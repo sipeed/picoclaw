@@ -18,7 +18,7 @@
     <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
-[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | [Bahasa Indonesia](README.id.md) | **English**
+[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | [Bahasa Indonesia](README.id.md) | [Malay](README.my.md) | **English**
 
 </div>
 
@@ -56,16 +56,20 @@
 
 ## 📢 News
 
+2026-03-31 📱 **Android Support!** PicoClaw now runs on Android! Download the APK at [picoclaw.io](https://picoclaw.io/download)
+
+2026-03-25 🚀 **v0.2.4 Released!** Agent architecture overhaul (SubTurn, Hooks, Steering, EventBus), WeChat/WeCom integration, security hardening (.security.yml, sensitive data filtering), new providers (AWS Bedrock, Azure, Xiaomi MiMo), and 35 bug fixes. PicoClaw has reached **26K Stars**!
+
 2026-03-17 🚀 **v0.2.3 Released!** System tray UI (Windows & Linux), sub-agent status query (`spawn_status`), experimental Gateway hot-reload, Cron security gating, and 2 security fixes. PicoClaw has reached **25K Stars**!
 
 2026-03-09 🎉 **v0.2.1 — Biggest update yet!** MCP protocol support, 4 new channels (Matrix/IRC/WeCom/Discord Proxy), 3 new providers (Kimi/Minimax/Avian), vision pipeline, JSONL memory store, model routing.
 
 2026-02-28 📦 **v0.2.0** released with Docker Compose and Web UI Launcher support.
 
-2026-02-26 🎉 PicoClaw hits **20K Stars** in just 17 days! Channel auto-orchestration and capability interfaces are live.
-
 <details>
 <summary>Earlier news...</summary>
+
+2026-02-26 🎉 PicoClaw hits **20K Stars** in just 17 days! Channel auto-orchestration and capability interfaces are live.
 
 2026-02-16 🎉 PicoClaw breaks 12K Stars in one week! Community maintainer roles and [Roadmap](ROADMAP.md) officially launched.
 
@@ -254,6 +258,29 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 
 </details>
 
+<details>
+<summary><b>macOS — First Launch Security Warning</b></summary>
+
+macOS may block `picoclaw-launcher` on first launch because it is downloaded from the internet and not notarized through the Mac App Store.
+
+**Step 1:** Double-click `picoclaw-launcher`. You will see a security warning:
+
+<p align="center">
+<img src="assets/macos-gatekeeper-warning.jpg" alt="macOS Gatekeeper warning" width="400">
+</p>
+
+> *"picoclaw-launcher" Not Opened — Apple could not verify "picoclaw-launcher" is free of malware that may harm your Mac or compromise your privacy.*
+
+**Step 2:** Open **System Settings** → **Privacy & Security** → scroll down to the **Security** section → click **Open Anyway** → confirm by clicking **Open Anyway** in the dialog.
+
+<p align="center">
+<img src="assets/macos-gatekeeper-allow.jpg" alt="macOS Privacy & Security — Open Anyway" width="600">
+</p>
+
+After this one-time step, `picoclaw-launcher` will open normally on subsequent launches.
+
+</details>
+
 ### 💻 TUI Launcher (Recommended for Headless / SSH)
 
 The TUI (Terminal UI) Launcher provides a full-featured terminal interface for configuration and management. Ideal for servers, Raspberry Pi, and other headless environments.
@@ -293,9 +320,9 @@ Then follow the Terminal Launcher section below to complete configuration.
 
 <img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
 
-**Option 2: APK Install (coming soon)**
+**Option 2: APK Install**
 
-A standalone Android APK with built-in WebUI is in development. Stay tuned!
+Download the APK from [picoclaw.io](https://picoclaw.io/download/) and install directly. No Termux required!
 
 <details>
 <summary><b>Terminal Launcher (for resource-constrained environments)</b></summary>
@@ -322,14 +349,17 @@ This creates `~/.picoclaw/config.json` and the workspace directory.
   "model_list": [
     {
       "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
-      "api_key": "sk-your-api-key"
+      "model": "openai/gpt-5.4"
+      // api_key is now loaded from .security.yml
     }
   ]
 }
 ```
 
 > See `config/config.example.json` in the repo for a complete configuration template with all available options.
+> 
+> Please note: config.example.json format is version 0, with sensitive codes in it, and will be auto migrated to version 1+, then, the config.json will only store insensitive data, the sensitive codes will be stored in .security.yml, if you need manually modify the codes, please see `docs/security_configuration.md` for more details.
+
 
 **3. Chat**
 
@@ -367,12 +397,16 @@ PicoClaw supports 30+ LLM providers through the `model_list` configuration. Use 
 | [NVIDIA NIM](https://build.nvidia.com/) | `nvidia/` | Required | NVIDIA hosted models |
 | [Cerebras](https://cloud.cerebras.ai/) | `cerebras/` | Required | Fast inference |
 | [Novita AI](https://novita.ai/) | `novita/` | Required | Various open models |
+| [Xiaomi MiMo](https://platform.xiaomimimo.com/) | `mimo/` | Required | MiMo models |
 | [Ollama](https://ollama.com/) | `ollama/` | Not needed | Local models, self-hosted |
 | [vLLM](https://docs.vllm.ai/) | `vllm/` | Not needed | Local deployment, OpenAI-compatible |
 | [LiteLLM](https://docs.litellm.ai/) | `litellm/` | Varies | Proxy for 100+ providers |
 | [Azure OpenAI](https://portal.azure.com/) | `azure/` | Required | Enterprise Azure deployment |
 | [GitHub Copilot](https://github.com/features/copilot) | `github-copilot/` | OAuth | Device code login |
 | [Antigravity](https://console.cloud.google.com/) | `antigravity/` | OAuth | Google Cloud AI |
+| [AWS Bedrock](https://console.aws.amazon.com/bedrock)* | `bedrock/` | AWS credentials | Claude, Llama, Mistral on AWS |
+
+> \* AWS Bedrock requires build tag: `go build -tags bedrock`. Set `api_base` to a region name (e.g., `us-east-1`) for automatic endpoint resolution across all AWS partitions (aws, aws-cn, aws-us-gov). When using a full endpoint URL instead, you must also configure `AWS_REGION` via environment variable or AWS config/profile.
 
 <details>
 <summary><b>Local deployment (Ollama, vLLM, etc.)</b></summary>
@@ -423,9 +457,7 @@ Talk to your PicoClaw through 17+ messaging platforms:
 | **DingTalk** | Medium (client credentials) | Stream | [Guide](docs/channels/dingtalk/README.md) |
 | **Feishu / Lark** | Medium (App ID + Secret) | WebSocket/SDK | [Guide](docs/channels/feishu/README.md) |
 | **LINE** | Medium (credentials + webhook) | Webhook | [Guide](docs/channels/line/README.md) |
-| **WeCom Bot** | Medium (webhook URL) | Webhook | [Guide](docs/channels/wecom/wecom_bot/README.md) |
-| **WeCom App** | Medium (corp credentials) | Webhook | [Guide](docs/channels/wecom/wecom_app/README.md) |
-| **WeCom AI Bot** | Medium (token + AES key) | WebSocket / Webhook | [Guide](docs/channels/wecom/wecom_aibot/README.md) |
+| **WeCom** | Easy (QR login or manual) | WebSocket | [Guide](docs/channels/wecom/README.md) |
 | **IRC** | Medium (server + nick) | IRC protocol | [Guide](docs/chat-apps.md#irc) |
 | **OneBot** | Medium (WebSocket URL) | OneBot v11 | [Guide](docs/channels/onebot/README.md) |
 | **MaixCam** | Easy (enable) | TCP socket | [Guide](docs/channels/maixcam/README.md) |
@@ -433,6 +465,8 @@ Talk to your PicoClaw through 17+ messaging platforms:
 | **Pico Client** | Easy (WebSocket URL) | WebSocket | Built-in |
 
 > All webhook-based channels share a single Gateway HTTP server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). Feishu uses WebSocket/SDK mode and does not use the shared HTTP server.
+
+> Log verbosity is controlled by `gateway.log_level` (default: `warn`). Supported values: `debug`, `info`, `warn`, `error`, `fatal`. Can also be set via `PICOCLAW_LOG_LEVEL`. See [Configuration](docs/configuration.md#gateway-log-level) for details.
 
 For detailed channel setup instructions, see [Chat Apps Configuration](docs/chat-apps.md).
 
@@ -520,7 +554,7 @@ Connect PicoClaw to the Agent Social Network simply by sending a single message 
 | Command                   | Description                      |
 | ------------------------- | -------------------------------- |
 | `picoclaw onboard`        | Initialize config & workspace    |
-| `picoclaw onboard weixin` | Connect WeChat account via QR |
+| `picoclaw auth weixin` | Connect WeChat account via QR |
 | `picoclaw agent -m "..."` | Chat with the agent              |
 | `picoclaw agent`          | Interactive chat mode            |
 | `picoclaw gateway`        | Start the gateway                |
@@ -544,6 +578,8 @@ PicoClaw supports scheduled reminders and recurring tasks through the `cron` too
 * **Recurring tasks**: "Remind me every 2 hours" -> triggers every 2 hours
 * **Cron expressions**: "Remind me at 9am daily" -> uses cron expression
 
+See [docs/cron.md](docs/cron.md) for current schedule types, execution modes, command-job gates, and persistence details.
+
 ## 📚 Documentation
 
 For detailed guides beyond this README:
@@ -553,6 +589,7 @@ For detailed guides beyond this README:
 | [Docker & Quick Start](docs/docker.md) | Docker Compose setup, Launcher/Agent modes |
 | [Chat Apps](docs/chat-apps.md) | All 17+ channel setup guides |
 | [Configuration](docs/configuration.md) | Environment variables, workspace layout, security sandbox |
+| [Scheduled Tasks and Cron Jobs](docs/cron.md) | Cron schedule types, deliver modes, command gates, job storage |
 | [Providers & Models](docs/providers.md) | 30+ LLM providers, model routing, model_list configuration |
 | [Spawn & Async Tasks](docs/spawn-tasks.md) | Quick tasks, long tasks with spawn, async sub-agent orchestration |
 | [Hooks](docs/hooks/README.md) | Event-driven hook system: observers, interceptors, approval hooks |

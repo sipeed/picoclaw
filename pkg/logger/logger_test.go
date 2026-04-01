@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 )
@@ -363,5 +367,67 @@ func TestAppendFields_ErrorUsesErrorString(t *testing.T) {
 
 	if got["error"] != "transcription request failed" {
 		t.Fatalf("error field = %#v, want %q", got["error"], "transcription request failed")
+	}
+}
+
+func TestDisableConsole(t *testing.T) {
+	DisableConsole()
+	Info("this should go to nowhere")
+}
+
+func TestConfigureFromEnv(t *testing.T) {
+	home := os.Getenv("HOME")
+	if home == "" {
+		t.Skip("HOME not set")
+	}
+
+	tmpFile := "/tmp/picoclaw_test_log_" + fmt.Sprintf("%d", time.Now().UnixNano())
+	defer os.Remove(tmpFile)
+
+	os.Setenv("PICOCLAW_LOG_FILE", tmpFile)
+	defer os.Unsetenv("PICOCLAW_LOG_FILE")
+
+	ConfigureFromEnv()
+
+	if logFile == nil {
+		t.Error("expected log file to be set")
+	}
+
+	Info("test message")
+
+	os.Setenv("PICOCLAW_LOG_FILE", "~/test_log")
+	ConfigureFromEnv()
+
+	expanded := filepath.Join(home, "test_log")
+	defer os.Remove(expanded)
+}
+
+func TestConfigureFromEnvNoEnv(t *testing.T) {
+	os.Unsetenv("PICOCLAW_LOG_FILE")
+	ConfigureFromEnv()
+}
+
+func TestGetPackageNameFromFile(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{"normal package path", "/home/user/project/pkg/logger/logger.go", "logger"},
+		{"nested package", "/home/user/project/internal/service/auth/handler.go", "auth"},
+		{"cmd package", "/home/user/project/cmd/server/main.go", "server"},
+		{"project root returns main", "./main.go", "<main>"},
+		{"single dot returns main", ".", "<main>"},
+		{"single directory", "mypkg/file.go", "mypkg"},
+		{"deep nesting", "/a/b/c/d/e/f.go", "e"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getPackageNameFromFile(tt.path)
+			if got != tt.want {
+				t.Errorf("getPackageNameFromFile(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
 	}
 }

@@ -62,7 +62,7 @@ type LINEChannel struct {
 
 // NewLINEChannel creates a new LINE channel instance.
 func NewLINEChannel(cfg config.LINEConfig, messageBus *bus.MessageBus) (*LINEChannel, error) {
-	if cfg.ChannelSecret == "" || cfg.ChannelAccessToken == "" {
+	if cfg.ChannelSecret.String() == "" || cfg.ChannelAccessToken.String() == "" {
 		return nil, fmt.Errorf("line channel_secret and channel_access_token are required")
 	}
 
@@ -110,7 +110,7 @@ func (c *LINEChannel) fetchBotInfo() error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.config.ChannelAccessToken)
+	req.Header.Set("Authorization", "Bearer "+c.config.ChannelAccessToken.String())
 
 	resp, err := c.infoClient.Do(req)
 	if err != nil {
@@ -216,7 +216,7 @@ func (c *LINEChannel) verifySignature(body []byte, signature string) bool {
 		return false
 	}
 
-	mac := hmac.New(sha256.New, []byte(c.config.ChannelSecret))
+	mac := hmac.New(sha256.New, []byte(c.config.ChannelSecret.String()))
 	mac.Write(body)
 	expected := base64.StdEncoding.EncodeToString(mac.Sum(nil))
 
@@ -301,8 +301,9 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 	storeMedia := func(localPath, filename string) string {
 		if store := c.GetMediaStore(); store != nil {
 			ref, err := store.Store(localPath, media.MediaMeta{
-				Filename: filename,
-				Source:   "line",
+				Filename:      filename,
+				Source:        "line",
+				CleanupPolicy: media.CleanupPolicyDeleteOnCleanup,
 			}, scope)
 			if err == nil {
 				return ref
@@ -495,9 +496,9 @@ func (c *LINEChannel) resolveChatID(source lineSource) string {
 
 // Send sends a message to LINE. It first tries the Reply API (free)
 // using a cached reply token, then falls back to the Push API.
-func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	// Load and consume quote token for this chat
@@ -515,28 +516,28 @@ func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 					"chat_id": msg.ChatID,
 					"quoted":  quoteToken != "",
 				})
-				return nil
+				return nil, nil
 			}
 			logger.DebugC("line", "Reply API failed, falling back to Push API")
 		}
 	}
 
 	// Fall back to Push API
-	return c.sendPush(ctx, msg.ChatID, msg.Content, quoteToken)
+	return nil, c.sendPush(ctx, msg.ChatID, msg.Content, quoteToken)
 }
 
 // SendMedia implements the channels.MediaSender interface.
 // LINE requires media to be accessible via public URL; since we only have local files,
 // we fall back to sending a text message with the filename/caption.
 // For full support, an external file hosting service would be needed.
-func (c *LINEChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+func (c *LINEChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	store := c.GetMediaStore()
 	if store == nil {
-		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
 	}
 
 	// LINE Messaging API requires publicly accessible URLs for media messages.
@@ -548,11 +549,11 @@ func (c *LINEChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessag
 		}
 
 		if err := c.sendPush(ctx, msg.ChatID, caption, ""); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 // buildTextMessage creates a text message object, optionally with quoteToken.
@@ -654,7 +655,7 @@ func (c *LINEChannel) callAPI(ctx context.Context, endpoint string, payload any)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.config.ChannelAccessToken)
+	req.Header.Set("Authorization", "Bearer "+c.config.ChannelAccessToken.String())
 
 	resp, err := c.apiClient.Do(req)
 	if err != nil {
@@ -679,7 +680,12 @@ func (c *LINEChannel) downloadContent(messageID, filename string) string {
 	return utils.DownloadFile(url, filename, utils.DownloadOptions{
 		LoggerPrefix: "line",
 		ExtraHeaders: map[string]string{
-			"Authorization": "Bearer " + c.config.ChannelAccessToken,
+			"Authorization": "Bearer " + c.config.ChannelAccessToken.String(),
 		},
 	})
+}
+
+// VoiceCapabilities returns the voice capabilities of the channel.
+func (c *LINEChannel) VoiceCapabilities() channels.VoiceCapabilities {
+	return channels.VoiceCapabilities{ASR: true, TTS: true}
 }

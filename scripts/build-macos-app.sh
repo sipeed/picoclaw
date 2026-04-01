@@ -10,6 +10,8 @@ if [ -z "$EXECUTABLE" ]; then
     exit 1
 fi
 
+LAUNCHER_EXECUTABLE="picoclaw-launcher-${EXECUTABLE}"
+EXECUTABLE="picoclaw-${EXECUTABLE}"
 echo "executable: $EXECUTABLE"
 
 APP_NAME="PicoClaw Launcher"
@@ -33,17 +35,17 @@ mkdir -p "$APP_RESOURCES"
 
 # Copy executable
 echo "Copying executable..."
-if [ -f "./web/build/${APP_EXECUTABLE}" ]; then
-    cp "./web/build/${APP_EXECUTABLE}" "${APP_MACOS}/"
+if [ -f "./build/${LAUNCHER_EXECUTABLE}" ]; then
+    cp "./build/${LAUNCHER_EXECUTABLE}" "${APP_MACOS}/${APP_EXECUTABLE}"
 else
-    echo "Error: ./web/build/${APP_EXECUTABLE} not found. Please build the web backend first."
-    echo "Run: make build in web dir"
+    echo "Error: ./build/${LAUNCHER_EXECUTABLE} not found. Please build the web backend first."
+    echo "Run: make build-launcher"
     exit 1
 fi
-if [ -f "./build/picoclaw" ]; then
-    cp "./build/picoclaw" "${APP_MACOS}/"
+if [ -f "./build/${EXECUTABLE}" ]; then
+    cp "./build/${EXECUTABLE}" "${APP_MACOS}/picoclaw"
 else
-    echo "Error: ./build/picoclaw not found. Please build the main file first."
+    echo "Error: ./build/${EXECUTABLE} not found. Please build the main file first."
     echo "Run: make build"
     exit 1
 fi
@@ -76,10 +78,10 @@ cat > "${APP_CONTENTS}/Info.plist" << 'EOF'
     <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
-    <key>LSRequiresCarbon</key>
-    <true/>
     <key>LSUIElement</key>
-    <string>1</string>
+    <true/>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.11</string>
 </dict>
 </plist>
 EOF

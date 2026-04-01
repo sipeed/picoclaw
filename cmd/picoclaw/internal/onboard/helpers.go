@@ -97,7 +97,11 @@ func onboard(encrypt bool) {
 	fmt.Println("")
 	fmt.Println("     See README.md for 17+ supported providers.")
 	fmt.Println("")
-	fmt.Println("  3. Chat: picoclaw agent -m \"Hello!\"")
+	if encrypt {
+		fmt.Println("  3. Chat: picoclaw agent -m \"Hello!\"")
+	} else {
+		fmt.Println("  2. Chat: picoclaw agent -m \"Hello!\"")
+	}
 }
 
 // promptPassphrase reads the encryption passphrase twice from the terminal

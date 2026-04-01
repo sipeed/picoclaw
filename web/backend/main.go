@@ -16,6 +16,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -33,6 +34,10 @@ import (
 
 const (
 	appName = "PicoClaw"
+
+	logPath   = "logs"
+	panicFile = "launcher_panic.log"
+	logFile   = "launcher.log"
 )
 
 var (
@@ -40,10 +45,19 @@ var (
 
 	server     *http.Server
 	serverAddr string
-	apiHandler *api.Handler
+	// browserLaunchURL is opened by openBrowser() (auto-open + tray "open console").
+	// Includes ?token= for same-machine dashboard login; keep serverAddr without secrets for other use.
+	browserLaunchURL string
+	apiHandler       *api.Handler
+	// launcherDashboardTokenForClipboard is read by the system tray "copy token" action (GUI mode).
+	launcherDashboardTokenForClipboard string
 
 	noBrowser *bool
 )
+
+func shouldEnableLauncherFileLogging(enableConsole, debug bool) bool {
+	return !enableConsole || debug
+}
 
 func main() {
 	port := flag.String("port", "18800", "Port to listen on")
@@ -52,44 +66,60 @@ func main() {
 	lang := flag.String("lang", "", "Language: en (English) or zh (Chinese). Default: auto-detect from system locale")
 	console := flag.Bool("console", false, "Console mode, no GUI")
 
+	var debug bool
+	flag.BoolVar(&debug, "d", false, "Enable debug logging")
+	flag.BoolVar(&debug, "debug", false, "Enable debug logging")
+
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "PicoClaw Launcher - A web-based configuration editor\n\n")
+		fmt.Fprintf(os.Stderr, "%s Launcher - Web console and gateway manager\n\n", appName)
 		fmt.Fprintf(os.Stderr, "Usage: %s [options] [config.json]\n\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "Arguments:\n")
 		fmt.Fprintf(os.Stderr, "  config.json    Path to the configuration file (default: ~/.picoclaw/config.json)\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  %s                          Use default config path\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s ./config.json             Specify a config file\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "      Use default config path in GUI mode\n")
+		fmt.Fprintf(os.Stderr, "  %s ./config.json\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "      Specify a config file\n")
 		fmt.Fprintf(
 			os.Stderr,
-			"  %s -public ./config.json     Allow access from other devices on the network\n",
+			"  %s -public ./config.json\n",
 			os.Args[0],
 		)
+		fmt.Fprintf(os.Stderr, "      Allow access from other devices on the local network\n")
+		fmt.Fprintf(os.Stderr, "  %s -console -d ./config.json\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "      Run in the terminal with debug logs enabled\n")
 	}
 	flag.Parse()
 
 	// Initialize logger
 	picoHome := utils.GetPicoclawHome()
-	// By default, detect terminal to decide console log behavior
-	// If -console-logs flag is explicitly set, it overrides the detection
-	enableConsole := *console
-	if !enableConsole {
-		// Disable console logging by setting level to Fatal (no output)
-		logger.SetConsoleLevel(logger.FATAL)
 
-		logPath := filepath.Join(picoHome, "logs", "web.log")
-		if err := logger.EnableFileLogging(logPath); err != nil {
-			// FIXME: https://github.com/sipeed/picoclaw/issues/1734
-			fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
-			os.Exit(1)
+	f := filepath.Join(picoHome, logPath, panicFile)
+	panicFunc, err := logger.InitPanic(f)
+	if err != nil {
+		panic(fmt.Sprintf("error initializing panic log: %v", err))
+	}
+	defer panicFunc()
+
+	enableConsole := *console
+	fileLoggingEnabled := shouldEnableLauncherFileLogging(enableConsole, debug)
+	if fileLoggingEnabled {
+		// GUI mode writes launcher logs to file. Debug mode keeps file logging enabled in console mode too.
+		if !debug {
+			logger.DisableConsole()
+		}
+
+		f := filepath.Join(picoHome, logPath, logFile)
+		if err = logger.EnableFileLogging(f); err != nil {
+			panic(fmt.Sprintf("error enabling file logging: %v", err))
 		}
 		defer logger.DisableFileLogging()
 	}
-
-	logger.InfoC("web", "PicoClaw Launcher starting...")
-	logger.InfoC("web", fmt.Sprintf("PicoClaw Home: %s", picoHome))
+	if debug {
+		logger.SetLevel(logger.DEBUG)
+	}
 
 	// Set language from command line or auto-detect
 	if *lang != "" {
@@ -108,7 +138,26 @@ func main() {
 	}
 	err = utils.EnsureOnboarded(absPath)
 	if err != nil {
-		logger.Errorf("Warning: Failed to initialize PicoClaw config automatically: %v", err)
+		logger.Errorf("Warning: Failed to initialize %s config automatically: %v", appName, err)
+	}
+	if !debug {
+		logger.SetLevelFromString(config.ResolveGatewayLogLevel(absPath))
+	}
+
+	logger.InfoC("web", fmt.Sprintf("%s launcher starting (version %s)...", appName, appVersion))
+	logger.InfoC("web", fmt.Sprintf("%s Home: %s", appName, picoHome))
+	if debug {
+		logger.InfoC("web", "Debug mode enabled")
+		logger.DebugC(
+			"web",
+			fmt.Sprintf(
+				"Launcher flags: console=%t public=%t no_browser=%t config=%s",
+				enableConsole,
+				*public,
+				*noBrowser,
+				absPath,
+			),
+		)
 	}
 
 	var explicitPort bool
@@ -146,6 +195,13 @@ func main() {
 		logger.Fatalf("Invalid port %q: %v", effectivePort, err)
 	}
 
+	dashboardToken, dashboardSigningKey, newDashTok, dashErr := launcherconfig.EnsureDashboardSecrets()
+	if dashErr != nil {
+		logger.Fatalf("Dashboard auth setup failed: %v", dashErr)
+	}
+	dashboardSessionCookie := middleware.SessionCookieValue(dashboardSigningKey, dashboardToken)
+	launcherDashboardTokenForClipboard = dashboardToken
+
 	// Determine listen address
 	var addr string
 	if effectivePublic {
@@ -157,8 +213,27 @@ func main() {
 	// Initialize Server components
 	mux := http.NewServeMux()
 
+	tokenLogFileAbs := ""
+	if fileLoggingEnabled {
+		tokenLogFileAbs = filepath.Join(picoHome, logPath, logFile)
+	}
+	api.RegisterLauncherAuthRoutes(mux, api.LauncherAuthRouteOpts{
+		DashboardToken: dashboardToken,
+		SessionCookie:  dashboardSessionCookie,
+		TokenHelp: api.LauncherAuthTokenHelp{
+			EnvVarName:    "PICOCLAW_LAUNCHER_TOKEN",
+			LogFileAbs:    tokenLogFileAbs,
+			TrayCopyMenu:  trayOffersDashboardTokenCopy(),
+			ConsoleStdout: enableConsole,
+		},
+	})
+
 	// API Routes (e.g. /api/status)
 	apiHandler = api.NewHandler(absPath)
+	apiHandler.SetDebug(debug)
+	if _, err = apiHandler.EnsurePicoChannel(""); err != nil {
+		logger.ErrorC("web", fmt.Sprintf("Warning: failed to ensure pico channel on startup: %v", err))
+	}
 	apiHandler.SetServerOptions(portNum, effectivePublic, explicitPublic, launcherCfg.AllowedCIDRs)
 	apiHandler.RegisterRoutes(mux)
 
@@ -170,15 +245,22 @@ func main() {
 		logger.Fatalf("Invalid allowed CIDR configuration: %v", err)
 	}
 
+	dashAuth := middleware.LauncherDashboardAuth(middleware.LauncherDashboardAuthConfig{
+		ExpectedCookie: dashboardSessionCookie,
+		Token:          dashboardToken,
+	}, accessControlledMux)
+
 	// Apply middleware stack
 	handler := middleware.Recoverer(
 		middleware.Logger(
-			middleware.JSONContentType(accessControlledMux),
+			middleware.ReferrerPolicyNoReferrer(
+				middleware.JSONContentType(dashAuth),
+			),
 		),
 	)
 
-	// Print startup banner (only in console mode)
-	if enableConsole {
+	// Print startup banner and token (console mode only).
+	if enableConsole || debug {
 		fmt.Print(utils.Banner)
 		fmt.Println()
 		fmt.Println("  Open the following URL in your browser:")
@@ -190,6 +272,19 @@ func main() {
 			}
 		}
 		fmt.Println()
+		if newDashTok {
+			fmt.Printf("  Dashboard token (this run): %s\n", dashboardToken)
+		} else if os.Getenv("PICOCLAW_LAUNCHER_TOKEN") != "" {
+			fmt.Printf("  Dashboard token: %s (from PICOCLAW_LAUNCHER_TOKEN)\n", dashboardToken)
+		}
+		fmt.Println()
+	}
+
+	if os.Getenv("PICOCLAW_LAUNCHER_TOKEN") != "" {
+		logger.InfoC("web", "Dashboard token: environment PICOCLAW_LAUNCHER_TOKEN")
+	}
+	if !enableConsole && newDashTok {
+		logger.InfoC("web", "Dashboard token (this run): "+dashboardToken)
 	}
 
 	// Log startup info to file
@@ -202,6 +297,11 @@ func main() {
 
 	// Share the local URL with the launcher runtime.
 	serverAddr = fmt.Sprintf("http://localhost:%s", effectivePort)
+	if dashboardToken != "" {
+		browserLaunchURL = serverAddr + "?token=" + url.QueryEscape(dashboardToken)
+	} else {
+		browserLaunchURL = serverAddr
+	}
 
 	// Auto-open browser will be handled by the launcher runtime.
 

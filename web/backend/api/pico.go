@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // registerPicoRoutes binds Pico Channel management endpoints to the ServeMux.
@@ -26,20 +27,56 @@ func (h *Handler) registerPicoRoutes(mux *http.ServeMux) {
 
 // createWsProxy creates a reverse proxy to the current gateway WebSocket endpoint.
 // The gateway bind host and port are resolved from the latest configuration.
-func (h *Handler) createWsProxy() *httputil.ReverseProxy {
-	wsProxy := httputil.NewSingleHostReverseProxy(h.gatewayProxyURL())
-	wsProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		http.Error(w, "Gateway unavailable: "+err.Error(), http.StatusBadGateway)
+func (h *Handler) createWsProxy(origProtocol string, token string) *httputil.ReverseProxy {
+	wsProxy := &httputil.ReverseProxy{
+		Rewrite: func(r *httputil.ProxyRequest) {
+			target := h.gatewayProxyURL()
+			r.SetURL(target)
+			r.Out.Header.Set(protocolKey, tokenPrefix+token)
+		},
+		ModifyResponse: func(r *http.Response) error {
+			if prot := r.Header.Values(protocolKey); len(prot) > 0 {
+				r.Header.Del(protocolKey)
+				if origProtocol != "" {
+					r.Header.Set(protocolKey, origProtocol)
+				}
+			}
+			return nil
+		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			logger.Errorf("Failed to proxy WebSocket: %v", err)
+			http.Error(w, "Gateway unavailable: "+err.Error(), http.StatusBadGateway)
+		},
 	}
 	return wsProxy
 }
 
 // handleWebSocketProxy wraps a reverse proxy to handle WebSocket connections.
-// The reverse proxy forwards the incoming upgrade handshake as-is.
+// It validates the client token before forwarding; rejects immediately on failure.
 func (h *Handler) handleWebSocketProxy() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		proxy := h.createWsProxy()
-		proxy.ServeHTTP(w, r)
+		gateway.mu.Lock()
+		ensurePicoTokenCachedLocked(h.configPath)
+		gatewayAvailable := gateway.pidData != nil
+		gateway.mu.Unlock()
+
+		if !gatewayAvailable {
+			logger.Warnf("Gateway not available for WebSocket proxy")
+			http.Error(w, "Gateway not available", http.StatusServiceUnavailable)
+			return
+		}
+		prot := r.Header.Values(protocolKey)
+		if len(prot) > 0 {
+			origProtocol := prot[0]
+			newToken := picoComposedToken(prot[0])
+			if newToken != "" {
+				h.createWsProxy(origProtocol, newToken).ServeHTTP(w, r)
+				return
+			}
+		}
+
+		logger.Warnf("Invalid Pico token: %v", prot)
+		http.Error(w, "Invalid Pico token", http.StatusForbidden)
 	}
 }
 
@@ -53,11 +90,11 @@ func (h *Handler) handleGetPicoToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wsURL := h.buildWsURL(r, cfg)
+	wsURL := h.buildWsURL(r)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"token":   cfg.Channels.Pico.Token,
+		"token":   cfg.Channels.Pico.Token.String(),
 		"ws_url":  wsURL,
 		"enabled": cfg.Channels.Pico.Enabled,
 	})
@@ -74,14 +111,19 @@ func (h *Handler) handleRegenPicoToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token := generateSecureToken()
-	cfg.Channels.Pico.Token = token
+	cfg.Channels.Pico.SetToken(token)
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	wsURL := h.buildWsURL(r, cfg)
+	// Refresh cached pico token.
+	gateway.mu.Lock()
+	gateway.picoToken = token
+	gateway.mu.Unlock()
+
+	wsURL := h.buildWsURL(r)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
@@ -90,14 +132,14 @@ func (h *Handler) handleRegenPicoToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ensurePicoChannel enables the Pico channel with sane defaults if it isn't
+// EnsurePicoChannel enables the Pico channel with sane defaults if it isn't
 // already configured. Returns true when the config was modified.
 //
 // callerOrigin is the Origin header from the setup request. If non-empty and
 // no origins are configured yet, it's written as the allowed origin so the
 // WebSocket handshake works for whatever host the caller is on (LAN, custom
 // port, etc.). Pass "" when there's no request context.
-func (h *Handler) ensurePicoChannel(callerOrigin string) (bool, error) {
+func (h *Handler) EnsurePicoChannel(callerOrigin string) (bool, error) {
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
 		return false, fmt.Errorf("failed to load config: %w", err)
@@ -110,8 +152,8 @@ func (h *Handler) ensurePicoChannel(callerOrigin string) (bool, error) {
 		changed = true
 	}
 
-	if cfg.Channels.Pico.Token == "" {
-		cfg.Channels.Pico.Token = generateSecureToken()
+	if cfg.Channels.Pico.Token.String() == "" {
+		cfg.Channels.Pico.SetToken(generateSecureToken())
 		changed = true
 	}
 
@@ -134,23 +176,27 @@ func (h *Handler) ensurePicoChannel(callerOrigin string) (bool, error) {
 //
 //	POST /api/pico/setup
 func (h *Handler) handlePicoSetup(w http.ResponseWriter, r *http.Request) {
-	changed, err := h.ensurePicoChannel(r.Header.Get("Origin"))
+	changed, err := h.EnsurePicoChannel(r.Header.Get("Origin"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	// Reload config (EnsurePicoChannel may have modified it) and refresh cache.
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
 		return
 	}
+	if changed {
+		refreshPicoToken(cfg)
+	}
 
-	wsURL := h.buildWsURL(r, cfg)
+	wsURL := h.buildWsURL(r)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"token":   cfg.Channels.Pico.Token,
+		"token":   cfg.Channels.Pico.Token.String(),
 		"ws_url":  wsURL,
 		"enabled": true,
 		"changed": changed,
@@ -162,7 +208,7 @@ func generateSecureToken() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		// Fallback to something pseudo-random if crypto/rand fails
-		return fmt.Sprintf("pico_%x", time.Now().UnixNano())
+		return fmt.Sprintf("%032x", time.Now().UnixNano())
 	}
 	return hex.EncodeToString(b)
 }

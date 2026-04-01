@@ -35,11 +35,30 @@ type Provider struct {
 	apiBase        string
 	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
 	httpClient     *http.Client
+	extraBody      map[string]any // Additional fields to inject into request body
 }
 
 type Option func(*Provider)
 
 const defaultRequestTimeout = common.DefaultRequestTimeout
+
+var stripModelPrefixProviders = map[string]struct{}{
+	"litellm":    {},
+	"venice":     {},
+	"moonshot":   {},
+	"nvidia":     {},
+	"groq":       {},
+	"ollama":     {},
+	"deepseek":   {},
+	"google":     {},
+	"openrouter": {},
+	"zhipu":      {},
+	"mistral":    {},
+	"vivgrid":    {},
+	"minimax":    {},
+	"novita":     {},
+	"lmstudio":   {},
+}
 
 func WithMaxTokensField(maxTokensField string) Option {
 	return func(p *Provider) {
@@ -52,6 +71,12 @@ func WithRequestTimeout(timeout time.Duration) Option {
 		if timeout > 0 {
 			p.httpClient.Timeout = timeout
 		}
+	}
+}
+
+func WithExtraBody(extraBody map[string]any) Option {
+	return func(p *Provider) {
+		p.extraBody = extraBody
 	}
 }
 
@@ -138,6 +163,12 @@ func (p *Provider) buildRequestBody(
 		if supportsPromptCacheKey(p.apiBase) {
 			requestBody["prompt_cache_key"] = cacheKey
 		}
+	}
+
+	// Merge extra body fields configured per-provider/model.
+	// These are injected last so they take precedence over defaults.
+	for k, v := range p.extraBody {
+		requestBody[k] = v
 	}
 
 	return requestBody
@@ -384,13 +415,11 @@ func normalizeModel(model, apiBase string) string {
 	}
 
 	prefix := strings.ToLower(before)
-	switch prefix {
-	case "litellm", "moonshot", "nvidia", "groq", "ollama", "deepseek", "google",
-		"openrouter", "zhipu", "mistral", "vivgrid", "minimax", "novita":
+	if _, ok := stripModelPrefixProviders[prefix]; ok {
 		return after
-	default:
-		return model
 	}
+
+	return model
 }
 
 func buildToolsList(tools []ToolDefinition, nativeSearch bool) []any {

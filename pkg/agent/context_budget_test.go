@@ -529,6 +529,26 @@ func TestEstimateMessageTokens_MediaItems(t *testing.T) {
 	}
 }
 
+func TestEstimateMessageTokens_SystemParts(t *testing.T) {
+	plain := providers.Message{Role: "system", Content: "instructions"}
+	withParts := providers.Message{
+		Role:    "system",
+		Content: "instructions",
+		SystemParts: []providers.ContentBlock{
+			{Type: "text", Text: "some more system context"},
+			{Type: "text", Text: "even more cached blocks"},
+		},
+	}
+
+	plainTokens := estimateMessageTokens(plain)
+	partsTokens := estimateMessageTokens(withParts)
+
+	if partsTokens <= plainTokens {
+		t.Errorf("system message with SystemParts (%d) should exceed plain message (%d)",
+			partsTokens, plainTokens)
+	}
+}
+
 // --- estimateToolDefsTokens tests ---
 
 func TestEstimateToolDefsTokens(t *testing.T) {

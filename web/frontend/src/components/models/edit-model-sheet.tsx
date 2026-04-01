@@ -20,6 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { Textarea } from "@/components/ui/textarea"
 
 interface EditForm {
   apiKey: string
@@ -32,6 +33,7 @@ interface EditForm {
   maxTokensField: string
   requestTimeout: string
   thinkingLevel: string
+  extraBody: string
 }
 
 interface EditModelSheetProps {
@@ -59,6 +61,7 @@ export function EditModelSheet({
     maxTokensField: "",
     requestTimeout: "",
     thinkingLevel: "",
+    extraBody: "",
   })
   const [saving, setSaving] = useState(false)
   const [setAsDefault, setSetAsDefault] = useState(false)
@@ -79,6 +82,9 @@ export function EditModelSheet({
           ? String(model.request_timeout)
           : "",
         thinkingLevel: model.thinking_level ?? "",
+        extraBody: model.extra_body
+          ? JSON.stringify(model.extra_body, null, 2)
+          : "",
       })
       setSetAsDefault(model.is_default)
       setError("")
@@ -86,7 +92,8 @@ export function EditModelSheet({
   }, [model])
 
   const setField =
-    (key: keyof EditForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    (key: keyof EditForm) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setForm((f) => ({ ...f, [key]: e.target.value }))
 
   const handleSave = async () => {
@@ -109,6 +116,9 @@ export function EditModelSheet({
           ? Number(form.requestTimeout)
           : undefined,
         thinking_level: form.thinkingLevel || undefined,
+        extra_body: form.extraBody.trim()
+          ? JSON.parse(form.extraBody.trim())
+          : {},
       })
       if (setAsDefault && !model.is_default) {
         await setDefaultModel(model.model_name)
@@ -123,9 +133,10 @@ export function EditModelSheet({
   }
 
   const isOAuth = model?.auth_method === "oauth"
-  const apiKeyPlaceholder = model?.configured
+  const hasSavedAPIKey = Boolean(model?.api_key)
+  const apiKeyPlaceholder = hasSavedAPIKey
     ? maskedSecretPlaceholder(
-        model.api_key,
+        model?.api_key ?? "",
         t("models.field.apiKeyPlaceholderSet"),
       )
     : t("models.field.apiKeyPlaceholder")
@@ -151,7 +162,7 @@ export function EditModelSheet({
               <Field
                 label={t("models.field.apiKey")}
                 hint={
-                  model?.configured ? t("models.edit.apiKeyHint") : undefined
+                  hasSavedAPIKey ? t("models.edit.apiKeyHint") : undefined
                 }
               >
                 <KeyInput
@@ -271,6 +282,18 @@ export function EditModelSheet({
                   value={form.maxTokensField}
                   onChange={setField("maxTokensField")}
                   placeholder="max_completion_tokens"
+                />
+              </Field>
+
+              <Field
+                label={t("models.field.extraBody")}
+                hint={t("models.field.extraBodyHint")}
+              >
+                <Textarea
+                  value={form.extraBody}
+                  onChange={setField("extraBody")}
+                  placeholder='{"key": "value"}'
+                  rows={3}
                 />
               </Field>
             </AdvancedSection>

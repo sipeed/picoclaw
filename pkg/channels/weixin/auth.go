@@ -40,6 +40,7 @@ func PerformLoginInteractive(
 	if err != nil {
 		return "", "", "", "", fmt.Errorf("failed to create api client: %w", err)
 	}
+	pollAPI := api
 
 	logger.InfoC("weixin", "Requesting Weixin QR code...")
 	qrResp, err := api.GetQRCode(ctx, opts.BotType)
@@ -76,7 +77,7 @@ func PerformLoginInteractive(
 		case <-timeoutCtx.Done():
 			return "", "", "", "", fmt.Errorf("login timeout")
 		case <-pollTicker.C:
-			statusResp, err := api.GetQRCodeStatus(timeoutCtx, qrResp.Qrcode)
+			statusResp, err := pollAPI.GetQRCodeStatus(timeoutCtx, qrResp.Qrcode)
 			if err != nil {
 				// Long poll timeout or temporary error
 				continue
@@ -99,6 +100,27 @@ func PerformLoginInteractive(
 				})
 
 				return statusResp.BotToken, statusResp.IlinkUserID, statusResp.IlinkBotID, statusResp.Baseurl, nil
+			case "scaned_but_redirect":
+				if statusResp.RedirectHost == "" {
+					logger.WarnC(
+						"weixin",
+						"scaned_but_redirect received without redirect_host; continuing on current host",
+					)
+					continue
+				}
+				nextBaseURL := "https://" + statusResp.RedirectHost + "/"
+				nextAPI, nextErr := NewApiClient(nextBaseURL, "", opts.Proxy)
+				if nextErr != nil {
+					logger.WarnCF("weixin", "Failed to switch QR polling host", map[string]any{
+						"redirect_host": statusResp.RedirectHost,
+						"error":         nextErr.Error(),
+					})
+					continue
+				}
+				pollAPI = nextAPI
+				logger.InfoCF("weixin", "Switched QR polling host", map[string]any{
+					"redirect_host": statusResp.RedirectHost,
+				})
 			case "expired":
 				return "", "", "", "", fmt.Errorf("qrcode expired, please try again")
 			default:

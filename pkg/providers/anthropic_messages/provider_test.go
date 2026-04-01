@@ -562,6 +562,96 @@ func TestBuildRequestBodyEdgeCases(t *testing.T) {
 	}
 }
 
+func TestBuildRequestBody_ConsecutiveToolResultsMerged(t *testing.T) {
+	// Consecutive tool results (role "tool") should be merged into a single "user" message
+	messages := []Message{
+		{Role: "user", Content: "Use tools"},
+		{Role: "assistant", Content: "", ToolCalls: []ToolCall{
+			{ID: "t1", Name: "tool_a", Arguments: map[string]any{"x": 1}},
+			{ID: "t2", Name: "tool_b", Arguments: map[string]any{"y": 2}},
+		}},
+		{Role: "tool", ToolCallID: "t1", Content: "result1"},
+		{Role: "tool", ToolCallID: "t2", Content: "result2"},
+	}
+
+	got, err := buildRequestBody(messages, nil, "test-model", map[string]any{"max_tokens": 8192})
+	if err != nil {
+		t.Fatalf("buildRequestBody() error: %v", err)
+	}
+
+	apiMessages, ok := got["messages"].([]any)
+	if !ok {
+		t.Fatalf("messages is not []any")
+	}
+
+	// Expect: user, assistant, user (merged tool results)
+	if len(apiMessages) != 3 {
+		for i, m := range apiMessages {
+			t.Logf("message[%d]: %+v", i, m)
+		}
+		t.Fatalf("expected 3 API messages, got %d", len(apiMessages))
+	}
+
+	// The third message should be a user message with 2 tool_result blocks
+	toolResultMsg, ok := apiMessages[2].(map[string]any)
+	if !ok {
+		t.Fatalf("tool result message is not map[string]any")
+	}
+	if toolResultMsg["role"] != "user" {
+		t.Errorf("expected role 'user', got %v", toolResultMsg["role"])
+	}
+	content, ok := toolResultMsg["content"].([]map[string]any)
+	if !ok {
+		t.Fatalf("content is not []map[string]any: %T", toolResultMsg["content"])
+	}
+	if len(content) != 2 {
+		t.Fatalf("expected 2 tool_result blocks, got %d", len(content))
+	}
+	if content[0]["tool_use_id"] != "t1" {
+		t.Errorf("first tool_result tool_use_id = %v, want t1", content[0]["tool_use_id"])
+	}
+	if content[1]["tool_use_id"] != "t2" {
+		t.Errorf("second tool_result tool_use_id = %v, want t2", content[1]["tool_use_id"])
+	}
+}
+
+func TestBuildRequestBody_UserToolResultsMerged(t *testing.T) {
+	// Consecutive tool results using role "user" with ToolCallID should also be merged
+	messages := []Message{
+		{Role: "user", Content: "Use tools"},
+		{Role: "assistant", Content: "", ToolCalls: []ToolCall{
+			{ID: "t1", Name: "tool_a", Arguments: map[string]any{"x": 1}},
+			{ID: "t2", Name: "tool_b", Arguments: map[string]any{"y": 2}},
+		}},
+		{Role: "user", ToolCallID: "t1", Content: "result1"},
+		{Role: "user", ToolCallID: "t2", Content: "result2"},
+	}
+
+	got, err := buildRequestBody(messages, nil, "test-model", map[string]any{"max_tokens": 8192})
+	if err != nil {
+		t.Fatalf("buildRequestBody() error: %v", err)
+	}
+
+	apiMessages, ok := got["messages"].([]any)
+	if !ok {
+		t.Fatalf("messages is not []any")
+	}
+
+	// Expect: user, assistant, user (merged tool results)
+	if len(apiMessages) != 3 {
+		t.Fatalf("expected 3 API messages, got %d", len(apiMessages))
+	}
+
+	toolResultMsg := apiMessages[2].(map[string]any)
+	content, ok := toolResultMsg["content"].([]map[string]any)
+	if !ok {
+		t.Fatalf("content is not []map[string]any: %T", toolResultMsg["content"])
+	}
+	if len(content) != 2 {
+		t.Fatalf("expected 2 tool_result blocks, got %d", len(content))
+	}
+}
+
 // TestParseResponseBodyEdgeCases tests edge cases for parseResponseBody.
 func TestParseResponseBodyEdgeCases(t *testing.T) {
 	tests := []struct {

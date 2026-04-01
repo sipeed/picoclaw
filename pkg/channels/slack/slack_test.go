@@ -102,10 +102,8 @@ func TestNewSlackChannel(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 
 	t.Run("missing bot token", func(t *testing.T) {
-		cfg := config.SlackConfig{
-			BotToken: "",
-			AppToken: "xapp-test",
-		}
+		cfg := config.SlackConfig{}
+		cfg.AppToken = *config.NewSecureString("xapp-test")
 		_, err := NewSlackChannel(cfg, msgBus)
 		if err == nil {
 			t.Error("expected error for missing bot_token, got nil")
@@ -113,10 +111,8 @@ func TestNewSlackChannel(t *testing.T) {
 	})
 
 	t.Run("missing app token", func(t *testing.T) {
-		cfg := config.SlackConfig{
-			BotToken: "xoxb-test",
-			AppToken: "",
-		}
+		cfg := config.SlackConfig{}
+		cfg.BotToken = *config.NewSecureString("xoxb-test")
 		_, err := NewSlackChannel(cfg, msgBus)
 		if err == nil {
 			t.Error("expected error for missing app_token, got nil")
@@ -125,10 +121,10 @@ func TestNewSlackChannel(t *testing.T) {
 
 	t.Run("valid config", func(t *testing.T) {
 		cfg := config.SlackConfig{
-			BotToken:  "xoxb-test",
-			AppToken:  "xapp-test",
 			AllowFrom: []string{"U123"},
 		}
+		cfg.BotToken = *config.NewSecureString("xoxb-test")
+		cfg.AppToken = *config.NewSecureString("xapp-test")
 		ch, err := NewSlackChannel(cfg, msgBus)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -147,10 +143,10 @@ func TestSlackChannelIsAllowed(t *testing.T) {
 
 	t.Run("empty allowlist allows all", func(t *testing.T) {
 		cfg := config.SlackConfig{
-			BotToken:  "xoxb-test",
-			AppToken:  "xapp-test",
 			AllowFrom: []string{},
 		}
+		cfg.BotToken = *config.NewSecureString("xoxb-test")
+		cfg.AppToken = *config.NewSecureString("xapp-test")
 		ch, _ := NewSlackChannel(cfg, msgBus)
 		if !ch.IsAllowed("U_ANYONE") {
 			t.Error("empty allowlist should allow all users")
@@ -159,10 +155,10 @@ func TestSlackChannelIsAllowed(t *testing.T) {
 
 	t.Run("allowlist restricts users", func(t *testing.T) {
 		cfg := config.SlackConfig{
-			BotToken:  "xoxb-test",
-			AppToken:  "xapp-test",
 			AllowFrom: []string{"U_ALLOWED"},
 		}
+		cfg.BotToken = *config.NewSecureString("xoxb-test")
+		cfg.AppToken = *config.NewSecureString("xapp-test")
 		ch, _ := NewSlackChannel(cfg, msgBus)
 		if !ch.IsAllowed("U_ALLOWED") {
 			t.Error("allowed user should pass allowlist check")

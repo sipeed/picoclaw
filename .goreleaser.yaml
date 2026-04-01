@@ -2,6 +2,11 @@
 # vim: set ts=2 sw=2 tw=0 fo=cnqoj
 version: 2
 
+git:
+  ignore_tags:
+    - nightly
+    - ".*-nightly.*"
+
 before:
   hooks:
     - go mod tidy
@@ -15,6 +20,7 @@ builds:
     env:
       - CGO_ENABLED=0
     tags:
+      - goolm
       - stdjson
     ldflags:
       - -s -w
@@ -57,6 +63,7 @@ builds:
     env:
       - CGO_ENABLED=0
     tags:
+      - goolm
       - stdjson
     ldflags:
       - -s -w
@@ -95,6 +102,7 @@ builds:
     env:
       - CGO_ENABLED=0
     tags:
+      - goolm
       - stdjson
     ldflags:
       - -s -w

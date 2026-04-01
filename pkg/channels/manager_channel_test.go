@@ -31,7 +31,7 @@ func TestToChannelHashes(t *testing.T) {
 	added, removed = compareChannels(results2, results3)
 	assert.EqualValues(t, []string{"dingtalk"}, removed)
 	assert.EqualValues(t, []string{"telegram"}, added)
-	cfg3.Channels.Telegram.Token = "114314"
+	cfg3.Channels.Telegram.SetToken("114314")
 	results4 := toChannelHashes(cfg3)
 	assert.Equal(t, 1, len(results4))
 	logger.Debugf("results4: %v", results4)
@@ -41,11 +41,11 @@ func TestToChannelHashes(t *testing.T) {
 	cc, err := toChannelConfig(cfg3, added)
 	assert.NoError(t, err)
 	logger.Debugf("cc: %#v", cc.Telegram)
-	assert.Equal(t, "114314", cc.Telegram.Token)
+	assert.Equal(t, "114314", cc.Telegram.Token.String())
 	assert.Equal(t, true, cc.Telegram.Enabled)
 	cc, err = toChannelConfig(cfg2, added)
 	assert.NoError(t, err)
 	logger.Debugf("cc: %#v", cc.Telegram)
-	assert.Equal(t, "", cc.Telegram.Token)
+	assert.Equal(t, "", cc.Telegram.Token.String())
 	assert.Equal(t, false, cc.Telegram.Enabled)
 }

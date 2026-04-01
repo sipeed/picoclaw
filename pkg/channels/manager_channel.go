@@ -21,12 +21,48 @@ func toChannelHashes(cfg *config.Config) map[string]string {
 		if !value["enabled"].(bool) {
 			continue
 		}
+		hiddenValues(key, value, ch)
 		valueBytes, _ := json.Marshal(value)
 		hash := md5.Sum(valueBytes)
 		result[key] = hex.EncodeToString(hash[:])
 	}
 
 	return result
+}
+
+func hiddenValues(key string, value map[string]any, ch config.ChannelsConfig) {
+	switch key {
+	case "pico":
+		value["token"] = ch.Pico.Token.String()
+	case "telegram":
+		value["token"] = ch.Telegram.Token.String()
+	case "discord":
+		value["token"] = ch.Discord.Token.String()
+	case "slack":
+		value["bot_token"] = ch.Slack.BotToken.String()
+		value["app_token"] = ch.Slack.AppToken.String()
+	case "matrix":
+		value["token"] = ch.Matrix.AccessToken.String()
+	case "onebot":
+		value["token"] = ch.OneBot.AccessToken.String()
+	case "line":
+		value["token"] = ch.LINE.ChannelAccessToken.String()
+		value["secret"] = ch.LINE.ChannelSecret.String()
+	case "wecom":
+		value["secret"] = ch.WeCom.Secret.String()
+	case "dingtalk":
+		value["secret"] = ch.DingTalk.ClientSecret.String()
+	case "qq":
+		value["secret"] = ch.QQ.AppSecret.String()
+	case "irc":
+		value["password"] = ch.IRC.Password.String()
+		value["serv_password"] = ch.IRC.NickServPassword.String()
+		value["sasl_password"] = ch.IRC.SASLPassword.String()
+	case "feishu":
+		value["app_secret"] = ch.Feishu.AppSecret.String()
+		value["encrypt_key"] = ch.Feishu.EncryptKey.String()
+		value["verification_token"] = ch.Feishu.VerificationToken.String()
+	}
 }
 
 func compareChannels(old, news map[string]string) (added, removed []string) {
@@ -82,5 +118,52 @@ func toChannelConfig(cfg *config.Config, list []string) (*config.ChannelsConfig,
 		return nil, err
 	}
 
+	updateKeys(result, &ch)
+
 	return result, nil
+}
+
+func updateKeys(newcfg, old *config.ChannelsConfig) {
+	if newcfg.Pico.Enabled {
+		newcfg.Pico.Token = old.Pico.Token
+	}
+	if newcfg.Telegram.Enabled {
+		newcfg.Telegram.Token = old.Telegram.Token
+	}
+	if newcfg.Discord.Enabled {
+		newcfg.Discord.Token = old.Discord.Token
+	}
+	if newcfg.Slack.Enabled {
+		newcfg.Slack.BotToken = old.Slack.BotToken
+		newcfg.Slack.AppToken = old.Slack.AppToken
+	}
+	if newcfg.Matrix.Enabled {
+		newcfg.Matrix.AccessToken = old.Matrix.AccessToken
+	}
+	if newcfg.OneBot.Enabled {
+		newcfg.OneBot.AccessToken = old.OneBot.AccessToken
+	}
+	if newcfg.LINE.Enabled {
+		newcfg.LINE.ChannelAccessToken = old.LINE.ChannelAccessToken
+		newcfg.LINE.ChannelSecret = old.LINE.ChannelSecret
+	}
+	if newcfg.WeCom.Enabled {
+		newcfg.WeCom.Secret = old.WeCom.Secret
+	}
+	if newcfg.DingTalk.Enabled {
+		newcfg.DingTalk.ClientSecret = old.DingTalk.ClientSecret
+	}
+	if newcfg.QQ.Enabled {
+		newcfg.QQ.AppSecret = old.QQ.AppSecret
+	}
+	if newcfg.IRC.Enabled {
+		newcfg.IRC.Password = old.IRC.Password
+		newcfg.IRC.NickServPassword = old.IRC.NickServPassword
+		newcfg.IRC.SASLPassword = old.IRC.SASLPassword
+	}
+	if newcfg.Feishu.Enabled {
+		newcfg.Feishu.AppSecret = old.Feishu.AppSecret
+		newcfg.Feishu.EncryptKey = old.Feishu.EncryptKey
+		newcfg.Feishu.VerificationToken = old.Feishu.VerificationToken
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -24,9 +25,12 @@ type mockChannel struct {
 	lastPlaceholderID string
 }
 
-func (m *mockChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (m *mockChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	m.sentMessages = append(m.sentMessages, msg)
-	return m.sendFn(ctx, msg)
+	if m.sendFn == nil {
+		return nil, nil
+	}
+	return nil, m.sendFn(ctx, msg)
 }
 
 func (m *mockChannel) Start(ctx context.Context) error { return nil }
@@ -40,6 +44,40 @@ func (m *mockChannel) SendPlaceholder(ctx context.Context, chatID string) (strin
 
 func (m *mockChannel) EditMessage(ctx context.Context, chatID, messageID, content string) error {
 	m.editedMessages++
+	return nil
+}
+
+type mockMediaChannel struct {
+	mockChannel
+	sendMediaFn       func(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error)
+	sentMediaMessages []bus.OutboundMediaMessage
+}
+
+func (m *mockMediaChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
+	m.sentMediaMessages = append(m.sentMediaMessages, msg)
+	if m.sendMediaFn != nil {
+		return m.sendMediaFn(ctx, msg)
+	}
+	return nil, nil
+}
+
+type mockDeletingMediaChannel struct {
+	mockMediaChannel
+	deleteCalls int
+	lastDeleted struct {
+		chatID    string
+		messageID string
+	}
+}
+
+func (m *mockDeletingMediaChannel) DeleteMessage(
+	_ context.Context,
+	chatID string,
+	messageID string,
+) error {
+	m.deleteCalls++
+	m.lastDeleted.chatID = chatID
+	m.lastDeleted.messageID = messageID
 	return nil
 }
 
@@ -205,6 +243,125 @@ func TestSendWithRetry_MaxRetriesExhausted(t *testing.T) {
 	expected := maxRetries + 1 // initial attempt + maxRetries retries
 	if callCount != expected {
 		t.Fatalf("expected %d Send calls, got %d", expected, callCount)
+	}
+}
+
+func TestSendMedia_Success(t *testing.T) {
+	m := newTestManager()
+	var callCount int
+	ch := &mockMediaChannel{
+		sendMediaFn: func(_ context.Context, _ bus.OutboundMediaMessage) ([]string, error) {
+			callCount++
+			return nil, nil
+		},
+	}
+	w := &channelWorker{
+		ch:      ch,
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+	m.channels["test"] = ch
+	m.workers["test"] = w
+
+	err := m.SendMedia(context.Background(), bus.OutboundMediaMessage{
+		Channel: "test",
+		ChatID:  "chat1",
+		Parts:   []bus.MediaPart{{Ref: "media://abc"}},
+	})
+	if err != nil {
+		t.Fatalf("SendMedia() error = %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected 1 SendMedia call, got %d", callCount)
+	}
+}
+
+func TestSendMedia_PropagatesFailure(t *testing.T) {
+	m := newTestManager()
+	ch := &mockMediaChannel{
+		sendMediaFn: func(_ context.Context, _ bus.OutboundMediaMessage) ([]string, error) {
+			return nil, fmt.Errorf("bad upload: %w", ErrSendFailed)
+		},
+	}
+	w := &channelWorker{
+		ch:      ch,
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+	m.channels["test"] = ch
+	m.workers["test"] = w
+
+	err := m.SendMedia(context.Background(), bus.OutboundMediaMessage{
+		Channel: "test",
+		ChatID:  "chat1",
+		Parts:   []bus.MediaPart{{Ref: "media://abc"}},
+	})
+	if err == nil {
+		t.Fatal("expected SendMedia to return error")
+	}
+	if !errors.Is(err, ErrSendFailed) {
+		t.Fatalf("expected ErrSendFailed, got %v", err)
+	}
+}
+
+func TestSendMedia_UnsupportedChannelReturnsError(t *testing.T) {
+	m := newTestManager()
+	ch := &mockChannel{
+		sendFn: func(_ context.Context, _ bus.OutboundMessage) error {
+			return nil
+		},
+	}
+	w := &channelWorker{
+		ch:      ch,
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+	m.channels["test"] = ch
+	m.workers["test"] = w
+
+	err := m.SendMedia(context.Background(), bus.OutboundMediaMessage{
+		Channel: "test",
+		ChatID:  "chat1",
+		Parts:   []bus.MediaPart{{Ref: "media://abc"}},
+	})
+	if err == nil {
+		t.Fatal("expected SendMedia to return error for unsupported channel")
+	}
+	if !strings.Contains(err.Error(), "does not support media sending") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSendMedia_DeletesPlaceholderBeforeSending(t *testing.T) {
+	m := newTestManager()
+	ch := &mockDeletingMediaChannel{
+		mockMediaChannel: mockMediaChannel{
+			sendMediaFn: func(_ context.Context, _ bus.OutboundMediaMessage) ([]string, error) {
+				return nil, nil
+			},
+		},
+	}
+	w := &channelWorker{
+		ch:      ch,
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+	m.channels["test"] = ch
+	m.workers["test"] = w
+	m.RecordPlaceholder("test", "chat1", "placeholder-1")
+
+	err := m.SendMedia(context.Background(), bus.OutboundMediaMessage{
+		Channel: "test",
+		ChatID:  "chat1",
+		Parts:   []bus.MediaPart{{Ref: "media://abc"}},
+	})
+	if err != nil {
+		t.Fatalf("SendMedia() error = %v", err)
+	}
+	if ch.deleteCalls != 1 {
+		t.Fatalf("expected placeholder delete to be called once, got %d", ch.deleteCalls)
+	}
+	if ch.lastDeleted.chatID != "chat1" || ch.lastDeleted.messageID != "placeholder-1" {
+		t.Fatalf("unexpected placeholder deletion target: %+v", ch.lastDeleted)
+	}
+	if len(ch.sentMediaMessages) != 1 {
+		t.Fatalf("expected media to be sent once, got %d", len(ch.sentMediaMessages))
 	}
 }
 
@@ -474,7 +631,7 @@ func TestPreSend_PlaceholderEditSuccess(t *testing.T) {
 	m.RecordPlaceholder("test", "123", "456")
 
 	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
-	edited := m.preSend(context.Background(), "test", msg, ch)
+	_, edited := m.preSend(context.Background(), "test", msg, ch)
 
 	if !edited {
 		t.Fatal("expected preSend to return true (placeholder edited)")
@@ -504,7 +661,7 @@ func TestPreSend_PlaceholderEditFails_FallsThrough(t *testing.T) {
 	m.RecordPlaceholder("test", "123", "456")
 
 	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
-	edited := m.preSend(context.Background(), "test", msg, ch)
+	_, edited := m.preSend(context.Background(), "test", msg, ch)
 
 	if edited {
 		t.Fatal("expected preSend to return false when edit fails")
@@ -580,7 +737,7 @@ func TestPreSend_NoRegisteredState(t *testing.T) {
 	}
 
 	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
-	edited := m.preSend(context.Background(), "test", msg, ch)
+	_, edited := m.preSend(context.Background(), "test", msg, ch)
 
 	if edited {
 		t.Fatal("expected preSend to return false with no registered state")
@@ -610,7 +767,7 @@ func TestPreSend_TypingAndPlaceholder(t *testing.T) {
 	m.RecordPlaceholder("test", "123", "456")
 
 	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
-	edited := m.preSend(context.Background(), "test", msg, ch)
+	_, edited := m.preSend(context.Background(), "test", msg, ch)
 
 	if !stopCalled {
 		t.Fatal("expected typing stop to be called")
@@ -871,7 +1028,7 @@ func TestPreSendStillWorksWithWrappedTypes(t *testing.T) {
 	m.RecordPlaceholder("test", "chat1", "ph_id")
 
 	msg := bus.OutboundMessage{Channel: "test", ChatID: "chat1", Content: "response"}
-	edited := m.preSend(context.Background(), "test", msg, ch)
+	_, edited := m.preSend(context.Background(), "test", msg, ch)
 
 	if !stopCalled {
 		t.Fatal("expected typing stop to be called via wrapped type")

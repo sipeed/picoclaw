@@ -64,9 +64,20 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) er
 
 	fmt.Printf("Installing skill '%s' from %s registry...\n", slug, registryName)
 
+	clawHubConfig := cfg.Tools.Skills.Registries.ClawHub
 	registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
 		MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
-		ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
+		ClawHub: skills.ClawHubConfig{
+			Enabled:         clawHubConfig.Enabled,
+			BaseURL:         clawHubConfig.BaseURL,
+			AuthToken:       clawHubConfig.AuthToken.String(),
+			SearchPath:      clawHubConfig.SearchPath,
+			SkillsPath:      clawHubConfig.SkillsPath,
+			DownloadPath:    clawHubConfig.DownloadPath,
+			Timeout:         clawHubConfig.Timeout,
+			MaxZipSize:      clawHubConfig.MaxZipSize,
+			MaxResponseSize: clawHubConfig.MaxResponseSize,
+		},
 	})
 
 	registry := registryMgr.GetRegistry(registryName)
@@ -226,9 +237,20 @@ func skillsSearchCmd(query string) {
 		return
 	}
 
+	clawHubConfig := cfg.Tools.Skills.Registries.ClawHub
 	registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
 		MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
-		ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
+		ClawHub: skills.ClawHubConfig{
+			Enabled:         clawHubConfig.Enabled,
+			BaseURL:         clawHubConfig.BaseURL,
+			AuthToken:       clawHubConfig.AuthToken.String(),
+			SearchPath:      clawHubConfig.SearchPath,
+			SkillsPath:      clawHubConfig.SkillsPath,
+			DownloadPath:    clawHubConfig.DownloadPath,
+			Timeout:         clawHubConfig.Timeout,
+			MaxZipSize:      clawHubConfig.MaxZipSize,
+			MaxResponseSize: clawHubConfig.MaxResponseSize,
+		},
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

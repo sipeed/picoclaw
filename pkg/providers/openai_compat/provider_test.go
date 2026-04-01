@@ -432,7 +432,7 @@ func TestProviderChat_StripsMoonshotPrefixAndNormalizesKimiTemperature(t *testin
 	}
 }
 
-func TestProviderChat_StripsGroqOllamaDeepseekVivgridNovitaPrefixes(t *testing.T) {
+func TestProviderChat_StripsKnownProviderPrefixes(t *testing.T) {
 	var requestBody map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -473,6 +473,16 @@ func TestProviderChat_StripsGroqOllamaDeepseekVivgridNovitaPrefixes(t *testing.T
 			name:      "strips ollama prefix",
 			input:     "ollama/qwen2.5:14b",
 			wantModel: "qwen2.5:14b",
+		},
+		{
+			name:      "strips lmstudio prefix and keeps nested model",
+			input:     "lmstudio/openai/gpt-oss-20b",
+			wantModel: "openai/gpt-oss-20b",
+		},
+		{
+			name:      "strips venice prefix",
+			input:     "venice/venice-uncensored",
+			wantModel: "venice-uncensored",
 		},
 		{
 			name:      "strips deepseek prefix",
@@ -579,6 +589,12 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	if got := normalizeModel("deepseek/deepseek-chat", "https://api.deepseek.com/v1"); got != "deepseek-chat" {
 		t.Fatalf("normalizeModel(deepseek) = %q, want %q", got, "deepseek-chat")
 	}
+	if got := normalizeModel("lmstudio/openai/gpt-oss-20b", "http://localhost:1234/v1"); got != "openai/gpt-oss-20b" {
+		t.Fatalf("normalizeModel(lmstudio) = %q, want %q", got, "openai/gpt-oss-20b")
+	}
+	if got := normalizeModel("venice/venice-uncensored", "https://api.venice.ai/api/v1"); got != "venice-uncensored" {
+		t.Fatalf("normalizeModel(venice) = %q, want %q", got, "venice-uncensored")
+	}
 	if got := normalizeModel("openrouter/auto", "https://openrouter.ai/api/v1"); got != "openrouter/auto" {
 		t.Fatalf("normalizeModel(openrouter) = %q, want %q", got, "openrouter/auto")
 	}
@@ -607,6 +623,90 @@ func TestProvider_RequestTimeoutOverride(t *testing.T) {
 	p := NewProviderWithMaxTokensFieldAndTimeout("key", "https://example.com/v1", "", "", 300)
 	if p.httpClient.Timeout != 300*time.Second {
 		t.Fatalf("http timeout = %v, want %v", p.httpClient.Timeout, 300*time.Second)
+	}
+}
+
+func TestProviderChat_ExtraBodyInjected(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	extraBody := map[string]any{"reasoning_split": true, "custom_field": "test"}
+	p := NewProvider("key", server.URL, "", WithExtraBody(extraBody))
+
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"minimax/abab7",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if got, ok := requestBody["reasoning_split"]; !ok || got != true {
+		t.Fatalf("reasoning_split = %v, want true", got)
+	}
+	if got, ok := requestBody["custom_field"]; !ok || got != "test" {
+		t.Fatalf("custom_field = %v, want test", got)
+	}
+}
+
+func TestProviderChat_ExtraBodyOverridesOptions(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	extraBody := map[string]any{"temperature": 0.9}
+	p := NewProvider("key", server.URL, "", WithExtraBody(extraBody))
+
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"gpt-4o",
+		map[string]any{"temperature": 0.5},
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	// ExtraBody takes precedence over options since it is merged last.
+	if got := requestBody["temperature"]; got != float64(0.9) {
+		t.Fatalf("temperature = %v, want 0.9 (from extraBody, overriding options)", got)
 	}
 }
 

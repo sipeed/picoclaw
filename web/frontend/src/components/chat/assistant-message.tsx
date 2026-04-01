@@ -1,6 +1,8 @@
 import { IconCheck, IconCopy } from "@tabler/icons-react"
 import { useState } from "react"
 import ReactMarkdown from "react-markdown"
+import rehypeRaw from "rehype-raw"
+import rehypeSanitize from "rehype-sanitize"
 import remarkGfm from "remark-gfm"
 
 import { Button } from "@/components/ui/button"
@@ -42,7 +44,12 @@ export function AssistantMessage({
 
       <div className="bg-card text-card-foreground relative overflow-hidden rounded-xl border">
         <div className="prose dark:prose-invert prose-p:my-2 prose-pre:my-2 prose-pre:rounded-lg prose-pre:border prose-pre:bg-zinc-950 prose-pre:p-3 max-w-none p-4 text-[15px] leading-relaxed">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={[rehypeRaw, rehypeSanitize]}
+          >
+            {content}
+          </ReactMarkdown>
         </div>
         <Button
           variant="ghost"

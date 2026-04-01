@@ -14,6 +14,18 @@ export function normalizeWsUrlForBrowser(wsUrl: string): string {
     if (isLocalHost && !isBrowserLocal) {
       parsedUrl.hostname = window.location.hostname
       finalWsUrl = parsedUrl.toString()
+    } else if (
+      isLocalHost &&
+      isBrowserLocal &&
+      parsedUrl.hostname !== window.location.hostname &&
+      (parsedUrl.hostname === "127.0.0.1" ||
+        parsedUrl.hostname === "localhost") &&
+      (window.location.hostname === "127.0.0.1" ||
+        window.location.hostname === "localhost")
+    ) {
+      // Same machine, but cookies are host-specific; match the page origin.
+      parsedUrl.hostname = window.location.hostname
+      finalWsUrl = parsedUrl.toString()
     }
   } catch (error) {
     console.warn("Could not parse ws_url:", error)

@@ -209,7 +209,7 @@ func TestSendMedia_UploadsLocalFileAsBase64(t *testing.T) {
 	ch.lastMsgID.Store("group-1", "msg-1")
 	ch.msgSeqCounters.Store("group-1", new(atomic.Uint64))
 
-	err = ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
+	_, err = ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
 		ChatID: "group-1",
 		Parts: []bus.MediaPart{{
 			Type:    "image",
@@ -303,7 +303,7 @@ func assertAudioWAVUploadType(t *testing.T, duration time.Duration, wantFileType
 	ch.SetMediaStore(store)
 	ch.chatType.Store("group-1", "group")
 
-	err = ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
+	_, err = ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
 		ChatID: "group-1",
 		Parts: []bus.MediaPart{{
 			Type: "audio",
@@ -337,7 +337,7 @@ func TestSendMedia_RemoteAudioFallsBackToFileUpload(t *testing.T) {
 	ch.SetRunning(true)
 	ch.chatType.Store("user-1", "direct")
 
-	err := ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
+	_, err := ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
 		ChatID: "user-1",
 		Parts: []bus.MediaPart{{
 			Type: "audio",
@@ -383,7 +383,7 @@ func TestSendMedia_LocalAudioWithUnknownDurationFallsBackToFileUpload(t *testing
 	ch.SetMediaStore(store)
 	ch.chatType.Store("group-1", "group")
 
-	err = ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
+	_, err = ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
 		ChatID: "group-1",
 		Parts: []bus.MediaPart{{
 			Type: "audio",
@@ -417,7 +417,7 @@ func TestSendMedia_UsesRemoteURLUploadForC2C(t *testing.T) {
 	ch.SetRunning(true)
 	ch.chatType.Store("user-1", "direct")
 
-	err := ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
+	_, err := ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
 		ChatID: "user-1",
 		Parts: []bus.MediaPart{{
 			Type: "file",
@@ -444,6 +444,9 @@ func TestSendMedia_UsesRemoteURLUploadForC2C(t *testing.T) {
 	if upload.body.FileType != 4 {
 		t.Fatalf("upload file_type = %d, want 4", upload.body.FileType)
 	}
+	if upload.body.FileName != "report.pdf" {
+		t.Fatalf("upload file_name = %q, want report.pdf", upload.body.FileName)
+	}
 
 	if len(api.c2cMessages) != 1 {
 		t.Fatalf("c2cMessages = %d, want 1", len(api.c2cMessages))
@@ -460,6 +463,59 @@ func TestSendMedia_UsesRemoteURLUploadForC2C(t *testing.T) {
 	}
 }
 
+func TestSendMedia_LocalFileUploadIncludesStoredFilename(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	store := media.NewFileMediaStore()
+
+	localPath := writeTempFile(t, t.TempDir(), "report.pdf", []byte("fake-pdf"))
+	ref, err := store.Store(localPath, media.MediaMeta{
+		Filename:    "report.pdf",
+		ContentType: "application/pdf",
+	}, "qq:test")
+	if err != nil {
+		t.Fatalf("Store() error = %v", err)
+	}
+
+	api := &fakeQQAPI{
+		transportResp: mustJSON(t, dto.Message{FileInfo: []byte("local-file-info")}),
+	}
+	ch := &QQChannel{
+		BaseChannel: channels.NewBaseChannel("qq", nil, messageBus, nil),
+		api:         api,
+		dedup:       make(map[string]time.Time),
+		done:        make(chan struct{}),
+		ctx:         context.Background(),
+	}
+	ch.SetRunning(true)
+	ch.SetMediaStore(store)
+	ch.chatType.Store("user-1", "direct")
+
+	_, err = ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
+		ChatID: "user-1",
+		Parts: []bus.MediaPart{{
+			Type: "file",
+			Ref:  ref,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("SendMedia() error = %v", err)
+	}
+
+	if len(api.transportCalls) != 1 {
+		t.Fatalf("transportCalls = %d, want 1", len(api.transportCalls))
+	}
+	upload := api.transportCalls[0]
+	if upload.body.FileType != 4 {
+		t.Fatalf("upload file_type = %d, want 4", upload.body.FileType)
+	}
+	if upload.body.FileName != "report.pdf" {
+		t.Fatalf("upload file_name = %q, want report.pdf", upload.body.FileName)
+	}
+	if upload.body.FileData == "" {
+		t.Fatal("upload file_data = empty, want base64 payload")
+	}
+}
+
 func TestSendMedia_ReturnsSendFailedWithoutMediaStore(t *testing.T) {
 	messageBus := bus.NewMessageBus()
 	ch := &QQChannel{
@@ -472,7 +528,7 @@ func TestSendMedia_ReturnsSendFailedWithoutMediaStore(t *testing.T) {
 	ch.SetRunning(true)
 	ch.chatType.Store("group-1", "group")
 
-	err := ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
+	_, err := ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
 		ChatID: "group-1",
 		Parts: []bus.MediaPart{{
 			Type: "image",
@@ -522,7 +578,7 @@ func TestSendMedia_ReturnsSendFailedWhenLocalFileExceedsBase64MiBLimit(t *testin
 	ch.SetMediaStore(store)
 	ch.chatType.Store("group-1", "group")
 
-	err = ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
+	_, err = ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
 		ChatID: "group-1",
 		Parts: []bus.MediaPart{{
 			Type: "file",

@@ -252,28 +252,28 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 **3e. Send method error returns**
 
 ```go
-// Old code: returns plain error
+// Old code: returned only error
 func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
     if !c.running { return fmt.Errorf("not running") }
     // ...
     if err != nil { return err }
 }
 
-// New code: must return sentinel errors for Manager to determine retry strategy
-func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+// New code: return delivered message IDs plus sentinel errors
+func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
     if !c.IsRunning() {
-        return channels.ErrNotRunning    // ← Manager will not retry
+        return nil, channels.ErrNotRunning    // ← Manager will not retry
     }
     // ...
     if err != nil {
         // Use ClassifySendError to wrap error based on HTTP status code
-        return channels.ClassifySendError(statusCode, err)
+        return nil, channels.ClassifySendError(statusCode, err)
         // Or manually wrap:
-        // return fmt.Errorf("%w: %v", channels.ErrTemporary, err)
-        // return fmt.Errorf("%w: %v", channels.ErrRateLimit, err)
-        // return fmt.Errorf("%w: %v", channels.ErrSendFailed, err)
+        // return nil, fmt.Errorf("%w: %v", channels.ErrTemporary, err)
+        // return nil, fmt.Errorf("%w: %v", channels.ErrRateLimit, err)
+        // return nil, fmt.Errorf("%w: %v", channels.ErrSendFailed, err)
     }
-    return nil
+    return []string{deliveredID}, nil // or return nil, nil if IDs are unavailable
 }
 ```
 
@@ -502,25 +502,25 @@ func (c *MatrixChannel) Stop(ctx context.Context) error {
     return nil
 }
 
-func (c *MatrixChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *MatrixChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
     // 1. Check running state
     if !c.IsRunning() {
-        return channels.ErrNotRunning
+        return nil, channels.ErrNotRunning
     }
 
     // 2. Send message to Matrix
-    err := c.sendToMatrix(ctx, msg.ChatID, msg.Content)
+    eventID, err := c.sendToMatrix(ctx, msg.ChatID, msg.Content)
     if err != nil {
         // 3. Must use error classification wrapping
         //    If you have an HTTP status code:
-        //    return channels.ClassifySendError(statusCode, err)
+        //    return nil, channels.ClassifySendError(statusCode, err)
         //    If it's a network error:
-        //    return channels.ClassifyNetError(err)
+        //    return nil, channels.ClassifyNetError(err)
         //    If manual classification is needed:
-        return fmt.Errorf("%w: %v", channels.ErrTemporary, err)
+        return nil, fmt.Errorf("%w: %v", channels.ErrTemporary, err)
     }
 
-    return nil
+    return []string{eventID}, nil
 }
 
 // ========== Incoming Message Handling ==========
@@ -580,9 +580,9 @@ func (c *MatrixChannel) handleIncoming(roomID, senderID, displayName, content st
 
 // ========== Internal Methods ==========
 
-func (c *MatrixChannel) sendToMatrix(ctx context.Context, roomID, content string) error {
+func (c *MatrixChannel) sendToMatrix(ctx context.Context, roomID, content string) (string, error) {
     // Actual Matrix SDK call
-    return nil
+    return "event-id", nil
 }
 ```
 
@@ -594,16 +594,17 @@ Depending on platform capabilities, your channel can optionally implement the fo
 
 ```go
 // If the platform supports sending images/files/audio/video
-func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
     if !c.IsRunning() {
-        return channels.ErrNotRunning
+        return nil, channels.ErrNotRunning
     }
 
     store := c.GetMediaStore()
     if store == nil {
-        return fmt.Errorf("no media store: %w", channels.ErrSendFailed)
+        return nil, fmt.Errorf("no media store: %w", channels.ErrSendFailed)
     }
 
+    var messageIDs []string
     for _, part := range msg.Parts {
         localPath, err := store.Resolve(part.Ref)
         if err != nil {
@@ -620,8 +621,10 @@ func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
         default:
             // Upload file to Matrix
         }
+        // Append platform IDs here when the API returns them.
+        // messageIDs = append(messageIDs, uploadedMessageID)
     }
-    return nil
+    return messageIDs, nil
 }
 ```
 
@@ -1255,8 +1258,7 @@ make test                                       # Full test suite
 | `pkg/channels/onebot/` | `"onebot"` | ReactionCapable, MediaSender |
 | `pkg/channels/dingtalk/` | `"dingtalk"` | — |
 | `pkg/channels/feishu/` | `"feishu"` | — (architecture-specific build tags: `feishu_32.go` / `feishu_64.go`) |
-| `pkg/channels/wecom/` | `"wecom"` | WebhookHandler, HealthChecker |
-| `pkg/channels/wecom/` | `"wecom_app"` | MediaSender, WebhookHandler, HealthChecker |
+| `pkg/channels/wecom/` | `"wecom"` | MediaSender |
 | `pkg/channels/qq/` | `"qq"` | — |
 | `pkg/channels/whatsapp/` | `"whatsapp"` | — (Bridge mode) |
 | `pkg/channels/whatsapp_native/` | `"whatsapp_native"` | — (Native whatsmeow mode) |
@@ -1271,7 +1273,7 @@ type Channel interface {
     Name() string
     Start(ctx context.Context) error
     Stop(ctx context.Context) error
-    Send(ctx context.Context, msg bus.OutboundMessage) error
+    Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error)
     IsRunning() bool
     IsAllowed(senderID string) bool
     IsAllowedSender(sender bus.SenderInfo) bool
@@ -1280,7 +1282,7 @@ type Channel interface {
 
 // ===== Optional =====
 type MediaSender interface {
-    SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error
+    SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error)
 }
 
 type TypingCapable interface {
@@ -1371,7 +1373,7 @@ agentLoop.Stop()               // Stop Agent
 
 2. **Feishu architecture-specific compilation**: The Feishu channel uses build tags to distinguish 32-bit and 64-bit architectures (`feishu_32.go` / `feishu_64.go`). Feishu uses the SDK's WebSocket mode (not HTTP webhook), so it does not implement `WebhookHandler`.
 
-3. **WeCom has two factories**: `"wecom"` (Bot mode, webhook only) and `"wecom_app"` (App mode, supports MediaSender) are registered separately. Both implement `WebhookHandler` and `HealthChecker`.
+3. **WeCom is now a single channel**: `"wecom"` is implemented as a WebSocket-based AI Bot channel with route persistence. Access control uses the shared channel allowlist mechanism. It no longer exposes the legacy webhook/app split.
 
 4. **Pico Protocol**: `pkg/channels/pico/` implements a custom PicoClaw native protocol channel that receives messages via WebSocket webhook (`/pico/ws`).
 
@@ -1381,4 +1383,4 @@ agentLoop.Stop()               // Stop Agent
 
 7. **PlaceholderConfig vs implementation**: `PlaceholderConfig` appears in 6 channel configs (Telegram, Discord, Slack, LINE, OneBot, Pico), but only channels that implement both `PlaceholderCapable` + `MessageEditor` (Telegram, Discord, Pico) can actually use placeholder message editing. The rest are reserved fields.
 
-8. **ReasoningChannelID**: Most channel configs include a `reasoning_channel_id` field to route LLM reasoning/thinking output to a designated channel (WhatsApp, Telegram, Feishu, Discord, MaixCam, QQ, DingTalk, Slack, LINE, OneBot, WeCom, WeComApp). Note: `PicoConfig` does not currently expose this field. `BaseChannel` exposes this via the `WithReasoningChannelID` option and `ReasoningChannelID()` method.
+8. **ReasoningChannelID**: Most channel configs include a `reasoning_channel_id` field to route LLM reasoning/thinking output to a designated channel (WhatsApp, Telegram, Feishu, Discord, MaixCam, QQ, DingTalk, Slack, LINE, OneBot, WeCom). Note: `PicoConfig` does not currently expose this field. `BaseChannel` exposes this via the `WithReasoningChannelID` option and `ReasoningChannelID()` method.

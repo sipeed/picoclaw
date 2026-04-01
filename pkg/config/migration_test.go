@@ -11,10 +11,10 @@ import (
 )
 
 func TestConvertProvidersToModelList_OpenAI(t *testing.T) {
-	cfg := &Config{
-		Providers: ProvidersConfig{
-			OpenAI: OpenAIProviderConfig{
-				ProviderConfig: ProviderConfig{
+	cfg := &configV0{
+		Providers: providersConfigV0{
+			OpenAI: openAIProviderConfigV0{
+				providerConfigV0: providerConfigV0{
 					APIKey:  "sk-test-key",
 					APIBase: "https://custom.api.com/v1",
 				},
@@ -22,7 +22,7 @@ func TestConvertProvidersToModelList_OpenAI(t *testing.T) {
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -40,16 +40,15 @@ func TestConvertProvidersToModelList_OpenAI(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_Anthropic(t *testing.T) {
-	cfg := &Config{
-		Providers: ProvidersConfig{
-			Anthropic: ProviderConfig{
-				APIKey:  "ant-key",
+	cfg := &configV0{
+		Providers: providersConfigV0{
+			Anthropic: providerConfigV0{
 				APIBase: "https://custom.anthropic.com",
 			},
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -64,16 +63,15 @@ func TestConvertProvidersToModelList_Anthropic(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_LiteLLM(t *testing.T) {
-	cfg := &Config{
-		Providers: ProvidersConfig{
-			LiteLLM: ProviderConfig{
-				APIKey:  "litellm-key",
+	cfg := &configV0{
+		Providers: providersConfigV0{
+			LiteLLM: providerConfigV0{
 				APIBase: "http://localhost:4000/v1",
 			},
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -91,15 +89,15 @@ func TestConvertProvidersToModelList_LiteLLM(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_Multiple(t *testing.T) {
-	cfg := &Config{
-		Providers: ProvidersConfig{
-			OpenAI: OpenAIProviderConfig{ProviderConfig: ProviderConfig{APIKey: "openai-key"}},
-			Groq:   ProviderConfig{APIKey: "groq-key"},
-			Zhipu:  ProviderConfig{APIKey: "zhipu-key"},
+	cfg := &configV0{
+		Providers: providersConfigV0{
+			OpenAI: openAIProviderConfigV0{providerConfigV0: providerConfigV0{APIKey: "openai-key"}},
+			Groq:   providerConfigV0{APIKey: "groq-key"},
+			Zhipu:  providerConfigV0{APIKey: "zhipu-key"},
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 3 {
 		t.Fatalf("len(result) = %d, want 3", len(result))
@@ -119,11 +117,11 @@ func TestConvertProvidersToModelList_Multiple(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_Empty(t *testing.T) {
-	cfg := &Config{
-		Providers: ProvidersConfig{},
+	cfg := &configV0{
+		Providers: providersConfigV0{},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 0 {
 		t.Errorf("len(result) = %d, want 0", len(result))
@@ -131,7 +129,7 @@ func TestConvertProvidersToModelList_Empty(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_Nil(t *testing.T) {
-	result := ConvertProvidersToModelList(nil)
+	result := v0ConvertProvidersToModelList(nil)
 
 	if result != nil {
 		t.Errorf("result = %v, want nil", result)
@@ -139,35 +137,38 @@ func TestConvertProvidersToModelList_Nil(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
-	cfg := &Config{
-		Providers: ProvidersConfig{
-			OpenAI:        OpenAIProviderConfig{ProviderConfig: ProviderConfig{APIKey: "key1"}},
-			LiteLLM:       ProviderConfig{APIKey: "key-litellm", APIBase: "http://localhost:4000/v1"},
-			Anthropic:     ProviderConfig{APIKey: "key2"},
-			OpenRouter:    ProviderConfig{APIKey: "key3"},
-			Groq:          ProviderConfig{APIKey: "key4"},
-			Zhipu:         ProviderConfig{APIKey: "key5"},
-			VLLM:          ProviderConfig{APIKey: "key6"},
-			Gemini:        ProviderConfig{APIKey: "key7"},
-			Nvidia:        ProviderConfig{APIKey: "key8"},
-			Ollama:        ProviderConfig{APIKey: "key9"},
-			Moonshot:      ProviderConfig{APIKey: "key10"},
-			ShengSuanYun:  ProviderConfig{APIKey: "key11"},
-			DeepSeek:      ProviderConfig{APIKey: "key12"},
-			Cerebras:      ProviderConfig{APIKey: "key13"},
-			Vivgrid:       ProviderConfig{APIKey: "key14"},
-			VolcEngine:    ProviderConfig{APIKey: "key15"},
-			GitHubCopilot: ProviderConfig{ConnectMode: "grpc"},
-			Antigravity:   ProviderConfig{AuthMethod: "oauth"},
-			Qwen:          ProviderConfig{APIKey: "key17"},
-			Mistral:       ProviderConfig{APIKey: "key18"},
-			Avian:         ProviderConfig{APIKey: "key19"},
-			LongCat:       ProviderConfig{APIKey: "key-longcat"},
-			ModelScope:    ProviderConfig{APIKey: "key-modelscope"},
+	// This test verifies that when providers have at least one configured field,
+	// they are converted. GitHubCopilot has ConnectMode set, Antigravity has AuthMethod.
+	// Other providers have no configuration, so they won't be converted.
+	cfg := &configV0{
+		Providers: providersConfigV0{
+			OpenAI:        openAIProviderConfigV0{providerConfigV0: providerConfigV0{APIKey: "key1"}},
+			LiteLLM:       providerConfigV0{APIKey: "key-litellm", APIBase: "http://localhost:4000/v1"},
+			Anthropic:     providerConfigV0{APIKey: "key2"},
+			OpenRouter:    providerConfigV0{APIKey: "key3"},
+			Groq:          providerConfigV0{APIKey: "key4"},
+			Zhipu:         providerConfigV0{APIKey: "key5"},
+			VLLM:          providerConfigV0{APIKey: "key6"},
+			Gemini:        providerConfigV0{APIKey: "key7"},
+			Nvidia:        providerConfigV0{APIKey: "key8"},
+			Ollama:        providerConfigV0{APIKey: "key9"},
+			Moonshot:      providerConfigV0{APIKey: "key10"},
+			ShengSuanYun:  providerConfigV0{APIKey: "key11"},
+			DeepSeek:      providerConfigV0{APIKey: "key12"},
+			Cerebras:      providerConfigV0{APIKey: "key13"},
+			Vivgrid:       providerConfigV0{APIKey: "key14"},
+			VolcEngine:    providerConfigV0{APIKey: "key15"},
+			GitHubCopilot: providerConfigV0{ConnectMode: "grpc"},
+			Antigravity:   providerConfigV0{AuthMethod: "oauth"},
+			Qwen:          providerConfigV0{APIKey: "key17"},
+			Mistral:       providerConfigV0{APIKey: "key18"},
+			Avian:         providerConfigV0{APIKey: "key19"},
+			LongCat:       providerConfigV0{APIKey: "key-longcat"},
+			ModelScope:    providerConfigV0{APIKey: "key-modelscope"},
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	// All 23 providers should be converted
 	if len(result) != 23 {
@@ -176,10 +177,10 @@ func TestConvertProvidersToModelList_AllProviders(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_Proxy(t *testing.T) {
-	cfg := &Config{
-		Providers: ProvidersConfig{
-			OpenAI: OpenAIProviderConfig{
-				ProviderConfig: ProviderConfig{
+	cfg := &configV0{
+		Providers: providersConfigV0{
+			OpenAI: openAIProviderConfigV0{
+				providerConfigV0: providerConfigV0{
 					APIKey: "key",
 					Proxy:  "http://proxy:8080",
 				},
@@ -187,7 +188,7 @@ func TestConvertProvidersToModelList_Proxy(t *testing.T) {
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -199,16 +200,16 @@ func TestConvertProvidersToModelList_Proxy(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_RequestTimeout(t *testing.T) {
-	cfg := &Config{
-		Providers: ProvidersConfig{
-			Ollama: ProviderConfig{
-				APIKey:         "ollama-key",
+	cfg := &configV0{
+		Providers: providersConfigV0{
+			Ollama: providerConfigV0{
+				APIBase:        "http://localhost:11434",
 				RequestTimeout: 300,
 			},
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -220,17 +221,17 @@ func TestConvertProvidersToModelList_RequestTimeout(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_AuthMethod(t *testing.T) {
-	cfg := &Config{
-		Providers: ProvidersConfig{
-			OpenAI: OpenAIProviderConfig{
-				ProviderConfig: ProviderConfig{
+	cfg := &configV0{
+		Providers: providersConfigV0{
+			OpenAI: openAIProviderConfigV0{
+				providerConfigV0: providerConfigV0{
 					AuthMethod: "oauth",
 				},
 			},
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 0 {
 		t.Errorf("len(result) = %d, want 0 (AuthMethod alone should not create entry)", len(result))
@@ -240,19 +241,19 @@ func TestConvertProvidersToModelList_AuthMethod(t *testing.T) {
 // Tests for preserving user's configured model during migration
 
 func TestConvertProvidersToModelList_PreservesUserModel_DeepSeek(t *testing.T) {
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "deepseek",
 				Model:    "deepseek-reasoner",
 			},
 		},
-		Providers: ProvidersConfig{
-			DeepSeek: ProviderConfig{APIKey: "sk-deepseek"},
+		Providers: providersConfigV0{
+			DeepSeek: providerConfigV0{APIKey: "sk-deepseek"},
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -265,19 +266,19 @@ func TestConvertProvidersToModelList_PreservesUserModel_DeepSeek(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_PreservesUserModel_OpenAI(t *testing.T) {
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "openai",
 				Model:    "gpt-4-turbo",
 			},
 		},
-		Providers: ProvidersConfig{
-			OpenAI: OpenAIProviderConfig{ProviderConfig: ProviderConfig{APIKey: "sk-openai"}},
+		Providers: providersConfigV0{
+			OpenAI: openAIProviderConfigV0{providerConfigV0: providerConfigV0{APIKey: "sk-openai"}},
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -289,19 +290,19 @@ func TestConvertProvidersToModelList_PreservesUserModel_OpenAI(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_PreservesUserModel_Anthropic(t *testing.T) {
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "claude", // alternative name
 				Model:    "claude-opus-4-20250514",
 			},
 		},
-		Providers: ProvidersConfig{
-			Anthropic: ProviderConfig{APIKey: "sk-ant"},
+		Providers: providersConfigV0{
+			Anthropic: providerConfigV0{APIKey: "sk-ant"},
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -313,19 +314,19 @@ func TestConvertProvidersToModelList_PreservesUserModel_Anthropic(t *testing.T) 
 }
 
 func TestConvertProvidersToModelList_PreservesUserModel_Qwen(t *testing.T) {
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "qwen",
 				Model:    "qwen-plus",
 			},
 		},
-		Providers: ProvidersConfig{
-			Qwen: ProviderConfig{APIKey: "sk-qwen"},
+		Providers: providersConfigV0{
+			Qwen: providerConfigV0{APIKey: "sk-qwen"},
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -337,19 +338,19 @@ func TestConvertProvidersToModelList_PreservesUserModel_Qwen(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_UsesDefaultWhenNoUserModel(t *testing.T) {
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "deepseek",
 				Model:    "", // no model specified
 			},
 		},
-		Providers: ProvidersConfig{
-			DeepSeek: ProviderConfig{APIKey: "sk-deepseek"},
+		Providers: providersConfigV0{
+			DeepSeek: providerConfigV0{APIKey: "sk-deepseek"},
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -362,20 +363,20 @@ func TestConvertProvidersToModelList_UsesDefaultWhenNoUserModel(t *testing.T) {
 }
 
 func TestConvertProvidersToModelList_MultipleProviders_PreservesUserModel(t *testing.T) {
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "deepseek",
 				Model:    "deepseek-reasoner",
 			},
 		},
-		Providers: ProvidersConfig{
-			OpenAI:   OpenAIProviderConfig{ProviderConfig: ProviderConfig{APIKey: "sk-openai"}},
-			DeepSeek: ProviderConfig{APIKey: "sk-deepseek"},
+		Providers: providersConfigV0{
+			OpenAI:   openAIProviderConfigV0{providerConfigV0: providerConfigV0{APIKey: "sk-openai"}},
+			DeepSeek: providerConfigV0{APIKey: "sk-deepseek"},
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 2 {
 		t.Fatalf("len(result) = %d, want 2", len(result))
@@ -400,20 +401,20 @@ func TestConvertProvidersToModelList_ProviderNameAliases(t *testing.T) {
 	tests := []struct {
 		providerAlias string
 		expectedModel string
-		provider      ProviderConfig
+		provider      providerConfigV0
 	}{
-		{"gpt", "openai/gpt-4-custom", ProviderConfig{APIKey: "key"}},
-		{"claude", "anthropic/claude-custom", ProviderConfig{APIKey: "key"}},
-		{"doubao", "volcengine/doubao-custom", ProviderConfig{APIKey: "key"}},
-		{"tongyi", "qwen/qwen-custom", ProviderConfig{APIKey: "key"}},
-		{"kimi", "moonshot/kimi-custom", ProviderConfig{APIKey: "key"}},
+		{"gpt", "openai/gpt-4-custom", providerConfigV0{APIKey: "key"}},
+		{"claude", "anthropic/claude-custom", providerConfigV0{APIKey: "key"}},
+		{"doubao", "volcengine/doubao-custom", providerConfigV0{APIKey: "key"}},
+		{"tongyi", "qwen/qwen-custom", providerConfigV0{APIKey: "key"}},
+		{"kimi", "moonshot/kimi-custom", providerConfigV0{APIKey: "key"}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.providerAlias, func(t *testing.T) {
-			cfg := &Config{
-				Agents: AgentsConfig{
-					Defaults: AgentDefaults{
+			cfg := &configV0{
+				Agents: agentsConfigV0{
+					Defaults: agentDefaultsV0{
 						Provider: tt.providerAlias,
 						Model: strings.TrimPrefix(
 							tt.expectedModel,
@@ -421,13 +422,13 @@ func TestConvertProvidersToModelList_ProviderNameAliases(t *testing.T) {
 						),
 					},
 				},
-				Providers: ProvidersConfig{},
+				Providers: providersConfigV0{},
 			}
 
 			// Set the appropriate provider config
 			switch tt.providerAlias {
 			case "gpt":
-				cfg.Providers.OpenAI = OpenAIProviderConfig{ProviderConfig: tt.provider}
+				cfg.Providers.OpenAI = openAIProviderConfigV0{providerConfigV0: tt.provider}
 			case "claude":
 				cfg.Providers.Anthropic = tt.provider
 			case "doubao":
@@ -444,7 +445,7 @@ func TestConvertProvidersToModelList_ProviderNameAliases(t *testing.T) {
 				tt.expectedModel[:strings.Index(tt.expectedModel, "/")+1],
 			)
 
-			result := ConvertProvidersToModelList(cfg)
+			result := v0ConvertProvidersToModelList(cfg)
 			if len(result) != 1 {
 				t.Fatalf("len(result) = %d, want 1", len(result))
 			}
@@ -466,19 +467,21 @@ func TestConvertProvidersToModelList_NoProviderField_SingleProvider(t *testing.T
 	// - No provider field set
 	// - model = "glm-4.7"
 	// - Only zhipu has API key configured
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "", // Not set
 				Model:    "glm-4.7",
 			},
 		},
-		Providers: ProvidersConfig{
-			Zhipu: ProviderConfig{APIKey: "test-zhipu-key"},
+		Providers: providersConfigV0{
+			Zhipu: providerConfigV0{
+				APIKey: "test-zhipu-key",
+			},
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -499,20 +502,20 @@ func TestConvertProvidersToModelList_NoProviderField_MultipleProviders(t *testin
 	// When multiple providers are configured but no provider field is set,
 	// the FIRST provider (in migration order) will use userModel as ModelName
 	// for backward compatibility with legacy implicit provider selection
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "", // Not set
 				Model:    "some-model",
 			},
 		},
-		Providers: ProvidersConfig{
-			OpenAI: OpenAIProviderConfig{ProviderConfig: ProviderConfig{APIKey: "openai-key"}},
-			Zhipu:  ProviderConfig{APIKey: "zhipu-key"},
+		Providers: providersConfigV0{
+			OpenAI: openAIProviderConfigV0{providerConfigV0: providerConfigV0{APIKey: "openai-key"}},
+			Zhipu:  providerConfigV0{APIKey: "zhipu-key"},
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 2 {
 		t.Fatalf("len(result) = %d, want 2", len(result))
@@ -532,19 +535,19 @@ func TestConvertProvidersToModelList_NoProviderField_MultipleProviders(t *testin
 
 func TestConvertProvidersToModelList_NoProviderField_NoModel(t *testing.T) {
 	// Edge case: no provider, no model
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "",
 				Model:    "",
 			},
 		},
-		Providers: ProvidersConfig{
-			Zhipu: ProviderConfig{APIKey: "zhipu-key"},
+		Providers: providersConfigV0{
+			Zhipu: providerConfigV0{APIKey: "zhipu-key"},
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) != 1 {
 		t.Fatalf("len(result) = %d, want 1", len(result))
@@ -585,19 +588,19 @@ func TestBuildModelWithProtocol_DifferentPrefix(t *testing.T) {
 
 // Test for legacy config with protocol prefix in model name
 func TestConvertProvidersToModelList_LegacyModelWithProtocolPrefix(t *testing.T) {
-	cfg := &Config{
-		Agents: AgentsConfig{
-			Defaults: AgentDefaults{
+	cfg := &configV0{
+		Agents: agentsConfigV0{
+			Defaults: agentDefaultsV0{
 				Provider: "",                // No explicit provider
 				Model:    "openrouter/auto", // Model already has protocol prefix
 			},
 		},
-		Providers: ProvidersConfig{
-			OpenRouter: ProviderConfig{APIKey: "sk-or-test"},
+		Providers: providersConfigV0{
+			OpenRouter: providerConfigV0{APIKey: "sk-or-test"},
 		},
 	}
 
-	result := ConvertProvidersToModelList(cfg)
+	result := v0ConvertProvidersToModelList(cfg)
 
 	if len(result) < 1 {
 		t.Fatalf("len(result) = %d, want at least 1", len(result))
@@ -611,145 +614,5 @@ func TestConvertProvidersToModelList_LegacyModelWithProtocolPrefix(t *testing.T)
 	// Model should NOT have duplicated prefix
 	if result[0].Model != "openrouter/auto" {
 		t.Errorf("Model = %q, want %q (should not duplicate prefix)", result[0].Model, "openrouter/auto")
-	}
-}
-
-// ---------- InheritProviderCredentials tests ----------
-
-func TestInheritProviderCredentials_FillsMissingAPIKey(t *testing.T) {
-	models := []ModelConfig{
-		{ModelName: "my-deepseek", Model: "deepseek/deepseek-chat"},
-	}
-	providers := ProvidersConfig{
-		DeepSeek: ProviderConfig{
-			APIKey:  "sk-deepseek-from-providers",
-			APIBase: "https://api.deepseek.com/v1",
-		},
-	}
-
-	InheritProviderCredentials(models, providers)
-
-	if models[0].APIKey != "sk-deepseek-from-providers" {
-		t.Errorf("APIKey = %q, want %q", models[0].APIKey, "sk-deepseek-from-providers")
-	}
-	if models[0].APIBase != "https://api.deepseek.com/v1" {
-		t.Errorf("APIBase = %q, want %q", models[0].APIBase, "https://api.deepseek.com/v1")
-	}
-}
-
-func TestInheritProviderCredentials_ExplicitValuesTakePrecedence(t *testing.T) {
-	models := []ModelConfig{
-		{
-			ModelName: "my-openai",
-			Model:     "openai/gpt-5.4",
-			APIKey:    "sk-explicit-model-key",
-			APIBase:   "https://my-custom-endpoint.com/v1",
-		},
-	}
-	providers := ProvidersConfig{
-		OpenAI: OpenAIProviderConfig{
-			ProviderConfig: ProviderConfig{
-				APIKey:  "sk-provider-key",
-				APIBase: "https://api.openai.com/v1",
-			},
-		},
-	}
-
-	InheritProviderCredentials(models, providers)
-
-	if models[0].APIKey != "sk-explicit-model-key" {
-		t.Errorf("APIKey = %q, want %q (explicit should win)", models[0].APIKey, "sk-explicit-model-key")
-	}
-	if models[0].APIBase != "https://my-custom-endpoint.com/v1" {
-		t.Errorf("APIBase = %q, want %q (explicit should win)", models[0].APIBase, "https://my-custom-endpoint.com/v1")
-	}
-}
-
-func TestInheritProviderCredentials_MultipleModels(t *testing.T) {
-	models := []ModelConfig{
-		{ModelName: "groq-llama", Model: "groq/llama-3.1-70b"},
-		{ModelName: "zhipu-glm", Model: "zhipu/glm-4"},
-		{ModelName: "custom-openai", Model: "openai/gpt-5.4", APIKey: "sk-already-set"},
-	}
-	providers := ProvidersConfig{
-		Groq:  ProviderConfig{APIKey: "gsk-groq-key", Proxy: "http://proxy:8080"},
-		Zhipu: ProviderConfig{APIKey: "zhipu-key-123", APIBase: "https://zhipu.example.com"},
-		OpenAI: OpenAIProviderConfig{
-			ProviderConfig: ProviderConfig{APIKey: "sk-should-not-override"},
-		},
-	}
-
-	InheritProviderCredentials(models, providers)
-
-	// groq model should inherit
-	if models[0].APIKey != "gsk-groq-key" {
-		t.Errorf("groq APIKey = %q, want %q", models[0].APIKey, "gsk-groq-key")
-	}
-	if models[0].Proxy != "http://proxy:8080" {
-		t.Errorf("groq Proxy = %q, want %q", models[0].Proxy, "http://proxy:8080")
-	}
-
-	// zhipu model should inherit
-	if models[1].APIKey != "zhipu-key-123" {
-		t.Errorf("zhipu APIKey = %q, want %q", models[1].APIKey, "zhipu-key-123")
-	}
-	if models[1].APIBase != "https://zhipu.example.com" {
-		t.Errorf("zhipu APIBase = %q, want %q", models[1].APIBase, "https://zhipu.example.com")
-	}
-
-	// openai model already has key — should NOT be overridden
-	if models[2].APIKey != "sk-already-set" {
-		t.Errorf("openai APIKey = %q, want %q (should not be overridden)", models[2].APIKey, "sk-already-set")
-	}
-}
-
-func TestInheritProviderCredentials_NoMatchingProvider(t *testing.T) {
-	models := []ModelConfig{
-		{ModelName: "my-model", Model: "novelai/some-model"},
-	}
-	providers := ProvidersConfig{
-		DeepSeek: ProviderConfig{APIKey: "sk-deepseek"},
-	}
-
-	InheritProviderCredentials(models, providers)
-
-	// No matching provider for "novelai" protocol — should stay empty
-	if models[0].APIKey != "" {
-		t.Errorf("APIKey = %q, want empty (no matching provider)", models[0].APIKey)
-	}
-}
-
-func TestInheritProviderCredentials_EmptyProviders(t *testing.T) {
-	models := []ModelConfig{
-		{ModelName: "my-model", Model: "openai/gpt-5.4"},
-	}
-	providers := ProvidersConfig{} // all empty
-
-	InheritProviderCredentials(models, providers)
-
-	// Empty providers — nothing to inherit
-	if models[0].APIKey != "" {
-		t.Errorf("APIKey = %q, want empty", models[0].APIKey)
-	}
-}
-
-func TestInheritProviderCredentials_InheritsRequestTimeout(t *testing.T) {
-	models := []ModelConfig{
-		{ModelName: "my-ollama", Model: "ollama/llama3.2:3b"},
-	}
-	providers := ProvidersConfig{
-		Ollama: ProviderConfig{
-			APIBase:        "http://localhost:11434",
-			RequestTimeout: 120,
-		},
-	}
-
-	InheritProviderCredentials(models, providers)
-
-	if models[0].APIBase != "http://localhost:11434" {
-		t.Errorf("APIBase = %q, want %q", models[0].APIBase, "http://localhost:11434")
-	}
-	if models[0].RequestTimeout != 120 {
-		t.Errorf("RequestTimeout = %d, want 120", models[0].RequestTimeout)
 	}
 }

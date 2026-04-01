@@ -68,7 +68,7 @@ func (c *IRCChannel) Start(ctx context.Context) error {
 		Nick:        c.config.Nick,
 		User:        user,
 		RealName:    realName,
-		Password:    c.config.Password,
+		Password:    c.config.Password.String(),
 		UseTLS:      c.config.TLS,
 		RequestCaps: caps,
 		QuitMessage: "Goodbye",
@@ -83,9 +83,9 @@ func (c *IRCChannel) Start(ctx context.Context) error {
 	}
 
 	// SASL auth (takes priority over NickServ)
-	if c.config.SASLUser != "" && c.config.SASLPassword != "" {
+	if c.config.SASLUser != "" && c.config.SASLPassword.String() != "" {
 		conn.SASLLogin = c.config.SASLUser
-		conn.SASLPassword = c.config.SASLPassword
+		conn.SASLPassword = c.config.SASLPassword.String()
 	}
 
 	// Register event handlers
@@ -130,18 +130,18 @@ func (c *IRCChannel) Stop(ctx context.Context) error {
 }
 
 // Send sends a message to an IRC channel or user.
-func (c *IRCChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *IRCChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	target := msg.ChatID
 	if target == "" {
-		return fmt.Errorf("chat ID is empty: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("chat ID is empty: %w", channels.ErrSendFailed)
 	}
 
 	if strings.TrimSpace(msg.Content) == "" {
-		return nil
+		return nil, nil
 	}
 
 	// Send each line separately (IRC is line-oriented)
@@ -158,7 +158,7 @@ func (c *IRCChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		"target": target,
 		"lines":  len(lines),
 	})
-	return nil
+	return nil, nil
 }
 
 // StartTyping implements channels.TypingCapable using IRCv3 +typing client tag.

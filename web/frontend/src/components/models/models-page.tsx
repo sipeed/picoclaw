@@ -32,6 +32,7 @@ const PROVIDER_PRIORITY: Record<string, number> = {
   vllm: 16,
   mistral: 17,
   avian: 18,
+  mimo: 19,
 }
 
 interface ProviderGroup {
@@ -39,7 +40,7 @@ interface ProviderGroup {
   label: string
   models: ModelInfo[]
   hasDefault: boolean
-  configuredCount: number
+  availableCount: number
 }
 
 export function ModelsPage() {
@@ -61,8 +62,8 @@ export function ModelsPage() {
       const sorted = [...data.models].sort((a, b) => {
         if (a.is_default && !b.is_default) return -1
         if (!a.is_default && b.is_default) return 1
-        if (a.configured && !b.configured) return -1
-        if (!a.configured && b.configured) return 1
+        if (a.available && !b.available) return -1
+        if (!a.available && b.available) return 1
         return a.model_name.localeCompare(b.model_name)
       })
       setModels(sorted)
@@ -106,23 +107,23 @@ export function ModelsPage() {
 
   const providerGroups: ProviderGroup[] = Object.entries(grouped)
     .map(([key, group]) => {
-      const configuredCount = group.models.filter(
-        (model) => model.configured,
+      const availableCount = group.models.filter(
+        (model) => model.available,
       ).length
       return {
         key,
         label: group.label,
         models: group.models,
         hasDefault: group.models.some((model) => model.is_default),
-        configuredCount,
+        availableCount,
       }
     })
     .sort((a, b) => {
       if (a.hasDefault && !b.hasDefault) return -1
       if (!a.hasDefault && b.hasDefault) return 1
 
-      if (a.configuredCount !== b.configuredCount) {
-        return b.configuredCount - a.configuredCount
+      if (a.availableCount !== b.availableCount) {
+        return b.availableCount - a.availableCount
       }
 
       const aPriority = PROVIDER_PRIORITY[a.key] ?? Number.MAX_SAFE_INTEGER

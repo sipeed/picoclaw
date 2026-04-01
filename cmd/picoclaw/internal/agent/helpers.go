@@ -28,6 +28,8 @@ func agentCmd(message, sessionKey, model string, debug bool) error {
 		return fmt.Errorf("error loading config: %w", err)
 	}
 
+	logger.ConfigureFromEnv()
+
 	if debug {
 		logger.SetLevel(logger.DEBUG)
 		fmt.Println("🔍 Debug mode enabled")
