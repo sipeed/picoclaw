@@ -138,6 +138,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			cfg.UserAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
 		), modelID, nil
@@ -157,6 +158,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.APIKey(),
 			cfg.APIBase,
 			cfg.Proxy,
+			cfg.UserAgent,
 			cfg.RequestTimeout,
 		), modelID, nil
 
@@ -214,6 +216,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			cfg.UserAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
 		), modelID, nil
@@ -239,6 +242,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			cfg.UserAgent,
 			cfg.RequestTimeout,
 			extraBody,
 		), modelID, nil
@@ -265,6 +269,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			cfg.UserAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
 		), modelID, nil
@@ -281,6 +286,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return anthropicmessages.NewProviderWithTimeout(
 			cfg.APIKey(),
 			apiBase,
+			cfg.UserAgent,
 			cfg.RequestTimeout,
 		), modelID, nil
 
@@ -296,6 +302,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return anthropicmessages.NewProviderWithTimeout(
 			cfg.APIKey(),
 			apiBase,
+			cfg.UserAgent,
 			cfg.RequestTimeout,
 		), modelID, nil
 

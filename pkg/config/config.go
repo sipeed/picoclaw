@@ -598,6 +598,8 @@ type ModelConfig struct {
 	// existing configs, the field is inferred during load: models with API keys
 	// or the reserved "local-model" name are auto-enabled.
 	Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	// UserAgent is the user agent string to use for HTTP requests.
+	UserAgent string `json:"user_agent,omitempty" yaml:"-"`
 
 	// isVirtual marks this model as a virtual model generated from multi-key expansion.
 	// Virtual models should not be persisted to config files.
