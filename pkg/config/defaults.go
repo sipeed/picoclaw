@@ -189,7 +189,7 @@ func DefaultConfig() *Config {
 			{
 				ModelName: "venice-uncensored",
 				Model:     "venice/venice-uncensored",
-				APIBase:   "https://api.venice.ai/v1",
+				APIBase:   "https://api.venice.ai/api/v1",
 			},
 
 			// Google Gemini - https://ai.google.dev/
