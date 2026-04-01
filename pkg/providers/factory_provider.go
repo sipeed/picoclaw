@@ -115,6 +115,11 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 
 	protocol, modelID := ExtractProtocol(cfg.Model)
 
+	userAgent := cfg.UserAgent
+	if userAgent == "" {
+		userAgent = fmt.Sprintf("PicoClaw/%s", config.Version)
+	}
+
 	switch protocol {
 	case "openai":
 		// OpenAI with OAuth/token auth (Codex-style)
@@ -138,7 +143,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
-			cfg.UserAgent,
+			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
 		), modelID, nil
@@ -158,7 +163,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.APIKey(),
 			cfg.APIBase,
 			cfg.Proxy,
-			cfg.UserAgent,
+			userAgent,
 			cfg.RequestTimeout,
 		), modelID, nil
 
@@ -216,7 +221,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
-			cfg.UserAgent,
+			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
 		), modelID, nil
@@ -242,7 +247,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
-			cfg.UserAgent,
+			userAgent,
 			cfg.RequestTimeout,
 			extraBody,
 		), modelID, nil
@@ -269,7 +274,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
-			cfg.UserAgent,
+			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
 		), modelID, nil
@@ -286,7 +291,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return anthropicmessages.NewProviderWithTimeout(
 			cfg.APIKey(),
 			apiBase,
-			cfg.UserAgent,
+			userAgent,
 			cfg.RequestTimeout,
 		), modelID, nil
 
@@ -302,7 +307,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return anthropicmessages.NewProviderWithTimeout(
 			cfg.APIKey(),
 			apiBase,
-			cfg.UserAgent,
+			userAgent,
 			cfg.RequestTimeout,
 		), modelID, nil
 
