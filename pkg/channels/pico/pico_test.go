@@ -142,3 +142,25 @@ func (c *PicoChannel) addConnForTest(pc *picoConn) {
 	}
 	bySession[pc.id] = pc
 }
+
+func TestNewPicoChannel_LeavesCheckOriginUnsetWithoutAllowOrigins(t *testing.T) {
+	ch := newTestPicoChannel(t)
+
+	if ch.upgrader.CheckOrigin != nil {
+		t.Fatalf("CheckOrigin = %v, want nil when allow_origins is empty", ch.upgrader.CheckOrigin)
+	}
+}
+
+func TestNewPicoChannel_SetsCheckOriginWithAllowOrigins(t *testing.T) {
+	cfg := config.PicoConfig{AllowOrigins: []string{"https://example.com"}}
+	cfg.SetToken("test-token")
+
+	ch, err := NewPicoChannel(cfg, bus.NewMessageBus())
+	if err != nil {
+		t.Fatalf("NewPicoChannel: %v", err)
+	}
+
+	if ch.upgrader.CheckOrigin == nil {
+		t.Fatal("CheckOrigin is nil, want custom allowlist validation when allow_origins is set")
+	}
+}
