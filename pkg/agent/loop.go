@@ -2852,7 +2852,7 @@ func (al *AgentLoop) resolveContextManager() ContextManager {
 		})
 		return &legacyContextManager{al: al}
 	}
-	cm, err := factory(nil, al)
+	cm, err := factory(al.cfg.Agents.Defaults.ContextManagerConfig, al)
 	if err != nil {
 		logger.WarnCF("agent", "Failed to create context manager, falling back to legacy", map[string]any{
 			"name":  name,
