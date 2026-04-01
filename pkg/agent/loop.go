@@ -972,6 +972,7 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
+				logger.RecoverPanicNoExit(r)
 				panicErr = fmt.Errorf("panic during registry creation: %v", r)
 				logger.ErrorCF("agent", "Panic during registry creation",
 					map[string]any{"panic": r})

@@ -427,6 +427,7 @@ func spawnSubTurn(
 	// 7. Defer cleanup: deliver result (for async), emit End event, and recover from panics
 	defer func() {
 		if r := recover(); r != nil {
+			logger.RecoverPanicNoExit(r)
 			err = fmt.Errorf("subturn panicked: %v", r)
 			result = nil
 			logger.ErrorCF("subturn", "SubTurn panicked", map[string]any{
