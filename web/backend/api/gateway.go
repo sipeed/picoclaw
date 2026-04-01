@@ -69,6 +69,14 @@ func ensurePicoTokenCachedLocked(configPath string) {
 	refreshPicoTokensLocked(configPath)
 }
 
+func (h *Handler) gatewayCommandArgs() []string {
+	args := []string{"gateway", "-E"}
+	if h.debug {
+		args = append(args, "-d")
+	}
+	return args
+}
+
 const (
 	protocolKey = "Sec-Websocket-Protocol"
 	tokenPrefix = "token."
@@ -531,7 +539,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	execPath := utils.FindPicoclawBinary()
 	logger.InfoC("gateway", fmt.Sprintf("Starting gateway process (%s)", execPath))
 
-	cmd = exec.Command(execPath, "gateway", "-E")
+	cmd = exec.Command(execPath, h.gatewayCommandArgs()...)
 	cmd.Env = os.Environ()
 	// Forward the launcher's config path via the environment variable that
 	// GetConfigPath() already reads, so the gateway sub-process uses the same
@@ -620,6 +628,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 				gateway.mu.Lock()
 				if gateway.cmd == cmd {
 					gateway.pidData = pd
+					gateway.picoToken = cfg.Channels.Pico.Token.String()
 					setGatewayRuntimeStatusLocked("running")
 				}
 				gateway.mu.Unlock()
@@ -914,34 +923,13 @@ func (h *Handler) gatewayStatusData() map[string]any {
 		data["pid"] = pidData.PID
 		gateway.mu.Unlock()
 	} else {
-		// Fallback: probe health endpoint to get pid and status
-		_, statusCode, err := h.getGatewayHealth(cfg, 2*time.Second)
-		if err != nil {
-			gateway.mu.Lock()
-			data["gateway_status"] = gatewayStatusWithoutHealthLocked()
-			gateway.pidData = nil
-			gateway.mu.Unlock()
-			logger.ErrorC("gateway", fmt.Sprintf("Gateway health check failed: %v", err))
-		} else {
-			logger.InfoC("gateway", fmt.Sprintf("Gateway health status: %d", statusCode))
-			if statusCode != http.StatusOK {
-				gateway.mu.Lock()
-				setGatewayRuntimeStatusLocked("error")
-				gateway.pidData = nil
-				gateway.mu.Unlock()
-				data["gateway_status"] = "error"
-				data["status_code"] = statusCode
-			} else {
-				gateway.mu.Lock()
-				setGatewayRuntimeStatusLocked("running")
-				bootDefaultModel := gateway.bootDefaultModel
-				if bootDefaultModel != "" {
-					data["boot_default_model"] = bootDefaultModel
-				}
-				data["gateway_status"] = "running"
-				gateway.mu.Unlock()
-			}
-		}
+		// Intentionally skip health probe here; the startup goroutine
+		// (startGatewayLocked) already handles liveness detection via
+		// pidFile polling and health fallback.
+		gateway.mu.Lock()
+		data["gateway_status"] = gatewayStatusWithoutHealthLocked()
+		gateway.pidData = nil
+		gateway.mu.Unlock()
 	}
 
 	gatewayStatus, _ := data["gateway_status"].(string)

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -13,6 +14,8 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/agent"
+	"github.com/sipeed/picoclaw/pkg/audio/asr"
+	"github.com/sipeed/picoclaw/pkg/audio/tts"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	_ "github.com/sipeed/picoclaw/pkg/channels/dingtalk"
@@ -41,7 +44,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
-	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 const (
@@ -61,6 +63,7 @@ type services struct {
 	ChannelManager   *channels.Manager
 	DeviceService    *devices.Service
 	HealthServer     *health.Server
+	VoiceAgentCancel context.CancelFunc
 	manualReloadChan chan struct{}
 	reloading        atomic.Bool
 	authToken        string
@@ -68,6 +71,27 @@ type services struct {
 
 type startupBlockedProvider struct {
 	reason string
+}
+
+func logChannelVoiceCapabilities(cm *channels.Manager, asrAvailable bool, ttsAvailable bool) {
+	if cm == nil {
+		return
+	}
+
+	names := cm.GetEnabledChannels()
+	sort.Strings(names)
+	for _, name := range names {
+		ch, ok := cm.GetChannel(name)
+		if !ok {
+			continue
+		}
+		caps := channels.DetectVoiceCapabilities(name, ch, asrAvailable, ttsAvailable)
+		logger.InfoCF("voice", "Channel voice capabilities", map[string]any{
+			"channel": name,
+			"asr":     caps.ASR,
+			"tts":     caps.TTS,
+		})
+	}
 }
 
 func (p *startupBlockedProvider) Chat(
@@ -98,6 +122,12 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	}
 	defer logger.DisableFileLogging()
 
+	if debug {
+		logger.SetLevel(logger.DEBUG)
+	} else {
+		logger.SetLevelFromString(config.ResolveGatewayLogLevel(configPath))
+	}
+
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		logger.Fatalf("error loading config: %v", err)
@@ -109,16 +139,17 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 
 	// Debug mode permanently overrides the config log level to DEBUG.
 	if debug {
-		logger.SetLevel(logger.DEBUG)
 		fmt.Println("🔍 Debug mode enabled")
 	} else {
-		logger.SetLevelFromString(cfg.Gateway.LogLevel)
-		logger.Infof("Log level set to %q", cfg.Gateway.LogLevel)
+		effectiveLogLevel := config.EffectiveGatewayLogLevel(cfg)
+		logger.SetLevelFromString(effectiveLogLevel)
+		logger.Infof("Log level set to %q", effectiveLogLevel)
 	}
 
 	// Enforce singleton: write PID file with generated token.
 	pidData, err := pid.WritePidFile(homePath, cfg.Gateway.Host, cfg.Gateway.Port)
 	if err != nil {
+		logger.Warnf("write pid file failed: %v", err)
 		return fmt.Errorf("singleton check failed: %w", err)
 	}
 	defer pid.RemovePidFile(homePath)
@@ -331,10 +362,13 @@ func setupAndStartServices(
 	agentLoop.SetChannelManager(runningServices.ChannelManager)
 	agentLoop.SetMediaStore(runningServices.MediaStore)
 
-	if transcriber := voice.DetectTranscriber(cfg); transcriber != nil {
+	transcriber := asr.DetectTranscriber(cfg)
+	if transcriber != nil {
 		agentLoop.SetTranscriber(transcriber)
 		logger.InfoCF("voice", "Transcription enabled (agent-level)", map[string]any{"provider": transcriber.Name()})
 	}
+
+	ttsAvailable := tts.DetectTTS(cfg) != nil
 
 	enabledChannels := runningServices.ChannelManager.GetEnabledChannels()
 	if len(enabledChannels) > 0 {
@@ -350,6 +384,16 @@ func setupAndStartServices(
 
 	if err = runningServices.ChannelManager.StartAll(context.Background()); err != nil {
 		return nil, fmt.Errorf("error starting channels: %w", err)
+	}
+
+	logChannelVoiceCapabilities(runningServices.ChannelManager, transcriber != nil, ttsAvailable)
+
+	if transcriber != nil {
+		// Start Voice Agent Orchestrator after channels are ready.
+		vaCtx, vaCancel := context.WithCancel(context.Background())
+		runningServices.VoiceAgentCancel = vaCancel
+		voiceAgent := asr.NewAgent(msgBus, transcriber)
+		voiceAgent.Start(vaCtx)
 	}
 
 	fmt.Printf(
@@ -380,6 +424,9 @@ func stopAndCleanupServices(runningServices *services, shutdownTimeout time.Dura
 	// reload should not stop channel manager
 	if !isReload && runningServices.ChannelManager != nil {
 		runningServices.ChannelManager.StopAll(shutdownCtx)
+	}
+	if runningServices.VoiceAgentCancel != nil {
+		runningServices.VoiceAgentCancel()
 	}
 	if runningServices.DeviceService != nil {
 		runningServices.DeviceService.Stop()
@@ -476,8 +523,9 @@ func handleConfigReload(
 	// Debug mode permanently overrides the config log level to DEBUG.
 	if !debug {
 		// Update log level last so that reload-related info/warn logs above are not suppressed.
-		logger.SetLevelFromString(newCfg.Gateway.LogLevel)
-		logger.Infof("Log level changing from current to %q", newCfg.Gateway.LogLevel)
+		effectiveLogLevel := config.EffectiveGatewayLogLevel(newCfg)
+		logger.SetLevelFromString(effectiveLogLevel)
+		logger.Infof("Log level changing from current to %q", effectiveLogLevel)
 	}
 
 	return nil
@@ -556,14 +604,22 @@ func restartServices(
 		fmt.Println("  ✓ Device event service restarted")
 	}
 
-	transcriber := voice.DetectTranscriber(cfg)
+	transcriber := asr.DetectTranscriber(cfg)
 	al.SetTranscriber(transcriber)
 	if transcriber != nil {
 		logger.InfoCF("voice", "Transcription re-enabled (agent-level)", map[string]any{"provider": transcriber.Name()})
+
+		// Start Voice Agent Orchestrator on reload
+		vaCtx, vaCancel := context.WithCancel(context.Background())
+		runningServices.VoiceAgentCancel = vaCancel
+		voiceAgent := asr.NewAgent(msgBus, transcriber)
+		voiceAgent.Start(vaCtx)
 	} else {
 		logger.InfoCF("voice", "Transcription disabled", nil)
 	}
 
+	ttsAvailable := tts.DetectTTS(cfg) != nil
+	logChannelVoiceCapabilities(runningServices.ChannelManager, transcriber != nil, ttsAvailable)
 	// NOTE: PID file is written once at startup and not updated on reload.
 	// Changing the gateway listen address requires a full restart.
 

@@ -170,8 +170,9 @@
     "noDefaultHintPrefix": "尚未设置默认模型，点击",
     "noDefaultHintSuffix": "设为默认。",
     "status": {
-      "configured": "已配置",
-      "unconfigured": "未配置"
+      "available": "可用",
+      "unconfigured": "未配置",
+      "unreachable": "服务不可达"
     },
     "badge": {
       "default": "默认",
@@ -547,6 +548,7 @@
       "unsaved_changes": "您有未保存的更改。"
     },
     "logs": {
+      "log_level_error": "更新日志等级失败。",
       "clear": "清空日志",
       "empty": "等待日志中..."
     }

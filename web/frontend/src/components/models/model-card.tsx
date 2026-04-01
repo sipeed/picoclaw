@@ -28,14 +28,16 @@ export function ModelCard({
 }: ModelCardProps) {
   const { t } = useTranslation()
   const isOAuth = model.auth_method === "oauth"
+  const status = model.status
+  const statusLabel = t(`models.status.${status}`)
   const canSetDefault =
-    model.configured && !model.is_default && !model.is_virtual
+    model.available && !model.is_default && !model.is_virtual
 
   return (
     <div
       className={[
         "group/card hover:bg-muted/30 relative flex w-full max-w-[36rem] flex-col gap-3 justify-self-start rounded-xl border p-4 transition-colors hover:shadow-xs",
-        model.configured
+        model.available
           ? "border-border/60 bg-card"
           : "border-border/50 bg-card/60",
       ].join(" ")}
@@ -47,15 +49,13 @@ export function ModelCard({
               "mt-0.5 h-2 w-2 shrink-0 rounded-full",
               model.is_default
                 ? "bg-green-400 shadow-[0_0_0_2px_rgba(74,222,128,0.35)]"
-                : model.configured
+                : status === "available"
                   ? "bg-green-500"
+                  : status === "unreachable"
+                    ? "bg-amber-500"
                   : "bg-muted-foreground/25",
             ].join(" ")}
-            title={
-              model.configured
-                ? t("models.status.configured")
-                : t("models.status.unconfigured")
-            }
+            title={statusLabel}
           />
           <span className="text-foreground truncate text-sm font-semibold">
             {model.model_name}
@@ -127,14 +127,14 @@ export function ModelCard({
           <span className="text-muted-foreground bg-muted rounded px-1.5 py-0.5 text-[10px] font-medium">
             OAuth
           </span>
-        ) : model.configured && model.api_key ? (
+        ) : status === "available" && model.api_key ? (
           <span className="text-muted-foreground/70 flex items-center gap-1 font-mono text-[11px]">
             <IconKey className="size-3" />
             {model.api_key}
           </span>
         ) : (
           <span className="text-muted-foreground/50 text-[11px]">
-            {t("models.status.unconfigured")}
+            {statusLabel}
           </span>
         )}
       </div>

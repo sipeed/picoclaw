@@ -15,8 +15,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
+	ppid "github.com/sipeed/picoclaw/pkg/pid"
 	"github.com/sipeed/picoclaw/web/backend/utils"
 )
 
@@ -77,6 +80,8 @@ func resetGatewayTestState(t *testing.T) {
 
 		gateway.mu.Lock()
 		gateway.cmd = nil
+		gateway.pidData = nil
+		gateway.owned = false
 		gateway.bootDefaultModel = ""
 		gateway.bootConfigSignature = ""
 		setGatewayRuntimeStatusLocked("stopped")
@@ -163,6 +168,17 @@ func TestGatewayStartReady_DefaultModelWithoutCredential(t *testing.T) {
 	}
 	if !strings.Contains(reason, "no credentials configured") {
 		t.Fatalf("gatewayStartReady() reason = %q, want contains %q", reason, "no credentials configured")
+	}
+}
+
+func TestGatewayCommandArgsIncludesDebugFlagWhenEnabled(t *testing.T) {
+	h := NewHandler(filepath.Join(t.TempDir(), "config.json"))
+	h.SetDebug(true)
+
+	args := h.gatewayCommandArgs()
+	want := []string{"gateway", "-E", "-d"}
+	if strings.Join(args, " ") != strings.Join(want, " ") {
+		t.Fatalf("gatewayCommandArgs() = %v, want %v", args, want)
 	}
 }
 
@@ -431,7 +447,7 @@ func TestGatewayStatusKeepsRunningWhenHealthProbeFailsAfterRunning(t *testing.T)
 	}
 }
 
-func TestGatewayStatusReportsRunningFromHealthProbe(t *testing.T) {
+func TestGatewayStatusReportsRunningFromPidProbe(t *testing.T) {
 	resetGatewayTestState(t)
 
 	configPath := filepath.Join(t.TempDir(), "config.json")
@@ -454,6 +470,9 @@ func TestGatewayStatusReportsRunningFromHealthProbe(t *testing.T) {
 	gatewayHealthGet = func(string, time.Duration) (*http.Response, error) {
 		return mockGatewayHealthResponse(http.StatusOK, cmd.Process.Pid), nil
 	}
+
+	_, err := ppid.WritePidFile(globalConfigDir(), "localhost", 0)
+	require.NoError(t, err)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
@@ -500,6 +519,8 @@ func TestGatewayStatusRequiresRestartAfterDefaultModelChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindProcess() error = %v", err)
 	}
+	_, err = ppid.WritePidFile(globalConfigDir(), "localhost", 0)
+	require.NoError(t, err)
 
 	bootSignature := computeConfigSignature(cfg)
 	gateway.mu.Lock()

@@ -1300,3 +1300,8 @@ func stripUserMentionWithRegexp(text string, userID id.UserID, mentionR *regexp.
 	cleaned = strings.TrimLeft(cleaned, ",:; ")
 	return strings.TrimSpace(cleaned)
 }
+
+// VoiceCapabilities returns the voice capabilities of the channel.
+func (c *MatrixChannel) VoiceCapabilities() channels.VoiceCapabilities {
+	return channels.VoiceCapabilities{ASR: true, TTS: true}
+}

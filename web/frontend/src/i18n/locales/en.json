@@ -170,8 +170,9 @@
     "noDefaultHintPrefix": "No default model set yet. Click",
     "noDefaultHintSuffix": "to set one.",
     "status": {
-      "configured": "Configured",
-      "unconfigured": "Not configured"
+      "available": "Available",
+      "unconfigured": "Not configured",
+      "unreachable": "Service unreachable"
     },
     "badge": {
       "default": "Default",
@@ -547,6 +548,7 @@
       "unsaved_changes": "You have unsaved changes."
     },
     "logs": {
+      "log_level_error": "Failed to update log level.",
       "clear": "Clear logs",
       "empty": "Waiting for logs..."
     }
