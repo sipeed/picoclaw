@@ -10,19 +10,19 @@ import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
 
 interface ChatEmptyStateProps {
-  hasConfiguredModels: boolean
+  hasAvailableModels: boolean
   defaultModelName: string
   isConnected: boolean
 }
 
 export function ChatEmptyState({
-  hasConfiguredModels,
+  hasAvailableModels,
   defaultModelName,
   isConnected,
 }: ChatEmptyStateProps) {
   const { t } = useTranslation()
 
-  if (!hasConfiguredModels) {
+  if (!hasAvailableModels) {
     return (
       <div className="flex flex-col items-center justify-center py-20 opacity-70">
         <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-500">

@@ -98,6 +98,19 @@ func ExtractProtocol(model string) (protocol, modelID string) {
 	return protocol, modelID
 }
 
+// ResolveAPIBase returns the configured API base, or the protocol default when
+// the model uses an HTTP-based provider family with a known default endpoint.
+func ResolveAPIBase(cfg *config.ModelConfig) string {
+	if cfg == nil {
+		return ""
+	}
+	if apiBase := strings.TrimSpace(cfg.APIBase); apiBase != "" {
+		return strings.TrimRight(apiBase, "/")
+	}
+	protocol, _ := ExtractProtocol(cfg.Model)
+	return strings.TrimRight(getDefaultAPIBase(protocol), "/")
+}
+
 // CreateProviderFromConfig creates a provider based on the ModelConfig.
 // It uses the protocol prefix in the Model field to determine which provider to create.
 // Supported protocol families include OpenAI-compatible prefixes (e.g., openai, openrouter, groq, gemini),

@@ -684,3 +684,8 @@ func (c *LINEChannel) downloadContent(messageID, filename string) string {
 		},
 	})
 }
+
+// VoiceCapabilities returns the voice capabilities of the channel.
+func (c *LINEChannel) VoiceCapabilities() channels.VoiceCapabilities {
+	return channels.VoiceCapabilities{ASR: true, TTS: true}
+}

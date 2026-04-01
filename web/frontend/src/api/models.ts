@@ -20,7 +20,8 @@ export interface ModelInfo {
   thinking_level?: string
   extra_body?: Record<string, unknown>
   // Meta
-  configured: boolean
+  available: boolean
+  status: "available" | "unconfigured" | "unreachable"
   is_default: boolean
   is_virtual: boolean
 }

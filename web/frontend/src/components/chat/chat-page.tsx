@@ -39,7 +39,7 @@ export function ChatPage() {
 
   const {
     defaultModelName,
-    hasConfiguredModels,
+    hasAvailableModels,
     apiKeyModels,
     oauthModels,
     localModels,
@@ -94,7 +94,7 @@ export function ChatPage() {
           hasScrolled ? "shadow-sm" : "shadow-none"
         }`}
         titleExtra={
-          hasConfiguredModels && (
+          hasAvailableModels && (
             <ModelSelector
               defaultModelName={defaultModelName}
               apiKeyModels={apiKeyModels}
@@ -140,7 +140,7 @@ export function ChatPage() {
         <div className="mx-auto flex w-full max-w-250 flex-col gap-8 pb-8">
           {messages.length === 0 && !isTyping && (
             <ChatEmptyState
-              hasConfiguredModels={hasConfiguredModels}
+              hasAvailableModels={hasAvailableModels}
               defaultModelName={defaultModelName}
               isConnected={isGatewayRunning}
             />

@@ -1133,3 +1133,8 @@ func cryptoRandInt() int {
 	_, _ = rand.Read(b[:])
 	return int(binary.BigEndian.Uint32(b[:])) | 1 // ensure non-zero
 }
+
+// VoiceCapabilities returns the voice capabilities of the channel.
+func (c *TelegramChannel) VoiceCapabilities() channels.VoiceCapabilities {
+	return channels.VoiceCapabilities{ASR: true, TTS: true}
+}

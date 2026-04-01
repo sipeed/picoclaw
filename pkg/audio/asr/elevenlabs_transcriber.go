@@ -1,4 +1,4 @@
-package voice
+package asr
 
 import (
 	"bytes"
@@ -23,12 +23,16 @@ type ElevenLabsTranscriber struct {
 	httpClient *http.Client
 }
 
-func NewElevenLabsTranscriber(apiKey string) *ElevenLabsTranscriber {
+func NewElevenLabsTranscriber(apiKey, apiBase string) *ElevenLabsTranscriber {
 	logger.DebugCF("voice", "Creating ElevenLabs transcriber", map[string]any{"has_api_key": apiKey != ""})
+
+	if apiBase == "" {
+		apiBase = "https://api.elevenlabs.io"
+	}
 
 	return &ElevenLabsTranscriber{
 		apiKey:  apiKey,
-		apiBase: "https://api.elevenlabs.io",
+		apiBase: apiBase,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 		},

@@ -20,14 +20,18 @@ func resetModelProbeHooks(t *testing.T) {
 	origTCPProbe := probeTCPServiceFunc
 	origOllamaProbe := probeOllamaModelFunc
 	origOpenAIProbe := probeOpenAICompatibleModelFunc
+	origNow := modelProbeNowFunc
+	resetModelProbeCache()
 	t.Cleanup(func() {
 		probeTCPServiceFunc = origTCPProbe
 		probeOllamaModelFunc = origOllamaProbe
 		probeOpenAICompatibleModelFunc = origOpenAIProbe
+		modelProbeNowFunc = origNow
+		resetModelProbeCache()
 	})
 }
 
-func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *testing.T) {
+func TestHandleListModels_AvailabilityUsesRuntimeProbesForLocalModels(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 	resetOAuthHooks(t)
@@ -113,25 +117,42 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
-	got := make(map[string]bool, len(resp.Models))
+	gotAvailable := make(map[string]bool, len(resp.Models))
+	gotStatus := make(map[string]string, len(resp.Models))
 	for _, model := range resp.Models {
-		got[model.ModelName] = model.Configured
+		gotAvailable[model.ModelName] = model.Available
+		gotStatus[model.ModelName] = model.Status
 	}
 
-	if got["openai-oauth"] {
-		t.Fatalf("openai oauth model configured = true, want false without stored credential")
+	if gotAvailable["openai-oauth"] {
+		t.Fatalf("openai oauth model available = true, want false without stored credential")
 	}
-	if !got["vllm-local"] {
-		t.Fatalf("vllm local model configured = false, want true when local probe succeeds")
+	if !gotAvailable["vllm-local"] {
+		t.Fatalf("vllm local model available = false, want true when local probe succeeds")
 	}
-	if !got["ollama-default"] {
-		t.Fatalf("ollama default model configured = false, want true when default local probe succeeds")
+	if !gotAvailable["ollama-default"] {
+		t.Fatalf("ollama default model available = false, want true when default local probe succeeds")
 	}
-	if !got["vllm-remote"] {
-		t.Fatalf("remote vllm model configured = false, want true with api_key")
+	if !gotAvailable["vllm-remote"] {
+		t.Fatalf("remote vllm model available = false, want true with api_key")
 	}
-	if !got["copilot-gpt-5.4"] {
-		t.Fatalf("copilot model configured = false, want true when local bridge probe succeeds")
+	if !gotAvailable["copilot-gpt-5.4"] {
+		t.Fatalf("copilot model available = false, want true when local bridge probe succeeds")
+	}
+	if gotStatus["openai-oauth"] != modelStatusUnconfigured {
+		t.Fatalf("openai oauth model status = %q, want %q", gotStatus["openai-oauth"], modelStatusUnconfigured)
+	}
+	if gotStatus["vllm-local"] != modelStatusAvailable {
+		t.Fatalf("vllm local model status = %q, want %q", gotStatus["vllm-local"], modelStatusAvailable)
+	}
+	if gotStatus["ollama-default"] != modelStatusAvailable {
+		t.Fatalf("ollama default model status = %q, want %q", gotStatus["ollama-default"], modelStatusAvailable)
+	}
+	if gotStatus["vllm-remote"] != modelStatusAvailable {
+		t.Fatalf("remote vllm model status = %q, want %q", gotStatus["vllm-remote"], modelStatusAvailable)
+	}
+	if gotStatus["copilot-gpt-5.4"] != modelStatusAvailable {
+		t.Fatalf("copilot model status = %q, want %q", gotStatus["copilot-gpt-5.4"], modelStatusAvailable)
 	}
 	if len(openAIProbes) != 1 || openAIProbes[0] != "http://127.0.0.1:8000/v1|custom-model|" {
 		t.Fatalf("openAI probes = %#v, want only local vllm probe", openAIProbes)
@@ -144,7 +165,7 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 	}
 }
 
-func TestHandleListModels_ConfiguredStatusForOAuthModelWithCredential(t *testing.T) {
+func TestHandleListModels_AvailabilityForOAuthModelWithCredential(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 	resetOAuthHooks(t)
@@ -193,8 +214,8 @@ func TestHandleListModels_ConfiguredStatusForOAuthModelWithCredential(t *testing
 	if len(resp.Models) != 1 {
 		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
 	}
-	if !resp.Models[0].Configured {
-		t.Fatalf("oauth model configured = false, want true with stored credential")
+	if !resp.Models[0].Available {
+		t.Fatalf("oauth model available = false, want true with stored credential")
 	}
 }
 
@@ -306,11 +327,68 @@ func TestHandleListModels_NormalizesWildcardLocalAPIBaseForProbe(t *testing.T) {
 	if len(resp.Models) != 1 {
 		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
 	}
-	if !resp.Models[0].Configured {
-		t.Fatal("wildcard-bound local model configured = false, want true after probe host normalization")
+	if !resp.Models[0].Available {
+		t.Fatal("wildcard-bound local model available = false, want true after probe host normalization")
 	}
 	if gotProbe != "http://127.0.0.1:8000/v1|custom-model|" {
 		t.Fatalf("probe api base = %q, want %q", gotProbe, "http://127.0.0.1:8000/v1|custom-model|")
+	}
+}
+
+func TestHandleListModels_StatusMarksUnreachableLocalModel(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+	resetOAuthHooks(t)
+	resetModelProbeHooks(t)
+
+	probeOpenAICompatibleModelFunc = func(apiBase, modelID, apiKey string) bool {
+		return false
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "vllm-local-down",
+		Model:     "vllm/custom-model",
+		APIBase:   "http://127.0.0.1:8000/v1",
+		APIKeys:   config.SimpleSecureStrings("test-key"),
+	}}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Models []modelResponse `json:"models"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
+	}
+
+	if resp.Models[0].Available {
+		t.Fatal("unreachable local model available = true, want false")
+	}
+	if resp.Models[0].Status != modelStatusUnreachable {
+		t.Fatalf("unreachable local model status = %q, want %q", resp.Models[0].Status, modelStatusUnreachable)
+	}
+	if resp.Models[0].APIKey == "" {
+		t.Fatal("masked API key preview should still be returned when API key is configured")
 	}
 }
 

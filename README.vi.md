@@ -56,6 +56,8 @@
 
 ## 📢 Tin tức
 
+2026-03-31 📱 **Hỗ trợ Android!** PicoClaw giờ chạy trên Android! Tải APK tại [picoclaw.io](https://picoclaw.io/download)
+
 2026-03-25 🚀 **v0.2.4 đã phát hành!** Tái cấu trúc kiến trúc Agent (SubTurn, Hooks, Steering, EventBus), tích hợp WeChat/WeCom, tăng cường bảo mật (.security.yml, lọc dữ liệu nhạy cảm), provider mới (AWS Bedrock, Azure, Xiaomi MiMo) và 35 bản vá lỗi. PicoClaw đã đạt **26K Stars**!
 
 2026-03-17 🚀 **v0.2.3 đã phát hành!** Giao diện system tray (Windows & Linux), truy vấn trạng thái sub-agent (`spawn_status`), thử nghiệm Gateway hot-reload, bảo mật Cron, và 2 bản vá bảo mật. PicoClaw đã đạt **25K Stars**!
@@ -318,9 +320,9 @@ Sau đó làm theo phần Terminal Launcher bên dưới để hoàn tất cấu
 
 <img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
 
-**Tùy chọn 2: Cài đặt APK (sắp ra mắt)**
+**Tùy chọn 2: Cài đặt APK**
 
-Một APK Android độc lập với WebUI tích hợp đang được phát triển. Hãy đón chờ!
+Tải APK từ [picoclaw.io](https://picoclaw.io/download/) và cài đặt trực tiếp. Không cần Termux!
 
 <details>
 <summary><b>Terminal Launcher (cho môi trường hạn chế tài nguyên)</b></summary>

@@ -13,18 +13,20 @@ Telegram Channel 通过 Telegram 机器人 API 使用长轮询实现基于机器
       "enabled": true,
       "token": "123456789:ABCdefGHIjklMNOpqrsTUVwxyz",
       "allow_from": ["123456789"],
-      "proxy": ""
+      "proxy": "",
+      "use_markdown_v2": false
     }
   }
 }
 ```
 
-| 字段       | 类型   | 必填 | 描述                                                      |
-| ---------- | ------ | ---- | --------------------------------------------------------- |
-| enabled    | bool   | 是   | 是否启用 Telegram 频道                                    |
-| token      | string | 是   | Telegram 机器人 API Token                                 |
-| allow_from | array  | 否   | 用户ID白名单，空表示允许所有用户                          |
-| proxy      | string | 否   | 连接 Telegram API 的代理 URL (例如 http://127.0.0.1:7890) |
+| 字段             | 类型   | 必填 | 描述                                                      |
+| ---------------- | ------ | ---- | --------------------------------------------------------- |
+| enabled          | bool   | 是   | 是否启用 Telegram 频道                                    |
+| token            | string | 是   | Telegram 机器人 API Token                                 |
+| allow_from       | array  | 否   | 用户ID白名单，空表示允许所有用户                          |
+| proxy            | string | 否   | 连接 Telegram API 的代理 URL (例如 http://127.0.0.1:7890) |
+| use_markdown_v2 | bool   | 否   | 启用 Telegram MarkdownV2 格式化                           |
 
 ## 设置流程
 
@@ -50,6 +52,23 @@ Telegram 会在启动时自动注册 PicoClaw 的顶级 Bot 命令，包括 `/st
 ```text
 /list skills
 /use git explain how to squash the last 3 commits
-/use italiapersonalfinance
-dammi le ultime news
+/use git
+explain how to squash the last 3 commits
+```
+
+## 高级格式化
+
+您可以设置 `use_markdown_v2: true` 来启用增强的格式化选项。这允许机器人使用 Telegram MarkdownV2 的全部功能，包括嵌套样式、剧透和自定义等宽代码块。
+
+```json
+{
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "YOUR_BOT_TOKEN",
+      "allow_from": ["YOUR_USER_ID"],
+      "use_markdown_v2": true
+    }
+  }
+}
 ```
