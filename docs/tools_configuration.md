@@ -301,14 +301,16 @@ and injected into the context for a configured number of turns (`ttl`).
 | `env_file` | string  | no       | Path to environment file for stdio process                                                                                                                      |
 | `url`      | string  | sse/http | Endpoint URL for `sse`/`http` transport                                                                                                                         |
 | `headers`  | object  | no       | HTTP headers for `sse`/`http` transport                                                                                                                         |
+| `proxy`    | string  | no       | HTTP proxy URL (http/https/socks5/socks5h). For `sse`/`http`: used for HTTP requests. For `stdio`: sets `HTTP_PROXY`/`HTTPS_PROXY` env vars for the subprocess. When empty, uses environment proxy settings. |
 
 ### Transport Behavior
 
 - If `type` is omitted, transport is auto-detected:
     - `url` is set → `sse`
     - `command` is set → `stdio`
-- `http` and `sse` both use `url` + optional `headers`.
-- `env` and `env_file` are only applied to `stdio` servers.
+- `http` and `sse` both use `url` + optional `headers` and `proxy`.
+- `env`, `env_file`, and `proxy` are only applied to `stdio` servers (via environment variables).
+- All transport types support the `proxy` option. Supports http, https, socks5, and socks5h schemes.
 
 ### Configuration Examples
 
@@ -356,6 +358,31 @@ and injected into the context for a configured number of turns (`ttl`).
   }
 }
 ```
+
+#### 2.1) Remote MCP server with proxy
+
+```json
+{
+  "tools": {
+    "mcp": {
+      "enabled": true,
+      "servers": {
+        "remote-mcp-behind-proxy": {
+          "enabled": true,
+          "type": "sse",
+          "url": "https://internal-mcp.example.com/mcp",
+          "proxy": "socks5://127.0.0.1:1080",
+          "headers": {
+            "Authorization": "Bearer YOUR_TOKEN"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Supported proxy schemes: `http`, `https`, `socks5`, `socks5h`. When `proxy` is not set, the system environment proxy settings (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`) are used.
 
 #### 3) Massive MCP setup with Tool Discovery enabled
 
