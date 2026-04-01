@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"sync"
 	"testing"
 
@@ -143,16 +145,39 @@ func (c *PicoChannel) addConnForTest(pc *picoConn) {
 	bySession[pc.id] = pc
 }
 
-func TestNewPicoChannel_LeavesCheckOriginUnsetWithoutAllowOrigins(t *testing.T) {
+func TestNewPicoChannel_UsesSameOriginCheckWithoutAllowOrigins(t *testing.T) {
 	ch := newTestPicoChannel(t)
 
-	if ch.upgrader.CheckOrigin != nil {
-		t.Fatalf("CheckOrigin = %v, want nil when allow_origins is empty", ch.upgrader.CheckOrigin)
+	if ch.upgrader.CheckOrigin == nil {
+		t.Fatal("CheckOrigin is nil, want custom same-origin check when allow_origins is empty")
+	}
+
+	if !ch.upgrader.CheckOrigin(&http.Request{
+		Host: "example.com",
+		Header: http.Header{
+			"Origin": []string{"https://example.com"},
+		},
+	}) {
+		t.Fatal("CheckOrigin rejected same-origin request")
+	}
+
+	if ch.upgrader.CheckOrigin(&http.Request{
+		Host: "example.com",
+		Header: http.Header{
+			"Origin": []string{"https://other.example"},
+		},
+	}) {
+		t.Fatal("CheckOrigin accepted cross-origin request")
+	}
+
+	if !ch.upgrader.CheckOrigin(&http.Request{Host: "example.com"}) {
+		t.Fatal("CheckOrigin rejected request without Origin header")
 	}
 }
 
-func TestNewPicoChannel_SetsCheckOriginWithAllowOrigins(t *testing.T) {
-	cfg := config.PicoConfig{AllowOrigins: []string{"https://example.com"}}
+func TestNewPicoChannel_SetsCheckOriginWithWildcard(t *testing.T) {
+	// (2) explicit AllowOrigins=["*"] allows any origin
+	cfg := config.PicoConfig{AllowOrigins: []string{"*"}}
 	cfg.SetToken("test-token")
 
 	ch, err := NewPicoChannel(cfg, bus.NewMessageBus())
@@ -161,6 +186,16 @@ func TestNewPicoChannel_SetsCheckOriginWithAllowOrigins(t *testing.T) {
 	}
 
 	if ch.upgrader.CheckOrigin == nil {
-		t.Fatal("CheckOrigin is nil, want custom allowlist validation when allow_origins is set")
+		t.Fatal("CheckOrigin is nil, want wildcard validation when allow_origins is set")
+	}
+
+	// Prove it allows any random cross-origin
+	if !ch.upgrader.CheckOrigin(&http.Request{
+		Header: http.Header{
+			"Origin": []string{"https://any-random-cross-origin.com"},
+		},
+		URL: &url.URL{},
+	}) {
+		t.Fatal("CheckOrigin rejected an origin even though wildcard '*' was provided")
 	}
 }
