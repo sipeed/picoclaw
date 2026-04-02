@@ -300,7 +300,25 @@ Untuk dokumentasi TUI terperinci, lihat [docs.picoclaw.io](https://docs.picoclaw
 
 Berikan telefon lama anda kehidupan baru! Jadikannya Pembantu AI pintar dengan PicoClaw.
 
-**Pilihan 1: Termux (tersedia sekarang)**
+**Pilihan 1: Pasang APK**
+
+Pratonton:
+
+<table>
+  <tr>
+    <td><img src="assets/fui_main_page.jpg" width="200"></td>
+    <td><img src="assets/fui_web_page.jpg" width="200"></td>
+    <td><img src="assets/fui_log_page.jpg" width="200"></td>
+    <td><img src="assets/fui_setting_page.jpg" width="200"></td>
+  </tr>
+</table>
+
+Muat turun APK dari [picoclaw.io](https://picoclaw.io/download/) dan pasang secara langsung. Tiada Termux diperlukan!
+
+**Pilihan 2: Termux**
+
+<details>
+<summary><b>Pelancar Terminal (untuk persekitaran terhad sumber)</b></summary>
 
 1. Pasang [Termux](https://github.com/termux/termux-app) (muat turun dari [GitHub Releases](https://github.com/termux/termux-app/releases), atau cari di F-Droid / Google Play)
 2. Jalankan arahan berikut:
@@ -316,13 +334,6 @@ termux-chroot ./picoclaw onboard   # chroot menyediakan susun atur sistem fail L
 Kemudian ikuti bahagian Pelancar Terminal di bawah untuk melengkapkan konfigurasi.
 
 <img src="assets/termux.jpg" alt="PicoClaw pada Termux" width="512">
-
-**Pilihan 2: Pasang APK**
-
-Muat turun APK dari [picoclaw.io](https://picoclaw.io/download/) dan pasang secara langsung. Tiada Termux diperlukan!
-
-<details>
-<summary><b>Pelancar Terminal (untuk persekitaran terhad sumber)</b></summary>
 
 Untuk persekitaran minimal di mana hanya binari teras `picoclaw` tersedia (tiada UI Pelancar), anda boleh mengkonfigurasi semua melalui baris arahan dan fail konfigurasi JSON.
 

@@ -305,6 +305,17 @@ Give your decade-old phone a second life! Turn it into a smart AI Assistant with
 
 **Option 1: APK Install**
 
+Preview:
+
+<table>
+  <tr>
+    <td><img src="assets/fui_main_page.jpg" width="200"></td>
+    <td><img src="assets/fui_web_page.jpg" width="200"></td>
+    <td><img src="assets/fui_log_page.jpg" width="200"></td>
+    <td><img src="assets/fui_setting_page.jpg" width="200"></td>
+  </tr>
+</table>
+
 Download the APK from [picoclaw.io](https://picoclaw.io/download/) and install directly. No Termux required!
 
 **Option 2: Termux**
