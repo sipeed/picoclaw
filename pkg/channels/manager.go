@@ -98,6 +98,10 @@ type asyncTask struct {
 	cancel context.CancelFunc
 }
 
+// HTTPMiddleware wraps an HTTP handler and may return an error if middleware
+// configuration is invalid.
+type HTTPMiddleware func(http.Handler) (http.Handler, error)
+
 // RecordPlaceholder registers a placeholder message for later editing.
 // Implements PlaceholderRecorder.
 func (m *Manager) RecordPlaceholder(channel, chatID, placeholderID string) {
@@ -436,7 +440,7 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 // SetupHTTPServer creates a shared HTTP server with the given listen address.
 // It registers health endpoints from the health server and discovers channels
 // that implement WebhookHandler and/or HealthChecker to register their handlers.
-func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
+func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server, middlewares ...HTTPMiddleware) error {
 	m.mux = newDynamicServeMux()
 
 	// Register health endpoints
@@ -447,12 +451,26 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 	// Discover and register webhook handlers and health checkers
 	m.registerHTTPHandlersLocked()
 
+	handler := http.Handler(m.mux)
+	for idx, mw := range middlewares {
+		if mw == nil {
+			continue
+		}
+		wrapped, err := mw(handler)
+		if err != nil {
+			return fmt.Errorf("apply HTTP middleware #%d: %w", idx, err)
+		}
+		handler = wrapped
+	}
+
 	m.httpServer = &http.Server{
 		Addr:         addr,
-		Handler:      m.mux,
+		Handler:      handler,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}
+
+	return nil
 }
 
 // registerHTTPHandlersLocked registers webhook and health-check handlers for

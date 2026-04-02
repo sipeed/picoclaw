@@ -173,6 +173,31 @@ func TestHandlePatchConfig_AllowsInvalidExecRegexPatternsWhenExecDisabled(t *tes
 	}
 }
 
+func TestHandlePatchConfig_RejectsInvalidGatewayAllowedCIDRs(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"gateway": {
+			"allowed_cidrs": ["bad-cidr"]
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("gateway.allowed_cidrs")) {
+		t.Fatalf("expected validation error mentioning gateway.allowed_cidrs, body=%s", rec.Body.String())
+	}
+}
+
 // setupPicoEnabledEnv creates a test environment with Pico channel enabled and
 // its token stored only in .security.yml (not in the JSON payload).
 func setupPicoEnabledEnv(t *testing.T) (string, func()) {

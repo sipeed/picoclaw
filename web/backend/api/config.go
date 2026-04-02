@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -278,6 +279,15 @@ func validateConfig(cfg *config.Config) []string {
 	// Gateway port range
 	if cfg.Gateway.Port != 0 && (cfg.Gateway.Port < 1 || cfg.Gateway.Port > 65535) {
 		errs = append(errs, fmt.Sprintf("gateway.port %d is out of valid range (1-65535)", cfg.Gateway.Port))
+	}
+	for index, cidr := range cfg.Gateway.AllowedCIDRs {
+		trimmed := strings.TrimSpace(cidr)
+		if trimmed == "" {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(trimmed); err != nil {
+			errs = append(errs, fmt.Sprintf("gateway.allowed_cidrs[%d] is not a valid CIDR: %v", index, err))
+		}
 	}
 
 	// Pico channel: token required when enabled
