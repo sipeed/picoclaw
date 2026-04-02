@@ -55,9 +55,9 @@ You can also override this with the environment variable `PICOCLAW_LOG_LEVEL`.
 
 When `gateway.host` is a loopback address (`127.0.0.1`, `::1`, or `localhost`) and bind fails (for example, on boards where loopback is unavailable), PicoClaw automatically:
 
-1. Scans non-loopback network interfaces and collects local CIDR ranges.
-2. Falls back to bind on `0.0.0.0`.
-3. Enforces a CIDR allowlist for gateway HTTP endpoints.
+1. Falls back to bind on `0.0.0.0`.
+2. Enforces a CIDR allowlist for gateway HTTP endpoints.
+3. Discovers local interface CIDRs only when `gateway.allowed_cidrs` is empty.
 
 CIDR sources in fallback mode:
 
@@ -66,6 +66,8 @@ CIDR sources in fallback mode:
 - If no non-loopback CIDR can be discovered, gateway startup fails.
 
 Loopback clients are always allowed for local administration.
+
+> **Reverse proxy note:** CIDR checks use connection `RemoteAddr`. If you place the gateway behind a local reverse proxy/tunnel (so requests arrive as loopback), those requests are treated as loopback and pass CIDR filtering at this layer.
 
 Example:
 

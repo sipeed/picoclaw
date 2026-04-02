@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -35,6 +36,8 @@ func TestResolveGatewayListenDecisionLoopbackFallbackUsesConfiguredCIDRs(t *test
 		discoverGatewayCIDRs = origDiscover
 	})
 
+	discoverCalled := false
+
 	probeGatewayBind = func(host string, _ int) error {
 		switch host {
 		case "127.0.0.1":
@@ -46,7 +49,8 @@ func TestResolveGatewayListenDecisionLoopbackFallbackUsesConfiguredCIDRs(t *test
 		}
 	}
 	discoverGatewayCIDRs = func() ([]string, error) {
-		return []string{"192.168.50.0/24"}, nil
+		discoverCalled = true
+		return nil, errors.New("must not be called when configured CIDRs are provided")
 	}
 
 	decision, err := resolveGatewayListenDecision("127.0.0.1", 18790, []string{"10.0.0.0/8"})
@@ -62,6 +66,9 @@ func TestResolveGatewayListenDecisionLoopbackFallbackUsesConfiguredCIDRs(t *test
 	wantCIDRs := []string{"10.0.0.0/8"}
 	if !reflect.DeepEqual(decision.AllowedCIDRs, wantCIDRs) {
 		t.Fatalf("decision.AllowedCIDRs = %v, want %v", decision.AllowedCIDRs, wantCIDRs)
+	}
+	if discoverCalled {
+		t.Fatal("discoverGatewayCIDRs() called unexpectedly")
 	}
 }
 
@@ -196,5 +203,20 @@ func TestCIDRAllowlistMiddlewareInvalidCIDR(t *testing.T) {
 	_, err := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	if err == nil {
 		t.Fatal("middleware expected error for invalid CIDR")
+	}
+}
+
+func TestNormalizeIPForMaskIPv4MappedIPv6(t *testing.T) {
+	ip := net.ParseIP("::ffff:192.168.10.20")
+	mask := net.CIDRMask(24, 32)
+
+	normalized := normalizeIPForMask(ip, mask)
+	if got := normalized.String(); got != "192.168.10.20" {
+		t.Fatalf("normalizeIPForMask() = %q, want %q", got, "192.168.10.20")
+	}
+
+	masked := normalized.Mask(mask)
+	if got := (&net.IPNet{IP: masked, Mask: mask}).String(); got != "192.168.10.0/24" {
+		t.Fatalf("masked network = %q, want %q", got, "192.168.10.0/24")
 	}
 }

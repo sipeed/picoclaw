@@ -99,6 +99,41 @@ func WritePidFile(homePath, host string, port int) (*PidFileData, error) {
 	return data, nil
 }
 
+// UpdatePidFileEndpoint updates host/port in the current process pid file
+// without rotating the auth token.
+func UpdatePidFileEndpoint(homePath, host string, port int) (*PidFileData, error) {
+	pidMu.Lock()
+	defer pidMu.Unlock()
+
+	pidPath := pidFilePath(homePath)
+	data, err := readPidFileUnlocked(pidPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read pid file: %w", err)
+	}
+	if data.PID != os.Getpid() {
+		return nil, fmt.Errorf("pid file belongs to another process: %d", data.PID)
+	}
+
+	data.Host = host
+	data.Port = port
+
+	raw, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal pid file: %w", err)
+	}
+
+	tmp := pidPath + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+		return nil, fmt.Errorf("failed to write pid file: %w", err)
+	}
+	if err := os.Rename(tmp, pidPath); err != nil {
+		os.Remove(tmp)
+		return nil, fmt.Errorf("failed to rename pid file: %w", err)
+	}
+
+	return data, nil
+}
+
 // ReadPidFileWithCheck reads the PID file and additionally checks if
 // the recorded process is still alive. Returns nil if the file is
 // missing, unreadable, or the process has exited.

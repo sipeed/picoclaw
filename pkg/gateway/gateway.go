@@ -190,6 +190,19 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 		return err
 	}
 
+	if pidData.Host != runningServices.ListenHost || pidData.Port != cfg.Gateway.Port {
+		updatedPidData, updateErr := pid.UpdatePidFileEndpoint(homePath, runningServices.ListenHost, cfg.Gateway.Port)
+		if updateErr != nil {
+			logger.WarnCF("gateway", "Failed to sync pid listen endpoint", map[string]any{
+				"error":       updateErr.Error(),
+				"listen_host": runningServices.ListenHost,
+				"listen_port": cfg.Gateway.Port,
+			})
+		} else {
+			pidData = updatedPidData
+		}
+	}
+
 	// Setup manual reload channel for /reload endpoint
 	manualReloadChan := make(chan struct{}, 1)
 	runningServices.manualReloadChan = manualReloadChan
@@ -210,7 +223,7 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	agentLoop.SetReloadFunc(reloadTrigger)
 
 	if runningServices.ListenHost == gatewayFallbackBindHost {
-		fmt.Printf("✓ Gateway started (all interfaces, port %d)\n", cfg.Gateway.Port)
+		fmt.Printf("✓ Gateway started (all interfaces, port %d)\n", pidData.Port)
 	} else {
 		fmt.Printf("✓ Gateway started on %s\n", runningServices.ListenAddr)
 	}

@@ -19,7 +19,6 @@ const (
 
 type gatewayListenDecision struct {
 	BindHost       string
-	Port           int
 	AllowedCIDRs   []string
 	AutoFallback   bool
 	FallbackReason string
@@ -49,7 +48,6 @@ func resolveGatewayListenDecision(
 	if bindErr == nil {
 		return &gatewayListenDecision{
 			BindHost:     host,
-			Port:         port,
 			AllowedCIDRs: normalizedCIDRs,
 		}, nil
 	}
@@ -58,23 +56,27 @@ func resolveGatewayListenDecision(
 		return nil, fmt.Errorf("bind %s:%d failed: %w", host, port, bindErr)
 	}
 
-	discoveredCIDRs, discoverErr := discoverGatewayCIDRs()
-	if discoverErr != nil {
-		return nil, fmt.Errorf(
-			"loopback bind %s:%d failed: %w; interface discovery failed: %v",
-			host,
-			port,
-			bindErr,
-			discoverErr,
-		)
-	}
-	if len(discoveredCIDRs) == 0 {
-		return nil, fmt.Errorf(
-			"loopback bind %s:%d failed: %w; no non-loopback interface CIDRs discovered",
-			host,
-			port,
-			bindErr,
-		)
+	var discoveredCIDRs []string
+	if len(normalizedCIDRs) == 0 {
+		var discoverErr error
+		discoveredCIDRs, discoverErr = discoverGatewayCIDRs()
+		if discoverErr != nil {
+			return nil, fmt.Errorf(
+				"loopback bind %s:%d failed: %w; interface discovery failed: %v",
+				host,
+				port,
+				bindErr,
+				discoverErr,
+			)
+		}
+		if len(discoveredCIDRs) == 0 {
+			return nil, fmt.Errorf(
+				"loopback bind %s:%d failed: %w; no non-loopback interface CIDRs discovered",
+				host,
+				port,
+				bindErr,
+			)
+		}
 	}
 
 	fallbackCIDRs := normalizedCIDRs
@@ -99,7 +101,6 @@ func resolveGatewayListenDecision(
 
 	return &gatewayListenDecision{
 		BindHost:     gatewayFallbackBindHost,
-		Port:         port,
 		AllowedCIDRs: fallbackCIDRs,
 		AutoFallback: true,
 		FallbackReason: fmt.Sprintf(
@@ -174,11 +175,17 @@ func discoverLocalInterfaceCIDRs() ([]string, error) {
 				continue
 			}
 
-			masked := ip.Mask(ipNet.Mask)
+			mask := ipNet.Mask
+			if len(mask) == 0 {
+				continue
+			}
+			ip = normalizeIPForMask(ip, mask)
+
+			masked := ip.Mask(mask)
 			if masked == nil {
 				continue
 			}
-			canonical := (&net.IPNet{IP: masked, Mask: ipNet.Mask}).String()
+			canonical := (&net.IPNet{IP: masked, Mask: mask}).String()
 			if _, ok := seen[canonical]; ok {
 				continue
 			}
@@ -192,6 +199,20 @@ func discoverLocalInterfaceCIDRs() ([]string, error) {
 		return nil, errors.Join(ifaceErrs...)
 	}
 	return out, nil
+}
+
+func normalizeIPForMask(ip net.IP, mask net.IPMask) net.IP {
+	switch len(mask) {
+	case net.IPv4len:
+		if ip4 := ip.To4(); ip4 != nil {
+			return ip4
+		}
+	case net.IPv6len:
+		if ip16 := ip.To16(); ip16 != nil {
+			return ip16
+		}
+	}
+	return ip
 }
 
 func toIPNet(addr net.Addr) *net.IPNet {
@@ -253,6 +274,9 @@ func newCIDRAllowlistMiddleware(allowedCIDRs []string) channels.HTTPMiddleware {
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
 			}
+			// Loopback is always allowed for local administration.
+			// When deployed behind a local reverse proxy/tunnel, forwarded
+			// external traffic may still appear as loopback at this layer.
 			if ip.IsLoopback() {
 				next.ServeHTTP(w, r)
 				return
