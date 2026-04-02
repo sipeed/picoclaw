@@ -19,13 +19,29 @@ func NewIPAllowlist(allowedCIDRs []string) (*IPAllowlist, error) {
 		return &IPAllowlist{}, nil
 	}
 
+	seen := make(map[string]struct{}, len(allowedCIDRs))
 	nets := make([]*net.IPNet, 0, len(allowedCIDRs))
-	for _, cidr := range allowedCIDRs {
+	for _, rawCIDR := range allowedCIDRs {
+		cidr := strings.TrimSpace(rawCIDR)
+		if cidr == "" {
+			continue
+		}
+
 		_, ipNet, err := net.ParseCIDR(cidr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid CIDR %q: %w", cidr, err)
 		}
+
+		canonical := ipNet.String()
+		if _, ok := seen[canonical]; ok {
+			continue
+		}
+		seen[canonical] = struct{}{}
 		nets = append(nets, ipNet)
+	}
+
+	if len(nets) == 0 {
+		return &IPAllowlist{}, nil
 	}
 
 	return &IPAllowlist{nets: nets}, nil

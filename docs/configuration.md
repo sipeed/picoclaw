@@ -62,7 +62,7 @@ When `gateway.host` is a loopback address (`127.0.0.1`, `::1`, or `localhost`) a
 CIDR sources in fallback mode:
 
 - If `gateway.allowed_cidrs` is configured, that list is used.
-- If `gateway.allowed_cidrs` is empty, discovered private CIDRs are used (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `fc00::/7`).
+- If `gateway.allowed_cidrs` is empty, PicoClaw discovers CIDR networks from local interfaces and uses only those that fall within private address ranges (for example, within `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `fc00::/7`).
 - If no private non-loopback CIDR can be discovered, gateway startup fails. On public-only hosts, configure `gateway.allowed_cidrs` explicitly.
 
 Loopback clients are always allowed for local administration.

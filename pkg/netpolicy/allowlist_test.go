@@ -69,3 +69,42 @@ func TestIPAllowlistWithZoneAddressInCIDR(t *testing.T) {
 		t.Fatal("allowlist should accept IPv6 link-local with zone")
 	}
 }
+
+func TestNewIPAllowlistTrimsSkipsAndDedups(t *testing.T) {
+	allowlist, err := NewIPAllowlist([]string{
+		" 192.168.1.8/24 ",
+		"",
+		"192.168.1.0/24",
+		"   ",
+		"10.0.0.0/8",
+	})
+	if err != nil {
+		t.Fatalf("NewIPAllowlist() error = %v", err)
+	}
+	if allowlist.IsOpen() {
+		t.Fatal("allowlist should not be open")
+	}
+	if len(allowlist.nets) != 2 {
+		t.Fatalf("len(allowlist.nets) = %d, want 2", len(allowlist.nets))
+	}
+
+	if !allowlist.AllowsRemoteAddr("192.168.1.22:1234") {
+		t.Fatal("allowlist should allow deduplicated 192.168.1.0/24 CIDR")
+	}
+	if !allowlist.AllowsRemoteAddr("10.9.8.7:1234") {
+		t.Fatal("allowlist should allow 10.0.0.0/8 CIDR")
+	}
+	if allowlist.AllowsRemoteAddr("203.0.113.7:1234") {
+		t.Fatal("allowlist should reject outside CIDR")
+	}
+}
+
+func TestNewIPAllowlistAllEmptyEntries(t *testing.T) {
+	allowlist, err := NewIPAllowlist([]string{"", "   ", "\t"})
+	if err != nil {
+		t.Fatalf("NewIPAllowlist() error = %v", err)
+	}
+	if !allowlist.IsOpen() {
+		t.Fatal("allowlist should be open when all entries are empty")
+	}
+}
