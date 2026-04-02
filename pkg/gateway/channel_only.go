@@ -180,7 +180,11 @@ func setupAndStartChannelServices(
 	}
 
 	if runningServices.ListenHost != "" {
-		fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", runningServices.ListenHost, runningServices.ListenPort)
+		fmt.Printf(
+			"✓ Health endpoints available at http://%s:%d/health and /ready\n",
+			runningServices.ListenHost,
+			runningServices.ListenPort,
+		)
 	} else {
 		fmt.Println("⚠ Shared HTTP server disabled; /health and webhook endpoints are unavailable")
 	}
