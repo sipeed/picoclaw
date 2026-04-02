@@ -474,6 +474,32 @@ func TestParseResponseBody_IncompleteStatus(t *testing.T) {
 	}
 }
 
+func TestParseResponseBody_IncompleteStatusUsesTruncatedForMaxOutputTokens(t *testing.T) {
+	body := strings.NewReader(`{
+		"id": "resp_inc_truncated",
+		"object": "response",
+		"status": "incomplete",
+		"output": [
+			{
+				"type": "message",
+				"content": [{"type": "output_text", "text": "partial"}]
+			}
+		],
+		"incomplete_details": {"reason": "max_output_tokens"},
+		"usage": {"input_tokens": 5, "output_tokens": 2, "total_tokens": 7,
+			"input_tokens_details": {"cached_tokens": 0},
+			"output_tokens_details": {"reasoning_tokens": 0}}
+	}`)
+
+	result, err := ParseResponseBody(body)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if result.FinishReason != "truncated" {
+		t.Fatalf("FinishReason = %q, want %q", result.FinishReason, "truncated")
+	}
+}
+
 func TestParseResponseBody_FailedStatus(t *testing.T) {
 	body := strings.NewReader(`{
 		"id": "resp_fail",

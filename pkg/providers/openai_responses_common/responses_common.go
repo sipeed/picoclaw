@@ -359,7 +359,7 @@ func parseResponseEnvelope(apiResp *responseEnvelope) (*protocoltypes.LLMRespons
 	if len(toolCalls) > 0 {
 		finishReason = "tool_calls"
 	} else if status == "incomplete" {
-		finishReason = "length"
+		finishReason = "truncated"
 		if apiResp.IncompleteDetails != nil &&
 			apiResp.IncompleteDetails.Reason != "" &&
 			apiResp.IncompleteDetails.Reason != "max_output_tokens" {
@@ -438,7 +438,7 @@ func parseResponse(apiResp *responses.Response) *protocoltypes.LLMResponse {
 	}
 	switch apiResp.Status {
 	case responses.ResponseStatusIncomplete:
-		finishReason = "length"
+		finishReason = "truncated"
 	case responses.ResponseStatusFailed:
 		finishReason = "error"
 	case responses.ResponseStatusCancelled:
