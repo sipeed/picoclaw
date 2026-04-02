@@ -219,6 +219,12 @@ func (h *Handler) TryAutoStartGateway() {
 
 // gatewayStartReady validates whether current config can start the gateway.
 func (h *Handler) gatewayStartReady() (bool, string, error) {
+	return h.gatewayStartReadyWithRuntimeProbe(true)
+}
+
+// gatewayStartReadyWithRuntimeProbe validates whether current config can start
+// the gateway, with optional local runtime reachability probing.
+func (h *Handler) gatewayStartReadyWithRuntimeProbe(allowRuntimeProbe bool) (bool, string, error) {
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to load config: %w", err)
@@ -237,7 +243,7 @@ func (h *Handler) gatewayStartReady() (bool, string, error) {
 	if !hasModelConfiguration(modelCfg) {
 		return false, fmt.Sprintf("default model %q has no credentials configured", modelName), nil
 	}
-	if requiresRuntimeProbe(modelCfg) && !probeLocalModelAvailability(modelCfg) {
+	if allowRuntimeProbe && requiresRuntimeProbe(modelCfg) && !probeLocalModelAvailability(modelCfg) {
 		return false, fmt.Sprintf("default model %q is not reachable", modelName), nil
 	}
 
@@ -937,13 +943,17 @@ func (h *Handler) gatewayStatusData() map[string]any {
 	gateway.mu.Lock()
 	bootConfigSignature := gateway.bootConfigSignature
 	gateway.mu.Unlock()
-	data["gateway_restart_required"] = gatewayRestartRequiredBySignature(
+	restartRequired := gatewayRestartRequiredBySignature(
 		bootConfigSignature,
 		currentConfigSignature,
 		gatewayStatus,
 	)
+	data["gateway_restart_required"] = restartRequired
 
-	ready, reason, readyErr := h.gatewayStartReady()
+	// Avoid repeated local model probes in steady-state running status polling.
+	// Keep probe-based readiness when restart is required for the current config.
+	allowRuntimeProbe := gatewayStatus != "running" || restartRequired
+	ready, reason, readyErr := h.gatewayStartReadyWithRuntimeProbe(allowRuntimeProbe)
 	if readyErr != nil {
 		data["gateway_start_allowed"] = false
 		data["gateway_start_reason"] = readyErr.Error()
