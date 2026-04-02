@@ -626,7 +626,11 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	}
 
 	if message.Text != "" {
-		content += message.Text
+		botUsername := ""
+		if c.bot != nil {
+			botUsername = c.bot.Username()
+		}
+		content += rewriteModelShortcut(message.Text, botUsername)
 	}
 
 	if message.Caption != "" {
