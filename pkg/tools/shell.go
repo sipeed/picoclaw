@@ -113,6 +113,7 @@ var (
 	}
 
 	scriptPreflightEnvVarPattern = regexp.MustCompile(`\$[A-Z_][A-Z0-9_]{1,}`)
+	scriptPreflightNodePattern   = regexp.MustCompile(`(?m)^[ \t]*(?:NODE\s+["'][^"']+["']|(?:bash|sh)\s+-c\b|export\s+[A-Za-z_][A-Za-z0-9_]*=)`)
 	envAssignmentPattern         = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 	interpreterPipePattern       = regexp.MustCompile(
 		`(?i)(?:^|[|;&]\s*)(?:env\s+)?(?:python(?:\d+(?:\.\d+)?)?|node(?:js)?)\b`,
@@ -1156,13 +1157,19 @@ func (t *ExecTool) validateScriptFileForShellBleed(command, cwd string) string {
 			continue
 		}
 
-		if !shouldScanScriptForShellBleed(absPath) {
+		kind := scriptPreflightKind(absPath)
+		if kind == "" {
 			continue
 		}
 
-		if first := scriptPreflightEnvVarPattern.Find(content); len(first) > 0 {
+		if first := firstScriptPreflightMatch(kind, content); first != "" {
+			reason := "exec preflight: detected likely shell variable injection"
+			if kind == "node" {
+				reason = "exec preflight: detected likely shell syntax"
+			}
 			return fmt.Sprintf(
-				"Command blocked by safety guard (exec preflight: detected likely shell variable injection (%s))",
+				"Command blocked by safety guard (%s (%s))",
+				reason,
 				first,
 			)
 		}
@@ -1191,7 +1198,7 @@ func extractScriptTargetFromCommand(command string) []string {
 		}
 		return []string{target}
 	case isNodeInterpreter(interpreter):
-		target := findFirstPositionalScriptArg(argv[1:], []string{".js"})
+		target := findFirstPositionalScriptArg(argv[1:], []string{".js", ".mjs", ".cjs"})
 		if target == "" {
 			return nil
 		}
@@ -1287,6 +1294,24 @@ func stripEnvPrefix(argv []string) []string {
 			idx++
 			continue
 		}
+		if lower == "-i" || lower == "--ignore-environment" {
+			idx++
+			continue
+		}
+		if lower == "-u" || strings.HasPrefix(lower, "-u") {
+			idx++
+			if lower == "-u" && idx < len(argv) {
+				idx++
+			}
+			continue
+		}
+		if lower == "--unset" || strings.HasPrefix(lower, "--unset=") {
+			idx++
+			if lower == "--unset" && idx < len(argv) {
+				idx++
+			}
+			continue
+		}
 		if envAssignmentPattern.MatchString(token) && !strings.HasPrefix(token, "-") {
 			idx++
 			continue
@@ -1360,9 +1385,29 @@ func hasScriptSuffix(token string, suffixes []string) bool {
 	return false
 }
 
-func shouldScanScriptForShellBleed(path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	return ext == ".py" || ext == ".pyw"
+func scriptPreflightKind(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".py", ".pyw":
+		return "python"
+	case ".js", ".mjs", ".cjs":
+		return "node"
+	default:
+		return ""
+	}
+}
+
+func firstScriptPreflightMatch(kind string, content []byte) string {
+	switch kind {
+	case "python":
+		if first := scriptPreflightEnvVarPattern.Find(content); len(first) > 0 {
+			return string(first)
+		}
+	case "node":
+		if first := scriptPreflightNodePattern.Find(content); len(first) > 0 {
+			return string(first)
+		}
+	}
+	return ""
 }
 
 func shouldFailClosedInterpreterPreflight(command string) bool {

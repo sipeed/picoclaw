@@ -700,6 +700,27 @@ func TestShellTool_ScriptPreflight(t *testing.T) {
 			want:     "exec preflight: detected likely shell variable injection ($DM_JSON)",
 		},
 		{
+			name:     "quoted node js script path validates shell bleed",
+			command:  `node "bad.js"`,
+			fileName: "bad.js",
+			content:  `NODE "$TMPDIR/hot.json"`,
+			want:     "exec preflight: detected likely shell syntax (NODE \"$TMPDIR/hot.json\")",
+		},
+		{
+			name:     "quoted node mjs script path validates shell bleed",
+			command:  `node "bad.mjs"`,
+			fileName: "bad.mjs",
+			content:  `NODE "$TMPDIR/hot.json"`,
+			want:     "exec preflight: detected likely shell syntax (NODE \"$TMPDIR/hot.json\")",
+		},
+		{
+			name:     "quoted node cjs script path validates shell bleed",
+			command:  `node "bad.cjs"`,
+			fileName: "bad.cjs",
+			content:  `NODE "$TMPDIR/hot.json"`,
+			want:     "exec preflight: detected likely shell syntax (NODE \"$TMPDIR/hot.json\")",
+		},
+		{
 			name:     "piped interpreter fails closed",
 			command:  "cat bad.py | python",
 			fileName: "bad.py",
@@ -758,6 +779,24 @@ func TestShellTool_ScriptPreflight_AllowsDirectChainedInterpreter(t *testing.T) 
 	result := tool.Execute(context.Background(), map[string]any{
 		"action":  "run",
 		"command": "python good.py && echo ok",
+	})
+	require.NotContains(t, result.ForLLM, "exec preflight:")
+}
+
+func TestShellTool_ScriptPreflight_AllowsDirectChainedNodeInterpreter(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "good.js"), []byte("console.log('ok')"), 0o644); err != nil {
+		t.Fatalf("failed to write test script: %v", err)
+	}
+
+	tool, err := NewExecTool(tmpDir, false)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"action":  "run",
+		"command": "node good.js && echo ok",
 	})
 	require.NotContains(t, result.ForLLM, "exec preflight:")
 }
