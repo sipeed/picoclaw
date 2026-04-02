@@ -17,9 +17,9 @@ type HTTPProvider struct {
 	delegate *openai_compat.Provider
 }
 
-func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
+func NewHTTPProvider(apiKey, apiBase, proxy, userAgent string) *HTTPProvider {
 	return &HTTPProvider{
-		delegate: openai_compat.NewProvider(apiKey, apiBase, proxy),
+		delegate: openai_compat.NewProvider(apiKey, apiBase, proxy, openai_compat.WithUserAgent(userAgent)),
 	}
 }
 
@@ -45,7 +45,7 @@ func NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 	}
 }
 
-func NewAzureAIProvider(apiKey, apiBase, proxy string, requestTimeoutSeconds int) *HTTPProvider {
+func NewAzureAIProvider(apiKey, apiBase, proxy, userAgent string, requestTimeoutSeconds int) *HTTPProvider {
 	return &HTTPProvider{
 		delegate: openai_compat.NewProvider(
 			apiKey,
@@ -53,6 +53,7 @@ func NewAzureAIProvider(apiKey, apiBase, proxy string, requestTimeoutSeconds int
 			proxy,
 			openai_compat.WithAzureHeaders(true),
 			openai_compat.WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
+			openai_compat.WithUserAgent(userAgent),
 		),
 	}
 }

@@ -269,6 +269,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.APIKey(),
 			cfg.APIBase,
 			cfg.Proxy,
+			userAgent,
 			cfg.RequestTimeout,
 		), modelID, nil
 
