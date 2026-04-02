@@ -7,7 +7,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -266,6 +268,67 @@ func TestBuildWeixinSyncBufPathUsesPicoclawHome(t *testing.T) {
 	got := buildWeixinSyncBufPath(wxCfg)
 	if filepath.Dir(got) != filepath.Join(home, "channels", "weixin", "sync") {
 		t.Fatalf("sync path dir = %q", filepath.Dir(got))
+	}
+}
+
+func TestBuildWeixinSyncBufPathFallsBackWhenHomeIsUnusable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("HOME handling differs on windows")
+	}
+
+	t.Setenv(config.EnvHome, "")
+	unusableHome := filepath.Join(t.TempDir(), "home-file")
+	if err := os.WriteFile(unusableHome, []byte("not-a-dir"), 0o600); err != nil {
+		t.Fatalf("WriteFile(unusableHome) error = %v", err)
+	}
+	t.Setenv("HOME", unusableHome)
+
+	wxCfg := config.WeixinConfig{
+		BaseURL: "https://ilinkai.weixin.qq.com/",
+	}
+	wxCfg.SetToken("token-123")
+	got := buildWeixinSyncBufPath(wxCfg)
+	wantDir := filepath.Join(os.TempDir(), "picoclaw", "channels", "weixin", "sync")
+	if filepath.Dir(got) != wantDir {
+		t.Fatalf("sync path dir = %q, want %q", filepath.Dir(got), wantDir)
+	}
+}
+
+func TestBuildWeixinSyncBufPathFallsBackWhenSyncDirUnwritable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission mode behavior differs on windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root can usually bypass directory write permissions")
+	}
+
+	t.Setenv(config.EnvHome, "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	syncDir := filepath.Join(home, ".picoclaw", "channels", "weixin", "sync")
+	if err := os.MkdirAll(syncDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll(syncDir) error = %v", err)
+	}
+	if err := os.Chmod(syncDir, 0o500); err != nil {
+		t.Fatalf("Chmod(syncDir, 0500) error = %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(syncDir, 0o700) })
+
+	if probeFile, err := os.CreateTemp(syncDir, ".probe-*"); err == nil {
+		_ = probeFile.Close()
+		_ = os.Remove(probeFile.Name())
+		t.Skip("environment does not enforce non-writable directory permissions")
+	}
+
+	wxCfg := config.WeixinConfig{
+		BaseURL: "https://ilinkai.weixin.qq.com/",
+	}
+	wxCfg.SetToken("token-123")
+	got := buildWeixinSyncBufPath(wxCfg)
+	wantDir := filepath.Join(os.TempDir(), "picoclaw", "channels", "weixin", "sync")
+	if filepath.Dir(got) != wantDir {
+		t.Fatalf("sync path dir = %q, want %q", filepath.Dir(got), wantDir)
 	}
 }
 
