@@ -3,13 +3,11 @@ package qq
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"os"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -207,7 +205,6 @@ func TestSendMedia_UploadsLocalFileAsBase64(t *testing.T) {
 	ch.SetMediaStore(store)
 	ch.chatType.Store("group-1", "group")
 	ch.lastMsgID.Store("group-1", "msg-1")
-	ch.msgSeqCounters.Store("group-1", new(atomic.Uint64))
 
 	_, err = ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
 		ChatID: "group-1",
@@ -234,9 +231,8 @@ func TestSendMedia_UploadsLocalFileAsBase64(t *testing.T) {
 	if upload.body.URL != "" {
 		t.Fatalf("upload URL = %q, want empty", upload.body.URL)
 	}
-	wantBase64 := base64.StdEncoding.EncodeToString(content)
-	if upload.body.FileData != wantBase64 {
-		t.Fatalf("upload file_data = %q, want %q", upload.body.FileData, wantBase64)
+	if !bytes.Equal(upload.body.FileData, content) {
+		t.Fatalf("upload file_data = %q, want %q", upload.body.FileData, content)
 	}
 	if upload.body.FileType != 1 {
 		t.Fatalf("upload file_type = %d, want 1", upload.body.FileType)
@@ -415,7 +411,7 @@ func TestSendMedia_UsesRemoteURLUploadForC2C(t *testing.T) {
 		ctx:         context.Background(),
 	}
 	ch.SetRunning(true)
-	ch.chatType.Store("user-1", "direct")
+	ch.chatType.Store("user-1", kindDirect)
 
 	_, err := ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
 		ChatID: "user-1",
@@ -438,7 +434,7 @@ func TestSendMedia_UsesRemoteURLUploadForC2C(t *testing.T) {
 	if upload.body.URL != "https://cdn.example.com/report.pdf" {
 		t.Fatalf("upload URL = %q", upload.body.URL)
 	}
-	if upload.body.FileData != "" {
+	if len(upload.body.FileData) > 0 {
 		t.Fatalf("upload file_data = %q, want empty", upload.body.FileData)
 	}
 	if upload.body.FileType != 4 {
@@ -511,7 +507,7 @@ func TestSendMedia_LocalFileUploadIncludesStoredFilename(t *testing.T) {
 	if upload.body.FileName != "report.pdf" {
 		t.Fatalf("upload file_name = %q, want report.pdf", upload.body.FileName)
 	}
-	if upload.body.FileData == "" {
+	if len(upload.body.FileData) == 0 {
 		t.Fatal("upload file_data = empty, want base64 payload")
 	}
 }
@@ -606,7 +602,7 @@ type fakeQQAPI struct {
 type fakeTransportCall struct {
 	method string
 	url    string
-	body   qqMediaUpload
+	body   RichMediaMessage
 }
 
 func (f *fakeQQAPI) WS(
@@ -638,7 +634,7 @@ func (f *fakeQQAPI) PostC2CMessage(
 }
 
 func (f *fakeQQAPI) Transport(_ context.Context, method, url string, body any) ([]byte, error) {
-	upload, ok := body.(*qqMediaUpload)
+	upload, ok := body.(*RichMediaMessage)
 	if !ok {
 		return nil, errors.New("unexpected transport body type")
 	}

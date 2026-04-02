@@ -643,7 +643,7 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 		}
 
 		if !c.IsAllowedSender(sender) {
-			logger.Infof("qq", "Received group message from unauthorized sender", map[string]any{
+			logger.InfoCF("qq", "Received group message from unauthorized sender", map[string]any{
 				"sender": sender,
 			})
 			return nil
@@ -1027,6 +1027,9 @@ func sanitizeURLs(text string) string {
 }
 
 func getVoiceInfo(event *dto.WSPayload) (string, string) {
+	if event == nil {
+		return "", ""
+	}
 	_raw, err := json.Marshal(event.Data)
 	if err != nil {
 		logger.ErrorCF("qq", "Failed to marshal event data", map[string]any{
