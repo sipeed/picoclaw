@@ -1,0 +1,183 @@
+docker compose --env-file .env --profile gateway run --rm picoclaw-agent -m "$(cat <<'EOF'
+Before generating anything, read and follow:
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+- /skills/app-selectors-knowledge-base/SKILL.md
+
+TECH STACK: This app is built with Vue.js and Vuetify. All form validation and modal behaviors follow Vue/Vuetify patterns — apply the rules in /skills/app-selectors/SKILL.md under "Playwright Patterns for This App".
+
+## PHASE 1 — Source Code Discovery (MANDATORY)
+
+The base path is: /home/picoclaw/.picoclaw/workspace/context/dashboard/src
+If that path is not readable, STOP and report that the mount is missing. Do not proceed.
+
+You MUST read EVERY file listed below. Do not skip any. Do not stop early.
+
+### Directory: src/components/knowledge-base/
+List all files in this directory and all subdirectories, then read each one.
+
+### Specific files to read:
+- src/pages/KnowledgeBasePage.vue (or the equivalent page component for the Knowledge Base route)
+- src/stores/scheduleConfirm.store.ts (or any store file related to schedule/knowledge base)
+
+### After listing, read ALL files found — no exceptions.
+Do NOT decide some files are "not relevant" and skip them.
+
+After reading ALL files, continue to Phase 2.
+
+## PHASE 2 — Create Reference Document (MANDATORY before writing test)
+
+If /tests/knowledge-base/KB_SCHEDULE_REFERENCE.md already exists, read it and skip to Phase 3.
+Otherwise create it at: /tests/knowledge-base/KB_SCHEDULE_REFERENCE.md
+
+The FIRST section of this file MUST be:
+
+### 0. Files Read
+List every file path you read in Phase 1. If the list contains fewer than 4 files, go back and complete Phase 1.
+
+Do NOT proceed to the remaining sections until this list is written.
+
+The remaining sections must contain the following, derived from what you read:
+
+### 1. Knowledge Base List
+- How to navigate to the Knowledge Base page
+- How to locate a KB bucket card by name (e.g. "Picotest2")
+- Selector for the Schedule button on a KB card
+
+### 2. Manage Schedule Modal
+- Selector for the modal/overlay that appears after clicking Schedule
+- How to verify the modal is open
+- Selector for Sync Type display
+- Selector for Cron Expression display
+- Selector for the "Create Schedule" button
+
+### 3. Create/Edit Schedule Form
+- How the Sync Type selector works — look at the source template and find what HTML element is rendered
+  for the radio/select options. Vue component names like <v-radio> render as input[type="radio"] in the DOM.
+  Document: the correct Playwright selector to click "Incremental Sync"
+  (hint: use getByRole('radio', { name: /Incremental Sync/ }) or input[type="radio"][aria-label="Incremental Sync"])
+- How the Cron Expression mode toggle works (SIMPLE vs ADVANCED — selector + how to switch)
+  Vue toggles like <v-btn-toggle> or <v-tabs> render as buttons or tab elements — document the exact selector
+- Selector for the Cron Expression input field in ADVANCED mode
+- How the cron expression auto-generates when switching to ADVANCED
+- Whether a UTC timezone warning is shown in ADVANCED mode (and its selector/text if so)
+- Selector for the Save button
+
+### 4. Success Notification
+- Selector and text for the success notification after saving a schedule
+- How long to wait for it
+
+Do NOT proceed to Phase 3 until this file is written.
+
+## PHASE 3 — Generate Playwright Test
+
+IMPORTANT RULES:
+
+1. ONLY use selectors from the SKILL.md files and the reference document you just created.
+2. NEVER guess or invent Vuetify selectors like .v-dialog, .v-dialog--active, .v-overlay, .v-card, etc.
+3. For login, COPY THE CODE VERBATIM from the "Login Flow (copy-paste ready)" block in /skills/app-selectors/SKILL.md.
+   Do NOT rewrite it. Do NOT use input[type="email"], input[type="password"], or any selector not in that block.
+   The correct URL is https://dashboard.int3nt.info/login (with /login — NOT the root URL).
+   The correct selectors are .v-text-field (NOT input[type="email"]) and .organization-card.
+   The login button MUST be: page.getByRole('button', { name: /login/i })
+   The button text is "Login" (ONE word). NEVER use filter({ hasText: /Log In/ }) or /^Log In$/ — those will NEVER match.
+   After login, the app MAY redirect to /?select_org OR directly to the dashboard (if org is remembered).
+   NEVER use waitForURL(/\?select_org/) directly — it times out when the server skips org selection.
+   CORRECT post-login pattern (waitForURL callback gets a URL object — use .pathname or .href, NOT .includes()):
+     await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
+     if (page.url().includes('select_org')) {  // page.url() returns a string — .includes() is fine here
+       await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
+       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
+     }
+4. Selector priority — ALWAYS follow this order:
+   STEP 1: Custom CSS class from SKILL.md (e.g. .schedule-button, .sync-button, .create-button).
+   STEP 2: Only if no custom class, use a Vuetify class verified in SKILL.md DOM output.
+   STEP 3: NEVER guess or invent a selector. Use getByRole() or getByText() with exact visible text as a last resort.
+5. TypeScript-safe Playwright only. NEVER invent or guess Playwright API methods.
+   FORBIDDEN: triple_click(), triple_click?.(), doubleClick(), selectText(), clearText(), typeText(), pressKey(),
+              filter({ hasAttribute: ... })
+   CORRECT alternatives:
+   - Fill a field: await input.click(); await input.fill('text');
+   - Press Enter: await input.press('Enter');
+6. Logging rule — MANDATORY FORMAT:
+   BEFORE each step: console.log('📍 Step N: Description');
+   AFTER step assertion succeeds: console.log('✅ PASS: Step N - Description');
+   NEVER print "✅ PASS" before the assertion/action that verifies the step.
+   At the end of the test, include a full summary block:
+     console.log('\n' + '='.repeat(70));
+     console.log('📊 TEST SUMMARY');
+     console.log('='.repeat(70));
+     console.log('✅ Step 1: PASS - Description'); // one line per step
+     console.log('='.repeat(70));
+7. Modal loading states: after a modal/overlay opens, ALWAYS wait for any loading indicator to disappear
+   before asserting content or interacting with form fields. Use:
+     await page.locator('.v-overlay--active').locator('text=/loading/i').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+8. For modal form fields (Sync Type, Cron mode toggle, etc.): NEVER guess component types.
+   Always derive selectors from the reference document you created in Phase 2.
+   If a toggle or selector is not documented, use getByRole() or getByText() with exact visible text.
+   VUETIFY RADIO BUTTONS — v-radio renders as input[type="radio"] in the DOM, NOT as a CSS class ".v-radio".
+   NEVER use locator('v-radio') — that is a Vue component tag, not a valid CSS selector and will never match.
+   CORRECT ways to click a Vuetify radio option:
+     page.getByRole('radio', { name: /Incremental Sync/ })                    ← preferred
+     page.locator('input[type="radio"][aria-label="Incremental Sync"]')        ← also valid
+     page.locator('label.v-label--clickable').filter({ hasText: /Incremental Sync/ })  ← click label instead
+   The same rule applies to ALL Vuetify component tags: v-select, v-checkbox, v-switch, v-tab, etc.
+   These are Vue component names — they never appear as CSS selectors in the rendered DOM.
+9. STRICT MODE RULE — ALWAYS use .first() or .last() on any locator that can match multiple elements.
+   FORBIDDEN without .first()/.last():
+     page.locator('.v-list-item')        ← strict mode violation if multiple items exist
+     page.locator('.v-overlay--active .v-list-item')  ← always filter or index
+   CORRECT: .filter({ hasText: /exact text/ }) or .nth(0) or .first() / .last()
+10. Test timeout: set at least 60 seconds.
+    test.setTimeout(60000);
+    Place this as the FIRST line inside the test() callback.
+
+Create a Playwright test file at /tests/knowledge-base/schedule-kb-incremental-sync-advanced.spec.ts.
+
+## PHASE 4 — Run and Fix
+
+After creating the test:
+
+1. Run:
+   npx playwright test tests/knowledge-base/schedule-kb-incremental-sync-advanced.spec.ts --reporter=line
+2. If it fails:
+   - Analyze the error carefully
+   - Identify root cause (selector issue, timing issue, missing wait, wrong modal selector, etc.)
+   - Update the test to fix it
+3. Re-run after each fix
+4. Repeat until the test passes or a clear blocking issue is identified.
+5. At the end, report:
+   - Final terminal output
+   - Summary of fixes applied
+   - Final result (PASS / FAIL)
+
+---
+
+Test credentials: email=heidi@intnt.ai password=testing2026! org=Testing2026!
+
+Steps:
+1. Perform case "Login"
+2. On Select Organization page, select organization "Testing2026!"
+3. User redirected to https://dashboard.int3nt.info/
+4. Click "Knowledge Base" from sidebar
+5. Locate knowledge base bucket "Picotest2"
+6. Click "Schedule" on the "Picotest2" card (.schedule-button)
+7. Click "Create Schedule"
+8. Under Sync Type, select "Incremental Sync"
+9. Switch Cron Expression mode to ADVANCED
+10. Verify warning message appears: "All cron expressions must be in UTC/GMT+0 timezone."
+11. Verify Cron Expression is automatically generated (field is not empty)
+12. Click Save
+
+Expected result:
+1. Advanced Cron configuration is displayed
+2. User able to manually enter Cron Expression
+3. System accepts valid cron format
+4. Schedule saved successfully
+5. Notification appears: "Schedule created successfully"
+6. Manage Schedule modal displays the saved schedule with:
+   - Sync Type: Incremental Sync
+   - Cron Expression: 0 9 * * 1-5
+EOF
+)"

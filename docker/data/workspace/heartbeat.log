@@ -77,3 +77,178 @@
 [2026-03-24 01:05:45] [ERROR] Heartbeat error: Heartbeat error: LLM call failed after retries: failed to send request: Post "http://litellm:4000/chat/completions": dial tcp 172.19.0.2:4000: connect: connection refused
 [2026-03-24 01:10:34] [INFO] Resolved channel: , chatID:  (from lastChannel: )
 [2026-03-24 01:10:34] [ERROR] Heartbeat error: Heartbeat error: LLM call failed after retries: failed to send request: Post "http://litellm:4000/chat/completions": dial tcp 172.19.0.2:4000: connect: connection refused
+[2026-03-25 06:27:40] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-25 06:27:40] [ERROR] Heartbeat error: Heartbeat error: LLM call failed after retries: failed to send request: Post "http://litellm:4000/chat/completions": dial tcp 172.19.0.2:4000: connect: connection refused
+[2026-03-25 06:57:39] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-25 06:57:41] [INFO] Heartbeat OK - silent
+[2026-03-25 07:35:10] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-25 07:35:11] [INFO] Heartbeat OK - silent
+[2026-03-25 08:05:10] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-25 08:05:12] [INFO] Heartbeat OK - silent
+[2026-03-25 08:36:42] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-25 08:36:46] [INFO] Heartbeat OK - silent
+[2026-03-25 09:22:38] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-25 09:22:41] [INFO] Heartbeat OK - silent
+[2026-03-25 10:01:08] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-25 10:01:09] [INFO] Heartbeat OK - silent
+[2026-03-25 11:10:28] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-25 11:10:31] [INFO] Heartbeat OK - silent
+[2026-03-25 11:43:47] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-25 11:43:49] [INFO] Heartbeat OK - silent
+[2026-03-25 12:26:59] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-25 12:27:01] [INFO] Heartbeat OK - silent
+[2026-03-26 00:22:18] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 00:22:20] [ERROR] Heartbeat error: Heartbeat error: LLM call failed after retries: failed to send request: Post "http://litellm:4000/chat/completions": dial tcp 172.19.0.2:4000: connect: connection refused
+[2026-03-26 00:53:06] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 00:53:08] [INFO] Heartbeat OK - silent
+[2026-03-26 01:23:06] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 01:23:08] [INFO] Heartbeat OK - silent
+[2026-03-26 01:53:06] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 01:53:08] [INFO] Heartbeat OK - silent
+[2026-03-26 03:08:47] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 03:08:49] [INFO] Heartbeat OK - silent
+[2026-03-26 03:38:47] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 03:38:49] [INFO] Heartbeat OK - silent
+[2026-03-26 04:08:47] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 04:08:50] [INFO] Heartbeat OK - silent
+[2026-03-26 04:38:47] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 04:38:49] [INFO] Heartbeat OK - silent
+[2026-03-26 05:34:57] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 05:35:02] [INFO] Heartbeat OK - silent
+[2026-03-26 06:06:29] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 06:06:31] [INFO] Heartbeat OK - silent
+[2026-03-26 06:51:47] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 06:51:49] [INFO] Heartbeat OK - silent
+[2026-03-26 07:22:05] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 07:22:08] [INFO] Heartbeat OK - silent
+[2026-03-26 07:52:05] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 07:52:08] [INFO] Heartbeat OK - silent
+[2026-03-26 08:22:05] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 08:22:07] [INFO] Heartbeat OK - silent
+[2026-03-26 08:52:05] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 08:52:07] [INFO] Heartbeat OK - silent
+[2026-03-26 10:03:44] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 10:03:44] [ERROR] Heartbeat error: Heartbeat error: LLM call failed after retries: failed to send request: Post "http://litellm:4000/chat/completions": dial tcp 172.19.0.2:4000: connect: connection refused
+[2026-03-26 10:37:00] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 10:37:02] [INFO] Heartbeat OK - silent
+[2026-03-26 11:07:00] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 11:07:02] [INFO] Heartbeat OK - silent
+[2026-03-26 11:37:00] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 11:37:03] [INFO] Heartbeat OK - silent
+[2026-03-26 12:13:08] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 12:13:10] [INFO] Heartbeat OK - silent
+[2026-03-26 12:43:30] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 12:43:32] [INFO] Heartbeat OK - silent
+[2026-03-26 13:13:29] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 13:13:32] [INFO] Heartbeat OK - silent
+[2026-03-26 13:17:53] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 13:17:55] [ERROR] Heartbeat error: Heartbeat error: LLM call failed after retries: API request failed:
+  Status: 401
+  Body:   {"error":{"message":"litellm.AuthenticationError: BedrockException Invalid Authentication - Unable to locate credentials","type":null,"param":null,"code":"401"}}
+[2026-03-26 13:21:14] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 13:21:15] [INFO] Heartbeat OK - silent
+[2026-03-26 13:51:13] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-26 13:51:15] [INFO] Heartbeat OK - silent
+[2026-03-27 06:18:43] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-27 06:18:43] [ERROR] Heartbeat error: Heartbeat error: LLM call failed after retries: failed to send request: Post "http://litellm:4000/chat/completions": dial tcp 172.19.0.2:4000: connect: connection refused
+[2026-03-27 10:46:10] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-27 10:46:13] [INFO] Heartbeat OK - silent
+[2026-03-27 11:11:03] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-27 11:11:05] [INFO] Heartbeat OK - silent
+[2026-03-27 11:53:02] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-27 11:53:03] [INFO] Heartbeat OK - silent
+[2026-03-27 11:56:09] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-27 11:56:10] [INFO] Heartbeat OK - silent
+[2026-03-27 12:10:01] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-27 12:10:03] [INFO] Heartbeat OK - silent
+[2026-03-27 12:41:26] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-27 12:41:29] [INFO] Heartbeat OK - silent
+[2026-03-29 23:59:44] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-29 23:59:44] [ERROR] Heartbeat error: Heartbeat error: LLM call failed after retries: failed to send request: Post "http://litellm:4000/chat/completions": dial tcp 172.19.0.2:4000: connect: connection refused
+[2026-03-30 00:32:17] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 00:32:19] [INFO] Heartbeat OK - silent
+[2026-03-30 01:02:17] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 01:02:19] [INFO] Heartbeat OK - silent
+[2026-03-30 01:32:17] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 01:32:19] [INFO] Heartbeat OK - silent
+[2026-03-30 02:02:17] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 02:02:19] [INFO] Heartbeat OK - silent
+[2026-03-30 02:32:17] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 02:32:20] [INFO] Heartbeat OK - silent
+[2026-03-30 03:02:17] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 03:02:19] [INFO] Heartbeat OK - silent
+[2026-03-30 04:07:33] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 04:07:37] [INFO] Heartbeat OK - silent
+[2026-03-30 04:37:33] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 04:37:36] [INFO] Heartbeat OK - silent
+[2026-03-30 05:34:44] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 05:34:47] [INFO] Heartbeat OK - silent
+[2026-03-30 06:09:37] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 06:09:39] [INFO] Heartbeat OK - silent
+[2026-03-30 06:39:37] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 06:39:38] [INFO] Heartbeat OK - silent
+[2026-03-30 07:09:37] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 07:09:39] [INFO] Heartbeat OK - silent
+[2026-03-30 07:39:37] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 07:39:39] [INFO] Heartbeat OK - silent
+[2026-03-30 08:26:00] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 08:26:03] [INFO] Heartbeat OK - silent
+[2026-03-30 08:56:00] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 08:56:01] [INFO] Heartbeat OK - silent
+[2026-03-30 09:26:17] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 09:26:19] [INFO] Heartbeat OK - silent
+[2026-03-30 09:56:17] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 09:56:20] [INFO] Heartbeat OK - silent
+[2026-03-30 10:28:18] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 10:28:18] [ERROR] Heartbeat error: Heartbeat error: LLM call failed after retries: failed to send request: Post "http://litellm:4000/chat/completions": dial tcp 172.19.0.2:4000: connect: connection refused
+[2026-03-30 10:30:09] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 10:30:09] [ERROR] Heartbeat error: Heartbeat error: LLM call failed after retries: failed to send request: Post "http://litellm:4000/chat/completions": dial tcp 172.19.0.2:4000: connect: connection refused
+[2026-03-30 11:00:08] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 11:00:11] [INFO] Heartbeat OK - silent
+[2026-03-30 11:30:08] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 11:30:10] [INFO] Heartbeat OK - silent
+[2026-03-30 12:00:59] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 12:01:03] [INFO] Heartbeat OK - silent
+[2026-03-30 13:40:47] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-30 13:40:51] [INFO] Heartbeat OK - silent
+[2026-03-31 03:31:06] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-31 03:31:06] [ERROR] Heartbeat error: Heartbeat error: LLM call failed after retries: failed to send request: Post "http://litellm:4000/chat/completions": dial tcp 172.19.0.2:4000: connect: connection refused
+[2026-03-31 04:01:05] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-31 04:01:07] [INFO] Heartbeat OK - silent
+[2026-03-31 04:31:05] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-31 04:31:08] [INFO] Heartbeat OK - silent
+[2026-03-31 05:01:05] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-31 05:01:08] [INFO] Heartbeat OK - silent
+[2026-03-31 05:31:05] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-31 05:31:08] [INFO] Heartbeat OK - silent
+[2026-03-31 06:01:05] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-31 06:01:07] [INFO] Heartbeat OK - silent
+[2026-03-31 06:31:05] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-31 06:31:10] [INFO] Heartbeat OK - silent
+[2026-03-31 07:12:04] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-31 07:12:07] [INFO] Heartbeat OK - silent
+[2026-03-31 07:42:04] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-31 07:42:07] [INFO] Heartbeat OK - silent
+[2026-03-31 08:12:04] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-31 08:12:07] [INFO] Heartbeat OK - silent
+[2026-03-31 09:48:19] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-31 09:48:22] [INFO] Heartbeat OK - silent
+[2026-03-31 12:46:49] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-31 12:46:49] [ERROR] Heartbeat error: Heartbeat error: LLM call failed after retries: failed to send request: Post "http://litellm:4000/chat/completions": dial tcp 172.19.0.2:4000: connect: connection refused
+[2026-03-31 13:20:43] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-31 13:20:44] [ERROR] Heartbeat error: Heartbeat error: LLM call failed after retries: failed to send request: Post "http://litellm:4000/chat/completions": dial tcp 172.19.0.2:4000: connect: connection refused
+[2026-03-31 13:50:42] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-31 13:50:44] [INFO] Heartbeat OK - silent
+[2026-03-31 14:20:42] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-03-31 14:20:43] [INFO] Heartbeat OK - silent
+[2026-04-01 04:14:45] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-04-01 04:14:45] [ERROR] Heartbeat error: Heartbeat error: LLM call failed after retries: failed to send request: Post "http://litellm:4000/chat/completions": dial tcp 172.19.0.2:4000: connect: connection refused
+[2026-04-01 04:46:19] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-04-01 04:46:21] [INFO] Heartbeat OK - silent
+[2026-04-01 06:01:37] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-04-01 06:01:41] [INFO] Heartbeat OK - silent
+[2026-04-01 07:17:17] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-04-01 07:17:21] [INFO] Heartbeat OK - silent
+[2026-04-01 08:05:36] [INFO] Resolved channel: , chatID:  (from lastChannel: )
+[2026-04-01 08:05:37] [INFO] Heartbeat OK - silent
+[2026-04-01 09:16:33] [INFO] Resolved channel: , chatID:  (from lastChannel: )

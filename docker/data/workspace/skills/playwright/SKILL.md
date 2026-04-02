@@ -1,308 +1,193 @@
 ---
 name: playwright
-description: End-to-End (E2E) testing for the Intent Platform. Use when asked to test complex user flows across Dashboard, Flow Designer, and Knowledge Base. Focuses on Vuetify 3 selector strategies, GlobalFormField patterns, and monorepo integration.
+description: E2E testing for the Intent Platform (Vue 3, Vuetify 3). Selector strategies, modal patterns, and dropdown interaction for the Dashboard service.
 ---
 
 # Picoclaw E2E Testing Skill
 
-This skill provides specialized guidance for browser-based automation (Playwright) against the Intent Platform monorepo: Vue 3, Vuetify 3, FastAPI. It is based on the actual DOM structure and component patterns in the Dashboard service.
+## Selector Strategy
 
----
+Production code does **not** use `data-testid`. Labels from `GlobalFormField` are **not** linked via `for`/id, so `getByLabel()` often fails.
 
-## Selector Strategy (Vuetify 3 & GlobalFormField)
-
-Production code does **not** use `data-testid`. Labels from `GlobalFormField` are **not** linked via `for`/id, so `getByLabel()` often fails. Use these strategies in order of preference.
-
-### 1. Anchor-by-label (recommended for forms)
-
-Find the container that holds the label text, then the input inside it. This matches how `GlobalFormField` renders: a `<label>` and a sibling `v-text-field` inside a wrapper div.
+### Input fields
 
 ```typescript
-// Scope to a unique container first (e.g. login card, modal)
-const card = page.locator(".login-card");
+// By placeholder (preferred when available)
+const nameInput = drawer.locator('input[placeholder="Enter knowledge group name"]');
 
-// Email: div that contains the label "Email address", then the input inside
-const emailInput = card
-  .locator("div")
-  .filter({ hasText: /^Email address/ })
-  .locator("input")
-  .first();
+// By index inside container
+const firstInput = drawer.locator('input[type="text"]').nth(0);
 
-// Password: same pattern
-const passwordInput = card
-  .locator("div")
-  .filter({ hasText: /^Password/ })
-  .locator("input")
-  .first();
+// getByPlaceholder
+const hourInput = page.getByPlaceholder(/HH/i).first();
+
+// For login card — anchor-by-label works here because labels are inline
+const emailInput = page.locator('.login-card')
+  .locator('div').filter({ hasText: /^Email address/ })
+  .locator('input').first();
 ```
 
-- Use **scoped context** (e.g. `.login-card`, `.v-dialog--active`) so you don’t match multiple instances.
-- Match the **exact i18n string** for the locale under test (see Login flow for en).
+**Do NOT** use `.filter({ hasText: /placeholder text/ })` on a `div` — placeholder is an HTML attribute, not visible text, so `hasText` won't match it.
 
-### 2. ARIA roles and names
+**Do NOT** use `.filter({ hasAttribute: ... })` — not a valid Playwright API. Valid filter options: `hasText`, `hasNotText`, `has`, `hasNot`.
 
-Use when the element exposes a proper role/label:
+Always scope to a container (`.custom-drawer-overlay`, `.login-card`, `.v-overlay--active .v-card`, etc.).
+
+### Buttons and roles
 
 - Buttons: `page.getByRole('button', { name: /Login/i })`
 - Links: `page.getByRole('link', { name: /Sign up/i })`
 
-Inputs are often not properly associated with labels (no `for`/id in GlobalFormField), so prefer anchor-by-label for text fields.
+### Dropdowns (Vuetify v-select)
 
-### 3. Vuetify 3 structure (fallback)
+Vuetify dropdowns are **teleported** to the bottom of `<body>` as `.v-overlay`. Never use `[role="option"]`, `getByRole('option')`, or `.locator('..')` parent traversal.
 
-**Do not rely on `.v-text-field`** as the root selector. In Vuetify 3, `v-text-field` composes `v-input` and `v-field`; the root may have `.v-input`, and the native `<input>` lives under `.v-field__input`. The class `.v-text-field` is not guaranteed on the root.
+```typescript
+// Step 1: Click the v-select to open it
+await modal.locator('.v-select').nth(0).click();
+await page.waitForTimeout(500);
 
-If anchor-by-label is not possible:
+// Step 2: Click the option in the teleported overlay
+await page.locator('.v-overlay--active .v-list-item')
+  .filter({ hasText: /Monthly/ }).click();
+await page.waitForTimeout(300);
+```
 
-- Scope to a unique parent, then use:
-  - `.v-input input` or
-  - `.v-field__input` (then the inner `input` if needed)
-- Checkboxes/radios: `.v-checkbox-btn input`, `.v-radio-group input`
+- Use the exact dropdown index (`.nth(N)`) or label from the app-selectors-* SKILL.md.
+- Do NOT use `.filter({ hasText: /LabelText/ })` on `.v-select` when label text is in a sibling `<label>` (common in GlobalFormField).
+- After clicking a `.v-list-item`, the overlay closes automatically. Do NOT press Escape.
 
-### 4. Placeholder (when present)
+### Radio groups and button toggles
 
-If the field has a placeholder: `page.getByPlaceholder(/enter email/i)`.
+Use the selectors from the app-selectors-* SKILL.md. Do NOT guess component types like `.v-radio-group`, `.v-btn-toggle`, or `.v-tabs` if they are not documented there.
 
 ---
 
 ## Auth & Login Flow
 
-### Route and redirects
+- Login page: `/login`. Unauthenticated `/` redirects to `/login`.
+- After login, may redirect to `/?select_org` for org selection.
 
-- Login page: `/login`.
-- Unauthenticated access to `/` redirects to `/login` (router guard). Always **wait for the login page** before querying the form.
-- After successful login, the app may redirect to `/?select_org` for organization selection.
+Before interacting:
+1. `await page.waitForURL(/\/login/);`
+2. `await page.locator('.login-card').waitFor({ state: 'visible' });`
 
-### Wait before interacting with the login form
-
-1. Wait for URL: `await page.waitForURL(/\/login/);`
-2. Wait for the login card: `await page.locator('.login-card').waitFor({ state: 'visible' });`
-3. Optionally wait for the email input: `await emailInput.waitFor({ state: 'visible' });`
-
-### Login form selectors (English locale)
-
-- **Email**: Label text `"Email address"`. Use anchor-by-label scoped to `.login-card` (see above).
-- **Password**: Label text `"Password"`. Same pattern.
-- **Submit**: `page.getByRole('button', { name: /^Login$/i })`.
-- **Forgot password**: Button/link with text "Forgot Password".
-- **Sign up**: Button/link with text "Sign up".
-
-### Forgot Password page selectors
-
-The Forgot Password page (`/forgot-password`) also uses `GlobalFormField` with `inputType="text"` for the email field, so **there is no `type="email"` and often no placeholder**. Do **not** rely on:
-
-- `input[type="email"]`
-- `input[placeholder*="email" i]`
-
-Any spec that continues to use these generic selectors on the Forgot Password page will keep failing, because no matching element exists in the DOM there; you **must** switch to the label-anchored selector below.
-
-Instead:
-
-- Scope to `.forgot-password-card`.
-- Use anchor-by-label with the **forgot password email label** (English: `"Email address"` from `forgotPasswordPage.emailLabel`).
-- Use the button text `"Send Email"` (or variants) for the submit button.
-
-Example:
-
-```ts
-await page.goto("/forgot-password");
-await page.waitForURL(/\/forgot-password/);
-await page.locator(".forgot-password-card").waitFor({ state: "visible" });
-
-const forgotCard = page.locator(".forgot-password-card");
-const emailInput = forgotCard
-  .locator("div")
-  .filter({ hasText: /^Email address/ })
-  .locator("input")
-  .first();
-
-const sendEmailButton = page.getByRole("button", { name: /Send Email|Send/i });
-
-await expect(emailInput).toBeVisible();
-await emailInput.fill("test@intnt.ai");
-await expect(sendEmailButton).toBeVisible();
-await sendEmailButton.click();
-```
-
-If you need a locale-agnostic fallback (e.g. different language labels), you can also use the Vuetify structure scoped to the card:
-
-```ts
-const emailInput = page.locator(".forgot-password-card .v-input input").first();
-```
-
-but **do not** use this unscoped (without `.forgot-password-card`) to avoid accidentally matching other fields.
-
-### Example: full login flow
-
-```typescript
-await page.goto("/login"); // or base URL and let redirect
-await page.waitForURL(/\/login/);
-await page.locator(".login-card").waitFor({ state: "visible" });
-
-const loginCard = page.locator(".login-card");
-const emailInput = loginCard
-  .locator("div")
-  .filter({ hasText: /^Email address/ })
-  .locator("input")
-  .first();
-const passwordInput = loginCard
-  .locator("div")
-  .filter({ hasText: /^Password/ })
-  .locator("input")
-  .first();
-const loginButton = page.getByRole("button", { name: /^Login$/i });
-
-await expect(emailInput).toBeVisible();
-await expect(passwordInput).toBeVisible();
-await expect(loginButton).toBeVisible();
-
-await emailInput.fill("user@example.com");
-await passwordInput.fill("password");
-await loginButton.click();
-```
-
-### SSO
-
-- SSO button: `v-btn` with icon `mdi-shield-account` or text like "Sign in with SSO".
-- Provider list appears in a modal; select by visible provider name.
+Login form selectors:
+- **Email**: `.login-card` → `div` filter `hasText: /^Email address/` → `input`
+- **Password**: `.login-card` → `div` filter `hasText: /^Password/` → `input`
+- **Submit**: `page.getByRole('button', { name: /^Login$/i })`
 
 ---
 
 ## Organization Selection
 
-Two contexts:
+### Full-page (`/?select_org`)
 
-### 1. Full-page org selection (`/?select_org`)
-
-After login, the app may show `SelectOrganizationPage` when the URL has `?select_org`.
-
-- Container: `.container`
-- Title: `.welcome-title`
-- Logout: `.logout-button`
 - Organization list: `.organization-card` (click to select)
-- Create org: button with text matching "Create Organization" / createOrganization
-- Modal for creating org: Vuetify `v-dialog`; when open, use `.v-dialog--active` to scope form fields (anchor-by-label for "Organization Name" if using GlobalFormField, or the v-text-field in that modal).
+- Container: `.container`, title: `.welcome-title`
 
-### 2. In-app org switcher (drawer)
-
-`OrganizationSelector` in the layout uses **Teleport to body** for the dropdown. The menu is **not** inside the drawer DOM.
+### In-app org switcher
 
 - Trigger: `.org-dropdown-trigger`
-- Menu: `.org-dropdown-menu` (appears on `body`). Wait for it after clicking the trigger: `page.locator('.org-dropdown-menu').waitFor({ state: 'visible' })`
+- Menu: `.org-dropdown-menu` (teleported to `body`)
 - Items: `.org-dropdown-item`
-- Empty state: `.org-dropdown-empty`
 
 ---
 
-## Flow Designer
+## Modals & Overlays
 
-- **Canvas**: VueFlow (`@vue-flow/core`). Main wrapper: `.dnd-flow`, flow root: `.basic-flow`, pane: `.vue-flow__pane`.
-- **Nodes**: Rendered inside the flow; identify by type/label or position. Node types come from metadata (e.g. Start, End, RestAPINode shown as "Rest API Node").
-- **Sidebar**: Nodes dropdown in a panel; add nodes by click or drag-and-drop from the sidebar to the canvas.
-- **Config**: `NodeConfigurationModal`, `EdgeConfigurationModal`; wait for modal to be visible (e.g. `.v-dialog--active`) before interacting with form fields (anchor-by-label or Vuetify fallbacks).
+- **NEVER** use any of these — they do not exist as valid DOM selectors:
+  - `v-dialog` (bare element — `<v-dialog>` is a Vue component tag, not in the real DOM)
+  - `.v-dialog` (class)
+  - `.v-dialog--active` (class)
+  - `[role="dialog"]`
+- `v-dialog` without a dot is NOT the same as `.v-dialog`. Both are wrong. Do not use either.
 
----
+**Two modal types — pick the right selector:**
 
-## Knowledge Base
+**Type A — modals with a custom class** (check "Discovered Modals" in the app-selectors-* SKILL.md):
+```typescript
+await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 10000 });
+```
 
-- **File upload**: Components like `DragDropFileUpload`; use Playwright file chooser or drop events as needed.
-- **Status**: Use classes such as `.knowledge-base-status-pill` to assert processing state when present.
+**Type B — modals WITHOUT a custom class** (standard Vuetify dialogs: save, confirm, etc.):
+```typescript
+// Scope to .v-overlay--active filtered by the visible heading/title text
+const dialog = page.locator('.v-overlay--active').filter({ hasText: /Modal Heading/ });
+await dialog.waitFor({ state: 'visible', timeout: 10000 });
+// Scope ALL child selectors through the dialog variable
+await dialog.locator('.v-field__input').fill('value');
+await dialog.locator('button').filter({ hasText: /^Save$/ }).click();
+```
 
----
-
-## Modals & global UI
-
-- **Vuetify dialogs**: When open, the active overlay has `.v-dialog--active`. Scope all modal content to this container to avoid hitting elements outside the dialog.
-- **Form modals**: `FormModal` and similar use Vuetify form controls; use anchor-by-label inside `.v-dialog--active` for fields.
-- **Snackbars**: Feedback is shown via `GlobalSnackBar`. Assert messages in `.v-snackbar` (e.g. content or role).
-
----
-
-## Waiting & synchronization
-
-- **Navigation**: After `page.goto()` or a redirect, wait for the target URL (`waitForURL`) and then for a stable container (e.g. `.login-card`, `.container`).
-- **API**: When needed, wait for specific responses: `page.waitForResponse(urlOrPredicate)`.
-- **Transitions**: Vuetify uses transitions (e.g. `v-fade-transition`). Wait for the element to be visible and stable before clicking.
-- **Loading**: Buttons may show loading state (e.g. `.v-btn--loading`). Wait for the action to finish before asserting (e.g. wait for loading to disappear or for next UI state).
-
----
-
-## Mocking & data
-
-- **MSW**: The platform uses Mock Service Worker for network mocking. For E2E, use `page.addInitScript()` to inject MSW if running without a full backend.
-- **Auth/orgs**: Intercept Supabase (or auth) calls to simulate different roles (e.g. Owner vs Member) for permission tests.
-- **Files**: Mock signed URLs (e.g. GCS/S3) to test file previews without real bucket access.
+- Look up the modal's actual selector in the "Discovered Modals / Dialogs" section first.
+- If not listed there, use Type B with the exact visible heading text.
+- **Snackbars**: `await expect(page.locator('.v-snackbar')).toContainText('success')`
 
 ---
 
-## Monorepo context
+## Test Timeout
 
-- **Dashboard** (`services/dashboard`): Main UI; E2E targets this app.
-- **Python service** (`services/python`): Backend; E2E typically runs against a dev or local docker-compose environment.
-- **Supabase**: Auth and real-time; mock or stub as needed (e.g. `auth.loginWithSSO`) to avoid external redirects.
+The default Playwright test timeout is **30 seconds**, which is too short for multi-step flow canvas tests that involve node creation, drag-repositioning, modal interactions, and edge connections.
 
----
+**Always set a longer timeout as the first line inside every test callback:**
 
-## Reporting format
+```typescript
+test('my test', async ({ page }) => {
+  test.setTimeout(120000); // ← first line, before any steps
+  // ...
+});
+```
 
-Use this format for test execution reports:
-
-- **PASS** Step N: [Short description of action/assertion]
-- **FAIL** Step N: [Reason for failure + current URL/state]
-
-**Result: X/Y PASSED**  
-**Navigation path**: Start → Login → [Target page]
+Use at least `120000` (2 minutes) for any test that creates nodes or connects edges on the flow canvas.
 
 ---
 
-## Debugging checklist
+## Waiting & Synchronization
 
-- **Hydration / i18n**: Ensure the app has finished loading and (if applicable) i18n has resolved. Wait for URL and a non-layout element (e.g. `.login-card`) before interacting.
-- **Label text**: Does the regex match the rendered label exactly? (e.g. "Email address" vs "Email".) Use the exact strings from `locales/en/pages.json` for the default locale.
-- **Teleports**: Menus and dialogs (e.g. `v-menu`, `v-dialog`) render at the end of `<body>`, not inside the component tree. Query for `.org-dropdown-menu`, `.v-dialog--active` on `page` (or `document.body`), not inside a parent that doesn’t contain them.
-- **Hidden inputs**: Vuetify may wrap the real `<input>` for styling. Prefer the visible interaction target; use `.click({ force: true })` only if necessary and document why.
-- **Redirects**: If using `page.goto('/')`, wait for the redirect to `/login` to complete before looking for login inputs.
-- **Vuetify 3**: Prefer anchor-by-label over `.v-text-field`; use `.v-input` / `.v-field__input` as fallback when needed.
+- **Navigation**: After `page.goto()` or redirect, `waitForURL` then wait for a stable container.
+- **Transitions**: Wait for elements to be visible before clicking.
+- **Button loading**: Wait for `.v-btn--loading` to disappear before asserting.
+- **Modal loading**: After a modal opens, wait for loading to finish before asserting content:
+  ```typescript
+  await modal.locator('text=/loading/i')
+    .waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+  ```
 
-> **Important:** If an auto-generated spec still contains  
-> `page.locator('input[type="email"], input[placeholder*="email" i]')`  
-> on `/forgot-password`, it is **incorrect for this app** and must be replaced  
-> with one of the patterns above. The login page happens to work with  
-> `.v-text-field.locator('input')`, but the Forgot Password page does not  
-> expose any email-specific attributes, so generic email selectors will  
-> always fail there.
+---
 
-## STABILITY RULES FOR VUETIFY UI:
+## Reporting Format
 
-Selector priority:
-1. Use getByRole() with accessible names whenever possible
-2. Use getByLabel() for text fields
-3. Use getByText() for menu items
-4. Use Vuetify classes only when necessary (.v-btn, .v-select, .v-dialog)
+> ⚠️ **MANDATORY** — every step MUST use this exact format. Do NOT use `✅ PASS — Description` (em-dash) or any other format.
 
-Dialogs:
-- Wait for dialogs using:
-  await page.locator('.v-dialog--active').waitFor()
+Before the step action:
+```typescript
+console.log('📍 Step 5: Verify redirect');
+```
 
-Menus / dropdowns:
-- Vuetify v-menu is teleported to the bottom of the body
-- Always wait for the menu before selecting items
+After the assertion/action succeeds:
+```typescript
+await expect(page).toHaveURL(/dashboard/);
+console.log('✅ PASS: Step 5 - Redirected to dashboard');
+```
 
-Example:
-await page.getByRole('button', { name: /select role/i }).click()
-await page.getByRole('option', { name: /developer/i }).click()
+Both lines are required for every step. The `📍` line comes first. The `✅ PASS:` line comes AFTER the assertion.
 
-Tables:
-- When selecting rows by email:
-await page.locator('tr', { hasText: "test2@intnt.ai" })
+Summary block at the end of the test:
 
-Notifications:
-- Wait for snackbar using:
-await expect(page.locator('.v-snackbar')).toContainText('success')
+```typescript
+console.log('\n' + '='.repeat(70));
+console.log('📊 TEST SUMMARY');
+console.log('='.repeat(70));
+console.log('✅ Step 1: PASS - Page loaded');
+// ... one line per step ...
+console.log('='.repeat(70));
+```
 
-Buttons:
-- Always ensure buttons are enabled before clicking
-await expect(button).toBeEnabled()
+---
 
-Animations:
-- After opening dialogs or menus, wait for the element to become visible before interacting.
+## Debugging Checklist
+
+- **Teleports**: Menus/dialogs render at end of `<body>`, not inside parent components. Query on `page`, not inside a scoped parent.
+- **Hidden inputs**: Vuetify wraps `<input>` for styling. Use `.click({ force: true })` only if necessary.
+- **Redirects**: If `page.goto('/')`, wait for redirect to `/login` before querying inputs.

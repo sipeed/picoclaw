@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r array-item /Users/maxintent/Documents/Apps/picoclaw --include=*.vue --include=*.jsx --include=*.tsx --include=*.js --include=*.ts)"
+    ]
+  }
+}

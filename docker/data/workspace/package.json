@@ -17,6 +17,7 @@
     "playwright": "^1.58.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/imap": "^0.8.43",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^25.5.0"

@@ -1,0 +1,439 @@
+docker compose --env-file .env --profile gateway run --rm picoclaw-agent -m "$(cat <<'EOF'
+Before generating anything, read and follow:
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+- /skills/app-selectors-flow-designer/SKILL.md
+- /skills/app-selectors-flow-designer-canvas/SKILL.md
+
+TECH STACK: This app is built with Vue.js, Vuetify, and Vue Flow. All canvas interactions, form validation, and modal behaviors follow Vue/Vuetify/Vue Flow patterns — apply the rules in /skills/app-selectors/SKILL.md under "Playwright Patterns for This App".
+
+## PHASE 1 — Source Code Discovery (MANDATORY)
+
+The base path is: /home/picoclaw/.picoclaw/workspace/context/dashboard/src
+If that path is not readable, STOP and report that the mount is missing. Do not proceed.
+
+You MUST read EVERY file listed below. Do not skip any. Do not stop early.
+
+### Directory: src/components/flow-designer/
+List all files in this directory and all subdirectories, then read each one.
+This includes (but is not limited to):
+- All .vue files directly in src/components/flow-designer/
+- All .vue files in src/components/flow-designer/dropdown/
+- All .vue files in src/components/flow-designer/nodes/
+
+### Specific files to read:
+- src/pages/FlowDesigner.vue
+- src/pages/FlowCanvas.vue
+- src/stores/flow.store.ts (or flow.ts — check both names)
+
+### After listing, read ALL files found — no exceptions.
+Do NOT decide some files are "not relevant" and skip them.
+Do NOT stop after reading 6 files. Read everything in the flow-designer component tree.
+
+After reading ALL files, continue to Phase 2.
+
+## PHASE 2 — Create Reference Document (MANDATORY before writing test)
+
+Create a reference file at: /tests/flow-designer/FLOW_DESIGNER_REFERENCE.md
+
+The FIRST section of this file MUST be:
+
+### 0. Files Read
+List every file path you read in Phase 1. This list must include ALL files from:
+- src/components/flow-designer/ (all subdirectories)
+- src/pages/FlowDesigner.vue
+- src/pages/FlowCanvas.vue
+- src/stores/flow.store.ts
+
+If the list contains fewer than 10 files, you did not read everything — go back and complete Phase 1 before continuing.
+
+Do NOT proceed to the remaining sections until this list is written.
+
+The remaining sections must contain the following, derived from what you read:
+
+### 1. Node Types
+For each node type (Start, End, UserUtterance, ReplyMessage, etc.):
+- node-container selector (e.g. `.node-container#START`)
+- connection handle selectors (source/target)
+- How to drag-connect from one node to another (handle coordinates or drag strategy)
+
+### 2. Node Config Modals
+For each node type that has a config modal:
+- How the modal is opened (click the node)
+- Modal container selector (from SKILL.md)
+- All input fields and their selectors
+- All dropdown fields and how to interact with them
+- Save/Cancel/Delete button selectors
+
+### 3. Add Nodes Panel
+- Selector to open the panel (`.nodes-button` / `.mdi-shape-rectangle-plus`)
+- Wait condition after opening
+- How to pick a specific node type from the menu
+
+### 4. Flow Name Field
+- Selector and interaction pattern for renaming the flow
+
+### 5. Save Flow (disk icon)
+- Selector for the save button
+- Save Flow Version modal: container selector, version name input, save button
+- Success toast selector and assertion
+
+### 6. Drag-Connect Strategy
+- Exact steps to connect two nodes by dragging (source handle → target handle)
+- Use vue-flow handle selectors from the SKILL.md
+
+Do NOT proceed to Phase 3 until this file is written.
+
+## PHASE 3 — Generate Playwright Test
+
+IMPORTANT RULES:
+
+1. ONLY use selectors from the SKILL.md files and the reference document you just created.
+2. NEVER guess or invent Vuetify selectors like .v-dialog, .v-dialog--active, .v-overlay, .v-card, etc.
+3. For login, COPY THE CODE VERBATIM from the "Login Flow (copy-paste ready)" block in /skills/app-selectors/SKILL.md.
+   Do NOT rewrite it. Do NOT use input[type="email"], input[type="password"], or any selector not in that block.
+   The correct URL is https://dashboard.int3nt.info/login (with /login — NOT the root URL).
+   The correct selectors are .v-text-field (NOT input[type="email"]) and .organization-card.
+   The login button MUST be: page.getByRole('button', { name: /login/i })
+   The button text is "Login" (ONE word). NEVER use filter({ hasText: /Log In/ }) or /^Log In$/ — those will NEVER match.
+   After login, the app MAY redirect to /?select_org OR directly to the dashboard (if org is remembered).
+   NEVER use waitForURL(/\?select_org/) directly — it times out when the server skips org selection.
+   CORRECT post-login pattern (waitForURL callback gets a URL object — use .pathname or .href, NOT .includes()):
+     await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
+     if (page.url().includes('select_org')) {  // page.url() returns a string — .includes() is fine here
+       await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
+       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
+     }
+     // After the waitForURL block, do NOT add a separate Step for org selection — it's handled inside the if block above.
+4. Selector priority — ALWAYS follow this order when choosing a selector:
+   STEP 1: Look for a custom CSS class in the SKILL.md "Custom Elements & IDs" or "Discovered Modals" section (e.g. .modal-dialog, .nodes-dropdown-item, .field-container).
+   STEP 2: Only if no custom class exists, use a Vuetify class — but ONLY if you can verify it in the SKILL.md DOM output (e.g. .v-overlay--active .v-list-item for v-select dropdowns).
+   STEP 3: NEVER guess or invent a selector. If you cannot find it in the SKILL.md or reference doc, use getByRole() or getByText() with exact visible text.
+   NEVER default to generic Vuetify wrappers (.v-dialog, .v-card, .v-overlay, .v-list-item) without first checking for a custom class.
+5. TypeScript-safe Playwright only. NEVER invent or guess Playwright API methods — only use methods that exist in the official Playwright API.
+   FORBIDDEN (do not use — these do not exist): triple_click(), triple_click?.(), doubleClick(), selectText(), clearText(), typeText(), pressKey()
+   NOTE: triple_click?.() uses optional chaining but the method still doesn't exist — it silently does nothing. NEVER use it even with ?.
+   CORRECT alternatives:
+   - Change a field value: await input.click(); await input.fill('new value'); await input.press('Tab');
+     ← fill() clears the field automatically. No select-all, no triple-click, no click({ clickCount: 3 }) needed.
+   - Click 3 times (only if truly needed): await input.click({ clickCount: 3 })
+   - Select all text: await input.press('Control+a') or await input.press('Meta+a')
+   - Clear field: await input.clear()  or  await input.fill('')
+   - Type without clearing: await input.pressSequentially('text')
+   NEVER use .filter({ hasAttribute: ... }) — also not a valid Playwright API.
+6. Logging rule — MANDATORY FORMAT (copy-paste from /skills/playwright/SKILL.md):
+   BEFORE each step: console.log('📍 Step N: Description');
+   AFTER step assertion succeeds: console.log('✅ PASS: Step N - Description');
+   NEVER print "✅ PASS" before the assertion/action that verifies the step.
+   NEVER use "✅ PASS — Description" (em-dash format) — ALWAYS use "✅ PASS: Step N - Description".
+   At the end of the test, include a full summary block:
+     console.log('\\n' + '='.repeat(70));
+     console.log('📊 TEST SUMMARY');
+     console.log('='.repeat(70));
+     console.log('✅ Step 1: PASS - Description'); // one line per step
+     console.log('='.repeat(70));
+7. After a modal opens, ALWAYS wait for loading to finish:
+   await page.locator('.v-overlay--active').locator('text=/loading/i').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+8. NEVER guess component types. Always use selectors from the SKILL.md or the reference document.
+9. Flow name field: the input that appears after clicking the flow name has NO type attribute. NEVER use input[type="text"] for it. Use exactly:
+   await page.locator('.panel-container p.text-secondary').first().click();
+   await page.waitForTimeout(300);
+   const flowNameInput = page.locator('.panel-container input').first();
+   await flowNameInput.waitFor({ state: 'visible', timeout: 5000 });
+   await flowNameInput.fill('Name');
+   await flowNameInput.press('Enter');
+10. TWO different dropdown types exist — NEVER mix them up:
+    a) Add Nodes panel (custom component) → use .nodes-dropdown-item inside .nodes-dropdown-menu:
+       await page.locator('.nodes-dropdown-item').filter({ hasText: /Reply Message/ }).click();
+       await page.keyboard.press('Escape');
+       await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+       await page.waitForTimeout(300);
+    b) Vuetify v-select inside a modal → use .v-list-item inside .v-overlay--active:
+       await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /OPTION/ }).click();
+    NEVER use .v-overlay--active .v-list-item for the Add Nodes panel.
+11. Two modal types — use the right selector for each:
+    Type A (node config modals — have .modal-dialog class): scope everything to .modal-dialog:
+      await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 10000 });
+    Type B (all other dialogs — no custom class): scope to .v-overlay--active filtered by heading text:
+      const dialog = page.locator('.v-overlay--active').filter({ hasText: /Dialog Heading/ });
+      await dialog.waitFor({ state: 'visible', timeout: 10000 });
+      // Always scope child selectors through dialog — do NOT use page.locator() directly for inputs/buttons inside
+      await dialog.locator('.v-field__input').fill('value');
+      await dialog.locator('button').filter({ hasText: /^Save$/ }).click();
+    NEVER use page.locator('v-dialog') or page.locator('.v-dialog') — both are wrong.
+    'v-dialog' is a Vue component name. It does not exist as a DOM element or CSS class.
+    There is no <v-dialog> element in the rendered HTML — only .v-overlay--active wrapping a .v-card.
+12. Vuetify Save button starts DISABLED. Enable it by filling required fields with click + fill + Tab:
+    await input.click(); await input.fill('value'); await input.press('Tab');
+13. Vuetify input selectors in modals: NEVER use input[type="text"] — also matches combobox inputs. Use:
+    page.locator('.modal-dialog .field-container')
+      .filter({ has: page.locator('label', { hasText: /^LABEL_NAME/ }) })
+      .locator('.v-field__input')
+13b. Verifying Vuetify field values — CRITICAL: NEVER use toHaveValue() on a v-select or v-autocomplete.
+    These are divs, not inputs. toHaveValue() will throw "Not an input element".
+    - Text inputs (Node ID, Message): use toHaveValue()
+    - Dropdown fields (Node Version, Receiver Channel, Content Type): use toContainText()
+    CORRECT patterns:
+      const nodeIdField = modal.locator('.field-container').filter({ has: locator('label', { hasText: /^Node ID/ }) }).locator('.v-field__input');
+      await expect(nodeIdField).toHaveValue(/ReplyMessage_/);  // text input ✓
+      const nodeVersionField = modal.locator('.field-container').filter({ has: locator('label', { hasText: /^Node Version/ }) }).locator('.v-select');
+      await expect(nodeVersionField).toContainText(/Version/);  // v-select ✓
+    WRONG:
+      await expect(modal.locator('.v-select').first()).toHaveValue(/Version/);  // ← "Not an input element"
+14. After adding a node via the dropdown, ALWAYS move it to a unique canvas position BEFORE clicking or connecting it.
+    Nodes spawn stacked on top of each other — overlapping nodes intercept pointer events.
+    Drag the .vue-flow__node wrapper (the parent of .node-container) to a clear area using page.mouse.
+
+    // To find the Nth node of a type, put .nth(N) on the OUTER locator — NEVER inside the has filter:
+    // WRONG: .filter({ has: locator.filter(...).nth(1) }).first()  ← .nth inside has doesn't scope correctly
+    // CORRECT: .filter({ has: locator.filter(...) }).nth(1)        ← .nth on the outer result
+
+    ⚠️ CRITICAL: The hasText pattern for .node-container uses the NODE ID (camelCase), NOT the dropdown display name.
+    The dropdown shows "Reply Message" but the node-container text is "ReplyMessage" (no space).
+    The dropdown shows "User Utterance" but the node-container text is "UserUtterance" (no space).
+    EXACT hasText patterns to use:
+      Reply Message node   → filter({ hasText: /ReplyMessage/ })    ← NO space
+      User Utterance node  → filter({ hasText: /UserUtterance/ })   ← NO space
+    NEVER use /Reply Message/ or /User Utterance/ — those will NEVER match .node-container.
+
+    ════════════════════════════════════════════════════════════════
+    MANDATORY POSITIONING STRATEGY — ABSOLUTE CANVAS COORDINATES
+    ════════════════════════════════════════════════════════════════
+    WHY: New nodes spawn at the viewport center (using screenToFlowCoordinate from the click event).
+    Their spawn canvas position varies with pan/zoom. Relative-to-prev approaches fail because
+    the canvas may auto-pan during drag, moving nodes to wrong positions.
+    SOLUTION: Read the full canvas transform (scale + tx + ty), then drag each node's CENTER
+    to a pre-calculated screen position that corresponds to the exact desired canvas coordinate.
+
+    The default canvas has START at (250, 0) and END at (250, 400).
+    Use these FIXED target canvas positions (center of each node):
+      Node 1 (1st added node)  → canvas { x: 250, y: 100 }
+      Node 2 (2nd added node)  → canvas { x: 250, y: 200 }
+      Node 3 (3rd added node)  → canvas { x: 250, y: 300 }
+
+    STEP 1 — Read canvas transform ONCE (do this before the first node is added):
+    const tf = await page.locator('.vue-flow__transformationpane').evaluate(el => {
+      const m = new DOMMatrix((el as HTMLElement).style.transform);
+      return { scale: m.a, tx: m.e, ty: m.f };
+    });
+
+    STEP 2 — For each node, drag its center to the target screen position:
+    // Convert desired canvas position to screen position:
+    // targetScreenX = targetCanvasX * tf.scale + tf.tx
+    // targetScreenY = targetCanvasY * tf.scale + tf.ty
+
+    // Find the new node wrapper:
+    const newWrapper = page.locator('.vue-flow__node').filter({ has: page.locator('.node-container').filter({ hasText: /NewNodeLabel/ }) }).nth(N);
+    // N=0 (.first()) for first of this type, N=1 for second of same type
+    const newBBox = await newWrapper.boundingBox();
+    if (!newBBox) throw new Error('Cannot find node to position');
+
+    // For 1st node: target canvas y=100
+    const targetScreenX = 250 * tf.scale + tf.tx;
+    const targetScreenY = 100 * tf.scale + tf.ty;  // 100 for Node1, 200 for Node2, 300 for Node3
+    await page.mouse.move(newBBox.x + newBBox.width / 2, newBBox.y + newBBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(targetScreenX, targetScreenY, { steps: 20 });
+    await page.mouse.up();
+    await page.waitForTimeout(500);
+
+    ❌ WRONG (ALL of these break at non-100% zoom or when canvas is panned):
+    targetY = prevBBox.y + prevBBox.height + 200   ← relative + fixed pixels — zoom-unaware
+    targetY = prevBBox.y + prevBBox.height + 80 * canvasScale  ← relative — breaks with auto-pan
+    page.mouse.move(x, targetY, { steps: 10 })  ← only 10 steps — too few for reliable drag
+
+    ✅ CORRECT: convert canvas (250, Y) to screen using transform, drag to that screen position
+
+    ⚠️ STALE TRANSFORM: The `tf` variable read at STEP 1 becomes STALE after any zoom operation.
+    Each drag connection includes a zoom-in + zoom-out block that changes the canvas transform.
+    NEVER use the original `tf` for nodes positioned AFTER the first drag connection has run.
+    For every node added after the first edge, re-read the transform immediately before positioning:
+
+      const tfFresh = await page.locator('.vue-flow__transformationpane').evaluate(el => {
+        const m = new DOMMatrix((el as HTMLElement).style.transform);
+        return { scale: m.a, tx: m.e, ty: m.f };
+      });
+      // Use tfFresh (not tf) for this node's target screen position calculation
+
+    Name each fresh read descriptively (tfNode2, tfOutput, tfReply2, etc.) so it is clear
+    which node it belongs to. Never reuse a transform variable from an earlier positioning step.
+15. Clicking nodes on the canvas: ALWAYS use evaluate — NEVER .click() directly (overlap may still occur):
+    await page.locator('.node-container').filter({ hasText: /NodeLabel/ }).first().evaluate(el => (el as HTMLElement).click());
+16. Before any drag connection, ALWAYS wait for the canvas to be fully settled:
+    - Wait at least 500ms after a modal closes before starting a drag connection
+    - Wait at least 300ms after moving a node before connecting from/to it
+    - If a connection silently fails (no edge appears), the node was not ready — increase the wait
+    Example after modal close:
+      await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 10000 });
+      await page.waitForTimeout(500); // let canvas re-render before connecting
+
+    ⚠️ CRITICAL — ZOOM NORMALIZATION: Before EVERY drag connection, normalize canvas zoom to ~100%.
+    Vue Flow canvas zoom persists between operations. After modals, positioning drags, or previous
+    connections, the canvas may be at minimum zoom (20%) where handles are too small to target.
+    ALWAYS run this block immediately before reading handle boundingBoxes:
+
+      await page.mouse.move(640, 360);
+      await page.keyboard.down('Control');
+      for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); } // zoom in to max (400%)
+      await page.keyboard.up('Control');
+      await page.waitForTimeout(200);
+      await page.keyboard.down('Control');
+      for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); } // zoom out to ~100%
+      await page.keyboard.up('Control');
+      await page.waitForTimeout(500);
+      // THEN get boundingBoxes and drag
+
+    WHY zoom-in THEN zoom-out: If the canvas is already at minimum zoom (20%), zoom-out-only does
+    nothing — handles remain too small. Zoom-in first guarantees a known starting point (400% max),
+    then 10× zoom-out reliably reaches ~100%. NEVER use zoom-out-only for the 2nd+ connection.
+
+17. Vue Flow drag connections: NEVER use dragTo(). Use page.mouse with steps.
+    CRITICAL: Vue Flow handles (.vue-flow__handle-bottom, .vue-flow__handle-top) may NOT be inside .node-container.
+    They might be siblings of .node-container inside .vue-flow__node.
+    ALWAYS scope handle lookups via the .vue-flow__node wrapper — NEVER via .node-container:
+    WRONG: page.locator('.node-container#START').locator('.vue-flow__handle-bottom')
+    WRONG: page.locator('.node-container').filter(...).locator('.vue-flow__handle-bottom')
+    CORRECT: page.locator('.vue-flow__node').filter({ has: page.locator('.node-container#START') }).locator('.vue-flow__handle-bottom')
+    CORRECT: page.locator('.vue-flow__node').filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) }).first().locator('.vue-flow__handle-bottom')
+    Full drag example:
+    const sourceHandle = page.locator('.vue-flow__node').filter({ has: page.locator('.node-container#SOURCE_ID') }).locator('.vue-flow__handle-bottom');
+    const targetHandle = page.locator('.vue-flow__node').filter({ has: page.locator('.node-container#TARGET_ID') }).locator('.vue-flow__handle-top');
+    const srcBox = await sourceHandle.boundingBox();
+    const tgtBox = await targetHandle.boundingBox();
+    if (!srcBox || !tgtBox) throw new Error('Handle not found — check that node IDs are correct and nodes are visible');
+    // CRITICAL: hover briefly before mousedown — Vue Flow needs the handle's hover state to initialize drag detection
+    await page.mouse.move(srcBox.x + srcBox.width / 2, srcBox.y + srcBox.height / 2);
+    await page.waitForTimeout(200); // pause on handle before dragging
+    await page.mouse.down();
+    await page.mouse.move(tgtBox.x + tgtBox.width / 2, tgtBox.y + tgtBox.height / 2, { steps: 20 }); // use 20 steps minimum
+    await page.waitForTimeout(200); // CRITICAL: dwell on target handle — Vue Flow needs mouseenter to register target
+    await page.mouse.up();
+    await page.waitForTimeout(1000); // 1000ms minimum — 300ms is not enough for Vue Flow to persist the edge
+    NEVER use a silent if-guard: if (srcBox && tgtBox) { ... } — use the throw pattern above so failures are visible.
+18. Newly added nodes get auto-suffixed IDs (e.g. ReplyMessage_3, UserUtterance_4). NEVER wait for .node-container#ReplyMessage after adding a node — it will never match.
+    Use filter + first()/nth() to find newly added nodes:
+    page.locator('.node-container').filter({ hasText: /ReplyMessage/ }).first()
+    After saving with a custom Node ID (e.g. "input"), you can then use the exact selector:
+    page.locator('.node-container#input')
+19. Test timeout: multi-step flow tests take longer than 30 seconds. ALWAYS set a generous timeout at the top of each test:
+    test.setTimeout(120000); // 2 minutes minimum for flow canvas tests
+    Place this as the FIRST line inside the test() callback, before any steps.
+
+Create a Playwright test file at /tests/flow-designer/create-new-flow-user-utterance-node.spec.ts.
+
+## PHASE 4 — Run and Fix
+
+After creating the test:
+
+1. Run:
+   npx playwright test tests/flow-designer/create-new-flow-user-utterance-node.spec.ts --reporter=line
+2. If it fails:
+   - Analyze the error carefully
+   - Identify root cause (selector issue, timing issue, missing wait, etc.)
+   - Update the test to fix it
+3. Re-run after each fix
+4. Repeat until:
+   - The test passes, OR
+   - A clear blocking issue is identified
+5. At the end, report:
+   - Final terminal output
+   - Summary of fixes applied
+   - Final result (PASS / FAIL)
+
+---
+
+Test credentials: email=heidi@intnt.ai password=testing2026! org=Testing2026!
+
+Steps:
+1. Perform case "Login"
+2. On Select Organization page, select organization "Testing2026!"
+3. User redirected to: https://dashboard.int3nt.info
+4. Click Flow Designer on the left sidebar
+5. On All Flows page, click Add New
+6. Flow canvas page opens displaying default nodes: START, END
+7. Click the Flow Name field beside the home icon
+8. Enter flow name: User Utterance
+9. Click Add Nodes Button
+10. From Add Nodes menu, select: Reply Message
+    [POSITIONING — do this IMMEDIATELY after the node appears, BEFORE clicking it]
+    Read canvas transform tf from .vue-flow__transformationpane (scale, tx, ty).
+    Drag this node's center to screen position: x = 250*tf.scale+tf.tx, y = 100*tf.scale+tf.ty  (canvas y=100)
+    Find new node: hasText: /ReplyMessage/ (camelCase, NO space) .first()
+11. Click that Reply Message node to open config modal
+12. Verify the following fields are automatically populated:
+    - Node ID, Node Version, Receiver Channel, Content Type
+13. In Message field, enter: Write something below to test the user utterance node:
+14. Click Save
+15. Connect nodes by dragging: START → Reply Message node
+16. Click Add Nodes Button
+17. From Add Nodes menu, select: User Utterance
+    [POSITIONING — do this IMMEDIATELY after the node appears, BEFORE clicking it]
+    Use canvas transform tf (already read in step 10 positioning).
+    Drag this node's center to: x = 250*tf.scale+tf.tx, y = 200*tf.scale+tf.ty  (canvas y=200)
+18. Click that User Utterance node to open config modal
+19. Change node ID to: input
+20. Leave State Variable empty
+21. Click Save
+22. Connect nodes by dragging: Reply Message → input
+23. Click Add Nodes Button
+24. From Add Nodes menu, select: Reply Message
+    [POSITIONING — do this IMMEDIATELY after the node appears, BEFORE clicking it]
+    Use canvas transform tf (already read in step 10 positioning).
+    This is the SECOND ReplyMessage node — find it with hasText: /ReplyMessage/ .nth(1)
+    Drag this node's center to: x = 250*tf.scale+tf.tx, y = 300*tf.scale+tf.ty  (canvas y=300)
+25. Click that Reply Message node to open config modal
+26. Rename Node Id to: Output
+27. Leave Node Version, Receiver Channel, Content Type as-is
+28. In Message field, enter: {{ state['nodes']['input']['output']['messages'].content }}
+29. Click Save
+30. Connect nodes by dragging: input → Output
+    Then connect: Output → END
+31. Click Save (disk icon) on top right
+32. Verify Save Flow Version modal is displayed
+33. Input Version Name: UserUtteranceV1
+34. Click Save button in modal
+35. Verify success toast notification appears
+
+IMPORTANT — After each drag connection, verify the edge was actually created before proceeding.
+
+EDGE VERIFICATION — CONFIRMED FROM SOURCE CODE:
+When an edge is created via drag in the UI, flow.store.ts generates: id = `e-${Date.now()}` (a TIMESTAMP).
+Example: "e-1704067200000" — NOT "e-START-ReplyMessage".
+The [data-id^="e-SOURCE-"] pattern ONLY works for edges loaded from a SAVED flow (different ID format).
+NEVER use [data-id^="e-START-"] or [data-id^="e-SOURCE-"] to verify a NEWLY DRAGGED edge — it will ALWAYS fail.
+
+CORRECT VERIFICATION — count-based using .vue-flow__edge[data-id]:
+Real persisted edges have a data-id attribute. Ghost/connection-preview elements do NOT have data-id.
+So .vue-flow__edge[data-id] reliably matches only real edges, never ghost edges.
+
+Use this pattern for EVERY drag connection:
+  // BEFORE the drag — capture current edge count:
+  const edgesBefore = await page.locator('.vue-flow__edge[data-id]').count();
+
+  // ... perform the drag (mouse.down → mouse.move steps:20 → waitForTimeout(200) → mouse.up) ...
+
+  await page.waitForTimeout(1000); // let Vue Flow call onConnect and persist the edge
+
+  // AFTER the drag — verify count increased by 1:
+  const edgesAfter = await page.locator('.vue-flow__edge[data-id]').count();
+  if (edgesAfter <= edgesBefore) {
+    throw new Error(`Edge NOT created — count before: ${edgesBefore}, after: ${edgesAfter}`);
+  }
+
+FORBIDDEN (ALL of these will fail for newly created edges):
+  NEVER: [data-id^="e-START-"]         ← edges use timestamp IDs, not source-target IDs
+  NEVER: [data-id^="e-ReplyMessage_"]  ← same reason
+  NEVER: [data-id^="e-input-"]         ← same reason
+  NEVER: .vue-flow__edge.first()       ← matches ghost/preview edges (false positives)
+
+Expected result:
+1. User successfully creates a new flow in Flow Designer
+2. Flow name User Utterance is displayed
+3. Nodes created: Reply Message, input (User Utterance), Output (Reply Message)
+4. All nodes successfully configured
+5. All nodes connected via drag lines
+6. Final flow structure: START > ReplyMessage > input > Output > END
+7. Flow published successfully
+EOF
+)"

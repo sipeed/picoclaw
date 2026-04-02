@@ -1,0 +1,237 @@
+docker compose --env-file .env --profile gateway run --rm picoclaw-agent -m "$(cat <<'EOF'
+Before generating anything, read and follow:
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+- /skills/app-selectors-flow-designer/SKILL.md
+- /skills/app-selectors-flow-designer-canvas/SKILL.md
+
+TECH STACK: This app is built with Vue.js, Vuetify, and Vue Flow. All canvas interactions, form validation, and modal behaviors follow Vue/Vuetify/Vue Flow patterns — apply the rules in /skills/app-selectors/SKILL.md under "Playwright Patterns for This App".
+
+## PHASE 1 — Source Code Discovery (MANDATORY)
+
+The base path is: /home/picoclaw/.picoclaw/workspace/context/dashboard/src  
+If that path is not readable, STOP and report that the mount is missing. Do not proceed.
+
+You MUST read EVERY file listed below. Do not skip any. Do not stop early.
+
+### Directory: src/components/flow-designer/
+List all files in this directory and all subdirectories, then read each one.  
+This includes:
+- All .vue files directly in src/components/flow-designer/
+- All .vue files in src/components/flow-designer/dropdown/
+- All .vue files in src/components/flow-designer/nodes/
+
+### Specific files to read:
+- src/pages/FlowDesigner.vue
+- src/pages/FlowCanvas.vue
+- src/stores/flow.store.ts (or flow.ts — check both names)
+
+After listing, read ALL files found — no exceptions.
+
+---
+
+## PHASE 2 — Create Reference Document (MANDATORY before writing test)
+
+Create:
+/tests/flow-designer/FLOW_DESIGNER_REFERENCE.md
+
+### 0. Files Read
+List ALL files read. Must be ≥10 files.
+
+### 1. Node Types
+- node-container selectors
+- handles
+- drag strategy
+
+### 2. Node Config Modals
+- open behavior
+- modal selector
+- fields
+- dropdown interaction
+- buttons
+
+### 3. Add Nodes Panel
+- open selector
+- wait condition
+- selection via .nodes-dropdown-item
+
+### 4. Flow Name Field
+- selector
+- interaction pattern
+
+### 5. Save Flow
+- save button
+- modal
+- version input
+- toast
+
+### 6. Drag-Connect Strategy
+- Vue Flow handle usage
+- required waits
+
+---
+
+## PHASE 3 — Generate Playwright Test
+
+Create test file:
+tests/flow-designer/create-new-flow-custom-node.spec.ts
+
+Test credentials:
+email=heidi@intnt.ai  
+password=testing2026!  
+org=Testing2026!
+
+Steps:
+
+1. Perform case "Login"
+2. On Select Organization page, select organization "Testing2026!"
+3. User redirected to https://dashboard.int3nt.info
+4. Click Flow Designer on the left sidebar
+5. On All Flows page, click Add New
+6. Flow canvas page opens displaying default nodes: START, END
+
+7. Click Flow Name field beside home icon
+8. Enter flow name: Custom Node
+
+9. Click Add Nodes Button
+10. From Add Nodes menu, select Reply Message
+
+[POSITIONING — REQUIRED]
+Read canvas transform tf from .vue-flow__transformationpane  
+Drag node center to:
+x = 250*tf.scale+tf.tx  
+y = 100*tf.scale+tf.ty
+
+11. Click Reply Message node
+
+12. Verify auto-filled fields:
+- Node ID
+- Node Version
+- Receiver Channel
+- Content Type
+
+13. In Message field, enter:
+Below is the Custom Node Result. should return 'is what you inputted' behind the text you wrote
+
+14. Click Save
+
+15. Connect nodes by dragging: START → ReplyMessage
+
+[EDGE VERIFICATION REQUIRED]
+
+16. Click Add Nodes Button
+17. From Add Nodes menu, select Custom Node
+
+[POSITIONING]
+Drag node center to:
+x = 250*tf.scale+tf.tx  
+y = 200*tf.scale+tf.ty
+
+18. Click Custom Node
+
+19. Change Node ID to: CustomNode
+
+20. In Code field, enter exactly:
+
+def custom_function(state, config):
+    return {'result': state['nodes']['START']['output']['messages'].content + ', is what you inputted'}
+
+21. Click Save
+
+22. Connect nodes by dragging: ReplyMessage → CustomNode
+
+[EDGE VERIFICATION REQUIRED]
+
+23. Click Add Nodes Button
+24. From Add Nodes menu, select Reply Message
+
+[POSITIONING]
+Drag node center to:
+x = 250*tf.scale+tf.tx  
+y = 300*tf.scale+tf.ty
+
+25. Click this SECOND Reply Message node
+
+26. Change Node ID to: Output
+
+27. Verify fields auto-filled:
+- Node Version
+- Receiver Channel
+- Content Type
+
+28. In Message field, enter:
+{{ state['nodes']['CustomNode']['output']['result'] }}
+
+29. Click Save
+
+30. Connect nodes:
+- CustomNode → Output
+- Output → END
+
+[EDGE VERIFICATION REQUIRED FOR EACH]
+
+31. Verify flow structure:
+START → ReplyMessage → CustomNode → Output → END
+
+32. Click Save (disk icon)
+
+33. Verify Save Flow Version modal
+
+34. Enter Version Name: CustomnodeV1
+
+35. Click Save
+
+36. Verify success toast
+
+---
+
+## EDGE VERIFICATION RULE (MANDATORY)
+
+const edgesBefore = await page.locator('.vue-flow__edge[data-id]').count();
+
+// drag
+
+await page.waitForTimeout(1000);
+
+const edgesAfter = await page.locator('.vue-flow__edge[data-id]').count();
+if (edgesAfter <= edgesBefore) {
+  throw new Error(`Edge NOT created — before: ${edgesBefore}, after: ${edgesAfter}`);
+}
+
+---
+
+## EXPECTED RESULT
+
+1. Flow "Custom Node" is successfully created  
+2. Node connections:
+   START → ReplyMessage  
+   ReplyMessage → CustomNode  
+   CustomNode → Output  
+   Output → END  
+3. Custom Node executes script correctly and returns processed result  
+4. Output node displays:
+   {{ state['nodes']['CustomNode']['output']['result'] }}  
+5. Flow is saved successfully  
+
+---
+
+## PHASE 4 — Run and Fix
+
+Run:
+npx playwright test tests/flow-designer/create-new-flow-custom-node.spec.ts --reporter=line
+
+If fails:
+- analyze
+- fix
+- re-run
+
+Repeat until PASS or blocked
+
+Final report must include:
+- terminal output
+- fixes applied
+- final result
+
+EOF
+)"

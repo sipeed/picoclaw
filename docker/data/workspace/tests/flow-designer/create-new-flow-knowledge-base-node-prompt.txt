@@ -1,0 +1,217 @@
+docker compose --env-file .env --profile gateway run --rm picoclaw-agent -m "$(cat <<'EOF'
+Before generating anything, read and follow these files in order:
+
+1. /skills/playwright/SKILL.md
+2. /skills/app-selectors/SKILL.md
+3. /skills/app-selectors-flow-designer/SKILL.md
+4. /skills/app-selectors-flow-designer-canvas/SKILL.md
+5. /tests/flow-designer/FLOW_DESIGNER_REFERENCE.md
+6. /tests/flow-designer/create-new-flow-user-utterance-node.spec.ts  ← working reference test, copy its patterns exactly
+
+TECH STACK: This app is built with Vue.js, Vuetify, and Vue Flow. All canvas interactions, form validation, and modal behaviors follow Vue/Vuetify/Vue Flow patterns — apply the rules in /skills/app-selectors/SKILL.md under "Playwright Patterns for This App".
+
+Do NOT create FLOW_DESIGNER_REFERENCE.md — it already exists. Read it and use it.
+Do NOT read the dashboard source code — all required selectors are in the files above.
+
+---
+
+## PHASE 1 — Generate Playwright Test
+
+Create test file at:
+tests/flow-designer/create-new-flow-knowledge-base-node.spec.ts
+
+Test credentials:
+email=heidi@intnt.ai
+password=testing2026!
+org=Testing2026!
+
+### Login pattern (copy verbatim from create-new-flow-user-utterance-node.spec.ts)
+Use the EXACT same login and org-selection code from the working reference test.
+
+### Canvas transform (read ONCE before adding any node)
+MANDATORY: Read the canvas transform ONCE after the canvas opens, before adding any node.
+Use DOMMatrix exactly as shown in create-new-flow-user-utterance-node.spec.ts:
+  const tf = await page.locator('.vue-flow__transformationpane').evaluate(el => {
+    const m = new DOMMatrix((el as HTMLElement).style.transform);
+    return { scale: m.a, tx: m.e, ty: m.f };
+  });
+
+### Clicking nodes to open their modal (CRITICAL)
+ALWAYS click `.node-container` using evaluate — NEVER click the `.vue-flow__node` wrapper.
+CORRECT:
+  await page.locator('.node-container').filter({ hasText: /KnowledgeBaseNode/ }).first().evaluate(el => (el as HTMLElement).click());
+WRONG:
+  await kbWrapper.evaluate(el => (el as HTMLElement).click());  ← wrapper click does NOT open the modal
+
+Steps:
+
+1. Perform case "Login"
+2. On Select Organization page, select organization "Testing2026!"
+3. User redirected to https://dashboard.int3nt.info
+4. Click Flow Designer on the left sidebar
+5. On All Flows page, click Add New
+6. Flow canvas page opens displaying default nodes: START, END
+
+[Read canvas transform tf here — ONCE, before step 7]
+
+7. Click Add Nodes Button
+8. From Add Nodes menu, select Knowledge Base Node
+
+[POSITIONING — immediately after node appears, before clicking it]
+Find the new node wrapper:
+  page.locator('.vue-flow__node').filter({ has: page.locator('.node-container').filter({ hasText: /KnowledgeBaseNode/ }) }).first()
+Convert canvas (250, 100) to screen position using tf:
+  targetX = 250 * tf.scale + tf.tx
+  targetY = 100 * tf.scale + tf.ty
+Drag with steps: 20. Wait 500ms after.
+
+9. Click Knowledge Base node to open modal
+   CORRECT:
+   await page.locator('.node-container').filter({ hasText: /KnowledgeBaseNode/ }).first().evaluate(el => (el as HTMLElement).click());
+   await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 10000 });
+
+10. Change Node ID to: Kb
+
+11. In Is Tool, select: False
+
+12. Verify Source dropdown is set to: Document Search Options
+    Source is a v-select (div, NOT an input). NEVER use inputValue() — it throws "Not an input element".
+    CORRECT: await expect(sourceSelect).toContainText(/Document Search/);
+
+13. In Document Search Cluster, select: testing kb
+
+14. In Search Fields, click + Add Item button
+    Selector: page.locator('.modal-dialog button').filter({ hasText: /Add Item/ }).first()
+15. Enter: body
+    NodeConfigurationModal wraps each array item's fields in .array-item-fields (NOT .array-item-content).
+    Inside .array-item-fields, only plain text inputs exist (no comboboxes) — so this selector is unambiguous:
+      page.locator('.modal-dialog .array-item-fields input[type="text"]').first()
+    waitFor visible before filling. Do NOT use input[type="text"] scoped to the whole modal — it matches comboboxes too.
+
+16. Verify Size is: 5
+    Size is a number input. Use inputValue() on it — it IS a real input element.
+
+17. In Min Score, enter: 0
+
+18. In Inner Hits Size, enter: 10
+
+19. In Response Fields, click + Add Item button
+    Use the SECOND "Add Item" button (nth(1)) — Search Fields has the first one.
+    Selector: page.locator('.modal-dialog button').filter({ hasText: /Add Item/ }).nth(1)
+20. Enter: context
+    After the second Add Item, the response field is the LAST .array-item-fields input:
+      page.locator('.modal-dialog .array-item-fields input[type="text"]').last()
+    waitFor visible before filling.
+
+21. Verify Arguments is set to: Knowledge Search Arguments
+    Arguments is a v-select (div, NOT an input). NEVER use inputValue() — it throws "Not an input element".
+    CORRECT: await expect(argumentsSelect).toContainText(/Knowledge Search Arguments/);
+
+22. In Query, enter: intent
+
+23. Click Save
+    Wait for modal to close. Wait 500ms after.
+
+24. Connect nodes by dragging: START → Kb
+
+[EDGE VERIFICATION — REQUIRED — use count-based pattern from reference test]
+
+25. Click Add Nodes Button
+26. From Add Nodes menu, select Reply Message
+
+[POSITIONING — immediately after node appears]
+Find the new node wrapper: hasText: /ReplyMessage/ .first()
+Convert canvas (250, 200) to screen using tf:
+  targetX = 250 * tf.scale + tf.tx
+  targetY = 200 * tf.scale + tf.ty
+Drag with steps: 20. Wait 500ms after.
+
+27. Click Reply Message node to open modal
+    CORRECT:
+    await page.locator('.node-container').filter({ hasText: /ReplyMessage/ }).first().evaluate(el => (el as HTMLElement).click());
+
+28. Verify fields auto-filled: Node Version, Receiver Channel, Content Type
+    These are v-select dropdowns — use toContainText(), NOT inputValue() or toHaveValue().
+
+29. Change Node ID to: ReplyMessage
+
+30. In Message field, enter:
+{{ state['nodes']['Kb']['output']['results'][0].context }}
+
+31. Click Save
+    Wait for modal to close. Wait 500ms after.
+
+32. Connect nodes by dragging: Kb → ReplyMessage
+
+[EDGE VERIFICATION — REQUIRED]
+
+33. Connect nodes by dragging: ReplyMessage → END
+
+[EDGE VERIFICATION — REQUIRED]
+
+34. Click Flow Name field beside home icon
+35. Enter: Knowledge Base
+
+36. Click Save (disk icon)
+
+37. Verify Save Flow Version modal appears
+
+38. Input Version Name: KnowledgebaseV1
+
+39. Click Save
+
+40. Verify success toast notification appears
+
+---
+
+## EDGE VERIFICATION RULE (MANDATORY — copy from create-new-flow-user-utterance-node.spec.ts)
+
+Use count-based verification only. Before each drag, capture edge count:
+
+  const edgesBefore = await page.locator('.vue-flow__edge[data-id]').count();
+  // perform drag
+  await page.waitForTimeout(1000);
+  const edgesAfter = await page.locator('.vue-flow__edge[data-id]').count();
+  if (edgesAfter <= edgesBefore) {
+    throw new Error(`Edge NOT created — before: ${edgesBefore}, after: ${edgesAfter}`);
+  }
+
+NEVER use:
+- [data-id^="e-START-"] or any source-based ID pattern (timestamp IDs — will never match)
+- .vue-flow__edge.first() (matches ghost/preview edges)
+
+---
+
+## EXPECTED RESULT
+
+1. Flow "Knowledge Base" is successfully created
+2. Knowledge Base node (Kb) uses cluster: testing kb
+3. Reply Message node uses: {{ state['nodes']['Kb']['output']['results'][0].context }}
+4. Flow structure: START → Kb → ReplyMessage → END
+5. Flow saved with version KnowledgebaseV1 successfully
+
+---
+
+## PHASE 2 — Run and Fix
+
+After creating the test:
+
+1. Run:
+npx playwright test tests/flow-designer/create-new-flow-knowledge-base-node.spec.ts --reporter=line
+
+2. If it fails:
+- Analyze error carefully
+- Identify root cause (selector, timing, wrong method like inputValue on a div)
+- Fix the test
+
+3. Re-run after each fix
+
+4. Repeat until PASS or clear blocking issue
+
+5. Final report must include:
+- Terminal output
+- Fix summary
+- Final result (PASS / FAIL)
+
+EOF
+)"
