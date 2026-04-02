@@ -112,10 +112,16 @@ var (
 		"/dev/stderr":  true,
 	}
 
-	scriptPreflightEnvVarPattern      = regexp.MustCompile(`\$[A-Z_][A-Z0-9_]{1,}`)
-	interpreterPipePattern            = regexp.MustCompile(`(?i)(?:^|[|;&]\s*)(?:env\s+)?(?:python(?:\d+(?:\.\d+)?)?|node(?:js)?)\b`)
-	interpreterShellWrapperPattern    = regexp.MustCompile(`(?i)(?:^|\s)(?:env\s+)?(?:bash|sh|zsh|dash)\b[^\n]*\s-c\s+["']?\s*(?:env\s+)?(?:python(?:\d+(?:\.\d+)?)?|node(?:js)?)\b`)
-	interpreterProcessSubstPattern    = regexp.MustCompile(`(?i)(?:^|\s)(?:env\s+)?(?:python(?:\d+(?:\.\d+)?)?|node(?:js)?)\b[^\n]*<\(`)
+	scriptPreflightEnvVarPattern = regexp.MustCompile(`\$[A-Z_][A-Z0-9_]{1,}`)
+	interpreterPipePattern       = regexp.MustCompile(
+		`(?i)(?:^|[|;&]\s*)(?:env\s+)?(?:python(?:\d+(?:\.\d+)?)?|node(?:js)?)\b`,
+	)
+	interpreterShellWrapperPattern = regexp.MustCompile(
+		`(?i)(?:^|\s)(?:env\s+)?(?:bash|sh|zsh|dash)\b[^\n]*\s-c\s+["']?\s*(?:env\s+)?(?:python(?:\d+(?:\.\d+)?)?|node(?:js)?)\b`,
+	)
+	interpreterProcessSubstPattern = regexp.MustCompile(
+		`(?i)(?:^|\s)(?:env\s+)?(?:python(?:\d+(?:\.\d+)?)?|node(?:js)?)\b[^\n]*<\(`,
+	)
 )
 
 func NewExecTool(workingDir string, restrict bool, allowPaths ...[]*regexp.Regexp) (*ExecTool, error) {
@@ -1150,7 +1156,10 @@ func (t *ExecTool) validateScriptFileForShellBleed(command, cwd string) string {
 		}
 
 		if first := scriptPreflightEnvVarPattern.Find(content); len(first) > 0 {
-			return fmt.Sprintf("Command blocked by safety guard (exec preflight: detected likely shell variable injection (%s))", first)
+			return fmt.Sprintf(
+				"Command blocked by safety guard (exec preflight: detected likely shell variable injection (%s))",
+				first,
+			)
 		}
 	}
 
@@ -1309,14 +1318,23 @@ func findLastPositionalScriptArg(tokens []string, suffixes []string) string {
 		if token == "-c" || token == "-m" || token == "-e" || token == "-p" || token == "--eval" || token == "--print" {
 			return ""
 		}
-		if token == "-W" || token == "-X" || token == "-Q" || token == "--check-hash-based-pycs" || token == "-r" || token == "--require" || token == "--import" {
+		if token == "-W" || token == "-X" || token == "-Q" || token == "--check-hash-based-pycs" || token == "-r" ||
+			token == "--require" ||
+			token == "--import" {
 			i++
 			continue
 		}
-		if strings.HasPrefix(token, "-W") || strings.HasPrefix(token, "-X") || strings.HasPrefix(token, "-Q") || strings.HasPrefix(token, "-r") || strings.HasPrefix(token, "-e") || strings.HasPrefix(token, "-p") || strings.HasPrefix(token, "-c") {
+		if strings.HasPrefix(token, "-W") || strings.HasPrefix(token, "-X") || strings.HasPrefix(token, "-Q") ||
+			strings.HasPrefix(token, "-r") ||
+			strings.HasPrefix(token, "-e") ||
+			strings.HasPrefix(token, "-p") ||
+			strings.HasPrefix(token, "-c") {
 			continue
 		}
-		if strings.HasPrefix(token, "--require=") || strings.HasPrefix(token, "--import=") || strings.HasPrefix(token, "--check-hash-based-pycs=") || strings.HasPrefix(token, "--eval=") || strings.HasPrefix(token, "--print=") {
+		if strings.HasPrefix(token, "--require=") || strings.HasPrefix(token, "--import=") ||
+			strings.HasPrefix(token, "--check-hash-based-pycs=") ||
+			strings.HasPrefix(token, "--eval=") ||
+			strings.HasPrefix(token, "--print=") {
 			continue
 		}
 		if hasScriptSuffix(token, suffixes) {
