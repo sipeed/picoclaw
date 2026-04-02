@@ -57,6 +57,8 @@
 
 ## 📢 Actualités
 
+2026-03-31 📱 **Support Android !** PicoClaw fonctionne maintenant sur Android ! Téléchargez l'APK sur [picoclaw.io](https://picoclaw.io/download)
+
 2026-03-25 🚀 **v0.2.4 publiée !** Refonte de l'architecture Agent (SubTurn, Hooks, Steering, EventBus), intégration WeChat/WeCom, renforcement de la sécurité (.security.yml, filtrage des données sensibles), nouveaux providers (AWS Bedrock, Azure, Xiaomi MiMo), et 35 corrections de bugs. PicoClaw a atteint **26K Stars** !
 
 2026-03-17 🚀 **v0.2.3 publiée !** Interface system tray (Windows & Linux), requête de statut des sous-agents (`spawn_status`), rechargement à chaud expérimental du Gateway, sécurisation Cron, et 2 correctifs de sécurité. PicoClaw a atteint **25K Stars** !
@@ -304,7 +306,25 @@ Pour la documentation détaillée du TUI, voir [docs.picoclaw.io](https://docs.p
 
 Donnez une seconde vie à votre téléphone vieux de dix ans ! Transformez-le en assistant IA intelligent avec PicoClaw.
 
-**Option 1 : Termux (disponible maintenant)**
+**Option 1 : Installation APK**
+
+Aperçu :
+
+<table>
+  <tr>
+    <td><img src="assets/fui_main_page.jpg" width="200"></td>
+    <td><img src="assets/fui_web_page.jpg" width="200"></td>
+    <td><img src="assets/fui_log_page.jpg" width="200"></td>
+    <td><img src="assets/fui_setting_page.jpg" width="200"></td>
+  </tr>
+</table>
+
+Téléchargez l'APK depuis [picoclaw.io](https://picoclaw.io/download/) et installez-le directement. Pas besoin de Termux !
+
+**Option 2 : Termux**
+
+<details>
+<summary><b>Terminal Launcher (pour les environnements à ressources limitées)</b></summary>
 
 1. Installez [Termux](https://github.com/termux/termux-app) (téléchargez depuis [GitHub Releases](https://github.com/termux/termux-app/releases), ou cherchez dans F-Droid / Google Play)
 2. Exécutez les commandes suivantes :
@@ -320,13 +340,6 @@ termux-chroot ./picoclaw onboard   # chroot fournit une arborescence Linux stand
 Suivez ensuite la section Terminal Launcher ci-dessous pour terminer la configuration.
 
 <img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
-
-**Option 2 : Installation APK (bientôt disponible)**
-
-Un APK Android autonome avec WebUI intégré est en développement. Restez à l'écoute !
-
-<details>
-<summary><b>Terminal Launcher (pour les environnements à ressources limitées)</b></summary>
 
 Pour les environnements minimaux où seul le binaire principal `picoclaw` est disponible (sans Launcher UI), vous pouvez tout configurer via la ligne de commande et un fichier de configuration JSON.
 
@@ -461,6 +474,8 @@ Parlez à votre PicoClaw via plus de 17 plateformes de messagerie :
 | **Pico Client** | Facile (URL WebSocket) | WebSocket | Intégré |
 
 > Tous les channels basés sur webhook partagent un seul serveur HTTP Gateway (`gateway.host`:`gateway.port`, par défaut `127.0.0.1:18790`). Feishu utilise le mode WebSocket/SDK et n'utilise pas le serveur HTTP partagé.
+
+> La verbosité des logs est contrôlée par `gateway.log_level` (par défaut : `warn`). Valeurs supportées : `debug`, `info`, `warn`, `error`, `fatal`. Peut aussi être défini via `PICOCLAW_LOG_LEVEL`. Voir [Configuration](docs/fr/configuration.md#niveau-de-log-du-gateway) pour plus de détails.
 
 Pour les instructions détaillées de configuration des channels, voir [Configuration des applications de chat](docs/fr/chat-apps.md).
 

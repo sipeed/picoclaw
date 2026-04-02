@@ -2,8 +2,11 @@ package openai_responses_common
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/openai/openai-go/v3/responses"
 
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
@@ -298,10 +301,10 @@ func TestTranslateTools_DescriptionOmittedWhenEmpty(t *testing.T) {
 // --- ParseResponseBody tests ---
 
 func TestParseResponseBody_TextOutput(t *testing.T) {
-	body := strings.NewReader(`{
+	body := strings.NewReader(fmt.Sprintf(`{
 		"id": "resp_123",
 		"object": "response",
-		"status": "completed",
+		"status": "%s",
 		"output": [
 			{
 				"type": "message",
@@ -315,7 +318,7 @@ func TestParseResponseBody_TextOutput(t *testing.T) {
 			"input_tokens_details": {"cached_tokens": 0},
 			"output_tokens_details": {"reasoning_tokens": 0}
 		}
-	}`)
+	}`, string(responses.ResponseStatusCompleted)))
 
 	result, err := ParseResponseBody(body)
 	if err != nil {
@@ -333,10 +336,10 @@ func TestParseResponseBody_TextOutput(t *testing.T) {
 }
 
 func TestParseResponseBody_FunctionCall(t *testing.T) {
-	body := strings.NewReader(`{
+	body := strings.NewReader(fmt.Sprintf(`{
 		"id": "resp_456",
 		"object": "response",
-		"status": "completed",
+		"status": "%s",
 		"output": [
 			{
 				"type": "function_call",
@@ -352,7 +355,7 @@ func TestParseResponseBody_FunctionCall(t *testing.T) {
 			"input_tokens_details": {"cached_tokens": 0},
 			"output_tokens_details": {"reasoning_tokens": 0}
 		}
-	}`)
+	}`, string(responses.ResponseStatusCompleted)))
 
 	result, err := ParseResponseBody(body)
 	if err != nil {
@@ -373,10 +376,10 @@ func TestParseResponseBody_FunctionCall(t *testing.T) {
 }
 
 func TestParseResponseBody_Reasoning(t *testing.T) {
-	body := strings.NewReader(`{
+	body := strings.NewReader(fmt.Sprintf(`{
 		"id": "resp_789",
 		"object": "response",
-		"status": "completed",
+		"status": "%s",
 		"output": [
 			{
 				"type": "reasoning",
@@ -396,7 +399,7 @@ func TestParseResponseBody_Reasoning(t *testing.T) {
 			"input_tokens_details": {"cached_tokens": 0},
 			"output_tokens_details": {"reasoning_tokens": 10}
 		}
-	}`)
+	}`, string(responses.ResponseStatusCompleted)))
 
 	result, err := ParseResponseBody(body)
 	if err != nil {
@@ -417,10 +420,10 @@ func TestParseResponseBody_Reasoning(t *testing.T) {
 }
 
 func TestParseResponseBody_Refusal(t *testing.T) {
-	body := strings.NewReader(`{
+	body := strings.NewReader(fmt.Sprintf(`{
 		"id": "resp_ref",
 		"object": "response",
-		"status": "completed",
+		"status": "%s",
 		"output": [
 			{
 				"type": "message",
@@ -434,7 +437,7 @@ func TestParseResponseBody_Refusal(t *testing.T) {
 			"input_tokens_details": {"cached_tokens": 0},
 			"output_tokens_details": {"reasoning_tokens": 0}
 		}
-	}`)
+	}`, string(responses.ResponseStatusCompleted)))
 
 	result, err := ParseResponseBody(body)
 	if err != nil {
@@ -489,6 +492,26 @@ func TestParseResponseBody_FailedStatus(t *testing.T) {
 	}
 	if err.Error() != "responses failed" {
 		t.Fatalf("error = %q, want %q", err.Error(), "responses failed")
+	}
+}
+
+func TestParseResponseBody_CanceledStatus(t *testing.T) {
+	body := strings.NewReader(fmt.Sprintf(`{
+		"id": "resp_cancel",
+		"object": "response",
+		"status": "%s",
+		"output": [],
+		"usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
+			"input_tokens_details": {"cached_tokens": 0},
+			"output_tokens_details": {"reasoning_tokens": 0}}
+	}`, string(responses.ResponseStatusCancelled)))
+
+	_, err := ParseResponseBody(body)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "unexpected or non-terminal status") {
+		t.Fatalf("error = %q, want unexpected canceled status", err.Error())
 	}
 }
 

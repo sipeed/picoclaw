@@ -11,6 +11,13 @@ import { useTranslation } from "react-i18next"
 import type { ChannelConfig } from "@/api/channels"
 import { patchAppConfig, pollWecomFlow, startWecomFlow } from "@/api/channels"
 import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 
 type BindingState =
@@ -329,39 +336,32 @@ export function WecomForm({
   }
 
   return (
-    <div className="space-y-5">
-      <div className="border-border/60 bg-background rounded-lg border px-4 py-3">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium">
-              {t("channels.page.enableLabel")}
-            </p>
-            <p className="text-muted-foreground mt-0.5 text-xs">
-              {isBound
-                ? t("channels.wecom.enableDesc")
-                : t("channels.wecom.enableBindFirst")}
-            </p>
-          </div>
+    <div className="space-y-6">
+      <div className="bg-card text-card-foreground border-border/60 flex items-center justify-between rounded-xl border px-6 py-4 shadow-sm">
+        <p className="text-sm font-medium">{t("channels.page.enableLabel")}</p>
+        <div className="flex flex-col items-end gap-2">
           <Switch
             checked={enabled}
             disabled={!isBound || toggleSaving}
             onCheckedChange={(checked) => void handleEnabledChange(checked)}
           />
+          {toggleError && (
+            <p className="text-destructive max-w-60 text-right text-xs leading-normal">
+              {toggleError}
+            </p>
+          )}
         </div>
-        {toggleError && (
-          <p className="text-destructive mt-2 text-sm">{toggleError}</p>
-        )}
       </div>
 
-      <div className="border-border/60 bg-muted/30 rounded-xl border">
-        <div className="border-border/60 border-b px-4 py-3">
-          <p className="text-sm font-medium">{t("channels.wecom.bindTitle")}</p>
-          <p className="text-muted-foreground mt-0.5 text-xs">
-            {t("channels.wecom.bindDesc")}
-          </p>
-        </div>
-        {renderBindSection()}
-      </div>
+      <Card className="shadow-sm">
+        <CardHeader className="border-border/60 border-b px-6">
+          <CardTitle className="text-foreground text-sm font-medium">
+            {t("channels.wecom.bindTitle")}
+          </CardTitle>
+          <CardDescription>{t("channels.wecom.bindDesc")}</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">{renderBindSection()}</CardContent>
+      </Card>
     </div>
   )
 }

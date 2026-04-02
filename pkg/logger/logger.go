@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/rs/zerolog"
+	"golang.org/x/term"
 )
 
 type LogLevel = zerolog.Level
@@ -21,6 +22,8 @@ const (
 	WARN  = zerolog.WarnLevel
 	ERROR = zerolog.ErrorLevel
 	FATAL = zerolog.FatalLevel
+
+	Component = "component"
 )
 
 var (
@@ -32,28 +35,47 @@ var (
 		FATAL: "FATAL",
 	}
 
-	currentLevel = INFO
-	logger       zerolog.Logger
-	fileLogger   zerolog.Logger
-	logFile      *os.File
-	once         sync.Once
-	mu           sync.RWMutex
+	currentLevel  = INFO
+	logger        zerolog.Logger
+	logFile       *os.File
+	once          sync.Once
+	mu            sync.RWMutex
+	writers       []io.Writer
+	consoleWriter zerolog.ConsoleWriter
 )
 
 func init() {
 	once.Do(func() {
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 
-		consoleWriter := zerolog.ConsoleWriter{
+		isTTY := term.IsTerminal(int(os.Stdout.Fd()))
+
+		consoleWriter = zerolog.ConsoleWriter{
 			Out:        os.Stdout,
 			TimeFormat: "15:04:05", // TODO: make it configurable???
 
 			// Custom formatter to handle multiline strings and JSON objects
 			FormatFieldValue: formatFieldValue,
+			PartsOrder: []string{
+				zerolog.TimestampFieldName,
+				zerolog.LevelFieldName,
+				Component,
+				zerolog.CallerFieldName,
+				zerolog.MessageFieldName,
+			},
+			FieldsExclude: []string{Component},
+			FormatPrepare: func(fields map[string]any) error {
+				if isTTY {
+					fields[Component] = fmt.Sprintf("\x1b[33m%v\x1b[0m", fields[Component])
+				}
+				return nil
+			},
+			NoColor: !isTTY,
 		}
 
-		logger = zerolog.New(consoleWriter).With().Timestamp().Caller().Logger()
-		fileLogger = zerolog.Logger{}
+		writers = append(writers, consoleWriter)
+
+		logger = zerolog.New(io.MultiWriter(writers...)).With().Timestamp().Caller().Logger()
 	})
 }
 
@@ -104,7 +126,15 @@ func SetConsoleLevel(level LogLevel) {
 func DisableConsole() {
 	mu.Lock()
 	defer mu.Unlock()
-	logger = zerolog.New(io.Discard).With().Timestamp().Caller().Logger()
+	writers[0] = io.Discard
+	logger = logger.Output(io.MultiWriter(writers...))
+}
+
+func EnableConsole() {
+	mu.Lock()
+	defer mu.Unlock()
+	writers[0] = consoleWriter
+	logger = logger.Output(io.MultiWriter(writers...))
 }
 
 func GetLevel() LogLevel {
@@ -162,7 +192,14 @@ func EnableFileLogging(filePath string) error {
 	}
 
 	logFile = newFile
-	fileLogger = zerolog.New(logFile).With().Timestamp().Caller().Logger()
+
+	if len(writers) != 1 {
+		return fmt.Errorf("failed to configure file logging: %w", err)
+	}
+
+	writers = append(writers, logFile)
+	logger = logger.Output(io.MultiWriter(writers...))
+
 	return nil
 }
 
@@ -174,7 +211,10 @@ func DisableFileLogging() {
 		logFile.Close()
 		logFile = nil
 	}
-	fileLogger = zerolog.Logger{}
+	if len(writers) > 1 {
+		writers = writers[:1]
+		logger = logger.Output(io.MultiWriter(writers...))
+	}
 }
 
 func ConfigureFromEnv() {
@@ -193,7 +233,28 @@ func ConfigureFromEnv() {
 	}
 }
 
-func getCallerSkip() int {
+const (
+	locUnknown = "<unknown>"
+)
+
+func getPackageNameFromFile(filePath string) string {
+	dir := filepath.Dir(filePath)
+	importPath := filepath.ToSlash(dir)
+
+	parts := strings.Split(importPath, "/")
+	if len(parts) == 0 {
+		return locUnknown
+	}
+
+	pkg := parts[len(parts)-1]
+	if pkg == "." {
+		return "<main>"
+	}
+
+	return pkg
+}
+
+func getCallerSkip() (int, string) {
 	for i := 2; i < 15; i++ {
 		pc, file, _, ok := runtime.Caller(i)
 		if !ok {
@@ -217,10 +278,10 @@ func getCallerSkip() int {
 			continue
 		}
 
-		return i - 1
+		return i - 1, getPackageNameFromFile(file)
 	}
 
-	return 3
+	return 3, locUnknown
 }
 
 //nolint:zerologlint
@@ -246,33 +307,19 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		return
 	}
 
-	skip := getCallerSkip()
+	skip, pkg := getCallerSkip()
 
 	event := getEvent(logger, level)
 
-	if component != "" {
-		event.Str("component", component)
+	if component == "" {
+		component = pkg
 	}
+
+	event.Str(Component, component)
 
 	appendFields(event, fields)
+
 	event.CallerSkipFrame(skip).Msg(message)
-
-	// Also log to file if enabled
-	if fileLogger.GetLevel() != zerolog.NoLevel {
-		fileEvent := getEvent(fileLogger, level)
-
-		if component != "" {
-			fileEvent.Str("component", component)
-		}
-		// fileEvent.Str("caller", fmt.Sprintf("%s:%d (%s)", callerFile, callerLine, callerFunc))
-
-		appendFields(fileEvent, fields)
-		fileEvent.CallerSkipFrame(skip).Msg(message)
-	}
-
-	if level == FATAL {
-		os.Exit(1)
-	}
 }
 
 func appendFields(event *zerolog.Event, fields map[string]any) {

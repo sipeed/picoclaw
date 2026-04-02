@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	ppid "github.com/sipeed/picoclaw/pkg/pid"
 )
 
 func TestEnsurePicoChannel_FreshConfig(t *testing.T) {
@@ -335,8 +336,20 @@ func TestHandleWebSocketProxyReloadsGatewayTargetFromConfig(t *testing.T) {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
+	gateway.pidData = &ppid.PidFileData{}
+	gateway.picoToken = "pico"
 	req1 := httptest.NewRequest(http.MethodGet, "/pico/ws", nil)
+	req1.Header.Set(protocolKey, tokenPrefix+"wrong_token")
 	rec1 := httptest.NewRecorder()
+	handler(rec1, req1)
+
+	if rec1.Code != http.StatusForbidden {
+		t.Fatalf("first status = %d, want %d", rec1.Code, http.StatusForbidden)
+	}
+
+	req1 = httptest.NewRequest(http.MethodGet, "/pico/ws", nil)
+	req1.Header.Set(protocolKey, tokenPrefix+"pico")
+	rec1 = httptest.NewRecorder()
 	handler(rec1, req1)
 
 	if rec1.Code != http.StatusOK {
@@ -352,6 +365,7 @@ func TestHandleWebSocketProxyReloadsGatewayTargetFromConfig(t *testing.T) {
 	}
 
 	req2 := httptest.NewRequest(http.MethodGet, "/pico/ws", nil)
+	req2.Header.Set(protocolKey, tokenPrefix+"pico")
 	rec2 := httptest.NewRecorder()
 	handler(rec2, req2)
 
@@ -360,6 +374,55 @@ func TestHandleWebSocketProxyReloadsGatewayTargetFromConfig(t *testing.T) {
 	}
 	if body := rec2.Body.String(); body != "server2" {
 		t.Fatalf("second body = %q, want %q", body, "server2")
+	}
+}
+
+func TestHandleWebSocketProxyLoadsCachedPicoTokenWhenMissing(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	handler := h.handleWebSocketProxy()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/pico/ws" {
+			t.Fatalf("path = %q, want %q", r.URL.Path, "/pico/ws")
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "proxied")
+	}))
+	defer server.Close()
+
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Host = "127.0.0.1"
+	cfg.Gateway.Port = mustGatewayTestPort(t, server.URL)
+	cfg.Channels.Pico.Enabled = true
+	cfg.Channels.Pico.SetToken("cached-token")
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	origPidData := gateway.pidData
+	origPicoToken := gateway.picoToken
+	t.Cleanup(func() {
+		gateway.pidData = origPidData
+		gateway.picoToken = origPicoToken
+	})
+
+	gateway.pidData = &ppid.PidFileData{}
+	gateway.picoToken = ""
+
+	req := httptest.NewRequest(http.MethodGet, "/pico/ws?session_id=test-session", nil)
+	req.Header.Set(protocolKey, tokenPrefix+"cached-token")
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if body := rec.Body.String(); body != "proxied" {
+		t.Fatalf("body = %q, want %q", body, "proxied")
+	}
+	if gateway.picoToken != "cached-token" {
+		t.Fatalf("gateway.picoToken = %q, want %q", gateway.picoToken, "cached-token")
 	}
 }
 

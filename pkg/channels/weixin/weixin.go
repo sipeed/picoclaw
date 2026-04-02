@@ -358,16 +358,16 @@ func (c *WeixinChannel) handleInboundMessage(ctx context.Context, msg WeixinMess
 }
 
 // Send implements channels.Channel by sending a text message to the WeChat user.
-func (c *WeixinChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *WeixinChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 	if err := c.ensureSessionActive(); err != nil {
-		return err
+		return nil, err
 	}
 
 	if msg.Content == "" {
-		return nil
+		return nil, nil
 	}
 
 	// We need a context_token to send a reply. It should be stored in the conversation metadata.
@@ -386,7 +386,7 @@ func (c *WeixinChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		logger.ErrorCF("weixin", "Missing context token, cannot send message", map[string]any{
 			"to_user_id": toUserID,
 		})
-		return fmt.Errorf("weixin send: %w: missing context token for chat %s", channels.ErrSendFailed, toUserID)
+		return nil, fmt.Errorf("weixin send: %w: missing context token for chat %s", channels.ErrSendFailed, toUserID)
 	}
 
 	if err := c.sendTextMessage(ctx, toUserID, contextToken, msg.Content); err != nil {
@@ -395,10 +395,15 @@ func (c *WeixinChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 			"error":      err.Error(),
 		})
 		if c.remainingPause() > 0 {
-			return fmt.Errorf("weixin send: %w", channels.ErrSendFailed)
+			return nil, fmt.Errorf("weixin send: %w", channels.ErrSendFailed)
 		}
-		return fmt.Errorf("weixin send: %w", channels.ErrTemporary)
+		return nil, fmt.Errorf("weixin send: %w", channels.ErrTemporary)
 	}
 
-	return nil
+	return nil, nil
+}
+
+// VoiceCapabilities returns the voice capabilities of the channel.
+func (c *WeixinChannel) VoiceCapabilities() channels.VoiceCapabilities {
+	return channels.VoiceCapabilities{ASR: true, TTS: true}
 }

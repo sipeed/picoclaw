@@ -73,22 +73,22 @@ Este design também permite **suporte multi-agente** com seleção flexível de 
     {
       "model_name": "ark-code-latest",
       "model": "volcengine/ark-code-latest",
-      "api_key": "sk-your-api-key"
+      "api_keys": ["sk-your-api-key"]
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
-      "api_key": "sk-your-openai-key"
+      "api_keys": ["sk-your-openai-key"]
     },
     {
       "model_name": "claude-sonnet-4.6",
       "model": "anthropic/claude-sonnet-4.6",
-      "api_key": "sk-ant-your-key"
+      "api_keys": ["sk-ant-your-key"]
     },
     {
       "model_name": "glm-4.7",
       "model": "zhipu/glm-4.7",
-      "api_key": "your-zhipu-key"
+      "api_keys": ["your-zhipu-key"]
     }
   ],
   "agents": {
@@ -99,6 +99,24 @@ Este design também permite **suporte multi-agente** com seleção flexível de 
 }
 ```
 
+#### Campos de entrada `model_list`
+
+| Campo | Tipo | Obrigatório | Descrição |
+|-------|------|-------------|-----------|
+| `model_name` | string | Sim | Nome único para referenciar este modelo na config do agent |
+| `model` | string | Sim | Identificador fornecedor/modelo (ex: `openai/gpt-5.4`, `azure/gpt-5.4`, `anthropic/claude-sonnet-4.6`) |
+| `api_keys` | string[] | Sim* | Chave(s) API para autenticação. Múltiplas chaves permitem rotação por requisição. Não necessário para providers locais (Ollama, LM Studio, VLLM) |
+| `api_base` | string | Não | Substitui a URL base da API padrão |
+| `proxy` | string | Não | URL do proxy HTTP para esta entrada de modelo |
+| `user_agent` | string | Não | Cabeçalho `User-Agent` personalizado enviado com requisições API (suportado por providers OpenAI-compatible, Anthropic e Azure) |
+| `request_timeout` | int | Não | Timeout de requisição em segundos (o padrão varia por provider) |
+| `max_tokens_field` | string | Não | Substitui o nome do campo max tokens no corpo da requisição (ex: `max_completion_tokens` para modelos o1) |
+| `thinking_level` | string | Não | Nível de pensamento estendido: `off`, `low`, `medium`, `high`, `xhigh` ou `adaptive` |
+| `extra_body` | object | Não | Campos adicionais para injetar em cada corpo de requisição |
+| `rpm` | int | Não | Limite de requisições por minuto |
+| `fallbacks` | string[] | Não | Nomes dos modelos de fallback para failover automático |
+| `enabled` | bool | Não | Ativar ou desativar esta entrada de modelo (padrão: `true`) |
+
 #### Exemplos por Vendor
 
 **OpenAI**
@@ -107,7 +125,7 @@ Este design também permite **suporte multi-agente** com seleção flexível de 
 {
   "model_name": "gpt-5.4",
   "model": "openai/gpt-5.4",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -117,7 +135,7 @@ Este design também permite **suporte multi-agente** com seleção flexível de 
 {
   "model_name": "ark-code-latest",
   "model": "volcengine/ark-code-latest",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -127,7 +145,7 @@ Este design também permite **suporte multi-agente** com seleção flexível de 
 {
   "model_name": "glm-4.7",
   "model": "zhipu/glm-4.7",
-  "api_key": "your-key"
+  "api_keys": ["your-key"]
 }
 ```
 
@@ -137,7 +155,7 @@ Este design também permite **suporte multi-agente** com seleção flexível de 
 {
   "model_name": "deepseek-chat",
   "model": "deepseek/deepseek-chat",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -147,7 +165,7 @@ Este design também permite **suporte multi-agente** com seleção flexível de 
 {
   "model_name": "claude-sonnet-4.6",
   "model": "anthropic/claude-sonnet-4.6",
-  "api_key": "sk-ant-your-key"
+  "api_keys": ["sk-ant-your-key"]
 }
 ```
 
@@ -161,7 +179,7 @@ Para acesso direto à API Anthropic ou endpoints personalizados que suportam ape
 {
   "model_name": "claude-opus-4-6",
   "model": "anthropic-messages/claude-opus-4-6",
-  "api_key": "sk-ant-your-key",
+  "api_keys": ["sk-ant-your-key"],
   "api_base": "https://api.anthropic.com"
 }
 ```
@@ -189,7 +207,8 @@ Para acesso direto à API Anthropic ou endpoints personalizados que suportam ape
   "model_name": "my-custom-model",
   "model": "openai/custom-model",
   "api_base": "https://my-proxy.com/v1",
-  "api_key": "sk-...",
+  "api_keys": ["sk-..."],
+  "user_agent": "MyApp/1.0",
   "request_timeout": 300
 }
 ```
@@ -201,7 +220,7 @@ Para acesso direto à API Anthropic ou endpoints personalizados que suportam ape
   "model_name": "lite-gpt4",
   "model": "litellm/lite-gpt4",
   "api_base": "http://localhost:4000/v1",
-  "api_key": "sk-..."
+  "api_keys": ["sk-..."]
 }
 ```
 
@@ -218,13 +237,13 @@ Configure múltiplos endpoints para o mesmo nome de modelo — o PicoClaw fará 
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api1.example.com/v1",
-      "api_key": "sk-key1"
+      "api_keys": ["sk-key1"]
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api2.example.com/v1",
-      "api_key": "sk-key2"
+      "api_keys": ["sk-key2"]
     }
   ]
 }
@@ -232,7 +251,7 @@ Configure múltiplos endpoints para o mesmo nome de modelo — o PicoClaw fará 
 
 #### Migração da Configuração Legacy `providers`
 
-A configuração antiga `providers` está **descontinuada** mas ainda é suportada para compatibilidade retroativa.
+A configuração antiga `providers` está **descontinuada** e foi removida no V2. Configs V0/V1 existentes são auto-migradas.
 
 **Configuração Antiga (descontinuada):**
 
@@ -257,11 +276,12 @@ A configuração antiga `providers` está **descontinuada** mas ainda é suporta
 
 ```json
 {
+  "version": 2,
   "model_list": [
     {
       "model_name": "glm-4.7",
       "model": "zhipu/glm-4.7",
-      "api_key": "your-key"
+      "api_keys": ["your-key"]
     }
   ],
   "agents": {
@@ -282,7 +302,7 @@ O PicoClaw roteia provedores por família de protocolo:
 - Protocolo Anthropic: Comportamento nativo da API Claude.
 - Caminho Codex/OAuth: Rota de autenticação OAuth/token da OpenAI.
 
-Isso mantém o runtime leve enquanto torna novos backends compatíveis com OpenAI basicamente uma operação de configuração (`api_base` + `api_key`).
+Isso mantém o runtime leve enquanto torna novos backends compatíveis com OpenAI basicamente uma operação de configuração (`api_base` + `api_keys`).
 
 <details>
 <summary><b>Zhipu</b></summary>

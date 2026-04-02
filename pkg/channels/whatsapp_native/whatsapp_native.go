@@ -396,13 +396,13 @@ func (c *WhatsAppNativeChannel) handleIncoming(evt *events.Message) {
 	c.HandleMessage(c.runCtx, peer, messageID, senderID, chatID, content, mediaPaths, metadata, sender)
 }
 
-func (c *WhatsAppNativeChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *WhatsAppNativeChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	default:
 	}
 
@@ -411,18 +411,18 @@ func (c *WhatsAppNativeChannel) Send(ctx context.Context, msg bus.OutboundMessag
 	c.mu.Unlock()
 
 	if client == nil || !client.IsConnected() {
-		return fmt.Errorf("whatsapp connection not established: %w", channels.ErrTemporary)
+		return nil, fmt.Errorf("whatsapp connection not established: %w", channels.ErrTemporary)
 	}
 
 	// Detect unpaired state: the client is connected (to WhatsApp servers)
 	// but has not completed QR-login yet, so sending would fail.
 	if client.Store.ID == nil {
-		return fmt.Errorf("whatsapp not yet paired (QR login pending): %w", channels.ErrTemporary)
+		return nil, fmt.Errorf("whatsapp not yet paired (QR login pending): %w", channels.ErrTemporary)
 	}
 
 	to, err := parseJID(msg.ChatID)
 	if err != nil {
-		return fmt.Errorf("invalid chat id %q: %w", msg.ChatID, err)
+		return nil, fmt.Errorf("invalid chat id %q: %w", msg.ChatID, err)
 	}
 
 	waMsg := &waE2E.Message{
@@ -430,9 +430,9 @@ func (c *WhatsAppNativeChannel) Send(ctx context.Context, msg bus.OutboundMessag
 	}
 
 	if _, err = client.SendMessage(ctx, to, waMsg); err != nil {
-		return fmt.Errorf("whatsapp send: %w", channels.ErrTemporary)
+		return nil, fmt.Errorf("whatsapp send: %w", channels.ErrTemporary)
 	}
-	return nil
+	return nil, nil
 }
 
 // parseJID converts a chat ID (phone number or JID string) to types.JID.

@@ -104,20 +104,20 @@ func (c *DingTalkChannel) Stop(ctx context.Context) error {
 }
 
 // Send sends a message to DingTalk via the chatbot reply API
-func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	// Get session webhook from storage
 	sessionWebhookRaw, ok := c.sessionWebhooks.Load(msg.ChatID)
 	if !ok {
-		return fmt.Errorf("no session_webhook found for chat %s, cannot send message", msg.ChatID)
+		return nil, fmt.Errorf("no session_webhook found for chat %s, cannot send message", msg.ChatID)
 	}
 
 	sessionWebhook, ok := sessionWebhookRaw.(string)
 	if !ok {
-		return fmt.Errorf("invalid session_webhook type for chat %s", msg.ChatID)
+		return nil, fmt.Errorf("invalid session_webhook type for chat %s", msg.ChatID)
 	}
 
 	logger.DebugCF("dingtalk", "Sending message", map[string]any{
@@ -126,7 +126,7 @@ func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	})
 
 	// Use the session webhook to send the reply
-	return c.SendDirectReply(ctx, sessionWebhook, msg.Content)
+	return nil, c.SendDirectReply(ctx, sessionWebhook, msg.Content)
 }
 
 // onChatBotMessageReceived implements the IChatBotMessageHandler function signature

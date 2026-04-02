@@ -26,6 +26,7 @@ type (
 
 const (
 	defaultRequestTimeout = common.DefaultRequestTimeout
+	responsesAPIPath      = "openai/v1/responses"
 )
 
 // Provider implements the LLM provider interface for Azure OpenAI endpoints.
@@ -35,6 +36,7 @@ type Provider struct {
 	apiKey     string
 	apiBase    string
 	httpClient *http.Client
+	userAgent  string
 }
 
 // Option configures the Azure Provider.
@@ -49,11 +51,19 @@ func WithRequestTimeout(timeout time.Duration) Option {
 	}
 }
 
+// WithUserAgent sets the User-Agent header for requests.
+func WithUserAgent(userAgent string) Option {
+	return func(p *Provider) {
+		p.userAgent = userAgent
+	}
+}
+
 // NewProvider creates a new Azure OpenAI provider.
-func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
+func NewProvider(apiKey, apiBase, proxy, userAgent string, opts ...Option) *Provider {
 	p := &Provider{
 		apiKey:     apiKey,
 		apiBase:    strings.TrimRight(apiBase, "/"),
+		userAgent:  userAgent,
 		httpClient: common.NewHTTPClient(proxy),
 	}
 
@@ -67,9 +77,9 @@ func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
 }
 
 // NewProviderWithTimeout creates a new Azure OpenAI provider with a custom request timeout in seconds.
-func NewProviderWithTimeout(apiKey, apiBase, proxy string, requestTimeoutSeconds int) *Provider {
+func NewProviderWithTimeout(apiKey, apiBase, proxy, userAgent string, requestTimeoutSeconds int) *Provider {
 	return NewProvider(
-		apiKey, apiBase, proxy,
+		apiKey, apiBase, proxy, userAgent,
 		WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
 	)
 }
@@ -87,7 +97,7 @@ func (p *Provider) Chat(
 		return nil, fmt.Errorf("Azure API base not configured")
 	}
 
-	requestURL, err := url.JoinPath(p.apiBase, "openai/v1/responses")
+	requestURL, err := url.JoinPath(p.apiBase, responsesAPIPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Azure request URL: %w", err)
 	}
@@ -139,6 +149,9 @@ func (p *Provider) Chat(
 	req.Header.Set("Content-Type", "application/json")
 	if p.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
+	if p.userAgent != "" {
+		req.Header.Set("User-Agent", p.userAgent)
 	}
 
 	resp, err := p.httpClient.Do(req)

@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -172,4 +174,62 @@ func TestBM25Search_SortingStability(t *testing.T) {
 				i, results[i].Score, i-1, results[i-1].Score)
 		}
 	}
+}
+
+func BenchmarkBM25Search_ReusedIndex(b *testing.B) {
+	corpus := benchmarkBM25Corpus(2000)
+	engine := NewBM25Engine(corpus, extractText)
+	query := "hardware gpio i2c sensor controller latency"
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		results := engine.Search(query, 10)
+		if len(results) == 0 {
+			b.Fatal("expected non-empty results")
+		}
+	}
+}
+
+func BenchmarkBM25Search_RebuildEachTime(b *testing.B) {
+	corpus := benchmarkBM25Corpus(2000)
+	query := "hardware gpio i2c sensor controller latency"
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		engine := NewBM25Engine(corpus, extractText)
+		results := engine.Search(query, 10)
+		if len(results) == 0 {
+			b.Fatal("expected non-empty results")
+		}
+	}
+}
+
+func benchmarkBM25Corpus(size int) []testDoc {
+	corpus := make([]testDoc, size)
+	topics := []string{
+		"hardware gpio pwm adc sensor controller latency throughput",
+		"telegram markdown parser message escape formatting bot command",
+		"jsonl memory session history storage append compact recovery",
+		"openai provider routing agent tool search registry hidden tools",
+		"i2c spi uart serial device bus address transfer clock",
+	}
+
+	for i := range corpus {
+		topic := topics[i%len(topics)]
+		corpus[i] = testDoc{
+			ID: i,
+			Text: fmt.Sprintf(
+				"doc %d %s repeated repeated %s variant-%d %s",
+				i,
+				topic,
+				topic,
+				i%17,
+				strings.Repeat("token ", (i%7)+1),
+			),
+		}
+	}
+
+	return corpus
 }

@@ -24,22 +24,23 @@ func NewHTTPProvider(apiKey, apiBase, proxy string, opts ...openai_compat.Option
 }
 
 func NewHTTPProviderWithMaxTokensField(apiKey, apiBase, proxy, maxTokensField string) *HTTPProvider {
-	return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(apiKey, apiBase, proxy, maxTokensField, 0, nil)
+	return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(apiKey, apiBase, proxy, maxTokensField, "", 0, nil)
 }
 
 func NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
-	apiKey, apiBase, proxy, maxTokensField string,
+	apiKey, apiBase, proxy, maxTokensField, userAgent string,
 	requestTimeoutSeconds int,
 	extraBody map[string]any,
 	opts ...openai_compat.Option,
 ) *HTTPProvider {
-	providerOpts := make([]openai_compat.Option, 0, 3+len(opts))
+	providerOpts := make([]openai_compat.Option, 0, 4+len(opts))
 	providerOpts = append(providerOpts,
 		openai_compat.WithMaxTokensField(maxTokensField),
 		openai_compat.WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
 		openai_compat.WithExtraBody(extraBody),
 	)
 	providerOpts = append(providerOpts, opts...)
+	providerOpts = append(providerOpts, openai_compat.WithUserAgent(userAgent))
 
 	return &HTTPProvider{
 		delegate: openai_compat.NewProvider(apiKey, apiBase, proxy, providerOpts...),

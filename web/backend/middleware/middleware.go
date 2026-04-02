@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"bufio"
 	"fmt"
+	"net"
 	"net/http"
 	"runtime/debug"
 	"time"
@@ -44,6 +46,15 @@ func (rr *responseRecorder) Unwrap() http.ResponseWriter {
 	return rr.ResponseWriter
 }
 
+// Hijack implements http.Hijacker so that WebSocket upgrades work through
+// the middleware layer.
+func (rr *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := rr.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, http.ErrNotSupported
+}
+
 // Logger logs each HTTP request with method, path, status code, and duration.
 func Logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +71,7 @@ func Recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
+				logger.RecoverPanicNoExit(err)
 				logger.ErrorC("http", fmt.Sprintf("panic recovered: %v\n%s", err, debug.Stack()))
 				http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
 			}

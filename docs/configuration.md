@@ -6,6 +6,8 @@
 
 Config file: `~/.picoclaw/config.json`
 
+> **Security Configuration:** For storing API keys, tokens, and other sensitive data, see the [Security Configuration Guide](security_configuration.md).
+
 ### Environment Variables
 
 You can override default paths using environment variables. This is useful for portable installations, containerized deployments, or running picoclaw as a system service. These variables are independent and control different paths.
@@ -38,12 +40,12 @@ PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gat
 ```json
 {
   "gateway": {
-    "log_level": "fatal"
+    "log_level": "warn"
   }
 }
 ```
 
-When omitted, the default is `fatal`. Supported values: `debug`, `info`, `warn`, `error`, `fatal`.
+When omitted, the default is `warn`. Supported values: `debug`, `info`, `warn`, `error`, `fatal`.
 
 You can also override this with the environment variable `PICOCLAW_LOG_LEVEL`.
 
@@ -66,6 +68,18 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 ```
 
 > **Note:** Changes to `AGENT.md`, `SOUL.md`, `USER.md` and `memory/MEMORY.md` are automatically detected at runtime via file modification time (mtime) tracking. You do **not** need to restart the gateway after editing these files — the agent picks up the new content on the next request.
+
+### Web launcher dashboard
+
+**picoclaw-launcher** serves a browser UI that requires sign-in first. By default, the **dashboard token** and **session signing key** are **generated in memory on each start** (a new random token after every restart). Set **`PICOCLAW_LAUNCHER_TOKEN`** to pin a fixed token for that process (startup logs do not print the secret when this env var is used).
+
+**Where to read the token**: In **console mode** (`-console`), it is printed at startup. In **tray / GUI mode**, use the tray action **Copy dashboard token**, and check **`$PICOCLAW_HOME/logs/launcher.log`** (typically `~/.picoclaw/logs/launcher.log` if `PICOCLAW_HOME` is unset) for the random token logged on startup. The login page shows hints that match how the launcher is running (including the absolute log path); **responses do not include the token itself**.
+
+- **Config file**: Same directory as `config.json` (or the file pointed to by `PICOCLAW_CONFIG`). The launcher-specific file is `launcher-config.json`.
+- **Sign-in and links**: Enter the token on the login page, or open with `?token=` when the browser is launched automatically. All responses include **`Referrer-Policy: no-referrer`** to reduce leakage of `token` via the `Referer` header.
+- **Sign-out**: Use **`POST /api/auth/logout`** with **`Content-Type: application/json`** (body may be `{}`). Do not rely on a GET URL for logout (CSRF-safe pattern).
+- **Brute-force**: **`POST /api/auth/login`** is **rate-limited per client IP per minute** (HTTP 429 when exceeded).
+- **Session lifetime**: The HttpOnly session cookie lasts about **7 days** by default; sign in again with the token after it expires.
 
 ### Skill Sources
 
@@ -287,6 +301,66 @@ Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous
 | `tools.allow_read_paths` | string[] | `[]` | Additional paths allowed for reading outside workspace |
 | `tools.allow_write_paths` | string[] | `[]` | Additional paths allowed for writing outside workspace |
 
+### Read File Mode
+
+`read_file` has two mutually exclusive implementations selected by config. PicoClaw registers exactly one of them at startup:
+
+| Config Key | Type | Default | Description |
+|------------|------|---------|-------------|
+| `tools.read_file.enabled` | bool | `true` | Enables the `read_file` tool |
+| `tools.read_file.mode` | string | `bytes` | Selects the `read_file` implementation: `bytes` or `lines` |
+| `tools.read_file.max_read_file_size` | int | `65536` | Maximum bytes returned by `read_file` |
+
+#### Mode: `bytes`
+
+Optimized for arbitrary files and binary-safe pagination.
+
+Parameters:
+
+* `path` (required): File path
+* `offset` (optional): Starting byte offset, default `0`
+* `length` (optional): Maximum number of bytes to read, default `max_read_file_size`
+
+Use `bytes` when:
+
+* You may read binary files
+* You want deterministic byte-range pagination
+
+#### Mode: `lines`
+
+Text-oriented behavior, optimized for source files, markdown, logs, and configs. The tool reads sequentially by line and stops when the configured byte budget is reached.
+
+Parameters:
+
+* `path` (required): File path
+* `start_line` (optional): Starting line number, 1-indexed and inclusive, default `1`
+* `max_lines` (optional): Maximum number of lines to read, default = all remaining lines until EOF or byte budget
+
+Behavior notes:
+
+* Binary-looking files are rejected with guidance to switch `read_file` to `mode = bytes`
+* Extremely long single lines are truncated rather than skipped
+
+Use `mode = lines` when:
+
+* The agent mostly reads text files
+* You want line-based pagination in prompts and tool calls
+* You want cleaner chunks for code review, logs, and documentation
+
+#### Example
+
+```json
+{
+  "tools": {
+    "read_file": {
+      "enabled": true,
+       "mode": "lines",
+      "max_read_file_size": 65536
+    }
+  }
+}
+```
+
 ### Exec Security
 
 | Config Key | Type | Default | Description |
@@ -467,8 +541,9 @@ This design also enables **multi-agent support** with flexible provider selectio
 
 - **Different agents, different providers**: Each agent can use its own LLM provider
 - **Model fallbacks**: Configure primary and fallback models for resilience
-- **Load balancing**: Distribute requests across multiple endpoints
+- **Load balancing**: Distribute requests across multiple endpoints or keys
 - **Centralized configuration**: Manage all providers in one place
+- **Model enable/disable**: Use the `enabled` field to temporarily disable a model without removing its configuration
 
 #### 🔒 Security Configuration (Recommended)
 
@@ -548,6 +623,7 @@ For complete documentation, see [`security_configuration.md`](security_configura
 | **通义千问 (Qwen)**     | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Get Key](https://dashscope.console.aliyun.com)                  |
 | **NVIDIA**              | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [Get Key](https://build.nvidia.com)                              |
 | **Ollama**              | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | Local (no key needed)                                            |
+| **LM Studio**           | `lmstudio/`       | `http://localhost:1234/v1`                          | OpenAI    | Optional (local default: no key)                                 |
 | **OpenRouter**          | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            |
 | **LiteLLM Proxy**       | `litellm/`        | `http://localhost:4000/v1`                          | OpenAI    | Your LiteLLM proxy key                                           |
 | **VLLM**                | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
@@ -569,22 +645,22 @@ For complete documentation, see [`security_configuration.md`](security_configura
     {
       "model_name": "ark-code-latest",
       "model": "volcengine/ark-code-latest",
-      "api_key": "sk-your-api-key"
+      "api_keys": ["sk-your-api-key"]
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
-      "api_key": "sk-your-openai-key"
+      "api_keys": ["sk-your-openai-key"]
     },
     {
       "model_name": "claude-sonnet-4.6",
       "model": "anthropic/claude-sonnet-4.6",
-      "api_key": "sk-ant-your-key"
+      "api_keys": ["sk-ant-your-key"]
     },
     {
       "model_name": "glm-4.7",
       "model": "zhipu/glm-4.7",
-      "api_key": "your-zhipu-key"
+      "api_keys": ["your-zhipu-key"]
     }
   ],
   "agents": {
@@ -595,7 +671,9 @@ For complete documentation, see [`security_configuration.md`](security_configura
 }
 ```
 
-> **Security Note**: You can remove `api_key` fields from your config and store them in `.security.yml` instead. See [Security Configuration](#-security-configuration-recommended) above for details.
+> **Security Note**: You can remove `api_keys` fields from your config and store them in `.security.yml` instead. See [Security Configuration](#-security-configuration-recommended) above for details.
+>
+> **Note**: The `enabled` field can be set to `false` to disable a model entry without removing it. When omitted, it defaults to `true` during migration for models that have API keys.
 
 #### Vendor-Specific Examples
 
@@ -672,7 +750,7 @@ For direct Anthropic API access or custom endpoints that only support Anthropic'
 {
   "model_name": "claude-opus-4-6",
   "model": "anthropic-messages/claude-opus-4-6",
-  "api_key": "sk-ant-your-key",
+  "api_keys": ["sk-ant-your-key"],
   "api_base": "https://api.anthropic.com"
 }
 ```
@@ -690,6 +768,21 @@ For direct Anthropic API access or custom endpoints that only support Anthropic'
   "model": "ollama/llama3"
 }
 ```
+
+</details>
+
+<details>
+<summary><b>LM Studio (local)</b></summary>
+
+```json
+{
+  "model_name": "lmstudio-local",
+  "model": "lmstudio/openai/gpt-oss-20b"
+}
+```
+
+`api_base` defaults to `http://localhost:1234/v1`. API key is optional unless your LM Studio server enables authentication.<br/>
+PicoClaw sends OpenAI-compatible requests to LM Studio, and strips the `lmstudio/` prefix before sending requests, so `lmstudio/openai/gpt-oss-20b` sends `openai/gpt-oss-20b` to the LM Studio server.
 
 </details>
 
@@ -747,13 +840,13 @@ model_list:
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api1.example.com/v1",
-      "api_key": "sk-key1"
+      "api_keys": ["sk-key1"]
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api2.example.com/v1",
-      "api_key": "sk-key2"
+      "api_keys": ["sk-key2"]
     }
   ]
 }
@@ -761,7 +854,7 @@ model_list:
 
 #### Migration from Legacy `providers` Config
 
-The old `providers` configuration is **deprecated** but still supported for backward compatibility. See [docs/migration/model-list-migration.md](../migration/model-list-migration.md) for the full guide.
+The old `providers` configuration is **deprecated** and has been removed in V2. Existing V0/V1 configs are auto-migrated. See [docs/migration/model-list-migration.md](../migration/model-list-migration.md) for the full guide.
 
 ### Provider Architecture
 
@@ -771,7 +864,7 @@ PicoClaw routes providers by protocol family:
 - **Anthropic**: Claude-native API behavior.
 - **Codex/OAuth**: OpenAI OAuth/token authentication route.
 
-This keeps the runtime lightweight while making new OpenAI-compatible backends mostly a config operation (`api_base` + `api_key`).
+This keeps the runtime lightweight while making new OpenAI-compatible backends mostly a config operation (`api_base` + `api_keys`).
 
 <details>
 <summary><b>Zhipu (legacy providers format)</b></summary>

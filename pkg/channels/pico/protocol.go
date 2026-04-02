@@ -17,6 +17,8 @@ const (
 	TypeTypingStop    = "typing.stop"
 	TypeError         = "error"
 	TypePong          = "pong"
+
+	PicoTokenPrefix = "pico-"
 )
 
 // PicoMessage is the wire format for all Pico Protocol messages.
