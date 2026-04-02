@@ -77,20 +77,21 @@ type channelWorker struct {
 }
 
 type Manager struct {
-	channels      map[string]Channel
-	workers       map[string]*channelWorker
-	bus           *bus.MessageBus
-	config        *config.Config
-	mediaStore    media.MediaStore
-	dispatchTask  *asyncTask
-	mux           *dynamicServeMux
-	httpServer    *http.Server
-	mu            sync.RWMutex
-	placeholders  sync.Map          // "channel:chatID" → placeholderID (string)
-	typingStops   sync.Map          // "channel:chatID" → func()
-	reactionUndos sync.Map          // "channel:chatID" → reactionEntry
-	streamActive  sync.Map          // "channel:chatID" → true (set when streamer.Finalize sent the message)
-	channelHashes map[string]string // channel name → config hash
+	channels         map[string]Channel
+	workers          map[string]*channelWorker
+	bus              *bus.MessageBus
+	config           *config.Config
+	mediaStore       media.MediaStore
+	dispatchTask     *asyncTask
+	mux              *dynamicServeMux
+	httpServer       *http.Server
+	httpServerErrors chan error
+	mu               sync.RWMutex
+	placeholders     sync.Map          // "channel:chatID" → placeholderID (string)
+	typingStops      sync.Map          // "channel:chatID" → func()
+	reactionUndos    sync.Map          // "channel:chatID" → reactionEntry
+	streamActive     sync.Map          // "channel:chatID" → true (set when streamer.Finalize sent the message)
+	channelHashes    map[string]string // channel name → config hash
 }
 
 type asyncTask struct {
@@ -452,6 +453,7 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}
+	m.httpServerErrors = make(chan error, 1)
 }
 
 // registerHTTPHandlersLocked registers webhook and health-check handlers for
@@ -541,12 +543,18 @@ func (m *Manager) StartAll(ctx context.Context) error {
 
 	// Start shared HTTP server if configured
 	if m.httpServer != nil {
+		httpServer := m.httpServer
+		httpServerErrors := m.httpServerErrors
 		go func() {
 			logger.InfoCF("channels", "Shared HTTP server listening", map[string]any{
-				"addr": m.httpServer.Addr,
+				"addr": httpServer.Addr,
 			})
-			if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				logger.FatalCF("channels", "Shared HTTP server error", map[string]any{
+			if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				select {
+				case httpServerErrors <- err:
+				default:
+				}
+				logger.ErrorCF("channels", "Shared HTTP server error", map[string]any{
 					"error": err.Error(),
 				})
 			}
@@ -555,6 +563,12 @@ func (m *Manager) StartAll(ctx context.Context) error {
 
 	logger.InfoC("channels", "All channels started")
 	return nil
+}
+
+func (m *Manager) HTTPServerErrors() <-chan error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.httpServerErrors
 }
 
 func (m *Manager) StopAll(ctx context.Context) error {
@@ -573,6 +587,7 @@ func (m *Manager) StopAll(ctx context.Context) error {
 			})
 		}
 		m.httpServer = nil
+		m.httpServerErrors = nil
 	}
 
 	// Cancel dispatcher

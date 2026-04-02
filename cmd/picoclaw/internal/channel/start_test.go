@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 func TestNewStartCommand(t *testing.T) {
@@ -40,5 +42,6 @@ func TestStartCommandPreRunE_NoTruncateWithDebug(t *testing.T) {
 	require.NoError(t, err)
 
 	err = cmd.PreRunE(cmd, nil)
+	defer utils.SetDisableTruncation(false)
 	assert.NoError(t, err)
 }

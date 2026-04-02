@@ -222,7 +222,7 @@ type HandlerMux interface {
 }
 
 // RegisterOnMux registers /health, /ready and /reload handlers onto the given mux.
-// This allows the health endpoints to be served by a shared HTTP server.
+// The /reload handler checks reload availability at request time.
 func (s *Server) RegisterOnMux(mux HandlerMux) {
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)

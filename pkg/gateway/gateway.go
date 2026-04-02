@@ -289,11 +289,25 @@ func createStartupProvider(
 	cfg *config.Config,
 	allowEmptyStartup bool,
 ) (providers.LLMProvider, string, error) {
+	return createStartupProviderForRuntime(cfg, allowEmptyStartup, "gateway")
+}
+
+func createStartupProviderForRuntime(
+	cfg *config.Config,
+	allowEmptyStartup bool,
+	runtimeName string,
+) (providers.LLMProvider, string, error) {
 	modelName := cfg.Agents.Defaults.GetModelName()
 	if modelName == "" && allowEmptyStartup {
-		reason := "no default model configured; gateway started in limited mode"
+		runtimeName = strings.TrimSpace(runtimeName)
+		if runtimeName == "" {
+			runtimeName = "gateway"
+		}
+
+		reason := fmt.Sprintf("no default model configured; %s started in limited mode", runtimeName)
 		fmt.Printf("⚠ Warning: %s\n", reason)
-		logger.WarnCF("gateway", "Gateway started without default model", map[string]any{
+		logger.WarnCF("runtime", "Runtime started without default model", map[string]any{
+			"runtime":      runtimeName,
 			"limited_mode": true,
 		})
 		return &startupBlockedProvider{reason: reason}, "", nil

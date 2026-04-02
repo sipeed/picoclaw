@@ -39,7 +39,7 @@ PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gat
 # 启动 config.json 中所有已启用 channel
 picoclaw channel start
 
-# 与 gateway 启动校验保持一致
+# 与 gateway 启动时的默认模型/Provider 校验及 --allow-empty 行为保持一致
 picoclaw channel start --allow-empty
 picoclaw channel start --debug
 ```
@@ -47,9 +47,9 @@ picoclaw channel start --debug
 与 `picoclaw gateway` 相比，channel 独立运行模式：
 
 - 保留 MessageBus + AgentLoop + ChannelManager（完整消息处理链路）
-- 启动共享 HTTP 服务，用于 channel webhook 与 `/health`/`/ready`
+- 尝试启动共享 HTTP 服务，用于 channel webhook 与 `/health`/`/ready`（best-effort）：若配置的 host/port 无法绑定，则会禁用共享 HTTP（当配置为 loopback 时，回退也仅限 loopback，例如 `::1` 或 `127.0.0.1`），此时 webhook 类 channel 以及 `/health`、`/ready` 将不可用
 - **不会** 启动 Cron、Heartbeat、Device 服务
-- **不会** 启用配置热更新和 `/reload`
+- **不会** 启用配置热更新；channel-only 模式下 `/reload` 仍可访问，但会返回 503（`reload not configured`）
 
 验证说明：channel 独立运行模式在设计上对各渠道通用。当前运行时验证主要覆盖 QQ，其他渠道仍在持续验证中。
 

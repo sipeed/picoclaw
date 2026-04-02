@@ -41,7 +41,7 @@ Use `picoclaw channel start` when you want to run enabled channels and AgentLoop
 # Start all enabled channels from config.json
 picoclaw channel start
 
-# Same startup checks as gateway command
+# Shares default-model/provider validation and --allow-empty behavior with gateway
 picoclaw channel start --allow-empty
 picoclaw channel start --debug
 ```
@@ -49,9 +49,11 @@ picoclaw channel start --debug
 Compared with `picoclaw gateway`, channel-only runtime:
 
 - Keeps MessageBus + AgentLoop + ChannelManager (full chat processing path)
-- Starts shared HTTP server for channel webhooks and `/health`/`/ready`
+- Attempts to start shared HTTP server for channel webhooks and `/health`/`/ready` (best-effort; for loopback hosts, fallback remains loopback-only and may be disabled if binding fails)
 - Does **not** start Cron service, Heartbeat service, Device service
-- Does **not** enable config hot reload or `/reload`
+- Does **not** enable config hot reload; `/reload` remains exposed by the shared health server but returns 503 (`reload not configured`) in channel-only mode
+
+Note: Because shared HTTP startup is best-effort, webhook-based channels may be unavailable when no usable host/port can be bound.
 
 Validation note: channel-only runtime is channel-agnostic by design. Current runtime validation is primarily focused on QQ, while other channels are continuously validated.
 

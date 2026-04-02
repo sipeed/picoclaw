@@ -20,6 +20,12 @@ func newTestServer() *Server {
 	return s
 }
 
+func newReloadEnabledTestServer() *Server {
+	s := newTestServer()
+	s.SetReloadFunc(func() error { return nil })
+	return s
+}
+
 func TestHealthHandler_ReturnsOK(t *testing.T) {
 	s := newTestServer()
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -150,7 +156,7 @@ func TestReadyHandler_PassingCheck(t *testing.T) {
 }
 
 func TestReloadHandler_MethodNotAllowed(t *testing.T) {
-	s := newTestServer()
+	s := newReloadEnabledTestServer()
 
 	req := httptest.NewRequest(http.MethodGet, "/reload", nil)
 	w := httptest.NewRecorder()
@@ -177,7 +183,7 @@ func TestReloadHandler_NoReloadFunc(t *testing.T) {
 }
 
 func TestReloadHandler_Success(t *testing.T) {
-	s := newTestServer()
+	s := newReloadEnabledTestServer()
 	called := false
 	s.SetReloadFunc(func() error {
 		called = true
@@ -199,7 +205,7 @@ func TestReloadHandler_Success(t *testing.T) {
 }
 
 func TestReloadHandler_Error(t *testing.T) {
-	s := newTestServer()
+	s := newReloadEnabledTestServer()
 	s.SetReloadFunc(func() error {
 		return errors.New("config parse error")
 	})
@@ -289,6 +295,31 @@ func TestRegisterOnMux(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("/ready on custom mux = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/reload", nil)
+	req.Header.Set("Authorization", "Bearer test")
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("/reload on mux without reload = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestRegisterOnMux_WithReload(t *testing.T) {
+	s := newReloadEnabledTestServer()
+	s.SetReady(true)
+
+	mux := http.NewServeMux()
+	s.RegisterOnMux(mux)
+
+	req := httptest.NewRequest(http.MethodPost, "/reload", nil)
+	req.Header.Set("Authorization", "Bearer test")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("/reload on mux with reload = %d, want %d", w.Code, http.StatusOK)
 	}
 }
 
