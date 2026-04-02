@@ -42,7 +42,7 @@ func TestResolveGatewayListenDecisionLoopbackFallbackUsesConfiguredCIDRs(t *test
 		switch host {
 		case "127.0.0.1":
 			return errors.New("loopback unavailable")
-		case gatewayFallbackBindHost:
+		case gatewayFallbackBindHostV4, gatewayFallbackBindHostV6:
 			return nil
 		default:
 			return nil
@@ -60,8 +60,8 @@ func TestResolveGatewayListenDecisionLoopbackFallbackUsesConfiguredCIDRs(t *test
 	if !decision.AutoFallback {
 		t.Fatal("decision.AutoFallback = false, want true")
 	}
-	if decision.BindHost != gatewayFallbackBindHost {
-		t.Fatalf("decision.BindHost = %q, want %q", decision.BindHost, gatewayFallbackBindHost)
+	if decision.BindHost != gatewayFallbackBindHostV4 {
+		t.Fatalf("decision.BindHost = %q, want %q", decision.BindHost, gatewayFallbackBindHostV4)
 	}
 	wantCIDRs := []string{"10.0.0.0/8"}
 	if !reflect.DeepEqual(decision.AllowedCIDRs, wantCIDRs) {
@@ -84,7 +84,7 @@ func TestResolveGatewayListenDecisionLoopbackFallbackUsesDiscoveredCIDRs(t *test
 		switch host {
 		case "localhost":
 			return errors.New("loopback unavailable")
-		case gatewayFallbackBindHost:
+		case gatewayFallbackBindHostV4, gatewayFallbackBindHostV6:
 			return nil
 		default:
 			return nil
@@ -146,7 +146,7 @@ func TestResolveGatewayListenDecisionLoopbackFailureNoDiscoveredCIDRs(t *testing
 		switch host {
 		case "127.0.0.1":
 			return errors.New("loopback unavailable")
-		case gatewayFallbackBindHost:
+		case gatewayFallbackBindHostV4, gatewayFallbackBindHostV6:
 			return nil
 		default:
 			return nil
@@ -160,8 +160,74 @@ func TestResolveGatewayListenDecisionLoopbackFailureNoDiscoveredCIDRs(t *testing
 	if err == nil {
 		t.Fatal("resolveGatewayListenDecision() expected error")
 	}
-	if !strings.Contains(err.Error(), "no non-loopback interface CIDRs discovered") {
+	if !strings.Contains(err.Error(), "no private non-loopback interface CIDRs discovered") {
 		t.Fatalf("error = %q, want no-interface-cidr failure", err.Error())
+	}
+}
+
+func TestResolveGatewayListenDecisionLoopbackFallbackIPv6Preferred(t *testing.T) {
+	origProbe := probeGatewayBind
+	origDiscover := discoverGatewayCIDRs
+	t.Cleanup(func() {
+		probeGatewayBind = origProbe
+		discoverGatewayCIDRs = origDiscover
+	})
+
+	probeGatewayBind = func(host string, _ int) error {
+		switch host {
+		case "::1":
+			return errors.New("loopback unavailable")
+		case gatewayFallbackBindHostV6:
+			return nil
+		case gatewayFallbackBindHostV4:
+			return errors.New("should not probe IPv4 when IPv6 fallback succeeds")
+		default:
+			return nil
+		}
+	}
+	discoverGatewayCIDRs = func() ([]string, error) {
+		return []string{"192.168.1.0/24"}, nil
+	}
+
+	decision, err := resolveGatewayListenDecision("::1", 18790, nil)
+	if err != nil {
+		t.Fatalf("resolveGatewayListenDecision() error = %v", err)
+	}
+	if decision.BindHost != gatewayFallbackBindHostV6 {
+		t.Fatalf("decision.BindHost = %q, want %q", decision.BindHost, gatewayFallbackBindHostV6)
+	}
+}
+
+func TestResolveGatewayListenDecisionLoopbackFallbackTriesSecondaryWildcard(t *testing.T) {
+	origProbe := probeGatewayBind
+	origDiscover := discoverGatewayCIDRs
+	t.Cleanup(func() {
+		probeGatewayBind = origProbe
+		discoverGatewayCIDRs = origDiscover
+	})
+
+	probeGatewayBind = func(host string, _ int) error {
+		switch host {
+		case "::1":
+			return errors.New("loopback unavailable")
+		case gatewayFallbackBindHostV6:
+			return errors.New("ipv6 wildcard unavailable")
+		case gatewayFallbackBindHostV4:
+			return nil
+		default:
+			return nil
+		}
+	}
+	discoverGatewayCIDRs = func() ([]string, error) {
+		return []string{"192.168.1.0/24"}, nil
+	}
+
+	decision, err := resolveGatewayListenDecision("::1", 18790, nil)
+	if err != nil {
+		t.Fatalf("resolveGatewayListenDecision() error = %v", err)
+	}
+	if decision.BindHost != gatewayFallbackBindHostV4 {
+		t.Fatalf("decision.BindHost = %q, want %q", decision.BindHost, gatewayFallbackBindHostV4)
 	}
 }
 
@@ -218,5 +284,55 @@ func TestNormalizeIPForMaskIPv4MappedIPv6(t *testing.T) {
 	masked := normalized.Mask(mask)
 	if got := (&net.IPNet{IP: masked, Mask: mask}).String(); got != "192.168.10.0/24" {
 		t.Fatalf("masked network = %q, want %q", got, "192.168.10.0/24")
+	}
+}
+
+func TestFallbackBindCandidates(t *testing.T) {
+	tests := []struct {
+		name string
+		host string
+		want []string
+	}{
+		{
+			name: "ipv4 loopback",
+			host: "127.0.0.1",
+			want: []string{gatewayFallbackBindHostV4, gatewayFallbackBindHostV6},
+		},
+		{name: "ipv6 loopback", host: "::1", want: []string{gatewayFallbackBindHostV6, gatewayFallbackBindHostV4}},
+		{name: "localhost", host: "localhost", want: []string{gatewayFallbackBindHostV6, gatewayFallbackBindHostV4}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := fallbackBindCandidates(tt.host)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("fallbackBindCandidates() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsSafeFallbackIP(t *testing.T) {
+	tests := []struct {
+		name string
+		ip   string
+		want bool
+	}{
+		{name: "rfc1918 a", ip: "10.1.2.3", want: true},
+		{name: "rfc1918 b", ip: "172.20.1.1", want: true},
+		{name: "rfc1918 c", ip: "192.168.1.1", want: true},
+		{name: "cgnat", ip: "100.64.2.3", want: true},
+		{name: "ipv6 ula", ip: "fd12::1", want: true},
+		{name: "public ipv4", ip: "8.8.8.8", want: false},
+		{name: "public ipv6", ip: "2001:4860:4860::8888", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ip := net.ParseIP(tt.ip)
+			if got := isSafeFallbackIP(ip); got != tt.want {
+				t.Fatalf("isSafeFallbackIP(%q) = %v, want %v", tt.ip, got, tt.want)
+			}
+		})
 	}
 }

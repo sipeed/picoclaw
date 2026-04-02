@@ -222,7 +222,7 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	runningServices.HealthServer.SetReloadFunc(reloadTrigger)
 	agentLoop.SetReloadFunc(reloadTrigger)
 
-	if runningServices.ListenHost == gatewayFallbackBindHost {
+	if isWildcardBindHost(runningServices.ListenHost) {
 		fmt.Printf("✓ Gateway started (all interfaces, port %d)\n", pidData.Port)
 	} else {
 		fmt.Printf("✓ Gateway started on %s\n", runningServices.ListenAddr)
@@ -450,7 +450,7 @@ func setupAndStartServices(
 		voiceAgent.Start(vaCtx)
 	}
 
-	if runningServices.ListenHost == gatewayFallbackBindHost {
+	if isWildcardBindHost(runningServices.ListenHost) {
 		fmt.Printf(
 			"✓ Health endpoints available on all interfaces at port %d (/health, /ready and /reload POST)\n",
 			cfg.Gateway.Port,
