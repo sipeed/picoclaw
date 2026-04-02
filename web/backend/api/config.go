@@ -10,6 +10,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/routing"
 )
 
 // registerConfigRoutes binds configuration management endpoints to the ServeMux.
@@ -269,6 +270,21 @@ func (h *Handler) handleTestCommandPatterns(w http.ResponseWriter, r *http.Reque
 // Returns a list of human-readable error strings; empty means valid.
 func validateConfig(cfg *config.Config) []string {
 	var errs []string
+
+	if rawScope := strings.TrimSpace(cfg.Session.DMScope); rawScope != "" {
+		normalizedScope, ok := routing.NormalizeDMScope(rawScope)
+		if !ok {
+			errs = append(
+				errs,
+				fmt.Sprintf(
+					"session.dm_scope %q is invalid; supported values: main, per-peer, per-channel-peer, per-account-channel-peer",
+					cfg.Session.DMScope,
+				),
+			)
+		} else {
+			cfg.Session.DMScope = string(normalizedScope)
+		}
+	}
 
 	// Validate model_list entries
 	if err := cfg.ValidateModelList(); err != nil {

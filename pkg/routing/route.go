@@ -44,8 +44,8 @@ func (r *RouteResolver) ResolveRoute(input RouteInput) ResolvedRoute {
 	accountID := NormalizeAccountID(input.AccountID)
 	peer := input.Peer
 
-	dmScope := DMScope(r.cfg.Session.DMScope)
-	if dmScope == "" {
+	dmScope, ok := NormalizeDMScope(r.cfg.Session.DMScope)
+	if !ok {
 		dmScope = DMScopeMain
 	}
 	identityLinks := r.cfg.Session.IdentityLinks

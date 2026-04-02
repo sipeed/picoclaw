@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -170,6 +171,45 @@ func TestHandlePatchConfig_AllowsInvalidExecRegexPatternsWhenExecDisabled(t *tes
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestValidateConfig_NormalizesLegacyDMScopeAliases(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "global", input: "global", want: "main"},
+		{name: "per-channel", input: "per-channel", want: "per-channel-peer"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.DefaultConfig()
+			cfg.Session.DMScope = tt.input
+
+			errs := validateConfig(cfg)
+			if len(errs) != 0 {
+				t.Fatalf("validateConfig() errors = %v, want none", errs)
+			}
+			if cfg.Session.DMScope != tt.want {
+				t.Fatalf("Session.DMScope = %q, want %q", cfg.Session.DMScope, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateConfig_RejectsUnknownDMScope(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Session.DMScope = "shared"
+
+	errs := validateConfig(cfg)
+	if len(errs) == 0 {
+		t.Fatal("validateConfig() errors = nil, want dm_scope validation error")
+	}
+	if !strings.Contains(errs[0], "session.dm_scope") {
+		t.Fatalf("validateConfig() first error = %q, want dm_scope validation", errs[0])
 	}
 }
 

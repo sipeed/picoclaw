@@ -15,6 +15,22 @@ const (
 	DMScopePerAccountChannelPeer DMScope = "per-account-channel-peer"
 )
 
+// NormalizeDMScope converts known legacy aliases to their canonical backend values.
+func NormalizeDMScope(scope string) (DMScope, bool) {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case string(DMScopeMain), "global":
+		return DMScopeMain, true
+	case string(DMScopePerPeer):
+		return DMScopePerPeer, true
+	case string(DMScopePerChannelPeer), "per-channel":
+		return DMScopePerChannelPeer, true
+	case string(DMScopePerAccountChannelPeer):
+		return DMScopePerAccountChannelPeer, true
+	default:
+		return "", false
+	}
+}
+
 // RoutePeer represents a chat peer with kind and ID.
 type RoutePeer struct {
 	Kind string // "direct", "group", "channel"
@@ -56,8 +72,8 @@ func BuildAgentPeerSessionKey(params SessionKeyParams) string {
 	}
 
 	if peerKind == "direct" {
-		dmScope := params.DMScope
-		if dmScope == "" {
+		dmScope, ok := NormalizeDMScope(string(params.DMScope))
+		if !ok {
 			dmScope = DMScopeMain
 		}
 		peerID := strings.TrimSpace(peer.ID)
