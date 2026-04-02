@@ -1,0 +1,162 @@
+docker compose --env-file .env --profile gateway run --rm picoclaw-agent -m "$(cat <<'EOF'
+Before generating anything, read and follow:
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+- /skills/app-selectors-flow-tester/SKILL.md
+- /tests/flow-tester/FLOW_TESTER_REFERENCE.md
+
+TECH STACK: This app is built with Vue.js and Vuetify. All form validation and modal behaviors follow Vue/Vuetify patterns — apply the rules in /skills/app-selectors/SKILL.md under "Playwright Patterns for This App".
+
+No source discovery needed — the reference document already exists at /tests/flow-tester/FLOW_TESTER_REFERENCE.md.
+Read it now and use it as the sole source of selectors for this test.
+
+## PHASE 1 — Generate Playwright Test
+
+IMPORTANT RULES:
+
+1. ONLY use selectors from the SKILL.md files and /tests/flow-tester/FLOW_TESTER_REFERENCE.md.
+2. NEVER guess or invent selectors not found in those documents.
+3. For login, COPY THE CODE VERBATIM from the "Login Flow (copy-paste ready)" block in /skills/app-selectors/SKILL.md.
+   Do NOT rewrite it. Do NOT use input[type="email"], input[type="password"], or any selector not in that block.
+   The correct URL is https://dashboard.int3nt.info/login (with /login — NOT the root URL).
+   The correct selectors are .v-text-field (NOT input[type="email"]) and .organization-card.
+   The login button MUST be: page.getByRole('button', { name: /login/i })
+   The button text is "Login" (ONE word). NEVER use filter({ hasText: /Log In/ }) or /^Log In$/ — those will NEVER match.
+   After login, the app MAY redirect to /?select_org OR directly to the dashboard (if org is remembered).
+   NEVER use waitForURL(/\?select_org/) directly — it times out when the server skips org selection.
+   CORRECT post-login pattern (waitForURL callback gets a URL object — use .pathname or .href, NOT .includes()):
+     await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
+     if (page.url().includes('select_org')) {
+       await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click();
+       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
+     }
+   CRITICAL — org name "Testing" is a substring of "Testing2026!". NEVER use hasText: 'Testing' or /Testing/ alone —
+   they will match the wrong org. ALWAYS use has: page.locator(':text-is("Testing")') for exact child-node matching.
+4. Selector priority — ALWAYS follow this order:
+   STEP 1: Custom CSS class from SKILL.md or FLOW_TESTER_REFERENCE.md.
+   STEP 2: Only if no custom class, use a Vuetify class verified in SKILL.md DOM output.
+   STEP 3: NEVER guess or invent a selector. Use getByRole() or getByText() with exact visible text as a last resort.
+
+   FLOW AND VERSION NAME MATCHING — always use case-insensitive regex:
+   Flow names and version names in the DB may differ in capitalisation from what is shown in the UI.
+   ALWAYS use the /i flag on flow and version name regexes to avoid silent mismatches:
+     CORRECT:   .filter({ hasText: /web crawler/i })
+     INCORRECT: .filter({ hasText: /Web Crawler/ })   ← fails if casing differs
+
+   FLOW DROPDOWN — ALWAYS wait for overlay to stabilise before filtering:
+   After clicking .tester-select, the overlay may take a moment to render its items.
+   CORRECT pattern:
+     await page.locator('.tester-select').click();
+     await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 5000 });
+     await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /web crawler/i }).click();
+5. TypeScript-safe Playwright only. NEVER invent or guess Playwright API methods.
+   FORBIDDEN: triple_click(), triple_click?.(), doubleClick(), selectText(), clearText(), typeText(), pressKey(),
+              filter({ hasAttribute: ... })
+   CORRECT alternatives:
+   - Fill a field: await input.click(); await input.fill('text');
+   - Press Enter: await input.press('Enter');
+   - Click send button: await page.locator('.message-field .v-field__append-inner').click();
+6. Logging rule — MANDATORY FORMAT:
+   BEFORE each step: console.log('📍 Step N: Description');
+   AFTER step assertion succeeds: console.log('✅ PASS: Step N - Description');
+   NEVER print "✅ PASS" before the assertion/action that verifies the step.
+   At the end of the test, include a full summary block:
+     console.log('\n' + '='.repeat(70));
+     console.log('📊 TEST SUMMARY');
+     console.log('='.repeat(70));
+     console.log('✅ Step 1: PASS - Description'); // one line per step
+     console.log('='.repeat(70));
+7. Version selection — MANDATORY EXPLICIT SELECTION, auto-select is FORBIDDEN:
+   The app auto-selects the FIRST version which is often wrong.
+   ALWAYS explicitly open the dropdown and click the target version by name.
+   CORRECT pattern (copy exactly):
+     await page.locator('.version-selector-button').click();
+     await page.locator('.version-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
+     // Wait for real items — skeleton .version-item elements have NO click handler
+     await page.locator('.version-dropdown-menu .version-date').first()
+       .waitFor({ state: 'visible', timeout: 20000 });
+     // Use /webcrawler/i (anchored to start) to avoid matching "Knowledgebase_Webcrawler" versions
+     // Use .first() because multiple versions may be named "webcrawler" — pick the latest
+     await page.locator('.version-dropdown-menu .version-item')
+       .filter({ hasText: /webcrawler/i })
+       .first()
+       .click();
+     await expect(page.locator('.version-selector-text'))
+       .not.toContainText('Select Version', { timeout: 20000 });
+   The .version-date wait MUST use timeout: 20000 — version loading can take longer than expected.
+8. CRITICAL — Wait for bot to finish before asserting bot responses:
+   The store has a loadingMessage guard. SSE streaming means loadingMessage can stay true after the response appears.
+   The web crawler flow may take longer than usual since it retrieves data from a knowledge base.
+   ALWAYS wait for .typing-indicator to disappear before asserting the bot response:
+     await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 60000 });
+   Use timeout: 60000 for this flow — knowledge base retrieval can be slow.
+9. Bot message rendering — ONE visible bot message expected:
+   After sending "hi", the Web Crawler flow retrieves content from Knowledgebase_Webcrawler and returns it.
+   The response is dynamic (not static text). Do NOT assert exact text.
+   ONLY assert that the response is not empty and contains substantial text (length > 50 characters):
+     const botMsg = page.locator('.chatbox .message-card .message-text').last();
+     await botMsg.waitFor({ state: 'visible', timeout: 60000 });
+     const text = await botMsg.textContent();
+     expect(text?.trim().length).toBeGreaterThan(50);
+
+   CRITICAL — .chatbox .message-text also includes USER messages (.message-card-user .message-text).
+   To target BOT messages only, always scope to .message-card (not .message-card-user):
+     Bot response: page.locator('.chatbox .message-card .message-text').last()
+   NEVER use .chatbox .message-text.first() — it will match the user message.
+10. STRICT MODE RULE — ALWAYS use .first() or .last() on any locator that can match multiple elements.
+    FORBIDDEN without .first()/.last():
+      page.locator('.chatbox .message-text')       ← strict mode violation after 2+ messages
+      page.locator('.chatbox .message-card-user')  ← strict mode violation after 2+ user messages
+    CORRECT: .last() for most recent, .first() for earliest, .nth(N) for specific index.
+11. Test timeout: set at least 120 seconds — knowledge base retrieval can be slow.
+    test.setTimeout(120000);
+    Place this as the FIRST line inside the test() callback.
+
+Create a Playwright test file at /tests/flow-tester/test-kb-web-crawler-flow.spec.ts.
+
+## PHASE 2 — Run and Fix
+
+After creating the test:
+
+1. Run:
+   npx playwright test tests/flow-tester/test-kb-web-crawler-flow.spec.ts --reporter=line
+2. If it fails:
+   - Analyze the error carefully
+   - Identify root cause (selector issue, timing issue, missing wait, wrong version name, etc.)
+   - Update the test to fix it
+3. Re-run after each fix
+4. Repeat until the test passes or a clear blocking issue is identified.
+5. At the end, report:
+   - Final terminal output
+   - Summary of fixes applied
+   - Final result (PASS / FAIL)
+
+---
+
+Test credentials: email=heidi@intnt.ai password=testing2026! org=Testing
+
+Steps:
+1. Navigate to Flow Tester — click "Flow Tester" from the left sidebar
+2. Verify Flow Tester page is displayed
+3. Select Conversation Flow: "Web Crawler"
+4. Verify selected flow is "Web Crawler"
+5. Select Version: "webcrawler"
+6. Verify selected version is not "Select Version"
+7. Click the message input field at the bottom
+8. Type message: "hi"
+9. Click the send button (arrow icon — .v-field__append-inner inside .message-field)
+10. Wait until bot response appears in chat area
+
+Expected result:
+1. Flow Tester page loads successfully
+2. "Web Crawler" flow is selectable and selected
+3. "webcrawler" version is selectable and selected
+4. User is able to send message "hi"
+5. System executes the flow without error
+6. Bot response is displayed in chat area
+7. Response contains text output retrieved from Knowledgebase_Webcrawler
+8. Bot response is NOT empty
+9. Bot response contains paragraph text (length > 50 characters)
+EOF
+)"

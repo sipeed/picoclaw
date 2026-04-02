@@ -1,0 +1,213 @@
+docker compose --env-file .env --profile gateway run --rm picoclaw-agent -m "$(cat <<'EOF'
+Before generating anything, read and follow:
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+- /skills/app-selectors-flow-tester/SKILL.md
+
+TECH STACK: This app is built with Vue.js and Vuetify. All form validation and modal behaviors follow Vue/Vuetify patterns — apply the rules in /skills/app-selectors/SKILL.md under "Playwright Patterns for This App".
+
+## PHASE 1 — Source Code Discovery (MANDATORY)
+
+The base path is: /home/picoclaw/.picoclaw/workspace/context/dashboard/src
+If that path is not readable, STOP and report that the mount is missing. Do not proceed.
+
+You MUST read EVERY file listed below. Do not skip any. Do not stop early.
+
+### Directory: src/components/flow-tester/
+List all files in this directory and all subdirectories, then read each one.
+
+### Specific files to read:
+- src/pages/FlowTester.vue (or the equivalent page component for the Flow Tester route)
+- Any store file related to flow tester (e.g. flow-tester.store.ts, tester.store.ts — check both names)
+
+### After listing, read ALL files found — no exceptions.
+Do NOT decide some files are "not relevant" and skip them.
+
+After reading ALL files, continue to Phase 2.
+
+## PHASE 2 — Create Reference Document (MANDATORY before writing test)
+
+Create a reference file at: /tests/flow-tester/FLOW_TESTER_REFERENCE.md
+
+The FIRST section of this file MUST be:
+
+### 0. Files Read
+List every file path you read in Phase 1. If the list contains fewer than 3 files, go back and complete Phase 1.
+
+Do NOT proceed to the remaining sections until this list is written.
+
+The remaining sections must contain the following, derived from what you read:
+
+### 1. Flow Selection
+- Selector for the "Select Conversation Flow" dropdown (`.tester-select`)
+- How to open it and pick a flow by name
+- Selector for the "Select Version" button (`.version-selector-button`)
+- How to open the version dropdown (`.version-dropdown-menu`) and pick a version
+
+### 2. Chat Interface
+- Selector for the message input field (`.message-field input`)
+- How to type and send a message (fill + press Enter or click send button)
+- Selector for bot messages in the chat
+- Selector for user messages in the chat
+- How to verify a specific message text appears (bot or user)
+
+### 3. Initial Bot Message
+- Whether the bot sends an automatic first message on flow start, and how to detect it
+
+Do NOT proceed to Phase 3 until this file is written.
+
+## PHASE 3 — Generate Playwright Test
+
+IMPORTANT RULES:
+
+1. ONLY use selectors from the SKILL.md files and the reference document you just created.
+2. NEVER guess or invent Vuetify selectors.
+3. For login, COPY THE CODE VERBATIM from the "Login Flow (copy-paste ready)" block in /skills/app-selectors/SKILL.md.
+   Do NOT rewrite it. Do NOT use input[type="email"], input[type="password"], or any selector not in that block.
+   The correct URL is https://dashboard.int3nt.info/login (with /login — NOT the root URL).
+   The correct selectors are .v-text-field (NOT input[type="email"]) and .organization-card.
+   The login button MUST be: page.getByRole('button', { name: /login/i })
+   The button text is "Login" (ONE word). NEVER use filter({ hasText: /Log In/ }) or /^Log In$/ — those will NEVER match.
+   After login, the app MAY redirect to /?select_org OR directly to the dashboard (if org is remembered).
+   NEVER use waitForURL(/\?select_org/) directly — it times out when the server skips org selection.
+   CORRECT post-login pattern (waitForURL callback gets a URL object — use .pathname or .href, NOT .includes()):
+     await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
+     if (page.url().includes('select_org')) {  // page.url() returns a string — .includes() is fine here
+       await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
+       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
+     }
+4. Selector priority — ALWAYS follow this order:
+   STEP 1: Custom CSS class from SKILL.md (e.g. .tester-select, .version-selector-button, .version-dropdown-menu, .message-field).
+   STEP 2: Only if no custom class, use a Vuetify class verified in SKILL.md DOM output.
+   STEP 3: NEVER guess or invent a selector. Use getByRole() or getByText() with exact visible text as a last resort.
+5. TypeScript-safe Playwright only. NEVER invent or guess Playwright API methods.
+   FORBIDDEN: triple_click(), triple_click?.(), doubleClick(), selectText(), clearText(), typeText(), pressKey()
+   CORRECT alternatives:
+   - Fill a field: await input.click(); await input.fill('text'); (fill clears automatically — no select-all needed)
+   - Press Enter to send: await input.press('Enter');
+6. Logging rule — MANDATORY FORMAT:
+   BEFORE each step: console.log('📍 Step N: Description');
+   AFTER step assertion succeeds: console.log('✅ PASS: Step N - Description');
+   NEVER print "✅ PASS" before the assertion/action that verifies the step.
+   At the end of the test, include a full summary block:
+     console.log('\n' + '='.repeat(70));
+     console.log('📊 TEST SUMMARY');
+     console.log('='.repeat(70));
+     console.log('✅ Step 1: PASS - Description'); // one line per step
+     console.log('='.repeat(70));
+7. Flow selection dropdown (.tester-select):
+   ALWAYS wait for the overlay to stabilise before filtering — the list may take a moment to render.
+   ALWAYS use case-insensitive regex /i — flow names in the DB may differ in capitalisation from the UI.
+   CORRECT pattern:
+     await page.locator('.tester-select').click();
+     await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 5000 });
+     await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /flow name here/i }).click();
+
+8. Version selection — MANDATORY EXPLICIT SELECTION, auto-select is FORBIDDEN:
+   The app auto-selects the FIRST version which is often wrong (e.g. "CustomnodeV1" instead of the target version).
+   NEVER wait for .version-selector-text to change and assume the right version was picked.
+   ALWAYS open the dropdown and pick the specific version named in the Steps section.
+   CRITICAL: During loading, skeleton elements ALSO have class .version-item but have NO click handler.
+   Clicking a skeleton item silently does nothing. You MUST wait for real items before clicking.
+   CORRECT pattern (copy exactly):
+     await page.locator('.version-selector-button').click();
+     await page.locator('.version-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
+     // Wait for real items — skeleton .version-item elements have NO click handler
+     // Use timeout: 20000 — version loading can take longer than expected
+     await page.locator('.version-dropdown-menu .version-date').first().waitFor({ state: 'visible', timeout: 20000 });
+     await page.locator('.version-dropdown-menu .version-item')
+       .filter({ hasText: /version name here/i })
+       .click();
+     await expect(page.locator('.version-selector-text'))
+       .not.toContainText('Select Version', { timeout: 20000 });
+
+9. Message input: use .message-field input (NOT input[type="text"] or .v-field__input).
+   To send: fill the input then press Enter.
+
+10. STRICT MODE RULE — ALWAYS use .first() or .last() on multi-element locators in the chatbox.
+    The chatbox accumulates messages as the conversation progresses. Any locator that can match multiple elements
+    WILL cause a strict mode violation if used without .first() or .last(). This is ALWAYS true after the first
+    message exchange.
+
+    BOTH user messages (.message-card-user) and bot messages (.message-card) render text in .message-text.
+    .chatbox .message-text therefore matches ALL messages (user + bot). To target bot messages only:
+      page.locator('.chatbox .message-card .message-text')         ← bot messages only
+      page.locator('.chatbox .message-card-user .message-text')    ← user messages only
+
+    MANDATORY patterns — no exceptions:
+    - Latest bot message:   page.locator('.chatbox .message-card .message-text').last()
+    - First bot message:    page.locator('.chatbox .message-card .message-text').first()
+    - First user message:   page.locator('.chatbox .message-card-user').first()
+    - Latest user message:  page.locator('.chatbox .message-card-user').last()
+
+    FORBIDDEN — will cause wrong results or strict mode violation:
+      page.locator('.chatbox .message-text').first()  ← returns user message, NOT first bot message
+      page.locator('.chatbox .message-text')          ← NEVER without .first()/.last()
+      page.locator('.chatbox .message-card-user')     ← NEVER without .first()/.last()
+
+    ALWAYS use toContainText() NOT toHaveText() to handle whitespace.
+
+11. CRITICAL — Wait for bot to finish before sending next message:
+    The store has a loadingMessage guard: if loadingMessage is true, sendMessageToStore() silently rejects the input.
+    SSE streaming means loadingMessage can stay true for several seconds after the bot response appears.
+    ALWAYS wait for the typing indicator to disappear before sending any message that follows a previous send:
+      await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 20000 });
+    Place this wait BEFORE filling and pressing Enter for the second message onward.
+    Failure to do this causes silent message rejection — no error, no user message in chat, no bot reply.
+
+12. Some flows send an initial bot message automatically (before any user input). Others only respond AFTER the user speaks.
+    ALWAYS follow the step-by-step order in the Steps section exactly — it tells you whether to wait first or send first.
+    Do NOT assume there is an automatic initial message unless the Steps say to verify one before the first user send.
+
+13. Test timeout: set at least 90 seconds (flows with multi-turn conversation need time for SSE stream + bot response).
+    test.setTimeout(90000);
+    Place this as the FIRST line inside the test() callback.
+
+Create a Playwright test file at /tests/flow-tester/test-user-utterance-flow.spec.ts.
+
+## PHASE 4 — Run and Fix
+
+After creating the test:
+
+1. Run:
+   npx playwright test tests/flow-tester/test-user-utterance-flow.spec.ts --reporter=line
+2. If it fails:
+   - Analyze the error carefully
+   - Identify root cause (selector issue, timing issue, missing wait, etc.)
+   - Update the test to fix it
+3. Re-run after each fix
+4. Repeat until the test passes or a clear blocking issue is identified.
+5. At the end, report:
+   - Final terminal output
+   - Summary of fixes applied
+   - Final result (PASS / FAIL)
+
+---
+
+Test credentials: email=heidi@intnt.ai password=testing2026! org=Testing2026!
+
+Steps:
+1. Perform case "Login"
+2. On Select Organization page, select organization "Testing2026!"
+3. User redirected to: https://dashboard.int3nt.info
+4. Click Flow Tester on the left sidebar
+5. On Flow Tester page, locate the Select Conversation Flow dropdown
+6. Click Select Conversation Flow dropdown
+7. From dropdown list, select: User Utterance
+8. Open the version dropdown (.version-selector-button), wait for real items to load (.version-date must be visible
+   before clicking — skeleton items look the same but have no click handler), then select version "UserUtteranceV1"
+9. Greet the bot — send "HELLO" in the message field (fill + press Enter)
+10. Verify the bot responds to "HELLO" with "Write something below to test the user utterance node:"
+    (This message appears directly in .message-text — it is NOT an expansion panel)
+11. Wait for the typing indicator to disappear (confirms the bot finished and SSE stream is closed),
+    then send "I want to talk" in the message field (fill + press Enter)
+12. Verify the bot responds with the same message: "I want to talk"
+
+Expected result:
+1. User successfully selects User Utterance flow and version "UserUtteranceV1" in Flow Tester.
+2. After HELLO: bot sends "Write something below to test the user utterance node:" (visible in .message-text).
+3. User sends "I want to talk" after waiting for the typing indicator to disappear.
+4. The bot responds with the same message: "I want to talk"
+EOF
+)"
