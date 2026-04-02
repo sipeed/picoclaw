@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -578,6 +579,10 @@ type ModelConfig struct {
 	ModelName string `json:"model_name"` // User-facing alias for the model
 	Model     string `json:"model"`      // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-sonnet-4.6")
 
+	// Input types supported by this model (e.g., ["text"], ["text", "image"])
+	// Default is ["text"] if not specified
+	Input []string `json:"input,omitempty"`
+
 	// HTTP-based providers
 	APIBase   string   `json:"api_base,omitempty"`  // API endpoint URL
 	Proxy     string   `json:"proxy,omitempty"`     // HTTP proxy URL
@@ -620,6 +625,15 @@ func (c *ModelConfig) APIKey() string {
 // IsVirtual returns true if this model was generated from multi-key expansion.
 func (c *ModelConfig) IsVirtual() bool {
 	return c.isVirtual
+}
+
+// SupportsInput checks if the model supports a specific input type.
+// If Input is empty or nil, it defaults to ["text"].
+func (c *ModelConfig) SupportsInput(inputType string) bool {
+	if len(c.Input) == 0 {
+		return inputType == "text"
+	}
+	return slices.Contains(c.Input, inputType)
 }
 
 // Validate checks if the ModelConfig has all required fields.
@@ -1156,11 +1170,20 @@ func (c *Config) GetModelConfig(modelName string) (*ModelConfig, error) {
 	return matches[idx], nil
 }
 
-// findMatches finds all ModelConfig entries with the given model_name.
+// findMatches finds all ModelConfig entries with the given model_name or model field.
+// It first tries to match by model_name, then by model field if no match is found.
 func (c *Config) findMatches(modelName string) []*ModelConfig {
 	var matches []*ModelConfig
 	for i := range c.ModelList {
 		if c.ModelList[i].ModelName == modelName {
+			matches = append(matches, c.ModelList[i])
+		}
+	}
+	if len(matches) > 0 {
+		return matches
+	}
+	for i := range c.ModelList {
+		if c.ModelList[i].Model == modelName {
 			matches = append(matches, c.ModelList[i])
 		}
 	}
