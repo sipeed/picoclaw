@@ -57,13 +57,13 @@ When `gateway.host` is a loopback address (`127.0.0.1`, `::1`, or `localhost`) a
 
 1. Falls back to bind on `0.0.0.0`.
 2. Enforces a CIDR allowlist for gateway HTTP endpoints.
-3. Discovers local interface CIDRs only when `gateway.allowed_cidrs` is empty.
+3. Discovers private local interface CIDRs only when `gateway.allowed_cidrs` is empty.
 
 CIDR sources in fallback mode:
 
 - If `gateway.allowed_cidrs` is configured, that list is used.
-- If `gateway.allowed_cidrs` is empty, discovered local CIDRs are used.
-- If no non-loopback CIDR can be discovered, gateway startup fails.
+- If `gateway.allowed_cidrs` is empty, discovered private CIDRs are used (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`, `fc00::/7`).
+- If no private non-loopback CIDR can be discovered, gateway startup fails. On public-only hosts, configure `gateway.allowed_cidrs` explicitly.
 
 Loopback clients are always allowed for local administration.
 

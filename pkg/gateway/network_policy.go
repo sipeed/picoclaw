@@ -10,11 +10,13 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/channels"
+	"github.com/sipeed/picoclaw/pkg/netpolicy"
 )
 
 const (
 	gatewayDefaultLoopbackHost = "127.0.0.1"
-	gatewayFallbackBindHost    = "0.0.0.0"
+	gatewayFallbackBindHostV4  = "0.0.0.0"
+	gatewayFallbackBindHostV6  = "::"
 )
 
 type gatewayListenDecision struct {
@@ -27,6 +29,14 @@ type gatewayListenDecision struct {
 var (
 	probeGatewayBind     = probeTCPBind
 	discoverGatewayCIDRs = discoverLocalInterfaceCIDRs
+
+	fallbackPrivateCIDRs = mustParseCIDRs(
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"100.64.0.0/10",
+		"fc00::/7",
+	)
 )
 
 func resolveGatewayListenDecision(
@@ -71,7 +81,7 @@ func resolveGatewayListenDecision(
 		}
 		if len(discoveredCIDRs) == 0 {
 			return nil, fmt.Errorf(
-				"loopback bind %s:%d failed: %w; no non-loopback interface CIDRs discovered",
+				"loopback bind %s:%d failed: %w; no private non-loopback interface CIDRs discovered",
 				host,
 				port,
 				bindErr,
@@ -87,30 +97,71 @@ func resolveGatewayListenDecision(
 		return nil, fmt.Errorf("loopback bind %s:%d failed: %w; fallback allowlist is empty", host, port, bindErr)
 	}
 
-	if fallbackBindErr := probeGatewayBind(gatewayFallbackBindHost, port); fallbackBindErr != nil {
+	fallbackCandidates := fallbackBindCandidates(host)
+	fallbackHost, fallbackBindErr := probeFallbackBindCandidates(fallbackCandidates, port)
+	if fallbackBindErr != nil {
 		return nil, fmt.Errorf(
-			"loopback bind %s:%d failed: %w; fallback bind %s:%d failed: %v",
+			"loopback bind %s:%d failed: %w; fallback bind candidates %v failed: %v",
 			host,
 			port,
 			bindErr,
-			gatewayFallbackBindHost,
-			port,
+			fallbackCandidates,
 			fallbackBindErr,
 		)
 	}
 
 	return &gatewayListenDecision{
-		BindHost:     gatewayFallbackBindHost,
+		BindHost:     fallbackHost,
 		AllowedCIDRs: fallbackCIDRs,
 		AutoFallback: true,
 		FallbackReason: fmt.Sprintf(
 			"loopback bind %s:%d failed, fallback to %s:%d with CIDR allowlist",
 			host,
 			port,
-			gatewayFallbackBindHost,
+			fallbackHost,
 			port,
 		),
 	}, nil
+}
+
+func fallbackBindCandidates(configuredLoopbackHost string) []string {
+	lower := strings.TrimSpace(strings.ToLower(configuredLoopbackHost))
+	if lower == "localhost" {
+		return []string{gatewayFallbackBindHostV6, gatewayFallbackBindHostV4}
+	}
+
+	ip := net.ParseIP(lower)
+	if ip != nil && ip.To4() == nil {
+		return []string{gatewayFallbackBindHostV6, gatewayFallbackBindHostV4}
+	}
+
+	return []string{gatewayFallbackBindHostV4, gatewayFallbackBindHostV6}
+}
+
+func probeFallbackBindCandidates(candidates []string, port int) (string, error) {
+	errList := make([]error, 0, len(candidates))
+	for _, host := range candidates {
+		err := probeGatewayBind(host, port)
+		if err == nil {
+			return host, nil
+		}
+		errList = append(errList, fmt.Errorf("%s:%d: %w", host, port, err))
+	}
+
+	if len(errList) == 0 {
+		return "", fmt.Errorf("no fallback bind candidates")
+	}
+
+	return "", errors.Join(errList...)
+}
+
+func isWildcardBindHost(host string) bool {
+	switch strings.TrimSpace(host) {
+	case gatewayFallbackBindHostV4, gatewayFallbackBindHostV6:
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeAndValidateCIDRs(cidrs []string) ([]string, error) {
@@ -180,6 +231,9 @@ func discoverLocalInterfaceCIDRs() ([]string, error) {
 				continue
 			}
 			ip = normalizeIPForMask(ip, mask)
+			if !isSafeFallbackIP(ip) {
+				continue
+			}
 
 			masked := ip.Mask(mask)
 			if masked == nil {
@@ -199,6 +253,30 @@ func discoverLocalInterfaceCIDRs() ([]string, error) {
 		return nil, errors.Join(ifaceErrs...)
 	}
 	return out, nil
+}
+
+func mustParseCIDRs(cidrs ...string) []*net.IPNet {
+	parsed := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic(fmt.Sprintf("invalid built-in fallback CIDR %q: %v", cidr, err))
+		}
+		parsed = append(parsed, ipNet)
+	}
+	return parsed
+}
+
+func isSafeFallbackIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	for _, ipNet := range fallbackPrivateCIDRs {
+		if ipNet.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeIPForMask(ip net.IP, mask net.IPMask) net.IP {
@@ -255,47 +333,23 @@ func isLoopbackHost(host string) bool {
 func newCIDRAllowlistMiddleware(allowedCIDRs []string) channels.HTTPMiddleware {
 	effectiveCIDRs := append([]string(nil), allowedCIDRs...)
 	return func(next http.Handler) (http.Handler, error) {
-		if len(effectiveCIDRs) == 0 {
+		allowlist, err := netpolicy.NewIPAllowlist(effectiveCIDRs)
+		if err != nil {
+			return nil, err
+		}
+		if allowlist.IsOpen() {
 			return next, nil
 		}
 
-		nets := make([]*net.IPNet, 0, len(effectiveCIDRs))
-		for _, cidr := range effectiveCIDRs {
-			_, ipNet, err := net.ParseCIDR(cidr)
-			if err != nil {
-				return nil, fmt.Errorf("invalid CIDR %q: %w", cidr, err)
-			}
-			nets = append(nets, ipNet)
-		}
-
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := clientIPFromRemoteAddr(r.RemoteAddr)
-			if ip == nil {
-				http.Error(w, "Forbidden", http.StatusForbidden)
-				return
-			}
 			// Loopback is always allowed for local administration.
 			// When deployed behind a local reverse proxy/tunnel, forwarded
 			// external traffic may still appear as loopback at this layer.
-			if ip.IsLoopback() {
+			if allowlist.AllowsRemoteAddr(r.RemoteAddr) {
 				next.ServeHTTP(w, r)
 				return
-			}
-			for _, ipNet := range nets {
-				if ipNet.Contains(ip) {
-					next.ServeHTTP(w, r)
-					return
-				}
 			}
 			http.Error(w, "Forbidden", http.StatusForbidden)
 		}), nil
 	}
-}
-
-func clientIPFromRemoteAddr(remoteAddr string) net.IP {
-	host := remoteAddr
-	if h, _, err := net.SplitHostPort(remoteAddr); err == nil {
-		host = h
-	}
-	return net.ParseIP(strings.TrimSpace(host))
 }
