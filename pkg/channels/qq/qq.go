@@ -110,11 +110,7 @@ func (c *QQChannel) Start(ctx context.Context) error {
 	c.stopOnce = sync.Once{}
 
 	// create token source
-	credentials := &token.QQBotCredentials{
-		AppID:     c.config.AppID,
-		AppSecret: c.config.AppSecret.String(),
-	}
-	c.tokenSource = token.NewQQBotTokenSource(credentials)
+	c.tokenSource = newQQTokenSource(c.config.AppID, c.config.AppSecret.String())
 
 	// create child context
 	c.ctx, c.cancel = context.WithCancel(ctx)
