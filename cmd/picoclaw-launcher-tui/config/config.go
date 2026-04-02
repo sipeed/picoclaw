@@ -151,15 +151,17 @@ func (p *Provider) UsersForScheme(schemeName string) []User {
 	return out
 }
 
-// SyncSelectedModelToMainConfig syncs the currently selected model to ~/.picoclaw/config.json
+// SyncSelectedModelToMainConfig syncs the currently selected model to the main config file.
 // Adds/replaces a "tui-prefer" model entry and sets it as the default model.
 // Preserves all other existing fields in the config file unchanged.
-func SyncSelectedModelToMainConfig(scheme Scheme, user User, modelID string) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
+func SyncSelectedModelToMainConfig(mainConfigPath string, scheme Scheme, user User, modelID string) error {
+	if mainConfigPath == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "."
+		}
+		mainConfigPath = filepath.Join(home, ".picoclaw", "config.json")
 	}
-	mainConfigPath := filepath.Join(home, ".picoclaw", "config.json")
 
 	var cfg map[string]any
 	if data, readErr := os.ReadFile(mainConfigPath); readErr == nil {
@@ -180,7 +182,7 @@ func SyncSelectedModelToMainConfig(scheme Scheme, user User, modelID string) err
 		}
 		defaults, ok := agents["defaults"].(map[string]any)
 		if ok {
-			defaults["model"] = "tui-prefer"
+			defaults["model_name"] = "tui-prefer"
 		}
 	}
 
