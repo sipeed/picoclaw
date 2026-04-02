@@ -112,6 +112,60 @@ description: DOM selectors and component map for the Flow Tester page on dashboa
 | `` | `label` | `` | Type here |
 | `` | `input` | `` |  |
 
+---
+
+## Playwright Usage — Verified Patterns (from source code)
+
+### Version Selection
+The app AUTO-SELECTS the first version when a flow finishes loading (Vue watcher).
+DO NOT click the version dropdown and try to pick an item — during loading, skeleton `.version-item` elements
+have no click handler and clicking them silently does nothing.
+
+CORRECT — wait for auto-selection:
+```typescript
+await expect(page.locator('.version-selector-text'))
+  .not.toContainText('Select Version', { timeout: 15000 });
+```
+
+Only open the dropdown manually if you specifically need to pick a non-default version:
+```typescript
+await page.locator('.version-selector-button').click();
+await page.locator('.version-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
+// Wait for real items (not skeleton) by waiting for .version-date to appear
+await page.locator('.version-dropdown-menu .version-date').first().waitFor({ state: 'visible', timeout: 10000 });
+await page.locator('.version-dropdown-menu .version-item').first().click();
+```
+
+### Bot Message Rendering — isOutput determines which element
+Bot messages render in one of two ways depending on the `isOutput` flag from the API:
+
+| isOutput | Rendered as | Selector |
+|----------|-------------|----------|
+| `true`   | `.message-card` with `.message-text` inside (visible in chat) | `.chatbox .message-text` |
+| `false`  | Collapsed `v-expansion-panel` labelled "Additional bot response" | `.chatbox .v-expansion-panel` |
+
+The **final output** of a flow (last Reply Message in the chain) has `isOutput: true` → `.message-text`.
+**Intermediate** messages (e.g. prompts/instructions mid-flow) have `isOutput: false` → expansion panel.
+
+CORRECT — verify final bot output:
+```typescript
+await expect(page.locator('.chatbox .message-text').last())
+  .toContainText('expected text', { timeout: 15000 });
+```
+
+CORRECT — verify an intermediate bot message (expansion panel):
+```typescript
+await expect(page.locator('.chatbox .v-expansion-panel')).toBeVisible({ timeout: 15000 });
+```
+
+### User Messages
+```typescript
+await expect(page.locator('.chatbox .message-card-user .message-text').last())
+  .toContainText('expected text', { timeout: 5000 });
+```
+
+---
+
 #### Discovered Modals / Dialogs
 
 **Trigger:** `page.locator('button:has-text("Edited else edge")').click()`
