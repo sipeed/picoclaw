@@ -240,7 +240,11 @@ func isLoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-func shutdownChannelRuntime(runningServices *channelServices, agentLoop *agent.AgentLoop, provider providers.LLMProvider) {
+func shutdownChannelRuntime(
+	runningServices *channelServices,
+	agentLoop *agent.AgentLoop,
+	provider providers.LLMProvider,
+) {
 	if cp, ok := provider.(providers.StatefulProvider); ok {
 		cp.Close()
 	}
