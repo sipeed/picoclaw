@@ -13,7 +13,7 @@ RUN go mod download
 
 # Copy source and build
 COPY . .
-ARG BUILD_TARGET=build
+ARG BUILD_TARGET=build-whatsapp-native-docker
 RUN make ${BUILD_TARGET}
 
 # ============================================================

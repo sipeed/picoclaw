@@ -43,6 +43,7 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sushi30
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:picoclaw-whatsapp
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ steps.sha.outputs.short }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
