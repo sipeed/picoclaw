@@ -250,6 +250,31 @@ func (sec *Config) collectSensitiveValues() []string {
 	return values
 }
 
+// secureStringValue extracts the string value from a SecureString reflect.Value.
+// Uses typed call when possible for better performance and type safety.
+func secureStringValue(v reflect.Value) string {
+	// Prefer typed call over reflective MethodByName for performance and type safety
+	if v.CanInterface() {
+		if ss, ok := v.Interface().(SecureString); ok {
+			return ss.String()
+		}
+	}
+	// Fallback to reflection for unexported/non-interfaceable values
+	var ptrVal reflect.Value
+	if v.CanAddr() {
+		ptrVal = v.Addr()
+	} else {
+		tmp := reflect.New(v.Type()).Elem()
+		tmp.Set(v)
+		ptrVal = tmp.Addr()
+	}
+	result := ptrVal.MethodByName("String").Call(nil)
+	if len(result) > 0 {
+		return result[0].String()
+	}
+	return ""
+}
+
 // collectSensitive recursively traverses the value and collects SecureString/SecureStrings values.
 func collectSensitive(v reflect.Value, values *[]string) {
 	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
@@ -276,14 +301,8 @@ func collectSensitive(v reflect.Value, values *[]string) {
 
 	// SecureString: collect via String() method (defined on *SecureString)
 	if t == reflect.TypeOf(SecureString{}) {
-		// Create a new pointer to make it addressable for method calls
-		ptr := reflect.New(t)
-		ptr.Elem().Set(v)
-		result := ptr.MethodByName("String").Call(nil)
-		if len(result) > 0 {
-			if s := result[0].String(); s != "" {
-				*values = append(*values, s)
-			}
+		if s := secureStringValue(v); s != "" {
+			*values = append(*values, s)
 		}
 		return
 	}
@@ -300,11 +319,8 @@ func collectSensitive(v reflect.Value, values *[]string) {
 				elem = elem.Elem()
 			}
 			if elem.IsValid() && elem.Type() == reflect.TypeOf(SecureString{}) {
-				result := elem.Addr().MethodByName("String").Call(nil)
-				if len(result) > 0 {
-					if s := result[0].String(); s != "" {
-						*values = append(*values, s)
-					}
+				if s := secureStringValue(elem); s != "" {
+					*values = append(*values, s)
 				}
 			}
 		}
