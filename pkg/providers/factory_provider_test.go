@@ -118,6 +118,9 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"openrouter", "openrouter"},
 		{"cerebras", "cerebras"},
 		{"vivgrid", "vivgrid"},
+		{"xai", "xai"},
+		{"x-ai", "x-ai"},
+		{"x.ai", "x.ai"},
 		{"qwen", "qwen"},
 		{"vllm", "vllm"},
 		{"deepseek", "deepseek"},
@@ -745,6 +748,15 @@ func TestGetDefaultAPIBase_QwenIntlAliases(t *testing.T) {
 func TestGetDefaultAPIBase_QwenUSAliases(t *testing.T) {
 	expectedURL := "https://dashscope-us.aliyuncs.com/compatible-mode/v1"
 	for _, protocol := range []string{"qwen-us", "dashscope-us"} {
+		if got := getDefaultAPIBase(protocol); got != expectedURL {
+			t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", protocol, got, expectedURL)
+		}
+	}
+}
+
+func TestGetDefaultAPIBase_XAI(t *testing.T) {
+	expectedURL := "https://api.x.ai/v1"
+	for _, protocol := range []string{"xai", "x-ai", "x.ai"} {
 		if got := getDefaultAPIBase(protocol); got != expectedURL {
 			t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", protocol, got, expectedURL)
 		}

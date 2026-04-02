@@ -192,6 +192,13 @@ func DefaultConfig() *Config {
 				APIBase:   "https://api.venice.ai/api/v1",
 			},
 
+			// xAI - https://console.x.ai/
+			{
+				ModelName: "grok-4",
+				Model:     "xai/grok-4",
+				APIBase:   "https://api.x.ai/v1",
+			},
+
 			// Google Gemini - https://ai.google.dev/
 			{
 				ModelName: "gemini-2.0-flash",

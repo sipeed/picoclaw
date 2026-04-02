@@ -54,6 +54,11 @@
       "api_key": "your-venice-api-key"
     },
     {
+      "model_name": "grok-4",
+      "model": "xai/grok-4",
+      "api_key": "your-xai-api-key"
+    },
+    {
       "model_name": "lmstudio-local",
       "model": "lmstudio/openai/gpt-oss-20b"
     },

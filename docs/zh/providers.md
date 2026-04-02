@@ -16,6 +16,7 @@
 | `anthropic`          | LLM (Claude 直连)            | [console.anthropic.com](https://console.anthropic.com)               |
 | `openai`             | LLM (GPT 直连)               | [platform.openai.com](https://platform.openai.com)                   |
 | `venice`             | LLM (Venice AI 直连)         | [venice.ai](https://venice.ai)                                       |
+| `xai`                | LLM (xAI Grok 直连)          | [console.x.ai](https://console.x.ai)                                 |
 | `deepseek`           | LLM (DeepSeek 直连)          | [platform.deepseek.com](https://platform.deepseek.com)               |
 | `qwen`               | LLM (通义千问)               | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | `groq`               | LLM + **语音转录** (Whisper) | [console.groq.com](https://console.groq.com)                         |
@@ -46,6 +47,7 @@
 | ------------------- | ----------------- | --------------------------------------------------- | --------- | ----------------------------------------------------------------- |
 | **OpenAI**          | `openai/`         | `https://api.openai.com/v1`                         | OpenAI    | [获取密钥](https://platform.openai.com)                           |
 | **Venice AI**       | `venice/`         | `https://api.venice.ai/api/v1`                      | OpenAI    | [获取密钥](https://venice.ai)                                     |
+| **xAI**             | `xai/`            | `https://api.x.ai/v1`                               | OpenAI    | [获取密钥](https://console.x.ai)                                 |
 | **Anthropic**       | `anthropic/`      | `https://api.anthropic.com/v1`                      | Anthropic | [获取密钥](https://console.anthropic.com)                         |
 | **智谱 AI (GLM)**   | `zhipu/`          | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [获取密钥](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
 | **DeepSeek**        | `deepseek/`       | `https://api.deepseek.com/v1`                       | OpenAI    | [获取密钥](https://platform.deepseek.com)                         |

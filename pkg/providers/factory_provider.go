@@ -40,6 +40,9 @@ var protocolMetaByName = map[string]protocolMeta{
 	"cerebras":                 {defaultAPIBase: "https://api.cerebras.ai/v1"},
 	"vivgrid":                  {defaultAPIBase: "https://api.vivgrid.com/v1"},
 	"volcengine":               {defaultAPIBase: "https://ark.cn-beijing.volces.com/api/v3"},
+	"xai":                      {defaultAPIBase: "https://api.x.ai/v1"},
+	"x-ai":                     {defaultAPIBase: "https://api.x.ai/v1"},
+	"x.ai":                     {defaultAPIBase: "https://api.x.ai/v1"},
 	"qwen":                     {defaultAPIBase: "https://dashscope.aliyuncs.com/compatible-mode/v1"},
 	"qwen-intl":                {defaultAPIBase: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"},
 	"qwen-international":       {defaultAPIBase: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"},
@@ -214,6 +217,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
 		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",
+		"xai", "x-ai", "x.ai",
 		"coding-plan", "alibaba-coding", "qwen-coding", "mimo":
 		// All other OpenAI-compatible HTTP providers
 		if cfg.APIKey() == "" && cfg.APIBase == "" && !isEmptyAPIKeyAllowed(protocol) {
