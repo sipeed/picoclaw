@@ -281,3 +281,88 @@ func TestNewAgentInstance_InvalidExecConfigDoesNotExit(t *testing.T) {
 		t.Fatal("read_file tool should still be registered")
 	}
 }
+
+func TestNewAgentInstance_UsesFrontmatterModelAndSkills(t *testing.T) {
+	workspace := setupWorkspace(t, map[string]string{
+		"AGENT.md": `---
+model: frontmatter-model
+skills: [frontmatter-skill]
+mcpServers: [GitHub, filesystem]
+---
+# Agent
+
+Use frontmatter identity.
+`,
+	})
+	defer cleanupWorkspace(t, workspace)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				ModelName: "default-model",
+			},
+		},
+	}
+
+	agent := NewAgentInstance(&config.AgentConfig{
+		ID:        "research",
+		Workspace: workspace,
+		Model: &config.AgentModelConfig{
+			Primary: "config-model",
+		},
+		Skills: []string{"config-skill"},
+	}, &cfg.Agents.Defaults, cfg, &mockProvider{})
+
+	if agent.Model != "frontmatter-model" {
+		t.Fatalf("agent.Model = %q, want frontmatter-model", agent.Model)
+	}
+	if len(agent.SkillsFilter) != 1 || agent.SkillsFilter[0] != "frontmatter-skill" {
+		t.Fatalf("agent.SkillsFilter = %v, want [frontmatter-skill]", agent.SkillsFilter)
+	}
+	if !agent.AllowsMCPServer("github") {
+		t.Fatal("expected github MCP server to be allowed from frontmatter")
+	}
+	if !agent.AllowsMCPServer("FILESYSTEM") {
+		t.Fatal("expected filesystem MCP server matching to be case-insensitive")
+	}
+	if agent.AllowsMCPServer("slack") {
+		t.Fatal("expected slack MCP server to be blocked by frontmatter allowlist")
+	}
+}
+
+func TestNewAgentInstance_InvalidFrontmatterFailsClosedForToolsAndMCPServers(t *testing.T) {
+	workspace := setupWorkspace(t, map[string]string{
+		"AGENT.md": `---
+tools: [read_file
+mcpServers: [github]
+---
+# Agent
+`,
+	})
+	defer cleanupWorkspace(t, workspace)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				ModelName: "default-model",
+			},
+		},
+		Tools: config.ToolsConfig{
+			ReadFile: config.ReadFileToolConfig{Enabled: true},
+		},
+	}
+
+	agent := NewAgentInstance(&config.AgentConfig{
+		ID:        "research",
+		Workspace: workspace,
+	}, &cfg.Agents.Defaults, cfg, &mockProvider{})
+
+	if _, ok := agent.Tools.Get("read_file"); ok {
+		t.Fatal("expected malformed frontmatter to fail closed and block read_file")
+	}
+	if agent.AllowsMCPServer("github") {
+		t.Fatal("expected malformed frontmatter to fail closed for MCP servers")
+	}
+}

@@ -113,17 +113,17 @@ func TestAgentConfig_FullParse(t *testing.T) {
 					"name": "Sales Bot",
 					"model": "gpt-4"
 				},
-				{
-					"id": "support",
-					"name": "Support Bot",
-					"model": {
-						"primary": "claude-opus",
-						"fallbacks": ["haiku"]
-					},
-					"subagents": {
-						"allow_agents": ["sales"]
-					}
+			{
+				"id": "support",
+				"name": "Support Bot",
+				"model": {
+					"primary": "claude-opus",
+					"fallbacks": ["haiku"]
+				},
+				"subagents": {
+					"allow_agents": ["sales"]
 				}
+			}
 			]
 		},
 		"bindings": [
@@ -182,7 +182,8 @@ func TestAgentConfig_FullParse(t *testing.T) {
 	if binding.AgentID != "support" || binding.Match.Channel != "telegram" {
 		t.Errorf("binding = %+v", binding)
 	}
-	if binding.Match.Peer == nil || binding.Match.Peer.Kind != "direct" || binding.Match.Peer.ID != "user123" {
+	if binding.Match.Peer == nil || binding.Match.Peer.Kind != "direct" ||
+		binding.Match.Peer.ID != "user123" {
 		t.Errorf("binding.Match.Peer = %+v", binding.Match.Peer)
 	}
 
@@ -387,7 +388,9 @@ func TestSaveConfig_PreservesDisabledTelegramPlaceholder(t *testing.T) {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
 	if loaded.Channels.Telegram.Placeholder.Enabled {
-		t.Fatal("telegram placeholder should remain disabled after SaveConfig/LoadConfig round-trip")
+		t.Fatal(
+			"telegram placeholder should remain disabled after SaveConfig/LoadConfig round-trip",
+		)
 	}
 }
 
@@ -510,7 +513,9 @@ func TestLoadConfig_ToolFeedbackDefaultsFalseWhenUnset(t *testing.T) {
 		t.Fatalf("LoadConfig() error: %v", err)
 	}
 	if cfg.Agents.Defaults.ToolFeedback.Enabled {
-		t.Fatal("agents.defaults.tool_feedback.enabled should remain false when unset in config file")
+		t.Fatal(
+			"agents.defaults.tool_feedback.enabled should remain false when unset in config file",
+		)
 	}
 }
 
@@ -764,7 +769,10 @@ func TestDefaultConfig_SummarizationThresholds(t *testing.T) {
 	cfg := DefaultConfig()
 
 	if cfg.Agents.Defaults.SummarizeMessageThreshold != 20 {
-		t.Errorf("SummarizeMessageThreshold = %d, want 20", cfg.Agents.Defaults.SummarizeMessageThreshold)
+		t.Errorf(
+			"SummarizeMessageThreshold = %d, want 20",
+			cfg.Agents.Defaults.SummarizeMessageThreshold,
+		)
 	}
 	if cfg.Agents.Defaults.SummarizeTokenPercent != 75 {
 		t.Errorf("SummarizeTokenPercent = %d, want 75", cfg.Agents.Defaults.SummarizeTokenPercent)
@@ -806,7 +814,11 @@ func TestDefaultConfig_WorkspacePath_WithPicoclawHome(t *testing.T) {
 	want := filepath.Join("/custom/picoclaw/home", "workspace")
 
 	if cfg.Agents.Defaults.Workspace != want {
-		t.Errorf("Workspace path with PICOCLAW_HOME = %q, want %q", cfg.Agents.Defaults.Workspace, want)
+		t.Errorf(
+			"Workspace path with PICOCLAW_HOME = %q, want %q",
+			cfg.Agents.Defaults.Workspace,
+			want,
+		)
 	}
 }
 
@@ -885,7 +897,12 @@ func TestFlexibleStringSlice_UnmarshalText(t *testing.T) {
 			}
 
 			if len(f) != len(tt.expected) {
-				t.Errorf("UnmarshalText(%q) length = %d, want %d", tt.input, len(f), len(tt.expected))
+				t.Errorf(
+					"UnmarshalText(%q) length = %d, want %d",
+					tt.input,
+					len(f),
+					len(tt.expected),
+				)
 				return
 			}
 
@@ -1006,7 +1023,8 @@ func TestLoadConfig_TelegramPlaceholderTextAcceptsSingleString(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	if got := []string(cfg.Channels.Telegram.Placeholder.Text); len(got) != 1 || got[0] != "Thinking..." {
+	if got := []string(cfg.Channels.Telegram.Placeholder.Text); len(got) != 1 ||
+		got[0] != "Thinking..." {
 		t.Fatalf("placeholder.text = %#v, want [\"Thinking...\"]", got)
 	}
 }
@@ -1196,9 +1214,21 @@ func TestSaveConfig_MixedKeys(t *testing.T) {
 	cfg := &Config{
 		Version: CurrentVersion,
 		ModelList: []*ModelConfig{
-			{ModelName: "plain", Model: "openai/gpt-4", APIKeys: SimpleSecureStrings("sk-new-plaintext")},
-			{ModelName: "enc", Model: "openai/gpt-4", APIKeys: SimpleSecureStrings(alreadyEncrypted)},
-			{ModelName: "file", Model: "openai/gpt-4", APIKeys: SimpleSecureStrings("file://api.key")},
+			{
+				ModelName: "plain",
+				Model:     "openai/gpt-4",
+				APIKeys:   SimpleSecureStrings("sk-new-plaintext"),
+			},
+			{
+				ModelName: "enc",
+				Model:     "openai/gpt-4",
+				APIKeys:   SimpleSecureStrings(alreadyEncrypted),
+			},
+			{
+				ModelName: "file",
+				Model:     "openai/gpt-4",
+				APIKeys:   SimpleSecureStrings("file://api.key"),
+			},
 		},
 	}
 	if err := SaveConfig(cfgPath, cfg); err != nil {
@@ -1335,7 +1365,10 @@ func TestSaveConfig_UsesPassphraseProvider(t *testing.T) {
 
 	raw, _ := os.ReadFile(filepath.Join(dir, SecurityConfigFile))
 	if !strings.Contains(string(raw), "enc://") {
-		t.Errorf("SaveConfig should have encrypted plaintext key via PassphraseProvider; got:\n%s", raw)
+		t.Errorf(
+			"SaveConfig should have encrypted plaintext key via PassphraseProvider; got:\n%s",
+			raw,
+		)
 	}
 }
 
@@ -1619,9 +1652,13 @@ func TestFilterSensitiveData_AllTokenTypes(t *testing.T) {
 			FilterMinLength:     8,
 			// Web tool API keys
 			Web: WebToolsConfig{
-				Brave:       BraveConfig{APIKeys: SecureStrings{NewSecureString("brave-api-key")}},
-				Tavily:      TavilyConfig{APIKeys: SecureStrings{NewSecureString("tavily-api-key")}},
-				Perplexity:  PerplexityConfig{APIKeys: SecureStrings{NewSecureString("perplexity-api-key")}},
+				Brave: BraveConfig{APIKeys: SecureStrings{NewSecureString("brave-api-key")}},
+				Tavily: TavilyConfig{
+					APIKeys: SecureStrings{NewSecureString("tavily-api-key")},
+				},
+				Perplexity: PerplexityConfig{
+					APIKeys: SecureStrings{NewSecureString("perplexity-api-key")},
+				},
 				GLMSearch:   GLMSearchConfig{APIKey: *NewSecureString("glm-search-key")},
 				BaiduSearch: BaiduSearchConfig{APIKey: *NewSecureString("baidu-search-key")},
 			},
@@ -1629,7 +1666,9 @@ func TestFilterSensitiveData_AllTokenTypes(t *testing.T) {
 			Skills: SkillsToolsConfig{
 				Github: SkillsGithubConfig{Token: *NewSecureString("github-token-xyz")},
 				Registries: SkillsRegistriesConfig{
-					ClawHub: ClawHubRegistryConfig{AuthToken: *NewSecureString("clawhub-auth-token")},
+					ClawHub: ClawHubRegistryConfig{
+						AuthToken: *NewSecureString("clawhub-auth-token"),
+					},
 				},
 			},
 		},

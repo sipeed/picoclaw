@@ -44,7 +44,11 @@ type mockAsyncRegistryTool struct {
 	lastCB AsyncCallback
 }
 
-func (m *mockAsyncRegistryTool) ExecuteAsync(_ context.Context, args map[string]any, cb AsyncCallback) *ToolResult {
+func (m *mockAsyncRegistryTool) ExecuteAsync(
+	_ context.Context,
+	args map[string]any,
+	cb AsyncCallback,
+) *ToolResult {
 	m.lastCB = cb
 	return m.result
 }
@@ -92,6 +96,28 @@ func TestToolRegistry_RegisterAndGet(t *testing.T) {
 	}
 	if got.Name() != "echo" {
 		t.Errorf("expected name 'echo', got %q", got.Name())
+	}
+}
+
+func TestToolRegistry_AllowlistFiltersRegistrations(t *testing.T) {
+	r := NewToolRegistry()
+	r.SetAllowlist([]string{"Allowed_Tool"})
+
+	r.Register(newMockTool("allowed_tool", "allowed"))
+	r.Register(newMockTool("blocked_tool", "blocked"))
+	r.RegisterHidden(newMockTool("hidden_blocked", "hidden blocked"))
+
+	if _, ok := r.Get("allowed_tool"); !ok {
+		t.Fatal("expected allowed_tool to be registered")
+	}
+	if _, ok := r.Get("blocked_tool"); ok {
+		t.Fatal("blocked_tool should not be registered")
+	}
+	if _, ok := r.Get("hidden_blocked"); ok {
+		t.Fatal("hidden_blocked should not be registered")
+	}
+	if got := r.List(); len(got) != 1 || got[0] != "allowed_tool" {
+		t.Fatalf("registry list = %v, want [allowed_tool]", got)
 	}
 }
 
@@ -296,7 +322,11 @@ func TestToolRegistry_ToProviderDefs(t *testing.T) {
 		t.Errorf("Name: want %q, got %q", want.Function.Name, got.Function.Name)
 	}
 	if got.Function.Description != want.Function.Description {
-		t.Errorf("Description: want %q, got %q", want.Function.Description, got.Function.Description)
+		t.Errorf(
+			"Description: want %q, got %q",
+			want.Function.Description,
+			got.Function.Description,
+		)
 	}
 }
 
@@ -399,7 +429,10 @@ func TestToolRegistry_Clone(t *testing.T) {
 		t.Errorf("expected parent to have 4 tools, got %d", r.Count())
 	}
 	if clone.Count() != 3 {
-		t.Errorf("expected clone to still have 3 tools after parent mutation, got %d", clone.Count())
+		t.Errorf(
+			"expected clone to still have 3 tools after parent mutation, got %d",
+			clone.Count(),
+		)
 	}
 	if _, ok := clone.Get("spawn"); ok {
 		t.Error("expected clone NOT to have 'spawn' tool registered on parent after cloning")
@@ -695,7 +728,14 @@ func TestToolRegistry_ExecuteWithContext_SanitizesLargeBase64Payload(t *testing.
 		result: SilentResult(payload),
 	})
 
-	result := r.ExecuteWithContext(context.Background(), "base64_tool", nil, "telegram", "chat-1", nil)
+	result := r.ExecuteWithContext(
+		context.Background(),
+		"base64_tool",
+		nil,
+		"telegram",
+		"chat-1",
+		nil,
+	)
 
 	if result.ForLLM != largeBase64OmittedMessage {
 		t.Fatalf("expected sanitized payload, got %q", result.ForLLM)
@@ -715,7 +755,14 @@ func TestToolRegistry_ExecuteWithContext_ExtractsInlineMediaDataURL(t *testing.T
 		result: SilentResult(payload),
 	})
 
-	result := r.ExecuteWithContext(context.Background(), "inline_media_tool", nil, "telegram", "chat-42", nil)
+	result := r.ExecuteWithContext(
+		context.Background(),
+		"inline_media_tool",
+		nil,
+		"telegram",
+		"chat-42",
+		nil,
+	)
 
 	if len(result.Media) != 1 {
 		t.Fatalf("expected 1 media ref, got %d", len(result.Media))
@@ -750,7 +797,14 @@ func TestToolRegistry_ExecuteWithContext_SanitizesInlineMediaWithoutStore(t *tes
 		result: SilentResult(payload),
 	})
 
-	result := r.ExecuteWithContext(context.Background(), "inline_media_no_store", nil, "telegram", "chat-42", nil)
+	result := r.ExecuteWithContext(
+		context.Background(),
+		"inline_media_no_store",
+		nil,
+		"telegram",
+		"chat-42",
+		nil,
+	)
 
 	if strings.Contains(result.ForLLM, "data:image/png;base64") {
 		t.Fatalf("expected inline data URL to be removed from ForLLM, got %q", result.ForLLM)

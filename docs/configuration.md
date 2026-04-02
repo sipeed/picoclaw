@@ -248,6 +248,73 @@ In other words: **channel + account form the candidate set; peer/guild/team then
 - **Wildcard catches too much traffic?** Add more specific `peer/guild/team` rules for critical paths.
 - **Unexpected default fallback?** Confirm `agent_id` exists and is not misspelled.
 
+### Agent Tool Allowlist
+
+Per-agent tool declarations live in `AGENT.md` frontmatter, not in `config.json`.
+
+If `tools` is omitted from frontmatter, the agent gets the normal globally enabled tool set. If `tools` is present, PicoClaw registers only the listed runtime tools for that agent.
+
+```md
+---
+name: Research Agent
+description: Specialist for web research and in-depth analysis.
+tools: [read_file, write_file, web_search, web_fetch, message]
+skills: [deep-research]
+mcpServers: [web-index]
+---
+
+You are the research agent.
+```
+
+Notes:
+
+- This is an allowlist, not a preference hint.
+- Tool names are matched against the runtime tool name 1:1.
+- Use runtime tool names such as `web_search`, `web_fetch`, `spawn`, `subagent`, `send_file`.
+- Tool declarations in `AGENT.md` are used by runtime/tooling, but they are not injected into the discovery prompt.
+
+### Agent Discovery (Automatic)
+
+When more than one agent exists, PicoClaw injects a structured agent registry into each agent's system prompt on every turn. No extra `list_agents` tool call is required.
+
+This registry is intended to make delegation concrete and reliable, especially when using `spawn` with a target `agent_id`.
+
+Each entry includes:
+
+| Field | Meaning |
+|-------|---------|
+| `id` | Stable agent id |
+| `name` | Agent identity name from `AGENT.md` frontmatter |
+| `description` | Agent identity description from `AGENT.md` frontmatter |
+
+Important behavior:
+
+- The discovery section includes the current agent's own entry, so the model has self-awareness.
+- Discovery is intentionally lightweight. It gives the model only the identity it needs to choose a peer: `id`, `name`, and `description`.
+- `config.json` remains the infrastructure layer: workspace, default agent selection, routing, and subagent permissions.
+- `AGENT.md` remains the identity layer. Runtime/tool code can still use its `tools`, `skills`, `mcpServers`, and `model` fields when delegation happens.
+
+Example injected shape:
+
+```json
+{
+  "agents": [
+    {
+      "id": "main",
+      "name": "Main Assistant",
+      "description": "Generalist agent for day-to-day requests."
+    },
+    {
+      "id": "research",
+      "name": "Research Agent",
+      "description": "Specialist for long-form investigation and web work."
+    }
+  ]
+}
+```
+
+In practice, this means a generalist agent can choose a peer based on its role description, then call `spawn` with the peer's `agent_id`. The runtime resolves the rest.
+
 ### 🔒 Security Sandbox
 
 PicoClaw runs in a sandboxed environment by default. The agent can only access files and execute commands within the configured workspace.

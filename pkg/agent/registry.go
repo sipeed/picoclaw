@@ -12,6 +12,7 @@ import (
 
 // AgentRegistry manages multiple agent instances and routes messages to them.
 type AgentRegistry struct {
+	cfg      *config.Config
 	agents   map[string]*AgentInstance
 	resolver *routing.RouteResolver
 	mu       sync.RWMutex
@@ -23,6 +24,7 @@ func NewAgentRegistry(
 	provider providers.LLMProvider,
 ) *AgentRegistry {
 	registry := &AgentRegistry{
+		cfg:      cfg,
 		agents:   make(map[string]*AgentInstance),
 		resolver: routing.NewRouteResolver(cfg),
 	}
@@ -52,6 +54,12 @@ func NewAgentRegistry(
 		}
 	}
 
+	for _, instance := range registry.agents {
+		if instance.ContextBuilder != nil {
+			instance.ContextBuilder.WithAgentDiscovery(registry.ListAgents)
+		}
+	}
+
 	return registry
 }
 
@@ -78,6 +86,30 @@ func (r *AgentRegistry) ListAgentIDs() []string {
 		ids = append(ids, id)
 	}
 	return ids
+}
+
+func (r *AgentRegistry) allowedMCPServers() map[string]struct{} {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if len(r.agents) == 0 {
+		return nil
+	}
+
+	union := make(map[string]struct{})
+	for _, agent := range r.agents {
+		if agent == nil {
+			continue
+		}
+		if agent.MCPServerAllowlist == nil {
+			return nil
+		}
+		for serverName := range agent.MCPServerAllowlist {
+			union[serverName] = struct{}{}
+		}
+	}
+
+	return union
 }
 
 // CanSpawnSubagent checks if parentAgentID is allowed to spawn targetAgentID.
@@ -130,11 +162,13 @@ func (r *AgentRegistry) Close() {
 func (r *AgentRegistry) GetDefaultAgent() *AgentInstance {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if agent, ok := r.agents["main"]; ok {
-		return agent
+	if id := r.defaultAgentIDLocked(); id != "" {
+		if agent, ok := r.agents[id]; ok {
+			return agent
+		}
 	}
-	for _, agent := range r.agents {
-		return agent
+	for id := range r.agents {
+		return r.agents[id]
 	}
 	return nil
 }

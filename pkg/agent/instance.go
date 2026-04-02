@@ -39,6 +39,7 @@ type AgentInstance struct {
 	Tools                     *tools.ToolRegistry
 	Subagents                 *config.SubagentsConfig
 	SkillsFilter              []string
+	MCPServerAllowlist        map[string]struct{}
 	Candidates                []providers.FallbackCandidate
 
 	// Router is non-nil when model routing is configured and the light model
@@ -63,7 +64,9 @@ func NewAgentInstance(
 	workspace := resolveAgentWorkspace(agentCfg, defaults)
 	os.MkdirAll(workspace, 0o755)
 
-	model := resolveAgentModel(agentCfg, defaults)
+	definition := loadAgentDefinition(workspace)
+
+	model := resolveAgentModel(agentCfg, defaults, definition)
 	fallbacks := resolveAgentFallbacks(agentCfg, defaults)
 
 	restrict := defaults.RestrictToWorkspace
@@ -72,12 +75,17 @@ func NewAgentInstance(
 	// Compile path whitelist patterns from config.
 	allowReadPaths := buildAllowReadPatterns(cfg)
 	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
+	agentToolAllowlist := resolveAgentToolAllowlist(definition)
+	agentMCPServerAllowlist := resolveAgentMCPServerAllowlist(definition)
 
 	toolsRegistry := tools.NewToolRegistry()
+	toolsRegistry.SetAllowlist(agentToolAllowlist)
 
 	if cfg.Tools.IsToolEnabled("read_file") {
 		maxReadFileSize := cfg.Tools.ReadFile.MaxReadFileSize
-		toolsRegistry.Register(tools.NewReadFileTool(workspace, readRestrict, maxReadFileSize, allowReadPaths))
+		toolsRegistry.Register(
+			tools.NewReadFileTool(workspace, readRestrict, maxReadFileSize, allowReadPaths),
+		)
 	}
 	if cfg.Tools.IsToolEnabled("write_file") {
 		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
@@ -121,9 +129,13 @@ func NewAgentInstance(
 	if agentCfg != nil {
 		agentID = routing.NormalizeAgentID(agentCfg.ID)
 		agentName = agentCfg.Name
+		if definition.Agent != nil && strings.TrimSpace(definition.Agent.Frontmatter.Name) != "" {
+			agentName = strings.TrimSpace(definition.Agent.Frontmatter.Name)
+		}
 		subagents = agentCfg.Subagents
-		skillsFilter = agentCfg.Skills
+		skillsFilter = resolveAgentSkillsFilter(agentCfg, definition)
 	}
+	warnOnUnknownAgentDeclarations(agentID, workspace, cfg, definition)
 
 	maxIter := defaults.MaxToolIterations
 	if maxIter == 0 {
@@ -180,8 +192,15 @@ func NewAgentInstance(
 		if len(resolved) > 0 {
 			lightModelCfg, err := resolvedModelConfig(cfg, rc.LightModel, workspace)
 			if err != nil {
-				logger.WarnCF("agent", "Routing light model config invalid; routing disabled",
-					map[string]any{"light_model": rc.LightModel, "agent_id": agentID, "error": err.Error()})
+				logger.WarnCF(
+					"agent",
+					"Routing light model config invalid; routing disabled",
+					map[string]any{
+						"light_model": rc.LightModel,
+						"agent_id":    agentID,
+						"error":       err.Error(),
+					},
+				)
 			} else {
 				lp, _, err := providers.CreateProviderFromConfig(lightModelCfg)
 				if err != nil {
@@ -221,6 +240,7 @@ func NewAgentInstance(
 		Tools:                     toolsRegistry,
 		Subagents:                 subagents,
 		SkillsFilter:              skillsFilter,
+		MCPServerAllowlist:        agentMCPServerAllowlist,
 		Candidates:                candidates,
 		Router:                    router,
 		LightCandidates:           lightCandidates,
@@ -234,7 +254,8 @@ func resolveAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentD
 		return expandHome(strings.TrimSpace(agentCfg.Workspace))
 	}
 	// Use the configured default workspace (respects PICOCLAW_HOME)
-	if agentCfg == nil || agentCfg.Default || agentCfg.ID == "" || routing.NormalizeAgentID(agentCfg.ID) == "main" {
+	if agentCfg == nil || agentCfg.Default || agentCfg.ID == "" ||
+		routing.NormalizeAgentID(agentCfg.ID) == "main" {
 		return expandHome(defaults.Workspace)
 	}
 	// For named agents without explicit workspace, use default workspace with agent ID suffix
@@ -243,7 +264,14 @@ func resolveAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentD
 }
 
 // resolveAgentModel resolves the primary model for an agent.
-func resolveAgentModel(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) string {
+func resolveAgentModel(
+	agentCfg *config.AgentConfig,
+	defaults *config.AgentDefaults,
+	definition AgentContextDefinition,
+) string {
+	if definition.Agent != nil && strings.TrimSpace(definition.Agent.Frontmatter.Model) != "" {
+		return strings.TrimSpace(definition.Agent.Frontmatter.Model)
+	}
 	if agentCfg != nil && agentCfg.Model != nil && strings.TrimSpace(agentCfg.Model.Primary) != "" {
 		return strings.TrimSpace(agentCfg.Model.Primary)
 	}
@@ -256,6 +284,27 @@ func resolveAgentFallbacks(agentCfg *config.AgentConfig, defaults *config.AgentD
 		return agentCfg.Model.Fallbacks
 	}
 	return defaults.ModelFallbacks
+}
+
+func resolveAgentSkillsFilter(
+	agentCfg *config.AgentConfig,
+	definition AgentContextDefinition,
+) []string {
+	if definition.Agent != nil && definition.Agent.Frontmatter.Skills != nil {
+		return append([]string(nil), definition.Agent.Frontmatter.Skills...)
+	}
+	if agentCfg == nil || agentCfg.Skills == nil {
+		return nil
+	}
+	return append([]string(nil), agentCfg.Skills...)
+}
+
+func (a *AgentInstance) AllowsMCPServer(serverName string) bool {
+	if a == nil || a.MCPServerAllowlist == nil {
+		return true
+	}
+	_, ok := a.MCPServerAllowlist[strings.ToLower(strings.TrimSpace(serverName))]
+	return ok
 }
 
 func compilePatterns(patterns []string) []*regexp.Regexp {

@@ -42,14 +42,13 @@ PicoClaw salva i dati nel workspace configurato (predefinito: `~/.picoclaw/works
 ├── state/            # Stato persistente (ultimo canale, ecc.)
 ├── cron/             # Database dei job pianificati
 ├── skills/           # Skill personalizzate
-├── AGENTS.md         # Guida al comportamento dell'agent
+├── AGENT.md          # Guida al comportamento dell'agent
 ├── HEARTBEAT.md      # Prompt per task periodici (controllato ogni 30 min)
-├── IDENTITY.md       # Identità dell'agent
 ├── SOUL.md           # Anima dell'agent
 └── USER.md           # Preferenze dell'utente
 ```
 
-> **Nota:** Le modifiche a `AGENTS.md`, `SOUL.md`, `USER.md`, `IDENTITY.md` e `memory/MEMORY.md` vengono rilevate automaticamente a runtime tramite il tracciamento della data di modifica (mtime). **Non è necessario riavviare il gateway** dopo aver modificato questi file — l'agent caricherà il nuovo contenuto alla prossima richiesta.
+> **Nota:** Le modifiche a `AGENT.md`, `SOUL.md`, `USER.md` e `memory/MEMORY.md` vengono rilevate automaticamente a runtime tramite il tracciamento della data di modifica (mtime). **Non è necessario riavviare il gateway** dopo aver modificato questi file — l'agent caricherà il nuovo contenuto alla prossima richiesta.
 
 ### Sorgenti delle Skill
 
@@ -71,6 +70,73 @@ export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
 - Gli adattatori dei canali non consumano più localmente i comandi generici; inoltrano il testo in entrata al percorso bus/agent. Telegram registra ancora automaticamente i comandi supportati all'avvio.
 - Un comando slash sconosciuto (ad esempio `/foo`) viene passato all'elaborazione LLM come se fosse un messaggio dell'utente.
 - Un comando registrato ma non supportato sul canale corrente (ad esempio `/show` su WhatsApp) restituisce un errore esplicito all'utente e interrompe l'elaborazione.
+
+### Allowlist dei Tool per Agent
+
+La dichiarazione dei tool per-agent vive nel frontmatter di `AGENT.md`, non in `config.json`.
+
+Se `tools` è omesso nel frontmatter, l'agent riceve il normale set globale dei tool abilitati. Se `tools` è presente, PicoClaw registra per quell'agent solo i tool runtime elencati.
+
+```md
+---
+name: Research Agent
+description: Specialista per ricerca web e analisi approfondita.
+tools: [read_file, write_file, web_search, web_fetch, message]
+skills: [deep-research]
+mcpServers: [web-index]
+---
+
+Sei l'agent di ricerca.
+```
+
+Note:
+
+- È una allowlist reale, non un suggerimento per l'LLM.
+- I nomi dei tool fanno match 1:1 con il nome runtime del tool.
+- Se ti serve controllo preciso, usa i nomi runtime effettivi come `web_search`, `web_fetch`, `spawn`, `subagent`, `send_file`.
+- Le dichiarazioni dei tool in `AGENT.md` sono usate dal runtime e dai tool, ma non vengono iniettate nel prompt di discovery.
+
+### Discovery Multi-Agent (Automatica)
+
+Quando esiste più di un agent, PicoClaw inietta automaticamente nel system prompt di ogni agent un registry strutturato dei peer. Non serve una chiamata aggiuntiva a un tool `list_agents`.
+
+Questa discovery serve soprattutto a rendere affidabile la delega tramite `spawn` con `agent_id` esplicito.
+
+Ogni entry include:
+
+| Campo | Significato |
+|-------|-------------|
+| `id` | ID stabile dell'agent |
+| `name` | Nome identitario da `AGENT.md` frontmatter |
+| `description` | Descrizione identitaria da `AGENT.md` frontmatter |
+
+Dettagli importanti:
+
+- La sezione include anche l'entry dell'agent corrente, quindi c'è self-awareness.
+- La discovery è volutamente leggera. Fornisce al modello solo l'identità necessaria per scegliere un peer: `id`, `name`, `description`.
+- `config.json` resta il layer infrastrutturale: workspace, agent di default, routing e permessi di subagent.
+- `AGENT.md` resta il layer di identità. Il codice runtime e i tool possono comunque usare `tools`, `skills`, `mcpServers` e `model` quando avviene la delega.
+
+Forma dell'oggetto iniettato:
+
+```json
+{
+  "agents": [
+    {
+      "id": "main",
+      "name": "Main Assistant",
+      "description": "Agent generalista per richieste quotidiane."
+    },
+    {
+      "id": "research",
+      "name": "Research Agent",
+      "description": "Specialista per investigazioni e lavoro web."
+    }
+  ]
+}
+```
+
+In pratica, un agent generalista sceglie un peer in base alla descrizione del suo ruolo, poi chiama `spawn` con l'`agent_id` del peer. Il runtime risolve il resto.
 
 ### 🔒 Sandbox di Sicurezza
 
