@@ -1743,7 +1743,10 @@ func (al *AgentLoop) runAgentLoop(
 					return
 				}
 				if opts.EnableSummary {
-					al.maybeSummarize(agent, opts.SessionKey, ts.scope)
+					al.contextManager.Compact(ctx, &CompactRequest{
+						SessionKey: opts.SessionKey,
+						Reason:     ContextCompressReasonSummarize,
+					})
 				}
 			})
 		}
@@ -3001,6 +3004,12 @@ turnLoop:
 
 	ts.setPhase(TurnPhaseFinalizing)
 	ts.setFinalContent(finalContent)
+	if !ts.opts.NoHistory && finalContent != "" {
+		ts.ingestMessage(turnCtx, al, providers.Message{
+			Role:    "assistant",
+			Content: finalContent,
+		})
+	}
 
 	ts.setPhase(TurnPhaseCompleted)
 	return turnResult{
