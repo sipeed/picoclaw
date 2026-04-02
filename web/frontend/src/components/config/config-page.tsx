@@ -1,4 +1,4 @@
-import { IconCode, IconDeviceFloppy } from "@tabler/icons-react"
+import { IconCode, IconDeviceFloppy, IconTag } from "@tabler/icons-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
@@ -10,6 +10,7 @@ import { launcherFetch } from "@/api/http"
 import {
   getAutoStartStatus,
   getLauncherConfig,
+  getSystemVersionInfo,
   setAutoStartEnabled as updateAutoStartEnabled,
   setLauncherConfig as updateLauncherConfig,
 } from "@/api/system"
@@ -32,6 +33,7 @@ import {
   parseMultilineList,
 } from "@/components/config/form-model"
 import { PageHeader } from "@/components/page-header"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { refreshGatewayState } from "@/store/gateway"
 
@@ -62,6 +64,12 @@ export function ConfigPage() {
   const { data: launcherConfig, isLoading: isLauncherLoading } = useQuery({
     queryKey: ["system", "launcher-config"],
     queryFn: getLauncherConfig,
+  })
+
+  const { data: versionInfo } = useQuery({
+    queryKey: ["system", "version"],
+    queryFn: getSystemVersionInfo,
+    staleTime: 5 * 60 * 1000,
   })
 
   const {
@@ -297,6 +305,17 @@ export function ConfigPage() {
     <div className="flex h-full flex-col">
       <PageHeader
         title={t("navigation.config")}
+        titleExtra={
+          versionInfo && (
+            <Badge
+              variant="secondary"
+              className="gap-1 font-mono text-[11px] font-normal opacity-80"
+            >
+              <IconTag className="size-3 opacity-70" />
+              {versionInfo.version}
+            </Badge>
+          )
+        }
         children={
           <Button variant="outline" asChild>
             <Link to="/config/raw">

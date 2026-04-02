@@ -120,6 +120,7 @@ func streamOggOpusToDiscord(ctx context.Context, vc *discordgo.VoiceConnection, 
 	defer func() {
 		if rec := recover(); rec != nil {
 			retErr = fmt.Errorf("voice connection closed during playback")
+			logger.RecoverPanicNoExit(rec)
 		}
 	}()
 

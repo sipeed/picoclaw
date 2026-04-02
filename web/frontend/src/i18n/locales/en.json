@@ -244,10 +244,6 @@
   },
   "channels": {
     "loadError": "Failed to load channels",
-    "edit": "Configure {{name}}",
-    "status": {
-      "configured": "Configured"
-    },
     "name": {
       "telegram": "Telegram",
       "discord": "Discord",
@@ -267,8 +263,6 @@
       "weixin": "WeChat"
     },
     "weixin": {
-      "warningTitle": "Testing phase, use with caution",
-      "warningDesc": "The WeChat channel is still experimental and may carry a risk of account suspension. Use it only if you understand and accept the risk.",
       "bindTitle": "WeChat Account Binding",
       "bindDesc": "Scan the QR code with WeChat to bind your personal account.",
       "bind": "Bind WeChat",
@@ -286,8 +280,6 @@
     "wecom": {
       "bindTitle": "WeCom Binding",
       "bindDesc": "Scan the QR code with WeCom to bind your AI Bot.",
-      "enableDesc": "Once bound, you can enable or disable the channel here.",
-      "enableBindFirst": "Bind the bot first, then enable the channel.",
       "bind": "Bind WeCom",
       "rebind": "Re-bind",
       "bound": "WeCom Bound",
@@ -329,7 +321,6 @@
       "notFound": "Channel \"{{name}}\" is not supported.",
       "saveSuccess": "Channel configuration saved.",
       "saveError": "Failed to save channel configuration",
-      "enabled": "enabled",
       "docLink": "Documentation",
       "enableLabel": "Enable channel",
       "restartRequiredTitle": "Gateway restart required",
