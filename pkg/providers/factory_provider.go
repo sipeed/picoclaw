@@ -91,6 +91,10 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
+		// OpenAI is the protocol where /responses is expected to work natively.
+		// The shared openai_compat transport still keeps /chat/completions as the
+		// compatibility path, but gpt-5-family models will probe /responses
+		// first before falling back when necessary.
 		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 			cfg.APIKey(),
 			apiBase,
@@ -159,7 +163,12 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",
 		"coding-plan", "alibaba-coding", "qwen-coding", "mimo":
-		// All other OpenAI-compatible HTTP providers
+		// All other OpenAI-compatible HTTP providers.
+		// These providers generally remain /chat/completions-first in practice,
+		// even though they share the same transport/parser wrapper. If one of
+		// these gateways exposes a gpt-5-family model ID, openai_compat may probe
+		// /responses once and then fall back automatically when the endpoint does
+		// not support it.
 		if cfg.APIKey() == "" && cfg.APIBase == "" {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
 		}

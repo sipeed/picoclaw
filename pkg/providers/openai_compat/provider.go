@@ -172,8 +172,11 @@ func shouldPreferResponses(rawModel, normalizedModel string) bool {
 	normalizedModel = strings.ToLower(strings.TrimSpace(normalizedModel))
 
 	// Keep the automatic route conservative: only gpt-5 models are forced
-	// onto /responses, and all other model families stay on chat/completions
-	// unless they are explicitly routed elsewhere by the caller.
+	// onto /responses today, and all other model families stay on
+	// /chat/completions unless they are explicitly routed elsewhere by the
+	// caller. When OpenAI ships another Responses-first family (for example,
+	// gpt-6), update this gate at the same time so new native models do not
+	// silently stay on the compatibility path.
 	return strings.HasPrefix(rawModel, "gpt-5") || strings.HasPrefix(normalizedModel, "gpt-5")
 }
 
