@@ -168,7 +168,7 @@ func setupAndStartChannelServices(
 		addr := net.JoinHostPort(listenHost, strconv.Itoa(cfg.Gateway.Port))
 		runningServices.ListenHost = listenHost
 		runningServices.ListenPort = cfg.Gateway.Port
-		runningServices.HealthServer = health.NewServer(listenHost, cfg.Gateway.Port)
+		runningServices.HealthServer = health.NewServer(listenHost, cfg.Gateway.Port, "")
 		runningServices.ChannelManager.SetupHTTPServer(addr, runningServices.HealthServer)
 	}
 
