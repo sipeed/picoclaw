@@ -303,7 +303,25 @@ Para documentação detalhada do TUI, veja [docs.picoclaw.io](https://docs.picoc
 
 Dê uma segunda vida ao seu celular de uma década! Transforme-o em um Assistente de IA inteligente com o PicoClaw.
 
-**Opção 1: Termux (disponível agora)**
+**Opção 1: Instalação via APK**
+
+Pré-visualização:
+
+<table>
+  <tr>
+    <td><img src="assets/fui_main_page.jpg" width="200"></td>
+    <td><img src="assets/fui_web_page.jpg" width="200"></td>
+    <td><img src="assets/fui_log_page.jpg" width="200"></td>
+    <td><img src="assets/fui_setting_page.jpg" width="200"></td>
+  </tr>
+</table>
+
+Baixe o APK de [picoclaw.io](https://picoclaw.io/download/) e instale diretamente. Sem necessidade de Termux!
+
+**Opção 2: Termux**
+
+<details>
+<summary><b>Terminal Launcher (para ambientes com recursos limitados)</b></summary>
 
 1. Instale o [Termux](https://github.com/termux/termux-app) (baixe nas [GitHub Releases](https://github.com/termux/termux-app/releases), ou pesquise no F-Droid / Google Play)
 2. Execute os seguintes comandos:
@@ -319,13 +337,6 @@ termux-chroot ./picoclaw onboard   # chroot fornece um layout padrão de sistema
 Em seguida, siga a seção Terminal Launcher abaixo para concluir a configuração.
 
 <img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
-
-**Opção 2: Instalação via APK**
-
-Baixe o APK de [picoclaw.io](https://picoclaw.io/download/) e instale diretamente. Sem necessidade de Termux!
-
-<details>
-<summary><b>Terminal Launcher (para ambientes com recursos limitados)</b></summary>
 
 Para ambientes mínimos onde apenas o binário principal `picoclaw` está disponível (sem Launcher UI), você pode configurar tudo via linha de comando e um arquivo de configuração JSON.
 

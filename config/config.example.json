@@ -421,7 +421,8 @@
       "enabled": true
     },
     "read_file": {
-      "enabled": true
+      "enabled": true,
+      "mode": "bytes"
     },
     "send_tts": {
       "enabled": false

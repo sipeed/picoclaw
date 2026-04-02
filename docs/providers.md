@@ -108,6 +108,24 @@ This design also enables **multi-agent support** with flexible provider selectio
 }
 ```
 
+#### `model_list` Entry Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `model_name` | string | Yes | Unique name used to reference this model in agent config |
+| `model` | string | Yes | Vendor/model identifier (e.g., `openai/gpt-5.4`, `azure/gpt-5.4`, `anthropic/claude-sonnet-4.6`) |
+| `api_keys` | string[] | Yes* | API key(s) for authentication. Multiple keys enable per-request rotation. Not required for local providers (Ollama, LM Studio, VLLM) |
+| `api_base` | string | No | Override the default API endpoint URL |
+| `proxy` | string | No | HTTP proxy URL for this model entry |
+| `user_agent` | string | No | Custom `User-Agent` header sent with API requests (supported by OpenAI-compatible, Anthropic, and Azure providers) |
+| `request_timeout` | int | No | Request timeout in seconds (default varies by provider) |
+| `max_tokens_field` | string | No | Override the max tokens field name in request body (e.g., `max_completion_tokens` for o1 models) |
+| `thinking_level` | string | No | Extended thinking level: `off`, `low`, `medium`, `high`, `xhigh`, or `adaptive` |
+| `extra_body` | object | No | Additional fields to inject into every request body |
+| `rpm` | int | No | Per-minute request rate limit |
+| `fallbacks` | string[] | No | Fallback model names for automatic failover |
+| `enabled` | bool | No | Whether this model entry is active (default: `true`) |
+
 #### Voice Transcription
 
 You can configure a dedicated model for audio transcription with `voice.model_name`. This lets you reuse existing multimodal providers that support audio input instead of relying only on Groq.
@@ -249,6 +267,7 @@ PicoClaw sends OpenAI-compatible requests to LM Studio, and strips the `lmstudio
   "model": "openai/custom-model",
   "api_base": "https://my-proxy.com/v1",
   "api_keys": ["sk-..."],
+  "user_agent": "MyApp/1.0",
   "request_timeout": 300
 }
 ```

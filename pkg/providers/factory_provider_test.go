@@ -846,6 +846,107 @@ func TestCreateProviderFromConfig_MinimaxPreservesUserExtraBody(t *testing.T) {
 	}
 }
 
+// openaiCompatResponse is the JSON response used by OpenAI-compatible providers.
+const openaiCompatResponse = `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`
+
+// anthropicResponse is the JSON response used by Anthropic providers.
+const anthropicResponse = `{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5}}`
+
+func TestCreateProviderFromConfig_UserAgent(t *testing.T) {
+	defaultUA := "PicoClaw/" + config.Version
+
+	tests := []struct {
+		name      string
+		model     string
+		userAgent string
+		apiKey    string
+		response  string
+		wantUA    string
+		chatOpts  map[string]any
+	}{
+		{
+			name:     "openai default user agent",
+			model:    "openai/gpt-4o",
+			apiKey:   "test-key",
+			response: openaiCompatResponse,
+			wantUA:   defaultUA,
+		},
+		{
+			name:      "openai custom user agent",
+			model:     "openai/gpt-4o",
+			apiKey:    "test-key",
+			userAgent: "MyAgent/1.2.3",
+			response:  openaiCompatResponse,
+			wantUA:    "MyAgent/1.2.3",
+		},
+		{
+			name:     "anthropic default user agent",
+			model:    "anthropic/claude-sonnet-4-20250514",
+			apiKey:   "test-key",
+			response: anthropicResponse,
+			wantUA:   defaultUA,
+		},
+		{
+			name:     "anthropic-messages default user agent",
+			model:    "anthropic-messages/claude-sonnet-4-20250514",
+			apiKey:   "test-key",
+			response: anthropicResponse,
+			wantUA:   defaultUA,
+			chatOpts: map[string]any{"max_tokens": 1024},
+		},
+		{
+			name:     "azure default user agent",
+			model:    "azure/my-deployment",
+			apiKey:   "test-azure-key",
+			response: openaiCompatResponse,
+			wantUA:   defaultUA,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var receivedUA string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				receivedUA = r.Header.Get("User-Agent")
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tt.response))
+			}))
+			defer server.Close()
+
+			cfg := &config.ModelConfig{
+				ModelName: "test-ua-" + tt.name,
+				Model:     tt.model,
+				APIBase:   server.URL,
+				UserAgent: tt.userAgent,
+			}
+			cfg.SetAPIKey(tt.apiKey)
+
+			provider, modelID, err := CreateProviderFromConfig(cfg)
+			if err != nil {
+				t.Fatalf("CreateProviderFromConfig() error = %v", err)
+			}
+			if provider == nil {
+				t.Fatal("CreateProviderFromConfig() returned nil provider")
+			}
+
+			_, err = provider.Chat(
+				t.Context(),
+				[]Message{{Role: "user", Content: "hi"}},
+				nil,
+				modelID,
+				tt.chatOpts,
+			)
+			if err != nil {
+				t.Fatalf("Chat() error = %v", err)
+			}
+
+			if receivedUA != tt.wantUA {
+				t.Errorf("User-Agent = %q, want %q", receivedUA, tt.wantUA)
+			}
+		})
+	}
+}
+
 func TestCreateProviderFromConfig_Bedrock(t *testing.T) {
 	// Set dummy AWS env vars to make test deterministic
 	t.Setenv("AWS_ACCESS_KEY_ID", "test-key")

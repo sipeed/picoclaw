@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -600,6 +601,8 @@ type ModelConfig struct {
 	// existing configs, the field is inferred during load: models with API keys
 	// or the reserved "local-model" name are auto-enabled.
 	Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	// UserAgent is the user agent string to use for HTTP requests.
+	UserAgent string `json:"user_agent,omitempty" yaml:"-"`
 
 	// isVirtual marks this model as a virtual model generated from multi-key expansion.
 	// Virtual models should not be persisted to config files.
@@ -801,8 +804,25 @@ type MediaCleanupConfig struct {
 }
 
 type ReadFileToolConfig struct {
-	Enabled         bool `json:"enabled"`
-	MaxReadFileSize int  `json:"max_read_file_size"`
+	Enabled         bool   `json:"enabled"`
+	Mode            string `json:"mode"`
+	MaxReadFileSize int    `json:"max_read_file_size"`
+}
+
+const (
+	ReadFileModeBytes = "bytes"
+	ReadFileModeLines = "lines"
+)
+
+func (c ReadFileToolConfig) EffectiveMode() string {
+	switch strings.ToLower(strings.TrimSpace(c.Mode)) {
+	case ReadFileModeLines:
+		return ReadFileModeLines
+	case "", ReadFileModeBytes:
+		return ReadFileModeBytes
+	default:
+		return ReadFileModeBytes
+	}
 }
 
 type ToolsConfig struct {

@@ -54,7 +54,7 @@ jobs:
             "dist/picoclaw-${{ matrix.arch }}.dmg" \
             "build/PicoClaw Launcher.app"
 
-      # 6. 上传文件到 GitHub Artifacts (供你下载)
+      # 7. 上传文件到 GitHub Artifacts (供你下载)
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:

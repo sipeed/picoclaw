@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
@@ -513,6 +514,8 @@ func (m *Manager) StartAll(ctx context.Context) error {
 
 	dispatchCtx, cancel := context.WithCancel(ctx)
 	m.dispatchTask = &asyncTask{cancel: cancel}
+	failedStarts := make([]error, 0, len(m.channels))
+	failedNames := make([]string, 0, len(m.channels))
 
 	for name, channel := range m.channels {
 		logger.InfoCF("channels", "Starting channel", map[string]any{
@@ -523,6 +526,8 @@ func (m *Manager) StartAll(ctx context.Context) error {
 				"channel": name,
 				"error":   err.Error(),
 			})
+			failedStarts = append(failedStarts, fmt.Errorf("channel %s: %w", name, err))
+			failedNames = append(failedNames, name)
 			continue
 		}
 		// Lazily create worker only after channel starts successfully
@@ -530,6 +535,36 @@ func (m *Manager) StartAll(ctx context.Context) error {
 		m.workers[name] = w
 		go m.runWorker(dispatchCtx, name, w)
 		go m.runMediaWorker(dispatchCtx, name, w)
+	}
+
+	if len(m.channels) > 0 && len(m.workers) == 0 {
+		if m.dispatchTask != nil {
+			m.dispatchTask.cancel()
+			m.dispatchTask = nil
+		}
+
+		sort.Strings(failedNames)
+		if len(failedStarts) == 0 {
+			return fmt.Errorf("failed to start any enabled channels")
+		}
+
+		logger.ErrorCF("channels", "All enabled channels failed to start", map[string]any{
+			"failed":          len(failedNames),
+			"total":           len(m.channels),
+			"failed_channels": failedNames,
+		})
+
+		return fmt.Errorf("failed to start any enabled channels: %w", errors.Join(failedStarts...))
+	}
+
+	if len(failedNames) > 0 {
+		sort.Strings(failedNames)
+		logger.WarnCF("channels", "Some channels failed to start", map[string]any{
+			"failed":          len(failedNames),
+			"started":         len(m.workers),
+			"total":           len(m.channels),
+			"failed_channels": failedNames,
+		})
 	}
 
 	// Start the dispatcher that reads from the bus and routes to workers
@@ -553,7 +588,11 @@ func (m *Manager) StartAll(ctx context.Context) error {
 		}()
 	}
 
-	logger.InfoC("channels", "All channels started")
+	logger.InfoCF("channels", "Channel startup completed", map[string]any{
+		"started": len(m.workers),
+		"failed":  len(failedNames),
+		"total":   len(m.channels),
+	})
 	return nil
 }
 

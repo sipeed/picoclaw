@@ -301,6 +301,66 @@ Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous
 | `tools.allow_read_paths` | string[] | `[]` | Additional paths allowed for reading outside workspace |
 | `tools.allow_write_paths` | string[] | `[]` | Additional paths allowed for writing outside workspace |
 
+### Read File Mode
+
+`read_file` has two mutually exclusive implementations selected by config. PicoClaw registers exactly one of them at startup:
+
+| Config Key | Type | Default | Description |
+|------------|------|---------|-------------|
+| `tools.read_file.enabled` | bool | `true` | Enables the `read_file` tool |
+| `tools.read_file.mode` | string | `bytes` | Selects the `read_file` implementation: `bytes` or `lines` |
+| `tools.read_file.max_read_file_size` | int | `65536` | Maximum bytes returned by `read_file` |
+
+#### Mode: `bytes`
+
+Optimized for arbitrary files and binary-safe pagination.
+
+Parameters:
+
+* `path` (required): File path
+* `offset` (optional): Starting byte offset, default `0`
+* `length` (optional): Maximum number of bytes to read, default `max_read_file_size`
+
+Use `bytes` when:
+
+* You may read binary files
+* You want deterministic byte-range pagination
+
+#### Mode: `lines`
+
+Text-oriented behavior, optimized for source files, markdown, logs, and configs. The tool reads sequentially by line and stops when the configured byte budget is reached.
+
+Parameters:
+
+* `path` (required): File path
+* `start_line` (optional): Starting line number, 1-indexed and inclusive, default `1`
+* `max_lines` (optional): Maximum number of lines to read, default = all remaining lines until EOF or byte budget
+
+Behavior notes:
+
+* Binary-looking files are rejected with guidance to switch `read_file` to `mode = bytes`
+* Extremely long single lines are truncated rather than skipped
+
+Use `mode = lines` when:
+
+* The agent mostly reads text files
+* You want line-based pagination in prompts and tool calls
+* You want cleaner chunks for code review, logs, and documentation
+
+#### Example
+
+```json
+{
+  "tools": {
+    "read_file": {
+      "enabled": true,
+       "mode": "lines",
+      "max_read_file_size": 65536
+    }
+  }
+}
+```
+
 ### Exec Security
 
 | Config Key | Type | Default | Description |
