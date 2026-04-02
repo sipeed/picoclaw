@@ -438,9 +438,15 @@ func setupAndStartServices(
 	}
 
 	if runningServices.ListenHost == gatewayFallbackBindHost {
-		fmt.Printf("✓ Health endpoints available on all interfaces at port %d (/health, /ready and /reload POST)\n", cfg.Gateway.Port)
+		fmt.Printf(
+			"✓ Health endpoints available on all interfaces at port %d (/health, /ready and /reload POST)\n",
+			cfg.Gateway.Port,
+		)
 	} else {
-		fmt.Printf("✓ Health endpoints available at http://%s/health, /ready and /reload (POST)\n", runningServices.ListenAddr)
+		fmt.Printf(
+			"✓ Health endpoints available at http://%s/health, /ready and /reload (POST)\n",
+			runningServices.ListenAddr,
+		)
 	}
 	if len(runningServices.EffectiveCIDRs) > 0 {
 		fmt.Printf("✓ Gateway CIDR allowlist enabled: %s\n", strings.Join(runningServices.EffectiveCIDRs, ", "))

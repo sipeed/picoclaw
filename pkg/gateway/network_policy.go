@@ -30,7 +30,11 @@ var (
 	discoverGatewayCIDRs = discoverLocalInterfaceCIDRs
 )
 
-func resolveGatewayListenDecision(configuredHost string, port int, configuredCIDRs []string) (*gatewayListenDecision, error) {
+func resolveGatewayListenDecision(
+	configuredHost string,
+	port int,
+	configuredCIDRs []string,
+) (*gatewayListenDecision, error) {
 	host := strings.TrimSpace(configuredHost)
 	if host == "" {
 		host = gatewayDefaultLoopbackHost
@@ -94,11 +98,17 @@ func resolveGatewayListenDecision(configuredHost string, port int, configuredCID
 	}
 
 	return &gatewayListenDecision{
-		BindHost:       gatewayFallbackBindHost,
-		Port:           port,
-		AllowedCIDRs:   fallbackCIDRs,
-		AutoFallback:   true,
-		FallbackReason: fmt.Sprintf("loopback bind %s:%d failed, fallback to %s:%d with CIDR allowlist", host, port, gatewayFallbackBindHost, port),
+		BindHost:     gatewayFallbackBindHost,
+		Port:         port,
+		AllowedCIDRs: fallbackCIDRs,
+		AutoFallback: true,
+		FallbackReason: fmt.Sprintf(
+			"loopback bind %s:%d failed, fallback to %s:%d with CIDR allowlist",
+			host,
+			port,
+			gatewayFallbackBindHost,
+			port,
+		),
 	}, nil
 }
 
@@ -159,7 +169,8 @@ func discoverLocalInterfaceCIDRs() ([]string, error) {
 				continue
 			}
 			ip := ipNet.IP
-			if ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast() || ip.IsInterfaceLocalMulticast() || ip.IsLinkLocalMulticast() || ip.IsLinkLocalUnicast() {
+			if ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast() ||
+				ip.IsInterfaceLocalMulticast() || ip.IsLinkLocalMulticast() || ip.IsLinkLocalUnicast() {
 				continue
 			}
 
