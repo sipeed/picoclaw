@@ -141,7 +141,9 @@ func TestHandleGroupATMessage_PrefersGroupOpenIDFromRawPayload(t *testing.T) {
 		ctx:         context.Background(),
 	}
 
-	raw := []byte(`{"d":{"group_openid":"group-openid-abc","author":{"id":"legacy-member-id","member_openid":"member-openid-xyz"}}}`)
+	raw := []byte(
+		`{"d":{"group_openid":"group-openid-abc","author":{"id":"legacy-member-id","member_openid":"member-openid-xyz"}}}`,
+	)
 	err := ch.handleGroupATMessage()(&dto.WSPayload{RawMessage: raw}, &dto.WSGroupATMessageData{
 		ID:      "group-openid-msg",
 		GroupID: "legacy-group-id",
@@ -175,7 +177,9 @@ func TestHandleGroupATMessage_AllowListFallsBackToLegacyMemberID(t *testing.T) {
 		ctx:         context.Background(),
 	}
 
-	raw := []byte(`{"d":{"group_openid":"group-openid-abc","author":{"id":"legacy-member-id","member_openid":"member-openid-xyz"}}}`)
+	raw := []byte(
+		`{"d":{"group_openid":"group-openid-abc","author":{"id":"legacy-member-id","member_openid":"member-openid-xyz"}}}`,
+	)
 	err := ch.handleGroupATMessage()(&dto.WSPayload{RawMessage: raw}, &dto.WSGroupATMessageData{
 		ID:      "group-allow-fallback",
 		GroupID: "legacy-group-id",
@@ -208,11 +212,11 @@ func TestHandleGroupATMessage_AllowListFallsBackToLegacyMemberID(t *testing.T) {
 
 func TestParseQQOpenIDs(t *testing.T) {
 	tests := []struct {
-		name         string
-		raw          []byte
-		wantUser     string
-		wantMember   string
-		wantGroup    string
+		name       string
+		raw        []byte
+		wantUser   string
+		wantMember string
+		wantGroup  string
 	}{
 		{
 			name:       "empty",

@@ -35,12 +35,12 @@ import (
 )
 
 const (
-	dedupTTL      = 5 * time.Minute
-	dedupInterval = 60 * time.Second
-	dedupMaxSize  = 10000 // hard cap on dedup map entries
-	typingResend  = 8 * time.Second
-	typingSeconds = 10
-	bytesPerMiB   = 1024 * 1024
+	dedupTTL       = 5 * time.Minute
+	dedupInterval  = 60 * time.Second
+	dedupMaxSize   = 10000 // hard cap on dedup map entries
+	typingResend   = 8 * time.Second
+	typingSeconds  = 10
+	bytesPerMiB    = 1024 * 1024
 	qqStartupProbe = 15 * time.Second
 )
 
