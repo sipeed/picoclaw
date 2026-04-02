@@ -272,9 +272,14 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandlerMux defines the interface for an HTTP request multiplexer.
+type HandlerMux interface {
+	HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request))
+}
+
 // RegisterOnMux registers /health, /ready, /reload and /chat handlers onto the
 // given mux. This allows the health endpoints to be served by a shared HTTP server.
-func (s *Server) RegisterOnMux(mux Mux) {
+func (s *Server) RegisterOnMux(mux HandlerMux) {
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
 	mux.HandleFunc("/reload", s.reloadHandler)

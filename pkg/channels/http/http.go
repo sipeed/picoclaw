@@ -34,12 +34,12 @@ func (c *HTTPChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (c *HTTPChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *HTTPChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	logger.InfoCF("channels", "HTTP channel received outbound message", map[string]any{
 		"chat_id": msg.ChatID,
 		"content": msg.Content,
 	})
 	// For synchronous HTTP, the response is usually handled by the caller of ProcessDirectWithChannel.
 	// Asynchronous messages (e.g. from subagents) will just be logged here for now.
-	return nil
+	return nil, nil
 }
