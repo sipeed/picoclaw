@@ -49,6 +49,39 @@ When omitted, the default is `warn`. Supported values: `debug`, `info`, `warn`, 
 
 You can also override this with the environment variable `PICOCLAW_LOG_LEVEL`.
 
+### Gateway Host Fallback And CIDR Allowlist
+
+`gateway.host` defaults to `127.0.0.1`.
+
+When `gateway.host` is a loopback address (`127.0.0.1`, `::1`, or `localhost`) and bind fails (for example, on boards where loopback is unavailable), PicoClaw automatically:
+
+1. Scans non-loopback network interfaces and collects local CIDR ranges.
+2. Falls back to bind on `0.0.0.0`.
+3. Enforces a CIDR allowlist for gateway HTTP endpoints.
+
+CIDR sources in fallback mode:
+
+- If `gateway.allowed_cidrs` is configured, that list is used.
+- If `gateway.allowed_cidrs` is empty, discovered local CIDRs are used.
+- If no non-loopback CIDR can be discovered, gateway startup fails.
+
+Loopback clients are always allowed for local administration.
+
+Example:
+
+```json
+{
+  "gateway": {
+    "host": "127.0.0.1",
+    "port": 18790,
+    "allowed_cidrs": [
+      "192.168.1.0/24",
+      "10.0.0.0/8"
+    ]
+  }
+}
+```
+
 ### Workspace Layout
 
 PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspace`):

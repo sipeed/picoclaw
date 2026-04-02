@@ -242,7 +242,7 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 # Open http://localhost:18800
 ```
 
-> **Docker / VM users:** The Gateway listens on `127.0.0.1` by default. Set `PICOCLAW_GATEWAY_HOST=0.0.0.0` or use the `-public` flag to make it accessible from the host.
+> **Docker / VM users:** The Gateway listens on `127.0.0.1` by default. Set `PICOCLAW_GATEWAY_HOST=0.0.0.0` or use the `-public` flag to make it accessible from the host. If loopback bind fails at runtime, PicoClaw may fallback to `0.0.0.0` with CIDR restrictions; configure `gateway.allowed_cidrs` to keep exposure limited.
 
 ```bash
 # Check logs
