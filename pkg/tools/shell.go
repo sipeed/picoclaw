@@ -113,9 +113,11 @@ var (
 	}
 
 	scriptPreflightEnvVarPattern = regexp.MustCompile(`\$[A-Z_][A-Z0-9_]{1,}`)
-	scriptPreflightNodePattern   = regexp.MustCompile(`(?m)^[ \t]*(?:NODE\s+["'][^"']+["']|(?:bash|sh)\s+-c\b|export\s+[A-Za-z_][A-Za-z0-9_]*=)`)
-	envAssignmentPattern         = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
-	interpreterPipePattern       = regexp.MustCompile(
+	scriptPreflightNodePattern   = regexp.MustCompile(
+		`(?m)^[ \t]*(?:NODE\s+["'][^"']+["']|(?:bash|sh)\s+-c\b|export\s+[A-Za-z_][A-Za-z0-9_]*=)`,
+	)
+	envAssignmentPattern   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+	interpreterPipePattern = regexp.MustCompile(
 		`(?i)(?:^|[|;&]\s*)(?:env\s+)?(?:python(?:\d+(?:\.\d+)?)?|node(?:js)?)\b`,
 	)
 	interpreterShellWrapperPattern = regexp.MustCompile(
