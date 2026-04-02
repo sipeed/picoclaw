@@ -56,6 +56,8 @@
 
 ## 📢 Tin tức
 
+2026-03-31 📱 **Hỗ trợ Android!** PicoClaw giờ chạy trên Android! Tải APK tại [picoclaw.io](https://picoclaw.io/download)
+
 2026-03-25 🚀 **v0.2.4 đã phát hành!** Tái cấu trúc kiến trúc Agent (SubTurn, Hooks, Steering, EventBus), tích hợp WeChat/WeCom, tăng cường bảo mật (.security.yml, lọc dữ liệu nhạy cảm), provider mới (AWS Bedrock, Azure, Xiaomi MiMo) và 35 bản vá lỗi. PicoClaw đã đạt **26K Stars**!
 
 2026-03-17 🚀 **v0.2.3 đã phát hành!** Giao diện system tray (Windows & Linux), truy vấn trạng thái sub-agent (`spawn_status`), thử nghiệm Gateway hot-reload, bảo mật Cron, và 2 bản vá bảo mật. PicoClaw đã đạt **25K Stars**!
@@ -301,7 +303,25 @@ Sử dụng menu TUI để: **1)** Cấu hình Provider -> **2)** Cấu hình Ch
 
 Hãy cho chiếc điện thoại cũ của bạn một cuộc sống mới! Biến nó thành Trợ lý AI thông minh với PicoClaw.
 
-**Tùy chọn 1: Termux (có sẵn ngay)**
+**Tùy chọn 1: Cài đặt APK**
+
+Xem trước:
+
+<table>
+  <tr>
+    <td><img src="assets/fui_main_page.jpg" width="200"></td>
+    <td><img src="assets/fui_web_page.jpg" width="200"></td>
+    <td><img src="assets/fui_log_page.jpg" width="200"></td>
+    <td><img src="assets/fui_setting_page.jpg" width="200"></td>
+  </tr>
+</table>
+
+Tải APK từ [picoclaw.io](https://picoclaw.io/download/) và cài đặt trực tiếp. Không cần Termux!
+
+**Tùy chọn 2: Termux**
+
+<details>
+<summary><b>Terminal Launcher (cho môi trường hạn chế tài nguyên)</b></summary>
 
 1. Cài đặt [Termux](https://github.com/termux/termux-app) (tải từ [GitHub Releases](https://github.com/termux/termux-app/releases), hoặc tìm kiếm trong F-Droid / Google Play)
 2. Chạy các lệnh sau:
@@ -317,13 +337,6 @@ termux-chroot ./picoclaw onboard   # chroot provides a standard Linux filesystem
 Sau đó làm theo phần Terminal Launcher bên dưới để hoàn tất cấu hình.
 
 <img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
-
-**Tùy chọn 2: Cài đặt APK (sắp ra mắt)**
-
-Một APK Android độc lập với WebUI tích hợp đang được phát triển. Hãy đón chờ!
-
-<details>
-<summary><b>Terminal Launcher (cho môi trường hạn chế tài nguyên)</b></summary>
 
 Đối với các môi trường tối giản chỉ có binary lõi `picoclaw` (không có Launcher UI), bạn có thể cấu hình mọi thứ qua dòng lệnh và tệp cấu hình JSON.
 

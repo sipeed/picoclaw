@@ -20,6 +20,14 @@ func (h *Handler) registerConfigRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/config/test-command-patterns", h.handleTestCommandPatterns)
 }
 
+func (h *Handler) applyRuntimeLogLevel() {
+	if h.debug {
+		logger.SetLevel(logger.DEBUG)
+		return
+	}
+	logger.SetLevelFromString(config.ResolveGatewayLogLevel(h.configPath))
+}
+
 // handleGetConfig returns the complete system configuration.
 //
 //	GET /api/config
@@ -80,8 +88,6 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Infof("configuration updated successfully")
-
 	if err := config.SaveConfig(h.configPath, &cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
 		return
@@ -89,6 +95,8 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Refresh cached pico token in case user changed it.
 	refreshPicoToken(&cfg)
+	h.applyRuntimeLogLevel()
+	logger.Infof("configuration updated successfully")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -133,7 +141,6 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
 		return
 	}
-
 	existing, err := json.Marshal(cfg)
 	if err != nil {
 		http.Error(w, "Failed to serialize current config", http.StatusInternalServerError)
@@ -187,6 +194,8 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Refresh cached pico token in case user changed it.
 	refreshPicoToken(&newCfg)
+	h.applyRuntimeLogLevel()
+	logger.Infof("configuration updated successfully")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})

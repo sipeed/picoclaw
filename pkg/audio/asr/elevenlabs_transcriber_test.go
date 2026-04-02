@@ -1,4 +1,4 @@
-package voice
+package asr
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 var _ Transcriber = (*ElevenLabsTranscriber)(nil)
 
 func TestElevenLabsTranscriberName(t *testing.T) {
-	tr := NewElevenLabsTranscriber("sk_test")
+	tr := NewElevenLabsTranscriber("sk_test", "")
 	if got := tr.Name(); got != "elevenlabs" {
 		t.Errorf("Name() = %q, want %q", got, "elevenlabs")
 	}
@@ -43,7 +43,7 @@ func TestElevenLabsTranscribe(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		tr := NewElevenLabsTranscriber("sk_test")
+		tr := NewElevenLabsTranscriber("sk_test", "")
 		tr.apiBase = srv.URL
 
 		resp, err := tr.Transcribe(context.Background(), audioPath)
@@ -64,7 +64,7 @@ func TestElevenLabsTranscribe(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		tr := NewElevenLabsTranscriber("sk_bad")
+		tr := NewElevenLabsTranscriber("sk_bad", "")
 		tr.apiBase = srv.URL
 
 		_, err := tr.Transcribe(context.Background(), audioPath)
@@ -74,7 +74,7 @@ func TestElevenLabsTranscribe(t *testing.T) {
 	})
 
 	t.Run("missing file", func(t *testing.T) {
-		tr := NewElevenLabsTranscriber("sk_test")
+		tr := NewElevenLabsTranscriber("sk_test", "")
 		_, err := tr.Transcribe(context.Background(), filepath.Join(tmpDir, "nonexistent.ogg"))
 		if err == nil {
 			t.Fatal("expected error for missing file, got nil")

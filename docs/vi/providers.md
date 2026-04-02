@@ -99,6 +99,24 @@ Thiết kế này cũng cho phép **hỗ trợ đa agent** với lựa chọn pr
 }
 ```
 
+#### Các trường entry `model_list`
+
+| Trường | Kiểu | Bắt buộc | Mô tả |
+|--------|------|----------|------|
+| `model_name` | string | Có | Tên duy nhất để tham chiếu model này trong cấu hình agent |
+| `model` | string | Có | Định danh nhà cung cấp/model (ví dụ: `openai/gpt-5.4`, `azure/gpt-5.4`, `anthropic/claude-sonnet-4.6`) |
+| `api_keys` | string[] | Có* | Khóa API xác thực. Nhiều khóa cho phép xoay vòng theo yêu cầu. Không cần thiết cho provider nội bộ (Ollama, LM Studio, VLLM) |
+| `api_base` | string | Không | Ghi đè URL endpoint API mặc định |
+| `proxy` | string | Không | URL proxy HTTP cho entry model này |
+| `user_agent` | string | Không | Header `User-Agent` tùy chỉnh gửi với yêu cầu API (được hỗ trợ bởi provider OpenAI-compatible, Anthropic và Azure) |
+| `request_timeout` | int | Không | Timeout yêu cầu tính bằng giây (mặc định khác nhau tùy provider) |
+| `max_tokens_field` | string | Không | Ghi đè tên trường max tokens trong request body (ví dụ: `max_completion_tokens` cho model o1) |
+| `thinking_level` | string | Không | Mức độ tư duy mở rộng: `off`, `low`, `medium`, `high`, `xhigh` hoặc `adaptive` |
+| `extra_body` | object | Không | Các trường bổ sung để chèn vào mỗi request body |
+| `rpm` | int | Không | Giới hạn tốc độ yêu cầu mỗi phút |
+| `fallbacks` | string[] | Không | Tên model dự phòng cho failover tự động |
+| `enabled` | bool | Không | Kích hoạt hay vô hiệu hóa entry model này (mặc định: `true`) |
+
 #### Ví Dụ Theo Vendor
 
 **OpenAI**
@@ -190,6 +208,7 @@ Thiết kế này cũng cho phép **hỗ trợ đa agent** với lựa chọn pr
   "model": "openai/custom-model",
   "api_base": "https://my-proxy.com/v1",
   "api_keys": ["sk-..."],
+  "user_agent": "MyApp/1.0",
   "request_timeout": 300
 }
 ```

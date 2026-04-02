@@ -23,10 +23,13 @@ require (
 	github.com/h2non/filetype v1.1.3
 	github.com/larksuite/oapi-sdk-go/v3 v3.5.3
 	github.com/mdp/qrterminal/v3 v3.2.1
+	github.com/minio/selfupdate v0.6.0
 	github.com/modelcontextprotocol/go-sdk v1.4.1
 	github.com/mymmrac/telego v1.7.0
 	github.com/open-dingtalk/dingtalk-stream-sdk-go v0.9.1
 	github.com/openai/openai-go/v3 v3.22.0
+	github.com/pion/rtp v1.8.7
+	github.com/pion/webrtc/v3 v3.3.6
 	github.com/rivo/tview v0.42.0
 	github.com/rs/zerolog v1.34.0
 	github.com/slack-go/slack v0.17.3
@@ -46,6 +49,7 @@ require (
 )
 
 require (
+	aead.dev/minisign v0.2.0 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.8 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.12 // indirect
@@ -61,6 +65,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.9 // indirect
 	github.com/aws/smithy-go v1.24.2 // indirect
 	github.com/beeper/argo-go v1.1.2 // indirect
+	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -76,6 +81,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.34 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/petermattis/goid v0.0.0-20260226131333-17d1149c6ac6 // indirect
+	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
@@ -123,3 +129,5 @@ require (
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.42.0
 )
+
+replace github.com/bwmarrin/discordgo => github.com/yeongaori/discordgo-fork v0.0.0-20260319072544-e8e546f5d532

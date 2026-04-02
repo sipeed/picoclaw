@@ -17,6 +17,49 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers/bedrock"
 )
 
+type protocolMeta struct {
+	defaultAPIBase     string
+	emptyAPIKeyAllowed bool
+}
+
+var protocolMetaByName = map[string]protocolMeta{
+	"openai":                   {defaultAPIBase: "https://api.openai.com/v1"},
+	"venice":                   {defaultAPIBase: "https://api.venice.ai/api/v1"},
+	"openrouter":               {defaultAPIBase: "https://openrouter.ai/api/v1"},
+	"litellm":                  {defaultAPIBase: "http://localhost:4000/v1"},
+	"lmstudio":                 {defaultAPIBase: "http://localhost:1234/v1", emptyAPIKeyAllowed: true},
+	"novita":                   {defaultAPIBase: "https://api.novita.ai/openai"},
+	"groq":                     {defaultAPIBase: "https://api.groq.com/openai/v1"},
+	"zhipu":                    {defaultAPIBase: "https://open.bigmodel.cn/api/paas/v4"},
+	"gemini":                   {defaultAPIBase: "https://generativelanguage.googleapis.com/v1beta"},
+	"nvidia":                   {defaultAPIBase: "https://integrate.api.nvidia.com/v1"},
+	"ollama":                   {defaultAPIBase: "http://localhost:11434/v1", emptyAPIKeyAllowed: true},
+	"moonshot":                 {defaultAPIBase: "https://api.moonshot.cn/v1"},
+	"shengsuanyun":             {defaultAPIBase: "https://router.shengsuanyun.com/api/v1"},
+	"deepseek":                 {defaultAPIBase: "https://api.deepseek.com/v1"},
+	"cerebras":                 {defaultAPIBase: "https://api.cerebras.ai/v1"},
+	"vivgrid":                  {defaultAPIBase: "https://api.vivgrid.com/v1"},
+	"volcengine":               {defaultAPIBase: "https://ark.cn-beijing.volces.com/api/v3"},
+	"qwen":                     {defaultAPIBase: "https://dashscope.aliyuncs.com/compatible-mode/v1"},
+	"qwen-intl":                {defaultAPIBase: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"},
+	"qwen-international":       {defaultAPIBase: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"},
+	"dashscope-intl":           {defaultAPIBase: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"},
+	"qwen-us":                  {defaultAPIBase: "https://dashscope-us.aliyuncs.com/compatible-mode/v1"},
+	"dashscope-us":             {defaultAPIBase: "https://dashscope-us.aliyuncs.com/compatible-mode/v1"},
+	"coding-plan":              {defaultAPIBase: "https://coding-intl.dashscope.aliyuncs.com/v1"},
+	"alibaba-coding":           {defaultAPIBase: "https://coding-intl.dashscope.aliyuncs.com/v1"},
+	"qwen-coding":              {defaultAPIBase: "https://coding-intl.dashscope.aliyuncs.com/v1"},
+	"coding-plan-anthropic":    {defaultAPIBase: "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic"},
+	"alibaba-coding-anthropic": {defaultAPIBase: "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic"},
+	"vllm":                     {defaultAPIBase: "http://localhost:8000/v1", emptyAPIKeyAllowed: true},
+	"mistral":                  {defaultAPIBase: "https://api.mistral.ai/v1"},
+	"avian":                    {defaultAPIBase: "https://api.avian.io/v1"},
+	"minimax":                  {defaultAPIBase: "https://api.minimaxi.com/v1"},
+	"longcat":                  {defaultAPIBase: "https://api.longcat.chat/openai"},
+	"modelscope":               {defaultAPIBase: "https://api-inference.modelscope.cn/v1"},
+	"mimo":                     {defaultAPIBase: "https://api.xiaomimimo.com/v1"},
+}
+
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
 func createClaudeAuthProvider() (LLMProvider, error) {
 	cred, err := getCredential("anthropic")
@@ -56,6 +99,19 @@ func ExtractProtocol(model string) (protocol, modelID string) {
 	return protocol, modelID
 }
 
+// ResolveAPIBase returns the configured API base, or the protocol default when
+// the model uses an HTTP-based provider family with a known default endpoint.
+func ResolveAPIBase(cfg *config.ModelConfig) string {
+	if cfg == nil {
+		return ""
+	}
+	if apiBase := strings.TrimSpace(cfg.APIBase); apiBase != "" {
+		return strings.TrimRight(apiBase, "/")
+	}
+	protocol, _ := ExtractProtocol(cfg.Model)
+	return strings.TrimRight(getDefaultAPIBase(protocol), "/")
+}
+
 // CreateProviderFromConfig creates a provider based on the ModelConfig.
 // It uses the protocol prefix in the Model field to determine which provider to create.
 // Supported protocol families include OpenAI-compatible prefixes (e.g., openai, openrouter, groq, gemini),
@@ -72,6 +128,11 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	}
 
 	protocol, modelID := ExtractProtocol(cfg.Model)
+
+	userAgent := cfg.UserAgent
+	if userAgent == "" {
+		userAgent = fmt.Sprintf("PicoClaw/%s", config.Version)
+	}
 
 	switch protocol {
 	case "openai":
@@ -96,6 +157,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
 		), modelID, nil
@@ -115,6 +177,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.APIKey(),
 			cfg.APIBase,
 			cfg.Proxy,
+			userAgent,
 			cfg.RequestTimeout,
 		), modelID, nil
 
@@ -154,13 +217,13 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		}
 		return provider, modelID, nil
 
-	case "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
+	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "gemini", "nvidia", "venice",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
 		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",
 		"coding-plan", "alibaba-coding", "qwen-coding", "mimo":
 		// All other OpenAI-compatible HTTP providers
-		if cfg.APIKey() == "" && cfg.APIBase == "" {
+		if cfg.APIKey() == "" && cfg.APIBase == "" && !isEmptyAPIKeyAllowed(protocol) {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
 		}
 		apiBase := cfg.APIBase
@@ -172,6 +235,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
 		), modelID, nil
@@ -197,6 +261,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			userAgent,
 			cfg.RequestTimeout,
 			extraBody,
 		), modelID, nil
@@ -223,6 +288,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
 		), modelID, nil
@@ -239,6 +305,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return anthropicmessages.NewProviderWithTimeout(
 			cfg.APIKey(),
 			apiBase,
+			userAgent,
 			cfg.RequestTimeout,
 		), modelID, nil
 
@@ -254,6 +321,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return anthropicmessages.NewProviderWithTimeout(
 			cfg.APIKey(),
 			apiBase,
+			userAgent,
 			cfg.RequestTimeout,
 		), modelID, nil
 
@@ -294,64 +362,30 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	}
 }
 
+func isEmptyAPIKeyAllowed(protocol string) bool {
+	meta, ok := protocolMetaByName[protocol]
+	return ok && meta.emptyAPIKeyAllowed
+}
+
+// IsEmptyAPIKeyAllowedForProtocol reports whether a protocol allows requests
+// without api_key when using its default local endpoint.
+func IsEmptyAPIKeyAllowedForProtocol(protocol string) bool {
+	protocol = strings.ToLower(strings.TrimSpace(protocol))
+	return isEmptyAPIKeyAllowed(protocol)
+}
+
+// DefaultAPIBaseForProtocol returns the configured default API base for a protocol.
+// It returns empty string if the protocol has no default base.
+func DefaultAPIBaseForProtocol(protocol string) string {
+	protocol = strings.ToLower(strings.TrimSpace(protocol))
+	return getDefaultAPIBase(protocol)
+}
+
 // getDefaultAPIBase returns the default API base URL for a given protocol.
 func getDefaultAPIBase(protocol string) string {
-	switch protocol {
-	case "openai":
-		return "https://api.openai.com/v1"
-	case "openrouter":
-		return "https://openrouter.ai/api/v1"
-	case "litellm":
-		return "http://localhost:4000/v1"
-	case "novita":
-		return "https://api.novita.ai/openai"
-	case "groq":
-		return "https://api.groq.com/openai/v1"
-	case "zhipu":
-		return "https://open.bigmodel.cn/api/paas/v4"
-	case "gemini":
-		return "https://generativelanguage.googleapis.com/v1beta"
-	case "nvidia":
-		return "https://integrate.api.nvidia.com/v1"
-	case "ollama":
-		return "http://localhost:11434/v1"
-	case "moonshot":
-		return "https://api.moonshot.cn/v1"
-	case "shengsuanyun":
-		return "https://router.shengsuanyun.com/api/v1"
-	case "deepseek":
-		return "https://api.deepseek.com/v1"
-	case "cerebras":
-		return "https://api.cerebras.ai/v1"
-	case "vivgrid":
-		return "https://api.vivgrid.com/v1"
-	case "volcengine":
-		return "https://ark.cn-beijing.volces.com/api/v3"
-	case "qwen":
-		return "https://dashscope.aliyuncs.com/compatible-mode/v1"
-	case "qwen-intl", "qwen-international", "dashscope-intl":
-		return "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-	case "qwen-us", "dashscope-us":
-		return "https://dashscope-us.aliyuncs.com/compatible-mode/v1"
-	case "coding-plan", "alibaba-coding", "qwen-coding":
-		return "https://coding-intl.dashscope.aliyuncs.com/v1"
-	case "coding-plan-anthropic", "alibaba-coding-anthropic":
-		return "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic"
-	case "vllm":
-		return "http://localhost:8000/v1"
-	case "mistral":
-		return "https://api.mistral.ai/v1"
-	case "avian":
-		return "https://api.avian.io/v1"
-	case "minimax":
-		return "https://api.minimaxi.com/v1"
-	case "longcat":
-		return "https://api.longcat.chat/openai"
-	case "modelscope":
-		return "https://api-inference.modelscope.cn/v1"
-	case "mimo":
-		return "https://api.xiaomimimo.com/v1"
-	default:
+	meta, ok := protocolMetaByName[protocol]
+	if !ok {
 		return ""
 	}
+	return meta.defaultAPIBase
 }

@@ -112,6 +112,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		protocol string
 	}{
 		{"openai", "openai"},
+		{"venice", "venice"},
 		{"groq", "groq"},
 		{"novita", "novita"},
 		{"openrouter", "openrouter"},
@@ -121,6 +122,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"vllm", "vllm"},
 		{"deepseek", "deepseek"},
 		{"ollama", "ollama"},
+		{"lmstudio", "lmstudio"},
 		{"longcat", "longcat"},
 		{"modelscope", "modelscope"},
 		{"mimo", "mimo"},
@@ -153,6 +155,18 @@ func TestGetDefaultAPIBase_LiteLLM(t *testing.T) {
 	}
 }
 
+func TestGetDefaultAPIBase_LMStudio(t *testing.T) {
+	if got := getDefaultAPIBase("lmstudio"); got != "http://localhost:1234/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "lmstudio", got, "http://localhost:1234/v1")
+	}
+}
+
+func TestGetDefaultAPIBase_Venice(t *testing.T) {
+	if got := getDefaultAPIBase("venice"); got != "https://api.venice.ai/api/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "venice", got, "https://api.venice.ai/api/v1")
+	}
+}
+
 func TestCreateProviderFromConfig_LiteLLM(t *testing.T) {
 	cfg := &config.ModelConfig{
 		ModelName: "test-litellm",
@@ -170,6 +184,85 @@ func TestCreateProviderFromConfig_LiteLLM(t *testing.T) {
 	}
 	if modelID != "my-proxy-alias" {
 		t.Errorf("modelID = %q, want %q", modelID, "my-proxy-alias")
+	}
+}
+
+func TestCreateProviderFromConfig_LocalProviders(t *testing.T) {
+	tests := []struct {
+		name        string
+		modelName   string
+		model       string
+		apiKey      string
+		wantModelID string
+	}{
+		{
+			name:        "LMStudio with API key",
+			modelName:   "test-lmstudio",
+			model:       "lmstudio/openai/gpt-oss-20b",
+			apiKey:      "test-key",
+			wantModelID: "openai/gpt-oss-20b",
+		},
+		{
+			name:        "LMStudio without API key",
+			modelName:   "test-lmstudio",
+			model:       "lmstudio/openai/gpt-oss-20b",
+			apiKey:      "",
+			wantModelID: "openai/gpt-oss-20b",
+		},
+		{
+			name:        "Ollama with API key",
+			modelName:   "test-ollama",
+			model:       "ollama/llama3.1:8b",
+			apiKey:      "test-key",
+			wantModelID: "llama3.1:8b",
+		},
+		{
+			name:        "Ollama without API key",
+			modelName:   "test-ollama",
+			model:       "ollama/llama3.1:8b",
+			apiKey:      "",
+			wantModelID: "llama3.1:8b",
+		},
+		{
+			name:        "VLLM with API key",
+			modelName:   "test-vllm",
+			model:       "vllm/Qwen/Qwen3-8B",
+			apiKey:      "test-key",
+			wantModelID: "Qwen/Qwen3-8B",
+		},
+		{
+			name:        "VLLM without API key",
+			modelName:   "test-vllm",
+			model:       "vllm/Qwen/Qwen3-8B",
+			apiKey:      "",
+			wantModelID: "Qwen/Qwen3-8B",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.ModelConfig{
+				ModelName: tt.modelName,
+				Model:     tt.model,
+			}
+			if tt.apiKey != "" {
+				cfg.SetAPIKey(tt.apiKey)
+			}
+
+			provider, modelID, err := CreateProviderFromConfig(cfg)
+			if err != nil {
+				t.Fatalf("CreateProviderFromConfig() error = %v", err)
+			}
+			if provider == nil {
+				t.Fatal("CreateProviderFromConfig() returned nil provider")
+			}
+			if modelID != tt.wantModelID {
+				t.Errorf("modelID = %q, want %q", modelID, tt.wantModelID)
+			}
+			if _, ok := provider.(*HTTPProvider); !ok {
+				t.Fatalf("expected *HTTPProvider, got %T", provider)
+			}
+		})
 	}
 }
 
@@ -270,6 +363,28 @@ func TestCreateProviderFromConfig_Mimo(t *testing.T) {
 	}
 	if modelID != "mimo-v2-pro" {
 		t.Errorf("modelID = %q, want %q", modelID, "mimo-v2-pro")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_Venice(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-venice",
+		Model:     "venice/venice-uncensored",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "venice-uncensored" {
+		t.Errorf("modelID = %q, want %q", modelID, "venice-uncensored")
 	}
 	if _, ok := provider.(*HTTPProvider); !ok {
 		t.Fatalf("expected *HTTPProvider, got %T", provider)
@@ -728,6 +843,107 @@ func TestCreateProviderFromConfig_MinimaxPreservesUserExtraBody(t *testing.T) {
 	// Verify user's custom field is preserved
 	if got, ok := requestBody["custom_field"]; !ok || got != "test" {
 		t.Fatalf("custom_field = %v, want test", got)
+	}
+}
+
+// openaiCompatResponse is the JSON response used by OpenAI-compatible providers.
+const openaiCompatResponse = `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`
+
+// anthropicResponse is the JSON response used by Anthropic providers.
+const anthropicResponse = `{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5}}`
+
+func TestCreateProviderFromConfig_UserAgent(t *testing.T) {
+	defaultUA := "PicoClaw/" + config.Version
+
+	tests := []struct {
+		name      string
+		model     string
+		userAgent string
+		apiKey    string
+		response  string
+		wantUA    string
+		chatOpts  map[string]any
+	}{
+		{
+			name:     "openai default user agent",
+			model:    "openai/gpt-4o",
+			apiKey:   "test-key",
+			response: openaiCompatResponse,
+			wantUA:   defaultUA,
+		},
+		{
+			name:      "openai custom user agent",
+			model:     "openai/gpt-4o",
+			apiKey:    "test-key",
+			userAgent: "MyAgent/1.2.3",
+			response:  openaiCompatResponse,
+			wantUA:    "MyAgent/1.2.3",
+		},
+		{
+			name:     "anthropic default user agent",
+			model:    "anthropic/claude-sonnet-4-20250514",
+			apiKey:   "test-key",
+			response: anthropicResponse,
+			wantUA:   defaultUA,
+		},
+		{
+			name:     "anthropic-messages default user agent",
+			model:    "anthropic-messages/claude-sonnet-4-20250514",
+			apiKey:   "test-key",
+			response: anthropicResponse,
+			wantUA:   defaultUA,
+			chatOpts: map[string]any{"max_tokens": 1024},
+		},
+		{
+			name:     "azure default user agent",
+			model:    "azure/my-deployment",
+			apiKey:   "test-azure-key",
+			response: openaiCompatResponse,
+			wantUA:   defaultUA,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var receivedUA string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				receivedUA = r.Header.Get("User-Agent")
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tt.response))
+			}))
+			defer server.Close()
+
+			cfg := &config.ModelConfig{
+				ModelName: "test-ua-" + tt.name,
+				Model:     tt.model,
+				APIBase:   server.URL,
+				UserAgent: tt.userAgent,
+			}
+			cfg.SetAPIKey(tt.apiKey)
+
+			provider, modelID, err := CreateProviderFromConfig(cfg)
+			if err != nil {
+				t.Fatalf("CreateProviderFromConfig() error = %v", err)
+			}
+			if provider == nil {
+				t.Fatal("CreateProviderFromConfig() returned nil provider")
+			}
+
+			_, err = provider.Chat(
+				t.Context(),
+				[]Message{{Role: "user", Content: "hi"}},
+				nil,
+				modelID,
+				tt.chatOpts,
+			)
+			if err != nil {
+				t.Fatalf("Chat() error = %v", err)
+			}
+
+			if receivedUA != tt.wantUA {
+				t.Errorf("User-Agent = %q, want %q", receivedUA, tt.wantUA)
+			}
+		})
 	}
 }
 

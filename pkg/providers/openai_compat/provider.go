@@ -36,15 +36,40 @@ type Provider struct {
 	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
 	httpClient     *http.Client
 	extraBody      map[string]any // Additional fields to inject into request body
+	userAgent      string
 }
 
 type Option func(*Provider)
 
 const defaultRequestTimeout = common.DefaultRequestTimeout
 
+var stripModelPrefixProviders = map[string]struct{}{
+	"litellm":    {},
+	"venice":     {},
+	"moonshot":   {},
+	"nvidia":     {},
+	"groq":       {},
+	"ollama":     {},
+	"deepseek":   {},
+	"google":     {},
+	"openrouter": {},
+	"zhipu":      {},
+	"mistral":    {},
+	"vivgrid":    {},
+	"minimax":    {},
+	"novita":     {},
+	"lmstudio":   {},
+}
+
 func WithMaxTokensField(maxTokensField string) Option {
 	return func(p *Provider) {
 		p.maxTokensField = maxTokensField
+	}
+}
+
+func WithUserAgent(userAgent string) Option {
+	return func(p *Provider) {
+		p.userAgent = userAgent
 	}
 }
 
@@ -180,6 +205,9 @@ func (p *Provider) Chat(
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	if p.userAgent != "" {
+		req.Header.Set("User-Agent", p.userAgent)
+	}
 	if p.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
@@ -397,13 +425,11 @@ func normalizeModel(model, apiBase string) string {
 	}
 
 	prefix := strings.ToLower(before)
-	switch prefix {
-	case "litellm", "moonshot", "nvidia", "groq", "ollama", "deepseek", "google",
-		"openrouter", "zhipu", "mistral", "vivgrid", "minimax", "novita":
+	if _, ok := stripModelPrefixProviders[prefix]; ok {
 		return after
-	default:
-		return model
 	}
+
+	return model
 }
 
 func buildToolsList(tools []ToolDefinition, nativeSearch bool) []any {

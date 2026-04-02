@@ -15,6 +15,7 @@
 | `openrouter`         | LLM (推荐，可访问所有模型)   | [openrouter.ai](https://openrouter.ai)                               |
 | `anthropic`          | LLM (Claude 直连)            | [console.anthropic.com](https://console.anthropic.com)               |
 | `openai`             | LLM (GPT 直连)               | [platform.openai.com](https://platform.openai.com)                   |
+| `venice`             | LLM (Venice AI 直连)         | [venice.ai](https://venice.ai)                                       |
 | `deepseek`           | LLM (DeepSeek 直连)          | [platform.deepseek.com](https://platform.deepseek.com)               |
 | `qwen`               | LLM (通义千问)               | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | `groq`               | LLM + **语音转录** (Whisper) | [console.groq.com](https://console.groq.com)                         |
@@ -44,6 +45,7 @@
 | 厂商                | `model` 前缀      | 默认 API Base                                       | 协议      | 获取 API Key                                                      |
 | ------------------- | ----------------- | --------------------------------------------------- | --------- | ----------------------------------------------------------------- |
 | **OpenAI**          | `openai/`         | `https://api.openai.com/v1`                         | OpenAI    | [获取密钥](https://platform.openai.com)                           |
+| **Venice AI**       | `venice/`         | `https://api.venice.ai/api/v1`                      | OpenAI    | [获取密钥](https://venice.ai)                                     |
 | **Anthropic**       | `anthropic/`      | `https://api.anthropic.com/v1`                      | Anthropic | [获取密钥](https://console.anthropic.com)                         |
 | **智谱 AI (GLM)**   | `zhipu/`          | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [获取密钥](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
 | **DeepSeek**        | `deepseek/`       | `https://api.deepseek.com/v1`                       | OpenAI    | [获取密钥](https://platform.deepseek.com)                         |
@@ -53,6 +55,7 @@
 | **通义千问 (Qwen)** | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [获取密钥](https://dashscope.console.aliyun.com)                  |
 | **NVIDIA**          | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [获取密钥](https://build.nvidia.com)                              |
 | **Ollama**          | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | 本地（无需密钥）                                                  |
+| **LM Studio**       | `lmstudio/`       | `http://localhost:1234/v1`                          | OpenAI    | 可选（本地默认无需密钥）                                          |
 | **OpenRouter**      | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [获取密钥](https://openrouter.ai/keys)                            |
 | **LiteLLM Proxy**   | `litellm/`        | `http://localhost:4000/v1`                          | OpenAI    | 你的 LiteLLM 代理密钥                                             |
 | **VLLM**            | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | 本地                                                              |
@@ -100,6 +103,24 @@
   }
 }
 ```
+
+#### `model_list` 条目字段
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `model_name` | string | 是 | 在 agent 配置中引用此模型的唯一名称 |
+| `model` | string | 是 | 厂商/模型标识符（如 `openai/gpt-5.4`、`azure/gpt-5.4`、`anthropic/claude-sonnet-4.6`） |
+| `api_keys` | string[] | 是* | 认证密钥。多个密钥可按请求轮换。本地 provider（Ollama、LM Studio、VLLM）不需要 |
+| `api_base` | string | 否 | 覆盖默认的 API 端点 URL |
+| `proxy` | string | 否 | 此模型条目的 HTTP 代理 URL |
+| `user_agent` | string | 否 | 自定义 `User-Agent` 请求头（支持 OpenAI 兼容、Anthropic 和 Azure provider） |
+| `request_timeout` | int | 否 | 请求超时时间（秒），默认值因 provider 而异 |
+| `max_tokens_field` | string | 否 | 覆盖请求体中 max tokens 的字段名（如 o1 模型使用 `max_completion_tokens`） |
+| `thinking_level` | string | 否 | 扩展思考级别：`off`、`low`、`medium`、`high`、`xhigh` 或 `adaptive` |
+| `extra_body` | object | 否 | 注入到每个请求体中的额外字段 |
+| `rpm` | int | 否 | 每分钟请求速率限制 |
+| `fallbacks` | string[] | 否 | 自动故障转移的备用模型名称 |
+| `enabled` | bool | 否 | 是否启用此模型条目（默认：`true`） |
 
 #### 语音转录
 
@@ -211,6 +232,18 @@
 }
 ```
 
+**LM Studio（本地）**
+
+```json
+{
+  "model_name": "lmstudio-local",
+  "model": "lmstudio/openai/gpt-oss-20b"
+}
+```
+
+`api_base` 默认是 `http://localhost:1234/v1`。除非你在 LM Studio 侧启用了认证，否则不需要配置 API Key。
+PicoClaw 向 LM Studio 的 OpenAI 兼容终结点发送请求，且将移除首个 `lmstudio/` 前缀，因此 `lmstudio/openai/gpt-oss-20b` 会发送 `openai/gpt-oss-20b`。
+
 **自定义代理/API**
 
 ```json
@@ -219,6 +252,7 @@
   "model": "openai/custom-model",
   "api_base": "https://my-proxy.com/v1",
   "api_keys": ["sk-..."],
+  "user_agent": "MyApp/1.0",
   "request_timeout": 300
 }
 ```

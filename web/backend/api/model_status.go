@@ -1,24 +1,86 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-const modelProbeTimeout = 800 * time.Millisecond
+const (
+	modelProbeTimeout             = 800 * time.Millisecond
+	modelProbeSuccessBaseInterval = 2 * time.Second
+	modelProbeSuccessMaxInterval  = 60 * time.Second
+	modelProbeFailureBaseInterval = 1 * time.Second
+	modelProbeFailureMaxInterval  = 30 * time.Second
+	modelProbeBackoffMaxShift     = 8
+	modelProbeCacheMaxEntries     = 1024
+	modelProbeCacheEntryTTL       = 30 * time.Minute
+	modelProbeCacheTrimToEntries  = modelProbeCacheMaxEntries * 8 / 10
+	modelProbeTTLGCInterval       = 1 * time.Minute
+)
+
+const (
+	modelStatusAvailable    = "available"
+	modelStatusUnconfigured = "unconfigured"
+	modelStatusUnreachable  = "unreachable"
+)
+
+type modelConfigurationSummary struct {
+	Available bool
+	Status    string
+}
 
 var (
 	probeTCPServiceFunc            = probeTCPService
 	probeOllamaModelFunc           = probeOllamaModel
 	probeOpenAICompatibleModelFunc = probeOpenAICompatibleModel
+	modelProbeNowFunc              = time.Now
+	modelProbeState                = newModelProbeCacheState()
 )
+
+type modelProbeCacheState struct {
+	mu          sync.RWMutex
+	cache       map[string]*modelProbeCacheEntry
+	group       singleflight.Group
+	nextTTLGCAt time.Time
+}
+
+type modelProbeCacheEntry struct {
+	lastResult    bool
+	hasResult     bool
+	successStreak int
+	failureStreak int
+	nextProbeAt   time.Time
+	updatedAt     time.Time
+}
+
+func newModelProbeCacheState() *modelProbeCacheState {
+	return &modelProbeCacheState{cache: map[string]*modelProbeCacheEntry{}}
+}
+
+func resetModelProbeCache() {
+	modelProbeState.resetForTest()
+}
+
+func (s *modelProbeCacheState) resetForTest() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cache = map[string]*modelProbeCacheEntry{}
+	s.nextTTLGCAt = time.Time{}
+}
 
 func hasModelConfiguration(m *config.ModelConfig) bool {
 	authMethod := strings.ToLower(strings.TrimSpace(m.AuthMethod))
@@ -42,16 +104,17 @@ func hasModelConfiguration(m *config.ModelConfig) bool {
 	return apiKey != ""
 }
 
-// isModelConfigured reports whether a model is currently available to use.
-// Local models must be reachable; remote/API-key models only need saved config.
-func isModelConfigured(m *config.ModelConfig) bool {
+func modelConfigurationStatus(m *config.ModelConfig) modelConfigurationSummary {
 	if !hasModelConfiguration(m) {
-		return false
+		return modelConfigurationSummary{Available: false, Status: modelStatusUnconfigured}
 	}
 	if requiresRuntimeProbe(m) {
-		return probeLocalModelAvailability(m)
+		if probeLocalModelAvailability(m) {
+			return modelConfigurationSummary{Available: true, Status: modelStatusAvailable}
+		}
+		return modelConfigurationSummary{Available: false, Status: modelStatusUnreachable}
 	}
-	return true
+	return modelConfigurationSummary{Available: true, Status: modelStatusAvailable}
 }
 
 func requiresRuntimeProbe(m *config.ModelConfig) bool {
@@ -60,10 +123,14 @@ func requiresRuntimeProbe(m *config.ModelConfig) bool {
 		return true
 	}
 
-	switch modelProtocol(m.Model) {
+	protocol := modelProtocol(m.Model)
+
+	switch protocol {
 	case "claude-cli", "claudecli", "codex-cli", "codexcli", "github-copilot", "copilot":
 		return true
-	case "ollama", "vllm":
+	}
+
+	if providers.IsEmptyAPIKeyAllowedForProtocol(protocol) {
 		apiBase := strings.TrimSpace(m.APIBase)
 		return apiBase == "" || hasLocalAPIBase(apiBase)
 	}
@@ -76,12 +143,40 @@ func requiresRuntimeProbe(m *config.ModelConfig) bool {
 }
 
 func probeLocalModelAvailability(m *config.ModelConfig) bool {
+	cacheKey := modelProbeCacheKey(m)
+	return modelProbeState.probe(cacheKey, func() bool {
+		return runLocalModelProbe(m)
+	})
+}
+
+func (s *modelProbeCacheState) probe(cacheKey string, probeFunc func() bool) bool {
+	now := modelProbeNowFunc()
+	if cachedResult, ok := s.getCachedResult(cacheKey, now); ok {
+		return cachedResult
+	}
+
+	v, _, _ := s.group.Do(cacheKey, func() (any, error) {
+		now = modelProbeNowFunc()
+		if cachedResult, ok := s.getCachedResult(cacheKey, now); ok {
+			return cachedResult, nil
+		}
+
+		result := probeFunc()
+		s.setCachedResult(cacheKey, result, now)
+		return result, nil
+	})
+
+	result, _ := v.(bool)
+	return result
+}
+
+func runLocalModelProbe(m *config.ModelConfig) bool {
 	apiBase := modelProbeAPIBase(m)
 	protocol, modelID := splitModel(m.Model)
 	switch protocol {
 	case "ollama":
 		return probeOllamaModelFunc(apiBase, modelID)
-	case "vllm":
+	case "vllm", "lmstudio":
 		return probeOpenAICompatibleModelFunc(apiBase, modelID, m.APIKey())
 	case "github-copilot", "copilot":
 		return probeTCPServiceFunc(apiBase)
@@ -95,16 +190,206 @@ func probeLocalModelAvailability(m *config.ModelConfig) bool {
 	}
 }
 
+func modelProbeCacheKey(m *config.ModelConfig) string {
+	protocol, modelID := splitModel(m.Model)
+
+	apiBaseRaw := modelProbeAPIBase(m)
+	apiBase := strings.ToLower(strings.TrimRight(strings.TrimSpace(apiBaseRaw), "/"))
+	apiKeyFingerprint := modelProbeAPIKeyFingerprint(m.APIKey())
+
+	var b strings.Builder
+	b.Grow(len(protocol) + len(modelID) + len(apiBase) + len(apiKeyFingerprint) + 8)
+	b.WriteString(protocol)
+	b.WriteByte('|')
+	b.WriteString(modelID)
+	b.WriteByte('|')
+	b.WriteString(apiBase)
+	b.WriteByte('|')
+	b.WriteString(apiKeyFingerprint)
+
+	return b.String()
+}
+
+func modelProbeAPIKeyFingerprint(raw string) string {
+	apiKey := strings.TrimSpace(raw)
+	if apiKey == "" {
+		return "none"
+	}
+
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(apiKey))
+	return strconv.FormatUint(h.Sum64(), 36)
+}
+
+func (s *modelProbeCacheState) getCachedResult(cacheKey string, now time.Time) (bool, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	entry, ok := s.cache[cacheKey]
+	if !ok || !entry.hasResult {
+		return false, false
+	}
+	if now.Before(entry.nextProbeAt) {
+		return entry.lastResult, true
+	}
+	return false, false
+}
+
+func (s *modelProbeCacheState) setCachedResult(cacheKey string, result bool, now time.Time) {
+	s.mu.Lock()
+
+	entry, ok := s.cache[cacheKey]
+	if !ok {
+		entry = &modelProbeCacheEntry{}
+		s.cache[cacheKey] = entry
+	}
+
+	entry.lastResult = result
+	entry.hasResult = true
+	entry.updatedAt = now
+
+	var delay time.Duration
+	if result {
+		entry.successStreak++
+		entry.failureStreak = 0
+		delay = modelProbeBackoffDelay(
+			modelProbeSuccessBaseInterval,
+			modelProbeSuccessMaxInterval,
+			entry.successStreak,
+		)
+	} else {
+		entry.failureStreak++
+		entry.successStreak = 0
+		delay = modelProbeBackoffDelay(
+			modelProbeFailureBaseInterval,
+			modelProbeFailureMaxInterval,
+			entry.failureStreak,
+		)
+	}
+
+	entry.nextProbeAt = now.Add(delay)
+
+	shouldRunTTLGC := modelProbeCacheEntryTTL > 0 && (s.nextTTLGCAt.IsZero() || !now.Before(s.nextTTLGCAt))
+	if shouldRunTTLGC {
+		s.nextTTLGCAt = now.Add(modelProbeTTLGCInterval)
+	}
+	shouldRunSizeGC := len(s.cache) > modelProbeCacheMaxEntries
+	s.mu.Unlock()
+
+	if shouldRunTTLGC || shouldRunSizeGC {
+		s.gc(now, shouldRunTTLGC)
+	}
+}
+
+func (s *modelProbeCacheState) gc(now time.Time, runTTL bool) {
+	type evictionCandidate struct {
+		key       string
+		updatedAt time.Time
+	}
+
+	var expireBefore time.Time
+	if runTTL && modelProbeCacheEntryTTL > 0 {
+		expireBefore = now.Add(-modelProbeCacheEntryTTL)
+	}
+
+	s.mu.RLock()
+	cacheLen := len(s.cache)
+	if cacheLen == 0 {
+		s.mu.RUnlock()
+		return
+	}
+
+	expiredKeys := make([]string, 0)
+	if !expireBefore.IsZero() {
+		expiredKeys = make([]string, 0, min(cacheLen/8+1, 64))
+		for key, entry := range s.cache {
+			if entry.updatedAt.Before(expireBefore) {
+				expiredKeys = append(expiredKeys, key)
+			}
+		}
+	}
+
+	effectiveLen := cacheLen - len(expiredKeys)
+	removeCount := max(effectiveLen-modelProbeCacheTrimToEntries, 0)
+
+	candidates := make([]evictionCandidate, 0)
+	if removeCount > 0 {
+		candidates = make([]evictionCandidate, 0, effectiveLen)
+		for key, entry := range s.cache {
+			if !expireBefore.IsZero() && entry.updatedAt.Before(expireBefore) {
+				continue
+			}
+			candidates = append(candidates, evictionCandidate{key: key, updatedAt: entry.updatedAt})
+		}
+	}
+	s.mu.RUnlock()
+
+	if len(expiredKeys) == 0 && len(candidates) == 0 {
+		return
+	}
+
+	toEvict := map[string]time.Time{}
+	for i := 0; i < removeCount && len(candidates) > 0; i++ {
+		oldest := 0
+		for j := 1; j < len(candidates); j++ {
+			if candidates[j].updatedAt.Before(candidates[oldest].updatedAt) {
+				oldest = j
+			}
+		}
+		victim := candidates[oldest]
+		toEvict[victim.key] = victim.updatedAt
+		candidates[oldest] = candidates[len(candidates)-1]
+		candidates = candidates[:len(candidates)-1]
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !expireBefore.IsZero() {
+		for _, key := range expiredKeys {
+			entry, ok := s.cache[key]
+			if ok && entry.updatedAt.Before(expireBefore) {
+				delete(s.cache, key)
+			}
+		}
+	}
+
+	for key, victimUpdatedAt := range toEvict {
+		entry, ok := s.cache[key]
+		if ok && !entry.updatedAt.After(victimUpdatedAt) {
+			delete(s.cache, key)
+		}
+	}
+}
+
+func modelProbeBackoffDelay(base, maxDelay time.Duration, streak int) time.Duration {
+	if streak <= 0 {
+		streak = 1
+	}
+
+	shift := min(streak-1, modelProbeBackoffMaxShift)
+
+	delay := base * time.Duration(1<<shift)
+	if maxDelay > 0 && (delay > maxDelay || delay < 0) {
+		return maxDelay
+	}
+	if delay <= 0 {
+		return base
+	}
+	return delay
+}
+
 func modelProbeAPIBase(m *config.ModelConfig) string {
 	if apiBase := strings.TrimSpace(m.APIBase); apiBase != "" {
 		return normalizeModelProbeAPIBase(apiBase)
 	}
 
-	switch modelProtocol(m.Model) {
-	case "ollama":
-		return "http://localhost:11434/v1"
-	case "vllm":
-		return "http://localhost:8000/v1"
+	protocol := modelProtocol(m.Model)
+	if providers.IsEmptyAPIKeyAllowedForProtocol(protocol) {
+		return providers.DefaultAPIBaseForProtocol(protocol)
+	}
+
+	switch protocol {
 	case "github-copilot", "copilot":
 		return "localhost:4321"
 	default:
@@ -189,7 +474,11 @@ func probeTCPService(raw string) bool {
 		return false
 	}
 
-	conn, err := net.DialTimeout("tcp", hostPort, modelProbeTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), modelProbeTimeout)
+	defer cancel()
+
+	dialer := &net.Dialer{}
+	conn, err := dialer.DialContext(ctx, "tcp", hostPort)
 	if err != nil {
 		return false
 	}
@@ -244,7 +533,10 @@ func probeOpenAICompatibleModel(apiBase, modelID, apiKey string) bool {
 }
 
 func getJSON(rawURL string, out any, apiKey string) error {
-	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), modelProbeTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return err
 	}
@@ -252,7 +544,7 @@ func getJSON(rawURL string, out any, apiKey string) error {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
-	client := &http.Client{Timeout: modelProbeTimeout}
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -318,10 +610,29 @@ func ollamaModelMatches(candidate, want string) bool {
 	if candidate == "" || want == "" {
 		return false
 	}
-	if strings.EqualFold(candidate, want) {
-		return true
+
+	candidateBase, candidateTag := splitOllamaModel(candidate)
+	wantBase, wantTag := splitOllamaModel(want)
+	if candidateBase == "" || wantBase == "" {
+		return false
 	}
 
-	base, _, _ := strings.Cut(candidate, ":")
-	return strings.EqualFold(base, want)
+	if candidateTag == "" {
+		candidateTag = "latest"
+	}
+	if wantTag == "" {
+		wantTag = "latest"
+	}
+
+	return strings.EqualFold(candidateBase, wantBase) && strings.EqualFold(candidateTag, wantTag)
+}
+
+func splitOllamaModel(raw string) (base, tag string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", ""
+	}
+
+	base, tag, _ = strings.Cut(raw, ":")
+	return strings.TrimSpace(base), strings.TrimSpace(tag)
 }
