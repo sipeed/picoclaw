@@ -165,6 +165,55 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 	}
 }
 
+func TestNewAgentInstance_ResolvesThinkingLevelByModelRef(t *testing.T) {
+	tests := []struct {
+		name          string
+		defaultModel  string
+		modelListName string
+		modelListID   string
+	}{
+		{
+			name:          "full model ref",
+			defaultModel:  "deepseek/deepseek-reasoner",
+			modelListName: "reasoner-alias",
+			modelListID:   "deepseek/deepseek-reasoner",
+		},
+		{
+			name:          "model id without protocol",
+			defaultModel:  "deepseek-reasoner",
+			modelListName: "reasoner-alias",
+			modelListID:   "deepseek/deepseek-reasoner",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workspace := t.TempDir()
+
+			cfg := &config.Config{
+				Agents: config.AgentsConfig{
+					Defaults: config.AgentDefaults{
+						Workspace: workspace,
+						ModelName: tt.defaultModel,
+					},
+				},
+				ModelList: []*config.ModelConfig{
+					{
+						ModelName:     tt.modelListName,
+						Model:         tt.modelListID,
+						ThinkingLevel: "high",
+					},
+				},
+			}
+
+			agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+			if agent.ThinkingLevel != ThinkingHigh {
+				t.Fatalf("ThinkingLevel = %q, want %q", agent.ThinkingLevel, ThinkingHigh)
+			}
+		})
+	}
+}
+
 func TestNewAgentInstance_PreservesDistinctLimiterIdentityForSharedResolvedModel(t *testing.T) {
 	tmpDir := t.TempDir()
 
