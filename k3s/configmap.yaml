@@ -16,7 +16,7 @@ data:
           "restrict_to_workspace": true,
           "allow_read_outside_workspace": false,
           "provider": "",
-          "model_name": "nemotron-3-super-120b-a12b",
+          "model_name": "gemini-2.0-flash",
           "max_tokens": 32768,
           "max_tool_iterations": 50,
           "summarize_message_threshold": 20,
@@ -254,7 +254,8 @@ data:
         {
           "model_name": "gemini-2.0-flash",
           "model": "gemini/gemini-2.0-flash-exp",
-          "api_base": "https://generativelanguage.googleapis.com/v1beta"
+          "api_base": "https://generativelanguage.googleapis.com/v1beta",
+          "api_key": "file://secrets/google-api-key"
         },
         {
           "model_name": "qwen-plus",
@@ -506,14 +507,6 @@ data:
               "command": "",
               "type": "sse",
               "url": "http://hdn-server:8080/mcp"
-            },
-            "n8n-test": {
-              "enabled": true,
-              "type": "sse",
-              "url": "https://n8namber.app.n8n.cloud/mcp/a5747ff8-db9b-4326-8bef-474301f65251",
-              "headers": {
-                "Authorization": "Bearer 97340696-89AE-43B2-B6E2-080E062150C9"
-              }
             }
           }
         },
@@ -530,8 +523,7 @@ data:
           "weather",
           "summarize",
           "github",
-          "hdn-server",
-          "n8n-test"
+          "hdn-server"
         ],
         "whitelist_enabled": true,
         "append_file": {
