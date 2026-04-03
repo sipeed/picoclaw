@@ -6,7 +6,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: sushi30/picoclaw
 
 jobs:
   build:
@@ -35,16 +34,30 @@ jobs:
         shell: bash
         run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      - name: 🚀 Build and push Docker image
+      - name: 🚀 Build and push picoclaw image
         uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
           push: true
+          build-args: BUILD_TARGET=build
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sushi30
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:picoclaw-whatsapp
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ steps.sha.outputs.short }}
+            ${{ env.REGISTRY }}/sushi30/picoclaw:latest
+            ${{ env.REGISTRY }}/sushi30/picoclaw:sha-${{ steps.sha.outputs.short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: 🚀 Build and push picoclaw-whatsapp image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          build-args: BUILD_TARGET=build-whatsapp-native-docker
+          tags: |
+            ${{ env.REGISTRY }}/sushi30/picoclaw-whatsapp:latest
+            ${{ env.REGISTRY }}/sushi30/picoclaw-whatsapp:sha-${{ steps.sha.outputs.short }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
