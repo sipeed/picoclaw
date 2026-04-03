@@ -69,6 +69,8 @@ func hiddenValues(key string, value map[string]any, ch config.ChannelsConfig) {
 			webhooks[name] = target.WebhookURL.String()
 		}
 		value["webhooks"] = webhooks
+	case "grafana_alertmanager":
+		value["secret"] = ch.GrafanaAlertmanager.Secret.String()
 	}
 }
 
@@ -181,5 +183,8 @@ func updateKeys(newcfg, old *config.ChannelsConfig) {
 				newcfg.TeamsWebhook.Webhooks[name] = newTarget
 			}
 		}
+	}
+	if newcfg.GrafanaAlertmanager.Enabled {
+		newcfg.GrafanaAlertmanager.Secret = old.GrafanaAlertmanager.Secret
 	}
 }
