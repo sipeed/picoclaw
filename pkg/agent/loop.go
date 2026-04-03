@@ -1,9 +1,39 @@
-// PicoClaw - Ultra-lightweight personal AI agent
-// Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
-// License: MIT
+// PicoClaw - 超轻量级个人 AI 智能体
+// 籲发并基于 nanobot: https://github.com/HKUDS/nanobot
+// 许可证: MIT
 //
 // Copyright (c) 2026 PicoClaw contributors
 
+// ── agent 包 ──
+//
+// 本包实现了 PicoClaw 的核心 Agent Loop（智能体主循环)。
+//
+// ## 架构概览
+//
+// AgentLoop 是整个系统的大脑，负责：
+//   1. 从消息总线(bus)接收用户消息
+//   2. 通过路由系统(routing)将消息分发到对应的 Agent
+//   3. 管理 LLM 对话上下文(会话历史、系统提示)
+//   4. 调用 LLM 揸商商商模型)获取响应
+//   5. 执行工具调用(文件读写、网页搜索、消息发送等)
+//   6. 通过消息总线(bus)将响应发送回用户
+//
+// ## 栄心数据流
+//
+//   用户消息 → InboundChan → processMessage → runAgentLoop → runTurn
+//     → BuildMessages(构建上下文) → LLM Chat → 解析响应
+//     → 如果有工具调用 → ExecuteWithContext → 绔回结果给 LLM
+//     → 循环直到 LLM 返回纯文本 → PublishOutbound → 用户
+//
+// ## 关键子系统
+//
+//   - 会话管理(Sessions): 存储对话历史,支持摘要
+//   - 路由(Routing): 将消息分发到不同的 Agent
+//   - 钩子(Hooks): 在 LLM 蛽用、工具执行前后插入自定义逻辑
+//   - 转向(Steering): 在 LLM 変换中途中注入新的用户消息
+//   - 压缩(Compression): 当上下文过长时自动压缩历史
+//   - 摘要(Summarization): 定期将历史总结为摘要以减少 token 消耗
+//
 package agent
 
 import (
@@ -34,80 +64,122 @@ import (
 	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
+// AgentLoop 是整个 AI Agent 的核心运行循环
+//
+// 它 它// 是系统中所有消息处理的入口点。一个 AgentLoop 宂例管理消息路由、 LLM 交互、会话历史、工具调用和事件发射等//
+//
+// 生命周期:
+//   1. 创建时通过 NewAgentLoop 枝始化
+//   2. 通过 Run() 同动主消息处理循环
+//   3. 通过 Stop() 优雅关闭
+//   4. 通过 Close() 释放资源
+//
+// 栯心设计原则:
+//   - 单会处理并发： 通过 sessionKey 鯧分不同用户会话,并处理)
+//   - 流式响应: 支持通过 MessageBus 异步发送 LLM 响应
+//   - 可中断支持: steering 机制和硬中断
+//   - 自动上下文管理: 压缩和摘要机制防止 token 溢出
+//
+// AgentLoop 结构体
+//
+// 注意: 这个结构体本身不是线程安全的,所有字段都通过各自机制保护,
+// 例如: running 使用 atomic.Bool, channels 使用 sync.Map,
 type AgentLoop struct {
-	// Core dependencies
-	bus      *bus.MessageBus
-	cfg      *config.Config
-	registry *AgentRegistry
-	state    *state.Manager
+	// === 核心依赖 ===
+	bus      *bus.MessageBus      // 消息总线,所有消息通过这里传递
+	cfg      *config.Config       // 全局配置
+	registry *AgentRegistry       // Agent 注册表,管理多个 Agent 实例及其路由
+	state    *state.Manager       // 持久化状态管理器,保存最近活跃通道等	// === 事件系统 ===
+	eventBus *EventBus    // 事件总线,用于发布 Agent 事件(如 turn 开始/结束)
+	hooks    *HookManager // 钩子管理器,在 LLM/工具调用前后插入自定义逻辑	// === 运行时状态 ===
+	running        atomic.Bool             // 是否正在运行(原子操作,线程安全)
+	summarizing    sync.Map                // 正在进行的摘要任务(sessionKey -> bool),防止并发摘要
+	fallback       *providers.FallbackChain // LLM 降级链,支持多 Provider 自动切换
+	channelManager *channels.Manager       // 渠道管理器,管理所有消息通道(Telegram/Discord 等)
+	mediaStore     media.MediaStore        // 媒体存储(图片/音频/视频文件的临时存储)
+	transcriber    voice.Transcriber       // 语音转录器(将音频转为文字)
+	cmdRegistry    *commands.Registry      // 命令注册表(如 /help, /clear 等斜杠命令)
+	mcp            mcpRuntime              // MCP 运行时(模型上下文协议,管理外部工具)
+	hookRuntime    hookRuntime             // 钩子运行时(管理动态加载的钩子)
+	steering       *steeringQueue          // 转向队列(在 LLM 对话中途中注入新的用户消息)
+	pendingSkills  sync.Map                // 待应用技能(sessionKey -> []string)
+	mu             sync.RWMutex            // 读写锁,保护配置热重载时 registry 原子切换
 
-	// Event system (from Incoming)
-	eventBus *EventBus
-	hooks    *HookManager
+	// === 并发 Turn 管理 ===
+	// 支持多个会话同时进行 LLM 对话(每个 sessionKey 对应一个独立的对话状态)
+	activeTurnStates sync.Map     // 会话状态映射: sessionKey → *turnState
+	subTurnCounter   atomic.Int64 // 子 Turn ID 生成器(用于 SubAgent 递归调用)
 
-	// Runtime state
-	running        atomic.Bool
-	summarizing    sync.Map
-	fallback       *providers.FallbackChain
-	channelManager *channels.Manager
-	mediaStore     media.MediaStore
-	transcriber    voice.Transcriber
-	cmdRegistry    *commands.Registry
-	mcp            mcpRuntime
-	hookRuntime    hookRuntime
-	steering       *steeringQueue
-	pendingSkills  sync.Map
-	mu             sync.RWMutex
-
-	// Concurrent turn management (from HEAD)
-	activeTurnStates sync.Map     // key: sessionKey (string), value: *turnState
-	subTurnCounter   atomic.Int64 // Counter for generating unique SubTurn IDs
-
-	// Turn tracking (from Incoming)
-	turnSeq        atomic.Uint64
-	activeRequests sync.WaitGroup
+	// === Turn 追踪 ===
+	turnSeq        atomic.Uint64   // Turn 序列号生成器(单调递增,用于生成 TurnID)
+	activeRequests sync.WaitGroup  // 活跃请求计数器(等待所有 LLM 请求完成后再关闭)
 
 	reloadFunc func() error
 }
 
-// processOptions configures how a message is processed
+// processOptions 配置消息处理选项
+//
+// 控制单条消息如何被处理,包括:
+//   - 路由到哪个 Agent/会话
+//   - 使用哪个通道发送响应
+//   - 是否加载历史记录
+//   - 是否触发摘要
+//   - 是否在对话中途注入新消息(steering)
 type processOptions struct {
-	SessionKey              string              // Session identifier for history/context
-	Channel                 string              // Target channel for tool execution
-	ChatID                  string              // Target chat ID for tool execution
-	SenderID                string              // Current sender ID for dynamic context
-	SenderDisplayName       string              // Current sender display name for dynamic context
-	UserMessage             string              // User message content (may include prefix)
-	ForcedSkills            []string            // Skills explicitly requested for this message
-	SystemPromptOverride    string              // Override the default system prompt (Used by SubTurns)
-	Media                   []string            // media:// refs from inbound message
-	InitialSteeringMessages []providers.Message // Steering messages from refactor/agent
-	DefaultResponse         string              // Response when LLM returns empty
-	EnableSummary           bool                // Whether to trigger summarization
-	SendResponse            bool                // Whether to send response via bus
-	SuppressToolFeedback    bool                // Whether to suppress inline tool feedback messages
-	NoHistory               bool                // If true, don't load session history (for heartbeat)
-	SkipInitialSteeringPoll bool                // If true, skip the steering poll at loop start (used by Continue)
+	SessionKey              string              // 会话标识符，用于定位历史记录和上下文
+	Channel                 string              // 目标通道名称(如 "telegram", "discord")
+	ChatID                  string              // 目标聊天 ID(如群组 ID、频道 ID)
+	SenderID                string              // 当前发送者 ID，用于动态上下文
+	SenderDisplayName       string              // 当前发送者显示名称(用于动态上下文)
+	UserMessage             string              // 用户消息内容(可能包含命令前缀)
+	ForcedSkills            []string            // 此消息显式请求使用的技能列表
+	SystemPromptOverride    string              // 覆盖默认系统提示(用于子 Turn/SubAgent)
+	Media                   []string            // media:// 引用列表(来自入站消息的附件媒体)
+	InitialSteeringMessages []providers.Message // 初始注入的转向消息(来自重构/Agent 切换轮)
+	DefaultResponse         string              // 当 LLM 返回空响应时的默认回复
+	EnableSummary           bool                // 是否在 turn 结束后触发会话摘要
+	SendResponse            bool                // 是否通过消息总线发送响应
+	SuppressToolFeedback    bool                // 是否抑制工具执行的反馈消息(如 "正在执行 xxx...")
+	NoHistory               bool                // 如果为 true,不加载会话历史(用于心跳等避免上下文膨胀)
+	SkipInitialSteeringPoll bool                // 如果为 true,跳过循环开始时的转向消息轮询(用于 Continue)
 }
 
+// continuationTarget 表示转向续轮的目标
+// 当一个 Turn 宎束后还有排队中的用户消息需要继续处理时,
+// 使用此结构记录续轮的目标位置(通道+聊天ID+会话)
 type continuationTarget struct {
-	SessionKey string
-	Channel    string
-	ChatID     string
+	SessionKey string // 会话标识符
+	Channel    string // 目标通道
+	ChatID     string // 目标聊天 ID
 }
 
+// === 核心常量 ===
 const (
-	defaultResponse            = "The model returned an empty response. This may indicate a provider error or token limit."
-	toolLimitResponse          = "I've reached `max_tool_iterations` without a final response. Increase `max_tool_iterations` in config.json if this task needs more tool steps."
-	handledToolResponseSummary = "Requested output delivered via tool attachment."
-	sessionKeyAgentPrefix      = "agent:"
-	metadataKeyAccountID       = "account_id"
-	metadataKeyGuildID         = "guild_id"
-	metadataKeyTeamID          = "team_id"
-	metadataKeyParentPeerKind  = "parent_peer_kind"
-	metadataKeyParentPeerID    = "parent_peer_id"
+	defaultResponse            = "The model returned an empty response. This may indicate a provider error or token limit." // LLM 返回空内容时的默认响应
+	toolLimitResponse          = "I've reached `max_tool_iterations` without a final response. Increase `max_tool_iterations` in config.json if this task needs more tool steps." // 达到最大工具迭代次数时的提示
+	handledToolResponseSummary = "Requested output delivered via tool attachment." // 工具已处理输出时的摘要
+	sessionKeyAgentPrefix      = "agent:"                       // Agent 作用域会会话前缀
+	metadataKeyAccountID       = "account_id"                   // 元数据键: 軬户 ID
+	metadataKeyGuildID         = "guild_id"                     // 元数据键: 服务器 Guild ID(如 Discord)
+	metadataKeyTeamID          = "team_id"                      // 元数据键: 团队 ID(如 Slack)
+	metadataKeyParentPeerKind  = "parent_peer_kind"                // 元数据键: 父级对等方类型(用于回复场景)
+	metadataKeyParentPeerID    = "parent_peer_id"                // 元数据键: 父级对等方 ID(用于回复场景)
 )
 
+// NewAgentLoop 创建并初始化 AgentLoop 宙例
+//
+// 初始化流程:
+//   1. 创建 Agent 注册表(Registry),包含默认 Agent 和自定义 Agent
+//   2. 创建降级链(FallbackChain),支持多 Provider 自动切换
+//   3. 创建状态管理器(StateManager),用于持久化最近活跃通道
+//   4. 创建事件总线(EventBus),用于发布 Agent 事件
+//   5. 创建命令注册表(CommandRegistry),注册内置斜杠命令
+//   6. 创建转向队列(SteeringQueue),管理对话途中的用户消息注入
+//   7. 创建钩子管理器(HookManager),注册配置中定义的钩子
+//   8. 注册共享工具(web_search, web_fetch, message, send_file 等)
+//
+// 注意: provider 参数在此处仅用于创建 Registry,
+// 宾际的 LLM 豸用通过 AgentInstance.Provider 字段访问
 func NewAgentLoop(
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
@@ -147,7 +219,21 @@ func NewAgentLoop(
 	return al
 }
 
-// registerSharedTools registers tools that are shared across all agents (web, message, spawn).
+// registerSharedTools 向所有 Agent 注册共享工具
+//
+// 共享工具是所有 Agent 都可以使用的工具,包括:
+//   - web: 网页搜索(Brave/Tavily/DuckDuckGo/Perplexity/SearXNG/GLMSearch/BaiduSearch)
+//   - web_fetch: 网页内容抓取
+//   - i2c/spi: 硬件 I2C/SPI 接口(仅 Linux)
+//   - message: 跨通道消息发送
+//   - send_file: 文件发送(通过 MediaStore)
+//   - skills/find_skills/install_skill: 技能发现与安装
+//   - spawn/spawn_status/subagent: 子 Agent 生成与管理
+//
+// 工具注册遵循以下原则:
+//   1. 每个工具通过 config.Tools.IsToolEnabled() 检查是否启用
+//   2. 工具实例按 Agent 独立创建(避免共享状态)
+//   3. 子 Agent 工具(spawn) 使用克隆的工具集(防止递归生成)
 func registerSharedTools(
 	al *AgentLoop,
 	cfg *config.Config,
@@ -377,6 +463,20 @@ func registerSharedTools(
 	}
 }
 
+// Run 吱动 AgentLoop 的主消息处理循环
+//
+// 这是是 AgentLoop 的主入口函数,它:
+//   1. 从 InboundChan 读取用户消息
+//   2. 对每条消息启动一个处理协程
+//   3. 在处理期间,如果有转向目标匹配,启动 drain 协程将后续消息路由到转向队列
+//   4. 处理完成后,检查是否有排队的转向消息需要续轮处理
+//   5. 循环直到 ctx 被取消或 Stop() 被调用
+//
+// 关键设计:
+//   - 消息处理是异步的(通过 goroutine),支持并发处理
+//   - drain 机制确保在 LLM 对话中途中,同一会话的新消息被注入到当前对话(转向)而不是排队等待
+//   - defer 机制确保 typing stop 在处理完成(无论成功/失败)后都会被调用
+//   - 续轮机制允许在 turn 完成后继续处理排队的转向消息
 func (al *AgentLoop) Run(ctx context.Context) error {
 	al.running.Store(true)
 
@@ -528,10 +628,26 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 	}
 }
 
-// drainBusToSteering consumes inbound messages and redirects messages from the
-// active scope into the steering queue. Messages from other scopes are requeued
-// so they can be processed normally after the active turn. It drains all
-// immediately available messages, blocking for the first one until ctx is done.
+// drainBusToSteering 消息总线消费与转向注入
+//
+// 在一个活跃的 Turn(对话轮)执行期间,此函数作为后台 goroutine 运行,
+// 持续从消息总线消费新的入站消息:
+//
+// 消息路由规则:
+//   - 匹配当前活动 scope 的消息 → 注入到转向队列(steeringQueue)
+//     这些消息会在 LLM 下一次迭代时被注入到上下文中,实现"对话中途中插话"效果
+//   - 不匹配的消息 → 重新入队(requeueInboundMessage)
+//     等待当前 Turn 宝成后再被处理
+//
+// 阻塞行为:
+//   - 第一条消息: 阻塞等待(直到 ctx 取消或消息到达)
+//   - 后续消息: 非阻塞消费(立即返回当无消息时)
+//
+// 这个机制是 PicoClaw "对话中转向"功能的核心实现:
+//   用户: "帮我查下天气"
+//   Agent: [正在查天气...]
+//   用户: "顺便也查下明天的" ← 这条消息通过 drain 被注入到当前对话
+//   Agent: "今天晴,明天多云" ← 两条消息一起被处理
 func (al *AgentLoop) drainBusToSteering(ctx context.Context, activeScope, activeAgentID string) {
 	blocking := true
 	for {
@@ -599,10 +715,24 @@ func (al *AgentLoop) drainBusToSteering(ctx context.Context, activeScope, active
 	}
 }
 
+// Stop 停止 AgentLoop 的主消息处理循环
+//
+// 设置 running 标志为 false,主循环中的 select 将在下次检查时退出。
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
 }
 
+// publishResponseIfNeeded 在必要时将响应发布到消息总线
+//
+// 如果响应不为空且本轮没有通过 message 巯具发送过消息,则通过总线发送。
+// 这个检查是为了避免重复发送:当 LLM 使用 message 巯具主动发送消息时,
+// 不需要再通过总线发送一次相同的消息。
+//
+// 参数:
+//   - ctx: 上下文
+//   - channel: 目标通道
+//   - chatID: 目标聊天 ID
+//   - response: 响应内容
 func (al *AgentLoop) publishResponseIfNeeded(ctx context.Context, channel, chatID, response string) {
 	if response == "" {
 		return
@@ -640,6 +770,17 @@ func (al *AgentLoop) publishResponseIfNeeded(ctx context.Context, channel, chatI
 		})
 }
 
+// buildContinuationTarget 枾建续轮目标
+//
+// 在 Turn 宝成后,检查是否需要继续处理排队中的转向消息。
+// 如果消息来自 "system" 通道,则返回 nil(不需要续轮)。
+//
+// 参数:
+//   - msg: 原始入站消息
+//
+// 返回:
+//   - *continuationTarget: 续轮目标(包含会话键、通道、聊天ID)
+//   - error: 路由解析错误
 func (al *AgentLoop) buildContinuationTarget(msg bus.InboundMessage) (*continuationTarget, error) {
 	if msg.Channel == "system" {
 		return nil, nil
@@ -657,7 +798,13 @@ func (al *AgentLoop) buildContinuationTarget(msg bus.InboundMessage) (*continuat
 	}, nil
 }
 
-// Close releases resources held by agent session stores. Call after Stop.
+// Close 释放 AgentLoop 持有的所有资源
+//
+// 在调用 Stop() 后应调用此函数以清理:
+//   - MCP 禥理理器(关闭外部工具连接)
+//   - Agent 注册表(关闭所有 Agent 的会话存储)
+//   - 钩子管理器(卸载所有钩子)
+//   - 事件总线(关闭所有订阅者)
 func (al *AgentLoop) Close() {
 	mcpManager := al.mcp.takeManager()
 
@@ -899,6 +1046,13 @@ func (al *AgentLoop) logEvent(evt Event) {
 	logger.InfoCF("eventbus", fmt.Sprintf("Agent event: %s", evt.Kind.String()), fields)
 }
 
+// RegisterTool 向所有 Agent 注册一个新的工具
+//
+// 此方法用于在 AgentLoop 宍行时动态注册工具(如 MCP 工具)。
+// 巯具会被注册到注册表中每个 Agent 的工具集中。
+//
+// 参数:
+//   - tool: 要注册的工具实例
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 	registry := al.GetRegistry()
 	for _, agentID := range registry.ListAgentIDs() {
@@ -908,13 +1062,31 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 	}
 }
 
+// SetChannelManager 注入渠道管理器
+//
+// 渠道管理器用于:
+//   - 发送"正在输入"指示(typing indicator)
+//   - 管理占位消息("思考中...")
+//   - 发送响应消息
+//   - 获取渠道特定配置(如推理通道 ID)
 func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
 }
 
-// ReloadProviderAndConfig atomically swaps the provider and config with proper synchronization.
-// It uses a context to allow timeout control from the caller.
-// Returns an error if the reload fails or context is canceled.
+// ReloadProviderAndConfig 原子性地切换 LLM Provider 和配置
+//
+// 此方法支持运行时热重载,不重启服务即可切换模型。
+// 使用写锁确保读取器看到一致的 provider+config 对。
+//
+// 重载流程:
+//   1. 验证输入(provider 和 config 不为 nil)
+//   2. 在 goroutine 中创建新的 Agent 注册表(可能 panic,使用 recover 保护)
+//   3. 重新注册共享工具到新注册表
+//   4. 获取写锁,原子切换 config + registry + fallback chain
+//   5. 重新配置钩子管理器
+//   6. 关闭旧 provider(带 100ms 等待,让在途请求完成)
+//
+// 注意: 使用 context 控制超时,支持从调用方取消
 func (al *AgentLoop) ReloadProviderAndConfig(
 	ctx context.Context,
 	provider providers.LLMProvider,
@@ -1011,21 +1183,30 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 	return nil
 }
 
-// GetRegistry returns the current registry (thread-safe)
+// GetRegistry 返回当前的 Agent 注册表(线程安全)
+//
+// 使用读锁保护,确保在 ReloadProviderAndConfig 期间不会读到不一致的状态。
 func (al *AgentLoop) GetRegistry() *AgentRegistry {
 	al.mu.RLock()
 	defer al.mu.RUnlock()
 	return al.registry
 }
 
-// GetConfig returns the current config (thread-safe)
+// GetConfig 返回当前的配置(线程安全)
 func (al *AgentLoop) GetConfig() *config.Config {
 	al.mu.RLock()
 	defer al.mu.RUnlock()
 	return al.cfg
 }
 
-// SetMediaStore injects a MediaStore for media lifecycle management.
+// SetMediaStore 注入媒体存储实例
+//
+// 媒体存储用于:
+//   - 存储用户上传的图片/音频/视频
+//   - 存储工具生成的文件
+//   - 提供 media:// URI 的解析
+//
+// 同时将 store 传播到所有 Agent 的工具注册表。
 func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 	al.mediaStore = s
 
@@ -1038,21 +1219,41 @@ func (al *AgentLoop) SetMediaStore(s media.MediaStore) {
 	}
 }
 
-// SetTranscriber injects a voice transcriber for agent-level audio transcription.
+// SetTranscriber 注入语音转录器
+//
+// 转录器将用户发送的音频消息转为文字,使 LLM 能理解语音内容。
 func (al *AgentLoop) SetTranscriber(t voice.Transcriber) {
 	al.transcriber = t
 }
 
-// SetReloadFunc sets the callback function for triggering config reload.
+// SetReloadFunc 设置配置热重载回调函数
+//
+// 此回调由外部注入,当 Agent 收到 /reload 等命令时调用。
+// 典型实现是重新读取配置文件并调用 ReloadProviderAndConfig。
 func (al *AgentLoop) SetReloadFunc(fn func() error) {
 	al.reloadFunc = fn
 }
 
+// audioAnnotationRe 匹配音频注释的正则表达式
+// 格式: [voice] 或 [audio] 或 [voice:描述] 等
 var audioAnnotationRe = regexp.MustCompile(`\[(voice|audio)(?::[^\]]*)?\]`)
 
-// transcribeAudioInMessage resolves audio media refs, transcribes them, and
-// replaces audio annotations in msg.Content with the transcribed text.
-// Returns the (possibly modified) message and true if audio was transcribed.
+// transcribeAudioInMessage 转录消息中的音频附件
+//
+// 处理流程:
+//   1. 检查是否有可用的转录器和媒体存储
+//   2. 遍历消息中的 media:// 引用,解析为文件路径
+//   3. 对每个音频文件调用转录器,将语音转为文字
+//   4. 替换消息内容中的音频注释为转录文本 [voice: 转录文字]
+//   5. 如果有多余的转录文本(没有对应的注释),追加到消息末尾
+//
+// 参数:
+//   - ctx: 上下文
+//   - msg: 入站消息
+//
+// 返回:
+//   - bus.InboundMessage: 修改后的消息(内容中音频注释被替换为转录文本)
+//   - bool: 是否有音频被转录
 func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.InboundMessage) (bus.InboundMessage, bool) {
 	if al.transcriber == nil || al.mediaStore == nil || len(msg.Media) == 0 {
 		return msg, false
@@ -1104,10 +1305,19 @@ func (al *AgentLoop) transcribeAudioInMessage(ctx context.Context, msg bus.Inbou
 	return msg, true
 }
 
-// sendTranscriptionFeedback sends feedback to the user with the result of
-// audio transcription if the option is enabled. It uses Manager.SendMessage
-// which executes synchronously (rate limiting, splitting, retry) so that
-// ordering with the subsequent placeholder is guaranteed.
+// sendTranscriptionFeedback 向用户发送音频转录反馈
+//
+// 如果配置了 EchoTranscription,则将转录文本同步发送给用户。
+// 使用 Manager.SendMessage 确保:
+//   - 经速率限制和拆分处理
+//   - 与后续的占位消息保持顺序(转录反馈在占位消息之前)
+//
+// 参数:
+//   - ctx: 上下文
+//   - channel: 目标通道
+//   - chatID: 目标聊天 ID
+//   - messageID: 原始消息 ID(用于回复引用)
+//   - validTexts: 非空的转录文本列表
 func (al *AgentLoop) sendTranscriptionFeedback(
 	ctx context.Context,
 	channel, chatID, messageID string,
@@ -1145,8 +1355,18 @@ func (al *AgentLoop) sendTranscriptionFeedback(
 	}
 }
 
-// inferMediaType determines the media type ("image", "audio", "video", "file")
-// from a filename and MIME content type.
+// inferMediaType 根据文件名和 MIME 类型推断媒体类型
+//
+// 推断逻辑:
+//   1. 优先使用 Content-Type(如 "image/png" → "image")
+//   2. 如果 Content-Type 不明确,使用文件扩展名(.jpg → "image")
+//   3. 兜底返回 "file"(通用文件类型)
+//
+// 参数:
+//   - filename: 文件名(如 "photo.jpg")
+//   - contentType: MIME 类型(如 "image/jpeg")
+//
+// 返回: "image" | "audio" | "video" | "file"
 func inferMediaType(filename, contentType string) string {
 	ct := strings.ToLower(contentType)
 	fn := strings.ToLower(filename)
@@ -1175,8 +1395,10 @@ func inferMediaType(filename, contentType string) string {
 	return "file"
 }
 
-// RecordLastChannel records the last active channel for this workspace.
-// This uses the atomic state save mechanism to prevent data loss on crash.
+// RecordLastChannel 记录工作区最后活跃的通道
+//
+// 使用原子状态保存机制防止崩溃时数据丢失。
+// 用于心跳通知等场景,让 Agent 知道上次对话发生在哪个通道。
 func (al *AgentLoop) RecordLastChannel(channel string) error {
 	if al.state == nil {
 		return nil
@@ -1184,8 +1406,9 @@ func (al *AgentLoop) RecordLastChannel(channel string) error {
 	return al.state.SetLastChannel(channel)
 }
 
-// RecordLastChatID records the last active chat ID for this workspace.
-// This uses the atomic state save mechanism to prevent data loss on crash.
+// RecordLastChatID 记录工作区最后活跃的聊天 ID
+//
+// 与 RecordLastChannel 配合使用,记录精确的聊天位置。
 func (al *AgentLoop) RecordLastChatID(chatID string) error {
 	if al.state == nil {
 		return nil
@@ -1193,6 +1416,17 @@ func (al *AgentLoop) RecordLastChatID(chatID string) error {
 	return al.state.SetLastChatID(chatID)
 }
 
+// ProcessDirect 直接处理一条消息(不通过消息总线)
+//
+// 用于 CLI 等同步场景,直接将消息发送给 LLM 并返回响应。
+// 通道固定为 "cli",聊天 ID 固定为 "direct"。
+//
+// 参数:
+//   - ctx: 上下文
+//   - content: 消息内容
+//   - sessionKey: 会话标识符
+//
+// 返回: LLM 的响应文本
 func (al *AgentLoop) ProcessDirect(
 	ctx context.Context,
 	content, sessionKey string,
@@ -1200,6 +1434,17 @@ func (al *AgentLoop) ProcessDirect(
 	return al.ProcessDirectWithChannel(ctx, content, sessionKey, "cli", "direct")
 }
 
+// ProcessDirectWithChannel 直接处理一条消息到指定通道
+//
+// 与 ProcessDirect 类似,但允许指定通道和聊天 ID。
+// 用于定时任务(如 heartbeat)等需要精确控制目标通道的场景。
+//
+// 参数:
+//   - ctx: 上下文
+//   - content: 消息内容
+//   - sessionKey: 会话标识符
+//   - channel: 目标通道(如 "telegram")
+//   - chatID: 目标聊天 ID
 func (al *AgentLoop) ProcessDirectWithChannel(
 	ctx context.Context,
 	content, sessionKey, channel, chatID string,
@@ -1222,8 +1467,18 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 	return al.processMessage(ctx, msg)
 }
 
-// ProcessHeartbeat processes a heartbeat request without session history.
-// Each heartbeat is independent and doesn't accumulate context.
+// ProcessHeartbeat 处理心跳请求
+//
+// 心跳是一种特殊的消息处理:
+//   - 不加载会话历史(NoHistory=true)
+//   - 不累织上下文(每次心跳独立)
+//   - 抑制工具反馈消息(SuppressToolFeedback=true)
+//   - 不自动发送响应(SendResponse=false)
+//
+// 典型用途:
+//   - 定时健康检查
+//   - 定时任务触发(如 "每天早上 9 点报告待办事项")
+//   - 通知提醒(如 "提醒我下午 3 点开会")
 func (al *AgentLoop) ProcessHeartbeat(
 	ctx context.Context,
 	content, channel, chatID string,
@@ -1252,6 +1507,18 @@ func (al *AgentLoop) ProcessHeartbeat(
 	})
 }
 
+// processMessage 夿息整条入站消息的核心处理函数
+//
+// 夌理流程:
+//   1. 音频转录: 如果消息包含音频附件,使用 transcriber 将音频转为文字
+//   2. 綈息路由: 根据 routing 觡将消息分发到对应的 Agent
+//   3. 嶈息工具状态重 重: 重置 message 巯具的 "已发送" 标志
+//   4. 挂起技能处理: 如果有待应用的技能,将其加入选项
+//   5. 趈费 LLM: 调用 runAgentLoop 进入主对话循环
+//
+// 返回:
+//   - response: LLM 的最终响应文本
+//   - err: 处理过程中的错误
 func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
 	// Add message preview to log (show full content for error messages)
 	var logContent string
@@ -1342,6 +1609,16 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	return al.runAgentLoop(ctx, agent, opts)
 }
 
+// resolveMessageRoute 解析消息路由,将消息匹配到对应的 Agent
+//
+// 路由决策基于以下维度:
+//   - Channel: 通道名称(如 "telegram", "discord")
+//   - AccountID: 账户 ID
+//   - Peer: 对等方(如私聊 peer="direct",群聊 peer="group")
+//   - ParentPeer: 父级对等方(用于回复场景)
+//   - GuildID/TeamID: 服务器/团队 ID
+//
+// 如果没有匹配的路由规则,返回默认 Agent。
 func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {
 	registry := al.GetRegistry()
 	route := registry.ResolveRoute(routing.RouteInput{
@@ -1364,6 +1641,11 @@ func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.Resolv
 	return route, agent, nil
 }
 
+// resolveScopeKey 解析会话作用域键
+//
+// 如果消息显式指定了 agent 前缀的会话键(如 "agent:coder:main"),
+// 直接使用(保持 Agent 作用域隔离)。
+// 否则使用路由系统生成的 SessionKey(基于路由规则)。
 func resolveScopeKey(route routing.ResolvedRoute, msgSessionKey string) string {
 	if msgSessionKey != "" && strings.HasPrefix(msgSessionKey, sessionKeyAgentPrefix) {
 		return msgSessionKey
@@ -1371,6 +1653,15 @@ func resolveScopeKey(route routing.ResolvedRoute, msgSessionKey string) string {
 	return route.SessionKey
 }
 
+// resolveSteeringTarget 解析消息的转向目标
+//
+// 转向(Steering)是 PicoClaw 的核心特性之一,允许在 LLM 对话进行中
+// 将新的用户消息注入到当前对话。
+//
+// 返回:
+//   - scopeKey: 会话作用域键
+//   - agentID: 匹配的 Agent ID
+//   - bool: 是否匹配到转向目标(非 system 通道的消息总是匹配)
 func (al *AgentLoop) resolveSteeringTarget(msg bus.InboundMessage) (string, string, bool) {
 	if msg.Channel == "system" {
 		return "", "", false
@@ -1384,6 +1675,12 @@ func (al *AgentLoop) resolveSteeringTarget(msg bus.InboundMessage) (string, stri
 	return resolveScopeKey(route, msg.SessionKey), agent.ID, true
 }
 
+// requeueInboundMessage 将入站消息重新放回消息总线
+//
+// 当 drain 协程收到不匹配当前活跃 scope 的消息时,
+// 需要将消息重新发布到总线,以便在当前 Turn 宝成后处理。
+//
+// 注意: 使用独立的超时上下文(1秒),避免在主 Turn 取消时丢失消息。
 func (al *AgentLoop) requeueInboundMessage(msg bus.InboundMessage) error {
 	if al.bus == nil {
 		return nil
@@ -1397,6 +1694,18 @@ func (al *AgentLoop) requeueInboundMessage(msg bus.InboundMessage) error {
 	})
 }
 
+// processSystemMessage 处理系统消息
+//
+// 系统消息是内部消息,格式为:
+//   - Channel: "system"
+//   - ChatID: "channel:chatID"(包含原始通道信息)
+//   - Content: 系统消息内容(如异步工具结果)
+//
+// 处理流程:
+//   1. 解析 ChatID 提取原始通道和聊天 ID
+//   2. 提取消息内容(去除包装格式)
+//   3. 跳过内部通道的消息(仅日志记录)
+//   4. 使用默认 Agent 处理消息(带 [System: sender] 前缀)
 func (al *AgentLoop) processSystemMessage(
 	ctx context.Context,
 	msg bus.InboundMessage,
@@ -1462,8 +1771,24 @@ func (al *AgentLoop) processSystemMessage(
 	})
 }
 
-// runAgentLoop remains the top-level shell that starts a turn and publishes
-// any post-turn work. runTurn owns the full turn lifecycle.
+// runAgentLoop 是 Turn 的顶层入口函数,负责启动一个完整的对话轮(Turn)
+//
+// 一个 Turn 包含:
+//   1. 讱管理上下文预算(可能触发压缩)
+//   2. 将用户消息存入会话历史
+//   3. 调用 LLM 获取响应
+//   4. 执行工具调用(如果有)
+//   5. 将结果存入会话历史
+//   6. 触发摘要(如果需要)
+//   7. 发布后续消息(follow-ups)
+//
+// 参数:
+//   - agent: 目标 Agent 实例
+//   - opts: 夺理选项(包含会话键、通道、消息等)
+//
+// 返回:
+//   - string: LLM 的最终响应
+//   - error: 处理错误
 func (al *AgentLoop) runAgentLoop(
 	ctx context.Context,
 	agent *AgentInstance,
@@ -1532,6 +1857,17 @@ func (al *AgentLoop) targetReasoningChannelID(channelName string) (chatID string
 	return ""
 }
 
+// handleReasoning 夑达推理(reasoning)内容到指定的通道
+//
+// 推理是 LLM 在生成响应时的中间思考过程,通常使用支持推理的模型
+// (如 Claude 的 extended thinking)。推理内容会被发送到一个专门的"推理通道",
+// 用于调试和透明度。
+//
+// 参数:
+//   - ctx: 上下文(用于超时控制)
+//   - reasoningContent: 推理内容文本
+//   - channelName: 通道名称(如 "telegram")
+//   - channelID: 聊天 ID(即推理通道的 ID)
 func (al *AgentLoop) handleReasoning(
 	ctx context.Context,
 	reasoningContent, channelName, channelID string,
@@ -1578,6 +1914,48 @@ func (al *AgentLoop) handleReasoning(
 	}
 }
 
+// runTurn 执行一个完整的 Turn(对话轮)
+//
+// Turn 是 AgentLoop 中最核心的执行单元,代表一次完整的 LLM 对话轮。
+// 一个 Turn 可能包含多次 LLM 调用(迭代),每次迭代可能执行工具调用。
+//
+// 执行流程:
+//   1. 创建 turn 上下文(可取消)
+//   2. 注册 active turn(支持中断)
+//   3. 发出 TurnStart 事件
+//   4. 加载会话历史(如果没有标记 NoHistory)
+//   5. 管理上下文预算(可能触发压缩)
+//   6. 将用户消息存入会话历史
+//   7. 选择模型候选(可能使用轻量模型)
+//   8. 进入主循环:
+//      a. 检查硬中断/优雅中断
+//      b. 轮询转向消息
+//      c. 调用 LLM(支持重试)
+//      d. 处理 LLM 响应:
+//         - 纯文本响应 → 结束 Turn
+//         - 工具调用 → 执行工具 → 继续循环
+//      e. 检查是否所有工具已处理
+//   9. 保存最终响应到会话历史
+//  10. 触发摘要(如果需要)
+//  11. 发出 TurnEnd 事件
+//
+// 中断机制:
+//   - 硬中断(HardAbort): 立即终止 Turn,恢复会话到快照
+//   - 优雅中断(GracefulInterrupt): 完成当前迭代后终止,不恢复快照
+//   - 转向(Steering): 在对话中途中注入新的用户消息,改变对话方向
+//
+// 上下文管理:
+//   - 当 token 超过预算时,自动压缩历史(丢弃旧消息)
+//   - 压缩策略: 按完整 Turn 边界分割,保持工具调用序列完整性
+//   - 最后兜底: 仅保留最近的用户消息
+//
+// 参数:
+//   - ctx: 父上下文(用于取消和超时)
+//   - ts: Turn 状态(包含 Agent、选项、迭代计数等)
+//
+// 返回:
+//   - turnResult: Turn 结果(包含最终内容、后续消息、状态)
+//   - error: 执行错误
 func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, error) {
 	turnCtx, turnCancel := context.WithCancel(ctx)
 	defer turnCancel()
@@ -2712,6 +3090,15 @@ turnLoop:
 	}, nil
 }
 
+// abortTurn 中止当前 Turn
+//
+// 当收到硬中断(HardAbort)时调用,执行以下操作:
+//   1. 将 Turn 状态设置为 TurnPhaseAborted
+//   2. 恢复会话到快照(Turn 开始前的状态)
+//      - 这确保了被中断的 Turn 的所有中间状态(工具调用等)都被丢弃
+//      - 会话历史回滚到 Turn 开始前,好像这次对话从未发生
+//
+// 注意: abortTurn 不会发送任何消息给用户,它只清理内部状态。
 func (al *AgentLoop) abortTurn(ts *turnState) (turnResult, error) {
 	ts.setPhase(TurnPhaseAborted)
 	if !ts.opts.NoHistory {
@@ -2730,6 +3117,14 @@ func (al *AgentLoop) abortTurn(ts *turnState) (turnResult, error) {
 	return turnResult{status: TurnEndStatusAborted}, nil
 }
 
+// sleepWithContext 带上下文感知的 sleep
+//
+// 与 time.Sleep 不同,此函数在 ctx 被取消时会立即返回,
+// 避免在 shutdown 期间不必要的等待。
+//
+// 返回:
+//   - nil: sleep 正常完成
+//   - ctx.Err(): ctx 被取消
 func sleepWithContext(ctx context.Context, d time.Duration) error {
 	timer := time.NewTimer(d)
 	defer timer.Stop()
@@ -2742,14 +3137,23 @@ func sleepWithContext(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// selectCandidates returns the model candidates and resolved model name to use
-// for a conversation turn. When model routing is configured and the incoming
-// message scores below the complexity threshold, it returns the light model
-// candidates instead of the primary ones.
+// selectCandidates 根据消息复杂度选择合适的模型候选集和 resolved 模型名使用
 //
-// The returned (candidates, model) pair is used for all LLM calls within one
-// turn — tool follow-up iterations use the same tier as the initial call so
-// that a multi-step tool chain doesn't switch models mid-way.
+// 当配置了模型路由且消息复杂度低于阈值时,返回轻量模型候选集。
+// 否则返回主模型候选集。
+//
+// 一旦选择后同一 turn 内的所有 LLM 调用都使用同一组候选集,
+// 以便多步骤工具链不会中途切换模型。
+//
+// 参数:
+//   - agent: Agent 实例(包含候选集列表和路由器)
+//   - userMsg: 用户消息(用于复杂度评估)
+//   - history: 对话历史(用于复杂度评估)
+//
+// 返回:
+//   - candidates: LLM Provider 候选集(每个包含 provider+model)
+//   - model: 解析后的模型名
+//   - usedLight: 是否使用了轻量模型
 func (al *AgentLoop) selectCandidates(
 	agent *AgentInstance,
 	userMsg string,
@@ -2780,7 +3184,18 @@ func (al *AgentLoop) selectCandidates(
 	return agent.LightCandidates, resolvedCandidateModel(agent.LightCandidates, agent.Router.LightModel()), true
 }
 
-// maybeSummarize triggers summarization if the session history exceeds thresholds.
+// maybeSummarize 检查是否需要触发会话摘要(如果历史超过阈值)
+//
+// 触发条件(满足任一即可触发):
+//   - 消息数量阈值: SummarizeMessageThreshold
+//   - Token 估算阈值: ContextWindow * SummarizeTokenPercent / 100
+//
+// 摘要使用 goroutine 异步执行,通过 sync.Map 防止同一会话并发摘要
+//
+// 参数:
+//   - agent: Agent 实例(包含会话和配置)
+//   - sessionKey: 会话标识符
+//   - turnScope: Turn 事件范围(用于事件发射)
 func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey string, turnScope turnEventScope) {
 	newHistory := agent.Sessions.GetHistory(sessionKey)
 	tokenEstimate := al.estimateTokens(newHistory)
@@ -2798,23 +3213,29 @@ func (al *AgentLoop) maybeSummarize(agent *AgentInstance, sessionKey string, tur
 	}
 }
 
+// compressionResult 记录压缩操作的结果
 type compressionResult struct {
 	DroppedMessages   int
 	RemainingMessages int
 }
 
-// forceCompression aggressively reduces context when the limit is hit.
-// It drops the oldest ~50% of Turns (a Turn is a complete user→LLM→response
-// cycle, as defined in #1316), so tool-call sequences are never split.
+// forceCompression 濱遇上下文长度超限时强制压缩历史
 //
-// If the history is a single Turn with no safe split point, the function
-// falls back to keeping only the most recent user message. This breaks
-// Turn atomicity as a last resort to avoid a context-exceeded loop.
+// 压缩策略:
+//   1. 按完整 Turn 边界分割(Turn = 用户→LLM→响应 的完整循环)
+//   2. 丢弃最旧的 ~50% Turn,保留最新的 50%
+//   3. 如果只有单个 Turn(无安全分割点),则仅保留最近一条用户消息(兜底方案)
 //
-// Session history contains only user/assistant/tool messages — the system
-// prompt is built dynamically by BuildMessages and is NOT stored here.
-// The compression note is recorded in the session summary so that
-// BuildMessages can include it in the next system prompt.
+// 注意: 此操作会修改会话历史和不会修改消息内容。
+// 压缩信息会记录在会话摘要中,以便下次 BuildMessages 包其包含在系统提示中
+//
+// 参数:
+//   - agent: Agent 实例
+//   - sessionKey: 会话标识符
+//
+// 返回:
+//   - compressionResult: 压缩结果(丢弃/保留消息数)
+//   - bool: 是否执行了压缩
 func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) (compressionResult, bool) {
 	history := agent.Sessions.GetHistory(sessionKey)
 	if len(history) <= 2 {
@@ -2879,7 +3300,12 @@ func (al *AgentLoop) forceCompression(agent *AgentInstance, sessionKey string) (
 	}, true
 }
 
-// GetStartupInfo returns information about loaded tools and skills for logging.
+// GetStartupInfo 返回已加载的工具和技能信息
+//
+// 用于启动时的诊断日志,显示:
+//   - 已注册的工具数量和名称列表
+//   - 已安装的技能信息
+//   - Agent 数量和 ID 列表
 func (al *AgentLoop) GetStartupInfo() map[string]any {
 	info := make(map[string]any)
 
@@ -2908,7 +3334,19 @@ func (al *AgentLoop) GetStartupInfo() map[string]any {
 	return info
 }
 
-// formatMessagesForLog formats messages for logging
+// formatMessagesForLog 将消息列表格式化为日志友好的字符串
+//
+// 输出格式:
+//
+//	[
+//	  [0] Role: user
+//	    Content: Hello...
+//	  [1] Role: assistant
+//	    Content: Hi there...
+//	    ToolCalls:
+//	      - ID: call_123, Type: function, Name: web_search
+//	        Arguments: {"query": "weather"}
+//	]
 func formatMessagesForLog(messages []providers.Message) string {
 	if len(messages) == 0 {
 		return "[]"
@@ -2944,7 +3382,7 @@ func formatMessagesForLog(messages []providers.Message) string {
 	return sb.String()
 }
 
-// formatToolsForLog formats tool definitions for logging
+// formatToolsForLog 将工具定义列表格式化为日志友好的字符串
 func formatToolsForLog(toolDefs []providers.ToolDefinition) string {
 	if len(toolDefs) == 0 {
 		return "[]"
@@ -2968,6 +3406,22 @@ func formatToolsForLog(toolDefs []providers.ToolDefinition) string {
 }
 
 // summarizeSession summarizes the conversation history for a session.
+// summarizeSession 对会话历史进行摘要压缩
+//
+// 使用 LLM 将旧的历史消息总结为简短摘要,以减少上下文 token 占用。
+// 仅保留最近的几轮对话以保证连续性。
+//
+// 夑壕流程:
+//   1. 检查历史是否够长(<=44条直接返回)
+//   2. 找到安全的 Turn 边界切割点
+//   3. 过滤超大消息(超过上下文窗口一半的消息)
+//   4. 如果消息多于阈值,分批摘要后合并
+//   5. 将摘要保存到会话并截断历史
+//
+// 参数:
+//   - agent: Agent 实例
+//   - sessionKey: 会话标识符
+//   - turnScope: Turn 事件范围(用于事件发射)
 func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string, turnScope turnEventScope) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -3066,8 +3520,11 @@ func (al *AgentLoop) summarizeSession(agent *AgentInstance, sessionKey string, t
 	}
 }
 
-// findNearestUserMessage finds the nearest user message to the given index.
-// It searches backward first, then forward if no user message is found.
+// findNearestUserMessage 在消息列表中查找最近的用户消息
+//
+// 从 mid 位置开始,先向后搜索,如果没找到则向前搜索。
+// 这样做是为了在分割消息时确保分割点在用户消息边界上,
+// 避免将用户消息和对应的 LLM 响应拆开。
 func (al *AgentLoop) findNearestUserMessage(messages []providers.Message, mid int) int {
 	originalMid := mid
 
@@ -3091,7 +3548,18 @@ func (al *AgentLoop) findNearestUserMessage(messages []providers.Message, mid in
 	return originalMid
 }
 
-// retryLLMCall calls the LLM with retry logic.
+// retryLLMCall 带重试逻辑的 LLM 调用
+//
+// 在 LLM 调用失败或返回空内容时自动重试,最多重试 maxRetries 次。
+// 重试间隔使用递增延迟(100ms * attempt)。
+//
+// 参数:
+//   - ctx: 上下文
+//   - agent: Agent 实例(包含 Provider 和 Model)
+//   - prompt: 提示词文本
+//   - maxRetries: 最大重试次数
+//
+// 返回: LLM 响应(可能为 nil)和错误
 func (al *AgentLoop) retryLLMCall(
 	ctx context.Context,
 	agent *AgentInstance,
@@ -3133,7 +3601,20 @@ func (al *AgentLoop) retryLLMCall(
 	return resp, err
 }
 
-// summarizeBatch summarizes a batch of messages.
+// summarizeBatch 对一批消息进行摘要
+//
+// 使用 LLM 将一批对话消息总结为简短摘要。
+// 如果 LLM 调用失败,回退到简单截断策略:
+//   - 每条消息保留 fallbackMaxContentPercent% 的内容
+//   - 最少保留 fallbackMinContentLength 个字符
+//
+// 参数:
+//   - ctx: 上下文
+//   - agent: Agent 实例
+//   - batch: 待摘要的消息列表
+//   - existingSummary: 已有的摘要(用于保持连续性)
+//
+// 返回: 摘要文本和错误
 func (al *AgentLoop) summarizeBatch(
 	ctx context.Context,
 	agent *AgentInstance,
@@ -3198,9 +3679,14 @@ func (al *AgentLoop) summarizeBatch(
 	return fallback.String(), nil
 }
 
-// estimateTokens estimates the number of tokens in a message list.
-// Counts Content, ToolCalls arguments, and ToolCallID metadata so that
-// tool-heavy conversations are not systematically undercounted.
+// estimateTokens 估算消息列表的 token 数量
+//
+// 使用简单的字符数/2 估算(1个 token ≈ 2 个字符),并统计:
+//   - Content: 消息正文
+//   - ToolCalls: 巯具调用参数
+//   - ToolCallID: 巯具调用 ID 元数据
+//
+// 这样工具密集型对话不会被系统性低估。
 func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 	total := 0
 	for _, m := range messages {
@@ -3209,6 +3695,15 @@ func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
 	return total
 }
 
+// handleCommand 处理斜杠命令
+//
+// 支持的命令类型:
+//   - 显式技能命令(/use <skill> [message])
+//   - 内置命令(/help, /clear, /model, /reload 等)
+//
+// 返回:
+//   - response: 命令的响应文本
+//   - handled: 是否已被命令处理器处理(如果为 true,不再传递给 LLM)
 func (al *AgentLoop) handleCommand(
 	ctx context.Context,
 	msg bus.InboundMessage,
@@ -3256,6 +3751,11 @@ func (al *AgentLoop) handleCommand(
 	}
 }
 
+// activeSkillNames 收集所有应激活的技能名称
+//
+// 合并 Agent 配置的默认技能 + 消息选项中强制指定的技能。
+// 通过 ContextBuilder.ResolveSkillName 进行规范化(支持别名)。
+// 结果去重并保持顺序。
 func activeSkillNames(agent *AgentInstance, opts processOptions) []string {
 	if agent == nil {
 		return nil
@@ -3291,6 +3791,17 @@ func activeSkillNames(agent *AgentInstance, opts processOptions) []string {
 	return resolved
 }
 
+// applyExplicitSkillCommand 处理 /use 技能命令
+//
+// 支持三种用法:
+//   - /use <skill>       → 将技能加入待应用列表,下一条消息自动激活
+//   - /use <skill> <msg> → 立即使用指定技能处理消息
+//   - /use clear         → 清除待应用的技能覆盖
+//
+// 返回:
+//   - matched: 是否匹配了 /use 命令
+//   - handled: 是否已完全处理(不需要传给 LLM)
+//   - reply: 处理结果文本
 func (al *AgentLoop) applyExplicitSkillCommand(
 	raw string,
 	agent *AgentInstance,
@@ -3347,6 +3858,19 @@ func (al *AgentLoop) applyExplicitSkillCommand(
 	return true, false, ""
 }
 
+// buildCommandsRuntime 构建命令执行运行时
+//
+// 运行时提供了命令执行所需的回调函数:
+//   - ListAgentIDs: 列出所有 Agent ID
+//   - ListDefinitions: 列出所有命令定义
+//   - GetEnabledChannels: 获取已启用的通道列表
+//   - GetActiveTurn: 获取当前活跃的 Turn 状态
+//   - SwitchChannel: 切换通道
+//   - ListSkillNames: 列出已安装的技能
+//   - ReloadConfig: 热重载配置
+//   - GetModelInfo: 获取当前模型信息
+//   - SwitchModel: 切换模型
+//   - ClearHistory: 清空会话历史
 func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOptions) *commands.Runtime {
 	registry := al.GetRegistry()
 	cfg := al.GetConfig()
@@ -3442,10 +3966,14 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 	return rt
 }
 
+// commandsUnavailableSkillMessage 返回技能不可用提示
 func commandsUnavailableSkillMessage() string {
 	return "Skill selection is unavailable in the current context."
 }
 
+// buildUseCommandHelp 构建 /use 命令的帮助信息
+//
+// 显示用法说明和已安装技能列表。
 func buildUseCommandHelp(agent *AgentInstance) string {
 	if agent == nil || agent.ContextBuilder == nil {
 		return "Usage: /use <skill> [message]"
@@ -3462,6 +3990,10 @@ func buildUseCommandHelp(agent *AgentInstance) string {
 	)
 }
 
+// setPendingSkills 为指定会话设置待应用的技能列表
+//
+// 在收到 /use <skill> 命令时,技能不会立即应用,
+// 而是存入 pendingSkills,在用户发送下一条消息时自动激活。
 func (al *AgentLoop) setPendingSkills(sessionKey string, skillNames []string) {
 	sessionKey = strings.TrimSpace(sessionKey)
 	if sessionKey == "" || len(skillNames) == 0 {
@@ -3482,6 +4014,10 @@ func (al *AgentLoop) setPendingSkills(sessionKey string, skillNames []string) {
 	al.pendingSkills.Store(sessionKey, filtered)
 }
 
+// takePendingSkills 取出并清除指定会话的待应用技能列表
+//
+// 原子操作:读取后立即删除,确保技能只被应用一次。
+// 返回技能名称的副本(避免外部修改内部数据)。
 func (al *AgentLoop) takePendingSkills(sessionKey string) []string {
 	sessionKey = strings.TrimSpace(sessionKey)
 	if sessionKey == "" {
@@ -3501,6 +4037,7 @@ func (al *AgentLoop) takePendingSkills(sessionKey string) []string {
 	return append([]string(nil), skills...)
 }
 
+// clearPendingSkills 清除指定会话的待应用技能列表
 func (al *AgentLoop) clearPendingSkills(sessionKey string) {
 	sessionKey = strings.TrimSpace(sessionKey)
 	if sessionKey == "" {
@@ -3509,6 +4046,7 @@ func (al *AgentLoop) clearPendingSkills(sessionKey string) {
 	al.pendingSkills.Delete(sessionKey)
 }
 
+// mapCommandError 将命令执行错误格式化为用户友好的错误消息
 func mapCommandError(result commands.ExecuteResult) string {
 	if result.Command == "" {
 		return fmt.Sprintf("Failed to execute command: %v", result.Err)
@@ -3516,7 +4054,11 @@ func mapCommandError(result commands.ExecuteResult) string {
 	return fmt.Sprintf("Failed to execute /%s: %v", result.Command, result.Err)
 }
 
-// extractPeer extracts the routing peer from the inbound message's structured Peer field.
+// extractPeer 从入站消息的结构化 Peer 字段提取路由对等方
+//
+// Peer 描述消息的来源类型和来源 ID:
+//   - kind: "direct"(私聊), "group"(群聊), "channel"(频道)
+//   - id: 对等方唯一标识(如果为空,使用 SenderID 或 ChatID 作为回退)
 func extractPeer(msg bus.InboundMessage) *routing.RoutePeer {
 	if msg.Peer.Kind == "" {
 		return nil
@@ -3532,6 +4074,7 @@ func extractPeer(msg bus.InboundMessage) *routing.RoutePeer {
 	return &routing.RoutePeer{Kind: msg.Peer.Kind, ID: peerID}
 }
 
+// inboundMetadata 从入站消息的元数据中获取指定键的值
 func inboundMetadata(msg bus.InboundMessage, key string) string {
 	if msg.Metadata == nil {
 		return ""
@@ -3539,7 +4082,10 @@ func inboundMetadata(msg bus.InboundMessage, key string) string {
 	return msg.Metadata[key]
 }
 
-// extractParentPeer extracts the parent peer (reply-to) from inbound message metadata.
+// extractParentPeer 从入站消息元数据中提取父级对等方(回复目标)
+//
+// 用于回复场景:当用户回复某条消息时,metadata 中包含父级对等方信息,
+// 用于路由到正确的 Agent。
 func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 	parentKind := inboundMetadata(msg, metadataKeyParentPeerKind)
 	parentID := inboundMetadata(msg, metadataKeyParentPeerID)
@@ -3549,8 +4095,7 @@ func extractParentPeer(msg bus.InboundMessage) *routing.RoutePeer {
 	return &routing.RoutePeer{Kind: parentKind, ID: parentID}
 }
 
-// isNativeSearchProvider reports whether the given LLM provider implements
-// NativeSearchCapable and returns true for SupportsNativeSearch.
+// isNativeSearchProvider 检查 LLM 提供商是否支持原生搜索
 func isNativeSearchProvider(p providers.LLMProvider) bool {
 	if ns, ok := p.(providers.NativeSearchCapable); ok {
 		return ns.SupportsNativeSearch()
@@ -3558,8 +4103,10 @@ func isNativeSearchProvider(p providers.LLMProvider) bool {
 	return false
 }
 
-// filterClientWebSearch returns a copy of tools with the client-side
-// web_search tool removed. Used when native provider search is preferred.
+// filterClientWebSearch 过滤掉客户端侧的 web_search 巯具
+//
+// 当 Provider 支持原生搜索时(如 Google Gemini),移除客户端侧的 web_search 巯具,
+// 使用 Provider 内置的搜索功能代替。
 func filterClientWebSearch(tools []providers.ToolDefinition) []providers.ToolDefinition {
 	result := make([]providers.ToolDefinition, 0, len(tools))
 	for _, t := range tools {
@@ -3571,7 +4118,7 @@ func filterClientWebSearch(tools []providers.ToolDefinition) []providers.ToolDef
 	return result
 }
 
-// Helper to extract provider from registry for cleanup
+// extractProvider 从注册表中提取 Provider(用于重载时的旧 Provider 清理)
 func extractProvider(registry *AgentRegistry) (providers.LLMProvider, bool) {
 	if registry == nil {
 		return nil, false
