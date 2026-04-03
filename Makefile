@@ -70,7 +70,7 @@ WORKSPACE_DIR?=$(PICOCLAW_HOME)/workspace
 WORKSPACE_SKILLS_DIR=$(WORKSPACE_DIR)/skills
 BUILTIN_SKILLS_DIR=$(CURDIR)/skills
 
-LSCMD=ls -sf
+LNCMD=ln -sf
 
 # OS detection
 UNAME_S?=$(shell uname -s)
@@ -115,7 +115,7 @@ else
     IS_WINDOWS:=$(if $(findstring MINGW,$(UNAME_S)),yes,$(if $(findstring MSYS,$(UNAME_S)),yes,$(if $(findstring CYGWIN,$(UNAME_S)),yes,no)))
 	ifeq ($(IS_WINDOWS),yes)
 	    EXT=.exe
-	    LSCMD=cp
+	    LNCMD=cp
 	else ifeq ($(UNAME_S),windows) # failsafe for force windows build in other OS using UNAME_S=windows
 		EXT=.exe
 	endif
@@ -140,7 +140,7 @@ build: generate
 	@mkdir -p $(BUILD_DIR)
 	@GOARCH=${ARCH} $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_PATH)$(EXT) ./$(CMD_DIR)
 	@echo "Build complete: $(BINARY_PATH)$(EXT)"
-	@$(LSCMD) $(BINARY_NAME)-$(PLATFORM)-$(ARCH)$(EXT) $(BUILD_DIR)/$(BINARY_NAME)$(EXT)
+	@$(LNCMD) $(BINARY_NAME)-$(PLATFORM)-$(ARCH)$(EXT) $(BUILD_DIR)/$(BINARY_NAME)$(EXT)
 
 ## build-launcher: Build the picoclaw-launcher (web console) binary
 build-launcher:
@@ -151,7 +151,7 @@ build-launcher:
 		WEB_GO='$(WEB_GO)' \
 		GO_BUILD_TAGS='$(GO_BUILD_TAGS)' \
 		LDFLAGS='$(LDFLAGS)'
-	@$(LSCMD) picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXT) $(BUILD_DIR)/picoclaw-launcher$(EXT)
+	@$(LNCMD) picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXT) $(BUILD_DIR)/picoclaw-launcher$(EXT)
 	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher$(EXT)"
 
 build-launcher-frontend:
