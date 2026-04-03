@@ -2,14 +2,15 @@ import { Outlet, createRootRoute, useRouterState } from "@tanstack/react-router"
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools"
 import { useEffect } from "react"
 
+import { getLauncherAuthStatus } from "@/api/launcher-auth"
 import { AppLayout } from "@/components/app-layout"
 import { initializeChatStore } from "@/features/chat/controller"
-import { isLauncherLoginPathname } from "@/lib/launcher-login-path"
+import { isLauncherAuthPathname } from "@/lib/launcher-login-path"
 
 const RootLayout = () => {
   // Prefer the real address bar path: stale embedded bundles may not register
-  // /launcher-login in the route tree, which would otherwise keep AppLayout +
-  // gateway polling → 401 → launcherFetch redirect loop.
+  // /launcher-login or /launcher-setup in the route tree, which would otherwise
+  // keep AppLayout + gateway polling → 401 → launcherFetch redirect loop.
   const routerState = useRouterState({
     select: (s) => ({
       pathname: s.location.pathname,
@@ -22,19 +23,38 @@ const RootLayout = () => {
       ? globalThis.location.pathname || "/"
       : routerState.pathname
 
-  const isLauncherLogin =
-    isLauncherLoginPathname(windowPath) ||
-    isLauncherLoginPathname(routerState.pathname) ||
-    routerState.matches.some((m) => m.routeId === "/launcher-login")
+  const isAuthPage =
+    isLauncherAuthPathname(windowPath) ||
+    isLauncherAuthPathname(routerState.pathname) ||
+    routerState.matches.some(
+      (m) => m.routeId === "/launcher-login" || m.routeId === "/launcher-setup",
+    )
+
+  // Session guard: proactively check auth status on every page load.
+  // This catches the case where ?token= auto-login bypassed the login/setup UI.
+  useEffect(() => {
+    if (isAuthPage) return
+    void getLauncherAuthStatus()
+      .then((s) => {
+        if (!s.initialized) {
+          globalThis.location.assign("/launcher-setup")
+        } else if (!s.authenticated) {
+          globalThis.location.assign("/launcher-login")
+        }
+      })
+      .catch(() => {
+        // Network error or 401 — launcherFetch will handle redirect on real API calls.
+      })
+  }, [isAuthPage])
 
   useEffect(() => {
-    if (isLauncherLogin) {
+    if (isAuthPage) {
       return
     }
     initializeChatStore()
-  }, [isLauncherLogin])
+  }, [isAuthPage])
 
-  if (isLauncherLogin) {
+  if (isAuthPage) {
     return (
       <>
         <Outlet />

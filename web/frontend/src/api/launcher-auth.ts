@@ -1,30 +1,23 @@
 /**
- * Dashboard launcher token login. Uses plain fetch (not launcherFetch) to avoid
- * redirect loops on 401 while on the login page.
+ * Dashboard launcher auth API.
+ * Uses plain fetch (not launcherFetch) to avoid redirect loops on auth pages.
  */
 export async function postLauncherDashboardLogin(
-  token: string,
+  password: string,
 ): Promise<boolean> {
   const res = await fetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "same-origin",
-    body: JSON.stringify({ token: token.trim() }),
+    body: JSON.stringify({ password: password.trim() }),
   })
   return res.ok
 }
 
-export type LauncherAuthTokenHelp = {
-  env_var_name: string
-  log_file?: string
-  config_file?: string
-  tray_copy_menu: boolean
-  console_stdout: boolean
-}
-
 export type LauncherAuthStatus = {
   authenticated: boolean
-  token_help?: LauncherAuthTokenHelp
+  /** true when a bcrypt password has been stored in the DB */
+  initialized: boolean
 }
 
 export async function getLauncherAuthStatus(): Promise<LauncherAuthStatus> {
@@ -46,4 +39,29 @@ export async function postLauncherDashboardLogout(): Promise<boolean> {
     body: "{}",
   })
   return res.ok
+}
+
+export type SetupResult =
+  | { ok: true }
+  | { ok: false; error: string }
+
+export async function postLauncherDashboardSetup(
+  password: string,
+  confirm: string,
+): Promise<SetupResult> {
+  const res = await fetch("/api/auth/setup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ password: password.trim(), confirm: confirm.trim() }),
+  })
+  if (res.ok) return { ok: true }
+  let msg = "Unknown error"
+  try {
+    const j = (await res.json()) as { error?: string }
+    if (j.error) msg = j.error
+  } catch {
+    /* ignore */
+  }
+  return { ok: false, error: msg }
 }

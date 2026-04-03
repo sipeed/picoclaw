@@ -2,6 +2,7 @@ import {
   IconBook,
   IconLanguage,
   IconLoader2,
+  IconLogout,
   IconMenu2,
   IconMoon,
   IconPlayerPlay,
@@ -39,6 +40,7 @@ import {
 } from "@/components/ui/tooltip"
 import { useGateway } from "@/hooks/use-gateway.ts"
 import { useTheme } from "@/hooks/use-theme.ts"
+import { postLauncherDashboardLogout } from "@/api/launcher-auth"
 
 export function AppHeader() {
   const { i18n, t } = useTranslation()
@@ -65,6 +67,12 @@ export function AppHeader() {
     (gwState === "stopped" || gwState === "error")
 
   const [showStopDialog, setShowStopDialog] = React.useState(false)
+  const [showLogoutDialog, setShowLogoutDialog] = React.useState(false)
+
+  const handleLogout = async () => {
+    await postLauncherDashboardLogout()
+    globalThis.location.assign("/launcher-login")
+  }
 
   const handleGatewayToggle = () => {
     if (gwLoading || isRestarting || isStopping || (!isRunning && !canStart)) {
@@ -134,6 +142,23 @@ export function AppHeader() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("header.logout.tooltip")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("header.logout.description")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void handleLogout()}>
+              {t("header.logout.confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <div className="text-muted-foreground flex items-center gap-1 text-sm font-medium md:gap-2">
         {restartRequired && (
           <Tooltip delayDuration={700}>
@@ -180,9 +205,8 @@ export function AppHeader() {
             }
             size="sm"
             data-tour="gateway-button"
-            className={`h-8 gap-2 px-3 ${
-              isStopped ? "bg-green-500 text-white hover:bg-green-600" : ""
-            }`}
+            className={`h-8 gap-2 px-3 ${isStopped ? "bg-green-500 text-white hover:bg-green-600" : ""
+              }`}
             onClick={handleGatewayToggle}
             disabled={
               gwLoading || isStarting || isRestarting || isStopping || !canStart
@@ -241,6 +265,21 @@ export function AppHeader() {
         </DropdownMenu>
 
         {/* Theme Toggle */}
+        <Tooltip delayDuration={700}>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              onClick={() => setShowLogoutDialog(true)}
+              aria-label={t("header.logout.tooltip")}
+            >
+              <IconLogout className="size-4.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t("header.logout.tooltip")}</TooltipContent>
+        </Tooltip>
+
         <Button
           variant="ghost"
           size="icon"
