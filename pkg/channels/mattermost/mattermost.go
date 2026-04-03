@@ -26,13 +26,13 @@ import (
 )
 
 const (
-	sendTimeout     = 10 * time.Second
-	maxPostChars    = 4000
-	typingIntervalS = 4 * time.Second
-	typingTimeoutS  = 3 * time.Minute
-	wsReconnectMax  = 60 * time.Second
-	wsPingInterval  = 20 * time.Second
-	wsPingTimeout   = 10 * time.Second
+	sendTimeout    = 10 * time.Second
+	maxPostChars   = 16383
+	typingInterval = 4 * time.Second
+	typingTimeout  = 3 * time.Minute
+	wsReconnectMax = 60 * time.Second
+	wsPingInterval = 20 * time.Second
+	wsPingTimeout  = 10 * time.Second
 )
 
 // MattermostChannel implements the PicoClaw Channel interface for Mattermost.
@@ -511,22 +511,22 @@ func isMattermostUsernameChar(b byte) bool {
 
 // --- Send ---
 
-func (c *MattermostChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *MattermostChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 	if msg.ChatID == "" {
-		return fmt.Errorf("mattermost: chatID is empty")
+		return nil, fmt.Errorf("mattermost: chatID is empty")
 	}
 	if len([]rune(msg.Content)) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	rootID := msg.ReplyToMessageID
 	return c.postMessage(msg.ChatID, msg.Content, rootID)
 }
 
-func (c *MattermostChannel) postMessage(channelID, text, rootID string) error {
+func (c *MattermostChannel) postMessage(channelID, text, rootID string) ([]string, error) {
 	payload := map[string]any{
 		"channel_id": channelID,
 		"message":    text,
@@ -536,7 +536,7 @@ func (c *MattermostChannel) postMessage(channelID, text, rootID string) error {
 	}
 	resp, err := c.doJSON(http.MethodPost, "/api/v4/posts", payload)
 	if err != nil {
-		return fmt.Errorf("mattermost post: %w", channels.ErrTemporary)
+		return nil, fmt.Errorf("mattermost post: %w", channels.ErrTemporary)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
@@ -545,9 +545,16 @@ func (c *MattermostChannel) postMessage(channelID, text, rootID string) error {
 			"status": resp.StatusCode,
 			"body":   string(body),
 		})
-		return fmt.Errorf("mattermost post %d: %w", resp.StatusCode, channels.ErrTemporary)
+		return nil, fmt.Errorf("mattermost post %d: %w", resp.StatusCode, channels.ErrTemporary)
 	}
-	return nil
+	var created mmPost
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		return nil, fmt.Errorf("mattermost decode post response: %w", err)
+	}
+	if created.ID == "" {
+		return nil, nil
+	}
+	return []string{created.ID}, nil
 }
 
 // --- EditMessage (MessageEditor) ---
@@ -617,9 +624,9 @@ func (c *MattermostChannel) startTypingLoop(chatID string) {
 	go func() {
 		defer c.cleanupTypingLoop(chatID, stop)
 		c.sendTyping(chatID)
-		ticker := time.NewTicker(typingIntervalS)
+		ticker := time.NewTicker(typingInterval)
 		defer ticker.Stop()
-		timeout := time.After(typingTimeoutS)
+		timeout := time.After(typingTimeout)
 		for {
 			select {
 			case <-stop:
@@ -697,7 +704,7 @@ func (c *MattermostChannel) SendMedia(ctx context.Context, msg bus.OutboundMedia
 				"error": err.Error(),
 			})
 			// Fallback: send path as text
-			_ = c.postMessage(msg.ChatID, fmt.Sprintf("[Attachment: %s]", part.Filename), "")
+			_, _ = c.postMessage(msg.ChatID, fmt.Sprintf("[Attachment: %s]", part.Filename), "")
 			continue
 		}
 
