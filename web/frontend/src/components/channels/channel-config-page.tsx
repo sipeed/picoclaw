@@ -205,6 +205,7 @@ function getChannelDocSlug(channelName: string): string {
 
 const CHANNELS_WITHOUT_DOCS = new Set([
   "pico",
+  "imsg",
   "wecom",
   "matrix",
   "irc",

@@ -284,6 +284,7 @@ type ChannelsConfig struct {
 	Telegram   TelegramConfig   `json:"telegram"    yaml:"telegram,omitempty"`
 	Feishu     FeishuConfig     `json:"feishu"      yaml:"feishu,omitempty"`
 	Discord    DiscordConfig    `json:"discord"     yaml:"discord,omitempty"`
+	IMsg       IMsgConfig       `json:"imsg"        yaml:"imsg,omitempty"`
 	MaixCam    MaixCamConfig    `json:"maixcam"     yaml:"-"`
 	QQ         QQConfig         `json:"qq"          yaml:"qq,omitempty"`
 	DingTalk   DingTalkConfig   `json:"dingtalk"    yaml:"dingtalk,omitempty"`
@@ -384,6 +385,12 @@ type DiscordConfig struct {
 	Typing             TypingConfig        `json:"typing,omitempty"        yaml:"-"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"   yaml:"-"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"    yaml:"-"               env:"PICOCLAW_CHANNELS_DISCORD_REASONING_CHANNEL_ID"`
+}
+
+type IMsgConfig struct {
+	Enabled         bool                `json:"enabled"         yaml:"-" env:"PICOCLAW_CHANNELS_IMSG_ENABLED"`
+	AllowFrom       FlexibleStringSlice `json:"allow_from"      yaml:"-" env:"PICOCLAW_CHANNELS_IMSG_ALLOW_FROM"`
+	IMessageCLIPath string              `json:"iMessageCLIPath" yaml:"-" env:"PICOCLAW_CHANNELS_IMSG_IMESSAGECLIPATH"`
 }
 
 type MaixCamConfig struct {

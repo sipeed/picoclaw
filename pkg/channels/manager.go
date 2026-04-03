@@ -375,6 +375,10 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 		m.initChannel("discord", "Discord")
 	}
 
+	if channels.IMsg.Enabled {
+		m.initChannel("imsg", "iMessage")
+	}
+
 	if channels.MaixCam.Enabled {
 		m.initChannel("maixcam", "MaixCam")
 	}

@@ -135,6 +135,7 @@ export function GenericForm({
       channels: t("channels.form.desc.channels"),
       request_caps: t("channels.form.desc.requestCaps"),
       max_base64_file_size_mib: t("channels.form.desc.maxBase64FileSizeMiB"),
+      iMessageCLIPath: t("channels.form.desc.iMessageCLIPath"),
     }
     return (
       descriptions[key] ??

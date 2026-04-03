@@ -68,6 +68,11 @@ func DefaultConfig() *Config {
 				AllowFrom:   FlexibleStringSlice{},
 				MentionOnly: false,
 			},
+			IMsg: IMsgConfig{
+				Enabled:         false,
+				AllowFrom:       FlexibleStringSlice{},
+				IMessageCLIPath: "imsg",
+			},
 			MaixCam: MaixCamConfig{
 				Enabled:   false,
 				Host:      "0.0.0.0",
