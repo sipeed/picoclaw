@@ -217,6 +217,72 @@ func TestHandleGetSession_JSONLStorage(t *testing.T) {
 	}
 }
 
+func TestHandleGetSession_JSONLStorage_IncludesArchivedMessagesAfterTruncate(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore() error = %v", err)
+	}
+
+	sessionKey := picoSessionPrefix + "detail-jsonl-archived"
+	for _, msg := range []providers.Message{
+		{Role: "user", Content: "u1"},
+		{Role: "assistant", Content: "a1"},
+		{Role: "user", Content: "u2"},
+		{Role: "assistant", Content: "a2"},
+		{Role: "user", Content: "u3"},
+		{Role: "assistant", Content: "a3"},
+	} {
+		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+			t.Fatalf("AddFullMessage() error = %v", err)
+		}
+	}
+	if err := store.TruncateHistory(nil, sessionKey, 2); err != nil {
+		t.Fatalf("TruncateHistory() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	// Runtime history is logically truncated to the tail for context control.
+	runtimeMsgs, err := store.GetHistory(nil, sessionKey)
+	if err != nil {
+		t.Fatalf("GetHistory() error = %v", err)
+	}
+	if len(runtimeMsgs) != 2 {
+		t.Fatalf("len(runtimeMsgs) = %d, want 2", len(runtimeMsgs))
+	}
+
+	// Web API should still expose full archived transcript.
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-jsonl-archived", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Messages) != 6 {
+		t.Fatalf("len(resp.Messages) = %d, want 6", len(resp.Messages))
+	}
+	if resp.Messages[0].Content != "u1" || resp.Messages[5].Content != "a3" {
+		t.Fatalf("unexpected transcript boundary: first=%q last=%q", resp.Messages[0].Content, resp.Messages[5].Content)
+	}
+}
+
 func TestHandleGetSession_ReconstructsVisibleMessageToolOutput(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()

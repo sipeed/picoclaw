@@ -1,7 +1,11 @@
 package session_test
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/memory"
@@ -176,4 +180,58 @@ func TestJSONLBackend_SummarizeFlow(t *testing.T) {
 	if history[0].Content != "msg 16" {
 		t.Errorf("first message = %q, want %q", history[0].Content, "msg 16")
 	}
+}
+
+func TestJSONLBackend_SavePreservesArchivedJSONLLinesAfterTruncate(t *testing.T) {
+	dir := t.TempDir()
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	b := session.NewJSONLBackend(store)
+
+	for i := 0; i < 12; i++ {
+		b.AddMessage("s1", "user", fmt.Sprintf("msg %d", i))
+	}
+	b.TruncateHistory("s1", 3)
+
+	// Runtime context remains truncated.
+	history := b.GetHistory("s1")
+	if len(history) != 3 {
+		t.Fatalf("got %d messages, want 3", len(history))
+	}
+
+	if err := b.Save("s1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Archive file should still retain full append-only history lines.
+	lineCount, err := countNonEmptyLines(filepath.Join(dir, "s1.jsonl"))
+	if err != nil {
+		t.Fatalf("countNonEmptyLines() error = %v", err)
+	}
+	if lineCount != 12 {
+		t.Fatalf("lineCount = %d, want 12", lineCount)
+	}
+}
+
+func countNonEmptyLines(path string) (int, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	n := 0
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		if strings.TrimSpace(scanner.Text()) != "" {
+			n++
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
