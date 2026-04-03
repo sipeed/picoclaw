@@ -86,17 +86,17 @@ func (c *EmailChannel) Stop(ctx context.Context) error {
 
 // Send delivers an outbound message via SMTP.
 // msg.ChatID is the recipient email address.
-func (c *EmailChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *EmailChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	to := msg.ChatID
 	if to == "" {
-		return fmt.Errorf("chat ID (recipient address) is empty: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("chat ID (recipient address) is empty: %w", channels.ErrSendFailed)
 	}
 	if strings.TrimSpace(msg.Content) == "" {
-		return nil
+		return nil, nil
 	}
 
 	subject := c.config.DefaultSubject
@@ -128,24 +128,24 @@ func (c *EmailChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		tlsCfg := &tls.Config{ServerName: c.config.SMTPHost}
 		conn, err := tls.Dial("tcp", addr, tlsCfg)
 		if err != nil {
-			return fmt.Errorf("smtp tls dial: %w", channels.ErrTemporary)
+			return nil, fmt.Errorf("smtp tls dial: %w", channels.ErrTemporary)
 		}
 		client, err := smtp.NewClient(conn, c.config.SMTPHost)
 		if err != nil {
-			return fmt.Errorf("smtp new client: %w", channels.ErrTemporary)
+			return nil, fmt.Errorf("smtp new client: %w", channels.ErrTemporary)
 		}
 		defer client.Close()
 		if err := sendViaSMTPClient(client, auth, c.config.SMTPFrom, to, []byte(body)); err != nil {
-			return err
+			return nil, err
 		}
 	} else {
 		if err := smtp.SendMail(addr, auth, c.config.SMTPFrom, []string{to}, []byte(body)); err != nil {
-			return fmt.Errorf("smtp send: %w: %w", err, channels.ErrTemporary)
+			return nil, fmt.Errorf("smtp send: %w: %w", err, channels.ErrTemporary)
 		}
 	}
 
 	logger.DebugCF("email", "Message sent", map[string]any{"to": to})
-	return nil
+	return nil, nil
 }
 
 func sendViaSMTPClient(client *smtp.Client, auth smtp.Auth, from, to string, body []byte) error {
