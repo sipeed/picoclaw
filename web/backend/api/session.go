@@ -164,7 +164,7 @@ func (h *Handler) readSessionMessages(path string, skip int) ([]providers.Messag
 	return msgs, nil
 }
 
-func (h *Handler) readJSONLSession(dir, sessionID string) (sessionFile, error) {
+func (h *Handler) readJSONLSession(dir, sessionID string, includeArchived bool) (sessionFile, error) {
 	sessionKey := picoSessionPrefix + sessionID
 	base := filepath.Join(dir, sanitizeSessionKey(sessionKey))
 	jsonlPath := base + ".jsonl"
@@ -175,7 +175,13 @@ func (h *Handler) readJSONLSession(dir, sessionID string) (sessionFile, error) {
 		return sessionFile{}, err
 	}
 
-	messages, err := h.readSessionMessages(jsonlPath, meta.Skip)
+	skip := meta.Skip
+	if includeArchived {
+		// Web history APIs should expose the full transcript archive rather than
+		// the runtime context window that uses logical skip-truncation.
+		skip = 0
+	}
+	messages, err := h.readSessionMessages(jsonlPath, skip)
 	if err != nil {
 		return sessionFile{}, err
 	}
@@ -406,7 +412,7 @@ func (h *Handler) handleListSessions(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				continue
 			}
-			sess, loadErr = h.readJSONLSession(dir, sessionID)
+			sess, loadErr = h.readJSONLSession(dir, sessionID, true)
 			if loadErr == nil && isEmptySession(sess) {
 				continue
 			}
@@ -419,6 +425,7 @@ func (h *Handler) handleListSessions(w http.ResponseWriter, r *http.Request) {
 					if jsonlSess, jsonlErr := h.readJSONLSession(
 						dir,
 						jsonlSessionID,
+						true,
 					); jsonlErr == nil &&
 						!isEmptySession(jsonlSess) {
 						continue
@@ -508,7 +515,7 @@ func (h *Handler) handleGetSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess, err := h.readJSONLSession(dir, sessionID)
+	sess, err := h.readJSONLSession(dir, sessionID, true)
 	if err == nil && isEmptySession(sess) {
 		err = os.ErrNotExist
 	}

@@ -68,11 +68,13 @@ func (b *JSONLBackend) TruncateHistory(key string, keepLast int) {
 	}
 }
 
-// Save persists session state. Since the JSONL store fsyncs every write
-// immediately, the data is already durable. Save runs compaction to reclaim
-// space from logically truncated messages (no-op when there are none).
+// Save persists session state. JSONL writes are already durable because
+// Add*/Set*/Truncate* fsync metadata/data on each write, so Save is a no-op.
+//
+// Keeping Save non-compacting preserves full append-only JSONL archives for
+// UI/history inspection even when runtime context uses logical truncation.
 func (b *JSONLBackend) Save(key string) error {
-	return b.store.Compact(context.Background(), key)
+	return nil
 }
 
 // Close releases resources held by the underlying store.
