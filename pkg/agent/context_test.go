@@ -335,3 +335,19 @@ func TestSanitizeHistoryForProvider_ReusedToolCallIDAcrossRounds(t *testing.T) {
 		t.Fatalf("expected both rounds to keep tool_call_id call_1, got %q and %q", result[2].ToolCallID, result[6].ToolCallID)
 	}
 }
+
+func TestSanitizeHistoryForProvider_DropsMalformedMixedToolCallIDs(t *testing.T) {
+	history := []providers.Message{
+		msg("user", "do two things"),
+		assistantWithTools("A", ""),
+		toolResult("A"),
+		msg("user", "next question"),
+		msg("assistant", "answer"),
+	}
+
+	result := sanitizeHistoryForProvider(history)
+	if len(result) != 3 {
+		t.Fatalf("expected 3 messages, got %d: %+v", len(result), roles(result))
+	}
+	assertRoles(t, result, "user", "user", "assistant")
+}

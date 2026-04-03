@@ -696,8 +696,10 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 		// within the same assistant turn.
 		expectedOrder := make([]string, 0, len(msg.ToolCalls))
 		expectedSet := make(map[string]struct{}, len(msg.ToolCalls))
+		hasEmptyToolCallID := false
 		for _, tc := range msg.ToolCalls {
 			if tc.ID == "" {
+				hasEmptyToolCallID = true
 				continue
 			}
 			if _, exists := expectedSet[tc.ID]; exists {
@@ -707,10 +709,21 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 			expectedOrder = append(expectedOrder, tc.ID)
 		}
 
-		// If provider output is malformed and tool calls have no IDs, keep the
-		// assistant turn as-is and let provider-level validation handle it.
-		if len(expectedOrder) == 0 {
-			final = append(final, msg)
+		// A tool-call round with any empty tool_call ID is malformed. Drop the
+		// entire round, including any contiguous tool results, so we do not
+		// preserve provider-invalid history.
+		if hasEmptyToolCallID {
+			logger.DebugCF("agent", "Dropping assistant tool-call round with empty tool_call ID", map[string]any{
+				"tool_call_count": len(msg.ToolCalls),
+			})
+
+			j := i + 1
+			for ; j < len(sanitized); j++ {
+				if sanitized[j].Role != "tool" {
+					break
+				}
+			}
+			i = j - 1
 			continue
 		}
 
