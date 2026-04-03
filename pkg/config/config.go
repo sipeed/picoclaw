@@ -943,8 +943,19 @@ type MCPServerConfig struct {
 type MCPConfig struct {
 	ToolConfig `                    envPrefix:"PICOCLAW_TOOLS_MCP_"`
 	Discovery  ToolDiscoveryConfig `                                json:"discovery"`
+	// Max controls how much MCP text stays inline before it is saved as an artifact.
+	Max int `json:"max_inline_text_chars,omitempty" env:"PICOCLAW_TOOLS_MCP_MAX_INLINE_TEXT_CHARS"`
 	// Servers is a map of server name to server configuration
 	Servers map[string]MCPServerConfig `json:"servers,omitempty"`
+}
+
+const DefaultMCPMaxInlineTextChars = 16 * 1024
+
+func (c *MCPConfig) GetMaxInlineTextChars() int {
+	if c.Max > 0 {
+		return c.Max
+	}
+	return DefaultMCPMaxInlineTextChars
 }
 
 func LoadConfig(path string) (*Config, error) {

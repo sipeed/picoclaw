@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"hash/fnv"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -26,24 +28,39 @@ type MCPManager interface {
 
 // MCPTool wraps an MCP tool to implement the Tool interface
 type MCPTool struct {
-	manager    MCPManager
-	serverName string
-	tool       *mcp.Tool
-	mediaStore media.MediaStore
+	manager            MCPManager
+	serverName         string
+	tool               *mcp.Tool
+	mediaStore         media.MediaStore
+	workspace          string
+	maxInlineTextRunes int
 }
 
 // NewMCPTool creates a new MCP tool wrapper
 func NewMCPTool(manager MCPManager, serverName string, tool *mcp.Tool) *MCPTool {
 	return &MCPTool{
-		manager:    manager,
-		serverName: serverName,
-		tool:       tool,
+		manager:            manager,
+		serverName:         serverName,
+		tool:               tool,
+		maxInlineTextRunes: maxMCPInlineTextRunes,
 	}
 }
 
 func (t *MCPTool) SetMediaStore(store media.MediaStore) {
 	t.mediaStore = store
 }
+
+func (t *MCPTool) SetWorkspace(workspace string) {
+	t.workspace = strings.TrimSpace(workspace)
+}
+
+func (t *MCPTool) SetMaxInlineTextRunes(limit int) {
+	if limit > 0 {
+		t.maxInlineTextRunes = limit
+	}
+}
+
+const maxMCPInlineTextRunes = 16 * 1024
 
 // sanitizeIdentifierComponent normalizes a string so it can be safely used
 // as part of a tool/function identifier for downstream providers.
@@ -307,11 +324,61 @@ func (t *MCPTool) normalizeResultContent(ctx context.Context, content []mcp.Cont
 		}
 	}
 
+	forLLM := strings.Join(compactStrings(llmParts), "\n")
+	if artifactResult := t.persistLargeTextArtifact(forLLM); artifactResult != nil {
+		artifactResult.Media = mediaRefs
+		return artifactResult
+	}
+
 	result := &ToolResult{
-		ForLLM: strings.Join(compactStrings(llmParts), "\n"),
+		ForLLM: forLLM,
 		Media:  mediaRefs,
 	}
 	return result
+}
+
+func (t *MCPTool) persistLargeTextArtifact(text string) *ToolResult {
+	text = strings.TrimSpace(text)
+	limit := t.maxInlineTextRunes
+	if limit <= 0 {
+		limit = maxMCPInlineTextRunes
+	}
+	if text == "" || utf8.RuneCountInString(text) <= limit || t.workspace == "" {
+		return nil
+	}
+
+	dir := filepath.Join(t.workspace, ".artifacts", "mcp")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil
+	}
+
+	pattern := fmt.Sprintf(
+		"%s_%s_*.txt",
+		sanitizeIdentifierComponent(t.serverName),
+		sanitizeIdentifierComponent(t.tool.Name),
+	)
+	tmpFile, err := os.CreateTemp(dir, pattern)
+	if err != nil {
+		return nil
+	}
+	path := tmpFile.Name()
+	if _, err = tmpFile.WriteString(text); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(path)
+		return nil
+	}
+	if err = tmpFile.Close(); err != nil {
+		_ = os.Remove(path)
+		return nil
+	}
+
+	return &ToolResult{
+		ForLLM: fmt.Sprintf(
+			"[MCP returned a large text result (%d chars); omitted from model context and saved as a local artifact.]",
+			utf8.RuneCountInString(text),
+		),
+		ArtifactTags: []string{"[file:" + path + "]"},
+	}
 }
 
 func (t *MCPTool) storeEmbeddedResource(ctx context.Context, content *mcp.EmbeddedResource) (string, string) {

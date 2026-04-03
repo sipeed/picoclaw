@@ -198,6 +198,41 @@ func TestAgentConfig_FullParse(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_MCPMaxInlineTextChars(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Tools.MCP.GetMaxInlineTextChars() != DefaultMCPMaxInlineTextChars {
+		t.Fatalf(
+			"DefaultConfig().Tools.MCP.GetMaxInlineTextChars() = %d, want %d",
+			cfg.Tools.MCP.GetMaxInlineTextChars(),
+			DefaultMCPMaxInlineTextChars,
+		)
+	}
+}
+
+func TestLoadConfig_MCPMaxInlineTextChars(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := `{
+		"tools": {
+			"mcp": {
+				"enabled": true,
+				"max_inline_text_chars": 2048
+			}
+		}
+	}`
+	if err := os.WriteFile(configPath, []byte(raw), 0o644); err != nil {
+		t.Fatalf("WriteFile(configPath): %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if got := cfg.Tools.MCP.GetMaxInlineTextChars(); got != 2048 {
+		t.Fatalf("cfg.Tools.MCP.GetMaxInlineTextChars() = %d, want 2048", got)
+	}
+}
+
 func TestConfig_BackwardCompat_NoAgentsList(t *testing.T) {
 	jsonData := `{
 		"agents": {

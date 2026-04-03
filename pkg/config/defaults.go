@@ -462,6 +462,7 @@ func DefaultConfig() *Config {
 					UseBM25:          true,
 					UseRegex:         false,
 				},
+				Max:     DefaultMCPMaxInlineTextChars,
 				Servers: map[string]MCPServerConfig{},
 			},
 			AppendFile: ToolConfig{
