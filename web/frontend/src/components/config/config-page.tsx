@@ -94,6 +94,7 @@ export function ConfigPage() {
       port: String(launcherConfig.port),
       publicAccess: launcherConfig.public,
       allowedCIDRsText: (launcherConfig.allowed_cidrs ?? []).join("\n"),
+      launcherToken: launcherConfig.launcher_token ?? "",
     }
     setLauncherForm(parsed)
     setLauncherBaseline(parsed)
@@ -264,6 +265,7 @@ export function ConfigPage() {
           port,
           public: launcherForm.publicAccess,
           allowed_cidrs: allowedCIDRs,
+          launcher_token: launcherForm.launcherToken.trim(),
         })
         const parsedLauncher: LauncherForm = {
           port: String(savedLauncherConfig.port),
@@ -271,6 +273,7 @@ export function ConfigPage() {
           allowedCIDRsText: (savedLauncherConfig.allowed_cidrs ?? []).join(
             "\n",
           ),
+          launcherToken: savedLauncherConfig.launcher_token ?? "",
         }
         setLauncherForm(parsedLauncher)
         setLauncherBaseline(parsedLauncher)
@@ -343,6 +346,12 @@ export function ConfigPage() {
                 </div>
               )}
 
+              <LauncherSection
+                launcherForm={launcherForm}
+                onFieldChange={updateLauncherField}
+                disabled={saving || isLauncherLoading}
+              />
+
               <AgentDefaultsSection form={form} onFieldChange={updateField} />
 
               <RuntimeSection form={form} onFieldChange={updateField} />
@@ -350,12 +359,6 @@ export function ConfigPage() {
               <ExecSection form={form} onFieldChange={updateField} />
 
               <CronSection form={form} onFieldChange={updateField} />
-
-              <LauncherSection
-                launcherForm={launcherForm}
-                onFieldChange={updateLauncherField}
-                disabled={saving || isLauncherLoading}
-              />
 
               <DevicesSection
                 form={form}

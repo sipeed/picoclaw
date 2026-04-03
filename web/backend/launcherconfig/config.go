@@ -23,11 +23,20 @@ const (
 	dashboardTokenEntropyBytes = 32
 )
 
+type DashboardTokenSource string
+
+const (
+	DashboardTokenSourceEnv    DashboardTokenSource = "env"
+	DashboardTokenSourceConfig DashboardTokenSource = "config"
+	DashboardTokenSourceRandom DashboardTokenSource = "random"
+)
+
 // Config stores launch parameters for the web backend service.
 type Config struct {
-	Port         int      `json:"port"`
-	Public       bool     `json:"public"`
-	AllowedCIDRs []string `json:"allowed_cidrs,omitempty"`
+	Port          int      `json:"port"`
+	Public        bool     `json:"public"`
+	AllowedCIDRs  []string `json:"allowed_cidrs,omitempty"`
+	LauncherToken string   `json:"launcher_token,omitempty"`
 }
 
 // Default returns default launcher settings.
@@ -49,23 +58,30 @@ func Validate(cfg Config) error {
 }
 
 // EnsureDashboardSecrets returns signing key bytes and the effective dashboard token for this
-// process. The signing key is freshly random each call; the token comes from the environment
-// variable PICOCLAW_LAUNCHER_TOKEN when set, otherwise a new random token.
-func EnsureDashboardSecrets() (effectiveToken string, signingKey []byte, newRandomDashboardToken bool, err error) {
+// process. The signing key is freshly random each call; the token comes from
+// PICOCLAW_LAUNCHER_TOKEN when set, otherwise launcher-config.json launcher_token,
+// otherwise a new random token.
+func EnsureDashboardSecrets(
+	cfg Config,
+) (effectiveToken string, signingKey []byte, source DashboardTokenSource, err error) {
 	signingKey = make([]byte, dashboardSigningKeyBytes)
 	if _, err = rand.Read(signingKey); err != nil {
-		return "", nil, false, err
+		return "", nil, "", err
 	}
 
 	effectiveToken = strings.TrimSpace(os.Getenv("PICOCLAW_LAUNCHER_TOKEN"))
 	if effectiveToken != "" {
-		return effectiveToken, signingKey, false, nil
+		return effectiveToken, signingKey, DashboardTokenSourceEnv, nil
+	}
+	effectiveToken = strings.TrimSpace(cfg.LauncherToken)
+	if effectiveToken != "" {
+		return effectiveToken, signingKey, DashboardTokenSourceConfig, nil
 	}
 	tok, genErr := randomDashboardToken()
 	if genErr != nil {
-		return "", nil, false, genErr
+		return "", nil, "", genErr
 	}
-	return tok, signingKey, true, nil
+	return tok, signingKey, DashboardTokenSourceRandom, nil
 }
 
 func randomDashboardToken() (string, error) {
@@ -124,6 +140,7 @@ func Load(path string, fallback Config) (Config, error) {
 		return Config{}, err
 	}
 	cfg.AllowedCIDRs = NormalizeCIDRs(cfg.AllowedCIDRs)
+	cfg.LauncherToken = strings.TrimSpace(cfg.LauncherToken)
 	if err := Validate(cfg); err != nil {
 		return Config{}, err
 	}
@@ -133,6 +150,7 @@ func Load(path string, fallback Config) (Config, error) {
 // Save writes launcher settings to disk.
 func Save(path string, cfg Config) error {
 	cfg.AllowedCIDRs = NormalizeCIDRs(cfg.AllowedCIDRs)
+	cfg.LauncherToken = strings.TrimSpace(cfg.LauncherToken)
 	if err := Validate(cfg); err != nil {
 		return err
 	}

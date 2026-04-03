@@ -23,6 +23,7 @@ type LauncherAuthRouteOpts struct {
 type LauncherAuthTokenHelp struct {
 	EnvVarName    string `json:"env_var_name"`
 	LogFileAbs    string `json:"log_file,omitempty"`
+	ConfigFileAbs string `json:"config_file,omitempty"`
 	TrayCopyMenu  bool   `json:"tray_copy_menu"`
 	ConsoleStdout bool   `json:"console_stdout"`
 }
