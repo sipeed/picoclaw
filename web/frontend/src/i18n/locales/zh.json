@@ -49,6 +49,12 @@
     "deleteSession": "删除会话",
     "messagesCount": "{{count}} 条消息",
     "noModel": "选择模型",
+    "attachImage": "添加图片",
+    "removeImage": "移除图片",
+    "uploadedImage": "已上传图片",
+    "invalidImage": "“{{name}}”不是支持的图片文件。",
+    "imageTooLarge": "“{{name}}”超过了 {{size}} 限制。",
+    "imageReadFailed": "读取“{{name}}”失败。",
     "empty": {
       "noConfiguredModel": "尚未配置模型",
       "noConfiguredModelDescription": "请先配置至少一个带有 API Key 的 AI 模型，才能开始对话。",

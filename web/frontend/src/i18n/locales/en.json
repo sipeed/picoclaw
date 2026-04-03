@@ -49,6 +49,12 @@
     "deleteSession": "Delete session",
     "messagesCount": "{{count}} messages",
     "noModel": "Select model",
+    "attachImage": "Add images",
+    "removeImage": "Remove image",
+    "uploadedImage": "Uploaded image",
+    "invalidImage": "\"{{name}}\" is not a supported image file.",
+    "imageTooLarge": "\"{{name}}\" exceeds the {{size}} limit.",
+    "imageReadFailed": "Failed to read \"{{name}}\".",
     "empty": {
       "noConfiguredModel": "No Model Configured",
       "noConfiguredModelDescription": "You need to configure at least one AI model with an API key before you can start chatting.",
