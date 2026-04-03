@@ -249,13 +249,15 @@ func TestSanitizeHistoryForProvider_IncompleteToolResults(t *testing.T) {
 	}
 
 	result := sanitizeHistoryForProvider(history)
-	// The assistant message with incomplete tool results should be dropped,
-	// along with its partial tool result. The remaining messages are:
-	// user ("do two things"), user ("next question"), assistant ("answer")
-	if len(result) != 3 {
-		t.Fatalf("expected 3 messages, got %d: %+v", len(result), roles(result))
+	// The incomplete turn should be normalized, not dropped:
+	// one synthetic tool result is inserted for missing "B".
+	if len(result) != 6 {
+		t.Fatalf("expected 6 messages, got %d: %+v", len(result), roles(result))
 	}
-	assertRoles(t, result, "user", "user", "assistant")
+	assertRoles(t, result, "user", "assistant", "tool", "tool", "user", "assistant")
+	if result[3].ToolCallID != "B" {
+		t.Fatalf("expected synthetic tool result for B, got %q", result[3].ToolCallID)
+	}
 }
 
 // TestSanitizeHistoryForProvider_MissingAllToolResults tests the case where
@@ -270,12 +272,14 @@ func TestSanitizeHistoryForProvider_MissingAllToolResults(t *testing.T) {
 	}
 
 	result := sanitizeHistoryForProvider(history)
-	// The assistant message with no tool results should be dropped.
-	// Remaining: user ("do something"), user ("hello"), assistant ("hi")
-	if len(result) != 3 {
-		t.Fatalf("expected 3 messages, got %d: %+v", len(result), roles(result))
+	// No real tool result exists, so one synthetic tool result is inserted.
+	if len(result) != 5 {
+		t.Fatalf("expected 5 messages, got %d: %+v", len(result), roles(result))
 	}
-	assertRoles(t, result, "user", "user", "assistant")
+	assertRoles(t, result, "user", "assistant", "tool", "user", "assistant")
+	if result[2].ToolCallID != "A" {
+		t.Fatalf("expected synthetic tool result for A, got %q", result[2].ToolCallID)
+	}
 }
 
 // TestSanitizeHistoryForProvider_PartialToolResultsInMiddle tests that
@@ -297,12 +301,37 @@ func TestSanitizeHistoryForProvider_PartialToolResultsInMiddle(t *testing.T) {
 	}
 
 	result := sanitizeHistoryForProvider(history)
-	// First round is complete (user, assistant+tools, tool, assistant),
-	// second round is incomplete and dropped (assistant+tools, partial tool),
-	// third round is complete (user, assistant+tools, tool, assistant).
-	// Remaining: user, assistant, tool, assistant, user, user, assistant, tool, assistant
-	if len(result) != 9 {
-		t.Fatalf("expected 9 messages, got %d: %+v", len(result), roles(result))
+	// First and third rounds remain unchanged; second round gets a synthetic
+	// tool result for missing "C" instead of being dropped.
+	if len(result) != 12 {
+		t.Fatalf("expected 12 messages, got %d: %+v", len(result), roles(result))
 	}
-	assertRoles(t, result, "user", "assistant", "tool", "assistant", "user", "user", "assistant", "tool", "assistant")
+	assertRoles(t, result, "user", "assistant", "tool", "assistant", "user", "assistant", "tool", "tool", "user", "assistant", "tool", "assistant")
+	if result[7].ToolCallID != "C" {
+		t.Fatalf("expected synthetic tool result for C, got %q", result[7].ToolCallID)
+	}
+}
+
+// TestSanitizeHistoryForProvider_ReusedToolCallIDAcrossRounds ensures
+// per-turn normalization does not deduplicate tool_call IDs globally.
+func TestSanitizeHistoryForProvider_ReusedToolCallIDAcrossRounds(t *testing.T) {
+	history := []providers.Message{
+		msg("user", "round one"),
+		assistantWithTools("call_1"),
+		toolResult("call_1"),
+		msg("assistant", "done one"),
+		msg("user", "round two"),
+		assistantWithTools("call_1"), // ID reused by provider in a later round
+		toolResult("call_1"),
+		msg("assistant", "done two"),
+	}
+
+	result := sanitizeHistoryForProvider(history)
+	if len(result) != 8 {
+		t.Fatalf("expected 8 messages, got %d: %+v", len(result), roles(result))
+	}
+	assertRoles(t, result, "user", "assistant", "tool", "assistant", "user", "assistant", "tool", "assistant")
+	if result[2].ToolCallID != "call_1" || result[6].ToolCallID != "call_1" {
+		t.Fatalf("expected both rounds to keep tool_call_id call_1, got %q and %q", result[2].ToolCallID, result[6].ToolCallID)
+	}
 }
