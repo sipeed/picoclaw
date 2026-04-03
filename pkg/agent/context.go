@@ -681,73 +681,114 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 		}
 	}
 
-	// Second pass: ensure every assistant message with tool_calls has matching
-	// tool result messages following it. This is required by strict providers
-	// like DeepSeek that enforce: "An assistant message with 'tool_calls' must
-	// be followed by tool messages responding to each 'tool_call_id'."
+	// Second pass: normalize each assistant tool-call round so strict providers
+	// always receive exactly one tool response for each expected tool_call_id.
+	// This avoids cross-round dedupe bugs when providers reuse tool_call IDs.
 	final := make([]providers.Message, 0, len(sanitized))
-	seenToolCallID := make(map[string]bool)
 	for i := 0; i < len(sanitized); i++ {
 		msg := sanitized[i]
-
-		// Deduplicate tool results by ToolCallID
-		if msg.Role == "tool" && msg.ToolCallID != "" {
-			if seenToolCallID[msg.ToolCallID] {
-				logger.DebugCF("agent", "Dropping duplicate tool result", map[string]any{
-					"tool_call_id": msg.ToolCallID,
-				})
-				continue
-			}
-			seenToolCallID[msg.ToolCallID] = true
+		if msg.Role != "assistant" || len(msg.ToolCalls) == 0 {
+			final = append(final, msg)
+			continue
 		}
 
-		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
-			// Collect expected tool_call IDs
-			expected := make(map[string]bool, len(msg.ToolCalls))
-			for _, tc := range msg.ToolCalls {
-				expected[tc.ID] = false
+		// Collect expected IDs in stable order while deduplicating duplicates
+		// within the same assistant turn.
+		expectedOrder := make([]string, 0, len(msg.ToolCalls))
+		expectedSet := make(map[string]struct{}, len(msg.ToolCalls))
+		hasEmptyToolCallID := false
+		for _, tc := range msg.ToolCalls {
+			if tc.ID == "" {
+				hasEmptyToolCallID = true
+				continue
 			}
+			if _, exists := expectedSet[tc.ID]; exists {
+				continue
+			}
+			expectedSet[tc.ID] = struct{}{}
+			expectedOrder = append(expectedOrder, tc.ID)
+		}
 
-			// Check following messages for matching tool results
-			toolMsgCount := 0
-			for j := i + 1; j < len(sanitized); j++ {
+		// A tool-call round with any empty tool_call ID is malformed. Drop the
+		// entire round, including any contiguous tool results, so we do not
+		// preserve provider-invalid history.
+		if hasEmptyToolCallID {
+			logger.DebugCF("agent", "Dropping assistant tool-call round with empty tool_call ID", map[string]any{
+				"tool_call_count": len(msg.ToolCalls),
+			})
+
+			j := i + 1
+			for ; j < len(sanitized); j++ {
 				if sanitized[j].Role != "tool" {
 					break
 				}
-				toolMsgCount++
-				if _, exists := expected[sanitized[j].ToolCallID]; exists {
-					expected[sanitized[j].ToolCallID] = true
-				}
 			}
+			i = j - 1
+			continue
+		}
 
-			// If any tool_call_id is missing, drop this assistant message and its partial tool messages
-			allFound := true
-			for toolCallID, found := range expected {
-				if !found {
-					allFound = false
-					logger.DebugCF(
-						"agent",
-						"Dropping assistant message with incomplete tool results",
-						map[string]any{
-							"missing_tool_call_id": toolCallID,
-							"expected_count":       len(expected),
-							"found_count":          toolMsgCount,
-						},
-					)
-					break
-				}
+		// Gather the contiguous tool result block for this assistant turn.
+		j := i + 1
+		collectedTools := make([]providers.Message, 0, len(expectedOrder))
+		for ; j < len(sanitized); j++ {
+			if sanitized[j].Role != "tool" {
+				break
 			}
+			collectedTools = append(collectedTools, sanitized[j])
+		}
 
-			if !allFound {
-				// Skip this assistant message and its tool messages
-				i += toolMsgCount
+		// Keep only the first tool result per expected ID and drop stray entries.
+		toolByID := make(map[string]providers.Message, len(expectedOrder))
+		for _, toolMsg := range collectedTools {
+			if toolMsg.ToolCallID == "" {
+				logger.DebugCF("agent", "Dropping tool result without tool_call_id", map[string]any{})
 				continue
 			}
+			if _, expected := expectedSet[toolMsg.ToolCallID]; !expected {
+				logger.DebugCF("agent", "Dropping unexpected tool result", map[string]any{
+					"tool_call_id": toolMsg.ToolCallID,
+				})
+				continue
+			}
+			if _, exists := toolByID[toolMsg.ToolCallID]; exists {
+				logger.DebugCF("agent", "Dropping duplicate tool result within turn", map[string]any{
+					"tool_call_id": toolMsg.ToolCallID,
+				})
+				continue
+			}
+			toolByID[toolMsg.ToolCallID] = toolMsg
 		}
+
 		final = append(final, msg)
+		missingCount := 0
+		for _, toolCallID := range expectedOrder {
+			if toolMsg, ok := toolByID[toolCallID]; ok {
+				final = append(final, toolMsg)
+				continue
+			}
+			missingCount++
+			final = append(final, syntheticToolResultForMissingID(toolCallID))
+		}
+		if missingCount > 0 {
+			logger.DebugCF("agent", "Inserted synthetic tool results for missing IDs", map[string]any{
+				"missing_count":  missingCount,
+				"expected_count": len(expectedOrder),
+			})
+		}
+
+		// Skip the collected tool block; it has already been normalized above.
+		i = j - 1
 	}
 
 	return final
+}
+
+func syntheticToolResultForMissingID(toolCallID string) providers.Message {
+	return providers.Message{
+		Role:       "tool",
+		ToolCallID: toolCallID,
+		Content:    "Tool result unavailable: this call response was missing in retained history.",
+	}
 }
 
 func (cb *ContextBuilder) AddToolResult(
