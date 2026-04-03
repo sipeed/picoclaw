@@ -32,7 +32,8 @@ func DefaultConfig() *Config {
 					Enabled:       false,
 					MaxArgsLength: 300,
 				},
-				SplitOnMarker: false,
+				SplitOnMarker:        false,
+				AgentCacheTTLSeconds: 86400, // 24 hours
 			},
 		},
 		Bindings: []AgentBinding{},

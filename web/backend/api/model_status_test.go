@@ -337,7 +337,7 @@ func TestProbeLocalModelAvailability_DeduplicatesInflightProbe(t *testing.T) {
 	results := make(chan bool, workers)
 	workerStarted := make(chan struct{}, workers)
 
-	for range workers {
+	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -346,7 +346,7 @@ func TestProbeLocalModelAvailability_DeduplicatesInflightProbe(t *testing.T) {
 		}()
 	}
 
-	for range workers {
+	for i := 0; i < workers; i++ {
 		<-workerStarted
 	}
 

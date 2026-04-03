@@ -6,13 +6,13 @@ By default, the gateway listens on `127.0.0.1:18790`.
 
 ## 💬 Chat API
 
-The `/chat` (and alias `/cgat`) endpoint allows you to interact with the PicoClaw agent via a simple HTTP interface. This API is designed to be **asynchronous** to avoid timeouts during long-running LLM tasks or tool executions.
+The `/chat` endpoint allows you to interact with the PicoClaw agent via a simple HTTP interface. This API is designed to be **asynchronous** to avoid timeouts during long-running LLM tasks or tool executions.
 
 ### 1. Initiate a Chat Session (POST)
 
 Start a new chat request.
 
-**Endpoint:** `POST /chat` (or `POST /cgat`)  
+**Endpoint:** `POST /chat`  
 **Content-Type:** `application/json`
 
 **Request Body:**
@@ -35,7 +35,7 @@ Start a new chat request.
 
 Retrieve the status and response of a previously initiated session.
 
-**Endpoint:** `GET /chat?session_id=<ID>` (or `GET /cgat?session_id=<ID>`)
+**Endpoint:** `GET /chat?session_id=<ID>`
 
 **Possible Responses:**
 

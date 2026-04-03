@@ -159,7 +159,7 @@ func (m AgentModelConfig) MarshalJSON() ([]byte, error) {
 		Primary   string   `json:"primary,omitempty"`
 		Fallbacks []string `json:"fallbacks,omitempty"`
 	}
-	return json.Marshal(raw{Primary: m.Primary, Fallbacks: m.Fallbacks})
+	return json.Marshal(raw(m))
 }
 
 type AgentConfig struct {
@@ -249,6 +249,7 @@ type AgentDefaults struct {
 	SplitOnMarker             bool               `json:"split_on_marker"                  env:"PICOCLAW_AGENTS_DEFAULTS_SPLIT_ON_MARKER"` // split messages on <|[SPLIT]|> marker
 	ContextManager            string             `json:"context_manager,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_MANAGER"`
 	ContextManagerConfig      json.RawMessage    `json:"context_manager_config,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_MANAGER_CONFIG"`
+	AgentCacheTTLSeconds      int                `json:"agent_cache_ttl_seconds,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_AGENT_CACHE_TTL_SECONDS"`
 }
 
 const DefaultMaxMediaSize = 20 * 1024 * 1024 // 20 MB

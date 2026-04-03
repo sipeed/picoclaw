@@ -1,4 +1,3 @@
-version: "2"
 
 linters:
   default: all
@@ -10,25 +9,21 @@ linters:
     - dupword
     - err113
     - exhaustruct
-    - funcorder
     - gochecknoglobals
     - godot
     - intrange
     - ireturn
     - nlreturn
     - noctx
-    - noinlineerr
     - nonamedreturns
     - tagliatelle
     - testpackage
     - varnamelen
     - wrapcheck
     - wsl
-    - wsl_v5
 
     # TODO: Disabled, because they are failing at the moment, we should fix them and enable (step by step)
     - contextcheck
-    - embeddedstructfieldcheck
     - errcheck
     - errchkjson
     - errorlint
@@ -47,7 +42,6 @@ linters:
     - lll
     - maintidx
     - mnd
-    - modernize
     - nestif
     - nilnil
     - paralleltest

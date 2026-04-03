@@ -67,8 +67,7 @@ type AgentLoop struct {
 
 	// Agent instance caching for multi-user isolation
 	// Each unique chatID gets its own agent instance to maintain state/model selection
-	agentCache     sync.Map // key: channel:chatID, value: *AgentInstance
-	agentCacheMu   sync.RWMutex
+	agentCache     sync.Map      // key: channel:chatID, value: *AgentInstance
 	agentCacheTTL  time.Duration // How long to keep cached agents alive
 	agentCleaner   *time.Ticker  // Periodic cleanup of stale cached agents
 	lastCacheCheck sync.Map      // key: channel:chatID, value: time.Time (last access time)
@@ -160,6 +159,19 @@ func NewAgentLoop(
 		cmdRegistry: commands.NewRegistry(commands.BuiltinDefinitions()),
 		steering:    newSteeringQueue(parseSteeringMode(cfg.Agents.Defaults.SteeringMode)),
 	}
+
+	al.agentCacheTTL = 24 * time.Hour
+	cleanInterval := 1 * time.Hour
+	if cfg.Agents.Defaults.AgentCacheTTLSeconds > 0 {
+		al.agentCacheTTL = time.Duration(cfg.Agents.Defaults.AgentCacheTTLSeconds) * time.Second
+		cleanInterval = al.agentCacheTTL / 10
+		if cleanInterval < 1*time.Minute {
+			cleanInterval = 1 * time.Minute
+		}
+	}
+	al.agentCleaner = time.NewTicker(cleanInterval)
+	go al.agentCacheCleanupLoop()
+
 	al.hooks = NewHookManager(eventBus)
 	configureHookManagerFromConfig(al.hooks, cfg)
 	al.contextManager = al.resolveContextManager()
@@ -794,6 +806,28 @@ func (al *AgentLoop) UnmountHook(name string) {
 		return
 	}
 	al.hooks.Unmount(name)
+}
+
+func (al *AgentLoop) agentCacheCleanupLoop() {
+	if al.agentCleaner == nil {
+		return
+	}
+	for range al.agentCleaner.C {
+		now := time.Now()
+		al.lastCacheCheck.Range(func(key, value any) bool {
+			lastAccess := value.(time.Time)
+			if now.Sub(lastAccess) > al.agentCacheTTL {
+				// Evict stale isolated agent
+				al.agentCache.Delete(key)
+				al.lastCacheCheck.Delete(key)
+				logger.InfoCF("agent", "Evicted stale isolated agent", map[string]any{
+					"cache_key": key,
+					"ttl":       al.agentCacheTTL.String(),
+				})
+			}
+			return true
+		})
+	}
 }
 
 // SubscribeEvents registers a subscriber for agent-loop events.

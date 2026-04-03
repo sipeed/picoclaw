@@ -342,11 +342,7 @@ func (cb *ContextBuilder) sourceFilesChangedLocked() bool {
 			return true
 		}
 	}
-	if skillFilesChangedSince(cb.skillRoots(), cb.skillFilesAtCache) {
-		return true
-	}
-
-	return false
+	return skillFilesChangedSince(cb.skillRoots(), cb.skillFilesAtCache)
 }
 
 // fileChangedSince returns true if a tracked source file has been modified,

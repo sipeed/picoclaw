@@ -16,8 +16,10 @@ cmd/**/workspace
 
 # PicoClaw
 .picoclaw/
+pkg/agent/secret.txt
 config.json
 sessions/
+logs/
 build/
 
 # Coverage

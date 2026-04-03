@@ -30,12 +30,6 @@ func (r *mcpRuntime) setManager(manager *mcp.Manager) {
 	r.mu.Unlock()
 }
 
-func (r *mcpRuntime) setInitErr(err error) {
-	r.mu.Lock()
-	r.initErr = err
-	r.mu.Unlock()
-}
-
 func (r *mcpRuntime) getInitErr() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
