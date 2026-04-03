@@ -116,7 +116,7 @@ else
 	ifeq ($(IS_WINDOWS),yes)
 	    EXT=.exe
 	    LSCMD=cp
-	else ifeq ($(UNAME_S),windows) // failsafe for force windows build in other OS
+	else ifeq ($(UNAME_S),windows) # failsafe for force windows build in other OS using UNAME_S=windows
 		EXT=.exe
 	endif
 
