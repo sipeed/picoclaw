@@ -43,28 +43,31 @@ import (
 )
 
 const (
-	serviceShutdownTimeout  = 30 * time.Second
-	providerReloadTimeout   = 30 * time.Second
-	gracefulShutdownTimeout = 15 * time.Second
+	serviceShutdownTimeout  = 30 * time.Second  // 服务关闭超时时间
+	providerReloadTimeout   = 30 * time.Second  // Provider 重载超时时间
+	gracefulShutdownTimeout = 15 * time.Second  // 优雅关停超时时间
 
 	logPath   = "logs"
 	panicFile = "gateway_panic.log"
 	logFile   = "gateway.log"
 )
 
+// services 网关运行时管理的所有服务集合
 type services struct {
-	CronService      *cron.CronService
-	HeartbeatService *heartbeat.HeartbeatService
-	MediaStore       media.MediaStore
-	ChannelManager   *channels.Manager
-	DeviceService    *devices.Service
-	HealthServer     *health.Server
-	manualReloadChan chan struct{}
-	reloading        atomic.Bool
+	CronService      *cron.CronService          // 定时任务服务
+	HeartbeatService *heartbeat.HeartbeatService // 心跳服务
+	MediaStore       media.MediaStore            // 媒体文件存储
+	ChannelManager   *channels.Manager           // 渠道管理器
+	DeviceService    *devices.Service            // 设备事件服务
+	HealthServer     *health.Server              // 健康检查 HTTP 服务
+	manualReloadChan chan struct{}               // 手动重载信号通道
+	reloading        atomic.Bool                 // 重载进行中标记（原子操作，防止并发重载）
 }
 
+// startupBlockedProvider 启动受限模式的占位 Provider
+// 当没有配置默认模型时使用，所有请求直接返回错误
 type startupBlockedProvider struct {
-	reason string
+	reason string // 受限原因
 }
 
 func (p *startupBlockedProvider) Chat(
@@ -81,8 +84,9 @@ func (p *startupBlockedProvider) GetDefaultModel() string {
 	return ""
 }
 
-// Run starts the gateway runtime using the configuration loaded from configPath.
+// Run 启动网关运行时，从 configPath 加载配置并初始化所有服务
 func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error {
+	// 初始化 panic 日志，捕获未恢复的异常
 	panicPath := filepath.Join(homePath, logPath, panicFile)
 	panicFunc, err := logger.InitPanic(panicPath)
 	if err != nil {
@@ -90,16 +94,19 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	}
 	defer panicFunc()
 
+	// 启用文件日志
 	if err = logger.EnableFileLogging(filepath.Join(homePath, logPath, logFile)); err != nil {
 		panic(fmt.Sprintf("error enabling file logging: %v", err))
 	}
 	defer logger.DisableFileLogging()
 
+	// 加载配置文件
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("error loading config: %w", err)
 	}
 
+	// 设置日志级别
 	logger.SetLevelFromString(cfg.Gateway.LogLevel)
 
 	if debug {
@@ -107,6 +114,7 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 		fmt.Println("🔍 Debug mode enabled")
 	}
 
+	// 创建 LLM Provider（AI 模型提供者）
 	provider, modelID, err := createStartupProvider(cfg, allowEmptyStartup)
 	if err != nil {
 		return fmt.Errorf("error creating provider: %w", err)
@@ -116,9 +124,11 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 		cfg.Agents.Defaults.ModelName = modelID
 	}
 
+	// 创建消息总线和 Agent 循环
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
 
+	// 打印 Agent 启动信息
 	fmt.Println("\n📦 Agent Status:")
 	startupInfo := agentLoop.GetStartupInfo()
 	toolsInfo := startupInfo["tools"].(map[string]any)
@@ -133,14 +143,16 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 			"skills_available": skillsInfo["available"],
 		})
 
+	// 初始化并启动所有子服务（定时任务、心跳、渠道、设备等）
 	runningServices, err := setupAndStartServices(cfg, agentLoop, msgBus)
 	if err != nil {
 		return err
 	}
 
-	// Setup manual reload channel for /reload endpoint
+	// 设置手动重载通道，用于 /reload HTTP 端点
 	manualReloadChan := make(chan struct{}, 1)
 	runningServices.manualReloadChan = manualReloadChan
+	// reloadTrigger: 重载触发函数，确保同一时间只有一个重载任务执行
 	reloadTrigger := func() error {
 		if !runningServices.reloading.CompareAndSwap(false, true) {
 			return fmt.Errorf("reload already in progress")
@@ -149,7 +161,7 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 		case manualReloadChan <- struct{}{}:
 			return nil
 		default:
-			// Should not happen, but reset flag if channel is full
+			// 通道已满（不应发生），重置标记
 			runningServices.reloading.Store(false)
 			return fmt.Errorf("reload already queued")
 		}
@@ -163,8 +175,10 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// 启动 Agent 循环处理协程
 	go agentLoop.Run(ctx)
 
+	// 配置文件热重载监控
 	var configReloadChan <-chan *config.Config
 	stopWatch := func() {}
 	if cfg.Gateway.HotReload {
@@ -173,16 +187,20 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	}
 	defer stopWatch()
 
+	// 监听系统信号
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
+	// 主事件循环：监听系统信号、配置变更、手动重载
 	for {
 		select {
 		case <-sigChan:
+			// 收到中断信号，执行优雅关停
 			logger.Info("Shutting down...")
 			shutdownGateway(runningServices, agentLoop, provider, true)
 			return nil
 		case newCfg := <-configReloadChan:
+			// 配置文件变更，触发热重载
 			if !runningServices.reloading.CompareAndSwap(false, true) {
 				logger.Warn("Config reload skipped: another reload is in progress")
 				continue
@@ -192,6 +210,7 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 				logger.Errorf("Config reload failed: %v", err)
 			}
 		case <-manualReloadChan:
+			// 手动重载（通过 /reload HTTP 端点触发）
 			logger.Info("Manual reload triggered via /reload endpoint")
 			newCfg, err := config.LoadConfig(configPath)
 			if err != nil {
@@ -214,6 +233,7 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	}
 }
 
+// executeReload 执行重载操作，确保重载完成后重置标记
 func executeReload(
 	ctx context.Context,
 	agentLoop *agent.AgentLoop,
@@ -227,6 +247,8 @@ func executeReload(
 	return handleConfigReload(ctx, agentLoop, newCfg, provider, runningServices, msgBus, allowEmptyStartup)
 }
 
+// createStartupProvider 根据配置创建启动时的 LLM Provider
+// 当 allowEmptyStartup 为 true 且未配置模型时，返回受限模式的占位 Provider
 func createStartupProvider(
 	cfg *config.Config,
 	allowEmptyStartup bool,
@@ -244,6 +266,8 @@ func createStartupProvider(
 	return providers.CreateProvider(cfg)
 }
 
+// setupAndStartServices 初始化并启动所有子服务
+// 包括：定时任务、心跳、媒体存储、渠道管理、健康检查、设备事件等
 func setupAndStartServices(
 	cfg *config.Config,
 	agentLoop *agent.AgentLoop,
@@ -251,6 +275,7 @@ func setupAndStartServices(
 ) (*services, error) {
 	runningServices := &services{}
 
+	// 初始化定时任务服务
 	execTimeout := time.Duration(cfg.Tools.Cron.ExecTimeoutMinutes) * time.Minute
 	var err error
 	runningServices.CronService, err = setupCronTool(
@@ -269,6 +294,7 @@ func setupAndStartServices(
 	}
 	fmt.Println("✓ Cron service started")
 
+	// 初始化心跳服务
 	runningServices.HeartbeatService = heartbeat.NewHeartbeatService(
 		cfg.WorkspacePath(),
 		cfg.Heartbeat.Interval,
@@ -281,6 +307,7 @@ func setupAndStartServices(
 	}
 	fmt.Println("✓ Heartbeat service started")
 
+	// 初始化媒体文件存储（带自动清理）
 	runningServices.MediaStore = media.NewFileMediaStoreWithCleanup(media.MediaCleanerConfig{
 		Enabled:  cfg.Tools.MediaCleanup.Enabled,
 		MaxAge:   time.Duration(cfg.Tools.MediaCleanup.MaxAge) * time.Minute,
@@ -290,6 +317,7 @@ func setupAndStartServices(
 		fms.Start()
 	}
 
+	// 初始化渠道管理器
 	runningServices.ChannelManager, err = channels.NewManager(cfg, msgBus, runningServices.MediaStore)
 	if err != nil {
 		if fms, ok := runningServices.MediaStore.(*media.FileMediaStore); ok {
@@ -301,6 +329,7 @@ func setupAndStartServices(
 	agentLoop.SetChannelManager(runningServices.ChannelManager)
 	agentLoop.SetMediaStore(runningServices.MediaStore)
 
+	// 检测并设置语音转文字能力
 	if transcriber := voice.DetectTranscriber(cfg); transcriber != nil {
 		agentLoop.SetTranscriber(transcriber)
 		logger.InfoCF("voice", "Transcription enabled (agent-level)", map[string]any{"provider": transcriber.Name()})
@@ -313,10 +342,12 @@ func setupAndStartServices(
 		fmt.Println("⚠ Warning: No channels enabled")
 	}
 
+	// 启动 HTTP 服务器和健康检查端点
 	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
 	runningServices.HealthServer = health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port)
 	runningServices.ChannelManager.SetupHTTPServer(addr, runningServices.HealthServer)
 
+	// 启动所有已启用的渠道
 	if err = runningServices.ChannelManager.StartAll(context.Background()); err != nil {
 		return nil, fmt.Errorf("error starting channels: %w", err)
 	}
@@ -327,6 +358,7 @@ func setupAndStartServices(
 		cfg.Gateway.Port,
 	)
 
+	// 初始化设备事件服务
 	stateManager := state.NewManager(cfg.WorkspacePath())
 	runningServices.DeviceService = devices.NewService(devices.Config{
 		Enabled:    cfg.Devices.Enabled,
@@ -342,11 +374,13 @@ func setupAndStartServices(
 	return runningServices, nil
 }
 
+// stopAndCleanupServices 按顺序停止并清理所有服务
+// 重载时不会停止渠道管理器（isReload=true 时跳过）
 func stopAndCleanupServices(runningServices *services, shutdownTimeout time.Duration, isReload bool) {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
 
-	// reload should not stop channel manager
+	// 重载时不停渠道管理器
 	if !isReload && runningServices.ChannelManager != nil {
 		runningServices.ChannelManager.StopAll(shutdownCtx)
 	}
@@ -366,12 +400,14 @@ func stopAndCleanupServices(runningServices *services, shutdownTimeout time.Dura
 	}
 }
 
+// shutdownGateway 完整关闭网关：关闭 Provider → 停止所有服务 → 停止 Agent 循环
 func shutdownGateway(
 	runningServices *services,
 	agentLoop *agent.AgentLoop,
 	provider providers.LLMProvider,
 	fullShutdown bool,
 ) {
+	// 如果是完整关闭且 Provider 有状态，先关闭 Provider
 	if cp, ok := provider.(providers.StatefulProvider); ok && fullShutdown {
 		cp.Close()
 	}
@@ -384,6 +420,9 @@ func shutdownGateway(
 	logger.Info("✓ Gateway stopped")
 }
 
+// handleConfigReload 处理配置文件热重载
+// 流程：停止服务 → 创建新 Provider → 重载 Agent → 重启服务
+// 如果任何步骤失败，会尝试用旧配置重启服务
 func handleConfigReload(
 	ctx context.Context,
 	al *agent.AgentLoop,
@@ -399,12 +438,15 @@ func handleConfigReload(
 
 	logger.Infof(" New model is '%s', recreating provider...", newModel)
 
+	// 第一步：停止所有服务
 	logger.Info("  Stopping all services...")
 	stopAndCleanupServices(runningServices, serviceShutdownTimeout, true)
 
+	// 第二步：用新配置创建 Provider
 	newProvider, newModelID, err := createStartupProvider(newCfg, allowEmptyStartup)
 	if err != nil {
 		logger.Errorf("  ⚠ Error creating new provider: %v", err)
+		// 创建失败，尝试用旧配置恢复服务
 		logger.Warn("  Attempting to restart services with old provider and config...")
 		if restartErr := restartServices(al, runningServices, msgBus); restartErr != nil {
 			logger.Errorf("  ⚠ Failed to restart services: %v", restartErr)
@@ -419,11 +461,13 @@ func handleConfigReload(
 	reloadCtx, reloadCancel := context.WithTimeout(context.Background(), providerReloadTimeout)
 	defer reloadCancel()
 
+	// 第三步：重载 Agent 循环（更新 Provider 和配置）
 	if err := al.ReloadProviderAndConfig(reloadCtx, newProvider, newCfg); err != nil {
 		logger.Errorf("  ⚠ Error reloading agent loop: %v", err)
 		if cp, ok := newProvider.(providers.StatefulProvider); ok {
 			cp.Close()
 		}
+		// 重载失败，尝试用旧配置恢复服务
 		logger.Warn("  Attempting to restart services with old provider and config...")
 		if restartErr := restartServices(al, runningServices, msgBus); restartErr != nil {
 			logger.Errorf("  ⚠ Failed to restart services: %v", restartErr)
@@ -433,6 +477,7 @@ func handleConfigReload(
 
 	*providerRef = newProvider
 
+	// 第四步：用新配置重启所有服务
 	logger.Info("  Restarting all services with new configuration...")
 	if err := restartServices(al, runningServices, msgBus); err != nil {
 		logger.Errorf("  ⚠ Error restarting services: %v", err)
@@ -443,6 +488,8 @@ func handleConfigReload(
 	return nil
 }
 
+// restartServices 用当前配置重新创建并启动所有服务
+// 用于配置热重载后的服务恢复
 func restartServices(
 	al *agent.AgentLoop,
 	runningServices *services,
@@ -450,6 +497,7 @@ func restartServices(
 ) error {
 	cfg := al.GetConfig()
 
+	// 重建定时任务服务
 	execTimeout := time.Duration(cfg.Tools.Cron.ExecTimeoutMinutes) * time.Minute
 	var err error
 	runningServices.CronService, err = setupCronTool(
@@ -468,6 +516,7 @@ func restartServices(
 	}
 	fmt.Println("  ✓ Cron service restarted")
 
+	// 重建心跳服务
 	runningServices.HeartbeatService = heartbeat.NewHeartbeatService(
 		cfg.WorkspacePath(),
 		cfg.Heartbeat.Interval,
@@ -480,6 +529,7 @@ func restartServices(
 	}
 	fmt.Println("  ✓ Heartbeat service restarted")
 
+	// 重建媒体文件存储
 	runningServices.MediaStore = media.NewFileMediaStoreWithCleanup(media.MediaCleanerConfig{
 		Enabled:  cfg.Tools.MediaCleanup.Enabled,
 		MaxAge:   time.Duration(cfg.Tools.MediaCleanup.MaxAge) * time.Minute,
@@ -492,6 +542,7 @@ func restartServices(
 
 	al.SetChannelManager(runningServices.ChannelManager)
 
+	// 重载渠道管理器
 	if err = runningServices.ChannelManager.Reload(context.Background(), cfg); err != nil {
 		return fmt.Errorf("error reload channels: %w", err)
 	}
@@ -504,6 +555,7 @@ func restartServices(
 		fmt.Println("  ⚠ Warning: No channels enabled")
 	}
 
+	// 重建设备事件服务
 	stateManager := state.NewManager(cfg.WorkspacePath())
 	runningServices.DeviceService = devices.NewService(devices.Config{
 		Enabled:    cfg.Devices.Enabled,
@@ -516,6 +568,7 @@ func restartServices(
 		fmt.Println("  ✓ Device event service restarted")
 	}
 
+	// 重新检测语音转文字能力
 	transcriber := voice.DetectTranscriber(cfg)
 	al.SetTranscriber(transcriber)
 	if transcriber != nil {
@@ -527,6 +580,8 @@ func restartServices(
 	return nil
 }
 
+// setupConfigWatcherPolling 创建配置文件轮询监控器
+// 每 2 秒检查配置文件的修改时间和大小，变更时触发重载
 func setupConfigWatcherPolling(configPath string, debug bool) (chan *config.Config, func()) {
 	configChan := make(chan *config.Config, 1)
 	stop := make(chan struct{})
@@ -536,6 +591,7 @@ func setupConfigWatcherPolling(configPath string, debug bool) (chan *config.Conf
 	go func() {
 		defer wg.Done()
 
+		// 记录文件最后修改时间和大小
 		lastModTime := getFileModTime(configPath)
 		lastSize := getFileSize(configPath)
 
@@ -548,16 +604,19 @@ func setupConfigWatcherPolling(configPath string, debug bool) (chan *config.Conf
 				currentModTime := getFileModTime(configPath)
 				currentSize := getFileSize(configPath)
 
+				// 检测到文件变更
 				if currentModTime.After(lastModTime) || currentSize != lastSize {
 					if debug {
 						logger.Debugf("🔍 Config file change detected")
 					}
 
+					// 等待 500ms 避免文件写入中途读取
 					time.Sleep(500 * time.Millisecond)
 
 					lastModTime = currentModTime
 					lastSize = currentSize
 
+					// 加载并验证新配置
 					newCfg, err := config.LoadConfig(configPath)
 					if err != nil {
 						logger.Errorf("⚠ Error loading new config: %v", err)
@@ -573,6 +632,7 @@ func setupConfigWatcherPolling(configPath string, debug bool) (chan *config.Conf
 
 					logger.Info("✓ Config file validated and loaded")
 
+					// 非阻塞发送，如果上一次重载还未处理则跳过
 					select {
 					case configChan <- newCfg:
 					default:
@@ -593,6 +653,7 @@ func setupConfigWatcherPolling(configPath string, debug bool) (chan *config.Conf
 	return configChan, stopFunc
 }
 
+// getFileModTime 获取文件的最后修改时间
 func getFileModTime(path string) time.Time {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -601,6 +662,7 @@ func getFileModTime(path string) time.Time {
 	return info.ModTime()
 }
 
+// getFileSize 获取文件大小
 func getFileSize(path string) int64 {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -609,6 +671,8 @@ func getFileSize(path string) int64 {
 	return info.Size()
 }
 
+// setupCronTool 初始化定时任务服务和工具
+// 创建 CronService 实例，如果 cron 工具启用则注册到 Agent 循环
 func setupCronTool(
 	agentLoop *agent.AgentLoop,
 	msgBus *bus.MessageBus,
@@ -632,6 +696,7 @@ func setupCronTool(
 		agentLoop.RegisterTool(cronTool)
 	}
 
+	// 设置定时任务执行回调
 	if cronTool != nil {
 		cronService.SetOnJob(func(job *cron.CronJob) (string, error) {
 			result := cronTool.ExecuteJob(context.Background(), job)
@@ -642,6 +707,8 @@ func setupCronTool(
 	return cronService, nil
 }
 
+// createHeartbeatHandler 创建心跳处理函数
+// 当渠道和聊天 ID 为空时使用默认值（cli/direct）
 func createHeartbeatHandler(agentLoop *agent.AgentLoop) func(prompt, channel, chatID string) *tools.ToolResult {
 	return func(prompt, channel, chatID string) *tools.ToolResult {
 		if channel == "" || chatID == "" {
