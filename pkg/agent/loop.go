@@ -35,6 +35,17 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+// pendingDelivery holds an undelivered assistant reply together with a monotonic
+// version number. The version lets OnDelivered skip the delete when a newer
+// reply has already overwritten the slot (two in-flight replies, same session).
+type pendingDelivery struct {
+	content string
+	version uint64
+}
+
+// pendingDeliverySeq is a process-wide monotonic counter for pendingDelivery versions.
+var pendingDeliverySeq uint64
+
 type AgentLoop struct {
 	// Core dependencies
 	bus      *bus.MessageBus
@@ -47,18 +58,19 @@ type AgentLoop struct {
 	hooks    *HookManager
 
 	// Runtime state
-	running        atomic.Bool
-	contextManager ContextManager
-	fallback       *providers.FallbackChain
-	channelManager *channels.Manager
-	mediaStore     media.MediaStore
-	transcriber    asr.Transcriber
-	cmdRegistry    *commands.Registry
-	mcp            mcpRuntime
-	hookRuntime    hookRuntime
-	steering       *steeringQueue
-	pendingSkills  sync.Map
-	mu             sync.RWMutex
+	running           atomic.Bool
+	contextManager    ContextManager
+	fallback          *providers.FallbackChain
+	channelManager    *channels.Manager
+	mediaStore        media.MediaStore
+	transcriber       asr.Transcriber
+	cmdRegistry       *commands.Registry
+	mcp               mcpRuntime
+	hookRuntime       hookRuntime
+	steering          *steeringQueue
+	pendingSkills     sync.Map
+	pendingDeliveries sync.Map // sessionKey -> pendingDelivery: last undelivered assistant content
+	mu                sync.RWMutex
 
 	// Concurrent turn management (from HEAD)
 	activeTurnStates sync.Map     // key: sessionKey (string), value: *turnState
@@ -73,30 +85,77 @@ type AgentLoop struct {
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	SessionKey              string              // Session identifier for history/context
-	Channel                 string              // Target channel for tool execution
-	ChatID                  string              // Target chat ID for tool execution
-	MessageID               string              // Current inbound platform message ID
-	ReplyToMessageID        string              // Current inbound reply target message ID
-	SenderID                string              // Current sender ID for dynamic context
-	SenderDisplayName       string              // Current sender display name for dynamic context
-	UserMessage             string              // User message content (may include prefix)
-	ForcedSkills            []string            // Skills explicitly requested for this message
-	SystemPromptOverride    string              // Override the default system prompt (Used by SubTurns)
-	Media                   []string            // media:// refs from inbound message
-	InitialSteeringMessages []providers.Message // Steering messages from refactor/agent
-	DefaultResponse         string              // Response when LLM returns empty
-	EnableSummary           bool                // Whether to trigger summarization
-	SendResponse            bool                // Whether to send response via bus
-	SuppressToolFeedback    bool                // Whether to suppress inline tool feedback messages
-	NoHistory               bool                // If true, don't load session history (for heartbeat)
-	SkipInitialSteeringPoll bool                // If true, skip the steering poll at loop start (used by Continue)
+	SessionKey              string                   // Session identifier for history/context
+	Channel                 string                   // Target channel for tool execution
+	ChatID                  string                   // Target chat ID for tool execution
+	MessageID               string                   // Current inbound platform message ID
+	ReplyToMessageID        string                   // Current inbound reply target message ID
+	SenderID                string                   // Current sender ID for dynamic context
+	SenderDisplayName       string                   // Current sender display name for dynamic context
+	UserMessage             string                   // User message content (may include prefix)
+	ForcedSkills            []string                 // Skills explicitly requested for this message
+	SystemPromptOverride    string                   // Override the default system prompt (Used by SubTurns)
+	Media                   []string                 // media:// refs from inbound message
+	InitialSteeringMessages []providers.Message      // Steering messages from refactor/agent
+	DefaultResponse         string                   // Response when LLM returns empty
+	EnableSummary           bool                     // Whether to trigger summarization
+	SendResponse            bool                     // Whether to send response via bus
+	SuppressToolFeedback    bool                     // Whether to suppress inline tool feedback messages
+	NoHistory               bool                     // If true, don't load session history (for heartbeat)
+	SkipInitialSteeringPoll bool                     // If true, skip the steering poll at loop start (used by Continue)
+	Sender                  *providers.MessageSender // Author identity (nil for system/automated messages)
 }
 
 type continuationTarget struct {
 	SessionKey string
 	Channel    string
 	ChatID     string
+}
+
+// agentResponse carries the result of a single agent turn together with the
+// channel/chat routing needed to publish it and the delivery callback.
+// OnDelivered is called by the channel manager after all message chunks have
+// been successfully sent; it receives the platform message IDs of the
+// delivered chunks and is responsible for persisting the assistant message to
+// session history. It may be nil (e.g. NoHistory turns, heartbeats).
+type agentResponse struct {
+	Content     string
+	Channel     string
+	ChatID      string
+	OnDelivered func(msgIDs []string)
+}
+
+func (r agentResponse) outboundMessage(defaultChannel, defaultChatID string) bus.OutboundMessage {
+	channel := r.Channel
+	if channel == "" {
+		channel = defaultChannel
+	}
+	chatID := r.ChatID
+	if chatID == "" {
+		chatID = defaultChatID
+	}
+	return bus.OutboundMessage{
+		Channel:     channel,
+		ChatID:      chatID,
+		Content:     r.Content,
+		OnDelivered: r.OnDelivered,
+	}
+}
+
+func singleMessageIDs(msgID string) []string {
+	if msgID == "" {
+		return nil
+	}
+	return []string{msgID}
+}
+
+func cloneMessageIDs(msgIDs []string) []string {
+	if len(msgIDs) == 0 {
+		return nil
+	}
+	cloned := make([]string, len(msgIDs))
+	copy(cloned, msgIDs)
+	return cloned
 }
 
 const (
@@ -508,9 +567,12 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 				response, err := al.processMessage(ctx, msg)
 				if err != nil {
-					response = fmt.Sprintf("Error processing message: %v", err)
+					response = agentResponse{
+						Content: fmt.Sprintf("Error processing message: %v", err),
+						Channel: msg.Channel,
+						ChatID:  msg.ChatID,
+					}
 				}
-				finalResponse := response
 
 				target, targetErr := al.buildContinuationTarget(msg)
 				if targetErr != nil {
@@ -523,11 +585,16 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				}
 				if target == nil {
 					cancelDrain()
-					if finalResponse != "" {
-						al.PublishResponseIfNeeded(ctx, msg.Channel, msg.ChatID, finalResponse)
+					if response.Content != "" {
+						al.publishAgentResponseIfNeeded(ctx, response, msg.Channel, msg.ChatID)
 					}
 					return
 				}
+
+				// Accumulate the final response before publishing so that a
+				// steering continuation can supersede the initial reply.
+				// We publish exactly once at the end (matching upstream behavior).
+				finalResponse := response
 
 				for al.pendingSteeringCountForScope(target.SessionKey) > 0 {
 					logger.InfoCF("agent", "Continuing queued steering after turn end",
@@ -538,7 +605,12 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 							"queue_depth": al.pendingSteeringCountForScope(target.SessionKey),
 						})
 
-					continued, continueErr := al.Continue(ctx, target.SessionKey, target.Channel, target.ChatID)
+					continued, continueErr := al.Continue(
+						ctx,
+						target.SessionKey,
+						target.Channel,
+						target.ChatID,
+					)
 					if continueErr != nil {
 						logger.WarnCF("agent", "Failed to continue queued steering",
 							map[string]any{
@@ -548,10 +620,9 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 							})
 						return
 					}
-					if continued == "" {
+					if continued.Content == "" {
 						return
 					}
-
 					finalResponse = continued
 				}
 
@@ -566,7 +637,12 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 							"queue_depth": al.pendingSteeringCountForScope(target.SessionKey),
 						})
 
-					continued, continueErr := al.Continue(ctx, target.SessionKey, target.Channel, target.ChatID)
+					continued, continueErr := al.Continue(
+						ctx,
+						target.SessionKey,
+						target.Channel,
+						target.ChatID,
+					)
 					if continueErr != nil {
 						logger.WarnCF("agent", "Failed to continue queued steering after shutdown drain",
 							map[string]any{
@@ -576,15 +652,14 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 							})
 						return
 					}
-					if continued == "" {
+					if continued.Content == "" {
 						break
 					}
-
 					finalResponse = continued
 				}
 
-				if finalResponse != "" {
-					al.PublishResponseIfNeeded(ctx, target.Channel, target.ChatID, finalResponse)
+				if finalResponse.Content != "" {
+					al.publishAgentResponseIfNeeded(ctx, finalResponse, target.Channel, target.ChatID)
 				}
 			}()
 		}
@@ -648,10 +723,17 @@ func (al *AgentLoop) drainBusToSteering(ctx context.Context, activeScope, active
 				"scope":       activeScope,
 			})
 
+		replyToMessageID := msg.ReplyToMessageID
+		if replyToMessageID == "" {
+			replyToMessageID = inboundMetadata(msg, metadataKeyReplyToMessage)
+		}
 		if err := al.enqueueSteeringMessage(activeScope, activeAgentID, providers.Message{
-			Role:    "user",
-			Content: msg.Content,
-			Media:   append([]string(nil), msg.Media...),
+			Role:             "user",
+			Content:          msg.Content,
+			Media:            append([]string(nil), msg.Media...),
+			MessageIDs:       singleMessageIDs(msg.MessageID),
+			ReplyToMessageID: replyToMessageID,
+			Sender:           messageSenderFromInbound(msg.Sender),
 		}); err != nil {
 			logger.WarnCF("agent", "Failed to steer message, will be lost",
 				map[string]any{
@@ -666,8 +748,22 @@ func (al *AgentLoop) Stop() {
 	al.running.Store(false)
 }
 
+// PublishResponseIfNeeded is the public adapter that satisfies the tools.JobExecutor interface.
 func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatID, response string) {
-	if response == "" {
+	al.publishAgentResponseIfNeeded(
+		ctx,
+		agentResponse{Content: response, Channel: channel, ChatID: chatID},
+		channel,
+		chatID,
+	)
+}
+
+func (al *AgentLoop) publishAgentResponseIfNeeded(
+	ctx context.Context,
+	response agentResponse,
+	defaultChannel, defaultChatID string,
+) {
+	if response.Content == "" {
 		return
 	}
 
@@ -685,21 +781,18 @@ func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatI
 		logger.DebugCF(
 			"agent",
 			"Skipped outbound (message tool already sent)",
-			map[string]any{"channel": channel},
+			map[string]any{"channel": response.outboundMessage(defaultChannel, defaultChatID).Channel},
 		)
 		return
 	}
 
-	al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-		Channel: channel,
-		ChatID:  chatID,
-		Content: response,
-	})
+	outbound := response.outboundMessage(defaultChannel, defaultChatID)
+	al.bus.PublishOutbound(ctx, outbound)
 	logger.InfoCF("agent", "Published outbound response",
 		map[string]any{
-			"channel":     channel,
-			"chat_id":     chatID,
-			"content_len": len(response),
+			"channel":     outbound.Channel,
+			"chat_id":     outbound.ChatID,
+			"content_len": len(response.Content),
 		})
 }
 
@@ -1305,7 +1398,16 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 		SessionKey: sessionKey,
 	}
 
-	return al.processMessage(ctx, msg)
+	response, err := al.processMessage(ctx, msg)
+	if err != nil {
+		return "", err
+	}
+	// ProcessDirectWithChannel is synchronous: the caller receives the content
+	// directly, so the response is considered "delivered" immediately.
+	if response.OnDelivered != nil {
+		response.OnDelivered(nil)
+	}
+	return response.Content, nil
 }
 
 // ProcessHeartbeat processes a heartbeat request without session history.
@@ -1325,7 +1427,7 @@ func (al *AgentLoop) ProcessHeartbeat(
 	if agent == nil {
 		return "", fmt.Errorf("no default agent for heartbeat")
 	}
-	return al.runAgentLoop(ctx, agent, processOptions{
+	response, err := al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:           "heartbeat",
 		Channel:              channel,
 		ChatID:               chatID,
@@ -1336,9 +1438,13 @@ func (al *AgentLoop) ProcessHeartbeat(
 		SuppressToolFeedback: true,
 		NoHistory:            true, // Don't load session history for heartbeat
 	})
+	if err != nil {
+		return "", err
+	}
+	return response.Content, nil
 }
 
-func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (agentResponse, error) {
 	// Add message preview to log (show full content for error messages)
 	var logContent string
 	if strings.Contains(msg.Content, "Error:") || strings.Contains(msg.Content, "error") {
@@ -1373,7 +1479,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	route, agent, routeErr := al.resolveMessageRoute(msg)
 	if routeErr != nil {
-		return "", routeErr
+		return agentResponse{}, routeErr
 	}
 
 	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
@@ -1402,20 +1508,28 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Channel:           msg.Channel,
 		ChatID:            msg.ChatID,
 		MessageID:         msg.MessageID,
-		ReplyToMessageID:  inboundMetadata(msg, metadataKeyReplyToMessage),
+		ReplyToMessageID:  msg.ReplyToMessageID,
 		SenderID:          msg.SenderID,
 		SenderDisplayName: msg.Sender.DisplayName,
+		Sender:            messageSenderFromInbound(msg.Sender),
 		UserMessage:       msg.Content,
 		Media:             msg.Media,
 		DefaultResponse:   defaultResponse,
 		EnableSummary:     true,
 		SendResponse:      false,
 	}
+	if opts.ReplyToMessageID == "" {
+		opts.ReplyToMessageID = inboundMetadata(msg, metadataKeyReplyToMessage)
+	}
 
 	// context-dependent commands check their own Runtime fields and report
 	// "unavailable" when the required capability is nil.
 	if response, handled := al.handleCommand(ctx, msg, agent, &opts); handled {
-		return response, nil
+		return agentResponse{
+			Content: response,
+			Channel: opts.Channel,
+			ChatID:  opts.ChatID,
+		}, nil
 	}
 
 	if pending := al.takePendingSkills(opts.SessionKey); len(pending) > 0 {
@@ -1488,9 +1602,9 @@ func (al *AgentLoop) requeueInboundMessage(msg bus.InboundMessage) error {
 func (al *AgentLoop) processSystemMessage(
 	ctx context.Context,
 	msg bus.InboundMessage,
-) (string, error) {
+) (agentResponse, error) {
 	if msg.Channel != "system" {
-		return "", fmt.Errorf(
+		return agentResponse{}, fmt.Errorf(
 			"processSystemMessage called with non-system message channel: %s",
 			msg.Channel,
 		)
@@ -1527,13 +1641,13 @@ func (al *AgentLoop) processSystemMessage(
 				"content_len": len(content),
 				"channel":     originChannel,
 			})
-		return "", nil
+		return agentResponse{}, nil
 	}
 
 	// Use default agent for system messages
 	agent := al.GetRegistry().GetDefaultAgent()
 	if agent == nil {
-		return "", fmt.Errorf("no default agent for system message")
+		return agentResponse{}, fmt.Errorf("no default agent for system message")
 	}
 
 	// Use the origin session for context
@@ -1556,7 +1670,7 @@ func (al *AgentLoop) runAgentLoop(
 	ctx context.Context,
 	agent *AgentInstance,
 	opts processOptions,
-) (string, error) {
+) (agentResponse, error) {
 	// Record last channel for heartbeat notifications (skip internal channels and cli)
 	if opts.Channel != "" && opts.ChatID != "" && !constants.IsInternalChannel(opts.Channel) {
 		channelKey := fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID)
@@ -1572,10 +1686,10 @@ func (al *AgentLoop) runAgentLoop(
 	ts := newTurnState(agent, opts, al.newTurnEventScope(agent.ID, opts.SessionKey))
 	result, err := al.runTurn(ctx, ts)
 	if err != nil {
-		return "", err
+		return agentResponse{}, err
 	}
 	if result.status == TurnEndStatusAborted {
-		return "", nil
+		return agentResponse{}, nil
 	}
 
 	for _, followUp := range result.followUps {
@@ -1588,12 +1702,54 @@ func (al *AgentLoop) runAgentLoop(
 		}
 	}
 
-	if opts.SendResponse && result.finalContent != "" {
-		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-			Channel: opts.Channel,
-			ChatID:  opts.ChatID,
-			Content: result.finalContent,
+	response := agentResponse{
+		Content: result.finalContent,
+		Channel: opts.Channel,
+		ChatID:  opts.ChatID,
+	}
+
+	if !opts.NoHistory && result.finalContent != "" {
+		// Register the pending content so that fast follow-up inbound turns can
+		// inject it into their LLM context before OnDelivered persists it.
+		// Version prevents an earlier OnDelivered from deleting a newer reply's slot.
+		deliveryVersion := atomic.AddUint64(&pendingDeliverySeq, 1)
+		al.pendingDeliveries.Store(opts.SessionKey, pendingDelivery{
+			content: result.finalContent,
+			version: deliveryVersion,
 		})
+
+		var once sync.Once
+		response.OnDelivered = func(msgIDs []string) {
+			once.Do(func() {
+				// Only evict if this turn still owns the slot (guards against a newer
+				// reply having already overwritten it before our delivery completed).
+				if cur, ok := al.pendingDeliveries.Load(opts.SessionKey); ok {
+					if pd, ok := cur.(pendingDelivery); ok && pd.version == deliveryVersion {
+						al.pendingDeliveries.Delete(opts.SessionKey)
+					}
+				}
+				assistantMsg := providers.Message{
+					Role:       "assistant",
+					Content:    result.finalContent,
+					MessageIDs: cloneMessageIDs(msgIDs),
+				}
+				agent.Sessions.AddFullMessage(opts.SessionKey, assistantMsg)
+				if saveErr := agent.Sessions.Save(opts.SessionKey); saveErr != nil {
+					logger.WarnCF("agent", "Failed to save delivered assistant message",
+						map[string]any{
+							"session_key": opts.SessionKey,
+							"error":       saveErr.Error(),
+						})
+					return
+				}
+				if opts.EnableSummary {
+					al.contextManager.Compact(ctx, &CompactRequest{
+						SessionKey: opts.SessionKey,
+						Reason:     ContextCompressReasonSummarize,
+					})
+				}
+			})
+		}
 	}
 
 	if result.finalContent != "" {
@@ -1607,7 +1763,7 @@ func (al *AgentLoop) runAgentLoop(
 			})
 	}
 
-	return result.finalContent, nil
+	return response, nil
 }
 
 func (al *AgentLoop) targetReasoningChannelID(channelName string) (chatID string) {
@@ -1666,6 +1822,21 @@ func (al *AgentLoop) handleReasoning(
 	}
 }
 
+// injectPendingDelivery appends the last undelivered assistant reply to history
+// when the slot is occupied and history doesn't already end with an assistant message.
+// Must be called after every GetHistory so that proactive-compression and
+// context-error-retry rebuilds do not lose the pending content.
+func (al *AgentLoop) injectPendingDelivery(sessionKey string, history []providers.Message) []providers.Message {
+	if pendingRaw, ok := al.pendingDeliveries.Load(sessionKey); ok {
+		if pd, ok := pendingRaw.(pendingDelivery); ok && pd.content != "" {
+			if len(history) == 0 || history[len(history)-1].Role != "assistant" {
+				return append(history, providers.Message{Role: "assistant", Content: pd.content})
+			}
+		}
+	}
+	return history
+}
+
 func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, error) {
 	turnCtx, turnCancel := context.WithCancel(ctx)
 	defer turnCancel()
@@ -1718,6 +1889,12 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 	}
 	ts.captureRestorePoint(history, summary)
 
+	// Inject pending undelivered assistant reply into history so regular inbound turns
+	// see it in LLM context even before OnDelivered persists it to session storage.
+	if !ts.opts.NoHistory {
+		history = al.injectPendingDelivery(ts.sessionKey, history)
+	}
+
 	messages := ts.agent.ContextBuilder.BuildMessages(
 		history,
 		summary,
@@ -1758,6 +1935,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 				history = resp.History
 				summary = resp.Summary
 			}
+			history = al.injectPendingDelivery(ts.sessionKey, history)
 			messages = ts.agent.ContextBuilder.BuildMessages(
 				history, summary, ts.userMessage,
 				ts.media, ts.channel, ts.chatID,
@@ -1771,15 +1949,14 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 	// Save user message to session (from Incoming)
 	if !ts.opts.NoHistory && (strings.TrimSpace(ts.userMessage) != "" || len(ts.media) > 0) {
 		rootMsg := providers.Message{
-			Role:    "user",
-			Content: ts.userMessage,
-			Media:   append([]string(nil), ts.media...),
+			Role:             "user",
+			Content:          ts.userMessage,
+			Media:            append([]string(nil), ts.media...),
+			MessageIDs:       singleMessageIDs(ts.opts.MessageID),
+			ReplyToMessageID: ts.opts.ReplyToMessageID,
+			Sender:           ts.opts.Sender,
 		}
-		if len(rootMsg.Media) > 0 {
-			ts.agent.Sessions.AddFullMessage(ts.sessionKey, rootMsg)
-		} else {
-			ts.agent.Sessions.AddMessage(ts.sessionKey, rootMsg.Role, rootMsg.Content)
-		}
+		ts.agent.Sessions.AddFullMessage(ts.sessionKey, rootMsg)
 		ts.recordPersistedMessage(rootMsg)
 		ts.ingestMessage(turnCtx, al, rootMsg)
 	}
@@ -2144,6 +2321,7 @@ turnLoop:
 					history = asmResp.History
 					summary = asmResp.Summary
 				}
+				history = al.injectPendingDelivery(ts.sessionKey, history)
 				messages = ts.agent.ContextBuilder.BuildMessages(
 					history, summary, "",
 					nil, ts.channel, ts.chatID, ts.opts.SenderID, ts.opts.SenderDisplayName,
@@ -2214,8 +2392,10 @@ turnLoop:
 		if reasoningContent == "" {
 			reasoningContent = response.ReasoningContent
 		}
+		// Use the parent ctx, not turnCtx: reasoning is fire-and-forget and
+		// must not be gated by the turn's own cancel (which fires on return).
 		go al.handleReasoning(
-			turnCtx,
+			ctx,
 			reasoningContent,
 			ts.channel,
 			al.targetReasoningChannelID(ts.channel),
@@ -2824,33 +3004,11 @@ turnLoop:
 
 	ts.setPhase(TurnPhaseFinalizing)
 	ts.setFinalContent(finalContent)
-	if !ts.opts.NoHistory {
-		finalMsg := providers.Message{Role: "assistant", Content: finalContent}
-		ts.agent.Sessions.AddMessage(ts.sessionKey, finalMsg.Role, finalMsg.Content)
-		ts.recordPersistedMessage(finalMsg)
-		ts.ingestMessage(turnCtx, al, finalMsg)
-		if err := ts.agent.Sessions.Save(ts.sessionKey); err != nil {
-			turnStatus = TurnEndStatusError
-			al.emitEvent(
-				EventKindError,
-				ts.eventMeta("runTurn", "turn.error"),
-				ErrorPayload{
-					Stage:   "session_save",
-					Message: err.Error(),
-				},
-			)
-			return turnResult{}, err
-		}
-	}
-
-	if ts.opts.EnableSummary {
-		al.contextManager.Compact(
-			turnCtx,
-			&CompactRequest{
-				SessionKey: ts.sessionKey,
-				Reason:     ContextCompressReasonSummarize,
-			},
-		)
+	if !ts.opts.NoHistory && finalContent != "" {
+		ts.ingestMessage(turnCtx, al, providers.Message{
+			Role:    "assistant",
+			Content: finalContent,
+		})
 	}
 
 	ts.setPhase(TurnPhaseCompleted)
@@ -3422,4 +3580,23 @@ func extractProvider(registry *AgentRegistry) (providers.LLMProvider, bool) {
 		return nil, false
 	}
 	return defaultAgent.Provider, true
+}
+
+// messageSenderFromInbound converts bus.SenderInfo to providers.MessageSender.
+// Returns nil if no meaningful identity is present.
+func messageSenderFromInbound(s bus.SenderInfo) *providers.MessageSender {
+	if s.Username == "" && s.FirstName == "" && s.LastName == "" && s.DisplayName == "" {
+		return nil
+	}
+	username := s.Username
+	firstName := s.FirstName
+	lastName := s.LastName
+	if firstName == "" && lastName == "" && s.DisplayName != "" {
+		firstName = s.DisplayName
+	}
+	return &providers.MessageSender{
+		Username:  username,
+		FirstName: firstName,
+		LastName:  lastName,
+	}
 }

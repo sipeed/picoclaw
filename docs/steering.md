@@ -102,6 +102,12 @@ if response == "" {
 agent-scoped sessions continue on the correct agent instead of always using
 the default one.
 
+> **Note on session persistence:** the assistant reply produced by `Continue`
+> is saved to session history only after the outbound message is confirmed
+> delivered by the channel (via the internal `OnDelivered` callback). If the
+> agent loop processes a fast follow-up before delivery completes, the pending
+> reply is still visible in LLM context via the `pendingDeliveries` mechanism.
+
 ## Polling points in the loop
 
 Steering is checked at the following points in the agent cycle:

@@ -159,7 +159,7 @@ sequenceDiagram
     AgentLoop-->>runLLMIteration: [] (empty, or messages)
 
     alt pendingMessages not empty
-        runLLMIteration->>runLLMIteration: inject into messages[]<br/>save to session
+        runLLMIteration->>runLLMIteration: inject into messages[]<br/>(saved to session on delivery)
     end
 
     runLLMIteration->>LLM: Chat(messages, tools)
@@ -213,6 +213,11 @@ These results are:
 - Saved to the session via `AddFullMessage`
 
 This ensures the LLM knows which of its requested actions were not performed.
+
+> **Note:** the assistant reply that triggered the steering is saved to session
+> history only after confirmed channel delivery (`OnDelivered`). Skipped tool
+> results are saved synchronously as part of the turn because they are
+> intermediate state within the same turn, not a final outbound response.
 
 ### Loop condition change
 

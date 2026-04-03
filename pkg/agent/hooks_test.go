@@ -159,8 +159,8 @@ func TestAgentLoop_Hooks_ObserverAndLLMInterceptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runAgentLoop failed: %v", err)
 	}
-	if resp != "hooked content" {
-		t.Fatalf("expected hooked content, got %q", resp)
+	if resp.Content != "hooked content" {
+		t.Fatalf("expected hooked content, got %q", resp.Content)
 	}
 
 	provider.mu.Lock()
@@ -286,8 +286,8 @@ func TestAgentLoop_Hooks_ToolInterceptorCanRewrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runAgentLoop failed: %v", err)
 	}
-	if resp != "after:modified" {
-		t.Fatalf("expected rewritten tool result, got %q", resp)
+	if resp.Content != "after:modified" {
+		t.Fatalf("expected rewritten tool result, got %q", resp.Content)
 	}
 }
 
@@ -326,8 +326,8 @@ func TestAgentLoop_Hooks_ToolApproverCanDeny(t *testing.T) {
 		t.Fatalf("runAgentLoop failed: %v", err)
 	}
 	expected := "Tool execution denied by approval hook: blocked"
-	if resp != expected {
-		t.Fatalf("expected %q, got %q", expected, resp)
+	if resp.Content != expected {
+		t.Fatalf("expected %q, got %q", expected, resp.Content)
 	}
 
 	events := collectEventStream(sub.C)

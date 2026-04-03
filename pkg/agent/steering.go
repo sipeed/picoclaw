@@ -291,7 +291,7 @@ func (al *AgentLoop) continueWithSteeringMessages(
 	agent *AgentInstance,
 	sessionKey, channel, chatID string,
 	steeringMsgs []providers.Message,
-) (string, error) {
+) (agentResponse, error) {
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:              sessionKey,
 		Channel:                 channel,
@@ -319,31 +319,31 @@ func (al *AgentLoop) agentForSession(sessionKey string) *AgentInstance {
 	return registry.GetDefaultAgent()
 }
 
-// Continue resumes an idle agent by dequeuing any pending steering messages
-// and running them through the agent loop. This is used when the agent's last
-// message was from the assistant (i.e., it has stopped processing) and the
-// user has since enqueued steering messages.
-//
-// If no steering messages are pending, it returns an empty string.
-func (al *AgentLoop) Continue(ctx context.Context, sessionKey, channel, chatID string) (string, error) {
+// Continue dequeues pending steering messages and runs them through the agent loop.
+// Returns an agentResponse with OnDelivered set for delayed session persistence.
+// If no steering messages are pending, returns an empty agentResponse.
+func (al *AgentLoop) Continue(
+	ctx context.Context,
+	sessionKey, channel, chatID string,
+) (agentResponse, error) {
 	if active := al.GetActiveTurn(); active != nil {
-		return "", fmt.Errorf("turn %s is still active", active.TurnID)
+		return agentResponse{}, fmt.Errorf("turn %s is still active", active.TurnID)
 	}
 	if err := al.ensureHooksInitialized(ctx); err != nil {
-		return "", err
+		return agentResponse{}, err
 	}
 	if err := al.ensureMCPInitialized(ctx); err != nil {
-		return "", err
+		return agentResponse{}, err
 	}
 
 	steeringMsgs := al.dequeueSteeringMessagesForScopeWithFallback(sessionKey)
 	if len(steeringMsgs) == 0 {
-		return "", nil
+		return agentResponse{}, nil
 	}
 
 	agent := al.agentForSession(sessionKey)
 	if agent == nil {
-		return "", fmt.Errorf("no agent available for session %q", sessionKey)
+		return agentResponse{}, fmt.Errorf("no agent available for session %q", sessionKey)
 	}
 
 	if tool, ok := agent.Tools.Get("message"); ok {

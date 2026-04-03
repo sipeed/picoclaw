@@ -140,8 +140,8 @@ func TestAgentLoop_EmitsMinimalTurnEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runAgentLoop failed: %v", err)
 	}
-	if response != "done" {
-		t.Fatalf("expected final response 'done', got %q", response)
+	if response.Content != "done" {
+		t.Fatalf("expected final response 'done', got %q", response.Content)
 	}
 
 	events := collectEventStream(sub.C)
@@ -396,8 +396,8 @@ func TestAgentLoop_EmitsContextCompressEventOnRetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runAgentLoop failed: %v", err)
 	}
-	if resp != "Recovered from context error" {
-		t.Fatalf("expected retry success, got %q", resp)
+	if resp.Content != "Recovered from context error" {
+		t.Fatalf("expected retry success, got %q", resp.Content)
 	}
 
 	events := collectEventStream(sub.C)
@@ -552,8 +552,8 @@ func TestAgentLoop_EmitsFollowUpQueuedEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runAgentLoop failed: %v", err)
 	}
-	if resp != "async launched" {
-		t.Fatalf("expected final response 'async launched', got %q", resp)
+	if resp.Content != "async launched" {
+		t.Fatalf("expected final response 'async launched', got %q", resp.Content)
 	}
 
 	select {

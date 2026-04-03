@@ -717,11 +717,25 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 				chunks = splitByLength(msg.Content, maxLen)
 			}
 
-			// Step 3: Send all chunks
+			// Step 3: Send all chunks, collecting delivered platform message IDs.
+			// OnDelivered fires only when every chunk is delivered successfully:
+			// a partial delivery means the user saw a truncated message, so we
+			// must not record the full assistant reply as persisted.
+			var deliveredIDs []string
+			allDelivered := true
 			for _, chunk := range chunks {
 				chunkMsg := msg
 				chunkMsg.Content = chunk
-				m.sendWithRetry(ctx, name, w, chunkMsg)
+				chunkMsg.OnDelivered = nil // delivery callback fires once after all chunks
+				ids, ok := m.sendWithRetry(ctx, name, w, chunkMsg)
+				if !ok {
+					allDelivered = false
+					break
+				}
+				deliveredIDs = append(deliveredIDs, ids...)
+			}
+			if allDelivered && msg.OnDelivered != nil {
+				msg.OnDelivered(deliveredIDs)
 			}
 		case <-ctx.Done():
 			return
@@ -742,6 +756,9 @@ func splitByLength(content string, maxLen int) []string {
 //   - ErrNotRunning / ErrSendFailed: permanent, no retry
 //   - ErrRateLimit: fixed delay retry
 //   - ErrTemporary / unknown: exponential backoff retry
+//
+// Returns the platform message IDs returned by the channel and true on
+// success, or nil/false if delivery ultimately failed.
 func (m *Manager) sendWithRetry(
 	ctx context.Context,
 	name string,

@@ -12,7 +12,9 @@ type SenderInfo struct {
 	PlatformID  string `json:"platform_id,omitempty"`  // raw platform ID, e.g. "123456"
 	CanonicalID string `json:"canonical_id,omitempty"` // "platform:id" format
 	Username    string `json:"username,omitempty"`     // username (e.g. @alice)
-	DisplayName string `json:"display_name,omitempty"` // display name
+	DisplayName string `json:"display_name,omitempty"` // display name (used when first/last are not available)
+	FirstName   string `json:"first_name,omitempty"`   // given name (preferred over DisplayName when set)
+	LastName    string `json:"last_name,omitempty"`    // family name
 }
 
 type InboundMessage struct {
@@ -27,6 +29,8 @@ type InboundMessage struct {
 	MediaScope string            `json:"media_scope,omitempty"` // media lifecycle scope
 	SessionKey string            `json:"session_key"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
+
+	ReplyToMessageID string `json:"reply_to_message_id,omitempty"` // parent platform message ID
 }
 
 type OutboundMessage struct {
@@ -35,6 +39,11 @@ type OutboundMessage struct {
 	Content          string            `json:"content"`
 	ReplyToMessageID string            `json:"reply_to_message_id,omitempty"`
 	Metadata         map[string]string `json:"metadata,omitempty"`
+	// OnDelivered is called by the channel manager after all chunks of this
+	// message have been successfully delivered. msgIDs contains the platform
+	// message IDs of each sent chunk; it may be empty if the channel does not
+	// return IDs. The callback fires at most once per OutboundMessage.
+	OnDelivered func(msgIDs []string) `json:"-"`
 }
 
 // MediaPart describes a single media attachment to send.
