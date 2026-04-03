@@ -272,14 +272,19 @@ func extractContentText(content []mcp.Content) string {
 
 func (t *MCPTool) normalizeResultContent(ctx context.Context, content []mcp.Content) *ToolResult {
 	llmParts := make([]string, 0, len(content))
+	rawTextParts := make([]string, 0, len(content))
 	mediaRefs := make([]string, 0, len(content))
 
 	for _, c := range content {
 		switch v := c.(type) {
 		case *mcp.TextContent:
-			text := strings.TrimSpace(sanitizeToolLLMContent(v.Text))
-			if text != "" {
-				llmParts = append(llmParts, text)
+			rawText := strings.TrimSpace(v.Text)
+			if rawText != "" {
+				rawTextParts = append(rawTextParts, rawText)
+			}
+			safeText := strings.TrimSpace(sanitizeToolLLMContent(v.Text))
+			if safeText != "" {
+				llmParts = append(llmParts, safeText)
 			}
 		case *mcp.ImageContent:
 			ref, note := t.storeBinaryContent(
@@ -312,9 +317,12 @@ func (t *MCPTool) normalizeResultContent(ctx context.Context, content []mcp.Cont
 		case *mcp.ResourceLink:
 			llmParts = append(llmParts, summarizeResourceLink(v))
 		case *mcp.EmbeddedResource:
-			ref, note := t.storeEmbeddedResource(ctx, v)
+			ref, note, rawText := t.storeEmbeddedResource(ctx, v)
 			if ref != "" {
 				mediaRefs = append(mediaRefs, ref)
+			}
+			if rawText != "" {
+				rawTextParts = append(rawTextParts, rawText)
 			}
 			if note != "" {
 				llmParts = append(llmParts, note)
@@ -325,7 +333,8 @@ func (t *MCPTool) normalizeResultContent(ctx context.Context, content []mcp.Cont
 	}
 
 	forLLM := strings.Join(compactStrings(llmParts), "\n")
-	if artifactResult := t.persistLargeTextArtifact(forLLM); artifactResult != nil {
+	rawText := strings.Join(compactStrings(rawTextParts), "\n")
+	if artifactResult := t.persistLargeTextArtifact(rawText); artifactResult != nil {
 		artifactResult.Media = mediaRefs
 		return artifactResult
 	}
@@ -381,27 +390,29 @@ func (t *MCPTool) persistLargeTextArtifact(text string) *ToolResult {
 	}
 }
 
-func (t *MCPTool) storeEmbeddedResource(ctx context.Context, content *mcp.EmbeddedResource) (string, string) {
+func (t *MCPTool) storeEmbeddedResource(ctx context.Context, content *mcp.EmbeddedResource) (string, string, string) {
 	if content == nil || content.Resource == nil {
-		return "", "[MCP returned an embedded resource without data.]"
+		return "", "[MCP returned an embedded resource without data.]", ""
 	}
 
 	resource := content.Resource
 	if len(resource.Blob) > 0 {
-		return t.storeBinaryContent(
+		ref, note := t.storeBinaryContent(
 			ctx,
 			"resource",
 			normalizedMIMEType(resource.MIMEType),
 			resource.Blob,
 			content.Annotations,
 		)
+		return ref, note, ""
 	}
 
-	if strings.TrimSpace(resource.Text) != "" {
-		return "", sanitizeToolLLMContent(resource.Text)
+	rawText := strings.TrimSpace(resource.Text)
+	if rawText != "" {
+		return "", sanitizeToolLLMContent(resource.Text), rawText
 	}
 
-	return "", summarizeEmbeddedResource(content)
+	return "", summarizeEmbeddedResource(content), ""
 }
 
 func (t *MCPTool) storeBinaryContent(

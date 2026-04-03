@@ -635,6 +635,49 @@ func TestMCPTool_Execute_LargeBase64TextIsOmittedFromContext(t *testing.T) {
 	}
 }
 
+func TestMCPTool_Execute_LargeBase64TextArtifactPreservesRawPayload(t *testing.T) {
+	workspace := t.TempDir()
+	largeBase64 := strings.Repeat("QUJD", 400)
+	manager := &MockMCPManager{
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: largeBase64},
+				},
+			}, nil
+		},
+	}
+
+	mcpTool := NewMCPTool(manager, "test_server", &mcp.Tool{Name: "dump_payload"})
+	mcpTool.SetWorkspace(workspace)
+	mcpTool.SetMaxInlineTextRunes(32)
+
+	result := mcpTool.Execute(context.Background(), nil)
+
+	if !strings.Contains(result.ForLLM, "saved as a local artifact") {
+		t.Fatalf("expected artifact note, got %q", result.ForLLM)
+	}
+	if result.ForLLM == largeBase64OmittedMessage {
+		t.Fatalf("expected artifact note instead of sanitized base64 placeholder")
+	}
+	if len(result.ArtifactTags) != 1 {
+		t.Fatalf("expected 1 artifact tag, got %d", len(result.ArtifactTags))
+	}
+	tag := result.ArtifactTags[0]
+	const prefix = "[file:"
+	if !strings.HasPrefix(tag, prefix) || !strings.HasSuffix(tag, "]") {
+		t.Fatalf("expected file artifact tag, got %q", tag)
+	}
+	path := strings.TrimSuffix(strings.TrimPrefix(tag, prefix), "]")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected artifact file to be readable: %v", err)
+	}
+	if string(data) != largeBase64 {
+		t.Fatalf("expected artifact file contents to preserve raw MCP payload")
+	}
+}
+
 func TestMCPTool_Execute_LargeTextStoredAsArtifact(t *testing.T) {
 	workspace := t.TempDir()
 	largeText := strings.Repeat("This is a large MCP text payload.\n", 800)
