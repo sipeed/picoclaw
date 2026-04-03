@@ -2303,25 +2303,13 @@ func TestHandleReasoning(t *testing.T) {
 		al, msgBus := newLoop(t)
 		al.handleReasoning(context.Background(), "reasoning", "telegram", "")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
-		for {
-			select {
-			case msg, ok := <-msgBus.OutboundChan():
-				if !ok {
-					t.Fatalf("expected no outbound message, got %+v", msg)
-				}
-				if msg.Content == "reasoning" {
-					t.Fatalf("expected no message for empty chatID, got %+v", msg)
-				}
-				return
-			case <-ctx.Done():
-				t.Log("expected an outbound message, got none within timeout")
-				return
-			default:
-				// Continue to check for message
-				time.Sleep(5 * time.Millisecond) // Avoid busy loop
-			}
+		select {
+		case msg := <-msgBus.OutboundChan():
+			t.Fatalf("expected no outbound message for empty chatID, got %+v", msg)
+		case <-ctx.Done():
+			// Success: no message arrived
 		}
 	})
 
@@ -2372,23 +2360,18 @@ func TestHandleReasoning(t *testing.T) {
 		al, msgBus := newLoop(t)
 		reasoning := "hello telegram reasoning"
 
-		al.handleReasoning(context.Background(), reasoning, "telegram", "tg-chat")
+		expiredCtx, cancel := context.WithCancel(context.Background())
+		cancel()
 
-		consumeCtx, consumeCancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer consumeCancel()
+		al.handleReasoning(expiredCtx, reasoning, "telegram", "tg-chat")
 
-		for {
-			select {
-			case msg, ok := <-msgBus.OutboundChan():
-				if !ok {
-					t.Fatalf("expected no outbound message, but received: %+v", msg)
-				}
-				t.Logf("Received unexpected outbound message: %+v", msg)
-				return
-			case <-consumeCtx.Done():
-				t.Fatalf("failed: no message received within timeout")
-				return
-			}
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		select {
+		case msg := <-msgBus.OutboundChan():
+			t.Fatalf("expected no message for expired context, got %+v", msg)
+		case <-ctx.Done():
+			// Success: no message arrived
 		}
 	})
 

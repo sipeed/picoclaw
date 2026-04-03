@@ -283,15 +283,12 @@ func NewReadFileTool(
 	workspace string,
 	restrict bool,
 	maxReadFileSize int,
-	configs ...[]*regexp.Regexp,
+	allowPaths []*regexp.Regexp,
+	denyPaths ...[]*regexp.Regexp,
 ) *ReadFileTool {
-	var allowPatterns []*regexp.Regexp
 	var denyPatterns []*regexp.Regexp
-	if len(configs) > 0 {
-		allowPatterns = configs[0]
-	}
-	if len(configs) > 1 {
-		denyPatterns = configs[1]
+	if len(denyPaths) > 0 {
+		denyPatterns = denyPaths[0]
 	}
 
 	maxSize := int64(maxReadFileSize)
@@ -300,7 +297,7 @@ func NewReadFileTool(
 	}
 
 	return &ReadFileTool{
-		fs:      buildFs(workspace, restrict, allowPatterns, denyPatterns),
+		fs:      buildFs(workspace, restrict, allowPaths, denyPatterns),
 		maxSize: maxSize,
 	}
 }
@@ -309,24 +306,22 @@ func NewReadFileBytesTool(
 	workspace string,
 	restrict bool,
 	maxReadFileSize int,
-	configs ...[]*regexp.Regexp,
+	allowPaths []*regexp.Regexp,
+	denyPaths ...[]*regexp.Regexp,
 ) *ReadFileTool {
-	return NewReadFileTool(workspace, restrict, maxReadFileSize, configs...)
+	return NewReadFileTool(workspace, restrict, maxReadFileSize, allowPaths, denyPaths...)
 }
 
 func NewReadFileLinesTool(
 	workspace string,
 	restrict bool,
 	maxReadFileSize int,
-	configs ...[]*regexp.Regexp,
+	allowPaths []*regexp.Regexp,
+	denyPaths ...[]*regexp.Regexp,
 ) *ReadFileLinesTool {
-	var allowPatterns []*regexp.Regexp
 	var denyPatterns []*regexp.Regexp
-	if len(configs) > 0 {
-		allowPatterns = configs[0]
-	}
-	if len(configs) > 1 {
-		denyPatterns = configs[1]
+	if len(denyPaths) > 0 {
+		denyPatterns = denyPaths[0]
 	}
 
 	maxSize := int64(maxReadFileSize)
@@ -335,7 +330,7 @@ func NewReadFileLinesTool(
 	}
 
 	return &ReadFileLinesTool{
-		fs:      buildFs(workspace, restrict, allowPatterns, denyPatterns),
+		fs:      buildFs(workspace, restrict, allowPaths, denyPatterns),
 		maxSize: maxSize,
 	}
 }
@@ -874,16 +869,12 @@ type WriteFileTool struct {
 	fs fileSystem
 }
 
-func NewWriteFileTool(workspace string, restrict bool, configs ...[]*regexp.Regexp) *WriteFileTool {
-	var allowPatterns []*regexp.Regexp
+func NewWriteFileTool(workspace string, restrict bool, allowPaths []*regexp.Regexp, denyPaths ...[]*regexp.Regexp) *WriteFileTool {
 	var denyPatterns []*regexp.Regexp
-	if len(configs) > 0 {
-		allowPatterns = configs[0]
+	if len(denyPaths) > 0 {
+		denyPatterns = denyPaths[0]
 	}
-	if len(configs) > 1 {
-		denyPatterns = configs[1]
-	}
-	return &WriteFileTool{fs: buildFs(workspace, restrict, allowPatterns, denyPatterns)}
+	return &WriteFileTool{fs: buildFs(workspace, restrict, allowPaths, denyPatterns)}
 }
 
 func (t *WriteFileTool) Name() string {
@@ -948,16 +939,12 @@ type ListDirTool struct {
 	fs fileSystem
 }
 
-func NewListDirTool(workspace string, restrict bool, configs ...[]*regexp.Regexp) *ListDirTool {
-	var allowPatterns []*regexp.Regexp
+func NewListDirTool(workspace string, restrict bool, allowPaths []*regexp.Regexp, denyPaths ...[]*regexp.Regexp) *ListDirTool {
 	var denyPatterns []*regexp.Regexp
-	if len(configs) > 0 {
-		allowPatterns = configs[0]
+	if len(denyPaths) > 0 {
+		denyPatterns = denyPaths[0]
 	}
-	if len(configs) > 1 {
-		denyPatterns = configs[1]
-	}
-	return &ListDirTool{fs: buildFs(workspace, restrict, allowPatterns, denyPatterns)}
+	return &ListDirTool{fs: buildFs(workspace, restrict, allowPaths, denyPatterns)}
 }
 
 func (t *ListDirTool) Name() string {

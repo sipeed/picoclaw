@@ -163,13 +163,14 @@ func (m AgentModelConfig) MarshalJSON() ([]byte, error) {
 }
 
 type AgentConfig struct {
-	ID        string            `json:"id"`
-	Default   bool              `json:"default,omitempty"`
-	Name      string            `json:"name,omitempty"`
-	Workspace string            `json:"workspace,omitempty"`
-	Model     *AgentModelConfig `json:"model,omitempty"`
-	Skills    []string          `json:"skills,omitempty"`
-	Subagents *SubagentsConfig  `json:"subagents,omitempty"`
+	ID           string            `json:"id"`
+	Default      bool              `json:"default,omitempty"`
+	Name         string            `json:"name,omitempty"`
+	Workspace    string            `json:"workspace,omitempty"`
+	Model        *AgentModelConfig `json:"model,omitempty"`
+	Skills       []string          `json:"skills,omitempty"`
+	Subagents    *SubagentsConfig  `json:"subagents,omitempty"`
+	SystemPrompt string            `json:"system_prompt,omitempty"`
 }
 
 type SubagentsConfig struct {
@@ -247,6 +248,7 @@ type AgentDefaults struct {
 	SubTurn                   SubTurnConfig      `json:"subturn"                                                                                      envPrefix:"PICOCLAW_AGENTS_DEFAULTS_SUBTURN_"`
 	ToolFeedback              ToolFeedbackConfig `json:"tool_feedback,omitempty"`
 	SplitOnMarker             bool               `json:"split_on_marker"                  env:"PICOCLAW_AGENTS_DEFAULTS_SPLIT_ON_MARKER"` // split messages on <|[SPLIT]|> marker
+	SystemPrompt              string             `json:"system_prompt,omitempty"         env:"PICOCLAW_AGENTS_DEFAULTS_SYSTEM_PROMPT"`
 	ContextManager            string             `json:"context_manager,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_MANAGER"`
 	ContextManagerConfig      json.RawMessage    `json:"context_manager_config,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_MANAGER_CONFIG"`
 	AgentCacheTTLSeconds      int                `json:"agent_cache_ttl_seconds,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_AGENT_CACHE_TTL_SECONDS"`
@@ -652,7 +654,7 @@ func (c *ModelConfig) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	c.APIKeys = toSecureStrings(mergeAPIKeys(aux.APIKey, []string(aux.APIKeys)))
+	c.APIKeys = SimpleSecureStrings(MergeAPIKeys(aux.APIKey, aux.APIKeys)...)
 	return nil
 }
 

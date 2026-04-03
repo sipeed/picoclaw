@@ -129,7 +129,7 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	logFilePath := filepath.Join(homePath, logPath, logFile)
 	fmt.Printf("🔧 Enabling file logging: %s\n", logFilePath)
 	if err = logger.EnableFileLogging(logFilePath); err != nil {
-		fmt.Printf("⚠️  Warning: error initializing file logging (continuing): %v\n", err)
+		fmt.Printf("⚠️  Warning: error enabling file logging (continuing): %v\n", err)
 	} else {
 		defer logger.DisableFileLogging()
 		fmt.Println("✓ File logging enabled")

@@ -118,12 +118,19 @@ func NewAgentInstance(
 
 	mcpDiscoveryActive := cfg.Tools.MCP.Enabled && cfg.Tools.MCP.Discovery.Enabled
 	baseWorkspace := mainWorkspace
+	// Resolve effective system prompt (agent manual override > global default)
+	effectiveSystemPrompt := defaults.SystemPrompt
+	if agentCfg != nil && strings.TrimSpace(agentCfg.SystemPrompt) != "" {
+		effectiveSystemPrompt = strings.TrimSpace(agentCfg.SystemPrompt)
+	}
+
 	contextBuilder := NewContextBuilder(workspace, baseWorkspace).
 		WithToolDiscovery(
 			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseBM25,
 			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseRegex,
 		).
-		WithSplitOnMarker(cfg.Agents.Defaults.SplitOnMarker)
+		WithSplitOnMarker(cfg.Agents.Defaults.SplitOnMarker).
+		WithSystemPrompt(effectiveSystemPrompt)
 
 	agentID := routing.DefaultAgentID
 	agentName := ""

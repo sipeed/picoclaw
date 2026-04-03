@@ -309,8 +309,8 @@ type HandlerMux interface {
 	HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request))
 }
 
-// RegisterOnMux registers /health, /ready, /reload and /chat handlers onto the
-// given mux. This allows the health endpoints to be served by a shared HTTP server.
+// RegisterOnMux registers /health, /ready, /reload and /chat handlers onto the given mux.
+// This allows the health endpoints to be served by a shared HTTP server.
 func (s *Server) RegisterOnMux(mux HandlerMux) {
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)

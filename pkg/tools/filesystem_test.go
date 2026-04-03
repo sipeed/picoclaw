@@ -18,7 +18,7 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 	os.WriteFile(testFile, []byte("test content"), 0o644)
 
-	tool := NewReadFileBytesTool("", false, MaxReadFileSize)
+	tool := NewReadFileBytesTool("", false, MaxReadFileSize, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": testFile,
@@ -45,8 +45,9 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 
 // TestFilesystemTool_ReadFile_NotFound verifies error handling for missing file
 func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
-	tool := NewReadFileBytesTool("", false, MaxReadFileSize)
+	tool := NewReadFileBytesTool("", false, MaxReadFileSize, nil)
 	ctx := context.Background()
+
 	args := map[string]any{
 		"path": "/nonexistent_file_12345.txt",
 	}
@@ -878,7 +879,7 @@ func TestReadFileLinesTool_ChunkedReading(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 
 	result1 := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
@@ -889,16 +890,10 @@ func TestReadFileLinesTool_ChunkedReading(t *testing.T) {
 		t.Fatalf("Chunk 1 failed: %s", result1.ForLLM)
 	}
 	if !strings.Contains(result1.ForLLM, "1|line 1\n2|line 2\n") {
-		t.Fatalf("expected first two lines, got: %s", result1.ForLLM)
+		t.Errorf("Chunk 1 should contain lines 1 and 2, got: %s", result1.ForLLM)
 	}
-	if !strings.Contains(result1.ForLLM, "lines 1-2") {
-		t.Fatalf("expected line range 1-2, got: %s", result1.ForLLM)
-	}
-	if !strings.Contains(result1.ForLLM, "start_line=3") {
-		t.Fatalf("expected continuation start_line=3, got: %s", result1.ForLLM)
-	}
-	if !strings.Contains(result1.ForLLM, "max_lines=2") {
-		t.Fatalf("expected continuation max_lines=2, got: %s", result1.ForLLM)
+	if !strings.Contains(result1.ForLLM, "[PARTIAL - more content remains. Call read_file again with start_line=3 and max_lines=2 to continue.]") {
+		t.Errorf("Chunk 1 should suggest next start_line=3, got: %s", result1.ForLLM)
 	}
 
 	result2 := tool.Execute(context.Background(), map[string]any{
@@ -910,28 +905,79 @@ func TestReadFileLinesTool_ChunkedReading(t *testing.T) {
 		t.Fatalf("Chunk 2 failed: %s", result2.ForLLM)
 	}
 	if !strings.Contains(result2.ForLLM, "3|line 3\n4|line 4\n") {
-		t.Fatalf("expected middle chunk, got: %s", result2.ForLLM)
+		t.Errorf("Chunk 2 should contain lines 3 and 4, got: %s", result2.ForLLM)
 	}
-	if !strings.Contains(result2.ForLLM, "start_line=5") {
-		t.Fatalf("expected continuation start_line=5, got: %s", result2.ForLLM)
-	}
-	if !strings.Contains(result2.ForLLM, "max_lines=2") {
-		t.Fatalf("expected continuation max_lines=2, got: %s", result2.ForLLM)
+	if !strings.Contains(result2.ForLLM, "[PARTIAL - more content remains. Call read_file again with start_line=5 and max_lines=2 to continue.]") {
+		t.Errorf("Chunk 2 should suggest next start_line=5, got: %s", result2.ForLLM)
 	}
 
 	result3 := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 5,
-		"max_lines":  2,
+		"max_lines":  10,
 	})
 	if result3.IsError {
 		t.Fatalf("Chunk 3 failed: %s", result3.ForLLM)
 	}
 	if !strings.Contains(result3.ForLLM, "5|line 5\n6|line 6\n") {
-		t.Fatalf("expected final chunk, got: %s", result3.ForLLM)
+		t.Errorf("Chunk 3 should contain lines 5 and 6, got: %s", result3.ForLLM)
 	}
-	if !strings.Contains(result3.ForLLM, "[END OF FILE") {
-		t.Fatalf("expected EOF marker, got: %s", result3.ForLLM)
+	if strings.Contains(result3.ForLLM, "[TRUNCATED") {
+		t.Errorf("Chunk 3 should not be truncated, got: %s", result3.ForLLM)
+	}
+}
+
+func TestReadFileLinesTool_InvalidLineRange(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "invalid_range.txt")
+	os.WriteFile(testFile, []byte("line 1\nline 2\n"), 0o644)
+
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
+
+	// Case 1: start_line is greater than the number of lines
+	result1 := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 10,
+	})
+	if result1.IsError {
+		t.Fatalf("Should not return error for out-of-range start_line, got: %s", result1.ForLLM)
+	}
+	expectedMsg := "[END OF FILE - no content at or after start_line=10]"
+	if result1.ForLLM != expectedMsg {
+		t.Errorf("Expected %q, obtained: %q", expectedMsg, result1.ForLLM)
+	}
+
+	// Case 2: start_line <= 0 should return error
+	result2 := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": -5,
+	})
+	if !result2.IsError {
+		t.Fatalf("Should return error for zero/negative start_line")
+	}
+	if !strings.Contains(result2.ForLLM, "start_line must be >= 1") {
+		t.Errorf("Expected 'start_line must be >= 1', got: %s", result2.ForLLM)
+	}
+}
+
+func TestReadFileLinesTool_MixedParams(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "mixed.txt")
+	os.WriteFile(testFile, []byte("line 1\nline 2\n"), 0o644)
+
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
+
+	// String and integer for start_line/max_lines should be supported
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": "1",
+		"max_lines":  "1",
+	})
+	if result.IsError {
+		t.Fatalf("Mixed parameters failed: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "1|line 1") {
+		t.Errorf("Line 1 should be obtained, obtained: %s", result.ForLLM)
 	}
 }
 
@@ -944,7 +990,7 @@ func TestReadFileLinesTool_DefaultOffsetAndRemainingLines(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 1,
@@ -969,7 +1015,7 @@ func TestReadFileTool_LegacyLengthUsesByteModeForText(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileBytesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileBytesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":   testFile,
 		"offset": 10,
@@ -998,7 +1044,7 @@ func TestReadFileLinesTool_OffsetBeyondEOF(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": int64(100),
@@ -1021,7 +1067,7 @@ func TestReadFileLinesTool_RegistryValidationSupportsMaxLinesAndRejectsLimit(t *
 	}
 
 	reg := NewToolRegistry()
-	reg.Register(NewReadFileLinesTool(tmpDir, false, MaxReadFileSize))
+	reg.Register(NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil))
 
 	result := reg.Execute(context.Background(), "read_file", map[string]any{
 		"path":       testFile,
@@ -1057,7 +1103,7 @@ func TestReadFileLinesTool_RejectsOffset(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 1,
@@ -1080,7 +1126,7 @@ func TestReadFileLinesTool_RejectsLength(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 1,
@@ -1103,7 +1149,7 @@ func TestReadFileLinesTool_RejectsLimit(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 1,
@@ -1127,7 +1173,7 @@ func TestReadFileLinesTool_BinaryFileRejected(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 1,
@@ -1153,7 +1199,7 @@ func TestReadFileLinesTool_TruncatesSingleLongLineAtByteBudget(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 1,
@@ -1181,7 +1227,7 @@ func TestReadFileLinesTool_NoTrailingNewline(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 1,
@@ -1209,7 +1255,7 @@ func TestReadFileLinesTool_ExactByteBudgetBoundaryIncludesPrefix(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, 10)
+	tool := NewReadFileLinesTool(tmpDir, false, 10, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 1,

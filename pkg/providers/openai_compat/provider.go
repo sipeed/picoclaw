@@ -226,7 +226,11 @@ func (p *Provider) Chat(
 		req.Header.Set("User-Agent", p.userAgent)
 	}
 	if p.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		if p.useAzureHeaders {
+			req.Header.Set("api-key", p.apiKey)
+		} else {
+			req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		}
 	}
 
 	resp, err := p.httpClient.Do(req)
@@ -272,7 +276,11 @@ func (p *Provider) ChatStream(
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 	if p.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		if p.useAzureHeaders {
+			req.Header.Set("api-key", p.apiKey)
+		} else {
+			req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		}
 	}
 
 	// Use a client without Timeout for streaming — the http.Client.Timeout covers
@@ -432,12 +440,22 @@ func parseStreamResponse(
 }
 
 func normalizeModel(model, apiBase string) string {
-	before, after, ok := strings.Cut(model, "/")
-	if !ok {
+	if strings.Contains(strings.ToLower(apiBase), "openrouter.ai") {
 		return model
 	}
 
-	if strings.Contains(strings.ToLower(apiBase), "openrouter.ai") {
+	// NVIDIA endpoints (integrate.api.nvidia.com) require the provider prefix
+	// (e.g., nvidia/, meta/, mistral/) for routing. Do not strip them.
+	// We also re-add the prefix if it was likely stripped by the agent's protocol resolution logic.
+	if strings.Contains(strings.ToLower(apiBase), ".nvidia.com") {
+		if !strings.Contains(model, "/") {
+			return "nvidia/" + model
+		}
+		return model
+	}
+
+	before, after, ok := strings.Cut(model, "/")
+	if !ok {
 		return model
 	}
 
@@ -486,5 +504,7 @@ func supportsPromptCacheKey(apiBase string) bool {
 		return false
 	}
 	host := u.Hostname()
+	// Strictly limit to OpenAI official. Azure OpenAI often rejects this field
+	// depending on model version and region, causing 400 errors.
 	return host == "api.openai.com"
 }

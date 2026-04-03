@@ -12,7 +12,7 @@ The `/chat` endpoint allows you to interact with the PicoClaw agent via a simple
 
 Start a new chat request.
 
-**Endpoint:** `POST /chat`  
+**Endpoint:** `POST /chat`
 **Content-Type:** `application/json`
 
 **Request Body:**

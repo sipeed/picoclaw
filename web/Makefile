@@ -114,7 +114,6 @@ test:
 		echo "pnpm not found, skipping frontend linting"; \
 	fi
 
-
 # Lint and format
 lint:
 	cd $(BACKEND_DIR) && ${WEB_GO} vet ./...
