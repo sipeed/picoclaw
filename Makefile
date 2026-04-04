@@ -56,7 +56,8 @@ PTY_PATCH_LOONG64=pty_dir=$$(go env GOMODCACHE)/github.com/creack/pty@v1.1.9; \
 	fi
 
 # Golangci-lint
-GOLANGCI_LINT?=golangci-lint
+GOLANGCI_LINT_BIN := $(shell if [ -f $(CURDIR)/golangci-lint ]; then echo $(CURDIR)/golangci-lint; else echo golangci-lint; fi)
+GOLANGCI_LINT?=$(GOLANGCI_LINT_BIN)
 
 # Installation
 INSTALL_PREFIX?=$(HOME)/.local
@@ -268,12 +269,12 @@ vet: generate
 
 ## test: Test Go code
 test: generate
-	@$(GO) test $(GOFLAGS) $$($(GO) list $(GOFLAGS) ./... | grep -v github.com/sipeed/picoclaw/web/)
+	@$(GO) test $(GOFLAGS) -p 1 $$($(GO) list $(GOFLAGS) ./... | grep -v github.com/sipeed/picoclaw/web/) -timeout 120s
 	@cd web && make test
 
 ## fmt: Format Go code
 fmt:
-	@$(GO) fmt ./...
+	@gofmt -s -w $$(find . -name "*.go" -not -path "./web/*" -not -path "./vendor/*")
 
 ## lint: Run linters
 lint:
@@ -293,8 +294,8 @@ update-deps:
 	@$(GO) get -u ./...
 	@$(GO) mod tidy
 
-## check: Run vet, fmt, and verify dependencies
-check: deps fmt vet test
+## check: Run vet, fmt, lint, and verify dependencies
+check: deps fmt vet lint test
 
 ## run: Build and run picoclaw
 run: build

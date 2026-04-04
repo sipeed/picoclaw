@@ -155,7 +155,7 @@ func TestListSkillsWorkspaceOverridesGlobal(t *testing.T) {
 	createSkillDir(t, filepath.Join(ws, "skills"), "my-skill", "my-skill", "workspace version")
 	createSkillDir(t, global, "my-skill", "my-skill", "global version")
 
-	sl := NewSkillsLoader(ws, "", global, "", nil, false)
+	sl := NewSkillsLoader(ws, ws, global, "", nil, false)
 	skills := sl.ListSkills()
 
 	assert.Len(t, skills, 1)
@@ -172,7 +172,7 @@ func TestListSkillsGlobalOverridesBuiltin(t *testing.T) {
 	createSkillDir(t, global, "my-skill", "my-skill", "global version")
 	createSkillDir(t, builtin, "my-skill", "my-skill", "builtin version")
 
-	sl := NewSkillsLoader(ws, "", global, builtin, nil, false)
+	sl := NewSkillsLoader(ws, ws, global, builtin, nil, false)
 	skills := sl.ListSkills()
 
 	assert.Len(t, skills, 1)
@@ -189,7 +189,7 @@ func TestListSkillsMetadataNameDedup(t *testing.T) {
 	createSkillDir(t, filepath.Join(ws, "skills"), "dir-a", "shared-name", "workspace version")
 	createSkillDir(t, global, "dir-b", "shared-name", "global version")
 
-	sl := NewSkillsLoader(ws, "", global, "", nil, false)
+	sl := NewSkillsLoader(ws, ws, global, "", nil, false)
 	skills := sl.ListSkills()
 
 	assert.Len(t, skills, 1)
@@ -207,7 +207,7 @@ func TestListSkillsMultipleDistinctSkills(t *testing.T) {
 	createSkillDir(t, global, "skill-b", "skill-b", "desc b")
 	createSkillDir(t, builtin, "skill-c", "skill-c", "desc c")
 
-	sl := NewSkillsLoader(ws, "", global, builtin, nil, false)
+	sl := NewSkillsLoader(ws, ws, global, builtin, nil, false)
 	skills := sl.ListSkills()
 
 	assert.Len(t, skills, 3)
@@ -230,7 +230,7 @@ func TestListSkillsInvalidSkillSkipped(t *testing.T) {
 	// Valid skill
 	createSkillDir(t, global, "good-skill", "good-skill", "desc")
 
-	sl := NewSkillsLoader(ws, "", global, "", nil, false)
+	sl := NewSkillsLoader(ws, ws, global, "", nil, false)
 	skills := sl.ListSkills()
 
 	assert.Len(t, skills, 1)
@@ -243,7 +243,7 @@ func TestListSkillsEmptyAndNonexistentDirs(t *testing.T) {
 	emptyDir := filepath.Join(tmp, "empty")
 	require.NoError(t, os.MkdirAll(emptyDir, 0o755))
 
-	sl := NewSkillsLoader(ws, "", emptyDir, filepath.Join(tmp, "nonexistent"), nil, false)
+	sl := NewSkillsLoader(ws, ws, emptyDir, filepath.Join(tmp, "nonexistent"), nil, false)
 	skills := sl.ListSkills()
 
 	assert.Empty(t, skills)
@@ -259,7 +259,7 @@ func TestListSkillsDirWithoutSkillMD(t *testing.T) {
 	// Valid skill alongside
 	createSkillDir(t, global, "real-skill", "real-skill", "desc")
 
-	sl := NewSkillsLoader(ws, "", global, "", nil, false)
+	sl := NewSkillsLoader(ws, ws, global, "", nil, false)
 	skills := sl.ListSkills()
 
 	assert.Len(t, skills, 1)
@@ -333,7 +333,7 @@ func TestSkillRootsTrimsWhitespaceAndDedups(t *testing.T) {
 	global := filepath.Join(tmp, "global")
 	builtin := filepath.Join(tmp, "builtin")
 
-	sl := NewSkillsLoader(workspace, "", "  "+global+"  ", "\t"+builtin+"\n", nil, false)
+	sl := NewSkillsLoader(workspace, workspace, "  "+global+"  ", "\t"+builtin+"\n", nil, false)
 	roots := sl.SkillRoots()
 
 	assert.Equal(t, []string{
@@ -416,4 +416,49 @@ func TestGetSkillMetadata_IgnoresHTMLCommentBlocks(t *testing.T) {
 	require.NotNil(t, meta)
 	assert.Equal(t, "biomed-skill", meta.Name)
 	assert.Equal(t, "Summarize biomedical papers.", meta.Description)
+}
+
+func TestListSkillsWithWhitelist(t *testing.T) {
+	tmp := t.TempDir()
+	ws := filepath.Join(tmp, "workspace")
+	global := filepath.Join(tmp, "global")
+	builtin := filepath.Join(tmp, "builtin")
+
+	createSkillDir(t, filepath.Join(ws, "skills"), "skill-a", "skill-a", "desc a")
+	createSkillDir(t, global, "skill-b", "skill-b", "desc b")
+	createSkillDir(t, builtin, "skill-c", "skill-c", "desc c")
+
+	t.Run("allow-one", func(t *testing.T) {
+		sl := NewSkillsLoader(ws, ws, global, builtin, []string{"skill-a"}, true)
+		skills := sl.ListSkills()
+		assert.Len(t, skills, 1)
+		assert.Equal(t, "skill-a", skills[0].Name)
+	})
+
+	t.Run("allow-two", func(t *testing.T) {
+		sl := NewSkillsLoader(ws, ws, global, builtin, []string{"skill-a", "skill-c"}, true)
+		skills := sl.ListSkills()
+		assert.Len(t, skills, 2)
+		names := []string{skills[0].Name, skills[1].Name}
+		assert.Contains(t, names, "skill-a")
+		assert.Contains(t, names, "skill-c")
+	})
+
+	t.Run("allow-none", func(t *testing.T) {
+		sl := NewSkillsLoader(ws, ws, global, builtin, []string{"non-existent"}, true)
+		skills := sl.ListSkills()
+		assert.Empty(t, skills)
+	})
+
+	t.Run("empty-whitelist-allows-all", func(t *testing.T) {
+		sl := NewSkillsLoader(ws, ws, global, builtin, []string{}, false)
+		skills := sl.ListSkills()
+		assert.Len(t, skills, 3)
+	})
+
+	t.Run("nil-whitelist-allows-all", func(t *testing.T) {
+		sl := NewSkillsLoader(ws, ws, global, builtin, nil, false)
+		skills := sl.ListSkills()
+		assert.Len(t, skills, 3)
+	})
 }

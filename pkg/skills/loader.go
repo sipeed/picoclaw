@@ -99,14 +99,10 @@ func NewSkillsLoader(
 	whitelist []string,
 	whitelistEnabled bool,
 ) *SkillsLoader {
-	var baseWS string
-	if baseWorkspace != "" {
-		baseWS = filepath.Join(baseWorkspace, "skills")
-	}
 	return &SkillsLoader{
 		workspace:           workspace,
 		workspaceSkills:     filepath.Join(workspace, "skills"),
-		baseWorkspaceSkills: baseWS,
+		baseWorkspaceSkills: filepath.Join(baseWorkspace, "skills"),
 		globalSkills:        globalSkills, // ~/.picoclaw/skills
 		builtinSkills:       builtinSkills,
 		whitelist:           whitelist,

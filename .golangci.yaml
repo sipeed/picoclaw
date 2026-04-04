@@ -1,3 +1,4 @@
+
 linters:
   default: all
   disable:
@@ -6,27 +7,22 @@ linters:
     - cyclop
     - depguard
     - dupword
-    - err113
+    - goerr113
     - exhaustruct
-    - funcorder
     - gochecknoglobals
     - godot
-    - intrange
     - ireturn
     - nlreturn
     - noctx
-    - noinlineerr
     - nonamedreturns
     - tagliatelle
     - testpackage
     - varnamelen
     - wrapcheck
     - wsl
-    - wsl_v5
 
     # TODO: Disabled, because they are failing at the moment, we should fix them and enable (step by step)
     - contextcheck
-    - embeddedstructfieldcheck
     - errcheck
     - errchkjson
     - errorlint
@@ -44,8 +40,7 @@ linters:
     - ineffassign
     - lll
     - maintidx
-    - mnd
-    - modernize
+    - gomnd
     - nestif
     - nilnil
     - paralleltest
@@ -57,7 +52,6 @@ linters:
     - thelper
     - unparam
     - usestdlibvars
-    - usetesting
   settings:
     gomoddirectives:
       replace-allow-list:
@@ -83,7 +77,7 @@ linters:
       tab-width: 4
     misspell:
       locale: US
-    mnd:
+    gomnd:
       checks:
         - argument
         - assign

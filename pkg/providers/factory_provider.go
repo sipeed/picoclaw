@@ -217,11 +217,12 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		}
 		return provider, modelID, nil
 
-	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "gemini", "nvidia", "venice",
+	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "gemini", "venice",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
 		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",
 		"coding-plan", "alibaba-coding", "qwen-coding", "mimo":
+
 		// All other OpenAI-compatible HTTP providers
 		if cfg.APIKey() == "" && cfg.APIBase == "" && !isEmptyAPIKeyAllowed(protocol) {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
@@ -238,6 +239,38 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
+		), modelID, nil
+
+	case "nvidia":
+		apiBase := cfg.APIBase
+		if apiBase == "" {
+			apiBase = getDefaultAPIBase(protocol)
+		}
+		p := NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+			cfg.APIKey(),
+			apiBase,
+			cfg.Proxy,
+			cfg.MaxTokensField,
+			userAgent,
+			cfg.RequestTimeout,
+			cfg.ExtraBody,
+		)
+		// NVIDIA sometimes prefers api-key header or has issues with Bearer in some environments
+		p.SetUseAzureHeaders(false) // NVIDIA main gateway prefers standard Bearer headers; api-key causes 404s
+		return p, "nvidia/" + modelID, nil
+
+	case "azure-ai", "azure-foundry":
+		// Azure AI Foundry / Studio compatible with OpenAI API format,
+		// but using api-key header instead of Authorization: Bearer.
+		if cfg.APIKey() == "" && cfg.APIBase == "" {
+			return nil, "", fmt.Errorf("api_key or api_base is required for protocol %q", protocol)
+		}
+		return NewAzureAIProvider(
+			cfg.APIKey(),
+			cfg.APIBase,
+			cfg.Proxy,
+			userAgent,
+			cfg.RequestTimeout,
 		), modelID, nil
 
 	case "minimax":

@@ -13,7 +13,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/credential"
 )
 
-func onboard(encrypt bool) {
+func onboard(encrypt bool, yes bool) {
 	configPath := internal.GetConfigPath()
 
 	configExists := false
@@ -26,12 +26,14 @@ func onboard(encrypt bool) {
 			if _, err := os.Stat(sshKeyPath); err == nil {
 				// Both exist — confirm a full reset.
 				fmt.Printf("Config already exists at %s\n", configPath)
-				fmt.Print("Overwrite config with defaults? (y/n): ")
-				var response string
-				fmt.Scanln(&response)
-				if response != "y" {
-					fmt.Println("Aborted.")
-					return
+				if !yes {
+					fmt.Print("Overwrite config with defaults? (y/n): ")
+					var response string
+					fmt.Scanln(&response)
+					if response != "y" {
+						fmt.Println("Aborted.")
+						return
+					}
 				}
 				configExists = false // user agreed to reset; treat as fresh
 			}
@@ -54,7 +56,7 @@ func onboard(encrypt bool) {
 		// the current process and disappears when it exits.
 		os.Setenv(credential.PassphraseEnvVar, passphrase)
 
-		if err = setupSSHKey(); err != nil {
+		if err = setupSSHKey(yes); err != nil {
 			fmt.Printf("Error generating SSH key: %v\n", err)
 			os.Exit(1)
 		}
@@ -134,7 +136,7 @@ func promptPassphrase() (string, error) {
 // setupSSHKey generates the picoclaw-specific SSH key at ~/.ssh/picoclaw_ed25519.key.
 // If the key already exists the user is warned and asked to confirm overwrite.
 // Answering anything other than "y" keeps the existing key (not an error).
-func setupSSHKey() error {
+func setupSSHKey(yes bool) error {
 	keyPath, err := credential.DefaultSSHKeyPath()
 	if err != nil {
 		return fmt.Errorf("cannot determine SSH key path: %w", err)
@@ -143,12 +145,14 @@ func setupSSHKey() error {
 	if _, err := os.Stat(keyPath); err == nil {
 		fmt.Printf("\n⚠️  WARNING: %s already exists.\n", keyPath)
 		fmt.Println("    Overwriting will invalidate any credentials previously encrypted with this key.")
-		fmt.Print("    Overwrite? (y/n): ")
-		var response string
-		fmt.Scanln(&response)
-		if response != "y" {
-			fmt.Println("Keeping existing SSH key.")
-			return nil
+		if !yes {
+			fmt.Print("    Overwrite? (y/n): ")
+			var response string
+			fmt.Scanln(&response)
+			if response != "y" {
+				fmt.Println("Keeping existing SSH key.")
+				return nil
+			}
 		}
 	}
 

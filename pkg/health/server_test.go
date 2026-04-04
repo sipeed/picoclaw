@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -153,6 +154,7 @@ func TestReloadHandler_MethodNotAllowed(t *testing.T) {
 	s := newTestServer()
 
 	req := httptest.NewRequest(http.MethodGet, "/reload", nil)
+	req.Header.Set("Authorization", "Bearer test")
 	w := httptest.NewRecorder()
 
 	s.reloadHandler(w, req)
@@ -343,6 +345,80 @@ func TestStatusString(t *testing.T) {
 		got := statusString(tt.input)
 		if got != tt.want {
 			t.Errorf("statusString(%v) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestVerifyAuth(t *testing.T) {
+	s := &Server{
+		apiKey:    "api-key",
+		authToken: "auth-token",
+	}
+
+	t.Run("Valid X-API-Key", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("X-API-Key", "api-key")
+		if !s.verifyAuth(req) {
+			t.Error("expected true for valid X-API-Key")
+		}
+	})
+
+	t.Run("Valid Bearer Token", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Authorization", "Bearer auth-token")
+		if !s.verifyAuth(req) {
+			t.Error("expected true for valid Bearer token")
+		}
+	})
+
+	t.Run("Invalid X-API-Key", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("X-API-Key", "wrong")
+		if s.verifyAuth(req) {
+			t.Error("expected false for invalid X-API-Key")
+		}
+	})
+
+	t.Run("Invalid Bearer Token", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Authorization", "Bearer wrong")
+		if s.verifyAuth(req) {
+			t.Error("expected false for invalid Bearer token")
+		}
+	})
+
+	t.Run("Empty Headers When Auth Required", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		if s.verifyAuth(req) {
+			t.Error("expected false for missing auth headers when auth required")
+		}
+	})
+
+	t.Run("No Auth Configuration", func(t *testing.T) {
+		sNoAuth := &Server{}
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		if !sNoAuth.verifyAuth(req) {
+			t.Error("expected true when no auth is configured")
+		}
+	})
+}
+
+func TestSanitizeID(t *testing.T) {
+	s := &Server{}
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"abc-123_XYZ", "abc-123_XYZ"},
+		{"abc/def..path", "abc_def__path"},
+		{"very" + strings.Repeat("a", 150), "very" + strings.Repeat("a", 124)},
+		{"", ""},
+		{"!@#$%^&*()", "__________"},
+	}
+	for _, tt := range tests {
+		got := s.sanitizeID(tt.input)
+		if got != tt.want {
+			t.Errorf("sanitizeID(%q) = %q, want %q", tt.input, got, tt.want)
 		}
 	}
 }
