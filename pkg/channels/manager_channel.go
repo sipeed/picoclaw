@@ -62,6 +62,8 @@ func hiddenValues(key string, value map[string]any, ch config.ChannelsConfig) {
 		value["app_secret"] = ch.Feishu.AppSecret.String()
 		value["encrypt_key"] = ch.Feishu.EncryptKey.String()
 		value["verification_token"] = ch.Feishu.VerificationToken.String()
+	case "grafana_alertmanager":
+		value["secret"] = ch.GrafanaAlertmanager.Secret.String()
 	}
 }
 
@@ -165,5 +167,8 @@ func updateKeys(newcfg, old *config.ChannelsConfig) {
 		newcfg.Feishu.AppSecret = old.Feishu.AppSecret
 		newcfg.Feishu.EncryptKey = old.Feishu.EncryptKey
 		newcfg.Feishu.VerificationToken = old.Feishu.VerificationToken
+	}
+	if newcfg.GrafanaAlertmanager.Enabled {
+		newcfg.GrafanaAlertmanager.Secret = old.GrafanaAlertmanager.Secret
 	}
 }
