@@ -48,6 +48,8 @@ type MattermostChannel struct {
 	typingStop  map[string]chan struct{}
 }
 
+var _ channels.MediaSender = (*MattermostChannel)(nil)
+
 func NewMattermostChannel(cfg config.MattermostConfig, messageBus *bus.MessageBus) (*MattermostChannel, error) {
 	if cfg.URL == "" {
 		return nil, fmt.Errorf("mattermost url is required")
@@ -674,19 +676,20 @@ func (c *MattermostChannel) sendTyping(chatID string) {
 
 // --- SendMedia (MediaSender) ---
 
-func (c *MattermostChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+func (c *MattermostChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 	if msg.ChatID == "" {
-		return fmt.Errorf("mattermost: chatID is empty")
+		return nil, fmt.Errorf("mattermost: chatID is empty")
 	}
 
 	store := c.GetMediaStore()
 	if store == nil {
-		return fmt.Errorf("no media store: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("no media store: %w", channels.ErrSendFailed)
 	}
 
+	var postIDs []string
 	for _, part := range msg.Parts {
 		localPath, err := store.Resolve(part.Ref)
 		if err != nil {
@@ -715,7 +718,7 @@ func (c *MattermostChannel) SendMedia(ctx context.Context, msg bus.OutboundMedia
 		}
 		resp, err := c.doJSON(http.MethodPost, "/api/v4/posts", payload)
 		if err != nil {
-			return fmt.Errorf("mattermost media post: %w", channels.ErrTemporary)
+			return nil, fmt.Errorf("mattermost media post: %w", channels.ErrTemporary)
 		}
 		if resp.StatusCode != http.StatusCreated {
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
@@ -724,11 +727,19 @@ func (c *MattermostChannel) SendMedia(ctx context.Context, msg bus.OutboundMedia
 				"status": resp.StatusCode,
 				"body":   string(body),
 			})
-			return fmt.Errorf("mattermost media post %d: %w", resp.StatusCode, channels.ErrTemporary)
+			return nil, fmt.Errorf("mattermost media post %d: %w", resp.StatusCode, channels.ErrTemporary)
+		}
+		var created mmPost
+		if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("mattermost decode media post response: %w", err)
 		}
 		resp.Body.Close()
+		if created.ID != "" {
+			postIDs = append(postIDs, created.ID)
+		}
 	}
-	return nil
+	return postIDs, nil
 }
 
 // --- File helpers ---
