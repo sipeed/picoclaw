@@ -145,7 +145,6 @@ type qqConfigV0 struct {
 	GroupTrigger         GroupTriggerConfig  `json:"group_trigger,omitempty"`
 	MaxMessageLength     int                 `json:"max_message_length"       env:"PICOCLAW_CHANNELS_QQ_MAX_MESSAGE_LENGTH"`
 	MaxBase64FileSizeMiB int64               `json:"max_base64_file_size_mib" env:"PICOCLAW_CHANNELS_QQ_MAX_BASE64_FILE_SIZE_MIB"`
-	SendMarkdown         bool                `json:"send_markdown"            env:"PICOCLAW_CHANNELS_QQ_SEND_MARKDOWN"`
 	ReasoningChannelID   string              `json:"reasoning_channel_id"     env:"PICOCLAW_CHANNELS_QQ_REASONING_CHANNEL_ID"`
 }
 
@@ -157,7 +156,6 @@ func (v *qqConfigV0) ToQQConfig() QQConfig {
 		GroupTrigger:         v.GroupTrigger,
 		MaxMessageLength:     v.MaxMessageLength,
 		MaxBase64FileSizeMiB: v.MaxBase64FileSizeMiB,
-		SendMarkdown:         v.SendMarkdown,
 		ReasoningChannelID:   v.ReasoningChannelID,
 		AppSecret:            *NewSecureString(v.AppSecret),
 	}
