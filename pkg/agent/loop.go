@@ -2817,7 +2817,11 @@ turnLoop:
 	if finalContent == "" {
 		if ts.currentIteration() >= ts.agent.MaxIterations && ts.agent.MaxIterations > 0 {
 			finalContent = toolLimitResponse
-		} else {
+		} else if ts.currentIteration() == 0 {
+			// Only show "empty response" fallback when no tool calls were made.
+			// If the model executed tool calls but returned empty text afterward,
+			// the work was already communicated via tool results — sending a
+			// technical error message to the user is confusing and unhelpful.
 			finalContent = ts.opts.DefaultResponse
 		}
 	}

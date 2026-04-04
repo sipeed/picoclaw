@@ -342,6 +342,13 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		}
 		return NewCodexCliProvider(workspace), modelID, nil
 
+	case "hermes-acp", "hermesacp":
+		workspace := cfg.Workspace
+		if workspace == "" {
+			workspace = "."
+		}
+		return NewHermesACPProvider(workspace), modelID, nil
+
 	case "github-copilot", "copilot":
 		apiBase := cfg.APIBase
 		if apiBase == "" {
