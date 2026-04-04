@@ -387,13 +387,30 @@ func (e *CompactionEngine) compactCondensed(ctx context.Context, convID int64) (
 
 	startOrd := -1
 	endOrd := -1
+	hasNonCandidate := false
 	for _, item := range items {
 		if item.ItemType == "summary" && candidateSet[item.SummaryID] {
-			if startOrd == -1 || item.Ordinal < startOrd {
-				startOrd = item.Ordinal
-			}
-			if endOrd == -1 || item.Ordinal > endOrd {
-				endOrd = item.Ordinal
+			if startOrd == -1 {
+				startOrd, endOrd = item.Ordinal, item.Ordinal
+			} else {
+				// Check for non-candidate items between endOrd and current ordinal
+				for _, it := range items {
+					if it.Ordinal > endOrd && it.Ordinal <= item.Ordinal {
+						if it.ItemType != "summary" || !candidateSet[it.SummaryID] {
+							hasNonCandidate = true
+							break
+						}
+					}
+				}
+				if hasNonCandidate {
+					break
+				}
+				if item.Ordinal < startOrd {
+					startOrd = item.Ordinal
+				}
+				if item.Ordinal > endOrd {
+					endOrd = item.Ordinal
+				}
 			}
 		}
 	}
@@ -402,8 +419,22 @@ func (e *CompactionEngine) compactCondensed(ctx context.Context, convID int64) (
 		return nil, nil
 	}
 
-	if err := e.store.ReplaceContextRangeWithSummary(ctx, convID, startOrd, endOrd, summary.SummaryID); err != nil {
-		return nil, err
+	// Collect candidate summary IDs
+	candidateIDs := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		candidateIDs = append(candidateIDs, c.SummaryID)
+	}
+
+	if hasNonCandidate {
+		// Use safe per-item deletion to avoid deleting non-candidate items
+		if err := e.store.ReplaceContextItemsWithSummary(ctx, convID, candidateIDs, summary.SummaryID); err != nil {
+			return nil, err
+		}
+	} else {
+		// Candidates are consecutive, use efficient range deletion
+		if err := e.store.ReplaceContextRangeWithSummary(ctx, convID, startOrd, endOrd, summary.SummaryID); err != nil {
+			return nil, err
+		}
 	}
 
 	return &summary.SummaryID, nil

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -820,6 +819,101 @@ func (s *Store) ReplaceContextRangeWithSummary(
 	return tx.Commit()
 }
 
+// ReplaceContextItemsWithSummary replaces specific context items (by summary_id) with a new summary.
+// Use this when candidates are not contiguous in ordinal space to avoid deleting non-candidate items.
+func (s *Store) ReplaceContextItemsWithSummary(
+	ctx context.Context,
+	convID int64,
+	summaryIDs []string,
+	newSummaryID string,
+) error {
+	if len(summaryIDs) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Find the ordinals of items to delete and calculate midpoint
+	placeholders := make([]string, len(summaryIDs))
+	args := make([]any, len(summaryIDs)+1)
+	args[0] = convID
+	for i, sid := range summaryIDs {
+		placeholders[i] = "?"
+		args[i+1] = sid
+	}
+
+	query := fmt.Sprintf(
+		"SELECT ordinal FROM context_items WHERE conversation_id = ? AND summary_id IN (%s) ORDER BY ordinal",
+		strings.Join(placeholders, ","),
+	)
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+
+	var ordinals []int
+	for rows.Next() {
+		var ord int
+		if err := rows.Scan(&ord); err != nil {
+			rows.Close()
+			return err
+		}
+		ordinals = append(ordinals, ord)
+	}
+	rows.Close()
+
+	if len(ordinals) == 0 {
+		return nil
+	}
+
+	midpoint := (ordinals[0] + ordinals[len(ordinals)-1]) / 2
+
+	// Delete the specific items by summary_id
+	deleteQuery := fmt.Sprintf(
+		"DELETE FROM context_items WHERE conversation_id = ? AND summary_id IN (%s)",
+		strings.Join(placeholders, ","),
+	)
+	_, err = tx.ExecContext(ctx, deleteQuery, args...)
+	if err != nil {
+		return err
+	}
+
+	// Check if midpoint conflicts with existing ordinal
+	var conflict bool
+	var existingOrd int
+	err = tx.QueryRowContext(ctx,
+		"SELECT ordinal FROM context_items WHERE conversation_id = ? AND ordinal = ?",
+		convID, midpoint,
+	).Scan(&existingOrd)
+	if err == nil {
+		conflict = true
+	}
+
+	if conflict {
+		// Gap exhausted, need resequence
+		err = s.resequenceContextItemsTx(ctx, tx, convID, newSummaryID)
+		if err != nil {
+			return fmt.Errorf("resequence: %w", err)
+		}
+	} else {
+		// Normal insert at midpoint
+		_, err = tx.ExecContext(ctx,
+			`INSERT INTO context_items (conversation_id, ordinal, item_type, summary_id, token_count)
+			 SELECT ?, ?, 'summary', ?, token_count FROM summaries WHERE summary_id = ?`,
+			convID, midpoint, newSummaryID, newSummaryID,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 // resequenceContextItemsTx renumbers context_items with fresh OrdinalStep gaps.
 // Uses temp negative ordinals to avoid PRIMARY KEY constraint violations (spec lines 1240-1247).
 func (s *Store) resequenceContextItemsTx(ctx context.Context, tx *sql.Tx, convID int64, newSummaryID string) error {
@@ -844,17 +938,17 @@ func (s *Store) resequenceContextItemsTx(ctx context.Context, tx *sql.Tx, convID
 	var items []item
 	for rows.Next() {
 		var i item
-		var sid, mid sql.NullString
+		var sid sql.NullString
+		var mid sql.NullInt64
 		var scanErr error
 		if scanErr = rows.Scan(&i.ordinal, &i.itemType, &sid, &mid, &i.tokenCount); scanErr != nil {
-			return err
+			return scanErr
 		}
 		if sid.Valid {
 			i.summaryID = sid.String
 		}
 		if mid.Valid {
-			id, _ := strconv.ParseInt(mid.String, 10, 64)
-			i.messageID = id
+			i.messageID = mid.Int64
 		}
 		items = append(items, i)
 	}

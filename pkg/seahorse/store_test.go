@@ -1141,3 +1141,107 @@ func TestStoreSearchSummariesReturnsContent(t *testing.T) {
 		t.Errorf("SearchResult.Content = %q, want %q", results[0].Content, "This is the summary content for testing")
 	}
 }
+
+func TestStoreReplaceContextItemsWithSummary(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	conv, _ := s.GetOrCreateConversation(ctx, "agent:test-replace-items")
+
+	// Create messages
+	msgs := make([]int64, 5)
+	for i := 0; i < 5; i++ {
+		m, _ := s.AddMessage(ctx, conv.ConversationID, "user", fmt.Sprintf("msg%d", i), 2)
+		msgs[i] = m.ID
+	}
+
+	// Create summaries
+	summaries := make([]string, 3)
+	for i := 0; i < 3; i++ {
+		sum, _ := s.CreateSummary(ctx, CreateSummaryInput{
+			ConversationID: conv.ConversationID,
+			Kind:           SummaryKindLeaf,
+			Depth:          0,
+			Content:        fmt.Sprintf("summary %d", i),
+			TokenCount:     10,
+		})
+		summaries[i] = sum.SummaryID
+	}
+
+	// Insert context items with a message in between summaries:
+	// Ordinals: 100 (summary0), 200 (message), 300 (summary1), 400 (summary2)
+	items := []ContextItem{
+		{Ordinal: 100, ItemType: "summary", SummaryID: summaries[0], TokenCount: 10},
+		{Ordinal: 200, ItemType: "message", MessageID: msgs[1], TokenCount: 2},
+		{Ordinal: 300, ItemType: "summary", SummaryID: summaries[1], TokenCount: 10},
+		{Ordinal: 400, ItemType: "summary", SummaryID: summaries[2], TokenCount: 10},
+	}
+	s.UpsertContextItems(ctx, conv.ConversationID, items)
+
+	// Create a new summary to replace with
+	newSummary, _ := s.CreateSummary(ctx, CreateSummaryInput{
+		ConversationID: conv.ConversationID,
+		Kind:           SummaryKindCondensed,
+		Depth:          1,
+		Content:        "condensed summary",
+		TokenCount:     15,
+	})
+
+	// Replace summaries 0 and 1 (not 2) using per-item deletion
+	// This should NOT delete the message at ordinal 200
+	err := s.ReplaceContextItemsWithSummary(ctx, conv.ConversationID, []string{summaries[0], summaries[1]}, newSummary.SummaryID)
+	if err != nil {
+		t.Fatalf("ReplaceContextItemsWithSummary: %v", err)
+	}
+
+	// Verify result: should have 3 items (message at 200, summary2 at 400, new summary)
+	result, _ := s.GetContextItems(ctx, conv.ConversationID)
+	if len(result) != 3 {
+		t.Fatalf("expected 3 items after replace, got %d", len(result))
+	}
+
+	// Verify message at ordinal 200 is preserved
+	messagePreserved := false
+	for _, item := range result {
+		if item.ItemType == "message" && item.MessageID == msgs[1] {
+			messagePreserved = true
+			break
+		}
+	}
+	if !messagePreserved {
+		t.Error("message at ordinal 200 should have been preserved")
+	}
+
+	// Verify summary2 at ordinal 400 is preserved
+	summary2Preserved := false
+	for _, item := range result {
+		if item.ItemType == "summary" && item.SummaryID == summaries[2] {
+			summary2Preserved = true
+			break
+		}
+	}
+	if !summary2Preserved {
+		t.Error("summary2 at ordinal 400 should have been preserved")
+	}
+
+	// Verify new summary exists
+	newSummaryFound := false
+	for _, item := range result {
+		if item.ItemType == "summary" && item.SummaryID == newSummary.SummaryID {
+			newSummaryFound = true
+			break
+		}
+	}
+	if !newSummaryFound {
+		t.Error("new summary should exist")
+	}
+
+	// Verify no duplicate ordinals
+	ordinalSet := make(map[int]bool)
+	for _, item := range result {
+		if ordinalSet[item.Ordinal] {
+			t.Errorf("duplicate ordinal %d detected", item.Ordinal)
+		}
+		ordinalSet[item.Ordinal] = true
+	}
+}
