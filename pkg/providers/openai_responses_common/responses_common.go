@@ -4,6 +4,8 @@ package openai_responses_common
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"strings"
 
@@ -215,18 +217,184 @@ func TranslateTools(tools []protocoltypes.ToolDefinition, enableWebSearch bool) 
 // ParseResponseBody parses an OpenAI Responses API JSON body into an LLMResponse.
 // Handles output item types: "message" (output_text + refusal), "function_call", and "reasoning".
 func ParseResponseBody(body io.Reader) (*protocoltypes.LLMResponse, error) {
-	var apiResp responses.Response
+	var apiResp responseEnvelope
 	if err := json.NewDecoder(body).Decode(&apiResp); err != nil {
 		return nil, err
 	}
 
-	return parseResponse(&apiResp), nil
+	return parseResponseEnvelope(&apiResp)
 }
 
 // ParseResponseFromStruct converts a decoded responses.Response into an LLMResponse.
 // Used by providers that receive the Response struct directly (e.g., via streaming SDK).
 func ParseResponseFromStruct(resp *responses.Response) *protocoltypes.LLMResponse {
+	if resp == nil {
+		return &protocoltypes.LLMResponse{}
+	}
+
+	raw, err := json.Marshal(resp)
+	if err == nil {
+		var apiResp responseEnvelope
+		if err := json.Unmarshal(raw, &apiResp); err == nil {
+			if out, err := parseResponseEnvelope(&apiResp); err == nil {
+				return out
+			}
+		}
+	}
+
 	return parseResponse(resp)
+}
+
+type responseEnvelope struct {
+	Status string `json:"status"`
+	Error  *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+	Output []struct {
+		ID        string `json:"id"`
+		Type      string `json:"type"`
+		CallID    string `json:"call_id"`
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+		Summary   []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"summary"`
+		Content []struct {
+			Type    string `json:"type"`
+			Text    string `json:"text"`
+			Refusal string `json:"refusal"`
+		} `json:"content"`
+	} `json:"output"`
+	IncompleteDetails *struct {
+		Reason string `json:"reason"`
+	} `json:"incomplete_details"`
+	Usage *struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+func parseResponseEnvelope(apiResp *responseEnvelope) (*protocoltypes.LLMResponse, error) {
+	status := strings.TrimSpace(apiResp.Status)
+	switch status {
+	case "completed", "incomplete":
+		if len(apiResp.Output) == 0 {
+			return nil, errors.New("openai responses returned terminal status with empty output")
+		}
+	case "failed":
+		if apiResp.Error != nil {
+			if msg := strings.TrimSpace(apiResp.Error.Message); msg != "" {
+				return nil, errors.New(msg)
+			}
+		}
+		return nil, errors.New("openai responses request failed")
+	default:
+		return nil, fmt.Errorf("openai responses returned unexpected or non-terminal status: %q", status)
+	}
+
+	var content strings.Builder
+	var reasoning strings.Builder
+	var reasoningContent strings.Builder
+	reasoningDetails := make([]protocoltypes.ReasoningDetail, 0)
+	toolCalls := make([]protocoltypes.ToolCall, 0)
+
+	for _, item := range apiResp.Output {
+		switch item.Type {
+		case "message":
+			for _, c := range item.Content {
+				switch c.Type {
+				case "output_text":
+					content.WriteString(c.Text)
+				case "refusal":
+					content.WriteString(c.Refusal)
+				}
+			}
+		case "function_call":
+			var args map[string]any
+			if err := json.Unmarshal([]byte(item.Arguments), &args); err != nil {
+				args = map[string]any{"raw": item.Arguments}
+			}
+			toolCalls = append(toolCalls, protocoltypes.ToolCall{
+				ID:        firstNonEmpty(item.CallID, item.ID),
+				Name:      item.Name,
+				Arguments: args,
+			})
+		case "reasoning":
+			for _, s := range item.Summary {
+				if s.Text == "" {
+					continue
+				}
+				if reasoning.Len() > 0 {
+					reasoning.WriteString("\n")
+				}
+				reasoning.WriteString(s.Text)
+				reasoningDetails = append(reasoningDetails, protocoltypes.ReasoningDetail{
+					Format: "text",
+					Index:  len(reasoningDetails),
+					Type:   s.Type,
+					Text:   s.Text,
+				})
+			}
+			for _, c := range item.Content {
+				if c.Text == "" {
+					continue
+				}
+				if reasoningContent.Len() > 0 {
+					reasoningContent.WriteString("\n")
+				}
+				reasoningContent.WriteString(c.Text)
+				reasoningDetails = append(reasoningDetails, protocoltypes.ReasoningDetail{
+					Format: "text",
+					Index:  len(reasoningDetails),
+					Type:   c.Type,
+					Text:   c.Text,
+				})
+			}
+		}
+	}
+
+	finishReason := "stop"
+	if len(toolCalls) > 0 {
+		finishReason = "tool_calls"
+	} else if status == "incomplete" {
+		finishReason = "truncated"
+		if apiResp.IncompleteDetails != nil &&
+			apiResp.IncompleteDetails.Reason != "" &&
+			apiResp.IncompleteDetails.Reason != "max_output_tokens" {
+			finishReason = apiResp.IncompleteDetails.Reason
+		}
+	}
+
+	var usage *protocoltypes.UsageInfo
+	if apiResp.Usage != nil {
+		usage = &protocoltypes.UsageInfo{
+			PromptTokens:     apiResp.Usage.InputTokens,
+			CompletionTokens: apiResp.Usage.OutputTokens,
+			TotalTokens:      apiResp.Usage.TotalTokens,
+		}
+	}
+
+	return &protocoltypes.LLMResponse{
+		Content:          content.String(),
+		ReasoningContent: reasoningContent.String(),
+		Reasoning:        reasoning.String(),
+		ReasoningDetails: reasoningDetails,
+		ToolCalls:        toolCalls,
+		FinishReason:     finishReason,
+		Usage:            usage,
+	}, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+
+	return ""
 }
 
 // parseResponse is the shared implementation for extracting LLMResponse fields
@@ -270,7 +438,7 @@ func parseResponse(apiResp *responses.Response) *protocoltypes.LLMResponse {
 	}
 	switch apiResp.Status {
 	case responses.ResponseStatusIncomplete:
-		finishReason = "length"
+		finishReason = "truncated"
 	case responses.ResponseStatusFailed:
 		finishReason = "error"
 	case responses.ResponseStatusCancelled:
