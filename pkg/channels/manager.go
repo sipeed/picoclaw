@@ -430,6 +430,9 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 		m.initChannel("vk", "VK")
 	}
 
+	// Always initialize HTTP channel as it is used for synchronous gateway chat
+	m.initChannel("http", "HTTP")
+
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{
 		"enabled_channels": len(m.channels),
 	})
@@ -1248,7 +1251,7 @@ func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, conten
 	}
 
 	// Fallback: direct send (should not happen)
-	channel, _ := m.channels[channelName]
+	channel := m.channels[channelName]
 	_, err := channel.Send(ctx, msg)
 	return err
 }

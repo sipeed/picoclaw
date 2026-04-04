@@ -25,11 +25,12 @@ import (
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/status"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/version"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/security"
 	"github.com/sipeed/picoclaw/pkg/updater"
 )
 
 func NewPicoclawCommand() *cobra.Command {
-	short := fmt.Sprintf("%s picoclaw - Personal AI Assistant %s\n\n", internal.Logo, config.GetVersion())
+	short := fmt.Sprintf("%s picoclaw - Personal AI Assistant v%s\n\n", internal.Logo, config.GetVersion())
 
 	cmd := &cobra.Command{
 		Use:     "picoclaw",
@@ -68,6 +69,7 @@ const (
 )
 
 func main() {
+	security.Init()
 	fmt.Printf("%s", banner)
 
 	tz_env := os.Getenv("TZ")
@@ -86,6 +88,7 @@ func main() {
 
 	cmd := NewPicoclawCommand()
 	if err := cmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "\n❌ FATAL: %v\n", err)
 		os.Exit(1)
 	}
 }

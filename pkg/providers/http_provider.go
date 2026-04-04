@@ -17,9 +17,9 @@ type HTTPProvider struct {
 	delegate *openai_compat.Provider
 }
 
-func NewHTTPProvider(apiKey, apiBase, proxy string) *HTTPProvider {
+func NewHTTPProvider(apiKey, apiBase, proxy, userAgent string) *HTTPProvider {
 	return &HTTPProvider{
-		delegate: openai_compat.NewProvider(apiKey, apiBase, proxy),
+		delegate: openai_compat.NewProvider(apiKey, apiBase, proxy, openai_compat.WithUserAgent(userAgent)),
 	}
 }
 
@@ -40,6 +40,19 @@ func NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 			openai_compat.WithMaxTokensField(maxTokensField),
 			openai_compat.WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
 			openai_compat.WithExtraBody(extraBody),
+			openai_compat.WithUserAgent(userAgent),
+		),
+	}
+}
+
+func NewAzureAIProvider(apiKey, apiBase, proxy, userAgent string, requestTimeoutSeconds int) *HTTPProvider {
+	return &HTTPProvider{
+		delegate: openai_compat.NewProvider(
+			apiKey,
+			apiBase,
+			proxy,
+			openai_compat.WithAzureHeaders(true),
+			openai_compat.WithRequestTimeout(time.Duration(requestTimeoutSeconds)*time.Second),
 			openai_compat.WithUserAgent(userAgent),
 		),
 	}
@@ -70,6 +83,10 @@ func (p *HTTPProvider) ChatStream(
 
 func (p *HTTPProvider) GetDefaultModel() string {
 	return ""
+}
+
+func (p *HTTPProvider) SetUseAzureHeaders(use bool) {
+	p.delegate.SetUseAzureHeaders(use)
 }
 
 func (p *HTTPProvider) SupportsNativeSearch() bool {
