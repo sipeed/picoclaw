@@ -16,12 +16,13 @@ type EditFileTool struct {
 }
 
 // NewEditFileTool creates a new EditFileTool with optional directory restriction.
-func NewEditFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *EditFileTool {
-	var patterns []*regexp.Regexp
-	if len(allowPaths) > 0 {
-		patterns = allowPaths[0]
+func NewEditFileTool(workspace string, restrict bool, allowPaths []*regexp.Regexp,
+	denyPaths ...[]*regexp.Regexp) *EditFileTool {
+	var denyPatterns []*regexp.Regexp
+	if len(denyPaths) > 0 {
+		denyPatterns = denyPaths[0]
 	}
-	return &EditFileTool{fs: buildFs(workspace, restrict, patterns)}
+	return &EditFileTool{fs: buildFs(workspace, restrict, allowPaths, denyPatterns)}
 }
 
 func (t *EditFileTool) Name() string {
@@ -79,12 +80,13 @@ type AppendFileTool struct {
 	fs fileSystem
 }
 
-func NewAppendFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *AppendFileTool {
-	var patterns []*regexp.Regexp
-	if len(allowPaths) > 0 {
-		patterns = allowPaths[0]
+func NewAppendFileTool(workspace string, restrict bool, allowPaths []*regexp.Regexp,
+	denyPaths ...[]*regexp.Regexp) *AppendFileTool {
+	var denyPatterns []*regexp.Regexp
+	if len(denyPaths) > 0 {
+		denyPatterns = denyPaths[0]
 	}
-	return &AppendFileTool{fs: buildFs(workspace, restrict, patterns)}
+	return &AppendFileTool{fs: buildFs(workspace, restrict, allowPaths, denyPatterns)}
 }
 
 func (t *AppendFileTool) Name() string {

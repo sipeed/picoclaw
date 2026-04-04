@@ -832,9 +832,12 @@ type braveConfigV0 struct {
 }
 
 func toSecureStrings(keys []string) SecureStrings {
-	apikeys := make(SecureStrings, len(keys))
-	for i, key := range keys {
-		apikeys[i] = NewSecureString(key)
+	var apikeys SecureStrings
+	for _, key := range keys {
+		if key == "[NOT_HERE]" {
+			continue
+		}
+		apikeys = append(apikeys, NewSecureString(key))
 	}
 	return apikeys
 }

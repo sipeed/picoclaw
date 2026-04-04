@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -286,8 +287,11 @@ func TestAgentLoop_Hooks_ToolInterceptorCanRewrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runAgentLoop failed: %v", err)
 	}
-	if resp != "after:modified" {
-		t.Fatalf("expected rewritten tool result, got %q", resp)
+	if !strings.Contains(resp, "<external_data>\nafter:modified\n</external_data>") {
+		t.Fatalf("expected rewritten tool result containing tags, got %q", resp)
+	}
+	if !strings.Contains(resp, "[SYSTEM REMINDER:") {
+		t.Fatalf("system reminder missing from rewritten tool result, got %q", resp)
 	}
 }
 

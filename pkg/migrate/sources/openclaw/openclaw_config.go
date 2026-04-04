@@ -453,27 +453,27 @@ func (c *OpenClawConfig) GetAgents() []OpenClawAgentEntry {
 }
 
 func (c *OpenClawConfig) HasSkills() bool {
-	return c.Skills != nil && c.Skills.Entries != nil && len(c.Skills.Entries) > 0
+	return c.Skills != nil && len(c.Skills.Entries) > 0
 }
 
 func (c *OpenClawConfig) HasMemory() bool {
-	return c.Memory != nil && len(c.Memory) > 0
+	return len(c.Memory) > 0
 }
 
 func (c *OpenClawConfig) HasCron() bool {
-	return c.Cron != nil && len(c.Cron) > 0
+	return len(c.Cron) > 0
 }
 
 func (c *OpenClawConfig) HasHooks() bool {
-	return c.Hooks != nil && len(c.Hooks) > 0
+	return len(c.Hooks) > 0
 }
 
 func (c *OpenClawConfig) HasSession() bool {
-	return c.Session != nil && len(c.Session) > 0
+	return len(c.Session) > 0
 }
 
 func (c *OpenClawConfig) HasAuthProfiles() bool {
-	return c.Auth != nil && c.Auth.Profiles != nil && len(c.Auth.Profiles) > 0
+	return c.Auth != nil && len(c.Auth.Profiles) > 0
 }
 
 func (c *OpenClawConfig) ConvertToPicoClaw(sourceHome string) (*PicoClawConfig, []string, error) {
@@ -510,7 +510,7 @@ func (c *OpenClawConfig) ConvertToPicoClaw(sourceHome string) (*PicoClawConfig, 
 			continue
 		}
 		cfg.ModelList = append(cfg.ModelList, ModelConfig{
-			ModelName: fmt.Sprintf("%s", provName),
+			ModelName: provName,
 			Model:     fmt.Sprintf("%s/%s", provName, provName),
 			APIKey:    provCfg.ApiKey,
 			APIBase:   provCfg.BaseUrl,

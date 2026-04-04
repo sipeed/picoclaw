@@ -106,10 +106,14 @@ build-dev-picoclaw:
 	@mkdir -p "$$(dirname "$(PICOCLAW_BINARY)")"
 	@$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o "$(PICOCLAW_BINARY)" ../cmd/picoclaw
 
-# Run all tests
 test:
 	cd $(BACKEND_DIR) && ${WEB_GO} test ./...
-	cd $(FRONTEND_DIR) && pnpm lint
+	@if command -v pnpm >/dev/null 2>&1; then \
+		cd $(FRONTEND_DIR) && pnpm lint; \
+	else \
+		echo "pnpm not found, skipping frontend linting"; \
+	fi
+
 
 # Lint and format
 lint:

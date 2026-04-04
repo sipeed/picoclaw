@@ -97,6 +97,9 @@
 
 🧠 **Smart routing**: Rule-based model routing — simple queries go to lightweight models, saving API costs.
 
+🛡️ **Hardened Multi-User Isolation**: Built-in [Tenant Isolation](docs/configuration.md#🔒-multi-tenant-agent-isolation) for shared infrastructure (Azure/ACA) — automatically partitions workspaces, memory, and tools (including MCP) per-user session.
+
+🛡️ **Security Shield**: Active protection layers including Canary tokens (leak detection), PII Redaction, Indirect Prompt Injection (IPIA) Analysis, and Tool Policy-as-Code. [Learn more](docs/security_configuration.md#security-shield-active-protection).
 _*Recent builds may use 10-20MB due to rapid PR merges. Resource optimization is planned. Boot speed comparison based on 0.8GHz single-core benchmarks (see table below)._
 
 <div align="center">
@@ -609,6 +612,7 @@ For detailed guides beyond this README:
 | [SubTurn](docs/subturn.md) | Subagent coordination, concurrency control, lifecycle |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
 | [Tools Configuration](docs/tools_configuration.md) | Per-tool enable/disable, exec policies, MCP, Skills |
+| [Gateway API Reference](docs/api.md) | HTTP endpoints: `/chat`, `/health`, `/ready`, `/reload` |
 | [Hardware Compatibility](docs/hardware-compatibility.md) | Tested boards, minimum requirements |
 
 ## 🤝 Contribute & Roadmap

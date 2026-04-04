@@ -32,7 +32,8 @@ func DefaultConfig() *Config {
 					Enabled:       false,
 					MaxArgsLength: 300,
 				},
-				SplitOnMarker: false,
+				SplitOnMarker:        false,
+				AgentCacheTTLSeconds: 86400, // 24 hours
 			},
 		},
 		Bindings: []AgentBinding{},
@@ -358,11 +359,13 @@ func DefaultConfig() *Config {
 			},
 		},
 		Gateway: GatewayConfig{
-			Host:      "127.0.0.1",
-			Port:      18790,
-			HotReload: false,
-			LogLevel:  DefaultGatewayLogLevel,
+			Host:        "127.0.0.1",
+			Port:        18790,
+			ChatEnabled: true,
+			HotReload:   false,
+			LogLevel:    DefaultGatewayLogLevel,
 		},
+
 		Tools: ToolsConfig{
 			FilterSensitiveData: true,
 			FilterMinLength:     8,

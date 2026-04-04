@@ -1,0 +1,68 @@
+# ============================================================
+# Stage 1: Build the picoclaw binaries
+# ============================================================
+FROM golang:1.25-alpine AS builder
+
+WORKDIR /app
+
+# Cache dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source
+COPY . .
+
+# Build main binary for ARM64 (Raspberry Pi)
+# We enable standard JSON and Go-based OLM for Matrix
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -tags goolm,stdjson -ldflags="-s -w" -o bin/picoclaw ./cmd/picoclaw
+
+# Build additional tools from cmd/ as individual binaries (e.g. launcher-tui)
+# This follows your requested tool-building pattern
+RUN set -e; \
+  mkdir -p bin/tools; \
+  for d in $(find cmd -maxdepth 1 -type d -not -path 'cmd' -not -path 'cmd/picoclaw'); do \
+    name=$(basename "$d"); \
+    echo "Building tool: $name"; \
+    CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -tags goolm,stdjson -ldflags="-s -w" -o bin/tools/$name ./$d; \
+  done
+
+# ============================================================
+# Stage 2: Final runtime image - lightweight Alpine
+# ============================================================
+FROM alpine:latest
+
+# Install runtime dependencies as requested
+RUN apk add --no-cache \
+  ca-certificates \
+  openssh-client \
+  bash \
+  tzdata && \
+  update-ca-certificates
+
+WORKDIR /app
+
+# Copy main binary
+COPY --from=builder /app/bin/picoclaw /app/picoclaw
+
+# Copy additional tools (PICOCLAW_HOME typically looks for binaries here)
+RUN mkdir -p /app/bin/tools
+COPY --from=builder /app/bin/tools/ /app/bin/tools/
+RUN chmod -R +x /app/bin/tools || true
+
+# App configuration: use the example template by default
+COPY config/config.example.json ./config.json
+
+# If you have specific MCP skill configurations, copy them here
+# Matching your requested template structure
+RUN mkdir -p ./config
+COPY config/config.example.json ./config/mcp_skills.json
+
+# Initial setup: run onboard to create initial directories and local state
+RUN /app/picoclaw onboard
+
+# Expose Gateway port
+EXPOSE 18790
+
+# Standard entrypoint for PicoClaw
+ENTRYPOINT ["/app/picoclaw"]
+CMD ["gateway"]

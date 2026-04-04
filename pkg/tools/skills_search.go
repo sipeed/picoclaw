@@ -12,15 +12,24 @@ import (
 type FindSkillsTool struct {
 	registryMgr *skills.RegistryManager
 	cache       *skills.SearchCache
+	whitelist   []string
+	enabled     bool
 }
 
 // NewFindSkillsTool creates a new FindSkillsTool.
 // registryMgr is the shared registry manager (built from config in createToolRegistry).
 // cache is the search cache for deduplicating similar queries.
-func NewFindSkillsTool(registryMgr *skills.RegistryManager, cache *skills.SearchCache) *FindSkillsTool {
+func NewFindSkillsTool(
+	registryMgr *skills.RegistryManager,
+	cache *skills.SearchCache,
+	whitelist []string,
+	enabled bool,
+) *FindSkillsTool {
 	return &FindSkillsTool{
 		registryMgr: registryMgr,
 		cache:       cache,
+		whitelist:   whitelist,
+		enabled:     enabled,
 	}
 }
 
@@ -77,6 +86,21 @@ func (t *FindSkillsTool) Execute(ctx context.Context, args map[string]any) *Tool
 	results, err := t.registryMgr.SearchAll(ctx, query, limit)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("skill search failed: %v", err))
+	}
+
+	// Filter by whitelist if enabled
+	if t.enabled {
+		filtered := make([]skills.SearchResult, 0, len(results))
+		whitelistMap := make(map[string]struct{}, len(t.whitelist))
+		for _, w := range t.whitelist {
+			whitelistMap[w] = struct{}{}
+		}
+		for _, r := range results {
+			if _, ok := whitelistMap[r.Slug]; ok {
+				filtered = append(filtered, r)
+			}
+		}
+		results = filtered
 	}
 
 	// Cache the results.
