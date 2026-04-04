@@ -465,11 +465,6 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		content = cleaned
 	}
 
-	content, mediaRefs = c.prependReplyContext(ctx, message, chatID, content, mediaRefs)
-	if content == "" {
-		content = "[empty message]"
-	}
-
 	if replyTargetID(message) != "" || stringValue(message.ThreadId) != "" {
 		content, mediaRefs = c.prependReplyContext(ctx, message, chatID, content, mediaRefs)
 	}
