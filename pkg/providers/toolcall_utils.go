@@ -26,7 +26,9 @@ func buildCLIToolsPrompt(tools []ToolDefinition) string {
 	sb.WriteString("Escaping rules for string arguments:\n")
 	sb.WriteString("- `\\n` means a real newline.\n")
 	sb.WriteString("- To pass a literal backslash+n (`\\n`), encode it as `\\\\n` inside arguments JSON.\n")
-	sb.WriteString("- Because `arguments` is itself a JSON string, this often appears as `\\\\\\\\n` in the outer payload.\n\n")
+	sb.WriteString(
+		"- Because `arguments` is itself a JSON string, this often appears as `\\\\\\\\n` in the outer payload.\n\n",
+	)
 	sb.WriteString("### Tool Definitions:\n\n")
 
 	for _, tool := range tools {
