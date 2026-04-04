@@ -23,11 +23,11 @@ func buildCLIToolsPrompt(tools []ToolDefinition) string {
 	)
 	sb.WriteString("\n```\n\n")
 	sb.WriteString("CRITICAL: The 'arguments' field MUST be a JSON-encoded STRING.\n\n")
-	sb.WriteString("Escaping rules for string arguments:\n")
-	sb.WriteString("- `\\n` means a real newline.\n")
-	sb.WriteString("- To pass a literal backslash+n (`\\n`), encode it as `\\\\n` inside arguments JSON.\n")
+	sb.WriteString("Escaping rules (what to type in `function.arguments`):\n")
+	sb.WriteString("- Use `\\n` to represent a real newline character.\n")
+	sb.WriteString("- Use `\\\\n` to represent a literal backslash+n sequence (`\\n`).\n")
 	sb.WriteString(
-		"- Because `arguments` is itself a JSON string, this often appears as `\\\\\\\\n` in the outer payload.\n\n",
+		"- `function.arguments` is a JSON-encoded string, so quotes/backslashes must be escaped in the outer payload.\n\n",
 	)
 	sb.WriteString("### Tool Definitions:\n\n")
 
