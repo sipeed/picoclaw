@@ -10,17 +10,26 @@ import (
 
 // FindSkillsTool allows the LLM agent to search for installable skills from registries.
 type FindSkillsTool struct {
-	registryMgr *skills.RegistryManager
-	cache       *skills.SearchCache
+	registryMgr      *skills.RegistryManager
+	cache            *skills.SearchCache
+	whitelist        []string
+	whitelistEnabled bool
 }
 
 // NewFindSkillsTool creates a new FindSkillsTool.
 // registryMgr is the shared registry manager (built from config in createToolRegistry).
 // cache is the search cache for deduplicating similar queries.
-func NewFindSkillsTool(registryMgr *skills.RegistryManager, cache *skills.SearchCache) *FindSkillsTool {
+func NewFindSkillsTool(
+	registryMgr *skills.RegistryManager,
+	cache *skills.SearchCache,
+	whitelist []string,
+	whitelistEnabled bool,
+) *FindSkillsTool {
 	return &FindSkillsTool{
-		registryMgr: registryMgr,
-		cache:       cache,
+		registryMgr:      registryMgr,
+		cache:            cache,
+		whitelist:        whitelist,
+		whitelistEnabled: whitelistEnabled,
 	}
 }
 
@@ -77,6 +86,22 @@ func (t *FindSkillsTool) Execute(ctx context.Context, args map[string]any) *Tool
 	results, err := t.registryMgr.SearchAll(ctx, query, limit)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("skill search failed: %v", err))
+	}
+
+	// Apply whitelist filtering if enabled.
+	if t.whitelistEnabled {
+		filtered := make([]skills.SearchResult, 0, len(results))
+		whitelistMap := make(map[string]struct{}, len(t.whitelist))
+		for _, slug := range t.whitelist {
+			whitelistMap[slug] = struct{}{}
+		}
+
+		for _, r := range results {
+			if _, allowed := whitelistMap[r.Slug]; allowed {
+				filtered = append(filtered, r)
+			}
+		}
+		results = filtered
 	}
 
 	// Cache the results.

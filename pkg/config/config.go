@@ -159,7 +159,7 @@ func (m AgentModelConfig) MarshalJSON() ([]byte, error) {
 		Primary   string   `json:"primary,omitempty"`
 		Fallbacks []string `json:"fallbacks,omitempty"`
 	}
-	return json.Marshal(raw{Primary: m.Primary, Fallbacks: m.Fallbacks})
+	return json.Marshal(raw(m))
 }
 
 type AgentConfig struct {
@@ -170,6 +170,9 @@ type AgentConfig struct {
 	Model     *AgentModelConfig `json:"model,omitempty"`
 	Skills    []string          `json:"skills,omitempty"`
 	Subagents *SubagentsConfig  `json:"subagents,omitempty"`
+	// SystemPrompt is an optional agent-specific manual override for the bot's
+	// behavior. When set, it replaces the global default system prompt.
+	SystemPrompt string `json:"system_prompt,omitempty"`
 }
 
 type SubagentsConfig struct {
@@ -249,6 +252,13 @@ type AgentDefaults struct {
 	SplitOnMarker             bool               `json:"split_on_marker"                  env:"PICOCLAW_AGENTS_DEFAULTS_SPLIT_ON_MARKER"` // split messages on <|[SPLIT]|> marker
 	ContextManager            string             `json:"context_manager,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_MANAGER"`
 	ContextManagerConfig      json.RawMessage    `json:"context_manager_config,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_MANAGER_CONFIG"`
+	// SystemPrompt is the fallback system prompt used for all agents
+	// that do not have an explicit manual system_prompt configured.
+	SystemPrompt string `json:"system_prompt"                        env:"PICOCLAW_AGENTS_DEFAULTS_SYSTEM_PROMPT"`
+	// AgentCacheTTLSeconds determines how long to keep isolated agent instances
+	// (those with unique chatID/isolationID) in memory after their last use.
+	// Default: 24h
+	AgentCacheTTLSeconds int `json:"agent_cache_ttl_seconds"          env:"PICOCLAW_AGENTS_DEFAULTS_AGENT_CACHE_TTL_SECONDS"`
 }
 
 const DefaultMaxMediaSize = 20 * 1024 * 1024 // 20 MB
@@ -811,6 +821,8 @@ type SkillsToolsConfig struct {
 	Github                SkillsGithubConfig     `yaml:"github,omitempty"                                     json:"github"`
 	MaxConcurrentSearches int                    `yaml:"-"                                                    json:"max_concurrent_searches" env:"PICOCLAW_TOOLS_SKILLS_MAX_CONCURRENT_SEARCHES"`
 	SearchCache           SearchCacheConfig      `yaml:"-"                                                    json:"search_cache"`
+	Whitelist             []string               `json:"whitelist,omitempty"                       env:"PICOCLAW_TOOLS_SKILLS_WHITELIST"`
+	WhitelistEnabled      bool                   `json:"whitelist_enabled,omitempty"               env:"PICOCLAW_TOOLS_SKILLS_WHITELIST_ENABLED"`
 }
 
 type MediaCleanupConfig struct {
@@ -844,6 +856,14 @@ func (c ReadFileToolConfig) EffectiveMode() string {
 type ToolsConfig struct {
 	AllowReadPaths  []string `json:"allow_read_paths"  yaml:"-" env:"PICOCLAW_TOOLS_ALLOW_READ_PATHS"`
 	AllowWritePaths []string `json:"allow_write_paths" yaml:"-" env:"PICOCLAW_TOOLS_ALLOW_WRITE_PATHS"`
+	DenyReadPaths   []string `json:"deny_read_paths"   yaml:"-" env:"PICOCLAW_TOOLS_DENY_READ_PATHS"`
+	DenyWritePaths  []string `json:"deny_write_paths"  yaml:"-" env:"PICOCLAW_TOOLS_DENY_WRITE_PATHS"`
+	// Whitelist of tools allowed globally. When WhitelistEnabled is true,
+	// only tools in this list will be enabled even if set to enabled in config.
+	Whitelist []string `json:"whitelist,omitempty"                       env:"PICOCLAW_TOOLS_WHITELIST"`
+	// WhitelistEnabled controls global tool whitelisting.
+	WhitelistEnabled bool `json:"whitelist_enabled,omitempty"               env:"PICOCLAW_TOOLS_WHITELIST_ENABLED"`
+
 	// FilterSensitiveData controls whether to filter sensitive values (API keys,
 	// tokens, secrets) from tool results before sending to the LLM.
 	// Default: true (enabled)

@@ -60,7 +60,8 @@ func (info SkillInfo) validate() error {
 
 type SkillsLoader struct {
 	workspace       string
-	workspaceSkills string // workspace skills (project-level)
+	workspaceSkills string // workspace skills (session-level in isolation)
+	baseSkills      string // base workspace skills (project-level)
 	globalSkills    string // global skills (~/.picoclaw/skills)
 	builtinSkills   string // builtin skills
 }
@@ -68,7 +69,7 @@ type SkillsLoader struct {
 // SkillRoots returns all unique skill root directories used by this loader.
 // The order follows resolution priority: workspace > global > builtin.
 func (sl *SkillsLoader) SkillRoots() []string {
-	roots := []string{sl.workspaceSkills, sl.globalSkills, sl.builtinSkills}
+	roots := []string{sl.workspaceSkills, sl.baseSkills, sl.globalSkills, sl.builtinSkills}
 	seen := make(map[string]struct{}, len(roots))
 	out := make([]string, 0, len(roots))
 
@@ -88,10 +89,11 @@ func (sl *SkillsLoader) SkillRoots() []string {
 	return out
 }
 
-func NewSkillsLoader(workspace string, globalSkills string, builtinSkills string) *SkillsLoader {
+func NewSkillsLoader(workspace string, baseWorkspace string, globalSkills string, builtinSkills string) *SkillsLoader {
 	return &SkillsLoader{
 		workspace:       workspace,
 		workspaceSkills: filepath.Join(workspace, "skills"),
+		baseSkills:      filepath.Join(baseWorkspace, "skills"),
 		globalSkills:    globalSkills, // ~/.picoclaw/skills
 		builtinSkills:   builtinSkills,
 	}
@@ -139,8 +141,9 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 		}
 	}
 
-	// Priority: workspace > global > builtin
+	// Priority: workspace > base > global > builtin
 	addSkills(sl.workspaceSkills, "workspace")
+	addSkills(sl.baseSkills, "base")
 	addSkills(sl.globalSkills, "global")
 	addSkills(sl.builtinSkills, "builtin")
 
@@ -156,7 +159,15 @@ func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 		}
 	}
 
-	// 2. then load from global skills (~/.picoclaw/skills)
+	// 2. then load from base workspace skills (project-level)
+	if sl.baseSkills != "" {
+		skillFile := filepath.Join(sl.baseSkills, name, "SKILL.md")
+		if content, err := os.ReadFile(skillFile); err == nil {
+			return sl.stripFrontmatter(string(content)), true
+		}
+	}
+
+	// 3. then load from global skills (~/.picoclaw/skills)
 	if sl.globalSkills != "" {
 		skillFile := filepath.Join(sl.globalSkills, name, "SKILL.md")
 		if content, err := os.ReadFile(skillFile); err == nil {
@@ -164,7 +175,7 @@ func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 		}
 	}
 
-	// 3. finally load from builtin skills
+	// 4. finally load from builtin skills
 	if sl.builtinSkills != "" {
 		skillFile := filepath.Join(sl.builtinSkills, name, "SKILL.md")
 		if content, err := os.ReadFile(skillFile); err == nil {
@@ -204,7 +215,7 @@ func (sl *SkillsLoader) BuildSkillsSummary() string {
 		escapedDesc := escapeXML(s.Description)
 		escapedPath := escapeXML(s.Path)
 
-		lines = append(lines, fmt.Sprintf("  <skill>"))
+		lines = append(lines, "  <skill>")
 		lines = append(lines, fmt.Sprintf("    <name>%s</name>", escapedName))
 		lines = append(lines, fmt.Sprintf("    <description>%s</description>", escapedDesc))
 		lines = append(lines, fmt.Sprintf("    <location>%s</location>", escapedPath))

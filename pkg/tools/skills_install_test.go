@@ -13,19 +13,19 @@ import (
 )
 
 func TestInstallSkillToolName(t *testing.T) {
-	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir())
+	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false)
 	assert.Equal(t, "install_skill", tool.Name())
 }
 
 func TestInstallSkillToolMissingSlug(t *testing.T) {
-	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir())
+	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false)
 	result := tool.Execute(context.Background(), map[string]any{})
 	assert.True(t, result.IsError)
 	assert.Contains(t, result.ForLLM, "identifier is required and must be a non-empty string")
 }
 
 func TestInstallSkillToolEmptySlug(t *testing.T) {
-	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir())
+	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false)
 	result := tool.Execute(context.Background(), map[string]any{
 		"slug": "   ",
 	})
@@ -34,7 +34,7 @@ func TestInstallSkillToolEmptySlug(t *testing.T) {
 }
 
 func TestInstallSkillToolUnsafeSlug(t *testing.T) {
-	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir())
+	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false)
 
 	cases := []string{
 		"../etc/passwd",
@@ -56,7 +56,7 @@ func TestInstallSkillToolAlreadyExists(t *testing.T) {
 	skillDir := filepath.Join(workspace, "skills", "existing-skill")
 	require.NoError(t, os.MkdirAll(skillDir, 0o755))
 
-	tool := NewInstallSkillTool(skills.NewRegistryManager(), workspace)
+	tool := NewInstallSkillTool(skills.NewRegistryManager(), workspace, nil, false)
 	result := tool.Execute(context.Background(), map[string]any{
 		"slug":     "existing-skill",
 		"registry": "clawhub",
@@ -67,7 +67,7 @@ func TestInstallSkillToolAlreadyExists(t *testing.T) {
 
 func TestInstallSkillToolRegistryNotFound(t *testing.T) {
 	workspace := t.TempDir()
-	tool := NewInstallSkillTool(skills.NewRegistryManager(), workspace)
+	tool := NewInstallSkillTool(skills.NewRegistryManager(), workspace, nil, false)
 	result := tool.Execute(context.Background(), map[string]any{
 		"slug":     "some-skill",
 		"registry": "nonexistent",
@@ -78,7 +78,7 @@ func TestInstallSkillToolRegistryNotFound(t *testing.T) {
 }
 
 func TestInstallSkillToolParameters(t *testing.T) {
-	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir())
+	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false)
 	params := tool.Parameters()
 
 	props, ok := params["properties"].(map[string]any)
@@ -95,7 +95,7 @@ func TestInstallSkillToolParameters(t *testing.T) {
 }
 
 func TestInstallSkillToolMissingRegistry(t *testing.T) {
-	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir())
+	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false)
 	result := tool.Execute(context.Background(), map[string]any{
 		"slug": "some-skill",
 	})

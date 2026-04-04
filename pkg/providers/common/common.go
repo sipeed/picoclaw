@@ -36,6 +36,20 @@ type (
 	ReasoningDetail        = protocoltypes.ReasoningDetail
 )
 
+// SafetyFilterError is returned by LLM providers when a request or response
+// is blocked by the provider's built-in content safety filters (e.g. Gemini,
+// Azure OpenAI).
+type SafetyFilterError struct {
+	Message string
+}
+
+func (e *SafetyFilterError) Error() string {
+	if e.Message != "" {
+		return fmt.Sprintf("content blocked by safety filter: %s", e.Message)
+	}
+	return "content blocked by safety filter"
+}
+
 const DefaultRequestTimeout = 120 * time.Second
 
 // NewHTTPClient creates an *http.Client with an optional proxy and the default timeout.

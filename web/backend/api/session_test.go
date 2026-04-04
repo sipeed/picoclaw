@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -41,25 +42,25 @@ func TestHandleListSessions_JSONLStorage(t *testing.T) {
 	}
 
 	sessionKey := picoSessionPrefix + "history-jsonl"
-	if err := store.AddFullMessage(nil, sessionKey, providers.Message{
+	if err := store.AddFullMessage(context.Background(), sessionKey, providers.Message{
 		Role:    "user",
 		Content: "Explain why the history API is empty after migration.",
 	}); err != nil {
 		t.Fatalf("AddFullMessage(user) error = %v", err)
 	}
-	if err := store.AddFullMessage(nil, sessionKey, providers.Message{
+	if err := store.AddFullMessage(context.Background(), sessionKey, providers.Message{
 		Role:    "assistant",
 		Content: "Because the API still reads only legacy JSON session files.",
 	}); err != nil {
 		t.Fatalf("AddFullMessage(assistant) error = %v", err)
 	}
-	if err := store.AddFullMessage(nil, sessionKey, providers.Message{
+	if err := store.AddFullMessage(context.Background(), sessionKey, providers.Message{
 		Role:    "tool",
 		Content: "ignored",
 	}); err != nil {
 		t.Fatalf("AddFullMessage(tool) error = %v", err)
 	}
-	if err := store.SetSummary(nil, sessionKey, "JSONL-backed session"); err != nil {
+	if err := store.SetSummary(context.Background(), sessionKey, "JSONL-backed session"); err != nil {
 		t.Fatalf("SetSummary() error = %v", err)
 	}
 
@@ -111,14 +112,14 @@ func TestHandleListSessions_TitleUsesFirstUserMessage(t *testing.T) {
 	}
 
 	sessionKey := picoSessionPrefix + "summary-title"
-	if err := store.AddFullMessage(nil, sessionKey, providers.Message{
+	if err := store.AddFullMessage(context.Background(), sessionKey, providers.Message{
 		Role:    "user",
 		Content: "fallback preview",
 	}); err != nil {
 		t.Fatalf("AddFullMessage() error = %v", err)
 	}
 	if err := store.SetSummary(
-		nil,
+		context.Background(),
 		sessionKey,
 		"  This summary is intentionally longer than sixty characters so it must be truncated in the history menu.  ",
 	); err != nil {
@@ -169,11 +170,11 @@ func TestHandleGetSession_JSONLStorage(t *testing.T) {
 		{Role: "assistant", Content: "second"},
 		{Role: "tool", Content: "ignored"},
 	} {
-		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+		if err := store.AddFullMessage(context.Background(), sessionKey, msg); err != nil {
 			t.Fatalf("AddFullMessage() error = %v", err)
 		}
 	}
-	if err := store.SetSummary(nil, sessionKey, "detail summary"); err != nil {
+	if err := store.SetSummary(context.Background(), sessionKey, "detail summary"); err != nil {
 		t.Fatalf("SetSummary() error = %v", err)
 	}
 
@@ -247,7 +248,7 @@ func TestHandleGetSession_ReconstructsVisibleMessageToolOutput(t *testing.T) {
 		{Role: "tool", Content: "Message sent to pico:pico:detail-message-tool", ToolCallID: "call_1"},
 		{Role: "assistant", Content: handledToolResponseSummaryText},
 	} {
-		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+		if err := store.AddFullMessage(context.Background(), sessionKey, msg); err != nil {
 			t.Fatalf("AddFullMessage() error = %v", err)
 		}
 	}
@@ -310,7 +311,7 @@ func TestHandleGetSession_PreservesFinalAssistantReplyAfterMessageToolOutput(t *
 		{Role: "tool", Content: "Message sent to pico:pico:detail-message-tool-final-reply", ToolCallID: "call_1"},
 		{Role: "assistant", Content: "final assistant reply"},
 	} {
-		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+		if err := store.AddFullMessage(context.Background(), sessionKey, msg); err != nil {
 			t.Fatalf("AddFullMessage() error = %v", err)
 		}
 	}
@@ -376,7 +377,7 @@ func TestHandleListSessions_MessageCountUsesVisibleTranscript(t *testing.T) {
 		{Role: "tool", Content: "Message sent to pico:pico:list-visible-count", ToolCallID: "call_1"},
 		{Role: "assistant", Content: handledToolResponseSummaryText},
 	} {
-		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+		if err := store.AddFullMessage(context.Background(), sessionKey, msg); err != nil {
 			t.Fatalf("AddFullMessage() error = %v", err)
 		}
 	}
@@ -416,7 +417,7 @@ func TestHandleGetSession_IncludesMediaOnlyMessages(t *testing.T) {
 	}
 
 	sessionKey := picoSessionPrefix + "detail-media-only"
-	if err := store.AddFullMessage(nil, sessionKey, providers.Message{
+	if err := store.AddFullMessage(context.Background(), sessionKey, providers.Message{
 		Role:  "user",
 		Media: []string{"data:image/png;base64,abc123"},
 	}); err != nil {
@@ -465,7 +466,7 @@ func TestHandleSessions_SupportsJSONLMessagesUpToStoreCap(t *testing.T) {
 
 	sessionKey := picoSessionPrefix + "detail-large-jsonl"
 	largeContent := strings.Repeat("x", 9*1024*1024)
-	if err := store.AddFullMessage(nil, sessionKey, providers.Message{
+	if err := store.AddFullMessage(context.Background(), sessionKey, providers.Message{
 		Role:    "user",
 		Content: largeContent,
 	}); err != nil {
@@ -536,7 +537,7 @@ func TestHandleListSessions_UsesImagePreviewForMediaOnlyMessage(t *testing.T) {
 	}
 
 	sessionKey := picoSessionPrefix + "preview-media-only"
-	if err := store.AddFullMessage(nil, sessionKey, providers.Message{
+	if err := store.AddFullMessage(context.Background(), sessionKey, providers.Message{
 		Role:  "user",
 		Media: []string{"data:image/png;base64,abc123"},
 	}); err != nil {
@@ -581,13 +582,13 @@ func TestHandleDeleteSession_JSONLStorage(t *testing.T) {
 	}
 
 	sessionKey := picoSessionPrefix + "delete-jsonl"
-	if err := store.AddFullMessage(nil, sessionKey, providers.Message{
+	if err := store.AddFullMessage(context.Background(), sessionKey, providers.Message{
 		Role:    "user",
 		Content: "delete me",
 	}); err != nil {
 		t.Fatalf("AddFullMessage() error = %v", err)
 	}
-	if err := store.SetSummary(nil, sessionKey, "delete summary"); err != nil {
+	if err := store.SetSummary(context.Background(), sessionKey, "delete summary"); err != nil {
 		t.Fatalf("SetSummary() error = %v", err)
 	}
 

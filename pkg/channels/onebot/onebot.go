@@ -824,7 +824,7 @@ func (c *OneBotChannel) parseMessageSegments(
 
 		case "face":
 			if data != nil {
-				faceID, _ := data["id"]
+				faceID := data["id"]
 				textParts = append(textParts, fmt.Sprintf("[face:%v]", faceID))
 			}
 

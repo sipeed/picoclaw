@@ -180,6 +180,8 @@ model_list:
   model2:0:
     api_keys:
       - model2_key
+whitelist: []
+whitelistenabled: false
 web:
   brave:
     api_keys:
@@ -187,6 +189,8 @@ web:
 skills:
   github:
     token: github_token
+  whitelist: []
+  whitelistenabled: false
 `
 		assert.Equal(t, yamlOutput, string(file))
 

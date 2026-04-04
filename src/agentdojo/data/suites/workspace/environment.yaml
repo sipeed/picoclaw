@@ -1,0 +1,3 @@
+inbox: !include include/inbox.yaml
+calendar: !include include/calendar.yaml
+cloud_drive: !include include/cloud_drive.yaml

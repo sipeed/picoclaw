@@ -19,19 +19,28 @@ import (
 // It shares the same RegistryManager that FindSkillsTool uses,
 // so all registries configured in config are available for installation.
 type InstallSkillTool struct {
-	registryMgr *skills.RegistryManager
-	workspace   string
-	mu          sync.Mutex
+	registryMgr      *skills.RegistryManager
+	workspace        string
+	mu               sync.Mutex
+	whitelist        []string
+	whitelistEnabled bool
 }
 
 // NewInstallSkillTool creates a new InstallSkillTool.
 // registryMgr is the shared registry manager (same instance as FindSkillsTool).
 // workspace is the root workspace directory; skills install to {workspace}/skills/{slug}/.
-func NewInstallSkillTool(registryMgr *skills.RegistryManager, workspace string) *InstallSkillTool {
+func NewInstallSkillTool(
+	registryMgr *skills.RegistryManager,
+	workspace string,
+	whitelist []string,
+	whitelistEnabled bool,
+) *InstallSkillTool {
 	return &InstallSkillTool{
-		registryMgr: registryMgr,
-		workspace:   workspace,
-		mu:          sync.Mutex{},
+		registryMgr:      registryMgr,
+		workspace:        workspace,
+		mu:               sync.Mutex{},
+		whitelist:        whitelist,
+		whitelistEnabled: whitelistEnabled,
 	}
 }
 
@@ -88,6 +97,20 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 
 	version, _ := args["version"].(string)
 	force, _ := args["force"].(bool)
+
+	// Check whitelist if enabled.
+	if t.whitelistEnabled {
+		allowed := false
+		for _, s := range t.whitelist {
+			if s == slug {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return ErrorResult(fmt.Sprintf("skill %q is not in the whitelist and cannot be installed", slug))
+		}
+	}
 
 	// Check if already installed.
 	skillsDir := filepath.Join(t.workspace, "skills")

@@ -1248,7 +1248,7 @@ func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, conten
 	}
 
 	// Fallback: direct send (should not happen)
-	channel, _ := m.channels[channelName]
+	channel := m.channels[channelName]
 	_, err := channel.Send(ctx, msg)
 	return err
 }

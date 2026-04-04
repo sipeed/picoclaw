@@ -457,19 +457,19 @@ func (c *OpenClawConfig) HasSkills() bool {
 }
 
 func (c *OpenClawConfig) HasMemory() bool {
-	return c.Memory != nil && len(c.Memory) > 0
+	return len(c.Memory) > 0
 }
 
 func (c *OpenClawConfig) HasCron() bool {
-	return c.Cron != nil && len(c.Cron) > 0
+	return len(c.Cron) > 0
 }
 
 func (c *OpenClawConfig) HasHooks() bool {
-	return c.Hooks != nil && len(c.Hooks) > 0
+	return len(c.Hooks) > 0
 }
 
 func (c *OpenClawConfig) HasSession() bool {
-	return c.Session != nil && len(c.Session) > 0
+	return len(c.Session) > 0
 }
 
 func (c *OpenClawConfig) HasAuthProfiles() bool {
@@ -510,7 +510,7 @@ func (c *OpenClawConfig) ConvertToPicoClaw(sourceHome string) (*PicoClawConfig, 
 			continue
 		}
 		cfg.ModelList = append(cfg.ModelList, ModelConfig{
-			ModelName: fmt.Sprintf("%s", provName),
+			ModelName: provName,
 			Model:     fmt.Sprintf("%s/%s", provName, provName),
 			APIKey:    provCfg.ApiKey,
 			APIBase:   provCfg.BaseUrl,

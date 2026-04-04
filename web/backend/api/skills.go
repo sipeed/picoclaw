@@ -505,6 +505,7 @@ func (h *Handler) handleDeleteSkill(w http.ResponseWriter, r *http.Request) {
 func newSkillsLoader(workspace string) *skills.SkillsLoader {
 	return skills.NewSkillsLoader(
 		workspace,
+		workspace, // Backend handle usually works on project workspace
 		filepath.Join(globalConfigDir(), "skills"),
 		builtinSkillsDir(),
 	)
@@ -606,7 +607,7 @@ func findWorkspaceSkillByDirectory(cfg *config.Config, directory string) *skillS
 }
 
 func findWorkspaceSkillInfoByDirectory(workspace, directory string) *skills.SkillInfo {
-	loader := skills.NewSkillsLoader(workspace, "", "")
+	loader := skills.NewSkillsLoader(workspace, workspace, "", "")
 	for _, skill := range loader.ListSkills() {
 		if skill.Source != "workspace" {
 			continue

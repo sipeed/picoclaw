@@ -56,7 +56,7 @@ PTY_PATCH_LOONG64=pty_dir=$$(go env GOMODCACHE)/github.com/creack/pty@v1.1.9; \
 	fi
 
 # Golangci-lint
-GOLANGCI_LINT?=golangci-lint
+GOLANGCI_LINT?=$(shell if [ -x "./golangci-lint" ]; then echo "./golangci-lint"; else echo "golangci-lint"; fi)
 
 # Installation
 INSTALL_PREFIX?=$(HOME)/.local
@@ -273,7 +273,7 @@ test: generate
 
 ## fmt: Format Go code
 fmt:
-	@$(GOLANGCI_LINT) fmt
+	@$(GOLANGCI_LINT) run --fix --build-tags $(GO_BUILD_TAGS)
 
 ## lint: Run linters
 lint:
