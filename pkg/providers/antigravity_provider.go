@@ -21,7 +21,7 @@ const (
 	antigravityDefaultModel = "gemini-3-flash"
 	antigravityUserAgent    = "antigravity"
 	antigravityXGoogClient  = "google-cloud-sdk vscode_cloudshelleditor/0.1"
-	antigravityVersion      = "1.15.8"
+	antigravityVersion      = "1.25.0"
 )
 
 // AntigravityProvider implements LLMProvider using Google's Cloud Code Assist (Antigravity) API.
