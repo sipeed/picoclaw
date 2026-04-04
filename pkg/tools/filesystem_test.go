@@ -18,7 +18,7 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 	os.WriteFile(testFile, []byte("test content"), 0o644)
 
-	tool := NewReadFileBytesTool("", false, MaxReadFileSize)
+	tool := NewReadFileBytesTool("", false, MaxReadFileSize, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": testFile,
@@ -45,8 +45,9 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 
 // TestFilesystemTool_ReadFile_NotFound verifies error handling for missing file
 func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
-	tool := NewReadFileBytesTool("", false, MaxReadFileSize)
+	tool := NewReadFileBytesTool("", false, MaxReadFileSize, nil)
 	ctx := context.Background()
+
 	args := map[string]any{
 		"path": "/nonexistent_file_12345.txt",
 	}
@@ -94,7 +95,7 @@ func TestFilesystemTool_WriteFile_Success(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "newfile.txt")
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path":    testFile,
@@ -133,7 +134,7 @@ func TestFilesystemTool_WriteFile_CreateDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "subdir", "newfile.txt")
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path":    testFile,
@@ -159,7 +160,7 @@ func TestFilesystemTool_WriteFile_CreateDir(t *testing.T) {
 
 // TestFilesystemTool_WriteFile_MissingPath verifies error handling for missing path
 func TestFilesystemTool_WriteFile_MissingPath(t *testing.T) {
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"content": "test",
@@ -175,7 +176,7 @@ func TestFilesystemTool_WriteFile_MissingPath(t *testing.T) {
 
 // TestFilesystemTool_WriteFile_MissingContent verifies error handling for missing content
 func TestFilesystemTool_WriteFile_MissingContent(t *testing.T) {
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": "/tmp/test.txt",
@@ -202,7 +203,7 @@ func TestFilesystemTool_WriteFile_OverwriteDefaultBlocked(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "existing.txt")
 	os.WriteFile(testFile, []byte("original"), 0o644)
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":    testFile,
 		"content": "new content",
@@ -225,7 +226,7 @@ func TestFilesystemTool_WriteFile_OverwriteExplicitAllowed(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "existing.txt")
 	os.WriteFile(testFile, []byte("original"), 0o644)
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":      testFile,
 		"content":   "replaced",
@@ -245,7 +246,7 @@ func TestFilesystemTool_WriteFile_NewFileNoOverwriteFlag(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "newfile.txt")
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":    testFile,
 		"content": "brand new",
@@ -265,7 +266,7 @@ func TestFilesystemTool_WriteFile_OverwriteFalseExplicitBlocked(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "existing.txt")
 	os.WriteFile(testFile, []byte("original"), 0o644)
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":      testFile,
 		"content":   "new content",
@@ -287,7 +288,7 @@ func TestFilesystemTool_WriteFile_OverwriteSandboxed(t *testing.T) {
 	testFile := "file.txt"
 	os.WriteFile(filepath.Join(workspace, testFile), []byte("original"), 0o644)
 
-	tool := NewWriteFileTool(workspace, true)
+	tool := NewWriteFileTool(workspace, true, nil)
 
 	// Without overwrite=true → blocked
 	result := tool.Execute(context.Background(), map[string]any{
@@ -322,7 +323,7 @@ func TestFilesystemTool_ListDir_Success(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "file2.txt"), []byte("content"), 0o644)
 	os.Mkdir(filepath.Join(tmpDir, "subdir"), 0o755)
 
-	tool := NewListDirTool("", false)
+	tool := NewListDirTool("", false, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": tmpDir,
@@ -347,7 +348,7 @@ func TestFilesystemTool_ListDir_Success(t *testing.T) {
 
 // TestFilesystemTool_ListDir_NotFound verifies error handling for non-existent directory
 func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
-	tool := NewListDirTool("", false)
+	tool := NewListDirTool("", false, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": "/nonexistent_directory_12345",
@@ -373,7 +374,7 @@ func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
 
 // TestFilesystemTool_ListDir_DefaultPath verifies default to current directory
 func TestFilesystemTool_ListDir_DefaultPath(t *testing.T) {
-	tool := NewListDirTool("", false)
+	tool := NewListDirTool("", false, nil)
 	ctx := context.Background()
 	args := map[string]any{}
 
@@ -403,7 +404,7 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 		t.Skipf("symlink not supported in this environment: %v", err)
 	}
 
-	tool := NewReadFileTool(workspace, true, MaxReadFileSize)
+	tool := NewReadFileTool(workspace, true, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path": link,
 	})
@@ -422,7 +423,7 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 }
 
 func TestFilesystemTool_EmptyWorkspace_AccessDenied(t *testing.T) {
-	tool := NewReadFileTool("", true, MaxReadFileSize) // restrict=true but workspace=""
+	tool := NewReadFileTool("", true, MaxReadFileSize, nil) // restrict=true but workspace=""
 
 	// Try to read a sensitive file (simulated by a temp file outside workspace)
 	tmpDir := t.TempDir()
@@ -485,7 +486,7 @@ func TestRootMkdirAll(t *testing.T) {
 
 func TestFilesystemTool_WriteFile_Restricted_CreateDir(t *testing.T) {
 	workspace := t.TempDir()
-	tool := NewWriteFileTool(workspace, true)
+	tool := NewWriteFileTool(workspace, true, nil)
 	ctx := context.Background()
 
 	testFile := "deep/nested/path/to/file.txt"
@@ -763,7 +764,7 @@ func TestReadFileTool_ChunkedReading(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileTool(tmpDir, false, MaxReadFileSize, nil)
 	ctx := context.Background()
 
 	// --- Step 1: Read the first chunk (10 bytes) ---
@@ -841,7 +842,7 @@ func TestReadFileTool_OffsetBeyondEOF(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileTool(tmpDir, false, MaxReadFileSize, nil)
 	ctx := context.Background()
 
 	args := map[string]any{
@@ -878,7 +879,7 @@ func TestReadFileLinesTool_ChunkedReading(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 
 	result1 := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
@@ -889,16 +890,10 @@ func TestReadFileLinesTool_ChunkedReading(t *testing.T) {
 		t.Fatalf("Chunk 1 failed: %s", result1.ForLLM)
 	}
 	if !strings.Contains(result1.ForLLM, "1|line 1\n2|line 2\n") {
-		t.Fatalf("expected first two lines, got: %s", result1.ForLLM)
+		t.Errorf("Chunk 1 should contain lines 1 and 2, got: %s", result1.ForLLM)
 	}
-	if !strings.Contains(result1.ForLLM, "lines 1-2") {
-		t.Fatalf("expected line range 1-2, got: %s", result1.ForLLM)
-	}
-	if !strings.Contains(result1.ForLLM, "start_line=3") {
-		t.Fatalf("expected continuation start_line=3, got: %s", result1.ForLLM)
-	}
-	if !strings.Contains(result1.ForLLM, "max_lines=2") {
-		t.Fatalf("expected continuation max_lines=2, got: %s", result1.ForLLM)
+	if !strings.Contains(result1.ForLLM, "[PARTIAL - more content remains. Call read_file again with start_line=3 and max_lines=2 to continue.]") {
+		t.Errorf("Chunk 1 should suggest next start_line=3, got: %s", result1.ForLLM)
 	}
 
 	result2 := tool.Execute(context.Background(), map[string]any{
@@ -910,28 +905,79 @@ func TestReadFileLinesTool_ChunkedReading(t *testing.T) {
 		t.Fatalf("Chunk 2 failed: %s", result2.ForLLM)
 	}
 	if !strings.Contains(result2.ForLLM, "3|line 3\n4|line 4\n") {
-		t.Fatalf("expected middle chunk, got: %s", result2.ForLLM)
+		t.Errorf("Chunk 2 should contain lines 3 and 4, got: %s", result2.ForLLM)
 	}
-	if !strings.Contains(result2.ForLLM, "start_line=5") {
-		t.Fatalf("expected continuation start_line=5, got: %s", result2.ForLLM)
-	}
-	if !strings.Contains(result2.ForLLM, "max_lines=2") {
-		t.Fatalf("expected continuation max_lines=2, got: %s", result2.ForLLM)
+	if !strings.Contains(result2.ForLLM, "[PARTIAL - more content remains. Call read_file again with start_line=5 and max_lines=2 to continue.]") {
+		t.Errorf("Chunk 2 should suggest next start_line=5, got: %s", result2.ForLLM)
 	}
 
 	result3 := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 5,
-		"max_lines":  2,
+		"max_lines":  10,
 	})
 	if result3.IsError {
 		t.Fatalf("Chunk 3 failed: %s", result3.ForLLM)
 	}
 	if !strings.Contains(result3.ForLLM, "5|line 5\n6|line 6\n") {
-		t.Fatalf("expected final chunk, got: %s", result3.ForLLM)
+		t.Errorf("Chunk 3 should contain lines 5 and 6, got: %s", result3.ForLLM)
 	}
-	if !strings.Contains(result3.ForLLM, "[END OF FILE") {
-		t.Fatalf("expected EOF marker, got: %s", result3.ForLLM)
+	if strings.Contains(result3.ForLLM, "[TRUNCATED") {
+		t.Errorf("Chunk 3 should not be truncated, got: %s", result3.ForLLM)
+	}
+}
+
+func TestReadFileLinesTool_InvalidLineRange(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "invalid_range.txt")
+	os.WriteFile(testFile, []byte("line 1\nline 2\n"), 0o644)
+
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
+
+	// Case 1: start_line is greater than the number of lines
+	result1 := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 10,
+	})
+	if result1.IsError {
+		t.Fatalf("Should not return error for out-of-range start_line, got: %s", result1.ForLLM)
+	}
+	expectedMsg := "[END OF FILE - no content at or after start_line=10]"
+	if result1.ForLLM != expectedMsg {
+		t.Errorf("Expected %q, obtained: %q", expectedMsg, result1.ForLLM)
+	}
+
+	// Case 2: start_line <= 0 should return error
+	result2 := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": -5,
+	})
+	if !result2.IsError {
+		t.Fatalf("Should return error for zero/negative start_line")
+	}
+	if !strings.Contains(result2.ForLLM, "start_line must be >= 1") {
+		t.Errorf("Expected 'start_line must be >= 1', got: %s", result2.ForLLM)
+	}
+}
+
+func TestReadFileLinesTool_MixedParams(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "mixed.txt")
+	os.WriteFile(testFile, []byte("line 1\nline 2\n"), 0o644)
+
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
+
+	// String and integer for start_line/max_lines should be supported
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": "1",
+		"max_lines":  "1",
+	})
+	if result.IsError {
+		t.Fatalf("Mixed parameters failed: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "1|line 1") {
+		t.Errorf("Line 1 should be obtained, obtained: %s", result.ForLLM)
 	}
 }
 
@@ -944,7 +990,7 @@ func TestReadFileLinesTool_DefaultOffsetAndRemainingLines(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 1,
@@ -969,7 +1015,7 @@ func TestReadFileTool_LegacyLengthUsesByteModeForText(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileBytesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileBytesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":   testFile,
 		"offset": 10,
@@ -998,7 +1044,7 @@ func TestReadFileLinesTool_OffsetBeyondEOF(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": int64(100),
@@ -1021,7 +1067,7 @@ func TestReadFileLinesTool_RegistryValidationSupportsMaxLinesAndRejectsLimit(t *
 	}
 
 	reg := NewToolRegistry()
-	reg.Register(NewReadFileLinesTool(tmpDir, false, MaxReadFileSize))
+	reg.Register(NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil))
 
 	result := reg.Execute(context.Background(), "read_file", map[string]any{
 		"path":       testFile,
@@ -1057,7 +1103,7 @@ func TestReadFileLinesTool_RejectsOffset(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 1,
@@ -1080,7 +1126,7 @@ func TestReadFileLinesTool_RejectsLength(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 1,
@@ -1103,7 +1149,7 @@ func TestReadFileLinesTool_RejectsLimit(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 1,
@@ -1127,7 +1173,7 @@ func TestReadFileLinesTool_BinaryFileRejected(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 1,
@@ -1153,7 +1199,7 @@ func TestReadFileLinesTool_TruncatesSingleLongLineAtByteBudget(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 1,
@@ -1181,7 +1227,7 @@ func TestReadFileLinesTool_NoTrailingNewline(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 1,
@@ -1209,7 +1255,7 @@ func TestReadFileLinesTool_ExactByteBudgetBoundaryIncludesPrefix(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	tool := NewReadFileLinesTool(tmpDir, false, 10)
+	tool := NewReadFileLinesTool(tmpDir, false, 10, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":       testFile,
 		"start_line": 1,
@@ -1235,4 +1281,67 @@ func TestReadFileLinesTool_ExactByteBudgetBoundaryIncludesPrefix(t *testing.T) {
 	if !strings.Contains(result.ForLLM, "start_line=2") {
 		t.Fatalf("expected continuation at line 2, got: %s", result.ForLLM)
 	}
+}
+
+func TestFileSystem_DenyPatterns(t *testing.T) {
+	tmpDir := t.TempDir()
+	ctx := context.Background()
+
+	// Create a simulated skills directory
+	skillsDir := filepath.Join(tmpDir, "skills", "secret-skill")
+	os.MkdirAll(skillsDir, 0o755)
+	skillFile := filepath.Join(skillsDir, "SKILL.md")
+	os.WriteFile(skillFile, []byte("forbidden content"), 0o644)
+
+	// Create a normal file
+	normalFile := filepath.Join(tmpDir, "report.txt")
+	os.WriteFile(normalFile, []byte("allowed content"), 0o644)
+
+	// Test with deny patterns: block anything under skills/
+	denyPatterns := []*regexp.Regexp{regexp.MustCompile(`^skills(/.*)?$`)}
+
+	t.Run("WriteFile blocked", func(t *testing.T) {
+		tool := NewWriteFileTool(tmpDir, true, nil, denyPatterns)
+		args := map[string]any{
+			"path":    "skills/new-skill.md",
+			"content": "hacker stuff",
+		}
+		result := tool.Execute(ctx, args)
+		if !result.IsError {
+			t.Fatal("Expected error when writing to denied path, but got success")
+		}
+		if !strings.Contains(result.ForLLM, "access denied") {
+			t.Errorf("Expected 'access denied' error, got: %s", result.ForLLM)
+		}
+	})
+
+	t.Run("ReadFile blocked", func(t *testing.T) {
+		tool := NewReadFileTool(tmpDir, true, 0, nil, denyPatterns)
+		args := map[string]any{"path": "skills/secret-skill/SKILL.md"}
+		result := tool.Execute(ctx, args)
+		if !result.IsError {
+			t.Fatal("Expected error when reading from denied path, but got success")
+		}
+	})
+
+	t.Run("ListDir blocked", func(t *testing.T) {
+		tool := NewListDirTool(tmpDir, true, nil, denyPatterns)
+		args := map[string]any{"path": "skills"}
+		result := tool.Execute(ctx, args)
+		if !result.IsError {
+			t.Fatal("Expected error when listing denied path, but got success")
+		}
+	})
+
+	t.Run("Normal file allowed", func(t *testing.T) {
+		tool := NewReadFileTool(tmpDir, true, 0, nil, denyPatterns)
+		args := map[string]any{"path": "report.txt"}
+		result := tool.Execute(ctx, args)
+		if result.IsError {
+			t.Fatalf("Expected success for normal file, got error: %s", result.ForLLM)
+		}
+		if !strings.Contains(result.ForLLM, "allowed content") {
+			t.Errorf("Got unexpected content: %s", result.ForLLM)
+		}
+	})
 }

@@ -59,8 +59,9 @@ func NewAgentInstance(
 	defaults *config.AgentDefaults,
 	cfg *config.Config,
 	provider providers.LLMProvider,
+	isolationID string,
 ) *AgentInstance {
-	workspace := resolveAgentWorkspace(agentCfg, defaults)
+	workspace := resolveAgentWorkspace(agentCfg, defaults, isolationID)
 	os.MkdirAll(workspace, 0o755)
 
 	model := resolveAgentModel(agentCfg, defaults)
@@ -72,6 +73,8 @@ func NewAgentInstance(
 	// Compile path whitelist patterns from config.
 	allowReadPaths := buildAllowReadPatterns(cfg)
 	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
+	denyReadPaths := compilePatterns(cfg.Tools.DenyReadPaths)
+	denyWritePaths := compilePatterns(cfg.Tools.DenyWritePaths)
 
 	toolsRegistry := tools.NewToolRegistry()
 
@@ -79,16 +82,18 @@ func NewAgentInstance(
 		maxReadFileSize := cfg.Tools.ReadFile.MaxReadFileSize
 		switch cfg.Tools.ReadFile.EffectiveMode() {
 		case config.ReadFileModeLines:
-			toolsRegistry.Register(tools.NewReadFileLinesTool(workspace, readRestrict, maxReadFileSize, allowReadPaths))
+			toolsRegistry.Register(tools.NewReadFileLinesTool(
+				workspace, readRestrict, maxReadFileSize, allowReadPaths, denyReadPaths,
+			))
 		default:
-			toolsRegistry.Register(tools.NewReadFileBytesTool(workspace, readRestrict, maxReadFileSize, allowReadPaths))
+			toolsRegistry.Register(tools.NewReadFileBytesTool(workspace, readRestrict, maxReadFileSize, allowReadPaths, denyReadPaths))
 		}
 	}
 	if cfg.Tools.IsToolEnabled("write_file") {
-		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
+		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths, denyWritePaths))
 	}
 	if cfg.Tools.IsToolEnabled("list_dir") {
-		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
+		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths, denyReadPaths))
 	}
 	if cfg.Tools.IsToolEnabled("exec") {
 		execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg, allowReadPaths)
@@ -101,22 +106,32 @@ func NewAgentInstance(
 	}
 
 	if cfg.Tools.IsToolEnabled("edit_file") {
-		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
+		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths, denyWritePaths))
 	}
 	if cfg.Tools.IsToolEnabled("append_file") {
-		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths, denyWritePaths))
 	}
 
-	sessionsDir := filepath.Join(workspace, "sessions")
+	// Use main agent workspace (no isolation) for sessions so that session history
+	// persists across transient instances. The isolated workspace is only for file tools.
+	mainWorkspace := resolveOriginalAgentWorkspace(agentCfg, defaults)
+	sessionsDir := filepath.Join(mainWorkspace, "sessions")
 	sessions := initSessionStore(sessionsDir)
 
 	mcpDiscoveryActive := cfg.Tools.MCP.Enabled && cfg.Tools.MCP.Discovery.Enabled
-	contextBuilder := NewContextBuilder(workspace).
+	baseWorkspace := mainWorkspace
+	// Resolve effective system prompt (agent manual override > global default)
+	effectiveSystemPrompt := defaults.SystemPrompt
+	if agentCfg != nil && strings.TrimSpace(agentCfg.SystemPrompt) != "" {
+		effectiveSystemPrompt = strings.TrimSpace(agentCfg.SystemPrompt)
+	}
+	contextBuilder := NewContextBuilder(workspace, baseWorkspace).
 		WithToolDiscovery(
 			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseBM25,
 			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseRegex,
 		).
-		WithSplitOnMarker(cfg.Agents.Defaults.SplitOnMarker)
+		WithSplitOnMarker(cfg.Agents.Defaults.SplitOnMarker).
+		WithSystemPrompt(effectiveSystemPrompt)
 
 	agentID := routing.DefaultAgentID
 	agentName := ""
@@ -234,17 +249,27 @@ func NewAgentInstance(
 }
 
 // resolveAgentWorkspace determines the workspace directory for an agent.
-func resolveAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) string {
+func resolveAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentDefaults, isolationID string) string {
+	var base string
 	if agentCfg != nil && strings.TrimSpace(agentCfg.Workspace) != "" {
-		return expandHome(strings.TrimSpace(agentCfg.Workspace))
+		base = expandHome(strings.TrimSpace(agentCfg.Workspace))
+	} else if agentCfg == nil || agentCfg.Default || agentCfg.ID == "" || routing.NormalizeAgentID(agentCfg.ID) == "main" {
+		base = expandHome(defaults.Workspace)
+	} else {
+		// For named agents without explicit workspace, use default workspace with agent ID suffix
+		id := routing.NormalizeAgentID(agentCfg.ID)
+		base = filepath.Join(expandHome(defaults.Workspace), "..", "workspace-"+id)
 	}
-	// Use the configured default workspace (respects PICOCLAW_HOME)
-	if agentCfg == nil || agentCfg.Default || agentCfg.ID == "" || routing.NormalizeAgentID(agentCfg.ID) == "main" {
-		return expandHome(defaults.Workspace)
+
+	if isolationID != "" && isolationID != "direct" {
+		return filepath.Join(base, "sessions", isolationID, "workspace")
 	}
-	// For named agents without explicit workspace, use default workspace with agent ID suffix
-	id := routing.NormalizeAgentID(agentCfg.ID)
-	return filepath.Join(expandHome(defaults.Workspace), "..", "workspace-"+id)
+	return base
+}
+
+// resolveOriginalAgentWorkspace determines the original workspace directory for an agent without isolation.
+func resolveOriginalAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) string {
+	return resolveAgentWorkspace(agentCfg, defaults, "")
 }
 
 // resolveAgentModel resolves the primary model for an agent.
