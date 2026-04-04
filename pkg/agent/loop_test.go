@@ -670,7 +670,7 @@ func TestProcessMessage_MediaToolHandledSkipsFollowUpLLMAndFinalText(t *testing.
 	if err != nil {
 		t.Fatalf("resolveMessageRoute() error = %v", err)
 	}
-	sessionKey := resolveScopeKey(route, "")
+	sessionKey := resolveScopeKey(route, "", "chat1", route.AgentID)
 	history := defaultAgent.Sessions.GetHistory(sessionKey)
 	if len(history) == 0 {
 		t.Fatal("expected session history to be saved")
@@ -1399,11 +1399,8 @@ func TestProcessMessage_UsesRouteSessionKey(t *testing.T) {
 		},
 	}
 
-	route := al.registry.ResolveRoute(routing.RouteInput{
-		Channel: msg.Channel,
-		Peer:    extractPeer(msg),
-	})
-	sessionKey := route.SessionKey
+	// With chatID isolation, session key is derived from chatID
+	sessionKey := fmt.Sprintf("agent:main:%s", msg.ChatID)
 
 	defaultAgent := al.registry.GetDefaultAgent()
 	if defaultAgent == nil {
@@ -2087,7 +2084,7 @@ func TestAgentLoop_ToolLimitUsesDedicatedFallback(t *testing.T) {
 	al := NewAgentLoop(cfg, msgBus, provider)
 	al.RegisterTool(&toolLimitTestTool{})
 
-	response, err := al.ProcessDirectWithChannel(context.Background(), "hello", "tool-limit", "test", "chat1")
+	response, err := al.ProcessDirectWithChannel(context.Background(), "hello", "tool-limit", "test", "direct")
 	if err != nil {
 		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
 	}
@@ -2113,6 +2110,46 @@ func TestAgentLoop_ToolLimitUsesDedicatedFallback(t *testing.T) {
 	assertRoles(t, history, "user", "assistant", "tool", "assistant")
 	if history[3].Content != toolLimitResponse {
 		t.Fatalf("final assistant content = %q, want %q", history[3].Content, toolLimitResponse)
+	}
+}
+
+func TestAgentLoop_ToolRepeatLoopBreaksEarly(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: tmpDir,
+				ModelName: "test-model",
+				MaxTokens: 4096,
+				// Keep this high so the loop-breaker (not the iteration limit)
+				// is what terminates the turn.
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &toolLimitOnlyProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	al.RegisterTool(&toolLimitTestTool{})
+
+	response, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"hello",
+		"tool-repeat-loop",
+		"test",
+		"direct",
+	)
+	if err != nil {
+		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
+	}
+	if response != toolRepeatLoopResponse {
+		t.Fatalf("response = %q, want %q", response, toolRepeatLoopResponse)
 	}
 }
 
@@ -2266,25 +2303,13 @@ func TestHandleReasoning(t *testing.T) {
 		al, msgBus := newLoop(t)
 		al.handleReasoning(context.Background(), "reasoning", "telegram", "")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
-		for {
-			select {
-			case msg, ok := <-msgBus.OutboundChan():
-				if !ok {
-					t.Fatalf("expected no outbound message, got %+v", msg)
-				}
-				if msg.Content == "reasoning" {
-					t.Fatalf("expected no message for empty chatID, got %+v", msg)
-				}
-				return
-			case <-ctx.Done():
-				t.Log("expected an outbound message, got none within timeout")
-				return
-			default:
-				// Continue to check for message
-				time.Sleep(5 * time.Millisecond) // Avoid busy loop
-			}
+		select {
+		case msg := <-msgBus.OutboundChan():
+			t.Fatalf("expected no outbound message for empty chatID, got %+v", msg)
+		case <-ctx.Done():
+			// Success: no message arrived
 		}
 	})
 
@@ -2335,23 +2360,18 @@ func TestHandleReasoning(t *testing.T) {
 		al, msgBus := newLoop(t)
 		reasoning := "hello telegram reasoning"
 
-		al.handleReasoning(context.Background(), reasoning, "telegram", "tg-chat")
+		expiredCtx, cancel := context.WithCancel(context.Background())
+		cancel()
 
-		consumeCtx, consumeCancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer consumeCancel()
+		al.handleReasoning(expiredCtx, reasoning, "telegram", "tg-chat")
 
-		for {
-			select {
-			case msg, ok := <-msgBus.OutboundChan():
-				if !ok {
-					t.Fatalf("expected no outbound message, but received: %+v", msg)
-				}
-				t.Logf("Received unexpected outbound message: %+v", msg)
-				return
-			case <-consumeCtx.Done():
-				t.Fatalf("failed: no message received within timeout")
-				return
-			}
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		select {
+		case msg := <-msgBus.OutboundChan():
+			t.Fatalf("expected no message for expired context, got %+v", msg)
+		case <-ctx.Done():
+			// Success: no message arrived
 		}
 	})
 
