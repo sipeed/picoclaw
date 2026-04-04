@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,13 +33,17 @@ func NewSessionManager(storage string) *SessionManager {
 	}
 
 	if storage != "" {
-		os.MkdirAll(storage, 0o700)
+		if err := os.MkdirAll(storage, 0o700); err != nil {
+			log.Printf("session: failed to create storage dir %s: %v", storage, err)
+		}
 		sm.loadSessions()
 	}
 
 	return sm
 }
 
+// GetOrCreate returns the session for key, creating a new empty one if it doesn't exist.
+// The returned session is never nil.
 func (sm *SessionManager) GetOrCreate(key string) *Session {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
