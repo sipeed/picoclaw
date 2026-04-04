@@ -29,7 +29,7 @@ func (t *EditFileTool) Name() string {
 }
 
 func (t *EditFileTool) Description() string {
-	return "Edit a file by replacing old_text with new_text. The old_text must exist exactly in the file."
+	return "Edit a file by replacing old_text with new_text. The old_text must exist exactly in the file. JSON escapes apply (for example, \\n is newline and \\\\n is literal backslash-n)."
 }
 
 func (t *EditFileTool) Parameters() map[string]any {
@@ -42,11 +42,11 @@ func (t *EditFileTool) Parameters() map[string]any {
 			},
 			"old_text": map[string]any{
 				"type":        "string",
-				"description": "The exact text to find and replace",
+				"description": "The exact text to find and replace. JSON escapes apply: \\n is newline, \\\\n is literal backslash-n.",
 			},
 			"new_text": map[string]any{
 				"type":        "string",
-				"description": "The text to replace with",
+				"description": "The text to replace with. JSON escapes apply: \\n is newline, \\\\n is literal backslash-n.",
 			},
 		},
 		"required": []string{"path", "old_text", "new_text"},
@@ -92,7 +92,7 @@ func (t *AppendFileTool) Name() string {
 }
 
 func (t *AppendFileTool) Description() string {
-	return "Append content to the end of a file"
+	return "Append content to the end of a file. JSON escapes apply (for example, \\n is newline and \\\\n is literal backslash-n)."
 }
 
 func (t *AppendFileTool) Parameters() map[string]any {
@@ -105,7 +105,7 @@ func (t *AppendFileTool) Parameters() map[string]any {
 			},
 			"content": map[string]any{
 				"type":        "string",
-				"description": "The content to append",
+				"description": "The content to append. JSON escapes apply: \\n is newline, \\\\n is literal backslash-n.",
 			},
 		},
 		"required": []string{"path", "content"},

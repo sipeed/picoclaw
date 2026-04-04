@@ -128,6 +128,45 @@ func TestFilesystemTool_WriteFile_Success(t *testing.T) {
 	}
 }
 
+// TestFilesystemTool_WriteFile_LiteralBackslashN verifies write_file keeps
+// literal backslash sequences unchanged when they are passed as plain text.
+func TestFilesystemTool_WriteFile_LiteralBackslashN(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "literal.txt")
+
+	tool := NewWriteFileTool("", false)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":    testFile,
+		"content": `aaa\naaa`,
+	})
+
+	assert.False(t, result.IsError, "expected success, got: %s", result.ForLLM)
+
+	data, err := os.ReadFile(testFile)
+	assert.NoError(t, err)
+	assert.Equal(t, `aaa\naaa`, string(data))
+}
+
+// TestFilesystemTool_WriteFile_PreservesCRLF verifies write_file does not
+// normalize line endings and writes CRLF bytes as provided.
+func TestFilesystemTool_WriteFile_PreservesCRLF(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "crlf.txt")
+	content := "line1\r\nline2\r\n"
+
+	tool := NewWriteFileTool("", false)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":    testFile,
+		"content": content,
+	})
+
+	assert.False(t, result.IsError, "expected success, got: %s", result.ForLLM)
+
+	data, err := os.ReadFile(testFile)
+	assert.NoError(t, err)
+	assert.Equal(t, []byte(content), data)
+}
+
 // TestFilesystemTool_WriteFile_CreateDir verifies directory creation
 func TestFilesystemTool_WriteFile_CreateDir(t *testing.T) {
 	tmpDir := t.TempDir()
