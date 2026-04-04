@@ -465,9 +465,11 @@
   },
   "gateway": {
     "_comment": "Default log level is set to 'fatal'. Other available options are 'debug', 'info', 'warn' and 'error'.",
+    "_comment_allowed_cidrs": "Optional CIDR allowlist for gateway HTTP endpoints. Empty means no CIDR restriction unless automatic fallback enables a generated local allowlist.",
     "host": "127.0.0.1",
     "port": 18790,
     "hot_reload": false,
-    "log_level": "fatal"
+    "log_level": "fatal",
+    "allowed_cidrs": []
   }
 }

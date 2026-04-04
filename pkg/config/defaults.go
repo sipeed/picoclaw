@@ -358,10 +358,11 @@ func DefaultConfig() *Config {
 			},
 		},
 		Gateway: GatewayConfig{
-			Host:      "127.0.0.1",
-			Port:      18790,
-			HotReload: false,
-			LogLevel:  DefaultGatewayLogLevel,
+			Host:         "127.0.0.1",
+			Port:         18790,
+			HotReload:    false,
+			LogLevel:     DefaultGatewayLogLevel,
+			AllowedCIDRs: nil,
 		},
 		Tools: ToolsConfig{
 			FilterSensitiveData: true,

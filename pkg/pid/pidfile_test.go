@@ -120,6 +120,42 @@ func TestWritePidFileOverwrite(t *testing.T) {
 	}
 }
 
+func TestUpdatePidFileEndpoint(t *testing.T) {
+	dir := tmpDir(t)
+
+	data, err := WritePidFile(dir, "127.0.0.1", 18790)
+	if err != nil {
+		t.Fatalf("WritePidFile failed: %v", err)
+	}
+
+	updated, err := UpdatePidFileEndpoint(dir, "0.0.0.0", 18888)
+	if err != nil {
+		t.Fatalf("UpdatePidFileEndpoint failed: %v", err)
+	}
+	if updated.Host != "0.0.0.0" {
+		t.Fatalf("updated.Host = %q, want %q", updated.Host, "0.0.0.0")
+	}
+	if updated.Port != 18888 {
+		t.Fatalf("updated.Port = %d, want 18888", updated.Port)
+	}
+	if updated.Token != data.Token {
+		t.Fatal("UpdatePidFileEndpoint must not rotate token")
+	}
+}
+
+func TestUpdatePidFileEndpointDifferentPID(t *testing.T) {
+	dir := tmpDir(t)
+
+	other := PidFileData{PID: 99999999, Token: "deadbeef12345678deadbeef12345678", Host: "127.0.0.1", Port: 18790}
+	raw, _ := json.MarshalIndent(other, "", "  ")
+	os.WriteFile(filepath.Join(dir, pidFileName), raw, 0o600)
+
+	_, err := UpdatePidFileEndpoint(dir, "0.0.0.0", 18888)
+	if err == nil {
+		t.Fatal("expected error when pid file belongs to another process")
+	}
+}
+
 // TestWritePidFileStalePID writes a PID file with a non-running PID, then
 // verifies WritePidFile cleans it up and writes a new one.
 func TestWritePidFileStalePID(t *testing.T) {

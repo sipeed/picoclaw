@@ -84,3 +84,21 @@ func TestIPAllowlist_InvalidCIDR(t *testing.T) {
 		t.Fatal("IPAllowlist() expected error for invalid CIDR")
 	}
 }
+
+func TestIPAllowlist_AllowsIPv6ZoneAddress(t *testing.T) {
+	h, err := IPAllowlist([]string{"fe80::/10"}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	if err != nil {
+		t.Fatalf("IPAllowlist() error = %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "[fe80::1%eth0]:1234"
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
