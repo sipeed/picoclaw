@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -21,6 +22,7 @@ func (h *Handler) registerSessionRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/sessions", h.handleListSessions)
 	mux.HandleFunc("GET /api/sessions/{id}", h.handleGetSession)
 	mux.HandleFunc("DELETE /api/sessions/{id}", h.handleDeleteSession)
+	mux.HandleFunc("PATCH /api/sessions/{id}", h.handleRenameSession)
 }
 
 // sessionFile mirrors the on-disk session JSON structure from pkg/session.
@@ -37,6 +39,8 @@ type sessionListItem struct {
 	ID           string `json:"id"`
 	Title        string `json:"title"`
 	Preview      string `json:"preview"`
+	Channel      string `json:"channel"`
+	PeerName     string `json:"peer_name,omitempty"`
 	MessageCount int    `json:"message_count"`
 	Created      string `json:"created"`
 	Updated      string `json:"updated"`
@@ -76,6 +80,19 @@ const (
 	handledToolResponseSummaryText = "Requested output delivered via tool attachment."
 )
 
+// knownSanitizedPrefixes maps channel prefixes to human-readable channel names.
+var knownSanitizedPrefixes = []struct {
+	prefix  string
+	channel string
+}{
+	{sanitizedPicoSessionPrefix, "pico"},
+	{"agent_main_whatsapp_native_direct_", "whatsapp"},
+	{"agent_main_telegram_direct_", "telegram"},
+	{"agent_main_discord_direct_", "discord"},
+	{"agent_main_slack_direct_", "slack"},
+	{"agent_main_matrix_direct_", "matrix"},
+}
+
 // extractPicoSessionID extracts the session UUID from a full session key.
 // Returns the UUID and true if the key matches the Pico session pattern.
 func extractPicoSessionID(key string) (string, bool) {
@@ -90,6 +107,28 @@ func extractPicoSessionIDFromSanitizedKey(key string) (string, bool) {
 		return strings.TrimPrefix(key, sanitizedPicoSessionPrefix), true
 	}
 	return "", false
+}
+
+// extractAnySessionID extracts session ID and channel name from any known
+// sanitized key prefix. Returns sessionID, channel, ok.
+func extractAnySessionID(key string) (string, string, bool) {
+	for _, p := range knownSanitizedPrefixes {
+		if strings.HasPrefix(key, p.prefix) {
+			return strings.TrimPrefix(key, p.prefix), p.channel, true
+		}
+	}
+	return "", "", false
+}
+
+// extractAnySessionIDFromKey extracts session ID and channel from unsanitized key.
+func extractAnySessionIDFromKey(key string) (string, string, bool) {
+	for _, p := range knownSanitizedPrefixes {
+		unsanitized := strings.ReplaceAll(p.prefix, "_", ":")
+		if strings.HasPrefix(key, unsanitized) {
+			return strings.TrimPrefix(key, unsanitized), p.channel, true
+		}
+	}
+	return "", "", false
 }
 
 func sanitizeSessionKey(key string) string {
@@ -165,11 +204,16 @@ func (h *Handler) readSessionMessages(path string, skip int) ([]providers.Messag
 }
 
 func (h *Handler) readJSONLSession(dir, sessionID string) (sessionFile, error) {
-	sessionKey := picoSessionPrefix + sessionID
-	base := filepath.Join(dir, sanitizeSessionKey(sessionKey))
+	return h.readJSONLSessionByBase(dir, sanitizeSessionKey(picoSessionPrefix+sessionID))
+}
+
+// readJSONLSessionByBase reads a JSONL session by its sanitized base name (without extension).
+func (h *Handler) readJSONLSessionByBase(dir, baseName string) (sessionFile, error) {
+	base := filepath.Join(dir, baseName)
 	jsonlPath := base + ".jsonl"
 	metaPath := base + ".meta.json"
 
+	sessionKey := strings.ReplaceAll(baseName, "_", ":")
 	meta, err := h.readSessionMeta(metaPath, sessionKey)
 	if err != nil {
 		return sessionFile{}, err
@@ -202,7 +246,7 @@ func (h *Handler) readJSONLSession(dir, sessionID string) (sessionFile, error) {
 	}, nil
 }
 
-func buildSessionListItem(sessionID string, sess sessionFile) sessionListItem {
+func buildSessionListItem(sessionID, channel string, sess sessionFile) sessionListItem {
 	preview := ""
 	for _, msg := range sess.Messages {
 		if msg.Role == "user" {
@@ -225,6 +269,7 @@ func buildSessionListItem(sessionID string, sess sessionFile) sessionListItem {
 		ID:           sessionID,
 		Title:        title,
 		Preview:      preview,
+		Channel:      channel,
 		MessageCount: validMessageCount,
 		Created:      sess.Created.Format(time.RFC3339),
 		Updated:      sess.Updated.Format(time.RFC3339),
@@ -233,6 +278,108 @@ func buildSessionListItem(sessionID string, sess sessionFile) sessionListItem {
 
 func isEmptySession(sess sessionFile) bool {
 	return len(sess.Messages) == 0 && strings.TrimSpace(sess.Summary) == ""
+}
+
+// whatsappPeerInfo holds resolved WhatsApp peer data.
+type whatsappPeerInfo struct {
+	Phone    string // "+5521..."
+	PushName string // "Willian Santos"
+}
+
+// resolveWhatsAppLIDs resolves WhatsApp LID session IDs to phone numbers
+// and push names using the whatsmeow SQLite store.
+func (h *Handler) resolveWhatsAppLIDs(lids []string) map[string]whatsappPeerInfo {
+	if len(lids) == 0 {
+		return nil
+	}
+
+	cfg, err := config.LoadConfig(h.configPath)
+	if err != nil {
+		return nil
+	}
+	workspace := cfg.Agents.Defaults.Workspace
+	if workspace == "" {
+		home, _ := os.UserHomeDir()
+		workspace = filepath.Join(home, ".picoclaw", "workspace")
+	}
+	if len(workspace) > 0 && workspace[0] == '~' {
+		home, _ := os.UserHomeDir()
+		if len(workspace) > 1 && workspace[1] == '/' {
+			workspace = home + workspace[1:]
+		} else {
+			workspace = home
+		}
+	}
+
+	dbPath := filepath.Join(workspace, "whatsapp", "store.db")
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil
+	}
+
+	result := make(map[string]whatsappPeerInfo)
+	for _, lid := range lids {
+		cleanLID := strings.TrimSuffix(lid, "@lid")
+		info := whatsappPeerInfo{}
+
+		// Resolve LID → phone
+		query := "SELECT pn FROM whatsmeow_lid_map WHERE lid='" + cleanLID + "';"
+		if out, err := exec.Command("sqlite3", dbPath, query).Output(); err == nil {
+			phone := strings.TrimSpace(string(out))
+			if phone != "" {
+				info.Phone = "+" + phone
+
+				// Resolve phone → name via contacts table (prefer push_name, fallback to full_name)
+				contactQuery := "SELECT COALESCE(NULLIF(push_name,''), NULLIF(full_name,'')) FROM whatsmeow_contacts WHERE their_jid LIKE '" + phone + "%' LIMIT 1;"
+				if nameOut, err := exec.Command("sqlite3", dbPath, contactQuery).Output(); err == nil {
+					name := strings.TrimSpace(string(nameOut))
+					if name != "" {
+						info.PushName = name
+					}
+				}
+			}
+		}
+
+		if info.Phone != "" {
+			result[lid] = info
+		}
+	}
+	return result
+}
+
+// findAndReadSession tries all known channel prefixes to find and read a session.
+func (h *Handler) findAndReadSession(dir, sessionID string) (sessionFile, error) {
+	for _, p := range knownSanitizedPrefixes {
+		baseName := p.prefix + sessionID
+		sess, err := h.readJSONLSessionByBase(dir, baseName)
+		if err == nil && !isEmptySession(sess) {
+			return sess, nil
+		}
+		// Try legacy JSON
+		legacyPath := filepath.Join(dir, baseName+".json")
+		data, err := os.ReadFile(legacyPath)
+		if err == nil {
+			var legacySess sessionFile
+			if json.Unmarshal(data, &legacySess) == nil && !isEmptySession(legacySess) {
+				return legacySess, nil
+			}
+		}
+	}
+	return sessionFile{}, os.ErrNotExist
+}
+
+// findSessionFiles returns all file paths for a session across all channel prefixes.
+func findSessionFiles(dir, sessionID string) []string {
+	var paths []string
+	for _, p := range knownSanitizedPrefixes {
+		base := filepath.Join(dir, p.prefix+sessionID)
+		for _, ext := range []string{".jsonl", ".meta.json", ".json"} {
+			path := base + ext
+			if _, err := os.Stat(path); err == nil {
+				paths = append(paths, path)
+			}
+		}
+	}
+	return paths
 }
 
 func truncateRunes(s string, maxLen int) string {
@@ -400,13 +547,15 @@ func (h *Handler) handleListSessions(w http.ResponseWriter, r *http.Request) {
 			ok        bool
 		)
 
+		var channel string
 		switch {
 		case strings.HasSuffix(name, ".jsonl"):
-			sessionID, ok = extractPicoSessionIDFromSanitizedKey(strings.TrimSuffix(name, ".jsonl"))
+			baseName := strings.TrimSuffix(name, ".jsonl")
+			sessionID, channel, ok = extractAnySessionID(baseName)
 			if !ok {
 				continue
 			}
-			sess, loadErr = h.readJSONLSession(dir, sessionID)
+			sess, loadErr = h.readJSONLSessionByBase(dir, baseName)
 			if loadErr == nil && isEmptySession(sess) {
 				continue
 			}
@@ -415,10 +564,10 @@ func (h *Handler) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		case filepath.Ext(name) == ".json":
 			base := strings.TrimSuffix(name, ".json")
 			if _, statErr := os.Stat(filepath.Join(dir, base+".jsonl")); statErr == nil {
-				if jsonlSessionID, found := extractPicoSessionIDFromSanitizedKey(base); found {
-					if jsonlSess, jsonlErr := h.readJSONLSession(
+				if _, _, found := extractAnySessionID(base); found {
+					if jsonlSess, jsonlErr := h.readJSONLSessionByBase(
 						dir,
-						jsonlSessionID,
+						base,
 					); jsonlErr == nil &&
 						!isEmptySession(jsonlSess) {
 						continue
@@ -435,7 +584,7 @@ func (h *Handler) handleListSessions(w http.ResponseWriter, r *http.Request) {
 			if isEmptySession(sess) {
 				continue
 			}
-			sessionID, ok = extractPicoSessionID(sess.Key)
+			sessionID, channel, ok = extractAnySessionIDFromKey(sess.Key)
 			if !ok {
 				continue
 			}
@@ -454,13 +603,41 @@ func (h *Handler) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		}
 
 		seen[sessionID] = struct{}{}
-		items = append(items, buildSessionListItem(sessionID, sess))
+		items = append(items, buildSessionListItem(sessionID, channel, sess))
 	}
 
 	// Sort by updated descending (most recent first)
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].Updated > items[j].Updated
 	})
+
+	// Apply custom titles
+	if customTitles, err := h.loadCustomTitles(); err == nil {
+		for i := range items {
+			if t, ok := customTitles[items[i].ID]; ok {
+				items[i].Title = t
+			}
+		}
+	}
+
+	// Resolve WhatsApp LIDs to phone numbers
+	var whatsappLIDs []string
+	for _, item := range items {
+		if item.Channel == "whatsapp" {
+			whatsappLIDs = append(whatsappLIDs, item.ID)
+		}
+	}
+	if lidMap := h.resolveWhatsAppLIDs(whatsappLIDs); len(lidMap) > 0 {
+		for i := range items {
+			if info, ok := lidMap[items[i].ID]; ok {
+				items[i].PeerName = info.Phone
+				// Use push_name as default title if no custom title was set
+				if info.PushName != "" && items[i].Title == items[i].Preview {
+					items[i].Title = info.PushName
+				}
+			}
+		}
+	}
 
 	// Pagination parameters
 	offsetStr := r.URL.Query().Get("offset")
@@ -508,25 +685,14 @@ func (h *Handler) handleGetSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess, err := h.readJSONLSession(dir, sessionID)
-	if err == nil && isEmptySession(sess) {
-		err = os.ErrNotExist
-	}
+	sess, err := h.findAndReadSession(dir, sessionID)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			sess, err = h.readLegacySession(dir, sessionID)
-			if err == nil && isEmptySession(sess) {
-				err = os.ErrNotExist
-			}
+			http.Error(w, "session not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "failed to parse session", http.StatusInternalServerError)
 		}
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				http.Error(w, "session not found", http.StatusNotFound)
-			} else {
-				http.Error(w, "failed to parse session", http.StatusInternalServerError)
-			}
-			return
-		}
+		return
 	}
 
 	messages := visibleSessionMessages(sess.Messages)
@@ -557,13 +723,10 @@ func (h *Handler) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	base := filepath.Join(dir, sanitizeSessionKey(picoSessionPrefix+sessionID))
-	jsonlPath := base + ".jsonl"
-	metaPath := base + ".meta.json"
-	legacyPath := base + ".json"
+	paths := findSessionFiles(dir, sessionID)
 
 	removed := false
-	for _, path := range []string{jsonlPath, metaPath, legacyPath} {
+	for _, path := range paths {
 		if err := os.Remove(path); err != nil {
 			if os.IsNotExist(err) {
 				continue
@@ -580,4 +743,90 @@ func (h *Handler) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// customTitlesPath returns the path to the custom session titles file.
+func (h *Handler) customTitlesPath() (string, error) {
+	dir, err := h.sessionsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, ".session-titles.json"), nil
+}
+
+// loadCustomTitles reads the custom session titles map from disk.
+func (h *Handler) loadCustomTitles() (map[string]string, error) {
+	path, err := h.customTitlesPath()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return make(map[string]string), nil
+		}
+		return nil, err
+	}
+	var titles map[string]string
+	if err := json.Unmarshal(data, &titles); err != nil {
+		return make(map[string]string), nil
+	}
+	return titles, nil
+}
+
+// saveCustomTitles writes the custom session titles map to disk.
+func (h *Handler) saveCustomTitles(titles map[string]string) error {
+	path, err := h.customTitlesPath()
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(titles)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+// handleRenameSession updates the custom title for a session.
+//
+//	PATCH /api/sessions/{id}
+func (h *Handler) handleRenameSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	if sessionID == "" {
+		http.Error(w, "missing session id", http.StatusBadRequest)
+		return
+	}
+
+	var body struct {
+		Title string `json:"title"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	title := strings.TrimSpace(body.Title)
+	if title == "" {
+		http.Error(w, "title must not be empty", http.StatusBadRequest)
+		return
+	}
+	if len([]rune(title)) > maxSessionTitleRunes {
+		runes := []rune(title)
+		title = string(runes[:maxSessionTitleRunes])
+	}
+
+	titles, err := h.loadCustomTitles()
+	if err != nil {
+		http.Error(w, "failed to load titles", http.StatusInternalServerError)
+		return
+	}
+
+	titles[sessionID] = title
+	if err := h.saveCustomTitles(titles); err != nil {
+		http.Error(w, "failed to save title", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"title": title})
 }

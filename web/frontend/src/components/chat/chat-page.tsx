@@ -63,6 +63,17 @@ export function ChatPage() {
     newChat,
   } = usePicoChat()
 
+  // Load session from URL query param ?session=<id>
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const sessionParam = params.get("session")
+    if (sessionParam && sessionParam !== activeSessionId) {
+      switchSession(sessionParam)
+      // Clean up URL without reload
+      window.history.replaceState({}, "", window.location.pathname)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const { state: gwState } = useGateway()
   const isGatewayRunning = gwState === "running"
   const isChatConnected = connectionState === "connected"
@@ -85,6 +96,7 @@ export function ChatPage() {
     observerRef,
     loadSessions,
     handleDeleteSession,
+    handleRenameSession,
   } = useSessionHistory({
     activeSessionId,
     onDeletedActiveSession: newChat,
@@ -225,6 +237,7 @@ export function ChatPage() {
           }}
           onSwitchSession={switchSession}
           onDeleteSession={handleDeleteSession}
+          onRenameSession={handleRenameSession}
         />
       </PageHeader>
 

@@ -4,6 +4,8 @@ export interface SessionSummary {
   id: string
   title: string
   preview: string
+  channel: string
+  peer_name?: string
   message_count: number
   created: string
   updated: string
@@ -52,4 +54,19 @@ export async function deleteSession(id: string): Promise<void> {
   if (!res.ok) {
     throw new Error(`Failed to delete session ${id}: ${res.status}`)
   }
+}
+
+export async function renameSession(
+  id: string,
+  title: string,
+): Promise<{ title: string }> {
+  const res = await launcherFetch(`/api/sessions/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  })
+  if (!res.ok) {
+    throw new Error(`Failed to rename session ${id}: ${res.status}`)
+  }
+  return res.json()
 }
