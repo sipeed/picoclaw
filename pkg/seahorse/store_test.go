@@ -1189,7 +1189,10 @@ func TestStoreReplaceContextItemsWithSummary(t *testing.T) {
 
 	// Replace summaries 0 and 1 (not 2) using per-item deletion
 	// This should NOT delete the message at ordinal 200
-	err := s.ReplaceContextItemsWithSummary(ctx, conv.ConversationID, []string{summaries[0], summaries[1]}, newSummary.SummaryID)
+	err := s.ReplaceContextItemsWithSummary(
+		ctx, conv.ConversationID,
+		[]string{summaries[0], summaries[1]},
+		newSummary.SummaryID)
 	if err != nil {
 		t.Fatalf("ReplaceContextItemsWithSummary: %v", err)
 	}

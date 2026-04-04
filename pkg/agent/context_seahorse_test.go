@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -968,5 +969,118 @@ func TestSeahorseSteeringMessageIngested(t *testing.T) {
 
 	if !foundSteering {
 		t.Error("STEERING MESSAGE NOT IN SEAHORSE DB: steering message should be ingested into SQLite")
+	}
+}
+
+// TestSeahorseSummarizeSkipsCondensedWhenBelowThreshold verifies that when
+// Summarize is triggered but tokens are below ContextWindow threshold,
+// condensed compaction should NOT run.
+func TestSeahorseSummarizeSkipsCondensedWhenBelowThreshold(t *testing.T) {
+	contextWindow := 1000
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         t.TempDir(),
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				ContextManager:    "seahorse",
+				ContextWindow:     contextWindow,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &seahorseTestProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("expected default agent")
+	}
+
+	ctx := context.Background()
+	sessionKey := "test-summarize-skip-condensed"
+
+	seahorseCM, ok := al.contextManager.(*seahorseContextManager)
+	if !ok {
+		t.Fatal("expected seahorseContextManager")
+	}
+	store := seahorseCM.engine.GetRetrieval().Store()
+
+	conv, err := store.GetOrCreateConversation(ctx, sessionKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateConversation: %v", err)
+	}
+
+	// Insert leaf summaries directly (bypass leaf compaction requirement)
+	for i := 0; i < seahorse.CondensedMinFanout; i++ {
+		now := time.Now().UTC()
+		summary, sumErr := store.CreateSummary(ctx, seahorse.CreateSummaryInput{
+			ConversationID: conv.ConversationID,
+			Kind:           seahorse.SummaryKindLeaf,
+			Depth:          0,
+			Content:        fmt.Sprintf("leaf summary %d", i),
+			TokenCount:     50,
+			EarliestAt:     &now,
+			LatestAt:       &now,
+		})
+		if sumErr != nil {
+			t.Fatalf("CreateSummary %d: %v", i, sumErr)
+		}
+		if appendErr := store.AppendContextSummary(ctx, conv.ConversationID, summary.SummaryID); appendErr != nil {
+			t.Fatalf("AppendContextSummary %d: %v", i, appendErr)
+		}
+	}
+
+	// Add fresh messages (required for condensation candidates)
+	for i := 0; i < seahorse.FreshTailCount+1; i++ {
+		m, msgErr := store.AddMessage(ctx, conv.ConversationID, "user", "fresh", 5)
+		if msgErr != nil {
+			t.Fatalf("AddMessage %d: %v", i, msgErr)
+		}
+		if appendErr := store.AppendContextMessage(ctx, conv.ConversationID, m.ID); appendErr != nil {
+			t.Fatalf("AppendContextMessage %d: %v", i, appendErr)
+		}
+	}
+
+	tokensBefore, err := store.GetContextTokenCount(ctx, conv.ConversationID)
+	if err != nil {
+		t.Fatalf("GetContextTokenCount: %v", err)
+	}
+	threshold := int(float64(contextWindow) * seahorse.ContextThreshold)
+	t.Logf("Tokens before: %d, threshold: %d", tokensBefore, threshold)
+
+	// Trigger Summarize
+	_, err = al.runAgentLoop(ctx, defaultAgent, processOptions{
+		SessionKey:      sessionKey,
+		Channel:         "cli",
+		ChatID:          "direct",
+		UserMessage:     "trigger",
+		DefaultResponse: defaultResponse,
+		EnableSummary:   true,
+		SendResponse:    false,
+	})
+	if err != nil {
+		t.Fatalf("runAgentLoop: %v", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	summaries, err := store.GetSummariesByConversation(ctx, conv.ConversationID)
+	if err != nil {
+		t.Fatalf("GetSummariesByConversation: %v", err)
+	}
+
+	condensedCount := 0
+	for _, sum := range summaries {
+		if sum.Kind == seahorse.SummaryKindCondensed {
+			condensedCount++
+		}
+	}
+
+	t.Logf("Condensed summaries: %d", condensedCount)
+
+	if tokensBefore < threshold && condensedCount > 0 {
+		t.Errorf("BUG: condensed created when tokens (%d) < threshold (%d)", tokensBefore, threshold)
 	}
 }

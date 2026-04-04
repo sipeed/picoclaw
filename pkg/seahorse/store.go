@@ -854,17 +854,19 @@ func (s *Store) ReplaceContextItemsWithSummary(
 	if err != nil {
 		return err
 	}
+	defer rows.Close()
 
 	var ordinals []int
 	for rows.Next() {
 		var ord int
-		if err := rows.Scan(&ord); err != nil {
-			rows.Close()
-			return err
+		if scanErr := rows.Scan(&ord); scanErr != nil {
+			return scanErr
 		}
 		ordinals = append(ordinals, ord)
 	}
-	rows.Close()
+	if err = rows.Err(); err != nil {
+		return err
+	}
 
 	if len(ordinals) == 0 {
 		return nil

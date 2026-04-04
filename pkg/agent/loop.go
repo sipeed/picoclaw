@@ -1742,6 +1742,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 			if err := al.contextManager.Compact(turnCtx, &CompactRequest{
 				SessionKey: ts.sessionKey,
 				Reason:     ContextCompressReasonProactive,
+				Budget:     ts.agent.ContextWindow,
 			}); err != nil {
 				logger.WarnCF("agent", "Proactive compact failed", map[string]any{
 					"session_key": ts.sessionKey,
@@ -2775,7 +2776,7 @@ turnLoop:
 				}
 			}
 			if ts.opts.EnableSummary {
-				al.contextManager.Compact(turnCtx, &CompactRequest{SessionKey: ts.sessionKey, Reason: ContextCompressReasonSummarize})
+				al.contextManager.Compact(turnCtx, &CompactRequest{SessionKey: ts.sessionKey, Reason: ContextCompressReasonSummarize, Budget: ts.agent.ContextWindow})
 			}
 
 			ts.setPhase(TurnPhaseCompleted)
@@ -2851,6 +2852,7 @@ turnLoop:
 			&CompactRequest{
 				SessionKey: ts.sessionKey,
 				Reason:     ContextCompressReasonSummarize,
+				Budget:     ts.agent.ContextWindow,
 			},
 		)
 	}

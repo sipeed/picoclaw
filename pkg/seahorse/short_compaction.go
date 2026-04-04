@@ -64,6 +64,11 @@ func (e *CompactionEngine) Compact(ctx context.Context, convID int64, input Comp
 	var budget int
 	if input.Budget != nil {
 		budget = *input.Budget
+		if budget == 0 {
+			logger.ErrorCF("seahorse", "Compact: budget is 0, this should not happen", map[string]any{
+				"conv_id": convID,
+			})
+		}
 	} else {
 		budget = int(float64(tokensBefore) * ContextThreshold)
 	}
