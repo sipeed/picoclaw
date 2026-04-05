@@ -2389,22 +2389,12 @@ turnLoop:
 
 						toolDuration := time.Duration(0) // Hook execution time unknown
 
-						// Emit ToolExecEnd event
-						al.emitEvent(
-							EventKindToolExecEnd,
-							ts.eventMeta("runTurn", "turn.tool.end"),
-							ToolExecEndPayload{
-								Tool:       toolName,
-								Duration:   toolDuration,
-								ForLLMLen:  len(hookResult.ContentForLLM()),
-								ForUserLen: len(hookResult.ForUser),
-								IsError:    hookResult.IsError,
-								Async:      hookResult.Async,
-							},
-						)
-
 						// Send ForUser content to user
-						if !hookResult.Silent && hookResult.ForUser != "" && ts.opts.SendResponse {
+						// For ResponseHandled results, send regardless of SendResponse setting,
+						// same as normal tool execution path.
+						shouldSendForUser := !hookResult.Silent && hookResult.ForUser != "" &&
+							(ts.opts.SendResponse || hookResult.ResponseHandled)
+						if shouldSendForUser {
 							al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 								Channel: ts.channel,
 								ChatID:  ts.chatID,
@@ -2475,6 +2465,20 @@ turnLoop:
 							toolResultMsg.Content = contentForLLM
 							toolResultMsg.Media = append(toolResultMsg.Media, hookResult.Media...)
 						}
+
+						// Emit ToolExecEnd event (after filtering, same as normal tool execution)
+						al.emitEvent(
+							EventKindToolExecEnd,
+							ts.eventMeta("runTurn", "turn.tool.end"),
+							ToolExecEndPayload{
+								Tool:       toolName,
+								Duration:   toolDuration,
+								ForLLMLen:  len(contentForLLM),
+								ForUserLen: len(hookResult.ForUser),
+								IsError:    hookResult.IsError,
+								Async:      hookResult.Async,
+							},
+						)
 
 						messages = append(messages, toolResultMsg)
 						if !ts.opts.NoHistory {

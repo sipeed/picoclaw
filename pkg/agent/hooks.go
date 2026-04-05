@@ -800,6 +800,13 @@ func cloneToolResult(result *tools.ToolResult) *tools.ToolResult {
 	if len(result.Media) > 0 {
 		cloned.Media = append([]string(nil), result.Media...)
 	}
+	if len(result.ArtifactTags) > 0 {
+		cloned.ArtifactTags = append([]string(nil), result.ArtifactTags...)
+	}
+	if len(result.Messages) > 0 {
+		cloned.Messages = make([]providers.Message, len(result.Messages))
+		copy(cloned.Messages, result.Messages)
+	}
 	return &cloned
 }
 
