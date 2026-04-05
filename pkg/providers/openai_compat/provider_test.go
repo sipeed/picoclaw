@@ -1189,3 +1189,77 @@ func TestSerializeMessages_StripsSystemParts(t *testing.T) {
 		t.Fatal("system_parts should not appear in serialized output")
 	}
 }
+
+func TestParseStreamResponse_ThinkingFallback(t *testing.T) {
+	// Mock SSE stream with thinking/reasoning chunks
+	stream := `data: {"choices":[{"delta":{"thinking":"Let me "},"index":0}]}
+data: {"choices":[{"delta":{"thinking":"think... "},"index":0}]}
+data: {"choices":[{"delta":{"content":"The answer is "},"index":0}]}
+data: {"choices":[{"delta":{"content":"42"},"index":0}]}
+data: [DONE]
+`
+
+	var accumulated string
+	onChunk := func(acc string) {
+		accumulated = acc
+	}
+
+	resp, err := parseStreamResponse(t.Context(), strings.NewReader(stream), onChunk)
+	if err != nil {
+		t.Fatalf("parseStreamResponse() error = %v", err)
+	}
+
+	// Verify Thinking field is populated
+	if resp.Thinking != "Let me think... " {
+		t.Errorf("resp.Thinking = %q, want %q", resp.Thinking, "Let me think... ")
+	}
+
+	// Verify Content contains BOTH thinking (as fallback/prefix) and content
+	expectedContent := "Let me think... The answer is 42"
+	if resp.Content != expectedContent {
+		t.Errorf("resp.Content = %q, want %q", resp.Content, expectedContent)
+	}
+
+	// Verify onChunk received the intermediate states
+	if accumulated != expectedContent {
+		t.Errorf("last onChunk = %q, want %q", accumulated, expectedContent)
+	}
+}
+
+func TestParseStreamResponse_ReasoningFallback(t *testing.T) {
+	// Mock SSE stream with reasoning (Ollama style)
+	stream := `data: {"choices":[{"delta":{"reasoning":"I will calculate "},"index":0}]}
+data: {"choices":[{"delta":{"reasoning":"the sum."},"index":0}]}
+data: [DONE]
+`
+
+	resp, err := parseStreamResponse(t.Context(), strings.NewReader(stream), nil)
+	if err != nil {
+		t.Fatalf("parseStreamResponse() error = %v", err)
+	}
+
+	if resp.Content != "I will calculate the sum." {
+		t.Errorf("resp.Content = %q, want %q", resp.Content, "I will calculate the sum.")
+	}
+}
+
+func TestParseStreamResponse_MixedContent(t *testing.T) {
+	// Verify that if both thinking and content are present, they are both captured correctly.
+	// Some models might start with thinking and then send content.
+	stream := `data: {"choices":[{"delta":{"thinking":"Wait, "},"index":0}]}
+data: {"choices":[{"delta":{"content":"Hello"},"index":0}]}
+data: [DONE]
+`
+
+	resp, err := parseStreamResponse(t.Context(), strings.NewReader(stream), nil)
+	if err != nil {
+		t.Fatalf("parseStreamResponse() error = %v", err)
+	}
+
+	if resp.Thinking != "Wait, " {
+		t.Errorf("Thinking = %q", resp.Thinking)
+	}
+	if resp.Content != "Wait, Hello" {
+		t.Errorf("Content = %q", resp.Content)
+	}
+}

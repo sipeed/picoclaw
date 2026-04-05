@@ -610,3 +610,65 @@ func TestParseResponse_WithThoughtSignature(t *testing.T) {
 			out.ToolCalls[0].ExtraContent.Google.ThoughtSignature, "sig123")
 	}
 }
+
+func TestSerializeMessages_WithReasoningFallbackFields(t *testing.T) {
+	messages := []Message{
+		{
+			Role:             "assistant",
+			Content:          "final answer",
+			ReasoningContent: "deepseek thinking",
+			Reasoning:        "ollama reasoning",
+			Thinking:         "ollama thinking",
+		},
+	}
+	result := SerializeMessages(messages)
+
+	data, _ := json.Marshal(result)
+	var msgs []map[string]any
+	json.Unmarshal(data, &msgs)
+
+	if msgs[0]["reasoning_content"] != "deepseek thinking" {
+		t.Errorf("reasoning_content mismatch, got %v", msgs[0]["reasoning_content"])
+	}
+	if msgs[0]["reasoning"] != "ollama reasoning" {
+		t.Errorf("reasoning mismatch, got %v", msgs[0]["reasoning"])
+	}
+	if msgs[0]["thinking"] != "ollama thinking" {
+		t.Errorf("thinking mismatch, got %v", msgs[0]["thinking"])
+	}
+}
+
+func TestParseResponse_WithOllamaThinkingFallback(t *testing.T) {
+	// Test thinking fallback
+	body := `{"choices":[{"message":{"content":"","thinking":"I am thinking..."},"finish_reason":"stop"}]}`
+	out, err := ParseResponse(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("ParseResponse() error = %v", err)
+	}
+	if out.Content != "I am thinking..." {
+		t.Errorf("Content fallback to thinking failed, got %q", out.Content)
+	}
+	if out.Thinking != "I am thinking..." {
+		t.Errorf("Thinking field not preserved, got %q", out.Thinking)
+	}
+
+	// Test reasoning fallback
+	body = `{"choices":[{"message":{"content":"","reasoning":"Ollama reasoning text"},"finish_reason":"stop"}]}`
+	out, err = ParseResponse(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("ParseResponse() error = %v", err)
+	}
+	if out.Content != "Ollama reasoning text" {
+		t.Errorf("Content fallback to reasoning failed, got %q", out.Content)
+	}
+
+	// Test priority: content > thinking > reasoning
+	body = `{"choices":[{"message":{"content":"real content","thinking":"hidden thinking"},"finish_reason":"stop"}]}`
+	out, err = ParseResponse(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("ParseResponse() error = %v", err)
+	}
+	if out.Content != "real content" {
+		t.Errorf("Content should have priority, got %q", out.Content)
+	}
+}
