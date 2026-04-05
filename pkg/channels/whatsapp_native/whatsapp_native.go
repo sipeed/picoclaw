@@ -11,6 +11,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,6 +125,16 @@ func (c *WhatsAppNativeChannel) Start(ctx context.Context) error {
 	}
 
 	client := whatsmeow.NewClient(deviceStore, waLogger)
+
+	if c.config.Proxy != "" {
+		proxyURL, parseErr := url.Parse(c.config.Proxy)
+		if parseErr != nil {
+			return fmt.Errorf("invalid proxy URL %q: %w", c.config.Proxy, parseErr)
+		}
+		client.SetProxy(http.ProxyURL(proxyURL))
+	} else if os.Getenv("HTTP_PROXY") != "" || os.Getenv("HTTPS_PROXY") != "" {
+		client.SetProxy(http.ProxyFromEnvironment)
+	}
 
 	// Create runCtx/runCancel BEFORE registering event handler and starting
 	// goroutines so that Stop() can cancel them at any time, including during
