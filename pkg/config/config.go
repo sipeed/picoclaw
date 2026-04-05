@@ -348,6 +348,9 @@ type TelegramConfig struct {
 	Token              SecureString        `json:"token,omitzero"          yaml:"token,omitempty" env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
 	BaseURL            string              `json:"base_url"                yaml:"-"               env:"PICOCLAW_CHANNELS_TELEGRAM_BASE_URL"`
 	Proxy              string              `json:"proxy"                   yaml:"-"               env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
+	TLSCAFile          string              `json:"tls_ca_file,omitempty"    yaml:"-"               env:"PICOCLAW_CHANNELS_TELEGRAM_TLS_CA_FILE"`
+	TLSCADir           string              `json:"tls_ca_dir,omitempty"     yaml:"-"               env:"PICOCLAW_CHANNELS_TELEGRAM_TLS_CA_DIR"`
+	TLSInsecure        bool                `json:"tls_insecure,omitempty"   yaml:"-"               env:"PICOCLAW_CHANNELS_TELEGRAM_TLS_INSECURE"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"              yaml:"-"               env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty" yaml:"-"`
 	Typing             TypingConfig        `json:"typing,omitempty"        yaml:"-"`
