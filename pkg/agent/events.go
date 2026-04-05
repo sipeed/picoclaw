@@ -135,6 +135,10 @@ type LLMRequestPayload struct {
 	ToolsCount    int
 	MaxTokens     int
 	Temperature   float64
+	// Detailed content for verbose logging
+	UserMessagePreview  string   // Last user message preview
+	SystemPromptPreview string   // System prompt preview
+	ToolNames           []string // List of available tool names
 }
 
 // LLMResponsePayload describes an inbound LLM response.
@@ -142,6 +146,16 @@ type LLMResponsePayload struct {
 	ContentLen   int
 	ToolCalls    int
 	HasReasoning bool
+	// Detailed content for verbose logging
+	ContentPreview  string           // First 200 chars of response
+	ToolCallDetails []ToolCallDetail // Details of tool calls
+	FinishReason    string           // Why the LLM stopped
+}
+
+// ToolCallDetail describes a single tool call from LLM
+type ToolCallDetail struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 // LLMDeltaPayload describes a streamed LLM delta.
