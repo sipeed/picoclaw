@@ -22,7 +22,16 @@ func NewSkillManageTool(mgr *skills.SkillManager) *SkillManageTool {
 func (t *SkillManageTool) Name() string { return "skill_manage" }
 
 func (t *SkillManageTool) Description() string {
-	return "Create, read, update, or delete workspace skills. Use this to persist reusable procedures the agent discovers during conversations."
+	return "Manage workspace skills (create, read, update, patch, delete, list). " +
+		"Skills are your procedural memory -- reusable approaches for recurring task types.\n\n" +
+		"Create when: complex task succeeded (5+ tool calls), errors overcome, " +
+		"user-corrected approach worked, non-trivial workflow discovered.\n" +
+		"Update when: instructions stale/wrong, missing steps or pitfalls found during use. " +
+		"If you used a skill and hit issues not covered by it, patch it immediately.\n\n" +
+		"After difficult/iterative tasks, offer to save as a skill. " +
+		"Skip for simple one-offs. Confirm with user before creating/deleting.\n\n" +
+		"Good skills: trigger conditions, numbered steps with exact commands, " +
+		"pitfalls section, verification steps."
 }
 
 func (t *SkillManageTool) Parameters() map[string]any {
@@ -31,8 +40,8 @@ func (t *SkillManageTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"operation": map[string]any{
 				"type":        "string",
-				"enum":        []string{"create", "read", "update", "delete", "list"},
-				"description": "The operation to perform",
+				"enum":        []string{"create", "read", "update", "patch", "delete", "list"},
+				"description": "The operation to perform. Use 'patch' for targeted fixes (preferred over 'update' for small changes).",
 			},
 			"name": map[string]any{
 				"type":        "string",
@@ -46,6 +55,14 @@ func (t *SkillManageTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Optional subdirectory category for create",
 			},
+			"old_string": map[string]any{
+				"type":        "string",
+				"description": "Text to find in SKILL.md (required for patch). Must appear exactly once.",
+			},
+			"new_string": map[string]any{
+				"type":        "string",
+				"description": "Replacement text (required for patch). Use empty string to delete matched text.",
+			},
 		},
 		"required": []string{"operation"},
 	}
@@ -56,6 +73,8 @@ func (t *SkillManageTool) Execute(_ context.Context, args map[string]any) *ToolR
 	name, _ := args["name"].(string)
 	content, _ := args["content"].(string)
 	category, _ := args["category"].(string)
+	oldStr, _ := args["old_string"].(string)
+	newStr, _ := args["new_string"].(string)
 
 	switch op {
 	case "create":
@@ -95,6 +114,15 @@ func (t *SkillManageTool) Execute(_ context.Context, args map[string]any) *ToolR
 		}
 		return NewToolResult(fmt.Sprintf("Skill %q deleted", name))
 
+	case "patch":
+		if name == "" || oldStr == "" {
+			return ErrorResult("patch requires 'name' and 'old_string'")
+		}
+		if err := t.mgr.PatchSkill(name, oldStr, newStr); err != nil {
+			return ErrorResult(fmt.Sprintf("patch failed: %v", err))
+		}
+		return NewToolResult(fmt.Sprintf("Skill %q patched successfully", name))
+
 	case "list":
 		allSkills := t.mgr.ListSkills()
 		if len(allSkills) == 0 {
@@ -107,6 +135,6 @@ func (t *SkillManageTool) Execute(_ context.Context, args map[string]any) *ToolR
 		return NewToolResult(sb.String())
 
 	default:
-		return ErrorResult(fmt.Sprintf("unknown operation %q — use create/read/update/delete/list", op))
+		return ErrorResult(fmt.Sprintf("unknown operation %q -- use create/read/update/patch/delete/list", op))
 	}
 }

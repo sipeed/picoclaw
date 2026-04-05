@@ -111,7 +111,8 @@ func NewAgentInstance(
 			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseBM25,
 			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseRegex,
 		).
-		WithSplitOnMarker(cfg.Agents.Defaults.SplitOnMarker)
+		WithSplitOnMarker(cfg.Agents.Defaults.SplitOnMarker).
+		WithSkillManage(cfg.Tools.IsToolEnabled("skill_manage"))
 
 	agentID := routing.DefaultAgentID
 	agentName := ""

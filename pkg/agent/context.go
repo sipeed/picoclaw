@@ -26,6 +26,7 @@ type ContextBuilder struct {
 	toolDiscoveryBM25  bool
 	toolDiscoveryRegex bool
 	splitOnMarker      bool
+	skillManageEnabled bool
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -57,6 +58,11 @@ func (cb *ContextBuilder) WithSplitOnMarker(enabled bool) *ContextBuilder {
 	return cb
 }
 
+func (cb *ContextBuilder) WithSkillManage(enabled bool) *ContextBuilder {
+	cb.skillManageEnabled = enabled
+	return cb
+}
+
 func getGlobalConfigDir() string {
 	return config.GetHome()
 }
@@ -80,51 +86,43 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 
 func (cb *ContextBuilder) getIdentity() string {
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
-	toolDiscovery := cb.getDiscoveryRule()
 	version := config.FormatVersion()
 
-	return fmt.Sprintf(
-		`# picoclaw 🦞 (%s)
-
-You are picoclaw, a helpful AI assistant.
-
-## Workspace
-Your workspace is at: %s
-- Memory: %s/memory/MEMORY.md
-- Daily Notes: %s/memory/YYYYMM/YYYYMMDD.md
-- Skills: %s/skills/{skill-name}/SKILL.md
-
-## Important Rules
-
-1. **ALWAYS use tools** - When you need to perform an action (schedule reminders, send messages, execute commands, etc.), you MUST call the appropriate tool. Do NOT just say you'll do it or pretend to do it.
-
-2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
-
-3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md
-
-4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.
-
-%s`,
-		version, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, toolDiscovery)
-}
-
-func (cb *ContextBuilder) getDiscoveryRule() string {
-	if !cb.toolDiscoveryBM25 && !cb.toolDiscoveryRegex {
-		return ""
+	// Build rules dynamically so numbering adapts to conditional rules.
+	rules := []string{
+		`**ALWAYS use tools** - When you need to perform an action (schedule reminders, send messages, execute commands, etc.), you MUST call the appropriate tool. Do NOT just say you'll do it or pretend to do it.`,
+		`**Be helpful and accurate** - When using tools, briefly explain what you're doing.`,
+		fmt.Sprintf(`**Memory** - Save durable facts to %s/memory/MEMORY.md: user preferences, environment details, tool quirks, and stable conventions. Keep it compact. Prioritize what reduces future user corrections. Do NOT save task progress, session outcomes, or temporary state. If you discovered a reusable procedure, save it as a skill instead.`, workspacePath),
+		`**Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`,
 	}
 
-	var toolNames []string
-	if cb.toolDiscoveryBM25 {
-		toolNames = append(toolNames, `"tool_search_tool_bm25"`)
+	if cb.skillManageEnabled {
+		rules = append(rules, `**Skills** - After completing a complex task (5+ tool calls), fixing a tricky error, or discovering a non-trivial workflow, save the approach as a skill with skill_manage so you can reuse it next time. When using a skill and finding it outdated, incomplete, or wrong, patch it immediately with skill_manage(operation='patch') -- do not wait to be asked. Skills that are not maintained become liabilities.`)
 	}
-	if cb.toolDiscoveryRegex {
-		toolNames = append(toolNames, `"tool_search_tool_regex"`)
+
+	if cb.toolDiscoveryBM25 || cb.toolDiscoveryRegex {
+		var toolNames []string
+		if cb.toolDiscoveryBM25 {
+			toolNames = append(toolNames, `"tool_search_tool_bm25"`)
+		}
+		if cb.toolDiscoveryRegex {
+			toolNames = append(toolNames, `"tool_search_tool_regex"`)
+		}
+		rules = append(rules, fmt.Sprintf(`**Tool Discovery** - Your visible tools are limited to save memory, but a vast hidden library exists. If you lack the right tool for a task, BEFORE giving up, you MUST search using the %s tool. Do not refuse a request unless the search returns nothing. Found tools will temporarily unlock for your next turn.`, strings.Join(toolNames, " or ")))
+	}
+
+	// Format numbered rules.
+	var rulesText strings.Builder
+	for i, rule := range rules {
+		fmt.Fprintf(&rulesText, "%d. %s", i+1, rule)
+		if i < len(rules)-1 {
+			rulesText.WriteString("\n\n")
+		}
 	}
 
 	return fmt.Sprintf(
-		`5. **Tool Discovery** - Your visible tools are limited to save memory, but a vast hidden library exists. If you lack the right tool for a task, BEFORE giving up, you MUST search using the %s tool. Do not refuse a request unless the search returns nothing. Found tools will temporarily unlock for your next turn.`,
-		strings.Join(toolNames, " or "),
-	)
+		"# picoclaw 🦞 (%s)\n\nYou are picoclaw, a helpful AI assistant.\n\n## Workspace\nYour workspace is at: %s\n- Memory: %s/memory/MEMORY.md\n- Daily Notes: %s/memory/YYYYMM/YYYYMMDD.md\n- Skills: %s/skills/{skill-name}/SKILL.md\n\n## Important Rules\n\n%s",
+		version, workspacePath, workspacePath, workspacePath, workspacePath, rulesText.String())
 }
 
 func (cb *ContextBuilder) BuildSystemPrompt() string {

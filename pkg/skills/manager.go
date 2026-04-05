@@ -19,11 +19,36 @@ import (
 type SkillManager struct {
 	mu        sync.Mutex
 	skillsDir string // e.g. ~/.picoclaw/workspace/skills/
+	guard     bool   // security scanning enabled (default true)
 }
 
 // NewSkillManager creates a manager that writes skills to the given directory.
+// Security scanning is enabled by default.
 func NewSkillManager(skillsDir string) *SkillManager {
-	return &SkillManager{skillsDir: skillsDir}
+	return &SkillManager{skillsDir: skillsDir, guard: true}
+}
+
+// WithGuard enables or disables security scanning for agent-created skills.
+func (sm *SkillManager) WithGuard(enabled bool) *SkillManager {
+	sm.guard = enabled
+	return sm
+}
+
+// scanAfterWrite runs the security scanner on the skill directory after a write.
+// If the scan blocks the skill, it calls rollback and returns an error.
+func (sm *SkillManager) scanAfterWrite(skillDir string, rollback func()) error {
+	if !sm.guard {
+		return nil
+	}
+	result := ScanSkill(skillDir, TrustAgentCreated)
+	allowed, reason := ShouldAllowInstall(result)
+	if !allowed {
+		if rollback != nil {
+			rollback()
+		}
+		return fmt.Errorf("security scan blocked skill: %s\n%s", reason, FormatScanReport(result))
+	}
+	return nil
 }
 
 // CreateSkill validates and atomically writes a new skill.
@@ -71,6 +96,11 @@ func (sm *SkillManager) CreateSkill(name, content, category string) error {
 		return fmt.Errorf("write skill: %w", err)
 	}
 
+	// Security scan — rollback if blocked.
+	if err := sm.scanAfterWrite(skillDir, func() { os.RemoveAll(skillDir) }); err != nil {
+		return err
+	}
+
 	logger.DebugCF("skills", "skill created", map[string]any{
 		"name":     name,
 		"category": category,
@@ -96,12 +126,12 @@ func (sm *SkillManager) PatchSkill(name, oldStr, newStr string) error {
 		return fmt.Errorf("read skill: %w", err)
 	}
 
-	content := string(data)
-	if !strings.Contains(content, oldStr) {
+	original := string(data)
+	if !strings.Contains(original, oldStr) {
 		return fmt.Errorf("old_string not found in %s", info.Path)
 	}
 
-	updated := strings.Replace(content, oldStr, newStr, 1)
+	updated := strings.Replace(original, oldStr, newStr, 1)
 
 	// Validate updated content.
 	if err := ValidateFrontmatter(updated); err != nil {
@@ -110,6 +140,12 @@ func (sm *SkillManager) PatchSkill(name, oldStr, newStr string) error {
 
 	if err := atomicWrite(info.Path, updated); err != nil {
 		return fmt.Errorf("write patched skill: %w", err)
+	}
+
+	// Security scan — rollback to original if blocked.
+	skillDir := filepath.Dir(info.Path)
+	if err := sm.scanAfterWrite(skillDir, func() { atomicWrite(info.Path, original) }); err != nil {
+		return err
 	}
 
 	logger.DebugCF("skills", "skill patched", map[string]any{
@@ -137,8 +173,18 @@ func (sm *SkillManager) EditSkill(name, content string) error {
 		return fmt.Errorf("validate size: %w", err)
 	}
 
+	// Read original for rollback.
+	originalData, _ := os.ReadFile(info.Path)
+	original := string(originalData)
+
 	if err := atomicWrite(info.Path, content); err != nil {
 		return fmt.Errorf("write skill: %w", err)
+	}
+
+	// Security scan — rollback to original if blocked.
+	skillDir := filepath.Dir(info.Path)
+	if err := sm.scanAfterWrite(skillDir, func() { atomicWrite(info.Path, original) }); err != nil {
+		return err
 	}
 
 	return nil
