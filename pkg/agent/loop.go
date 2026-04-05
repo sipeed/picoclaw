@@ -2070,7 +2070,7 @@ turnLoop:
 				strings.Contains(errMsg, "prompt is too long") ||
 				strings.Contains(errMsg, "request too large"))
 
-			isServerError := !isTimeoutError && strings.Contains(errMsg, "status: 5")
+			isServerError := !isTimeoutError && strings.Contains(strings.ToLower(errMsg), "status: 5")
 
 			if isServerError && retry < maxRetries {
 				backoff := time.Duration(retry+1) * 5 * time.Second
