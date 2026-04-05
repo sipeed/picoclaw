@@ -546,3 +546,42 @@ Through the hook system's `respond` action, external processes can:
 3. **Coexist with built-in tools**: Does not affect normal operation of PicoClaw's original tools
 
 This provides a flexible and elegant solution for plugin development.
+
+---
+
+## Security Boundaries
+
+### Bypassing Approval Checks
+
+**Important**: The `respond` action bypasses `ApproveTool` approval checks.
+
+This means:
+- A `before_tool` hook can return `respond` for **any tool name**, including sensitive tools (like `bash`)
+- The tool won't go through the approval process, directly returning the hook-provided result
+- This is designed for plugin tools but introduces security risks
+
+### Security Recommendations
+
+1. **Review hook configuration**: Ensure only trusted hook processes are enabled
+2. **Limit hook scope**: Add your own security checks in hook implementation
+3. **Use `deny_tool` for rejection**: Use `deny_tool` action instead of `respond` with error for denying execution
+
+### Example: Hook-Internal Security Check
+
+```python
+def handle_before_tool(params: dict) -> dict:
+    tool = params.get("tool", "")
+    args = params.get("arguments", {})
+    
+    # Security check: only handle plugin tools
+    if tool in ["get_weather", "calculate"]:
+        return {
+            "action": "respond",
+            "result": execute_plugin_tool(tool, args),
+        }
+    
+    # Other tools continue normal flow (will go through approval)
+    return {"action": "continue"}
+```
+
+This ensures the hook only affects plugin tools, not system tool approval flow.

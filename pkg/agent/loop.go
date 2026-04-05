@@ -2349,7 +2349,12 @@ turnLoop:
 						toolArgs = toolReq.Arguments
 					}
 				case HookActionRespond:
-					// Hook returns result directly, skip tool execution
+					// Hook returns result directly, skip tool execution.
+					// SECURITY: This bypasses ApproveTool, allowing hooks to respond
+					// for any tool name without approval. This is intentional for
+					// plugin tools but means a before_tool hook can override even
+					// sensitive tools like bash. Hook configuration should be
+					// carefully reviewed to prevent unauthorized tool execution.
 					if toolReq != nil && toolReq.HookResult != nil {
 						hookResult := toolReq.HookResult
 

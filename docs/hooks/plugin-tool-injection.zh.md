@@ -546,3 +546,42 @@ func getWeatherData(city string) string {
 3. **与内置工具共存**：不影响 PicoClaw 原有工具的正常运行
 
 这为插件开发提供了灵活、优雅的解决方案。
+
+---
+
+## 安全边界说明
+
+### 绕过审批检查
+
+**重要**：`respond` action 会绕过 `ApproveTool` 审批检查。
+
+这意味着：
+- `before_tool` hook 可以为**任何工具名称**返回 `respond`，包括敏感工具（如 `bash`）
+- 工具不会经过审批流程，直接返回 hook 提供的结果
+- 这是为了支持插件工具而设计，但也带来了安全风险
+
+### 安全建议
+
+1. **审查 hook 配置**：确保只有可信的 hook 进程被启用
+2. **限制 hook 权限**：在 hook 实现中添加自己的安全检查
+3. **优先使用 `deny_tool`**：对于拒绝执行，使用 `deny_tool` action 而非 `respond` 返回错误
+
+### 示例：hook 内置安全检查
+
+```python
+def handle_before_tool(params: dict) -> dict:
+    tool = params.get("tool", "")
+    args = params.get("arguments", {})
+    
+    # 安全检查：只处理插件工具
+    if tool in ["get_weather", "calculate"]:
+        return {
+            "action": "respond",
+            "result": execute_plugin_tool(tool, args),
+        }
+    
+    # 其他工具继续正常流程（会经过审批）
+    return {"action": "continue"}
+```
+
+这样可以确保 hook 只影响插件工具，不影响系统工具的审批流程。
