@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -61,19 +62,14 @@ var (
 		),
 		regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
 		regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
-		regexp.MustCompile(`\$\([^)]+\)`),
-		regexp.MustCompile(`\$\{[^}]+\}`),
-		regexp.MustCompile("`[^`]+`"),
 		regexp.MustCompile(`\|\s*sh\b`),
 		regexp.MustCompile(`\|\s*bash\b`),
 		regexp.MustCompile(`;\s*rm\s+-[rf]`),
 		regexp.MustCompile(`&&\s*rm\s+-[rf]`),
 		regexp.MustCompile(`\|\|\s*rm\s+-[rf]`),
-		regexp.MustCompile(`<<\s*EOF`),
 		regexp.MustCompile(`\$\(\s*cat\s+`),
 		regexp.MustCompile(`\$\(\s*curl\s+`),
 		regexp.MustCompile(`\$\(\s*wget\s+`),
-		regexp.MustCompile(`\$\(\s*which\s+`),
 		regexp.MustCompile(`\bsudo\b`),
 		regexp.MustCompile(`\bchmod\s+[0-7]{3,4}\b`),
 		regexp.MustCompile(`\bchown\b`),
@@ -83,7 +79,6 @@ var (
 		regexp.MustCompile(`\bcurl\b.*\|\s*(sh|bash)`),
 		regexp.MustCompile(`\bwget\b.*\|\s*(sh|bash)`),
 		regexp.MustCompile(`\bnpm\s+install\s+-g\b`),
-		regexp.MustCompile(`\bpip\s+install\s+--user\b`),
 		regexp.MustCompile(`\bapt\s+(install|remove|purge)\b`),
 		regexp.MustCompile(`\byum\s+(install|remove)\b`),
 		regexp.MustCompile(`\bdnf\s+(install|remove)\b`),
@@ -110,6 +105,21 @@ var (
 		"/dev/stdin":   true,
 		"/dev/stdout":  true,
 		"/dev/stderr":  true,
+	}
+
+	// systemBinDirs are well-known system executable directories that are
+	// always trusted for path references inside commands. Commands referencing
+	// executables in these directories should not be blocked by the workspace
+	// restriction check.
+	systemBinDirs = map[string]bool{
+		"/bin":              true,
+		"/sbin":             true,
+		"/usr/bin":          true,
+		"/usr/sbin":         true,
+		"/usr/local/bin":    true,
+		"/usr/local/sbin":   true,
+		"/opt/homebrew/bin": true,
+		"/opt/homebrew/sbin": true,
 	}
 )
 
@@ -227,7 +237,7 @@ func (t *ExecTool) Parameters() map[string]any {
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
-				"description": "Timeout in seconds (0 = no timeout)",
+				"description": "Timeout in seconds (0 or omitted = use global default)",
 			},
 		},
 		"required": []string{"action"},
@@ -348,15 +358,38 @@ func (t *ExecTool) executeRun(ctx context.Context, args map[string]any) *ToolRes
 		return t.runBackground(ctx, command, cwd, isPty)
 	}
 
-	return t.runSync(ctx, command, cwd)
+	// Parse per-command timeout override from args.
+	// timeout=0 falls back to the global t.timeout (does not disable timeout).
+	perCommandTimeout := t.timeout
+	if v := args["timeout"]; v != nil {
+		switch tv := v.(type) {
+		case float64:
+			if tv > 0 {
+				perCommandTimeout = time.Duration(tv * float64(time.Second))
+			}
+			// tv <= 0: keep perCommandTimeout = t.timeout (global fallback)
+		case int:
+			if tv > 0 {
+				perCommandTimeout = time.Duration(tv) * time.Second
+			}
+			// tv <= 0: keep perCommandTimeout = t.timeout (global fallback)
+		case string:
+			if secs, err := strconv.Atoi(tv); err == nil && secs > 0 {
+				perCommandTimeout = time.Duration(secs) * time.Second
+			}
+			// invalid or <= 0: keep perCommandTimeout = t.timeout (global fallback)
+		}
+	}
+
+	return t.runSync(ctx, command, cwd, perCommandTimeout)
 }
 
-func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult {
+func (t *ExecTool) runSync(ctx context.Context, command, cwd string, timeout time.Duration) *ToolResult {
 	// timeout == 0 means no timeout
 	var cmdCtx context.Context
 	var cancel context.CancelFunc
-	if t.timeout > 0 {
-		cmdCtx, cancel = context.WithTimeout(ctx, t.timeout)
+	if timeout > 0 {
+		cmdCtx, cancel = context.WithTimeout(ctx, timeout)
 	} else {
 		cmdCtx, cancel = context.WithCancel(ctx)
 	}
@@ -409,7 +442,7 @@ func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult
 
 	if err != nil {
 		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
-			msg := fmt.Sprintf("Command timed out after %v", t.timeout)
+			msg := fmt.Sprintf("Command timed out after %v", timeout)
 			if output != "" {
 				msg += "\n\nPartial output before timeout:\n" + output
 			}
@@ -433,6 +466,16 @@ func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult
 			}
 		} else {
 			output += fmt.Sprintf("\n\n[Command failed: %v]", err)
+		}
+
+		// Detect "command not found" and provide helpful hint.
+		if isExecutableNotFound(err, stderr.String()) {
+			// Extract the command name from the original shell command.
+			cmdName := extractCommandName(command)
+			output += fmt.Sprintf(
+				"\n\nHint: command %q was not found. Use `which %s` or `command -v %s` to verify the path.",
+				cmdName, cmdName, cmdName,
+			)
 		}
 	}
 
@@ -1097,6 +1140,10 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			if safePaths[p] {
 				continue
 			}
+			// Skip paths under well-known system executable directories.
+			if isUnderSystemBinDir(p) {
+				continue
+			}
 			if isAllowedPath(p, t.allowedPathPatterns) {
 				continue
 			}
@@ -1113,6 +1160,51 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	return ""
+}
+
+// isUnderSystemBinDir returns true if the path is under a well-known system
+// executable directory (e.g. /usr/bin, /usr/local/bin, /opt/homebrew/bin).
+func isUnderSystemBinDir(path string) bool {
+	for dir := range systemBinDirs {
+		if strings.HasPrefix(path, dir+"/") || path == dir {
+			return true
+		}
+	}
+	return false
+}
+
+// isExecutableNotFound checks whether a command execution error indicates that
+// the executable was not found on the system PATH.
+func isExecutableNotFound(err error, stderrStr string) bool {
+	if err == nil {
+		return false
+	}
+	// exec.ErrNotFound or wrapped variants
+	if errors.Is(err, exec.ErrNotFound) {
+		return true
+	}
+	// Shell "command not found", "not found", or "No such file or directory" messages.
+	// macOS outputs "No such file or directory" for full-path commands with exit code 127.
+	lower := strings.ToLower(stderrStr)
+	return strings.Contains(lower, "command not found") ||
+		strings.Contains(lower, "not found") && !strings.Contains(lower, "file not found") ||
+		strings.Contains(lower, "no such file or directory")
+}
+
+// extractCommandName returns the first word of a shell command, stripping any
+// leading whitespace and path prefixes. For example:
+//   "/usr/bin/python3 script.py" -> "python3"
+//   "git status"                -> "git"
+//   "  echo hello"              -> "echo"
+func extractCommandName(command string) string {
+	trimmed := strings.TrimSpace(command)
+	// Take only the first token (command name).
+	if idx := strings.IndexAny(trimmed, " \t\n"); idx >= 0 {
+		trimmed = trimmed[:idx]
+	}
+	// Strip leading path components to get just the binary name.
+	trimmed = filepath.Base(trimmed)
+	return trimmed
 }
 
 func (t *ExecTool) SetTimeout(timeout time.Duration) {
