@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -135,7 +135,9 @@ func (p *Provider) buildRequestBody(
 	nativeSearch, _ := options["native_search"].(bool)
 	nativeSearch = nativeSearch && isNativeSearchHost(p.apiBase)
 	if len(tools) > 0 || nativeSearch {
-		requestBody["tools"] = buildToolsList(tools, nativeSearch)
+		// Build tool list with native search handling, then apply strict mode sanitization
+		toolsList := buildToolsList(tools, nativeSearch)
+		requestBody["tools"] = p.finalizeTools(toolsList, options)
 		requestBody["tool_choice"] = "auto"
 	}
 
@@ -391,7 +393,7 @@ func parseStreamResponse(
 		raw := acc.argsJSON.String()
 		if raw != "" {
 			if err := json.Unmarshal([]byte(raw), &args); err != nil {
-				log.Printf("openai_compat stream: failed to decode tool call arguments for %q: %v", acc.name, err)
+				slog.Error("openai_compat stream: failed to decode tool call arguments", "name", acc.name, "error", err)
 				args["raw"] = raw
 			}
 		}
@@ -470,4 +472,66 @@ func supportsPromptCacheKey(apiBase string) bool {
 	}
 	host := u.Hostname()
 	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
+}
+
+// supportsStrictMode reports whether the given API base is known to
+// support the 'strict' flag in tool definitions (Structured Outputs).
+// Non-OpenAI compatible providers often reject this flag with 400 errors.
+func supportsStrictMode(apiBase string) bool {
+	// For now, mirror prompt caching check: only native OpenAI is trusted.
+	return supportsPromptCacheKey(apiBase)
+}
+
+// finalizeTools handles OpenAI Strict Mode compatibility.
+// Strips 'strict' flag for non-OpenAI providers to prevent 400 errors.
+func (p *Provider) finalizeTools(tools []any, options map[string]any) any {
+	forceStrict, hasForce := options["strict_mode"].(bool)
+	isNative := supportsStrictMode(p.apiBase)
+
+	// Native providers: pass through unless user forces a mode
+	if isNative && !hasForce {
+		return tools
+	}
+
+	// Decide whether to use strict mode
+	useStrict := isNative
+	if hasForce {
+		if forceStrict && !isNative {
+			slog.Warn("openai_compat: strict_mode=true ignored for non-OpenAI provider", "api_base", p.apiBase)
+			useStrict = false
+		} else {
+			useStrict = forceStrict
+		}
+	}
+
+	// Build tool list with appropriate strict mode setting
+	out := make([]any, 0, len(tools))
+	for _, t := range tools {
+		var toolMap map[string]any
+		switch v := t.(type) {
+		case ToolDefinition:
+			toolMap = map[string]any{
+				"type": v.Type,
+				"function": map[string]any{
+					"name":        v.Function.Name,
+					"description": v.Function.Description,
+					"parameters":  v.Function.Parameters,
+				},
+			}
+		case map[string]any:
+			toolMap = v
+		default:
+			out = append(out, t)
+			continue
+		}
+
+		// Add strict flag only to function tools
+		if useStrict && toolMap["type"] == "function" {
+			if fn, ok := toolMap["function"].(map[string]any); ok {
+				fn["strict"] = true
+			}
+		}
+		out = append(out, toolMap)
+	}
+	return out
 }
