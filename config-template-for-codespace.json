@@ -1,0 +1,27 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "~/.picoclaw/workspace",
+      "restrict_to_workspace": false,
+      "provider": "openai",
+      "model_name": "gpt-4",
+      "max_tokens": 8192,
+      "max_tool_iterations": 20
+    }
+  },
+  "providers": {
+    "openai": {
+      "api_key": "YOUR_OPENAI_API_KEY_HERE",
+      "api_base": ""
+    }
+  },
+  "tools": {
+    "affine": {
+      "enabled": true,
+      "mcp_endpoint": "https://app.affine.pro/api/workspaces/732dbb91-3973-4b77-adbc-c8d5ec830d6d/mcp",
+      "api_key": "ut_sdphcGU940Vv5UhGKXy7Rw1WpM2KQjUbyA2bV6bC7nY",
+      "workspace_id": "732dbb91-3973-4b77-adbc-c8d5ec830d6d",
+      "timeout_seconds": 30
+    }
+  }
+}
