@@ -349,7 +349,7 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Echo the matched subprotocol back so the browser accepts the upgrade.
 	var responseHeader http.Header
 	if proto := c.matchedSubprotocol(r); proto != "" {
-		responseHeader = http.Header{"Sec-WebSocket-Protocol": {proto}}
+		responseHeader = http.Header{"Sec-Websocket-Protocol": {proto}}
 	}
 
 	conn, err := c.upgrader.Upgrade(w, r, responseHeader)
@@ -387,7 +387,7 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 // authenticate checks the request for a valid token:
 //  1. Authorization: Bearer <token> header
-//  2. Sec-WebSocket-Protocol "token.<value>" (for browsers that can't set headers)
+//  2. Sec-Websocket-Protocol "token.<value>" (for browsers that can't set headers)
 //  3. Query parameter "token" (only when AllowTokenQuery is on)
 func (c *PicoChannel) authenticate(r *http.Request) bool {
 	token := c.config.Token.String()
@@ -403,7 +403,7 @@ func (c *PicoChannel) authenticate(r *http.Request) bool {
 		}
 	}
 
-	// Check Sec-WebSocket-Protocol subprotocol ("token.<value>")
+	// Check Sec-Websocket-Protocol subprotocol ("token.<value>")
 	if c.matchedSubprotocol(r) != "" {
 		return true
 	}

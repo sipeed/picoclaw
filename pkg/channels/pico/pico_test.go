@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"strings"
 	"sync"
 	"testing"
 
@@ -141,4 +143,50 @@ func (c *PicoChannel) addConnForTest(pc *picoConn) {
 		c.sessionConnections[pc.sessionID] = bySession
 	}
 	bySession[pc.id] = pc
+}
+
+func TestPicoChannel_AuthenticateSubprotocol(t *testing.T) {
+	cfg := config.PicoConfig{}
+	cfg.SetToken("secret-token")
+	ch, _ := NewPicoChannel(cfg, bus.NewMessageBus())
+
+	tests := []struct {
+		name         string
+		subprotocols []string
+		want         bool
+	}{
+		{
+			name:         "Correct subprotocol",
+			subprotocols: []string{"token.secret-token"},
+			want:         true,
+		},
+		{
+			name:         "Incorrect subprotocol",
+			subprotocols: []string{"token.wrong-token"},
+			want:         false,
+		},
+		{
+			name:         "Multiple subprotocols with correct one",
+			subprotocols: []string{"other-proto", "token.secret-token"},
+			want:         true,
+		},
+		{
+			name:         "No subprotocols",
+			subprotocols: []string{},
+			want:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			header := make(http.Header)
+			if len(tt.subprotocols) > 0 {
+				header.Set("Sec-Websocket-Protocol", strings.Join(tt.subprotocols, ", "))
+			}
+			req := &http.Request{Header: header}
+			if got := ch.authenticate(req); got != tt.want {
+				t.Errorf("authenticate() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
