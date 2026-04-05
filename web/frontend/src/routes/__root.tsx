@@ -1,8 +1,4 @@
-import {
-  Outlet,
-  createRootRoute,
-  useRouterState,
-} from "@tanstack/react-router"
+import { Outlet, createRootRoute, useRouterState } from "@tanstack/react-router"
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools"
 import { useEffect } from "react"
 

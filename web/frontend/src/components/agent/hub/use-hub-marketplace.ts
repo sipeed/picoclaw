@@ -5,17 +5,17 @@ import {
   useQueryClient,
 } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
-import { useEffect, useRef, useState, type UIEvent } from "react"
+import { type UIEvent, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
 import {
+  type SkillRegistrySearchResult,
+  type SkillSearchResponse,
+  type SkillSupportItem,
   getSkills,
   installSkill,
   searchSkills,
-  type SkillSearchResponse,
-  type SkillRegistrySearchResult,
-  type SkillSupportItem,
 } from "@/api/skills"
 import { getTools } from "@/api/tools"
 
@@ -71,7 +71,7 @@ export function useHubMarketplace() {
         Number(pageParam) || 0,
       ),
     getNextPageParam: (lastPage: SkillSearchResponse) =>
-      lastPage.has_more ? lastPage.next_offset ?? undefined : undefined,
+      lastPage.has_more ? (lastPage.next_offset ?? undefined) : undefined,
     enabled: isMarketSearchActive,
     staleTime: 5 * 60 * 1000,
     refetchOnMount: false,
@@ -112,9 +112,7 @@ export function useHubMarketplace() {
     !marketSearchData &&
     (isMarketSearchPending || isMarketSearchFetching)
   const isMarketSearchLoadingMore =
-    isMarketSearchActive &&
-    Boolean(marketSearchData) &&
-    isFetchingNextPage
+    isMarketSearchActive && Boolean(marketSearchData) && isFetchingNextPage
   const installPendingKey =
     installMutation.isPending && installMutation.variables
       ? `${installMutation.variables.registry}:${installMutation.variables.slug}`
@@ -179,7 +177,9 @@ export function useHubMarketplace() {
     void fetchNextPage()
   }
 
-  const getInstalledSkill = (installedName?: string): SkillSupportItem | null => {
+  const getInstalledSkill = (
+    installedName?: string,
+  ): SkillSupportItem | null => {
     if (!installedName) {
       return null
     }

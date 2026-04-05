@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -377,8 +378,38 @@ func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messag
 	}
 	_, err = c.bot.EditMessageText(ctx, editMsg)
 	if err != nil {
-		logParseFailed(err, useMarkdownV2)
-		_, err = c.bot.EditMessageText(ctx, tu.EditMessageText(tu.ID(cid), mid, content))
+		// If it failed because it was already modified (likely from a previous
+		// attempt that timed out on our end but landed on Telegram), we treat
+		// it as success to prevent the Manager from sending a duplicate message.
+		if strings.Contains(err.Error(), "message is not modified") {
+			return nil
+		}
+
+		// Only fallback to plain text if the error looks like a parsing failure (Bad Request).
+		// Network errors or timeouts should NOT trigger a retry with different content.
+		if strings.Contains(err.Error(), "Bad Request") {
+			logParseFailed(err, useMarkdownV2)
+			_, err = c.bot.EditMessageText(ctx, tu.EditMessageText(tu.ID(cid), mid, content))
+		}
+	}
+
+	if err != nil {
+		if strings.Contains(err.Error(), "message is not modified") {
+			return nil
+		}
+
+		if isPostConnectError(err) {
+			logger.WarnCF(
+				"telegram",
+				"EditMessage likely landed but result is unknown; swallowing error to prevent duplicate",
+				map[string]any{
+					"chat_id": chatID,
+					"mid":     mid,
+					"error":   err.Error(),
+				},
+			)
+			return nil // Swallow to prevent Manager fallback to a new SendMessage
+		}
 	}
 
 	return err
@@ -1132,6 +1163,30 @@ func cryptoRandInt() int {
 	var b [4]byte
 	_, _ = rand.Read(b[:])
 	return int(binary.BigEndian.Uint32(b[:])) | 1 // ensure non-zero
+}
+
+// isPostConnectError identifies network errors that likely occurred after
+// the request was transmitted to Telegram (e.g. dropped connection while
+// waiting for response). Swallowing these for edits prevents duplicate
+// fallbacks, at the small risk of leaving a stale placeholder if the
+// edit never actually reached the server.
+func isPostConnectError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Context errors (timeout/canceled) are too broad; they can be triggered
+	// locally before any data is sent. Never swallow them.
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return false
+	}
+
+	msg := strings.ToLower(err.Error())
+	// Narrowly target connection dropouts where the request likely landed.
+	return strings.Contains(msg, "connection reset by peer") ||
+		strings.Contains(msg, "unexpected eof") ||
+		strings.Contains(msg, "connection closed by foreign host") ||
+		strings.Contains(msg, "broken pipe")
 }
 
 // VoiceCapabilities returns the voice capabilities of the channel.

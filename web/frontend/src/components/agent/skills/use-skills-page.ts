@@ -150,7 +150,10 @@ export function useSkillsPage() {
   }, [allSkills, normalizedSearchQuery, sourceFilter])
 
   const sortedSkills = useMemo(
-    () => [...filteredSkills].sort((left, right) => compareSkills(left, right, sortOrder)),
+    () =>
+      [...filteredSkills].sort((left, right) =>
+        compareSkills(left, right, sortOrder),
+      ),
     [filteredSkills, sortOrder],
   )
 

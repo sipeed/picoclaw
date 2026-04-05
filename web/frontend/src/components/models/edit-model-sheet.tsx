@@ -161,9 +161,7 @@ export function EditModelSheet({
             {!isOAuth && (
               <Field
                 label={t("models.field.apiKey")}
-                hint={
-                  hasSavedAPIKey ? t("models.edit.apiKeyHint") : undefined
-                }
+                hint={hasSavedAPIKey ? t("models.edit.apiKeyHint") : undefined}
               >
                 <KeyInput
                   value={form.apiKey}

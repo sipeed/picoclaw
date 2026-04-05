@@ -59,6 +59,13 @@ func shouldEnableLauncherFileLogging(enableConsole, debug bool) bool {
 	return !enableConsole || debug
 }
 
+func dashboardTokenConfigHelpPath(source launcherconfig.DashboardTokenSource, launcherPath string) string {
+	if source != launcherconfig.DashboardTokenSourceConfig {
+		return ""
+	}
+	return launcherPath
+}
+
 func main() {
 	port := flag.String("port", "18800", "Port to listen on")
 	public := flag.Bool("public", false, "Listen on all interfaces (0.0.0.0) instead of localhost only")
@@ -195,7 +202,9 @@ func main() {
 		logger.Fatalf("Invalid port %q: %v", effectivePort, err)
 	}
 
-	dashboardToken, dashboardSigningKey, newDashTok, dashErr := launcherconfig.EnsureDashboardSecrets()
+	dashboardToken, dashboardSigningKey, dashboardTokenSource, dashErr := launcherconfig.EnsureDashboardSecrets(
+		launcherCfg,
+	)
 	if dashErr != nil {
 		logger.Fatalf("Dashboard auth setup failed: %v", dashErr)
 	}
@@ -223,6 +232,7 @@ func main() {
 		TokenHelp: api.LauncherAuthTokenHelp{
 			EnvVarName:    "PICOCLAW_LAUNCHER_TOKEN",
 			LogFileAbs:    tokenLogFileAbs,
+			ConfigFileAbs: dashboardTokenConfigHelpPath(dashboardTokenSource, launcherPath),
 			TrayCopyMenu:  trayOffersDashboardTokenCopy(),
 			ConsoleStdout: enableConsole,
 		},
@@ -272,19 +282,26 @@ func main() {
 			}
 		}
 		fmt.Println()
-		if newDashTok {
+		switch dashboardTokenSource {
+		case launcherconfig.DashboardTokenSourceRandom:
 			fmt.Printf("  Dashboard token (this run): %s\n", dashboardToken)
-		} else if os.Getenv("PICOCLAW_LAUNCHER_TOKEN") != "" {
+		case launcherconfig.DashboardTokenSourceEnv:
 			fmt.Printf("  Dashboard token: %s (from PICOCLAW_LAUNCHER_TOKEN)\n", dashboardToken)
+		case launcherconfig.DashboardTokenSourceConfig:
+			fmt.Printf("  Dashboard token: %s (from %s)\n", dashboardToken, launcherPath)
 		}
 		fmt.Println()
 	}
 
-	if os.Getenv("PICOCLAW_LAUNCHER_TOKEN") != "" {
+	switch dashboardTokenSource {
+	case launcherconfig.DashboardTokenSourceEnv:
 		logger.InfoC("web", "Dashboard token: environment PICOCLAW_LAUNCHER_TOKEN")
-	}
-	if !enableConsole && newDashTok {
-		logger.InfoC("web", "Dashboard token (this run): "+dashboardToken)
+	case launcherconfig.DashboardTokenSourceConfig:
+		logger.InfoC("web", fmt.Sprintf("Dashboard token: configured in %s", launcherPath))
+	case launcherconfig.DashboardTokenSourceRandom:
+		if !enableConsole {
+			logger.InfoC("web", "Dashboard token (this run): "+dashboardToken)
+		}
 	}
 
 	// Log startup info to file

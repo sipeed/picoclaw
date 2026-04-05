@@ -1,6 +1,18 @@
 import { getSessionHistory } from "@/api/sessions"
 import { normalizeUnixTimestamp } from "@/features/chat/state"
-import type { ChatMessage } from "@/store/chat"
+import type { ChatAttachment, ChatMessage } from "@/store/chat"
+
+function toChatAttachments(media?: string[]): ChatAttachment[] | undefined {
+  if (!media || media.length === 0) {
+    return undefined
+  }
+
+  const attachments = media
+    .filter((item) => item.startsWith("data:image/"))
+    .map((url) => ({ type: "image" as const, url }))
+
+  return attachments.length > 0 ? attachments : undefined
+}
 
 export async function loadSessionMessages(
   sessionId: string,
@@ -12,6 +24,7 @@ export async function loadSessionMessages(
     id: `hist-${index}-${Date.now()}`,
     role: message.role,
     content: message.content,
+    attachments: toChatAttachments(message.media),
     timestamp: fallbackTime,
   }))
 }
@@ -31,9 +44,13 @@ function normalizeMessageTimestamp(timestamp: number | string): string {
 }
 
 function messageSignature(message: ChatMessage): string {
+  const attachmentSignature = (message.attachments ?? [])
+    .map((attachment) => `${attachment.type}\u0001${attachment.url}`)
+    .join("\u0002")
+
   return `${message.role}\u0000${message.content}\u0000${normalizeMessageTimestamp(
     message.timestamp,
-  )}`
+  )}\u0000${attachmentSignature}`
 }
 
 function comparableTimestamp(timestamp: number | string): number {

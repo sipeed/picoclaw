@@ -17,7 +17,7 @@
   },
   "launcherLogin": {
     "title": "Launcher access",
-    "description": "Sign in with the dashboard access token for this launcher process (it may change after each restart unless you pin it with an environment variable).",
+    "description": "Sign in with the dashboard access token for this launcher process (it may change after each restart unless you pin it with an environment variable or launcher config).",
     "tokenLabel": "Token",
     "tokenPlaceholder": "Enter access token",
     "submit": "Continue to Dashboard",
@@ -26,6 +26,7 @@
     "helpTitle": "Where to find the token",
     "helpConsole": "Console mode: printed in the terminal when the launcher starts.",
     "helpTray": "Tray mode: menu «Copy dashboard token».",
+    "helpConfig": "Launcher config file: {{path}}",
     "helpLogFile": "Log file (startup line includes the token): {{path}}",
     "helpEnv": "Stable token: set {{env}}."
   },
@@ -49,6 +50,12 @@
     "deleteSession": "Delete session",
     "messagesCount": "{{count}} messages",
     "noModel": "Select model",
+    "attachImage": "Add images",
+    "removeImage": "Remove image",
+    "uploadedImage": "Uploaded image",
+    "invalidImage": "\"{{name}}\" is not a supported image file.",
+    "imageTooLarge": "\"{{name}}\" exceeds the {{size}} limit.",
+    "imageReadFailed": "Failed to read \"{{name}}\".",
     "empty": {
       "noConfiguredModel": "No Model Configured",
       "noConfiguredModelDescription": "You need to configure at least one AI model with an API key before you can start chatting.",
@@ -244,10 +251,6 @@
   },
   "channels": {
     "loadError": "Failed to load channels",
-    "edit": "Configure {{name}}",
-    "status": {
-      "configured": "Configured"
-    },
     "name": {
       "telegram": "Telegram",
       "discord": "Discord",
@@ -267,8 +270,6 @@
       "weixin": "WeChat"
     },
     "weixin": {
-      "warningTitle": "Testing phase, use with caution",
-      "warningDesc": "The WeChat channel is still experimental and may carry a risk of account suspension. Use it only if you understand and accept the risk.",
       "bindTitle": "WeChat Account Binding",
       "bindDesc": "Scan the QR code with WeChat to bind your personal account.",
       "bind": "Bind WeChat",
@@ -286,8 +287,6 @@
     "wecom": {
       "bindTitle": "WeCom Binding",
       "bindDesc": "Scan the QR code with WeCom to bind your AI Bot.",
-      "enableDesc": "Once bound, you can enable or disable the channel here.",
-      "enableBindFirst": "Bind the bot first, then enable the channel.",
       "bind": "Bind WeCom",
       "rebind": "Re-bind",
       "bound": "WeCom Bound",
@@ -329,7 +328,6 @@
       "notFound": "Channel \"{{name}}\" is not supported.",
       "saveSuccess": "Channel configuration saved.",
       "saveError": "Failed to save channel configuration",
-      "enabled": "enabled",
       "docLink": "Documentation",
       "enableLabel": "Enable channel",
       "restartRequiredTitle": "Gateway restart required",
@@ -585,6 +583,10 @@
       "autostart_load_error": "Failed to load launch-at-login status.",
       "server_port": "Service Port",
       "server_port_hint": "HTTP port used by PicoClaw Web.",
+      "launcher_token": "Login Token",
+      "launcher_token_section_hint": "Changes in this section take effect after the launcher restarts.",
+      "launcher_token_hint": "Used to sign in on the launcher login page.",
+      "launcher_token_placeholder": "Enter login token",
       "lan_access": "Enable LAN Access",
       "lan_access_hint": "Allow access from other devices on your local network.",
       "allowed_cidrs": "Allowed Network CIDRs",
@@ -595,7 +597,7 @@
         "runtime": "Runtime",
         "exec": "Run Commands",
         "cron": "Cron Tasks",
-        "launcher": "Service",
+        "launcher": "Launcher",
         "devices": "Devices"
       },
       "open_raw": "Raw Config",

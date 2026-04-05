@@ -427,6 +427,7 @@ func spawnSubTurn(
 	// 7. Defer cleanup: deliver result (for async), emit End event, and recover from panics
 	defer func() {
 		if r := recover(); r != nil {
+			logger.RecoverPanicNoExit(r)
 			err = fmt.Errorf("subturn panicked: %v", r)
 			result = nil
 			logger.ErrorCF("subturn", "SubTurn panicked", map[string]any{
@@ -510,6 +511,7 @@ func deliverSubTurnResult(al *AgentLoop, parentTS *turnState, childID string, re
 	// We use defer/recover to catch any unlikely channel panics if it were ever closed.
 	defer func() {
 		if r := recover(); r != nil {
+			logger.RecoverPanicNoExit(r)
 			logger.WarnCF("subturn", "recovered panic sending to pendingResults", map[string]any{
 				"parent_id": parentTS.turnID,
 				"child_id":  childID,
@@ -602,6 +604,7 @@ type ephemeralSessionStoreIface interface {
 	SetHistory(key string, history []providers.Message)
 	TruncateHistory(key string, keepLast int)
 	Save(key string) error
+	ListSessions() []string
 	Close() error
 }
 
@@ -661,8 +664,9 @@ func (e *ephemeralSessionStore) TruncateHistory(_ string, keepLast int) {
 	e.history = e.history[len(e.history)-keepLast:]
 }
 
-func (e *ephemeralSessionStore) Save(_ string) error { return nil }
-func (e *ephemeralSessionStore) Close() error        { return nil }
+func (e *ephemeralSessionStore) Save(_ string) error    { return nil }
+func (e *ephemeralSessionStore) Close() error           { return nil }
+func (e *ephemeralSessionStore) ListSessions() []string { return nil }
 
 func (e *ephemeralSessionStore) truncateLocked() {
 	if len(e.history) > maxEphemeralHistorySize {

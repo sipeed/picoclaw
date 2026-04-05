@@ -165,6 +165,58 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 	}
 }
 
+func TestNewAgentInstance_PreservesDistinctLimiterIdentityForSharedResolvedModel(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:      tmpDir,
+				ModelName:      "glm-4.7",
+				ModelFallbacks: []string{"glm-4.7__key_1"},
+			},
+		},
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "glm-4.7",
+				Model:     "zhipu/glm-4.7",
+				RPM:       1,
+			},
+			{
+				ModelName: "glm-4.7__key_1",
+				Model:     "zhipu/glm-4.7",
+				RPM:       3,
+			},
+		},
+	}
+
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	if len(agent.Candidates) != 2 {
+		t.Fatalf("len(Candidates) = %d, want 2", len(agent.Candidates))
+	}
+
+	first := agent.Candidates[0]
+	second := agent.Candidates[1]
+	if first.Provider != "zhipu" || first.Model != "glm-4.7" {
+		t.Fatalf("first candidate = %s/%s, want zhipu/glm-4.7", first.Provider, first.Model)
+	}
+	if second.Provider != "zhipu" || second.Model != "glm-4.7" {
+		t.Fatalf("second candidate = %s/%s, want zhipu/glm-4.7", second.Provider, second.Model)
+	}
+	if first.IdentityKey != "model_name:glm-4.7" {
+		t.Fatalf("first identity key = %q, want %q", first.IdentityKey, "model_name:glm-4.7")
+	}
+	if second.IdentityKey != "model_name:glm-4.7__key_1" {
+		t.Fatalf("second identity key = %q, want %q", second.IdentityKey, "model_name:glm-4.7__key_1")
+	}
+	if first.RPM != 1 {
+		t.Fatalf("first RPM = %d, want 1", first.RPM)
+	}
+	if second.RPM != 3 {
+		t.Fatalf("second RPM = %d, want 3", second.RPM)
+	}
+}
+
 func TestNewAgentInstance_AllowsMediaTempDirForReadListAndExec(t *testing.T) {
 	workspace := t.TempDir()
 	mediaDir := media.TempDir()
@@ -245,6 +297,47 @@ func TestNewAgentInstance_AllowsMediaTempDirForReadListAndExec(t *testing.T) {
 	}
 	if !strings.Contains(execResult.ForLLM, "attachment content") {
 		t.Fatalf("exec output missing media content: %s", execResult.ForLLM)
+	}
+}
+
+func TestNewAgentInstance_ReadFileModeSelectsSchema(t *testing.T) {
+	workspace := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				ModelName: "test-model",
+			},
+		},
+		Tools: config.ToolsConfig{
+			ReadFile: config.ReadFileToolConfig{
+				Enabled:         true,
+				Mode:            config.ReadFileModeLines,
+				MaxReadFileSize: 4096,
+			},
+		},
+	}
+
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	readTool, ok := agent.Tools.Get("read_file")
+	if !ok {
+		t.Fatal("read_file tool not registered")
+	}
+
+	params := readTool.Parameters()
+	props, _ := params["properties"].(map[string]any)
+	if _, ok := props["start_line"]; !ok {
+		t.Fatalf("expected line-mode schema to expose start_line, got %#v", props)
+	}
+	if _, ok := props["max_lines"]; !ok {
+		t.Fatalf("expected line-mode schema to expose max_lines, got %#v", props)
+	}
+	if _, ok := props["offset"]; ok {
+		t.Fatalf("did not expect line-mode schema to expose offset, got %#v", props)
+	}
+	if _, ok := props["length"]; ok {
+		t.Fatalf("did not expect line-mode schema to expose length, got %#v", props)
 	}
 }
 

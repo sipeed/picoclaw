@@ -4,9 +4,9 @@ import * as React from "react"
 import { useTranslation } from "react-i18next"
 
 import {
+  type LauncherAuthTokenHelp,
   getLauncherAuthStatus,
   postLauncherDashboardLogin,
-  type LauncherAuthTokenHelp,
 } from "@/api/launcher-auth"
 import { Button } from "@/components/ui/button"
 import {
@@ -32,9 +32,8 @@ function LauncherLoginPage() {
   const [token, setToken] = React.useState("")
   const [submitting, setSubmitting] = React.useState(false)
   const [error, setError] = React.useState("")
-  const [tokenHelp, setTokenHelp] = React.useState<LauncherAuthTokenHelp | null>(
-    null,
-  )
+  const [tokenHelp, setTokenHelp] =
+    React.useState<LauncherAuthTokenHelp | null>(null)
 
   React.useEffect(() => {
     let cancelled = false
@@ -154,6 +153,13 @@ function LauncherLoginPage() {
                   ) : null}
                   {tokenHelp.tray_copy_menu ? (
                     <li>{t("launcherLogin.helpTray")}</li>
+                  ) : null}
+                  {tokenHelp.config_file ? (
+                    <li>
+                      {t("launcherLogin.helpConfig", {
+                        path: tokenHelp.config_file,
+                      })}
+                    </li>
                   ) : null}
                   {tokenHelp.log_file ? (
                     <li>

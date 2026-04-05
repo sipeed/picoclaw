@@ -71,7 +71,7 @@ export function SessionHistoryMenu({
                 onClick={() => onSwitchSession(session.id)}
               >
                 <span className="line-clamp-1 text-sm font-medium">
-                  {session.title || session.preview}
+                  {session.title}
                 </span>
                 <span className="text-muted-foreground text-xs">
                   {t("chat.messagesCount", {

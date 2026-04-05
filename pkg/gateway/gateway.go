@@ -29,6 +29,7 @@ import (
 	_ "github.com/sipeed/picoclaw/pkg/channels/qq"
 	_ "github.com/sipeed/picoclaw/pkg/channels/slack"
 	_ "github.com/sipeed/picoclaw/pkg/channels/telegram"
+	_ "github.com/sipeed/picoclaw/pkg/channels/vk"
 	_ "github.com/sipeed/picoclaw/pkg/channels/wecom"
 	_ "github.com/sipeed/picoclaw/pkg/channels/weixin"
 	_ "github.com/sipeed/picoclaw/pkg/channels/whatsapp"

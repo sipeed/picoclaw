@@ -5,6 +5,7 @@ go 1.25.8
 require (
 	fyne.io/systray v1.12.0
 	github.com/BurntSushi/toml v1.6.0
+	github.com/SevereCloud/vksdk/v3 v3.3.1
 	github.com/adhocore/gronx v1.19.6
 	github.com/anthropics/anthropic-sdk-go v1.26.0
 	github.com/atotto/clipboard v0.1.4
@@ -23,6 +24,7 @@ require (
 	github.com/h2non/filetype v1.1.3
 	github.com/larksuite/oapi-sdk-go/v3 v3.5.3
 	github.com/mdp/qrterminal/v3 v3.2.1
+	github.com/minio/selfupdate v0.6.0
 	github.com/modelcontextprotocol/go-sdk v1.4.1
 	github.com/mymmrac/telego v1.7.0
 	github.com/open-dingtalk/dingtalk-stream-sdk-go v0.9.1
@@ -30,7 +32,7 @@ require (
 	github.com/pion/rtp v1.8.7
 	github.com/pion/webrtc/v3 v3.3.6
 	github.com/rivo/tview v0.42.0
-	github.com/rs/zerolog v1.34.0
+	github.com/rs/zerolog v1.35.0
 	github.com/slack-go/slack v0.17.3
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
@@ -48,6 +50,7 @@ require (
 )
 
 require (
+	aead.dev/minisign v0.2.0 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.8 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.12 // indirect
@@ -87,6 +90,8 @@ require (
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.27 // indirect
+	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
+	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	go.mau.fi/libsignal v0.2.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.35.0 // indirect
@@ -124,7 +129,7 @@ require (
 	golang.org/x/arch v0.24.0 // indirect
 	golang.org/x/crypto v0.49.0
 	golang.org/x/net v0.52.0
-	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sync v0.20.0
 	golang.org/x/sys v0.42.0
 )
 

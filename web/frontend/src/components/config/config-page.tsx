@@ -1,4 +1,4 @@
-import { IconCode, IconDeviceFloppy } from "@tabler/icons-react"
+import { IconCode, IconDeviceFloppy, IconTag } from "@tabler/icons-react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
@@ -10,6 +10,7 @@ import { launcherFetch } from "@/api/http"
 import {
   getAutoStartStatus,
   getLauncherConfig,
+  getSystemVersionInfo,
   setAutoStartEnabled as updateAutoStartEnabled,
   setLauncherConfig as updateLauncherConfig,
 } from "@/api/system"
@@ -32,6 +33,7 @@ import {
   parseMultilineList,
 } from "@/components/config/form-model"
 import { PageHeader } from "@/components/page-header"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { refreshGatewayState } from "@/store/gateway"
 
@@ -64,6 +66,12 @@ export function ConfigPage() {
     queryFn: getLauncherConfig,
   })
 
+  const { data: versionInfo } = useQuery({
+    queryKey: ["system", "version"],
+    queryFn: getSystemVersionInfo,
+    staleTime: 5 * 60 * 1000,
+  })
+
   const {
     data: autoStartStatus,
     isLoading: isAutoStartLoading,
@@ -86,6 +94,7 @@ export function ConfigPage() {
       port: String(launcherConfig.port),
       publicAccess: launcherConfig.public,
       allowedCIDRsText: (launcherConfig.allowed_cidrs ?? []).join("\n"),
+      launcherToken: launcherConfig.launcher_token ?? "",
     }
     setLauncherForm(parsed)
     setLauncherBaseline(parsed)
@@ -256,6 +265,7 @@ export function ConfigPage() {
           port,
           public: launcherForm.publicAccess,
           allowed_cidrs: allowedCIDRs,
+          launcher_token: launcherForm.launcherToken.trim(),
         })
         const parsedLauncher: LauncherForm = {
           port: String(savedLauncherConfig.port),
@@ -263,6 +273,7 @@ export function ConfigPage() {
           allowedCIDRsText: (savedLauncherConfig.allowed_cidrs ?? []).join(
             "\n",
           ),
+          launcherToken: savedLauncherConfig.launcher_token ?? "",
         }
         setLauncherForm(parsedLauncher)
         setLauncherBaseline(parsedLauncher)
@@ -297,6 +308,17 @@ export function ConfigPage() {
     <div className="flex h-full flex-col">
       <PageHeader
         title={t("navigation.config")}
+        titleExtra={
+          versionInfo && (
+            <Badge
+              variant="secondary"
+              className="gap-1 font-mono text-[11px] font-normal opacity-80"
+            >
+              <IconTag className="size-3 opacity-70" />
+              {versionInfo.version}
+            </Badge>
+          )
+        }
         children={
           <Button variant="outline" asChild>
             <Link to="/config/raw">
@@ -324,6 +346,12 @@ export function ConfigPage() {
                 </div>
               )}
 
+              <LauncherSection
+                launcherForm={launcherForm}
+                onFieldChange={updateLauncherField}
+                disabled={saving || isLauncherLoading}
+              />
+
               <AgentDefaultsSection form={form} onFieldChange={updateField} />
 
               <RuntimeSection form={form} onFieldChange={updateField} />
@@ -331,12 +359,6 @@ export function ConfigPage() {
               <ExecSection form={form} onFieldChange={updateField} />
 
               <CronSection form={form} onFieldChange={updateField} />
-
-              <LauncherSection
-                launcherForm={launcherForm}
-                onFieldChange={updateLauncherField}
-                disabled={saving || isLauncherLoading}
-              />
 
               <DevicesSection
                 form={form}
