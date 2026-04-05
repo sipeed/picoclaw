@@ -125,6 +125,19 @@ func TestMarkerAndLengthSplitIntegration(t *testing.T) {
 	}
 }
 
+func TestSplitByMarker_SpacedVariant(t *testing.T) {
+	// LLMs sometimes generate the marker with extra spaces
+	content := "Part1 <| [SPLIT] |> Part2 <|[ SPLIT ]|> Part3"
+	chunks := SplitByMarker(content)
+
+	if len(chunks) != 3 {
+		t.Fatalf("Expected 3 chunks, got %d: %q", len(chunks), chunks)
+	}
+	if chunks[0] != "Part1" || chunks[1] != "Part2" || chunks[2] != "Part3" {
+		t.Errorf("Spaced markers not handled: %q", chunks)
+	}
+}
+
 // TestMarkerSplitPreservesCodeBlockIntegrity tests that marker split preserves code block boundaries
 func TestMarkerSplitPreservesCodeBlockIntegrity(t *testing.T) {
 	content := "Hello <|[SPLIT]|>```go\npackage main\n```<|[SPLIT]|>World"
