@@ -25,6 +25,7 @@ PicoClaw runs on virtually any Linux device. This page tracks verified chips, pr
 | ARM64 | [BCM2711](https://www.raspberrypi.com/documentation/computers/processors.html#bcm2711) (Raspberry Pi 4) | Quad-core Cortex-A72 |
 | ARM64 | [BCM2712](https://www.raspberrypi.com/documentation/computers/processors.html#bcm2712) (Raspberry Pi 5) | Quad-core Cortex-A76 |
 | ARM64 | [AX630C](https://www.axera-tech.com/) (爱芯元智) | Dual-core Cortex-A53 + NPU, used in NanoKVM-Pro / MaixCAM2 |
+| ARM64 | [msm8916](https://www.qualcomm.com/smartphones/products/4-series/snapdragon-processors-410) |  Quad-core Cortex-A53|
 
 ### RISC-V (riscv64)
 
