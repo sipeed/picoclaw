@@ -937,6 +937,8 @@ type MCPServerConfig struct {
 	URL string `json:"url,omitempty"`
 	// Headers are HTTP headers to send with requests (sse/http only)
 	Headers map[string]string `json:"headers,omitempty"`
+	// Proxy is an optional proxy URL for SSE/HTTP transport (http/https/socks5/socks5h)
+	Proxy string `json:"proxy,omitempty"`
 }
 
 // MCPConfig defines configuration for all MCP servers

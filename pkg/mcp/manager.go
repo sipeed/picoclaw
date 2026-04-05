@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -290,6 +291,7 @@ func (m *Manager) ConnectServer(
 				"server":               name,
 				"url":                  cfg.URL,
 				"disableStandaloneSSE": disableStandaloneSSE,
+				"proxy":                cfg.Proxy,
 			})
 
 		sseTransport := &mcp.StreamableClientTransport{
@@ -297,20 +299,45 @@ func (m *Manager) ConnectServer(
 			DisableStandaloneSSE: disableStandaloneSSE,
 		}
 
-		// Add custom headers if provided
-		if len(cfg.Headers) > 0 {
-			// Create a custom HTTP client with header-injecting transport
-			sseTransport.HTTPClient = &http.Client{
-				Transport: &headerTransport{
-					base:    http.DefaultTransport,
-					headers: cfg.Headers,
+		// Create HTTP client with headers and optional proxy
+		needsCustomClient := len(cfg.Headers) > 0 || cfg.Proxy != ""
+		if needsCustomClient {
+			transport := &http.Transport{
+				Proxy: func(req *http.Request) (*url.URL, error) {
+					if cfg.Proxy != "" {
+						return url.Parse(cfg.Proxy)
+					}
+					// Fall back to environment proxy settings
+					return http.ProxyFromEnvironment(req)
 				},
 			}
-			logger.DebugCF("mcp", "Added custom HTTP headers",
-				map[string]any{
-					"server":       name,
-					"header_count": len(cfg.Headers),
-				})
+
+			// Wrap with header transport if custom headers are provided
+			if len(cfg.Headers) > 0 {
+				sseTransport.HTTPClient = &http.Client{
+					Transport: &headerTransport{
+						base:    transport,
+						headers: cfg.Headers,
+					},
+				}
+				logger.DebugCF("mcp", "Added custom HTTP headers",
+					map[string]any{
+						"server":       name,
+						"header_count": len(cfg.Headers),
+					})
+			} else {
+				sseTransport.HTTPClient = &http.Client{
+					Transport: transport,
+				}
+			}
+
+			if cfg.Proxy != "" {
+				logger.DebugCF("mcp", "Using custom proxy for MCP server",
+					map[string]any{
+						"server": name,
+						"proxy":  cfg.Proxy,
+					})
+			}
 		}
 
 		transport = sseTransport
@@ -322,6 +349,7 @@ func (m *Manager) ConnectServer(
 			map[string]any{
 				"server":  name,
 				"command": cfg.Command,
+				"proxy":   cfg.Proxy,
 			})
 		// Create command with context
 		cmd := exec.CommandContext(ctx, cfg.Command, cfg.Args...)
@@ -357,6 +385,22 @@ func (m *Manager) ConnectServer(
 		// Environment variables from config override those from file
 		for k, v := range cfg.Env {
 			envMap[k] = v
+		}
+
+		// Set proxy environment variables for stdio transport
+		// This allows the subprocess to make HTTP requests through the proxy
+		if cfg.Proxy != "" {
+			envMap["HTTP_PROXY"] = cfg.Proxy
+			envMap["HTTPS_PROXY"] = cfg.Proxy
+			// By default, don't proxy localhost/loopback addresses
+			if _, exists := envMap["NO_PROXY"]; !exists {
+				envMap["NO_PROXY"] = "localhost,127.0.0.1,::1"
+			}
+			logger.DebugCF("mcp", "Added proxy environment variables for stdio transport",
+				map[string]any{
+					"server": name,
+					"proxy":  cfg.Proxy,
+				})
 		}
 
 		// Convert map to slice
