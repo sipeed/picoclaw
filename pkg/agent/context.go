@@ -21,6 +21,7 @@ import (
 
 type ContextBuilder struct {
 	workspace          string
+	baseWorkspace      string
 	skillsLoader       *skills.SkillsLoader
 	memory             *MemoryStore
 	toolDiscoveryBM25  bool
@@ -61,7 +62,9 @@ func getGlobalConfigDir() string {
 	return config.GetHome()
 }
 
-func NewContextBuilder(workspace string) *ContextBuilder {
+func NewContextBuilder(workspace string, baseWorkspace string, whitelist []string, whitelistEnabled bool) *ContextBuilder {
+	os.MkdirAll(workspace, 0o755)
+
 	// builtin skills: skills directory in current project
 	// Use the skills/ directory under the current working directory
 	builtinSkillsDir := strings.TrimSpace(os.Getenv(config.EnvBuiltinSkills))
@@ -72,9 +75,10 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 	globalSkillsDir := filepath.Join(getGlobalConfigDir(), "skills")
 
 	return &ContextBuilder{
-		workspace:    workspace,
-		skillsLoader: skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
-		memory:       NewMemoryStore(workspace),
+		workspace:     workspace,
+		baseWorkspace: baseWorkspace,
+		skillsLoader:  skills.NewSkillsLoader(workspace, baseWorkspace, globalSkillsDir, builtinSkillsDir, whitelist, whitelistEnabled),
+		memory:        NewMemoryStore(workspace),
 	}
 }
 

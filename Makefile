@@ -273,7 +273,7 @@ test: generate
 
 ## fmt: Format Go code
 fmt:
-	@$(GOLANGCI_LINT) fmt
+	@$(GO) fmt ./...
 
 ## lint: Run linters
 lint:
