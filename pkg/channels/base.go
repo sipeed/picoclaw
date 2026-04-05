@@ -18,6 +18,9 @@ import (
 	"github.com/sipeed/picoclaw/pkg/media"
 )
 
+// ForbiddenReplyText is the message sent to unauthorized users who message the bot.
+const ForbiddenReplyText = "You are not authorized to use this bot."
+
 var (
 	uniqueIDCounter uint64
 	uniqueIDPrefix  string
@@ -259,10 +262,22 @@ func (c *BaseChannel) HandleMessage(
 	}
 	if sender.CanonicalID != "" || sender.PlatformID != "" {
 		if !c.IsAllowedSender(sender) {
+			logger.DebugCF(c.name, "Message blocked (not in allowlist)", map[string]any{"sender": sender.CanonicalID})
+			if c.owner != nil {
+				_, _ = c.owner.Send(ctx, bus.OutboundMessage{
+					Channel: c.name, ChatID: chatID, Content: ForbiddenReplyText,
+				})
+			}
 			return
 		}
 	} else {
 		if !c.IsAllowed(senderID) {
+			logger.DebugCF(c.name, "Message blocked (not in allowlist)", map[string]any{"sender_id": senderID})
+			if c.owner != nil {
+				_, _ = c.owner.Send(ctx, bus.OutboundMessage{
+					Channel: c.name, ChatID: chatID, Content: ForbiddenReplyText,
+				})
+			}
 			return
 		}
 	}

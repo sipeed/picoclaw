@@ -1,11 +1,16 @@
 package channels
 
 import (
+	"context"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
+
+func newTestBus() *bus.MessageBus {
+	return bus.NewMessageBus()
+}
 
 func TestBaseChannelIsAllowed(t *testing.T) {
 	tests := []struct {
@@ -259,6 +264,68 @@ func TestIsAllowedSender(t *testing.T) {
 			ch := NewBaseChannel("test", nil, nil, tt.allowList)
 			if got := ch.IsAllowedSender(tt.sender); got != tt.want {
 				t.Fatalf("IsAllowedSender(%+v) = %v, want %v", tt.sender, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHandleMessageForbiddenReply(t *testing.T) {
+	const allowedID = "allowed:123"
+	const chatID = "chat-456"
+
+	tests := []struct {
+		name        string
+		sender      bus.SenderInfo
+		wantReplied bool
+	}{
+		{
+			name: "unauthorized sender receives forbidden reply",
+			sender: bus.SenderInfo{
+				Platform:    "test",
+				PlatformID:  "999",
+				CanonicalID: "test:999",
+			},
+			wantReplied: true,
+		},
+		{
+			name: "authorized sender does not receive forbidden reply",
+			sender: bus.SenderInfo{
+				Platform:    "test",
+				PlatformID:  "123",
+				CanonicalID: allowedID,
+			},
+			wantReplied: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockChannel{}
+			mock.BaseChannel = *NewBaseChannel("test", nil, newTestBus(), []string{allowedID})
+			mock.SetOwner(mock)
+
+			mock.HandleMessage(
+				context.Background(),
+				bus.Peer{Kind: "direct", ID: chatID},
+				"msg-1", tt.sender.PlatformID, chatID, "hello",
+				nil, nil,
+				tt.sender,
+			)
+
+			if tt.wantReplied {
+				if len(mock.sentMessages) != 1 {
+					t.Fatalf("expected 1 forbidden reply, got %d", len(mock.sentMessages))
+				}
+				if mock.sentMessages[0].Content != ForbiddenReplyText {
+					t.Errorf("reply content = %q, want %q", mock.sentMessages[0].Content, ForbiddenReplyText)
+				}
+				if mock.sentMessages[0].ChatID != chatID {
+					t.Errorf("reply chatID = %q, want %q", mock.sentMessages[0].ChatID, chatID)
+				}
+			} else {
+				if len(mock.sentMessages) != 0 {
+					t.Fatalf("expected no reply for authorized sender, got %d", len(mock.sentMessages))
+				}
 			}
 		})
 	}
