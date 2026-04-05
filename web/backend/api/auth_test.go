@@ -23,12 +23,6 @@ func TestLauncherAuthLoginAndStatus(t *testing.T) {
 	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
 		DashboardToken: tok,
 		SessionCookie:  sess,
-		TokenHelp: LauncherAuthTokenHelp{
-			EnvVarName:    "PICOCLAW_LAUNCHER_TOKEN",
-			LogFileAbs:    "/tmp/launcher.log",
-			TrayCopyMenu:  true,
-			ConsoleStdout: false,
-		},
 	})
 
 	t.Run("status_unauthenticated", func(t *testing.T) {
@@ -38,23 +32,20 @@ func TestLauncherAuthLoginAndStatus(t *testing.T) {
 			t.Fatalf("status code = %d", rec.Code)
 		}
 		var body struct {
-			Authenticated bool                   `json:"authenticated"`
-			TokenHelp     *LauncherAuthTokenHelp `json:"token_help"`
+			Authenticated bool `json:"authenticated"`
+			Initialized   bool `json:"initialized"`
 		}
 		if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if body.Authenticated || body.TokenHelp == nil {
-			t.Fatalf("unexpected body: %+v", body)
-		}
-		if body.TokenHelp.EnvVarName != "PICOCLAW_LAUNCHER_TOKEN" || body.TokenHelp.LogFileAbs != "/tmp/launcher.log" {
-			t.Fatalf("token_help = %+v", body.TokenHelp)
+		if body.Authenticated {
+			t.Fatalf("unexpected authenticated=true: %+v", body)
 		}
 	})
 
 	t.Run("login_ok", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"token":"`+tok+`"}`))
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"password":"`+tok+`"}`))
 		req.Header.Set("Content-Type", "application/json")
 		req.RemoteAddr = "127.0.0.1:12345"
 		mux.ServeHTTP(rec, req)
@@ -91,7 +82,6 @@ func TestLauncherAuthLogoutRequiresPostAndJSON(t *testing.T) {
 	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
 		DashboardToken: "tok",
 		SessionCookie:  sess,
-		TokenHelp:      LauncherAuthTokenHelp{EnvVarName: "PICOCLAW_LAUNCHER_TOKEN"},
 	})
 
 	rec := httptest.NewRecorder()
@@ -125,11 +115,10 @@ func TestLauncherAuthLoginRateLimit(t *testing.T) {
 	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
 		DashboardToken: tok,
 		SessionCookie:  sess,
-		TokenHelp:      LauncherAuthTokenHelp{EnvVarName: "X"},
 	})
 
 	// 11 failing logins by wrong token; each consumes allow() slot after valid JSON.
-	wrongBody := `{"token":"wrong"}`
+	wrongBody := `{"password":"wrong"}`
 	for i := 0; i < loginAttemptsPerIP; i++ {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(wrongBody))
@@ -187,7 +176,6 @@ func TestLauncherAuthLogoutEmptyBody(t *testing.T) {
 	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
 		DashboardToken: "tok",
 		SessionCookie:  sess,
-		TokenHelp:      LauncherAuthTokenHelp{EnvVarName: "X"},
 	})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
@@ -206,7 +194,6 @@ func TestLauncherAuthLogoutRejectsTrailingJSON(t *testing.T) {
 	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
 		DashboardToken: "tok",
 		SessionCookie:  sess,
-		TokenHelp:      LauncherAuthTokenHelp{EnvVarName: "X"},
 	})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", strings.NewReader(`{}{}`))
