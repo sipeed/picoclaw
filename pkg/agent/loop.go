@@ -2413,7 +2413,7 @@ turnLoop:
 				}
 			}
 
-			argsJSON, _ := json.Marshal(toolArgs)
+			argsJSON, _ := utils.MarshalNoEscape(toolArgs)
 			argsPreview := utils.Truncate(string(argsJSON), 200)
 			logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", toolName, argsPreview),
 				map[string]any{
