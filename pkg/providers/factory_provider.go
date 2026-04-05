@@ -114,9 +114,8 @@ func ResolveAPIBase(cfg *config.ModelConfig) string {
 
 // CreateProviderFromConfig creates a provider based on the ModelConfig.
 // It uses the protocol prefix in the Model field to determine which provider to create.
-// Supported protocol families include OpenAI-compatible prefixes (e.g., openai, openrouter, groq, gemini),
-// Azure OpenAI, Amazon Bedrock, Anthropic (including messages), and various CLI/compatibility shims.
-// See the switch on protocol in this function for the authoritative list.
+// Supported protocols: openai, litellm, novita, anthropic, anthropic-messages,
+// antigravity, claude-cli, codex-cli, qwen-cli, github-copilot
 // Returns the provider, the model ID (without protocol prefix), and any error.
 func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, error) {
 	if cfg == nil {
@@ -341,6 +340,13 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			workspace = "."
 		}
 		return NewCodexCliProvider(workspace), modelID, nil
+
+	case "qwen-cli", "qwencli":
+		workspace := cfg.Workspace
+		if workspace == "" {
+			workspace = "."
+		}
+		return NewQwenCliProvider(workspace), modelID, nil
 
 	case "github-copilot", "copilot":
 		apiBase := cfg.APIBase

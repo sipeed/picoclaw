@@ -287,6 +287,12 @@ func DefaultConfig() *Config {
 				AuthMethod: "oauth",
 			},
 
+			// Qwen CLI - Local CLI tool (requires `qwen` installed)
+			{
+				ModelName: "qwen-code",
+				Model:     "qwen-cli/qwen-code",
+			},
+
 			// Ollama (local) - https://ollama.com
 			{
 				ModelName: "llama3",
