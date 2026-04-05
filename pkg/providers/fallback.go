@@ -370,3 +370,14 @@ func (e *FallbackExhaustedError) Error() string {
 	}
 	return sb.String()
 }
+
+// Unwrap returns the last non-skipped attempt's error for errors.Is/As traversal.
+// This allows errors.As(err, &FailoverError{}) to work through FallbackExhaustedError.
+func (e *FallbackExhaustedError) Unwrap() error {
+	for i := len(e.Attempts) - 1; i >= 0; i-- {
+		if !e.Attempts[i].Skipped && e.Attempts[i].Error != nil {
+			return e.Attempts[i].Error
+		}
+	}
+	return nil
+}
