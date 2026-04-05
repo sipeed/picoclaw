@@ -347,8 +347,9 @@ func registerSharedTools(
 			// resolve media:// refs in the same way the main AgentLoop does.
 			// This keeps subagent vision support working even when the optimized
 			// sub-turn spawner path is unavailable.
+			supportsImage := agent.SupportsInput("image")
 			subagentManager.SetMediaResolver(func(msgs []providers.Message) []providers.Message {
-				return resolveMediaRefs(msgs, al.mediaStore, cfg.Agents.Defaults.GetMaxMediaSize())
+				return resolveMediaRefs(msgs, al.mediaStore, cfg.Agents.Defaults.GetMaxMediaSize(), supportsImage)
 			})
 
 			// Set the spawner that links into AgentLoop's turnState
@@ -1732,7 +1733,9 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 
 	cfg := al.GetConfig()
 	maxMediaSize := cfg.Agents.Defaults.GetMaxMediaSize()
-	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
+
+	supportsImage := ts.agent.SupportsInput("image")
+	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize, supportsImage)
 
 	if !ts.opts.NoHistory {
 		toolDefs := ts.agent.Tools.ToProviderDefs()
@@ -1765,7 +1768,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 				ts.opts.SenderID, ts.opts.SenderDisplayName,
 				activeSkillNames(ts.agent, ts.opts)...,
 			)
-			messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
+			messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize, supportsImage)
 		}
 	}
 
@@ -1850,7 +1853,7 @@ turnLoop:
 
 		// Inject pending steering messages
 		if len(pendingMessages) > 0 {
-			resolvedPending := resolveMediaRefs(pendingMessages, al.mediaStore, maxMediaSize)
+			resolvedPending := resolveMediaRefs(pendingMessages, al.mediaStore, maxMediaSize, supportsImage)
 			totalContentLen := 0
 			for i, pm := range pendingMessages {
 				messages = append(messages, resolvedPending[i])
@@ -1917,7 +1920,7 @@ turnLoop:
 		// before entering the loop; only subsequent iterations can contain new
 		// tool-generated media refs that need base64 encoding.
 		if iteration > 1 {
-			messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
+			messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize, supportsImage)
 		}
 
 		callMessages := messages

@@ -112,6 +112,7 @@
 | `model` | string | 是 | 厂商/模型标识符（如 `openai/gpt-5.4`、`azure/gpt-5.4`、`anthropic/claude-sonnet-4.6`） |
 | `api_keys` | string[] | 是* | 认证密钥。多个密钥可按请求轮换。本地 provider（Ollama、LM Studio、VLLM）不需要 |
 | `api_base` | string | 否 | 覆盖默认的 API 端点 URL |
+| `input` | string[] | 否 | 模型支持的输入类型。有效值：`"text"`、`"image"`。默认：`["text"]`。当模型不支持图片输入时，图片会下载到本地进行工具处理，而不是发送到模型 API |
 | `proxy` | string | 否 | 此模型条目的 HTTP 代理 URL |
 | `user_agent` | string | 否 | 自定义 `User-Agent` 请求头（支持 OpenAI 兼容、Anthropic 和 Azure provider） |
 | `request_timeout` | int | 否 | 请求超时时间（秒），默认值因 provider 而异 |
@@ -157,7 +158,8 @@
 {
   "model_name": "gpt-5.4",
   "model": "openai/gpt-5.4",
-  "api_keys": ["sk-..."]
+  "api_keys": ["sk-..."],
+  "input": ["text", "image"]
 }
 ```
 
@@ -281,13 +283,15 @@ PicoClaw 在发送请求前仅去除外层 `litellm/` 前缀，因此 `litellm/l
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api1.example.com/v1",
-      "api_keys": ["sk-key1"]
+      "api_keys": ["sk-key1"],
+      "input": ["text", "image"]
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api2.example.com/v1",
-      "api_keys": ["sk-key2"]
+      "api_keys": ["sk-key2"],
+      "input": ["text", "image"]
     }
   ]
 }

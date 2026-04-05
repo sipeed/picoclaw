@@ -650,7 +650,8 @@ For complete documentation, see [`security_configuration.md`](security_configura
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
-      "api_keys": ["sk-your-openai-key"]
+      "api_keys": ["sk-your-openai-key"],
+      "input": ["text", "image"]
     },
     {
       "model_name": "claude-sonnet-4.6",
@@ -793,7 +794,8 @@ PicoClaw sends OpenAI-compatible requests to LM Studio, and strips the `lmstudio
 {
   "model_name": "my-custom-model",
   "model": "openai/custom-model",
-  "api_base": "https://my-proxy.com/v1"
+  "api_base": "https://my-proxy.com/v1",
+  "input": ["text"]
   // api_key: set in .security.yml
 }
 ```
@@ -824,7 +826,8 @@ model_list:
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
-      "api_base": "https://api.openai.com/v1"
+      "api_base": "https://api.openai.com/v1",
+      "input": ["text", "image"]
       // api_keys loaded from .security.yml
     }
   ]
@@ -840,13 +843,15 @@ model_list:
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api1.example.com/v1",
-      "api_keys": ["sk-key1"]
+      "api_keys": ["sk-key1"],
+      "input": ["text", "image"]
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api2.example.com/v1",
-      "api_keys": ["sk-key2"]
+      "api_keys": ["sk-key2"],
+      "input": ["text", "image"]
     }
   ]
 }

@@ -107,6 +107,7 @@ Este design também permite **suporte multi-agente** com seleção flexível de 
 | `model` | string | Sim | Identificador fornecedor/modelo (ex: `openai/gpt-5.4`, `azure/gpt-5.4`, `anthropic/claude-sonnet-4.6`) |
 | `api_keys` | string[] | Sim* | Chave(s) API para autenticação. Múltiplas chaves permitem rotação por requisição. Não necessário para providers locais (Ollama, LM Studio, VLLM) |
 | `api_base` | string | Não | Substitui a URL base da API padrão |
+| `input` | string[] | Não | Tipos de entrada suportados pelo modelo. Valores válidos: `"text"`, `"image"`. Padrão: `["text"]`. Quando um modelo não suporta entrada de imagem, as imagens são baixadas localmente para processamento por ferramentas em vez de enviadas à API do modelo |
 | `proxy` | string | Não | URL do proxy HTTP para esta entrada de modelo |
 | `user_agent` | string | Não | Cabeçalho `User-Agent` personalizado enviado com requisições API (suportado por providers OpenAI-compatible, Anthropic e Azure) |
 | `request_timeout` | int | Não | Timeout de requisição em segundos (o padrão varia por provider) |
@@ -125,7 +126,8 @@ Este design também permite **suporte multi-agente** com seleção flexível de 
 {
   "model_name": "gpt-5.4",
   "model": "openai/gpt-5.4",
-  "api_keys": ["sk-..."]
+  "api_keys": ["sk-..."],
+  "input": ["text", "image"]
 }
 ```
 
@@ -237,13 +239,15 @@ Configure múltiplos endpoints para o mesmo nome de modelo — o PicoClaw fará 
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api1.example.com/v1",
-      "api_keys": ["sk-key1"]
+      "api_keys": ["sk-key1"],
+      "input": ["text", "image"]
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api2.example.com/v1",
-      "api_keys": ["sk-key2"]
+      "api_keys": ["sk-key2"],
+      "input": ["text", "image"]
     }
   ]
 }

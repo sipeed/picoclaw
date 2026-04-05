@@ -144,6 +144,48 @@ func TestGetModelConfig_Concurrent(t *testing.T) {
 	}
 }
 
+func TestGetModelConfig_ByModelField(t *testing.T) {
+	cfg := &Config{
+		Version: CurrentVersion,
+		ModelList: []*ModelConfig{
+			{ModelName: "test-model", Model: "openai/gpt-4o", APIKeys: SimpleSecureStrings("key1")},
+			{ModelName: "other-model", Model: "anthropic/claude", APIKeys: SimpleSecureStrings("key2")},
+		},
+	}
+
+	result, err := cfg.GetModelConfig("openai/gpt-4o")
+	if err != nil {
+		t.Fatalf("GetModelConfig() error = %v", err)
+	}
+	if result.Model != "openai/gpt-4o" {
+		t.Errorf("Model = %q, want %q", result.Model, "openai/gpt-4o")
+	}
+	if result.ModelName != "test-model" {
+		t.Errorf("ModelName = %q, want %q", result.ModelName, "test-model")
+	}
+}
+
+func TestGetModelConfig_PrefersModelNameOverModel(t *testing.T) {
+	cfg := &Config{
+		Version: CurrentVersion,
+		ModelList: []*ModelConfig{
+			{ModelName: "gpt-4", Model: "openai/gpt-4", APIKeys: SimpleSecureStrings("key1")},
+			{ModelName: "openai/gpt-4", Model: "openai/gpt-4-turbo", APIKeys: SimpleSecureStrings("key2")},
+		},
+	}
+
+	result, err := cfg.GetModelConfig("gpt-4")
+	if err != nil {
+		t.Fatalf("GetModelConfig() error = %v", err)
+	}
+	if result.Model != "openai/gpt-4" {
+		t.Errorf("Model = %q, want %q", result.Model, "openai/gpt-4")
+	}
+	if result.ModelName != "gpt-4" {
+		t.Errorf("ModelName = %q, want %q", result.ModelName, "gpt-4")
+	}
+}
+
 func TestAgentDefaultsV0_JSON_BackwardCompat(t *testing.T) {
 	tests := []struct {
 		name     string
