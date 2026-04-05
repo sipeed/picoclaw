@@ -17,4 +17,8 @@ type Runtime struct {
 	SwitchChannel      func(value string) error
 	ClearHistory       func() error
 	ReloadConfig       func() error
+
+	GetSessionModelMode func() (persistent, pending string)
+	SetSessionModelMode func(value string) error
+	ArmNextModelMode    func(value string) error
 }

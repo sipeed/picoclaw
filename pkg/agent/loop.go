@@ -47,18 +47,20 @@ type AgentLoop struct {
 	hooks    *HookManager
 
 	// Runtime state
-	running        atomic.Bool
-	contextManager ContextManager
-	fallback       *providers.FallbackChain
-	channelManager *channels.Manager
-	mediaStore     media.MediaStore
-	transcriber    asr.Transcriber
-	cmdRegistry    *commands.Registry
-	mcp            mcpRuntime
-	hookRuntime    hookRuntime
-	steering       *steeringQueue
-	pendingSkills  sync.Map
-	mu             sync.RWMutex
+	running               atomic.Bool
+	contextManager        ContextManager
+	fallback              *providers.FallbackChain
+	channelManager        *channels.Manager
+	mediaStore            media.MediaStore
+	transcriber           asr.Transcriber
+	cmdRegistry           *commands.Registry
+	mcp                   mcpRuntime
+	hookRuntime           hookRuntime
+	steering              *steeringQueue
+	pendingSkills         sync.Map
+	pendingModelOverrides sync.Map
+	sessionModelOverrides sync.Map
+	mu                    sync.RWMutex
 
 	// Concurrent turn management (from HEAD)
 	activeTurnStates sync.Map     // key: sessionKey (string), value: *turnState
@@ -82,6 +84,7 @@ type processOptions struct {
 	SenderDisplayName       string              // Current sender display name for dynamic context
 	UserMessage             string              // User message content (may include prefix)
 	ForcedSkills            []string            // Skills explicitly requested for this message
+	ForcedModel             string              // Model explicitly forced for this message/session
 	SystemPromptOverride    string              // Override the default system prompt (Used by SubTurns)
 	Media                   []string            // media:// refs from inbound message
 	InitialSteeringMessages []providers.Message // Steering messages from refactor/agent
@@ -1418,6 +1421,22 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return response, nil
 	}
 
+	if pendingModel := al.takePendingModelOverride(opts.SessionKey); pendingModel != "" {
+		opts.ForcedModel = pendingModel
+		logger.InfoCF("agent", "Applying pending model override",
+			map[string]any{
+				"session_key": opts.SessionKey,
+				"model":       pendingModel,
+			})
+	} else if sessionModel := al.getSessionModelOverride(opts.SessionKey); sessionModel != "" {
+		opts.ForcedModel = sessionModel
+		logger.DebugCF("agent", "Applying session model override",
+			map[string]any{
+				"session_key": opts.SessionKey,
+				"model":       sessionModel,
+			})
+	}
+
 	if pending := al.takePendingSkills(opts.SessionKey); len(pending) > 0 {
 		opts.ForcedSkills = append(opts.ForcedSkills, pending...)
 		logger.InfoCF("agent", "Applying pending skill override",
@@ -1784,10 +1803,34 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 		ts.ingestMessage(turnCtx, al, rootMsg)
 	}
 
-	activeCandidates, activeModel, usedLight := al.selectCandidates(ts.agent, ts.userMessage, messages)
+	activeCandidates := ts.agent.Candidates
+	activeModel := resolvedCandidateModel(ts.agent.Candidates, ts.agent.Model)
 	activeProvider := ts.agent.Provider
-	if usedLight && ts.agent.LightProvider != nil {
-		activeProvider = ts.agent.LightProvider
+	activeThinkingLevel := ts.agent.ThinkingLevel
+	var usedLight bool
+	if forcedModel := strings.TrimSpace(ts.opts.ForcedModel); forcedModel != "" {
+		forcedCfg, forcedProvider, forcedCandidates, err := al.resolveModelSelection(cfg, ts.agent, forcedModel)
+		if err != nil {
+			turnStatus = TurnEndStatusError
+			return turnResult{}, err
+		}
+		activeCandidates = forcedCandidates
+		activeModel = resolvedCandidateModel(forcedCandidates, forcedModel)
+		activeProvider = forcedProvider
+		activeThinkingLevel = parseThinkingLevel(forcedCfg.ThinkingLevel)
+		if stateful, ok := activeProvider.(providers.StatefulProvider); ok {
+			defer stateful.Close()
+		}
+		logger.InfoCF("agent", "Forced model override selected",
+			map[string]any{
+				"agent_id": ts.agent.ID,
+				"model":    activeModel,
+			})
+	} else {
+		activeCandidates, activeModel, usedLight = al.selectCandidates(ts.agent, ts.userMessage, messages)
+		if usedLight && ts.agent.LightProvider != nil {
+			activeProvider = ts.agent.LightProvider
+		}
 	}
 	pendingMessages := append([]providers.Message(nil), ts.opts.InitialSteeringMessages...)
 	var finalContent string
@@ -1893,7 +1936,7 @@ turnLoop:
 			hasWebSearch &&
 			func() bool {
 				// Check if provider supports native search
-				if ns, ok := ts.agent.Provider.(interface{ SupportsNativeSearch() bool }); ok {
+				if ns, ok := activeProvider.(interface{ SupportsNativeSearch() bool }); ok {
 					return ns.SupportsNativeSearch()
 				}
 				return false
@@ -1933,12 +1976,12 @@ turnLoop:
 		if useNativeSearch {
 			llmOpts["native_search"] = true
 		}
-		if ts.agent.ThinkingLevel != ThinkingOff {
-			if tc, ok := ts.agent.Provider.(providers.ThinkingCapable); ok && tc.SupportsThinking() {
-				llmOpts["thinking_level"] = string(ts.agent.ThinkingLevel)
+		if activeThinkingLevel != ThinkingOff {
+			if tc, ok := activeProvider.(providers.ThinkingCapable); ok && tc.SupportsThinking() {
+				llmOpts["thinking_level"] = string(activeThinkingLevel)
 			} else {
 				logger.WarnCF("agent", "thinking_level is set but current provider does not support it, ignoring",
-					map[string]any{"agent_id": ts.agent.ID, "thinking_level": string(ts.agent.ThinkingLevel)})
+					map[string]any{"agent_id": ts.agent.ID, "thinking_level": string(activeThinkingLevel)})
 			}
 		}
 
@@ -3187,6 +3230,35 @@ func (al *AgentLoop) applyExplicitSkillCommand(
 	return true, false, ""
 }
 
+func (al *AgentLoop) resolveModelSelection(cfg *config.Config, agent *AgentInstance, modelName string) (*config.ModelConfig, providers.LLMProvider, []providers.FallbackCandidate, error) {
+	if cfg == nil {
+		return nil, nil, nil, fmt.Errorf("config is nil")
+	}
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
+		return nil, nil, nil, fmt.Errorf("model name is required")
+	}
+	workspace := ""
+	fallbacks := []string(nil)
+	if agent != nil {
+		workspace = agent.Workspace
+		fallbacks = agent.Fallbacks
+	}
+	modelCfg, err := resolvedModelConfig(cfg, modelName, workspace)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	provider, _, err := providers.CreateProviderFromConfig(modelCfg)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to initialize model %q: %w", modelName, err)
+	}
+	candidates := resolveModelCandidates(cfg, cfg.Agents.Defaults.Provider, modelName, fallbacks)
+	if len(candidates) == 0 {
+		return nil, nil, nil, fmt.Errorf("model %q did not resolve to any provider candidates", modelName)
+	}
+	return modelCfg, provider, candidates, nil
+}
+
 func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOptions) *commands.Runtime {
 	registry := al.GetRegistry()
 	cfg := al.GetConfig()
@@ -3265,6 +3337,42 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 			return oldModel, nil
 		}
 
+		validateSessionModel := func(value string) error {
+			if agent == nil {
+				return fmt.Errorf("session model overrides unavailable in current context")
+			}
+			_, _, _, err := al.resolveModelSelection(cfg, agent, value)
+			return err
+		}
+
+		rt.GetSessionModelMode = func() (string, string) {
+			if opts == nil || strings.TrimSpace(opts.SessionKey) == "" {
+				return "", ""
+			}
+			return al.getSessionModelOverride(opts.SessionKey), al.getPendingModelOverride(opts.SessionKey)
+		}
+		rt.SetSessionModelMode = func(value string) error {
+			if opts == nil || strings.TrimSpace(opts.SessionKey) == "" {
+				return fmt.Errorf("session model overrides unavailable in current context")
+			}
+			if err := validateSessionModel(value); err != nil {
+				return err
+			}
+			al.setSessionModelOverride(opts.SessionKey, value)
+			al.clearPendingModelOverride(opts.SessionKey)
+			return nil
+		}
+		rt.ArmNextModelMode = func(value string) error {
+			if opts == nil || strings.TrimSpace(opts.SessionKey) == "" {
+				return fmt.Errorf("session model overrides unavailable in current context")
+			}
+			if err := validateSessionModel(value); err != nil {
+				return err
+			}
+			al.setPendingModelOverride(opts.SessionKey, value)
+			return nil
+		}
+
 		rt.ClearHistory = func() error {
 			if opts == nil {
 				return fmt.Errorf("process options not available")
@@ -3300,6 +3408,96 @@ func buildUseCommandHelp(agent *AgentInstance) string {
 		"Usage: /use <skill> [message]\n\nInstalled Skills:\n- %s\n\nUse /use <skill> to apply a skill to your next message, or /use <skill> <message> to force it immediately.",
 		strings.Join(names, "\n- "),
 	)
+}
+
+func (al *AgentLoop) setSessionModelOverride(sessionKey, modelName string) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	modelName = strings.TrimSpace(modelName)
+	if sessionKey == "" {
+		return
+	}
+	if modelName == "" {
+		al.sessionModelOverrides.Delete(sessionKey)
+		return
+	}
+	al.sessionModelOverrides.Store(sessionKey, modelName)
+}
+
+func (al *AgentLoop) getSessionModelOverride(sessionKey string) string {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		return ""
+	}
+	value, ok := al.sessionModelOverrides.Load(sessionKey)
+	if !ok {
+		return ""
+	}
+	modelName, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(modelName)
+}
+
+func (al *AgentLoop) clearSessionModelOverride(sessionKey string) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		return
+	}
+	al.sessionModelOverrides.Delete(sessionKey)
+}
+
+func (al *AgentLoop) setPendingModelOverride(sessionKey, modelName string) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	modelName = strings.TrimSpace(modelName)
+	if sessionKey == "" {
+		return
+	}
+	if modelName == "" {
+		al.pendingModelOverrides.Delete(sessionKey)
+		return
+	}
+	al.pendingModelOverrides.Store(sessionKey, modelName)
+}
+
+func (al *AgentLoop) getPendingModelOverride(sessionKey string) string {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		return ""
+	}
+	value, ok := al.pendingModelOverrides.Load(sessionKey)
+	if !ok {
+		return ""
+	}
+	modelName, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(modelName)
+}
+
+func (al *AgentLoop) takePendingModelOverride(sessionKey string) string {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		return ""
+	}
+	value, ok := al.pendingModelOverrides.LoadAndDelete(sessionKey)
+	if !ok {
+		return ""
+	}
+	modelName, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(modelName)
+}
+
+func (al *AgentLoop) clearPendingModelOverride(sessionKey string) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		return
+	}
+	al.pendingModelOverrides.Delete(sessionKey)
 }
 
 func (al *AgentLoop) setPendingSkills(sessionKey string, skillNames []string) {

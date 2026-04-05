@@ -1753,6 +1753,126 @@ func TestProcessMessage_SwitchModelRoutesSubsequentRequestsToSelectedProvider(t 
 	}
 }
 
+func TestProcessMessage_BoostForcesPaidModelForOneTurn(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	heavyCalls := 0
+	heavyServer := newStrictChatCompletionTestServer(
+		t,
+		"heavy",
+		"gemini-2.5-flash",
+		"heavy reply",
+		&heavyCalls,
+	)
+	defer heavyServer.Close()
+
+	lightCalls := 0
+	lightServer := newStrictChatCompletionTestServer(
+		t,
+		"light",
+		"qwen2.5:0.5b",
+		"light reply",
+		&lightCalls,
+	)
+	defer lightServer.Close()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "gemini-main",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				Routing: &config.RoutingConfig{
+					Enabled:    true,
+					LightModel: "qwen-light",
+					Threshold:  0.99,
+				},
+			},
+		},
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "gemini-main",
+				Model:     "gemini/gemini-2.5-flash",
+				APIBase:   heavyServer.URL,
+				APIKeys:   config.SimpleSecureStrings("heavy-key"),
+			},
+			{
+				ModelName: "qwen-light",
+				Model:     "ollama/qwen2.5:0.5b",
+				APIBase:   lightServer.URL,
+				APIKeys:   config.SimpleSecureStrings("light-key"),
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider, _, err := providers.CreateProvider(cfg)
+	if err != nil {
+		t.Fatalf("CreateProvider() error = %v", err)
+	}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	helper := testHelper{al: al}
+
+	boostResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/boost",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+	if !strings.Contains(boostResp, "Boost armed. Next message will use gemini-main.") {
+		t.Fatalf("unexpected /boost reply: %q", boostResp)
+	}
+
+	firstResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "hello after boost",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+	if firstResp != "heavy reply" {
+		t.Fatalf("unexpected boosted response: %q", firstResp)
+	}
+	if heavyCalls != 1 {
+		t.Fatalf("heavy calls after boost = %d, want 1", heavyCalls)
+	}
+	if lightCalls != 0 {
+		t.Fatalf("light calls after boost = %d, want 0", lightCalls)
+	}
+
+	secondResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "hello after boost consumed",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	})
+	if secondResp != "light reply" {
+		t.Fatalf("unexpected post-boost response: %q", secondResp)
+	}
+	if heavyCalls != 1 {
+		t.Fatalf("heavy calls after second message = %d, want 1", heavyCalls)
+	}
+	if lightCalls != 1 {
+		t.Fatalf("light calls after second message = %d, want 1", lightCalls)
+	}
+}
+
 func TestProcessMessage_ModelRoutingUsesLightProvider(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
