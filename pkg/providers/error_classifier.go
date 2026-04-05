@@ -177,6 +177,8 @@ func classifyByStatus(status int) FailoverReason {
 		return FailoverAuth
 	case status == 402:
 		return FailoverBilling
+	case status == 404:
+		return FailoverTimeout
 	case status == 408:
 		return FailoverTimeout
 	case status == 429:
