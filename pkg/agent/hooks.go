@@ -25,6 +25,7 @@ type HookAction string
 const (
 	HookActionContinue  HookAction = "continue"
 	HookActionModify    HookAction = "modify"
+	HookActionRespond   HookAction = "respond"    // Return result directly, skip tool execution
 	HookActionDenyTool  HookAction = "deny_tool"
 	HookActionAbortTurn HookAction = "abort_turn"
 	HookActionHardAbort HookAction = "hard_abort"
@@ -127,11 +128,12 @@ func (r *LLMHookResponse) Clone() *LLMHookResponse {
 }
 
 type ToolCallHookRequest struct {
-	Meta      EventMeta      `json:"meta"`
-	Tool      string         `json:"tool"`
-	Arguments map[string]any `json:"arguments,omitempty"`
-	Channel   string         `json:"channel,omitempty"`
-	ChatID    string         `json:"chat_id,omitempty"`
+	Meta       EventMeta         `json:"meta"`
+	Tool       string            `json:"tool"`
+	Arguments  map[string]any    `json:"arguments,omitempty"`
+	Channel    string            `json:"channel,omitempty"`
+	ChatID     string            `json:"chat_id,omitempty"`
+	HookResult *tools.ToolResult `json:"hook_result,omitempty"` // Result returned directly by hook (for respond action)
 }
 
 func (r *ToolCallHookRequest) Clone() *ToolCallHookRequest {
@@ -140,6 +142,7 @@ func (r *ToolCallHookRequest) Clone() *ToolCallHookRequest {
 	}
 	cloned := *r
 	cloned.Arguments = cloneStringAnyMap(r.Arguments)
+	cloned.HookResult = cloneToolResult(r.HookResult)
 	return &cloned
 }
 
@@ -382,6 +385,10 @@ func (hm *HookManager) BeforeTool(
 			if next != nil {
 				current = next
 			}
+		case HookActionRespond:
+			// Hook returns result directly, skip tool execution
+			// Carry HookResult in ToolCallHookRequest and return
+			return next, decision
 		case HookActionDenyTool, HookActionAbortTurn, HookActionHardAbort:
 			return current, decision
 		default:
