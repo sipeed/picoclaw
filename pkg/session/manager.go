@@ -97,7 +97,7 @@ func (sm *SessionManager) GetHistory(key string) []providers.Message {
 
 	history := make([]providers.Message, len(session.Messages))
 	copy(history, session.Messages)
-	return history
+	return sanitizeRecoveredHistory(history)
 }
 
 func (sm *SessionManager) GetSummary(key string) string {
