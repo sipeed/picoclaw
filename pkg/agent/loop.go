@@ -2407,6 +2407,41 @@ turnLoop:
 							})
 						}
 
+						// Handle media from hook result (same as normal tool execution)
+						if len(hookResult.Media) > 0 && hookResult.ResponseHandled {
+							parts := make([]bus.MediaPart, 0, len(hookResult.Media))
+							for _, ref := range hookResult.Media {
+								part := bus.MediaPart{Ref: ref}
+								if al.mediaStore != nil {
+									if _, meta, err := al.mediaStore.ResolveWithMeta(ref); err == nil {
+										part.Filename = meta.Filename
+										part.ContentType = meta.ContentType
+										part.Type = inferMediaType(meta.Filename, meta.ContentType)
+									}
+								}
+								parts = append(parts, part)
+							}
+							outboundMedia := bus.OutboundMediaMessage{
+								Channel: ts.channel,
+								ChatID:  ts.chatID,
+								Parts:   parts,
+							}
+							if al.channelManager != nil && ts.channel != "" && !constants.IsInternalChannel(ts.channel) {
+								if err := al.channelManager.SendMedia(ctx, outboundMedia); err != nil {
+									logger.WarnCF("agent", "Failed to deliver hook media",
+										map[string]any{
+											"agent_id": ts.agent.ID,
+											"tool":     toolName,
+											"channel":  ts.channel,
+											"chat_id":  ts.chatID,
+											"error":    err.Error(),
+										})
+								}
+							} else if al.bus != nil {
+								al.bus.PublishOutboundMedia(ctx, outboundMedia)
+							}
+						}
+
 						// Track response handling status (same as normal tool execution)
 						if !hookResult.ResponseHandled {
 							allResponsesHandled = false
@@ -2423,6 +2458,19 @@ turnLoop:
 							Content:    contentForLLM,
 							ToolCallID: tc.ID,
 						}
+
+						// Handle media for LLM vision (same as normal tool execution)
+						if len(hookResult.Media) > 0 && !hookResult.ResponseHandled {
+							hookResult.ArtifactTags = buildArtifactTags(al.mediaStore, hookResult.Media)
+							// Recalculate contentForLLM after adding ArtifactTags
+							contentForLLM = hookResult.ContentForLLM()
+							if al.cfg.Tools.IsFilterSensitiveDataEnabled() {
+								contentForLLM = al.cfg.FilterSensitiveData(contentForLLM)
+							}
+							toolResultMsg.Content = contentForLLM
+							toolResultMsg.Media = append(toolResultMsg.Media, hookResult.Media...)
+						}
+
 						messages = append(messages, toolResultMsg)
 						if !ts.opts.NoHistory {
 							ts.agent.Sessions.AddFullMessage(ts.sessionKey, toolResultMsg)
@@ -2432,7 +2480,13 @@ turnLoop:
 						// Skip subsequent tool execution flow
 						continue
 					}
-					// If no HookResult, fall back to continue
+					// If no HookResult, fall back to continue with warning
+					logger.WarnCF("agent", "Hook returned respond action but no HookResult provided",
+						map[string]any{
+							"agent_id": ts.agent.ID,
+							"tool":     toolName,
+							"action":   "respond",
+						})
 				case HookActionDenyTool:
 					allResponsesHandled = false
 					denyContent := hookDeniedToolContent("Tool execution denied by hook", decision.Reason)

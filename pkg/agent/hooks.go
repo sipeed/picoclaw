@@ -133,7 +133,7 @@ type ToolCallHookRequest struct {
 	Arguments  map[string]any    `json:"arguments,omitempty"`
 	Channel    string            `json:"channel,omitempty"`
 	ChatID     string            `json:"chat_id,omitempty"`
-	HookResult *tools.ToolResult `json:"hook_result,omitempty"` // Result returned directly by hook (for respond action)
+	HookResult *tools.ToolResult `json:"hook_result,omitempty"` // Result returned directly by hook (for respond action). Media is supported - see Media handling section in docs.
 }
 
 func (r *ToolCallHookRequest) Clone() *ToolCallHookRequest {

@@ -273,7 +273,9 @@ if __name__ == "__main__":
     "for_llm": "返回给 LLM 的内容",
     "for_user": "可选，发送给用户的内容",
     "silent": false,
-    "is_error": false
+    "is_error": false,
+    "media": ["可选，媒体引用列表"],
+    "response_handled": false
   }
 }
 ```
@@ -284,6 +286,85 @@ if __name__ == "__main__":
 | `for_user` | 可选，直接发送给用户 |
 | `silent` | 为 true 时不发送给用户 |
 | `is_error` | 为 true 时表示执行失败 |
+| `media` | 可选，媒体文件引用列表（如图片、文件） |
+| `response_handled` | 为 true 时表示已处理用户请求，轮次将结束 |
+
+---
+
+## 媒体文件处理
+
+`respond` action 支持返回媒体文件（图片、文件等）。有两种处理方式：
+
+### 1. 自动发送（`response_handled=true`）
+
+当 `response_handled=true` 时，媒体文件会自动发送给用户，轮次结束：
+
+```json
+{
+  "action": "respond",
+  "result": {
+    "for_llm": "图片已发送给用户",
+    "for_user": "",
+    "media": ["media://abc123"],
+    "response_handled": true
+  }
+}
+```
+
+适用场景：
+- 图像生成插件直接返回结果
+- 文件下载插件发送文件给用户
+
+### 2. LLM 可见（`response_handled=false`）
+
+当 `response_handled=false` 时，媒体引用会传递给 LLM，LLM 可以在下一轮请求中看到内容：
+
+```json
+{
+  "action": "respond",
+  "result": {
+    "for_llm": "图片已加载，路径：/tmp/image.png [file:/tmp/image.png]",
+    "media": ["media://abc123"]
+  }
+}
+```
+
+LLM 看到内容后，可以自主决定：
+- 使用 `send_file` 工具发送给用户
+- 分析图片内容并回复用户
+- 其他处理方式
+
+### 媒体引用格式
+
+媒体引用使用 `media://` 协议：
+
+```
+media://<store-id>
+```
+
+这些引用由 PicoClaw 的 MediaStore 管理，可以：
+- 通过 channel 发送给用户
+- 在 LLM vision 请求中转换为 base64
+
+### 替代方案：使用现有工具
+
+如果插件生成文件，可以返回文件路径让 LLM 调用 `send_file` 等工具：
+
+```json
+{
+  "action": "respond",
+  "result": {
+    "for_llm": "图片已生成，保存在 /tmp/generated_image.png。使用 send_file 工具发送给用户。",
+    "for_user": "",
+    "silent": false
+  }
+}
+```
+
+这种方式：
+- 更解耦，LLM 自主决策发送时机
+- 利用现有工具机制
+- 支持批量发送、延迟发送等场景
 
 ---
 

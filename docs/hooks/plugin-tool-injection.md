@@ -273,7 +273,9 @@ Tool definition follows OpenAI function calling format:
     "for_llm": "Content returned to LLM",
     "for_user": "Optional, content sent to user",
     "silent": false,
-    "is_error": false
+    "is_error": false,
+    "media": ["Optional, media reference list"],
+    "response_handled": false
   }
 }
 ```
@@ -284,6 +286,85 @@ Tool definition follows OpenAI function calling format:
 | `for_user` | Optional, sent directly to user |
 | `silent` | When true, not sent to user |
 | `is_error` | When true, indicates execution failure |
+| `media` | Optional, media file references (images, files, etc.) |
+| `response_handled` | When true, indicates user request is handled, turn will end |
+
+---
+
+## Media File Handling
+
+The `respond` action supports returning media files (images, files, etc.). There are two processing modes:
+
+### 1. Automatic Delivery (`response_handled=true`)
+
+When `response_handled=true`, media files are automatically sent to the user and the turn ends:
+
+```json
+{
+  "action": "respond",
+  "result": {
+    "for_llm": "Image sent to user",
+    "for_user": "",
+    "media": ["media://abc123"],
+    "response_handled": true
+  }
+}
+```
+
+Use cases:
+- Image generation plugin directly returning results
+- File download plugin sending files to user
+
+### 2. LLM Visible (`response_handled=false`)
+
+When `response_handled=false`, media references are passed to the LLM, which can see the content in the next request:
+
+```json
+{
+  "action": "respond",
+  "result": {
+    "for_llm": "Image loaded, path: /tmp/image.png [file:/tmp/image.png]",
+    "media": ["media://abc123"]
+  }
+}
+```
+
+After seeing the content, the LLM can decide:
+- Use `send_file` tool to send to user
+- Analyze image content and reply to user
+- Other processing approaches
+
+### Media Reference Format
+
+Media references use the `media://` protocol:
+
+```
+media://<store-id>
+```
+
+These references are managed by PicoClaw's MediaStore and can be:
+- Sent to user via channel
+- Converted to base64 in LLM vision requests
+
+### Alternative: Use Existing Tools
+
+If the plugin generates files, you can return the file path and let the LLM call `send_file` or similar tools:
+
+```json
+{
+  "action": "respond",
+  "result": {
+    "for_llm": "Image generated, saved at /tmp/generated_image.png. Use send_file tool to send to user.",
+    "for_user": "",
+    "silent": false
+  }
+}
+```
+
+This approach:
+- More decoupled, LLM decides when to send
+- Leverages existing tool mechanisms
+- Supports batch sending, delayed sending, etc.
 
 ---
 
