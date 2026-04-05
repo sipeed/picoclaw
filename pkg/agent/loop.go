@@ -335,6 +335,12 @@ func registerSharedTools(
 			}
 		}
 
+		// Skill management tool (create/update/delete workspace skills).
+		if cfg.Tools.IsToolEnabled("skill_manage") {
+			skillMgr := skills.NewSkillManager(filepath.Join(agent.Workspace, "skills"))
+			agent.Tools.Register(tools.NewSkillManageTool(skillMgr))
+		}
+
 		// Spawn and spawn_status tools share a SubagentManager.
 		// Construct it when either tool is enabled (both require subagent).
 		spawnEnabled := cfg.Tools.IsToolEnabled("spawn")
