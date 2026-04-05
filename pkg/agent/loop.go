@@ -1536,8 +1536,10 @@ func (al *AgentLoop) processSystemMessage(
 		return "", fmt.Errorf("no default agent for system message")
 	}
 
-	// Use the origin session for context
-	sessionKey := routing.BuildAgentMainSessionKey(agent.ID)
+	sessionKey := msg.SessionKey
+	if sessionKey == "" {
+		sessionKey = routing.BuildAgentMainSessionKey(agent.ID)
+	}
 
 	return al.runAgentLoop(ctx, agent, processOptions{
 		SessionKey:      sessionKey,
@@ -2492,11 +2494,12 @@ turnLoop:
 
 				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer pubCancel()
-				_ = al.bus.PublishInbound(pubCtx, bus.InboundMessage{
-					Channel:  "system",
-					SenderID: fmt.Sprintf("async:%s", asyncToolName),
-					ChatID:   fmt.Sprintf("%s:%s", ts.channel, ts.chatID),
-					Content:  content,
+				al.bus.PublishInbound(pubCtx, bus.InboundMessage{
+					Channel:    "system",
+					SenderID:   fmt.Sprintf("async:%s", asyncToolName),
+					ChatID:     fmt.Sprintf("%s:%s", ts.channel, ts.chatID),
+					Content:    content,
+					SessionKey: ts.sessionKey,
 				})
 			}
 
