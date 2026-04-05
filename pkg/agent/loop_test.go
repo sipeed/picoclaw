@@ -3046,3 +3046,98 @@ func TestProcessMessage_ContextOverflow_AnthropicStyle(t *testing.T) {
 		t.Fatalf("expected 2 calls for retry, got %d", provider.calls)
 	}
 }
+
+func TestExtractPeer_CronJobWithEmptyPeerKind(t *testing.T) {
+	// When Peer.Kind is empty but ChatID is set (e.g., cron jobs),
+	// extractPeer should treat it as a direct message using ChatID.
+	// This ensures cron job responses route to the correct chat session.
+	msg := bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "cron",
+		ChatID:   "439850467",
+		Peer:     bus.Peer{}, // Kind is empty
+	}
+	got := extractPeer(msg)
+	if got == nil {
+		t.Fatal("extractPeer returned nil, want Peer with Kind=direct")
+	}
+	if got.Kind != "direct" {
+		t.Errorf("got.Kind = %q, want %q", got.Kind, "direct")
+	}
+	if got.ID != "439850467" {
+		t.Errorf("got.ID = %q, want %q", got.ID, "439850467")
+	}
+}
+
+func TestExtractPeer_EmptyPeerKindAndEmptyChatID(t *testing.T) {
+	// When both Peer.Kind and ChatID are empty, extractPeer should return nil.
+	msg := bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "cron",
+		Peer:     bus.Peer{},
+	}
+	got := extractPeer(msg)
+	if got != nil {
+		t.Errorf("extractPeer returned %+v, want nil", got)
+	}
+}
+
+func TestExtractPeer_NormalDirectMessage(t *testing.T) {
+	// Normal direct message with Peer.Kind and Peer.ID set.
+	msg := bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	}
+	got := extractPeer(msg)
+	if got == nil {
+		t.Fatal("extractPeer returned nil")
+	}
+	if got.Kind != "direct" || got.ID != "user1" {
+		t.Errorf("extractPeer = %+v, want Kind=direct, ID=user1", got)
+	}
+}
+
+func TestExtractPeer_DirectMessageWithEmptyPeerID(t *testing.T) {
+	// When Peer.Kind is "direct" but Peer.ID is empty, should use SenderID.
+	msg := bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "",
+		},
+	}
+	got := extractPeer(msg)
+	if got == nil {
+		t.Fatal("extractPeer returned nil")
+	}
+	if got.ID != "user1" {
+		t.Errorf("got.ID = %q, want %q", got.ID, "user1")
+	}
+}
+
+func TestExtractPeer_GroupMessageWithEmptyPeerID(t *testing.T) {
+	// When Peer.Kind is "group" but Peer.ID is empty, should use ChatID.
+	msg := bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "group_chat_123",
+		Peer: bus.Peer{
+			Kind: "group",
+			ID:   "",
+		},
+	}
+	got := extractPeer(msg)
+	if got == nil {
+		t.Fatal("extractPeer returned nil")
+	}
+	if got.ID != "group_chat_123" {
+		t.Errorf("got.ID = %q, want %q", got.ID, "group_chat_123")
+	}
+}
