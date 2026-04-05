@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"sync"
 	"testing"
 
@@ -141,4 +143,59 @@ func (c *PicoChannel) addConnForTest(pc *picoConn) {
 		c.sessionConnections[pc.sessionID] = bySession
 	}
 	bySession[pc.id] = pc
+}
+
+func TestNewPicoChannel_UsesSameOriginCheckWithoutAllowOrigins(t *testing.T) {
+	ch := newTestPicoChannel(t)
+
+	if ch.upgrader.CheckOrigin == nil {
+		t.Fatal("CheckOrigin is nil, want custom same-origin check when allow_origins is empty")
+	}
+
+	if !ch.upgrader.CheckOrigin(&http.Request{
+		Host: "example.com",
+		Header: http.Header{
+			"Origin": []string{"https://example.com"},
+		},
+	}) {
+		t.Fatal("CheckOrigin rejected same-origin request")
+	}
+
+	if ch.upgrader.CheckOrigin(&http.Request{
+		Host: "example.com",
+		Header: http.Header{
+			"Origin": []string{"https://other.example"},
+		},
+	}) {
+		t.Fatal("CheckOrigin accepted cross-origin request")
+	}
+
+	if !ch.upgrader.CheckOrigin(&http.Request{Host: "example.com"}) {
+		t.Fatal("CheckOrigin rejected request without Origin header")
+	}
+}
+
+func TestNewPicoChannel_SetsCheckOriginWithWildcard(t *testing.T) {
+	// (2) explicit AllowOrigins=["*"] allows any origin
+	cfg := config.PicoConfig{AllowOrigins: []string{"*"}}
+	cfg.SetToken("test-token")
+
+	ch, err := NewPicoChannel(cfg, bus.NewMessageBus())
+	if err != nil {
+		t.Fatalf("NewPicoChannel: %v", err)
+	}
+
+	if ch.upgrader.CheckOrigin == nil {
+		t.Fatal("CheckOrigin is nil, want wildcard validation when allow_origins is set")
+	}
+
+	// Prove it allows any random cross-origin
+	if !ch.upgrader.CheckOrigin(&http.Request{
+		Header: http.Header{
+			"Origin": []string{"https://any-random-cross-origin.com"},
+		},
+		URL: &url.URL{},
+	}) {
+		t.Fatal("CheckOrigin rejected an origin even though wildcard '*' was provided")
+	}
 }
