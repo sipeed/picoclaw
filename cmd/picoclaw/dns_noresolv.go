@@ -20,7 +20,8 @@ func init() {
 	// 例如: PICOCLAW_DNS_SERVER="8.8.8.8:53;1.1.1.1:53;223.5.5.5:53"
 	dnsEnv := os.Getenv("PICOCLAW_DNS_SERVER")
 	if dnsEnv == "" {
-		dnsEnv = "8.8.8.8:53;1.1.1.1:53"
+		// 默认使用阿里 DNS 和腾讯 DNS
+		dnsEnv = "223.5.5.5:53;119.29.29.29:53"
 	}
 
 	var dnsServers []string

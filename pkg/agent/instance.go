@@ -91,12 +91,16 @@ func NewAgentInstance(
 		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
 	}
 	if cfg.Tools.IsToolEnabled("exec") {
-		execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg, allowReadPaths)
-		if err != nil {
-			logger.ErrorCF("agent", "Failed to initialize exec tool; continuing without exec",
-				map[string]any{"error": err.Error()})
+		if isAndroid() {
+			logger.InfoCF("agent", "Skipping exec tool on Android (no shell available)", nil)
 		} else {
-			toolsRegistry.Register(execTool)
+			execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg, allowReadPaths)
+			if err != nil {
+				logger.ErrorCF("agent", "Failed to initialize exec tool; continuing without exec",
+					map[string]any{"error": err.Error()})
+			} else {
+				toolsRegistry.Register(execTool)
+			}
 		}
 	}
 
@@ -345,4 +349,12 @@ func expandHome(path string) string {
 		return home
 	}
 	return path
+}
+
+// isAndroid 检测当前是否运行在 Android 环境中。
+// Android 上 GOOS=linux，无法通过 runtime.GOOS 区分，
+// 因此通过检查 Android 特有的 /system/build.prop 文件来判断。
+func isAndroid() bool {
+	_, err := os.Stat("/system/build.prop")
+	return err == nil
 }
