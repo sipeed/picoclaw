@@ -14,6 +14,7 @@ type deps struct {
 	workspace    string
 	installer    *skills.SkillInstaller
 	skillsLoader *skills.SkillsLoader
+	proxy        string
 }
 
 func NewSkillsCommand() *cobra.Command {
@@ -29,6 +30,7 @@ func NewSkillsCommand() *cobra.Command {
 			}
 
 			d.workspace = cfg.WorkspacePath()
+			d.proxy = cfg.Tools.Skills.Github.Proxy
 			installer, err := skills.NewSkillInstaller(
 				d.workspace,
 				cfg.Tools.Skills.Github.Token.String(),
@@ -75,7 +77,7 @@ func NewSkillsCommand() *cobra.Command {
 
 	cmd.AddCommand(
 		newListCommand(loaderFn),
-		newInstallCommand(installerFn),
+		newInstallCommand(installerFn, d.proxy),
 		newInstallBuiltinCommand(workspaceFn),
 		newListBuiltinCommand(),
 		newRemoveCommand(installerFn),
