@@ -356,10 +356,10 @@ func (h *respondHook) BeforeTool(
 	if h.respondTools[call.Tool] {
 		next := call.Clone()
 		next.HookResult = &tools.ToolResult{
-			ForLLM:   "hook-responded: " + call.Tool,
-			ForUser:  "",
-			Silent:   false,
-			IsError:  false,
+			ForLLM:  "hook-responded: " + call.Tool,
+			ForUser: "",
+			Silent:  false,
+			IsError: false,
 		}
 		return next, HookDecision{Action: HookActionRespond}, nil
 	}

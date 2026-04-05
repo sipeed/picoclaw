@@ -25,7 +25,7 @@ type HookAction string
 const (
 	HookActionContinue  HookAction = "continue"
 	HookActionModify    HookAction = "modify"
-	HookActionRespond   HookAction = "respond"    // Return result directly, skip tool execution
+	HookActionRespond   HookAction = "respond" // Return result directly, skip tool execution
 	HookActionDenyTool  HookAction = "deny_tool"
 	HookActionAbortTurn HookAction = "abort_turn"
 	HookActionHardAbort HookAction = "hard_abort"

@@ -91,8 +91,8 @@ type processHookAfterLLMResponse struct {
 
 type processHookBeforeToolResponse struct {
 	processHookDecisionResponse
-	Call   *ToolCallHookRequest  `json:"call,omitempty"`
-	Result *tools.ToolResult     `json:"result,omitempty"` // Result returned directly by hook (for respond action)
+	Call   *ToolCallHookRequest `json:"call,omitempty"`
+	Result *tools.ToolResult    `json:"result,omitempty"` // Result returned directly by hook (for respond action)
 }
 
 type processHookAfterToolResponse struct {
