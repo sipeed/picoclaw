@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -68,6 +69,8 @@ type CronService struct {
 	gronx     *gronx.Gronx
 }
 
+// NewCronService creates a cron service that persists jobs to storePath.
+// onJob is called when a job fires; it may be nil if SetOnJob is used later.
 func NewCronService(storePath string, onJob JobHandler) *CronService {
 	cs := &CronService{
 		storePath: storePath,
@@ -80,6 +83,7 @@ func NewCronService(storePath string, onJob JobHandler) *CronService {
 	return cs
 }
 
+// Start begins the cron run loop in a background goroutine.
 func (cs *CronService) Start() error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
@@ -107,6 +111,7 @@ func (cs *CronService) Start() error {
 	return nil
 }
 
+// Stop signals the run loop to exit and waits for it to finish.
 func (cs *CronService) Stop() {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
@@ -365,12 +370,14 @@ func (cs *CronService) getNextWakeMS() *int64 {
 	return nextWake
 }
 
+// Load reads persisted jobs from disk, replacing the in-memory store.
 func (cs *CronService) Load() error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	return cs.loadStore()
 }
 
+// SetOnJob replaces the callback invoked when a job fires.
 func (cs *CronService) SetOnJob(handler JobHandler) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
@@ -404,12 +411,18 @@ func (cs *CronService) saveStoreUnsafe() error {
 	return fileutil.WriteFileAtomic(cs.storePath, data, 0o600)
 }
 
+// AddJob creates and persists a new cron job. Returns an error if the
+// schedule expression is invalid or required fields are empty.
 func (cs *CronService) AddJob(
 	name string,
 	schedule CronSchedule,
 	message string,
 	channel, to string,
 ) (*CronJob, error) {
+	if strings.TrimSpace(name) == "" {
+		return nil, fmt.Errorf("job name must not be empty")
+	}
+
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
@@ -447,6 +460,7 @@ func (cs *CronService) AddJob(
 	return &job, nil
 }
 
+// UpdateJob replaces a job's definition and persists the change.
 func (cs *CronService) UpdateJob(job *CronJob) error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
@@ -464,6 +478,7 @@ func (cs *CronService) UpdateJob(job *CronJob) error {
 	return fmt.Errorf("job not found")
 }
 
+// RemoveJob deletes a job by ID and returns true if it was found.
 func (cs *CronService) RemoveJob(jobID string) bool {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
@@ -493,6 +508,7 @@ func (cs *CronService) removeJobUnsafe(jobID string) bool {
 	return removed
 }
 
+// EnableJob toggles a job's enabled state and recomputes its next run time.
 func (cs *CronService) EnableJob(jobID string, enabled bool) *CronJob {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
@@ -522,6 +538,7 @@ func (cs *CronService) EnableJob(jobID string, enabled bool) *CronJob {
 	return nil
 }
 
+// ListJobs returns a snapshot of all jobs, optionally including disabled ones.
 func (cs *CronService) ListJobs(includeDisabled bool) []CronJob {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
@@ -540,6 +557,7 @@ func (cs *CronService) ListJobs(includeDisabled bool) []CronJob {
 	return enabled
 }
 
+// Status returns a summary of the cron service state for diagnostics.
 func (cs *CronService) Status() map[string]any {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()

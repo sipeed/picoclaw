@@ -61,7 +61,9 @@ func WritePidFile(homePath, host string, port int) (*PidFileData, error) {
 			logger.Warnf("not running (PID: %d) so will remove the pid file: %s", data.PID, pidPath)
 		}
 		// Stale PID file; process no longer exists → clean up.
-		os.Remove(pidPath)
+		if err := os.Remove(pidPath); err != nil && !os.IsNotExist(err) {
+			logger.Warnf("failed to remove stale pid file %s: %v", pidPath, err)
+		}
 	}
 
 	data := &PidFileData{
@@ -91,7 +93,7 @@ func WritePidFile(homePath, host string, port int) (*PidFileData, error) {
 		return nil, fmt.Errorf("failed to write pid file: %w", err)
 	}
 	if err := os.Rename(tmp, pidPath); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp) // best-effort cleanup of temp file
 		return nil, fmt.Errorf("failed to rename pid file: %w", err)
 	}
 	logger.Debugf("wrote pid file: %s success", pidPath)
@@ -115,7 +117,9 @@ func ReadPidFileWithCheck(homePath string) *PidFileData {
 
 	if !isProcessRunning(data.PID) {
 		logger.Debugf("process not running, remove pid file: %s", pidPath)
-		os.Remove(pidPath)
+		if err := os.Remove(pidPath); err != nil && !os.IsNotExist(err) {
+			logger.Warnf("failed to remove stale pid file %s: %v", pidPath, err)
+		}
 		return nil
 	}
 
@@ -137,7 +141,9 @@ func RemovePidFile(homePath string) {
 	}
 
 	logger.Infof("remove pid file: %s", pidPath)
-	os.Remove(pidPath)
+	if err := os.Remove(pidPath); err != nil && !os.IsNotExist(err) {
+		logger.Warnf("failed to remove pid file %s: %v", pidPath, err)
+	}
 }
 
 // readPidFileUnlocked reads the PID file without acquiring the lock.

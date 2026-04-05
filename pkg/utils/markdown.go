@@ -25,6 +25,13 @@ var skipTags = map[string]bool{
 	"nav": true, "footer": true, "aside": true, "header": true, "form": true, "dialog": true,
 }
 
+// unlikelyKeywords is allocated once at package level to avoid repeated
+// allocation on every call to isUnlikelyNode.
+var unlikelyKeywords = []string{
+	"menu", "nav", "footer", "sidebar", "cookie", "banner",
+	"sponsor", "advert", "popup", "modal", "newsletter", "share", "social",
+}
+
 func isSafeHref(href string) bool {
 	lower := strings.ToLower(strings.TrimSpace(href))
 	if strings.HasPrefix(lower, "javascript:") || strings.HasPrefix(lower, "vbscript:") ||
@@ -81,21 +88,6 @@ func isUnlikelyNode(n *html.Node) bool {
 	if strings.Contains(classId, "article") || strings.Contains(classId, "main") ||
 		strings.Contains(classId, "content") {
 		return false
-	}
-	unlikelyKeywords := []string{
-		"menu",
-		"nav",
-		"footer",
-		"sidebar",
-		"cookie",
-		"banner",
-		"sponsor",
-		"advert",
-		"popup",
-		"modal",
-		"newsletter",
-		"share",
-		"social",
 	}
 	for _, keyword := range unlikelyKeywords {
 		if strings.Contains(classId, keyword) {

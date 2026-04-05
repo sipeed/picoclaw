@@ -18,6 +18,8 @@ import (
 
 var audioExtensions = []string{".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma"}
 
+// AudioFormat returns the audio format (e.g. "mp3", "wav") for the given file path
+// based on its extension, or an error if the format is unsupported.
 func AudioFormat(path string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(path))
 	for _, supportedExt := range audioExtensions {

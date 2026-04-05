@@ -20,18 +20,21 @@ func NewJSONLBackend(store memory.Store) *JSONLBackend {
 	return &JSONLBackend{store: store}
 }
 
+// AddMessage appends a text message to the session (fire-and-forget).
 func (b *JSONLBackend) AddMessage(sessionKey, role, content string) {
 	if err := b.store.AddMessage(context.Background(), sessionKey, role, content); err != nil {
 		log.Printf("session: add message: %v", err)
 	}
 }
 
+// AddFullMessage appends a complete message (with tool calls, reasoning, etc.) to the session.
 func (b *JSONLBackend) AddFullMessage(sessionKey string, msg providers.Message) {
 	if err := b.store.AddFullMessage(context.Background(), sessionKey, msg); err != nil {
 		log.Printf("session: add full message: %v", err)
 	}
 }
 
+// GetHistory returns the message history for a session, or an empty slice on error.
 func (b *JSONLBackend) GetHistory(key string) []providers.Message {
 	msgs, err := b.store.GetHistory(context.Background(), key)
 	if err != nil {
@@ -41,6 +44,7 @@ func (b *JSONLBackend) GetHistory(key string) []providers.Message {
 	return msgs
 }
 
+// GetSummary returns the session summary, or empty string on error.
 func (b *JSONLBackend) GetSummary(key string) string {
 	summary, err := b.store.GetSummary(context.Background(), key)
 	if err != nil {
@@ -50,18 +54,21 @@ func (b *JSONLBackend) GetSummary(key string) string {
 	return summary
 }
 
+// SetSummary replaces the session summary (fire-and-forget).
 func (b *JSONLBackend) SetSummary(key, summary string) {
 	if err := b.store.SetSummary(context.Background(), key, summary); err != nil {
 		log.Printf("session: set summary: %v", err)
 	}
 }
 
+// SetHistory replaces the full message history for a session (fire-and-forget).
 func (b *JSONLBackend) SetHistory(key string, history []providers.Message) {
 	if err := b.store.SetHistory(context.Background(), key, history); err != nil {
 		log.Printf("session: set history: %v", err)
 	}
 }
 
+// TruncateHistory keeps only the last keepLast messages in a session (fire-and-forget).
 func (b *JSONLBackend) TruncateHistory(key string, keepLast int) {
 	if err := b.store.TruncateHistory(context.Background(), key, keepLast); err != nil {
 		log.Printf("session: truncate history: %v", err)

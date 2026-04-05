@@ -33,6 +33,7 @@ func canonicalGatewayLogLevel(level logger.LogLevel) string {
 	}
 }
 
+// normalizeGatewayLogLevel maps a user-provided log level string to a valid zerolog level.
 func normalizeGatewayLogLevel(logLevel string) string {
 	if level, ok := logger.ParseLevel(logLevel); ok {
 		return canonicalGatewayLogLevel(level)
@@ -61,7 +62,10 @@ func ResolveGatewayLogLevel(path string) string {
 
 	data, err := os.ReadFile(path)
 	if err == nil {
-		_ = json.Unmarshal(data, &cfg)
+		if jsonErr := json.Unmarshal(data, &cfg); jsonErr != nil {
+			// Malformed config — fall through to default log level.
+			_ = jsonErr
+		}
 	}
 
 	if envLevel := os.Getenv("PICOCLAW_LOG_LEVEL"); envLevel != "" {
