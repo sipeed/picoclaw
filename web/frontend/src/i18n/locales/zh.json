@@ -48,6 +48,8 @@
     "historyOpenFailed": "打开该历史会话失败",
     "loadingMore": "加载更多...",
     "deleteSession": "删除会话",
+    "renameSession": "重命名会话",
+    "copyLink": "复制链接",
     "messagesCount": "{{count}} 条消息",
     "noModel": "选择模型",
     "attachImage": "添加图片",
