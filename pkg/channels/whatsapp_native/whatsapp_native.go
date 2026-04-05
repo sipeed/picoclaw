@@ -483,6 +483,32 @@ func (c *WhatsAppNativeChannel) Send(ctx context.Context, msg bus.OutboundMessag
 	return nil, nil
 }
 
+// SendStatus sends a text message to the WhatsApp Status broadcast (status@broadcast).
+func (c *WhatsAppNativeChannel) SendStatus(ctx context.Context, text string) error {
+	c.mu.Lock()
+	client := c.client
+	c.mu.Unlock()
+	if client == nil || !client.IsConnected() {
+		return fmt.Errorf("whatsapp not connected")
+	}
+	if client.Store.ID == nil {
+		return fmt.Errorf("whatsapp not paired")
+	}
+	black := uint32(0xFF000000)
+	white := uint32(0xFFFFFFFF)
+	font := waE2E.ExtendedTextMessage_SYSTEM_BOLD
+	msg := &waE2E.Message{
+		ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+			Text:           proto.String(text),
+			BackgroundArgb: &black,
+			TextArgb:       &white,
+			Font:           &font,
+		},
+	}
+	_, err := client.SendMessage(ctx, types.StatusBroadcastJID, msg)
+	return err
+}
+
 // SendMedia implements the channels.MediaSender interface.
 func (c *WhatsAppNativeChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
 	if !c.IsRunning() {

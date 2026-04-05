@@ -1034,6 +1034,13 @@ func (m *Manager) GetChannel(name string) (Channel, bool) {
 	return channel, ok
 }
 
+// HandleFunc registers a custom HTTP handler on the shared gateway mux.
+func (m *Manager) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
+	if m.mux != nil {
+		m.mux.HandleFunc(pattern, handler)
+	}
+}
+
 func (m *Manager) GetStatus() map[string]any {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

@@ -2,7 +2,9 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -32,7 +34,7 @@ import (
 	_ "github.com/sipeed/picoclaw/pkg/channels/wecom"
 	_ "github.com/sipeed/picoclaw/pkg/channels/weixin"
 	_ "github.com/sipeed/picoclaw/pkg/channels/whatsapp"
-	_ "github.com/sipeed/picoclaw/pkg/channels/whatsapp_native"
+	whatsappnative "github.com/sipeed/picoclaw/pkg/channels/whatsapp_native"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/cron"
 	"github.com/sipeed/picoclaw/pkg/devices"
@@ -381,6 +383,37 @@ func setupAndStartServices(
 	runningServices.authToken = authToken
 	runningServices.HealthServer = health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port, authToken)
 	runningServices.ChannelManager.SetupHTTPServer(addr, runningServices.HealthServer)
+
+	// API: send text to WhatsApp Status broadcast
+	runningServices.ChannelManager.HandleFunc("/api/send-status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var body struct {
+			Text string `json:"text"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Text == "" {
+			http.Error(w, "bad request: text required", http.StatusBadRequest)
+			return
+		}
+		ch, ok := runningServices.ChannelManager.GetChannel("whatsapp_native")
+		if !ok {
+			http.Error(w, "whatsapp not available", http.StatusServiceUnavailable)
+			return
+		}
+		waCh, ok := ch.(*whatsappnative.WhatsAppNativeChannel)
+		if !ok {
+			http.Error(w, "whatsapp channel type mismatch", http.StatusInternalServerError)
+			return
+		}
+		if err := waCh.SendStatus(r.Context(), body.Text); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
 
 	if err = runningServices.ChannelManager.StartAll(context.Background()); err != nil {
 		return nil, fmt.Errorf("error starting channels: %w", err)
