@@ -480,7 +480,7 @@ go install github.com/Gentleman-Programming/engram/cmd/engram@latest
         "engram": {
           "enabled": true,
           "command": "engram",
-          "args": ["mcp", "--tools=agent", "--project=my-assistant"]
+          "args": ["mcp", "--tools=agent", "--project=<your-project>"]
         }
       }
     }
@@ -488,7 +488,9 @@ go install github.com/Gentleman-Programming/engram/cmd/engram@latest
 }
 ```
 
-This gives your agent 11 memory tools including `mem_save`, `mem_search`, `mem_context`, and `mem_session_summary`. See the [Engram documentation](https://github.com/Gentleman-Programming/engram) for the full tool reference.
+Replace `<your-project>` with a name that identifies your agent or environment.
+
+This gives your agent memory tools such as `mem_save`, `mem_search`, `mem_context`, and `mem_session_summary`. See the [Engram documentation](https://github.com/Gentleman-Programming/engram) for the full tool reference.
 
 ## Skills Tool
 
