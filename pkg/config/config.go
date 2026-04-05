@@ -829,6 +829,7 @@ type ToolsConfig struct {
 	FindSkills      ToolConfig         `json:"find_skills"       yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_FIND_SKILLS_"`
 	I2C             ToolConfig         `json:"i2c"               yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_I2C_"`
 	InstallSkill    ToolConfig         `json:"install_skill"     yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_INSTALL_SKILL_"`
+	SkillManage     ToolConfig         `json:"skill_manage"      yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SKILL_MANAGE_"`
 	ListDir         ToolConfig         `json:"list_dir"          yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_LIST_DIR_"`
 	Message         ToolConfig         `json:"message"           yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_MESSAGE_"`
 	ReadFile        ReadFileToolConfig `json:"read_file"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_READ_FILE_"`
@@ -1268,6 +1269,8 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.I2C.Enabled
 	case "install_skill":
 		return t.InstallSkill.Enabled
+	case "skill_manage":
+		return t.SkillManage.Enabled
 	case "list_dir":
 		return t.ListDir.Enabled
 	case "message":
