@@ -35,12 +35,15 @@ import (
 )
 
 const (
-	dedupTTL      = 5 * time.Minute
-	dedupInterval = 60 * time.Second
-	dedupMaxSize  = 10000 // hard cap on dedup map entries
-	typingResend  = 8 * time.Second
-	typingSeconds = 10
-	bytesPerMiB   = 1024 * 1024
+	dedupTTL             = 5 * time.Minute
+	dedupInterval        = 60 * time.Second
+	dedupMaxSize         = 10000 // hard cap on dedup map entries
+	typingResend         = 8 * time.Second
+	typingSeconds        = 10
+	bytesPerMiB          = 1024 * 1024
+	reconnectInitial     = 5 * time.Second
+	reconnectMax         = 5 * time.Minute
+	reconnectMultiplier  = 2.0
 )
 
 type qqAPI interface {
@@ -127,6 +130,28 @@ func (c *QQChannel) Start(ctx context.Context) error {
 	// initialize OpenAPI client
 	c.api = botgo.NewOpenAPI(c.config.AppID, c.tokenSource).WithTimeout(5 * time.Second)
 
+	// start dedup janitor goroutine
+	go c.dedupJanitor()
+
+	// Pre-register reasoning_channel_id as group chat if configured,
+	// so outbound-only destinations are routed correctly.
+	if c.config.ReasoningChannelID != "" {
+		c.chatType.Store(c.config.ReasoningChannelID, "group")
+	}
+
+	// Start the reconnect loop. It handles both the initial connection and
+	// subsequent reconnection attempts with exponential backoff.
+	go c.reconnectLoop()
+
+	c.SetRunning(true)
+	logger.InfoC("qq", "QQ bot started successfully")
+
+	return nil
+}
+
+// startSession fetches a fresh WebSocket endpoint and starts the session manager.
+// It blocks until the session goroutine exits (i.e. the WebSocket connection drops).
+func (c *QQChannel) startSession() error {
 	// register event handlers
 	intent := event.RegisterHandlers(
 		c.handleC2CMessage(),
@@ -146,29 +171,59 @@ func (c *QQChannel) Start(ctx context.Context) error {
 	// create and save sessionManager
 	c.sessionManager = botgo.NewSessionManager()
 
-	// start WebSocket connection in goroutine to avoid blocking
-	go func() {
-		if err := c.sessionManager.Start(wsInfo, c.tokenSource, &intent); err != nil {
-			logger.ErrorCF("qq", "WebSocket session error", map[string]any{
-				"error": err.Error(),
-			})
-			c.SetRunning(false)
+	return c.sessionManager.Start(wsInfo, c.tokenSource, &intent)
+}
+
+// reconnectLoop manages the QQ WebSocket session lifecycle with exponential backoff.
+// On initial start or after a disconnect, it re-acquires the WebSocket endpoint
+// and re-initializes the session manager.
+func (c *QQChannel) reconnectLoop() {
+	backoff := reconnectInitial
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-c.done:
+			return
+		default:
 		}
-	}()
 
-	// start dedup janitor goroutine
-	go c.dedupJanitor()
+		// Check if channel was explicitly stopped.
+		if !c.IsRunning() {
+			return
+		}
 
-	// Pre-register reasoning_channel_id as group chat if configured,
-	// so outbound-only destinations are routed correctly.
-	if c.config.ReasoningChannelID != "" {
-		c.chatType.Store(c.config.ReasoningChannelID, "group")
+		logger.InfoCF("qq", "Starting QQ session", map[string]any{
+			"backoff": backoff.String(),
+		})
+
+		err := c.startSession()
+		if err == nil {
+			// Session exited cleanly (e.g. via Stop/cancel).
+			return
+		}
+
+		// Session failed or disconnected -- log and schedule retry.
+		logger.WarnCF("qq", "QQ session ended, reconnecting", map[string]any{
+			"error": err.Error(),
+		})
+
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-c.done:
+			return
+		case <-time.After(backoff):
+			if backoff < reconnectMax {
+				next := time.Duration(float64(backoff) * reconnectMultiplier)
+				if next > reconnectMax {
+					next = reconnectMax
+				}
+				backoff = next
+			}
+		}
 	}
-
-	c.SetRunning(true)
-	logger.InfoC("qq", "QQ bot started successfully")
-
-	return nil
 }
 
 func (c *QQChannel) Stop(ctx context.Context) error {
