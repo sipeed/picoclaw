@@ -68,8 +68,8 @@ type GrepSummaryResult struct {
 	Depth          int         `json:"depth"`
 	Kind           SummaryKind `json:"kind"`
 	ConversationID int64       `json:"conversationId"`
-	// Rank is the bm25 relevance score (negative value, closer to 0 = better match).
-	// Examples: -0.5 = excellent match, -2.0 = good match, -10.0 = partial match.
+	// Rank is the bm25 relevance score (negative value, lower = better match).
+	// Examples: -5.0 = excellent match, -2.0 = good match, -0.5 = partial match.
 	Rank float64 `json:"rank,omitempty"`
 }
 
@@ -79,7 +79,7 @@ type GrepMessageResult struct {
 	Snippet        string  `json:"snippet"`
 	Role           string  `json:"role"`
 	ConversationID int64   `json:"conversationId"`
-	Rank           float64 `json:"rank,omitempty"` // Relevance score (lower = better match)
+	Rank           float64 `json:"rank,omitempty"` // Relevance score (more negative = better match)
 }
 
 // ExpandMessagesResult contains expanded messages.
