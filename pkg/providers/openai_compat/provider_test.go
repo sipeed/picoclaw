@@ -485,6 +485,11 @@ func TestProviderChat_StripsKnownProviderPrefixes(t *testing.T) {
 			wantModel: "venice-uncensored",
 		},
 		{
+			name:      "strips xai prefix",
+			input:     "xai/grok-4",
+			wantModel: "grok-4",
+		},
+		{
 			name:      "strips deepseek prefix",
 			input:     "deepseek/deepseek-chat",
 			wantModel: "deepseek-chat",
@@ -594,6 +599,9 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	}
 	if got := normalizeModel("venice/venice-uncensored", "https://api.venice.ai/api/v1"); got != "venice-uncensored" {
 		t.Fatalf("normalizeModel(venice) = %q, want %q", got, "venice-uncensored")
+	}
+	if got := normalizeModel("xai/grok-4", "https://api.x.ai/v1"); got != "grok-4" {
+		t.Fatalf("normalizeModel(xai) = %q, want %q", got, "grok-4")
 	}
 	if got := normalizeModel("openrouter/auto", "https://openrouter.ai/api/v1"); got != "openrouter/auto" {
 		t.Fatalf("normalizeModel(openrouter) = %q, want %q", got, "openrouter/auto")
