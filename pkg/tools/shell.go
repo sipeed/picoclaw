@@ -21,6 +21,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/isolation"
+	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/termutil"
 )
 
 var (
@@ -99,6 +101,11 @@ var (
 
 	// absolutePathPattern matches absolute file paths in commands (Unix and Windows).
 	absolutePathPattern = regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
+
+	// commandTokenPattern extracts unquoted shell tokens for lightweight path inspection.
+	// This intentionally stays simple; it is only used to identify obvious path-like
+	// arguments that need workspace validation.
+	commandTokenPattern = regexp.MustCompile(`[^\s"'` + "`" + `]+`)
 
 	// safePaths are kernel pseudo-devices that are always safe to reference in
 	// commands, regardless of workspace restriction. They contain no user data
@@ -291,6 +298,7 @@ func (t *ExecTool) executeRun(ctx context.Context, args map[string]any) *ToolRes
 	}
 	isPty := getBoolArg("pty")
 	isBackground := getBoolArg("background")
+	requestedWD, _ := args["cwd"].(string)
 
 	if isPty {
 		if runtime.GOOS == "windows" {
@@ -303,6 +311,7 @@ func (t *ExecTool) executeRun(ctx context.Context, args map[string]any) *ToolRes
 		if t.restrictToWorkspace && t.workingDir != "" {
 			resolvedWD, err := validatePathWithAllowPaths(wd, t.workingDir, true, t.allowedPathPatterns)
 			if err != nil {
+				t.logGuardBlock(command, requestedWD, cwd, err.Error())
 				return ErrorResult("Command blocked by safety guard (" + err.Error() + ")")
 			}
 			cwd = resolvedWD
@@ -319,6 +328,7 @@ func (t *ExecTool) executeRun(ctx context.Context, args map[string]any) *ToolRes
 	}
 
 	if guardError := t.guardCommand(command, cwd); guardError != "" {
+		t.logGuardBlock(command, requestedWD, cwd, guardError)
 		return ErrorResult(guardError)
 	}
 
@@ -327,6 +337,7 @@ func (t *ExecTool) executeRun(ctx context.Context, args map[string]any) *ToolRes
 	if t.restrictToWorkspace && t.workingDir != "" && cwd != t.workingDir {
 		resolved, err := filepath.EvalSymlinks(cwd)
 		if err != nil {
+			t.logGuardBlock(command, requestedWD, cwd, fmt.Sprintf("path resolution failed: %v", err))
 			return ErrorResult(fmt.Sprintf("Command blocked by safety guard (path resolution failed: %v)", err))
 		}
 		if isAllowedPath(resolved, t.allowedPathPatterns) {
@@ -339,6 +350,7 @@ func (t *ExecTool) executeRun(ctx context.Context, args map[string]any) *ToolRes
 			}
 			rel, err := filepath.Rel(wsResolved, resolved)
 			if err != nil || !filepath.IsLocal(rel) {
+				t.logGuardBlock(command, requestedWD, cwd, "working directory escaped workspace")
 				return ErrorResult("Command blocked by safety guard (working directory escaped workspace)")
 			}
 			cwd = resolved
@@ -350,6 +362,21 @@ func (t *ExecTool) executeRun(ctx context.Context, args map[string]any) *ToolRes
 	}
 
 	return t.runSync(ctx, command, cwd)
+}
+
+func (t *ExecTool) logGuardBlock(command, requestedWD, resolvedWD, reason string) {
+	fields := map[string]any{
+		"tool":    t.Name(),
+		"command": command,
+		"reason":  reason,
+	}
+	if requestedWD != "" {
+		fields["requested_cwd"] = requestedWD
+	}
+	if resolvedWD != "" {
+		fields["resolved_cwd"] = resolvedWD
+	}
+	logger.WarnCF("tool", "Exec blocked by safety guard", fields)
 }
 
 func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult {
@@ -442,6 +469,8 @@ func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult
 	if output == "" {
 		output = "(no output)"
 	}
+
+	output = termutil.EscapeControlChars(output)
 
 	maxLen := 10000
 	if len(output) > maxLen {
@@ -706,6 +735,7 @@ func (t *ExecTool) executeRead(args map[string]any) *ToolResult {
 	}
 
 	output := session.Read()
+	output = termutil.EscapeControlChars(output)
 
 	resp := ExecResponse{
 		SessionID: sessionID,
@@ -1054,10 +1084,6 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	if t.restrictToWorkspace {
-		if strings.Contains(cmd, "..\\") || strings.Contains(cmd, "../") {
-			return "Command blocked by safety guard (path traversal detected)"
-		}
-
 		cwdPath, err := filepath.Abs(cwd)
 		if err != nil {
 			return ""
@@ -1072,6 +1098,10 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 
 		for _, loc := range matchIndices {
 			raw := cmd[loc[0]:loc[1]]
+
+			if loc[0] > 0 && !isPathTokenBoundary(cmd[loc[0]-1]) {
+				continue
+			}
 
 			// Skip URL path components that look like they're from web URLs.
 			// When a URL like "https://github.com" is parsed, the regex captures
@@ -1115,9 +1145,84 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 				return "Command blocked by safety guard (path outside working dir)"
 			}
 		}
+
+		for _, raw := range extractTraversalPathCandidates(cmd) {
+			p := raw
+			if !filepath.IsAbs(p) {
+				p = filepath.Join(cwdPath, p)
+			}
+
+			resolved, err := filepath.Abs(p)
+			if err != nil {
+				continue
+			}
+
+			if safePaths[resolved] {
+				continue
+			}
+			if isAllowedPath(resolved, t.allowedPathPatterns) {
+				continue
+			}
+
+			rel, err := filepath.Rel(cwdPath, resolved)
+			if err != nil {
+				continue
+			}
+
+			if strings.HasPrefix(rel, "..") {
+				return "Command blocked by safety guard (path outside working dir)"
+			}
+		}
 	}
 
 	return ""
+}
+
+func extractTraversalPathCandidates(command string) []string {
+	tokens := commandTokenPattern.FindAllString(command, -1)
+	if len(tokens) == 0 {
+		return nil
+	}
+
+	candidates := make([]string, 0, len(tokens))
+	seen := make(map[string]struct{}, len(tokens))
+
+	for _, token := range tokens {
+		for _, part := range strings.FieldsFunc(token, func(r rune) bool {
+			return r == '=' || r == ',' || r == ';' || r == '(' || r == ')'
+		}) {
+			part = strings.Trim(part, `"'`)
+			if part == "" {
+				continue
+			}
+
+			hasTraversal := strings.Contains(part, "../") ||
+				strings.Contains(part, `..\`) ||
+				strings.HasSuffix(part, "/..") ||
+				strings.HasSuffix(part, `\..`) ||
+				part == ".."
+			if !hasTraversal {
+				continue
+			}
+
+			if _, ok := seen[part]; ok {
+				continue
+			}
+			seen[part] = struct{}{}
+			candidates = append(candidates, part)
+		}
+	}
+
+	return candidates
+}
+
+func isPathTokenBoundary(b byte) bool {
+	switch b {
+	case ' ', '\t', '\n', '\r', '"', '\'', '`', '(', ')', '[', ']', '{', '}', ',', ';', '=', ':':
+		return true
+	default:
+		return false
+	}
 }
 
 func (t *ExecTool) SetTimeout(timeout time.Duration) {

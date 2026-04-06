@@ -250,6 +250,16 @@ func TestFormatFieldValue(t *testing.T) {
 			input:    "   ",
 			expected: `"   "`,
 		},
+		{
+			name:     "ANSI escape is rendered safely",
+			input:    "\x1b[31mred\x1b[0m",
+			expected: `\x1b[31mred\x1b[0m`,
+		},
+		{
+			name:     "Bidi override is escaped",
+			input:    "safe\u202edanger",
+			expected: `safe\u202edanger`,
+		},
 	}
 
 	for _, tt := range tests {
