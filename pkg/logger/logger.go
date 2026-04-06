@@ -217,6 +217,9 @@ func DisableFileLogging() {
 	}
 }
 
+// ConfigureFromEnv reads PICOCLAW_LOG_FILE from the environment and
+// enables file logging if set. The log level is controlled separately
+// via PICOCLAW_LOG_LEVEL in the config/gateway package.
 func ConfigureFromEnv() {
 	if logFile := os.Getenv("PICOCLAW_LOG_FILE"); logFile != "" {
 		if strings.HasPrefix(logFile, "~/") {
