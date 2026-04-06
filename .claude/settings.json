@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(grep -r array-item /Users/maxintent/Documents/Apps/picoclaw --include=*.vue --include=*.jsx --include=*.tsx --include=*.js --include=*.ts)"
+      "Bash(grep -r array-item /Users/maxintent/Documents/Apps/picoclaw --include=*.vue --include=*.jsx --include=*.tsx --include=*.js --include=*.ts)",
+      "Bash(find /Users/maxintent/Documents/Apps/picoclaw -maxdepth 3 -type f \\\\\\(-name *.test.ts -o -name playwright.config.* -o -name *playwright* -o -name *test* \\\\\\))"
     ]
   }
 }
