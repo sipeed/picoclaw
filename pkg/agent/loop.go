@@ -3362,18 +3362,25 @@ func mapCommandError(result commands.ExecuteResult) string {
 
 // extractPeer extracts the routing peer from the inbound message's structured Peer field.
 func extractPeer(msg bus.InboundMessage) *routing.RoutePeer {
-	if msg.Peer.Kind == "" {
+	peerKind := msg.Peer.Kind
+	peerID := msg.Peer.ID
+	// When Peer.Kind is empty but ChatID is set (e.g., cron jobs), treat as a
+	// direct message so session routing resolves to the correct chat session.
+	if peerKind == "" && msg.ChatID != "" {
+		peerKind = "direct"
+		peerID = msg.ChatID
+	}
+	if peerKind == "" {
 		return nil
 	}
-	peerID := msg.Peer.ID
 	if peerID == "" {
-		if msg.Peer.Kind == "direct" {
+		if peerKind == "direct" {
 			peerID = msg.SenderID
 		} else {
 			peerID = msg.ChatID
 		}
 	}
-	return &routing.RoutePeer{Kind: msg.Peer.Kind, ID: peerID}
+	return &routing.RoutePeer{Kind: peerKind, ID: peerID}
 }
 
 func inboundMetadata(msg bus.InboundMessage, key string) string {
