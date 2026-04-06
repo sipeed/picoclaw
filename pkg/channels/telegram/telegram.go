@@ -47,12 +47,13 @@ var (
 
 type TelegramChannel struct {
 	*channels.BaseChannel
-	bot     *telego.Bot
-	bh      *th.BotHandler
-	config  *config.Config
-	chatIDs map[string]int64
-	ctx     context.Context
-	cancel  context.CancelFunc
+	bot       *telego.Bot
+	bh        *th.BotHandler
+	config    *config.Config
+	chatIDs   map[string]int64
+	ctx       context.Context
+	cancel    context.CancelFunc
+	downloadC *tls.Config
 
 	registerFunc     func(context.Context, []commands.Definition) error
 	commandRegCancel context.CancelFunc
@@ -74,8 +75,6 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 			return nil, fmt.Errorf("invalid proxy URL %q: %w", telegramCfg.Proxy, parseErr)
 		}
 		transport.Proxy = http.ProxyURL(proxyURL)
-	} else {
-		transport.Proxy = http.ProxyFromEnvironment
 	}
 
 	if baseURL := strings.TrimRight(strings.TrimSpace(telegramCfg.BaseURL), "/"); baseURL != "" {
@@ -103,15 +102,13 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 		bot:         bot,
 		config:      cfg,
 		chatIDs:     make(map[string]int64),
+		downloadC:   transport.TLSClientConfig,
 	}, nil
 }
 
 func telegramHTTPTransport(cfg config.TelegramConfig) (*http.Transport, error) {
-	// Start with Go defaults, then inject proxy + TLS tweaks.
-	// We keep timeouts conservative; telego itself also applies request-level timeouts.
-	t := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-	}
+	// Clone default transport to preserve Go's standard dial/TLS timeouts.
+	t := http.DefaultTransport.(*http.Transport).Clone()
 
 	tlsCfg, err := telegramTLSConfig(cfg)
 	if err != nil {
@@ -126,6 +123,9 @@ func telegramHTTPTransport(cfg config.TelegramConfig) (*http.Transport, error) {
 func telegramTLSConfig(cfg config.TelegramConfig) (*tls.Config, error) {
 	if !cfg.TLSInsecure && strings.TrimSpace(cfg.TLSCAFile) == "" && strings.TrimSpace(cfg.TLSCADir) == "" {
 		return nil, nil
+	}
+	if cfg.TLSInsecure {
+		logger.WarnC("telegram", "TLS verification is disabled via channels.telegram.tls_insecure")
 	}
 
 	base, err := x509.SystemCertPool()
@@ -152,14 +152,19 @@ func telegramTLSConfig(cfg config.TelegramConfig) (*tls.Config, error) {
 			if ent.IsDir() {
 				continue
 			}
-			// Common practice: read every file; ignore parse failures quietly to handle
-			// hashed symlinks / non-PEM files.
 			p := filepath.Join(caDir, ent.Name())
 			b, e := os.ReadFile(p)
 			if e != nil {
 				continue
 			}
-			_ = base.AppendCertsFromPEM(b)
+			if ok := base.AppendCertsFromPEM(b); !ok {
+				name := strings.ToLower(ent.Name())
+				if strings.HasSuffix(name, ".pem") || strings.HasSuffix(name, ".crt") || strings.HasSuffix(name, ".cer") {
+					logger.WarnCF("telegram", "Failed to parse certificate file in tls_ca_dir", map[string]any{
+						"path": p,
+					})
+				}
+			}
 		}
 	}
 
@@ -948,6 +953,8 @@ func (c *TelegramChannel) downloadFileWithInfo(file *telego.File, ext string) st
 	filename := file.FilePath + ext
 	return utils.DownloadFile(url, filename, utils.DownloadOptions{
 		LoggerPrefix: "telegram",
+		ProxyURL:     c.config.Channels.Telegram.Proxy,
+		TLSConfig:    c.downloadC,
 	})
 }
 

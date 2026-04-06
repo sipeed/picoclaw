@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
@@ -68,6 +69,7 @@ type DownloadOptions struct {
 	ExtraHeaders map[string]string
 	LoggerPrefix string
 	ProxyURL     string
+	TLSConfig    *tls.Config
 }
 
 // DownloadFile downloads a file from URL to a local temp directory.
@@ -107,7 +109,10 @@ func DownloadFile(urlStr, filename string, opts DownloadOptions) string {
 		req.Header.Set(key, value)
 	}
 
-	client := &http.Client{Timeout: opts.Timeout}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if opts.TLSConfig != nil {
+		transport.TLSClientConfig = opts.TLSConfig
+	}
 	if opts.ProxyURL != "" {
 		proxyURL, parseErr := url.Parse(opts.ProxyURL)
 		if parseErr != nil {
@@ -117,10 +122,9 @@ func DownloadFile(urlStr, filename string, opts DownloadOptions) string {
 			})
 			return ""
 		}
-		client.Transport = &http.Transport{
-			Proxy: http.ProxyURL(proxyURL),
-		}
+		transport.Proxy = http.ProxyURL(proxyURL)
 	}
+	client := &http.Client{Timeout: opts.Timeout, Transport: transport}
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.ErrorCF(opts.LoggerPrefix, "Failed to download file", map[string]any{
