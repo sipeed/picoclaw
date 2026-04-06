@@ -11,6 +11,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	ppid "github.com/sipeed/picoclaw/pkg/pid"
 )
 
 // registerPicoRoutes binds Pico Channel management endpoints to the ServeMux.
@@ -56,6 +57,12 @@ func (h *Handler) createWsProxy(origProtocol string, token string) *httputil.Rev
 func (h *Handler) handleWebSocketProxy() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gateway.mu.Lock()
+		// Re-read pidFile to detect if gateway restarted with new credentials.
+		// ReadPidFileWithCheck also validates the process is still alive.
+		if newPidData := ppid.ReadPidFileWithCheck(globalConfigDir()); newPidData != nil {
+			gateway.pidData = newPidData
+			refreshPicoTokensLocked(h.configPath)
+		}
 		ensurePicoTokenCachedLocked(h.configPath)
 		gatewayAvailable := gateway.pidData != nil
 		gateway.mu.Unlock()

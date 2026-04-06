@@ -11,6 +11,8 @@ services:
     # Uncomment to access host network; leave commented unless needed.
     #extra_hosts:
     #  - "host.docker.internal:host-gateway"
+    environment:
+      - PICOCLAW_HOME=/root/.picoclaw
     volumes:
       - ./data:/root/.picoclaw
     entrypoint: ["picoclaw", "agent"]
@@ -30,6 +32,8 @@ services:
     # Uncomment to access host network; leave commented unless needed.
     #extra_hosts:
     #  - "host.docker.internal:host-gateway"
+    environment:
+      - PICOCLAW_HOME=/root/.picoclaw
     volumes:
       - ./data:/root/.picoclaw
 
@@ -45,6 +49,7 @@ services:
       - launcher
     environment:
       - PICOCLAW_GATEWAY_HOST=0.0.0.0
+      - PICOCLAW_HOME=/root/.picoclaw
     ports:
       - "127.0.0.1:18800:18800"
       - "127.0.0.1:18790:18790"
