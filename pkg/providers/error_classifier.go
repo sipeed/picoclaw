@@ -84,6 +84,17 @@ var (
 		substr("messages.1.content.1.tool_use.id"),
 		substr("invalid request format"),
 	}
+	// modelNotFoundPatterns detects errors indicating the model is unavailable at
+	// the provider, which should trigger fallback to the next candidate.
+	modelNotFoundPatterns = []errorPattern{
+		substr("no endpoints found"),
+		substr("model not found"),
+		substr("does not exist"),
+		rxp(`model .* not available`),
+		substr("model_not_found"),
+		rxp(`\b404\b`),
+	}
+
 	contextOverflowPatterns = []errorPattern{
 		rxp(`context[_ ]?length[_ ]?exceeded`),
 		rxp(`context[_ ]?window[_ ]?exceeded`),
@@ -195,6 +206,8 @@ func classifyByStatus(status int) FailoverReason {
 		return FailoverRateLimit
 	case status == 400:
 		return FailoverFormat
+	case status == 404:
+		return FailoverModelNotFound
 	case transientStatusCodes[status]:
 		return FailoverTimeout
 	}
@@ -224,6 +237,9 @@ func classifyByMessage(msg string) FailoverReason {
 	}
 	if matchesAny(msg, contextOverflowPatterns) {
 		return FailoverContextOverflow
+	}
+	if matchesAny(msg, modelNotFoundPatterns) {
+		return FailoverModelNotFound
 	}
 	return ""
 }
