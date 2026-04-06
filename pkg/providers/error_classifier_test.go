@@ -39,6 +39,7 @@ func TestClassifyError_StatusCodes(t *testing.T) {
 		{401, FailoverAuth},
 		{403, FailoverAuth},
 		{402, FailoverBilling},
+		{404, FailoverTimeout},
 		{408, FailoverTimeout},
 		{429, FailoverRateLimit},
 		{400, FailoverFormat},
@@ -261,6 +262,22 @@ func TestClassifyError_UnknownError(t *testing.T) {
 	result := ClassifyError(err, "openai", "gpt-4")
 	if result != nil {
 		t.Errorf("expected nil for unknown error, got %+v", result)
+	}
+}
+
+func TestClassifyError_404TriggersFallback(t *testing.T) {
+	// OpenRouter returns 404 when model endpoint doesn't exist.
+	// This should be classified as FailoverTimeout (retriable) so fallback kicks in.
+	err := fmt.Errorf("fallback: unclassified error from openrouter/qwen3.6-plus-preview:free: API request failed:\n  Status: 404\n  Body:   {\"error\":{\"message\":\"No endpoints found for qwen3.6-plus-preview:free.\",\"code\":404}}")
+	result := ClassifyError(err, "openrouter", "qwen3.6-plus-preview:free")
+	if result == nil {
+		t.Fatal("expected non-nil for 404 error")
+	}
+	if result.Reason != FailoverTimeout {
+		t.Errorf("reason = %q, want %q (retriable so fallback is triggered)", result.Reason, FailoverTimeout)
+	}
+	if !result.IsRetriable() {
+		t.Errorf("expected 404 to be retriable")
 	}
 }
 
