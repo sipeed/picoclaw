@@ -2070,6 +2070,37 @@ turnLoop:
 				strings.Contains(errMsg, "prompt is too long") ||
 				strings.Contains(errMsg, "request too large"))
 
+			isServerError := !isTimeoutError && strings.Contains(strings.ToLower(errMsg), "status: 5")
+
+			if isServerError && retry < maxRetries {
+				backoff := time.Duration(retry+1) * 5 * time.Second
+				al.emitEvent(
+					EventKindLLMRetry,
+					ts.eventMeta("runTurn", "turn.llm.retry"),
+					LLMRetryPayload{
+						Attempt:    retry + 1,
+						MaxRetries: maxRetries,
+						Reason:     "server_error",
+						Error:      err.Error(),
+						Backoff:    backoff,
+					},
+				)
+				logger.WarnCF("agent", "Server error, retrying after backoff", map[string]any{
+					"error":   err.Error(),
+					"retry":   retry,
+					"backoff": backoff.String(),
+				})
+				if sleepErr := sleepWithContext(turnCtx, backoff); sleepErr != nil {
+					if ts.hardAbortRequested() {
+						turnStatus = TurnEndStatusAborted
+						return al.abortTurn(ts)
+					}
+					err = sleepErr
+					break
+				}
+				continue
+			}
+
 			if isTimeoutError && retry < maxRetries {
 				backoff := time.Duration(retry+1) * 5 * time.Second
 				al.emitEvent(
