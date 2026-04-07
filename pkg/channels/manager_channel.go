@@ -62,6 +62,13 @@ func hiddenValues(key string, value map[string]any, ch config.ChannelsConfig) {
 		value["app_secret"] = ch.Feishu.AppSecret.String()
 		value["encrypt_key"] = ch.Feishu.EncryptKey.String()
 		value["verification_token"] = ch.Feishu.VerificationToken.String()
+	case "teams_webhook":
+		// Expose webhook URLs for hash computation (they contain secrets)
+		webhooks := make(map[string]string)
+		for name, target := range ch.TeamsWebhook.Webhooks {
+			webhooks[name] = target.WebhookURL.String()
+		}
+		value["webhooks"] = webhooks
 	}
 }
 
@@ -165,5 +172,14 @@ func updateKeys(newcfg, old *config.ChannelsConfig) {
 		newcfg.Feishu.AppSecret = old.Feishu.AppSecret
 		newcfg.Feishu.EncryptKey = old.Feishu.EncryptKey
 		newcfg.Feishu.VerificationToken = old.Feishu.VerificationToken
+	}
+	if newcfg.TeamsWebhook.Enabled {
+		// Copy SecureString webhook URLs from old config
+		for name, oldTarget := range old.TeamsWebhook.Webhooks {
+			if newTarget, ok := newcfg.TeamsWebhook.Webhooks[name]; ok {
+				newTarget.WebhookURL = oldTarget.WebhookURL
+				newcfg.TeamsWebhook.Webhooks[name] = newTarget
+			}
+		}
 	}
 }
