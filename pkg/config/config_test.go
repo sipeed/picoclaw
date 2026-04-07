@@ -1084,27 +1084,18 @@ func TestLoadConfig_TelegramPlaceholderTextAcceptsSingleString(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
 	data := `{
-		"version": 1,
-		"agents": { "defaults": { "workspace": "", "model": "", "max_tokens": 0, "max_tool_iterations": 0 } },
-		"bindings": [],
-		"session": {},
+		"version": 2,
 		"channels": {
 			"telegram": {
 				"enabled": true,
-				"bot_token": "",
+				"token": "",
 				"allow_from": [],
 				"placeholder": {
 					"enabled": true,
 					"text": "Thinking..."
 				}
 			}
-		},
-		"model_list": [],
-		"gateway": {},
-		"tools": {},
-		"heartbeat": {},
-		"devices": {},
-		"voice": {}
+		}
 	}`
 	if err := os.WriteFile(cfgPath, []byte(data), 0o600); err != nil {
 		t.Fatalf("setup: %v", err)
@@ -1120,25 +1111,12 @@ func TestLoadConfig_TelegramPlaceholderTextAcceptsSingleString(t *testing.T) {
 }
 
 // TestLoadConfig_WarnsForPlaintextAPIKey verifies that LoadConfig resolves a plaintext
-// api_key into memory but does NOT rewrite the config file. File writes are the sole
+// api_keys entry into memory but does NOT rewrite the config file. File writes are the sole
 // responsibility of SaveConfig.
 func TestLoadConfig_WarnsForPlaintextAPIKey(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
-	const original = `{"version":1,"model_list":[{"model_name":"test","model":"openai/gpt-4","api_key":"sk-plaintext"}]}`
-	if err := os.WriteFile(cfgPath, []byte(original), 0o600); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-	secPath := filepath.Join(dir, SecurityConfigFile)
-	const securityConfig = `
-model_list:
-  test:0:
-    api_keys:
-      - "sk-plaintext"
-`
-	if err := os.WriteFile(secPath, []byte(securityConfig), 0o600); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	const original = `{"version":2,"model_list":[{"model_name":"test","model":"openai/gpt-4","api_keys":["sk-plaintext"]}]}`
 	if err := os.WriteFile(cfgPath, []byte(original), 0o600); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
