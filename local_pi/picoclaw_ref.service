@@ -1,0 +1,17 @@
+[Unit]
+Description=PicoClaw AI Agent Runtime
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tim
+WorkingDirectory=/home/tim/picoclaw-data
+Environment="PICOCLAW_CONFIG=/home/tim/picoclaw-data/config/config.json"
+Environment="OLLAMA_HOST=http://[IP_ADDRESS]"
+Environment="OPENAI_API_KEY=[ENCRYPTION_KEY]"
+ExecStart=/usr/local/bin/picoclaw gateway
+Restart=on-failure
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal

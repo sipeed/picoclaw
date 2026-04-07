@@ -1,0 +1,47 @@
+{
+  "version": 2,
+  "agents": {
+    "defaults": {
+      "workspace": "/home/tim/picoclaw-data/workspace",
+      "model_name": "gemini-3.1-flash-lite-preview",
+      "soul_file": "/home/tim/picoclaw-data/SOUL.md"
+    }
+  },
+  "model_list": [
+    {
+      "model_name": "gemma",
+      "model": "ollama/gemma3:4b",
+      "api_base": "http://vulcan:11434/v1"
+    },
+    {
+      "model_name": "gemini-2.5-flash",
+      "model": "openai/gemini-2.5-flash",
+      "api_keys": ["xxx-xxx"],
+      "api_base": "https://generativelanguage.googleapis.com/v1beta/openai"
+    },
+    {
+      "model_name": "gemini-3.1-flash-lite-preview",
+      "model": "openai/gemini-3.1-flash-lite-preview",
+      "api_keys": ["xxx-xxx"],
+      "api_base": "https://generativelanguage.googleapis.com/v1beta/openai"
+    },
+    {
+      "model_name": "claude",
+      "model": "openai/claude-3.5-sonnet",
+      "api_keys": ["sk-or-v1-xxx"],
+      "api_base": "https://openrouter.ai/api/v1"
+    }
+  ],
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "token": "234232:xxxx",
+      "allow_from": ["xxxxx"]
+    }
+  },
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 18790
+  }
+}
+
