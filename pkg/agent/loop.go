@@ -58,6 +58,7 @@ type AgentLoop struct {
 	hookRuntime    hookRuntime
 	steering       *steeringQueue
 	pendingSkills  sync.Map
+	agentOverrides sync.Map   // map[string]string (key: SessionKey, value: AgentID)
 	mu             sync.RWMutex
 
 	// Concurrent turn management (from HEAD)
@@ -1371,6 +1372,29 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		return al.processSystemMessage(ctx, msg)
 	}
 
+	content := strings.TrimSpace(msg.Content)
+	if strings.HasPrefix(content, "/agent ") {
+		newAgentName := strings.TrimSpace(strings.TrimPrefix(content, "/agent "))
+		if _, ok := al.GetRegistry().GetAgent(newAgentName); ok {
+			route, _, err := al.resolveMessageRoute(msg)
+			if err == nil {
+				sessionKey := resolveScopeKey(route, msg.SessionKey)
+				al.agentOverrides.Store(sessionKey, newAgentName)
+				
+				respMsg := "Switched active agent to: " + newAgentName
+				if al.channelManager != nil {
+					al.channelManager.SendPlaceholder(ctx, msg.Channel, msg.ChatID)
+				}
+				al.PublishResponseIfNeeded(ctx, msg.Channel, msg.ChatID, respMsg)
+				return respMsg, nil
+			}
+		} else {
+			respMsg := fmt.Sprintf("Agent '%s' not found in active config.", newAgentName)
+			al.PublishResponseIfNeeded(ctx, msg.Channel, msg.ChatID, respMsg)
+			return respMsg, nil
+		}
+	}
+
 	route, agent, routeErr := al.resolveMessageRoute(msg)
 	if routeErr != nil {
 		return "", routeErr
@@ -1386,6 +1410,17 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	// Resolve session key from route, while preserving explicit agent-scoped keys.
 	scopeKey := resolveScopeKey(route, msg.SessionKey)
 	sessionKey := scopeKey
+
+	// Hot-Swap Override Integration
+	if overrideRaw, ok := al.agentOverrides.Load(sessionKey); ok {
+		if overrideAgent, exists := al.GetRegistry().GetAgent(overrideRaw.(string)); exists {
+			agent = overrideAgent
+			logger.InfoCF("agent", "Applied agent override via hot-swap", map[string]any{
+				"session_key": sessionKey,
+				"overridden_agent": overrideRaw.(string),
+			})
+		}
+	}
 
 	logger.InfoCF("agent", "Routed message",
 		map[string]any{
