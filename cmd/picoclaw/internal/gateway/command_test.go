@@ -24,7 +24,8 @@ func TestNewGatewayCommand(t *testing.T) {
 	assert.Nil(t, cmd.PersistentPreRun)
 	assert.Nil(t, cmd.PersistentPostRun)
 
-	assert.False(t, cmd.HasSubCommands())
+	assert.True(t, cmd.HasSubCommands())
+	assert.NotNil(t, cmd.Commands())
 
 	assert.True(t, cmd.HasFlags())
 	assert.NotNil(t, cmd.Flags().Lookup("debug"))
