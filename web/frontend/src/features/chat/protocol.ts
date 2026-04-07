@@ -1,3 +1,5 @@
+import { toast } from "sonner"
+
 import { normalizeUnixTimestamp } from "@/features/chat/state"
 import { updateChatStore } from "@/store/chat"
 
@@ -67,10 +69,24 @@ export function handlePicoMessage(
       updateChatStore({ isTyping: false })
       break
 
-    case "error":
+    case "error": {
+      const requestId =
+        typeof payload.request_id === "string" ? payload.request_id : ""
+      const errorMessage =
+        typeof payload.message === "string" ? payload.message : ""
+
       console.error("Pico error:", payload)
-      updateChatStore({ isTyping: false })
+      if (errorMessage) {
+        toast.error(errorMessage)
+      }
+      updateChatStore((prev) => ({
+        messages: requestId
+          ? prev.messages.filter((msg) => msg.id !== requestId)
+          : prev.messages,
+        isTyping: false,
+      }))
       break
+    }
 
     case "pong":
       break

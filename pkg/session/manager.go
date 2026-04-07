@@ -145,6 +145,16 @@ func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 	session.Updated = time.Now()
 }
 
+func (sm *SessionManager) ListSessions() []string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	keys := make([]string, 0, len(sm.sessions))
+	for k := range sm.sessions {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 // sanitizeFilename converts a session key into a cross-platform safe filename.
 // Replaces ':' with '_' (session key separator) and '/' and '\' with '_' so
 // composite IDs (e.g. Telegram forum "chatID/threadID") do not create

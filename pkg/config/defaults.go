@@ -462,7 +462,8 @@ func DefaultConfig() *Config {
 					UseBM25:          true,
 					UseRegex:         false,
 				},
-				Servers: map[string]MCPServerConfig{},
+				MaxInlineTextChars: DefaultMCPMaxInlineTextChars,
+				Servers:            map[string]MCPServerConfig{},
 			},
 			AppendFile: ToolConfig{
 				Enabled: true,
@@ -487,6 +488,7 @@ func DefaultConfig() *Config {
 			},
 			ReadFile: ReadFileToolConfig{
 				Enabled:         true,
+				Mode:            ReadFileModeBytes,
 				MaxReadFileSize: 64 * 1024, // 64KB
 			},
 			Spawn: ToolConfig{

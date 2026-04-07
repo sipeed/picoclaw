@@ -39,10 +39,18 @@ func newMessage(msgType string, payload map[string]any) PicoMessage {
 	}
 }
 
-// newError creates an error PicoMessage.
-func newError(code, message string) PicoMessage {
-	return newMessage(TypeError, map[string]any{
+func newErrorWithPayload(code, message string, extra map[string]any) PicoMessage {
+	payload := map[string]any{
 		"code":    code,
 		"message": message,
-	})
+	}
+	for key, value := range extra {
+		payload[key] = value
+	}
+	return newMessage(TypeError, payload)
+}
+
+// newError creates an error PicoMessage.
+func newError(code, message string) PicoMessage {
+	return newErrorWithPayload(code, message, nil)
 }

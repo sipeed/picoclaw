@@ -9,6 +9,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -125,6 +126,21 @@ func main() {
 	} else {
 		fmt.Printf("%s", banner)
 	}
+
+	tzEnv := os.Getenv("TZ")
+	if tzEnv != "" {
+		fmt.Println("TZ environment:", tzEnv)
+		zoneinfoEnv := os.Getenv("ZONEINFO")
+		fmt.Println("ZONEINFO environment:", zoneinfoEnv)
+		loc, err := time.LoadLocation(tzEnv)
+		if err != nil {
+			fmt.Println("Error loading time zone:", err)
+		} else {
+			fmt.Println("Time zone loaded successfully:", loc)
+			time.Local = loc //nolint:gosmopolitan // We intentionally set local timezone from TZ env
+		}
+	}
+
 	cmd := NewPicoclawCommand()
 	last, err := cmd.ExecuteC()
 	if err != nil {

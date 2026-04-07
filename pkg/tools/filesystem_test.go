@@ -18,7 +18,7 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 	os.WriteFile(testFile, []byte("test content"), 0o644)
 
-	tool := NewReadFileTool("", false, MaxReadFileSize)
+	tool := NewReadFileBytesTool("", false, MaxReadFileSize)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": testFile,
@@ -45,7 +45,7 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 
 // TestFilesystemTool_ReadFile_NotFound verifies error handling for missing file
 func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
-	tool := NewReadFileTool("", false, MaxReadFileSize)
+	tool := NewReadFileBytesTool("", false, MaxReadFileSize)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": "/nonexistent_file_12345.txt",
@@ -59,8 +59,13 @@ func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
 	}
 
 	// Should contain error message
-	if !strings.Contains(result.ForLLM, "failed to open file") && !strings.Contains(result.ForUser, "failed to read") {
-		t.Errorf("Expected error message, got ForLLM: %s, ForUser: %s", result.ForLLM, result.ForUser)
+	if !strings.Contains(result.ForLLM, "failed to open file") &&
+		!strings.Contains(result.ForUser, "failed to open") {
+		t.Errorf(
+			"Expected error message, got ForLLM: %s, ForUser: %s",
+			result.ForLLM,
+			result.ForUser,
+		)
 	}
 }
 
@@ -78,7 +83,8 @@ func TestFilesystemTool_ReadFile_MissingPath(t *testing.T) {
 	}
 
 	// Should mention required parameter
-	if !strings.Contains(result.ForLLM, "path is required") && !strings.Contains(result.ForUser, "path is required") {
+	if !strings.Contains(result.ForLLM, "path is required") &&
+		!strings.Contains(result.ForUser, "path is required") {
 		t.Errorf("Expected 'path is required' message, got ForLLM: %s", result.ForLLM)
 	}
 }
@@ -120,6 +126,45 @@ func TestFilesystemTool_WriteFile_Success(t *testing.T) {
 	if string(content) != "hello world" {
 		t.Errorf("Expected file content 'hello world', got: %s", string(content))
 	}
+}
+
+// TestFilesystemTool_WriteFile_LiteralBackslashN verifies write_file keeps
+// literal backslash sequences unchanged when they are passed as plain text.
+func TestFilesystemTool_WriteFile_LiteralBackslashN(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "literal.txt")
+
+	tool := NewWriteFileTool("", false)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":    testFile,
+		"content": `aaa\naaa`,
+	})
+
+	assert.False(t, result.IsError, "expected success, got: %s", result.ForLLM)
+
+	data, err := os.ReadFile(testFile)
+	assert.NoError(t, err)
+	assert.Equal(t, `aaa\naaa`, string(data))
+}
+
+// TestFilesystemTool_WriteFile_PreservesCRLF verifies write_file does not
+// normalize line endings and writes CRLF bytes as provided.
+func TestFilesystemTool_WriteFile_PreservesCRLF(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "crlf.txt")
+	content := "line1\r\nline2\r\n"
+
+	tool := NewWriteFileTool("", false)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":    testFile,
+		"content": content,
+	})
+
+	assert.False(t, result.IsError, "expected success, got: %s", result.ForLLM)
+
+	data, err := os.ReadFile(testFile)
+	assert.NoError(t, err)
+	assert.Equal(t, []byte(content), data)
 }
 
 // TestFilesystemTool_WriteFile_CreateDir verifies directory creation
@@ -297,7 +342,12 @@ func TestFilesystemTool_WriteFile_OverwriteSandboxed(t *testing.T) {
 		"content":   "replaced in sandbox",
 		"overwrite": true,
 	})
-	assert.False(t, result.IsError, "expected success in sandbox mode with overwrite=true, got: %s", result.ForLLM)
+	assert.False(
+		t,
+		result.IsError,
+		"expected success in sandbox mode with overwrite=true, got: %s",
+		result.ForLLM,
+	)
 
 	data, err := os.ReadFile(filepath.Join(workspace, testFile))
 	assert.NoError(t, err)
@@ -325,7 +375,8 @@ func TestFilesystemTool_ListDir_Success(t *testing.T) {
 	}
 
 	// Should list files and directories
-	if !strings.Contains(result.ForLLM, "file1.txt") || !strings.Contains(result.ForLLM, "file2.txt") {
+	if !strings.Contains(result.ForLLM, "file1.txt") ||
+		!strings.Contains(result.ForLLM, "file2.txt") {
 		t.Errorf("Expected files in listing, got: %s", result.ForLLM)
 	}
 	if !strings.Contains(result.ForLLM, "subdir") {
@@ -349,8 +400,13 @@ func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
 	}
 
 	// Should contain error message
-	if !strings.Contains(result.ForLLM, "failed to read") && !strings.Contains(result.ForUser, "failed to read") {
-		t.Errorf("Expected error message, got ForLLM: %s, ForUser: %s", result.ForLLM, result.ForUser)
+	if !strings.Contains(result.ForLLM, "failed to read") &&
+		!strings.Contains(result.ForUser, "failed to read") {
+		t.Errorf(
+			"Expected error message, got ForLLM: %s, ForUser: %s",
+			result.ForLLM,
+			result.ForUser,
+		)
 	}
 }
 
@@ -397,7 +453,8 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 	// os.Root might return different errors depending on platform/implementation
 	// but it definitely should error.
 	// Our wrapper returns "access denied or file not found"
-	if !strings.Contains(result.ForLLM, "access denied") && !strings.Contains(result.ForLLM, "file not found") &&
+	if !strings.Contains(result.ForLLM, "access denied") &&
+		!strings.Contains(result.ForLLM, "file not found") &&
 		!strings.Contains(result.ForLLM, "no such file") {
 		t.Fatalf("expected symlink escape error, got: %s", result.ForLLM)
 	}
@@ -416,10 +473,20 @@ func TestFilesystemTool_EmptyWorkspace_AccessDenied(t *testing.T) {
 	})
 
 	// We EXPECT IsError=true (access blocked due to empty workspace)
-	assert.True(t, result.IsError, "Security Regression: Empty workspace allowed access! content: %s", result.ForLLM)
+	assert.True(
+		t,
+		result.IsError,
+		"Security Regression: Empty workspace allowed access! content: %s",
+		result.ForLLM,
+	)
 
 	// Verify it failed for the right reason
-	assert.Contains(t, result.ForLLM, "workspace is not defined", "Expected 'workspace is not defined' error")
+	assert.Contains(
+		t,
+		result.ForLLM,
+		"workspace is not defined",
+		"Expected 'workspace is not defined' error",
+	)
 }
 
 // TestRootMkdirAll verifies that root.MkdirAll (used by atomicWriteFileInRoot) handles all cases:
@@ -653,7 +720,10 @@ func TestWhitelistFs_BlocksSymlinkEscapeInAllowedDir(t *testing.T) {
 	patterns := []*regexp.Regexp{regexp.MustCompile(`^` + regexp.QuoteMeta(allowedDir))}
 	tool := NewReadFileTool(workspace, true, MaxReadFileSize, patterns)
 
-	result := tool.Execute(context.Background(), map[string]any{"path": filepath.Join(linkPath, "secret.txt")})
+	result := tool.Execute(
+		context.Background(),
+		map[string]any{"path": filepath.Join(linkPath, "secret.txt")},
+	)
 	if !result.IsError {
 		t.Fatalf("expected symlink escape from allowed dir to be blocked, got: %s", result.ForLLM)
 	}
@@ -726,7 +796,6 @@ func TestReadFileTool_ChunkedReading(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "pagination_test.txt")
 
-	// Create a test file with exactly 26 bytes of content
 	fullContent := "abcdefghijklmnopqrstuvwxyz"
 	err := os.WriteFile(testFile, []byte(fullContent), 0o644)
 	if err != nil {
@@ -748,15 +817,12 @@ func TestReadFileTool_ChunkedReading(t *testing.T) {
 		t.Fatalf("Chunk 1 failed: %s", result1.ForLLM)
 	}
 
-	// Expect the first 10 characters
 	if !strings.Contains(result1.ForLLM, "abcdefghij") {
 		t.Errorf("Chunk 1 should contain 'abcdefghij', got: %s", result1.ForLLM)
 	}
-	// Expect the header to indicate the file is truncated
 	if !strings.Contains(result1.ForLLM, "[TRUNCATED") {
 		t.Errorf("Chunk 1 header should indicate truncation, got: %s", result1.ForLLM)
 	}
-	// Expect the header to suggest the next offset (10)
 	if !strings.Contains(result1.ForLLM, "offset=10") {
 		t.Errorf("Chunk 1 header should suggest next offset=10, got: %s", result1.ForLLM)
 	}
@@ -773,17 +839,14 @@ func TestReadFileTool_ChunkedReading(t *testing.T) {
 		t.Fatalf("Chunk 2 failed: %s", result2.ForLLM)
 	}
 
-	// Expect the next 10 characters
 	if !strings.Contains(result2.ForLLM, "klmnopqrst") {
 		t.Errorf("Chunk 2 should contain 'klmnopqrst', got: %s", result2.ForLLM)
 	}
-	// Expect the header to suggest the next offset (20)
 	if !strings.Contains(result2.ForLLM, "offset=20") {
 		t.Errorf("Chunk 2 header should suggest next offset=20, got: %s", result2.ForLLM)
 	}
 
 	// Step 3: Read the final chunk (remaining 6 bytes) ---
-	// We ask for 10 bytes, but only 6 are left in the file
 	args3 := map[string]any{
 		"path":   testFile,
 		"offset": 20,
@@ -795,16 +858,12 @@ func TestReadFileTool_ChunkedReading(t *testing.T) {
 		t.Fatalf("Chunk 3 failed: %s", result3.ForLLM)
 	}
 
-	// Expect the last 6 characters
 	if !strings.Contains(result3.ForLLM, "uvwxyz") {
 		t.Errorf("Chunk 3 should contain 'uvwxyz', got: %s", result3.ForLLM)
 	}
-	// Expect the header to indicate the end of the file
 	if !strings.Contains(result3.ForLLM, "[END OF FILE") {
 		t.Errorf("Chunk 3 header should indicate end of file, got: %s", result3.ForLLM)
 	}
-
-	// Ensure no TRUNCATED message is present in the final chunk
 	if strings.Contains(result3.ForLLM, "[TRUNCATED") {
 		t.Errorf("Chunk 3 header should NOT indicate truncation, got: %s", result3.ForLLM)
 	}
@@ -816,7 +875,6 @@ func TestReadFileTool_OffsetBeyondEOF(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "short.txt")
 
-	// create a file of only 5 bytes
 	err := os.WriteFile(testFile, []byte("12345"), 0o644)
 	if err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
@@ -827,19 +885,393 @@ func TestReadFileTool_OffsetBeyondEOF(t *testing.T) {
 
 	args := map[string]any{
 		"path":   testFile,
-		"offset": int64(100), // Offset beyond the end of the file
+		"offset": int64(100),
 	}
 
 	result := tool.Execute(ctx, args)
 
-	// It should not be classified as a tool execution error
 	if result.IsError {
 		t.Errorf("A mistake was not expected, obtained IsError=true: %s", result.ForLLM)
 	}
 
-	// Must return EXACTLY the string provided in the code
 	expectedMsg := "[END OF FILE - no content at this offset]"
 	if result.ForLLM != expectedMsg {
 		t.Errorf("The message %q was expected, obtained: %q", expectedMsg, result.ForLLM)
+	}
+}
+
+func TestReadFileLinesTool_ChunkedReading(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "pagination_lines.txt")
+
+	fullContent := strings.Join([]string{
+		"line 1",
+		"line 2",
+		"line 3",
+		"line 4",
+		"line 5",
+		"line 6",
+	}, "\n") + "\n"
+	err := os.WriteFile(testFile, []byte(fullContent), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+
+	result1 := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 1,
+		"max_lines":  2,
+	})
+	if result1.IsError {
+		t.Fatalf("Chunk 1 failed: %s", result1.ForLLM)
+	}
+	if !strings.Contains(result1.ForLLM, "1|line 1\n2|line 2\n") {
+		t.Fatalf("expected first two lines, got: %s", result1.ForLLM)
+	}
+	if !strings.Contains(result1.ForLLM, "lines 1-2") {
+		t.Fatalf("expected line range 1-2, got: %s", result1.ForLLM)
+	}
+	if !strings.Contains(result1.ForLLM, "start_line=3") {
+		t.Fatalf("expected continuation start_line=3, got: %s", result1.ForLLM)
+	}
+	if !strings.Contains(result1.ForLLM, "max_lines=2") {
+		t.Fatalf("expected continuation max_lines=2, got: %s", result1.ForLLM)
+	}
+
+	result2 := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 3,
+		"max_lines":  2,
+	})
+	if result2.IsError {
+		t.Fatalf("Chunk 2 failed: %s", result2.ForLLM)
+	}
+	if !strings.Contains(result2.ForLLM, "3|line 3\n4|line 4\n") {
+		t.Fatalf("expected middle chunk, got: %s", result2.ForLLM)
+	}
+	if !strings.Contains(result2.ForLLM, "start_line=5") {
+		t.Fatalf("expected continuation start_line=5, got: %s", result2.ForLLM)
+	}
+	if !strings.Contains(result2.ForLLM, "max_lines=2") {
+		t.Fatalf("expected continuation max_lines=2, got: %s", result2.ForLLM)
+	}
+
+	result3 := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 5,
+		"max_lines":  2,
+	})
+	if result3.IsError {
+		t.Fatalf("Chunk 3 failed: %s", result3.ForLLM)
+	}
+	if !strings.Contains(result3.ForLLM, "5|line 5\n6|line 6\n") {
+		t.Fatalf("expected final chunk, got: %s", result3.ForLLM)
+	}
+	if !strings.Contains(result3.ForLLM, "[END OF FILE") {
+		t.Fatalf("expected EOF marker, got: %s", result3.ForLLM)
+	}
+}
+
+func TestReadFileLinesTool_DefaultOffsetAndRemainingLines(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "default_lines.txt")
+
+	err := os.WriteFile(testFile, []byte("line 1\nline 2\nline 3\n"), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 1,
+	})
+	if result.IsError {
+		t.Fatalf("Execute() error = %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "1|line 1\n2|line 2\n3|line 3\n") {
+		t.Fatalf("expected remaining lines by default, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "lines 1-3") {
+		t.Fatalf("expected line range 1-3, got: %s", result.ForLLM)
+	}
+}
+
+func TestReadFileTool_LegacyLengthUsesByteModeForText(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "legacy_bytes.txt")
+
+	err := os.WriteFile(testFile, []byte("abcdefghijklmnopqrstuvwxyz"), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileBytesTool(tmpDir, false, MaxReadFileSize)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":   testFile,
+		"offset": 10,
+		"length": 5,
+	})
+	if result.IsError {
+		t.Fatalf("Execute() error = %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "read: bytes 10-14") {
+		t.Fatalf("expected byte-based header, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "klmno") {
+		t.Fatalf("expected byte chunk content, got: %s", result.ForLLM)
+	}
+	if strings.Contains(result.ForLLM, "lines ") {
+		t.Fatalf("expected legacy byte mode, got line-based header: %s", result.ForLLM)
+	}
+}
+
+func TestReadFileLinesTool_OffsetBeyondEOF(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "short_lines.txt")
+
+	err := os.WriteFile(testFile, []byte("line 1\nline 2\n"), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": int64(100),
+	})
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+	if result.ForLLM != "[END OF FILE - no content at or after start_line=100]" {
+		t.Fatalf("unexpected EOF message: %q", result.ForLLM)
+	}
+}
+
+func TestReadFileLinesTool_RegistryValidationSupportsMaxLinesAndRejectsLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "registry_lines.txt")
+
+	err := os.WriteFile(testFile, []byte("line 1\nline 2\nline 3\n"), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	reg := NewToolRegistry()
+	reg.Register(NewReadFileLinesTool(tmpDir, false, MaxReadFileSize))
+
+	result := reg.Execute(context.Background(), "read_file", map[string]any{
+		"path":       testFile,
+		"start_line": 1,
+		"max_lines":  1,
+	})
+	if result.IsError {
+		t.Fatalf("expected max_lines to pass registry validation, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "1|line 1\n") {
+		t.Fatalf("expected first line via max_lines, got: %s", result.ForLLM)
+	}
+
+	result = reg.Execute(context.Background(), "read_file", map[string]any{
+		"path":       testFile,
+		"start_line": 2,
+		"limit":      1,
+	})
+	if !result.IsError {
+		t.Fatalf("expected limit to be rejected, got success: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "unexpected property \"limit\"") {
+		t.Fatalf("expected registry validation error for limit, got: %s", result.ForLLM)
+	}
+}
+
+func TestReadFileLinesTool_RejectsOffset(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "legacy_offset.txt")
+
+	err := os.WriteFile(testFile, []byte("line 1\nline 2\n"), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 1,
+		"offset":     1,
+	})
+	if !result.IsError {
+		t.Fatalf("expected offset to be rejected, got success: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "offset is not supported in line mode; use start_line") {
+		t.Fatalf("unexpected error for offset in line mode: %s", result.ForLLM)
+	}
+}
+
+func TestReadFileLinesTool_RejectsLength(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "legacy_length.txt")
+
+	err := os.WriteFile(testFile, []byte("line 1\nline 2\n"), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 1,
+		"length":     1,
+	})
+	if !result.IsError {
+		t.Fatalf("expected length to be rejected, got success: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "length is not supported in line mode; use max_lines") {
+		t.Fatalf("unexpected error for length in line mode: %s", result.ForLLM)
+	}
+}
+
+func TestReadFileLinesTool_RejectsLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "legacy_limit.txt")
+
+	err := os.WriteFile(testFile, []byte("line 1\nline 2\n"), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 1,
+		"limit":      1,
+	})
+	if !result.IsError {
+		t.Fatalf("expected limit to be rejected, got success: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "limit is not supported in line mode; use max_lines") {
+		t.Fatalf("unexpected error for limit in line mode: %s", result.ForLLM)
+	}
+}
+
+func TestReadFileLinesTool_BinaryFileRejected(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "binary.dat")
+
+	data := []byte{0x00, 0x01, 'A', 'B', 'C', 'D', 'E', 'F'}
+	err := os.WriteFile(testFile, data, 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 1,
+	})
+	if !result.IsError {
+		t.Fatalf("expected binary file rejection in line mode, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "switch read_file mode to 'bytes'") {
+		t.Fatalf("expected binary file rejection message, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "mode to 'bytes'") {
+		t.Fatalf("expected suggestion to switch read_file mode, got: %s", result.ForLLM)
+	}
+}
+
+func TestReadFileLinesTool_TruncatesSingleLongLineAtByteBudget(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "long_line.txt")
+
+	content := "first line\n" + strings.Repeat("x", 70*1024) + "\n"
+	err := os.WriteFile(testFile, []byte(content), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 1,
+	})
+	if result.IsError {
+		t.Fatalf("Execute() error = %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "was cut mid-line") {
+		t.Fatalf("expected explicit mid-line truncation warning, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "1|first line\n") {
+		t.Fatalf("expected the first line with line prefix, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "2|") {
+		t.Fatalf("expected line prefix for the truncated line, got: %s", result.ForLLM)
+	}
+}
+
+func TestReadFileLinesTool_NoTrailingNewline(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "no_trailing_newline.txt")
+
+	err := os.WriteFile(testFile, []byte("line 1\nline 2"), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileLinesTool(tmpDir, false, MaxReadFileSize)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 1,
+	})
+	if result.IsError {
+		t.Fatalf("Execute() error = %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "1|line 1\n2|line 2") {
+		t.Fatalf(
+			"expected final line without trailing newline to be preserved, got: %s",
+			result.ForLLM,
+		)
+	}
+	if !strings.Contains(result.ForLLM, "[END OF FILE - no further content.]") {
+		t.Fatalf("expected EOF marker, got: %s", result.ForLLM)
+	}
+}
+
+func TestReadFileLinesTool_ExactByteBudgetBoundaryIncludesPrefix(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "exact_boundary.txt")
+
+	err := os.WriteFile(testFile, []byte("1234567\nsecond line\n"), 0o644)
+	if err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	tool := NewReadFileLinesTool(tmpDir, false, 10)
+	result := tool.Execute(context.Background(), map[string]any{
+		"path":       testFile,
+		"start_line": 1,
+	})
+	if result.IsError {
+		t.Fatalf("Execute() error = %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "1|1234567\n") {
+		t.Fatalf(
+			"expected first line to fit exactly in the byte budget with its prefix, got: %s",
+			result.ForLLM,
+		)
+	}
+	if strings.Contains(result.ForLLM, "2|") {
+		t.Fatalf(
+			"expected second line to be excluded once the exact output byte budget was reached, got: %s",
+			result.ForLLM,
+		)
+	}
+	if !strings.Contains(result.ForLLM, "file_bytes: 8 | output_bytes: 10") {
+		t.Fatalf("expected separate file/output byte counters, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "start_line=2") {
+		t.Fatalf("expected continuation at line 2, got: %s", result.ForLLM)
 	}
 }

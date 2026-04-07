@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
+)
 
 func TestShouldEnableLauncherFileLogging(t *testing.T) {
 	tests := []struct {
@@ -25,6 +29,40 @@ func TestShouldEnableLauncherFileLogging(t *testing.T) {
 					got,
 					tt.want,
 				)
+			}
+		})
+	}
+}
+
+func TestDashboardTokenConfigHelpPath(t *testing.T) {
+	const launcherPath = "/tmp/launcher-config.json"
+
+	tests := []struct {
+		name   string
+		source launcherconfig.DashboardTokenSource
+		want   string
+	}{
+		{
+			name:   "env token does not expose config path",
+			source: launcherconfig.DashboardTokenSourceEnv,
+			want:   "",
+		},
+		{
+			name:   "config token exposes config path",
+			source: launcherconfig.DashboardTokenSourceConfig,
+			want:   launcherPath,
+		},
+		{
+			name:   "random token does not expose config path",
+			source: launcherconfig.DashboardTokenSourceRandom,
+			want:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := dashboardTokenConfigHelpPath(tt.source, launcherPath); got != tt.want {
+				t.Fatalf("dashboardTokenConfigHelpPath(%q, %q) = %q, want %q", tt.source, launcherPath, got, tt.want)
 			}
 		})
 	}

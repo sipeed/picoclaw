@@ -5,6 +5,7 @@ BINARY_NAME=picoclaw
 BUILD_DIR=build
 CMD_DIR=cmd/$(BINARY_NAME)
 MAIN_GO=$(CMD_DIR)/main.go
+EXT=
 
 # Version
 VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -69,9 +70,11 @@ WORKSPACE_DIR?=$(PICOCLAW_HOME)/workspace
 WORKSPACE_SKILLS_DIR=$(WORKSPACE_DIR)/skills
 BUILTIN_SKILLS_DIR=$(CURDIR)/skills
 
+LNCMD=ln -sf
+
 # OS detection
-UNAME_S:=$(shell uname -s)
-UNAME_M:=$(shell uname -m)
+UNAME_S?=$(shell uname -s)
+UNAME_M?=$(shell uname -m)
 
 # Platform-specific settings
 ifeq ($(UNAME_S),Linux)
@@ -103,7 +106,20 @@ else ifeq ($(UNAME_S),Darwin)
 	endif
 else
 	PLATFORM=$(UNAME_S)
-	ARCH=$(UNAME_M)
+	ifeq ($(UNAME_M),x86_64)
+		ARCH?=amd64
+	else
+	    ARCH?=$(UNAME_M)
+	endif
+	# Detect Windows (Git Bash / MSYS2)
+    IS_WINDOWS:=$(if $(findstring MINGW,$(UNAME_S)),yes,$(if $(findstring MSYS,$(UNAME_S)),yes,$(if $(findstring CYGWIN,$(UNAME_S)),yes,no)))
+	ifeq ($(IS_WINDOWS),yes)
+	    EXT=.exe
+	    LNCMD=cp
+	else ifeq ($(UNAME_S),windows) # failsafe for force windows build in other OS using UNAME_S=windows
+		EXT=.exe
+	endif
+
 endif
 
 BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)
@@ -120,23 +136,23 @@ generate:
 
 ## build: Build the picoclaw binary for current platform
 build: generate
-	@echo "Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH)..."
+	@echo "Building $(BINARY_NAME)$(EXT) for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
-	@GOARCH=${ARCH} $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_PATH) ./$(CMD_DIR)
-	@echo "Build complete: $(BINARY_PATH)"
-	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/$(BINARY_NAME)
+	@GOARCH=${ARCH} $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_PATH)$(EXT) ./$(CMD_DIR)
+	@echo "Build complete: $(BINARY_PATH)$(EXT)"
+	@$(LNCMD) $(BINARY_NAME)-$(PLATFORM)-$(ARCH)$(EXT) $(BUILD_DIR)/$(BINARY_NAME)$(EXT)
 
 ## build-launcher: Build the picoclaw-launcher (web console) binary
 build-launcher:
 	@echo "Building picoclaw-launcher for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
 	@GOARCH=${ARCH} $(MAKE) -C web build \
-		OUTPUT="$(CURDIR)/$(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH)" \
+		OUTPUT="$(CURDIR)/$(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXT)" \
 		WEB_GO='$(WEB_GO)' \
 		GO_BUILD_TAGS='$(GO_BUILD_TAGS)' \
 		LDFLAGS='$(LDFLAGS)'
-	@ln -sf picoclaw-launcher-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/picoclaw-launcher
-	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher"
+	@$(LNCMD) picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXT) $(BUILD_DIR)/picoclaw-launcher$(EXT)
+	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher$(EXT)"
 
 build-launcher-frontend:
 	@$(MAKE) -C web build-frontend
@@ -332,6 +348,25 @@ build-macos-app:build-launcher
 	fi
 	@./scripts/build-macos-app.sh $(PLATFORM)-$(ARCH)
 	@echo "macOS .app bundle created: $(BUILD_DIR)/PicoClaw.app"
+
+## mem: Build membench, download LOCOMO data (if needed), run benchmark, and show results
+mem:
+	@echo "Building membench..."
+	@mkdir -p $(BUILD_DIR)
+	@$(GO) build -o $(BUILD_DIR)/membench ./cmd/membench
+	@echo "Build complete: $(BUILD_DIR)/membench"
+	@if [ ! -f $(BUILD_DIR)/memdata/locomo10.json ]; then \
+		echo "Downloading LOCOMO dataset..."; \
+		mkdir -p $(BUILD_DIR)/memdata; \
+		curl -sfL "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json" \
+			-o $(BUILD_DIR)/memdata/locomo10.json && [ -s $(BUILD_DIR)/memdata/locomo10.json ] || { echo "Error: LOCOMO download failed"; exit 1; }; \
+		echo "Download complete"; \
+	else \
+		echo "LOCOMO dataset already exists, skipping download"; \
+	fi
+	@echo "Running benchmark..."
+	@rm -rf $(BUILD_DIR)/memout
+	@$(BUILD_DIR)/membench run --data $(BUILD_DIR)/memdata --out $(BUILD_DIR)/memout --budget 4000
 
 ## help: Show this help message
 help:

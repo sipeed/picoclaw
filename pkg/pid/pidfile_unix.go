@@ -3,6 +3,7 @@
 package pid
 
 import (
+	"errors"
 	"os"
 	"syscall"
 )
@@ -18,5 +19,11 @@ func isProcessRunning(pid int) bool {
 		return false
 	}
 	// Signal(nil) does not kill the process but checks existence on Unix.
-	return p.Signal(syscall.Signal(0)) == nil
+	err = p.Signal(syscall.Signal(0))
+	if err == nil {
+		return true
+	}
+	var errno syscall.Errno
+	// EPERM means the process exists but we are not allowed to signal it.
+	return errors.As(err, &errno) && errno == syscall.EPERM
 }

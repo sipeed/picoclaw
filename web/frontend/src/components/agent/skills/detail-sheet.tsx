@@ -23,10 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
 import { OriginBadge } from "./origin-badge"
-import {
-  getOriginLabel,
-  getSkillOriginKind,
-} from "./origin-utils"
+import { getOriginLabel, getSkillOriginKind } from "./origin-utils"
 import type { SkillDetailView } from "./types"
 
 const DETAIL_VIEWS = [
@@ -86,7 +83,8 @@ export function DetailSheet({
             </div>
             <div className="min-w-0 flex-1 space-y-1 text-left">
               <SheetTitle className="truncate text-xl font-bold tracking-tight">
-                {activeSkillDetail?.name || t("pages.agent.skills.viewer_title")}
+                {activeSkillDetail?.name ||
+                  t("pages.agent.skills.viewer_title")}
               </SheetTitle>
               <SheetDescription className="line-clamp-2">
                 {activeSkillDetail?.description ||

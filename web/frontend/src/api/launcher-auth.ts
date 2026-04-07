@@ -17,6 +17,7 @@ export async function postLauncherDashboardLogin(
 export type LauncherAuthTokenHelp = {
   env_var_name: string
   log_file?: string
+  config_file?: string
   tray_copy_menu: boolean
   console_stdout: boolean
 }

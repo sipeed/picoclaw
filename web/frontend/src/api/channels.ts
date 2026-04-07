@@ -1,5 +1,3 @@
-// API client for channels navigation and channel-specific config flows.
-
 import { launcherFetch } from "@/api/http"
 
 export type ChannelConfig = Record<string, unknown>
@@ -8,6 +6,13 @@ export type AppConfig = Record<string, unknown>
 export interface SupportedChannel {
   name: string
   display_name?: string
+  config_key: string
+  variant?: string
+}
+
+export interface ChannelConfigResponse {
+  config: ChannelConfig
+  configured_secrets: string[]
   config_key: string
   variant?: string
 }
@@ -52,6 +57,14 @@ export async function getChannelsCatalog(): Promise<ChannelsCatalogResponse> {
 
 export async function getAppConfig(): Promise<AppConfig> {
   return request<AppConfig>("/api/config")
+}
+
+export async function getChannelConfig(
+  channelName: string,
+): Promise<ChannelConfigResponse> {
+  return request<ChannelConfigResponse>(
+    `/api/channels/${encodeURIComponent(channelName)}/config`,
+  )
 }
 
 export async function patchAppConfig(

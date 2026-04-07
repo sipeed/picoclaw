@@ -303,7 +303,25 @@ For detailed TUI documentation, see [docs.picoclaw.io](https://docs.picoclaw.io)
 
 Give your decade-old phone a second life! Turn it into a smart AI Assistant with PicoClaw.
 
-**Option 1: Termux (available now)**
+**Option 1: APK Install**
+
+Preview:
+
+<table>
+  <tr>
+    <td><img src="assets/fui_main_page.jpg" width="200"></td>
+    <td><img src="assets/fui_web_page.jpg" width="200"></td>
+    <td><img src="assets/fui_log_page.jpg" width="200"></td>
+    <td><img src="assets/fui_setting_page.jpg" width="200"></td>
+  </tr>
+</table>
+
+Download the APK from [picoclaw.io](https://picoclaw.io/download/) and install directly. No Termux required!
+
+**Option 2: Termux**
+
+<details>
+<summary><b>Terminal Launcher (for resource-constrained environments)</b></summary>
 
 1. Install [Termux](https://github.com/termux/termux-app) (download from [GitHub Releases](https://github.com/termux/termux-app/releases), or search in F-Droid / Google Play)
 2. Run the following commands:
@@ -319,13 +337,6 @@ termux-chroot ./picoclaw onboard   # chroot provides a standard Linux filesystem
 Then follow the Terminal Launcher section below to complete configuration.
 
 <img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
-
-**Option 2: APK Install**
-
-Download the APK from [picoclaw.io](https://picoclaw.io/download/) and install directly. No Termux required!
-
-<details>
-<summary><b>Terminal Launcher (for resource-constrained environments)</b></summary>
 
 For minimal environments where only the `picoclaw` core binary is available (no Launcher UI), you can configure everything via the command line and a JSON config file.
 
@@ -443,7 +454,7 @@ For full provider configuration details, see [Providers & Models](docs/providers
 
 ## 💬 Channels (Chat Apps)
 
-Talk to your PicoClaw through 17+ messaging platforms:
+Talk to your PicoClaw through 18+ messaging platforms:
 
 | Channel | Setup | Protocol | Docs |
 |---------|-------|----------|------|
@@ -458,6 +469,7 @@ Talk to your PicoClaw through 17+ messaging platforms:
 | **Feishu / Lark** | Medium (App ID + Secret) | WebSocket/SDK | [Guide](docs/channels/feishu/README.md) |
 | **LINE** | Medium (credentials + webhook) | Webhook | [Guide](docs/channels/line/README.md) |
 | **WeCom** | Easy (QR login or manual) | WebSocket | [Guide](docs/channels/wecom/README.md) |
+| **VK** | Easy (group token) | Long Poll | [Guide](docs/channels/vk/README.md) |
 | **IRC** | Medium (server + nick) | IRC protocol | [Guide](docs/chat-apps.md#irc) |
 | **OneBot** | Medium (WebSocket URL) | OneBot v11 | [Guide](docs/channels/onebot/README.md) |
 | **MaixCam** | Easy (enable) | TCP socket | [Guide](docs/channels/maixcam/README.md) |
