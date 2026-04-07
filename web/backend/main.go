@@ -251,6 +251,7 @@ func main() {
 		DashboardToken: dashboardToken,
 		SessionCookie:  dashboardSessionCookie,
 		PasswordStore:  authStore,
+		StoreError:     authStoreErr,
 	})
 
 	// API Routes (e.g. /api/status)

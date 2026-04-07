@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 
 	"golang.org/x/crypto/bcrypt"
@@ -15,13 +16,20 @@ import (
 
 // Store holds a handle to the SQLite database that stores the bcrypt hash.
 type Store struct {
-	db *sql.DB
+	db   *sql.DB
+	path string // absolute path to the SQLite file
 }
 
 // New opens (or creates) the database inside dir, using the package's
 // canonical filename. This is the preferred constructor for most callers.
+// Any error is wrapped with the resolved path so callers get actionable output.
 func New(dir string) (*Store, error) {
-	return Open(filepath.Join(dir, DBFilename))
+	path := filepath.Join(dir, DBFilename)
+	s, err := Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open %q: %w", path, err)
+	}
+	return s, nil
 }
 
 // Open opens (or creates) the SQLite database at path and migrates the schema.
@@ -34,11 +42,14 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, path: path}, nil
 }
 
 // Close releases the database handle.
 func (s *Store) Close() error { return s.db.Close() }
+
+// DBPath returns the absolute path to the SQLite database file.
+func (s *Store) DBPath() string { return s.path }
 
 // IsInitialized reports whether a password hash has been stored.
 func (s *Store) IsInitialized(ctx context.Context) (bool, error) {

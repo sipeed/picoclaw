@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -31,6 +32,10 @@ type LauncherAuthRouteOpts struct {
 	// initialized, web-form login verifies against the stored hash instead of
 	// the plaintext DashboardToken.
 	PasswordStore PasswordStore
+	// StoreError holds the error returned when opening the password store. When
+	// non-nil and PasswordStore is nil, the auth endpoints surface a recovery
+	// message instead of an opaque 501/503.
+	StoreError error
 }
 
 type launcherAuthLoginBody struct {
@@ -58,6 +63,7 @@ func RegisterLauncherAuthRoutes(mux *http.ServeMux, opts LauncherAuthRouteOpts) 
 		sessionCookie: opts.SessionCookie,
 		secureCookie:  secure,
 		store:         opts.PasswordStore,
+		storeErr:      opts.StoreError,
 		loginLimit:    newLoginRateLimiter(),
 	}
 	mux.HandleFunc("POST /api/auth/login", h.handleLogin)
@@ -71,16 +77,27 @@ type launcherAuthHandlers struct {
 	sessionCookie string
 	secureCookie  func(*http.Request) bool
 	store         PasswordStore
+	storeErr      error // set when the store failed to open; drives recovery messages
 	loginLimit    *loginRateLimiter
 }
 
 // isStoreInitialized safely queries the store.
-func (h *launcherAuthHandlers) isStoreInitialized(ctx context.Context) bool {
+// Returns (false, nil) when no store is configured (storeErr also nil).
+// Returns (false, err) on store errors — callers must treat this as a 5xx, not as
+// "uninitialized", to keep auth fail-closed.
+// Exception: handleLogin swallows storeErr and falls back to token auth so
+// that a corrupt DB does not lock out all access.
+func (h *launcherAuthHandlers) isStoreInitialized(ctx context.Context) (bool, error) {
 	if h.store == nil {
-		return false
+		if h.storeErr != nil {
+			return false, fmt.Errorf(
+				"password store unavailable (%w); "+
+					"to recover, stop the application, delete the database file and restart ",
+				h.storeErr)
+		}
+		return false, nil
 	}
-	ok, err := h.store.IsInitialized(ctx)
-	return err == nil && ok
+	return h.store.IsInitialized(ctx)
 }
 
 func (h *launcherAuthHandlers) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -100,13 +117,25 @@ func (h *launcherAuthHandlers) handleLogin(w http.ResponseWriter, r *http.Reques
 	in := strings.TrimSpace(body.Password)
 	var ok bool
 
-	if h.isStoreInitialized(r.Context()) {
+	initialized, initErr := h.isStoreInitialized(r.Context())
+	if initErr != nil {
+		if h.storeErr != nil {
+			// Store failed to open at startup — token login remains available.
+			initialized = false
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+			writeErrorf(w, "%v", initErr)
+			return
+		}
+	}
+
+	if initialized {
 		// Bcrypt path: verify against the stored hash.
 		var err error
 		ok, err = h.store.VerifyPassword(r.Context(), in)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte(`{"error":"internal error"}`))
+			writeErrorf(w, "password verification failed: %v", err)
 			return
 		}
 	} else {
@@ -162,14 +191,20 @@ func (h *launcherAuthHandlers) handleStatus(w http.ResponseWriter, r *http.Reque
 	if c, err := r.Cookie(middleware.LauncherDashboardCookieName); err == nil {
 		authed = subtle.ConstantTimeCompare([]byte(c.Value), []byte(h.sessionCookie)) == 1
 	}
+	initialized, initErr := h.isStoreInitialized(r.Context())
+	if initErr != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		writeErrorf(w, "%v", initErr)
+		return
+	}
 	resp := launcherAuthStatusResponse{
 		Authenticated: authed,
-		Initialized:   h.isStoreInitialized(r.Context()),
+		Initialized:   initialized,
 	}
 	enc, err := json.Marshal(resp)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(`{"error":"internal error"}`))
+		writeErrorf(w, "marshal response failed: %v", err)
 		return
 	}
 	_, _ = w.Write(enc)
@@ -189,7 +224,12 @@ func (h *launcherAuthHandlers) handleSetup(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	initialized := h.isStoreInitialized(r.Context())
+	initialized, initErr := h.isStoreInitialized(r.Context())
+	if initErr != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		writeErrorf(w, "%v", initErr)
+		return
+	}
 
 	// If already initialized, require an active session (change-password flow).
 	if initialized {
@@ -230,10 +270,17 @@ func (h *launcherAuthHandlers) handleSetup(w http.ResponseWriter, r *http.Reques
 
 	if err := h.store.SetPassword(r.Context(), pw); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(`{"error":"failed to save password"}`))
+		writeErrorf(w, "failed to save password: %v", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+// writeErrorf writes a JSON error response with a formatted message.
+// json.Marshal is used to safely escape the message string.
+func writeErrorf(w http.ResponseWriter, format string, args ...any) {
+	msg, _ := json.Marshal(fmt.Sprintf(format, args...))
+	_, _ = w.Write([]byte(`{"error":` + string(msg) + `}`))
 }
