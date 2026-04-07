@@ -349,6 +349,25 @@ build-macos-app:build-launcher
 	@./scripts/build-macos-app.sh $(PLATFORM)-$(ARCH)
 	@echo "macOS .app bundle created: $(BUILD_DIR)/PicoClaw.app"
 
+## mem: Build membench, download LOCOMO data (if needed), run benchmark, and show results
+mem:
+	@echo "Building membench..."
+	@mkdir -p $(BUILD_DIR)
+	@$(GO) build -o $(BUILD_DIR)/membench ./cmd/membench
+	@echo "Build complete: $(BUILD_DIR)/membench"
+	@if [ ! -f $(BUILD_DIR)/memdata/locomo10.json ]; then \
+		echo "Downloading LOCOMO dataset..."; \
+		mkdir -p $(BUILD_DIR)/memdata; \
+		curl -sfL "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json" \
+			-o $(BUILD_DIR)/memdata/locomo10.json && [ -s $(BUILD_DIR)/memdata/locomo10.json ] || { echo "Error: LOCOMO download failed"; exit 1; }; \
+		echo "Download complete"; \
+	else \
+		echo "LOCOMO dataset already exists, skipping download"; \
+	fi
+	@echo "Running benchmark..."
+	@rm -rf $(BUILD_DIR)/memout
+	@$(BUILD_DIR)/membench run --data $(BUILD_DIR)/memdata --out $(BUILD_DIR)/memout --budget 4000
+
 ## help: Show this help message
 help:
 	@echo "picoclaw Makefile"
