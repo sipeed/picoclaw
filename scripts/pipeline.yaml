@@ -11,6 +11,8 @@ trigger:
 variables:
   - name: DockerImageName
     value: 'enterprise-automation-352103/container-repo/picoclaw-e2e-testing'
+  - name: Registry
+    value: 'europe-west4-docker.pkg.dev'
 
 pool:
   vmImage: ubuntu-latest
@@ -20,25 +22,15 @@ stages:
   jobs:
   - job: buildAndPush
     steps:
-    - task: DownloadSecureFile@1
-      name: gcpServiceAccountKeyAuto
-      inputs:
-        secureFile: 'gcp-services-account-key-automation.json'
     - template: pipeline_templates/gcp_auth.yaml
       parameters:
         environment: 'automation'
-    - task: Docker@2
-      displayName: 'Login to Container Registry'
-      inputs:
-        command: login
-        containerRegistry: 'gcr-connection-automation'
     - script: |
-        docker build -t europe-west4-docker.pkg.dev/$(DockerImageName):$(Build.SourceVersion) -f docker/Dockerfile .
+        gcloud auth configure-docker $(Registry) --quiet
+      displayName: Configure Docker for GCR
+    - script: |
+        docker build -t $(Registry)/$(DockerImageName):$(Build.SourceVersion) -f docker/Dockerfile .
       displayName: Build docker image
-    - task: Docker@2
-      displayName: 'Push image'
-      inputs:
-        command: push
-        repository: '$(DockerImageName)'
-        tags: |
-          $(Build.SourceVersion)
+    - script: |
+        docker push $(Registry)/$(DockerImageName):$(Build.SourceVersion)
+      displayName: Push docker image

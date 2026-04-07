@@ -1,0 +1,18 @@
+{
+    "dev": { 
+        "project": "digital-equator-311106", 
+        "account": "digital-equator-311106@digital-equator-311106.iam.gserviceaccount.com" 
+    },
+    "uat": { 
+        "project": "intnt-in-house-uat", 
+        "account": "intnt-in-house-uat@intnt-in-house-uat.iam.gserviceaccount.com" 
+    },
+    "prod": { 
+        "project": "intnt-in-house-prod", 
+        "account": "intnt-in-house-prod@intnt-in-house-prod.iam.gserviceaccount.com" 
+    },
+    "automation": { 
+        "project": "enterprise-automation-352103", 
+        "account": "application-automation-account@enterprise-automation-352103.iam.gserviceaccount.com" 
+    }
+  }

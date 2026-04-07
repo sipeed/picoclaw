@@ -1,0 +1,32 @@
+parameters:
+- name: 'environment'  # defaults for any parameters that aren't specified
+  type: string
+
+steps: 
+  - script: |
+      ls
+      pwd
+      PROJECT=$(jq -r '.${{parameters.environment}}.project' account_mappings.json)
+      ACCOUNT=$(jq -r '.${{parameters.environment}}.account' account_mappings.json)
+      echo "##vso[task.setvariable variable=gcpProject]$PROJECT"
+      echo "##vso[task.setvariable variable=gcpAccount]$ACCOUNT"
+    displayName: 'Set Environment Variables from JSON'
+    workingDirectory: scripts/pipeline_templates
+    env:
+      ENVIRONMENT: ${{ parameters.environment }}
+  - task: DownloadSecureFile@1
+    name: gcpServiceAccountKey_${{ parameters.environment }}
+    inputs:
+      secureFile: 'gcp-services-account-key-${{parameters.environment}}.json'
+  - script: |
+      echo "Authenticating with Google Cloud..."
+      echo $(gcpServiceAccountKey_${{ parameters.environment }}.secureFilePath)
+      echo $(gcpProject)
+      echo $(gcpAccount)
+      gcloud auth login --cred-file=$(gcpServiceAccountKey_${{ parameters.environment }}.secureFilePath)
+      gcloud config set project $(gcpProject)
+      gcloud config set account $(gcpAccount)
+      echo "##vso[task.setvariable variable=GOOGLE_APPLICATION_CREDENTIALS]$(gcpServiceAccountKey_${{ parameters.environment }}.secureFilePath)"
+    displayName: 'authenticate gcp'
+    env:
+      GOOGLE_APPLICATION_CREDENTIALS: $(gcpServiceAccountKey_${{ parameters.environment }}.secureFilePath)
