@@ -23,12 +23,13 @@ import (
 
 // picoConn represents a single WebSocket connection.
 type picoConn struct {
-	id        string
-	conn      *websocket.Conn
-	sessionID string
-	writeMu   sync.Mutex
-	closed    atomic.Bool
-	cancel    context.CancelFunc // cancels per-connection goroutines (e.g. pingLoop)
+	id            string
+	conn          *websocket.Conn
+	sessionID     string
+	writeMu       sync.Mutex
+	closed        atomic.Bool
+	cancel        context.CancelFunc // cancels per-connection goroutines (e.g. pingLoop)
+	writeJSONFunc func(any) error
 }
 
 var allowedInlineImageMIMETypes = map[string]struct{}{
@@ -46,6 +47,9 @@ func (pc *picoConn) writeJSON(v any) error {
 	}
 	pc.writeMu.Lock()
 	defer pc.writeMu.Unlock()
+	if pc.writeJSONFunc != nil {
+		return pc.writeJSONFunc(v)
+	}
 	return pc.conn.WriteJSON(v)
 }
 
@@ -70,6 +74,14 @@ type PicoChannel struct {
 	connsMu            sync.RWMutex
 	ctx                context.Context
 	cancel             context.CancelFunc
+}
+
+type picoStreamer struct {
+	channel   *PicoChannel
+	chatID    string
+	messageID string
+	content   string
+	mu        sync.Mutex
 }
 
 // NewPicoChannel creates a new Pico Protocol channel.
@@ -255,11 +267,41 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 	return nil, c.broadcastToSession(msg.ChatID, outMsg)
 }
 
+// BeginStream implements channels.StreamingCapable.
+func (c *PicoChannel) BeginStream(ctx context.Context, chatID string) (channels.Streamer, error) {
+	if !c.IsRunning() {
+		return nil, channels.ErrNotRunning
+	}
+
+	messageID := uuid.New().String()
+	outMsg := newMessage(TypeMessageCreate, map[string]any{
+		"content":    "",
+		"message_id": messageID,
+	})
+	if err := c.broadcastToSession(chatID, outMsg); err != nil {
+		return nil, err
+	}
+
+	return &picoStreamer{
+		channel:   c,
+		chatID:    chatID,
+		messageID: messageID,
+	}, nil
+}
+
 // EditMessage implements channels.MessageEditor.
 func (c *PicoChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
 	outMsg := newMessage(TypeMessageUpdate, map[string]any{
 		"message_id": messageID,
 		"content":    content,
+	})
+	return c.broadcastToSession(chatID, outMsg)
+}
+
+// DeleteMessage implements channels.MessageDeleter.
+func (c *PicoChannel) DeleteMessage(ctx context.Context, chatID string, messageID string) error {
+	outMsg := newMessage(TypeMessageDelete, map[string]any{
+		"message_id": messageID,
 	})
 	return c.broadcastToSession(chatID, outMsg)
 }
@@ -274,6 +316,24 @@ func (c *PicoChannel) StartTyping(ctx context.Context, chatID string) (func(), e
 		stopMsg := newMessage(TypeTypingStop, nil)
 		c.broadcastToSession(chatID, stopMsg)
 	}, nil
+}
+
+func (s *picoStreamer) Update(ctx context.Context, content string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.content = content
+	return s.channel.EditMessage(ctx, s.chatID, s.messageID, content)
+}
+
+func (s *picoStreamer) Finalize(ctx context.Context, content string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.content = content
+	return s.channel.EditMessage(ctx, s.chatID, s.messageID, content)
+}
+
+func (s *picoStreamer) Cancel(ctx context.Context) {
+	_ = s.channel.DeleteMessage(ctx, s.chatID, s.messageID)
 }
 
 // SendPlaceholder implements channels.PlaceholderCapable.

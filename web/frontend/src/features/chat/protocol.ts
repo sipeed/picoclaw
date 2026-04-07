@@ -61,6 +61,18 @@ export function handlePicoMessage(
       break
     }
 
+    case "message.delete": {
+      const messageId = payload.message_id as string
+      if (!messageId) {
+        break
+      }
+
+      updateChatStore((prev) => ({
+        messages: prev.messages.filter((msg) => msg.id !== messageId),
+      }))
+      break
+    }
+
     case "typing.start":
       updateChatStore({ isTyping: true })
       break

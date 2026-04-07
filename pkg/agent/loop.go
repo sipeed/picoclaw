@@ -2004,6 +2004,61 @@ turnLoop:
 				"tools_json":    formatToolsForLog(providerToolDefs),
 			})
 
+		callProvider := func(
+			ctx context.Context,
+			provider providers.LLMProvider,
+			model string,
+			messagesForCall []providers.Message,
+			toolDefsForCall []providers.ToolDefinition,
+		) (*providers.LLMResponse, error) {
+			if streamingProvider, ok := provider.(providers.StreamingProvider); ok {
+				if streamer, streamOK := al.bus.GetStreamer(ctx, ts.channel, ts.chatID); streamOK {
+					var finalized bool
+					response, err := streamingProvider.ChatStream(
+						ctx,
+						messagesForCall,
+						toolDefsForCall,
+						model,
+						llmOpts,
+						func(accumulated string) {
+							if accumulated == "" {
+								return
+							}
+							if err := streamer.Update(ctx, accumulated); err != nil {
+								logger.DebugCF("agent", "Streaming update failed", map[string]any{
+									"agent_id": ts.agent.ID,
+									"channel":  ts.channel,
+									"chat_id":  ts.chatID,
+									"error":    err.Error(),
+								})
+							}
+						},
+					)
+					if err != nil {
+						streamer.Cancel(ctx)
+						return nil, err
+					}
+					if response != nil && response.Content != "" {
+						if err := streamer.Finalize(ctx, response.Content); err != nil {
+							logger.DebugCF("agent", "Streaming finalize failed", map[string]any{
+								"agent_id": ts.agent.ID,
+								"channel":  ts.channel,
+								"chat_id":  ts.chatID,
+								"error":    err.Error(),
+							})
+						} else {
+							finalized = true
+						}
+					}
+					if !finalized && response != nil {
+						streamer.Cancel(ctx)
+					}
+					return response, nil
+				}
+			}
+			return provider.Chat(ctx, messagesForCall, toolDefsForCall, model, llmOpts)
+		}
+
 		callLLM := func(messagesForCall []providers.Message, toolDefsForCall []providers.ToolDefinition) (*providers.LLMResponse, error) {
 			providerCtx, providerCancel := context.WithCancel(turnCtx)
 			ts.setProviderCancel(providerCancel)
@@ -2024,7 +2079,7 @@ turnLoop:
 						if cp, ok := ts.agent.CandidateProviders[providers.ModelKey(provider, model)]; ok {
 							candidateProvider = cp
 						}
-						return candidateProvider.Chat(ctx, messagesForCall, toolDefsForCall, model, llmOpts)
+						return callProvider(ctx, candidateProvider, model, messagesForCall, toolDefsForCall)
 					},
 				)
 				if fbErr != nil {
@@ -2040,7 +2095,7 @@ turnLoop:
 				}
 				return fbResult.Response, nil
 			}
-			return activeProvider.Chat(providerCtx, messagesForCall, toolDefsForCall, llmModel, llmOpts)
+			return callProvider(providerCtx, activeProvider, llmModel, messagesForCall, toolDefsForCall)
 		}
 
 		var response *providers.LLMResponse

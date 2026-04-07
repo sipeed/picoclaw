@@ -23,6 +23,7 @@ func newTestPicoChannel(t *testing.T) *PicoChannel {
 	}
 
 	ch.ctx = context.Background()
+	ch.SetRunning(true)
 	return ch
 }
 
@@ -119,6 +120,88 @@ func TestBroadcastToSession_TargetsOnlyRequestedSession(t *testing.T) {
 	}
 	if !errors.Is(err, channels.ErrSendFailed) {
 		t.Fatalf("expected ErrSendFailed, got %v", err)
+	}
+}
+
+func TestDeleteMessage_SendsDeleteEvent(t *testing.T) {
+	ch := newTestPicoChannel(t)
+
+	messages := make([]PicoMessage, 0, 1)
+	conn := &picoConn{
+		id:        "delete",
+		sessionID: "sess-del",
+		writeJSONFunc: func(v any) error {
+			msg, ok := v.(PicoMessage)
+			if ok {
+				messages = append(messages, msg)
+			}
+			return nil
+		},
+	}
+	ch.addConnForTest(conn)
+
+	if err := ch.DeleteMessage(context.Background(), "pico:sess-del", "msg-1"); err != nil {
+		t.Fatalf("DeleteMessage() error = %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 delete message, got %d", len(messages))
+	}
+	if messages[0].Type != TypeMessageDelete {
+		t.Fatalf("message type = %q, want %q", messages[0].Type, TypeMessageDelete)
+	}
+	if messages[0].Payload["message_id"] != "msg-1" {
+		t.Fatalf("message_id = %v, want msg-1", messages[0].Payload["message_id"])
+	}
+}
+
+func TestBeginStream_SendsCreateAndUpdatesMessage(t *testing.T) {
+	ch := newTestPicoChannel(t)
+
+	messages := make([]PicoMessage, 0, 3)
+	conn := &picoConn{
+		id:        "stream",
+		sessionID: "sess-1",
+		writeJSONFunc: func(v any) error {
+			msg, ok := v.(PicoMessage)
+			if ok {
+				messages = append(messages, msg)
+			}
+			return nil
+		},
+	}
+	ch.addConnForTest(conn)
+
+	streamer, err := ch.BeginStream(context.Background(), "pico:sess-1")
+	if err != nil {
+		t.Fatalf("BeginStream() error = %v", err)
+	}
+	if len(messages) == 0 {
+		t.Fatal("expected initial message.create for stream placeholder")
+	}
+	createPayload := messages[0].Payload
+	messageID, _ := createPayload["message_id"].(string)
+	if messageID == "" {
+		t.Fatal("expected message_id in initial stream create payload")
+	}
+	if err := streamer.Update(context.Background(), "hello"); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if err := streamer.Finalize(context.Background(), "hello world"); err != nil {
+		t.Fatalf("Finalize() error = %v", err)
+	}
+	if len(messages) < 3 {
+		t.Fatalf("expected at least 3 messages, got %d", len(messages))
+	}
+	updatePayload := messages[1].Payload
+	if updatePayload["message_id"] != messageID {
+		t.Fatalf("update message_id = %v, want %s", updatePayload["message_id"], messageID)
+	}
+	if updatePayload["content"] != "hello" {
+		t.Fatalf("update content = %v, want hello", updatePayload["content"])
+	}
+	finalPayload := messages[2].Payload
+	if finalPayload["content"] != "hello world" {
+		t.Fatalf("final content = %v, want hello world", finalPayload["content"])
 	}
 }
 

@@ -764,6 +764,36 @@ func TestProviderChat_CustomHeadersInjected(t *testing.T) {
 	}
 }
 
+func TestProviderChatStream_ParsesTextDeltas(t *testing.T) {
+	var chunks []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hel\"},\"finish_reason\":null}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"lo\"},\"finish_reason\":\"stop\"}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"gpt-4o",
+		nil,
+		func(accumulated string) { chunks = append(chunks, accumulated) },
+	)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+	if out.Content != "hello" {
+		t.Fatalf("Content = %q, want %q", out.Content, "hello")
+	}
+	if len(chunks) != 2 || chunks[0] != "hel" || chunks[1] != "hello" {
+		t.Fatalf("chunks = %v, want [hel hello]", chunks)
+	}
+}
+
 func TestProviderChatStream_CustomHeadersInjected(t *testing.T) {
 	var gotSource, gotAuth, gotUserAgent string
 
