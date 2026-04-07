@@ -159,7 +159,9 @@ func telegramTLSConfig(cfg config.TelegramConfig) (*tls.Config, error) {
 			}
 			if ok := base.AppendCertsFromPEM(b); !ok {
 				name := strings.ToLower(ent.Name())
-				if strings.HasSuffix(name, ".pem") || strings.HasSuffix(name, ".crt") || strings.HasSuffix(name, ".cer") {
+				if strings.HasSuffix(name, ".pem") ||
+					strings.HasSuffix(name, ".crt") ||
+					strings.HasSuffix(name, ".cer") {
 					logger.WarnCF("telegram", "Failed to parse certificate file in tls_ca_dir", map[string]any{
 						"path": p,
 					})

@@ -278,7 +278,7 @@ func (d *AgentDefaults) GetModelName() string {
 
 type ChannelsConfig struct {
 	WhatsApp   WhatsAppConfig   `json:"whatsapp"    yaml:"-"`
-	Telegram   TelegramConfig   `json:"telegram"    yaml:"telegram,omitempty"`
+	Telegram   TelegramConfig   `json:"telegram"    yaml:"telegram,omitempty" envPrefix:"PICOCLAW_CHANNELS_TELEGRAM_"`
 	Feishu     FeishuConfig     `json:"feishu"      yaml:"feishu,omitempty"`
 	Discord    DiscordConfig    `json:"discord"     yaml:"discord,omitempty"`
 	MaixCam    MaixCamConfig    `json:"maixcam"     yaml:"-"`
@@ -340,20 +340,20 @@ type WhatsAppConfig struct {
 }
 
 type TelegramConfig struct {
-	Enabled            bool                `json:"enabled"                 yaml:"-"               env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
-	Token              SecureString        `json:"token,omitzero"          yaml:"token,omitempty" env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
-	BaseURL            string              `json:"base_url"                yaml:"-"               env:"PICOCLAW_CHANNELS_TELEGRAM_BASE_URL"`
-	Proxy              string              `json:"proxy"                   yaml:"-"               env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
-	TLSCAFile          string              `json:"tls_ca_file,omitempty"  env:"PICOCLAW_CHANNELS_TELEGRAM_TLS_CA_FILE"`
-	TLSCADir           string              `json:"tls_ca_dir,omitempty"   env:"PICOCLAW_CHANNELS_TELEGRAM_TLS_CA_DIR"`
-	TLSInsecure        bool                `json:"tls_insecure,omitempty" env:"PICOCLAW_CHANNELS_TELEGRAM_TLS_INSECURE"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from"              yaml:"-"               env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	Enabled            bool                `json:"enabled"                 yaml:"-"               env:"ENABLED"`
+	Token              SecureString        `json:"token,omitzero"          yaml:"token,omitempty" env:"TOKEN"`
+	BaseURL            string              `json:"base_url"                yaml:"-"               env:"BASE_URL"`
+	Proxy              string              `json:"proxy"                   yaml:"-"               env:"PROXY"`
+	TLSCAFile          string              `json:"tls_ca_file,omitempty" yaml:"-" env:"TLS_CA_FILE"`
+	TLSCADir           string              `json:"tls_ca_dir,omitempty" yaml:"-" env:"TLS_CA_DIR"`
+	TLSInsecure        bool                `json:"tls_insecure,omitempty" yaml:"-" env:"TLS_INSECURE"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"              yaml:"-"               env:"ALLOW_FROM"`
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty" yaml:"-"`
 	Typing             TypingConfig        `json:"typing,omitempty"        yaml:"-"`
 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"   yaml:"-"`
 	Streaming          StreamingConfig     `json:"streaming,omitempty"     yaml:"-"`
-	ReasoningChannelID string              `json:"reasoning_channel_id"    yaml:"-"               env:"PICOCLAW_CHANNELS_TELEGRAM_REASONING_CHANNEL_ID"`
-	UseMarkdownV2      bool                `json:"use_markdown_v2"         yaml:"-"               env:"PICOCLAW_CHANNELS_TELEGRAM_USE_MARKDOWN_V2"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"    yaml:"-"               env:"REASONING_CHANNEL_ID"`
+	UseMarkdownV2      bool                `json:"use_markdown_v2"         yaml:"-"               env:"USE_MARKDOWN_V2"`
 }
 
 func (c *TelegramConfig) SetToken(token string) {
