@@ -1528,6 +1528,42 @@ func TestModelConfig_ExtraBodyRoundTrip(t *testing.T) {
 	}
 }
 
+func TestModelConfig_CustomHeadersRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	cfg := &Config{
+		Version: CurrentVersion,
+		ModelList: []*ModelConfig{
+			{
+				ModelName:     "test-model",
+				Model:         "openai/test",
+				APIKeys:       SimpleSecureStrings("sk-test"),
+				CustomHeaders: map[string]string{"X-Source": "coding-plan", "X-Agent": "openclaw"},
+			},
+		},
+	}
+
+	if err := SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("SaveConfig error: %v", err)
+	}
+
+	loaded, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if loaded.ModelList[0].CustomHeaders == nil {
+		t.Fatal("CustomHeaders should not be nil after round-trip")
+	}
+	if got := loaded.ModelList[0].CustomHeaders["X-Source"]; got != "coding-plan" {
+		t.Errorf("CustomHeaders[X-Source] = %q, want coding-plan", got)
+	}
+	if got := loaded.ModelList[0].CustomHeaders["X-Agent"]; got != "openclaw" {
+		t.Errorf("CustomHeaders[X-Agent] = %q, want openclaw", got)
+	}
+}
+
 func TestDefaultConfig_MinimaxExtraBody(t *testing.T) {
 	cfg := DefaultConfig()
 
