@@ -130,6 +130,11 @@ func telegramTLSConfig(cfg config.TelegramConfig) (*tls.Config, error) {
 
 	base, err := x509.SystemCertPool()
 	if err != nil || base == nil {
+		if err != nil {
+			logger.WarnCF("telegram", "Failed to load system cert pool; using empty cert pool", map[string]any{
+				"error": err.Error(),
+			})
+		}
 		base = x509.NewCertPool()
 	}
 
