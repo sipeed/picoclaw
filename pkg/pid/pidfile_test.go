@@ -191,6 +191,22 @@ func TestReadPidFileWithCheckStalePID(t *testing.T) {
 	}
 }
 
+// TestReadPidFileWithCheckInvalidFile auto-cleans malformed PID file.
+func TestReadPidFileWithCheckInvalidFile(t *testing.T) {
+	dir := tmpDir(t)
+	path := filepath.Join(dir, pidFileName)
+	os.WriteFile(path, []byte("not json"), 0o600)
+
+	data := ReadPidFileWithCheck(dir)
+	if data != nil {
+		t.Error("expected nil for malformed pid file")
+	}
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("malformed PID file should be removed")
+	}
+}
+
 // TestRemovePidFile removes the PID file for the current process.
 func TestRemovePidFile(t *testing.T) {
 	dir := tmpDir(t)

@@ -1742,6 +1742,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 			if err := al.contextManager.Compact(turnCtx, &CompactRequest{
 				SessionKey: ts.sessionKey,
 				Reason:     ContextCompressReasonProactive,
+				Budget:     ts.agent.ContextWindow,
 			}); err != nil {
 				logger.WarnCF("agent", "Proactive compact failed", map[string]any{
 					"session_key": ts.sessionKey,
@@ -1857,6 +1858,7 @@ turnLoop:
 				if !ts.opts.NoHistory {
 					ts.agent.Sessions.AddFullMessage(ts.sessionKey, pm)
 					ts.recordPersistedMessage(pm)
+					ts.ingestMessage(turnCtx, al, pm)
 				}
 				logger.InfoCF("agent", "Injected steering message into context",
 					map[string]any{
@@ -2018,7 +2020,11 @@ turnLoop:
 					providerCtx,
 					activeCandidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return activeProvider.Chat(ctx, messagesForCall, toolDefsForCall, model, llmOpts)
+						candidateProvider := activeProvider
+						if cp, ok := ts.agent.CandidateProviders[providers.ModelKey(provider, model)]; ok {
+							candidateProvider = cp
+						}
+						return candidateProvider.Chat(ctx, messagesForCall, toolDefsForCall, model, llmOpts)
 					},
 				)
 				if fbErr != nil {
@@ -2128,6 +2134,7 @@ turnLoop:
 				if compactErr := al.contextManager.Compact(turnCtx, &CompactRequest{
 					SessionKey: ts.sessionKey,
 					Reason:     ContextCompressReasonRetry,
+					Budget:     ts.agent.ContextWindow,
 				}); compactErr != nil {
 					logger.WarnCF("agent", "Context overflow compact failed", map[string]any{
 						"session_key": ts.sessionKey,
@@ -2773,7 +2780,7 @@ turnLoop:
 				}
 			}
 			if ts.opts.EnableSummary {
-				al.contextManager.Compact(turnCtx, &CompactRequest{SessionKey: ts.sessionKey, Reason: ContextCompressReasonSummarize})
+				al.contextManager.Compact(turnCtx, &CompactRequest{SessionKey: ts.sessionKey, Reason: ContextCompressReasonSummarize, Budget: ts.agent.ContextWindow})
 			}
 
 			ts.setPhase(TurnPhaseCompleted)
@@ -2849,6 +2856,7 @@ turnLoop:
 			&CompactRequest{
 				SessionKey: ts.sessionKey,
 				Reason:     ContextCompressReasonSummarize,
+				Budget:     ts.agent.ContextWindow,
 			},
 		)
 	}

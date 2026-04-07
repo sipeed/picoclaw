@@ -604,6 +604,7 @@ type ephemeralSessionStoreIface interface {
 	SetHistory(key string, history []providers.Message)
 	TruncateHistory(key string, keepLast int)
 	Save(key string) error
+	ListSessions() []string
 	Close() error
 }
 
@@ -663,8 +664,9 @@ func (e *ephemeralSessionStore) TruncateHistory(_ string, keepLast int) {
 	e.history = e.history[len(e.history)-keepLast:]
 }
 
-func (e *ephemeralSessionStore) Save(_ string) error { return nil }
-func (e *ephemeralSessionStore) Close() error        { return nil }
+func (e *ephemeralSessionStore) Save(_ string) error    { return nil }
+func (e *ephemeralSessionStore) Close() error           { return nil }
+func (e *ephemeralSessionStore) ListSessions() []string { return nil }
 
 func (e *ephemeralSessionStore) truncateLocked() {
 	if len(e.history) > maxEphemeralHistorySize {

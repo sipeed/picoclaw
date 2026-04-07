@@ -846,6 +846,49 @@ func TestCreateProviderFromConfig_MinimaxPreservesUserExtraBody(t *testing.T) {
 	}
 }
 
+func TestCreateProviderFromConfig_CustomHeaders(t *testing.T) {
+	var gotSource, gotAuth string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotSource = r.Header.Get("X-Source")
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.ModelConfig{
+		ModelName:     "test-headers",
+		Model:         "openai/gpt-4o",
+		APIBase:       server.URL,
+		CustomHeaders: map[string]string{"X-Source": "coding-plan", "Authorization": "Token config-auth"},
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+
+	_, err = provider.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		modelID,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if gotSource != "coding-plan" {
+		t.Fatalf("X-Source = %q, want %q", gotSource, "coding-plan")
+	}
+	if gotAuth != "Token config-auth" {
+		t.Fatalf("Authorization = %q, want %q", gotAuth, "Token config-auth")
+	}
+}
+
 // openaiCompatResponse is the JSON response used by OpenAI-compatible providers.
 const openaiCompatResponse = `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`
 

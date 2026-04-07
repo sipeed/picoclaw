@@ -11,6 +11,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	ppid "github.com/sipeed/picoclaw/pkg/pid"
 )
 
 // registerPicoRoutes binds Pico Channel management endpoints to the ServeMux.
@@ -57,8 +58,33 @@ func (h *Handler) handleWebSocketProxy() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gateway.mu.Lock()
 		ensurePicoTokenCachedLocked(h.configPath)
-		gatewayAvailable := gateway.pidData != nil
+		cachedPID := gateway.pidData
+		trackedCmd := gateway.cmd
 		gateway.mu.Unlock()
+
+		gatewayAvailable := false
+		// Prefer fresh PID file data when available.
+		if pidData := ppid.ReadPidFileWithCheck(globalConfigDir()); pidData != nil {
+			gateway.mu.Lock()
+			gateway.pidData = pidData
+			setGatewayRuntimeStatusLocked("running")
+			gatewayAvailable = true
+			gateway.mu.Unlock()
+		} else if cachedPID != nil {
+			// No PID file now: keep availability only while tracked process is
+			// still alive (covers short PID-file races at startup/restart).
+			if isCmdProcessAliveLocked(trackedCmd) {
+				gatewayAvailable = true
+			} else {
+				gateway.mu.Lock()
+				if gateway.cmd == trackedCmd {
+					gateway.pidData = nil
+					setGatewayRuntimeStatusLocked("stopped")
+				}
+				gatewayAvailable = gateway.pidData != nil
+				gateway.mu.Unlock()
+			}
+		}
 
 		if !gatewayAvailable {
 			logger.Warnf("Gateway not available for WebSocket proxy")
