@@ -1589,10 +1589,37 @@ func (al *AgentLoop) runAgentLoop(
 	}
 
 	if opts.SendResponse && result.finalContent != "" {
+		var totalTokens, promptTokens, compTokens int
+		if usage := ts.GetLastUsage(); usage != nil {
+			totalTokens = usage.TotalTokens
+			promptTokens = usage.PromptTokens
+			compTokens = usage.CompletionTokens
+		}
+
+		version := al.GetConfig().BuildInfo.Version
+		if version == "" {
+			version = "0.2.5"
+		}
+
+		providerName := al.GetConfig().Agents.Defaults.Provider
+		modelName := al.GetConfig().Agents.Defaults.GetModelName()
+
+		m := Metrics{
+			Version:    version,
+			Agent:      agent.ID,
+			Route:      providerName,
+			Model:      modelName,
+			Complexity: calculateComplexity(promptTokens, compTokens),
+			Tokens:     totalTokens,
+			Processing: time.Since(ts.startedAt),
+		}
+
+		finalWrappedContent := WrapResponse(result.finalContent, m)
+
 		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Channel: opts.Channel,
 			ChatID:  opts.ChatID,
-			Content: result.finalContent,
+			Content: finalWrappedContent,
 		})
 	}
 

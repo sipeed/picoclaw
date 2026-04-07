@@ -69,3 +69,4 @@ web/backend/dist/*
 docker/data
 
 .omc/
+/local_pi/
