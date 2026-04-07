@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,8 @@ import (
 )
 
 const pidFileName = ".picoclaw.pid"
+
+var errInvalidPidFile = errors.New("invalid pid file")
 
 // PidFileData is the JSON structure stored in the PID file.
 type PidFileData struct {
@@ -109,6 +112,14 @@ func ReadPidFileWithCheck(homePath string) *PidFileData {
 	pidPath := pidFilePath(homePath)
 	data, err := readPidFileUnlocked(pidPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if errors.Is(err, errInvalidPidFile) {
+			logger.Warnf("invalid pid file, remove it: %s (%v)", pidPath, err)
+			_ = os.Remove(pidPath)
+			return nil
+		}
 		logger.Debugf("failed to read pid file: %s", err)
 		return nil
 	}
@@ -150,12 +161,12 @@ func readPidFileUnlocked(pidPath string) (*PidFileData, error) {
 
 	var data PidFileData
 	if err := json.Unmarshal(raw, &data); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", errInvalidPidFile, err)
 	}
 
 	// Validate PID is a positive integer.
 	if data.PID <= 0 {
-		return nil, fmt.Errorf("invalid pid in pid file: %d", data.PID)
+		return nil, fmt.Errorf("%w: pid=%d", errInvalidPidFile, data.PID)
 	}
 
 	return &data, nil
