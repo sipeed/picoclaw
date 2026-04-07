@@ -1623,7 +1623,7 @@ func (al *AgentLoop) runAgentLoop(
 		}
 	}
 
-	if opts.SendResponse && result.finalContent != "" {
+	if result.finalContent != "" {
 		var totalTokens, promptTokens, compTokens int
 		if usage := ts.GetLastUsage(); usage != nil {
 			totalTokens = usage.TotalTokens
@@ -1649,12 +1649,14 @@ func (al *AgentLoop) runAgentLoop(
 			Processing: time.Since(ts.startedAt),
 		}
 
-		finalWrappedContent := WrapResponse(result.finalContent, m)
+		result.finalContent = WrapResponse(result.finalContent, m)
+	}
 
+	if opts.SendResponse && result.finalContent != "" {
 		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Channel: opts.Channel,
 			ChatID:  opts.ChatID,
-			Content: finalWrappedContent,
+			Content: result.finalContent,
 		})
 	}
 
