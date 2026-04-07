@@ -842,6 +842,13 @@ func (c ReadFileToolConfig) EffectiveMode() string {
 	}
 }
 
+type CurlConfig struct {
+	ToolConfig     `json:"-"                  envPrefix:"PICOCLAW_TOOLS_CURL_"`
+	AllowedDomains []string `json:"allowed_domains,omitempty" env:"PICOCLAW_TOOLS_CURL_ALLOWED_DOMAINS"`
+	TimeoutSeconds int      `json:"timeout_seconds"           env:"PICOCLAW_TOOLS_CURL_TIMEOUT_SECONDS"`
+	MaxBytes       int64    `json:"max_bytes"                 env:"PICOCLAW_TOOLS_CURL_MAX_BYTES"`
+}
+
 type ToolsConfig struct {
 	AllowReadPaths  []string `json:"allow_read_paths"  yaml:"-" env:"PICOCLAW_TOOLS_ALLOW_READ_PATHS"`
 	AllowWritePaths []string `json:"allow_write_paths" yaml:"-" env:"PICOCLAW_TOOLS_ALLOW_WRITE_PATHS"`
@@ -875,6 +882,7 @@ type ToolsConfig struct {
 	Subagent        ToolConfig         `json:"subagent"          yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
 	WebFetch        ToolConfig         `json:"web_fetch"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
 	WriteFile       ToolConfig         `json:"write_file"        yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
+	Curl            CurlConfig         `json:"curl"              yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_CURL_"`
 }
 
 // IsFilterSensitiveDataEnabled returns true if sensitive data filtering is enabled
@@ -1362,6 +1370,8 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.SendTTS.Enabled
 	case "write_file":
 		return t.WriteFile.Enabled
+	case "curl":
+		return t.Curl.Enabled
 	case "mcp":
 		return t.MCP.Enabled
 	default:
