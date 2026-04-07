@@ -485,7 +485,8 @@ func TestHandleUpdateModel_CustomHeadersPreserveAndClear(t *testing.T) {
 		APIKeys:       config.SimpleSecureStrings("sk-existing"),
 		CustomHeaders: map[string]string{"X-Source": "coding-plan"},
 	}}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
