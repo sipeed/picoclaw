@@ -69,3 +69,24 @@ web/backend/dist/*
 docker/data
 
 .omc/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Local development
+local/
+local.*
+
+# Node modules for frontend
+web/frontend/node_modules/
+web/frontend/dist/
+web/frontend/.cache/
+
+# Python virtual environments
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
