@@ -72,7 +72,7 @@ func TestGatewayStopCmdNotRunning(t *testing.T) {
 	assert.Contains(t, err.Error(), "gateway is not running")
 }
 
-func TestGatewayStopCmdRunningProcess(t *testing.T) {
+func TestGatewayStatusCmdRejectsNonGatewayPID(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("requires POSIX signal semantics")
 	}
@@ -89,6 +89,51 @@ func TestGatewayStopCmdRunningProcess(t *testing.T) {
 
 	writeGatewayPidFile(t, homePath, sleepCmd.Process.Pid)
 
+	_, err := captureGatewayStdout(t, func() error {
+		return gatewayStatusCmd(homePath)
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "non-gateway process")
+}
+
+func TestGatewayStopCmdRejectsNonGatewayPID(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires POSIX signal semantics")
+	}
+
+	homePath := t.TempDir()
+	sleepCmd := exec.Command("sleep", "30")
+	require.NoError(t, sleepCmd.Start())
+	t.Cleanup(func() {
+		if sleepCmd.Process != nil {
+			_ = sleepCmd.Process.Kill()
+		}
+		_ = sleepCmd.Wait()
+	})
+
+	writeGatewayPidFile(t, homePath, sleepCmd.Process.Pid)
+
+	err := gatewayStopCmd(homePath)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "non-gateway process")
+}
+
+func TestGatewayStopCmdRunningProcess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires POSIX signal semantics")
+	}
+
+	homePath := t.TempDir()
+	helperCmd := startGatewayHelperProcess(t)
+	t.Cleanup(func() {
+		if helperCmd.Process != nil {
+			_ = helperCmd.Process.Kill()
+		}
+	})
+
+	writeGatewayPidFile(t, homePath, helperCmd.Process.Pid)
+
 	output, err := captureGatewayStdout(t, func() error {
 		return gatewayStopCmd(homePath)
 	})
@@ -98,7 +143,7 @@ func TestGatewayStopCmdRunningProcess(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- sleepCmd.Wait()
+		done <- helperCmd.Wait()
 	}()
 
 	select {
@@ -109,4 +154,40 @@ func TestGatewayStopCmdRunningProcess(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("gateway process did not exit after stop signal")
 	}
+}
+
+func startGatewayHelperProcess(t *testing.T) *exec.Cmd {
+	t.Helper()
+
+	exePath, err := os.Executable()
+	require.NoError(t, err)
+
+	cmd := exec.Command(
+		exePath,
+		"-test.run=TestGatewayCommandHelperProcess",
+		"--",
+		"gateway",
+	)
+	cmd.Env = append(os.Environ(), "GO_WANT_GATEWAY_HELPER_PROCESS=1")
+	require.NoError(t, cmd.Start())
+	return cmd
+}
+
+func TestGatewayCommandHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_GATEWAY_HELPER_PROCESS") != "1" {
+		return
+	}
+
+	for i, arg := range os.Args {
+		if arg != "--" {
+			continue
+		}
+		args := os.Args[i+1:]
+		if len(args) > 0 && args[0] == "gateway" {
+			select {}
+		}
+		break
+	}
+
+	os.Exit(2)
 }

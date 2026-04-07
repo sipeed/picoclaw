@@ -12,6 +12,11 @@ import (
 	"github.com/sipeed/picoclaw/pkg/pid"
 )
 
+type gatewayTarget struct {
+	data    *pid.PidFileData
+	process *os.Process
+}
+
 func newStatusCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
@@ -35,30 +40,36 @@ func newStopCommand() *cobra.Command {
 }
 
 func gatewayStatusCmd(homePath string) error {
-	data := pid.ReadPidFileWithCheck(homePath)
-	if data == nil {
+	target, err := resolveGatewayTarget(homePath)
+	if err != nil {
+		return err
+	}
+	if target == nil {
 		fmt.Println("Gateway status: stopped")
 		return nil
 	}
 
 	fmt.Printf(
 		"Gateway status: running (PID: %d, host: %s, port: %d)\n",
-		data.PID,
-		data.Host,
-		data.Port,
+		target.data.PID,
+		target.data.Host,
+		target.data.Port,
 	)
 	return nil
 }
 
 func gatewayStopCmd(homePath string) error {
-	data := pid.ReadPidFileWithCheck(homePath)
-	if data == nil {
+	target, err := resolveGatewayTarget(homePath)
+	if err != nil {
+		return err
+	}
+	if target == nil {
 		return fmt.Errorf("gateway is not running")
 	}
 
-	process, err := os.FindProcess(data.PID)
-	if err != nil {
-		return fmt.Errorf("failed to find gateway process (PID: %d): %w", data.PID, err)
+	process := target.process
+	if process == nil {
+		return fmt.Errorf("failed to find gateway process (PID: %d)", target.data.PID)
 	}
 
 	if runtime.GOOS == "windows" {
@@ -67,9 +78,31 @@ func gatewayStopCmd(homePath string) error {
 		err = process.Signal(syscall.SIGTERM)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to stop gateway (PID: %d): %w", data.PID, err)
+		return fmt.Errorf("failed to stop gateway (PID: %d): %w", target.data.PID, err)
 	}
 
-	fmt.Printf("Sent stop signal to gateway (PID: %d)\n", data.PID)
+	fmt.Printf("Sent stop signal to gateway (PID: %d)\n", target.data.PID)
 	return nil
+}
+
+func resolveGatewayTarget(homePath string) (*gatewayTarget, error) {
+	data := pid.ReadPidFileWithCheck(homePath)
+	if data == nil {
+		return nil, nil
+	}
+
+	process, err := os.FindProcess(data.PID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find gateway process (PID: %d): %w", data.PID, err)
+	}
+
+	err = verifyGatewayProcessIdentity(data.PID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &gatewayTarget{
+		data:    data,
+		process: process,
+	}, nil
 }
