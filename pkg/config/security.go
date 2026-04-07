@@ -44,7 +44,7 @@ func loadSecurityConfig(cfg *Config, securityPath string) error {
 	}
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return fmt.Errorf("failed to parse security config: %w", err)
+		return fmt.Errorf("failed to parse security config %s: %w", securityPath, err)
 	}
 
 	return nil

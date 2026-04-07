@@ -132,7 +132,7 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
-		logger.Fatalf("error loading config: %v", err)
+		logger.FatalCF("gateway", "error loading config", map[string]any{"error": config.DiagnosticSummary(err)})
 	}
 
 	if err = preCheckConfig(cfg); err != nil {
