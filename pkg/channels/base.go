@@ -119,14 +119,16 @@ func NewBaseChannel(
 	// currently defaults to accepting messages from ANYONE. To explicitly
 	// acknowledge and permit this (e.g. for a public bot), use ["*"].
 	if len(bc.allowList) == 0 {
-		logger.WarnCF("channels", fmt.Sprintf("SECURITY: Channel '%s' allows EVERYONE (allow_from is empty)", bc.name), map[string]any{
-			"channel": bc.name,
-			"hint":    "Set allow_from to your ID, or use '*' to explicitly acknowledge open access.",
+		logger.WarnCF("channels", fmt.Sprintf("SECURITY: Channel '%s' allows EVERYONE (allow_from is empty). This is a potential security risk.", bc.name), map[string]any{
+			"channel":   bc.name,
+			"channelID": bc.name,
+			"hint":      "Set allow_from to your ID, or use ['*'] to explicitly acknowledge open access. See: https://github.com/sipeed/picoclaw/blob/main/docs/configuration.md",
 		})
 	} else {
-		logger.InfoCF("channels", fmt.Sprintf("Channel '%s' allow_from configured", bc.name), map[string]any{
+		logger.InfoCF("channels", fmt.Sprintf("Channel '%s' allow_from configured (%d entries)", bc.name, len(bc.allowList)), map[string]any{
 			"channel":    bc.name,
 			"allow_list": bc.allowList,
+			"count":      len(bc.allowList),
 		})
 	}
 
