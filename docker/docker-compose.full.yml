@@ -10,6 +10,10 @@ services:
     container_name: picoclaw-agent-full
     profiles:
       - agent
+    environment:
+      # PicoClaw runs as root in container by default
+      # If running as non-root user, update these paths to match the user's home directory
+      - HOME=/root
     volumes:
       - ../config/config.json:/root/.picoclaw/config.json:ro
       - picoclaw-workspace:/root/.picoclaw/workspace
@@ -30,6 +34,10 @@ services:
     restart: unless-stopped
     profiles:
       - gateway
+    environment:
+      # PicoClaw runs as root in container by default
+      # If running as non-root user, update these paths to match the user's home directory
+      - HOME=/root
     volumes:
       # Configuration file
       - ../config/config.json:/root/.picoclaw/config.json:ro
