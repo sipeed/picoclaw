@@ -2358,6 +2358,15 @@ turnLoop:
 					if toolReq != nil && toolReq.HookResult != nil {
 						hookResult := toolReq.HookResult
 
+						argsJSON, _ := json.Marshal(toolArgs)
+						argsPreview := utils.Truncate(string(argsJSON), 200)
+						logger.InfoCF("agent", fmt.Sprintf("Tool call (hook respond): %s(%s)", toolName, argsPreview),
+							map[string]any{
+								"agent_id":  ts.agent.ID,
+								"tool":      toolName,
+								"iteration": iteration,
+							})
+
 						// Emit ToolExecStart event (same as normal tool execution)
 						al.emitEvent(
 							EventKindToolExecStart,
@@ -2399,6 +2408,9 @@ turnLoop:
 								Channel: ts.channel,
 								ChatID:  ts.chatID,
 								Content: hookResult.ForUser,
+								Metadata: map[string]string{
+									"is_tool_call": "true",
+								},
 							})
 						}
 
@@ -2431,9 +2443,14 @@ turnLoop:
 											"chat_id":  ts.chatID,
 											"error":    err.Error(),
 										})
+									// Same as normal tool execution: notify LLM about delivery failure
+									hookResult.IsError = true
+									hookResult.ForLLM = fmt.Sprintf("failed to deliver attachment: %v", err)
 								}
 							} else if al.bus != nil {
 								al.bus.PublishOutboundMedia(ctx, outboundMedia)
+								// Same as normal tool execution: bus only queues, media not yet delivered
+								hookResult.ResponseHandled = false
 							}
 						}
 
@@ -2484,9 +2501,74 @@ turnLoop:
 						if !ts.opts.NoHistory {
 							ts.agent.Sessions.AddFullMessage(ts.sessionKey, toolResultMsg)
 							ts.recordPersistedMessage(toolResultMsg)
+							ts.ingestMessage(turnCtx, al, toolResultMsg)
 						}
 
-						// Skip subsequent tool execution flow
+						// Same as normal tool execution: check for steering/interrupt/SubTurn after each tool
+						if steerMsgs := al.dequeueSteeringMessagesForScope(ts.sessionKey); len(steerMsgs) > 0 {
+							pendingMessages = append(pendingMessages, steerMsgs...)
+						}
+
+						skipReason := ""
+						skipMessage := ""
+						if len(pendingMessages) > 0 {
+							skipReason = "queued user steering message"
+							skipMessage = "Skipped due to queued user message."
+						} else if gracefulPending, _ := ts.gracefulInterruptRequested(); gracefulPending {
+							skipReason = "graceful interrupt requested"
+							skipMessage = "Skipped due to graceful interrupt."
+						}
+
+						if skipReason != "" {
+							remaining := len(normalizedToolCalls) - i - 1
+							if remaining > 0 {
+								logger.InfoCF("agent", "Turn checkpoint: skipping remaining tools after hook respond",
+									map[string]any{
+										"agent_id":  ts.agent.ID,
+										"completed": i + 1,
+										"skipped":   remaining,
+										"reason":    skipReason,
+									})
+								for j := i + 1; j < len(normalizedToolCalls); j++ {
+									skippedTC := normalizedToolCalls[j]
+									al.emitEvent(
+										EventKindToolExecSkipped,
+										ts.eventMeta("runTurn", "turn.tool.skipped"),
+										ToolExecSkippedPayload{
+											Tool:   skippedTC.Name,
+											Reason: skipReason,
+										},
+									)
+									skippedMsg := providers.Message{
+										Role:       "tool",
+										Content:    skipMessage,
+										ToolCallID: skippedTC.ID,
+									}
+									messages = append(messages, skippedMsg)
+									if !ts.opts.NoHistory {
+										ts.agent.Sessions.AddFullMessage(ts.sessionKey, skippedMsg)
+										ts.recordPersistedMessage(skippedMsg)
+									}
+								}
+							}
+							break
+						}
+
+						// Also poll for any SubTurn results that arrived during tool execution.
+						if ts.pendingResults != nil {
+							select {
+							case result, ok := <-ts.pendingResults:
+								if ok && result != nil && result.ForLLM != "" {
+									content := al.cfg.FilterSensitiveData(result.ForLLM)
+									msg := providers.Message{Role: "user", Content: fmt.Sprintf("[SubTurn Result] %s", content)}
+									messages = append(messages, msg)
+									ts.agent.Sessions.AddFullMessage(ts.sessionKey, msg)
+								}
+							default:
+								// No results available
+							}
+						}
+
 						continue
 					}
 					// If no HookResult, fall back to continue with warning
