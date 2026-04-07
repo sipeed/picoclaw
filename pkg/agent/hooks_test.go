@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sync"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -483,7 +485,6 @@ func TestHookManager_BeforeTool_RespondAction(t *testing.T) {
 	hm := NewHookManager(nil)
 	defer hm.Close()
 
-	// Register a hook that returns respond action
 	hook := &respondHook{
 		respondTools: map[string]bool{"test_tool": true},
 	}
@@ -491,23 +492,371 @@ func TestHookManager_BeforeTool_RespondAction(t *testing.T) {
 		t.Fatalf("mount hook: %v", err)
 	}
 
-	// Call BeforeTool
 	req := &ToolCallHookRequest{
 		Tool:      "test_tool",
 		Arguments: map[string]any{"arg": "value"},
 	}
 	result, decision := hm.BeforeTool(context.Background(), req)
 
-	// Verify decision is respond
 	if decision.Action != HookActionRespond {
 		t.Fatalf("expected action %q, got %q", HookActionRespond, decision.Action)
 	}
 
-	// Verify HookResult is correctly set
 	if result.HookResult == nil {
 		t.Fatal("expected HookResult to be set")
 	}
 	if result.HookResult.ForLLM != "hook-responded: test_tool" {
 		t.Fatalf("unexpected HookResult.ForLLM: %q", result.HookResult.ForLLM)
 	}
+}
+
+type respondWithMediaHook struct {
+	respondTools    map[string]bool
+	media           []string
+	responseHandled bool
+	forLLM          string
+	sendMediaErr    error
+}
+
+func (h *respondWithMediaHook) BeforeTool(
+	ctx context.Context,
+	call *ToolCallHookRequest,
+) (*ToolCallHookRequest, HookDecision, error) {
+	if h.respondTools[call.Tool] {
+		next := call.Clone()
+		next.HookResult = &tools.ToolResult{
+			ForLLM:          h.forLLM,
+			ForUser:         "media result",
+			Media:           h.media,
+			ResponseHandled: h.responseHandled,
+			Silent:          false,
+			IsError:         false,
+		}
+		return next, HookDecision{Action: HookActionRespond}, nil
+	}
+	return call, HookDecision{Action: HookActionContinue}, nil
+}
+
+func (h *respondWithMediaHook) AfterTool(
+	ctx context.Context,
+	result *ToolResultHookResponse,
+) (*ToolResultHookResponse, HookDecision, error) {
+	return result, HookDecision{Action: HookActionContinue}, nil
+}
+
+type errorMediaChannel struct {
+	fakeChannel
+	sendErr error
+}
+
+func (f *errorMediaChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
+	return nil, f.sendErr
+}
+
+func TestAgentLoop_HookRespond_MediaError(t *testing.T) {
+	provider := &multiToolProvider{
+		toolCalls: []providers.ToolCall{
+			{ID: "call-1", Name: "media_tool", Arguments: map[string]any{}},
+		},
+		finalContent: "done",
+	}
+	al, agent, cleanup := newHookTestLoop(t, provider)
+	defer cleanup()
+
+	hook := &respondWithMediaHook{
+		respondTools:    map[string]bool{"media_tool": true},
+		media:           []string{"media://test/image.png"},
+		responseHandled: true,
+		forLLM:          "media sent successfully",
+	}
+	if err := al.MountHook(NamedHook("media-hook", hook)); err != nil {
+		t.Fatalf("MountHook failed: %v", err)
+	}
+
+	al.channelManager = newStartedTestChannelManager(t, al.bus, al.mediaStore, "discord", &errorMediaChannel{
+		sendErr: errors.New("channel unavailable"),
+	})
+
+	sub := al.SubscribeEvents(16)
+	defer al.UnsubscribeEvents(sub.ID)
+
+	_, err := al.runAgentLoop(context.Background(), agent, processOptions{
+		SessionKey:      "session-media-err",
+		Channel:         "discord",
+		ChatID:          "chat1",
+		UserMessage:     "send media",
+		DefaultResponse: defaultResponse,
+		EnableSummary:   false,
+		SendResponse:    false,
+	})
+	if err != nil {
+		t.Fatalf("runAgentLoop failed: %v", err)
+	}
+
+	events := collectEventStream(sub.C)
+	endEvt, ok := findEvent(events, EventKindToolExecEnd)
+	if !ok {
+		t.Fatal("expected ToolExecEnd event")
+	}
+	payload, ok := endEvt.Payload.(ToolExecEndPayload)
+	if !ok {
+		t.Fatalf("expected ToolExecEndPayload, got %T", endEvt.Payload)
+	}
+
+	if !payload.IsError {
+		t.Fatal("expected IsError=true when SendMedia fails")
+	}
+
+	if payload.ForLLMLen < 30 {
+		t.Fatalf("expected ForLLM to contain error message, got ForLLMLen=%d", payload.ForLLMLen)
+	}
+}
+
+func TestAgentLoop_HookRespond_BusFallback(t *testing.T) {
+	provider := &multiToolProvider{
+		toolCalls: []providers.ToolCall{
+			{ID: "call-1", Name: "media_tool", Arguments: map[string]any{}},
+		},
+		finalContent: "done",
+	}
+	al, agent, cleanup := newHookTestLoop(t, provider)
+	defer cleanup()
+
+	hook := &respondWithMediaHook{
+		respondTools:    map[string]bool{"media_tool": true},
+		media:           []string{"media://test/image.png"},
+		responseHandled: true,
+		forLLM:          "media queued",
+	}
+	if err := al.MountHook(NamedHook("media-hook", hook)); err != nil {
+		t.Fatalf("MountHook failed: %v", err)
+	}
+
+	sub := al.SubscribeEvents(16)
+	defer al.UnsubscribeEvents(sub.ID)
+
+	resp, err := al.runAgentLoop(context.Background(), agent, processOptions{
+		SessionKey:      "session-bus-fallback",
+		Channel:         "cli",
+		ChatID:          "chat1",
+		UserMessage:     "send media",
+		DefaultResponse: defaultResponse,
+		EnableSummary:   false,
+		SendResponse:    false,
+	})
+	if err != nil {
+		t.Fatalf("runAgentLoop failed: %v", err)
+	}
+
+	events := collectEventStream(sub.C)
+	endEvt, ok := findEvent(events, EventKindToolExecEnd)
+	if !ok {
+		t.Fatal("expected ToolExecEnd event")
+	}
+	payload, ok := endEvt.Payload.(ToolExecEndPayload)
+	if !ok {
+		t.Fatalf("expected ToolExecEndPayload, got %T", endEvt.Payload)
+	}
+
+	if payload.IsError {
+		t.Fatal("expected IsError=false for bus fallback (media queued, not delivered)")
+	}
+
+	if resp != "done" {
+		t.Fatalf("expected response 'done', got %q", resp)
+	}
+}
+
+type multiToolProvider struct {
+	mu           sync.Mutex
+	callCount    int
+	toolCalls    []providers.ToolCall
+	finalContent string
+}
+
+func (p *multiToolProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.callCount++
+	if p.callCount == 1 && len(p.toolCalls) > 0 {
+		return &providers.LLMResponse{
+			ToolCalls: p.toolCalls,
+		}, nil
+	}
+
+	return &providers.LLMResponse{
+		Content: p.finalContent,
+	}, nil
+}
+
+func (p *multiToolProvider) GetDefaultModel() string {
+	return "multi-tool-provider"
+}
+
+func TestAgentLoop_HookRespond_InterruptSkipsRemaining(t *testing.T) {
+	provider := &multiToolProvider{
+		toolCalls: []providers.ToolCall{
+			{ID: "call-1", Name: "tool_one", Arguments: map[string]any{}},
+			{ID: "call-2", Name: "tool_two", Arguments: map[string]any{}},
+			{ID: "call-3", Name: "tool_three", Arguments: map[string]any{}},
+		},
+		finalContent: "done",
+	}
+	al, _, cleanup := newHookTestLoop(t, provider)
+	defer cleanup()
+
+	tool1ExecCh := make(chan struct{}, 1)
+	al.RegisterTool(&slowTool{name: "tool_two", duration: 100 * time.Millisecond, execCh: tool1ExecCh})
+	al.RegisterTool(&slowTool{name: "tool_three", duration: 100 * time.Millisecond})
+
+	hook := &respondHook{
+		respondTools: map[string]bool{"tool_one": true},
+	}
+	if err := al.MountHook(NamedHook("respond-hook", hook)); err != nil {
+		t.Fatalf("MountHook failed: %v", err)
+	}
+
+	sub := al.SubscribeEvents(32)
+	defer al.UnsubscribeEvents(sub.ID)
+
+	sessionKey := routing.BuildAgentMainSessionKey(routing.DefaultAgentID)
+
+	type result struct {
+		resp string
+		err  error
+	}
+	resultCh := make(chan result, 1)
+	go func() {
+		resp, err := al.ProcessDirectWithChannel(
+			context.Background(),
+			"run tools",
+			sessionKey,
+			"cli",
+			"chat1",
+		)
+		resultCh <- result{resp: resp, err: err}
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	if err := al.InterruptGraceful("stop now"); err != nil {
+		t.Fatalf("InterruptGraceful failed: %v", err)
+	}
+
+	select {
+	case r := <-resultCh:
+		if r.err != nil {
+			t.Fatalf("unexpected error: %v", r.err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for result")
+	}
+
+	events := collectEventStream(sub.C)
+
+	skippedEvts := filterEvents(events, EventKindToolExecSkipped)
+	if len(skippedEvts) < 1 {
+		t.Fatal("expected at least one ToolExecSkipped event after interrupt")
+	}
+
+	for _, evt := range skippedEvts {
+		payload, ok := evt.Payload.(ToolExecSkippedPayload)
+		if !ok {
+			t.Fatalf("expected ToolExecSkippedPayload, got %T", evt.Payload)
+		}
+		if payload.Reason != "graceful interrupt requested" {
+			t.Fatalf("expected skip reason 'graceful interrupt requested', got %q", payload.Reason)
+		}
+	}
+}
+
+func TestAgentLoop_HookRespond_SteeringSkipsRemaining(t *testing.T) {
+	provider := &multiToolProvider{
+		toolCalls: []providers.ToolCall{
+			{ID: "call-1", Name: "tool_one", Arguments: map[string]any{}},
+			{ID: "call-2", Name: "tool_two", Arguments: map[string]any{}},
+			{ID: "call-3", Name: "tool_three", Arguments: map[string]any{}},
+		},
+		finalContent: "done",
+	}
+	al, _, cleanup := newHookTestLoop(t, provider)
+	defer cleanup()
+
+	al.RegisterTool(&slowTool{name: "tool_two", duration: 100 * time.Millisecond})
+	al.RegisterTool(&slowTool{name: "tool_three", duration: 100 * time.Millisecond})
+
+	hook := &respondHook{
+		respondTools: map[string]bool{"tool_one": true},
+	}
+	if err := al.MountHook(NamedHook("respond-hook", hook)); err != nil {
+		t.Fatalf("MountHook failed: %v", err)
+	}
+
+	sub := al.SubscribeEvents(32)
+	defer al.UnsubscribeEvents(sub.ID)
+
+	sessionKey := routing.BuildAgentMainSessionKey(routing.DefaultAgentID)
+
+	type result struct {
+		resp string
+		err  error
+	}
+	resultCh := make(chan result, 1)
+	go func() {
+		resp, err := al.ProcessDirectWithChannel(
+			context.Background(),
+			"run tools",
+			sessionKey,
+			"cli",
+			"chat1",
+		)
+		resultCh <- result{resp: resp, err: err}
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	al.Steer(providers.Message{Role: "user", Content: "change direction"})
+
+	select {
+	case r := <-resultCh:
+		if r.err != nil {
+			t.Fatalf("unexpected error: %v", r.err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for result")
+	}
+
+	events := collectEventStream(sub.C)
+
+	skippedEvts := filterEvents(events, EventKindToolExecSkipped)
+	if len(skippedEvts) < 1 {
+		t.Fatal("expected at least one ToolExecSkipped event after steering")
+	}
+
+	for _, evt := range skippedEvts {
+		payload, ok := evt.Payload.(ToolExecSkippedPayload)
+		if !ok {
+			t.Fatalf("expected ToolExecSkippedPayload, got %T", evt.Payload)
+		}
+		if payload.Reason != "queued user steering message" {
+			t.Fatalf("expected skip reason 'queued user steering message', got %q", payload.Reason)
+		}
+	}
+}
+
+func filterEvents(events []Event, kind EventKind) []Event {
+	var result []Event
+	for _, evt := range events {
+		if evt.Kind == kind {
+			result = append(result, evt)
+		}
+	}
+	return result
 }

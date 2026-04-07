@@ -475,7 +475,7 @@ Common `Kind` values:
 |--------|-----------------|--------|
 | `continue` | All interceptor types | Pass through without modification |
 | `modify` | `before_llm`, `before_tool`, `after_llm`, `after_tool` | Modify request/response and pass through |
-| `respond` | `before_tool` | Return tool result directly, skip actual execution |
+| `respond` | `before_tool` | Return tool result directly, skip actual execution. **Note: AfterTool is NOT called (design decision - respond provides final answer).** |
 | `deny_tool` | `before_tool` | Deny tool execution |
 | `abort_turn` | All interceptor types | Abort current turn, return error |
 | `hard_abort` | All interceptor types | Force stop entire agent loop |
