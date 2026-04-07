@@ -47,6 +47,10 @@ func NewGatewayCommand() *cobra.Command {
 		false,
 		"Continue starting even when no default model is configured",
 	)
+	cmd.AddCommand(
+		newStatusCommand(),
+		newStopCommand(),
+	)
 
 	return cmd
 }
