@@ -1637,7 +1637,7 @@ func (al *AgentLoop) runAgentLoop(
 		}
 
 		providerName := al.GetConfig().Agents.Defaults.Provider
-		modelName := al.GetConfig().Agents.Defaults.GetModelName()
+		modelName := agent.Model
 
 		m := Metrics{
 			Version:    version,
@@ -1646,6 +1646,7 @@ func (al *AgentLoop) runAgentLoop(
 			Model:      modelName,
 			Complexity: calculateComplexity(promptTokens, compTokens),
 			Tokens:     totalTokens,
+			ToolCalls:  ts.currentIteration(),
 			Processing: time.Since(ts.startedAt),
 		}
 
@@ -2268,10 +2269,15 @@ turnLoop:
 			}
 		}
 
-		// Save finishReason to turnState for SubTurn truncation detection
+		// Save finishReason and Usage permanently to the primary turnState
+		ts.SetLastFinishReason(response.FinishReason)
+		if response.Usage != nil {
+			ts.SetLastUsage(response.Usage)
+		}
+		
+		// Save to inner context if truncated
 		if innerTS := turnStateFromContext(ctx); innerTS != nil {
 			innerTS.SetLastFinishReason(response.FinishReason)
-			// Save usage for token budget tracking
 			if response.Usage != nil {
 				innerTS.SetLastUsage(response.Usage)
 			}

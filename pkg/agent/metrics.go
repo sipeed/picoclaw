@@ -12,13 +12,14 @@ type Metrics struct {
 	Model      string
 	Complexity int
 	Tokens     int
+	ToolCalls  int
 	Processing time.Duration
 }
 
 func WrapResponse(rawOutput string, m Metrics) string {
 	header := fmt.Sprintf(
-		"System: picoclaw-%s\nAgent: %s\nRoute: %s\nModel: %s\nComplexity: %d\nTokens: %d\nProcessing: %.1fs\n\n",
-		m.Version, m.Agent, m.Route, m.Model, m.Complexity, m.Tokens, m.Processing.Seconds(),
+		"System: picoclaw-%s\nAgent: %s\nRoute: %s\nModel: %s\nComplexity: %d\nTokens: %d\nTool Calls: %d\nProcessing: %.1fs\n\n",
+		m.Version, m.Agent, m.Route, m.Model, m.Complexity, m.Tokens, m.ToolCalls, m.Processing.Seconds(),
 	)
 	return header + rawOutput
 }
