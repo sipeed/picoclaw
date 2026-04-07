@@ -34,6 +34,7 @@ const CHANNEL_IMPORTANCE_TAIL = [
   "wecom",
   "dingtalk",
   "qq",
+  "imsg",
   "onebot",
   "matrix",
   "pico",
@@ -83,6 +84,7 @@ const CHANNEL_ICON_MAP: Record<
   onebot: IconRobot,
   pico: IconBrandChrome,
   irc: IconMessages,
+  imsg: IconMessages,
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

@@ -1,0 +1,1087 @@
+Subject: [PATCH] feat:add imsg channel
+feat:add imsg channel
+---
+Index: config/config.example.json
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/config/config.example.json b/config/config.example.json
+--- a/config/config.example.json	(revision e4893d27d769a8441d2d2ac491670158f696d327)
++++ b/config/config.example.json	(revision 1b841470cad5f1a1bd520abbac6ce2e7a7b28802)
+@@ -105,6 +105,11 @@
+       },
+       "reasoning_channel_id": ""
+     },
++    "imsg": {
++      "enabled": false,
++      "allow_from": [],
++      "iMessageCLIPath": "imsg"
++    },
+     "qq": {
+       "enabled": false,
+       "app_id": "YOUR_QQ_APP_ID",
+Index: pkg/channels/imsg/imsg.go
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/pkg/channels/imsg/imsg.go b/pkg/channels/imsg/imsg.go
+new file mode 100644
+--- /dev/null	(revision 9f4fadd446eb36835d4e3c23e652b86c98b601a4)
++++ b/pkg/channels/imsg/imsg.go	(revision 9f4fadd446eb36835d4e3c23e652b86c98b601a4)
+@@ -0,0 +1,824 @@
++package imsg
++
++import (
++	"bufio"
++	"context"
++	"crypto/sha1"
++	"encoding/json"
++	"fmt"
++	"io"
++	"os/exec"
++	"reflect"
++	"strings"
++	"sync"
++	"sync/atomic"
++	"time"
++
++	"github.com/sipeed/picoclaw/pkg/bus"
++	"github.com/sipeed/picoclaw/pkg/channels"
++	"github.com/sipeed/picoclaw/pkg/config"
++	"github.com/sipeed/picoclaw/pkg/identity"
++	"github.com/sipeed/picoclaw/pkg/logger"
++)
++
++type IMsgChannel struct {
++	*channels.BaseChannel
++	config    config.IMsgConfig
++	runCtx    context.Context
++	runCancel context.CancelFunc
++	rpcCmd    *exec.Cmd
++	rpcStdin  io.WriteCloser
++	wg        sync.WaitGroup
++	mu        sync.Mutex
++	fatalMu   sync.Mutex
++	fatalLine string
++	lastLine  string
++	recvMode  string
++	seenMu    sync.Mutex
++	seenIDs   map[string]struct{}
++	seenEvent map[string]time.Time
++	reqSeq    atomic.Uint64
++	writeMu   sync.Mutex
++	pendingMu sync.Mutex
++	pending   map[string]chan rpcResponse
++}
++
++func NewIMsgChannel(cfg config.IMsgConfig, messageBus *bus.MessageBus) (*IMsgChannel, error) {
++	if strings.TrimSpace(cfg.IMessageCLIPath) == "" {
++		cfg.IMessageCLIPath = "imsg"
++	}
++
++	base := channels.NewBaseChannel("imsg", cfg, messageBus, cfg.AllowFrom)
++	return &IMsgChannel{
++		BaseChannel: base,
++		config:      cfg,
++		seenIDs:     make(map[string]struct{}),
++		seenEvent:   make(map[string]time.Time),
++		pending:     make(map[string]chan rpcResponse),
++	}, nil
++}
++
++type rpcResponse struct {
++	Result any
++	Error  *rpcError
++}
++
++type rpcError struct {
++	Code    int    `json:"code"`
++	Message string `json:"message"`
++}
++
++func (c *IMsgChannel) Start(ctx context.Context) error {
++	c.mu.Lock()
++	defer c.mu.Unlock()
++
++	if c.IsRunning() {
++		return nil
++	}
++	c.fatalMu.Lock()
++	c.fatalLine = ""
++	c.lastLine = ""
++	c.fatalMu.Unlock()
++	c.runCtx, c.runCancel = context.WithCancel(ctx)
++	if err := c.startRPCLocked(); err != nil {
++		c.runCancel()
++		c.runCtx = nil
++		c.runCancel = nil
++		return err
++	}
++	c.SetRunning(true)
++	logger.InfoC("imsg", "iMessage channel started")
++	return nil
++}
++
++func (c *IMsgChannel) Stop(ctx context.Context) error {
++	c.mu.Lock()
++	if !c.IsRunning() && c.rpcCmd == nil {
++		c.mu.Unlock()
++		return nil
++	}
++	c.SetRunning(false)
++	if c.runCancel != nil {
++		c.runCancel()
++	}
++	cmd := c.rpcCmd
++	stdin := c.rpcStdin
++	c.rpcCmd = nil
++	c.rpcStdin = nil
++	c.mu.Unlock()
++
++	if stdin != nil {
++		_ = stdin.Close()
++	}
++	if cmd != nil && cmd.Process != nil {
++		_ = cmd.Process.Kill()
++	}
++	c.wg.Wait()
++
++	c.mu.Lock()
++	c.runCtx = nil
++	c.runCancel = nil
++	c.mu.Unlock()
++
++	logger.InfoC("imsg", "iMessage channel stopped")
++	return nil
++}
++
++func (c *IMsgChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
++	if !c.IsRunning() {
++		return nil, channels.ErrNotRunning
++	}
++	paramsList := []map[string]any{
++		{"chat_id": msg.ChatID, "text": msg.Content},
++		{"chatId": msg.ChatID, "text": msg.Content},
++		{"chat_id": msg.ChatID, "content": msg.Content},
++	}
++	methods := []string{"send", "message.send"}
++	var lastErr error
++	for _, method := range methods {
++		for _, params := range paramsList {
++			logger.InfoCF("imsg", "imsg rpc send request", map[string]any{
++				"method": method,
++				"params": params,
++			})
++			if _, err := c.rpcCall(ctx, method, params, 8*time.Second); err == nil {
++				return nil, nil
++			} else {
++				lastErr = err
++			}
++		}
++	}
++	return nil, fmt.Errorf("imsg rpc send failed: %w", lastErr)
++}
++
++// SendMedia implements channels.MediaSender via imsg RPC.
++func (c *IMsgChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
++	if !c.IsRunning() {
++		return nil, channels.ErrNotRunning
++	}
++	store := c.GetMediaStore()
++	if store == nil {
++		return nil, fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
++	}
++
++	for _, part := range msg.Parts {
++		localPath, err := store.Resolve(part.Ref)
++		if err != nil {
++			return nil, fmt.Errorf("resolve media ref %s: %w", part.Ref, err)
++		}
++		paramsList := []map[string]any{
++			{"chat_id": msg.ChatID, "text": part.Caption, "file": localPath},
++			{"chatId": msg.ChatID, "text": part.Caption, "file": localPath},
++			{"chat_id": msg.ChatID, "content": part.Caption, "file": localPath},
++		}
++		methods := []string{"send", "message.send"}
++		var lastErr error
++		ok := false
++		for _, method := range methods {
++			for _, params := range paramsList {
++				logger.InfoCF("imsg", "imsg rpc send media request", map[string]any{
++					"method": method,
++					"params": params,
++				})
++				if _, err := c.rpcCall(ctx, method, params, 12*time.Second); err == nil {
++					ok = true
++					break
++				} else {
++					lastErr = err
++				}
++			}
++			if ok {
++				break
++			}
++		}
++		if !ok {
++			return nil, fmt.Errorf("imsg rpc send media failed: %w", lastErr)
++		}
++	}
++	return nil, nil
++}
++
++func (c *IMsgChannel) startRPCLocked() error {
++	cliPath := strings.TrimSpace(c.config.IMessageCLIPath)
++	if cliPath == "" {
++		cliPath = "imsg"
++	}
++
++	commands := []struct {
++		mode string
++		args []string
++	}{
++		{mode: "rpc", args: []string{"rpc", "--json"}},
++		{mode: "rpc", args: []string{"rpc"}},
++	}
++	var lastErr error
++	for _, candidate := range commands {
++		if err := c.startReceiveProcessLocked(cliPath, candidate.mode, candidate.args); err != nil {
++			lastErr = err
++			continue
++		}
++		if err := c.subscribeRPC(c.runCtx); err != nil {
++			c.cleanupReceiveProcessLocked()
++			lastErr = err
++			continue
++		}
++		return nil
++	}
++	if lastErr != nil {
++		return lastErr
++	}
++	return fmt.Errorf("imsg startup failed: no receive command available")
++}
++
++func (c *IMsgChannel) cleanupReceiveProcessLocked() {
++	stdin := c.rpcStdin
++	cmd := c.rpcCmd
++	c.rpcStdin = nil
++	c.rpcCmd = nil
++	if stdin != nil {
++		_ = stdin.Close()
++	}
++	if cmd != nil && cmd.Process != nil {
++		_ = cmd.Process.Kill()
++	}
++	c.wg.Wait()
++}
++
++func (c *IMsgChannel) startReceiveProcessLocked(cliPath, mode string, args []string) error {
++	cmd := exec.CommandContext(c.runCtx, cliPath, args...)
++	logger.InfoCF("imsg", "imsg receive command", map[string]any{
++		"mode": mode,
++		"cmd":  strings.Join(cmd.Args, " "),
++	})
++	stdout, err := cmd.StdoutPipe()
++	if err != nil {
++		return fmt.Errorf("imsg %s stdout pipe: %w", mode, err)
++	}
++	stderr, err := cmd.StderrPipe()
++	if err != nil {
++		return fmt.Errorf("imsg %s stderr pipe: %w", mode, err)
++	}
++	stdin, err := cmd.StdinPipe()
++	if err != nil {
++		return fmt.Errorf("imsg %s stdin pipe: %w", mode, err)
++	}
++	if err := cmd.Start(); err != nil {
++		return fmt.Errorf("start imsg %s: %w", mode, err)
++	}
++	c.rpcCmd = cmd
++	c.rpcStdin = stdin
++	c.recvMode = mode
++
++	exited := make(chan error, 1)
++	c.wg.Add(3)
++	go c.consumeRPCStdout(stdout)
++	go c.consumeRPCStderr(stderr)
++	go c.waitRPCExit(cmd, exited)
++
++	// Startup probe: if RPC exits immediately, fail Start with a clear reason.
++	select {
++	case err := <-exited:
++		c.rpcCmd = nil
++		c.rpcStdin = nil
++		c.wg.Wait()
++		if err == nil {
++			if fatal := c.getFatalLine(); fatal != "" {
++				return fmt.Errorf(
++					"imsg %s exited during startup (cmd=%q, fatal=%s)",
++					mode,
++					strings.Join(cmd.Args, " "),
++					fatal,
++				)
++			}
++			if last := c.getLastLine(); last != "" {
++				return fmt.Errorf(
++					"imsg %s exited during startup (cmd=%q, last output: %s)",
++					mode,
++					strings.Join(cmd.Args, " "),
++					last,
++				)
++			}
++			return fmt.Errorf(
++				"imsg %s exited during startup (cmd=%q, no output captured)",
++				mode,
++				strings.Join(cmd.Args, " "),
++			)
++		}
++		if fatal := c.getFatalLine(); fatal != "" {
++			return fmt.Errorf(
++				"imsg %s startup failed: %v (cmd=%q, fatal=%s)",
++				mode,
++				err,
++				strings.Join(cmd.Args, " "),
++				fatal,
++			)
++		}
++		if last := c.getLastLine(); last != "" {
++			return fmt.Errorf(
++				"imsg %s startup failed: %v (cmd=%q, last output: %s)",
++				mode,
++				err,
++				strings.Join(cmd.Args, " "),
++				last,
++			)
++		}
++		return fmt.Errorf(
++			"imsg %s startup failed: %w (cmd=%q, no output captured)",
++			mode,
++			err,
++			strings.Join(cmd.Args, " "),
++		)
++	case <-time.After(1200 * time.Millisecond):
++	}
++	logger.InfoCF("imsg", "imsg receive process started", map[string]any{
++		"mode": mode,
++		"cmd":  strings.Join(cmd.Args, " "),
++	})
++	// NOTE: History polling fallback is intentionally disabled.
++	// Use pure JSON-RPC watch.subscribe for inbound messages.
++	return nil
++}
++
++func (c *IMsgChannel) consumeRPCStdout(r io.Reader) {
++	defer c.wg.Done()
++	scanner := bufio.NewScanner(r)
++	scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
++	for scanner.Scan() {
++		c.handleRPCLine(scanner.Text())
++	}
++	if err := scanner.Err(); err != nil && c.IsRunning() {
++		logger.WarnCF("imsg", "imsg rpc stdout scanner error", map[string]any{"error": err.Error()})
++	}
++}
++
++func (c *IMsgChannel) consumeRPCStderr(r io.Reader) {
++	defer c.wg.Done()
++	scanner := bufio.NewScanner(r)
++	scanner.Buffer(make([]byte, 0, 8*1024), 512*1024)
++	for scanner.Scan() {
++		line := strings.TrimSpace(scanner.Text())
++		if line == "" {
++			continue
++		}
++		c.setLastLine(line)
++		if isFatalRPCLine(line) {
++			c.setFatalLine(line)
++		}
++		logger.DebugCF("imsg", "imsg rpc stderr", map[string]any{"line": line})
++	}
++}
++
++func (c *IMsgChannel) waitRPCExit(cmd *exec.Cmd, exited chan<- error) {
++	defer c.wg.Done()
++	err := cmd.Wait()
++	select {
++	case exited <- err:
++	default:
++	}
++	if err != nil && c.IsRunning() {
++		fields := map[string]any{"error": err.Error()}
++		if fatal := c.getFatalLine(); fatal != "" {
++			fields["hint"] = fatal
++		} else if last := c.getLastLine(); last != "" {
++			fields["last_output"] = last
++		}
++		logger.ErrorCF("imsg", "imsg rpc exited unexpectedly", fields)
++	}
++}
++
++func (c *IMsgChannel) handleRPCLine(line string) {
++	line = strings.TrimSpace(line)
++	if line == "" {
++		return
++	}
++	c.setLastLine(line)
++	var raw map[string]any
++	if err := json.Unmarshal([]byte(line), &raw); err != nil {
++		if isFatalRPCLine(line) {
++			c.setFatalLine(line)
++			logger.ErrorCF("imsg", "imsg rpc fatal output", map[string]any{"line": line})
++			return
++		}
++		logger.DebugCF("imsg", "skip non-json rpc line", map[string]any{"line": line})
++		return
++	}
++	// Handle JSON-RPC responses first.
++	if id, ok := raw["id"]; ok && (raw["result"] != nil || raw["error"] != nil) {
++		c.resolvePending(id, raw)
++		return
++	}
++
++	method := strings.ToLower(anyToString(raw["method"]))
++	if method != "" {
++		// imsg legacy notification: method = "message"
++		if strings.Contains(method, "message") || strings.Contains(method, "watch") {
++			params := firstMap(raw["params"], raw["result"], raw["payload"], raw["message"], raw)
++			c.handlePayload(params, line)
++			return
++		}
++		// Non-message RPC notifications (e.g. ping/ack) should not enter agent loop.
++		logger.DebugCF("imsg", "skip non-message rpc notification", map[string]any{"method": method})
++		return
++	}
++
++	// Ignore JSON lines without method to avoid parsing RPC response-like payloads
++	// as inbound chat messages, which can create self-reply loops.
++	logger.DebugCF("imsg", "skip rpc json without method", map[string]any{"line": line})
++}
++
++func (c *IMsgChannel) handlePayload(raw map[string]any, rawLine string) {
++	// Ignore messages sent by ourselves to avoid self-trigger loops.
++	if deepBool(raw, "is_from_me", "from_me", "is_me", "isFromMe", "fromMe", "outgoing") {
++		return
++	}
++	content := deepCoalesceString(raw, "content", "text", "message", "body")
++	if strings.TrimSpace(content) == "" {
++		return
++	}
++
++	kind := strings.ToLower(deepCoalesceString(raw, "type", "event", "method", "name"))
++	if strings.Contains(kind, "outgoing") || strings.Contains(kind, "sent") {
++		return
++	}
++
++	senderID := deepCoalesceString(raw, "from", "sender", "sender_id", "handle", "from_id", "participant")
++	chatID := deepCoalesceString(
++		raw,
++		"chat_id",
++		"chat",
++		"conversation",
++		"thread",
++		"peer",
++		"to",
++		"chat_identifier",
++		"conversation_id",
++	)
++	if senderID == "" && chatID == "" {
++		logger.DebugCF("imsg", "imsg rpc json parsed but missing sender/chat", map[string]any{
++			"kind": kind,
++			"line": rawLine,
++		})
++		return
++	}
++	if senderID == "" {
++		senderID = chatID
++	}
++	if chatID == "" {
++		chatID = senderID
++	}
++	messageID := deepCoalesceString(raw, "id", "message_id", "guid", "rowid")
++	if messageID != "" && !c.markSeen(messageID) {
++		return
++	}
++	if messageID == "" {
++		fingerprint := eventFingerprint(chatID, senderID, content, deepCoalesceString(raw, "timestamp", "date", "time"))
++		if !c.markSeenEvent(fingerprint) {
++			return
++		}
++	}
++
++	peerKind := "direct"
++	if deepBool(raw, "is_group", "group", "isGroup") {
++		peerKind = "group"
++	}
++	peer := bus.Peer{Kind: peerKind, ID: chatID}
++	sender := bus.SenderInfo{
++		Platform:    "imsg",
++		PlatformID:  senderID,
++		CanonicalID: identity.BuildCanonicalID("imsg", senderID),
++	}
++	if !c.isAllowedIMsg(sender, senderID, chatID) {
++		logger.DebugCF("imsg", "imsg message blocked by allow_from", map[string]any{
++			"sender_id": senderID,
++			"chat_id":   chatID,
++		})
++		c.sendNotAllowedNotice(chatID)
++		return
++	}
++	metadata := map[string]string{"platform": "imsg"}
++	if kind != "" {
++		metadata["rpc_event"] = kind
++	}
++	metadata["recv_mode"] = c.recvMode
++	if rawLine != "" {
++		metadata["raw_line"] = rawLine
++	}
++	logger.InfoCF("imsg", "imsg inbound message received", map[string]any{
++		"mode":      c.recvMode,
++		"event":     kind,
++		"sender_id": senderID,
++		"chat_id":   chatID,
++	})
++	c.HandleMessage(c.runCtx, peer, messageID, senderID, chatID, content, nil, metadata, sender)
++}
++
++func (c *IMsgChannel) isAllowedIMsg(sender bus.SenderInfo, senderID, chatID string) bool {
++	// 1) Canonical sender matching (preferred).
++	if c.IsAllowedSender(sender) {
++		return true
++	}
++	// 2) Legacy sender matching.
++	if senderID != "" && c.IsAllowed(senderID) {
++		return true
++	}
++	return false
++}
++
++func (c *IMsgChannel) sendNotAllowedNotice(chatID string) {
++	if strings.TrimSpace(chatID) == "" || !c.IsRunning() {
++		return
++	}
++	_, err := c.Send(c.runCtx, bus.OutboundMessage{
++		Channel: "imsg",
++		ChatID:  chatID,
++		Content: "not allowed",
++	})
++	if err != nil {
++		logger.DebugCF("imsg", "failed to send not-allowed notice", map[string]any{
++			"chat_id": chatID,
++			"error":   err.Error(),
++		})
++	}
++}
++
++func deepCoalesceString(v any, keys ...string) string {
++	for _, k := range keys {
++		if s := deepLookupString(v, k); s != "" {
++			return s
++		}
++	}
++	return ""
++}
++
++func deepLookupString(v any, key string) string {
++	switch vv := v.(type) {
++	case map[string]any:
++		if val, ok := vv[key]; ok {
++			if s := anyToString(val); s != "" {
++				return s
++			}
++		}
++		for _, child := range vv {
++			if s := deepLookupString(child, key); s != "" {
++				return s
++			}
++		}
++	case []any:
++		for _, child := range vv {
++			if s := deepLookupString(child, key); s != "" {
++				return s
++			}
++		}
++	}
++	return ""
++}
++
++func anyToString(v any) string {
++	switch vv := v.(type) {
++	case string:
++		if strings.TrimSpace(vv) != "" {
++			return vv
++		}
++	case json.Number:
++		return vv.String()
++	case float64:
++		return fmt.Sprintf("%.0f", vv)
++	case int, int32, int64, uint, uint32, uint64:
++		return fmt.Sprintf("%v", vv)
++	}
++	return ""
++}
++
++func deepBool(v any, keys ...string) bool {
++	for _, k := range keys {
++		if b, ok := deepLookupBool(v, k); ok {
++			return b
++		}
++	}
++	return false
++}
++
++func deepLookupBool(v any, key string) (bool, bool) {
++	switch vv := v.(type) {
++	case map[string]any:
++		if val, ok := vv[key]; ok {
++			if b, okb := val.(bool); okb {
++				return b, true
++			}
++			// Handle 0/1 style flags.
++			rv := reflect.ValueOf(val)
++			switch rv.Kind() {
++			case reflect.Int, reflect.Int32, reflect.Int64:
++				return rv.Int() != 0, true
++			case reflect.Uint, reflect.Uint32, reflect.Uint64:
++				return rv.Uint() != 0, true
++			case reflect.Float32, reflect.Float64:
++				return rv.Float() != 0, true
++			}
++		}
++		for _, child := range vv {
++			if b, ok := deepLookupBool(child, key); ok {
++				return b, true
++			}
++		}
++	case []any:
++		for _, child := range vv {
++			if b, ok := deepLookupBool(child, key); ok {
++				return b, true
++			}
++		}
++	}
++	return false, false
++}
++
++func (c *IMsgChannel) subscribeRPC(ctx context.Context) error {
++	methods := []string{"watch.subscribe", "subscribe"}
++	var lastErr error
++	for _, m := range methods {
++		logger.InfoCF("imsg", "imsg rpc subscribe request", map[string]any{"method": m})
++		if _, err := c.rpcCall(ctx, m, map[string]any{}, 6*time.Second); err == nil {
++			return nil
++		} else {
++			lastErr = err
++		}
++	}
++	return fmt.Errorf("rpc subscribe failed: %w", lastErr)
++}
++
++func (c *IMsgChannel) rpcCall(ctx context.Context, method string, params any, timeout time.Duration) (any, error) {
++	id := fmt.Sprintf("%d", c.reqSeq.Add(1))
++	req := map[string]any{
++		"jsonrpc": "2.0",
++		"id":      id,
++		"method":  method,
++		"params":  params,
++	}
++	data, err := json.Marshal(req)
++	if err != nil {
++		return nil, err
++	}
++
++	respCh := make(chan rpcResponse, 1)
++	c.pendingMu.Lock()
++	c.pending[id] = respCh
++	c.pendingMu.Unlock()
++	defer func() {
++		c.pendingMu.Lock()
++		delete(c.pending, id)
++		c.pendingMu.Unlock()
++	}()
++
++	c.writeMu.Lock()
++	stdin := c.rpcStdin
++	if stdin == nil {
++		c.writeMu.Unlock()
++		return nil, fmt.Errorf("rpc stdin unavailable")
++	}
++	_, wErr := io.WriteString(stdin, string(data)+"\n")
++	c.writeMu.Unlock()
++	if wErr != nil {
++		return nil, fmt.Errorf("rpc write failed: %w", wErr)
++	}
++
++	waitCtx, cancel := context.WithTimeout(ctx, timeout)
++	defer cancel()
++	select {
++	case <-waitCtx.Done():
++		return nil, waitCtx.Err()
++	case resp := <-respCh:
++		if resp.Error != nil {
++			return nil, fmt.Errorf("rpc error %d: %s", resp.Error.Code, resp.Error.Message)
++		}
++		return resp.Result, nil
++	}
++}
++
++func (c *IMsgChannel) resolvePending(id any, raw map[string]any) {
++	key := anyToString(id)
++	if key == "" {
++		return
++	}
++	c.pendingMu.Lock()
++	ch, ok := c.pending[key]
++	c.pendingMu.Unlock()
++	if !ok {
++		return
++	}
++	resp := rpcResponse{Result: raw["result"]}
++	if errObj, ok := raw["error"].(map[string]any); ok {
++		resp.Error = &rpcError{
++			Code:    int(toFloat(errObj["code"])),
++			Message: anyToString(errObj["message"]),
++		}
++	}
++	select {
++	case ch <- resp:
++	default:
++	}
++}
++
++func firstMap(candidates ...any) map[string]any {
++	for _, v := range candidates {
++		switch vv := v.(type) {
++		case map[string]any:
++			if msg, ok := vv["message"].(map[string]any); ok {
++				return msg
++			}
++			if data, ok := vv["data"].(map[string]any); ok {
++				return data
++			}
++			if payload, ok := vv["payload"].(map[string]any); ok {
++				return payload
++			}
++			return vv
++		case []any:
++			for _, item := range vv {
++				if mm, ok := item.(map[string]any); ok {
++					return mm
++				}
++			}
++		}
++	}
++	return map[string]any{}
++}
++
++func toFloat(v any) float64 {
++	switch vv := v.(type) {
++	case float64:
++		return vv
++	case int:
++		return float64(vv)
++	case int64:
++		return float64(vv)
++	case json.Number:
++		f, _ := vv.Float64()
++		return f
++	}
++	return 0
++}
++
++func isFatalRPCLine(line string) bool {
++	l := strings.ToLower(line)
++	return strings.Contains(l, "permissiondenied") ||
++		strings.Contains(l, "authorization denied") ||
++		(strings.Contains(l, "chat.db") && strings.Contains(l, "denied"))
++}
++
++func (c *IMsgChannel) setFatalLine(line string) {
++	c.fatalMu.Lock()
++	defer c.fatalMu.Unlock()
++	if c.fatalLine == "" {
++		c.fatalLine = line
++	}
++}
++
++func (c *IMsgChannel) getFatalLine() string {
++	c.fatalMu.Lock()
++	defer c.fatalMu.Unlock()
++	return c.fatalLine
++}
++
++func (c *IMsgChannel) setLastLine(line string) {
++	c.fatalMu.Lock()
++	defer c.fatalMu.Unlock()
++	c.lastLine = line
++}
++
++func (c *IMsgChannel) getLastLine() string {
++	c.fatalMu.Lock()
++	defer c.fatalMu.Unlock()
++	return c.lastLine
++}
++
++func (c *IMsgChannel) markSeen(id string) bool {
++	c.seenMu.Lock()
++	defer c.seenMu.Unlock()
++	if _, ok := c.seenIDs[id]; ok {
++		return false
++	}
++	c.seenIDs[id] = struct{}{}
++	return true
++}
++
++func (c *IMsgChannel) markSeenEvent(fp string) bool {
++	c.seenMu.Lock()
++	defer c.seenMu.Unlock()
++	now := time.Now()
++	const ttl = 2 * time.Minute
++	if t, ok := c.seenEvent[fp]; ok && now.Sub(t) <= ttl {
++		return false
++	}
++	c.seenEvent[fp] = now
++	// Opportunistic cleanup to keep map bounded.
++	for k, t := range c.seenEvent {
++		if now.Sub(t) > ttl {
++			delete(c.seenEvent, k)
++		}
++	}
++	return true
++}
++
++func eventFingerprint(chatID, senderID, content, ts string) string {
++	sum := sha1.Sum([]byte(chatID + "|" + senderID + "|" + content + "|" + ts))
++	return fmt.Sprintf("%x", sum[:])
++}
+Index: pkg/channels/imsg/init.go
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/pkg/channels/imsg/init.go b/pkg/channels/imsg/init.go
+new file mode 100644
+--- /dev/null	(revision 1b841470cad5f1a1bd520abbac6ce2e7a7b28802)
++++ b/pkg/channels/imsg/init.go	(revision 1b841470cad5f1a1bd520abbac6ce2e7a7b28802)
+@@ -0,0 +1,16 @@
++package imsg
++
++import (
++	"github.com/sipeed/picoclaw/pkg/bus"
++	"github.com/sipeed/picoclaw/pkg/channels"
++	"github.com/sipeed/picoclaw/pkg/config"
++)
++
++func init() {
++	channels.RegisterFactory("imsg", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
++		if !cfg.Channels.IMsg.Enabled {
++			return nil, nil
++		}
++		return NewIMsgChannel(cfg.Channels.IMsg, b)
++	})
++}
+Index: pkg/channels/manager.go
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/pkg/channels/manager.go b/pkg/channels/manager.go
+--- a/pkg/channels/manager.go	(revision e4893d27d769a8441d2d2ac491670158f696d327)
++++ b/pkg/channels/manager.go	(revision 1b841470cad5f1a1bd520abbac6ce2e7a7b28802)
+@@ -374,6 +374,10 @@
+ 		m.initChannel("discord", "Discord")
+ 	}
+ 
++	if channels.IMsg.Enabled {
++		m.initChannel("imsg", "iMessage")
++	}
++
+ 	if channels.MaixCam.Enabled {
+ 		m.initChannel("maixcam", "MaixCam")
+ 	}
+Index: pkg/config/config.go
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/pkg/config/config.go b/pkg/config/config.go
+--- a/pkg/config/config.go	(revision e4893d27d769a8441d2d2ac491670158f696d327)
++++ b/pkg/config/config.go	(revision 9f4fadd446eb36835d4e3c23e652b86c98b601a4)
+@@ -281,6 +281,7 @@
+ 	Telegram   TelegramConfig   `json:"telegram"    yaml:"telegram,omitempty"`
+ 	Feishu     FeishuConfig     `json:"feishu"      yaml:"feishu,omitempty"`
+ 	Discord    DiscordConfig    `json:"discord"     yaml:"discord,omitempty"`
++	IMsg       IMsgConfig       `json:"imsg"        yaml:"imsg,omitempty"`
+ 	MaixCam    MaixCamConfig    `json:"maixcam"     yaml:"-"`
+ 	QQ         QQConfig         `json:"qq"          yaml:"qq,omitempty"`
+ 	DingTalk   DingTalkConfig   `json:"dingtalk"    yaml:"dingtalk,omitempty"`
+@@ -383,6 +384,12 @@
+ 	ReasoningChannelID string              `json:"reasoning_channel_id"    yaml:"-"               env:"PICOCLAW_CHANNELS_DISCORD_REASONING_CHANNEL_ID"`
+ }
+ 
++type IMsgConfig struct {
++	Enabled         bool                `json:"enabled"         yaml:"-" env:"PICOCLAW_CHANNELS_IMSG_ENABLED"`
++	AllowFrom       FlexibleStringSlice `json:"allow_from"      yaml:"-" env:"PICOCLAW_CHANNELS_IMSG_ALLOW_FROM"`
++	IMessageCLIPath string              `json:"iMessageCLIPath" yaml:"-" env:"PICOCLAW_CHANNELS_IMSG_IMESSAGECLIPATH"`
++}
++
+ type MaixCamConfig struct {
+ 	Enabled            bool                `json:"enabled"              env:"PICOCLAW_CHANNELS_MAIXCAM_ENABLED"`
+ 	Host               string              `json:"host"                 env:"PICOCLAW_CHANNELS_MAIXCAM_HOST"`
+Index: pkg/config/defaults.go
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/pkg/config/defaults.go b/pkg/config/defaults.go
+--- a/pkg/config/defaults.go	(revision e4893d27d769a8441d2d2ac491670158f696d327)
++++ b/pkg/config/defaults.go	(revision 1b841470cad5f1a1bd520abbac6ce2e7a7b28802)
+@@ -68,6 +68,11 @@
+ 				AllowFrom:   FlexibleStringSlice{},
+ 				MentionOnly: false,
+ 			},
++			IMsg: IMsgConfig{
++				Enabled:         false,
++				AllowFrom:       FlexibleStringSlice{},
++				IMessageCLIPath: "imsg",
++			},
+ 			MaixCam: MaixCamConfig{
+ 				Enabled:   false,
+ 				Host:      "0.0.0.0",
+Index: pkg/gateway/gateway.go
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/pkg/gateway/gateway.go b/pkg/gateway/gateway.go
+--- a/pkg/gateway/gateway.go	(revision e4893d27d769a8441d2d2ac491670158f696d327)
++++ b/pkg/gateway/gateway.go	(revision 1b841470cad5f1a1bd520abbac6ce2e7a7b28802)
+@@ -18,6 +18,7 @@
+ 	_ "github.com/sipeed/picoclaw/pkg/channels/dingtalk"
+ 	_ "github.com/sipeed/picoclaw/pkg/channels/discord"
+ 	_ "github.com/sipeed/picoclaw/pkg/channels/feishu"
++	_ "github.com/sipeed/picoclaw/pkg/channels/imsg"
+ 	_ "github.com/sipeed/picoclaw/pkg/channels/irc"
+ 	_ "github.com/sipeed/picoclaw/pkg/channels/line"
+ 	_ "github.com/sipeed/picoclaw/pkg/channels/maixcam"
+Index: web/backend/api/channels.go
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/web/backend/api/channels.go b/web/backend/api/channels.go
+--- a/web/backend/api/channels.go	(revision e4893d27d769a8441d2d2ac491670158f696d327)
++++ b/web/backend/api/channels.go	(revision 1b841470cad5f1a1bd520abbac6ce2e7a7b28802)
+@@ -15,6 +15,7 @@
+ 	{Name: "weixin", ConfigKey: "weixin"},
+ 	{Name: "telegram", ConfigKey: "telegram"},
+ 	{Name: "discord", ConfigKey: "discord"},
++	{Name: "imsg", ConfigKey: "imsg"},
+ 	{Name: "slack", ConfigKey: "slack"},
+ 	{Name: "feishu", ConfigKey: "feishu"},
+ 	{Name: "dingtalk", ConfigKey: "dingtalk"},
+Index: web/frontend/src/components/channels/channel-config-page.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/web/frontend/src/components/channels/channel-config-page.tsx b/web/frontend/src/components/channels/channel-config-page.tsx
+--- a/web/frontend/src/components/channels/channel-config-page.tsx	(revision e4893d27d769a8441d2d2ac491670158f696d327)
++++ b/web/frontend/src/components/channels/channel-config-page.tsx	(revision 1b841470cad5f1a1bd520abbac6ce2e7a7b28802)
+@@ -225,6 +225,7 @@
+ 
+ const CHANNELS_WITHOUT_DOCS = new Set([
+   "pico",
++  "imsg",
+   "wecom",
+   "matrix",
+   "irc",
+Index: web/frontend/src/components/channels/channel-forms/generic-form.tsx
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/web/frontend/src/components/channels/channel-forms/generic-form.tsx b/web/frontend/src/components/channels/channel-forms/generic-form.tsx
+--- a/web/frontend/src/components/channels/channel-forms/generic-form.tsx	(revision e4893d27d769a8441d2d2ac491670158f696d327)
++++ b/web/frontend/src/components/channels/channel-forms/generic-form.tsx	(revision 1b841470cad5f1a1bd520abbac6ce2e7a7b28802)
+@@ -151,6 +151,7 @@
+       channels: t("channels.form.desc.channels"),
+       request_caps: t("channels.form.desc.requestCaps"),
+       max_base64_file_size_mib: t("channels.form.desc.maxBase64FileSizeMiB"),
++      iMessageCLIPath: t("channels.form.desc.iMessageCLIPath"),
+     }
+     return (
+       descriptions[key] ??
+Index: web/frontend/src/hooks/use-sidebar-channels.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/web/frontend/src/hooks/use-sidebar-channels.ts b/web/frontend/src/hooks/use-sidebar-channels.ts
+--- a/web/frontend/src/hooks/use-sidebar-channels.ts	(revision e4893d27d769a8441d2d2ac491670158f696d327)
++++ b/web/frontend/src/hooks/use-sidebar-channels.ts	(revision 1b841470cad5f1a1bd520abbac6ce2e7a7b28802)
+@@ -34,6 +34,7 @@
+   "wecom",
+   "dingtalk",
+   "qq",
++  "imsg",
+   "onebot",
+   "matrix",
+   "pico",
+@@ -83,6 +84,7 @@
+   onebot: IconRobot,
+   pico: IconBrandChrome,
+   irc: IconMessages,
++  imsg: IconMessages,
+ }
+ 
+ function asRecord(value: unknown): Record<string, unknown> {
+Index: web/frontend/src/i18n/locales/en.json
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/web/frontend/src/i18n/locales/en.json b/web/frontend/src/i18n/locales/en.json
+--- a/web/frontend/src/i18n/locales/en.json	(revision e4893d27d769a8441d2d2ac491670158f696d327)
++++ b/web/frontend/src/i18n/locales/en.json	(revision 1b841470cad5f1a1bd520abbac6ce2e7a7b28802)
+@@ -249,6 +249,7 @@
+     "name": {
+       "telegram": "Telegram",
+       "discord": "Discord",
++      "imsg": "iMessage",
+       "slack": "Slack",
+       "feishu": "Feishu",
+       "dingtalk": "DingTalk",
+@@ -385,6 +386,7 @@
+         "realName": "Displayed real name.",
+         "channels": "IRC channels to join.",
+         "requestCaps": "IRC capability list requested on connect.",
++        "iMessageCLIPath": "Path to iMessage CLI executable (default: imsg).",
+         "maxBase64FileSizeMiB": "Maximum size in MiB for converting local files to base64 before upload. 0 means unlimited. Applies only to local files, not URL uploads.",
+         "genericField": "Used to configure {{field}}."
+       }
+Index: web/frontend/src/i18n/locales/zh.json
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/web/frontend/src/i18n/locales/zh.json b/web/frontend/src/i18n/locales/zh.json
+--- a/web/frontend/src/i18n/locales/zh.json	(revision e4893d27d769a8441d2d2ac491670158f696d327)
++++ b/web/frontend/src/i18n/locales/zh.json	(revision 1b841470cad5f1a1bd520abbac6ce2e7a7b28802)
+@@ -249,6 +249,7 @@
+     "name": {
+       "telegram": "Telegram",
+       "discord": "Discord",
++      "imsg": "iMessage",
+       "slack": "Slack",
+       "feishu": "飞书",
+       "dingtalk": "钉钉",
+@@ -385,6 +386,7 @@
+         "realName": "显示名称。",
+         "channels": "要加入的 IRC 频道列表。",
+         "requestCaps": "连接时请求的 IRC 扩展能力列表。",
++        "iMessageCLIPath": "iMessage CLI 可执行文件路径（默认：imsg）。",
+         "maxBase64FileSizeMiB": "本地文件转为 base64 上传的最大体积，单位 MiB；0 表示不限制，仅影响本地文件，不影响 URL 直传。",
+         "genericField": "用于配置{{field}}。"
+       }

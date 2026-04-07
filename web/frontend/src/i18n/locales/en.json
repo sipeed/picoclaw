@@ -254,6 +254,7 @@
     "name": {
       "telegram": "Telegram",
       "discord": "Discord",
+      "imsg": "iMessage",
       "slack": "Slack",
       "feishu": "Feishu",
       "dingtalk": "DingTalk",
@@ -385,6 +386,7 @@
         "realName": "Displayed real name.",
         "channels": "IRC channels to join.",
         "requestCaps": "IRC capability list requested on connect.",
+        "iMessageCLIPath": "Path to iMessage CLI executable (default: imsg).",
         "maxBase64FileSizeMiB": "Maximum size in MiB for converting local files to base64 before upload. 0 means unlimited. Applies only to local files, not URL uploads.",
         "genericField": "Used to configure {{field}}."
       }

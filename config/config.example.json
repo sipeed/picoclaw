@@ -110,6 +110,11 @@
       },
       "reasoning_channel_id": ""
     },
+    "imsg": {
+      "enabled": false,
+      "allow_from": [],
+      "iMessageCLIPath": "imsg"
+    },
     "qq": {
       "enabled": false,
       "app_id": "YOUR_QQ_APP_ID",
