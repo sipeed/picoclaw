@@ -765,11 +765,12 @@ func TestProviderChat_CustomHeadersInjected(t *testing.T) {
 }
 
 func TestProviderChatStream_CustomHeadersInjected(t *testing.T) {
-	var gotSource, gotAuth string
+	var gotSource, gotAuth, gotUserAgent string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotSource = r.Header.Get("X-Source")
 		gotAuth = r.Header.Get("Authorization")
+		gotUserAgent = r.Header.Get("User-Agent")
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n"))
@@ -781,9 +782,11 @@ func TestProviderChatStream_CustomHeadersInjected(t *testing.T) {
 		"key",
 		server.URL,
 		"",
+		WithUserAgent("PicoClaw/Test"),
 		WithCustomHeaders(map[string]string{
 			"X-Source":      "coding-plan",
 			"Authorization": "Token stream-auth",
+			"User-Agent":    "Custom-UA/Stream",
 		}),
 	)
 
@@ -806,6 +809,9 @@ func TestProviderChatStream_CustomHeadersInjected(t *testing.T) {
 	}
 	if gotAuth != "Token stream-auth" {
 		t.Fatalf("Authorization = %q, want %q", gotAuth, "Token stream-auth")
+	}
+	if gotUserAgent != "Custom-UA/Stream" {
+		t.Fatalf("User-Agent = %q, want %q", gotUserAgent, "Custom-UA/Stream")
 	}
 }
 

@@ -271,6 +271,9 @@ func (p *Provider) ChatStream(
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
+	if p.userAgent != "" {
+		req.Header.Set("User-Agent", p.userAgent)
+	}
 	if p.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
