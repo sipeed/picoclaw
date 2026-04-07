@@ -1,6 +1,6 @@
 const express = require('express');
 const { spawn } = require('child_process');
-const { readdirSync } = require('fs');
+const { readdirSync, readFileSync } = require('fs');
 const path = require('path');
 
 const app = express();
@@ -78,17 +78,41 @@ app.post('/test/run', (req, res) => {
   });
 });
 
+const TEMPLATES_DIR = path.join(__dirname, 'templates');
+const AVAILABLE_AREAS = ['flow-designer', 'flow-tester', 'knowledge-base'];
+
+/**
+ * GET /agent/areas
+ * Returns the list of available template areas.
+ */
+app.get('/agent/areas', (_req, res) => {
+  res.json({ areas: AVAILABLE_AREAS });
+});
+
 /**
  * POST /agent/run
- * Body: { "prompt": "your prompt text here" }
- * Runs picoclaw via docker compose with the given prompt, streams output back.
+ * Body: { "area": "flow-designer", "testFile": "create-new-flow-custom-node", "steps": "...", "expectedResult": "..." }
+ * Composes the full prompt from the area template and runs picoclaw via docker compose.
+ * Streams output back as plain text.
  */
 app.post('/agent/run', (req, res) => {
-  const { prompt } = req.body;
+  const { area, testFile, steps, expectedResult } = req.body;
 
-  if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
-    return res.status(400).json({ error: '"prompt" is required' });
+  if (!area || !testFile || !steps || !expectedResult) {
+    return res.status(400).json({ error: '"area", "testFile", "steps", and "expectedResult" are required' });
   }
+
+  if (!AVAILABLE_AREAS.includes(area)) {
+    return res.status(400).json({ error: `Unknown area. Available: ${AVAILABLE_AREAS.join(', ')}` });
+  }
+
+  const templatePath = path.join(TEMPLATES_DIR, `${area}.txt`);
+  const template = readFileSync(templatePath, 'utf-8');
+
+  const prompt = template
+    .replace(/\{\{TEST_FILE\}\}/g, testFile)
+    .replace(/\{\{STEPS\}\}/g, steps)
+    .replace(/\{\{EXPECTED_RESULT\}\}/g, expectedResult);
 
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.setHeader('Transfer-Encoding', 'chunked');
@@ -96,7 +120,7 @@ app.post('/agent/run', (req, res) => {
 
   const proc = spawn(
     'docker',
-    ['compose', '--env-file', '.env', '--profile', 'gateway', 'run', '--rm', 'picoclaw-agent', '-m', prompt.trim()],
+    ['compose', '--env-file', '.env', '--profile', 'gateway', 'run', '--rm', 'picoclaw-agent', '-m', prompt],
     {
       cwd: DOCKER_DIR,
       env: { ...process.env },
