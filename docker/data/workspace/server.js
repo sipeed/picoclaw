@@ -1,14 +1,14 @@
-// node -e "require('./server.js')" & sleep 2 && curl -s -X POST http://localhost:3100/test/run -H 'Content-Type: application/json' -d '{}' && kill %1 2>/dev/null; true
-
 const express = require('express');
 const { spawn } = require('child_process');
 const { readdirSync } = require('fs');
 const path = require('path');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 const TESTS_DIR = path.join(__dirname, 'tests');
+// docker/ directory is two levels up from workspace/
+const DOCKER_DIR = path.join(__dirname, '..', '..');
 
 function getTestFiles() {
   const results = [];
@@ -78,61 +78,30 @@ app.post('/test/run', (req, res) => {
   });
 });
 
-// docker/ directory is two levels up from workspace/
-const DOCKER_DIR = path.join(__dirname, '..', '..');
-
-function getPromptFiles() {
-  const results = [];
-  function walk(dir) {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walk(full);
-      } else if (entry.name.endsWith('-prompt.txt')) {
-        results.push(path.relative(__dirname, full));
-      }
-    }
-  }
-  walk(TESTS_DIR);
-  return results;
-}
-
 /**
- * GET /picoclaw/prompts
- * Returns the list of available prompt .txt files.
+ * POST /agent/run
+ * Body: { "prompt": "your prompt text here" }
+ * Runs picoclaw via docker compose with the given prompt, streams output back.
  */
-app.get('/picoclaw/prompts', (_req, res) => {
-  res.json({ files: getPromptFiles() });
-});
+app.post('/agent/run', (req, res) => {
+  const { prompt } = req.body;
 
-/**
- * POST /picoclaw/run
- * Body: { "file": "tests/knowledge-base/schedule-kb-full-sync-advanced-prompt.txt" }
- * Executes the prompt file as a bash script from the docker/ directory.
- * Streams output back as plain text.
- */
-app.post('/picoclaw/run', (req, res) => {
-  const { file } = req.body;
-
-  if (!file) {
-    return res.status(400).json({ error: '"file" is required' });
+  if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+    return res.status(400).json({ error: '"prompt" is required' });
   }
-
-  const available = getPromptFiles();
-  if (!available.includes(file)) {
-    return res.status(400).json({ error: 'Unknown prompt file', available });
-  }
-
-  const absFile = path.join(__dirname, file);
 
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.setHeader('Transfer-Encoding', 'chunked');
   res.setHeader('X-Content-Type-Options', 'nosniff');
 
-  const proc = spawn('bash', [absFile], {
-    cwd: DOCKER_DIR,
-    env: { ...process.env },
-  });
+  const proc = spawn(
+    'docker',
+    ['compose', '--env-file', '.env', '--profile', 'gateway', 'run', '--rm', 'picoclaw-agent', '-m', prompt.trim()],
+    {
+      cwd: DOCKER_DIR,
+      env: { ...process.env },
+    }
+  );
 
   proc.stdout.on('data', (data) => res.write(data));
   proc.stderr.on('data', (data) => res.write(data));
