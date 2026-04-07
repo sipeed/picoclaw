@@ -8,3 +8,26 @@ config/
 *.md
 LICENSE
 assets/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test files
+*_test.go
+/testdata/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Documentation
+docs/
+
+# Node modules (for frontend)
+node_modules/
+web/frontend/node_modules/
