@@ -47,7 +47,6 @@ type agentsConfigV0 struct {
 // It is unexported since it's only used internally for migration.
 type configV0 struct {
 	Agents    agentsConfigV0    `json:"agents"`
-	Bindings  []AgentBinding    `json:"bindings,omitempty"`
 	Session   SessionConfig     `json:"session,omitempty"`
 	Channels  channelsConfigV0  `json:"channels"`
 	Providers providersConfigV0 `json:"providers,omitempty"`
@@ -701,7 +700,6 @@ func (c *configV0) Migrate() (*Config, error) {
 	cfg.Agents.Defaults.Routing = c.Agents.Defaults.Routing
 
 	// Copy other top-level fields
-	cfg.Bindings = c.Bindings
 	cfg.Session = c.Session
 	cfg.Channels = c.Channels.ToChannelsConfig()
 	cfg.Gateway = c.Gateway

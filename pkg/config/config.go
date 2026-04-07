@@ -26,18 +26,19 @@ const CurrentVersion = 2
 
 // Config is the current config structure with version support
 type Config struct {
-	Version   int             `json:"version"            yaml:"-"` // Config schema version for migration
-	Agents    AgentsConfig    `json:"agents"             yaml:"-"`
-	Bindings  []AgentBinding  `json:"bindings,omitempty" yaml:"-"`
-	Session   SessionConfig   `json:"session,omitempty"  yaml:"-"`
-	Channels  ChannelsConfig  `json:"channels"           yaml:"channels"`
-	ModelList SecureModelList `json:"model_list"         yaml:"model_list"` // New model-centric provider configuration
-	Gateway   GatewayConfig   `json:"gateway"            yaml:"-"`
-	Hooks     HooksConfig     `json:"hooks,omitempty"    yaml:"-"`
-	Tools     ToolsConfig     `json:"tools"              yaml:",inline"`
-	Heartbeat HeartbeatConfig `json:"heartbeat"          yaml:"-"`
-	Devices   DevicesConfig   `json:"devices"            yaml:"-"`
-	Voice     VoiceConfig     `json:"voice"              yaml:"-"`
+	// Config schema version for migration.
+	Version  int            `json:"version"           yaml:"-"`
+	Agents   AgentsConfig   `json:"agents"            yaml:"-"`
+	Session  SessionConfig  `json:"session,omitempty" yaml:"-"`
+	Channels ChannelsConfig `json:"channels"          yaml:"channels"`
+	// New model-centric provider configuration.
+	ModelList SecureModelList `json:"model_list"      yaml:"model_list"`
+	Gateway   GatewayConfig   `json:"gateway"         yaml:"-"`
+	Hooks     HooksConfig     `json:"hooks,omitempty" yaml:"-"`
+	Tools     ToolsConfig     `json:"tools"           yaml:",inline"`
+	Heartbeat HeartbeatConfig `json:"heartbeat"       yaml:"-"`
+	Devices   DevicesConfig   `json:"devices"         yaml:"-"`
+	Voice     VoiceConfig     `json:"voice"           yaml:"-"`
 	// BuildInfo contains build-time version information
 	BuildInfo BuildInfo `json:"build_info,omitempty" yaml:"-"`
 
@@ -100,7 +101,7 @@ type BuildInfo struct {
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
-// to omit providers section when empty and session when empty
+// to omit providers section when empty and session when empty.
 func (c *Config) MarshalJSON() ([]byte, error) {
 	type Alias Config
 	aux := &struct {
@@ -110,17 +111,18 @@ func (c *Config) MarshalJSON() ([]byte, error) {
 		Alias: (*Alias)(c),
 	}
 
-	// Only include session if not empty
-	if c.Session.DMScope != "" || len(c.Session.IdentityLinks) > 0 {
-		aux.Session = &c.Session
+	if len(c.Session.Dimensions) > 0 || len(c.Session.IdentityLinks) > 0 {
+		sessionCfg := c.Session
+		aux.Session = &sessionCfg
 	}
 
 	return json.Marshal(aux)
 }
 
 type AgentsConfig struct {
-	Defaults AgentDefaults `json:"defaults"`
-	List     []AgentConfig `json:"list,omitempty"`
+	Defaults AgentDefaults   `json:"defaults"`
+	List     []AgentConfig   `json:"list,omitempty"`
+	Dispatch *DispatchConfig `json:"dispatch,omitempty"`
 }
 
 // AgentModelConfig supports both string and structured model config.
@@ -177,26 +179,29 @@ type SubagentsConfig struct {
 	Model       *AgentModelConfig `json:"model,omitempty"`
 }
 
-type PeerMatch struct {
-	Kind string `json:"kind"`
-	ID   string `json:"id"`
+type DispatchConfig struct {
+	Rules []DispatchRule `json:"rules,omitempty"`
 }
 
-type BindingMatch struct {
-	Channel   string     `json:"channel"`
-	AccountID string     `json:"account_id,omitempty"`
-	Peer      *PeerMatch `json:"peer,omitempty"`
-	GuildID   string     `json:"guild_id,omitempty"`
-	TeamID    string     `json:"team_id,omitempty"`
+type DispatchRule struct {
+	Name              string           `json:"name,omitempty"`
+	Agent             string           `json:"agent"`
+	When              DispatchSelector `json:"when"`
+	SessionDimensions []string         `json:"session_dimensions,omitempty"`
 }
 
-type AgentBinding struct {
-	AgentID string       `json:"agent_id"`
-	Match   BindingMatch `json:"match"`
+type DispatchSelector struct {
+	Channel   string `json:"channel,omitempty"`
+	Account   string `json:"account,omitempty"`
+	Space     string `json:"space,omitempty"`
+	Chat      string `json:"chat,omitempty"`
+	Topic     string `json:"topic,omitempty"`
+	Sender    string `json:"sender,omitempty"`
+	Mentioned *bool  `json:"mentioned,omitempty"`
 }
 
 type SessionConfig struct {
-	DMScope       string              `json:"dm_scope,omitempty"`
+	Dimensions    []string            `json:"dimensions,omitempty"`
 	IdentityLinks map[string][]string `json:"identity_links,omitempty"`
 }
 
@@ -591,9 +596,10 @@ type DevicesConfig struct {
 }
 
 type VoiceConfig struct {
-	ModelName         string `json:"model_name,omitempty"     env:"PICOCLAW_VOICE_MODEL_NAME"`
-	TTSModelName      string `json:"tts_model_name,omitempty" env:"PICOCLAW_VOICE_TTS_MODEL_NAME"`
-	EchoTranscription bool   `json:"echo_transcription"       env:"PICOCLAW_VOICE_ECHO_TRANSCRIPTION"`
+	ModelName         string `json:"model_name,omitempty"         env:"PICOCLAW_VOICE_MODEL_NAME"`
+	TTSModelName      string `json:"tts_model_name,omitempty"     env:"PICOCLAW_VOICE_TTS_MODEL_NAME"`
+	EchoTranscription bool   `json:"echo_transcription"           env:"PICOCLAW_VOICE_ECHO_TRANSCRIPTION"`
+	ElevenLabsAPIKey  string `json:"elevenlabs_api_key,omitempty" env:"PICOCLAW_VOICE_ELEVENLABS_API_KEY"`
 }
 
 // ModelConfig represents a model-centric provider configuration.
@@ -1099,6 +1105,8 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("unsupported config version: %d", versionInfo.Version)
 	}
 
+	applyLegacyBindingsMigration(data, cfg)
+
 	if err = env.Parse(cfg); err != nil {
 		return nil, err
 	}
@@ -1295,6 +1303,7 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 				ThinkingLevel:  m.ThinkingLevel,
 				ExtraBody:      m.ExtraBody,
 				CustomHeaders:  m.CustomHeaders,
+				UserAgent:      m.UserAgent,
 				isVirtual:      true,
 			}
 			expanded = append(expanded, additionalEntry)
@@ -1316,6 +1325,7 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 			ThinkingLevel:  m.ThinkingLevel,
 			ExtraBody:      m.ExtraBody,
 			CustomHeaders:  m.CustomHeaders,
+			UserAgent:      m.UserAgent,
 			APIKeys:        SimpleSecureStrings(keys[0]),
 		}
 

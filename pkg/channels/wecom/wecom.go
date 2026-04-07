@@ -570,7 +570,6 @@ func (c *WeComChannel) dispatchIncoming(reqID string, msg wecomIncomingMessage) 
 		return err
 	}
 
-	peer := bus.Peer{Kind: peerKind, ID: actualChatID}
 	metadata := map[string]string{
 		"channel":   "wecom",
 		"req_id":    reqID,
@@ -583,7 +582,20 @@ func (c *WeComChannel) dispatchIncoming(reqID string, msg wecomIncomingMessage) 
 		metadata["quote_text"] = quoteText
 	}
 
-	c.HandleMessage(c.ctx, peer, msg.MsgID, senderID, actualChatID, content, mediaRefs, metadata, sender)
+	inboundCtx := bus.InboundContext{
+		Channel:   c.Name(),
+		Account:   strings.TrimSpace(msg.AIBotID),
+		ChatID:    actualChatID,
+		ChatType:  peerKind,
+		SenderID:  senderID,
+		MessageID: msg.MsgID,
+		ReplyHandles: map[string]string{
+			"req_id": reqID,
+		},
+		Raw: metadata,
+	}
+
+	c.HandleInboundContext(c.ctx, actualChatID, content, mediaRefs, inboundCtx, sender)
 	return nil
 }
 

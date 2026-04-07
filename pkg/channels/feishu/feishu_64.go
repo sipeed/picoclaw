@@ -447,22 +447,25 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	if messageType != "" {
 		metadata["message_type"] = messageType
 	}
-	chatType := stringValue(message.ChatType)
-	if chatType != "" {
-		metadata["chat_type"] = chatType
+	rawChatType := stringValue(message.ChatType)
+	if rawChatType != "" {
+		metadata["chat_type"] = rawChatType
 	}
 	if sender != nil && sender.TenantKey != nil {
 		metadata["tenant_key"] = *sender.TenantKey
 	}
 
-	var peer bus.Peer
-	if chatType == "p2p" {
-		peer = bus.Peer{Kind: "direct", ID: senderID}
+	var (
+		inboundChatType string
+		isMentioned     bool
+	)
+	if rawChatType == "p2p" {
+		inboundChatType = "direct"
 	} else {
-		peer = bus.Peer{Kind: "group", ID: chatID}
+		inboundChatType = "group"
 
 		// Check if bot was mentioned
-		isMentioned := c.isBotMentioned(message)
+		isMentioned = c.isBotMentioned(message)
 
 		// Strip mention placeholders from content before group trigger check
 		if len(message.Mentions) > 0 {
@@ -484,7 +487,21 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		"preview":    utils.Truncate(content, 80),
 	})
 
-	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, mediaRefs, metadata, senderInfo)
+	inboundCtx := bus.InboundContext{
+		Channel:   "feishu",
+		ChatID:    chatID,
+		ChatType:  inboundChatType,
+		SenderID:  senderID,
+		MessageID: messageID,
+		Mentioned: isMentioned,
+		Raw:       metadata,
+	}
+	if sender != nil && sender.TenantKey != nil && *sender.TenantKey != "" {
+		inboundCtx.SpaceType = "tenant"
+		inboundCtx.SpaceID = *sender.TenantKey
+	}
+
+	c.HandleInboundContext(ctx, chatID, content, mediaRefs, inboundCtx, senderInfo)
 	return nil
 }
 

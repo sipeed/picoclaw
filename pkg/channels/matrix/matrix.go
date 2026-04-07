@@ -736,10 +736,8 @@ func (c *MatrixChannel) handleMessageEvent(ctx context.Context, evt *event.Event
 	}
 
 	peerKind := "direct"
-	peerID := senderID
 	if isGroup {
 		peerKind = "group"
-		peerID = roomID
 	}
 
 	metadata := map[string]string{
@@ -752,17 +750,19 @@ func (c *MatrixChannel) handleMessageEvent(ctx context.Context, evt *event.Event
 		metadata["reply_to_msg_id"] = replyTo.String()
 	}
 
-	c.HandleMessage(
-		c.baseContext(),
-		bus.Peer{Kind: peerKind, ID: peerID},
-		evt.ID.String(),
-		senderID,
-		roomID,
-		content,
-		mediaPaths,
-		metadata,
-		sender,
-	)
+	inboundCtx := bus.InboundContext{
+		Channel:   "matrix",
+		ChatID:    roomID,
+		ChatType:  peerKind,
+		SenderID:  senderID,
+		MessageID: evt.ID.String(),
+		Raw:       metadata,
+	}
+	if replyTo := msgEvt.GetRelatesTo().GetReplyTo(); replyTo != "" {
+		inboundCtx.ReplyToMessageID = replyTo.String()
+	}
+
+	c.HandleInboundContext(c.baseContext(), roomID, content, mediaPaths, inboundCtx, sender)
 }
 
 // decryptEvent decrypts an encrypted event and returns the decrypted message event content.

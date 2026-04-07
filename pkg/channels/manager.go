@@ -98,6 +98,22 @@ type asyncTask struct {
 	cancel context.CancelFunc
 }
 
+func outboundMessageChannel(msg bus.OutboundMessage) string {
+	return msg.Context.Channel
+}
+
+func outboundMessageChatID(msg bus.OutboundMessage) string {
+	return msg.ChatID
+}
+
+func outboundMediaChannel(msg bus.OutboundMediaMessage) string {
+	return msg.Context.Channel
+}
+
+func outboundMediaChatID(msg bus.OutboundMediaMessage) string {
+	return msg.ChatID
+}
+
 // RecordPlaceholder registers a placeholder message for later editing.
 // Implements PlaceholderRecorder.
 func (m *Manager) RecordPlaceholder(channel, chatID, placeholderID string) {
@@ -161,7 +177,8 @@ func (m *Manager) RecordReactionUndo(channel, chatID string, undo func()) {
 // preSend handles typing stop, reaction undo, and placeholder editing before sending a message.
 // Returns the delivered message IDs and true when delivery completed before a normal Send.
 func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMessage, ch Channel) ([]string, bool) {
-	key := name + ":" + msg.ChatID
+	chatID := outboundMessageChatID(msg)
+	key := name + ":" + chatID
 
 	// 1. Stop typing
 	if v, loaded := m.typingStops.LoadAndDelete(key); loaded {
@@ -183,9 +200,9 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 			if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
 				// Prefer deleting the placeholder (cleaner UX than editing to same content)
 				if deleter, ok := ch.(MessageDeleter); ok {
-					deleter.DeleteMessage(ctx, msg.ChatID, entry.id) // best effort
+					deleter.DeleteMessage(ctx, chatID, entry.id) // best effort
 				} else if editor, ok := ch.(MessageEditor); ok {
-					editor.EditMessage(ctx, msg.ChatID, entry.id, msg.Content) // fallback
+					editor.EditMessage(ctx, chatID, entry.id, msg.Content) // fallback
 				}
 			}
 		}
@@ -196,7 +213,7 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
 			if editor, ok := ch.(MessageEditor); ok {
-				if err := editor.EditMessage(ctx, msg.ChatID, entry.id, msg.Content); err == nil {
+				if err := editor.EditMessage(ctx, chatID, entry.id, msg.Content); err == nil {
 					return []string{entry.id}, true
 				}
 				// edit failed → fall through to normal Send
@@ -212,7 +229,8 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 // delivery never edits the placeholder because there is no text payload to
 // replace it with; it only attempts to delete the placeholder when possible.
 func (m *Manager) preSendMedia(ctx context.Context, name string, msg bus.OutboundMediaMessage, ch Channel) {
-	key := name + ":" + msg.ChatID
+	chatID := outboundMediaChatID(msg)
+	key := name + ":" + chatID
 
 	// 1. Stop typing
 	if v, loaded := m.typingStops.LoadAndDelete(key); loaded {
@@ -235,7 +253,7 @@ func (m *Manager) preSendMedia(ctx context.Context, name string, msg bus.Outboun
 	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
 			if deleter, ok := ch.(MessageDeleter); ok {
-				deleter.DeleteMessage(ctx, msg.ChatID, entry.id) // best effort
+				deleter.DeleteMessage(ctx, chatID, entry.id) // best effort
 			}
 		}
 	}
@@ -812,7 +830,7 @@ func (m *Manager) sendWithRetry(
 	// All retries exhausted or permanent failure
 	logger.ErrorCF("channels", "Send failed", map[string]any{
 		"channel": name,
-		"chat_id": msg.ChatID,
+		"chat_id": outboundMessageChatID(msg),
 		"error":   lastErr.Error(),
 		"retries": maxRetries,
 	})
@@ -874,7 +892,7 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 	dispatchLoop(
 		ctx, m,
 		m.bus.OutboundChan(),
-		func(msg bus.OutboundMessage) string { return msg.Channel },
+		func(msg bus.OutboundMessage) string { return outboundMessageChannel(msg) },
 		func(ctx context.Context, w *channelWorker, msg bus.OutboundMessage) bool {
 			select {
 			case w.queue <- msg:
@@ -894,7 +912,7 @@ func (m *Manager) dispatchOutboundMedia(ctx context.Context) {
 	dispatchLoop(
 		ctx, m,
 		m.bus.OutboundMediaChan(),
-		func(msg bus.OutboundMediaMessage) string { return msg.Channel },
+		func(msg bus.OutboundMediaMessage) string { return outboundMediaChannel(msg) },
 		func(ctx context.Context, w *channelWorker, msg bus.OutboundMediaMessage) bool {
 			select {
 			case w.mediaQueue <- msg:
@@ -993,7 +1011,7 @@ func (m *Manager) sendMediaWithRetry(
 	// All retries exhausted or permanent failure
 	logger.ErrorCF("channels", "SendMedia failed", map[string]any{
 		"channel": name,
-		"chat_id": msg.ChatID,
+		"chat_id": outboundMediaChatID(msg),
 		"error":   lastErr.Error(),
 		"retries": maxRetries,
 	})
@@ -1186,16 +1204,19 @@ func (m *Manager) UnregisterChannel(name string) {
 // delivered (or all retries are exhausted), which preserves ordering when
 // a subsequent operation depends on the message having been sent.
 func (m *Manager) SendMessage(ctx context.Context, msg bus.OutboundMessage) error {
+	msg = bus.NormalizeOutboundMessage(msg)
+	channelName := outboundMessageChannel(msg)
+
 	m.mu.RLock()
-	_, exists := m.channels[msg.Channel]
-	w, wExists := m.workers[msg.Channel]
+	_, exists := m.channels[channelName]
+	w, wExists := m.workers[channelName]
 	m.mu.RUnlock()
 
 	if !exists {
-		return fmt.Errorf("channel %s not found", msg.Channel)
+		return fmt.Errorf("channel %s not found", channelName)
 	}
 	if !wExists || w == nil {
-		return fmt.Errorf("channel %s has no active worker", msg.Channel)
+		return fmt.Errorf("channel %s has no active worker", channelName)
 	}
 
 	maxLen := 0
@@ -1206,10 +1227,10 @@ func (m *Manager) SendMessage(ctx context.Context, msg bus.OutboundMessage) erro
 		for _, chunk := range SplitMessage(msg.Content, maxLen) {
 			chunkMsg := msg
 			chunkMsg.Content = chunk
-			m.sendWithRetry(ctx, msg.Channel, w, chunkMsg)
+			m.sendWithRetry(ctx, channelName, w, chunkMsg)
 		}
 	} else {
-		m.sendWithRetry(ctx, msg.Channel, w, msg)
+		m.sendWithRetry(ctx, channelName, w, msg)
 	}
 	return nil
 }
@@ -1219,19 +1240,22 @@ func (m *Manager) SendMessage(ctx context.Context, msg bus.OutboundMessage) erro
 // retries are exhausted), which preserves ordering when later agent behavior
 // depends on actual media delivery.
 func (m *Manager) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	msg = bus.NormalizeOutboundMediaMessage(msg)
+	channelName := outboundMediaChannel(msg)
+
 	m.mu.RLock()
-	_, exists := m.channels[msg.Channel]
-	w, wExists := m.workers[msg.Channel]
+	_, exists := m.channels[channelName]
+	w, wExists := m.workers[channelName]
 	m.mu.RUnlock()
 
 	if !exists {
-		return fmt.Errorf("channel %s not found", msg.Channel)
+		return fmt.Errorf("channel %s not found", channelName)
 	}
 	if !wExists || w == nil {
-		return fmt.Errorf("channel %s has no active worker", msg.Channel)
+		return fmt.Errorf("channel %s has no active worker", channelName)
 	}
 
-	_, err := m.sendMediaWithRetry(ctx, msg.Channel, w, msg)
+	_, err := m.sendMediaWithRetry(ctx, channelName, w, msg)
 	return err
 }
 
@@ -1246,10 +1270,10 @@ func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, conten
 	}
 
 	msg := bus.OutboundMessage{
-		Channel: channelName,
-		ChatID:  chatID,
+		Context: bus.NewOutboundContext(channelName, chatID, ""),
 		Content: content,
 	}
+	msg = bus.NormalizeOutboundMessage(msg)
 
 	if wExists && w != nil {
 		select {

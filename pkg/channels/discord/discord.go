@@ -402,8 +402,8 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 
 	// In guild (group) channels, apply unified group trigger filtering
 	// DMs (GuildID is empty) always get a response
+	isMentioned := false
 	if m.GuildID != "" {
-		isMentioned := false
 		for _, mention := range m.Mentions {
 			if mention.ID == c.botUserID {
 				isMentioned = true
@@ -500,13 +500,9 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	})
 
 	peerKind := "channel"
-	peerID := m.ChannelID
 	if m.GuildID == "" {
 		peerKind = "direct"
-		peerID = senderID
 	}
-
-	peer := bus.Peer{Kind: peerKind, ID: peerID}
 
 	metadata := map[string]string{
 		"user_id":      senderID,
@@ -516,8 +512,24 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		"channel_id":   m.ChannelID,
 		"is_dm":        fmt.Sprintf("%t", m.GuildID == ""),
 	}
+	inboundCtx := bus.InboundContext{
+		Channel:   c.Name(),
+		ChatID:    m.ChannelID,
+		ChatType:  peerKind,
+		SenderID:  senderID,
+		MessageID: m.ID,
+		Mentioned: isMentioned,
+		Raw:       metadata,
+	}
+	if m.GuildID != "" {
+		inboundCtx.SpaceID = m.GuildID
+		inboundCtx.SpaceType = "guild"
+	}
+	if m.MessageReference != nil {
+		inboundCtx.ReplyToMessageID = m.MessageReference.MessageID
+	}
 
-	c.HandleMessage(c.ctx, peer, m.ID, senderID, m.ChannelID, content, mediaPaths, metadata, sender)
+	c.HandleInboundContext(c.ctx, m.ChannelID, content, mediaPaths, inboundCtx, sender)
 }
 
 // startTyping starts a continuous typing indicator loop for the given chatID.

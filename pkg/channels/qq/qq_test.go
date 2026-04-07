@@ -54,8 +54,8 @@ func TestHandleC2CMessage_IncludesAccountIDMetadata(t *testing.T) {
 			if !ok {
 				t.Fatal("expected inbound message")
 			}
-			if inbound.Metadata["account_id"] != "7750283E123456" {
-				t.Fatalf("account_id metadata = %q, want %q", inbound.Metadata["account_id"], "7750283E123456")
+			if inbound.Context.Raw["account_id"] != "7750283E123456" {
+				t.Fatalf("account_id raw = %q, want %q", inbound.Context.Raw["account_id"], "7750283E123456")
 			}
 			return
 		}
@@ -165,8 +165,8 @@ func TestHandleGroupATMessage_AttachmentOnlyPublishesMedia(t *testing.T) {
 	if !strings.HasPrefix(inbound.Media[0], "media://") {
 		t.Fatalf("inbound.Media[0] = %q, want media:// ref", inbound.Media[0])
 	}
-	if inbound.Peer.Kind != "group" || inbound.Peer.ID != "group-1" {
-		t.Fatalf("inbound.Peer = %+v, want group/group-1", inbound.Peer)
+	if inbound.Context.ChatType != "group" {
+		t.Fatalf("inbound.Context.ChatType = %q, want group", inbound.Context.ChatType)
 	}
 }
 

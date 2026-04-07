@@ -6,10 +6,10 @@ import (
 	"sync/atomic"
 )
 
-type SendCallback func(channel, chatID, content, replyToMessageID string) error
+type SendCallbackWithContext func(ctx context.Context, channel, chatID, content, replyToMessageID string) error
 
 type MessageTool struct {
-	sendCallback SendCallback
+	sendCallback SendCallbackWithContext
 	sentInRound  atomic.Bool // Tracks whether a message was sent in the current processing round
 }
 
@@ -61,7 +61,7 @@ func (t *MessageTool) HasSentInRound() bool {
 	return t.sentInRound.Load()
 }
 
-func (t *MessageTool) SetSendCallback(callback SendCallback) {
+func (t *MessageTool) SetSendCallback(callback SendCallbackWithContext) {
 	t.sendCallback = callback
 }
 
@@ -90,7 +90,7 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 		return &ToolResult{ForLLM: "Message sending not configured", IsError: true}
 	}
 
-	if err := t.sendCallback(channel, chatID, content, replyToMessageID); err != nil {
+	if err := t.sendCallback(ctx, channel, chatID, content, replyToMessageID); err != nil {
 		return &ToolResult{
 			ForLLM:  fmt.Sprintf("sending message: %v", err),
 			IsError: true,

@@ -126,18 +126,8 @@ func TestAgentConfig_FullParse(t *testing.T) {
 				}
 			]
 		},
-		"bindings": [
-			{
-				"agent_id": "support",
-				"match": {
-					"channel": "telegram",
-					"account_id": "*",
-					"peer": {"kind": "direct", "id": "user123"}
-				}
-			}
-		],
 		"session": {
-			"dm_scope": "per-peer",
+			"dimensions": ["sender"],
 			"identity_links": {
 				"john": ["telegram:123", "discord:john#1234"]
 			}
@@ -175,19 +165,8 @@ func TestAgentConfig_FullParse(t *testing.T) {
 		t.Errorf("support.Subagents = %+v", support.Subagents)
 	}
 
-	if len(cfg.Bindings) != 1 {
-		t.Fatalf("bindings len = %d, want 1", len(cfg.Bindings))
-	}
-	binding := cfg.Bindings[0]
-	if binding.AgentID != "support" || binding.Match.Channel != "telegram" {
-		t.Errorf("binding = %+v", binding)
-	}
-	if binding.Match.Peer == nil || binding.Match.Peer.Kind != "direct" || binding.Match.Peer.ID != "user123" {
-		t.Errorf("binding.Match.Peer = %+v", binding.Match.Peer)
-	}
-
-	if cfg.Session.DMScope != "per-peer" {
-		t.Errorf("Session.DMScope = %q", cfg.Session.DMScope)
+	if len(cfg.Session.Dimensions) != 1 || cfg.Session.Dimensions[0] != "sender" {
+		t.Errorf("Session.Dimensions = %v", cfg.Session.Dimensions)
 	}
 	if len(cfg.Session.IdentityLinks) != 1 {
 		t.Errorf("Session.IdentityLinks = %v", cfg.Session.IdentityLinks)
@@ -253,8 +232,242 @@ func TestConfig_BackwardCompat_NoAgentsList(t *testing.T) {
 	if len(cfg.Agents.List) != 0 {
 		t.Errorf("agents.list should be empty for backward compat, got %d", len(cfg.Agents.List))
 	}
-	if len(cfg.Bindings) != 0 {
-		t.Errorf("bindings should be empty, got %d", len(cfg.Bindings))
+}
+
+func TestAgentConfig_ParsesDispatchRules(t *testing.T) {
+	jsonData := `{
+		"agents": {
+			"defaults": {
+				"workspace": "~/.picoclaw/workspace",
+				"model": "glm-4.7"
+			},
+			"list": [
+				{ "id": "main", "default": true },
+				{ "id": "support" }
+			],
+			"dispatch": {
+				"rules": [
+					{
+						"name": "support-vip",
+						"agent": "support",
+						"when": {
+							"channel": "telegram",
+							"chat": "group:-100123",
+							"sender": "12345",
+							"mentioned": true
+						},
+						"session_dimensions": ["chat", "sender"]
+					}
+				]
+			}
+		}
+	}`
+
+	cfg := DefaultConfig()
+	if err := json.Unmarshal([]byte(jsonData), cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.Agents.Dispatch == nil {
+		t.Fatal("Agents.Dispatch should not be nil")
+	}
+	if len(cfg.Agents.Dispatch.Rules) != 1 {
+		t.Fatalf("Dispatch.Rules len = %d, want 1", len(cfg.Agents.Dispatch.Rules))
+	}
+	rule := cfg.Agents.Dispatch.Rules[0]
+	if rule.Name != "support-vip" || rule.Agent != "support" {
+		t.Fatalf("rule = %+v", rule)
+	}
+	if rule.When.Channel != "telegram" || rule.When.Chat != "group:-100123" || rule.When.Sender != "12345" {
+		t.Fatalf("rule.When = %+v", rule.When)
+	}
+	if rule.When.Mentioned == nil || !*rule.When.Mentioned {
+		t.Fatalf("rule.When.Mentioned = %+v, want true", rule.When.Mentioned)
+	}
+	if got := rule.SessionDimensions; len(got) != 2 || got[0] != "chat" || got[1] != "sender" {
+		t.Fatalf("rule.SessionDimensions = %v, want [chat sender]", got)
+	}
+}
+
+func TestLoadConfig_MigratesLegacyBindingsToDispatchRules(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := `{
+		"version": 2,
+		"agents": {
+			"defaults": {
+				"workspace": "~/.picoclaw/workspace",
+				"model": "glm-4.7"
+			},
+			"list": [
+				{ "id": "main", "default": true },
+				{ "id": "support" },
+				{ "id": "ops" },
+				{ "id": "slack" }
+			]
+		},
+		"bindings": [
+			{
+				"agent_id": "support",
+				"match": {
+					"channel": "telegram",
+					"peer": { "kind": "group", "id": "-100123" }
+				}
+			},
+			{
+				"agent_id": "ops",
+				"match": {
+					"channel": "discord",
+					"guild_id": "guild-1"
+				}
+			},
+			{
+				"agent_id": "slack",
+				"match": {
+					"channel": "slack",
+					"account_id": "*"
+				}
+			}
+		]
+	}`
+	if err := os.WriteFile(configPath, []byte(raw), 0o644); err != nil {
+		t.Fatalf("WriteFile(configPath): %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Agents.Dispatch == nil {
+		t.Fatal("Agents.Dispatch should not be nil")
+	}
+	if len(cfg.Agents.Dispatch.Rules) != 3 {
+		t.Fatalf("Dispatch.Rules len = %d, want 3", len(cfg.Agents.Dispatch.Rules))
+	}
+
+	first := cfg.Agents.Dispatch.Rules[0]
+	if first.Agent != "support" {
+		t.Fatalf("first.Agent = %q, want %q", first.Agent, "support")
+	}
+	if first.When.Channel != "telegram" || first.When.Chat != "group:-100123" {
+		t.Fatalf("first.When = %+v", first.When)
+	}
+	if first.When.Account != legacyDefaultAccountID {
+		t.Fatalf("first.When.Account = %q, want %q", first.When.Account, legacyDefaultAccountID)
+	}
+
+	second := cfg.Agents.Dispatch.Rules[1]
+	if second.Agent != "ops" || second.When.Space != "guild:guild-1" {
+		t.Fatalf("second = %+v", second)
+	}
+
+	third := cfg.Agents.Dispatch.Rules[2]
+	if third.Agent != "slack" {
+		t.Fatalf("third.Agent = %q, want %q", third.Agent, "slack")
+	}
+	if third.When.Channel != "slack" || third.When.Account != "" {
+		t.Fatalf("third.When = %+v", third.When)
+	}
+}
+
+func TestLoadConfig_PrefersDispatchRulesOverLegacyBindings(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := `{
+		"version": 2,
+		"agents": {
+			"defaults": {
+				"workspace": "~/.picoclaw/workspace",
+				"model": "glm-4.7"
+			},
+			"list": [
+				{ "id": "main", "default": true },
+				{ "id": "support" }
+			],
+			"dispatch": {
+				"rules": [
+					{
+						"name": "explicit",
+						"agent": "support",
+						"when": {
+							"channel": "telegram",
+							"chat": "group:-100123"
+						}
+					}
+				]
+			}
+		},
+		"bindings": [
+			{
+				"agent_id": "main",
+				"match": {
+					"channel": "telegram",
+					"account_id": "*"
+				}
+			}
+		]
+	}`
+	if err := os.WriteFile(configPath, []byte(raw), 0o644); err != nil {
+		t.Fatalf("WriteFile(configPath): %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Agents.Dispatch == nil {
+		t.Fatal("Agents.Dispatch should not be nil")
+	}
+	if len(cfg.Agents.Dispatch.Rules) != 1 {
+		t.Fatalf("Dispatch.Rules len = %d, want 1", len(cfg.Agents.Dispatch.Rules))
+	}
+	if cfg.Agents.Dispatch.Rules[0].Name != "explicit" {
+		t.Fatalf("Dispatch.Rules[0].Name = %q, want %q", cfg.Agents.Dispatch.Rules[0].Name, "explicit")
+	}
+}
+
+func TestLoadConfig_MigratesLegacyDirectBindingsWithIdentityLinks(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := `{
+		"version": 2,
+		"agents": {
+			"defaults": {
+				"workspace": "~/.picoclaw/workspace",
+				"model": "glm-4.7"
+			},
+			"list": [
+				{ "id": "main", "default": true },
+				{ "id": "support" }
+			]
+		},
+		"session": {
+			"identity_links": {
+				"john": ["telegram:123", "123"]
+			}
+		},
+		"bindings": [
+			{
+				"agent_id": "support",
+				"match": {
+					"channel": "telegram",
+					"peer": { "kind": "direct", "id": "123" }
+				}
+			}
+		]
+	}`
+	if err := os.WriteFile(configPath, []byte(raw), 0o644); err != nil {
+		t.Fatalf("WriteFile(configPath): %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Agents.Dispatch == nil || len(cfg.Agents.Dispatch.Rules) != 1 {
+		t.Fatalf("Dispatch.Rules = %+v, want 1 migrated rule", cfg.Agents.Dispatch)
+	}
+	if got := cfg.Agents.Dispatch.Rules[0].When.Sender; got != "john" {
+		t.Fatalf("migrated sender selector = %q, want %q", got, "john")
 	}
 }
 
@@ -349,13 +562,6 @@ func TestDefaultConfig_WebTools(t *testing.T) {
 	}
 	if cfg.Tools.Web.DuckDuckGo.MaxResults != 5 {
 		t.Error("Expected DuckDuckGo MaxResults 5, got ", cfg.Tools.Web.DuckDuckGo.MaxResults)
-	}
-}
-
-func TestDefaultConfig_ReadFileMode(t *testing.T) {
-	cfg := DefaultConfig()
-	if cfg.Tools.ReadFile.EffectiveMode() != ReadFileModeBytes {
-		t.Fatalf("expected default read_file mode %q, got %q", ReadFileModeBytes, cfg.Tools.ReadFile.EffectiveMode())
 	}
 }
 
@@ -800,7 +1006,7 @@ func TestLoadConfig_HooksProcessConfig(t *testing.T) {
 	}
 }
 
-// TestDefaultConfig_DMScope verifies the default dm_scope value
+// TestDefaultConfig_SessionDimensions verifies the default session dimensions
 // TestDefaultConfig_SummarizationThresholds verifies summarization defaults
 func TestDefaultConfig_SummarizationThresholds(t *testing.T) {
 	cfg := DefaultConfig()
@@ -813,11 +1019,11 @@ func TestDefaultConfig_SummarizationThresholds(t *testing.T) {
 	}
 }
 
-func TestDefaultConfig_DMScope(t *testing.T) {
+func TestDefaultConfig_SessionDimensions(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Session.DMScope != "per-channel-peer" {
-		t.Errorf("Session.DMScope = %q, want 'per-channel-peer'", cfg.Session.DMScope)
+	if len(cfg.Session.Dimensions) != 1 || cfg.Session.Dimensions[0] != "chat" {
+		t.Errorf("Session.Dimensions = %v, want [chat]", cfg.Session.Dimensions)
 	}
 }
 
@@ -1020,7 +1226,6 @@ func TestLoadConfig_TelegramPlaceholderTextAcceptsSingleString(t *testing.T) {
 	data := `{
 		"version": 1,
 		"agents": { "defaults": { "workspace": "", "model": "", "max_tokens": 0, "max_tool_iterations": 0 } },
-		"bindings": [],
 		"session": {},
 		"channels": {
 			"telegram": {

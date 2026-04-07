@@ -3,12 +3,14 @@ package agent
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/routing"
+	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -292,10 +294,18 @@ func (al *AgentLoop) continueWithSteeringMessages(
 	sessionKey, channel, chatID string,
 	steeringMsgs []providers.Message,
 ) (string, error) {
+	dispatch := DispatchRequest{
+		SessionKey: sessionKey,
+	}
+	if channel != "" || chatID != "" {
+		dispatch.InboundContext = &bus.InboundContext{
+			Channel:  channel,
+			ChatID:   chatID,
+			ChatType: "direct",
+		}
+	}
 	return al.runAgentLoop(ctx, agent, processOptions{
-		SessionKey:              sessionKey,
-		Channel:                 channel,
-		ChatID:                  chatID,
+		Dispatch:                dispatch,
 		DefaultResponse:         defaultResponse,
 		EnableSummary:           true,
 		SendResponse:            false,
@@ -310,9 +320,19 @@ func (al *AgentLoop) agentForSession(sessionKey string) *AgentInstance {
 		return nil
 	}
 
-	if parsed := routing.ParseAgentSessionKey(sessionKey); parsed != nil {
-		if agent, ok := registry.GetAgent(parsed.AgentID); ok {
-			return agent
+	agentIDs := registry.ListAgentIDs()
+	sort.Strings(agentIDs)
+	for _, agentID := range agentIDs {
+		agent, ok := registry.GetAgent(agentID)
+		if !ok || agent == nil {
+			continue
+		}
+		resolvedAgentID := session.ResolveAgentID(agent.Sessions, sessionKey)
+		if resolvedAgentID == "" {
+			continue
+		}
+		if scopedAgent, ok := registry.GetAgent(resolvedAgentID); ok {
+			return scopedAgent
 		}
 	}
 

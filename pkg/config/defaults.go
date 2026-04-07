@@ -35,9 +35,8 @@ func DefaultConfig() *Config {
 				SplitOnMarker: false,
 			},
 		},
-		Bindings: []AgentBinding{},
 		Session: SessionConfig{
-			DMScope: "per-channel-peer",
+			Dimensions: []string{"chat"},
 		},
 		Channels: ChannelsConfig{
 			WhatsApp: WhatsAppConfig{
@@ -520,7 +519,9 @@ func DefaultConfig() *Config {
 		},
 		Voice: VoiceConfig{
 			ModelName:         "",
+			TTSModelName:      "",
 			EchoTranscription: false,
+			ElevenLabsAPIKey:  "",
 		},
 		BuildInfo: BuildInfo{
 			Version:   Version,
