@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -24,9 +25,20 @@ func TestNewGatewayCommand(t *testing.T) {
 	assert.Nil(t, cmd.PersistentPreRun)
 	assert.Nil(t, cmd.PersistentPostRun)
 
-	assert.False(t, cmd.HasSubCommands())
+	assert.True(t, cmd.HasSubCommands())
 
 	assert.True(t, cmd.HasFlags())
 	assert.NotNil(t, cmd.Flags().Lookup("debug"))
 	assert.NotNil(t, cmd.Flags().Lookup("allow-empty"))
+
+	allowedCommands := []string{
+		"status",
+		"stop",
+	}
+	subcommands := cmd.Commands()
+	assert.Len(t, subcommands, len(allowedCommands))
+	for _, subcmd := range subcommands {
+		assert.True(t, slices.Contains(allowedCommands, subcmd.Name()))
+		assert.NotNil(t, subcmd.RunE)
+	}
 }
