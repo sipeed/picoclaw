@@ -23,7 +23,3 @@ func WrapResponse(rawOutput string, m Metrics) string {
 	)
 	return header + rawOutput
 }
-
-func calculateComplexity(promptTokens, completionTokens int) int {
-	return int(float64(promptTokens)*0.1 + float64(completionTokens)*0.5)
-}

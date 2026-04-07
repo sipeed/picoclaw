@@ -1624,11 +1624,9 @@ func (al *AgentLoop) runAgentLoop(
 	}
 
 	if result.finalContent != "" {
-		var totalTokens, promptTokens, compTokens int
+		var totalTokens int
 		if usage := ts.GetLastUsage(); usage != nil {
 			totalTokens = usage.TotalTokens
-			promptTokens = usage.PromptTokens
-			compTokens = usage.CompletionTokens
 		}
 
 		version := al.GetConfig().BuildInfo.Version
@@ -1644,7 +1642,7 @@ func (al *AgentLoop) runAgentLoop(
 			Agent:      agent.ID,
 			Route:      providerName,
 			Model:      modelName,
-			Complexity: calculateComplexity(promptTokens, compTokens),
+			Complexity: int(ts.getComplexityScore() * 100),
 			Tokens:     totalTokens,
 			ToolCalls:  ts.currentIteration(),
 			Processing: time.Since(ts.startedAt),
@@ -1850,7 +1848,8 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 		ts.ingestMessage(turnCtx, al, rootMsg)
 	}
 
-	activeCandidates, activeModel, usedLight := al.selectCandidates(ts.agent, ts.userMessage, messages)
+	activeCandidates, activeModel, usedLight, score := al.selectCandidates(ts.agent, ts.userMessage, messages)
+	ts.setComplexityScore(score)
 	activeProvider := ts.agent.Provider
 	if usedLight && ts.agent.LightProvider != nil {
 		activeProvider = ts.agent.LightProvider
@@ -2977,12 +2976,18 @@ func (al *AgentLoop) selectCandidates(
 	agent *AgentInstance,
 	userMsg string,
 	history []providers.Message,
-) (candidates []providers.FallbackCandidate, model string, usedLight bool) {
+) (candidates []providers.FallbackCandidate, model string, usedLight bool, score float64) {
 	if agent.Router == nil || len(agent.LightCandidates) == 0 {
-		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model), false
+		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model), false, 0
 	}
 
-	_, usedLight, score := agent.Router.SelectModel(userMsg, history, agent.Model)
+	_, usedLight, score = agent.Router.SelectModel(userMsg, history, agent.Model)
+	
+	// Cache the native rule-based complexity score to the primary turnState
+	if ts := turnStateFromContext(context.Background()); ts != nil {
+		// Note: Since we don't have direct access to ts here, we actually pass it up natively in runTurn
+	}
+	
 	if !usedLight {
 		logger.DebugCF("agent", "Model routing: primary model selected",
 			map[string]any{
@@ -2990,7 +2995,7 @@ func (al *AgentLoop) selectCandidates(
 				"score":     score,
 				"threshold": agent.Router.Threshold(),
 			})
-		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model), false
+		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model), false, score
 	}
 
 	logger.InfoCF("agent", "Model routing: light model selected",
@@ -3000,7 +3005,7 @@ func (al *AgentLoop) selectCandidates(
 			"score":       score,
 			"threshold":   agent.Router.Threshold(),
 		})
-	return agent.LightCandidates, resolvedCandidateModel(agent.LightCandidates, agent.Router.LightModel()), true
+	return agent.LightCandidates, resolvedCandidateModel(agent.LightCandidates, agent.Router.LightModel()), true, score
 }
 
 // resolveContextManager selects the ContextManager implementation based on config.
