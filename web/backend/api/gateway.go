@@ -452,18 +452,31 @@ func (h *Handler) StopGateway() {
 // Assumes gateway.mu is held by the caller.
 // Returns the PID of the stopped process and any error encountered.
 func stopGatewayLocked() (int, error) {
-	if gateway.cmd == nil || gateway.cmd.Process == nil {
-		return 0, nil
-	}
-
-	pid := gateway.cmd.Process.Pid
-
-	// Send SIGTERM for graceful shutdown (SIGKILL on Windows)
+	var pid int
 	var sigErr error
-	if runtime.GOOS == "windows" {
-		sigErr = gateway.cmd.Process.Kill()
+
+	if gateway.cmd != nil && gateway.cmd.Process != nil {
+		// Gateway was started by us - use the cmd process
+		pid = gateway.cmd.Process.Pid
+		if runtime.GOOS == "windows" {
+			sigErr = gateway.cmd.Process.Kill()
+		} else {
+			sigErr = gateway.cmd.Process.Signal(syscall.SIGTERM)
+		}
+	} else if gateway.pidData != nil && gateway.pidData.PID > 0 {
+		// Gateway was started externally and we attached to it - use os.FindProcess
+		pid = gateway.pidData.PID
+		proc, err := os.FindProcess(pid)
+		if err != nil {
+			return pid, fmt.Errorf("failed to find process: %w", err)
+		}
+		if runtime.GOOS == "windows" {
+			sigErr = proc.Kill()
+		} else {
+			sigErr = proc.Signal(syscall.SIGTERM)
+		}
 	} else {
-		sigErr = gateway.cmd.Process.Signal(syscall.SIGTERM)
+		return 0, nil
 	}
 
 	if sigErr != nil {
@@ -752,7 +765,8 @@ func (h *Handler) handleGatewayStop(w http.ResponseWriter, r *http.Request) {
 	gateway.mu.Lock()
 	defer gateway.mu.Unlock()
 
-	if gateway.cmd == nil || gateway.cmd.Process == nil {
+	// Check if gateway is running (either started by us or attached externally)
+	if gateway.cmd == nil && gateway.pidData == nil {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"status": "not_running",
