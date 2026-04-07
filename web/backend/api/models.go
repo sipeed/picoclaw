@@ -32,13 +32,14 @@ type modelResponse struct {
 	Proxy      string `json:"proxy,omitempty"`
 	AuthMethod string `json:"auth_method,omitempty"`
 	// Advanced fields
-	ConnectMode    string         `json:"connect_mode,omitempty"`
-	Workspace      string         `json:"workspace,omitempty"`
-	RPM            int            `json:"rpm,omitempty"`
-	MaxTokensField string         `json:"max_tokens_field,omitempty"`
-	RequestTimeout int            `json:"request_timeout,omitempty"`
-	ThinkingLevel  string         `json:"thinking_level,omitempty"`
-	ExtraBody      map[string]any `json:"extra_body,omitempty"`
+	ConnectMode    string            `json:"connect_mode,omitempty"`
+	Workspace      string            `json:"workspace,omitempty"`
+	RPM            int               `json:"rpm,omitempty"`
+	MaxTokensField string            `json:"max_tokens_field,omitempty"`
+	RequestTimeout int               `json:"request_timeout,omitempty"`
+	ThinkingLevel  string            `json:"thinking_level,omitempty"`
+	ExtraBody      map[string]any    `json:"extra_body,omitempty"`
+	CustomHeaders  map[string]string `json:"custom_headers,omitempty"`
 	// Meta
 	Enabled   bool   `json:"enabled"`
 	Available bool   `json:"available"`
@@ -87,6 +88,7 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 			RequestTimeout: m.RequestTimeout,
 			ThinkingLevel:  m.ThinkingLevel,
 			ExtraBody:      m.ExtraBody,
+			CustomHeaders:  m.CustomHeaders,
 			Enabled:        m.Enabled,
 			Available:      modelStatuses[i].Available,
 			Status:         modelStatuses[i].Status,
@@ -215,6 +217,14 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 		mc.ExtraBody = cfg.ModelList[idx].ExtraBody
 	} else if len(mc.ExtraBody) == 0 {
 		mc.ExtraBody = nil
+	}
+	// Preserve existing CustomHeaders when omitted (nil), but clear it when
+	// the frontend sends an empty object {} to indicate the field should
+	// be removed.
+	if mc.CustomHeaders == nil {
+		mc.CustomHeaders = cfg.ModelList[idx].CustomHeaders
+	} else if len(mc.CustomHeaders) == 0 {
+		mc.CustomHeaders = nil
 	}
 
 	cfg.ModelList[idx] = &mc.ModelConfig

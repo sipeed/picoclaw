@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/sipeed/picoclaw/pkg/channels/pico"
 	"github.com/sipeed/picoclaw/pkg/config"
 	ppid "github.com/sipeed/picoclaw/pkg/pid"
 )
@@ -307,6 +308,9 @@ func TestHandlePicoSetup_Response(t *testing.T) {
 }
 
 func TestHandleWebSocketProxyReloadsGatewayTargetFromConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("PICOCLAW_HOME", home)
+
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
 	handler := h.handleWebSocketProxy()
@@ -335,6 +339,16 @@ func TestHandleWebSocketProxyReloadsGatewayTargetFromConfig(t *testing.T) {
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
+	if _, err := ppid.WritePidFile(globalConfigDir(), cfg.Gateway.Host, cfg.Gateway.Port); err != nil {
+		t.Fatalf("WritePidFile() error = %v", err)
+	}
+	origPidData := gateway.pidData
+	origPicoToken := gateway.picoToken
+	t.Cleanup(func() {
+		ppid.RemovePidFile(globalConfigDir())
+		gateway.pidData = origPidData
+		gateway.picoToken = origPicoToken
+	})
 
 	gateway.pidData = &ppid.PidFileData{}
 	gateway.picoToken = "pico"
@@ -378,6 +392,9 @@ func TestHandleWebSocketProxyReloadsGatewayTargetFromConfig(t *testing.T) {
 }
 
 func TestHandleWebSocketProxyLoadsCachedPicoTokenWhenMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("PICOCLAW_HOME", home)
+
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
 	handler := h.handleWebSocketProxy()
@@ -399,6 +416,12 @@ func TestHandleWebSocketProxyLoadsCachedPicoTokenWhenMissing(t *testing.T) {
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
+	if _, err := ppid.WritePidFile(globalConfigDir(), cfg.Gateway.Host, cfg.Gateway.Port); err != nil {
+		t.Fatalf("WritePidFile() error = %v", err)
+	}
+	t.Cleanup(func() {
+		ppid.RemovePidFile(globalConfigDir())
+	})
 
 	origPidData := gateway.pidData
 	origPicoToken := gateway.picoToken
@@ -423,6 +446,134 @@ func TestHandleWebSocketProxyLoadsCachedPicoTokenWhenMissing(t *testing.T) {
 	}
 	if gateway.picoToken != "cached-token" {
 		t.Fatalf("gateway.picoToken = %q, want %q", gateway.picoToken, "cached-token")
+	}
+}
+
+func TestHandleWebSocketProxyLoadsPidDataOnDemand(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("PICOCLAW_HOME", home)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	handler := h.handleWebSocketProxy()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/pico/ws" {
+			t.Fatalf("path = %q, want %q", r.URL.Path, "/pico/ws")
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, r.Header.Get(protocolKey))
+	}))
+	defer server.Close()
+
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Host = "127.0.0.1"
+	cfg.Gateway.Port = mustGatewayTestPort(t, server.URL)
+	cfg.Channels.Pico.Enabled = true
+	cfg.Channels.Pico.SetToken("ui-token")
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	pidData, err := ppid.WritePidFile(globalConfigDir(), cfg.Gateway.Host, cfg.Gateway.Port)
+	if err != nil {
+		t.Fatalf("WritePidFile() error = %v", err)
+	}
+	t.Cleanup(func() {
+		ppid.RemovePidFile(globalConfigDir())
+	})
+
+	origPidData := gateway.pidData
+	origPicoToken := gateway.picoToken
+	origStatus := gateway.runtimeStatus
+	t.Cleanup(func() {
+		gateway.mu.Lock()
+		gateway.pidData = origPidData
+		gateway.picoToken = origPicoToken
+		gateway.runtimeStatus = origStatus
+		gateway.mu.Unlock()
+	})
+
+	gateway.mu.Lock()
+	gateway.pidData = nil
+	gateway.picoToken = ""
+	setGatewayRuntimeStatusLocked("stopped")
+	gateway.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/pico/ws?session_id=test-session", nil)
+	req.Header.Set(protocolKey, tokenPrefix+"ui-token")
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	expected := tokenPrefix + pico.PicoTokenPrefix + pidData.Token + "ui-token"
+	if got := rec.Body.String(); got != expected {
+		t.Fatalf("forwarded protocol = %q, want %q", got, expected)
+	}
+
+	gateway.mu.Lock()
+	defer gateway.mu.Unlock()
+	if gateway.pidData == nil {
+		t.Fatal("gateway.pidData should be loaded from pid file")
+	}
+	if gateway.runtimeStatus != "running" {
+		t.Fatalf("runtimeStatus = %q, want %q", gateway.runtimeStatus, "running")
+	}
+}
+
+func TestHandleWebSocketProxyRejectsStalePidDataAfterProcessExit(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	handler := h.handleWebSocketProxy()
+
+	cfg := config.DefaultConfig()
+	cfg.Channels.Pico.Enabled = true
+	cfg.Channels.Pico.SetToken("ui-token")
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	cmd := startLongRunningProcess(t)
+	if cmd.Process != nil {
+		_ = cmd.Process.Kill()
+	}
+	_ = cmd.Wait()
+
+	origPidData := gateway.pidData
+	origPicoToken := gateway.picoToken
+	origCmd := gateway.cmd
+	origStatus := gateway.runtimeStatus
+	t.Cleanup(func() {
+		gateway.mu.Lock()
+		gateway.pidData = origPidData
+		gateway.picoToken = origPicoToken
+		gateway.cmd = origCmd
+		gateway.runtimeStatus = origStatus
+		gateway.mu.Unlock()
+	})
+
+	gateway.mu.Lock()
+	gateway.pidData = &ppid.PidFileData{PID: cmd.Process.Pid, Token: "stale-token"}
+	gateway.picoToken = "ui-token"
+	gateway.cmd = cmd
+	setGatewayRuntimeStatusLocked("running")
+	gateway.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/pico/ws?session_id=test-session", nil)
+	req.Header.Set(protocolKey, tokenPrefix+"ui-token")
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+	gateway.mu.Lock()
+	defer gateway.mu.Unlock()
+	if gateway.pidData != nil {
+		t.Fatal("gateway.pidData should be cleared after stale process exit is detected")
 	}
 }
 

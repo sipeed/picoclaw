@@ -357,7 +357,13 @@ func isCmdProcessAliveLocked(cmd *exec.Cmd) bool {
 		return true
 	}
 
-	return cmd.Process.Signal(syscall.Signal(0)) == nil
+	err := cmd.Process.Signal(syscall.Signal(0))
+	if err == nil {
+		return true
+	}
+	var errno syscall.Errno
+	// EPERM means the process exists but cannot be signaled by this user.
+	return errors.As(err, &errno) && errno == syscall.EPERM
 }
 
 func setGatewayRuntimeStatusLocked(status string) {
@@ -401,6 +407,15 @@ func gatewayStatusWithoutHealthLocked() string {
 		return "error"
 	}
 	if gateway.runtimeStatus == "running" {
+		// For attached processes there is no waiter goroutine; degrade stale
+		// running state once the tracked process exits.
+		if !isCmdProcessAliveLocked(gateway.cmd) {
+			gateway.cmd = nil
+			gateway.owned = false
+			gateway.bootDefaultModel = ""
+			gateway.bootConfigSignature = ""
+			return "stopped"
+		}
 		return "running"
 	}
 	if gateway.runtimeStatus == "error" {
@@ -614,6 +629,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 
 	// Start a goroutine to probe pidFile and health, update runtime state once ready.
 	go func() {
+		healthConfirmed := false
 		for i := 0; i < 30; i++ { // try for up to 15 seconds
 			time.Sleep(500 * time.Millisecond)
 			gateway.mu.Lock()
@@ -648,7 +664,11 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 					setGatewayRuntimeStatusLocked("running")
 				}
 				gateway.mu.Unlock()
-				return
+				if !healthConfirmed {
+					healthConfirmed = true
+					logger.InfoC("gateway", "Gateway health endpoint reachable; waiting for pid file")
+				}
+				continue
 			}
 		}
 	}()
@@ -927,8 +947,14 @@ func (h *Handler) gatewayStatusData() map[string]any {
 		// (startGatewayLocked) already handles liveness detection via
 		// pidFile polling and health fallback.
 		gateway.mu.Lock()
-		data["gateway_status"] = gatewayStatusWithoutHealthLocked()
-		gateway.pidData = nil
+		status := gatewayStatusWithoutHealthLocked()
+		data["gateway_status"] = status
+		// Keep last known pidData while gateway is still in a transient
+		// running state; otherwise websocket proxy may lose auth token
+		// during short pid-file races.
+		if status == "stopped" || status == "error" {
+			gateway.pidData = nil
+		}
 		gateway.mu.Unlock()
 	}
 

@@ -430,6 +430,112 @@ func TestHandleAddModel_PersistsAPIKey(t *testing.T) {
 	}
 }
 
+func TestHandleAddModel_PersistsCustomHeaders(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models", bytes.NewBufferString(`{
+		"model_name":"new-model-headers",
+		"model":"openai/gpt-4o-mini",
+		"custom_headers":{"X-Source":"coding-plan","X-Agent":"openclaw"}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if len(cfg.ModelList) != 2 {
+		t.Fatalf("len(model_list) = %d, want 2", len(cfg.ModelList))
+	}
+
+	added := cfg.ModelList[1]
+	if added.CustomHeaders == nil {
+		t.Fatal("custom_headers should not be nil")
+	}
+	if got := added.CustomHeaders["X-Source"]; got != "coding-plan" {
+		t.Fatalf("custom_headers[X-Source] = %q, want %q", got, "coding-plan")
+	}
+	if got := added.CustomHeaders["X-Agent"]; got != "openclaw" {
+		t.Fatalf("custom_headers[X-Agent] = %q, want %q", got, "openclaw")
+	}
+}
+
+func TestHandleUpdateModel_CustomHeadersPreserveAndClear(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName:     "editable",
+		Model:         "openai/gpt-4o-mini",
+		APIKeys:       config.SimpleSecureStrings("sk-existing"),
+		CustomHeaders: map[string]string{"X-Source": "coding-plan"},
+	}}
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	// Omitted custom_headers should preserve existing value.
+	recPreserve := httptest.NewRecorder()
+	reqPreserve := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"editable",
+		"model":"openai/gpt-4o-mini"
+	}`))
+	reqPreserve.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recPreserve, reqPreserve)
+	if recPreserve.Code != http.StatusOK {
+		t.Fatalf("preserve status = %d, want %d, body=%s", recPreserve.Code, http.StatusOK, recPreserve.Body.String())
+	}
+
+	afterPreserve, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() after preserve error = %v", err)
+	}
+	if got := afterPreserve.ModelList[0].CustomHeaders["X-Source"]; got != "coding-plan" {
+		t.Fatalf("preserved custom_headers[X-Source] = %q, want %q", got, "coding-plan")
+	}
+
+	// Empty object should clear custom_headers.
+	recClear := httptest.NewRecorder()
+	reqClear := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"editable",
+		"model":"openai/gpt-4o-mini",
+		"custom_headers":{}
+	}`))
+	reqClear.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recClear, reqClear)
+	if recClear.Code != http.StatusOK {
+		t.Fatalf("clear status = %d, want %d, body=%s", recClear.Code, http.StatusOK, recClear.Body.String())
+	}
+
+	afterClear, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() after clear error = %v", err)
+	}
+	if afterClear.ModelList[0].CustomHeaders != nil {
+		t.Fatalf("custom_headers = %#v, want nil", afterClear.ModelList[0].CustomHeaders)
+	}
+}
+
 // TestHandleSetDefaultModel_RejectsNonexistentModel tests that setting a non-existent
 // model as default returns 404. This covers the case where virtual models (which are
 // filtered by SaveConfig) cannot be set as default.
