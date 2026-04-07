@@ -4,74 +4,16 @@ Before generating anything, read and follow:
 - /skills/app-selectors/SKILL.md
 - /skills/app-selectors-flow-designer/SKILL.md
 - /skills/app-selectors-flow-designer-canvas/SKILL.md
+- /tests/flow-designer/FLOW_DESIGNER_REFERENCE.md
 
 TECH STACK: This app is built with Vue.js, Vuetify, and Vue Flow. All canvas interactions, form validation, and modal behaviors follow Vue/Vuetify/Vue Flow patterns — apply the rules in /skills/app-selectors/SKILL.md under "Playwright Patterns for This App".
 
-## PHASE 1 — Source Code Discovery (MANDATORY)
-
-The base path is: /home/picoclaw/.picoclaw/workspace/context/dashboard/src
-If that path is not readable, STOP and report that the mount is missing. Do not proceed.
-
-You MUST read EVERY file listed below. Do not skip any. Do not stop early.
-
-### Directory: src/components/flow-designer/
-List all files in this directory and all subdirectories, then read each one.
-This includes:
-- All .vue files directly in src/components/flow-designer/
-- All .vue files in src/components/flow-designer/dropdown/
-- All .vue files in src/components/flow-designer/nodes/
-
-### Specific files to read:
-- src/pages/FlowDesigner.vue
-- src/pages/FlowCanvas.vue
-- src/stores/flow.store.ts (or flow.ts — check both names)
-
-After listing, read ALL files found — no exceptions.
+No source discovery needed — the reference document already exists at /tests/flow-designer/FLOW_DESIGNER_REFERENCE.md.
+Read it now and use it as the sole source of selectors for this test.
 
 ---
 
-## PHASE 2 — Create Reference Document (MANDATORY before writing test)
-
-Create:
-/tests/flow-designer/FLOW_DESIGNER_REFERENCE.md
-
-### 0. Files Read
-List ALL files read. Must be ≥10 files.
-
-### 1. Node Types
-- node-container selectors
-- handles
-- drag strategy
-
-### 2. Node Config Modals
-- open behavior
-- modal selector
-- fields
-- dropdown interaction
-- buttons
-
-### 3. Add Nodes Panel
-- open selector
-- wait condition
-- selection via .nodes-dropdown-item
-
-### 4. Flow Name Field
-- selector
-- interaction pattern
-
-### 5. Save Flow
-- save button
-- modal
-- version input
-- toast
-
-### 6. Drag-Connect Strategy
-- Vue Flow handle usage
-- required waits
-
----
-
-## PHASE 3 — Generate Playwright Test
+## PHASE 1 — Generate Playwright Test
 
 Create test file:
 tests/flow-designer/{{TEST_FILE}}.spec.ts
@@ -83,7 +25,7 @@ org=Testing2026!
 
 IMPORTANT RULES:
 
-1. ONLY use selectors from the SKILL.md files and the reference document you just created.
+1. ONLY use selectors from the SKILL.md files and /tests/flow-designer/FLOW_DESIGNER_REFERENCE.md.
 2. NEVER guess or invent Vuetify selectors like .v-dialog, .v-dialog--active, .v-overlay, .v-card, etc.
 3. For login, COPY THE CODE VERBATIM from the "Login Flow (copy-paste ready)" block in /skills/app-selectors/SKILL.md.
    Do NOT rewrite it. Do NOT use input[type="email"], input[type="password"], or any selector not in that block.
@@ -100,7 +42,7 @@ IMPORTANT RULES:
        await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
      }
 4. Selector priority — ALWAYS follow this order:
-   STEP 1: Custom CSS class from SKILL.md.
+   STEP 1: Custom CSS class from SKILL.md or FLOW_DESIGNER_REFERENCE.md.
    STEP 2: Only if no custom class, use a Vuetify class verified in SKILL.md DOM output.
    STEP 3: NEVER guess or invent a selector. Use getByRole() or getByText() with exact visible text as a last resort.
 5. TypeScript-safe Playwright only. NEVER invent or guess Playwright API methods.
@@ -119,8 +61,7 @@ IMPORTANT RULES:
      console.log('='.repeat(70));
      console.log('✅ Step 1: PASS - Description');
      console.log('='.repeat(70));
-7. Modal loading states: after a modal/overlay opens, ALWAYS wait for any loading indicator to disappear
-   before asserting content or interacting with form fields. Use:
+7. Modal loading states: after a modal/overlay opens, ALWAYS wait for any loading indicator to disappear:
      await page.locator('.v-overlay--active').locator('text=/loading/i').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
 8. VUETIFY RADIO BUTTONS — v-radio renders as input[type="radio"] in the DOM, NOT as a CSS class ".v-radio".
    NEVER use locator('v-radio') — that is a Vue component tag, not a valid CSS selector and will never match.
@@ -144,7 +85,7 @@ Steps:
 
 ---
 
-## EDGE VERIFICATION RULE (MANDATORY)
+## EDGE VERIFICATION RULE (MANDATORY for any drag-connect step)
 
 const edgesBefore = await page.locator('.vue-flow__edge[data-id]').count();
 
@@ -165,7 +106,7 @@ if (edgesAfter <= edgesBefore) {
 
 ---
 
-## PHASE 4 — Run and Fix
+## PHASE 2 — Run and Fix
 
 Run:
 npx playwright test tests/flow-designer/{{TEST_FILE}}.spec.ts --reporter=line

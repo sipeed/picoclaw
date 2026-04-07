@@ -79,7 +79,7 @@ app.post('/test/run', (req, res) => {
 });
 
 const TEMPLATES_DIR = path.join(__dirname, 'templates');
-const AVAILABLE_AREAS = ['flow-designer', 'flow-tester', 'knowledge-base'];
+const AVAILABLE_AREAS = ['auth', 'flow-designer', 'flow-tester', 'knowledge-base', 'logs', 'organization', 'profile', 'settings'];
 
 /**
  * GET /agent/areas
@@ -87,6 +87,55 @@ const AVAILABLE_AREAS = ['flow-designer', 'flow-tester', 'knowledge-base'];
  */
 app.get('/agent/areas', (_req, res) => {
   res.json({ areas: AVAILABLE_AREAS });
+});
+
+/**
+ * POST /agent/reference
+ * Body: { "area": "auth" }
+ * Runs picoclaw to generate the reference document for the given area.
+ * Streams output back as plain text.
+ */
+app.post('/agent/reference', (req, res) => {
+  const { area } = req.body;
+
+  if (!area) {
+    return res.status(400).json({ error: '"area" is required' });
+  }
+
+  if (!AVAILABLE_AREAS.includes(area)) {
+    return res.status(400).json({ error: `Unknown area. Available: ${AVAILABLE_AREAS.join(', ')}` });
+  }
+
+  const templatePath = path.join(TEMPLATES_DIR, 'reference', `${area}.txt`);
+  const prompt = readFileSync(templatePath, 'utf-8');
+
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Transfer-Encoding', 'chunked');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+
+  const proc = spawn(
+    'docker',
+    ['compose', '--env-file', '.env', '--profile', 'gateway', 'run', '--rm', 'picoclaw-agent', '-m', prompt],
+    {
+      cwd: DOCKER_DIR,
+      env: { ...process.env },
+    }
+  );
+
+  proc.stdout.on('data', (data) => res.write(data));
+  proc.stderr.on('data', (data) => res.write(data));
+
+  proc.on('close', (code) => {
+    res.end(`\n[exit code: ${code}]`);
+  });
+
+  proc.on('error', (err) => {
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message });
+    } else {
+      res.end(`\n[error: ${err.message}]`);
+    }
+  });
 });
 
 /**
