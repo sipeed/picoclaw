@@ -58,6 +58,7 @@ type WhatsAppNativeChannel struct {
 	reconnectMu  sync.Mutex
 	reconnecting bool
 	stopping     atomic.Bool    // set once Stop begins; prevents new wg.Add calls
+	loggedOut    atomic.Bool    // set when session is permanently invalid (LoggedOut, StreamReplaced, etc.)
 	wg           sync.WaitGroup // tracks background goroutines (QR handler, reconnect)
 }
 
@@ -88,6 +89,7 @@ func (c *WhatsAppNativeChannel) Start(ctx context.Context) error {
 	// and Stop() which coordinate under the same lock.
 	c.reconnectMu.Lock()
 	c.stopping.Store(false)
+	c.loggedOut.Store(false)
 	c.reconnecting = false
 	c.reconnectMu.Unlock()
 
@@ -267,9 +269,37 @@ func (c *WhatsAppNativeChannel) Stop(ctx context.Context) error {
 }
 
 func (c *WhatsAppNativeChannel) eventHandler(evt any) {
-	switch evt.(type) {
+	switch v := evt.(type) {
 	case *events.Message:
-		c.handleIncoming(evt.(*events.Message))
+		c.handleIncoming(v)
+	case *events.LoggedOut:
+		c.loggedOut.Store(true)
+		logger.ErrorCF("whatsapp", "WhatsApp session logged out — re-pairing required", map[string]any{
+			"on_connect": v.OnConnect,
+			"reason":     v.Reason.String(),
+		})
+	case *events.StreamReplaced:
+		c.loggedOut.Store(true)
+		logger.ErrorCF("whatsapp", "WhatsApp stream replaced by another session — re-pairing required", nil)
+	case *events.KeepAliveTimeout:
+		logger.WarnCF("whatsapp", "WhatsApp keep-alive timeout", map[string]any{
+			"error_count":  v.ErrorCount,
+			"last_success": v.LastSuccess.Format(time.RFC3339),
+		})
+	case *events.ConnectFailure:
+		logger.ErrorCF("whatsapp", "WhatsApp connect failure", map[string]any{
+			"reason":  v.Reason.String(),
+			"message": v.Message,
+		})
+	case *events.TemporaryBan:
+		c.loggedOut.Store(true)
+		logger.ErrorCF("whatsapp", "WhatsApp temporary ban — stopping reconnect", map[string]any{
+			"code":   v.Code.String(),
+			"expire": v.Expire.String(),
+		})
+	case *events.ClientOutdated:
+		c.loggedOut.Store(true)
+		logger.ErrorCF("whatsapp", "WhatsApp client outdated — update whatsmeow required", nil)
 	case *events.Disconnected:
 		logger.InfoCF("whatsapp", "WhatsApp disconnected, will attempt reconnection", nil)
 		c.reconnectMu.Lock()
@@ -303,6 +333,11 @@ func (c *WhatsAppNativeChannel) reconnectWithBackoff() {
 
 	backoff := reconnectInitial
 	for {
+		if c.loggedOut.Load() {
+			logger.ErrorCF("whatsapp", "Aborting reconnect — session invalid, re-pairing required", nil)
+			return
+		}
+
 		select {
 		case <-c.runCtx.Done():
 			return
