@@ -73,6 +73,9 @@ func TestGatewayStopCmdNotRunning(t *testing.T) {
 }
 
 func TestGatewayStatusCmdRejectsNonGatewayPID(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("process identity verification is linux-only (/proc)")
+	}
 	if runtime.GOOS == "windows" {
 		t.Skip("requires POSIX signal semantics")
 	}
@@ -98,6 +101,9 @@ func TestGatewayStatusCmdRejectsNonGatewayPID(t *testing.T) {
 }
 
 func TestGatewayStopCmdRejectsNonGatewayPID(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("process identity verification is linux-only (/proc)")
+	}
 	if runtime.GOOS == "windows" {
 		t.Skip("requires POSIX signal semantics")
 	}

@@ -96,9 +96,14 @@ func resolveGatewayTarget(homePath string) (*gatewayTarget, error) {
 		return nil, fmt.Errorf("failed to find gateway process (PID: %d): %w", data.PID, err)
 	}
 
-	err = verifyGatewayProcessIdentity(data.PID)
-	if err != nil {
-		return nil, err
+	// Hardening: when possible, ensure the PID file still points to a picoclaw
+	// gateway process before we report or signal it. Currently we only have a
+	// reliable, dependency-free implementation on Linux (/proc).
+	if runtime.GOOS == "linux" {
+		err = verifyGatewayProcessIdentity(data.PID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &gatewayTarget{

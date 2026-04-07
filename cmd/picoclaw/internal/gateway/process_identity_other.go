@@ -2,11 +2,8 @@
 
 package gateway
 
-import "fmt"
-
 func verifyGatewayProcessIdentity(processID int) error {
-	return fmt.Errorf(
-		"gateway process identity verification is not supported on this platform (PID: %d)",
-		processID,
-	)
+	// Best-effort: non-Linux platforms don't have a portable, dependency-free way
+	// to validate /proc-style executable + argv identity. Don't block status/stop.
+	return nil
 }
