@@ -1,0 +1,44 @@
+pr:
+  branches:
+    include:
+    - '*'
+
+trigger:
+  branches:
+    include:
+    - main
+
+variables:
+  - name: DockerImageName
+    value: 'enterprise-automation-352103/container-repo/picoclaw-e2e-testing'
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+- stage: build
+  jobs:
+  - job: buildAndPush
+    steps:
+    - task: DownloadSecureFile@1
+      name: gcpServiceAccountKeyAuto
+      inputs:
+        secureFile: 'gcp-services-account-key-automation.json'
+    - template: pipeline_templates/gcp_auth.yaml
+      parameters:
+        environment: 'automation'
+    - task: Docker@2
+      displayName: 'Login to Container Registry'
+      inputs:
+        command: login
+        containerRegistry: 'gcr-connection-automation'
+    - script: |
+        docker build -t europe-west4-docker.pkg.dev/$(DockerImageName):$(Build.SourceVersion) -f docker/Dockerfile .
+      displayName: Build docker image
+    - task: Docker@2
+      displayName: 'Push image'
+      inputs:
+        command: push
+        repository: '$(DockerImageName)'
+        tags: |
+          $(Build.SourceVersion)
