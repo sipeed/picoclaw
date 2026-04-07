@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/spf13/cobra"
 
