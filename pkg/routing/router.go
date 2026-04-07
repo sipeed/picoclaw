@@ -5,9 +5,11 @@ import (
 )
 
 // defaultThreshold is used when the config threshold is zero or negative.
-// At 0.35 a message needs at least one strong signal (code block, long text,
-// or an attachment) before the heavy model is chosen.
-const defaultThreshold = 0.35
+// Raised to 0.65 so that 95%+ of everyday messages stay on the light model
+// (Gemini Flash). Only messages with multiple strong signals — e.g. a code
+// block inside a long prompt, or a dense multi-tool agentic chain — cross
+// this bar and escalate to the heavy model (Claude).
+const defaultThreshold = 0.65
 
 // RouterConfig holds the validated model routing settings.
 // It mirrors config.RoutingConfig but lives in pkg/routing to keep the
