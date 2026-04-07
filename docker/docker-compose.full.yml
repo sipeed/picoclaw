@@ -10,9 +10,12 @@ services:
     container_name: picoclaw-agent-full
     profiles:
       - agent
+    environment:
+      # Allow overriding the default home directory via environment variable
+      - PICOCLAW_HOME=${PICOCLAW_HOME:-/root/.picoclaw}
     volumes:
-      - ../config/config.json:/root/.picoclaw/config.json:ro
-      - picoclaw-workspace:/root/.picoclaw/workspace
+      - ../config/config.json:${PICOCLAW_HOME:-/root/.picoclaw}/config.json:ro
+      - picoclaw-workspace:${PICOCLAW_HOME:-/root/.picoclaw}/workspace
       - picoclaw-npm-cache:/root/.npm # npm cache for faster MCP server installs
     entrypoint: ["picoclaw", "agent"]
     stdin_open: true
@@ -30,11 +33,14 @@ services:
     restart: unless-stopped
     profiles:
       - gateway
+    environment:
+      # Allow overriding the default home directory via environment variable
+      - PICOCLAW_HOME=${PICOCLAW_HOME:-/root/.picoclaw}
     volumes:
       # Configuration file
-      - ../config/config.json:/root/.picoclaw/config.json:ro
+      - ../config/config.json:${PICOCLAW_HOME:-/root/.picoclaw}/config.json:ro
       # Persistent workspace (sessions, memory, logs)
-      - picoclaw-workspace:/root/.picoclaw/workspace
+      - picoclaw-workspace:${PICOCLAW_HOME:-/root/.picoclaw}/workspace
       # NPM cache for faster MCP server installs
       - picoclaw-npm-cache:/root/.npm
     command: ["gateway"]
