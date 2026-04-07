@@ -67,3 +67,5 @@ web/backend/dist/*
 .claude/
 
 docker/data
+
+.omc/

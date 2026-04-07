@@ -43,6 +43,7 @@ type AssembleResponse struct {
 type CompactRequest struct {
 	SessionKey string                // session identifier
 	Reason     ContextCompressReason // proactive_budget | llm_retry | summarize
+	Budget     int                   // context window budget (used for retry aggressive compaction)
 }
 
 // IngestRequest is the input to Ingest.

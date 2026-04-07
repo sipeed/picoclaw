@@ -37,6 +37,9 @@ type Store interface {
 	// data. Backends that do not accumulate dead data may return nil.
 	Compact(ctx context.Context, sessionKey string) error
 
+	// ListSessions returns all known session keys.
+	ListSessions() []string
+
 	// Close releases any resources held by the store.
 	Close() error
 }

@@ -373,7 +373,7 @@ func (m *legacyContextManager) summarizeBatch(
 func (m *legacyContextManager) estimateTokens(messages []providers.Message) int {
 	total := 0
 	for _, msg := range messages {
-		total += estimateMessageTokens(msg)
+		total += EstimateMessageTokens(msg)
 	}
 	return total
 }
