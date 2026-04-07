@@ -59,13 +59,14 @@ type placeholderEntry struct {
 
 // channelRateConfig maps channel name to per-second rate limit.
 var channelRateConfig = map[string]float64{
-	"telegram": 20,
-	"discord":  1,
-	"slack":    1,
-	"matrix":   2,
-	"line":     10,
-	"qq":       5,
-	"irc":      2,
+	"telegram":   20,
+	"discord":    1,
+	"slack":      1,
+	"matrix":     2,
+	"line":       10,
+	"qq":         5,
+	"irc":        2,
+	"mattermost": 5,
 }
 
 type channelWorker struct {
@@ -428,6 +429,12 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 
 	if channels.VK.Enabled && channels.VK.Token.String() != "" && channels.VK.GroupID != 0 {
 		m.initChannel("vk", "VK")
+	}
+
+	if channels.Mattermost.Enabled &&
+		channels.Mattermost.URL != "" &&
+		channels.Mattermost.BotToken.String() != "" {
+		m.initChannel("mattermost", "Mattermost")
 	}
 
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{
