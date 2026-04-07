@@ -1,5 +1,5 @@
 // PicoClaw - 超轻量级个人 AI 智能体
-// 籲发并基于 nanobot: https://github.com/HKUDS/nanobot
+// 开发并基于 nanobot: https://github.com/HKUDS/nanobot
 // 许可证: MIT
 //
 // Copyright (c) 2026 PicoClaw contributors
@@ -14,11 +14,11 @@
 //   1. 从消息总线(bus)接收用户消息
 //   2. 通过路由系统(routing)将消息分发到对应的 Agent
 //   3. 管理 LLM 对话上下文(会话历史、系统提示)
-//   4. 调用 LLM 揸商商商模型)获取响应
+//   4. 调用 LLM(大语言模型)获取响应
 //   5. 执行工具调用(文件读写、网页搜索、消息发送等)
 //   6. 通过消息总线(bus)将响应发送回用户
 //
-// ## 栄心数据流
+// ## 核心数据流
 //
 //   用户消息 → InboundChan → processMessage → runAgentLoop → runTurn
 //     → BuildMessages(构建上下文) → LLM Chat → 解析响应
@@ -29,8 +29,8 @@
 //
 //   - 会话管理(Sessions): 存储对话历史,支持摘要
 //   - 路由(Routing): 将消息分发到不同的 Agent
-//   - 钩子(Hooks): 在 LLM 蛽用、工具执行前后插入自定义逻辑
-//   - 转向(Steering): 在 LLM 変换中途中注入新的用户消息
+//   - 钩子(Hooks): 在 LLM 调用、工具执行前后插入自定义逻辑
+//   - 转向(Steering): 在 LLM 对话中途中注入新的用户消息
 //   - 压缩(Compression): 当上下文过长时自动压缩历史
 //   - 摘要(Summarization): 定期将历史总结为摘要以减少 token 消耗
 //
@@ -66,16 +66,16 @@ import (
 
 // AgentLoop 是整个 AI Agent 的核心运行循环
 //
-// 它 它// 是系统中所有消息处理的入口点。一个 AgentLoop 宂例管理消息路由、 LLM 交互、会话历史、工具调用和事件发射等//
+// 它是系统中所有消息处理的入口点。一个 AgentLoop 实例管理消息路由、LLM 交互、会话历史、工具调用和事件发射等。
 //
 // 生命周期:
 //   1. 创建时通过 NewAgentLoop 枝始化
-//   2. 通过 Run() 同动主消息处理循环
+//   2. 通过 Run() 启动主消息处理循环
 //   3. 通过 Stop() 优雅关闭
 //   4. 通过 Close() 释放资源
 //
-// 栯心设计原则:
-//   - 单会处理并发： 通过 sessionKey 鯧分不同用户会话,并处理)
+// 核心设计原则:
+//   - 单会话并发处理：通过 sessionKey 区分不同用户会话,支持并发处理
 //   - 流式响应: 支持通过 MessageBus 异步发送 LLM 响应
 //   - 可中断支持: steering 机制和硬中断
 //   - 自动上下文管理: 压缩和摘要机制防止 token 溢出
@@ -89,7 +89,9 @@ type AgentLoop struct {
 	bus      *bus.MessageBus      // 消息总线,所有消息通过这里传递
 	cfg      *config.Config       // 全局配置
 	registry *AgentRegistry       // Agent 注册表,管理多个 Agent 实例及其路由
-	state    *state.Manager       // 持久化状态管理器,保存最近活跃通道等	// === 事件系统 ===
+	state    *state.Manager       // 持久化状态管理器,保存最近活跃通道等
+
+	// === 事件系统 ===
 	eventBus *EventBus    // 事件总线,用于发布 Agent 事件(如 turn 开始/结束)
 	hooks    *HookManager // 钩子管理器,在 LLM/工具调用前后插入自定义逻辑	// === 运行时状态 ===
 	running        atomic.Bool             // 是否正在运行(原子操作,线程安全)
@@ -159,14 +161,14 @@ const (
 	toolLimitResponse          = "I've reached `max_tool_iterations` without a final response. Increase `max_tool_iterations` in config.json if this task needs more tool steps." // 达到最大工具迭代次数时的提示
 	handledToolResponseSummary = "Requested output delivered via tool attachment." // 工具已处理输出时的摘要
 	sessionKeyAgentPrefix      = "agent:"                       // Agent 作用域会会话前缀
-	metadataKeyAccountID       = "account_id"                   // 元数据键: 軬户 ID
+	metadataKeyAccountID       = "account_id"                   // 元数据键: 账户 ID
 	metadataKeyGuildID         = "guild_id"                     // 元数据键: 服务器 Guild ID(如 Discord)
 	metadataKeyTeamID          = "team_id"                      // 元数据键: 团队 ID(如 Slack)
 	metadataKeyParentPeerKind  = "parent_peer_kind"                // 元数据键: 父级对等方类型(用于回复场景)
 	metadataKeyParentPeerID    = "parent_peer_id"                // 元数据键: 父级对等方 ID(用于回复场景)
 )
 
-// NewAgentLoop 创建并初始化 AgentLoop 宙例
+// NewAgentLoop 创建并初始化 AgentLoop 实例
 //
 // 初始化流程:
 //   1. 创建 Agent 注册表(Registry),包含默认 Agent 和自定义 Agent
@@ -179,7 +181,7 @@ const (
 //   8. 注册共享工具(web_search, web_fetch, message, send_file 等)
 //
 // 注意: provider 参数在此处仅用于创建 Registry,
-// 宾际的 LLM 豸用通过 AgentInstance.Provider 字段访问
+// 实际的 LLM 调用通过 AgentInstance.Provider 字段访问
 func NewAgentLoop(
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
@@ -463,9 +465,9 @@ func registerSharedTools(
 	}
 }
 
-// Run 吱动 AgentLoop 的主消息处理循环
+// Run 启动 AgentLoop 的主消息处理循环
 //
-// 这是是 AgentLoop 的主入口函数,它:
+// 这是 AgentLoop 的主入口函数,它:
 //   1. 从 InboundChan 读取用户消息
 //   2. 对每条消息启动一个处理协程
 //   3. 在处理期间,如果有转向目标匹配,启动 drain 协程将后续消息路由到转向队列
@@ -637,7 +639,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 //   - 匹配当前活动 scope 的消息 → 注入到转向队列(steeringQueue)
 //     这些消息会在 LLM 下一次迭代时被注入到上下文中,实现"对话中途中插话"效果
 //   - 不匹配的消息 → 重新入队(requeueInboundMessage)
-//     等待当前 Turn 宝成后再被处理
+//     等待当前 Turn 完成后再被处理
 //
 // 阻塞行为:
 //   - 第一条消息: 阻塞等待(直到 ctx 取消或消息到达)
@@ -724,8 +726,8 @@ func (al *AgentLoop) Stop() {
 
 // publishResponseIfNeeded 在必要时将响应发布到消息总线
 //
-// 如果响应不为空且本轮没有通过 message 巯具发送过消息,则通过总线发送。
-// 这个检查是为了避免重复发送:当 LLM 使用 message 巯具主动发送消息时,
+// 如果响应不为空且本轮没有通过 message 工具发送过消息,则通过总线发送。
+// 这个检查是为了避免重复发送:当 LLM 使用 message 工具主动发送消息时,
 // 不需要再通过总线发送一次相同的消息。
 //
 // 参数:
@@ -770,9 +772,9 @@ func (al *AgentLoop) publishResponseIfNeeded(ctx context.Context, channel, chatI
 		})
 }
 
-// buildContinuationTarget 枾建续轮目标
+// buildContinuationTarget 构建续轮目标
 //
-// 在 Turn 宝成后,检查是否需要继续处理排队中的转向消息。
+// 在 Turn 完成后,检查是否需要继续处理排队中的转向消息。
 // 如果消息来自 "system" 通道,则返回 nil(不需要续轮)。
 //
 // 参数:
@@ -801,7 +803,7 @@ func (al *AgentLoop) buildContinuationTarget(msg bus.InboundMessage) (*continuat
 // Close 释放 AgentLoop 持有的所有资源
 //
 // 在调用 Stop() 后应调用此函数以清理:
-//   - MCP 禥理理器(关闭外部工具连接)
+//   - MCP 管理器(关闭外部工具连接)
 //   - Agent 注册表(关闭所有 Agent 的会话存储)
 //   - 钩子管理器(卸载所有钩子)
 //   - 事件总线(关闭所有订阅者)
@@ -1048,8 +1050,8 @@ func (al *AgentLoop) logEvent(evt Event) {
 
 // RegisterTool 向所有 Agent 注册一个新的工具
 //
-// 此方法用于在 AgentLoop 宍行时动态注册工具(如 MCP 工具)。
-// 巯具会被注册到注册表中每个 Agent 的工具集中。
+// 此方法用于在 AgentLoop 运行时动态注册工具(如 MCP 工具)。
+// 工具会被注册到注册表中每个 Agent 的工具集中。
 //
 // 参数:
 //   - tool: 要注册的工具实例
@@ -1471,7 +1473,7 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 //
 // 心跳是一种特殊的消息处理:
 //   - 不加载会话历史(NoHistory=true)
-//   - 不累织上下文(每次心跳独立)
+//   - 不累积上下文(每次心跳独立)
 //   - 抑制工具反馈消息(SuppressToolFeedback=true)
 //   - 不自动发送响应(SendResponse=false)
 //
@@ -1507,14 +1509,14 @@ func (al *AgentLoop) ProcessHeartbeat(
 	})
 }
 
-// processMessage 夿息整条入站消息的核心处理函数
+// processMessage 处理整条入站消息的核心处理函数
 //
-// 夌理流程:
+// 处理流程:
 //   1. 音频转录: 如果消息包含音频附件,使用 transcriber 将音频转为文字
-//   2. 綈息路由: 根据 routing 觡将消息分发到对应的 Agent
-//   3. 嶈息工具状态重 重: 重置 message 巯具的 "已发送" 标志
+//   2. 消息路由: 根据 routing 规则将消息分发到对应的 Agent
+//   3. 消息工具状态重置: 重置 message 工具的 "已发送" 标志
 //   4. 挂起技能处理: 如果有待应用的技能,将其加入选项
-//   5. 趈费 LLM: 调用 runAgentLoop 进入主对话循环
+//   5. 调用 LLM: 调用 runAgentLoop 进入主对话循环
 //
 // 返回:
 //   - response: LLM 的最终响应文本
@@ -1678,7 +1680,7 @@ func (al *AgentLoop) resolveSteeringTarget(msg bus.InboundMessage) (string, stri
 // requeueInboundMessage 将入站消息重新放回消息总线
 //
 // 当 drain 协程收到不匹配当前活跃 scope 的消息时,
-// 需要将消息重新发布到总线,以便在当前 Turn 宝成后处理。
+// 需要将消息重新发布到总线,以便在当前 Turn 完成后处理。
 //
 // 注意: 使用独立的超时上下文(1秒),避免在主 Turn 取消时丢失消息。
 func (al *AgentLoop) requeueInboundMessage(msg bus.InboundMessage) error {
@@ -1774,7 +1776,7 @@ func (al *AgentLoop) processSystemMessage(
 // runAgentLoop 是 Turn 的顶层入口函数,负责启动一个完整的对话轮(Turn)
 //
 // 一个 Turn 包含:
-//   1. 讱管理上下文预算(可能触发压缩)
+//   1. 管理上下文预算(可能触发压缩)
 //   2. 将用户消息存入会话历史
 //   3. 调用 LLM 获取响应
 //   4. 执行工具调用(如果有)
@@ -1784,7 +1786,7 @@ func (al *AgentLoop) processSystemMessage(
 //
 // 参数:
 //   - agent: 目标 Agent 实例
-//   - opts: 夺理选项(包含会话键、通道、消息等)
+//   - opts: 处理选项(包含会话键、通道、消息等)
 //
 // 返回:
 //   - string: LLM 的最终响应
@@ -1857,7 +1859,7 @@ func (al *AgentLoop) targetReasoningChannelID(channelName string) (chatID string
 	return ""
 }
 
-// handleReasoning 夑达推理(reasoning)内容到指定的通道
+// handleReasoning 发送推理(reasoning)内容到指定的通道
 //
 // 推理是 LLM 在生成响应时的中间思考过程,通常使用支持推理的模型
 // (如 Claude 的 extended thinking)。推理内容会被发送到一个专门的"推理通道",
@@ -3219,7 +3221,7 @@ type compressionResult struct {
 	RemainingMessages int
 }
 
-// forceCompression 濱遇上下文长度超限时强制压缩历史
+// forceCompression 当上下文长度超限时强制压缩历史
 //
 // 压缩策略:
 //   1. 按完整 Turn 边界分割(Turn = 用户→LLM→响应 的完整循环)
@@ -3411,7 +3413,7 @@ func formatToolsForLog(toolDefs []providers.ToolDefinition) string {
 // 使用 LLM 将旧的历史消息总结为简短摘要,以减少上下文 token 占用。
 // 仅保留最近的几轮对话以保证连续性。
 //
-// 夑壕流程:
+// 处理流程:
 //   1. 检查历史是否够长(<=44条直接返回)
 //   2. 找到安全的 Turn 边界切割点
 //   3. 过滤超大消息(超过上下文窗口一半的消息)
@@ -3683,8 +3685,8 @@ func (al *AgentLoop) summarizeBatch(
 //
 // 使用简单的字符数/2 估算(1个 token ≈ 2 个字符),并统计:
 //   - Content: 消息正文
-//   - ToolCalls: 巯具调用参数
-//   - ToolCallID: 巯具调用 ID 元数据
+//   - ToolCalls: 工具调用参数
+//   - ToolCallID: 工具调用 ID 元数据
 //
 // 这样工具密集型对话不会被系统性低估。
 func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
@@ -4103,9 +4105,9 @@ func isNativeSearchProvider(p providers.LLMProvider) bool {
 	return false
 }
 
-// filterClientWebSearch 过滤掉客户端侧的 web_search 巯具
+// filterClientWebSearch 过滤掉客户端侧的 web_search 工具
 //
-// 当 Provider 支持原生搜索时(如 Google Gemini),移除客户端侧的 web_search 巯具,
+// 当 Provider 支持原生搜索时(如 Google Gemini),移除客户端侧的 web_search 工具,
 // 使用 Provider 内置的搜索功能代替。
 func filterClientWebSearch(tools []providers.ToolDefinition) []providers.ToolDefinition {
 	result := make([]providers.ToolDefinition, 0, len(tools))
