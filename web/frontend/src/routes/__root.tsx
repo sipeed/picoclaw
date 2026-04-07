@@ -42,8 +42,14 @@ const RootLayout = () => {
           globalThis.location.assign("/launcher-login")
         }
       })
-      .catch(() => {
-        // Network error or 401 — launcherFetch will handle redirect on real API calls.
+      .catch((err: unknown) => {
+        // For real HTTP errors (e.g. 503 when the auth store is unavailable),
+        // redirect to login so the user can re-authenticate rather than being
+        // silently stranded on the dashboard.  Network failures (no response)
+        // are left alone — launcherFetch handles the 401 redirect on real calls.
+        if (err instanceof Error && /^status \d+$/.test(err.message)) {
+          globalThis.location.assign("/launcher-login")
+        }
       })
   }, [isAuthPage])
 
