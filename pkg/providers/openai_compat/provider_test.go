@@ -2,6 +2,7 @@ package openai_compat
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,41 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
+
+func TestParseStreamResponse_ReassemblesSplitJSONAcrossDataLines(t *testing.T) {
+	stream := strings.Join([]string{
+		`data: {"choices":[{"delta":{"content":"hel`,
+		`data: lo"},"finish_reason":"stop"}]}`,
+		`data: [DONE]`,
+		"",
+	}, "\n")
+
+	out, err := parseStreamResponse(context.Background(), strings.NewReader(stream), nil)
+	if err != nil {
+		t.Fatalf("parseStreamResponse() error = %v", err)
+	}
+	if out.Content != "hello" {
+		t.Fatalf("Content = %q, want %q", out.Content, "hello")
+	}
+}
+
+func TestParseStreamResponse_DropsMalformedChunkAndRecovers(t *testing.T) {
+	stream := strings.Join([]string{
+		`data: {"choices":[{"delta":{"content":"bad"}}]} garbage`,
+		`data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}`,
+		`data: [DONE]`,
+		"",
+	}, "\n")
+
+	out, err := parseStreamResponse(context.Background(), strings.NewReader(stream), nil)
+	if err != nil {
+		t.Fatalf("parseStreamResponse() error = %v", err)
+	}
+	// The malformed chunk should be skipped, and the next valid chunk should still parse.
+	if out.Content != "ok" {
+		t.Fatalf("Content = %q, want %q", out.Content, "ok")
+	}
+}
 
 func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
 	var requestBody map[string]any
