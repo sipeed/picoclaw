@@ -702,6 +702,7 @@ func TestAgentLoop_Steering_SkipsRemainingTools(t *testing.T) {
 			"test-session",
 			"test",
 			"chat1",
+			"",
 		)
 		resultCh <- result{resp, err}
 	}()
@@ -784,6 +785,7 @@ func TestAgentLoop_Steering_InitialPoll(t *testing.T) {
 		"test-session",
 		"test",
 		"chat1",
+		"",
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -971,6 +973,7 @@ func TestAgentLoop_Steering_DirectResponseContinuesWithQueuedMessage(t *testing.
 			sessionKey,
 			"test",
 			"chat1",
+			"",
 		)
 		resultCh <- struct {
 			resp string
@@ -1185,6 +1188,7 @@ func TestAgentLoop_InterruptGraceful_UsesTerminalNoToolCall(t *testing.T) {
 			sessionKey,
 			"test",
 			"chat1",
+			"",
 		)
 		resultCh <- result{resp: resp, err: err}
 	}()
@@ -1350,6 +1354,7 @@ func TestAgentLoop_InterruptHard_RestoresSession(t *testing.T) {
 			sessionKey,
 			"test",
 			"chat1",
+			"",
 		)
 		resultCh <- result{resp: resp, err: err}
 	}()
@@ -1518,7 +1523,7 @@ func TestAgentLoop_Steering_SkippedToolsHaveErrorResults(t *testing.T) {
 	resultCh := make(chan string, 1)
 	go func() {
 		resp, _ := al.ProcessDirectWithChannel(
-			context.Background(), "go", "test-session", "test", "chat1",
+			context.Background(), "go", "test-session", "test", "chat1", "",
 		)
 		resultCh <- resp
 	}()

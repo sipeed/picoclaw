@@ -35,7 +35,7 @@
   "channels": {
     "telegram": {
       "enabled": true,
-      "token": "234232:xxxx",
+      "token": "xxxx:xxxx",
       "allow_from": ["xxxxx"]
     }
   },

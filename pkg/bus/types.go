@@ -24,9 +24,10 @@ type InboundMessage struct {
 	Media      []string          `json:"media,omitempty"`
 	Peer       Peer              `json:"peer"`                  // routing peer
 	MessageID  string            `json:"message_id,omitempty"`  // platform message ID
-	MediaScope string            `json:"media_scope,omitempty"` // media lifecycle scope
-	SessionKey string            `json:"session_key"`
-	Metadata   map[string]string `json:"metadata,omitempty"`
+	MediaScope    string            `json:"media_scope,omitempty"` // media lifecycle scope
+	SessionKey    string            `json:"session_key"`
+	ModelOverride string            `json:"model_override,omitempty"` // Explicitly requested model tier
+	Metadata      map[string]string `json:"metadata,omitempty"`
 }
 
 type OutboundMessage struct {

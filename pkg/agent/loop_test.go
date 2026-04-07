@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -2008,6 +2009,7 @@ func TestAgentLoop_ContextExhaustionRetry(t *testing.T) {
 		sessionKey,
 		"test",
 		"test-chat",
+		"",
 	)
 	if err != nil {
 		t.Fatalf("Expected success after retry, got error: %v", err)
@@ -2055,7 +2057,7 @@ func TestAgentLoop_EmptyModelResponseUsesAccurateFallback(t *testing.T) {
 	provider := &simpleMockProvider{response: ""}
 	al := NewAgentLoop(cfg, msgBus, provider)
 
-	response, err := al.ProcessDirectWithChannel(context.Background(), "hello", "empty-response", "test", "chat1")
+	response, err := al.ProcessDirectWithChannel(context.Background(), "hello", "empty-response", "test", "chat1", "")
 	if err != nil {
 		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
 	}
@@ -2087,7 +2089,7 @@ func TestAgentLoop_ToolLimitUsesDedicatedFallback(t *testing.T) {
 	al := NewAgentLoop(cfg, msgBus, provider)
 	al.RegisterTool(&toolLimitTestTool{})
 
-	response, err := al.ProcessDirectWithChannel(context.Background(), "hello", "tool-limit", "test", "chat1")
+	response, err := al.ProcessDirectWithChannel(context.Background(), "hello", "tool-limit", "test", "chat1", "")
 	if err != nil {
 		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
 	}
@@ -2162,6 +2164,7 @@ func TestProcessDirectWithChannel_TriggersMCPInitialization(t *testing.T) {
 		"session-1",
 		"cli",
 		"direct",
+		"",
 	)
 	if err != nil {
 		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
@@ -3046,3 +3049,41 @@ func TestProcessMessage_ContextOverflow_AnthropicStyle(t *testing.T) {
 		t.Fatalf("expected 2 calls for retry, got %d", provider.calls)
 	}
 }
+
+func TestAgentLoop_SelectCandidates_ModelOverride(t *testing.T) {
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				ModelName: "default-model",
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &simpleMockProvider{response: "ok"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	// Test case: provide an explicit model override
+	modelOverride := "explicit-gemini-3-flash"
+	
+	// We need an agent instance
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("default agent not found")
+	}
+
+	candidates, selectedModel, usedLight, score := al.selectCandidates(agent, "test", nil, modelOverride)
+
+	if selectedModel != modelOverride {
+		t.Fatalf("selectedModel = %q, want %q", selectedModel, modelOverride)
+	}
+	if usedLight {
+		t.Fatal("usedLight should be false when using override")
+	}
+	if score != 0 {
+		t.Fatalf("score should be 0 when using override, got %f", score)
+	}
+	if !reflect.DeepEqual(candidates, agent.Candidates) {
+		t.Fatal("candidates should match agent.Candidates")
+	}
+}
+

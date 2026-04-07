@@ -29,6 +29,7 @@ type CronPayload struct {
 	Command string `json:"command,omitempty"`
 	Channel string `json:"channel,omitempty"`
 	To      string `json:"to,omitempty"`
+	Model   string `json:"model,omitempty"` // Override model tier (e.g. "gemini-3-flash")
 }
 
 type CronJobState struct {

@@ -21,6 +21,7 @@ type stubJobExecutor struct {
 	lastKey         string
 	lastChan        string
 	lastChatID      string
+	lastModel       string // Track the model override
 	publishedResp   string
 	publishedChan   string
 	publishedChatID string
@@ -29,11 +30,13 @@ type stubJobExecutor struct {
 func (s *stubJobExecutor) ProcessDirectWithChannel(
 	_ context.Context,
 	content, sessionKey, channel, chatID string,
+	modelOverride string,
 ) (string, error) {
 	s.lastPrompt = content
 	s.lastKey = sessionKey
 	s.lastChan = channel
 	s.lastChatID = chatID
+	s.lastModel = modelOverride
 	return s.response, s.err
 }
 
@@ -345,3 +348,23 @@ func TestCronTool_ExecuteJobReturnsErrorWithoutPublish(t *testing.T) {
 		t.Fatalf("unexpected publish on error path: %q", executor.publishedResp)
 	}
 }
+
+func TestCronTool_ExecuteJob_ModelOverride(t *testing.T) {
+	executor := &stubJobExecutor{response: "reply"}
+	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
+
+	job := &cron.CronJob{ID: "job-override"}
+	job.Payload.Channel = "telegram"
+	job.Payload.To = "chat-1"
+	job.Payload.Message = "heavy task"
+	job.Payload.Model = "gemini-3-flash"
+
+	if got := tool.ExecuteJob(context.Background(), job); got != "ok" {
+		t.Fatalf("ExecuteJob() = %q, want ok", got)
+	}
+
+	if executor.lastModel != "gemini-3-flash" {
+		t.Fatalf("model = %q, want gemini-3-flash", executor.lastModel)
+	}
+}
+

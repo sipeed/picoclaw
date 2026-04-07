@@ -275,7 +275,7 @@ func TestAgentLoop_EmitsSteeringAndSkippedToolEvents(t *testing.T) {
 
 	resultCh := make(chan string, 1)
 	go func() {
-		resp, _ := al.ProcessDirectWithChannel(context.Background(), "do something", "test-session", "test", "chat1")
+		resp, _ := al.ProcessDirectWithChannel(context.Background(), "do something", "test-session", "test", "chat1", "")
 		resultCh <- resp
 	}()
 

@@ -92,6 +92,7 @@ type processOptions struct {
 	SuppressToolFeedback    bool                // Whether to suppress inline tool feedback messages
 	NoHistory               bool                // If true, don't load session history (for heartbeat)
 	SkipInitialSteeringPoll bool                // If true, skip the steering poll at loop start (used by Continue)
+	ModelOverride           string              // Explicitly requested model tier
 }
 
 type continuationTarget struct {
@@ -1284,12 +1285,13 @@ func (al *AgentLoop) ProcessDirect(
 	ctx context.Context,
 	content, sessionKey string,
 ) (string, error) {
-	return al.ProcessDirectWithChannel(ctx, content, sessionKey, "cli", "direct")
+	return al.ProcessDirectWithChannel(ctx, content, sessionKey, "cli", "direct", "")
 }
 
 func (al *AgentLoop) ProcessDirectWithChannel(
 	ctx context.Context,
 	content, sessionKey, channel, chatID string,
+	modelOverride string,
 ) (string, error) {
 	if err := al.ensureHooksInitialized(ctx); err != nil {
 		return "", err
@@ -1299,11 +1301,12 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 	}
 
 	msg := bus.InboundMessage{
-		Channel:    channel,
-		SenderID:   "cron",
-		ChatID:     chatID,
-		Content:    content,
-		SessionKey: sessionKey,
+		Channel:       channel,
+		SenderID:      "cron",
+		ChatID:        chatID,
+		Content:       content,
+		SessionKey:    sessionKey,
+		ModelOverride: modelOverride,
 	}
 
 	return al.processMessage(ctx, msg)
@@ -1445,6 +1448,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		DefaultResponse:   defaultResponse,
 		EnableSummary:     true,
 		SendResponse:      false,
+		ModelOverride:     msg.ModelOverride,
 	}
 
 	// context-dependent commands check their own Runtime fields and report
@@ -1848,7 +1852,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 		ts.ingestMessage(turnCtx, al, rootMsg)
 	}
 
-	activeCandidates, activeModel, usedLight, score := al.selectCandidates(ts.agent, ts.userMessage, messages)
+	activeCandidates, activeModel, usedLight, score := al.selectCandidates(ts.agent, ts.userMessage, messages, ts.opts.ModelOverride)
 	ts.setComplexityScore(score)
 	activeProvider := ts.agent.Provider
 	if usedLight && ts.agent.LightProvider != nil {
@@ -2976,7 +2980,20 @@ func (al *AgentLoop) selectCandidates(
 	agent *AgentInstance,
 	userMsg string,
 	history []providers.Message,
+	modelOverride string,
 ) (candidates []providers.FallbackCandidate, model string, usedLight bool, score float64) {
+	if modelOverride != "" {
+		// Use explicit override if provided (bypasses routing rules)
+		logger.InfoCF("agent", "Model routing: using explicit override",
+			map[string]any{
+				"agent_id": agent.ID,
+				"model":    modelOverride,
+			})
+		// We use the primary candidates list but substitute the model name if it matches an available candidate,
+		// otherwise we trust the override.
+		return agent.Candidates, modelOverride, false, 0
+	}
+
 	if agent.Router == nil || len(agent.LightCandidates) == 0 {
 		return agent.Candidates, resolvedCandidateModel(agent.Candidates, agent.Model), false, 0
 	}
