@@ -23,7 +23,7 @@ FROM node:20-slim
 # Install Chromium system dependencies + utilities
 # Using Playwright's recommended deps for Debian/Ubuntu
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates tzdata wget \
+    ca-certificates tzdata wget curl \
     # Chromium dependencies
     libasound2 libatk-bridge2.0-0 libatk1.0-0 libcairo2 libcups2 \
     libdbus-1-3 libdrm2 libexpat1 libgbm1 libglib2.0-0 libnspr4 \
@@ -44,6 +44,11 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Copy binary
 COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
 
+# Copy entrypoint scripts
+COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY docker/entrypoint-job.sh /home/picoclaw/entrypoint-job.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh /home/picoclaw/entrypoint-job.sh
+
 # Create non-root user and group
 RUN userdel -r node 2>/dev/null || true && \
     groupadd --gid 1000 picoclaw && \
@@ -59,5 +64,8 @@ USER picoclaw
 # Run onboard to create initial directories and config
 RUN /usr/local/bin/picoclaw onboard
 
-ENTRYPOINT ["picoclaw"]
+# Bake workspace (skills, tests) into the image for Cloud Run Jobs
+COPY --chown=picoclaw:picoclaw docker/data/workspace /home/picoclaw/.picoclaw/workspace
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["gateway"]

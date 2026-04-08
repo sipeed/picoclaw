@@ -1,0 +1,10 @@
+name: picoclaw
+description: A minimal Google Cloud TypeScript Pulumi program
+runtime:
+  name: nodejs
+  options:
+    packagemanager: npm
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: gcp-typescript
