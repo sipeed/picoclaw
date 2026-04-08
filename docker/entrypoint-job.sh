@@ -43,7 +43,7 @@ run_group() {
   echo "=================================================="
   echo "GROUP: $group_name"
   echo "=================================================="
-  npx playwright test "$@" --reporter=line
+  /tmp/node_modules/.bin/playwright test "$@" --reporter=line
 }
 
 JOB_TYPE="${JOB_TYPE:-run-all}"
@@ -130,7 +130,7 @@ case "$JOB_TYPE" in
       exit 1
     fi
     echo "Running test: $JOB_SPEC"
-    npx playwright test "$JOB_SPEC" --reporter=line
+    /tmp/node_modules/.bin/playwright test "$JOB_SPEC" --reporter=line
     ;;
 
   generate)
