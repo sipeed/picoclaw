@@ -703,6 +703,82 @@ func TestShellTool_URLBypassPrevented(t *testing.T) {
 	}
 }
 
+func TestShellTool_RelativeTraversalInsideWorkingDirAllowed(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(filepath.Join(workspace, "subdir"), 0o755); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "file.txt"), []byte("ok"), 0o644); err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+
+	tool, err := NewExecTool(workspace, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"action":  "run",
+		"command": "cat subdir/../file.txt",
+	})
+
+	if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
+		t.Fatalf("normalized relative path inside working dir should be allowed: %s", result.ForLLM)
+	}
+}
+
+func TestShellTool_RelativeTraversalOutsideWorkingDirBlocked(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(filepath.Join(workspace, "subdir"), 0o755); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "secret.txt"), []byte("secret"), 0o644); err != nil {
+		t.Fatalf("failed to create file: %v", err)
+	}
+
+	tool, err := NewExecTool(workspace, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"action":  "run",
+		"command": "cat ../secret.txt",
+		"cwd":     filepath.Join(workspace, "subdir"),
+	})
+
+	if !result.IsError || !strings.Contains(result.ForLLM, "path outside working dir") {
+		t.Fatalf("relative path that escapes working dir should be blocked, got: %s", result.ForLLM)
+	}
+}
+
+func TestShellTool_OutputEscapesTerminalControlChars(t *testing.T) {
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"action":  "run",
+		"command": "printf '\\033[31mred\\033[0m\\u202E'",
+	})
+
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	if strings.Contains(result.ForLLM, "\x1b") {
+		t.Fatalf("expected ANSI escape to be escaped in ForLLM, got: %q", result.ForLLM)
+	}
+	if strings.ContainsRune(result.ForLLM, '\u202e') {
+		t.Fatalf("expected bidi control to be escaped in ForLLM, got: %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, `\x1b[31mred\x1b[0m`) || !strings.Contains(strings.ToLower(result.ForLLM), `\u202e`) {
+		t.Fatalf("expected escaped control sequence in output, got: %q", result.ForLLM)
+	}
+}
+
 func TestShellTool_Background_ReturnsImmediately(t *testing.T) {
 	tool, err := NewExecTool("", false)
 	require.NoError(t, err)

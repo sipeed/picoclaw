@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/sipeed/picoclaw/pkg/termutil"
+
 	"github.com/rs/zerolog"
 	"golang.org/x/term"
 )
@@ -88,12 +90,14 @@ func formatFieldValue(i any) string {
 	case []byte:
 		s = string(val)
 	default:
-		return fmt.Sprintf("%v", i)
+		s = fmt.Sprintf("%v", i)
 	}
 
 	if unquoted, err := strconv.Unquote(s); err == nil {
 		s = unquoted
 	}
+
+	s = termutil.EscapeControlChars(s)
 
 	if strings.Contains(s, "\n") {
 		return fmt.Sprintf("\n%s", s)
