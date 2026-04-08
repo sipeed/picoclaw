@@ -59,6 +59,24 @@ func refreshPicoTokensLocked(configPath string) {
 	gateway.picoToken = cfg.Channels.Pico.Token.String()
 }
 
+// ensurePicoTokenCachedLocked lazily fills the in-memory pico token cache when
+// the launcher has already discovered a running gateway via pidData, but has
+// not yet refreshed the token into memory.
+func ensurePicoTokenCachedLocked(configPath string) {
+	if gateway.picoToken != "" {
+		return
+	}
+	refreshPicoTokensLocked(configPath)
+}
+
+func (h *Handler) gatewayCommandArgs() []string {
+	args := []string{"gateway", "-E"}
+	if h.debug {
+		args = append(args, "-d")
+	}
+	return args
+}
+
 const (
 	protocolKey = "Sec-Websocket-Protocol"
 	tokenPrefix = "token."
@@ -90,6 +108,8 @@ var gatewayHealthGet = func(url string, timeout time.Duration) (*http.Response, 
 	return client.Get(url)
 }
 
+var gatewayProcessMatcher = isLikelyGatewayProcess
+
 // getGatewayHealth checks the gateway health endpoint and returns the status response.
 // Returns (*health.StatusResponse, statusCode, error). If error is not nil, the other values are not valid.
 func (h *Handler) getGatewayHealth(cfg *config.Config, timeout time.Duration) (*health.StatusResponse, int, error) {
@@ -99,7 +119,7 @@ func (h *Handler) getGatewayHealth(cfg *config.Config, timeout time.Duration) (*
 	gateway.mu.Lock()
 	if d := gateway.pidData; d != nil && d.Port > 0 {
 		port = d.Port
-		host = d.Host
+		host = gatewayProbeHost(d.Host)
 	}
 	gateway.mu.Unlock()
 	if port == 0 {
@@ -132,6 +152,150 @@ func getGatewayHealthByURL(url string, timeout time.Duration) (*health.StatusRes
 	return &healthResponse, resp.StatusCode, nil
 }
 
+// isLikelyGatewayProcess returns whether PID appears to be a picoclaw gateway
+// process plus whether inspection was conclusive on this platform/environment.
+func isLikelyGatewayProcess(pid int) (bool, bool) {
+	if pid <= 0 {
+		return false, true
+	}
+
+	if runtime.GOOS == "windows" {
+		psCmd := fmt.Sprintf(
+			`$p=Get-CimInstance Win32_Process -Filter "ProcessId = %d"; if ($null -eq $p) { "" } else { $p.CommandLine }`,
+			pid,
+		)
+		out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd).Output()
+		if err == nil {
+			cmdline := strings.TrimSpace(string(out))
+			if cmdline != "" {
+				return looksLikeGatewayCommandLine(cmdline), true
+			}
+		}
+
+		// Fallback: determine only whether the process still exists.
+		out, err = exec.Command("tasklist", "/FI", "PID eq "+strconv.Itoa(pid), "/FO", "CSV", "/NH").Output()
+		if err != nil {
+			return false, false
+		}
+		line := strings.ToLower(strings.TrimSpace(string(out)))
+		if line == "" {
+			return false, true
+		}
+		// A CSV row means the process exists, but may have a custom executable
+		// name we cannot classify here.
+		if strings.HasPrefix(line, "\"") {
+			if strings.Contains(line, "\"picoclaw.exe\"") {
+				return true, true
+			}
+			return false, false
+		}
+		if strings.Contains(line, "no tasks are running") {
+			return false, true
+		}
+		return false, true
+	}
+
+	out, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return false, false
+	}
+	cmdline := strings.ToLower(strings.TrimSpace(string(out)))
+	if cmdline == "" {
+		return false, true
+	}
+	return looksLikeGatewayCommandLine(cmdline), true
+}
+
+// looksLikeGatewayCommandLine checks whether a process command line likely
+// represents "picoclaw gateway ..." regardless of executable filename.
+func looksLikeGatewayCommandLine(cmdline string) bool {
+	fields := strings.Fields(strings.ToLower(strings.TrimSpace(cmdline)))
+	if len(fields) == 0 {
+		return false
+	}
+	for _, f := range fields {
+		token := strings.Trim(f, `"'`)
+		if token == "gateway" || strings.HasSuffix(token, "/gateway") || strings.HasSuffix(token, `\gateway`) {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *Handler) getGatewayHealthForPidData(
+	pidData *ppid.PidFileData,
+	cfg *config.Config,
+	timeout time.Duration,
+) (*health.StatusResponse, int, error) {
+	if pidData == nil {
+		return nil, 0, errors.New("nil pid data")
+	}
+
+	port := pidData.Port
+	if port == 0 {
+		port = 18790
+		if cfg != nil && cfg.Gateway.Port != 0 {
+			port = cfg.Gateway.Port
+		}
+	}
+
+	host := gatewayProbeHost(strings.TrimSpace(pidData.Host))
+	if host == "" {
+		host = gatewayProbeHost(h.effectiveGatewayBindHost(cfg))
+	}
+	if host == "" {
+		host = "127.0.0.1"
+	}
+
+	url := "http://" + net.JoinHostPort(host, strconv.Itoa(port)) + "/health"
+	return getGatewayHealthByURL(url, timeout)
+}
+
+func (h *Handler) validateGatewayPidData(
+	pidData *ppid.PidFileData,
+	cfg *config.Config,
+) (ok bool, decisive bool, reason string) {
+	if pidData == nil || pidData.PID <= 0 {
+		return false, true, "invalid pid data"
+	}
+
+	if gatewayProcess, inspected := gatewayProcessMatcher(pidData.PID); inspected {
+		if !gatewayProcess {
+			return false, true, "pid process command is not picoclaw gateway"
+		}
+		return true, true, ""
+	}
+
+	healthResp, statusCode, err := h.getGatewayHealthForPidData(pidData, cfg, 800*time.Millisecond)
+	if err != nil {
+		return false, false, fmt.Sprintf("health probe failed: %v", err)
+	}
+	if statusCode != http.StatusOK {
+		return false, false, fmt.Sprintf("health endpoint returned status %d", statusCode)
+	}
+	if healthResp.PID > 0 && healthResp.PID != pidData.PID {
+		return false, true, fmt.Sprintf("health pid mismatch: pidFile=%d, health=%d", pidData.PID, healthResp.PID)
+	}
+	return true, true, ""
+}
+
+func (h *Handler) sanitizeGatewayPidData(pidData *ppid.PidFileData, cfg *config.Config) *ppid.PidFileData {
+	if pidData == nil {
+		return nil
+	}
+
+	ok, decisive, reason := h.validateGatewayPidData(pidData, cfg)
+	if ok {
+		return pidData
+	}
+
+	logger.Warnf("ignore pid file for PID %d: %s", pidData.PID, reason)
+	if decisive && ppid.RemovePidFileIfPID(globalConfigDir(), pidData.PID) {
+		logger.Warnf("removed stale pid file for PID %d", pidData.PID)
+	}
+	return nil
+}
+
 // registerGatewayRoutes binds gateway lifecycle endpoints to the ServeMux.
 func (h *Handler) registerGatewayRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/gateway/status", h.handleGatewayStatus)
@@ -146,7 +310,7 @@ func (h *Handler) registerGatewayRoutes(mux *http.ServeMux) {
 // starts it when possible. Intended to be called by the backend at startup.
 func (h *Handler) TryAutoStartGateway() {
 	// Check PID file first to detect an already-running gateway.
-	pidData := ppid.ReadPidFileWithCheck(globalConfigDir())
+	pidData := h.sanitizeGatewayPidData(ppid.ReadPidFileWithCheck(globalConfigDir()), nil)
 	if pidData != nil {
 		gateway.mu.Lock()
 		ready, reason, err := h.gatewayStartReady()
@@ -339,7 +503,13 @@ func isCmdProcessAliveLocked(cmd *exec.Cmd) bool {
 		return true
 	}
 
-	return cmd.Process.Signal(syscall.Signal(0)) == nil
+	err := cmd.Process.Signal(syscall.Signal(0))
+	if err == nil {
+		return true
+	}
+	var errno syscall.Errno
+	// EPERM means the process exists but cannot be signaled by this user.
+	return errors.As(err, &errno) && errno == syscall.EPERM
 }
 
 func setGatewayRuntimeStatusLocked(status string) {
@@ -383,6 +553,15 @@ func gatewayStatusWithoutHealthLocked() string {
 		return "error"
 	}
 	if gateway.runtimeStatus == "running" {
+		// For attached processes there is no waiter goroutine; degrade stale
+		// running state once the tracked process exits.
+		if !isCmdProcessAliveLocked(gateway.cmd) {
+			gateway.cmd = nil
+			gateway.owned = false
+			gateway.bootDefaultModel = ""
+			gateway.bootConfigSignature = ""
+			return "stopped"
+		}
 		return "running"
 	}
 	if gateway.runtimeStatus == "error" {
@@ -439,6 +618,11 @@ func stopGatewayLocked() (int, error) {
 	}
 
 	pid := gateway.cmd.Process.Pid
+	if !gateway.owned {
+		if isGateway, inspected := gatewayProcessMatcher(pid); inspected && !isGateway {
+			return pid, fmt.Errorf("refuse to stop non-gateway process (PID %d)", pid)
+		}
+	}
 
 	// Send SIGTERM for graceful shutdown (SIGKILL on Windows)
 	var sigErr error
@@ -521,7 +705,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	execPath := utils.FindPicoclawBinary()
 	logger.InfoC("gateway", fmt.Sprintf("Starting gateway process (%s)", execPath))
 
-	cmd = exec.Command(execPath, "gateway", "-E")
+	cmd = exec.Command(execPath, h.gatewayCommandArgs()...)
 	cmd.Env = os.Environ()
 	// Forward the launcher's config path via the environment variable that
 	// GetConfigPath() already reads, so the gateway sub-process uses the same
@@ -596,6 +780,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 
 	// Start a goroutine to probe pidFile and health, update runtime state once ready.
 	go func() {
+		healthConfirmed := false
 		for i := 0; i < 30; i++ { // try for up to 15 seconds
 			time.Sleep(500 * time.Millisecond)
 			gateway.mu.Lock()
@@ -610,6 +795,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 				gateway.mu.Lock()
 				if gateway.cmd == cmd {
 					gateway.pidData = pd
+					gateway.picoToken = cfg.Channels.Pico.Token.String()
 					setGatewayRuntimeStatusLocked("running")
 				}
 				gateway.mu.Unlock()
@@ -629,7 +815,11 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 					setGatewayRuntimeStatusLocked("running")
 				}
 				gateway.mu.Unlock()
-				return
+				if !healthConfirmed {
+					healthConfirmed = true
+					logger.InfoC("gateway", "Gateway health endpoint reachable; waiting for pid file")
+				}
+				continue
 			}
 		}
 	}()
@@ -642,7 +832,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 //	POST /api/gateway/start
 func (h *Handler) handleGatewayStart(w http.ResponseWriter, r *http.Request) {
 	// Check PID file first to detect an already-running gateway.
-	pidData := ppid.ReadPidFileWithCheck(globalConfigDir())
+	pidData := h.sanitizeGatewayPidData(ppid.ReadPidFileWithCheck(globalConfigDir()), nil)
 	if pidData != nil {
 		pid := pidData.PID
 		gateway.mu.Lock()
@@ -768,8 +958,21 @@ func (h *Handler) RestartGateway() (int, error) {
 
 	gateway.mu.Lock()
 	previousCmd := gateway.cmd
+	previousOwned := gateway.owned
 	setGatewayRuntimeStatusLocked("restarting")
 	gateway.mu.Unlock()
+
+	if previousCmd != nil && previousCmd.Process != nil && !previousOwned {
+		if isGateway, inspected := gatewayProcessMatcher(previousCmd.Process.Pid); inspected && !isGateway {
+			logger.Warnf("refuse restarting non-gateway process (PID: %d)", previousCmd.Process.Pid)
+			gateway.mu.Lock()
+			if gateway.cmd == previousCmd {
+				setGatewayRuntimeStatusLocked("running")
+			}
+			gateway.mu.Unlock()
+			return 0, fmt.Errorf("refuse to restart non-gateway process (PID %d)", previousCmd.Process.Pid)
+		}
+	}
 
 	if err = stopGatewayProcessForRestart(previousCmd); err != nil {
 		gateway.mu.Lock()
@@ -882,7 +1085,7 @@ func (h *Handler) gatewayStatusData() map[string]any {
 	}
 
 	// Primary detection: read PID file and check if process is alive.
-	pidData := ppid.ReadPidFileWithCheck(globalConfigDir())
+	pidData := h.sanitizeGatewayPidData(ppid.ReadPidFileWithCheck(globalConfigDir()), cfg)
 	if pidData != nil {
 		gateway.mu.Lock()
 		gateway.pidData = pidData
@@ -904,34 +1107,19 @@ func (h *Handler) gatewayStatusData() map[string]any {
 		data["pid"] = pidData.PID
 		gateway.mu.Unlock()
 	} else {
-		// Fallback: probe health endpoint to get pid and status
-		_, statusCode, err := h.getGatewayHealth(cfg, 2*time.Second)
-		if err != nil {
-			gateway.mu.Lock()
-			data["gateway_status"] = gatewayStatusWithoutHealthLocked()
+		// Intentionally skip health probe here; the startup goroutine
+		// (startGatewayLocked) already handles liveness detection via
+		// pidFile polling and health fallback.
+		gateway.mu.Lock()
+		status := gatewayStatusWithoutHealthLocked()
+		data["gateway_status"] = status
+		// Keep last known pidData while gateway is still in a transient
+		// running state; otherwise websocket proxy may lose auth token
+		// during short pid-file races.
+		if status == "stopped" || status == "error" {
 			gateway.pidData = nil
-			gateway.mu.Unlock()
-			logger.ErrorC("gateway", fmt.Sprintf("Gateway health check failed: %v", err))
-		} else {
-			logger.InfoC("gateway", fmt.Sprintf("Gateway health status: %d", statusCode))
-			if statusCode != http.StatusOK {
-				gateway.mu.Lock()
-				setGatewayRuntimeStatusLocked("error")
-				gateway.pidData = nil
-				gateway.mu.Unlock()
-				data["gateway_status"] = "error"
-				data["status_code"] = statusCode
-			} else {
-				gateway.mu.Lock()
-				setGatewayRuntimeStatusLocked("running")
-				bootDefaultModel := gateway.bootDefaultModel
-				if bootDefaultModel != "" {
-					data["boot_default_model"] = bootDefaultModel
-				}
-				data["gateway_status"] = "running"
-				gateway.mu.Unlock()
-			}
 		}
+		gateway.mu.Unlock()
 	}
 
 	gatewayStatus, _ := data["gateway_status"].(string)

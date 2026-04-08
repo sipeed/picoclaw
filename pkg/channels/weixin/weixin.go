@@ -402,3 +402,8 @@ func (c *WeixinChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]st
 
 	return nil, nil
 }
+
+// VoiceCapabilities returns the voice capabilities of the channel.
+func (c *WeixinChannel) VoiceCapabilities() channels.VoiceCapabilities {
+	return channels.VoiceCapabilities{ASR: true, TTS: true}
+}

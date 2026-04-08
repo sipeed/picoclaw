@@ -88,8 +88,14 @@ export function useSessionHistory({
   const handleDeleteSession = useCallback(
     async (id: string) => {
       try {
+        const deletedLoadedSession = sessions.some(
+          (session) => session.id === id,
+        )
         await deleteSession(id)
         setSessions((prev) => prev.filter((s) => s.id !== id))
+        if (deletedLoadedSession) {
+          setOffset((prev) => Math.max(prev - 1, 0))
+        }
         if (id === activeSessionId) {
           onDeletedActiveSession()
         }
@@ -97,7 +103,7 @@ export function useSessionHistory({
         console.error("Failed to delete session:", err)
       }
     },
-    [activeSessionId, onDeletedActiveSession],
+    [activeSessionId, onDeletedActiveSession, sessions],
   )
 
   return {

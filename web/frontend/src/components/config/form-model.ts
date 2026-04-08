@@ -30,6 +30,7 @@ export interface LauncherForm {
   port: string
   publicAccess: boolean
   allowedCIDRsText: string
+  launcherToken: string
 }
 
 export const DM_SCOPE_OPTIONS = [
@@ -93,6 +94,7 @@ export const EMPTY_LAUNCHER_FORM: LauncherForm = {
   port: "18800",
   publicAccess: false,
   allowedCIDRsText: "",
+  launcherToken: "",
 }
 
 function asRecord(value: unknown): JsonRecord {

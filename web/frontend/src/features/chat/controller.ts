@@ -15,10 +15,13 @@ import {
 import {
   invalidateSocket,
   isCurrentSocket,
-  normalizeWsUrlForBrowser,
 } from "@/features/chat/websocket"
 import i18n from "@/i18n"
-import { getChatState, updateChatStore } from "@/store/chat"
+import {
+  type ChatAttachment,
+  getChatState,
+  updateChatStore,
+} from "@/store/chat"
 import { type GatewayState, gatewayAtom } from "@/store/gateway"
 
 const store = getDefaultStore()
@@ -131,7 +134,7 @@ export async function connectChat() {
   updateChatStore({ connectionState: "connecting" })
 
   try {
-    const { token, ws_url } = await getPicoToken()
+    const { token } = await getPicoToken()
     const sessionId = activeSessionIdRef
 
     if (generation !== connectionGeneration) {
@@ -147,8 +150,9 @@ export async function connectChat() {
       return
     }
 
-    const finalWsUrl = normalizeWsUrlForBrowser(ws_url)
-    const url = `${finalWsUrl}?session_id=${encodeURIComponent(sessionId)}`
+    const wsScheme = window.location.protocol === "https:" ? "wss:" : "ws:"
+    const wsUrl = `${wsScheme}//${window.location.host}/pico/ws`
+    const url = `${wsUrl}?session_id=${encodeURIComponent(sessionId)}`
     const socket = new WebSocket(url, [`token.${token}`])
 
     if (generation !== connectionGeneration) {
@@ -324,9 +328,26 @@ export async function hydrateActiveSession() {
   return hydratePromise
 }
 
-export function sendChatMessage(content: string) {
+interface SendChatMessageInput {
+  content: string
+  attachments?: ChatAttachment[]
+}
+
+export function sendChatMessage({
+  content,
+  attachments = [],
+}: SendChatMessageInput) {
   if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
     console.warn("WebSocket not connected")
+    return false
+  }
+
+  const normalizedContent = content.trim()
+  const normalizedAttachments = attachments
+    .filter((attachment) => attachment.type === "image" && attachment.url)
+    .map((attachment) => ({ ...attachment }))
+
+  if (!normalizedContent && normalizedAttachments.length === 0) {
     return false
   }
 
@@ -336,7 +357,14 @@ export function sendChatMessage(content: string) {
   updateChatStore((prev) => ({
     messages: [
       ...prev.messages,
-      { id, role: "user", content, timestamp: Date.now() },
+      {
+        id,
+        role: "user",
+        content: normalizedContent,
+        attachments:
+          normalizedAttachments.length > 0 ? normalizedAttachments : undefined,
+        timestamp: Date.now(),
+      },
     ],
     isTyping: true,
   }))
@@ -346,7 +374,10 @@ export function sendChatMessage(content: string) {
       JSON.stringify({
         type: "message.send",
         id,
-        payload: { content },
+        payload: {
+          content: normalizedContent,
+          media: normalizedAttachments.map((attachment) => attachment.url),
+        },
       }),
     )
     return true

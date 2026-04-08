@@ -99,6 +99,24 @@ Este design também permite **suporte multi-agente** com seleção flexível de 
 }
 ```
 
+#### Campos de entrada `model_list`
+
+| Campo | Tipo | Obrigatório | Descrição |
+|-------|------|-------------|-----------|
+| `model_name` | string | Sim | Nome único para referenciar este modelo na config do agent |
+| `model` | string | Sim | Identificador fornecedor/modelo (ex: `openai/gpt-5.4`, `azure/gpt-5.4`, `anthropic/claude-sonnet-4.6`) |
+| `api_keys` | string[] | Sim* | Chave(s) API para autenticação. Múltiplas chaves permitem rotação por requisição. Não necessário para providers locais (Ollama, LM Studio, VLLM) |
+| `api_base` | string | Não | Substitui a URL base da API padrão |
+| `proxy` | string | Não | URL do proxy HTTP para esta entrada de modelo |
+| `user_agent` | string | Não | Cabeçalho `User-Agent` personalizado enviado com requisições API (suportado por providers OpenAI-compatible, Anthropic e Azure) |
+| `request_timeout` | int | Não | Timeout de requisição em segundos (o padrão varia por provider) |
+| `max_tokens_field` | string | Não | Substitui o nome do campo max tokens no corpo da requisição (ex: `max_completion_tokens` para modelos o1) |
+| `thinking_level` | string | Não | Nível de pensamento estendido: `off`, `low`, `medium`, `high`, `xhigh` ou `adaptive` |
+| `extra_body` | object | Não | Campos adicionais para injetar em cada corpo de requisição |
+| `rpm` | int | Não | Limite de requisições por minuto |
+| `fallbacks` | string[] | Não | Nomes dos modelos de fallback para failover automático |
+| `enabled` | bool | Não | Ativar ou desativar esta entrada de modelo (padrão: `true`) |
+
 #### Exemplos por Vendor
 
 **OpenAI**
@@ -190,6 +208,7 @@ Para acesso direto à API Anthropic ou endpoints personalizados que suportam ape
   "model": "openai/custom-model",
   "api_base": "https://my-proxy.com/v1",
   "api_keys": ["sk-..."],
+  "user_agent": "MyApp/1.0",
   "request_timeout": 300
 }
 ```

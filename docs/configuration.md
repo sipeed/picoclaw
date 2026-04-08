@@ -301,6 +301,66 @@ Even with `restrict_to_workspace: false`, the `exec` tool blocks these dangerous
 | `tools.allow_read_paths` | string[] | `[]` | Additional paths allowed for reading outside workspace |
 | `tools.allow_write_paths` | string[] | `[]` | Additional paths allowed for writing outside workspace |
 
+### Read File Mode
+
+`read_file` has two mutually exclusive implementations selected by config. PicoClaw registers exactly one of them at startup:
+
+| Config Key | Type | Default | Description |
+|------------|------|---------|-------------|
+| `tools.read_file.enabled` | bool | `true` | Enables the `read_file` tool |
+| `tools.read_file.mode` | string | `bytes` | Selects the `read_file` implementation: `bytes` or `lines` |
+| `tools.read_file.max_read_file_size` | int | `65536` | Maximum bytes returned by `read_file` |
+
+#### Mode: `bytes`
+
+Optimized for arbitrary files and binary-safe pagination.
+
+Parameters:
+
+* `path` (required): File path
+* `offset` (optional): Starting byte offset, default `0`
+* `length` (optional): Maximum number of bytes to read, default `max_read_file_size`
+
+Use `bytes` when:
+
+* You may read binary files
+* You want deterministic byte-range pagination
+
+#### Mode: `lines`
+
+Text-oriented behavior, optimized for source files, markdown, logs, and configs. The tool reads sequentially by line and stops when the configured byte budget is reached.
+
+Parameters:
+
+* `path` (required): File path
+* `start_line` (optional): Starting line number, 1-indexed and inclusive, default `1`
+* `max_lines` (optional): Maximum number of lines to read, default = all remaining lines until EOF or byte budget
+
+Behavior notes:
+
+* Binary-looking files are rejected with guidance to switch `read_file` to `mode = bytes`
+* Extremely long single lines are truncated rather than skipped
+
+Use `mode = lines` when:
+
+* The agent mostly reads text files
+* You want line-based pagination in prompts and tool calls
+* You want cleaner chunks for code review, logs, and documentation
+
+#### Example
+
+```json
+{
+  "tools": {
+    "read_file": {
+      "enabled": true,
+       "mode": "lines",
+      "max_read_file_size": 65536
+    }
+  }
+}
+```
+
 ### Exec Security
 
 | Config Key | Type | Default | Description |
@@ -563,6 +623,7 @@ For complete documentation, see [`security_configuration.md`](security_configura
 | **通义千问 (Qwen)**     | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Get Key](https://dashscope.console.aliyun.com)                  |
 | **NVIDIA**              | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [Get Key](https://build.nvidia.com)                              |
 | **Ollama**              | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | Local (no key needed)                                            |
+| **LM Studio**           | `lmstudio/`       | `http://localhost:1234/v1`                          | OpenAI    | Optional (local default: no key)                                 |
 | **OpenRouter**          | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            |
 | **LiteLLM Proxy**       | `litellm/`        | `http://localhost:4000/v1`                          | OpenAI    | Your LiteLLM proxy key                                           |
 | **VLLM**                | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
@@ -707,6 +768,21 @@ For direct Anthropic API access or custom endpoints that only support Anthropic'
   "model": "ollama/llama3"
 }
 ```
+
+</details>
+
+<details>
+<summary><b>LM Studio (local)</b></summary>
+
+```json
+{
+  "model_name": "lmstudio-local",
+  "model": "lmstudio/openai/gpt-oss-20b"
+}
+```
+
+`api_base` defaults to `http://localhost:1234/v1`. API key is optional unless your LM Studio server enables authentication.<br/>
+PicoClaw sends OpenAI-compatible requests to LM Studio, and strips the `lmstudio/` prefix before sending requests, so `lmstudio/openai/gpt-oss-20b` sends `openai/gpt-oss-20b` to the LM Studio server.
 
 </details>
 

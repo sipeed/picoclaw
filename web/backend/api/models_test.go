@@ -20,14 +20,18 @@ func resetModelProbeHooks(t *testing.T) {
 	origTCPProbe := probeTCPServiceFunc
 	origOllamaProbe := probeOllamaModelFunc
 	origOpenAIProbe := probeOpenAICompatibleModelFunc
+	origNow := modelProbeNowFunc
+	resetModelProbeCache()
 	t.Cleanup(func() {
 		probeTCPServiceFunc = origTCPProbe
 		probeOllamaModelFunc = origOllamaProbe
 		probeOpenAICompatibleModelFunc = origOpenAIProbe
+		modelProbeNowFunc = origNow
+		resetModelProbeCache()
 	})
 }
 
-func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *testing.T) {
+func TestHandleListModels_AvailabilityUsesRuntimeProbesForLocalModels(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 	resetOAuthHooks(t)
@@ -113,25 +117,42 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
-	got := make(map[string]bool, len(resp.Models))
+	gotAvailable := make(map[string]bool, len(resp.Models))
+	gotStatus := make(map[string]string, len(resp.Models))
 	for _, model := range resp.Models {
-		got[model.ModelName] = model.Configured
+		gotAvailable[model.ModelName] = model.Available
+		gotStatus[model.ModelName] = model.Status
 	}
 
-	if got["openai-oauth"] {
-		t.Fatalf("openai oauth model configured = true, want false without stored credential")
+	if gotAvailable["openai-oauth"] {
+		t.Fatalf("openai oauth model available = true, want false without stored credential")
 	}
-	if !got["vllm-local"] {
-		t.Fatalf("vllm local model configured = false, want true when local probe succeeds")
+	if !gotAvailable["vllm-local"] {
+		t.Fatalf("vllm local model available = false, want true when local probe succeeds")
 	}
-	if !got["ollama-default"] {
-		t.Fatalf("ollama default model configured = false, want true when default local probe succeeds")
+	if !gotAvailable["ollama-default"] {
+		t.Fatalf("ollama default model available = false, want true when default local probe succeeds")
 	}
-	if !got["vllm-remote"] {
-		t.Fatalf("remote vllm model configured = false, want true with api_key")
+	if !gotAvailable["vllm-remote"] {
+		t.Fatalf("remote vllm model available = false, want true with api_key")
 	}
-	if !got["copilot-gpt-5.4"] {
-		t.Fatalf("copilot model configured = false, want true when local bridge probe succeeds")
+	if !gotAvailable["copilot-gpt-5.4"] {
+		t.Fatalf("copilot model available = false, want true when local bridge probe succeeds")
+	}
+	if gotStatus["openai-oauth"] != modelStatusUnconfigured {
+		t.Fatalf("openai oauth model status = %q, want %q", gotStatus["openai-oauth"], modelStatusUnconfigured)
+	}
+	if gotStatus["vllm-local"] != modelStatusAvailable {
+		t.Fatalf("vllm local model status = %q, want %q", gotStatus["vllm-local"], modelStatusAvailable)
+	}
+	if gotStatus["ollama-default"] != modelStatusAvailable {
+		t.Fatalf("ollama default model status = %q, want %q", gotStatus["ollama-default"], modelStatusAvailable)
+	}
+	if gotStatus["vllm-remote"] != modelStatusAvailable {
+		t.Fatalf("remote vllm model status = %q, want %q", gotStatus["vllm-remote"], modelStatusAvailable)
+	}
+	if gotStatus["copilot-gpt-5.4"] != modelStatusAvailable {
+		t.Fatalf("copilot model status = %q, want %q", gotStatus["copilot-gpt-5.4"], modelStatusAvailable)
 	}
 	if len(openAIProbes) != 1 || openAIProbes[0] != "http://127.0.0.1:8000/v1|custom-model|" {
 		t.Fatalf("openAI probes = %#v, want only local vllm probe", openAIProbes)
@@ -144,7 +165,7 @@ func TestHandleListModels_ConfiguredStatusUsesRuntimeProbesForLocalModels(t *tes
 	}
 }
 
-func TestHandleListModels_ConfiguredStatusForOAuthModelWithCredential(t *testing.T) {
+func TestHandleListModels_AvailabilityForOAuthModelWithCredential(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 	resetOAuthHooks(t)
@@ -193,8 +214,8 @@ func TestHandleListModels_ConfiguredStatusForOAuthModelWithCredential(t *testing
 	if len(resp.Models) != 1 {
 		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
 	}
-	if !resp.Models[0].Configured {
-		t.Fatalf("oauth model configured = false, want true with stored credential")
+	if !resp.Models[0].Available {
+		t.Fatalf("oauth model available = false, want true with stored credential")
 	}
 }
 
@@ -306,11 +327,68 @@ func TestHandleListModels_NormalizesWildcardLocalAPIBaseForProbe(t *testing.T) {
 	if len(resp.Models) != 1 {
 		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
 	}
-	if !resp.Models[0].Configured {
-		t.Fatal("wildcard-bound local model configured = false, want true after probe host normalization")
+	if !resp.Models[0].Available {
+		t.Fatal("wildcard-bound local model available = false, want true after probe host normalization")
 	}
 	if gotProbe != "http://127.0.0.1:8000/v1|custom-model|" {
 		t.Fatalf("probe api base = %q, want %q", gotProbe, "http://127.0.0.1:8000/v1|custom-model|")
+	}
+}
+
+func TestHandleListModels_StatusMarksUnreachableLocalModel(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+	resetOAuthHooks(t)
+	resetModelProbeHooks(t)
+
+	probeOpenAICompatibleModelFunc = func(apiBase, modelID, apiKey string) bool {
+		return false
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "vllm-local-down",
+		Model:     "vllm/custom-model",
+		APIBase:   "http://127.0.0.1:8000/v1",
+		APIKeys:   config.SimpleSecureStrings("test-key"),
+	}}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Models []modelResponse `json:"models"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
+	}
+
+	if resp.Models[0].Available {
+		t.Fatal("unreachable local model available = true, want false")
+	}
+	if resp.Models[0].Status != modelStatusUnreachable {
+		t.Fatalf("unreachable local model status = %q, want %q", resp.Models[0].Status, modelStatusUnreachable)
+	}
+	if resp.Models[0].APIKey == "" {
+		t.Fatal("masked API key preview should still be returned when API key is configured")
 	}
 }
 
@@ -349,6 +427,112 @@ func TestHandleAddModel_PersistsAPIKey(t *testing.T) {
 	}
 	if added.APIKey() != "sk-new-model-key" {
 		t.Fatalf("api_key = %q, want %q", added.APIKey(), "sk-new-model-key")
+	}
+}
+
+func TestHandleAddModel_PersistsCustomHeaders(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models", bytes.NewBufferString(`{
+		"model_name":"new-model-headers",
+		"model":"openai/gpt-4o-mini",
+		"custom_headers":{"X-Source":"coding-plan","X-Agent":"openclaw"}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if len(cfg.ModelList) != 2 {
+		t.Fatalf("len(model_list) = %d, want 2", len(cfg.ModelList))
+	}
+
+	added := cfg.ModelList[1]
+	if added.CustomHeaders == nil {
+		t.Fatal("custom_headers should not be nil")
+	}
+	if got := added.CustomHeaders["X-Source"]; got != "coding-plan" {
+		t.Fatalf("custom_headers[X-Source] = %q, want %q", got, "coding-plan")
+	}
+	if got := added.CustomHeaders["X-Agent"]; got != "openclaw" {
+		t.Fatalf("custom_headers[X-Agent] = %q, want %q", got, "openclaw")
+	}
+}
+
+func TestHandleUpdateModel_CustomHeadersPreserveAndClear(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName:     "editable",
+		Model:         "openai/gpt-4o-mini",
+		APIKeys:       config.SimpleSecureStrings("sk-existing"),
+		CustomHeaders: map[string]string{"X-Source": "coding-plan"},
+	}}
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	// Omitted custom_headers should preserve existing value.
+	recPreserve := httptest.NewRecorder()
+	reqPreserve := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"editable",
+		"model":"openai/gpt-4o-mini"
+	}`))
+	reqPreserve.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recPreserve, reqPreserve)
+	if recPreserve.Code != http.StatusOK {
+		t.Fatalf("preserve status = %d, want %d, body=%s", recPreserve.Code, http.StatusOK, recPreserve.Body.String())
+	}
+
+	afterPreserve, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() after preserve error = %v", err)
+	}
+	if got := afterPreserve.ModelList[0].CustomHeaders["X-Source"]; got != "coding-plan" {
+		t.Fatalf("preserved custom_headers[X-Source] = %q, want %q", got, "coding-plan")
+	}
+
+	// Empty object should clear custom_headers.
+	recClear := httptest.NewRecorder()
+	reqClear := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"editable",
+		"model":"openai/gpt-4o-mini",
+		"custom_headers":{}
+	}`))
+	reqClear.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recClear, reqClear)
+	if recClear.Code != http.StatusOK {
+		t.Fatalf("clear status = %d, want %d, body=%s", recClear.Code, http.StatusOK, recClear.Body.String())
+	}
+
+	afterClear, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() after clear error = %v", err)
+	}
+	if afterClear.ModelList[0].CustomHeaders != nil {
+		t.Fatalf("custom_headers = %#v, want nil", afterClear.ModelList[0].CustomHeaders)
 	}
 }
 

@@ -12,6 +12,13 @@ import type { ChannelConfig } from "@/api/channels"
 import { pollWeixinFlow, startWeixinFlow } from "@/api/channels"
 import { Field } from "@/components/shared-form"
 import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 
 type BindingState =
@@ -301,51 +308,50 @@ export function WeixinForm({
   }
 
   return (
-    <div className="space-y-5">
-      {/* QR Bind Section */}
-      <div className="border-border/60 bg-muted/30 rounded-xl border">
-        <div className="border-border/60 border-b px-4 py-3">
-          <p className="text-sm font-medium">
+    <div className="space-y-6">
+      <Card className="shadow-sm">
+        <CardHeader className="border-border/60 border-b px-6">
+          <CardTitle className="text-foreground text-sm font-medium">
             {t("channels.weixin.bindTitle")}
-          </p>
-          <p className="text-muted-foreground mt-0.5 text-xs">
-            {t("channels.weixin.bindDesc")}
-          </p>
-        </div>
-        {renderBindSection()}
-      </div>
+          </CardTitle>
+          <CardDescription>{t("channels.weixin.bindDesc")}</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">{renderBindSection()}</CardContent>
+      </Card>
 
-      {/* allow_from */}
-      <Field
-        label={t("channels.field.allowFrom")}
-        hint={t("channels.form.desc.allowFrom")}
-      >
-        <Input
-          value={asStringArray(config.allow_from).join(", ")}
-          onChange={(e) =>
-            onChange(
-              "allow_from",
-              e.target.value
-                .split(",")
-                .map((s: string) => s.trim())
-                .filter(Boolean),
-            )
-          }
-          placeholder={t("channels.field.allowFromPlaceholder")}
-        />
-      </Field>
+      <Card className="shadow-sm">
+        <CardContent className="divide-border/60 divide-y px-6 py-0 [&>div]:py-5">
+          <Field
+            label={t("channels.field.allowFrom")}
+            hint={t("channels.form.desc.allowFrom")}
+          >
+            <Input
+              value={asStringArray(config.allow_from).join(", ")}
+              onChange={(e) =>
+                onChange(
+                  "allow_from",
+                  e.target.value
+                    .split(",")
+                    .map((s: string) => s.trim())
+                    .filter(Boolean),
+                )
+              }
+              placeholder={t("channels.field.allowFromPlaceholder")}
+            />
+          </Field>
 
-      {/* proxy */}
-      <Field
-        label={t("channels.field.proxy")}
-        hint={t("channels.form.desc.proxy")}
-      >
-        <Input
-          value={asString(config.proxy)}
-          onChange={(e) => onChange("proxy", e.target.value)}
-          placeholder="http://localhost:7890"
-        />
-      </Field>
+          <Field
+            label={t("channels.field.proxy")}
+            hint={t("channels.form.desc.proxy")}
+          >
+            <Input
+              value={asString(config.proxy)}
+              onChange={(e) => onChange("proxy", e.target.value)}
+              placeholder="http://localhost:7890"
+            />
+          </Field>
+        </CardContent>
+      </Card>
     </div>
   )
 }

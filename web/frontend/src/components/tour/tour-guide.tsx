@@ -7,14 +7,14 @@ import { useAtom } from "jotai"
 import { useTranslation } from "react-i18next"
 
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import {
+  type TourStep,
   tourAtom,
   tourCurrentStepAtom,
   tourIsActiveAtom,
-  type TourStep,
   useTourActions,
 } from "@/store/tour"
-import { cn } from "@/lib/utils"
 
 interface TourStepConfig {
   title: string
@@ -177,7 +177,7 @@ export function TourGuide() {
 
       {targetElement && (
         <div
-          className="pointer-events-none fixed z-[101] rounded-lg ring-2 ring-primary ring-offset-2 ring-offset-background transition-all duration-300"
+          className="ring-primary ring-offset-background pointer-events-none fixed z-[101] rounded-lg ring-2 ring-offset-2 transition-all duration-300"
           style={{
             top: targetElement.getBoundingClientRect().top - 4,
             left: targetElement.getBoundingClientRect().left - 4,
@@ -189,7 +189,7 @@ export function TourGuide() {
 
       <div
         className={cn(
-          "fixed z-[102] w-80 rounded-xl border bg-background p-4 shadow-2xl",
+          "bg-background fixed z-[102] w-80 rounded-xl border p-4 shadow-2xl",
           isCentered && "max-w-md",
         )}
         style={position}

@@ -185,6 +185,13 @@ func DefaultConfig() *Config {
 				APIBase:   "https://api.deepseek.com/v1",
 			},
 
+			// Venice AI - https://venice.ai
+			{
+				ModelName: "venice-uncensored",
+				Model:     "venice/venice-uncensored",
+				APIBase:   "https://api.venice.ai/api/v1",
+			},
+
 			// Google Gemini - https://ai.google.dev/
 			{
 				ModelName: "gemini-2.0-flash",
@@ -335,6 +342,13 @@ func DefaultConfig() *Config {
 				APIBase:   "http://localhost:8000/v1",
 			},
 
+			// LM Studio (local) - http://localhost:1234
+			{
+				ModelName: "lmstudio-local",
+				Model:     "lmstudio/openai/gpt-oss-20b",
+				APIBase:   "http://localhost:1234/v1",
+			},
+
 			// Azure OpenAI - https://portal.azure.com
 			// model_name is a user-friendly alias; the model field's path after "azure/" is your deployment name
 			{
@@ -347,7 +361,7 @@ func DefaultConfig() *Config {
 			Host:      "127.0.0.1",
 			Port:      18790,
 			HotReload: false,
-			LogLevel:  "warn",
+			LogLevel:  DefaultGatewayLogLevel,
 		},
 		Tools: ToolsConfig{
 			FilterSensitiveData: true,
@@ -434,6 +448,9 @@ func DefaultConfig() *Config {
 			SendFile: ToolConfig{
 				Enabled: true,
 			},
+			SendTTS: ToolConfig{
+				Enabled: false,
+			},
 			MCP: MCPConfig{
 				ToolConfig: ToolConfig{
 					Enabled: false,
@@ -445,7 +462,8 @@ func DefaultConfig() *Config {
 					UseBM25:          true,
 					UseRegex:         false,
 				},
-				Servers: map[string]MCPServerConfig{},
+				MaxInlineTextChars: DefaultMCPMaxInlineTextChars,
+				Servers:            map[string]MCPServerConfig{},
 			},
 			AppendFile: ToolConfig{
 				Enabled: true,
@@ -470,6 +488,7 @@ func DefaultConfig() *Config {
 			},
 			ReadFile: ReadFileToolConfig{
 				Enabled:         true,
+				Mode:            ReadFileModeBytes,
 				MaxReadFileSize: 64 * 1024, // 64KB
 			},
 			Spawn: ToolConfig{

@@ -12,6 +12,7 @@ linters:
     - exhaustruct
     - funcorder
     - gochecknoglobals
+    - gosmopolitan  # Project legitimately uses CJK text in tests (FTS5, token counting)
     - godot
     - intrange
     - ireturn
@@ -61,6 +62,9 @@ linters:
     - usestdlibvars
     - usetesting
   settings:
+    gomoddirectives:
+      replace-allow-list:
+        - github.com/bwmarrin/discordgo
     errcheck:
       check-type-assertions: true
       check-blank: true

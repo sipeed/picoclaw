@@ -190,12 +190,20 @@ func joinClientVisibleHostPort(r *http.Request, host string, serverListenPort in
 func (h *Handler) picoWebUIAddr(r *http.Request) string {
 	wsPort := h.serverPort
 	if wsPort == 0 {
-		wsPort = 18800 // default web server port
+		wsPort = 18800
 	}
 	if fwdHost := forwardedHostFirst(r); fwdHost != "" {
 		return joinClientVisibleHostPort(r, fwdHost, wsPort)
 	}
 	host := requestHostName(r)
+	// Use clientVisiblePort only when an explicit port is present in headers
+	// or Host header — do not infer from TLS/scheme, as serverPort takes priority.
+	if p := forwardedPortFirst(r); p != "" {
+		return net.JoinHostPort(host, p)
+	}
+	if _, port, err := net.SplitHostPort(r.Host); err == nil && port != "" {
+		return net.JoinHostPort(host, port)
+	}
 	return net.JoinHostPort(host, strconv.Itoa(wsPort))
 }
 

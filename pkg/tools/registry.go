@@ -228,6 +228,7 @@ func (r *ToolRegistry) ExecuteWithContext(
 	func() {
 		defer func() {
 			if re := recover(); re != nil {
+				logger.RecoverPanicNoExit(re)
 				errMsg := fmt.Sprintf("Tool '%s' crashed with panic: %v", name, re)
 				logger.ErrorCF("tool", "Tool execution panic recovered",
 					map[string]any{

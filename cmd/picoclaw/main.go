@@ -9,6 +9,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -24,10 +25,11 @@ import (
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/status"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/version"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/updater"
 )
 
 func NewPicoclawCommand() *cobra.Command {
-	short := fmt.Sprintf("%s picoclaw - Personal AI Assistant v%s\n\n", internal.Logo, config.GetVersion())
+	short := fmt.Sprintf("%s picoclaw - Personal AI Assistant %s\n\n", internal.Logo, config.GetVersion())
 
 	cmd := &cobra.Command{
 		Use:     "picoclaw",
@@ -45,6 +47,7 @@ func NewPicoclawCommand() *cobra.Command {
 		migrate.NewMigrateCommand(),
 		skills.NewSkillsCommand(),
 		model.NewModelCommand(),
+		updater.NewUpdateCommand("picoclaw"),
 		version.NewVersionCommand(),
 	)
 
@@ -66,6 +69,21 @@ const (
 
 func main() {
 	fmt.Printf("%s", banner)
+
+	tz_env := os.Getenv("TZ")
+	if tz_env != "" {
+		fmt.Println("TZ environment:", tz_env)
+		zoneinfo_env := os.Getenv("ZONEINFO")
+		fmt.Println("ZONEINFO environment:", zoneinfo_env)
+		loc, err := time.LoadLocation(tz_env)
+		if err != nil {
+			fmt.Println("Error loading time zone:", err)
+		} else {
+			fmt.Println("Time zone loaded successfully:", loc)
+			time.Local = loc //nolint:gosmopolitan // We intentionally set local timezone from TZ env
+		}
+	}
+
 	cmd := NewPicoclawCommand()
 	if err := cmd.Execute(); err != nil {
 		os.Exit(1)

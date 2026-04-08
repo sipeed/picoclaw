@@ -167,6 +167,8 @@ const (
 	ContextCompressReasonProactive ContextCompressReason = "proactive_budget"
 	// ContextCompressReasonRetry indicates compression during context-error retry handling.
 	ContextCompressReasonRetry ContextCompressReason = "llm_retry"
+	// ContextCompressReasonSummarize indicates post-turn async summarization.
+	ContextCompressReasonSummarize ContextCompressReason = "summarize"
 )
 
 // ContextCompressPayload describes a forced history compression.

@@ -5,6 +5,7 @@ BINARY_NAME=picoclaw
 BUILD_DIR=build
 CMD_DIR=cmd/$(BINARY_NAME)
 MAIN_GO=$(CMD_DIR)/main.go
+EXT=
 
 # Version
 VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -69,9 +70,11 @@ WORKSPACE_DIR?=$(PICOCLAW_HOME)/workspace
 WORKSPACE_SKILLS_DIR=$(WORKSPACE_DIR)/skills
 BUILTIN_SKILLS_DIR=$(CURDIR)/skills
 
+LNCMD=ln -sf
+
 # OS detection
-UNAME_S:=$(shell uname -s)
-UNAME_M:=$(shell uname -m)
+UNAME_S?=$(shell uname -s)
+UNAME_M?=$(shell uname -m)
 
 # Platform-specific settings
 ifeq ($(UNAME_S),Linux)
@@ -93,17 +96,30 @@ ifeq ($(UNAME_S),Linux)
 	endif
 else ifeq ($(UNAME_S),Darwin)
 	PLATFORM=darwin
-	WEB_GO=CGO_ENABLED=1 go
+	WEB_GO=CGO_LDFLAGS="-mmacosx-version-min=10.11" CGO_CFLAGS="-mmacosx-version-min=10.11" CGO_ENABLED=1 go
 	ifeq ($(UNAME_M),x86_64)
-		ARCH=amd64
+		ARCH?=amd64
 	else ifeq ($(UNAME_M),arm64)
-		ARCH=arm64
+		ARCH?=arm64
 	else
-		ARCH=$(UNAME_M)
+		ARCH?=$(UNAME_M)
 	endif
 else
 	PLATFORM=$(UNAME_S)
-	ARCH=$(UNAME_M)
+	ifeq ($(UNAME_M),x86_64)
+		ARCH?=amd64
+	else
+	    ARCH?=$(UNAME_M)
+	endif
+	# Detect Windows (Git Bash / MSYS2)
+    IS_WINDOWS:=$(if $(findstring MINGW,$(UNAME_S)),yes,$(if $(findstring MSYS,$(UNAME_S)),yes,$(if $(findstring CYGWIN,$(UNAME_S)),yes,no)))
+	ifeq ($(IS_WINDOWS),yes)
+	    EXT=.exe
+	    LNCMD=cp
+	else ifeq ($(UNAME_S),windows) # failsafe for force windows build in other OS using UNAME_S=windows
+		EXT=.exe
+	endif
+
 endif
 
 BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)
@@ -120,23 +136,23 @@ generate:
 
 ## build: Build the picoclaw binary for current platform
 build: generate
-	@echo "Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH)..."
+	@echo "Building $(BINARY_NAME)$(EXT) for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
-	@$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_PATH) ./$(CMD_DIR)
-	@echo "Build complete: $(BINARY_PATH)"
-	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/$(BINARY_NAME)
+	@GOARCH=${ARCH} $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_PATH)$(EXT) ./$(CMD_DIR)
+	@echo "Build complete: $(BINARY_PATH)$(EXT)"
+	@$(LNCMD) $(BINARY_NAME)-$(PLATFORM)-$(ARCH)$(EXT) $(BUILD_DIR)/$(BINARY_NAME)$(EXT)
 
 ## build-launcher: Build the picoclaw-launcher (web console) binary
 build-launcher:
 	@echo "Building picoclaw-launcher for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
-	@$(MAKE) -C web build \
-		OUTPUT="$(CURDIR)/$(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH)" \
+	@GOARCH=${ARCH} $(MAKE) -C web build \
+		OUTPUT="$(CURDIR)/$(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXT)" \
 		WEB_GO='$(WEB_GO)' \
 		GO_BUILD_TAGS='$(GO_BUILD_TAGS)' \
 		LDFLAGS='$(LDFLAGS)'
-	@ln -sf picoclaw-launcher-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/picoclaw-launcher
-	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher"
+	@$(LNCMD) picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXT) $(BUILD_DIR)/picoclaw-launcher$(EXT)
+	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher$(EXT)"
 
 build-launcher-frontend:
 	@$(MAKE) -C web build-frontend
@@ -324,15 +340,33 @@ docker-clean:
 
 
 ## build-macos-app: Build PicoClaw macOS .app bundle (no terminal window)
-build-macos-app:
+build-macos-app:build-launcher
 	@echo "Building macOS .app bundle..."
 	@if [ "$(UNAME_S)" != "Darwin" ]; then \
 		echo "Error: This target is only available on macOS"; \
 		exit 1; \
 	fi
-	@cd web && $(MAKE) build && cd ..
-	@./scripts/build-macos-app.sh $(BINARY_NAME)-$(PLATFORM)-$(ARCH)
+	@./scripts/build-macos-app.sh $(PLATFORM)-$(ARCH)
 	@echo "macOS .app bundle created: $(BUILD_DIR)/PicoClaw.app"
+
+## mem: Build membench, download LOCOMO data (if needed), run benchmark, and show results
+mem:
+	@echo "Building membench..."
+	@mkdir -p $(BUILD_DIR)
+	@$(GO) build -o $(BUILD_DIR)/membench ./cmd/membench
+	@echo "Build complete: $(BUILD_DIR)/membench"
+	@if [ ! -f $(BUILD_DIR)/memdata/locomo10.json ]; then \
+		echo "Downloading LOCOMO dataset..."; \
+		mkdir -p $(BUILD_DIR)/memdata; \
+		curl -sfL "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json" \
+			-o $(BUILD_DIR)/memdata/locomo10.json && [ -s $(BUILD_DIR)/memdata/locomo10.json ] || { echo "Error: LOCOMO download failed"; exit 1; }; \
+		echo "Download complete"; \
+	else \
+		echo "LOCOMO dataset already exists, skipping download"; \
+	fi
+	@echo "Running benchmark..."
+	@rm -rf $(BUILD_DIR)/memout
+	@$(BUILD_DIR)/membench run --data $(BUILD_DIR)/memdata --out $(BUILD_DIR)/memout --budget 4000
 
 ## help: Show this help message
 help:

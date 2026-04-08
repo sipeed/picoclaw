@@ -34,6 +34,9 @@ func TestGetLauncherConfigUsesRuntimeFallback(t *testing.T) {
 	if got.Port != 19999 || !got.Public {
 		t.Fatalf("response = %+v, want port=19999 public=true", got)
 	}
+	if got.LauncherToken != "" {
+		t.Fatalf("response launcher_token = %q, want empty", got.LauncherToken)
+	}
 	if len(got.AllowedCIDRs) != 1 || got.AllowedCIDRs[0] != "192.168.1.0/24" {
 		t.Fatalf("response allowed_cidrs = %v, want [192.168.1.0/24]", got.AllowedCIDRs)
 	}
@@ -50,7 +53,9 @@ func TestPutLauncherConfigPersists(t *testing.T) {
 	req := httptest.NewRequest(
 		http.MethodPut,
 		"/api/system/launcher-config",
-		strings.NewReader(`{"port":18080,"public":true,"allowed_cidrs":["192.168.1.0/24"]}`),
+		strings.NewReader(
+			`{"port":18080,"public":true,"allowed_cidrs":["192.168.1.0/24"],"launcher_token":"saved-token"}`,
+		),
 	)
 	req.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(rec, req)
@@ -66,6 +71,9 @@ func TestPutLauncherConfigPersists(t *testing.T) {
 	}
 	if cfg.Port != 18080 || !cfg.Public {
 		t.Fatalf("saved config = %+v, want port=18080 public=true", cfg)
+	}
+	if cfg.LauncherToken != "saved-token" {
+		t.Fatalf("saved launcher_token = %q, want %q", cfg.LauncherToken, "saved-token")
 	}
 	if len(cfg.AllowedCIDRs) != 1 || cfg.AllowedCIDRs[0] != "192.168.1.0/24" {
 		t.Fatalf("saved config allowed_cidrs = %v, want [192.168.1.0/24]", cfg.AllowedCIDRs)
