@@ -3,11 +3,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import * as React from "react"
 import { useTranslation } from "react-i18next"
 
-import {
-  type LauncherAuthTokenHelp,
-  getLauncherAuthStatus,
-  postLauncherDashboardLogin,
-} from "@/api/launcher-auth"
+import { postLauncherDashboardLogin, getLauncherAuthStatus } from "@/api/launcher-auth"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -32,24 +28,16 @@ function LauncherLoginPage() {
   const [token, setToken] = React.useState("")
   const [submitting, setSubmitting] = React.useState(false)
   const [error, setError] = React.useState("")
-  const [tokenHelp, setTokenHelp] =
-    React.useState<LauncherAuthTokenHelp | null>(null)
 
+  // If the password store has never been initialized, go to setup instead.
   React.useEffect(() => {
-    let cancelled = false
     void getLauncherAuthStatus()
       .then((s) => {
-        if (cancelled || s.authenticated || !s.token_help) {
-          return
+        if (!s.initialized) {
+          globalThis.location.assign("/launcher-setup")
         }
-        setTokenHelp(s.token_help)
       })
-      .catch(() => {
-        /* ignore; login form still usable */
-      })
-    return () => {
-      cancelled = true
-    }
+      .catch(() => { /* network error — stay on login page */ })
   }, [])
 
   const loginWithToken = React.useCallback(
@@ -120,17 +108,17 @@ function LauncherLoginPage() {
             <form className="flex flex-col gap-4" onSubmit={onSubmit}>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="launcher-token">
-                  {t("launcherLogin.tokenLabel")}
+                  {t("launcherLogin.passwordLabel")}
                 </Label>
                 <Input
                   id="launcher-token"
-                  name="token"
+                  name="password"
                   type="password"
                   autoComplete="current-password"
                   required
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
-                  placeholder={t("launcherLogin.tokenPlaceholder")}
+                  placeholder={t("launcherLogin.passwordPlaceholder")}
                 />
               </div>
               <Button type="submit" disabled={submitting}>
@@ -142,42 +130,6 @@ function LauncherLoginPage() {
                 </p>
               ) : null}
             </form>
-            {tokenHelp ? (
-              <div className="border-border/60 mt-6 border-t pt-4">
-                <p className="text-muted-foreground mb-2 text-sm font-medium">
-                  {t("launcherLogin.helpTitle")}
-                </p>
-                <ul className="text-muted-foreground list-inside list-disc space-y-1.5 text-sm">
-                  {tokenHelp.console_stdout ? (
-                    <li>{t("launcherLogin.helpConsole")}</li>
-                  ) : null}
-                  {tokenHelp.tray_copy_menu ? (
-                    <li>{t("launcherLogin.helpTray")}</li>
-                  ) : null}
-                  {tokenHelp.config_file ? (
-                    <li>
-                      {t("launcherLogin.helpConfig", {
-                        path: tokenHelp.config_file,
-                      })}
-                    </li>
-                  ) : null}
-                  {tokenHelp.log_file ? (
-                    <li>
-                      {t("launcherLogin.helpLogFile", {
-                        path: tokenHelp.log_file,
-                      })}
-                    </li>
-                  ) : null}
-                  {tokenHelp.env_var_name ? (
-                    <li>
-                      {t("launcherLogin.helpEnv", {
-                        env: tokenHelp.env_var_name,
-                      })}
-                    </li>
-                  ) : null}
-                </ul>
-              </div>
-            ) : null}
           </CardContent>
         </Card>
       </div>

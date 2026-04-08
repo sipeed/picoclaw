@@ -852,6 +852,37 @@ func TestDefaultConfig_WorkspacePath_WithPicoclawHome(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_IsolationEnabled(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Isolation.Enabled {
+		t.Fatal("DefaultConfig().Isolation.Enabled should be false")
+	}
+}
+
+func TestConfig_UnmarshalIsolation(t *testing.T) {
+	cfg := DefaultConfig()
+	raw := []byte(`{
+		"isolation": {
+			"enabled": false,
+			"expose_paths": [
+				{"source":"/src","target":"/dst","mode":"ro"}
+			]
+		}
+	}`)
+	if err := json.Unmarshal(raw, cfg); err != nil {
+		t.Fatalf("json.Unmarshal isolation config: %v", err)
+	}
+	if cfg.Isolation.Enabled {
+		t.Fatal("Isolation.Enabled should be false after unmarshal")
+	}
+	if len(cfg.Isolation.ExposePaths) != 1 {
+		t.Fatalf("ExposePaths len = %d, want 1", len(cfg.Isolation.ExposePaths))
+	}
+	if got := cfg.Isolation.ExposePaths[0]; got.Source != "/src" || got.Target != "/dst" || got.Mode != "ro" {
+		t.Fatalf("ExposePaths[0] = %+v, want source=/src target=/dst mode=ro", got)
+	}
+}
+
 // TestFlexibleStringSlice_UnmarshalText tests UnmarshalText with various comma separators
 func TestFlexibleStringSlice_UnmarshalText(t *testing.T) {
 	tests := []struct {
@@ -1525,6 +1556,42 @@ func TestModelConfig_ExtraBodyRoundTrip(t *testing.T) {
 	}
 	if got := loaded.ModelList[0].ExtraBody["num_field"]; got != float64(42) {
 		t.Errorf("ExtraBody[num_field] = %v, want 42", got)
+	}
+}
+
+func TestModelConfig_CustomHeadersRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	cfg := &Config{
+		Version: CurrentVersion,
+		ModelList: []*ModelConfig{
+			{
+				ModelName:     "test-model",
+				Model:         "openai/test",
+				APIKeys:       SimpleSecureStrings("sk-test"),
+				CustomHeaders: map[string]string{"X-Source": "coding-plan", "X-Agent": "openclaw"},
+			},
+		},
+	}
+
+	if err := SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("SaveConfig error: %v", err)
+	}
+
+	loaded, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if loaded.ModelList[0].CustomHeaders == nil {
+		t.Fatal("CustomHeaders should not be nil after round-trip")
+	}
+	if got := loaded.ModelList[0].CustomHeaders["X-Source"]; got != "coding-plan" {
+		t.Errorf("CustomHeaders[X-Source] = %q, want coding-plan", got)
+	}
+	if got := loaded.ModelList[0].CustomHeaders["X-Agent"]; got != "openclaw" {
+		t.Errorf("CustomHeaders[X-Agent] = %q, want openclaw", got)
 	}
 }
 

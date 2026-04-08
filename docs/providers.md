@@ -122,6 +122,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | `max_tokens_field` | string | No | Override the max tokens field name in request body (e.g., `max_completion_tokens` for o1 models) |
 | `thinking_level` | string | No | Extended thinking level: `off`, `low`, `medium`, `high`, `xhigh`, or `adaptive` |
 | `extra_body` | object | No | Additional fields to inject into every request body |
+| `custom_headers` | object | No | Additional HTTP headers to inject into every request (e.g., `{"X-Source":"coding-plan"}`). If a key matches a built-in header, the custom value overrides the built-in one (e.g., `Authorization`, `User-Agent`, `Content-Type`, `Accept`). |
 | `rpm` | int | No | Per-minute request rate limit |
 | `fallbacks` | string[] | No | Fallback model names for automatic failover |
 | `enabled` | bool | No | Whether this model entry is active (default: `true`) |

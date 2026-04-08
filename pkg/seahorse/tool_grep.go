@@ -56,8 +56,8 @@ Returns:
   "hint": "No matches. Try: %keyword% for fuzzy search"
 }
 
-Rank field (FTS5 mode only): bm25 relevance score, negative value where closer to 0 = better match.
-Examples: -0.5=excellent, -2=good, -5=partial, -10=weak. LIKE mode (%pattern%) has no rank.
+Rank field (FTS5 mode only): bm25 relevance score, negative value where more negative = higher relevance.
+Examples: -5=excellent, -2=good, -0.5=partial. LIKE mode (%pattern%) has no rank.
 
 Examples:
   {"pattern": "authentication"}
