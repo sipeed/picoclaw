@@ -21,6 +21,7 @@ import (
 	_ "github.com/sipeed/picoclaw/pkg/channels/dingtalk"
 	_ "github.com/sipeed/picoclaw/pkg/channels/discord"
 	_ "github.com/sipeed/picoclaw/pkg/channels/feishu"
+	_ "github.com/sipeed/picoclaw/pkg/channels/http"
 	_ "github.com/sipeed/picoclaw/pkg/channels/irc"
 	_ "github.com/sipeed/picoclaw/pkg/channels/line"
 	_ "github.com/sipeed/picoclaw/pkg/channels/maixcam"
@@ -112,27 +113,39 @@ func (p *startupBlockedProvider) GetDefaultModel() string {
 
 // Run starts the gateway runtime using the configuration loaded from configPath.
 func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error {
+	fmt.Printf("🚀 PicoClaw Gateway starting...\n")
+	fmt.Printf("📂 Home Path: %s\n", homePath)
+	fmt.Printf("📄 Config Path: %s\n", configPath)
+
 	panicPath := filepath.Join(homePath, logPath, panicFile)
+	fmt.Printf("🔧 Initializing panic log: %s\n", panicPath)
 	panicFunc, err := logger.InitPanic(panicPath)
 	if err != nil {
-		return fmt.Errorf("error initializing panic log: %w", err)
+		fmt.Printf("⚠️  Warning: error initializing panic log (continuing): %v\n", err)
+	} else if panicFunc != nil {
+		defer panicFunc()
+		fmt.Println("✓ Panic log initialized")
 	}
-	defer panicFunc()
 
-	if err = logger.EnableFileLogging(filepath.Join(homePath, logPath, logFile)); err != nil {
-		logger.Fatal(fmt.Sprintf("error enabling file logging: %v", err))
+	logFilePath := filepath.Join(homePath, logPath, logFile)
+	fmt.Printf("🔧 Enabling file logging: %s\n", logFilePath)
+	if err = logger.EnableFileLogging(logFilePath); err != nil {
+		fmt.Printf("⚠️  Warning: error enabling file logging (continuing): %v\n", err)
+	} else {
+		defer logger.DisableFileLogging()
+		fmt.Println("✓ File logging enabled")
 	}
-	defer logger.DisableFileLogging()
+
+	fmt.Println("🔍 Loading configuration...")
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		return fmt.Errorf("error loading config: %w", err)
+	}
 
 	if debug {
 		logger.SetLevel(logger.DEBUG)
 	} else {
-		logger.SetLevelFromString(config.ResolveGatewayLogLevel(configPath))
-	}
-
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		logger.Fatalf("error loading config: %v", err)
+		logger.SetLevelFromString(cfg.Gateway.LogLevel)
 	}
 
 	if err = preCheckConfig(cfg); err != nil {
@@ -156,10 +169,14 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	}
 	defer pid.RemovePidFile(homePath)
 
+	fmt.Printf("🔍 Creating startup provider for model: %s (allow empty: %v)\n",
+		cfg.Agents.Defaults.GetModelName(), allowEmptyStartup)
 	provider, modelID, err := createStartupProvider(cfg, allowEmptyStartup)
 	if err != nil {
+		fmt.Printf("❌ Error creating provider: %v\n", err)
 		return fmt.Errorf("error creating provider: %w", err)
 	}
+	fmt.Printf("✓ Provider created (Model ID: %s)\n", modelID)
 
 	if modelID != "" {
 		cfg.Agents.Defaults.ModelName = modelID
@@ -182,8 +199,10 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 			"skills_available": skillsInfo["available"],
 		})
 
+	fmt.Println("🚀 Setting up services...")
 	runningServices, err := setupAndStartServices(cfg, agentLoop, msgBus, pidData.Token)
 	if err != nil {
+		fmt.Printf("❌ Error starting services: %v\n", err)
 		return err
 	}
 
@@ -204,7 +223,22 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 		}
 	}
 	runningServices.HealthServer.SetReloadFunc(reloadTrigger)
+	runningServices.HealthServer.SetAPIKey(cfg.Gateway.APIKey)
 	agentLoop.SetReloadFunc(reloadTrigger)
+
+	// Setup synchronous /chat endpoint handler
+	if cfg.Gateway.ChatEnabled {
+		runningServices.HealthServer.SetChatFunc(func(ctx context.Context, message, sessionID, chatID string) (string, error) {
+			if sessionID == "" {
+				sessionID = fmt.Sprintf("chat-%s", time.Now().Format("20060102-150405"))
+			}
+			if chatID == "" {
+				// Default to sessionID to ensure isolation
+				chatID = sessionID
+			}
+			return agentLoop.ProcessDirectWithChannel(ctx, message, sessionID, "http", chatID)
+		})
+	}
 
 	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
 	fmt.Println("Press Ctrl+C to stop")
