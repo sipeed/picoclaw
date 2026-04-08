@@ -20,5 +20,5 @@ import (
 	// long-term fix is to split Matrix basic support from its E2EE/sqlite-backed
 	// crypto path, or to upgrade/replace the upstream sqlite dependency once the
 	// affected targets are supported.
-	_ "github.com/sipeed/picoclaw/pkg/channels/matrix"
+	//_ "github.com/sipeed/picoclaw/pkg/channels/matrix"
 )
