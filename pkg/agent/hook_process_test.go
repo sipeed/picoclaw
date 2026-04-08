@@ -218,13 +218,14 @@ func TestAgentLoop_MountProcessHook_IsolationSupportsRelativeDirAndCommand(t *te
 		t.Fatal(err)
 	}
 
-	if err := al.MountProcessHook(context.Background(), "ipc-relative", ProcessHookOptions{
+	mountErr := al.MountProcessHook(context.Background(), "ipc-relative", ProcessHookOptions{
 		Command:      []string{"./hook-helper", "-test.run=TestProcessHook_HelperProcess", "--"},
 		Dir:          relHookDir,
 		Env:          processHookHelperEnv("rewrite", ""),
 		InterceptLLM: true,
-	}); err != nil {
-		t.Fatalf("MountProcessHook failed with relative dir/command under isolation: %v", err)
+	})
+	if mountErr != nil {
+		t.Fatalf("MountProcessHook failed with relative dir/command under isolation: %v", mountErr)
 	}
 
 	resp, err := al.runAgentLoop(context.Background(), agent, processOptions{

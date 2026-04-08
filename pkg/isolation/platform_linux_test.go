@@ -59,8 +59,8 @@ func TestResolveLinuxWorkingDir_ResolvesRelativeDir(t *testing.T) {
 			t.Fatalf("restore cwd: %v", chdirErr)
 		}
 	}()
-	if err := os.Chdir(cwd); err != nil {
-		t.Fatal(err)
+	if chdirErr := os.Chdir(cwd); chdirErr != nil {
+		t.Fatal(chdirErr)
 	}
 
 	resolvedDir, execDir, err := resolveLinuxWorkingDir("./hooks", "./hook.sh")
