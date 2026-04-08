@@ -1,0 +1,76 @@
+Before generating anything, read and follow:
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+
+The base path is: /home/picoclaw/.picoclaw/workspace/context/dashboard/src
+If that path is not readable, STOP and report that the mount is missing. Do not proceed.
+
+## PHASE 1 — Source Code Discovery (MANDATORY)
+
+You MUST read EVERY file listed below. Do not skip any. Do not stop early.
+
+### Files to read:
+- src/pages/auth/LoginPage.vue
+- src/pages/auth/ForgotPasswordPage.vue
+- src/pages/auth/ChangeEmailPage.vue
+- src/pages/auth/ChangePasswordPage.vue
+- src/components/organization-selector/OrganizationSelector.vue
+- src/components/organization-selector/SelectOrganizationPage.vue
+- src/components/GlobalFormField.vue
+- src/components/AlertModal.vue
+- src/stores/auth.store.ts
+- src/stores/profile.store.ts
+
+After reading ALL files, continue to Phase 2.
+
+## PHASE 2 — Create Reference Document
+
+Create a reference file at: /tests/auth/AUTH_REFERENCE.md
+
+### 0. Files Read
+List every file path you read in Phase 1. If the list contains fewer than 8 files, go back and complete Phase 1.
+
+### 1. Login Page
+- URL: https://dashboard.int3nt.info/login
+- Selector for email field
+- Selector for password field
+- Selector for the Login button (exact button text)
+- Post-login redirect behavior (may go to /?select_org or directly to dashboard)
+- Correct waitForURL pattern after login
+
+### 2. Organization Selection
+- Selector for the organization card
+- How to filter by org name
+- Selector for the page/overlay containing org cards
+
+### 3. Forgot Password Page
+- How to navigate to forgot password
+- Selector for email input
+- Selector for submit button
+- Success/error notification selectors
+
+### 4. Change Email Flow
+- Navigation path (profile page → change email OR direct URL)
+- Selector for current email input
+- Selector for new email input
+- Selector for confirm/save button
+- Success notification selector and text
+
+### 5. Change Password Flow
+- Navigation path
+- Selector for current password input
+- Selector for new password input
+- Selector for confirm password input
+- Selector for submit button
+- Success notification selector and text
+
+### 6. Form Field Patterns
+- How GlobalFormField renders in the DOM (what HTML elements it produces)
+- Correct selector to target text inputs inside GlobalFormField
+- Correct selector to target error messages
+
+### 7. Notifications
+- Selector for success snackbar/toast
+- Selector for error snackbar/toast
+- Typical wait timeout

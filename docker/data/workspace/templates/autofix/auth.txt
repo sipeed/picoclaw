@@ -1,0 +1,62 @@
+## YOUR ONLY JOB
+
+Run a Playwright test. If it fails, edit the spec file to fix it. Run again. Repeat until it passes.
+
+## STRICT RULES — violating these is failure
+
+❌ DO NOT create any .md files
+❌ DO NOT create any .sh files
+❌ DO NOT create any summary, report, or documentation files of any kind
+❌ DO NOT describe what you will do — just do it
+❌ DO NOT say "fixes applied" or "test is running" without having actually done the action
+❌ DO NOT predict "Expected Result: PASS" — run it and report real output only
+✅ DO edit /{{SPEC_FILE}} directly when a fix is needed
+✅ DO run the actual test command and show real terminal output
+✅ DO loop: run → check output → fix if failed → run again → repeat
+
+## Before your first run — read these files
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+- /tests/auth/AUTH_REFERENCE.md
+- /{{SPEC_FILE}}
+
+## The loop
+
+STEP 1 — Run this exact command:
+  cd /workspace && npx playwright test {{SPEC_FILE}} --reporter=line
+
+STEP 2 — Check real output:
+  - All tests PASSED → print the terminal output and stop. Done.
+  - Test FAILED → go to STEP 3.
+
+STEP 3 — Fix the spec file:
+  a) Read the error message and failing line number from the terminal output.
+  b) If the error mentions an error-context.md path, read that file.
+  c) Read /{{SPEC_FILE}}.
+  d) Find the exact line that caused the error.
+  e) Edit the file to fix it. Use the fix guide below.
+  f) Go back to STEP 1.
+
+## Fix guide
+
+| Error message contains | Root cause | Fix |
+|------------------------|-----------|-----|
+| `waitForURL: timeout` on `\?select_org` | `waitForURL(/\?select_org/)` fails when server skips org selection | Replace with: `await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 }); if (page.url().includes('select_org')) { await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click(); await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 }); }` |
+| `getByRole('button', { name: /Log In/ })` timeout | Button text is "Login" not "Log In" | Use `page.getByRole('button', { name: /login/i })` |
+| `input[type="email"]` or `input[type="password"]` timeout | Wrong selector for Vuetify text fields | Use `.v-text-field` and `.nth(0)` / `.nth(1)` to differentiate fields |
+| `strict mode violation` | Locator matched multiple elements | Add `.first()`, `.last()`, or `.filter({ hasText: /exact/ })` |
+| `locator.fill: timeout` on text field | Vuetify input not focused | Use `.click()` first, then `.fill()` |
+| `locator.click: timeout` on modal button | Modal not fully open yet | Add `await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 10000 })` |
+| `toHaveValue` on dropdown | v-select is a div, not an input | Use `toContainText()` |
+| success notification not found | Snackbar dismissed too quickly | Increase assertion timeout; assert immediately after action |
+
+## Final output (required — print this after the loop ends)
+
+  Iterations: N
+  Fixes applied:
+    1. Line NN — what was wrong → what was changed
+    2. ...
+  Terminal output:
+    [paste actual terminal output]
+  Result: ✅ PASS  OR  ❌ FAIL — [unresolved error message]

@@ -192,6 +192,62 @@ app.post('/agent/run', (req, res) => {
   });
 });
 
+/**
+ * POST /test/autofix
+ * Body: { "file": "tests/flow-designer/create-new-flow-custom-node.spec.ts" }
+ * Runs picoclaw to auto-fix the spec file until it passes.
+ * Streams output back as plain text.
+ */
+app.post('/test/autofix', (req, res) => {
+  const { file } = req.body;
+
+  if (!file) {
+    return res.status(400).json({ error: '"file" is required' });
+  }
+
+  const available = getTestFiles();
+  if (!available.includes(file)) {
+    return res.status(400).json({ error: 'Unknown test file', available });
+  }
+
+  // Derive area from path: "tests/flow-designer/foo.spec.ts" → "flow-designer"
+  const area = file.split('/')[1];
+  if (!AVAILABLE_AREAS.includes(area)) {
+    return res.status(400).json({ error: `No autofix template for area: ${area}` });
+  }
+
+  const templatePath = path.join(TEMPLATES_DIR, 'autofix', `${area}.txt`);
+  const prompt = readFileSync(templatePath, 'utf-8').replace(/\{\{SPEC_FILE\}\}/g, file);
+
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Transfer-Encoding', 'chunked');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+
+  const proc = spawn(
+    'docker',
+    ['compose', '--env-file', '.env', '--profile', 'gateway', 'run', '--rm', 'picoclaw-agent', '-m', prompt],
+    {
+      cwd: DOCKER_DIR,
+      env: { ...process.env },
+    }
+  );
+
+  proc.stdout.on('data', (data) => res.write(data));
+  proc.stderr.on('data', (data) => res.write(data));
+
+  proc.on('close', (code) => {
+    res.end(`\n[exit code: ${code}]`);
+  });
+
+  proc.on('error', (err) => {
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message });
+    } else {
+      res.end(`\n[error: ${err.message}]`);
+    }
+  });
+});
+
 const PORT = process.env.PORT || 3100;
 app.listen(PORT, () => {
   console.log(`Test server listening on http://localhost:${PORT}`);

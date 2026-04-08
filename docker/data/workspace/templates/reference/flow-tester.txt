@@ -1,0 +1,65 @@
+Before generating anything, read and follow:
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+- /skills/app-selectors-flow-tester/SKILL.md
+
+The base path is: /home/picoclaw/.picoclaw/workspace/context/dashboard/src
+If that path is not readable, STOP and report that the mount is missing. Do not proceed.
+
+## PHASE 1 — Source Code Discovery (MANDATORY)
+
+You MUST read EVERY file listed below. Do not skip any. Do not stop early.
+
+### Directory: src/components/flow-tester/
+List all files in this directory and read each one.
+
+### Specific files to read:
+- src/pages/FlowTester.vue
+- src/stores/flowTester.store.ts
+- src/stores/chat.store.ts
+- src/stores/flow.store.ts
+
+After listing, read ALL files found — no exceptions.
+
+## PHASE 2 — Create Reference Document
+
+Create a reference file at: /tests/flow-tester/FLOW_TESTER_REFERENCE.md
+
+### 0. Files Read
+List ALL files read. Must be ≥5 files.
+
+### 1. Flow Tester Page
+- Sidebar selector to navigate to Flow Tester
+- Page URL or route identifier
+- How to verify the page is loaded
+
+### 2. Flow Selection
+- Selector for the flow selector dropdown (.tester-select — verify class name)
+- How to open the dropdown
+- How to wait for overlay to stabilise before selecting
+- How to filter and click a flow by name (case-insensitive)
+
+### 3. Version Selection
+- Selector for the version selector button (.version-selector-button — verify)
+- How to open the version dropdown (.version-dropdown-menu — verify)
+- How to wait for real version items to load (not skeletons)
+- How to click the first/latest version
+- How to verify a version is selected
+
+### 4. Chat Interface
+- Selector for the message input field (.message-field — verify)
+- Selector for the send button (.v-field__append-inner inside .message-field — verify)
+- Selector for the chat/message area (.chatbox — verify)
+- Selector for bot message bubbles (.message-card .message-text — verify)
+- Selector for user message bubbles (.message-card-user — verify)
+- Selector for the typing indicator (.typing-indicator — verify)
+- How to wait for bot to finish responding
+
+### 5. Message Assertions
+- How to target the FIRST bot message vs LAST bot message
+- How to avoid matching user messages
+- Correct scoping: .chatbox .message-card .message-text (NOT .chatbox .message-text)
+
+### 6. BotIcon Component
+- What BotIcon renders and where it appears

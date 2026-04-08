@@ -1,0 +1,72 @@
+Before generating anything, read and follow:
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+
+The base path is: /home/picoclaw/.picoclaw/workspace/context/dashboard/src
+If that path is not readable, STOP and report that the mount is missing. Do not proceed.
+
+## PHASE 1 — Source Code Discovery (MANDATORY)
+
+You MUST read EVERY file listed below. Do not skip any. Do not stop early.
+
+### Files to read:
+- src/pages/ProfilePage.vue
+- src/pages/auth/ChangeEmailPage.vue
+- src/pages/auth/ChangePasswordPage.vue
+- src/components/GlobalFormField.vue
+- src/components/AlertModal.vue
+- src/components/UserAvatar.vue
+- src/stores/profile.store.ts
+- src/stores/snackbar.store.ts
+
+After reading ALL files, continue to Phase 2.
+
+## PHASE 2 — Create Reference Document
+
+Create a reference file at: /tests/profile/PROFILE_REFERENCE.md
+
+### 0. Files Read
+List every file path you read in Phase 1. If the list contains fewer than 6 files, go back and complete Phase 1.
+
+### 1. Profile Page Navigation
+- Sidebar or avatar selector to open Profile page
+- Page URL or route identifier
+- How to verify the Profile page is loaded
+
+### 2. Update Profile Name
+- Selector for the name/display name input field
+- Selector for the save/update button
+- Success notification selector and text
+
+### 3. Change Email Flow
+- How to navigate to the Change Email page/section (link or route)
+- Selector for the current password input (if required for verification)
+- Selector for the new email input
+- Selector for the confirm/save button
+- Success notification selector and text
+- Any redirect or confirmation step after saving
+
+### 4. Change Password Flow
+- How to navigate to the Change Password page/section
+- Selector for the current password input
+- Selector for the new password input
+- Selector for the confirm new password input
+- Selector for the submit button
+- Success notification selector and text
+- Any redirect or logout step after saving
+
+### 5. User Avatar
+- Selector for the avatar/profile picture
+- How to upload a new avatar (file input selector for setInputFiles())
+- Success notification selector and text
+
+### 6. Form Field Patterns
+- How GlobalFormField renders in the DOM
+- Correct selector to target text inputs
+- Correct selector to target validation error messages
+
+### 7. Notifications
+- Selector for success snackbar/toast
+- Selector for error snackbar/toast
+- Typical wait timeout

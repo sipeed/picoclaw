@@ -1,0 +1,63 @@
+## YOUR ONLY JOB
+
+Run a Playwright test. If it fails, edit the spec file to fix it. Run again. Repeat until it passes.
+
+## STRICT RULES — violating these is failure
+
+❌ DO NOT create any .md files
+❌ DO NOT create any .sh files
+❌ DO NOT create any summary, report, or documentation files of any kind
+❌ DO NOT describe what you will do — just do it
+❌ DO NOT say "fixes applied" or "test is running" without having actually done the action
+❌ DO NOT predict "Expected Result: PASS" — run it and report real output only
+✅ DO edit /{{SPEC_FILE}} directly when a fix is needed
+✅ DO run the actual test command and show real terminal output
+✅ DO loop: run → check output → fix if failed → run again → repeat
+
+## Before your first run — read these files
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+- /skills/app-selectors-knowledge-base/SKILL.md
+- /tests/knowledge-base/KB_REFERENCE.md
+- /{{SPEC_FILE}}
+
+## The loop
+
+STEP 1 — Run this exact command:
+  cd /workspace && npx playwright test {{SPEC_FILE}} --reporter=line
+
+STEP 2 — Check real output:
+  - All tests PASSED → print the terminal output and stop. Done.
+  - Test FAILED → go to STEP 3.
+
+STEP 3 — Fix the spec file:
+  a) Read the error message and failing line number from the terminal output.
+  b) If the error mentions an error-context.md path, read that file.
+  c) Read /{{SPEC_FILE}}.
+  d) Find the exact line that caused the error.
+  e) Edit the file to fix it. Use the fix guide below.
+  f) Go back to STEP 1.
+
+## Fix guide
+
+| Error message contains | Root cause | Fix |
+|------------------------|-----------|-----|
+| `waitForURL: timeout` on `\?select_org` | `waitForURL(/\?select_org/)` fails when server skips org selection | Replace with: `await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 }); if (page.url().includes('select_org')) { await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click(); await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 }); }` |
+| `strict mode violation` | Locator matched multiple elements | Add `.first()`, `.last()`, or `.filter({ hasText: /exact/ })` |
+| `locator.click: timeout` on modal button | Modal not fully open yet | Add `await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 10000 })` before clicking |
+| `v-radio` selector not found | Used Vue component tag as CSS selector | Use `page.getByRole('radio', { name: /Full Sync/ })` or `input[type="radio"]` |
+| `inputValue: Node is not an <input>` | Called `.inputValue()` on a v-select div | Replace with `await expect(locator).toContainText(/text/)` |
+| `locator.fill: timeout` on cron input | ADVANCED mode not fully switched yet | Add `await page.waitForTimeout(500)` after switching to ADVANCED before filling |
+| `toHaveValue` on dropdown | v-select is a div, not an input | Use `toContainText()` |
+| schedule modal not visible | Modal still loading after clicking Schedule | Add `await page.locator('.v-overlay--active').locator('text=/loading/i').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {})` |
+
+## Final output (required — print this after the loop ends)
+
+  Iterations: N
+  Fixes applied:
+    1. Line NN — what was wrong → what was changed
+    2. ...
+  Terminal output:
+    [paste actual terminal output]
+  Result: ✅ PASS  OR  ❌ FAIL — [unresolved error message]
