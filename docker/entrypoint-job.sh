@@ -21,6 +21,14 @@ fi
 
 cd "$WORKSPACE"
 
+# Remove node_modules from GCS mount if present — it conflicts with the /tmp
+# install because Node resolves @playwright/test from the workspace copy first,
+# creating two different playwright instances ("test() called here" error).
+if [ -d "$WORKSPACE/node_modules" ]; then
+  echo "Removing node_modules from GCS workspace to prevent version conflicts..."
+  gsutil -m rm -r "gs://${RESULTS_BUCKET}/node_modules" 2>/dev/null || true
+fi
+
 # Install node_modules to /tmp — GCS FUSE does not support chmod,
 # which npm requires when linking bin scripts in node_modules.
 if [ ! -d "/tmp/node_modules" ]; then
