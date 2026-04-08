@@ -15,8 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
 	ppid "github.com/sipeed/picoclaw/pkg/pid"
@@ -38,6 +36,36 @@ func startLongRunningProcess(t *testing.T) *exec.Cmd {
 	}
 
 	return cmd
+}
+
+func startGatewayLikeProcess(t *testing.T) *exec.Cmd {
+	t.Helper()
+
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		t.Skip("gateway-like process commandline check is not deterministic on Windows tests")
+	}
+	cmd = exec.Command("sh", "-c", "sleep 30 # picoclaw gateway")
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	return cmd
+}
+
+func writeTestPidFile(t *testing.T, data ppid.PidFileData) string {
+	t.Helper()
+
+	path := filepath.Join(globalConfigDir(), ".picoclaw.pid")
+	raw, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal pid file: %v", err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatalf("write pid file: %v", err)
+	}
+	return path
 }
 
 func mockGatewayHealthResponse(statusCode, pid int) *http.Response {
@@ -68,12 +96,14 @@ func resetGatewayTestState(t *testing.T) {
 	t.Helper()
 
 	originalHealthGet := gatewayHealthGet
+	originalProcessMatcher := gatewayProcessMatcher
 	originalRestartGracePeriod := gatewayRestartGracePeriod
 	originalRestartForceKillWindow := gatewayRestartForceKillWindow
 	originalRestartPollInterval := gatewayRestartPollInterval
 	t.Setenv("PICOCLAW_HOME", t.TempDir())
 	t.Cleanup(func() {
 		gatewayHealthGet = originalHealthGet
+		gatewayProcessMatcher = originalProcessMatcher
 		gatewayRestartGracePeriod = originalRestartGracePeriod
 		gatewayRestartForceKillWindow = originalRestartForceKillWindow
 		gatewayRestartPollInterval = originalRestartPollInterval
@@ -102,6 +132,105 @@ func TestGatewayStartReady_NoDefaultModel(t *testing.T) {
 	}
 	if reason != "no default model configured" {
 		t.Fatalf("gatewayStartReady() reason = %q, want %q", reason, "no default model configured")
+	}
+}
+
+func TestLooksLikeGatewayCommandLine(t *testing.T) {
+	cases := []struct {
+		name    string
+		cmdline string
+		want    bool
+	}{
+		{
+			name:    "default picoclaw gateway",
+			cmdline: "/usr/local/bin/picoclaw gateway -E",
+			want:    true,
+		},
+		{
+			name:    "renamed binary with gateway subcommand",
+			cmdline: "/opt/bin/custom-claw gateway -E -d",
+			want:    true,
+		},
+		{
+			name:    "standalone gateway binary path",
+			cmdline: "/opt/bin/gateway -E",
+			want:    true,
+		},
+		{
+			name:    "non gateway process",
+			cmdline: "/bin/sleep 30",
+			want:    false,
+		},
+		{
+			name:    "gateway substring only",
+			cmdline: "/opt/bin/gatewayd --serve",
+			want:    false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := looksLikeGatewayCommandLine(tc.cmdline)
+			if got != tc.want {
+				t.Fatalf("looksLikeGatewayCommandLine(%q) = %v, want %v", tc.cmdline, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateGatewayPidDataAcceptsHealthWhenMatcherInconclusive(t *testing.T) {
+	resetGatewayTestState(t)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+
+	const testPID = 34567
+	pidData := &ppid.PidFileData{
+		PID:  testPID,
+		Host: "127.0.0.1",
+		Port: 18790,
+	}
+
+	gatewayProcessMatcher = func(int) (bool, bool) { return false, false }
+	gatewayHealthGet = func(string, time.Duration) (*http.Response, error) {
+		return mockGatewayHealthResponse(http.StatusOK, testPID), nil
+	}
+
+	ok, decisive, reason := h.validateGatewayPidData(pidData, nil)
+	if !ok {
+		t.Fatalf("validateGatewayPidData() ok = false, want true (reason=%q)", reason)
+	}
+	if !decisive {
+		t.Fatalf("validateGatewayPidData() decisive = false, want true")
+	}
+}
+
+func TestValidateGatewayPidDataRejectsHealthPidMismatchWhenMatcherInconclusive(t *testing.T) {
+	resetGatewayTestState(t)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+
+	pidData := &ppid.PidFileData{
+		PID:  34567,
+		Host: "127.0.0.1",
+		Port: 18790,
+	}
+
+	gatewayProcessMatcher = func(int) (bool, bool) { return false, false }
+	gatewayHealthGet = func(string, time.Duration) (*http.Response, error) {
+		return mockGatewayHealthResponse(http.StatusOK, 99999), nil
+	}
+
+	ok, decisive, reason := h.validateGatewayPidData(pidData, nil)
+	if ok {
+		t.Fatalf("validateGatewayPidData() ok = true, want false")
+	}
+	if !decisive {
+		t.Fatalf("validateGatewayPidData() decisive = false, want true")
+	}
+	if !strings.Contains(reason, "health pid mismatch") {
+		t.Fatalf("validateGatewayPidData() reason = %q, want contains %q", reason, "health pid mismatch")
 	}
 }
 
@@ -533,7 +662,7 @@ func TestGatewayStatusDowngradesRunningWhenTrackedProcessExitedAndPidFileMissing
 	}
 }
 
-func TestGatewayStatusReportsRunningFromPidProbe(t *testing.T) {
+func TestGatewayStatusIgnoresAndRemovesPidFileForNonGatewayProcess(t *testing.T) {
 	resetGatewayTestState(t)
 
 	configPath := filepath.Join(t.TempDir(), "config.json")
@@ -549,6 +678,87 @@ func TestGatewayStatusReportsRunningFromPidProbe(t *testing.T) {
 		_ = cmd.Wait()
 	})
 
+	pidPath := writeTestPidFile(t, ppid.PidFileData{
+		PID:   cmd.Process.Pid,
+		Token: "stale-token",
+		Host:  "127.0.0.1",
+		Port:  18790,
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if got := body["gateway_status"]; got != "stopped" {
+		t.Fatalf("gateway_status = %#v, want %q", got, "stopped")
+	}
+	if _, err := os.Stat(pidPath); !os.IsNotExist(err) {
+		t.Fatal("stale pid file should be removed for non-gateway process")
+	}
+}
+
+func TestGatewayStopRefusesNonGatewayAttachedProcess(t *testing.T) {
+	resetGatewayTestState(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("commandline-based process type check is best-effort on Windows")
+	}
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	cmd := startLongRunningProcess(t)
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	})
+
+	gateway.mu.Lock()
+	gateway.cmd = cmd
+	gateway.owned = false
+	setGatewayRuntimeStatusLocked("running")
+	gateway.mu.Unlock()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/gateway/stop", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+	if !isCmdProcessAliveLocked(cmd) {
+		t.Fatal("non-gateway process should not be terminated by /api/gateway/stop")
+	}
+}
+
+func TestGatewayStatusReportsRunningFromPidProbe(t *testing.T) {
+	resetGatewayTestState(t)
+	gatewayProcessMatcher = func(int) (bool, bool) { return true, true }
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	cmd := startGatewayLikeProcess(t)
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	})
+
 	gateway.mu.Lock()
 	setGatewayRuntimeStatusLocked("stopped")
 	gateway.mu.Unlock()
@@ -557,8 +767,12 @@ func TestGatewayStatusReportsRunningFromPidProbe(t *testing.T) {
 		return mockGatewayHealthResponse(http.StatusOK, cmd.Process.Pid), nil
 	}
 
-	_, err := ppid.WritePidFile(globalConfigDir(), "localhost", 0)
-	require.NoError(t, err)
+	writeTestPidFile(t, ppid.PidFileData{
+		PID:   cmd.Process.Pid,
+		Token: "test-token",
+		Host:  "127.0.0.1",
+		Port:  18790,
+	})
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
@@ -583,6 +797,7 @@ func TestGatewayStatusReportsRunningFromPidProbe(t *testing.T) {
 
 func TestGatewayStatusRequiresRestartAfterDefaultModelChange(t *testing.T) {
 	resetGatewayTestState(t)
+	gatewayProcessMatcher = func(int) (bool, bool) { return true, true }
 
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	cfg := config.DefaultConfig()
@@ -601,16 +816,23 @@ func TestGatewayStatusRequiresRestartAfterDefaultModelChange(t *testing.T) {
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
 
-	process, err := os.FindProcess(os.Getpid())
-	if err != nil {
-		t.Fatalf("FindProcess() error = %v", err)
-	}
-	_, err = ppid.WritePidFile(globalConfigDir(), "localhost", 0)
-	require.NoError(t, err)
+	cmd := startGatewayLikeProcess(t)
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	})
+	writeTestPidFile(t, ppid.PidFileData{
+		PID:   cmd.Process.Pid,
+		Token: "test-token",
+		Host:  "127.0.0.1",
+		Port:  18790,
+	})
 
 	bootSignature := computeConfigSignature(cfg)
 	gateway.mu.Lock()
-	gateway.cmd = &exec.Cmd{Process: process}
+	gateway.cmd = cmd
 	gateway.bootDefaultModel = cfg.ModelList[0].ModelName
 	gateway.bootConfigSignature = bootSignature
 	setGatewayRuntimeStatusLocked("running")
