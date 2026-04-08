@@ -2,6 +2,7 @@ import {
   IconBook,
   IconLanguage,
   IconLoader2,
+  IconLogout,
   IconMenu2,
   IconMoon,
   IconPlayerPlay,
@@ -39,6 +40,7 @@ import {
 } from "@/components/ui/tooltip"
 import { useGateway } from "@/hooks/use-gateway.ts"
 import { useTheme } from "@/hooks/use-theme.ts"
+import { postLauncherDashboardLogout } from "@/api/launcher-auth"
 
 export function AppHeader() {
   const { i18n, t } = useTranslation()
@@ -47,10 +49,12 @@ export function AppHeader() {
     state: gwState,
     loading: gwLoading,
     canStart,
+    startReason,
     restartRequired,
     start,
     restart,
     stop,
+    error: gwError,
   } = useGateway()
 
   const isRunning = gwState === "running"
@@ -65,6 +69,12 @@ export function AppHeader() {
     (gwState === "stopped" || gwState === "error")
 
   const [showStopDialog, setShowStopDialog] = React.useState(false)
+  const [showLogoutDialog, setShowLogoutDialog] = React.useState(false)
+
+  const handleLogout = async () => {
+    await postLauncherDashboardLogout()
+    globalThis.location.assign("/launcher-login")
+  }
 
   const handleGatewayToggle = () => {
     if (gwLoading || isRestarting || isStopping || (!isRunning && !canStart)) {
@@ -134,6 +144,23 @@ export function AppHeader() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("header.logout.tooltip")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("header.logout.description")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void handleLogout()}>
+              {t("header.logout.confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <div className="text-muted-foreground flex items-center gap-1 text-sm font-medium md:gap-2">
         {restartRequired && (
           <Tooltip delayDuration={700}>
@@ -171,38 +198,50 @@ export function AppHeader() {
                 <IconPower className="h-4 w-4 opacity-80" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{t("header.gateway.action.stop")}</TooltipContent>
+            <TooltipContent>{gwError ?? t("header.gateway.action.stop")}</TooltipContent>
           </Tooltip>
         ) : (
-          <Button
-            variant={
-              isStarting || isRestarting || isStopping ? "secondary" : "default"
-            }
-            size="sm"
-            data-tour="gateway-button"
-            className={`h-8 gap-2 px-3 ${
-              isStopped ? "bg-green-500 text-white hover:bg-green-600" : ""
-            }`}
-            onClick={handleGatewayToggle}
-            disabled={
-              gwLoading || isStarting || isRestarting || isStopping || !canStart
-            }
-          >
-            {gwLoading || isStarting || isRestarting || isStopping ? (
-              <IconLoader2 className="h-4 w-4 animate-spin opacity-70" />
-            ) : (
-              <IconPlayerPlay className="h-4 w-4 opacity-80" />
-            )}
-            <span className="text-xs font-semibold">
-              {isStopping
-                ? t("header.gateway.status.stopping")
-                : isRestarting
-                  ? t("header.gateway.status.restarting")
-                  : isStarting
-                    ? t("header.gateway.status.starting")
-                    : t("header.gateway.action.start")}
-            </span>
-          </Button>
+          <Tooltip delayDuration={(gwError || (!canStart && startReason)) ? 0 : 700}>
+            <TooltipTrigger asChild>
+              {/* Wrap in span so the tooltip still fires when the button is disabled */}
+              <span
+                className={!canStart && startReason ? "cursor-not-allowed" : undefined}
+                tabIndex={!canStart && startReason ? 0 : undefined}
+              >
+                <Button
+                  variant={
+                    isStarting || isRestarting || isStopping ? "secondary" : "default"
+                  }
+                  size="sm"
+                  data-tour="gateway-button"
+                  className={`h-8 gap-2 px-3 ${isStopped ? "bg-green-500 text-white hover:bg-green-600" : ""
+                    } ${!canStart ? "pointer-events-none" : ""}`}
+                  onClick={handleGatewayToggle}
+                  disabled={
+                    gwLoading || isStarting || isRestarting || isStopping || !canStart
+                  }
+                >
+                  {gwLoading || isStarting || isRestarting || isStopping ? (
+                    <IconLoader2 className="h-4 w-4 animate-spin opacity-70" />
+                  ) : (
+                    <IconPlayerPlay className="h-4 w-4 opacity-80" />
+                  )}
+                  <span className="text-xs font-semibold">
+                    {isStopping
+                      ? t("header.gateway.status.stopping")
+                      : isRestarting
+                        ? t("header.gateway.status.restarting")
+                        : isStarting
+                          ? t("header.gateway.status.starting")
+                          : t("header.gateway.action.start")}
+                  </span>
+                </Button>
+              </span>
+            </TooltipTrigger>
+            {(gwError || (!canStart && startReason)) ? (
+              <TooltipContent>{gwError ?? startReason}</TooltipContent>
+            ) : null}
+          </Tooltip>
         )}
 
         <Separator
@@ -241,6 +280,21 @@ export function AppHeader() {
         </DropdownMenu>
 
         {/* Theme Toggle */}
+        <Tooltip delayDuration={700}>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              onClick={() => setShowLogoutDialog(true)}
+              aria-label={t("header.logout.tooltip")}
+            >
+              <IconLogout className="size-4.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t("header.logout.tooltip")}</TooltipContent>
+        </Tooltip>
+
         <Button
           variant="ghost"
           size="icon"
