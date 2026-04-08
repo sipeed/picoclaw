@@ -176,12 +176,11 @@ func TestValidateWindowsExposePaths(t *testing.T) {
 
 func TestDefaultLinuxSystemExposePaths(t *testing.T) {
 	paths := defaultLinuxSystemExposePaths()
-	needed := map[string]bool{
-		"/etc/hosts":          false,
-		"/etc/nsswitch.conf":  false,
-		"/etc/ssl":            false,
-		"/usr/share/zoneinfo": false,
-		"/etc/localtime":      false,
+	needed := map[string]bool{}
+	for _, path := range []string{"/etc/hosts", "/etc/nsswitch.conf", "/etc/ssl", "/usr/share/zoneinfo", "/etc/localtime"} {
+		if _, err := os.Stat(path); err == nil {
+			needed[path] = false
+		}
 	}
 	for _, item := range paths {
 		if _, ok := needed[item.Source]; ok {
@@ -192,6 +191,23 @@ func TestDefaultLinuxSystemExposePaths(t *testing.T) {
 		if !found {
 			t.Fatalf("defaultLinuxSystemExposePaths missing %s", path)
 		}
+	}
+}
+
+func TestExistingExposePaths_SkipsMissingPaths(t *testing.T) {
+	existing := filepath.Join(t.TempDir(), "existing")
+	if err := os.MkdirAll(existing, 0o755); err != nil {
+		t.Fatalf("os.MkdirAll() error = %v", err)
+	}
+	filtered := existingExposePaths([]config.ExposePath{
+		{Source: existing, Target: existing, Mode: "ro"},
+		{Source: filepath.Join(t.TempDir(), "missing"), Target: "/missing", Mode: "ro"},
+	})
+	if len(filtered) != 1 {
+		t.Fatalf("existingExposePaths() len = %d, want 1", len(filtered))
+	}
+	if got := filtered[0]; got.Source != existing {
+		t.Fatalf("existingExposePaths()[0] = %+v, want source=%q", got, existing)
 	}
 }
 

@@ -218,7 +218,7 @@ func DefaultExposePaths(root string) []config.ExposePath {
 }
 
 func defaultLinuxSystemExposePaths() []config.ExposePath {
-	return []config.ExposePath{
+	return existingExposePaths([]config.ExposePath{
 		{Source: "/usr", Target: "/usr", Mode: "ro"},
 		{Source: "/bin", Target: "/bin", Mode: "ro"},
 		{Source: "/lib", Target: "/lib", Mode: "ro"},
@@ -236,7 +236,19 @@ func defaultLinuxSystemExposePaths() []config.ExposePath {
 		{Source: "/etc/alternatives", Target: "/etc/alternatives", Mode: "ro"},
 		{Source: "/usr/share/zoneinfo", Target: "/usr/share/zoneinfo", Mode: "ro"},
 		{Source: "/etc/localtime", Target: "/etc/localtime", Mode: "ro"},
+	})
+}
+
+// existingExposePaths keeps only the builtin host paths that exist on the
+// current machine so Linux isolation does not fail on distro-specific paths.
+func existingExposePaths(items []config.ExposePath) []config.ExposePath {
+	filtered := make([]config.ExposePath, 0, len(items))
+	for _, item := range items {
+		if _, err := os.Stat(item.Source); err == nil {
+			filtered = append(filtered, item)
+		}
 	}
+	return filtered
 }
 
 // MergeExposePaths merges built-in rules with user overrides. Rules are keyed
@@ -363,12 +375,12 @@ func Start(cmd *exec.Cmd) error {
 		var err error
 		root, err = ResolveInstanceRoot()
 		if err != nil {
-			_ = cmd.Process.Kill()
+			terminateStartedCommand(cmd)
 			return err
 		}
 	}
 	if err := postStartPlatformIsolation(cmd, isolation, root); err != nil {
-		_ = cmd.Process.Kill()
+		terminateStartedCommand(cmd)
 		return err
 	}
 	return nil
@@ -390,15 +402,24 @@ func Run(cmd *exec.Cmd) error {
 		var err error
 		root, err = ResolveInstanceRoot()
 		if err != nil {
-			_ = cmd.Process.Kill()
+			terminateStartedCommand(cmd)
 			return err
 		}
 	}
 	if err := postStartPlatformIsolation(cmd, isolation, root); err != nil {
-		_ = cmd.Process.Kill()
+		terminateStartedCommand(cmd)
 		return err
 	}
 	return cmd.Wait()
+}
+
+func terminateStartedCommand(cmd *exec.Cmd) {
+	cleanupPendingPlatformResources(cmd)
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
 }
 
 // PrepareCommand mutates the command in-place so it inherits the configured
