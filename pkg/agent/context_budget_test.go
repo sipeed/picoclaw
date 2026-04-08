@@ -417,9 +417,9 @@ func TestEstimateMessageTokens(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := estimateMessageTokens(tt.msg)
+			got := EstimateMessageTokens(tt.msg)
 			if got < tt.want {
-				t.Errorf("estimateMessageTokens() = %d, want >= %d", got, tt.want)
+				t.Errorf("EstimateMessageTokens() = %d, want >= %d", got, tt.want)
 			}
 		})
 	}
@@ -443,8 +443,8 @@ func TestEstimateMessageTokens_ToolCallsContribute(t *testing.T) {
 		},
 	}
 
-	plainTokens := estimateMessageTokens(plain)
-	withTCTokens := estimateMessageTokens(withTC)
+	plainTokens := EstimateMessageTokens(plain)
+	withTCTokens := EstimateMessageTokens(withTC)
 
 	if withTCTokens <= plainTokens {
 		t.Errorf("message with ToolCalls (%d tokens) should exceed plain message (%d tokens)",
@@ -457,7 +457,7 @@ func TestEstimateMessageTokens_MultibyteContent(t *testing.T) {
 	// but may map to different token counts. The heuristic should still produce
 	// reasonable estimates via RuneCountInString.
 	msg := msgUser("caf\u00e9 na\u00efve r\u00e9sum\u00e9 \u00fcber stra\u00dfe")
-	tokens := estimateMessageTokens(msg)
+	tokens := EstimateMessageTokens(msg)
 	if tokens <= 0 {
 		t.Errorf("multibyte message should produce positive token count, got %d", tokens)
 	}
@@ -481,7 +481,7 @@ func TestEstimateMessageTokens_LargeArguments(t *testing.T) {
 		},
 	}
 
-	tokens := estimateMessageTokens(msg)
+	tokens := EstimateMessageTokens(msg)
 	// 5000+ chars → at least 2000 tokens with the 2.5 char/token heuristic
 	if tokens < 2000 {
 		t.Errorf("large tool call arguments should produce significant token count, got %d", tokens)
@@ -496,8 +496,8 @@ func TestEstimateMessageTokens_ReasoningContent(t *testing.T) {
 		ReasoningContent: strings.Repeat("thinking step ", 200),
 	}
 
-	plainTokens := estimateMessageTokens(plain)
-	reasoningTokens := estimateMessageTokens(withReasoning)
+	plainTokens := EstimateMessageTokens(plain)
+	reasoningTokens := EstimateMessageTokens(withReasoning)
 
 	if reasoningTokens <= plainTokens {
 		t.Errorf("message with ReasoningContent (%d tokens) should exceed plain message (%d tokens)",
@@ -513,8 +513,8 @@ func TestEstimateMessageTokens_MediaItems(t *testing.T) {
 		Media:   []string{"media://img1.png", "media://img2.png"},
 	}
 
-	plainTokens := estimateMessageTokens(plain)
-	mediaTokens := estimateMessageTokens(withMedia)
+	plainTokens := EstimateMessageTokens(plain)
+	mediaTokens := EstimateMessageTokens(withMedia)
 
 	if mediaTokens <= plainTokens {
 		t.Errorf("message with Media (%d tokens) should exceed plain message (%d tokens)",
@@ -540,8 +540,8 @@ func TestEstimateMessageTokens_SystemParts(t *testing.T) {
 		},
 	}
 
-	plainTokens := estimateMessageTokens(plain)
-	partsTokens := estimateMessageTokens(withParts)
+	plainTokens := EstimateMessageTokens(plain)
+	partsTokens := EstimateMessageTokens(withParts)
 
 	if partsTokens <= plainTokens {
 		t.Errorf("system message with SystemParts (%d) should exceed plain message (%d)",
@@ -549,7 +549,7 @@ func TestEstimateMessageTokens_SystemParts(t *testing.T) {
 	}
 }
 
-// --- estimateToolDefsTokens tests ---
+// --- EstimateToolDefsTokens tests ---
 
 func TestEstimateToolDefsTokens(t *testing.T) {
 	tests := []struct {
@@ -599,9 +599,9 @@ func TestEstimateToolDefsTokens(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := estimateToolDefsTokens(tt.defs)
+			got := EstimateToolDefsTokens(tt.defs)
 			if got < tt.want {
-				t.Errorf("estimateToolDefsTokens() = %d, want >= %d", got, tt.want)
+				t.Errorf("EstimateToolDefsTokens() = %d, want >= %d", got, tt.want)
 			}
 		})
 	}
@@ -624,8 +624,8 @@ func TestEstimateToolDefsTokens_ScalesWithCount(t *testing.T) {
 		}
 	}
 
-	one := estimateToolDefsTokens([]providers.ToolDefinition{makeTool("tool_a")})
-	three := estimateToolDefsTokens([]providers.ToolDefinition{
+	one := EstimateToolDefsTokens([]providers.ToolDefinition{makeTool("tool_a")})
+	three := EstimateToolDefsTokens([]providers.ToolDefinition{
 		makeTool("tool_a"), makeTool("tool_b"), makeTool("tool_c"),
 	})
 
@@ -770,7 +770,7 @@ func TestEstimateMessageTokens_WithReasoningAndMedia(t *testing.T) {
 		},
 	}
 
-	tokens := estimateMessageTokens(msg)
+	tokens := EstimateMessageTokens(msg)
 
 	// ReasoningContent alone is ~1700 chars → ~680 tokens.
 	// Content + TC + overhead adds more. Should be well above 500.
@@ -781,7 +781,7 @@ func TestEstimateMessageTokens_WithReasoningAndMedia(t *testing.T) {
 	// Compare without reasoning to ensure it's counted.
 	msgNoReasoning := msg
 	msgNoReasoning.ReasoningContent = ""
-	tokensNoReasoning := estimateMessageTokens(msgNoReasoning)
+	tokensNoReasoning := EstimateMessageTokens(msgNoReasoning)
 
 	if tokens <= tokensNoReasoning {
 		t.Errorf("reasoning content should add tokens: with=%d, without=%d", tokens, tokensNoReasoning)

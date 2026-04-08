@@ -14,6 +14,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/isolation"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 const (
@@ -91,7 +92,8 @@ type processHookAfterLLMResponse struct {
 
 type processHookBeforeToolResponse struct {
 	processHookDecisionResponse
-	Call *ToolCallHookRequest `json:"call,omitempty"`
+	Call   *ToolCallHookRequest `json:"call,omitempty"`
+	Result *tools.ToolResult    `json:"result,omitempty"` // Result returned directly by hook (for respond action)
 }
 
 type processHookAfterToolResponse struct {
@@ -243,6 +245,10 @@ func (ph *ProcessHook) BeforeTool(
 	}
 	if resp.Call == nil {
 		resp.Call = call
+	}
+	// If hook returned a Result, carry it in ToolCallHookRequest
+	if resp.Result != nil {
+		resp.Call.HookResult = resp.Result
 	}
 	return resp.Call, HookDecision{Action: resp.Action, Reason: resp.Reason}, nil
 }

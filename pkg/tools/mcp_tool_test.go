@@ -634,3 +634,177 @@ func TestMCPTool_Execute_LargeBase64TextIsOmittedFromContext(t *testing.T) {
 		t.Fatalf("expected sanitized large base64 note, got %q", result.ForLLM)
 	}
 }
+
+func TestMCPTool_Execute_LargeBase64TextArtifactPreservesRawPayload(t *testing.T) {
+	workspace := t.TempDir()
+	largeBase64 := strings.Repeat("QUJD", 400)
+	manager := &MockMCPManager{
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: largeBase64},
+				},
+			}, nil
+		},
+	}
+
+	mcpTool := NewMCPTool(manager, "test_server", &mcp.Tool{Name: "dump_payload"})
+	mcpTool.SetWorkspace(workspace)
+	mcpTool.SetMaxInlineTextRunes(32)
+
+	result := mcpTool.Execute(context.Background(), nil)
+
+	if !strings.Contains(result.ForLLM, "saved as a local artifact") {
+		t.Fatalf("expected artifact note, got %q", result.ForLLM)
+	}
+	if result.ForLLM == largeBase64OmittedMessage {
+		t.Fatalf("expected artifact note instead of sanitized base64 placeholder")
+	}
+	if len(result.ArtifactTags) != 1 {
+		t.Fatalf("expected 1 artifact tag, got %d", len(result.ArtifactTags))
+	}
+	tag := result.ArtifactTags[0]
+	const prefix = "[file:"
+	if !strings.HasPrefix(tag, prefix) || !strings.HasSuffix(tag, "]") {
+		t.Fatalf("expected file artifact tag, got %q", tag)
+	}
+	path := strings.TrimSuffix(strings.TrimPrefix(tag, prefix), "]")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected artifact file to be readable: %v", err)
+	}
+	if string(data) != largeBase64 {
+		t.Fatalf("expected artifact file contents to preserve raw MCP payload")
+	}
+}
+
+func TestMCPTool_Execute_LargeTextStoredAsArtifact(t *testing.T) {
+	workspace := t.TempDir()
+	largeText := strings.Repeat("This is a large MCP text payload.\n", 800)
+	manager := &MockMCPManager{
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: largeText},
+				},
+			}, nil
+		},
+	}
+
+	mcpTool := NewMCPTool(manager, "test_server", &mcp.Tool{Name: "dump_payload"})
+	mcpTool.SetWorkspace(workspace)
+
+	result := mcpTool.Execute(context.Background(), nil)
+
+	if strings.Contains(result.ForLLM, "This is a large MCP text payload") {
+		t.Fatalf("expected large MCP text to be omitted from ForLLM, got %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "saved as a local artifact") {
+		t.Fatalf("expected artifact note, got %q", result.ForLLM)
+	}
+	if len(result.ArtifactTags) != 1 {
+		t.Fatalf("expected 1 artifact tag, got %d", len(result.ArtifactTags))
+	}
+	tag := result.ArtifactTags[0]
+	const prefix = "[file:"
+	if !strings.HasPrefix(tag, prefix) || !strings.HasSuffix(tag, "]") {
+		t.Fatalf("expected file artifact tag, got %q", tag)
+	}
+	path := strings.TrimSuffix(strings.TrimPrefix(tag, prefix), "]")
+	if !strings.HasPrefix(path, workspace) {
+		t.Fatalf("expected artifact inside workspace, got %q", path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected artifact file to be readable: %v", err)
+	}
+	if string(data) != strings.TrimSpace(largeText) {
+		t.Fatalf("expected artifact file contents to match source text")
+	}
+}
+
+func TestMCPTool_Execute_CustomInlineTextThreshold(t *testing.T) {
+	workspace := t.TempDir()
+	text := strings.Repeat("small custom threshold text\n", 20)
+	manager := &MockMCPManager{
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: text},
+				},
+			}, nil
+		},
+	}
+
+	mcpTool := NewMCPTool(manager, "test_server", &mcp.Tool{Name: "dump_payload"})
+	mcpTool.SetWorkspace(workspace)
+	mcpTool.SetMaxInlineTextRunes(32)
+
+	result := mcpTool.Execute(context.Background(), nil)
+
+	if len(result.ArtifactTags) != 1 {
+		t.Fatalf("expected custom threshold to persist artifact, got %+v", result)
+	}
+	if strings.Contains(result.ForLLM, "small custom threshold text") {
+		t.Fatalf("expected text to be omitted from ForLLM, got %q", result.ForLLM)
+	}
+}
+
+func TestMCPTool_Execute_LargeTextArtifactFailureStillOmitsContext(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	workspaceFile := filepath.Join(workspaceRoot, "not-a-directory")
+	if err := os.WriteFile(workspaceFile, []byte("x"), 0o600); err != nil {
+		t.Fatalf("failed to create workspace file: %v", err)
+	}
+
+	largeText := strings.Repeat("This is a large MCP text payload.\n", 800)
+	manager := &MockMCPManager{
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: largeText},
+				},
+			}, nil
+		},
+	}
+
+	mcpTool := NewMCPTool(manager, "test_server", &mcp.Tool{Name: "dump_payload"})
+	mcpTool.SetWorkspace(workspaceFile)
+
+	result := mcpTool.Execute(context.Background(), nil)
+
+	if strings.Contains(result.ForLLM, "This is a large MCP text payload") {
+		t.Fatalf("expected large MCP text to be omitted from ForLLM, got %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "artifact persistence failed") {
+		t.Fatalf("expected persistence failure note, got %q", result.ForLLM)
+	}
+	if len(result.ArtifactTags) != 0 {
+		t.Fatalf("expected no artifact tags on persistence failure, got %+v", result.ArtifactTags)
+	}
+}
+
+func TestMCPTool_Execute_WhitespaceWorkspaceDisablesArtifactPersistence(t *testing.T) {
+	largeText := strings.Repeat("This is a large MCP text payload.\n", 800)
+	manager := &MockMCPManager{
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: largeText},
+				},
+			}, nil
+		},
+	}
+
+	mcpTool := NewMCPTool(manager, "test_server", &mcp.Tool{Name: "dump_payload"})
+	mcpTool.SetWorkspace(" \n\t ")
+
+	result := mcpTool.Execute(context.Background(), nil)
+
+	if len(result.ArtifactTags) != 0 {
+		t.Fatalf("expected no artifact tags for whitespace workspace, got %+v", result.ArtifactTags)
+	}
+	if !strings.Contains(result.ForLLM, "This is a large MCP text payload") {
+		t.Fatalf("expected large text to remain inline when workspace is blank, got %q", result.ForLLM)
+	}
+}

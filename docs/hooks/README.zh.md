@@ -28,6 +28,69 @@
 
 其余 lifecycle 通过事件形式只读暴露。
 
+## Hook Actions
+
+Hook 可以返回不同的 action 来控制流程：
+
+| Action | 适用阶段 | 效果 |
+| --- | --- | --- |
+| `continue` | 所有拦截型 | 放行，不做修改 |
+| `modify` | `before_llm`, `after_llm`, `before_tool`, `after_tool` | 改写请求/响应后放行 |
+| `respond` | `before_tool` | 直接返回工具结果，跳过实际工具执行 |
+| `deny_tool` | `before_tool` | 拒绝工具执行，返回错误信息 |
+| `abort_turn` | 所有拦截型 | 中止当前 turn |
+| `hard_abort` | 所有拦截型 | 强制终止整个 agent loop |
+
+### `respond` Action
+
+`respond` action 是特殊的：它允许 `before_tool` hook 直接提供工具结果，跳过实际工具执行。适用于：
+
+1. **插件工具注入**：外部 hook 可以实现工具，无需在 ToolRegistry 注册
+2. **工具结果缓存**：对重复调用返回缓存结果
+3. **工具模拟**：测试时返回模拟结果
+
+当 hook 返回 `respond` 并携带 `HookResult` 时，agent loop 会：
+1. 跳过实际工具执行
+2. 使用提供的结果作为工具执行结果
+3. 正常继续 turn 流程
+
+示例（Go 进程内 hook）：
+
+```go
+func (h *MyHook) BeforeTool(
+    ctx context.Context,
+    call *agent.ToolCallHookRequest,
+) (*agent.ToolCallHookRequest, agent.HookDecision, error) {
+    if call.Tool == "my_plugin_tool" {
+        next := call.Clone()
+        next.HookResult = &tools.ToolResult{
+            ForLLM:  "Plugin tool executed successfully",
+            Silent:  false,
+            IsError: false,
+        }
+        return next, agent.HookDecision{Action: agent.HookActionRespond}, nil
+    }
+    return call, agent.HookDecision{Action: agent.HookActionContinue}, nil
+}
+```
+
+示例（Python process hook）：
+
+```python
+def handle_before_tool(params: dict) -> dict:
+    tool = params.get("tool", "")
+    if tool == "my_plugin_tool":
+        return {
+            "action": "respond",
+            "result": {
+                "for_llm": "Plugin tool executed successfully",
+                "silent": False,
+                "is_error": False
+            }
+        }
+    return {"action": "continue"}
+```
+
 ## 执行顺序
 
 HookManager 的排序规则是：

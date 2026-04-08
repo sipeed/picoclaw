@@ -34,6 +34,7 @@ interface EditForm {
   requestTimeout: string
   thinkingLevel: string
   extraBody: string
+  customHeaders: string
 }
 
 interface EditModelSheetProps {
@@ -62,6 +63,7 @@ export function EditModelSheet({
     requestTimeout: "",
     thinkingLevel: "",
     extraBody: "",
+    customHeaders: "",
   })
   const [saving, setSaving] = useState(false)
   const [setAsDefault, setSetAsDefault] = useState(false)
@@ -84,6 +86,9 @@ export function EditModelSheet({
         thinkingLevel: model.thinking_level ?? "",
         extraBody: model.extra_body
           ? JSON.stringify(model.extra_body, null, 2)
+          : "",
+        customHeaders: model.custom_headers
+          ? JSON.stringify(model.custom_headers, null, 2)
           : "",
       })
       setSetAsDefault(model.is_default)
@@ -118,6 +123,9 @@ export function EditModelSheet({
         thinking_level: form.thinkingLevel || undefined,
         extra_body: form.extraBody.trim()
           ? JSON.parse(form.extraBody.trim())
+          : {},
+        custom_headers: form.customHeaders.trim()
+          ? JSON.parse(form.customHeaders.trim())
           : {},
       })
       if (setAsDefault && !model.is_default) {
@@ -291,6 +299,18 @@ export function EditModelSheet({
                   value={form.extraBody}
                   onChange={setField("extraBody")}
                   placeholder='{"key": "value"}'
+                  rows={3}
+                />
+              </Field>
+
+              <Field
+                label={t("models.field.customHeaders")}
+                hint={t("models.field.customHeadersHint")}
+              >
+                <Textarea
+                  value={form.customHeaders}
+                  onChange={setField("customHeaders")}
+                  placeholder='{"X-Source": "coding-plan"}'
                   rows={3}
                 />
               </Field>

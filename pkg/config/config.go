@@ -296,23 +296,24 @@ func (d *AgentDefaults) GetModelName() string {
 }
 
 type ChannelsConfig struct {
-	WhatsApp   WhatsAppConfig   `json:"whatsapp"    yaml:"-"`
-	Telegram   TelegramConfig   `json:"telegram"    yaml:"telegram,omitempty"`
-	Feishu     FeishuConfig     `json:"feishu"      yaml:"feishu,omitempty"`
-	Discord    DiscordConfig    `json:"discord"     yaml:"discord,omitempty"`
-	MaixCam    MaixCamConfig    `json:"maixcam"     yaml:"-"`
-	QQ         QQConfig         `json:"qq"          yaml:"qq,omitempty"`
-	DingTalk   DingTalkConfig   `json:"dingtalk"    yaml:"dingtalk,omitempty"`
-	Slack      SlackConfig      `json:"slack"       yaml:"slack,omitempty"`
-	Matrix     MatrixConfig     `json:"matrix"      yaml:"matrix,omitempty"`
-	LINE       LINEConfig       `json:"line"        yaml:"line,omitempty"`
-	OneBot     OneBotConfig     `json:"onebot"      yaml:"onebot,omitempty"`
-	WeCom      WeComConfig      `json:"wecom"       yaml:"wecom,omitempty"       envPrefix:"PICOCLAW_CHANNELS_WECOM_"`
-	Weixin     WeixinConfig     `json:"weixin"      yaml:"weixin,omitempty"`
-	Pico       PicoConfig       `json:"pico"        yaml:"pico,omitempty"`
-	PicoClient PicoClientConfig `json:"pico_client" yaml:"pico_client,omitempty"`
-	IRC        IRCConfig        `json:"irc"         yaml:"irc,omitempty"`
-	VK         VKConfig         `json:"vk"          yaml:"vk,omitempty"`
+	WhatsApp     WhatsAppConfig     `json:"whatsapp"      yaml:"-"`
+	Telegram     TelegramConfig     `json:"telegram"      yaml:"telegram,omitempty"`
+	Feishu       FeishuConfig       `json:"feishu"        yaml:"feishu,omitempty"`
+	Discord      DiscordConfig      `json:"discord"       yaml:"discord,omitempty"`
+	MaixCam      MaixCamConfig      `json:"maixcam"       yaml:"-"`
+	QQ           QQConfig           `json:"qq"            yaml:"qq,omitempty"`
+	DingTalk     DingTalkConfig     `json:"dingtalk"      yaml:"dingtalk,omitempty"`
+	Slack        SlackConfig        `json:"slack"         yaml:"slack,omitempty"`
+	Matrix       MatrixConfig       `json:"matrix"        yaml:"matrix,omitempty"`
+	LINE         LINEConfig         `json:"line"          yaml:"line,omitempty"`
+	OneBot       OneBotConfig       `json:"onebot"        yaml:"onebot,omitempty"`
+	WeCom        WeComConfig        `json:"wecom"         yaml:"wecom,omitempty"         envPrefix:"PICOCLAW_CHANNELS_WECOM_"`
+	Weixin       WeixinConfig       `json:"weixin"        yaml:"weixin,omitempty"`
+	Pico         PicoConfig         `json:"pico"          yaml:"pico,omitempty"`
+	PicoClient   PicoClientConfig   `json:"pico_client"   yaml:"pico_client,omitempty"`
+	IRC          IRCConfig          `json:"irc"           yaml:"irc,omitempty"`
+	VK           VKConfig           `json:"vk"            yaml:"vk,omitempty"`
+	TeamsWebhook TeamsWebhookConfig `json:"teams_webhook" yaml:"teams_webhook,omitempty"`
 }
 
 // GroupTriggerConfig controls when the bot responds in group chats.
@@ -582,6 +583,19 @@ func (c *VKConfig) SetToken(token string) {
 	c.Token = *NewSecureString(token)
 }
 
+// TeamsWebhookConfig configures the output-only Microsoft Teams webhook channel.
+// Multiple webhook targets can be configured and selected via ChatID at send time.
+type TeamsWebhookConfig struct {
+	Enabled  bool                          `json:"enabled"  yaml:"-"                  env:"PICOCLAW_CHANNELS_TEAMS_WEBHOOK_ENABLED"`
+	Webhooks map[string]TeamsWebhookTarget `json:"webhooks" yaml:"webhooks,omitempty"`
+}
+
+// TeamsWebhookTarget represents a single Teams webhook destination.
+type TeamsWebhookTarget struct {
+	WebhookURL SecureString `json:"webhook_url,omitzero" yaml:"webhook_url,omitempty"`
+	Title      string       `json:"title,omitempty"      yaml:"-"`
+}
+
 type HeartbeatConfig struct {
 	Enabled  bool `json:"enabled"  env:"PICOCLAW_HEARTBEAT_ENABLED"`
 	Interval int  `json:"interval" env:"PICOCLAW_HEARTBEAT_INTERVAL"` // minutes, min 5
@@ -621,11 +635,12 @@ type ModelConfig struct {
 	Workspace   string `json:"workspace,omitempty"`    // Workspace path for CLI-based providers
 
 	// Optional optimizations
-	RPM            int            `json:"rpm,omitempty"`              // Requests per minute limit
-	MaxTokensField string         `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
-	RequestTimeout int            `json:"request_timeout,omitempty"`
-	ThinkingLevel  string         `json:"thinking_level,omitempty"` // Extended thinking: off|low|medium|high|xhigh|adaptive
-	ExtraBody      map[string]any `json:"extra_body,omitempty"`     // Additional fields to inject into request body
+	RPM            int               `json:"rpm,omitempty"`              // Requests per minute limit
+	MaxTokensField string            `json:"max_tokens_field,omitempty"` // Field name for max tokens (e.g., "max_completion_tokens")
+	RequestTimeout int               `json:"request_timeout,omitempty"`
+	ThinkingLevel  string            `json:"thinking_level,omitempty"` // Extended thinking: off|low|medium|high|xhigh|adaptive
+	ExtraBody      map[string]any    `json:"extra_body,omitempty"`     // Additional fields to inject into request body
+	CustomHeaders  map[string]string `json:"custom_headers,omitempty"` // Additional headers to inject into every HTTP request
 
 	APIKeys SecureStrings `json:"api_keys,omitzero" yaml:"api_keys,omitempty"` // API authentication keys (multiple keys for failover)
 
@@ -959,8 +974,19 @@ type MCPServerConfig struct {
 type MCPConfig struct {
 	ToolConfig `                    envPrefix:"PICOCLAW_TOOLS_MCP_"`
 	Discovery  ToolDiscoveryConfig `                                json:"discovery"`
+	// MaxInlineTextChars controls how much MCP text stays inline before it is saved as an artifact.
+	MaxInlineTextChars int `json:"max_inline_text_chars,omitempty" env:"PICOCLAW_TOOLS_MCP_MAX_INLINE_TEXT_CHARS"`
 	// Servers is a map of server name to server configuration
 	Servers map[string]MCPServerConfig `json:"servers,omitempty"`
+}
+
+const DefaultMCPMaxInlineTextChars = 16 * 1024
+
+func (c *MCPConfig) GetMaxInlineTextChars() int {
+	if c.MaxInlineTextChars > 0 {
+		return c.MaxInlineTextChars
+	}
+	return DefaultMCPMaxInlineTextChars
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -1284,6 +1310,7 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 				RequestTimeout: m.RequestTimeout,
 				ThinkingLevel:  m.ThinkingLevel,
 				ExtraBody:      m.ExtraBody,
+				CustomHeaders:  m.CustomHeaders,
 				isVirtual:      true,
 			}
 			expanded = append(expanded, additionalEntry)
@@ -1304,6 +1331,7 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 			RequestTimeout: m.RequestTimeout,
 			ThinkingLevel:  m.ThinkingLevel,
 			ExtraBody:      m.ExtraBody,
+			CustomHeaders:  m.CustomHeaders,
 			APIKeys:        SimpleSecureStrings(keys[0]),
 		}
 

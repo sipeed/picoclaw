@@ -36,6 +36,7 @@ type Provider struct {
 	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
 	httpClient     *http.Client
 	extraBody      map[string]any // Additional fields to inject into request body
+	customHeaders  map[string]string
 	userAgent      string
 }
 
@@ -84,6 +85,12 @@ func WithRequestTimeout(timeout time.Duration) Option {
 func WithExtraBody(extraBody map[string]any) Option {
 	return func(p *Provider) {
 		p.extraBody = extraBody
+	}
+}
+
+func WithCustomHeaders(customHeaders map[string]string) Option {
+	return func(p *Provider) {
+		p.customHeaders = customHeaders
 	}
 }
 
@@ -181,6 +188,15 @@ func (p *Provider) buildRequestBody(
 	return requestBody
 }
 
+func (p *Provider) applyCustomHeaders(req *http.Request) {
+	for k, v := range p.customHeaders {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		req.Header.Set(k, v)
+	}
+}
+
 func (p *Provider) Chat(
 	ctx context.Context,
 	messages []Message,
@@ -211,6 +227,7 @@ func (p *Provider) Chat(
 	if p.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
+	p.applyCustomHeaders(req)
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
@@ -254,9 +271,13 @@ func (p *Provider) ChatStream(
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
+	if p.userAgent != "" {
+		req.Header.Set("User-Agent", p.userAgent)
+	}
 	if p.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
+	p.applyCustomHeaders(req)
 
 	// Use a client without Timeout for streaming — the http.Client.Timeout covers
 	// the entire request lifecycle including body reads, which would kill long streams.
