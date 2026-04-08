@@ -19,29 +19,27 @@ if [ -n "$LITELLM_BASE_URL" ]; then
   done
 fi
 
-cd "$WORKSPACE"
+# ── Playwright staging area ───────────────────────────────────────────────────
+# Copy tests + config to /tmp so Node.js module resolution never walks into the
+# GCS-mounted workspace and finds a stale node_modules there. Running from /tmp
+# means @playwright/test always resolves from /tmp/pw/node_modules only.
 
-# Always purge node_modules from the GCS bucket via gsutil (bypasses FUSE, which
-# does not reliably expose bucket prefixes as directories for [ -d ] checks).
-# node_modules in the bucket causes two @playwright/test instances → "test() called here".
-echo "Purging node_modules from GCS bucket..."
-gsutil -m rm -r "gs://${RESULTS_BUCKET}/node_modules/" 2>/dev/null || true
+PW="/tmp/pw"
+mkdir -p "$PW"
 
-# Install node_modules to /tmp — GCS FUSE does not support chmod,
-# which npm requires when linking bin scripts in node_modules.
-if [ ! -d "/tmp/node_modules" ]; then
-  echo "Installing dependencies to /tmp..."
-  cp "$WORKSPACE/package.json" /tmp/
-  cp "$WORKSPACE/package-lock.json" /tmp/ 2>/dev/null || true
-  cd /tmp && npm install --prefer-offline 2>&1
-  cd "$WORKSPACE"
-fi
+echo "Staging tests from workspace to /tmp/pw..."
+cp -r "$WORKSPACE/tests" "$PW/"
+cp "$WORKSPACE/playwright.config.ts" "$PW/" 2>/dev/null || true
+cp "$WORKSPACE/package.json" "$PW/"
+cp "$WORKSPACE/package-lock.json" "$PW/" 2>/dev/null || true
 
-export PATH="/tmp/node_modules/.bin:$PATH"
-export NODE_PATH="/tmp/node_modules"
+cd "$PW"
 
-# Run a group of tests. Exits the script if any test fails.
-# Usage: run_group "Group Name" <spec1> <spec2> ...
+echo "Installing dependencies..."
+npm install --prefer-offline 2>&1
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
 run_group() {
   local group_name="$1"
   shift
@@ -49,14 +47,16 @@ run_group() {
   echo "=================================================="
   echo "GROUP: $group_name"
   echo "=================================================="
-  /tmp/node_modules/.bin/playwright test "$@" --reporter=line
+  "$PW/node_modules/.bin/playwright" test "$@" --reporter=line
 }
+
+# ── Dispatch ──────────────────────────────────────────────────────────────────
 
 JOB_TYPE="${JOB_TYPE:-run-all}"
 
 case "$JOB_TYPE" in
   run-all)
-    # Tests are run in dependency order:
+    # Tests run in dependency order:
     #   auth → knowledge-base (create → operate → delete)
     #       → flow-designer → flow-tester
     #       → profile → organization → settings → logs
@@ -136,7 +136,7 @@ case "$JOB_TYPE" in
       exit 1
     fi
     echo "Running test: $JOB_SPEC"
-    /tmp/node_modules/.bin/playwright test "$JOB_SPEC" --reporter=line
+    "$PW/node_modules/.bin/playwright" test "$JOB_SPEC" --reporter=line
     ;;
 
   generate)
