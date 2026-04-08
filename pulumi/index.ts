@@ -7,6 +7,7 @@ const config = new pulumi.Config();
 const gcpConfig = new pulumi.Config("gcp");
 
 const project = gcpConfig.require("project");
+const enterpriseAutomationProjectId = "enterprise-automation-352103";
 const region = config.get("region") ?? "europe-west4";
 const imageTag = config.get("imageTag") ?? "latest";
 const imageName = config.get("imageName") ?? "picoclaw-e2e-testing";
@@ -21,7 +22,7 @@ const LITELLM_MODEL = "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0";
 const picoRepo = new gcp.artifactregistry.Repository("picoclaw-repo", {
     repositoryId: "picoclaw",
     location: region,
-    project,
+    project: enterpriseAutomationProjectId,
     format: "DOCKER",
 });
 
@@ -29,7 +30,7 @@ const picoRepo = new gcp.artifactregistry.Repository("picoclaw-repo", {
 const ghcrRemoteRepo = new gcp.artifactregistry.Repository("ghcr-remote", {
     repositoryId: "ghcr-remote",
     location: region,
-    project,
+    project: enterpriseAutomationProjectId,
     format: "DOCKER",
     mode: "REMOTE_REPOSITORY",
     remoteRepositoryConfig: {
@@ -41,7 +42,7 @@ const ghcrRemoteRepo = new gcp.artifactregistry.Repository("ghcr-remote", {
     },
 });
 
-const PICOCLAW_IMAGE = pulumi.interpolate`${region}-docker.pkg.dev/enterprise-automation-352103/${picoRepo.repositoryId}/${imageName}:${imageTag}`;
+const PICOCLAW_IMAGE = pulumi.interpolate`${region}-docker.pkg.dev/enterprise-automation-352103/container-repo/${imageName}:${imageTag}`;
 const LITELLM_IMAGE = pulumi.interpolate`${region}-docker.pkg.dev/enterprise-automation-352103/${ghcrRemoteRepo.repositoryId}/berriai/litellm:main-latest`;
 
 // ── Service Account ───────────────────────────────────────────────────────────
@@ -103,22 +104,12 @@ const awsSecretKeyRef = {
     },
 };
 
-// // Grant SA read access to both AR repos (same project — no cross-project issue)
-// new gcp.artifactregistry.RepositoryIamMember("sa-picoclaw-repo-reader", {
-//     project,
-//     location: region,
-//     repository: picoRepo.repositoryId,
-//     role: "roles/artifactregistry.reader",
-//     member: pulumi.interpolate`serviceAccount:${sa.email}`,
-// });
-
-// new gcp.artifactregistry.RepositoryIamMember("sa-ghcr-remote-reader", {
-//     project,
-//     location: region,
-//     repository: ghcrRemoteRepo.repositoryId,
-//     role: "roles/artifactregistry.reader",
-//     member: pulumi.interpolate`serviceAccount:${sa.email}`,
-// });
+// Grant SA read access to all AR repos in the project
+new gcp.projects.IAMMember("sa-ar-reader", {
+    project,
+    role: "roles/artifactregistry.reader",
+    member: pulumi.interpolate`serviceAccount:${sa.email}`,
+});
 
 // ── Storage Bucket ────────────────────────────────────────────────────────────
 

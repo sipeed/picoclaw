@@ -29,8 +29,8 @@ stages:
         gcloud auth configure-docker $(Registry) --quiet
       displayName: Configure Docker for GCR
     - script: |
-        docker build -t $(Registry)/$(DockerImageName):$(Build.SourceVersion) -f docker/Dockerfile .
+        docker build -t $(Registry)/$(DockerImageName):latest -f docker/Dockerfile .
       displayName: Build docker image
     - script: |
-        docker push $(Registry)/$(DockerImageName):$(Build.SourceVersion)
+        docker push $(Registry)/$(DockerImageName):latest
       displayName: Push docker image
