@@ -114,7 +114,6 @@ func TestBuildLinuxMountPlan(t *testing.T) {
 }
 
 func TestBuildWindowsAccessRules(t *testing.T) {
-	t.Setenv("USERPROFILE", `C:\Users\tester`)
 	rules := BuildWindowsAccessRules(
 		`C:\picoclaw`,
 		[]config.ExposePath{{Source: `D:\data`, Target: `C:\mapped`, Mode: "ro"}},
@@ -137,6 +136,37 @@ func TestBuildWindowsAccessRules(t *testing.T) {
 	}
 	if !foundOverride {
 		t.Fatal("BuildWindowsAccessRules missing override rule")
+	}
+}
+
+func TestValidateWindowsExposePaths(t *testing.T) {
+	if err := validateWindowsExposePaths(nil); err != nil {
+		t.Fatalf("validateWindowsExposePaths(nil) error = %v", err)
+	}
+	err := validateWindowsExposePaths([]config.ExposePath{{Source: `D:\data`, Target: `D:\data`, Mode: "ro"}})
+	if err == nil {
+		t.Fatal("validateWindowsExposePaths() expected error for expose_paths")
+	}
+}
+
+func TestDefaultLinuxSystemExposePaths(t *testing.T) {
+	paths := defaultLinuxSystemExposePaths()
+	needed := map[string]bool{
+		"/etc/hosts":          false,
+		"/etc/nsswitch.conf":  false,
+		"/etc/ssl":            false,
+		"/usr/share/zoneinfo": false,
+		"/etc/localtime":      false,
+	}
+	for _, item := range paths {
+		if _, ok := needed[item.Source]; ok {
+			needed[item.Source] = true
+		}
+	}
+	for path, found := range needed {
+		if !found {
+			t.Fatalf("defaultLinuxSystemExposePaths missing %s", path)
+		}
 	}
 }
 

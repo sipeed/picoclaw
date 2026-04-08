@@ -54,7 +54,7 @@ type IsolationConfig struct {
 }
 
 // ExposePath describes a host path that should remain visible inside the isolated
-// child-process environment.
+// child-process environment. This is currently implemented on Linux only.
 type ExposePath struct {
 	Source string `json:"source"`
 	Target string `json:"target,omitempty"`

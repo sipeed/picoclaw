@@ -39,11 +39,12 @@ func applyPlatformIsolation(cmd *exec.Cmd, isolation config.IsolationConfig, roo
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
 	rules := BuildWindowsAccessRules(root, isolation.ExposePaths)
-	logger.InfoCF("isolation", "windows isolation access rules",
+	logger.InfoCF("isolation", "windows isolation process constraints",
 		map[string]any{
 			"root":    root,
 			"command": cmd.Path,
 			"rules":   formatWindowsAccessRules(rules),
+			"note":    "Windows currently enforces restricted token, low integrity, and job object limits; expose_paths filesystem remapping is rejected during preflight",
 		})
 	// Create the restricted token before the process starts so CreateProcess uses
 	// the reduced privilege set from the first instruction.

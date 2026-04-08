@@ -227,15 +227,31 @@ func DefaultExposePaths(root string) []config.ExposePath {
 		Mode:   "rw",
 	}}
 	if runtime.GOOS == "linux" {
-		items = append(items,
-			config.ExposePath{Source: "/usr", Target: "/usr", Mode: "ro"},
-			config.ExposePath{Source: "/bin", Target: "/bin", Mode: "ro"},
-			config.ExposePath{Source: "/lib", Target: "/lib", Mode: "ro"},
-			config.ExposePath{Source: "/lib64", Target: "/lib64", Mode: "ro"},
-			config.ExposePath{Source: "/etc/resolv.conf", Target: "/etc/resolv.conf", Mode: "ro"},
-		)
+		items = append(items, defaultLinuxSystemExposePaths()...)
 	}
 	return items
+}
+
+func defaultLinuxSystemExposePaths() []config.ExposePath {
+	return []config.ExposePath{
+		{Source: "/usr", Target: "/usr", Mode: "ro"},
+		{Source: "/bin", Target: "/bin", Mode: "ro"},
+		{Source: "/lib", Target: "/lib", Mode: "ro"},
+		{Source: "/lib64", Target: "/lib64", Mode: "ro"},
+		{Source: "/etc/resolv.conf", Target: "/etc/resolv.conf", Mode: "ro"},
+		{Source: "/etc/hosts", Target: "/etc/hosts", Mode: "ro"},
+		{Source: "/etc/nsswitch.conf", Target: "/etc/nsswitch.conf", Mode: "ro"},
+		{Source: "/etc/passwd", Target: "/etc/passwd", Mode: "ro"},
+		{Source: "/etc/group", Target: "/etc/group", Mode: "ro"},
+		{Source: "/etc/ssl", Target: "/etc/ssl", Mode: "ro"},
+		{Source: "/etc/pki", Target: "/etc/pki", Mode: "ro"},
+		{Source: "/etc/ca-certificates", Target: "/etc/ca-certificates", Mode: "ro"},
+		{Source: "/usr/share/ca-certificates", Target: "/usr/share/ca-certificates", Mode: "ro"},
+		{Source: "/usr/local/share/ca-certificates", Target: "/usr/local/share/ca-certificates", Mode: "ro"},
+		{Source: "/etc/alternatives", Target: "/etc/alternatives", Mode: "ro"},
+		{Source: "/usr/share/zoneinfo", Target: "/usr/share/zoneinfo", Mode: "ro"},
+		{Source: "/etc/localtime", Target: "/etc/localtime", Mode: "ro"},
+	}
 }
 
 // MergeExposePaths merges built-in rules with user overrides. Rules are keyed
@@ -276,19 +292,17 @@ func BuildLinuxMountPlan(root string, overrides []config.ExposePath) []MountRule
 // Windows restricted-token backend.
 func BuildWindowsAccessRules(root string, overrides []config.ExposePath) []AccessRule {
 	rules := []AccessRule{{Path: root, Mode: "rw"}}
-	if userProfile := os.Getenv("USERPROFILE"); userProfile != "" {
-		rules = append(rules,
-			AccessRule{Path: filepath.Join(userProfile, ".ssh"), Mode: "deny"},
-			AccessRule{Path: filepath.Join(userProfile, ".gitconfig"), Mode: "deny"},
-			AccessRule{Path: filepath.Join(userProfile, "Documents"), Mode: "deny"},
-			AccessRule{Path: filepath.Join(userProfile, "Desktop"), Mode: "deny"},
-			AccessRule{Path: filepath.Join(userProfile, "Downloads"), Mode: "deny"},
-		)
-	}
 	for _, item := range MergeExposePaths(nil, overrides) {
 		rules = append(rules, AccessRule{Path: item.Source, Mode: item.Mode})
 	}
 	return rules
+}
+
+func validateWindowsExposePaths(items []config.ExposePath) error {
+	if len(items) == 0 {
+		return nil
+	}
+	return fmt.Errorf("windows isolation does not yet support expose_paths filesystem rules")
 }
 
 // IsSupported reports whether the current platform has an implemented isolation
@@ -334,6 +348,9 @@ func Preflight() error {
 		}
 	}
 	if runtime.GOOS == "windows" {
+		if err := validateWindowsExposePaths(isolation.ExposePaths); err != nil {
+			return err
+		}
 		for _, rule := range BuildWindowsAccessRules(root, isolation.ExposePaths) {
 			if rule.Path == "" {
 				return fmt.Errorf("invalid windows access rule")

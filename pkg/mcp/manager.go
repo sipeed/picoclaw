@@ -372,7 +372,7 @@ func (m *Manager) ConnectServer(
 			return fmt.Errorf("prepare stdio MCP isolation: %w", err)
 		}
 
-		transport = &mcp.CommandTransport{Command: cmd}
+		transport = &isolatedCommandTransport{Command: cmd}
 	default:
 		return fmt.Errorf(
 			"unsupported transport type: %s (supported: stdio, sse, http)",
