@@ -44,9 +44,9 @@ func applyPlatformIsolation(cmd *exec.Cmd, isolation config.IsolationConfig, roo
 	originalArgs := append([]string{}, cmd.Args...)
 	originalDir := cmd.Dir
 
-	// Start from the configured mount plan, then add the executable, its resolved
-	// path, the working directory, and any absolute path arguments the process may
-	// need at runtime.
+	// Start from the configured mount plan, then add only the executable, its
+	// resolved path, and the working directory. Any additional host paths must be
+	// exposed explicitly via config instead of being inferred from argv.
 	plan := BuildLinuxMountPlan(root, isolation.ExposePaths)
 	plan = ensureLinuxMountRule(plan, originalPath, originalPath, "ro")
 	plan = ensureLinuxMountRule(plan, filepath.Dir(originalPath), filepath.Dir(originalPath), "ro")
@@ -58,11 +58,6 @@ func applyPlatformIsolation(cmd *exec.Cmd, isolation config.IsolationConfig, roo
 		plan = ensureLinuxMountRule(plan, originalDir, originalDir, "rw")
 		if resolved, resolveErr := filepath.EvalSymlinks(originalDir); resolveErr == nil && resolved != originalDir {
 			plan = ensureLinuxMountRule(plan, resolved, resolved, "rw")
-		}
-	}
-	for _, arg := range originalArgs[1:] {
-		if filepath.IsAbs(arg) {
-			plan = ensureLinuxPathForArgument(plan, arg)
 		}
 	}
 	logger.DebugCF("isolation", "linux isolation mount plan",
@@ -165,25 +160,4 @@ func linuxBindFlag(rule MountRule) (string, error) {
 		return "--bind", nil
 	}
 	return "--ro-bind", nil
-}
-
-// ensureLinuxPathForArgument exposes absolute-path arguments conservatively so
-// common CLI flags that point at files or directories keep working in the
-// isolated filesystem view.
-func ensureLinuxPathForArgument(plan []MountRule, arg string) []MountRule {
-	clean := filepath.Clean(arg)
-	if info, err := os.Stat(clean); err == nil {
-		if info.IsDir() {
-			return ensureLinuxMountRule(plan, clean, clean, "rw")
-		}
-		return ensureLinuxMountRule(plan, filepath.Dir(clean), filepath.Dir(clean), "rw")
-	}
-	parent := filepath.Dir(clean)
-	if parent == "." || parent == "/" {
-		return plan
-	}
-	if _, err := os.Stat(parent); err == nil {
-		return ensureLinuxMountRule(plan, parent, parent, "rw")
-	}
-	return plan
 }

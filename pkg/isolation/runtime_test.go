@@ -1,6 +1,7 @@
 package isolation
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -25,17 +26,28 @@ func TestPrepareInstanceRoot_CreatesDirectories(t *testing.T) {
 	if err := PrepareInstanceRoot(root); err != nil {
 		t.Fatalf("PrepareInstanceRoot() error = %v", err)
 	}
-	for _, dir := range []string{
-		root,
-		filepath.Join(root, "workspace"),
-		filepath.Join(root, "skills"),
-		filepath.Join(root, "logs"),
-		filepath.Join(root, "cache"),
-		filepath.Join(root, "state"),
-		filepath.Join(root, "runtime-user-env"),
-	} {
-		if _, err := filepath.Abs(dir); err != nil {
-			t.Fatalf("filepath.Abs(%q): %v", dir, err)
+	for _, dir := range InstanceDirs(root) {
+		if info, err := os.Stat(dir); err != nil {
+			t.Fatalf("os.Stat(%q): %v", dir, err)
+		} else if !info.IsDir() {
+			t.Fatalf("%q is not a directory", dir)
+		}
+	}
+}
+
+func TestIsSupportedOn(t *testing.T) {
+	tests := []struct {
+		goos string
+		want bool
+	}{
+		{goos: "linux", want: true},
+		{goos: "windows", want: true},
+		{goos: "darwin", want: false},
+		{goos: "freebsd", want: false},
+	}
+	for _, tt := range tests {
+		if got := isSupportedOn(tt.goos); got != tt.want {
+			t.Fatalf("isSupportedOn(%q) = %v, want %v", tt.goos, got, tt.want)
 		}
 	}
 }

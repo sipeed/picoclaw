@@ -294,7 +294,11 @@ func BuildWindowsAccessRules(root string, overrides []config.ExposePath) []Acces
 // IsSupported reports whether the current platform has an implemented isolation
 // backend.
 func IsSupported() bool {
-	switch runtime.GOOS {
+	return isSupportedOn(runtime.GOOS)
+}
+
+func isSupportedOn(goos string) bool {
+	switch goos {
 	case "linux", "windows":
 		return true
 	default:
@@ -308,6 +312,9 @@ func Preflight() error {
 	isolation := CurrentConfig()
 	if !isolation.Enabled {
 		return nil
+	}
+	if !IsSupported() {
+		return fmt.Errorf("subprocess isolation is not supported on %s", runtime.GOOS)
 	}
 	root, err := ResolveInstanceRoot()
 	if err != nil {

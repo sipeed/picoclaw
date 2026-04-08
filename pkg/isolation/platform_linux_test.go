@@ -30,6 +30,8 @@ func TestBuildLinuxBwrapArgs_IncludesNamespaceFlagsAndExec(t *testing.T) {
 	hasExec := false
 	for i := range args {
 		switch args[i] {
+		case "--unshare-net":
+			hasNet = true
 		case "--unshare-ipc":
 			hasIPC = true
 		case "--":
