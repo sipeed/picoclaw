@@ -160,8 +160,8 @@ const e2eJob = new gcp.cloudrunv2.Job("picoclaw-e2e-job", {
                     args: ["--model", LITELLM_MODEL, "--port", "4000"],
                     resources: {
                         limits: {
-                            memory: "512Mi",
-                            cpu: "500m",
+                            memory: "2Gi",
+                            cpu: "1000m",
                         },
                     },
                     envs: [

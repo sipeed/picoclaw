@@ -21,11 +21,18 @@ fi
 
 cd "$WORKSPACE"
 
-# Install dependencies if node_modules is missing
-if [ ! -d "node_modules" ]; then
-  echo "Installing dependencies..."
-  npm install
+# Install node_modules to /tmp — GCS FUSE does not support chmod,
+# which npm requires when linking bin scripts in node_modules.
+if [ ! -d "/tmp/node_modules" ]; then
+  echo "Installing dependencies to /tmp..."
+  cp "$WORKSPACE/package.json" /tmp/
+  cp "$WORKSPACE/package-lock.json" /tmp/ 2>/dev/null || true
+  cd /tmp && npm install --prefer-offline 2>&1
+  cd "$WORKSPACE"
 fi
+
+export PATH="/tmp/node_modules/.bin:$PATH"
+export NODE_PATH="/tmp/node_modules"
 
 # Run a group of tests. Exits the script if any test fails.
 # Usage: run_group "Group Name" <spec1> <spec2> ...
