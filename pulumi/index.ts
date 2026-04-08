@@ -41,8 +41,8 @@ const ghcrRemoteRepo = new gcp.artifactregistry.Repository("ghcr-remote", {
     },
 });
 
-const PICOCLAW_IMAGE = pulumi.interpolate`${region}-docker.pkg.dev/${project}/${picoRepo.repositoryId}/${imageName}:${imageTag}`;
-const LITELLM_IMAGE = pulumi.interpolate`${region}-docker.pkg.dev/${project}/${ghcrRemoteRepo.repositoryId}/berriai/litellm:main-latest`;
+const PICOCLAW_IMAGE = pulumi.interpolate`${region}-docker.pkg.dev/enterprise-automation-352103/${picoRepo.repositoryId}/${imageName}:${imageTag}`;
+const LITELLM_IMAGE = pulumi.interpolate`${region}-docker.pkg.dev/enterprise-automation-352103/${ghcrRemoteRepo.repositoryId}/berriai/litellm:main-latest`;
 
 // ── Service Account ───────────────────────────────────────────────────────────
 
@@ -122,8 +122,7 @@ const awsSecretKeyRef = {
 
 // ── Storage Bucket ────────────────────────────────────────────────────────────
 
-const bucket = new gcp.storage.Bucket("picoclaw-e2e-testing-bucket", {
-    name: `picoclaw-e2e-testing`,
+const bucket = new gcp.storage.Bucket("picoclaw-e2e-testing", {
     project,
     location: region,
     uniformBucketLevelAccess: true,
