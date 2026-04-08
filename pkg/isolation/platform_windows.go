@@ -101,9 +101,9 @@ func postStartPlatformIsolation(cmd *exec.Cmd, isolation config.IsolationConfig,
 		}
 		return fmt.Errorf("open process for job assignment: %w", err)
 	}
-	defer windows.CloseHandle(proc)
 
 	if err := windows.AssignProcessToJobObject(job, proc); err != nil {
+		_ = windows.CloseHandle(proc)
 		_ = windows.CloseHandle(job)
 		if resources.token != 0 {
 			_ = resources.token.Close()
@@ -118,6 +118,20 @@ func postStartPlatformIsolation(cmd *exec.Cmd, isolation config.IsolationConfig,
 	windowsProcessResourcesByPID.Store(cmd.Process.Pid, resources)
 	go reapWindowsProcessResources(cmd.Process.Pid, proc, job)
 	return nil
+}
+
+func cleanupPendingPlatformResources(cmd *exec.Cmd) {
+	if cmd == nil {
+		return
+	}
+	resourcesAny, ok := windowsPendingResources.LoadAndDelete(cmd)
+	if !ok {
+		return
+	}
+	resources, _ := resourcesAny.(windowsProcessResources)
+	if resources.token != 0 {
+		_ = resources.token.Close()
+	}
 }
 
 func reapWindowsProcessResources(pid int, proc windows.Handle, job windows.Handle) {

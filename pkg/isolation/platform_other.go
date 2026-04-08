@@ -17,3 +17,6 @@ func applyPlatformIsolation(cmd *exec.Cmd, isolation config.IsolationConfig, roo
 func postStartPlatformIsolation(cmd *exec.Cmd, isolation config.IsolationConfig, root string) error {
 	return nil
 }
+
+func cleanupPendingPlatformResources(cmd *exec.Cmd) {
+}

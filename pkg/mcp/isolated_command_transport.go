@@ -220,5 +220,7 @@ func (c *isolatedIOConn) Close() error {
 	return c.closeErr
 }
 
-var _ sdkmcp.Transport = (*isolatedCommandTransport)(nil)
-var _ sdkmcp.Connection = (*isolatedIOConn)(nil)
+var (
+	_ sdkmcp.Transport  = (*isolatedCommandTransport)(nil)
+	_ sdkmcp.Connection = (*isolatedIOConn)(nil)
+)

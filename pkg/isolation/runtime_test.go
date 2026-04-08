@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/sipeed/picoclaw/pkg"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -32,6 +33,30 @@ func TestPrepareInstanceRoot_CreatesDirectories(t *testing.T) {
 		} else if !info.IsDir() {
 			t.Fatalf("%q is not a directory", dir)
 		}
+	}
+}
+
+func TestInstanceDirs_UsesInstanceWorkspaceNotGlobalState(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "instance")
+	cfg := config.DefaultConfig()
+	cfg.Isolation.Enabled = true
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "external-workspace")
+	Configure(cfg)
+	t.Cleanup(func() { Configure(config.DefaultConfig()) })
+
+	dirs := InstanceDirs(root)
+	wantWorkspace := filepath.Join(root, pkg.WorkspaceName)
+	found := false
+	for _, dir := range dirs {
+		if dir == wantWorkspace {
+			found = true
+		}
+		if dir == cfg.WorkspacePath() {
+			t.Fatalf("InstanceDirs() should not depend on process-wide workspace state: %q", dir)
+		}
+	}
+	if !found {
+		t.Fatalf("InstanceDirs() missing instance workspace dir %q", wantWorkspace)
 	}
 }
 

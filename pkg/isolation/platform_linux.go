@@ -99,6 +99,9 @@ func postStartPlatformIsolation(cmd *exec.Cmd, isolation config.IsolationConfig,
 	return nil
 }
 
+func cleanupPendingPlatformResources(cmd *exec.Cmd) {
+}
+
 // buildLinuxBwrapArgs translates the mount plan into the bubblewrap command
 // line that re-executes the original process inside the isolated mount view.
 func buildLinuxBwrapArgs(

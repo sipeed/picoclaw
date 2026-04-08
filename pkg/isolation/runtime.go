@@ -42,7 +42,6 @@ type UserEnv struct {
 var (
 	isolationMu      sync.RWMutex
 	currentIsolation = config.DefaultConfig().Isolation
-	currentWorkspace = config.DefaultConfig().WorkspacePath()
 )
 
 // Configure updates the process-wide isolation state used by subsequent child
@@ -53,11 +52,9 @@ func Configure(cfg *config.Config) {
 	if cfg == nil {
 		defaults := config.DefaultConfig()
 		currentIsolation = defaults.Isolation
-		currentWorkspace = defaults.WorkspacePath()
 		return
 	}
 	currentIsolation = cfg.Isolation
-	currentWorkspace = filepath.Clean(cfg.WorkspacePath())
 }
 
 // CurrentConfig returns the currently active isolation settings.
@@ -65,14 +62,6 @@ func CurrentConfig() config.IsolationConfig {
 	isolationMu.RLock()
 	defer isolationMu.RUnlock()
 	return currentIsolation
-}
-
-// CurrentWorkspace returns the workspace path currently associated with the
-// configured runtime state.
-func CurrentWorkspace() string {
-	isolationMu.RLock()
-	defer isolationMu.RUnlock()
-	return currentWorkspace
 }
 
 // ResolveInstanceRoot resolves the instance root used to build the isolated
@@ -111,11 +100,7 @@ func InstanceDirs(root string) []string {
 		filepath.Join(root, "runtime-user-env", "cache"),
 		filepath.Join(root, "runtime-user-env", "state"),
 	}
-	workspace := CurrentWorkspace()
-	if workspace == "" {
-		workspace = filepath.Join(root, pkg.WorkspaceName)
-	}
-	dirs = append(dirs, workspace)
+	dirs = append(dirs, filepath.Join(root, pkg.WorkspaceName))
 	if runtime.GOOS == "windows" {
 		dirs = append(dirs,
 			filepath.Join(root, "runtime-user-env", "AppData", "Roaming"),
@@ -291,8 +276,10 @@ func BuildLinuxMountPlan(root string, overrides []config.ExposePath) []MountRule
 // BuildWindowsAccessRules derives the host-path access policy used by the
 // Windows restricted-token backend.
 func BuildWindowsAccessRules(root string, overrides []config.ExposePath) []AccessRule {
-	rules := []AccessRule{{Path: root, Mode: "rw"}}
-	for _, item := range MergeExposePaths(nil, overrides) {
+	merged := MergeExposePaths(nil, overrides)
+	rules := make([]AccessRule, 0, len(merged)+1)
+	rules = append(rules, AccessRule{Path: root, Mode: "rw"})
+	for _, item := range merged {
 		rules = append(rules, AccessRule{Path: item.Source, Mode: item.Mode})
 	}
 	return rules
@@ -367,6 +354,7 @@ func Start(cmd *exec.Cmd) error {
 		return err
 	}
 	if err := cmd.Start(); err != nil {
+		cleanupPendingPlatformResources(cmd)
 		return err
 	}
 	isolation := CurrentConfig()
@@ -393,6 +381,7 @@ func Run(cmd *exec.Cmd) error {
 		return err
 	}
 	if err := cmd.Start(); err != nil {
+		cleanupPendingPlatformResources(cmd)
 		return err
 	}
 	isolation := CurrentConfig()

@@ -16,7 +16,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/isolation"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
@@ -366,12 +365,6 @@ func (m *Manager) ConnectServer(
 			env = append(env, fmt.Sprintf("%s=%s", k, v))
 		}
 		cmd.Env = env
-		// Apply the shared isolation preparation before the MCP SDK takes over the
-		// stdio transport so stdio servers see the same isolated environment.
-		if err := isolation.PrepareCommand(cmd); err != nil {
-			return fmt.Errorf("prepare stdio MCP isolation: %w", err)
-		}
-
 		transport = &isolatedCommandTransport{Command: cmd}
 	default:
 		return fmt.Errorf(
