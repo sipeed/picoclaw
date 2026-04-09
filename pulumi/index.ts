@@ -117,6 +117,9 @@ const bucket = new gcp.storage.Bucket("picoclaw-e2e-testing", {
     project,
     location: region,
     uniformBucketLevelAccess: true,
+    labels: {
+        "do-not-delete": "true",
+    }
 });
 
 new gcp.storage.BucketIAMMember("sa-bucket-writer", {
@@ -140,6 +143,9 @@ const e2eJob = new gcp.cloudrunv2.Job("picoclaw-e2e-job", {
     name: "picoclaw-e2e",
     location: region,
     project,
+    labels: {
+        "do-not-delete": "true",
+    },
     template: {
         template: {
             serviceAccount: sa.email,
