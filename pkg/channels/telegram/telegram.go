@@ -3,6 +3,8 @@ package telegram
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -45,12 +48,13 @@ var (
 
 type TelegramChannel struct {
 	*channels.BaseChannel
-	bot     *telego.Bot
-	bh      *th.BotHandler
-	config  *config.Config
-	chatIDs map[string]int64
-	ctx     context.Context
-	cancel  context.CancelFunc
+	bot       *telego.Bot
+	bh        *th.BotHandler
+	config    *config.Config
+	chatIDs   map[string]int64
+	ctx       context.Context
+	cancel    context.CancelFunc
+	downloadC *tls.Config
 
 	registerFunc     func(context.Context, []commands.Definition) error
 	commandRegCancel context.CancelFunc
@@ -60,23 +64,18 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 	var opts []telego.BotOption
 	telegramCfg := cfg.Channels.Telegram
 
+	transport, err := telegramHTTPTransport(telegramCfg)
+	if err != nil {
+		return nil, err
+	}
+	opts = append(opts, telego.WithHTTPClient(&http.Client{Transport: transport}))
+
 	if telegramCfg.Proxy != "" {
 		proxyURL, parseErr := url.Parse(telegramCfg.Proxy)
 		if parseErr != nil {
 			return nil, fmt.Errorf("invalid proxy URL %q: %w", telegramCfg.Proxy, parseErr)
 		}
-		opts = append(opts, telego.WithHTTPClient(&http.Client{
-			Transport: &http.Transport{
-				Proxy: http.ProxyURL(proxyURL),
-			},
-		}))
-	} else if os.Getenv("HTTP_PROXY") != "" || os.Getenv("HTTPS_PROXY") != "" {
-		// Use environment proxy if configured
-		opts = append(opts, telego.WithHTTPClient(&http.Client{
-			Transport: &http.Transport{
-				Proxy: http.ProxyFromEnvironment,
-			},
-		}))
+		transport.Proxy = http.ProxyURL(proxyURL)
 	}
 
 	if baseURL := strings.TrimRight(strings.TrimSpace(telegramCfg.BaseURL), "/"); baseURL != "" {
@@ -104,6 +103,82 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 		bot:         bot,
 		config:      cfg,
 		chatIDs:     make(map[string]int64),
+		downloadC:   transport.TLSClientConfig,
+	}, nil
+}
+
+func telegramHTTPTransport(cfg config.TelegramConfig) (*http.Transport, error) {
+	// Clone default transport to preserve Go's standard dial/TLS timeouts.
+	t := http.DefaultTransport.(*http.Transport).Clone()
+
+	tlsCfg, err := telegramTLSConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if tlsCfg != nil {
+		t.TLSClientConfig = tlsCfg
+	}
+	return t, nil
+}
+
+func telegramTLSConfig(cfg config.TelegramConfig) (*tls.Config, error) {
+	if !cfg.TLSInsecure && strings.TrimSpace(cfg.TLSCAFile) == "" && strings.TrimSpace(cfg.TLSCADir) == "" {
+		return nil, nil
+	}
+	if cfg.TLSInsecure {
+		logger.WarnC("telegram", "TLS verification is disabled via channels.telegram.tls_insecure")
+	}
+
+	base, err := x509.SystemCertPool()
+	if err != nil || base == nil {
+		if err != nil {
+			logger.WarnCF("telegram", "Failed to load system cert pool; using empty cert pool", map[string]any{
+				"error": err.Error(),
+			})
+		}
+		base = x509.NewCertPool()
+	}
+
+	if caFile := strings.TrimSpace(cfg.TLSCAFile); caFile != "" {
+		pemBytes, readErr := os.ReadFile(caFile)
+		if readErr != nil {
+			return nil, fmt.Errorf("telegram tls_ca_file read %q: %w", caFile, readErr)
+		}
+		if ok := base.AppendCertsFromPEM(pemBytes); !ok {
+			return nil, fmt.Errorf("telegram tls_ca_file %q: no certificates found", caFile)
+		}
+	}
+
+	if caDir := strings.TrimSpace(cfg.TLSCADir); caDir != "" {
+		entries, readErr := os.ReadDir(caDir)
+		if readErr != nil {
+			return nil, fmt.Errorf("telegram tls_ca_dir read %q: %w", caDir, readErr)
+		}
+		for _, ent := range entries {
+			if ent.IsDir() {
+				continue
+			}
+			p := filepath.Join(caDir, ent.Name())
+			b, e := os.ReadFile(p)
+			if e != nil {
+				continue
+			}
+			if ok := base.AppendCertsFromPEM(b); !ok {
+				name := strings.ToLower(ent.Name())
+				if strings.HasSuffix(name, ".pem") ||
+					strings.HasSuffix(name, ".crt") ||
+					strings.HasSuffix(name, ".cer") {
+					logger.WarnCF("telegram", "Failed to parse certificate file in tls_ca_dir", map[string]any{
+						"path": p,
+					})
+				}
+			}
+		}
+	}
+
+	return &tls.Config{
+		RootCAs:            base,
+		InsecureSkipVerify: cfg.TLSInsecure,
 	}, nil
 }
 
@@ -916,6 +991,8 @@ func (c *TelegramChannel) downloadFileWithInfo(file *telego.File, ext string) st
 	filename := file.FilePath + ext
 	return utils.DownloadFile(url, filename, utils.DownloadOptions{
 		LoggerPrefix: "telegram",
+		ProxyURL:     c.config.Channels.Telegram.Proxy,
+		TLSConfig:    c.downloadC,
 	})
 }
 
