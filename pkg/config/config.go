@@ -312,6 +312,7 @@ type ChannelsConfig struct {
 	Pico         PicoConfig         `json:"pico"          yaml:"pico,omitempty"`
 	PicoClient   PicoClientConfig   `json:"pico_client"   yaml:"pico_client,omitempty"`
 	IRC          IRCConfig          `json:"irc"           yaml:"irc,omitempty"`
+	Chatmail     ChatmailConfig     `json:"chatmail"      yaml:"chatmail,omitempty"`
 	VK           VKConfig           `json:"vk"            yaml:"vk,omitempty"`
 	TeamsWebhook TeamsWebhookConfig `json:"teams_webhook" yaml:"teams_webhook,omitempty"`
 }
@@ -566,6 +567,15 @@ type IRCConfig struct {
 	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"    yaml:"-"`
 	Typing             TypingConfig        `json:"typing,omitempty"           yaml:"-"`
 	ReasoningChannelID string              `json:"reasoning_channel_id"       yaml:"-"`
+}
+
+type ChatmailConfig struct {
+	Enabled            bool                `json:"enabled"                 yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_ENABLED"`
+	AccountPath        string              `json:"account_path"            yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_ACCOUNT_PATH"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"              yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty" yaml:"-"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"    yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_REASONING_CHANNEL_ID"`
+	InviteQR           string              `json:"invite_qr"               yaml:"-" env:"PICOCLAW_CHANNELS_CHATMAIL_INVITE_QR"`
 }
 
 type VKConfig struct {

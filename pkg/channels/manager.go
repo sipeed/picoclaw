@@ -426,6 +426,10 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 		m.initChannel("irc", "IRC")
 	}
 
+	if channels.Chatmail.Enabled {
+		m.initChannel("chatmail", "Chatmail")
+	}
+
 	if channels.VK.Enabled && channels.VK.Token.String() != "" && channels.VK.GroupID != 0 {
 		m.initChannel("vk", "VK")
 	}
