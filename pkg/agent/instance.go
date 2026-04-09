@@ -111,6 +111,16 @@ func NewAgentInstance(
 		}
 	}
 
+	if cfg.Tools.IsToolEnabled("browser") {
+		browserTool, err := tools.NewBrowserTool(cfg.Tools.Browser)
+		if err != nil {
+			logger.WarnCF("agent", "Browser tool unavailable (optional)",
+				map[string]any{"error": err.Error()})
+		} else {
+			toolsRegistry.Register(browserTool)
+		}
+	}
+
 	if cfg.Tools.IsToolEnabled("edit_file") {
 		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
 	}
