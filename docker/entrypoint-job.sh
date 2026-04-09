@@ -19,6 +19,22 @@ if [ -n "$LITELLM_BASE_URL" ]; then
   done
 fi
 
+# Wait for the target server to be ready
+if [ -n "$BASE_URL" ]; then
+  echo "Waiting for server at $BASE_URL ..."
+  for i in $(seq 1 30); do
+    if curl -sf "$BASE_URL" > /dev/null 2>&1; then
+      echo "Server is ready."
+      break
+    fi
+    if [ "$i" -eq 30 ]; then
+      echo "ERROR: Server did not become ready in time."
+      exit 1
+    fi
+    sleep 2
+  done
+fi
+
 # ── Playwright staging area ───────────────────────────────────────────────────
 # Copy tests + config to /tmp so Node.js module resolution never walks into the
 # GCS-mounted workspace and finds a stale node_modules there. Running from /tmp
@@ -139,17 +155,50 @@ case "$JOB_TYPE" in
     "$PW/node_modules/.bin/playwright" test "$JOB_SPEC" --reporter=line
     ;;
 
-  generate)
-    if [ -z "$JOB_PROMPT" ]; then
-      echo "ERROR: JOB_PROMPT is required for JOB_TYPE=generate"
+  autofix)
+    if [ -z "$JOB_SPEC" ]; then
+      echo "ERROR: JOB_SPEC is required for JOB_TYPE=autofix"
       exit 1
     fi
-    echo "Generating test from prompt..."
-    picoclaw agent -m "$JOB_PROMPT"
+    AREA=$(echo "$JOB_SPEC" | cut -d'/' -f2)
+    TEMPLATE="$WORKSPACE/templates/autofix/$AREA.txt"
+    if [ ! -f "$TEMPLATE" ]; then
+      echo "ERROR: No autofix template for area: $AREA"
+      exit 1
+    fi
+    echo "Autofixing test: $JOB_SPEC ..."
+    PROMPT=$(node -e "
+const fs = require('fs');
+const t = fs.readFileSync('$TEMPLATE', 'utf8');
+process.stdout.write(t.replace(/\{\{SPEC_FILE\}\}/g, '$JOB_SPEC'));
+")
+    picoclaw agent -m "$PROMPT"
+    ;;
+
+  generate)
+    if [ -z "$JOB_AREA" ] || [ -z "$JOB_TEST_FILE" ] || [ -z "$JOB_STEPS" ] || [ -z "$JOB_EXPECTED_RESULT" ]; then
+      echo "ERROR: JOB_AREA, JOB_TEST_FILE, JOB_STEPS, and JOB_EXPECTED_RESULT are required for JOB_TYPE=generate"
+      exit 1
+    fi
+    TEMPLATE="$WORKSPACE/templates/$JOB_AREA.txt"
+    if [ ! -f "$TEMPLATE" ]; then
+      echo "ERROR: No template found for area: $JOB_AREA"
+      exit 1
+    fi
+    echo "Generating test from template..."
+    PROMPT=$(node -e "
+const fs = require('fs');
+let t = fs.readFileSync('$TEMPLATE', 'utf8');
+t = t.replace(/\{\{TEST_FILE\}\}/g, process.env.JOB_TEST_FILE || '');
+t = t.replace(/\{\{STEPS\}\}/g, process.env.JOB_STEPS || '');
+t = t.replace(/\{\{EXPECTED_RESULT\}\}/g, process.env.JOB_EXPECTED_RESULT || '');
+process.stdout.write(t);
+")
+    picoclaw agent -m "$PROMPT"
     ;;
 
   *)
-    echo "ERROR: Unknown JOB_TYPE=$JOB_TYPE (valid: run-all, run, generate)"
+    echo "ERROR: Unknown JOB_TYPE=$JOB_TYPE (valid: run-all, run, autofix, generate)"
     exit 1
     ;;
 esac
