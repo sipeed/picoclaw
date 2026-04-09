@@ -1,0 +1,36 @@
+pr:
+  branches:
+    include:
+    - '*'
+
+trigger:
+  branches:
+    include:
+    - main
+
+variables:
+  - name: DockerImageName
+    value: 'enterprise-automation-352103/container-repo/picoclaw-e2e-testing'
+  - name: Registry
+    value: 'europe-west4-docker.pkg.dev'
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+- stage: build
+  jobs:
+  - job: buildAndPush
+    steps:
+    - template: pipeline_templates/gcp_auth.yaml
+      parameters:
+        environment: 'automation'
+    - script: |
+        gcloud auth configure-docker $(Registry) --quiet
+      displayName: Configure Docker for GCR
+    - script: |
+        docker build -t $(Registry)/$(DockerImageName):latest -f docker/Dockerfile .
+      displayName: Build docker image
+    - script: |
+        docker push $(Registry)/$(DockerImageName):latest
+      displayName: Push docker image
