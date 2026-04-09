@@ -155,3 +155,19 @@ func TestGitHubRegistrySkillURLUsesProvidedVersionAndBasePath(t *testing.T) {
 		registry.SkillURL("https://ghe.example.com/git/org/repo/tree/dev/skills/pr-review", ""),
 	)
 }
+
+func TestGitHubRegistryResolveInstallDirNameSupportsFullURLs(t *testing.T) {
+	registry := GitHubRegistryConfig{
+		Enabled: true,
+		BaseURL: "https://ghe.example.com/git",
+	}.BuildRegistry()
+	require.NotNil(t, registry)
+
+	dirName, err := registry.ResolveInstallDirName("https://ghe.example.com/git/org/repo/tree/dev/skills/pr-review")
+	require.NoError(t, err)
+	assert.Equal(t, "pr-review", dirName)
+
+	dirName, err = registry.ResolveInstallDirName("https://github.com/org/repo/tree/main/skills/release-checklist")
+	require.NoError(t, err)
+	assert.Equal(t, "release-checklist", dirName)
+}

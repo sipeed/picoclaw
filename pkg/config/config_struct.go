@@ -351,6 +351,20 @@ func (v *SkillsRegistriesConfig) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+func (v SkillsRegistriesConfig) MarshalJSON() ([]byte, error) {
+	if v == nil {
+		return []byte("null"), nil
+	}
+	mm := make(map[string]SkillRegistryConfig, len(v))
+	for _, registry := range v {
+		if registry == nil || registry.Name == "" {
+			continue
+		}
+		mm[registry.Name] = *registry
+	}
+	return json.Marshal(mm)
+}
+
 func (c *SkillRegistryConfig) UnmarshalJSON(data []byte) error {
 	type alias struct {
 		Name      string         `json:"name,omitempty"`

@@ -203,3 +203,46 @@ func TestSkillsRegistriesConfigMarshalYAMLIncludesRegistryToken(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "registry-auth-token", github.AuthToken.String())
 }
+
+func TestSkillsRegistriesConfigMarshalJSONPreservesObjectShape(t *testing.T) {
+	registries := SkillsRegistriesConfig{
+		&SkillRegistryConfig{
+			Name:    "github",
+			Enabled: true,
+			BaseURL: "https://ghe.example.com/git",
+			Param: map[string]any{
+				"proxy": "http://127.0.0.1:7890",
+			},
+		},
+		&SkillRegistryConfig{
+			Name:    "clawhub",
+			Enabled: true,
+			BaseURL: "https://clawhub.ai",
+		},
+	}
+
+	data, err := json.Marshal(registries)
+	assert.NoError(t, err)
+	assert.Contains(t, string(data), `"github":{`)
+	assert.Contains(t, string(data), `"clawhub":{`)
+	assert.NotContains(t, string(data), `[{`)
+
+	var decoded map[string]json.RawMessage
+	err = json.Unmarshal(data, &decoded)
+	assert.NoError(t, err)
+	assert.Contains(t, decoded, "github")
+	assert.Contains(t, decoded, "clawhub")
+
+	var roundTripped SkillsRegistriesConfig
+	err = json.Unmarshal(data, &roundTripped)
+	assert.NoError(t, err)
+
+	github, ok := roundTripped.Get("github")
+	assert.True(t, ok)
+	assert.Equal(t, "https://ghe.example.com/git", github.BaseURL)
+	assert.Equal(t, "http://127.0.0.1:7890", github.Param["proxy"])
+
+	clawhub, ok := roundTripped.Get("clawhub")
+	assert.True(t, ok)
+	assert.Equal(t, "https://clawhub.ai", clawhub.BaseURL)
+}
