@@ -1,56 +1,33 @@
 package middleware
 
 import (
-	"fmt"
-	"net"
 	"net/http"
 	"strings"
+
+	"github.com/sipeed/picoclaw/pkg/netpolicy"
 )
 
 // IPAllowlist restricts access to requests from configured CIDR ranges.
 // Loopback addresses are always allowed for local administration.
 // Empty CIDR list means no restriction.
 func IPAllowlist(allowedCIDRs []string, next http.Handler) (http.Handler, error) {
-	if len(allowedCIDRs) == 0 {
+	allowlist, err := netpolicy.NewIPAllowlist(allowedCIDRs)
+	if err != nil {
+		return nil, err
+	}
+
+	if allowlist.IsOpen() {
 		return next, nil
 	}
 
-	nets := make([]*net.IPNet, 0, len(allowedCIDRs))
-	for _, cidr := range allowedCIDRs {
-		_, ipNet, err := net.ParseCIDR(cidr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid CIDR %q: %w", cidr, err)
-		}
-		nets = append(nets, ipNet)
-	}
-
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := clientIPFromRemoteAddr(r.RemoteAddr)
-		if ip == nil {
-			rejectByPolicy(w, r)
-			return
-		}
-		if ip.IsLoopback() {
+		if allowlist.AllowsRemoteAddr(r.RemoteAddr) {
 			next.ServeHTTP(w, r)
 			return
-		}
-		for _, ipNet := range nets {
-			if ipNet.Contains(ip) {
-				next.ServeHTTP(w, r)
-				return
-			}
 		}
 
 		rejectByPolicy(w, r)
 	}), nil
-}
-
-func clientIPFromRemoteAddr(remoteAddr string) net.IP {
-	host := remoteAddr
-	if h, _, err := net.SplitHostPort(remoteAddr); err == nil {
-		host = h
-	}
-	return net.ParseIP(host)
 }
 
 func rejectByPolicy(w http.ResponseWriter, r *http.Request) {

@@ -3,10 +3,12 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -66,6 +68,9 @@ type services struct {
 	DeviceService    *devices.Service
 	HealthServer     *health.Server
 	VoiceAgentCancel context.CancelFunc
+	ListenHost       string
+	ListenAddr       string
+	EffectiveCIDRs   []string
 	manualReloadChan chan struct{}
 	reloading        atomic.Bool
 	authToken        string
@@ -187,6 +192,19 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 		return err
 	}
 
+	if pidData.Host != runningServices.ListenHost || pidData.Port != cfg.Gateway.Port {
+		updatedPidData, updateErr := pid.UpdatePidFileEndpoint(homePath, runningServices.ListenHost, cfg.Gateway.Port)
+		if updateErr != nil {
+			logger.WarnCF("gateway", "Failed to sync pid listen endpoint", map[string]any{
+				"error":       updateErr.Error(),
+				"listen_host": runningServices.ListenHost,
+				"listen_port": cfg.Gateway.Port,
+			})
+		} else {
+			pidData = updatedPidData
+		}
+	}
+
 	// Setup manual reload channel for /reload endpoint
 	manualReloadChan := make(chan struct{}, 1)
 	runningServices.manualReloadChan = manualReloadChan
@@ -206,7 +224,11 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	runningServices.HealthServer.SetReloadFunc(reloadTrigger)
 	agentLoop.SetReloadFunc(reloadTrigger)
 
-	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	if isWildcardBindHost(runningServices.ListenHost) {
+		fmt.Printf("✓ Gateway started (all interfaces, port %d)\n", pidData.Port)
+	} else {
+		fmt.Printf("✓ Gateway started on %s\n", runningServices.ListenAddr)
+	}
 	fmt.Println("Press Ctrl+C to stop")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -266,6 +288,9 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 func preCheckConfig(cfg *config.Config) error {
 	if cfg.Gateway.Port <= 0 || cfg.Gateway.Port > 65535 {
 		return fmt.Errorf("invalid gateway port: %d, port must be between 1 and 65535", cfg.Gateway.Port)
+	}
+	if _, err := normalizeAndValidateCIDRs(cfg.Gateway.AllowedCIDRs); err != nil {
+		return fmt.Errorf("invalid gateway allowed_cidrs: %w", err)
 	}
 	return nil
 }
@@ -379,10 +404,39 @@ func setupAndStartServices(
 		fmt.Println("⚠ Warning: No channels enabled")
 	}
 
-	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
+	listenDecision, err := resolveGatewayListenDecision(cfg.Gateway.Host, cfg.Gateway.Port, cfg.Gateway.AllowedCIDRs)
+	if err != nil {
+		if fms, ok := runningServices.MediaStore.(*media.FileMediaStore); ok {
+			fms.Stop()
+		}
+		return nil, fmt.Errorf("error resolving gateway listen host: %w", err)
+	}
+	if listenDecision.AutoFallback {
+		logger.WarnCF("gateway", "Loopback bind failed, fallback to all interfaces with CIDR allowlist", map[string]any{
+			"configured_host": cfg.Gateway.Host,
+			"bind_host":       listenDecision.BindHost,
+			"port":            cfg.Gateway.Port,
+			"allowed_cidrs":   listenDecision.AllowedCIDRs,
+			"reason":          listenDecision.FallbackReason,
+		})
+	}
+
+	addr := net.JoinHostPort(listenDecision.BindHost, strconv.Itoa(cfg.Gateway.Port))
+	runningServices.ListenHost = listenDecision.BindHost
+	runningServices.ListenAddr = addr
+	runningServices.EffectiveCIDRs = listenDecision.AllowedCIDRs
 	runningServices.authToken = authToken
-	runningServices.HealthServer = health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port, authToken)
-	runningServices.ChannelManager.SetupHTTPServer(addr, runningServices.HealthServer)
+	runningServices.HealthServer = health.NewServer(listenDecision.BindHost, cfg.Gateway.Port, authToken)
+	if err = runningServices.ChannelManager.SetupHTTPServer(
+		addr,
+		runningServices.HealthServer,
+		newCIDRAllowlistMiddleware(listenDecision.AllowedCIDRs),
+	); err != nil {
+		if fms, ok := runningServices.MediaStore.(*media.FileMediaStore); ok {
+			fms.Stop()
+		}
+		return nil, fmt.Errorf("error setting up shared HTTP server: %w", err)
+	}
 
 	if err = runningServices.ChannelManager.StartAll(context.Background()); err != nil {
 		return nil, fmt.Errorf("error starting channels: %w", err)
@@ -398,11 +452,20 @@ func setupAndStartServices(
 		voiceAgent.Start(vaCtx)
 	}
 
-	fmt.Printf(
-		"✓ Health endpoints available at http://%s:%d/health, /ready and /reload (POST)\n",
-		cfg.Gateway.Host,
-		cfg.Gateway.Port,
-	)
+	if isWildcardBindHost(runningServices.ListenHost) {
+		fmt.Printf(
+			"✓ Health endpoints available on all interfaces at port %d (/health, /ready and /reload POST)\n",
+			cfg.Gateway.Port,
+		)
+	} else {
+		fmt.Printf(
+			"✓ Health endpoints available at http://%s/health, /ready and /reload (POST)\n",
+			runningServices.ListenAddr,
+		)
+	}
+	if len(runningServices.EffectiveCIDRs) > 0 {
+		fmt.Printf("✓ Gateway CIDR allowlist enabled: %s\n", strings.Join(runningServices.EffectiveCIDRs, ", "))
+	}
 
 	stateManager := state.NewManager(cfg.WorkspacePath())
 	runningServices.DeviceService = devices.NewService(devices.Config{

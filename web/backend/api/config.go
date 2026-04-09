@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -279,6 +280,32 @@ func validateConfig(cfg *config.Config) []string {
 	if cfg.Gateway.Port != 0 && (cfg.Gateway.Port < 1 || cfg.Gateway.Port > 65535) {
 		errs = append(errs, fmt.Sprintf("gateway.port %d is out of valid range (1-65535)", cfg.Gateway.Port))
 	}
+
+	// Normalize and validate gateway allowed CIDRs:
+	//   - trim whitespace
+	//   - drop empty entries
+	//   - canonicalize via ipNet.String()
+	//   - deduplicate canonical CIDRs
+	normalizedCIDRs := make([]string, 0, len(cfg.Gateway.AllowedCIDRs))
+	seenCIDRs := make(map[string]struct{}, len(cfg.Gateway.AllowedCIDRs))
+	for index, cidr := range cfg.Gateway.AllowedCIDRs {
+		trimmed := strings.TrimSpace(cidr)
+		if trimmed == "" {
+			continue
+		}
+		_, ipNet, err := net.ParseCIDR(trimmed)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("gateway.allowed_cidrs[%d] is not a valid CIDR: %v", index, err))
+			continue
+		}
+		canonical := ipNet.String()
+		if _, exists := seenCIDRs[canonical]; exists {
+			continue
+		}
+		seenCIDRs[canonical] = struct{}{}
+		normalizedCIDRs = append(normalizedCIDRs, canonical)
+	}
+	cfg.Gateway.AllowedCIDRs = normalizedCIDRs
 
 	// Pico channel: token required when enabled
 	if cfg.Channels.Pico.Enabled && cfg.Channels.Pico.Token.String() == "" {
