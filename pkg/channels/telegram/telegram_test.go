@@ -503,7 +503,7 @@ func TestSend_HTMLFallback_BothFail(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, channels.ErrTemporary), "error should wrap ErrTemporary")
-	assert.Equal(t, 2, len(caller.calls), "should have HTML attempt + plain text attempt")
+	assert.Equal(t, 1, len(caller.calls), "should not retry as plain text for non-parse failures")
 }
 
 func TestSend_LongMessage_HTMLFallback_StopsOnError(t *testing.T) {
@@ -524,8 +524,27 @@ func TestSend_LongMessage_HTMLFallback_StopsOnError(t *testing.T) {
 	})
 
 	assert.Error(t, err)
-	// Should fail on the first chunk (2 calls: HTML + fallback), never reaching the second chunk.
-	assert.Equal(t, 2, len(caller.calls), "should stop after first chunk fails both HTML and plain text")
+	// Should fail on the first chunk (1 call: formatted send only), never reaching the second chunk.
+	assert.Equal(t, 1, len(caller.calls), "should stop after first chunk fails without plain-text retry")
+}
+
+func TestSend_PostConnectError_SwallowsToPreventDuplicate(t *testing.T) {
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			return nil, errors.New("write tcp 10.0.0.1:12345->149.154.167.220:443: write: broken pipe")
+		},
+	}
+	ch := newTestChannel(t, caller)
+
+	msgIDs, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:  "12345",
+		Content: "Hello",
+	})
+
+	assert.NoError(t, err)
+	assert.Len(t, caller.calls, 1, "post-connect failure should not trigger plain-text retry")
+	assert.Len(t, msgIDs, 1, "channel should still report success to suppress duplicate retries")
+	assert.Equal(t, "", msgIDs[0], "message id is unknown when send result is swallowed")
 }
 
 func TestSend_MarkdownShortButHTMLLong_MultipleCalls(t *testing.T) {
