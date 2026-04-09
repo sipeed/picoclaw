@@ -1792,6 +1792,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState) (turnResult, er
 	}
 	pendingMessages := append([]providers.Message(nil), ts.opts.InitialSteeringMessages...)
 	var finalContent string
+	var lastAssistantTextContent string // text from last response that also had tool calls
 
 turnLoop:
 	for ts.currentIteration() < ts.agent.MaxIterations || len(pendingMessages) > 0 || func() bool {
@@ -2296,6 +2297,9 @@ turnLoop:
 			})
 
 		allResponsesHandled := len(normalizedToolCalls) > 0
+		if response.Content != "" {
+			lastAssistantTextContent = response.Content
+		}
 		assistantMsg := providers.Message{
 			Role:             "assistant",
 			Content:          response.Content,
@@ -3054,6 +3058,9 @@ turnLoop:
 	if finalContent == "" {
 		if ts.currentIteration() >= ts.agent.MaxIterations && ts.agent.MaxIterations > 0 {
 			finalContent = toolLimitResponse
+		} else if lastAssistantTextContent != "" {
+			// LLM returned empty after tool execution but already provided text in the tool-call response
+			finalContent = lastAssistantTextContent
 		} else {
 			finalContent = ts.opts.DefaultResponse
 		}
