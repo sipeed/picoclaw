@@ -36,24 +36,25 @@ if [ -n "$BASE_URL" ]; then
   done
 fi
 
-# ── Playwright staging area ───────────────────────────────────────────────────
+# ── Playwright staging area (run / run-all only) ─────────────────────────────
 # Copy tests + config to /tmp so Node.js module resolution never walks into the
 # GCS-mounted workspace and finds a stale node_modules there. Running from /tmp
 # means @playwright/test always resolves from /tmp/pw/node_modules only.
+# Skipped for generate/autofix — those only need the workspace (GCS mount).
 
 PW="/tmp/pw"
-mkdir -p "$PW"
 
-echo "Staging tests from workspace to /tmp/pw..."
-cp -r "$WORKSPACE/tests" "$PW/"
-cp "$WORKSPACE/playwright.config.ts" "$PW/" 2>/dev/null || true
-cp "$WORKSPACE/package.json" "$PW/"
-cp "$WORKSPACE/package-lock.json" "$PW/" 2>/dev/null || true
-
-cd "$PW"
-
-echo "Installing dependencies..."
-npm install --prefer-offline 2>&1
+setup_playwright() {
+  mkdir -p "$PW"
+  echo "Staging tests from workspace to /tmp/pw..."
+  cp -r "$WORKSPACE/tests" "$PW/"
+  cp "$WORKSPACE/playwright.config.ts" "$PW/" 2>/dev/null || true
+  cp "$WORKSPACE/package.json" "$PW/"
+  cp "$WORKSPACE/package-lock.json" "$PW/" 2>/dev/null || true
+  cd "$PW"
+  echo "Installing dependencies..."
+  npm install --prefer-offline 2>&1
+}
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -73,6 +74,7 @@ JOB_TYPE="${JOB_TYPE:-run-all}"
 
 case "$JOB_TYPE" in
   run-all)
+    setup_playwright
     # Tests run in dependency order:
     #   auth → knowledge-base (create → operate → delete)
     #       → flow-designer → flow-tester
@@ -152,6 +154,7 @@ case "$JOB_TYPE" in
       echo "ERROR: JOB_SPEC is required for JOB_TYPE=run"
       exit 1
     fi
+    setup_playwright
     echo "Running test: $JOB_SPEC"
     "$PW/node_modules/.bin/playwright" test "$JOB_SPEC" --reporter=line
     ;;
