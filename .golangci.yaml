@@ -12,6 +12,7 @@ linters:
     - exhaustruct
     - funcorder
     - gochecknoglobals
+    - gosmopolitan  # Project legitimately uses CJK text in tests (FTS5, token counting)
     - godot
     - intrange
     - ireturn

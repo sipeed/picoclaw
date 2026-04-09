@@ -303,7 +303,25 @@ Untuk dokumentasi TUI lengkap, lihat [docs.picoclaw.io](https://docs.picoclaw.io
 
 Berikan kehidupan kedua untuk ponsel lama Anda! Ubah menjadi Asisten AI pintar dengan PicoClaw.
 
-**Opsi 1: Termux (tersedia sekarang)**
+**Opsi 1: Instal APK**
+
+Pratinjau:
+
+<table>
+  <tr>
+    <td><img src="assets/fui_main_page.jpg" width="200"></td>
+    <td><img src="assets/fui_web_page.jpg" width="200"></td>
+    <td><img src="assets/fui_log_page.jpg" width="200"></td>
+    <td><img src="assets/fui_setting_page.jpg" width="200"></td>
+  </tr>
+</table>
+
+Unduh APK dari [picoclaw.io](https://picoclaw.io/download/) dan instal langsung. Tanpa Termux!
+
+**Opsi 2: Termux**
+
+<details>
+<summary><b>Terminal Launcher (untuk lingkungan dengan sumber daya terbatas)</b></summary>
 
 1. Instal [Termux](https://github.com/termux/termux-app) (unduh dari [GitHub Releases](https://github.com/termux/termux-app/releases), atau cari di F-Droid / Google Play)
 2. Jalankan perintah berikut:
@@ -319,13 +337,6 @@ termux-chroot ./picoclaw onboard   # chroot menyediakan tata letak filesystem Li
 Kemudian ikuti bagian Terminal Launcher di bawah untuk menyelesaikan konfigurasi.
 
 <img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
-
-**Opsi 2: Instal APK**
-
-Unduh APK dari [picoclaw.io](https://picoclaw.io/download/) dan instal langsung. Tanpa Termux!
-
-<details>
-<summary><b>Terminal Launcher (untuk lingkungan dengan sumber daya terbatas)</b></summary>
 
 Untuk lingkungan minimal di mana hanya binary inti `picoclaw` yang tersedia (tanpa Launcher UI), Anda dapat mengonfigurasi semuanya melalui command line dan file konfigurasi JSON.
 

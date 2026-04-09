@@ -53,7 +53,7 @@ export function ModelCard({
                   ? "bg-green-500"
                   : status === "unreachable"
                     ? "bg-amber-500"
-                  : "bg-muted-foreground/25",
+                    : "bg-muted-foreground/25",
             ].join(" ")}
             title={statusLabel}
           />

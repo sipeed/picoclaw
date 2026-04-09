@@ -100,9 +100,7 @@ export function AgentDefaultsSection({
         hint={t("pages.config.split_on_marker_hint")}
         layout="setting-row"
         checked={form.splitOnMarker}
-        onCheckedChange={(checked) =>
-          onFieldChange("splitOnMarker", checked)
-        }
+        onCheckedChange={(checked) => onFieldChange("splitOnMarker", checked)}
       />
 
       <SwitchCardField
@@ -519,7 +517,25 @@ export function LauncherSection({
   const { t } = useTranslation()
 
   return (
-    <ConfigSectionCard title={t("pages.config.sections.launcher")}>
+    <ConfigSectionCard
+      title={t("pages.config.sections.launcher")}
+      description={t("pages.config.launcher_token_section_hint")}
+    >
+      <Field
+        label={t("pages.config.launcher_token")}
+        hint={t("pages.config.launcher_token_hint")}
+        layout="setting-row"
+      >
+        <Input
+          type="password"
+          value={launcherForm.launcherToken}
+          disabled={disabled}
+          autoComplete="off"
+          placeholder={t("pages.config.launcher_token_placeholder")}
+          onChange={(e) => onFieldChange("launcherToken", e.target.value)}
+        />
+      </Field>
+
       <SwitchCardField
         label={t("pages.config.lan_access")}
         hint={t("pages.config.lan_access_hint")}

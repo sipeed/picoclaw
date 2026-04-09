@@ -2,7 +2,9 @@ import type { TFunction } from "i18next"
 
 import type { ToolSupportItem } from "@/api/tools"
 
-type MarketplaceTool = Pick<ToolSupportItem, "status" | "reason_code"> | undefined
+type MarketplaceTool =
+  | Pick<ToolSupportItem, "status" | "reason_code">
+  | undefined
 
 export interface UnavailableToolMessage {
   key: "search" | "install"

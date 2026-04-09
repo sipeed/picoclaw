@@ -1,8 +1,4 @@
-import {
-  IconLayoutGrid,
-  IconLayoutList,
-  IconSearch,
-} from "@tabler/icons-react"
+import { IconLayoutGrid, IconLayoutList, IconSearch } from "@tabler/icons-react"
 import { useTranslation } from "react-i18next"
 
 import { Input } from "@/components/ui/input"

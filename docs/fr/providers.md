@@ -99,6 +99,24 @@ Cette conception permet également le **support multi-agents** avec une sélecti
 }
 ```
 
+#### Champs d'entrée `model_list`
+
+| Champ | Type | Requis | Description |
+|-------|------|--------|-------------|
+| `model_name` | string | Oui | Nom unique pour référencer ce modèle dans la config agent |
+| `model` | string | Oui | Identifiant fournisseur/modèle (ex : `openai/gpt-5.4`, `azure/gpt-5.4`, `anthropic/claude-sonnet-4.6`) |
+| `api_keys` | string[] | Oui* | Clé(s) API pour l'authentification. Plusieurs clés permettent la rotation par requête. Non requis pour les fournisseurs locaux (Ollama, LM Studio, VLLM) |
+| `api_base` | string | Non | Remplace l'URL de base API par défaut |
+| `proxy` | string | Non | URL du proxy HTTP pour cette entrée de modèle |
+| `user_agent` | string | Non | En-tête `User-Agent` personnalisé pour les requêtes API (supporté par les providers OpenAI-compatible, Anthropic et Azure) |
+| `request_timeout` | int | Non | Délai d'expiration de la requête en secondes (la valeur par défaut varie selon le provider) |
+| `max_tokens_field` | string | Non | Remplace le nom du champ max tokens dans le corps de la requête (ex : `max_completion_tokens` pour les modèles o1) |
+| `thinking_level` | string | Non | Niveau de pensée étendue : `off`, `low`, `medium`, `high`, `xhigh` ou `adaptive` |
+| `extra_body` | object | Non | Champs supplémentaires à injecter dans chaque corps de requête |
+| `rpm` | int | Non | Limite de requêtes par minute |
+| `fallbacks` | string[] | Non | Noms des modèles de secours pour le basculement automatique |
+| `enabled` | bool | Non | Activer ou désactiver cette entrée de modèle (par défaut : `true`) |
+
 #### Exemples par Vendor
 
 **OpenAI**
@@ -190,6 +208,7 @@ Pour l'accès direct à l'API Anthropic ou les endpoints personnalisés qui ne p
   "model": "openai/custom-model",
   "api_base": "https://my-proxy.com/v1",
   "api_keys": ["sk-..."],
+  "user_agent": "MyApp/1.0",
   "request_timeout": 300
 }
 ```

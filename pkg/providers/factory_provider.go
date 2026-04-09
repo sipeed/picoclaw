@@ -129,6 +129,11 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 
 	protocol, modelID := ExtractProtocol(cfg.Model)
 
+	userAgent := cfg.UserAgent
+	if userAgent == "" {
+		userAgent = fmt.Sprintf("PicoClaw/%s", config.Version)
+	}
+
 	switch protocol {
 	case "openai":
 		// OpenAI with OAuth/token auth (Codex-style)
@@ -152,8 +157,10 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
+			cfg.CustomHeaders,
 		), modelID, nil
 
 	case "azure", "azure-openai":
@@ -171,6 +178,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.APIKey(),
 			cfg.APIBase,
 			cfg.Proxy,
+			userAgent,
 			cfg.RequestTimeout,
 		), modelID, nil
 
@@ -228,8 +236,10 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
+			cfg.CustomHeaders,
 		), modelID, nil
 
 	case "minimax":
@@ -253,8 +263,10 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			userAgent,
 			cfg.RequestTimeout,
 			extraBody,
+			cfg.CustomHeaders,
 		), modelID, nil
 
 	case "anthropic":
@@ -279,8 +291,10 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
+			cfg.CustomHeaders,
 		), modelID, nil
 
 	case "anthropic-messages":
@@ -295,6 +309,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return anthropicmessages.NewProviderWithTimeout(
 			cfg.APIKey(),
 			apiBase,
+			userAgent,
 			cfg.RequestTimeout,
 		), modelID, nil
 
@@ -310,6 +325,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return anthropicmessages.NewProviderWithTimeout(
 			cfg.APIKey(),
 			apiBase,
+			userAgent,
 			cfg.RequestTimeout,
 		), modelID, nil
 

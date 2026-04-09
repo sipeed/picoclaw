@@ -455,6 +455,33 @@ func (s *JSONLStore) rewriteJSONL(
 	return fileutil.WriteFileAtomic(s.jsonlPath(sessionKey), buf.Bytes(), 0o644)
 }
 
+// ListSessions returns all known session keys by reading .meta.json files.
+func (s *JSONLStore) ListSessions() []string {
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return nil
+	}
+	var keys []string
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".meta.json") {
+			continue
+		}
+		// Read the meta file to get the original key
+		data, err := os.ReadFile(filepath.Join(s.dir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var meta sessionMeta
+		if err := json.Unmarshal(data, &meta); err != nil {
+			continue
+		}
+		if meta.Key != "" {
+			keys = append(keys, meta.Key)
+		}
+	}
+	return keys
+}
+
 func (s *JSONLStore) Close() error {
 	return nil
 }

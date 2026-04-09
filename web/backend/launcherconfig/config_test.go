@@ -25,9 +25,10 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "launcher-config.json")
 	want := Config{
-		Port:         18080,
-		Public:       true,
-		AllowedCIDRs: []string{"192.168.1.0/24", "10.0.0.0/8"},
+		Port:          18080,
+		Public:        true,
+		AllowedCIDRs:  []string{"192.168.1.0/24", "10.0.0.0/8"},
+		LauncherToken: "saved-launcher-token",
 	}
 
 	if err := Save(path, want); err != nil {
@@ -39,6 +40,9 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	}
 	if got.Port != want.Port || got.Public != want.Public {
 		t.Fatalf("Load() = %+v, want %+v", got, want)
+	}
+	if got.LauncherToken != want.LauncherToken {
+		t.Fatalf("launcher_token = %q, want %q", got.LauncherToken, want.LauncherToken)
 	}
 	if len(got.AllowedCIDRs) != len(want.AllowedCIDRs) {
 		t.Fatalf("allowed_cidrs len = %d, want %d", len(got.AllowedCIDRs), len(want.AllowedCIDRs))
@@ -80,24 +84,24 @@ func TestValidateRejectsInvalidCIDR(t *testing.T) {
 func TestEnsureDashboardSecrets_GeneratesEphemeral(t *testing.T) {
 	t.Setenv("PICOCLAW_LAUNCHER_TOKEN", "")
 
-	tok, key, newTok, err := EnsureDashboardSecrets()
+	tok, key, source, err := EnsureDashboardSecrets(Default())
 	if err != nil {
 		t.Fatalf("EnsureDashboardSecrets() error = %v", err)
 	}
-	if !newTok || tok == "" || len(key) != dashboardSigningKeyBytes {
-		t.Fatalf("unexpected first call: newTok=%v tok=%q keyLen=%d", newTok, tok, len(key))
+	if source != DashboardTokenSourceRandom || tok == "" || len(key) != dashboardSigningKeyBytes {
+		t.Fatalf("unexpected first call: source=%q tok=%q keyLen=%d", source, tok, len(key))
 	}
 	mac := middleware.SessionCookieValue(key, tok)
 	if mac == "" {
 		t.Fatal("empty session mac")
 	}
 
-	tok2, key2, newTok2, err := EnsureDashboardSecrets()
+	tok2, key2, source2, err := EnsureDashboardSecrets(Default())
 	if err != nil {
 		t.Fatalf("EnsureDashboardSecrets() second error = %v", err)
 	}
-	if !newTok2 {
-		t.Fatal("second call without env should generate another random token")
+	if source2 != DashboardTokenSourceRandom {
+		t.Fatalf("second call source = %q, want %q", source2, DashboardTokenSourceRandom)
 	}
 	if tok2 == tok {
 		t.Fatal("expected a new random dashboard token")
@@ -110,15 +114,30 @@ func TestEnsureDashboardSecrets_GeneratesEphemeral(t *testing.T) {
 func TestEnsureDashboardSecrets_EnvOverridesGenerated(t *testing.T) {
 	t.Setenv("PICOCLAW_LAUNCHER_TOKEN", "env-only-token-override")
 
-	tok, _, newTok, err := EnsureDashboardSecrets()
+	tok, _, source, err := EnsureDashboardSecrets(Config{LauncherToken: "config-token"})
 	if err != nil {
 		t.Fatalf("EnsureDashboardSecrets() error = %v", err)
 	}
 	if tok != "env-only-token-override" {
 		t.Fatalf("token = %q, want env value", tok)
 	}
-	if newTok {
-		t.Fatal("newRandomDashboardToken should be false when env is set")
+	if source != DashboardTokenSourceEnv {
+		t.Fatalf("source = %q, want %q", source, DashboardTokenSourceEnv)
+	}
+}
+
+func TestEnsureDashboardSecrets_ConfigOverridesGenerated(t *testing.T) {
+	t.Setenv("PICOCLAW_LAUNCHER_TOKEN", "")
+
+	tok, _, source, err := EnsureDashboardSecrets(Config{LauncherToken: "config-token"})
+	if err != nil {
+		t.Fatalf("EnsureDashboardSecrets() error = %v", err)
+	}
+	if tok != "config-token" {
+		t.Fatalf("token = %q, want config value", tok)
+	}
+	if source != DashboardTokenSourceConfig {
+		t.Fatalf("source = %q, want %q", source, DashboardTokenSourceConfig)
 	}
 }
 

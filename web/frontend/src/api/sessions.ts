@@ -1,5 +1,3 @@
-// Sessions API — list and retrieve chat session history
-
 import { launcherFetch } from "@/api/http"
 
 export interface SessionSummary {
@@ -13,7 +11,11 @@ export interface SessionSummary {
 
 export interface SessionDetail {
   id: string
-  messages: { role: "user" | "assistant"; content: string }[]
+  messages: {
+    role: "user" | "assistant"
+    content: string
+    media?: string[]
+  }[]
   summary: string
   created: string
   updated: string
