@@ -3,7 +3,6 @@ package agent
 import (
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/gomarkdown/markdown/parser"
@@ -117,21 +116,6 @@ func loadAgentDefinition(workspace string) AgentContextDefinition {
 	return definition
 }
 
-func (definition AgentContextDefinition) trackedPaths(workspace string) []string {
-	paths := []string{
-		filepath.Join(workspace, string(AgentDefinitionSourceAgent)),
-		filepath.Join(workspace, "SOUL.md"),
-		filepath.Join(workspace, "USER.md"),
-	}
-	if definition.Source != AgentDefinitionSourceAgent {
-		paths = append(paths,
-			filepath.Join(workspace, string(AgentDefinitionSourceAgents)),
-			filepath.Join(workspace, "IDENTITY.md"),
-		)
-	}
-	return uniquePaths(paths)
-}
-
 func loadUserDefinition(workspace string) *UserDefinition {
 	userPath := filepath.Join(workspace, "USER.md")
 	if content, err := os.ReadFile(userPath); err == nil {
@@ -232,21 +216,6 @@ func relativeWorkspacePath(workspace, path string) string {
 		return filepath.ToSlash(relativePath)
 	}
 	return filepath.Clean(path)
-}
-
-func uniquePaths(paths []string) []string {
-	result := make([]string, 0, len(paths))
-	for _, path := range paths {
-		if strings.TrimSpace(path) == "" {
-			continue
-		}
-		cleaned := filepath.Clean(path)
-		if slices.Contains(result, cleaned) {
-			continue
-		}
-		result = append(result, cleaned)
-	}
-	return result
 }
 
 func fileExists(path string) bool {
