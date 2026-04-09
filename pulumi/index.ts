@@ -73,6 +73,15 @@ new gcp.projects.IAMMember("sa-secret-accessor", {
 //   gcloud secrets versions add PICOCLAW_AWS_ACCESS_KEY_ID --data-file=- <<< "YOUR_KEY"
 //   gcloud secrets versions add PICOCLAW_AWS_SECRET_ACCESS_KEY --data-file=- <<< "YOUR_SECRET"
 
+// config.json — mounted as a file at /home/picoclaw/.picoclaw/config.json
+// Populate after pulumi up:
+//   sed 's|http://litellm:4000|http://localhost:4000|g' docker/data/config.json | \
+//     gcloud secrets versions add picoclaw-config --project=PROJECT --data-file=-
+const configSecret = gcp.secretmanager.Secret.get(
+    "picoclaw-config",
+    `projects/${project}/secrets/PICOCLAW_CONFIG_FILE`,
+);
+
 const awsAccessKeySecret = gcp.secretmanager.Secret.get(
     "picoclaw-aws-access-key-id",
     `projects/${project}/secrets/PICOCLAW_AWS_ACCESS_KEY_ID`,
@@ -151,13 +160,25 @@ const e2eJob = new gcp.cloudrunv2.Job("picoclaw-e2e-job", {
             serviceAccount: sa.email,
             maxRetries: 0,
             timeout: "3600s",
-            volumes: [{
-                name: "workspace",
-                gcs: {
-                    bucket: bucket.name,
-                    readOnly: false,
+            volumes: [
+                {
+                    name: "workspace",
+                    gcs: {
+                        bucket: bucket.name,
+                        readOnly: false,
+                    },
                 },
-            }],
+                {
+                    name: "config",
+                    secret: {
+                        secret: configSecret.secretId,
+                        items: [{
+                            version: "latest",
+                            path: "config.json",
+                        }],
+                    },
+                },
+            ],
             containers: [
                 // ── Sidecar: LiteLLM ──────────────────────────────────────
                 {
@@ -180,10 +201,16 @@ const e2eJob = new gcp.cloudrunv2.Job("picoclaw-e2e-job", {
                 {
                     name: "picoclaw",
                     image: PICOCLAW_IMAGE,
-                    volumeMounts: [{
-                        name: "workspace",
-                        mountPath: "/home/picoclaw/.picoclaw/workspace",
-                    }],
+                    volumeMounts: [
+                        {
+                            name: "workspace",
+                            mountPath: "/home/picoclaw/.picoclaw/workspace",
+                        },
+                        {
+                            name: "config",
+                            mountPath: "/home/picoclaw/.picoclaw",
+                        },
+                    ],
                     resources: {
                         limits: {
                             memory: "4Gi",
