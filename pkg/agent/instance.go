@@ -122,7 +122,7 @@ func NewAgentInstance(
 	sessions := initSessionStore(sessionsDir)
 
 	mcpDiscoveryActive := cfg.Tools.MCP.Enabled && cfg.Tools.MCP.Discovery.Enabled
-	contextBuilder := NewContextBuilder(workspace).
+	contextBuilder := NewContextBuilder(workspace, "", cfg.Tools.Skills.Whitelist, cfg.Tools.Skills.WhitelistEnabled).
 		WithToolDiscovery(
 			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseBM25,
 			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseRegex,
