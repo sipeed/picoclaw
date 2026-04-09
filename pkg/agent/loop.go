@@ -1409,7 +1409,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Media:             msg.Media,
 		DefaultResponse:   defaultResponse,
 		EnableSummary:     true,
-		SendResponse:      false,
+		SendResponse:      msg.Channel == "pico",
 	}
 
 	// context-dependent commands check their own Runtime fields and report

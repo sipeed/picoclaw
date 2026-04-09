@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 // registerSessionRoutes binds session list and detail endpoints to the ServeMux.
@@ -72,6 +74,8 @@ const (
 	// pkg/memory/jsonl.go so oversized lines fail consistently everywhere.
 	maxSessionJSONLLineSize = 10 * 1024 * 1024
 	maxSessionTitleRunes    = 60
+	// Keep session reconstruction aligned with tool_feedback max args preview.
+	sessionToolFeedbackMaxArgsLength = 300
 
 	handledToolResponseSummaryText = "Requested output delivered via tool attachment."
 )
@@ -275,6 +279,11 @@ func visibleSessionMessages(messages []providers.Message) []sessionChatMessage {
 			}
 
 		case "assistant":
+			toolSummaryMessages := visibleAssistantToolSummaryMessages(msg.ToolCalls)
+			if len(toolSummaryMessages) > 0 {
+				transcript = append(transcript, toolSummaryMessages...)
+			}
+
 			visibleToolMessages := visibleAssistantToolMessages(msg.ToolCalls)
 			if len(visibleToolMessages) > 0 {
 				transcript = append(transcript, visibleToolMessages...)
@@ -283,7 +292,7 @@ func visibleSessionMessages(messages []providers.Message) []sessionChatMessage {
 			// Pico web chat can persist both visible `message` tool output and a
 			// later plain assistant reply in the same turn. Hide only the fixed
 			// internal summary that marks handled tool delivery.
-			if len(visibleToolMessages) > 0 || !sessionMessageVisible(msg) || assistantMessageInternalOnly(msg) {
+			if !sessionMessageVisible(msg) || assistantMessageInternalOnly(msg) {
 				continue
 			}
 
@@ -300,6 +309,50 @@ func visibleSessionMessages(messages []providers.Message) []sessionChatMessage {
 
 func assistantMessageInternalOnly(msg providers.Message) bool {
 	return strings.TrimSpace(msg.Content) == handledToolResponseSummaryText
+}
+
+func visibleAssistantToolSummaryMessages(toolCalls []providers.ToolCall) []sessionChatMessage {
+	if len(toolCalls) == 0 {
+		return nil
+	}
+
+	messages := make([]sessionChatMessage, 0, len(toolCalls))
+	for _, tc := range toolCalls {
+		name := tc.Name
+		argsJSON := ""
+		if tc.Function != nil {
+			if name == "" {
+				name = tc.Function.Name
+			}
+			argsJSON = tc.Function.Arguments
+		}
+
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+
+		if strings.TrimSpace(argsJSON) == "" && len(tc.Arguments) > 0 {
+			if encodedArgs, err := json.Marshal(tc.Arguments); err == nil {
+				argsJSON = string(encodedArgs)
+			}
+		}
+
+		argsPreview := strings.TrimSpace(argsJSON)
+		if argsPreview == "" {
+			argsPreview = "{}"
+		}
+
+		messages = append(messages, sessionChatMessage{
+			Role:    "assistant",
+			Content: formatToolCallSummary(name, utils.Truncate(argsPreview, sessionToolFeedbackMaxArgsLength)),
+		})
+	}
+
+	return messages
+}
+
+func formatToolCallSummary(name, argsPreview string) string {
+	return fmt.Sprintf("\U0001f527 `%s`\n```\n%s\n```", name, argsPreview)
 }
 
 func visibleAssistantToolMessages(toolCalls []providers.ToolCall) []sessionChatMessage {
