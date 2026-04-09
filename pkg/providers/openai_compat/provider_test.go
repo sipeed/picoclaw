@@ -1294,3 +1294,102 @@ func TestSerializeMessages_StripsSystemParts(t *testing.T) {
 		t.Fatal("system_parts should not appear in serialized output")
 	}
 }
+
+func TestFinalizeTools_StrictMode(t *testing.T) {
+	tools := []ToolDefinition{
+		{
+			Type: "function",
+			Function: ToolFunctionDefinition{
+				Name:        "test_func",
+				Description: "testing",
+				Parameters:  map[string]any{"type": "object"},
+			},
+		},
+	}
+
+	tests := []struct {
+		name       string
+		apiBase    string
+		options    map[string]any
+		wantStrict bool
+		wantSame   bool // whether it should be a direct pass-through
+	}{
+		{
+			name:       "native openai - default",
+			apiBase:    "https://api.openai.com/v1",
+			options:    nil,
+			wantStrict: false,
+			wantSame:   true,
+		},
+		{
+			name:       "native openai - force strict",
+			apiBase:    "https://api.openai.com/v1",
+			options:    map[string]any{"strict_mode": true},
+			wantStrict: true,
+			wantSame:   false,
+		},
+		{
+			name:       "native openai - force off",
+			apiBase:    "https://api.openai.com/v1",
+			options:    map[string]any{"strict_mode": false},
+			wantStrict: false,
+			wantSame:   false,
+		},
+		{
+			name:       "non-native - default (stripped)",
+			apiBase:    "https://api.deepseek.com/v1",
+			options:    nil,
+			wantStrict: false,
+			wantSame:   false,
+		},
+		{
+			name:       "non-native - force strict (ignored)",
+			apiBase:    "https://api.groq.com/openai/v1",
+			options:    map[string]any{"strict_mode": true},
+			wantStrict: false,
+			wantSame:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Provider{apiBase: tt.apiBase}
+			// Convert []ToolDefinition to []any for the new signature
+			toolsAny := make([]any, len(tools))
+			for i, t := range tools {
+				toolsAny[i] = t
+			}
+			res := p.finalizeTools(toolsAny, tt.options)
+
+			if tt.wantSame {
+				if fmt.Sprintf("%p", res) != fmt.Sprintf("%p", toolsAny) {
+					t.Errorf("expected pass-through, got new slice")
+				}
+				return
+			}
+
+			// Verify if it's a slice of maps with/without strict
+			resSlice, ok := res.([]any)
+			if !ok {
+				t.Fatalf("expected []any, got %T", res)
+			}
+			if len(resSlice) != 1 {
+				t.Fatalf("expected 1 tool, got %d", len(resSlice))
+			}
+
+			toolMap := resSlice[0].(map[string]any)
+			fnMap := toolMap["function"].(map[string]any)
+			val, hasStrict := fnMap["strict"]
+
+			if tt.wantStrict {
+				if !hasStrict || val != true {
+					t.Errorf("expected strict: true, got %v", val)
+				}
+			} else {
+				if hasStrict {
+					t.Errorf("did not expect strict field, got %v", val)
+				}
+			}
+		})
+	}
+}
