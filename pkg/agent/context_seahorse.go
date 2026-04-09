@@ -1,3 +1,5 @@
+//go:build !mipsle && !netbsd && !(freebsd && arm)
+
 package agent
 
 import (

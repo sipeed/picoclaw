@@ -3,14 +3,21 @@ package tools
 import (
 	"context"
 	"fmt"
-	"sync/atomic"
+	"sync"
 )
 
 type SendCallback func(channel, chatID, content, replyToMessageID string) error
 
+// sentTarget records the channel+chatID that the message tool sent to.
+type sentTarget struct {
+	Channel string
+	ChatID  string
+}
+
 type MessageTool struct {
 	sendCallback SendCallback
-	sentInRound  atomic.Bool // Tracks whether a message was sent in the current processing round
+	mu           sync.Mutex
+	sentTargets  []sentTarget // Tracks all targets sent to in the current round
 }
 
 func NewMessageTool() *MessageTool {
@@ -53,12 +60,30 @@ func (t *MessageTool) Parameters() map[string]any {
 // ResetSentInRound resets the per-round send tracker.
 // Called by the agent loop at the start of each inbound message processing round.
 func (t *MessageTool) ResetSentInRound() {
-	t.sentInRound.Store(false)
+	t.mu.Lock()
+	t.sentTargets = t.sentTargets[:0]
+	t.mu.Unlock()
 }
 
 // HasSentInRound returns true if the message tool sent a message during the current round.
 func (t *MessageTool) HasSentInRound() bool {
-	return t.sentInRound.Load()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.sentTargets) > 0
+}
+
+// HasSentTo returns true if the message tool sent to the specific channel+chatID
+// during the current round. Used by PublishResponseIfNeeded to avoid suppressing
+// the final response when the message tool only sent to a different conversation.
+func (t *MessageTool) HasSentTo(channel, chatID string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, st := range t.sentTargets {
+		if st.Channel == channel && st.ChatID == chatID {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *MessageTool) SetSendCallback(callback SendCallback) {
@@ -98,7 +123,10 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 		}
 	}
 
-	t.sentInRound.Store(true)
+	t.mu.Lock()
+	t.sentTargets = append(t.sentTargets, sentTarget{Channel: channel, ChatID: chatID})
+	t.mu.Unlock()
+
 	// Silent: user already received the message directly
 	return &ToolResult{
 		ForLLM: fmt.Sprintf("Message sent to %s:%s", channel, chatID),

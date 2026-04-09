@@ -2,14 +2,26 @@ package seahorse
 
 import (
 	"database/sql"
+	"fmt"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	_ "modernc.org/sqlite"
 )
 
+var testDBCounter uint64
+
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite", ":memory:")
+
+	n := atomic.AddUint64(&testDBCounter, 1)
+	testName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
+	// Use a shared in-memory database so concurrent goroutines/connections in tests
+	// observe the same schema/data.
+	dsn := fmt.Sprintf("file:seahorse_test_%s_%d?mode=memory&cache=shared", testName, n)
+
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}

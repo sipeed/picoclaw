@@ -28,6 +28,69 @@ The currently exposed synchronous hook points are:
 
 Everything else is exposed as read-only events.
 
+## Hook Actions
+
+Hooks can return different actions to control the flow:
+
+| Action | Applicable Stages | Effect |
+| --- | --- | --- |
+| `continue` | All interceptors | Pass through without modification |
+| `modify` | `before_llm`, `after_llm`, `before_tool`, `after_tool` | Modify request/response and continue |
+| `respond` | `before_tool` | Return a tool result directly, skip actual tool execution |
+| `deny_tool` | `before_tool` | Deny tool execution, return error message |
+| `abort_turn` | All interceptors | Abort the current turn |
+| `hard_abort` | All interceptors | Force stop the entire agent loop |
+
+### The `respond` Action
+
+The `respond` action is special: it allows a `before_tool` hook to provide the tool result directly, skipping the actual tool execution. This is useful for:
+
+1. **Plugin tool injection**: External hooks can implement tools without registering them in the tool registry
+2. **Tool result caching**: Return cached results for repeated tool calls
+3. **Tool mocking**: Return mock results for testing purposes
+
+When a hook returns `respond` with a `HookResult`, the agent loop:
+1. Skips the actual tool execution
+2. Uses the provided result as if the tool had executed
+3. Continues the turn normally with the result
+
+Example (Go in-process hook):
+
+```go
+func (h *MyHook) BeforeTool(
+    ctx context.Context,
+    call *agent.ToolCallHookRequest,
+) (*agent.ToolCallHookRequest, agent.HookDecision, error) {
+    if call.Tool == "my_plugin_tool" {
+        next := call.Clone()
+        next.HookResult = &tools.ToolResult{
+            ForLLM:  "Plugin tool executed successfully",
+            Silent:  false,
+            IsError: false,
+        }
+        return next, agent.HookDecision{Action: agent.HookActionRespond}, nil
+    }
+    return call, agent.HookDecision{Action: agent.HookActionContinue}, nil
+}
+```
+
+Example (Python process hook):
+
+```python
+def handle_before_tool(params: dict) -> dict:
+    tool = params.get("tool", "")
+    if tool == "my_plugin_tool":
+        return {
+            "action": "respond",
+            "result": {
+                "for_llm": "Plugin tool executed successfully",
+                "silent": False,
+                "is_error": False
+            }
+        }
+    return {"action": "continue"}
+```
+
 ## Execution Order
 
 `HookManager` sorts hooks like this:

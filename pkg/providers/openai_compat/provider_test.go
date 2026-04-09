@@ -710,6 +710,111 @@ func TestProviderChat_ExtraBodyOverridesOptions(t *testing.T) {
 	}
 }
 
+func TestProviderChat_CustomHeadersInjected(t *testing.T) {
+	var gotSource, gotAuth, gotUserAgent string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotSource = r.Header.Get("X-Source")
+		gotAuth = r.Header.Get("Authorization")
+		gotUserAgent = r.Header.Get("User-Agent")
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider(
+		"key",
+		server.URL,
+		"",
+		WithUserAgent("PicoClaw/Test"),
+		WithCustomHeaders(map[string]string{
+			"X-Source":      "coding-plan",
+			"Authorization": "Token custom-auth",
+			"User-Agent":    "Custom-UA/1.0",
+		}),
+	)
+
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"gpt-4o",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if gotSource != "coding-plan" {
+		t.Fatalf("X-Source = %q, want %q", gotSource, "coding-plan")
+	}
+	if gotAuth != "Token custom-auth" {
+		t.Fatalf("Authorization = %q, want %q", gotAuth, "Token custom-auth")
+	}
+	if gotUserAgent != "Custom-UA/1.0" {
+		t.Fatalf("User-Agent = %q, want %q", gotUserAgent, "Custom-UA/1.0")
+	}
+}
+
+func TestProviderChatStream_CustomHeadersInjected(t *testing.T) {
+	var gotSource, gotAuth, gotUserAgent string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotSource = r.Header.Get("X-Source")
+		gotAuth = r.Header.Get("Authorization")
+		gotUserAgent = r.Header.Get("User-Agent")
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	p := NewProvider(
+		"key",
+		server.URL,
+		"",
+		WithUserAgent("PicoClaw/Test"),
+		WithCustomHeaders(map[string]string{
+			"X-Source":      "coding-plan",
+			"Authorization": "Token stream-auth",
+			"User-Agent":    "Custom-UA/Stream",
+		}),
+	)
+
+	out, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"gpt-4o",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+	if out.Content != "ok" {
+		t.Fatalf("Content = %q, want %q", out.Content, "ok")
+	}
+	if gotSource != "coding-plan" {
+		t.Fatalf("X-Source = %q, want %q", gotSource, "coding-plan")
+	}
+	if gotAuth != "Token stream-auth" {
+		t.Fatalf("Authorization = %q, want %q", gotAuth, "Token stream-auth")
+	}
+	if gotUserAgent != "Custom-UA/Stream" {
+		t.Fatalf("User-Agent = %q, want %q", gotUserAgent, "Custom-UA/Stream")
+	}
+}
+
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {

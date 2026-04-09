@@ -23,19 +23,19 @@ func isProcessRunning(pid int) bool {
 		return false
 	}
 
-	handle, _, err := procOpenProcess.Call(
+	handle, _, _ := procOpenProcess.Call(
 		uintptr(processQueryLimitedInformation),
 		0,
 		uintptr(pid),
 	)
-	if handle == 0 || err != nil {
+	if handle == 0 {
 		return false
 	}
 	defer procCloseHandle.Call(handle)
 
 	var exitCode uint32
-	ret, _, err := procGetExitCodeProcess.Call(handle, uintptr(unsafe.Pointer(&exitCode)))
-	if ret == 0 || err != nil {
+	ret, _, _ := procGetExitCodeProcess.Call(handle, uintptr(unsafe.Pointer(&exitCode)))
+	if ret == 0 {
 		return false
 	}
 	return exitCode == stillActive
