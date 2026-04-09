@@ -53,6 +53,8 @@
     "historyOpenFailed": "Failed to open this chat history",
     "loadingMore": "Loading more...",
     "deleteSession": "Delete session",
+    "renameSession": "Rename session",
+    "copyLink": "Copy link",
     "messagesCount": "{{count}} messages",
     "noModel": "Select model",
     "attachImage": "Add images",
