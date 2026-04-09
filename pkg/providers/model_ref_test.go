@@ -73,6 +73,9 @@ func TestNormalizeProvider(t *testing.T) {
 		{"glm", "zhipu"},
 		{"google", "gemini"},
 		{"groq", "groq"},
+		{"xai", "xai"},
+		{"x-ai", "xai"},
+		{"x.ai", "xai"},
 		// Alibaba Coding Plan aliases
 		{"alibaba-coding", "coding-plan"},
 		{"qwen-coding", "coding-plan"},

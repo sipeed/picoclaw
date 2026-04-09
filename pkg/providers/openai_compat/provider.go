@@ -55,6 +55,7 @@ var stripModelPrefixProviders = map[string]struct{}{
 	"google":     {},
 	"openrouter": {},
 	"zhipu":      {},
+	"xai":        {},
 	"mistral":    {},
 	"vivgrid":    {},
 	"minimax":    {},
