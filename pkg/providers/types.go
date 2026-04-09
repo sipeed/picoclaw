@@ -78,6 +78,7 @@ const (
 	FailoverFormat          FailoverReason = "format"
 	FailoverContextOverflow FailoverReason = "context_overflow"
 	FailoverOverloaded      FailoverReason = "overloaded"
+	FailoverModelNotFound   FailoverReason = "model_not_found"
 	FailoverUnknown         FailoverReason = "unknown"
 )
 
