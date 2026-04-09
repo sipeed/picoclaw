@@ -61,6 +61,8 @@ func (p *CodexProvider) Chat(
 	var opts []option.RequestOption
 	accountID := p.accountID
 	resolvedModel, fallbackReason := resolveCodexModel(model)
+	var streamedText strings.Builder
+	var streamedReasoning strings.Builder
 	if fallbackReason != "" {
 		logger.WarnCF(
 			"provider.codex",
@@ -106,7 +108,19 @@ func (p *CodexProvider) Chat(
 	var resp *responses.Response
 	for stream.Next() {
 		evt := stream.Current()
-		if evt.Type == "response.completed" || evt.Type == "response.failed" || evt.Type == "response.incomplete" {
+		switch string(evt.Type) {
+		case "response.output_text.delta":
+			delta := evt.AsResponseOutputTextDelta()
+			streamedText.WriteString(delta.Delta)
+		case "response.output_text.done":
+			done := evt.AsResponseOutputTextDone()
+			if strings.TrimSpace(done.Text) != "" && strings.TrimSpace(streamedText.String()) == "" {
+				streamedText.WriteString(done.Text)
+			}
+		case "response.reasoning_text.delta":
+			delta := evt.AsResponseReasoningTextDelta()
+			streamedReasoning.WriteString(delta.Delta)
+		case "response.completed", "response.failed", "response.incomplete":
 			evtResp := evt.Response
 			if evtResp.ID != "" {
 				evtRespCopy := evtResp
@@ -153,7 +167,31 @@ func (p *CodexProvider) Chat(
 		return nil, fmt.Errorf("codex API call: stream ended without completed response")
 	}
 
-	return orc.ParseResponseFromStruct(resp), nil
+	parsed := orc.ParseResponseFromStruct(resp)
+	if strings.TrimSpace(parsed.Content) == "" && strings.TrimSpace(streamedText.String()) != "" {
+		parsed.Content = strings.TrimSpace(streamedText.String())
+	}
+	if strings.TrimSpace(parsed.ReasoningContent) == "" && strings.TrimSpace(streamedReasoning.String()) != "" {
+		parsed.ReasoningContent = strings.TrimSpace(streamedReasoning.String())
+	}
+	itemTypes := make([]string, 0, len(resp.Output))
+	for _, item := range resp.Output {
+		itemTypes = append(itemTypes, string(item.Type))
+	}
+	logger.InfoCF("provider.codex", "Codex parsed response", map[string]any{
+		"requested_model": model,
+		"resolved_model": resolvedModel,
+		"resp_status": resp.Status,
+		"output_items": len(resp.Output),
+		"output_types": itemTypes,
+		"streamed_text_len": len(streamedText.String()),
+		"streamed_reasoning_len": len(streamedReasoning.String()),
+		"content_len": len(parsed.Content),
+		"reasoning_len": len(parsed.ReasoningContent),
+		"tool_calls": len(parsed.ToolCalls),
+	})
+
+	return parsed, nil
 }
 
 func (p *CodexProvider) GetDefaultModel() string {

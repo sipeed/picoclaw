@@ -286,8 +286,15 @@ func parseResponse(apiResp *responses.Response) *protocoltypes.LLMResponse {
 		}
 	}
 
+	contentStr := content.String()
+	if strings.TrimSpace(contentStr) == "" {
+		if fallback := strings.TrimSpace(apiResp.OutputText()); fallback != "" {
+			contentStr = fallback
+		}
+	}
+
 	return &protocoltypes.LLMResponse{
-		Content:          content.String(),
+		Content:          contentStr,
 		ReasoningContent: reasoningContent.String(),
 		ToolCalls:        toolCalls,
 		FinishReason:     finishReason,
