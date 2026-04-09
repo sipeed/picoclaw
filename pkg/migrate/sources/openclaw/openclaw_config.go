@@ -642,6 +642,7 @@ type ChannelsConfig struct {
 type WhatsAppConfig struct {
 	Enabled   bool     `json:"enabled"`
 	BridgeURL string   `json:"bridge_url"`
+	Proxy     string   `json:"proxy"`
 	AllowFrom []string `json:"allow_from"`
 }
 
