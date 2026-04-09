@@ -1,0 +1,55 @@
+{
+  "name": "PicoClaw Development",
+  "image": "mcr.microsoft.com/devcontainers/go:1-1.23-bookworm",
+  
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "ms-vscode.makefile-tools",
+        "eamodio.gitlens"
+      ],
+      "settings": {
+        "go.toolsManagement.checkForUpdates": "local",
+        "go.useLanguageServer": true,
+        "go.gopath": "/go",
+        "go.goroot": "/usr/local/go",
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+
+  "remoteUser": "vscode",
+
+  "mounts": [
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.picoclaw,target=/home/vscode/.picoclaw,type=bind,consistency=cached"
+  ],
+
+  "forwardPorts": [18790, 18791, 18792, 18793],
+
+  "portsAttributes": {
+    "18790": {
+      "label": "PicoClaw Gateway",
+      "onAutoForward": "notify"
+    },
+    "18791": {
+      "label": "LINE Webhook",
+      "onAutoForward": "ignore"
+    },
+    "18792": {
+      "label": "WeCom App Webhook",
+      "onAutoForward": "ignore"
+    },
+    "18793": {
+      "label": "WeCom Bot Webhook",
+      "onAutoForward": "ignore"
+    }
+  }
+}
