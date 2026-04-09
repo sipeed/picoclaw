@@ -212,6 +212,9 @@ func TestExistingExposePaths_SkipsMissingPaths(t *testing.T) {
 }
 
 func TestPrepareCommand_AppliesUserEnv(t *testing.T) {
+	if !isSupportedOn(runtime.GOOS) {
+		t.Skipf("isolation not supported on %s", runtime.GOOS)
+	}
 	t.Setenv(config.EnvHome, filepath.Join(t.TempDir(), "home"))
 	if runtime.GOOS == "linux" {
 		binDir := filepath.Join(t.TempDir(), "bin")
