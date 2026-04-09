@@ -2,6 +2,7 @@
 set -e
 
 WORKSPACE="/home/picoclaw/.picoclaw/workspace"
+PICOCLAW_MODEL=bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0
 
 # Wait for LiteLLM sidecar to be ready (Cloud Run sidecars have no startup ordering)
 if [ -n "$LITELLM_BASE_URL" ]; then
@@ -172,7 +173,7 @@ const fs = require('fs');
 const t = fs.readFileSync('$TEMPLATE', 'utf8');
 process.stdout.write(t.replace(/\{\{SPEC_FILE\}\}/g, '$JOB_SPEC'));
 ")
-    picoclaw agent -m "$PROMPT"
+    picoclaw agent --model "$PICOCLAW_MODEL" -m "$PROMPT"
     ;;
 
   generate)
@@ -194,7 +195,7 @@ t = t.replace(/\{\{STEPS\}\}/g, process.env.JOB_STEPS || '');
 t = t.replace(/\{\{EXPECTED_RESULT\}\}/g, process.env.JOB_EXPECTED_RESULT || '');
 process.stdout.write(t);
 ")
-    picoclaw agent -m "$PROMPT"
+    picoclaw agent --model "$PICOCLAW_MODEL" -m "$PROMPT"
     ;;
 
   *)
