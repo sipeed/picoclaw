@@ -677,6 +677,130 @@ func TestShellTool_FileURISandboxing(t *testing.T) {
 	}
 }
 
+func TestShellTool_ScriptPreflight(t *testing.T) {
+	tests := []struct {
+		name     string
+		command  string
+		fileName string
+		content  string
+		want     string
+	}{
+		{
+			name:     "quoted python script path validates content",
+			command:  `python "bad.py"`,
+			fileName: "bad.py",
+			content:  "const value = $DM_JSON;",
+			want:     "exec preflight: detected likely shell variable injection ($DM_JSON)",
+		},
+		{
+			name:     "env-prefixed interpreter validates content",
+			command:  `env PYTHONPATH=/tmp python bad.py`,
+			fileName: "bad.py",
+			content:  "payload = $DM_JSON",
+			want:     "exec preflight: detected likely shell variable injection ($DM_JSON)",
+		},
+		{
+			name:     "quoted node js script path validates shell bleed",
+			command:  `node "bad.js"`,
+			fileName: "bad.js",
+			content:  `NODE "$TMPDIR/hot.json"`,
+			want:     "exec preflight: detected likely shell syntax (NODE \"$TMPDIR/hot.json\")",
+		},
+		{
+			name:     "quoted node mjs script path validates shell bleed",
+			command:  `node "bad.mjs"`,
+			fileName: "bad.mjs",
+			content:  `NODE "$TMPDIR/hot.json"`,
+			want:     "exec preflight: detected likely shell syntax (NODE \"$TMPDIR/hot.json\")",
+		},
+		{
+			name:     "quoted node cjs script path validates shell bleed",
+			command:  `node "bad.cjs"`,
+			fileName: "bad.cjs",
+			content:  `NODE "$TMPDIR/hot.json"`,
+			want:     "exec preflight: detected likely shell syntax (NODE \"$TMPDIR/hot.json\")",
+		},
+		{
+			name:     "piped interpreter fails closed",
+			command:  "cat bad.py | python",
+			fileName: "bad.py",
+			content:  "payload = $DM_JSON",
+			want:     "exec preflight: complex interpreter invocation detected",
+		},
+		{
+			name:     "shell wrapped interpreter fails closed",
+			command:  `bash -c "python bad.py"`,
+			fileName: "bad.py",
+			content:  "payload = $DM_JSON",
+			want:     "exec preflight: complex interpreter invocation detected",
+		},
+		{
+			name:     "process substitution fails closed",
+			command:  "python <(cat bad.py)",
+			fileName: "bad.py",
+			content:  "payload = $DM_JSON",
+			want:     "exec preflight: complex interpreter invocation detected",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(tmpDir, tt.fileName), []byte(tt.content), 0o644); err != nil {
+				t.Fatalf("failed to write test script: %v", err)
+			}
+
+			tool, err := NewExecTool(tmpDir, false)
+			if err != nil {
+				t.Fatalf("unable to configure exec tool: %s", err)
+			}
+
+			result := tool.Execute(context.Background(), map[string]any{
+				"action":  "run",
+				"command": tt.command,
+			})
+			require.True(t, result.IsError, "expected script preflight to block %q", tt.command)
+			require.Contains(t, result.ForLLM, tt.want)
+		})
+	}
+}
+
+func TestShellTool_ScriptPreflight_AllowsDirectChainedInterpreter(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "good.py"), []byte("print('ok')"), 0o644); err != nil {
+		t.Fatalf("failed to write test script: %v", err)
+	}
+
+	tool, err := NewExecTool(tmpDir, false)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"action":  "run",
+		"command": "python good.py && echo ok",
+	})
+	require.NotContains(t, result.ForLLM, "exec preflight:")
+}
+
+func TestShellTool_ScriptPreflight_AllowsDirectChainedNodeInterpreter(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "good.js"), []byte("console.log('ok')"), 0o644); err != nil {
+		t.Fatalf("failed to write test script: %v", err)
+	}
+
+	tool, err := NewExecTool(tmpDir, false)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"action":  "run",
+		"command": "node good.js && echo ok",
+	})
+	require.NotContains(t, result.ForLLM, "exec preflight:")
+}
+
 // TestShellTool_URLBypassPrevented verifies that a command cannot bypass the workspace
 // sandbox by smuggling a real path after a URL that contains the same //path substring.
 // e.g. "echo https://etc/passwd && cat //etc/passwd" must still be blocked.
