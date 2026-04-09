@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -42,7 +43,24 @@ var (
 	mu            sync.RWMutex
 	writers       []io.Writer
 	consoleWriter zerolog.ConsoleWriter
+
+	// controlCharPattern matches ANSI escape sequences and Unicode format
+	// characters that can alter terminal rendering or mislead operators.
+	controlCharPattern = regexp.MustCompile(`(\x1b\[[0-9;]*[a-zA-Z]|\x1b[()][AB012]|\x1b[>?[0-9]+[a-z]|\x1b\][^\x07]*\x07?|\x1b[^a-zA-Z]*[a-zA-Z]|\u202[aeo]|\u200f|\u200e|\u2066|\u2067|\u2068|\u2069)`)
 )
+
+// escapeControlChars replaces terminal control characters and Unicode format
+// characters with their safe escaped representation. This prevents log output
+// from altering terminal state or misleading operators.
+func escapeControlChars(s string) string {
+	return controlCharPattern.ReplaceAllStringFunc(s, func(match string) string {
+		var buf strings.Builder
+		for _, r := range match {
+			fmt.Fprintf(&buf, "\\x%02x", r)
+		}
+		return buf.String()
+	})
+}
 
 func init() {
 	once.Do(func() {
@@ -88,12 +106,16 @@ func formatFieldValue(i any) string {
 	case []byte:
 		s = string(val)
 	default:
-		return fmt.Sprintf("%v", i)
+		return escapeControlChars(fmt.Sprintf("%v", i))
 	}
 
 	if unquoted, err := strconv.Unquote(s); err == nil {
 		s = unquoted
 	}
+
+	// Escape terminal control and format characters to prevent
+	// log output from altering terminal state or misleading operators.
+	s = escapeControlChars(s)
 
 	if strings.Contains(s, "\n") {
 		return fmt.Sprintf("\n%s", s)
