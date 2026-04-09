@@ -143,11 +143,11 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) (runEr
 
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
-		logger.Fatalf("error loading config: %v", err)
+		return fmt.Errorf("error loading config: %w", err)
 	}
 
 	if err = preCheckConfig(cfg); err != nil {
-		logger.Fatalf("config pre-check failed: %v", err)
+		return fmt.Errorf("config pre-check failed: %w", err)
 	}
 
 	// Debug mode permanently overrides the config log level to DEBUG.
