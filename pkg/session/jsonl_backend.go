@@ -38,7 +38,7 @@ func (b *JSONLBackend) GetHistory(key string) []providers.Message {
 		log.Printf("session: get history: %v", err)
 		return []providers.Message{}
 	}
-	return msgs
+	return sanitizeRecoveredHistory(msgs)
 }
 
 func (b *JSONLBackend) GetSummary(key string) string {
