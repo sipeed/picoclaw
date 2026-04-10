@@ -286,19 +286,20 @@ func getCallerSkip() (int, string) {
 
 //nolint:zerologlint
 func getEvent(logger zerolog.Logger, level LogLevel) *zerolog.Event {
+	l := logger.Level(zerolog.DebugLevel)
 	switch level {
 	case zerolog.DebugLevel:
-		return logger.Debug()
+		return l.Debug()
 	case zerolog.InfoLevel:
-		return logger.Info()
+		return l.Info()
 	case zerolog.WarnLevel:
-		return logger.Warn()
+		return l.Warn()
 	case zerolog.ErrorLevel:
-		return logger.Error()
+		return l.Error()
 	case zerolog.FatalLevel:
-		return logger.Fatal()
+		return l.Fatal()
 	default:
-		return logger.Info()
+		return l.Info()
 	}
 }
 
