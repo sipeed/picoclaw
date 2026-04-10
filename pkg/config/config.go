@@ -603,14 +603,14 @@ type EmailConfig struct {
 	// SMTP (outbound)
 	SMTPHost       string       `json:"smtp_host"              yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_SMTP_HOST"`
 	SMTPPort       int          `json:"smtp_port"              yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_SMTP_PORT"`
-	SMTPFrom       string       `json:"smtp_from"              yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_SMTP_FROM"`
-	SMTPUser       string       `json:"smtp_user"              yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_SMTP_USER"`
+	SMTPFrom       SecureString `json:"smtp_from,omitzero"     yaml:"smtp_from,omitempty"     env:"PICOCLAW_CHANNELS_EMAIL_SMTP_FROM"`
+	SMTPUser       SecureString `json:"smtp_user,omitzero"     yaml:"smtp_user,omitempty"     env:"PICOCLAW_CHANNELS_EMAIL_SMTP_USER"`
 	SMTPPassword   SecureString `json:"smtp_password,omitzero" yaml:"smtp_password,omitempty" env:"PICOCLAW_CHANNELS_EMAIL_SMTP_PASSWORD"`
 	DefaultSubject string       `json:"default_subject"        yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_DEFAULT_SUBJECT"`
 	// IMAP (inbound)
 	IMAPHost         string       `json:"imap_host"              yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_IMAP_HOST"`
 	IMAPPort         int          `json:"imap_port"              yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_IMAP_PORT"`
-	IMAPUser         string       `json:"imap_user"              yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_IMAP_USER"`
+	IMAPUser         SecureString `json:"imap_user,omitzero"     yaml:"imap_user,omitempty"     env:"PICOCLAW_CHANNELS_EMAIL_IMAP_USER"`
 	IMAPPassword     SecureString `json:"imap_password,omitzero" yaml:"imap_password,omitempty" env:"PICOCLAW_CHANNELS_EMAIL_IMAP_PASSWORD"`
 	PollIntervalSecs int          `json:"poll_interval_secs"     yaml:"-"                       env:"PICOCLAW_CHANNELS_EMAIL_POLL_INTERVAL_SECS"`
 	// Common

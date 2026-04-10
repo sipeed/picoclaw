@@ -32,13 +32,13 @@ func NewEmailChannel(cfg config.EmailConfig, messageBus *bus.MessageBus) (*Email
 	if cfg.SMTPHost == "" {
 		return nil, fmt.Errorf("email smtp_host is required")
 	}
-	if cfg.SMTPFrom == "" {
+	if cfg.SMTPFrom.String() == "" {
 		return nil, fmt.Errorf("email smtp_from is required")
 	}
 	if cfg.IMAPHost == "" {
 		return nil, fmt.Errorf("email imap_host is required")
 	}
-	if cfg.IMAPUser == "" {
+	if cfg.IMAPUser.String() == "" {
 		return nil, fmt.Errorf("email imap_user is required")
 	}
 
@@ -110,13 +110,13 @@ func (c *EmailChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]str
 	}
 
 	addr := fmt.Sprintf("%s:%d", c.config.SMTPHost, smtpPort)
-	smtpUser := c.config.SMTPUser
+	smtpUser := c.config.SMTPUser.String()
 	if smtpUser == "" {
-		smtpUser = c.config.SMTPFrom
+		smtpUser = c.config.SMTPFrom.String()
 	}
 
 	body := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n%s",
-		c.config.SMTPFrom, to, subject, msg.Content)
+		c.config.SMTPFrom.String(), to, subject, msg.Content)
 
 	var auth smtp.Auth
 	if c.config.SMTPPassword.String() != "" {
@@ -135,11 +135,11 @@ func (c *EmailChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]str
 			return nil, fmt.Errorf("smtp new client: %w", channels.ErrTemporary)
 		}
 		defer client.Close()
-		if err := sendViaSMTPClient(client, auth, c.config.SMTPFrom, to, []byte(body)); err != nil {
+		if err := sendViaSMTPClient(client, auth, c.config.SMTPFrom.String(), to, []byte(body)); err != nil {
 			return nil, err
 		}
 	} else {
-		if err := smtp.SendMail(addr, auth, c.config.SMTPFrom, []string{to}, []byte(body)); err != nil {
+		if err := smtp.SendMail(addr, auth, c.config.SMTPFrom.String(), []string{to}, []byte(body)); err != nil {
 			return nil, fmt.Errorf("smtp send: %w: %w", err, channels.ErrTemporary)
 		}
 	}
@@ -215,7 +215,7 @@ func (c *EmailChannel) pollIMAP() {
 	}
 	defer client.Close()
 
-	if err = client.Login(c.config.IMAPUser, c.config.IMAPPassword.String()).Wait(); err != nil {
+	if err = client.Login(c.config.IMAPUser.String(), c.config.IMAPPassword.String()).Wait(); err != nil {
 		logger.WarnCF("email", "IMAP login failed", map[string]any{"err": err})
 		return
 	}

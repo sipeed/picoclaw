@@ -100,6 +100,7 @@ type channelsConfigV0 struct {
 	WeCom    wecomConfigV0    `json:"wecom"    envPrefix:"PICOCLAW_CHANNELS_WECOM_"`
 	Pico     picoConfigV0     `json:"pico"`
 	IRC      ircConfigV0      `json:"irc"`
+	Email    EmailConfig      `json:"email"`
 }
 
 func (v *channelsConfigV0) ToChannelsConfig() ChannelsConfig {
@@ -134,6 +135,7 @@ func (v *channelsConfigV0) ToChannelsConfig() ChannelsConfig {
 		WeCom:    wecom,
 		Pico:     pico,
 		IRC:      irc,
+		Email:    v.Email,
 	}
 }
 
