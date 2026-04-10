@@ -353,13 +353,17 @@ func setupAndStartServices(
 	}
 	fmt.Println("✓ Heartbeat service started")
 
-	runningServices.MediaStore = media.NewFileMediaStoreWithCleanup(media.MediaCleanerConfig{
-		Enabled:  cfg.Tools.MediaCleanup.Enabled,
-		MaxAge:   time.Duration(cfg.Tools.MediaCleanup.MaxAge) * time.Minute,
-		Interval: time.Duration(cfg.Tools.MediaCleanup.Interval) * time.Minute,
-	})
-	if fms, ok := runningServices.MediaStore.(*media.FileMediaStore); ok {
-		fms.Start()
+	// Initialize MediaStore for file uploads
+	// Note: Changes to media_cleanup config require restart to take effect
+	if runningServices.MediaStore == nil {
+		runningServices.MediaStore = media.NewFileMediaStoreWithCleanup(media.MediaCleanerConfig{
+			Enabled:  cfg.Tools.MediaCleanup.Enabled,
+			MaxAge:   time.Duration(cfg.Tools.MediaCleanup.MaxAge) * time.Minute,
+			Interval: time.Duration(cfg.Tools.MediaCleanup.Interval) * time.Minute,
+		})
+		if fms, ok := runningServices.MediaStore.(*media.FileMediaStore); ok {
+			fms.Start()
+		}
 	}
 
 	overridePicoToken(cfg, authToken)
@@ -450,7 +454,9 @@ func stopAndCleanupServices(runningServices *services, shutdownTimeout time.Dura
 	if runningServices.CronService != nil {
 		runningServices.CronService.Stop()
 	}
-	if runningServices.MediaStore != nil {
+	// Don't stop MediaStore on reload to preserve file references
+	// and allow cleanup goroutine to continue running
+	if !isReload && runningServices.MediaStore != nil {
 		if fms, ok := runningServices.MediaStore.(*media.FileMediaStore); ok {
 			fms.Stop()
 		}
@@ -581,13 +587,17 @@ func restartServices(
 	}
 	fmt.Println("  ✓ Heartbeat service restarted")
 
-	runningServices.MediaStore = media.NewFileMediaStoreWithCleanup(media.MediaCleanerConfig{
-		Enabled:  cfg.Tools.MediaCleanup.Enabled,
-		MaxAge:   time.Duration(cfg.Tools.MediaCleanup.MaxAge) * time.Minute,
-		Interval: time.Duration(cfg.Tools.MediaCleanup.Interval) * time.Minute,
-	})
-	if fms, ok := runningServices.MediaStore.(*media.FileMediaStore); ok {
-		fms.Start()
+	// Reuse existing MediaStore to preserve file references across reloads
+	// Note: Changes to media_cleanup config require restart to take effect
+	if runningServices.MediaStore == nil {
+		runningServices.MediaStore = media.NewFileMediaStoreWithCleanup(media.MediaCleanerConfig{
+			Enabled:  cfg.Tools.MediaCleanup.Enabled,
+			MaxAge:   time.Duration(cfg.Tools.MediaCleanup.MaxAge) * time.Minute,
+			Interval: time.Duration(cfg.Tools.MediaCleanup.Interval) * time.Minute,
+		})
+		if fms, ok := runningServices.MediaStore.(*media.FileMediaStore); ok {
+			fms.Start()
+		}
 	}
 	al.SetMediaStore(runningServices.MediaStore)
 
