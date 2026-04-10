@@ -4,6 +4,10 @@ set -e
 WORKSPACE="/home/picoclaw/.picoclaw/workspace"
 PICOCLAW_MODEL=bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0
 
+echo "=== Workspace contents ==="
+find "$WORKSPACE" -type f | sort
+echo "=========================="
+
 # Wait for LiteLLM sidecar to be ready (Cloud Run sidecars have no startup ordering)
 if [ -n "$LITELLM_BASE_URL" ]; then
   echo "Waiting for LiteLLM at $LITELLM_BASE_URL ..."
