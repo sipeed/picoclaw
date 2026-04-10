@@ -342,7 +342,7 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		return "ok"
 	}
 
-	sessionKey := fmt.Sprintf("cron-%s", job.ID)
+	sessionKey := fmt.Sprintf("cron-%s-%d", job.ID, time.Now().UnixMilli())
 
 	// Call agent with the job message
 	response, err := t.executor.ProcessDirectWithChannel(
