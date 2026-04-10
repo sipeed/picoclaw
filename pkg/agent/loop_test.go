@@ -41,6 +41,38 @@ type fakeMediaChannel struct {
 	sentMedia []bus.OutboundMediaMessage
 }
 
+type fakeStreamer struct {
+	updates   []string
+	finalized []string
+	cancelled bool
+}
+
+func (s *fakeStreamer) Update(ctx context.Context, content string) error {
+	s.updates = append(s.updates, content)
+	return nil
+}
+
+func (s *fakeStreamer) Finalize(ctx context.Context, content string) error {
+	s.finalized = append(s.finalized, content)
+	return nil
+}
+
+func (s *fakeStreamer) Cancel(ctx context.Context) {
+	s.cancelled = true
+}
+
+type fakeStreamingChannel struct {
+	fakeChannel
+	streamer *fakeStreamer
+}
+
+func (f *fakeStreamingChannel) BeginStream(ctx context.Context, chatID string) (channels.Streamer, error) {
+	if f.streamer == nil {
+		f.streamer = &fakeStreamer{}
+	}
+	return f.streamer, nil
+}
+
 func (f *fakeMediaChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
 	f.sentMedia = append(f.sentMedia, msg)
 	return nil, nil
@@ -2657,6 +2689,45 @@ func TestProcessMessage_PublishesReasoningContentToReasoningChannel(t *testing.T
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("expected reasoning content to be published to reasoning channel")
+	}
+}
+
+func TestProcessMessage_StreamsToChannelWhenProviderSupportsStreaming(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &mockProvider{streamChunks: []string{"hel", "lo"}}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	streamingChannel := &fakeStreamingChannel{fakeChannel: fakeChannel{id: "reason-chat"}, streamer: &fakeStreamer{}}
+	al.SetChannelManager(newStartedTestChannelManager(t, msgBus, nil, "pico", streamingChannel))
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "pico",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "hello",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "hello" {
+		t.Fatalf("processMessage() response = %q, want %q", response, "hello")
+	}
+	if got := streamingChannel.streamer.updates; len(got) != 2 || got[0] != "hel" || got[1] != "hello" {
+		t.Fatalf("stream updates = %v, want [hel hello]", got)
+	}
+	if got := streamingChannel.streamer.finalized; len(got) != 1 || got[0] != "hello" {
+		t.Fatalf("stream finalized = %v, want [hello]", got)
 	}
 }
 
