@@ -1033,6 +1033,47 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 	// Ensure shared tools are re-registered on the new registry
 	registerSharedTools(al, cfg, al.bus, registry, provider)
 
+	var (
+		newMCPManager mcpController
+		mcpSummary    mcpRegistrationSummary
+	)
+	if cfg.Tools.IsToolEnabled("mcp") && countEnabledMCPServers(cfg.Tools.MCP.Servers) > 0 {
+		newMCPManager = newMCPController()
+
+		workspacePath := cfg.WorkspacePath()
+		if defaultAgent := registry.GetDefaultAgent(); defaultAgent != nil && defaultAgent.Workspace != "" {
+			workspacePath = defaultAgent.Workspace
+		}
+
+		if err := newMCPManager.LoadFromMCPConfig(ctx, cfg.Tools.MCP, workspacePath); err != nil {
+			if closeErr := newMCPManager.Close(); closeErr != nil {
+				logger.ErrorCF("agent", "Failed to close MCP manager",
+					map[string]any{
+						"error": closeErr.Error(),
+					})
+			}
+			return fmt.Errorf("failed to initialize MCP during reload: %w", err)
+		}
+
+		mcpSummary = registerMCPToolsOnRegistry(registry, cfg, newMCPManager, newMCPManager.GetServers())
+		if err := registerMCPDiscoveryToolsOnRegistry(registry, cfg); err != nil {
+			if closeErr := newMCPManager.Close(); closeErr != nil {
+				logger.ErrorCF("agent", "Failed to close MCP manager",
+					map[string]any{
+						"error": closeErr.Error(),
+					})
+			}
+			return fmt.Errorf("failed to restore MCP discovery tools during reload: %w", err)
+		}
+	}
+	if al.mediaStore != nil {
+		for _, agentID := range registry.ListAgentIDs() {
+			if agent, ok := registry.GetAgent(agentID); ok {
+				agent.Tools.SetMediaStore(al.mediaStore)
+			}
+		}
+	}
+
 	// Atomically swap the config and registry under write lock
 	// This ensures readers see a consistent pair
 	al.mu.Lock()
@@ -1054,6 +1095,7 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 
 	al.mu.Unlock()
 
+	oldMCPManager := al.mcp.replaceForReload(newMCPManager, newMCPManager != nil)
 	al.hookRuntime.reset(al)
 	configureHookManagerFromConfig(al.hooks, cfg)
 
@@ -1074,10 +1116,21 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 			}
 		}
 	}
+	if oldMCPManager != nil {
+		if err := oldMCPManager.Close(); err != nil {
+			logger.ErrorCF("agent", "Failed to close previous MCP manager",
+				map[string]any{
+					"error": err.Error(),
+				})
+		}
+	}
 
 	logger.InfoCF("agent", "Provider and config reloaded successfully",
 		map[string]any{
-			"model": cfg.Agents.Defaults.GetModelName(),
+			"model":                   cfg.Agents.Defaults.GetModelName(),
+			"mcp_server_count":        mcpSummary.serverCount,
+			"mcp_unique_tools":        mcpSummary.uniqueTools,
+			"mcp_total_registrations": mcpSummary.totalRegistrations,
 		})
 
 	return nil
@@ -3454,6 +3507,9 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 		Config:          cfg,
 		ListAgentIDs:    registry.ListAgentIDs,
 		ListDefinitions: al.cmdRegistry.Definitions,
+		GetMCPStatus: func() string {
+			return formatMCPStatus(cfg, al.mcp.statusSnapshot())
+		},
 		GetEnabledChannels: func() []string {
 			if al.channelManager == nil {
 				return nil

@@ -39,7 +39,7 @@ func TestBuiltinHelpHandler_ReturnsFormattedMessage(t *testing.T) {
 	if !strings.Contains(reply, "/show [model|channel|agents]") {
 		t.Fatalf("/help reply missing /show usage, got %q", reply)
 	}
-	if !strings.Contains(reply, "/list [models|channels|agents|skills]") {
+	if !strings.Contains(reply, "/list [models|channels|agents|skills|mcp]") {
 		t.Fatalf("/help reply missing /list usage, got %q", reply)
 	}
 	if !strings.Contains(reply, "/use <skill> <message>") {
@@ -171,6 +171,31 @@ func TestBuiltinListSkills_UsesRuntimeSkillNames(t *testing.T) {
 	}
 	if !strings.Contains(reply, "shell") || !strings.Contains(reply, "git") {
 		t.Fatalf("/list skills reply=%q, want installed skill names", reply)
+	}
+}
+
+func TestBuiltinListMCP_UsesRuntimeStatus(t *testing.T) {
+	rt := &Runtime{
+		GetMCPStatus: func() string {
+			return "MCP Enabled: yes\nConnected Servers: 1/1\n\nServers:\n- remote: connected, transport=http, tools=3, url=http://127.0.0.1:8080/mcp"
+		},
+	}
+	defs := BuiltinDefinitions()
+	ex := NewExecutor(NewRegistry(defs), rt)
+
+	var reply string
+	res := ex.Execute(context.Background(), Request{
+		Text: "/list mcp",
+		Reply: func(text string) error {
+			reply = text
+			return nil
+		},
+	})
+	if res.Outcome != OutcomeHandled {
+		t.Fatalf("/list mcp: outcome=%v, want=%v", res.Outcome, OutcomeHandled)
+	}
+	if !strings.Contains(reply, "Connected Servers: 1/1") || !strings.Contains(reply, "remote: connected") {
+		t.Fatalf("/list mcp reply=%q, want MCP status summary", reply)
 	}
 }
 
