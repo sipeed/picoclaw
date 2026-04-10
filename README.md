@@ -513,7 +513,7 @@ picoclaw skills search "web scraping"
 picoclaw skills install <skill-name>
 ```
 
-**Configure ClawHub token** (optional, for higher rate limits):
+**Configure skill registries**:
 
 Add to your `config.json`:
 ```json
@@ -523,12 +523,19 @@ Add to your `config.json`:
       "registries": {
         "clawhub": {
           "auth_token": "your-clawhub-token"
+        },
+        "github": {
+          "base_url": "https://github.com",
+          "auth_token": "your-github-token",
+          "proxy": ""
         }
       }
     }
   }
 }
 ```
+
+`tools.skills.github.*` is deprecated. Use `tools.skills.registries.github.*` instead.
 
 For more details, see [Tools Configuration - Skills](docs/tools_configuration.md#skills-tool).
 

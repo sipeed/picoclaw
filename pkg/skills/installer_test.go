@@ -127,6 +127,77 @@ func TestParseGitHubRef(t *testing.T) {
 	}
 }
 
+func TestParseGitHubRefWithBaseURL(t *testing.T) {
+	ref, err := parseGitHubRefWithBaseURL(
+		"https://ghe.example.com/git/org/repo/tree/dev/skills/test",
+		"https://ghe.example.com/git",
+		"main",
+	)
+	if err != nil {
+		t.Fatalf("parseGitHubRefWithBaseURL() unexpected error = %v", err)
+	}
+	if ref.Owner != "org" {
+		t.Fatalf("owner = %q, want org", ref.Owner)
+	}
+	if ref.RepoName != "repo" {
+		t.Fatalf("repo = %q, want repo", ref.RepoName)
+	}
+	if ref.Ref != "dev" {
+		t.Fatalf("ref = %q, want dev", ref.Ref)
+	}
+	if ref.SubPath != "skills/test" {
+		t.Fatalf("subPath = %q, want skills/test", ref.SubPath)
+	}
+
+	dirName, err := githubInstallDirNameWithBaseURL(
+		"https://ghe.example.com/git/org/repo/tree/dev/skills/test",
+		"https://ghe.example.com/git",
+	)
+	if err != nil {
+		t.Fatalf("githubInstallDirNameWithBaseURL() unexpected error = %v", err)
+	}
+	if dirName != "test" {
+		t.Fatalf("dirName = %q, want test", dirName)
+	}
+
+	ref, err = parseGitHubRefWithBaseURL("https://ghe.example.com/git/org/repo", "https://ghe.example.com/git", "")
+	if err != nil {
+		t.Fatalf("parseGitHubRefWithBaseURL() unexpected error = %v", err)
+	}
+	if ref.Ref != "" {
+		t.Fatalf("ref = %q, want empty", ref.Ref)
+	}
+}
+
+func TestSkillInstallerResolveGitHubRefUsesDefaultBranch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v3/repos/org/repo":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"default_branch":"master"}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	installer, err := NewSkillInstallerWithBaseURL(t.TempDir(), server.URL, "", "")
+	if err != nil {
+		t.Fatalf("NewSkillInstallerWithBaseURL() error = %v", err)
+	}
+
+	ref, err := installer.resolveGitHubRef(context.Background(), "org/repo/skills/test", "")
+	if err != nil {
+		t.Fatalf("resolveGitHubRef() error = %v", err)
+	}
+	if ref.Ref != "master" {
+		t.Fatalf("ref = %q, want master", ref.Ref)
+	}
+	if ref.SubPath != "skills/test" {
+		t.Fatalf("subPath = %q, want skills/test", ref.SubPath)
+	}
+}
+
 func TestShouldDownload(t *testing.T) {
 	tests := []struct {
 		name string
@@ -197,6 +268,16 @@ func TestNewSkillInstaller(t *testing.T) {
 		t.Errorf("githubToken = %v, want 'test-token'", installer.githubToken)
 	}
 
+	if installer.githubBaseURL != "https://github.com" {
+		t.Errorf("githubBaseURL = %v, want https://github.com", installer.githubBaseURL)
+	}
+	if installer.githubAPIBaseURL != "https://api.github.com" {
+		t.Errorf("githubAPIBaseURL = %v, want https://api.github.com", installer.githubAPIBaseURL)
+	}
+	if installer.githubRawBaseURL != "https://raw.githubusercontent.com" {
+		t.Errorf("githubRawBaseURL = %v, want https://raw.githubusercontent.com", installer.githubRawBaseURL)
+	}
+
 	if installer.proxy != "" {
 		t.Errorf("proxy = %v, want empty", installer.proxy)
 	}
@@ -231,6 +312,24 @@ func TestNewSkillInstaller_WithProxy(t *testing.T) {
 
 	if transport.Proxy == nil {
 		t.Error("transport.Proxy is nil, expected non-nil")
+	}
+}
+
+func TestNewSkillInstaller_WithBaseURL(t *testing.T) {
+	tmpDir := t.TempDir()
+	installer, err := NewSkillInstallerWithBaseURL(tmpDir, "https://github.example.com", "test-token", "")
+	if err != nil {
+		t.Fatalf("NewSkillInstallerWithBaseURL() error = %v", err)
+	}
+
+	if installer.githubBaseURL != "https://github.example.com" {
+		t.Errorf("githubBaseURL = %v, want https://github.example.com", installer.githubBaseURL)
+	}
+	if installer.githubAPIBaseURL != "https://github.example.com/api/v3" {
+		t.Errorf("githubAPIBaseURL = %v, want https://github.example.com/api/v3", installer.githubAPIBaseURL)
+	}
+	if installer.githubRawBaseURL != "https://github.example.com/raw" {
+		t.Errorf("githubRawBaseURL = %v, want https://github.example.com/raw", installer.githubRawBaseURL)
 	}
 }
 

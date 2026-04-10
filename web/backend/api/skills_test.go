@@ -15,8 +15,25 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/sipeed/picoclaw/pkg/config"
 )
+
+func setClawHubBaseURL(cfg *config.Config, baseURL string) {
+	registryCfg, _ := cfg.Tools.Skills.Registries.Get("clawhub")
+	registryCfg.BaseURL = baseURL
+	cfg.Tools.Skills.Registries.Set("clawhub", registryCfg)
+}
+
+func setGithubBaseURL(cfg *config.Config, baseURL string) {
+	registryCfg, ok := cfg.Tools.Skills.Registries.Get("github")
+	if !ok {
+		return
+	}
+	registryCfg.BaseURL = baseURL
+	cfg.Tools.Skills.Registries.Set("github", registryCfg)
+}
 
 func TestHandleListSkills(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
@@ -554,7 +571,8 @@ func TestHandleSearchSkills(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/search" {
 			http.NotFound(w, r)
 			return
@@ -583,7 +601,7 @@ func TestHandleSearchSkills(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg.Tools.Skills.Registries.ClawHub.BaseURL = server.URL
+	setClawHubBaseURL(cfg, server.URL)
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
@@ -627,7 +645,73 @@ func TestHandleSearchSkills(t *testing.T) {
 	}
 }
 
-func TestHandleSearchSkillsPagination(t *testing.T) {
+func TestHandleSearchSkillsUsesGitHubResultVersionInURL(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	cfg.Agents.Defaults.Workspace = workspace
+
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v3/search/code" {
+			http.NotFound(w, r)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{
+				{
+					"path":  "skills/pr-review/SKILL.md",
+					"score": 10,
+					"repository": map[string]any{
+						"full_name":      "foo/bar",
+						"name":           "bar",
+						"description":    "Review pull requests",
+						"default_branch": "master",
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	setGithubBaseURL(cfg, server.URL)
+	clawHubRegistry, _ := cfg.Tools.Skills.Registries.Get("clawhub")
+	clawHubRegistry.Enabled = false
+	cfg.Tools.Skills.Registries.Set("clawhub", clawHubRegistry)
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/skills/search?q=pr+review&limit=5", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp skillSearchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Results) != 1 {
+		t.Fatalf("results count = %d, want 1", len(resp.Results))
+	}
+	if resp.Results[0].URL != server.URL+"/foo/bar/tree/master/skills/pr-review" {
+		t.Fatalf("result URL = %q", resp.Results[0].URL)
+	}
+}
+
+func TestHandleSearchSkillsGitHubRateLimitDegradesGracefully(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 
@@ -639,6 +723,57 @@ func TestHandleSearchSkillsPagination(t *testing.T) {
 	cfg.Agents.Defaults.Workspace = workspace
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v3/search/code" {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"message":"API rate limit exceeded for 1.2.3.4"}`))
+	}))
+	defer server.Close()
+
+	setGithubBaseURL(cfg, server.URL)
+	clawHubRegistry, _ := cfg.Tools.Skills.Registries.Get("clawhub")
+	clawHubRegistry.Enabled = false
+	cfg.Tools.Skills.Registries.Set("clawhub", clawHubRegistry)
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/skills/search?q=pr+review&limit=5", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp skillSearchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Results) != 0 {
+		t.Fatalf("results count = %d, want 0", len(resp.Results))
+	}
+}
+
+func TestHandleSearchSkillsPagination(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	cfg.Agents.Defaults.Workspace = workspace
+
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/search" {
 			http.NotFound(w, r)
 			return
@@ -681,7 +816,7 @@ func TestHandleSearchSkillsPagination(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg.Tools.Skills.Registries.ClawHub.BaseURL = server.URL
+	setClawHubBaseURL(cfg, server.URL)
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
@@ -733,7 +868,8 @@ func TestHandleSearchSkillsClampsRegistryFanout(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), "workspace")
 	cfg.Agents.Defaults.Workspace = workspace
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/search" {
 			http.NotFound(w, r)
 			return
@@ -755,7 +891,7 @@ func TestHandleSearchSkillsClampsRegistryFanout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg.Tools.Skills.Registries.ClawHub.BaseURL = server.URL
+	setClawHubBaseURL(cfg, server.URL)
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
@@ -838,7 +974,7 @@ func TestHandleInstallSkill(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg.Tools.Skills.Registries.ClawHub.BaseURL = server.URL
+	setClawHubBaseURL(cfg, server.URL)
 	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
 		t.Fatalf("SaveConfig() error = %v", saveErr)
 	}
@@ -972,7 +1108,7 @@ func TestHandleInstallSkillForcePreservesExistingSkillOnFailure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg.Tools.Skills.Registries.ClawHub.BaseURL = server.URL
+	setClawHubBaseURL(cfg, server.URL)
 	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
 		t.Fatalf("SaveConfig() error = %v", saveErr)
 	}
@@ -1005,6 +1141,173 @@ func TestHandleInstallSkillForcePreservesExistingSkillOnFailure(t *testing.T) {
 	}
 	if !bytes.Equal(gotContent, oldContent) {
 		t.Fatalf("existing skill should remain unchanged, got:\n%s", string(gotContent))
+	}
+}
+
+func TestHandleInstallSkillDefaultsRegistryToGitHub(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, loadErr := config.LoadConfig(configPath)
+	if loadErr != nil {
+		t.Fatalf("LoadConfig() error = %v", loadErr)
+	}
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	cfg.Agents.Defaults.Workspace = workspace
+	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
+		t.Fatalf("SaveConfig() error = %v", saveErr)
+	}
+
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v3/repos/foo/bar":
+			json.NewEncoder(w).Encode(map[string]any{"default_branch": "master"})
+		case "/api/v3/repos/foo/bar/contents/.agents/skills/pr-review":
+			assert.Equal(t, "ref=master", r.URL.RawQuery)
+			json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"type":         "file",
+					"name":         "SKILL.md",
+					"download_url": server.URL + "/raw/foo/bar/master/.agents/skills/pr-review/SKILL.md",
+				},
+			})
+		case "/raw/foo/bar/master/.agents/skills/pr-review/SKILL.md":
+			_, _ = w.Write([]byte("---\nname: pr-review\ndescription: PR review skill\n---\n# PR Review\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	githubRegistry, ok := cfg.Tools.Skills.Registries.Get("github")
+	if !ok {
+		t.Fatalf("github registry missing from default config")
+	}
+	githubRegistry.BaseURL = server.URL
+	cfg.Tools.Skills.Registries.Set("github", githubRegistry)
+	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
+		t.Fatalf("SaveConfig() error = %v", saveErr)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	body, err := json.Marshal(installSkillRequest{
+		Slug: "foo/bar/.agents/skills/pr-review",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/skills/install", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp installSkillResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if resp.Registry != "github" {
+		t.Fatalf("resp.Registry = %q, want github", resp.Registry)
+	}
+}
+
+func TestHandleInstallSkillTracksGitHubURLInstallsAsInstalled(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, loadErr := config.LoadConfig(configPath)
+	if loadErr != nil {
+		t.Fatalf("LoadConfig() error = %v", loadErr)
+	}
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	cfg.Agents.Defaults.Workspace = workspace
+
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v3/repos/foo/bar":
+			json.NewEncoder(w).Encode(map[string]any{"default_branch": "master"})
+		case "/api/v3/repos/foo/bar/contents/.agents/skills/pr-review":
+			assert.Equal(t, "ref=master", r.URL.RawQuery)
+			json.NewEncoder(w).Encode([]map[string]any{{
+				"type":         "file",
+				"name":         "SKILL.md",
+				"download_url": server.URL + "/raw/foo/bar/master/.agents/skills/pr-review/SKILL.md",
+			}})
+		case "/api/v3/search/code":
+			json.NewEncoder(w).Encode(map[string]any{
+				"items": []map[string]any{{
+					"path":  ".agents/skills/pr-review/SKILL.md",
+					"score": 10,
+					"repository": map[string]any{
+						"full_name":      "foo/bar",
+						"name":           "bar",
+						"description":    "PR review skill",
+						"default_branch": "master",
+					},
+				}},
+			})
+		case "/raw/foo/bar/master/.agents/skills/pr-review/SKILL.md":
+			_, _ = w.Write([]byte("---\nname: pr-review\ndescription: PR review skill\n---\n# PR Review\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	setGithubBaseURL(cfg, server.URL)
+	clawHubRegistry, _ := cfg.Tools.Skills.Registries.Get("clawhub")
+	clawHubRegistry.Enabled = false
+	cfg.Tools.Skills.Registries.Set("clawhub", clawHubRegistry)
+	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
+		t.Fatalf("SaveConfig() error = %v", saveErr)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	installBody, err := json.Marshal(installSkillRequest{
+		Slug: server.URL + "/foo/bar/tree/master/.agents/skills/pr-review",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	installRec := httptest.NewRecorder()
+	installReq := httptest.NewRequest(http.MethodPost, "/api/skills/install", bytes.NewReader(installBody))
+	installReq.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(installRec, installReq)
+
+	if installRec.Code != http.StatusOK {
+		t.Fatalf("install status = %d, want %d, body=%s", installRec.Code, http.StatusOK, installRec.Body.String())
+	}
+
+	searchRec := httptest.NewRecorder()
+	searchReq := httptest.NewRequest(http.MethodGet, "/api/skills/search?q=pr+review&limit=5", nil)
+	mux.ServeHTTP(searchRec, searchReq)
+
+	if searchRec.Code != http.StatusOK {
+		t.Fatalf("search status = %d, want %d, body=%s", searchRec.Code, http.StatusOK, searchRec.Body.String())
+	}
+
+	var searchResp skillSearchResponse
+	if err := json.Unmarshal(searchRec.Body.Bytes(), &searchResp); err != nil {
+		t.Fatalf("Unmarshal(search response) error = %v", err)
+	}
+	if len(searchResp.Results) != 1 {
+		t.Fatalf("search results count = %d, want 1", len(searchResp.Results))
+	}
+	if !searchResp.Results[0].Installed || searchResp.Results[0].InstalledName != "pr-review" {
+		t.Fatalf("search result should be treated as installed after URL install, got %#v", searchResp.Results[0])
 	}
 }
 
@@ -1047,7 +1350,7 @@ func TestHandleInstallSkillRollsBackOnOriginMetadataWriteFailure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg.Tools.Skills.Registries.ClawHub.BaseURL = server.URL
+	setClawHubBaseURL(cfg, server.URL)
 	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
 		t.Fatalf("SaveConfig() error = %v", saveErr)
 	}
@@ -1135,7 +1438,7 @@ func TestHandleInstallSkillSerializesConcurrentRequests(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg.Tools.Skills.Registries.ClawHub.BaseURL = server.URL
+	setClawHubBaseURL(cfg, server.URL)
 	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
 		t.Fatalf("SaveConfig() error = %v", saveErr)
 	}
@@ -1248,7 +1551,7 @@ func TestHandleImportSkillWaitsForConcurrentInstall(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg.Tools.Skills.Registries.ClawHub.BaseURL = server.URL
+	setClawHubBaseURL(cfg, server.URL)
 	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
 		t.Fatalf("SaveConfig() error = %v", saveErr)
 	}
@@ -1365,7 +1668,7 @@ func TestHandleInstallSkillRejectsInvalidArchive(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg.Tools.Skills.Registries.ClawHub.BaseURL = server.URL
+	setClawHubBaseURL(cfg, server.URL)
 	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
 		t.Fatalf("SaveConfig() error = %v", saveErr)
 	}

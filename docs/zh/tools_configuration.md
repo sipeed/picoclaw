@@ -461,3 +461,29 @@ Skills 工具配置通过 ClawHub 等注册表进行技能发现和安装。
 - `PICOCLAW_TOOLS_MCP_ENABLED=true`
 
 注意：嵌套的映射式配置（例如 `tools.mcp.servers.<name>.*`）在 `config.json` 中配置，而非通过环境变量。
+
+## Skills Tool
+
+Skills 工具用于通过仓库源发现和安装 Skill，支持 ClawHub 与 GitHub。
+
+### Registries
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `registries.clawhub.enabled` | bool | true | 是否启用 ClawHub |
+| `registries.clawhub.base_url` | string | `https://clawhub.ai` | ClawHub 基础地址 |
+| `registries.clawhub.auth_token` | string | `""` | ClawHub 认证令牌 |
+| `registries.github.enabled` | bool | true | 是否启用 GitHub |
+| `registries.github.base_url` | string | `https://github.com` | GitHub 或 GitHub Enterprise 基础地址 |
+| `registries.github.auth_token` | string | `""` | GitHub 访问令牌 |
+| `registries.github.proxy` | string | `""` | GitHub 请求代理 |
+
+### 旧版 GitHub 配置
+
+`github.*` 已废弃，建议迁移到 `registries.github.*`。当前仍保留兼容，后续可移除。
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `github.base_url` | string | `https://github.com` | 已废弃 |
+| `github.proxy` | string | `""` | 已废弃 |
+| `github.token` | string | `""` | 已废弃 |

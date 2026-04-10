@@ -936,15 +936,13 @@ func (v *webToolsConfigV0) ToWebToolsConfig() WebToolsConfig {
 }
 
 type skillsToolsConfigV0 struct {
-	ToolConfig            `                         envPrefix:"PICOCLAW_TOOLS_SKILLS_"`
-	Registries            skillsRegistriesConfigV0 `                                   json:"registries"`
-	Github                skillsGithubConfigV0     `                                   json:"github"`
-	MaxConcurrentSearches int                      `                                   json:"max_concurrent_searches" env:"PICOCLAW_TOOLS_SKILLS_MAX_CONCURRENT_SEARCHES"`
-	SearchCache           SearchCacheConfig        `                                   json:"search_cache"`
-}
-
-type skillsRegistriesConfigV0 struct {
-	ClawHub clawHubRegistryConfigV0 `json:"clawhub"`
+	ToolConfig `envPrefix:"PICOCLAW_TOOLS_SKILLS_"`
+	Registries struct {
+		ClawHub clawHubRegistryConfigV0 `json:"clawhub"`
+	} `                                   json:"registries"`
+	Github                skillsGithubConfigV0 `                                   json:"github"`
+	MaxConcurrentSearches int                  `                                   json:"max_concurrent_searches" env:"PICOCLAW_TOOLS_SKILLS_MAX_CONCURRENT_SEARCHES"`
+	SearchCache           SearchCacheConfig    `                                   json:"search_cache"`
 }
 
 type clawHubRegistryConfigV0 struct {
@@ -955,12 +953,15 @@ type clawHubRegistryConfigV0 struct {
 	SkillsPath string `json:"skills_path" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_SKILLS_PATH"`
 }
 
-func (v *clawHubRegistryConfigV0) ToClawHubRegistryConfig() ClawHubRegistryConfig {
-	cfg := ClawHubRegistryConfig{
-		Enabled:    v.Enabled,
-		BaseURL:    v.BaseURL,
-		SearchPath: v.SearchPath,
-		SkillsPath: v.SkillsPath,
+func (v *clawHubRegistryConfigV0) ToSkillRegistryConfig() SkillRegistryConfig {
+	cfg := SkillRegistryConfig{
+		Name:    "clawhub",
+		Enabled: v.Enabled,
+		BaseURL: v.BaseURL,
+		Param: map[string]any{
+			"search_path": v.SearchPath,
+			"skills_path": v.SkillsPath,
+		},
 	}
 	if v.AuthToken != "" {
 		cfg.AuthToken = *NewSecureString(v.AuthToken)
@@ -969,31 +970,25 @@ func (v *clawHubRegistryConfigV0) ToClawHubRegistryConfig() ClawHubRegistryConfi
 }
 
 type skillsGithubConfigV0 struct {
-	Token string `json:"token"           env:"PICOCLAW_TOOLS_SKILLS_GITHUB_TOKEN"`
-	Proxy string `json:"proxy,omitempty" env:"PICOCLAW_TOOLS_SKILLS_GITHUB_PROXY"`
+	BaseURL string `json:"base_url,omitempty" env:"PICOCLAW_TOOLS_SKILLS_GITHUB_BASE_URL"`
+	Token   string `json:"token"              env:"PICOCLAW_TOOLS_SKILLS_GITHUB_TOKEN"`
+	Proxy   string `json:"proxy,omitempty"    env:"PICOCLAW_TOOLS_SKILLS_GITHUB_PROXY"`
 }
 
 func (v *skillsGithubConfigV0) ToSkillsGithubConfig() SkillsGithubConfig {
 	return SkillsGithubConfig{
-		Token: *NewSecureString(v.Token),
-		Proxy: v.Proxy,
-	}
-}
-
-func (v *skillsRegistriesConfigV0) ToSkillsRegistriesConfig() SkillsRegistriesConfig {
-	clawHub := v.ClawHub.ToClawHubRegistryConfig()
-
-	return SkillsRegistriesConfig{
-		ClawHub: clawHub,
+		BaseURL: v.BaseURL,
+		Token:   *NewSecureString(v.Token),
+		Proxy:   v.Proxy,
 	}
 }
 
 func (v *skillsToolsConfigV0) ToSkillsToolsConfig() SkillsToolsConfig {
-	registries := v.Registries.ToSkillsRegistriesConfig()
+	clawHub := v.Registries.ClawHub.ToSkillRegistryConfig()
 	github := v.Github.ToSkillsGithubConfig()
 	return SkillsToolsConfig{
 		ToolConfig:            v.ToolConfig,
-		Registries:            registries,
+		Registries:            SkillsRegistriesConfig{&clawHub},
 		Github:                github,
 		MaxConcurrentSearches: v.MaxConcurrentSearches,
 		SearchCache:           v.SearchCache,

@@ -307,21 +307,7 @@ func registerSharedTools(
 		find_skills_enable := cfg.Tools.IsToolEnabled("find_skills")
 		install_skills_enable := cfg.Tools.IsToolEnabled("install_skill")
 		if skills_enabled && (find_skills_enable || install_skills_enable) {
-			clawHubConfig := cfg.Tools.Skills.Registries.ClawHub
-			registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
-				MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
-				ClawHub: skills.ClawHubConfig{
-					Enabled:         clawHubConfig.Enabled,
-					BaseURL:         clawHubConfig.BaseURL,
-					AuthToken:       clawHubConfig.AuthToken.String(),
-					SearchPath:      clawHubConfig.SearchPath,
-					SkillsPath:      clawHubConfig.SkillsPath,
-					DownloadPath:    clawHubConfig.DownloadPath,
-					Timeout:         clawHubConfig.Timeout,
-					MaxZipSize:      clawHubConfig.MaxZipSize,
-					MaxResponseSize: clawHubConfig.MaxResponseSize,
-				},
-			})
+			registryMgr := skills.NewRegistryManagerFromToolsConfig(cfg.Tools.Skills)
 
 			if find_skills_enable {
 				searchCache := skills.NewSearchCache(
