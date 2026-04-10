@@ -208,7 +208,7 @@ const e2eJob = new gcp.cloudrunv2.Job("picoclaw-e2e-job", {
                         },
                         {
                             name: "config",
-                            mountPath: "/home/picoclaw/.picoclaw",
+                            mountPath: "/home/picoclaw/.picoclaw-config",
                         },
                     ],
                     resources: {

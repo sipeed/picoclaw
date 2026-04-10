@@ -64,8 +64,5 @@ USER picoclaw
 # Run onboard to create initial directories and config
 RUN /usr/local/bin/picoclaw onboard
 
-# Bake workspace (skills, tests) into the image for Cloud Run Jobs
-COPY --chown=picoclaw:picoclaw docker/data/workspace /home/picoclaw/.picoclaw/workspace
-
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["gateway"]
