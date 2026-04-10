@@ -334,20 +334,41 @@ func (v *SkillsRegistriesConfig) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	legacy := map[string]*SkillRegistryConfig{}
+	legacy := map[string]json.RawMessage{}
 	if err := json.Unmarshal(data, &legacy); err != nil {
 		return err
 	}
 
-	list = make([]*SkillRegistryConfig, 0, len(legacy))
-	for name, registry := range legacy {
+	if len(*v) == 0 {
+		keys := make([]string, 0, len(legacy))
+		for name := range legacy {
+			keys = append(keys, name)
+		}
+		sort.Strings(keys)
+		list = make([]*SkillRegistryConfig, 0, len(keys))
+		for _, name := range keys {
+			var registry SkillRegistryConfig
+			if err := json.Unmarshal(legacy[name], &registry); err != nil {
+				return err
+			}
+			registry.Name = name
+			list = append(list, &registry)
+		}
+		*v = list
+		return nil
+	}
+
+	for _, name := range sortedRegistryNamesFromJSON(legacy) {
+		registry := cloneRegistryConfig(findRegistryConfigByName(*v, name))
 		if registry == nil {
-			continue
+			registry = &SkillRegistryConfig{Name: name}
+		}
+		if err := json.Unmarshal(legacy[name], registry); err != nil {
+			return err
 		}
 		registry.Name = name
-		list = append(list, registry)
+		v.Set(name, *registry)
 	}
-	*v = list
 	return nil
 }
 
@@ -366,24 +387,42 @@ func (v SkillsRegistriesConfig) MarshalJSON() ([]byte, error) {
 }
 
 func (c *SkillRegistryConfig) UnmarshalJSON(data []byte) error {
-	type alias struct {
-		Name      string         `json:"name,omitempty"`
-		Enabled   bool           `json:"enabled"`
-		BaseURL   string         `json:"base_url"`
-		AuthToken SecureString   `json:"auth_token,omitzero"`
-		Param     map[string]any `json:"param,omitempty"`
-	}
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
-	var parsed alias
-	if err := json.Unmarshal(data, &parsed); err != nil {
-		return err
+	params := cloneRegistryParams(c.Param)
+	if params == nil {
+		params = map[string]any{}
 	}
-	params := map[string]any{}
-	for key, value := range parsed.Param {
-		params[key] = value
+	if value, ok := raw["name"]; ok {
+		if err := json.Unmarshal(value, &c.Name); err != nil {
+			return err
+		}
+	}
+	if value, ok := raw["enabled"]; ok {
+		if err := json.Unmarshal(value, &c.Enabled); err != nil {
+			return err
+		}
+	}
+	if value, ok := raw["base_url"]; ok {
+		if err := json.Unmarshal(value, &c.BaseURL); err != nil {
+			return err
+		}
+	}
+	if value, ok := raw["auth_token"]; ok {
+		if err := json.Unmarshal(value, &c.AuthToken); err != nil {
+			return err
+		}
+	}
+	if value, ok := raw["param"]; ok {
+		var nested map[string]any
+		if err := json.Unmarshal(value, &nested); err != nil {
+			return err
+		}
+		for key, nestedValue := range nested {
+			params[key] = nestedValue
+		}
 	}
 	for key, value := range raw {
 		switch key {
@@ -397,10 +436,6 @@ func (c *SkillRegistryConfig) UnmarshalJSON(data []byte) error {
 			params[key] = decoded
 		}
 	}
-	c.Name = parsed.Name
-	c.Enabled = parsed.Enabled
-	c.BaseURL = parsed.BaseURL
-	c.AuthToken = parsed.AuthToken
 	c.Param = params
 	return nil
 }
@@ -433,7 +468,10 @@ func (c *SkillRegistryConfig) UnmarshalYAML(value *yaml.Node) error {
 	if err := value.Decode(&raw); err != nil {
 		return err
 	}
-	params := map[string]any{}
+	params := cloneRegistryParams(c.Param)
+	if params == nil {
+		params = map[string]any{}
+	}
 	if nested, ok := raw["param"].(map[string]any); ok {
 		for k, v := range nested {
 			params[k] = v
@@ -523,31 +561,83 @@ func (v *SkillsRegistriesConfig) UnmarshalYAML(value *yaml.Node) error {
 		*v = list
 		return nil
 	}
-	for _, registry := range *v {
-		if registry == nil {
+	for _, name := range sortedRegistryNames(mm) {
+		sec := mm[name]
+		if sec == nil {
 			continue
 		}
-		sec := mm[registry.Name]
-		if sec != nil {
-			registry.AuthToken = sec.AuthToken
-			if registry.BaseURL == "" {
-				registry.BaseURL = sec.BaseURL
+		sec.Name = name
+		registry := findRegistryConfigByName(*v, name)
+		if registry == nil {
+			*v = append(*v, cloneRegistryConfig(sec))
+			continue
+		}
+		registry.AuthToken = sec.AuthToken
+		if registry.BaseURL == "" {
+			registry.BaseURL = sec.BaseURL
+		}
+		if !registry.Enabled {
+			registry.Enabled = sec.Enabled
+		}
+		if registry.Param == nil {
+			registry.Param = map[string]any{}
+		}
+		for key, value := range sec.Param {
+			if _, ok := registry.Param[key]; ok {
+				continue
 			}
-			if !registry.Enabled {
-				registry.Enabled = sec.Enabled
-			}
-			if registry.Param == nil {
-				registry.Param = map[string]any{}
-			}
-			for key, value := range sec.Param {
-				if _, ok := registry.Param[key]; ok {
-					continue
-				}
-				registry.Param[key] = value
-			}
+			registry.Param[key] = value
 		}
 	}
 	return nil
+}
+
+func cloneRegistryParams(src map[string]any) map[string]any {
+	if src == nil {
+		return nil
+	}
+	cloned := make(map[string]any, len(src))
+	for key, value := range src {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneRegistryConfig(src *SkillRegistryConfig) *SkillRegistryConfig {
+	if src == nil {
+		return nil
+	}
+	cloned := *src
+	cloned.Param = cloneRegistryParams(src.Param)
+	return &cloned
+}
+
+func findRegistryConfigByName(registries SkillsRegistriesConfig, name string) *SkillRegistryConfig {
+	for _, registry := range registries {
+		if registry == nil || registry.Name != name {
+			continue
+		}
+		return registry
+	}
+	return nil
+}
+
+func sortedRegistryNames(mm map[string]*SkillRegistryConfig) []string {
+	keys := make([]string, 0, len(mm))
+	for name := range mm {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedRegistryNamesFromJSON(mm map[string]json.RawMessage) []string {
+	keys := make([]string, 0, len(mm))
+	for name := range mm {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func (v SkillsRegistriesConfig) MarshalYAML() (any, error) {

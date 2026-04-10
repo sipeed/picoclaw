@@ -263,6 +263,47 @@ func TestSkillsRegistriesConfigMarshalJSONPreservesObjectShape(t *testing.T) {
 	assert.Equal(t, "https://clawhub.ai", clawhub.BaseURL)
 }
 
+func TestSkillsRegistriesConfigUnmarshalJSONPreservesDefaultRegistries(t *testing.T) {
+	registries := DefaultConfig().Tools.Skills.Registries
+
+	err := json.Unmarshal([]byte(`{
+		"clawhub": {
+			"base_url": "https://clawhub.example.com"
+		}
+	}`), &registries)
+	assert.NoError(t, err)
+
+	clawhub, ok := registries.Get("clawhub")
+	assert.True(t, ok)
+	assert.True(t, clawhub.Enabled)
+	assert.Equal(t, "https://clawhub.example.com", clawhub.BaseURL)
+
+	github, ok := registries.Get("github")
+	assert.True(t, ok)
+	assert.True(t, github.Enabled)
+	assert.Equal(t, "https://github.com", github.BaseURL)
+	assert.Empty(t, github.Param)
+}
+
+func TestSkillsRegistriesConfigUnmarshalYAMLAppendsNewRegistryToExistingSlice(t *testing.T) {
+	registries := DefaultConfig().Tools.Skills.Registries
+
+	err := yaml.Unmarshal([]byte(`custom:
+  base_url: https://skills.example.com
+  auth_token: custom-token
+`), &registries)
+	assert.NoError(t, err)
+
+	custom, ok := registries.Get("custom")
+	assert.True(t, ok)
+	assert.Equal(t, "https://skills.example.com", custom.BaseURL)
+	assert.Equal(t, "custom-token", custom.AuthToken.String())
+
+	github, ok := registries.Get("github")
+	assert.True(t, ok)
+	assert.Equal(t, "https://github.com", github.BaseURL)
+}
+
 func TestSkillsGithubConfigV0ToSkillsGithubConfigPreservesBaseURL(t *testing.T) {
 	legacy := skillsGithubConfigV0{
 		BaseURL: "https://ghe.example.com/git",
