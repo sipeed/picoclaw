@@ -21,11 +21,18 @@ import (
 )
 
 // resolveMediaRefs resolves media:// refs in messages.
-// Images are base64-encoded into the Media array for multimodal LLMs.
-// Non-image files (documents, audio, video) have their local path injected
+// Images are base64-encoded into the Media array for multimodal LLMs that support image input.
+// If the model doesn't support image input, images are treated like other media files:
+// their local path is injected into Content so the agent can access them via file tools.
+// Non-image files (documents, audio, video) always have their local path injected
 // into Content so the agent can access them via file tools like read_file.
 // Returns a new slice; original messages are not mutated.
-func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxSize int) []providers.Message {
+func resolveMediaRefs(
+	messages []providers.Message,
+	store media.MediaStore,
+	maxSize int,
+	supportsImage bool,
+) []providers.Message {
 	if store == nil {
 		return messages
 	}
@@ -67,7 +74,7 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxS
 
 			mime := detectMIME(localPath, meta)
 
-			if strings.HasPrefix(mime, "image/") {
+			if strings.HasPrefix(mime, "image/") && supportsImage {
 				dataURL := encodeImageToDataURL(localPath, mime, info, maxSize)
 				if dataURL != "" {
 					resolved = append(resolved, dataURL)
@@ -160,9 +167,11 @@ func encodeImageToDataURL(localPath, mime string, info os.FileInfo, maxSize int)
 }
 
 // buildPathTag creates a structured tag exposing the local file path.
-// Tag type is derived from MIME: [audio:/path], [video:/path], or [file:/path].
+// Tag type is derived from MIME: [image:/path], [audio:/path], [video:/path], or [file:/path].
 func buildPathTag(mime, localPath string) string {
 	switch {
+	case strings.HasPrefix(mime, "image/"):
+		return "[image:" + localPath + "]"
 	case strings.HasPrefix(mime, "audio/"):
 		return "[audio:" + localPath + "]"
 	case strings.HasPrefix(mime, "video/"):
@@ -178,6 +187,8 @@ func injectPathTags(content string, tags []string) string {
 	for _, tag := range tags {
 		var generic string
 		switch {
+		case strings.HasPrefix(tag, "[image:"):
+			generic = "[image]"
 		case strings.HasPrefix(tag, "[audio:"):
 			generic = "[audio]"
 		case strings.HasPrefix(tag, "[video:"):

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -34,6 +35,7 @@ type AgentInstance struct {
 	ContextWindow             int
 	SummarizeMessageThreshold int
 	SummarizeTokenPercent     int
+	SupportedInput            []string
 	Provider                  providers.LLMProvider
 	Sessions                  session.SessionStore
 	ContextBuilder            *ContextBuilder
@@ -56,6 +58,11 @@ type AgentInstance struct {
 	// instances. This allows each fallback model to use its own api_base and api_key
 	// from model_list, instead of inheriting the primary model's provider config.
 	CandidateProviders map[string]providers.LLMProvider
+}
+
+// SupportsInput checks if the agent supports a specific input type.
+func (a *AgentInstance) SupportsInput(inputType string) bool {
+	return slices.Contains(a.SupportedInput, inputType)
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -168,8 +175,13 @@ func NewAgentInstance(
 	}
 
 	var thinkingLevelStr string
+	var supportedInput []string
 	if mc, err := cfg.GetModelConfig(model); err == nil {
 		thinkingLevelStr = mc.ThinkingLevel
+		supportedInput = mc.Input
+	}
+	if len(supportedInput) == 0 {
+		supportedInput = []string{"text"}
 	}
 	thinkingLevel := parseThinkingLevel(thinkingLevelStr)
 
@@ -235,6 +247,7 @@ func NewAgentInstance(
 		ContextWindow:             contextWindow,
 		SummarizeMessageThreshold: summarizeMessageThreshold,
 		SummarizeTokenPercent:     summarizeTokenPercent,
+		SupportedInput:            supportedInput,
 		Provider:                  provider,
 		Sessions:                  sessions,
 		ContextBuilder:            contextBuilder,

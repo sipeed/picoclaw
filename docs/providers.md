@@ -116,6 +116,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | `model` | string | Yes | Vendor/model identifier (e.g., `openai/gpt-5.4`, `azure/gpt-5.4`, `anthropic/claude-sonnet-4.6`) |
 | `api_keys` | string[] | Yes* | API key(s) for authentication. Multiple keys enable per-request rotation. Not required for local providers (Ollama, LM Studio, VLLM) |
 | `api_base` | string | No | Override the default API endpoint URL |
+| `input` | string[] | No | Input types supported by the model. Valid values: `"text"`, `"image"`. Default: `["text"]`. When a model doesn't support image input, images are downloaded locally for tool processing instead of being sent to the model API |
 | `proxy` | string | No | HTTP proxy URL for this model entry |
 | `user_agent` | string | No | Custom `User-Agent` header sent with API requests (supported by OpenAI-compatible, Anthropic, and Azure providers) |
 | `request_timeout` | int | No | Request timeout in seconds (default varies by provider) |
@@ -162,7 +163,8 @@ If `voice.model_name` is not configured, PicoClaw will continue to fall back to 
 {
   "model_name": "gpt-5.4",
   "model": "openai/gpt-5.4",
-  "api_keys": ["sk-..."]
+  "api_keys": ["sk-..."],
+  "input": ["text", "image"]
 }
 ```
 
@@ -312,13 +314,15 @@ Configure multiple endpoints for the same model name—PicoClaw will automatical
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api1.example.com/v1",
-      "api_keys": ["sk-key1"]
+      "api_keys": ["sk-key1"],
+      "input": ["text", "image"]
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api2.example.com/v1",
-      "api_keys": ["sk-key2"]
+      "api_keys": ["sk-key2"],
+      "input": ["text", "image"]
     }
   ]
 }

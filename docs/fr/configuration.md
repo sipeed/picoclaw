@@ -334,8 +334,8 @@ Configurez plusieurs endpoints pour le même nom de modèle — PicoClaw effectu
 ```json
 {
   "model_list": [
-    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api1.example.com/v1", "api_keys": ["sk-key1"] },
-    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api2.example.com/v1", "api_keys": ["sk-key2"] }
+    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api1.example.com/v1", "api_keys": ["sk-key1"], "input": ["text", "image"] },
+    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api2.example.com/v1", "api_keys": ["sk-key2"], "input": ["text", "image"] }
   ]
 }
 ```
