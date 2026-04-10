@@ -104,12 +104,21 @@ func (p *CodexProvider) Chat(
 	defer stream.Close()
 
 	var resp *responses.Response
+	var accumulatedOutput []responses.ResponseOutputItemUnion
 	for stream.Next() {
 		evt := stream.Current()
+		// Accumulate output items as they arrive — the response.completed
+		// event may not include them in its Response.Output field.
+		if evt.Type == "response.output_item.done" {
+			accumulatedOutput = append(accumulatedOutput, evt.Item)
+		}
 		if evt.Type == "response.completed" || evt.Type == "response.failed" || evt.Type == "response.incomplete" {
 			evtResp := evt.Response
 			if evtResp.ID != "" {
 				evtRespCopy := evtResp
+				if len(evtRespCopy.Output) == 0 && len(accumulatedOutput) > 0 {
+					evtRespCopy.Output = accumulatedOutput
+				}
 				resp = &evtRespCopy
 			}
 		}
