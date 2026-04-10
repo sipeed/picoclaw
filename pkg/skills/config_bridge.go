@@ -2,6 +2,8 @@ package skills
 
 import "github.com/sipeed/picoclaw/pkg/config"
 
+const defaultGitHubRegistryBaseURL = "https://github.com"
+
 func effectiveRegistryConfigsFromToolsConfig(cfg config.SkillsToolsConfig) []config.SkillRegistryConfig {
 	effective := make([]config.SkillRegistryConfig, 0, len(cfg.Registries)+1)
 	seen := map[string]struct{}{}
@@ -44,7 +46,10 @@ func applyLegacyGithubRegistryCompatibility(
 	if registryCfg.Param == nil {
 		registryCfg.Param = map[string]any{}
 	}
-	if registryCfg.BaseURL == "" {
+	if registryCfg.BaseURL == "" ||
+		(registryCfg.BaseURL == defaultGitHubRegistryBaseURL &&
+			cfg.Github.BaseURL != "" &&
+			cfg.Github.BaseURL != defaultGitHubRegistryBaseURL) {
 		registryCfg.BaseURL = cfg.Github.BaseURL
 	}
 	if registryCfg.AuthToken.String() == "" {

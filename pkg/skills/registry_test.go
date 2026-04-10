@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -206,4 +207,34 @@ func TestIsSafeSlug(t *testing.T) {
 	assert.Error(t, utils.ValidateSkillIdentifier("../etc/passwd"))
 	assert.Error(t, utils.ValidateSkillIdentifier("path/traversal"))
 	assert.Error(t, utils.ValidateSkillIdentifier("path\\traversal"))
+}
+
+func TestLegacyGithubBaseURLOverridesDefaultRegistryBaseURL(t *testing.T) {
+	cfg := config.DefaultConfig().Tools.Skills
+	cfg.Github.BaseURL = "https://ghe.example.com/git"
+
+	registry := LookupRegistryFromToolsConfig(cfg, "github")
+	assert.NotNil(t, registry)
+
+	ghRegistry, ok := registry.(*GitHubRegistry)
+	assert.True(t, ok)
+	assert.Equal(t, "https://ghe.example.com/git", ghRegistry.webBase)
+}
+
+func TestExplicitGithubRegistryBaseURLBeatsLegacyCompat(t *testing.T) {
+	cfg := config.DefaultConfig().Tools.Skills
+	cfg.Github.BaseURL = "https://ghe-legacy.example.com/git"
+	cfg.Registries.Set("github", config.SkillRegistryConfig{
+		Name:    "github",
+		Enabled: true,
+		BaseURL: "https://ghe-explicit.example.com/scm",
+		Param:   map[string]any{},
+	})
+
+	registry := LookupRegistryFromToolsConfig(cfg, "github")
+	assert.NotNil(t, registry)
+
+	ghRegistry, ok := registry.(*GitHubRegistry)
+	assert.True(t, ok)
+	assert.Equal(t, "https://ghe-explicit.example.com/scm", ghRegistry.webBase)
 }
