@@ -6,7 +6,6 @@
 package config
 
 import (
-	"encoding/json"
 	"slices"
 	"strings"
 )
@@ -477,7 +476,7 @@ func v0ConvertProvidersToModelList(cfg *configV0) []modelConfigV0 {
 // loadConfigV0 loads a legacy config (no version field)
 func loadConfigV0(data []byte) (migratable, error) {
 	var v0 configV0
-	if err := json.Unmarshal(data, &v0); err != nil {
+	if err := decodeJSONWithDiagnostics(data, &v0, "config.json"); err != nil {
 		return nil, err
 	}
 
@@ -522,14 +521,14 @@ func loadConfig(data []byte) (*Config, error) {
 	// index position. We only reset cfg.ModelList when the user actually provides
 	// entries; when count is 0 we keep DefaultConfig's built-in list as fallback.
 	var tmp Config
-	if err := json.Unmarshal(data, &tmp); err != nil {
+	if err := decodeJSONWithDiagnostics(data, &tmp, "config.json"); err != nil {
 		return nil, err
 	}
 	if len(tmp.ModelList) > 0 {
 		cfg.ModelList = nil
 	}
 
-	if err := json.Unmarshal(data, cfg); err != nil {
+	if err := decodeJSONWithDiagnostics(data, cfg, "config.json"); err != nil {
 		return nil, err
 	}
 	return cfg, nil
