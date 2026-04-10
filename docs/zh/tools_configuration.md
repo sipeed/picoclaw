@@ -234,6 +234,8 @@ Cron 工具用于调度周期性任务。
 | `exec_timeout_minutes` | int  | 5      | 执行超时时间（分钟），0 表示无限制  |
 | `allow_command`        | bool | false  | 允许 cron 任务执行 shell 命令       |
 
+对于不带 `command` 的普通 cron 任务，保存下来的 `message` 会在任务触发时重新作为一条新的“用户消息”送回 agent。编写时应使用用户视角/直接对 agent 说话的口吻，例如 `每小时检查仓库更新，如果有新版本告诉我`，而不是 `如果有更新就通知用户`。
+
 ## MCP 工具
 
 MCP 工具支持与外部 Model Context Protocol 服务器集成。
