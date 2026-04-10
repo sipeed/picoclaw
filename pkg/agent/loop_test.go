@@ -14,9 +14,12 @@ import (
 	"testing"
 	"time"
 
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	mcppkg "github.com/sipeed/picoclaw/pkg/mcp"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
@@ -73,6 +76,66 @@ func newStartedTestChannelManager(
 
 type recordingProvider struct {
 	lastMessages []providers.Message
+}
+
+type fakeMCPController struct {
+	closed  bool
+	servers map[string]*mcppkg.ServerConnection
+}
+
+func (m *fakeMCPController) LoadFromMCPConfig(
+	_ context.Context,
+	mcpCfg config.MCPConfig,
+	_ string,
+) error {
+	m.servers = make(map[string]*mcppkg.ServerConnection)
+	for serverName, serverCfg := range mcpCfg.Servers {
+		if !serverCfg.Enabled {
+			continue
+		}
+		m.servers[serverName] = &mcppkg.ServerConnection{
+			Name: serverName,
+			Tools: []*sdkmcp.Tool{
+				{
+					Name:        "ping",
+					Description: "Remote ping",
+					InputSchema: map[string]any{
+						"type":       "object",
+						"properties": map[string]any{},
+					},
+				},
+			},
+		}
+	}
+	return nil
+}
+
+func (m *fakeMCPController) GetServers() map[string]*mcppkg.ServerConnection {
+	servers := make(map[string]*mcppkg.ServerConnection, len(m.servers))
+	for name, conn := range m.servers {
+		servers[name] = conn
+	}
+	return servers
+}
+
+func (m *fakeMCPController) CallTool(
+	ctx context.Context,
+	serverName, toolName string,
+	arguments map[string]any,
+) (*sdkmcp.CallToolResult, error) {
+	if m.closed {
+		return nil, fmt.Errorf("manager is closed")
+	}
+	return &sdkmcp.CallToolResult{
+		Content: []sdkmcp.Content{
+			&sdkmcp.TextContent{Text: fmt.Sprintf("%s:%s", serverName, toolName)},
+		},
+	}, nil
+}
+
+func (m *fakeMCPController) Close() error {
+	m.closed = true
+	return nil
 }
 
 func (r *recordingProvider) Chat(
@@ -2328,6 +2391,216 @@ func TestProcessDirectWithChannel_TriggersMCPInitialization(t *testing.T) {
 	// Manager should not be initialized when no servers are configured
 	if al.mcp.hasManager() {
 		t.Fatal("expected MCP manager to be nil when no servers are configured")
+	}
+}
+
+func TestReloadProviderAndConfig_RebuildsMCPToolsFromNewConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oldFactory := newMCPController
+	newMCPController = func() mcpController {
+		return &fakeMCPController{}
+	}
+	t.Cleanup(func() {
+		newMCPController = oldFactory
+	})
+
+	oldCfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		Tools: config.ToolsConfig{
+			MCP: config.MCPConfig{
+				ToolConfig: config.ToolConfig{
+					Enabled: true,
+				},
+				Servers: map[string]config.MCPServerConfig{
+					"stale": {Enabled: true},
+				},
+			},
+		},
+	}
+	newCfg := &config.Config{
+		Agents: oldCfg.Agents,
+		Tools: config.ToolsConfig{
+			MCP: config.MCPConfig{
+				ToolConfig: config.ToolConfig{
+					Enabled: true,
+				},
+				Servers: map[string]config.MCPServerConfig{
+					"fresh": {Enabled: true},
+				},
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(oldCfg, msgBus, &mockProvider{})
+	defer al.Close()
+
+	al.mcp.setManager(&fakeMCPController{
+		servers: map[string]*mcppkg.ServerConnection{
+			"stale": {
+				Name: "stale",
+				Tools: []*sdkmcp.Tool{
+					{
+						Name:        "ping",
+						Description: "Stale ping",
+						InputSchema: map[string]any{
+							"type":       "object",
+							"properties": map[string]any{},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	if err := al.ReloadProviderAndConfig(context.Background(), &mockProvider{}, newCfg); err != nil {
+		t.Fatalf("ReloadProviderAndConfig() error = %v", err)
+	}
+
+	agent := al.GetRegistry().GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent after reload")
+	}
+
+	if _, ok := agent.Tools.Get("mcp_stale_ping"); ok {
+		t.Fatal("expected stale MCP tool to be removed after reload")
+	}
+
+	toolName := "mcp_fresh_ping"
+	if _, ok := agent.Tools.Get(toolName); !ok {
+		t.Fatalf("expected MCP tool %q to be registered from reloaded config", toolName)
+	}
+
+	result := agent.Tools.Execute(context.Background(), toolName, map[string]any{})
+	if result == nil || result.IsError {
+		t.Fatalf("expected MCP tool %q to execute successfully after reload, got %#v", toolName, result)
+	}
+	if !strings.Contains(result.ContentForLLM(), "fresh:ping") {
+		t.Fatalf("unexpected MCP tool result after reload: %q", result.ContentForLLM())
+	}
+}
+
+func TestReloadProviderAndConfig_RemovesMCPToolsWhenServersDeleted(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		Tools: config.ToolsConfig{
+			MCP: config.MCPConfig{
+				ToolConfig: config.ToolConfig{
+					Enabled: true,
+				},
+				Servers: map[string]config.MCPServerConfig{
+					"remote": {Enabled: true},
+				},
+			},
+		},
+	}
+	reloadedCfg := &config.Config{
+		Agents: cfg.Agents,
+		Tools: config.ToolsConfig{
+			MCP: config.MCPConfig{
+				ToolConfig: config.ToolConfig{
+					Enabled: true,
+				},
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, &mockProvider{})
+	defer al.Close()
+
+	al.mcp.setManager(&fakeMCPController{
+		servers: map[string]*mcppkg.ServerConnection{
+			"remote": {
+				Name: "remote",
+				Tools: []*sdkmcp.Tool{
+					{
+						Name:        "ping",
+						Description: "Remote ping",
+						InputSchema: map[string]any{
+							"type":       "object",
+							"properties": map[string]any{},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	if err := al.ReloadProviderAndConfig(context.Background(), &mockProvider{}, reloadedCfg); err != nil {
+		t.Fatalf("ReloadProviderAndConfig() error = %v", err)
+	}
+
+	agent := al.GetRegistry().GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent after reload")
+	}
+	if _, ok := agent.Tools.Get("mcp_remote_ping"); ok {
+		t.Fatal("expected MCP tool to be removed when no servers are configured after reload")
+	}
+	if al.mcp.hasManager() {
+		t.Fatal("expected MCP manager to be cleared when reload removes all servers")
+	}
+}
+
+func TestFormatMCPStatus_IncludesConfiguredServers(t *testing.T) {
+	cfg := &config.Config{
+		Tools: config.ToolsConfig{
+			MCP: config.MCPConfig{
+				ToolConfig: config.ToolConfig{Enabled: true},
+				Servers: map[string]config.MCPServerConfig{
+					"remote-http": {
+						Enabled: true,
+						Type:    "http",
+						URL:     "http://127.0.0.1:8080/mcp",
+					},
+					"local-stdio": {
+						Enabled: true,
+						Command: "npx",
+					},
+				},
+			},
+		},
+	}
+
+	status := formatMCPStatus(cfg, mcpStatusSnapshot{
+		attempted: true,
+		servers: map[string]*mcppkg.ServerConnection{
+			"remote-http": {
+				Name:  "remote-http",
+				Tools: []*sdkmcp.Tool{{Name: "ping"}, {Name: "echo"}},
+			},
+		},
+	})
+
+	if !strings.Contains(status, "Initialization Attempted: yes") {
+		t.Fatalf("status missing initialization state:\n%s", status)
+	}
+	if !strings.Contains(status, "Connected Servers: 1/2") {
+		t.Fatalf("status missing connected server count:\n%s", status)
+	}
+	if !strings.Contains(status, "remote-http: connected, transport=http, tools=2") {
+		t.Fatalf("status missing connected http server details:\n%s", status)
+	}
+	if !strings.Contains(status, "local-stdio: not connected, transport=stdio, tools=0, command=npx") {
+		t.Fatalf("status missing disconnected stdio server details:\n%s", status)
 	}
 }
 

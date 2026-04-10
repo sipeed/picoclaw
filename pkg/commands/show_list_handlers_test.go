@@ -64,6 +64,9 @@ func TestShowListHandlers_ListHandledOnAllChannels(t *testing.T) {
 		ListSkillNames: func() []string {
 			return []string{"shell"}
 		},
+		GetMCPStatus: func() string {
+			return "MCP Enabled: yes\nConnected Servers: 0/1"
+		},
 	}
 	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), rt)
 
@@ -100,5 +103,21 @@ func TestShowListHandlers_ListHandledOnAllChannels(t *testing.T) {
 	}
 	if !strings.Contains(reply, "shell") {
 		t.Fatalf("whatsapp /list skills reply=%q, expected installed skills content", reply)
+	}
+
+	reply = ""
+	res = ex.Execute(context.Background(), Request{
+		Channel: "whatsapp",
+		Text:    "/list mcp",
+		Reply: func(text string) error {
+			reply = text
+			return nil
+		},
+	})
+	if res.Outcome != OutcomeHandled {
+		t.Fatalf("whatsapp /list mcp outcome=%v, want=%v", res.Outcome, OutcomeHandled)
+	}
+	if !strings.Contains(reply, "Connected Servers: 0/1") {
+		t.Fatalf("whatsapp /list mcp reply=%q, expected mcp status content", reply)
 	}
 }
