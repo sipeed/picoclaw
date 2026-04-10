@@ -33,6 +33,12 @@ export function ChatComposer({
   const { t } = useTranslation()
   const canInput = isConnected && hasDefaultModel
 
+  const inputDisabledReason = (() => {
+    if (!isConnected) return t("chat.inputDisabled.notConnected")
+    if (!hasDefaultModel) return t("chat.inputDisabled.noModel")
+    return null
+  })()
+
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return
     if (e.key === "Enter" && !e.shiftKey) {
@@ -76,6 +82,7 @@ export function ChatComposer({
           onKeyDown={handleKeyDown}
           placeholder={t("chat.placeholder")}
           disabled={!canInput}
+          title={inputDisabledReason || undefined}
           className={cn(
             "placeholder:text-muted-foreground/50 max-h-[200px] min-h-[60px] resize-none border-0 bg-transparent px-2 py-1 text-[15px] shadow-none transition-colors focus-visible:ring-0 focus-visible:outline-none dark:bg-transparent",
             !canInput && "cursor-not-allowed",
@@ -83,6 +90,11 @@ export function ChatComposer({
           minRows={1}
           maxRows={8}
         />
+        {!canInput && inputDisabledReason && (
+          <div className="px-3 py-1 text-xs text-muted-foreground">
+            {inputDisabledReason}
+          </div>
+        )}
 
         <div className="mt-2 flex items-center justify-between px-1">
           <div className="flex items-center gap-1">

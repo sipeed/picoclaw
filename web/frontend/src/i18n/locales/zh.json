@@ -55,6 +55,10 @@
     "deleteSession": "删除会话",
     "messagesCount": "{{count}} 条消息",
     "noModel": "选择模型",
+    "inputDisabled": {
+      "notConnected": "服务未运行，请先启动以进行对话。",
+      "noModel": "未设置默认模型，请前往模型页面进行配置。"
+    },
     "attachImage": "添加图片",
     "removeImage": "移除图片",
     "uploadedImage": "已上传图片",
@@ -199,7 +203,16 @@
     "action": {
       "edit": "编辑 API Key",
       "setDefault": "设为默认",
-      "delete": "删除模型"
+      "delete": "删除模型",
+      "setDefaultDisabled": {
+        "setting": "正在设为默认...",
+        "unavailable": "无法将不可用的模型设为默认",
+        "isDefault": "该模型已是默认模型",
+        "isVirtual": "无法将虚拟模型设为默认"
+      },
+      "deleteDisabled": {
+        "isDefault": "无法删除默认模型"
+      }
     },
     "defaultOnSave": {
       "label": "默认模型",
@@ -487,6 +500,11 @@
           "version": "已安装版本",
           "lines": "行数",
           "characters": "字符数"
+        },
+        "marketplace_installDisabled": {
+          "installing": "正在安装...",
+          "installed": "已安装",
+          "cannotInstall": "无法安装：相关工具未启用"
         }
       },
       "tools": {

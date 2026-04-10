@@ -33,6 +33,18 @@ export function ModelCard({
   const canSetDefault =
     model.available && !model.is_default && !model.is_virtual
 
+  const setDefaultDisabledReason = (() => {
+    if (settingDefault) return t("models.action.setDefaultDisabled.setting")
+    if (!model.available) return t("models.action.setDefaultDisabled.unavailable")
+    if (model.is_default) return t("models.action.setDefaultDisabled.isDefault")
+    if (model.is_virtual) return t("models.action.setDefaultDisabled.isVirtual")
+    return t("models.action.setDefault")
+  })()
+
+  const deleteDisabledReason = model.is_default
+    ? t("models.action.deleteDisabled.isDefault")
+    : t("models.action.delete")
+
   return (
     <div
       className={[
@@ -86,7 +98,7 @@ export function ModelCard({
               size="icon-sm"
               onClick={() => onSetDefault(model)}
               disabled={settingDefault || !canSetDefault}
-              title={t("models.action.setDefault")}
+              title={setDefaultDisabledReason}
             >
               {settingDefault ? (
                 <IconLoader2 className="size-3.5 animate-spin" />
@@ -110,7 +122,7 @@ export function ModelCard({
             size="icon-sm"
             onClick={() => onDelete(model)}
             disabled={model.is_default}
-            title={t("models.action.delete")}
+            title={deleteDisabledReason}
             className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
           >
             <IconTrash className="size-3.5" />

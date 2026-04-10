@@ -36,6 +36,13 @@ export function MarketSkillCard({
 }) {
   const { t } = useTranslation()
 
+  const installDisabledReason = (() => {
+    if (installPending) return t("pages.agent.skills.marketplace_installDisabled.installing")
+    if (result.installed) return t("pages.agent.skills.marketplace_installDisabled.installed")
+    if (!canInstall) return t("pages.agent.skills.marketplace_installDisabled.cannotInstall")
+    return t("pages.agent.skills.marketplace_install_action")
+  })()
+
   return (
     <Card
       className="group border-border/40 bg-card/40 hover:border-border/80 hover:bg-card relative overflow-hidden transition-all hover:shadow-md"
@@ -92,6 +99,7 @@ export function MarketSkillCard({
               className="shadow-sm transition-all"
               disabled={!canInstall || result.installed || installPending}
               onClick={onInstall}
+              title={installDisabledReason}
             >
               {installPending ? (
                 <IconLoader2 className="size-4 animate-spin" />
