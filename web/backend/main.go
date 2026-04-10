@@ -27,6 +27,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/web/backend/api"
+	"github.com/sipeed/picoclaw/web/backend/dashboardauth"
 	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
 	"github.com/sipeed/picoclaw/web/backend/middleware"
 	"github.com/sipeed/picoclaw/web/backend/utils"
@@ -49,8 +50,6 @@ var (
 	// Includes ?token= for same-machine dashboard login; keep serverAddr without secrets for other use.
 	browserLaunchURL string
 	apiHandler       *api.Handler
-	// launcherDashboardTokenForClipboard is read by the system tray "copy token" action (GUI mode).
-	launcherDashboardTokenForClipboard string
 
 	noBrowser *bool
 )
@@ -64,6 +63,24 @@ func dashboardTokenConfigHelpPath(source launcherconfig.DashboardTokenSource, la
 		return ""
 	}
 	return launcherPath
+}
+
+// maskSecret masks a secret for display. It always shows up to the first 3
+// runes. The last 4 runes are only appended when at least 5 runes remain
+// hidden in the middle (i.e. string length >= 12), so an 8-char minimum
+// password never exposes its tail. Strings of 3 chars or fewer are fully
+// masked.
+func maskSecret(s string) string {
+	runes := []rune(s)
+	n := len(runes)
+	const prefixLen, suffixLen, minHidden = 3, 4, 5
+	if n < prefixLen+suffixLen+minHidden {
+		if n <= prefixLen {
+			return "**********"
+		}
+		return string(runes[:prefixLen]) + "**********"
+	}
+	return string(runes[:prefixLen]) + "**********" + string(runes[n-suffixLen:])
 }
 
 func main() {
@@ -209,7 +226,25 @@ func main() {
 		logger.Fatalf("Dashboard auth setup failed: %v", dashErr)
 	}
 	dashboardSessionCookie := middleware.SessionCookieValue(dashboardSigningKey, dashboardToken)
-	launcherDashboardTokenForClipboard = dashboardToken
+
+	// Open the bcrypt password store (creates the DB file on first run).
+	authStore, authStoreErr := dashboardauth.New(picoHome)
+	var passwordStore api.PasswordStore
+	if authStoreErr == nil {
+		passwordStore = authStore
+		defer authStore.Close()
+	} else if errors.Is(authStoreErr, dashboardauth.ErrUnsupportedPlatform) {
+		logger.InfoC(
+			"web",
+			fmt.Sprintf(
+				"Dashboard password store unavailable on this platform; falling back to token login: %v",
+				authStoreErr,
+			),
+		)
+		authStoreErr = nil
+	} else {
+		logger.ErrorC("web", fmt.Sprintf("Warning: could not open auth store: %v", authStoreErr))
+	}
 
 	// Determine listen address
 	var addr string
@@ -222,20 +257,11 @@ func main() {
 	// Initialize Server components
 	mux := http.NewServeMux()
 
-	tokenLogFileAbs := ""
-	if fileLoggingEnabled {
-		tokenLogFileAbs = filepath.Join(picoHome, logPath, logFile)
-	}
 	api.RegisterLauncherAuthRoutes(mux, api.LauncherAuthRouteOpts{
 		DashboardToken: dashboardToken,
 		SessionCookie:  dashboardSessionCookie,
-		TokenHelp: api.LauncherAuthTokenHelp{
-			EnvVarName:    "PICOCLAW_LAUNCHER_TOKEN",
-			LogFileAbs:    tokenLogFileAbs,
-			ConfigFileAbs: dashboardTokenConfigHelpPath(dashboardTokenSource, launcherPath),
-			TrayCopyMenu:  trayOffersDashboardTokenCopy(),
-			ConsoleStdout: enableConsole,
-		},
+		PasswordStore:  passwordStore,
+		StoreError:     authStoreErr,
 	})
 
 	// API Routes (e.g. /api/status)
@@ -284,23 +310,23 @@ func main() {
 		fmt.Println()
 		switch dashboardTokenSource {
 		case launcherconfig.DashboardTokenSourceRandom:
-			fmt.Printf("  Dashboard token (this run): %s\n", dashboardToken)
+			fmt.Printf("  Dashboard password (this run): %s\n", maskSecret(dashboardToken))
 		case launcherconfig.DashboardTokenSourceEnv:
-			fmt.Printf("  Dashboard token: %s (from PICOCLAW_LAUNCHER_TOKEN)\n", dashboardToken)
+			fmt.Printf("  Dashboard password: from environment variable PICOCLAW_LAUNCHER_TOKEN\n")
 		case launcherconfig.DashboardTokenSourceConfig:
-			fmt.Printf("  Dashboard token: %s (from %s)\n", dashboardToken, launcherPath)
+			fmt.Printf("  Dashboard password: configured in %s\n", launcherPath)
 		}
 		fmt.Println()
 	}
 
 	switch dashboardTokenSource {
 	case launcherconfig.DashboardTokenSourceEnv:
-		logger.InfoC("web", "Dashboard token: environment PICOCLAW_LAUNCHER_TOKEN")
+		logger.InfoC("web", "Dashboard password: environment PICOCLAW_LAUNCHER_TOKEN")
 	case launcherconfig.DashboardTokenSourceConfig:
-		logger.InfoC("web", fmt.Sprintf("Dashboard token: configured in %s", launcherPath))
+		logger.InfoC("web", fmt.Sprintf("Dashboard password: configured in %s", launcherPath))
 	case launcherconfig.DashboardTokenSourceRandom:
 		if !enableConsole {
-			logger.InfoC("web", "Dashboard token (this run): "+dashboardToken)
+			logger.InfoC("web", "Dashboard password (this run): "+maskSecret(dashboardToken))
 		}
 	}
 

@@ -29,7 +29,7 @@ func (t *EditFileTool) Name() string {
 }
 
 func (t *EditFileTool) Description() string {
-	return "Edit a file by replacing old_text with new_text. The old_text must exist exactly in the file. In `function.arguments`, use \\n for newline and \\\\n for literal backslash-n."
+	return "Edit a file by replacing old_text with new_text. The old_text must exist exactly in the file. Standard JSON escaping applies: \\n for newline and \\\\n for literal backslash-n."
 }
 
 func (t *EditFileTool) Parameters() map[string]any {
@@ -42,11 +42,11 @@ func (t *EditFileTool) Parameters() map[string]any {
 			},
 			"old_text": map[string]any{
 				"type":        "string",
-				"description": "The exact text to find and replace. In `function.arguments`, use \\n for newline and \\\\n for literal backslash-n.",
+				"description": "The exact text to find and replace. Standard JSON escaping applies: \\n for newline and \\\\n for literal backslash-n.",
 			},
 			"new_text": map[string]any{
 				"type":        "string",
-				"description": "The text to replace with. In `function.arguments`, use \\n for newline and \\\\n for literal backslash-n.",
+				"description": "The text to replace with. Standard JSON escaping applies: \\n for newline and \\\\n for literal backslash-n.",
 			},
 		},
 		"required": []string{"path", "old_text", "new_text"},
@@ -92,7 +92,7 @@ func (t *AppendFileTool) Name() string {
 }
 
 func (t *AppendFileTool) Description() string {
-	return "Append content to the end of a file. In `function.arguments`, use \\n for newline and \\\\n for literal backslash-n."
+	return "Append content to the end of a file. Standard JSON escaping applies: \\n for newline and \\\\n for literal backslash-n."
 }
 
 func (t *AppendFileTool) Parameters() map[string]any {
@@ -105,7 +105,7 @@ func (t *AppendFileTool) Parameters() map[string]any {
 			},
 			"content": map[string]any{
 				"type":        "string",
-				"description": "The content to append. In `function.arguments`, use \\n for newline and \\\\n for literal backslash-n.",
+				"description": "The content to append. Standard JSON escaping applies: \\n for newline and \\\\n for literal backslash-n.",
 			},
 		},
 		"required": []string{"path", "content"},

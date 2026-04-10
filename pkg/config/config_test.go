@@ -852,6 +852,37 @@ func TestDefaultConfig_WorkspacePath_WithPicoclawHome(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_IsolationEnabled(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Isolation.Enabled {
+		t.Fatal("DefaultConfig().Isolation.Enabled should be false")
+	}
+}
+
+func TestConfig_UnmarshalIsolation(t *testing.T) {
+	cfg := DefaultConfig()
+	raw := []byte(`{
+		"isolation": {
+			"enabled": false,
+			"expose_paths": [
+				{"source":"/src","target":"/dst","mode":"ro"}
+			]
+		}
+	}`)
+	if err := json.Unmarshal(raw, cfg); err != nil {
+		t.Fatalf("json.Unmarshal isolation config: %v", err)
+	}
+	if cfg.Isolation.Enabled {
+		t.Fatal("Isolation.Enabled should be false after unmarshal")
+	}
+	if len(cfg.Isolation.ExposePaths) != 1 {
+		t.Fatalf("ExposePaths len = %d, want 1", len(cfg.Isolation.ExposePaths))
+	}
+	if got := cfg.Isolation.ExposePaths[0]; got.Source != "/src" || got.Target != "/dst" || got.Mode != "ro" {
+		t.Fatalf("ExposePaths[0] = %+v, want source=/src target=/dst mode=ro", got)
+	}
+}
+
 // TestFlexibleStringSlice_UnmarshalText tests UnmarshalText with various comma separators
 func TestFlexibleStringSlice_UnmarshalText(t *testing.T) {
 	tests := []struct {

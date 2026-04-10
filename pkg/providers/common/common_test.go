@@ -254,6 +254,22 @@ func TestDecodeToolCallArguments_ObjectJSON(t *testing.T) {
 	}
 }
 
+func TestDecodeToolCallArguments_ObjectJSON_NewlineEscape(t *testing.T) {
+	raw := json.RawMessage(`{"content":"line1\nline2"}`)
+	args := DecodeToolCallArguments(raw, "write_file")
+	if args["content"] != "line1\nline2" {
+		t.Errorf("content = %q, want newline-expanded string", args["content"])
+	}
+}
+
+func TestDecodeToolCallArguments_ObjectJSON_LiteralBackslashN(t *testing.T) {
+	raw := json.RawMessage(`{"content":"line1\\nline2"}`)
+	args := DecodeToolCallArguments(raw, "write_file")
+	if args["content"] != `line1\nline2` {
+		t.Errorf("content = %q, want literal backslash-n", args["content"])
+	}
+}
+
 func TestDecodeToolCallArguments_StringJSON(t *testing.T) {
 	raw := json.RawMessage(`"{\"city\":\"SF\"}"`)
 	args := DecodeToolCallArguments(raw, "test")

@@ -1,4 +1,4 @@
-//go:build !mipsle && !netbsd
+//go:build !mipsle && !netbsd && !(freebsd && arm)
 
 package agent
 

@@ -308,6 +308,10 @@ func TestHandlePicoSetup_Response(t *testing.T) {
 }
 
 func TestHandleWebSocketProxyReloadsGatewayTargetFromConfig(t *testing.T) {
+	origMatcher := gatewayProcessMatcher
+	gatewayProcessMatcher = func(int) (bool, bool) { return true, true }
+	t.Cleanup(func() { gatewayProcessMatcher = origMatcher })
+
 	home := t.TempDir()
 	t.Setenv("PICOCLAW_HOME", home)
 
@@ -339,9 +343,19 @@ func TestHandleWebSocketProxyReloadsGatewayTargetFromConfig(t *testing.T) {
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
-	if _, err := ppid.WritePidFile(globalConfigDir(), cfg.Gateway.Host, cfg.Gateway.Port); err != nil {
-		t.Fatalf("WritePidFile() error = %v", err)
-	}
+	cmd := startGatewayLikeProcess(t)
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	})
+	writeTestPidFile(t, ppid.PidFileData{
+		PID:   cmd.Process.Pid,
+		Token: "test-token",
+		Host:  cfg.Gateway.Host,
+		Port:  cfg.Gateway.Port,
+	})
 	origPidData := gateway.pidData
 	origPicoToken := gateway.picoToken
 	t.Cleanup(func() {
@@ -392,6 +406,10 @@ func TestHandleWebSocketProxyReloadsGatewayTargetFromConfig(t *testing.T) {
 }
 
 func TestHandleWebSocketProxyLoadsCachedPicoTokenWhenMissing(t *testing.T) {
+	origMatcher := gatewayProcessMatcher
+	gatewayProcessMatcher = func(int) (bool, bool) { return true, true }
+	t.Cleanup(func() { gatewayProcessMatcher = origMatcher })
+
 	home := t.TempDir()
 	t.Setenv("PICOCLAW_HOME", home)
 
@@ -416,9 +434,19 @@ func TestHandleWebSocketProxyLoadsCachedPicoTokenWhenMissing(t *testing.T) {
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
-	if _, err := ppid.WritePidFile(globalConfigDir(), cfg.Gateway.Host, cfg.Gateway.Port); err != nil {
-		t.Fatalf("WritePidFile() error = %v", err)
-	}
+	cmd := startGatewayLikeProcess(t)
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	})
+	writeTestPidFile(t, ppid.PidFileData{
+		PID:   cmd.Process.Pid,
+		Token: "test-token",
+		Host:  cfg.Gateway.Host,
+		Port:  cfg.Gateway.Port,
+	})
 	t.Cleanup(func() {
 		ppid.RemovePidFile(globalConfigDir())
 	})
@@ -450,6 +478,10 @@ func TestHandleWebSocketProxyLoadsCachedPicoTokenWhenMissing(t *testing.T) {
 }
 
 func TestHandleWebSocketProxyLoadsPidDataOnDemand(t *testing.T) {
+	origMatcher := gatewayProcessMatcher
+	gatewayProcessMatcher = func(int) (bool, bool) { return true, true }
+	t.Cleanup(func() { gatewayProcessMatcher = origMatcher })
+
 	home := t.TempDir()
 	t.Setenv("PICOCLAW_HOME", home)
 
@@ -475,10 +507,20 @@ func TestHandleWebSocketProxyLoadsPidDataOnDemand(t *testing.T) {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
-	pidData, err := ppid.WritePidFile(globalConfigDir(), cfg.Gateway.Host, cfg.Gateway.Port)
-	if err != nil {
-		t.Fatalf("WritePidFile() error = %v", err)
+	cmd := startGatewayLikeProcess(t)
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	})
+	pidData := ppid.PidFileData{
+		PID:   cmd.Process.Pid,
+		Token: "test-token",
+		Host:  cfg.Gateway.Host,
+		Port:  cfg.Gateway.Port,
 	}
+	writeTestPidFile(t, pidData)
 	t.Cleanup(func() {
 		ppid.RemovePidFile(globalConfigDir())
 	})

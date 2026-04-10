@@ -870,7 +870,7 @@ func (t *WriteFileTool) Name() string {
 }
 
 func (t *WriteFileTool) Description() string {
-	return "Write content to a file. In `function.arguments`, use \\n for a newline and \\\\n for a literal backslash-n sequence. Content is written byte-for-byte after argument decoding. If the file already exists, you must set overwrite=true to replace it."
+	return "Write content to a file. Content is written byte-for-byte after argument decoding. Standard JSON escaping applies: \\n for newline and \\\\n for a literal backslash-n sequence. If the file already exists, you must set overwrite=true to replace it."
 }
 
 func (t *WriteFileTool) Parameters() map[string]any {
@@ -883,7 +883,7 @@ func (t *WriteFileTool) Parameters() map[string]any {
 			},
 			"content": map[string]any{
 				"type":        "string",
-				"description": "Content to write to the file. In `function.arguments`, use \\n for newline and \\\\n for literal backslash-n.",
+				"description": "Content to write to the file. Standard JSON escaping applies: \\n for newline and \\\\n for literal backslash-n.",
 			},
 			"overwrite": map[string]any{
 				"type":        "boolean",
