@@ -2,7 +2,6 @@
 set -e
 
 WORKSPACE="/home/picoclaw/.picoclaw/workspace"
-PICOCLAW_MODEL=bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0
 
 # Config secret is mounted at .picoclaw-config (not .picoclaw) so it doesn't
 # create a read-only tmpfs that would block the GCS workspace volume mount.
@@ -12,7 +11,7 @@ if [ -f "/home/picoclaw/.picoclaw-config/config.json" ]; then
 fi
 
 echo "=== Workspace contents ==="
-find "$WORKSPACE" -type f | sort
+find "$WORKSPACE" -type d -name node_modules -prune -o -type f -print | sort
 echo "=========================="
 
 # Wait for LiteLLM sidecar to be ready (Cloud Run sidecars have no startup ordering)
@@ -187,7 +186,7 @@ const fs = require('fs');
 const t = fs.readFileSync('$TEMPLATE', 'utf8');
 process.stdout.write(t.replace(/\{\{SPEC_FILE\}\}/g, '$JOB_SPEC'));
 ")
-    picoclaw agent --model "$PICOCLAW_MODEL" -m "$PROMPT"
+    picoclaw agent -m "$PROMPT"
     ;;
 
   generate)
@@ -209,7 +208,7 @@ t = t.replace(/\{\{STEPS\}\}/g, process.env.JOB_STEPS || '');
 t = t.replace(/\{\{EXPECTED_RESULT\}\}/g, process.env.JOB_EXPECTED_RESULT || '');
 process.stdout.write(t);
 ")
-    picoclaw agent --model "$PICOCLAW_MODEL" -m "$PROMPT"
+    picoclaw agent -m "$PROMPT"
     ;;
 
   *)
