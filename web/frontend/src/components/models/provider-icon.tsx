@@ -41,6 +41,7 @@ const PROVIDER_DOMAINS: Record<string, string> = {
   mistral: "mistral.ai",
   avian: "avian.io",
   vllm: "vllm.ai",
+  ovms: "docs.openvino.ai",
   zhipu: "zhipuai.cn",
   zai: "z.ai",
   mimo: "xiaomi.com",

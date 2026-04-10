@@ -199,6 +199,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"vivgrid", "vivgrid"},
 		{"qwen", "qwen"},
 		{"vllm", "vllm"},
+		{"ovms", "ovms"},
 		{"deepseek", "deepseek"},
 		{"ollama", "ollama"},
 		{"lmstudio", "lmstudio"},
@@ -315,6 +316,20 @@ func TestCreateProviderFromConfig_LocalProviders(t *testing.T) {
 			model:       "vllm/Qwen/Qwen3-8B",
 			apiKey:      "",
 			wantModelID: "Qwen/Qwen3-8B",
+		},
+		{
+			name:        "OVMS with API key",
+			modelName:   "test-ovms",
+			model:       "ovms/llama3",
+			apiKey:      "test-key",
+			wantModelID: "llama3",
+		},
+		{
+			name:        "OVMS without API key",
+			modelName:   "test-ovms",
+			model:       "ovms/llama3",
+			apiKey:      "",
+			wantModelID: "llama3",
 		},
 	}
 

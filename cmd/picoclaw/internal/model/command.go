@@ -25,10 +25,11 @@ Examples:
   picoclaw model                    # Show current default model
   picoclaw model gpt-5.2           # Set gpt-5.2 as default
   picoclaw model claude-sonnet-4.6 # Set claude-sonnet-4.6 as default
-  picoclaw model local-model       # Set local VLLM server as default
+  picoclaw model local-model       # Set local VLLM/OVMS server as default
 
 Note: 'local-model' is a special value for using a local VLLM server
-(running at localhost:8000 by default) which does not require an API key.`,
+(running at localhost:8000 by default) which does not require an API key.
+You can also use OVMS (OpenVINO Model Server) or other OpenAI-compatible servers.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			configPath := internal.GetConfigPath()

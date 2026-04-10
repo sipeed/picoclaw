@@ -341,7 +341,7 @@ Check these in the dashboard:
 
 - a default model is selected
 - the model has credentials or OAuth state
-- local models such as Ollama or vLLM are reachable
+- local models such as Ollama, vLLM, or OVMS are reachable
 
 ### The launcher cannot find `picoclaw`
 
