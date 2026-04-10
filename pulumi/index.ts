@@ -218,12 +218,15 @@ const e2eJob = new gcp.cloudrunv2.Job("picoclaw-e2e-job", {
                         },
                     },
                     envs: [
-                        // JOB_TYPE: run-all | run | generate
+                        // JOB_TYPE: run-all | run | autofix | generate
                         { name: "JOB_TYPE", value: "run-all" },
-                        // JOB_SPEC: only used when JOB_TYPE=run
+                        // JOB_SPEC: used when JOB_TYPE=run or autofix
                         { name: "JOB_SPEC", value: "" },
-                        // JOB_PROMPT: only used when JOB_TYPE=generate
-                        { name: "JOB_PROMPT", value: "" },
+                        // used when JOB_TYPE=generate
+                        { name: "JOB_AREA", value: "" },
+                        { name: "JOB_TEST_FILE", value: "" },
+                        { name: "JOB_STEPS", value: "" },
+                        { name: "JOB_EXPECTED_RESULT", value: "" },
                         { name: "RESULTS_BUCKET", value: bucket.name },
                         { name: "LITELLM_BASE_URL", value: "http://0.0.0.0:4000" },
                         { name: "AWS_REGION_NAME", value: awsRegion },
@@ -257,4 +260,8 @@ export const runSingleTestCommand = pulumi.interpolate
 
 export const generateTestCommand = pulumi.interpolate
     `gcloud run jobs execute ${e2eJob.name} --region=${region} --project=${project} \
---container=picoclaw --update-env-vars=JOB_TYPE=generate,JOB_PROMPT="<paste prompt here>"`;
+--container=picoclaw --update-env-vars=JOB_TYPE=generate --update-env-vars=JOB_AREA=flow-designer --update-env-vars=JOB_TEST_FILE=<test-file> --update-env-vars="JOB_STEPS=<steps>" --update-env-vars="JOB_EXPECTED_RESULT=<expected>"`;
+
+export const autofixTestCommand = pulumi.interpolate
+    `gcloud run jobs execute ${e2eJob.name} --region=${region} --project=${project} \
+--container=picoclaw --update-env-vars=JOB_TYPE=autofix --update-env-vars=JOB_SPEC=tests/flow-designer/create-new-flow-custom-node.spec.ts`;

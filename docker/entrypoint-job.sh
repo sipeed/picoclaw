@@ -4,6 +4,13 @@ set -e
 WORKSPACE="/home/picoclaw/.picoclaw/workspace"
 PICOCLAW_MODEL=bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0
 
+# Config secret is mounted at .picoclaw-config (not .picoclaw) so it doesn't
+# create a read-only tmpfs that would block the GCS workspace volume mount.
+# Copy config.json to the location picoclaw expects before anything else runs.
+if [ -f "/home/picoclaw/.picoclaw-config/config.json" ]; then
+    cp "/home/picoclaw/.picoclaw-config/config.json" "/home/picoclaw/.picoclaw/config.json"
+fi
+
 echo "=== Workspace contents ==="
 find "$WORKSPACE" -type f | sort
 echo "=========================="
