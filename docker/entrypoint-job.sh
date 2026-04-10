@@ -211,8 +211,17 @@ process.stdout.write(t);
     picoclaw agent -m "$PROMPT"
     ;;
 
+  prompt)
+    if [ -z "$JOB_PROMPT" ]; then
+      echo "ERROR: JOB_PROMPT is required for JOB_TYPE=prompt"
+      exit 1
+    fi
+    echo "Running picoclaw with prompt..."
+    picoclaw agent -m "$JOB_PROMPT"
+    ;;
+
   *)
-    echo "ERROR: Unknown JOB_TYPE=$JOB_TYPE (valid: run-all, run, autofix, generate)"
+    echo "ERROR: Unknown JOB_TYPE=$JOB_TYPE (valid: run-all, run, autofix, generate, prompt)"
     exit 1
     ;;
 esac

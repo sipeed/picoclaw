@@ -218,7 +218,7 @@ const e2eJob = new gcp.cloudrunv2.Job("picoclaw-e2e-job", {
                         },
                     },
                     envs: [
-                        // JOB_TYPE: run-all | run | autofix | generate
+                        // JOB_TYPE: run-all | run | autofix | generate | prompt
                         { name: "JOB_TYPE", value: "run-all" },
                         // JOB_SPEC: used when JOB_TYPE=run or autofix
                         { name: "JOB_SPEC", value: "" },
@@ -227,6 +227,8 @@ const e2eJob = new gcp.cloudrunv2.Job("picoclaw-e2e-job", {
                         { name: "JOB_TEST_FILE", value: "" },
                         { name: "JOB_STEPS", value: "" },
                         { name: "JOB_EXPECTED_RESULT", value: "" },
+                        // used when JOB_TYPE=prompt
+                        { name: "JOB_PROMPT", value: "" },
                         { name: "RESULTS_BUCKET", value: bucket.name },
                         { name: "LITELLM_BASE_URL", value: "http://0.0.0.0:4000" },
                         { name: "AWS_REGION_NAME", value: awsRegion },
