@@ -365,8 +365,7 @@ func (m *Manager) ConnectServer(
 			env = append(env, fmt.Sprintf("%s=%s", k, v))
 		}
 		cmd.Env = env
-
-		transport = &mcp.CommandTransport{Command: cmd}
+		transport = &isolatedCommandTransport{Command: cmd}
 	default:
 		return fmt.Errorf(
 			"unsupported transport type: %s (supported: stdio, sse, http)",

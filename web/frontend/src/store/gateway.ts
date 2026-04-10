@@ -14,6 +14,7 @@ export type GatewayState =
 export interface GatewayStoreState {
   status: GatewayState
   canStart: boolean
+  startReason?: string
   restartRequired: boolean
 }
 
@@ -57,6 +58,7 @@ function normalizeGatewayStoreState(
   if (
     next.status === prev.status &&
     next.canStart === prev.canStart &&
+    next.startReason === prev.startReason &&
     next.restartRequired === prev.restartRequired
   ) {
     return prev
@@ -108,7 +110,10 @@ export function applyGatewayStatusToStore(
   data: Partial<
     Pick<
       GatewayStatusResponse,
-      "gateway_status" | "gateway_start_allowed" | "gateway_restart_required"
+      | "gateway_status"
+      | "gateway_start_allowed"
+      | "gateway_start_reason"
+      | "gateway_restart_required"
     >
   >,
 ) {
@@ -121,6 +126,10 @@ export function applyGatewayStatusToStore(
       prev.status === "stopping" && data.gateway_status === "running"
         ? false
         : (data.gateway_start_allowed ?? prev.canStart),
+    startReason:
+      prev.status === "stopping" && data.gateway_status === "running"
+        ? prev.startReason
+        : (data.gateway_start_reason ?? prev.startReason),
     restartRequired:
       prev.status === "stopping" && data.gateway_status === "running"
         ? false

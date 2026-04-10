@@ -18,7 +18,7 @@
     <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
-[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | [Malay](README.my.md) | [English](README.md) | **Bahasa Indonesia**
+[中文](README.zh.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | **Bahasa Indonesia** | [Malay](README.my.md) | [English](README.md)
 
 </div>
 
@@ -615,4 +615,3 @@ Discord: <https://discord.gg/V4sAZ9XWpN>
 
 WeChat:
 <img src="assets/wechat.png" alt="Kode QR grup WeChat" width="512">
-

@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/isolation"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -178,6 +181,76 @@ func TestAgentLoop_MountProcessHook_ApprovalDeny(t *testing.T) {
 	}
 }
 
+func TestAgentLoop_MountProcessHook_IsolationSupportsRelativeDirAndCommand(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only isolation path handling")
+	}
+
+	provider := &llmHookTestProvider{}
+	al, agent, cleanup := newHookTestLoop(t, provider)
+	defer cleanup()
+
+	root := t.TempDir()
+	t.Setenv(config.EnvHome, filepath.Join(root, "picoclaw-home"))
+	binDir := filepath.Join(root, "bin")
+	hookDir := filepath.Join(root, "hooks")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(hookDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFakeBwrap(t, filepath.Join(binDir, "bwrap"))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	linkTestBinary(t, os.Args[0], filepath.Join(hookDir, "hook-helper"))
+
+	cfg := config.DefaultConfig()
+	cfg.Isolation.Enabled = true
+	isolation.Configure(cfg)
+	t.Cleanup(func() { isolation.Configure(config.DefaultConfig()) })
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relHookDir, err := filepath.Rel(cwd, hookDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mountErr := al.MountProcessHook(context.Background(), "ipc-relative", ProcessHookOptions{
+		Command:      []string{"./hook-helper", "-test.run=TestProcessHook_HelperProcess", "--"},
+		Dir:          relHookDir,
+		Env:          processHookHelperEnv("rewrite", ""),
+		InterceptLLM: true,
+	})
+	if mountErr != nil {
+		t.Fatalf("MountProcessHook failed with relative dir/command under isolation: %v", mountErr)
+	}
+
+	resp, err := al.runAgentLoop(context.Background(), agent, processOptions{
+		SessionKey:      "session-relative",
+		Channel:         "cli",
+		ChatID:          "direct",
+		UserMessage:     "hello",
+		DefaultResponse: defaultResponse,
+		EnableSummary:   false,
+		SendResponse:    false,
+	})
+	if err != nil {
+		t.Fatalf("runAgentLoop failed: %v", err)
+	}
+	if resp != "provider content|ipc" {
+		t.Fatalf("expected process-hooked llm content, got %q", resp)
+	}
+	provider.mu.Lock()
+	lastModel := provider.lastModel
+	provider.mu.Unlock()
+	if lastModel != "process-model" {
+		t.Fatalf("expected process model, got %q", lastModel)
+	}
+}
+
 func processHookHelperCommand() []string {
 	return []string{os.Args[0], "-test.run=TestProcessHook_HelperProcess", "--"}
 }
@@ -191,6 +264,59 @@ func processHookHelperEnv(mode, eventLog string) []string {
 		env = append(env, "PICOCLAW_HOOK_EVENT_LOG="+eventLog)
 	}
 	return env
+}
+
+func writeFakeBwrap(t *testing.T, path string) {
+	t.Helper()
+	script := `#!/bin/sh
+set -eu
+workdir=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --)
+      shift
+      break
+      ;;
+    --chdir)
+      workdir="$2"
+      shift 2
+      ;;
+    --bind|--ro-bind)
+      shift 3
+      ;;
+    --proc|--dev)
+      shift 2
+      ;;
+    --die-with-parent|--unshare-ipc)
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+if [ -n "$workdir" ]; then
+  cd "$workdir"
+fi
+exec "$@"
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake bwrap: %v", err)
+	}
+}
+
+func linkTestBinary(t *testing.T, source, target string) {
+	t.Helper()
+	if err := os.Symlink(source, target); err == nil {
+		return
+	}
+	data, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatalf("read test binary: %v", err)
+	}
+	if err := os.WriteFile(target, data, 0o755); err != nil {
+		t.Fatalf("create hook helper binary: %v", err)
+	}
 }
 
 func waitForFileContains(t *testing.T, path, substring string) {

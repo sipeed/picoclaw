@@ -151,6 +151,30 @@ func RemovePidFile(homePath string) {
 	os.Remove(pidPath)
 }
 
+// RemovePidFileIfPID deletes the PID file only when the recorded PID matches
+// expectedPID. It returns true when the file is removed successfully.
+func RemovePidFileIfPID(homePath string, expectedPID int) bool {
+	if expectedPID <= 0 {
+		return false
+	}
+
+	pidMu.Lock()
+	defer pidMu.Unlock()
+
+	pidPath := pidFilePath(homePath)
+	data, err := readPidFileUnlocked(pidPath)
+	if err != nil {
+		return false
+	}
+	if data.PID != expectedPID {
+		return false
+	}
+	if err := os.Remove(pidPath); err != nil {
+		return false
+	}
+	return true
+}
+
 // readPidFileUnlocked reads the PID file without acquiring the lock.
 // Caller must hold pidMu.
 func readPidFileUnlocked(pidPath string) (*PidFileData, error) {
