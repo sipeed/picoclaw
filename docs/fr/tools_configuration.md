@@ -345,6 +345,7 @@ Au lieu de charger tous les outils, le LLM reçoit un outil de recherche léger 
         },
         "slack": {
           "enabled": true,
+          "type": "slack",
           "command": "npx",
           "args": [
             "-y",

@@ -18,9 +18,15 @@ func TestHandleGetChannelConfig_ReturnsSecretPresenceWithoutLeakingSecrets(t *te
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	cfg.Channels.Feishu.Enabled = true
-	cfg.Channels.Feishu.AppID = "cli_test_app"
-	cfg.Channels.Feishu.AppSecret = *config.NewSecureString("feishu-secret-from-security")
+	bc := cfg.Channels[config.ChannelFeishu]
+	bc.Enabled = true
+	decoded, err := bc.GetDecoded()
+	if err != nil {
+		t.Fatalf("GetDecoded() error = %v", err)
+	}
+	bcfg := decoded.(*config.FeishuSettings)
+	bcfg.AppID = "cli_test_app"
+	bcfg.AppSecret = *config.NewSecureString("feishu-secret-from-security")
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}

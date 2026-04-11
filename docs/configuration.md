@@ -592,9 +592,10 @@ chmod 600 ~/.picoclaw/.security.yml
       // api_key loaded from .security.yml
     }
   ],
-  "channels": {
+  "channel_list": {
     "telegram": {
-      "enabled": true"
+      "enabled": true,
+      "type": "telegram""
       // token loaded from .security.yml
     }
   }
@@ -907,9 +908,10 @@ This keeps the runtime lightweight while making new OpenAI-compatible backends m
     "dm_scope": "per-channel-peer",
     "backlog_limit": 20
   },
-  "channels": {
+  "channel_list": {
     "telegram": {
-      "enabled": true"
+      "enabled": true,
+      "type": "telegram""
       // token: set in .security.yml
       "allow_from": ["123456789"]
     }

@@ -21,33 +21,46 @@ import (
 
 type VKChannel struct {
 	*channels.BaseChannel
-	vk     *api.VK
-	lp     *longpoll.LongPoll
-	config *config.Config
-	ctx    context.Context
-	cancel context.CancelFunc
+	vk          *api.VK
+	lp          *longpoll.LongPoll
+	channelName string
+	bc          *config.Channel
+	ctx         context.Context
+	cancel      context.CancelFunc
 }
 
-func NewVKChannel(cfg *config.Config, bus *bus.MessageBus) (*VKChannel, error) {
-	vkCfg := cfg.Channels.VK
+func NewVKChannel(channelName string, bc *config.Channel, bus *bus.MessageBus) (*VKChannel, error) {
+	var vkCfg config.VKSettings
+	if err := bc.Decode(&vkCfg); err != nil {
+		return nil, err
+	}
 
 	vk := api.NewVK(vkCfg.Token.String())
 
 	base := channels.NewBaseChannel(
-		"vk",
-		vkCfg,
+		channelName,
+		&vkCfg,
 		bus,
-		vkCfg.AllowFrom,
+		bc.AllowFrom,
 		channels.WithMaxMessageLength(4000),
-		channels.WithGroupTrigger(vkCfg.GroupTrigger),
-		channels.WithReasoningChannelID(vkCfg.ReasoningChannelID),
+		channels.WithGroupTrigger(bc.GroupTrigger),
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	return &VKChannel{
 		BaseChannel: base,
 		vk:          vk,
-		config:      cfg,
+		channelName: channelName,
+		bc:          bc,
 	}, nil
+}
+
+func (c *VKChannel) getVKCfg() *config.VKSettings {
+	var v config.VKSettings
+	if err := c.bc.Decode(&v); err != nil {
+		return nil
+	}
+	return &v
 }
 
 func (c *VKChannel) Start(ctx context.Context) error {
@@ -55,7 +68,7 @@ func (c *VKChannel) Start(ctx context.Context) error {
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	groupID := c.config.Channels.VK.GroupID
+	groupID := c.getVKCfg().GroupID
 	if groupID == 0 {
 		c.cancel()
 		return fmt.Errorf("group_id is required for VK bot")
@@ -143,7 +156,7 @@ func (c *VKChannel) handleMessage(msg object.MessagesMessage) {
 		return
 	}
 
-	groupTrigger := c.config.Channels.VK.GroupTrigger
+	groupTrigger := c.bc.GroupTrigger
 	isGroupChat := peerID != fromID
 
 	if isGroupChat {

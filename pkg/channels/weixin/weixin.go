@@ -20,7 +20,7 @@ import (
 type WeixinChannel struct {
 	*channels.BaseChannel
 	api    *ApiClient
-	config config.WeixinConfig
+	config *config.WeixinSettings
 	ctx    context.Context
 	cancel context.CancelFunc
 	bus    *bus.MessageBus
@@ -36,25 +36,48 @@ type WeixinChannel struct {
 }
 
 func init() {
-	channels.RegisterFactory("weixin", func(cfg *config.Config, bus *bus.MessageBus) (channels.Channel, error) {
-		return NewWeixinChannel(cfg.Channels.Weixin, bus)
-	})
+	channels.RegisterFactory(
+		config.ChannelWeixin,
+		func(channelName, channelType string, cfg *config.Config, bus *bus.MessageBus) (channels.Channel, error) {
+			bc := cfg.Channels[channelName]
+			decoded, err := bc.GetDecoded()
+			if err != nil {
+				return nil, err
+			}
+			weixinCfg, ok := decoded.(*config.WeixinSettings)
+			if !ok {
+				return nil, channels.ErrSendFailed
+			}
+			ch, err := NewWeixinChannel(bc, weixinCfg, bus)
+			if err != nil {
+				return nil, err
+			}
+			if channelName != config.ChannelWeixin {
+				ch.SetName(channelName)
+			}
+			return ch, nil
+		},
+	)
 }
 
 // NewWeixinChannel creates a new WeixinChannel from config.
-func NewWeixinChannel(cfg config.WeixinConfig, messageBus *bus.MessageBus) (*WeixinChannel, error) {
+func NewWeixinChannel(
+	bc *config.Channel,
+	cfg *config.WeixinSettings,
+	messageBus *bus.MessageBus,
+) (*WeixinChannel, error) {
 	api, err := NewApiClient(cfg.BaseURL, cfg.Token.String(), cfg.Proxy)
 	if err != nil {
 		return nil, fmt.Errorf("weixin: failed to create API client: %w", err)
 	}
 
 	base := channels.NewBaseChannel(
-		"weixin",
+		bc.Name(),
 		cfg,
 		messageBus,
-		cfg.AllowFrom,
+		bc.AllowFrom,
 		channels.WithMaxMessageLength(4000),
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	return &WeixinChannel{

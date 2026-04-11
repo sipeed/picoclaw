@@ -50,7 +50,7 @@ The new `model_list` configuration offers several advantages:
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "model_list": [
     {
       "model_name": "gpt4",

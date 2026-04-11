@@ -44,7 +44,7 @@ func picoclawHomeDir() string {
 	return config.GetHome()
 }
 
-func genWeixinAccountKey(cfg config.WeixinConfig) string {
+func genWeixinAccountKey(cfg *config.WeixinSettings) string {
 	token := strings.TrimSpace(cfg.Token.String())
 	if token == "" {
 		return "default"
@@ -53,11 +53,11 @@ func genWeixinAccountKey(cfg config.WeixinConfig) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-func buildWeixinSyncBufPath(cfg config.WeixinConfig) string {
+func buildWeixinSyncBufPath(cfg *config.WeixinSettings) string {
 	return filepath.Join(picoclawHomeDir(), "channels", "weixin", "sync", genWeixinAccountKey(cfg)+".json")
 }
 
-func buildWeixinContextTokensPath(cfg config.WeixinConfig) string {
+func buildWeixinContextTokensPath(cfg *config.WeixinSettings) string {
 	return filepath.Join(picoclawHomeDir(), "channels", "weixin", "context-tokens", genWeixinAccountKey(cfg)+".json")
 }
 

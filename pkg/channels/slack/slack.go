@@ -21,7 +21,7 @@ import (
 
 type SlackChannel struct {
 	*channels.BaseChannel
-	config       config.SlackConfig
+	config       *config.SlackSettings
 	api          *slack.Client
 	socketClient *socketmode.Client
 	botUserID    string
@@ -36,7 +36,11 @@ type slackMessageRef struct {
 	Timestamp string
 }
 
-func NewSlackChannel(cfg config.SlackConfig, messageBus *bus.MessageBus) (*SlackChannel, error) {
+func NewSlackChannel(
+	bc *config.Channel,
+	cfg *config.SlackSettings,
+	messageBus *bus.MessageBus,
+) (*SlackChannel, error) {
 	if cfg.BotToken.String() == "" || cfg.AppToken.String() == "" {
 		return nil, fmt.Errorf("slack bot_token and app_token are required")
 	}
@@ -48,10 +52,10 @@ func NewSlackChannel(cfg config.SlackConfig, messageBus *bus.MessageBus) (*Slack
 
 	socketClient := socketmode.New(api)
 
-	base := channels.NewBaseChannel("slack", cfg, messageBus, cfg.AllowFrom,
+	base := channels.NewBaseChannel("slack", cfg, messageBus, bc.AllowFrom,
 		channels.WithMaxMessageLength(40000),
-		channels.WithGroupTrigger(cfg.GroupTrigger),
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+		channels.WithGroupTrigger(bc.GroupTrigger),
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	return &SlackChannel{

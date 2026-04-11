@@ -144,42 +144,6 @@ func TestGetModelConfig_Concurrent(t *testing.T) {
 	}
 }
 
-func TestAgentDefaultsV0_JSON_BackwardCompat(t *testing.T) {
-	tests := []struct {
-		name     string
-		json     string
-		wantName string
-	}{
-		{
-			name:     "new model_name field",
-			json:     `{"model_name": "gpt4"}`,
-			wantName: "gpt4",
-		},
-		{
-			name:     "old model field",
-			json:     `{"model": "gpt4"}`,
-			wantName: "gpt4",
-		},
-		{
-			name:     "both fields - model_name wins",
-			json:     `{"model_name": "new", "model": "old"}`,
-			wantName: "new",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var defaults agentDefaultsV0
-			if err := json.Unmarshal([]byte(tt.json), &defaults); err != nil {
-				t.Fatalf("Unmarshal error: %v", err)
-			}
-			if got := defaults.GetModelName(); got != tt.wantName {
-				t.Errorf("GetModelName() = %q, want %q", got, tt.wantName)
-			}
-		})
-	}
-}
-
 func TestModelConfig_Validate(t *testing.T) {
 	tests := []struct {
 		name    string

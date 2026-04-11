@@ -397,6 +397,7 @@ dynamically only when requested by the user.*
         },
         "slack": {
           "enabled": true,
+          "type": "slack",
           "command": "npx",
           "args": [
             "-y",

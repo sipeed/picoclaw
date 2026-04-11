@@ -8,9 +8,10 @@ MaixCam é um canal dedicado para conectar dispositivos de câmera AI Sipeed Mai
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "maixcam": {
       "enabled": true,
+      "type": "maixcam",
       "host": "0.0.0.0",
       "port": 18790,
       "allow_from": []

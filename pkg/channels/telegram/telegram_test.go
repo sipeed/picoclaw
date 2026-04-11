@@ -140,7 +140,8 @@ func newTestChannelWithConstructor(
 		BaseChannel: base,
 		bot:         bot,
 		chatIDs:     make(map[string]int64),
-		config:      config.DefaultConfig(),
+		bc:          &config.Channel{Type: config.ChannelTelegram, Enabled: true},
+		tgCfg:       &config.TelegramSettings{},
 	}
 }
 

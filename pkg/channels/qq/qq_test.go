@@ -198,6 +198,7 @@ func TestSendMedia_UploadsLocalFileAsBase64(t *testing.T) {
 	}
 	ch := &QQChannel{
 		BaseChannel: channels.NewBaseChannel("qq", nil, messageBus, nil),
+		config:      &config.QQSettings{},
 		api:         api,
 		dedup:       make(map[string]time.Time),
 		done:        make(chan struct{}),
@@ -294,6 +295,7 @@ func assertAudioWAVUploadType(t *testing.T, duration time.Duration, wantFileType
 	}
 	ch := &QQChannel{
 		BaseChannel: channels.NewBaseChannel("qq", nil, messageBus, nil),
+		config:      &config.QQSettings{},
 		api:         api,
 		dedup:       make(map[string]time.Time),
 		done:        make(chan struct{}),
@@ -329,6 +331,7 @@ func TestSendMedia_RemoteAudioFallsBackToFileUpload(t *testing.T) {
 	}
 	ch := &QQChannel{
 		BaseChannel: channels.NewBaseChannel("qq", nil, messageBus, nil),
+		config:      &config.QQSettings{},
 		api:         api,
 		dedup:       make(map[string]time.Time),
 		done:        make(chan struct{}),
@@ -374,6 +377,7 @@ func TestSendMedia_LocalAudioWithUnknownDurationFallsBackToFileUpload(t *testing
 	}
 	ch := &QQChannel{
 		BaseChannel: channels.NewBaseChannel("qq", nil, messageBus, nil),
+		config:      &config.QQSettings{},
 		api:         api,
 		dedup:       make(map[string]time.Time),
 		done:        make(chan struct{}),
@@ -409,6 +413,7 @@ func TestSendMedia_UsesRemoteURLUploadForC2C(t *testing.T) {
 	}
 	ch := &QQChannel{
 		BaseChannel: channels.NewBaseChannel("qq", nil, messageBus, nil),
+		config:      &config.QQSettings{},
 		api:         api,
 		dedup:       make(map[string]time.Time),
 		done:        make(chan struct{}),
@@ -481,6 +486,7 @@ func TestSendMedia_LocalFileUploadIncludesStoredFilename(t *testing.T) {
 	}
 	ch := &QQChannel{
 		BaseChannel: channels.NewBaseChannel("qq", nil, messageBus, nil),
+		config:      &config.QQSettings{},
 		api:         api,
 		dedup:       make(map[string]time.Time),
 		done:        make(chan struct{}),
@@ -520,6 +526,7 @@ func TestSendMedia_ReturnsSendFailedWithoutMediaStore(t *testing.T) {
 	messageBus := bus.NewMessageBus()
 	ch := &QQChannel{
 		BaseChannel: channels.NewBaseChannel("qq", nil, messageBus, nil),
+		config:      &config.QQSettings{},
 		api:         &fakeQQAPI{},
 		dedup:       make(map[string]time.Time),
 		done:        make(chan struct{}),
@@ -566,7 +573,7 @@ func TestSendMedia_ReturnsSendFailedWhenLocalFileExceedsBase64MiBLimit(t *testin
 	api := &fakeQQAPI{}
 	ch := &QQChannel{
 		BaseChannel: channels.NewBaseChannel("qq", nil, messageBus, nil),
-		config: config.QQConfig{
+		config: &config.QQSettings{
 			MaxBase64FileSizeMiB: 1,
 		},
 		api:   api,

@@ -23,7 +23,7 @@ import (
 
 type OneBotChannel struct {
 	*channels.BaseChannel
-	config        config.OneBotConfig
+	config        *config.OneBotSettings
 	conn          *websocket.Conn
 	ctx           context.Context
 	cancel        context.CancelFunc
@@ -96,10 +96,14 @@ type oneBotMessageSegment struct {
 	Data map[string]any `json:"data"`
 }
 
-func NewOneBotChannel(cfg config.OneBotConfig, messageBus *bus.MessageBus) (*OneBotChannel, error) {
-	base := channels.NewBaseChannel("onebot", cfg, messageBus, cfg.AllowFrom,
-		channels.WithGroupTrigger(cfg.GroupTrigger),
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+func NewOneBotChannel(
+	bc *config.Channel,
+	cfg *config.OneBotSettings,
+	messageBus *bus.MessageBus,
+) (*OneBotChannel, error) {
+	base := channels.NewBaseChannel("onebot", cfg, messageBus, bc.AllowFrom,
+		channels.WithGroupTrigger(bc.GroupTrigger),
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	const dedupSize = 1024
