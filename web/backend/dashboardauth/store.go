@@ -1,3 +1,5 @@
+//go:build !mipsle && !netbsd && !(freebsd && arm)
+
 // Package dashboardauth provides a bcrypt-backed SQLite store for the
 // launcher dashboard password. The database contains a single row (id=1)
 // with the bcrypt hash; no plaintext is ever persisted.

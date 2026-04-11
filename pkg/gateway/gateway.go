@@ -111,7 +111,7 @@ func (p *startupBlockedProvider) GetDefaultModel() string {
 }
 
 // Run starts the gateway runtime using the configuration loaded from configPath.
-func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error {
+func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) (runErr error) {
 	panicPath := filepath.Join(homePath, logPath, panicFile)
 	panicFunc, err := logger.InitPanic(panicPath)
 	if err != nil {
@@ -129,14 +129,25 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	} else {
 		logger.SetLevelFromString(config.ResolveGatewayLogLevel(configPath))
 	}
+	defer func() {
+		if runErr != nil {
+			logger.ErrorCF("gateway", "Gateway startup failed", map[string]any{
+				"config_path": configPath,
+				"error":       runErr.Error(),
+				"home_path":   homePath,
+				"allow_empty": allowEmptyStartup,
+				"debug":       debug,
+			})
+		}
+	}()
 
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
-		logger.Fatalf("error loading config: %v", err)
+		return fmt.Errorf("error loading config: %w", err)
 	}
 
 	if err = preCheckConfig(cfg); err != nil {
-		logger.Fatalf("config pre-check failed: %v", err)
+		return fmt.Errorf("config pre-check failed: %w", err)
 	}
 
 	// Debug mode permanently overrides the config log level to DEBUG.

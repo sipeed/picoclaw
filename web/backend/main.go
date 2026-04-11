@@ -229,11 +229,21 @@ func main() {
 
 	// Open the bcrypt password store (creates the DB file on first run).
 	authStore, authStoreErr := dashboardauth.New(picoHome)
-	if authStoreErr != nil {
-		logger.ErrorC("web", fmt.Sprintf("Warning: could not open auth store: %v", authStoreErr))
-		authStore = nil
-	} else {
+	var passwordStore api.PasswordStore
+	if authStoreErr == nil {
+		passwordStore = authStore
 		defer authStore.Close()
+	} else if errors.Is(authStoreErr, dashboardauth.ErrUnsupportedPlatform) {
+		logger.InfoC(
+			"web",
+			fmt.Sprintf(
+				"Dashboard password store unavailable on this platform; falling back to token login: %v",
+				authStoreErr,
+			),
+		)
+		authStoreErr = nil
+	} else {
+		logger.ErrorC("web", fmt.Sprintf("Warning: could not open auth store: %v", authStoreErr))
 	}
 
 	// Determine listen address
@@ -250,7 +260,7 @@ func main() {
 	api.RegisterLauncherAuthRoutes(mux, api.LauncherAuthRouteOpts{
 		DashboardToken: dashboardToken,
 		SessionCookie:  dashboardSessionCookie,
-		PasswordStore:  authStore,
+		PasswordStore:  passwordStore,
 		StoreError:     authStoreErr,
 	})
 

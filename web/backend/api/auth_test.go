@@ -75,6 +75,67 @@ func TestLauncherAuthLoginAndStatus(t *testing.T) {
 	})
 }
 
+func TestLauncherAuthLegacyTokenFallbackReportsInitialized(t *testing.T) {
+	key := make([]byte, 32)
+	const tok = "legacy-fallback-token"
+	sess := middleware.SessionCookieValue(key, tok)
+	mux := http.NewServeMux()
+	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
+		DashboardToken: tok,
+		SessionCookie:  sess,
+	})
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/auth/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status code = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var body struct {
+		Authenticated bool `json:"authenticated"`
+		Initialized   bool `json:"initialized"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.Initialized {
+		t.Fatalf("initialized = false, want true in legacy token fallback mode")
+	}
+	if body.Authenticated {
+		t.Fatalf("unexpected authenticated=true: %+v", body)
+	}
+
+	rec = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"password":"`+tok+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login code = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLauncherAuthSetupRejectedInLegacyTokenFallback(t *testing.T) {
+	key := make([]byte, 32)
+	sess := middleware.SessionCookieValue(key, "legacy-token")
+	mux := http.NewServeMux()
+	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
+		DashboardToken: "legacy-token",
+		SessionCookie:  sess,
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/auth/setup",
+		strings.NewReader(`{"password":"12345678","confirm":"12345678"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("setup code = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestLauncherAuthLogoutRequiresPostAndJSON(t *testing.T) {
 	key := make([]byte, 32)
 	sess := middleware.SessionCookieValue(key, "tok")

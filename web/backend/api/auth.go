@@ -81,8 +81,13 @@ type launcherAuthHandlers struct {
 	loginLimit    *loginRateLimiter
 }
 
+func (h *launcherAuthHandlers) usesLegacyTokenAuth() bool {
+	return h.store == nil && h.storeErr == nil && h.token != ""
+}
+
 // isStoreInitialized safely queries the store.
-// Returns (false, nil) when no store is configured (storeErr also nil).
+// Returns (true, nil) when legacy token auth is active without a password store.
+// Returns (false, nil) when no store/token fallback is configured.
 // Returns (false, err) on store errors — callers must treat this as a 5xx, not as
 // "uninitialized", to keep auth fail-closed.
 // Exception: handleLogin swallows storeErr and falls back to token auth so
@@ -94,6 +99,9 @@ func (h *launcherAuthHandlers) isStoreInitialized(ctx context.Context) (bool, er
 				"password store unavailable (%w); "+
 					"to recover, stop the application, delete the database file and restart ",
 				h.storeErr)
+		}
+		if h.usesLegacyTokenAuth() {
+			return true, nil
 		}
 		return false, nil
 	}
@@ -129,7 +137,7 @@ func (h *launcherAuthHandlers) handleLogin(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	if initialized {
+	if initialized && h.store != nil {
 		// Bcrypt path: verify against the stored hash.
 		var err error
 		ok, err = h.store.VerifyPassword(r.Context(), in)
@@ -217,6 +225,14 @@ func (h *launcherAuthHandlers) handleStatus(w http.ResponseWriter, r *http.Reque
 //   - If a password is already set, the caller must hold a valid session cookie.
 func (h *launcherAuthHandlers) handleSetup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
+	if h.usesLegacyTokenAuth() {
+		w.WriteHeader(http.StatusNotImplemented)
+		_, _ = w.Write(
+			[]byte(`{"error":"password setup is unavailable on this platform; use the dashboard token instead"}`),
+		)
+		return
+	}
 
 	if h.store == nil {
 		w.WriteHeader(http.StatusNotImplemented)
