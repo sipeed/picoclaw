@@ -39,6 +39,13 @@ var allowedInlineImageMIMETypes = map[string]struct{}{
 	"image/bmp":  {},
 }
 
+func outboundMessageIsThought(metadata map[string]string) bool {
+	if len(metadata) == 0 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(metadata["message_kind"]), MessageKindThought)
+}
+
 // writeJSON sends a JSON message to the connection with write locking.
 func (pc *picoConn) writeJSON(v any) error {
 	if pc.closed.Load() {
@@ -247,9 +254,11 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 	if !c.IsRunning() {
 		return nil, channels.ErrNotRunning
 	}
+	isThought := outboundMessageIsThought(msg.Metadata)
 
 	outMsg := newMessage(TypeMessageCreate, map[string]any{
-		"content": msg.Content,
+		PayloadKeyContent: msg.Content,
+		PayloadKeyThought: isThought,
 	})
 
 	return nil, c.broadcastToSession(msg.ChatID, outMsg)
@@ -288,8 +297,9 @@ func (c *PicoChannel) SendPlaceholder(ctx context.Context, chatID string) (strin
 
 	msgID := uuid.New().String()
 	outMsg := newMessage(TypeMessageCreate, map[string]any{
-		"content":    text,
-		"message_id": msgID,
+		PayloadKeyContent: text,
+		PayloadKeyThought: false,
+		"message_id":      msgID,
 	})
 
 	if err := c.broadcastToSession(chatID, outMsg); err != nil {

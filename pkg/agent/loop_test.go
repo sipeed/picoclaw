@@ -1921,7 +1921,7 @@ func TestProcessMessage_FallbackUsesPerCandidateProvider(t *testing.T) {
 			},
 			{
 				ModelName: "gemma-fallback",
-				Model:     "gemini/gemma-3-27b-it",
+				Model:     "openrouter/gemma-3-27b-it",
 				APIBase:   fallbackServer.URL,
 				APIKeys:   config.SimpleSecureStrings("fallback-key"),
 				Workspace: workspace,
@@ -2657,6 +2657,62 @@ func TestProcessMessage_PublishesReasoningContentToReasoningChannel(t *testing.T
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("expected reasoning content to be published to reasoning channel")
+	}
+}
+
+func TestProcessMessage_PicoPublishesReasoningAsThoughtMessage(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &reasoningContentProvider{
+		response:         "final answer",
+		reasoningContent: "thinking trace",
+	}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel:  "pico",
+		SenderID: "user1",
+		ChatID:   "pico:test-session",
+		Content:  "hello",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "final answer" {
+		t.Fatalf("processMessage() response = %q, want %q", response, "final answer")
+	}
+
+	var thoughtMsg *bus.OutboundMessage
+	deadline := time.After(3 * time.Second)
+
+	for thoughtMsg == nil {
+		select {
+		case outbound := <-msgBus.OutboundChan():
+			msg := outbound
+			if msg.Content == "thinking trace" {
+				thoughtMsg = &msg
+			}
+		case <-deadline:
+			t.Fatal("expected thought outbound message for pico")
+		}
+	}
+
+	if thoughtMsg.Channel != "pico" || thoughtMsg.ChatID != "pico:test-session" {
+		t.Fatalf("thought message route = %s/%s, want pico/pico:test-session", thoughtMsg.Channel, thoughtMsg.ChatID)
+	}
+	if thoughtMsg.Metadata[metadataKeyMessageKind] != messageKindThought {
+		t.Fatalf("thought metadata kind = %q, want %q", thoughtMsg.Metadata[metadataKeyMessageKind], messageKindThought)
 	}
 }
 

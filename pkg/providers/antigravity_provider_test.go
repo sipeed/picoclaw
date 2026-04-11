@@ -54,3 +54,27 @@ func TestResolveToolResponseNameInfersNameFromGeneratedCallID(t *testing.T) {
 		t.Fatalf("expected inferred tool name search_docs, got %q", got)
 	}
 }
+
+func TestParseSSEResponse_SplitsThoughtAndVisibleContent(t *testing.T) {
+	p := &AntigravityProvider{}
+	body := "data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hidden reasoning\",\"thought\":true},{\"text\":\"visible answer\"}],\"role\":\"model\"},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":8,\"candidatesTokenCount\":17,\"totalTokenCount\":216}}}\n" +
+		"data: [DONE]\n"
+
+	resp, err := p.parseSSEResponse(body)
+	if err != nil {
+		t.Fatalf("parseSSEResponse() error = %v", err)
+	}
+
+	if resp.Content != "visible answer" {
+		t.Fatalf("Content = %q, want %q", resp.Content, "visible answer")
+	}
+	if resp.ReasoningContent != "hidden reasoning" {
+		t.Fatalf("ReasoningContent = %q, want %q", resp.ReasoningContent, "hidden reasoning")
+	}
+	if resp.FinishReason != "stop" {
+		t.Fatalf("FinishReason = %q, want %q", resp.FinishReason, "stop")
+	}
+	if resp.Usage == nil || resp.Usage.TotalTokens != 216 {
+		t.Fatalf("Usage.TotalTokens = %v, want %d", resp.Usage, 216)
+	}
+}

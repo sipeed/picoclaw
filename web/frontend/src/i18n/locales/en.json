@@ -47,6 +47,7 @@
       "step3": "Preparing response...",
       "step4": "Almost there..."
     },
+    "reasoningLabel": "Reasoning",
     "history": "History",
     "noHistory": "No chat history yet",
     "historyLoadFailed": "Failed to load chat history",

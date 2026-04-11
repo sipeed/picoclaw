@@ -105,6 +105,8 @@ const (
 	toolLimitResponse          = "I've reached `max_tool_iterations` without a final response. Increase `max_tool_iterations` in config.json if this task needs more tool steps."
 	handledToolResponseSummary = "Requested output delivered via tool attachment."
 	sessionKeyAgentPrefix      = "agent:"
+	metadataKeyMessageKind     = "message_kind"
+	messageKindThought         = "thought"
 	metadataKeyAccountID       = "account_id"
 	metadataKeyGuildID         = "guild_id"
 	metadataKeyTeamID          = "team_id"
@@ -1622,6 +1624,41 @@ func (al *AgentLoop) targetReasoningChannelID(channelName string) (chatID string
 	return ""
 }
 
+func (al *AgentLoop) publishPicoReasoning(ctx context.Context, reasoningContent, chatID string) {
+	if reasoningContent == "" || chatID == "" {
+		return
+	}
+
+	if ctx.Err() != nil {
+		return
+	}
+
+	pubCtx, pubCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer pubCancel()
+
+	if err := al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+		Channel: "pico",
+		ChatID:  chatID,
+		Content: reasoningContent,
+		Metadata: map[string]string{
+			metadataKeyMessageKind: messageKindThought,
+		},
+	}); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
+			errors.Is(err, bus.ErrBusClosed) {
+			logger.DebugCF("agent", "Pico reasoning publish skipped (timeout/cancel)", map[string]any{
+				"channel": "pico",
+				"error":   err.Error(),
+			})
+		} else {
+			logger.WarnCF("agent", "Failed to publish pico reasoning (best-effort)", map[string]any{
+				"channel": "pico",
+				"error":   err.Error(),
+			})
+		}
+	}
+}
+
 func (al *AgentLoop) handleReasoning(
 	ctx context.Context,
 	reasoningContent, channelName, channelID string,
@@ -2223,12 +2260,16 @@ turnLoop:
 		if reasoningContent == "" {
 			reasoningContent = response.ReasoningContent
 		}
-		go al.handleReasoning(
-			turnCtx,
-			reasoningContent,
-			ts.channel,
-			al.targetReasoningChannelID(ts.channel),
-		)
+		if ts.channel == "pico" {
+			go al.publishPicoReasoning(turnCtx, reasoningContent, ts.chatID)
+		} else {
+			go al.handleReasoning(
+				turnCtx,
+				reasoningContent,
+				ts.channel,
+				al.targetReasoningChannelID(ts.channel),
+			)
+		}
 		al.emitEvent(
 			EventKindLLMResponse,
 			ts.eventMeta("runTurn", "turn.llm.response"),
@@ -2277,7 +2318,7 @@ turnLoop:
 
 		if len(response.ToolCalls) == 0 || gracefulTerminal {
 			responseContent := response.Content
-			if responseContent == "" && response.ReasoningContent != "" {
+			if responseContent == "" && response.ReasoningContent != "" && ts.channel != "pico" {
 				responseContent = response.ReasoningContent
 			}
 			if steerMsgs := al.dequeueSteeringMessagesForScope(ts.sessionKey); len(steerMsgs) > 0 {
