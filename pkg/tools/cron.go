@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
@@ -342,7 +343,7 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		return "ok"
 	}
 
-	sessionKey := fmt.Sprintf("cron-%s", job.ID)
+	sessionKey := fmt.Sprintf("agent:cron-%s-%s", job.ID, uuid.New().String())
 
 	// Call agent with the job message
 	response, err := t.executor.ProcessDirectWithChannel(
