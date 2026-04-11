@@ -622,9 +622,10 @@ PicoClaw 按协议族路由提供商：
       "api_key": "gsk_xxx"
     }
   },
-  "channels": {
+  "channel_list": {
     "telegram": {
       "enabled": true,
+      "type": "telegram",
       "token": "123456:ABC...",
       "allow_from": ["123456789"]
     }

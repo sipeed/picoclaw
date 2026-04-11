@@ -155,11 +155,22 @@ func defaultWeComQRFlowOptions(timeout time.Duration) wecomQRFlowOptions {
 }
 
 func applyWeComAuthResult(cfg *config.Config, botInfo wecomQRBotInfo) {
-	cfg.Channels.WeCom.Enabled = true
-	cfg.Channels.WeCom.BotID = botInfo.BotID
-	cfg.Channels.WeCom.SetSecret(botInfo.Secret)
-	if strings.TrimSpace(cfg.Channels.WeCom.WebSocketURL) == "" {
-		cfg.Channels.WeCom.WebSocketURL = wecomDefaultWebSocketURL
+	bc := cfg.Channels.Get(config.ChannelWeCom)
+	if bc == nil {
+		bc = &config.Channel{Type: config.ChannelWeCom}
+		cfg.Channels["wecom"] = bc
+	}
+	bc.Enabled = true
+
+	decoded, err := bc.GetDecoded()
+	if err != nil {
+		return
+	}
+	wecomCfg := decoded.(*config.WeComSettings)
+	wecomCfg.BotID = botInfo.BotID
+	wecomCfg.Secret = *config.NewSecureString(botInfo.Secret)
+	if strings.TrimSpace(wecomCfg.WebSocketURL) == "" {
+		wecomCfg.WebSocketURL = wecomDefaultWebSocketURL
 	}
 }
 

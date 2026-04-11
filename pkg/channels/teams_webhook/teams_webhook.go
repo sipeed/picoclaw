@@ -52,13 +52,15 @@ func classifyTeamsError(err error) error {
 // Multiple webhook targets can be configured and selected via ChatID.
 type TeamsWebhookChannel struct {
 	*channels.BaseChannel
-	config config.TeamsWebhookConfig
+	bc     *config.Channel
+	config *config.TeamsWebhookSettings
 	client teamsMessageSender
 }
 
 // NewTeamsWebhookChannel creates a new Teams webhook channel.
 func NewTeamsWebhookChannel(
-	cfg config.TeamsWebhookConfig,
+	bc *config.Channel,
+	cfg *config.TeamsWebhookSettings,
 	bus *bus.MessageBus,
 ) (*TeamsWebhookChannel, error) {
 	if len(cfg.Webhooks) == 0 {
@@ -99,6 +101,7 @@ func NewTeamsWebhookChannel(
 
 	return &TeamsWebhookChannel{
 		BaseChannel: base,
+		bc:          bc,
 		config:      cfg,
 		client:      client,
 	}, nil

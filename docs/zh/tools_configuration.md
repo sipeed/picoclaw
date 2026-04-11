@@ -372,6 +372,7 @@ LLM 不会加载所有工具，而是获得一个轻量级搜索工具（使用 
         },
         "slack": {
           "enabled": true,
+          "type": "slack",
           "command": "npx",
           "args": [
             "-y",

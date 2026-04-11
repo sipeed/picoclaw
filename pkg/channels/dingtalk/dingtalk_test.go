@@ -11,7 +11,11 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
-func newTestDingTalkChannel(t *testing.T, cfg config.DingTalkConfig) (*DingTalkChannel, *bus.MessageBus) {
+func newTestDingTalkChannel(
+	t *testing.T,
+	cfg config.DingTalkSettings,
+	bc *config.Channel,
+) (*DingTalkChannel, *bus.MessageBus) {
 	t.Helper()
 
 	if cfg.ClientID == "" {
@@ -22,7 +26,10 @@ func newTestDingTalkChannel(t *testing.T, cfg config.DingTalkConfig) (*DingTalkC
 	}
 
 	msgBus := bus.NewMessageBus()
-	ch, err := NewDingTalkChannel(cfg, msgBus)
+	if bc == nil {
+		bc = &config.Channel{Type: config.ChannelDingTalk, Enabled: true}
+	}
+	ch, err := NewDingTalkChannel(bc, &cfg, msgBus)
 	if err != nil {
 		t.Fatalf("new channel: %v", err)
 	}
@@ -41,9 +48,12 @@ func mustReceiveInbound(t *testing.T, msgBus *bus.MessageBus) bus.InboundMessage
 }
 
 func TestOnChatBotMessageReceived_GroupMentionOnlyUsesIsInAtListAndStripsMention(t *testing.T) {
-	ch, msgBus := newTestDingTalkChannel(t, config.DingTalkConfig{
+	bc := &config.Channel{
+		Type:         config.ChannelDingTalk,
+		Enabled:      true,
 		GroupTrigger: config.GroupTriggerConfig{MentionOnly: true},
-	})
+	}
+	ch, msgBus := newTestDingTalkChannel(t, config.DingTalkSettings{}, bc)
 
 	_, err := ch.onChatBotMessageReceived(context.Background(), &chatbot.BotCallbackDataModel{
 		Text:             chatbot.BotCallbackDataTextModel{Content: "  @bot /help  "},
@@ -74,7 +84,7 @@ func TestOnChatBotMessageReceived_GroupMentionOnlyUsesIsInAtListAndStripsMention
 }
 
 func TestOnChatBotMessageReceived_DirectFallbackSenderIDUsesConversationID(t *testing.T) {
-	ch, msgBus := newTestDingTalkChannel(t, config.DingTalkConfig{})
+	ch, msgBus := newTestDingTalkChannel(t, config.DingTalkSettings{}, nil)
 
 	_, err := ch.onChatBotMessageReceived(context.Background(), &chatbot.BotCallbackDataModel{
 		Text:             chatbot.BotCallbackDataTextModel{Content: "ping"},

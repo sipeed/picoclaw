@@ -20,7 +20,7 @@ import (
 type WhatsAppChannel struct {
 	*channels.BaseChannel
 	conn      *websocket.Conn
-	config    config.WhatsAppConfig
+	config    *config.WhatsAppSettings
 	url       string
 	ctx       context.Context
 	cancel    context.CancelFunc
@@ -28,14 +28,18 @@ type WhatsAppChannel struct {
 	connected bool
 }
 
-func NewWhatsAppChannel(cfg config.WhatsAppConfig, bus *bus.MessageBus) (*WhatsAppChannel, error) {
+func NewWhatsAppChannel(
+	bc *config.Channel,
+	cfg *config.WhatsAppSettings,
+	bus *bus.MessageBus,
+) (*WhatsAppChannel, error) {
 	base := channels.NewBaseChannel(
 		"whatsapp",
 		cfg,
 		bus,
-		cfg.AllowFrom,
+		bc.AllowFrom,
 		channels.WithMaxMessageLength(65536),
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	return &WhatsAppChannel{

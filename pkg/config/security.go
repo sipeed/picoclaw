@@ -30,11 +30,12 @@ func securityPath(configPath string) string {
 }
 
 // loadSecurityConfig loads the security configuration from security.yml
-// Returns an empty SecurityConfig if the file doesn't exist
+// and merges secure field values into the config.
 func loadSecurityConfig(cfg *Config, securityPath string) error {
 	if cfg == nil {
 		return fmt.Errorf("config is nil")
 	}
+
 	data, err := os.ReadFile(securityPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -43,9 +44,57 @@ func loadSecurityConfig(cfg *Config, securityPath string) error {
 		return fmt.Errorf("failed to read security config: %w", err)
 	}
 
+	// Save existing channels and ModelList before unmarshal
+	savedChannels := make(ChannelsConfig, len(cfg.Channels))
+	for name, bc := range cfg.Channels {
+		savedChannels[name] = bc
+	}
+	// savedModelList := cfg.ModelList
+
+	// Parse YAML into a yaml.Node tree to extract channels node
+	var rootNode yaml.Node
+	if err := yaml.Unmarshal(data, &rootNode); err != nil {
+		return fmt.Errorf("failed to parse security config: %w", err)
+	}
+
+	// Extract channels node (support both 'channels' and 'channel_list' keys)
+	var channelsNode *yaml.Node
+	if len(rootNode.Content) > 0 {
+		content := rootNode.Content[0].Content
+		for i := 0; i < len(content); i += 2 {
+			if i+1 < len(content) {
+				key := content[i].Value
+				if key == "channels" || key == "channel_list" {
+					channelsNode = content[i+1]
+					break
+				}
+			}
+		}
+	}
+
+	// Unmarshal non-channel fields from security.yml
+	// This will resolve encrypted values for model_list, tools, etc.
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return fmt.Errorf("failed to parse security config: %w", err)
 	}
+
+	// Restore channels from saved, then manually merge from security.yml
+	cfg.Channels = make(ChannelsConfig)
+	for name, savedBC := range savedChannels {
+		cfg.Channels[name] = savedBC
+	}
+
+	// If we found a channels node in security.yml, merge it into existing channels
+	if channelsNode != nil {
+		if err := cfg.Channels.UnmarshalYAML(channelsNode); err != nil {
+			return fmt.Errorf("failed to merge channels from security config: %w", err)
+		}
+	}
+
+	// Restore ModelList if yaml.Unmarshal couldn't parse it (keyed format in security.yml)
+	//if len(cfg.ModelList) == 0 && len(savedModelList) > 0 {
+	//	cfg.ModelList = savedModelList
+	//}
 
 	return nil
 }
@@ -121,9 +170,25 @@ func collectSensitive(v reflect.Value, values *[]string) {
 
 	t := v.Type()
 
+	// Channel: use CollectSensitiveValues() method
+	if t == reflect.TypeOf(Channel{}) {
+		if method := v.MethodByName("CollectSensitiveValues"); method.IsValid() {
+			results := method.Call(nil)
+			if len(results) > 0 {
+				if vals, ok := results[0].Interface().([]string); ok {
+					*values = append(*values, vals...)
+				}
+			}
+		}
+		return
+	}
+
 	// SecureString: collect via String() method (defined on *SecureString)
 	if t == reflect.TypeOf(SecureString{}) {
-		result := v.Addr().MethodByName("String").Call(nil)
+		// Create a new pointer to make it addressable for method calls
+		ptr := reflect.New(t)
+		ptr.Elem().Set(v)
+		result := ptr.MethodByName("String").Call(nil)
 		if len(result) > 0 {
 			if s := result[0].String(); s != "" {
 				*values = append(*values, s)

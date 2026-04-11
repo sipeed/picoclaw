@@ -39,7 +39,7 @@ The `version` field in `config.json` indicates the schema version:
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "agents": {...},
   ...
 }
@@ -171,7 +171,7 @@ func TestMigrateV2ToV3(t *testing.T) {
 Old config (version 2):
 ```json
 {
-  "version": 2,
+  "version": 3,
   "model_list": [
     {
       "model_name": "gpt-5.4",

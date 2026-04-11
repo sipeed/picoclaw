@@ -100,7 +100,17 @@ const (
 )
 
 // SecureStrings is a slice of SecureString
+//
+//nolint:recvcheck
 type SecureStrings []*SecureString
+
+// IsZero returns true if the SecureStrings is nil or empty.
+func (s SecureStrings) IsZero() bool {
+	if !callerFromYaml() {
+		return true
+	}
+	return len(s) == 0
+}
 
 // Values returns the decrypted/resolved values
 func (s *SecureStrings) Values() []string {
@@ -149,7 +159,19 @@ func (s *SecureStrings) UnmarshalJSON(value []byte) error {
 	if err != nil {
 		return err
 	}
-	*s = v
+	// Filter out elements where SecureString.UnmarshalJSON was a no-op
+	// (e.g. "[NOT_HERE]" entries), keeping only actually populated values.
+	filtered := make(SecureStrings, 0, len(v))
+	for _, ss := range v {
+		if ss.resolved != "" || ss.raw != "" {
+			filtered = append(filtered, ss)
+		}
+	}
+	if len(filtered) == 0 {
+		*s = nil
+	} else {
+		*s = filtered
+	}
 	return nil
 }
 
@@ -167,16 +189,16 @@ func callerFromYaml() bool {
 		d := filepath.Dir(file)
 		// check the caller is from yaml.v
 		if !strings.Contains(d, "yaml.v") {
-			return true
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 // IsZero returns true if the SecureString is empty
 // if caller not yaml, just return true for prevent marshal this field
 func (s SecureString) IsZero() bool {
-	if callerFromYaml() {
+	if !callerFromYaml() {
 		return true
 	}
 	return s.resolved == ""

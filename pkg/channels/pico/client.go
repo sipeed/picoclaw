@@ -22,7 +22,7 @@ import (
 // PicoClientChannel connects to a remote Pico Protocol WebSocket server.
 type PicoClientChannel struct {
 	*channels.BaseChannel
-	config config.PicoClientConfig
+	config *config.PicoClientSettings
 	conn   *picoConn
 	mu     sync.Mutex
 	ctx    context.Context
@@ -31,14 +31,15 @@ type PicoClientChannel struct {
 
 // NewPicoClientChannel creates a new Pico Protocol client channel.
 func NewPicoClientChannel(
-	cfg config.PicoClientConfig,
+	bc *config.Channel,
+	cfg *config.PicoClientSettings,
 	messageBus *bus.MessageBus,
 ) (*PicoClientChannel, error) {
 	if cfg.URL == "" {
 		return nil, fmt.Errorf("pico_client url is required")
 	}
 
-	base := channels.NewBaseChannel("pico_client", cfg, messageBus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("pico_client", cfg, messageBus, bc.AllowFrom)
 
 	return &PicoClientChannel{
 		BaseChannel: base,

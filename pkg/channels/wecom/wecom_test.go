@@ -605,9 +605,10 @@ func TestSendMedia_SendsActiveFile(t *testing.T) {
 func newTestWeComChannel(t *testing.T, messageBus *bus.MessageBus) *WeComChannel {
 	t.Helper()
 
-	cfg := config.WeComConfig{BotID: "bot-1"}
+	cfg := &config.WeComSettings{BotID: "bot-1"}
 	cfg.SetSecret("secret-1")
-	ch, err := NewChannel(cfg, messageBus)
+	bc := &config.Channel{Type: config.ChannelWeCom, Enabled: true}
+	ch, err := NewChannel(bc, cfg, messageBus)
 	if err != nil {
 		t.Fatalf("NewChannel() error = %v", err)
 	}

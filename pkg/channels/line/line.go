@@ -48,7 +48,7 @@ type replyTokenEntry struct {
 // and REST API for sending messages.
 type LINEChannel struct {
 	*channels.BaseChannel
-	config         config.LINEConfig
+	config         *config.LINESettings
 	infoClient     *http.Client // for bot info lookups (short timeout)
 	apiClient      *http.Client // for messaging API calls
 	botUserID      string       // Bot's user ID
@@ -61,15 +61,19 @@ type LINEChannel struct {
 }
 
 // NewLINEChannel creates a new LINE channel instance.
-func NewLINEChannel(cfg config.LINEConfig, messageBus *bus.MessageBus) (*LINEChannel, error) {
+func NewLINEChannel(
+	bc *config.Channel,
+	cfg *config.LINESettings,
+	messageBus *bus.MessageBus,
+) (*LINEChannel, error) {
 	if cfg.ChannelSecret.String() == "" || cfg.ChannelAccessToken.String() == "" {
 		return nil, fmt.Errorf("line channel_secret and channel_access_token are required")
 	}
 
-	base := channels.NewBaseChannel("line", cfg, messageBus, cfg.AllowFrom,
+	base := channels.NewBaseChannel("line", cfg, messageBus, bc.AllowFrom,
 		channels.WithMaxMessageLength(5000),
-		channels.WithGroupTrigger(cfg.GroupTrigger),
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+		channels.WithGroupTrigger(bc.GroupTrigger),
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	return &LINEChannel{

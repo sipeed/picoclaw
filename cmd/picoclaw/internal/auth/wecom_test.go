@@ -112,17 +112,23 @@ func TestPollWeComQRCodeResult(t *testing.T) {
 
 func TestApplyWeComAuthResult(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Channels.WeCom.WebSocketURL = ""
+	require.NoError(t, config.InitChannelList(cfg.Channels))
+	wecom := cfg.Channels["wecom"]
+	t.Logf("wecom: %+v", wecom)
+	decoded, err := wecom.GetDecoded()
+	require.NoError(t, err)
+	weCfg := decoded.(*config.WeComSettings)
+	weCfg.WebSocketURL = ""
 
 	applyWeComAuthResult(cfg, wecomQRBotInfo{
 		BotID:  "bot-1",
 		Secret: "secret-1",
 	})
 
-	assert.True(t, cfg.Channels.WeCom.Enabled)
-	assert.Equal(t, "bot-1", cfg.Channels.WeCom.BotID)
-	assert.Equal(t, "secret-1", cfg.Channels.WeCom.Secret.String())
-	assert.Equal(t, wecomDefaultWebSocketURL, cfg.Channels.WeCom.WebSocketURL)
+	assert.True(t, wecom.Enabled)
+	assert.Equal(t, "bot-1", weCfg.BotID)
+	assert.Equal(t, "secret-1", weCfg.Secret.String())
+	assert.Equal(t, wecomDefaultWebSocketURL, weCfg.WebSocketURL)
 }
 
 func TestAuthWeComCmdWithScanner(t *testing.T) {
@@ -149,9 +155,13 @@ func TestAuthWeComCmdWithScanner(t *testing.T) {
 
 	cfg, err := config.LoadConfig(internal.GetConfigPath())
 	require.NoError(t, err)
-	assert.True(t, cfg.Channels.WeCom.Enabled)
-	assert.Equal(t, "bot-1", cfg.Channels.WeCom.BotID)
-	assert.Equal(t, "secret-1", cfg.Channels.WeCom.Secret.String())
-	assert.Equal(t, wecomDefaultWebSocketURL, cfg.Channels.WeCom.WebSocketURL)
+	wecom := cfg.Channels["wecom"]
+	decoded, err := wecom.GetDecoded()
+	require.NoError(t, err)
+	weCfg := decoded.(*config.WeComSettings)
+	assert.True(t, wecom.Enabled)
+	assert.Equal(t, "bot-1", weCfg.BotID)
+	assert.Equal(t, "secret-1", weCfg.Secret.String())
+	assert.Equal(t, wecomDefaultWebSocketURL, weCfg.WebSocketURL)
 	assert.Contains(t, output.String(), "WeCom connected.")
 }

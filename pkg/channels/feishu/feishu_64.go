@@ -38,7 +38,8 @@ const errCodeTenantTokenInvalid = 99991663
 
 type FeishuChannel struct {
 	*channels.BaseChannel
-	config     config.FeishuConfig
+	bc         *config.Channel
+	config     *config.FeishuSettings
 	client     *lark.Client
 	wsClient   *larkws.Client
 	tokenCache *tokenCache // custom cache that supports invalidation
@@ -55,10 +56,10 @@ type cachedMessage struct {
 	expiry time.Time
 }
 
-func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
-	base := channels.NewBaseChannel("feishu", cfg, bus, cfg.AllowFrom,
-		channels.WithGroupTrigger(cfg.GroupTrigger),
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+func NewFeishuChannel(bc *config.Channel, cfg *config.FeishuSettings, bus *bus.MessageBus) (*FeishuChannel, error) {
+	base := channels.NewBaseChannel("feishu", cfg, bus, bc.AllowFrom,
+		channels.WithGroupTrigger(bc.GroupTrigger),
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	tc := newTokenCache()
@@ -68,6 +69,7 @@ func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChan
 	}
 	ch := &FeishuChannel{
 		BaseChannel: base,
+		bc:          bc,
 		config:      cfg,
 		tokenCache:  tc,
 		client:      lark.NewClient(cfg.AppID, cfg.AppSecret.String(), opts...),
@@ -211,14 +213,14 @@ func (c *FeishuChannel) EditMessage(ctx context.Context, chatID, messageID, cont
 // SendPlaceholder implements channels.PlaceholderCapable.
 // Sends an interactive card with placeholder text and returns its message ID.
 func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
-	if !c.config.Placeholder.Enabled {
+	if !c.bc.Placeholder.Enabled {
 		logger.DebugCF("feishu", "Placeholder disabled, skipping", map[string]any{
 			"chat_id": chatID,
 		})
 		return "", nil
 	}
 
-	text := c.config.Placeholder.GetRandomText()
+	text := c.bc.Placeholder.GetRandomText()
 
 	cardContent, err := buildMarkdownCard(text)
 	if err != nil {

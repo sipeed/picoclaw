@@ -65,6 +65,7 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
 	}
+	logger.Infof("cfg: %#v", cfg.Channels)
 	if execAllowRemoteOmitted(body) {
 		cfg.Tools.Exec.AllowRemote = config.DefaultConfig().Tools.Exec.AllowRemote
 	}
@@ -77,6 +78,7 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyConfigSecretsFromMap(&cfg, raw)
+	logger.Infof("cfg: %#v", cfg.Channels)
 
 	if errs := validateConfig(&cfg); len(errs) > 0 {
 		w.Header().Set("Content-Type", "application/json")
@@ -87,12 +89,14 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	logger.Infof("cfg: %#v", cfg.Channels)
 
 	if err := config.SaveConfig(h.configPath, &cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
 		return
 	}
 
+	logger.Infof("cfg: %v", cfg)
 	// Refresh cached pico token in case user changed it.
 	refreshPicoToken(&cfg)
 	h.applyRuntimeLogLevel()
@@ -281,26 +285,54 @@ func validateConfig(cfg *config.Config) []string {
 	}
 
 	// Pico channel: token required when enabled
-	if cfg.Channels.Pico.Enabled && cfg.Channels.Pico.Token.String() == "" {
-		errs = append(errs, "channels.pico.token is required when pico channel is enabled")
+	{
+		bc := cfg.Channels.Get(config.ChannelPico)
+		if bc != nil && bc.Enabled {
+			if decoded, err := bc.GetDecoded(); err == nil && decoded != nil {
+				if c, ok := decoded.(*config.PicoSettings); ok && c.Token.String() == "" {
+					errs = append(errs, "channels.pico.token is required when pico channel is enabled")
+				}
+			}
+		}
 	}
 
 	// Telegram: token required when enabled
-	if cfg.Channels.Telegram.Enabled && cfg.Channels.Telegram.Token.String() == "" {
-		errs = append(errs, "channels.telegram.token is required when telegram channel is enabled")
+	{
+		bc := cfg.Channels.Get(config.ChannelTelegram)
+		if bc != nil && bc.Enabled {
+			if decoded, err := bc.GetDecoded(); err == nil && decoded != nil {
+				if c, ok := decoded.(*config.TelegramSettings); ok && c.Token.String() == "" {
+					errs = append(errs, "channels.telegram.token is required when telegram channel is enabled")
+				}
+			}
+		}
 	}
 
 	// Discord: token required when enabled
-	if cfg.Channels.Discord.Enabled && cfg.Channels.Discord.Token.String() == "" {
-		errs = append(errs, "channels.discord.token is required when discord channel is enabled")
+	{
+		bc := cfg.Channels.Get(config.ChannelDiscord)
+		if bc != nil && bc.Enabled {
+			if decoded, err := bc.GetDecoded(); err == nil && decoded != nil {
+				if c, ok := decoded.(*config.DiscordSettings); ok && c.Token.String() == "" {
+					errs = append(errs, "channels.discord.token is required when discord channel is enabled")
+				}
+			}
+		}
 	}
 
-	if cfg.Channels.WeCom.Enabled {
-		if cfg.Channels.WeCom.BotID == "" {
-			errs = append(errs, "channels.wecom.bot_id is required when wecom channel is enabled")
-		}
-		if cfg.Channels.WeCom.Secret.String() == "" {
-			errs = append(errs, "channels.wecom.secret is required when wecom channel is enabled")
+	{
+		bc := cfg.Channels.Get(config.ChannelWeCom)
+		if bc != nil && bc.Enabled {
+			if decoded, err := bc.GetDecoded(); err == nil && decoded != nil {
+				if c, ok := decoded.(*config.WeComSettings); ok {
+					if c.BotID == "" {
+						errs = append(errs, "channels.wecom.bot_id is required when wecom channel is enabled")
+					}
+					if c.Secret.String() == "" {
+						errs = append(errs, "channels.wecom.secret is required when wecom channel is enabled")
+					}
+				}
+			}
 		}
 	}
 
@@ -333,6 +365,7 @@ func validateRegexPatterns(field string, patterns []string) []string {
 // - If both dst and src have a nested object for the same key, merge recursively.
 // - Otherwise the value from src overwrites dst.
 func mergeMap(dst, src map[string]any) {
+	logger.Infof("merging map src: %+v det: %+v", src, dst)
 	for key, srcVal := range src {
 		if srcVal == nil {
 			delete(dst, key)
@@ -346,6 +379,7 @@ func mergeMap(dst, src map[string]any) {
 			dst[key] = srcVal
 		}
 	}
+	logger.Infof("merging map final: %+v", dst)
 }
 
 func asMapField(value map[string]any, key string) (map[string]any, bool) {
@@ -374,119 +408,64 @@ func getSecretString(m map[string]any, key string) (string, bool) {
 }
 
 func applyConfigSecretsFromMap(cfg *config.Config, raw map[string]any) {
-	channels, hasChannels := asMapField(raw, "channels")
-	if hasChannels {
-		if telegram, hasTelegram := asMapField(channels, "telegram"); hasTelegram {
-			if token, hasToken := getSecretString(telegram, "token"); hasToken {
-				cfg.Channels.Telegram.SetToken(token)
-			}
+	channelsMap, hasChannels := asMapField(raw, "channels")
+	if !hasChannels {
+		logger.Infof("applyConfigSecretsFromMap channels not found")
+		return
+	}
+
+	// channelName -> {jsonFieldName -> secretValue}
+	secretMapping := map[string]map[string]string{
+		config.ChannelTelegram: {"token": ""},
+		config.ChannelFeishu:   {"app_secret": "", "encrypt_key": "", "verification_token": ""},
+		config.ChannelDiscord:  {"token": ""},
+		config.ChannelWeixin:   {"token": ""},
+		config.ChannelQQ:       {"app_secret": ""},
+		config.ChannelDingTalk: {"client_secret": ""},
+		config.ChannelSlack:    {"bot_token": "", "app_token": ""},
+		config.ChannelMatrix:   {"access_token": ""},
+		config.ChannelLINE:     {"channel_secret": "", "channel_access_token": ""},
+		config.ChannelOneBot:   {"access_token": ""},
+		config.ChannelWeCom:    {"secret": ""},
+		config.ChannelPico:     {"token": ""},
+		config.ChannelIRC:      {"password": "", "nickserv_password": "", "sasl_password": ""},
+	}
+
+	for chName, fields := range secretMapping {
+		chData, ok := asMapField(channelsMap, chName)
+		if !ok {
+			continue
 		}
-		if feishu, hasFeishu := asMapField(channels, "feishu"); hasFeishu {
-			if appSecret, hasAppSecret := getSecretString(feishu, "app_secret"); hasAppSecret {
-				cfg.Channels.Feishu.AppSecret.Set(appSecret)
-			}
-			if encryptKey, hasEncryptKey := getSecretString(feishu, "encrypt_key"); hasEncryptKey {
-				cfg.Channels.Feishu.EncryptKey.Set(encryptKey)
-			}
-			if verificationToken, hasVerificationToken := getSecretString(
-				feishu,
-				"verification_token",
-			); hasVerificationToken {
-				cfg.Channels.Feishu.VerificationToken.Set(verificationToken)
-			}
+		bc := cfg.Channels.Get(chName)
+		if bc == nil {
+			continue
 		}
-		if discord, hasDiscord := asMapField(channels, "discord"); hasDiscord {
-			if token, hasToken := getSecretString(discord, "token"); hasToken {
-				cfg.Channels.Discord.Token.Set(token)
-			}
-		}
-		if weixin, hasWeixin := asMapField(channels, "weixin"); hasWeixin {
-			if token, hasToken := getSecretString(weixin, "token"); hasToken {
-				cfg.Channels.Weixin.SetToken(token)
-			}
-		}
-		if qq, hasQQ := asMapField(channels, "qq"); hasQQ {
-			if appSecret, hasAppSecret := getSecretString(qq, "app_secret"); hasAppSecret {
-				cfg.Channels.QQ.AppSecret.Set(appSecret)
-			}
-		}
-		if dingtalk, hasDingTalk := asMapField(channels, "dingtalk"); hasDingTalk {
-			if clientSecret, hasClientSecret := getSecretString(dingtalk, "client_secret"); hasClientSecret {
-				cfg.Channels.DingTalk.ClientSecret.Set(clientSecret)
-			}
-		}
-		if slack, hasSlack := asMapField(channels, "slack"); hasSlack {
-			if botToken, hasBotToken := getSecretString(slack, "bot_token"); hasBotToken {
-				cfg.Channels.Slack.BotToken.Set(botToken)
-			}
-			if appToken, hasAppToken := getSecretString(slack, "app_token"); hasAppToken {
-				cfg.Channels.Slack.AppToken.Set(appToken)
-			}
-		}
-		if matrix, hasMatrix := asMapField(channels, "matrix"); hasMatrix {
-			if accessToken, hasAccessToken := getSecretString(matrix, "access_token"); hasAccessToken {
-				cfg.Channels.Matrix.AccessToken.Set(accessToken)
-			}
-		}
-		if line, hasLine := asMapField(channels, "line"); hasLine {
-			if channelSecret, hasChannelSecret := getSecretString(line, "channel_secret"); hasChannelSecret {
-				cfg.Channels.LINE.ChannelSecret.Set(channelSecret)
-			}
-			if channelAccessToken, hasChannelAccessToken := getSecretString(
-				line,
-				"channel_access_token",
-			); hasChannelAccessToken {
-				cfg.Channels.LINE.ChannelAccessToken.Set(channelAccessToken)
-			}
-		}
-		if onebot, hasOneBot := asMapField(channels, "onebot"); hasOneBot {
-			if accessToken, hasAccessToken := getSecretString(onebot, "access_token"); hasAccessToken {
-				cfg.Channels.OneBot.AccessToken.Set(accessToken)
-			}
-		}
-		if wecom, hasWeCom := asMapField(channels, "wecom"); hasWeCom {
-			if secret, hasSecret := getSecretString(wecom, "secret"); hasSecret {
-				cfg.Channels.WeCom.SetSecret(secret)
-			}
-		}
-		if pico, hasPico := asMapField(channels, "pico"); hasPico {
-			if token, hasToken := getSecretString(pico, "token"); hasToken {
-				cfg.Channels.Pico.SetToken(token)
-			}
-		}
-		if irc, hasIRC := asMapField(channels, "irc"); hasIRC {
-			if password, hasPassword := getSecretString(irc, "password"); hasPassword {
-				cfg.Channels.IRC.Password.Set(password)
-			}
-			if nickservPassword, hasNickservPassword := getSecretString(irc, "nickserv_password"); hasNickservPassword {
-				cfg.Channels.IRC.NickServPassword.Set(nickservPassword)
-			}
-			if saslPassword, hasSASLPassword := getSecretString(irc, "sasl_password"); hasSASLPassword {
-				cfg.Channels.IRC.SASLPassword.Set(saslPassword)
+		logger.Infof("applyConfigSecretsFromMap %s, %v", chName, fields)
+		for fieldName := range fields {
+			if val, has := getSecretString(chData, fieldName); has {
+				bc.SetSecretField(fieldName, *config.NewSecureString(val))
 			}
 		}
 	}
 
+	// Handle tools secrets
 	tools, hasTools := asMapField(raw, "tools")
-	if !hasTools {
-		return
-	}
-	skills, hasSkills := asMapField(tools, "skills")
-	if !hasSkills {
-		return
-	}
-	if github, hasGithub := asMapField(skills, "github"); hasGithub {
-		if token, hasToken := getSecretString(github, "token"); hasToken {
-			cfg.Tools.Skills.Github.Token.Set(token)
-		}
-	}
-	registries, hasRegistries := asMapField(skills, "registries")
-	if !hasRegistries {
-		return
-	}
-	if clawHub, hasClawHub := asMapField(registries, "clawhub"); hasClawHub {
-		if authToken, hasAuthToken := getSecretString(clawHub, "auth_token"); hasAuthToken {
-			cfg.Tools.Skills.Registries.ClawHub.AuthToken.Set(authToken)
+	if hasTools {
+		skills, hasSkills := asMapField(tools, "skills")
+		if hasSkills {
+			if github, hasGithub := asMapField(skills, "github"); hasGithub {
+				if token, hasToken := getSecretString(github, "token"); hasToken {
+					cfg.Tools.Skills.Github.Token.Set(token)
+				}
+			}
+			registries, hasRegistries := asMapField(skills, "registries")
+			if hasRegistries {
+				if clawHub, hasClawHub := asMapField(registries, "clawhub"); hasClawHub {
+					if authToken, hasAuthToken := getSecretString(clawHub, "auth_token"); hasAuthToken {
+						cfg.Tools.Skills.Registries.ClawHub.AuthToken.Set(authToken)
+					}
+				}
+			}
 		}
 	}
 }

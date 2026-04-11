@@ -6,9 +6,10 @@ The VK channel uses Bots Long Poll API for bot-based communication with VK socia
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "vk": {
       "enabled": true,
+      "type": "vk",
       "token": "NOT_HERE",
       "group_id": 123456789,
       "allow_from": ["123456789"],
@@ -120,9 +121,10 @@ VK has a maximum message length of 4000 characters. PicoClaw automatically split
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "vk": {
       "enabled": true,
+      "type": "vk",
       "token": "NOT_HERE",
       "group_id": 123456789
     }
@@ -134,9 +136,10 @@ VK has a maximum message length of 4000 characters. PicoClaw automatically split
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "vk": {
       "enabled": true,
+      "type": "vk",
       "token": "NOT_HERE",
       "group_id": 123456789,
       "allow_from": ["123456789", "987654321"]
@@ -149,9 +152,10 @@ VK has a maximum message length of 4000 characters. PicoClaw automatically split
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "vk": {
       "enabled": true,
+      "type": "vk",
       "token": "NOT_HERE",
       "group_id": 123456789,
       "group_trigger": {

@@ -8,9 +8,10 @@ Slack est l'une des principales plateformes de messagerie instantanée pour les 
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "slack": {
       "enabled": true,
+      "type": "slack",
       "bot_token": "xoxb-...",
       "app_token": "xapp-...",
       "allow_from": []

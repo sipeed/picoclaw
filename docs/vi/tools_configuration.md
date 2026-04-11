@@ -345,6 +345,7 @@ Thay vì tải tất cả các công cụ, LLM được cung cấp một công c
         },
         "slack": {
           "enabled": true,
+          "type": "slack",
           "command": "npx",
           "args": [
             "-y",

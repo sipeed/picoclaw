@@ -177,6 +177,12 @@ func (c *BaseChannel) Name() string {
 	return c.name
 }
 
+// SetName updates the channel name. Used by the manager after channel creation
+// to ensure the name matches the config key (which may differ from the type).
+func (c *BaseChannel) SetName(name string) {
+	c.name = name
+}
+
 func (c *BaseChannel) ReasoningChannelID() string {
 	return c.reasoningChannelID
 }

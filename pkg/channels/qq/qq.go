@@ -56,7 +56,8 @@ type qqAPI interface {
 
 type QQChannel struct {
 	*channels.BaseChannel
-	config         config.QQConfig
+	bc             *config.Channel
+	config         *config.QQSettings
 	api            qqAPI
 	tokenSource    oauth2.TokenSource
 	ctx            context.Context
@@ -82,15 +83,16 @@ type QQChannel struct {
 	stopOnce sync.Once
 }
 
-func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, error) {
-	base := channels.NewBaseChannel("qq", cfg, messageBus, cfg.AllowFrom,
+func NewQQChannel(bc *config.Channel, cfg *config.QQSettings, messageBus *bus.MessageBus) (*QQChannel, error) {
+	base := channels.NewBaseChannel("qq", cfg, messageBus, bc.AllowFrom,
 		channels.WithMaxMessageLength(cfg.MaxMessageLength),
-		channels.WithGroupTrigger(cfg.GroupTrigger),
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+		channels.WithGroupTrigger(bc.GroupTrigger),
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	return &QQChannel{
 		BaseChannel: base,
+		bc:          bc,
 		config:      cfg,
 		dedup:       make(map[string]time.Time),
 		done:        make(chan struct{}),
@@ -161,8 +163,8 @@ func (c *QQChannel) Start(ctx context.Context) error {
 
 	// Pre-register reasoning_channel_id as group chat if configured,
 	// so outbound-only destinations are routed correctly.
-	if c.config.ReasoningChannelID != "" {
-		c.chatType.Store(c.config.ReasoningChannelID, "group")
+	if c.bc.ReasoningChannelID != "" {
+		c.chatType.Store(c.bc.ReasoningChannelID, "group")
 	}
 
 	c.SetRunning(true)
