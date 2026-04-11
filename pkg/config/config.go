@@ -357,6 +357,7 @@ type WhatsAppConfig struct {
 	UseNative          bool                `json:"use_native"           yaml:"-" env:"PICOCLAW_CHANNELS_WHATSAPP_USE_NATIVE"`
 	SessionStorePath   string              `json:"session_store_path"   yaml:"-" env:"PICOCLAW_CHANNELS_WHATSAPP_SESSION_STORE_PATH"`
 	AllowFrom          FlexibleStringSlice `json:"allow_from"           yaml:"-" env:"PICOCLAW_CHANNELS_WHATSAPP_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty" yaml:"-"`
 	ReasoningChannelID string              `json:"reasoning_channel_id" yaml:"-" env:"PICOCLAW_CHANNELS_WHATSAPP_REASONING_CHANNEL_ID"`
 }
 
@@ -1058,7 +1059,9 @@ func LoadConfig(path string) (*Config, error) {
 			return nil, fmt.Errorf("failed to load existing security config: %w", secErr)
 		}
 		defer func(cfg *Config) {
-			_ = SaveConfig(path, cfg)
+			if saveErr := SaveConfig(path, cfg); saveErr != nil {
+				logger.ErrorF("failed to save config after v0 migration", map[string]any{"error": saveErr})
+			}
 		}(cfg)
 	case 1:
 		// V1→V2 migration: infer Enabled and migrate channel config fields
@@ -1092,7 +1095,9 @@ func LoadConfig(path string) (*Config, error) {
 		}
 
 		defer func(cfg *Config) {
-			_ = SaveConfig(path, cfg)
+			if saveErr := SaveConfig(path, cfg); saveErr != nil {
+				logger.ErrorF("failed to save config after v1 migration", map[string]any{"error": saveErr})
+			}
 		}(cfg)
 		logger.InfoF(
 			"config migrate success",

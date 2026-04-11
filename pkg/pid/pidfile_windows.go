@@ -31,7 +31,7 @@ func isProcessRunning(pid int) bool {
 	if handle == 0 {
 		return false
 	}
-	defer procCloseHandle.Call(handle)
+	defer procCloseHandle.Call(handle) //nolint:errcheck
 
 	var exitCode uint32
 	ret, _, _ := procGetExitCodeProcess.Call(handle, uintptr(unsafe.Pointer(&exitCode)))

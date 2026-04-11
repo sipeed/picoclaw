@@ -110,6 +110,7 @@ func formatFieldValue(i any) string {
 	return s
 }
 
+// SetLevel sets the global minimum log level.
 func SetLevel(level LogLevel) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -117,12 +118,14 @@ func SetLevel(level LogLevel) {
 	zerolog.SetGlobalLevel(level)
 }
 
+// SetConsoleLevel adjusts the log level for console output only.
 func SetConsoleLevel(level LogLevel) {
 	mu.Lock()
 	defer mu.Unlock()
 	logger = logger.Level(level)
 }
 
+// DisableConsole silences console output by redirecting it to io.Discard.
 func DisableConsole() {
 	mu.Lock()
 	defer mu.Unlock()
@@ -130,6 +133,7 @@ func DisableConsole() {
 	logger = logger.Output(io.MultiWriter(writers...))
 }
 
+// EnableConsole restores console output after a DisableConsole call.
 func EnableConsole() {
 	mu.Lock()
 	defer mu.Unlock()
@@ -137,6 +141,7 @@ func EnableConsole() {
 	logger = logger.Output(io.MultiWriter(writers...))
 }
 
+// GetLevel returns the current global log level.
 func GetLevel() LogLevel {
 	mu.RLock()
 	defer mu.RUnlock()
@@ -186,15 +191,18 @@ func EnableFileLogging(filePath string) error {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}
 
-	// Close old file if exists
+	// Close old file if exists; log but don't fail on close error
+	// since we're replacing it with a new file.
 	if logFile != nil {
-		logFile.Close()
+		if closeErr := logFile.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to close old log file: %v\n", closeErr)
+		}
 	}
 
 	logFile = newFile
 
 	if len(writers) != 1 {
-		return fmt.Errorf("failed to configure file logging: %w", err)
+		return fmt.Errorf("invalid writers state: expected 1 writer, got %d", len(writers))
 	}
 
 	writers = append(writers, logFile)
@@ -203,12 +211,15 @@ func EnableFileLogging(filePath string) error {
 	return nil
 }
 
+// DisableFileLogging closes the log file and removes it from the output writers.
 func DisableFileLogging() {
 	mu.Lock()
 	defer mu.Unlock()
 
 	if logFile != nil {
-		logFile.Close()
+		if closeErr := logFile.Close(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to close log file: %v\n", closeErr)
+		}
 		logFile = nil
 	}
 	if len(writers) > 1 {
@@ -217,6 +228,8 @@ func DisableFileLogging() {
 	}
 }
 
+// ConfigureFromEnv reads PICOCLAW_LOG_FILE and PICOCLAW_LOG_LEVEL from the
+// environment and applies them to the logger configuration.
 func ConfigureFromEnv() {
 	if logFile := os.Getenv("PICOCLAW_LOG_FILE"); logFile != "" {
 		if strings.HasPrefix(logFile, "~/") {

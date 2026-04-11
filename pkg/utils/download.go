@@ -39,9 +39,13 @@ func DownloadToFile(ctx context.Context, client *http.Client, req *http.Request,
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		// Read a small amount for the error message.
+		// Read a small amount for the error message; ignore read errors
+		// since the HTTP status itself is the primary error signal.
 		errBody := make([]byte, 512)
-		n, _ := io.ReadFull(resp.Body, errBody)
+		n, readErr := io.ReadFull(resp.Body, errBody)
+		if readErr != nil && readErr != io.ErrUnexpectedEOF && readErr != io.EOF {
+			return "", fmt.Errorf("HTTP %d (body unreadable: %w)", resp.StatusCode, readErr)
+		}
 		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(errBody[:n]))
 	}
 
@@ -56,10 +60,12 @@ func DownloadToFile(ctx context.Context, client *http.Client, req *http.Request,
 		"path": tmpPath,
 	})
 
-	// Cleanup helper — removes the temp file on any error.
+	// Cleanup helper — best-effort removal of the temp file on error.
+	// Close/Remove errors are intentionally ignored since this only runs
+	// on failure paths where the primary error is already captured.
 	cleanup := func() {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpPath)
+		tmpFile.Close()
+		os.Remove(tmpPath)
 	}
 
 	// Optionally limit the download size.
