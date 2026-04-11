@@ -178,17 +178,34 @@ func buildRequestBody(
 	}
 
 	// Process messages
-	var systemPrompt string
+	var systemBlocks []map[string]any
 	var apiMessages []any
 
 	for _, msg := range messages {
 		switch msg.Role {
 		case "system":
-			// Accumulate system messages
-			if systemPrompt != "" {
-				systemPrompt += "\n\n" + msg.Content
+			// Prefer structured SystemParts for per-block cache_control.
+			// This enables Anthropic prompt caching: static blocks keep a
+			// stable prefix hash while dynamic parts (time, session) change.
+			if len(msg.SystemParts) > 0 {
+				for _, part := range msg.SystemParts {
+					block := map[string]any{
+						"type": "text",
+						"text": part.Text,
+					}
+					if part.CacheControl != nil && part.CacheControl.Type != "" {
+						block["cache_control"] = map[string]string{
+							"type": part.CacheControl.Type,
+						}
+					}
+					systemBlocks = append(systemBlocks, block)
+				}
 			} else {
-				systemPrompt = msg.Content
+				// Fallback: no structured parts, use plain text block.
+				systemBlocks = append(systemBlocks, map[string]any{
+					"type": "text",
+					"text": msg.Content,
+				})
 			}
 
 		case "user":
@@ -280,9 +297,9 @@ func buildRequestBody(
 
 	result["messages"] = apiMessages
 
-	// Set system prompt if present
-	if systemPrompt != "" {
-		result["system"] = systemPrompt
+	// Set system prompt if present (always as content blocks array for cache_control support)
+	if len(systemBlocks) > 0 {
+		result["system"] = systemBlocks
 	}
 
 	// Add tools if present
