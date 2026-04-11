@@ -14,6 +14,7 @@ import (
 // Build with: go build -tags whatsapp_native ./cmd/...
 func NewWhatsAppNativeChannel(
 	cfg config.WhatsAppConfig,
+	voiceCfg config.VoiceConfig,
 	bus *bus.MessageBus,
 	storePath string,
 ) (channels.Channel, error) {

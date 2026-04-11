@@ -51,6 +51,7 @@ const (
 type WhatsAppNativeChannel struct {
 	*channels.BaseChannel
 	config       config.WhatsAppConfig
+	voiceConfig  config.VoiceConfig
 	storePath    string
 	client       *whatsmeow.Client
 	container    *sqlstore.Container
@@ -67,6 +68,7 @@ type WhatsAppNativeChannel struct {
 // storePath is the directory for the SQLite session store (e.g. workspace/whatsapp).
 func NewWhatsAppNativeChannel(
 	cfg config.WhatsAppConfig,
+	voiceCfg config.VoiceConfig,
 	bus *bus.MessageBus,
 	storePath string,
 ) (channels.Channel, error) {
@@ -80,6 +82,7 @@ func NewWhatsAppNativeChannel(
 	c := &WhatsAppNativeChannel{
 		BaseChannel: base,
 		config:      cfg,
+		voiceConfig: voiceCfg,
 		storePath:   storePath,
 	}
 	return c, nil
@@ -428,7 +431,7 @@ func (c *WhatsAppNativeChannel) handleIncoming(evt *events.Message) {
 		metadata["peer_kind"] = "direct"
 		metadata["peer_id"] = senderID
 	}
-	if len(mediaPaths) > 0 && c.config.EchoTranscription {
+	if len(mediaPaths) > 0 && c.voiceConfig.EchoTranscription {
 		metadata["echo_transcription"] = "true"
 	}
 
