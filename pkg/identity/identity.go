@@ -44,18 +44,22 @@ func MatchAllowed(sender bus.SenderInfo, allowed string) bool {
 		return false
 	}
 
-	// Try canonical match first: "platform:id" format
-	if platform, id, ok := ParseCanonicalID(allowed); ok {
-		// Only treat as canonical if the platform portion looks like a known platform name
-		// (not a pure-numeric string, which could be a compound ID)
-		if !isNumeric(platform) {
-			candidate := BuildCanonicalID(platform, id)
-			if candidate != "" && sender.CanonicalID != "" {
-				return strings.EqualFold(sender.CanonicalID, candidate)
+	// Try canonical match first: "platform:id" format.
+	// Skip when allowed starts with "@" — that indicates a username
+	// (e.g., Matrix user IDs like "@alice:matrix.org"), not a canonical ID.
+	if !strings.HasPrefix(allowed, "@") {
+		if platform, id, ok := ParseCanonicalID(allowed); ok {
+			// Only treat as canonical if the platform portion looks like a known platform name
+			// (not a pure-numeric string, which could be a compound ID)
+			if !isNumeric(platform) {
+				candidate := BuildCanonicalID(platform, id)
+				if candidate != "" && sender.CanonicalID != "" {
+					return strings.EqualFold(sender.CanonicalID, candidate)
+				}
+				// If sender has no canonical ID, try matching platform + platformID
+				return strings.EqualFold(platform, sender.Platform) &&
+					sender.PlatformID == id
 			}
-			// If sender has no canonical ID, try matching platform + platformID
-			return strings.EqualFold(platform, sender.Platform) &&
-				sender.PlatformID == id
 		}
 	}
 
@@ -78,8 +82,18 @@ func MatchAllowed(sender bus.SenderInfo, allowed string) bool {
 		return true
 	}
 
-	// Match against Username only when explicitly requested via "@username"
-	if isAtUsername && sender.Username != "" && sender.Username == trimmed {
+	// Match against Username only when explicitly requested via "@username".
+	// Compare against both the trimmed value and the original allowed value,
+	// because some platforms (e.g., Matrix) include "@" in their user IDs.
+	if isAtUsername && sender.Username != "" {
+		if sender.Username == trimmed || sender.Username == allowed {
+			return true
+		}
+	}
+
+	// Also try matching PlatformID against the original "@..." value
+	// for platforms where PlatformID itself contains "@" (e.g., Matrix "@user:server").
+	if isAtUsername && sender.PlatformID != "" && sender.PlatformID == allowed {
 		return true
 	}
 

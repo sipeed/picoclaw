@@ -78,6 +78,14 @@ func TestMatchAllowed(t *testing.T) {
 		Username:   "carol",
 	}
 
+	matrixSender := bus.SenderInfo{
+		Platform:    "matrix",
+		PlatformID:  "@example:matrix.org",
+		CanonicalID: "matrix:@example:matrix.org",
+		Username:    "@example:matrix.org",
+		DisplayName: "@example:matrix.org",
+	}
+
 	tests := []struct {
 		name    string
 		sender  bus.SenderInfo
@@ -222,6 +230,25 @@ func TestMatchAllowed(t *testing.T) {
 			sender:  telegramSender,
 			allowed: "  123456  ",
 			want:    true,
+		},
+		// Matrix user ID format "@user:server"
+		{
+			name:    "matrix user ID matches via @username",
+			sender:  matrixSender,
+			allowed: "@example:matrix.org",
+			want:    true,
+		},
+		{
+			name:    "matrix canonical format also works",
+			sender:  matrixSender,
+			allowed: "matrix:@example:matrix.org",
+			want:    true,
+		},
+		{
+			name:    "matrix user ID wrong user does not match",
+			sender:  matrixSender,
+			allowed: "@other:matrix.org",
+			want:    false,
 		},
 	}
 
