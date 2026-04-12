@@ -1118,6 +1118,17 @@ func TestLoadConfig_V0MigrateProducesV2(t *testing.T) {
 	if !modelEnabled("local-model") {
 		t.Error("local-model from V0 should be enabled")
 	}
+
+	githubRegistry, ok := cfg.Tools.Skills.Registries.Get("github")
+	if !ok {
+		t.Fatal("expected default github skills registry to survive V0 migration")
+	}
+	if !githubRegistry.Enabled {
+		t.Error("github skills registry should remain enabled after V0 migration")
+	}
+	if githubRegistry.BaseURL != "https://github.com" {
+		t.Errorf("github registry base_url = %q, want %q", githubRegistry.BaseURL, "https://github.com")
+	}
 }
 
 // TestLoadConfig_UnsupportedVersion verifies that unsupported versions return an error.

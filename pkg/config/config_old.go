@@ -984,13 +984,20 @@ func (v *skillsGithubConfigV0) ToSkillsGithubConfig() SkillsGithubConfig {
 }
 
 func (v *skillsToolsConfigV0) ToSkillsToolsConfig() SkillsToolsConfig {
+	cfg := DefaultConfig().Tools.Skills
 	clawHub := v.Registries.ClawHub.ToSkillRegistryConfig()
-	github := v.Github.ToSkillsGithubConfig()
-	return SkillsToolsConfig{
-		ToolConfig:            v.ToolConfig,
-		Registries:            SkillsRegistriesConfig{&clawHub},
-		Github:                github,
-		MaxConcurrentSearches: v.MaxConcurrentSearches,
-		SearchCache:           v.SearchCache,
+	cfg.ToolConfig = v.ToolConfig
+	cfg.Registries.Set(clawHub.Name, clawHub)
+	if v.Github.BaseURL != "" {
+		cfg.Github.BaseURL = v.Github.BaseURL
 	}
+	if v.Github.Token != "" {
+		cfg.Github.Token = *NewSecureString(v.Github.Token)
+	}
+	if v.Github.Proxy != "" {
+		cfg.Github.Proxy = v.Github.Proxy
+	}
+	cfg.MaxConcurrentSearches = v.MaxConcurrentSearches
+	cfg.SearchCache = v.SearchCache
+	return cfg
 }
