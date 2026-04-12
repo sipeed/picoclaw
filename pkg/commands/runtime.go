@@ -17,4 +17,9 @@ type Runtime struct {
 	SwitchChannel      func(value string) error
 	ClearHistory       func() error
 	ReloadConfig       func() error
+
+	GetSessionStats    func() SessionStats
+	CompactContext     func(instructions string) (droppedMessages int, err error)
+	NewSession         func() error
+	GetCompactionCount func() int
 }

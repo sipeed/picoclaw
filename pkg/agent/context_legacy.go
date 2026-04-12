@@ -36,10 +36,15 @@ func (m *legacyContextManager) Assemble(_ context.Context, req *AssembleRequest)
 }
 
 func (m *legacyContextManager) Compact(_ context.Context, req *CompactRequest) error {
+	if req == nil {
+		return nil
+	}
+
 	switch req.Reason {
 	case ContextCompressReasonProactive, ContextCompressReasonRetry:
 		// Sync emergency compression — budget exceeded.
 		if result, ok := m.forceCompression(req.SessionKey); ok {
+			m.al.incrementCompactionCount(req.SessionKey)
 			m.al.emitEvent(
 				EventKindContextCompress,
 				m.al.newTurnEventScope("", req.SessionKey).meta(0, "forceCompression", "turn.context.compress"),
@@ -51,6 +56,14 @@ func (m *legacyContextManager) Compact(_ context.Context, req *CompactRequest) e
 			)
 		}
 	case ContextCompressReasonSummarize:
+		if req.Manual {
+			agent := m.al.registry.GetDefaultAgent()
+			if agent == nil {
+				return nil
+			}
+			_, _, err := m.summarizeSessionWithOptions(agent, req.SessionKey, req.Instructions, true)
+			return err
+		}
 		m.maybeSummarize(req.SessionKey)
 	}
 	return nil
@@ -87,7 +100,7 @@ func (m *legacyContextManager) maybeSummarize(sessionKey string) {
 					}
 				}()
 				logger.Debug("Memory threshold reached. Optimizing conversation history...")
-				m.summarizeSession(agent, sessionKey)
+				_, _, _ = m.summarizeSessionWithOptions(agent, sessionKey, "", false)
 			}()
 		}
 	}
@@ -159,19 +172,32 @@ func (m *legacyContextManager) forceCompression(sessionKey string) (compressionR
 }
 
 func (m *legacyContextManager) summarizeSession(agent *AgentInstance, sessionKey string) {
+	_, _, _ = m.summarizeSessionWithOptions(agent, sessionKey, "", false)
+}
+
+func (m *legacyContextManager) summarizeSessionWithOptions(
+	agent *AgentInstance,
+	sessionKey string,
+	instructions string,
+	manual bool,
+) (SessionSummarizePayload, bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	history := agent.Sessions.GetHistory(sessionKey)
 	summary := agent.Sessions.GetSummary(sessionKey)
 
-	if len(history) <= 4 {
-		return
+	keepLast := 4
+	if manual {
+		keepLast = 2
+	}
+	if len(history) <= keepLast {
+		return SessionSummarizePayload{}, false, nil
 	}
 
-	safeCut := findSafeBoundary(history, len(history)-4)
+	safeCut := findSafeBoundary(history, len(history)-keepLast)
 	if safeCut <= 0 {
-		return
+		return SessionSummarizePayload{}, false, nil
 	}
 	keepCount := len(history) - safeCut
 	toSummarize := history[:safeCut]
@@ -193,7 +219,7 @@ func (m *legacyContextManager) summarizeSession(agent *AgentInstance, sessionKey
 	}
 
 	if len(validMessages) == 0 {
-		return
+		return SessionSummarizePayload{}, false, nil
 	}
 
 	const (
@@ -209,13 +235,16 @@ func (m *legacyContextManager) summarizeSession(agent *AgentInstance, sessionKey
 		part1 := validMessages[:mid]
 		part2 := validMessages[mid:]
 
-		s1, _ := m.summarizeBatch(ctx, agent, part1, "")
-		s2, _ := m.summarizeBatch(ctx, agent, part2, "")
+		s1, _ := m.summarizeBatch(ctx, agent, part1, "", instructions)
+		s2, _ := m.summarizeBatch(ctx, agent, part2, "", instructions)
 
 		mergePrompt := fmt.Sprintf(
 			"Merge these two conversation summaries into one cohesive summary:\n\n1: %s\n\n2: %s",
 			s1, s2,
 		)
+		if instructions != "" {
+			mergePrompt += "\n\nAdditional focus for manual compaction: " + instructions
+		}
 
 		resp, err := m.retryLLMCall(ctx, agent, mergePrompt, llmMaxRetries)
 		if err == nil && resp.Content != "" {
@@ -224,28 +253,34 @@ func (m *legacyContextManager) summarizeSession(agent *AgentInstance, sessionKey
 			finalSummary = s1 + " " + s2
 		}
 	} else {
-		finalSummary, _ = m.summarizeBatch(ctx, agent, validMessages, summary)
+		finalSummary, _ = m.summarizeBatch(ctx, agent, validMessages, summary, instructions)
 	}
 
 	if omitted && finalSummary != "" {
 		finalSummary += "\n[Note: Some oversized messages were omitted from this summary for efficiency.]"
 	}
 
-	if finalSummary != "" {
-		agent.Sessions.SetSummary(sessionKey, finalSummary)
-		agent.Sessions.TruncateHistory(sessionKey, keepCount)
-		agent.Sessions.Save(sessionKey)
-		m.al.emitEvent(
-			EventKindSessionSummarize,
-			m.al.newTurnEventScope(agent.ID, sessionKey).meta(0, "summarizeSession", "turn.session.summarize"),
-			SessionSummarizePayload{
-				SummarizedMessages: len(validMessages),
-				KeptMessages:       keepCount,
-				SummaryLen:         len(finalSummary),
-				OmittedOversized:   omitted,
-			},
-		)
+	if finalSummary == "" {
+		return SessionSummarizePayload{}, false, nil
 	}
+
+	agent.Sessions.SetSummary(sessionKey, finalSummary)
+	agent.Sessions.TruncateHistory(sessionKey, keepCount)
+	agent.Sessions.Save(sessionKey)
+	m.al.incrementCompactionCount(sessionKey)
+
+	payload := SessionSummarizePayload{
+		SummarizedMessages: len(validMessages),
+		KeptMessages:       keepCount,
+		SummaryLen:         len(finalSummary),
+		OmittedOversized:   omitted,
+	}
+	m.al.emitEvent(
+		EventKindSessionSummarize,
+		m.al.newTurnEventScope(agent.ID, sessionKey).meta(0, "summarizeSession", "turn.session.summarize"),
+		payload,
+	)
+	return payload, true, nil
 }
 
 func (m *legacyContextManager) findNearestUserMessage(messages []providers.Message, mid int) int {
@@ -315,6 +350,7 @@ func (m *legacyContextManager) summarizeBatch(
 	agent *AgentInstance,
 	batch []providers.Message,
 	existingSummary string,
+	customInstructions string,
 ) (string, error) {
 	const (
 		llmMaxRetries             = 3
@@ -327,6 +363,11 @@ func (m *legacyContextManager) summarizeBatch(
 	if existingSummary != "" {
 		sb.WriteString("Existing context: ")
 		sb.WriteString(existingSummary)
+		sb.WriteString("\n")
+	}
+	if customInstructions != "" {
+		sb.WriteString("Additional focus for this manual compaction: ")
+		sb.WriteString(customInstructions)
 		sb.WriteString("\n")
 	}
 	sb.WriteString("\nCONVERSATION:\n")
