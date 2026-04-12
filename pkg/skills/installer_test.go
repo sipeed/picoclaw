@@ -89,6 +89,12 @@ func TestParseGitHubRef(t *testing.T) {
 			wantRef:      "main",
 			wantSubPath:  "",
 		},
+		{
+			name:           "invalid non github host",
+			repo:           "https://gitlab.com/sipeed/picoclaw/-/tree/main/skills/test",
+			wantErr:        true,
+			wantErrContain: `invalid GitHub URL host "gitlab.com"`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -181,6 +187,18 @@ func TestParseGitHubRefWithBaseURL(t *testing.T) {
 	}
 	if ref.SubPath != ".agents/skills/pr-review" {
 		t.Fatalf("subPath = %q, want .agents/skills/pr-review", ref.SubPath)
+	}
+
+	_, err = parseGitHubRefWithBaseURL(
+		"https://gitlab.example.com/org/repo/-/tree/dev/skills/test",
+		"https://ghe.example.com/git",
+		"main",
+	)
+	if err == nil {
+		t.Fatal("parseGitHubRefWithBaseURL() error = nil, want invalid host error")
+	}
+	if !strings.Contains(err.Error(), `invalid GitHub URL host "gitlab.example.com"`) {
+		t.Fatalf("unexpected error = %v", err)
 	}
 }
 

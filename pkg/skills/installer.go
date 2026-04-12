@@ -168,6 +168,36 @@ func parseGitHubRefPathParts(repoURL *url.URL, githubBaseURL string) []string {
 	return parts[len(baseParts):]
 }
 
+func isSupportedGitHubURL(repoURL *url.URL, githubBaseURL string) bool {
+	if repoURL == nil {
+		return false
+	}
+	if matchesGitHubWebBase(repoURL, "https://github.com") {
+		return true
+	}
+	trimmedBaseURL := strings.TrimSpace(githubBaseURL)
+	if trimmedBaseURL == "" {
+		return false
+	}
+	return matchesGitHubWebBase(repoURL, trimmedBaseURL)
+}
+
+func matchesGitHubWebBase(repoURL *url.URL, webBaseURL string) bool {
+	baseURL, err := url.Parse(strings.TrimSpace(webBaseURL))
+	if err != nil {
+		return false
+	}
+	if !strings.EqualFold(repoURL.Host, baseURL.Host) {
+		return false
+	}
+	basePath := strings.Trim(baseURL.Path, "/")
+	if basePath == "" {
+		return true
+	}
+	repoPath := strings.Trim(repoURL.Path, "/")
+	return repoPath == basePath || strings.HasPrefix(repoPath, basePath+"/")
+}
+
 func splitGitHubTreeOrBlobRefPath(parts []string, defaultRef string) (string, string) {
 	if len(parts) == 0 {
 		return defaultRef, ""
@@ -215,6 +245,9 @@ func parseGitHubRefWithBaseURL(repo, githubBaseURL, defaultRef string) (GitHubRe
 		u, err := url.Parse(repo)
 		if err != nil {
 			return GitHubRef{}, fmt.Errorf("invalid URL: %w", err)
+		}
+		if !isSupportedGitHubURL(u, githubBaseURL) {
+			return GitHubRef{}, fmt.Errorf("invalid GitHub URL host %q", u.Host)
 		}
 		parts := parseGitHubRefPathParts(u, githubBaseURL)
 		if len(parts) < 2 {
