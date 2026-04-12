@@ -200,6 +200,18 @@ func TestParseGitHubRefWithBaseURL(t *testing.T) {
 	if !strings.Contains(err.Error(), `invalid GitHub URL host "gitlab.example.com"`) {
 		t.Fatalf("unexpected error = %v", err)
 	}
+
+	_, err = parseGitHubRefWithBaseURL(
+		"http://ghe.example.com/git/org/repo/tree/dev/skills/test",
+		"https://ghe.example.com/git",
+		"main",
+	)
+	if err == nil {
+		t.Fatal("parseGitHubRefWithBaseURL() error = nil, want invalid host error for scheme mismatch")
+	}
+	if !strings.Contains(err.Error(), `invalid GitHub URL host "ghe.example.com"`) {
+		t.Fatalf("unexpected scheme mismatch error = %v", err)
+	}
 }
 
 func TestSkillInstallerResolveGitHubRefUsesDefaultBranch(t *testing.T) {

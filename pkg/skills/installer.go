@@ -187,6 +187,9 @@ func matchesGitHubWebBase(repoURL *url.URL, webBaseURL string) bool {
 	if err != nil {
 		return false
 	}
+	if !strings.EqualFold(repoURL.Scheme, baseURL.Scheme) {
+		return false
+	}
 	if !strings.EqualFold(repoURL.Host, baseURL.Host) {
 		return false
 	}
