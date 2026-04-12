@@ -1,41 +1,22 @@
 ```
-# Build artifacts
+# Go build artifacts
 *.o
-*.obj
-*.out
-*.so
-*.dll
-*.exe
 *.a
-*.dylib
-
-# Go-specific
+*.out
 *.test
-*.prof
-cover.out
-coverage.txt
+*_test.go
 
 # Dependencies
 vendor/
 
-# Logs
+# Logs and temp files
 *.log
-
-# Temporary files
 *.tmp
-*~
-.DS_Store
-Thumbs.db
 
 # Environment
 .env
 .env.local
 *.env.*
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
 
 # Editors
 .vscode/
@@ -43,27 +24,20 @@ htmlcov/
 *.swp
 *.swo
 
-# Archives
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Build directories
+build/
+dist/
+target/
+
+# Python artifacts (if any Python files exist)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
 ```

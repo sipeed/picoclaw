@@ -23,7 +23,60 @@ pkg/protoagent/
 ├── engine.go          # Motor principal de processamento
 ├── generators.go      # Geradores de artefatos
 └── policies.go        # Gerador de políticas OPA
+
+cmd/protoagent-cli/
+└── main.go            # CLI para uso por linha de comando
 ```
+
+## Separação do ProtoAgent
+
+O código do protoagente foi completamente separado do restante do agente:
+
+- **Backend (pkg/protoagent/)**: Contém toda a lógica de processamento de requisitos e geração de artefatos
+  - `types.go`: Definições de tipos e estruturas de dados
+  - `engine.go`: Motor principal de processamento
+  - `generators.go`: Geradores de artefatos (interfaces, schemas, channels, skills, tools)
+  - `policies.go`: Gerador de políticas OPA
+
+- **Frontend (CLI)**: Interface de linha de comando para interação com o protoagente
+  - `cmd/protoagent-cli/main.go`: CLI completa com comandos generate, validate, version e help
+
+## CLI de Linha de Comando
+
+O ProtoAgent possui uma CLI dedicada para uso via terminal:
+
+### Instalação
+
+```bash
+go build -o protoagent-cli ./cmd/protoagent-cli
+```
+
+### Uso
+
+```bash
+# Gerar artefatos a partir de requisitos
+protoagent-cli generate requirements.json -o ./output --opa --verbose
+
+# Validar arquivo de requisitos
+protoagent-cli validate requirements.json
+
+# Ver versão
+protoagent-cli version
+
+# Ajuda
+protoagent-cli help
+```
+
+### Comandos
+
+- `generate`: Gera todos os artefatos a partir de um arquivo de requisitos JSON
+  - Opções: `-o/--output`, `-w/--workspace`, `--opa`, `--ai`, `--dry-run`, `-v/--verbose`
+
+- `validate`: Valida um arquivo de requisitos sem gerar artefatos
+
+- `version`: Mostra informações de versão
+
+- `help`: Mostra ajuda detalhada
 
 ## Tipos de Requisitos
 
