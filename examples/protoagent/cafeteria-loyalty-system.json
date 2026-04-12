@@ -1,0 +1,197 @@
+{
+  "version": "1.0.0",
+  "name": "Cafeteria Loyalty System",
+  "description": "Sistema de fidelização de cafeteria onde clientes acumulam 'grãos' baseados no consumo e podem trocar por produtos. Atendentes gerenciam contas de clientes e transações de grãos.",
+  
+  "functionalRequirements": [
+    {
+      "id": "FR001",
+      "type": "resource",
+      "name": "ManageCustomer",
+      "description": "Gerenciar cadastro de clientes do programa de fidelidade",
+      "inputs": [
+        {"name": "customer_id", "type": "string", "required": true, "description": "Identificador único do cliente"},
+        {"name": "name", "type": "string", "required": true, "description": "Nome do cliente"},
+        {"name": "phone", "type": "string", "required": true, "description": "Telefone/WhatsApp para Telegram"},
+        {"name": "email", "type": "string", "required": false, "description": "Email do cliente"}
+      ],
+      "outputs": [
+        {"name": "customer", "type": "object", "description": "Dados completos do cliente"}
+      ],
+      "interactionMethods": ["api", "ui", "messaging"]
+    },
+    {
+      "id": "FR002",
+      "type": "action",
+      "name": "AddGrains",
+      "description": "Adicionar grãos à conta do cliente baseado na compra",
+      "inputs": [
+        {"name": "customer_id", "type": "string", "required": true, "description": "ID do cliente"},
+        {"name": "amount", "type": "integer", "required": true, "description": "Quantidade de grãos a adicionar"},
+        {"name": "purchase_value", "type": "decimal", "required": true, "description": "Valor da compra em reais"},
+        {"name": "attendant_id", "type": "string", "required": true, "description": "ID do atendente realizando a operação"}
+      ],
+      "outputs": [
+        {"name": "new_balance", "type": "integer", "description": "Novo saldo de grãos"},
+        {"name": "transaction_id", "type": "string", "description": "ID da transação"}
+      ],
+      "preconditions": ["Cliente deve estar cadastrado", "Atendente deve estar autenticado"],
+      "postconditions": ["Saldo atualizado", "Transação registrada"],
+      "interactionMethods": ["api", "ui"]
+    },
+    {
+      "id": "FR003",
+      "type": "action",
+      "name": "RedeemGrains",
+      "description": "Consumir grãos para resgatar produtos",
+      "inputs": [
+        {"name": "customer_id", "type": "string", "required": true, "description": "ID do cliente"},
+        {"name": "product_id", "type": "string", "required": true, "description": "ID do produto a resgatar"},
+        {"name": "grains_required", "type": "integer", "required": true, "description": "Quantidade de grãos necessários"},
+        {"name": "attendant_id", "type": "string", "required": true, "description": "ID do atendente"}
+      ],
+      "outputs": [
+        {"name": "success", "type": "boolean", "description": "Se o resgate foi bem sucedido"},
+        {"name": "remaining_balance", "type": "integer", "description": "Saldo restante após resgate"}
+      ],
+      "preconditions": ["Cliente deve ter saldo suficiente", "Produto deve estar disponível"],
+      "postconditions": ["Saldo deduzido", "Resgate registrado", "Produto marcado como entregue"],
+      "interactionMethods": ["api", "ui"]
+    },
+    {
+      "id": "FR004",
+      "type": "operation",
+      "name": "ConsultBalance",
+      "description": "Consultar saldo de grãos do cliente",
+      "inputs": [
+        {"name": "customer_id", "type": "string", "required": true, "description": "ID do cliente"}
+      ],
+      "outputs": [
+        {"name": "balance", "type": "integer", "description": "Saldo atual de grãos"},
+        {"name": "last_updated", "type": "timestamp", "description": "Data da última atualização"}
+      ],
+      "interactionMethods": ["api", "ui", "messaging"]
+    },
+    {
+      "id": "FR005",
+      "type": "resource",
+      "name": "ManageProducts",
+      "description": "Gerenciar catálogo de produtos disponíveis para resgate",
+      "inputs": [
+        {"name": "product_id", "type": "string", "required": false, "description": "ID do produto"},
+        {"name": "name", "type": "string", "required": true, "description": "Nome do produto"},
+        {"name": "grains_cost", "type": "integer", "required": true, "description": "Custo em grãos"},
+        {"name": "quantity", "type": "integer", "required": true, "description": "Quantidade disponível"},
+        {"name": "category", "type": "string", "required": false, "description": "Categoria do produto"}
+      ],
+      "outputs": [
+        {"name": "product", "type": "object", "description": "Dados do produto"}
+      ],
+      "interactionMethods": ["api", "ui"]
+    },
+    {
+      "id": "FR006",
+      "type": "operation",
+      "name": "TelegramBalanceQuery",
+      "description": "Permitir que clientes consultem saldo via Telegram",
+      "inputs": [
+        {"name": "telegram_user_id", "type": "string", "required": true, "description": "ID do usuário no Telegram"}
+      ],
+      "outputs": [
+        {"name": "balance", "type": "integer", "description": "Saldo de grãos"},
+        {"name": "message", "type": "string", "description": "Mensagem formatada para Telegram"}
+      ],
+      "interactionMethods": ["messaging"]
+    },
+    {
+      "id": "FR007",
+      "type": "operation",
+      "name": "TransactionHistory",
+      "description": "Listar histórico de transações de grãos",
+      "inputs": [
+        {"name": "customer_id", "type": "string", "required": true, "description": "ID do cliente"},
+        {"name": "limit", "type": "integer", "required": false, "description": "Número máximo de registros", "default": "10"}
+      ],
+      "outputs": [
+        {"name": "transactions", "type": "array", "description": "Lista de transações"}
+      ],
+      "interactionMethods": ["api", "ui", "messaging"]
+    }
+  ],
+
+  "nonFunctionalRequirements": [
+    {
+      "id": "NFR001",
+      "category": "security",
+      "name": "Authentication",
+      "description": "Todos os atendentes devem ser autenticados antes de realizar operações",
+      "constraints": {
+        "auth_type": "jwt",
+        "token_expiry": "8h",
+        "mfa_required": "false"
+      }
+    },
+    {
+      "id": "NFR002",
+      "category": "performance",
+      "name": "ResponseTime",
+      "description": "Operações de consulta de saldo devem responder em menos de 2 segundos",
+      "constraints": {
+        "max_response_time": "2s",
+        "percentile": "95"
+      },
+      "metrics": [
+        {"name": "avg_response_time", "target": "< 1s", "unit": "seconds"}
+      ]
+    },
+    {
+      "id": "NFR003",
+      "category": "reliability",
+      "name": "DataIntegrity",
+      "description": "Todas as transações de grãos devem ser registradas de forma imutável",
+      "constraints": {
+        "audit_log": "true",
+        "transaction_log": "true"
+      }
+    },
+    {
+      "id": "NFR004",
+      "category": "scalability",
+      "name": "Concurrency",
+      "description": "Sistema deve suportar múltiplos atendentes operando simultaneamente",
+      "constraints": {
+        "max_concurrent_users": "50"
+      }
+    }
+  ],
+
+  "securityRequirements": [
+    {
+      "roles": ["admin", "attendant", "customer"],
+      "permissions": ["read", "write", "delete", "redeem", "add_grains"],
+      "authorizations": ["role_based", "resource_owner"],
+      "securityControls": ["authentication", "authorization", "audit_logging"],
+      "dataClassification": "internal"
+    }
+  ],
+
+  "performanceRequirements": [
+    {
+      "responseTime": "2s",
+      "throughput": 100,
+      "concurrency": 50,
+      "resourceLimits": {
+        "memory": "512MB",
+        "cpu": "1 core",
+        "storage": "10GB"
+      }
+    }
+  ],
+
+  "metadata": {
+    "domain": "retail",
+    "industry": "food_beverage",
+    "channel_priority": ["telegram", "ui", "api"],
+    "database_type": "sql"
+  }
+}

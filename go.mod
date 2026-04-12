@@ -1,6 +1,6 @@
 module github.com/sipeed/picoclaw
 
-go 1.25.9
+go 1.19
 
 require (
 	fyne.io/systray v1.12.0
@@ -26,8 +26,8 @@ require (
 	github.com/larksuite/oapi-sdk-go/v3 v3.5.3
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/minio/selfupdate v0.6.0
-	github.com/muesli/termenv v0.16.0
 	github.com/modelcontextprotocol/go-sdk v1.5.0
+	github.com/muesli/termenv v0.16.0
 	github.com/mymmrac/telego v1.8.0
 	github.com/open-dingtalk/dingtalk-stream-sdk-go v0.9.1
 	github.com/openai/openai-go/v3 v3.22.0
@@ -139,7 +139,7 @@ require (
 	golang.org/x/crypto v0.49.0
 	golang.org/x/net v0.52.0
 	golang.org/x/sync v0.20.0
-	golang.org/x/sys v0.43.0
+	golang.org/x/sys v0.15.0
 )
 
 replace github.com/bwmarrin/discordgo => github.com/yeongaori/discordgo-fork v0.0.0-20260319072544-e8e546f5d532

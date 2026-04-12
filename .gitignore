@@ -1,71 +1,69 @@
-# Binaries
-# Go build artifacts
-bin/
-build/
-*.exe
-*.dll
-*.so
-*.dylib
-*.test
+```
+# Build artifacts
+*.o
+*.obj
 *.out
-/picoclaw
-/picoclaw-test
-cmd/**/workspace
+*.so
+*.dll
+*.exe
+*.a
+*.dylib
 
-# Picoclaw specific
+# Go-specific
+*.test
+*.prof
+cover.out
+coverage.txt
 
-# PicoClaw
-.picoclaw/
-config.json
-sessions/
-build/
+# Dependencies
+vendor/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*~
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+*.env.*
 
 # Coverage
-
-# Secrets & Config (keep templates, ignore actual secrets)
-.env
-config/config.json
-.security.yml
-onboard
-
-
-# Test
-coverage.txt
-coverage.html
-
-# OS
-.DS_Store
-
-# Ralph workspace
-ralph/
-.ralph/
-tasks/
-
-# Plans
-docs/plans/
-docs/superpowers/
+coverage/
+htmlcov/
+.coverage
 
 # Editors
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Added by goreleaser init:
-dist/
-*.vite/
-
-# Windows Application Icon/Resource
-*.syso
-
-# Test telegram integration
-cmd/telegram/
-
-# Keep embedded backend dist directory placeholder in VCS
-!web/backend/dist/
-web/backend/dist/*
-!web/backend/dist/.gitkeep
-
-.claude/
-
-docker/data
-
-.omc/
+# Archives
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
+```

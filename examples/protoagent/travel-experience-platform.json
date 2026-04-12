@@ -1,0 +1,291 @@
+{
+  "version": "1.0.0",
+  "name": "Travel Experience Platform",
+  "description": "Plataforma de experiências de viagem onde viajantes compartilham relatos com mídias. O sistema atua como editor, filtrando dados pessoais, enriquecendo relatos com informações adicionais e publicando conteúdo curado em redes sociais.",
+  
+  "functionalRequirements": [
+    {
+      "id": "FR001",
+      "type": "resource",
+      "name": "SubmitTravelStory",
+      "description": "Permitir que viajantes submetam relatos de viagens com mídias e conteúdos",
+      "inputs": [
+        {"name": "traveler_id", "type": "string", "required": true, "description": "ID do viajante"},
+        {"name": "title", "type": "string", "required": true, "description": "Título do relato"},
+        {"name": "content", "type": "text", "required": true, "description": "Conteúdo do relato"},
+        {"name": "location", "type": "object", "required": false, "description": "Localização da experiência"},
+        {"name": "media_files", "type": "array", "required": false, "description": "Fotos e vídeos anexados"},
+        {"name": "tags", "type": "array", "required": false, "description": "Tags para categorização"},
+        {"name": "travel_date", "type": "date", "required": false, "description": "Data da viagem"}
+      ],
+      "outputs": [
+        {"name": "story_id", "type": "string", "description": "ID único do relato"},
+        {"name": "status", "type": "string", "description": "Status inicial (pending_review)"}
+      ],
+      "preconditions": ["Viajante deve estar autenticado"],
+      "postconditions": ["Relato criado", "Status definido como pending_review"],
+      "interactionMethods": ["api", "ui", "webhook"]
+    },
+    {
+      "id": "FR002",
+      "type": "operation",
+      "name": "FilterPersonalData",
+      "description": "Filtrar automaticamente informações pessoais dos relatos para privacidade",
+      "inputs": [
+        {"name": "story_content", "type": "text", "required": true, "description": "Conteúdo original do relato"},
+        {"name": "media_files", "type": "array", "required": false, "description": "Mídias para análise"}
+      ],
+      "outputs": [
+        {"name": "filtered_content", "type": "text", "description": "Conteúdo com dados pessoais removidos"},
+        {"name": "detected_pii", "type": "array", "description": "Lista de informações pessoais detectadas"},
+        {"name": "confidence_score", "type": "float", "description": "Confiança da detecção"}
+      ],
+      "preconditions": ["Relato deve estar em revisão"],
+      "postconditions": ["Dados pessoais identificados", "Conteúdo filtrado gerado"],
+      "interactionMethods": ["api"]
+    },
+    {
+      "id": "FR003",
+      "type": "operation",
+      "name": "EnrichStoryContent",
+      "description": "Coletar informações adicionais do autor para enriquecer o relato",
+      "inputs": [
+        {"name": "story_id", "type": "string", "required": true, "description": "ID do relato"},
+        {"name": "missing_info", "type": "array", "required": true, "description": "Lista de informações faltantes"}
+      ],
+      "outputs": [
+        {"name": "enriched_content", "type": "text", "description": "Conteúdo enriquecido"},
+        {"name": "additional_media", "type": "array", "description": "Mídias adicionais solicitadas"}
+      ],
+      "preconditions": ["Relato deve estar em processo de curadoria"],
+      "postconditions": ["Informações adicionais coletadas", "Relato atualizado"],
+      "interactionMethods": ["messaging", "api"]
+    },
+    {
+      "id": "FR004",
+      "type": "operation",
+      "name": "GenerateSocialMediaArticle",
+      "description": "Elaborar artigos formatados para publicação em redes sociais",
+      "inputs": [
+        {"name": "story_id", "type": "string", "required": true, "description": "ID do relato"},
+        {"name": "platform", "type": "string", "required": true, "description": "Rede social destino (instagram, facebook, twitter, linkedin)"},
+        {"name": "tone", "type": "string", "required": false, "description": "Tom do conteúdo (inspirational, informative, adventurous)", "default": "inspirational"}
+      ],
+      "outputs": [
+        {"name": "article_content", "type": "text", "description": "Artigo formatado para a plataforma"},
+        {"name": "hashtags", "type": "array", "description": "Hashtags sugeridas"},
+        {"name": "media_selection", "type": "array", "description": "Mídias selecionadas para publicação"}
+      ],
+      "preconditions": ["Relato deve estar aprovado"],
+      "postconditions": ["Artigo gerado", "Pronto para publicação"],
+      "interactionMethods": ["api"]
+    },
+    {
+      "id": "FR005",
+      "type": "action",
+      "name": "CurateContent",
+      "description": "Realizar curadoria do conteúdo - aprovar, remover ou solicitar atualizações",
+      "inputs": [
+        {"name": "story_id", "type": "string", "required": true, "description": "ID do relato"},
+        {"name": "action", "type": "string", "required": true, "description": "Ação: approve, reject, request_update"},
+        {"name": "reason", "type": "string", "required": false, "description": "Motivo da decisão"},
+        {"name": "curator_id", "type": "string", "required": true, "description": "ID do curador/agente"}
+      ],
+      "outputs": [
+        {"name": "new_status", "type": "string", "description": "Novo status do relato"},
+        {"name": "feedback", "type": "string", "description": "Feedback para o autor"}
+      ],
+      "preconditions": ["Relato deve ter passado por filtragem de dados pessoais"],
+      "postconditions": ["Status atualizado", "Autor notificado se necessário"],
+      "interactionMethods": ["api", "ui"]
+    },
+    {
+      "id": "FR006",
+      "type": "action",
+      "name": "PublishToSocialMedia",
+      "description": "Publicar conteúdo aprovado em redes sociais via APIs externas",
+      "inputs": [
+        {"name": "article_id", "type": "string", "required": true, "description": "ID do artigo gerado"},
+        {"name": "platforms", "type": "array", "required": true, "description": "Lista de plataformas para publicação"},
+        {"name": "schedule_time", "type": "timestamp", "required": false, "description": "Agendamento da publicação"}
+      ],
+      "outputs": [
+        {"name": "publication_ids", "type": "object", "description": "IDs das publicações em cada plataforma"},
+        {"name": "urls", "type": "array", "description": "URLs das publicações"}
+      ],
+      "preconditions": ["Artigo deve estar aprovado", "APIs das redes sociais devem estar configuradas"],
+      "postconditions": ["Conteúdo publicado", "URLs registradas", "Engajamento monitorado"],
+      "interactionMethods": ["api", "webhook"]
+    },
+    {
+      "id": "FR007",
+      "type": "operation",
+      "name": "MonitorEngagement",
+      "description": "Monitorar engajamento das publicações nas redes sociais",
+      "inputs": [
+        {"name": "publication_id", "type": "string", "required": true, "description": "ID da publicação"},
+        {"name": "metrics", "type": "array", "required": false, "description": "Métricas para coletar (likes, shares, comments)", "default": ["likes", "shares", "comments"]}
+      ],
+      "outputs": [
+        {"name": "engagement_data", "type": "object", "description": "Dados de engajamento coletados"},
+        {"name": "performance_score", "type": "float", "description": "Score de performance do conteúdo"}
+      ],
+      "interactionMethods": ["api"]
+    },
+    {
+      "id": "FR008",
+      "type": "resource",
+      "name": "ManageTravelerProfile",
+      "description": "Gerenciar perfis de viajantes com histórico e preferências",
+      "inputs": [
+        {"name": "traveler_id", "type": "string", "required": true, "description": "ID do viajante"},
+        {"name": "bio", "type": "text", "required": false, "description": "Biografia do viajante"},
+        {"name": "preferences", "type": "object", "required": false, "description": "Preferências de privacidade e notificação"},
+        {"name": "social_links", "type": "array", "required": false, "description": "Links para redes sociais do viajante"}
+      ],
+      "outputs": [
+        {"name": "profile", "type": "object", "description": "Perfil completo do viajante"}
+      ],
+      "interactionMethods": ["api", "ui"]
+    },
+    {
+      "id": "FR009",
+      "type": "operation",
+      "name": "ExternalAPIIntegration",
+      "description": "Integrar com APIs externas para enriquecer relatos (clima, mapas, pontos turísticos)",
+      "inputs": [
+        {"name": "location", "type": "object", "required": true, "description": "Localização da viagem"},
+        {"name": "date_range", "type": "object", "required": false, "description": "Período da viagem"},
+        {"name": "api_sources", "type": "array", "required": false, "description": "Fontes de API para consultar"}
+      ],
+      "outputs": [
+        {"name": "enrichment_data", "type": "object", "description": "Dados externos coletados"}
+      ],
+      "interactionMethods": ["api"]
+    },
+    {
+      "id": "FR010",
+      "type": "action",
+      "name": "UpdateStory",
+      "description": "Atualizar relatos existentes com novas informações ou correções",
+      "inputs": [
+        {"name": "story_id", "type": "string", "required": true, "description": "ID do relato"},
+        {"name": "updates", "type": "object", "required": true, "description": "Campos a serem atualizados"},
+        {"name": "author_id", "type": "string", "required": true, "description": "ID do autor solicitando atualização"}
+      ],
+      "outputs": [
+        {"name": "updated_story", "type": "object", "description": "Relato atualizado"},
+        {"name": "version", "type": "integer", "description": "Número da versão"}
+      ],
+      "preconditions": ["Autor deve ser dono do relato", "Relato não pode estar bloqueado"],
+      "postconditions": ["Relato atualizado", "Histórico de versões mantido"],
+      "interactionMethods": ["api", "ui"]
+    }
+  ],
+
+  "nonFunctionalRequirements": [
+    {
+      "id": "NFR001",
+      "category": "security",
+      "name": "PrivacyProtection",
+      "description": "Sistema deve detectar e remover automaticamente informações pessoais identificáveis (PII)",
+      "constraints": {
+        "pii_detection": "true",
+        "auto_redaction": "true",
+        "gdpr_compliance": "true"
+      }
+    },
+    {
+      "id": "NFR002",
+      "category": "security",
+      "name": "ContentModeration",
+      "description": "Conteúdo deve passar por moderação antes de publicação",
+      "constraints": {
+        "moderation_required": "true",
+        "ai_assisted": "true",
+        "human_review_threshold": "low_confidence"
+      }
+    },
+    {
+      "id": "NFR003",
+      "category": "performance",
+      "name": "ProcessingTime",
+      "description": "Processamento de filtragem e enriquecimento deve completar em até 30 segundos",
+      "constraints": {
+        "max_processing_time": "30s",
+        "async_processing": "true"
+      },
+      "metrics": [
+        {"name": "avg_filtering_time", "target": "< 10s", "unit": "seconds"},
+        {"name": "avg_enrichment_time", "target": "< 20s", "unit": "seconds"}
+      ]
+    },
+    {
+      "id": "NFR004",
+      "category": "reliability",
+      "name": "DataPersistence",
+      "description": "Todos os relatos e versões devem ser persistidos com backup automático",
+      "constraints": {
+        "backup_frequency": "daily",
+        "version_history": "true",
+        "retention_period": "5 years"
+      }
+    },
+    {
+      "id": "NFR005",
+      "category": "scalability",
+      "name": "MediaStorage",
+      "description": "Sistema deve escalar armazenamento de mídias conforme demanda",
+      "constraints": {
+        "storage_type": "cloud_object_storage",
+        "cdn_enabled": "true",
+        "auto_scaling": "true"
+      }
+    },
+    {
+      "id": "NFR006",
+      "category": "availability",
+      "name": "APIAvailability",
+      "description": "APIs externas de redes sociais devem ter fallback em caso de indisponibilidade",
+      "constraints": {
+        "retry_policy": "exponential_backoff",
+        "fallback_queue": "true",
+        "max_retries": "5"
+      }
+    }
+  ],
+
+  "securityRequirements": [
+    {
+      "roles": ["admin", "curator", "traveler", "viewer"],
+      "permissions": ["read", "write", "delete", "approve", "reject", "publish", "edit_own"],
+      "authorizations": ["role_based", "resource_owner", "content_moderation"],
+      "securityControls": ["authentication", "authorization", "pii_detection", "audit_logging", "content_moderation"],
+      "dataClassification": "mixed"
+    }
+  ],
+
+  "performanceRequirements": [
+    {
+      "responseTime": "5s",
+      "throughput": 500,
+      "concurrency": 200,
+      "resourceLimits": {
+        "memory": "2GB",
+        "cpu": "4 cores",
+        "storage": "100GB",
+        "network": "1Gbps"
+      }
+    }
+  ],
+
+  "metadata": {
+    "domain": "travel",
+    "industry": "tourism",
+    "channel_priority": ["api", "ui", "webhook", "messaging"],
+    "database_type": "nosql",
+    "media_storage": "cloud",
+    "external_integrations": ["instagram_api", "facebook_api", "twitter_api", "linkedin_api", "weather_api", "maps_api"],
+    "ai_features": ["pii_detection", "content_enrichment", "article_generation", "curation_assistance"]
+  }
+}
