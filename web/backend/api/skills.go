@@ -242,6 +242,15 @@ func (h *Handler) handleSearchSkills(w http.ResponseWriter, r *http.Request) {
 	response := make([]skillSearchResultItem, 0, len(pageResults))
 	for _, result := range pageResults {
 		installedSkill, installed := installedSkills[result.Slug]
+		if !installed {
+			registry := registryMgr.GetRegistry(result.RegistryName)
+			if registry != nil {
+				dirName, err := registry.ResolveInstallDirName(result.Slug)
+				if err == nil {
+					installedSkill, installed = installedSkills[dirName]
+				}
+			}
+		}
 		item := skillSearchResultItem{
 			Score:        result.Score,
 			Slug:         result.Slug,
@@ -569,17 +578,19 @@ func buildOccupiedWorkspaceSkillsByDirectory(cfg *config.Config) (map[string]ski
 			continue
 		}
 
-		key := filepath.Base(filepath.Dir(skill.Path))
+		dirName := filepath.Base(filepath.Dir(skill.Path))
+		if dirName != "" {
+			result[dirName] = skill
+		}
 		if meta, err := readInstalledSkillOriginMeta(skill.Path); err == nil && meta != nil && meta.Slug != "" {
-			key = skills.NormalizeInstallTargetForRegistry(cfg.Tools.Skills, meta.Registry, meta.Slug)
+			key := skills.NormalizeInstallTargetForRegistry(cfg.Tools.Skills, meta.Registry, meta.Slug)
 			if key == "" {
 				key = meta.Slug
 			}
+			if key != "" {
+				result[key] = skill
+			}
 		}
-		if key == "" {
-			continue
-		}
-		result[key] = skill
 	}
 	return result, nil
 }

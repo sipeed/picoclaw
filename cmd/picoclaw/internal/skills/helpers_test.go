@@ -60,3 +60,40 @@ func TestSkillsInstallFromRegistryWritesOriginMetadata(t *testing.T) {
 	assert.Equal(t, "master", meta.InstalledVersion)
 	assert.NotZero(t, meta.InstalledAt)
 }
+
+func TestSkillsInstallFromRegistryRejectsInvalidSkillArchive(t *testing.T) {
+	workspace := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = workspace
+
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v3/repos/foo/bar":
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"default_branch": "master"}))
+		case "/api/v3/repos/foo/bar/contents/.agents/skills/pr-review":
+			require.NoError(t, json.NewEncoder(w).Encode([]map[string]any{{
+				"type":         "file",
+				"name":         "SKILL.md",
+				"download_url": server.URL + "/raw/foo/bar/master/.agents/skills/pr-review/SKILL.md",
+			}}))
+		case "/raw/foo/bar/master/.agents/skills/pr-review/SKILL.md":
+			_, _ = w.Write([]byte("---\nname: bad_skill\ndescription: Invalid skill name\n---\n# Invalid\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	githubRegistry, ok := cfg.Tools.Skills.Registries.Get("github")
+	require.True(t, ok)
+	githubRegistry.BaseURL = server.URL
+	cfg.Tools.Skills.Registries.Set("github", githubRegistry)
+
+	target := server.URL + "/foo/bar/tree/master/.agents/skills/pr-review"
+	err := skillsInstallFromRegistry(cfg, "github", target)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "is not a valid skill")
+	_, statErr := os.Stat(filepath.Join(workspace, "skills", "pr-review"))
+	assert.True(t, os.IsNotExist(statErr))
+}

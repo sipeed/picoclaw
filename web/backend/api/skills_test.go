@@ -1311,6 +1311,89 @@ func TestHandleInstallSkillTracksGitHubURLInstallsAsInstalled(t *testing.T) {
 	}
 }
 
+func TestHandleSearchSkillsMarksDirectoryCollisionAsInstalled(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, loadErr := config.LoadConfig(configPath)
+	if loadErr != nil {
+		t.Fatalf("LoadConfig() error = %v", loadErr)
+	}
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	cfg.Agents.Defaults.Workspace = workspace
+
+	skillDir := filepath.Join(workspace, "skills", "pr-review")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(skillDir, "SKILL.md"),
+		[]byte("---\nname: pr-review\ndescription: Workspace PR review skill\n---\n# PR Review\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile(SKILL.md) error = %v", err)
+	}
+	if err := writeSkillOriginMeta(skillDir, installedSkillOriginMeta{
+		Version:          1,
+		OriginKind:       "third_party",
+		Registry:         "github",
+		Slug:             "foo/bar/.agents/skills/pr-review",
+		RegistryURL:      "https://github.com/foo/bar/tree/master/.agents/skills/pr-review",
+		InstalledVersion: "master",
+		InstalledAt:      time.Now().UnixMilli(),
+	}); err != nil {
+		t.Fatalf("writeSkillOriginMeta() error = %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/search":
+			json.NewEncoder(w).Encode(map[string]any{
+				"results": []map[string]any{{
+					"slug":        "pr-review",
+					"displayName": "PR Review",
+					"summary":     "ClawHub PR review skill",
+					"version":     "1.2.3",
+				}},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	setClawHubBaseURL(cfg, server.URL)
+	githubRegistry, _ := cfg.Tools.Skills.Registries.Get("github")
+	githubRegistry.Enabled = false
+	cfg.Tools.Skills.Registries.Set("github", githubRegistry)
+	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
+		t.Fatalf("SaveConfig() error = %v", saveErr)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/skills/search?q=pr+review&limit=5", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp skillSearchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Results) != 1 {
+		t.Fatalf("results count = %d, want 1", len(resp.Results))
+	}
+	if !resp.Results[0].Installed || resp.Results[0].InstalledName != "pr-review" {
+		t.Fatalf("search result should be treated as installed when directory is occupied, got %#v", resp.Results[0])
+	}
+}
+
 func TestHandleInstallSkillRollsBackOnOriginMetadataWriteFailure(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()

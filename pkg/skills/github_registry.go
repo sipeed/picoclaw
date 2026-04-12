@@ -93,10 +93,10 @@ func (r *GitHubRegistry) SkillURL(target, version string) string {
 		return fmt.Sprintf("%s/%s", base, urlPath)
 	}
 	if ref.SubPath != "" {
-		return fmt.Sprintf("%s/%s/tree/%s/%s", base, urlPath, url.PathEscape(ref.Ref), ref.SubPath)
+		return fmt.Sprintf("%s/%s/tree/%s/%s", base, urlPath, ref.Ref, ref.SubPath)
 	}
 	if ref.Ref != "main" {
-		return fmt.Sprintf("%s/%s/tree/%s", base, urlPath, url.PathEscape(ref.Ref))
+		return fmt.Sprintf("%s/%s/tree/%s", base, urlPath, ref.Ref)
 	}
 	return fmt.Sprintf("%s/%s", base, urlPath)
 }

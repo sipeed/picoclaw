@@ -104,6 +104,11 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, target string) 
 		fmt.Printf("\u26a0\ufe0f  Warning: skill '%s' is flagged as suspicious.\n", target)
 	}
 
+	if !workspaceHasValidSkillDirectory(workspace, dirName) {
+		_ = os.RemoveAll(targetDir)
+		return fmt.Errorf("✗ failed to install skill: registry archive for %q is not a valid skill", target)
+	}
+
 	normalizedSlug := skills.NormalizeInstallTargetForRegistry(cfg.Tools.Skills, registry.Name(), target)
 	installedAt := time.Now().UnixMilli()
 	if err := writeInstalledSkillOriginMeta(targetDir, installedSkillOriginMeta{
@@ -133,6 +138,19 @@ func writeInstalledSkillOriginMeta(targetDir string, meta installedSkillOriginMe
 		return err
 	}
 	return fileutil.WriteFileAtomic(filepath.Join(targetDir, ".skill-origin.json"), data, 0o600)
+}
+
+func workspaceHasValidSkillDirectory(workspace, directory string) bool {
+	loader := skills.NewSkillsLoader(workspace, "", "")
+	for _, skill := range loader.ListSkills() {
+		if skill.Source != "workspace" {
+			continue
+		}
+		if filepath.Base(filepath.Dir(skill.Path)) == directory {
+			return true
+		}
+	}
+	return false
 }
 
 func skillsRemoveFromWorkspace(workspace, skillName string) error {
