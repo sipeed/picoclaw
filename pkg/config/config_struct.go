@@ -445,9 +445,6 @@ func (c SkillRegistryConfig) MarshalJSON() ([]byte, error) {
 		"enabled":  c.Enabled,
 		"base_url": c.BaseURL,
 	}
-	if c.Name != "" {
-		m["name"] = c.Name
-	}
 	if c.AuthToken.String() != "" {
 		m["auth_token"] = c.AuthToken
 	}
@@ -513,9 +510,6 @@ func (c SkillRegistryConfig) MarshalYAML() (any, error) {
 	m := map[string]any{
 		"enabled":  c.Enabled,
 		"base_url": c.BaseURL,
-	}
-	if c.Name != "" {
-		m["name"] = c.Name
 	}
 	if c.AuthToken.String() != "" {
 		m["auth_token"] = c.AuthToken

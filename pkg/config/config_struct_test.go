@@ -242,6 +242,8 @@ func TestSkillsRegistriesConfigMarshalJSONPreservesObjectShape(t *testing.T) {
 	assert.Contains(t, string(data), `"github":{`)
 	assert.Contains(t, string(data), `"clawhub":{`)
 	assert.NotContains(t, string(data), `[{`)
+	assert.NotContains(t, string(data), `"name":"github"`)
+	assert.NotContains(t, string(data), `"name":"clawhub"`)
 
 	var decoded map[string]json.RawMessage
 	err = json.Unmarshal(data, &decoded)
