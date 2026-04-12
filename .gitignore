@@ -1,43 +1,100 @@
 ```
-# Go build artifacts
+# Go-specific ignores
 *.o
 *.a
-*.out
+*.so
+*.exe
+*.dll
+*.dylib
 *.test
-*_test.go
+*.prof
+cover.out
+coverage.html
+
+# Build artifacts
+bin/
+_dist/
+_dist/*
+dist/
+dist/*
+build/
+build/*
+target/
+target/*
 
 # Dependencies
 vendor/
+_deps/
+_deps/*
 
-# Logs and temp files
+# Logs
 *.log
+_logs/
+_logs/*
+
+# Temp files
 *.tmp
+*.temp
+*.swp
+*~
+.DS_Store
+Thumbs.db
 
 # Environment
 .env
 .env.local
-*.env.*
+.env.*
+!*.env.example
 
-# Editors
+# IDE and editor files
 .vscode/
 .idea/
 *.swp
 *.swo
+*.bak
+*.backup
 
-# Coverage
+# Testing
+_coverage/
 coverage/
 htmlcov/
 .coverage
+*.coverprofile
 
-# Build directories
-build/
-dist/
-target/
+# System files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+apidoc/
+apidocs/
 
-# Python artifacts (if any Python files exist)
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
+# Package management
+go.mod
+go.sum
+!go.mod
+!go.sum
+
+# Ignore compiled Go binaries in bin directories
+bin/*.exe
+bin/*.dll
+bin/*.so
+bin/*.dylib
+bin/*.a
+bin/*.o
+
+# Compressed archives
+*.zip
+*.tar.gz
+*.tar.xz
+*.tar.bz2
+*.gz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.tgz
+*.tar
+*.deb
+*.rpm
 ```
