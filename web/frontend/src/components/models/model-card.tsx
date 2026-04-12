@@ -10,6 +10,11 @@ import { useTranslation } from "react-i18next"
 
 import type { ModelInfo } from "@/api/models"
 import { Button } from "@/components/ui/button"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 interface ModelCardProps {
   model: ModelInfo
@@ -35,7 +40,8 @@ export function ModelCard({
 
   const setDefaultDisabledReason = (() => {
     if (settingDefault) return t("models.action.setDefaultDisabled.setting")
-    if (!model.available) return t("models.action.setDefaultDisabled.unavailable")
+    if (!model.available)
+      return t("models.action.setDefaultDisabled.unavailable")
     if (model.is_default) return t("models.action.setDefaultDisabled.isDefault")
     if (model.is_virtual) return t("models.action.setDefaultDisabled.isVirtual")
     return t("models.action.setDefault")
@@ -44,6 +50,7 @@ export function ModelCard({
   const deleteDisabledReason = model.is_default
     ? t("models.action.deleteDisabled.isDefault")
     : t("models.action.delete")
+  const deleteDisabled = model.is_default
 
   return (
     <div
@@ -93,19 +100,32 @@ export function ModelCard({
               <IconStarFilled className="size-3.5" />
             </span>
           ) : (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => onSetDefault(model)}
-              disabled={settingDefault || !canSetDefault}
-              title={setDefaultDisabledReason}
-            >
-              {settingDefault ? (
-                <IconLoader2 className="size-3.5 animate-spin" />
-              ) : (
-                <IconStar className="size-3.5" />
-              )}
-            </Button>
+            <Tooltip delayDuration={!canSetDefault || settingDefault ? 0 : 700}>
+              <TooltipTrigger asChild>
+                <span
+                  className={
+                    !canSetDefault || settingDefault
+                      ? "cursor-not-allowed"
+                      : undefined
+                  }
+                  tabIndex={!canSetDefault || settingDefault ? 0 : undefined}
+                >
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => onSetDefault(model)}
+                    disabled={settingDefault || !canSetDefault}
+                  >
+                    {settingDefault ? (
+                      <IconLoader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <IconStar className="size-3.5" />
+                    )}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{setDefaultDisabledReason}</TooltipContent>
+            </Tooltip>
           )}
 
           <Button
@@ -117,16 +137,25 @@ export function ModelCard({
             <IconEdit className="size-3.5" />
           </Button>
 
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => onDelete(model)}
-            disabled={model.is_default}
-            title={deleteDisabledReason}
-            className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-          >
-            <IconTrash className="size-3.5" />
-          </Button>
+          <Tooltip delayDuration={deleteDisabled ? 0 : 700}>
+            <TooltipTrigger asChild>
+              <span
+                className={deleteDisabled ? "cursor-not-allowed" : undefined}
+                tabIndex={deleteDisabled ? 0 : undefined}
+              >
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => onDelete(model)}
+                  disabled={deleteDisabled}
+                  className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                >
+                  <IconTrash className="size-3.5" />
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{deleteDisabledReason}</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
