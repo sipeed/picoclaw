@@ -363,6 +363,13 @@ func githubInstallDirNameWithBaseURL(repo, githubBaseURL string) (string, error)
 		return "", err
 	}
 	if ref.SubPath != "" {
+		if isSkillMarkdownPath(ref.SubPath) {
+			skillDir := path.Dir(strings.Trim(ref.SubPath, "/"))
+			if skillDir == "." || skillDir == "" {
+				return ref.RepoName, nil
+			}
+			return path.Base(skillDir), nil
+		}
 		return filepath.Base(ref.SubPath), nil
 	}
 	return ref.RepoName, nil

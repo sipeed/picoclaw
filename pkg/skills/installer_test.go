@@ -166,6 +166,28 @@ func TestParseGitHubRefWithBaseURL(t *testing.T) {
 		t.Fatalf("dirName = %q, want test", dirName)
 	}
 
+	dirName, err = githubInstallDirNameWithBaseURL(
+		"https://ghe.example.com/git/org/repo/blob/dev/skills/test/SKILL.md",
+		"https://ghe.example.com/git",
+	)
+	if err != nil {
+		t.Fatalf("githubInstallDirNameWithBaseURL() unexpected error for blob skill url = %v", err)
+	}
+	if dirName != "test" {
+		t.Fatalf("dirName for nested blob skill = %q, want test", dirName)
+	}
+
+	dirName, err = githubInstallDirNameWithBaseURL(
+		"https://ghe.example.com/git/org/repo/blob/dev/SKILL.md",
+		"https://ghe.example.com/git",
+	)
+	if err != nil {
+		t.Fatalf("githubInstallDirNameWithBaseURL() unexpected error for repo root blob skill = %v", err)
+	}
+	if dirName != "repo" {
+		t.Fatalf("dirName for repo root blob skill = %q, want repo", dirName)
+	}
+
 	ref, err = parseGitHubRefWithBaseURL("https://ghe.example.com/git/org/repo", "https://ghe.example.com/git", "")
 	if err != nil {
 		t.Fatalf("parseGitHubRefWithBaseURL() unexpected error = %v", err)

@@ -197,4 +197,16 @@ func TestGitHubRegistryResolveInstallDirNameSupportsFullURLs(t *testing.T) {
 	dirName, err = registry.ResolveInstallDirName("https://github.com/org/repo/tree/main/skills/release-checklist")
 	require.NoError(t, err)
 	assert.Equal(t, "release-checklist", dirName)
+
+	dirName, err = registry.ResolveInstallDirName(
+		"https://ghe.example.com/git/org/repo/blob/dev/skills/pr-review/SKILL.md",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "pr-review", dirName)
+
+	dirName, err = registry.ResolveInstallDirName(
+		"https://ghe.example.com/git/org/repo/blob/dev/SKILL.md",
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "repo", dirName)
 }
