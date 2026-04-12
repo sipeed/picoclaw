@@ -36,6 +36,8 @@ This is the default for the cron tool.
 
 When the job fires, PicoClaw sends the saved message back through the agent loop as a new agent turn. Use this for scheduled work that may need reasoning, tools, or a generated reply.
 
+Because the saved `message` is replayed as a new user-style input, write it from the user's perspective or as direct instructions to the agent. Prefer wording such as `check the repo every hour and tell me if there is a new release` over third-person wording such as `check the repo and notify the user`.
+
 ### `deliver: true`
 
 When the job fires, PicoClaw publishes the saved message directly to the target channel and recipient without agent processing.
@@ -49,6 +51,23 @@ When a cron-tool job includes `command`, PicoClaw runs that shell command throug
 For command jobs, `deliver` is forced to `false` when the job is created. The saved `message` becomes descriptive text only; the scheduled action is the shell command.
 
 The current CLI `picoclaw cron add` command does not expose a `command` flag.
+
+## Writing Job Messages
+
+For normal cron jobs without `command`, the saved `payload.message` becomes the next input sent to the agent when the job fires. In practice, that means the job message should read like something the user would say to the agent.
+
+Recommended style:
+
+- Use first-person or direct-address wording such as `tell me`, `remind me`, `reply in Chinese`, `do not reply if nothing changed`
+- Be explicit about the quiet case if needed, for example `If there is no update, do not reply`
+- Avoid third-person wording such as `notify the user`, because the model may continue replying in third person
+
+Examples:
+
+```text
+Good: Check gdsfactory/gdsfactory every hour. If there is a new release, tell me in Chinese and summarize the changes. If nothing changed, do not reply.
+Bad: Check gdsfactory/gdsfactory every hour. If there is a new release, notify the user and summarize the changes.
+```
 
 ## Config and Security Gates
 

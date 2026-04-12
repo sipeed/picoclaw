@@ -64,6 +64,16 @@ func listCommand() Definition {
 					))
 				},
 			},
+			{
+				Name:        "mcp",
+				Description: "MCP server status",
+				Handler: func(_ context.Context, req Request, rt *Runtime) error {
+					if rt == nil || rt.GetMCPStatus == nil {
+						return req.Reply(unavailableMsg)
+					}
+					return req.Reply(rt.GetMCPStatus())
+				},
+			},
 		},
 	}
 }

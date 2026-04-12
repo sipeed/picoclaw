@@ -252,6 +252,8 @@ The cron tool is used for scheduling periodic tasks.
 | `allow_command`        | bool | true    | Allow command jobs without extra confirmation  |
 | `exec_timeout_minutes` | int  | 5       | Execution timeout in minutes, 0 means no limit |
 
+For normal cron jobs without `command`, the saved `message` is later replayed into the agent loop as a new user-style message. Write it from the user's perspective, for example `check the repo every hour and tell me if there is a new release`, not `notify the user`.
+
 For schedule types, execution modes (`deliver`, agent turn, and command jobs), persistence, and the current command-security gates, see [Scheduled Tasks and Cron Jobs](cron.md).
 
 ## MCP Tool
