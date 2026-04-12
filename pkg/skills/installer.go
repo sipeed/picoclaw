@@ -217,7 +217,7 @@ func looksLikeSkillSubPath(subPath string) bool {
 	if subPath == "" {
 		return false
 	}
-	if subPath == "SKILL.md" || strings.HasSuffix(subPath, "/SKILL.md") {
+	if isSkillMarkdownPath(subPath) {
 		return true
 	}
 	parts := strings.Split(subPath, "/")
@@ -228,6 +228,11 @@ func looksLikeSkillSubPath(subPath string) bool {
 		return true
 	}
 	return false
+}
+
+func isSkillMarkdownPath(subPath string) bool {
+	subPath = strings.Trim(strings.TrimSpace(subPath), "/")
+	return subPath == "SKILL.md" || strings.HasSuffix(subPath, "/SKILL.md")
 }
 
 // parseGitHubRef parses a GitHub reference.
@@ -462,7 +467,11 @@ func (si *SkillInstaller) getGithubDirAllFiles(ctx context.Context, apiURL, loca
 func (si *SkillInstaller) downloadRaw(ctx context.Context, owner, repo, ref, subPath, localDir string) error {
 	urlPath := path.Join(owner, repo, ref)
 	if subPath != "" {
-		urlPath = path.Join(urlPath, subPath)
+		if isSkillMarkdownPath(subPath) {
+			urlPath = strings.TrimSuffix(path.Join(urlPath, subPath), "/SKILL.md")
+		} else {
+			urlPath = path.Join(urlPath, subPath)
+		}
 	}
 	url := fmt.Sprintf("%s/%s/SKILL.md", si.githubRawBaseURL, urlPath)
 

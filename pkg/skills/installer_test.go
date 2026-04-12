@@ -231,6 +231,50 @@ func TestSkillInstallerResolveGitHubRefUsesDefaultBranch(t *testing.T) {
 	}
 }
 
+func TestSkillInstallerInstallFromGitHubToDirSupportsBlobSkillURL(t *testing.T) {
+	tmpDir := t.TempDir()
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v3/repos/org/repo/contents/.agents/skills/pr-review/SKILL.md":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"type":"file","name":"SKILL.md"}`))
+		case "/raw/org/repo/main/.agents/skills/pr-review/SKILL.md":
+			_, _ = w.Write([]byte("---\nname: pr-review\ndescription: PR review skill\n---\n# PR Review\n"))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	installer, err := NewSkillInstallerWithBaseURL(tmpDir, server.URL, "", "")
+	if err != nil {
+		t.Fatalf("NewSkillInstallerWithBaseURL() error = %v", err)
+	}
+
+	targetDir := filepath.Join(tmpDir, "skills", "pr-review")
+	result, err := installer.InstallFromGitHubToDir(
+		context.Background(),
+		server.URL+"/org/repo/blob/main/.agents/skills/pr-review/SKILL.md",
+		"",
+		targetDir,
+	)
+	if err != nil {
+		t.Fatalf("InstallFromGitHubToDir() error = %v", err)
+	}
+	if result.Version != "main" {
+		t.Fatalf("version = %q, want main", result.Version)
+	}
+
+	content, err := os.ReadFile(filepath.Join(targetDir, "SKILL.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(SKILL.md) error = %v", err)
+	}
+	if !strings.Contains(string(content), "name: pr-review") {
+		t.Fatalf("SKILL.md content = %q, want skill metadata", string(content))
+	}
+}
+
 func TestShouldDownload(t *testing.T) {
 	tests := []struct {
 		name string

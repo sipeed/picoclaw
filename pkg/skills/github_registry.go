@@ -93,7 +93,11 @@ func (r *GitHubRegistry) SkillURL(target, version string) string {
 		return fmt.Sprintf("%s/%s", base, urlPath)
 	}
 	if ref.SubPath != "" {
-		return fmt.Sprintf("%s/%s/tree/%s/%s", base, urlPath, ref.Ref, ref.SubPath)
+		viewKind := "tree"
+		if isSkillMarkdownPath(ref.SubPath) {
+			viewKind = "blob"
+		}
+		return fmt.Sprintf("%s/%s/%s/%s/%s", base, urlPath, viewKind, ref.Ref, ref.SubPath)
 	}
 	if ref.Ref != "main" {
 		return fmt.Sprintf("%s/%s/tree/%s", base, urlPath, ref.Ref)
