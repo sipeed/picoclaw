@@ -18,6 +18,8 @@ import (
 
 const defaultSkillRegistryName = "github"
 
+var persistInstalledSkillOriginMeta = writeOriginMeta
+
 // InstallSkillTool allows the LLM agent to install skills from registries.
 // It shares the same RegistryManager that FindSkillsTool uses,
 // so all registries configured in config are available for installation.
@@ -170,7 +172,7 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 	}
 
 	// Write origin metadata.
-	if err := writeOriginMeta(targetDir, registry, slug, result.Version); err != nil {
+	if err := persistInstalledSkillOriginMeta(targetDir, registry, slug, result.Version); err != nil {
 		logger.ErrorCF("tool", "Failed to write origin metadata",
 			map[string]any{
 				"tool":     "install_skill",
@@ -180,7 +182,16 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 				"slug":     slug,
 				"version":  result.Version,
 			})
-		_ = err
+		rmErr := os.RemoveAll(targetDir)
+		if rmErr != nil {
+			logger.ErrorCF("tool", "Failed to roll back install after metadata write failure",
+				map[string]any{
+					"tool":       "install_skill",
+					"target_dir": targetDir,
+					"error":      rmErr.Error(),
+				})
+		}
+		return ErrorResult(fmt.Sprintf("failed to persist skill metadata for %q: %v", slug, err))
 	}
 
 	// Build result with moderation warning if suspicious.

@@ -283,3 +283,28 @@ func TestInstallSkillToolRejectsInvalidInstalledSkill(t *testing.T) {
 	_, err := os.Stat(filepath.Join(workspace, "skills", "broken-skill"))
 	assert.True(t, os.IsNotExist(err))
 }
+
+func TestInstallSkillToolRollsBackOnOriginMetadataWriteFailure(t *testing.T) {
+	workspace := t.TempDir()
+	registryMgr := skills.NewRegistryManager()
+	registryMgr.AddRegistry(&mockInstallRegistry{})
+	tool := NewInstallSkillTool(registryMgr, workspace)
+
+	previousPersist := persistInstalledSkillOriginMeta
+	persistInstalledSkillOriginMeta = func(string, skills.SkillRegistry, string, string) error {
+		return assert.AnError
+	}
+	defer func() {
+		persistInstalledSkillOriginMeta = previousPersist
+	}()
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"slug":     "rollback-skill",
+		"registry": "clawhub",
+	})
+
+	assert.True(t, result.IsError)
+	assert.Contains(t, result.ForLLM, "failed to persist skill metadata")
+	_, err := os.Stat(filepath.Join(workspace, "skills", "rollback-skill"))
+	assert.True(t, os.IsNotExist(err))
+}
