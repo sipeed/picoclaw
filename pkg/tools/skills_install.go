@@ -111,6 +111,32 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 	// Check if already installed.
 	skillsDir := filepath.Join(t.workspace, "skills")
 	targetDir := filepath.Join(skillsDir, dirName)
+	backupDir := ""
+	restorePreviousInstall := func() {
+		if backupDir == "" {
+			return
+		}
+		if rmErr := os.RemoveAll(targetDir); rmErr != nil {
+			logger.ErrorCF("tool", "Failed to remove failed install before restore",
+				map[string]any{
+					"tool":       "install_skill",
+					"target_dir": targetDir,
+					"error":      rmErr.Error(),
+				})
+			return
+		}
+		if restoreErr := os.Rename(backupDir, targetDir); restoreErr != nil {
+			logger.ErrorCF("tool", "Failed to restore previous install after failed reinstall",
+				map[string]any{
+					"tool":       "install_skill",
+					"backup_dir": backupDir,
+					"target_dir": targetDir,
+					"error":      restoreErr.Error(),
+				})
+			return
+		}
+		backupDir = ""
+	}
 
 	if !force {
 		if _, statErr := os.Stat(targetDir); statErr == nil {
@@ -119,12 +145,19 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 			)
 		}
 	} else {
-		// Force: remove existing if present.
-		os.RemoveAll(targetDir)
+		if _, statErr := os.Stat(targetDir); statErr == nil {
+			backupDir = filepath.Join(skillsDir, fmt.Sprintf(".%s.picoclaw-backup-%d", dirName, time.Now().UnixNano()))
+			if renameErr := os.Rename(targetDir, backupDir); renameErr != nil {
+				return ErrorResult(fmt.Sprintf("failed to prepare reinstall for %q: %v", slug, renameErr))
+			}
+		} else if !os.IsNotExist(statErr) {
+			return ErrorResult(fmt.Sprintf("failed to inspect existing install for %q: %v", slug, statErr))
+		}
 	}
 
 	// Ensure skills directory exists.
 	if mkdirErr := os.MkdirAll(skillsDir, 0o755); mkdirErr != nil {
+		restorePreviousInstall()
 		return ErrorResult(fmt.Sprintf("failed to create skills directory: %v", mkdirErr))
 	}
 
@@ -141,6 +174,7 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 					"error":      rmErr.Error(),
 				})
 		}
+		restorePreviousInstall()
 		return ErrorResult(fmt.Sprintf("failed to install %q: %v", slug, err))
 	}
 
@@ -155,6 +189,7 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 					"error":      rmErr.Error(),
 				})
 		}
+		restorePreviousInstall()
 		return ErrorResult(fmt.Sprintf("skill %q is flagged as malicious and cannot be installed", slug))
 	}
 
@@ -168,6 +203,7 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 					"error":      rmErr.Error(),
 				})
 		}
+		restorePreviousInstall()
 		return ErrorResult(fmt.Sprintf("failed to install %q: registry archive is not a valid skill", slug))
 	}
 
@@ -191,7 +227,18 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 					"error":      rmErr.Error(),
 				})
 		}
+		restorePreviousInstall()
 		return ErrorResult(fmt.Sprintf("failed to persist skill metadata for %q: %v", slug, err))
+	}
+	if backupDir != "" {
+		if rmErr := os.RemoveAll(backupDir); rmErr != nil {
+			logger.ErrorCF("tool", "Failed to remove previous install backup after successful reinstall",
+				map[string]any{
+					"tool":       "install_skill",
+					"backup_dir": backupDir,
+					"error":      rmErr.Error(),
+				})
+		}
 	}
 
 	// Build result with moderation warning if suspicious.

@@ -102,6 +102,8 @@ func (m *stubGitHubInstallRegistry) DownloadAndInstall(
 
 type mockInvalidInstallRegistry struct{}
 
+type mockFailingInstallRegistry struct{}
+
 func (m *mockInvalidInstallRegistry) Name() string { return "clawhub" }
 
 func (m *mockInvalidInstallRegistry) ResolveInstallDirName(target string) (string, error) {
@@ -135,6 +137,31 @@ func (m *mockInvalidInstallRegistry) DownloadAndInstall(
 		return nil, err
 	}
 	return &skills.InstallResult{Version: "test"}, nil
+}
+
+func (m *mockFailingInstallRegistry) Name() string { return "clawhub" }
+
+func (m *mockFailingInstallRegistry) ResolveInstallDirName(target string) (string, error) {
+	return target, nil
+}
+
+func (m *mockFailingInstallRegistry) SkillURL(slug, _ string) string { return slug }
+
+func (m *mockFailingInstallRegistry) Search(context.Context, string, int) ([]skills.SearchResult, error) {
+	return nil, nil
+}
+
+func (m *mockFailingInstallRegistry) GetSkillMeta(context.Context, string) (*skills.SkillMeta, error) {
+	return nil, nil
+}
+
+func (m *mockFailingInstallRegistry) DownloadAndInstall(
+	_ context.Context,
+	_ string,
+	_ string,
+	_ string,
+) (*skills.InstallResult, error) {
+	return nil, assert.AnError
 }
 
 func TestInstallSkillToolName(t *testing.T) {
@@ -335,4 +362,62 @@ func TestInstallSkillToolRollsBackOnOriginMetadataWriteFailure(t *testing.T) {
 	assert.Contains(t, result.ForLLM, "failed to persist skill metadata")
 	_, err := os.Stat(filepath.Join(workspace, "skills", "rollback-skill"))
 	assert.True(t, os.IsNotExist(err))
+}
+
+func TestInstallSkillToolForceReinstallRestoresPreviousSkillAfterDownloadFailure(t *testing.T) {
+	workspace := t.TempDir()
+	skillDir := filepath.Join(workspace, "skills", "existing-skill")
+	require.NoError(t, os.MkdirAll(skillDir, 0o755))
+	oldContent := []byte("---\nname: existing-skill\ndescription: Existing skill\n---\n# Existing\n")
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), oldContent, 0o600))
+
+	registryMgr := skills.NewRegistryManager()
+	registryMgr.AddRegistry(&mockFailingInstallRegistry{})
+	tool := NewInstallSkillTool(registryMgr, workspace)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"slug":     "existing-skill",
+		"registry": "clawhub",
+		"force":    true,
+	})
+
+	assert.True(t, result.IsError)
+	assert.Contains(t, result.ForLLM, "failed to install")
+
+	gotContent, err := os.ReadFile(filepath.Join(skillDir, "SKILL.md"))
+	require.NoError(t, err)
+	assert.Equal(t, oldContent, gotContent)
+}
+
+func TestInstallSkillToolForceReinstallRestoresPreviousSkillAfterMetadataFailure(t *testing.T) {
+	workspace := t.TempDir()
+	skillDir := filepath.Join(workspace, "skills", "existing-skill")
+	require.NoError(t, os.MkdirAll(skillDir, 0o755))
+	oldContent := []byte("---\nname: existing-skill\ndescription: Existing skill\n---\n# Existing\n")
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), oldContent, 0o600))
+
+	registryMgr := skills.NewRegistryManager()
+	registryMgr.AddRegistry(&mockInstallRegistry{})
+	tool := NewInstallSkillTool(registryMgr, workspace)
+
+	previousPersist := persistInstalledSkillOriginMeta
+	persistInstalledSkillOriginMeta = func(string, skills.SkillRegistry, string, string) error {
+		return assert.AnError
+	}
+	defer func() {
+		persistInstalledSkillOriginMeta = previousPersist
+	}()
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"slug":     "existing-skill",
+		"registry": "clawhub",
+		"force":    true,
+	})
+
+	assert.True(t, result.IsError)
+	assert.Contains(t, result.ForLLM, "failed to persist skill metadata")
+
+	gotContent, err := os.ReadFile(filepath.Join(skillDir, "SKILL.md"))
+	require.NoError(t, err)
+	assert.Equal(t, oldContent, gotContent)
 }
