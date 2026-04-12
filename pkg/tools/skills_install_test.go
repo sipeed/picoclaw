@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -167,13 +168,27 @@ func TestInstallSkillToolMissingRegistry(t *testing.T) {
 func TestInstallSkillToolAllowsGitHubURLSlug(t *testing.T) {
 	registryMgr := skills.NewRegistryManager()
 	registryMgr.AddRegistry(&mockGitHubInstallRegistry{})
-	tool := NewInstallSkillTool(registryMgr, t.TempDir())
+	workspace := t.TempDir()
+	tool := NewInstallSkillTool(registryMgr, workspace)
 
+	slug := "https://github.com/synthetic-lab/octofriend/tree/main/.agents/skills/pr-review"
 	result := tool.Execute(context.Background(), map[string]any{
-		"slug":     "https://github.com/synthetic-lab/octofriend/tree/main/.agents/skills/pr-review",
+		"slug":     slug,
 		"registry": "github",
 	})
 
 	assert.False(t, result.IsError)
 	assert.Contains(t, result.ForLLM, `Successfully installed skill`)
+
+	data, err := os.ReadFile(filepath.Join(workspace, "skills", "pr-review", ".skill-origin.json"))
+	require.NoError(t, err)
+
+	var meta originMeta
+	require.NoError(t, json.Unmarshal(data, &meta))
+	assert.Equal(t, "third_party", meta.OriginKind)
+	assert.Equal(t, "github", meta.Registry)
+	assert.Equal(t, slug, meta.Slug)
+	assert.Equal(t, slug, meta.RegistryURL)
+	assert.Equal(t, "main", meta.InstalledVersion)
+	assert.NotZero(t, meta.InstalledAt)
 }

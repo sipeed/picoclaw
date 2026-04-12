@@ -157,7 +157,7 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 	}
 
 	// Write origin metadata.
-	if err := writeOriginMeta(targetDir, registry.Name(), slug, result.Version); err != nil {
+	if err := writeOriginMeta(targetDir, registry, slug, result.Version); err != nil {
 		logger.ErrorCF("tool", "Failed to write origin metadata",
 			map[string]any{
 				"tool":     "install_skill",
@@ -189,17 +189,28 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 // originMeta tracks which registry a skill was installed from.
 type originMeta struct {
 	Version          int    `json:"version"`
+	OriginKind       string `json:"origin_kind,omitempty"`
 	Registry         string `json:"registry"`
 	Slug             string `json:"slug"`
+	RegistryURL      string `json:"registry_url,omitempty"`
 	InstalledVersion string `json:"installed_version"`
 	InstalledAt      int64  `json:"installed_at"`
 }
 
-func writeOriginMeta(targetDir, registryName, slug, version string) error {
+func writeOriginMeta(targetDir string, registry skills.SkillRegistry, slug, version string) error {
+	registryName := ""
+	registryURL := ""
+	if registry != nil {
+		registryName = registry.Name()
+		registryURL = registry.SkillURL(slug, version)
+	}
+
 	meta := originMeta{
 		Version:          1,
+		OriginKind:       "third_party",
 		Registry:         registryName,
 		Slug:             slug,
+		RegistryURL:      registryURL,
 		InstalledVersion: version,
 		InstalledAt:      time.Now().UnixMilli(),
 	}
