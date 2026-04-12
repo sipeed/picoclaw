@@ -167,6 +167,21 @@ func TestParseGitHubRefWithBaseURL(t *testing.T) {
 	if ref.Ref != "" {
 		t.Fatalf("ref = %q, want empty", ref.Ref)
 	}
+
+	ref, err = parseGitHubRefWithBaseURL(
+		"https://github.com/org/repo/tree/feature/skills-registry/.agents/skills/pr-review",
+		"",
+		"main",
+	)
+	if err != nil {
+		t.Fatalf("parseGitHubRefWithBaseURL() unexpected error for slash branch = %v", err)
+	}
+	if ref.Ref != "feature/skills-registry" {
+		t.Fatalf("ref = %q, want feature/skills-registry", ref.Ref)
+	}
+	if ref.SubPath != ".agents/skills/pr-review" {
+		t.Fatalf("subPath = %q, want .agents/skills/pr-review", ref.SubPath)
+	}
 }
 
 func TestSkillInstallerResolveGitHubRefUsesDefaultBranch(t *testing.T) {

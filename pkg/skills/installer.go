@@ -168,6 +168,38 @@ func parseGitHubRefPathParts(repoURL *url.URL, githubBaseURL string) []string {
 	return parts[len(baseParts):]
 }
 
+func splitGitHubTreeOrBlobRefPath(parts []string, defaultRef string) (string, string) {
+	if len(parts) == 0 {
+		return defaultRef, ""
+	}
+	for i := 1; i < len(parts); i++ {
+		candidateRef := strings.Join(parts[:i], "/")
+		candidateSubPath := strings.Join(parts[i:], "/")
+		if looksLikeSkillSubPath(candidateSubPath) {
+			return candidateRef, candidateSubPath
+		}
+	}
+	return parts[0], strings.Join(parts[1:], "/")
+}
+
+func looksLikeSkillSubPath(subPath string) bool {
+	subPath = strings.Trim(strings.TrimSpace(subPath), "/")
+	if subPath == "" {
+		return false
+	}
+	if subPath == "SKILL.md" || strings.HasSuffix(subPath, "/SKILL.md") {
+		return true
+	}
+	parts := strings.Split(subPath, "/")
+	if len(parts) >= 2 && parts[0] == "skills" {
+		return true
+	}
+	if len(parts) >= 3 && parts[0] == ".agents" && parts[1] == "skills" {
+		return true
+	}
+	return false
+}
+
 // parseGitHubRef parses a GitHub reference.
 // Supports: "owner/repo", "owner/repo/path", or full URL like "https://github.com/owner/repo/tree/ref/path"
 func parseGitHubRef(repo string) (GitHubRef, error) {
@@ -197,8 +229,7 @@ func parseGitHubRefWithBaseURL(repo, githubBaseURL, defaultRef string) (GitHubRe
 		for i := 2; i < len(parts); i++ {
 			if parts[i] == "tree" || parts[i] == "blob" {
 				if i+1 < len(parts) {
-					ref.Ref = parts[i+1]
-					ref.SubPath = strings.Join(parts[i+2:], "/")
+					ref.Ref, ref.SubPath = splitGitHubTreeOrBlobRefPath(parts[i+1:], defaultRef)
 				}
 				break
 			}
