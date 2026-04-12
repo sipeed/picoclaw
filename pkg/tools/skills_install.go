@@ -222,12 +222,10 @@ type originMeta struct {
 }
 
 func writeOriginMeta(targetDir string, registry skills.SkillRegistry, slug, version string) error {
-	normalizedSlug := skills.NormalizeInstallTargetForRegistryInstance(registry, slug)
+	normalizedSlug, registryURL := skills.BuildInstallMetadataForRegistryInstance(registry, slug, version)
 	registryName := ""
-	registryURL := ""
 	if registry != nil {
 		registryName = registry.Name()
-		registryURL = registry.SkillURL(normalizedSlug, version)
 	}
 
 	meta := originMeta{

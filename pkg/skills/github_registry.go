@@ -83,11 +83,12 @@ func (r *GitHubRegistry) NormalizeInstallTarget(target string) string {
 
 func (r *GitHubRegistry) SkillURL(target, version string) string {
 	defaultRef := strings.TrimSpace(version)
-	ref, err := parseGitHubRefWithBaseURL(target, r.webBase, defaultRef)
+	parsedTarget, err := parseGitHubTargetWithBaseURL(target, r.webBase, defaultRef)
 	if err != nil {
 		return ""
 	}
-	base := strings.TrimRight(r.webBase, "/")
+	ref := parsedTarget.Ref
+	base := strings.TrimRight(parsedTarget.Endpoints.WebBaseURL, "/")
 	urlPath := path.Join(ref.Owner, ref.RepoName)
 	if ref.Ref == "" {
 		return fmt.Sprintf("%s/%s", base, urlPath)
@@ -269,12 +270,18 @@ func (r *GitHubRegistry) GetSkillMeta(ctx context.Context, target string) (*Skil
 	if err != nil {
 		return nil, err
 	}
-	ref, err := parseGitHubRefWithBaseURL(target, r.webBase, "")
+	parsedTarget, err := parseGitHubTargetWithBaseURL(target, r.webBase, "")
 	if err != nil {
 		return nil, err
 	}
+	ref := parsedTarget.Ref
 	if ref.Ref == "" {
-		ref.Ref, err = r.installer.fetchDefaultBranch(ctx, ref.Owner, ref.RepoName)
+		ref.Ref, err = r.installer.fetchDefaultBranchWithAPIBaseURL(
+			ctx,
+			parsedTarget.Endpoints.APIBaseURL,
+			ref.Owner,
+			ref.RepoName,
+		)
 		if err != nil {
 			return nil, err
 		}

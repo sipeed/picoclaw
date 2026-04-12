@@ -381,13 +381,13 @@ func (h *Handler) handleInstallSkill(w http.ResponseWriter, r *http.Request) {
 	}
 
 	installedAt := time.Now().UnixMilli()
-	normalizedSlug := skills.NormalizeInstallTargetForRegistry(cfg.Tools.Skills, registry.Name(), req.Slug)
+	normalizedSlug, registryURL := skills.BuildInstallMetadataForRegistryInstance(registry, req.Slug, result.Version)
 	if err := persistSkillOriginMeta(stagedTargetDir, installedSkillOriginMeta{
 		Version:          1,
 		OriginKind:       "third_party",
 		Registry:         registry.Name(),
 		Slug:             normalizedSlug,
-		RegistryURL:      registrySkillURL(cfg, registry.Name(), normalizedSlug, result.Version),
+		RegistryURL:      registryURL,
 		InstalledVersion: result.Version,
 		InstalledAt:      installedAt,
 	}); err != nil {
@@ -422,7 +422,7 @@ func (h *Handler) handleInstallSkill(w http.ResponseWriter, r *http.Request) {
 		Description:      validatedSkill.Description,
 		OriginKind:       "third_party",
 		RegistryName:     registry.Name(),
-		RegistryURL:      registrySkillURL(cfg, registry.Name(), normalizedSlug, result.Version),
+		RegistryURL:      registryURL,
 		InstalledVersion: result.Version,
 		InstalledAt:      installedAt,
 	}

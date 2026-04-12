@@ -260,6 +260,35 @@ func TestParseGitHubRefWithBaseURL(t *testing.T) {
 	}
 }
 
+func TestParseGitHubTargetWithBaseURLPreservesSourceEndpoints(t *testing.T) {
+	target, err := parseGitHubTargetWithBaseURL(
+		"https://github.com/org/repo/tree/main/.agents/skills/pr-review",
+		"https://ghe.example.com/git",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("parseGitHubTargetWithBaseURL() unexpected error = %v", err)
+	}
+	if target.Endpoints.WebBaseURL != "https://github.com" {
+		t.Fatalf("web base = %q, want https://github.com", target.Endpoints.WebBaseURL)
+	}
+	if target.Endpoints.APIBaseURL != "https://api.github.com" {
+		t.Fatalf("api base = %q, want https://api.github.com", target.Endpoints.APIBaseURL)
+	}
+	if target.Endpoints.RawBaseURL != "https://raw.githubusercontent.com" {
+		t.Fatalf("raw base = %q, want https://raw.githubusercontent.com", target.Endpoints.RawBaseURL)
+	}
+	if target.Ref.Owner != "org" || target.Ref.RepoName != "repo" {
+		t.Fatalf("unexpected ref = %+v", target.Ref)
+	}
+	if target.Ref.Ref != "main" {
+		t.Fatalf("ref = %q, want main", target.Ref.Ref)
+	}
+	if target.Ref.SubPath != ".agents/skills/pr-review" {
+		t.Fatalf("subPath = %q, want .agents/skills/pr-review", target.Ref.SubPath)
+	}
+}
+
 func TestSkillInstallerResolveGitHubRefUsesDefaultBranch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -277,10 +306,11 @@ func TestSkillInstallerResolveGitHubRefUsesDefaultBranch(t *testing.T) {
 		t.Fatalf("NewSkillInstallerWithBaseURL() error = %v", err)
 	}
 
-	ref, err := installer.resolveGitHubRef(context.Background(), "org/repo/skills/test", "")
+	target, err := installer.resolveGitHubTarget(context.Background(), "org/repo/skills/test", "")
 	if err != nil {
-		t.Fatalf("resolveGitHubRef() error = %v", err)
+		t.Fatalf("resolveGitHubTarget() error = %v", err)
 	}
+	ref := target.Ref
 	if ref.Ref != "master" {
 		t.Fatalf("ref = %q, want master", ref.Ref)
 	}

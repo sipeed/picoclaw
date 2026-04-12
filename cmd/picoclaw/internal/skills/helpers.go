@@ -109,14 +109,14 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, target string) 
 		return fmt.Errorf("✗ failed to install skill: registry archive for %q is not a valid skill", target)
 	}
 
-	normalizedSlug := skills.NormalizeInstallTargetForRegistry(cfg.Tools.Skills, registry.Name(), target)
+	normalizedSlug, registryURL := skills.BuildInstallMetadataForRegistryInstance(registry, target, result.Version)
 	installedAt := time.Now().UnixMilli()
 	if err := writeInstalledSkillOriginMeta(targetDir, installedSkillOriginMeta{
 		Version:          1,
 		OriginKind:       "third_party",
 		Registry:         registry.Name(),
 		Slug:             normalizedSlug,
-		RegistryURL:      registry.SkillURL(normalizedSlug, result.Version),
+		RegistryURL:      registryURL,
 		InstalledVersion: result.Version,
 		InstalledAt:      installedAt,
 	}); err != nil {

@@ -34,6 +34,11 @@ type GitHubRef struct {
 	SubPath  string // Path within the repository
 }
 
+type gitHubTarget struct {
+	Ref       GitHubRef
+	Endpoints gitHubEndpoints
+}
+
 type SkillInstaller struct {
 	workspace        string
 	client           *http.Client
@@ -168,18 +173,18 @@ func parseGitHubRefPathParts(repoURL *url.URL, githubBaseURL string) []string {
 	return parts[len(baseParts):]
 }
 
-func isSupportedGitHubURL(repoURL *url.URL, githubBaseURL string) bool {
+func supportedGitHubBaseURL(repoURL *url.URL, githubBaseURL string) string {
 	if repoURL == nil {
-		return false
-	}
-	if matchesGitHubWebBase(repoURL, "https://github.com") {
-		return true
+		return ""
 	}
 	trimmedBaseURL := strings.TrimSpace(githubBaseURL)
-	if trimmedBaseURL == "" {
-		return false
+	if trimmedBaseURL != "" && matchesGitHubWebBase(repoURL, trimmedBaseURL) {
+		return trimmedBaseURL
 	}
-	return matchesGitHubWebBase(repoURL, trimmedBaseURL)
+	if matchesGitHubWebBase(repoURL, "https://github.com") {
+		return "https://github.com"
+	}
+	return ""
 }
 
 func matchesGitHubWebBase(repoURL *url.URL, webBaseURL string) bool {
@@ -245,6 +250,14 @@ func parseGitHubRef(repo string) (GitHubRef, error) {
 }
 
 func parseGitHubRefWithBaseURL(repo, githubBaseURL, defaultRef string) (GitHubRef, error) {
+	target, err := parseGitHubTargetWithBaseURL(repo, githubBaseURL, defaultRef)
+	if err != nil {
+		return GitHubRef{}, err
+	}
+	return target.Ref, nil
+}
+
+func parseGitHubTargetWithBaseURL(repo, githubBaseURL, defaultRef string) (gitHubTarget, error) {
 	repo = strings.TrimSpace(repo)
 	defaultRef = strings.TrimSpace(defaultRef)
 
@@ -252,21 +265,26 @@ func parseGitHubRefWithBaseURL(repo, githubBaseURL, defaultRef string) (GitHubRe
 	if strings.HasPrefix(repo, "http://") || strings.HasPrefix(repo, "https://") {
 		u, err := url.Parse(repo)
 		if err != nil {
-			return GitHubRef{}, fmt.Errorf("invalid URL: %w", err)
+			return gitHubTarget{}, fmt.Errorf("invalid URL: %w", err)
 		}
-		if !isSupportedGitHubURL(u, githubBaseURL) {
-			return GitHubRef{}, fmt.Errorf("invalid GitHub URL host %q", u.Host)
+		matchedBaseURL := supportedGitHubBaseURL(u, githubBaseURL)
+		if matchedBaseURL == "" {
+			return gitHubTarget{}, fmt.Errorf("invalid GitHub URL host %q", u.Host)
 		}
-		parts := parseGitHubRefPathParts(u, githubBaseURL)
+		endpoints, err := resolveGitHubEndpoints(matchedBaseURL)
+		if err != nil {
+			return gitHubTarget{}, err
+		}
+		parts := parseGitHubRefPathParts(u, matchedBaseURL)
 		if len(parts) < 2 {
-			return GitHubRef{}, fmt.Errorf("invalid GitHub URL")
+			return gitHubTarget{}, fmt.Errorf("invalid GitHub URL")
 		}
 		if len(parts) > 2 {
 			if parts[2] != "tree" && parts[2] != "blob" {
-				return GitHubRef{}, fmt.Errorf("invalid GitHub repository URL path %q", u.Path)
+				return gitHubTarget{}, fmt.Errorf("invalid GitHub repository URL path %q", u.Path)
 			}
 			if len(parts) < 4 {
-				return GitHubRef{}, fmt.Errorf("invalid GitHub %s URL path %q", parts[2], u.Path)
+				return gitHubTarget{}, fmt.Errorf("invalid GitHub %s URL path %q", parts[2], u.Path)
 			}
 		}
 		ref := GitHubRef{
@@ -283,13 +301,18 @@ func parseGitHubRefWithBaseURL(repo, githubBaseURL, defaultRef string) (GitHubRe
 				break
 			}
 		}
-		return ref, nil
+		return gitHubTarget{Ref: ref, Endpoints: endpoints}, nil
+	}
+
+	endpoints, err := resolveGitHubEndpoints(githubBaseURL)
+	if err != nil {
+		return gitHubTarget{}, err
 	}
 
 	// Handle shorthand format
 	parts := strings.Split(strings.Trim(repo, "/"), "/")
 	if len(parts) < 2 {
-		return GitHubRef{}, fmt.Errorf("invalid format %q: expected 'owner/repo'", repo)
+		return gitHubTarget{}, fmt.Errorf("invalid format %q: expected 'owner/repo'", repo)
 	}
 	ref := GitHubRef{
 		Owner:    parts[0],
@@ -299,35 +322,43 @@ func parseGitHubRefWithBaseURL(repo, githubBaseURL, defaultRef string) (GitHubRe
 	if len(parts) > 2 {
 		ref.SubPath = strings.Join(parts[2:], "/")
 	}
-	return ref, nil
+	return gitHubTarget{Ref: ref, Endpoints: endpoints}, nil
 }
 
 type gitHubRepository struct {
 	DefaultBranch string `json:"default_branch"`
 }
 
-func (si *SkillInstaller) resolveGitHubRef(ctx context.Context, repo, version string) (GitHubRef, error) {
-	ref, err := parseGitHubRefWithBaseURL(repo, si.githubBaseURL, "")
+func (si *SkillInstaller) resolveGitHubTarget(ctx context.Context, repo, version string) (gitHubTarget, error) {
+	target, err := parseGitHubTargetWithBaseURL(repo, si.githubBaseURL, "")
 	if err != nil {
-		return GitHubRef{}, err
+		return gitHubTarget{}, err
 	}
 	if version != "" {
-		ref.Ref = version
-		return ref, nil
+		target.Ref.Ref = version
+		return target, nil
 	}
-	if ref.Ref != "" {
-		return ref, nil
+	if target.Ref.Ref != "" {
+		return target, nil
 	}
-	defaultBranch, err := si.fetchDefaultBranch(ctx, ref.Owner, ref.RepoName)
+	defaultBranch, err := si.fetchDefaultBranchWithAPIBaseURL(
+		ctx,
+		target.Endpoints.APIBaseURL,
+		target.Ref.Owner,
+		target.Ref.RepoName,
+	)
 	if err != nil {
-		return GitHubRef{}, err
+		return gitHubTarget{}, err
 	}
-	ref.Ref = defaultBranch
-	return ref, nil
+	target.Ref.Ref = defaultBranch
+	return target, nil
 }
 
-func (si *SkillInstaller) fetchDefaultBranch(ctx context.Context, owner, repo string) (string, error) {
-	apiURL := fmt.Sprintf("%s/repos/%s/%s", strings.TrimRight(si.githubAPIBaseURL, "/"), owner, repo)
+func (si *SkillInstaller) fetchDefaultBranchWithAPIBaseURL(
+	ctx context.Context,
+	apiBaseURL, owner, repo string,
+) (string, error) {
+	apiURL := fmt.Sprintf("%s/repos/%s/%s", strings.TrimRight(apiBaseURL, "/"), owner, repo)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return "", err
@@ -401,22 +432,24 @@ func (si *SkillInstaller) InstallFromGitHubToDir(
 	ctx context.Context,
 	repo, version, skillDirectory string,
 ) (*InstallResult, error) {
-	ref, err := si.resolveGitHubRef(ctx, repo, version)
+	target, err := si.resolveGitHubTarget(ctx, repo, version)
 	if err != nil {
 		return nil, err
 	}
+	ref := target.Ref
 
 	// Build GitHub API URL
 	apiPath := path.Join(ref.Owner, ref.RepoName, "contents")
 	if ref.SubPath != "" {
 		apiPath = path.Join(apiPath, ref.SubPath)
 	}
-	apiURL := fmt.Sprintf("%s/repos/%s?ref=%s", si.githubAPIBaseURL, apiPath, url.QueryEscape(ref.Ref))
+	apiURL := fmt.Sprintf("%s/repos/%s?ref=%s", target.Endpoints.APIBaseURL, apiPath, url.QueryEscape(ref.Ref))
 
 	if err := si.getGithubDirAllFiles(ctx, apiURL, skillDirectory, true); err != nil {
 		// Fallback to raw download
 		if downloadErr := si.downloadRaw(
 			ctx,
+			target.Endpoints.RawBaseURL,
 			ref.Owner,
 			ref.RepoName,
 			ref.Ref,
@@ -482,7 +515,10 @@ func (si *SkillInstaller) getGithubDirAllFiles(ctx context.Context, apiURL, loca
 }
 
 // downloadRaw is a fallback that downloads just SKILL.md from raw.githubusercontent.com
-func (si *SkillInstaller) downloadRaw(ctx context.Context, owner, repo, ref, subPath, localDir string) error {
+func (si *SkillInstaller) downloadRaw(
+	ctx context.Context,
+	rawBaseURL, owner, repo, ref, subPath, localDir string,
+) error {
 	urlPath := path.Join(owner, repo, ref)
 	if subPath != "" {
 		if isSkillMarkdownPath(subPath) {
@@ -491,7 +527,7 @@ func (si *SkillInstaller) downloadRaw(ctx context.Context, owner, repo, ref, sub
 			urlPath = path.Join(urlPath, subPath)
 		}
 	}
-	url := fmt.Sprintf("%s/%s/SKILL.md", si.githubRawBaseURL, urlPath)
+	url := fmt.Sprintf("%s/%s/SKILL.md", strings.TrimRight(rawBaseURL, "/"), urlPath)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {

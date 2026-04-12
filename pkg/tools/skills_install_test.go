@@ -267,6 +267,34 @@ func TestInstallSkillToolAllowsGitHubURLSlug(t *testing.T) {
 	assert.NotZero(t, meta.InstalledAt)
 }
 
+func TestInstallSkillToolPreservesGitHubSourceURLWithEnterpriseRegistry(t *testing.T) {
+	registry := skills.GitHubRegistryConfig{Enabled: true, BaseURL: "https://ghe.example.com/git"}.BuildRegistry()
+	githubRegistry, ok := registry.(*skills.GitHubRegistry)
+	require.True(t, ok)
+
+	registryMgr := skills.NewRegistryManager()
+	registryMgr.AddRegistry(&stubGitHubInstallRegistry{GitHubRegistry: githubRegistry})
+	workspace := t.TempDir()
+	tool := NewInstallSkillTool(registryMgr, workspace)
+
+	slug := "https://github.com/synthetic-lab/octofriend/tree/main/.agents/skills/pr-review"
+	result := tool.Execute(context.Background(), map[string]any{
+		"slug":     slug,
+		"registry": "github",
+	})
+
+	assert.False(t, result.IsError)
+
+	data, err := os.ReadFile(filepath.Join(workspace, "skills", "pr-review", ".skill-origin.json"))
+	require.NoError(t, err)
+
+	var meta originMeta
+	require.NoError(t, json.Unmarshal(data, &meta))
+	assert.Equal(t, "synthetic-lab/octofriend/.agents/skills/pr-review", meta.Slug)
+	assert.Equal(t, slug, meta.RegistryURL)
+	assert.Equal(t, "main", meta.InstalledVersion)
+}
+
 func TestInstallSkillToolRejectsInvalidInstalledSkill(t *testing.T) {
 	workspace := t.TempDir()
 	registryMgr := skills.NewRegistryManager()

@@ -113,3 +113,15 @@ func NormalizeInstallTargetForRegistry(cfg config.SkillsToolsConfig, registryNam
 	}
 	return normalized
 }
+
+func BuildInstallMetadataForRegistryInstance(registry SkillRegistry, target, version string) (string, string) {
+	normalizedTarget := NormalizeInstallTargetForRegistryInstance(registry, target)
+	if registry == nil {
+		return normalizedTarget, ""
+	}
+	registryURL := registry.SkillURL(target, version)
+	if registryURL == "" {
+		registryURL = registry.SkillURL(normalizedTarget, version)
+	}
+	return normalizedTarget, registryURL
+}
