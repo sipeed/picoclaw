@@ -2,9 +2,12 @@ package cliui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 // PrintOnboardComplete prints the post-onboard “ready” message and next steps.
@@ -24,9 +27,11 @@ func printOnboardPlain(logo string, encrypt bool, configPath string) {
 		fmt.Println("       export PICOCLAW_KEY_PASSPHRASE=<your-passphrase>   # Linux/macOS")
 		fmt.Println("       set PICOCLAW_KEY_PASSPHRASE=<your-passphrase>      # Windows cmd")
 		fmt.Println("")
-		fmt.Println("  2. Add your API key to", configPath)
+		fmt.Println("  2. Add your selected LLM to the `model_name` field in", configPath)
+		fmt.Println("  3. Add your API key to", securityPath(configPath))
 	} else {
-		fmt.Println("  1. Add your API key to", configPath)
+		fmt.Println("  1. Add your selected LLM to the `model_name` field in", configPath)
+		fmt.Println("  2. Add your API key to", securityPath(configPath))
 	}
 	fmt.Println("")
 	fmt.Println("     Recommended:")
@@ -36,9 +41,9 @@ func printOnboardPlain(logo string, encrypt bool, configPath string) {
 	fmt.Println("     See README.md for 17+ supported providers.")
 	fmt.Println("")
 	if encrypt {
-		fmt.Println("  3. Chat: picoclaw agent -m \"Hello!\"")
+		fmt.Println("  4. Chat: picoclaw agent -m \"Hello!\"")
 	} else {
-		fmt.Println("  2. Chat: picoclaw agent -m \"Hello!\"")
+		fmt.Println("  3. Chat: picoclaw agent -m \"Hello!\"")
 	}
 }
 
@@ -85,12 +90,18 @@ func buildOnboardingSteps(encrypt bool, configPath string) string {
 		b.WriteString("1. Set your encryption passphrase before starting picoclaw:\n")
 		b.WriteString("   export PICOCLAW_KEY_PASSPHRASE=<your-passphrase>   # Linux/macOS\n")
 		b.WriteString("   set PICOCLAW_KEY_PASSPHRASE=<your-passphrase>      # Windows cmd\n\n")
-		b.WriteString("2. Add your API key to\n   ")
+		b.WriteString("2. Add your selected LLM to the `model_name` field in\n   ")
 		b.WriteString(configPath)
 		b.WriteString("\n")
+		b.WriteString("3. Add your API key to\n   ")
+		b.WriteString(securityPath(configPath))
+		b.WriteString("\n")
 	} else {
-		b.WriteString("1. Add your API key to\n   ")
+		b.WriteString("1. Add your selected LLM to the `model_name` field in\n   ")
 		b.WriteString(configPath)
+		b.WriteString("\n")
+		b.WriteString("2. Add your API key to\n   ")
+		b.WriteString(securityPath(configPath))
 		b.WriteString("\n")
 	}
 	return b.String()
@@ -104,7 +115,15 @@ func recommendedBlock() string {
 
 func chatStep(encrypt bool) string {
 	if encrypt {
-		return "3. Chat:\n   picoclaw agent -m \"Hello!\""
+		return "4. Chat:\n   picoclaw agent -m \"Hello!\""
 	}
-	return "2. Chat:\n   picoclaw agent -m \"Hello!\""
+	return "3. Chat:\n   picoclaw agent -m \"Hello!\""
+}
+
+// Derive the expected path of the security configuration file
+// from the general configuration file path.
+// NOTE: Function duplicated from config/security.go#securityPath()
+func securityPath(configPath string) string {
+	configDir := filepath.Dir(configPath)
+	return filepath.Join(configDir, config.SecurityConfigFile)
 }
