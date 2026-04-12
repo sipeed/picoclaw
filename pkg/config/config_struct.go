@@ -538,58 +538,72 @@ func (c SkillRegistryConfig) MarshalYAML() (any, error) {
 }
 
 func (v *SkillsRegistriesConfig) UnmarshalYAML(value *yaml.Node) error {
-	mm := make(map[string]*SkillRegistryConfig)
-	if err := value.Decode(&mm); err != nil {
+	decoded, err := decodeRegistryNodesFromYAML(value, nil)
+	if err != nil {
 		logger.Errorf("Decode error: %v", err)
 		return err
 	}
 	if len(*v) == 0 {
-		keys := make([]string, 0, len(mm))
-		for name := range mm {
+		keys := make([]string, 0, len(decoded))
+		for name := range decoded {
 			keys = append(keys, name)
 		}
 		sort.Strings(keys)
 		list := make([]*SkillRegistryConfig, 0, len(keys))
 		for _, name := range keys {
-			registry := mm[name]
+			registry := decoded[name]
 			if registry == nil {
 				continue
 			}
-			registry.Name = name
 			list = append(list, registry)
 		}
 		*v = list
 		return nil
 	}
-	for _, name := range sortedRegistryNames(mm) {
-		sec := mm[name]
-		if sec == nil {
-			continue
-		}
-		sec.Name = name
-		registry := findRegistryConfigByName(*v, name)
+	decoded, err = decodeRegistryNodesFromYAML(value, *v)
+	if err != nil {
+		logger.Errorf("Decode error: %v", err)
+		return err
+	}
+	for _, name := range sortedRegistryNames(decoded) {
+		registry := decoded[name]
 		if registry == nil {
-			*v = append(*v, cloneRegistryConfig(sec))
 			continue
 		}
-		registry.AuthToken = sec.AuthToken
-		if registry.BaseURL == "" {
-			registry.BaseURL = sec.BaseURL
-		}
-		if !registry.Enabled {
-			registry.Enabled = sec.Enabled
-		}
-		if registry.Param == nil {
-			registry.Param = map[string]any{}
-		}
-		for key, value := range sec.Param {
-			if _, ok := registry.Param[key]; ok {
-				continue
-			}
-			registry.Param[key] = value
-		}
+		v.Set(name, *registry)
 	}
 	return nil
+}
+
+func decodeRegistryNodesFromYAML(
+	value *yaml.Node,
+	existing SkillsRegistriesConfig,
+) (map[string]*SkillRegistryConfig, error) {
+	decoded := make(map[string]*SkillRegistryConfig)
+	if value == nil {
+		return decoded, nil
+	}
+	for i := 0; i+1 < len(value.Content); i += 2 {
+		nameNode := value.Content[i]
+		registryNode := value.Content[i+1]
+		if nameNode == nil || registryNode == nil {
+			continue
+		}
+		name := strings.TrimSpace(nameNode.Value)
+		if name == "" {
+			continue
+		}
+		registry := cloneRegistryConfig(findRegistryConfigByName(existing, name))
+		if registry == nil {
+			registry = &SkillRegistryConfig{Name: name}
+		}
+		if err := registryNode.Decode(registry); err != nil {
+			return nil, err
+		}
+		registry.Name = name
+		decoded[name] = registry
+	}
+	return decoded, nil
 }
 
 func cloneRegistryParams(src map[string]any) map[string]any {

@@ -304,6 +304,39 @@ func TestSkillsRegistriesConfigUnmarshalYAMLAppendsNewRegistryToExistingSlice(t 
 	assert.Equal(t, "https://github.com", github.BaseURL)
 }
 
+func TestSkillsRegistriesConfigUnmarshalYAMLOverridesDefaultRegistryFields(t *testing.T) {
+	registries := DefaultConfig().Tools.Skills.Registries
+
+	err := yaml.Unmarshal([]byte(`github:
+  enabled: false
+  base_url: https://ghe.example.com/git
+  proxy: http://127.0.0.1:7890
+`), &registries)
+	assert.NoError(t, err)
+
+	github, ok := registries.Get("github")
+	assert.True(t, ok)
+	assert.False(t, github.Enabled)
+	assert.Equal(t, "https://ghe.example.com/git", github.BaseURL)
+	assert.Equal(t, "http://127.0.0.1:7890", github.Param["proxy"])
+}
+
+func TestSkillsRegistriesConfigUnmarshalYAMLRetainsDefaultsForOmittedFields(t *testing.T) {
+	registries := DefaultConfig().Tools.Skills.Registries
+
+	err := yaml.Unmarshal([]byte(`github:
+  auth_token: registry-token
+`), &registries)
+	assert.NoError(t, err)
+
+	github, ok := registries.Get("github")
+	assert.True(t, ok)
+	assert.True(t, github.Enabled)
+	assert.Equal(t, "https://github.com", github.BaseURL)
+	assert.Equal(t, "registry-token", github.AuthToken.String())
+	assert.Empty(t, github.Param)
+}
+
 func TestSkillsGithubConfigV0ToSkillsGithubConfigPreservesBaseURL(t *testing.T) {
 	legacy := skillsGithubConfigV0{
 		BaseURL: "https://ghe.example.com/git",
