@@ -2095,23 +2095,41 @@ turnLoop:
 				return al.abortTurn(ts)
 			}
 
-			errMsg := strings.ToLower(err.Error())
-			isTimeoutError := errors.Is(err, context.DeadlineExceeded) ||
-				strings.Contains(errMsg, "deadline exceeded") ||
-				strings.Contains(errMsg, "client.timeout") ||
-				strings.Contains(errMsg, "timed out") ||
-				strings.Contains(errMsg, "timeout exceeded")
+			// Extract typed FailoverReason from the error chain.
+			// FallbackChain already classifies errors; the outer retry loop
+			// only handles specific recoverable scenarios.
+			var failErr *providers.FailoverError
+			failReason := providers.FailoverUnknown
+			if errors.As(err, &failErr) {
+				failReason = failErr.Reason
+			} else if errors.Is(err, context.DeadlineExceeded) {
+				failReason = providers.FailoverTimeout
+			} else {
+				// Single-candidate path: classify raw error via ClassifyError
+				// to maintain backward compatibility with provider error messages.
+				errMsg := strings.ToLower(err.Error())
+				if strings.Contains(errMsg, "deadline exceeded") ||
+					strings.Contains(errMsg, "client.timeout") ||
+					strings.Contains(errMsg, "timed out") ||
+					strings.Contains(errMsg, "timeout exceeded") {
+					failReason = providers.FailoverTimeout
+				} else if strings.Contains(errMsg, "context_length_exceeded") ||
+					strings.Contains(errMsg, "context window") ||
+					strings.Contains(errMsg, "context_window") ||
+					strings.Contains(errMsg, "maximum context length") ||
+					strings.Contains(errMsg, "token limit") ||
+					strings.Contains(errMsg, "too many tokens") ||
+					strings.Contains(errMsg, "max_tokens") ||
+					strings.Contains(errMsg, "invalidparameter") ||
+					strings.Contains(errMsg, "prompt is too long") ||
+					strings.Contains(errMsg, "request too large") {
+					failReason = providers.FailoverContextOverflow
+				}
+			}
 
-			isContextError := !isTimeoutError && (strings.Contains(errMsg, "context_length_exceeded") ||
-				strings.Contains(errMsg, "context window") ||
-				strings.Contains(errMsg, "context_window") ||
-				strings.Contains(errMsg, "maximum context length") ||
-				strings.Contains(errMsg, "token limit") ||
-				strings.Contains(errMsg, "too many tokens") ||
-				strings.Contains(errMsg, "max_tokens") ||
-				strings.Contains(errMsg, "invalidparameter") ||
-				strings.Contains(errMsg, "prompt is too long") ||
-				strings.Contains(errMsg, "request too large"))
+			isTimeoutError := failReason == providers.FailoverTimeout
+
+			isContextError := failReason == providers.FailoverContextOverflow
 
 			if isTimeoutError && retry < maxRetries {
 				backoff := time.Duration(retry+1) * 5 * time.Second

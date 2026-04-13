@@ -264,6 +264,97 @@ func TestClassifyError_UnknownError(t *testing.T) {
 	}
 }
 
+func TestClassifyError_ModelNotFoundPatterns(t *testing.T) {
+	tests := []struct {
+		name    string
+		msg     string
+		want    FailoverReason
+		wantOK  bool
+	}{
+		// Exact pattern: model_not_found (zhipu actual format)
+		{name: "model_not_found", msg: "model_not_found", want: FailoverFormat, wantOK: true},
+		// Space-separated
+		{name: "model not found", msg: "model not found", want: FailoverFormat, wantOK: true},
+		// invalid model
+		{name: "invalid model", msg: "invalid model", want: FailoverFormat, wantOK: true},
+		// model does not exist
+		{name: "model does not exist", msg: "model does not exist", want: FailoverFormat, wantOK: true},
+		// Case insensitive
+		{name: "Model_Not_Found upper", msg: "Model_Not_Found", want: FailoverFormat, wantOK: true},
+		// model not supported
+		{name: "model not supported", msg: "model not supported", want: FailoverFormat, wantOK: true},
+		// model not available
+		{name: "model not available", msg: "model not available", want: FailoverFormat, wantOK: true},
+		// unknown model
+		{name: "unknown model", msg: "unknown model", want: FailoverFormat, wantOK: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := errors.New(tt.msg)
+			result := ClassifyError(err, "zhipu", "glm-4")
+			if tt.wantOK {
+				if result == nil {
+					t.Fatalf("expected non-nil for %q", tt.msg)
+				}
+				if result.Reason != tt.want {
+					t.Errorf("reason = %q, want %q", result.Reason, tt.want)
+				}
+			} else {
+				if result != nil {
+					t.Errorf("expected nil for %q, got %+v", tt.msg, result)
+				}
+			}
+		})
+	}
+}
+
+func TestClassifyError_TransientStatusOverride(t *testing.T) {
+	// When a transient 5xx status (e.g. 503) is accompanied by a
+	// model_not_found message body, the message pattern should win over
+	// the status code classification. This verifies the isTransientStatus
+	// override logic in ClassifyError.
+	tests := []struct {
+		name   string
+		errMsg string
+		want   FailoverReason
+	}{
+		{
+			name:   "503 with model_not_found should be format not timeout",
+			errMsg: "API error: status: 503 model_not_found",
+			want:   FailoverFormat,
+		},
+		{
+			name:   "500 with model not found should be format not timeout",
+			errMsg: "API error: status: 500 model not found",
+			want:   FailoverFormat,
+		},
+		{
+			name:   "502 with invalid model should be format not timeout",
+			errMsg: "status 502 - invalid model",
+			want:   FailoverFormat,
+		},
+		{
+			name:   "503 without model pattern should remain timeout",
+			errMsg: "API error: status: 503 service unavailable",
+			want:   FailoverTimeout,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := errors.New(tt.errMsg)
+			result := ClassifyError(err, "zhipu", "glm-4")
+			if result == nil {
+				t.Fatalf("expected non-nil for %q", tt.errMsg)
+			}
+			if result.Reason != tt.want {
+				t.Errorf("reason = %q, want %q", result.Reason, tt.want)
+			}
+		})
+	}
+}
+
 func TestClassifyError_ProviderModelPropagation(t *testing.T) {
 	err := errors.New("rate limit exceeded")
 	result := ClassifyError(err, "my-provider", "my-model")

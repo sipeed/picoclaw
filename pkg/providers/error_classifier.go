@@ -102,6 +102,16 @@ var (
 		rxp(`image exceeds.*mb`),
 	}
 
+	modelNotFoundPatterns = []errorPattern{
+		rxp(`model[_ ]?not[_ ]?found`),
+		rxp(`does not exist.*model`),
+		rxp(`model.*does not exist`),
+		rxp(`invalid model`),
+		rxp(`model.*not available`),
+		rxp(`model.*not supported`),
+		rxp(`unknown model`),
+	}
+
 	// Transient HTTP status codes that map to timeout (server-side failures).
 	transientStatusCodes = map[int]bool{
 		500: true, 502: true, 503: true,
@@ -147,6 +157,21 @@ func ClassifyError(err error, provider, model string) *FailoverError {
 	// Try HTTP status code extraction first.
 	if status := extractHTTPStatus(msg); status > 0 {
 		if reason := classifyByStatus(status); reason != "" {
+			// For transient status codes (5xx), the message body may contain a
+			// more specific, non-transient error (e.g. zhipu returns 503 with
+			// "model_not_found"). Check message patterns and prefer them when
+			// they indicate a concrete, non-transient failure.
+			if isTransientStatus(status) {
+				if msgReason := classifyByMessage(msg); msgReason != "" && msgReason != FailoverTimeout {
+					return &FailoverError{
+						Reason:  msgReason,
+						Provider: provider,
+						Model:    model,
+						Status:   status,
+						Wrapped:  err,
+					}
+				}
+			}
 			return &FailoverError{
 				Reason:   reason,
 				Provider: provider,
@@ -192,6 +217,9 @@ func classifyByStatus(status int) FailoverReason {
 // classifyByMessage matches error messages against patterns.
 // Priority order matters (from OpenClaw classifyFailoverReason).
 func classifyByMessage(msg string) FailoverReason {
+	if matchesAny(msg, modelNotFoundPatterns) {
+		return FailoverFormat // model_not_found is a configuration error, not retriable
+	}
 	if matchesAny(msg, rateLimitPatterns) {
 		return FailoverRateLimit
 	}
@@ -262,4 +290,10 @@ func parseDigits(s string) int {
 		}
 	}
 	return n
+}
+
+// isTransientStatus returns true for 5xx status codes that represent
+// server-side transient failures (should be retried via fallback).
+func isTransientStatus(status int) bool {
+	return transientStatusCodes[status]
 }
