@@ -1,4 +1,5 @@
-.PHONY: dev dev-frontend dev-backend build build-frontend build-dev-picoclaw test lint clean
+.PHONY: dev dev-frontend dev-backend build build-frontend build-dev-picoclaw test lint clean \
+	build-android-arm64 build-android-bundle
 
 # Go variables
 GO?=CGO_ENABLED=0 go
@@ -9,6 +10,7 @@ GOFLAGS?=-v -tags $(GO_BUILD_TAGS)
 # Build variables
 BUILD_DIR=build
 OUTPUT?=$(BUILD_DIR)/picoclaw-launcher
+OUTPUT_ANDROID_ARM64?=$(BUILD_DIR)/picoclaw-launcher-android-arm64
 FRONTEND_DIR=frontend
 BACKEND_DIR=backend
 BACKEND_DIST=$(BACKEND_DIR)/dist
@@ -90,6 +92,17 @@ dev-backend:
 build: build-frontend
 	@mkdir -p "$$(dirname "$(OUTPUT)")"
 	${WEB_GO} build $(GOFLAGS) -ldflags "$(LAUNCHER_LDFLAGS)" -o "$(OUTPUT)" ./$(BACKEND_DIR)/
+
+# Build launcher for Android ARM64 (frontend must already be built)
+build-android-arm64: build-frontend
+	@mkdir -p $(BUILD_DIR)
+	GOOS=android GOARCH=arm64 $(GO) build -tags stdjson -ldflags "$(LDFLAGS)" -o "$(OUTPUT_ANDROID_ARM64)" ./$(BACKEND_DIR)/
+
+# Build launcher for all Android architectures
+build-android-bundle: build-frontend
+	@mkdir -p $(BUILD_DIR)
+	GOOS=android GOARCH=arm64 $(GO) build -tags stdjson -ldflags "$(LDFLAGS)" -o "$(BUILD_DIR)/picoclaw-launcher-android-arm64" ./$(BACKEND_DIR)/
+	@echo "All Android launcher builds complete"
 
 build-frontend:
 	@if [ ! -d $(FRONTEND_DIR)/node_modules ] || \

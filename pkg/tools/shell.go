@@ -20,6 +20,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
+	"github.com/sipeed/picoclaw/pkg/isolation"
 )
 
 var (
@@ -120,7 +121,7 @@ func NewExecTool(workingDir string, restrict bool, allowPaths ...[]*regexp.Regex
 func NewExecToolWithConfig(
 	workingDir string,
 	restrict bool,
-	config *config.Config,
+	cfg *config.Config,
 	allowPaths ...[]*regexp.Regexp,
 ) (*ExecTool, error) {
 	denyPatterns := make([]*regexp.Regexp, 0)
@@ -131,8 +132,8 @@ func NewExecToolWithConfig(
 		allowedPathPatterns = allowPaths[0]
 	}
 
-	if config != nil {
-		execConfig := config.Tools.Exec
+	if cfg != nil {
+		execConfig := cfg.Tools.Exec
 		enableDenyPatterns := execConfig.EnableDenyPatterns
 		allowRemote = execConfig.AllowRemote
 		if enableDenyPatterns {
@@ -163,8 +164,8 @@ func NewExecToolWithConfig(
 	}
 
 	var timeout time.Duration
-	if config != nil && config.Tools.Exec.TimeoutSeconds > 0 {
-		timeout = time.Duration(config.Tools.Exec.TimeoutSeconds) * time.Second
+	if cfg != nil && cfg.Tools.Exec.TimeoutSeconds > 0 {
+		timeout = time.Duration(cfg.Tools.Exec.TimeoutSeconds) * time.Second
 	}
 
 	return &ExecTool{
@@ -378,7 +379,9 @@ func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	if err := cmd.Start(); err != nil {
+	// Route shell execution through the shared isolation entry point so exec tool
+	// subprocesses receive the same isolation policy as other integrations.
+	if err := isolation.Start(cmd); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to start command: %v", err))
 	}
 
@@ -521,7 +524,9 @@ func (t *ExecTool) runBackground(ctx context.Context, command, cwd string, ptyEn
 		session.stdinWriter = stdinWriter
 	}
 
-	if err := cmd.Start(); err != nil {
+	// Background sessions use the same startup path so isolation stays consistent
+	// with synchronous exec runs.
+	if err := isolation.Start(cmd); err != nil {
 		if session.ptyMaster != nil {
 			session.ptyMaster.Close()
 		}

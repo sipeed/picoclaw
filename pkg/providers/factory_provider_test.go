@@ -434,6 +434,62 @@ func TestCreateProviderFromConfig_Antigravity(t *testing.T) {
 	}
 }
 
+func TestCreateProviderFromConfig_Gemini(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-gemini",
+		Model:     "gemini/gemini-2.5-flash",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "gemini-2.5-flash" {
+		t.Errorf("modelID = %q, want %q", modelID, "gemini-2.5-flash")
+	}
+	if _, ok := provider.(*GeminiProvider); !ok {
+		t.Fatalf("expected *GeminiProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_GeminiMissingAPIKey(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-gemini-no-key",
+		Model:     "gemini/gemini-2.5-flash",
+	}
+
+	_, _, err := CreateProviderFromConfig(cfg)
+	if err == nil {
+		t.Fatal("CreateProviderFromConfig() expected error for missing gemini API key")
+	}
+}
+
+func TestCreateProviderFromConfig_GeminiCustomAPIBaseWithoutKey(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-gemini-custom-base",
+		Model:     "gemini/gemini-2.5-flash",
+		APIBase:   "https://proxy.example.com/v1beta",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "gemini-2.5-flash" {
+		t.Errorf("modelID = %q, want %q", modelID, "gemini-2.5-flash")
+	}
+	if _, ok := provider.(*GeminiProvider); !ok {
+		t.Fatalf("expected *GeminiProvider, got %T", provider)
+	}
+}
+
 func TestCreateProviderFromConfig_ClaudeCLI(t *testing.T) {
 	cfg := &config.ModelConfig{
 		ModelName: "test-claude-cli",

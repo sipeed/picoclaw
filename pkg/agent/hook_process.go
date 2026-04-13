@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/isolation"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
@@ -122,7 +123,9 @@ func NewProcessHook(ctx context.Context, name string, opts ProcessHookOptions) (
 	if err != nil {
 		return nil, fmt.Errorf("create process hook stderr: %w", err)
 	}
-	if err := cmd.Start(); err != nil {
+	// Route hook subprocess startup through the shared isolation entry point so
+	// process hooks inherit the same isolation behavior as other child processes.
+	if err := isolation.Start(cmd); err != nil {
 		return nil, fmt.Errorf("start process hook: %w", err)
 	}
 

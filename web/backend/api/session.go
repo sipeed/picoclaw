@@ -14,6 +14,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 // registerSessionRoutes binds session list and detail endpoints to the ServeMux.
@@ -75,6 +76,11 @@ const (
 
 	handledToolResponseSummaryText = "Requested output delivered via tool attachment."
 )
+
+func defaultToolFeedbackMaxArgsLength() int {
+	defaults := config.AgentDefaults{}
+	return defaults.GetToolFeedbackMaxArgsLength()
+}
 
 // extractPicoSessionID extracts the session UUID from a full session key.
 // Returns the UUID and true if the key matches the Pico session pattern.
@@ -202,7 +208,7 @@ func (h *Handler) readJSONLSession(dir, sessionID string) (sessionFile, error) {
 	}, nil
 }
 
-func buildSessionListItem(sessionID string, sess sessionFile) sessionListItem {
+func buildSessionListItem(sessionID string, sess sessionFile, toolFeedbackMaxArgsLength int) sessionListItem {
 	preview := ""
 	for _, msg := range sess.Messages {
 		if msg.Role == "user" {
@@ -219,7 +225,7 @@ func buildSessionListItem(sessionID string, sess sessionFile) sessionListItem {
 	}
 	title := preview
 
-	validMessageCount := len(visibleSessionMessages(sess.Messages))
+	validMessageCount := len(visibleSessionMessages(sess.Messages, toolFeedbackMaxArgsLength))
 
 	return sessionListItem{
 		ID:           sessionID,
@@ -260,7 +266,7 @@ func sessionMessagePreview(msg providers.Message) string {
 	return ""
 }
 
-func visibleSessionMessages(messages []providers.Message) []sessionChatMessage {
+func visibleSessionMessages(messages []providers.Message, toolFeedbackMaxArgsLength int) []sessionChatMessage {
 	transcript := make([]sessionChatMessage, 0, len(messages))
 
 	for _, msg := range messages {
@@ -275,6 +281,17 @@ func visibleSessionMessages(messages []providers.Message) []sessionChatMessage {
 			}
 
 		case "assistant":
+			// Reasoning-only assistant messages are transient display artifacts and
+			// should not be restored from session history.
+			if assistantMessageTransientThought(msg) {
+				continue
+			}
+
+			toolSummaryMessages := visibleAssistantToolSummaryMessages(msg.ToolCalls, toolFeedbackMaxArgsLength)
+			if len(toolSummaryMessages) > 0 {
+				transcript = append(transcript, toolSummaryMessages...)
+			}
+
 			visibleToolMessages := visibleAssistantToolMessages(msg.ToolCalls)
 			if len(visibleToolMessages) > 0 {
 				transcript = append(transcript, visibleToolMessages...)
@@ -283,7 +300,7 @@ func visibleSessionMessages(messages []providers.Message) []sessionChatMessage {
 			// Pico web chat can persist both visible `message` tool output and a
 			// later plain assistant reply in the same turn. Hide only the fixed
 			// internal summary that marks handled tool delivery.
-			if len(visibleToolMessages) > 0 || !sessionMessageVisible(msg) || assistantMessageInternalOnly(msg) {
+			if !sessionMessageVisible(msg) || assistantMessageInternalOnly(msg) {
 				continue
 			}
 
@@ -298,8 +315,61 @@ func visibleSessionMessages(messages []providers.Message) []sessionChatMessage {
 	return transcript
 }
 
+func assistantMessageTransientThought(msg providers.Message) bool {
+	return strings.TrimSpace(msg.Content) == "" &&
+		strings.TrimSpace(msg.ReasoningContent) != "" &&
+		len(msg.ToolCalls) == 0 &&
+		len(msg.Media) == 0
+}
+
 func assistantMessageInternalOnly(msg providers.Message) bool {
 	return strings.TrimSpace(msg.Content) == handledToolResponseSummaryText
+}
+
+func visibleAssistantToolSummaryMessages(
+	toolCalls []providers.ToolCall,
+	toolFeedbackMaxArgsLength int,
+) []sessionChatMessage {
+	if len(toolCalls) == 0 {
+		return nil
+	}
+	if toolFeedbackMaxArgsLength <= 0 {
+		toolFeedbackMaxArgsLength = defaultToolFeedbackMaxArgsLength()
+	}
+
+	messages := make([]sessionChatMessage, 0, len(toolCalls))
+	for _, tc := range toolCalls {
+		name := tc.Name
+		argsJSON := ""
+		if tc.Function != nil {
+			if name == "" {
+				name = tc.Function.Name
+			}
+			argsJSON = tc.Function.Arguments
+		}
+
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+
+		if strings.TrimSpace(argsJSON) == "" && len(tc.Arguments) > 0 {
+			if encodedArgs, err := json.Marshal(tc.Arguments); err == nil {
+				argsJSON = string(encodedArgs)
+			}
+		}
+
+		argsPreview := strings.TrimSpace(argsJSON)
+		if argsPreview == "" {
+			argsPreview = "{}"
+		}
+
+		messages = append(messages, sessionChatMessage{
+			Role:    "assistant",
+			Content: utils.FormatToolFeedbackMessage(name, utils.Truncate(argsPreview, toolFeedbackMaxArgsLength)),
+		})
+	}
+
+	return messages
 }
 
 func visibleAssistantToolMessages(toolCalls []providers.ToolCall) []sessionChatMessage {
@@ -347,7 +417,19 @@ func (h *Handler) sessionsDir() (string, error) {
 		return "", err
 	}
 
-	workspace := cfg.Agents.Defaults.Workspace
+	return resolveSessionsDir(cfg.Agents.Defaults.Workspace), nil
+}
+
+func (h *Handler) sessionRuntimeSettings() (string, int, error) {
+	cfg, err := config.LoadConfig(h.configPath)
+	if err != nil {
+		return "", 0, err
+	}
+
+	return resolveSessionsDir(cfg.Agents.Defaults.Workspace), cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(), nil
+}
+
+func resolveSessionsDir(workspace string) string {
 	if workspace == "" {
 		home, _ := os.UserHomeDir()
 		workspace = filepath.Join(home, ".picoclaw", "workspace")
@@ -363,14 +445,14 @@ func (h *Handler) sessionsDir() (string, error) {
 		}
 	}
 
-	return filepath.Join(workspace, "sessions"), nil
+	return filepath.Join(workspace, "sessions")
 }
 
 // handleListSessions returns a list of Pico session summaries.
 //
 //	GET /api/sessions
 func (h *Handler) handleListSessions(w http.ResponseWriter, r *http.Request) {
-	dir, err := h.sessionsDir()
+	dir, toolFeedbackMaxArgsLength, err := h.sessionRuntimeSettings()
 	if err != nil {
 		http.Error(w, "failed to resolve sessions directory", http.StatusInternalServerError)
 		return
@@ -454,7 +536,7 @@ func (h *Handler) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		}
 
 		seen[sessionID] = struct{}{}
-		items = append(items, buildSessionListItem(sessionID, sess))
+		items = append(items, buildSessionListItem(sessionID, sess, toolFeedbackMaxArgsLength))
 	}
 
 	// Sort by updated descending (most recent first)
@@ -502,7 +584,7 @@ func (h *Handler) handleGetSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dir, err := h.sessionsDir()
+	dir, toolFeedbackMaxArgsLength, err := h.sessionRuntimeSettings()
 	if err != nil {
 		http.Error(w, "failed to resolve sessions directory", http.StatusInternalServerError)
 		return
@@ -529,7 +611,7 @@ func (h *Handler) handleGetSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	messages := visibleSessionMessages(sess.Messages)
+	messages := visibleSessionMessages(sess.Messages, toolFeedbackMaxArgsLength)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{

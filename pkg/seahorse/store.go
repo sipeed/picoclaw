@@ -1178,9 +1178,14 @@ func (s *Store) SearchSummaries(ctx context.Context, input SearchInput) ([]Searc
 }
 
 func (s *Store) searchSummariesFTS(ctx context.Context, input SearchInput) ([]SearchResult, error) {
+	sanitized := SanitizeFTS5Query(input.Pattern)
+	if sanitized == "" {
+		return nil, nil
+	}
+
 	// Build WHERE clause for filters (used in both count and data queries)
 	whereClauses := []string{"summaries_fts MATCH ?"}
-	args := []any{input.Pattern}
+	args := []any{sanitized}
 
 	if input.ConversationID > 0 && !input.AllConversations {
 		whereClauses = append(whereClauses, "s.conversation_id = ?")
@@ -1326,9 +1331,14 @@ func (s *Store) SearchMessages(ctx context.Context, input SearchInput) ([]Search
 }
 
 func (s *Store) searchMessagesFTS(ctx context.Context, input SearchInput) ([]SearchResult, error) {
+	sanitized := SanitizeFTS5Query(input.Pattern)
+	if sanitized == "" {
+		return nil, nil
+	}
+
 	// Build WHERE clause for filters (used in both count and data queries)
 	whereClauses := []string{"messages_fts MATCH ?"}
-	args := []any{input.Pattern}
+	args := []any{sanitized}
 
 	if input.ConversationID > 0 && !input.AllConversations {
 		whereClauses = append(whereClauses, "m.conversation_id = ?")

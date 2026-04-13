@@ -316,3 +316,67 @@ func TestPicoChannel_HandleMessageSend_AllowsMediaOnly(t *testing.T) {
 		t.Fatal("timed out waiting for inbound media message")
 	}
 }
+
+func TestIsThoughtPayload(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload map[string]any
+		want    bool
+	}{
+		{
+			name:    "explicit thought bool",
+			payload: map[string]any{PayloadKeyThought: true},
+			want:    true,
+		},
+		{
+			name:    "thought false",
+			payload: map[string]any{PayloadKeyThought: false},
+			want:    false,
+		},
+		{
+			name:    "thought string ignored",
+			payload: map[string]any{PayloadKeyThought: "true"},
+			want:    false,
+		},
+		{
+			name:    "default normal",
+			payload: map[string]any{PayloadKeyContent: "hello"},
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isThoughtPayload(tt.payload); got != tt.want {
+				t.Fatalf("isThoughtPayload() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPicoClientChannel_HandleServerMessage_IgnoresThought(t *testing.T) {
+	mb := bus.NewMessageBus()
+	ch, err := NewPicoClientChannel(config.PicoClientConfig{
+		URL: "ws://localhost:8080/ws",
+	}, mb)
+	if err != nil {
+		t.Fatalf("NewPicoClientChannel() error = %v", err)
+	}
+
+	ch.ctx = context.Background()
+	pc := &picoConn{sessionID: "sess-thought"}
+
+	ch.handleServerMessage(pc, PicoMessage{
+		Type: TypeMessageCreate,
+		Payload: map[string]any{
+			PayloadKeyContent: "internal reasoning",
+			PayloadKeyThought: true,
+		},
+	})
+
+	select {
+	case msg := <-mb.InboundChan():
+		t.Fatalf("expected no inbound publish for thought payload, got %+v", msg)
+	case <-time.After(150 * time.Millisecond):
+	}
+}

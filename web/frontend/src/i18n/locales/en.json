@@ -16,19 +16,24 @@
     "logs": "Logs"
   },
   "launcherLogin": {
-    "title": "Launcher access",
-    "description": "Sign in with the dashboard access token for this launcher process (it may change after each restart unless you pin it with an environment variable or launcher config).",
-    "tokenLabel": "Token",
-    "tokenPlaceholder": "Enter access token",
-    "submit": "Continue to Dashboard",
-    "errorInvalid": "Invalid token. Please try again.",
-    "errorNetwork": "Network error. Please try again.",
-    "helpTitle": "Where to find the token",
-    "helpConsole": "Console mode: printed in the terminal when the launcher starts.",
-    "helpTray": "Tray mode: menu «Copy dashboard token».",
-    "helpConfig": "Launcher config file: {{path}}",
-    "helpLogFile": "Log file (startup line includes the token): {{path}}",
-    "helpEnv": "Stable token: set {{env}}."
+    "title": "Sign in",
+    "description": "Enter the dashboard password to continue.",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "Enter password",
+    "submit": "Sign in",
+    "errorInvalid": "Incorrect password. Please try again.",
+    "errorNetwork": "Network error. Please try again."
+  },
+  "launcherSetup": {
+    "title": "Set dashboard password",
+    "description": "Choose a password to protect access to this dashboard. You will use it every time you sign in.",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "At least 8 characters",
+    "confirmLabel": "Confirm password",
+    "confirmPlaceholder": "Repeat password",
+    "submit": "Set password",
+    "errorMismatch": "Passwords do not match.",
+    "errorNetwork": "Network error. Please try again."
   },
   "chat": {
     "welcome": "How can I help you today?",
@@ -42,6 +47,7 @@
       "step3": "Preparing response...",
       "step4": "Almost there..."
     },
+    "reasoningLabel": "Reasoning",
     "history": "History",
     "noHistory": "No chat history yet",
     "historyLoadFailed": "Failed to load chat history",
@@ -72,6 +78,11 @@
     }
   },
   "header": {
+    "logout": {
+      "tooltip": "Sign out",
+      "confirm": "Sign out",
+      "description": "Are you sure you want to sign out of the dashboard?"
+    },
     "gateway": {
       "stopDialog": {
         "title": "Stop Gateway Service?",

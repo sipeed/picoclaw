@@ -110,6 +110,17 @@ jobs:
           MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
 
+      - name: Build and upload Android arm64
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sudo apt-get install -y zip
+          make build-android-bundle
+          gh release upload "${{ inputs.tag }}" \
+            build/picoclaw-android-universal.zip \
+            --clobber
+
       - name: Apply release flags
         shell: bash
         env:

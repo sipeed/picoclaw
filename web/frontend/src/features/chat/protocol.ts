@@ -1,7 +1,10 @@
 import { toast } from "sonner"
 
 import { normalizeUnixTimestamp } from "@/features/chat/state"
-import { updateChatStore } from "@/store/chat"
+import {
+  type AssistantMessageKind,
+  updateChatStore,
+} from "@/store/chat"
 
 export interface PicoMessage {
   type: string
@@ -9,6 +12,16 @@ export interface PicoMessage {
   session_id?: string
   timestamp?: number | string
   payload?: Record<string, unknown>
+}
+
+function parseAssistantMessageKind(
+  payload: Record<string, unknown>,
+): AssistantMessageKind {
+  return payload.thought === true ? "thought" : "normal"
+}
+
+function hasAssistantKindPayload(payload: Record<string, unknown>): boolean {
+  return typeof payload.thought === "boolean"
 }
 
 export function handlePicoMessage(
@@ -25,6 +38,7 @@ export function handlePicoMessage(
     case "message.create": {
       const content = (payload.content as string) || ""
       const messageId = (payload.message_id as string) || `pico-${Date.now()}`
+      const kind = parseAssistantMessageKind(payload)
       const timestamp =
         message.timestamp !== undefined &&
         Number.isFinite(Number(message.timestamp))
@@ -38,6 +52,7 @@ export function handlePicoMessage(
             id: messageId,
             role: "assistant",
             content,
+            kind,
             timestamp,
           },
         ],
@@ -49,13 +64,21 @@ export function handlePicoMessage(
     case "message.update": {
       const content = (payload.content as string) || ""
       const messageId = payload.message_id as string
+      const hasKind = hasAssistantKindPayload(payload)
+      const kind = parseAssistantMessageKind(payload)
       if (!messageId) {
         break
       }
 
       updateChatStore((prev) => ({
         messages: prev.messages.map((msg) =>
-          msg.id === messageId ? { ...msg, content } : msg,
+          msg.id === messageId
+            ? {
+                ...msg,
+                content,
+                ...(hasKind ? { kind } : {}),
+              }
+            : msg,
         ),
       }))
       break

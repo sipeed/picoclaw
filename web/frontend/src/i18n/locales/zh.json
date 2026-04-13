@@ -16,19 +16,24 @@
     "logs": "日志"
   },
   "launcherLogin": {
-    "title": "Launcher 访问验证",
-    "description": "请使用当前 Launcher 进程的访问口令登录（每次重启可能变化，除非用环境变量或 launcher 配置固定）",
-    "tokenLabel": "令牌",
-    "tokenPlaceholder": "输入访问令牌",
-    "submit": "进入 Dashboard",
-    "errorInvalid": "令牌错误，请重试",
-    "errorNetwork": "网络错误，请重试",
-    "helpTitle": "口令在哪里",
-    "helpConsole": "控制台模式：启动时在终端输出",
-    "helpTray": "托盘模式：菜单「复制控制台口令」",
-    "helpConfig": "Launcher 配置文件：{{path}}",
-    "helpLogFile": "日志文件（启动时会写入口令）：{{path}}",
-    "helpEnv": "固定口令：设置环境变量 {{env}}"
+    "title": "登录",
+    "description": "请输入控制台密码以继续。",
+    "passwordLabel": "密码",
+    "passwordPlaceholder": "输入密码",
+    "submit": "登录",
+    "errorInvalid": "密码错误，请重试。",
+    "errorNetwork": "网络错误，请重试。"
+  },
+  "launcherSetup": {
+    "title": "设置控制台密码",
+    "description": "设置一个密码来保护控制台访问权限，登录时需要输入此密码。",
+    "passwordLabel": "密码",
+    "passwordPlaceholder": "至少 8 个字符",
+    "confirmLabel": "确认密码",
+    "confirmPlaceholder": "再次输入密码",
+    "submit": "设置密码",
+    "errorMismatch": "两次输入的密码不一致。",
+    "errorNetwork": "网络错误，请重试。"
   },
   "chat": {
     "welcome": "今天我能为您做些什么？",
@@ -42,6 +47,7 @@
       "step3": "准备回复...",
       "step4": "马上就好..."
     },
+    "reasoningLabel": "思考",
     "history": "历史记录",
     "noHistory": "暂无对话历史",
     "historyLoadFailed": "加载历史记录失败",
@@ -72,6 +78,11 @@
     }
   },
   "header": {
+    "logout": {
+      "tooltip": "退出登录",
+      "confirm": "退出登录",
+      "description": "确定要退出仪表盘登录吗？"
+    },
     "gateway": {
       "stopDialog": {
         "title": "停止服务？",

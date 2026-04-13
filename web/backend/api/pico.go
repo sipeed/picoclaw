@@ -64,7 +64,7 @@ func (h *Handler) handleWebSocketProxy() http.HandlerFunc {
 
 		gatewayAvailable := false
 		// Prefer fresh PID file data when available.
-		if pidData := ppid.ReadPidFileWithCheck(globalConfigDir()); pidData != nil {
+		if pidData := h.sanitizeGatewayPidData(ppid.ReadPidFileWithCheck(globalConfigDir()), nil); pidData != nil {
 			gateway.mu.Lock()
 			gateway.pidData = pidData
 			setGatewayRuntimeStatusLocked("running")

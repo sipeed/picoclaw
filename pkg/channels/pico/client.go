@@ -242,7 +242,11 @@ func (c *PicoClientChannel) handleInbound(pc *picoConn, msg PicoMessage) {
 }
 
 func (c *PicoClientChannel) handleServerMessage(pc *picoConn, msg PicoMessage) {
-	content, _ := msg.Payload["content"].(string)
+	if isThoughtPayload(msg.Payload) {
+		return
+	}
+
+	content, _ := msg.Payload[PayloadKeyContent].(string)
 	if strings.TrimSpace(content) == "" {
 		return
 	}
@@ -285,7 +289,7 @@ func (c *PicoClientChannel) Send(ctx context.Context, msg bus.OutboundMessage) (
 	}
 
 	outMsg := newMessage(TypeMessageSend, map[string]any{
-		"content": msg.Content,
+		PayloadKeyContent: msg.Content,
 	})
 	outMsg.SessionID = strings.TrimPrefix(msg.ChatID, "pico_client:")
 	return nil, pc.writeJSON(outMsg)

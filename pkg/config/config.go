@@ -24,25 +24,41 @@ var rrCounter atomic.Uint64
 // CurrentVersion is the latest config schema version
 const CurrentVersion = 2
 
-// Config is the current config structure with version support
+// Config is the current config structure with version support.
 type Config struct {
-	Version   int             `json:"version"            yaml:"-"` // Config schema version for migration
-	Agents    AgentsConfig    `json:"agents"             yaml:"-"`
-	Bindings  []AgentBinding  `json:"bindings,omitempty" yaml:"-"`
-	Session   SessionConfig   `json:"session,omitempty"  yaml:"-"`
-	Channels  ChannelsConfig  `json:"channels"           yaml:"channels"`
-	ModelList SecureModelList `json:"model_list"         yaml:"model_list"` // New model-centric provider configuration
-	Gateway   GatewayConfig   `json:"gateway"            yaml:"-"`
-	Hooks     HooksConfig     `json:"hooks,omitempty"    yaml:"-"`
-	Tools     ToolsConfig     `json:"tools"              yaml:",inline"`
-	Heartbeat HeartbeatConfig `json:"heartbeat"          yaml:"-"`
-	Devices   DevicesConfig   `json:"devices"            yaml:"-"`
-	Voice     VoiceConfig     `json:"voice"              yaml:"-"`
+	Version   int             `json:"version"             yaml:"-"` // Config schema version for migration
+	Isolation IsolationConfig `json:"isolation,omitempty" yaml:"-"`
+	Agents    AgentsConfig    `json:"agents"              yaml:"-"`
+	Bindings  []AgentBinding  `json:"bindings,omitempty"  yaml:"-"`
+	Session   SessionConfig   `json:"session,omitempty"   yaml:"-"`
+	Channels  ChannelsConfig  `json:"channels"            yaml:"channels"`
+	ModelList SecureModelList `json:"model_list"          yaml:"model_list"` // New model-centric provider configuration
+	Gateway   GatewayConfig   `json:"gateway"             yaml:"-"`
+	Hooks     HooksConfig     `json:"hooks,omitempty"     yaml:"-"`
+	Tools     ToolsConfig     `json:"tools"               yaml:",inline"`
+	Heartbeat HeartbeatConfig `json:"heartbeat"           yaml:"-"`
+	Devices   DevicesConfig   `json:"devices"             yaml:"-"`
+	Voice     VoiceConfig     `json:"voice"               yaml:"-"`
 	// BuildInfo contains build-time version information
 	BuildInfo BuildInfo `json:"build_info,omitempty" yaml:"-"`
 
 	// cache for sensitive values and compiled regex (computed once)
 	sensitiveCache *SensitiveDataCache
+}
+
+// IsolationConfig controls subprocess isolation for commands started by PicoClaw.
+// It is applied by the isolation package rather than by sandboxing the main process.
+type IsolationConfig struct {
+	Enabled     bool         `json:"enabled,omitempty"`
+	ExposePaths []ExposePath `json:"expose_paths,omitempty"`
+}
+
+// ExposePath describes a host path that should remain visible inside the isolated
+// child-process environment. This is currently implemented on Linux only.
+type ExposePath struct {
+	Source string `json:"source"`
+	Target string `json:"target,omitempty"`
+	Mode   string `json:"mode"`
 }
 
 // FilterSensitiveData filters sensitive values from content before sending to LLM.

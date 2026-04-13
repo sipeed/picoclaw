@@ -11,11 +11,14 @@ export interface ChatAttachment {
   filename?: string
 }
 
+export type AssistantMessageKind = "normal" | "thought"
+
 export interface ChatMessage {
   id: string
   role: "user" | "assistant"
   content: string
   timestamp: number | string
+  kind?: AssistantMessageKind
   attachments?: ChatAttachment[]
 }
 

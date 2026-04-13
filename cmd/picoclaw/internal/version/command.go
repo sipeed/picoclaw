@@ -1,11 +1,10 @@
 package version
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
+	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/cliui"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -23,12 +22,6 @@ func NewVersionCommand() *cobra.Command {
 }
 
 func printVersion() {
-	fmt.Printf("%s picoclaw %s\n", internal.Logo, config.FormatVersion())
 	build, goVer := config.FormatBuildInfo()
-	if build != "" {
-		fmt.Printf("  Build: %s\n", build)
-	}
-	if goVer != "" {
-		fmt.Printf("  Go: %s\n", goVer)
-	}
+	cliui.PrintVersion(internal.Logo, "picoclaw "+config.FormatVersion(), build, goVer)
 }

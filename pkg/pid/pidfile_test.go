@@ -244,6 +244,40 @@ func TestRemovePidFileNonexistent(t *testing.T) {
 	RemovePidFile(dir)
 }
 
+func TestRemovePidFileIfPID(t *testing.T) {
+	dir := tmpDir(t)
+
+	other := PidFileData{PID: 99999999, Token: "deadbeef12345678deadbeef12345678"}
+	raw, _ := json.MarshalIndent(other, "", "  ")
+	path := filepath.Join(dir, pidFileName)
+	os.WriteFile(path, raw, 0o600)
+
+	removed := RemovePidFileIfPID(dir, 99999999)
+	if !removed {
+		t.Fatal("expected RemovePidFileIfPID to remove matching pid file")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("PID file should be removed for matching expected PID")
+	}
+}
+
+func TestRemovePidFileIfPIDMismatch(t *testing.T) {
+	dir := tmpDir(t)
+
+	other := PidFileData{PID: 99999999, Token: "deadbeef12345678deadbeef12345678"}
+	raw, _ := json.MarshalIndent(other, "", "  ")
+	path := filepath.Join(dir, pidFileName)
+	os.WriteFile(path, raw, 0o600)
+
+	removed := RemovePidFileIfPID(dir, 88888888)
+	if removed {
+		t.Fatal("expected RemovePidFileIfPID to keep non-matching pid file")
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Error("PID file should NOT be removed for mismatching expected PID")
+	}
+}
+
 // TestReadPidFileUnlockedInvalidJSON returns error for malformed content.
 func TestReadPidFileUnlockedInvalidJSON(t *testing.T) {
 	dir := tmpDir(t)

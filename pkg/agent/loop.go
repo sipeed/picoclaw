@@ -88,6 +88,7 @@ type processOptions struct {
 	DefaultResponse         string              // Response when LLM returns empty
 	EnableSummary           bool                // Whether to trigger summarization
 	SendResponse            bool                // Whether to send response via bus
+	AllowInterimPicoPublish bool                // Whether pico tool-call interim text can be published when SendResponse is false
 	SuppressToolFeedback    bool                // Whether to suppress inline tool feedback messages
 	NoHistory               bool                // If true, don't load session history (for heartbeat)
 	SkipInitialSteeringPoll bool                // If true, skip the steering poll at loop start (used by Continue)
@@ -104,6 +105,8 @@ const (
 	toolLimitResponse          = "I've reached `max_tool_iterations` without a final response. Increase `max_tool_iterations` in config.json if this task needs more tool steps."
 	handledToolResponseSummary = "Requested output delivered via tool attachment."
 	sessionKeyAgentPrefix      = "agent:"
+	metadataKeyMessageKind     = "message_kind"
+	messageKindThought         = "thought"
 	metadataKeyAccountID       = "account_id"
 	metadataKeyGuildID         = "guild_id"
 	metadataKeyTeamID          = "team_id"
@@ -671,21 +674,21 @@ func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatI
 		return
 	}
 
-	alreadySent := false
+	alreadySentToSameChat := false
 	defaultAgent := al.GetRegistry().GetDefaultAgent()
 	if defaultAgent != nil {
 		if tool, ok := defaultAgent.Tools.Get("message"); ok {
 			if mt, ok := tool.(*tools.MessageTool); ok {
-				alreadySent = mt.HasSentInRound()
+				alreadySentToSameChat = mt.HasSentTo(channel, chatID)
 			}
 		}
 	}
 
-	if alreadySent {
+	if alreadySentToSameChat {
 		logger.DebugCF(
 			"agent",
-			"Skipped outbound (message tool already sent)",
-			map[string]any{"channel": channel},
+			"Skipped outbound (message tool already sent to same chat)",
+			map[string]any{"channel": channel, "chat_id": chatID},
 		)
 		return
 	}
@@ -1398,18 +1401,19 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		})
 
 	opts := processOptions{
-		SessionKey:        sessionKey,
-		Channel:           msg.Channel,
-		ChatID:            msg.ChatID,
-		MessageID:         msg.MessageID,
-		ReplyToMessageID:  inboundMetadata(msg, metadataKeyReplyToMessage),
-		SenderID:          msg.SenderID,
-		SenderDisplayName: msg.Sender.DisplayName,
-		UserMessage:       msg.Content,
-		Media:             msg.Media,
-		DefaultResponse:   defaultResponse,
-		EnableSummary:     true,
-		SendResponse:      false,
+		SessionKey:              sessionKey,
+		Channel:                 msg.Channel,
+		ChatID:                  msg.ChatID,
+		MessageID:               msg.MessageID,
+		ReplyToMessageID:        inboundMetadata(msg, metadataKeyReplyToMessage),
+		SenderID:                msg.SenderID,
+		SenderDisplayName:       msg.Sender.DisplayName,
+		UserMessage:             msg.Content,
+		Media:                   msg.Media,
+		DefaultResponse:         defaultResponse,
+		EnableSummary:           true,
+		SendResponse:            false,
+		AllowInterimPicoPublish: true,
 	}
 
 	// context-dependent commands check their own Runtime fields and report
@@ -1618,6 +1622,41 @@ func (al *AgentLoop) targetReasoningChannelID(channelName string) (chatID string
 		return ch.ReasoningChannelID()
 	}
 	return ""
+}
+
+func (al *AgentLoop) publishPicoReasoning(ctx context.Context, reasoningContent, chatID string) {
+	if reasoningContent == "" || chatID == "" {
+		return
+	}
+
+	if ctx.Err() != nil {
+		return
+	}
+
+	pubCtx, pubCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer pubCancel()
+
+	if err := al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+		Channel: "pico",
+		ChatID:  chatID,
+		Content: reasoningContent,
+		Metadata: map[string]string{
+			metadataKeyMessageKind: messageKindThought,
+		},
+	}); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
+			errors.Is(err, bus.ErrBusClosed) {
+			logger.DebugCF("agent", "Pico reasoning publish skipped (timeout/cancel)", map[string]any{
+				"channel": "pico",
+				"error":   err.Error(),
+			})
+		} else {
+			logger.WarnCF("agent", "Failed to publish pico reasoning (best-effort)", map[string]any{
+				"channel": "pico",
+				"error":   err.Error(),
+			})
+		}
+	}
 }
 
 func (al *AgentLoop) handleReasoning(
@@ -2221,12 +2260,16 @@ turnLoop:
 		if reasoningContent == "" {
 			reasoningContent = response.ReasoningContent
 		}
-		go al.handleReasoning(
-			turnCtx,
-			reasoningContent,
-			ts.channel,
-			al.targetReasoningChannelID(ts.channel),
-		)
+		if ts.channel == "pico" {
+			go al.publishPicoReasoning(turnCtx, reasoningContent, ts.chatID)
+		} else {
+			go al.handleReasoning(
+				turnCtx,
+				reasoningContent,
+				ts.channel,
+				al.targetReasoningChannelID(ts.channel),
+			)
+		}
 		al.emitEvent(
 			EventKindLLMResponse,
 			ts.eventMeta("runTurn", "turn.llm.response"),
@@ -2253,9 +2296,29 @@ turnLoop:
 		}
 		logger.DebugCF("agent", "LLM response", llmResponseFields)
 
+		if al.bus != nil && ts.channel == "pico" && len(response.ToolCalls) > 0 && ts.opts.AllowInterimPicoPublish {
+			if strings.TrimSpace(response.Content) != "" {
+				outCtx, outCancel := context.WithTimeout(turnCtx, 3*time.Second)
+				err := al.bus.PublishOutbound(outCtx, bus.OutboundMessage{
+					Channel: ts.channel,
+					ChatID:  ts.chatID,
+					Content: response.Content,
+				})
+				outCancel()
+				if err != nil {
+					logger.WarnCF("agent", "Failed to publish pico interim tool-call content", map[string]any{
+						"error":     err.Error(),
+						"channel":   ts.channel,
+						"chat_id":   ts.chatID,
+						"iteration": iteration,
+					})
+				}
+			}
+		}
+
 		if len(response.ToolCalls) == 0 || gracefulTerminal {
 			responseContent := response.Content
-			if responseContent == "" && response.ReasoningContent != "" {
+			if responseContent == "" && response.ReasoningContent != "" && ts.channel != "pico" {
 				responseContent = response.ReasoningContent
 			}
 			if steerMsgs := al.dequeueSteeringMessagesForScope(ts.sessionKey); len(steerMsgs) > 0 {
@@ -2390,7 +2453,7 @@ turnLoop:
 								string(argsJSON),
 								al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(),
 							)
-							feedbackMsg := fmt.Sprintf("\U0001f527 `%s`\n```\n%s\n```", toolName, feedbackPreview)
+							feedbackMsg := utils.FormatToolFeedbackMessage(toolName, feedbackPreview)
 							fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
 							_ = al.bus.PublishOutbound(fbCtx, bus.OutboundMessage{
 								Channel: ts.channel,
@@ -2672,7 +2735,7 @@ turnLoop:
 					string(argsJSON),
 					al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(),
 				)
-				feedbackMsg := fmt.Sprintf("\U0001f527 `%s`\n```\n%s\n```", tc.Name, feedbackPreview)
+				feedbackMsg := utils.FormatToolFeedbackMessage(tc.Name, feedbackPreview)
 				fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
 				_ = al.bus.PublishOutbound(fbCtx, bus.OutboundMessage{
 					Channel: ts.channel,
