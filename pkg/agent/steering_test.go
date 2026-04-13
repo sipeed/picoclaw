@@ -1081,6 +1081,29 @@ func TestAgentLoop_Steering_BtwCommandBypassesQueuedTurn(t *testing.T) {
 		t.Fatal("timeout waiting for first LLM call to start")
 	}
 
+	messageTool, ok := al.GetRegistry().GetDefaultAgent().Tools.Get("message")
+	var mt *tools.MessageTool
+	if !ok {
+		mt = tools.NewMessageTool()
+		al.RegisterTool(mt)
+	} else {
+		var typeOK bool
+		mt, typeOK = messageTool.(*tools.MessageTool)
+		if !typeOK {
+			t.Fatal("expected message tool type")
+		}
+	}
+	mt.SetSendCallback(func(channel, chatID, content, replyToMessageID string) error {
+		return nil
+	})
+	if result := mt.Execute(context.Background(), map[string]any{
+		"channel": "test",
+		"chat_id": "chat1",
+		"content": "already sent from busy turn",
+	}); result == nil || result.IsError {
+		t.Fatalf("message tool setup result = %+v, want successful send", result)
+	}
+
 	if err := msgBus.PublishInbound(pubCtx, btw); err != nil {
 		t.Fatalf("publish /btw inbound: %v", err)
 	}
@@ -1103,11 +1126,15 @@ func TestAgentLoop_Steering_BtwCommandBypassesQueuedTurn(t *testing.T) {
 
 	select {
 	case outbound := <-msgBus.OutboundChan():
-		if outbound.Content != "long turn finished" {
-			t.Fatalf("expected original turn response after release, got %q", outbound.Content)
-		}
+		t.Fatalf("expected busy turn final response to stay suppressed, got %q", outbound.Content)
 	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for original turn response")
+	}
+
+	provider.mu.Lock()
+	callCount := provider.calls
+	provider.mu.Unlock()
+	if callCount != 2 {
+		t.Fatalf("provider call count = %d, want 2", callCount)
 	}
 
 	cancelRun()

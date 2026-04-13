@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -244,6 +245,10 @@ func TestProcessMessage_BtwCommandRunsWithoutPersistingHistory(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 	provider := &recordingProvider{}
 	al := NewAgentLoop(cfg, msgBus, provider)
+	defaultAgent := al.GetRegistry().GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("expected default agent")
+	}
 
 	msg := bus.InboundMessage{
 		Channel:  "telegram",
@@ -251,6 +256,17 @@ func TestProcessMessage_BtwCommandRunsWithoutPersistingHistory(t *testing.T) {
 		ChatID:   "chat-1",
 		Content:  "/btw explain side effects",
 	}
+	route, _, err := al.resolveMessageRoute(msg)
+	if err != nil {
+		t.Fatalf("resolveMessageRoute() error = %v", err)
+	}
+	sessionKey := resolveScopeKey(route, msg.SessionKey)
+	initialHistory := []providers.Message{
+		{Role: "user", Content: "We decided to avoid global state."},
+		{Role: "assistant", Content: "Right, keep it request-scoped."},
+	}
+	defaultAgent.Sessions.SetHistory(sessionKey, initialHistory)
+	defaultAgent.Sessions.SetSummary(sessionKey, "The team decided to keep state request-scoped.")
 
 	response, err := al.processMessage(context.Background(), msg)
 	if err != nil {
@@ -262,20 +278,88 @@ func TestProcessMessage_BtwCommandRunsWithoutPersistingHistory(t *testing.T) {
 	if len(provider.lastMessages) == 0 {
 		t.Fatal("provider did not receive any messages")
 	}
+	if len(provider.lastMessages) != 4 {
+		t.Fatalf("provider messages len = %d, want 4 (system + history + user)", len(provider.lastMessages))
+	}
+	if !strings.Contains(provider.lastMessages[0].Content, "The team decided to keep state request-scoped.") {
+		t.Fatalf("system prompt missing session summary: %q", provider.lastMessages[0].Content)
+	}
+	if provider.lastMessages[1].Content != initialHistory[0].Content ||
+		provider.lastMessages[2].Content != initialHistory[1].Content {
+		t.Fatalf("provider history = %+v, want seeded session history", provider.lastMessages[1:3])
+	}
 
 	lastMessage := provider.lastMessages[len(provider.lastMessages)-1]
 	if lastMessage.Role != "user" || lastMessage.Content != "explain side effects" {
 		t.Fatalf("last provider message = %+v, want stripped /btw question", lastMessage)
 	}
 
-	route, _, err := al.resolveMessageRoute(msg)
-	if err != nil {
-		t.Fatalf("resolveMessageRoute() error = %v", err)
-	}
-	sessionKey := resolveScopeKey(route, msg.SessionKey)
 	history := al.GetRegistry().GetDefaultAgent().Sessions.GetHistory(sessionKey)
-	if len(history) != 0 {
-		t.Fatalf("session history len = %d, want 0 for /btw", len(history))
+	if !reflect.DeepEqual(history, initialHistory) {
+		t.Fatalf("session history = %#v, want %#v", history, initialHistory)
+	}
+}
+
+func TestPublishResponseIfNeeded_SkipsWhenNonDefaultAgentAlreadySentToChat(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+			List: []config.AgentConfig{
+				{ID: "main", Default: true},
+				{ID: "support"},
+			},
+		},
+		Tools: config.ToolsConfig{
+			Message: config.ToolConfig{Enabled: true},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, &recordingProvider{})
+
+	supportAgent, ok := al.GetRegistry().GetAgent("support")
+	if !ok || supportAgent == nil {
+		t.Fatal("expected support agent")
+	}
+
+	tool, ok := supportAgent.Tools.Get("message")
+	if !ok {
+		t.Fatal("expected message tool on support agent")
+	}
+	mt, ok := tool.(*tools.MessageTool)
+	if !ok {
+		t.Fatal("expected message tool type")
+	}
+
+	if result := mt.Execute(context.Background(), map[string]any{
+		"channel": "telegram",
+		"chat_id": "chat-1",
+		"content": "interim reply",
+	}); result == nil || result.IsError {
+		t.Fatalf("message tool setup result = %+v, want successful send", result)
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Content != "interim reply" {
+			t.Fatalf("expected setup outbound %q, got %#v", "interim reply", outbound)
+		}
+	default:
+		t.Fatal("expected interim outbound from message tool setup")
+	}
+
+	al.PublishResponseIfNeeded(context.Background(), "telegram", "chat-1", "final reply")
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		t.Fatalf("expected final reply to be suppressed, got outbound %#v", outbound)
+	default:
 	}
 }
 

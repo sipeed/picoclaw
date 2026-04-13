@@ -645,7 +645,7 @@ func (al *AgentLoop) drainBusToSteering(ctx context.Context, activeScope, active
 
 		if handled, response := al.tryHandlePriorityCommand(ctx, msg); handled {
 			if response != "" {
-				al.PublishResponseIfNeeded(ctx, msg.Channel, msg.ChatID, response)
+				al.publishResponse(ctx, msg.Channel, msg.ChatID, response)
 			}
 			continue
 		}
@@ -676,20 +676,32 @@ func (al *AgentLoop) Stop() {
 	al.running.Store(false)
 }
 
+func (al *AgentLoop) resetMessageToolRound(agent *AgentInstance) {
+	if agent == nil {
+		return
+	}
+
+	if tool, ok := agent.Tools.Get("message"); ok {
+		if resetter, ok := tool.(interface{ ResetSentInRound() }); ok {
+			resetter.ResetSentInRound()
+		}
+	}
+}
+
 func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatID, response string) {
 	if response == "" {
 		return
 	}
 
 	alreadySentToSameChat := false
-	defaultAgent := al.GetRegistry().GetDefaultAgent()
-	if defaultAgent != nil {
-		if tool, ok := defaultAgent.Tools.Get("message"); ok {
-			if mt, ok := tool.(*tools.MessageTool); ok {
-				alreadySentToSameChat = mt.HasSentTo(channel, chatID)
-			}
+	al.GetRegistry().ForEachTool("message", func(tool tools.Tool) {
+		if alreadySentToSameChat {
+			return
 		}
-	}
+		if mt, ok := tool.(*tools.MessageTool); ok && mt.HasSentTo(channel, chatID) {
+			alreadySentToSameChat = true
+		}
+	})
 
 	if alreadySentToSameChat {
 		logger.DebugCF(
@@ -697,6 +709,14 @@ func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatI
 			"Skipped outbound (message tool already sent to same chat)",
 			map[string]any{"channel": channel, "chat_id": chatID},
 		)
+		return
+	}
+
+	al.publishResponse(ctx, channel, chatID, response)
+}
+
+func (al *AgentLoop) publishResponse(ctx context.Context, channel, chatID, response string) {
+	if response == "" {
 		return
 	}
 
@@ -1364,20 +1384,35 @@ func (al *AgentLoop) askSideQuestion(
 	}
 
 	var channel, chatID, senderID, senderDisplayName string
+	var media []string
 	var activeSkills []string
+	var history []providers.Message
+	var summary string
 	if opts != nil {
 		channel = opts.Channel
 		chatID = opts.ChatID
 		senderID = opts.SenderID
 		senderDisplayName = opts.SenderDisplayName
+		media = append([]string(nil), opts.Media...)
 		activeSkills = activeSkillNames(agent, *opts)
+
+		if !opts.NoHistory {
+			if resp, err := al.contextManager.Assemble(ctx, &AssembleRequest{
+				SessionKey: opts.SessionKey,
+				Budget:     agent.ContextWindow,
+				MaxTokens:  agent.MaxTokens,
+			}); err == nil && resp != nil {
+				history = resp.History
+				summary = resp.Summary
+			}
+		}
 	}
 
 	messages := agent.ContextBuilder.BuildMessages(
-		nil,
-		"",
+		history,
+		summary,
 		question,
-		nil,
+		media,
 		channel,
 		chatID,
 		senderID,
@@ -1476,11 +1511,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
-	if tool, ok := agent.Tools.Get("message"); ok {
-		if resetter, ok := tool.(interface{ ResetSentInRound() }); ok {
-			resetter.ResetSentInRound()
-		}
-	}
+	al.resetMessageToolRound(agent)
 
 	// Resolve session key from route, while preserving explicit agent-scoped keys.
 	scopeKey := resolveScopeKey(route, msg.SessionKey)
