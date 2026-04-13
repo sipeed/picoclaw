@@ -252,7 +252,13 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 		"content": msg.Content,
 	})
 
-	return nil, c.broadcastToSession(msg.ChatID, outMsg)
+	err := c.broadcastToSession(msg.ChatID, outMsg)
+
+	// Send typing stop after the message is delivered
+	stopMsg := newMessage(TypeTypingStop, nil)
+	_ = c.broadcastToSession(msg.ChatID, stopMsg)
+
+	return nil, err
 }
 
 // EditMessage implements channels.MessageEditor.
