@@ -5,9 +5,8 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
-	"github.com/sipeed/picoclaw/pkg/config"
-
 	_ "github.com/sipeed/picoclaw/pkg/channels/email"
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 // TestInitChannels_EmailPickedUp verifies that a channel with Enabled=true is
