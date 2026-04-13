@@ -417,7 +417,7 @@ PicoClaw hỗ trợ 30+ Provider LLM thông qua cấu hình `model_list`. Sử d
 | [Xiaomi MiMo](https://platform.xiaomimimo.com/) | `mimo/` | Bắt buộc | Mô hình MiMo |
 | [Ollama](https://ollama.com/) | `ollama/` | Không cần | Mô hình cục bộ, tự lưu trữ |
 | [vLLM](https://docs.vllm.ai/) | `vllm/` | Không cần | Triển khai cục bộ, tương thích OpenAI |
-| [OVMS](https://docs.openvino.ai/2024/openvino-workflow/model-server.html) | `ovms/` | Không cần | Intel OpenVINO Model Server, tương thích OpenAI |
+| [OVMS](https://docs.openvino.ai/2026/model-server/ovms_docs_llm_quickstart.html) | `ovms/` | Không cần | Intel OpenVINO Model Server, tương thích OpenAI |
 | [LiteLLM](https://docs.litellm.ai/) | `litellm/` | Tùy | Proxy cho 100+ provider |
 | [Azure OpenAI](https://portal.azure.com/) | `azure/` | Bắt buộc | Triển khai Azure doanh nghiệp |
 | [GitHub Copilot](https://github.com/features/copilot) | `github-copilot/` | OAuth | Đăng nhập bằng device code |

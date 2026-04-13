@@ -417,7 +417,7 @@ PicoClaw は `model_list` 設定を通じて 30 以上の LLM Provider をサポ
 | [Xiaomi MiMo](https://platform.xiaomimimo.com/) | `mimo/` | 必須 | MiMo モデル |
 | [Ollama](https://ollama.com/) | `ollama/` | 不要 | ローカルモデル、セルフホスト |
 | [vLLM](https://docs.vllm.ai/) | `vllm/` | 不要 | ローカルデプロイ、OpenAI 互換 |
-| [OVMS](https://docs.openvino.ai/2024/openvino-workflow/model-server.html) | `ovms/` | 不要 | Intel OpenVINO Model Server、OpenAI 互換 |
+| [OVMS](https://docs.openvino.ai/2026/model-server/ovms_docs_llm_quickstart.html) | `ovms/` | 不要 | Intel OpenVINO Model Server、OpenAI 互換 |
 | [LiteLLM](https://docs.litellm.ai/) | `litellm/` | 場合による | 100 以上の Provider のプロキシ |
 | [Azure OpenAI](https://portal.azure.com/) | `azure/` | 必須 | エンタープライズ Azure デプロイ |
 | [GitHub Copilot](https://github.com/features/copilot) | `github-copilot/` | OAuth | デバイスコードログイン |

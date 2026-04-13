@@ -416,7 +416,7 @@ PicoClaw supporta 30+ provider LLM tramite la configurazione `model_list`. Usa i
 | [Xiaomi MiMo](https://platform.xiaomimimo.com/) | `mimo/` | Richiesta | Modelli MiMo |
 | [Ollama](https://ollama.com/) | `ollama/` | Non necessaria | Modelli locali, self-hosted |
 | [vLLM](https://docs.vllm.ai/) | `vllm/` | Non necessaria | Deploy locale, compatibile OpenAI |
-| [OVMS](https://docs.openvino.ai/2024/openvino-workflow/model-server.html) | `ovms/` | Non necessaria | Intel OpenVINO Model Server, compatibile OpenAI |
+| [OVMS](https://docs.openvino.ai/2026/model-server/ovms_docs_llm_quickstart.html) | `ovms/` | Non necessaria | Intel OpenVINO Model Server, compatibile OpenAI |
 | [LiteLLM](https://docs.litellm.ai/) | `litellm/` | Variabile | Proxy per 100+ provider |
 | [Azure OpenAI](https://portal.azure.com/) | `azure/` | Richiesta | Deploy Azure enterprise |
 | [GitHub Copilot](https://github.com/features/copilot) | `github-copilot/` | OAuth | Login con device code |
