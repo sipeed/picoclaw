@@ -29,7 +29,7 @@ IMPORTANT RULES:
 2. NEVER guess or invent Vuetify selectors like .v-dialog, .v-dialog--active, .v-overlay, .v-card, etc.
 3. For login, COPY THE CODE VERBATIM from the "Login Flow (copy-paste ready)" block in /skills/app-selectors/SKILL.md.
    Do NOT rewrite it. Do NOT use input[type="email"], input[type="password"], or any selector not in that block.
-   The correct URL is https://dashboard.int3nt.info/login (with /login — NOT the root URL).
+   The correct URL is {{BASE_URL}}/login (with /login — NOT the root URL).
    The correct selectors are .v-text-field (NOT input[type="email"]) and .organization-card.
    The login button MUST be: page.getByRole('button', { name: /login/i })
    The button text is "Login" (ONE word). NEVER use filter({ hasText: /Log In/ }) or /^Log In$/ — those will NEVER match.
@@ -117,8 +117,3 @@ If fails:
 - re-run
 
 Repeat until PASS or blocked
-
-Final report must include:
-- terminal output
-- fixes applied
-- final result

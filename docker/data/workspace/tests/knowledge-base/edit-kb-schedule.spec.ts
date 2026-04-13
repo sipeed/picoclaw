@@ -5,7 +5,7 @@ test('Edit Knowledge Base Schedule', async ({ page }) => {
   // STEP 1: Login
   // ============================================================
   console.log('📍 Step 1: Navigate to login page');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
   await page.locator('.login-card').waitFor({ state: 'visible', timeout: 10000 });
 
   console.log('📍 Step 1a: Fill email and password');
@@ -33,7 +33,7 @@ test('Edit Knowledge Base Schedule', async ({ page }) => {
   // ============================================================
   // STEP 3: Verify redirect to dashboard
   // ============================================================
-  console.log('📍 Step 3: Verify redirect to https://dashboard.int3nt.info/');
+  console.log('📍 Step 3: Verify redirect to ');
   await expect(page).toHaveURL(/https:\/\/dashboard\.int3nt\.info\//);
   console.log('✅ PASS: Step 3 - Redirected to dashboard');
 

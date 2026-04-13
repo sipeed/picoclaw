@@ -11,7 +11,7 @@ test.describe('Knowledge Base - Create KB Bucket with GCS', () => {
     console.log('\n📍 Step 1: Perform case "Login"');
 
     // Navigate to login
-    await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+    await page.goto('/login', { waitUntil: 'networkidle' });
     await page.waitForURL(/\/login/);
     await page.locator('.login-card').waitFor({ state: 'visible' });
 
@@ -55,15 +55,15 @@ test.describe('Knowledge Base - Create KB Bucket with GCS', () => {
     await orgCard.click();
 
     // Wait for redirect to dashboard
-    await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 15000 });
+    await page.waitForURL(url => !url.searchParams.has('select_org'), { timeout: 15000 });
 
     console.log('✅ PASS: Step 2 - Organization Testing2026! selected');
 
-    // Step 3: User redirected to https://dashboard.int3nt.info/
-    console.log('\n📍 Step 3: User redirected to https://dashboard.int3nt.info/');
+    // Step 3: User redirected to dashboard
+    console.log('\n📍 Step 3: User redirected to dashboard');
 
     const dashboardUrl = page.url();
-    expect(dashboardUrl).toContain('dashboard.int3nt.info');
+    expect(dashboardUrl).not.toContain('login');
     expect(dashboardUrl).not.toContain('?select_org');
     console.log(`  ℹ️  Current URL: ${dashboardUrl}`);
 

@@ -9,7 +9,7 @@ test('Schedule Knowledge Base Full Sync with Simple Mode', async ({ page }) => {
   // Step 1: Login
   // =========================================================================
   console.log('📍 Step 1: Login with credentials');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
   await page.waitForURL(/\/login/, { timeout: 20000 });
   await page.locator('.login-card').waitFor({ state: 'visible', timeout: 10000 });
 
@@ -55,7 +55,7 @@ test('Schedule Knowledge Base Full Sync with Simple Mode', async ({ page }) => {
   // =========================================================================
   console.log('📍 Step 3: Verify redirect to dashboard');
   await expect(page).toHaveURL(/https:\/\/dashboard\.int3nt\.info\/?$/);
-  console.log('✅ PASS: Step 3 - Redirected to https://dashboard.int3nt.info/');
+  console.log('✅ PASS: Step 3 - Redirected to ');
 
   // =========================================================================
   // Step 4: Click "Knowledge Base" in the left sidebar

@@ -8,7 +8,7 @@ test('Flow Tester - Model Node with Parser Flow Test', async ({ page }) => {
   // ============================================================================
   console.log('📍 Step 1: Login to dashboard');
   
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
   
   // Fill credentials
   await page.locator('.v-text-field').nth(0).locator('input').fill('heidi@intnt.ai');

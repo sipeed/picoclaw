@@ -5,7 +5,7 @@ test('Model Node without Parser Flow - User sends "hello" and receives narcissis
 
   // ========== STEP 1: Navigate to login page ==========
   console.log('📍 Step 1: Navigate to login page');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
   await page.locator('.login-card').waitFor({ state: 'visible', timeout: 10000 });
   console.log('✅ PASS: Step 1 - Login page loaded');
 

@@ -13,7 +13,7 @@ test('API Key edit description flow', async ({ page }) => {
   console.log('✅ PASS: Step 1-2 - Login and organization selection completed');
 
   // Step 3: Verify redirect to dashboard
-  console.log('\n📍 Step 3: Verify redirect to https://dashboard.int3nt.info/');
+  console.log('\n📍 Step 3: Verify redirect to ');
   await expect(page).toHaveURL(/.*dashboard\.int3nt\.info\/?$/);
   console.log('✅ PASS: Step 3 - User redirected to dashboard');
 

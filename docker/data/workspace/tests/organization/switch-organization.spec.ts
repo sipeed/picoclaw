@@ -81,7 +81,7 @@ test('Organization switching flow', async ({ page }) => {
 
   // Step 7: Verify redirect and active organization
   console.log('\n📍 Step 7: Verify redirect to dashboard and active organization is testing2026');
-  await page.waitForURL('**/dashboard.int3nt.info/', { timeout: 15000 });
+  await page.waitForURL('**/', { timeout: 15000 });
   await expect(page).toHaveURL(/.*dashboard\.int3nt\.info\/?$/);
 
   // Verify the active organization display

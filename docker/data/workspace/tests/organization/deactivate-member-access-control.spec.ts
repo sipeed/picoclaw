@@ -82,7 +82,7 @@ test('Deactivate organization member flow and disabled organization access', asy
   await loginForm.locator('input').nth(1).fill(memberPassword);
   await page.locator('button[type="submit"]').click();
 
-  await page.waitForURL('**/dashboard.int3nt.info/?select_org', { timeout: 15000 });
+  await page.waitForURL('**/?select_org', { timeout: 15000 });
   console.log('✅ PASS: Step 9 - Logged in and on selection page');
 
   // Step 10: Locate Disabled Organization card

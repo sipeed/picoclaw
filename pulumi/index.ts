@@ -220,6 +220,8 @@ const e2eJob = new gcp.cloudrunv2.Job("picoclaw-e2e-job", {
                     envs: [
                         // JOB_TYPE: run-all | run | autofix | generate | prompt
                         { name: "JOB_TYPE", value: "run-all" },
+                        // ENVIRONMENT: UAT | PREVIEW-PROD (maps to BASE_URL in entrypoint-job.sh)
+                        { name: "ENVIRONMENT", value: "UAT" },
                         // JOB_SPEC: used when JOB_TYPE=run or autofix
                         { name: "JOB_SPEC", value: "" },
                         // used when JOB_TYPE=generate

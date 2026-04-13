@@ -8,7 +8,7 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   // ============================================================================
 
   console.log('📍 Step 1: Navigate to login page');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
   await page.locator('.login-card').waitFor({ state: 'visible', timeout: 10000 });
   console.log('✅ PASS: Step 1 - Login page loaded');
 

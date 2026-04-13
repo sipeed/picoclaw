@@ -26,7 +26,7 @@ IMPORTANT RULES:
 1. ONLY use selectors from the SKILL.md files and /tests/organization/ORG_REFERENCE.md.
 2. NEVER guess or invent selectors not found in those documents.
 3. For login, COPY THE CODE VERBATIM from the "Login Flow (copy-paste ready)" block in /skills/app-selectors/SKILL.md.
-   The correct URL is https://dashboard.int3nt.info/login (with /login — NOT the root URL).
+   The correct URL is {{BASE_URL}}/login (with /login — NOT the root URL).
    The correct selectors are .v-text-field and .organization-card.
    The login button MUST be: page.getByRole('button', { name: /login/i })
    CORRECT post-login pattern:
@@ -76,8 +76,3 @@ If fails:
 - re-run
 
 Repeat until PASS or blocked
-
-Final report must include:
-- terminal output
-- fixes applied
-- final result

@@ -7,7 +7,7 @@ test('Schedule KB with Incremental Sync in Simple Mode', async ({ page }) => {
   // STEP 1: LOGIN
   // ============================================================================
   console.log('📍 Step 1: Navigate to login page');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
 
   console.log('📍 Step 2: Fill email and password');
   await page.locator('.v-text-field').nth(0).locator('input').fill('heidi@intnt.ai');

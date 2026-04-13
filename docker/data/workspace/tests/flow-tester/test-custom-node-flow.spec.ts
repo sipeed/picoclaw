@@ -4,7 +4,7 @@ test('Custom Node Flow - Send message and verify bot responses', async ({ page }
   test.setTimeout(90000); // ← first line, before any steps
 
   console.log('📍 Step 1: Navigate to login page');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
   console.log('✅ PASS: Step 1 - Login page loaded');
 
   console.log('📍 Step 2: Fill email and password');

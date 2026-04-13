@@ -3,6 +3,27 @@ set -e
 
 WORKSPACE="/home/picoclaw/.picoclaw/workspace"
 
+# ── Environment selection ─────────────────────────────────────────────────────
+# ENVIRONMENT controls which dashboard URL is targeted.
+# Pass --update-env-vars="ENVIRONMENT=UAT" or --update-env-vars="ENVIRONMENT=PREVIEW-PROD"
+# BASE_URL can also be set directly to override this mapping.
+if [ -z "$BASE_URL" ]; then
+  case "${ENVIRONMENT:-UAT}" in
+    UAT)
+      BASE_URL="https://dashboard.int3nt.info"
+      ;;
+    PREVIEW-PROD)
+      BASE_URL="https://dashboard-preview.intentai.com"
+      ;;
+    *)
+      echo "ERROR: Unknown ENVIRONMENT=${ENVIRONMENT} (valid: UAT, PREVIEW-PROD)"
+      exit 1
+      ;;
+  esac
+fi
+export BASE_URL
+echo "=== Target environment: ${ENVIRONMENT:-UAT} ($BASE_URL) ==="
+
 # Config secret is mounted at .picoclaw-config (not .picoclaw) so it doesn't
 # create a read-only tmpfs that would block the GCS workspace volume mount.
 # Copy config.json to the location picoclaw expects before anything else runs.
@@ -183,8 +204,10 @@ case "$JOB_TYPE" in
     echo "Autofixing test: $JOB_SPEC ..."
     PROMPT=$(node -e "
 const fs = require('fs');
-const t = fs.readFileSync('$TEMPLATE', 'utf8');
-process.stdout.write(t.replace(/\{\{SPEC_FILE\}\}/g, '$JOB_SPEC'));
+let t = fs.readFileSync('$TEMPLATE', 'utf8');
+t = t.replace(/\{\{SPEC_FILE\}\}/g, process.env.JOB_SPEC || '');
+t = t.replace(/\{\{BASE_URL\}\}/g, process.env.BASE_URL || 'https://dashboard.int3nt.info');
+process.stdout.write(t);
 ")
     picoclaw agent -m "$PROMPT"
     ;;
@@ -206,6 +229,7 @@ let t = fs.readFileSync('$TEMPLATE', 'utf8');
 t = t.replace(/\{\{TEST_FILE\}\}/g, process.env.JOB_TEST_FILE || '');
 t = t.replace(/\{\{STEPS\}\}/g, process.env.JOB_STEPS || '');
 t = t.replace(/\{\{EXPECTED_RESULT\}\}/g, process.env.JOB_EXPECTED_RESULT || '');
+t = t.replace(/\{\{BASE_URL\}\}/g, process.env.BASE_URL || 'https://dashboard.int3nt.info');
 process.stdout.write(t);
 ")
     picoclaw agent -m "$PROMPT"

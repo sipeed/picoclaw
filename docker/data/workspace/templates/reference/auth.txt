@@ -32,7 +32,7 @@ Create a reference file at: /tests/auth/AUTH_REFERENCE.md
 List every file path you read in Phase 1. If the list contains fewer than 8 files, go back and complete Phase 1.
 
 ### 1. Login Page
-- URL: https://dashboard.int3nt.info/login
+- URL: {{BASE_URL}}/login
 - Selector for email field
 - Selector for password field
 - Selector for the Login button (exact button text)

@@ -7,7 +7,7 @@ test('Create KB schedule with Full Sync in ADVANCED mode', async ({ page }) => {
   // STEP 1: Login
   // ============================================================================
   console.log('📍 Step 1: Navigate to login page');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
 
   console.log('📍 Step 2: Fill login credentials');
   await page.locator('.v-text-field').nth(0).locator('input').fill('heidi@intnt.ai');

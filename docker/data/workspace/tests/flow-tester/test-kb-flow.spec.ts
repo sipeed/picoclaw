@@ -4,7 +4,7 @@ test('Knowledge Base Flow — Send "Hello" and verify bot response', async ({ pa
   test.setTimeout(120000); // 2 minutes — KB retrieval can be slow
 
   console.log('📍 Step 1: Navigate to login page');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
   console.log('✅ PASS: Step 1 - Navigated to login page');
 
   console.log('📍 Step 2: Fill credentials and click Login');

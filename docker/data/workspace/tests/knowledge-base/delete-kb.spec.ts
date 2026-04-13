@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test('Delete Knowledge Base Bucket', async ({ page }) => {
   console.log('📍 Step 1: Navigate to login page');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
   await page.locator('.login-card').waitFor({ state: 'visible', timeout: 10000 });
 
   console.log('📍 Step 1a: Fill email and password');
@@ -24,7 +24,7 @@ test('Delete Knowledge Base Bucket', async ({ page }) => {
   await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 15000 });
   console.log('✅ PASS: Step 2 - Organization selected');
 
-  console.log('📍 Step 3: Verify redirect to https://dashboard.int3nt.info/');
+  console.log('📍 Step 3: Verify redirect to ');
   await expect(page).toHaveURL(/https:\/\/dashboard\.int3nt\.info\//);
   console.log('✅ PASS: Step 3 - Redirected to dashboard');
 

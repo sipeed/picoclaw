@@ -1,16 +1,39 @@
 # Cloud Run Jobs
 
-The `picoclaw-e2e` Cloud Run Job runs via `entrypoint-job.sh`. Behaviour is controlled by the `JOB_TYPE` environment variable passed at execution time with `--update-env-vars`.
+The `picoclaw-e2e` Cloud Run Job runs via `entrypoint-job.sh`. Behaviour is controlled by `JOB_TYPE` and `ENVIRONMENT` environment variables passed at execution time with `--update-env-vars`.
 
 **Base command:**
 ```bash
 gcloud run jobs execute picoclaw-e2e \
   --region=europe-west4 \
   --container=picoclaw \
-  --update-env-vars="JOB_TYPE=<type>"
+  --update-env-vars="JOB_TYPE=<type>" \
+  --update-env-vars="ENVIRONMENT=<env>"
 ```
 
 > `--container=picoclaw` is required for multi-container jobs. Without it gcloud crashes with `'NoneType' object has no attribute 'template'`.
+
+---
+
+## ENVIRONMENT
+
+Controls which dashboard is targeted. Defaults to `UAT` if not specified.
+
+| Value | URL |
+|---|---|
+| `UAT` *(default)* | `https://dashboard.int3nt.info` |
+| `PREVIEW-PROD` | `https://dashboard-preview.intentai.com` |
+
+```bash
+# Run against Preview PROD
+gcloud run jobs execute picoclaw-e2e \
+  --region=europe-west4 \
+  --container=picoclaw \
+  --update-env-vars="JOB_TYPE=run-all" \
+  --update-env-vars="ENVIRONMENT=PREVIEW-PROD"
+```
+
+> You can also override the URL directly with `--update-env-vars="BASE_URL=https://..."` which takes precedence over `ENVIRONMENT`.
 
 ---
 
