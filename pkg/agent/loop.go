@@ -3405,10 +3405,16 @@ func (al *AgentLoop) applyExplicitSkillCommand(
 		if opts == nil || strings.TrimSpace(opts.SessionKey) == "" {
 			return true, true, commandsUnavailableSkillMessage()
 		}
-		al.setPendingSkills(opts.SessionKey, []string{skillName})
+		armedSkills := al.setPendingSkills(opts.SessionKey, []string{skillName})
+		if len(armedSkills) == 1 {
+			return true, true, fmt.Sprintf(
+				"Skill %q is armed for your next message. Send your next prompt normally, or use /use clear to cancel.",
+				skillName,
+			)
+		}
 		return true, true, fmt.Sprintf(
-			"Skill %q is armed for your next message. Send your next prompt normally, or use /use clear to cancel.",
-			skillName,
+			"Skills %s are armed for your next message. Send your next prompt normally, or use /use clear to cancel.",
+			quoteSkillNames(armedSkills),
 		)
 	}
 
@@ -3540,24 +3546,27 @@ func buildUseCommandHelp(agent *AgentInstance) string {
 	)
 }
 
-func (al *AgentLoop) setPendingSkills(sessionKey string, skillNames []string) {
+func (al *AgentLoop) setPendingSkills(sessionKey string, skillNames []string) []string {
 	sessionKey = strings.TrimSpace(sessionKey)
 	if sessionKey == "" || len(skillNames) == 0 {
-		return
+		return nil
 	}
 
-	filtered := make([]string, 0, len(skillNames))
-	for _, name := range skillNames {
-		name = strings.TrimSpace(name)
-		if name != "" {
-			filtered = append(filtered, name)
+	merged := make([]string, 0, len(skillNames))
+	if existingValue, ok := al.pendingSkills.Load(sessionKey); ok {
+		if existingSkills, ok := existingValue.([]string); ok {
+			merged = append(merged, existingSkills...)
 		}
 	}
+	merged = append(merged, skillNames...)
+
+	filtered := uniqueSkillNames(merged)
 	if len(filtered) == 0 {
-		return
+		return nil
 	}
 
 	al.pendingSkills.Store(sessionKey, filtered)
+	return append([]string(nil), filtered...)
 }
 
 func (al *AgentLoop) takePendingSkills(sessionKey string) []string {
@@ -3585,6 +3594,31 @@ func (al *AgentLoop) clearPendingSkills(sessionKey string) {
 		return
 	}
 	al.pendingSkills.Delete(sessionKey)
+}
+
+func uniqueSkillNames(skillNames []string) []string {
+	filtered := make([]string, 0, len(skillNames))
+	seen := make(map[string]struct{}, len(skillNames))
+	for _, name := range skillNames {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+		filtered = append(filtered, name)
+	}
+	return filtered
+}
+
+func quoteSkillNames(skillNames []string) string {
+	quoted := make([]string, 0, len(skillNames))
+	for _, name := range skillNames {
+		quoted = append(quoted, fmt.Sprintf("%q", name))
+	}
+	return strings.Join(quoted, ", ")
 }
 
 func mapCommandError(result commands.ExecuteResult) string {

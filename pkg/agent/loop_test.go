@@ -365,6 +365,60 @@ func TestApplyExplicitSkillCommand_ArmsSkillForNextMessage(t *testing.T) {
 	}
 }
 
+func TestApplyExplicitSkillCommand_AppendsPendingSkillsForNextMessage(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	for _, skillName := range []string{"shell", "finance-news"} {
+		skillDir := filepath.Join(cfg.Agents.Defaults.Workspace, "skills", skillName)
+		if err := os.MkdirAll(skillDir, 0o755); err != nil {
+			t.Fatalf("MkdirAll(%s) error = %v", skillName, err)
+		}
+		if err := os.WriteFile(
+			filepath.Join(skillDir, "SKILL.md"),
+			[]byte("# "+skillName+"\n\nSkill test fixture.\n"),
+			0o644,
+		); err != nil {
+			t.Fatalf("WriteFile(%s/SKILL.md) error = %v", skillName, err)
+		}
+	}
+
+	agent := al.GetRegistry().GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent")
+	}
+
+	opts := &processOptions{SessionKey: "agent:main:test"}
+	_, handled, reply := al.applyExplicitSkillCommand("/use shell", agent, opts)
+	if !handled {
+		t.Fatal("expected /use shell to be handled")
+	}
+	if !strings.Contains(reply, `Skill "shell" is armed for your next message`) {
+		t.Fatalf("unexpected first reply: %q", reply)
+	}
+
+	_, handled, reply = al.applyExplicitSkillCommand("/use finance-news", agent, opts)
+	if !handled {
+		t.Fatal("expected /use finance-news to be handled")
+	}
+	if !strings.Contains(reply, `Skills "shell", "finance-news" are armed for your next message`) {
+		t.Fatalf("unexpected second reply: %q", reply)
+	}
+
+	_, handled, reply = al.applyExplicitSkillCommand("/use shell", agent, opts)
+	if !handled {
+		t.Fatal("expected duplicate /use shell to be handled")
+	}
+	if !strings.Contains(reply, `Skills "shell", "finance-news" are armed for your next message`) {
+		t.Fatalf("unexpected duplicate reply: %q", reply)
+	}
+
+	pending := al.takePendingSkills(opts.SessionKey)
+	if !slices.Equal(pending, []string{"shell", "finance-news"}) {
+		t.Fatalf("pending skills = %#v, want [shell finance-news]", pending)
+	}
+}
+
 func TestApplyExplicitSkillCommand_InlineMessageMutatesOptions(t *testing.T) {
 	al, cfg, _, _, cleanup := newTestAgentLoop(t)
 	defer cleanup()
