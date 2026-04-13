@@ -46,7 +46,7 @@ data:
         },
         "telegram": {
           "enabled": true,
-          "token": "file://secrets/telegram-token",
+          "token": "env://PICOCLAW_TELEGRAM_TOKEN",
           "base_url": "",
           "proxy": "",
           "allow_from": [
@@ -258,7 +258,7 @@ data:
           "model_name": "gemini-flash",
           "model": "openai/gemini-3-flash-preview",
           "api_base": "https://generativelanguage.googleapis.com/v1beta/openai/",
-          "api_key": "env://GOOGLE_API_KEY",
+          "api_key": "env://PICOCLAW_GOOGLE_API_KEY",
           "request_timeout": 300
         },
         {
