@@ -1,0 +1,138 @@
+# PicoClaw Policy Configuration
+# This file defines security policies for the PicoClaw agent
+# Format: YAML
+# Location: ~/.picoclaw/.policy.yml (alongside config.json)
+
+# Enable or disable policy evaluation
+enabled: true
+
+# Timeout in seconds for policy evaluation
+timeout: 5
+
+# Default behavior when no rules match
+# true = allow by default, false = deny by default
+default_allow: false
+
+# List of tools that are explicitly allowed (if specified, only these can be used)
+allowed_tools:
+  - "web_search"
+  - "web_fetch"
+  - "message"
+  - "send_file"
+  - "load_image"
+  # - "bash"  # Dangerous tools should not be in allowed list
+  # - "shell"
+
+# List of tools that are explicitly denied
+denied_tools:
+  - "bash"
+  - "shell"
+  - "exec"
+  - "system"
+  - "rm"
+  - "delete"
+
+# List of intents that are explicitly allowed
+allowed_intents:
+  - "search"
+  - "fetch"
+  - "communicate"
+  - "read_file"
+  # - "execute_code"  # Dangerous intents should not be allowed
+  # - "modify_system"
+
+# List of intents that are explicitly denied
+denied_intents:
+  - "execute_code"
+  - "modify_system"
+  - "delete_files"
+  - "install_software"
+
+# Maximum number of arguments a tool call can have
+max_tool_args: 10
+
+# List of tools that require explicit user approval before execution
+require_approval:
+  - "spawn"
+  - "subagent"
+  - "install_skill"
+  - "mcp"
+
+# Argument patterns to detect and block dangerous operations
+argument_patterns:
+  - tool: "bash"
+    argument: "command"
+    pattern: "^(rm|sudo|chmod|chown|dd|mkfs)"
+    action: "deny"
+    reason: "Destructive system commands are not allowed"
+  
+  - tool: "bash"
+    argument: "command"
+    pattern: "(wget|curl).*(\\|.*sh|\\|.*bash)"
+    action: "deny"
+    reason: "Piping remote scripts to shell is not allowed"
+  
+  - tool: "web_fetch"
+    argument: "url"
+    pattern: "^file://"
+    action: "deny"
+    reason: "Local file access via web_fetch is not allowed"
+  
+  - tool: "send_file"
+    argument: "path"
+    pattern: "^(/etc/|/root/|\\.ssh/)"
+    action: "deny"
+    reason: "Access to sensitive directories is not allowed"
+  
+  - tool: "spawn"
+    argument: "task"
+    pattern: "(delete|remove|destroy|format)"
+    action: "require_approval"
+    reason: "Destructive tasks require approval"
+
+# Custom rules with conditions
+rules:
+  - id: "block-dangerous-shells"
+    description: "Block shell commands with dangerous patterns"
+    condition: "tool.name == bash"
+    tools:
+      - "bash"
+      - "shell"
+    action: "deny"
+    priority: 100
+  
+  - id: "allow-safe-search"
+    description: "Allow web search operations"
+    tools:
+      - "web_search"
+      - "web_fetch"
+    action: "allow"
+    priority: 50
+  
+  - id: "require-approval-for-spawn"
+    description: "Require approval for spawning subagents"
+    tools:
+      - "spawn"
+      - "subagent"
+    action: "require_approval"
+    priority: 75
+  
+  - id: "block-system-modification"
+    description: "Block any intent to modify system"
+    intents:
+      - "modify_system"
+      - "install_software"
+      - "configure_system"
+    action: "deny"
+    priority: 100
+  
+  - id: "limit-file-access"
+    description: "Restrict file access to workspace"
+    tools:
+      - "send_file"
+      - "load_image"
+    action: "require_approval"
+    priority: 60
+
+# Custom policies (advanced - Rego-like syntax support in future versions)
+custom_policies: {}

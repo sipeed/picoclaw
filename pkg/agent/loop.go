@@ -27,6 +27,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/policy"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -45,6 +46,9 @@ type AgentLoop struct {
 	// Event system (from Incoming)
 	eventBus *EventBus
 	hooks    *HookManager
+
+	// Policy evaluator for security enforcement
+	policyEvaluator *policy.Evaluator
 
 	// Runtime state
 	running        atomic.Bool
@@ -156,6 +160,23 @@ func NewAgentLoop(
 	al.hooks = NewHookManager(eventBus)
 	configureHookManagerFromConfig(al.hooks, cfg)
 	al.contextManager = al.resolveContextManager()
+
+	// Initialize policy evaluator for security enforcement
+	var configPath string
+	if cfg.Path != "" {
+		configPath = cfg.Path
+	} else {
+		configPath = "config.yml"
+	}
+	policyEval, err := policy.NewEvaluator(cfg, configPath)
+	if err != nil {
+		logger.WarnCF("agent", "Failed to initialize policy evaluator", map[string]any{"error": err.Error()})
+	} else {
+		al.policyEvaluator = policyEval
+		logger.InfoCF("agent", "Policy evaluator initialized", map[string]any{
+			"enabled": policyEval.IsEnabled(),
+		})
+	}
 
 	// Register shared tools to all agents (now that al is created)
 	registerSharedTools(al, cfg, msgBus, registry, provider)
@@ -2400,6 +2421,50 @@ turnLoop:
 
 			toolName := tc.Name
 			toolArgs := cloneStringAnyMap(tc.Arguments)
+
+			// Policy evaluation: Check if tool call is allowed
+			if al.policyEvaluator != nil {
+				toolCall := policy.ToolCall{
+					Name:      toolName,
+					Arguments: toolArgs,
+					Channel:   ts.channel,
+					ChatID:    ts.chatID,
+					SenderID:  ts.opts.SenderID,
+				}
+				policyResult, err := al.policyEvaluator.EvaluateToolCall(turnCtx, toolCall)
+				if err != nil {
+					logger.WarnCF("agent", "Policy evaluation error", map[string]any{
+						"tool":  toolName,
+						"error": err.Error(),
+					})
+				} else if !policyResult.Allowed {
+					allResponsesHandled = false
+					denyContent := fmt.Sprintf("Tool execution denied by policy: %s", policyResult.Reason)
+					al.emitEvent(
+						EventKindToolExecSkipped,
+						ts.eventMeta("runTurn", "turn.tool.skipped"),
+						ToolExecSkippedPayload{
+							Tool:   toolName,
+							Reason: denyContent,
+						},
+					)
+					deniedMsg := providers.Message{
+						Role:       "tool",
+						Content:    denyContent,
+						ToolCallID: tc.ID,
+					}
+					messages = append(messages, deniedMsg)
+					if !ts.opts.NoHistory {
+						ts.agent.Sessions.AddFullMessage(ts.sessionKey, deniedMsg)
+						ts.recordPersistedMessage(deniedMsg)
+					}
+					logger.InfoCF("agent", "Tool call blocked by policy", map[string]any{
+						"tool":   toolName,
+						"reason": policyResult.Reason,
+					})
+					continue
+				}
+			}
 
 			if al.hooks != nil {
 				toolReq, decision := al.hooks.BeforeTool(turnCtx, &ToolCallHookRequest{
