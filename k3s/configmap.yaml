@@ -47,7 +47,7 @@ data:
         },
         "telegram": {
           "enabled": true,
-          "token": "file://secrets/telegram-token",
+          "token": "env://PICOCLAW_TELEGRAM_TOKEN",
           "base_url": "",
           "proxy": "",
           "allow_from": [
@@ -255,7 +255,7 @@ data:
           "model_name": "gemini-flash",
           "model": "gemini-3-flash-preview",
           "api_base": "https://generativelanguage.googleapis.com/v1beta/openai/",
-          "api_key": "file://secrets/google-api-key",
+          "api_key": "env://PICOCLAW_GOOGLE_API_KEY",
           "request_timeout": 300
         },
         {
@@ -319,11 +319,6 @@ data:
           "model_name": "deepseek-v3",
           "model": "shengsuanyun/deepseek-v3",
           "api_base": "https://api.shengsuanyun.com/v1"
-        },
-        {
-          "model_name": "gemini-flash",
-          "model": "antigravity/gemini-3-flash",
-          "auth_method": "oauth"
         },
         {
           "model_name": "copilot-gpt-5.4",

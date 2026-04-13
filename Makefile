@@ -325,7 +325,7 @@ docker-run:
 ## docker-build-rpi: Build Raspberry Pi specific Docker image (ARM64)
 docker-build-rpi:
 	@echo "Building Raspberry Pi Docker image (ARM64)..."
-	docker build --platform linux/arm64 -t $(DOCKER_USER)/picoclaw-rpi:latest -f docker/Dockerfile.rpi .
+	docker build --no-cache --platform linux/arm64 -t $(DOCKER_USER)/picoclaw-rpi:latest -f docker/Dockerfile.rpi .
 
 ## docker-push-rpi: Push Raspberry Pi specific Docker image (ARM64)
 docker-push-rpi:
