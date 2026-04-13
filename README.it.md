@@ -164,11 +164,19 @@ In alternativa, scarica il binario per la tua piattaforma dalla pagina delle [Gi
 
 ### Compila dai sorgenti (per lo sviluppo)
 
+Prerequisiti:
+
+- Go 1.25+
+- Node.js 22+ con Corepack abilitato per le build Web UI / launcher
+
 ```bash
 git clone https://github.com/sipeed/picoclaw.git
 
 cd picoclaw
 make deps
+
+# Installa il package manager frontend dichiarato dal repository
+(cd web/frontend && corepack install)
 
 # Compila il binario core
 make build
@@ -176,7 +184,7 @@ make build
 # Compila il Web UI Launcher (necessario per la modalità WebUI)
 make build-launcher
 
-# Compila per più piattaforme
+# Compila i binari core per tutte le piattaforme gestite dal Makefile
 make build-all
 
 # Compila per Raspberry Pi Zero 2 W (32-bit: make build-linux-arm; 64-bit: make build-linux-arm64)

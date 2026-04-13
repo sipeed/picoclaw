@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -181,9 +182,7 @@ func (p *Provider) buildRequestBody(
 
 	// Merge extra body fields configured per-provider/model.
 	// These are injected last so they take precedence over defaults.
-	for k, v := range p.extraBody {
-		requestBody[k] = v
-	}
+	maps.Copy(requestBody, p.extraBody)
 
 	return requestBody
 }

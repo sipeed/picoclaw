@@ -281,6 +281,12 @@ func visibleSessionMessages(messages []providers.Message, toolFeedbackMaxArgsLen
 			}
 
 		case "assistant":
+			// Reasoning-only assistant messages are transient display artifacts and
+			// should not be restored from session history.
+			if assistantMessageTransientThought(msg) {
+				continue
+			}
+
 			toolSummaryMessages := visibleAssistantToolSummaryMessages(msg.ToolCalls, toolFeedbackMaxArgsLength)
 			if len(toolSummaryMessages) > 0 {
 				transcript = append(transcript, toolSummaryMessages...)
@@ -307,6 +313,13 @@ func visibleSessionMessages(messages []providers.Message, toolFeedbackMaxArgsLen
 	}
 
 	return transcript
+}
+
+func assistantMessageTransientThought(msg providers.Message) bool {
+	return strings.TrimSpace(msg.Content) == "" &&
+		strings.TrimSpace(msg.ReasoningContent) != "" &&
+		len(msg.ToolCalls) == 0 &&
+		len(msg.Media) == 0
 }
 
 func assistantMessageInternalOnly(msg providers.Message) bool {

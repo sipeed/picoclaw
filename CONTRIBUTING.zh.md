@@ -108,7 +108,7 @@ git checkout -b 你的功能分支名
 - 有关联 Issue 时请引用：`Fix session leak (#123)`。
 - 保持 commit 专注，每个 commit 只做一件事。
 - 对于小的清理或拼写修正，提 PR 前请将其合并为一个 commit。
-- 按照 https://www.conventionalcommits.org/zh-hans/v1.0.0/ 规范来撰写
+- 按照 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/v1.0.0/) 规范来撰写
 
 ### 保持与上游同步
 

@@ -108,7 +108,7 @@ Use descriptive branch names, e.g. `fix/telegram-timeout`, `feat/ollama-provider
 - Reference the related issue when relevant: `Fix session leak (#123)`.
 - Keep commits focused. One logical change per commit is preferred.
 - For minor cleanups or typo fixes, squash them into a single commit before opening a PR.
-- Refer to https://www.conventionalcommits.org/zh-hans/v1.0.0/
+- Refer to [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
 
 ### Keeping Up to Date
 

@@ -164,22 +164,32 @@ Alternatively, download the binary for your platform from the [GitHub Releases](
 
 ### Build from source (for development)
 
+Prerequisites:
+
+- Go 1.25+
+- Node.js 22+ with Corepack enabled for Web UI / launcher builds
+
 ```bash
 git clone https://github.com/sipeed/picoclaw.git
 
 cd picoclaw
 make deps
 
-# Build core binary
+# Install frontend package manager declared by the repo
+(cd web/frontend && corepack install)
+
+# Build the core binary for the current platform
 make build
 
-# Build Web UI Launcher (required for WebUI mode)
+# Build the Web UI Launcher (required for WebUI mode)
 make build-launcher
 
-# Build for multiple platforms
+# Build core binaries for all Makefile-managed platforms
 make build-all
 
-# Build for Raspberry Pi Zero 2 W (32-bit: make build-linux-arm; 64-bit: make build-linux-arm64)
+# Build for Raspberry Pi Zero 2 W
+# 32-bit: make build-linux-arm
+# 64-bit: make build-linux-arm64
 make build-pi-zero
 
 # Build and install
@@ -215,7 +225,7 @@ picoclaw-launcher
 <img src="assets/launcher-webui.jpg" alt="WebUI Launcher" width="600">
 </p>
 
-**Getting started:** 
+**Getting started:**
 
 Open the WebUI, then: **1)** Configure a Provider (add your LLM API key) -> **2)** Configure a Channel (e.g., Telegram) -> **3)** Start the Gateway -> **4)** Chat!
 
@@ -293,7 +303,7 @@ picoclaw-launcher-tui
 <img src="assets/launcher-tui.jpg" alt="TUI Launcher" width="600">
 </p>
 
-**Getting started:** 
+**Getting started:**
 
 Use the TUI menus to: **1)** Configure a Provider -> **2)** Configure a Channel -> **3)** Start the Gateway -> **4)** Chat!
 
@@ -368,7 +378,7 @@ This creates `~/.picoclaw/config.json` and the workspace directory.
 ```
 
 > See `config/config.example.json` in the repo for a complete configuration template with all available options.
-> 
+>
 > Please note: config.example.json format is version 0, with sensitive codes in it, and will be auto migrated to version 1+, then, the config.json will only store insensitive data, the sensitive codes will be stored in .security.yml, if you need manually modify the codes, please see `docs/security_configuration.md` for more details.
 
 
