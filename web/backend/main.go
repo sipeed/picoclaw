@@ -219,7 +219,7 @@ func main() {
 		logger.Fatalf("Invalid port %q: %v", effectivePort, err)
 	}
 
-	dashboardToken, dashboardSigningKey, dashboardTokenSource, dashErr := launcherconfig.EnsureDashboardSecrets(
+	dashboardToken, dashboardSigningKey, _, dashErr := launcherconfig.EnsureDashboardSecrets(
 		launcherCfg,
 	)
 	if dashErr != nil {
@@ -227,6 +227,7 @@ func main() {
 	}
 	dashboardSessionCookie := middleware.SessionCookieValue(dashboardSigningKey, dashboardToken)
 
+	fmt.Println("dashboardToken: ", dashboardToken)
 	// Open the bcrypt password store (creates the DB file on first run).
 	authStore, authStoreErr := dashboardauth.New(picoHome)
 	var passwordStore api.PasswordStore
@@ -308,26 +309,6 @@ func main() {
 			}
 		}
 		fmt.Println()
-		switch dashboardTokenSource {
-		case launcherconfig.DashboardTokenSourceRandom:
-			fmt.Printf("  Dashboard password (this run): %s\n", maskSecret(dashboardToken))
-		case launcherconfig.DashboardTokenSourceEnv:
-			fmt.Printf("  Dashboard password: from environment variable PICOCLAW_LAUNCHER_TOKEN\n")
-		case launcherconfig.DashboardTokenSourceConfig:
-			fmt.Printf("  Dashboard password: configured in %s\n", launcherPath)
-		}
-		fmt.Println()
-	}
-
-	switch dashboardTokenSource {
-	case launcherconfig.DashboardTokenSourceEnv:
-		logger.InfoC("web", "Dashboard password: environment PICOCLAW_LAUNCHER_TOKEN")
-	case launcherconfig.DashboardTokenSourceConfig:
-		logger.InfoC("web", fmt.Sprintf("Dashboard password: configured in %s", launcherPath))
-	case launcherconfig.DashboardTokenSourceRandom:
-		if !enableConsole {
-			logger.InfoC("web", "Dashboard password (this run): "+maskSecret(dashboardToken))
-		}
 	}
 
 	// Log startup info to file
