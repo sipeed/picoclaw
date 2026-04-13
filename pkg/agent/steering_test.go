@@ -1013,6 +1013,114 @@ func TestAgentLoop_Steering_DirectResponseContinuesWithQueuedMessage(t *testing.
 	}
 }
 
+func TestAgentLoop_Steering_BtwCommandBypassesQueuedTurn(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	provider := &blockingDirectProvider{
+		firstStarted: make(chan struct{}),
+		releaseFirst: make(chan struct{}),
+		firstResp:    "long turn finished",
+		finalResp:    "btw immediate reply",
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	runCtx, cancelRun := context.WithCancel(context.Background())
+	defer cancelRun()
+	runErrCh := make(chan error, 1)
+	go func() {
+		runErrCh <- al.Run(runCtx)
+	}()
+
+	first := bus.InboundMessage{
+		Channel:  "test",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "execute sleep 60, then send OK",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	}
+	btw := bus.InboundMessage{
+		Channel:  "test",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/btw 你说283928",
+		Peer: bus.Peer{
+			Kind: "direct",
+			ID:   "user1",
+		},
+	}
+
+	pubCtx, pubCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer pubCancel()
+	if err := msgBus.PublishInbound(pubCtx, first); err != nil {
+		t.Fatalf("publish first inbound: %v", err)
+	}
+
+	select {
+	case <-provider.firstStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for first LLM call to start")
+	}
+
+	if err := msgBus.PublishInbound(pubCtx, btw); err != nil {
+		t.Fatalf("publish /btw inbound: %v", err)
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Content != "btw immediate reply" {
+			t.Fatalf("expected /btw reply before long turn completion, got %q", outbound.Content)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for /btw outbound response")
+	}
+
+	sessionKey := routing.BuildAgentMainSessionKey(routing.DefaultAgentID)
+	if msgs := al.dequeueSteeringMessagesForScope(sessionKey); len(msgs) != 0 {
+		t.Fatalf("expected /btw to bypass steering queue, got %v", msgs)
+	}
+
+	close(provider.releaseFirst)
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Content != "long turn finished" {
+			t.Fatalf("expected original turn response after release, got %q", outbound.Content)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for original turn response")
+	}
+
+	cancelRun()
+	select {
+	case err := <-runErrCh:
+		if err != nil {
+			t.Fatalf("Run returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for Run to stop")
+	}
+}
+
 func TestAgentLoop_Continue_PreservesSteeringMedia(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {

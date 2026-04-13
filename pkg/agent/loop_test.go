@@ -228,6 +228,57 @@ func TestProcessMessage_UseCommandLoadsRequestedSkill(t *testing.T) {
 	}
 }
 
+func TestProcessMessage_BtwCommandRunsWithoutPersistingHistory(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	msg := bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "/btw explain side effects",
+	}
+
+	response, err := al.processMessage(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "Mock response" {
+		t.Fatalf("processMessage() response = %q, want %q", response, "Mock response")
+	}
+	if len(provider.lastMessages) == 0 {
+		t.Fatal("provider did not receive any messages")
+	}
+
+	lastMessage := provider.lastMessages[len(provider.lastMessages)-1]
+	if lastMessage.Role != "user" || lastMessage.Content != "explain side effects" {
+		t.Fatalf("last provider message = %+v, want stripped /btw question", lastMessage)
+	}
+
+	route, _, err := al.resolveMessageRoute(msg)
+	if err != nil {
+		t.Fatalf("resolveMessageRoute() error = %v", err)
+	}
+	sessionKey := resolveScopeKey(route, msg.SessionKey)
+	history := al.GetRegistry().GetDefaultAgent().Sessions.GetHistory(sessionKey)
+	if len(history) != 0 {
+		t.Fatalf("session history len = %d, want 0 for /btw", len(history))
+	}
+}
+
 func TestHandleCommand_UseCommandRejectsUnknownSkill(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := &config.Config{

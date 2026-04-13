@@ -641,6 +641,13 @@ func (al *AgentLoop) drainBusToSteering(ctx context.Context, activeScope, active
 		// Transcribe audio if needed before steering, so the agent sees text.
 		msg, _ = al.transcribeAudioInMessage(ctx, msg)
 
+		if handled, response := al.tryHandlePriorityCommand(ctx, msg); handled {
+			if response != "" {
+				al.PublishResponseIfNeeded(ctx, msg.Channel, msg.ChatID, response)
+			}
+			continue
+		}
+
 		logger.InfoCF("agent", "Redirecting inbound message to steering queue",
 			map[string]any{
 				"channel":     msg.Channel,
@@ -1337,6 +1344,95 @@ func (al *AgentLoop) ProcessHeartbeat(
 		SuppressToolFeedback: true,
 		NoHistory:            true, // Don't load session history for heartbeat
 	})
+}
+
+func (al *AgentLoop) askSideQuestion(
+	ctx context.Context,
+	agent *AgentInstance,
+	opts *processOptions,
+	question string,
+) (string, error) {
+	if agent == nil {
+		return "", fmt.Errorf("no agent available for /btw")
+	}
+
+	question = strings.TrimSpace(question)
+	if question == "" {
+		return "", fmt.Errorf("Usage: /btw <question>")
+	}
+
+	var channel, chatID, senderID, senderDisplayName string
+	var activeSkills []string
+	if opts != nil {
+		channel = opts.Channel
+		chatID = opts.ChatID
+		senderID = opts.SenderID
+		senderDisplayName = opts.SenderDisplayName
+		activeSkills = activeSkillNames(agent, *opts)
+	}
+
+	messages := agent.ContextBuilder.BuildMessages(
+		nil,
+		"",
+		question,
+		nil,
+		channel,
+		chatID,
+		senderID,
+		senderDisplayName,
+		activeSkills...,
+	)
+
+	activeCandidates, activeModel, usedLight := al.selectCandidates(agent, question, messages)
+	activeProvider := agent.Provider
+	if usedLight && agent.LightProvider != nil {
+		activeProvider = agent.LightProvider
+	}
+
+	llmOpts := map[string]any{
+		"max_tokens":       agent.MaxTokens,
+		"temperature":      agent.Temperature,
+		"prompt_cache_key": agent.ID + ":btw",
+	}
+	if agent.ThinkingLevel != ThinkingOff {
+		if tc, ok := activeProvider.(providers.ThinkingCapable); ok && tc.SupportsThinking() {
+			llmOpts["thinking_level"] = string(agent.ThinkingLevel)
+		}
+	}
+
+	callProvider := func(ctx context.Context, provider providers.LLMProvider, model string) (*providers.LLMResponse, error) {
+		return provider.Chat(ctx, messages, nil, model, llmOpts)
+	}
+
+	if len(activeCandidates) > 1 && al.fallback != nil {
+		fbResult, err := al.fallback.Execute(
+			ctx,
+			activeCandidates,
+			func(ctx context.Context, providerName, model string) (*providers.LLMResponse, error) {
+				candidateProvider := activeProvider
+				if cp, ok := agent.CandidateProviders[providers.ModelKey(providerName, model)]; ok {
+					candidateProvider = cp
+				}
+				return callProvider(ctx, candidateProvider, model)
+			},
+		)
+		if err != nil {
+			return "", err
+		}
+		if fbResult.Response == nil {
+			return "", nil
+		}
+		return fbResult.Response.Content, nil
+	}
+
+	resp, err := callProvider(ctx, activeProvider, activeModel)
+	if err != nil {
+		return "", err
+	}
+	if resp == nil {
+		return "", nil
+	}
+	return resp.Content, nil
 }
 
 func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
@@ -3490,6 +3586,14 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 		if agent.ContextBuilder != nil {
 			rt.ListSkillNames = agent.ContextBuilder.ListSkillNames
 		}
+		rt.AskSideQuestion = func(ctx context.Context, question string) (string, error) {
+			question = strings.TrimSpace(question)
+			if question == "" {
+				return "", fmt.Errorf("Usage: /btw <question>")
+			}
+
+			return al.askSideQuestion(ctx, agent, opts, question)
+		}
 		rt.GetModelInfo = func() (string, string) {
 			return agent.Model, resolvedCandidateProvider(agent.Candidates, cfg.Agents.Defaults.Provider)
 		}
@@ -3614,6 +3718,40 @@ func mapCommandError(result commands.ExecuteResult) string {
 		return fmt.Sprintf("Failed to execute command: %v", result.Err)
 	}
 	return fmt.Sprintf("Failed to execute /%s: %v", result.Command, result.Err)
+}
+
+func (al *AgentLoop) tryHandlePriorityCommand(ctx context.Context, msg bus.InboundMessage) (bool, string) {
+	cmdName, ok := commands.CommandName(msg.Content)
+	if !ok || cmdName != "btw" {
+		return false, ""
+	}
+
+	route, agent, err := al.resolveMessageRoute(msg)
+	if err != nil || agent == nil {
+		if err != nil {
+			return true, fmt.Sprintf("Error processing message: %v", err)
+		}
+		return true, "Command unavailable in current context."
+	}
+
+	opts := processOptions{
+		SessionKey:        resolveScopeKey(route, msg.SessionKey),
+		Channel:           msg.Channel,
+		ChatID:            msg.ChatID,
+		MessageID:         msg.MessageID,
+		ReplyToMessageID:  inboundMetadata(msg, metadataKeyReplyToMessage),
+		SenderID:          msg.SenderID,
+		SenderDisplayName: msg.Sender.DisplayName,
+		UserMessage:       msg.Content,
+		Media:             msg.Media,
+		DefaultResponse:   defaultResponse,
+	}
+
+	response, handled := al.handleCommand(ctx, msg, agent, &opts)
+	if !handled {
+		return false, ""
+	}
+	return true, response
 }
 
 // extractPeer extracts the routing peer from the inbound message's structured Peer field.
