@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
+	"os"
 	"sync"
 	"time"
 
@@ -55,6 +58,16 @@ func (c *WhatsAppChannel) Start(ctx context.Context) error {
 
 	dialer := websocket.DefaultDialer
 	dialer.HandshakeTimeout = 10 * time.Second
+
+	if c.config.Proxy != "" {
+		proxyURL, parseErr := url.Parse(c.config.Proxy)
+		if parseErr != nil {
+			return fmt.Errorf("invalid proxy URL %q: %w", c.config.Proxy, parseErr)
+		}
+		dialer.Proxy = http.ProxyURL(proxyURL)
+	} else if os.Getenv("HTTP_PROXY") != "" || os.Getenv("HTTPS_PROXY") != "" {
+		dialer.Proxy = http.ProxyFromEnvironment
+	}
 
 	conn, resp, err := dialer.Dial(c.url, nil)
 	if resp != nil {
