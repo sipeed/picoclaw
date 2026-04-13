@@ -28,6 +28,23 @@ var (
 	sessionManagerMu     sync.RWMutex
 )
 
+// controlCharPattern matches ANSI escape sequences and Unicode format characters
+// that can alter terminal rendering or be used for malicious purposes.
+var controlCharPattern = regexp.MustCompile(`(\x1b\[[0-9;]*[a-zA-Z]|\x1b[()][AB012]|\x1b[>?[0-9]+[a-z-z]|\x1b\][^\x07]*\x07?|\x1b[^a-zA-Z]*[a-zA-Z]|\u202[aeo]|\u200f|\u200e|\u2066|\u2067|\u2068|\u2069)`)
+
+// escapeControlChars replaces terminal control characters and Unicode format
+// characters with their safe escaped representation. This prevents commands
+// from altering terminal state or misleading operators.
+func escapeControlChars(s string) string {
+	return controlCharPattern.ReplaceAllStringFunc(s, func(match string) string {
+		var buf strings.Builder
+		for _, r := range match {
+			fmt.Fprintf(&buf, "\\x%02x", r)
+		}
+		return buf.String()
+	})
+}
+
 func getSessionManager() *SessionManager {
 	sessionManagerMu.RLock()
 	defer sessionManagerMu.RUnlock()
@@ -443,6 +460,10 @@ func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult
 		output = "(no output)"
 	}
 
+	// Escape terminal control and format characters to prevent
+	// command output from altering terminal state or misleading operators.
+	output = escapeControlChars(output)
+
 	maxLen := 10000
 	if len(output) > maxLen {
 		output = output[:maxLen] + fmt.Sprintf("\n... (truncated, %d more chars)", len(output)-maxLen)
@@ -706,6 +727,9 @@ func (t *ExecTool) executeRead(args map[string]any) *ToolResult {
 	}
 
 	output := session.Read()
+	// Escape terminal control and format characters to prevent
+	// malicious output from altering terminal state.
+	output = escapeControlChars(output)
 
 	resp := ExecResponse{
 		SessionID: sessionID,
@@ -1054,13 +1078,35 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	if t.restrictToWorkspace {
-		if strings.Contains(cmd, "..\\") || strings.Contains(cmd, "../") {
-			return "Command blocked by safety guard (path traversal detected)"
-		}
-
 		cwdPath, err := filepath.Abs(cwd)
 		if err != nil {
 			return ""
+		}
+
+		// Check for path traversal patterns that need resolution.
+		// Instead of blanket-blocking ../, we resolve the path and verify
+		// it stays within the working directory.
+		if strings.Contains(cmd, "..\\") || strings.Contains(cmd, "../") {
+			// Extract path segments containing ..
+			// Match path-like segments that include ..
+			pathTraversalPattern := regexp.MustCompile(`(?:[.\w]+/)++\.\.(?:/[.\w]+)*|[.\w]+/+\.\.(?:/[.\w]+)*`)
+
+			traversalIndices := pathTraversalPattern.FindAllStringIndex(cmd, -1)
+			for _, loc := range traversalIndices {
+				traversalPath := cmd[loc[0]:loc[1]]
+
+				// Resolve the traversal path relative to cwd
+				resolved, err := filepath.Abs(filepath.Join(cwdPath, traversalPath))
+				if err != nil {
+					return "Command blocked by safety guard (path traversal detected)"
+				}
+
+				// Check if resolved path is still within cwd
+				rel, err := filepath.Rel(cwdPath, resolved)
+				if err != nil || strings.HasPrefix(rel, "..") {
+					return "Command blocked by safety guard (path traversal detected)"
+				}
+			}
 		}
 
 		// Web URL schemes whose path components (starting with //) should be exempt
