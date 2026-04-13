@@ -8,6 +8,9 @@ import (
 
 func init() {
 	channels.RegisterFactory("vk", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+		if !cfg.Channels.VK.Enabled {
+			return nil, nil
+		}
 		return NewVKChannel(cfg, b)
 	})
 }

@@ -8,6 +8,9 @@ import (
 
 func init() {
 	channels.RegisterFactory("qq", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+		if !cfg.Channels.QQ.Enabled {
+			return nil, nil
+		}
 		return NewQQChannel(cfg.Channels.QQ, b)
 	})
 }

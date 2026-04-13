@@ -8,6 +8,9 @@ import (
 
 func init() {
 	channels.RegisterFactory("dingtalk", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+		if !cfg.Channels.DingTalk.Enabled {
+			return nil, nil
+		}
 		return NewDingTalkChannel(cfg.Channels.DingTalk, b)
 	})
 }

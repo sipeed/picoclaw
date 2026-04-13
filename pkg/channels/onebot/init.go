@@ -8,6 +8,9 @@ import (
 
 func init() {
 	channels.RegisterFactory("onebot", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+		if !cfg.Channels.OneBot.Enabled {
+			return nil, nil
+		}
 		return NewOneBotChannel(cfg.Channels.OneBot, b)
 	})
 }

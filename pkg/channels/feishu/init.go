@@ -8,6 +8,9 @@ import (
 
 func init() {
 	channels.RegisterFactory("feishu", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+		if !cfg.Channels.Feishu.Enabled {
+			return nil, nil
+		}
 		return NewFeishuChannel(cfg.Channels.Feishu, b)
 	})
 }

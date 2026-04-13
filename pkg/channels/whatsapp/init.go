@@ -8,6 +8,10 @@ import (
 
 func init() {
 	channels.RegisterFactory("whatsapp", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
-		return NewWhatsAppChannel(cfg.Channels.WhatsApp, b)
+		waCfg := cfg.Channels.WhatsApp
+		if !waCfg.Enabled || waCfg.UseNative || waCfg.BridgeURL == "" {
+			return nil, nil
+		}
+		return NewWhatsAppChannel(waCfg, b)
 	})
 }

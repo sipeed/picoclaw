@@ -30,3 +30,14 @@ func getFactory(name string) (ChannelFactory, bool) {
 	f, ok := factories[name]
 	return f, ok
 }
+
+// getAllFactories returns a shallow copy of all registered channel factories.
+func getAllFactories() map[string]ChannelFactory {
+	factoriesMu.RLock()
+	defer factoriesMu.RUnlock()
+	result := make(map[string]ChannelFactory, len(factories))
+	for k, v := range factories {
+		result[k] = v
+	}
+	return result
+}

@@ -8,6 +8,9 @@ import (
 
 func init() {
 	channels.RegisterFactory("maixcam", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+		if !cfg.Channels.MaixCam.Enabled {
+			return nil, nil
+		}
 		return NewMaixCamChannel(cfg.Channels.MaixCam, b)
 	})
 }

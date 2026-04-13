@@ -8,6 +8,9 @@ import (
 
 func init() {
 	channels.RegisterFactory("line", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+		if !cfg.Channels.LINE.Enabled {
+			return nil, nil
+		}
 		return NewLINEChannel(cfg.Channels.LINE, b)
 	})
 }

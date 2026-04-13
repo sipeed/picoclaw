@@ -10,6 +10,9 @@ import (
 
 func init() {
 	channels.RegisterFactory("matrix", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+		if !cfg.Channels.Matrix.Enabled {
+			return nil, nil
+		}
 		matrixCfg := cfg.Channels.Matrix
 		cryptoDatabasePath := matrixCfg.CryptoDatabasePath
 		if cryptoDatabasePath == "" {

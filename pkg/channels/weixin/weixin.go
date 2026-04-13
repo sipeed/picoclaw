@@ -37,6 +37,9 @@ type WeixinChannel struct {
 
 func init() {
 	channels.RegisterFactory("weixin", func(cfg *config.Config, bus *bus.MessageBus) (channels.Channel, error) {
+		if !cfg.Channels.Weixin.Enabled {
+			return nil, nil
+		}
 		return NewWeixinChannel(cfg.Channels.Weixin, bus)
 	})
 }

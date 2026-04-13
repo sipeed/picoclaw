@@ -8,6 +8,9 @@ import (
 
 func init() {
 	channels.RegisterFactory("teams_webhook", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+		if !cfg.Channels.TeamsWebhook.Enabled {
+			return nil, nil
+		}
 		return NewTeamsWebhookChannel(cfg.Channels.TeamsWebhook, b)
 	})
 }

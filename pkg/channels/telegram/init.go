@@ -8,6 +8,9 @@ import (
 
 func init() {
 	channels.RegisterFactory("telegram", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+		if !cfg.Channels.Telegram.Enabled {
+			return nil, nil
+		}
 		return NewTelegramChannel(cfg, b)
 	})
 }

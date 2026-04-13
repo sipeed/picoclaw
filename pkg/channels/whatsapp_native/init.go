@@ -11,6 +11,9 @@ import (
 func init() {
 	channels.RegisterFactory("whatsapp_native", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
 		waCfg := cfg.Channels.WhatsApp
+		if !waCfg.Enabled || !waCfg.UseNative {
+			return nil, nil
+		}
 		storePath := waCfg.SessionStorePath
 		if storePath == "" {
 			storePath = filepath.Join(cfg.WorkspacePath(), "whatsapp")

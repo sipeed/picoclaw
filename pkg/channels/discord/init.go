@@ -9,6 +9,9 @@ import (
 
 func init() {
 	channels.RegisterFactory("discord", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+		if !cfg.Channels.Discord.Enabled {
+			return nil, nil
+		}
 		ch, err := NewDiscordChannel(cfg.Channels.Discord, b)
 		if err == nil {
 			ch.tts = tts.DetectTTS(cfg)

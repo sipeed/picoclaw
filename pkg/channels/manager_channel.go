@@ -62,6 +62,9 @@ func hiddenValues(key string, value map[string]any, ch config.ChannelsConfig) {
 		value["app_secret"] = ch.Feishu.AppSecret.String()
 		value["encrypt_key"] = ch.Feishu.EncryptKey.String()
 		value["verification_token"] = ch.Feishu.VerificationToken.String()
+	case "email":
+		value["smtp_password"] = ch.Email.SMTPPassword.String()
+		value["imap_password"] = ch.Email.IMAPPassword.String()
 	case "teams_webhook":
 		// Expose webhook URLs for hash computation (they contain secrets)
 		webhooks := make(map[string]string)
@@ -172,6 +175,10 @@ func updateKeys(newcfg, old *config.ChannelsConfig) {
 		newcfg.Feishu.AppSecret = old.Feishu.AppSecret
 		newcfg.Feishu.EncryptKey = old.Feishu.EncryptKey
 		newcfg.Feishu.VerificationToken = old.Feishu.VerificationToken
+	}
+	if newcfg.Email.Enabled {
+		newcfg.Email.SMTPPassword = old.Email.SMTPPassword
+		newcfg.Email.IMAPPassword = old.Email.IMAPPassword
 	}
 	if newcfg.TeamsWebhook.Enabled {
 		// Copy SecureString webhook URLs from old config
