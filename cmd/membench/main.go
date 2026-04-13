@@ -58,7 +58,8 @@ func main() {
 	evalCmd.Flags().IntVar(&flagBudget, "budget", 4000, "token budget for retrieval")
 	evalCmd.Flags().
 		StringVar(&flagEvalMode, "eval-mode", "token", "evaluation mode: token (direct match) or llm (LLM-as-Judge)")
-	evalCmd.Flags().StringVar(&flagAPIBase, "api-base", "", "OpenAI-compatible API base URL (env: MEMBENCH_API_BASE)")
+	evalCmd.Flags().
+		StringVar(&flagAPIBase, "api-base", "", "API base URL with version path, e.g. http://host/v1 (default: http://127.0.0.1:8080/v1, env: MEMBENCH_API_BASE)")
 	evalCmd.Flags().StringVar(&flagAPIKey, "api-key", "", "API key for the LLM endpoint (env: MEMBENCH_API_KEY)")
 	evalCmd.Flags().StringVar(&flagModel, "model", "", "model name for LLM eval (env: MEMBENCH_MODEL)")
 	evalCmd.Flags().
@@ -84,7 +85,8 @@ func main() {
 	runCmd.Flags().IntVar(&flagBudget, "budget", 4000, "token budget for retrieval")
 	runCmd.Flags().
 		StringVar(&flagEvalMode, "eval-mode", "token", "evaluation mode: token (direct match) or llm (LLM-as-Judge)")
-	runCmd.Flags().StringVar(&flagAPIBase, "api-base", "", "OpenAI-compatible API base URL (env: MEMBENCH_API_BASE)")
+	runCmd.Flags().
+		StringVar(&flagAPIBase, "api-base", "", "API base URL with version path, e.g. http://host/v1 (default: http://127.0.0.1:8080/v1, env: MEMBENCH_API_BASE)")
 	runCmd.Flags().StringVar(&flagAPIKey, "api-key", "", "API key for the LLM endpoint (env: MEMBENCH_API_KEY)")
 	runCmd.Flags().StringVar(&flagModel, "model", "", "model name for LLM eval (env: MEMBENCH_MODEL)")
 	runCmd.Flags().

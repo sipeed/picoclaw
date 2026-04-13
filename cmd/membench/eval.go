@@ -236,9 +236,6 @@ func aggregateMetrics(qaResults []QAResult) AggMetrics {
 	if nHit == 0 {
 		nHit = 1
 	}
-	if validF1Count == 0 {
-		validF1Count = 1
-	}
 	byCat := map[int]*CatMetrics{}
 	for cat, acc := range byCatAcc {
 		cm := &CatMetrics{
@@ -253,8 +250,12 @@ func aggregateMetrics(qaResults []QAResult) AggMetrics {
 		}
 		byCat[cat] = cm
 	}
+	var overallF1 float64
+	if validF1Count > 0 {
+		overallF1 = totalF1 / float64(validF1Count)
+	}
 	return AggMetrics{
-		OverallF1:      totalF1 / float64(validF1Count),
+		OverallF1:      overallF1,
 		OverallHitRate: totalHitRate / float64(nHit),
 		ByCategory:     byCat,
 		TotalQuestions: len(qaResults),
@@ -304,20 +305,29 @@ func SaveAggregated(results []EvalResult, outDir string) error {
 func computeModeAgg(results []EvalResult) AggMetrics {
 	agg := AggMetrics{ByCategory: map[int]*CatMetrics{}}
 	for _, r := range results {
-		agg.OverallF1 += r.Agg.OverallF1 * float64(r.Agg.ValidF1Count)
+		// Backward compat: old eval JSON without ValidF1Count → use TotalQuestions.
+		vf1 := r.Agg.ValidF1Count
+		if vf1 == 0 && r.Agg.TotalQuestions > 0 {
+			vf1 = r.Agg.TotalQuestions
+		}
+		agg.OverallF1 += r.Agg.OverallF1 * float64(vf1)
 		agg.OverallHitRate += r.Agg.OverallHitRate * float64(r.Agg.TotalQuestions)
 		agg.TotalQuestions += r.Agg.TotalQuestions
-		agg.ValidF1Count += r.Agg.ValidF1Count
+		agg.ValidF1Count += vf1
 		for cat, cm := range r.Agg.ByCategory {
 			existing, ok := agg.ByCategory[cat]
 			if !ok {
 				existing = &CatMetrics{}
 				agg.ByCategory[cat] = existing
 			}
-			existing.F1 += cm.F1 * float64(cm.ValidF1Count)
+			cvf1 := cm.ValidF1Count
+			if cvf1 == 0 && cm.QuestionCount > 0 {
+				cvf1 = cm.QuestionCount
+			}
+			existing.F1 += cm.F1 * float64(cvf1)
 			existing.HitRate += cm.HitRate * float64(cm.QuestionCount)
 			existing.QuestionCount += cm.QuestionCount
-			existing.ValidF1Count += cm.ValidF1Count
+			existing.ValidF1Count += cvf1
 		}
 	}
 	if agg.ValidF1Count > 0 {
@@ -392,7 +402,9 @@ func printSection(title string, results []EvalResult) {
 
 // PrintComparison outputs a human-readable comparison table to stdout.
 func PrintComparison(results []EvalResult, llmResults []EvalResult) {
-	printSection("No LLM generation", results)
+	if len(results) > 0 {
+		printSection("No LLM generation", results)
+	}
 	if len(llmResults) > 0 {
 		printSection("With LLM", llmResults)
 	}
