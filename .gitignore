@@ -1,49 +1,40 @@
 ```
-# Go build artifacts
+# Compiled and binary files
+*.pyc
+__pycache__/
 *.o
-*.a
-*.so
-*.dylib
-*.dll
+*.obj
 *.exe
+*.dll
+*.so
+*.a
 *.out
 
-# Go cache and tools
-go.sum
-*.mod
-*.mod~
-*.info
-coverage.out
-profile.out
-
 # Dependencies
-vendor/
-
-# Logs
-*.log
-
-# Environment
+node_modules/
+venv/
+.venv/
 .env
 .env.local
-.env.*
+*.env.*
+
+# Build artifacts
+dist/
+build/
+target/
+.mypy_cache/
+.pytest_cache/
+coverage/
+htmlcov/
+*.log
+*.tmp
+*.swp
 
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# OS
+# System
 .DS_Store
 Thumbs.db
-
-# Build directories
-bin/
-_dist/
-_output/
-
-# Test coverage
-coverage/
-htmlcov/
-.coverage
 ```

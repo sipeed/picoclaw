@@ -218,7 +218,7 @@ func (e *Evaluator) compileRules() error {
 				compiled.ToolPatterns = append(compiled.ToolPatterns, re)
 			} else {
 				logger.WarnCF("policy", "Invalid tool pattern in rule", map[string]any{
-					"rule_id": rule.Rule.ID,
+					"rule_id": rule.ID,
 					"pattern": tool,
 					"error":   err.Error(),
 				})
@@ -231,7 +231,7 @@ func (e *Evaluator) compileRules() error {
 				compiled.IntentPatterns = append(compiled.IntentPatterns, re)
 			} else {
 				logger.WarnCF("policy", "Invalid intent pattern in rule", map[string]any{
-					"rule_id": rule.Rule.ID,
+					"rule_id": rule.ID,
 					"pattern": intent,
 					"error":   err.Error(),
 				})
@@ -376,15 +376,15 @@ func (e *Evaluator) evaluateIntentInternal(intent Intent) PolicyResult {
 		}
 
 		// Apply rule action
-		switch rule.Rule.Action {
+		switch rule.Action {
 		case "allow":
-			return PolicyResult{Allowed: true, Reason: fmt.Sprintf("rule %q allows this intent", rule.Rule.ID)}
+			return PolicyResult{Allowed: true, Reason: fmt.Sprintf("rule %q allows this intent", rule.ID)}
 		case "deny":
-			return PolicyResult{Allowed: false, Reason: fmt.Sprintf("rule %q denies this intent", rule.Rule.ID)}
+			return PolicyResult{Allowed: false, Reason: fmt.Sprintf("rule %q denies this intent", rule.ID)}
 		case "require_approval":
 			return PolicyResult{
 				Allowed: false,
-				Reason:  fmt.Sprintf("rule %q requires approval for this intent", rule.Rule.ID),
+				Reason:  fmt.Sprintf("rule %q requires approval for this intent", rule.ID),
 				Data:    map[string]interface{}{"requires_approval": true},
 			}
 		}
@@ -562,15 +562,15 @@ func (e *Evaluator) evaluateToolCallInternal(toolCall ToolCall) PolicyResult {
 		}
 
 		// Apply rule action
-		switch rule.Rule.Action {
+		switch rule.Action {
 		case "allow":
-			return PolicyResult{Allowed: true, Reason: fmt.Sprintf("rule %q allows this tool", rule.Rule.ID)}
+			return PolicyResult{Allowed: true, Reason: fmt.Sprintf("rule %q allows this tool", rule.ID)}
 		case "deny":
-			return PolicyResult{Allowed: false, Reason: fmt.Sprintf("rule %q denies this tool", rule.Rule.ID)}
+			return PolicyResult{Allowed: false, Reason: fmt.Sprintf("rule %q denies this tool", rule.ID)}
 		case "require_approval":
 			return PolicyResult{
 				Allowed: false,
-				Reason:  fmt.Sprintf("rule %q requires approval for this tool", rule.Rule.ID),
+				Reason:  fmt.Sprintf("rule %q requires approval for this tool", rule.ID),
 				Data:    map[string]interface{}{"requires_approval": true},
 			}
 		}
