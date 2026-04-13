@@ -1,7 +1,7 @@
 # ============================================================
 # Stage 1: Build the picoclaw binaries
 # ============================================================
-FROM golang:1.25-alpine AS builder
+FROM --platform=linux/arm64 golang:1.25-alpine AS builder
 
 WORKDIR /app
 
@@ -29,7 +29,7 @@ RUN set -e; \
 # ============================================================
 # Stage 2: Final runtime image - lightweight Alpine
 # ============================================================
-FROM alpine:latest
+FROM --platform=linux/arm64 alpine:latest
 
 # Install runtime dependencies as requested
 RUN apk add --no-cache \
