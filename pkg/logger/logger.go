@@ -57,7 +57,8 @@ func init() {
 			TimeFormat: "15:04:05", // TODO: make it configurable???
 
 			// Custom formatter to handle multiline strings and JSON objects
-			FormatFieldValue: formatFieldValue,
+			FormatFieldValue:      formatFieldValue,
+			FormatPartValueByName: formatPartValueByName,
 			PartsOrder: []string{
 				zerolog.TimestampFieldName,
 				zerolog.LevelFieldName,
@@ -67,8 +68,11 @@ func init() {
 			},
 			FieldsExclude: []string{Component},
 			FormatPrepare: func(fields map[string]any) error {
+				component := formatComponentValue(fields[Component])
 				if isTTY {
-					fields[Component] = fmt.Sprintf("\x1b[33m%v\x1b[0m", fields[Component])
+					fields[Component] = fmt.Sprintf("\x1b[33m%s\x1b[0m", component)
+				} else {
+					fields[Component] = component
 				}
 				return nil
 			},
@@ -82,6 +86,22 @@ func init() {
 }
 
 func formatFieldValue(i any) string {
+	s := sanitizeFieldString(i)
+	return formatSanitizedFieldValue(s)
+}
+
+func formatPartValueByName(i any, name string) string {
+	if name == Component {
+		return fmt.Sprintf("%v", i)
+	}
+	return formatFieldValue(i)
+}
+
+func formatComponentValue(i any) string {
+	return sanitizeFieldString(i)
+}
+
+func sanitizeFieldString(i any) string {
 	var s string
 
 	switch val := i.(type) {
@@ -97,12 +117,13 @@ func formatFieldValue(i any) string {
 		s = unquoted
 	}
 
-	s = termutil.EscapeControlChars(s)
+	return termutil.EscapeControlChars(s)
+}
 
+func formatSanitizedFieldValue(s string) string {
 	if strings.Contains(s, "\n") {
 		return fmt.Sprintf("\n%s", s)
 	}
-
 	if strings.Contains(s, " ") {
 		if (strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}")) ||
 			(strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]")) {

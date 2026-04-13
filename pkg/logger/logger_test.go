@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -269,6 +270,29 @@ func TestFormatFieldValue(t *testing.T) {
 				t.Errorf("formatFieldValue() = %q, expected %q", actual, tt.expected)
 			}
 		})
+	}
+}
+
+func TestFormatPreparePreservesColoredComponent(t *testing.T) {
+	fields := map[string]any{
+		Component: "safe\u202ecomponent",
+	}
+
+	if err := consoleWriter.FormatPrepare(fields); err != nil {
+		t.Fatalf("FormatPrepare() error = %v", err)
+	}
+
+	component, ok := fields[Component].(string)
+	if !ok {
+		t.Fatalf("component field type = %T, want string", fields[Component])
+	}
+	if strings.ContainsRune(component, '\u202e') {
+		t.Fatalf("expected bidi control to be escaped in component, got %q", component)
+	}
+
+	formatted := formatPartValueByName(component, Component)
+	if formatted != component {
+		t.Fatalf("formatPartValueByName(component) = %q, want %q", formatted, component)
 	}
 }
 

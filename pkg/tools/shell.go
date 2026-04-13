@@ -436,6 +436,7 @@ func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult
 	if stderr.Len() > 0 {
 		output += "\nSTDERR:\n" + stderr.String()
 	}
+	output = termutil.EscapeControlChars(output)
 
 	if err != nil {
 		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
@@ -469,8 +470,6 @@ func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult
 	if output == "" {
 		output = "(no output)"
 	}
-
-	output = termutil.EscapeControlChars(output)
 
 	maxLen := 10000
 	if len(output) > maxLen {
@@ -1205,6 +1204,9 @@ func extractTraversalPathCandidates(command string) []string {
 				continue
 			}
 
+			// This is a lexical heuristic over the literal command text, not a full
+			// shell parser. Paths materialized only after shell expansion are a
+			// known limitation and are handled by the surrounding trust model.
 			if _, ok := seen[part]; ok {
 				continue
 			}

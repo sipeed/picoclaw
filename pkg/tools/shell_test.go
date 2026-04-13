@@ -779,6 +779,36 @@ func TestShellTool_OutputEscapesTerminalControlChars(t *testing.T) {
 	}
 }
 
+func TestShellTool_TimeoutOutputEscapesTerminalControlChars(t *testing.T) {
+	tool, err := NewExecTool("", false)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	tool.SetTimeout(100 * time.Millisecond)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"action":  "run",
+		"command": "printf '\\033[31mred\\033[0m\\u202E'; sleep 10",
+	})
+
+	if !result.IsError {
+		t.Fatalf("expected timeout error, got success: %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "timed out") {
+		t.Fatalf("expected timeout message, got: %q", result.ForLLM)
+	}
+	if strings.Contains(result.ForLLM, "\x1b") {
+		t.Fatalf("expected ANSI escape to be escaped in timeout output, got: %q", result.ForLLM)
+	}
+	if strings.ContainsRune(result.ForLLM, '\u202e') {
+		t.Fatalf("expected bidi control to be escaped in timeout output, got: %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, `\x1b[31mred\x1b[0m`) || !strings.Contains(strings.ToLower(result.ForLLM), `\u202e`) {
+		t.Fatalf("expected escaped control sequence in timeout output, got: %q", result.ForLLM)
+	}
+}
+
 func TestShellTool_Background_ReturnsImmediately(t *testing.T) {
 	tool, err := NewExecTool("", false)
 	require.NoError(t, err)

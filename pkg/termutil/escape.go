@@ -17,9 +17,9 @@ func EscapeControlChars(input string) string {
 		switch {
 		case r == '\n' || r == '\r' || r == '\t':
 			sb.WriteRune(r)
-		case r < 0x20 || r == 0x7f:
+		case r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f):
 			sb.WriteString(fmt.Sprintf("\\x%02x", r))
-		case unicode.Is(unicode.Cf, r):
+		case unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Co, r):
 			if r <= 0xffff {
 				sb.WriteString(fmt.Sprintf("\\u%04x", r))
 			} else {
