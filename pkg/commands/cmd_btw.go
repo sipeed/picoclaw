@@ -31,7 +31,6 @@ func btwCommand() Definition {
 			}
 
 			return req.Reply(answer)
-
 		},
 	}
 }
