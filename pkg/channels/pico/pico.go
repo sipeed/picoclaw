@@ -390,31 +390,53 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 //  2. Sec-WebSocket-Protocol "token.<value>" (for browsers that can't set headers)
 //  3. Query parameter "token" (only when AllowTokenQuery is on)
 func (c *PicoChannel) authenticate(r *http.Request) bool {
-	token := c.config.Token.String()
+	token := strings.TrimSpace(c.config.Token.String())
 	if token == "" {
+		logger.WarnCF("pico", "Authentication failed: No token configured for channel", nil)
 		return false
 	}
 
 	// Check Authorization header
 	auth := r.Header.Get("Authorization")
 	if after, ok := strings.CutPrefix(auth, "Bearer "); ok {
-		if after == token {
+		received := strings.TrimSpace(after)
+		if received == token {
 			return true
 		}
+		logger.DebugCF("pico", "Token mismatch (Header)", map[string]any{
+			"expected_preview": token[:4] + "...",
+			"received_preview": received[:4] + "...",
+			"expected_len":     len(token),
+			"received_len":     len(received),
+		})
 	}
 
 	// Check Sec-WebSocket-Protocol subprotocol ("token.<value>")
-	if c.matchedSubprotocol(r) != "" {
+	if proto := c.matchedSubprotocol(r); proto != "" {
 		return true
 	}
 
 	// Check query parameter only when explicitly allowed
 	if c.config.AllowTokenQuery {
-		if r.URL.Query().Get("token") == token {
+		received := strings.TrimSpace(r.URL.Query().Get("token"))
+		if received == token {
 			return true
+		}
+		if received != "" {
+			logger.DebugCF("pico", "Token mismatch (Query)", map[string]any{
+				"expected_preview": token[:4] + "...",
+				"received_preview": received[:4] + "...",
+			})
 		}
 	}
 
+	logger.WarnCF("pico", "Authentication failed: No valid token provided in request", map[string]any{
+		"path":           r.URL.Path,
+		"remote_addr":    r.RemoteAddr,
+		"has_auth_hdr":   auth != "",
+		"has_token_q":    r.URL.Query().Get("token") != "",
+		"has_subproto":   r.Header.Get("Sec-WebSocket-Protocol") != "",
+	})
 	return false
 }
 
