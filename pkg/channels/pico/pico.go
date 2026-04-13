@@ -559,6 +559,19 @@ func (c *PicoChannel) handleMessage(pc *picoConn, msg PicoMessage) {
 // handleMessageSend processes an inbound message.send from a client.
 func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 	content, _ := msg.Payload["content"].(string)
+
+	// Robust parameter mapping for HDN compatibility
+	if content == "" {
+		// Fallback to other common field names used by different HDN versions
+		if c, ok := msg.Payload["prompt"].(string); ok {
+			content = c
+		} else if m, ok := msg.Payload["message"].(string); ok {
+			content = m
+		} else if q, ok := msg.Payload["query"].(string); ok {
+			content = q
+		}
+	}
+
 	media, err := parseInlineImageMedia(msg.Payload)
 	if err != nil {
 		errMsg := newErrorWithPayload("invalid_media", err.Error(), map[string]any{
