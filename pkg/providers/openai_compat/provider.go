@@ -227,6 +227,8 @@ func (p *Provider) Chat(
 		req.Header.Set("User-Agent", p.userAgent)
 	}
 	if p.apiKey != "" {
+		log.Printf("DEBUG: apiKey length: %d", len(p.apiKey))
+		log.Printf("DEBUG: sending request to: %s", req.URL.String())
 		if p.useAzureHeaders {
 			req.Header.Set("api-key", p.apiKey)
 		} else {
