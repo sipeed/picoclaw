@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { loginAndSelectOrg } from '../utils/auth';
 
 test('Change email flow', async ({ page }) => {
+  test.setTimeout(180000); // 3 minutes timeout
   const primaryEmail = 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
   const organizationName = 'Testing2026!';

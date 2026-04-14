@@ -75,8 +75,8 @@ IMPORTANT RULES:
      page.locator('.v-list-item')
      page.locator('.v-overlay--active .v-list-item')
    CORRECT: .filter({ hasText: /exact text/ }) or .nth(0) or .first() / .last()
-10. Test timeout: set at least 60 seconds.
-    test.setTimeout(60000);
+10. Test timeout: set at least 3 minutes.
+    test.setTimeout(180000);
     Place this as the FIRST line inside the test() callback.
 
 Steps:

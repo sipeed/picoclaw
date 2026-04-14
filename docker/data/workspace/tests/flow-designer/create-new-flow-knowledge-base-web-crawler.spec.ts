@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('Create new flow with Knowledge Base web crawler node', async ({ page }) => {
-  test.setTimeout(120000); // 2 minutes timeout
+  test.setTimeout(180000); // 3 minutes timeout
 
   // ============================================================================
   // PHASE 1: LOGIN

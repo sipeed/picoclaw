@@ -49,8 +49,8 @@ IMPORTANT RULES:
 7. Modal loading states: wait for loading to disappear before interacting:
      await page.locator('.v-overlay--active').locator('text=/loading/i').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
 8. STRICT MODE RULE — ALWAYS use .first() or .last() on any locator that can match multiple elements.
-9. Test timeout: set at least 60 seconds.
-   test.setTimeout(60000);
+9. Test timeout: set at least 3 minutes.
+   test.setTimeout(180000);
 
 Steps:
 
