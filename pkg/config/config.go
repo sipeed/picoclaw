@@ -498,6 +498,22 @@ type TeamsWebhookTarget struct {
 	Title      string       `json:"title,omitempty"      yaml:"-"`
 }
 
+type MattermostSettings struct {
+	URL      string       `json:"url"                yaml:"-"                   env:"PICOCLAW_CHANNELS_MATTERMOST_URL"`
+	BotToken SecureString `json:"bot_token,omitzero" yaml:"bot_token,omitempty" env:"PICOCLAW_CHANNELS_MATTERMOST_BOT_TOKEN"`
+}
+
+type MattermostConfig struct {
+	Enabled            bool                `json:"enabled"`
+	URL                string              `json:"url"`
+	BotToken           SecureString        `json:"bot_token,omitzero"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty"`
+	Typing             TypingConfig        `json:"typing,omitempty"`
+	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"`
+}
+
 type HeartbeatConfig struct {
 	Enabled  bool `json:"enabled"  env:"PICOCLAW_HEARTBEAT_ENABLED"`
 	Interval int  `json:"interval" env:"PICOCLAW_HEARTBEAT_INTERVAL"` // minutes, min 5

@@ -470,6 +470,7 @@ Talk to your PicoClaw through 18+ messaging platforms:
 |---------|-------|----------|------|
 | **Telegram** | Easy (bot token) | Long polling | [Guide](docs/channels/telegram/README.md) |
 | **Discord** | Easy (bot token + intents) | WebSocket | [Guide](docs/channels/discord/README.md) |
+| **Mattermost** | Easy (bot token) | WebSocket + REST | [Guide](docs/channels/mattermost/README.md) |
 | **WhatsApp** | Easy (QR scan or bridge URL) | Native / Bridge | [Guide](docs/chat-apps.md#whatsapp) |
 | **Weixin** | Easy (Native QR scan) | iLink API | [Guide](docs/chat-apps.md#weixin) |
 | **QQ** | Easy (AppID + AppSecret) | WebSocket | [Guide](docs/channels/qq/README.md) |

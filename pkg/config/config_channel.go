@@ -32,6 +32,7 @@ const (
 	ChannelMaixCam        = "maixcam"
 	ChannelWhatsApp       = "whatsapp"
 	ChannelWhatsAppNative = "whatsapp_native"
+	ChannelMattermost     = "mattermost"
 	ChannelTeamsWebHook   = "teams_webhook"
 )
 
@@ -639,6 +640,7 @@ var channelSettingsFactory = map[string]any{
 	ChannelMaixCam:        (MaixCamSettings{}),
 	ChannelWhatsApp:       (WhatsAppSettings{}),
 	ChannelWhatsAppNative: (WhatsAppSettings{}),
+	ChannelMattermost:     (MattermostSettings{}),
 	ChannelTeamsWebHook:   (TeamsWebhookSettings{}),
 }
 

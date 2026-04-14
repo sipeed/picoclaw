@@ -500,6 +500,9 @@ func defaultChannels() ChannelsConfig {
 				"max_connections": 100,
 			},
 		},
+		"mattermost": map[string]any{
+			"typing": map[string]any{"enabled": true},
+		},
 	}
 
 	channels := make(ChannelsConfig, len(defs))
