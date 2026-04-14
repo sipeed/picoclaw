@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,20 +18,22 @@ func TestNewPicoclawCommand(t *testing.T) {
 
 	require.NotNil(t, cmd)
 
-	short := fmt.Sprintf("%s picoclaw - Personal AI Assistant %s\n\n", internal.Logo, config.GetVersion())
+	short := fmt.Sprintf("%s PicoClaw — personal AI assistant", internal.Logo)
+	longHas := strings.Contains(cmd.Long, config.FormatVersion())
 
 	assert.Equal(t, "picoclaw", cmd.Use)
 	assert.Equal(t, short, cmd.Short)
+	assert.True(t, longHas)
 
 	assert.True(t, cmd.HasSubCommands())
 	assert.True(t, cmd.HasAvailableSubCommands())
 
-	assert.False(t, cmd.HasFlags())
+	assert.True(t, cmd.PersistentFlags().Lookup("no-color") != nil)
 
 	assert.Nil(t, cmd.Run)
 	assert.Nil(t, cmd.RunE)
 
-	assert.Nil(t, cmd.PersistentPreRun)
+	assert.NotNil(t, cmd.PersistentPreRun)
 	assert.Nil(t, cmd.PersistentPostRun)
 
 	allowedCommands := []string{

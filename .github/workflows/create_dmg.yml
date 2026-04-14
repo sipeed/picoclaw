@@ -17,29 +17,38 @@ jobs:
         with:
           ref: main
 
-      # 1. 安装指定版本的 Go (可选，但推荐)
+      # 1. Install Go from go.mod
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
-      # 2. 安装 pnpm
-      - name: Install pnpm
-        run: brew install pnpm
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+          run_install: false
 
-      # 3. 运行你的 Makefile 编译二进制文件
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/frontend/pnpm-lock.yaml
+
+      # 3. Build the application bundle
       - name: Build with Make
         run: make build ARCH=${{ matrix.arch }} && make build-macos-app ARCH=${{ matrix.arch }}
 
-      # 4. 签名
+      # 4. Apply ad-hoc signing
       - name: Ad-hoc Sign
         run: codesign --force --deep --sign - "build/PicoClaw Launcher.app"
 
-      # 5. 安装打包工具
+      # 5. Install the DMG packaging tool
       - name: Install create-dmg
         run: brew install create-dmg
 
-      # 6. 执行打包命令
+      # 6. Create the DMG
       - name: Create DMG
         run: |
           mkdir -p dist
@@ -54,7 +63,7 @@ jobs:
             "dist/picoclaw-${{ matrix.arch }}.dmg" \
             "build/PicoClaw Launcher.app"
 
-      # 7. 上传文件到 GitHub Artifacts (供你下载)
+      # 7. Upload the DMG as a GitHub artifact
       - name: Upload DMG
         uses: actions/upload-artifact@v7
         with:

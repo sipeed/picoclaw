@@ -8,9 +8,10 @@ MaixCam は、Sipeed MaixCAM および MaixCAM2 AI カメラデバイスへの�
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "maixcam": {
       "enabled": true,
+      "type": "maixcam",
       "host": "0.0.0.0",
       "port": 18790,
       "allow_from": []

@@ -758,14 +758,17 @@ func setupCronTool(
 // The PID file is the single source of truth for the pico auth token;
 // it is generated once at gateway startup and remains unchanged across reloads.
 func overridePicoToken(cfg *config.Config, token string) {
-	if !cfg.Channels.Pico.Enabled {
+	picoBC := cfg.Channels.GetByType(config.ChannelPico)
+	if picoBC == nil || !picoBC.Enabled {
 		return
 	}
-	picoToken := cfg.Channels.Pico.Token.String()
+	var picoCfg config.PicoSettings
+	picoBC.Decode(&picoCfg)
+	picoToken := picoCfg.Token.String()
 	if picoToken == "" || strings.HasPrefix(picoToken, pico.PicoTokenPrefix) {
 		return
 	}
-	cfg.Channels.Pico.SetToken(pico.PicoTokenPrefix + token + picoToken)
+	picoCfg.SetToken(pico.PicoTokenPrefix + token + picoToken)
 }
 
 func createHeartbeatHandler(agentLoop *agent.AgentLoop) func(prompt, channel, chatID string) *tools.ToolResult {

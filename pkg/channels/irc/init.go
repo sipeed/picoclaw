@@ -7,10 +7,29 @@ import (
 )
 
 func init() {
-	channels.RegisterFactory("irc", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
-		if !cfg.Channels.IRC.Enabled {
-			return nil, nil
-		}
-		return NewIRCChannel(cfg.Channels.IRC, b)
-	})
+	channels.RegisterFactory(
+		config.ChannelIRC,
+		func(channelName, channelType string, cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+			bc := cfg.Channels[channelName]
+			if bc == nil || !bc.Enabled {
+				return nil, nil
+			}
+			decoded, err := bc.GetDecoded()
+			if err != nil {
+				return nil, err
+			}
+			c, ok := decoded.(*config.IRCSettings)
+			if !ok {
+				return nil, channels.ErrSendFailed
+			}
+			ch, err := NewIRCChannel(bc, c, b)
+			if err != nil {
+				return nil, err
+			}
+			if channelName != config.ChannelIRC {
+				ch.SetName(channelName)
+			}
+			return ch, nil
+		},
+	)
 }

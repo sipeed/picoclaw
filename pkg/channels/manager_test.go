@@ -175,11 +175,11 @@ func TestStartAll_PartialFailure_StartsSuccessfulWorkers(t *testing.T) {
 
 	pubCtx, pubCancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer pubCancel()
-	if err := m.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+	if err := m.bus.PublishOutbound(pubCtx, testOutboundMessage(bus.OutboundMessage{
 		Channel: "good",
 		ChatID:  "chat-1",
 		Content: "hello",
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("PublishOutbound() error = %v", err)
 	}
 
@@ -197,6 +197,20 @@ func TestStartAll_PartialFailure_StartsSuccessfulWorkers(t *testing.T) {
 	}
 }
 
+func testOutboundMessage(msg bus.OutboundMessage) bus.OutboundMessage {
+	if msg.Context.Channel == "" && msg.Context.ChatID == "" {
+		msg.Context = bus.NewOutboundContext(msg.Channel, msg.ChatID, msg.ReplyToMessageID)
+	}
+	return bus.NormalizeOutboundMessage(msg)
+}
+
+func testOutboundMediaMessage(msg bus.OutboundMediaMessage) bus.OutboundMediaMessage {
+	if msg.Context.Channel == "" && msg.Context.ChatID == "" {
+		msg.Context = bus.NewOutboundContext(msg.Channel, msg.ChatID, "")
+	}
+	return bus.NormalizeOutboundMediaMessage(msg)
+}
+
 func TestSendWithRetry_Success(t *testing.T) {
 	m := newTestManager()
 	var callCount int
@@ -212,7 +226,7 @@ func TestSendWithRetry_Success(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	msg := bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"}
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"})
 
 	m.sendWithRetry(ctx, "test", w, msg)
 
@@ -239,7 +253,7 @@ func TestSendWithRetry_TemporaryThenSuccess(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	msg := bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"}
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"})
 
 	m.sendWithRetry(ctx, "test", w, msg)
 
@@ -263,7 +277,7 @@ func TestSendWithRetry_PermanentFailure(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	msg := bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"}
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"})
 
 	m.sendWithRetry(ctx, "test", w, msg)
 
@@ -287,7 +301,7 @@ func TestSendWithRetry_NotRunning(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	msg := bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"}
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"})
 
 	m.sendWithRetry(ctx, "test", w, msg)
 
@@ -314,7 +328,7 @@ func TestSendWithRetry_RateLimitRetry(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	msg := bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"}
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"})
 
 	start := time.Now()
 	m.sendWithRetry(ctx, "test", w, msg)
@@ -344,7 +358,7 @@ func TestSendWithRetry_MaxRetriesExhausted(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	msg := bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"}
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"})
 
 	m.sendWithRetry(ctx, "test", w, msg)
 
@@ -370,11 +384,11 @@ func TestSendMedia_Success(t *testing.T) {
 	m.channels["test"] = ch
 	m.workers["test"] = w
 
-	err := m.SendMedia(context.Background(), bus.OutboundMediaMessage{
+	err := m.SendMedia(context.Background(), testOutboundMediaMessage(bus.OutboundMediaMessage{
 		Channel: "test",
 		ChatID:  "chat1",
 		Parts:   []bus.MediaPart{{Ref: "media://abc"}},
-	})
+	}))
 	if err != nil {
 		t.Fatalf("SendMedia() error = %v", err)
 	}
@@ -397,11 +411,11 @@ func TestSendMedia_PropagatesFailure(t *testing.T) {
 	m.channels["test"] = ch
 	m.workers["test"] = w
 
-	err := m.SendMedia(context.Background(), bus.OutboundMediaMessage{
+	err := m.SendMedia(context.Background(), testOutboundMediaMessage(bus.OutboundMediaMessage{
 		Channel: "test",
 		ChatID:  "chat1",
 		Parts:   []bus.MediaPart{{Ref: "media://abc"}},
-	})
+	}))
 	if err == nil {
 		t.Fatal("expected SendMedia to return error")
 	}
@@ -424,11 +438,11 @@ func TestSendMedia_UnsupportedChannelReturnsError(t *testing.T) {
 	m.channels["test"] = ch
 	m.workers["test"] = w
 
-	err := m.SendMedia(context.Background(), bus.OutboundMediaMessage{
+	err := m.SendMedia(context.Background(), testOutboundMediaMessage(bus.OutboundMediaMessage{
 		Channel: "test",
 		ChatID:  "chat1",
 		Parts:   []bus.MediaPart{{Ref: "media://abc"}},
-	})
+	}))
 	if err == nil {
 		t.Fatal("expected SendMedia to return error for unsupported channel")
 	}
@@ -454,11 +468,11 @@ func TestSendMedia_DeletesPlaceholderBeforeSending(t *testing.T) {
 	m.workers["test"] = w
 	m.RecordPlaceholder("test", "chat1", "placeholder-1")
 
-	err := m.SendMedia(context.Background(), bus.OutboundMediaMessage{
+	err := m.SendMedia(context.Background(), testOutboundMediaMessage(bus.OutboundMediaMessage{
 		Channel: "test",
 		ChatID:  "chat1",
 		Parts:   []bus.MediaPart{{Ref: "media://abc"}},
-	})
+	}))
 	if err != nil {
 		t.Fatalf("SendMedia() error = %v", err)
 	}
@@ -491,7 +505,7 @@ func TestSendWithRetry_UnknownError(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	msg := bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"}
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"})
 
 	m.sendWithRetry(ctx, "test", w, msg)
 
@@ -515,7 +529,7 @@ func TestSendWithRetry_ContextCancelled(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	msg := bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"}
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"})
 
 	// Cancel context after first Send attempt returns
 	ch.sendFn = func(_ context.Context, _ bus.OutboundMessage) error {
@@ -561,7 +575,7 @@ func TestWorkerRateLimiter(t *testing.T) {
 
 	// Enqueue 4 messages
 	for i := range 4 {
-		w.queue <- bus.OutboundMessage{Channel: "test", ChatID: "1", Content: fmt.Sprintf("msg%d", i)}
+		w.queue <- testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "1", Content: fmt.Sprintf("msg%d", i)})
 	}
 
 	// Wait enough time for all messages to be sent (4 msgs at 2/s = ~2s, give extra margin)
@@ -586,7 +600,7 @@ func TestWorkerRateLimiter(t *testing.T) {
 
 func TestNewChannelWorker_DefaultRate(t *testing.T) {
 	ch := &mockChannel{}
-	w := newChannelWorker("unknown_channel", ch)
+	w := newChannelWorker("unknown_channel", ch, "unknown_channel")
 
 	if w.limiter == nil {
 		t.Fatal("expected limiter to be non-nil")
@@ -599,10 +613,10 @@ func TestNewChannelWorker_DefaultRate(t *testing.T) {
 func TestNewChannelWorker_ConfiguredRate(t *testing.T) {
 	ch := &mockChannel{}
 
-	for name, expectedRate := range channelRateConfig {
-		w := newChannelWorker(name, ch)
+	for channelType, expectedRate := range channelRateConfig {
+		w := newChannelWorker(channelType, ch, channelType)
 		if w.limiter.Limit() != rate.Limit(expectedRate) {
-			t.Fatalf("channel %s: expected rate %v, got %v", name, expectedRate, w.limiter.Limit())
+			t.Fatalf("channel %s: expected rate %v, got %v", channelType, expectedRate, w.limiter.Limit())
 		}
 	}
 }
@@ -637,7 +651,7 @@ func TestRunWorker_MessageSplitting(t *testing.T) {
 	go m.runWorker(ctx, "test", w)
 
 	// Send a message that should be split
-	w.queue <- bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello world"}
+	w.queue <- testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello world"})
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -678,7 +692,7 @@ func TestSendWithRetry_ExponentialBackoff(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	msg := bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"}
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "1", Content: "hello"})
 
 	start := time.Now()
 	m.sendWithRetry(ctx, "test", w, msg)
@@ -738,7 +752,7 @@ func TestPreSend_PlaceholderEditSuccess(t *testing.T) {
 	// Register placeholder
 	m.RecordPlaceholder("test", "123", "456")
 
-	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"})
 	_, edited := m.preSend(context.Background(), "test", msg, ch)
 
 	if !edited {
@@ -768,7 +782,7 @@ func TestPreSend_PlaceholderEditFails_FallsThrough(t *testing.T) {
 
 	m.RecordPlaceholder("test", "123", "456")
 
-	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"})
 	_, edited := m.preSend(context.Background(), "test", msg, ch)
 
 	if edited {
@@ -827,7 +841,7 @@ func TestPreSend_TypingStopCalled(t *testing.T) {
 		stopCalled = true
 	})
 
-	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"})
 	m.preSend(context.Background(), "test", msg, ch)
 
 	if !stopCalled {
@@ -844,7 +858,7 @@ func TestPreSend_NoRegisteredState(t *testing.T) {
 		},
 	}
 
-	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"})
 	_, edited := m.preSend(context.Background(), "test", msg, ch)
 
 	if edited {
@@ -874,7 +888,7 @@ func TestPreSend_TypingAndPlaceholder(t *testing.T) {
 	})
 	m.RecordPlaceholder("test", "123", "456")
 
-	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"})
 	_, edited := m.preSend(context.Background(), "test", msg, ch)
 
 	if !stopCalled {
@@ -938,7 +952,7 @@ func TestRecordTypingStop_ReplacesExistingStop(t *testing.T) {
 		t.Fatalf("expected replacement typing stop to stay active until preSend, got %d calls", newStopCalls)
 	}
 
-	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"})
 	m.preSend(context.Background(), "test", msg, &mockChannel{})
 
 	if newStopCalls != 1 {
@@ -972,7 +986,7 @@ func TestSendWithRetry_PreSendEditsPlaceholder(t *testing.T) {
 		limiter: rate.NewLimiter(rate.Inf, 1),
 	}
 
-	msg := bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"})
 	m.sendWithRetry(context.Background(), "test", w, msg)
 
 	if sendCalled {
@@ -1135,7 +1149,7 @@ func TestPreSendStillWorksWithWrappedTypes(t *testing.T) {
 	})
 	m.RecordPlaceholder("test", "chat1", "ph_id")
 
-	msg := bus.OutboundMessage{Channel: "test", ChatID: "chat1", Content: "response"}
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "chat1", Content: "response"})
 	_, edited := m.preSend(context.Background(), "test", msg, ch)
 
 	if !stopCalled {
@@ -1222,7 +1236,7 @@ func TestManager_PlaceholderConsumedByResponse(t *testing.T) {
 			return nil
 		},
 	}
-	worker := newChannelWorker("mock", mockCh)
+	worker := newChannelWorker("mock", mockCh, "mock")
 	mgr.channels["mock"] = mockCh
 	mgr.workers["mock"] = worker
 
@@ -1238,11 +1252,11 @@ func TestManager_PlaceholderConsumedByResponse(t *testing.T) {
 
 	// Transcription feedback arrives first — it should consume the placeholder
 	// and be delivered via EditMessage, not Send.
-	msgTranscript := bus.OutboundMessage{
+	msgTranscript := testOutboundMessage(bus.OutboundMessage{
 		Channel: "mock",
 		ChatID:  "chat-1",
 		Content: "Transcript: hello",
-	}
+	})
 	mgr.sendWithRetry(ctx, "mock", worker, msgTranscript)
 
 	if mockCh.editedMessages != 1 {
@@ -1258,11 +1272,11 @@ func TestManager_PlaceholderConsumedByResponse(t *testing.T) {
 	}
 
 	// Final LLM response arrives — no placeholder left, so it goes through Send
-	msgFinal := bus.OutboundMessage{
+	msgFinal := testOutboundMessage(bus.OutboundMessage{
 		Channel: "mock",
 		ChatID:  "chat-1",
 		Content: "Final Answer",
-	}
+	})
 	mgr.sendWithRetry(ctx, "mock", worker, msgFinal)
 
 	if len(mockCh.sentMessages) != 1 {
@@ -1288,12 +1302,12 @@ func TestSendMessage_Synchronous(t *testing.T) {
 	m.channels["test"] = ch
 	m.workers["test"] = w
 
-	msg := bus.OutboundMessage{
+	msg := testOutboundMessage(bus.OutboundMessage{
 		Channel:          "test",
 		ChatID:           "123",
 		Content:          "hello world",
 		ReplyToMessageID: "msg-456",
-	}
+	})
 
 	err := m.SendMessage(context.Background(), msg)
 	if err != nil {
@@ -1315,11 +1329,11 @@ func TestSendMessage_Synchronous(t *testing.T) {
 func TestSendMessage_UnknownChannel(t *testing.T) {
 	m := newTestManager()
 
-	msg := bus.OutboundMessage{
+	msg := testOutboundMessage(bus.OutboundMessage{
 		Channel: "nonexistent",
 		ChatID:  "123",
 		Content: "hello",
-	}
+	})
 
 	err := m.SendMessage(context.Background(), msg)
 	if err == nil {
@@ -1336,11 +1350,11 @@ func TestSendMessage_NoWorker(t *testing.T) {
 	m.channels["test"] = ch
 	// No worker registered
 
-	msg := bus.OutboundMessage{
+	msg := testOutboundMessage(bus.OutboundMessage{
 		Channel: "test",
 		ChatID:  "123",
 		Content: "hello",
-	}
+	})
 
 	err := m.SendMessage(context.Background(), msg)
 	if err == nil {
@@ -1369,11 +1383,11 @@ func TestSendMessage_WithRetry(t *testing.T) {
 	m.channels["test"] = ch
 	m.workers["test"] = w
 
-	msg := bus.OutboundMessage{
+	msg := testOutboundMessage(bus.OutboundMessage{
 		Channel: "test",
 		ChatID:  "123",
 		Content: "retry me",
-	}
+	})
 
 	err := m.SendMessage(context.Background(), msg)
 	if err != nil {
@@ -1382,6 +1396,46 @@ func TestSendMessage_WithRetry(t *testing.T) {
 
 	if callCount != 2 {
 		t.Fatalf("expected 2 Send calls (1 failure + 1 success), got %d", callCount)
+	}
+}
+
+func TestSendMessage_ContextOnlyUsesContextAddressing(t *testing.T) {
+	m := newTestManager()
+
+	var received []bus.OutboundMessage
+	ch := &mockChannel{
+		sendFn: func(_ context.Context, msg bus.OutboundMessage) error {
+			received = append(received, msg)
+			return nil
+		},
+	}
+
+	w := &channelWorker{
+		ch:      ch,
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+	m.channels["test"] = ch
+	m.workers["test"] = w
+
+	msg := testOutboundMessage(bus.OutboundMessage{
+		Context: bus.NewOutboundContext("test", "123", "msg-9"),
+		Content: "hello",
+	})
+
+	if err := m.SendMessage(context.Background(), msg); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(received) != 1 {
+		t.Fatalf("expected 1 message sent, got %d", len(received))
+	}
+	if received[0].Channel != "test" || received[0].ChatID != "123" {
+		t.Fatalf("expected mirrored legacy address, got %+v", received[0])
+	}
+	if received[0].Context.Channel != "test" || received[0].Context.ChatID != "123" {
+		t.Fatalf("expected context address to be preserved, got %+v", received[0].Context)
+	}
+	if received[0].ReplyToMessageID != "msg-9" {
+		t.Fatalf("expected reply_to_message_id msg-9, got %q", received[0].ReplyToMessageID)
 	}
 }
 
@@ -1406,11 +1460,11 @@ func TestSendMessage_WithSplitting(t *testing.T) {
 	m.channels["test"] = ch
 	m.workers["test"] = w
 
-	msg := bus.OutboundMessage{
+	msg := testOutboundMessage(bus.OutboundMessage{
 		Channel: "test",
 		ChatID:  "123",
 		Content: "hello world",
-	}
+	})
 
 	err := m.SendMessage(context.Background(), msg)
 	if err != nil {
@@ -1419,6 +1473,43 @@ func TestSendMessage_WithSplitting(t *testing.T) {
 
 	if len(received) < 2 {
 		t.Fatalf("expected message to be split into at least 2 chunks, got %d", len(received))
+	}
+}
+
+func TestSendMedia_ContextOnlyUsesContextAddressing(t *testing.T) {
+	m := newTestManager()
+
+	var received []bus.OutboundMediaMessage
+	ch := &mockMediaChannel{
+		sendMediaFn: func(_ context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
+			received = append(received, msg)
+			return nil, nil
+		},
+	}
+
+	w := &channelWorker{
+		ch:      ch,
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+	m.channels["test"] = ch
+	m.workers["test"] = w
+
+	msg := testOutboundMediaMessage(bus.OutboundMediaMessage{
+		Context: bus.NewOutboundContext("test", "media-chat", ""),
+		Parts:   []bus.MediaPart{{Type: "image", Ref: "media://1"}},
+	})
+
+	if err := m.SendMedia(context.Background(), msg); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(received) != 1 {
+		t.Fatalf("expected 1 media message sent, got %d", len(received))
+	}
+	if received[0].Channel != "test" || received[0].ChatID != "media-chat" {
+		t.Fatalf("expected mirrored legacy media address, got %+v", received[0])
+	}
+	if received[0].Context.Channel != "test" || received[0].Context.ChatID != "media-chat" {
+		t.Fatalf("expected media context address to be preserved, got %+v", received[0].Context)
 	}
 }
 
@@ -1441,12 +1532,12 @@ func TestSendMessage_PreservesOrdering(t *testing.T) {
 	m.workers["test"] = w
 
 	// Send two messages sequentially — they must arrive in order
-	_ = m.SendMessage(context.Background(), bus.OutboundMessage{
+	_ = m.SendMessage(context.Background(), testOutboundMessage(bus.OutboundMessage{
 		Channel: "test", ChatID: "1", Content: "first",
-	})
-	_ = m.SendMessage(context.Background(), bus.OutboundMessage{
+	}))
+	_ = m.SendMessage(context.Background(), testOutboundMessage(bus.OutboundMessage{
 		Channel: "test", ChatID: "1", Content: "second",
-	})
+	}))
 
 	if len(order) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(order))

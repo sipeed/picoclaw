@@ -1018,113 +1018,155 @@ func (c *PicoClawConfig) ToStandardConfig() *config.Config {
 }
 
 func (c ChannelsConfig) ToStandardChannels() config.ChannelsConfig {
-	return config.ChannelsConfig{
-		WhatsApp: config.WhatsAppConfig{
-			Enabled:   c.WhatsApp.Enabled,
-			BridgeURL: c.WhatsApp.BridgeURL,
-		},
-		Telegram: func() config.TelegramConfig {
-			tc := config.TelegramConfig{
-				Enabled: c.Telegram.Enabled,
-				Proxy:   c.Telegram.Proxy,
-			}
-			if c.Telegram.Token != "" {
-				tc.Token = *config.NewSecureString(c.Telegram.Token)
-			}
-			return tc
-		}(),
-		Feishu: func() config.FeishuConfig {
-			fc := config.FeishuConfig{
-				Enabled: c.Feishu.Enabled,
-				AppID:   c.Feishu.AppID,
-			}
-			if c.Feishu.AppSecret != "" {
-				fc.AppSecret = *config.NewSecureString(c.Feishu.AppSecret)
-			}
-			if c.Feishu.EncryptKey != "" {
-				fc.EncryptKey = *config.NewSecureString(c.Feishu.EncryptKey)
-			}
-			if c.Feishu.VerificationToken != "" {
-				fc.VerificationToken = *config.NewSecureString(c.Feishu.VerificationToken)
-			}
-			return fc
-		}(),
-		Discord: func() config.DiscordConfig {
-			dc := config.DiscordConfig{
-				Enabled:     c.Discord.Enabled,
-				MentionOnly: c.Discord.MentionOnly,
-			}
-			if c.Discord.Token != "" {
-				dc.Token = *config.NewSecureString(c.Discord.Token)
-			}
-			return dc
-		}(),
-		MaixCam: config.MaixCamConfig{
-			Enabled: c.MaixCam.Enabled,
-			Host:    c.MaixCam.Host,
-			Port:    c.MaixCam.Port,
-		},
-		QQ: func() config.QQConfig {
-			qc := config.QQConfig{
-				Enabled: c.QQ.Enabled,
-				AppID:   c.QQ.AppID,
-			}
-			if c.QQ.AppSecret != "" {
-				qc.AppSecret = *config.NewSecureString(c.QQ.AppSecret)
-			}
-			return qc
-		}(),
-		DingTalk: func() config.DingTalkConfig {
-			dt := config.DingTalkConfig{
-				Enabled:  c.DingTalk.Enabled,
-				ClientID: c.DingTalk.ClientID,
-			}
-			if c.DingTalk.ClientSecret != "" {
-				dt.ClientSecret = *config.NewSecureString(c.DingTalk.ClientSecret)
-			}
-			return dt
-		}(),
-		Slack: func() config.SlackConfig {
-			sc := config.SlackConfig{
-				Enabled: c.Slack.Enabled,
-			}
-			if c.Slack.BotToken != "" {
-				sc.BotToken = *config.NewSecureString(c.Slack.BotToken)
-			}
-			if c.Slack.AppToken != "" {
-				sc.AppToken = *config.NewSecureString(c.Slack.AppToken)
-			}
-			return sc
-		}(),
-		Matrix: func() config.MatrixConfig {
-			mc := config.MatrixConfig{
-				Enabled:      c.Matrix.Enabled,
-				Homeserver:   c.Matrix.Homeserver,
-				UserID:       c.Matrix.UserID,
-				AllowFrom:    c.Matrix.AllowFrom,
-				JoinOnInvite: true,
-			}
-			if c.Matrix.AccessToken != "" {
-				mc.AccessToken = *config.NewSecureString(c.Matrix.AccessToken)
-			}
-			return mc
-		}(),
-		LINE: func() config.LINEConfig {
-			lc := config.LINEConfig{
-				Enabled:     c.LINE.Enabled,
-				WebhookHost: c.LINE.WebhookHost,
-				WebhookPort: c.LINE.WebhookPort,
-				WebhookPath: c.LINE.WebhookPath,
-			}
-			if c.LINE.ChannelSecret != "" {
-				lc.ChannelSecret = *config.NewSecureString(c.LINE.ChannelSecret)
-			}
-			if c.LINE.ChannelAccessToken != "" {
-				lc.ChannelAccessToken = *config.NewSecureString(c.LINE.ChannelAccessToken)
-			}
-			return lc
-		}(),
+	channels := make(config.ChannelsConfig)
+
+	setChannel(channels, "whatsapp", map[string]any{
+		"enabled":    c.WhatsApp.Enabled,
+		"bridge_url": c.WhatsApp.BridgeURL,
+	})
+
+	setChannel(channels, "telegram", func() map[string]any {
+		m := map[string]any{
+			"enabled": c.Telegram.Enabled,
+			"proxy":   c.Telegram.Proxy,
+		}
+		if c.Telegram.Token != "" {
+			m["token"] = config.NewSecureString(c.Telegram.Token)
+		}
+		return m
+	}())
+
+	setChannel(channels, "feishu", func() map[string]any {
+		m := map[string]any{
+			"enabled": c.Feishu.Enabled,
+			"app_id":  c.Feishu.AppID,
+		}
+		if c.Feishu.AppSecret != "" {
+			m["app_secret"] = config.NewSecureString(c.Feishu.AppSecret)
+		}
+		if c.Feishu.EncryptKey != "" {
+			m["encrypt_key"] = config.NewSecureString(c.Feishu.EncryptKey)
+		}
+		if c.Feishu.VerificationToken != "" {
+			m["verification_token"] = config.NewSecureString(c.Feishu.VerificationToken)
+		}
+		return m
+	}())
+
+	setChannel(channels, "discord", func() map[string]any {
+		m := map[string]any{
+			"enabled":      c.Discord.Enabled,
+			"mention_only": c.Discord.MentionOnly,
+		}
+		if c.Discord.Token != "" {
+			m["token"] = config.NewSecureString(c.Discord.Token)
+		}
+		return m
+	}())
+
+	setChannel(channels, "maixcam", map[string]any{
+		"enabled": c.MaixCam.Enabled,
+		"host":    c.MaixCam.Host,
+		"port":    c.MaixCam.Port,
+	})
+
+	setChannel(channels, "qq", func() map[string]any {
+		m := map[string]any{
+			"enabled": c.QQ.Enabled,
+			"app_id":  c.QQ.AppID,
+		}
+		if c.QQ.AppSecret != "" {
+			m["app_secret"] = config.NewSecureString(c.QQ.AppSecret)
+		}
+		return m
+	}())
+
+	setChannel(channels, "dingtalk", func() map[string]any {
+		m := map[string]any{
+			"enabled":   c.DingTalk.Enabled,
+			"client_id": c.DingTalk.ClientID,
+		}
+		if c.DingTalk.ClientSecret != "" {
+			m["client_secret"] = config.NewSecureString(c.DingTalk.ClientSecret)
+		}
+		return m
+	}())
+
+	setChannel(channels, "slack", func() map[string]any {
+		m := map[string]any{
+			"enabled": c.Slack.Enabled,
+		}
+		if c.Slack.BotToken != "" {
+			m["bot_token"] = config.NewSecureString(c.Slack.BotToken)
+		}
+		if c.Slack.AppToken != "" {
+			m["app_token"] = config.NewSecureString(c.Slack.AppToken)
+		}
+		return m
+	}())
+
+	setChannel(channels, "matrix", func() map[string]any {
+		m := map[string]any{
+			"enabled":        c.Matrix.Enabled,
+			"homeserver":     c.Matrix.Homeserver,
+			"user_id":        c.Matrix.UserID,
+			"allow_from":     c.Matrix.AllowFrom,
+			"join_on_invite": true,
+		}
+		if c.Matrix.AccessToken != "" {
+			m["access_token"] = config.NewSecureString(c.Matrix.AccessToken)
+		}
+		return m
+	}())
+
+	setChannel(channels, "line", func() map[string]any {
+		m := map[string]any{
+			"enabled":      c.LINE.Enabled,
+			"webhook_host": c.LINE.WebhookHost,
+			"webhook_port": c.LINE.WebhookPort,
+			"webhook_path": c.LINE.WebhookPath,
+		}
+		if c.LINE.ChannelSecret != "" {
+			m["channel_secret"] = config.NewSecureString(c.LINE.ChannelSecret)
+		}
+		if c.LINE.ChannelAccessToken != "" {
+			m["channel_access_token"] = config.NewSecureString(c.LINE.ChannelAccessToken)
+		}
+		return m
+	}())
+
+	return channels
+}
+
+func setChannel(channels config.ChannelsConfig, name string, cfg any) {
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return
 	}
+	// Wrap in "settings" for nested format
+	var m map[string]any
+	if err = json.Unmarshal(data, &m); err != nil {
+		return
+	}
+	settings := make(map[string]any)
+	for k, v := range m {
+		if _, exists := config.BaseFieldNames[k]; !exists {
+			settings[k] = v
+			delete(m, k)
+		}
+	}
+	if len(settings) > 0 {
+		m["settings"] = settings
+	}
+	nestedData, err := json.Marshal(m)
+	if err != nil {
+		return
+	}
+	bc := &config.Channel{}
+	if err := json.Unmarshal(nestedData, bc); err != nil {
+		return
+	}
+	channels[name] = bc
 }
 
 func (c GatewayConfig) ToStandardGateway() config.GatewayConfig {

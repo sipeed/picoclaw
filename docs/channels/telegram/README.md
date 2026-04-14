@@ -8,9 +8,10 @@ The Telegram channel uses long polling via the Telegram Bot API for bot-based co
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "telegram": {
       "enabled": true,
+      "type": "telegram",
       "token": "123456789:ABCdefGHIjklMNOpqrsTUVwxyz",
       "allow_from": ["123456789"],
       "proxy": "",
@@ -62,9 +63,10 @@ You can set `use_markdown_v2: true` to enable enhanced formatting options. This 
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "telegram": {
       "enabled": true,
+      "type": "telegram",
       "token": "YOUR_BOT_TOKEN",
       "allow_from": ["YOUR_USER_ID"],
       "use_markdown_v2": true

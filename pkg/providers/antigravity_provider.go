@@ -389,6 +389,7 @@ type antigravityJSONResponse struct {
 		Content struct {
 			Parts []struct {
 				Text                  string                   `json:"text,omitempty"`
+				Thought               bool                     `json:"thought,omitempty"`
 				ThoughtSignature      string                   `json:"thoughtSignature,omitempty"`
 				ThoughtSignatureSnake string                   `json:"thought_signature,omitempty"`
 				FunctionCall          *antigravityFunctionCall `json:"functionCall,omitempty"`
@@ -406,6 +407,7 @@ type antigravityJSONResponse struct {
 
 func (p *AntigravityProvider) parseSSEResponse(body string) (*LLMResponse, error) {
 	var contentParts []string
+	var reasoningParts []string
 	var toolCalls []ToolCall
 	var usage *UsageInfo
 	var finishReason string
@@ -433,7 +435,11 @@ func (p *AntigravityProvider) parseSSEResponse(body string) (*LLMResponse, error
 		for _, candidate := range resp.Candidates {
 			for _, part := range candidate.Content.Parts {
 				if part.Text != "" {
-					contentParts = append(contentParts, part.Text)
+					if part.Thought {
+						reasoningParts = append(reasoningParts, part.Text)
+					} else {
+						contentParts = append(contentParts, part.Text)
+					}
 				}
 				if part.FunctionCall != nil {
 					argumentsJSON, _ := json.Marshal(part.FunctionCall.Args)
@@ -475,10 +481,11 @@ func (p *AntigravityProvider) parseSSEResponse(body string) (*LLMResponse, error
 	}
 
 	return &LLMResponse{
-		Content:      strings.Join(contentParts, ""),
-		ToolCalls:    toolCalls,
-		FinishReason: mappedFinish,
-		Usage:        usage,
+		Content:          strings.Join(contentParts, ""),
+		ReasoningContent: strings.Join(reasoningParts, ""),
+		ToolCalls:        toolCalls,
+		FinishReason:     mappedFinish,
+		Usage:            usage,
 	}, nil
 }
 

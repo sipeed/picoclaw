@@ -46,7 +46,16 @@ var gateway = struct {
 func refreshPicoToken(cfg *config.Config) {
 	gateway.mu.Lock()
 	defer gateway.mu.Unlock()
-	gateway.picoToken = cfg.Channels.Pico.Token.String()
+	var picoCfg config.PicoSettings
+	if bc := cfg.Channels.GetByType(config.ChannelPico); bc != nil {
+		decoded, err := bc.GetDecoded()
+		if err == nil && decoded != nil {
+			if p, ok := decoded.(*config.PicoSettings); ok {
+				picoCfg = *p
+			}
+		}
+	}
+	gateway.picoToken = picoCfg.Token.String()
 }
 
 // refreshPicoTokensLocked reads the pico token from config and caches it.
@@ -56,7 +65,16 @@ func refreshPicoTokensLocked(configPath string) {
 	if err != nil {
 		return
 	}
-	gateway.picoToken = cfg.Channels.Pico.Token.String()
+	var picoCfg config.PicoSettings
+	if bc := cfg.Channels.GetByType(config.ChannelPico); bc != nil {
+		decoded, err := bc.GetDecoded()
+		if err == nil && decoded != nil {
+			if p, ok := decoded.(*config.PicoSettings); ok {
+				picoCfg = *p
+			}
+		}
+	}
+	gateway.picoToken = picoCfg.Token.String()
 }
 
 // ensurePicoTokenCachedLocked lazily fills the in-memory pico token cache when
@@ -795,7 +813,16 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 				gateway.mu.Lock()
 				if gateway.cmd == cmd {
 					gateway.pidData = pd
-					gateway.picoToken = cfg.Channels.Pico.Token.String()
+					var picoCfg config.PicoSettings
+					if bc := cfg.Channels.GetByType(config.ChannelPico); bc != nil {
+						decoded, err := bc.GetDecoded()
+						if err == nil && decoded != nil {
+							if p, ok := decoded.(*config.PicoSettings); ok {
+								picoCfg = *p
+							}
+						}
+					}
+					gateway.picoToken = picoCfg.Token.String()
 					setGatewayRuntimeStatusLocked("running")
 				}
 				gateway.mu.Unlock()

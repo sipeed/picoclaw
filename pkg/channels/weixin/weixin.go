@@ -20,7 +20,7 @@ import (
 type WeixinChannel struct {
 	*channels.BaseChannel
 	api    *ApiClient
-	config config.WeixinConfig
+	config *config.WeixinSettings
 	ctx    context.Context
 	cancel context.CancelFunc
 	bus    *bus.MessageBus
@@ -36,25 +36,48 @@ type WeixinChannel struct {
 }
 
 func init() {
-	channels.RegisterFactory("weixin", func(cfg *config.Config, bus *bus.MessageBus) (channels.Channel, error) {
-		return NewWeixinChannel(cfg.Channels.Weixin, bus)
-	})
+	channels.RegisterFactory(
+		config.ChannelWeixin,
+		func(channelName, channelType string, cfg *config.Config, bus *bus.MessageBus) (channels.Channel, error) {
+			bc := cfg.Channels[channelName]
+			decoded, err := bc.GetDecoded()
+			if err != nil {
+				return nil, err
+			}
+			weixinCfg, ok := decoded.(*config.WeixinSettings)
+			if !ok {
+				return nil, channels.ErrSendFailed
+			}
+			ch, err := NewWeixinChannel(bc, weixinCfg, bus)
+			if err != nil {
+				return nil, err
+			}
+			if channelName != config.ChannelWeixin {
+				ch.SetName(channelName)
+			}
+			return ch, nil
+		},
+	)
 }
 
 // NewWeixinChannel creates a new WeixinChannel from config.
-func NewWeixinChannel(cfg config.WeixinConfig, messageBus *bus.MessageBus) (*WeixinChannel, error) {
+func NewWeixinChannel(
+	bc *config.Channel,
+	cfg *config.WeixinSettings,
+	messageBus *bus.MessageBus,
+) (*WeixinChannel, error) {
 	api, err := NewApiClient(cfg.BaseURL, cfg.Token.String(), cfg.Proxy)
 	if err != nil {
 		return nil, fmt.Errorf("weixin: failed to create API client: %w", err)
 	}
 
 	base := channels.NewBaseChannel(
-		"weixin",
+		bc.Name(),
 		cfg,
 		messageBus,
-		cfg.AllowFrom,
+		bc.AllowFrom,
 		channels.WithMaxMessageLength(4000),
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	return &WeixinChannel{
@@ -334,8 +357,6 @@ func (c *WeixinChannel) handleInboundMessage(ctx context.Context, msg WeixinMess
 		return
 	}
 
-	peer := bus.Peer{Kind: "direct", ID: fromUserID}
-
 	metadata := map[string]string{
 		"from_user_id":  fromUserID,
 		"context_token": msg.ContextToken,
@@ -354,7 +375,21 @@ func (c *WeixinChannel) handleInboundMessage(ctx context.Context, msg WeixinMess
 		c.persistContextTokens()
 	}
 
-	c.HandleMessage(ctx, peer, messageID, fromUserID, fromUserID, content, mediaRefs, metadata, sender)
+	inboundCtx := bus.InboundContext{
+		Channel:   "weixin",
+		ChatID:    fromUserID,
+		ChatType:  "direct",
+		SenderID:  fromUserID,
+		MessageID: messageID,
+		Raw:       metadata,
+	}
+	if msg.ContextToken != "" {
+		inboundCtx.ReplyHandles = map[string]string{
+			"context_token": msg.ContextToken,
+		}
+	}
+
+	c.HandleInboundContext(ctx, fromUserID, content, mediaRefs, inboundCtx, sender)
 }
 
 // Send implements channels.Channel by sending a text message to the WeChat user.

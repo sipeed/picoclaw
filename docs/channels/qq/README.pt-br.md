@@ -8,9 +8,10 @@ O PicoClaw oferece suporte ao QQ via API Bot oficial da Plataforma Aberta QQ.
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "qq": {
       "enabled": true,
+      "type": "qq",
       "app_id": "YOUR_APP_ID",
       "app_secret": "YOUR_APP_SECRET",
       "allow_from": []

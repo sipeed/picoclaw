@@ -12,6 +12,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
+	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -108,7 +109,8 @@ func (p *llmHookTestProvider) GetDefaultModel() string {
 }
 
 type llmObserverHook struct {
-	eventCh chan Event
+	eventCh     chan Event
+	lastInbound *bus.InboundContext
 }
 
 func (h *llmObserverHook) OnEvent(ctx context.Context, evt Event) error {
@@ -125,6 +127,9 @@ func (h *llmObserverHook) BeforeLLM(
 	ctx context.Context,
 	req *LLMHookRequest,
 ) (*LLMHookRequest, HookDecision, error) {
+	if req.Context != nil {
+		h.lastInbound = cloneInboundContext(req.Context.Inbound)
+	}
 	next := req.Clone()
 	next.Model = "hook-model"
 	return next, HookDecision{Action: HookActionModify}, nil
@@ -157,6 +162,31 @@ func TestAgentLoop_Hooks_ObserverAndLLMInterceptor(t *testing.T) {
 		DefaultResponse: defaultResponse,
 		EnableSummary:   false,
 		SendResponse:    false,
+		InboundContext: &bus.InboundContext{
+			Channel:  "cli",
+			ChatID:   "direct",
+			ChatType: "direct",
+			SenderID: "hook-user",
+		},
+		RouteResult: &routing.ResolvedRoute{
+			AgentID:   "main",
+			Channel:   "cli",
+			AccountID: routing.DefaultAccountID,
+			SessionPolicy: routing.SessionPolicy{
+				Dimensions: []string{"sender"},
+			},
+			MatchedBy: "default",
+		},
+		SessionScope: &session.SessionScope{
+			Version:    session.ScopeVersionV1,
+			AgentID:    "main",
+			Channel:    "cli",
+			Account:    routing.DefaultAccountID,
+			Dimensions: []string{"sender"},
+			Values: map[string]string{
+				"sender": "hook-user",
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("runAgentLoop failed: %v", err)
@@ -171,11 +201,29 @@ func TestAgentLoop_Hooks_ObserverAndLLMInterceptor(t *testing.T) {
 	if lastModel != "hook-model" {
 		t.Fatalf("expected model hook-model, got %q", lastModel)
 	}
+	if hook.lastInbound == nil {
+		t.Fatal("expected hook to receive inbound context")
+	}
+	if hook.lastInbound.Channel != "cli" || hook.lastInbound.SenderID != "hook-user" {
+		t.Fatalf("hook inbound context = %+v", hook.lastInbound)
+	}
+	if hook.lastInbound != nil && hook.lastInbound.ChatID != "direct" {
+		t.Fatalf("hook inbound chat ID = %q, want direct", hook.lastInbound.ChatID)
+	}
 
 	select {
 	case evt := <-hook.eventCh:
 		if evt.Kind != EventKindTurnEnd {
 			t.Fatalf("expected turn end event, got %v", evt.Kind)
+		}
+		if evt.Context == nil || evt.Context.Inbound == nil {
+			t.Fatal("expected observer event to carry inbound context")
+		}
+		if evt.Context.Route == nil || evt.Context.Route.AgentID != "main" {
+			t.Fatalf("expected observer event to carry route context, got %+v", evt.Context.Route)
+		}
+		if evt.Context.Scope == nil || evt.Context.Scope.Values["sender"] != "hook-user" {
+			t.Fatalf("expected observer event to carry session scope, got %+v", evt.Context.Scope)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for hook observer event")
@@ -725,7 +773,7 @@ func TestAgentLoop_HookRespond_InterruptSkipsRemaining(t *testing.T) {
 	sub := al.SubscribeEvents(32)
 	defer al.UnsubscribeEvents(sub.ID)
 
-	sessionKey := routing.BuildAgentMainSessionKey(routing.DefaultAgentID)
+	sessionKey := session.BuildMainSessionKey(routing.DefaultAgentID)
 
 	type result struct {
 		resp string
@@ -801,7 +849,7 @@ func TestAgentLoop_HookRespond_SteeringSkipsRemaining(t *testing.T) {
 	sub := al.SubscribeEvents(32)
 	defer al.UnsubscribeEvents(sub.ID)
 
-	sessionKey := routing.BuildAgentMainSessionKey(routing.DefaultAgentID)
+	sessionKey := session.BuildMainSessionKey(routing.DefaultAgentID)
 
 	type result struct {
 		resp string
@@ -819,9 +867,26 @@ func TestAgentLoop_HookRespond_SteeringSkipsRemaining(t *testing.T) {
 		resultCh <- result{resp: resp, err: err}
 	}()
 
-	time.Sleep(50 * time.Millisecond)
-
-	al.Steer(providers.Message{Role: "user", Content: "change direction"})
+	collectedEvents := make([]Event, 0, 8)
+	steered := false
+	deadline := time.After(3 * time.Second)
+	for !steered {
+		select {
+		case evt := <-sub.C:
+			collectedEvents = append(collectedEvents, evt)
+			if evt.Kind != EventKindToolExecEnd {
+				continue
+			}
+			payload, ok := evt.Payload.(ToolExecEndPayload)
+			if !ok || payload.Tool != "tool_one" {
+				continue
+			}
+			al.Steer(providers.Message{Role: "user", Content: "change direction"})
+			steered = true
+		case <-deadline:
+			t.Fatal("timeout waiting for tool_one to finish before steering")
+		}
+	}
 
 	select {
 	case r := <-resultCh:
@@ -832,7 +897,7 @@ func TestAgentLoop_HookRespond_SteeringSkipsRemaining(t *testing.T) {
 		t.Fatal("timeout waiting for result")
 	}
 
-	events := collectEventStream(sub.C)
+	events := append(collectedEvents, collectEventStream(sub.C)...)
 
 	skippedEvts := filterEvents(events, EventKindToolExecSkipped)
 	if len(skippedEvts) < 1 {

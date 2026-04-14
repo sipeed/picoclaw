@@ -8,9 +8,10 @@ PicoClaw 通过 LINE Messaging API 配合 Webhook 回调功能实现对 LINE 的
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "line": {
       "enabled": true,
+      "type": "line",
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
       "webhook_path": "/webhook/line",

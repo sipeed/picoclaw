@@ -390,7 +390,7 @@ The old `providers` configuration is **deprecated** and has been removed in V2. 
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "model_list": [
     {
       "model_name": "glm-4.7",
@@ -480,19 +480,22 @@ picoclaw agent -m "Hello"
     "model_name": "voice-gemini",
     "echo_transcription": false
   },
-  "channels": {
+  "channel_list": {
     "telegram": {
       "enabled": true,
+      "type": "telegram",
       "token": "123456:ABC...",
       "allow_from": ["123456789"]
     },
     "discord": {
       "enabled": true,
+      "type": "discord",
       "token": "",
       "allow_from": [""]
     },
     "whatsapp": {
       "enabled": false,
+      "type": "whatsapp",
       "bridge_url": "ws://localhost:3001",
       "use_native": false,
       "session_store_path": "",
@@ -500,6 +503,7 @@ picoclaw agent -m "Hello"
     },
     "feishu": {
       "enabled": false,
+      "type": "feishu",
       "app_id": "cli_xxx",
       "app_secret": "xxx",
       "encrypt_key": "",
@@ -508,6 +512,7 @@ picoclaw agent -m "Hello"
     },
     "qq": {
       "enabled": false,
+      "type": "qq",
       "app_id": "",
       "app_secret": "",
       "allow_from": []

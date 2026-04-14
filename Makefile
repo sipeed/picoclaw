@@ -1,4 +1,4 @@
-.PHONY: all build install uninstall clean help test
+.PHONY: all build install uninstall clean help test build-all
 
 # Build variables
 BINARY_NAME=picoclaw
@@ -205,11 +205,44 @@ build-linux-mipsle: generate
 	$(call PATCH_MIPS_FLAGS,$(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle)
 	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)-linux-mipsle"
 
+## build-android-arm64: Build core for Android ARM64
+build-android-arm64: generate
+	@echo "Building for android/arm64..."
+	@mkdir -p $(BUILD_DIR)
+	GOOS=android GOARCH=arm64 $(GO) build -tags stdjson -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-android-arm64 ./$(CMD_DIR)
+	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)-android-arm64"
+
+## build-launcher-android-arm64: Build launcher for Android ARM64
+build-launcher-android-arm64:
+	@echo "Building picoclaw-launcher for android/arm64..."
+	@mkdir -p $(BUILD_DIR)
+	@$(MAKE) -C web build-android-arm64 \
+		OUTPUT_ANDROID_ARM64="$(CURDIR)/$(BUILD_DIR)/picoclaw-launcher-android-arm64" \
+		GO='$(GO)' \
+		LDFLAGS='$(LDFLAGS)'
+	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher-android-arm64"
+
+## build-android-bundle: Build core and launcher for all Android architectures and package as universal zip
+build-android-bundle: generate
+	@echo "Building core for all Android architectures..."
+	@mkdir -p $(BUILD_DIR)
+	GOOS=android GOARCH=arm64 $(GO) build -tags stdjson -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-android-arm64 ./$(CMD_DIR)
+	@echo "Building launcher for Android arm64..."
+	@$(MAKE) build-launcher-android-arm64
+	@echo "Staging JNI libs..."
+	@rm -rf $(BUILD_DIR)/android-staging
+	@mkdir -p $(BUILD_DIR)/android-staging/arm64-v8a
+	@cp $(BUILD_DIR)/$(BINARY_NAME)-android-arm64 $(BUILD_DIR)/android-staging/arm64-v8a/libpicoclaw.so
+	@cp $(BUILD_DIR)/picoclaw-launcher-android-arm64 $(BUILD_DIR)/android-staging/arm64-v8a/libpicoclaw-web.so
+	@cd $(BUILD_DIR)/android-staging && zip -r ../picoclaw-android-universal.zip .
+	@rm -rf $(BUILD_DIR)/android-staging
+	@echo "All Android builds complete: $(BUILD_DIR)/picoclaw-android-universal.zip"
+
 ## build-pi-zero: Build for Raspberry Pi Zero 2 W (32-bit and 64-bit)
 build-pi-zero: build-linux-arm build-linux-arm64
 	@echo "Pi Zero 2 W builds: $(BUILD_DIR)/$(BINARY_NAME)-linux-arm (32-bit), $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 (64-bit)"
 
-## build-all: Build picoclaw for all platforms
+## build-all: Build the picoclaw core binary for all Makefile-managed platforms
 build-all: generate
 	@echo "Building for multiple platforms..."
 	@mkdir -p $(BUILD_DIR)
@@ -226,7 +259,7 @@ build-all: generate
 	GOOS=windows GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)
 	GOOS=netbsd GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-netbsd-amd64 ./$(CMD_DIR)
 	GOOS=netbsd GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY_NAME)-netbsd-arm64 ./$(CMD_DIR)
-	@echo "All builds complete"
+	@echo "Core builds complete"
 
 ## install: Install picoclaw to system and copy builtin skills
 install: build

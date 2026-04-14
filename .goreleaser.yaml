@@ -9,11 +9,10 @@ git:
 
 before:
   hooks:
-    - go mod tidy
     - go generate ./...
-    - sh -c 'cd web/frontend && pnpm install && pnpm build:backend'
-    - go install github.com/tc-hib/go-winres@latest
-    - go-winres make --in web/backend/winres/winres.json --out web/backend/rsrc --product-version={{ .Version }} --file-version={{ .Version }}
+    - sh -c 'cd web/frontend && CI=true pnpm install --frozen-lockfile && pnpm build:backend'
+    - sh -c 'GOBIN="$(go env GOPATH)/bin"; mkdir -p "$GOBIN"; go install github.com/tc-hib/go-winres@v0.3.3 && "$GOBIN/go-winres" make --in web/backend/winres/winres.json --out web/backend/rsrc --product-version={{ .Version }} --file-version={{ .Version }}'
+    - sh -c 'if [ "${INCLUDE_ANDROID_BUNDLE:-}" = "true" ]; then make build-android-bundle; fi'
 
 builds:
   - id: picoclaw
@@ -27,7 +26,7 @@ builds:
       - -X github.com/sipeed/picoclaw/pkg/config.Version={{ .Version }}
       - -X github.com/sipeed/picoclaw/pkg/config.GitCommit={{ .ShortCommit }}
       - -X github.com/sipeed/picoclaw/pkg/config.BuildTime={{ .Date }}
-      - -X github.com/sipeed/picoclaw/pkg/config.GoVersion={{ .Env.GOVERSION }}
+      - -X github.com/sipeed/picoclaw/pkg/config.GoVersion={{ with index .Env "GOVERSION" }}{{ . }}{{ else }}unknown{{ end }}
     goos:
       - linux
       - windows
@@ -67,6 +66,10 @@ builds:
       - stdjson
     ldflags:
       - -s -w
+      - -X github.com/sipeed/picoclaw/pkg/config.Version={{ .Version }}
+      - -X github.com/sipeed/picoclaw/pkg/config.GitCommit={{ .ShortCommit }}
+      - -X github.com/sipeed/picoclaw/pkg/config.BuildTime={{ .Date }}
+      - -X github.com/sipeed/picoclaw/pkg/config.GoVersion={{ with index .Env "GOVERSION" }}{{ . }}{{ else }}unknown{{ end }}
     goos:
       - linux
       - windows
@@ -106,6 +109,10 @@ builds:
       - stdjson
     ldflags:
       - -s -w
+      - -X github.com/sipeed/picoclaw/pkg/config.Version={{ .Version }}
+      - -X github.com/sipeed/picoclaw/pkg/config.GitCommit={{ .ShortCommit }}
+      - -X github.com/sipeed/picoclaw/pkg/config.BuildTime={{ .Date }}
+      - -X github.com/sipeed/picoclaw/pkg/config.GoVersion={{ with index .Env "GOVERSION" }}{{ . }}{{ else }}unknown{{ end }}
     goos:
       - linux
       - windows
@@ -245,6 +252,8 @@ changelog:
 
 release:
   disable: '{{ isEnvSet "NIGHTLY_BUILD" }}'
+  extra_files:
+    - glob: ./build/picoclaw-android-universal.zip
   footer: >-
 
     ---

@@ -47,6 +47,7 @@
       "step3": "准备回复...",
       "step4": "马上就好..."
     },
+    "reasoningLabel": "思考",
     "history": "历史记录",
     "noHistory": "暂无对话历史",
     "historyLoadFailed": "加载历史记录失败",

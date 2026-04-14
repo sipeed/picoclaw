@@ -17,7 +17,7 @@ import (
 
 type MaixCamChannel struct {
 	*channels.BaseChannel
-	config     config.MaixCamConfig
+	config     *config.MaixCamSettings
 	listener   net.Listener
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -32,13 +32,17 @@ type MaixCamMessage struct {
 	Data      map[string]any `json:"data"`
 }
 
-func NewMaixCamChannel(cfg config.MaixCamConfig, bus *bus.MessageBus) (*MaixCamChannel, error) {
+func NewMaixCamChannel(
+	bc *config.Channel,
+	cfg *config.MaixCamSettings,
+	bus *bus.MessageBus,
+) (*MaixCamChannel, error) {
 	base := channels.NewBaseChannel(
 		"maixcam",
 		cfg,
 		bus,
-		cfg.AllowFrom,
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+		bc.AllowFrom,
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	return &MaixCamChannel{
@@ -196,17 +200,15 @@ func (c *MaixCamChannel) handlePersonDetection(msg MaixCamMessage) {
 		return
 	}
 
-	c.HandleMessage(
-		c.ctx,
-		bus.Peer{Kind: "channel", ID: "default"},
-		"",
-		senderID,
-		chatID,
-		content,
-		[]string{},
-		metadata,
-		sender,
-	)
+	inboundCtx := bus.InboundContext{
+		Channel:  "maixcam",
+		ChatID:   chatID,
+		ChatType: "channel",
+		SenderID: senderID,
+		Raw:      metadata,
+	}
+
+	c.HandleInboundContext(c.ctx, chatID, content, nil, inboundCtx, sender)
 }
 
 func (c *MaixCamChannel) handleStatusUpdate(msg MaixCamMessage) {

@@ -24,6 +24,16 @@ type mcpRuntime struct {
 	initErr  error
 }
 
+func (r *mcpRuntime) reset() *mcp.Manager {
+	r.mu.Lock()
+	manager := r.manager
+	r.manager = nil
+	r.initErr = nil
+	r.initOnce = sync.Once{}
+	r.mu.Unlock()
+	return manager
+}
+
 func (r *mcpRuntime) setManager(manager *mcp.Manager) {
 	r.mu.Lock()
 	r.manager = manager

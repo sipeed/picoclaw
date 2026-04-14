@@ -8,9 +8,10 @@ Kênh Telegram sử dụng long polling qua Telegram Bot API để giao tiếp d
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "telegram": {
       "enabled": true,
+      "type": "telegram",
       "token": "123456789:ABCdefGHIjklMNOpqrsTUVwxyz",
       "allow_from": ["123456789"],
       "proxy": "",
@@ -42,9 +43,10 @@ Bạn có thể đặt `use_markdown_v2: true` để bật các tùy chọn đ�
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "telegram": {
       "enabled": true,
+      "type": "telegram",
       "token": "YOUR_BOT_TOKEN",
       "allow_from": ["YOUR_USER_ID"],
       "use_markdown_v2": true
