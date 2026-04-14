@@ -40,9 +40,10 @@ Converse com seu picoclaw através do Telegram, Discord, WhatsApp, Matrix, QQ, D
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "telegram": {
       "enabled": true,
+      "type": "telegram",
       "token": "YOUR_BOT_TOKEN",
       "allow_from": ["YOUR_USER_ID"]
     }
@@ -98,9 +99,10 @@ Voce tambem pode gerenciar skills instaladas diretamente pelo Telegram:
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "discord": {
       "enabled": true,
+      "type": "discord",
       "token": "YOUR_BOT_TOKEN",
       "allow_from": ["YOUR_USER_ID"]
     }
@@ -121,7 +123,7 @@ Por padrão, o bot responde a todas as mensagens em um canal do servidor. Para r
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "discord": {
       "group_trigger": { "mention_only": true }
     }
@@ -133,7 +135,7 @@ Você também pode ativar por prefixos de palavras-chave (ex.: `!bot`):
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "discord": {
       "group_trigger": { "prefixes": ["!bot"] }
     }
@@ -162,9 +164,10 @@ O PicoClaw pode se conectar ao WhatsApp de duas formas:
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "whatsapp": {
       "enabled": true,
+      "type": "whatsapp",
       "use_native": true,
       "session_store_path": "",
       "allow_from": []
@@ -196,9 +199,10 @@ Escaneie o QR code exibido com seu aplicativo WeChat mobile. Após o login bem-s
 (Opcional) Adicione seu ID de usuário WeChat em `allow_from` para restringir quem pode enviar mensagens ao bot:
 ```json
 {
-  "channels": {
+  "channel_list": {
     "weixin": {
       "enabled": true,
+      "type": "weixin",
       "token": "YOUR_TOKEN",
       "allow_from": ["YOUR_USER_ID"]
     }
@@ -227,9 +231,10 @@ A QQ Open Platform oferece uma página de configuração com um clique para bots
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "qq": {
       "enabled": true,
+      "type": "qq",
       "app_id": "YOUR_APP_ID",
       "app_secret": "YOUR_APP_SECRET",
       "allow_from": []
@@ -269,9 +274,10 @@ Se preferir criar o bot manualmente:
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "dingtalk": {
       "enabled": true,
+      "type": "dingtalk",
       "client_id": "YOUR_CLIENT_ID",
       "client_secret": "YOUR_CLIENT_SECRET",
       "allow_from": []
@@ -298,9 +304,10 @@ Canal de integração projetado especificamente para hardware de câmera AI Sipe
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "maixcam": {
-      "enabled": true
+      "enabled": true,
+      "type": "maixcam"
     }
   }
 }
@@ -326,9 +333,10 @@ picoclaw gateway
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "matrix": {
       "enabled": true,
+      "type": "matrix",
       "homeserver": "https://matrix.org",
       "user_id": "@your-bot:matrix.org",
       "access_token": "YOUR_MATRIX_ACCESS_TOKEN",
@@ -362,9 +370,10 @@ Para opções completas (`device_id`, `join_on_invite`, `group_trigger`, `placeh
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "line": {
       "enabled": true,
+      "type": "line",
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
       "webhook_path": "/webhook/line",
@@ -420,9 +429,10 @@ Veja o [Guia de Configuração do WeCom AI Bot](../channels/wecom/wecom_aibot/RE
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "wecom": {
       "enabled": true,
+      "type": "wecom",
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
       "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
@@ -453,7 +463,7 @@ Veja o [Guia de Configuração do WeCom AI Bot](../channels/wecom/wecom_aibot/RE
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "wecom_app": {
       "enabled": true,
       "corp_id": "wwxxxxxxxxxxxxxxxx",
@@ -488,7 +498,7 @@ picoclaw gateway
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "wecom_aibot": {
       "enabled": true,
       "token": "YOUR_TOKEN",
@@ -528,9 +538,10 @@ O PicoClaw se conecta ao Feishu via modo WebSocket/SDK — não é necessário U
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "feishu": {
       "enabled": true,
+      "type": "feishu",
       "app_id": "cli_xxx",
       "app_secret": "YOUR_APP_SECRET",
       "allow_from": []
@@ -568,9 +579,10 @@ Para opções completas, veja o [Guia de Configuração do Canal Feishu](../chan
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "slack": {
       "enabled": true,
+      "type": "slack",
       "bot_token": "xoxb-YOUR-BOT-TOKEN",
       "app_token": "xapp-YOUR-APP-TOKEN",
       "allow_from": []
@@ -595,9 +607,10 @@ picoclaw gateway
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "irc": {
       "enabled": true,
+      "type": "irc",
       "server": "irc.libera.chat:6697",
       "tls": true,
       "nick": "picoclaw-bot",
@@ -635,9 +648,10 @@ Instale e execute um framework de bot QQ compatível com OneBot v11. Habilite se
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "onebot": {
       "enabled": true,
+      "type": "onebot",
       "ws_url": "ws://127.0.0.1:8080",
       "access_token": "",
       "allow_from": []
@@ -667,9 +681,10 @@ Canal de integração projetado especificamente para hardware de câmera AI Sipe
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "maixcam": {
-      "enabled": true
+      "enabled": true,
+      "type": "maixcam"
     }
   }
 }

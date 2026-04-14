@@ -119,10 +119,19 @@ func (h *Handler) handleGetPicoToken(w http.ResponseWriter, r *http.Request) {
 	wsURL := h.buildWsURL(r)
 
 	w.Header().Set("Content-Type", "application/json")
+	bc := cfg.Channels.GetByType(config.ChannelPico)
+	var picoCfg config.PicoSettings
+	if bc != nil {
+		bc.Decode(&picoCfg)
+	}
+	enabled := false
+	if bc != nil {
+		enabled = bc.Enabled
+	}
 	json.NewEncoder(w).Encode(map[string]any{
-		"token":   cfg.Channels.Pico.Token.String(),
+		"token":   picoCfg.Token.String(),
 		"ws_url":  wsURL,
-		"enabled": cfg.Channels.Pico.Enabled,
+		"enabled": enabled,
 	})
 }
 
@@ -137,7 +146,14 @@ func (h *Handler) handleRegenPicoToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token := generateSecureToken()
-	cfg.Channels.Pico.SetToken(token)
+	if bc := cfg.Channels.GetByType(config.ChannelPico); bc != nil {
+		decoded, err := bc.GetDecoded()
+		if err == nil && decoded != nil {
+			if settings, ok := decoded.(*config.PicoSettings); ok {
+				settings.Token = *config.NewSecureString(token)
+			}
+		}
+	}
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
@@ -173,20 +189,30 @@ func (h *Handler) EnsurePicoChannel(callerOrigin string) (bool, error) {
 
 	changed := false
 
-	if !cfg.Channels.Pico.Enabled {
-		cfg.Channels.Pico.Enabled = true
+	bc := cfg.Channels.GetByType(config.ChannelPico)
+	if bc == nil {
+		bc = &config.Channel{Type: config.ChannelPico}
+		cfg.Channels["pico"] = bc
+	}
+
+	if !bc.Enabled {
+		bc.Enabled = true
 		changed = true
 	}
 
-	if cfg.Channels.Pico.Token.String() == "" {
-		cfg.Channels.Pico.SetToken(generateSecureToken())
-		changed = true
-	}
+	if decoded, err := bc.GetDecoded(); err == nil && decoded != nil {
+		if picoCfg, ok := decoded.(*config.PicoSettings); ok {
+			if picoCfg.Token.String() == "" {
+				picoCfg.Token = *config.NewSecureString(generateSecureToken())
+				changed = true
+			}
 
-	// Seed origins from the request instead of hardcoding ports.
-	if len(cfg.Channels.Pico.AllowOrigins) == 0 && callerOrigin != "" {
-		cfg.Channels.Pico.AllowOrigins = []string{callerOrigin}
-		changed = true
+			// Seed origins from the request instead of hardcoding ports.
+			if len(picoCfg.AllowOrigins) == 0 && callerOrigin != "" {
+				picoCfg.AllowOrigins = []string{callerOrigin}
+				changed = true
+			}
+		}
 	}
 
 	if changed {
@@ -220,9 +246,15 @@ func (h *Handler) handlePicoSetup(w http.ResponseWriter, r *http.Request) {
 
 	wsURL := h.buildWsURL(r)
 
+	var picoCfg2 config.PicoSettings
+	if bc := cfg.Channels.GetByType(config.ChannelPico); bc != nil {
+		if decoded, err := bc.GetDecoded(); err == nil && decoded != nil {
+			picoCfg2 = *decoded.(*config.PicoSettings)
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"token":   cfg.Channels.Pico.Token.String(),
+		"token":   picoCfg2.Token.String(),
 		"ws_url":  wsURL,
 		"enabled": true,
 		"changed": changed,

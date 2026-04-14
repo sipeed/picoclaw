@@ -327,8 +327,13 @@ import (
 )
 
 func init() {
-    channels.RegisterFactory("telegram", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
-        return NewTelegramChannel(cfg, b)
+    channels.RegisterFactory(config.ChannelTelegram, func(channelName, channelType string, cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+        bc := cfg.Channels[channelName]
+        decoded, err := bc.GetDecoded()
+        if err != nil { return nil, err }
+        c, ok := decoded.(*config.TelegramSettings)
+        if !ok { return nil, channels.ErrSendFailed }
+        return NewTelegramChannel(bc, c, b)
     })
 }
 ```
@@ -427,8 +432,13 @@ import (
 )
 
 func init() {
-    channels.RegisterFactory("matrix", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
-        return NewMatrixChannel(cfg, b)
+    channels.RegisterFactory(config.ChannelMatrix, func(channelName, channelType string, cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+        bc := cfg.Channels[channelName]
+        decoded, err := bc.GetDecoded()
+        if err != nil { return nil, err }
+        c, ok := decoded.(*config.MatrixSettings)
+        if !ok { return nil, channels.ErrSendFailed }
+        return NewMatrixChannel(bc, c, b)
     })
 }
 ```
@@ -772,41 +782,58 @@ if c.owner != nil && c.placeholderRecorder != nil {
 
 ### 3.5 注册配置和 Gateway 接入
 
-#### 在 `pkg/config/config.go` 中添加配置
+#### 添加配置入口
+
+Channels 现在使用统一的 map 类型配置（`map[string]*config.Channel`）。
+每个 channel 条目将通用字段（`enabled`、`type`、`allow_from` 等）放在顶层，
+channel 特定的设置放在 `settings` 子键中：
+
+```json
+{
+  "channels": {
+    "matrix": {
+      "enabled": true,
+      "type": "matrix",
+      "allow_from": ["@user:example.com"],
+      "settings": {
+        "home_server": "https://matrix.org",
+        "user_id": "@bot:example.com",
+        "access_token": "enc://..."
+      }
+    }
+  }
+}
+```
+
+安全字段（token、密码、API 密钥）放入 `.security.yml`：
+
+```yaml
+channels:
+  matrix:
+    access_token: "your-matrix-access-token"
+```
+
+Channel 类型必须在 `pkg/config/config_channel.go` 的 `channelSettingsFactory` 中注册：
 
 ```go
-type ChannelsConfig struct {
+var channelSettingsFactory = map[string]any{
     // ... 现有 channels
-    Matrix  MatrixChannelConfig  `json:"matrix"`
-}
-
-type MatrixChannelConfig struct {
-    Enabled    bool     `json:"enabled"`
-    HomeServer string   `json:"home_server"`
-    Token      string   `json:"token"`
-    AllowFrom  []string `json:"allow_from"`
-    GroupTrigger GroupTriggerConfig `json:"group_trigger"`
-    Placeholder  PlaceholderConfig  `json:"placeholder"`
-    ReasoningChannelID string `json:"reasoning_channel_id"`
+    ChannelMatrix: (MatrixSettings{}),
 }
 ```
 
-#### 在 Manager.initChannels() 中添加入口
+#### 无需修改 Manager
 
-```go
-// pkg/channels/manager.go 的 initChannels() 方法中
-if m.config.Channels.Matrix.Enabled && m.config.Channels.Matrix.Token != "" {
-    m.initChannel("matrix", "Matrix")
-}
-```
+Manager 使用 `InitChannelList()` 来验证类型和解码设置，
+然后通过 `bc.Type` 查找工厂。不需要在 Manager 中添加每个 channel 的条目——
+只需注册工厂和配置条目即可。
 
-> **注意**：如果你的 channel 有多种模式（如 WhatsApp Bridge vs Native），需要在 initChannels 中根据配置分支：
+> **注意**：如果你的 channel 有多种模式（如 WhatsApp Bridge vs Native），
+> 在 `channelSettingsFactory` 中注册两种类型，并根据配置分支：
 > ```go
-> if cfg.UseNative {
->     m.initChannel("whatsapp_native", "WhatsApp Native")
-> } else {
->     m.initChannel("whatsapp", "WhatsApp")
-> }
+> // 在 config_channel.go 中：
+> ChannelWhatsApp:       (WhatsAppSettings{}),
+> ChannelWhatsAppNative: (WhatsAppSettings{}),
 > ```
 
 #### 在 Gateway 中添加 blank import
@@ -946,10 +973,29 @@ channels.WithReasoningChannelID(id)        // 设置思维链路由目标 channe
 **文件**：`pkg/channels/registry.go`
 
 ```go
-type ChannelFactory func(cfg *config.Config, bus *bus.MessageBus) (Channel, error)
+type ChannelFactory func(channelName, channelType string, cfg *config.Config, bus *bus.MessageBus) (Channel, error)
 
-func RegisterFactory(name string, f ChannelFactory)   // 子包 init() 中调用
-func getFactory(name string) (ChannelFactory, bool)    // Manager 内部调用
+func RegisterFactory(name string, f ChannelFactory)    // 子包 init() 中调用
+func getFactory(name string) (ChannelFactory, bool)     // Manager 内部调用
+func GetRegisteredFactoryNames() []string               // 返回所有已注册的工厂名称
+```
+
+为方便使用，`RegisterSafeFactory[S any]` 提供自动类型安全的设置解码：
+
+```go
+// 不使用 RegisterSafeFactory（手动 GetDecoded() + 类型断言）：
+channels.RegisterFactory(config.ChannelTelegram,
+    func(channelName, channelType string, cfg *config.Config, b *bus.MessageBus) (Channel, error) {
+        bc := cfg.Channels[channelName]
+        decoded, err := bc.GetDecoded()
+        if err != nil { return nil, err }
+        c, ok := decoded.(*config.TelegramSettings)
+        if !ok { return nil, ErrSendFailed }
+        return NewTelegramChannel(bc, c, b)
+    })
+
+// 使用 RegisterSafeFactory（同等安全，减少样板代码）：
+channels.RegisterSafeFactory(config.ChannelTelegram, NewTelegramChannel)
 ```
 
 工厂注册表使用 `sync.RWMutex` 保护，在 `init()` 阶段注册（进程启动时完成）。Manager 在 `initChannel()` 中通过名字查找工厂并调用它。

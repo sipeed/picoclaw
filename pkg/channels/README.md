@@ -327,8 +327,13 @@ import (
 )
 
 func init() {
-    channels.RegisterFactory("telegram", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
-        return NewTelegramChannel(cfg, b)
+    channels.RegisterFactory(config.ChannelTelegram, func(channelName, channelType string, cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+        bc := cfg.Channels[channelName]
+        decoded, err := bc.GetDecoded()
+        if err != nil { return nil, err }
+        c, ok := decoded.(*config.TelegramSettings)
+        if !ok { return nil, channels.ErrSendFailed }
+        return NewTelegramChannel(bc, c, b)
     })
 }
 ```
@@ -427,8 +432,13 @@ import (
 )
 
 func init() {
-    channels.RegisterFactory("matrix", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
-        return NewMatrixChannel(cfg, b)
+    channels.RegisterFactory(config.ChannelMatrix, func(channelName, channelType string, cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+        bc := cfg.Channels[channelName]
+        decoded, err := bc.GetDecoded()
+        if err != nil { return nil, err }
+        c, ok := decoded.(*config.MatrixSettings)
+        if !ok { return nil, channels.ErrSendFailed }
+        return NewMatrixChannel(bc, c, b)
     })
 }
 ```
@@ -773,41 +783,59 @@ When the Agent finishes processing a message, Manager's `preSend` automatically:
 
 ### 3.5 Register Configuration and Gateway Integration
 
-#### Add configuration in `pkg/config/config.go`
+#### Add configuration entry
+
+Channels now use a unified map-based configuration (`map[string]*config.Channel`).
+Each channel entry stores common fields (`enabled`, `type`, `allow_from`, etc.) at
+the top level, with channel-specific settings in the `settings` sub-key:
+
+```json
+{
+  "channels": {
+    "matrix": {
+      "enabled": true,
+      "type": "matrix",
+      "allow_from": ["@user:example.com"],
+      "settings": {
+        "home_server": "https://matrix.org",
+        "user_id": "@bot:example.com",
+        "access_token": "enc://..."
+      }
+    }
+  }
+}
+```
+
+Secure fields (tokens, passwords, API keys) go into `.security.yml`:
+
+```yaml
+channels:
+  matrix:
+    access_token: "your-matrix-access-token"
+```
+
+Channel types must be registered in `channelSettingsFactory` in
+`pkg/config/config_channel.go`:
 
 ```go
-type ChannelsConfig struct {
+var channelSettingsFactory = map[string]any{
     // ... existing channels
-    Matrix  MatrixChannelConfig  `json:"matrix"`
-}
-
-type MatrixChannelConfig struct {
-    Enabled    bool     `json:"enabled"`
-    HomeServer string   `json:"home_server"`
-    Token      string   `json:"token"`
-    AllowFrom  []string `json:"allow_from"`
-    GroupTrigger GroupTriggerConfig `json:"group_trigger"`
-    Placeholder  PlaceholderConfig  `json:"placeholder"`
-    ReasoningChannelID string `json:"reasoning_channel_id"`
+    ChannelMatrix: (MatrixSettings{}),
 }
 ```
 
-#### Add entry in Manager.initChannels()
+#### No Manager changes needed
 
-```go
-// In the initChannels() method of pkg/channels/manager.go
-if m.config.Channels.Matrix.Enabled && m.config.Channels.Matrix.Token != "" {
-    m.initChannel("matrix", "Matrix")
-}
-```
+The Manager uses `InitChannelList()` to validate types and decode settings,
+then looks up factories by `bc.Type`. No per-channel entry needed in Manager —
+just register the factory and the config entry.
 
-> **Note**: If your channel has multiple modes (like WhatsApp Bridge vs Native), branch in initChannels based on config:
+> **Note**: If your channel has multiple modes (like WhatsApp Bridge vs Native),
+> register both types in `channelSettingsFactory` and branch on config:
 > ```go
-> if cfg.UseNative {
->     m.initChannel("whatsapp_native", "WhatsApp Native")
-> } else {
->     m.initChannel("whatsapp", "WhatsApp")
-> }
+> // In config_channel.go:
+> ChannelWhatsApp:       (WhatsAppSettings{}),
+> ChannelWhatsAppNative: (WhatsAppSettings{}),
 > ```
 
 #### Add blank import in Gateway
@@ -947,10 +975,29 @@ channels.WithReasoningChannelID(id)        // Set reasoning chain routing target
 **File**: `pkg/channels/registry.go`
 
 ```go
-type ChannelFactory func(cfg *config.Config, bus *bus.MessageBus) (Channel, error)
+type ChannelFactory func(channelName, channelType string, cfg *config.Config, bus *bus.MessageBus) (Channel, error)
 
-func RegisterFactory(name string, f ChannelFactory)   // Called in sub-package init()
-func getFactory(name string) (ChannelFactory, bool)    // Called internally by Manager
+func RegisterFactory(name string, f ChannelFactory)    // Called in sub-package init()
+func getFactory(name string) (ChannelFactory, bool)     // Called internally by Manager
+func GetRegisteredFactoryNames() []string               // Returns all registered factory names
+```
+
+For convenience, `RegisterSafeFactory[S any]` provides automatic type-safe settings decoding:
+
+```go
+// Instead of manual GetDecoded() + type assertion:
+channels.RegisterFactory(config.ChannelTelegram,
+    func(channelName, channelType string, cfg *config.Config, b *bus.MessageBus) (Channel, error) {
+        bc := cfg.Channels[channelName]
+        decoded, err := bc.GetDecoded()
+        if err != nil { return nil, err }
+        c, ok := decoded.(*config.TelegramSettings)
+        if !ok { return nil, ErrSendFailed }
+        return NewTelegramChannel(bc, c, b)
+    })
+
+// You can use RegisterSafeFactory (same safety, less boilerplate):
+channels.RegisterSafeFactory(config.ChannelTelegram, NewTelegramChannel)
 ```
 
 The factory registry is protected by `sync.RWMutex` and registrations occur during `init()` phase (completed at process startup). Manager looks up factories by name in `initChannel()` and calls them.

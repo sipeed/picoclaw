@@ -18,14 +18,15 @@ import (
 // IRCChannel implements the Channel interface for IRC servers.
 type IRCChannel struct {
 	*channels.BaseChannel
-	config config.IRCConfig
+	bc     *config.Channel
+	config *config.IRCSettings
 	conn   *ircevent.Connection
 	ctx    context.Context
 	cancel context.CancelFunc
 }
 
 // NewIRCChannel creates a new IRC channel.
-func NewIRCChannel(cfg config.IRCConfig, messageBus *bus.MessageBus) (*IRCChannel, error) {
+func NewIRCChannel(bc *config.Channel, cfg *config.IRCSettings, messageBus *bus.MessageBus) (*IRCChannel, error) {
 	if cfg.Server == "" {
 		return nil, fmt.Errorf("irc server is required")
 	}
@@ -33,14 +34,15 @@ func NewIRCChannel(cfg config.IRCConfig, messageBus *bus.MessageBus) (*IRCChanne
 		return nil, fmt.Errorf("irc nick is required")
 	}
 
-	base := channels.NewBaseChannel("irc", cfg, messageBus, cfg.AllowFrom,
+	base := channels.NewBaseChannel("irc", cfg, messageBus, bc.AllowFrom,
 		channels.WithMaxMessageLength(400),
-		channels.WithGroupTrigger(cfg.GroupTrigger),
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+		channels.WithGroupTrigger(bc.GroupTrigger),
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	return &IRCChannel{
 		BaseChannel: base,
+		bc:          bc,
 		config:      cfg,
 	}, nil
 }
@@ -166,7 +168,7 @@ func (c *IRCChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]strin
 func (c *IRCChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
 	noop := func() {}
 
-	if !c.config.Typing.Enabled || !c.IsRunning() || c.conn == nil {
+	if !c.bc.Typing.Enabled || !c.IsRunning() || c.conn == nil {
 		return noop, nil
 	}
 

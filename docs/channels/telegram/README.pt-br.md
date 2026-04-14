@@ -8,9 +8,10 @@ O canal Telegram utiliza long polling via a API de Bot do Telegram para comunica
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "telegram": {
       "enabled": true,
+      "type": "telegram",
       "token": "123456789:ABCdefGHIjklMNOpqrsTUVwxyz",
       "allow_from": ["123456789"],
       "proxy": "",
@@ -42,9 +43,10 @@ Você pode definir `use_markdown_v2: true` para habilitar opções de formataç�
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "telegram": {
       "enabled": true,
+      "type": "telegram",
       "token": "YOUR_BOT_TOKEN",
       "allow_from": ["YOUR_USER_ID"],
       "use_markdown_v2": true

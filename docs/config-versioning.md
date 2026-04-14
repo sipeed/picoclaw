@@ -20,6 +20,16 @@ PicoClaw uses a schema versioning system for `config.json` to ensure smooth upgr
   - V0 configs now migrate directly to CurrentVersion (V2) instead of going through V1
   - `makeBackup()` now uses date-only suffix (e.g., `config.json.20260330.bak`) and also backs up `.security.yml`
 
+### Version 3
+- **Introduction**: Enhanced type safety and improved error handling
+- **Changes**:
+  - Added comma-ok type assertions in channel configuration decoding to prevent potential panics
+  - Improved error logging for Weixin channel configuration decoding
+  - Enhanced security configuration documentation and examples
+  - **Auto-migration**: V2 configs are automatically migrated to V3 on load with no user action required
+  - **Backup**: Before migration, the system creates a date-stamped backup (e.g., `config.json.20260413.bak`) in the same directory
+  - **Downgrade risk**: Once migrated to V3, the config cannot be safely loaded by older V2-only versions. To downgrade, restore from the auto-created backup file.
+
 ## How It Works
 
 ### Automatic Migration
@@ -39,7 +49,7 @@ The `version` field in `config.json` indicates the schema version:
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "agents": {...},
   ...
 }
@@ -164,6 +174,52 @@ func TestMigrateV2ToV3(t *testing.T) {
 7. **Test Thoroughly**: Test with real user config files
 8. **Update Defaults**: Keep `defaults.go` in sync with the latest schema
 
+## V2→V3 Migration Guide
+
+### What Changed?
+
+Version 3 introduces improved type safety and error handling:
+
+- **Type-safe channel decoding**: All channel type assertions now use comma-ok pattern (`val, ok := v.(*Settings)`) to prevent panics if Type and Settings are mismatched
+- **Enhanced error logging**: Weixin channel now logs errors on `GetDecoded()` failure for consistency with other channels
+- **Documentation fixes**: Corrected stray quotes in JSON configuration examples
+
+### Auto-Migration Behavior
+
+When you run PicoClaw with a V2 config file:
+
+1. **Detection**: PicoClaw reads the `version` field and detects V2
+2. **Backup**: Before any changes, creates `config.json.YYYYMMDD.bak` (e.g., `config.json.20260413.bak`)
+3. **Migration**: Applies V2→V3 structural changes (primarily internal type safety improvements)
+4. **Save**: Writes the updated config with `"version": 3`
+5. **Continue**: Starts normally with the V3 config
+
+**No user action required** — the migration happens automatically on first load.
+
+### Backup Location
+
+Backups are created in the same directory as your config file:
+
+- **Default**: `~/.picoclaw/config.json.20260413.bak`
+- **Custom path**: If using `PICOCLAW_CONFIG`, backup is created next to that file
+- **Security file**: `.security.yml` is also backed up as `.security.yml.YYYYMMDD.bak`
+
+### Downgrade Risk
+
+⚠️ **Important**: Once migrated to V3, the config **cannot** be safely loaded by older PicoClaw versions that only support V2.
+
+**To downgrade:**
+
+1. Stop PicoClaw
+2. Restore the backup:
+   ```bash
+   cp ~/.picoclaw/config.json.20260413.bak ~/.picoclaw/config.json
+   cp ~/.picoclaw/.security.yml.20260413.bak ~/.picoclaw/.security.yml  # if it exists
+   ```
+3. Use a PicoClaw version that supports V2 configs
+
+**Alternative**: Manually edit `config.json` and change `"version": 3` to `"version": 2`. This works because V3 changes are primarily code-level safety improvements, not structural schema changes.
+
 ## Example Migration
 
 ### Scenario: Adding a new field with default value
@@ -171,7 +227,7 @@ func TestMigrateV2ToV3(t *testing.T) {
 Old config (version 2):
 ```json
 {
-  "version": 2,
+  "version": 3,
   "model_list": [
     {
       "model_name": "gpt-5.4",

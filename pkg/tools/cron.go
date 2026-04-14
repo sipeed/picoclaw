@@ -311,8 +311,7 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 			pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer pubCancel()
 			t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
-				Channel: channel,
-				ChatID:  chatID,
+				Context: bus.NewOutboundContext(channel, chatID, ""),
 				Content: output,
 			})
 			return "ok"
@@ -335,8 +334,7 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer pubCancel()
 		t.msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
-			Channel: channel,
-			ChatID:  chatID,
+			Context: bus.NewOutboundContext(channel, chatID, ""),
 			Content: output,
 		})
 		return "ok"

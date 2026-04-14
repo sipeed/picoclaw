@@ -167,7 +167,7 @@ PicoClaw 几乎可以部署在任何 Linux 设备上！
 前置要求：
 
 - Go 1.25+
-- Node.js 22+，并启用 Corepack（用于 Web UI / launcher 构建）
+- Node.js 22+ 和 pnpm 10.33.0+（用于 Web UI / launcher 构建）
 
 ```bash
 git clone https://github.com/sipeed/picoclaw.git
@@ -175,8 +175,8 @@ git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 make deps
 
-# 安装仓库声明的前端包管理器
-(cd web/frontend && corepack install)
+# 安装前端依赖
+(cd web/frontend && pnpm install --frozen-lockfile)
 
 # 构建核心二进制文件
 make build
@@ -515,7 +515,7 @@ picoclaw skills search "web scraping"
 picoclaw skills install <skill-name>
 ```
 
-**配置 ClawHub token**（可选，用于提高速率限制）：
+**配置 Skills 仓库源**：
 
 在 `config.json` 中添加：
 ```json
@@ -525,12 +525,19 @@ picoclaw skills install <skill-name>
       "registries": {
         "clawhub": {
           "auth_token": "your-clawhub-token"
+        },
+        "github": {
+          "base_url": "https://github.com",
+          "auth_token": "your-github-token",
+          "proxy": ""
         }
       }
     }
   }
 }
 ```
+
+`tools.skills.github.*` 已废弃，请改用 `tools.skills.registries.github.*`。
 
 更多详情请参阅 [工具配置 - Skills](docs/zh/tools_configuration.md#skills-tool)。
 
@@ -624,5 +631,3 @@ Discord: <https://discord.gg/V4sAZ9XWpN>
 
 WeChat:
 <img src="assets/wechat.png" alt="WeChat group QR code" width="512">
-
-

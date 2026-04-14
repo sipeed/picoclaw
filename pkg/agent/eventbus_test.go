@@ -10,6 +10,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/routing"
+	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -136,6 +138,31 @@ func TestAgentLoop_EmitsMinimalTurnEvents(t *testing.T) {
 		DefaultResponse: defaultResponse,
 		EnableSummary:   false,
 		SendResponse:    false,
+		InboundContext: &bus.InboundContext{
+			Channel:  "cli",
+			ChatID:   "direct",
+			ChatType: "direct",
+			SenderID: "tester",
+		},
+		RouteResult: &routing.ResolvedRoute{
+			AgentID:   "main",
+			Channel:   "cli",
+			AccountID: routing.DefaultAccountID,
+			SessionPolicy: routing.SessionPolicy{
+				Dimensions: []string{"sender"},
+			},
+			MatchedBy: "default",
+		},
+		SessionScope: &session.SessionScope{
+			Version:    session.ScopeVersionV1,
+			AgentID:    "main",
+			Channel:    "cli",
+			Account:    routing.DefaultAccountID,
+			Dimensions: []string{"sender"},
+			Values: map[string]string{
+				"sender": "tester",
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("runAgentLoop failed: %v", err)
@@ -175,6 +202,18 @@ func TestAgentLoop_EmitsMinimalTurnEvents(t *testing.T) {
 		}
 		if evt.Meta.SessionKey != "session-1" {
 			t.Fatalf("event %d has session key %q, want session-1", i, evt.Meta.SessionKey)
+		}
+		if evt.Context == nil || evt.Context.Inbound == nil {
+			t.Fatalf("event %d missing inbound turn context", i)
+		}
+		if evt.Context.Inbound.Channel != "cli" || evt.Context.Inbound.SenderID != "tester" {
+			t.Fatalf("event %d inbound context = %+v", i, evt.Context.Inbound)
+		}
+		if evt.Context.Route == nil || evt.Context.Route.AgentID != "main" {
+			t.Fatalf("event %d missing route context: %+v", i, evt.Context.Route)
+		}
+		if evt.Context.Scope == nil || evt.Context.Scope.Values["sender"] != "tester" {
+			t.Fatalf("event %d missing session scope: %+v", i, evt.Context.Scope)
 		}
 	}
 
@@ -472,7 +511,6 @@ func TestAgentLoop_EmitsSessionSummarizeEvent(t *testing.T) {
 	sub := al.SubscribeEvents(16)
 	defer al.UnsubscribeEvents(sub.ID)
 
-	// Use legacyContextManager's summarizeSession via contextManager interface
 	lcm := &legacyContextManager{al: al}
 	lcm.summarizeSession(defaultAgent, "session-1")
 
@@ -571,12 +609,6 @@ func TestAgentLoop_EmitsFollowUpQueuedEvent(t *testing.T) {
 	}
 	if payload.SourceTool != "async_followup" {
 		t.Fatalf("expected source tool async_followup, got %q", payload.SourceTool)
-	}
-	if payload.Channel != "cli" {
-		t.Fatalf("expected channel cli, got %q", payload.Channel)
-	}
-	if payload.ChatID != "direct" {
-		t.Fatalf("expected chat id direct, got %q", payload.ChatID)
 	}
 	if payload.ContentLen != len("background result") {
 		t.Fatalf("expected content len %d, got %d", len("background result"), payload.ContentLen)

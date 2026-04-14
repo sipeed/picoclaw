@@ -154,6 +154,19 @@ func (m *seahorseContextManager) Ingest(ctx context.Context, req *IngestRequest)
 	return err
 }
 
+// Clear removes all stored context for a session (seahorse DB + JSONL).
+func (m *seahorseContextManager) Clear(ctx context.Context, sessionKey string) error {
+	if err := m.engine.ClearSession(ctx, sessionKey); err != nil {
+		return err
+	}
+	if m.sessions != nil {
+		m.sessions.SetHistory(sessionKey, []providers.Message{})
+		m.sessions.SetSummary(sessionKey, "")
+		return m.sessions.Save(sessionKey)
+	}
+	return nil
+}
+
 // bootstrapSession reconciles JSONL session history into seahorse SQLite.
 func (m *seahorseContextManager) bootstrapSession(ctx context.Context, sessionKey string) {
 	if m.sessions == nil {

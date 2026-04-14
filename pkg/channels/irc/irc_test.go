@@ -11,28 +11,31 @@ func TestNewIRCChannel(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 
 	t.Run("missing server", func(t *testing.T) {
-		cfg := config.IRCConfig{Nick: "bot"}
-		_, err := NewIRCChannel(cfg, msgBus)
+		bc := &config.Channel{Type: config.ChannelIRC, Enabled: true}
+		cfg := &config.IRCSettings{Nick: "bot"}
+		_, err := NewIRCChannel(bc, cfg, msgBus)
 		if err == nil {
 			t.Error("expected error for missing server, got nil")
 		}
 	})
 
 	t.Run("missing nick", func(t *testing.T) {
-		cfg := config.IRCConfig{Server: "irc.example.com:6667"}
-		_, err := NewIRCChannel(cfg, msgBus)
+		bc := &config.Channel{Type: config.ChannelIRC, Enabled: true}
+		cfg := &config.IRCSettings{Server: "irc.example.com:6667"}
+		_, err := NewIRCChannel(bc, cfg, msgBus)
 		if err == nil {
 			t.Error("expected error for missing nick, got nil")
 		}
 	})
 
 	t.Run("valid config", func(t *testing.T) {
-		cfg := config.IRCConfig{
+		bc := &config.Channel{Type: config.ChannelIRC, Enabled: true}
+		cfg := &config.IRCSettings{
 			Server:   "irc.example.com:6667",
 			Nick:     "testbot",
 			Channels: []string{"#test"},
 		}
-		ch, err := NewIRCChannel(cfg, msgBus)
+		ch, err := NewIRCChannel(bc, cfg, msgBus)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

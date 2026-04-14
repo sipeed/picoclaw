@@ -351,15 +351,17 @@ func spawnSubTurn(
 	}
 
 	// Create processOptions for the child turn
+	dispatch := DispatchRequest{
+		SessionKey:     childID,
+		UserMessage:    cfg.SystemPrompt,
+		Media:          nil,
+		InboundContext: cloneInboundContext(parentTS.opts.Dispatch.InboundContext),
+	}
 	opts := processOptions{
-		SessionKey:              childID,
-		Channel:                 parentTS.channel,
-		ChatID:                  parentTS.chatID,
-		SenderID:                parentTS.opts.SenderID,
+		Dispatch:                dispatch,
+		SenderID:                parentTS.opts.Dispatch.SenderID(),
 		SenderDisplayName:       parentTS.opts.SenderDisplayName,
-		UserMessage:             cfg.SystemPrompt, // Task description becomes the first user message
 		SystemPromptOverride:    cfg.ActualSystemPrompt,
-		Media:                   nil,
 		InitialSteeringMessages: cfg.InitialMessages,
 		DefaultResponse:         "",
 		EnableSummary:           false,
@@ -369,7 +371,11 @@ func spawnSubTurn(
 	}
 
 	// Create event scope for the child turn
-	scope := al.newTurnEventScope(agent.ID, childID)
+	scope := al.newTurnEventScope(
+		agent.ID,
+		childID,
+		newTurnContext(opts.Dispatch.InboundContext, opts.Dispatch.RouteResult, opts.Dispatch.SessionScope),
+	)
 
 	// Create child turnState using the new API
 	childTS := newTurnState(&agent, opts, scope)

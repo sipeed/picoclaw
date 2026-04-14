@@ -167,7 +167,7 @@ In alternativa, scarica il binario per la tua piattaforma dalla pagina delle [Gi
 Prerequisiti:
 
 - Go 1.25+
-- Node.js 22+ con Corepack abilitato per le build Web UI / launcher
+- Node.js 22+ e pnpm 10.33.0+ per le build Web UI / launcher
 
 ```bash
 git clone https://github.com/sipeed/picoclaw.git
@@ -175,8 +175,8 @@ git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 make deps
 
-# Installa il package manager frontend dichiarato dal repository
-(cd web/frontend && corepack install)
+# Installa le dipendenze frontend
+(cd web/frontend && pnpm install --frozen-lockfile)
 
 # Compila il binario core
 make build

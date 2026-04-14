@@ -216,11 +216,19 @@ func (h *Handler) saveWecomBinding(botID, secret string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	cfg.Channels.WeCom.Enabled = true
-	cfg.Channels.WeCom.BotID = botID
-	cfg.Channels.WeCom.SetSecret(secret)
-	if strings.TrimSpace(cfg.Channels.WeCom.WebSocketURL) == "" {
-		cfg.Channels.WeCom.WebSocketURL = wecomDefaultWebSocketURL
+	bc := cfg.Channels.Get(config.ChannelWeCom)
+	if bc == nil {
+		bc = &config.Channel{Type: config.ChannelWeCom}
+		cfg.Channels["wecom"] = bc
+	}
+	bc.Enabled = true
+
+	var wecomCfg config.WeComSettings
+	bc.Decode(&wecomCfg)
+	wecomCfg.BotID = botID
+	wecomCfg.Secret = *config.NewSecureString(secret)
+	if strings.TrimSpace(wecomCfg.WebSocketURL) == "" {
+		wecomCfg.WebSocketURL = wecomDefaultWebSocketURL
 	}
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		return err

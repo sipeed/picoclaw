@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-type SendCallback func(channel, chatID, content, replyToMessageID string) error
+type SendCallbackWithContext func(ctx context.Context, channel, chatID, content, replyToMessageID string) error
 
 // sentTarget records the channel+chatID that the message tool sent to.
 type sentTarget struct {
@@ -15,7 +15,7 @@ type sentTarget struct {
 }
 
 type MessageTool struct {
-	sendCallback SendCallback
+	sendCallback SendCallbackWithContext
 	mu           sync.Mutex
 	sentTargets  []sentTarget // Tracks all targets sent to in the current round
 }
@@ -86,7 +86,7 @@ func (t *MessageTool) HasSentTo(channel, chatID string) bool {
 	return false
 }
 
-func (t *MessageTool) SetSendCallback(callback SendCallback) {
+func (t *MessageTool) SetSendCallback(callback SendCallbackWithContext) {
 	t.sendCallback = callback
 }
 
@@ -115,7 +115,7 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 		return &ToolResult{ForLLM: "Message sending not configured", IsError: true}
 	}
 
-	if err := t.sendCallback(channel, chatID, content, replyToMessageID); err != nil {
+	if err := t.sendCallback(ctx, channel, chatID, content, replyToMessageID); err != nil {
 		return &ToolResult{
 			ForLLM:  fmt.Sprintf("sending message: %v", err),
 			IsError: true,

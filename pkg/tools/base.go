@@ -1,6 +1,10 @@
 package tools
 
-import "context"
+import (
+	"context"
+
+	"github.com/sipeed/picoclaw/pkg/session"
+)
 
 // Tool is the interface that all tools must implement.
 type Tool interface {
@@ -25,6 +29,9 @@ var (
 	ctxKeyChatID           = &toolCtxKey{"chatID"}
 	ctxKeyMessageID        = &toolCtxKey{"messageID"}
 	ctxKeyReplyToMessageID = &toolCtxKey{"replyToMessageID"}
+	ctxKeyAgentID          = &toolCtxKey{"agentID"}
+	ctxKeySessionKey       = &toolCtxKey{"sessionKey"}
+	ctxKeySessionScope     = &toolCtxKey{"sessionScope"}
 )
 
 // WithToolContext returns a child context carrying channel and chatID.
@@ -51,6 +58,18 @@ func WithToolInboundContext(
 	return ctx
 }
 
+// WithToolSessionContext returns a child context carrying turn-scoped session metadata.
+func WithToolSessionContext(
+	ctx context.Context,
+	agentID, sessionKey string,
+	scope *session.SessionScope,
+) context.Context {
+	ctx = context.WithValue(ctx, ctxKeyAgentID, agentID)
+	ctx = context.WithValue(ctx, ctxKeySessionKey, sessionKey)
+	ctx = context.WithValue(ctx, ctxKeySessionScope, session.CloneScope(scope))
+	return ctx
+}
+
 // ToolChannel extracts the channel from ctx, or "" if unset.
 func ToolChannel(ctx context.Context) string {
 	v, _ := ctx.Value(ctxKeyChannel).(string)
@@ -73,6 +92,24 @@ func ToolMessageID(ctx context.Context) string {
 func ToolReplyToMessageID(ctx context.Context) string {
 	v, _ := ctx.Value(ctxKeyReplyToMessageID).(string)
 	return v
+}
+
+// ToolAgentID extracts the active turn's agent ID from ctx, or "" if unset.
+func ToolAgentID(ctx context.Context) string {
+	v, _ := ctx.Value(ctxKeyAgentID).(string)
+	return v
+}
+
+// ToolSessionKey extracts the active turn's session key from ctx, or "" if unset.
+func ToolSessionKey(ctx context.Context) string {
+	v, _ := ctx.Value(ctxKeySessionKey).(string)
+	return v
+}
+
+// ToolSessionScope extracts the active turn's structured session scope from ctx.
+func ToolSessionScope(ctx context.Context) *session.SessionScope {
+	scope, _ := ctx.Value(ctxKeySessionScope).(*session.SessionScope)
+	return session.CloneScope(scope)
 }
 
 // AsyncCallback is a function type that async tools use to notify completion.

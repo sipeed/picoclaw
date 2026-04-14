@@ -8,9 +8,10 @@ Discord はコミュニティ向けに設計された無料の音声・ビデオ
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "discord": {
       "enabled": true,
+      "type": "discord",
       "token": "YOUR_BOT_TOKEN",
       "allow_from": ["YOUR_USER_ID"],
       "group_trigger": {
