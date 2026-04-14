@@ -58,7 +58,9 @@ type chatRequest struct {
 	Messages           []chatMessage  `json:"messages"`
 	Temperature        float64        `json:"temperature"`
 	MaxTokens          int            `json:"max_tokens"`
-	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
+	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"` // llama.cpp
+	Think              *bool          `json:"think,omitempty"`                // Ollama
+	Thinking           map[string]any `json:"thinking,omitempty"`             // GLM (智谱)
 }
 
 type chatMessage struct {
@@ -86,11 +88,19 @@ func (c *LLMClient) Complete(ctx context.Context, systemPrompt, userPrompt strin
 		Model:       c.Model,
 		Messages:    messages,
 		Temperature: 0.1,
-		MaxTokens:   512,
+		MaxTokens:   2048,
 	}
 	if c.NoThinking {
+		// llama.cpp: chat_template_kwargs
 		body.ChatTemplateKwargs = map[string]any{
 			"enable_thinking": false,
+		}
+		// Ollama (0.9+): think field
+		thinkFalse := false
+		body.Think = &thinkFalse
+		// GLM (智谱): thinking field
+		body.Thinking = map[string]any{
+			"type": "disabled",
 		}
 	}
 
