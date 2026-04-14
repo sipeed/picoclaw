@@ -69,6 +69,28 @@ type AgentLoop struct {
 	activeRequests sync.WaitGroup
 
 	reloadFunc func() error
+
+	// Compression tracking (custom feature)
+	compressionCounters sync.Map // key: sessionKey, value: int64
+}
+
+func (al *AgentLoop) incrementCompactionCount(sessionKey string) {
+	if sessionKey == "" {
+		return
+	}
+	current, _ := al.compressionCounters.LoadOrStore(sessionKey, int64(0))
+	al.compressionCounters.Store(sessionKey, current.(int64)+1)
+}
+
+func (al *AgentLoop) getCompactionCount(sessionKey string) int {
+	if sessionKey == "" {
+		return 0
+	}
+	value, ok := al.compressionCounters.Load(sessionKey)
+	if !ok {
+		return 0
+	}
+	return int(value.(int64))
 }
 
 // processOptions configures how a message is processed
@@ -3575,6 +3597,99 @@ func (al *AgentLoop) buildCommandsRuntime(
 				return fmt.Errorf("process options not available")
 			}
 			return al.contextManager.Clear(ctx, opts.SessionKey)
+		}
+
+		rt.GetSessionStats = func() commands.SessionStats {
+			stats := commands.SessionStats{}
+
+			if opts == nil || agent.Sessions == nil {
+				return stats
+			}
+
+			stats.Version = config.GetVersion()
+			stats.SessionKey = opts.SessionKey
+
+			history := agent.Sessions.GetHistory(opts.SessionKey)
+			summary := agent.Sessions.GetSummary(opts.SessionKey)
+			stats.MessageCount = len(history)
+
+			tokenEstimate := 0
+			for _, msg := range history {
+				tokenEstimate += EstimateMessageTokens(msg)
+			}
+			if summary != "" {
+				tokenEstimate += EstimateMessageTokens(providers.Message{
+					Role:    "system",
+					Content: summary,
+				})
+				stats.HasSummary = true
+			}
+			stats.TokenEstimate = tokenEstimate
+
+			stats.ContextWindow = agent.ContextWindow
+			if agent.ContextWindow > 0 {
+				stats.ContextPercent = float64(tokenEstimate) / float64(agent.ContextWindow) * 100
+			}
+
+			stats.ThinkEnabled = agent.ThinkingLevel != ThinkingOff
+
+			return stats
+		}
+
+		rt.CompactContext = func(instructions string) (int, error) {
+			if opts == nil {
+				return 0, fmt.Errorf("process options not available")
+			}
+			if al.contextManager == nil {
+				return 0, fmt.Errorf("context manager is not initialized")
+			}
+			if agent.Sessions == nil {
+				return 0, fmt.Errorf("sessions not initialized for agent")
+			}
+
+			beforeHistory := agent.Sessions.GetHistory(opts.SessionKey)
+
+			compactCtx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			defer cancel()
+
+			if err := al.contextManager.Compact(compactCtx, &CompactRequest{
+				SessionKey:   opts.SessionKey,
+				Reason:       ContextCompressReasonSummarize,
+				Budget:       agent.ContextWindow,
+				Instructions: instructions,
+				Manual:       true,
+			}); err != nil {
+				return 0, err
+			}
+
+			afterHistory := agent.Sessions.GetHistory(opts.SessionKey)
+			if len(afterHistory) < len(beforeHistory) {
+				al.incrementCompactionCount(opts.SessionKey)
+			}
+			return len(beforeHistory) - len(afterHistory), nil
+		}
+
+		rt.NewSession = func() error {
+			if opts == nil {
+				return fmt.Errorf("process options not available")
+			}
+			if agent.Sessions == nil {
+				return fmt.Errorf("sessions not initialized for agent")
+			}
+
+			al.compressionCounters.Store(opts.SessionKey, int64(0))
+
+			agent.Sessions.SetHistory(opts.SessionKey, make([]providers.Message, 0))
+			agent.Sessions.SetSummary(opts.SessionKey, "")
+			agent.Sessions.Save(opts.SessionKey)
+			return nil
+		}
+
+		rt.GetCompactionCount = func() int {
+			if opts == nil {
+				return 0
+			}
+			return al.getCompactionCount(opts.SessionKey)
 		}
 	}
 	return rt
