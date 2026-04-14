@@ -143,7 +143,7 @@ const awsSecretKeyRef = {
 };
 
 const awsRegionNameRef = {
-    name: "PICOCLAW_AWS_REGION_NAME" as const,
+    name: "AWS_REGION_NAME" as const,
     valueSource: {
         secretKeyRef: {
             secret: picoclawAwsRegionNameSecret.secretId,
@@ -153,7 +153,7 @@ const awsRegionNameRef = {
 };
 
 const imapHostRef = {
-    name: "PICOCLAW_IMAP_HOST" as const,
+    name: "IMAP_HOST" as const,
     valueSource: {
         secretKeyRef: {
             secret: imapHostSecret.secretId,
@@ -163,7 +163,7 @@ const imapHostRef = {
 };
 
 const imapUserRef = {
-    name: "PICOCLAW_IMAP_USER" as const,
+    name: "IMAP_USER" as const,
     valueSource: {
         secretKeyRef: {
             secret: imapUserSecret.secretId,
@@ -173,7 +173,7 @@ const imapUserRef = {
 };
 
 const imapPasswordRef = {
-    name: "PICOCLAW_IMAP_PASSWORD" as const,
+    name: "IMAP_PASSWORD" as const,
     valueSource: {
         secretKeyRef: {
             secret: imapPasswordSecret.secretId,
@@ -183,7 +183,7 @@ const imapPasswordRef = {
 };
 
 const imapPortRef = {
-    name: "PICOCLAW_IMAP_PORT" as const,
+    name: "IMAP_PORT" as const,
     valueSource: {
         secretKeyRef: {
             secret: imapPortSecret.secretId,
@@ -313,7 +313,6 @@ const e2eJob = new gcp.cloudrunv2.Job("picoclaw-e2e-job", {
                         { name: "JOB_PROMPT", value: "" },
                         { name: "RESULTS_BUCKET", value: bucket.name },
                         { name: "LITELLM_BASE_URL", value: "http://0.0.0.0:4000" },
-                        { name: "AWS_REGION_NAME", value: awsRegion },
                         awsRegionNameRef,
                         awsAccessKeyRef,
                         awsSecretKeyRef,
