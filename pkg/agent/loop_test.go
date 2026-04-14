@@ -278,15 +278,8 @@ func TestProcessMessage_BtwCommandRunsWithoutPersistingHistory(t *testing.T) {
 	if len(provider.lastMessages) == 0 {
 		t.Fatal("provider did not receive any messages")
 	}
-	if len(provider.lastMessages) != 4 {
-		t.Fatalf("provider messages len = %d, want 4 (system + history + user)", len(provider.lastMessages))
-	}
-	if !strings.Contains(provider.lastMessages[0].Content, "The team decided to keep state request-scoped.") {
-		t.Fatalf("system prompt missing session summary: %q", provider.lastMessages[0].Content)
-	}
-	if provider.lastMessages[1].Content != initialHistory[0].Content ||
-		provider.lastMessages[2].Content != initialHistory[1].Content {
-		t.Fatalf("provider history = %+v, want seeded session history", provider.lastMessages[1:3])
+	if len(provider.lastMessages) != 2 {
+		t.Fatalf("provider messages len = %d, want 2 (system + user, no history)", len(provider.lastMessages))
 	}
 
 	lastMessage := provider.lastMessages[len(provider.lastMessages)-1]
