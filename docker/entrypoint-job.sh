@@ -152,19 +152,19 @@ case "$JOB_TYPE" in
       tests/profile/change-email.spec.ts
 
     run_group "Organization" \
-      tests/organization/invite-member-access.spec.ts \
-      tests/organization/invite-existing-user.spec.ts \
-      tests/organization/change-role-admin-to-developer.spec.ts \
-      tests/organization/change-role-developer-to-agent.spec.ts \
+      tests/organization/switch-organization.spec.ts \
+      tests/organization/agent-role-sidebar-permissions.spec.ts \
       tests/organization/change-role-agent-to-admin.spec.ts \
+      tests/organization/admin-role-sidebar-permissions.spec.ts \
+      tests/organization/change-role-admin-to-developer.spec.ts \
+      tests/organization/developer-role-sidebar-permissions.spec.ts \
+      tests/organization/change-role-developer-to-agent.spec.ts \
       tests/organization/deactivate-member-access-control.spec.ts \
       tests/organization/activate-member-access-restored.spec.ts \
-      tests/organization/switch-organization.spec.ts \
-      tests/organization/upload-organization-logo.spec.ts \
       tests/organization/upload-bot-icon.spec.ts \
-      tests/organization/admin-role-sidebar-permissions.spec.ts \
-      tests/organization/developer-role-sidebar-permissions.spec.ts \
-      tests/organization/agent-role-sidebar-permissions.spec.ts
+      tests/organization/upload-organization-logo.spec.ts \
+      tests/organization/invite-member-access.spec.ts \
+      tests/organization/invite-existing-user.spec.ts
 
     run_group "Settings" \
       tests/settings/view-api-keys-settings.spec.ts \

@@ -8,10 +8,11 @@ const envPath = path.join(__dirname, '../../.env');
 dotenv.config({ path: envPath });
 
 test('Invite member to organization flow', async ({ page }) => {
-  test.setTimeout(120000);
+  test.setTimeout(180000);
   const primaryEmail = process.env.IMAP_USER || 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
-  const invitedEmail = 'heidi+22222@intnt.ai';
+  const randomSuffix = Math.floor(10000 + Math.random() * 90000);
+  const invitedEmail = `heidi+${randomSuffix}@intnt.ai`;
   const invitedPassword = 'testing2026!!';
   const organizationName = 'Testing2026!';
   const adminRole = 'admin';

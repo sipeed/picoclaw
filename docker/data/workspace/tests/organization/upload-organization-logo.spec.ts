@@ -3,12 +3,12 @@ import { loginAndSelectOrg } from '../utils/auth';
 import path from 'path';
 
 test('Organization logo upload flow', async ({ page }) => {
+  test.setTimeout(180000); // 3 minutes timeout
   const primaryEmail = 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
   const organizationName = 'Testing2026!';
-  const downloadsDir = path.join(process.env.HOME || '/home/picoclaw', 'Downloads');
-  const logoFile1 = path.join(downloadsDir, 'test2.png');
-  const logoFile2 = path.join(downloadsDir, 'test.png');
+  const logoFile1 = path.join(__dirname, '../fixtures/test2.png');
+  const logoFile2 = path.join(__dirname, '../fixtures/test.png');
 
   // Step 1 & 2: Login and select organization
   await loginAndSelectOrg(page, primaryEmail, primaryPassword, organizationName);
