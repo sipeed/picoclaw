@@ -167,7 +167,7 @@ Ngoài ra, tải binary cho nền tảng của bạn từ trang [GitHub Releases
 Yêu cầu:
 
 - Go 1.25+
-- Node.js 22+ với Corepack được bật cho các bản build Web UI / launcher
+- Node.js 22+ và pnpm 10.33.0+ cho các bản build Web UI / launcher
 
 ```bash
 git clone https://github.com/sipeed/picoclaw.git
@@ -175,8 +175,8 @@ git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 make deps
 
-# Cài đặt trình quản lý gói frontend được khai báo bởi repo
-(cd web/frontend && corepack install)
+# Cài đặt dependencies frontend
+(cd web/frontend && pnpm install --frozen-lockfile)
 
 # Build binary lõi
 make build

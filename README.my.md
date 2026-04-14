@@ -168,15 +168,15 @@ Muat turun binari untuk platform anda dari halaman [GitHub Releases](https://git
 Prasyarat:
 
 - Go 1.25+
-- Node.js 22+ dengan Corepack diaktifkan untuk binaan Web UI / launcher
+- Node.js 22+ dan pnpm 10.33.0+ untuk binaan Web UI / launcher
 
 ```bash
 git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 make deps
 
-# Pasang pengurus pakej frontend yang diisytiharkan oleh repositori
-(cd web/frontend && corepack install)
+# Pasang dependensi frontend
+(cd web/frontend && pnpm install --frozen-lockfile)
 
 # Bina binari teras
 make build

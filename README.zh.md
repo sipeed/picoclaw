@@ -167,7 +167,7 @@ PicoClaw 几乎可以部署在任何 Linux 设备上！
 前置要求：
 
 - Go 1.25+
-- Node.js 22+，并启用 Corepack（用于 Web UI / launcher 构建）
+- Node.js 22+ 和 pnpm 10.33.0+（用于 Web UI / launcher 构建）
 
 ```bash
 git clone https://github.com/sipeed/picoclaw.git
@@ -175,8 +175,8 @@ git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 make deps
 
-# 安装仓库声明的前端包管理器
-(cd web/frontend && corepack install)
+# 安装前端依赖
+(cd web/frontend && pnpm install --frozen-lockfile)
 
 # 构建核心二进制文件
 make build
@@ -624,5 +624,3 @@ Discord: <https://discord.gg/V4sAZ9XWpN>
 
 WeChat:
 <img src="assets/wechat.png" alt="WeChat group QR code" width="512">
-
-

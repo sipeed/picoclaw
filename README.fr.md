@@ -170,7 +170,7 @@ Vous pouvez aussi télécharger le binaire pour votre plateforme depuis la page 
 Prérequis :
 
 - Go 1.25+
-- Node.js 22+ avec Corepack activé pour les builds Web UI / launcher
+- Node.js 22+ et pnpm 10.33.0+ pour les builds Web UI / launcher
 
 ```bash
 git clone https://github.com/sipeed/picoclaw.git
@@ -178,8 +178,8 @@ git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 make deps
 
-# Installer le gestionnaire de paquets frontend déclaré par le dépôt
-(cd web/frontend && corepack install)
+# Installer les dépendances frontend
+(cd web/frontend && pnpm install --frozen-lockfile)
 
 # Compiler le binaire principal
 make build
@@ -627,4 +627,3 @@ Discord : <https://discord.gg/V4sAZ9XWpN>
 
 WeChat :
 <img src="assets/wechat.png" alt="WeChat group QR code" width="512">
-
