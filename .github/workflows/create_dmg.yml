@@ -23,15 +23,18 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+          run_install: false
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: web/frontend/pnpm-lock.yaml
-
-      - name: Setup pnpm
-        run: corepack enable && corepack install
 
       # 3. Build the application bundle
       - name: Build with Make
