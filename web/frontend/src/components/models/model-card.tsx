@@ -38,18 +38,21 @@ export function ModelCard({
   const canSetDefault =
     model.available && !model.is_default && !model.is_virtual
 
+  const setDefaultLabel = t("models.action.setDefault")
   const setDefaultDisabledReason = (() => {
     if (settingDefault) return t("models.action.setDefaultDisabled.setting")
     if (!model.available)
       return t("models.action.setDefaultDisabled.unavailable")
     if (model.is_default) return t("models.action.setDefaultDisabled.isDefault")
     if (model.is_virtual) return t("models.action.setDefaultDisabled.isVirtual")
-    return t("models.action.setDefault")
+    return setDefaultLabel
   })()
 
+  const editLabel = t("models.action.edit")
+  const deleteLabel = t("models.action.delete")
   const deleteDisabledReason = model.is_default
     ? t("models.action.deleteDisabled.isDefault")
-    : t("models.action.delete")
+    : deleteLabel
   const deleteDisabled = model.is_default
 
   return (
@@ -109,12 +112,28 @@ export function ModelCard({
                       : undefined
                   }
                   tabIndex={!canSetDefault || settingDefault ? 0 : undefined}
+                  role={!canSetDefault || settingDefault ? "button" : undefined}
+                  aria-disabled={
+                    !canSetDefault || settingDefault ? true : undefined
+                  }
+                  aria-label={
+                    !canSetDefault || settingDefault
+                      ? setDefaultLabel
+                      : undefined
+                  }
+                  title={
+                    !canSetDefault || settingDefault
+                      ? setDefaultLabel
+                      : undefined
+                  }
                 >
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     onClick={() => onSetDefault(model)}
                     disabled={settingDefault || !canSetDefault}
+                    aria-label={setDefaultLabel}
+                    title={setDefaultLabel}
                   >
                     {settingDefault ? (
                       <IconLoader2 className="size-3.5 animate-spin" />
@@ -132,7 +151,8 @@ export function ModelCard({
             variant="ghost"
             size="icon-sm"
             onClick={() => onEdit(model)}
-            title={t("models.action.edit")}
+            aria-label={editLabel}
+            title={editLabel}
           >
             <IconEdit className="size-3.5" />
           </Button>
@@ -142,12 +162,18 @@ export function ModelCard({
               <span
                 className={deleteDisabled ? "cursor-not-allowed" : undefined}
                 tabIndex={deleteDisabled ? 0 : undefined}
+                role={deleteDisabled ? "button" : undefined}
+                aria-disabled={deleteDisabled ? true : undefined}
+                aria-label={deleteDisabled ? deleteLabel : undefined}
+                title={deleteDisabled ? deleteLabel : undefined}
               >
                 <Button
                   variant="ghost"
                   size="icon-sm"
                   onClick={() => onDelete(model)}
                   disabled={deleteDisabled}
+                  aria-label={deleteLabel}
+                  title={deleteLabel}
                   className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                 >
                   <IconTrash className="size-3.5" />
