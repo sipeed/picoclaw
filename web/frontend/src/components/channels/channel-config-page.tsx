@@ -1,14 +1,20 @@
-import { IconAlertTriangle, IconLoader2 } from "@tabler/icons-react"
+import { IconLoader2 } from "@tabler/icons-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import {
   type ChannelConfig,
   type SupportedChannel,
-  getAppConfig,
+  getChannelConfig,
   getChannelsCatalog,
   patchAppConfig,
 } from "@/api/channels"
+import {
+  SECRET_FIELD_MAP,
+  buildEditConfig,
+  getFieldValueForValidation,
+  isSecretField,
+} from "@/components/channels/channel-config-fields"
 import { getChannelDisplayName } from "@/components/channels/channel-display-name"
 import { DiscordForm } from "@/components/channels/channel-forms/discord-form"
 import { FeishuForm } from "@/components/channels/channel-forms/feishu-form"
@@ -27,24 +33,6 @@ interface ChannelConfigPageProps {
   channelName: string
 }
 
-const SECRET_FIELD_MAP: Record<string, string> = {
-  token: "_token",
-  app_secret: "_app_secret",
-  client_secret: "_client_secret",
-  corp_secret: "_corp_secret",
-  channel_secret: "_channel_secret",
-  channel_access_token: "_channel_access_token",
-  access_token: "_access_token",
-  bot_token: "_bot_token",
-  app_token: "_app_token",
-  encoding_aes_key: "_encoding_aes_key",
-  encrypt_key: "_encrypt_key",
-  verification_token: "_verification_token",
-  password: "_password",
-  nickserv_password: "_nickserv_password",
-  sasl_password: "_sasl_password",
-}
-
 function asRecord(value: unknown): Record<string, unknown> {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, unknown>
@@ -58,16 +46,6 @@ function asString(value: unknown): string {
 
 function asBool(value: unknown): boolean {
   return value === true
-}
-
-function buildEditConfig(config: ChannelConfig): ChannelConfig {
-  const edit: ChannelConfig = { ...config }
-  for (const secretKey of Object.keys(SECRET_FIELD_MAP)) {
-    if (secretKey in config) {
-      edit[SECRET_FIELD_MAP[secretKey]] = ""
-    }
-  }
-  return edit
 }
 
 function normalizeConfig(
@@ -94,15 +72,21 @@ function buildSavePayload(
   for (const [key, value] of Object.entries(editConfig)) {
     if (key.startsWith("_")) continue
     if (key === "enabled") continue
-
-    if (key in SECRET_FIELD_MAP) {
-      const editKey = SECRET_FIELD_MAP[key]
-      const incoming = asString(editConfig[editKey])
-      payload[key] = incoming !== "" ? incoming : value
-      continue
-    }
+    if (isSecretField(key)) continue
 
     payload[key] = value
+  }
+
+  for (const [secretKey, editKey] of Object.entries(SECRET_FIELD_MAP)) {
+    const incoming = asString(editConfig[editKey])
+    if (incoming !== "") {
+      payload[secretKey] = incoming
+      continue
+    }
+    const existing = asString(editConfig[secretKey]).trim()
+    if (existing !== "") {
+      payload[secretKey] = existing
+    }
   }
 
   if (channel.name === "whatsapp_native") {
@@ -118,51 +102,50 @@ function buildSavePayload(
 function isConfigured(
   channel: SupportedChannel,
   config: ChannelConfig,
+  configuredSecrets: readonly string[],
 ): boolean {
+  const hasValue = (key: string) =>
+    !isMissingRequiredValue(
+      getFieldValueForValidation(config, configuredSecrets, key),
+    )
+
   switch (channel.name) {
     case "telegram":
-      return asString(config.token) !== ""
+      return hasValue("token")
     case "discord":
-      return asString(config.token) !== ""
+      return hasValue("token")
     case "slack":
-      return asString(config.bot_token) !== ""
+      return hasValue("bot_token")
     case "feishu":
-      return (
-        asString(config.app_id) !== "" && asString(config.app_secret) !== ""
-      )
+      return hasValue("app_id") && hasValue("app_secret")
     case "dingtalk":
-      return (
-        asString(config.client_id) !== "" &&
-        asString(config.client_secret) !== ""
-      )
+      return hasValue("client_id") && hasValue("client_secret")
     case "line":
-      return asString(config.channel_access_token) !== ""
+      return hasValue("channel_secret") && hasValue("channel_access_token")
     case "qq":
-      return (
-        asString(config.app_id) !== "" && asString(config.app_secret) !== ""
-      )
+      return hasValue("app_id") && hasValue("app_secret")
     case "onebot":
-      return asString(config.ws_url) !== ""
+      return hasValue("ws_url")
     case "weixin":
-      return asString(config.account_id) !== ""
+      return hasValue("account_id")
     case "wecom":
-      return asString(config.bot_id) !== ""
+      return hasValue("bot_id")
     case "whatsapp":
-      return asString(config.bridge_url) !== ""
+      return hasValue("bridge_url")
     case "whatsapp_native":
       return asBool(config.use_native)
     case "pico":
-      return asString(config.token) !== ""
+      return hasValue("token")
     case "maixcam":
-      return asString(config.host) !== ""
+      return hasValue("host")
     case "matrix":
       return (
-        asString(config.homeserver) !== "" &&
-        asString(config.user_id) !== "" &&
-        asString(config.access_token) !== ""
+        hasValue("homeserver") &&
+        hasValue("user_id") &&
+        hasValue("access_token")
       )
     case "irc":
-      return asString(config.server) !== ""
+      return hasValue("server")
     default:
       return false
   }
@@ -242,21 +225,23 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
   const [channel, setChannel] = useState<SupportedChannel | null>(null)
   const [baseConfig, setBaseConfig] = useState<ChannelConfig>({})
   const [editConfig, setEditConfig] = useState<ChannelConfig>({})
+  const [configuredSecrets, setConfiguredSecrets] = useState<string[]>([])
   const [enabled, setEnabled] = useState(false)
 
   const loadData = useCallback(
     async (silent = false) => {
       if (!silent) setLoading(true)
       try {
-        const [catalog, appConfig] = await Promise.all([
-          getChannelsCatalog(),
-          getAppConfig(),
-        ])
+        const catalog = await getChannelsCatalog()
         const matched =
           catalog.channels.find((item) => item.name === channelName) ?? null
 
         if (!matched) {
           setChannel(null)
+          setBaseConfig({})
+          setEditConfig({})
+          setConfiguredSecrets([])
+          setEnabled(false)
           setFetchError(
             t("channels.page.notFound", {
               name: channelName,
@@ -265,18 +250,20 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
           return
         }
 
-        const channelsConfig = asRecord(asRecord(appConfig).channels)
-        const raw = asRecord(channelsConfig[matched.config_key])
+        const channelConfig = await getChannelConfig(channelName)
+        const raw = asRecord(channelConfig.config)
         const normalized = normalizeConfig(matched, raw)
 
         setChannel(matched)
         setBaseConfig(normalized)
-        setEditConfig(buildEditConfig(normalized))
+        setEditConfig(buildEditConfig(matched.name, normalized))
+        setConfiguredSecrets(channelConfig.configured_secrets ?? [])
         setEnabled(asBool(normalized.enabled))
         setFetchError("")
         setServerError("")
         setFieldErrors({})
       } catch (e) {
+        setConfiguredSecrets([])
         setFetchError(e instanceof Error ? e.message : t("channels.loadError"))
       } finally {
         if (!silent) setLoading(false)
@@ -304,9 +291,9 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
   }, [channel, editConfig, enabled])
 
   const configured = useMemo(() => {
-    if (!channel || !savePayload) return false
-    return isConfigured(channel, savePayload)
-  }, [channel, savePayload])
+    if (!channel) return false
+    return isConfigured(channel, editConfig, configuredSecrets)
+  }, [channel, configuredSecrets, editConfig])
 
   const docsUrl = useMemo(() => {
     if (!channel) return ""
@@ -359,7 +346,8 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
   }, [])
 
   const handleReset = () => {
-    setEditConfig(buildEditConfig(baseConfig))
+    if (!channel) return
+    setEditConfig(buildEditConfig(channel.name, baseConfig))
     setEnabled(asBool(baseConfig.enabled))
     setServerError("")
     setFieldErrors({})
@@ -369,7 +357,9 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
     if (!channel || !savePayload) return
 
     const missingRequiredFields = requiredKeys.filter((key) =>
-      isMissingRequiredValue(savePayload[key]),
+      isMissingRequiredValue(
+        getFieldValueForValidation(editConfig, configuredSecrets, key),
+      ),
     )
     if (missingRequiredFields.length > 0) {
       const requiredFieldError = t("channels.validation.requiredField")
@@ -453,7 +443,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
           <TelegramForm
             config={editConfig}
             onChange={handleChange}
-            isEdit={isEdit}
+            configuredSecrets={configuredSecrets}
             fieldErrors={fieldErrors}
           />
         )
@@ -462,7 +452,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
           <DiscordForm
             config={editConfig}
             onChange={handleChange}
-            isEdit={isEdit}
+            configuredSecrets={configuredSecrets}
             fieldErrors={fieldErrors}
           />
         )
@@ -471,7 +461,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
           <SlackForm
             config={editConfig}
             onChange={handleChange}
-            isEdit={isEdit}
+            configuredSecrets={configuredSecrets}
             fieldErrors={fieldErrors}
           />
         )
@@ -480,7 +470,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
           <FeishuForm
             config={editConfig}
             onChange={handleChange}
-            isEdit={isEdit}
+            configuredSecrets={configuredSecrets}
             fieldErrors={fieldErrors}
           />
         )
@@ -507,7 +497,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
             <GenericForm
               config={editConfig}
               onChange={handleChange}
-              isEdit={isEdit}
+              configuredSecrets={configuredSecrets}
               hiddenKeys={[...hiddenKeys, "bot_id"]}
               requiredKeys={requiredKeys}
               fieldErrors={fieldErrors}
@@ -519,7 +509,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
           <GenericForm
             config={editConfig}
             onChange={handleChange}
-            isEdit={isEdit}
+            configuredSecrets={configuredSecrets}
             hiddenKeys={hiddenKeys}
             requiredKeys={requiredKeys}
             fieldErrors={fieldErrors}
@@ -533,19 +523,17 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
       <PageHeader
         title={channelDisplayName}
         titleExtra={
-          channel ? (
-            <div className="flex items-center gap-1.5">
-              {enabled ? (
-                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-                  {t("channels.page.enabled")}
-                </span>
-              ) : configured ? (
-                <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                  {t("channels.status.configured")}
-                </span>
-              ) : null}
-            </div>
-          ) : undefined
+          channel &&
+          docsUrl && (
+            <a
+              href={docsUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-muted-foreground hover:text-foreground text-xs underline underline-offset-2"
+            >
+              {t("channels.page.docLink")}
+            </a>
+          )
         }
       />
 
@@ -559,46 +547,9 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
             {fetchError}
           </div>
         ) : (
-          <div className="w-full max-w-250 space-y-5 pt-2">
-            <div className="flex items-center gap-2 text-sm">
-              <p className="font-medium">
-                {t("channels.edit", {
-                  name: channelDisplayName,
-                })}
-              </p>
-              {channel && docsUrl && (
-                <a
-                  href={docsUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-muted-foreground hover:text-foreground text-xs underline underline-offset-2"
-                >
-                  {t("channels.page.docLink")}
-                </a>
-              )}
-            </div>
-
-            {channel?.name === "weixin" && (
-              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
-                <div className="flex items-start gap-3">
-                  <IconAlertTriangle
-                    size={18}
-                    className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400"
-                  />
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
-                      {t("channels.weixin.warningTitle")}
-                    </p>
-                    <p className="text-sm text-amber-700/90 dark:text-amber-300/90">
-                      {t("channels.weixin.warningDesc")}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
+          <div className="w-full max-w-4xl space-y-6 pt-5">
             {!hidesPageLevelEnableToggle && (
-              <div className="border-border/60 bg-background flex items-center justify-between rounded-lg border px-4 py-3">
+              <div className="bg-card text-card-foreground border-border/60 flex items-center justify-between rounded-xl border px-6 py-4 shadow-sm">
                 <p className="text-sm font-medium">
                   {t("channels.page.enableLabel")}
                 </p>

@@ -406,3 +406,28 @@ func TestConfigureFromEnvNoEnv(t *testing.T) {
 	os.Unsetenv("PICOCLAW_LOG_FILE")
 	ConfigureFromEnv()
 }
+
+func TestGetPackageNameFromFile(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{"normal package path", "/home/user/project/pkg/logger/logger.go", "logger"},
+		{"nested package", "/home/user/project/internal/service/auth/handler.go", "auth"},
+		{"cmd package", "/home/user/project/cmd/server/main.go", "server"},
+		{"project root returns main", "./main.go", "<main>"},
+		{"single dot returns main", ".", "<main>"},
+		{"single directory", "mypkg/file.go", "mypkg"},
+		{"deep nesting", "/a/b/c/d/e/f.go", "e"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getPackageNameFromFile(tt.path)
+			if got != tt.want {
+				t.Errorf("getPackageNameFromFile(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}

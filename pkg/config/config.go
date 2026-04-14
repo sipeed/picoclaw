@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 
@@ -20,89 +21,8 @@ import (
 // rrCounter is a global counter for round-robin load balancing across models.
 var rrCounter atomic.Uint64
 
-// FlexibleStringSlice is a []string that also accepts JSON numbers,
-// so allow_from can contain both "123" and 123.
-// It also supports parsing comma-separated strings from environment variables,
-// including both English (,) and Chinese (，) commas.
-type FlexibleStringSlice []string
-
-func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
-	// Accept a single JSON string for convenience, e.g.:
-	// "text": "Thinking..."
-	var singleString string
-	if err := json.Unmarshal(data, &singleString); err == nil {
-		*f = FlexibleStringSlice{singleString}
-		return nil
-	}
-
-	// Accept a single JSON number too, to keep symmetry with mixed allow_from
-	// payloads that may contain numeric identifiers.
-	var singleNumber float64
-	if err := json.Unmarshal(data, &singleNumber); err == nil {
-		*f = FlexibleStringSlice{fmt.Sprintf("%.0f", singleNumber)}
-		return nil
-	}
-
-	// Try []string first
-	var ss []string
-	if err := json.Unmarshal(data, &ss); err == nil {
-		*f = ss
-		return nil
-	}
-
-	// Try []interface{} to handle mixed types
-	var raw []any
-	if err := json.Unmarshal(data, &raw); err != nil {
-		var s string
-		// fail over to compatible to old format string
-		if err = json.Unmarshal(data, &s); err != nil {
-			return err
-		}
-		*f = []string{s}
-		return nil
-	}
-
-	result := make([]string, 0, len(raw))
-	for _, v := range raw {
-		switch val := v.(type) {
-		case string:
-			result = append(result, val)
-		case float64:
-			result = append(result, fmt.Sprintf("%.0f", val))
-		default:
-			result = append(result, fmt.Sprintf("%v", val))
-		}
-	}
-	*f = result
-	return nil
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler to support env variable parsing.
-// It handles comma-separated values with both English (,) and Chinese (，) commas.
-func (f *FlexibleStringSlice) UnmarshalText(text []byte) error {
-	if len(text) == 0 {
-		*f = nil
-		return nil
-	}
-
-	s := string(text)
-	// Replace Chinese comma with English comma, then split
-	s = strings.ReplaceAll(s, "，", ",")
-	parts := strings.Split(s, ",")
-
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			result = append(result, part)
-		}
-	}
-	*f = result
-	return nil
-}
-
 // CurrentVersion is the latest config schema version
-const CurrentVersion = 1
+const CurrentVersion = 2
 
 // Config is the current config structure with version support
 type Config struct {
@@ -239,17 +159,18 @@ func (m AgentModelConfig) MarshalJSON() ([]byte, error) {
 		Primary   string   `json:"primary,omitempty"`
 		Fallbacks []string `json:"fallbacks,omitempty"`
 	}
-	return json.Marshal(raw{Primary: m.Primary, Fallbacks: m.Fallbacks})
+	return json.Marshal(raw(m))
 }
 
 type AgentConfig struct {
-	ID        string            `json:"id"`
-	Default   bool              `json:"default,omitempty"`
-	Name      string            `json:"name,omitempty"`
-	Workspace string            `json:"workspace,omitempty"`
-	Model     *AgentModelConfig `json:"model,omitempty"`
-	Skills    []string          `json:"skills,omitempty"`
-	Subagents *SubagentsConfig  `json:"subagents,omitempty"`
+	ID           string            `json:"id"`
+	Default      bool              `json:"default,omitempty"`
+	Name         string            `json:"name,omitempty"`
+	Workspace    string            `json:"workspace,omitempty"`
+	Model        *AgentModelConfig `json:"model,omitempty"`
+	Skills       []string          `json:"skills,omitempty"`
+	Subagents    *SubagentsConfig  `json:"subagents,omitempty"`
+	SystemPrompt string            `json:"system_prompt,omitempty"`
 }
 
 type SubagentsConfig struct {
@@ -307,26 +228,30 @@ type ToolFeedbackConfig struct {
 }
 
 type AgentDefaults struct {
-	Workspace                 string             `json:"workspace"                       env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace       bool               `json:"restrict_to_workspace"           env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	AllowReadOutsideWorkspace bool               `json:"allow_read_outside_workspace"    env:"PICOCLAW_AGENTS_DEFAULTS_ALLOW_READ_OUTSIDE_WORKSPACE"`
-	Provider                  string             `json:"provider"                        env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	ModelName                 string             `json:"model_name"                      env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
+	Workspace                 string             `json:"workspace"                        env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
+	RestrictToWorkspace       bool               `json:"restrict_to_workspace"            env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	AllowReadOutsideWorkspace bool               `json:"allow_read_outside_workspace"     env:"PICOCLAW_AGENTS_DEFAULTS_ALLOW_READ_OUTSIDE_WORKSPACE"`
+	Provider                  string             `json:"provider"                         env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
+	ModelName                 string             `json:"model_name"                       env:"PICOCLAW_AGENTS_DEFAULTS_MODEL_NAME"`
 	ModelFallbacks            []string           `json:"model_fallbacks,omitempty"`
-	ImageModel                string             `json:"image_model,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
+	ImageModel                string             `json:"image_model,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_MODEL"`
 	ImageModelFallbacks       []string           `json:"image_model_fallbacks,omitempty"`
-	MaxTokens                 int                `json:"max_tokens"                      env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	ContextWindow             int                `json:"context_window,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_WINDOW"`
-	Temperature               *float64           `json:"temperature,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations         int                `json:"max_tool_iterations"             env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
-	SummarizeMessageThreshold int                `json:"summarize_message_threshold"     env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_MESSAGE_THRESHOLD"`
-	SummarizeTokenPercent     int                `json:"summarize_token_percent"         env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENT"`
-	MaxMediaSize              int                `json:"max_media_size,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
+	MaxTokens                 int                `json:"max_tokens"                       env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
+	ContextWindow             int                `json:"context_window,omitempty"         env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_WINDOW"`
+	Temperature               *float64           `json:"temperature,omitempty"            env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations         int                `json:"max_tool_iterations"              env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	SummarizeMessageThreshold int                `json:"summarize_message_threshold"      env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_MESSAGE_THRESHOLD"`
+	SummarizeTokenPercent     int                `json:"summarize_token_percent"          env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENT"`
+	MaxMediaSize              int                `json:"max_media_size,omitempty"         env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
 	Routing                   *RoutingConfig     `json:"routing,omitempty"`
-	SteeringMode              string             `json:"steering_mode,omitempty"         env:"PICOCLAW_AGENTS_DEFAULTS_STEERING_MODE"` // "one-at-a-time" (default) or "all"
-	SubTurn                   SubTurnConfig      `json:"subturn"                                                                                     envPrefix:"PICOCLAW_AGENTS_DEFAULTS_SUBTURN_"`
+	SteeringMode              string             `json:"steering_mode,omitempty"          env:"PICOCLAW_AGENTS_DEFAULTS_STEERING_MODE"` // "one-at-a-time" (default) or "all"
+	SubTurn                   SubTurnConfig      `json:"subturn"                                                                                      envPrefix:"PICOCLAW_AGENTS_DEFAULTS_SUBTURN_"`
 	ToolFeedback              ToolFeedbackConfig `json:"tool_feedback,omitempty"`
-	SplitOnMarker             bool               `json:"split_on_marker"                 env:"PICOCLAW_AGENTS_DEFAULTS_SPLIT_ON_MARKER"` // split messages on <|[SPLIT]|> marker
+	SplitOnMarker             bool               `json:"split_on_marker"                  env:"PICOCLAW_AGENTS_DEFAULTS_SPLIT_ON_MARKER"` // split messages on <|[SPLIT]|> marker
+	SystemPrompt              string             `json:"system_prompt,omitempty"         env:"PICOCLAW_AGENTS_DEFAULTS_SYSTEM_PROMPT"`
+	ContextManager            string             `json:"context_manager,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_MANAGER"`
+	ContextManagerConfig      json.RawMessage    `json:"context_manager_config,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_MANAGER_CONFIG"`
+	AgentCacheTTLSeconds      int                `json:"agent_cache_ttl_seconds,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_AGENT_CACHE_TTL_SECONDS"`
 }
 
 const DefaultMaxMediaSize = 20 * 1024 * 1024 // 20 MB
@@ -374,6 +299,7 @@ type ChannelsConfig struct {
 	Pico       PicoConfig       `json:"pico"        yaml:"pico,omitempty"`
 	PicoClient PicoClientConfig `json:"pico_client" yaml:"pico_client,omitempty"`
 	IRC        IRCConfig        `json:"irc"         yaml:"irc,omitempty"`
+	VK         VKConfig         `json:"vk"          yaml:"vk,omitempty"`
 }
 
 // GroupTriggerConfig controls when the bot responds in group chats.
@@ -640,6 +566,21 @@ type IRCConfig struct {
 	ReasoningChannelID string              `json:"reasoning_channel_id"       yaml:"-"`
 }
 
+type VKConfig struct {
+	Enabled            bool                `json:"enabled"                 yaml:"-"               env:"PICOCLAW_CHANNELS_VK_ENABLED"`
+	Token              SecureString        `json:"token,omitzero"          yaml:"token,omitempty" env:"PICOCLAW_CHANNELS_VK_TOKEN"`
+	GroupID            int                 `json:"group_id"                yaml:"-"               env:"PICOCLAW_CHANNELS_VK_GROUP_ID"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from"              yaml:"-"               env:"PICOCLAW_CHANNELS_VK_ALLOW_FROM"`
+	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty" yaml:"-"`
+	Typing             TypingConfig        `json:"typing,omitempty"        yaml:"-"`
+	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"   yaml:"-"`
+	ReasoningChannelID string              `json:"reasoning_channel_id"    yaml:"-"               env:"PICOCLAW_CHANNELS_VK_REASONING_CHANNEL_ID"`
+}
+
+func (c *VKConfig) SetToken(token string) {
+	c.Token = *NewSecureString(token)
+}
+
 type HeartbeatConfig struct {
 	Enabled  bool `json:"enabled"  env:"PICOCLAW_HEARTBEAT_ENABLED"`
 	Interval int  `json:"interval" env:"PICOCLAW_HEARTBEAT_INTERVAL"` // minutes, min 5
@@ -651,9 +592,9 @@ type DevicesConfig struct {
 }
 
 type VoiceConfig struct {
-	ModelName         string `json:"model_name,omitempty"         env:"PICOCLAW_VOICE_MODEL_NAME"`
-	EchoTranscription bool   `json:"echo_transcription"           env:"PICOCLAW_VOICE_ECHO_TRANSCRIPTION"`
-	ElevenLabsAPIKey  string `json:"elevenlabs_api_key,omitempty" env:"PICOCLAW_VOICE_ELEVENLABS_API_KEY"`
+	ModelName         string `json:"model_name,omitempty"     env:"PICOCLAW_VOICE_MODEL_NAME"`
+	TTSModelName      string `json:"tts_model_name,omitempty" env:"PICOCLAW_VOICE_TTS_MODEL_NAME"`
+	EchoTranscription bool   `json:"echo_transcription"       env:"PICOCLAW_VOICE_ECHO_TRANSCRIPTION"`
 }
 
 // ModelConfig represents a model-centric provider configuration.
@@ -686,6 +627,13 @@ type ModelConfig struct {
 	ExtraBody      map[string]any `json:"extra_body,omitempty"`     // Additional fields to inject into request body
 
 	APIKeys SecureStrings `json:"api_keys,omitzero" yaml:"api_keys,omitempty"` // API authentication keys (multiple keys for failover)
+
+	// Enabled indicates whether this model entry is active. When omitted in
+	// existing configs, the field is inferred during load: models with API keys
+	// or the reserved "local-model" name are auto-enabled.
+	Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	// UserAgent is the user agent string to use for HTTP requests.
+	UserAgent string `json:"user_agent,omitempty" yaml:"-"`
 
 	// isVirtual marks this model as a virtual model generated from multi-key expansion.
 	// Virtual models should not be persisted to config files.
@@ -740,15 +688,6 @@ func (c *ModelConfig) SetAPIKey(value string) {
 	} else {
 		c.APIKeys = append(c.APIKeys, NewSecureString(value))
 	}
-}
-
-type GatewayConfig struct {
-	Host        string `json:"host"                env:"PICOCLAW_GATEWAY_HOST"`
-	Port        int    `json:"port"                env:"PICOCLAW_GATEWAY_PORT"`
-	APIKey      string `json:"api_key"             env:"PICOCLAW_GATEWAY_API_KEY"`
-	ChatEnabled bool   `json:"chat_enabled"        env:"PICOCLAW_GATEWAY_CHAT_ENABLED"`
-	HotReload   bool   `json:"hot_reload"          env:"PICOCLAW_GATEWAY_HOT_RELOAD"`
-	LogLevel    string `json:"log_level,omitempty" env:"PICOCLAW_LOG_LEVEL"`
 }
 
 type ToolDiscoveryConfig struct {
@@ -875,13 +814,13 @@ type WebToolsConfig struct {
 	// the client-side web_search tool is hidden to avoid duplicate search surfaces,
 	// and the provider's built-in search is used instead. Falls back to client-side
 	// search when the provider does not support native search.
-	PreferNative bool `json:"prefer_native" yaml:"-" env:"PICOCLAW_TOOLS_WEB_PREFER_NATIVE"`
+	PreferNative bool `yaml:"-" json:"prefer_native" env:"PICOCLAW_TOOLS_WEB_PREFER_NATIVE"`
 	// Proxy is an optional proxy URL for web tools (http/https/socks5/socks5h).
 	// For authenticated proxies, prefer HTTP_PROXY/HTTPS_PROXY env vars instead of embedding credentials in config.
-	Proxy                string              `json:"proxy,omitempty"                  yaml:"-" env:"PICOCLAW_TOOLS_WEB_PROXY"`
-	FetchLimitBytes      int64               `json:"fetch_limit_bytes,omitempty"      yaml:"-" env:"PICOCLAW_TOOLS_WEB_FETCH_LIMIT_BYTES"`
-	Format               string              `json:"format,omitempty"                 yaml:"-" env:"PICOCLAW_TOOLS_WEB_FORMAT"`
-	PrivateHostWhitelist FlexibleStringSlice `json:"private_host_whitelist,omitempty" yaml:"-" env:"PICOCLAW_TOOLS_WEB_PRIVATE_HOST_WHITELIST"`
+	Proxy                string              `yaml:"-" json:"proxy,omitempty"                  env:"PICOCLAW_TOOLS_WEB_PROXY"`
+	FetchLimitBytes      int64               `yaml:"-" json:"fetch_limit_bytes,omitempty"      env:"PICOCLAW_TOOLS_WEB_FETCH_LIMIT_BYTES"`
+	Format               string              `yaml:"-" json:"format,omitempty"                 env:"PICOCLAW_TOOLS_WEB_FORMAT"`
+	PrivateHostWhitelist FlexibleStringSlice `yaml:"-" json:"private_host_whitelist,omitempty" env:"PICOCLAW_TOOLS_WEB_PRIVATE_HOST_WHITELIST"`
 }
 
 type CronToolsConfig struct {
@@ -903,10 +842,10 @@ type SkillsToolsConfig struct {
 	ToolConfig            `                       yaml:"-"                 envPrefix:"PICOCLAW_TOOLS_SKILLS_"`
 	Registries            SkillsRegistriesConfig `yaml:",inline,omitempty"                                    json:"registries"`
 	Github                SkillsGithubConfig     `yaml:"github,omitempty"                                     json:"github"`
-	MaxConcurrentSearches int                    `yaml:"-"                                                    json:"max_concurrent_searches" env:"PICOCLAW_TOOLS_SKILLS_MAX_CONCURRENT_SEARCHES"`
+	MaxConcurrentSearches int                    `yaml:"-" json:"max_concurrent_searches" env:"PICOCLAW_TOOLS_SKILLS_MAX_CONCURRENT_SEARCHES"`
 	SearchCache           SearchCacheConfig      `yaml:"-"                                                    json:"search_cache"`
-	Whitelist             FlexibleStringSlice    `json:"whitelist,omitempty"                                  yaml:"-" env:"PICOCLAW_TOOLS_SKILLS_WHITELIST"`
-	WhitelistEnabled      bool                   `json:"whitelist_enabled,omitempty"                          yaml:"-" env:"PICOCLAW_TOOLS_SKILLS_WHITELIST_ENABLED"`
+	Whitelist             FlexibleStringSlice    `json:"whitelist,omitempty"         yaml:"-"                 env:"PICOCLAW_TOOLS_SKILLS_WHITELIST"`
+	WhitelistEnabled      bool                   `json:"whitelist_enabled,omitempty" yaml:"-"                 env:"PICOCLAW_TOOLS_SKILLS_WHITELIST_ENABLED"`
 }
 
 type MediaCleanupConfig struct {
@@ -916,8 +855,25 @@ type MediaCleanupConfig struct {
 }
 
 type ReadFileToolConfig struct {
-	Enabled         bool `json:"enabled"`
-	MaxReadFileSize int  `json:"max_read_file_size"`
+	Enabled         bool   `json:"enabled"`
+	Mode            string `json:"mode"`
+	MaxReadFileSize int    `json:"max_read_file_size"`
+}
+
+const (
+	ReadFileModeBytes = "bytes"
+	ReadFileModeLines = "lines"
+)
+
+func (c ReadFileToolConfig) EffectiveMode() string {
+	switch strings.ToLower(strings.TrimSpace(c.Mode)) {
+	case ReadFileModeLines:
+		return ReadFileModeLines
+	case "", ReadFileModeBytes:
+		return ReadFileModeBytes
+	default:
+		return ReadFileModeBytes
+	}
 }
 
 type ToolsConfig struct {
@@ -950,6 +906,7 @@ type ToolsConfig struct {
 	Message          ToolConfig          `json:"message"           yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_MESSAGE_"`
 	ReadFile         ReadFileToolConfig  `json:"read_file"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_READ_FILE_"`
 	SendFile         ToolConfig          `json:"send_file"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SEND_FILE_"`
+	SendTTS          ToolConfig          `json:"send_tts"          yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SEND_TTS_"`
 	Spawn            ToolConfig          `json:"spawn"             yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPAWN_"`
 	SpawnStatus      ToolConfig          `json:"spawn_status"      yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPAWN_STATUS_"`
 	SPI              ToolConfig          `json:"spi"               yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPI_"`
@@ -1025,8 +982,19 @@ type MCPServerConfig struct {
 type MCPConfig struct {
 	ToolConfig `                    envPrefix:"PICOCLAW_TOOLS_MCP_"`
 	Discovery  ToolDiscoveryConfig `                                json:"discovery"`
+	// MaxInlineTextChars controls how much MCP text stays inline before it is saved as an artifact.
+	MaxInlineTextChars int `json:"max_inline_text_chars,omitempty" env:"PICOCLAW_TOOLS_MCP_MAX_INLINE_TEXT_CHARS"`
 	// Servers is a map of server name to server configuration
 	Servers map[string]MCPServerConfig `json:"servers,omitempty"`
+}
+
+const DefaultMCPMaxInlineTextChars = 16 * 1024
+
+func (c *MCPConfig) GetMaxInlineTextChars() int {
+	if c.MaxInlineTextChars > 0 {
+		return c.MaxInlineTextChars
+	}
+	return DefaultMCPMaxInlineTextChars
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -1037,7 +1005,10 @@ func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			logger.WarnF("config file not found, using default config", map[string]any{"path": path})
+			logger.WarnF(
+				"config file not found, using default config",
+				map[string]any{"path": path},
+			)
 			return DefaultConfig(), nil
 		}
 		logger.Errorf("failed to read config file: %v", err)
@@ -1060,7 +1031,10 @@ func LoadConfig(path string) (*Config, error) {
 	var cfg *Config
 	switch versionInfo.Version {
 	case 0:
-		logger.InfoF("config migrate start", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+		logger.InfoF(
+			"config migrate start",
+			map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
+		)
 		// Legacy config (no version field)
 		v, e := loadConfigV0(data)
 		if e != nil {
@@ -1068,10 +1042,16 @@ func LoadConfig(path string) (*Config, error) {
 		}
 		cfg, e = v.Migrate()
 		if e != nil {
-			logger.ErrorF("config migrate fail", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+			logger.ErrorF(
+				"config migrate fail",
+				map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
+			)
 			return nil, e
 		}
-		logger.InfoF("config migrate success", map[string]any{"from": versionInfo.Version, "to": CurrentVersion})
+		logger.InfoF(
+			"config migrate success",
+			map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
+		)
 		err = makeBackup(path)
 		if err != nil {
 			return nil, err
@@ -1079,12 +1059,53 @@ func LoadConfig(path string) (*Config, error) {
 		// Load existing security config and merge with migrated one to prevent data loss
 		secErr := loadSecurityConfig(cfg, securityPath(path))
 		if secErr != nil && !os.IsNotExist(secErr) {
-			logger.WarnF("failed to load existing security config during migration", map[string]any{"error": secErr})
+			logger.WarnF(
+				"failed to load existing security config during migration",
+				map[string]any{"error": secErr},
+			)
 			return nil, fmt.Errorf("failed to load existing security config: %w", secErr)
 		}
 		defer func(cfg *Config) {
 			_ = SaveConfig(path, cfg)
 		}(cfg)
+	case 1:
+		// V1→V2 migration: infer Enabled and migrate channel config fields
+		logger.InfoF(
+			"config migrate start",
+			map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
+		)
+		cfg, err = loadConfig(data)
+		if err != nil {
+			return nil, err
+		}
+		secPath := securityPath(path)
+		err = loadSecurityConfig(cfg, secPath)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("failed to load security config: %w", err)
+		}
+
+		oldCfg := &configV1{Config: *cfg}
+		cfg, err = oldCfg.Migrate()
+		if err != nil {
+			logger.ErrorF(
+				"config migrate fail",
+				map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
+			)
+			return nil, err
+		}
+
+		err = makeBackup(path)
+		if err != nil {
+			return nil, err
+		}
+
+		defer func(cfg *Config) {
+			_ = SaveConfig(path, cfg)
+		}(cfg)
+		logger.InfoF(
+			"config migrate success",
+			map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
+		)
 	case CurrentVersion:
 		// Current version
 		cfg, err = loadConfig(data)
@@ -1102,29 +1123,21 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("unsupported config version: %d", versionInfo.Version)
 	}
 
-	if err := env.Parse(cfg); err != nil {
+	if err = env.Parse(cfg); err != nil {
 		return nil, err
 	}
 
 	// Expand multi-key configs into separate entries for key-level failover
 	cfg.ModelList = expandMultiKeyModels(cfg.ModelList)
 
-	// Migrate legacy channel config fields to new unified structures
-	cfg.migrateChannelConfigs()
-
 	// Validate model_list for uniqueness and required fields
-	if err := cfg.ValidateModelList(); err != nil {
+	if err = cfg.ValidateModelList(); err != nil {
 		return nil, err
 	}
 
 	// Ensure Workspace has a default if not set
 	if cfg.Agents.Defaults.Workspace == "" {
-		homePath, _ := os.UserHomeDir()
-		if picoclawHome := os.Getenv(EnvHome); picoclawHome != "" {
-			homePath = picoclawHome
-		} else if homePath != "" {
-			homePath = filepath.Join(homePath, pkg.DefaultPicoClawHome)
-		}
+		homePath := GetHome()
 		cfg.Agents.Defaults.Workspace = filepath.Join(homePath, pkg.WorkspaceName)
 	}
 
@@ -1135,11 +1148,21 @@ func makeBackup(path string) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil
 	}
-	// Create backup of the config file before migration
-	bakPath := path + ".bak"
+	dateSuffix := time.Now().Format(".20060102.bak")
+	// Backup config file
+	bakPath := path + dateSuffix
 	if err := fileutil.CopyFile(path, bakPath, 0o600); err != nil {
 		logger.ErrorF("failed to create config backup", map[string]any{"error": err})
 		return fmt.Errorf("failed to create config backup: %w", err)
+	}
+	// Backup security config file
+	secPath := securityPath(path)
+	if _, err := os.Stat(secPath); err == nil {
+		secBakPath := secPath + dateSuffix
+		if secErr := fileutil.CopyFile(secPath, secBakPath, 0o600); secErr != nil {
+			logger.ErrorF("failed to create security backup", map[string]any{"error": secErr})
+			return fmt.Errorf("failed to create security backup: %w", secErr)
+		}
 	}
 	return nil
 }
@@ -1156,19 +1179,6 @@ func toNameIndex(list []*ModelConfig) []string {
 	return nameList
 }
 
-func (c *Config) migrateChannelConfigs() {
-	// Discord: mention_only -> group_trigger.mention_only
-	if c.Channels.Discord.MentionOnly && !c.Channels.Discord.GroupTrigger.MentionOnly {
-		c.Channels.Discord.GroupTrigger.MentionOnly = true
-	}
-
-	// OneBot: group_trigger_prefix -> group_trigger.prefixes
-	if len(c.Channels.OneBot.GroupTriggerPrefix) > 0 &&
-		len(c.Channels.OneBot.GroupTrigger.Prefixes) == 0 {
-		c.Channels.OneBot.GroupTrigger.Prefixes = c.Channels.OneBot.GroupTriggerPrefix
-	}
-}
-
 func SaveConfig(path string, cfg *Config) error {
 	if cfg.Version < CurrentVersion {
 		cfg.Version = CurrentVersion
@@ -1182,6 +1192,10 @@ func SaveConfig(path string, cfg *Config) error {
 	}
 	// Temporarily replace ModelList with filtered version for serialization
 	originalModelList := cfg.ModelList
+	defer func() {
+		// Restore original ModelList after serialization
+		cfg.ModelList = originalModelList
+	}()
 	cfg.ModelList = nonVirtualModels
 
 	if err := saveSecurityConfig(securityPath(path), cfg); err != nil {
@@ -1190,8 +1204,6 @@ func SaveConfig(path string, cfg *Config) error {
 	}
 
 	data, err := json.MarshalIndent(cfg, "", "  ")
-	// Restore original ModelList after serialization
-	cfg.ModelList = originalModelList
 	if err != nil {
 		return err
 	}
@@ -1405,6 +1417,8 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.WebFetch.Enabled
 	case "send_file":
 		return t.SendFile.Enabled
+	case "send_tts":
+		return t.SendTTS.Enabled
 	case "write_file":
 		return t.WriteFile.Enabled
 	case "mcp":

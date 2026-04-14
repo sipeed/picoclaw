@@ -1,38 +1,22 @@
 import { useTranslation } from "react-i18next"
 
 import type { ChannelConfig } from "@/api/channels"
-import { maskedSecretPlaceholder } from "@/components/secret-placeholder"
+import {
+  getSecretInputPlaceholder,
+  isSecretField,
+} from "@/components/channels/channel-config-fields"
 import { Field, KeyInput, SwitchCardField } from "@/components/shared-form"
+import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 
 interface GenericFormProps {
   config: ChannelConfig
   onChange: (key: string, value: unknown) => void
-  isEdit: boolean
+  configuredSecrets?: string[]
   hiddenKeys?: string[]
   requiredKeys?: string[]
   fieldErrors?: Record<string, string>
 }
-
-// Secret field names that should use masked input.
-const SECRET_FIELDS = new Set([
-  "token",
-  "app_secret",
-  "client_secret",
-  "corp_secret",
-  "channel_secret",
-  "channel_access_token",
-  "access_token",
-  "bot_token",
-  "app_token",
-  "encoding_aes_key",
-  "encrypt_key",
-  "verification_token",
-  "secret",
-  "password",
-  "nickserv_password",
-  "sasl_password",
-])
 
 // Fields to skip in the generic form (handled by enabled toggle or internal).
 const SKIP_FIELDS = new Set(["enabled", "reasoning_channel_id"])
@@ -83,7 +67,7 @@ function asBool(value: unknown): boolean {
 export function GenericForm({
   config,
   onChange,
-  isEdit,
+  configuredSecrets = [],
   hiddenKeys = [],
   requiredKeys = [],
   fieldErrors = {},
@@ -96,7 +80,7 @@ export function GenericForm({
   const placeholderConfig = asRecord(config.placeholder)
   const placeholderEnabled = asBool(placeholderConfig.enabled)
 
-  const fields = Object.keys(config).filter(
+  const rawFields = Object.keys(config).filter(
     (k) =>
       !k.startsWith("_") &&
       !SKIP_FIELDS.has(k) &&
@@ -160,231 +144,291 @@ export function GenericForm({
     )
   }
 
-  return (
-    <div className="space-y-5">
-      {fields.map((key) => {
-        const isRequired = requiredFieldSet.has(key)
-        if (SECRET_FIELDS.has(key)) {
-          const editKey = `_${key}`
-          const extraHint =
-            isEdit && config[key] ? ` ${t("channels.field.secretHintSet")}` : ""
-          return (
-            <Field
-              key={key}
-              label={formatLabel(key)}
-              required={isRequired}
-              hint={`${buildHint(key)}${extraHint}`}
-              error={fieldErrors[key]}
-            >
-              <KeyInput
-                value={asString(config[editKey])}
-                onChange={(v) => onChange(editKey, v)}
-                placeholder={maskedSecretPlaceholder(config[key])}
-              />
-            </Field>
-          )
-        }
-
-        const value = config[key]
-        if (typeof value === "boolean") {
-          return (
-            <SwitchCardField
-              key={key}
-              label={formatLabel(key)}
-              hint={buildHint(key)}
-              error={fieldErrors[key]}
-              checked={value}
-              onCheckedChange={(checked) => onChange(key, checked)}
-              ariaLabel={formatLabel(key)}
-            />
-          )
-        }
-
-        if (Array.isArray(value)) {
-          return (
-            <Field
-              key={key}
-              label={formatLabel(key)}
-              required={isRequired}
-              hint={buildHint(key)}
-              error={fieldErrors[key]}
-            >
-              <Input
-                value={asStringArray(value).join(", ")}
-                onChange={(e) =>
-                  onChange(
-                    key,
-                    e.target.value
-                      .split(",")
-                      .map((s: string) => s.trim())
-                      .filter(Boolean),
-                  )
-                }
-              />
-            </Field>
-          )
-        }
-
-        return (
-          <Field
-            key={key}
-            label={formatLabel(key)}
-            required={isRequired}
-            hint={buildHint(key)}
-            error={fieldErrors[key]}
-          >
-            <Input
-              value={String(value ?? "")}
-              onChange={(e) => {
-                // Attempt to preserve number types
-                const v = e.target.value
-                if (typeof config[key] === "number") {
-                  onChange(key, v === "" ? 0 : Number(v))
-                } else {
-                  onChange(key, v)
-                }
-              }}
-            />
-          </Field>
-        )
-      })}
-
-      {/* Allow From field */}
-      {config.allow_from !== undefined && !hiddenFieldSet.has("allow_from") && (
+  const renderField = (key: string) => {
+    const isRequired = requiredFieldSet.has(key)
+    if (isSecretField(key)) {
+      const editKey = `_${key}`
+      return (
         <Field
-          label={t("channels.field.allowFrom")}
-          hint={t("channels.form.desc.allowFrom")}
+          key={key}
+          label={formatLabel(key)}
+          required={isRequired}
+          hint={buildHint(key)}
+          error={fieldErrors[key]}
+        >
+          <KeyInput
+            value={asString(config[editKey])}
+            onChange={(v) => onChange(editKey, v)}
+            placeholder={getSecretInputPlaceholder(
+              configuredSecrets,
+              key,
+              t("channels.field.secretHintSet"),
+              t("channels.field.secretPlaceholder"),
+            )}
+          />
+        </Field>
+      )
+    }
+
+    const value = config[key]
+    if (typeof value === "boolean") {
+      return (
+        <SwitchCardField
+          key={key}
+          label={formatLabel(key)}
+          hint={buildHint(key)}
+          error={fieldErrors[key]}
+          checked={value}
+          onCheckedChange={(checked) => onChange(key, checked)}
+          ariaLabel={formatLabel(key)}
+        />
+      )
+    }
+
+    if (Array.isArray(value)) {
+      return (
+        <Field
+          key={key}
+          label={formatLabel(key)}
+          required={isRequired}
+          hint={buildHint(key)}
+          error={fieldErrors[key]}
         >
           <Input
-            value={asStringArray(config.allow_from).join(", ")}
+            value={asStringArray(value).join(", ")}
             onChange={(e) =>
               onChange(
-                "allow_from",
+                key,
                 e.target.value
                   .split(",")
                   .map((s: string) => s.trim())
                   .filter(Boolean),
               )
             }
-            placeholder={t("channels.field.allowFromPlaceholder")}
           />
         </Field>
-      )}
+      )
+    }
 
-      {config.allow_origins !== undefined &&
-        !hiddenFieldSet.has("allow_origins") && (
-          <Field
-            label={t("channels.field.allowOrigins")}
-            hint={t("channels.form.desc.allowOrigins")}
-          >
-            <Input
-              value={asStringArray(config.allow_origins).join(", ")}
-              onChange={(e) =>
-                onChange(
-                  "allow_origins",
-                  e.target.value
-                    .split(",")
-                    .map((s: string) => s.trim())
-                    .filter(Boolean),
-                )
-              }
-              placeholder={t("channels.field.allowOriginsPlaceholder")}
-            />
-          </Field>
-        )}
-
-      {config.allow_token_query !== undefined &&
-        !hiddenFieldSet.has("allow_token_query") && (
-          <SwitchCardField
-            label={formatLabel("allow_token_query")}
-            hint={buildHint("allow_token_query")}
-            checked={asBool(config.allow_token_query)}
-            onCheckedChange={(checked) =>
-              onChange("allow_token_query", checked)
+    return (
+      <Field
+        key={key}
+        label={formatLabel(key)}
+        required={isRequired}
+        hint={buildHint(key)}
+        error={fieldErrors[key]}
+      >
+        <Input
+          value={String(value ?? "")}
+          onChange={(e) => {
+            const v = e.target.value
+            if (typeof config[key] === "number") {
+              onChange(key, v === "" ? 0 : Number(v))
+            } else {
+              onChange(key, v)
             }
-            ariaLabel={formatLabel("allow_token_query")}
-          />
-        )}
-
-      {config.group_trigger !== undefined &&
-        !hiddenFieldSet.has("group_trigger") && (
-          <>
-            <SwitchCardField
-              label={t("channels.field.groupTriggerMentionOnly")}
-              hint={t("channels.form.desc.groupTriggerMentionOnly")}
-              checked={asBool(groupTriggerConfig.mention_only)}
-              onCheckedChange={(checked) =>
-                onChange("group_trigger", {
-                  ...groupTriggerConfig,
-                  mention_only: checked,
-                })
-              }
-              ariaLabel={t("channels.field.groupTriggerMentionOnly")}
-            />
-            <Field
-              label={t("channels.field.groupTriggerPrefixes")}
-              hint={t("channels.form.desc.groupTriggerPrefixes")}
-            >
-              <Input
-                value={asStringArray(groupTriggerConfig.prefixes).join(", ")}
-                onChange={(e) =>
-                  onChange("group_trigger", {
-                    ...groupTriggerConfig,
-                    prefixes: e.target.value
-                      .split(",")
-                      .map((s: string) => s.trim())
-                      .filter(Boolean),
-                  })
-                }
-                placeholder={t("channels.field.groupTriggerPrefixes")}
-              />
-            </Field>
-          </>
-        )}
-
-      {config.typing !== undefined && !hiddenFieldSet.has("typing") && (
-        <SwitchCardField
-          label={t("channels.field.typingEnabled")}
-          hint={t("channels.form.desc.typingEnabled")}
-          checked={asBool(typingConfig.enabled)}
-          onCheckedChange={(checked) =>
-            onChange("typing", { ...typingConfig, enabled: checked })
-          }
-          ariaLabel={t("channels.field.typingEnabled")}
+          }}
         />
+      </Field>
+    )
+  }
+
+  const isBasicField = (key: string) => {
+    if (requiredFieldSet.has(key)) return true
+    if (
+      key.endsWith("id") ||
+      key.endsWith("token") ||
+      key.endsWith("secret") ||
+      key.endsWith("url") ||
+      key === "server" ||
+      key === "host" ||
+      key === "port"
+    ) {
+      return true
+    }
+    return false
+  }
+
+  const basicFields = rawFields.filter(isBasicField)
+  const advancedFields = rawFields.filter((key) => !isBasicField(key))
+
+  const hasAdvancedContent =
+    advancedFields.length > 0 ||
+    (config.allow_from !== undefined && !hiddenFieldSet.has("allow_from")) ||
+    (config.allow_origins !== undefined &&
+      !hiddenFieldSet.has("allow_origins")) ||
+    (config.allow_token_query !== undefined &&
+      !hiddenFieldSet.has("allow_token_query")) ||
+    (config.group_trigger !== undefined &&
+      !hiddenFieldSet.has("group_trigger")) ||
+    (config.typing !== undefined && !hiddenFieldSet.has("typing")) ||
+    (config.placeholder !== undefined && !hiddenFieldSet.has("placeholder"))
+
+  return (
+    <div className="space-y-6">
+      {basicFields.length > 0 && (
+        <Card className="shadow-sm">
+          <CardContent className="divide-border/60 divide-y px-6 py-0 [&>div]:py-5">
+            {basicFields.map(renderField)}
+          </CardContent>
+        </Card>
       )}
 
-      {config.placeholder !== undefined &&
-        !hiddenFieldSet.has("placeholder") && (
-          <SwitchCardField
-            label={t("channels.field.placeholderEnabled")}
-            hint={t("channels.form.desc.placeholderEnabled")}
-            checked={placeholderEnabled}
-            onCheckedChange={(checked) =>
-              onChange("placeholder", {
-                ...placeholderConfig,
-                enabled: checked,
-              })
-            }
-            ariaLabel={t("channels.field.placeholderEnabled")}
-          >
-            {placeholderEnabled && (
-              <div className="space-y-1">
-                <Input
-                  value={asString(placeholderConfig.text)}
-                  onChange={(e) =>
-                    onChange("placeholder", {
-                      ...placeholderConfig,
-                      text: e.target.value,
-                    })
+      {hasAdvancedContent && (
+        <Card className="shadow-sm">
+          <CardContent className="divide-border/60 divide-y px-6 py-0 [&>div]:py-5">
+            {advancedFields.map(renderField)}
+
+            {config.allow_from !== undefined &&
+              !hiddenFieldSet.has("allow_from") && (
+                <Field
+                  label={t("channels.field.allowFrom")}
+                  hint={t("channels.form.desc.allowFrom")}
+                >
+                  <Input
+                    value={asStringArray(config.allow_from).join(", ")}
+                    onChange={(e) =>
+                      onChange(
+                        "allow_from",
+                        e.target.value
+                          .split(",")
+                          .map((s: string) => s.trim())
+                          .filter(Boolean),
+                      )
+                    }
+                    placeholder={t("channels.field.allowFromPlaceholder")}
+                  />
+                </Field>
+              )}
+
+            {config.allow_origins !== undefined &&
+              !hiddenFieldSet.has("allow_origins") && (
+                <Field
+                  label={t("channels.field.allowOrigins")}
+                  hint={t("channels.form.desc.allowOrigins")}
+                >
+                  <Input
+                    value={asStringArray(config.allow_origins).join(", ")}
+                    onChange={(e) =>
+                      onChange(
+                        "allow_origins",
+                        e.target.value
+                          .split(",")
+                          .map((s: string) => s.trim())
+                          .filter(Boolean),
+                      )
+                    }
+                    placeholder={t("channels.field.allowOriginsPlaceholder")}
+                  />
+                </Field>
+              )}
+
+            {config.allow_token_query !== undefined &&
+              !hiddenFieldSet.has("allow_token_query") && (
+                <div>
+                  <SwitchCardField
+                    label={formatLabel("allow_token_query")}
+                    hint={buildHint("allow_token_query")}
+                    checked={asBool(config.allow_token_query)}
+                    onCheckedChange={(checked) =>
+                      onChange("allow_token_query", checked)
+                    }
+                    ariaLabel={formatLabel("allow_token_query")}
+                  />
+                </div>
+              )}
+
+            {config.group_trigger !== undefined &&
+              !hiddenFieldSet.has("group_trigger") && (
+                <>
+                  <div>
+                    <SwitchCardField
+                      label={t("channels.field.groupTriggerMentionOnly")}
+                      hint={t("channels.form.desc.groupTriggerMentionOnly")}
+                      checked={asBool(groupTriggerConfig.mention_only)}
+                      onCheckedChange={(checked) =>
+                        onChange("group_trigger", {
+                          ...groupTriggerConfig,
+                          mention_only: checked,
+                        })
+                      }
+                      ariaLabel={t("channels.field.groupTriggerMentionOnly")}
+                    />
+                  </div>
+
+                  <Field
+                    label={t("channels.field.groupTriggerPrefixes")}
+                    hint={t("channels.form.desc.groupTriggerPrefixes")}
+                  >
+                    <Input
+                      value={asStringArray(groupTriggerConfig.prefixes).join(
+                        ", ",
+                      )}
+                      onChange={(e) =>
+                        onChange("group_trigger", {
+                          ...groupTriggerConfig,
+                          prefixes: e.target.value
+                            .split(",")
+                            .map((s: string) => s.trim())
+                            .filter(Boolean),
+                        })
+                      }
+                      placeholder={t("channels.field.groupTriggerPrefixes")}
+                    />
+                  </Field>
+                </>
+              )}
+
+            {config.typing !== undefined && !hiddenFieldSet.has("typing") && (
+              <div>
+                <SwitchCardField
+                  label={t("channels.field.typingEnabled")}
+                  hint={t("channels.form.desc.typingEnabled")}
+                  checked={asBool(typingConfig.enabled)}
+                  onCheckedChange={(checked) =>
+                    onChange("typing", { ...typingConfig, enabled: checked })
                   }
-                  placeholder={t("channels.field.placeholderText")}
-                  aria-label={t("channels.field.placeholderText")}
+                  ariaLabel={t("channels.field.typingEnabled")}
                 />
               </div>
             )}
-          </SwitchCardField>
-        )}
+
+            {config.placeholder !== undefined &&
+              !hiddenFieldSet.has("placeholder") && (
+                <div>
+                  <SwitchCardField
+                    label={t("channels.field.placeholderEnabled")}
+                    hint={t("channels.form.desc.placeholderEnabled")}
+                    checked={placeholderEnabled}
+                    onCheckedChange={(checked) =>
+                      onChange("placeholder", {
+                        ...placeholderConfig,
+                        enabled: checked,
+                      })
+                    }
+                    ariaLabel={t("channels.field.placeholderEnabled")}
+                  >
+                    {placeholderEnabled && (
+                      <div className="space-y-1">
+                        <Input
+                          value={asString(placeholderConfig.text)}
+                          onChange={(e) =>
+                            onChange("placeholder", {
+                              ...placeholderConfig,
+                              text: e.target.value,
+                            })
+                          }
+                          placeholder={t("channels.field.placeholderText")}
+                          aria-label={t("channels.field.placeholderText")}
+                        />
+                      </div>
+                    )}
+                  </SwitchCardField>
+                </div>
+              )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

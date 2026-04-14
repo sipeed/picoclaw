@@ -41,15 +41,16 @@ type Provider struct {
 	apiKey     string
 	apiBase    string
 	httpClient *http.Client
+	userAgent  string
 }
 
 // NewProvider creates a new Anthropic Messages API provider.
-func NewProvider(apiKey, apiBase string) *Provider {
-	return NewProviderWithTimeout(apiKey, apiBase, 0)
+func NewProvider(apiKey, apiBase, userAgent string) *Provider {
+	return NewProviderWithTimeout(apiKey, apiBase, userAgent, 0)
 }
 
 // NewProviderWithTimeout creates a provider with custom request timeout.
-func NewProviderWithTimeout(apiKey, apiBase string, timeoutSeconds int) *Provider {
+func NewProviderWithTimeout(apiKey, apiBase, userAgent string, timeoutSeconds int) *Provider {
 	baseURL := normalizeBaseURL(apiBase)
 	timeout := defaultRequestTimeout
 	if timeoutSeconds > 0 {
@@ -57,8 +58,9 @@ func NewProviderWithTimeout(apiKey, apiBase string, timeoutSeconds int) *Provide
 	}
 
 	return &Provider{
-		apiKey:  apiKey,
-		apiBase: baseURL,
+		apiKey:    apiKey,
+		apiBase:   baseURL,
+		userAgent: userAgent,
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
@@ -105,6 +107,9 @@ func (p *Provider) Chat(
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", p.apiKey) //nolint:canonicalheader // Anthropic API requires exact header name
 	req.Header.Set("Anthropic-Version", defaultAPIVersion)
+	if p.userAgent != "" {
+		req.Header.Set("User-Agent", p.userAgent)
+	}
 
 	// Execute request
 	resp, err := p.httpClient.Do(req)

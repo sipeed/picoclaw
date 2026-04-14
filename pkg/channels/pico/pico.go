@@ -2,6 +2,7 @@ package pico
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -28,6 +29,14 @@ type picoConn struct {
 	writeMu   sync.Mutex
 	closed    atomic.Bool
 	cancel    context.CancelFunc // cancels per-connection goroutines (e.g. pingLoop)
+}
+
+var allowedInlineImageMIMETypes = map[string]struct{}{
+	"image/jpeg": {},
+	"image/png":  {},
+	"image/gif":  {},
+	"image/webp": {},
+	"image/bmp":  {},
 }
 
 // writeJSON sends a JSON message to the connection with write locking.
@@ -234,16 +243,22 @@ func (c *PicoChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // Send implements Channel — sends a message to the appropriate WebSocket connection.
-func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	outMsg := newMessage(TypeMessageCreate, map[string]any{
 		"content": msg.Content,
 	})
 
-	return c.broadcastToSession(msg.ChatID, outMsg)
+	err := c.broadcastToSession(msg.ChatID, outMsg)
+
+	// Send typing stop after the message is delivered
+	stopMsg := newMessage(TypeTypingStop, nil)
+	_ = c.broadcastToSession(msg.ChatID, stopMsg)
+
+	return nil, err
 }
 
 // EditMessage implements channels.MessageEditor.
@@ -381,31 +396,53 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 //  2. Sec-WebSocket-Protocol "token.<value>" (for browsers that can't set headers)
 //  3. Query parameter "token" (only when AllowTokenQuery is on)
 func (c *PicoChannel) authenticate(r *http.Request) bool {
-	token := c.config.Token.String()
+	token := strings.TrimSpace(c.config.Token.String())
 	if token == "" {
+		logger.WarnCF("pico", "Authentication failed: No token configured for channel", nil)
 		return false
 	}
 
 	// Check Authorization header
 	auth := r.Header.Get("Authorization")
 	if after, ok := strings.CutPrefix(auth, "Bearer "); ok {
-		if after == token {
+		received := strings.TrimSpace(after)
+		if received == token {
 			return true
 		}
+		logger.DebugCF("pico", "Token mismatch (Header)", map[string]any{
+			"expected_preview": token[:4] + "...",
+			"received_preview": received[:4] + "...",
+			"expected_len":     len(token),
+			"received_len":     len(received),
+		})
 	}
 
 	// Check Sec-WebSocket-Protocol subprotocol ("token.<value>")
-	if c.matchedSubprotocol(r) != "" {
+	if proto := c.matchedSubprotocol(r); proto != "" {
 		return true
 	}
 
 	// Check query parameter only when explicitly allowed
 	if c.config.AllowTokenQuery {
-		if r.URL.Query().Get("token") == token {
+		received := strings.TrimSpace(r.URL.Query().Get("token"))
+		if received == token {
 			return true
+		}
+		if received != "" {
+			logger.DebugCF("pico", "Token mismatch (Query)", map[string]any{
+				"expected_preview": token[:4] + "...",
+				"received_preview": received[:4] + "...",
+			})
 		}
 	}
 
+	logger.WarnCF("pico", "Authentication failed: No valid token provided in request", map[string]any{
+		"path":           r.URL.Path,
+		"remote_addr":    r.RemoteAddr,
+		"has_auth_hdr":   auth != "",
+		"has_token_q":    r.URL.Query().Get("token") != "",
+		"has_subproto":   r.Header.Get("Sec-WebSocket-Protocol") != "",
+	})
 	return false
 }
 
@@ -516,6 +553,9 @@ func (c *PicoChannel) handleMessage(pc *picoConn, msg PicoMessage) {
 	case TypeMessageSend:
 		c.handleMessageSend(pc, msg)
 
+	case TypeMediaSend:
+		c.handleMessageSend(pc, msg)
+
 	default:
 		errMsg := newError("unknown_type", fmt.Sprintf("unknown message type: %s", msg.Type))
 		pc.writeJSON(errMsg)
@@ -525,8 +565,32 @@ func (c *PicoChannel) handleMessage(pc *picoConn, msg PicoMessage) {
 // handleMessageSend processes an inbound message.send from a client.
 func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 	content, _ := msg.Payload["content"].(string)
-	if strings.TrimSpace(content) == "" {
-		errMsg := newError("empty_content", "message content is empty")
+
+	// Robust parameter mapping for HDN compatibility
+	if content == "" {
+		// Fallback to other common field names used by different HDN versions
+		if c, ok := msg.Payload["prompt"].(string); ok {
+			content = c
+		} else if m, ok := msg.Payload["message"].(string); ok {
+			content = m
+		} else if q, ok := msg.Payload["query"].(string); ok {
+			content = q
+		}
+	}
+
+	media, err := parseInlineImageMedia(msg.Payload)
+	if err != nil {
+		errMsg := newErrorWithPayload("invalid_media", err.Error(), map[string]any{
+			"request_id": msg.ID,
+		})
+		pc.writeJSON(errMsg)
+		return
+	}
+
+	if strings.TrimSpace(content) == "" && len(media) == 0 {
+		errMsg := newErrorWithPayload("empty_content", "message content is empty", map[string]any{
+			"request_id": msg.ID,
+		})
 		pc.writeJSON(errMsg)
 		return
 	}
@@ -550,6 +614,7 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 	logger.DebugCF("pico", "Received message", map[string]any{
 		"session_id": sessionID,
 		"preview":    truncate(content, 50),
+		"media":      len(media),
 	})
 
 	sender := bus.SenderInfo{
@@ -562,7 +627,7 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 		return
 	}
 
-	c.HandleMessage(c.ctx, peer, msg.ID, senderID, chatID, content, nil, metadata, sender)
+	c.HandleMessage(c.ctx, peer, msg.ID, senderID, chatID, content, media, metadata, sender)
 }
 
 // truncate truncates a string to maxLen runes.
@@ -572,4 +637,100 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return string(runes[:maxLen]) + "..."
+}
+
+func parseInlineImageMedia(payload map[string]any) ([]string, error) {
+	if len(payload) == 0 {
+		return nil, nil
+	}
+
+	raw, ok := payload["media"]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+
+	switch values := raw.(type) {
+	case []any:
+		media := make([]string, 0, len(values))
+		for i, item := range values {
+			value, err := inlineImageValue(item)
+			if err != nil {
+				return nil, fmt.Errorf("media[%d]: %w", i, err)
+			}
+			if err := validateInlineImageDataURL(value); err != nil {
+				return nil, fmt.Errorf("media[%d]: %w", i, err)
+			}
+			media = append(media, value)
+		}
+		return media, nil
+	case []string:
+		media := make([]string, 0, len(values))
+		for i, value := range values {
+			value = strings.TrimSpace(value)
+			if err := validateInlineImageDataURL(value); err != nil {
+				return nil, fmt.Errorf("media[%d]: %w", i, err)
+			}
+			media = append(media, value)
+		}
+		return media, nil
+	case string:
+		value := strings.TrimSpace(values)
+		if err := validateInlineImageDataURL(value); err != nil {
+			return nil, err
+		}
+		return []string{value}, nil
+	default:
+		return nil, fmt.Errorf("media must be a string or array of strings")
+	}
+}
+
+func inlineImageValue(item any) (string, error) {
+	switch value := item.(type) {
+	case string:
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return "", fmt.Errorf("image payload is empty")
+		}
+		return value, nil
+	case map[string]any:
+		for _, key := range []string{"url", "data_url"} {
+			if raw, ok := value[key].(string); ok && strings.TrimSpace(raw) != "" {
+				return strings.TrimSpace(raw), nil
+			}
+		}
+		return "", fmt.Errorf("image payload must include url or data_url")
+	default:
+		return "", fmt.Errorf("image payload must be a string or object")
+	}
+}
+
+func validateInlineImageDataURL(mediaURL string) error {
+	if mediaURL == "" {
+		return fmt.Errorf("image payload is empty")
+	}
+	if !strings.HasPrefix(mediaURL, "data:image/") {
+		return fmt.Errorf("only inline image data URLs are supported")
+	}
+
+	header, data, found := strings.Cut(mediaURL, ",")
+	if !found || strings.TrimSpace(data) == "" {
+		return fmt.Errorf("image data URL is malformed")
+	}
+	if !strings.Contains(header, ";base64") {
+		return fmt.Errorf("image data URL must be base64 encoded")
+	}
+	mimeType, _, _ := strings.Cut(strings.TrimPrefix(header, "data:"), ";")
+	if _, ok := allowedInlineImageMIMETypes[mimeType]; !ok {
+		return fmt.Errorf("unsupported image format: %s", mimeType)
+	}
+
+	data = strings.TrimSpace(data)
+	if base64.StdEncoding.DecodedLen(len(data)) > config.DefaultMaxMediaSize {
+		return fmt.Errorf("image exceeds %d byte limit", config.DefaultMaxMediaSize)
+	}
+	if _, err := base64.StdEncoding.DecodeString(data); err != nil {
+		return fmt.Errorf("invalid base64 image data")
+	}
+
+	return nil
 }

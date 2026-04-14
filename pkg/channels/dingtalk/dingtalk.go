@@ -6,6 +6,7 @@ package dingtalk
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/chatbot"
@@ -103,20 +104,20 @@ func (c *DingTalkChannel) Stop(ctx context.Context) error {
 }
 
 // Send sends a message to DingTalk via the chatbot reply API
-func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	// Get session webhook from storage
 	sessionWebhookRaw, ok := c.sessionWebhooks.Load(msg.ChatID)
 	if !ok {
-		return fmt.Errorf("no session_webhook found for chat %s, cannot send message", msg.ChatID)
+		return nil, fmt.Errorf("no session_webhook found for chat %s, cannot send message", msg.ChatID)
 	}
 
 	sessionWebhook, ok := sessionWebhookRaw.(string)
 	if !ok {
-		return fmt.Errorf("invalid session_webhook type for chat %s", msg.ChatID)
+		return nil, fmt.Errorf("invalid session_webhook type for chat %s", msg.ChatID)
 	}
 
 	logger.DebugCF("dingtalk", "Sending message", map[string]any{
@@ -125,7 +126,7 @@ func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 	})
 
 	// Use the session webhook to send the reply
-	return c.SendDirectReply(ctx, sessionWebhook, msg.Content)
+	return nil, c.SendDirectReply(ctx, sessionWebhook, msg.Content)
 }
 
 // onChatBotMessageReceived implements the IChatBotMessageHandler function signature
@@ -135,13 +136,17 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 	ctx context.Context,
 	data *chatbot.BotCallbackDataModel,
 ) ([]byte, error) {
+	if data == nil {
+		return nil, nil
+	}
+
 	// Extract message content from Text field
-	content := data.Text.Content
+	content := strings.TrimSpace(data.Text.Content)
 	if content == "" {
 		// Try to extract from Content interface{} if Text is empty
 		if contentMap, ok := data.Content.(map[string]any); ok {
 			if textContent, ok := contentMap["content"].(string); ok {
-				content = textContent
+				content = strings.TrimSpace(textContent)
 			}
 		}
 	}
@@ -150,12 +155,19 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 		return nil, nil // Ignore empty messages
 	}
 
-	senderID := data.SenderStaffId
-	senderNick := data.SenderNick
-	chatID := senderID
-	if data.ConversationType != "1" {
-		// For group chats
-		chatID = data.ConversationId
+	senderID := strings.TrimSpace(data.SenderStaffId)
+	if senderID == "" {
+		senderID = strings.TrimSpace(data.SenderId)
+	}
+	senderNick := strings.TrimSpace(data.SenderNick)
+
+	chatID := strings.TrimSpace(data.ConversationId)
+	if chatID == "" && data.ConversationType == "1" {
+		// Fallback for direct chats when conversation_id is absent.
+		chatID = senderID
+	}
+	if chatID == "" {
+		return nil, nil
 	}
 
 	// Store the session webhook for this chat so we can reply later
@@ -171,11 +183,19 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 
 	var peer bus.Peer
 	if data.ConversationType == "1" {
-		peer = bus.Peer{Kind: "direct", ID: senderID}
+		peerID := senderID
+		if peerID == "" {
+			peerID = chatID
+		}
+		peer = bus.Peer{Kind: "direct", ID: peerID}
 	} else {
 		peer = bus.Peer{Kind: "group", ID: data.ConversationId}
+		isMentioned := data.IsInAtList
+		if isMentioned {
+			content = stripLeadingAtMentions(content)
+		}
 		// In group chats, apply unified group trigger filtering
-		respond, cleaned := c.ShouldRespondInGroup(false, content)
+		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
 		if !respond {
 			return nil, nil
 		}
@@ -189,10 +209,18 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 	})
 
 	// Build sender info
+	platformID := senderID
+	if platformID == "" {
+		platformID = chatID
+	}
+	resolvedSenderID := senderID
+	if resolvedSenderID == "" {
+		resolvedSenderID = platformID
+	}
 	sender := bus.SenderInfo{
 		Platform:    "dingtalk",
-		PlatformID:  senderID,
-		CanonicalID: identity.BuildCanonicalID("dingtalk", senderID),
+		PlatformID:  platformID,
+		CanonicalID: identity.BuildCanonicalID("dingtalk", platformID),
 		DisplayName: senderNick,
 	}
 
@@ -201,7 +229,7 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 	}
 
 	// Handle the message through the base channel
-	c.HandleMessage(ctx, peer, "", senderID, chatID, content, nil, metadata, sender)
+	c.HandleMessage(ctx, peer, "", resolvedSenderID, chatID, content, nil, metadata, sender)
 
 	// Return nil to indicate we've handled the message asynchronously
 	// The response will be sent through the message bus
@@ -228,4 +256,20 @@ func (c *DingTalkChannel) SendDirectReply(ctx context.Context, sessionWebhook, c
 	}
 
 	return nil
+}
+
+func stripLeadingAtMentions(content string) string {
+	fields := strings.Fields(content)
+	if len(fields) == 0 {
+		return ""
+	}
+
+	i := 0
+	for i < len(fields) && strings.HasPrefix(fields[i], "@") {
+		i++
+	}
+	if i == 0 {
+		return strings.TrimSpace(content)
+	}
+	return strings.Join(fields[i:], " ")
 }

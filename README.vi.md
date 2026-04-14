@@ -18,7 +18,7 @@
     <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
-[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | **Tiếng Việt** | [Français](README.fr.md) | [Italiano](README.it.md) | [Bahasa Indonesia](README.id.md) | [English](README.md)
+[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | **Tiếng Việt** | [Français](README.fr.md) | [Italiano](README.it.md) | [Bahasa Indonesia](README.id.md) | [Malay](README.my.md) | [English](README.md)
 
 </div>
 
@@ -56,16 +56,20 @@
 
 ## 📢 Tin tức
 
+2026-03-31 📱 **Hỗ trợ Android!** PicoClaw giờ chạy trên Android! Tải APK tại [picoclaw.io](https://picoclaw.io/download)
+
+2026-03-25 🚀 **v0.2.4 đã phát hành!** Tái cấu trúc kiến trúc Agent (SubTurn, Hooks, Steering, EventBus), tích hợp WeChat/WeCom, tăng cường bảo mật (.security.yml, lọc dữ liệu nhạy cảm), provider mới (AWS Bedrock, Azure, Xiaomi MiMo) và 35 bản vá lỗi. PicoClaw đã đạt **26K Stars**!
+
 2026-03-17 🚀 **v0.2.3 đã phát hành!** Giao diện system tray (Windows & Linux), truy vấn trạng thái sub-agent (`spawn_status`), thử nghiệm Gateway hot-reload, bảo mật Cron, và 2 bản vá bảo mật. PicoClaw đã đạt **25K Stars**!
 
 2026-03-09 🎉 **v0.2.1 — Bản cập nhật lớn nhất từ trước đến nay!** Hỗ trợ giao thức MCP, 4 Channel mới (Matrix/IRC/WeCom/Discord Proxy), 3 Provider mới (Kimi/Minimax/Avian), pipeline thị giác, bộ nhớ JSONL, định tuyến mô hình.
 
 2026-02-28 📦 **v0.2.0** phát hành với hỗ trợ Docker Compose và Web UI Launcher.
 
-2026-02-26 🎉 PicoClaw đạt **20K Stars** chỉ trong 17 ngày! Tự động điều phối Channel và giao diện khả năng đã hoạt động.
-
 <details>
 <summary>Tin tức trước đó...</summary>
+
+2026-02-26 🎉 PicoClaw đạt **20K Stars** chỉ trong 17 ngày! Tự động điều phối Channel và giao diện khả năng đã hoạt động.
 
 2026-02-16 🎉 PicoClaw vượt 12K Stars trong một tuần! Vai trò người duy trì cộng đồng và [Lộ trình](ROADMAP.md) chính thức ra mắt.
 
@@ -254,6 +258,29 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 
 </details>
 
+<details>
+<summary><b>macOS — Cảnh báo bảo mật khi khởi chạy lần đầu</b></summary>
+
+macOS có thể chặn `picoclaw-launcher` khi khởi chạy lần đầu vì nó được tải từ internet và chưa được công chứng qua Mac App Store.
+
+**Bước 1:** Nhấp đúp vào `picoclaw-launcher`. Bạn sẽ thấy cảnh báo bảo mật:
+
+<p align="center">
+<img src="assets/macos-gatekeeper-warning.jpg" alt="Cảnh báo macOS Gatekeeper" width="400">
+</p>
+
+> *"picoclaw-launcher" Không Mở Được — Apple không thể xác minh "picoclaw-launcher" không chứa phần mềm độc hại có thể gây hại cho Mac hoặc xâm phạm quyền riêng tư của bạn.*
+
+**Bước 2:** Mở **Cài đặt Hệ thống** → **Quyền riêng tư & Bảo mật** → cuộn xuống phần **Bảo mật** → nhấp **Vẫn Mở** → xác nhận bằng cách nhấp **Vẫn Mở** trong hộp thoại.
+
+<p align="center">
+<img src="assets/macos-gatekeeper-allow.jpg" alt="macOS Quyền riêng tư & Bảo mật — Vẫn Mở" width="600">
+</p>
+
+Sau bước này, `picoclaw-launcher` sẽ mở bình thường trong các lần khởi chạy tiếp theo.
+
+</details>
+
 ### 💻 TUI Launcher (Khuyến nghị cho Headless / SSH)
 
 TUI (Terminal UI) Launcher cung cấp giao diện terminal đầy đủ tính năng để cấu hình và quản lý. Lý tưởng cho máy chủ, Raspberry Pi và các môi trường headless khác.
@@ -276,7 +303,25 @@ Sử dụng menu TUI để: **1)** Cấu hình Provider -> **2)** Cấu hình Ch
 
 Hãy cho chiếc điện thoại cũ của bạn một cuộc sống mới! Biến nó thành Trợ lý AI thông minh với PicoClaw.
 
-**Tùy chọn 1: Termux (có sẵn ngay)**
+**Tùy chọn 1: Cài đặt APK**
+
+Xem trước:
+
+<table>
+  <tr>
+    <td><img src="assets/fui_main_page.jpg" width="200"></td>
+    <td><img src="assets/fui_web_page.jpg" width="200"></td>
+    <td><img src="assets/fui_log_page.jpg" width="200"></td>
+    <td><img src="assets/fui_setting_page.jpg" width="200"></td>
+  </tr>
+</table>
+
+Tải APK từ [picoclaw.io](https://picoclaw.io/download/) và cài đặt trực tiếp. Không cần Termux!
+
+**Tùy chọn 2: Termux**
+
+<details>
+<summary><b>Terminal Launcher (cho môi trường hạn chế tài nguyên)</b></summary>
 
 1. Cài đặt [Termux](https://github.com/termux/termux-app) (tải từ [GitHub Releases](https://github.com/termux/termux-app/releases), hoặc tìm kiếm trong F-Droid / Google Play)
 2. Chạy các lệnh sau:
@@ -292,13 +337,6 @@ termux-chroot ./picoclaw onboard   # chroot provides a standard Linux filesystem
 Sau đó làm theo phần Terminal Launcher bên dưới để hoàn tất cấu hình.
 
 <img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
-
-**Tùy chọn 2: Cài đặt APK (sắp ra mắt)**
-
-Một APK Android độc lập với WebUI tích hợp đang được phát triển. Hãy đón chờ!
-
-<details>
-<summary><b>Terminal Launcher (cho môi trường hạn chế tài nguyên)</b></summary>
 
 Đối với các môi trường tối giản chỉ có binary lõi `picoclaw` (không có Launcher UI), bạn có thể cấu hình mọi thứ qua dòng lệnh và tệp cấu hình JSON.
 
@@ -367,6 +405,7 @@ PicoClaw hỗ trợ 30+ Provider LLM thông qua cấu hình `model_list`. Sử d
 | [NVIDIA NIM](https://build.nvidia.com/) | `nvidia/` | Bắt buộc | Mô hình do NVIDIA lưu trữ |
 | [Cerebras](https://cloud.cerebras.ai/) | `cerebras/` | Bắt buộc | Suy luận nhanh |
 | [Novita AI](https://novita.ai/) | `novita/` | Bắt buộc | Nhiều mô hình mở |
+| [Xiaomi MiMo](https://platform.xiaomimimo.com/) | `mimo/` | Bắt buộc | Mô hình MiMo |
 | [Ollama](https://ollama.com/) | `ollama/` | Không cần | Mô hình cục bộ, tự lưu trữ |
 | [vLLM](https://docs.vllm.ai/) | `vllm/` | Không cần | Triển khai cục bộ, tương thích OpenAI |
 | [LiteLLM](https://docs.litellm.ai/) | `litellm/` | Tùy | Proxy cho 100+ provider |
@@ -423,9 +462,7 @@ Trò chuyện với PicoClaw của bạn qua 17+ nền tảng nhắn tin:
 | **DingTalk** | Trung bình (client credentials) | Stream | [Hướng dẫn](docs/channels/dingtalk/README.vi.md) |
 | **Feishu / Lark** | Trung bình (App ID + Secret) | WebSocket/SDK | [Hướng dẫn](docs/channels/feishu/README.vi.md) |
 | **LINE** | Trung bình (credentials + webhook) | Webhook | [Hướng dẫn](docs/channels/line/README.vi.md) |
-| **WeCom Bot** | Trung bình (webhook URL) | Webhook | [Hướng dẫn](docs/channels/wecom/wecom_bot/README.vi.md) |
-| **WeCom App** | Trung bình (corp credentials) | Webhook | [Hướng dẫn](docs/channels/wecom/wecom_app/README.vi.md) |
-| **WeCom AI Bot** | Trung bình (token + AES key) | WebSocket / Webhook | [Hướng dẫn](docs/channels/wecom/wecom_aibot/README.vi.md) |
+| **WeCom** | Dễ (đăng nhập QR hoặc thủ công) | WebSocket | [Hướng dẫn](docs/channels/wecom/README.md) |
 | **IRC** | Trung bình (server + nick) | IRC protocol | [Hướng dẫn](docs/vi/chat-apps.md#irc) |
 | **OneBot** | Trung bình (WebSocket URL) | OneBot v11 | [Hướng dẫn](docs/channels/onebot/README.vi.md) |
 | **MaixCam** | Dễ (bật) | TCP socket | [Hướng dẫn](docs/channels/maixcam/README.vi.md) |
@@ -433,6 +470,8 @@ Trò chuyện với PicoClaw của bạn qua 17+ nền tảng nhắn tin:
 | **Pico Client** | Dễ (WebSocket URL) | WebSocket | Tích hợp sẵn |
 
 > Tất cả các Channel dựa trên webhook dùng chung một Gateway HTTP server (`gateway.host`:`gateway.port`, mặc định `127.0.0.1:18790`). Feishu sử dụng chế độ WebSocket/SDK và không dùng HTTP server chung.
+
+> Mức độ chi tiết log được kiểm soát bởi `gateway.log_level` (mặc định: `warn`). Các giá trị được hỗ trợ: `debug`, `info`, `warn`, `error`, `fatal`. Cũng có thể đặt qua `PICOCLAW_LOG_LEVEL`. Xem [Cấu hình](docs/vi/configuration.md#mức-log-của-gateway) để biết thêm chi tiết.
 
 Để biết hướng dẫn thiết lập Channel chi tiết, xem [Cấu hình Ứng dụng Chat](docs/vi/chat-apps.md).
 

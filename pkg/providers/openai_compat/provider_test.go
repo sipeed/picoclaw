@@ -432,7 +432,7 @@ func TestProviderChat_StripsMoonshotPrefixAndNormalizesKimiTemperature(t *testin
 	}
 }
 
-func TestProviderChat_StripsGroqOllamaDeepseekVivgridNovitaPrefixes(t *testing.T) {
+func TestProviderChat_StripsKnownProviderPrefixes(t *testing.T) {
 	var requestBody map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -473,6 +473,16 @@ func TestProviderChat_StripsGroqOllamaDeepseekVivgridNovitaPrefixes(t *testing.T
 			name:      "strips ollama prefix",
 			input:     "ollama/qwen2.5:14b",
 			wantModel: "qwen2.5:14b",
+		},
+		{
+			name:      "strips lmstudio prefix and keeps nested model",
+			input:     "lmstudio/openai/gpt-oss-20b",
+			wantModel: "openai/gpt-oss-20b",
+		},
+		{
+			name:      "strips venice prefix",
+			input:     "venice/venice-uncensored",
+			wantModel: "venice-uncensored",
 		},
 		{
 			name:      "strips deepseek prefix",
@@ -578,6 +588,12 @@ func TestProviderChat_AcceptsNumericOptionTypes(t *testing.T) {
 func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	if got := normalizeModel("deepseek/deepseek-chat", "https://api.deepseek.com/v1"); got != "deepseek-chat" {
 		t.Fatalf("normalizeModel(deepseek) = %q, want %q", got, "deepseek-chat")
+	}
+	if got := normalizeModel("lmstudio/openai/gpt-oss-20b", "http://localhost:1234/v1"); got != "openai/gpt-oss-20b" {
+		t.Fatalf("normalizeModel(lmstudio) = %q, want %q", got, "openai/gpt-oss-20b")
+	}
+	if got := normalizeModel("venice/venice-uncensored", "https://api.venice.ai/api/v1"); got != "venice-uncensored" {
+		t.Fatalf("normalizeModel(venice) = %q, want %q", got, "venice-uncensored")
 	}
 	if got := normalizeModel("openrouter/auto", "https://openrouter.ai/api/v1"); got != "openrouter/auto" {
 		t.Fatalf("normalizeModel(openrouter) = %q, want %q", got, "openrouter/auto")

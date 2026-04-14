@@ -2,16 +2,23 @@ package health
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"maps"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
+
+// Mux defines the interface required for registering health handlers.
+type Mux interface {
+	HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request))
+}
 
 // ChatRequest is the JSON body for POST /chat.
 type ChatRequest struct {
@@ -42,10 +49,12 @@ type Server struct {
 	checks        map[string]Check
 	startTime     time.Time
 	reloadFunc    func() error
+	authToken     string // optional bearer token for protected endpoints
 	chatFunc      func(ctx context.Context, message, sessionID, chatID string) (string, error)
 	apiKey        string
 	chatResults   map[string]*chatStatus
 	chatResultsMu sync.RWMutex
+	rateLimits    sync.Map // key: string (ID or IP), value: time.Time
 }
 
 type Check struct {
@@ -62,12 +71,13 @@ type StatusResponse struct {
 	Pid    int              `json:"pid"`
 }
 
-func NewServer(host string, port int) *Server {
+func NewServer(host string, port int, token string) *Server {
 	mux := http.NewServeMux()
 	s := &Server{
 		ready:       false,
 		checks:      make(map[string]Check),
 		startTime:   time.Now(),
+		authToken:   token,
 		chatResults: make(map[string]*chatStatus),
 	}
 
@@ -75,7 +85,6 @@ func NewServer(host string, port int) *Server {
 	mux.HandleFunc("/ready", s.readyHandler)
 	mux.HandleFunc("/reload", s.reloadHandler)
 	mux.HandleFunc("/chat", s.chatHandler)
-	mux.HandleFunc("/cgat", s.chatHandler)
 
 	// Start task cleanup goroutine
 	go s.taskCleanupLoop()
@@ -167,17 +176,47 @@ func (s *Server) SetAPIKey(key string) {
 	s.apiKey = key
 }
 
-func (s *Server) verifyAPIKey(r *http.Request) bool {
+// SetAuthToken sets the expected Bearer token.
+func (s *Server) SetAuthToken(token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.authToken = token
+}
+
+func (s *Server) verifyAuth(r *http.Request) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.apiKey == "" {
+
+	// If no authentication is configured, allow the request.
+	if s.apiKey == "" && s.authToken == "" {
 		return true
 	}
-	return r.Header.Get("X-API-Key") == s.apiKey
+
+	// Check X-API-Key header.
+	if s.apiKey != "" {
+		gotKey := r.Header.Get("X-API-Key")
+		if subtle.ConstantTimeCompare([]byte(gotKey), []byte(s.apiKey)) == 1 {
+			return true
+		}
+	}
+
+	// Check Authorization: Bearer <token> header.
+	if s.authToken != "" {
+		authHeader := r.Header.Get("Authorization")
+		const prefix = "Bearer "
+		if len(authHeader) > len(prefix) && strings.EqualFold(authHeader[:len(prefix)], prefix) {
+			gotToken := authHeader[len(prefix):]
+			if subtle.ConstantTimeCompare([]byte(gotToken), []byte(s.authToken)) == 1 {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func (s *Server) reloadHandler(w http.ResponseWriter, r *http.Request) {
-	if !s.verifyAPIKey(r) {
+	if !s.verifyAuth(r) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
@@ -267,16 +306,11 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 
 // RegisterOnMux registers /health, /ready, /reload and /chat handlers onto the
 // given mux. This allows the health endpoints to be served by a shared HTTP server.
-func (s *Server) RegisterOnMux(mux *http.ServeMux) {
+func (s *Server) RegisterOnMux(mux Mux) {
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
 	mux.HandleFunc("/reload", s.reloadHandler)
 	mux.HandleFunc("/chat", s.chatHandler)
-	mux.HandleFunc("/cgat", s.chatHandler)
-	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
-		logger.Error("GATEWAY IS HITTING ITSELF FOR LLM CALLS!")
-		http.Error(w, "GATEWAY LOOP DETECTION", http.StatusLoopDetected)
-	})
 }
 
 // chatHandler handles POST /chat (initiate async) and GET /chat (poll for result).
@@ -285,10 +319,17 @@ func (s *Server) RegisterOnMux(mux *http.ServeMux) {
 // GET query: ?session_id=...
 // GET response: {"response": "...", "status": "completed"}
 func (s *Server) chatHandler(w http.ResponseWriter, r *http.Request) {
-	if !s.verifyAPIKey(r) {
+	if !s.verifyAuth(r) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(ChatResponse{Error: "unauthorized"})
+		return
+	}
+
+	if !s.checkRateLimit(r) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		json.NewEncoder(w).Encode(ChatResponse{Error: "rate limit exceeded"})
 		return
 	}
 
@@ -363,6 +404,8 @@ func (s *Server) handlePostChat(w http.ResponseWriter, r *http.Request) {
 			chatID = req.SessionID
 		}
 	}
+	chatID = s.sanitizeID(chatID)
+	sessionID = s.sanitizeID(sessionID)
 
 	if chatID != "" {
 		logger.InfoCF("api", "Resolved isolation ID for request", map[string]any{
@@ -386,6 +429,9 @@ func (s *Server) handlePostChat(w http.ResponseWriter, r *http.Request) {
 
 	if sessionID == "" {
 		sessionID = fmt.Sprintf("chat-%d", time.Now().UnixNano())
+	} else {
+		// Even if provided, sanitize the user-provided sessionID again to be sure
+		sessionID = s.sanitizeID(sessionID)
 	}
 
 	// Initialize status
@@ -398,7 +444,7 @@ func (s *Server) handlePostChat(w http.ResponseWriter, r *http.Request) {
 	// Start processing in background
 	go func() {
 		// Use a long-running context for the chat call, but don't bind to r.Context()
-		// which will be cancelled when this request finishes.
+		// which will be canceled when this request finishes.
 		ctx := context.Background()
 		logger.Debugf("Starting async chat for session %s", sessionID)
 		reply, err := chatFunc(ctx, req.Message, sessionID, chatID)
@@ -497,6 +543,45 @@ func (s *Server) taskCleanupLoop() {
 		}
 		s.chatResultsMu.Unlock()
 	}
+}
+
+func (s *Server) sanitizeID(id string) string {
+	if len(id) > 128 {
+		id = id[:128]
+	}
+
+	result := make([]rune, 0, len(id))
+	for _, r := range id {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			result = append(result, r)
+		} else {
+			result = append(result, '_')
+		}
+	}
+	return string(result)
+}
+
+func (s *Server) checkRateLimit(r *http.Request) bool {
+	// Simple rate limit: 1 request per second per ID or IP
+	// This is defensive against automated spamming.
+	key := r.Header.Get("X-PicoClaw-Chat-ID")
+	if key == "" {
+		key = r.RemoteAddr
+		// Strip port if present
+		if i := strings.LastIndex(key, ":"); i != -1 {
+			key = key[:i]
+		}
+	}
+
+	if val, ok := s.rateLimits.Load(key); ok {
+		lastAccess := val.(time.Time)
+		if time.Since(lastAccess) < time.Second {
+			return false
+		}
+	}
+
+	s.rateLimits.Store(key, time.Now())
+	return true
 }
 
 func statusString(ok bool) string {

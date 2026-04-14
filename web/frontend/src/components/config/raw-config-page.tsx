@@ -5,6 +5,7 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
+import { launcherFetch } from "@/api/http"
 import { PageHeader } from "@/components/page-header"
 import {
   AlertDialog,
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { refreshGatewayState } from "@/store/gateway"
 
 export function RawConfigPage() {
   const { t } = useTranslation()
@@ -27,7 +29,7 @@ export function RawConfigPage() {
   const { data: config, isLoading } = useQuery({
     queryKey: ["config"],
     queryFn: async () => {
-      const res = await fetch("/api/config")
+      const res = await launcherFetch("/api/config")
       if (!res.ok) {
         throw new Error("Failed to fetch config")
       }
@@ -37,7 +39,7 @@ export function RawConfigPage() {
 
   const mutation = useMutation({
     mutationFn: async (newConfig: string) => {
-      const res = await fetch("/api/config", {
+      const res = await launcherFetch("/api/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: newConfig,
@@ -56,6 +58,7 @@ export function RawConfigPage() {
       } catch {
         queryClient.invalidateQueries({ queryKey: ["config"] })
       }
+      void refreshGatewayState({ force: true })
     },
     onError: () => {
       toast.error(t("pages.config.save_error"))

@@ -5,6 +5,7 @@
     "models": "Models",
     "credentials": "Credentials",
     "agent_group": "Agent",
+    "hub": "Hub",
     "skills": "Skills",
     "tools": "Tools",
     "services": "Services",
@@ -13,6 +14,21 @@
     "show_less_channels": "Less",
     "config": "Config",
     "logs": "Logs"
+  },
+  "launcherLogin": {
+    "title": "Launcher access",
+    "description": "Sign in with the dashboard access token for this launcher process (it may change after each restart unless you pin it with an environment variable or launcher config).",
+    "tokenLabel": "Token",
+    "tokenPlaceholder": "Enter access token",
+    "submit": "Continue to Dashboard",
+    "errorInvalid": "Invalid token. Please try again.",
+    "errorNetwork": "Network error. Please try again.",
+    "helpTitle": "Where to find the token",
+    "helpConsole": "Console mode: printed in the terminal when the launcher starts.",
+    "helpTray": "Tray mode: menu «Copy dashboard token».",
+    "helpConfig": "Launcher config file: {{path}}",
+    "helpLogFile": "Log file (startup line includes the token): {{path}}",
+    "helpEnv": "Stable token: set {{env}}."
   },
   "chat": {
     "welcome": "How can I help you today?",
@@ -34,6 +50,12 @@
     "deleteSession": "Delete session",
     "messagesCount": "{{count}} messages",
     "noModel": "Select model",
+    "attachImage": "Add images",
+    "removeImage": "Remove image",
+    "uploadedImage": "Uploaded image",
+    "invalidImage": "\"{{name}}\" is not a supported image file.",
+    "imageTooLarge": "\"{{name}}\" exceeds the {{size}} limit.",
+    "imageReadFailed": "Failed to read \"{{name}}\".",
     "empty": {
       "noConfiguredModel": "No Model Configured",
       "noConfiguredModelDescription": "You need to configure at least one AI model with an API key before you can start chatting.",
@@ -66,7 +88,7 @@
         "restarting": "Restarting Gateway...",
         "stopping": "Stopping Gateway..."
       },
-      "restartRequired": "Model changes require a gateway restart to take effect."
+      "restartRequired": "Configuration changes require a gateway restart to take effect."
     }
   },
   "common": {
@@ -78,6 +100,12 @@
   },
   "labels": {
     "loading": "Loading..."
+  },
+  "footer": {
+    "version": "Version",
+    "commit": "Commit",
+    "build": "Build",
+    "version_unknown": "Unknown"
   },
   "credentials": {
     "description": "Manage OAuth and token-based credentials for supported providers.",
@@ -150,8 +178,9 @@
     "noDefaultHintPrefix": "No default model set yet. Click",
     "noDefaultHintSuffix": "to set one.",
     "status": {
-      "configured": "Configured",
-      "unconfigured": "Not configured"
+      "available": "Available",
+      "unconfigured": "Not configured",
+      "unreachable": "Service unreachable"
     },
     "badge": {
       "default": "Default",
@@ -222,10 +251,6 @@
   },
   "channels": {
     "loadError": "Failed to load channels",
-    "edit": "Configure {{name}}",
-    "status": {
-      "configured": "Configured"
-    },
     "name": {
       "telegram": "Telegram",
       "discord": "Discord",
@@ -245,8 +270,6 @@
       "weixin": "WeChat"
     },
     "weixin": {
-      "warningTitle": "Testing phase, use with caution",
-      "warningDesc": "The WeChat channel is still experimental and may carry a risk of account suspension. Use it only if you understand and accept the risk.",
       "bindTitle": "WeChat Account Binding",
       "bindDesc": "Scan the QR code with WeChat to bind your personal account.",
       "bind": "Bind WeChat",
@@ -264,8 +287,6 @@
     "wecom": {
       "bindTitle": "WeCom Binding",
       "bindDesc": "Scan the QR code with WeCom to bind your AI Bot.",
-      "enableDesc": "Once bound, you can enable or disable the channel here.",
-      "enableBindFirst": "Bind the bot first, then enable the channel.",
       "bind": "Bind WeCom",
       "rebind": "Re-bind",
       "bound": "WeCom Bound",
@@ -307,7 +328,6 @@
       "notFound": "Channel \"{{name}}\" is not supported.",
       "saveSuccess": "Channel configuration saved.",
       "saveError": "Failed to save channel configuration",
-      "enabled": "enabled",
       "docLink": "Documentation",
       "enableLabel": "Enable channel",
       "restartRequiredTitle": "Gateway restart required",
@@ -377,11 +397,18 @@
     "agent": {
       "load_error": "Failed to load agent support information.",
       "skills": {
-        "description": "Skills are loaded from the workspace, global PicoClaw home, and builtin directories.",
         "empty": "No skills are currently available.",
+        "install_success": "Installed {{name}}.",
+        "install_error": "Failed to install skill.",
+        "search_placeholder": "Search by name, description, or registry",
+        "source_label": "Type",
+        "sort_label": "Sort",
         "import": "Import Skill",
         "import_success": "Skill imported.",
         "import_error": "Failed to import skill.",
+        "import_invalid_type": "Only Markdown or ZIP skill files are supported.",
+        "import_invalid_size": "Skill file must be 1 MB or smaller.",
+        "import_constraints": "Import a Markdown or ZIP skill file up to 1 MB",
         "view": "View",
         "delete": "Delete",
         "delete_title": "Delete Skill?",
@@ -391,20 +418,78 @@
         "delete_error": "Failed to delete skill.",
         "viewer_title": "Skill Content",
         "viewer_description": "Read the current effective SKILL.md content here.",
-        "loading_detail": "Loading skill content...",
         "load_detail_error": "Failed to load skill content.",
-        "path": "Skill Path",
-        "no_description": "No description provided."
+        "no_description": "No description provided.",
+        "no_results": "No skills matched the current filters.",
+        "dropzone_title": "Import Into Workspace",
+        "dropzone_description": "Drag a skill file here or pick one from disk.",
+        "dropzone_label": "Drop a skill file here",
+        "dropzone_active": "Release to import this skill",
+        "dropzone_release": "The skill will be normalized and saved into the workspace skills directory.",
+        "marketplace_title": "Discover Skills",
+        "marketplace_description": "Search the skill registries and install useful skills into this workspace",
+        "marketplace_search_placeholder": "Search for capabilities like github, docker, database...",
+        "marketplace_search_action": "Search",
+        "marketplace_search_status": "Search Status",
+        "marketplace_install_status": "Install Status",
+        "marketplace_notice_title": "Security Notice",
+        "marketplace_notice_body": "Registry skills are third-party content. Review the author, page URL, instructions, and any required code or credentials before installing.",
+        "marketplace_status_disabled": "Disabled. Enable the corresponding tool on the Tools page first.",
+        "marketplace_status_enable_hint": "Enable the related tool on the Tools page first.",
+        "marketplace_search_error": "Failed to search registries.",
+        "marketplace_loading_results": "Searching skills...",
+        "marketplace_loading_more": "Loading more skills...",
+        "marketplace_results_title": "{{count}} results for “{{query}}”",
+        "marketplace_results_hint": "Registry results install into the current workspace.",
+        "marketplace_install_action": "Install",
+        "marketplace_installed": "Installed",
+        "marketplace_view_installed": "View Local",
+        "marketplace_installed_hint": "Already available in this workspace as “{{name}}”.",
+        "marketplace_empty_results": "No installable skills matched “{{query}}”.",
+        "marketplace_idle": "Search for a capability to discover installable skills from configured registries.",
+        "marketplace_unavailable": "Registry search is currently unavailable. Check the Skills tools configuration.",
+        "sort": {
+          "name_asc": "Name (A-Z)",
+          "name_desc": "Name (Z-A)",
+          "source": "Type"
+        },
+        "origin": {
+          "all": "All Types",
+          "builtin": "Builtin",
+          "third_party": "Third-Party",
+          "manual": "Manual"
+        },
+        "summary": {
+          "total": "Total Skills"
+        },
+        "detail_tabs": {
+          "preview": "Preview",
+          "raw": "Raw",
+          "meta": "Metadata"
+        },
+        "metadata": {
+          "name": "Name",
+          "description": "Description",
+          "registry": "Registry",
+          "url": "URL",
+          "version": "Installed Version",
+          "lines": "Line Count",
+          "characters": "Character Count"
+        }
       },
       "tools": {
-        "description": "This view reflects whether each agent tool is enabled, disabled, or blocked by a missing prerequisite.",
+        "search_placeholder": "Search tools...",
+        "no_results": "No tools match your criteria.",
+        "filter": {
+          "all": "All Status",
+          "enabled": "Enabled only",
+          "disabled": "Disabled only",
+          "blocked": "Blocked only"
+        },
         "empty": "No tools are available.",
-        "enable": "Enable",
-        "disable": "Disable",
         "enable_success": "Tool enabled.",
         "disable_success": "Tool disabled.",
         "toggle_error": "Failed to update tool state.",
-        "config_key": "Controlled by tools.{{key}}",
         "status": {
           "enabled": "Enabled",
           "disabled": "Disabled",
@@ -498,6 +583,10 @@
       "autostart_load_error": "Failed to load launch-at-login status.",
       "server_port": "Service Port",
       "server_port_hint": "HTTP port used by PicoClaw Web.",
+      "launcher_token": "Login Token",
+      "launcher_token_section_hint": "Changes in this section take effect after the launcher restarts.",
+      "launcher_token_hint": "Used to sign in on the launcher login page.",
+      "launcher_token_placeholder": "Enter login token",
       "lan_access": "Enable LAN Access",
       "lan_access_hint": "Allow access from other devices on your local network.",
       "allowed_cidrs": "Allowed Network CIDRs",
@@ -508,7 +597,7 @@
         "runtime": "Runtime",
         "exec": "Run Commands",
         "cron": "Cron Tasks",
-        "launcher": "Service",
+        "launcher": "Launcher",
         "devices": "Devices"
       },
       "open_raw": "Raw Config",
@@ -527,8 +616,31 @@
       "unsaved_changes": "You have unsaved changes."
     },
     "logs": {
+      "log_level_error": "Failed to update log level.",
       "clear": "Clear logs",
       "empty": "Waiting for logs..."
+    }
+  },
+  "tour": {
+    "skip": "Skip tour",
+    "prev": "Previous",
+    "next": "Next",
+    "finish": "Finish",
+    "welcome": {
+      "title": "Welcome to PicoClaw",
+      "description": "PicoClaw is a powerful AI assistant platform. Let's take a few seconds to help you complete the basic setup."
+    },
+    "models": {
+      "title": "Configure Models",
+      "description": "Click the \"Models\" menu on the left to configure API keys for AI providers. Only configured models can be used for chat."
+    },
+    "gateway": {
+      "title": "Start Gateway",
+      "description": "After configuring models, click the \"Start Gateway\" button at the top to begin chatting with AI."
+    },
+    "docs": {
+      "title": "View Documentation",
+      "description": "Need more help? Click the documentation button in the top right corner to view detailed guides and configuration docs."
     }
   }
 }

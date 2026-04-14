@@ -46,7 +46,7 @@ func TestSend_NotRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = ch.Send(context.Background(), bus.OutboundMessage{Content: "hi"})
+	_, err = ch.Send(context.Background(), bus.OutboundMessage{Content: "hi"})
 	if !errors.Is(err, channels.ErrNotRunning) {
 		t.Fatalf("expected ErrNotRunning, got %v", err)
 	}
@@ -124,7 +124,7 @@ func TestClientChannel_ConnectAndSend(t *testing.T) {
 	defer ch.Stop(ctx)
 
 	// Send a message
-	err = ch.Send(ctx, bus.OutboundMessage{
+	_, err = ch.Send(ctx, bus.OutboundMessage{
 		ChatID:  "pico_client:sess-1",
 		Content: "hello",
 	})
@@ -179,7 +179,7 @@ func TestClientChannel_ReceivesServerMessage(t *testing.T) {
 	defer ch.Stop(ctx)
 
 	// Send a message; the echo server replies with message.create
-	err = ch.Send(ctx, bus.OutboundMessage{
+	_, err = ch.Send(ctx, bus.OutboundMessage{
 		ChatID:  "pico_client:sess-echo",
 		Content: "ping",
 	})
@@ -252,7 +252,7 @@ func TestSend_ClosedConnection(t *testing.T) {
 	ch.conn.close()
 	ch.mu.Unlock()
 
-	err = ch.Send(ctx, bus.OutboundMessage{
+	_, err = ch.Send(ctx, bus.OutboundMessage{
 		ChatID:  "pico_client:sess-close",
 		Content: "should fail",
 	})
@@ -261,4 +261,58 @@ func TestSend_ClosedConnection(t *testing.T) {
 	}
 
 	ch.Stop(ctx)
+}
+
+func TestParseInlineImageMedia_Valid(t *testing.T) {
+	media, err := parseInlineImageMedia(map[string]any{
+		"media": []any{
+			"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2ioAAAAASUVORK5CYII=",
+		},
+	})
+	if err != nil {
+		t.Fatalf("parseInlineImageMedia() error = %v", err)
+	}
+	if len(media) != 1 {
+		t.Fatalf("len(media) = %d, want 1", len(media))
+	}
+}
+
+func TestPicoChannel_HandleMessageSend_AllowsMediaOnly(t *testing.T) {
+	mb := bus.NewMessageBus()
+	ch, err := NewPicoChannel(config.PicoConfig{
+		Token: *config.NewSecureString("test-token"),
+	}, mb)
+	if err != nil {
+		t.Fatalf("NewPicoChannel() error = %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := ch.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer ch.Stop(ctx)
+
+	pc := &picoConn{id: "conn-1", sessionID: "sess-1"}
+	ch.handleMessageSend(pc, PicoMessage{
+		ID: "msg-1",
+		Payload: map[string]any{
+			"media": []any{
+				"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2ioAAAAASUVORK5CYII=",
+			},
+		},
+	})
+
+	select {
+	case msg := <-mb.InboundChan():
+		if msg.Content != "" {
+			t.Fatalf("msg.Content = %q, want empty", msg.Content)
+		}
+		if len(msg.Media) != 1 || !strings.HasPrefix(msg.Media[0], "data:image/png;base64,") {
+			t.Fatalf("msg.Media = %#v, want inline image payload", msg.Media)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for inbound media message")
+	}
 }

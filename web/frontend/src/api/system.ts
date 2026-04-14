@@ -1,3 +1,5 @@
+import { launcherFetch } from "@/api/http"
+
 export interface AutoStartStatus {
   enabled: boolean
   supported: boolean
@@ -9,10 +11,18 @@ export interface LauncherConfig {
   port: number
   public: boolean
   allowed_cidrs: string[]
+  launcher_token: string
+}
+
+export interface SystemVersionInfo {
+  version: string
+  git_commit?: string
+  build_time?: string
+  go_version: string
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(path, options)
+  const res = await launcherFetch(path, options)
   if (!res.ok) {
     let message = `API error: ${res.status} ${res.statusText}`
     try {
@@ -59,4 +69,8 @@ export async function setLauncherConfig(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   })
+}
+
+export async function getSystemVersionInfo(): Promise<SystemVersionInfo> {
+  return request<SystemVersionInfo>("/api/system/version")
 }

@@ -22,6 +22,7 @@ func (m *isolationMockTool) Description() string { return "mock tool" }
 func (m *isolationMockTool) Parameters() map[string]any {
 	return map[string]any{"type": "object", "properties": map[string]any{}}
 }
+
 func (m *isolationMockTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
 	return tools.SilentResult("executed")
 }

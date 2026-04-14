@@ -30,12 +30,6 @@ func (r *mcpRuntime) setManager(manager *mcp.Manager) {
 	r.mu.Unlock()
 }
 
-func (r *mcpRuntime) setInitErr(err error) {
-	r.mu.Lock()
-	r.initErr = err
-	r.mu.Unlock()
-}
-
 func (r *mcpRuntime) getInitErr() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -62,7 +56,7 @@ func (r *mcpRuntime) getManager() *mcp.Manager {
 	return r.manager
 }
 
-// ensureMCPInitialized loads MCP servers/tools once so both Run() and direct
+// EnsureMCPInitialized loads MCP servers/tools once so both Run() and direct
 // agent mode share the same initialization path.
 func (al *AgentLoop) EnsureMCPInitialized(ctx context.Context) error {
 	if !al.cfg.Tools.IsToolEnabled("mcp") {
@@ -154,6 +148,8 @@ func (al *AgentLoop) RegisterMCPToolsToAgent(agentID string, agent *AgentInstanc
 
 		for _, tool := range conn.Tools {
 			mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
+			mcpTool.SetWorkspace(agent.Workspace)
+			mcpTool.SetMaxInlineTextRunes(al.cfg.Tools.MCP.GetMaxInlineTextChars())
 
 			if registerAsHidden {
 				agent.Tools.RegisterHidden(mcpTool)

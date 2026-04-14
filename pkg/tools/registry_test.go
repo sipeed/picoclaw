@@ -190,6 +190,33 @@ func TestToolRegistry_ExecuteWithContext_EmptyContext(t *testing.T) {
 	}
 }
 
+func TestToolRegistry_ExecuteWithContext_PreservesMessageContext(t *testing.T) {
+	r := NewToolRegistry()
+	ct := &mockContextAwareTool{
+		mockRegistryTool: *newMockTool("ctx_tool", "needs context"),
+	}
+	r.Register(ct)
+
+	baseCtx := WithToolMessageContext(context.Background(), "msg-123", "msg-100")
+	r.ExecuteWithContext(baseCtx, "ctx_tool", nil, "telegram", "chat-42", nil)
+
+	if ct.lastCtx == nil {
+		t.Fatal("expected Execute to be called")
+	}
+	if got := ToolChannel(ct.lastCtx); got != "telegram" {
+		t.Errorf("expected channel 'telegram', got %q", got)
+	}
+	if got := ToolChatID(ct.lastCtx); got != "chat-42" {
+		t.Errorf("expected chatID 'chat-42', got %q", got)
+	}
+	if got := ToolMessageID(ct.lastCtx); got != "msg-123" {
+		t.Errorf("expected messageID 'msg-123', got %q", got)
+	}
+	if got := ToolReplyToMessageID(ct.lastCtx); got != "msg-100" {
+		t.Errorf("expected replyToMessageID 'msg-100', got %q", got)
+	}
+}
+
 func TestToolRegistry_ExecuteWithContext_AsyncCallback(t *testing.T) {
 	r := NewToolRegistry()
 	at := &mockAsyncRegistryTool{
@@ -737,14 +764,14 @@ func TestToolRegistry_Filter_SupportsPrefix(t *testing.T) {
 	r := NewToolRegistry()
 	r.Register(newMockTool("read_file", "core tool"))
 	r.Register(newMockTool("write_file", "core tool"))
-	r.Register(newMockTool("mcp_monday_get_items", "mcp tool"))
-	r.Register(newMockTool("mcp_harvest_get_entries", "mcp tool"))
+	r.Register(newMockTool("mcp_github_get_items", "mcp tool"))
+	r.Register(newMockTool("mcp_google_get_entries", "mcp tool"))
 	r.Register(newMockTool("tool_search_regex", "discovery tool"))
 
-	whitelist := []string{"read_file", "monday", "search"}
+	whitelist := []string{"read_file", "github", "search"}
 	r.Filter(whitelist, true)
 
-	// expected: read_file (exact), mcp_monday_get_items (mcp_monday_ prefix), tool_search_regex (tool_search_ prefix)
+	// expected: read_file (exact), mcp_github_get_items (mcp_github_ prefix), tool_search_regex (tool_search_ prefix)
 	if r.Count() != 3 {
 		t.Errorf("expected 3 tools after filtering, got %d: %v", r.Count(), r.List())
 	}
@@ -752,7 +779,7 @@ func TestToolRegistry_Filter_SupportsPrefix(t *testing.T) {
 	allowed := r.List()
 	expected := map[string]bool{
 		"read_file":            true,
-		"mcp_monday_get_items": true,
+		"mcp_github_get_items": true,
 		"tool_search_regex":    true,
 	}
 
@@ -764,7 +791,7 @@ func TestToolRegistry_Filter_SupportsPrefix(t *testing.T) {
 	}
 
 	if len(expected) > 0 {
-		var missing []string
+		missing := make([]string, 0, len(expected))
 		for m := range expected {
 			missing = append(missing, m)
 		}

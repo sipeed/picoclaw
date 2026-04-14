@@ -229,6 +229,7 @@ func (r *ToolRegistry) ExecuteWithContext(
 	func() {
 		defer func() {
 			if re := recover(); re != nil {
+				logger.RecoverPanicNoExit(re)
 				errMsg := fmt.Sprintf("Tool '%s' crashed with panic: %v", name, re)
 				logger.ErrorCF("tool", "Tool execution panic recovered",
 					map[string]any{
@@ -444,11 +445,13 @@ func (r *ToolRegistry) Filter(whitelist []string, enabled bool) {
 		if _, exact := whitelistMap[name]; exact {
 			allowed = true
 		} else {
-			// Check for prefix matches (e.g. "monday" matches "mcp_monday_...")
+			// Check for prefix matches (e.g. "github" matches "mcp_github_...")
 			for _, w := range whitelist {
 				// Match exact (redundant but safe) or prefix with underscore
 				// We also check for "mcp_" prefix specifically to support MCP tool grouping
-				if strings.HasPrefix(name, "mcp_"+w+"_") || strings.HasPrefix(name, "tool_"+w+"_") || strings.HasPrefix(name, w+"_") {
+				if strings.HasPrefix(name, "mcp_"+w+"_") ||
+					strings.HasPrefix(name, "tool_"+w+"_") ||
+					strings.HasPrefix(name, w+"_") {
 					allowed = true
 					break
 				}

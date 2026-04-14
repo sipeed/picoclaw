@@ -4,14 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
 )
 
 type launcherConfigPayload struct {
-	Port         int      `json:"port"`
-	Public       bool     `json:"public"`
-	AllowedCIDRs []string `json:"allowed_cidrs"`
+	Port          int      `json:"port"`
+	Public        bool     `json:"public"`
+	AllowedCIDRs  []string `json:"allowed_cidrs"`
+	LauncherToken string   `json:"launcher_token"`
 }
 
 func (h *Handler) registerLauncherConfigRoutes(mux *http.ServeMux) {
@@ -48,9 +50,10 @@ func (h *Handler) handleGetLauncherConfig(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(launcherConfigPayload{
-		Port:         cfg.Port,
-		Public:       cfg.Public,
-		AllowedCIDRs: append([]string(nil), cfg.AllowedCIDRs...),
+		Port:          cfg.Port,
+		Public:        cfg.Public,
+		AllowedCIDRs:  append([]string(nil), cfg.AllowedCIDRs...),
+		LauncherToken: cfg.LauncherToken,
 	})
 }
 
@@ -62,9 +65,10 @@ func (h *Handler) handleUpdateLauncherConfig(w http.ResponseWriter, r *http.Requ
 	}
 
 	cfg := launcherconfig.Config{
-		Port:         payload.Port,
-		Public:       payload.Public,
-		AllowedCIDRs: append([]string(nil), payload.AllowedCIDRs...),
+		Port:          payload.Port,
+		Public:        payload.Public,
+		AllowedCIDRs:  append([]string(nil), payload.AllowedCIDRs...),
+		LauncherToken: strings.TrimSpace(payload.LauncherToken),
 	}
 	if err := launcherconfig.Validate(cfg); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -78,8 +82,9 @@ func (h *Handler) handleUpdateLauncherConfig(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(launcherConfigPayload{
-		Port:         cfg.Port,
-		Public:       cfg.Public,
-		AllowedCIDRs: append([]string(nil), cfg.AllowedCIDRs...),
+		Port:          cfg.Port,
+		Public:        cfg.Public,
+		AllowedCIDRs:  append([]string(nil), cfg.AllowedCIDRs...),
+		LauncherToken: cfg.LauncherToken,
 	})
 }

@@ -10,6 +10,8 @@ import (
 	"github.com/openai/openai-go/v3"
 	openaiopt "github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
+
+	orc "github.com/sipeed/picoclaw/pkg/providers/openai_responses_common"
 )
 
 func TestBuildCodexParams_BasicMessage(t *testing.T) {
@@ -225,7 +227,7 @@ func TestParseCodexResponse_TextOutput(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	result := parseCodexResponse(&resp)
+	result := orc.ParseResponseFromStruct(&resp)
 	if result.Content != "Hello there!" {
 		t.Errorf("Content = %q, want %q", result.Content, "Hello there!")
 	}
@@ -266,7 +268,7 @@ func TestParseCodexResponse_FunctionCall(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	result := parseCodexResponse(&resp)
+	result := orc.ParseResponseFromStruct(&resp)
 	if len(result.ToolCalls) != 1 {
 		t.Fatalf("len(ToolCalls) = %d, want 1", len(result.ToolCalls))
 	}

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers/common"
@@ -36,16 +37,45 @@ type Provider struct {
 	maxTokensField  string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
 	httpClient      *http.Client
 	extraBody       map[string]any // Additional fields to inject into request body
-	useAzureHeaders bool           // Use api-key header instead of Authorization: Bearer
+	userAgent       string
+	useAzureHeaders bool         // Use api-key header instead of Authorization: Bearer
+	mu              sync.RWMutex // Protect useAzureHeaders
 }
 
 type Option func(*Provider)
 
 const defaultRequestTimeout = common.DefaultRequestTimeout
 
+var stripModelPrefixProviders = map[string]struct{}{
+	"litellm":       {},
+	"venice":        {},
+	"moonshot":      {},
+	"nvidia":        {},
+	"groq":          {},
+	"ollama":        {},
+	"deepseek":      {},
+	"google":        {},
+	"openrouter":    {},
+	"zhipu":         {},
+	"mistral":       {},
+	"vivgrid":       {},
+	"minimax":       {},
+	"novita":        {},
+	"lmstudio":      {},
+	"azure-ai":      {},
+	"azure-foundry": {},
+	"gemini":        {},
+}
+
 func WithMaxTokensField(maxTokensField string) Option {
 	return func(p *Provider) {
 		p.maxTokensField = maxTokensField
+	}
+}
+
+func WithUserAgent(userAgent string) Option {
+	return func(p *Provider) {
+		p.userAgent = userAgent
 	}
 }
 
@@ -63,13 +93,15 @@ func WithExtraBody(extraBody map[string]any) Option {
 	}
 }
 
-func WithAzureHeaders() Option {
+func WithAzureHeaders(use bool) Option {
 	return func(p *Provider) {
-		p.useAzureHeaders = true
+		p.useAzureHeaders = use
 	}
 }
 
 func (p *Provider) SetUseAzureHeaders(use bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.useAzureHeaders = use
 }
 
@@ -191,7 +223,11 @@ func (p *Provider) Chat(
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	if p.userAgent != "" {
+		req.Header.Set("User-Agent", p.userAgent)
+	}
 	if p.apiKey != "" {
+
 		if p.useAzureHeaders {
 			req.Header.Set("api-key", p.apiKey)
 		} else {
@@ -426,14 +462,11 @@ func normalizeModel(model, apiBase string) string {
 	}
 
 	prefix := strings.ToLower(before)
-	switch prefix {
-	case "litellm", "moonshot", "groq", "ollama", "deepseek", "google",
-		"openrouter", "zhipu", "mistral", "vivgrid", "minimax", "novita",
-		"azure-ai", "azure-foundry":
+	if _, ok := stripModelPrefixProviders[prefix]; ok {
 		return after
-	default:
-		return model
 	}
+
+	return model
 }
 
 func buildToolsList(tools []ToolDefinition, nativeSearch bool) []any {

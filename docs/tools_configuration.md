@@ -276,8 +276,11 @@ The cron tool is used for scheduling periodic tasks.
 
 | Config                 | Type | Default | Description                                    |
 |------------------------|------|---------|------------------------------------------------|
+| `enabled`              | bool | true    | Register the agent-facing cron tool            |
+| `allow_command`        | bool | true    | Allow command jobs without extra confirmation  |
 | `exec_timeout_minutes` | int  | 5       | Execution timeout in minutes, 0 means no limit |
-| `allow_command`        | bool | false   | Allow cron tasks to execute shell commands      |
+
+For schedule types, execution modes (`deliver`, agent turn, and command jobs), persistence, and the current command-security gates, see [Scheduled Tasks and Cron Jobs](cron.md).
 
 ## MCP Tool
 
@@ -553,6 +556,9 @@ For example:
 - `PICOCLAW_TOOLS_EXEC_ENABLE_DENY_PATTERNS=false`
 - `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
 - `PICOCLAW_TOOLS_MCP_ENABLED=true`
+- `PICOCLAW_TOOLS_MCP_MAX_INLINE_TEXT_CHARS=16384`
 
 Note: Nested map-style config (for example `tools.mcp.servers.<name>.*`) is configured in `config.json` rather than
 environment variables.
+
+For MCP tools, `tools.mcp.max_inline_text_chars` controls how much text result is kept inline in model context. The threshold is counted in Unicode characters (Go runes), not bytes. For example, `16384` means up to 16,384 characters inline, which may occupy more than 16 KB for multibyte text such as CJK. Above this threshold, PicoClaw saves the MCP text result as a local artifact in the agent workspace and gives the model a short note plus a structured `[file:...]` artifact path instead of injecting the full payload into context.

@@ -31,6 +31,22 @@ PICOCLAW_HOME=/opt/picoclaw picoclaw agent
 PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
 ```
 
+### Niveau de Log du Gateway
+
+`gateway.log_level` contrôle la verbosité des logs du Gateway, configurable dans `config.json` :
+
+```json
+{
+  "gateway": {
+    "log_level": "warn"
+  }
+}
+```
+
+La valeur par défaut est `warn`. Valeurs supportées : `debug`, `info`, `warn`, `error`, `fatal`.
+
+Peut également être surchargé via la variable d'environnement : `PICOCLAW_LOG_LEVEL=info`
+
 ### Structure du Workspace
 
 PicoClaw stocke les données dans votre workspace configuré (par défaut : `~/.picoclaw/workspace`) :
@@ -318,15 +334,15 @@ Configurez plusieurs endpoints pour le même nom de modèle — PicoClaw effectu
 ```json
 {
   "model_list": [
-    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api1.example.com/v1", "api_key": "sk-key1" },
-    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api2.example.com/v1", "api_key": "sk-key2" }
+    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api1.example.com/v1", "api_keys": ["sk-key1"] },
+    { "model_name": "gpt-5.4", "model": "openai/gpt-5.4", "api_base": "https://api2.example.com/v1", "api_keys": ["sk-key2"] }
   ]
 }
 ```
 
 #### Migration depuis l'ancienne config `providers`
 
-L'ancienne configuration `providers` est **dépréciée** mais toujours supportée. Voir [docs/migration/model-list-migration.md](../migration/model-list-migration.md).
+L'ancienne configuration `providers` est **dépréciée** et a été supprimée dans V2. Les configs V0/V1 existantes sont auto-migrées. Voir [docs/migration/model-list-migration.md](../migration/model-list-migration.md).
 
 ### Architecture des Providers
 
