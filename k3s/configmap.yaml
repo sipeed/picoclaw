@@ -497,28 +497,14 @@ data:
             "ttl_seconds": 300
           }
         },
-        "media_cleanup": {
+"media_cleanup": {
           "enabled": true,
           "max_age_minutes": 30,
           "interval_minutes": 5
         },
         "mcp": {
-          "enabled": true,
-          "discovery": {
-            "enabled": false,
-            "ttl": 5,
-            "max_search_results": 5,
-            "use_bm25": true,
-            "use_regex": false
-          },
-          "servers": {
-            "hdn-server": {
-              "enabled": true,
-              "command": "",
-              "type": "sse",
-              "url": "http://hdn-server:8080/mcp"
-            }
-          }
+          "enabled": false,
+          "servers": {}
         },
         "whitelist": [
           "spawn",
@@ -531,9 +517,7 @@ data:
           "exec",
           "message",
           "weather",
-          "summarize",
-          "github",
-          "hdn-server"
+          "summarize"
         ],
         "whitelist_enabled": true,
         "append_file": {
