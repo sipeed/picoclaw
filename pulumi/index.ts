@@ -19,7 +19,7 @@ const LITELLM_MODEL = "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0";
 // ── Artifact Registry (local — we have full IAM here) ────────────────────────
 
 // Docker repo for the picoclaw image — CI pipeline pushes here.
-const picoRepo = new gcp.artifactregistry.Repository("picoclaw-repo", {
+const picoRepo = gcp.artifactregistry.Repository.get("picoclaw-repo", "picoclaw-repo", {
     repositoryId: "picoclaw",
     location: region,
     project: enterpriseAutomationProjectId,
@@ -27,7 +27,7 @@ const picoRepo = new gcp.artifactregistry.Repository("picoclaw-repo", {
 });
 
 // Remote repo proxying ghcr.io — Cloud Run Jobs rejects non-AR/GCR/DockerHub images.
-const ghcrRemoteRepo = new gcp.artifactregistry.Repository("ghcr-remote", {
+const ghcrRemoteRepo = gcp.artifactregistry.Repository.get("ghcr-remote", "ghcr-remote", {
     repositoryId: "ghcr-remote",
     location: region,
     project: enterpriseAutomationProjectId,
