@@ -476,14 +476,7 @@
       "interval_minutes": 5
     },
     "mcp": {
-      "enabled": true,
-      "discovery": {
-        "enabled": false,
-        "ttl": 5,
-        "max_search_results": 5,
-        "use_bm25": true,
-        "use_regex": false
-      },
+      "enabled": false,
       "servers": {}
     },
     "whitelist": [
@@ -496,9 +489,7 @@
       "append_file",
       "message",
       "weather",
-      "summarize",
-      "github",
-      "search_tool"
+      "summarize"
     ],
     "whitelist_enabled": true,
     "append_file": {
