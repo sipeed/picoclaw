@@ -466,6 +466,7 @@ PicoClaw supports 30+ LLM providers through the `model_list` configuration. Use 
   "model_list": [
     {
       "model_name": "local-ovms",
+      "enabled": true,
       "model": "ovms/your-model",
       "api_base": "http://localhost:8000/v3"
     }
