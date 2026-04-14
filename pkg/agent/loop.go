@@ -2614,10 +2614,7 @@ turnLoop:
 			break
 		}
 
-		normalizedToolCalls := make([]providers.ToolCall, 0, len(response.ToolCalls))
-		for _, tc := range response.ToolCalls {
-			normalizedToolCalls = append(normalizedToolCalls, providers.NormalizeToolCall(tc))
-		}
+		normalizedToolCalls := providers.NormalizeToolCall(response.ToolCalls)
 
 		toolNames := make([]string, 0, len(normalizedToolCalls))
 		for _, tc := range normalizedToolCalls {

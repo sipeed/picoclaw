@@ -109,10 +109,7 @@ func RunToolLoop(
 			break
 		}
 
-		normalizedToolCalls := make([]providers.ToolCall, 0, len(response.ToolCalls))
-		for _, tc := range response.ToolCalls {
-			normalizedToolCalls = append(normalizedToolCalls, providers.NormalizeToolCall(tc))
-		}
+		normalizedToolCalls := providers.NormalizeToolCall(response.ToolCalls)
 
 		// 5. Log tool calls
 		toolNames := make([]string, 0, len(normalizedToolCalls))
