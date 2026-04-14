@@ -653,6 +653,18 @@ func (al *AgentLoop) drainBusToSteering(ctx context.Context, activeScope, active
 		// Transcribe audio if needed before steering, so the agent sees text.
 		msg, _ = al.transcribeAudioInMessage(ctx, msg)
 
+		// Handle priority commands (e.g. /btw) immediately instead of queueing them.
+		if handled, response := al.tryHandlePriorityCommand(ctx, msg); handled {
+			if response != "" {
+				al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+					Channel: msg.Channel,
+					ChatID:  msg.ChatID,
+					Content: response,
+				})
+			}
+			continue
+		}
+
 		logger.InfoCF("agent", "Redirecting inbound message to steering queue",
 			map[string]any{
 				"channel":     msg.Channel,
@@ -4045,6 +4057,39 @@ func mapCommandError(result commands.ExecuteResult) string {
 		return fmt.Sprintf("Failed to execute command: %v", result.Err)
 	}
 	return fmt.Sprintf("Failed to execute /%s: %v", result.Command, result.Err)
+}
+
+func (al *AgentLoop) tryHandlePriorityCommand(ctx context.Context, msg bus.InboundMessage) (bool, string) {
+	cmdName, ok := commands.CommandName(msg.Content)
+	if !ok || cmdName != "btw" {
+		return false, ""
+	}
+
+	route, agent, err := al.resolveMessageRoute(msg)
+	if err != nil || agent == nil {
+		if err != nil {
+			logger.ErrorCF("agent", fmt.Sprintf("Error resolving route for /btw: %v", err), nil)
+			return true, fmt.Sprintf("Error processing message: %v", err)
+		}
+		logger.WarnCF("agent", "/btw command unavailable: no agent resolved", nil)
+		return true, "Command unavailable in current context."
+	}
+
+	allocation := al.allocateRouteSession(route, msg)
+	opts := processOptions{
+		SessionKey:        resolveScopeKey(allocation.SessionKey, msg.SessionKey),
+		Channel:           msg.Channel,
+		ChatID:            msg.ChatID,
+		SenderID:          msg.SenderID,
+		SenderDisplayName: msg.Sender.DisplayName,
+		Media:             msg.Media,
+	}
+
+	response, handled := al.handleCommand(ctx, msg, agent, &opts)
+	if !handled {
+		return false, ""
+	}
+	return true, response
 }
 
 // isNativeSearchProvider reports whether the given LLM provider implements
