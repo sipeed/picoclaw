@@ -29,7 +29,8 @@ Controls which dashboard is targeted. Defaults to `UAT` if not specified.
 gcloud run jobs execute picoclaw-e2e \
   --region=europe-west4 \
   --container=picoclaw \
-  --update-env-vars="JOB_TYPE=run-all" \
+  --update-env-vars="JOB_TYPE=run" \
+  --update-env-vars="JOB_SPEC=tests/auth/login.spec.ts" \
   --update-env-vars="ENVIRONMENT=PREVIEW-PROD"
 ```
 
@@ -54,20 +55,30 @@ gcloud run jobs execute picoclaw-e2e \
 
 ## JOB_TYPE=run
 
-Runs a single Playwright spec file.
+Runs a single Playwright spec file **or an entire folder** of tests.
 
 **Required env vars:**
 | Var | Description |
 |---|---|
-| `JOB_SPEC` | Spec file path (e.g. `tests/auth/login.spec.ts`) |
+| `JOB_SPEC` | Spec file path or folder path (e.g. `tests/auth/login.spec.ts` or `tests/knowledge-base`) |
 
 ```bash
+# Single spec file
 gcloud run jobs execute picoclaw-e2e \
   --region=europe-west4 \
   --container=picoclaw \
   --update-env-vars="JOB_TYPE=run" \
   --update-env-vars="JOB_SPEC=tests/auth/login.spec.ts"
+
+# All tests in a folder
+gcloud run jobs execute picoclaw-e2e \
+  --region=europe-west4 \
+  --container=picoclaw \
+  --update-env-vars="JOB_TYPE=run" \
+  --update-env-vars="JOB_SPEC=tests/knowledge-base"
 ```
+
+**Available folders:** `tests/auth`, `tests/knowledge-base`, `tests/flow-designer`, `tests/flow-tester`, `tests/profile`, `tests/organization`, `tests/settings`, `tests/logs`
 
 ---
 

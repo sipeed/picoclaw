@@ -3,7 +3,7 @@ import { performLogin } from '../utils/auth';
 import Imap from 'imap';
 import { simpleParser } from 'mailparser';
 import * as dotenv from 'dotenv';
-dotenv.config({ path: __dirname + '/../.env' });
+dotenv.config({ path: __dirname + '/../../.env' });
 
 test('Password reset flow - Reset password and verify login', async ({ page }) => {
     test.setTimeout(120000);
@@ -153,7 +153,7 @@ test('Password reset flow - Reset password and verify login', async ({ page }) =
 
     // Step 8: Verify success message and click Go To Dashboard
     console.log('\n📍 Step 8: Verify success message and click Go To Dashboard');
-    await expect(page.getByText(/Your password was reset successfully/i)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/Your password was reset successfully!!/i)).toBeVisible({ timeout: 10000 });
     console.log('   ✓ Success message visible');
     const goToDashboardButton = page.locator('button:has-text("Go To Dashboard"), a:has-text("Go To Dashboard")').first();
     await expect(goToDashboardButton).toBeVisible();
