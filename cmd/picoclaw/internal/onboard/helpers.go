@@ -146,11 +146,6 @@ func createWorkspaceTemplates(workspace string) {
 }
 
 func copyEmbeddedToTarget(targetDir string) error {
-	legacyWorkspaceFiles := map[string]struct{}{
-		"AGENTS.md":   {},
-		"IDENTITY.md": {},
-	}
-
 	// Ensure target directory exists
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return fmt.Errorf("Failed to create target directory: %w", err)
@@ -176,9 +171,6 @@ func copyEmbeddedToTarget(targetDir string) error {
 		new_path, err := filepath.Rel("workspace", path)
 		if err != nil {
 			return fmt.Errorf("Failed to get relative path for %s: %v\n", path, err)
-		}
-		if _, skip := legacyWorkspaceFiles[filepath.Base(new_path)]; skip {
-			return nil
 		}
 
 		// Build target file path

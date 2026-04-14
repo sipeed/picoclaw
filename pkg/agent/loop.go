@@ -645,7 +645,11 @@ func (al *AgentLoop) drainBusToSteering(ctx context.Context, activeScope, active
 
 		if handled, response := al.tryHandlePriorityCommand(ctx, msg); handled {
 			if response != "" {
-				al.publishResponse(ctx, msg.Channel, msg.ChatID, response)
+				al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+					Channel: msg.Channel,
+					ChatID:  msg.ChatID,
+					Content: response,
+				})
 			}
 			continue
 		}
@@ -676,32 +680,20 @@ func (al *AgentLoop) Stop() {
 	al.running.Store(false)
 }
 
-func (al *AgentLoop) resetMessageToolRound(agent *AgentInstance) {
-	if agent == nil {
-		return
-	}
-
-	if tool, ok := agent.Tools.Get("message"); ok {
-		if resetter, ok := tool.(interface{ ResetSentInRound() }); ok {
-			resetter.ResetSentInRound()
-		}
-	}
-}
-
 func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatID, response string) {
 	if response == "" {
 		return
 	}
 
 	alreadySentToSameChat := false
-	al.GetRegistry().ForEachTool("message", func(tool tools.Tool) {
-		if alreadySentToSameChat {
-			return
+	defaultAgent := al.GetRegistry().GetDefaultAgent()
+	if defaultAgent != nil {
+		if tool, ok := defaultAgent.Tools.Get("message"); ok {
+			if mt, ok := tool.(*tools.MessageTool); ok {
+				alreadySentToSameChat = mt.HasSentTo(channel, chatID)
+			}
 		}
-		if mt, ok := tool.(*tools.MessageTool); ok && mt.HasSentTo(channel, chatID) {
-			alreadySentToSameChat = true
-		}
-	})
+	}
 
 	if alreadySentToSameChat {
 		logger.DebugCF(
@@ -709,14 +701,6 @@ func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatI
 			"Skipped outbound (message tool already sent to same chat)",
 			map[string]any{"channel": channel, "chat_id": chatID},
 		)
-		return
-	}
-
-	al.publishResponse(ctx, channel, chatID, response)
-}
-
-func (al *AgentLoop) publishResponse(ctx context.Context, channel, chatID, response string) {
-	if response == "" {
 		return
 	}
 
@@ -1420,6 +1404,9 @@ func (al *AgentLoop) askSideQuestion(
 		activeSkills...,
 	)
 
+	maxMediaSize := al.GetConfig().Agents.Defaults.GetMaxMediaSize()
+	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
+
 	activeCandidates, activeModel, usedLight := al.selectCandidates(agent, question, messages)
 	activeProvider := agent.Provider
 	if usedLight && agent.LightProvider != nil {
@@ -1511,7 +1498,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
-	al.resetMessageToolRound(agent)
+	if tool, ok := agent.Tools.Get("message"); ok {
+		if resetter, ok := tool.(interface{ ResetSentInRound() }); ok {
+			resetter.ResetSentInRound()
+		}
+	}
 
 	// Resolve session key from route, while preserving explicit agent-scoped keys.
 	scopeKey := resolveScopeKey(route, msg.SessionKey)
@@ -3659,11 +3650,6 @@ func (al *AgentLoop) buildCommandsRuntime(agent *AgentInstance, opts *processOpt
 			rt.ListSkillNames = agent.ContextBuilder.ListSkillNames
 		}
 		rt.AskSideQuestion = func(ctx context.Context, question string) (string, error) {
-			question = strings.TrimSpace(question)
-			if question == "" {
-				return "", fmt.Errorf("Usage: /btw <question>")
-			}
-
 			return al.askSideQuestion(ctx, agent, opts, question)
 		}
 		rt.GetModelInfo = func() (string, string) {
@@ -3810,13 +3796,9 @@ func (al *AgentLoop) tryHandlePriorityCommand(ctx context.Context, msg bus.Inbou
 		SessionKey:        resolveScopeKey(route, msg.SessionKey),
 		Channel:           msg.Channel,
 		ChatID:            msg.ChatID,
-		MessageID:         msg.MessageID,
-		ReplyToMessageID:  inboundMetadata(msg, metadataKeyReplyToMessage),
 		SenderID:          msg.SenderID,
 		SenderDisplayName: msg.Sender.DisplayName,
-		UserMessage:       msg.Content,
 		Media:             msg.Media,
-		DefaultResponse:   defaultResponse,
 	}
 
 	response, handled := al.handleCommand(ctx, msg, agent, &opts)

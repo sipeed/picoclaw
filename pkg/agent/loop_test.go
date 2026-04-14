@@ -300,69 +300,6 @@ func TestProcessMessage_BtwCommandRunsWithoutPersistingHistory(t *testing.T) {
 	}
 }
 
-func TestPublishResponseIfNeeded_SkipsWhenNonDefaultAgentAlreadySentToChat(t *testing.T) {
-	tmpDir := t.TempDir()
-	cfg := &config.Config{
-		Agents: config.AgentsConfig{
-			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
-				ModelName:         "test-model",
-				MaxTokens:         4096,
-				MaxToolIterations: 10,
-			},
-			List: []config.AgentConfig{
-				{ID: "main", Default: true},
-				{ID: "support"},
-			},
-		},
-		Tools: config.ToolsConfig{
-			Message: config.ToolConfig{Enabled: true},
-		},
-	}
-
-	msgBus := bus.NewMessageBus()
-	al := NewAgentLoop(cfg, msgBus, &recordingProvider{})
-
-	supportAgent, ok := al.GetRegistry().GetAgent("support")
-	if !ok || supportAgent == nil {
-		t.Fatal("expected support agent")
-	}
-
-	tool, ok := supportAgent.Tools.Get("message")
-	if !ok {
-		t.Fatal("expected message tool on support agent")
-	}
-	mt, ok := tool.(*tools.MessageTool)
-	if !ok {
-		t.Fatal("expected message tool type")
-	}
-
-	if result := mt.Execute(context.Background(), map[string]any{
-		"channel": "telegram",
-		"chat_id": "chat-1",
-		"content": "interim reply",
-	}); result == nil || result.IsError {
-		t.Fatalf("message tool setup result = %+v, want successful send", result)
-	}
-
-	select {
-	case outbound := <-msgBus.OutboundChan():
-		if outbound.Content != "interim reply" {
-			t.Fatalf("expected setup outbound %q, got %#v", "interim reply", outbound)
-		}
-	default:
-		t.Fatal("expected interim outbound from message tool setup")
-	}
-
-	al.PublishResponseIfNeeded(context.Background(), "telegram", "chat-1", "final reply")
-
-	select {
-	case outbound := <-msgBus.OutboundChan():
-		t.Fatalf("expected final reply to be suppressed, got outbound %#v", outbound)
-	default:
-	}
-}
-
 func TestHandleCommand_UseCommandRejectsUnknownSkill(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := &config.Config{
