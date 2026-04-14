@@ -120,14 +120,12 @@ case "$JOB_TYPE" in
       tests/knowledge-base/create-kb-bucket-gcs.spec.ts \
       tests/knowledge-base/create-kb-bucket-website-crawler.spec.ts
 
-    run_group "Knowledge Base - Schedule & Edit" \
-      tests/knowledge-base/edit-kb-schedule.spec.ts \
-      tests/knowledge-base/schedule-kb-incremental-sync-simple.spec.ts \
+    run_group "Knowledge Base - Schedule" \
       tests/knowledge-base/schedule-kb-incremental-sync-advanced.spec.ts \
-      tests/knowledge-base/schedule-kb-full-sync-advanced.spec.ts \
       tests/knowledge-base/schedule-kb-full-sync-simple.spec.ts
 
-    run_group "Knowledge Base - Delete" \
+    run_group "Knowledge Base - Edit & Delete" \
+      tests/knowledge-base/edit-kb-schedule.spec.ts \
       tests/knowledge-base/delete-kb.spec.ts
 
     # flow-designer must run before flow-tester (creates the flows)

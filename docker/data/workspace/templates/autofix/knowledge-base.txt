@@ -44,7 +44,9 @@ STEP 3 — Fix the spec file:
 | Error message contains | Root cause | Fix |
 |------------------------|-----------|-----|
 | `waitForURL: timeout` on `\?select_org` | `waitForURL(/\?select_org/)` fails when server skips org selection | Replace with: `await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 }); if (page.url().includes('select_org')) { await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click(); await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 }); }` |
-| `strict mode violation` | Locator matched multiple elements | Add `.first()`, `.last()`, or `.filter({ hasText: /exact/ })` |
+| `strict mode violation` on `.bucket-card` | UI renders the same card multiple times in the DOM | Change `page.locator('.bucket-card').filter({ hasText: 'Name' })` to `page.locator('.bucket-card').filter({ hasText: 'Name' }).first()` — apply `.first()` on EVERY use: `.waitFor()`, `.isVisible()`, and variable assignments |
+| `strict mode violation` on `.organization-card` | Multiple org cards in DOM | Change `.filter({ hasText: 'Testing2026!' })` to `.filter({ hasText: 'Testing2026!' }).first()` |
+| `strict mode violation` on other locators | Locator matched multiple elements | Add `.first()`, `.last()`, or `.nth(N)` |
 | `locator.click: timeout` on modal button | Modal not fully open yet | Add `await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 10000 })` before clicking |
 | `v-radio` selector not found | Used Vue component tag as CSS selector | Use `page.getByRole('radio', { name: /Full Sync/ })` or `input[type="radio"]` |
 | `inputValue: Node is not an <input>` | Called `.inputValue()` on a v-select div | Replace with `await expect(locator).toContainText(/text/)` |

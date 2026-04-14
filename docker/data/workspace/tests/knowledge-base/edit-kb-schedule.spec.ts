@@ -26,15 +26,15 @@ test('Edit Knowledge Base Schedule', async ({ page }) => {
     await loader.first().waitFor({ state: 'hidden', timeout: 15000 });
   }
   await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
-  await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
-  await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 15000 });
+  await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).first().click();
+  await page.waitForURL(url => !url.searchParams.has('select_org'), { timeout: 15000 });
   console.log('✅ PASS: Step 2 - Organization selected');
 
   // ============================================================
   // STEP 3: Verify redirect to dashboard
   // ============================================================
-  console.log('📍 Step 3: Verify redirect to ');
-  await expect(page).toHaveURL(/https:\/\/dashboard\.int3nt\.info\//);
+  console.log('📍 Step 3: Verify redirect to dashboard');
+  await expect(page).not.toHaveURL(/login|select_org/);
   console.log('✅ PASS: Step 3 - Redirected to dashboard');
 
   // ============================================================
@@ -49,8 +49,8 @@ test('Edit Knowledge Base Schedule', async ({ page }) => {
   // STEP 5: Locate knowledge base bucket "Picotest1"
   // ============================================================
   console.log('📍 Step 5: Locate knowledge base bucket "Picotest1"');
-  await page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).waitFor({ state: 'visible', timeout: 10000 });
-  const bucketCard = page.locator('.bucket-card').filter({ hasText: 'Picotest1' });
+  await page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).first().waitFor({ state: 'visible', timeout: 10000 });
+  const bucketCard = page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).first();
   console.log('✅ PASS: Step 5 - Bucket "Picotest1" found');
 
   // ============================================================

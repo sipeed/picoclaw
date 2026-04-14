@@ -24,8 +24,8 @@ test('Create KB schedule with Full Sync in ADVANCED mode', async ({ page }) => {
     await loader.first().waitFor({ state: 'hidden', timeout: 15000 });
   }
   await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
-  await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
-  await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 15000 });
+  await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).first().click();
+  await page.waitForURL(url => !url.searchParams.has('select_org'), { timeout: 15000 });
   console.log('✅ PASS: Step 4 - Organization selected');
 
   // ============================================================================
@@ -42,7 +42,7 @@ test('Create KB schedule with Full Sync in ADVANCED mode', async ({ page }) => {
   console.log('📍 Step 6: Locate Picotest1 KB bucket and click Schedule');
   const picotest1Card = page.locator('.bucket-card').filter({
     has: page.locator('.bucket-name').filter({ hasText: /Picotest1/ })
-  });
+  }).first();
   await picotest1Card.waitFor({ state: 'visible', timeout: 10000 });
 
   // Click the schedule button on this card

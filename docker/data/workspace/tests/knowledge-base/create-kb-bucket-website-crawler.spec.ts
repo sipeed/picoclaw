@@ -211,7 +211,7 @@ test.describe('Create Knowledge Base Bucket with Website Crawler', () => {
 
     // Step 25: Verify KB bucket was created and appears in list
     console.log(`📍 Step 25: Verify KB bucket "${kbName}" appears in Knowledge Base list`);
-    const kbBucketName = page.locator('.bucket-name').filter({ hasText: kbName });
+    const kbBucketName = page.locator('.bucket-name').filter({ hasText: kbName }).first();
     await expect(kbBucketName).toBeVisible({ timeout: 15000 });
     console.log(`✅ PASS: Step 25 - KB bucket "${kbName}" successfully created and appears in list`);
 

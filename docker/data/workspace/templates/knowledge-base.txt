@@ -69,11 +69,17 @@ IMPORTANT RULES:
      page.locator('input[type="radio"][aria-label="Full Sync"]')
      page.locator('label.v-label--clickable').filter({ hasText: /Full Sync/ })
    The same rule applies to ALL Vuetify component tags: v-select, v-checkbox, v-switch, v-tab, etc.
-9. STRICT MODE RULE — ALWAYS use .first() or .last() on any locator that can match multiple elements.
-   FORBIDDEN without .first()/.last():
+9. STRICT MODE RULE — ALWAYS use .first() on any locator that can match multiple elements.
+   FORBIDDEN without .first():
      page.locator('.v-list-item')
-     page.locator('.v-overlay--active .v-list-item')
-   CORRECT: .filter({ hasText: /exact text/ }) or .nth(0) or .first() / .last()
+     page.locator('.bucket-card').filter({ hasText: 'Picotest1' })
+     page.locator('.organization-card').filter({ hasText: 'Testing2026!' })
+   CORRECT:
+     page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).first()
+     page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).first()
+   This also applies to .waitFor(), .isVisible(), and variable assignments — EVERY use of the locator needs .first().
+   The app may render the same card multiple times in the DOM (e.g. once in the list, once in a hidden state).
+   ALWAYS use .first() when locating a bucket card, org card, or any list item by name.
 10. Test timeout: set at least 60 seconds.
     test.setTimeout(60000);
     Place this as the FIRST line inside the test() callback.
