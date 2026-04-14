@@ -271,7 +271,6 @@ const e2eJob = new gcp.cloudrunv2.Job("picoclaw-e2e-job", {
                         },
                     },
                     envs: [
-                        { name: "AWS_REGION_NAME", value: awsRegion },
                         awsRegionNameRef,
                         awsAccessKeyRef,
                         awsSecretKeyRef,
