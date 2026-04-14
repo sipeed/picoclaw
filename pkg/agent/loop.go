@@ -1370,7 +1370,6 @@ func (al *AgentLoop) askSideQuestion(
 	var channel, chatID, senderID, senderDisplayName string
 	var media []string
 	var activeSkills []string
-	var history []providers.Message
 	var summary string
 	if opts != nil {
 		channel = opts.Channel
@@ -1386,14 +1385,13 @@ func (al *AgentLoop) askSideQuestion(
 				Budget:     agent.ContextWindow,
 				MaxTokens:  agent.MaxTokens,
 			}); err == nil && resp != nil {
-				history = resp.History
 				summary = resp.Summary
 			}
 		}
 	}
 
 	messages := agent.ContextBuilder.BuildMessages(
-		history,
+		nil, // system instructions are not relevant for side questions
 		summary,
 		question,
 		media,
@@ -1446,7 +1444,11 @@ func (al *AgentLoop) askSideQuestion(
 		if fbResult.Response == nil {
 			return "", nil
 		}
-		return fbResult.Response.Content, nil
+		content := fbResult.Response.Content
+		if content == "" && fbResult.Response.ReasoningContent != "" {
+			content = fbResult.Response.ReasoningContent
+		}
+		return content, nil
 	}
 
 	resp, err := callProvider(ctx, activeProvider, activeModel)
@@ -1456,7 +1458,11 @@ func (al *AgentLoop) askSideQuestion(
 	if resp == nil {
 		return "", nil
 	}
-	return resp.Content, nil
+	content := resp.Content
+	if content == "" && resp.ReasoningContent != "" {
+		content = resp.ReasoningContent
+	}
+	return content, nil
 }
 
 func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
