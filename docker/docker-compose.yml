@@ -3,11 +3,14 @@ services:
     image: ghcr.io/berriai/litellm:main-latest
     container_name: litellm
     restart: on-failure
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     environment:
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION_NAME=${AWS_REGION_NAME:-ap-southeast-1}
-    command: ["--model", "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0", "--port", "4000"]
+    command: ["--model", "bedrock/global.anthropic.claude-sonnet-4-6", "--port", "4000"]
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
       interval: 10s

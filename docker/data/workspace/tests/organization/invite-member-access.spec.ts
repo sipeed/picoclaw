@@ -3,9 +3,7 @@ import { loginAndSelectOrg } from '../utils/auth';
 import Imap from 'imap';
 import { simpleParser } from 'mailparser';
 import * as dotenv from 'dotenv';
-import path from 'path';
-const envPath = path.join(__dirname, '../../.env');
-dotenv.config({ path: envPath });
+dotenv.config({ path: __dirname + '/../../.env' });
 
 test('Invite member to organization flow', async ({ page }) => {
   test.setTimeout(180000);

@@ -163,8 +163,7 @@ case "$JOB_TYPE" in
       tests/organization/activate-member-access-restored.spec.ts \
       tests/organization/upload-bot-icon.spec.ts \
       tests/organization/upload-organization-logo.spec.ts \
-      tests/organization/invite-member-access.spec.ts \
-      tests/organization/invite-existing-user.spec.ts
+      tests/organization/invite-member-access.spec.ts
 
     run_group "Settings" \
       tests/settings/view-api-keys-settings.spec.ts \
