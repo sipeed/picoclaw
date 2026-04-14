@@ -1062,7 +1062,7 @@ func TestAgentLoop_Steering_BtwCommandBypassesQueuedTurn(t *testing.T) {
 		Channel:  "test",
 		SenderID: "user1",
 		ChatID:   "chat1",
-		Content:  "/btw 你说283928",
+		Content:  "/btw what is the current progress?",
 		Peer: bus.Peer{
 			Kind: "direct",
 			ID:   "user1",

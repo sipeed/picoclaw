@@ -3793,8 +3793,10 @@ func (al *AgentLoop) tryHandlePriorityCommand(ctx context.Context, msg bus.Inbou
 	route, agent, err := al.resolveMessageRoute(msg)
 	if err != nil || agent == nil {
 		if err != nil {
+			logger.ErrorCF("agent", fmt.Sprintf("Error resolving route for /btw: %v", err), nil)
 			return true, fmt.Sprintf("Error processing message: %v", err)
 		}
+		logger.WarnCF("agent", "/btw command unavailable: no agent resolved", nil)
 		return true, "Command unavailable in current context."
 	}
 

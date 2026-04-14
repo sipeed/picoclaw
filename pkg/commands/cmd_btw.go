@@ -17,10 +17,11 @@ func btwCommand() Definition {
 				return req.Reply(unavailableMsg)
 			}
 
-			question := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(req.Text), nthToken(req.Text, 0)))
-			if question == "" {
+			parts := strings.Fields(strings.TrimSpace(req.Text))
+			if len(parts) < 2 {
 				return req.Reply("Usage: /btw <question>")
 			}
+			question := strings.Join(parts[1:], " ")
 
 			answer, err := rt.AskSideQuestion(ctx, question)
 			if err != nil {
