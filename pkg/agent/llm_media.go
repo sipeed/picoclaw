@@ -29,6 +29,27 @@ func stripMessageMedia(messages []providers.Message) []providers.Message {
 	return stripped
 }
 
+func callLLMWithVisionUnsupportedRetry(
+	messages []providers.Message,
+	call func([]providers.Message) (*providers.LLMResponse, error),
+	beforeRetry func(error),
+) (*providers.LLMResponse, []providers.Message, bool, error) {
+	response, err := call(messages)
+	if err == nil {
+		return response, messages, false, nil
+	}
+	if !messagesContainMedia(messages) || !isVisionUnsupportedError(err) {
+		return response, messages, false, err
+	}
+
+	if beforeRetry != nil {
+		beforeRetry(err)
+	}
+	stripped := stripMessageMedia(messages)
+	response, err = call(stripped)
+	return response, stripped, true, err
+}
+
 func isVisionUnsupportedError(err error) bool {
 	if err == nil {
 		return false

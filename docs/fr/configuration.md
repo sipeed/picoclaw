@@ -80,10 +80,30 @@ Pour les configurations avancées/de test, vous pouvez remplacer la racine des c
 export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
 ```
 
+### Utiliser les Commandes Depuis les Canaux de Chat
+
+Une fois les compétences installées, vous pouvez aussi les inspecter et les activer directement depuis un canal de chat :
+
+- `/list skills` affiche les noms des compétences installées visibles pour l'agent courant.
+- `/use <skill> <message>` force une compétence pour une seule requête.
+- `/use <skill>` prépare cette compétence pour votre prochain message dans la meme conversation.
+- `/use clear` annule une surcharge de compétence en attente creee via `/use <skill>`.
+- `/btw <question>` pose une question annexe immediate sans modifier l'historique courant de la session. `/btw` est traite comme une requete directe sans outils et n'entre pas dans le flux normal d'execution des outils.
+
+Exemples :
+
+```text
+/list skills
+/use git explique comment squash les 3 derniers commits
+/btw rappelle-moi ce qu'on a deja decide pour le plan de deploiement
+/use italiapersonalfinance
+dammi le ultime news
+```
+
 ### Politique Unifiée d'Exécution des Commandes
 
 - Les commandes slash génériques sont exécutées via un chemin unique dans `pkg/agent/loop.go` via `commands.Executor`.
-- Les adaptateurs de canaux ne consomment plus les commandes génériques localement ; ils transmettent le texte entrant au chemin bus/agent. Telegram enregistre toujours automatiquement les commandes prises en charge au démarrage.
+- Les adaptateurs de canaux ne consomment plus les commandes génériques localement ; ils transmettent le texte entrant au chemin bus/agent. Telegram enregistre toujours automatiquement au démarrage les commandes prises en charge, comme `/start`, `/help`, `/show`, `/list`, `/use` et `/btw`.
 - Une commande slash inconnue (par exemple `/foo`) passe au traitement LLM normal.
 - Une commande enregistrée mais non prise en charge sur le canal actuel (par exemple `/show` sur WhatsApp) renvoie une erreur explicite à l'utilisateur et arrête le traitement ultérieur.
 
