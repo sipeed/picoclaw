@@ -1555,6 +1555,7 @@ func (al *AgentLoop) askSideQuestion(
 	var channel, chatID, senderID, senderDisplayName string
 	var media []string
 	var activeSkills []string
+	var history []providers.Message
 	var summary string
 	if opts != nil {
 		channel = opts.Channel
@@ -1570,13 +1571,14 @@ func (al *AgentLoop) askSideQuestion(
 				Budget:     agent.ContextWindow,
 				MaxTokens:  agent.MaxTokens,
 			}); err == nil && resp != nil {
+				history = resp.History
 				summary = resp.Summary
 			}
 		}
 	}
 
 	messages := agent.ContextBuilder.BuildMessages(
-		nil,
+		history,
 		summary,
 		question,
 		media,

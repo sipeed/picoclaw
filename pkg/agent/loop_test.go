@@ -286,8 +286,12 @@ func TestProcessMessage_BtwCommandRunsWithoutPersistingHistory(t *testing.T) {
 	if len(provider.lastMessages) == 0 {
 		t.Fatal("provider did not receive any messages")
 	}
-	if len(provider.lastMessages) != 2 {
-		t.Fatalf("provider messages len = %d, want 2 (system + user, no history)", len(provider.lastMessages))
+	if len(provider.lastMessages) != 4 {
+		t.Fatalf("provider messages len = %d, want 4 (system + prior history + user)", len(provider.lastMessages))
+	}
+
+	if !reflect.DeepEqual(provider.lastMessages[1:3], initialHistory) {
+		t.Fatalf("provider history = %#v, want %#v", provider.lastMessages[1:3], initialHistory)
 	}
 
 	lastMessage := provider.lastMessages[len(provider.lastMessages)-1]
