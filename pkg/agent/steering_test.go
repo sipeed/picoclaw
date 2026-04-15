@@ -1119,8 +1119,14 @@ func TestAgentLoop_Steering_BtwCommandBypassesQueuedTurn(t *testing.T) {
 		if outbound.SessionKey != expectedSessionKey {
 			t.Fatalf("expected /btw outbound session_key %q, got %q", expectedSessionKey, outbound.SessionKey)
 		}
-		if outbound.Scope == nil || outbound.Scope.AgentID != routing.DefaultAgentID || outbound.Scope.Channel != "test" {
-			t.Fatalf("expected /btw outbound scope for agent %q on test channel, got %+v", routing.DefaultAgentID, outbound.Scope)
+		if outbound.Scope == nil ||
+			outbound.Scope.AgentID != routing.DefaultAgentID ||
+			outbound.Scope.Channel != "test" {
+			t.Fatalf(
+				"expected /btw outbound scope for agent %q on test channel, got %+v",
+				routing.DefaultAgentID,
+				outbound.Scope,
+			)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for /btw outbound response")
