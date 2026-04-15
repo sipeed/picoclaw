@@ -659,6 +659,12 @@ func (al *AgentLoop) drainBusToSteering(ctx context.Context, activeScope, active
 				al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 					Channel: msg.Channel,
 					ChatID:  msg.ChatID,
+					Context: outboundContextFromInbound(
+						&msg.Context,
+						msg.Channel,
+						msg.ChatID,
+						msg.Context.ReplyToMessageID,
+					),
 					Content: response,
 				})
 			}
@@ -4083,6 +4089,9 @@ func (al *AgentLoop) tryHandlePriorityCommand(ctx context.Context, msg bus.Inbou
 		SenderID:          msg.SenderID,
 		SenderDisplayName: msg.Sender.DisplayName,
 		Media:             msg.Media,
+		MessageID:         msg.MessageID,
+		ReplyToMessageID:  msg.Context.ReplyToMessageID,
+		InboundContext:    &msg.Context,
 	}
 
 	response, handled := al.handleCommand(ctx, msg, agent, &opts)
