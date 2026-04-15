@@ -174,6 +174,130 @@ func TestHandlePatchConfig_AllowsInvalidExecRegexPatternsWhenExecDisabled(t *tes
 	}
 }
 
+func TestHandlePatchConfig_SavesChannelListSettingsPatch(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"channel_list": {
+			"feishu": {
+				"enabled": true,
+				"allow_from": ["ou_patch_user"],
+				"settings": {
+					"app_id": "cli_patch_app",
+					"app_secret": "patch-secret",
+					"is_lark": true
+				}
+			}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	bc := cfg.Channels[config.ChannelFeishu]
+	if !bc.Enabled {
+		t.Fatal("feishu should be enabled after PATCH")
+	}
+	if len(bc.AllowFrom) != 1 || bc.AllowFrom[0] != "ou_patch_user" {
+		t.Fatalf("feishu allow_from = %#v, want [\"ou_patch_user\"]", bc.AllowFrom)
+	}
+	decoded, err := bc.GetDecoded()
+	if err != nil {
+		t.Fatalf("GetDecoded() error = %v", err)
+	}
+	feishuCfg := decoded.(*config.FeishuSettings)
+	if got := feishuCfg.AppID; got != "cli_patch_app" {
+		t.Fatalf("feishu app_id = %q, want %q", got, "cli_patch_app")
+	}
+	if got := feishuCfg.AppSecret.String(); got != "patch-secret" {
+		t.Fatalf("feishu app_secret = %q, want %q", got, "patch-secret")
+	}
+	if !feishuCfg.IsLark {
+		t.Fatal("feishu is_lark should be true after PATCH")
+	}
+}
+
+func TestHandlePatchConfig_CreatesMissingChannelWithTypeAndSecret(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	delete(cfg.Channels, config.ChannelIRC)
+	if err = config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"channel_list": {
+			"irc": {
+				"enabled": true,
+				"type": "irc",
+				"settings": {
+					"server": "irc.example.com",
+					"password": "irc-patch-password"
+				}
+			}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err = config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	bc := cfg.Channels[config.ChannelIRC]
+	if bc == nil {
+		t.Fatal("irc channel should exist after PATCH")
+	}
+	if got := bc.Type; got != config.ChannelIRC {
+		t.Fatalf("irc type = %q, want %q", got, config.ChannelIRC)
+	}
+	decoded, err := bc.GetDecoded()
+	if err != nil {
+		t.Fatalf("GetDecoded() error = %v", err)
+	}
+	ircCfg := decoded.(*config.IRCSettings)
+	if got := ircCfg.Server; got != "irc.example.com" {
+		t.Fatalf("irc server = %q, want %q", got, "irc.example.com")
+	}
+	if got := ircCfg.Password.String(); got != "irc-patch-password" {
+		t.Fatalf("irc password = %q, want %q", got, "irc-patch-password")
+	}
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile(configPath) error = %v", err)
+	}
+	if bytes.Contains(configData, []byte("irc-patch-password")) {
+		t.Fatalf("config file leaked irc password: %s", string(configData))
+	}
+}
+
 // setupPicoEnabledEnv creates a test environment with Pico channel enabled and
 // its token stored only in .security.yml (not in the JSON payload).
 func setupPicoEnabledEnv(t *testing.T) (string, func()) {

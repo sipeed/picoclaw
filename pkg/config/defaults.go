@@ -509,6 +509,14 @@ func defaultChannels() ChannelsConfig {
 				"max_connections": 100,
 			},
 		},
+		"irc": map[string]any{
+			"settings": map[string]any{
+				"server":   "",
+				"tls":      true,
+				"nick":     "picoclaw",
+				"channels": []string{},
+			},
+		},
 	}
 
 	channels := make(ChannelsConfig, len(defs))
