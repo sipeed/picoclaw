@@ -654,19 +654,9 @@ func (al *AgentLoop) drainBusToSteering(ctx context.Context, activeScope, active
 		msg, _ = al.transcribeAudioInMessage(ctx, msg)
 
 		// Handle priority commands (e.g. /btw) immediately instead of queueing them.
-		if handled, response := al.tryHandlePriorityCommand(ctx, msg); handled {
-			if response != "" {
-				al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-					Channel: msg.Channel,
-					ChatID:  msg.ChatID,
-					Context: outboundContextFromInbound(
-						&msg.Context,
-						msg.Channel,
-						msg.ChatID,
-						msg.Context.ReplyToMessageID,
-					),
-					Content: response,
-				})
+		if handled, outbound := al.tryHandlePriorityCommand(ctx, msg); handled {
+			if outbound.Content != "" {
+				al.bus.PublishOutbound(ctx, outbound)
 			}
 			continue
 		}
@@ -1586,7 +1576,7 @@ func (al *AgentLoop) askSideQuestion(
 	}
 
 	messages := agent.ContextBuilder.BuildMessages(
-		nil, // system instructions are not relevant for side questions
+		nil,
 		summary,
 		question,
 		media,
@@ -4065,25 +4055,47 @@ func mapCommandError(result commands.ExecuteResult) string {
 	return fmt.Sprintf("Failed to execute /%s: %v", result.Command, result.Err)
 }
 
-func (al *AgentLoop) tryHandlePriorityCommand(ctx context.Context, msg bus.InboundMessage) (bool, string) {
+func (al *AgentLoop) tryHandlePriorityCommand(ctx context.Context, msg bus.InboundMessage) (bool, bus.OutboundMessage) {
 	cmdName, ok := commands.CommandName(msg.Content)
 	if !ok || cmdName != "btw" {
-		return false, ""
+		return false, bus.OutboundMessage{}
 	}
 
 	route, agent, err := al.resolveMessageRoute(msg)
 	if err != nil || agent == nil {
 		if err != nil {
 			logger.ErrorCF("agent", fmt.Sprintf("Error resolving route for /btw: %v", err), nil)
-			return true, fmt.Sprintf("Error processing message: %v", err)
+			return true, bus.OutboundMessage{
+				Channel: msg.Channel,
+				ChatID:  msg.ChatID,
+				Context: outboundContextFromInbound(
+					&msg.Context,
+					msg.Channel,
+					msg.ChatID,
+					msg.Context.ReplyToMessageID,
+				),
+				Content: fmt.Sprintf("Error processing message: %v", err),
+			}
 		}
 		logger.WarnCF("agent", "/btw command unavailable: no agent resolved", nil)
-		return true, "Command unavailable in current context."
+		return true, bus.OutboundMessage{
+			Channel: msg.Channel,
+			ChatID:  msg.ChatID,
+			Context: outboundContextFromInbound(
+				&msg.Context,
+				msg.Channel,
+				msg.ChatID,
+				msg.Context.ReplyToMessageID,
+			),
+			Content: "Command unavailable in current context.",
+		}
 	}
 
 	allocation := al.allocateRouteSession(route, msg)
+	sessionKey := resolveScopeKey(allocation.SessionKey, msg.SessionKey)
+	msg.SessionKey = sessionKey
 	opts := processOptions{
-		SessionKey:        resolveScopeKey(allocation.SessionKey, msg.SessionKey),
+		SessionKey:        sessionKey,
 		Channel:           msg.Channel,
 		ChatID:            msg.ChatID,
 		SenderID:          msg.SenderID,
@@ -4096,9 +4108,23 @@ func (al *AgentLoop) tryHandlePriorityCommand(ctx context.Context, msg bus.Inbou
 
 	response, handled := al.handleCommand(ctx, msg, agent, &opts)
 	if !handled {
-		return false, ""
+		return false, bus.OutboundMessage{}
 	}
-	return true, response
+	agentID, outboundSessionKey, scope := outboundTurnMetadata(agent.ID, sessionKey, &allocation.Scope)
+	return true, bus.OutboundMessage{
+		Channel: msg.Channel,
+		ChatID:  msg.ChatID,
+		Context: outboundContextFromInbound(
+			&msg.Context,
+			msg.Channel,
+			msg.ChatID,
+			msg.Context.ReplyToMessageID,
+		),
+		AgentID:    agentID,
+		SessionKey: outboundSessionKey,
+		Scope:      scope,
+		Content:    response,
+	}
 }
 
 // isNativeSearchProvider reports whether the given LLM provider implements

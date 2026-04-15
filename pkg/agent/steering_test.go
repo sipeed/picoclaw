@@ -1108,6 +1108,20 @@ func TestAgentLoop_Steering_BtwCommandBypassesQueuedTurn(t *testing.T) {
 		if outbound.Content != "btw immediate reply" {
 			t.Fatalf("expected /btw reply before long turn completion, got %q", outbound.Content)
 		}
+		if outbound.AgentID != routing.DefaultAgentID {
+			t.Fatalf("expected /btw outbound agent_id %q, got %q", routing.DefaultAgentID, outbound.AgentID)
+		}
+		route, _, err := al.resolveMessageRoute(btw)
+		if err != nil {
+			t.Fatalf("resolveMessageRoute(/btw) error = %v", err)
+		}
+		expectedSessionKey := resolveScopeKey(al.allocateRouteSession(route, btw).SessionKey, btw.SessionKey)
+		if outbound.SessionKey != expectedSessionKey {
+			t.Fatalf("expected /btw outbound session_key %q, got %q", expectedSessionKey, outbound.SessionKey)
+		}
+		if outbound.Scope == nil || outbound.Scope.AgentID != routing.DefaultAgentID || outbound.Scope.Channel != "test" {
+			t.Fatalf("expected /btw outbound scope for agent %q on test channel, got %+v", routing.DefaultAgentID, outbound.Scope)
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for /btw outbound response")
 	}
