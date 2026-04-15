@@ -38,9 +38,10 @@ Berbual dengan picoclaw anda melalui Telegram, Discord, WhatsApp, Matrix, QQ, Di
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "telegram": {
       "enabled": true,
+      "type": "telegram",
       "token": "YOUR_BOT_TOKEN",
       "allow_from": ["YOUR_USER_ID"],
       "use_markdown_v2": false,
@@ -91,9 +92,10 @@ Anda boleh menetapkan `use_markdown_v2: true` untuk mengaktifkan pilihan pemform
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "discord": {
       "enabled": true,
+      "type": "discord",
       "token": "YOUR_BOT_TOKEN",
       "allow_from": ["YOUR_USER_ID"]
     }
@@ -114,7 +116,7 @@ Secara lalai bot membalas semua mesej dalam saluran pelayan. Untuk mengehadkan b
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "discord": {
       "group_trigger": { "mention_only": true }
     }
@@ -126,7 +128,7 @@ Anda juga boleh mencetuskan dengan awalan kata kunci (contohnya `!bot`):
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "discord": {
       "group_trigger": { "prefixes": ["!bot"] }
     }
@@ -154,9 +156,10 @@ PicoClaw boleh menyambung ke WhatsApp dalam dua cara:
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "whatsapp": {
       "enabled": true,
+      "type": "whatsapp",
       "use_native": true,
       "session_store_path": "",
       "allow_from": []
@@ -181,9 +184,10 @@ Jika `session_store_path` kosong, sesi akan disimpan dalam `<workspace>/whatsapp
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "qq": {
       "enabled": true,
+      "type": "qq",
       "app_id": "YOUR_APP_ID",
       "app_secret": "YOUR_APP_SECRET",
       "allow_from": []
@@ -215,9 +219,10 @@ picoclaw gateway
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "dingtalk": {
       "enabled": true,
+      "type": "dingtalk",
       "client_id": "YOUR_CLIENT_ID",
       "client_secret": "YOUR_CLIENT_SECRET",
       "allow_from": []
@@ -247,9 +252,10 @@ picoclaw gateway
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "matrix": {
       "enabled": true,
+      "type": "matrix",
       "homeserver": "https://matrix.org",
       "user_id": "@your-bot:matrix.org",
       "access_token": "YOUR_MATRIX_ACCESS_TOKEN",
@@ -282,9 +288,10 @@ Untuk pilihan penuh (`device_id`, `join_on_invite`, `group_trigger`, `placeholde
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "line": {
       "enabled": true,
+      "type": "line",
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
       "webhook_path": "/webhook/line",
@@ -339,9 +346,10 @@ Lihat [Panduan Konfigurasi WeCom AI Bot](docs/channels/wecom/wecom_aibot/README.
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "wecom": {
       "enabled": true,
+      "type": "wecom",
       "token": "YOUR_TOKEN",
       "encoding_aes_key": "YOUR_ENCODING_AES_KEY",
       "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
@@ -372,7 +380,7 @@ Lihat [Panduan Konfigurasi WeCom AI Bot](docs/channels/wecom/wecom_aibot/README.
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "wecom_app": {
       "enabled": true,
       "corp_id": "wwxxxxxxxxxxxxxxxx",
@@ -407,7 +415,7 @@ picoclaw gateway
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "wecom_aibot": {
       "enabled": true,
       "token": "YOUR_TOKEN",

@@ -8,9 +8,10 @@ OneBot は QQ ボット向けのオープンプロトコル標準で、複数の
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "onebot": {
       "enabled": true,
+      "type": "onebot",
       "ws_url": "ws://localhost:8080",
       "access_token": "",
       "allow_from": []

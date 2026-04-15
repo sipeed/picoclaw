@@ -42,7 +42,7 @@ func (m *legacyContextManager) Compact(_ context.Context, req *CompactRequest) e
 		if result, ok := m.forceCompression(req.SessionKey); ok {
 			m.al.emitEvent(
 				EventKindContextCompress,
-				m.al.newTurnEventScope("", req.SessionKey).meta(0, "forceCompression", "turn.context.compress"),
+				m.al.newTurnEventScope("", req.SessionKey, nil).meta(0, "forceCompression", "turn.context.compress"),
 				ContextCompressPayload{
 					Reason:            req.Reason,
 					DroppedMessages:   result.DroppedMessages,
@@ -59,6 +59,16 @@ func (m *legacyContextManager) Compact(_ context.Context, req *CompactRequest) e
 func (m *legacyContextManager) Ingest(_ context.Context, _ *IngestRequest) error {
 	// Legacy: no-op. Messages are persisted by Sessions JSONL.
 	return nil
+}
+
+func (m *legacyContextManager) Clear(_ context.Context, sessionKey string) error {
+	agent := m.al.registry.GetDefaultAgent()
+	if agent == nil || agent.Sessions == nil {
+		return fmt.Errorf("sessions not initialized")
+	}
+	agent.Sessions.SetHistory(sessionKey, []providers.Message{})
+	agent.Sessions.SetSummary(sessionKey, "")
+	return agent.Sessions.Save(sessionKey)
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
@@ -237,7 +247,7 @@ func (m *legacyContextManager) summarizeSession(agent *AgentInstance, sessionKey
 		agent.Sessions.Save(sessionKey)
 		m.al.emitEvent(
 			EventKindSessionSummarize,
-			m.al.newTurnEventScope(agent.ID, sessionKey).meta(0, "summarizeSession", "turn.session.summarize"),
+			m.al.newTurnEventScope(agent.ID, sessionKey, nil).meta(0, "summarizeSession", "turn.session.summarize"),
 			SessionSummarizePayload{
 				SummarizedMessages: len(validMessages),
 				KeptMessages:       keepCount,

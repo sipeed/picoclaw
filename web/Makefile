@@ -12,6 +12,7 @@ BUILD_DIR=build
 OUTPUT?=$(BUILD_DIR)/picoclaw-launcher
 OUTPUT_ANDROID_ARM64?=$(BUILD_DIR)/picoclaw-launcher-android-arm64
 FRONTEND_DIR=frontend
+FRONTEND_INSTALL_STAMP=$(FRONTEND_DIR)/node_modules/.picoclaw-install-stamp
 BACKEND_DIR=backend
 BACKEND_DIST=$(BACKEND_DIR)/dist
 PICOCLAW_BINARY_NAME=picoclaw
@@ -105,11 +106,14 @@ build-android-bundle: build-frontend
 	@echo "All Android launcher builds complete"
 
 build-frontend:
-	@if [ ! -d $(FRONTEND_DIR)/node_modules ] || \
-		[ $(FRONTEND_DIR)/package.json -nt $(FRONTEND_DIR)/node_modules ] || \
-		[ $(FRONTEND_DIR)/pnpm-lock.yaml -nt $(FRONTEND_DIR)/node_modules ]; then \
+	@expected_stamp="$$(cat $(FRONTEND_DIR)/package.json $(FRONTEND_DIR)/pnpm-lock.yaml | cksum | awk '{print $$1 ":" $$2}')"; \
+	if [ ! -d $(FRONTEND_DIR)/node_modules ] || \
+		[ ! -x $(FRONTEND_DIR)/node_modules/.bin/tsc ] || \
+		[ ! -f $(FRONTEND_INSTALL_STAMP) ] || \
+		[ "$$(cat $(FRONTEND_INSTALL_STAMP) 2>/dev/null)" != "$$expected_stamp" ]; then \
 		echo "Installing frontend dependencies..."; \
-		cd $(FRONTEND_DIR) && pnpm install --frozen-lockfile; \
+		(cd $(FRONTEND_DIR) && CI=true pnpm install --frozen-lockfile) && \
+		printf '%s\n' "$$expected_stamp" > $(FRONTEND_INSTALL_STAMP); \
 	fi
 	@echo "Building frontend..."
 	@cd $(FRONTEND_DIR) && pnpm build:backend

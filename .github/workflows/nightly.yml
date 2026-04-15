@@ -47,13 +47,18 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+          run_install: false
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 22
-
-      - name: Setup pnpm
-        run: corepack enable && corepack prepare pnpm@latest --activate
+          cache: pnpm
+          cache-dependency-path: web/frontend/pnpm-lock.yaml
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -75,6 +80,9 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Install zip
+        run: sudo apt-get install -y zip
+
       - name: Create local tag for GoReleaser
         run: git tag "${{ steps.version.outputs.version }}"
 
@@ -90,6 +98,7 @@ jobs:
           DOCKERHUB_IMAGE_NAME: ${{ vars.DOCKERHUB_REPOSITORY }}
           GOVERSION: ${{ steps.setup-go.outputs.go-version }}
           GORELEASER_CURRENT_TAG: ${{ steps.version.outputs.version }}
+          INCLUDE_ANDROID_BUNDLE: "true"
           NIGHTLY_BUILD: "true"
           MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
           MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
@@ -123,7 +132,7 @@ jobs:
 
           # Collect release artifacts from goreleaser dist/
           ASSETS=()
-          for f in dist/*.tar.gz dist/*.zip dist/*.deb dist/*.rpm dist/checksums.txt; do
+          for f in dist/*.tar.gz dist/*.zip dist/*.deb dist/*.rpm dist/checksums.txt build/picoclaw-android-universal.zip; do
             [ -f "$f" ] && ASSETS+=("$f")
           done
 
@@ -135,4 +144,3 @@ jobs:
             --prerelease \
             --latest=false \
             "${ASSETS[@]}"
-

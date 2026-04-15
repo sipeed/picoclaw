@@ -17,6 +17,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
+	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -357,7 +358,7 @@ func TestDrainBusToSteering_RequeuesDifferentScopeMessage(t *testing.T) {
 			},
 		},
 		Session: config.SessionConfig{
-			DMScope: "per-peer",
+			Dimensions: []string{"sender"},
 		},
 	}
 
@@ -365,14 +366,13 @@ func TestDrainBusToSteering_RequeuesDifferentScopeMessage(t *testing.T) {
 	al := NewAgentLoop(cfg, msgBus, &mockProvider{})
 
 	activeMsg := bus.InboundMessage{
-		Channel:  "telegram",
-		SenderID: "user1",
-		ChatID:   "chat1",
-		Content:  "active turn",
-		Peer: bus.Peer{
-			Kind: "direct",
-			ID:   "user1",
+		Context: bus.InboundContext{
+			Channel:  "telegram",
+			ChatID:   "chat1",
+			ChatType: "direct",
+			SenderID: "user1",
 		},
+		Content: "active turn",
 	}
 	activeScope, activeAgentID, ok := al.resolveSteeringTarget(activeMsg)
 	if !ok {
@@ -380,14 +380,13 @@ func TestDrainBusToSteering_RequeuesDifferentScopeMessage(t *testing.T) {
 	}
 
 	otherMsg := bus.InboundMessage{
-		Channel:  "telegram",
-		SenderID: "user2",
-		ChatID:   "chat2",
-		Content:  "other session",
-		Peer: bus.Peer{
-			Kind: "direct",
-			ID:   "user2",
+		Context: bus.InboundContext{
+			Channel:  "telegram",
+			ChatID:   "chat2",
+			ChatType: "direct",
+			SenderID: "user2",
 		},
+		Content: "other session",
 	}
 	otherScope, _, ok := al.resolveSteeringTarget(otherMsg)
 	if !ok {
@@ -422,9 +421,9 @@ func TestDrainBusToSteering_RequeuesDifferentScopeMessage(t *testing.T) {
 
 	select {
 	case <-ctx.Done():
-		t.Fatalf("timeout waiting for requeued message on outbound bus")
-	case requeued := <-msgBus.OutboundChan():
-		if requeued.Channel != otherMsg.Channel || requeued.ChatID != otherMsg.ChatID ||
+		t.Fatalf("timeout waiting for requeued message on inbound bus")
+	case requeued := <-msgBus.InboundChan():
+		if requeued.Context.Channel != otherMsg.Context.Channel || requeued.Context.ChatID != otherMsg.Context.ChatID ||
 			requeued.Content != otherMsg.Content {
 			t.Fatalf("requeued message mismatch: got %+v want %+v", requeued, otherMsg)
 		}
@@ -841,24 +840,22 @@ func TestAgentLoop_Run_AutoContinuesLateSteeringMessage(t *testing.T) {
 	}()
 
 	first := bus.InboundMessage{
-		Channel:  "test",
-		SenderID: "user1",
-		ChatID:   "chat1",
-		Content:  "first message",
-		Peer: bus.Peer{
-			Kind: "direct",
-			ID:   "user1",
+		Context: bus.InboundContext{
+			Channel:  "test",
+			ChatID:   "chat1",
+			ChatType: "direct",
+			SenderID: "user1",
 		},
+		Content: "first message",
 	}
 	late := bus.InboundMessage{
-		Channel:  "test",
-		SenderID: "user1",
-		ChatID:   "chat1",
-		Content:  "late append",
-		Peer: bus.Peer{
-			Kind: "direct",
-			ID:   "user1",
+		Context: bus.InboundContext{
+			Channel:  "test",
+			ChatID:   "chat1",
+			ChatType: "direct",
+			SenderID: "user1",
 		},
+		Content: "late append",
 	}
 
 	pubCtx, pubCancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -949,7 +946,7 @@ func TestAgentLoop_Steering_DirectResponseContinuesWithQueuedMessage(t *testing.
 		},
 	}
 
-	sessionKey := routing.BuildAgentMainSessionKey(routing.DefaultAgentID)
+	sessionKey := session.BuildMainSessionKey(routing.DefaultAgentID)
 	provider := &blockingDirectProvider{
 		firstStarted: make(chan struct{}),
 		releaseFirst: make(chan struct{}),
@@ -1013,6 +1010,62 @@ func TestAgentLoop_Steering_DirectResponseContinuesWithQueuedMessage(t *testing.
 	}
 }
 
+func TestAgentLoop_AgentForSession_UsesStoredScopeMetadata(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+			List: []config.AgentConfig{
+				{ID: "sales", Default: true},
+				{ID: "support"},
+			},
+		},
+	}
+
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), &mockProvider{})
+	support, ok := al.registry.GetAgent("support")
+	if !ok || support == nil {
+		t.Fatal("expected support agent")
+	}
+
+	metaStore, ok := support.Sessions.(session.MetadataAwareSessionStore)
+	if !ok {
+		t.Fatal("support session store does not support metadata")
+	}
+
+	alias := "agent:support:slack:channel:c001"
+	key := session.BuildOpaqueSessionKey(alias)
+	scope := &session.SessionScope{
+		Version:    session.ScopeVersionV1,
+		AgentID:    "support",
+		Channel:    "slack",
+		Account:    "default",
+		Dimensions: []string{"chat"},
+		Values: map[string]string{
+			"chat": "channel:c001",
+		},
+	}
+	metaStore.EnsureSessionMetadata(key, scope, []string{alias})
+
+	got := al.agentForSession(key)
+	if got == nil {
+		t.Fatal("agentForSession() returned nil")
+	}
+	if got.ID != "support" {
+		t.Fatalf("agentForSession() = %q, want %q", got.ID, "support")
+	}
+}
+
 func TestAgentLoop_Continue_PreservesSteeringMedia(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
@@ -1060,7 +1113,7 @@ func TestAgentLoop_Continue_PreservesSteeringMedia(t *testing.T) {
 		},
 	}
 
-	sessionKey := routing.BuildAgentMainSessionKey(routing.DefaultAgentID)
+	sessionKey := session.BuildMainSessionKey(routing.DefaultAgentID)
 	msgBus := bus.NewMessageBus()
 	al := NewAgentLoop(cfg, msgBus, provider)
 	al.SetMediaStore(store)
@@ -1168,7 +1221,7 @@ func TestAgentLoop_InterruptGraceful_UsesTerminalNoToolCall(t *testing.T) {
 	al := NewAgentLoop(cfg, msgBus, provider)
 	al.RegisterTool(tool1)
 	al.RegisterTool(tool2)
-	sessionKey := routing.BuildAgentMainSessionKey(routing.DefaultAgentID)
+	sessionKey := session.BuildMainSessionKey(routing.DefaultAgentID)
 
 	sub := al.SubscribeEvents(32)
 	defer al.UnsubscribeEvents(sub.ID)
@@ -1322,7 +1375,7 @@ func TestAgentLoop_InterruptHard_RestoresSession(t *testing.T) {
 	al := NewAgentLoop(cfg, msgBus, provider)
 	started := make(chan struct{})
 	al.RegisterTool(&interruptibleTool{name: "cancel_tool", started: started})
-	sessionKey := routing.BuildAgentMainSessionKey(routing.DefaultAgentID)
+	sessionKey := session.BuildMainSessionKey(routing.DefaultAgentID)
 
 	defaultAgent := al.registry.GetDefaultAgent()
 	if defaultAgent == nil {

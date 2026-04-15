@@ -8,9 +8,10 @@ Feishu (tên quốc tế: Lark) là nền tảng cộng tác doanh nghiệp củ
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "feishu": {
       "enabled": true,
+      "type": "feishu",
       "app_id": "cli_xxx",
       "app_secret": "xxx",
       "encrypt_key": "",

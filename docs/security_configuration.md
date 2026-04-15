@@ -148,9 +148,10 @@ You can now remove sensitive fields from `config.json` since they're loaded from
       "api_key": "sk-your-actual-api-key-here"
     }
   ],
-  "channels": {
+  "channel_list": {
     "telegram": {
       "enabled": true,
+      "type": "telegram",
       "token": "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
     }
   }
@@ -168,9 +169,10 @@ You can now remove sensitive fields from `config.json` since they're loaded from
       // api_key is now loaded from .security.yml
     }
   ],
-  "channels": {
+  "channel_list": {
     "telegram": {
-      "enabled": true"
+      "enabled": true,
+      "type": "telegram"
       // token is now loaded from .security.yml
     }
   }
@@ -444,7 +446,7 @@ Returns the path to `.security.yml` relative to the config file.
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "agents": {
     "defaults": {
       "workspace": "~/picoclaw-workspace",
@@ -463,9 +465,10 @@ Returns the path to `.security.yml` relative to the config file.
       "api_base": "https://api.anthropic.com/v1"
     }
   ],
-  "channels": {
+  "channel_list": {
     "telegram": {
-      "enabled": true
+      "enabled": true,
+      "type": "telegram"
     }
   },
   "tools": {

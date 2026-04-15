@@ -38,8 +38,9 @@ var (
 
 type DiscordChannel struct {
 	*channels.BaseChannel
+	bc         *config.Channel
 	session    *discordgo.Session
-	config     config.DiscordConfig
+	config     *config.DiscordSettings
 	ctx        context.Context
 	cancel     context.CancelFunc
 	typingMu   sync.Mutex
@@ -56,7 +57,11 @@ type DiscordChannel struct {
 	ttsPlayID uint64
 }
 
-func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordChannel, error) {
+func NewDiscordChannel(
+	bc *config.Channel,
+	cfg *config.DiscordSettings,
+	bus *bus.MessageBus,
+) (*DiscordChannel, error) {
 	discordgo.Logger = logger.NewLogger("discord").
 		WithLevels(map[int]logger.LogLevel{
 			discordgo.LogError:         logger.ERROR,
@@ -73,14 +78,15 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 	if err := applyDiscordProxy(session, cfg.Proxy); err != nil {
 		return nil, err
 	}
-	base := channels.NewBaseChannel("discord", cfg, bus, cfg.AllowFrom,
+	base := channels.NewBaseChannel("discord", cfg, bus, bc.AllowFrom,
 		channels.WithMaxMessageLength(2000),
-		channels.WithGroupTrigger(cfg.GroupTrigger),
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+		channels.WithGroupTrigger(bc.GroupTrigger),
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	return &DiscordChannel{
 		BaseChannel: base,
+		bc:          bc,
 		session:     session,
 		config:      cfg,
 		ctx:         context.Background(),
@@ -297,11 +303,11 @@ func (c *DiscordChannel) EditMessage(ctx context.Context, chatID string, message
 // It sends a placeholder message that will later be edited to the actual
 // response via EditMessage (channels.MessageEditor).
 func (c *DiscordChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
-	if !c.config.Placeholder.Enabled {
+	if !c.bc.Placeholder.Enabled {
 		return "", nil
 	}
 
-	text := c.config.Placeholder.GetRandomText()
+	text := c.bc.Placeholder.GetRandomText()
 
 	msg, err := c.session.ChannelMessageSend(chatID, text)
 	if err != nil {
@@ -402,8 +408,8 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 
 	// In guild (group) channels, apply unified group trigger filtering
 	// DMs (GuildID is empty) always get a response
+	isMentioned := false
 	if m.GuildID != "" {
-		isMentioned := false
 		for _, mention := range m.Mentions {
 			if mention.ID == c.botUserID {
 				isMentioned = true
@@ -500,13 +506,9 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	})
 
 	peerKind := "channel"
-	peerID := m.ChannelID
 	if m.GuildID == "" {
 		peerKind = "direct"
-		peerID = senderID
 	}
-
-	peer := bus.Peer{Kind: peerKind, ID: peerID}
 
 	metadata := map[string]string{
 		"user_id":      senderID,
@@ -516,8 +518,24 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		"channel_id":   m.ChannelID,
 		"is_dm":        fmt.Sprintf("%t", m.GuildID == ""),
 	}
+	inboundCtx := bus.InboundContext{
+		Channel:   c.Name(),
+		ChatID:    m.ChannelID,
+		ChatType:  peerKind,
+		SenderID:  senderID,
+		MessageID: m.ID,
+		Mentioned: isMentioned,
+		Raw:       metadata,
+	}
+	if m.GuildID != "" {
+		inboundCtx.SpaceID = m.GuildID
+		inboundCtx.SpaceType = "guild"
+	}
+	if m.MessageReference != nil {
+		inboundCtx.ReplyToMessageID = m.MessageReference.MessageID
+	}
 
-	c.HandleMessage(c.ctx, peer, m.ID, senderID, m.ChannelID, content, mediaPaths, metadata, sender)
+	c.HandleInboundContext(c.ctx, m.ChannelID, content, mediaPaths, inboundCtx, sender)
 }
 
 // startTyping starts a continuous typing indicator loop for the given chatID.

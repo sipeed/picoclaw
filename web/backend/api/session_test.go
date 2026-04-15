@@ -36,12 +36,12 @@ func TestHandleListSessions_JSONLStorage(t *testing.T) {
 	defer cleanup()
 
 	dir := sessionsTestDir(t, configPath)
-	store, err := memory.NewJSONLStore(dir)
-	if err != nil {
-		t.Fatalf("NewJSONLStore() error = %v", err)
+	store, storeErr := memory.NewJSONLStore(dir)
+	if storeErr != nil {
+		t.Fatalf("NewJSONLStore() error = %v", storeErr)
 	}
 
-	sessionKey := picoSessionPrefix + "history-jsonl"
+	sessionKey := legacyPicoSessionPrefix + "history-jsonl"
 	if err := store.AddFullMessage(nil, sessionKey, providers.Message{
 		Role:    "user",
 		Content: "Explain why the history API is empty after migration.",
@@ -106,12 +106,12 @@ func TestHandleListSessions_TitleUsesFirstUserMessage(t *testing.T) {
 	defer cleanup()
 
 	dir := sessionsTestDir(t, configPath)
-	store, err := memory.NewJSONLStore(dir)
-	if err != nil {
-		t.Fatalf("NewJSONLStore() error = %v", err)
+	store, storeErr := memory.NewJSONLStore(dir)
+	if storeErr != nil {
+		t.Fatalf("NewJSONLStore() error = %v", storeErr)
 	}
 
-	sessionKey := picoSessionPrefix + "summary-title"
+	sessionKey := legacyPicoSessionPrefix + "summary-title"
 	if err := store.AddFullMessage(nil, sessionKey, providers.Message{
 		Role:    "user",
 		Content: "fallback preview",
@@ -164,7 +164,7 @@ func TestHandleGetSession_JSONLStorage(t *testing.T) {
 		t.Fatalf("NewJSONLStore() error = %v", err)
 	}
 
-	sessionKey := picoSessionPrefix + "detail-jsonl"
+	sessionKey := legacyPicoSessionPrefix + "detail-jsonl"
 	for _, msg := range []providers.Message{
 		{Role: "user", Content: "first"},
 		{Role: "assistant", Content: "second"},
@@ -215,6 +215,81 @@ func TestHandleGetSession_JSONLStorage(t *testing.T) {
 	}
 	if resp.Messages[1].Role != "assistant" || resp.Messages[1].Content != "second" {
 		t.Fatalf("second message = %#v, want assistant/second", resp.Messages[1])
+	}
+}
+
+func TestHandleSessions_JSONLScopeDiscovery(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, storeErr := memory.NewJSONLStore(dir)
+	if storeErr != nil {
+		t.Fatalf("NewJSONLStore() error = %v", storeErr)
+	}
+
+	sessionKey := "sk_v1_scope_discovery"
+	if err := store.AddFullMessage(nil, sessionKey, providers.Message{
+		Role:    "user",
+		Content: "scope discovered session",
+	}); err != nil {
+		t.Fatalf("AddFullMessage() error = %v", err)
+	}
+	if err := store.SetSummary(nil, sessionKey, "scope summary"); err != nil {
+		t.Fatalf("SetSummary() error = %v", err)
+	}
+
+	scopeData, err := json.Marshal(session.SessionScope{
+		Version:    session.ScopeVersionV1,
+		AgentID:    "main",
+		Channel:    "pico",
+		Account:    "default",
+		Dimensions: []string{"sender"},
+		Values: map[string]string{
+			"sender": "pico:scope-jsonl",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal(scope) error = %v", err)
+	}
+	if err := store.UpsertSessionMeta(nil, sessionKey, scopeData, nil); err != nil {
+		t.Fatalf("UpsertSessionMeta() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	listRec := httptest.NewRecorder()
+	listReq := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	mux.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d, body=%s", listRec.Code, http.StatusOK, listRec.Body.String())
+	}
+
+	var items []sessionListItem
+	if err := json.Unmarshal(listRec.Body.Bytes(), &items); err != nil {
+		t.Fatalf("Unmarshal(list) error = %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len(items) = %d, want 1", len(items))
+	}
+	if items[0].ID != "scope-jsonl" {
+		t.Fatalf("items[0].ID = %q, want %q", items[0].ID, "scope-jsonl")
+	}
+
+	detailRec := httptest.NewRecorder()
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/sessions/scope-jsonl", nil)
+	mux.ServeHTTP(detailRec, detailReq)
+	if detailRec.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, want %d, body=%s", detailRec.Code, http.StatusOK, detailRec.Body.String())
+	}
+
+	deleteRec := httptest.NewRecorder()
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/sessions/scope-jsonl", nil)
+	mux.ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want %d, body=%s", deleteRec.Code, http.StatusNoContent, deleteRec.Body.String())
 	}
 }
 
@@ -784,7 +859,7 @@ func TestHandleDeleteSession_JSONLStorage(t *testing.T) {
 		t.Fatalf("NewJSONLStore() error = %v", err)
 	}
 
-	sessionKey := picoSessionPrefix + "delete-jsonl"
+	sessionKey := legacyPicoSessionPrefix + "delete-jsonl"
 	if err := store.AddFullMessage(nil, sessionKey, providers.Message{
 		Role:    "user",
 		Content: "delete me",
@@ -821,7 +896,7 @@ func TestHandleGetSession_LegacyJSONFallback(t *testing.T) {
 
 	dir := sessionsTestDir(t, configPath)
 	manager := session.NewSessionManager(dir)
-	sessionKey := picoSessionPrefix + "legacy-json"
+	sessionKey := legacyPicoSessionPrefix + "legacy-json"
 	manager.AddMessage(sessionKey, "user", "legacy user")
 	manager.AddMessage(sessionKey, "assistant", "legacy assistant")
 	if err := manager.Save(sessionKey); err != nil {
@@ -846,7 +921,7 @@ func TestHandleSessions_FiltersEmptyJSONLFiles(t *testing.T) {
 	defer cleanup()
 
 	dir := sessionsTestDir(t, configPath)
-	base := filepath.Join(dir, sanitizeSessionKey(picoSessionPrefix+"empty-jsonl"))
+	base := filepath.Join(dir, sanitizeSessionKey(legacyPicoSessionPrefix+"empty-jsonl"))
 	if err := os.WriteFile(base+".jsonl", []byte{}, 0o644); err != nil {
 		t.Fatalf("WriteFile(jsonl) error = %v", err)
 	}
@@ -877,5 +952,84 @@ func TestHandleSessions_FiltersEmptyJSONLFiles(t *testing.T) {
 
 	if detailRec.Code != http.StatusNotFound {
 		t.Fatalf("detail status = %d, want %d, body=%s", detailRec.Code, http.StatusNotFound, detailRec.Body.String())
+	}
+}
+
+func TestHandleSessions_ListsLegacyJSONLWithoutMeta(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	sessionKey := legacyPicoSessionPrefix + "missing-meta"
+	base := filepath.Join(dir, sanitizeSessionKey(sessionKey))
+	line, err := json.Marshal(providers.Message{Role: "user", Content: "recover me"})
+	if err != nil {
+		t.Fatalf("Marshal(message) error = %v", err)
+	}
+	if err := os.WriteFile(base+".jsonl", append(line, '\n'), 0o644); err != nil {
+		t.Fatalf("WriteFile(jsonl) error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	listRec := httptest.NewRecorder()
+	listReq := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	mux.ServeHTTP(listRec, listReq)
+
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d, body=%s", listRec.Code, http.StatusOK, listRec.Body.String())
+	}
+
+	var items []sessionListItem
+	if err := json.Unmarshal(listRec.Body.Bytes(), &items); err != nil {
+		t.Fatalf("Unmarshal(list) error = %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len(items) = %d, want 1", len(items))
+	}
+	if items[0].ID != "missing-meta" {
+		t.Fatalf("items[0].ID = %q, want %q", items[0].ID, "missing-meta")
+	}
+
+	detailRec := httptest.NewRecorder()
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/sessions/missing-meta", nil)
+	mux.ServeHTTP(detailRec, detailReq)
+
+	if detailRec.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, want %d, body=%s", detailRec.Code, http.StatusOK, detailRec.Body.String())
+	}
+}
+
+func TestHandleSessions_IgnoresMetaJSONInLegacyFallback(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	metaOnly := filepath.Join(dir, "agent_main_pico_direct_pico_meta-only.meta.json")
+	metaOnlyContent := []byte(`{"key":"agent:main:pico:direct:pico:meta-only","summary":"meta only"}`)
+	if err := os.WriteFile(metaOnly, metaOnlyContent, 0o644); err != nil {
+		t.Fatalf("WriteFile(meta) error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	listRec := httptest.NewRecorder()
+	listReq := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	mux.ServeHTTP(listRec, listReq)
+
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d, body=%s", listRec.Code, http.StatusOK, listRec.Body.String())
+	}
+
+	var items []sessionListItem
+	if err := json.Unmarshal(listRec.Body.Bytes(), &items); err != nil {
+		t.Fatalf("Unmarshal(list) error = %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("len(items) = %d, want 0", len(items))
 	}
 }

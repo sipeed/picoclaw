@@ -8,9 +8,10 @@ Telegram Channel 通过 Telegram 机器人 API 使用长轮询实现基于机器
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "telegram": {
       "enabled": true,
+      "type": "telegram",
       "token": "123456789:ABCdefGHIjklMNOpqrsTUVwxyz",
       "allow_from": ["123456789"],
       "proxy": "",
@@ -62,9 +63,10 @@ explain how to squash the last 3 commits
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "telegram": {
       "enabled": true,
+      "type": "telegram",
       "token": "YOUR_BOT_TOKEN",
       "allow_from": ["YOUR_USER_ID"],
       "use_markdown_v2": true

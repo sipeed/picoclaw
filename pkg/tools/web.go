@@ -218,6 +218,10 @@ func (p *BraveSearchProvider) Search(
 	count int,
 	rangeCode string,
 ) (string, error) {
+	if p.keyPool == nil || len(p.keyPool.keys) == 0 {
+		return "", errors.New("no API key provided")
+	}
+
 	searchURL := fmt.Sprintf("https://api.search.brave.com/res/v1/web/search?q=%s&count=%d",
 		url.QueryEscape(query), count)
 	if freshness := mapBraveFreshness(rangeCode); freshness != "" {
@@ -317,6 +321,10 @@ func (p *TavilySearchProvider) Search(
 	count int,
 	rangeCode string,
 ) (string, error) {
+	if p.keyPool == nil || len(p.keyPool.keys) == 0 {
+		return "", errors.New("no API key provided")
+	}
+
 	searchURL := p.baseURL
 	if searchURL == "" {
 		searchURL = "https://api.tavily.com/search"
@@ -532,6 +540,10 @@ func (p *PerplexitySearchProvider) Search(
 	count int,
 	rangeCode string,
 ) (string, error) {
+	if p.keyPool == nil || len(p.keyPool.keys) == 0 {
+		return "", errors.New("no API key provided")
+	}
+
 	searchURL := "https://api.perplexity.ai/chat/completions"
 
 	var lastErr error
@@ -645,6 +657,10 @@ func (p *SearXNGSearchProvider) Search(
 	count int,
 	rangeCode string,
 ) (string, error) {
+	if p.baseURL == "" {
+		return "", errors.New("no SearXNG URL provided")
+	}
+
 	searchURL := fmt.Sprintf("%s/search?q=%s&format=json&categories=general",
 		strings.TrimSuffix(p.baseURL, "/"),
 		url.QueryEscape(query))
@@ -719,6 +735,10 @@ func (p *GLMSearchProvider) Search(
 	count int,
 	rangeCode string,
 ) (string, error) {
+	if p.apiKey == "" {
+		return "", errors.New("no API key provided")
+	}
+
 	searchURL := p.baseURL
 	if searchURL == "" {
 		searchURL = "https://open.bigmodel.cn/api/paas/v4/web_search"
@@ -808,6 +828,10 @@ func (p *BaiduSearchProvider) Search(
 	count int,
 	rangeCode string,
 ) (string, error) {
+	if p.apiKey == "" {
+		return "", errors.New("no API key provided")
+	}
+
 	searchURL := p.baseURL
 	if searchURL == "" {
 		searchURL = "https://qianfan.baidubce.com/v2/ai_search/web_search"
@@ -921,7 +945,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 	var provider SearchProvider
 	maxResults := 10
 	// Priority: Perplexity > Brave > SearXNG > Tavily > DuckDuckGo > Baidu Search > GLM Search
-	if opts.PerplexityEnabled && len(opts.PerplexityAPIKeys) > 0 {
+	if opts.PerplexityEnabled {
 		client, err := utils.CreateHTTPClient(opts.Proxy, perplexityTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Perplexity: %w", err)
@@ -934,7 +958,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		if opts.PerplexityMaxResults > 0 {
 			maxResults = min(opts.PerplexityMaxResults, 10)
 		}
-	} else if opts.BraveEnabled && len(opts.BraveAPIKeys) > 0 {
+	} else if opts.BraveEnabled {
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Brave: %w", err)
@@ -943,12 +967,12 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		if opts.BraveMaxResults > 0 {
 			maxResults = min(opts.BraveMaxResults, 10)
 		}
-	} else if opts.SearXNGEnabled && opts.SearXNGBaseURL != "" {
+	} else if opts.SearXNGEnabled {
 		provider = &SearXNGSearchProvider{baseURL: opts.SearXNGBaseURL}
 		if opts.SearXNGMaxResults > 0 {
 			maxResults = min(opts.SearXNGMaxResults, 10)
 		}
-	} else if opts.TavilyEnabled && len(opts.TavilyAPIKeys) > 0 {
+	} else if opts.TavilyEnabled {
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Tavily: %w", err)
@@ -971,7 +995,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		if opts.DuckDuckGoMaxResults > 0 {
 			maxResults = min(opts.DuckDuckGoMaxResults, 10)
 		}
-	} else if opts.BaiduSearchEnabled && opts.BaiduSearchAPIKey != "" {
+	} else if opts.BaiduSearchEnabled {
 		client, err := utils.CreateHTTPClient(opts.Proxy, perplexityTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for Baidu Search: %w", err)
@@ -985,7 +1009,7 @@ func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
 		if opts.BaiduSearchMaxResults > 0 {
 			maxResults = min(opts.BaiduSearchMaxResults, 10)
 		}
-	} else if opts.GLMSearchEnabled && opts.GLMSearchAPIKey != "" {
+	} else if opts.GLMSearchEnabled {
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create HTTP client for GLM Search: %w", err)

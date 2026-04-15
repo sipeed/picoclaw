@@ -8,9 +8,10 @@ OneBot é um padrão de protocolo aberto para bots QQ, fornecendo uma interface 
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "onebot": {
       "enabled": true,
+      "type": "onebot",
       "ws_url": "ws://localhost:8080",
       "access_token": "",
       "allow_from": []

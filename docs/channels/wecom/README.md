@@ -56,9 +56,10 @@ If you already have a `bot_id` and `secret` from the WeCom AI Bot platform, conf
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "wecom": {
       "enabled": true,
+      "type": "wecom",
       "bot_id": "YOUR_BOT_ID",
       "secret": "YOUR_SECRET",
       "websocket_url": "wss://openws.work.weixin.qq.com",

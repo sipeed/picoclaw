@@ -56,6 +56,7 @@ type turnState struct {
 	turnID     string
 	agentID    string
 	sessionKey string
+	turnCtx    *TurnContext
 
 	channel     string
 	chatID      string
@@ -115,11 +116,12 @@ func newTurnState(agent *AgentInstance, opts processOptions, scope turnEventScop
 		scope:       scope,
 		turnID:      scope.turnID,
 		agentID:     agent.ID,
-		sessionKey:  opts.SessionKey,
-		channel:     opts.Channel,
-		chatID:      opts.ChatID,
-		userMessage: opts.UserMessage,
-		media:       append([]string(nil), opts.Media...),
+		sessionKey:  opts.Dispatch.SessionKey,
+		turnCtx:     cloneTurnContext(scope.context),
+		channel:     opts.Dispatch.Channel(),
+		chatID:      opts.Dispatch.ChatID(),
+		userMessage: opts.Dispatch.UserMessage,
+		media:       append([]string(nil), opts.Dispatch.Media...),
 		phase:       TurnPhaseSetup,
 		startedAt:   time.Now(),
 	}
@@ -127,7 +129,7 @@ func newTurnState(agent *AgentInstance, opts processOptions, scope turnEventScop
 	// Bind session store and capture initial history length for rollback logic
 	if agent != nil && agent.Sessions != nil {
 		ts.session = agent.Sessions
-		ts.initialHistoryLength = len(agent.Sessions.GetHistory(opts.SessionKey))
+		ts.initialHistoryLength = len(agent.Sessions.GetHistory(opts.Dispatch.SessionKey))
 	}
 
 	return ts
@@ -302,12 +304,13 @@ func (ts *turnState) hardAbortRequested() bool {
 func (ts *turnState) eventMeta(source, tracePath string) EventMeta {
 	snap := ts.snapshot()
 	return EventMeta{
-		AgentID:    snap.AgentID,
-		TurnID:     snap.TurnID,
-		SessionKey: snap.SessionKey,
-		Iteration:  snap.Iteration,
-		Source:     source,
-		TracePath:  tracePath,
+		AgentID:     snap.AgentID,
+		TurnID:      snap.TurnID,
+		SessionKey:  snap.SessionKey,
+		Iteration:   snap.Iteration,
+		Source:      source,
+		TracePath:   tracePath,
+		turnContext: cloneTurnContext(ts.turnCtx),
 	}
 }
 

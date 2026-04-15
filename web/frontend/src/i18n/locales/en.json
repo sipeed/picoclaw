@@ -39,6 +39,18 @@
     "welcome": "How can I help you today?",
     "welcomeDesc": "Ask me about weather, settings, or any other tasks. I'm here to assist you.",
     "placeholder": "Start a new message...\nPress Enter to send, Shift + Enter for a new line",
+    "disabledPlaceholder": {
+      "gatewayUnknown": "Unable to chat: Gateway status is still being checked. Please wait, then refresh the page or restart Launcher if needed.",
+      "gatewayStarting": "Unable to chat: Gateway is starting. Wait for startup to complete, then try again.",
+      "gatewayRestarting": "Unable to chat: Gateway is restarting. Please wait for restart to finish.",
+      "gatewayStopping": "Unable to chat: Gateway is stopping. Wait for it to stop, then start Gateway again.",
+      "gatewayStopped": "Unable to chat: Gateway is not started. Click Start Gateway in the top bar, then retry.",
+      "gatewayError": "Unable to chat: Gateway is in an error state. Check logs, then restart Gateway or Launcher.",
+      "websocketConnecting": "Connecting to chat service... Please wait.",
+      "websocketDisconnected": "Unable to chat: WebSocket connection is disconnected. Check network and gateway status, then refresh the page or restart Launcher.",
+      "websocketError": "Unable to chat: WebSocket connection failed. Check network and gateway status, then retry.",
+      "noDefaultModel": "Unable to chat: No default model is selected. Set a default model on the Models page."
+    },
     "newChat": "New Chat",
     "notConnected": "Gateway is not running. Start it to chat.",
     "thinking": {
@@ -56,6 +68,10 @@
     "deleteSession": "Delete session",
     "messagesCount": "{{count}} messages",
     "noModel": "Select model",
+    "inputDisabled": {
+      "notConnected": "Gateway is not running. Start it to chat.",
+      "noModel": "No default model configured. Go to Models page to set one."
+    },
     "attachImage": "Add images",
     "removeImage": "Remove image",
     "uploadedImage": "Uploaded image",
@@ -200,7 +216,16 @@
     "action": {
       "edit": "Edit API key",
       "setDefault": "Set as default",
-      "delete": "Delete model"
+      "delete": "Delete model",
+      "setDefaultDisabled": {
+        "setting": "Setting as default...",
+        "unavailable": "Cannot set unavailable model as default",
+        "isDefault": "Already the default model",
+        "isVirtual": "Cannot set virtual model as default"
+      },
+      "deleteDisabled": {
+        "isDefault": "Cannot delete the default model"
+      }
     },
     "defaultOnSave": {
       "label": "Default Model",
@@ -488,6 +513,11 @@
           "version": "Installed Version",
           "lines": "Line Count",
           "characters": "Character Count"
+        },
+        "marketplace_installDisabled": {
+          "installing": "Installing...",
+          "installed": "Already installed",
+          "cannotInstall": "Cannot install: related tool is not enabled"
         }
       },
       "tools": {

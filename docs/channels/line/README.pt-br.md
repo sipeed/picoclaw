@@ -8,9 +8,10 @@ O PicoClaw suporta o LINE por meio da LINE Messaging API com callbacks de webhoo
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "line": {
       "enabled": true,
+      "type": "line",
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
       "webhook_path": "/webhook/line",

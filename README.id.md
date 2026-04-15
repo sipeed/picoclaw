@@ -164,11 +164,19 @@ Atau, unduh binary untuk platform Anda dari halaman [GitHub Releases](https://gi
 
 ### Build dari source (untuk pengembangan)
 
+Prasyarat:
+
+- Go 1.25+
+- Node.js 22+ dan pnpm 10.33.0+ untuk build Web UI / launcher
+
 ```bash
 git clone https://github.com/sipeed/picoclaw.git
 
 cd picoclaw
 make deps
+
+# Instal dependensi frontend
+(cd web/frontend && pnpm install --frozen-lockfile)
 
 # Build binary inti
 make build
@@ -176,7 +184,7 @@ make build
 # Build Web UI Launcher (diperlukan untuk mode WebUI)
 make build-launcher
 
-# Build untuk berbagai platform
+# Build binary inti untuk semua platform yang dikelola Makefile
 make build-all
 
 # Build untuk Raspberry Pi Zero 2 W (32-bit: make build-linux-arm; 64-bit: make build-linux-arm64)

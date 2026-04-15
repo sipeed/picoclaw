@@ -391,8 +391,13 @@ func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if tool != nil {
-		t.Errorf("Expected nil tool when Brave API key is empty")
+	if tool == nil {
+		t.Fatalf("Expected tool to be created")
+	}
+	ctx := context.Background()
+	result := tool.Execute(ctx, map[string]any{"query": "test"})
+	if !result.IsError {
+		t.Errorf("Expected error when API key is missing")
 	}
 
 	// Also nil when nothing is enabled

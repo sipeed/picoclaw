@@ -39,11 +39,11 @@ var allowedInlineImageMIMETypes = map[string]struct{}{
 	"image/bmp":  {},
 }
 
-func outboundMessageIsThought(metadata map[string]string) bool {
-	if len(metadata) == 0 {
+func outboundMessageIsThought(msg bus.OutboundMessage) bool {
+	if len(msg.Context.Raw) == 0 {
 		return false
 	}
-	return strings.EqualFold(strings.TrimSpace(metadata["message_kind"]), MessageKindThought)
+	return strings.EqualFold(strings.TrimSpace(msg.Context.Raw["message_kind"]), MessageKindThought)
 }
 
 // writeJSON sends a JSON message to the connection with write locking.
@@ -70,7 +70,8 @@ func (pc *picoConn) close() {
 // It serves as the reference implementation for all optional capability interfaces.
 type PicoChannel struct {
 	*channels.BaseChannel
-	config             config.PicoConfig
+	bc                 *config.Channel
+	config             *config.PicoSettings
 	upgrader           websocket.Upgrader
 	connections        map[string]*picoConn            // connID -> *picoConn
 	sessionConnections map[string]map[string]*picoConn // sessionID -> connID -> *picoConn
@@ -80,12 +81,16 @@ type PicoChannel struct {
 }
 
 // NewPicoChannel creates a new Pico Protocol channel.
-func NewPicoChannel(cfg config.PicoConfig, messageBus *bus.MessageBus) (*PicoChannel, error) {
+func NewPicoChannel(
+	bc *config.Channel,
+	cfg *config.PicoSettings,
+	messageBus *bus.MessageBus,
+) (*PicoChannel, error) {
 	if cfg.Token.String() == "" {
 		return nil, fmt.Errorf("pico token is required")
 	}
 
-	base := channels.NewBaseChannel("pico", cfg, messageBus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("pico", cfg, messageBus, bc.AllowFrom)
 
 	allowOrigins := cfg.AllowOrigins
 	checkOrigin := func(r *http.Request) bool {
@@ -103,6 +108,7 @@ func NewPicoChannel(cfg config.PicoConfig, messageBus *bus.MessageBus) (*PicoCha
 
 	return &PicoChannel{
 		BaseChannel: base,
+		bc:          bc,
 		config:      cfg,
 		upgrader: websocket.Upgrader{
 			CheckOrigin:     checkOrigin,
@@ -254,7 +260,7 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 	if !c.IsRunning() {
 		return nil, channels.ErrNotRunning
 	}
-	isThought := outboundMessageIsThought(msg.Metadata)
+	isThought := outboundMessageIsThought(msg)
 
 	outMsg := newMessage(TypeMessageCreate, map[string]any{
 		PayloadKeyContent: msg.Content,
@@ -289,11 +295,11 @@ func (c *PicoChannel) StartTyping(ctx context.Context, chatID string) (func(), e
 // It sends a placeholder message via the Pico Protocol that will later be
 // edited to the actual response via EditMessage (channels.MessageEditor).
 func (c *PicoChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
-	if !c.config.Placeholder.Enabled {
+	if !c.bc.Placeholder.Enabled {
 		return "", nil
 	}
 
-	text := c.config.Placeholder.GetRandomText()
+	text := c.bc.Placeholder.GetRandomText()
 
 	msgID := uuid.New().String()
 	outMsg := newMessage(TypeMessageCreate, map[string]any{
@@ -572,8 +578,6 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 	chatID := "pico:" + sessionID
 	senderID := "pico-user"
 
-	peer := bus.Peer{Kind: "direct", ID: "pico:" + sessionID}
-
 	metadata := map[string]string{
 		"platform":   "pico",
 		"session_id": sessionID,
@@ -596,7 +600,16 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 		return
 	}
 
-	c.HandleMessage(c.ctx, peer, msg.ID, senderID, chatID, content, media, metadata, sender)
+	inboundCtx := bus.InboundContext{
+		Channel:   "pico",
+		ChatID:    chatID,
+		ChatType:  "direct",
+		SenderID:  senderID,
+		MessageID: msg.ID,
+		Raw:       metadata,
+	}
+
+	c.HandleInboundContext(c.ctx, chatID, content, media, inboundCtx, sender)
 }
 
 // truncate truncates a string to maxLen runes.

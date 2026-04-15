@@ -39,7 +39,7 @@ const (
 	EnvBinary = "PICOCLAW_BINARY"
 
 	// EnvGatewayHost overrides the host address for the gateway server.
-	// Default: "127.0.0.1"
+	// Default: "localhost"
 	EnvGatewayHost = "PICOCLAW_GATEWAY_HOST"
 )
 

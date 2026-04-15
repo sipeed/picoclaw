@@ -24,6 +24,10 @@ type ContextManager interface {
 	// Ingest records a message into the ContextManager's own storage.
 	// Called after each message is persisted to session JSONL.
 	Ingest(ctx context.Context, req *IngestRequest) error
+
+	// Clear removes all stored context for a session (messages, summaries, etc.).
+	// Called when the user issues /clear or /reset.
+	Clear(ctx context.Context, sessionKey string) error
 }
 
 // AssembleRequest is the input to Assemble.

@@ -8,9 +8,10 @@ MaixCam là kênh chuyên dụng để kết nối với các thiết bị camer
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "maixcam": {
       "enabled": true,
+      "type": "maixcam",
       "host": "0.0.0.0",
       "port": 18790,
       "allow_from": []

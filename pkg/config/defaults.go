@@ -6,6 +6,7 @@
 package config
 
 import (
+	"encoding/json"
 	"path/filepath"
 
 	"github.com/sipeed/picoclaw/pkg"
@@ -40,115 +41,10 @@ func DefaultConfig() *Config {
 				SplitOnMarker: false,
 			},
 		},
-		Bindings: []AgentBinding{},
 		Session: SessionConfig{
-			DMScope: "per-channel-peer",
+			Dimensions: []string{"chat"},
 		},
-		Channels: ChannelsConfig{
-			WhatsApp: WhatsAppConfig{
-				Enabled:          false,
-				BridgeURL:        "ws://localhost:3001",
-				UseNative:        false,
-				SessionStorePath: "",
-				AllowFrom:        FlexibleStringSlice{},
-			},
-			Telegram: TelegramConfig{
-				Enabled:   false,
-				AllowFrom: FlexibleStringSlice{},
-				Typing:    TypingConfig{Enabled: true},
-				Placeholder: PlaceholderConfig{
-					Enabled: true,
-					Text:    FlexibleStringSlice{"Thinking... 💭"},
-				},
-				Streaming:     StreamingConfig{Enabled: true, ThrottleSeconds: 3, MinGrowthChars: 200},
-				UseMarkdownV2: false,
-			},
-			Feishu: FeishuConfig{
-				Enabled:   false,
-				AppID:     "",
-				AllowFrom: FlexibleStringSlice{},
-			},
-			Discord: DiscordConfig{
-				Enabled:     false,
-				AllowFrom:   FlexibleStringSlice{},
-				MentionOnly: false,
-			},
-			MaixCam: MaixCamConfig{
-				Enabled:   false,
-				Host:      "0.0.0.0",
-				Port:      18790,
-				AllowFrom: FlexibleStringSlice{},
-			},
-			QQ: QQConfig{
-				Enabled:              false,
-				AppID:                "",
-				AllowFrom:            FlexibleStringSlice{},
-				MaxMessageLength:     2000,
-				MaxBase64FileSizeMiB: 0,
-			},
-			DingTalk: DingTalkConfig{
-				Enabled:   false,
-				ClientID:  "",
-				AllowFrom: FlexibleStringSlice{},
-			},
-			Slack: SlackConfig{
-				Enabled:   false,
-				AllowFrom: FlexibleStringSlice{},
-			},
-			Matrix: MatrixConfig{
-				Enabled:      false,
-				Homeserver:   "https://matrix.org",
-				UserID:       "",
-				DeviceID:     "",
-				JoinOnInvite: true,
-				AllowFrom:    FlexibleStringSlice{},
-				GroupTrigger: GroupTriggerConfig{
-					MentionOnly: true,
-				},
-				Placeholder: PlaceholderConfig{
-					Enabled: true,
-					Text:    FlexibleStringSlice{"Thinking... 💭"},
-				},
-				CryptoDatabasePath: "",
-				CryptoPassphrase:   "",
-			},
-			LINE: LINEConfig{
-				Enabled:      false,
-				WebhookHost:  "0.0.0.0",
-				WebhookPort:  18791,
-				WebhookPath:  "/webhook/line",
-				AllowFrom:    FlexibleStringSlice{},
-				GroupTrigger: GroupTriggerConfig{MentionOnly: true},
-			},
-			OneBot: OneBotConfig{
-				Enabled:           false,
-				WSUrl:             "ws://127.0.0.1:3001",
-				ReconnectInterval: 5,
-				AllowFrom:         FlexibleStringSlice{},
-			},
-			WeCom: WeComConfig{
-				Enabled:             false,
-				BotID:               "",
-				WebSocketURL:        "wss://openws.work.weixin.qq.com",
-				SendThinkingMessage: true,
-				AllowFrom:           FlexibleStringSlice{},
-			},
-			Weixin: WeixinConfig{
-				Enabled:    false,
-				BaseURL:    "https://ilinkai.weixin.qq.com/",
-				CDNBaseURL: "https://novac2c.cdn.weixin.qq.com/c2c",
-				AllowFrom:  FlexibleStringSlice{},
-				Proxy:      "",
-			},
-			Pico: PicoConfig{
-				Enabled:        false,
-				PingInterval:   30,
-				ReadTimeout:    60,
-				WriteTimeout:   10,
-				MaxConnections: 100,
-				AllowFrom:      FlexibleStringSlice{},
-			},
-		},
+		Channels: defaultChannels(),
 		Hooks: HooksConfig{
 			Enabled: true,
 			Defaults: HookDefaultsConfig{
@@ -363,7 +259,7 @@ func DefaultConfig() *Config {
 			},
 		},
 		Gateway: GatewayConfig{
-			Host:      "127.0.0.1",
+			Host:      "localhost",
 			Port:      18790,
 			HotReload: false,
 			LogLevel:  DefaultGatewayLogLevel,
@@ -439,9 +335,17 @@ func DefaultConfig() *Config {
 					Enabled: true,
 				},
 				Registries: SkillsRegistriesConfig{
-					ClawHub: ClawHubRegistryConfig{
+					&SkillRegistryConfig{
+						Name:    "clawhub",
 						Enabled: true,
 						BaseURL: "https://clawhub.ai",
+						Param:   map[string]any{},
+					},
+					&SkillRegistryConfig{
+						Name:    "github",
+						Enabled: true,
+						BaseURL: "https://github.com",
+						Param:   map[string]any{},
 					},
 				},
 				MaxConcurrentSearches: 2,
@@ -525,7 +429,9 @@ func DefaultConfig() *Config {
 		},
 		Voice: VoiceConfig{
 			ModelName:         "",
+			TTSModelName:      "",
 			EchoTranscription: false,
+			ElevenLabsAPIKey:  "",
 		},
 		BuildInfo: BuildInfo{
 			Version:   Version,
@@ -534,4 +440,92 @@ func DefaultConfig() *Config {
 			GoVersion: GoVersion,
 		},
 	}
+}
+
+func defaultChannels() ChannelsConfig {
+	defs := map[string]any{
+		"whatsapp": map[string]any{
+			"settings": map[string]any{
+				"bridge_url": "ws://localhost:3001",
+			},
+		},
+		"telegram": map[string]any{
+			"typing":      map[string]any{"enabled": true},
+			"placeholder": map[string]any{"enabled": true, "text": []string{"Thinking... 💭"}},
+			"settings": map[string]any{
+				"streaming":       map[string]any{"enabled": true, "throttle_seconds": 3, "min_growth_chars": 200},
+				"use_markdown_v2": false,
+			},
+		},
+		"feishu":  map[string]any{},
+		"discord": map[string]any{},
+		"maixcam": map[string]any{
+			"settings": map[string]any{"host": "0.0.0.0", "port": 18790},
+		},
+		"qq": map[string]any{
+			"settings": map[string]any{"max_message_length": 2000},
+		},
+		"dingtalk": map[string]any{},
+		"slack":    map[string]any{},
+		"matrix": map[string]any{
+			"group_trigger": map[string]any{"mention_only": true},
+			"placeholder":   map[string]any{"enabled": true, "text": []string{"Thinking... 💭"}},
+			"settings": map[string]any{
+				"homeserver":     "https://matrix.org",
+				"join_on_invite": true,
+			},
+		},
+		"line": map[string]any{
+			"group_trigger": map[string]any{"mention_only": true},
+			"settings": map[string]any{
+				"webhook_host": "0.0.0.0",
+				"webhook_port": 18791,
+				"webhook_path": "/webhook/line",
+			},
+		},
+		"onebot": map[string]any{
+			"settings": map[string]any{
+				"ws_url":             "ws://127.0.0.1:3001",
+				"reconnect_interval": 5,
+			},
+		},
+		"wecom": map[string]any{
+			"settings": map[string]any{
+				"websocket_url":         "wss://openws.work.weixin.qq.com",
+				"send_thinking_message": true,
+			},
+		},
+		"weixin": map[string]any{
+			"settings": map[string]any{
+				"base_url":     "https://ilinkai.weixin.qq.com/",
+				"cdn_base_url": "https://novac2c.cdn.weixin.qq.com/c2c",
+			},
+		},
+		"pico": map[string]any{
+			"settings": map[string]any{
+				"ping_interval":   30,
+				"read_timeout":    60,
+				"write_timeout":   10,
+				"max_connections": 100,
+			},
+		},
+	}
+
+	channels := make(ChannelsConfig, len(defs))
+	for name, def := range defs {
+		data, err := json.Marshal(def)
+		if err != nil {
+			continue
+		}
+		bc := &Channel{}
+		if err := json.Unmarshal(data, bc); err != nil {
+			continue
+		}
+		bc.SetName(name)
+		if bc.Type == "" {
+			bc.Type = name
+		}
+		channels[name] = bc
+	}
+	return channels
 }

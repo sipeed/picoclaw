@@ -8,9 +8,15 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/netbind"
 )
 
 func (h *Handler) effectiveLauncherPublic() bool {
+	if h.serverHostExplicit {
+		// -host takes precedence over -public and launcher-config public setting.
+		return false
+	}
+
 	if h.serverPublicExplicit {
 		return h.serverPublic
 	}
@@ -24,8 +30,11 @@ func (h *Handler) effectiveLauncherPublic() bool {
 }
 
 func (h *Handler) gatewayHostOverride() string {
+	if h.serverHostExplicit {
+		return strings.TrimSpace(h.serverHostInput)
+	}
 	if h.effectiveLauncherPublic() {
-		return "0.0.0.0"
+		return "*"
 	}
 	return ""
 }
@@ -41,10 +50,11 @@ func (h *Handler) effectiveGatewayBindHost(cfg *config.Config) string {
 }
 
 func gatewayProbeHost(bindHost string) string {
-	if bindHost == "" || bindHost == "0.0.0.0" {
-		return "127.0.0.1"
+	plan, err := netbind.BuildPlan(bindHost, netbind.DefaultLoopback)
+	if err != nil || strings.TrimSpace(plan.ProbeHost) == "" {
+		return netbind.ResolveAdaptiveLoopbackHost()
 	}
-	return bindHost
+	return plan.ProbeHost
 }
 
 func (h *Handler) gatewayProxyURL() *url.URL {
@@ -72,7 +82,7 @@ func requestHostName(r *http.Request) string {
 	if strings.TrimSpace(r.Host) != "" {
 		return r.Host
 	}
-	return "127.0.0.1"
+	return netbind.ResolveAdaptiveLoopbackHost()
 }
 
 func requestWSScheme(r *http.Request) string {

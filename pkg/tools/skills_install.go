@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +15,10 @@ import (
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
+
+const defaultSkillRegistryName = "github"
+
+var persistInstalledSkillOriginMeta = writeOriginMeta
 
 // InstallSkillTool allows the LLM agent to install skills from registries.
 // It shares the same RegistryManager that FindSkillsTool uses,
@@ -40,7 +45,7 @@ func (t *InstallSkillTool) Name() string {
 }
 
 func (t *InstallSkillTool) Description() string {
-	return "Install a skill from a registry by slug. Downloads and extracts the skill into the workspace. Use find_skills first to discover available skills."
+	return "Install a skill from a registry by slug. Defaults to GitHub when registry is omitted. Downloads and extracts the skill into the workspace. Use find_skills first to discover available skills."
 }
 
 func (t *InstallSkillTool) Parameters() map[string]any {
@@ -57,14 +62,14 @@ func (t *InstallSkillTool) Parameters() map[string]any {
 			},
 			"registry": map[string]any{
 				"type":        "string",
-				"description": "Registry to install from (required, e.g., 'clawhub')",
+				"description": "Registry to install from (optional, defaults to 'github')",
 			},
 			"force": map[string]any{
 				"type":        "boolean",
 				"description": "Force reinstall if skill already exists (default false)",
 			},
 		},
-		"required": []string{"slug", "registry"},
+		"required": []string{"slug"},
 	}
 }
 
@@ -74,34 +79,18 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	// Validate slug
 	slug, _ := args["slug"].(string)
-	if err := utils.ValidateSkillIdentifier(slug); err != nil {
-		return ErrorResult(fmt.Sprintf("invalid slug %q: error: %s", slug, err.Error()))
+	if strings.TrimSpace(slug) == "" {
+		return ErrorResult("identifier is required and must be a non-empty string")
 	}
 
 	// Validate registry
 	registryName, _ := args["registry"].(string)
+	if registryName == "" {
+		registryName = defaultSkillRegistryName
+	}
 	if err := utils.ValidateSkillIdentifier(registryName); err != nil {
 		return ErrorResult(fmt.Sprintf("invalid registry %q: error: %s", registryName, err.Error()))
-	}
-
-	version, _ := args["version"].(string)
-	force, _ := args["force"].(bool)
-
-	// Check if already installed.
-	skillsDir := filepath.Join(t.workspace, "skills")
-	targetDir := filepath.Join(skillsDir, slug)
-
-	if !force {
-		if _, err := os.Stat(targetDir); err == nil {
-			return ErrorResult(
-				fmt.Sprintf("skill %q already installed at %s. Use force=true to reinstall.", slug, targetDir),
-			)
-		}
-	} else {
-		// Force: remove existing if present.
-		os.RemoveAll(targetDir)
 	}
 
 	// Resolve which registry to use.
@@ -110,9 +99,66 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 		return ErrorResult(fmt.Sprintf("registry %q not found", registryName))
 	}
 
+	// Validate target and resolve install directory.
+	dirName, err := registry.ResolveInstallDirName(slug)
+	if err != nil {
+		return ErrorResult(fmt.Sprintf("invalid slug %q: error: %s", slug, err.Error()))
+	}
+
+	version, _ := args["version"].(string)
+	force, _ := args["force"].(bool)
+
+	// Check if already installed.
+	skillsDir := filepath.Join(t.workspace, "skills")
+	targetDir := filepath.Join(skillsDir, dirName)
+	backupDir := ""
+	restorePreviousInstall := func() {
+		if backupDir == "" {
+			return
+		}
+		if rmErr := os.RemoveAll(targetDir); rmErr != nil {
+			logger.ErrorCF("tool", "Failed to remove failed install before restore",
+				map[string]any{
+					"tool":       "install_skill",
+					"target_dir": targetDir,
+					"error":      rmErr.Error(),
+				})
+			return
+		}
+		if restoreErr := os.Rename(backupDir, targetDir); restoreErr != nil {
+			logger.ErrorCF("tool", "Failed to restore previous install after failed reinstall",
+				map[string]any{
+					"tool":       "install_skill",
+					"backup_dir": backupDir,
+					"target_dir": targetDir,
+					"error":      restoreErr.Error(),
+				})
+			return
+		}
+		backupDir = ""
+	}
+
+	if !force {
+		if _, statErr := os.Stat(targetDir); statErr == nil {
+			return ErrorResult(
+				fmt.Sprintf("skill %q already installed at %s. Use force=true to reinstall.", slug, targetDir),
+			)
+		}
+	} else {
+		if _, statErr := os.Stat(targetDir); statErr == nil {
+			backupDir = filepath.Join(skillsDir, fmt.Sprintf(".%s.picoclaw-backup-%d", dirName, time.Now().UnixNano()))
+			if renameErr := os.Rename(targetDir, backupDir); renameErr != nil {
+				return ErrorResult(fmt.Sprintf("failed to prepare reinstall for %q: %v", slug, renameErr))
+			}
+		} else if !os.IsNotExist(statErr) {
+			return ErrorResult(fmt.Sprintf("failed to inspect existing install for %q: %v", slug, statErr))
+		}
+	}
+
 	// Ensure skills directory exists.
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
-		return ErrorResult(fmt.Sprintf("failed to create skills directory: %v", err))
+	if mkdirErr := os.MkdirAll(skillsDir, 0o755); mkdirErr != nil {
+		restorePreviousInstall()
+		return ErrorResult(fmt.Sprintf("failed to create skills directory: %v", mkdirErr))
 	}
 
 	// Download and install (handles metadata, version resolution, extraction).
@@ -128,6 +174,7 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 					"error":      rmErr.Error(),
 				})
 		}
+		restorePreviousInstall()
 		return ErrorResult(fmt.Sprintf("failed to install %q: %v", slug, err))
 	}
 
@@ -142,11 +189,26 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 					"error":      rmErr.Error(),
 				})
 		}
+		restorePreviousInstall()
 		return ErrorResult(fmt.Sprintf("skill %q is flagged as malicious and cannot be installed", slug))
 	}
 
+	if !workspaceHasValidInstalledSkill(t.workspace, dirName) {
+		rmErr := os.RemoveAll(targetDir)
+		if rmErr != nil {
+			logger.ErrorCF("tool", "Failed to remove invalid installed skill",
+				map[string]any{
+					"tool":       "install_skill",
+					"target_dir": targetDir,
+					"error":      rmErr.Error(),
+				})
+		}
+		restorePreviousInstall()
+		return ErrorResult(fmt.Sprintf("failed to install %q: registry archive is not a valid skill", slug))
+	}
+
 	// Write origin metadata.
-	if err := writeOriginMeta(targetDir, registry.Name(), slug, result.Version); err != nil {
+	if err := persistInstalledSkillOriginMeta(targetDir, registry, slug, result.Version); err != nil {
 		logger.ErrorCF("tool", "Failed to write origin metadata",
 			map[string]any{
 				"tool":     "install_skill",
@@ -156,7 +218,27 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 				"slug":     slug,
 				"version":  result.Version,
 			})
-		_ = err
+		rmErr := os.RemoveAll(targetDir)
+		if rmErr != nil {
+			logger.ErrorCF("tool", "Failed to roll back install after metadata write failure",
+				map[string]any{
+					"tool":       "install_skill",
+					"target_dir": targetDir,
+					"error":      rmErr.Error(),
+				})
+		}
+		restorePreviousInstall()
+		return ErrorResult(fmt.Sprintf("failed to persist skill metadata for %q: %v", slug, err))
+	}
+	if backupDir != "" {
+		if rmErr := os.RemoveAll(backupDir); rmErr != nil {
+			logger.ErrorCF("tool", "Failed to remove previous install backup after successful reinstall",
+				map[string]any{
+					"tool":       "install_skill",
+					"backup_dir": backupDir,
+					"error":      rmErr.Error(),
+				})
+		}
 	}
 
 	// Build result with moderation warning if suspicious.
@@ -178,17 +260,27 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 // originMeta tracks which registry a skill was installed from.
 type originMeta struct {
 	Version          int    `json:"version"`
+	OriginKind       string `json:"origin_kind,omitempty"`
 	Registry         string `json:"registry"`
 	Slug             string `json:"slug"`
+	RegistryURL      string `json:"registry_url,omitempty"`
 	InstalledVersion string `json:"installed_version"`
 	InstalledAt      int64  `json:"installed_at"`
 }
 
-func writeOriginMeta(targetDir, registryName, slug, version string) error {
+func writeOriginMeta(targetDir string, registry skills.SkillRegistry, slug, version string) error {
+	normalizedSlug, registryURL := skills.BuildInstallMetadataForRegistryInstance(registry, slug, version)
+	registryName := ""
+	if registry != nil {
+		registryName = registry.Name()
+	}
+
 	meta := originMeta{
 		Version:          1,
+		OriginKind:       "third_party",
 		Registry:         registryName,
-		Slug:             slug,
+		Slug:             normalizedSlug,
+		RegistryURL:      registryURL,
 		InstalledVersion: version,
 		InstalledAt:      time.Now().UnixMilli(),
 	}
@@ -200,4 +292,17 @@ func writeOriginMeta(targetDir, registryName, slug, version string) error {
 
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
 	return fileutil.WriteFileAtomic(filepath.Join(targetDir, ".skill-origin.json"), data, 0o600)
+}
+
+func workspaceHasValidInstalledSkill(workspace, directory string) bool {
+	loader := skills.NewSkillsLoader(workspace, "", "")
+	for _, skill := range loader.ListSkills() {
+		if skill.Source != "workspace" {
+			continue
+		}
+		if filepath.Base(filepath.Dir(skill.Path)) == directory {
+			return true
+		}
+	}
+	return false
 }

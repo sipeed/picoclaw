@@ -80,23 +80,6 @@ func TestAgentModelConfig_MarshalObject(t *testing.T) {
 	}
 }
 
-func TestProvidersConfig_IsEmpty(t *testing.T) {
-	var empty providersConfigV0
-	t.Logf("empty: %+v", empty)
-	if !empty.IsEmpty() {
-		t.Fatal("empty providersConfig should report empty")
-	}
-
-	novita := providersConfigV0{
-		Novita: providerConfigV0{
-			APIKey: "test-key",
-		},
-	}
-	if novita.IsEmpty() {
-		t.Fatal("providersConfig with novita settings should not report empty")
-	}
-}
-
 func TestAgentConfig_FullParse(t *testing.T) {
 	jsonData := `{
 		"agents": {
@@ -126,18 +109,8 @@ func TestAgentConfig_FullParse(t *testing.T) {
 				}
 			]
 		},
-		"bindings": [
-			{
-				"agent_id": "support",
-				"match": {
-					"channel": "telegram",
-					"account_id": "*",
-					"peer": {"kind": "direct", "id": "user123"}
-				}
-			}
-		],
 		"session": {
-			"dm_scope": "per-peer",
+			"dimensions": ["sender"],
 			"identity_links": {
 				"john": ["telegram:123", "discord:john#1234"]
 			}
@@ -175,19 +148,8 @@ func TestAgentConfig_FullParse(t *testing.T) {
 		t.Errorf("support.Subagents = %+v", support.Subagents)
 	}
 
-	if len(cfg.Bindings) != 1 {
-		t.Fatalf("bindings len = %d, want 1", len(cfg.Bindings))
-	}
-	binding := cfg.Bindings[0]
-	if binding.AgentID != "support" || binding.Match.Channel != "telegram" {
-		t.Errorf("binding = %+v", binding)
-	}
-	if binding.Match.Peer == nil || binding.Match.Peer.Kind != "direct" || binding.Match.Peer.ID != "user123" {
-		t.Errorf("binding.Match.Peer = %+v", binding.Match.Peer)
-	}
-
-	if cfg.Session.DMScope != "per-peer" {
-		t.Errorf("Session.DMScope = %q", cfg.Session.DMScope)
+	if len(cfg.Session.Dimensions) != 1 || cfg.Session.Dimensions[0] != "sender" {
+		t.Errorf("Session.Dimensions = %v", cfg.Session.Dimensions)
 	}
 	if len(cfg.Session.IdentityLinks) != 1 {
 		t.Errorf("Session.IdentityLinks = %v", cfg.Session.IdentityLinks)
@@ -253,8 +215,242 @@ func TestConfig_BackwardCompat_NoAgentsList(t *testing.T) {
 	if len(cfg.Agents.List) != 0 {
 		t.Errorf("agents.list should be empty for backward compat, got %d", len(cfg.Agents.List))
 	}
-	if len(cfg.Bindings) != 0 {
-		t.Errorf("bindings should be empty, got %d", len(cfg.Bindings))
+}
+
+func TestAgentConfig_ParsesDispatchRules(t *testing.T) {
+	jsonData := `{
+		"agents": {
+			"defaults": {
+				"workspace": "~/.picoclaw/workspace",
+				"model": "glm-4.7"
+			},
+			"list": [
+				{ "id": "main", "default": true },
+				{ "id": "support" }
+			],
+			"dispatch": {
+				"rules": [
+					{
+						"name": "support-vip",
+						"agent": "support",
+						"when": {
+							"channel": "telegram",
+							"chat": "group:-100123",
+							"sender": "12345",
+							"mentioned": true
+						},
+						"session_dimensions": ["chat", "sender"]
+					}
+				]
+			}
+		}
+	}`
+
+	cfg := DefaultConfig()
+	if err := json.Unmarshal([]byte(jsonData), cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.Agents.Dispatch == nil {
+		t.Fatal("Agents.Dispatch should not be nil")
+	}
+	if len(cfg.Agents.Dispatch.Rules) != 1 {
+		t.Fatalf("Dispatch.Rules len = %d, want 1", len(cfg.Agents.Dispatch.Rules))
+	}
+	rule := cfg.Agents.Dispatch.Rules[0]
+	if rule.Name != "support-vip" || rule.Agent != "support" {
+		t.Fatalf("rule = %+v", rule)
+	}
+	if rule.When.Channel != "telegram" || rule.When.Chat != "group:-100123" || rule.When.Sender != "12345" {
+		t.Fatalf("rule.When = %+v", rule.When)
+	}
+	if rule.When.Mentioned == nil || !*rule.When.Mentioned {
+		t.Fatalf("rule.When.Mentioned = %+v, want true", rule.When.Mentioned)
+	}
+	if got := rule.SessionDimensions; len(got) != 2 || got[0] != "chat" || got[1] != "sender" {
+		t.Fatalf("rule.SessionDimensions = %v, want [chat sender]", got)
+	}
+}
+
+func TestLoadConfig_MigratesLegacyBindingsToDispatchRules(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := `{
+		"version": 2,
+		"agents": {
+			"defaults": {
+				"workspace": "~/.picoclaw/workspace",
+				"model": "glm-4.7"
+			},
+			"list": [
+				{ "id": "main", "default": true },
+				{ "id": "support" },
+				{ "id": "ops" },
+				{ "id": "slack" }
+			]
+		},
+		"bindings": [
+			{
+				"agent_id": "support",
+				"match": {
+					"channel": "telegram",
+					"peer": { "kind": "group", "id": "-100123" }
+				}
+			},
+			{
+				"agent_id": "ops",
+				"match": {
+					"channel": "discord",
+					"guild_id": "guild-1"
+				}
+			},
+			{
+				"agent_id": "slack",
+				"match": {
+					"channel": "slack",
+					"account_id": "*"
+				}
+			}
+		]
+	}`
+	if err := os.WriteFile(configPath, []byte(raw), 0o644); err != nil {
+		t.Fatalf("WriteFile(configPath): %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Agents.Dispatch == nil {
+		t.Fatal("Agents.Dispatch should not be nil")
+	}
+	if len(cfg.Agents.Dispatch.Rules) != 3 {
+		t.Fatalf("Dispatch.Rules len = %d, want 3", len(cfg.Agents.Dispatch.Rules))
+	}
+
+	first := cfg.Agents.Dispatch.Rules[0]
+	if first.Agent != "support" {
+		t.Fatalf("first.Agent = %q, want %q", first.Agent, "support")
+	}
+	if first.When.Channel != "telegram" || first.When.Chat != "group:-100123" {
+		t.Fatalf("first.When = %+v", first.When)
+	}
+	if first.When.Account != legacyDefaultAccountID {
+		t.Fatalf("first.When.Account = %q, want %q", first.When.Account, legacyDefaultAccountID)
+	}
+
+	second := cfg.Agents.Dispatch.Rules[1]
+	if second.Agent != "ops" || second.When.Space != "guild:guild-1" {
+		t.Fatalf("second = %+v", second)
+	}
+
+	third := cfg.Agents.Dispatch.Rules[2]
+	if third.Agent != "slack" {
+		t.Fatalf("third.Agent = %q, want %q", third.Agent, "slack")
+	}
+	if third.When.Channel != "slack" || third.When.Account != "" {
+		t.Fatalf("third.When = %+v", third.When)
+	}
+}
+
+func TestLoadConfig_PrefersDispatchRulesOverLegacyBindings(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := `{
+		"version": 2,
+		"agents": {
+			"defaults": {
+				"workspace": "~/.picoclaw/workspace",
+				"model": "glm-4.7"
+			},
+			"list": [
+				{ "id": "main", "default": true },
+				{ "id": "support" }
+			],
+			"dispatch": {
+				"rules": [
+					{
+						"name": "explicit",
+						"agent": "support",
+						"when": {
+							"channel": "telegram",
+							"chat": "group:-100123"
+						}
+					}
+				]
+			}
+		},
+		"bindings": [
+			{
+				"agent_id": "main",
+				"match": {
+					"channel": "telegram",
+					"account_id": "*"
+				}
+			}
+		]
+	}`
+	if err := os.WriteFile(configPath, []byte(raw), 0o644); err != nil {
+		t.Fatalf("WriteFile(configPath): %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Agents.Dispatch == nil {
+		t.Fatal("Agents.Dispatch should not be nil")
+	}
+	if len(cfg.Agents.Dispatch.Rules) != 1 {
+		t.Fatalf("Dispatch.Rules len = %d, want 1", len(cfg.Agents.Dispatch.Rules))
+	}
+	if cfg.Agents.Dispatch.Rules[0].Name != "explicit" {
+		t.Fatalf("Dispatch.Rules[0].Name = %q, want %q", cfg.Agents.Dispatch.Rules[0].Name, "explicit")
+	}
+}
+
+func TestLoadConfig_MigratesLegacyDirectBindingsWithIdentityLinks(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := `{
+		"version": 2,
+		"agents": {
+			"defaults": {
+				"workspace": "~/.picoclaw/workspace",
+				"model": "glm-4.7"
+			},
+			"list": [
+				{ "id": "main", "default": true },
+				{ "id": "support" }
+			]
+		},
+		"session": {
+			"identity_links": {
+				"john": ["telegram:123", "123"]
+			}
+		},
+		"bindings": [
+			{
+				"agent_id": "support",
+				"match": {
+					"channel": "telegram",
+					"peer": { "kind": "direct", "id": "123" }
+				}
+			}
+		]
+	}`
+	if err := os.WriteFile(configPath, []byte(raw), 0o644); err != nil {
+		t.Fatalf("WriteFile(configPath): %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Agents.Dispatch == nil || len(cfg.Agents.Dispatch.Rules) != 1 {
+		t.Fatalf("Dispatch.Rules = %+v, want 1 migrated rule", cfg.Agents.Dispatch)
+	}
+	if got := cfg.Agents.Dispatch.Rules[0].When.Sender; got != "john" {
+		t.Fatalf("migrated sender selector = %q, want %q", got, "john")
 	}
 }
 
@@ -307,7 +503,7 @@ func TestDefaultConfig_Temperature(t *testing.T) {
 func TestDefaultConfig_Gateway(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Gateway.Host != "127.0.0.1" {
+	if cfg.Gateway.Host != "localhost" {
 		t.Error("Gateway host should have default value")
 	}
 	if cfg.Gateway.Port == 0 {
@@ -322,17 +518,56 @@ func TestDefaultConfig_Gateway(t *testing.T) {
 func TestDefaultConfig_Channels(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Channels.Telegram.Enabled {
-		t.Error("Telegram should be disabled by default")
+	for name, bc := range cfg.Channels {
+		if bc.Enabled {
+			t.Errorf("Channel %q should be disabled by default", name)
+		}
 	}
-	if cfg.Channels.Discord.Enabled {
-		t.Error("Discord should be disabled by default")
+}
+
+func TestValidateSingletonChannels_RejectsMultipleInstances(t *testing.T) {
+	channels := ChannelsConfig{
+		"pico1": &Channel{Enabled: true, Type: ChannelPico},
+		"pico2": &Channel{Enabled: true, Type: ChannelPico},
 	}
-	if cfg.Channels.Slack.Enabled {
-		t.Error("Slack should be disabled by default")
+	err := validateSingletonChannels(channels)
+	if err == nil {
+		t.Fatal("expected error for multiple pico channels, got nil")
 	}
-	if cfg.Channels.Matrix.Enabled {
-		t.Error("Matrix should be disabled by default")
+	if !strings.Contains(err.Error(), "singleton") {
+		t.Fatalf("expected singleton error, got: %v", err)
+	}
+}
+
+func TestValidateSingletonChannels_AllowsSingleInstance(t *testing.T) {
+	channels := ChannelsConfig{
+		"pico1": &Channel{Enabled: true, Type: ChannelPico},
+	}
+	err := validateSingletonChannels(channels)
+	if err != nil {
+		t.Fatalf("expected no error for single pico channel, got: %v", err)
+	}
+}
+
+func TestValidateSingletonChannels_IgnoresDisabledInstances(t *testing.T) {
+	channels := ChannelsConfig{
+		"pico1": &Channel{Enabled: true, Type: ChannelPico},
+		"pico2": &Channel{Enabled: false, Type: ChannelPico},
+	}
+	err := validateSingletonChannels(channels)
+	if err != nil {
+		t.Fatalf("expected no error when only one pico channel is enabled, got: %v", err)
+	}
+}
+
+func TestValidateSingletonChannels_AllowsMultiInstanceTypes(t *testing.T) {
+	channels := ChannelsConfig{
+		"tg1": &Channel{Enabled: true, Type: ChannelTelegram},
+		"tg2": &Channel{Enabled: true, Type: ChannelTelegram},
+	}
+	err := validateSingletonChannels(channels)
+	if err != nil {
+		t.Fatalf("telegram should allow multiple instances, got error: %v", err)
 	}
 }
 
@@ -349,13 +584,6 @@ func TestDefaultConfig_WebTools(t *testing.T) {
 	}
 	if cfg.Tools.Web.DuckDuckGo.MaxResults != 5 {
 		t.Error("Expected DuckDuckGo MaxResults 5, got ", cfg.Tools.Web.DuckDuckGo.MaxResults)
-	}
-}
-
-func TestDefaultConfig_ReadFileMode(t *testing.T) {
-	cfg := DefaultConfig()
-	if cfg.Tools.ReadFile.EffectiveMode() != ReadFileModeBytes {
-		t.Fatalf("expected default read_file mode %q, got %q", ReadFileModeBytes, cfg.Tools.ReadFile.EffectiveMode())
 	}
 }
 
@@ -407,7 +635,9 @@ func TestSaveConfig_PreservesDisabledTelegramPlaceholder(t *testing.T) {
 	path := filepath.Join(tmpDir, "config.json")
 
 	cfg := DefaultConfig()
-	cfg.Channels.Telegram.Placeholder.Enabled = false
+	if bc := cfg.Channels.Get("telegram"); bc != nil {
+		bc.Placeholder.Enabled = false
+	}
 
 	if err := SaveConfig(path, cfg); err != nil {
 		t.Fatalf("SaveConfig failed: %v", err)
@@ -428,7 +658,8 @@ func TestSaveConfig_PreservesDisabledTelegramPlaceholder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig failed: %v", err)
 	}
-	if loaded.Channels.Telegram.Placeholder.Enabled {
+	bc := loaded.Channels.Get("telegram")
+	if bc != nil && bc.Placeholder.Enabled {
 		t.Fatal("telegram placeholder should remain disabled after SaveConfig/LoadConfig round-trip")
 	}
 }
@@ -508,7 +739,7 @@ func TestConfig_Complete(t *testing.T) {
 	if cfg.Agents.Defaults.MaxToolIterations == 0 {
 		t.Error("MaxToolIterations should not be zero")
 	}
-	if cfg.Gateway.Host != "127.0.0.1" {
+	if cfg.Gateway.Host != "localhost" {
 		t.Error("Gateway host should have default value")
 	}
 	if cfg.Gateway.Port == 0 {
@@ -800,7 +1031,7 @@ func TestLoadConfig_HooksProcessConfig(t *testing.T) {
 	}
 }
 
-// TestDefaultConfig_DMScope verifies the default dm_scope value
+// TestDefaultConfig_SessionDimensions verifies the default session dimensions
 // TestDefaultConfig_SummarizationThresholds verifies summarization defaults
 func TestDefaultConfig_SummarizationThresholds(t *testing.T) {
 	cfg := DefaultConfig()
@@ -813,11 +1044,11 @@ func TestDefaultConfig_SummarizationThresholds(t *testing.T) {
 	}
 }
 
-func TestDefaultConfig_DMScope(t *testing.T) {
+func TestDefaultConfig_SessionDimensions(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Session.DMScope != "per-channel-peer" {
-		t.Errorf("Session.DMScope = %q, want 'per-channel-peer'", cfg.Session.DMScope)
+	if len(cfg.Session.Dimensions) != 1 || cfg.Session.Dimensions[0] != "chat" {
+		t.Errorf("Session.Dimensions = %v, want [chat]", cfg.Session.Dimensions)
 	}
 }
 
@@ -1051,7 +1282,6 @@ func TestLoadConfig_TelegramPlaceholderTextAcceptsSingleString(t *testing.T) {
 	data := `{
 		"version": 1,
 		"agents": { "defaults": { "workspace": "", "model": "", "max_tokens": 0, "max_tool_iterations": 0 } },
-		"bindings": [],
 		"session": {},
 		"channels": {
 			"telegram": {
@@ -1079,7 +1309,8 @@ func TestLoadConfig_TelegramPlaceholderTextAcceptsSingleString(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	if got := []string(cfg.Channels.Telegram.Placeholder.Text); len(got) != 1 || got[0] != "Thinking..." {
+	bc := cfg.Channels.Get("telegram")
+	if got := []string(bc.Placeholder.Text); len(got) != 1 || got[0] != "Thinking..." {
 		t.Fatalf("placeholder.text = %#v, want [\"Thinking...\"]", got)
 	}
 }
@@ -1523,6 +1754,86 @@ func TestResolveGatewayLogLevel_UsesEnvOverrideAndNormalizesInvalid(t *testing.T
 	}
 }
 
+func TestLoadConfig_AppliesLegacyClawHubRegistryEnvOverrides(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	data := `{"version":2,"tools":{"skills":{"registries":{"clawhub":{"enabled":true,"base_url":"https://clawhub.ai"}}}}}`
+	if err := os.WriteFile(cfgPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	t.Setenv(envSkillsClawHubBaseURL, "https://clawhub.example.com")
+	t.Setenv(envSkillsClawHubAuthToken, "clawhub-token-from-env")
+	t.Setenv(envSkillsClawHubEnabled, "false")
+	t.Setenv(envSkillsClawHubSearchPath, "/custom/search")
+	t.Setenv(envSkillsClawHubDownloadPath, "/custom/download")
+	t.Setenv(envSkillsClawHubTimeout, "17")
+
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	clawhub, ok := cfg.Tools.Skills.Registries.Get("clawhub")
+	if !ok {
+		t.Fatal("clawhub registry missing")
+	}
+	if clawhub.BaseURL != "https://clawhub.example.com" {
+		t.Fatalf("BaseURL = %q, want %q", clawhub.BaseURL, "https://clawhub.example.com")
+	}
+	if clawhub.AuthToken.String() != "clawhub-token-from-env" {
+		t.Fatalf("AuthToken = %q, want %q", clawhub.AuthToken.String(), "clawhub-token-from-env")
+	}
+	if clawhub.Enabled {
+		t.Fatal("Enabled = true, want false")
+	}
+	if got := clawhub.Param["search_path"]; got != "/custom/search" {
+		t.Fatalf("search_path = %v, want %q", got, "/custom/search")
+	}
+	if got := clawhub.Param["download_path"]; got != "/custom/download" {
+		t.Fatalf("download_path = %v, want %q", got, "/custom/download")
+	}
+	if got := clawhub.Param["timeout"]; got != 17 {
+		t.Fatalf("timeout = %v, want %d", got, 17)
+	}
+}
+
+func TestLoadConfig_AppliesGitHubRegistryEnvOverrides(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	data := `{"version":2,"tools":{"skills":{"registries":{"github":{"enabled":true,"base_url":"https://github.com"}}}}}`
+	if err := os.WriteFile(cfgPath, []byte(data), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	t.Setenv(envSkillsGitHubBaseURL, "https://ghe.example.com/git")
+	t.Setenv(envSkillsGitHubAuthToken, "github-token-from-env")
+	t.Setenv(envSkillsGitHubEnabled, "false")
+	t.Setenv(envSkillsGitHubProxy, "http://127.0.0.1:7890")
+
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	github, ok := cfg.Tools.Skills.Registries.Get("github")
+	if !ok {
+		t.Fatal("github registry missing")
+	}
+	if github.BaseURL != "https://ghe.example.com/git" {
+		t.Fatalf("BaseURL = %q, want %q", github.BaseURL, "https://ghe.example.com/git")
+	}
+	if github.AuthToken.String() != "github-token-from-env" {
+		t.Fatalf("AuthToken = %q, want %q", github.AuthToken.String(), "github-token-from-env")
+	}
+	if github.Enabled {
+		t.Fatal("Enabled = true, want false")
+	}
+	if got := github.Param["proxy"]; got != "http://127.0.0.1:7890" {
+		t.Fatalf("proxy = %v, want %q", got, "http://127.0.0.1:7890")
+	}
+}
+
 func TestModelConfig_ExtraBodyRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
@@ -1701,28 +2012,7 @@ func TestFilterSensitiveData_AllTokenTypes(t *testing.T) {
 			},
 		},
 		// Channel tokens
-		Channels: ChannelsConfig{
-			Telegram: TelegramConfig{Token: *NewSecureString("telegram-bot-token-abcdef")},
-			Discord:  DiscordConfig{Token: *NewSecureString("discord-bot-token-xyz789")},
-			Slack: SlackConfig{
-				BotToken: *NewSecureString("xoxb-slack-bot-token"),
-				AppToken: *NewSecureString("xapp-slack-app-token"),
-			},
-			Matrix: MatrixConfig{AccessToken: *NewSecureString("matrix-access-token-abc")},
-			Feishu: FeishuConfig{
-				AppSecret:  *NewSecureString("feishu-app-secret-123"),
-				EncryptKey: *NewSecureString("feishu-encrypt-key"),
-			},
-			DingTalk: DingTalkConfig{ClientSecret: *NewSecureString("dingtalk-client-secret")},
-			OneBot:   OneBotConfig{AccessToken: *NewSecureString("onebot-access-token")},
-			WeCom:    WeComConfig{Secret: *NewSecureString("wecom-secret")},
-			Pico:     PicoConfig{Token: *NewSecureString("pico-token-abc123")},
-			IRC: IRCConfig{
-				Password:         *NewSecureString("irc-password"),
-				NickServPassword: *NewSecureString("nickserv-pass"),
-				SASLPassword:     *NewSecureString("sasl-pass"),
-			},
-		},
+		Channels: testChannelsConfigWithTokens(),
 		Tools: ToolsConfig{
 			FilterSensitiveData: true,
 			FilterMinLength:     8,
@@ -1738,7 +2028,7 @@ func TestFilterSensitiveData_AllTokenTypes(t *testing.T) {
 			Skills: SkillsToolsConfig{
 				Github: SkillsGithubConfig{Token: *NewSecureString("github-token-xyz")},
 				Registries: SkillsRegistriesConfig{
-					ClawHub: ClawHubRegistryConfig{AuthToken: *NewSecureString("clawhub-auth-token")},
+					&SkillRegistryConfig{Name: "clawhub", AuthToken: *NewSecureString("clawhub-auth-token")},
 				},
 			},
 		},
@@ -1973,4 +2263,50 @@ func TestMakeBackup_SameDateSuffix(t *testing.T) {
 	if configDate != secDate {
 		t.Errorf("config backup date = %q, security backup date = %q, should match", configDate, secDate)
 	}
+}
+
+func testChannelsConfigWithTokens() ChannelsConfig {
+	channels := make(ChannelsConfig)
+	type chDef struct {
+		name string
+		cfg  any
+	}
+	defs := []chDef{
+		{"telegram", TelegramSettings{Token: *NewSecureString("telegram-bot-token-abcdef")}},
+		{"discord", DiscordSettings{Token: *NewSecureString("discord-bot-token-xyz789")}},
+		{
+			"slack",
+			SlackSettings{
+				BotToken: *NewSecureString("xoxb-slack-bot-token"),
+				AppToken: *NewSecureString("xapp-slack-app-token"),
+			},
+		},
+		{"matrix", MatrixSettings{AccessToken: *NewSecureString("matrix-access-token-abc")}},
+		{
+			"feishu",
+			FeishuSettings{
+				AppSecret:  *NewSecureString("feishu-app-secret-123"),
+				EncryptKey: *NewSecureString("feishu-encrypt-key"),
+			},
+		},
+		{"dingtalk", DingTalkSettings{ClientSecret: *NewSecureString("dingtalk-client-secret")}},
+		{"onebot", OneBotSettings{AccessToken: *NewSecureString("onebot-access-token")}},
+		{"wecom", WeComSettings{Secret: *NewSecureString("wecom-secret")}},
+		{"pico", PicoSettings{Token: *NewSecureString("pico-token-abc123")}},
+		{
+			"irc",
+			IRCSettings{
+				Password:         *NewSecureString("irc-password"),
+				NickServPassword: *NewSecureString("nickserv-pass"),
+				SASLPassword:     *NewSecureString("sasl-pass"),
+			},
+		},
+	}
+	for _, def := range defs {
+		// Create Channel directly with settings to preserve SecureString values
+		bc := &Channel{Type: def.name}
+		bc.Decode(def.cfg)
+		channels[def.name] = bc
+	}
+	return channels
 }

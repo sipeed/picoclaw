@@ -31,67 +31,60 @@ func TestNewTeamsWebhookChannel(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 
 	// Test missing webhooks
-	_, err := NewTeamsWebhookChannel(config.TeamsWebhookConfig{
-		Enabled:  true,
+	bc := &config.Channel{Type: config.ChannelTeamsWebHook, Enabled: true}
+	cfg := config.TeamsWebhookSettings{
 		Webhooks: nil,
-	}, msgBus)
+	}
+	_, err := NewTeamsWebhookChannel(bc, &cfg, msgBus)
 	if err == nil {
 		t.Error("expected error for missing webhooks")
 	}
 
 	// Test missing "default" webhook
-	_, err = NewTeamsWebhookChannel(config.TeamsWebhookConfig{
-		Enabled: true,
-		Webhooks: map[string]config.TeamsWebhookTarget{
-			"alerts": {
-				WebhookURL: *config.NewSecureString("https://example.com/webhook"),
-				Title:      "Alerts",
-			},
+	cfg.Webhooks = map[string]config.TeamsWebhookTarget{
+		"alerts": {
+			WebhookURL: *config.NewSecureString("https://example.com/webhook"),
+			Title:      "Alerts",
 		},
-	}, msgBus)
+	}
+	_, err = NewTeamsWebhookChannel(bc, &cfg, msgBus)
 	if err == nil {
 		t.Error("expected error for missing 'default' webhook")
 	}
 
 	// Test empty webhook URL
-	_, err = NewTeamsWebhookChannel(config.TeamsWebhookConfig{
-		Enabled: true,
-		Webhooks: map[string]config.TeamsWebhookTarget{
-			"default": {Title: "Default"},
-		},
-	}, msgBus)
+	cfg.Webhooks = map[string]config.TeamsWebhookTarget{
+		"default": {Title: "Default"},
+	}
+	_, err = NewTeamsWebhookChannel(bc, &cfg, msgBus)
 	if err == nil {
 		t.Error("expected error for empty webhook_url")
 	}
 
 	// Test HTTP URL (should fail, must be HTTPS)
-	_, err = NewTeamsWebhookChannel(config.TeamsWebhookConfig{
-		Enabled: true,
-		Webhooks: map[string]config.TeamsWebhookTarget{
-			"default": {
-				WebhookURL: *config.NewSecureString("http://example.com/webhook"),
-				Title:      "Default",
-			},
+	cfg.Webhooks = map[string]config.TeamsWebhookTarget{
+		"default": {
+			WebhookURL: *config.NewSecureString("http://example.com/webhook"),
+			Title:      "Default",
 		},
-	}, msgBus)
+	}
+	_, err = NewTeamsWebhookChannel(bc, &cfg, msgBus)
 	if err == nil {
 		t.Error("expected error for HTTP webhook URL (must be HTTPS)")
 	}
 
 	// Test valid config with HTTPS (must include "default")
-	ch, err := NewTeamsWebhookChannel(config.TeamsWebhookConfig{
-		Enabled: true,
-		Webhooks: map[string]config.TeamsWebhookTarget{
-			"default": {
-				WebhookURL: *config.NewSecureString("https://example.com/webhook-default"),
-				Title:      "Default",
-			},
-			"alerts": {
-				WebhookURL: *config.NewSecureString("https://example.com/webhook1"),
-				Title:      "Alerts",
-			},
+	cfg.Webhooks = map[string]config.TeamsWebhookTarget{
+		"default": {
+			WebhookURL: *config.NewSecureString("https://example.com/webhook-default"),
+			Title:      "Default",
 		},
-	}, msgBus)
+		"alerts": {
+			WebhookURL: *config.NewSecureString("https://example.com/webhook1"),
+			Title:      "Alerts",
+		},
+	}
+	ch, err := NewTeamsWebhookChannel(bc, &cfg, msgBus)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -103,14 +96,15 @@ func TestNewTeamsWebhookChannel(t *testing.T) {
 
 func TestTeamsWebhookChannel_StartStop(t *testing.T) {
 	msgBus := bus.NewMessageBus()
-	ch, err := NewTeamsWebhookChannel(config.TeamsWebhookConfig{
-		Enabled: true,
+	bc := &config.Channel{Type: config.ChannelTeamsWebHook, Enabled: true}
+	cfg := config.TeamsWebhookSettings{
 		Webhooks: map[string]config.TeamsWebhookTarget{
 			"default": {
 				WebhookURL: *config.NewSecureString("https://example.com/webhook"),
 			},
 		},
-	}, msgBus)
+	}
+	ch, err := NewTeamsWebhookChannel(bc, &cfg, msgBus)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -140,8 +134,8 @@ func TestTeamsWebhookChannel_StartStop(t *testing.T) {
 
 func TestTeamsWebhookChannel_BuildAdaptiveCard(t *testing.T) {
 	msgBus := bus.NewMessageBus()
-	ch, err := NewTeamsWebhookChannel(config.TeamsWebhookConfig{
-		Enabled: true,
+	bc := &config.Channel{Type: config.ChannelTeamsWebHook, Enabled: true}
+	cfg := config.TeamsWebhookSettings{
 		Webhooks: map[string]config.TeamsWebhookTarget{
 			"default": {
 				WebhookURL: *config.NewSecureString("https://example.com/webhook-default"),
@@ -152,7 +146,8 @@ func TestTeamsWebhookChannel_BuildAdaptiveCard(t *testing.T) {
 				Title:      "Custom Title",
 			},
 		},
-	}, msgBus)
+	}
+	ch, err := NewTeamsWebhookChannel(bc, &cfg, msgBus)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -175,14 +170,15 @@ func TestTeamsWebhookChannel_BuildAdaptiveCard(t *testing.T) {
 
 func TestTeamsWebhookChannel_SendNotRunning(t *testing.T) {
 	msgBus := bus.NewMessageBus()
-	ch, err := NewTeamsWebhookChannel(config.TeamsWebhookConfig{
-		Enabled: true,
+	bc := &config.Channel{Type: config.ChannelTeamsWebHook, Enabled: true}
+	cfg := config.TeamsWebhookSettings{
 		Webhooks: map[string]config.TeamsWebhookTarget{
 			"default": {
 				WebhookURL: *config.NewSecureString("https://example.com/webhook"),
 			},
 		},
-	}, msgBus)
+	}
+	ch, err := NewTeamsWebhookChannel(bc, &cfg, msgBus)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -208,8 +204,8 @@ func TestTeamsWebhookChannel_SendDefaultTargetFallback(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			msgBus := bus.NewMessageBus()
-			ch, err := NewTeamsWebhookChannel(config.TeamsWebhookConfig{
-				Enabled: true,
+			bc := &config.Channel{Type: config.ChannelTeamsWebHook, Enabled: true}
+			cfg := config.TeamsWebhookSettings{
 				Webhooks: map[string]config.TeamsWebhookTarget{
 					"default": {
 						WebhookURL: *config.NewSecureString("https://example.com/webhook-default"),
@@ -218,7 +214,8 @@ func TestTeamsWebhookChannel_SendDefaultTargetFallback(t *testing.T) {
 						WebhookURL: *config.NewSecureString("https://example.com/webhook-alerts"),
 					},
 				},
-			}, msgBus)
+			}
+			ch, err := NewTeamsWebhookChannel(bc, &cfg, msgBus)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -250,8 +247,8 @@ func TestTeamsWebhookChannel_SendDefaultTargetFallback(t *testing.T) {
 
 func TestTeamsWebhookChannel_SendSuccess(t *testing.T) {
 	msgBus := bus.NewMessageBus()
-	ch, err := NewTeamsWebhookChannel(config.TeamsWebhookConfig{
-		Enabled: true,
+	bc := &config.Channel{Type: config.ChannelTeamsWebHook, Enabled: true}
+	cfg := config.TeamsWebhookSettings{
 		Webhooks: map[string]config.TeamsWebhookTarget{
 			"default": {
 				WebhookURL: *config.NewSecureString("https://example.com/webhook-default"),
@@ -262,7 +259,8 @@ func TestTeamsWebhookChannel_SendSuccess(t *testing.T) {
 				Title:      "Test Alerts",
 			},
 		},
-	}, msgBus)
+	}
+	ch, err := NewTeamsWebhookChannel(bc, &cfg, msgBus)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -294,8 +292,8 @@ func TestTeamsWebhookChannel_SendSuccess(t *testing.T) {
 
 func TestTeamsWebhookChannel_SendError(t *testing.T) {
 	msgBus := bus.NewMessageBus()
-	ch, err := NewTeamsWebhookChannel(config.TeamsWebhookConfig{
-		Enabled: true,
+	bc := &config.Channel{Type: config.ChannelTeamsWebHook, Enabled: true}
+	cfg := config.TeamsWebhookSettings{
 		Webhooks: map[string]config.TeamsWebhookTarget{
 			"default": {
 				WebhookURL: *config.NewSecureString("https://example.com/webhook-default"),
@@ -304,7 +302,8 @@ func TestTeamsWebhookChannel_SendError(t *testing.T) {
 				WebhookURL: *config.NewSecureString("https://example.com/webhook-alerts"),
 			},
 		},
-	}, msgBus)
+	}
+	ch, err := NewTeamsWebhookChannel(bc, &cfg, msgBus)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

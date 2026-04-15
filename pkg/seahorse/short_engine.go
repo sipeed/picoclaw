@@ -377,6 +377,19 @@ func (e *Engine) IngestMessages(ctx context.Context, sessionKey string, messages
 	return e.Ingest(ctx, sessionKey, messages)
 }
 
+// ClearSession removes all stored data for a session (messages, summaries, context).
+// If the session has no prior seahorse record, it is a no-op.
+func (e *Engine) ClearSession(ctx context.Context, sessionKey string) error {
+	conv, err := e.store.GetConversationBySessionKey(ctx, sessionKey)
+	if err != nil {
+		return err
+	}
+	if conv == nil {
+		return nil // session never ingested, nothing to clear
+	}
+	return e.store.ClearConversation(ctx, conv.ConversationID)
+}
+
 // Bootstrap reconciles a session's messages with the database.
 // Called once at startup for each known session.
 // Bootstrap reconciles JSONL history with SQLite by ingesting only the delta.

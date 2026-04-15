@@ -226,8 +226,7 @@ func (a *Agent) processUtterance(ctx context.Context, acc *speechAccumulator) {
 			logger.ErrorCF("voice-agent", "Failed to publish leave control", map[string]any{"error": err})
 		}
 		if err := a.bus.PublishOutbound(ctx, bus.OutboundMessage{
-			Channel: channelType,
-			ChatID:  acc.chatID,
+			Context: bus.NewOutboundContext(channelType, acc.chatID, ""),
 			Content: "Goodbye! Leaving the voice channel.",
 		}); err != nil {
 			logger.ErrorCF("voice-agent", "Failed to publish goodbye message", map[string]any{"error": err})
@@ -238,14 +237,16 @@ func (a *Agent) processUtterance(ctx context.Context, acc *speechAccumulator) {
 	oralPrompt := "\n\n[SYSTEM]: The user just spoke this to you over voice chat. Please reply in a highly concise, conversational, oral style suitable for text-to-speech. Do not use markdown, emojis, asterisks, or code blocks. Speak naturally."
 
 	if err := a.bus.PublishInbound(ctx, bus.InboundMessage{
-		Channel:  channelType,
-		SenderID: acc.speakerID,
-		ChatID:   acc.chatID,
-		Content:  res.Text + oralPrompt,
-		Peer:     bus.Peer{Kind: "channel", ID: acc.chatID},
-		Metadata: map[string]string{
-			"is_voice": "true",
+		Context: bus.InboundContext{
+			Channel:  channelType,
+			ChatID:   acc.chatID,
+			ChatType: "channel",
+			SenderID: acc.speakerID,
+			Raw: map[string]string{
+				"is_voice": "true",
+			},
 		},
+		Content: res.Text + oralPrompt,
 	}); err != nil {
 		logger.ErrorCF("voice-agent", "Failed to publish inbound message", map[string]any{"error": err})
 	}

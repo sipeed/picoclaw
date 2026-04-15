@@ -382,9 +382,16 @@
           "timeout": 0,
           "max_zip_size": 0,
           "max_response_size": 0
+        },
+        "github": {
+          "enabled": true,
+          "base_url": "https://github.com",
+          "auth_token": "",
+          "proxy": "http://127.0.0.1:7891"
         }
       },
       "github": {
+        "base_url": "https://github.com",
         "proxy": "http://127.0.0.1:7891",
         "token": ""
       },
@@ -465,7 +472,7 @@
   },
   "gateway": {
     "_comment": "Default log level is set to 'fatal'. Other available options are 'debug', 'info', 'warn' and 'error'.",
-    "host": "127.0.0.1",
+    "host": "localhost",
     "port": 18790,
     "hot_reload": false,
     "log_level": "fatal"

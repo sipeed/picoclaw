@@ -728,6 +728,57 @@ func (s *Store) DeleteMessagesAfterID(ctx context.Context, convID int64, afterID
 	return tx.Commit()
 }
 
+// ClearConversation removes all data for a conversation from all tables.
+// Deletes context_items, summary_messages, summary_parents (via subquery), summaries,
+// message_parts, and messages. FTS entries are handled automatically by triggers.
+// Uses a transaction for atomicity.
+func (s *Store) ClearConversation(ctx context.Context, convID int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Delete in child→parent order. FTS tables (messages_fts, summaries_fts) are
+	// kept in sync by DELETE triggers, so we just delete from the parent tables.
+
+	if _, err := tx.ExecContext(ctx,
+		"DELETE FROM context_items WHERE conversation_id = ?", convID); err != nil {
+		return fmt.Errorf("context_items: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM summary_messages WHERE summary_id IN (
+			SELECT summary_id FROM summaries WHERE conversation_id = ?
+		)`, convID); err != nil {
+		return fmt.Errorf("summary_messages: %w", err)
+	}
+	// Note: summary_parents has no convID column; delete via subquery on summaries
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM summary_parents WHERE summary_id IN (
+			SELECT summary_id FROM summaries WHERE conversation_id = ?
+		) OR parent_summary_id IN (
+			SELECT summary_id FROM summaries WHERE conversation_id = ?
+		)`, convID, convID); err != nil {
+		return fmt.Errorf("summary_parents: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		"DELETE FROM summaries WHERE conversation_id = ?", convID); err != nil {
+		return fmt.Errorf("summaries: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM message_parts WHERE message_id IN (
+			SELECT message_id FROM messages WHERE conversation_id = ?
+		)`, convID); err != nil {
+		return fmt.Errorf("message_parts: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		"DELETE FROM messages WHERE conversation_id = ?", convID); err != nil {
+		return fmt.Errorf("messages: %w", err)
+	}
+
+	return tx.Commit()
+}
+
 // AppendContextMessage appends a single message to context_items at next ordinal.
 func (s *Store) AppendContextMessage(ctx context.Context, convID int64, messageID int64) error {
 	return s.appendContextItems(ctx, convID, []ContextItem{

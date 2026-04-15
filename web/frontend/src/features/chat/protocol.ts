@@ -1,10 +1,7 @@
 import { toast } from "sonner"
 
 import { normalizeUnixTimestamp } from "@/features/chat/state"
-import {
-  type AssistantMessageKind,
-  updateChatStore,
-} from "@/store/chat"
+import { type AssistantMessageKind, updateChatStore } from "@/store/chat"
 
 export interface PicoMessage {
   type: string
