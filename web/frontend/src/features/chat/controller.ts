@@ -12,10 +12,7 @@ import {
   generateSessionId,
   readStoredSessionId,
 } from "@/features/chat/state"
-import {
-  invalidateSocket,
-  isCurrentSocket,
-} from "@/features/chat/websocket"
+import { invalidateSocket, isCurrentSocket } from "@/features/chat/websocket"
 import i18n from "@/i18n"
 import {
   type ChatAttachment,

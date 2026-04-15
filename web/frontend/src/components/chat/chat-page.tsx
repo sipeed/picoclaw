@@ -5,8 +5,8 @@ import { toast } from "sonner"
 
 import { AssistantMessage } from "@/components/chat/assistant-message"
 import {
-  type ChatInputDisabledReason,
   ChatComposer,
+  type ChatInputDisabledReason,
 } from "@/components/chat/chat-composer"
 import { ChatEmptyState } from "@/components/chat/chat-empty-state"
 import { ModelSelector } from "@/components/chat/model-selector"
