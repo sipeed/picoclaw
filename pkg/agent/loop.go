@@ -1613,6 +1613,47 @@ func (al *AgentLoop) askSideQuestion(
 		return provider.Chat(ctx, messages, nil, model, llmOpts)
 	}
 
+	turnCtx := newTurnContext(nil, nil, nil)
+	if opts != nil {
+		turnCtx = newTurnContext(opts.Dispatch.InboundContext, opts.Dispatch.RouteResult, opts.Dispatch.SessionScope)
+	}
+	llmModel := activeModel
+	if al.hooks != nil {
+		llmReq, decision := al.hooks.BeforeLLM(ctx, &LLMHookRequest{
+			Meta: EventMeta{
+				Source:      "askSideQuestion",
+				TracePath:   "turn.llm.request",
+				turnContext: cloneTurnContext(turnCtx),
+			},
+			Context:          cloneTurnContext(turnCtx),
+			Model:            llmModel,
+			Messages:         messages,
+			Tools:            nil,
+			Options:          llmOpts,
+			GracefulTerminal: false,
+		})
+		switch decision.normalizedAction() {
+		case HookActionContinue, HookActionModify:
+			if llmReq != nil {
+				llmModel = llmReq.Model
+				messages = llmReq.Messages
+				llmOpts = llmReq.Options
+			}
+		case HookActionAbortTurn:
+			reason := decision.Reason
+			if reason == "" {
+				reason = "hook requested turn abort"
+			}
+			return "", fmt.Errorf("hook aborted turn during before_llm: %s", reason)
+		case HookActionHardAbort:
+			reason := decision.Reason
+			if reason == "" {
+				reason = "hook requested turn abort"
+			}
+			return "", fmt.Errorf("hook aborted turn during before_llm: %s", reason)
+		}
+	}
+
 	if len(activeCandidates) > 1 && al.fallback != nil {
 		fbResult, err := al.fallback.Execute(
 			ctx,
@@ -1631,19 +1672,80 @@ func (al *AgentLoop) askSideQuestion(
 		if fbResult.Response == nil {
 			return "", nil
 		}
-		content := fbResult.Response.Content
-		if content == "" && fbResult.Response.ReasoningContent != "" {
-			content = fbResult.Response.ReasoningContent
+		response := fbResult.Response
+		if al.hooks != nil {
+			llmResp, decision := al.hooks.AfterLLM(ctx, &LLMHookResponse{
+				Meta: EventMeta{
+					Source:      "askSideQuestion",
+					TracePath:   "turn.llm.response",
+					turnContext: cloneTurnContext(turnCtx),
+				},
+				Context:  cloneTurnContext(turnCtx),
+				Model:    llmModel,
+				Response: response,
+			})
+			switch decision.normalizedAction() {
+			case HookActionContinue, HookActionModify:
+				if llmResp != nil && llmResp.Response != nil {
+					response = llmResp.Response
+				}
+			case HookActionAbortTurn:
+				reason := decision.Reason
+				if reason == "" {
+					reason = "hook requested turn abort"
+				}
+				return "", fmt.Errorf("hook aborted turn during after_llm: %s", reason)
+			case HookActionHardAbort:
+				reason := decision.Reason
+				if reason == "" {
+					reason = "hook requested turn abort"
+				}
+				return "", fmt.Errorf("hook aborted turn during after_llm: %s", reason)
+			}
+		}
+		content := response.Content
+		if content == "" && response.ReasoningContent != "" {
+			content = response.ReasoningContent
 		}
 		return content, nil
 	}
 
-	resp, err := callProvider(ctx, activeProvider, activeModel)
+	resp, err := callProvider(ctx, activeProvider, llmModel)
 	if err != nil {
 		return "", err
 	}
 	if resp == nil {
 		return "", nil
+	}
+	if al.hooks != nil {
+		llmResp, decision := al.hooks.AfterLLM(ctx, &LLMHookResponse{
+			Meta: EventMeta{
+				Source:      "askSideQuestion",
+				TracePath:   "turn.llm.response",
+				turnContext: cloneTurnContext(turnCtx),
+			},
+			Context:  cloneTurnContext(turnCtx),
+			Model:    llmModel,
+			Response: resp,
+		})
+		switch decision.normalizedAction() {
+		case HookActionContinue, HookActionModify:
+			if llmResp != nil && llmResp.Response != nil {
+				resp = llmResp.Response
+			}
+		case HookActionAbortTurn:
+			reason := decision.Reason
+			if reason == "" {
+				reason = "hook requested turn abort"
+			}
+			return "", fmt.Errorf("hook aborted turn during after_llm: %s", reason)
+		case HookActionHardAbort:
+			reason := decision.Reason
+			if reason == "" {
+				reason = "hook requested turn abort"
+			}
+			return "", fmt.Errorf("hook aborted turn during after_llm: %s", reason)
+		}
 	}
 	content := resp.Content
 	if content == "" && resp.ReasoningContent != "" {

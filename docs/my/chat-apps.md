@@ -71,7 +71,7 @@ Anda juga boleh mengurus skill yang dipasang terus dari Telegram:
 - `/use <skill> <message>`
 - `/use <skill>` kemudian hantar permintaan sebenar dalam mesej seterusnya
 - `/use clear`
-- `/btw <question>` untuk bertanya soalan sampingan tanpa mengubah sejarah sesi aktif
+- `/btw <question>` untuk bertanya soalan sampingan segera tanpa mengubah sejarah sesi aktif; `/btw` dikendalikan sebagai pertanyaan langsung tanpa tool dan tidak memasuki aliran pelaksanaan tool biasa
 
 **4. Pemformatan Lanjutan**
 Anda boleh menetapkan `use_markdown_v2: true` untuk mengaktifkan pilihan pemformatan yang lebih maju. Ini membolehkan bot menggunakan keseluruhan set ciri Telegram MarkdownV2, termasuk gaya bersarang, spoiler, dan blok lebar tetap tersuai.

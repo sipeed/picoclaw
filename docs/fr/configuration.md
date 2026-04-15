@@ -88,7 +88,7 @@ Une fois les compétences installées, vous pouvez aussi les inspecter et les ac
 - `/use <skill> <message>` force une compétence pour une seule requête.
 - `/use <skill>` prépare cette compétence pour votre prochain message dans la meme conversation.
 - `/use clear` annule une surcharge de compétence en attente creee via `/use <skill>`.
-- `/btw <question>` pose une question annexe sans modifier l'historique courant de la session.
+- `/btw <question>` pose une question annexe immediate sans modifier l'historique courant de la session. `/btw` est traite comme une requete directe sans outils et n'entre pas dans le flux normal d'execution des outils.
 
 Exemples :
 

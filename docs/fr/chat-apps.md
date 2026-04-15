@@ -72,7 +72,7 @@ Vous pouvez aussi gerer les competences installees directement depuis Telegram :
 - `/use <skill> <message>`
 - `/use <skill>` puis envoyer la vraie requete dans le message suivant
 - `/use clear`
-- `/btw <question>` pour poser une question annexe sans modifier l'historique actif de la session
+- `/btw <question>` pour poser une question annexe immediate sans modifier l'historique actif de la session ; `/btw` est traite comme une requete directe sans outils et n'entre pas dans le flux normal d'execution des outils
 
 </details>
 

@@ -72,7 +72,7 @@ Voce tambem pode gerenciar skills instaladas diretamente pelo Telegram:
 - `/use <skill> <message>`
 - `/use <skill>` e depois enviar a solicitacao real na proxima mensagem
 - `/use clear`
-- `/btw <question>` para fazer uma pergunta lateral sem alterar o historico ativo da sessao
+- `/btw <question>` para fazer uma pergunta lateral imediata sem alterar o historico ativo da sessao; `/btw` e tratado como uma consulta direta sem ferramentas e nao entra no fluxo normal de execucao de ferramentas
 
 </details>
 

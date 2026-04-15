@@ -101,7 +101,7 @@ export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
 - `/use <skill> <message>`：只对当前这一条请求强制使用指定技能。
 - `/use <skill>`：为同一会话中的下一条消息预先启用该技能。
 - `/use clear`：取消通过 `/use <skill>` 设置的待应用技能。
-- `/btw <question>`：发起一个旁支提问，且不改动当前会话历史。
+- `/btw <question>`：发起一个即时的旁支提问，且不改动当前会话历史。`/btw` 会按一次无工具的直接问答处理，不会进入常规的工具执行流程。
 
 示例：
 

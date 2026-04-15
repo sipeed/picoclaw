@@ -72,7 +72,7 @@ Ban cung co the quan ly skill da cai dat truc tiep tu Telegram:
 - `/use <skill> <message>`
 - `/use <skill>` roi gui yeu cau that o tin nhan tiep theo
 - `/use clear`
-- `/btw <question>` de hoi them mot cau ngoai le ma khong thay doi lich su phien dang hoat dong
+- `/btw <question>` de hoi them mot cau ngoai le ngay lap tuc ma khong thay doi lich su phien dang hoat dong; `/btw` duoc xu ly nhu mot truy van truc tiep khong dung cong cu va khong di vao luong thuc thi cong cu thong thuong
 
 </details>
 

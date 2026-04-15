@@ -89,7 +89,7 @@ Sau khi cai dat skill, ban co the xem va ep dung truc tiep tu kenh chat:
 - `/use <skill> <message>` ep dung mot skill cho duy nhat mot yeu cau.
 - `/use <skill>` dat san skill do cho tin nhan tiep theo trong cung cuoc tro chuyen.
 - `/use clear` huy skill override dang cho duoc tao boi `/use <skill>`.
-- `/btw <question>` dat cau hoi phu ma khong thay doi lich su phien hien tai.
+- `/btw <question>` dat cau hoi phu ngay lap tuc ma khong thay doi lich su phien hien tai. `/btw` duoc xu ly nhu mot truy van truc tiep khong dung cong cu va khong di vao luong thuc thi cong cu thong thuong.
 
 Vi du:
 

@@ -103,7 +103,7 @@ Once skills are installed, you can inspect and force them directly from a chat c
 - `/use <skill> <message>` forces a specific skill for a single request.
 - `/use <skill>` arms that skill for your next message in the same chat session.
 - `/use clear` cancels a pending skill override created by `/use <skill>`.
-- `/btw <question>` asks a side question without changing the current session history.
+- `/btw <question>` asks an immediate side question without changing the current session history. `/btw` is handled as a no-tool query and does not enter the normal tool-execution flow.
 
 Examples:
 

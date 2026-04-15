@@ -89,7 +89,7 @@ Depois que as skills estiverem instaladas, voce pode inspeciona-las e aplica-las
 - `/use <skill> <message>` força uma skill para uma unica requisicao.
 - `/use <skill>` prepara essa skill para a sua proxima mensagem no mesmo chat.
 - `/use clear` cancela uma substituicao pendente criada por `/use <skill>`.
-- `/btw <question>` faz uma pergunta lateral sem alterar o historico atual da sessao.
+- `/btw <question>` faz uma pergunta lateral imediata sem alterar o historico atual da sessao. `/btw` e tratado como uma consulta direta sem ferramentas e nao entra no fluxo normal de execucao de ferramentas.
 
 Exemplos:
 

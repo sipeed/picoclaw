@@ -89,7 +89,7 @@ export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
 - `/use <skill> <message>` は 1 回のリクエストだけそのスキルを強制します。
 - `/use <skill>` は同じチャット内の次のメッセージにそのスキルを予約します。
 - `/use clear` は `/use <skill>` で設定した保留中のスキル上書きを解除します。
-- `/btw <question>` は現在のセッション履歴を変更せずに横道の質問を送ります。
+- `/btw <question>` は現在のセッション履歴を変更せずに即時の横道の質問を送ります。`/btw` はツールなしの直接質問として処理され、通常のツール実行フローには入りません。
 
 例：
 

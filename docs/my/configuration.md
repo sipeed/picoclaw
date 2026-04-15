@@ -71,7 +71,7 @@ Selepas skill dipasang, anda boleh menyemak dan memaksanya terus dari saluran ch
 - `/use <skill> <message>` memaksa satu skill untuk satu permintaan sahaja.
 - `/use <skill>` menyediakan skill itu untuk mesej anda yang seterusnya dalam chat yang sama.
 - `/use clear` membatalkan skill override tertunda yang dibuat melalui `/use <skill>`.
-- `/btw <question>` bertanya soalan sampingan tanpa mengubah sejarah sesi semasa.
+- `/btw <question>` bertanya soalan sampingan segera tanpa mengubah sejarah sesi semasa. `/btw` dikendalikan sebagai pertanyaan langsung tanpa tool dan tidak memasuki aliran pelaksanaan tool biasa.
 
 Contoh:
 
