@@ -6,9 +6,10 @@ import {
 } from "@/features/chat/state"
 
 export interface ChatAttachment {
-  type: "image"
+  type: "image" | "audio" | "video" | "file"
   url: string
   filename?: string
+  contentType?: string
 }
 
 export type AssistantMessageKind = "normal" | "thought"

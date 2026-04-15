@@ -310,6 +310,7 @@ export function ChatPage() {
               {msg.role === "assistant" ? (
                 <AssistantMessage
                   content={msg.content}
+                  attachments={msg.attachments}
                   isThought={msg.kind === "thought"}
                   timestamp={msg.timestamp}
                 />

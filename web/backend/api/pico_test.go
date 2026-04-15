@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/channels/pico"
@@ -649,6 +650,54 @@ func TestHandleWebSocketProxyLoadsPidDataOnDemand(t *testing.T) {
 	}
 }
 
+func TestCreatePicoHTTPProxyInjectsGatewayAuth(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Host = "127.0.0.1"
+	cfg.Gateway.Port = 18790
+	bc := cfg.Channels["pico"]
+	bc.Enabled = true
+	decoded, err := bc.GetDecoded()
+	if err != nil {
+		t.Fatalf("GetDecoded() error = %v", err)
+	}
+	decoded.(*config.PicoSettings).SetToken("ui-token")
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	proxy := h.createPicoHTTPProxy(pico.PicoTokenPrefix + "test-token" + "ui-token")
+	var capturedPath string
+	var capturedAuth string
+	proxy.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		capturedPath = req.URL.Path
+		capturedAuth = req.Header.Get("Authorization")
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("proxied")),
+			Request:    req,
+		}, nil
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/pico/media/attachment-1", nil)
+	rec := httptest.NewRecorder()
+	proxy.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if capturedPath != "/pico/media/attachment-1" {
+		t.Fatalf("capturedPath = %q, want %q", capturedPath, "/pico/media/attachment-1")
+	}
+	expected := "Bearer " + pico.PicoTokenPrefix + "test-token" + "ui-token"
+	if capturedAuth != expected {
+		t.Fatalf("Authorization = %q, want %q", capturedAuth, expected)
+	}
+}
+
 func TestHandleWebSocketProxyRejectsStalePidDataAfterProcessExit(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("HOME", tmpDir)
@@ -725,4 +774,10 @@ func mustGatewayTestPort(t *testing.T, rawURL string) int {
 	}
 
 	return port
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
 }

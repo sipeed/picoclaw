@@ -15,6 +15,12 @@ export interface SessionDetail {
     role: "user" | "assistant"
     content: string
     media?: string[]
+    attachments?: {
+      type?: "image" | "audio" | "video" | "file"
+      url: string
+      filename?: string
+      content_type?: string
+    }[]
   }[]
   summary: string
   created: string

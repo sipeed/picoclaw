@@ -1443,6 +1443,24 @@ func inferMediaType(filename, contentType string) string {
 	return "file"
 }
 
+func buildProviderAttachments(store media.MediaStore, refs []string) []providers.Attachment {
+	if store == nil || len(refs) == 0 {
+		return nil
+	}
+
+	attachments := make([]providers.Attachment, 0, len(refs))
+	for _, ref := range refs {
+		attachment := providers.Attachment{Ref: ref}
+		if _, meta, err := store.ResolveWithMeta(ref); err == nil {
+			attachment.Filename = meta.Filename
+			attachment.ContentType = meta.ContentType
+			attachment.Type = inferMediaType(meta.Filename, meta.ContentType)
+		}
+		attachments = append(attachments, attachment)
+	}
+	return attachments
+}
+
 // RecordLastChannel records the last active channel for this workspace.
 // This uses the atomic state save mechanism to prevent data loss on crash.
 func (al *AgentLoop) RecordLastChannel(channel string) error {
@@ -2676,6 +2694,7 @@ turnLoop:
 			})
 
 		allResponsesHandled := len(normalizedToolCalls) > 0
+		handledAttachments := make([]providers.Attachment, 0)
 		assistantMsg := providers.Message{
 			Role:             "assistant",
 			Content:          response.Content,
@@ -2831,6 +2850,8 @@ turnLoop:
 									// Same as normal tool execution: notify LLM about delivery failure
 									hookResult.IsError = true
 									hookResult.ForLLM = fmt.Sprintf("failed to deliver attachment: %v", err)
+								} else {
+									handledAttachments = append(handledAttachments, buildProviderAttachments(al.mediaStore, hookResult.Media)...)
 								}
 							} else if al.bus != nil {
 								al.bus.PublishOutboundMedia(ctx, outboundMedia)
@@ -3207,6 +3228,8 @@ turnLoop:
 								"error":    err.Error(),
 							})
 						toolResult = tools.ErrorResult(fmt.Sprintf("failed to deliver attachment: %v", err)).WithError(err)
+					} else {
+						handledAttachments = append(handledAttachments, buildProviderAttachments(al.mediaStore, toolResult.Media)...)
 					}
 				} else if al.bus != nil {
 					al.bus.PublishOutboundMedia(ctx, outboundMedia)
@@ -3365,12 +3388,13 @@ turnLoop:
 			}
 
 			summaryMsg := providers.Message{
-				Role:    "assistant",
-				Content: handledToolResponseSummary,
+				Role:        "assistant",
+				Content:     handledToolResponseSummary,
+				Attachments: append([]providers.Attachment(nil), handledAttachments...),
 			}
 
 			if !ts.opts.NoHistory {
-				ts.agent.Sessions.AddMessage(ts.sessionKey, summaryMsg.Role, summaryMsg.Content)
+				ts.agent.Sessions.AddFullMessage(ts.sessionKey, summaryMsg)
 				ts.recordPersistedMessage(summaryMsg)
 				ts.ingestMessage(turnCtx, al, summaryMsg)
 				if err := ts.agent.Sessions.Save(ts.sessionKey); err != nil {

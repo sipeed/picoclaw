@@ -62,10 +62,19 @@ type ContentBlock struct {
 	CacheControl *CacheControl `json:"cache_control,omitempty"`
 }
 
+type Attachment struct {
+	Type        string `json:"type,omitempty"`
+	Ref         string `json:"ref,omitempty"`
+	URL         string `json:"url,omitempty"`
+	Filename    string `json:"filename,omitempty"`
+	ContentType string `json:"content_type,omitempty"`
+}
+
 type Message struct {
 	Role             string         `json:"role"`
 	Content          string         `json:"content"`
 	Media            []string       `json:"media,omitempty"`
+	Attachments      []Attachment   `json:"attachments,omitempty"`
 	ReasoningContent string         `json:"reasoning_content,omitempty"`
 	SystemParts      []ContentBlock `json:"system_parts,omitempty"` // structured system blocks for cache-aware adapters
 	ToolCalls        []ToolCall     `json:"tool_calls,omitempty"`

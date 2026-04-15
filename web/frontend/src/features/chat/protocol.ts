@@ -1,7 +1,11 @@
 import { toast } from "sonner"
 
 import { normalizeUnixTimestamp } from "@/features/chat/state"
-import { type AssistantMessageKind, updateChatStore } from "@/store/chat"
+import {
+  type AssistantMessageKind,
+  type ChatAttachment,
+  updateChatStore,
+} from "@/store/chat"
 
 export interface PicoMessage {
   type: string
@@ -21,6 +25,50 @@ function hasAssistantKindPayload(payload: Record<string, unknown>): boolean {
   return typeof payload.thought === "boolean"
 }
 
+function parseAttachments(payload: Record<string, unknown>): ChatAttachment[] | undefined {
+  const raw = payload.attachments
+  if (!Array.isArray(raw)) {
+    return undefined
+  }
+
+  const attachments: ChatAttachment[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== "object") {
+      continue
+    }
+
+    const attachment = item as Record<string, unknown>
+    const url = typeof attachment.url === "string" ? attachment.url : ""
+    if (!url) {
+      continue
+    }
+
+    const type =
+      attachment.type === "audio" ||
+      attachment.type === "video" ||
+      attachment.type === "file" ||
+      attachment.type === "image"
+        ? attachment.type
+        : "file"
+
+    const filename =
+      typeof attachment.filename === "string" ? attachment.filename : undefined
+    const contentType =
+      typeof attachment.content_type === "string"
+        ? attachment.content_type
+        : undefined
+
+    attachments.push({
+      type,
+      url,
+      ...(filename ? { filename } : {}),
+      ...(contentType ? { contentType } : {}),
+    })
+  }
+
+  return attachments.length > 0 ? attachments : undefined
+}
+
 export function handlePicoMessage(
   message: PicoMessage,
   expectedSessionId: string,
@@ -32,10 +80,12 @@ export function handlePicoMessage(
   const payload = message.payload || {}
 
   switch (message.type) {
-    case "message.create": {
+    case "message.create":
+    case "media.create": {
       const content = (payload.content as string) || ""
       const messageId = (payload.message_id as string) || `pico-${Date.now()}`
       const kind = parseAssistantMessageKind(payload)
+      const attachments = parseAttachments(payload)
       const timestamp =
         message.timestamp !== undefined &&
         Number.isFinite(Number(message.timestamp))
@@ -50,6 +100,7 @@ export function handlePicoMessage(
             role: "assistant",
             content,
             kind,
+            attachments,
             timestamp,
           },
         ],
@@ -63,6 +114,7 @@ export function handlePicoMessage(
       const messageId = payload.message_id as string
       const hasKind = hasAssistantKindPayload(payload)
       const kind = parseAssistantMessageKind(payload)
+      const attachments = parseAttachments(payload)
       if (!messageId) {
         break
       }
@@ -74,6 +126,7 @@ export function handlePicoMessage(
                 ...msg,
                 content,
                 ...(hasKind ? { kind } : {}),
+                ...(attachments ? { attachments } : {}),
               }
             : msg,
         ),

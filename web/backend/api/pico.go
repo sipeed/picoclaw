@@ -24,6 +24,8 @@ func (h *Handler) registerPicoRoutes(mux *http.ServeMux) {
 	// This allows the frontend to connect via the same port as the web UI,
 	// avoiding the need to expose extra ports for WebSocket communication.
 	mux.HandleFunc("GET /pico/ws", h.handleWebSocketProxy())
+	mux.HandleFunc("GET /pico/media/{id}", h.handlePicoMediaProxy())
+	mux.HandleFunc("HEAD /pico/media/{id}", h.handlePicoMediaProxy())
 }
 
 // createWsProxy creates a reverse proxy to the current gateway WebSocket endpoint.
@@ -52,41 +54,58 @@ func (h *Handler) createWsProxy(origProtocol string, token string) *httputil.Rev
 	return wsProxy
 }
 
+func (h *Handler) createPicoHTTPProxy(token string) *httputil.ReverseProxy {
+	return &httputil.ReverseProxy{
+		Rewrite: func(r *httputil.ProxyRequest) {
+			target := h.gatewayProxyURL()
+			r.SetURL(target)
+			r.Out.Header.Set("Authorization", "Bearer "+token)
+		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			logger.Errorf("Failed to proxy Pico HTTP request: %v", err)
+			http.Error(w, "Gateway unavailable: "+err.Error(), http.StatusBadGateway)
+		},
+	}
+}
+
+func (h *Handler) gatewayAvailableForProxy() bool {
+	gateway.mu.Lock()
+	ensurePicoTokenCachedLocked(h.configPath)
+	cachedPID := gateway.pidData
+	trackedCmd := gateway.cmd
+	gateway.mu.Unlock()
+
+	if pidData := h.sanitizeGatewayPidData(ppid.ReadPidFileWithCheck(globalConfigDir()), nil); pidData != nil {
+		gateway.mu.Lock()
+		gateway.pidData = pidData
+		setGatewayRuntimeStatusLocked("running")
+		gateway.mu.Unlock()
+		return true
+	}
+
+	if cachedPID == nil {
+		return false
+	}
+
+	if isCmdProcessAliveLocked(trackedCmd) {
+		return true
+	}
+
+	gateway.mu.Lock()
+	if gateway.cmd == trackedCmd {
+		gateway.pidData = nil
+		setGatewayRuntimeStatusLocked("stopped")
+	}
+	available := gateway.pidData != nil
+	gateway.mu.Unlock()
+	return available
+}
+
 // handleWebSocketProxy wraps a reverse proxy to handle WebSocket connections.
 // It validates the client token before forwarding; rejects immediately on failure.
 func (h *Handler) handleWebSocketProxy() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		gateway.mu.Lock()
-		ensurePicoTokenCachedLocked(h.configPath)
-		cachedPID := gateway.pidData
-		trackedCmd := gateway.cmd
-		gateway.mu.Unlock()
-
-		gatewayAvailable := false
-		// Prefer fresh PID file data when available.
-		if pidData := h.sanitizeGatewayPidData(ppid.ReadPidFileWithCheck(globalConfigDir()), nil); pidData != nil {
-			gateway.mu.Lock()
-			gateway.pidData = pidData
-			setGatewayRuntimeStatusLocked("running")
-			gatewayAvailable = true
-			gateway.mu.Unlock()
-		} else if cachedPID != nil {
-			// No PID file now: keep availability only while tracked process is
-			// still alive (covers short PID-file races at startup/restart).
-			if isCmdProcessAliveLocked(trackedCmd) {
-				gatewayAvailable = true
-			} else {
-				gateway.mu.Lock()
-				if gateway.cmd == trackedCmd {
-					gateway.pidData = nil
-					setGatewayRuntimeStatusLocked("stopped")
-				}
-				gatewayAvailable = gateway.pidData != nil
-				gateway.mu.Unlock()
-			}
-		}
-
-		if !gatewayAvailable {
+		if !h.gatewayAvailableForProxy() {
 			logger.Warnf("Gateway not available for WebSocket proxy")
 			http.Error(w, "Gateway not available", http.StatusServiceUnavailable)
 			return
@@ -103,6 +122,29 @@ func (h *Handler) handleWebSocketProxy() http.HandlerFunc {
 
 		logger.Warnf("Invalid Pico token: %v", prot)
 		http.Error(w, "Invalid Pico token", http.StatusForbidden)
+	}
+}
+
+func (h *Handler) handlePicoMediaProxy() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !h.gatewayAvailableForProxy() {
+			logger.Warnf("Gateway not available for Pico media proxy")
+			http.Error(w, "Gateway not available", http.StatusServiceUnavailable)
+			return
+		}
+
+		gateway.mu.Lock()
+		uiToken := gateway.picoToken
+		gateway.mu.Unlock()
+
+		token := picoComposedToken(tokenPrefix + uiToken)
+		if token == "" {
+			logger.Warnf("Missing Pico token for media proxy")
+			http.Error(w, "Invalid Pico token", http.StatusForbidden)
+			return
+		}
+
+		h.createPicoHTTPProxy(token).ServeHTTP(w, r)
 	}
 }
 

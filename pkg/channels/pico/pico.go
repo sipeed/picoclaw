@@ -5,7 +5,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"mime"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -251,6 +255,10 @@ func (c *PicoChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/ws", "/ws/":
 		c.handleWebSocket(w, r)
 	default:
+		if strings.HasPrefix(path, "/media/") {
+			c.handleMediaDownload(w, r)
+			return
+		}
 		http.NotFound(w, r)
 	}
 }
@@ -313,6 +321,195 @@ func (c *PicoChannel) SendPlaceholder(ctx context.Context, chatID string) (strin
 	}
 
 	return msgID, nil
+}
+
+// SendMedia implements channels.MediaSender for the Pico web UI.
+// Media is delivered as a normal assistant message carrying structured
+// attachments plus an authenticated same-origin download URL.
+func (c *PicoChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
+	if !c.IsRunning() {
+		return nil, channels.ErrNotRunning
+	}
+
+	store := c.GetMediaStore()
+	if store == nil {
+		return nil, fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
+	}
+
+	attachments := make([]map[string]any, 0, len(msg.Parts))
+	caption := ""
+
+	for _, part := range msg.Parts {
+		localPath, meta, err := store.ResolveWithMeta(part.Ref)
+		if err != nil {
+			logger.ErrorCF("pico", "Failed to resolve media ref", map[string]any{
+				"ref":   part.Ref,
+				"error": err.Error(),
+			})
+			continue
+		}
+
+		filename := strings.TrimSpace(part.Filename)
+		if filename == "" {
+			filename = strings.TrimSpace(meta.Filename)
+		}
+		if filename == "" {
+			filename = filepath.Base(localPath)
+		}
+
+		contentType := strings.TrimSpace(part.ContentType)
+		if contentType == "" {
+			contentType = strings.TrimSpace(meta.ContentType)
+		}
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+
+		attachmentType := strings.TrimSpace(part.Type)
+		if attachmentType == "" {
+			attachmentType = picoInferAttachmentType(filename, contentType)
+		}
+
+		attachmentURL, err := picoDownloadURLForRef(part.Ref)
+		if err != nil {
+			logger.ErrorCF("pico", "Failed to build media download URL", map[string]any{
+				"ref":   part.Ref,
+				"error": err.Error(),
+			})
+			continue
+		}
+
+		attachments = append(attachments, map[string]any{
+			"type":         attachmentType,
+			"url":          attachmentURL,
+			"filename":     filename,
+			"content_type": contentType,
+		})
+
+		if caption == "" && strings.TrimSpace(part.Caption) != "" {
+			caption = strings.TrimSpace(part.Caption)
+		}
+	}
+
+	if len(attachments) == 0 {
+		return nil, fmt.Errorf("no deliverable media parts: %w", channels.ErrSendFailed)
+	}
+
+	msgID := uuid.New().String()
+	outMsg := newMessage(TypeMessageCreate, map[string]any{
+		PayloadKeyContent: caption,
+		"attachments":     attachments,
+		"message_id":      msgID,
+	})
+
+	if err := c.broadcastToSession(msg.ChatID, outMsg); err != nil {
+		return nil, err
+	}
+
+	return []string{msgID}, nil
+}
+
+func picoDownloadURLForRef(ref string) (string, error) {
+	refID, err := picoMediaRefID(ref)
+	if err != nil {
+		return "", err
+	}
+	return "/pico/media/" + url.PathEscape(refID), nil
+}
+
+func picoMediaRefID(ref string) (string, error) {
+	refID := strings.TrimSpace(strings.TrimPrefix(ref, "media://"))
+	if refID == "" || strings.Contains(refID, "/") {
+		return "", fmt.Errorf("invalid media ref %q", ref)
+	}
+	return refID, nil
+}
+
+func picoInferAttachmentType(filename, contentType string) string {
+	contentType = strings.ToLower(strings.TrimSpace(contentType))
+	filename = strings.ToLower(strings.TrimSpace(filename))
+
+	switch {
+	case strings.HasPrefix(contentType, "image/"):
+		return "image"
+	case strings.HasPrefix(contentType, "audio/"):
+		return "audio"
+	case strings.HasPrefix(contentType, "video/"):
+		return "video"
+	}
+
+	switch ext := filepath.Ext(filename); ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg":
+		return "image"
+	case ".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma", ".opus":
+		return "audio"
+	case ".mp4", ".avi", ".mov", ".webm", ".mkv":
+		return "video"
+	default:
+		return "file"
+	}
+}
+
+func (c *PicoChannel) handleMediaDownload(w http.ResponseWriter, r *http.Request) {
+	if !c.IsRunning() {
+		http.Error(w, "channel not running", http.StatusServiceUnavailable)
+		return
+	}
+	if !c.authenticate(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	refID := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(r.URL.Path, "/pico/media/"), "/"))
+	if refID == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	store := c.GetMediaStore()
+	if store == nil {
+		http.Error(w, "media store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	localPath, meta, err := store.ResolveWithMeta("media://" + refID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	file, err := os.Open(localPath)
+	if err != nil {
+		http.Error(w, "failed to open media", http.StatusInternalServerError)
+		return
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		http.Error(w, "failed to stat media", http.StatusInternalServerError)
+		return
+	}
+
+	filename := strings.TrimSpace(meta.Filename)
+	if filename == "" {
+		filename = filepath.Base(localPath)
+	}
+	contentType := strings.TrimSpace(meta.ContentType)
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	dispositionType := "attachment"
+	if picoInferAttachmentType(filename, contentType) == "image" {
+		dispositionType = "inline"
+	}
+
+	if cd := mime.FormatMediaType(dispositionType, map[string]string{"filename": filename}); cd != "" {
+		w.Header().Set("Content-Disposition", cd)
+	}
+	w.Header().Set("Content-Type", contentType)
+	http.ServeContent(w, r, filename, info.ModTime(), file)
 }
 
 // broadcastToSession sends a message to all connections with a matching session.
