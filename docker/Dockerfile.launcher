@@ -1,0 +1,28 @@
+FROM golang:1.25-alpine AS builder
+
+RUN apk add --no-cache git make nodejs npm && npm i -g pnpm
+
+WORKDIR /src
+
+# Cache Go modules first
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy full source tree for web/frontend build embedding
+COPY . .
+
+ARG GO_BUILD_TAGS=goolm,stdjson,bedrock
+
+# Build both launcher and core binary. Launcher needs frontend assets embedded.
+RUN make build GO_BUILD_TAGS=${GO_BUILD_TAGS} && \
+    make build-launcher GO_BUILD_TAGS=${GO_BUILD_TAGS}
+
+FROM alpine:3.23
+
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
+COPY --from=builder /src/build/picoclaw-launcher /usr/local/bin/picoclaw-launcher
+
+ENTRYPOINT ["picoclaw-launcher"]
+CMD ["-console", "-public", "-no-browser"]

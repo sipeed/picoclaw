@@ -1,0 +1,746 @@
+{
+  "info": {
+    "_postman_id": "picoclaw-api-v1",
+    "name": "PicoClaw API",
+    "description": "PicoClaw launcher backend ({{base_url}}) and gateway health server ({{health_url}}) API.\n\nSet `bearer_token` to your dashboard token or leave blank and use the cookie from POST /auth/login.\n\nPublic endpoints (Auth folder) use No Auth override.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{bearer_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    { "key": "base_url",       "value": "http://localhost:18800", "type": "string" },
+    { "key": "health_url",     "value": "http://localhost:18790", "type": "string" },
+    { "key": "bearer_token",   "value": "",                       "type": "string" },
+    { "key": "session_id",     "value": "",                       "type": "string" },
+    { "key": "model_index",    "value": "0",                      "type": "string" },
+    { "key": "skill_name",     "value": "",                       "type": "string" },
+    { "key": "oauth_flow_id",  "value": "",                       "type": "string" },
+    { "key": "weixin_flow_id", "value": "",                       "type": "string" },
+    { "key": "wecom_flow_id",  "value": "",                       "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Dashboard authentication. All endpoints in this folder are public (no auth required).",
+      "auth": { "type": "noauth" },
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"your-password-here\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Validates password and sets picoclaw_launcher_auth session cookie (7-day HttpOnly). Rate-limited per IP."
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/auth/logout",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Clears the session cookie."
+          }
+        },
+        {
+          "name": "Auth Status",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/auth/status",
+            "description": "Returns {authenticated, initialized}. Use to check if a password has been set."
+          }
+        },
+        {
+          "name": "Setup Password",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/auth/setup",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"mynewpassword1\",\n  \"confirm\": \"mynewpassword1\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Set or change the dashboard password. Open when uninitialized; requires session cookie when password already exists. Min 8 chars."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Config",
+      "item": [
+        {
+          "name": "Get Config",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/config",
+            "description": "Returns the full gateway config.Config object."
+          }
+        },
+        {
+          "name": "Replace Config",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/api/config",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"gateway\": {\n    \"log_level\": \"info\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Replaces the full config. Security fields (tokens) preserved when omitted."
+          }
+        },
+        {
+          "name": "Patch Config",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/api/config",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"gateway\": {\n    \"log_level\": \"debug\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "JSON Merge Patch (RFC 7396) — only present fields are updated."
+          }
+        },
+        {
+          "name": "Test Command Patterns",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/config/test-command-patterns",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"allow_patterns\": [\"^ls\", \"^cat \"],\n  \"deny_patterns\": [\"^rm \", \"^sudo \"],\n  \"command\": \"ls -la /tmp\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Tests a command against allow/deny regex patterns. Returns {allowed, blocked, matched_whitelist, matched_blacklist}."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Gateway",
+      "item": [
+        {
+          "name": "Gateway Status",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/gateway/status",
+            "description": "Returns gateway_status, pid, config_default_model, gateway_start_allowed, gateway_restart_required."
+          }
+        },
+        {
+          "name": "Gateway Logs",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/gateway/logs?log_offset=0&log_run_id=-1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "gateway", "logs"],
+              "query": [
+                { "key": "log_offset", "value": "0" },
+                { "key": "log_run_id", "value": "-1" }
+              ]
+            },
+            "description": "Incremental log polling. Send log_offset and log_run_id from previous response to get only new lines."
+          }
+        },
+        {
+          "name": "Clear Logs",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/gateway/logs/clear",
+            "description": "Clears in-memory log buffer."
+          }
+        },
+        {
+          "name": "Start Gateway",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/gateway/start",
+            "description": "Starts the gateway subprocess. Returns 400 precondition_failed if no default model is configured."
+          }
+        },
+        {
+          "name": "Stop Gateway",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/gateway/stop",
+            "description": "Stops the gateway gracefully (SIGTERM). Returns {status: not_running} if already stopped."
+          }
+        },
+        {
+          "name": "Restart Gateway",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/gateway/restart",
+            "description": "Stops then restarts the gateway. Returns 400 if preconditions are not met."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pico Channel",
+      "item": [
+        {
+          "name": "Get Pico Token",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/pico/token",
+            "description": "Returns {token, ws_url, enabled}. Use token to authenticate the WebSocket at /pico/ws."
+          }
+        },
+        {
+          "name": "Regenerate Pico Token",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/pico/token",
+            "description": "Generates a new random 32-char hex token."
+          }
+        },
+        {
+          "name": "Pico Setup",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/pico/setup",
+            "description": "Auto-enables the Pico channel and generates a token if not set. Seeds allowed origins from request Origin header."
+          }
+        },
+        {
+          "name": "WebSocket Proxy (WS only)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/pico/ws",
+            "header": [
+              { "key": "Sec-Websocket-Protocol", "value": "token.{{pico_token}}", "description": "Replace {{pico_token}} with value from GET /api/pico/token" }
+            ],
+            "description": "Upgrades to WebSocket. Auth via Sec-Websocket-Protocol: token.<pico-token>. Use a WebSocket client — this is not a regular HTTP request."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sessions",
+      "item": [
+        {
+          "name": "List Sessions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/sessions?offset=0&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sessions"],
+              "query": [
+                { "key": "offset", "value": "0" },
+                { "key": "limit",  "value": "20" }
+              ]
+            },
+            "description": "Paginated list sorted by updated descending."
+          }
+        },
+        {
+          "name": "Get Session",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/sessions/{{session_id}}",
+            "description": "Full message history for a session. Set session_id variable first."
+          }
+        },
+        {
+          "name": "Delete Session",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/sessions/{{session_id}}",
+            "description": "Deletes session files. Returns 204 on success."
+          }
+        }
+      ]
+    },
+    {
+      "name": "OAuth",
+      "item": [
+        {
+          "name": "List Providers",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/oauth/providers",
+            "description": "Returns provider list with credential status for openai, anthropic, google-antigravity."
+          }
+        },
+        {
+          "name": "Login (Token)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/oauth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"anthropic\",\n  \"method\": \"token\",\n  \"token\": \"sk-ant-...\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Saves an API token directly. Works for all three providers."
+          }
+        },
+        {
+          "name": "Login (Device Code)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/oauth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"openai\",\n  \"method\": \"device_code\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Starts device code flow (OpenAI only). Returns user_code, verify_url, flow_id. Poll /api/oauth/flows/{id}/poll."
+          }
+        },
+        {
+          "name": "Login (Browser)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/oauth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"openai\",\n  \"method\": \"browser\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Starts browser OAuth flow. Returns auth_url to redirect user to."
+          }
+        },
+        {
+          "name": "Get OAuth Flow",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/oauth/flows/{{oauth_flow_id}}",
+            "description": "Get current status of a flow. Set oauth_flow_id variable from login response."
+          }
+        },
+        {
+          "name": "Poll OAuth Flow",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/oauth/flows/{{oauth_flow_id}}/poll",
+            "description": "Poll a device_code flow once. Call at the interval from the login response until status is success or error."
+          }
+        },
+        {
+          "name": "OAuth Logout",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/oauth/logout",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"openai\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Deletes stored credentials for a provider."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Models",
+      "item": [
+        {
+          "name": "List Models",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/models",
+            "description": "Returns all model configs. API keys are masked."
+          }
+        },
+        {
+          "name": "Add Model",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/models",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model_name\": \"gpt-4o\",\n  \"model\": \"openai/gpt-4o\",\n  \"api_key\": \"sk-proj-...\",\n  \"enabled\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Appends a new model to model_list. Returns {status, index}."
+          }
+        },
+        {
+          "name": "Set Default Model",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/models/default",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model_name\": \"gpt-4o\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Sets the default model. Must exist in model_list and not be a virtual model."
+          }
+        },
+        {
+          "name": "Update Model",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/api/models/{{model_index}}",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model_name\": \"gpt-4o\",\n  \"model\": \"openai/gpt-4o\",\n  \"enabled\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Replaces model at model_index. Omit api_key to keep existing. Send {} for extra_body/custom_headers to clear them."
+          }
+        },
+        {
+          "name": "Delete Model",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/models/{{model_index}}",
+            "description": "Removes model at model_index. If it was the default model, the default is cleared."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Channels",
+      "item": [
+        {
+          "name": "Channel Catalog",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/channels/catalog",
+            "description": "Lists all supported channel names and their config keys."
+          }
+        },
+        {
+          "name": "Get Channel Config (Telegram)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/channels/telegram/config",
+            "description": "Returns channel config with secrets stripped. configured_secrets lists which secret fields have a value."
+          }
+        },
+        {
+          "name": "Get Channel Config (Discord)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/channels/discord/config"
+          }
+        },
+        {
+          "name": "Get Channel Config (Slack)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/channels/slack/config"
+          }
+        },
+        {
+          "name": "Get Channel Config (Pico)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/channels/pico/config"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Skills",
+      "item": [
+        {
+          "name": "List Skills",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/skills",
+            "description": "Lists all installed skills (builtin, global, workspace)."
+          }
+        },
+        {
+          "name": "Search Skills",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/skills/search?q=code+review&limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["api", "skills", "search"],
+              "query": [
+                { "key": "q",      "value": "code review" },
+                { "key": "limit",  "value": "20" },
+                { "key": "offset", "value": "0" }
+              ]
+            },
+            "description": "Searches registries. Requires tools.skills and tools.find_skills enabled."
+          }
+        },
+        {
+          "name": "Get Skill",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/skills/{{skill_name}}",
+            "description": "Returns skill metadata and full content. Set skill_name variable."
+          }
+        },
+        {
+          "name": "Install Skill",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/skills/install",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"code-review\",\n  \"registry\": \"clawhub\",\n  \"force\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Downloads and installs from registry. Returns 409 if already installed (use force: true to overwrite)."
+          }
+        },
+        {
+          "name": "Import Skill",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/skills/import",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "/path/to/skill.md",
+                  "description": "A .md skill file or .zip archive containing SKILL.md. Max 1 MB."
+                }
+              ]
+            },
+            "description": "Imports a skill from an uploaded file."
+          }
+        },
+        {
+          "name": "Delete Skill",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/skills/{{skill_name}}",
+            "description": "Deletes a workspace skill. Returns 400 for builtin/global skills."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tools",
+      "item": [
+        {
+          "name": "List Tools",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/tools",
+            "description": "Lists all tools with name, category, status (enabled/disabled/blocked), and reason_code."
+          }
+        },
+        {
+          "name": "Enable Tool",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/api/tools/web_search/state",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Replace web_search in the URL with any tool name from GET /api/tools."
+          }
+        },
+        {
+          "name": "Disable Tool",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/api/tools/web_search/state",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Get Version",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/system/version",
+            "description": "Returns {version, git_commit, build_time, go_version}."
+          }
+        },
+        {
+          "name": "Get Autostart",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/system/autostart",
+            "description": "Returns {enabled, supported, platform, message}."
+          }
+        },
+        {
+          "name": "Set Autostart",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/api/system/autostart",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Supported on macOS, Linux, Windows. Returns 400 on unsupported platforms."
+          }
+        },
+        {
+          "name": "Get Launcher Config",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/system/launcher-config",
+            "description": "Returns {port, public, allowed_cidrs, launcher_token}."
+          }
+        },
+        {
+          "name": "Update Launcher Config",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/api/system/launcher-config",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"port\": 18800,\n  \"public\": false,\n  \"allowed_cidrs\": [],\n  \"launcher_token\": \"\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Changes take effect on next launcher restart."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Update",
+      "item": [
+        {
+          "name": "Self-Update",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/update",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"binary\": \"picoclaw-launcher\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Downloads and applies a self-update. Restart required after."
+          }
+        }
+      ]
+    },
+    {
+      "name": "WeChat (Weixin)",
+      "item": [
+        {
+          "name": "Start WeChat Flow",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/weixin/flows",
+            "description": "Starts a WeChat QR login flow. Returns {flow_id, status: wait, qr_data_uri}. Display the QR code image for the user to scan. TTL: 5 minutes."
+          }
+        },
+        {
+          "name": "Poll WeChat Flow",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/weixin/flows/{{weixin_flow_id}}",
+            "description": "Poll every 2-3 seconds. Status: wait → scaned → confirmed | expired | error. On confirmed, credentials are saved."
+          }
+        }
+      ]
+    },
+    {
+      "name": "WeCom",
+      "item": [
+        {
+          "name": "Start WeCom Flow",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/wecom/flows",
+            "description": "Starts a WeCom QR login flow. Returns {flow_id, status: wait, qr_data_uri}. TTL: 5 minutes."
+          }
+        },
+        {
+          "name": "Poll WeCom Flow",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/wecom/flows/{{wecom_flow_id}}",
+            "description": "Poll every 2-3 seconds. On confirmed, WeCom bot credentials saved and gateway restarted."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Gateway Health",
+      "description": "Endpoints served on port 18790 (backend-only mode). No auth required for /health and /ready.",
+      "auth": { "type": "noauth" },
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "url": "{{health_url}}/health",
+            "description": "Liveness probe. Returns {status: ok, uptime, pid}. Always 200 when server is running."
+          }
+        },
+        {
+          "name": "Ready",
+          "request": {
+            "method": "GET",
+            "url": "{{health_url}}/ready",
+            "description": "Readiness probe. Returns 200 when ready, 503 when not ready or checks failing."
+          }
+        },
+        {
+          "name": "Reload",
+          "request": {
+            "method": "POST",
+            "url": "{{health_url}}/reload",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{bearer_token}}",
+                "description": "Required only if the gateway was started with an auth token. Remove header if no token configured."
+              }
+            ],
+            "description": "Triggers a config reload on the gateway process."
+          }
+        }
+      ]
+    }
+  ]
+}

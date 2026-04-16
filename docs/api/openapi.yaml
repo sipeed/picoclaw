@@ -1,0 +1,2124 @@
+openapi: "3.0.3"
+info:
+  title: PicoClaw API
+  version: "1.0.0"
+  description: |
+    HTTP API for the PicoClaw launcher backend (port 18800) and gateway health server (port 18790).
+
+    ## Authentication
+
+    All `/api/*` routes require authentication except the public auth endpoints listed below.
+    Two credential types are accepted interchangeably:
+
+    - **Session cookie**: `picoclaw_launcher_auth=<value>` — set by `POST /api/auth/login`, valid for 7 days
+    - **Bearer token**: `Authorization: Bearer <dashboard-token>` — plaintext dashboard token from
+      `PICOCLAW_LAUNCHER_TOKEN` env var or launcher config
+
+    ### Public endpoints (no auth required)
+    - `POST /api/auth/login`
+    - `POST /api/auth/logout`
+    - `GET /api/auth/status`
+    - `POST /api/auth/setup` (open when no password set; requires session when password already exists)
+
+    ### WebSocket proxy (`GET /pico/ws`)
+    Authenticates via the `Sec-Websocket-Protocol` header rather than a session cookie or
+    bearer token. Set the header to `token.<pico-token>` during the WebSocket upgrade handshake.
+    The token is obtained from `GET /api/pico/token`.
+
+servers:
+  - url: http://localhost:18800
+    description: Launcher backend — web console and management API
+  - url: http://localhost:18790
+    description: Gateway health server — used in backend-only (picoclaw-gateway) mode
+
+security:
+  - cookieAuth: []
+  - bearerAuth: []
+
+tags:
+  - name: auth
+    description: Dashboard authentication and session management
+  - name: config
+    description: Gateway configuration CRUD
+  - name: gateway
+    description: Gateway process lifecycle (start/stop/restart/logs)
+  - name: pico
+    description: Pico channel (WebSocket chat proxy) management
+  - name: sessions
+    description: Chat session history
+  - name: oauth
+    description: OAuth and credential management for AI providers
+  - name: models
+    description: Model list management
+  - name: channels
+    description: Channel catalog and per-channel config
+  - name: skills
+    description: Skills install, search, and management
+  - name: tools
+    description: Tool enable/disable
+  - name: system
+    description: Version info, autostart, and launcher service settings
+  - name: update
+    description: Self-update
+  - name: weixin
+    description: WeChat QR login flow
+  - name: wecom
+    description: WeCom QR login flow
+  - name: gateway-health
+    description: Gateway health and readiness endpoints (port 18790)
+
+paths:
+
+  # ── AUTH ─────────────────────────────────────────────────────────────────
+
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: Log in to the dashboard
+      description: |
+        Validates the password and sets a `picoclaw_launcher_auth` session cookie (7-day HttpOnly).
+        Rate-limited per client IP — returns 429 after too many failed attempts.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  example: mysecretpassword
+      responses:
+        "200":
+          description: Login successful; sets picoclaw_launcher_auth session cookie
+          headers:
+            Set-Cookie:
+              description: "picoclaw_launcher_auth=<value>; HttpOnly; SameSite=Lax; Max-Age=604800"
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOK"
+        "400":
+          description: Invalid JSON body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Wrong password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many login attempts from this IP
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      summary: Log out; clears the session cookie
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Empty JSON object required
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOK"
+        "400":
+          description: Invalid JSON body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: Content-Type must be application/json
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/auth/status:
+    get:
+      tags: [auth]
+      summary: Check authentication and initialization state
+      security: []
+      responses:
+        "200":
+          description: Auth status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated:
+                    type: boolean
+                    description: Whether the current request carries a valid session
+                  initialized:
+                    type: boolean
+                    description: Whether a password has been set (false means setup is required)
+        "503":
+          description: Password store unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/auth/setup:
+    post:
+      tags: [auth]
+      summary: Set or change the dashboard password
+      description: |
+        When no password is set yet, this endpoint is open (no session required).
+        When a password already exists, a valid session cookie is required.
+        Minimum password length: 8 characters.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password, confirm]
+              properties:
+                password:
+                  type: string
+                  minLength: 8
+                  example: mynewpassword1
+                confirm:
+                  type: string
+                  example: mynewpassword1
+      responses:
+        "200":
+          description: Password set successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOK"
+        "400":
+          description: "Validation error: passwords don't match, too short, or empty"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Must be authenticated to change an existing password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "501":
+          description: Password setup unavailable on this platform or store not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ── CONFIG ───────────────────────────────────────────────────────────────
+
+  /api/config:
+    get:
+      tags: [config]
+      summary: Get the full gateway configuration
+      responses:
+        "200":
+          description: Current configuration object
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Full config.Config object (see pkg/config/config.go)
+        "500":
+          description: Failed to load config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      tags: [config]
+      summary: Replace the entire gateway configuration
+      description: |
+        Replaces the full config. Security-managed fields (tokens, secrets) in the existing
+        config are preserved when omitted from the request. Validates before saving.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Full config.Config object
+      responses:
+        "200":
+          description: Configuration saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOK"
+        "400":
+          description: Invalid JSON or validation errors
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/Error"
+                  - $ref: "#/components/schemas/ValidationError"
+        "500":
+          description: Failed to save config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    patch:
+      tags: [config]
+      summary: Partially update the gateway configuration (JSON Merge Patch, RFC 7396)
+      description: |
+        Only fields present in the request body are updated; all other fields remain unchanged.
+        Set a field to `null` to remove it. Security-managed fields are preserved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Partial config fields to merge
+              example:
+                gateway:
+                  log_level: debug
+      responses:
+        "200":
+          description: Configuration patched
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOK"
+        "400":
+          description: Invalid JSON or validation errors
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/Error"
+                  - $ref: "#/components/schemas/ValidationError"
+        "500":
+          description: Failed to save config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/config/test-command-patterns:
+    post:
+      tags: [config]
+      summary: Test a command string against allow/deny regex patterns
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [command]
+              properties:
+                allow_patterns:
+                  type: array
+                  items:
+                    type: string
+                  example: ["^ls", "^cat "]
+                deny_patterns:
+                  type: array
+                  items:
+                    type: string
+                  example: ["^rm ", "^sudo "]
+                command:
+                  type: string
+                  example: "ls -la /tmp"
+      responses:
+        "200":
+          description: Pattern match result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allowed:
+                    type: boolean
+                  blocked:
+                    type: boolean
+                  matched_whitelist:
+                    type: string
+                    nullable: true
+                  matched_blacklist:
+                    type: string
+                    nullable: true
+
+  # ── GATEWAY ──────────────────────────────────────────────────────────────
+
+  /api/gateway/status:
+    get:
+      tags: [gateway]
+      summary: Get gateway process status
+      responses:
+        "200":
+          description: Gateway status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GatewayStatus"
+
+  /api/gateway/logs:
+    get:
+      tags: [gateway]
+      summary: Get buffered gateway logs (supports incremental polling)
+      parameters:
+        - name: log_offset
+          in: query
+          description: Number of log lines already received; fetch only new lines from this offset
+          schema:
+            type: integer
+            default: 0
+        - name: log_run_id
+          in: query
+          description: |
+            Run ID from a previous response. If the current run ID differs (gateway restarted),
+            the server resets the offset to 0 and returns all lines from the new run.
+          schema:
+            type: integer
+            default: -1
+      responses:
+        "200":
+          description: Log lines
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GatewayLogsResponse"
+
+  /api/gateway/logs/clear:
+    post:
+      tags: [gateway]
+      summary: Clear the in-memory gateway log buffer
+      responses:
+        "200":
+          description: Log buffer cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: cleared
+                  log_total:
+                    type: integer
+                    example: 0
+                  log_run_id:
+                    type: integer
+
+  /api/gateway/start:
+    post:
+      tags: [gateway]
+      summary: Start the gateway subprocess
+      description: |
+        Checks preconditions (default model configured and has credentials) before starting.
+        Returns 400 with `status: precondition_failed` if conditions are not met.
+        If a gateway is already running (detected via PID file), attaches to it instead.
+      responses:
+        "200":
+          description: Gateway started or attached
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  pid:
+                    type: integer
+                    example: 12345
+        "400":
+          description: "Precondition not met (e.g. no default model configured)"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: precondition_failed
+                  message:
+                    type: string
+                    example: "no default model configured"
+        "500":
+          description: Failed to start gateway
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/gateway/stop:
+    post:
+      tags: [gateway]
+      summary: Stop the gateway subprocess gracefully (SIGTERM on Unix, SIGKILL on Windows)
+      responses:
+        "200":
+          description: Gateway stopped or was not running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok, not_running]
+                  pid:
+                    type: integer
+        "500":
+          description: Failed to stop gateway
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/gateway/restart:
+    post:
+      tags: [gateway]
+      summary: Stop the gateway (if running) and start a new instance
+      description: Checks preconditions before restarting. Returns 400 with precondition_failed if not met.
+      responses:
+        "200":
+          description: Gateway restarted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  pid:
+                    type: integer
+        "400":
+          description: Precondition not met
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: precondition_failed
+                  message:
+                    type: string
+        "500":
+          description: Failed to restart gateway
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ── PICO CHANNEL ─────────────────────────────────────────────────────────
+
+  /api/pico/token:
+    get:
+      tags: [pico]
+      summary: Get the current Pico channel WebSocket token
+      responses:
+        "200":
+          description: Pico token and WebSocket URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    example: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+                  ws_url:
+                    type: string
+                    example: ws://localhost:18800/pico/ws
+                  enabled:
+                    type: boolean
+    post:
+      tags: [pico]
+      summary: Regenerate the Pico channel WebSocket token
+      description: Generates a new random 32-char hex token and saves it to config.
+      responses:
+        "200":
+          description: New token generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  ws_url:
+                    type: string
+
+  /api/pico/setup:
+    post:
+      tags: [pico]
+      summary: Auto-configure the Pico channel
+      description: |
+        Enables the Pico channel and generates a token if not already configured.
+        Seeds allowed WebSocket origins from the request `Origin` header.
+      responses:
+        "200":
+          description: Pico channel configured
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  ws_url:
+                    type: string
+                  enabled:
+                    type: boolean
+                  changed:
+                    type: boolean
+                    description: Whether the config was modified
+
+  /pico/ws:
+    get:
+      tags: [pico]
+      summary: WebSocket proxy to the gateway Pico channel
+      description: |
+        **This endpoint upgrades to a WebSocket connection — it is not a regular HTTP request.**
+
+        Authentication is via the `Sec-Websocket-Protocol` header rather than a session cookie or
+        bearer token. Set the header to `token.<pico-token>` where `<pico-token>` is the value
+        from `GET /api/pico/token`.
+
+        Example (JavaScript):
+        ```js
+        new WebSocket('ws://localhost:18800/pico/ws', ['token.' + picoToken])
+        ```
+
+        Returns 403 if the token is invalid, 503 if the gateway is not running.
+      security: []
+      parameters:
+        - name: Sec-Websocket-Protocol
+          in: header
+          required: true
+          description: "Must be `token.<pico-token>`"
+          schema:
+            type: string
+            example: token.a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+      responses:
+        "101":
+          description: Switching Protocols — WebSocket upgrade successful
+        "403":
+          description: Invalid Pico token
+        "503":
+          description: Gateway not available
+
+  # ── SESSIONS ─────────────────────────────────────────────────────────────
+
+  /api/sessions:
+    get:
+      tags: [sessions]
+      summary: List Pico channel chat sessions
+      parameters:
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+      responses:
+        "200":
+          description: Paginated session list sorted by updated descending
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SessionListItem"
+
+  /api/sessions/{id}:
+    get:
+      tags: [sessions]
+      summary: Get full message history for a session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+      responses:
+        "200":
+          description: Session detail with messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionDetail"
+        "404":
+          description: Session not found
+    delete:
+      tags: [sessions]
+      summary: Delete a session and its files
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Session deleted
+        "404":
+          description: Session not found
+        "500":
+          description: Failed to delete session files
+
+  # ── OAUTH ─────────────────────────────────────────────────────────────────
+
+  /api/oauth/providers:
+    get:
+      tags: [oauth]
+      summary: List OAuth providers and their credential status
+      responses:
+        "200":
+          description: Provider list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/OAuthProviderStatus"
+
+  /api/oauth/login:
+    post:
+      tags: [oauth]
+      summary: Start an OAuth login flow or save a token directly
+      description: |
+        **method: token** — Saves the provided API token immediately. Returns `{status, provider, method}`.
+
+        **method: device_code** — Starts a device code flow (OpenAI only). Returns flow details
+        including `user_code` and `verify_url`. Poll `POST /api/oauth/flows/{id}/poll` to complete.
+
+        **method: browser** — Starts a browser OAuth flow (OpenAI, Google Antigravity). Returns
+        `auth_url` to redirect the user to. The flow completes via `GET /oauth/callback`.
+
+        Supported providers: `openai`, `anthropic`, `google-antigravity` (alias: `antigravity`)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, method]
+              properties:
+                provider:
+                  type: string
+                  enum: [openai, anthropic, google-antigravity]
+                  example: openai
+                method:
+                  type: string
+                  enum: [token, device_code, browser]
+                  example: token
+                token:
+                  type: string
+                  description: Required when method is `token`
+                  example: sk-proj-abc123
+      responses:
+        "200":
+          description: |
+            For `token` method: `{status, provider, method}`.
+            For `device_code`: `{status, provider, method, flow_id, user_code, verify_url, interval, expires_at}`.
+            For `browser`: `{status, provider, method, flow_id, auth_url, expires_at}`.
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Unsupported provider, method, or missing token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/oauth/flows/{id}:
+    get:
+      tags: [oauth]
+      summary: Get current status of an OAuth flow
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Flow status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthFlowResponse"
+        "404":
+          description: Flow not found
+
+  /api/oauth/flows/{id}/poll:
+    post:
+      tags: [oauth]
+      summary: Poll a device_code flow once for completion
+      description: Only valid for `device_code` flows. Call at the interval returned by `POST /api/oauth/login`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated flow status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthFlowResponse"
+        "400":
+          description: Flow does not support polling (not a device_code flow)
+        "404":
+          description: Flow not found
+
+  /api/oauth/logout:
+    post:
+      tags: [oauth]
+      summary: Delete stored credentials for a provider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider]
+              properties:
+                provider:
+                  type: string
+                  enum: [openai, anthropic, google-antigravity]
+      responses:
+        "200":
+          description: Credentials deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  provider:
+                    type: string
+
+  /oauth/callback:
+    get:
+      tags: [oauth]
+      summary: OAuth redirect callback (browser flows only — not for direct use)
+      description: |
+        Called by the OAuth provider's authorization server after the user grants permission.
+        Renders an HTML page that communicates the result back to the opener window via `postMessage`,
+        then closes. **Not intended for direct programmatic use.**
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: error
+          in: query
+          schema:
+            type: string
+        - name: error_description
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Authorization successful — HTML page rendered
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: Authorization failed — HTML error page rendered
+          content:
+            text/html:
+              schema:
+                type: string
+
+  # ── MODELS ───────────────────────────────────────────────────────────────
+
+  /api/models:
+    get:
+      tags: [models]
+      summary: List all model configurations
+      description: API keys are masked in the response (first 3 + last 4 chars, rest replaced with ****).
+      responses:
+        "200":
+          description: Model list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  models:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ModelResponse"
+                  total:
+                    type: integer
+                  default_model:
+                    type: string
+    post:
+      tags: [models]
+      summary: Add a new model configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelConfig"
+      responses:
+        "200":
+          description: Model added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  index:
+                    type: integer
+                    description: Zero-based index of the new model in the list
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/models/default:
+    post:
+      tags: [models]
+      summary: Set the default model for all agents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model_name]
+              properties:
+                model_name:
+                  type: string
+                  example: gpt-4o
+      responses:
+        "200":
+          description: Default model updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  default_model:
+                    type: string
+        "400":
+          description: model_name required or model is a virtual model
+        "404":
+          description: Model name not found in model_list
+
+  /api/models/{index}:
+    put:
+      tags: [models]
+      summary: Update a model configuration by index
+      description: |
+        Omit `api_key` (or send empty string) to preserve the existing stored key.
+        Omit `extra_body` to preserve existing; send `{}` to clear it.
+        Omit `custom_headers` to preserve existing; send `{}` to clear it.
+      parameters:
+        - name: index
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModelConfig"
+      responses:
+        "200":
+          description: Model updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOK"
+        "400":
+          description: Validation error or invalid index format
+        "404":
+          description: Index out of range
+    delete:
+      tags: [models]
+      summary: Delete a model configuration by index
+      description: If the deleted model was the default, the default is cleared.
+      parameters:
+        - name: index
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 0
+      responses:
+        "200":
+          description: Model deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOK"
+        "404":
+          description: Index out of range
+
+  # ── CHANNELS ─────────────────────────────────────────────────────────────
+
+  /api/channels/catalog:
+    get:
+      tags: [channels]
+      summary: List all supported channels
+      responses:
+        "200":
+          description: Channel catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  channels:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ChannelCatalogItem"
+
+  /api/channels/{name}/config:
+    get:
+      tags: [channels]
+      summary: Get channel configuration with secrets stripped
+      description: |
+        Returns the channel's config object with all secret fields removed.
+        The `configured_secrets` array lists which secret field names have a value stored
+        (e.g. `["token"]`) so callers can tell if credentials are present without seeing them.
+
+        Valid channel names: `weixin`, `telegram`, `discord`, `slack`, `feishu`, `dingtalk`,
+        `line`, `qq`, `onebot`, `wecom`, `whatsapp`, `whatsapp_native`, `pico`, `maixcam`,
+        `matrix`, `irc`
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          example: telegram
+      responses:
+        "200":
+          description: Channel config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelConfigResponse"
+        "404":
+          description: Channel not found
+
+  # ── SKILLS ───────────────────────────────────────────────────────────────
+
+  /api/skills:
+    get:
+      tags: [skills]
+      summary: List installed skills (builtin, global, and workspace)
+      responses:
+        "200":
+          description: Skill list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skills:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SkillItem"
+
+  /api/skills/search:
+    get:
+      tags: [skills]
+      summary: Search skill registries
+      description: Returns an empty result when `q` is blank. Requires `tools.skills` and `tools.find_skills` to be enabled in config.
+      parameters:
+        - name: q
+          in: query
+          description: Search query
+          schema:
+            type: string
+          example: code review
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillSearchResponse"
+        "400":
+          description: Invalid limit/offset or skills tool disabled
+        "502":
+          description: Registry search failed
+
+  /api/skills/{name}:
+    get:
+      tags: [skills]
+      summary: Get a skill by name including its full content
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          example: code-review
+      responses:
+        "200":
+          description: Skill detail with content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillDetail"
+        "404":
+          description: Skill not found
+    delete:
+      tags: [skills]
+      summary: Delete a workspace skill by name
+      description: Only workspace-sourced skills can be deleted. Builtin and global skills return 400.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Skill deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOK"
+        "400":
+          description: Skill is not a workspace skill
+        "404":
+          description: Skill not found
+
+  /api/skills/install:
+    post:
+      tags: [skills]
+      summary: Install a skill from a registry
+      description: |
+        Downloads the skill archive from the named registry and installs it into the workspace.
+        Returns 409 Conflict if the skill slug is already installed (use `force: true` to overwrite).
+        Returns 403 if the skill is flagged as malicious.
+        Requires `tools.skills` and `tools.install_skill` to be enabled in config.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slug, registry]
+              properties:
+                slug:
+                  type: string
+                  description: Skill identifier in the registry (alphanumeric with hyphens)
+                  example: code-review
+                registry:
+                  type: string
+                  description: Registry name
+                  example: clawhub
+                version:
+                  type: string
+                  description: Specific version to install; omit for latest
+                  example: "1.2.0"
+                force:
+                  type: boolean
+                  description: Overwrite an existing installation
+                  default: false
+      responses:
+        "200":
+          description: Skill installed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstallSkillResponse"
+        "400":
+          description: Invalid slug/registry or skills tool disabled
+        "403":
+          description: Skill flagged as malicious
+        "409":
+          description: Skill already installed (set force to true to overwrite)
+        "502":
+          description: Registry download failed
+
+  /api/skills/import:
+    post:
+      tags: [skills]
+      summary: Import a skill from an uploaded file
+      description: |
+        Accepts a `.md` Markdown file or a `.zip` archive containing a `SKILL.md`.
+        Maximum file size: 1 MB. Returns 409 if a skill with the same name already exists.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: .md skill file or .zip archive containing SKILL.md
+      responses:
+        "200":
+          description: Skill imported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillItem"
+        "400":
+          description: Invalid file, missing SKILL.md in archive, or invalid skill name
+        "409":
+          description: A skill with this name already exists
+
+  # ── TOOLS ────────────────────────────────────────────────────────────────
+
+  /api/tools:
+    get:
+      tags: [tools]
+      summary: List all tools and their current status
+      responses:
+        "200":
+          description: Tool list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ToolItem"
+
+  /api/tools/{name}/state:
+    put:
+      tags: [tools]
+      summary: Enable or disable a tool
+      description: |
+        Some tools have side effects when enabled:
+        - `find_skills` also enables `skills`
+        - `install_skill` also enables `skills`
+        - `spawn` also enables `subagent`
+        - `spawn_status` also enables `spawn` and `subagent`
+        - `tool_search_tool_regex` also enables `mcp` and `mcp.discovery`
+        - `tool_search_tool_bm25` also enables `mcp` and `mcp.discovery`
+
+        Hardware tools (`i2c`, `spi`) are only functional on Linux (`status: blocked` on other platforms).
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: "Tool name — see GET /api/tools for the full list"
+          schema:
+            type: string
+          example: web_search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Tool state updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOK"
+        "400":
+          description: Unknown tool name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ── SYSTEM ───────────────────────────────────────────────────────────────
+
+  /api/system/version:
+    get:
+      tags: [system]
+      summary: Get runtime version information
+      description: Attempts to resolve version from the picoclaw binary; falls back to launcher build metadata.
+      responses:
+        "200":
+          description: Version info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemVersion"
+
+  /api/system/autostart:
+    get:
+      tags: [system]
+      summary: Get OS launch-at-login status
+      responses:
+        "200":
+          description: Autostart status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutoStartResponse"
+    put:
+      tags: [system]
+      summary: Enable or disable OS launch-at-login
+      description: |
+        Supported on macOS (LaunchAgent plist), Linux (XDG autostart .desktop), and
+        Windows (HKCU Run registry key). Returns 400 on unsupported platforms.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Autostart setting updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutoStartResponse"
+        "400":
+          description: Platform does not support autostart
+        "500":
+          description: Failed to update startup setting
+
+  /api/system/launcher-config:
+    get:
+      tags: [system]
+      summary: Get launcher service parameters (port, public mode, allowed CIDRs)
+      responses:
+        "200":
+          description: Launcher config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LauncherConfigPayload"
+    put:
+      tags: [system]
+      summary: Update launcher service parameters
+      description: Changes take effect on next launcher restart.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LauncherConfigPayload"
+      responses:
+        "200":
+          description: Launcher config saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LauncherConfigPayload"
+        "400":
+          description: Validation error (e.g. invalid port number)
+
+  # ── UPDATE ───────────────────────────────────────────────────────────────
+
+  /api/update:
+    post:
+      tags: [update]
+      summary: Apply a self-update to the launcher binary
+      description: |
+        Downloads a release and replaces the current executable.
+        A restart is required for the new version to take effect.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                  description: Release URL; omit for the default release channel
+                binary:
+                  type: string
+                  description: Binary name to install
+                  default: picoclaw-launcher
+      responses:
+        "200":
+          description: Update applied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  message:
+                    type: string
+                    example: "update applied; restart to use new version"
+        "400":
+          description: Invalid request body
+        "500":
+          description: Update failed
+
+  # ── WECHAT ───────────────────────────────────────────────────────────────
+
+  /api/weixin/flows:
+    post:
+      tags: [weixin]
+      summary: Start a WeChat QR login flow
+      description: Fetches a QR code from the WeChat API and returns it as a base64-encoded PNG data URI. Flow TTL is 5 minutes.
+      responses:
+        "200":
+          description: QR code ready for scanning
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeixinFlowResponse"
+        "500":
+          description: Failed to fetch QR code from WeChat API
+
+  /api/weixin/flows/{id}:
+    get:
+      tags: [weixin]
+      summary: Poll a WeChat QR login flow for scan status
+      description: |
+        Polls the WeChat API for status. Call every few seconds until `status` is `confirmed`
+        (credentials saved and gateway restarted) or a terminal state (`expired`, `error`).
+
+        Status values: `wait` → `scaned` → `confirmed` | `expired` | `error`
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: wx_a1b2c3d4e5f6a1b2c3d4e5f6
+      responses:
+        "200":
+          description: Current flow status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeixinFlowResponse"
+        "404":
+          description: Flow not found
+
+  # ── WECOM ────────────────────────────────────────────────────────────────
+
+  /api/wecom/flows:
+    post:
+      tags: [wecom]
+      summary: Start a WeCom QR login flow
+      description: Fetches a QR code from the WeCom API and returns it as a base64-encoded PNG data URI. Flow TTL is 5 minutes.
+      responses:
+        "200":
+          description: QR code ready for scanning
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WecomFlowResponse"
+        "500":
+          description: Failed to fetch QR code from WeCom API
+
+  /api/wecom/flows/{id}:
+    get:
+      tags: [wecom]
+      summary: Poll a WeCom QR login flow for scan status
+      description: |
+        Polls the WeCom API for status. On `confirmed`, the WeCom bot credentials are saved and
+        the gateway is restarted if running.
+
+        Status values: `wait` → `scaned` → `confirmed` | `expired` | `error`
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: wc_a1b2c3d4e5f6a1b2c3d4e5f6
+      responses:
+        "200":
+          description: Current flow status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WecomFlowResponse"
+        "404":
+          description: Flow not found
+
+  # ── GATEWAY HEALTH ───────────────────────────────────────────────────────
+
+  /health:
+    get:
+      tags: [gateway-health]
+      summary: Gateway liveness probe
+      description: Served on port 18790. No authentication required.
+      security: []
+      servers:
+        - url: http://localhost:18790
+          description: Gateway health server
+      responses:
+        "200":
+          description: Gateway is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /ready:
+    get:
+      tags: [gateway-health]
+      summary: Gateway readiness probe
+      description: Returns 503 when the gateway is not yet ready or any registered health check is failing.
+      security: []
+      servers:
+        - url: http://localhost:18790
+          description: Gateway health server
+      responses:
+        "200":
+          description: Gateway is ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: Gateway not ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /reload:
+    post:
+      tags: [gateway-health]
+      summary: Trigger a config reload on the gateway
+      description: |
+        If the gateway was started with an auth token, include `Authorization: Bearer <token>`.
+        If no token is configured, the endpoint accepts unauthenticated requests.
+      security:
+        - bearerAuth: []
+        - {}
+      servers:
+        - url: http://localhost:18790
+          description: Gateway health server
+      responses:
+        "200":
+          description: Reload triggered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: reload triggered
+        "401":
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Reload handler not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: picoclaw_launcher_auth
+      description: Session cookie set after successful login via POST /api/auth/login. Valid for 7 days.
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Plaintext dashboard token from PICOCLAW_LAUNCHER_TOKEN env var or launcher config.
+
+  schemas:
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: unauthorized
+
+    StatusOK:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+
+    ValidationError:
+      type: object
+      properties:
+        status:
+          type: string
+          example: validation_error
+        errors:
+          type: array
+          items:
+            type: string
+          example:
+            - "gateway.port 99999 is out of valid range (1-65535)"
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, ready, "not ready"]
+          example: ok
+        uptime:
+          type: string
+          example: 1h23m45.6s
+        pid:
+          type: integer
+          example: 12345
+        checks:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              name:
+                type: string
+              status:
+                type: string
+                enum: [ok, fail]
+              message:
+                type: string
+              timestamp:
+                type: string
+                format: date-time
+
+    GatewayStatus:
+      type: object
+      properties:
+        gateway_status:
+          type: string
+          enum: [running, stopped, starting, restarting, error]
+          example: running
+        pid:
+          type: integer
+          example: 12345
+        config_default_model:
+          type: string
+          example: gpt-4o
+        boot_default_model:
+          type: string
+          example: gpt-4o
+        gateway_version:
+          type: string
+          example: "1.2.3"
+        gateway_start_allowed:
+          type: boolean
+        gateway_start_reason:
+          type: string
+          description: Present when gateway_start_allowed is false
+          example: "no default model configured"
+        gateway_restart_required:
+          type: boolean
+          description: True when config has changed since the gateway booted
+
+    GatewayLogsResponse:
+      type: object
+      properties:
+        logs:
+          type: array
+          items:
+            type: string
+          description: Log lines since the requested offset
+        log_total:
+          type: integer
+          description: Total number of log lines in the current run buffer
+        log_run_id:
+          type: integer
+          description: Run identifier; changes when the gateway restarts
+
+    ModelConfig:
+      type: object
+      required: [model_name, model]
+      properties:
+        model_name:
+          type: string
+          description: Human-readable alias used in UI and as default model reference
+          example: gpt-4o
+        model:
+          type: string
+          description: Provider-qualified model identifier
+          example: openai/gpt-4o
+        api_key:
+          type: string
+          description: "API key (write-only; masked in GET responses). Omit on PUT to preserve existing."
+          example: sk-proj-abc123
+        api_base:
+          type: string
+          description: Custom API base URL for self-hosted or proxy deployments
+          example: https://api.openai.com/v1
+        proxy:
+          type: string
+          description: HTTP/HTTPS/SOCKS5 proxy URL
+        auth_method:
+          type: string
+          description: "Authentication method (e.g. oauth, token)"
+        connect_mode:
+          type: string
+        workspace:
+          type: string
+        rpm:
+          type: integer
+          description: Requests per minute rate limit
+        max_tokens_field:
+          type: string
+        request_timeout:
+          type: integer
+          description: Request timeout in seconds
+        thinking_level:
+          type: string
+          enum: [none, low, medium, high]
+        extra_body:
+          type: object
+          description: "Extra JSON fields merged into the request body. Send {} to clear."
+          additionalProperties: true
+        custom_headers:
+          type: object
+          description: "Custom HTTP headers added to every request. Send {} to clear."
+          additionalProperties:
+            type: string
+        enabled:
+          type: boolean
+          default: true
+
+    ModelResponse:
+      allOf:
+        - $ref: "#/components/schemas/ModelConfig"
+        - type: object
+          properties:
+            index:
+              type: integer
+            available:
+              type: boolean
+            status:
+              type: string
+              enum: [available, unconfigured, unreachable, unknown]
+            is_default:
+              type: boolean
+            is_virtual:
+              type: boolean
+
+    SessionListItem:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+        title:
+          type: string
+          description: First user message truncated to 60 chars
+          example: "How do I reverse a string in Python..."
+        preview:
+          type: string
+        message_count:
+          type: integer
+        created:
+          type: string
+          format: date-time
+        updated:
+          type: string
+          format: date-time
+
+    SessionDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        messages:
+          type: array
+          items:
+            type: object
+            properties:
+              role:
+                type: string
+                enum: [user, assistant]
+              content:
+                type: string
+              media:
+                type: array
+                items:
+                  type: string
+        summary:
+          type: string
+        created:
+          type: string
+          format: date-time
+        updated:
+          type: string
+          format: date-time
+
+    OAuthProviderStatus:
+      type: object
+      properties:
+        provider:
+          type: string
+          example: openai
+        display_name:
+          type: string
+          example: OpenAI
+        methods:
+          type: array
+          items:
+            type: string
+            enum: [token, device_code, browser]
+        logged_in:
+          type: boolean
+        status:
+          type: string
+          enum: [not_logged_in, connected, expired, needs_refresh]
+        auth_method:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        account_id:
+          type: string
+        email:
+          type: string
+        project_id:
+          type: string
+
+    OAuthFlowResponse:
+      type: object
+      properties:
+        flow_id:
+          type: string
+        provider:
+          type: string
+        method:
+          type: string
+          enum: [token, device_code, browser]
+        status:
+          type: string
+          enum: [pending, success, error, expired]
+        expires_at:
+          type: string
+          format: date-time
+        error:
+          type: string
+        user_code:
+          type: string
+          description: Code to display to the user (device_code flows only)
+        verify_url:
+          type: string
+          description: URL where the user enters the device code (device_code flows only)
+        interval:
+          type: integer
+          description: Polling interval in seconds (device_code flows only)
+
+    SkillItem:
+      type: object
+      properties:
+        name:
+          type: string
+          example: code-review
+        path:
+          type: string
+          example: /home/user/.picoclaw/workspace/skills/code-review/SKILL.md
+        source:
+          type: string
+          enum: [builtin, global, workspace]
+        description:
+          type: string
+        origin_kind:
+          type: string
+          enum: [builtin, manual, third_party]
+        registry_name:
+          type: string
+        registry_url:
+          type: string
+        installed_version:
+          type: string
+        installed_at:
+          type: integer
+          description: Unix timestamp in milliseconds
+
+    SkillDetail:
+      allOf:
+        - $ref: "#/components/schemas/SkillItem"
+        - type: object
+          properties:
+            content:
+              type: string
+              description: Skill markdown content (frontmatter stripped)
+
+    SkillSearchResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              score:
+                type: number
+              slug:
+                type: string
+              display_name:
+                type: string
+              summary:
+                type: string
+              version:
+                type: string
+              registry_name:
+                type: string
+              url:
+                type: string
+              installed:
+                type: boolean
+              installed_name:
+                type: string
+        limit:
+          type: integer
+        offset:
+          type: integer
+        next_offset:
+          type: integer
+        has_more:
+          type: boolean
+
+    InstallSkillResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        slug:
+          type: string
+        registry:
+          type: string
+        version:
+          type: string
+        summary:
+          type: string
+        is_suspicious:
+          type: boolean
+          description: True when the registry flagged the skill as potentially suspicious but not blocked
+        skill:
+          $ref: "#/components/schemas/SkillItem"
+
+    ToolItem:
+      type: object
+      properties:
+        name:
+          type: string
+          example: web_search
+        description:
+          type: string
+        category:
+          type: string
+          enum: [filesystem, web, communication, skills, agents, hardware, discovery, automation]
+        config_key:
+          type: string
+        status:
+          type: string
+          enum: [enabled, disabled, blocked]
+        reason_code:
+          type: string
+          description: "Why a tool is blocked (e.g. requires_skills, requires_linux, requires_mcp_discovery)"
+
+    ChannelCatalogItem:
+      type: object
+      properties:
+        name:
+          type: string
+          example: telegram
+        config_key:
+          type: string
+          example: telegram
+        variant:
+          type: string
+          description: Present for multi-variant channels (e.g. bridge or native for whatsapp)
+
+    ChannelConfigResponse:
+      type: object
+      properties:
+        config:
+          type: object
+          description: Channel configuration object with all secret fields removed
+        configured_secrets:
+          type: array
+          items:
+            type: string
+          description: Names of secret fields that have a stored value
+          example: ["token"]
+        config_key:
+          type: string
+        variant:
+          type: string
+
+    SystemVersion:
+      type: object
+      properties:
+        version:
+          type: string
+          example: "1.2.3"
+        git_commit:
+          type: string
+          example: abc1234
+        build_time:
+          type: string
+          example: "2026-01-15T10:30:00Z"
+        go_version:
+          type: string
+          example: go1.22.0
+
+    AutoStartResponse:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        supported:
+          type: boolean
+          description: Whether the current OS supports launch-at-login
+        platform:
+          type: string
+          example: linux
+        message:
+          type: string
+          example: "Changes apply on next login."
+
+    LauncherConfigPayload:
+      type: object
+      properties:
+        port:
+          type: integer
+          description: Launcher HTTP server port
+          example: 18800
+        public:
+          type: boolean
+          description: "Bind on 0.0.0.0 (true) or 127.0.0.1 (false)"
+          default: false
+        allowed_cidrs:
+          type: array
+          items:
+            type: string
+          description: IP CIDRs allowed to reach the launcher when public is true
+          example: ["192.168.1.0/24"]
+        launcher_token:
+          type: string
+          description: Dashboard auth token override
+
+    WeixinFlowResponse:
+      type: object
+      properties:
+        flow_id:
+          type: string
+          example: wx_a1b2c3d4e5f6a1b2c3d4e5f6
+        status:
+          type: string
+          enum: [wait, scaned, confirmed, expired, error]
+        qr_data_uri:
+          type: string
+          description: "Base64 PNG data URI (present in wait and scaned states)"
+          example: "data:image/png;base64,..."
+        account_id:
+          type: string
+          description: WeChat account ID (present on confirmed)
+        error:
+          type: string
+
+    WecomFlowResponse:
+      type: object
+      properties:
+        flow_id:
+          type: string
+          example: wc_a1b2c3d4e5f6a1b2c3d4e5f6
+        status:
+          type: string
+          enum: [wait, scaned, confirmed, expired, error]
+        qr_data_uri:
+          type: string
+          description: "Base64 PNG data URI (present in wait and scaned states)"
+          example: "data:image/png;base64,..."
+        bot_id:
+          type: string
+          description: WeCom bot ID (present on confirmed)
+        error:
+          type: string

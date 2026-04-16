@@ -4,6 +4,11 @@ services:
   #   docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "Hello"
   # ─────────────────────────────────────────────
   picoclaw-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        GO_BUILD_TAGS: goolm,stdjson,bedrock
     image: docker.io/sipeed/picoclaw:latest
     container_name: picoclaw-agent
     profiles:
@@ -19,35 +24,56 @@ services:
 
   # ─────────────────────────────────────────────
   # PicoClaw Gateway (Long-running Bot)
-  #   docker compose -f docker/docker-compose.yml --profile gateway up
+  #   docker compose -f docker/docker-compose.yml up
   # ─────────────────────────────────────────────
   picoclaw-gateway:
-    image: docker.io/sipeed/picoclaw:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        GO_BUILD_TAGS: goolm,stdjson,bedrock
     container_name: picoclaw-gateway
     restart: unless-stopped
+    environment:
+      - PICOCLAW_GATEWAY_HOST=0.0.0.0
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION_NAME:-ap-southeast-1}
     profiles:
       - gateway
     # Uncomment to access host network; leave commented unless needed.
     #extra_hosts:
     #  - "host.docker.internal:host-gateway"
     volumes:
-      - ./data:/root/.picoclaw
+      - ./data_gateway:/root/.picoclaw
+    ports:
+      - "18790:18790"
 
   # ─────────────────────────────────────────────
   # PicoClaw Launcher (Web Console + Gateway)
   #   docker compose -f docker/docker-compose.yml --profile launcher up
   # ─────────────────────────────────────────────
   picoclaw-launcher:
-    image: docker.io/sipeed/picoclaw:launcher
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.launcher
+      args:
+        GO_BUILD_TAGS: goolm,stdjson,bedrock
+    image: docker-picoclaw-launcher:local
     container_name: picoclaw-launcher
     restart: unless-stopped
     profiles:
       - launcher
     environment:
       - PICOCLAW_GATEWAY_HOST=0.0.0.0
+      - PICOCLAW_GATEWAY_PORT=18790
+      - PICOCLAW_LAUNCHER_TOKEN=abc123
+      - AWS_REGION=${AWS_REGION_NAME:-ap-southeast-1}
+      - AWS_DEFAULT_REGION=${AWS_REGION_NAME:-ap-southeast-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       # Set a fixed dashboard token instead of a random one each restart.
       # If not set, a random token is generated and printed to the console on startup.
-      #- PICOCLAW_LAUNCHER_TOKEN=your-secret-token-here
     ports:
       - "18800:18800"
       - "18790:18790"

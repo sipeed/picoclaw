@@ -8,3 +8,5 @@ config/
 *.md
 LICENSE
 assets/
+docker/data/
+docker/data_temp/

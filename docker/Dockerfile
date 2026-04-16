@@ -13,7 +13,8 @@ RUN go mod download
 
 # Copy source and build
 COPY . .
-RUN make build
+ARG GO_BUILD_TAGS=goolm,stdjson
+RUN make build GO_BUILD_TAGS=${GO_BUILD_TAGS}
 
 # ============================================================
 # Stage 2: Minimal runtime image
