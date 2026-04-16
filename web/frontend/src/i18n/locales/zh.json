@@ -75,6 +75,8 @@
     },
     "sendMessage": "发送消息",
     "sendHint": "按 Enter 发送\nShift + Enter 换行",
+    "contextTitle": "上下文",
+    "contextDetail": "查看详情",
     "attachImage": "添加图片",
     "removeImage": "移除图片",
     "uploadedImage": "已上传图片",

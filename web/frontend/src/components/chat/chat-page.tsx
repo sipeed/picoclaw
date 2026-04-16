@@ -115,6 +115,7 @@ export function ChatPage() {
     connectionState,
     isTyping,
     activeSessionId,
+    contextUsage,
     sendMessage,
     switchSession,
     newChat,
@@ -341,8 +342,14 @@ export function ChatPage() {
         onAddImages={handleAddImages}
         onRemoveAttachment={handleRemoveAttachment}
         onSend={handleSend}
+        onContextDetail={() => {
+          if (sendMessage({ content: "/context", attachments: [] })) {
+            setInput("")
+          }
+        }}
         inputDisabledReason={inputDisabledReason}
         canSend={canSubmit}
+        contextUsage={contextUsage}
       />
     </div>
   )

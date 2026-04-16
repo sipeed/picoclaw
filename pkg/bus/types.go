@@ -61,6 +61,15 @@ type OutboundScope struct {
 	Values     map[string]string `json:"values,omitempty"`
 }
 
+// ContextUsage describes how much of the model's context window the current
+// session consumes, and how far it is from triggering compression.
+type ContextUsage struct {
+	UsedTokens       int `json:"used_tokens"`
+	TotalTokens      int `json:"total_tokens"`       // model context window
+	CompressAtTokens int `json:"compress_at_tokens"` // threshold that triggers compression
+	UsedPercent      int `json:"used_percent"`       // 0-100
+}
+
 type OutboundMessage struct {
 	Channel          string         `json:"channel"`
 	ChatID           string         `json:"chat_id"`
@@ -70,6 +79,7 @@ type OutboundMessage struct {
 	Scope            *OutboundScope `json:"scope,omitempty"`
 	Content          string         `json:"content"`
 	ReplyToMessageID string         `json:"reply_to_message_id,omitempty"`
+	ContextUsage     *ContextUsage  `json:"context_usage,omitempty"`
 }
 
 // MediaPart describes a single media attachment to send.

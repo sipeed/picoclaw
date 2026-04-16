@@ -527,10 +527,11 @@ func (al *AgentLoop) runAgentLoop(
 				opts.Dispatch.ChatID(),
 				opts.Dispatch.ReplyToMessageID(),
 			),
-			AgentID:    agentID,
-			SessionKey: sessionKey,
-			Scope:      scope,
-			Content:    result.finalContent,
+			AgentID:      agentID,
+			SessionKey:   sessionKey,
+			Scope:        scope,
+			Content:      result.finalContent,
+			ContextUsage: computeContextUsage(agent, opts.Dispatch.SessionKey),
 		})
 	}
 

@@ -75,6 +75,8 @@
     },
     "sendMessage": "Send message",
     "sendHint": "Press Enter to send\nShift + Enter for a new line",
+    "contextTitle": "Context",
+    "contextDetail": "View Details",
     "attachImage": "Add images",
     "removeImage": "Remove image",
     "uploadedImage": "Uploaded image",

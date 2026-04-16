@@ -214,6 +214,24 @@ func (al *AgentLoop) buildCommandsRuntime(
 		rt.AskSideQuestion = func(ctx context.Context, question string) (string, error) {
 			return al.askSideQuestion(ctx, agent, opts, question)
 		}
+
+		rt.GetContextStats = func() *commands.ContextStats {
+			if opts == nil || agent.Sessions == nil {
+				return nil
+			}
+			usage := computeContextUsage(agent, opts.SessionKey)
+			if usage == nil {
+				return nil
+			}
+			history := agent.Sessions.GetHistory(opts.SessionKey)
+			return &commands.ContextStats{
+				UsedTokens:       usage.UsedTokens,
+				TotalTokens:      usage.TotalTokens,
+				CompressAtTokens: usage.CompressAtTokens,
+				UsedPercent:      usage.UsedPercent,
+				MessageCount:     len(history),
+			}
+		}
 	}
 	return rt
 }
