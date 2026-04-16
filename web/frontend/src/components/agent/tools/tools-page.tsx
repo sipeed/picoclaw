@@ -1,15 +1,15 @@
 import { IconSearch } from "@tabler/icons-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
 import {
+  type ToolSupportItem,
+  type WebSearchConfigResponse,
   getTools,
   getWebSearchConfig,
   setToolEnabled,
-  type ToolSupportItem,
-  type WebSearchConfigResponse,
   updateWebSearchConfig,
 } from "@/api/tools"
 import { PageHeader } from "@/components/page-header"
@@ -54,14 +54,9 @@ export function ToolsPage() {
 
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
-  const [webSearchDraft, setWebSearchDraft] =
+  const [webSearchDraftOverride, setWebSearchDraftOverride] =
     useState<WebSearchConfigResponse | null>(null)
-
-  useEffect(() => {
-    if (webSearchData) {
-      setWebSearchDraft(webSearchData)
-    }
-  }, [webSearchData])
+  const webSearchDraft = webSearchDraftOverride ?? webSearchData ?? null
 
   const toggleMutation = useMutation({
     mutationFn: async ({ name, enabled }: { name: string; enabled: boolean }) =>
@@ -87,9 +82,12 @@ export function ToolsPage() {
   const webSearchMutation = useMutation({
     mutationFn: updateWebSearchConfig,
     onSuccess: (updated) => {
-      setWebSearchDraft(updated)
+      queryClient.setQueryData(["tools", "web-search-config"], updated)
+      setWebSearchDraftOverride(null)
       toast.success(t("pages.agent.tools.web_search.save_success"))
-      void queryClient.invalidateQueries({ queryKey: ["tools", "web-search-config"] })
+      void queryClient.invalidateQueries({
+        queryKey: ["tools", "web-search-config"],
+      })
       void queryClient.invalidateQueries({ queryKey: ["tools"] })
       void refreshGatewayState({ force: true })
     },
@@ -148,7 +146,10 @@ export function ToolsPage() {
   const updateDraft = (
     updater: (current: WebSearchConfigResponse) => WebSearchConfigResponse,
   ) => {
-    setWebSearchDraft((current) => (current ? updater(current) : current))
+    setWebSearchDraftOverride((current) => {
+      const draft = current ?? webSearchData
+      return draft ? updater(draft) : current
+    })
   }
 
   return (
@@ -161,7 +162,9 @@ export function ToolsPage() {
             <Card className="border-destructive/50 bg-destructive/10 cursor-default">
               <CardHeader>
                 <CardTitle>{t("pages.agent.tools.web_search.title")}</CardTitle>
-                <CardDescription>{t("pages.agent.tools.web_search.load_error")}</CardDescription>
+                <CardDescription>
+                  {t("pages.agent.tools.web_search.load_error")}
+                </CardDescription>
               </CardHeader>
             </Card>
           ) : isWebSearchLoading || !webSearchDraft ? (
@@ -201,7 +204,10 @@ export function ToolsPage() {
                     <Select
                       value={webSearchDraft.provider}
                       onValueChange={(value) =>
-                        updateDraft((current) => ({ ...current, provider: value }))
+                        updateDraft((current) => ({
+                          ...current,
+                          provider: value,
+                        }))
                       }
                     >
                       <SelectTrigger>
@@ -254,74 +260,59 @@ export function ToolsPage() {
                 </div>
 
                 <div className="grid gap-4 lg:grid-cols-2">
-                  {Object.entries(webSearchDraft.settings).map(([providerId, settings]) => {
-                    const providerLabel = providerLabelMap.get(providerId) ?? providerId
-                    const apiKeyPlaceholder = maskedSecretPlaceholder(
-                      settings.api_key_set ? `${providerId}-configured` : "",
-                      t("pages.agent.tools.web_search.api_key_placeholder"),
-                    )
+                  {Object.entries(webSearchDraft.settings).map(
+                    ([providerId, settings]) => {
+                      const providerLabel =
+                        providerLabelMap.get(providerId) ?? providerId
+                      const apiKeyPlaceholder = maskedSecretPlaceholder(
+                        settings.api_key_set ? `${providerId}-configured` : "",
+                        t("pages.agent.tools.web_search.api_key_placeholder"),
+                      )
 
-                    return (
-                      <Card key={providerId} className="border-border/60 shadow-none">
-                        <CardHeader className="pb-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <CardTitle className="text-base">{providerLabel}</CardTitle>
-                              <CardDescription className="mt-1 text-xs">
-                                {t("pages.agent.tools.web_search.provider_hint")}
-                              </CardDescription>
-                            </div>
-                            <Switch
-                              checked={settings.enabled}
-                              onCheckedChange={(checked) =>
-                                updateDraft((current) => ({
-                                  ...current,
-                                  settings: {
-                                    ...current.settings,
-                                    [providerId]: {
-                                      ...current.settings[providerId],
-                                      enabled: checked,
+                      return (
+                        <Card
+                          key={providerId}
+                          className="border-border/60 shadow-none"
+                        >
+                          <CardHeader className="pb-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <CardTitle className="text-base">
+                                  {providerLabel}
+                                </CardTitle>
+                                <CardDescription className="mt-1 text-xs">
+                                  {t(
+                                    "pages.agent.tools.web_search.provider_hint",
+                                  )}
+                                </CardDescription>
+                              </div>
+                              <Switch
+                                checked={settings.enabled}
+                                onCheckedChange={(checked) =>
+                                  updateDraft((current) => ({
+                                    ...current,
+                                    settings: {
+                                      ...current.settings,
+                                      [providerId]: {
+                                        ...current.settings[providerId],
+                                        enabled: checked,
+                                      },
                                     },
-                                  },
-                                }))
-                              }
-                            />
-                          </div>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                          <div className="space-y-2">
-                            <div className="text-sm font-medium">
-                              {t("pages.agent.tools.web_search.max_results")}
+                                  }))
+                                }
+                              />
                             </div>
-                            <Input
-                              type="number"
-                              min={1}
-                              max={10}
-                              value={settings.max_results || 5}
-                              onChange={(e) =>
-                                updateDraft((current) => ({
-                                  ...current,
-                                  settings: {
-                                    ...current.settings,
-                                    [providerId]: {
-                                      ...current.settings[providerId],
-                                      max_results: Number(e.target.value) || 0,
-                                    },
-                                  },
-                                }))
-                              }
-                            />
-                          </div>
-                          {(providerId === "tavily" ||
-                            providerId === "searxng" ||
-                            providerId === "glm_search" ||
-                            providerId === "baidu_search") && (
+                          </CardHeader>
+                          <CardContent className="space-y-3">
                             <div className="space-y-2">
                               <div className="text-sm font-medium">
-                                {t("pages.agent.tools.web_search.base_url")}
+                                {t("pages.agent.tools.web_search.max_results")}
                               </div>
                               <Input
-                                value={settings.base_url ?? ""}
+                                type="number"
+                                min={1}
+                                max={10}
+                                value={settings.max_results || 5}
                                 onChange={(e) =>
                                   updateDraft((current) => ({
                                     ...current,
@@ -329,46 +320,74 @@ export function ToolsPage() {
                                       ...current.settings,
                                       [providerId]: {
                                         ...current.settings[providerId],
-                                        base_url: e.target.value,
+                                        max_results:
+                                          Number(e.target.value) || 0,
                                       },
                                     },
                                   }))
                                 }
-                                placeholder={t("pages.agent.tools.web_search.base_url_placeholder")}
                               />
                             </div>
-                          )}
-                          {(providerId === "brave" ||
-                            providerId === "tavily" ||
-                            providerId === "perplexity" ||
-                            providerId === "glm_search" ||
-                            providerId === "baidu_search") && (
-                            <div className="space-y-2">
-                              <div className="text-sm font-medium">
-                                {t("pages.agent.tools.web_search.api_key")}
+                            {(providerId === "tavily" ||
+                              providerId === "searxng" ||
+                              providerId === "glm_search" ||
+                              providerId === "baidu_search") && (
+                              <div className="space-y-2">
+                                <div className="text-sm font-medium">
+                                  {t("pages.agent.tools.web_search.base_url")}
+                                </div>
+                                <Input
+                                  value={settings.base_url ?? ""}
+                                  onChange={(e) =>
+                                    updateDraft((current) => ({
+                                      ...current,
+                                      settings: {
+                                        ...current.settings,
+                                        [providerId]: {
+                                          ...current.settings[providerId],
+                                          base_url: e.target.value,
+                                        },
+                                      },
+                                    }))
+                                  }
+                                  placeholder={t(
+                                    "pages.agent.tools.web_search.base_url_placeholder",
+                                  )}
+                                />
                               </div>
-                              <KeyInput
-                                value={settings.api_key ?? ""}
-                                onChange={(value) =>
-                                  updateDraft((current) => ({
-                                    ...current,
-                                    settings: {
-                                      ...current.settings,
-                                      [providerId]: {
-                                        ...current.settings[providerId],
-                                        api_key: value,
+                            )}
+                            {(providerId === "brave" ||
+                              providerId === "tavily" ||
+                              providerId === "perplexity" ||
+                              providerId === "glm_search" ||
+                              providerId === "baidu_search") && (
+                              <div className="space-y-2">
+                                <div className="text-sm font-medium">
+                                  {t("pages.agent.tools.web_search.api_key")}
+                                </div>
+                                <KeyInput
+                                  value={settings.api_key ?? ""}
+                                  onChange={(value) =>
+                                    updateDraft((current) => ({
+                                      ...current,
+                                      settings: {
+                                        ...current.settings,
+                                        [providerId]: {
+                                          ...current.settings[providerId],
+                                          api_key: value,
+                                        },
                                       },
-                                    },
-                                  }))
-                                }
-                                placeholder={apiKeyPlaceholder}
-                              />
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    )
-                  })}
+                                    }))
+                                  }
+                                  placeholder={apiKeyPlaceholder}
+                                />
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )
+                    },
+                  )}
                 </div>
 
                 <div className="flex justify-end">
