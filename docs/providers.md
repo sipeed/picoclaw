@@ -25,6 +25,7 @@
 | `nvidia`     | LLM (NVIDIA NIM)                        | [build.nvidia.com](https://build.nvidia.com)                 |
 | `moonshot`   | LLM (Kimi/Moonshot direct)              | [platform.moonshot.cn](https://platform.moonshot.cn)         |
 | `minimax`    | LLM (Minimax direct)                    | [platform.minimaxi.com](https://platform.minimaxi.com)      |
+| `xai`        | LLM (xAI Grok direct)                   | [console.x.ai](https://console.x.ai)                         |
 | `avian`      | LLM (Avian direct)                      | [avian.io](https://avian.io)                                 |
 | `mistral`    | LLM (Mistral direct)                    | [console.mistral.ai](https://console.mistral.ai)            |
 | `longcat`    | LLM (Longcat direct)                    | [longcat.ai](https://longcat.ai)                             |

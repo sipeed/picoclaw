@@ -414,6 +414,7 @@ PicoClaw supports 30+ LLM providers through the `model_list` configuration. Use 
 | [Groq](https://console.groq.com/keys) | `groq/` | Required | Fast inference (Llama, Mixtral) |
 | [Moonshot (Kimi)](https://platform.moonshot.cn/console/api-keys) | `moonshot/` | Required | Kimi models |
 | [Minimax](https://platform.minimaxi.com/user-center/basic-information/interface-key) | `minimax/` | Required | MiniMax models |
+| [xAI](https://console.x.ai/) | `xai/` | Required | Grok models |
 | [Mistral](https://console.mistral.ai/api-keys) | `mistral/` | Required | Mistral Large, Codestral |
 | [NVIDIA NIM](https://build.nvidia.com/) | `nvidia/` | Required | NVIDIA hosted models |
 | [Cerebras](https://cloud.cerebras.ai/) | `cerebras/` | Required | Fast inference |
