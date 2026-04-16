@@ -13,7 +13,7 @@
     ```
     {
       "model_name": "claude-sonnet-bedrock",
-      "model": "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "model": "bedrock/global.anthropic.claude-sonnet-4-6",
       "api_base": "https://bedrock-runtime.ap-southeast-1.amazonaws.com",
       "api_keys": "[NOT_HERE]"
     }
