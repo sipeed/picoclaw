@@ -812,6 +812,8 @@ func (p *PerplexitySearchProvider) Search(
 
 type SearXNGSearchProvider struct {
 	baseURL string
+	proxy   string
+	client  *http.Client
 }
 
 func (p *SearXNGSearchProvider) Search(
@@ -836,7 +838,10 @@ func (p *SearXNGSearchProvider) Search(
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := p.client
+	if client == nil {
+		client = &http.Client{Timeout: searchTimeout}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
@@ -1166,12 +1171,18 @@ func (opts WebSearchToolOptions) providerByName(name string) (SearchProvider, in
 		if !opts.SearXNGEnabled {
 			return nil, 0, nil
 		}
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create HTTP client for SearXNG: %w", err)
+		}
 		maxResults := 10
 		if opts.SearXNGMaxResults > 0 {
 			maxResults = min(opts.SearXNGMaxResults, 10)
 		}
 		return &SearXNGSearchProvider{
 			baseURL: opts.SearXNGBaseURL,
+			proxy:   opts.Proxy,
+			client:  client,
 		}, maxResults, nil
 	case "tavily":
 		if !opts.TavilyEnabled {
@@ -1458,6 +1469,8 @@ type privateHostWhitelist struct {
 	cidrs []*net.IPNet
 }
 
+type webFetchAllowedFirstHopHostKey struct{}
+
 func NewWebFetchTool(maxChars int, format string, fetchLimitBytes int64) (*WebFetchTool, error) {
 	// createHTTPClient cannot fail with an empty proxy string.
 	return NewWebFetchToolWithConfig(maxChars, "", format, fetchLimitBytes, nil)
@@ -1509,6 +1522,7 @@ func NewWebFetchToolWithConfig(
 		if isObviousPrivateHost(req.URL.Hostname(), whitelist) {
 			return fmt.Errorf("redirect target is private or local network host")
 		}
+		allowConfiguredProxyFirstHop(req, client.Transport)
 		return nil
 	}
 	if fetchLimitBytes <= 0 {
@@ -1588,6 +1602,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		if reqErr != nil {
 			return nil, nil, fmt.Errorf("failed to create request: %w", reqErr)
 		}
+		allowConfiguredProxyFirstHop(req, t.client.Transport)
 		req.Header.Set("User-Agent", ua)
 		resp, doErr := t.client.Do(req)
 		if doErr != nil {
@@ -1790,6 +1805,9 @@ func newSafeDialContext(
 		if host == "" {
 			return nil, fmt.Errorf("empty target host")
 		}
+		if isAllowedFirstHopHost(ctx, host) {
+			return dialer.DialContext(ctx, network, address)
+		}
 
 		if ip := net.ParseIP(host); ip != nil {
 			if shouldBlockPrivateIP(ip, whitelist) {
@@ -1836,6 +1854,46 @@ func newSafeDialContext(
 		}
 		return nil, fmt.Errorf("failed connecting to public addresses for %s", host)
 	}
+}
+
+func allowConfiguredProxyFirstHop(req *http.Request, rt http.RoundTripper) {
+	if req == nil {
+		return
+	}
+
+	transport, ok := rt.(*http.Transport)
+	if !ok || transport.Proxy == nil {
+		return
+	}
+
+	proxyURL, err := transport.Proxy(req)
+	if err != nil || proxyURL == nil {
+		return
+	}
+
+	host := normalizeAllowedFirstHopHost(proxyURL.Hostname())
+	if host == "" {
+		return
+	}
+
+	*req = *req.WithContext(context.WithValue(
+		req.Context(),
+		webFetchAllowedFirstHopHostKey{},
+		host,
+	))
+}
+
+func isAllowedFirstHopHost(ctx context.Context, host string) bool {
+	allowed, _ := ctx.Value(webFetchAllowedFirstHopHostKey{}).(string)
+	if allowed == "" {
+		return false
+	}
+	return allowed == normalizeAllowedFirstHopHost(host)
+}
+
+func normalizeAllowedFirstHopHost(host string) string {
+	host = strings.ToLower(strings.TrimSpace(host))
+	return strings.TrimSuffix(host, ".")
 }
 
 func newPrivateHostWhitelist(entries []string) (*privateHostWhitelist, error) {

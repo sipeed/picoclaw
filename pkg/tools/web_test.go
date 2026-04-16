@@ -767,6 +767,33 @@ func TestWebTool_WebFetch_PrivateHostAllowedForTests(t *testing.T) {
 	}
 }
 
+func TestWebTool_WebFetch_AllowsLoopbackProxy(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.String() != "http://example.com/proxied" {
+			t.Fatalf("proxy received URL %q, want %q", r.URL.String(), "http://example.com/proxied")
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("proxied content"))
+	}))
+	defer proxy.Close()
+
+	tool, err := NewWebFetchToolWithProxy(50000, proxy.URL, format, testFetchLimit, nil)
+	if err != nil {
+		t.Fatalf("Failed to create web fetch tool: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": "http://example.com/proxied",
+	})
+	if result.IsError {
+		t.Fatalf("expected success through loopback proxy, got %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "proxied content") {
+		t.Fatalf("expected proxied content, got %q", result.ForLLM)
+	}
+}
+
 // TestWebFetch_BlocksIPv4MappedIPv6Loopback verifies ::ffff:127.0.0.1 is blocked
 func TestWebFetch_BlocksIPv4MappedIPv6Loopback(t *testing.T) {
 	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
@@ -1090,6 +1117,40 @@ func TestNewWebSearchTool_PropagatesProxy(t *testing.T) {
 		}
 		if p.proxy != "http://127.0.0.1:7890" {
 			t.Fatalf("provider proxy = %q, want %q", p.proxy, "http://127.0.0.1:7890")
+		}
+	})
+
+	t.Run("searxng", func(t *testing.T) {
+		tool, err := NewWebSearchTool(WebSearchToolOptions{
+			SearXNGEnabled:    true,
+			SearXNGBaseURL:    "https://searx.example.com",
+			SearXNGMaxResults: 3,
+			Proxy:             "http://127.0.0.1:7890",
+		})
+		if err != nil {
+			t.Fatalf("NewWebSearchTool() error: %v", err)
+		}
+		p, ok := tool.provider.(*SearXNGSearchProvider)
+		if !ok {
+			t.Fatalf("provider type = %T, want *SearXNGSearchProvider", tool.provider)
+		}
+		if p.proxy != "http://127.0.0.1:7890" {
+			t.Fatalf("provider proxy = %q, want %q", p.proxy, "http://127.0.0.1:7890")
+		}
+		tr, ok := p.client.Transport.(*http.Transport)
+		if !ok {
+			t.Fatalf("client.Transport type = %T, want *http.Transport", p.client.Transport)
+		}
+		req, err := http.NewRequest(http.MethodGet, "https://searx.example.com/search", nil)
+		if err != nil {
+			t.Fatalf("http.NewRequest() error: %v", err)
+		}
+		proxyURL, err := tr.Proxy(req)
+		if err != nil {
+			t.Fatalf("transport.Proxy(req) error: %v", err)
+		}
+		if proxyURL == nil || proxyURL.String() != "http://127.0.0.1:7890" {
+			t.Fatalf("proxy URL = %v, want %q", proxyURL, "http://127.0.0.1:7890")
 		}
 	})
 }
