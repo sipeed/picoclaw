@@ -11,7 +11,7 @@ steps:
       echo "##vso[task.setvariable variable=gcpProject]$PROJECT"
       echo "##vso[task.setvariable variable=gcpAccount]$ACCOUNT"
     displayName: 'Set Environment Variables from JSON'
-    workingDirectory: scripts/pipeline_templates
+    workingDirectory: pipeline/pipeline_templates
     env:
       ENVIRONMENT: ${{ parameters.environment }}
   - task: DownloadSecureFile@1
