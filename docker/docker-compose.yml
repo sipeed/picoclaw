@@ -56,7 +56,7 @@ services:
   picoclaw-launcher:
     build:
       context: ..
-      dockerfile: docker/Dockerfile.launcher
+      dockerfile: docker/Dockerfile.heavy
       args:
         GO_BUILD_TAGS: goolm,stdjson,bedrock
     image: docker-picoclaw-launcher:local

@@ -3,7 +3,7 @@
 # ============================================================
 FROM golang:1.26.0-alpine AS builder
 
-RUN apk add --no-cache git make
+RUN apk add --no-cache git make nodejs npm && npm i -g pnpm
 
 WORKDIR /src
 
@@ -14,7 +14,9 @@ RUN go mod download
 # Copy source and build
 COPY . .
 ARG GO_BUILD_TAGS=goolm,stdjson,bedrock
-RUN make build GO_BUILD_TAGS=${GO_BUILD_TAGS}
+RUN make build GO_BUILD_TAGS=${GO_BUILD_TAGS} && \
+    make build-launcher GO_BUILD_TAGS=${GO_BUILD_TAGS} && \
+    make build-launcher-tui GO_BUILD_TAGS=${GO_BUILD_TAGS}
 
 # ============================================================
 # Stage 2: Node.js runtime with Python + MCP support
@@ -48,6 +50,8 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Copy binary
 COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
+COPY --from=builder /src/build/picoclaw-launcher /usr/local/bin/picoclaw-launcher
+COPY --from=builder /src/build/picoclaw-launcher-tui /usr/local/bin/picoclaw-launcher-tui
 
 # Run onboard to create initial directories and config
 RUN /usr/local/bin/picoclaw onboard
@@ -57,5 +61,6 @@ COPY workspace/ /root/.picoclaw/workspace/
 
 VOLUME /root/.picoclaw/workspace
 
-ENTRYPOINT ["picoclaw"]
-CMD ["gateway"]
+ENTRYPOINT ["picoclaw-launcher"]
+CMD ["-console", "-public", "-no-browser"]
+

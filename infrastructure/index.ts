@@ -44,11 +44,25 @@ const gatewayServiceAccount = new gcp.serviceaccount.Account("picoclaw-gateway-s
     displayName: "PicoClaw Gateway Service Account",
 });
 
+// Persistent storage for /root/.picoclaw on Cloud Run.
+const picoclawStateBucket = new gcp.storage.Bucket("picoclaw-volume", {
+    project,
+    location: region.toUpperCase(),
+    uniformBucketLevelAccess: true,
+    forceDestroy: false,
+});
+
 // Grant the service account secretAccessor at the project level so it can
 // read all pre-existing secrets without needing setIamPolicy on each one.
 const iamSecretAccessor = new gcp.projects.IAMMember("picoclaw-sa-secret-accessor", {
     project,
     role: "roles/secretmanager.secretAccessor",
+    member: pulumi.interpolate`serviceAccount:${gatewayServiceAccount.email}`,
+});
+
+const stateBucketObjectAdmin = new gcp.storage.BucketIAMMember("picoclaw-sa-state-bucket-object-admin", {
+    bucket: picoclawStateBucket.name,
+    role: "roles/storage.objectAdmin",
     member: pulumi.interpolate`serviceAccount:${gatewayServiceAccount.email}`,
 });
 
@@ -127,6 +141,12 @@ const gatewayService = new gcp.cloudrunv2.Service("picoclaw-gateway", {
                     },
                     cpuIdle: true,
                 },
+                volumeMounts: [
+                    {
+                        name: "picoclaw-home",
+                        mountPath: "/root/.picoclaw",
+                    },
+                ],
                 // startupProbe: {
                 //     httpGet: {
                 //         path: "/health",
@@ -146,9 +166,18 @@ const gatewayService = new gcp.cloudrunv2.Service("picoclaw-gateway", {
                 // },
             },
         ],
+        volumes: [
+            {
+                name: "picoclaw-home",
+                gcs: {
+                    bucket: picoclawStateBucket.name,
+                    readOnly: false,
+                },
+            },
+        ],
     },
 }, {
-    dependsOn: [iamSecretAccessor],
+    dependsOn: [iamSecretAccessor, stateBucketObjectAdmin],
 });
 
 // Temporarily disable access filtering and allow unauthenticated access.
