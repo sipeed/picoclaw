@@ -116,7 +116,7 @@ func (c *DingTalkChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 	// Get session webhook from storage
 	sessionWebhookRaw, ok := c.sessionWebhooks.Load(msg.ChatID)
 	if !ok {
-		return nil, fmt.Errorf("no session_webhook found for chat %s, cannot send message", msg.ChatID)
+		return nil, fmt.Errorf("no session_webhook found for chat %s. Note: DingTalk channel requires an active user conversation to send messages. Proactive/cron messages are not supported", msg.ChatID)
 	}
 
 	sessionWebhook, ok := sessionWebhookRaw.(string)
