@@ -170,8 +170,8 @@ case "$JOB_TYPE" in
       tests/settings/create-api-key-internal.spec.ts \
       tests/settings/create-api-key-external.spec.ts \
       tests/settings/edit-api-key-description.spec.ts \
-      tests/settings/reactivate-api-key.spec.ts \
-      tests/settings/revoke-api-key.spec.ts
+      tests/settings/revoke-api-key.spec.ts \
+      tests/settings/reactivate-api-key.spec.ts
 
     run_group "Logs" \
       tests/logs/download-conversation-logs.spec.ts

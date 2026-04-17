@@ -26,12 +26,30 @@ test('API Key reactivate flow', async ({ page }) => {
         await expect(tableLoader).not.toBeVisible({ timeout: 15000 });
     }
 
+    // Set pagination to "All" to ensure we can see all keys
+    console.log('Setting pagination to show all items...');
+    const paginationSelect = page.locator('.v-data-table-footer__items-per-page .v-select').first();
+    await paginationSelect.click();
+    await page.waitForTimeout(300);
+
+    // Click "All" option in the dropdown
+    const allOption = page.locator('.v-overlay-container .v-list-item').filter({ hasText: /^All$/i }).first();
+    await expect(allOption).toBeVisible({ timeout: 5000 });
+    await allOption.click();
+    await page.waitForTimeout(1000); // Wait for table to reload with all items
+
+    // Wait for table to finish loading after pagination change
+    if (await tableLoader.isVisible().catch(() => false)) {
+        console.log('Waiting for table to reload...');
+        await expect(tableLoader).not.toBeVisible({ timeout: 15000 });
+    }
+
     /**
-     * We look specifically for a row that contains the text 'Revoked' 
+     * We look specifically for a row that contains the text 'Revoked'
      * so we can reactivate it.
      */
     const revokedKeyRow = page.locator('.api-keys-table tbody tr').filter({
-        hasText: /revoked/i
+        has: page.locator('.v-chip').filter({ hasText: /^Revoked$/i })
     }).first();
 
     await expect(revokedKeyRow).toBeVisible({
@@ -83,8 +101,11 @@ test('API Key reactivate flow', async ({ page }) => {
 
     // Step 11: Verify status updated to Active in the table
     console.log('\n📍 Step 11: Verify status in table');
+    // Wait for table to reload after edit
+    await page.waitForTimeout(1000);
+
     /**
-     * We re-locate the row (it will no longer have 'Revoked' text 
+     * We re-locate the row (it will no longer have 'Revoked' text
      * so we search by description or just wait for the Active chip).
      */
     await expect(page.locator('.api-keys-table')).toBeVisible();

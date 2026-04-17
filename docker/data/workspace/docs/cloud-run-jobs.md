@@ -130,6 +130,32 @@ gcloud run jobs execute picoclaw-e2e \
   --update-env-vars="JOB_EXPECTED_RESULT=1. Flow created with custom node visible"
 ```
 
+```bash
+gcloud run jobs execute picoclaw-e2e \
+  --region=europe-west4 \
+  --container=picoclaw \
+  --flags-file=<(cat <<'EOF'
+--update-env-vars:
+  JOB_TYPE: generate
+  JOB_AREA: flow-designer
+  JOB_TEST_FILE: create-new-flow-custom-node
+  JOB_STEPS: |
+    1. Perform case "Login"
+    2. On Select Organization page, select organization "Testing2026!"
+    3. User redirected to: https://dashboard.int3nt.info
+    4. Click Flow Designer on the left sidebar
+    5. On All Flows page, click Add New
+    6. Flow canvas page opens displaying default nodes: START, END
+    7. Click Add Nodes Button
+    8. From Add Nodes menu, select Custom Node
+    9. Verify the Custom Node is added to the canvas
+  JOB_EXPECTED_RESULT: |
+    1. Custom Node is successfully added to the flow canvas
+    2. Default nodes (START, END) remain visible
+EOF
+)
+```
+
 ---
 
 ## JOB_TYPE=prompt
