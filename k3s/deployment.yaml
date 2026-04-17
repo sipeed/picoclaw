@@ -41,6 +41,8 @@ spec:
         ports:
         - containerPort: 18790
         env:
+        - name: PICOCLAW_LOG_LEVEL
+          value: "debug"
         - name: PICOCLAW_HOME
           value: /home/picoclaw/.picoclaw
         - name: PICOCLAW_GATEWAY_HOST

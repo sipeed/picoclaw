@@ -64,6 +64,7 @@ var stripModelPrefixProviders = map[string]struct{}{
 	"lmstudio":      {},
 	"azure-ai":      {},
 	"azure-foundry": {},
+	"gemini":        {},
 }
 
 func WithMaxTokensField(maxTokensField string) Option {
@@ -226,6 +227,7 @@ func (p *Provider) Chat(
 		req.Header.Set("User-Agent", p.userAgent)
 	}
 	if p.apiKey != "" {
+
 		if p.useAzureHeaders {
 			req.Header.Set("api-key", p.apiKey)
 		} else {

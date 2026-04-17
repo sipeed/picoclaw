@@ -4,6 +4,7 @@
 BINARY_NAME=picoclaw
 BUILD_DIR=build
 CMD_DIR=cmd/$(BINARY_NAME)
+DOCKER_USER=stevef1uk
 MAIN_GO=$(CMD_DIR)/main.go
 EXT=
 
@@ -319,7 +320,17 @@ docker-test:
 
 ## docker-run: Run picoclaw gateway in Docker (Alpine-based)
 docker-run:
-	docker compose -f docker/docker-compose.yml --profile gateway up
+	docker compose -f docker/docker-compose.yml up -d
+
+## docker-build-rpi: Build Raspberry Pi specific Docker image (ARM64)
+docker-build-rpi:
+	@echo "Building Raspberry Pi Docker image (ARM64)..."
+	docker build --no-cache --platform linux/arm64 -t $(DOCKER_USER)/picoclaw-rpi:latest -f docker/Dockerfile.rpi .
+
+## docker-push-rpi: Push Raspberry Pi specific Docker image (ARM64)
+docker-push-rpi:
+	@echo "Pushing Raspberry Pi Docker image (ARM64)..."
+	docker push $(DOCKER_USER)/picoclaw-rpi:latest
 
 ## docker-run-full: Run picoclaw gateway in Docker (full-featured)
 docker-run-full:
