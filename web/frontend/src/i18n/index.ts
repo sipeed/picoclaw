@@ -7,8 +7,6 @@ import i18n from "i18next"
 import LanguageDetector from "i18next-browser-languagedetector"
 import { initReactI18next } from "react-i18next"
 
-import { launcherFetch } from "@/api/http"
-
 import en from "./locales/en.json"
 import zh from "./locales/zh.json"
 
@@ -46,14 +44,6 @@ i18n.on("languageChanged", (lng) => {
   } else {
     dayjs.locale("en")
   }
-
-  void launcherFetch("/api/ui/language", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ language: lng }),
-  }).catch(() => {
-    // Keep UI language changes responsive even if backend sync fails.
-  })
 })
 
 export default i18n

@@ -1778,11 +1778,6 @@ func TestApplySogouRangeHint(t *testing.T) {
 }
 
 func TestPrefersDuckDuckGoQuery(t *testing.T) {
-	SetPreferredWebSearchLanguage("")
-	t.Cleanup(func() {
-		SetPreferredWebSearchLanguage("")
-	})
-
 	tests := []struct {
 		name  string
 		query string
@@ -1805,19 +1800,9 @@ func TestPrefersDuckDuckGoQuery(t *testing.T) {
 	}
 }
 
-func TestPrefersDuckDuckGoQuery_FallsBackToPreferredLanguage(t *testing.T) {
-	SetPreferredWebSearchLanguage("en")
-	t.Cleanup(func() {
-		SetPreferredWebSearchLanguage("")
-	})
-
-	if !prefersDuckDuckGoQuery("2026 04 15") {
-		t.Fatal("numeric query should prefer DuckDuckGo when preferred language is English")
-	}
-
-	SetPreferredWebSearchLanguage("zh")
+func TestPrefersDuckDuckGoQuery_DoesNotUseGlobalLanguageFallback(t *testing.T) {
 	if prefersDuckDuckGoQuery("2026 04 15") {
-		t.Fatal("numeric query should prefer Sogou when preferred language is Chinese")
+		t.Fatal("numeric query should default to Sogou when no script-specific hint is present")
 	}
 }
 
