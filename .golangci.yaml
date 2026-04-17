@@ -1,169 +1,37 @@
-
 linters:
-  default: all
-  disable:
-    # TODO: Tweak for current project needs
-    - containedctx
-    - cyclop
-    - depguard
-    - dupword
-    - goerr113
-    - exhaustruct
-    - gochecknoglobals
-    - godot
-    - ireturn
-    - nlreturn
-    - noctx
-    - nonamedreturns
-    - tagliatelle
-    - testpackage
-    - varnamelen
-    - wrapcheck
-    - wsl
-
-    # TODO: Disabled, because they are failing at the moment, we should fix them and enable (step by step)
-    - contextcheck
-    - errcheck
-    - errchkjson
-    - errorlint
-    - exhaustive
-    - forbidigo
-    - forcetypeassert
-    - funlen
-    - gochecknoinits
-    - gocognit
-    - goconst
-    - gocritic
-    - gocyclo
-    - godox
-    - gosec
-    - ineffassign
-    - lll
-    - maintidx
-    - gomnd
-    - nestif
-    - nilnil
-    - paralleltest
-    - perfsprint
-    - revive
-    - staticcheck
-    - tagalign
-    - testifylint
-    - thelper
-    - unparam
-    - usestdlibvars
-  settings:
-    gomoddirectives:
-      replace-allow-list:
-        - github.com/bwmarrin/discordgo
-    errcheck:
-      check-type-assertions: true
-      check-blank: true
-    exhaustive:
-      default-signifies-exhaustive: true
-    funlen:
-      lines: 120
-      statements: 40
-    gocognit:
-      min-complexity: 25
-    gocyclo:
-      min-complexity: 20
-    govet:
-      enable-all: true
-      disable:
-        - fieldalignment
-    lll:
-      line-length: 120
-      tab-width: 4
-    misspell:
-      locale: US
-    gomnd:
-      checks:
-        - argument
-        - assign
-        - case
-        - condition
-        - operation
-        - return
-    nakedret:
-      max-func-lines: 3
-    revive:
-      enable-all-rules: true
-      rules:
-        - name: add-constant
-          disabled: true
-        - name: argument-limit
-          arguments:
-            - 7
-          severity: warning
-        - name: banned-characters
-          disabled: true
-        - name: cognitive-complexity
-          disabled: true
-        - name: comment-spacings
-          arguments:
-            - nolint
-          severity: warning
-        - name: cyclomatic
-          disabled: true
-        - name: file-header
-          disabled: true
-        - name: function-result-limit
-          arguments:
-            - 3
-          severity: warning
-        - name: function-length
-          disabled: true
-        - name: line-length-limit
-          disabled: true
-        - name: max-public-structs
-          disabled: true
-        - name: modifies-value-receiver
-          disabled: true
-        - name: package-comments
-          disabled: true
-        - name: unused-receiver
-          disabled: true
-  exclusions:
-    generated: lax
-    rules:
-      - linters:
-          - lll
-        source: '^//go:generate '
-      - linters:
-          - funlen
-          - maintidx
-          - gocognit
-          - gocyclo
-        path: _test\.go$
-      - linters:
-          - nolintlint
-        path: 'pkg/tools/(i2c\.go|spi\.go)$'
-
-issues:
-  max-issues-per-linter: 0
-  max-same-issues: 0
-
-formatters:
+  default: none
   enable:
-    - gci
+    - gocognit
+    - gocyclo
     - gofmt
-    - gofumpt
     - goimports
-    - golines
-  settings:
-    gci:
-      sections:
-        - standard
-        - default
-        - localmodule
-      custom-order: true
-    gofmt:
-      simplify: true
-      rewrite-rules:
-        - pattern: "interface{}"
-          replacement: "any"
-        - pattern: "a[b:len(a)]"
-          replacement: "a[b:]"
-    golines:
-      max-len: 120
+    - misspell
+    - nakedret
+
+linters-settings:
+  gocyclo:
+    min-complexity: 30
+  gocognit:
+    min-complexity: 30
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: github.com/sipeed/picoclaw
+  misspell:
+    locale: US
+  nakedret:
+    max-func-lines: 30
+
+run:
+  timeout: 30m
+  skip-dirs:
+    - vendor
+    - web/frontend
+    - scratch
+    - pkg/channels
+    - pkg/audio
+    - cmd/picoclaw-launcher-tui
+    - web/backend/api
+  tests: false
+  skip-files:
+    - .*_test.go

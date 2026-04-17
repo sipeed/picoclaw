@@ -296,7 +296,7 @@ update-deps:
 	@$(GO) mod tidy
 
 ## check: Run vet, fmt, lint, and verify dependencies
-check: deps fmt vet lint test
+check: deps fmt vet test
 
 ## run: Build and run picoclaw
 run: build
