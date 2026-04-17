@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,19 +14,19 @@ import (
 )
 
 func TestInstallSkillToolName(t *testing.T) {
-	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false)
+	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false, nil)
 	assert.Equal(t, "install_skill", tool.Name())
 }
 
 func TestInstallSkillToolMissingSlug(t *testing.T) {
-	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false)
+	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false, nil)
 	result := tool.Execute(context.Background(), map[string]any{})
 	assert.True(t, result.IsError)
 	assert.Contains(t, result.ForLLM, "identifier is required and must be a non-empty string")
 }
 
 func TestInstallSkillToolEmptySlug(t *testing.T) {
-	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false)
+	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"slug": "   ",
 	})
@@ -34,7 +35,7 @@ func TestInstallSkillToolEmptySlug(t *testing.T) {
 }
 
 func TestInstallSkillToolUnsafeSlug(t *testing.T) {
-	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false)
+	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false, nil)
 
 	cases := []string{
 		"../etc/passwd",
@@ -56,7 +57,7 @@ func TestInstallSkillToolAlreadyExists(t *testing.T) {
 	skillDir := filepath.Join(workspace, "skills", "existing-skill")
 	require.NoError(t, os.MkdirAll(skillDir, 0o755))
 
-	tool := NewInstallSkillTool(skills.NewRegistryManager(), workspace, nil, false)
+	tool := NewInstallSkillTool(skills.NewRegistryManager(), workspace, nil, false, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"slug":     "existing-skill",
 		"registry": "clawhub",
@@ -67,7 +68,7 @@ func TestInstallSkillToolAlreadyExists(t *testing.T) {
 
 func TestInstallSkillToolRegistryNotFound(t *testing.T) {
 	workspace := t.TempDir()
-	tool := NewInstallSkillTool(skills.NewRegistryManager(), workspace, nil, false)
+	tool := NewInstallSkillTool(skills.NewRegistryManager(), workspace, nil, false, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"slug":     "some-skill",
 		"registry": "nonexistent",
@@ -78,7 +79,7 @@ func TestInstallSkillToolRegistryNotFound(t *testing.T) {
 }
 
 func TestInstallSkillToolParameters(t *testing.T) {
-	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false)
+	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false, nil)
 	params := tool.Parameters()
 
 	props, ok := params["properties"].(map[string]any)
@@ -95,7 +96,7 @@ func TestInstallSkillToolParameters(t *testing.T) {
 }
 
 func TestInstallSkillToolMissingRegistry(t *testing.T) {
-	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false)
+	tool := NewInstallSkillTool(skills.NewRegistryManager(), t.TempDir(), nil, false, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"slug": "some-skill",
 	})
@@ -108,7 +109,7 @@ func TestInstallSkillToolWhitelist(t *testing.T) {
 	rm := skills.NewRegistryManager()
 
 	t.Run("blocked-by-whitelist", func(t *testing.T) {
-		tool := NewInstallSkillTool(rm, workspace, []string{"allowed-skill"}, true)
+		tool := NewInstallSkillTool(rm, workspace, []string{"allowed-skill"}, true, nil)
 		result := tool.Execute(context.Background(), map[string]any{
 			"slug":     "blocked-skill",
 			"registry": "clawhub",
@@ -119,7 +120,7 @@ func TestInstallSkillToolWhitelist(t *testing.T) {
 
 	t.Run("allowed-by-whitelist", func(t *testing.T) {
 		// This will still fail because registry is not found, but it should pass the whitelist check
-		tool := NewInstallSkillTool(rm, workspace, []string{"allowed-skill"}, true)
+		tool := NewInstallSkillTool(rm, workspace, []string{"allowed-skill"}, true, nil)
 		result := tool.Execute(context.Background(), map[string]any{
 			"slug":     "allowed-skill",
 			"registry": "clawhub",
@@ -129,7 +130,7 @@ func TestInstallSkillToolWhitelist(t *testing.T) {
 	})
 
 	t.Run("empty-whitelist-allows-all", func(t *testing.T) {
-		tool := NewInstallSkillTool(rm, workspace, []string{}, false)
+		tool := NewInstallSkillTool(rm, workspace, []string{}, false, nil)
 		result := tool.Execute(context.Background(), map[string]any{
 			"slug":     "any-skill",
 			"registry": "clawhub",
@@ -139,12 +140,49 @@ func TestInstallSkillToolWhitelist(t *testing.T) {
 	})
 
 	t.Run("nil-whitelist-allows-all", func(t *testing.T) {
-		tool := NewInstallSkillTool(rm, workspace, nil, false)
+		tool := NewInstallSkillTool(rm, workspace, nil, false, nil)
 		result := tool.Execute(context.Background(), map[string]any{
 			"slug":     "any-skill",
 			"registry": "clawhub",
 		})
 		assert.True(t, result.IsError)
 		assert.NotContains(t, result.ForLLM, "not in whitelist")
+	})
+}
+
+func TestInstallSkillToolDenyWritePaths(t *testing.T) {
+	workspace := t.TempDir()
+	rm := skills.NewRegistryManager()
+
+	t.Run("blocked-by-deny-write-paths", func(t *testing.T) {
+		denyPatterns := []*regexp.Regexp{regexp.MustCompile(`^skills(/.*)?$`)}
+		tool := NewInstallSkillTool(rm, workspace, nil, false, denyPatterns)
+		result := tool.Execute(context.Background(), map[string]any{
+			"slug":     "some-skill",
+			"registry": "clawhub",
+		})
+		assert.True(t, result.IsError)
+		assert.Contains(t, result.ForLLM, "access denied")
+	})
+
+	t.Run("allowed-without-deny-paths", func(t *testing.T) {
+		tool := NewInstallSkillTool(rm, workspace, nil, false, nil)
+		result := tool.Execute(context.Background(), map[string]any{
+			"slug":     "some-skill",
+			"registry": "clawhub",
+		})
+		assert.True(t, result.IsError)
+		assert.NotContains(t, result.ForLLM, "access denied")
+	})
+
+	t.Run("non-matching-deny-pattern-allows", func(t *testing.T) {
+		denyPatterns := []*regexp.Regexp{regexp.MustCompile(`^restricted(/.*)?$`)}
+		tool := NewInstallSkillTool(rm, workspace, nil, false, denyPatterns)
+		result := tool.Execute(context.Background(), map[string]any{
+			"slug":     "some-skill",
+			"registry": "clawhub",
+		})
+		assert.True(t, result.IsError)
+		assert.NotContains(t, result.ForLLM, "access denied")
 	})
 }

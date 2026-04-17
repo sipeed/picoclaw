@@ -193,6 +193,7 @@ func registerSharedTools(
 ) {
 	allowReadPaths := buildAllowReadPatterns(cfg)
 	denyReadPaths := compilePatterns(cfg.Tools.DenyReadPaths)
+	denyWritePaths := compilePatterns(cfg.Tools.DenyWritePaths)
 	var ttsProvider tts.TTSProvider
 	if cfg.Tools.IsToolEnabled("send_tts") {
 		ttsProvider = tts.DetectTTS(cfg)
@@ -376,6 +377,7 @@ func registerSharedTools(
 						agent.Workspace,
 						cfg.Tools.Skills.Whitelist,
 						cfg.Tools.Skills.WhitelistEnabled,
+						denyWritePaths,
 					),
 				)
 			}
