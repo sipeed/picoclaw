@@ -20,7 +20,12 @@ type (
 
 const MaxReadFileSize = fstools.MaxReadFileSize
 
-func NewReadFileTool(workspace string, restrict bool, maxReadFileSize int, allowPaths ...[]*regexp.Regexp) *ReadFileTool {
+func NewReadFileTool(
+	workspace string,
+	restrict bool,
+	maxReadFileSize int,
+	allowPaths ...[]*regexp.Regexp,
+) *ReadFileTool {
 	return fstools.NewReadFileTool(workspace, restrict, maxReadFileSize, allowPaths...)
 }
 
@@ -42,19 +47,35 @@ func NewReadFileLinesTool(
 	return fstools.NewReadFileLinesTool(workspace, restrict, maxReadFileSize, allowPaths...)
 }
 
-func NewWriteFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *WriteFileTool {
+func NewWriteFileTool(
+	workspace string,
+	restrict bool,
+	allowPaths ...[]*regexp.Regexp,
+) *WriteFileTool {
 	return fstools.NewWriteFileTool(workspace, restrict, allowPaths...)
 }
 
-func NewListDirTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *ListDirTool {
+func NewListDirTool(
+	workspace string,
+	restrict bool,
+	allowPaths ...[]*regexp.Regexp,
+) *ListDirTool {
 	return fstools.NewListDirTool(workspace, restrict, allowPaths...)
 }
 
-func NewEditFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *EditFileTool {
+func NewEditFileTool(
+	workspace string,
+	restrict bool,
+	allowPaths ...[]*regexp.Regexp,
+) *EditFileTool {
 	return fstools.NewEditFileTool(workspace, restrict, allowPaths...)
 }
 
-func NewAppendFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *AppendFileTool {
+func NewAppendFileTool(
+	workspace string,
+	restrict bool,
+	allowPaths ...[]*regexp.Regexp,
+) *AppendFileTool {
 	return fstools.NewAppendFileTool(workspace, restrict, allowPaths...)
 }
 

@@ -1,8 +1,6 @@
 package tools
 
 import (
-	"context"
-
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/sipeed/picoclaw/pkg/audio/tts"
@@ -101,5 +99,3 @@ func NewWebFetchToolWithConfig(
 ) (*WebFetchTool, error) {
 	return integrationtools.NewWebFetchToolWithConfig(maxChars, proxy, format, fetchLimitBytes, privateHostWhitelist)
 }
-
-func _keepContext(context.Context) {}

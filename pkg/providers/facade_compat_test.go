@@ -38,15 +38,7 @@ func TestNormalizeToolCallFacadeMatchesCLIProvider(t *testing.T) {
 }
 
 func TestAntigravityFacadeSignaturesRemainAvailable(t *testing.T) {
-	var projectFetcher func(string) (string, error) = FetchAntigravityProjectID
-	var modelsFetcher func(string, string) ([]AntigravityModelInfo, error) = FetchAntigravityModels
-
-	if projectFetcher == nil {
-		t.Fatal("FetchAntigravityProjectID facade should be available")
-	}
-	if modelsFetcher == nil {
-		t.Fatal("FetchAntigravityModels facade should be available")
-	}
-
+	var _ func(string) (string, error) = FetchAntigravityProjectID
+	var _ func(string, string) ([]AntigravityModelInfo, error) = FetchAntigravityModels
 	var _ AntigravityModelInfo = oauthprovider.AntigravityModelInfo{}
 }
