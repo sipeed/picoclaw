@@ -47,6 +47,9 @@ const gatewayServiceAccount = new gcp.serviceaccount.Account("picoclaw-gateway-s
 // Persistent storage for /root/.picoclaw on Cloud Run.
 const picoclawStateBucket = new gcp.storage.Bucket("picoclaw-volume", {
     project,
+    labels: {
+        "do-not-delete": "true",
+    },
     location: region.toUpperCase(),
     uniformBucketLevelAccess: true,
     forceDestroy: false,

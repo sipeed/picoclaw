@@ -29,7 +29,7 @@ stages:
         gcloud auth configure-docker $(Registry) --quiet
       displayName: Configure Docker for GCR
     - script: |
-        docker build -t $(Registry)/$(DockerImageName):latest -f docker/Dockerfile.heavy --build-arg GO_BUILD_TAGS=goolm,stdjson,bedrock .
+        docker build -t $(Registry)/$(DockerImageName):latest -f docker/Dockerfile.launcher --build-arg GO_BUILD_TAGS=goolm,stdjson,bedrock .
       displayName: Build docker image
     - script: |
         docker push $(Registry)/$(DockerImageName):latest
