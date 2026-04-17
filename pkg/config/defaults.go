@@ -516,7 +516,7 @@ func defaultChannels() ChannelsConfig {
 		},
 		"mattermost": map[string]any{
 			"typing": map[string]any{"enabled": true},
-    },
+		},
 		"irc": map[string]any{
 			"settings": map[string]any{
 				"server":   "",
