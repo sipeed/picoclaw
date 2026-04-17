@@ -1,4 +1,4 @@
-> Voltar ao [README](../../../README.pt-br.md)
+> Voltar ao [README](../../project/README.pt-br.md)
 
 # MaixCam
 

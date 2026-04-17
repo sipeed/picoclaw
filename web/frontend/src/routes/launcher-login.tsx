@@ -3,7 +3,10 @@ import { createFileRoute } from "@tanstack/react-router"
 import * as React from "react"
 import { useTranslation } from "react-i18next"
 
-import { postLauncherDashboardLogin, getLauncherAuthStatus } from "@/api/launcher-auth"
+import {
+  getLauncherAuthStatus,
+  postLauncherDashboardLogin,
+} from "@/api/launcher-auth"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -37,7 +40,9 @@ function LauncherLoginPage() {
           globalThis.location.assign("/launcher-setup")
         }
       })
-      .catch(() => { /* network error — stay on login page */ })
+      .catch(() => {
+        /* network error — stay on login page */
+      })
   }, [])
 
   const loginWithToken = React.useCallback(

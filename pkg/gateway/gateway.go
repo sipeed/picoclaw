@@ -3,10 +3,12 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -42,6 +44,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/netbind"
 	"github.com/sipeed/picoclaw/pkg/pid"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/state"
@@ -159,13 +162,30 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) (runEr
 		logger.Infof("Log level set to %q", effectiveLogLevel)
 	}
 
+	bindPlan, listenResult, err := openGatewayListeners(cfg.Gateway.Host, cfg.Gateway.Port)
+	if err != nil {
+		return fmt.Errorf("error opening gateway listeners: %w", err)
+	}
+
 	// Enforce singleton: write PID file with generated token.
-	pidData, err := pid.WritePidFile(homePath, cfg.Gateway.Host, cfg.Gateway.Port)
+	pidData, err := pid.WritePidFile(homePath, bindPlan.ProbeHost, cfg.Gateway.Port)
 	if err != nil {
 		logger.Warnf("write pid file failed: %v", err)
+		for _, ln := range listenResult.Listeners {
+			_ = ln.Close()
+		}
 		return fmt.Errorf("singleton check failed: %w", err)
 	}
 	defer pid.RemovePidFile(homePath)
+	closeListeners := true
+	defer func() {
+		if !closeListeners {
+			return
+		}
+		for _, ln := range listenResult.Listeners {
+			_ = ln.Close()
+		}
+	}()
 
 	provider, modelID, err := createStartupProvider(cfg, allowEmptyStartup)
 	if err != nil {
@@ -193,10 +213,11 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) (runEr
 			"skills_available": skillsInfo["available"],
 		})
 
-	runningServices, err := setupAndStartServices(cfg, agentLoop, msgBus, pidData.Token)
+	runningServices, err := setupAndStartServices(cfg, agentLoop, msgBus, pidData.Token, listenResult)
 	if err != nil {
 		return err
 	}
+	closeListeners = false
 
 	// Setup manual reload channel for /reload endpoint
 	manualReloadChan := make(chan struct{}, 1)
@@ -217,7 +238,9 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) (runEr
 	runningServices.HealthServer.SetReloadFunc(reloadTrigger)
 	agentLoop.SetReloadFunc(reloadTrigger)
 
-	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	for _, bindHost := range listenResult.BindHosts {
+		fmt.Printf("✓ Gateway started on %s\n", net.JoinHostPort(bindHost, strconv.Itoa(cfg.Gateway.Port)))
+	}
 	fmt.Println("Press Ctrl+C to stop")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -320,6 +343,7 @@ func setupAndStartServices(
 	agentLoop *agent.AgentLoop,
 	msgBus *bus.MessageBus,
 	authToken string,
+	listenResult netbind.OpenResult,
 ) (*services, error) {
 	runningServices := &services{}
 
@@ -390,10 +414,20 @@ func setupAndStartServices(
 		fmt.Println("⚠ Warning: No channels enabled")
 	}
 
-	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
 	runningServices.authToken = authToken
-	runningServices.HealthServer = health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port, authToken)
-	runningServices.ChannelManager.SetupHTTPServer(addr, runningServices.HealthServer)
+	runningServices.HealthServer = health.NewServer(listenResult.ProbeHost, cfg.Gateway.Port, authToken)
+
+	var listenAddr string
+	if len(listenResult.Listeners) > 0 {
+		listenAddr = listenResult.Listeners[0].Addr().String()
+	} else {
+		listenAddr = net.JoinHostPort(listenResult.ProbeHost, strconv.Itoa(cfg.Gateway.Port))
+	}
+	runningServices.ChannelManager.SetupHTTPServerListeners(
+		listenResult.Listeners,
+		listenAddr,
+		runningServices.HealthServer,
+	)
 
 	if err = runningServices.ChannelManager.StartAll(context.Background()); err != nil {
 		return nil, fmt.Errorf("error starting channels: %w", err)
@@ -409,10 +443,10 @@ func setupAndStartServices(
 		voiceAgent.Start(vaCtx)
 	}
 
+	healthAddr := net.JoinHostPort(listenResult.ProbeHost, strconv.Itoa(cfg.Gateway.Port))
 	fmt.Printf(
-		"✓ Health endpoints available at http://%s:%d/health, /ready and /reload (POST)\n",
-		cfg.Gateway.Host,
-		cfg.Gateway.Port,
+		"✓ Health endpoints available at http://%s/health, /ready and /reload (POST)\n",
+		healthAddr,
 	)
 
 	stateManager := state.NewManager(cfg.WorkspacePath())

@@ -7,6 +7,7 @@ import {
 import type { ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import ReactMarkdown from "react-markdown"
+import rehypeHighlight from "rehype-highlight"
 import rehypeRaw from "rehype-raw"
 import rehypeSanitize from "rehype-sanitize"
 import remarkGfm from "remark-gfm"
@@ -171,10 +172,10 @@ export function DetailSheet({
               </div>
 
               {detailView === "preview" ? (
-                <div className="prose prose-zinc dark:prose-invert prose-sm sm:prose-base prose-pre:rounded-xl prose-pre:border prose-pre:border-border/40 prose-pre:bg-zinc-950/90 prose-pre:shadow-sm prose-headings:tracking-tight prose-a:text-primary prose-a:no-underline hover:prose-a:underline max-w-none">
+                <div className="prose prose-zinc dark:prose-invert prose-sm sm:prose-base prose-pre:rounded-xl prose-pre:border prose-pre:border-border/40 prose-pre:bg-zinc-100 prose-pre:p-0 prose-pre:shadow-sm dark:prose-pre:bg-zinc-950/90 prose-headings:tracking-tight prose-a:text-primary prose-a:no-underline hover:prose-a:underline max-w-none">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
-                    rehypePlugins={[rehypeRaw, rehypeSanitize]}
+                    rehypePlugins={[rehypeRaw, rehypeSanitize, rehypeHighlight]}
                   >
                     {selectedSkillDetail.content}
                   </ReactMarkdown>

@@ -77,5 +77,15 @@ export function useGateway() {
     }
   }, [state])
 
-  return { state, loading, canStart, startReason, restartRequired, start, stop, restart, error }
+  return {
+    state,
+    loading,
+    canStart,
+    startReason,
+    restartRequired,
+    start,
+    stop,
+    restart,
+    error,
+  }
 }

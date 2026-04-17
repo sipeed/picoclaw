@@ -1,4 +1,4 @@
-> Quay lại [README](../../../README.vi.md)
+> Quay lại [README](../../project/README.vi.md)
 
 # MaixCam
 

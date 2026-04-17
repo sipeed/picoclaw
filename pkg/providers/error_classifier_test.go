@@ -4,8 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/url"
+	"syscall"
 	"testing"
 )
+
+type stubNetError struct {
+	msg     string
+	timeout bool
+}
+
+func (e stubNetError) Error() string   { return e.msg }
+func (e stubNetError) Timeout() bool   { return e.timeout }
+func (e stubNetError) Temporary() bool { return false }
 
 func TestClassifyError_Nil(t *testing.T) {
 	result := ClassifyError(nil, "openai", "gpt-4")
@@ -154,6 +167,129 @@ func TestClassifyError_TimeoutPatterns(t *testing.T) {
 	}
 }
 
+func TestClassifyError_NetworkPatterns(t *testing.T) {
+	patterns := []string{
+		`failed to send request: Post "https://example.com": tls: bad record MAC`,
+		"read tcp 10.20.0.1:61279->172.65.90.20:443: read: connection reset by peer",
+		"failed to send request: dial tcp 203.0.113.10:443: connect: connection refused",
+		"tls handshake failure",
+		"x509: certificate has expired or is not yet valid",
+		"read tcp 127.0.0.1:443: read: unexpected EOF",
+		"lookup api.example.com: no such host",
+	}
+
+	for _, msg := range patterns {
+		err := errors.New(msg)
+		result := ClassifyError(err, "openai", "gpt-4")
+		if result == nil {
+			t.Errorf("pattern %q: expected non-nil", msg)
+			continue
+		}
+		if result.Reason != FailoverNetwork {
+			t.Errorf("pattern %q: reason = %q, want network", msg, result.Reason)
+		}
+	}
+}
+
+func TestClassifyError_NetworkTypes(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "wrapped EOF",
+			err: &url.Error{
+				Op:  "Post",
+				URL: "https://example.com",
+				Err: io.EOF,
+			},
+		},
+		{
+			name: "dns error",
+			err: &net.DNSError{
+				Err:  "no such host",
+				Name: "api.example.com",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ClassifyError(tt.err, "openai", "gpt-4")
+			if result == nil {
+				t.Fatal("expected non-nil")
+			}
+			if result.Reason != FailoverNetwork {
+				t.Fatalf("reason = %q, want network", result.Reason)
+			}
+		})
+	}
+}
+
+func TestClassifyError_TimeoutNetworkTypes(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "wrapped syscall timeout",
+			err:  fmt.Errorf("dial tcp: %w", syscall.ETIMEDOUT),
+		},
+		{
+			name: "net error timeout",
+			err: &url.Error{
+				Op:  "Post",
+				URL: "https://example.com",
+				Err: stubNetError{msg: "i/o timeout", timeout: true},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ClassifyError(tt.err, "openai", "gpt-4")
+			if result == nil {
+				t.Fatal("expected non-nil")
+			}
+			if result.Reason != FailoverTimeout {
+				t.Fatalf("reason = %q, want timeout", result.Reason)
+			}
+		})
+	}
+}
+
+func TestClassifyError_TimeoutPatternsWinOverNetworkContext(t *testing.T) {
+	patterns := []string{
+		`failed to send request: Post "https://example.com": dial tcp 203.0.113.10:443: i/o timeout`,
+		`read tcp 10.20.0.1:61279->172.65.90.20:443: i/o timeout`,
+	}
+
+	for _, msg := range patterns {
+		err := errors.New(msg)
+		result := ClassifyError(err, "openai", "gpt-4")
+		if result == nil {
+			t.Errorf("pattern %q: expected non-nil", msg)
+			continue
+		}
+		if result.Reason != FailoverTimeout {
+			t.Errorf("pattern %q: reason = %q, want timeout", msg, result.Reason)
+		}
+	}
+}
+
+func TestClassifyError_NetworkPatternsWinOverAuthExpired(t *testing.T) {
+	err := errors.New(
+		`Post "https://example.com": tls: failed to verify certificate: x509: certificate has expired or is not yet valid`,
+	)
+	result := ClassifyError(err, "openai", "gpt-4")
+	if result == nil {
+		t.Fatal("expected non-nil")
+	}
+	if result.Reason != FailoverNetwork {
+		t.Fatalf("reason = %q, want network", result.Reason)
+	}
+}
+
 func TestClassifyError_AuthPatterns(t *testing.T) {
 	patterns := []string{
 		"invalid api key",
@@ -286,6 +422,7 @@ func TestFailoverError_IsRetriable(t *testing.T) {
 		{FailoverAuth, true},
 		{FailoverRateLimit, true},
 		{FailoverBilling, true},
+		{FailoverNetwork, true},
 		{FailoverTimeout, true},
 		{FailoverOverloaded, true},
 		{FailoverFormat, false},

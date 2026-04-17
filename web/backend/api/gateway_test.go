@@ -97,6 +97,7 @@ func resetGatewayTestState(t *testing.T) {
 
 	originalHealthGet := gatewayHealthGet
 	originalProcessMatcher := gatewayProcessMatcher
+	originalExecCommand := gatewayExecCommand
 	originalRestartGracePeriod := gatewayRestartGracePeriod
 	originalRestartForceKillWindow := gatewayRestartForceKillWindow
 	originalRestartPollInterval := gatewayRestartPollInterval
@@ -104,6 +105,7 @@ func resetGatewayTestState(t *testing.T) {
 	t.Cleanup(func() {
 		gatewayHealthGet = originalHealthGet
 		gatewayProcessMatcher = originalProcessMatcher
+		gatewayExecCommand = originalExecCommand
 		gatewayRestartGracePeriod = originalRestartGracePeriod
 		gatewayRestartForceKillWindow = originalRestartForceKillWindow
 		gatewayRestartPollInterval = originalRestartPollInterval
@@ -117,6 +119,159 @@ func resetGatewayTestState(t *testing.T) {
 		setGatewayRuntimeStatusLocked("stopped")
 		gateway.mu.Unlock()
 	})
+}
+
+type gatewayStartEnvSnapshot struct {
+	GatewayHost    string `json:"gateway_host"`
+	GatewayHostSet bool   `json:"gateway_host_set"`
+	ConfigPath     string `json:"config_path"`
+}
+
+func TestGatewayStartHelperProcess(t *testing.T) {
+	var envPath string
+	for i, arg := range os.Args {
+		if arg == "--" && i+2 < len(os.Args) && os.Args[i+1] == "gateway-env-helper" {
+			envPath = os.Args[i+2]
+			break
+		}
+	}
+	if envPath == "" {
+		t.Skip("helper process")
+	}
+
+	host, ok := os.LookupEnv(config.EnvGatewayHost)
+	raw, err := json.Marshal(gatewayStartEnvSnapshot{
+		GatewayHost:    host,
+		GatewayHostSet: ok,
+		ConfigPath:     os.Getenv(config.EnvConfig),
+	})
+	if err != nil {
+		_, _ = io.WriteString(os.Stderr, err.Error())
+		os.Exit(2)
+	}
+	if err := os.WriteFile(envPath, raw, 0o600); err != nil {
+		_, _ = io.WriteString(os.Stderr, err.Error())
+		os.Exit(2)
+	}
+	os.Exit(0)
+}
+
+func unsetGatewayStartEnvForTest(t *testing.T, key string) {
+	t.Helper()
+
+	prev, hadPrev := os.LookupEnv(key)
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatalf("Unsetenv(%q) error = %v", key, err)
+	}
+	t.Cleanup(func() {
+		if hadPrev {
+			_ = os.Setenv(key, prev)
+			return
+		}
+		_ = os.Unsetenv(key)
+	})
+}
+
+func newGatewayStartTestHandler(t *testing.T) *Handler {
+	t.Helper()
+	resetGatewayTestState(t)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := config.DefaultConfig()
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	h.SetServerOptions(18800, false, false, nil)
+	return h
+}
+
+func startGatewayAndCaptureEnv(t *testing.T, h *Handler) gatewayStartEnvSnapshot {
+	t.Helper()
+
+	unsetGatewayStartEnvForTest(t, config.EnvGatewayHost)
+
+	envPath := filepath.Join(t.TempDir(), "gateway-child-env.json")
+	gatewayExecCommand = func(_ string, _ ...string) *exec.Cmd {
+		return exec.Command(
+			os.Args[0],
+			"-test.run=TestGatewayStartHelperProcess",
+			"--",
+			"gateway-env-helper",
+			envPath,
+		)
+	}
+
+	pid, err := h.startGatewayLocked("starting", 0)
+	if err != nil {
+		t.Fatalf("startGatewayLocked() error = %v", err)
+	}
+	if pid <= 0 {
+		t.Fatalf("startGatewayLocked() pid = %d, want > 0", pid)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		raw, err := os.ReadFile(envPath)
+		if err == nil {
+			var snapshot gatewayStartEnvSnapshot
+			err = json.Unmarshal(raw, &snapshot)
+			if err != nil {
+				t.Fatalf("Unmarshal(child env) error = %v", err)
+			}
+			return snapshot
+		}
+		if !os.IsNotExist(err) {
+			t.Fatalf("ReadFile(%q) error = %v", envPath, err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for gateway child env snapshot %q", envPath)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestStartGatewayLocked_ForwardsLauncherHostOverrideToGatewayEnv(t *testing.T) {
+	h := newGatewayStartTestHandler(t)
+	h.SetServerBindHost("127.0.0.1,::1", true)
+
+	snapshot := startGatewayAndCaptureEnv(t, h)
+	if !snapshot.GatewayHostSet {
+		t.Fatal("gateway host env was not set")
+	}
+	if snapshot.GatewayHost != "127.0.0.1,::1" {
+		t.Fatalf("gateway host env = %q, want %q", snapshot.GatewayHost, "127.0.0.1,::1")
+	}
+	if snapshot.ConfigPath != h.configPath {
+		t.Fatalf("config env = %q, want %q", snapshot.ConfigPath, h.configPath)
+	}
+}
+
+func TestStartGatewayLocked_ForwardsLauncherHostFromEnvironmentToGatewayEnv(t *testing.T) {
+	h := newGatewayStartTestHandler(t)
+	h.SetServerBindHost("::", true)
+
+	snapshot := startGatewayAndCaptureEnv(t, h)
+	if !snapshot.GatewayHostSet {
+		t.Fatal("gateway host env was not set")
+	}
+	if snapshot.GatewayHost != "::" {
+		t.Fatalf("gateway host env = %q, want %q", snapshot.GatewayHost, "::")
+	}
+}
+
+func TestStartGatewayLocked_ForwardsWildcardHostForPublicLauncher(t *testing.T) {
+	h := newGatewayStartTestHandler(t)
+	h.SetServerOptions(18800, true, true, nil)
+
+	snapshot := startGatewayAndCaptureEnv(t, h)
+	if !snapshot.GatewayHostSet {
+		t.Fatal("gateway host env was not set")
+	}
+	if snapshot.GatewayHost != "*" {
+		t.Fatalf("gateway host env = %q, want %q", snapshot.GatewayHost, "*")
+	}
 }
 
 func TestGatewayStartReady_NoDefaultModel(t *testing.T) {

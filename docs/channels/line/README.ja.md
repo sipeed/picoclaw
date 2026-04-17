@@ -1,4 +1,4 @@
-> [README](../../../README.ja.md) に戻る
+> [README](../../project/README.ja.md) に戻る
 
 # Line
 

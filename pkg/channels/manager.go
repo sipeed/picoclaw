@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
 	"sort"
 	"sync"
@@ -86,6 +87,7 @@ type Manager struct {
 	dispatchTask  *asyncTask
 	mux           *dynamicServeMux
 	httpServer    *http.Server
+	httpListeners []net.Listener
 	mu            sync.RWMutex
 	placeholders  sync.Map          // "channel:chatID" → placeholderID (string)
 	typingStops   sync.Map          // "channel:chatID" → func()
@@ -474,6 +476,12 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 // It registers health endpoints from the health server and discovers channels
 // that implement WebhookHandler and/or HealthChecker to register their handlers.
 func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
+	m.SetupHTTPServerListeners(nil, addr, healthServer)
+}
+
+// SetupHTTPServerListeners creates a shared HTTP server on pre-opened listeners.
+// When listeners is empty it falls back to Addr-based ListenAndServe behavior.
+func (m *Manager) SetupHTTPServerListeners(listeners []net.Listener, addr string, healthServer *health.Server) {
 	m.mux = newDynamicServeMux()
 
 	// Register health endpoints
@@ -490,6 +498,7 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}
+	m.httpListeners = append([]net.Listener(nil), listeners...)
 }
 
 // registerHTTPHandlersLocked registers webhook and health-check handlers for
@@ -619,16 +628,33 @@ func (m *Manager) StartAll(ctx context.Context) error {
 
 	// Start shared HTTP server if configured
 	if m.httpServer != nil {
-		go func() {
-			logger.InfoCF("channels", "Shared HTTP server listening", map[string]any{
-				"addr": m.httpServer.Addr,
-			})
-			if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				logger.FatalCF("channels", "Shared HTTP server error", map[string]any{
-					"error": err.Error(),
-				})
+		if len(m.httpListeners) > 0 {
+			for _, listener := range m.httpListeners {
+				ln := listener
+				go func() {
+					logger.InfoCF("channels", "Shared HTTP server listening", map[string]any{
+						"addr": ln.Addr().String(),
+					})
+					if err := m.httpServer.Serve(ln); err != nil && err != http.ErrServerClosed {
+						logger.FatalCF("channels", "Shared HTTP server error", map[string]any{
+							"addr":  ln.Addr().String(),
+							"error": err.Error(),
+						})
+					}
+				}()
 			}
-		}()
+		} else {
+			go func() {
+				logger.InfoCF("channels", "Shared HTTP server listening", map[string]any{
+					"addr": m.httpServer.Addr,
+				})
+				if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					logger.FatalCF("channels", "Shared HTTP server error", map[string]any{
+						"error": err.Error(),
+					})
+				}
+			}()
+		}
 	}
 
 	logger.InfoCF("channels", "Channel startup completed", map[string]any{
@@ -655,6 +681,7 @@ func (m *Manager) StopAll(ctx context.Context) error {
 			})
 		}
 		m.httpServer = nil
+		m.httpListeners = nil
 	}
 
 	// Cancel dispatcher

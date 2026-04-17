@@ -14,6 +14,7 @@ import { Link } from "@tanstack/react-router"
 import * as React from "react"
 import { useTranslation } from "react-i18next"
 
+import { postLauncherDashboardLogout } from "@/api/launcher-auth"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,7 +41,6 @@ import {
 } from "@/components/ui/tooltip"
 import { useGateway } from "@/hooks/use-gateway.ts"
 import { useTheme } from "@/hooks/use-theme.ts"
-import { postLauncherDashboardLogout } from "@/api/launcher-auth"
 
 export function AppHeader() {
   const { i18n, t } = useTranslation()
@@ -198,27 +198,42 @@ export function AppHeader() {
                 <IconPower className="h-4 w-4 opacity-80" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{gwError ?? t("header.gateway.action.stop")}</TooltipContent>
+            <TooltipContent>
+              {gwError ?? t("header.gateway.action.stop")}
+            </TooltipContent>
           </Tooltip>
         ) : (
-          <Tooltip delayDuration={(gwError || (!canStart && startReason)) ? 0 : 700}>
+          <Tooltip
+            delayDuration={gwError || (!canStart && startReason) ? 0 : 700}
+          >
             <TooltipTrigger asChild>
               {/* Wrap in span so the tooltip still fires when the button is disabled */}
               <span
-                className={!canStart && startReason ? "cursor-not-allowed" : undefined}
+                className={
+                  !canStart && startReason ? "cursor-not-allowed" : undefined
+                }
                 tabIndex={!canStart && startReason ? 0 : undefined}
               >
                 <Button
                   variant={
-                    isStarting || isRestarting || isStopping ? "secondary" : "default"
+                    isStarting || isRestarting || isStopping
+                      ? "secondary"
+                      : "default"
                   }
                   size="sm"
                   data-tour="gateway-button"
-                  className={`h-8 gap-2 px-3 ${isStopped ? "bg-green-500 text-white hover:bg-green-600" : ""
-                    } ${!canStart ? "pointer-events-none" : ""}`}
+                  className={`h-8 gap-2 px-3 ${
+                    isStopped
+                      ? "bg-green-500 text-white hover:bg-green-600"
+                      : ""
+                  } ${!canStart ? "pointer-events-none" : ""}`}
                   onClick={handleGatewayToggle}
                   disabled={
-                    gwLoading || isStarting || isRestarting || isStopping || !canStart
+                    gwLoading ||
+                    isStarting ||
+                    isRestarting ||
+                    isStopping ||
+                    !canStart
                   }
                 >
                   {gwLoading || isStarting || isRestarting || isStopping ? (
@@ -238,7 +253,7 @@ export function AppHeader() {
                 </Button>
               </span>
             </TooltipTrigger>
-            {(gwError || (!canStart && startReason)) ? (
+            {gwError || (!canStart && startReason) ? (
               <TooltipContent>{gwError ?? startReason}</TooltipContent>
             ) : null}
           </Tooltip>

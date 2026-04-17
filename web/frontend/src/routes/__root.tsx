@@ -53,7 +53,9 @@ const RootLayout = () => {
           globalThis.location.assign("/launcher-login")
         } else {
           setAuthError(
-            err instanceof Error ? err.message : "Auth service unavailable, please try to delete the launcher-auth.db at picoclaw home directory and restart the application.",
+            err instanceof Error
+              ? err.message
+              : "Auth service unavailable, please try to delete the launcher-auth.db at picoclaw home directory and restart the application.",
           )
         }
       })

@@ -41,9 +41,7 @@ export async function postLauncherDashboardLogout(): Promise<boolean> {
   return res.ok
 }
 
-export type SetupResult =
-  | { ok: true }
-  | { ok: false; error: string }
+export type SetupResult = { ok: true } | { ok: false; error: string }
 
 export async function postLauncherDashboardSetup(
   password: string,
@@ -53,7 +51,10 @@ export async function postLauncherDashboardSetup(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "same-origin",
-    body: JSON.stringify({ password: password.trim(), confirm: confirm.trim() }),
+    body: JSON.stringify({
+      password: password.trim(),
+      confirm: confirm.trim(),
+    }),
   })
   if (res.ok) return { ok: true }
   let msg = "Unknown error"

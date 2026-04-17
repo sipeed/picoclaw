@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
@@ -18,7 +20,7 @@ type JobExecutor interface {
 	ProcessDirectWithChannel(ctx context.Context, content, sessionKey, channel, chatID string) (string, error)
 	// PublishResponseIfNeeded sends response to the outbound bus only when the
 	// agent did not already deliver content through the message tool in this round.
-	PublishResponseIfNeeded(ctx context.Context, channel, chatID, response string)
+	PublishResponseIfNeeded(ctx context.Context, channel, chatID, sessionKey, response string)
 }
 
 // CronTool provides scheduling capabilities for the agent
@@ -340,7 +342,7 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		return "ok"
 	}
 
-	sessionKey := fmt.Sprintf("cron-%s", job.ID)
+	sessionKey := fmt.Sprintf("agent:cron-%s-%s", job.ID, uuid.New().String())
 
 	// Call agent with the job message
 	response, err := t.executor.ProcessDirectWithChannel(
@@ -355,7 +357,7 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 	}
 
 	if response != "" {
-		t.executor.PublishResponseIfNeeded(ctx, channel, chatID, response)
+		t.executor.PublishResponseIfNeeded(ctx, channel, chatID, "", response)
 	}
 	return "ok"
 }

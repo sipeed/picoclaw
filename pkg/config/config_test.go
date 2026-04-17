@@ -503,7 +503,7 @@ func TestDefaultConfig_Temperature(t *testing.T) {
 func TestDefaultConfig_Gateway(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Gateway.Host != "127.0.0.1" {
+	if cfg.Gateway.Host != "localhost" {
 		t.Error("Gateway host should have default value")
 	}
 	if cfg.Gateway.Port == 0 {
@@ -739,7 +739,7 @@ func TestConfig_Complete(t *testing.T) {
 	if cfg.Agents.Defaults.MaxToolIterations == 0 {
 		t.Error("MaxToolIterations should not be zero")
 	}
-	if cfg.Gateway.Host != "127.0.0.1" {
+	if cfg.Gateway.Host != "localhost" {
 		t.Error("Gateway host should have default value")
 	}
 	if cfg.Gateway.Port == 0 {
@@ -757,6 +757,28 @@ func TestDefaultConfig_WebPreferNativeEnabled(t *testing.T) {
 	cfg := DefaultConfig()
 	if !cfg.Tools.Web.PreferNative {
 		t.Fatal("DefaultConfig().Tools.Web.PreferNative should be true")
+	}
+}
+
+func TestDefaultConfig_WebProviderIsAuto(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Tools.Web.Provider != "auto" {
+		t.Fatalf("DefaultConfig().Tools.Web.Provider = %q, want auto", cfg.Tools.Web.Provider)
+	}
+}
+
+func TestConfigExample_WebProviderIsAuto(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "config", "config.example.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(config.example.json) error: %v", err)
+	}
+
+	var cfg Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("Unmarshal(config.example.json) error: %v", err)
+	}
+	if cfg.Tools.Web.Provider != "auto" {
+		t.Fatalf("config.example.json tools.web.provider = %q, want auto", cfg.Tools.Web.Provider)
 	}
 }
 

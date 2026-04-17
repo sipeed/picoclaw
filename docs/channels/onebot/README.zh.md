@@ -1,4 +1,4 @@
-> 返回 [README](../../../README.zh.md)
+> 返回 [README](../../project/README.zh.md)
 
 # OneBot
 

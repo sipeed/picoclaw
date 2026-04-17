@@ -259,7 +259,7 @@ func DefaultConfig() *Config {
 			},
 		},
 		Gateway: GatewayConfig{
-			Host:      "127.0.0.1",
+			Host:      "localhost",
 			Port:      18790,
 			HotReload: false,
 			LogLevel:  DefaultGatewayLogLevel,
@@ -278,6 +278,7 @@ func DefaultConfig() *Config {
 				ToolConfig: ToolConfig{
 					Enabled: true,
 				},
+				Provider:        "auto",
 				PreferNative:    true,
 				Proxy:           "",
 				FetchLimitBytes: 10 * 1024 * 1024, // 10MB by default
@@ -290,8 +291,12 @@ func DefaultConfig() *Config {
 					Enabled:    false,
 					MaxResults: 5,
 				},
-				DuckDuckGo: DuckDuckGoConfig{
+				Sogou: SogouConfig{
 					Enabled:    true,
+					MaxResults: 5,
+				},
+				DuckDuckGo: DuckDuckGoConfig{
+					Enabled:    false,
 					MaxResults: 5,
 				},
 				Perplexity: PerplexityConfig{
@@ -507,6 +512,14 @@ func defaultChannels() ChannelsConfig {
 				"read_timeout":    60,
 				"write_timeout":   10,
 				"max_connections": 100,
+			},
+		},
+		"irc": map[string]any{
+			"settings": map[string]any{
+				"server":   "",
+				"tls":      true,
+				"nick":     "picoclaw",
+				"channels": []string{},
 			},
 		},
 	}

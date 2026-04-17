@@ -111,6 +111,8 @@ func (p *llmHookTestProvider) GetDefaultModel() string {
 type llmObserverHook struct {
 	eventCh     chan Event
 	lastInbound *bus.InboundContext
+	lastRoute   *routing.ResolvedRoute
+	lastScope   *session.SessionScope
 }
 
 func (h *llmObserverHook) OnEvent(ctx context.Context, evt Event) error {
@@ -129,6 +131,8 @@ func (h *llmObserverHook) BeforeLLM(
 ) (*LLMHookRequest, HookDecision, error) {
 	if req.Context != nil {
 		h.lastInbound = cloneInboundContext(req.Context.Inbound)
+		h.lastRoute = cloneResolvedRoute(req.Context.Route)
+		h.lastScope = session.CloneScope(req.Context.Scope)
 	}
 	next := req.Clone()
 	next.Model = "hook-model"
@@ -227,6 +231,91 @@ func TestAgentLoop_Hooks_ObserverAndLLMInterceptor(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for hook observer event")
+	}
+}
+
+func TestAgentLoop_BtwCommand_UsesLLMHooks(t *testing.T) {
+	provider := &llmHookTestProvider{}
+	al, agent, cleanup := newHookTestLoop(t, provider)
+	defer cleanup()
+	useTestSideQuestionProvider(al, provider)
+
+	hook := &llmObserverHook{eventCh: make(chan Event, 1)}
+	if err := al.MountHook(NamedHook("llm-observer", hook)); err != nil {
+		t.Fatalf("MountHook failed: %v", err)
+	}
+
+	response, handled := al.handleCommand(context.Background(), bus.InboundMessage{
+		Context: bus.InboundContext{
+			Channel:  "cli",
+			ChatID:   "direct",
+			ChatType: "direct",
+			SenderID: "hook-user",
+		},
+		Content: "/btw hello",
+	}, agent, &processOptions{
+		Dispatch: DispatchRequest{
+			SessionKey: "session-1",
+			InboundContext: &bus.InboundContext{
+				Channel:  "cli",
+				ChatID:   "direct",
+				ChatType: "direct",
+				SenderID: "hook-user",
+			},
+			RouteResult: &routing.ResolvedRoute{
+				AgentID:   "main",
+				Channel:   "cli",
+				AccountID: routing.DefaultAccountID,
+				SessionPolicy: routing.SessionPolicy{
+					Dimensions: []string{"sender"},
+				},
+				MatchedBy: "default",
+			},
+			SessionScope: &session.SessionScope{
+				Version:    session.ScopeVersionV1,
+				AgentID:    "main",
+				Channel:    "cli",
+				Account:    routing.DefaultAccountID,
+				Dimensions: []string{"sender"},
+				Values: map[string]string{
+					"sender": "hook-user",
+				},
+			},
+			UserMessage: "/btw hello",
+		},
+		SessionKey:        "session-1",
+		Channel:           "cli",
+		ChatID:            "direct",
+		SenderID:          "hook-user",
+		SenderDisplayName: "Hook User",
+	})
+	if !handled {
+		t.Fatal("expected /btw command to be handled")
+	}
+	if response != "hooked content" {
+		t.Fatalf("expected hooked content, got %q", response)
+	}
+
+	provider.mu.Lock()
+	lastModel := provider.lastModel
+	provider.mu.Unlock()
+	if lastModel != "hook-model" {
+		t.Fatalf("expected model hook-model, got %q", lastModel)
+	}
+	if hook.lastInbound == nil {
+		t.Fatal("expected hook to receive inbound context")
+	}
+	if hook.lastInbound.Channel != "cli" || hook.lastInbound.SenderID != "hook-user" {
+		t.Fatalf("hook inbound context = %+v", hook.lastInbound)
+	}
+	if hook.lastInbound.ChatID != "direct" {
+		t.Fatalf("hook inbound chat ID = %q, want direct", hook.lastInbound.ChatID)
+	}
+	if hook.lastRoute == nil || hook.lastRoute.AgentID != "main" {
+		t.Fatalf("expected hook route context for /btw, got %+v", hook.lastRoute)
+	}
+	if hook.lastScope == nil || hook.lastScope.Values["sender"] != "hook-user" {
+		t.Fatalf("expected hook session scope for /btw, got %+v", hook.lastScope)
 	}
 }
 
