@@ -1360,12 +1360,20 @@ func (c *Config) GetModelConfig(modelName string) (*ModelConfig, error) {
 	return matches[idx], nil
 }
 
-// findMatches finds all ModelConfig entries with the given model_name.
+// findMatches finds all ModelConfig entries with the given model_name or model id.
 func (c *Config) findMatches(modelName string) []*ModelConfig {
 	var matches []*ModelConfig
 	for i := range c.ModelList {
 		if c.ModelList[i].ModelName == modelName {
 			matches = append(matches, c.ModelList[i])
+		}
+	}
+	// If no matches found, also try matching by model id (e.g., "openai/gpt-4o")
+	if len(matches) == 0 {
+		for i := range c.ModelList {
+			if c.ModelList[i].Model == modelName {
+				matches = append(matches, c.ModelList[i])
+			}
 		}
 	}
 	return matches
