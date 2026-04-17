@@ -277,14 +277,16 @@ LLM 不会加载所有工具，而是获得一个轻量级搜索工具（使用 
 | `env_file` | string | 否       | stdio 进程的环境文件路径           |
 | `url`      | string | sse/http | `sse`/`http` 传输的端点 URL        |
 | `headers`  | object | 否       | `sse`/`http` 传输的 HTTP 头        |
+| `proxy`    | string | 否       | HTTP 代理 URL（支持 http/https/socks5/socks5h）。对于 `sse`/`http`：用于 HTTP 请求。对于 `stdio`：设置子进程的 `HTTP_PROXY`/`HTTPS_PROXY` 环境变量。为空时使用系统环境代理设置。 |
 
 ### 传输行为
 
 - 如果省略 `type`，传输方式将自动检测：
     - 设置了 `url` → `sse`
     - 设置了 `command` → `stdio`
-- `http` 和 `sse` 都使用 `url` + 可选的 `headers`。
-- `env` 和 `env_file` 仅应用于 `stdio` 服务器。
+- `http` 和 `sse` 都使用 `url` + 可选的 `headers` 和 `proxy`。
+- `env`、`env_file` 和 `proxy` 仅应用于 `stdio` 服务器（通过环境变量）。
+- 所有传输类型都支持 `proxy` 选项，支持 http、https、socks5 和 socks5h 协议。
 
 ### 配置示例
 
@@ -332,6 +334,31 @@ LLM 不会加载所有工具，而是获得一个轻量级搜索工具（使用 
   }
 }
 ```
+
+#### 2.1) 通过代理连接远程 MCP 服务器
+
+```json
+{
+  "tools": {
+    "mcp": {
+      "enabled": true,
+      "servers": {
+        "remote-mcp-behind-proxy": {
+          "enabled": true,
+          "type": "sse",
+          "url": "https://internal-mcp.example.com/mcp",
+          "proxy": "socks5://127.0.0.1:1080",
+          "headers": {
+            "Authorization": "Bearer YOUR_TOKEN"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+支持的代理协议：`http`、`https`、`socks5`、`socks5h`。未设置 `proxy` 时，使用系统环境代理设置（`HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY`）。
 
 #### 3) 启用工具发现的大规模 MCP 设置
 
