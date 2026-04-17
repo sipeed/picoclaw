@@ -7,7 +7,7 @@ test('Flow Tester - Web Crawler Flow - Send Message and Verify Bot Response', as
   // STEP 1: Navigate to login page
   // ============================================================================
   console.log('📍 Step 1: Navigate to login page');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
   await expect(page).toHaveURL(/\/login/);
   console.log('✅ PASS: Step 1 - Navigated to login page');
 
@@ -79,8 +79,10 @@ test('Flow Tester - Web Crawler Flow - Send Message and Verify Bot Response', as
   await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 5000 });
   // Wait for v-list-items to be rendered (not skeleton)
   await page.locator('.v-overlay--active .v-list-item').first().waitFor({ state: 'visible', timeout: 5000 });
+  // If multiple flows with same name exist, select the last one (oldest)
   await page.locator('.v-overlay--active .v-list-item')
     .filter({ hasText: /web crawler/i })
+    .last()
     .click();
   await page.waitForTimeout(500); // Allow dropdown to close
   console.log('✅ PASS: Step 8 - Web Crawler flow selected');

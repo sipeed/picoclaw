@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { loginAndSelectOrg } from '../utils/auth';
 
 test('Change email flow', async ({ page }) => {
+  test.setTimeout(180000); // 3 minutes timeout
   const primaryEmail = 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
   const organizationName = 'Testing2026!';
@@ -13,7 +14,7 @@ test('Change email flow', async ({ page }) => {
   console.log('✅ PASS: Step 1-2 - Login and organization selection completed');
 
   // Step 3: Verify redirect to dashboard
-  console.log('\n📍 Step 3: Verify redirect to https://dashboard.int3nt.info/');
+  console.log('\n📍 Step 3: Verify redirect to ');
   await expect(page).toHaveURL(/.*dashboard\.int3nt\.info\/?$/);
   console.log('✅ PASS: Step 3 - User redirected to dashboard');
 

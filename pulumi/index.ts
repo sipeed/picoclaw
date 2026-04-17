@@ -19,7 +19,7 @@ const LITELLM_MODEL = "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0";
 // ── Artifact Registry (local — we have full IAM here) ────────────────────────
 
 // Docker repo for the picoclaw image — CI pipeline pushes here.
-const picoRepo = new gcp.artifactregistry.Repository("picoclaw-repo", {
+const picoRepo = gcp.artifactregistry.Repository.get("picoclaw-repo", "picoclaw-repo", {
     repositoryId: "picoclaw",
     location: region,
     project: enterpriseAutomationProjectId,
@@ -27,7 +27,7 @@ const picoRepo = new gcp.artifactregistry.Repository("picoclaw-repo", {
 });
 
 // Remote repo proxying ghcr.io — Cloud Run Jobs rejects non-AR/GCR/DockerHub images.
-const ghcrRemoteRepo = new gcp.artifactregistry.Repository("ghcr-remote", {
+const ghcrRemoteRepo = gcp.artifactregistry.Repository.get("ghcr-remote", "ghcr-remote", {
     repositoryId: "ghcr-remote",
     location: region,
     project: enterpriseAutomationProjectId,
@@ -72,6 +72,11 @@ new gcp.projects.IAMMember("sa-secret-accessor", {
 // Populate values after pulumi up:
 //   gcloud secrets versions add PICOCLAW_AWS_ACCESS_KEY_ID --data-file=- <<< "YOUR_KEY"
 //   gcloud secrets versions add PICOCLAW_AWS_SECRET_ACCESS_KEY --data-file=- <<< "YOUR_SECRET"
+//   gcloud secrets versions add PICOCLAW_AWS_REGION_NAME --data-file=- <<< "ap-southeast-1"
+//   gcloud secrets versions add PICOCLAW_IMAP_HOST --data-file=- <<< "imap.example.com"
+//   gcloud secrets versions add PICOCLAW_IMAP_USER --data-file=- <<< "user@example.com"
+//   gcloud secrets versions add PICOCLAW_IMAP_PASSWORD --data-file=- <<< "YOUR_PASSWORD"
+//   gcloud secrets versions add PICOCLAW_IMAP_PORT --data-file=- <<< "993"
 
 // config.json — mounted as a file at /home/picoclaw/.picoclaw/config.json
 // Populate after pulumi up:
@@ -92,6 +97,30 @@ const awsSecretKeySecret = gcp.secretmanager.Secret.get(
     `projects/${project}/secrets/PICOCLAW_AWS_SECRET_ACCESS_KEY`,
 );
 
+const picoclawAwsRegionNameSecret = gcp.secretmanager.Secret.get(
+    "picoclaw-aws-region-name",
+    `projects/${project}/secrets/PICOCLAW_AWS_REGION_NAME`,
+);
+
+const imapHostSecret = gcp.secretmanager.Secret.get(
+    "picoclaw-imap-host",
+    `projects/${project}/secrets/PICOCLAW_IMAP_HOST`,
+);
+
+const imapUserSecret = gcp.secretmanager.Secret.get(
+    "picoclaw-imap-user",
+    `projects/${project}/secrets/PICOCLAW_IMAP_USER`,
+);
+
+const imapPasswordSecret = gcp.secretmanager.Secret.get(
+    "picoclaw-imap-password",
+    `projects/${project}/secrets/PICOCLAW_IMAP_PASSWORD`,
+);
+
+const imapPortSecret = gcp.secretmanager.Secret.get(
+    "picoclaw-imap-port",
+    `projects/${project}/secrets/PICOCLAW_IMAP_PORT`,
+);
 
 const awsAccessKeyRef = {
     name: "AWS_ACCESS_KEY_ID" as const,
@@ -108,6 +137,56 @@ const awsSecretKeyRef = {
     valueSource: {
         secretKeyRef: {
             secret: awsSecretKeySecret.secretId,
+            version: "latest",
+        },
+    },
+};
+
+const awsRegionNameRef = {
+    name: "AWS_REGION_NAME" as const,
+    valueSource: {
+        secretKeyRef: {
+            secret: picoclawAwsRegionNameSecret.secretId,
+            version: "latest",
+        },
+    },
+};
+
+const imapHostRef = {
+    name: "IMAP_HOST" as const,
+    valueSource: {
+        secretKeyRef: {
+            secret: imapHostSecret.secretId,
+            version: "latest",
+        },
+    },
+};
+
+const imapUserRef = {
+    name: "IMAP_USER" as const,
+    valueSource: {
+        secretKeyRef: {
+            secret: imapUserSecret.secretId,
+            version: "latest",
+        },
+    },
+};
+
+const imapPasswordRef = {
+    name: "IMAP_PASSWORD" as const,
+    valueSource: {
+        secretKeyRef: {
+            secret: imapPasswordSecret.secretId,
+            version: "latest",
+        },
+    },
+};
+
+const imapPortRef = {
+    name: "IMAP_PORT" as const,
+    valueSource: {
+        secretKeyRef: {
+            secret: imapPortSecret.secretId,
             version: "latest",
         },
     },
@@ -192,7 +271,7 @@ const e2eJob = new gcp.cloudrunv2.Job("picoclaw-e2e-job", {
                         },
                     },
                     envs: [
-                        { name: "AWS_REGION_NAME", value: awsRegion },
+                        awsRegionNameRef,
                         awsAccessKeyRef,
                         awsSecretKeyRef,
                     ],
@@ -220,6 +299,8 @@ const e2eJob = new gcp.cloudrunv2.Job("picoclaw-e2e-job", {
                     envs: [
                         // JOB_TYPE: run-all | run | autofix | generate | prompt
                         { name: "JOB_TYPE", value: "run-all" },
+                        // ENVIRONMENT: UAT | PREVIEW-PROD (maps to BASE_URL in entrypoint-job.sh)
+                        { name: "ENVIRONMENT", value: "UAT" },
                         // JOB_SPEC: used when JOB_TYPE=run or autofix
                         { name: "JOB_SPEC", value: "" },
                         // used when JOB_TYPE=generate
@@ -231,9 +312,13 @@ const e2eJob = new gcp.cloudrunv2.Job("picoclaw-e2e-job", {
                         { name: "JOB_PROMPT", value: "" },
                         { name: "RESULTS_BUCKET", value: bucket.name },
                         { name: "LITELLM_BASE_URL", value: "http://0.0.0.0:4000" },
-                        { name: "AWS_REGION_NAME", value: awsRegion },
+                        awsRegionNameRef,
                         awsAccessKeyRef,
                         awsSecretKeyRef,
+                        imapHostRef,
+                        imapUserRef,
+                        imapPasswordRef,
+                        imapPortRef,
                     ],
                 },
             ],

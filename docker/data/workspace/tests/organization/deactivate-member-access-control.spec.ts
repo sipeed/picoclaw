@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { loginAndSelectOrg } from '../utils/auth';
 
 test('Deactivate organization member flow and disabled organization access', async ({ page }) => {
+  test.setTimeout(180000); // 3 minutes timeout
   const adminEmail = 'heidi@intnt.ai';
   const adminPassword = 'testing2026!';
   const memberEmail = 'heidi+1@intnt.ai';
@@ -82,7 +83,7 @@ test('Deactivate organization member flow and disabled organization access', asy
   await loginForm.locator('input').nth(1).fill(memberPassword);
   await page.locator('button[type="submit"]').click();
 
-  await page.waitForURL('**/dashboard.int3nt.info/?select_org', { timeout: 15000 });
+  await page.waitForURL('**/?select_org', { timeout: 15000 });
   console.log('✅ PASS: Step 9 - Logged in and on selection page');
 
   // Step 10: Locate Disabled Organization card

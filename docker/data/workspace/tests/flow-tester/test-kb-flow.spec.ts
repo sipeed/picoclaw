@@ -4,7 +4,7 @@ test('Knowledge Base Flow — Send "Hello" and verify bot response', async ({ pa
   test.setTimeout(120000); // 2 minutes — KB retrieval can be slow
 
   console.log('📍 Step 1: Navigate to login page');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
   console.log('✅ PASS: Step 1 - Navigated to login page');
 
   console.log('📍 Step 2: Fill credentials and click Login');
@@ -24,7 +24,7 @@ test('Knowledge Base Flow — Send "Hello" and verify bot response', async ({ pa
       await loader.first().waitFor({ state: 'hidden', timeout: 15000 });
     }
     await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
-    await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
+    await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click();
     await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
   }
   console.log('✅ PASS: Step 4 - Org selection handled');
@@ -41,7 +41,8 @@ test('Knowledge Base Flow — Send "Hello" and verify bot response', async ({ pa
   console.log('📍 Step 7: Open flow dropdown and select "Knowledge Base"');
   await page.locator('.tester-select').click();
   await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 5000 });
-  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /knowledge base/i }).click();
+  // If multiple flows with same name exist, select the last one (oldest)
+  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /knowledge base/i }).last().click();
   console.log('✅ PASS: Step 7 - Knowledge Base flow selected');
 
   console.log('📍 Step 8: Wait for flow to load and select latest version');

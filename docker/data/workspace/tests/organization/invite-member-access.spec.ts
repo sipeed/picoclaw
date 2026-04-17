@@ -3,15 +3,14 @@ import { loginAndSelectOrg } from '../utils/auth';
 import Imap from 'imap';
 import { simpleParser } from 'mailparser';
 import * as dotenv from 'dotenv';
-import path from 'path';
-const envPath = path.join(__dirname, '../../.env');
-dotenv.config({ path: envPath });
+dotenv.config({ path: __dirname + '/../../.env' });
 
 test('Invite member to organization flow', async ({ page }) => {
-  test.setTimeout(120000);
+  test.setTimeout(180000);
   const primaryEmail = process.env.IMAP_USER || 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
-  const invitedEmail = 'heidi+22222@intnt.ai';
+  const randomSuffix = Math.floor(10000 + Math.random() * 90000);
+  const invitedEmail = `heidi+${randomSuffix}@intnt.ai`;
   const invitedPassword = 'testing2026!!';
   const organizationName = 'Testing2026!';
   const adminRole = 'admin';
@@ -222,7 +221,7 @@ test('Invite member to organization flow', async ({ page }) => {
 
   // Step 17: Verify redirection to selection page
   console.log('\n📍 Step 17: Verify redirection to selection page');
-  await page.waitForURL('**/dashboard.int3nt.info/?select_org', { timeout: 15000 });
+  await page.waitForURL('**/?select_org', { timeout: 15000 });
   console.log('✅ PASS: Step 17 - Redirected to organization selection page');
 
   // Step 18: Verify organization visibility

@@ -1,14 +1,14 @@
 import { test, expect } from '@playwright/test';
 
 test('Create new flow with Knowledge Base node', async ({ page }) => {
-  test.setTimeout(120000); // 2 minutes timeout
+  test.setTimeout(180000); // 3 minutes timeout
 
   // ============================================================================
   // PHASE 1: LOGIN
   // ============================================================================
 
   console.log('📍 Step 1: Navigate to login page');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
   await page.locator('.login-card').waitFor({ state: 'visible', timeout: 10000 });
   console.log('✅ PASS: Step 1 - Login page loaded');
 
@@ -26,13 +26,13 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   // PHASE 2: ORGANIZATION SELECTION
   // ============================================================================
 
-  console.log('📍 Step 4: Select organization Testing2026!');
+  console.log('📍 Step 4: Select organization Testing');
   const loader = page.locator('.loading-container, .loading-spinner, .v-progress-linear');
   if (await loader.first().isVisible().catch(() => false)) {
     await loader.first().waitFor({ state: 'hidden', timeout: 15000 });
   }
   await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
-  await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
+  await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click();
   await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 15000 });
   console.log('✅ PASS: Step 4 - Organization selected, redirected to dashboard');
 

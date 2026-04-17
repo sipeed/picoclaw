@@ -7,7 +7,7 @@ test('Create KB schedule with Incremental Sync in ADVANCED mode', async ({ page 
   // STEP 1: Login
   // ============================================================================
   console.log('📍 Step 1: Navigate to login page');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
 
   console.log('📍 Step 2: Fill login credentials');
   await page.locator('.v-text-field').nth(0).locator('input').fill('heidi@intnt.ai');
@@ -24,8 +24,8 @@ test('Create KB schedule with Incremental Sync in ADVANCED mode', async ({ page 
     await loader.first().waitFor({ state: 'hidden', timeout: 15000 });
   }
   await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
-  await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
-  await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 15000 });
+  await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).first().click();
+  await page.waitForURL(url => !url.searchParams.has('select_org'), { timeout: 15000 });
   console.log('✅ PASS: Step 4 - Organization selected');
 
   // ============================================================================
@@ -42,7 +42,7 @@ test('Create KB schedule with Incremental Sync in ADVANCED mode', async ({ page 
   console.log('📍 Step 6: Locate Picotest2 KB bucket and click Schedule');
   const picotest2Card = page.locator('.bucket-card').filter({
     has: page.locator('.bucket-name').filter({ hasText: /Picotest2/ })
-  });
+  }).first();
   await picotest2Card.waitFor({ state: 'visible', timeout: 10000 });
 
   // Click the schedule button on this card

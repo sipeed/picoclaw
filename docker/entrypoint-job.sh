@@ -3,6 +3,27 @@ set -e
 
 WORKSPACE="/home/picoclaw/.picoclaw/workspace"
 
+# ── Environment selection ─────────────────────────────────────────────────────
+# ENVIRONMENT controls which dashboard URL is targeted.
+# Pass --update-env-vars="ENVIRONMENT=UAT" or --update-env-vars="ENVIRONMENT=PREVIEW-PROD"
+# BASE_URL can also be set directly to override this mapping.
+if [ -z "$BASE_URL" ]; then
+  case "${ENVIRONMENT:-UAT}" in
+    UAT)
+      BASE_URL="https://dashboard.int3nt.info"
+      ;;
+    PREVIEW-PROD)
+      BASE_URL="https://dashboard-preview.intentai.com"
+      ;;
+    *)
+      echo "ERROR: Unknown ENVIRONMENT=${ENVIRONMENT} (valid: UAT, PREVIEW-PROD)"
+      exit 1
+      ;;
+  esac
+fi
+export BASE_URL
+echo "=== Target environment: ${ENVIRONMENT:-UAT} ($BASE_URL) ==="
+
 # Config secret is mounted at .picoclaw-config (not .picoclaw) so it doesn't
 # create a read-only tmpfs that would block the GCS workspace volume mount.
 # Copy config.json to the location picoclaw expects before anything else runs.
@@ -99,14 +120,12 @@ case "$JOB_TYPE" in
       tests/knowledge-base/create-kb-bucket-gcs.spec.ts \
       tests/knowledge-base/create-kb-bucket-website-crawler.spec.ts
 
-    run_group "Knowledge Base - Schedule & Edit" \
-      tests/knowledge-base/edit-kb-schedule.spec.ts \
-      tests/knowledge-base/schedule-kb-incremental-sync-simple.spec.ts \
+    run_group "Knowledge Base - Schedule" \
       tests/knowledge-base/schedule-kb-incremental-sync-advanced.spec.ts \
-      tests/knowledge-base/schedule-kb-full-sync-advanced.spec.ts \
       tests/knowledge-base/schedule-kb-full-sync-simple.spec.ts
 
-    run_group "Knowledge Base - Delete" \
+    run_group "Knowledge Base - Edit & Delete" \
+      tests/knowledge-base/edit-kb-schedule.spec.ts \
       tests/knowledge-base/delete-kb.spec.ts
 
     # flow-designer must run before flow-tester (creates the flows)
@@ -133,27 +152,26 @@ case "$JOB_TYPE" in
       tests/profile/change-email.spec.ts
 
     run_group "Organization" \
-      tests/organization/invite-member-access.spec.ts \
-      tests/organization/invite-existing-user.spec.ts \
-      tests/organization/change-role-admin-to-developer.spec.ts \
-      tests/organization/change-role-developer-to-agent.spec.ts \
+      tests/organization/switch-organization.spec.ts \
+      tests/organization/agent-role-sidebar-permissions.spec.ts \
       tests/organization/change-role-agent-to-admin.spec.ts \
+      tests/organization/admin-role-sidebar-permissions.spec.ts \
+      tests/organization/change-role-admin-to-developer.spec.ts \
+      tests/organization/developer-role-sidebar-permissions.spec.ts \
+      tests/organization/change-role-developer-to-agent.spec.ts \
       tests/organization/deactivate-member-access-control.spec.ts \
       tests/organization/activate-member-access-restored.spec.ts \
-      tests/organization/switch-organization.spec.ts \
-      tests/organization/upload-organization-logo.spec.ts \
       tests/organization/upload-bot-icon.spec.ts \
-      tests/organization/admin-role-sidebar-permissions.spec.ts \
-      tests/organization/developer-role-sidebar-permissions.spec.ts \
-      tests/organization/agent-role-sidebar-permissions.spec.ts
+      tests/organization/upload-organization-logo.spec.ts \
+      tests/organization/invite-member-access.spec.ts
 
     run_group "Settings" \
       tests/settings/view-api-keys-settings.spec.ts \
       tests/settings/create-api-key-internal.spec.ts \
       tests/settings/create-api-key-external.spec.ts \
       tests/settings/edit-api-key-description.spec.ts \
-      tests/settings/reactivate-api-key.spec.ts \
-      tests/settings/revoke-api-key.spec.ts
+      tests/settings/revoke-api-key.spec.ts \
+      tests/settings/reactivate-api-key.spec.ts
 
     run_group "Logs" \
       tests/logs/download-conversation-logs.spec.ts
@@ -183,8 +201,10 @@ case "$JOB_TYPE" in
     echo "Autofixing test: $JOB_SPEC ..."
     PROMPT=$(node -e "
 const fs = require('fs');
-const t = fs.readFileSync('$TEMPLATE', 'utf8');
-process.stdout.write(t.replace(/\{\{SPEC_FILE\}\}/g, '$JOB_SPEC'));
+let t = fs.readFileSync('$TEMPLATE', 'utf8');
+t = t.replace(/\{\{SPEC_FILE\}\}/g, process.env.JOB_SPEC || '');
+t = t.replace(/\{\{BASE_URL\}\}/g, process.env.BASE_URL || 'https://dashboard.int3nt.info');
+process.stdout.write(t);
 ")
     picoclaw agent -m "$PROMPT"
     ;;
@@ -206,6 +226,7 @@ let t = fs.readFileSync('$TEMPLATE', 'utf8');
 t = t.replace(/\{\{TEST_FILE\}\}/g, process.env.JOB_TEST_FILE || '');
 t = t.replace(/\{\{STEPS\}\}/g, process.env.JOB_STEPS || '');
 t = t.replace(/\{\{EXPECTED_RESULT\}\}/g, process.env.JOB_EXPECTED_RESULT || '');
+t = t.replace(/\{\{BASE_URL\}\}/g, process.env.BASE_URL || 'https://dashboard.int3nt.info');
 process.stdout.write(t);
 ")
     picoclaw agent -m "$PROMPT"

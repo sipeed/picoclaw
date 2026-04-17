@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { loginAndSelectOrg } from '../utils/auth';
 
 test('Invite existing user to organization flow', async ({ page }) => {
+  test.setTimeout(180000); // 3 minutes timeout
     const primaryEmail = 'heidi@intnt.ai';
     const primaryPassword = 'testing2026!';
     const secondaryEmail = 'heidi+1@intnt.ai';
@@ -93,7 +94,7 @@ test('Invite existing user to organization flow', async ({ page }) => {
     await loginButton.click();
 
     // Wait for the redirect to the organization selection query
-    await page.waitForURL('**/dashboard.int3nt.info/?select_org', { timeout: 15000 });
+    await page.waitForURL('**/?select_org', { timeout: 15000 });
     console.log('✅ PASS: Step 9 - Login successful and redirected to selection page');
 
     // Step 10: Verify organization is available

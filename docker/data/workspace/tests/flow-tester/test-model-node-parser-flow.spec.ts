@@ -8,7 +8,7 @@ test('Flow Tester - Model Node with Parser Flow Test', async ({ page }) => {
   // ============================================================================
   console.log('📍 Step 1: Login to dashboard');
   
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
   
   // Fill credentials
   await page.locator('.v-text-field').nth(0).locator('input').fill('heidi@intnt.ai');
@@ -29,12 +29,12 @@ test('Flow Tester - Model Node with Parser Flow Test', async ({ page }) => {
   // ============================================================================
   // STEP 2: Select Organization
   // ============================================================================
-  console.log('📍 Step 2: Select organization "Testing2026!"');
-  
+  console.log('📍 Step 2: Select organization "Testing"');
+
   await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
-  await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
+  await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing2026!")') }).click();
   await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 15000 });
-  
+
   console.log('✅ PASS: Step 2 - Organization selected, redirected to dashboard');
 
   // ============================================================================
@@ -70,12 +70,13 @@ test('Flow Tester - Model Node with Parser Flow Test', async ({ page }) => {
   // STEP 6: Open flow dropdown and select "Model Node with Parser"
   // ============================================================================
   console.log('📍 Step 6: Open flow dropdown and select "Model Node with Parser"');
-  
+
   await page.locator('.tester-select').click();
   await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 5000 });
-  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /model node with parser/i }).click();
+  // If multiple flows with same name exist, select the last one (oldest)
+  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /model node with parser/i }).last().click();
   await page.waitForTimeout(500);
-  
+
   console.log('✅ PASS: Step 6 - "Model Node with Parser" flow selected');
 
   // ============================================================================

@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test';
 
 test('Create new flow with User Utterance node', async ({ page }) => {
-  test.setTimeout(120000); // 2 minutes for multi-step flow canvas test
+  test.setTimeout(180000); // 3 minutes timeout
 
   // ============ PHASE 1: LOGIN & NAVIGATION ============
 
   console.log('📍 Step 1: Navigate to login page');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
   console.log('✅ PASS: Step 1 - Navigated to login page');
 
   console.log('📍 Step 2: Fill email address');

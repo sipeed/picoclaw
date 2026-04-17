@@ -74,7 +74,7 @@ IMPORTANT RULES:
    CORRECT post-login pattern (waitForURL callback gets a URL object — use .pathname or .href, NOT .includes()):
      await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
      if (page.url().includes('select_org')) {  // page.url() returns a string — .includes() is fine here
-       await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
+       await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click();
        await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
      }
 4. Selector priority — ALWAYS follow this order:
@@ -99,10 +99,12 @@ IMPORTANT RULES:
 7. Flow selection dropdown (.tester-select):
    ALWAYS wait for the overlay to stabilise before filtering — the list may take a moment to render.
    ALWAYS use case-insensitive regex /i — flow names in the DB may differ in capitalisation from the UI.
+   If multiple flows with the same name exist, ALWAYS select .last() (the oldest flow).
    CORRECT pattern:
      await page.locator('.tester-select').click();
      await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 5000 });
-     await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /flow name here/i }).click();
+     // If multiple flows with same name exist, select the last one (oldest)
+     await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /user utterance/i }).last().click();
 
 8. Version selection — MANDATORY EXPLICIT SELECTION, auto-select is FORBIDDEN:
    The app auto-selects the FIRST version which is often wrong (e.g. "CustomnodeV1" instead of the target version).
@@ -185,11 +187,11 @@ After creating the test:
 
 ---
 
-Test credentials: email=heidi@intnt.ai password=testing2026! org=Testing2026!
+Test credentials: email=heidi@intnt.ai password=testing2026! org=Testing
 
 Steps:
 1. Perform case "Login"
-2. On Select Organization page, select organization "Testing2026!"
+2. On Select Organization page, select organization "Testing"
 3. User redirected to: https://dashboard.int3nt.info
 4. Click Flow Tester on the left sidebar
 5. On Flow Tester page, locate the Select Conversation Flow dropdown

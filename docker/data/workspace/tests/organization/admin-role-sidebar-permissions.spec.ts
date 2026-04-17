@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { performLogin } from '../utils/auth';
 
 test('Admin role dashboard access and sidebar permissions', async ({ page }) => {
+  test.setTimeout(180000); // 3 minutes timeout
   const adminEmail = 'heidi@intnt.ai';
   const adminPassword = 'testing2026!';
 

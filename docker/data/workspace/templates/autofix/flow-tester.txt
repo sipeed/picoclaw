@@ -50,13 +50,3 @@ STEP 3 — Fix the spec file:
 | `strict mode violation` on `.message-text` | Matched user + bot messages | Scope to `.chatbox .message-card .message-text` and use `.first()` / `.last()` |
 | `locator.click: timeout` on `.version-dropdown-menu` | Skeleton items still showing | Wait for `.version-date` first: `await page.locator('.version-dropdown-menu .version-date').first().waitFor({ state: 'visible', timeout: 20000 })` |
 | `toHaveValue` on dropdown | v-select is a div, not an input | Use `toContainText()` |
-
-## Final output (required — print this after the loop ends)
-
-  Iterations: N
-  Fixes applied:
-    1. Line NN — what was wrong → what was changed
-    2. ...
-  Terminal output:
-    [paste actual terminal output]
-  Result: ✅ PASS  OR  ❌ FAIL — [unresolved error message]

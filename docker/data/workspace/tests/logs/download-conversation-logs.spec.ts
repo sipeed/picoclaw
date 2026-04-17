@@ -14,7 +14,7 @@ test('Download conversation logs flow', async ({ page }) => {
   await loginAndSelectOrg(page, primaryEmail, primaryPassword, organizationName);
 
   // Step 2: Verify redirect to dashboard
-  console.log('\n📍 Step 2: Verify redirect to https://dashboard.int3nt.info/');
+  console.log('\n📍 Step 2: Verify redirect to ');
   await expect(page).toHaveURL(/.*dashboard\.int3nt\.info\/?$/);
   console.log('✅ PASS: Step 2 - User redirected to dashboard');
 

@@ -5,7 +5,7 @@ test('Model Node without Parser Flow - User sends "hello" and receives narcissis
 
   // ========== STEP 1: Navigate to login page ==========
   console.log('📍 Step 1: Navigate to login page');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
   await page.locator('.login-card').waitFor({ state: 'visible', timeout: 10000 });
   console.log('✅ PASS: Step 1 - Login page loaded');
 
@@ -28,7 +28,7 @@ test('Model Node without Parser Flow - User sends "hello" and receives narcissis
     await loader.first().waitFor({ state: 'hidden', timeout: 15000 });
   }
   await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
-  await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
+  await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click();
   await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 15000 });
   console.log('✅ PASS: Step 4 - Organization selected');
 
@@ -43,7 +43,8 @@ test('Model Node without Parser Flow - User sends "hello" and receives narcissis
   console.log('📍 Step 6: Select flow "Node without Parser"');
   await page.locator('.tester-select').click();
   await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 5000 });
-  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /node without parser/i }).click();
+  // If multiple flows with same name exist, select the last one (oldest)
+  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /node without parser/i }).last().click();
   console.log('✅ PASS: Step 6 - Flow selected');
 
   // ========== STEP 7: Wait for version selector to stabilize ==========
@@ -93,7 +94,7 @@ test('Model Node without Parser Flow - User sends "hello" and receives narcissis
   console.log('📍 Step 13: Verify first bot message appears');
   const firstBotMessage = page.locator('.chatbox .message-card .message-text').first();
   await expect(firstBotMessage)
-    .toContainText('Below is the Model node result. it should return your input narcissly', { timeout: 20000 });
+    .toContainText('Below is the Model node result. it should return your input narcisticly', { timeout: 20000 });
   console.log('✅ PASS: Step 13 - First bot message verified');
 
   // ========== STEP 14: Verify second bot message (narcissistic reply) is not empty ==========

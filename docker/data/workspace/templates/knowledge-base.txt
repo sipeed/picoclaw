@@ -28,7 +28,7 @@ IMPORTANT RULES:
 2. NEVER guess or invent Vuetify selectors like .v-dialog, .v-dialog--active, .v-overlay, .v-card, etc.
 3. For login, COPY THE CODE VERBATIM from the "Login Flow (copy-paste ready)" block in /skills/app-selectors/SKILL.md.
    Do NOT rewrite it. Do NOT use input[type="email"], input[type="password"], or any selector not in that block.
-   The correct URL is https://dashboard.int3nt.info/login (with /login — NOT the root URL).
+   The correct URL is {{BASE_URL}}/login (with /login — NOT the root URL).
    The correct selectors are .v-text-field (NOT input[type="email"]) and .organization-card.
    The login button MUST be: page.getByRole('button', { name: /login/i })
    The button text is "Login" (ONE word). NEVER use filter({ hasText: /Log In/ }) or /^Log In$/ — those will NEVER match.
@@ -69,11 +69,17 @@ IMPORTANT RULES:
      page.locator('input[type="radio"][aria-label="Full Sync"]')
      page.locator('label.v-label--clickable').filter({ hasText: /Full Sync/ })
    The same rule applies to ALL Vuetify component tags: v-select, v-checkbox, v-switch, v-tab, etc.
-9. STRICT MODE RULE — ALWAYS use .first() or .last() on any locator that can match multiple elements.
-   FORBIDDEN without .first()/.last():
+9. STRICT MODE RULE — ALWAYS use .first() on any locator that can match multiple elements.
+   FORBIDDEN without .first():
      page.locator('.v-list-item')
-     page.locator('.v-overlay--active .v-list-item')
-   CORRECT: .filter({ hasText: /exact text/ }) or .nth(0) or .first() / .last()
+     page.locator('.bucket-card').filter({ hasText: 'Picotest1' })
+     page.locator('.organization-card').filter({ hasText: 'Testing2026!' })
+   CORRECT:
+     page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).first()
+     page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).first()
+   This also applies to .waitFor(), .isVisible(), and variable assignments — EVERY use of the locator needs .first().
+   The app may render the same card multiple times in the DOM (e.g. once in the list, once in a hidden state).
+   ALWAYS use .first() when locating a bucket card, org card, or any list item by name.
 10. Test timeout: set at least 60 seconds.
     test.setTimeout(60000);
     Place this as the FIRST line inside the test() callback.
@@ -101,8 +107,3 @@ If fails:
 - re-run
 
 Repeat until PASS or blocked
-
-Final report must include:
-- terminal output
-- fixes applied
-- final result

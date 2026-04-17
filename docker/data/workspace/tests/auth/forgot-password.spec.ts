@@ -3,7 +3,7 @@ import { performLogin } from '../utils/auth';
 import Imap from 'imap';
 import { simpleParser } from 'mailparser';
 import * as dotenv from 'dotenv';
-dotenv.config({ path: __dirname + '/../.env' });
+dotenv.config({ path: __dirname + '/../../.env' });
 
 test('Password reset flow - Reset password and verify login', async ({ page }) => {
     test.setTimeout(120000);
@@ -91,7 +91,7 @@ test('Password reset flow - Reset password and verify login', async ({ page }) =
 
     // Step 1: Open the page and verify it loads
     console.log('\n📍 Step 1: Open the page and verify it loads');
-    await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+    await page.goto('/login', { waitUntil: 'networkidle' });
     await expect(page).toHaveURL(/.*login/);
     console.log('✅ PASS: Step 1 - Login page loaded successfully');
 
@@ -153,12 +153,12 @@ test('Password reset flow - Reset password and verify login', async ({ page }) =
 
     // Step 8: Verify success message and click Go To Dashboard
     console.log('\n📍 Step 8: Verify success message and click Go To Dashboard');
-    await expect(page.getByText(/Your password was reset successfully/i)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/Your password was reset successfully!!/i)).toBeVisible({ timeout: 10000 });
     console.log('   ✓ Success message visible');
     const goToDashboardButton = page.locator('button:has-text("Go To Dashboard"), a:has-text("Go To Dashboard")').first();
     await expect(goToDashboardButton).toBeVisible();
     await goToDashboardButton.click();
-    await page.waitForURL('**/dashboard.int3nt.info/login', { timeout: 15000 });
+    await page.waitForURL('**/login', { timeout: 15000 });
     await expect(page).toHaveURL(/.*login/);
     console.log('✅ PASS: Step 8 - Clicked Go To Dashboard, redirected to login page');
 
@@ -194,7 +194,7 @@ test('Password reset flow - Reset password and verify login', async ({ page }) =
     }
 
     if (logoutFound) {
-        await page.waitForURL('**/dashboard.int3nt.info/login', { timeout: 10000 });
+        await page.waitForURL('**/login', { timeout: 10000 });
         console.log('✅ PASS: Step 10 - Logged out successfully, redirected to login');
     } else {
         console.log('❌ FAIL: Step 10 - Logout button not found');
@@ -203,7 +203,7 @@ test('Password reset flow - Reset password and verify login', async ({ page }) =
 
     // Step 11: Revert password - Click Forgot password again
     console.log('\n📍 Step 11: Revert password - Click Forgot password');
-    await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+    await page.goto('/login', { waitUntil: 'networkidle' });
     const forgotPasswordLink2 = page.locator('button:has-text("Forgot Password"), a:has-text("Forgot Password"), button:has-text("Forgot password")').first();
     await expect(forgotPasswordLink2).toBeVisible();
     await forgotPasswordLink2.click();
@@ -252,7 +252,7 @@ test('Password reset flow - Reset password and verify login', async ({ page }) =
     const goToDashboardButton2 = page.locator('button:has-text("Go To Dashboard"), a:has-text("Go To Dashboard")').first();
     await expect(goToDashboardButton2).toBeVisible();
     await goToDashboardButton2.click();
-    await page.waitForURL('**/dashboard.int3nt.info/login', { timeout: 15000 });
+    await page.waitForURL('**/login', { timeout: 15000 });
     await expect(page).toHaveURL(/.*login/);
     console.log('✅ PASS: Step 13 - Password reverted, clicked Go To Dashboard, redirected to login');
 

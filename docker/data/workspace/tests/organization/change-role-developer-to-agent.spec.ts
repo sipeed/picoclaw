@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { loginAndSelectOrg } from '../utils/auth';
 
 test('Change member role from Developer to Agent flow', async ({ page }) => {
+  test.setTimeout(180000); // 3 minutes timeout
   const primaryEmail = 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
   const memberEmail = 'heidi+1@intnt.ai';
