@@ -25,3 +25,19 @@ func TestFormatToolFeedbackMessage_EmptyToolNameOmitsToolLine(t *testing.T) {
 		t.Fatalf("FormatToolFeedbackMessage() = %q, want %q", got, want)
 	}
 }
+
+func TestFitToolFeedbackMessage_TruncatesBodyWithinSingleMessage(t *testing.T) {
+	got := FitToolFeedbackMessage("\U0001f527 `read_file`\nRead README.md first to confirm the current project structure.", 40)
+	want := "\U0001f527 `read_file`\nRead README.md first to..."
+	if got != want {
+		t.Fatalf("FitToolFeedbackMessage() = %q, want %q", got, want)
+	}
+}
+
+func TestFitToolFeedbackMessage_TruncatesSingleLineMessage(t *testing.T) {
+	got := FitToolFeedbackMessage("\U0001f527 `read_file`", 10)
+	want := "\U0001f527 `read..."
+	if got != want {
+		t.Fatalf("FitToolFeedbackMessage() = %q, want %q", got, want)
+	}
+}

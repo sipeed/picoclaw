@@ -54,7 +54,7 @@ Discord can show three different kinds of "working" feedback:
 
 ```text
 🔧 `web_search`
-{"query":"picoclaw release notes"}
+Checking the latest PicoClaw release notes before I answer.
 ```
 
 If you only see `Bot is typing`, check that `placeholder.enabled` or `tool_feedback.enabled` is actually set in your runtime config.

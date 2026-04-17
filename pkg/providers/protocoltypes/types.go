@@ -11,7 +11,8 @@ type ToolCall struct {
 }
 
 type ExtraContent struct {
-	Google *GoogleExtra `json:"google,omitempty"`
+	Google                  *GoogleExtra `json:"google,omitempty"`
+	ToolFeedbackExplanation string       `json:"tool_feedback_explanation,omitempty"`
 }
 
 type GoogleExtra struct {

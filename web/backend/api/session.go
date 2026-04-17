@@ -529,31 +529,23 @@ func visibleAssistantToolSummaryMessages(
 	messages := make([]sessionChatMessage, 0, len(toolCalls))
 	for _, tc := range toolCalls {
 		name := tc.Name
-		argsJSON := ""
 		if tc.Function != nil {
 			if name == "" {
 				name = tc.Function.Name
 			}
-			argsJSON = tc.Function.Arguments
 		}
 
 		if strings.TrimSpace(name) == "" {
 			continue
 		}
 
-		if strings.TrimSpace(argsJSON) == "" && len(tc.Arguments) > 0 {
-			if encodedArgs, err := json.Marshal(tc.Arguments); err == nil {
-				argsJSON = string(encodedArgs)
-			}
-		}
-
-		argsPreview := strings.TrimSpace(argsJSON)
-		if argsPreview == "" {
-			argsPreview = "{}"
+		explanation := ""
+		if tc.ExtraContent != nil {
+			explanation = strings.TrimSpace(tc.ExtraContent.ToolFeedbackExplanation)
 		}
 		messages = append(messages, sessionChatMessage{
 			Role:    "assistant",
-			Content: utils.FormatToolFeedbackMessage(name, utils.Truncate(argsPreview, toolFeedbackMaxArgsLength)),
+			Content: utils.FormatToolFeedbackMessage(name, utils.Truncate(explanation, toolFeedbackMaxArgsLength)),
 		})
 	}
 

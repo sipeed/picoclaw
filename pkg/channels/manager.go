@@ -26,6 +26,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/health"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 const (
@@ -820,14 +821,16 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 			if m.config != nil && m.config.Agents.Defaults.SplitOnMarker {
 				if markerChunks := SplitByMarker(msg.Content); len(markerChunks) > 1 {
 					for _, chunk := range markerChunks {
-						chunks = append(chunks, splitByLength(chunk, maxLen)...)
+						chunkMsg := msg
+						chunkMsg.Content = chunk
+						chunks = append(chunks, splitOutboundMessageContent(chunkMsg, maxLen)...)
 					}
 				}
 			}
 
 			// Step 2: Fallback to length-based splitting if no chunks from marker
 			if len(chunks) == 0 {
-				chunks = splitByLength(msg.Content, maxLen)
+				chunks = splitOutboundMessageContent(msg, maxLen)
 			}
 
 			// Step 3: Send all chunks
@@ -842,12 +845,16 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 	}
 }
 
-// splitByLength splits content by maxLen if needed, otherwise returns single chunk.
-func splitByLength(content string, maxLen int) []string {
-	if maxLen > 0 && len([]rune(content)) > maxLen {
-		return SplitMessage(content, maxLen)
+// splitOutboundMessageContent splits regular outbound content by maxLen, but
+// keeps tool feedback in a single message by truncating the explanation body.
+func splitOutboundMessageContent(msg bus.OutboundMessage, maxLen int) []string {
+	if maxLen > 0 && len([]rune(msg.Content)) > maxLen {
+		if outboundMessageIsToolFeedback(msg) {
+			return []string{utils.FitToolFeedbackMessage(msg.Content, maxLen)}
+		}
+		return SplitMessage(msg.Content, maxLen)
 	}
-	return []string{content}
+	return []string{msg.Content}
 }
 
 // sendWithRetry sends a message through the channel with rate limiting and
@@ -1311,13 +1318,16 @@ func (m *Manager) SendMessage(ctx context.Context, msg bus.OutboundMessage) erro
 	if mlp, ok := w.ch.(MessageLengthProvider); ok {
 		maxLen = mlp.MaxMessageLength()
 	}
-	if maxLen > 0 && len([]rune(msg.Content)) > maxLen {
-		for _, chunk := range SplitMessage(msg.Content, maxLen) {
+	if chunks := splitOutboundMessageContent(msg, maxLen); len(chunks) > 1 {
+		for _, chunk := range chunks {
 			chunkMsg := msg
 			chunkMsg.Content = chunk
 			m.sendWithRetry(ctx, channelName, w, chunkMsg)
 		}
 	} else {
+		if len(chunks) == 1 {
+			msg.Content = chunks[0]
+		}
 		m.sendWithRetry(ctx, channelName, w, msg)
 	}
 	return nil

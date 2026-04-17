@@ -24,6 +24,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type fakeChannel struct{ id string }
@@ -1827,7 +1828,7 @@ func TestToolFeedbackExplanationFromResponse_FallsBackToReasoningContent(t *test
 	}
 }
 
-func TestToolFeedbackExplanationFromResponse_UsesPreviousAssistantContentAsLastResort(t *testing.T) {
+func TestToolFeedbackExplanationFromResponse_UsesLatestUserContentAsLastResort(t *testing.T) {
 	response := &providers.LLMResponse{
 		Content:          "",
 		ReasoningContent: "",
@@ -1835,12 +1836,14 @@ func TestToolFeedbackExplanationFromResponse_UsesPreviousAssistantContentAsLastR
 	messages := []providers.Message{
 		{Role: "user", Content: "check file"},
 		{Role: "assistant", Content: "Previous turn explanation"},
+		{Role: "user", Content: "Inspect README.md and update the config example."},
 		{Role: "tool", Content: "tool output", ToolCallID: "call_1"},
 	}
 
 	got := toolFeedbackExplanationFromResponse(response, messages, 300)
-	if got != "Previous turn explanation" {
-		t.Fatalf("toolFeedbackExplanationFromResponse() = %q, want previous assistant content", got)
+	want := utils.ToolFeedbackContinuationHint + ": Inspect README.md and update the config example."
+	if got != want {
+		t.Fatalf("toolFeedbackExplanationFromResponse() = %q, want latest user content fallback", got)
 	}
 }
 
@@ -3744,8 +3747,14 @@ func TestProcessMessage_PublishesToolFeedbackWhenEnabled(t *testing.T) {
 		if !strings.Contains(outbound.Content, "`read_file`") {
 			t.Fatalf("tool feedback content = %q, want read_file summary", outbound.Content)
 		}
-		if strings.Contains(outbound.Content, "Why this tool should be executed") {
-			t.Fatalf("tool feedback content = %q, want no fallback explanation", outbound.Content)
+		if !strings.Contains(outbound.Content, utils.ToolFeedbackContinuationHint) {
+			t.Fatalf("tool feedback content = %q, want continuation hint fallback", outbound.Content)
+		}
+		if !strings.Contains(outbound.Content, "check tool feedback") {
+			t.Fatalf("tool feedback content = %q, want current user intent fallback", outbound.Content)
+		}
+		if strings.Contains(outbound.Content, "Previous turn explanation") {
+			t.Fatalf("tool feedback content = %q, want no previous assistant fallback", outbound.Content)
 		}
 		if outbound.AgentID != "main" {
 			t.Fatalf("tool feedback agent_id = %q, want main", outbound.AgentID)

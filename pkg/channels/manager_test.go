@@ -13,6 +13,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 // mockChannel is a test double that delegates Send to a configurable function.
@@ -904,6 +905,30 @@ func TestPreSendMedia_DismissesTrackedMessage(t *testing.T) {
 
 	if ch.dismissedChatID != "123" {
 		t.Fatalf("expected tracked tool feedback to be dismissed for media chat 123, got %q", ch.dismissedChatID)
+	}
+}
+
+func TestSplitOutboundMessageContent_ToolFeedbackTruncatesInsteadOfSplitting(t *testing.T) {
+	msg := testOutboundMessage(bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "123",
+		Content: "\U0001f527 `read_file`\nRead README.md first to confirm the current project structure before editing the config example.",
+		Context: bus.InboundContext{
+			Channel: "test",
+			ChatID:  "123",
+			Raw: map[string]string{
+				"message_kind": "tool_feedback",
+			},
+		},
+	})
+
+	chunks := splitOutboundMessageContent(msg, 40)
+	if len(chunks) != 1 {
+		t.Fatalf("len(chunks) = %d, want 1", len(chunks))
+	}
+	want := utils.FitToolFeedbackMessage(msg.Content, 40)
+	if chunks[0] != want {
+		t.Fatalf("chunk = %q, want %q", chunks[0], want)
 	}
 }
 

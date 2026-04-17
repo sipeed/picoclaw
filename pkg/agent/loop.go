@@ -851,13 +851,10 @@ func outboundMessageForTurnWithKind(ts *turnState, content, kind string) bus.Out
 	return msg
 }
 
-func previousAssistantContent(messages []providers.Message) string {
+func latestUserContent(messages []providers.Message) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
-		if msg.Role == "user" {
-			break
-		}
-		if msg.Role != "assistant" {
+		if msg.Role != "user" {
 			continue
 		}
 		if content := strings.TrimSpace(msg.Content); content != "" {
@@ -883,7 +880,10 @@ func toolFeedbackExplanationFromResponse(
 		explanation = strings.TrimSpace(response.ReasoningContent)
 	}
 	if explanation == "" {
-		explanation = previousAssistantContent(messages)
+		explanation = latestUserContent(messages)
+		if explanation != "" {
+			explanation = utils.ToolFeedbackContinuationHint + ": " + explanation
+		}
 	}
 	return utils.Truncate(explanation, maxLen)
 }
@@ -2738,6 +2738,12 @@ turnLoop:
 		for _, tc := range normalizedToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)
 			extraContent := tc.ExtraContent
+			if strings.TrimSpace(toolFeedbackExplanation) != "" {
+				if extraContent == nil {
+					extraContent = &providers.ExtraContent{}
+				}
+				extraContent.ToolFeedbackExplanation = toolFeedbackExplanation
+			}
 			thoughtSignature := ""
 			if tc.Function != nil {
 				thoughtSignature = tc.Function.ThoughtSignature

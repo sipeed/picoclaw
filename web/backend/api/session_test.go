@@ -629,6 +629,7 @@ func TestHandleGetSession_UsesConfiguredToolFeedbackMaxArgsLength(t *testing.T) 
 	}
 
 	argsJSON := `{"path":"README.md","start_line":1,"end_line":10,"extra":"abcdefghijklmnopqrstuvwxyz"}`
+	explanation := "Read README.md first to confirm the current project structure before editing the config example."
 	sessionKey := picoSessionPrefix + "detail-tool-summary-max-args"
 	err = store.AddFullMessage(nil, sessionKey, providers.Message{Role: "user", Content: "check file"})
 	if err != nil {
@@ -642,6 +643,9 @@ func TestHandleGetSession_UsesConfiguredToolFeedbackMaxArgsLength(t *testing.T) 
 			Function: &providers.FunctionCall{
 				Name:      "read_file",
 				Arguments: argsJSON,
+			},
+			ExtraContent: &providers.ExtraContent{
+				ToolFeedbackExplanation: explanation,
 			},
 		}},
 	})
@@ -675,7 +679,7 @@ func TestHandleGetSession_UsesConfiguredToolFeedbackMaxArgsLength(t *testing.T) 
 		t.Fatalf("len(resp.Messages) = %d, want at least 2", len(resp.Messages))
 	}
 
-	wantPreview := utils.Truncate(argsJSON, 20)
+	wantPreview := utils.Truncate(explanation, 20)
 	if !strings.Contains(resp.Messages[1].Content, wantPreview) {
 		t.Fatalf("tool summary = %q, want preview %q", resp.Messages[1].Content, wantPreview)
 	}
