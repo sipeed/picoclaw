@@ -127,9 +127,17 @@ func (h *Handler) handleListSkills(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Filter based on security policy
+	filtered := make([]skillSupportItem, 0, len(items))
+	for _, item := range items {
+		if ensureSkillRegistryToolEnabled(cfg, "", item.Name) == nil {
+			filtered = append(filtered, item)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(skillSupportResponse{
-		Skills: items,
+		Skills: filtered,
 	})
 }
 
@@ -146,6 +154,12 @@ func (h *Handler) handleGetSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
+
+	if registryErr := ensureSkillRegistryToolEnabled(cfg, "", name); registryErr != nil {
+		http.Error(w, registryErr.Error(), http.StatusBadRequest)
+		return
+	}
+
 	for _, skillItem := range skillItems {
 		if skillItem.Name != name {
 			continue
@@ -174,7 +188,7 @@ func (h *Handler) handleSearchSkills(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", loadErr), http.StatusInternalServerError)
 		return
 	}
-	if registryErr := ensureSkillRegistryToolEnabled(cfg, "find_skills"); registryErr != nil {
+	if registryErr := ensureSkillRegistryToolEnabled(cfg, "find_skills", ""); registryErr != nil {
 		http.Error(w, registryErr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -278,14 +292,14 @@ func (h *Handler) handleInstallSkill(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", loadErr), http.StatusInternalServerError)
 		return
 	}
-	if registryErr := ensureSkillRegistryToolEnabled(cfg, "install_skill"); registryErr != nil {
-		http.Error(w, registryErr.Error(), http.StatusBadRequest)
-		return
-	}
-
 	var req installSkillRequest
 	if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", decodeErr), http.StatusBadRequest)
+		return
+	}
+
+	if registryErr := ensureSkillRegistryToolEnabled(cfg, "install_skill", req.Slug); registryErr != nil {
+		http.Error(w, registryErr.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -448,6 +462,11 @@ func (h *Handler) handleImportSkill(w http.ResponseWriter, r *http.Request) {
 	}
 	defer uploadedFile.Close()
 
+	if registryErr := ensureSkillRegistryToolEnabled(cfg, "write_file", fileHeader.Filename); registryErr != nil {
+		http.Error(w, registryErr.Error(), http.StatusBadRequest)
+		return
+	}
+
 	content, err := io.ReadAll(io.LimitReader(uploadedFile, maxImportedSkillSize+1))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to read file: %v", err), http.StatusBadRequest)
@@ -479,6 +498,11 @@ func (h *Handler) handleDeleteSkill(w http.ResponseWriter, r *http.Request) {
 
 	loader := newSkillsLoader(cfg.WorkspacePath())
 	name := r.PathValue("name")
+
+	if registryErr := ensureSkillRegistryToolEnabled(cfg, "", name); registryErr != nil {
+		http.Error(w, registryErr.Error(), http.StatusBadRequest)
+		return
+	}
 	workspaceSkillWriteMu.Lock()
 	defer workspaceSkillWriteMu.Unlock()
 
@@ -531,13 +555,42 @@ func newSkillsRegistryManager(cfg *config.Config) *skills.RegistryManager {
 	})
 }
 
-func ensureSkillRegistryToolEnabled(cfg *config.Config, toolName string) error {
+func ensureSkillRegistryToolEnabled(cfg *config.Config, toolName string, skillName string) error {
 	if !cfg.Tools.IsToolEnabled("skills") {
 		return fmt.Errorf("tools.skills is disabled")
 	}
-	if !cfg.Tools.IsToolEnabled(toolName) {
-		return fmt.Errorf("%s is disabled", toolName)
+	if toolName != "" {
+		if !cfg.Tools.IsToolEnabled(toolName) {
+			return fmt.Errorf("%s is disabled", toolName)
+		}
 	}
+
+	// Check whitelist for specific skill if enabled
+	if cfg.Tools.Skills.WhitelistEnabled && skillName != "" {
+		allowed := false
+		for _, s := range cfg.Tools.Skills.Whitelist {
+			if s == skillName {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return fmt.Errorf("skill %q is not in the whitelist", skillName)
+		}
+	}
+
+	// Check deny paths
+	if skillName != "" {
+		// Path would be skills/skillName
+		pathCandidate := filepath.Join("skills", skillName)
+		for _, patternStr := range cfg.Tools.DenyWritePaths {
+			re, err := regexp.Compile(patternStr)
+			if err == nil && re.MatchString(pathCandidate) {
+				return fmt.Errorf("access to skill %q is blocked by security policy", skillName)
+			}
+		}
+	}
+
 	return nil
 }
 

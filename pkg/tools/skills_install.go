@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
@@ -20,23 +21,27 @@ type InstallSkillTool struct {
 	workspace        string
 	whitelist        []string
 	whitelistEnabled bool
+	denyWritePaths   []*regexp.Regexp
 	mu               sync.Mutex
 }
 
 // NewInstallSkillTool creates a new InstallSkillTool.
 // registryMgr is the shared registry manager (same instance as FindSkillsTool).
 // workspace is the root workspace directory; skills install to {workspace}/skills/{slug}/.
+// denyWritePaths is a list of regex patterns to check before allowing installation.
 func NewInstallSkillTool(
 	registryMgr *skills.RegistryManager,
 	workspace string,
 	whitelist []string,
 	whitelistEnabled bool,
+	denyWritePaths []*regexp.Regexp,
 ) *InstallSkillTool {
 	return &InstallSkillTool{
 		registryMgr:      registryMgr,
 		workspace:        workspace,
 		whitelist:        whitelist,
 		whitelistEnabled: whitelistEnabled,
+		denyWritePaths:   denyWritePaths,
 		mu:               sync.Mutex{},
 	}
 }
@@ -108,6 +113,18 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 
 	version, _ := args["version"].(string)
 	force, _ := args["force"].(bool)
+
+	// Check deny write paths before proceeding with installation.
+	if len(t.denyWritePaths) > 0 {
+		pathsToCheck := []string{"skills", filepath.Join("skills", slug)}
+		for _, path := range pathsToCheck {
+			for _, pattern := range t.denyWritePaths {
+				if pattern.MatchString(path) {
+					return ErrorResult(fmt.Sprintf("access denied: cannot write to %q", path))
+				}
+			}
+		}
+	}
 
 	// Check if already installed.
 	skillsDir := filepath.Join(t.workspace, "skills")

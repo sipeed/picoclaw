@@ -40,6 +40,7 @@ type ExecTool struct {
 	allowPatterns       []*regexp.Regexp
 	customAllowPatterns []*regexp.Regexp
 	allowedPathPatterns []*regexp.Regexp
+	denyWritePaths      []*regexp.Regexp
 	restrictToWorkspace bool
 	allowRemote         bool
 	sessionManager      *SessionManager
@@ -120,8 +121,18 @@ func NewExecTool(workingDir string, restrict bool, allowPaths ...[]*regexp.Regex
 func NewExecToolWithConfig(
 	workingDir string,
 	restrict bool,
-	config *config.Config,
+	cfg *config.Config,
 	allowPaths ...[]*regexp.Regexp,
+) (*ExecTool, error) {
+	return NewExecToolWithDenyPaths(workingDir, restrict, allowPaths, nil, cfg)
+}
+
+func NewExecToolWithDenyPaths(
+	workingDir string,
+	restrict bool,
+	allowPaths [][]*regexp.Regexp,
+	denyWritePaths []*regexp.Regexp,
+	cfg *config.Config,
 ) (*ExecTool, error) {
 	denyPatterns := make([]*regexp.Regexp, 0)
 	customAllowPatterns := make([]*regexp.Regexp, 0)
@@ -131,8 +142,8 @@ func NewExecToolWithConfig(
 		allowedPathPatterns = allowPaths[0]
 	}
 
-	if config != nil {
-		execConfig := config.Tools.Exec
+	if cfg != nil {
+		execConfig := cfg.Tools.Exec
 		enableDenyPatterns := execConfig.EnableDenyPatterns
 		allowRemote = execConfig.AllowRemote
 		if enableDenyPatterns {
@@ -163,8 +174,8 @@ func NewExecToolWithConfig(
 	}
 
 	var timeout time.Duration
-	if config != nil && config.Tools.Exec.TimeoutSeconds > 0 {
-		timeout = time.Duration(config.Tools.Exec.TimeoutSeconds) * time.Second
+	if cfg != nil && cfg.Tools.Exec.TimeoutSeconds > 0 {
+		timeout = time.Duration(cfg.Tools.Exec.TimeoutSeconds) * time.Second
 	}
 
 	return &ExecTool{
@@ -174,6 +185,7 @@ func NewExecToolWithConfig(
 		allowPatterns:       nil,
 		customAllowPatterns: customAllowPatterns,
 		allowedPathPatterns: allowedPathPatterns,
+		denyWritePaths:      denyWritePaths,
 		restrictToWorkspace: restrict,
 		allowRemote:         allowRemote,
 		sessionManager:      getSessionManager(),
@@ -1031,6 +1043,40 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		for _, pattern := range t.denyPatterns {
 			if pattern.MatchString(lower) {
 				return "Command blocked by safety guard (dangerous pattern detected)"
+			}
+		}
+
+		// Check deny write paths - block commands that reference protected directories or variables
+		// We perform a broad check on the entire command string to prevent variable bypasses.
+		if len(t.denyWritePaths) > 0 {
+			// First check: literal occurrences in the whole command
+			for _, pattern := range t.denyWritePaths {
+				if pattern.MatchString(cmd) {
+					return fmt.Sprintf("Command blocked: reference to restricted path detected")
+				}
+			}
+
+			// Second check: check individual words/arguments for deeper validation
+			words := strings.Fields(cmd)
+			for _, word := range words {
+				// Clean whitespace and common shell chars from word to find actual path candidates
+				cleanWord := strings.Trim(word, " ;&|><\"'$()")
+				if cleanWord == "" {
+					continue
+				}
+
+				for _, pattern := range t.denyWritePaths {
+					if pattern.MatchString(cleanWord) {
+						return fmt.Sprintf("Command blocked: cannot access protected path %q", cleanWord)
+					}
+					// Also check path components (e.g. "skills" in "mkdir -p skills/foo")
+					pathParts := strings.Split(cleanWord, "/")
+					for _, part := range pathParts {
+						if part != "" && pattern.MatchString(part) {
+							return fmt.Sprintf("Command blocked: cannot access protected path component %q", part)
+						}
+					}
+				}
 			}
 		}
 	}
