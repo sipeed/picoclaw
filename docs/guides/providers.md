@@ -35,6 +35,8 @@
 
 > **What's New?** PicoClaw now uses a **model-centric** configuration approach. Simply specify `vendor/model` format (e.g., `zhipu/glm-4.7`) to add new providers—**zero code changes required!**
 
+For agent dispatch and light-model routing examples, see the [Routing Guide](routing-guide.md).
+
 This design also enables **multi-agent support** with flexible provider selection:
 
 - **Different agents, different providers**: Each agent can use its own LLM provider

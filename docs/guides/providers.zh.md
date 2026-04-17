@@ -34,6 +34,8 @@
 
 > **新功能！** PicoClaw 现在采用**以模型为中心**的配置方式。只需使用 `厂商/模型` 格式（如 `zhipu/glm-4.7`）即可添加新的 provider——**无需修改任何代码！**
 
+如果你想看 agent 分发和轻量模型路由的完整示例，请看 [路由使用指南](routing-guide.zh.md)。
+
 该设计同时支持**多 Agent 场景**，提供灵活的 Provider 选择：
 
 - **不同 Agent 使用不同 Provider**：每个 Agent 可以使用自己的 LLM provider

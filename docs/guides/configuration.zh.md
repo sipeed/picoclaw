@@ -120,6 +120,86 @@ dammi le ultime news
 - 未注册的斜杠命令（例如 `/foo`）会透传给 LLM 按普通输入处理。
 - 已注册但当前 channel 不支持的命令（例如 WhatsApp 上的 `/show`）会返回明确的用户可见错误，并停止后续处理。
 
+### Session 隔离
+
+Session scope 决定了聊天、用户、线程和 space 之间共享多少上下文。
+
+- 全局默认值使用 `session.dimensions`
+- 如果只想让某条路由例外，使用 dispatch rule 上的 `session_dimensions`
+
+如果你想看完整的隔离方案和配置配方，请看 [Session 使用指南](session-guide.zh.md)。
+
+### Routing
+
+Routing 通过 `agents.dispatch.rules` 配置。
+
+每条规则都针对 channel 归一化后的 inbound context 做匹配。
+规则按从上到下顺序检查，第一条命中的规则立即生效。若没有规则命中，PicoClaw 会回退到默认 agent。
+
+支持的匹配字段：
+
+* `channel`
+* `account`
+* `space`
+* `chat`
+* `topic`
+* `sender`
+* `mentioned`
+
+这些值使用和 session system 一致的归一化词汇：
+
+* `space`: `workspace:t001`、`guild:123456`
+* `chat`: `direct:user123`、`group:-100123`、`channel:c123`
+* `topic`: `topic:42`
+* `sender`: 平台归一化后的 sender 标识
+
+规则也可以通过 `session_dimensions` 覆盖全局 `session.dimensions`，这样路由和会话隔离就能保持一致，而不必回到旧的 `bindings` 或 `dm_scope` 配置。
+
+示例：
+
+```json
+{
+  "agents": {
+    "list": [
+      { "id": "main", "default": true },
+      { "id": "support" },
+      { "id": "sales" }
+    ],
+    "dispatch": {
+      "rules": [
+        {
+          "name": "vip in support group",
+          "agent": "sales",
+          "when": {
+            "channel": "telegram",
+            "chat": "group:-1001234567890",
+            "sender": "12345"
+          },
+          "session_dimensions": ["chat", "sender"]
+        },
+        {
+          "name": "telegram support group",
+          "agent": "support",
+          "when": {
+            "channel": "telegram",
+            "chat": "group:-1001234567890"
+          },
+          "session_dimensions": ["chat"]
+        }
+      ]
+    }
+  },
+  "session": {
+    "dimensions": ["chat"]
+  }
+}
+```
+
+在这个例子里，VIP 规则必须放在更宽泛的群规则前面。
+因为 routing 是严格按顺序执行的，所以更具体的规则要放前面，兜底规则放后面。
+
+如果你想看更完整的 agent 路由和模型分层示例，请看 [路由使用指南](routing-guide.zh.md)。
+
 ### 🔒 安全沙箱 (Security Sandbox)
 
 PicoClaw 默认在沙箱环境中运行。Agent 只能访问配置的工作区内的文件和执行命令。

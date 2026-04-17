@@ -122,6 +122,15 @@ dammi le ultime news
 - Unknown slash command (for example `/foo`) passes through to normal LLM processing.
 - Registered but unsupported command on the current channel (for example `/show` on WhatsApp) returns an explicit user-facing error and stops further processing.
 
+### Session Isolation
+
+Session scope controls how much memory is shared between chats, users, threads, and spaces.
+
+- Use `session.dimensions` for the global default.
+- Use `session_dimensions` on a dispatch rule for one routed exception.
+
+For step-by-step recipes and isolation patterns, see the [Session Guide](session-guide.md).
+
 ### Routing
 
 Routing is configured through `agents.dispatch.rules`.
@@ -194,6 +203,8 @@ Example:
 In the example above, the VIP rule must appear before the broader group rule.
 Because routing is strictly ordered, more specific rules should be placed
 earlier and broader fallback rules later.
+
+For more complete routing and model-tier examples, see the [Routing Guide](routing-guide.md).
 
 ### 🔒 Security Sandbox
 
