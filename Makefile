@@ -211,6 +211,12 @@ build-linux-mipsle: generate
 build-pi-zero: build-linux-arm build-linux-arm64
 	@echo "Pi Zero 2 W builds: $(BUILD_DIR)/$(BINARY_NAME)-linux-arm (32-bit), $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 (64-bit)"
 
+## build-raspberry-pi: Alias for build-pi-zero
+build-raspberry-pi: build-pi-zero
+
+## build-rpi: Alias for build-pi-zero
+build-rpi: build-pi-zero
+
 ## build-all: Build picoclaw for all platforms
 build-all: generate
 	@echo "Building for multiple platforms..."
@@ -331,6 +337,9 @@ docker-build-rpi:
 docker-push-rpi:
 	@echo "Pushing Raspberry Pi Docker image (ARM64)..."
 	docker push $(DOCKER_USER)/picoclaw-rpi:latest
+
+docker-build-raspberry-pi: docker-build-rpi
+docker-push-raspberry-pi: docker-push-rpi
 
 ## docker-run-full: Run picoclaw gateway in Docker (full-featured)
 docker-run-full:
