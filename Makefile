@@ -211,11 +211,12 @@ build-linux-mipsle: generate
 build-pi-zero: build-linux-arm build-linux-arm64
 	@echo "Pi Zero 2 W builds: $(BUILD_DIR)/$(BINARY_NAME)-linux-arm (32-bit), $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 (64-bit)"
 
-## build-raspberry-pi: Alias for build-pi-zero
-build-raspberry-pi: build-pi-zero
+## build-raspberry-pi: Build binaries and Docker image for Raspberry Pi
+build-raspberry-pi: build-pi-zero docker-build-rpi
+	@echo "Raspberry Pi full build complete (binaries and Docker image)"
 
-## build-rpi: Alias for build-pi-zero
-build-rpi: build-pi-zero
+## build-rpi: Build binaries and Docker image for Raspberry Pi
+build-rpi: build-raspberry-pi
 
 ## build-all: Build picoclaw for all platforms
 build-all: generate
