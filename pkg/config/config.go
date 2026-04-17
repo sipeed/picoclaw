@@ -307,7 +307,12 @@ func (d *AgentDefaults) GetModelName() string {
 
 // GroupTriggerConfig controls when the bot responds in group chats.
 type GroupTriggerConfig struct {
-	MentionOnly bool     `json:"mention_only,omitempty"`
+	// MentionOnly must always serialize so an explicit `false` survives the
+	// LoadConfig → SaveConfig roundtrip in migration paths (config.go:1042,
+	// 1083, 1122). With `,omitempty`, Go would omit the bool zero value and
+	// defaultChannels() would re-inject the hardcoded `true` default
+	// (defaults.go:483-484), silently reverting the user's choice.
+	MentionOnly bool     `json:"mention_only"`
 	Prefixes    []string `json:"prefixes,omitempty"`
 }
 
