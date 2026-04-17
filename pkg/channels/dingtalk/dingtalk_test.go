@@ -75,8 +75,8 @@ func TestOnChatBotMessageReceived_GroupMentionOnlyUsesIsInAtListAndStripsMention
 	if inbound.ChatID != "group-abc" {
 		t.Fatalf("chat_id=%q", inbound.ChatID)
 	}
-	if inbound.Peer.Kind != "group" || inbound.Peer.ID != "group-abc" {
-		t.Fatalf("peer=%+v", inbound.Peer)
+	if inbound.Context.ChatType != "group" {
+		t.Fatalf("chat_type=%q", inbound.Context.ChatType)
 	}
 	if inbound.Content != "/help" {
 		t.Fatalf("content=%q", inbound.Content)
@@ -103,11 +103,14 @@ func TestOnChatBotMessageReceived_DirectFallbackSenderIDUsesConversationID(t *te
 	if inbound.ChatID != "conv-direct-42" {
 		t.Fatalf("chat_id=%q", inbound.ChatID)
 	}
-	if inbound.Peer.Kind != "direct" || inbound.Peer.ID != "openid-user-42" {
-		t.Fatalf("peer=%+v", inbound.Peer)
+	if inbound.Context.ChatType != "direct" {
+		t.Fatalf("chat_type=%q", inbound.Context.ChatType)
 	}
-	if inbound.SenderID != "dingtalk:openid-user-42" {
+	if inbound.SenderID != "openid-user-42" {
 		t.Fatalf("sender_id=%q", inbound.SenderID)
+	}
+	if inbound.Sender.CanonicalID != "dingtalk:openid-user-42" {
+		t.Fatalf("sender canonical_id=%q", inbound.Sender.CanonicalID)
 	}
 
 	if _, ok := ch.sessionWebhooks.Load("conv-direct-42"); !ok {

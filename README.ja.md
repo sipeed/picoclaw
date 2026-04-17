@@ -167,7 +167,7 @@ PicoClaw はほぼすべての Linux デバイスにデプロイできます！
 前提条件:
 
 - Go 1.25+
-- Web UI / launcher のビルドには Corepack を有効にした Node.js 22+
+- Web UI / launcher のビルドには Node.js 22+ と pnpm 10.33.0+ が必要
 
 ```bash
 git clone https://github.com/sipeed/picoclaw.git
@@ -175,8 +175,8 @@ git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 make deps
 
-# リポジトリで宣言されたフロントエンド用パッケージマネージャーをインストール
-(cd web/frontend && corepack install)
+# フロントエンド依存関係をインストール
+(cd web/frontend && pnpm install --frozen-lockfile)
 
 # コアバイナリをビルド
 make build

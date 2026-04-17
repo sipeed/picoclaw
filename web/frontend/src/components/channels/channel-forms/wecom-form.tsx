@@ -130,9 +130,10 @@ export function WecomForm({
       setToggleError("")
       try {
         await patchAppConfig({
-          channels: {
+          channel_list: {
             wecom: {
               enabled: checked,
+              type: "wecom",
             },
           },
         })

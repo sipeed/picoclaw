@@ -167,7 +167,7 @@ PicoClaw는 사실상 거의 모든 Linux 장치에 배포할 수 있습니다!
 필수 사항:
 
 - Go 1.25+
-- Web UI / launcher 빌드를 위한 Corepack 활성화된 Node.js 22+
+- Web UI / launcher 빌드에는 Node.js 22+와 pnpm 10.33.0+가 필요합니다
 
 ```bash
 git clone https://github.com/sipeed/picoclaw.git
@@ -175,8 +175,8 @@ git clone https://github.com/sipeed/picoclaw.git
 cd picoclaw
 make deps
 
-# 저장소에 선언된 프런트엔드 패키지 매니저 설치
-(cd web/frontend && corepack install)
+# 프런트엔드 의존성 설치
+(cd web/frontend && pnpm install --frozen-lockfile)
 
 # 코어 바이너리 빌드
 make build

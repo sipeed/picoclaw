@@ -227,13 +227,6 @@ func (c *WhatsAppChannel) handleIncomingMessage(msg map[string]any) {
 		metadata["user_name"] = userName
 	}
 
-	var peer bus.Peer
-	if chatID == senderID {
-		peer = bus.Peer{Kind: "direct", ID: senderID}
-	} else {
-		peer = bus.Peer{Kind: "group", ID: chatID}
-	}
-
 	logger.InfoCF("whatsapp", "WhatsApp message received", map[string]any{
 		"sender":  senderID,
 		"preview": utils.Truncate(content, 50),
@@ -252,5 +245,18 @@ func (c *WhatsAppChannel) handleIncomingMessage(msg map[string]any) {
 		return
 	}
 
-	c.HandleMessage(c.ctx, peer, messageID, senderID, chatID, content, mediaPaths, metadata, sender)
+	inboundCtx := bus.InboundContext{
+		Channel:   "whatsapp",
+		ChatID:    chatID,
+		SenderID:  senderID,
+		MessageID: messageID,
+		Raw:       metadata,
+	}
+	if chatID == senderID {
+		inboundCtx.ChatType = "direct"
+	} else {
+		inboundCtx.ChatType = "group"
+	}
+
+	c.HandleInboundContext(c.ctx, chatID, content, mediaPaths, inboundCtx, sender)
 }

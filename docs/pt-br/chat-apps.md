@@ -61,10 +61,18 @@ picoclaw gateway
 
 **4. Menu de comandos do Telegram (registrado automaticamente na inicialização)**
 
-O PicoClaw agora mantém definições de comandos em um registro compartilhado. Na inicialização, o Telegram registrará automaticamente os comandos de bot suportados (por exemplo `/start`, `/help`, `/show`, `/list`) para que o menu de comandos e o comportamento em tempo de execução permaneçam sincronizados.
+O PicoClaw agora mantém definições de comandos em um registro compartilhado. Na inicialização, o Telegram registrará automaticamente os comandos de bot suportados (por exemplo `/start`, `/help`, `/show`, `/list`, `/use`, `/btw`) para que o menu de comandos e o comportamento em tempo de execução permaneçam sincronizados.
 O registro do menu de comandos do Telegram permanece como descoberta UX local do canal; a execução genérica de comandos é tratada centralmente no loop do agente via commands executor.
 
 Se o registro de comandos falhar (erros transitórios de rede/API), o canal ainda inicia e o PicoClaw tenta novamente o registro em segundo plano.
+
+Voce tambem pode gerenciar skills instaladas diretamente pelo Telegram:
+
+- `/list skills`
+- `/use <skill> <message>`
+- `/use <skill>` e depois enviar a solicitacao real na proxima mensagem
+- `/use clear`
+- `/btw <question>` para fazer uma pergunta lateral imediata sem alterar o historico ativo da sessao; `/btw` e tratado como uma consulta direta sem ferramentas e nao entra no fluxo normal de execucao de ferramentas
 
 </details>
 

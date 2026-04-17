@@ -112,13 +112,17 @@ When the parent task is forcefully aborted (e.g., user interrupts with `/stop`):
 
 ## Agent Loop Integration
 
-### Bus Draining During Processing
+### Message Routing and Steering
 
-When a message enters the `Run()` loop, the agent starts a `drainBusToSteering` goroutine before calling `processMessage`. This goroutine runs concurrently with the entire processing lifecycle and continuously consumes any new inbound messages from the bus, redirecting them into the **steering queue** instead of dropping them.
+When a message enters the `Run()` loop, the agent determines whether to start a new worker or enqueue to steering:
 
-This ensures that if a user sends a follow-up message while the agent is processing (including during SubTurn execution), the message is not lost — it will be picked up between tool call iterations via `dequeueSteeringMessages`.
+- If **no active turn** exists for the message's session key, the session is atomically reserved and a **worker goroutine** is spawned. The worker processes the full turn lifecycle: `processMessage` → tool execution → steering drain → `Continue` for queued messages.
+- If an **active turn already exists** for the same session, the message is enqueued directly into that session's steering queue. It will be picked up by the existing worker's steering drain loop.
 
-The drain goroutine stops automatically when `processMessage` returns (via a cancellable context).
+This ensures that:
+- Messages from **different sessions** are processed **in parallel** (up to `max_parallel_turns` concurrent workers)
+- Messages from the **same session** are strictly **serialized** — they go to the steering queue and are processed sequentially within the active turn
+- No background drain goroutine is needed; steering is handled by the worker itself after processing
 
 ### Pending Result Polling
 
@@ -129,7 +133,7 @@ The agent loop polls for async SubTurn results at two points per iteration:
 
 ### Turn State Tracking
 
-All active root turns are registered in `AgentLoop.activeTurnStates` (`sync.Map`, keyed by session key). This allows `HardAbort` and `/subagents` observability commands to find and operate on active turns.
+All active turns are registered in `AgentLoop.activeTurnStates` (`sync.Map`, keyed by session key). A reservation sentinel is stored atomically via `LoadOrStore` before the worker starts, then replaced with the real `*turnState` when `runTurn` registers. This prevents a TOCTOU race where multiple messages for the same session could spawn concurrent workers. The sentinel is cleaned up by the worker's deferred cleanup. This allows `HardAbort` and `/subagents` observability commands to find and operate on active turns.
 
 ## Event Bus Integration
 
@@ -181,10 +185,10 @@ Creates a new spawner instance for the given AgentLoop. Pass the returned value 
 ### Continue
 
 ```go
-func (al *AgentLoop) Continue(ctx context.Context, sessionKey string) error
+func (al *AgentLoop) Continue(ctx context.Context, sessionKey, channel, chatID string) (string, error)
 ```
 
-Resumes an idle agent turn by injecting any queued steering messages as a new LLM iteration. Used when the agent is waiting and a deferred steering message needs to be processed without a new inbound message arriving.
+Resumes an idle agent turn by dequeuing steering messages for the given session and running them through the agent loop. Returns the response string if processing occurred, or empty string if no steering messages were pending. Uses session-aware active turn checking — it only blocks if a turn is active for the *same* session, not for unrelated sessions.
 
 ## Context Propagation
 

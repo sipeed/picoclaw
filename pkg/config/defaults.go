@@ -41,9 +41,8 @@ func DefaultConfig() *Config {
 				SplitOnMarker: false,
 			},
 		},
-		Bindings: []AgentBinding{},
 		Session: SessionConfig{
-			DMScope: "per-channel-peer",
+			Dimensions: []string{"chat"},
 		},
 		Channels: defaultChannels(),
 		Hooks: HooksConfig{
@@ -260,7 +259,7 @@ func DefaultConfig() *Config {
 			},
 		},
 		Gateway: GatewayConfig{
-			Host:      "127.0.0.1",
+			Host:      "localhost",
 			Port:      18790,
 			HotReload: false,
 			LogLevel:  DefaultGatewayLogLevel,
@@ -279,6 +278,7 @@ func DefaultConfig() *Config {
 				ToolConfig: ToolConfig{
 					Enabled: true,
 				},
+				Provider:        "auto",
 				PreferNative:    true,
 				Proxy:           "",
 				FetchLimitBytes: 10 * 1024 * 1024, // 10MB by default
@@ -291,8 +291,12 @@ func DefaultConfig() *Config {
 					Enabled:    false,
 					MaxResults: 5,
 				},
-				DuckDuckGo: DuckDuckGoConfig{
+				Sogou: SogouConfig{
 					Enabled:    true,
+					MaxResults: 5,
+				},
+				DuckDuckGo: DuckDuckGoConfig{
+					Enabled:    false,
 					MaxResults: 5,
 				},
 				Perplexity: PerplexityConfig{
@@ -336,9 +340,17 @@ func DefaultConfig() *Config {
 					Enabled: true,
 				},
 				Registries: SkillsRegistriesConfig{
-					ClawHub: ClawHubRegistryConfig{
+					&SkillRegistryConfig{
+						Name:    "clawhub",
 						Enabled: true,
 						BaseURL: "https://clawhub.ai",
+						Param:   map[string]any{},
+					},
+					&SkillRegistryConfig{
+						Name:    "github",
+						Enabled: true,
+						BaseURL: "https://github.com",
+						Param:   map[string]any{},
 					},
 				},
 				MaxConcurrentSearches: 2,
@@ -422,7 +434,9 @@ func DefaultConfig() *Config {
 		},
 		Voice: VoiceConfig{
 			ModelName:         "",
+			TTSModelName:      "",
 			EchoTranscription: false,
+			ElevenLabsAPIKey:  "",
 		},
 		BuildInfo: BuildInfo{
 			Version:   Version,
@@ -502,6 +516,14 @@ func defaultChannels() ChannelsConfig {
 		},
 		"mattermost": map[string]any{
 			"typing": map[string]any{"enabled": true},
+    },
+		"irc": map[string]any{
+			"settings": map[string]any{
+				"server":   "",
+				"tls":      true,
+				"nick":     "picoclaw",
+				"channels": []string{},
+			},
 		},
 	}
 

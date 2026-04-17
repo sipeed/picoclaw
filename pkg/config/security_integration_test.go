@@ -338,8 +338,9 @@ web:
 skills:
   github:
     token: "file://github_token.txt"
-  clawhub:
-    auth_token: "file://clawhub_auth_token.txt"
+  registries:
+    clawhub:
+      auth_token: "file://clawhub_auth_token.txt"
 `
 		err = os.WriteFile(securityPath, []byte(securityContent), 0o600)
 		require.NoError(t, err)
@@ -464,9 +465,172 @@ skills:
 		assert.Equal(t, "ghp-github-from-file-abc123", cfg.Tools.Skills.Github.Token.String())
 		t.Logf("Github Token(): %s", cfg.Tools.Skills.Github.Token.String())
 
-		assert.Equal(t, "clawhub-auth-token-from-file", cfg.Tools.Skills.Registries.ClawHub.AuthToken.String())
-		t.Logf("ClawHub AuthToken(): %s", cfg.Tools.Skills.Registries.ClawHub.AuthToken.String())
+		clawHub, ok := cfg.Tools.Skills.Registries.Get("clawhub")
+		assert.True(t, ok)
+		assert.Equal(t, "clawhub-auth-token-from-file", clawHub.AuthToken.String())
+		t.Logf("ClawHub AuthToken(): %s", clawHub.AuthToken.String())
 
 		t.Log("All security keys are successfully accessible via their respective Key() methods")
+	})
+
+	t.Run("Github registry token supports security overlay", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		githubTokenFile := filepath.Join(tmpDir, "github_registry_token.txt")
+		err := os.WriteFile(githubTokenFile, []byte("ghp-github-registry-token-from-file"), 0o600)
+		require.NoError(t, err)
+
+		configPath := filepath.Join(tmpDir, "config.json")
+		configContent := `{
+  "version": 1,
+  "tools": {
+    "skills": {
+      "registries": {
+        "github": {
+	          "enabled": true,
+	          "proxy": "http://127.0.0.1:7890"
+        }
+      }
+    }
+  }
+}`
+		err = os.WriteFile(configPath, []byte(configContent), 0o644)
+		require.NoError(t, err)
+
+		securityPath := filepath.Join(tmpDir, SecurityConfigFile)
+		securityContent := `skills:
+  registries:
+    github:
+      auth_token: "file://github_registry_token.txt"
+`
+		err = os.WriteFile(securityPath, []byte(securityContent), 0o600)
+		require.NoError(t, err)
+
+		cfg, err := LoadConfig(configPath)
+		require.NoError(t, err)
+
+		githubRegistry, ok := cfg.Tools.Skills.Registries.Get("github")
+		require.True(t, ok)
+		assert.Equal(t, "ghp-github-registry-token-from-file", githubRegistry.AuthToken.String())
+		assert.Equal(t, "http://127.0.0.1:7890", githubRegistry.Param["proxy"])
+	})
+
+	t.Run("Custom registry token supports security overlay", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		customTokenFile := filepath.Join(tmpDir, "custom_registry_token.txt")
+		err := os.WriteFile(customTokenFile, []byte("custom-registry-token-from-file"), 0o600)
+		require.NoError(t, err)
+
+		configPath := filepath.Join(tmpDir, "config.json")
+		configContent := `{
+  "version": 1,
+  "tools": {
+    "skills": {
+      "registries": {
+        "custom": {
+          "enabled": true,
+          "base_url": "https://skills.example.com"
+        }
+      }
+    }
+  }
+}`
+		err = os.WriteFile(configPath, []byte(configContent), 0o644)
+		require.NoError(t, err)
+
+		securityPath := filepath.Join(tmpDir, SecurityConfigFile)
+		securityContent := `skills:
+  registries:
+    custom:
+      auth_token: "file://custom_registry_token.txt"
+`
+		err = os.WriteFile(securityPath, []byte(securityContent), 0o600)
+		require.NoError(t, err)
+
+		cfg, err := LoadConfig(configPath)
+		require.NoError(t, err)
+
+		customRegistry, ok := cfg.Tools.Skills.Registries.Get("custom")
+		require.True(t, ok)
+		assert.Equal(t, "https://skills.example.com", customRegistry.BaseURL)
+		assert.Equal(t, "custom-registry-token-from-file", customRegistry.AuthToken.String())
+
+		githubRegistry, ok := cfg.Tools.Skills.Registries.Get("github")
+		require.True(t, ok)
+		assert.Equal(t, "https://github.com", githubRegistry.BaseURL)
+	})
+
+	t.Run("Legacy direct registry security entries remain supported", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		configPath := filepath.Join(tmpDir, "config.json")
+		configContent := `{
+  "version": 1,
+  "tools": {
+    "skills": {
+      "registries": {
+        "clawhub": {
+          "enabled": true,
+          "base_url": "https://clawhub.ai"
+        }
+      }
+    }
+  }
+}`
+		err := os.WriteFile(configPath, []byte(configContent), 0o644)
+		require.NoError(t, err)
+
+		securityPath := filepath.Join(tmpDir, SecurityConfigFile)
+		securityContent := `skills:
+  clawhub:
+    auth_token: "legacy-clawhub-token"
+`
+		err = os.WriteFile(securityPath, []byte(securityContent), 0o600)
+		require.NoError(t, err)
+
+		cfg, err := LoadConfig(configPath)
+		require.NoError(t, err)
+
+		registry, ok := cfg.Tools.Skills.Registries.Get("clawhub")
+		require.True(t, ok)
+		assert.Equal(t, "legacy-clawhub-token", registry.AuthToken.String())
+	})
+
+	t.Run("Legacy github security token populates github registry", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		configPath := filepath.Join(tmpDir, "config.json")
+		configContent := `{
+  "version": 1,
+  "tools": {
+    "skills": {
+      "registries": {
+        "github": {
+          "enabled": true,
+          "base_url": "https://github.com"
+        }
+      }
+    }
+  }
+}`
+		err := os.WriteFile(configPath, []byte(configContent), 0o644)
+		require.NoError(t, err)
+
+		securityPath := filepath.Join(tmpDir, SecurityConfigFile)
+		securityContent := `skills:
+  github:
+    token: "legacy-github-token"
+`
+		err = os.WriteFile(securityPath, []byte(securityContent), 0o600)
+		require.NoError(t, err)
+
+		cfg, err := LoadConfig(configPath)
+		require.NoError(t, err)
+
+		registry, ok := cfg.Tools.Skills.Registries.Get("github")
+		require.True(t, ok)
+		assert.Equal(t, "legacy-github-token", cfg.Tools.Skills.Github.Token.String())
+		assert.Equal(t, "legacy-github-token", registry.AuthToken.String())
 	})
 }

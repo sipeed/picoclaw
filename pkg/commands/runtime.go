@@ -1,6 +1,10 @@
 package commands
 
-import "github.com/sipeed/picoclaw/pkg/config"
+import (
+	"context"
+
+	"github.com/sipeed/picoclaw/pkg/config"
+)
 
 // Runtime provides runtime dependencies to command handlers. It is constructed
 // per-request by the agent loop so that per-request state (like session scope)
@@ -8,6 +12,7 @@ import "github.com/sipeed/picoclaw/pkg/config"
 type Runtime struct {
 	Config             *config.Config
 	GetModelInfo       func() (name, provider string)
+	AskSideQuestion    func(ctx context.Context, question string) (string, error)
 	ListAgentIDs       func() []string
 	ListDefinitions    func() []Definition
 	ListSkillNames     func() []string

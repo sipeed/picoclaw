@@ -4,16 +4,22 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/session"
 )
 
 func TestMessageTool_Execute_Success(t *testing.T) {
 	tool := NewMessageTool()
 
 	var sentChannel, sentChatID, sentContent string
-	tool.SetSendCallback(func(channel, chatID, content, replyToMessageID string) error {
+	tool.SetSendCallback(func(ctx context.Context, channel, chatID, content, replyToMessageID string) error {
 		sentChannel = channel
 		sentChatID = chatID
 		sentContent = content
+		if ToolAgentID(ctx) != "" || ToolSessionKey(ctx) != "" || ToolSessionScope(ctx) != nil {
+			t.Fatalf("expected empty turn metadata in basic context, got agent=%q session=%q scope=%+v",
+				ToolAgentID(ctx), ToolSessionKey(ctx), ToolSessionScope(ctx))
+		}
 		return nil
 	})
 
@@ -61,7 +67,7 @@ func TestMessageTool_Execute_WithCustomChannel(t *testing.T) {
 	tool := NewMessageTool()
 
 	var sentChannel, sentChatID string
-	tool.SetSendCallback(func(channel, chatID, content, replyToMessageID string) error {
+	tool.SetSendCallback(func(ctx context.Context, channel, chatID, content, replyToMessageID string) error {
 		sentChannel = channel
 		sentChatID = chatID
 		return nil
@@ -96,7 +102,7 @@ func TestMessageTool_Execute_SendFailure(t *testing.T) {
 	tool := NewMessageTool()
 
 	sendErr := errors.New("network error")
-	tool.SetSendCallback(func(channel, chatID, content, replyToMessageID string) error {
+	tool.SetSendCallback(func(ctx context.Context, channel, chatID, content, replyToMessageID string) error {
 		return sendErr
 	})
 
@@ -149,7 +155,7 @@ func TestMessageTool_Execute_NoTargetChannel(t *testing.T) {
 	tool := NewMessageTool()
 	// No WithToolContext — channel/chatID are empty
 
-	tool.SetSendCallback(func(channel, chatID, content, replyToMessageID string) error {
+	tool.SetSendCallback(func(ctx context.Context, channel, chatID, content, replyToMessageID string) error {
 		return nil
 	})
 
@@ -266,7 +272,7 @@ func TestMessageTool_Execute_WithReplyToMessageID(t *testing.T) {
 	tool := NewMessageTool()
 
 	var sentReplyTo string
-	tool.SetSendCallback(func(channel, chatID, content, replyToMessageID string) error {
+	tool.SetSendCallback(func(ctx context.Context, channel, chatID, content, replyToMessageID string) error {
 		sentReplyTo = replyToMessageID
 		return nil
 	})
@@ -283,5 +289,43 @@ func TestMessageTool_Execute_WithReplyToMessageID(t *testing.T) {
 	}
 	if sentReplyTo != "msg-123" {
 		t.Fatalf("expected reply_to_message_id msg-123, got %q", sentReplyTo)
+	}
+}
+
+func TestMessageTool_Execute_PropagatesTurnSessionMetadata(t *testing.T) {
+	tool := NewMessageTool()
+
+	var gotAgentID, gotSessionKey string
+	var gotScope *session.SessionScope
+	tool.SetSendCallback(func(ctx context.Context, channel, chatID, content, replyToMessageID string) error {
+		gotAgentID = ToolAgentID(ctx)
+		gotSessionKey = ToolSessionKey(ctx)
+		gotScope = ToolSessionScope(ctx)
+		return nil
+	})
+
+	ctx := WithToolContext(context.Background(), "test-channel", "test-chat-id")
+	ctx = WithToolSessionContext(ctx, "main", "sk_v1_tool", &session.SessionScope{
+		Version:    session.ScopeVersionV1,
+		AgentID:    "main",
+		Channel:    "telegram",
+		Dimensions: []string{"chat"},
+		Values: map[string]string{
+			"chat": "direct:test-chat-id",
+		},
+	})
+
+	result := tool.Execute(ctx, map[string]any{"content": "Hello, world!"})
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	if gotAgentID != "main" {
+		t.Fatalf("ToolAgentID() = %q, want main", gotAgentID)
+	}
+	if gotSessionKey != "sk_v1_tool" {
+		t.Fatalf("ToolSessionKey() = %q, want sk_v1_tool", gotSessionKey)
+	}
+	if gotScope == nil || gotScope.Values["chat"] != "direct:test-chat-id" {
+		t.Fatalf("ToolSessionScope() = %+v, want chat scope", gotScope)
 	}
 }

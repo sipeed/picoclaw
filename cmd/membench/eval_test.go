@@ -102,3 +102,81 @@ func TestComputeModeAgg(t *testing.T) {
 		t.Errorf("TotalQuestions = %d, want 10", got.TotalQuestions)
 	}
 }
+
+func TestAggregateMetricsSentinel(t *testing.T) {
+	qa := []QAResult{
+		{Category: 1, TokenF1: 0.8, HitRate: 0.5},
+		{Category: 1, TokenF1: -1.0, HitRate: 0.3},
+		{Category: 1, TokenF1: 0.4, HitRate: 0.7},
+	}
+	agg := aggregateMetrics(qa)
+
+	if agg.ValidF1Count != 2 {
+		t.Errorf("ValidF1Count = %d, want 2", agg.ValidF1Count)
+	}
+	if agg.TotalQuestions != 3 {
+		t.Errorf("TotalQuestions = %d, want 3", agg.TotalQuestions)
+	}
+	wantF1 := (0.8 + 0.4) / 2.0
+	if math.Abs(agg.OverallF1-wantF1) > 1e-9 {
+		t.Errorf("OverallF1 = %.6f, want %.6f", agg.OverallF1, wantF1)
+	}
+	wantHR := (0.5 + 0.3 + 0.7) / 3.0
+	if math.Abs(agg.OverallHitRate-wantHR) > 1e-9 {
+		t.Errorf("OverallHitRate = %.6f, want %.6f", agg.OverallHitRate, wantHR)
+	}
+}
+
+func TestAggregateMetricsAllSentinel(t *testing.T) {
+	qa := []QAResult{
+		{Category: 1, TokenF1: -1.0, HitRate: 0.5},
+		{Category: 1, TokenF1: -1.0, HitRate: 0.3},
+	}
+	agg := aggregateMetrics(qa)
+
+	if agg.ValidF1Count != 0 {
+		t.Errorf("ValidF1Count = %d, want 0", agg.ValidF1Count)
+	}
+	if agg.OverallF1 != 0 {
+		t.Errorf("OverallF1 = %.6f, want 0", agg.OverallF1)
+	}
+}
+
+func TestComputeModeAggSentinelWeighting(t *testing.T) {
+	results := []EvalResult{
+		{
+			Mode:     "test",
+			SampleID: "s1",
+			QAResults: []QAResult{
+				{Category: 1, TokenF1: 0.8, HitRate: 0.5},
+				{Category: 1, TokenF1: -1.0, HitRate: 0.3},
+			},
+		},
+		{
+			Mode:     "test",
+			SampleID: "s2",
+			QAResults: []QAResult{
+				{Category: 1, TokenF1: 0.4, HitRate: 0.6},
+				{Category: 1, TokenF1: 0.6, HitRate: 0.8},
+			},
+		},
+	}
+	for i := range results {
+		results[i].Agg = aggregateMetrics(results[i].QAResults)
+	}
+
+	got := computeModeAgg(results)
+
+	// s1: ValidF1Count=1, F1=0.8; s2: ValidF1Count=2, F1=0.5
+	// Weighted: (0.8*1 + 0.5*2) / 3 = 1.8/3 = 0.6
+	wantF1 := 0.6
+	if math.Abs(got.OverallF1-wantF1) > 1e-9 {
+		t.Errorf("OverallF1 = %.6f, want %.6f", got.OverallF1, wantF1)
+	}
+	if got.ValidF1Count != 3 {
+		t.Errorf("ValidF1Count = %d, want 3", got.ValidF1Count)
+	}
+	if got.TotalQuestions != 4 {
+		t.Errorf("TotalQuestions = %d, want 4", got.TotalQuestions)
+	}
+}

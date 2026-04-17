@@ -182,7 +182,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 
 	useMarkdownV2 := c.tgCfg.UseMarkdownV2
 
-	chatID, threadID, err := parseTelegramChatID(msg.ChatID)
+	chatID, threadID, err := resolveTelegramOutboundTarget(msg.ChatID, &msg.Context)
 	if err != nil {
 		return nil, fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
 	}
@@ -469,7 +469,7 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 		return nil, channels.ErrNotRunning
 	}
 
-	chatID, threadID, err := parseTelegramChatID(msg.ChatID)
+	chatID, threadID, err := resolveTelegramOutboundTarget(msg.ChatID, &msg.Context)
 	if err != nil {
 		return nil, fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
 	}
@@ -697,8 +697,9 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	}
 
 	// In group chats, apply unified group trigger filtering
+	isMentioned := false
 	if message.Chat.Type != "private" {
-		isMentioned := c.isBotMentioned(message)
+		isMentioned = c.isBotMentioned(message)
 		if isMentioned {
 			content = c.stripBotMention(content)
 		}
@@ -744,13 +745,9 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	})
 
 	peerKind := "direct"
-	peerID := fmt.Sprintf("%d", user.ID)
 	if message.Chat.Type != "private" {
 		peerKind = "group"
-		peerID = compositeChatID
 	}
-
-	peer := bus.Peer{Kind: peerKind, ID: peerID}
 	messageID := fmt.Sprintf("%d", message.MessageID)
 
 	metadata := map[string]string{
@@ -759,24 +756,29 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		"first_name": user.FirstName,
 		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
 	}
-	if message.ReplyToMessage != nil {
-		metadata["reply_to_message_id"] = fmt.Sprintf("%d", message.ReplyToMessage.MessageID)
-	}
 
-	// Set parent_peer metadata for per-topic agent binding.
+	inboundCtx := bus.InboundContext{
+		Channel:   c.Name(),
+		ChatID:    fmt.Sprintf("%d", chatID),
+		ChatType:  peerKind,
+		SenderID:  platformID,
+		MessageID: messageID,
+		Mentioned: isMentioned,
+		Raw:       metadata,
+	}
 	if message.Chat.IsForum && threadID != 0 {
-		metadata["parent_peer_kind"] = "topic"
-		metadata["parent_peer_id"] = fmt.Sprintf("%d", threadID)
+		inboundCtx.TopicID = fmt.Sprintf("%d", threadID)
+	}
+	if message.ReplyToMessage != nil {
+		inboundCtx.ReplyToMessageID = fmt.Sprintf("%d", message.ReplyToMessage.MessageID)
 	}
 
-	c.HandleMessage(c.ctx,
-		peer,
-		messageID,
-		platformID,
+	c.HandleMessageWithContext(
+		c.ctx,
 		compositeChatID,
 		content,
 		mediaPaths,
-		metadata,
+		inboundCtx,
 		sender,
 	)
 	return nil
@@ -962,6 +964,28 @@ func parseTelegramChatID(chatID string) (int64, int, error) {
 		return 0, 0, fmt.Errorf("invalid thread ID in chat ID %q: %w", chatID, err)
 	}
 	return cid, tid, nil
+}
+
+func resolveTelegramOutboundTarget(chatID string, outboundCtx *bus.InboundContext) (int64, int, error) {
+	targetChatID := strings.TrimSpace(chatID)
+	if targetChatID == "" && outboundCtx != nil {
+		targetChatID = strings.TrimSpace(outboundCtx.ChatID)
+	}
+	resolvedChatID, resolvedThreadID, err := parseTelegramChatID(targetChatID)
+	if err != nil {
+		return 0, 0, err
+	}
+	if resolvedThreadID != 0 || outboundCtx == nil {
+		return resolvedChatID, resolvedThreadID, nil
+	}
+	topicID := strings.TrimSpace(outboundCtx.TopicID)
+	if topicID == "" {
+		return resolvedChatID, resolvedThreadID, nil
+	}
+	if threadID, convErr := strconv.Atoi(topicID); convErr == nil {
+		return resolvedChatID, threadID, nil
+	}
+	return resolvedChatID, resolvedThreadID, nil
 }
 
 func logParseFailed(err error, useMarkdownV2 bool) {

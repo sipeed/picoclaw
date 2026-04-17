@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -23,6 +24,7 @@ import (
 
 const (
 	userAgent       = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+	sogouUserAgent  = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
 	userAgentHonest = "picoclaw/%s (+https://github.com/sipeed/picoclaw; AI assistant bot)"
 
 	// HTTP client timeouts for web tool providers.
@@ -46,8 +48,17 @@ var (
 	reDDGLink = regexp.MustCompile(
 		`<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)</a>`,
 	)
-	reDDGSnippet = regexp.MustCompile(`<a class="result__snippet[^"]*".*?>([\s\S]*?)</a>`)
+	reDDGSnippet = regexp.MustCompile(
+		`<a class="result__snippet[^"]*".*?>([\s\S]*?)</a>`,
+	)
+	reSogouTitle = regexp.MustCompile(
+		`<a\s+class=resultLink\s+href="([^"]+)"[^>]*id="sogou_vr_\d+_\d+"[^>]*>\s*(.*?)\s*</a>`,
+	)
+	reSogouSnippet = regexp.MustCompile(`<div class="clamp\d*">\s*(.*?)\s*</div>`)
+	reSogouRealURL = regexp.MustCompile(`url=([^&]+)`)
 )
+
+var preferredWebSearchLanguage atomic.Value
 
 type APIKeyPool struct {
 	keys    []string
@@ -89,6 +100,39 @@ func (it *APIKeyIterator) Next() (string, bool) {
 
 type SearchProvider interface {
 	Search(ctx context.Context, query string, count int, rangeCode string) (string, error)
+}
+
+type SearchResultItem struct {
+	Title   string
+	URL     string
+	Snippet string
+}
+
+func extractSogouURL(href string) string {
+	match := reSogouRealURL.FindStringSubmatch(href)
+	if len(match) < 2 {
+		return ""
+	}
+	decoded, err := url.QueryUnescape(match[1])
+	if err != nil {
+		return ""
+	}
+	return decoded
+}
+
+func applySogouRangeHint(query string, rangeCode string) string {
+	switch rangeCode {
+	case "d":
+		return query + " 最近一天"
+	case "w":
+		return query + " 最近一周"
+	case "m":
+		return query + " 最近一个月"
+	case "y":
+		return query + " 最近一年"
+	default:
+		return query
+	}
 }
 
 func normalizeSearchRange(raw string) (string, error) {
@@ -206,6 +250,27 @@ func mapBaiduRecencyFilter(rangeCode string) string {
 	}
 }
 
+func normalizePreferredWebSearchLanguage(lang string) string {
+	lang = strings.ToLower(strings.TrimSpace(lang))
+	switch {
+	case strings.HasPrefix(lang, "zh"), lang == "chinese":
+		return "zh"
+	case strings.HasPrefix(lang, "en"), lang == "english":
+		return "en"
+	default:
+		return ""
+	}
+}
+
+func SetPreferredWebSearchLanguage(lang string) {
+	preferredWebSearchLanguage.Store(normalizePreferredWebSearchLanguage(lang))
+}
+
+func GetPreferredWebSearchLanguage() string {
+	lang, _ := preferredWebSearchLanguage.Load().(string)
+	return lang
+}
+
 type BraveSearchProvider struct {
 	keyPool *APIKeyPool
 	proxy   string
@@ -218,6 +283,10 @@ func (p *BraveSearchProvider) Search(
 	count int,
 	rangeCode string,
 ) (string, error) {
+	if p.keyPool == nil || len(p.keyPool.keys) == 0 {
+		return "", errors.New("no API key provided")
+	}
+
 	searchURL := fmt.Sprintf("https://api.search.brave.com/res/v1/web/search?q=%s&count=%d",
 		url.QueryEscape(query), count)
 	if freshness := mapBraveFreshness(rangeCode); freshness != "" {
@@ -317,6 +386,10 @@ func (p *TavilySearchProvider) Search(
 	count int,
 	rangeCode string,
 ) (string, error) {
+	if p.keyPool == nil || len(p.keyPool.keys) == 0 {
+		return "", errors.New("no API key provided")
+	}
+
 	searchURL := p.baseURL
 	if searchURL == "" {
 		searchURL = "https://api.tavily.com/search"
@@ -415,6 +488,104 @@ func (p *TavilySearchProvider) Search(
 	}
 
 	return "", fmt.Errorf("all api keys failed, last error: %w", lastErr)
+}
+
+type SogouSearchProvider struct {
+	proxy  string
+	client *http.Client
+}
+
+func (p *SogouSearchProvider) Search(
+	ctx context.Context,
+	query string,
+	count int,
+	rangeCode string,
+) (string, error) {
+	const sogouWAPURL = "https://wap.sogou.com/web/searchList.jsp"
+
+	results := make([]SearchResultItem, 0, count)
+	seenURLs := make(map[string]bool)
+	maxPages := min(3, (count+1)/2+1)
+
+	for page := 1; page <= maxPages && len(results) < count; page++ {
+		params := url.Values{}
+		params.Set("keyword", applySogouRangeHint(query, rangeCode))
+		params.Set("v", "5")
+		params.Set("p", fmt.Sprintf("%d", page))
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, sogouWAPURL+"?"+params.Encode(), nil)
+		if err != nil {
+			return "", fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("User-Agent", sogouUserAgent)
+
+		resp, err := p.client.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("request failed: %w", err)
+		}
+
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		resp.Body.Close()
+		if err != nil {
+			return "", fmt.Errorf("failed to read response: %w", err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			return "", fmt.Errorf("Sogou returned status %d", resp.StatusCode)
+		}
+
+		html := string(body)
+		if len(html) < 200 {
+			break
+		}
+
+		matches := reSogouTitle.FindAllStringSubmatch(html, -1)
+		for _, match := range matches {
+			if len(match) < 3 {
+				continue
+			}
+
+			title := stripTags(match[2])
+			link := extractSogouURL(match[1])
+			if title == "" || link == "" || seenURLs[link] {
+				continue
+			}
+			seenURLs[link] = true
+
+			start := strings.Index(html, match[0])
+			snippet := ""
+			if start >= 0 {
+				after := html[start+len(match[0]):]
+				if len(after) > 2000 {
+					after = after[:2000]
+				}
+				if snippetMatch := reSogouSnippet.FindStringSubmatch(after); len(snippetMatch) > 1 {
+					snippet = stripTags(snippetMatch[1])
+				}
+			}
+
+			results = append(results, SearchResultItem{
+				Title:   title,
+				URL:     link,
+				Snippet: snippet,
+			})
+			if len(results) >= count {
+				break
+			}
+		}
+	}
+
+	if len(results) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	lines := []string{fmt.Sprintf("Results for: %s (via Sogou)", query)}
+	for i, item := range results {
+		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.URL))
+		if item.Snippet != "" {
+			lines = append(lines, fmt.Sprintf("   %s", item.Snippet))
+		}
+	}
+	return strings.Join(lines, "\n"), nil
 }
 
 type DuckDuckGoSearchProvider struct {
@@ -532,6 +703,10 @@ func (p *PerplexitySearchProvider) Search(
 	count int,
 	rangeCode string,
 ) (string, error) {
+	if p.keyPool == nil || len(p.keyPool.keys) == 0 {
+		return "", errors.New("no API key provided")
+	}
+
 	searchURL := "https://api.perplexity.ai/chat/completions"
 
 	var lastErr error
@@ -637,6 +812,8 @@ func (p *PerplexitySearchProvider) Search(
 
 type SearXNGSearchProvider struct {
 	baseURL string
+	proxy   string
+	client  *http.Client
 }
 
 func (p *SearXNGSearchProvider) Search(
@@ -645,6 +822,10 @@ func (p *SearXNGSearchProvider) Search(
 	count int,
 	rangeCode string,
 ) (string, error) {
+	if p.baseURL == "" {
+		return "", errors.New("no SearXNG URL provided")
+	}
+
 	searchURL := fmt.Sprintf("%s/search?q=%s&format=json&categories=general",
 		strings.TrimSuffix(p.baseURL, "/"),
 		url.QueryEscape(query))
@@ -657,7 +838,10 @@ func (p *SearXNGSearchProvider) Search(
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := p.client
+	if client == nil {
+		client = &http.Client{Timeout: searchTimeout}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
@@ -719,6 +903,10 @@ func (p *GLMSearchProvider) Search(
 	count int,
 	rangeCode string,
 ) (string, error) {
+	if p.apiKey == "" {
+		return "", errors.New("no API key provided")
+	}
+
 	searchURL := p.baseURL
 	if searchURL == "" {
 		searchURL = "https://open.bigmodel.cn/api/paas/v4/web_search"
@@ -808,6 +996,10 @@ func (p *BaiduSearchProvider) Search(
 	count int,
 	rangeCode string,
 ) (string, error) {
+	if p.apiKey == "" {
+		return "", errors.New("no API key provided")
+	}
+
 	searchURL := p.baseURL
 	if searchURL == "" {
 		searchURL = "https://qianfan.baidubce.com/v2/ai_search/web_search"
@@ -885,11 +1077,13 @@ func (p *BaiduSearchProvider) Search(
 }
 
 type WebSearchTool struct {
-	provider   SearchProvider
-	maxResults int
+	provider         SearchProvider
+	maxResults       int
+	providerResolver func(query string) (SearchProvider, int)
 }
 
 type WebSearchToolOptions struct {
+	Provider              string
 	BraveAPIKeys          []string
 	BraveMaxResults       int
 	BraveEnabled          bool
@@ -897,6 +1091,8 @@ type WebSearchToolOptions struct {
 	TavilyBaseURL         string
 	TavilyMaxResults      int
 	TavilyEnabled         bool
+	SogouMaxResults       int
+	SogouEnabled          bool
 	DuckDuckGoMaxResults  int
 	DuckDuckGoEnabled     bool
 	PerplexityAPIKeys     []string
@@ -917,100 +1113,262 @@ type WebSearchToolOptions struct {
 	Proxy                 string
 }
 
-func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
-	var provider SearchProvider
-	maxResults := 10
-	// Priority: Perplexity > Brave > SearXNG > Tavily > DuckDuckGo > Baidu Search > GLM Search
-	if opts.PerplexityEnabled && len(opts.PerplexityAPIKeys) > 0 {
+func (opts WebSearchToolOptions) providerByName(name string) (SearchProvider, int, error) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "", "auto":
+		return nil, 0, nil
+	case "sogou":
+		if !opts.SogouEnabled {
+			return nil, 0, nil
+		}
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create HTTP client for Sogou: %w", err)
+		}
+		maxResults := 10
+		if opts.SogouMaxResults > 0 {
+			maxResults = min(opts.SogouMaxResults, 10)
+		}
+		return &SogouSearchProvider{
+			proxy:  opts.Proxy,
+			client: client,
+		}, maxResults, nil
+	case "perplexity":
+		if !opts.PerplexityEnabled {
+			return nil, 0, nil
+		}
 		client, err := utils.CreateHTTPClient(opts.Proxy, perplexityTimeout)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create HTTP client for Perplexity: %w", err)
+			return nil, 0, fmt.Errorf("failed to create HTTP client for Perplexity: %w", err)
 		}
-		provider = &PerplexitySearchProvider{
-			keyPool: NewAPIKeyPool(opts.PerplexityAPIKeys),
-			proxy:   opts.Proxy,
-			client:  client,
-		}
+		maxResults := 10
 		if opts.PerplexityMaxResults > 0 {
 			maxResults = min(opts.PerplexityMaxResults, 10)
 		}
-	} else if opts.BraveEnabled && len(opts.BraveAPIKeys) > 0 {
+		return &PerplexitySearchProvider{
+			keyPool: NewAPIKeyPool(opts.PerplexityAPIKeys),
+			proxy:   opts.Proxy,
+			client:  client,
+		}, maxResults, nil
+	case "brave":
+		if !opts.BraveEnabled {
+			return nil, 0, nil
+		}
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create HTTP client for Brave: %w", err)
+			return nil, 0, fmt.Errorf("failed to create HTTP client for Brave: %w", err)
 		}
-		provider = &BraveSearchProvider{keyPool: NewAPIKeyPool(opts.BraveAPIKeys), proxy: opts.Proxy, client: client}
+		maxResults := 10
 		if opts.BraveMaxResults > 0 {
 			maxResults = min(opts.BraveMaxResults, 10)
 		}
-	} else if opts.SearXNGEnabled && opts.SearXNGBaseURL != "" {
-		provider = &SearXNGSearchProvider{baseURL: opts.SearXNGBaseURL}
+		return &BraveSearchProvider{
+			keyPool: NewAPIKeyPool(opts.BraveAPIKeys),
+			proxy:   opts.Proxy,
+			client:  client,
+		}, maxResults, nil
+	case "searxng":
+		if !opts.SearXNGEnabled {
+			return nil, 0, nil
+		}
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create HTTP client for SearXNG: %w", err)
+		}
+		maxResults := 10
 		if opts.SearXNGMaxResults > 0 {
 			maxResults = min(opts.SearXNGMaxResults, 10)
 		}
-	} else if opts.TavilyEnabled && len(opts.TavilyAPIKeys) > 0 {
+		return &SearXNGSearchProvider{
+			baseURL: opts.SearXNGBaseURL,
+			proxy:   opts.Proxy,
+			client:  client,
+		}, maxResults, nil
+	case "tavily":
+		if !opts.TavilyEnabled {
+			return nil, 0, nil
+		}
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create HTTP client for Tavily: %w", err)
+			return nil, 0, fmt.Errorf("failed to create HTTP client for Tavily: %w", err)
 		}
-		provider = &TavilySearchProvider{
+		maxResults := 10
+		if opts.TavilyMaxResults > 0 {
+			maxResults = min(opts.TavilyMaxResults, 10)
+		}
+		return &TavilySearchProvider{
 			keyPool: NewAPIKeyPool(opts.TavilyAPIKeys),
 			baseURL: opts.TavilyBaseURL,
 			proxy:   opts.Proxy,
 			client:  client,
+		}, maxResults, nil
+	case "duckduckgo":
+		if !opts.DuckDuckGoEnabled {
+			return nil, 0, nil
 		}
-		if opts.TavilyMaxResults > 0 {
-			maxResults = min(opts.TavilyMaxResults, 10)
-		}
-	} else if opts.DuckDuckGoEnabled {
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create HTTP client for DuckDuckGo: %w", err)
+			return nil, 0, fmt.Errorf("failed to create HTTP client for DuckDuckGo: %w", err)
 		}
-		provider = &DuckDuckGoSearchProvider{proxy: opts.Proxy, client: client}
+		maxResults := 10
 		if opts.DuckDuckGoMaxResults > 0 {
 			maxResults = min(opts.DuckDuckGoMaxResults, 10)
 		}
-	} else if opts.BaiduSearchEnabled && opts.BaiduSearchAPIKey != "" {
+		return &DuckDuckGoSearchProvider{
+			proxy:  opts.Proxy,
+			client: client,
+		}, maxResults, nil
+	case "baidu_search":
+		if !opts.BaiduSearchEnabled {
+			return nil, 0, nil
+		}
 		client, err := utils.CreateHTTPClient(opts.Proxy, perplexityTimeout)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create HTTP client for Baidu Search: %w", err)
+			return nil, 0, fmt.Errorf("failed to create HTTP client for Baidu Search: %w", err)
 		}
-		provider = &BaiduSearchProvider{
+		maxResults := 10
+		if opts.BaiduSearchMaxResults > 0 {
+			maxResults = min(opts.BaiduSearchMaxResults, 10)
+		}
+		return &BaiduSearchProvider{
 			apiKey:  opts.BaiduSearchAPIKey,
 			baseURL: opts.BaiduSearchBaseURL,
 			proxy:   opts.Proxy,
 			client:  client,
+		}, maxResults, nil
+	case "glm_search":
+		if !opts.GLMSearchEnabled {
+			return nil, 0, nil
 		}
-		if opts.BaiduSearchMaxResults > 0 {
-			maxResults = min(opts.BaiduSearchMaxResults, 10)
-		}
-	} else if opts.GLMSearchEnabled && opts.GLMSearchAPIKey != "" {
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create HTTP client for GLM Search: %w", err)
+			return nil, 0, fmt.Errorf("failed to create HTTP client for GLM Search: %w", err)
 		}
 		searchEngine := opts.GLMSearchEngine
 		if searchEngine == "" {
 			searchEngine = "search_std"
 		}
-		provider = &GLMSearchProvider{
+		maxResults := 10
+		if opts.GLMSearchMaxResults > 0 {
+			maxResults = min(opts.GLMSearchMaxResults, 10)
+		}
+		return &GLMSearchProvider{
 			apiKey:       opts.GLMSearchAPIKey,
 			baseURL:      opts.GLMSearchBaseURL,
 			searchEngine: searchEngine,
 			proxy:        opts.Proxy,
 			client:       client,
+		}, maxResults, nil
+	default:
+		return nil, 0, fmt.Errorf("unknown web search provider %q", name)
+	}
+}
+
+func containsHan(text string) bool {
+	for _, r := range text {
+		if unicode.Is(unicode.Han, r) {
+			return true
 		}
-		if opts.GLMSearchMaxResults > 0 {
-			maxResults = min(opts.GLMSearchMaxResults, 10)
+	}
+	return false
+}
+
+func containsLatinLetter(text string) bool {
+	for _, r := range text {
+		if unicode.IsLetter(r) && unicode.In(r, unicode.Latin) {
+			return true
 		}
-	} else {
+	}
+	return false
+}
+
+func prefersDuckDuckGoQuery(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return GetPreferredWebSearchLanguage() == "en"
+	}
+	if containsHan(trimmed) {
+		return false
+	}
+	if containsLatinLetter(trimmed) {
+		return true
+	}
+	return GetPreferredWebSearchLanguage() == "en"
+}
+
+func (opts WebSearchToolOptions) buildProviderResolver() (func(query string) (SearchProvider, int), error) {
+	providerName := strings.ToLower(strings.TrimSpace(opts.Provider))
+	if providerName != "" && providerName != "auto" {
+		provider, maxResults, err := opts.providerByName(providerName)
+		if err != nil {
+			return nil, err
+		}
+		if provider == nil {
+			return func(string) (SearchProvider, int) { return nil, 0 }, nil
+		}
+		return func(string) (SearchProvider, int) { return provider, maxResults }, nil
+	}
+
+	for _, name := range []string{"perplexity", "brave", "searxng", "tavily"} {
+		provider, maxResults, err := opts.providerByName(name)
+		if err != nil {
+			return nil, err
+		}
+		if provider != nil {
+			return func(string) (SearchProvider, int) { return provider, maxResults }, nil
+		}
+	}
+
+	sogouProvider, sogouMaxResults, err := opts.providerByName("sogou")
+	if err != nil {
+		return nil, err
+	}
+	duckProvider, duckMaxResults, err := opts.providerByName("duckduckgo")
+	if err != nil {
+		return nil, err
+	}
+	if sogouProvider != nil && duckProvider != nil {
+		return func(query string) (SearchProvider, int) {
+			if prefersDuckDuckGoQuery(query) {
+				return duckProvider, duckMaxResults
+			}
+			return sogouProvider, sogouMaxResults
+		}, nil
+	}
+	if sogouProvider != nil {
+		return func(string) (SearchProvider, int) { return sogouProvider, sogouMaxResults }, nil
+	}
+	if duckProvider != nil {
+		return func(string) (SearchProvider, int) { return duckProvider, duckMaxResults }, nil
+	}
+
+	for _, name := range []string{"baidu_search", "glm_search"} {
+		provider, maxResults, err := opts.providerByName(name)
+		if err != nil {
+			return nil, err
+		}
+		if provider != nil {
+			return func(string) (SearchProvider, int) { return provider, maxResults }, nil
+		}
+	}
+
+	return func(string) (SearchProvider, int) { return nil, 0 }, nil
+}
+
+func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {
+	resolver, err := opts.buildProviderResolver()
+	if err != nil {
+		return nil, err
+	}
+	provider, maxResults := resolver("")
+	if provider == nil {
 		return nil, nil
 	}
 
 	return &WebSearchTool{
-		provider:   provider,
-		maxResults: maxResults,
+		provider:         provider,
+		maxResults:       maxResults,
+		providerResolver: resolver,
 	}, nil
 }
 
@@ -1053,13 +1411,22 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *ToolR
 	}
 	query = strings.TrimSpace(query)
 
-	count64, err := getInt64Arg(args, "count", int64(t.maxResults))
+	provider := t.provider
+	maxResults := t.maxResults
+	if t.providerResolver != nil {
+		provider, maxResults = t.providerResolver(query)
+	}
+	if provider == nil {
+		return ErrorResult("search provider is not configured")
+	}
+
+	count64, err := getInt64Arg(args, "count", int64(maxResults))
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
-	count := t.maxResults
+	count := maxResults
 	if count64 > 0 && count64 <= 10 {
-		count = int(count64)
+		count = min(int(count64), maxResults)
 	}
 
 	rangeCode, err := normalizeSearchRange("")
@@ -1077,7 +1444,7 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]any) *ToolR
 		}
 	}
 
-	result, err := t.provider.Search(ctx, query, count, rangeCode)
+	result, err := provider.Search(ctx, query, count, rangeCode)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("search failed: %v", err))
 	}
@@ -1101,6 +1468,8 @@ type privateHostWhitelist struct {
 	exact map[string]struct{}
 	cidrs []*net.IPNet
 }
+
+type webFetchAllowedFirstHopHostKey struct{}
 
 func NewWebFetchTool(maxChars int, format string, fetchLimitBytes int64) (*WebFetchTool, error) {
 	// createHTTPClient cannot fail with an empty proxy string.
@@ -1153,6 +1522,7 @@ func NewWebFetchToolWithConfig(
 		if isObviousPrivateHost(req.URL.Hostname(), whitelist) {
 			return fmt.Errorf("redirect target is private or local network host")
 		}
+		allowConfiguredProxyFirstHop(req, client.Transport)
 		return nil
 	}
 	if fetchLimitBytes <= 0 {
@@ -1232,6 +1602,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		if reqErr != nil {
 			return nil, nil, fmt.Errorf("failed to create request: %w", reqErr)
 		}
+		allowConfiguredProxyFirstHop(req, t.client.Transport)
 		req.Header.Set("User-Agent", ua)
 		resp, doErr := t.client.Do(req)
 		if doErr != nil {
@@ -1434,6 +1805,9 @@ func newSafeDialContext(
 		if host == "" {
 			return nil, fmt.Errorf("empty target host")
 		}
+		if isAllowedFirstHopHost(ctx, host) {
+			return dialer.DialContext(ctx, network, address)
+		}
 
 		if ip := net.ParseIP(host); ip != nil {
 			if shouldBlockPrivateIP(ip, whitelist) {
@@ -1480,6 +1854,46 @@ func newSafeDialContext(
 		}
 		return nil, fmt.Errorf("failed connecting to public addresses for %s", host)
 	}
+}
+
+func allowConfiguredProxyFirstHop(req *http.Request, rt http.RoundTripper) {
+	if req == nil {
+		return
+	}
+
+	transport, ok := rt.(*http.Transport)
+	if !ok || transport.Proxy == nil {
+		return
+	}
+
+	proxyURL, err := transport.Proxy(req)
+	if err != nil || proxyURL == nil {
+		return
+	}
+
+	host := normalizeAllowedFirstHopHost(proxyURL.Hostname())
+	if host == "" {
+		return
+	}
+
+	*req = *req.WithContext(context.WithValue(
+		req.Context(),
+		webFetchAllowedFirstHopHostKey{},
+		host,
+	))
+}
+
+func isAllowedFirstHopHost(ctx context.Context, host string) bool {
+	allowed, _ := ctx.Value(webFetchAllowedFirstHopHostKey{}).(string)
+	if allowed == "" {
+		return false
+	}
+	return allowed == normalizeAllowedFirstHopHost(host)
+}
+
+func normalizeAllowedFirstHopHost(host string) string {
+	host = strings.ToLower(strings.TrimSpace(host))
+	return strings.TrimSuffix(host, ".")
 }
 
 func newPrivateHostWhitelist(entries []string) (*privateHostWhitelist, error) {

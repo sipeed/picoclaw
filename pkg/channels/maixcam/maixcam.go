@@ -200,17 +200,15 @@ func (c *MaixCamChannel) handlePersonDetection(msg MaixCamMessage) {
 		return
 	}
 
-	c.HandleMessage(
-		c.ctx,
-		bus.Peer{Kind: "channel", ID: "default"},
-		"",
-		senderID,
-		chatID,
-		content,
-		[]string{},
-		metadata,
-		sender,
-	)
+	inboundCtx := bus.InboundContext{
+		Channel:  "maixcam",
+		ChatID:   chatID,
+		ChatType: "channel",
+		SenderID: senderID,
+		Raw:      metadata,
+	}
+
+	c.HandleInboundContext(c.ctx, chatID, content, nil, inboundCtx, sender)
 }
 
 func (c *MaixCamChannel) handleStatusUpdate(msg MaixCamMessage) {

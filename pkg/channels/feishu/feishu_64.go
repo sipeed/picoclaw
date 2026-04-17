@@ -445,17 +445,23 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	// Append media tags to content (like Telegram does)
 	content = appendMediaTags(content, messageType, mediaRefs)
 
+	if content == "" {
+		content = "[empty message]"
+	}
 	chatType := stringValue(message.ChatType)
 	metadata := buildInboundMetadata(message, sender)
 
-	var peer bus.Peer
+	var (
+		inboundChatType string
+		isMentioned     bool
+	)
 	if chatType == "p2p" {
-		peer = bus.Peer{Kind: "direct", ID: senderID}
+		inboundChatType = "direct"
 	} else {
-		peer = bus.Peer{Kind: "group", ID: chatID}
+		inboundChatType = "group"
 
 		// Check if bot was mentioned
-		isMentioned := c.isBotMentioned(message)
+		isMentioned = c.isBotMentioned(message)
 
 		// Strip mention placeholders from content before group trigger check
 		if len(message.Mentions) > 0 {
@@ -490,7 +496,21 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		"thread_id":  stringValue(message.ThreadId),
 	})
 
-	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, mediaRefs, metadata, senderInfo)
+	inboundCtx := bus.InboundContext{
+		Channel:   "feishu",
+		ChatID:    chatID,
+		ChatType:  inboundChatType,
+		SenderID:  senderID,
+		MessageID: messageID,
+		Mentioned: isMentioned,
+		Raw:       metadata,
+	}
+	if sender != nil && sender.TenantKey != nil && *sender.TenantKey != "" {
+		inboundCtx.SpaceType = "tenant"
+		inboundCtx.SpaceID = *sender.TenantKey
+	}
+
+	c.HandleInboundContext(ctx, chatID, content, mediaRefs, inboundCtx, senderInfo)
 	return nil
 }
 

@@ -305,6 +305,16 @@ func TestNewServer(t *testing.T) {
 	}
 }
 
+func TestNewServer_IPv6ListenAddrFormatting(t *testing.T) {
+	s := NewServer("::", 18790, "")
+	if s.server == nil {
+		t.Fatal("server should be initialized")
+	}
+	if s.server.Addr != "[::]:18790" {
+		t.Fatalf("server.Addr = %q, want %q", s.server.Addr, "[::]:18790")
+	}
+}
+
 func TestStartContext_Cancellation(t *testing.T) {
 	s := NewServer("127.0.0.1", 0, "")
 

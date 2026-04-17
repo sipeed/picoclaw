@@ -185,8 +185,8 @@ func TestAgentCheckSilencePublishesInboundAndCleansUp(t *testing.T) {
 		if !strings.Contains(msg.Content, "hello there") {
 			t.Fatalf("unexpected inbound content: %q", msg.Content)
 		}
-		if msg.Metadata["is_voice"] != "true" {
-			t.Fatalf("expected is_voice metadata, got %#v", msg.Metadata)
+		if msg.Context.Raw["is_voice"] != "true" {
+			t.Fatalf("expected is_voice metadata, got %#v", msg.Context.Raw)
 		}
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("expected inbound publish")

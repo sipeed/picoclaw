@@ -56,6 +56,7 @@ type turnState struct {
 	turnID     string
 	agentID    string
 	sessionKey string
+	turnCtx    *TurnContext
 
 	channel     string
 	chatID      string
@@ -115,11 +116,12 @@ func newTurnState(agent *AgentInstance, opts processOptions, scope turnEventScop
 		scope:       scope,
 		turnID:      scope.turnID,
 		agentID:     agent.ID,
-		sessionKey:  opts.SessionKey,
-		channel:     opts.Channel,
-		chatID:      opts.ChatID,
-		userMessage: opts.UserMessage,
-		media:       append([]string(nil), opts.Media...),
+		sessionKey:  opts.Dispatch.SessionKey,
+		turnCtx:     cloneTurnContext(scope.context),
+		channel:     opts.Dispatch.Channel(),
+		chatID:      opts.Dispatch.ChatID(),
+		userMessage: opts.Dispatch.UserMessage,
+		media:       append([]string(nil), opts.Dispatch.Media...),
 		phase:       TurnPhaseSetup,
 		startedAt:   time.Now(),
 	}
@@ -127,7 +129,7 @@ func newTurnState(agent *AgentInstance, opts processOptions, scope turnEventScop
 	// Bind session store and capture initial history length for rollback logic
 	if agent != nil && agent.Sessions != nil {
 		ts.session = agent.Sessions
-		ts.initialHistoryLength = len(agent.Sessions.GetHistory(opts.SessionKey))
+		ts.initialHistoryLength = len(agent.Sessions.GetHistory(opts.Dispatch.SessionKey))
 	}
 
 	return ts
@@ -143,7 +145,11 @@ func (al *AgentLoop) clearActiveTurn(ts *turnState) {
 
 func (al *AgentLoop) getActiveTurnState(sessionKey string) *turnState {
 	if val, ok := al.activeTurnStates.Load(sessionKey); ok {
-		return val.(*turnState)
+		if ts, ok := val.(*turnState); ok {
+			return ts
+		}
+		// Unexpected non-*turnState value — treat as "no active turn" to avoid
+		// panics. This should not happen under normal operation.
 	}
 	return nil
 }
@@ -152,8 +158,11 @@ func (al *AgentLoop) getActiveTurnState(sessionKey string) *turnState {
 func (al *AgentLoop) getAnyActiveTurnState() *turnState {
 	var firstTS *turnState
 	al.activeTurnStates.Range(func(key, value any) bool {
-		firstTS = value.(*turnState)
-		return false // stop after first
+		if ts, ok := value.(*turnState); ok {
+			firstTS = ts
+			return false
+		}
+		return true
 	})
 	return firstTS
 }
@@ -163,8 +172,11 @@ func (al *AgentLoop) GetActiveTurn() *ActiveTurnInfo {
 	// In the new architecture, there can be multiple concurrent turns
 	var firstTS *turnState
 	al.activeTurnStates.Range(func(key, value any) bool {
-		firstTS = value.(*turnState)
-		return false // stop after first
+		if ts, ok := value.(*turnState); ok {
+			firstTS = ts
+			return false
+		}
+		return true
 	})
 	if firstTS == nil {
 		return nil
@@ -302,12 +314,13 @@ func (ts *turnState) hardAbortRequested() bool {
 func (ts *turnState) eventMeta(source, tracePath string) EventMeta {
 	snap := ts.snapshot()
 	return EventMeta{
-		AgentID:    snap.AgentID,
-		TurnID:     snap.TurnID,
-		SessionKey: snap.SessionKey,
-		Iteration:  snap.Iteration,
-		Source:     source,
-		TracePath:  tracePath,
+		AgentID:     snap.AgentID,
+		TurnID:      snap.TurnID,
+		SessionKey:  snap.SessionKey,
+		Iteration:   snap.Iteration,
+		Source:      source,
+		TracePath:   tracePath,
+		turnContext: cloneTurnContext(ts.turnCtx),
 	}
 }
 
@@ -426,7 +439,9 @@ func (ts *turnState) Finish(isHardAbort bool) {
 		ts.mu.RUnlock()
 		for _, childID := range children {
 			if val, ok := ts.al.activeTurnStates.Load(childID); ok {
-				val.(*turnState).Finish(true)
+				if child, ok := val.(*turnState); ok {
+					child.Finish(true)
+				}
 			}
 		}
 	}

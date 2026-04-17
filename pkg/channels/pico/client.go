@@ -259,8 +259,6 @@ func (c *PicoClientChannel) handleServerMessage(pc *picoConn, msg PicoMessage) {
 
 	chatID := "pico_client:" + sessionID
 	senderID := "pico-remote"
-	peer := bus.Peer{Kind: "direct", ID: chatID}
-
 	sender := bus.SenderInfo{
 		Platform:    "pico_client",
 		PlatformID:  senderID,
@@ -271,10 +269,19 @@ func (c *PicoClientChannel) handleServerMessage(pc *picoConn, msg PicoMessage) {
 		return
 	}
 
-	c.HandleMessage(c.ctx, peer, msg.ID, senderID, chatID, content, nil, map[string]string{
-		"platform":   "pico_client",
-		"session_id": sessionID,
-	}, sender)
+	inboundCtx := bus.InboundContext{
+		Channel:   "pico_client",
+		ChatID:    chatID,
+		ChatType:  "direct",
+		SenderID:  senderID,
+		MessageID: msg.ID,
+		Raw: map[string]string{
+			"platform":   "pico_client",
+			"session_id": sessionID,
+		},
+	}
+
+	c.HandleInboundContext(c.ctx, chatID, content, nil, inboundCtx, sender)
 }
 
 // Send sends a message to the remote server.

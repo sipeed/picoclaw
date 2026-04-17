@@ -1096,4 +1096,15 @@ func TestLoadConfig_V2DirectLoad(t *testing.T) {
 	if !foundBackup {
 		t.Error("V2→V3 migration should create backup")
 	}
+
+	githubRegistry, ok := cfg.Tools.Skills.Registries.Get("github")
+	if !ok {
+		t.Fatal("expected default github skills registry to survive V0 migration")
+	}
+	if !githubRegistry.Enabled {
+		t.Error("github skills registry should remain enabled after V0 migration")
+	}
+	if githubRegistry.BaseURL != "https://github.com" {
+		t.Errorf("github registry base_url = %q, want %q", githubRegistry.BaseURL, "https://github.com")
+	}
 }

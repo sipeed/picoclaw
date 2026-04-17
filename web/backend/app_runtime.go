@@ -34,22 +34,30 @@ func shutdownApp() {
 		apiHandler.Shutdown()
 	}
 
-	if server != nil {
-		// Disable keep-alive to allow graceful shutdown
-		server.SetKeepAlivesEnabled(false)
-
-		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		if err := server.Shutdown(ctx); err != nil {
-			// Context deadline exceeded is expected if there are active connections
-			// This is not necessarily an error, so log it at info level
-			if errors.Is(err, context.DeadlineExceeded) {
-				logger.Infof("Server shutdown timeout after %v, forcing close", shutdownTimeout)
-			} else {
-				logger.Errorf("Server shutdown error: %v", err)
+	if len(servers) > 0 {
+		for _, srv := range servers {
+			if srv == nil {
+				continue
 			}
-		} else {
-			logger.Infof("Server shutdown completed successfully")
+
+			// Disable keep-alive to allow graceful shutdown
+			srv.SetKeepAlivesEnabled(false)
+
+			ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+			err := srv.Shutdown(ctx)
+			cancel()
+
+			if err != nil {
+				// Context deadline exceeded is expected if there are active connections
+				// This is not necessarily an error, so log it at info level
+				if errors.Is(err, context.DeadlineExceeded) {
+					logger.Infof("Server shutdown timeout after %v, forcing close", shutdownTimeout)
+				} else {
+					logger.Errorf("Server shutdown error: %v", err)
+				}
+			} else {
+				logger.Infof("Server shutdown completed successfully")
+			}
 		}
 	}
 }

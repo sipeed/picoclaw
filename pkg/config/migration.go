@@ -361,6 +361,21 @@ func loadConfigMap(path string) (map[string]any, error) {
 					m["registries"] = map[string]any{"clawhub": m["clawhub"]}
 					delete(m, "clawhub")
 				}
+				if gh, ok := m["github"].(map[string]any); ok {
+					registries, _ := m["registries"].(map[string]any)
+					if registries == nil {
+						registries = map[string]any{}
+					}
+					githubRegistry := map[string]any{}
+					for k, v := range gh {
+						githubRegistry[k] = v
+					}
+					if token, ok := githubRegistry["token"]; ok {
+						githubRegistry["auth_token"] = token
+					}
+					registries["github"] = githubRegistry
+					m["registries"] = registries
+				}
 			}
 		}
 		m2["tools"] = m3

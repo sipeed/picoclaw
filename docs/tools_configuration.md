@@ -460,7 +460,7 @@ default (deferred). `aws` explicitly opts in to deferred mode even though it is 
 
 ## Skills Tool
 
-The skills tool configures skill discovery and installation via registries like ClawHub.
+The skills tool configures skill discovery and installation via registries like ClawHub and GitHub.
 
 ### Registries
 
@@ -475,13 +475,20 @@ The skills tool configures skill discovery and installation via registries like 
 | `registries.clawhub.timeout`       | int    | 0                    | Request timeout in seconds (0 = default)     |
 | `registries.clawhub.max_zip_size`  | int    | 0                    | Max skill zip size in bytes (0 = default)    |
 | `registries.clawhub.max_response_size` | int | 0                   | Max API response size in bytes (0 = default) |
+| `registries.github.enabled`        | bool   | true                 | Enable GitHub installs via registry config    |
+| `registries.github.base_url`       | string | `https://github.com` | GitHub or GitHub Enterprise base URL          |
+| `registries.github.auth_token`     | string | `""`                | GitHub personal access token                  |
+| `registries.github.proxy`          | string | `""`                | HTTP proxy for GitHub API requests            |
 
-### GitHub Integration
+### Legacy GitHub Config
 
-| Config           | Type   | Default | Description                          |
-|------------------|--------|---------|--------------------------------------|
-| `github.proxy`   | string | `""`    | HTTP proxy for GitHub API requests   |
-| `github.token`   | string | `""`    | GitHub personal access token         |
+`github.*` is deprecated. Use `registries.github.*` instead. The legacy fields are still supported for compatibility and will be removed later.
+
+| Config             | Type   | Default              | Description                    |
+|--------------------|--------|----------------------|--------------------------------|
+| `github.base_url`  | string | `https://github.com` | Deprecated GitHub base URL     |
+| `github.proxy`     | string | `""`                | Deprecated GitHub proxy        |
+| `github.token`     | string | `""`                | Deprecated GitHub token        |
 
 ### Search Settings
 
@@ -501,10 +508,23 @@ The skills tool configures skill discovery and installation via registries like 
         "clawhub": {
           "enabled": true,
           "base_url": "https://clawhub.ai",
-          "auth_token": ""
+          "auth_token": "",
+	          "search_path": "",
+	          "skills_path": "",
+	          "download_path": "",
+	          "timeout": 0,
+	          "max_zip_size": 0,
+	          "max_response_size": 0
+        },
+        "github": {
+          "enabled": true,
+          "base_url": "https://github.com",
+	          "auth_token": "",
+	          "proxy": ""
         }
       },
       "github": {
+	        "base_url": "https://github.com",
         "proxy": "",
         "token": ""
       },

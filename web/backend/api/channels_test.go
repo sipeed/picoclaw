@@ -27,6 +27,7 @@ func TestHandleGetChannelConfig_ReturnsSecretPresenceWithoutLeakingSecrets(t *te
 	bcfg := decoded.(*config.FeishuSettings)
 	bcfg.AppID = "cli_test_app"
 	bcfg.AppSecret = *config.NewSecureString("feishu-secret-from-security")
+	bc.AllowFrom = config.FlexibleStringSlice{"ou_test_user"}
 	if err := config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
@@ -67,6 +68,13 @@ func TestHandleGetChannelConfig_ReturnsSecretPresenceWithoutLeakingSecrets(t *te
 	if got := resp.Config["app_id"]; got != "cli_test_app" {
 		t.Fatalf("config.app_id = %#v, want %q", got, "cli_test_app")
 	}
+	if got := resp.Config["enabled"]; got != true {
+		t.Fatalf("config.enabled = %#v, want true", got)
+	}
+	allowFrom, ok := resp.Config["allow_from"].([]any)
+	if !ok || len(allowFrom) != 1 || allowFrom[0] != "ou_test_user" {
+		t.Fatalf("config.allow_from = %#v, want [\"ou_test_user\"]", resp.Config["allow_from"])
+	}
 	if _, exists := resp.Config["app_secret"]; exists {
 		t.Fatalf("config should omit app_secret, got %#v", resp.Config["app_secret"])
 	}
@@ -89,5 +97,99 @@ func TestHandleGetChannelConfig_ReturnsNotFoundForUnknownChannel(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("GET /api/channels/not-a-channel/config status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandleGetChannelConfig_ReturnsCommonFieldsWhenSettingsEmpty(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	bc := cfg.Channels[config.ChannelFeishu]
+	bc.Enabled = true
+	bc.AllowFrom = config.FlexibleStringSlice{"ou_common_user"}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/channels/feishu/config", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf(
+			"GET /api/channels/feishu/config status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusOK,
+			rec.Body.String(),
+		)
+	}
+
+	var resp struct {
+		Config map[string]any `json:"config"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if got := resp.Config["enabled"]; got != true {
+		t.Fatalf("config.enabled = %#v, want true", got)
+	}
+	allowFrom, ok := resp.Config["allow_from"].([]any)
+	if !ok || len(allowFrom) != 1 || allowFrom[0] != "ou_common_user" {
+		t.Fatalf("config.allow_from = %#v, want [\"ou_common_user\"]", resp.Config["allow_from"])
+	}
+}
+
+func TestHandleGetChannelConfig_ReturnsDefaultShapeForMissingChannel(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	delete(cfg.Channels, config.ChannelIRC)
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/channels/irc/config", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf(
+			"GET /api/channels/irc/config status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusOK,
+			rec.Body.String(),
+		)
+	}
+
+	var resp struct {
+		Config map[string]any `json:"config"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if got := resp.Config["server"]; got != "" {
+		t.Fatalf("config.server = %#v, want empty string", got)
+	}
+	if got := resp.Config["nick"]; got != "picoclaw" {
+		t.Fatalf("config.nick = %#v, want %q", got, "picoclaw")
+	}
+	if got := resp.Config["enabled"]; got != false {
+		t.Fatalf("config.enabled = %#v, want false", got)
 	}
 }

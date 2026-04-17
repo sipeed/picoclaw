@@ -650,7 +650,11 @@ func TestHandleWebSocketProxyLoadsPidDataOnDemand(t *testing.T) {
 }
 
 func TestHandleWebSocketProxyRejectsStalePidDataAfterProcessExit(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "config.json")
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("PICOCLAW_HOME", filepath.Join(tmpDir, ".picoclaw"))
+
+	configPath := filepath.Join(tmpDir, "config.json")
 	h := NewHandler(configPath)
 	handler := h.handleWebSocketProxy()
 

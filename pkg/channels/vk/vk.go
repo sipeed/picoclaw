@@ -172,14 +172,11 @@ func (c *VKChannel) handleMessage(msg object.MessagesMessage) {
 		_ = groupTrigger
 	}
 
-	peerKind := "direct"
-	peerIDStr := userID
+	chatType := "direct"
 	if isGroupChat {
-		peerKind = "group"
-		peerIDStr = chatID
+		chatType = "group"
 	}
 
-	peer := bus.Peer{Kind: peerKind, ID: peerIDStr}
 	messageID := strconv.Itoa(msg.ConversationMessageID)
 
 	metadata := map[string]string{
@@ -187,16 +184,15 @@ func (c *VKChannel) handleMessage(msg object.MessagesMessage) {
 		"is_group": fmt.Sprintf("%t", isGroupChat),
 	}
 
-	c.HandleMessage(c.ctx,
-		peer,
-		messageID,
-		userID,
-		chatID,
-		text,
-		nil,
-		metadata,
-		sender,
-	)
+	c.HandleInboundContext(c.ctx, chatID, text, nil, bus.InboundContext{
+		Channel:   "vk",
+		ChatID:    chatID,
+		ChatType:  chatType,
+		SenderID:  userID,
+		MessageID: messageID,
+		Mentioned: isGroupChat && c.isMentioned(msg),
+		Raw:       metadata,
+	}, sender)
 }
 
 func (c *VKChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {

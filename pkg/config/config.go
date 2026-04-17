@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -30,10 +31,10 @@ func init() {
 
 // Config is the current config structure with version support.
 type Config struct {
-	Version   int             `json:"version"             yaml:"-"` // Config schema version for migration
+	// Config schema version for migration.
+	Version   int             `json:"version"             yaml:"-"`
 	Isolation IsolationConfig `json:"isolation,omitempty" yaml:"-"`
 	Agents    AgentsConfig    `json:"agents"              yaml:"-"`
-	Bindings  []AgentBinding  `json:"bindings,omitempty"  yaml:"-"`
 	Session   SessionConfig   `json:"session,omitempty"   yaml:"-"`
 	Channels  ChannelsConfig  `json:"channel_list"        yaml:"channel_list"`
 	ModelList SecureModelList `json:"model_list"          yaml:"model_list"` // New model-centric provider configuration
@@ -120,7 +121,7 @@ type BuildInfo struct {
 }
 
 // MarshalJSON implements custom JSON marshaling for Config
-// to omit providers section when empty and session when empty
+// to omit providers section when empty and session when empty.
 func (c *Config) MarshalJSON() ([]byte, error) {
 	type Alias Config
 	aux := &struct {
@@ -130,17 +131,18 @@ func (c *Config) MarshalJSON() ([]byte, error) {
 		Alias: (*Alias)(c),
 	}
 
-	// Only include session if not empty
-	if c.Session.DMScope != "" || len(c.Session.IdentityLinks) > 0 {
-		aux.Session = &c.Session
+	if len(c.Session.Dimensions) > 0 || len(c.Session.IdentityLinks) > 0 {
+		sessionCfg := c.Session
+		aux.Session = &sessionCfg
 	}
 
 	return json.Marshal(aux)
 }
 
 type AgentsConfig struct {
-	Defaults AgentDefaults `json:"defaults"`
-	List     []AgentConfig `json:"list,omitempty"`
+	Defaults AgentDefaults   `json:"defaults"`
+	List     []AgentConfig   `json:"list,omitempty"`
+	Dispatch *DispatchConfig `json:"dispatch,omitempty"`
 }
 
 // AgentModelConfig supports both string and structured model config.
@@ -197,26 +199,29 @@ type SubagentsConfig struct {
 	Model       *AgentModelConfig `json:"model,omitempty"`
 }
 
-type PeerMatch struct {
-	Kind string `json:"kind"`
-	ID   string `json:"id"`
+type DispatchConfig struct {
+	Rules []DispatchRule `json:"rules,omitempty"`
 }
 
-type BindingMatch struct {
-	Channel   string     `json:"channel"`
-	AccountID string     `json:"account_id,omitempty"`
-	Peer      *PeerMatch `json:"peer,omitempty"`
-	GuildID   string     `json:"guild_id,omitempty"`
-	TeamID    string     `json:"team_id,omitempty"`
+type DispatchRule struct {
+	Name              string           `json:"name,omitempty"`
+	Agent             string           `json:"agent"`
+	When              DispatchSelector `json:"when"`
+	SessionDimensions []string         `json:"session_dimensions,omitempty"`
 }
 
-type AgentBinding struct {
-	AgentID string       `json:"agent_id"`
-	Match   BindingMatch `json:"match"`
+type DispatchSelector struct {
+	Channel   string `json:"channel,omitempty"`
+	Account   string `json:"account,omitempty"`
+	Space     string `json:"space,omitempty"`
+	Chat      string `json:"chat,omitempty"`
+	Topic     string `json:"topic,omitempty"`
+	Sender    string `json:"sender,omitempty"`
+	Mentioned *bool  `json:"mentioned,omitempty"`
 }
 
 type SessionConfig struct {
-	DMScope       string              `json:"dm_scope,omitempty"`
+	Dimensions    []string            `json:"dimensions,omitempty"`
 	IdentityLinks map[string][]string `json:"identity_links,omitempty"`
 }
 
@@ -263,7 +268,8 @@ type AgentDefaults struct {
 	SummarizeTokenPercent     int                `json:"summarize_token_percent"          env:"PICOCLAW_AGENTS_DEFAULTS_SUMMARIZE_TOKEN_PERCENT"`
 	MaxMediaSize              int                `json:"max_media_size,omitempty"         env:"PICOCLAW_AGENTS_DEFAULTS_MAX_MEDIA_SIZE"`
 	Routing                   *RoutingConfig     `json:"routing,omitempty"`
-	SteeringMode              string             `json:"steering_mode,omitempty"          env:"PICOCLAW_AGENTS_DEFAULTS_STEERING_MODE"` // "one-at-a-time" (default) or "all"
+	SteeringMode              string             `json:"steering_mode,omitempty"          env:"PICOCLAW_AGENTS_DEFAULTS_STEERING_MODE"`      // "one-at-a-time" (default) or "all"
+	MaxParallelTurns          int                `json:"max_parallel_turns,omitempty"     env:"PICOCLAW_AGENTS_DEFAULTS_MAX_PARALLEL_TURNS"` // Max concurrent turns (0 or 1 = sequential)
 	SubTurn                   SubTurnConfig      `json:"subturn"                                                                                      envPrefix:"PICOCLAW_AGENTS_DEFAULTS_SUBTURN_"`
 	ToolFeedback              ToolFeedbackConfig `json:"tool_feedback,omitempty"`
 	SplitOnMarker             bool               `json:"split_on_marker"                  env:"PICOCLAW_AGENTS_DEFAULTS_SPLIT_ON_MARKER"` // split messages on <|[SPLIT]|> marker
@@ -525,9 +531,10 @@ type DevicesConfig struct {
 }
 
 type VoiceConfig struct {
-	ModelName         string `json:"model_name,omitempty"     env:"PICOCLAW_VOICE_MODEL_NAME"`
-	TTSModelName      string `json:"tts_model_name,omitempty" env:"PICOCLAW_VOICE_TTS_MODEL_NAME"`
-	EchoTranscription bool   `json:"echo_transcription"       env:"PICOCLAW_VOICE_ECHO_TRANSCRIPTION"`
+	ModelName         string `json:"model_name,omitempty"         env:"PICOCLAW_VOICE_MODEL_NAME"`
+	TTSModelName      string `json:"tts_model_name,omitempty"     env:"PICOCLAW_VOICE_TTS_MODEL_NAME"`
+	EchoTranscription bool   `json:"echo_transcription"           env:"PICOCLAW_VOICE_ECHO_TRANSCRIPTION"`
+	ElevenLabsAPIKey  string `json:"elevenlabs_api_key,omitempty" env:"PICOCLAW_VOICE_ELEVENLABS_API_KEY"`
 }
 
 // ModelConfig represents a model-centric provider configuration.
@@ -674,6 +681,11 @@ type DuckDuckGoConfig struct {
 	MaxResults int  `json:"max_results" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
 }
 
+type SogouConfig struct {
+	Enabled    bool `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_SOGOU_ENABLED"`
+	MaxResults int  `json:"max_results" env:"PICOCLAW_TOOLS_WEB_SOGOU_MAX_RESULTS"`
+}
+
 type PerplexityConfig struct {
 	Enabled    bool          `json:"enabled"           yaml:"-"                  env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_ENABLED"`
 	APIKeys    SecureStrings `json:"api_keys,omitzero" yaml:"api_keys,omitempty" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_API_KEYS"`
@@ -720,11 +732,13 @@ type WebToolsConfig struct {
 	ToolConfig  `                  yaml:"-"                      envPrefix:"PICOCLAW_TOOLS_WEB_"`
 	Brave       BraveConfig       `yaml:"brave,omitempty"                                        json:"brave"`
 	Tavily      TavilyConfig      `yaml:"tavily,omitempty"                                       json:"tavily"`
+	Sogou       SogouConfig       `yaml:"-"                                                      json:"sogou"`
 	DuckDuckGo  DuckDuckGoConfig  `yaml:"-"                                                      json:"duckduckgo"`
 	Perplexity  PerplexityConfig  `yaml:"perplexity,omitempty"                                   json:"perplexity"`
 	SearXNG     SearXNGConfig     `yaml:"-"                                                      json:"searxng"`
 	GLMSearch   GLMSearchConfig   `yaml:"glm_search,omitempty"                                   json:"glm_search"`
 	BaiduSearch BaiduSearchConfig `yaml:"baidu_search,omitempty"                                 json:"baidu_search"`
+	Provider    string            `yaml:"-"                                                      json:"provider,omitempty" env:"PICOCLAW_TOOLS_WEB_PROVIDER"`
 	// PreferNative controls whether to use provider-native web search when
 	// the active LLM supports it (e.g. OpenAI web_search_preview). When true,
 	// the client-side web_search tool is hidden to avoid duplicate search surfaces,
@@ -755,11 +769,12 @@ type ExecConfig struct {
 }
 
 type SkillsToolsConfig struct {
-	ToolConfig            `                       yaml:"-"                 envPrefix:"PICOCLAW_TOOLS_SKILLS_"`
-	Registries            SkillsRegistriesConfig `yaml:",inline,omitempty"                                    json:"registries"`
-	Github                SkillsGithubConfig     `yaml:"github,omitempty"                                     json:"github"`
-	MaxConcurrentSearches int                    `yaml:"-"                                                    json:"max_concurrent_searches" env:"PICOCLAW_TOOLS_SKILLS_MAX_CONCURRENT_SEARCHES"`
-	SearchCache           SearchCacheConfig      `yaml:"-"                                                    json:"search_cache"`
+	ToolConfig `                       yaml:"-"                    envPrefix:"PICOCLAW_TOOLS_SKILLS_"`
+	Registries SkillsRegistriesConfig `yaml:"registries,omitempty"                                    json:"registries"`
+	// Deprecated: use registries.github instead.
+	Github                SkillsGithubConfig `yaml:"github,omitempty" json:"github"`
+	MaxConcurrentSearches int                `yaml:"-"                json:"max_concurrent_searches" env:"PICOCLAW_TOOLS_SKILLS_MAX_CONCURRENT_SEARCHES"`
+	SearchCache           SearchCacheConfig  `yaml:"-"                json:"search_cache"`
 }
 
 type MediaCleanupConfig struct {
@@ -843,25 +858,86 @@ type SearchCacheConfig struct {
 	TTLSeconds int `json:"ttl_seconds" env:"PICOCLAW_SKILLS_SEARCH_CACHE_TTL_SECONDS"`
 }
 
-type SkillsRegistriesConfig struct {
-	ClawHub ClawHubRegistryConfig `json:"clawhub" yaml:"clawhub,omitempty"`
+type SkillsRegistriesConfig []*SkillRegistryConfig
+
+func (c *SkillsRegistriesConfig) Get(name string) (SkillRegistryConfig, bool) {
+	if c == nil {
+		return SkillRegistryConfig{}, false
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return SkillRegistryConfig{}, false
+	}
+	for _, registry := range *c {
+		if registry == nil || registry.Name != name {
+			continue
+		}
+		return *registry, true
+	}
+	return SkillRegistryConfig{}, false
+}
+
+func (c *SkillsRegistriesConfig) Set(name string, cfg SkillRegistryConfig) {
+	if c == nil {
+		return
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	cfg.Name = name
+	for i, registry := range *c {
+		if registry == nil || registry.Name != name {
+			continue
+		}
+		(*c)[i] = &cfg
+		return
+	}
+	*c = append(*c, &cfg)
 }
 
 type SkillsGithubConfig struct {
-	Token SecureString `json:"token,omitzero"  yaml:"token,omitempty" env:"PICOCLAW_TOOLS_SKILLS_GITHUB_TOKEN"`
-	Proxy string       `json:"proxy,omitempty" yaml:"-"               env:"PICOCLAW_TOOLS_SKILLS_GITHUB_PROXY"`
+	BaseURL string       `json:"base_url,omitempty" yaml:"-"               env:"PICOCLAW_TOOLS_SKILLS_GITHUB_BASE_URL"`
+	Token   SecureString `json:"token,omitzero"     yaml:"token,omitempty" env:"PICOCLAW_TOOLS_SKILLS_GITHUB_TOKEN"`
+	Proxy   string       `json:"proxy,omitempty"    yaml:"-"               env:"PICOCLAW_TOOLS_SKILLS_GITHUB_PROXY"`
 }
 
-type ClawHubRegistryConfig struct {
-	Enabled         bool         `json:"enabled"             yaml:"-"                    env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_ENABLED"`
-	BaseURL         string       `json:"base_url"            yaml:"-"                    env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_BASE_URL"`
-	AuthToken       SecureString `json:"auth_token,omitzero" yaml:"auth_token,omitempty" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_AUTH_TOKEN"`
-	SearchPath      string       `json:"search_path"         yaml:"-"                    env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_SEARCH_PATH"`
-	SkillsPath      string       `json:"skills_path"         yaml:"-"                    env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_SKILLS_PATH"`
-	DownloadPath    string       `json:"download_path"       yaml:"-"                    env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_DOWNLOAD_PATH"`
-	Timeout         int          `json:"timeout"             yaml:"-"                    env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_TIMEOUT"`
-	MaxZipSize      int          `json:"max_zip_size"        yaml:"-"                    env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_MAX_ZIP_SIZE"`
-	MaxResponseSize int          `json:"max_response_size"   yaml:"-"                    env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_MAX_RESPONSE_SIZE"`
+type SkillRegistryConfig struct {
+	Name      string         `json:"name,omitempty"      yaml:"-"                    env:"-"`
+	Enabled   bool           `json:"enabled"             yaml:"-"                    env:"-"`
+	BaseURL   string         `json:"base_url"            yaml:"-"                    env:"-"`
+	AuthToken SecureString   `json:"auth_token,omitzero" yaml:"auth_token,omitempty" env:"-"`
+	Param     map[string]any `json:"-"                   yaml:"-"                    env:"-"`
+}
+
+const (
+	envSkillsClawHubEnabled         = "PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_ENABLED"
+	envSkillsClawHubBaseURL         = "PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_BASE_URL"
+	envSkillsClawHubAuthToken       = "PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_AUTH_TOKEN"
+	envSkillsClawHubSearchPath      = "PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_SEARCH_PATH"
+	envSkillsClawHubSkillsPath      = "PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_SKILLS_PATH"
+	envSkillsClawHubDownloadPath    = "PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_DOWNLOAD_PATH"
+	envSkillsClawHubTimeout         = "PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_TIMEOUT"
+	envSkillsClawHubMaxZipSize      = "PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_MAX_ZIP_SIZE"
+	envSkillsClawHubMaxResponseSize = "PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_MAX_RESPONSE_SIZE"
+	envSkillsGitHubEnabled          = "PICOCLAW_SKILLS_REGISTRIES_GITHUB_ENABLED"
+	envSkillsGitHubBaseURL          = "PICOCLAW_SKILLS_REGISTRIES_GITHUB_BASE_URL"
+	envSkillsGitHubAuthToken        = "PICOCLAW_SKILLS_REGISTRIES_GITHUB_AUTH_TOKEN"
+	envSkillsGitHubProxy            = "PICOCLAW_SKILLS_REGISTRIES_GITHUB_PROXY"
+)
+
+func (c *SkillRegistryConfig) DecodeParam(target any) error {
+	if c == nil {
+		return nil
+	}
+	if len(c.Param) == 0 {
+		return nil
+	}
+	data, err := json.Marshal(c.Param)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, target)
 }
 
 // MCPServerConfig defines configuration for a single MCP server
@@ -1082,12 +1158,21 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("unsupported config version: %d", versionInfo.Version)
 	}
 
+	applyLegacyBindingsMigration(data, cfg)
+
+	gatewayHostBeforeEnv := cfg.Gateway.Host
+
 	if err = env.Parse(cfg); err != nil {
 		return nil, err
 	}
+	applySkillsRegistryEnvCompat(cfg)
 
 	if err = InitChannelList(cfg.Channels); err != nil {
 		return nil, err
+	}
+	cfg.Gateway.Host, err = resolveGatewayHostFromEnv(gatewayHostBeforeEnv)
+	if err != nil {
+		return nil, fmt.Errorf("invalid gateway host: %w", err)
 	}
 
 	// Expand multi-key configs into separate entries for key-level failover
@@ -1105,6 +1190,89 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func applySkillsRegistryEnvCompat(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+
+	registryCfg, foundClawHub := cfg.Tools.Skills.Registries.Get("clawhub")
+	if !foundClawHub {
+		registryCfg = SkillRegistryConfig{
+			Name:  "clawhub",
+			Param: map[string]any{},
+		}
+	}
+	if registryCfg.Param == nil {
+		registryCfg.Param = map[string]any{}
+	}
+
+	if raw, envSet := os.LookupEnv(envSkillsClawHubEnabled); envSet {
+		if value, err := strconv.ParseBool(strings.TrimSpace(raw)); err == nil {
+			registryCfg.Enabled = value
+		}
+	}
+	if value, envSet := os.LookupEnv(envSkillsClawHubBaseURL); envSet {
+		registryCfg.BaseURL = value
+	}
+	if value, envSet := os.LookupEnv(envSkillsClawHubAuthToken); envSet {
+		registryCfg.AuthToken = *NewSecureString(value)
+	}
+	if value, envSet := os.LookupEnv(envSkillsClawHubSearchPath); envSet {
+		registryCfg.Param["search_path"] = value
+	}
+	if value, envSet := os.LookupEnv(envSkillsClawHubSkillsPath); envSet {
+		registryCfg.Param["skills_path"] = value
+	}
+	if value, envSet := os.LookupEnv(envSkillsClawHubDownloadPath); envSet {
+		registryCfg.Param["download_path"] = value
+	}
+	if raw, envSet := os.LookupEnv(envSkillsClawHubTimeout); envSet {
+		if value, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil {
+			registryCfg.Param["timeout"] = value
+		}
+	}
+	if raw, envSet := os.LookupEnv(envSkillsClawHubMaxZipSize); envSet {
+		if value, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil {
+			registryCfg.Param["max_zip_size"] = value
+		}
+	}
+	if raw, envSet := os.LookupEnv(envSkillsClawHubMaxResponseSize); envSet {
+		if value, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil {
+			registryCfg.Param["max_response_size"] = value
+		}
+	}
+
+	cfg.Tools.Skills.Registries.Set("clawhub", registryCfg)
+
+	githubCfg, foundGitHub := cfg.Tools.Skills.Registries.Get("github")
+	if !foundGitHub {
+		githubCfg = SkillRegistryConfig{
+			Name:  "github",
+			Param: map[string]any{},
+		}
+	}
+	if githubCfg.Param == nil {
+		githubCfg.Param = map[string]any{}
+	}
+
+	if raw, envSet := os.LookupEnv(envSkillsGitHubEnabled); envSet {
+		if value, err := strconv.ParseBool(strings.TrimSpace(raw)); err == nil {
+			githubCfg.Enabled = value
+		}
+	}
+	if value, envSet := os.LookupEnv(envSkillsGitHubBaseURL); envSet {
+		githubCfg.BaseURL = value
+	}
+	if value, envSet := os.LookupEnv(envSkillsGitHubAuthToken); envSet {
+		githubCfg.AuthToken = *NewSecureString(value)
+	}
+	if value, envSet := os.LookupEnv(envSkillsGitHubProxy); envSet {
+		githubCfg.Param["proxy"] = value
+	}
+
+	cfg.Tools.Skills.Registries.Set("github", githubCfg)
 }
 
 func makeBackup(path string) error {
@@ -1272,6 +1440,7 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 				ThinkingLevel:  m.ThinkingLevel,
 				ExtraBody:      m.ExtraBody,
 				CustomHeaders:  m.CustomHeaders,
+				UserAgent:      m.UserAgent,
 				isVirtual:      true,
 			}
 			expanded = append(expanded, additionalEntry)
@@ -1293,6 +1462,7 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 			ThinkingLevel:  m.ThinkingLevel,
 			ExtraBody:      m.ExtraBody,
 			CustomHeaders:  m.CustomHeaders,
+			UserAgent:      m.UserAgent,
 			APIKeys:        SimpleSecureStrings(keys[0]),
 		}
 

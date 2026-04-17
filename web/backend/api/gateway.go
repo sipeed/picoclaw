@@ -21,6 +21,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/health"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/netbind"
 	ppid "github.com/sipeed/picoclaw/pkg/pid"
 	"github.com/sipeed/picoclaw/web/backend/utils"
 )
@@ -119,6 +120,7 @@ var (
 	gatewayRestartGracePeriod     = 5 * time.Second
 	gatewayRestartForceKillWindow = 3 * time.Second
 	gatewayRestartPollInterval    = 100 * time.Millisecond
+	gatewayExecCommand            = exec.Command
 )
 
 var gatewayHealthGet = func(url string, timeout time.Duration) (*http.Response, error) {
@@ -262,7 +264,7 @@ func (h *Handler) getGatewayHealthForPidData(
 		host = gatewayProbeHost(h.effectiveGatewayBindHost(cfg))
 	}
 	if host == "" {
-		host = "127.0.0.1"
+		host = netbind.ResolveAdaptiveLoopbackHost()
 	}
 
 	url := "http://" + net.JoinHostPort(host, strconv.Itoa(port)) + "/health"
@@ -723,7 +725,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	execPath := utils.FindPicoclawBinary()
 	logger.InfoC("gateway", fmt.Sprintf("Starting gateway process (%s)", execPath))
 
-	cmd = exec.Command(execPath, h.gatewayCommandArgs()...)
+	cmd = gatewayExecCommand(execPath, h.gatewayCommandArgs()...)
 	cmd.Env = os.Environ()
 	// Forward the launcher's config path via the environment variable that
 	// GetConfigPath() already reads, so the gateway sub-process uses the same
@@ -731,8 +733,9 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	if h.configPath != "" {
 		cmd.Env = append(cmd.Env, config.EnvConfig+"="+h.configPath)
 	}
-	if host := h.gatewayHostOverride(); host != "" {
-		cmd.Env = append(cmd.Env, config.EnvGatewayHost+"="+host)
+	gatewayHostOverride := h.gatewayHostOverride()
+	if gatewayHostOverride != "" {
+		cmd.Env = append(cmd.Env, config.EnvGatewayHost+"="+gatewayHostOverride)
 	}
 
 	stdoutPipe, err := cmd.StdoutPipe()

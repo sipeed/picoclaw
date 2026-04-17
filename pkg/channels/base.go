@@ -260,12 +260,11 @@ func (c *BaseChannel) IsAllowedSender(sender bus.SenderInfo) bool {
 	return false
 }
 
-func (c *BaseChannel) HandleMessage(
+func (c *BaseChannel) HandleMessageWithContext(
 	ctx context.Context,
-	peer bus.Peer,
-	messageID, senderID, chatID, content string,
+	deliveryChatID, content string,
 	media []string,
-	metadata map[string]string,
+	inboundCtx bus.InboundContext,
 	senderOpts ...bus.SenderInfo,
 ) {
 	// Use SenderInfo-based allow check when available, else fall back to string
@@ -273,6 +272,7 @@ func (c *BaseChannel) HandleMessage(
 	if len(senderOpts) > 0 {
 		sender = senderOpts[0]
 	}
+	senderID := strings.TrimSpace(inboundCtx.SenderID)
 	if sender.CanonicalID != "" || sender.PlatformID != "" {
 		if !c.IsAllowedSender(sender) {
 			return
@@ -289,20 +289,28 @@ func (c *BaseChannel) HandleMessage(
 		resolvedSenderID = sender.CanonicalID
 	}
 
-	scope := BuildMediaScope(c.name, chatID, messageID)
+	if resolvedSenderID == "" {
+		resolvedSenderID = senderID
+	}
+
+	inboundCtx.Channel = c.name
+	if inboundCtx.ChatID == "" {
+		inboundCtx.ChatID = deliveryChatID
+	}
+	if inboundCtx.SenderID == "" {
+		inboundCtx.SenderID = resolvedSenderID
+	}
+
+	scope := BuildMediaScope(c.name, deliveryChatID, inboundCtx.MessageID)
 
 	msg := bus.InboundMessage{
-		Channel:    c.name,
-		SenderID:   resolvedSenderID,
+		Context:    inboundCtx,
 		Sender:     sender,
-		ChatID:     chatID,
 		Content:    content,
 		Media:      media,
-		Peer:       peer,
-		MessageID:  messageID,
 		MediaScope: scope,
-		Metadata:   metadata,
 	}
+	msg = bus.NormalizeInboundMessage(msg)
 
 	// Auto-trigger typing indicator, message reaction, and placeholder before publishing.
 	// Each capability is independent — all three may fire for the same message.
@@ -313,14 +321,14 @@ func (c *BaseChannel) HandleMessage(
 	if c.owner != nil && c.placeholderRecorder != nil {
 		// Typing
 		if tc, ok := c.owner.(TypingCapable); ok {
-			if stop, err := tc.StartTyping(ctx, chatID); err == nil {
-				c.placeholderRecorder.RecordTypingStop(c.name, chatID, stop)
+			if stop, err := tc.StartTyping(ctx, deliveryChatID); err == nil {
+				c.placeholderRecorder.RecordTypingStop(c.name, deliveryChatID, stop)
 			}
 		}
 		// Reaction
-		if rc, ok := c.owner.(ReactionCapable); ok && messageID != "" {
-			if undo, err := rc.ReactToMessage(ctx, chatID, messageID); err == nil {
-				c.placeholderRecorder.RecordReactionUndo(c.name, chatID, undo)
+		if rc, ok := c.owner.(ReactionCapable); ok && msg.MessageID != "" {
+			if undo, err := rc.ReactToMessage(ctx, deliveryChatID, msg.MessageID); err == nil {
+				c.placeholderRecorder.RecordReactionUndo(c.name, deliveryChatID, undo)
 			}
 		}
 		// Placeholder — independent pipeline.
@@ -329,8 +337,8 @@ func (c *BaseChannel) HandleMessage(
 		// "Thinking…" only once the voice has been processed.
 		if !audioAnnotationRe.MatchString(content) {
 			if pc, ok := c.owner.(PlaceholderCapable); ok {
-				if phID, err := pc.SendPlaceholder(ctx, chatID); err == nil && phID != "" {
-					c.placeholderRecorder.RecordPlaceholder(c.name, chatID, phID)
+				if phID, err := pc.SendPlaceholder(ctx, deliveryChatID); err == nil && phID != "" {
+					c.placeholderRecorder.RecordPlaceholder(c.name, deliveryChatID, phID)
 				}
 			}
 		}
@@ -339,10 +347,22 @@ func (c *BaseChannel) HandleMessage(
 	if err := c.bus.PublishInbound(ctx, msg); err != nil {
 		logger.ErrorCF("channels", "Failed to publish inbound message", map[string]any{
 			"channel": c.name,
-			"chat_id": chatID,
+			"chat_id": deliveryChatID,
 			"error":   err.Error(),
 		})
 	}
+}
+
+// HandleInboundContext publishes a normalized inbound message using only the
+// structured context.
+func (c *BaseChannel) HandleInboundContext(
+	ctx context.Context,
+	deliveryChatID, content string,
+	media []string,
+	inboundCtx bus.InboundContext,
+	senderOpts ...bus.SenderInfo,
+) {
+	c.HandleMessageWithContext(ctx, deliveryChatID, content, media, inboundCtx, senderOpts...)
 }
 
 func (c *BaseChannel) SetRunning(running bool) {

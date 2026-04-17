@@ -101,12 +101,14 @@ export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
 - `/use <skill> <message>`：只对当前这一条请求强制使用指定技能。
 - `/use <skill>`：为同一会话中的下一条消息预先启用该技能。
 - `/use clear`：取消通过 `/use <skill>` 设置的待应用技能。
+- `/btw <question>`：发起一个即时的旁支提问，且不改动当前会话历史。`/btw` 会按一次无工具的直接问答处理，不会进入常规的工具执行流程。
 
 示例：
 
 ```text
 /list skills
 /use git explain how to squash the last 3 commits
+/btw 帮我回顾一下刚才关于发布方案的结论
 /use italiapersonalfinance
 dammi le ultime news
 ```
@@ -114,7 +116,7 @@ dammi le ultime news
 ### 统一命令执行策略
 
 - 通用斜杠命令通过 `pkg/agent/loop.go` 中的 `commands.Executor` 统一执行。
-- Channel 适配器不再在本地消费通用命令；它们只负责把入站文本转发到 bus/agent 路径。Telegram 仍会在启动时自动注册其支持的命令菜单。
+- Channel 适配器不再在本地消费通用命令；它们只负责把入站文本转发到 bus/agent 路径。Telegram 仍会在启动时自动注册其支持的命令菜单，例如 `/start`、`/help`、`/show`、`/list`、`/use` 和 `/btw`。
 - 未注册的斜杠命令（例如 `/foo`）会透传给 LLM 按普通输入处理。
 - 已注册但当前 channel 不支持的命令（例如 WhatsApp 上的 `/show`）会返回明确的用户可见错误，并停止后续处理。
 

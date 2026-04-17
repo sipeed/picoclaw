@@ -385,14 +385,24 @@ func TestWebFetchTool_PayloadTooLarge(t *testing.T) {
 	}
 }
 
-// TestWebTool_WebSearch_NoApiKey verifies that no tool is created when API key is missing
+// TestWebTool_WebSearch_NoApiKey verifies missing credentials are surfaced at execution time.
 func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
 	tool, err := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKeys: nil})
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	if tool != nil {
-		t.Errorf("Expected nil tool when Brave API key is empty")
+	if tool == nil {
+		t.Fatalf("Expected tool when Brave is enabled, even without API keys")
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"query": "test query",
+	})
+	if !result.IsError {
+		t.Fatalf("Expected missing Brave API key to return error")
+	}
+	if !strings.Contains(result.ForLLM, "no API key provided") {
+		t.Fatalf("Unexpected error message: %s", result.ForLLM)
 	}
 
 	// Also nil when nothing is enabled
@@ -757,6 +767,33 @@ func TestWebTool_WebFetch_PrivateHostAllowedForTests(t *testing.T) {
 	}
 }
 
+func TestWebTool_WebFetch_AllowsLoopbackProxy(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.String() != "http://example.com/proxied" {
+			t.Fatalf("proxy received URL %q, want %q", r.URL.String(), "http://example.com/proxied")
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("proxied content"))
+	}))
+	defer proxy.Close()
+
+	tool, err := NewWebFetchToolWithProxy(50000, proxy.URL, format, testFetchLimit, nil)
+	if err != nil {
+		t.Fatalf("Failed to create web fetch tool: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": "http://example.com/proxied",
+	})
+	if result.IsError {
+		t.Fatalf("expected success through loopback proxy, got %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "proxied content") {
+		t.Fatalf("expected proxied content, got %q", result.ForLLM)
+	}
+}
+
 // TestWebFetch_BlocksIPv4MappedIPv6Loopback verifies ::ffff:127.0.0.1 is blocked
 func TestWebFetch_BlocksIPv4MappedIPv6Loopback(t *testing.T) {
 	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
@@ -1080,6 +1117,40 @@ func TestNewWebSearchTool_PropagatesProxy(t *testing.T) {
 		}
 		if p.proxy != "http://127.0.0.1:7890" {
 			t.Fatalf("provider proxy = %q, want %q", p.proxy, "http://127.0.0.1:7890")
+		}
+	})
+
+	t.Run("searxng", func(t *testing.T) {
+		tool, err := NewWebSearchTool(WebSearchToolOptions{
+			SearXNGEnabled:    true,
+			SearXNGBaseURL:    "https://searx.example.com",
+			SearXNGMaxResults: 3,
+			Proxy:             "http://127.0.0.1:7890",
+		})
+		if err != nil {
+			t.Fatalf("NewWebSearchTool() error: %v", err)
+		}
+		p, ok := tool.provider.(*SearXNGSearchProvider)
+		if !ok {
+			t.Fatalf("provider type = %T, want *SearXNGSearchProvider", tool.provider)
+		}
+		if p.proxy != "http://127.0.0.1:7890" {
+			t.Fatalf("provider proxy = %q, want %q", p.proxy, "http://127.0.0.1:7890")
+		}
+		tr, ok := p.client.Transport.(*http.Transport)
+		if !ok {
+			t.Fatalf("client.Transport type = %T, want *http.Transport", p.client.Transport)
+		}
+		req, err := http.NewRequest(http.MethodGet, "https://searx.example.com/search", nil)
+		if err != nil {
+			t.Fatalf("http.NewRequest() error: %v", err)
+		}
+		proxyURL, err := tr.Proxy(req)
+		if err != nil {
+			t.Fatalf("transport.Proxy(req) error: %v", err)
+		}
+		if proxyURL == nil || proxyURL.String() != "http://127.0.0.1:7890" {
+			t.Fatalf("proxy URL = %v, want %q", proxyURL, "http://127.0.0.1:7890")
 		}
 	})
 }
@@ -1666,4 +1737,198 @@ func TestWebTool_GLMSearch_Priority(t *testing.T) {
 	if _, ok := tool2.provider.(*GLMSearchProvider); !ok {
 		t.Errorf("Expected GLMSearchProvider when only GLM enabled, got %T", tool2.provider)
 	}
+}
+
+func TestWebTool_SogouSearch_Success(t *testing.T) {
+	provider := &SogouSearchProvider{
+		client: &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				rec := httptest.NewRecorder()
+				fmt.Fprint(rec, `<html><body>
+<a class=resultLink href="/link?url=https%3A%2F%2Fexample.com%2Fa" id="sogou_vr_0_0">Result A</a>
+<div class="clamp3">Snippet A</div>
+<a class=resultLink href="/link?url=https%3A%2F%2Fexample.com%2Fb" id="sogou_vr_0_1">Result B</a>
+<div class="clamp3">Snippet B</div>
+</body></html>`)
+				return rec.Result(), nil
+			}),
+		},
+	}
+
+	out, err := provider.Search(context.Background(), "test query", 2, "")
+	if err != nil {
+		t.Fatalf("Search() error: %v", err)
+	}
+	if !strings.Contains(out, "via Sogou") || !strings.Contains(out, "https://example.com/a") {
+		t.Fatalf("unexpected output: %s", out)
+	}
+}
+
+func TestApplySogouRangeHint(t *testing.T) {
+	tests := []struct {
+		name      string
+		query     string
+		rangeCode string
+		want      string
+	}{
+		{name: "empty range", query: "golang", rangeCode: "", want: "golang"},
+		{name: "day", query: "golang", rangeCode: "d", want: "golang 最近一天"},
+		{name: "week", query: "golang", rangeCode: "w", want: "golang 最近一周"},
+		{name: "month", query: "golang", rangeCode: "m", want: "golang 最近一个月"},
+		{name: "year", query: "golang", rangeCode: "y", want: "golang 最近一年"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := applySogouRangeHint(tt.query, tt.rangeCode); got != tt.want {
+				t.Fatalf("applySogouRangeHint(%q, %q) = %q, want %q", tt.query, tt.rangeCode, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrefersDuckDuckGoQuery(t *testing.T) {
+	SetPreferredWebSearchLanguage("")
+	t.Cleanup(func() {
+		SetPreferredWebSearchLanguage("")
+	})
+
+	tests := []struct {
+		name  string
+		query string
+		want  bool
+	}{
+		{name: "english words", query: "golang web search", want: true},
+		{name: "english with numbers", query: "OpenAI o3 price 2026", want: true},
+		{name: "chinese", query: "今天上海天气", want: false},
+		{name: "mixed with han", query: "golang 中文 教程", want: false},
+		{name: "numbers only", query: "2026 04 15", want: false},
+		{name: "blank", query: "   ", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := prefersDuckDuckGoQuery(tt.query); got != tt.want {
+				t.Fatalf("prefersDuckDuckGoQuery(%q) = %v, want %v", tt.query, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrefersDuckDuckGoQuery_FallsBackToPreferredLanguage(t *testing.T) {
+	SetPreferredWebSearchLanguage("en")
+	t.Cleanup(func() {
+		SetPreferredWebSearchLanguage("")
+	})
+
+	if !prefersDuckDuckGoQuery("2026 04 15") {
+		t.Fatal("numeric query should prefer DuckDuckGo when preferred language is English")
+	}
+
+	SetPreferredWebSearchLanguage("zh")
+	if prefersDuckDuckGoQuery("2026 04 15") {
+		t.Fatal("numeric query should prefer Sogou when preferred language is Chinese")
+	}
+}
+
+func TestWebTool_SogouPriorityAndExplicitProvider(t *testing.T) {
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		SogouEnabled:         true,
+		SogouMaxResults:      5,
+		DuckDuckGoEnabled:    true,
+		DuckDuckGoMaxResults: 5,
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+	if _, ok := tool.provider.(*SogouSearchProvider); !ok {
+		t.Fatalf("expected SogouSearchProvider, got %T", tool.provider)
+	}
+
+	tool, err = NewWebSearchTool(WebSearchToolOptions{
+		Provider:             "duckduckgo",
+		SogouEnabled:         true,
+		SogouMaxResults:      5,
+		DuckDuckGoEnabled:    true,
+		DuckDuckGoMaxResults: 5,
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+	if _, ok := tool.provider.(*DuckDuckGoSearchProvider); !ok {
+		t.Fatalf("expected DuckDuckGoSearchProvider, got %T", tool.provider)
+	}
+}
+
+func TestWebTool_AutoProviderPrefersConfiguredProvidersBeforeSogou(t *testing.T) {
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		SogouEnabled:         true,
+		SogouMaxResults:      5,
+		BraveEnabled:         true,
+		BraveAPIKeys:         []string{"brave-key"},
+		BraveMaxResults:      5,
+		DuckDuckGoEnabled:    true,
+		DuckDuckGoMaxResults: 5,
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+	if _, ok := tool.provider.(*BraveSearchProvider); !ok {
+		t.Fatalf("expected BraveSearchProvider, got %T", tool.provider)
+	}
+}
+
+type stubSearchProvider struct {
+	result string
+	calls  []string
+}
+
+func (p *stubSearchProvider) Search(
+	_ context.Context,
+	query string,
+	_ int,
+	_ string,
+) (string, error) {
+	p.calls = append(p.calls, query)
+	return p.result, nil
+}
+
+func TestWebTool_AutoProviderRoutesQueryLanguageBetweenSogouAndDuckDuckGo(t *testing.T) {
+	sogouProvider := &stubSearchProvider{result: "via sogou"}
+	duckProvider := &stubSearchProvider{result: "via duckduckgo"}
+	tool := &WebSearchTool{
+		provider:   sogouProvider,
+		maxResults: 5,
+		providerResolver: func(query string) (SearchProvider, int) {
+			if prefersDuckDuckGoQuery(query) {
+				return duckProvider, 3
+			}
+			return sogouProvider, 5
+		},
+	}
+
+	enResult := tool.Execute(context.Background(), map[string]any{"query": "golang concurrency", "count": 10})
+	if enResult.IsError {
+		t.Fatalf("english Execute() returned error: %s", enResult.ForLLM)
+	}
+	if len(duckProvider.calls) != 1 || duckProvider.calls[0] != "golang concurrency" {
+		t.Fatalf("english query should use DuckDuckGo provider, calls=%v", duckProvider.calls)
+	}
+	if len(sogouProvider.calls) != 0 {
+		t.Fatalf("english query should not call Sogou provider, calls=%v", sogouProvider.calls)
+	}
+
+	zhResult := tool.Execute(context.Background(), map[string]any{"query": "今天上海天气"})
+	if zhResult.IsError {
+		t.Fatalf("chinese Execute() returned error: %s", zhResult.ForLLM)
+	}
+	if len(sogouProvider.calls) != 1 || sogouProvider.calls[0] != "今天上海天气" {
+		t.Fatalf("chinese query should use Sogou provider, calls=%v", sogouProvider.calls)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
 }

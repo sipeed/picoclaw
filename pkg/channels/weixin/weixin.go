@@ -357,8 +357,6 @@ func (c *WeixinChannel) handleInboundMessage(ctx context.Context, msg WeixinMess
 		return
 	}
 
-	peer := bus.Peer{Kind: "direct", ID: fromUserID}
-
 	metadata := map[string]string{
 		"from_user_id":  fromUserID,
 		"context_token": msg.ContextToken,
@@ -377,7 +375,21 @@ func (c *WeixinChannel) handleInboundMessage(ctx context.Context, msg WeixinMess
 		c.persistContextTokens()
 	}
 
-	c.HandleMessage(ctx, peer, messageID, fromUserID, fromUserID, content, mediaRefs, metadata, sender)
+	inboundCtx := bus.InboundContext{
+		Channel:   "weixin",
+		ChatID:    fromUserID,
+		ChatType:  "direct",
+		SenderID:  fromUserID,
+		MessageID: messageID,
+		Raw:       metadata,
+	}
+	if msg.ContextToken != "" {
+		inboundCtx.ReplyHandles = map[string]string{
+			"context_token": msg.ContextToken,
+		}
+	}
+
+	c.HandleInboundContext(ctx, fromUserID, content, mediaRefs, inboundCtx, sender)
 }
 
 // Send implements channels.Channel by sending a text message to the WeChat user.

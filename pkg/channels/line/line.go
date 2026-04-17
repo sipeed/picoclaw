@@ -354,8 +354,9 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 	}
 
 	// In group chats, apply unified group trigger filtering
+	isMentioned := false
 	if isGroup {
-		isMentioned := c.isBotMentioned(msg)
+		isMentioned = c.isBotMentioned(msg)
 		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
 		if !respond {
 			logger.DebugCF("line", "Ignoring group message by group trigger", map[string]any{
@@ -369,13 +370,6 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 	metadata := map[string]string{
 		"platform":    "line",
 		"source_type": event.Source.Type,
-	}
-
-	var peer bus.Peer
-	if isGroup {
-		peer = bus.Peer{Kind: "group", ID: chatID}
-	} else {
-		peer = bus.Peer{Kind: "direct", ID: senderID}
 	}
 
 	logger.DebugCF("line", "Received message", map[string]any{
@@ -396,7 +390,25 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 		return
 	}
 
-	c.HandleMessage(c.ctx, peer, msg.ID, senderID, chatID, content, mediaPaths, metadata, sender)
+	inboundCtx := bus.InboundContext{
+		Channel:   c.Name(),
+		ChatID:    chatID,
+		ChatType:  map[bool]string{true: "group", false: "direct"}[isGroup],
+		SenderID:  senderID,
+		MessageID: msg.ID,
+		Mentioned: isMentioned,
+		Raw:       metadata,
+	}
+	if event.ReplyToken != "" {
+		inboundCtx.ReplyHandles = map[string]string{
+			"reply_token": event.ReplyToken,
+		}
+		if msg.QuoteToken != "" {
+			inboundCtx.ReplyHandles["quote_token"] = msg.QuoteToken
+		}
+	}
+
+	c.HandleInboundContext(c.ctx, chatID, content, mediaPaths, inboundCtx, sender)
 }
 
 // isBotMentioned checks if the bot is mentioned in the message.

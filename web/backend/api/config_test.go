@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -170,6 +171,130 @@ func TestHandlePatchConfig_AllowsInvalidExecRegexPatternsWhenExecDisabled(t *tes
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestHandlePatchConfig_SavesChannelListSettingsPatch(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"channel_list": {
+			"feishu": {
+				"enabled": true,
+				"allow_from": ["ou_patch_user"],
+				"settings": {
+					"app_id": "cli_patch_app",
+					"app_secret": "patch-secret",
+					"is_lark": true
+				}
+			}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	bc := cfg.Channels[config.ChannelFeishu]
+	if !bc.Enabled {
+		t.Fatal("feishu should be enabled after PATCH")
+	}
+	if len(bc.AllowFrom) != 1 || bc.AllowFrom[0] != "ou_patch_user" {
+		t.Fatalf("feishu allow_from = %#v, want [\"ou_patch_user\"]", bc.AllowFrom)
+	}
+	decoded, err := bc.GetDecoded()
+	if err != nil {
+		t.Fatalf("GetDecoded() error = %v", err)
+	}
+	feishuCfg := decoded.(*config.FeishuSettings)
+	if got := feishuCfg.AppID; got != "cli_patch_app" {
+		t.Fatalf("feishu app_id = %q, want %q", got, "cli_patch_app")
+	}
+	if got := feishuCfg.AppSecret.String(); got != "patch-secret" {
+		t.Fatalf("feishu app_secret = %q, want %q", got, "patch-secret")
+	}
+	if !feishuCfg.IsLark {
+		t.Fatal("feishu is_lark should be true after PATCH")
+	}
+}
+
+func TestHandlePatchConfig_CreatesMissingChannelWithTypeAndSecret(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	delete(cfg.Channels, config.ChannelIRC)
+	if err = config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"channel_list": {
+			"irc": {
+				"enabled": true,
+				"type": "irc",
+				"settings": {
+					"server": "irc.example.com",
+					"password": "irc-patch-password"
+				}
+			}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err = config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	bc := cfg.Channels[config.ChannelIRC]
+	if bc == nil {
+		t.Fatal("irc channel should exist after PATCH")
+	}
+	if got := bc.Type; got != config.ChannelIRC {
+		t.Fatalf("irc type = %q, want %q", got, config.ChannelIRC)
+	}
+	decoded, err := bc.GetDecoded()
+	if err != nil {
+		t.Fatalf("GetDecoded() error = %v", err)
+	}
+	ircCfg := decoded.(*config.IRCSettings)
+	if got := ircCfg.Server; got != "irc.example.com" {
+		t.Fatalf("irc server = %q, want %q", got, "irc.example.com")
+	}
+	if got := ircCfg.Password.String(); got != "irc-patch-password" {
+		t.Fatalf("irc password = %q, want %q", got, "irc-patch-password")
+	}
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile(configPath) error = %v", err)
+	}
+	if bytes.Contains(configData, []byte("irc-patch-password")) {
+		t.Fatalf("config file leaked irc password: %s", string(configData))
 	}
 }
 
@@ -389,6 +514,57 @@ func TestHandlePatchConfig_SavesDiscordTokenFromPayload(t *testing.T) {
 	}
 	if got := decoded.(*config.DiscordSettings).Token.String(); got != "discord-test-token" {
 		t.Fatalf("discord token = %q, want %q", got, "discord-test-token")
+	}
+}
+
+func TestHandlePatchConfig_DoesNotPersistShadowRegistryAuthTokenField(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"tools": {
+			"skills": {
+				"registries": {
+					"github": {
+						"_auth_token": "ghp-shadow-token"
+					}
+				}
+			}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	githubRegistry, ok := cfg.Tools.Skills.Registries.Get("github")
+	if !ok {
+		t.Fatal("github registry missing after PATCH")
+	}
+	if got := githubRegistry.AuthToken.String(); got != "ghp-shadow-token" {
+		t.Fatalf("github registry auth token = %q, want %q", got, "ghp-shadow-token")
+	}
+	if got := githubRegistry.BaseURL; got != "https://github.com" {
+		t.Fatalf("github registry base_url = %q, want %q", got, "https://github.com")
+	}
+
+	rawConfig, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile(configPath) error = %v", err)
+	}
+	if strings.Contains(string(rawConfig), "_auth_token") {
+		t.Fatalf("config.json should not persist _auth_token shadow field, got:\n%s", string(rawConfig))
 	}
 }
 

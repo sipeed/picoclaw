@@ -61,10 +61,18 @@ picoclaw gateway
 
 **4. Menu lệnh Telegram (tự động đăng ký khi khởi động)**
 
-PicoClaw hiện lưu trữ định nghĩa lệnh trong một registry chung. Khi khởi động, Telegram sẽ tự động đăng ký các lệnh bot được hỗ trợ (ví dụ `/start`, `/help`, `/show`, `/list`) để menu lệnh và hành vi runtime luôn đồng bộ.
+PicoClaw hiện lưu trữ định nghĩa lệnh trong một registry chung. Khi khởi động, Telegram sẽ tự động đăng ký các lệnh bot được hỗ trợ (ví dụ `/start`, `/help`, `/show`, `/list`, `/use`, `/btw`) để menu lệnh và hành vi runtime luôn đồng bộ.
 Đăng ký menu lệnh Telegram vẫn là UX khám phá cục bộ của kênh; thực thi lệnh chung được xử lý tập trung trong vòng lặp agent qua commands executor.
 
 Nếu đăng ký lệnh thất bại (lỗi tạm thời mạng/API), kênh vẫn khởi động và PicoClaw thử lại đăng ký trong nền.
+
+Ban cung co the quan ly skill da cai dat truc tiep tu Telegram:
+
+- `/list skills`
+- `/use <skill> <message>`
+- `/use <skill>` roi gui yeu cau that o tin nhan tiep theo
+- `/use clear`
+- `/btw <question>` de hoi them mot cau ngoai le ngay lap tuc ma khong thay doi lich su phien dang hoat dong; `/btw` duoc xu ly nhu mot truy van truc tiep khong dung cong cu va khong di vao luong thuc thi cong cu thong thuong
 
 </details>
 

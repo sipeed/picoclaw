@@ -438,22 +438,50 @@ func applyConfigSecretsFromMap(cfg *config.Config, raw map[string]any) {
 
 	// Handle tools secrets
 	tools, hasTools := asMapField(raw, "tools")
-	if hasTools {
-		skills, hasSkills := asMapField(tools, "skills")
-		if hasSkills {
-			if github, hasGithub := asMapField(skills, "github"); hasGithub {
-				if token, hasToken := getSecretString(github, "token"); hasToken {
-					cfg.Tools.Skills.Github.Token.Set(token)
-				}
+	if !hasTools {
+		return
+	}
+	skills, hasSkills := asMapField(tools, "skills")
+	if !hasSkills {
+		return
+	}
+	if github, hasGithub := asMapField(skills, "github"); hasGithub {
+		if token, hasToken := getSecretString(github, "token"); hasToken {
+			cfg.Tools.Skills.Github.Token.Set(token)
+		}
+	}
+	if registries, hasRegistries := asMapField(skills, "registries"); hasRegistries {
+		for registryName, rawRegistry := range registries {
+			registryMap, ok := rawRegistry.(map[string]any)
+			if !ok {
+				continue
 			}
-			registries, hasRegistries := asMapField(skills, "registries")
-			if hasRegistries {
-				if clawHub, hasClawHub := asMapField(registries, "clawhub"); hasClawHub {
-					if authToken, hasAuthToken := getSecretString(clawHub, "auth_token"); hasAuthToken {
-						cfg.Tools.Skills.Registries.ClawHub.AuthToken.Set(authToken)
-					}
-				}
+			if authToken, hasAuthToken := getSecretString(registryMap, "auth_token"); hasAuthToken {
+				registryCfg, _ := cfg.Tools.Skills.Registries.Get(registryName)
+				registryCfg.AuthToken.Set(authToken)
+				cfg.Tools.Skills.Registries.Set(registryName, registryCfg)
 			}
+		}
+		return
+	}
+
+	registriesList, hasRegistries := skills["registries"].([]any)
+	if !hasRegistries {
+		return
+	}
+	for _, rawRegistry := range registriesList {
+		registryMap, ok := rawRegistry.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := registryMap["name"].(string)
+		if name == "" {
+			continue
+		}
+		if authToken, hasAuthToken := getSecretString(registryMap, "auth_token"); hasAuthToken {
+			registryCfg, _ := cfg.Tools.Skills.Registries.Get(name)
+			registryCfg.AuthToken.Set(authToken)
+			cfg.Tools.Skills.Registries.Set(name, registryCfg)
 		}
 	}
 }

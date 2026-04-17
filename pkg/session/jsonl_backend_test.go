@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/memory"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
 )
 
@@ -175,5 +177,128 @@ func TestJSONLBackend_SummarizeFlow(t *testing.T) {
 	}
 	if history[0].Content != "msg 16" {
 		t.Errorf("first message = %q, want %q", history[0].Content, "msg 16")
+	}
+}
+
+func TestJSONLBackend_ResolveAliasAndPersistMetadata(t *testing.T) {
+	b := newBackend(t)
+
+	scope := &session.SessionScope{
+		Version:    session.ScopeVersionV1,
+		AgentID:    "main",
+		Channel:    "telegram",
+		Account:    "default",
+		Dimensions: []string{"chat"},
+		Values: map[string]string{
+			"chat": "group:c1",
+		},
+	}
+	b.EnsureSessionMetadata("canonical", scope, []string{"legacy"})
+
+	if got := b.ResolveSessionKey("legacy"); got != "canonical" {
+		t.Fatalf("ResolveSessionKey() = %q, want %q", got, "canonical")
+	}
+
+	b.AddMessage("legacy", "user", "hello through alias")
+	history := b.GetHistory("canonical")
+	if len(history) != 1 {
+		t.Fatalf("len(history) = %d, want 1", len(history))
+	}
+	if history[0].Content != "hello through alias" {
+		t.Fatalf("history[0].Content = %q, want %q", history[0].Content, "hello through alias")
+	}
+
+	resolvedScope := b.GetSessionScope("legacy")
+	if resolvedScope == nil {
+		t.Fatal("GetSessionScope() returned nil")
+	}
+	if resolvedScope.AgentID != scope.AgentID || resolvedScope.Values["chat"] != scope.Values["chat"] {
+		t.Fatalf("GetSessionScope() = %+v, want %+v", resolvedScope, scope)
+	}
+}
+
+func TestJSONLBackend_EnsureSessionMetadata_PromotesLegacyAliasHistory(t *testing.T) {
+	b := newBackend(t)
+
+	legacyKey := "agent:main:direct:legacy-user"
+	b.AddMessage(legacyKey, "user", "legacy history")
+	b.SetSummary(legacyKey, "legacy summary")
+
+	canonicalKey := session.BuildOpaqueSessionKey(legacyKey)
+	b.EnsureSessionMetadata(canonicalKey, &session.SessionScope{
+		Version: session.ScopeVersionV1,
+		AgentID: "main",
+	}, []string{legacyKey})
+
+	if got := b.ResolveSessionKey(legacyKey); got != canonicalKey {
+		t.Fatalf("ResolveSessionKey() = %q, want %q", got, canonicalKey)
+	}
+	history := b.GetHistory(canonicalKey)
+	if len(history) != 1 || history[0].Content != "legacy history" {
+		t.Fatalf("promoted history = %+v", history)
+	}
+	if summary := b.GetSummary(canonicalKey); summary != "legacy summary" {
+		t.Fatalf("promoted summary = %q, want %q", summary, "legacy summary")
+	}
+}
+
+func TestJSONLBackend_EnsureSessionMetadata_PromotesLegacyPicoDirectAliasHistory(t *testing.T) {
+	b := newBackend(t)
+
+	legacyKey := "agent:main:pico:direct:pico:session-123"
+	b.AddMessage(legacyKey, "user", "legacy pico history")
+
+	scope := &session.SessionScope{
+		Version:    session.ScopeVersionV1,
+		AgentID:    "main",
+		Channel:    "pico",
+		Account:    "default",
+		Dimensions: []string{"sender"},
+		Values: map[string]string{
+			"sender": "pico-user",
+		},
+	}
+	allocation := session.AllocateRouteSession(session.AllocationInput{
+		AgentID: "main",
+		Context: bus.InboundContext{
+			Channel:  "pico",
+			Account:  "default",
+			ChatID:   "pico:session-123",
+			ChatType: "direct",
+			SenderID: "pico-user",
+		},
+		SessionPolicy: routing.SessionPolicy{
+			Dimensions: []string{"sender"},
+		},
+	})
+
+	b.EnsureSessionMetadata(allocation.SessionKey, scope, allocation.SessionAliases)
+
+	if got := b.ResolveSessionKey(legacyKey); got != allocation.SessionKey {
+		t.Fatalf("ResolveSessionKey() = %q, want %q", got, allocation.SessionKey)
+	}
+	history := b.GetHistory(allocation.SessionKey)
+	if len(history) != 1 || history[0].Content != "legacy pico history" {
+		t.Fatalf("promoted history = %+v", history)
+	}
+}
+
+func TestJSONLBackend_EnsureSessionMetadata_DoesNotOverwriteNonEmptyCanonicalHistory(t *testing.T) {
+	b := newBackend(t)
+
+	canonicalKey := session.BuildOpaqueSessionKey("agent:main:direct:current-user")
+	legacyKey := "agent:main:direct:legacy-user"
+
+	b.AddMessage(canonicalKey, "user", "current canonical history")
+	b.AddMessage(legacyKey, "user", "legacy history")
+
+	b.EnsureSessionMetadata(canonicalKey, &session.SessionScope{
+		Version: session.ScopeVersionV1,
+		AgentID: "main",
+	}, []string{legacyKey})
+
+	history := b.GetHistory(canonicalKey)
+	if len(history) != 1 || history[0].Content != "current canonical history" {
+		t.Fatalf("canonical history overwritten: %+v", history)
 	}
 }

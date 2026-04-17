@@ -89,6 +89,12 @@ func TestParseGitHubRef(t *testing.T) {
 			wantRef:      "main",
 			wantSubPath:  "",
 		},
+		{
+			name:           "invalid non github host",
+			repo:           "https://gitlab.com/sipeed/picoclaw/-/tree/main/skills/test",
+			wantErr:        true,
+			wantErrContain: `invalid GitHub URL host "gitlab.com"`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -124,6 +130,268 @@ func TestParseGitHubRef(t *testing.T) {
 				t.Errorf("parseGitHubRef() subPath = %v, want %v", ref.SubPath, tt.wantSubPath)
 			}
 		})
+	}
+}
+
+func TestParseGitHubRefWithBaseURL(t *testing.T) {
+	ref, err := parseGitHubRefWithBaseURL(
+		"https://ghe.example.com/git/org/repo/tree/dev/skills/test",
+		"https://ghe.example.com/git",
+		"main",
+	)
+	if err != nil {
+		t.Fatalf("parseGitHubRefWithBaseURL() unexpected error = %v", err)
+	}
+	if ref.Owner != "org" {
+		t.Fatalf("owner = %q, want org", ref.Owner)
+	}
+	if ref.RepoName != "repo" {
+		t.Fatalf("repo = %q, want repo", ref.RepoName)
+	}
+	if ref.Ref != "dev" {
+		t.Fatalf("ref = %q, want dev", ref.Ref)
+	}
+	if ref.SubPath != "skills/test" {
+		t.Fatalf("subPath = %q, want skills/test", ref.SubPath)
+	}
+
+	dirName, err := githubInstallDirNameWithBaseURL(
+		"https://ghe.example.com/git/org/repo/tree/dev/skills/test",
+		"https://ghe.example.com/git",
+	)
+	if err != nil {
+		t.Fatalf("githubInstallDirNameWithBaseURL() unexpected error = %v", err)
+	}
+	if dirName != "test" {
+		t.Fatalf("dirName = %q, want test", dirName)
+	}
+
+	dirName, err = githubInstallDirNameWithBaseURL(
+		"https://ghe.example.com/git/org/repo/blob/dev/skills/test/SKILL.md",
+		"https://ghe.example.com/git",
+	)
+	if err != nil {
+		t.Fatalf("githubInstallDirNameWithBaseURL() unexpected error for blob skill url = %v", err)
+	}
+	if dirName != "test" {
+		t.Fatalf("dirName for nested blob skill = %q, want test", dirName)
+	}
+
+	dirName, err = githubInstallDirNameWithBaseURL(
+		"https://ghe.example.com/git/org/repo/blob/dev/SKILL.md",
+		"https://ghe.example.com/git",
+	)
+	if err != nil {
+		t.Fatalf("githubInstallDirNameWithBaseURL() unexpected error for repo root blob skill = %v", err)
+	}
+	if dirName != "repo" {
+		t.Fatalf("dirName for repo root blob skill = %q, want repo", dirName)
+	}
+
+	ref, err = parseGitHubRefWithBaseURL("https://ghe.example.com/git/org/repo", "https://ghe.example.com/git", "")
+	if err != nil {
+		t.Fatalf("parseGitHubRefWithBaseURL() unexpected error = %v", err)
+	}
+	if ref.Ref != "" {
+		t.Fatalf("ref = %q, want empty", ref.Ref)
+	}
+
+	ref, err = parseGitHubRefWithBaseURL(
+		"https://github.com/org/repo/tree/feature/skills-registry/.agents/skills/pr-review",
+		"",
+		"main",
+	)
+	if err != nil {
+		t.Fatalf("parseGitHubRefWithBaseURL() unexpected error for slash branch = %v", err)
+	}
+	if ref.Ref != "feature/skills-registry" {
+		t.Fatalf("ref = %q, want feature/skills-registry", ref.Ref)
+	}
+	if ref.SubPath != ".agents/skills/pr-review" {
+		t.Fatalf("subPath = %q, want .agents/skills/pr-review", ref.SubPath)
+	}
+
+	_, err = parseGitHubRefWithBaseURL(
+		"https://gitlab.example.com/org/repo/-/tree/dev/skills/test",
+		"https://ghe.example.com/git",
+		"main",
+	)
+	if err == nil {
+		t.Fatal("parseGitHubRefWithBaseURL() error = nil, want invalid host error")
+	}
+	if !strings.Contains(err.Error(), `invalid GitHub URL host "gitlab.example.com"`) {
+		t.Fatalf("unexpected error = %v", err)
+	}
+
+	_, err = parseGitHubRefWithBaseURL(
+		"http://ghe.example.com/git/org/repo/tree/dev/skills/test",
+		"https://ghe.example.com/git",
+		"main",
+	)
+	if err == nil {
+		t.Fatal("parseGitHubRefWithBaseURL() error = nil, want invalid host error for scheme mismatch")
+	}
+	if !strings.Contains(err.Error(), `invalid GitHub URL host "ghe.example.com"`) {
+		t.Fatalf("unexpected scheme mismatch error = %v", err)
+	}
+
+	_, err = parseGitHubRefWithBaseURL(
+		"https://github.com/org/repo/pull/2442",
+		"",
+		"main",
+	)
+	if err == nil {
+		t.Fatal("parseGitHubRefWithBaseURL() error = nil, want invalid repository URL path error")
+	}
+	if !strings.Contains(err.Error(), `invalid GitHub repository URL path "/org/repo/pull/2442"`) {
+		t.Fatalf("unexpected PR URL error = %v", err)
+	}
+
+	_, err = parseGitHubRefWithBaseURL(
+		"https://github.com/org/repo/tree",
+		"",
+		"main",
+	)
+	if err == nil {
+		t.Fatal("parseGitHubRefWithBaseURL() error = nil, want invalid tree URL path error")
+	}
+	if !strings.Contains(err.Error(), `invalid GitHub tree URL path "/org/repo/tree"`) {
+		t.Fatalf("unexpected short tree URL error = %v", err)
+	}
+}
+
+func TestParseGitHubTargetWithBaseURLPreservesSourceEndpoints(t *testing.T) {
+	target, err := parseGitHubTargetWithBaseURL(
+		"https://github.com/org/repo/tree/main/.agents/skills/pr-review",
+		"https://ghe.example.com/git",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("parseGitHubTargetWithBaseURL() unexpected error = %v", err)
+	}
+	if target.Endpoints.WebBaseURL != "https://github.com" {
+		t.Fatalf("web base = %q, want https://github.com", target.Endpoints.WebBaseURL)
+	}
+	if target.Endpoints.APIBaseURL != "https://api.github.com" {
+		t.Fatalf("api base = %q, want https://api.github.com", target.Endpoints.APIBaseURL)
+	}
+	if target.Endpoints.RawBaseURL != "https://raw.githubusercontent.com" {
+		t.Fatalf("raw base = %q, want https://raw.githubusercontent.com", target.Endpoints.RawBaseURL)
+	}
+	if target.Ref.Owner != "org" || target.Ref.RepoName != "repo" {
+		t.Fatalf("unexpected ref = %+v", target.Ref)
+	}
+	if target.Ref.Ref != "main" {
+		t.Fatalf("ref = %q, want main", target.Ref.Ref)
+	}
+	if target.Ref.SubPath != ".agents/skills/pr-review" {
+		t.Fatalf("subPath = %q, want .agents/skills/pr-review", target.Ref.SubPath)
+	}
+}
+
+func TestParseGitHubTargetWithBaseURLPreservesSlashBranchForRepoRootBlobSkill(t *testing.T) {
+	target, err := parseGitHubTargetWithBaseURL(
+		"https://github.com/org/repo/blob/feature/skills-registry/SKILL.md",
+		"",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("parseGitHubTargetWithBaseURL() unexpected error = %v", err)
+	}
+	if target.Ref.Ref != "feature/skills-registry" {
+		t.Fatalf("ref = %q, want feature/skills-registry", target.Ref.Ref)
+	}
+	if target.Ref.SubPath != "SKILL.md" {
+		t.Fatalf("subPath = %q, want SKILL.md", target.Ref.SubPath)
+	}
+}
+
+func TestSkillInstallerResolveGitHubRefUsesDefaultBranch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v3/repos/org/repo":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"default_branch":"master"}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	installer, err := NewSkillInstallerWithBaseURL(t.TempDir(), server.URL, "", "")
+	if err != nil {
+		t.Fatalf("NewSkillInstallerWithBaseURL() error = %v", err)
+	}
+
+	target, err := installer.resolveGitHubTarget(context.Background(), "org/repo/skills/test", "")
+	if err != nil {
+		t.Fatalf("resolveGitHubTarget() error = %v", err)
+	}
+	ref := target.Ref
+	if ref.Ref != "master" {
+		t.Fatalf("ref = %q, want master", ref.Ref)
+	}
+	if ref.SubPath != "skills/test" {
+		t.Fatalf("subPath = %q, want skills/test", ref.SubPath)
+	}
+}
+
+func TestSkillInstallerInstallFromGitHubToDirSupportsBlobSkillURL(t *testing.T) {
+	tmpDir := t.TempDir()
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v3/repos/org/repo/contents/.agents/skills/pr-review":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"type":"file","name":"SKILL.md","download_url":"` + server.URL + `/raw/org/repo/main/.agents/skills/pr-review/SKILL.md"},
+				{"type":"dir","name":"scripts","url":"` + server.URL + `/api/v3/repos/org/repo/contents/.agents/skills/pr-review/scripts?ref=main"}
+			]`))
+		case "/api/v3/repos/org/repo/contents/.agents/skills/pr-review/scripts":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"type":"file","name":"check.sh","download_url":"` + server.URL + `/raw/org/repo/main/.agents/skills/pr-review/scripts/check.sh"}
+			]`))
+		case "/raw/org/repo/main/.agents/skills/pr-review/SKILL.md":
+			_, _ = w.Write([]byte("---\nname: pr-review\ndescription: PR review skill\n---\n# PR Review\n"))
+		case "/raw/org/repo/main/.agents/skills/pr-review/scripts/check.sh":
+			_, _ = w.Write([]byte("#!/bin/sh\nexit 0\n"))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	installer, err := NewSkillInstallerWithBaseURL(tmpDir, server.URL, "", "")
+	if err != nil {
+		t.Fatalf("NewSkillInstallerWithBaseURL() error = %v", err)
+	}
+
+	targetDir := filepath.Join(tmpDir, "skills", "pr-review")
+	result, err := installer.InstallFromGitHubToDir(
+		context.Background(),
+		server.URL+"/org/repo/blob/main/.agents/skills/pr-review/SKILL.md",
+		"",
+		targetDir,
+	)
+	if err != nil {
+		t.Fatalf("InstallFromGitHubToDir() error = %v", err)
+	}
+	if result.Version != "main" {
+		t.Fatalf("version = %q, want main", result.Version)
+	}
+
+	content, err := os.ReadFile(filepath.Join(targetDir, "SKILL.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(SKILL.md) error = %v", err)
+	}
+	if !strings.Contains(string(content), "name: pr-review") {
+		t.Fatalf("SKILL.md content = %q, want skill metadata", string(content))
+	}
+
+	scriptPath := filepath.Join(targetDir, "scripts", "check.sh")
+	if _, err := os.Stat(scriptPath); err != nil {
+		t.Fatalf("Stat(scripts/check.sh) error = %v", err)
 	}
 }
 
@@ -197,6 +465,16 @@ func TestNewSkillInstaller(t *testing.T) {
 		t.Errorf("githubToken = %v, want 'test-token'", installer.githubToken)
 	}
 
+	if installer.githubBaseURL != "https://github.com" {
+		t.Errorf("githubBaseURL = %v, want https://github.com", installer.githubBaseURL)
+	}
+	if installer.githubAPIBaseURL != "https://api.github.com" {
+		t.Errorf("githubAPIBaseURL = %v, want https://api.github.com", installer.githubAPIBaseURL)
+	}
+	if installer.githubRawBaseURL != "https://raw.githubusercontent.com" {
+		t.Errorf("githubRawBaseURL = %v, want https://raw.githubusercontent.com", installer.githubRawBaseURL)
+	}
+
 	if installer.proxy != "" {
 		t.Errorf("proxy = %v, want empty", installer.proxy)
 	}
@@ -231,6 +509,24 @@ func TestNewSkillInstaller_WithProxy(t *testing.T) {
 
 	if transport.Proxy == nil {
 		t.Error("transport.Proxy is nil, expected non-nil")
+	}
+}
+
+func TestNewSkillInstaller_WithBaseURL(t *testing.T) {
+	tmpDir := t.TempDir()
+	installer, err := NewSkillInstallerWithBaseURL(tmpDir, "https://github.example.com", "test-token", "")
+	if err != nil {
+		t.Fatalf("NewSkillInstallerWithBaseURL() error = %v", err)
+	}
+
+	if installer.githubBaseURL != "https://github.example.com" {
+		t.Errorf("githubBaseURL = %v, want https://github.example.com", installer.githubBaseURL)
+	}
+	if installer.githubAPIBaseURL != "https://github.example.com/api/v3" {
+		t.Errorf("githubAPIBaseURL = %v, want https://github.example.com/api/v3", installer.githubAPIBaseURL)
+	}
+	if installer.githubRawBaseURL != "https://github.example.com/raw" {
+		t.Errorf("githubRawBaseURL = %v, want https://github.example.com/raw", installer.githubRawBaseURL)
 	}
 }
 

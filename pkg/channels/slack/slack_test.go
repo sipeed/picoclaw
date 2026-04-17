@@ -53,6 +53,24 @@ func TestParseSlackChatID(t *testing.T) {
 	}
 }
 
+func TestResolveSlackOutboundTarget_PrefersContextTopicID(t *testing.T) {
+	deliveryChatID, channelID, threadTS := resolveSlackOutboundTarget("C123456", &bus.InboundContext{
+		Channel: "slack",
+		ChatID:  "C123456",
+		TopicID: "1234567890.123456",
+	})
+
+	if deliveryChatID != "C123456/1234567890.123456" {
+		t.Fatalf("deliveryChatID = %q, want %q", deliveryChatID, "C123456/1234567890.123456")
+	}
+	if channelID != "C123456" {
+		t.Fatalf("channelID = %q, want %q", channelID, "C123456")
+	}
+	if threadTS != "1234567890.123456" {
+		t.Fatalf("threadTS = %q, want %q", threadTS, "1234567890.123456")
+	}
+}
+
 func TestStripBotMention(t *testing.T) {
 	ch := &SlackChannel{botUserID: "U12345BOT"}
 

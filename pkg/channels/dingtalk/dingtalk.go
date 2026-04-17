@@ -185,16 +185,15 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 		"session_webhook":   data.SessionWebhook,
 	}
 
-	var peer bus.Peer
+	var (
+		chatType    string
+		isMentioned bool
+	)
 	if data.ConversationType == "1" {
-		peerID := senderID
-		if peerID == "" {
-			peerID = chatID
-		}
-		peer = bus.Peer{Kind: "direct", ID: peerID}
+		chatType = "direct"
 	} else {
-		peer = bus.Peer{Kind: "group", ID: data.ConversationId}
-		isMentioned := data.IsInAtList
+		chatType = "group"
+		isMentioned = data.IsInAtList
 		if isMentioned {
 			content = stripLeadingAtMentions(content)
 		}
@@ -232,8 +231,21 @@ func (c *DingTalkChannel) onChatBotMessageReceived(
 		return nil, nil
 	}
 
-	// Handle the message through the base channel
-	c.HandleMessage(ctx, peer, "", resolvedSenderID, chatID, content, nil, metadata, sender)
+	inboundCtx := bus.InboundContext{
+		Channel:   "dingtalk",
+		ChatID:    chatID,
+		ChatType:  chatType,
+		SenderID:  resolvedSenderID,
+		Mentioned: isMentioned,
+		Raw:       metadata,
+	}
+	if data.SessionWebhook != "" {
+		inboundCtx.ReplyHandles = map[string]string{
+			"session_webhook": data.SessionWebhook,
+		}
+	}
+
+	c.HandleInboundContext(ctx, chatID, content, nil, inboundCtx, sender)
 
 	// Return nil to indicate we've handled the message asynchronously
 	// The response will be sent through the message bus

@@ -39,11 +39,11 @@ var allowedInlineImageMIMETypes = map[string]struct{}{
 	"image/bmp":  {},
 }
 
-func outboundMessageIsThought(metadata map[string]string) bool {
-	if len(metadata) == 0 {
+func outboundMessageIsThought(msg bus.OutboundMessage) bool {
+	if len(msg.Context.Raw) == 0 {
 		return false
 	}
-	return strings.EqualFold(strings.TrimSpace(metadata["message_kind"]), MessageKindThought)
+	return strings.EqualFold(strings.TrimSpace(msg.Context.Raw["message_kind"]), MessageKindThought)
 }
 
 // writeJSON sends a JSON message to the connection with write locking.
@@ -260,7 +260,7 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 	if !c.IsRunning() {
 		return nil, channels.ErrNotRunning
 	}
-	isThought := outboundMessageIsThought(msg.Metadata)
+	isThought := outboundMessageIsThought(msg)
 
 	outMsg := newMessage(TypeMessageCreate, map[string]any{
 		PayloadKeyContent: msg.Content,
@@ -578,8 +578,6 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 	chatID := "pico:" + sessionID
 	senderID := "pico-user"
 
-	peer := bus.Peer{Kind: "direct", ID: "pico:" + sessionID}
-
 	metadata := map[string]string{
 		"platform":   "pico",
 		"session_id": sessionID,
@@ -602,7 +600,16 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 		return
 	}
 
-	c.HandleMessage(c.ctx, peer, msg.ID, senderID, chatID, content, media, metadata, sender)
+	inboundCtx := bus.InboundContext{
+		Channel:   "pico",
+		ChatID:    chatID,
+		ChatType:  "direct",
+		SenderID:  senderID,
+		MessageID: msg.ID,
+		Raw:       metadata,
+	}
+
+	c.HandleInboundContext(c.ctx, chatID, content, media, inboundCtx, sender)
 }
 
 // truncate truncates a string to maxLen runes.

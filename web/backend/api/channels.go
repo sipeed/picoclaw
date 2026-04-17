@@ -117,8 +117,11 @@ func buildChannelConfigResponse(cfg *config.Config, item channelCatalogItem) cha
 
 	bc := cfg.Channels.Get(item.ConfigKey)
 	if bc == nil {
-		resp.Config = map[string]any{}
-		return resp
+		bc = defaultChannelConfig(item.ConfigKey)
+		if bc == nil {
+			resp.Config = map[string]any{}
+			return resp
+		}
 	}
 
 	// Detect configured secrets by checking the raw Settings JSON
@@ -126,19 +129,45 @@ func buildChannelConfigResponse(cfg *config.Config, item channelCatalogItem) cha
 	resp.ConfiguredSecrets = secrets
 
 	// Parse settings into a generic map for JSON response
-	var settings map[string]any
-	if err := json.Unmarshal(bc.Settings, &settings); err != nil {
-		resp.Config = map[string]any{}
-		return resp
+	settings := map[string]any{}
+	if len(bc.Settings) > 0 {
+		if err := json.Unmarshal(bc.Settings, &settings); err != nil {
+			resp.Config = map[string]any{}
+			return resp
+		}
 	}
 
 	// Remove secure fields from response
 	for _, key := range secrets {
 		delete(settings, key)
 	}
+	addChannelCommonConfig(settings, bc)
 	resp.Config = settings
 
 	return resp
+}
+
+func defaultChannelConfig(configKey string) *config.Channel {
+	return config.DefaultConfig().Channels.Get(configKey)
+}
+
+func addChannelCommonConfig(settings map[string]any, bc *config.Channel) {
+	settings["enabled"] = bc.Enabled
+	if len(bc.AllowFrom) > 0 {
+		settings["allow_from"] = []string(bc.AllowFrom)
+	}
+	if bc.ReasoningChannelID != "" {
+		settings["reasoning_channel_id"] = bc.ReasoningChannelID
+	}
+	if bc.GroupTrigger.MentionOnly || len(bc.GroupTrigger.Prefixes) > 0 {
+		settings["group_trigger"] = bc.GroupTrigger
+	}
+	if bc.Typing.Enabled {
+		settings["typing"] = bc.Typing
+	}
+	if bc.Placeholder.Enabled || len(bc.Placeholder.Text) > 0 {
+		settings["placeholder"] = bc.Placeholder
+	}
 }
 
 func detectConfiguredSecrets(settings config.RawNode, channelName string) []string {

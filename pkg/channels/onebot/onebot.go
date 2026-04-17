@@ -995,8 +995,8 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 
 	senderID := strconv.FormatInt(userID, 10)
 	var chatID string
-
-	var peer bus.Peer
+	var contextChatID string
+	var contextChatType string
 
 	metadata := map[string]string{}
 
@@ -1007,12 +1007,14 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 	switch raw.MessageType {
 	case "private":
 		chatID = "private:" + senderID
-		peer = bus.Peer{Kind: "direct", ID: senderID}
+		contextChatID = senderID
+		contextChatType = "direct"
 
 	case "group":
 		groupIDStr := strconv.FormatInt(groupID, 10)
 		chatID = "group:" + groupIDStr
-		peer = bus.Peer{Kind: "group", ID: groupIDStr}
+		contextChatID = groupIDStr
+		contextChatType = "group"
 		metadata["group_id"] = groupIDStr
 
 		senderUserID, _ := parseJSONInt64(sender.UserID)
@@ -1076,7 +1078,18 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 		return
 	}
 
-	c.HandleMessage(c.ctx, peer, messageID, senderID, chatID, content, parsed.Media, metadata, senderInfo)
+	inboundCtx := bus.InboundContext{
+		Channel:          c.Name(),
+		ChatID:           contextChatID,
+		ChatType:         contextChatType,
+		SenderID:         senderID,
+		MessageID:        messageID,
+		Mentioned:        isBotMentioned,
+		ReplyToMessageID: parsed.ReplyTo,
+		Raw:              metadata,
+	}
+
+	c.HandleInboundContext(c.ctx, chatID, content, parsed.Media, inboundCtx, senderInfo)
 }
 
 func (c *OneBotChannel) isDuplicate(messageID string) bool {

@@ -170,13 +170,19 @@ This is saved to the session via `AddFullMessage` and sent to the model, so it i
 
 ## Automatic bus drain
 
-When the agent loop (`Run()`) starts processing a message, it spawns a background goroutine that keeps consuming new inbound messages from the bus. These messages are automatically redirected into the steering queue via `Steer()`. This means:
+When the agent loop (`Run()`) starts, it reads inbound messages from a shared message bus. The routing logic determines how each message is handled:
 
-- Users on any channel (Telegram, Discord, etc.) don't need to do anything special — their messages are automatically captured as steering when the agent is busy
-- Audio messages are transcribed before being steered, so the agent receives text. If transcription fails, the original (non-transcribed) message is steered as-is
-- Only messages that resolve to the **same steering scope** as the active turn are redirected. Messages for other chats/sessions are requeued onto the inbound bus so they can be processed normally
-- `system` inbound messages are not treated as steering input
-- When `processMessage` finishes, the drain goroutine is canceled and normal message consumption resumes
+1. **No active turn for the message's session** — the message is dispatched to a **worker goroutine** that processes the full turn (LLM calls, tool execution, steering drain)
+2. **An active turn already exists for the same session** — the message is enqueued directly into that session's **steering queue** via `enqueueSteeringMessage`. No background drain goroutine is needed
+3. **Non-routable message** (e.g. `system`) — processed synchronously in the main loop
+
+This design enables **parallel processing of messages from different sessions** while keeping same-session messages strictly sequential. Key implications:
+
+- Messages from different users/channels are processed **concurrently** (up to `max_parallel_turns`)
+- Messages from the same session are **serialized** — subsequent messages go to the steering queue
+- Users don't need to do anything special — their messages are automatically captured as steering when the agent is busy for their session
+- Audio messages are transcribed within the worker that processes the turn, so the agent receives text
+- `system` inbound messages are processed immediately and do not trigger steering
 
 ## Steering with media
 

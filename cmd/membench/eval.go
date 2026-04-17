@@ -36,6 +36,7 @@ type AggMetrics struct {
 	OverallHitRate float64             `json:"overallHitRate"`
 	ByCategory     map[int]*CatMetrics `json:"byCategory"`
 	TotalQuestions int                 `json:"totalQuestions"`
+	ValidF1Count   int                 `json:"validF1Count"`
 }
 
 // CatMetrics holds metrics for a single category.
@@ -43,6 +44,7 @@ type CatMetrics struct {
 	F1            float64 `json:"f1"`
 	HitRate       float64 `json:"hitRate"`
 	QuestionCount int     `json:"questionCount"`
+	ValidF1Count  int     `json:"validF1Count"`
 }
 
 // EvalLegacy evaluates using legacy session store (raw history + budget truncation).
@@ -201,38 +203,64 @@ func EvalSeahorse(
 
 // aggregateMetrics computes overall and per-category metrics.
 func aggregateMetrics(qaResults []QAResult) AggMetrics {
-	byCat := map[int]*CatMetrics{}
+	type catAccum struct {
+		f1Sum        float64
+		f1Count      int
+		hitRateSum   float64
+		hitRateCount int
+	}
+	byCatAcc := map[int]*catAccum{}
 	totalF1 := 0.0
 	totalHitRate := 0.0
+	validF1Count := 0
 	for _, qr := range qaResults {
-		totalF1 += qr.TokenF1
-		totalHitRate += qr.HitRate
-		cat, ok := byCat[qr.Category]
-		if !ok {
-			cat = &CatMetrics{}
-			byCat[qr.Category] = cat
+		// Skip sentinel -1.0 scores (LLM API/parse failures) from F1 averaging.
+		if qr.TokenF1 >= 0 {
+			totalF1 += qr.TokenF1
+			validF1Count++
 		}
-		cat.F1 += qr.TokenF1
-		cat.HitRate += qr.HitRate
-		cat.QuestionCount++
+		totalHitRate += qr.HitRate
+		acc, ok := byCatAcc[qr.Category]
+		if !ok {
+			acc = &catAccum{}
+			byCatAcc[qr.Category] = acc
+		}
+		if qr.TokenF1 >= 0 {
+			acc.f1Sum += qr.TokenF1
+			acc.f1Count++
+		}
+		acc.hitRateSum += qr.HitRate
+		acc.hitRateCount++
 	}
-	n := len(qaResults)
-	if n == 0 {
-		n = 1
+	nHit := len(qaResults)
+	if nHit == 0 {
+		nHit = 1
 	}
-	agg := AggMetrics{
-		OverallF1:      totalF1 / float64(n),
-		OverallHitRate: totalHitRate / float64(n),
+	byCat := map[int]*CatMetrics{}
+	for cat, acc := range byCatAcc {
+		cm := &CatMetrics{
+			QuestionCount: acc.hitRateCount,
+			ValidF1Count:  acc.f1Count,
+		}
+		if acc.f1Count > 0 {
+			cm.F1 = acc.f1Sum / float64(acc.f1Count)
+		}
+		if acc.hitRateCount > 0 {
+			cm.HitRate = acc.hitRateSum / float64(acc.hitRateCount)
+		}
+		byCat[cat] = cm
+	}
+	var overallF1 float64
+	if validF1Count > 0 {
+		overallF1 = totalF1 / float64(validF1Count)
+	}
+	return AggMetrics{
+		OverallF1:      overallF1,
+		OverallHitRate: totalHitRate / float64(nHit),
 		ByCategory:     byCat,
 		TotalQuestions: len(qaResults),
+		ValidF1Count:   validF1Count,
 	}
-	for _, cat := range agg.ByCategory {
-		if cat.QuestionCount > 0 {
-			cat.F1 /= float64(cat.QuestionCount)
-			cat.HitRate /= float64(cat.QuestionCount)
-		}
-	}
-	return agg
 }
 
 // SaveResults writes per-sample eval results to JSON files.
@@ -277,27 +305,43 @@ func SaveAggregated(results []EvalResult, outDir string) error {
 func computeModeAgg(results []EvalResult) AggMetrics {
 	agg := AggMetrics{ByCategory: map[int]*CatMetrics{}}
 	for _, r := range results {
-		agg.OverallF1 += r.Agg.OverallF1 * float64(r.Agg.TotalQuestions)
+		// Backward compat: old eval JSON (token mode) without ValidF1Count → use TotalQuestions.
+		// LLM modes may legitimately have ValidF1Count==0 (all failures).
+		vf1 := r.Agg.ValidF1Count
+		if vf1 == 0 && r.Agg.TotalQuestions > 0 && !strings.HasSuffix(r.Mode, "-llm") {
+			vf1 = r.Agg.TotalQuestions
+		}
+		agg.OverallF1 += r.Agg.OverallF1 * float64(vf1)
 		agg.OverallHitRate += r.Agg.OverallHitRate * float64(r.Agg.TotalQuestions)
 		agg.TotalQuestions += r.Agg.TotalQuestions
+		agg.ValidF1Count += vf1
 		for cat, cm := range r.Agg.ByCategory {
 			existing, ok := agg.ByCategory[cat]
 			if !ok {
 				existing = &CatMetrics{}
 				agg.ByCategory[cat] = existing
 			}
-			existing.F1 += cm.F1 * float64(cm.QuestionCount)
+			cvf1 := cm.ValidF1Count
+			if cvf1 == 0 && cm.QuestionCount > 0 && !strings.HasSuffix(r.Mode, "-llm") {
+				cvf1 = cm.QuestionCount
+			}
+			existing.F1 += cm.F1 * float64(cvf1)
 			existing.HitRate += cm.HitRate * float64(cm.QuestionCount)
 			existing.QuestionCount += cm.QuestionCount
+			existing.ValidF1Count += cvf1
 		}
 	}
+	if agg.ValidF1Count > 0 {
+		agg.OverallF1 /= float64(agg.ValidF1Count)
+	}
 	if agg.TotalQuestions > 0 {
-		agg.OverallF1 /= float64(agg.TotalQuestions)
 		agg.OverallHitRate /= float64(agg.TotalQuestions)
 	}
 	for _, cat := range agg.ByCategory {
+		if cat.ValidF1Count > 0 {
+			cat.F1 /= float64(cat.ValidF1Count)
+		}
 		if cat.QuestionCount > 0 {
-			cat.F1 /= float64(cat.QuestionCount)
 			cat.HitRate /= float64(cat.QuestionCount)
 		}
 	}
@@ -359,7 +403,9 @@ func printSection(title string, results []EvalResult) {
 
 // PrintComparison outputs a human-readable comparison table to stdout.
 func PrintComparison(results []EvalResult, llmResults []EvalResult) {
-	printSection("No LLM generation", results)
+	if len(results) > 0 {
+		printSection("No LLM generation", results)
+	}
 	if len(llmResults) > 0 {
 		printSection("With LLM", llmResults)
 	}

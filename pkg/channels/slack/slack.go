@@ -117,7 +117,7 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]str
 		return nil, channels.ErrNotRunning
 	}
 
-	channelID, threadTS := parseSlackChatID(msg.ChatID)
+	deliveryChatID, channelID, threadTS := resolveSlackOutboundTarget(msg.ChatID, &msg.Context)
 	if channelID == "" {
 		return nil, fmt.Errorf("invalid slack chat ID: %s", msg.ChatID)
 	}
@@ -139,7 +139,7 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]str
 		return nil, fmt.Errorf("slack send: %w", channels.ErrTemporary)
 	}
 
-	if ref, ok := c.pendingAcks.LoadAndDelete(msg.ChatID); ok {
+	if ref, ok := c.pendingAcks.LoadAndDelete(deliveryChatID); ok {
 		msgRef := ref.(slackMessageRef)
 		c.api.AddReaction("white_check_mark", slack.ItemRef{
 			Channel:   msgRef.ChannelID,
@@ -161,7 +161,7 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 		return nil, channels.ErrNotRunning
 	}
 
-	channelID, _ := parseSlackChatID(msg.ChatID)
+	_, channelID, threadTS := resolveSlackMediaOutboundTarget(msg.ChatID, &msg.Context)
 	if channelID == "" {
 		return nil, fmt.Errorf("invalid slack chat ID: %s", msg.ChatID)
 	}
@@ -192,10 +192,11 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 		}
 
 		_, err = c.api.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
-			Channel:  channelID,
-			File:     localPath,
-			Filename: filename,
-			Title:    title,
+			Channel:         channelID,
+			ThreadTimestamp: threadTS,
+			File:            localPath,
+			Filename:        filename,
+			Title:           title,
 		})
 		if err != nil {
 			logger.ErrorCF("slack", "Failed to upload media", map[string]any{
@@ -360,13 +361,9 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 	}
 
 	peerKind := "channel"
-	peerID := channelID
 	if strings.HasPrefix(channelID, "D") {
 		peerKind = "direct"
-		peerID = senderID
 	}
-
-	peer := bus.Peer{Kind: peerKind, ID: peerID}
 
 	metadata := map[string]string{
 		"message_ts": messageTS,
@@ -383,7 +380,22 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 		"has_thread": threadTS != "",
 	})
 
-	c.HandleMessage(c.ctx, peer, messageTS, senderID, chatID, content, mediaPaths, metadata, sender)
+	inboundCtx := bus.InboundContext{
+		Channel:   c.Name(),
+		Account:   c.teamID,
+		ChatID:    channelID,
+		ChatType:  peerKind,
+		SenderID:  senderID,
+		MessageID: messageTS,
+		SpaceID:   c.teamID,
+		SpaceType: "workspace",
+		Raw:       metadata,
+	}
+	if threadTS != "" {
+		inboundCtx.TopicID = threadTS
+	}
+
+	c.HandleInboundContext(c.ctx, chatID, content, mediaPaths, inboundCtx, sender)
 }
 
 func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
@@ -431,13 +443,9 @@ func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
 	}
 
 	mentionPeerKind := "channel"
-	mentionPeerID := channelID
 	if strings.HasPrefix(channelID, "D") {
 		mentionPeerKind = "direct"
-		mentionPeerID = senderID
 	}
-
-	mentionPeer := bus.Peer{Kind: mentionPeerKind, ID: mentionPeerID}
 
 	metadata := map[string]string{
 		"message_ts": messageTS,
@@ -447,8 +455,21 @@ func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
 		"is_mention": "true",
 		"team_id":    c.teamID,
 	}
+	inboundCtx := bus.InboundContext{
+		Channel:   c.Name(),
+		Account:   c.teamID,
+		ChatID:    channelID,
+		ChatType:  mentionPeerKind,
+		TopicID:   threadTS,
+		SenderID:  senderID,
+		MessageID: messageTS,
+		SpaceID:   c.teamID,
+		SpaceType: "workspace",
+		Mentioned: true,
+		Raw:       metadata,
+	}
 
-	c.HandleMessage(c.ctx, mentionPeer, messageTS, senderID, chatID, content, nil, metadata, mentionSender)
+	c.HandleInboundContext(c.ctx, chatID, content, nil, inboundCtx, mentionSender)
 }
 
 func (c *SlackChannel) handleSlashCommand(event socketmode.Event) {
@@ -495,18 +516,22 @@ func (c *SlackChannel) handleSlashCommand(event socketmode.Event) {
 		"command":   cmd.Command,
 		"text":      utils.Truncate(content, 50),
 	})
+	peerKind := "channel"
+	if strings.HasPrefix(channelID, "D") {
+		peerKind = "direct"
+	}
+	inboundCtx := bus.InboundContext{
+		Channel:   c.Name(),
+		Account:   c.teamID,
+		ChatID:    channelID,
+		ChatType:  peerKind,
+		SenderID:  senderID,
+		SpaceID:   c.teamID,
+		SpaceType: "workspace",
+		Raw:       metadata,
+	}
 
-	c.HandleMessage(
-		c.ctx,
-		bus.Peer{Kind: "channel", ID: channelID},
-		"",
-		senderID,
-		chatID,
-		content,
-		nil,
-		metadata,
-		cmdSender,
-	)
+	c.HandleInboundContext(c.ctx, chatID, content, nil, inboundCtx, cmdSender)
 }
 
 func (c *SlackChannel) downloadSlackFile(file slack.File) string {
@@ -540,4 +565,34 @@ func parseSlackChatID(chatID string) (channelID, threadTS string) {
 		threadTS = parts[1]
 	}
 	return channelID, threadTS
+}
+
+func resolveSlackOutboundTarget(chatID string, outboundCtx *bus.InboundContext) (string, string, string) {
+	deliveryChatID := strings.TrimSpace(chatID)
+	if deliveryChatID == "" && outboundCtx != nil {
+		deliveryChatID = strings.TrimSpace(outboundCtx.ChatID)
+	}
+	channelID, threadTS := parseSlackChatID(deliveryChatID)
+	if threadTS == "" && outboundCtx != nil {
+		threadTS = strings.TrimSpace(outboundCtx.TopicID)
+		if threadTS != "" && channelID != "" {
+			deliveryChatID = channelID + "/" + threadTS
+		}
+	}
+	return deliveryChatID, channelID, threadTS
+}
+
+func resolveSlackMediaOutboundTarget(chatID string, outboundCtx *bus.InboundContext) (string, string, string) {
+	deliveryChatID := strings.TrimSpace(chatID)
+	if deliveryChatID == "" && outboundCtx != nil {
+		deliveryChatID = strings.TrimSpace(outboundCtx.ChatID)
+	}
+	channelID, threadTS := parseSlackChatID(deliveryChatID)
+	if threadTS == "" && outboundCtx != nil {
+		threadTS = strings.TrimSpace(outboundCtx.TopicID)
+		if threadTS != "" && channelID != "" {
+			deliveryChatID = channelID + "/" + threadTS
+		}
+	}
+	return deliveryChatID, channelID, threadTS
 }
