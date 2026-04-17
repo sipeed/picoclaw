@@ -118,6 +118,7 @@ const (
 	pendingTurnPrefix          = "pending-"
 	metadataKeyMessageKind     = "message_kind"
 	messageKindThought         = "thought"
+	messageKindToolFeedback    = "tool_feedback"
 	metadataKeyAccountID       = "account_id"
 	metadataKeyGuildID         = "guild_id"
 	metadataKeyTeamID          = "team_id"
@@ -836,6 +837,62 @@ func outboundMessageForTurn(ts *turnState, content string) bus.OutboundMessage {
 		Scope:      scope,
 		Content:    content,
 	}
+}
+
+func outboundMessageForTurnWithKind(ts *turnState, content, kind string) bus.OutboundMessage {
+	msg := outboundMessageForTurn(ts, content)
+	if strings.TrimSpace(kind) == "" {
+		return msg
+	}
+	if msg.Context.Raw == nil {
+		msg.Context.Raw = make(map[string]string, 1)
+	}
+	msg.Context.Raw[metadataKeyMessageKind] = kind
+	return msg
+}
+
+func previousAssistantContent(messages []providers.Message) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		if msg.Role == "user" {
+			break
+		}
+		if msg.Role != "assistant" {
+			continue
+		}
+		if content := strings.TrimSpace(msg.Content); content != "" {
+			return content
+		}
+	}
+	return ""
+}
+
+func toolFeedbackExplanationFromResponse(
+	response *providers.LLMResponse,
+	messages []providers.Message,
+	maxLen int,
+) string {
+	if response == nil {
+		return ""
+	}
+	explanation := strings.TrimSpace(response.Content)
+	if explanation == "" {
+		explanation = strings.TrimSpace(response.Reasoning)
+	}
+	if explanation == "" {
+		explanation = strings.TrimSpace(response.ReasoningContent)
+	}
+	if explanation == "" {
+		explanation = previousAssistantContent(messages)
+	}
+	return utils.Truncate(explanation, maxLen)
+}
+
+func shouldPublishToolFeedback(cfg *config.Config, ts *turnState) bool {
+	if ts == nil || ts.channel == "" || ts.opts.SuppressToolFeedback {
+		return false
+	}
+	return cfg != nil && cfg.Agents.Defaults.IsToolFeedbackEnabled()
 }
 
 // MountHook registers an in-process hook on the agent loop.
@@ -2666,6 +2723,11 @@ turnLoop:
 				"count":     len(normalizedToolCalls),
 				"iteration": iteration,
 			})
+		toolFeedbackExplanation := toolFeedbackExplanationFromResponse(
+			response,
+			messages,
+			al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(),
+		)
 
 		allResponsesHandled := len(normalizedToolCalls) > 0
 		assistantMsg := providers.Message{
@@ -2753,21 +2815,10 @@ turnLoop:
 						)
 
 						// Send tool feedback to chat channel if enabled (same as normal tool execution)
-						if al.cfg.Agents.Defaults.IsToolFeedbackEnabled() &&
-							ts.channel != "" &&
-							!ts.opts.SuppressToolFeedback {
-							argsJSON, _ := json.Marshal(toolArgs)
-							feedbackPreview := utils.Truncate(
-								string(argsJSON),
-								al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(),
-							)
-							feedbackMsg := utils.FormatToolFeedbackMessage(toolName, feedbackPreview)
+						if shouldPublishToolFeedback(al.cfg, ts) {
+							feedbackMsg := utils.FormatToolFeedbackMessage(toolName, toolFeedbackExplanation)
 							fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
-							_ = al.bus.PublishOutbound(fbCtx, bus.OutboundMessage{
-								Channel: ts.channel,
-								ChatID:  ts.chatID,
-								Content: feedbackMsg,
-							})
+							_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurnWithKind(ts, feedbackMsg, messageKindToolFeedback))
 							fbCancel()
 						}
 
@@ -3037,16 +3088,10 @@ turnLoop:
 			)
 
 			// Send tool feedback to chat channel if enabled (from HEAD)
-			if al.cfg.Agents.Defaults.IsToolFeedbackEnabled() &&
-				ts.channel != "" &&
-				!ts.opts.SuppressToolFeedback {
-				feedbackPreview := utils.Truncate(
-					string(argsJSON),
-					al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(),
-				)
-				feedbackMsg := utils.FormatToolFeedbackMessage(tc.Name, feedbackPreview)
+			if shouldPublishToolFeedback(al.cfg, ts) {
+				feedbackMsg := utils.FormatToolFeedbackMessage(tc.Name, toolFeedbackExplanation)
 				fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
-				_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurn(ts, feedbackMsg))
+				_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurnWithKind(ts, feedbackMsg, messageKindToolFeedback))
 				fbCancel()
 			}
 

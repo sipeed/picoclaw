@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -96,6 +97,19 @@ type Manager struct {
 	channelHashes map[string]string // channel name → config hash
 }
 
+type toolFeedbackMessageTracker interface {
+	RecordToolFeedbackMessage(chatID, messageID, content string)
+	ClearToolFeedbackMessage(chatID string)
+}
+
+type toolFeedbackMessageCleaner interface {
+	DismissToolFeedbackMessage(ctx context.Context, chatID string)
+}
+
+type toolFeedbackMessageFinalizer interface {
+	FinalizeToolFeedbackMessage(ctx context.Context, msg bus.OutboundMessage) ([]string, bool)
+}
+
 type asyncTask struct {
 	cancel context.CancelFunc
 }
@@ -106,6 +120,13 @@ func outboundMessageChannel(msg bus.OutboundMessage) string {
 
 func outboundMessageChatID(msg bus.OutboundMessage) string {
 	return msg.ChatID
+}
+
+func outboundMessageIsToolFeedback(msg bus.OutboundMessage) bool {
+	if len(msg.Context.Raw) == 0 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(msg.Context.Raw["message_kind"]), "tool_feedback")
 }
 
 func outboundMediaChannel(msg bus.OutboundMediaMessage) string {
@@ -196,6 +217,19 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 		}
 	}
 
+	if !outboundMessageIsToolFeedback(msg) {
+		if finalizer, ok := ch.(toolFeedbackMessageFinalizer); ok {
+			if msgIDs, handled := finalizer.FinalizeToolFeedbackMessage(ctx, msg); handled {
+				return msgIDs, true
+			}
+		}
+		if cleaner, ok := ch.(toolFeedbackMessageCleaner); ok {
+			cleaner.DismissToolFeedbackMessage(ctx, chatID)
+		} else if tracker, ok := ch.(toolFeedbackMessageTracker); ok {
+			tracker.ClearToolFeedbackMessage(chatID)
+		}
+	}
+
 	// 3. If a stream already finalized this message, delete the placeholder and skip send
 	if _, loaded := m.streamActive.LoadAndDelete(key); loaded {
 		if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
@@ -215,7 +249,14 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
 			if editor, ok := ch.(MessageEditor); ok {
-				if err := editor.EditMessage(ctx, chatID, entry.id, msg.Content); err == nil {
+				content := msg.Content
+				if outboundMessageIsToolFeedback(msg) {
+					content = InitialAnimatedToolFeedbackContent(msg.Content)
+				}
+				if err := editor.EditMessage(ctx, chatID, entry.id, content); err == nil {
+					if tracker, ok := ch.(toolFeedbackMessageTracker); ok && outboundMessageIsToolFeedback(msg) {
+						tracker.RecordToolFeedbackMessage(chatID, entry.id, msg.Content)
+					}
 					return []string{entry.id}, true
 				}
 				// edit failed → fall through to normal Send
@@ -233,6 +274,12 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 func (m *Manager) preSendMedia(ctx context.Context, name string, msg bus.OutboundMediaMessage, ch Channel) {
 	chatID := outboundMediaChatID(msg)
 	key := name + ":" + chatID
+
+	if cleaner, ok := ch.(toolFeedbackMessageCleaner); ok {
+		cleaner.DismissToolFeedbackMessage(ctx, chatID)
+	} else if tracker, ok := ch.(toolFeedbackMessageTracker); ok {
+		tracker.ClearToolFeedbackMessage(chatID)
+	}
 
 	// 1. Stop typing
 	if v, loaded := m.typingStops.LoadAndDelete(key); loaded {

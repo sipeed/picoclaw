@@ -682,6 +682,9 @@ func TestHandleGetSession_UsesConfiguredToolFeedbackMaxArgsLength(t *testing.T) 
 	if strings.Contains(resp.Messages[1].Content, argsJSON) {
 		t.Fatalf("tool summary = %q, expected configured truncation", resp.Messages[1].Content)
 	}
+	if !strings.Contains(resp.Messages[1].Content, "`read_file`") {
+		t.Fatalf("tool summary = %q, want read_file summary", resp.Messages[1].Content)
+	}
 }
 
 func TestHandleGetSession_IncludesMediaOnlyMessages(t *testing.T) {

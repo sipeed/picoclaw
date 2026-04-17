@@ -1,9 +1,23 @@
 package utils
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
-// FormatToolFeedbackMessage renders the tool name and arguments preview in the
-// same markdown shape used by live tool feedback and session reconstruction.
-func FormatToolFeedbackMessage(toolName, argsPreview string) string {
-	return fmt.Sprintf("\U0001f527 `%s`\n```\n%s\n```", toolName, argsPreview)
+// FormatToolFeedbackMessage renders the model-provided explanation for why a
+// tool is being executed. When the model does not provide one, it keeps only
+// the tool line and does not expose raw arguments or fallback text.
+func FormatToolFeedbackMessage(toolName, explanation string) string {
+	toolName = strings.TrimSpace(toolName)
+	explanation = strings.TrimSpace(explanation)
+
+	if toolName == "" {
+		return explanation
+	}
+	if explanation == "" {
+		return fmt.Sprintf("\U0001f527 `%s`", toolName)
+	}
+
+	return fmt.Sprintf("\U0001f527 `%s`\n%s", toolName, explanation)
 }

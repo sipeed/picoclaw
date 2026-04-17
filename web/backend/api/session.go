@@ -551,7 +551,6 @@ func visibleAssistantToolSummaryMessages(
 		if argsPreview == "" {
 			argsPreview = "{}"
 		}
-
 		messages = append(messages, sessionChatMessage{
 			Role:    "assistant",
 			Content: utils.FormatToolFeedbackMessage(name, utils.Truncate(argsPreview, toolFeedbackMaxArgsLength)),

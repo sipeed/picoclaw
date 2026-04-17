@@ -98,9 +98,20 @@ func (s *multipartRecordingConstructor) MultipartRequest(
 
 // successResponse returns a ta.Response that telego will treat as a successful SendMessage.
 func successResponse(t *testing.T) *ta.Response {
+	return successResponseWithMessageID(t, 1)
+}
+
+func successResponseWithMessageID(t *testing.T, messageID int) *ta.Response {
 	t.Helper()
-	msg := &telego.Message{MessageID: 1}
+	msg := &telego.Message{MessageID: messageID}
 	b, err := json.Marshal(msg)
+	require.NoError(t, err)
+	return &ta.Response{Ok: true, Result: b}
+}
+
+func successBoolResponse(t *testing.T) *ta.Response {
+	t.Helper()
+	b, err := json.Marshal(true)
 	require.NoError(t, err)
 	return &ta.Response{Ok: true, Result: b}
 }
@@ -142,6 +153,7 @@ func newTestChannelWithConstructor(
 		chatIDs:     make(map[string]int64),
 		bc:          &config.Channel{Type: config.ChannelTelegram, Enabled: true},
 		tgCfg:       &config.TelegramSettings{},
+		progress:    channels.NewToolFeedbackAnimator(nil),
 	}
 }
 
@@ -264,6 +276,37 @@ func TestSend_ShortMessage_SingleCall(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Len(t, caller.calls, 1, "short message should result in exactly one SendMessage call")
+}
+
+func TestSend_NonToolFeedbackDeletesTrackedProgressMessage(t *testing.T) {
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			switch {
+			case strings.Contains(url, "deleteMessage"):
+				return successBoolResponse(t), nil
+			case strings.Contains(url, "sendMessage"):
+				return successResponseWithMessageID(t, 2), nil
+			default:
+				t.Fatalf("unexpected API call: %s", url)
+				return nil, nil
+			}
+		},
+	}
+	ch := newTestChannel(t, caller)
+	ch.RecordToolFeedbackMessage("12345", "1", "🔧 `read_file`")
+
+	ids, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:  "12345",
+		Content: "final reply",
+	})
+
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"2"}, ids)
+	require.Len(t, caller.calls, 2)
+	assert.Contains(t, caller.calls[0].URL, "deleteMessage")
+	assert.Contains(t, caller.calls[1].URL, "sendMessage")
+	_, ok := ch.currentToolFeedbackMessage("12345")
+	assert.False(t, ok, "tracked tool feedback should be cleared after final reply")
 }
 
 func TestSend_LongMessage_SingleCall(t *testing.T) {

@@ -45,13 +45,14 @@ var (
 
 type TelegramChannel struct {
 	*channels.BaseChannel
-	bot     *telego.Bot
-	bh      *th.BotHandler
-	bc      *config.Channel
-	chatIDs map[string]int64
-	ctx     context.Context
-	cancel  context.CancelFunc
-	tgCfg   *config.TelegramSettings
+	bot      *telego.Bot
+	bh       *th.BotHandler
+	bc       *config.Channel
+	chatIDs  map[string]int64
+	ctx      context.Context
+	cancel   context.CancelFunc
+	tgCfg    *config.TelegramSettings
+	progress *channels.ToolFeedbackAnimator
 
 	registerFunc     func(context.Context, []commands.Definition) error
 	commandRegCancel context.CancelFunc
@@ -104,13 +105,15 @@ func NewTelegramChannel(
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
-	return &TelegramChannel{
+	ch := &TelegramChannel{
 		BaseChannel: base,
 		bot:         bot,
 		bc:          bc,
 		chatIDs:     make(map[string]int64),
 		tgCfg:       telegramCfg,
-	}, nil
+	}
+	ch.progress = channels.NewToolFeedbackAnimator(ch.EditMessage)
+	return ch, nil
 }
 
 func (c *TelegramChannel) Start(ctx context.Context) error {
@@ -168,6 +171,9 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	if c.cancel != nil {
 		c.cancel()
 	}
+	if c.progress != nil {
+		c.progress.StopAll()
+	}
 	if c.commandRegCancel != nil {
 		c.commandRegCancel()
 	}
@@ -191,12 +197,29 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 		return nil, nil
 	}
 
+	isToolFeedback := outboundMessageIsToolFeedback(msg)
+	if isToolFeedback {
+		animatedContent := channels.InitialAnimatedToolFeedbackContent(msg.Content)
+		if msgID, ok := c.currentToolFeedbackMessage(msg.ChatID); ok {
+			if err := c.EditMessage(ctx, msg.ChatID, msgID, animatedContent); err == nil {
+				c.RecordToolFeedbackMessage(msg.ChatID, msgID, msg.Content)
+				return []string{msgID}, nil
+			}
+			c.ClearToolFeedbackMessage(msg.ChatID)
+		}
+	} else {
+		c.DismissToolFeedbackMessage(ctx, msg.ChatID)
+	}
+
 	// The Manager already splits messages to ≤4000 chars (WithMaxMessageLength),
 	// so msg.Content is guaranteed to be within that limit. We still need to
 	// check if HTML expansion pushes it beyond Telegram's 4096-char API limit.
 	replyToID := msg.ReplyToMessageID
 	var messageIDs []string
 	queue := []string{msg.Content}
+	if isToolFeedback {
+		queue = []string{channels.InitialAnimatedToolFeedbackContent(msg.Content)}
+	}
 	for len(queue) > 0 {
 		chunk := queue[0]
 		queue = queue[1:]
@@ -268,6 +291,12 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 		messageIDs = append(messageIDs, msgID)
 		// Only the first chunk should be a reply; subsequent chunks are normal messages.
 		replyToID = ""
+	}
+
+	if isToolFeedback && len(messageIDs) > 0 {
+		c.RecordToolFeedbackMessage(msg.ChatID, messageIDs[0], msg.Content)
+	} else if !isToolFeedback {
+		c.ClearToolFeedbackMessage(msg.ChatID)
 	}
 
 	return messageIDs, nil
@@ -437,6 +466,43 @@ func (c *TelegramChannel) DeleteMessage(ctx context.Context, chatID string, mess
 	})
 }
 
+func outboundMessageIsToolFeedback(msg bus.OutboundMessage) bool {
+	if len(msg.Context.Raw) == 0 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(msg.Context.Raw["message_kind"]), "tool_feedback")
+}
+
+func (c *TelegramChannel) currentToolFeedbackMessage(chatID string) (string, bool) {
+	if c.progress == nil {
+		return "", false
+	}
+	return c.progress.Current(chatID)
+}
+
+func (c *TelegramChannel) RecordToolFeedbackMessage(chatID, messageID, content string) {
+	if c.progress == nil {
+		return
+	}
+	c.progress.Record(chatID, messageID, content)
+}
+
+func (c *TelegramChannel) ClearToolFeedbackMessage(chatID string) {
+	if c.progress == nil {
+		return
+	}
+	c.progress.Clear(chatID)
+}
+
+func (c *TelegramChannel) DismissToolFeedbackMessage(ctx context.Context, chatID string) {
+	msgID, ok := c.currentToolFeedbackMessage(chatID)
+	if !ok {
+		return
+	}
+	c.ClearToolFeedbackMessage(chatID)
+	_ = c.DeleteMessage(ctx, chatID, msgID)
+}
+
 // SendPlaceholder implements channels.PlaceholderCapable.
 // It sends a placeholder message (e.g. "Thinking... 💭") that will later be
 // edited to the actual response via EditMessage (channels.MessageEditor).
@@ -468,6 +534,7 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 	if !c.IsRunning() {
 		return nil, channels.ErrNotRunning
 	}
+	c.DismissToolFeedbackMessage(ctx, msg.ChatID)
 
 	chatID, threadID, err := resolveTelegramOutboundTarget(msg.ChatID, &msg.Context)
 	if err != nil {
