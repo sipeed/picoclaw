@@ -34,3 +34,84 @@
 {"level":"debug","component":"heartbeat","time":"2026-04-18T01:34:02+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/heartbeat/service.go:163","message":"Executing heartbeat"}
 {"level":"info","component":"heartbeat","time":"2026-04-18T01:34:02+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/heartbeat/service.go:167","message":"No heartbeat prompt (HEARTBEAT.md empty or missing)"}
 {"level":"error","component":"gateway","debug":true,"config_path":"d:\\Desktop\\一面千石\\picoclaw\\config.json","error":"error opening gateway listeners: failed to open adaptive localhost listener on port 18790","home_path":"d:\\Desktop\\一面千石\\picoclaw","allow_empty":false,"time":"2026-04-18T01:35:30+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/gateway/gateway.go:137","message":"Gateway startup failed"}
+{"level":"error","component":"gateway","config_path":"d:\\Desktop\\一面千石\\picoclaw\\config.json","error":"error opening gateway listeners: failed to open adaptive localhost listener on port 18790","home_path":"d:\\Desktop\\一面千石\\picoclaw","allow_empty":false,"debug":true,"time":"2026-04-18T01:41:22+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/gateway/gateway.go:137","message":"Gateway startup failed"}
+{"level":"info","component":"pid","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/pid/pidfile.go:60","message":"found pid file (PID: 16504, version: dev)"}
+{"level":"warn","component":"pid","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/pid/pidfile.go:64","message":"not running (PID: 16504) so will remove the pid file: d:\\Desktop\\一面千石\\picoclaw\\.picoclaw.pid"}
+{"level":"debug","component":"pid","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/pid/pidfile.go:100","message":"wrote pid file: d:\\Desktop\\一面千石\\picoclaw\\.picoclaw.pid success"}
+{"level":"debug","component":"tools","name":"read_file","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"write_file","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"list_dir","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"exec","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"edit_file","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"append_file","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"diff_files","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"info","component":"agent","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/agent/registry.go:39","message":"Created implicit main agent (no agents.list configured)"}
+{"level":"debug","component":"tools","name":"web_fetch","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"message","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"reaction","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"send_file","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"load_image","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"find_skills","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"install_skill","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"spawn","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"subagent","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"info","component":"agent","tools_count":16,"skills_total":7,"skills_available":7,"time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/gateway/gateway.go:209","message":"Agent initialized"}
+{"level":"debug","component":"tools","name":"cron","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"info","component":"heartbeat","interval_minutes":30,"time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/heartbeat/service.go:100","message":"Heartbeat service started"}
+{"level":"info","component":"media","interval":"5m0s","max_age":"30m0s","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/media/store.go:322","message":"cleanup enabled"}
+{"level":"info","component":"channels","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:451","message":"Initializing channel manager"}
+{"level":"info","component":"channels","enabled_channels":0,"time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:468","message":"Channel initialization completed"}
+{"level":"warn","component":"channels","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:556","message":"No channels enabled"}
+{"level":"info","component":"channels","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:559","message":"Starting all channels"}
+{"level":"info","component":"channels","started":0,"failed":0,"total":0,"time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:660","message":"Channel startup completed"}
+{"level":"info","component":"channels","addr":"[::1]:18790","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:635","message":"Shared HTTP server listening"}
+{"level":"info","component":"channels","addr":"127.0.0.1:18790","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:635","message":"Shared HTTP server listening"}
+{"level":"info","component":"channels","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:884","message":"Outbound dispatcher started"}
+{"level":"info","component":"channels","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:884","message":"Outbound media dispatcher started"}
+{"level":"info","component":"devices","time":"2026-04-18T01:42:31+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/devices/service.go:58","message":"Device event service disabled or no sources"}
+{"level":"debug","component":"heartbeat","time":"2026-04-18T01:42:32+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/heartbeat/service.go:163","message":"Executing heartbeat"}
+{"level":"info","component":"heartbeat","time":"2026-04-18T01:42:32+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/heartbeat/service.go:167","message":"No heartbeat prompt (HEARTBEAT.md empty or missing)"}
+{"level":"info","component":"gateway","time":"2026-04-18T01:43:35+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/gateway/gateway.go:265","message":"Shutting down..."}
+{"level":"info","component":"channels","time":"2026-04-18T01:43:35+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:672","message":"Stopping all channels"}
+{"level":"info","component":"channels","time":"2026-04-18T01:43:35+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:889","message":"Outbound media dispatcher stopped"}
+{"level":"info","component":"channels","time":"2026-04-18T01:43:35+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:729","message":"All channels stopped"}
+{"level":"info","component":"channels","time":"2026-04-18T01:43:35+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:889","message":"Outbound dispatcher stopped"}
+{"level":"info","component":"devices","time":"2026-04-18T01:43:35+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/devices/service.go:96","message":"Device event service stopped"}
+{"level":"info","component":"heartbeat","time":"2026-04-18T01:43:35+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/heartbeat/service.go:116","message":"Stopping heartbeat service"}
+{"level":"info","component":"gateway","time":"2026-04-18T01:43:35+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/gateway/gateway.go:509","message":"✓ Gateway stopped"}
+{"level":"info","component":"pid","time":"2026-04-18T01:43:35+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/pid/pidfile.go:150","message":"remove pid file: d:\\Desktop\\一面千石\\picoclaw\\.picoclaw.pid"}
+{"level":"debug","component":"pid","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/pid/pidfile.go:100","message":"wrote pid file: d:\\Desktop\\一面千石\\picoclaw\\.picoclaw.pid success"}
+{"level":"debug","component":"tools","name":"read_file","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"write_file","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"list_dir","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"exec","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"edit_file","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"append_file","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"diff_files","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"info","component":"agent","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/agent/registry.go:39","message":"Created implicit main agent (no agents.list configured)"}
+{"level":"debug","component":"tools","name":"web_fetch","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"message","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"reaction","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"send_file","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"load_image","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"find_skills","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"install_skill","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"spawn","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"debug","component":"tools","name":"subagent","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"info","component":"agent","tools_count":16,"skills_total":7,"skills_available":7,"time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/gateway/gateway.go:209","message":"Agent initialized"}
+{"level":"debug","component":"tools","name":"cron","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/tools/registry.go:56","message":"Registered core tool"}
+{"level":"info","component":"heartbeat","interval_minutes":30,"time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/heartbeat/service.go:100","message":"Heartbeat service started"}
+{"level":"info","component":"media","interval":"5m0s","max_age":"30m0s","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/media/store.go:322","message":"cleanup enabled"}
+{"level":"info","component":"channels","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:451","message":"Initializing channel manager"}
+{"level":"info","component":"channels","enabled_channels":0,"time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:468","message":"Channel initialization completed"}
+{"level":"warn","component":"channels","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:556","message":"No channels enabled"}
+{"level":"info","component":"channels","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:559","message":"Starting all channels"}
+{"level":"info","component":"channels","addr":"[::1]:18790","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:635","message":"Shared HTTP server listening"}
+{"level":"info","component":"channels","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:884","message":"Outbound dispatcher started"}
+{"level":"info","component":"channels","started":0,"failed":0,"total":0,"time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:660","message":"Channel startup completed"}
+{"level":"info","component":"channels","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:884","message":"Outbound media dispatcher started"}
+{"level":"info","component":"channels","addr":"127.0.0.1:18790","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:635","message":"Shared HTTP server listening"}
+{"level":"info","component":"devices","time":"2026-04-18T01:43:42+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/devices/service.go:58","message":"Device event service disabled or no sources"}
+{"level":"debug","component":"heartbeat","time":"2026-04-18T01:43:43+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/heartbeat/service.go:163","message":"Executing heartbeat"}
+{"level":"info","component":"heartbeat","time":"2026-04-18T01:43:43+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/heartbeat/service.go:167","message":"No heartbeat prompt (HEARTBEAT.md empty or missing)"}
+{"level":"error","component":"gateway","config_path":"d:\\Desktop\\一面千石\\picoclaw\\config.json","error":"error opening gateway listeners: failed to open adaptive localhost listener on port 18790","home_path":"d:\\Desktop\\一面千石\\picoclaw","allow_empty":false,"debug":true,"time":"2026-04-18T01:44:16+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/gateway/gateway.go:137","message":"Gateway startup failed"}
