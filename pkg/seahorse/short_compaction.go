@@ -167,7 +167,7 @@ func (e *CompactionEngine) CompactUntilUnder(ctx context.Context, convID int64, 
 }
 
 // compactLeaf compresses the oldest contiguous message chunk into a leaf summary.
-// When force is true, FreshTailCount protection is bypassed (used by CompactUntilUnder).
+// When force is true, fresh tail protection is bypassed (used by CompactUntilUnder).
 func (e *CompactionEngine) compactLeaf(ctx context.Context, convID int64, force ...bool) (*string, error) {
 	items, err := e.store.GetContextItems(ctx, convID)
 	if err != nil {
@@ -191,7 +191,7 @@ func (e *CompactionEngine) compactLeaf(ctx context.Context, convID int64, force 
 
 	// Calculate fresh tail boundary (bypass when forced)
 	useForce := len(force) > 0 && force[0]
-	tailStartIdx := len(items) - FreshTailCount
+	tailStartIdx := len(items) - e.config.GetFreshTailSize()
 	if useForce {
 		tailStartIdx = len(items) // allow compacting everything
 	}
@@ -465,7 +465,7 @@ func (e *CompactionEngine) selectShallowestCondensationCandidate(
 	}
 
 	// Group by depth, find consecutive runs
-	tailStartIdx := len(items) - FreshTailCount
+	tailStartIdx := len(items) - e.config.GetFreshTailSize()
 	if tailStartIdx < 0 {
 		tailStartIdx = 0
 	}
@@ -527,7 +527,7 @@ func (e *CompactionEngine) selectOldestChunkAtDepth(
 		return nil, err
 	}
 
-	tailStartIdx := len(items) - FreshTailCount
+	tailStartIdx := len(items) - e.config.GetFreshTailSize()
 	if tailStartIdx < 0 {
 		tailStartIdx = 0
 	}

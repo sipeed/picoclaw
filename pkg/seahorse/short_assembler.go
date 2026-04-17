@@ -54,8 +54,8 @@ func (a *Assembler) Assemble(ctx context.Context, convID int64, input AssembleIn
 		resolved[i] = r
 	}
 
-	// Split into evictable prefix and protected fresh tail
-	tailStart := len(resolved) - FreshTailCount
+	// Split into evictable prefix and protected fresh tail.
+	tailStart := len(resolved) - a.config.GetFreshTailSize()
 	if tailStart < 0 {
 		tailStart = 0
 	}

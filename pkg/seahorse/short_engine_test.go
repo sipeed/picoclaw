@@ -172,6 +172,16 @@ func TestNewEngineWithPatterns(t *testing.T) {
 	}
 }
 
+func TestConfigGetFreshTailSize(t *testing.T) {
+	if got := (Config{}).GetFreshTailSize(); got != FreshTailCount {
+		t.Errorf("default fresh tail size = %d, want %d", got, FreshTailCount)
+	}
+
+	if got := (Config{FreshTailSize: 7}).GetFreshTailSize(); got != 7 {
+		t.Errorf("configured fresh tail size = %d, want 7", got)
+	}
+}
+
 // --- Ingest ---
 
 func TestEngineIngest(t *testing.T) {

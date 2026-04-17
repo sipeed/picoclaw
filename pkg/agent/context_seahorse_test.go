@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -43,6 +44,62 @@ func TestSeahorseCMRegistration(t *testing.T) {
 	}
 	if factory == nil {
 		t.Error("expected non-nil factory")
+	}
+}
+
+func TestSeahorseContextManagerConfigFreshTailSize(t *testing.T) {
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:            t.TempDir(),
+				ModelName:            "test-model",
+				MaxTokens:            4096,
+				MaxToolIterations:    10,
+				ContextManager:       "seahorse",
+				ContextManagerConfig: json.RawMessage(`{"fresh_tail_size":2}`),
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, &simpleMockProvider{response: "ok"})
+
+	seahorseCM, ok := al.contextManager.(*seahorseContextManager)
+	if !ok {
+		t.Fatal("expected seahorseContextManager")
+	}
+
+	store := seahorseCM.engine.GetRetrieval().Store()
+	ctx := context.Background()
+	conv, err := store.GetOrCreateConversation(ctx, "fresh-tail-config")
+	if err != nil {
+		t.Fatalf("GetOrCreateConversation: %v", err)
+	}
+
+	for i := 0; i < 5; i++ {
+		msg, addErr := store.AddMessage(ctx, conv.ConversationID, "user", fmt.Sprintf("msg %d", i), 10)
+		if addErr != nil {
+			t.Fatalf("AddMessage %d: %v", i, addErr)
+		}
+		if appendErr := store.AppendContextMessage(ctx, conv.ConversationID, msg.ID); appendErr != nil {
+			t.Fatalf("AppendContextMessage %d: %v", i, appendErr)
+		}
+	}
+
+	resp, err := seahorseCM.Assemble(ctx, &AssembleRequest{
+		SessionKey: "fresh-tail-config",
+		Budget:     20,
+		MaxTokens:  0,
+	})
+	if err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+
+	if len(resp.History) != 2 {
+		t.Fatalf("History = %d, want 2", len(resp.History))
+	}
+	if resp.History[0].Content != "msg 3" {
+		t.Errorf("first history message = %q, want %q", resp.History[0].Content, "msg 3")
 	}
 }
 

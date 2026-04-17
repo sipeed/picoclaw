@@ -11,6 +11,11 @@
       "summarize_message_threshold": 20,
       "summarize_token_percent": 75,
       "split_on_marker": false,
+      "context_manager": "legacy",
+      "context_manager_config": {
+        "_comment": "Used by the seahorse context manager",
+        "fresh_tail_size": 32
+      },
       "tool_feedback": {
         "enabled": false,
         "max_args_length": 300
