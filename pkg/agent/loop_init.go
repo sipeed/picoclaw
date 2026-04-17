@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/agent/interfaces"
 	"github.com/sipeed/picoclaw/pkg/audio/tts"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -79,7 +80,7 @@ func NewAgentLoop(
 func registerSharedTools(
 	al *AgentLoop,
 	cfg *config.Config,
-	msgBus *bus.MessageBus,
+	msgBus interfaces.MessageBus,
 	registry *AgentRegistry,
 	provider providers.LLMProvider,
 ) {

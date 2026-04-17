@@ -709,9 +709,10 @@ func TestAgentLoop_HookRespond_MediaError(t *testing.T) {
 		t.Fatalf("MountHook failed: %v", err)
 	}
 
-	al.channelManager = newStartedTestChannelManager(t, al.bus, al.mediaStore, "discord", &errorMediaChannel{
-		sendErr: errors.New("channel unavailable"),
-	})
+	al.channelManager = newStartedTestChannelManager(t,
+		al.bus.(*bus.MessageBus), al.mediaStore, "discord", &errorMediaChannel{
+			sendErr: errors.New("channel unavailable"),
+		})
 
 	sub := al.SubscribeEvents(16)
 	defer al.UnsubscribeEvents(sub.ID)
