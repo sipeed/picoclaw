@@ -29,12 +29,12 @@ test('Flow Tester - User Utterance Flow Test', async ({ page }) => {
   // ============================================================================
   // STEP 2: Select Organization
   // ============================================================================
-  console.log('📍 Step 2: Select organization "Testing2026!"');
-  
+  console.log('📍 Step 2: Select organization "Testing"');
+
   await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
-  await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
+  await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing2026!")') }).click();
   await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 15000 });
-  
+
   console.log('✅ PASS: Step 2 - Organization selected, redirected to dashboard');
 
   // ============================================================================
@@ -79,10 +79,11 @@ test('Flow Tester - User Utterance Flow Test', async ({ page }) => {
   // STEP 7: Select "User Utterance" flow
   // ============================================================================
   console.log('📍 Step 7: Select "User Utterance" flow from dropdown');
-  
-  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /User Utterance/ }).click();
+
+  // If multiple flows with same name exist, select the last one (oldest)
+  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /User Utterance/ }).last().click();
   await page.waitForTimeout(500);
-  
+
   console.log('✅ PASS: Step 7 - "User Utterance" flow selected');
 
   // ============================================================================

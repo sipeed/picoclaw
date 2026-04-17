@@ -149,7 +149,7 @@ test('Create new flow with Model node without parser', async ({ page }) => {
     .filter({ has: page.locator('label', { hasText: /Message/ }) })
     .locator('.v-field__input');
   await messageInput1.click();
-  await messageInput1.fill('Below is the Model node result. it should return your input narcissly');
+  await messageInput1.fill('Below is the Model node result. it should return your input narcisticly');
   await messageInput1.press('Tab');
   console.log('✅ PASS: Step 16 - Message field set');
 

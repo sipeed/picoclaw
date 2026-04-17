@@ -33,7 +33,8 @@ test('Custom Node Flow - Send message and verify bot responses', async ({ page }
   console.log('📍 Step 6: Select Custom Node flow from dropdown');
   await page.locator('.tester-select').click();
   await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 5000 });
-  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /custom node/i }).click();
+  // If multiple flows with same name exist, select the last one (oldest)
+  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /custom node/i }).last().click();
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 6 - Custom Node flow selected');
 

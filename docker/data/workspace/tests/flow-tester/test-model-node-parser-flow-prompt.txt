@@ -28,7 +28,7 @@ IMPORTANT RULES:
    CORRECT post-login pattern (waitForURL callback gets a URL object — use .pathname or .href, NOT .includes()):
      await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
      if (page.url().includes('select_org')) {  // page.url() returns a string — .includes() is fine here
-       await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
+       await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click();
        await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
      }
 4. Selector priority — ALWAYS follow this order:
@@ -45,10 +45,12 @@ IMPORTANT RULES:
 
    FLOW DROPDOWN — ALWAYS wait for overlay to stabilise before filtering:
    After clicking .tester-select, the overlay may take a moment to render its items.
+   If multiple flows with the same name exist, ALWAYS select .last() (the oldest flow).
    CORRECT pattern:
      await page.locator('.tester-select').click();
      await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 5000 });
-     await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /model node with parser/i }).click();
+     // If multiple flows with same name exist, select the last one (oldest)
+     await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /model node with parser/i }).last().click();
 5. TypeScript-safe Playwright only. NEVER invent or guess Playwright API methods.
    FORBIDDEN: triple_click(), triple_click?.(), doubleClick(), selectText(), clearText(), typeText(), pressKey(),
               filter({ hasAttribute: ... })
@@ -130,7 +132,7 @@ After creating the test:
 
 ---
 
-Test credentials: email=heidi@intnt.ai password=testing2026! org=Testing2026!
+Test credentials: email=heidi@intnt.ai password=testing2026! org=Testing
 
 Steps:
 1. Navigate to Flow Tester — click "Flow Tester" from the left sidebar
