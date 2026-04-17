@@ -115,3 +115,12 @@
 {"level":"debug","component":"heartbeat","time":"2026-04-18T01:43:43+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/heartbeat/service.go:163","message":"Executing heartbeat"}
 {"level":"info","component":"heartbeat","time":"2026-04-18T01:43:43+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/heartbeat/service.go:167","message":"No heartbeat prompt (HEARTBEAT.md empty or missing)"}
 {"level":"error","component":"gateway","config_path":"d:\\Desktop\\一面千石\\picoclaw\\config.json","error":"error opening gateway listeners: failed to open adaptive localhost listener on port 18790","home_path":"d:\\Desktop\\一面千石\\picoclaw","allow_empty":false,"debug":true,"time":"2026-04-18T01:44:16+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/gateway/gateway.go:137","message":"Gateway startup failed"}
+{"level":"info","component":"gateway","time":"2026-04-18T01:49:32+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/gateway/gateway.go:265","message":"Shutting down..."}
+{"level":"info","component":"channels","time":"2026-04-18T01:49:32+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:672","message":"Stopping all channels"}
+{"level":"info","component":"channels","time":"2026-04-18T01:49:32+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:729","message":"All channels stopped"}
+{"level":"info","component":"channels","time":"2026-04-18T01:49:32+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:889","message":"Outbound media dispatcher stopped"}
+{"level":"info","component":"channels","time":"2026-04-18T01:49:32+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/channels/manager.go:889","message":"Outbound dispatcher stopped"}
+{"level":"info","component":"devices","time":"2026-04-18T01:49:32+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/devices/service.go:96","message":"Device event service stopped"}
+{"level":"info","component":"heartbeat","time":"2026-04-18T01:49:32+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/heartbeat/service.go:116","message":"Stopping heartbeat service"}
+{"level":"info","component":"gateway","time":"2026-04-18T01:49:32+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/gateway/gateway.go:509","message":"✓ Gateway stopped"}
+{"level":"info","component":"pid","time":"2026-04-18T01:49:32+08:00","caller":"D:/Desktop/一面千石/picoclaw/pkg/pid/pidfile.go:150","message":"remove pid file: d:\\Desktop\\一面千石\\picoclaw\\.picoclaw.pid"}
