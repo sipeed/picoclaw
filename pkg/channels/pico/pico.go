@@ -437,11 +437,11 @@ func (c *PicoChannel) authenticate(r *http.Request) bool {
 	}
 
 	logger.WarnCF("pico", "Authentication failed: No valid token provided in request", map[string]any{
-		"path":           r.URL.Path,
-		"remote_addr":    r.RemoteAddr,
-		"has_auth_hdr":   auth != "",
-		"has_token_q":    r.URL.Query().Get("token") != "",
-		"has_subproto":   r.Header.Get("Sec-WebSocket-Protocol") != "",
+		"path":         r.URL.Path,
+		"remote_addr":  r.RemoteAddr,
+		"has_auth_hdr": auth != "",
+		"has_token_q":  r.URL.Query().Get("token") != "",
+		"has_subproto": r.Header.Get("Sec-WebSocket-Protocol") != "",
 	})
 	return false
 }
