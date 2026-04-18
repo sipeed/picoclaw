@@ -91,6 +91,15 @@ func TestGetIntArg(t *testing.T) {
 		{map[string]any{"other": float64(1)}, "index", 0, false},
 		{map[string]any{}, "index", 0, false},
 		{map[string]any{"index": "not a number"}, "index", 0, false},
+		// Negative values rejected
+		{map[string]any{"index": float64(-1)}, "index", 0, false},
+		{map[string]any{"index": -3}, "index", 0, false},
+		{map[string]any{"index": int64(-5)}, "index", 0, false},
+		// Non-integer floats rejected
+		{map[string]any{"index": float64(1.9)}, "index", 0, false},
+		{map[string]any{"index": float64(0.5)}, "index", 0, false},
+		// Zero is valid
+		{map[string]any{"index": float64(0)}, "index", 0, true},
 	}
 
 	for _, tt := range tests {

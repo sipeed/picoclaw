@@ -233,18 +233,19 @@ func (t *BrowserTool) executeType(ctx context.Context, args map[string]any) *Too
 	if err := json.Unmarshal(raw, &focusStr); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to parse focus result: %v", err))
 	}
-	if strings.Contains(focusStr, "error") {
-		var result struct{ Error string `json:"error"` }
-		if err := json.Unmarshal([]byte(focusStr), &result); err != nil {
-			return ErrorResult(fmt.Sprintf("failed to parse focus result: %v", err))
-		}
-		if result.Error != "" {
-			return ErrorResult(result.Error)
-		}
+	var focusResult struct {
+		OK    bool   `json:"ok"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(focusStr), &focusResult); err != nil {
+		return ErrorResult(fmt.Sprintf("failed to parse focus result: %v", err))
+	}
+	if focusResult.Error != "" {
+		return ErrorResult(focusResult.Error)
 	}
 
 	// Type using CDP Input.insertText
-	if err := t.cdp.InsertText(text); err != nil {
+	if err := t.cdp.InsertText(ctx, text); err != nil {
 		return ErrorResult(fmt.Sprintf("type failed: %v", err))
 	}
 
@@ -281,18 +282,19 @@ func (t *BrowserTool) executeFill(ctx context.Context, args map[string]any) *Too
 	if err := json.Unmarshal(raw, &clearStr); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to parse fill result: %v", err))
 	}
-	if strings.Contains(clearStr, "error") {
-		var result struct{ Error string `json:"error"` }
-		if err := json.Unmarshal([]byte(clearStr), &result); err != nil {
-			return ErrorResult(fmt.Sprintf("failed to parse fill result: %v", err))
-		}
-		if result.Error != "" {
-			return ErrorResult(result.Error)
-		}
+	var clearResult struct {
+		OK    bool   `json:"ok"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(clearStr), &clearResult); err != nil {
+		return ErrorResult(fmt.Sprintf("failed to parse fill result: %v", err))
+	}
+	if clearResult.Error != "" {
+		return ErrorResult(clearResult.Error)
 	}
 
 	// Type new value
-	if err := t.cdp.InsertText(text); err != nil {
+	if err := t.cdp.InsertText(ctx, text); err != nil {
 		return ErrorResult(fmt.Sprintf("fill failed (type step): %v", err))
 	}
 
@@ -353,7 +355,7 @@ func (t *BrowserTool) executeSelect(ctx context.Context, args map[string]any) *T
 }
 
 func (t *BrowserTool) executeScreenshot(ctx context.Context) *ToolResult {
-	data, err := t.cdp.CaptureScreenshot("png", 0)
+	data, err := t.cdp.CaptureScreenshot(ctx, "png", 0)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("screenshot failed: %v", err))
 	}
@@ -402,7 +404,9 @@ func (t *BrowserTool) executeScreenshot(ctx context.Context) *ToolResult {
 	}
 
 	// No MediaStore or store failed — save to disk and return path as artifact
-	// so LLM can reference it and user can access it via send_file if needed
+	// so LLM can reference it and user can access it via send_file if needed.
+	// Track the temp file for cleanup on close.
+	t.trackTempFile(tmpFile)
 	return &ToolResult{
 		ForLLM:       fmt.Sprintf("Screenshot saved to %s (%d KB). Use send_file to deliver to user if needed.", tmpFile, len(pngBytes)/1024),
 		ArtifactTags: []string{fmt.Sprintf("[file:%s]", tmpFile)},
@@ -475,7 +479,7 @@ func (t *BrowserTool) executeScroll(ctx context.Context, args map[string]any) *T
 	return SilentResult(fmt.Sprintf("Scrolled %s. Run 'state' to see updated elements.", direction))
 }
 
-func (t *BrowserTool) executeKeys(_ context.Context, args map[string]any) *ToolResult {
+func (t *BrowserTool) executeKeys(ctx context.Context, args map[string]any) *ToolResult {
 	text, _ := args["text"].(string)
 	if text == "" {
 		return ErrorResult("text (key name) is required for keys action. Examples: Enter, Tab, Escape, ArrowDown")
@@ -504,10 +508,10 @@ func (t *BrowserTool) executeKeys(_ context.Context, args map[string]any) *ToolR
 		key = "ArrowRight"
 	}
 
-	if err := t.cdp.DispatchKeyEvent("keyDown", key, 0); err != nil {
+	if err := t.cdp.DispatchKeyEvent(ctx, "keyDown", key, 0); err != nil {
 		return ErrorResult(fmt.Sprintf("keyDown failed: %v", err))
 	}
-	if err := t.cdp.DispatchKeyEvent("keyUp", key, 0); err != nil {
+	if err := t.cdp.DispatchKeyEvent(ctx, "keyUp", key, 0); err != nil {
 		return ErrorResult(fmt.Sprintf("keyUp failed: %v", err))
 	}
 

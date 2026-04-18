@@ -456,22 +456,17 @@ func (c *CDPClient) Navigate(ctx context.Context, targetURL string) error {
 		return fmt.Errorf("navigation failed: %w", err)
 	}
 
-	// Wait for DOM content loaded with timeout
-	timer := time.NewTimer(30 * time.Second)
-	defer timer.Stop()
-
+	// Wait for DOM content loaded or context cancellation
 	select {
 	case <-domCh:
 		return nil
-	case <-timer.C:
-		return fmt.Errorf("page load timed out after 30s")
 	case <-ctx.Done():
-		return ctx.Err()
+		return fmt.Errorf("page load timed out: %w", ctx.Err())
 	}
 }
 
 // CaptureScreenshot takes a screenshot and returns base64-encoded PNG.
-func (c *CDPClient) CaptureScreenshot(format string, quality int) (string, error) {
+func (c *CDPClient) CaptureScreenshot(ctx context.Context, format string, quality int) (string, error) {
 	params := map[string]any{
 		"format": format,
 	}
@@ -479,7 +474,7 @@ func (c *CDPClient) CaptureScreenshot(format string, quality int) (string, error
 		params["quality"] = quality
 	}
 
-	result, err := c.Send("Page.captureScreenshot", params)
+	result, err := c.SendCtx(ctx, "Page.captureScreenshot", params)
 	if err != nil {
 		return "", err
 	}
@@ -495,35 +490,35 @@ func (c *CDPClient) CaptureScreenshot(format string, quality int) (string, error
 }
 
 // InjectScript injects JavaScript to be evaluated on every new document.
-func (c *CDPClient) InjectScript(source string) error {
-	_, err := c.Send("Page.addScriptToEvaluateOnNewDocument", map[string]any{
+func (c *CDPClient) InjectScript(ctx context.Context, source string) error {
+	_, err := c.SendCtx(ctx, "Page.addScriptToEvaluateOnNewDocument", map[string]any{
 		"source": source,
 	})
 	return err
 }
 
 // DispatchMouseEvent sends a mouse event at the given coordinates.
-func (c *CDPClient) DispatchMouseEvent(eventType string, x, y float64, button string, clickCount int) error {
-	_, err := c.Send("Input.dispatchMouseEvent", map[string]any{
+func (c *CDPClient) DispatchMouseEvent(ctx context.Context, eventType string, x, y float64, button string, clickCount int) error {
+	_, err := c.SendCtx(ctx, "Input.dispatchMouseEvent", map[string]any{
 		"type":       eventType,
-		"x":         x,
-		"y":         y,
-		"button":    button,
+		"x":          x,
+		"y":          y,
+		"button":     button,
 		"clickCount": clickCount,
 	})
 	return err
 }
 
 // InsertText inserts text at the current cursor position.
-func (c *CDPClient) InsertText(text string) error {
-	_, err := c.Send("Input.insertText", map[string]any{
+func (c *CDPClient) InsertText(ctx context.Context, text string) error {
+	_, err := c.SendCtx(ctx, "Input.insertText", map[string]any{
 		"text": text,
 	})
 	return err
 }
 
 // DispatchKeyEvent sends a keyboard event.
-func (c *CDPClient) DispatchKeyEvent(eventType, key string, modifiers int) error {
+func (c *CDPClient) DispatchKeyEvent(ctx context.Context, eventType, key string, modifiers int) error {
 	params := map[string]any{
 		"type": eventType,
 		"key":  key,
@@ -531,6 +526,6 @@ func (c *CDPClient) DispatchKeyEvent(eventType, key string, modifiers int) error
 	if modifiers > 0 {
 		params["modifiers"] = modifiers
 	}
-	_, err := c.Send("Input.dispatchKeyEvent", params)
+	_, err := c.SendCtx(ctx, "Input.dispatchKeyEvent", params)
 	return err
 }

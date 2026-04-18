@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -33,11 +34,12 @@ type BrowserTool struct {
 	cfg        config.BrowserToolConfig
 	cdp        *CDPClient
 	cdpMu      sync.Mutex // guards lazy cdp connection and cdp pointer
-	stateMu    sync.Mutex // guards mutable session state: history, mediaStore
+	stateMu    sync.Mutex // guards mutable session state: history, mediaStore, tempFiles
 	chromePath string
 	stealthJS  string
 	mediaStore media.MediaStore
 	history    []pageVisit // browsing history, most recent last
+	tempFiles  []string    // temp files to clean up on close
 }
 
 // NewBrowserTool creates a new BrowserTool. It verifies that Chrome is available
@@ -106,7 +108,7 @@ func (t *BrowserTool) connectIfNeeded() error {
 
 	// Inject stealth JS if configured
 	if t.stealthJS != "" {
-		if err := cdp.InjectScript(t.stealthJS); err != nil {
+		if err := cdp.InjectScript(context.Background(), t.stealthJS); err != nil {
 			logger.WarnCF("tool", "Failed to inject stealth JS",
 				map[string]any{"error": err.Error()})
 		}
@@ -164,19 +166,20 @@ func (t *BrowserTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 		return ErrorResult("action is required")
 	}
 
-	// Connect lazily on first use
-	if action != "close" {
-		if err := t.connectIfNeeded(); err != nil {
-			return ErrorResult(err.Error())
-		}
-	}
-
+	// Apply configured timeout before any work so connectIfNeeded also respects it
 	timeout := time.Duration(t.cfg.Timeout) * time.Second
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+
+	// Connect lazily on first use
+	if action != "close" {
+		if err := t.connectIfNeeded(); err != nil {
+			return ErrorResult(err.Error())
+		}
+	}
 
 	switch action {
 	case "navigate":
@@ -215,6 +218,13 @@ func (t *BrowserTool) SetMediaStore(store media.MediaStore) {
 	t.mediaStore = store
 }
 
+// trackTempFile records a temp file for cleanup on close.
+func (t *BrowserTool) trackTempFile(path string) {
+	t.stateMu.Lock()
+	defer t.stateMu.Unlock()
+	t.tempFiles = append(t.tempFiles, path)
+}
+
 func (t *BrowserTool) executeClose() *ToolResult {
 	t.cdpMu.Lock()
 	defer t.cdpMu.Unlock()
@@ -226,6 +236,13 @@ func (t *BrowserTool) executeClose() *ToolResult {
 		t.cdp = nil
 	}
 	t.history = nil
+
+	// Clean up temp files created by screenshots without MediaStore
+	for _, f := range t.tempFiles {
+		os.Remove(f)
+	}
+	t.tempFiles = nil
+
 	return SilentResult("Browser session closed.")
 }
 
@@ -440,7 +457,8 @@ func isNumericHost(host string) bool {
 	return true
 }
 
-// getIntArg extracts an integer from args, handling both float64 (JSON) and int types.
+// getIntArg extracts a non-negative integer from args, handling both float64 (JSON) and int types.
+// Rejects negative values and non-integer floats (e.g. 1.9).
 func getIntArg(args map[string]any, key string) (int, bool) {
 	v, ok := args[key]
 	if !ok {
@@ -448,10 +466,19 @@ func getIntArg(args map[string]any, key string) (int, bool) {
 	}
 	switch n := v.(type) {
 	case float64:
+		if n < 0 || n != float64(int(n)) {
+			return 0, false
+		}
 		return int(n), true
 	case int:
+		if n < 0 {
+			return 0, false
+		}
 		return n, true
 	case int64:
+		if n < 0 {
+			return 0, false
+		}
 		return int(n), true
 	}
 	return 0, false

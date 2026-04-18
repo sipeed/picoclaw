@@ -227,16 +227,24 @@ func TestIntegration_TempFileCleanup(t *testing.T) {
 
 	tool.Execute(ctx, map[string]any{"action": "navigate", "url": "https://example.com"})
 
-	// Screenshot without MediaStore — temp file should be cleaned up
+	// Screenshot without MediaStore — temp files should be cleaned up on close
 	beforeFiles := countTempScreenshots()
 	tool.Execute(ctx, map[string]any{"action": "screenshot"})
-	time.Sleep(100 * time.Millisecond)
-	afterFiles := countTempScreenshots()
+	tool.Execute(ctx, map[string]any{"action": "screenshot"})
 
-	// Since no MediaStore is set, temp file should be deferred for removal
-	t.Logf("Temp screenshot files: before=%d, after=%d", beforeFiles, afterFiles)
+	midFiles := countTempScreenshots()
+	if midFiles < beforeFiles+2 {
+		t.Logf("expected at least 2 new temp files, before=%d, mid=%d", beforeFiles, midFiles)
+	}
 
+	// Close should clean up temp files
 	tool.Execute(ctx, map[string]any{"action": "close"})
+	time.Sleep(100 * time.Millisecond)
+
+	afterFiles := countTempScreenshots()
+	if afterFiles > beforeFiles {
+		t.Errorf("temp screenshot files not cleaned up after close: before=%d, after=%d", beforeFiles, afterFiles)
+	}
 }
 
 func countTempScreenshots() int {
