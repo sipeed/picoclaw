@@ -9,7 +9,7 @@
       "restrict_to_workspace": true,
       "allow_read_outside_workspace": false,
       "provider": "",
-      "model_name": "nemotron-4-340b",
+      "model_name": "nemotron-3-super-120b-a12b",
       "max_tokens": 32768,
       "max_tool_iterations": 50,
       "summarize_message_threshold": 20,
@@ -44,6 +44,7 @@
       "enabled": true,
       "base_url": "",
       "proxy": "",
+      "token": "env://PICOCLAW_TELEGRAM_TOKEN",
       "allow_from": [
         "-5274005272",
         "8271300679"
