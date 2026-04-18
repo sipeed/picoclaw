@@ -9,7 +9,7 @@
       "restrict_to_workspace": true,
       "allow_read_outside_workspace": false,
       "provider": "",
-      "model_name": "nemotron-3-super-120b-a12b",
+      "model_name": "nemotron-4-340b",
       "max_tokens": 32768,
       "max_tool_iterations": 50,
       "summarize_message_threshold": 20,
@@ -296,10 +296,21 @@
       "api_keys": "[NOT_HERE]"
     },
     {
+      "model_name": "nemotron-4-340b",
+      "model": "nvidia/nemotron-4-340b-instruct",
+      "api_base": "https://integrate.api.nvidia.com/v1",
+      "api_keys": [
+        "file://secrets/nvidia-api-key"
+      ],
+      "enabled": true
+    },
+    {
       "model_name": "nemotron-3-super-120b-a12b",
       "model": "nvidia/nemotron-3-super-120b-a12b",
       "api_base": "https://integrate.api.nvidia.com/v1",
-      "api_keys": "[NOT_HERE]",
+      "api_keys": [
+        "file://secrets/nvidia-api-key"
+      ],
       "enabled": true
     },
     {
