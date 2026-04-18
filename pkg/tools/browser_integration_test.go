@@ -98,9 +98,10 @@ func TestIntegration_Screenshot(t *testing.T) {
 	t.Logf("Screenshot result: ForLLM=%s, ForUser=%s, Media=%v",
 		result.ForLLM, result.ForUser, result.Media)
 
-	// Verify temp file was created (even without MediaStore it should have existed briefly)
-	if !strings.Contains(result.ForLLM, "Screenshot captured") {
-		t.Error("unexpected screenshot result")
+	// Verify screenshot result - without MediaStore, returns "Screenshot saved to..." path;
+	// with MediaStore, returns "Screenshot captured".
+	if !strings.Contains(result.ForLLM, "Screenshot") {
+		t.Errorf("unexpected screenshot result: %s", result.ForLLM)
 	}
 
 	tool.Execute(ctx, map[string]any{"action": "close"})

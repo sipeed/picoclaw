@@ -56,6 +56,16 @@ func TestValidateBrowserURL(t *testing.T) {
 		{"http://[::1]", true, "IPv6 loopback blocked"},
 		{"not-a-url", true, "invalid URL"},
 		{"", true, "empty URL"},
+		// Numeric hostname bypass vectors
+		{"http://0/", true, "numeric zero hostname blocked"},
+		{"http://127.1/", true, "numeric short loopback blocked"},
+		{"http://2130706433/", true, "decimal IP blocked"},
+		{"http://0x7f000001/", true, "hex IP blocked"},
+		// Additional private ranges
+		{"http://100.64.0.1", true, "CGNAT range blocked"},
+		{"http://100.127.255.254", true, "CGNAT range high end blocked"},
+		{"http://198.18.0.1", true, "benchmark range blocked"},
+		{"http://198.19.255.254", true, "benchmark range high end blocked"},
 	}
 
 	for _, tt := range tests {

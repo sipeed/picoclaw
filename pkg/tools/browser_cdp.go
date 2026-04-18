@@ -46,8 +46,7 @@ type cdpErrorPayload struct {
 
 // cdpPending tracks an in-flight CDP request.
 type cdpPending struct {
-	ch    chan cdpResponse
-	timer *time.Timer
+	ch chan cdpResponse
 }
 
 type cdpResponse struct {
@@ -112,6 +111,15 @@ func (c *CDPClient) Send(method string, params map[string]any) (json.RawMessage,
 
 // SendWithTimeout sends a CDP command with a custom timeout.
 func (c *CDPClient) SendWithTimeout(method string, params map[string]any, timeout time.Duration) (json.RawMessage, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return c.SendCtx(ctx, method, params)
+}
+
+// SendCtx sends a CDP command and waits for the response, respecting context
+// cancellation and deadline. This ensures tool-level timeouts properly propagate
+// to CDP operations.
+func (c *CDPClient) SendCtx(ctx context.Context, method string, params map[string]any) (json.RawMessage, error) {
 	if c.closed.Load() {
 		return nil, fmt.Errorf("CDP connection closed")
 	}
@@ -134,8 +142,7 @@ func (c *CDPClient) SendWithTimeout(method string, params map[string]any, timeou
 
 	// Register pending request
 	p := &cdpPending{
-		ch:    make(chan cdpResponse, 1),
-		timer: time.NewTimer(timeout),
+		ch: make(chan cdpResponse, 1),
 	}
 
 	c.mu.Lock()
@@ -144,7 +151,6 @@ func (c *CDPClient) SendWithTimeout(method string, params map[string]any, timeou
 
 	// Clean up on return
 	defer func() {
-		p.timer.Stop()
 		c.mu.Lock()
 		delete(c.pending, id)
 		c.mu.Unlock()
@@ -158,12 +164,12 @@ func (c *CDPClient) SendWithTimeout(method string, params map[string]any, timeou
 		return nil, fmt.Errorf("failed to send CDP message: %w", err)
 	}
 
-	// Wait for response or timeout
+	// Wait for response, context cancellation, or connection close
 	select {
 	case resp := <-p.ch:
 		return resp.Result, resp.Err
-	case <-p.timer.C:
-		return nil, fmt.Errorf("CDP command %q timed out after %v", method, timeout)
+	case <-ctx.Done():
+		return nil, fmt.Errorf("CDP command %q cancelled: %w", method, ctx.Err())
 	case <-c.done:
 		return nil, fmt.Errorf("CDP connection closed while waiting for %q", method)
 	}
@@ -395,7 +401,7 @@ func (c *CDPClient) EnableDOM() error {
 
 // Evaluate executes JavaScript in the page context and returns the result value.
 func (c *CDPClient) Evaluate(ctx context.Context, expression string) (json.RawMessage, error) {
-	result, err := c.Send("Runtime.evaluate", map[string]any{
+	result, err := c.SendCtx(ctx, "Runtime.evaluate", map[string]any{
 		"expression":    expression,
 		"returnByValue": true,
 		"awaitPromise":  true,
@@ -443,7 +449,7 @@ func (c *CDPClient) Navigate(ctx context.Context, targetURL string) error {
 	handlerID := c.On("Page.domContentEventFired", handler)
 	defer c.Off("Page.domContentEventFired", handlerID)
 
-	_, err := c.Send("Page.navigate", map[string]any{
+	_, err := c.SendCtx(ctx, "Page.navigate", map[string]any{
 		"url": targetURL,
 	})
 	if err != nil {

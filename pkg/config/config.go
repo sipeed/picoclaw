@@ -901,7 +901,7 @@ type SearchCacheConfig struct {
 type BrowserToolConfig struct {
 	ToolConfig  `envPrefix:"PICOCLAW_TOOLS_BROWSER_"`
 	CDPEndpoint string `json:"cdp_endpoint"    yaml:"cdp_endpoint,omitempty"  env:"PICOCLAW_TOOLS_BROWSER_CDP_ENDPOINT"`
-	Timeout     int    `json:"timeout_seconds"  yaml:"timeout_seconds,omitempty" env:"PICOCLAW_TOOLS_BROWSER_TIMEOUT"`
+	Timeout     int    `json:"timeout_seconds"  yaml:"timeout_seconds,omitempty" env:"PICOCLAW_TOOLS_BROWSER_TIMEOUT_SECONDS"`
 	Stealth     bool   `json:"stealth"          yaml:"stealth,omitempty"       env:"PICOCLAW_TOOLS_BROWSER_STEALTH"`
 	AllowEval   bool   `json:"allow_evaluate"   yaml:"allow_evaluate,omitempty" env:"PICOCLAW_TOOLS_BROWSER_ALLOW_EVALUATE"`
 }

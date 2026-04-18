@@ -26,10 +26,13 @@ func (t *BrowserTool) Name() string { return "browser" }
 func (t *BrowserTool) Description() string { return "Browser automation (not compiled)" }
 
 // Parameters implements Tool interface (stub).
+// Returns an explicit empty schema to keep schema generation consistent
+// even when the tool isn't compiled in.
 func (t *BrowserTool) Parameters() map[string]any {
 	return map[string]any{
 		"type":       "object",
 		"properties": map[string]any{},
+		"required":   []string{},
 	}
 }
 
