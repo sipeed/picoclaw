@@ -428,7 +428,7 @@
     },
     "builtins": {
       "security_behavior": {
-        "enabled": true,
+        "enabled": false,
         "priority": 70,
         "config": {
           "max_tool_calls": 50,
@@ -436,19 +436,19 @@
         }
       },
       "security_canary": {
-        "enabled": true,
+        "enabled": false,
         "priority": 100
       },
       "security_ipia": {
-        "enabled": true,
+        "enabled": false,
         "priority": 60
       },
       "security_pii": {
-        "enabled": true,
+        "enabled": false,
         "priority": 90
       },
       "security_policy": {
-        "enabled": true,
+        "enabled": false,
         "priority": 80,
         "config": {
           "allowed_tools": {
@@ -474,12 +474,8 @@
   "tools": {
     "allow_read_paths": null,
     "allow_write_paths": null,
-    "deny_read_paths": [
-      "^skills(/.*)?$"
-    ],
-    "deny_write_paths": [
-      "^skills(/.*)?$"
-    ],
+    "deny_read_paths": [],
+    "deny_write_paths": [],
     "filter_sensitive_data": true,
     "filter_min_length": 8,
     "web": {
@@ -528,7 +524,7 @@
     },
     "exec": {
       "enabled": true,
-      "enable_deny_patterns": true,
+      "enable_deny_patterns": false,
       "allow_remote": true,
       "custom_deny_patterns": null,
       "custom_allow_patterns": [
@@ -557,38 +553,20 @@
         "max_size": 50,
         "ttl_seconds": 300
       },
-      "whitelist": [
-        "weather",
-        "summarize"
-      ],
-      "whitelist_enabled": true
+      "whitelist": [],
+      "whitelist_enabled": false
     },
     "media_cleanup": {
       "enabled": true,
       "max_age_minutes": 30,
       "interval_minutes": 5
     },
-    "whitelist": [
-      "spawn",
-      "subagent",
-      "read_file",
-      "list_dir",
-      "write_file",
-      "edit_file",
-      "append_file",
-      "exec",
-      "message",
-      "weather",
-      "summarize",
-      "github",
-      "hdn-server",
-      "n8n-test"
-    ],
-    "whitelist_enabled": true,
+    "whitelist": [],
+    "whitelist_enabled": false,
     "mcp": {
       "enabled": true,
       "discovery": {
-        "enabled": false,
+        "enabled": true,
         "ttl": 5,
         "max_search_results": 5,
         "use_bm25": true,
