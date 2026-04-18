@@ -77,7 +77,7 @@ When an incoming message includes a **ChatID** (passed in the `/chat` API or ext
  
 1.  **Isolated Workspace:** The agent's operations are restricted to `workspace/sessions/{isolationID}/workspace`.
 2.  **Isolated Memory:** Long-term memory (`MEMORY.md`) is stored and read from the isolated session path.
-3.  **Isolated Tools:** Tools like `read_file` and `write_file` are automatically pointed to the isolated workspace. Additionally, **MCP server tools** (e.g., Harvest, Monday) and discovery search tools are dynamically registered to each isolated instance, ensuring they inherit the same security boundaries.
+3.  **Isolated Tools:** Tools like `read_file` and `write_file` are automatically pointed to the isolated workspace. Additionally, **MCP server tools** (e.g., GitHub, Google) and discovery search tools are dynamically registered to each isolated instance, ensuring they inherit the same security boundaries.
  
 #### Tenant Identification (Inbound Integration)
  
