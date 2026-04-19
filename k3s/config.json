@@ -7,7 +7,12 @@
     "defaults": {
       "workspace": "/home/picoclaw/.picoclaw",
       "restrict_to_workspace": true,
-      "allow_read_outside_workspace": false,
+      "allow_read_paths": [
+        "/home/picoclaw/.picoclaw/memory"
+      ],
+      "allow_write_paths": [
+        "/home/picoclaw/.picoclaw/memory"
+      ],
       "provider": "",
       "model_name": "nemotron-3-super-120b-a12b",
       "max_tokens": 32768,
@@ -640,22 +645,13 @@
     "read_file": {
       "enabled": true,
       "mode": "plaintext",
-      "max_read_file_size": 1048576,
-      "allow_read_paths": [
-        "/home/picoclaw/.picoclaw/memory"
-      ]
+      "max_read_file_size": 1048576
     },
     "write_file": {
-      "enabled": true,
-      "allow_write_paths": [
-        "/home/picoclaw/.picoclaw/memory"
-      ]
+      "enabled": true
     },
     "append_file": {
-      "enabled": true,
-      "allow_append_paths": [
-        "/home/picoclaw/.picoclaw/memory"
-      ]
+      "enabled": true
     },
     "send_file": {
       "enabled": true
