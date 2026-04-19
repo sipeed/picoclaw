@@ -645,6 +645,18 @@
         "/home/picoclaw/.picoclaw/memory"
       ]
     },
+    "write_file": {
+      "enabled": true,
+      "allow_write_paths": [
+        "/home/picoclaw/.picoclaw/memory"
+      ]
+    },
+    "append_file": {
+      "enabled": true,
+      "allow_append_paths": [
+        "/home/picoclaw/.picoclaw/memory"
+      ]
+    },
     "send_file": {
       "enabled": true
     },

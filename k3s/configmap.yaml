@@ -624,7 +624,10 @@ data:
           }
         },
         "append_file": {
-          "enabled": true
+          "enabled": true,
+          "allow_append_paths": [
+            "/home/picoclaw/.picoclaw/memory"
+          ]
         },
         "edit_file": {
           "enabled": true
@@ -652,6 +655,9 @@ data:
             "/home/picoclaw/.picoclaw/memory"
           ]
         },
+        "write_file": {
+          "enabled": true
+        },
         "send_file": {
           "enabled": true
         },
@@ -671,9 +677,6 @@ data:
           "enabled": true
         },
         "web_fetch": {
-          "enabled": true
-        },
-        "write_file": {
           "enabled": true
         }
       },
