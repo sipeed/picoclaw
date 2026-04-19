@@ -137,6 +137,29 @@ export function useChatAutoScroll({
     cancelAnimation()
   }, [cancelAnimation])
 
+  const scrollToBottom = useCallback(
+    (options?: { immediate?: boolean }) => {
+      const element = scrollRef.current
+      if (!element) {
+        return
+      }
+
+      stickyRef.current = true
+      setIsAtBottom(true)
+      targetScrollTopRef.current = getBottomScrollTop(element)
+
+      if (options?.immediate) {
+        cancelAnimation()
+        element.scrollTop = targetScrollTopRef.current
+        syncStateFromElement(element, { programmatic: true })
+        return
+      }
+
+      animateToBottom()
+    },
+    [animateToBottom, cancelAnimation, syncStateFromElement],
+  )
+
   useLayoutEffect(() => {
     const element = scrollRef.current
     if (!element) {
@@ -164,5 +187,6 @@ export function useChatAutoScroll({
     hasScrolled,
     handleScroll,
     handleManualScrollIntent,
+    scrollToBottom,
   }
 }

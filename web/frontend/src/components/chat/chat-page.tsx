@@ -1,4 +1,4 @@
-import { IconPlus } from "@tabler/icons-react"
+import { IconArrowDown, IconPlus } from "@tabler/icons-react"
 import { useAtom } from "jotai"
 import { type ChangeEvent, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -178,11 +178,17 @@ export function ChatPage() {
   const hasStreamingMessage =
     streamingEnabled &&
     messages.some((message) => message.role === "assistant" && message.streaming)
-  const { scrollRef, hasScrolled, handleScroll, handleManualScrollIntent } =
-    useChatAutoScroll({
-      deps: [messages, isTyping],
-      streaming: hasStreamingMessage,
-    })
+  const {
+    scrollRef,
+    isAtBottom,
+    hasScrolled,
+    handleScroll,
+    handleManualScrollIntent,
+    scrollToBottom,
+  } = useChatAutoScroll({
+    deps: [messages, isTyping],
+    streaming: hasStreamingMessage,
+  })
 
   const handleSend = () => {
     if ((!input.trim() && attachments.length === 0) || !canInput) return
@@ -259,7 +265,7 @@ export function ChatPage() {
     canInput && (Boolean(input.trim()) || attachments.length > 0)
 
   return (
-    <div className="bg-background/95 flex h-full flex-col">
+    <div className="bg-background/95 relative flex h-full flex-col">
       <PageHeader
         title={t("navigation.chat")}
         className={`transition-shadow ${
@@ -373,6 +379,18 @@ export function ChatPage() {
         className="hidden"
         onChange={handleImageSelection}
       />
+
+      {!isAtBottom && messages.length > 0 && (
+        <Button
+          type="button"
+          size="icon"
+          className="absolute right-6 bottom-28 z-20 rounded-full shadow-lg md:right-8"
+          aria-label="Scroll to bottom"
+          onClick={() => scrollToBottom()}
+        >
+          <IconArrowDown className="size-4" />
+        </Button>
+      )}
 
       <ChatComposer
         input={input}
