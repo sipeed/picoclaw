@@ -21,7 +21,11 @@ data:
             "/home/picoclaw/.picoclaw/memory"
           ],
           "provider": "",
-          "model_name": "nemotron-3-super-120b-a12b",
+          "model_name": "nvidia/llama-3.1-nemotron-70b-instruct",
+          "fallback_models": [
+            "openrouter/anthropic/claude-3.5-sonnet",
+            "openrouter/google/gemini-2.0-flash-001"
+          ],
           "max_tokens": 32768,
           "max_tool_iterations": 50,
           "summarize_message_threshold": 20,
