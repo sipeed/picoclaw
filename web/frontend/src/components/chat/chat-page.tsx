@@ -1,6 +1,6 @@
 import { IconPlus } from "@tabler/icons-react"
 import { useAtom } from "jotai"
-import { type ChangeEvent, useEffect, useRef, useState } from "react"
+import { type ChangeEvent, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
@@ -18,6 +18,7 @@ import { UserMessage } from "@/components/chat/user-message"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
+import { useChatAutoScroll } from "@/hooks/use-chat-auto-scroll"
 import { useChatModels } from "@/hooks/use-chat-models"
 import { useGateway } from "@/hooks/use-gateway"
 import { usePicoChat } from "@/hooks/use-pico-chat"
@@ -108,10 +109,7 @@ function resolveChatInputDisabledReason({
 
 export function ChatPage() {
   const { t } = useTranslation()
-  const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [isAtBottom, setIsAtBottom] = useState(true)
-  const [hasScrolled, setHasScrolled] = useState(false)
   const [input, setInput] = useState("")
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [showAssistantDetails, setShowAssistantDetails] = useAtom(
@@ -177,25 +175,14 @@ export function ChatPage() {
       (appConfig?.agents as { defaults?: { streaming_enabled?: boolean } })
         ?.defaults?.streaming_enabled
     ) !== false
-
-  const syncScrollState = (element: HTMLDivElement) => {
-    const { clientHeight, scrollHeight, scrollTop } = element
-    setHasScrolled(scrollTop > 0)
-    setIsAtBottom(scrollHeight - scrollTop <= clientHeight + 10)
-  }
-
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    syncScrollState(e.currentTarget)
-  }
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      if (isAtBottom) {
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-      }
-      syncScrollState(scrollRef.current)
-    }
-  }, [messages, isTyping, isAtBottom])
+  const hasStreamingMessage =
+    streamingEnabled &&
+    messages.some((message) => message.role === "assistant" && message.streaming)
+  const { scrollRef, hasScrolled, handleScroll, handleManualScrollIntent } =
+    useChatAutoScroll({
+      deps: [messages, isTyping],
+      streaming: hasStreamingMessage,
+    })
 
   const handleSend = () => {
     if ((!input.trim() && attachments.length === 0) || !canInput) return
@@ -332,6 +319,8 @@ export function ChatPage() {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
+        onWheelCapture={handleManualScrollIntent}
+        onTouchStart={handleManualScrollIntent}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-6 [scrollbar-gutter:stable] md:px-8 lg:px-24 xl:px-48"
       >
         <div className="mx-auto flex w-full max-w-250 flex-col gap-8 pb-8">
