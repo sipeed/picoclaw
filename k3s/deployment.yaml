@@ -14,7 +14,6 @@ spec:
         app: picoclaw-agent
     spec:
       # Init container to bootstrap the configuration from the ConfigMap into the Persistent Volume
-      # This answers "how will I copy the config file": the config is copied into the volume on the first run.
       initContainers:
       - name: init-config
         image: busybox:latest
@@ -47,11 +46,6 @@ spec:
           value: /home/picoclaw/.picoclaw
         - name: PICOCLAW_GATEWAY_HOST
           value: "0.0.0.0"
-        - name: PICOCLAW_GOOGLE_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: picoclaw-secrets
-              key: GOOGLE_API_KEY
         - name: PICOCLAW_TELEGRAM_TOKEN
           valueFrom:
             secretKeyRef:
@@ -61,7 +55,17 @@ spec:
           valueFrom:
             secretKeyRef:
               name: picoclaw-secrets
-              key: openrouter-api-key
+              key: OPENROUTER_API_KEY
+        - name: NVIDIA_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: picoclaw-secrets
+              key: nvidia-api-key
+        - name: AZURE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: picoclaw-secrets
+              key: azure-api-key
         volumeMounts:
         - name: picoclaw-data
           mountPath: /home/picoclaw/.picoclaw
@@ -78,3 +82,4 @@ spec:
       - name: picoclaw-secrets
         secret:
           secretName: picoclaw-secrets
+      restartPolicy: Always
