@@ -1,4 +1,4 @@
-# Agent 重构文档
+# Agent 文件重命名计划
 
 ## 目标
 
@@ -38,7 +38,7 @@ pkg/agent/
 ├── agent_outbound.go    # 响应发布
 ├── agent_event.go       # 事件系统
 ├── agent_command.go     # 命令处理
-├── agent_steering.go   # Steering
+├── agent_steering.go    # Steering
 ├── agent_transcribe.go  # 转录
 ├── agent_media.go       # 媒体处理
 ├── agent_mcp.go         # MCP
@@ -69,7 +69,7 @@ pkg/agent/
 ┌─────────────────────────────────────────────────────────┐
 │                    AgentLoop (agent.go)                │
 │  - 消息循环 Run/Stop/Close                              │
-│  - 依赖注入 (agent_inject.go)                            │
+│  - 依赖注入 (agent_inject.go)                           │
 │  - 消息路由 (agent_message.go)                          │
 │  - 响应发布 (agent_outbound.go)                         │
 └─────────────────────────────────────────────────────────┘
@@ -77,18 +77,18 @@ pkg/agent/
                           ▼
 ┌─────────────────────────────────────────────────────────┐
 │              Turn Coordinator (turn_coord.go)           │
-│  - runTurn(): 主协调器                                   │
-│  - abortTurn(): 中止                                    │
-│  - askSideQuestion(): 侧问                              │
-│  - selectCandidates(): 模型选择                          │
+│  - runTurn(): 主协调器                                  │
+│  - abortTurn(): 中止                                  │
+│  - askSideQuestion(): 侧问                             │
+│  - selectCandidates(): 模型选择                        │
 └─────────────────────────────────────────────────────────┘
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────┐
-│                 Pipeline (pipeline_*.go)                │
-│  - SetupTurn(): 初始化                                  │
-│  - CallLLM(): LLM 调用                                 │
-│  - ExecuteTools(): 工具执行                             │
+│                 Pipeline (pipeline_*.go)               │
+│  - SetupTurn(): 初始化                                 │
+│  - CallLLM(): LLM 调用                                │
+│  - ExecuteTools(): 工具执行                            │
 │  - Finalize(): 终结                                   │
 └─────────────────────────────────────────────────────────┘
 ```

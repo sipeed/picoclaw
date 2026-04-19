@@ -44,19 +44,19 @@ AgentLoop (agent.go)
     ├── runAgentLoop() ──────────────────┐
     │                                    │
     │    ┌───────────────────────────────▼───────────────────────────────┐
-    │    │                    Turn Coordinator (turn_coord.go)           │
+    │    │                    Turn Coordinator (turn_coord.go)              │
     │    │                                                           │
     │    │   runTurn() {                                             │
     │    │       exec = pipeline.SetupTurn()                           │
-    │    │       loop {                                              │
+    │    │       loop {                                               │
     │    │           ctrl = pipeline.CallLLM()  ──► Pipeline (pipeline_*.go) │
-    │    │           if ctrl == ToolLoop {                            │
-    │    │               toolCtrl = pipeline.ExecuteTools()              │
-    │    │           }                                                │
+    │    │           if ctrl == ToolLoop {                             │
+    │    │               toolCtrl = pipeline.ExecuteTools()             │
+    │    │           }                                                 │
     │    │       }                                                    │
     │    │       return pipeline.Finalize()                            │
-    │    │   }                                                       │
-    │    └───────────────────────────────────────────────────────────┘
+    │    │   }                                                        │
+    │    └─────────────────────────────────────────────────────────────┘
     │
     └── 发布响应 (agent_outbound.go)
 ```
