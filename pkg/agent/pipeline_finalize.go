@@ -27,7 +27,6 @@ func (p *Pipeline) Finalize(
 	// But still check for hard abort - if requested, abort the turn.
 	if exec.allResponsesHandled {
 		if ts.hardAbortRequested() {
-			turnStatus = TurnEndStatusAborted
 			return al.abortTurn(ts)
 		}
 		ts.setPhase(TurnPhaseCompleted)
@@ -46,7 +45,6 @@ func (p *Pipeline) Finalize(
 		ts.recordPersistedMessage(finalMsg)
 		ts.ingestMessage(turnCtx, al, finalMsg)
 		if err := ts.agent.Sessions.Save(ts.sessionKey); err != nil {
-			turnStatus = TurnEndStatusError
 			al.emitEvent(
 				EventKindError,
 				ts.eventMeta("runTurn", "turn.error"),
@@ -55,7 +53,7 @@ func (p *Pipeline) Finalize(
 					Message: err.Error(),
 				},
 			)
-			return turnResult{}, err
+			return turnResult{status: TurnEndStatusError}, err
 		}
 	}
 

@@ -204,7 +204,6 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 				return pipeline.Finalize(ctx, turnCtx, ts, exec, turnStatus, finalContent)
 			}
 		}
-
 	}
 
 	if ts.hardAbortRequested() {

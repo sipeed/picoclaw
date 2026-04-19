@@ -629,9 +629,9 @@ toolLoop:
 	if len(exec.pendingMessages) > 0 {
 		logger.InfoCF("agent", "Pending steering after partial tool execution; continuing turn",
 			map[string]any{
-				"agent_id":             ts.agent.ID,
-				"pending_count":        len(exec.pendingMessages),
-				"allResponsesHandled":  exec.allResponsesHandled,
+				"agent_id":            ts.agent.ID,
+				"pending_count":       len(exec.pendingMessages),
+				"allResponsesHandled": exec.allResponsesHandled,
 			})
 		return ToolControlContinue
 	}
