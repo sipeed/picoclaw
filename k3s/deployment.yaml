@@ -51,7 +51,7 @@ spec:
           valueFrom:
             secretKeyRef:
               name: picoclaw-secrets
-              key: GOOGLE_API_KEY
+              key: GOOGLE_API_KEY # Ensure this exists in your cluster secrets
         - name: PICOCLAW_TELEGRAM_TOKEN
           valueFrom:
             secretKeyRef:
@@ -61,7 +61,7 @@ spec:
           valueFrom:
             secretKeyRef:
               name: picoclaw-secrets
-              key: openrouter-api-key
+              key: OPENROUTER_API_KEY
         volumeMounts:
         - name: picoclaw-data
           mountPath: /home/picoclaw/.picoclaw
