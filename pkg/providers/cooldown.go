@@ -1,7 +1,10 @@
 package providers
 
 import (
+	"encoding/json"
 	"math"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -16,6 +19,7 @@ type CooldownTracker struct {
 	mu            sync.RWMutex
 	entries       map[string]*cooldownEntry
 	failureWindow time.Duration
+	storagePath   string
 	nowFunc       func() time.Time // for testing
 }
 
@@ -29,20 +33,23 @@ type cooldownEntry struct {
 }
 
 // NewCooldownTracker creates a tracker with default 24h failure window.
-func NewCooldownTracker() *CooldownTracker {
-	return &CooldownTracker{
+func NewCooldownTracker(storagePath string) *CooldownTracker {
+	ct := &CooldownTracker{
 		entries:       make(map[string]*cooldownEntry),
 		failureWindow: defaultFailureWindow,
+		storagePath:   storagePath,
 		nowFunc:       time.Now,
 	}
+	if storagePath != "" {
+		ct.Load()
+	}
+	return ct
 }
 
 // MarkFailure records a failure for a provider and sets appropriate cooldown.
 // Resets error counts if last failure was more than failureWindow ago.
 func (ct *CooldownTracker) MarkFailure(provider string, reason FailoverReason) {
 	ct.mu.Lock()
-	defer ct.mu.Unlock()
-
 	now := ct.nowFunc()
 	entry := ct.getOrCreate(provider)
 
@@ -53,6 +60,9 @@ func (ct *CooldownTracker) MarkFailure(provider string, reason FailoverReason) {
 	}
 
 	entry.ErrorCount++
+	if entry.FailureCounts == nil {
+		entry.FailureCounts = make(map[FailoverReason]int)
+	}
 	entry.FailureCounts[reason]++
 	entry.LastFailure = now
 
@@ -63,15 +73,20 @@ func (ct *CooldownTracker) MarkFailure(provider string, reason FailoverReason) {
 	} else {
 		entry.CooldownEnd = now.Add(calculateStandardCooldown(entry.ErrorCount))
 	}
+
+	// Capture state for saving outside the lock
+	toSave := ct.copyEntriesLocked()
+	ct.mu.Unlock()
+
+	ct.persist(toSave)
 }
 
 // MarkSuccess resets all counters and cooldowns for a provider.
 func (ct *CooldownTracker) MarkSuccess(provider string) {
 	ct.mu.Lock()
-	defer ct.mu.Unlock()
-
 	entry := ct.entries[provider]
 	if entry == nil {
+		ct.mu.Unlock()
 		return
 	}
 
@@ -80,6 +95,12 @@ func (ct *CooldownTracker) MarkSuccess(provider string) {
 	entry.CooldownEnd = time.Time{}
 	entry.DisabledUntil = time.Time{}
 	entry.DisabledReason = ""
+
+	// Capture state for saving outside the lock
+	toSave := ct.copyEntriesLocked()
+	ct.mu.Unlock()
+
+	ct.persist(toSave)
 }
 
 // IsAvailable returns true if the provider is not in cooldown or disabled.
@@ -160,6 +181,93 @@ func (ct *CooldownTracker) FailureCount(provider string, reason FailoverReason) 
 		return 0
 	}
 	return entry.FailureCounts[reason]
+}
+
+// Load reads cooldown state from disk.
+func (ct *CooldownTracker) Load() {
+	if ct.storagePath == "" {
+		return
+	}
+
+	data, err := os.ReadFile(ct.storagePath)
+	if err != nil {
+		return // ignore missing file
+	}
+
+	var loaded map[string]*cooldownEntry
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		return
+	}
+
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+
+	now := ct.nowFunc()
+	for k, v := range loaded {
+		// Only load entries that aren't fully expired yet
+		if (!v.CooldownEnd.IsZero() && now.Before(v.CooldownEnd)) ||
+			(!v.DisabledUntil.IsZero() && now.Before(v.DisabledUntil)) ||
+			(!v.LastFailure.IsZero() && now.Sub(v.LastFailure) < ct.failureWindow) {
+			if v.FailureCounts == nil {
+				v.FailureCounts = make(map[FailoverReason]int)
+			}
+			ct.entries[k] = v
+		}
+	}
+}
+
+// Save writes cooldown state to disk.
+func (ct *CooldownTracker) Save() {
+	ct.mu.RLock()
+	toSave := ct.copyEntriesLocked()
+	ct.mu.RUnlock()
+
+	ct.persist(toSave)
+}
+
+func (ct *CooldownTracker) copyEntriesLocked() map[string]*cooldownEntry {
+	toSave := make(map[string]*cooldownEntry)
+	now := ct.nowFunc()
+	for k, v := range ct.entries {
+		if v == nil {
+			continue
+		}
+		// Only save entries that are still relevant
+		if (!v.CooldownEnd.IsZero() && now.Before(v.CooldownEnd)) ||
+			(!v.DisabledUntil.IsZero() && now.Before(v.DisabledUntil)) ||
+			(!v.LastFailure.IsZero() && now.Sub(v.LastFailure) < ct.failureWindow) {
+
+			// Deep copy the entry to avoid data races when serializing outside the lock
+			copy := *v
+			if v.FailureCounts != nil {
+				copy.FailureCounts = make(map[FailoverReason]int)
+				for r, c := range v.FailureCounts {
+					copy.FailureCounts[r] = c
+				}
+			}
+			toSave[k] = &copy
+		}
+	}
+	return toSave
+}
+
+func (ct *CooldownTracker) persist(toSave map[string]*cooldownEntry) {
+	if ct.storagePath == "" {
+		return
+	}
+
+	if len(toSave) == 0 {
+		os.Remove(ct.storagePath) // cleanup if empty
+		return
+	}
+
+	data, err := json.MarshalIndent(toSave, "", "  ")
+	if err != nil {
+		return
+	}
+
+	os.MkdirAll(filepath.Dir(ct.storagePath), 0755)
+	os.WriteFile(ct.storagePath, data, 0644)
 }
 
 func (ct *CooldownTracker) getOrCreate(provider string) *cooldownEntry {

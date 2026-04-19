@@ -32,10 +32,11 @@ func (c FallbackCandidate) StableKey() string {
 
 // FallbackResult contains the successful response and metadata about all attempts.
 type FallbackResult struct {
-	Response *LLMResponse
-	Provider string
-	Model    string
-	Attempts []FallbackAttempt
+	Response    *LLMResponse
+	Provider    string
+	Model       string
+	IdentityKey string
+	Attempts    []FallbackAttempt
 }
 
 // FallbackAttempt records one attempt in the fallback chain.
@@ -187,6 +188,7 @@ func (fc *FallbackChain) Execute(
 			result.Response = resp
 			result.Provider = candidate.Provider
 			result.Model = candidate.Model
+			result.IdentityKey = candidate.IdentityKey
 			return result, nil
 		}
 
@@ -305,6 +307,7 @@ func (fc *FallbackChain) ExecuteImage(
 			result.Response = resp
 			result.Provider = candidate.Provider
 			result.Model = candidate.Model
+			result.IdentityKey = candidate.IdentityKey
 			return result, nil
 		}
 

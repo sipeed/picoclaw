@@ -541,6 +541,19 @@ go test ./pkg/config -run TestSecurityConfig
 - Remember: Models, Brave, Tavily, Perplexity MUST use `api_keys` (array format)
 - GLMSearch and BaiduSearch MUST use `api_key` (single string format)
 
+## FreeRide & Dynamic Failover Security
+
+When using the **FreeRide** dynamic model failover system, PicoClaw dynamically adds models to your `model_list`. To ensure these models stay secure:
+
+1. **Protocol-Level Security**: You can define a single entry in `.security.yml` that matches a specific provider/protocol. For example, to provide an identity for ALL OpenRouter models added by FreeRide:
+   ```yaml
+   model_list:
+     openrouter:
+       api_keys: ["sk-or-v1-your-global-key"]
+   ```
+2. **Environment Variable Fallback**: FreeRide is configured to look for `OPENROUTER_API_KEY` in the environment. In production (`main` branch), it is recommended to use K3s Secrets or `SecureString` to inject this.
+3. **Sensitive Filtering**: All models added by FreeRide are subject to the same `sensitive_data_filtering.md` rules as your primary models.
+
 ### Load Balancing/Failover Issues
 
 - Verify all API keys in the `api_keys` array are valid

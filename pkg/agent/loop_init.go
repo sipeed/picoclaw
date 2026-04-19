@@ -5,6 +5,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/audio/tts"
@@ -28,7 +29,8 @@ func NewAgentLoop(
 	registry := NewAgentRegistry(cfg, provider)
 
 	// Set up shared fallback chain with rate limiting.
-	cooldown := providers.NewCooldownTracker()
+	cooldownPath := filepath.Join(filepath.Dir(filepath.Clean(registry.GetDefaultAgent().Workspace)), "cooldowns.json")
+	cooldown := providers.NewCooldownTracker(cooldownPath)
 	rl := providers.NewRateLimiterRegistry()
 	// Register rate limiters for all agents' candidates so that RPM limits
 	// configured in ModelConfig are enforced before each LLM call.
@@ -56,16 +58,17 @@ func NewAgentLoop(
 	}
 
 	al := &AgentLoop{
-		bus:         msgBus,
-		cfg:         cfg,
-		configPath:  configPath,
-		registry:    registry,
-		state:       stateManager,
-		eventBus:    eventBus,
-		fallback:    fallbackChain,
-		cmdRegistry: commands.NewRegistry(commands.BuiltinDefinitions()),
-		steering:    newSteeringQueue(parseSteeringMode(cfg.Agents.Defaults.SteeringMode)),
-		workerSem:   make(chan struct{}, workerPoolSize),
+		bus:          msgBus,
+		cfg:          cfg,
+		configPath:   configPath,
+		cooldownPath: cooldownPath,
+		registry:     registry,
+		state:        stateManager,
+		eventBus:     eventBus,
+		fallback:     fallbackChain,
+		cmdRegistry:  commands.NewRegistry(commands.BuiltinDefinitions()),
+		steering:     newSteeringQueue(parseSteeringMode(cfg.Agents.Defaults.SteeringMode)),
+		workerSem:    make(chan struct{}, workerPoolSize),
 	}
 	al.providerFactory = providers.CreateProviderFromConfig
 	al.hooks = NewHookManager(eventBus)

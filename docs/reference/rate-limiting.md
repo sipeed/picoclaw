@@ -25,13 +25,20 @@ AgentLoop.callLLM()
 The rate limiter runs **after** the cooldown check and **before** the provider call, so:
 - Candidates already in cooldown are skipped entirely (no token consumed)
 - Candidates that are available get throttled to the configured RPM
-
-The same check applies in `ExecuteImage`.
-
+ 
+## Cooldown Persistence ❄️
+ 
+While the Rate Limiter is **proactive**, the Cooldown Tracker is **reactive** (handled *after* a 429 is actually received). 
+ 
+To ensure stability across restarts, the Cooldown Tracker persists its state to disk:
+- **Location**: `~/.picoclaw/cooldowns.json` (or sibling to your workspace)
+- **Behavior**: If the agent is restarted, it loads the failure history and continues to enforce cooldowns. This prevents "initialization hangs" where a new agent process tries a long list of models that are already known to be rate-limited.
+- **Timing**: Default LLM request timeout is now **30 seconds** to ensure faster failover.
+ 
 ### Thread safety
-
+ 
 `RateLimiterRegistry` is safe for concurrent use. The per-limiter token bucket uses a fine-grained mutex so concurrent goroutines each acquire their own token independently.
-
+ 
 ## Configuration
 
 Set `rpm` on any model in `model_list`:

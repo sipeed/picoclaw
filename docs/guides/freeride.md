@@ -12,23 +12,16 @@ FreeRide is a dynamic model rotation and failover system for PicoClaw that lever
 
 ## Configuration
 
-FreeRide is implemented as a native PicoClaw tool.
+FreeRide is implemented as a native PicoClaw tool. For production environments (especially in the **main branch**), ensure you follow the [Security Configuration](../security/security_configuration.md) to manage your API keys safely.
 
 ### 1. Enable the Tool
-Ensure the `freeride` tool is enabled and whitelisted in your `config.json`:
-
+Ensure the `skills` tool is enabled in your `config.json` (FreeRide is bundled with the skills system):
+ 
 ```json
 {
   "tools": {
-    "whitelist": ["freeride", ...],
-    "whitelist_enabled": true,
-    "security_policy": {
-      "enabled": true,
-      "config": {
-        "allowed_tools": {
-          "freeride": true
-        }
-      }
+    "skills": {
+      "enabled": true
     }
   }
 }
@@ -106,11 +99,20 @@ env:
         key: openrouter-api-key
 ```
 
+## Cooldown Persistence & Timing ❄️
+ 
+To prevent the agent from "hanging" or retrying known-failed models, PicoClaw uses a two-pronged approach:
+ 
+### 1. Zero-Amnesia Persistence
+Model failures (e.g., 429 Rate Limits) are saved to `~/.picoclaw/cooldowns.json`. This ensures that if you restart the agent, it **remembers** which models were saturated and skips them instantly. You no longer have to wait through a series of timeouts every time you restart.
+ 
+### 2. Aggressive 30s Timeout
+The default request timeout for LLM calls is **30 seconds**. If a free model is stalled or unresponsive, the agent will move to the next fallback in your pool much faster than the standard HTTP default.
+ 
 ## Troubleshooting
 
 - **404 Errors**: Ensure the model is still available on OpenRouter using `freeride list`. If it's gone, run `freeride auto` to refresh your fallback pool.
-- **429 Rate Limiting**: This is common with free models. PicoClaw will automatically try the next model in your `model_fallbacks` list.
-- **Security Blocks**: Ensure `freeride` is added to your `security_policy` allowed tools map.
+- **429 Rate Limiting**: This is common with free models. PicoClaw will automatically try the next model in your `model_fallbacks` list and persist the cooldown to `cooldowns.json`.
 
 ---
 

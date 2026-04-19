@@ -36,7 +36,7 @@ type (
 	ReasoningDetail        = protocoltypes.ReasoningDetail
 )
 
-const DefaultRequestTimeout = 120 * time.Second
+const DefaultRequestTimeout = 30 * time.Second
 
 // NewHTTPClient creates an *http.Client with an optional proxy and the default timeout.
 func NewHTTPClient(proxy string) *http.Client {

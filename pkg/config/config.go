@@ -530,8 +530,9 @@ type VoiceConfig struct {
 // Default protocol is "openai" if no prefix is specified.
 type ModelConfig struct {
 	// Required fields
-	ModelName string `json:"model_name"` // User-facing alias for the model
-	Model     string `json:"model"`      // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-sonnet-4.6")
+	ModelName string `json:"model_name"`         // User-facing alias for the model
+	Model     string `json:"model"`              // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-sonnet-4.6")
+	Protocol  string `json:"protocol,omitempty"` // Explicit protocol (e.g., "openai", "openrouter", "anthropic")
 
 	// HTTP-based providers
 	APIBase   string   `json:"api_base,omitempty"`  // API endpoint URL

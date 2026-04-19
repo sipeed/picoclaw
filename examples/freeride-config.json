@@ -1,0 +1,37 @@
+{
+  "agents": {
+    "defaults": {
+      "model_name": "google/gemma-3-27b-it:free",
+      "model_fallbacks": [
+        "google/gemma-3-27b-it:free",
+        "nvidia/nemotron-4-340b-instruct:free",
+        "qwen/qwen-2.5-72b-instruct:free",
+        "mistralai/mistral-small-24b-it-v1:free"
+      ],
+      "max_tokens": 4096,
+      "max_tool_iterations": 10
+    }
+  },
+  "model_list": [
+    {
+      "model_name": "google/gemma-3-27b-it:free",
+      "model": "google/gemma-3-27b-it:free",
+      "protocol": "openrouter"
+    },
+    {
+      "model_name": "nvidia/nemotron-4-340b-instruct:free",
+      "model": "nvidia/nemotron-4-340b-instruct:free",
+      "protocol": "openrouter"
+    },
+    {
+      "model_name": "qwen/qwen-2.5-72b-instruct:free",
+      "model": "qwen/qwen-2.5-72b-instruct:free",
+      "protocol": "openrouter"
+    },
+    {
+      "model_name": "mistralai/mistral-small-24b-it-v1:free",
+      "model": "mistralai/mistral-small-24b-it-v1:free",
+      "protocol": "openrouter"
+    }
+  ]
+}

@@ -387,7 +387,11 @@ turnLoop:
 							fbResult.Provider, fbResult.Model, len(fbResult.Attempts)+1),
 						map[string]any{"agent_id": ts.agent.ID, "iteration": iteration},
 					)
-					ts.SetFallbackInfo(true, fbResult.Model)
+					displayName := fbResult.Model
+					if strings.HasPrefix(fbResult.IdentityKey, "model_name:") {
+						displayName = strings.TrimPrefix(fbResult.IdentityKey, "model_name:")
+					}
+					ts.SetFallbackInfo(true, displayName)
 				}
 				return fbResult.Response, nil
 			}

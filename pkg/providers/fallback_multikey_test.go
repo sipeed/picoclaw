@@ -24,7 +24,7 @@ func TestMultiKeyFailover(t *testing.T) {
 	}
 
 	// Create fallback chain
-	cooldown := NewCooldownTracker()
+	cooldown := NewCooldownTracker("")
 	chain := NewFallbackChain(cooldown, nil)
 
 	// Mock run function: first call fails with 429, second succeeds
@@ -81,7 +81,7 @@ func TestMultiKeyFailoverAllFail(t *testing.T) {
 
 	candidates := ResolveCandidates(cfg, "zhipu")
 
-	cooldown := NewCooldownTracker()
+	cooldown := NewCooldownTracker("")
 	chain := NewFallbackChain(cooldown, nil)
 
 	// Mock run function: all calls fail with rate limit
@@ -126,7 +126,7 @@ func TestMultiKeyFailoverCooldown(t *testing.T) {
 
 	candidates := ResolveCandidates(cfg, "zhipu")
 
-	cooldown := NewCooldownTracker()
+	cooldown := NewCooldownTracker("")
 	chain := NewFallbackChain(cooldown, nil)
 
 	// Put the first model in cooldown (using ModelKey now, not just provider)
@@ -182,7 +182,7 @@ func TestMultiKeyFailoverWithFormatError(t *testing.T) {
 
 	candidates := ResolveCandidates(cfg, "zhipu")
 
-	cooldown := NewCooldownTracker()
+	cooldown := NewCooldownTracker("")
 	chain := NewFallbackChain(cooldown, nil)
 
 	// Mock run function: first call fails with format error (bad request)
@@ -262,7 +262,7 @@ func TestMultiKeyWithModelFallback(t *testing.T) {
 		)
 	}
 
-	cooldown := NewCooldownTracker()
+	cooldown := NewCooldownTracker("")
 	chain := NewFallbackChain(cooldown, nil)
 
 	// Mock run function: first two fail, third succeeds (model fallback)
@@ -336,7 +336,7 @@ func TestMultiKeyFailoverMixedErrors(t *testing.T) {
 
 	candidates := ResolveCandidates(cfg, "zhipu")
 
-	cooldown := NewCooldownTracker()
+	cooldown := NewCooldownTracker("")
 	chain := NewFallbackChain(cooldown, nil)
 
 	// Mock run function: different errors for each key

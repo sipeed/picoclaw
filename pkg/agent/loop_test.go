@@ -2646,8 +2646,8 @@ func TestProcessMessage_FallbackUsesPerCandidateProvider(t *testing.T) {
 		Content:  "hi",
 	})
 
-	if resp != "fallback reply" {
-		t.Fatalf("response = %q, want %q (fallback provider)", resp, "fallback reply")
+	if !strings.HasPrefix(resp, "fallback reply") || !strings.Contains(resp, "🦞") {
+		t.Fatalf("response = %q, want it to contain %q and 🦞 (fallback provider)", resp, "fallback reply")
 	}
 	if primaryCalls == 0 {
 		t.Fatal("primary server was never called; expected at least one attempt")
@@ -2723,8 +2723,8 @@ func TestProcessMessage_FallbackUsesActiveProviderWhenCandidateNotRegistered(t *
 		Content:  "hi",
 	})
 
-	if resp != "active provider reply" {
-		t.Fatalf("response = %q, want %q", resp, "active provider reply")
+	if !strings.HasPrefix(resp, "active provider reply") || !strings.Contains(resp, "🦞") {
+		t.Fatalf("response = %q, want it to contain %q and 🦞", resp, "active provider reply")
 	}
 	if callCount < 2 {
 		t.Fatalf("primary server calls = %d, want >= 2 (one 429 + one success via activeProvider)", callCount)

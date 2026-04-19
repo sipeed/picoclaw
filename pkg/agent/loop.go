@@ -64,6 +64,7 @@ type AgentLoop struct {
 	turnSeq        atomic.Uint64
 	activeRequests sync.WaitGroup
 	configPath     string
+	cooldownPath   string
 
 	reloadFunc func() error
 
@@ -386,7 +387,7 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 			newRL.RegisterCandidates(agent.LightCandidates)
 		}
 	}
-	al.fallback = providers.NewFallbackChain(providers.NewCooldownTracker(), newRL)
+	al.fallback = providers.NewFallbackChain(providers.NewCooldownTracker(al.cooldownPath), newRL)
 
 	al.mu.Unlock()
 
@@ -521,16 +522,17 @@ func (al *AgentLoop) runAgentLoop(
 		}
 	}
 
-	if opts.SendResponse && result.finalContent != "" {
+	finalContent := result.finalContent
+	if usedFallback, fallbackModel := ts.GetFallbackInfo(); usedFallback {
+		finalContent += fmt.Sprintf("\n\n🦞 _(FreeRide: %s)_", fallbackModel)
+	}
+
+	if opts.SendResponse && finalContent != "" {
 		agentID, sessionKey, scope := outboundTurnMetadata(
 			agent.ID,
 			opts.Dispatch.SessionKey,
 			opts.Dispatch.SessionScope,
 		)
-		finalContent := result.finalContent
-		if usedFallback, fallbackModel := ts.GetFallbackInfo(); usedFallback {
-			finalContent += fmt.Sprintf("\n\n🦞 _(FreeRide: %s)_", fallbackModel)
-		}
 		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Context: outboundContextFromInbound(
 				opts.Dispatch.InboundContext,
@@ -545,7 +547,7 @@ func (al *AgentLoop) runAgentLoop(
 		})
 	}
 
-	return result.finalContent, nil
+	return finalContent, nil
 }
 
 // selectCandidates returns the model candidates and resolved model name to use

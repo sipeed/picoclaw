@@ -218,7 +218,8 @@ func (t *FreeRideTool) handleAuto(ctx context.Context, limit int) *ToolResult {
 		if !modelExists(cfgObj, modelName) {
 			mc := &config.ModelConfig{
 				ModelName: modelName,
-				Model:     "openrouter/" + m.ID,
+				Model:     m.ID,
+				Protocol:  "openrouter",
 				Enabled:   true,
 			}
 			mc.SetAPIKey("env://OPENROUTER_API_KEY")

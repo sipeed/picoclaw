@@ -8,13 +8,13 @@ import (
 
 func newTestTracker(now time.Time) (*CooldownTracker, *time.Time) {
 	current := now
-	ct := NewCooldownTracker()
+	ct := NewCooldownTracker("")
 	ct.nowFunc = func() time.Time { return current }
 	return ct, &current
 }
 
 func TestCooldown_InitiallyAvailable(t *testing.T) {
-	ct := NewCooldownTracker()
+	ct := NewCooldownTracker("")
 	if !ct.IsAvailable("openai") {
 		t.Error("new provider should be available")
 	}
@@ -110,7 +110,7 @@ func TestCooldown_BillingCap(t *testing.T) {
 }
 
 func TestCooldown_SuccessReset(t *testing.T) {
-	ct := NewCooldownTracker()
+	ct := NewCooldownTracker("")
 
 	ct.MarkFailure("openai", FailoverRateLimit)
 	ct.MarkFailure("openai", FailoverBilling)
@@ -157,7 +157,7 @@ func TestCooldown_FailureWindowReset(t *testing.T) {
 }
 
 func TestCooldown_PerReasonTracking(t *testing.T) {
-	ct := NewCooldownTracker()
+	ct := NewCooldownTracker("")
 
 	ct.MarkFailure("openai", FailoverRateLimit)
 	ct.MarkFailure("openai", FailoverRateLimit)
@@ -218,7 +218,7 @@ func TestCooldown_CooldownRemaining(t *testing.T) {
 }
 
 func TestCooldown_SuccessOnUnknownProvider(t *testing.T) {
-	ct := NewCooldownTracker()
+	ct := NewCooldownTracker("")
 	// Should not panic
 	ct.MarkSuccess("nonexistent")
 	if !ct.IsAvailable("nonexistent") {
@@ -227,7 +227,7 @@ func TestCooldown_SuccessOnUnknownProvider(t *testing.T) {
 }
 
 func TestCooldown_ConcurrentAccess(t *testing.T) {
-	ct := NewCooldownTracker()
+	ct := NewCooldownTracker("")
 	var wg sync.WaitGroup
 
 	for range 100 {
@@ -251,7 +251,7 @@ func TestCooldown_ConcurrentAccess(t *testing.T) {
 }
 
 func TestCooldown_MultipleProviders(t *testing.T) {
-	ct := NewCooldownTracker()
+	ct := NewCooldownTracker("")
 
 	ct.MarkFailure("openai", FailoverRateLimit)
 	ct.MarkFailure("anthropic", FailoverBilling)

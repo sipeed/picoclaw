@@ -18,6 +18,7 @@ import (
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/auth"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/cliui"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/cron"
+	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/freeride"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/gateway"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/migrate"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/model"
@@ -84,6 +85,7 @@ picoclaw --no-color status`,
 		onboard.NewOnboardCommand(),
 		agent.NewAgentCommand(),
 		auth.NewAuthCommand(),
+		freeride.NewFreerideCommand(),
 		gateway.NewGatewayCommand(),
 		status.NewStatusCommand(),
 		cron.NewCronCommand(),

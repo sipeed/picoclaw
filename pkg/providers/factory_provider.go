@@ -109,6 +109,9 @@ func ResolveAPIBase(cfg *config.ModelConfig) string {
 		return strings.TrimRight(apiBase, "/")
 	}
 	protocol, _ := ExtractProtocol(cfg.Model)
+	if cfg.Protocol != "" {
+		protocol = cfg.Protocol
+	}
 	return strings.TrimRight(getDefaultAPIBase(protocol), "/")
 }
 
@@ -128,6 +131,10 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	}
 
 	protocol, modelID := ExtractProtocol(cfg.Model)
+	if cfg.Protocol != "" {
+		protocol = cfg.Protocol
+		modelID = cfg.Model
+	}
 
 	userAgent := cfg.UserAgent
 	if userAgent == "" {
@@ -224,12 +231,12 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",
 		"coding-plan", "alibaba-coding", "qwen-coding", "mimo":
 		// All other OpenAI-compatible HTTP providers
-		if cfg.APIKey() == "" && cfg.APIBase == "" && !isEmptyAPIKeyAllowed(protocol) {
-			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
-		}
 		apiBase := cfg.APIBase
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
+		}
+		if cfg.APIKey() == "" && apiBase == "" && !isEmptyAPIKeyAllowed(protocol) {
+			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
 		}
 		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 			cfg.APIKey(),
