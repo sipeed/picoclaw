@@ -51,12 +51,12 @@ func agentCmd(message, sessionKey, model string, debug bool) error {
 
 	msgBus := bus.NewMessageBus()
 	defer msgBus.Close()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	agentLoop := agent.NewAgentLoop(cfg, internal.GetConfigPath(), msgBus, provider)
 	defer agentLoop.Close()
 
 	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()
-	logger.InfoCF("agent", "Agent initialized",
+	logger.DebugCF("agent", "Agent initialized",
 		map[string]any{
 			"tools_count":      startupInfo["tools"].(map[string]any)["count"],
 			"skills_total":     startupInfo["skills"].(map[string]any)["total"],

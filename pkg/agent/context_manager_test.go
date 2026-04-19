@@ -465,7 +465,7 @@ func TestLegacyCompact_PostTurn_ExceedsMessageThreshold(t *testing.T) {
 		},
 	}
 	msgBus := bus.NewMessageBus()
-	al := NewAgentLoop(cfg, msgBus, &simpleMockProvider{response: "summary"})
+	al := NewAgentLoop(cfg, "", msgBus, &simpleMockProvider{response: "summary"})
 
 	defaultAgent := al.registry.GetDefaultAgent()
 	if defaultAgent == nil {
@@ -617,7 +617,7 @@ func TestIngestCalledDuringTurn(t *testing.T) {
 	}
 
 	msgBus := bus.NewMessageBus()
-	al := NewAgentLoop(cfg, msgBus, &simpleMockProvider{response: "done"})
+	al := NewAgentLoop(cfg, "", msgBus, &simpleMockProvider{response: "done"})
 	defaultAgent := al.registry.GetDefaultAgent()
 	if defaultAgent == nil {
 		t.Fatal("expected default agent")
@@ -763,5 +763,5 @@ func testConfig(t *testing.T) *config.Config {
 
 func newCMTestAgentLoop(cfg *config.Config) *AgentLoop {
 	msgBus := bus.NewMessageBus()
-	return NewAgentLoop(cfg, msgBus, &simpleMockProvider{response: "test"})
+	return NewAgentLoop(cfg, "", msgBus, &simpleMockProvider{response: "test"})
 }

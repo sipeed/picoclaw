@@ -112,7 +112,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	} else {
 		logContent = utils.Truncate(msg.Content, 80)
 	}
-	logger.InfoCF(
+	logger.DebugCF(
 		"agent",
 		fmt.Sprintf("Processing message from %s:%s: %s", msg.Channel, msg.SenderID, logContent),
 		map[string]any{
@@ -156,7 +156,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		}
 	}
 
-	logger.InfoCF("agent", "Routed message",
+	logger.DebugCF("agent", "Routed message",
 		map[string]any{
 			"agent_id":           agent.ID,
 			"scope_key":          scopeKey,

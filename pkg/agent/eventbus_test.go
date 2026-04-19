@@ -120,7 +120,7 @@ func TestAgentLoop_EmitsMinimalTurnEvents(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	provider := &scriptedToolProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	al := NewAgentLoop(cfg, "", msgBus, provider)
 	al.RegisterTool(&mockCustomTool{})
 	defaultAgent := al.registry.GetDefaultAgent()
 	if defaultAgent == nil {
@@ -305,7 +305,7 @@ func TestAgentLoop_EmitsSteeringAndSkippedToolEvents(t *testing.T) {
 	}
 
 	msgBus := bus.NewMessageBus()
-	al := NewAgentLoop(cfg, msgBus, provider)
+	al := NewAgentLoop(cfg, "", msgBus, provider)
 	al.RegisterTool(tool1)
 	al.RegisterTool(tool2)
 
@@ -406,7 +406,7 @@ func TestAgentLoop_EmitsContextCompressEventOnRetry(t *testing.T) {
 		successResp: "Recovered from context error",
 	}
 	msgBus := bus.NewMessageBus()
-	al := NewAgentLoop(cfg, msgBus, provider)
+	al := NewAgentLoop(cfg, "", msgBus, provider)
 	defaultAgent := al.registry.GetDefaultAgent()
 	if defaultAgent == nil {
 		t.Fatal("expected default agent")
@@ -493,7 +493,7 @@ func TestAgentLoop_EmitsSessionSummarizeEvent(t *testing.T) {
 	}
 
 	msgBus := bus.NewMessageBus()
-	al := NewAgentLoop(cfg, msgBus, &simpleMockProvider{response: "summary text"})
+	al := NewAgentLoop(cfg, "", msgBus, &simpleMockProvider{response: "summary text"})
 	defaultAgent := al.registry.GetDefaultAgent()
 	if defaultAgent == nil {
 		t.Fatal("expected default agent")
@@ -563,7 +563,7 @@ func TestAgentLoop_EmitsFollowUpQueuedEvent(t *testing.T) {
 	}
 
 	msgBus := bus.NewMessageBus()
-	al := NewAgentLoop(cfg, msgBus, provider)
+	al := NewAgentLoop(cfg, "", msgBus, provider)
 	doneCh := make(chan struct{})
 	al.RegisterTool(&asyncFollowUpTool{
 		name:          "async_followup",

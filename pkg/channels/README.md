@@ -1376,7 +1376,7 @@ type PlaceholderRecorder interface {
 // 1. Create core components
 msgBus     := bus.NewMessageBus()
 provider   := providers.CreateProvider(cfg)
-agentLoop  := agent.NewAgentLoop(cfg, msgBus, provider)
+agentLoop  := agent.NewAgentLoop(cfg, configPath, msgBus, provider)
 
 // 2. Create media store (with TTL cleanup)
 mediaStore := media.NewFileMediaStoreWithCleanup(cleanerConfig)

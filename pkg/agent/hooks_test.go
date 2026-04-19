@@ -38,7 +38,7 @@ func newHookTestLoop(
 		},
 	}
 
-	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
+	al := NewAgentLoop(cfg, "", bus.NewMessageBus(), provider)
 	agent := al.registry.GetDefaultAgent()
 	if agent == nil {
 		t.Fatal("expected default agent")

@@ -306,7 +306,7 @@ test: generate
 
 ## fmt: Format Go code
 fmt:
-	@$(GOLANGCI_LINT) fmt
+	@go fmt ./...
 
 ## lint-docs: Check common documentation layout and naming conventions
 lint-docs:

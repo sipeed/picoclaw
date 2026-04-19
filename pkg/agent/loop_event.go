@@ -160,7 +160,7 @@ func (al *AgentLoop) logEvent(evt Event) {
 		fields["error"] = payload.Message
 	}
 
-	logger.InfoCF("eventbus", fmt.Sprintf("Agent event: %s", evt.Kind.String()), fields)
+	logger.DebugF("Agent event: "+evt.Kind.String(), fields)
 }
 
 // MountHook registers an in-process hook on the agent loop.

@@ -1374,7 +1374,7 @@ type PlaceholderRecorder interface {
 // 1. 创建核心组件
 msgBus     := bus.NewMessageBus()
 provider   := providers.CreateProvider(cfg)
-agentLoop  := agent.NewAgentLoop(cfg, msgBus, provider)
+agentLoop  := agent.NewAgentLoop(cfg, configPath, msgBus, provider)
 
 // 2. 创建媒体存储（带 TTL 清理）
 mediaStore := media.NewFileMediaStoreWithCleanup(cleanerConfig)

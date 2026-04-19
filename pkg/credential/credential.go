@@ -77,6 +77,7 @@ const picoclawHome = "PICOCLAW_HOME"
 const (
 	FileScheme = "file://"
 	EncScheme  = "enc://"
+	EnvScheme  = "env://"
 
 	hkdfInfo = "picoclaw-credential-v1"
 	saltLen  = 16
@@ -147,6 +148,17 @@ func (r *Resolver) Resolve(raw string) (string, error) {
 
 	if strings.HasPrefix(raw, EncScheme) {
 		return resolveEncrypted(raw)
+	}
+
+	if strings.HasPrefix(raw, EnvScheme) {
+		envVar := strings.TrimPrefix(raw, EnvScheme)
+		val := os.Getenv(envVar)
+		if val == "" {
+			// Do not return an error here, just return empty string.
+			// This prevents the whole agent from failing to start if an optional key is missing.
+			return "", nil
+		}
+		return strings.TrimSpace(val), nil
 	}
 
 	// Plaintext credential — return unchanged.

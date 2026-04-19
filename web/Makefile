@@ -1,5 +1,5 @@
 .PHONY: dev dev-frontend dev-backend build build-frontend build-dev-picoclaw test lint clean \
-	build-android-arm64 build-android-bundle
+	build-android-arm64 build-android-bundle frontend-install
 
 # Go variables
 GO?=CGO_ENABLED=0 go
@@ -105,7 +105,7 @@ build-android-bundle: build-frontend
 	GOOS=android GOARCH=arm64 $(GO) build -tags stdjson -ldflags "$(LDFLAGS)" -o "$(BUILD_DIR)/picoclaw-launcher-android-arm64" ./$(BACKEND_DIR)/
 	@echo "All Android launcher builds complete"
 
-build-frontend:
+frontend-install:
 	@expected_stamp="$$(cat $(FRONTEND_DIR)/package.json $(FRONTEND_DIR)/pnpm-lock.yaml | cksum | awk '{print $$1 ":" $$2}')"; \
 	if [ ! -d $(FRONTEND_DIR)/node_modules ] || \
 		[ ! -x $(FRONTEND_DIR)/node_modules/.bin/tsc ] || \
@@ -115,6 +115,8 @@ build-frontend:
 		(cd $(FRONTEND_DIR) && CI=true pnpm install --frozen-lockfile) && \
 		printf '%s\n' "$$expected_stamp" > $(FRONTEND_INSTALL_STAMP); \
 	fi
+
+build-frontend: frontend-install
 	@echo "Building frontend..."
 	@cd $(FRONTEND_DIR) && pnpm build:backend
 
@@ -124,12 +126,12 @@ build-dev-picoclaw:
 	@$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o "$(PICOCLAW_BINARY)" ../cmd/picoclaw
 
 # Run all tests
-test:
+test: frontend-install
 	cd $(BACKEND_DIR) && ${WEB_GO} test ./...
 	cd $(FRONTEND_DIR) && pnpm lint
 
 # Lint and format
-lint:
+lint: frontend-install
 	cd $(BACKEND_DIR) && ${WEB_GO} vet ./...
 	cd $(FRONTEND_DIR) && pnpm check
 

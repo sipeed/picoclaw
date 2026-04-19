@@ -36,6 +36,41 @@ See [Sensitive Data Filtering](../security/sensitive_data_filtering.md) for full
 |--------|------|---------|-------------|
 | `filter_sensitive_data` | bool | `true` | Enable/disable filtering |
 | `filter_min_length` | int | `8` | Minimum content length to trigger filtering |
+ 
++## Dynamic Credential Schemes
++
++PicoClaw supports several schemes for resolving API keys and secrets dynamically at runtime, avoiding the need to hardcode sensitive strings in your configuration file.
++
++| Scheme | Format | Description |
++|--------|--------|-------------|
++| **Environment** | `env://NAME` | Resolves the value of the environment variable `NAME`. |
++| **File** | `file:///path/to/key.txt` | Reads the first line of the specified file. |
++| **Encrypted** | `enc://VAULT_KEY` | (Beta) Decrypts values stored in an internal secure vault. |
++
++### Usage Example
++
++In `config.json`:
++```json
++{
++  "model_list": [
++    {
++      "model_name": "gpt-5.4",
++      "api_keys": ["env://OPENAI_API_KEY"]
++    }
++  ],
++  "tools": {
++    "web": {
++      "brave": {
++        "api_keys": ["file:///run/secrets/brave_key"]
++      }
++    }
++  }
++}
++```
++
++### Lenient Resolution
++If an environment variable (using `env://`) is not set, PicoClaw will return an empty string and continue. This allows you to configure multiple optional keys without causing the agent to crash on startup if some are missing.
++
 
 ## Web Tools
 

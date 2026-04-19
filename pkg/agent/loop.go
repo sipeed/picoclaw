@@ -27,7 +27,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/state"
-	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 type AgentLoop struct {
@@ -64,6 +63,7 @@ type AgentLoop struct {
 
 	turnSeq        atomic.Uint64
 	activeRequests sync.WaitGroup
+	configPath     string
 
 	reloadFunc func() error
 
@@ -263,6 +263,14 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
+}
+
+func (al *AgentLoop) GetReloadFunc() func() error {
+	return al.reloadFunc
+}
+
+func (al *AgentLoop) GetConfigPath() string {
+	return al.configPath
 }
 
 // Close releases resources held by agent session stores. Call after Stop.
@@ -519,6 +527,10 @@ func (al *AgentLoop) runAgentLoop(
 			opts.Dispatch.SessionKey,
 			opts.Dispatch.SessionScope,
 		)
+		finalContent := result.finalContent
+		if usedFallback, fallbackModel := ts.GetFallbackInfo(); usedFallback {
+			finalContent += fmt.Sprintf("\n\n🦞 _(FreeRide: %s)_", fallbackModel)
+		}
 		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Context: outboundContextFromInbound(
 				opts.Dispatch.InboundContext,
@@ -529,19 +541,8 @@ func (al *AgentLoop) runAgentLoop(
 			AgentID:    agentID,
 			SessionKey: sessionKey,
 			Scope:      scope,
-			Content:    result.finalContent,
+			Content:    finalContent,
 		})
-	}
-
-	if result.finalContent != "" {
-		responsePreview := utils.Truncate(result.finalContent, 120)
-		logger.InfoCF("agent", fmt.Sprintf("Response: %s", responsePreview),
-			map[string]any{
-				"agent_id":     agent.ID,
-				"session_key":  opts.Dispatch.SessionKey,
-				"iterations":   ts.currentIteration(),
-				"final_length": len(result.finalContent),
-			})
 	}
 
 	return result.finalContent, nil

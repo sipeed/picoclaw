@@ -21,6 +21,7 @@ import (
 
 func NewAgentLoop(
 	cfg *config.Config,
+	configPath string,
 	msgBus *bus.MessageBus,
 	provider providers.LLMProvider,
 ) *AgentLoop {
@@ -57,6 +58,7 @@ func NewAgentLoop(
 	al := &AgentLoop{
 		bus:         msgBus,
 		cfg:         cfg,
+		configPath:  configPath,
 		registry:    registry,
 		state:       stateManager,
 		eventBus:    eventBus,
@@ -229,6 +231,10 @@ func registerSharedTools(
 
 		// Skill discovery and installation tools
 		skills_enabled := cfg.Tools.IsToolEnabled("skills")
+		if skills_enabled {
+			agent.Tools.Register(tools.NewFreeRideTool(al.GetConfigPath(), al.GetReloadFunc()))
+		}
+
 		find_skills_enable := cfg.Tools.IsToolEnabled("find_skills")
 		install_skills_enable := cfg.Tools.IsToolEnabled("install_skill")
 		if skills_enabled && (find_skills_enable || install_skills_enable) {
