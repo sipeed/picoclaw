@@ -148,33 +148,11 @@ func (c *PicoChannel) addConnForTest(pc *picoConn) {
 func TestNewPicoChannel_UsesSameOriginCheckWithoutAllowOrigins(t *testing.T) {
 	ch := newTestPicoChannel(t)
 
-	// If CheckOrigin is nil, the implementation is relying on gorilla/websocket's
-	// default same-origin enforcement. In that case we don't assert the internal
-	// behaviour here to avoid coupling this test to that implementation detail.
-	if ch.upgrader.CheckOrigin == nil {
-		t.Skip("CheckOrigin is nil; relying on default same-origin enforcement")
-	}
-
-	if !ch.upgrader.CheckOrigin(&http.Request{
-		Host: "example.com",
-		Header: http.Header{
-			"Origin": []string{"https://example.com"},
-		},
-	}) {
-		t.Fatal("CheckOrigin rejected same-origin request")
-	}
-
-	if ch.upgrader.CheckOrigin(&http.Request{
-		Host: "example.com",
-		Header: http.Header{
-			"Origin": []string{"https://other.example"},
-		},
-	}) {
-		t.Fatal("CheckOrigin accepted cross-origin request")
-	}
-
-	if !ch.upgrader.CheckOrigin(&http.Request{Host: "example.com"}) {
-		t.Fatal("CheckOrigin rejected request without Origin header")
+	// When AllowOrigins is empty, CheckOrigin must be nil so gorilla/websocket
+	// uses its built-in same-origin enforcement (which correctly handles
+	// case-insensitive hostnames and port matching).
+	if ch.upgrader.CheckOrigin != nil {
+		t.Fatal("CheckOrigin should be nil when AllowOrigins is empty, to use gorilla's default same-origin check")
 	}
 }
 

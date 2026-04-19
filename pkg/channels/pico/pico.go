@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -72,27 +71,22 @@ func NewPicoChannel(cfg config.PicoConfig, messageBus *bus.MessageBus) (*PicoCha
 
 	base := channels.NewBaseChannel("pico", cfg, messageBus, cfg.AllowFrom)
 
-	allowOrigins := cfg.AllowOrigins
-	checkOrigin := func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		// If no origins are configured, allow same-origin only (default Gorilla behavior).
-		if len(allowOrigins) == 0 {
-			if origin == "" {
-				return true
+	// When AllowOrigins is empty, leave CheckOrigin nil so gorilla/websocket
+	// uses its built-in same-origin check (handles case-insensitive hostnames
+	// and port matching correctly). Only set a custom function when explicit
+	// origins are configured.
+	var checkOrigin func(*http.Request) bool
+	if len(cfg.AllowOrigins) > 0 {
+		allowOrigins := cfg.AllowOrigins
+		checkOrigin = func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			for _, allowed := range allowOrigins {
+				if allowed == "*" || allowed == origin {
+					return true
+				}
 			}
-			u, err := url.Parse(origin)
-			if err != nil {
-				return false
-			}
-			return u.Host == r.Host
+			return false
 		}
-		// If origins are configured, check for '*' or exact match.
-		for _, allowed := range allowOrigins {
-			if allowed == "*" || allowed == origin {
-				return true
-			}
-		}
-		return false
 	}
 
 	return &PicoChannel{
