@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: picoclaw-agent
+  namespace: agi
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: picoclaw-agent
+  template:
+    metadata:
+      labels:
+        app: picoclaw-agent
+    spec:
+      # Init container to bootstrap the configuration from the ConfigMap into the Persistent Volume
+      # This answers "how will I copy the config file": the config is copied into the volume on the first run.
+      initContainers:
+      - name: init-config
+        image: busybox:latest
+        command:
+          - sh
+          - -c
+          - |
+            mkdir -p /home/picoclaw/.picoclaw
+            echo "Syncing config files from ConfigMap..."
+            cp /config-source/config.json /home/picoclaw/.picoclaw/config.json
+            cp /config-source/cron.json /home/picoclaw/.picoclaw/cron.json
+            rm -f /home/picoclaw/.picoclaw/secure.yaml /home/picoclaw/.picoclaw/.security.yml
+            # Ensure the agent has write permissions to its home volume
+            chown -R 1000:1000 /home/picoclaw/.picoclaw
+        volumeMounts:
+        - name: picoclaw-data
+          mountPath: /home/picoclaw/.picoclaw
+        - name: picoclaw-config-source
+          mountPath: /config-source
+      containers:
+      - name: picoclaw-agent
+        image: stevef1uk/picoclaw-rpi:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 18790
+        env:
+        - name: PICOCLAW_LOG_LEVEL
+          value: "debug"
+        - name: PICOCLAW_HOME
+          value: /home/picoclaw/.picoclaw
+        - name: PICOCLAW_GATEWAY_HOST
+          value: "0.0.0.0"
+        - name: PICOCLAW_GOOGLE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: picoclaw-secrets
+              key: GOOGLE_API_KEY
+        - name: PICOCLAW_TELEGRAM_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: picoclaw-secrets
+              key: telegram-token
+        - name: OPENROUTER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: picoclaw-secrets
+              key: openrouter-api-key
+        volumeMounts:
+        - name: picoclaw-data
+          mountPath: /home/picoclaw/.picoclaw
+        - name: picoclaw-secrets
+          mountPath: /home/picoclaw/.picoclaw/secrets
+          readOnly: true
+      volumes:
+      - name: picoclaw-data
+        persistentVolumeClaim:
+          claimName: picoclaw-agent-pvc
+      - name: picoclaw-config-source
+        configMap:
+          name: picoclaw-config
+      - name: picoclaw-secrets
+        secret:
+          secretName: picoclaw-secrets
