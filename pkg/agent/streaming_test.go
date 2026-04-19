@@ -195,7 +195,12 @@ func TestProcessMessage_SkipsStreamingProviderWhenDisabled(t *testing.T) {
 		t.Fatal("expected Chat() to be used when streaming is disabled")
 	}
 	if len(streamer.updates) != 0 || len(streamer.finalized) != 0 || streamer.canceled {
-		t.Fatalf("streamer should stay unused, got updates=%#v finalized=%#v canceled=%v", streamer.updates, streamer.finalized, streamer.canceled)
+		t.Fatalf(
+			"streamer should stay unused, got updates=%#v finalized=%#v canceled=%v",
+			streamer.updates,
+			streamer.finalized,
+			streamer.canceled,
+		)
 	}
 }
 
