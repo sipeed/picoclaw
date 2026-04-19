@@ -21,11 +21,7 @@ data:
             "/home/picoclaw/.picoclaw/memory"
           ],
           "provider": "",
-          "model_name": "nvidia/llama-3.1-nemotron-70b-instruct",
-          "model_fallbacks": [
-            "openrouter/google/gemini-2.0-flash-exp:free",
-            "openrouter/mistralai/mistral-7b-instruct:free"
-          ],
+          "model_name": "nemotron-3-super-120b-a12b",
           "max_tokens": 32768,
           "max_tool_iterations": 50,
           "summarize_message_threshold": 20,
@@ -252,21 +248,6 @@ data:
         }
       },
       "model_list": [
-        {
-          "model_name": "nvidia/nemotron-3-super-120b-a12b",
-          "model": "nvidia/nemotron-3-super-120b-a12b",
-          "provider": "openrouter"
-        },
-        {
-          "model_name": "google/gemini-2.0-flash-exp:free",
-          "model": "google/gemini-2.0-flash-exp:free",
-          "provider": "openrouter"
-        },
-        {
-          "model_name": "mistralai/mistral-7b-instruct:free",
-          "model": "mistralai/mistral-7b-instruct:free",
-          "provider": "openrouter"
-        },
         {
           "model_name": "glm-4.7",
           "model": "zhipu/glm-4.7",
