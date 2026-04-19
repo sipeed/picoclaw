@@ -97,7 +97,7 @@
 
 🧠 **Smart routing**: Rule-based model routing — simple queries go to lightweight models, saving API costs.
 
-🧬 **FreeRide**: Intelligent model rotation using OpenRouter's free pool — never pay for basic LLM traffic again. [Learn more](docs/freeride.md).
+🧬 **FreeRide**: Intelligent model rotation using OpenRouter's free pool — never pay for basic LLM traffic again. [Learn more](docs/guides/freeride.md).
 
 _*Recent builds may use 10-20MB due to rapid PR merges. Resource optimization is planned. Boot speed comparison based on 0.8GHz single-core benchmarks (see table below)._
 
@@ -624,7 +624,7 @@ For detailed guides beyond this README:
 | [Scheduled Tasks and Cron Jobs](docs/reference/cron.md) | Cron schedule types, deliver modes, command gates, job storage |
 | [Providers & Models](docs/guides/providers.md) | 30+ LLM providers, model routing, model_list configuration |
 | [Spawn & Async Tasks](docs/guides/spawn-tasks.md) | Quick tasks, long tasks with spawn, async sub-agent orchestration |
-| [FreeRide](docs/freeride.md) | Dynamic free model rotation and K3s secret management |
+| [FreeRide](docs/guides/freeride.md) | Dynamic free model rotation and K3s secret management |
 | [Hooks](docs/architecture/hooks/README.md) | Event-driven hook system: observers, interceptors, approval hooks |
 | [Steering](docs/architecture/steering.md) | Inject messages into a running agent loop between tool calls |
 | [SubTurn](docs/architecture/subturn.md) | Subagent coordination, concurrency control, lifecycle |
