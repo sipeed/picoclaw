@@ -7,6 +7,7 @@ import {
 import { normalizeUnixTimestamp } from "@/features/chat/state"
 import {
   type ChatAttachment,
+  type ChatMessage,
   type ContextUsage,
   updateChatStore,
 } from "@/store/chat"
@@ -83,6 +84,38 @@ function parseContextUsage(
   }
 }
 
+function isToolFeedbackMessage(message: ChatMessage): boolean {
+  if (message.role !== "assistant") {
+    return false
+  }
+
+  const firstLine = message.content.split("\n", 1)[0]?.trim() ?? ""
+  return /^🔧\s+`[^`]+`/.test(firstLine)
+}
+
+function findToolFeedbackMessageIndex(messages: ChatMessage[]): number {
+  let lastUserIndex = -1
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].role === "user") {
+      lastUserIndex = i
+      break
+    }
+  }
+
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (i <= lastUserIndex) {
+      break
+    }
+    if (isToolFeedbackMessage(messages[i])) {
+      return i
+    }
+  }
+  return -1
+}
+
+function parseStreamingFlag(payload: Record<string, unknown>): boolean | undefined {
+  return typeof payload.streaming === "boolean" ? payload.streaming : undefined
+}
 export function handlePicoMessage(
   message: PicoMessage,
   expectedSessionId: string,
@@ -101,6 +134,7 @@ export function handlePicoMessage(
         parseAssistantMessageCreateState(payload)
       const attachments = parseAttachments(payload)
       const contextUsage = parseContextUsage(payload)
+      const streaming = parseStreamingFlag(payload)
       const timestamp =
         message.timestamp !== undefined &&
         Number.isFinite(Number(message.timestamp))
@@ -117,6 +151,7 @@ export function handlePicoMessage(
             kind,
             ...(toolCalls ? { toolCalls } : {}),
             attachments,
+            ...(streaming !== undefined ? { streaming } : {}),
             timestamp,
           },
         ],
@@ -135,6 +170,7 @@ export function handlePicoMessage(
         Number.isFinite(Number(message.timestamp))
           ? normalizeUnixTimestamp(Number(message.timestamp))
           : Date.now()
+      const streaming = parseStreamingFlag(payload)
       if (!messageId) {
         break
       }
@@ -156,6 +192,7 @@ export function handlePicoMessage(
               kind,
               toolCalls,
               ...(attachments ? { attachments } : {}),
+              ...(streaming !== undefined ? { streaming } : {}),
             }
           })
           if (found) {
@@ -164,6 +201,22 @@ export function handlePicoMessage(
 
           const { content, kind, toolCalls } =
             parseAssistantMessageUpdateState(payload)
+          const fallbackIndex = findToolFeedbackMessageIndex(messages)
+          if (fallbackIndex >= 0) {
+            return messages.map((msg, index) =>
+              index === fallbackIndex
+                ? {
+                    ...msg,
+                    id: messageId,
+                    content,
+                    kind,
+                    toolCalls,
+                    ...(attachments ? { attachments } : {}),
+                    ...(streaming !== undefined ? { streaming } : {}),
+                  }
+                : msg,
+            )
+          }
 
           return [
             ...messages,
@@ -174,6 +227,7 @@ export function handlePicoMessage(
               kind,
               toolCalls,
               ...(attachments ? { attachments } : {}),
+              ...(streaming !== undefined ? { streaming } : {}),
               timestamp,
             },
           ]
@@ -190,7 +244,19 @@ export function handlePicoMessage(
       }
 
       updateChatStore((prev) => ({
-        messages: prev.messages.filter((msg) => msg.id !== messageId),
+        messages: (() => {
+          const exactMessages = prev.messages.filter((msg) => msg.id !== messageId)
+          if (exactMessages.length !== prev.messages.length) {
+            return exactMessages
+          }
+
+          const fallbackIndex = findToolFeedbackMessageIndex(prev.messages)
+          if (fallbackIndex < 0) {
+            return prev.messages
+          }
+
+          return prev.messages.filter((_, index) => index !== fallbackIndex)
+        })(),
       }))
       break
     }

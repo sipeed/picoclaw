@@ -4,6 +4,7 @@ import { type ChangeEvent, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
+import { launcherFetch } from "@/api/http"
 import { AssistantMessage } from "@/components/chat/assistant-message"
 import {
   ChatComposer,
@@ -21,6 +22,7 @@ import { useChatModels } from "@/hooks/use-chat-models"
 import { useGateway } from "@/hooks/use-gateway"
 import { usePicoChat } from "@/hooks/use-pico-chat"
 import { useSessionHistory } from "@/hooks/use-session-history"
+import { useQuery } from "@tanstack/react-query"
 import type { ConnectionState } from "@/store/chat"
 import type { ChatAttachment } from "@/store/chat"
 import { showAssistantDetailsAtom } from "@/store/chat"
@@ -158,6 +160,23 @@ export function ChatPage() {
     activeSessionId,
     onDeletedActiveSession: newChat,
   })
+
+  const { data: appConfig } = useQuery({
+    queryKey: ["config"],
+    queryFn: async () => {
+      const res = await launcherFetch("/api/config")
+      if (!res.ok) {
+        throw new Error("Failed to load config")
+      }
+      return res.json() as Promise<Record<string, unknown>>
+    },
+    staleTime: 60_000,
+  })
+  const streamingEnabled =
+    (
+      (appConfig?.agents as { defaults?: { streaming_enabled?: boolean } })
+        ?.defaults?.streaming_enabled
+    ) !== false
 
   const syncScrollState = (element: HTMLDivElement) => {
     const { clientHeight, scrollHeight, scrollTop } = element
@@ -340,6 +359,8 @@ export function ChatPage() {
                     attachments={msg.attachments}
                     kind={msg.kind}
                     toolCalls={msg.toolCalls}
+                    isStreaming={msg.streaming}
+                    streamingEnabled={streamingEnabled}
                     timestamp={msg.timestamp}
                   />
                 ) : (

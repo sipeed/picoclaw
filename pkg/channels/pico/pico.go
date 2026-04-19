@@ -107,6 +107,16 @@ type PicoChannel struct {
 	deleteMessageFn    func(context.Context, string, string) error
 }
 
+type picoStreamer struct {
+	channel   *PicoChannel
+	chatID    string
+	messageID string
+
+	mu      sync.Mutex
+	started bool
+	closed  bool
+}
+
 // NewPicoChannel creates a new Pico Protocol channel.
 func NewPicoChannel(
 	bc *config.Channel,
@@ -354,6 +364,18 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 	return []string{msgID}, nil
 }
 
+func (c *PicoChannel) BeginStream(_ context.Context, chatID string) (channels.Streamer, error) {
+	if !c.IsRunning() {
+		return nil, channels.ErrNotRunning
+	}
+
+	return &picoStreamer{
+		channel:   c,
+		chatID:    chatID,
+		messageID: uuid.New().String(),
+	}, nil
+}
+
 // EditMessage implements channels.MessageEditor.
 func (c *PicoChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
 	return c.editMessage(ctx, chatID, messageID, content, nil)
@@ -438,6 +460,74 @@ func (c *PicoChannel) FinalizeToolFeedbackMessage(ctx context.Context, msg bus.O
 		return nil, false
 	}
 	return c.finalizeTrackedToolFeedbackMessage(ctx, msg.ChatID, msg.Content, c.editMessage, msg.ContextUsage)
+}
+
+func (s *picoStreamer) Update(_ context.Context, content string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return nil
+	}
+
+	if !s.started {
+		s.started = true
+		return s.channel.broadcastToSession(s.chatID, newMessage(TypeMessageCreate, map[string]any{
+			"message_id":        s.messageID,
+			PayloadKeyContent:   content,
+			PayloadKeyThought:   false,
+			PayloadKeyStreaming: true,
+		}))
+	}
+
+	return s.channel.broadcastToSession(s.chatID, newMessage(TypeMessageUpdate, map[string]any{
+		"message_id": s.messageID,
+		"content":    content,
+		"streaming":  true,
+	}))
+}
+
+func (s *picoStreamer) Finalize(_ context.Context, content string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return nil
+	}
+	s.closed = true
+
+	if !s.started {
+		return s.channel.broadcastToSession(s.chatID, newMessage(TypeMessageCreate, map[string]any{
+			"message_id":        s.messageID,
+			PayloadKeyContent:   content,
+			PayloadKeyThought:   false,
+			PayloadKeyStreaming: false,
+		}))
+	}
+
+	return s.channel.broadcastToSession(s.chatID, newMessage(TypeMessageUpdate, map[string]any{
+		"message_id": s.messageID,
+		"content":    content,
+		"streaming":  false,
+	}))
+}
+
+func (s *picoStreamer) Cancel(_ context.Context) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed {
+		return
+	}
+	s.closed = true
+
+	if !s.started {
+		return
+	}
+
+	_ = s.channel.broadcastToSession(s.chatID, newMessage(TypeMessageDelete, map[string]any{
+		"message_id": s.messageID,
+	}))
 }
 
 // StartTyping implements channels.TypingCapable.

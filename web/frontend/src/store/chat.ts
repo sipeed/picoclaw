@@ -37,6 +37,7 @@ export interface ChatMessage {
   content: string
   timestamp: number | string
   kind?: AssistantMessageKind
+  streaming?: boolean
   attachments?: ChatAttachment[]
   toolCalls?: ChatToolCall[]
 }

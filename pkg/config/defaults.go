@@ -39,7 +39,8 @@ func DefaultConfig() *Config {
 					MaxArgsLength:    300,
 					SeparateMessages: false,
 				},
-				SplitOnMarker: false,
+				StreamingEnabled: true,
+				SplitOnMarker:    false,
 			},
 		},
 		Session: SessionConfig{

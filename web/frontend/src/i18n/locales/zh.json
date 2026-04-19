@@ -617,6 +617,8 @@
       "workspace_hint": "智能体执行文件读写操作时使用的基础目录",
       "restrict_workspace": "限制工作目录访问",
       "restrict_workspace_hint": "仅允许在工作目录内执行文件操作",
+      "streaming_enabled": "流式响应",
+      "streaming_enabled_hint": "在对话中实时渲染模型输出，并在新文本到达时持续更新 Markdown 内容",
       "split_on_marker": "连续短消息",
       "split_on_marker_hint": "像真人聊天一样，把长难句拆成多条短消息快速发出",
       "tool_feedback_enabled": "工具反馈",

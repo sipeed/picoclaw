@@ -22,10 +22,13 @@ const (
 	TypeError         = "error"
 	TypePong          = "pong"
 
+	PicoTokenPrefix = "pico-"
+
 	PayloadKeyContent   = "content"
 	PayloadKeyThought   = "thought"
 	PayloadKeyKind      = "kind"
 	PayloadKeyToolCalls = "tool_calls"
+	PayloadKeyStreaming = "streaming"
 
 	MessageKindThought   = "thought"
 	MessageKindToolCalls = "tool_calls"

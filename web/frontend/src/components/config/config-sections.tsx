@@ -96,6 +96,16 @@ export function AgentDefaultsSection({
       />
 
       <SwitchCardField
+        label={t("pages.config.streaming_enabled")}
+        hint={t("pages.config.streaming_enabled_hint")}
+        layout="setting-row"
+        checked={form.streamingEnabled}
+        onCheckedChange={(checked) =>
+          onFieldChange("streamingEnabled", checked)
+        }
+      />
+
+      <SwitchCardField
         label={t("pages.config.split_on_marker")}
         hint={t("pages.config.split_on_marker_hint")}
         layout="setting-row"
