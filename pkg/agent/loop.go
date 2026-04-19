@@ -1776,10 +1776,14 @@ func (al *AgentLoop) runAgentLoop(
 	}
 
 	if opts.SendResponse && result.finalContent != "" {
+		finalContent := result.finalContent
+		if usedFallback, fallbackModel := ts.GetFallbackInfo(); usedFallback {
+			finalContent += fmt.Sprintf("\n\n🦞 _(FreeRide: %s)_", fallbackModel)
+		}
 		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
 			Channel: opts.Channel,
 			ChatID:  opts.ChatID,
-			Content: result.finalContent,
+			Content: finalContent,
 		})
 	}
 
@@ -2221,6 +2225,7 @@ turnLoop:
 							fbResult.Provider, fbResult.Model, len(fbResult.Attempts)+1),
 						map[string]any{"agent_id": ts.agent.ID, "iteration": iteration},
 					)
+					ts.SetFallbackInfo(true, fbResult.Model)
 				}
 				return fbResult.Response, nil
 			}

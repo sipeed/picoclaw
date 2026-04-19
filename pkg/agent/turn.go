@@ -103,6 +103,8 @@ type turnState struct {
 	tokenBudget      *atomic.Int64        // Shared token budget counter
 	lastFinishReason string               // Last LLM finish_reason
 	lastUsage        *providers.UsageInfo // Last LLM usage info
+	usedFallback     bool                 // Whether a fallback/FreeRide model was used
+	fallbackModel    string               // The name of the fallback model used
 
 	// Back-reference to the owning AgentLoop (set for SubTurns only, used for hard abort cascade)
 	al *AgentLoop
@@ -476,6 +478,21 @@ func (ts *turnState) SetLastUsage(usage *providers.UsageInfo) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.lastUsage = usage
+}
+
+// SetFallbackInfo sets fallback model info
+func (ts *turnState) SetFallbackInfo(used bool, model string) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.usedFallback = used
+	ts.fallbackModel = model
+}
+
+// GetFallbackInfo returns fallback model info
+func (ts *turnState) GetFallbackInfo() (bool, string) {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return ts.usedFallback, ts.fallbackModel
 }
 
 // Context helper functions for SubTurn
