@@ -97,6 +97,8 @@
 
 🧠 **Smart routing**: Rule-based model routing — simple queries go to lightweight models, saving API costs.
 
+🧬 **FreeRide**: Intelligent model rotation using OpenRouter's free pool — never pay for basic LLM traffic again. [Learn more](docs/freeride.md).
+
 🛡️ **Hardened Multi-User Isolation**: Built-in [Tenant Isolation](docs/configuration.md#🔒-multi-tenant-agent-isolation) for shared infrastructure (Azure/ACA) — automatically partitions workspaces, memory, and tools (including MCP) per-user session.
 
 🛡️ **Security Shield**: Active protection layers including Canary tokens (leak detection), PII Redaction, Indirect Prompt Injection (IPIA) Analysis, and Tool Policy-as-Code. [Learn more](docs/security_configuration.md#security-shield-active-protection).
@@ -607,6 +609,7 @@ For detailed guides beyond this README:
 | [Scheduled Tasks and Cron Jobs](docs/cron.md) | Cron schedule types, deliver modes, command gates, job storage |
 | [Providers & Models](docs/providers.md) | 30+ LLM providers, model routing, model_list configuration |
 | [Spawn & Async Tasks](docs/spawn-tasks.md) | Quick tasks, long tasks with spawn, async sub-agent orchestration |
+| [FreeRide](docs/freeride.md) | Dynamic free model rotation and K3s secret management |
 | [Hooks](docs/hooks/README.md) | Event-driven hook system: observers, interceptors, approval hooks |
 | [Steering](docs/steering.md) | Inject messages into a running agent loop between tool calls |
 | [SubTurn](docs/subturn.md) | Subagent coordination, concurrency control, lifecycle |
