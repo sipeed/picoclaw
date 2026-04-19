@@ -12,7 +12,7 @@ FreeRide is a dynamic model rotation and failover system for PicoClaw that lever
 
 ## Configuration
 
-FreeRide is implemented as a native PicoClaw tool.
+FreeRide is implemented as a native PicoClaw tool. For production environments (especially in the **main branch**), ensure you follow the [Security Configuration](../security/security_configuration.md) to manage your API keys safely.
 
 ### 1. Enable the Tool
 Ensure the `skills` tool is enabled in your `config.json` (FreeRide is bundled with the skills system):
