@@ -22,9 +22,9 @@ data:
           ],
           "provider": "",
           "model_name": "nvidia/llama-3.1-nemotron-70b-instruct",
-          "fallback_models": [
-            "openrouter/anthropic/claude-3.5-sonnet",
-            "openrouter/google/gemini-2.0-flash-001"
+          "model_fallbacks": [
+            "openrouter/google/gemini-2.0-flash-exp:free",
+            "openrouter/mistralai/mistral-7b-instruct:free"
           ],
           "max_tokens": 32768,
           "max_tool_iterations": 50,
