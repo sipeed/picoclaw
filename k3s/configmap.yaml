@@ -21,7 +21,7 @@ data:
             "/home/picoclaw/.picoclaw/memory"
           ],
           "provider": "",
-          "model_name": "nvidia/llama-3.1-nemotron-70b-instruct",
+          "model_name": "nvidia/nemotron-3-super-120b-a12b",
           "model_fallbacks": [
             "openrouter/google/gemini-2.0-flash-exp:free",
             "openrouter/mistralai/mistral-7b-instruct:free"
