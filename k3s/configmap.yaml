@@ -235,25 +235,21 @@ data:
     : true,\n        \"use_regex\": false\n      },\n      \"max_inline_text_chars\"\
     : 16384,\n      \"servers\": {\n        \"hdn-server\": {\n          \"enabled\"\
     : true,\n          \"command\": \"\",\n          \"type\": \"sse\",\n        \
-    \  \"url\": \"http://hdn-server:8080/mcp\"\n        },\n        \"n8n-test\":\
-    \ {\n          \"enabled\": true,\n          \"command\": \"\",\n          \"\
-    type\": \"sse\",\n          \"url\": \"https://n8namber.app.n8n.cloud/mcp/a5747ff8-db9b-4326-8bef-474301f65251\"\
-    ,\n          \"headers\": {\n            \"Authorization\": \"Bearer 97340696-89AE-43B2-B6E2-080E062150C9\"\
-    \n          }\n        }\n      }\n    },\n    \"append_file\": {\n      \"enabled\"\
-    : true\n    },\n    \"edit_file\": {\n      \"enabled\": true\n    },\n    \"\
-    find_skills\": {\n      \"enabled\": true\n    },\n    \"i2c\": {\n      \"enabled\"\
-    : false\n    },\n    \"install_skill\": {\n      \"enabled\": true\n    },\n \
-    \   \"list_dir\": {\n      \"enabled\": true\n    },\n    \"message\": {\n   \
-    \   \"enabled\": true\n    },\n    \"read_file\": {\n      \"enabled\": true,\n\
-    \      \"mode\": \"bytes\",\n      \"max_read_file_size\": 65536\n    },\n   \
-    \ \"send_file\": {\n      \"enabled\": true\n    },\n    \"send_tts\": {\n   \
-    \   \"enabled\": false\n    },\n    \"spawn\": {\n      \"enabled\": true\n  \
-    \  },\n    \"spawn_status\": {\n      \"enabled\": false\n    },\n    \"spi\"\
-    : {\n      \"enabled\": false\n    },\n    \"subagent\": {\n      \"enabled\"\
-    : true\n    },\n    \"web_fetch\": {\n      \"enabled\": true\n    },\n    \"\
-    write_file\": {\n      \"enabled\": true\n    }\n  },\n  \"heartbeat\": {\n  \
-    \  \"enabled\": true,\n    \"interval\": 30\n  },\n  \"devices\": {\n    \"enabled\"\
-    : false,\n    \"monitor_usb\": true\n  },\n  \"voice\": {\n    \"echo_transcription\"\
-    : false\n  },\n  \"build_info\": {\n    \"version\": \"0.1.0\",\n    \"git_commit\"\
-    : \"054b55fd\",\n    \"build_time\": \"2026-03-23T10:15:13+0100\",\n    \"go_version\"\
-    : \"go1.26.1\"\n  }\n}"
+    \  \"url\": \"http://hdn-server:8080/mcp\"\n        }\n      }\n    },\n    \"\
+    append_file\": {\n      \"enabled\": true\n    },\n    \"edit_file\": {\n    \
+    \  \"enabled\": true\n    },\n    \"find_skills\": {\n      \"enabled\": true\n\
+    \    },\n    \"i2c\": {\n      \"enabled\": false\n    },\n    \"install_skill\"\
+    : {\n      \"enabled\": true\n    },\n    \"list_dir\": {\n      \"enabled\":\
+    \ true\n    },\n    \"message\": {\n      \"enabled\": true\n    },\n    \"read_file\"\
+    : {\n      \"enabled\": true,\n      \"mode\": \"bytes\",\n      \"max_read_file_size\"\
+    : 65536\n    },\n    \"send_file\": {\n      \"enabled\": true\n    },\n    \"\
+    send_tts\": {\n      \"enabled\": false\n    },\n    \"spawn\": {\n      \"enabled\"\
+    : true\n    },\n    \"spawn_status\": {\n      \"enabled\": false\n    },\n  \
+    \  \"spi\": {\n      \"enabled\": false\n    },\n    \"subagent\": {\n      \"\
+    enabled\": true\n    },\n    \"web_fetch\": {\n      \"enabled\": true\n    },\n\
+    \    \"write_file\": {\n      \"enabled\": true\n    }\n  },\n  \"heartbeat\"\
+    : {\n    \"enabled\": true,\n    \"interval\": 30\n  },\n  \"devices\": {\n  \
+    \  \"enabled\": false,\n    \"monitor_usb\": true\n  },\n  \"voice\": {\n    \"\
+    echo_transcription\": false\n  },\n  \"build_info\": {\n    \"version\": \"0.1.0\"\
+    ,\n    \"git_commit\": \"054b55fd\",\n    \"build_time\": \"2026-03-23T10:15:13+0100\"\
+    ,\n    \"go_version\": \"go1.26.1\"\n  }\n}"

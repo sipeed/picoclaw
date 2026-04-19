@@ -629,15 +629,6 @@
           "command": "",
           "type": "sse",
           "url": "http://hdn-server:8080/mcp"
-        },
-        "n8n-test": {
-          "enabled": true,
-          "command": "",
-          "type": "sse",
-          "url": "https://n8namber.app.n8n.cloud/mcp/a5747ff8-db9b-4326-8bef-474301f65251",
-          "headers": {
-            "Authorization": "Bearer 97340696-89AE-43B2-B6E2-080E062150C9"
-          }
         }
       }
     },
