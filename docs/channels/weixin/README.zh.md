@@ -29,9 +29,10 @@ picoclaw gateway
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "weixin": {
       "enabled": true,
+      "type": "weixin",
       "token": "YOUR_WEIXIN_TOKEN",
       "allow_from": [
         "user_id_1",

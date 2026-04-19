@@ -48,6 +48,14 @@ function asBool(value: unknown): boolean {
   return value === true
 }
 
+const CHANNEL_COMMON_CONFIG_KEYS = new Set([
+  "allow_from",
+  "group_trigger",
+  "placeholder",
+  "reasoning_channel_id",
+  "typing",
+])
+
 function normalizeConfig(
   channel: SupportedChannel,
   rawConfig: ChannelConfig,
@@ -67,33 +75,42 @@ function buildSavePayload(
   editConfig: ChannelConfig,
   enabled: boolean,
 ): ChannelConfig {
-  const payload: ChannelConfig = { enabled }
+  const payload: ChannelConfig = { enabled, type: channel.config_key }
+  const settings: ChannelConfig = {}
 
   for (const [key, value] of Object.entries(editConfig)) {
     if (key.startsWith("_")) continue
     if (key === "enabled") continue
+    if (CHANNEL_COMMON_CONFIG_KEYS.has(key)) {
+      payload[key] = value
+      continue
+    }
     if (isSecretField(key)) continue
 
-    payload[key] = value
+    settings[key] = value
   }
 
   for (const [secretKey, editKey] of Object.entries(SECRET_FIELD_MAP)) {
     const incoming = asString(editConfig[editKey])
     if (incoming !== "") {
-      payload[secretKey] = incoming
+      settings[secretKey] = incoming
       continue
     }
     const existing = asString(editConfig[secretKey]).trim()
     if (existing !== "") {
-      payload[secretKey] = existing
+      settings[secretKey] = existing
     }
   }
 
   if (channel.name === "whatsapp_native") {
-    payload.use_native = true
+    settings.use_native = true
   }
   if (channel.name === "whatsapp") {
-    payload.use_native = false
+    settings.use_native = false
+  }
+
+  if (Object.keys(settings).length > 0) {
+    payload.settings = settings
   }
 
   return payload
@@ -377,7 +394,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
     setFieldErrors({})
     try {
       await patchAppConfig({
-        channels: {
+        channel_list: {
           [channel.config_key]: savePayload,
         },
       })

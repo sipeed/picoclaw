@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
@@ -37,21 +38,28 @@ const errCodeTenantTokenInvalid = 99991663
 
 type FeishuChannel struct {
 	*channels.BaseChannel
-	config     config.FeishuConfig
+	bc         *config.Channel
+	config     *config.FeishuSettings
 	client     *lark.Client
 	wsClient   *larkws.Client
 	tokenCache *tokenCache // custom cache that supports invalidation
 
-	botOpenID atomic.Value // stores string; populated lazily for @mention detection
+	botOpenID    atomic.Value // stores string; populated lazily for @mention detection
+	messageCache sync.Map     // caches fetched messages (messageID -> *larkim.Message)
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
 }
 
-func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
-	base := channels.NewBaseChannel("feishu", cfg, bus, cfg.AllowFrom,
-		channels.WithGroupTrigger(cfg.GroupTrigger),
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+type cachedMessage struct {
+	msg    *larkim.Message
+	expiry time.Time
+}
+
+func NewFeishuChannel(bc *config.Channel, cfg *config.FeishuSettings, bus *bus.MessageBus) (*FeishuChannel, error) {
+	base := channels.NewBaseChannel("feishu", cfg, bus, bc.AllowFrom,
+		channels.WithGroupTrigger(bc.GroupTrigger),
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	tc := newTokenCache()
@@ -61,6 +69,7 @@ func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChan
 	}
 	ch := &FeishuChannel{
 		BaseChannel: base,
+		bc:          bc,
 		config:      cfg,
 		tokenCache:  tc,
 		client:      lark.NewClient(cfg.AppID, cfg.AppSecret.String(), opts...),
@@ -204,14 +213,14 @@ func (c *FeishuChannel) EditMessage(ctx context.Context, chatID, messageID, cont
 // SendPlaceholder implements channels.PlaceholderCapable.
 // Sends an interactive card with placeholder text and returns its message ID.
 func (c *FeishuChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
-	if !c.config.Placeholder.Enabled {
+	if !c.bc.Placeholder.Enabled {
 		logger.DebugCF("feishu", "Placeholder disabled, skipping", map[string]any{
 			"chat_id": chatID,
 		})
 		return "", nil
 	}
 
-	text := c.config.Placeholder.GetRandomText()
+	text := c.bc.Placeholder.GetRandomText()
 
 	cardContent, err := buildMarkdownCard(text)
 	if err != nil {
@@ -439,30 +448,20 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	if content == "" {
 		content = "[empty message]"
 	}
-
-	metadata := map[string]string{}
-	if messageID != "" {
-		metadata["message_id"] = messageID
-	}
-	if messageType != "" {
-		metadata["message_type"] = messageType
-	}
 	chatType := stringValue(message.ChatType)
-	if chatType != "" {
-		metadata["chat_type"] = chatType
-	}
-	if sender != nil && sender.TenantKey != nil {
-		metadata["tenant_key"] = *sender.TenantKey
-	}
+	metadata := buildInboundMetadata(message, sender)
 
-	var peer bus.Peer
+	var (
+		inboundChatType string
+		isMentioned     bool
+	)
 	if chatType == "p2p" {
-		peer = bus.Peer{Kind: "direct", ID: senderID}
+		inboundChatType = "direct"
 	} else {
-		peer = bus.Peer{Kind: "group", ID: chatID}
+		inboundChatType = "group"
 
 		// Check if bot was mentioned
-		isMentioned := c.isBotMentioned(message)
+		isMentioned = c.isBotMentioned(message)
 
 		// Strip mention placeholders from content before group trigger check
 		if len(message.Mentions) > 0 {
@@ -477,14 +476,41 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 		content = cleaned
 	}
 
+	if replyTargetID(message) != "" || stringValue(message.ThreadId) != "" {
+		content, mediaRefs = c.prependReplyContext(ctx, message, chatID, content, mediaRefs)
+	}
+	if content == "" {
+		content = "[empty message]"
+	}
+
 	logger.InfoCF("feishu", "Feishu message received", map[string]any{
 		"sender_id":  senderID,
 		"chat_id":    chatID,
 		"message_id": messageID,
 		"preview":    utils.Truncate(content, 80),
 	})
+	logger.InfoCF("feishu", "Feishu reply linkage", map[string]any{
+		"message_id": messageID,
+		"parent_id":  stringValue(message.ParentId),
+		"root_id":    stringValue(message.RootId),
+		"thread_id":  stringValue(message.ThreadId),
+	})
 
-	c.HandleMessage(ctx, peer, messageID, senderID, chatID, content, mediaRefs, metadata, senderInfo)
+	inboundCtx := bus.InboundContext{
+		Channel:   "feishu",
+		ChatID:    chatID,
+		ChatType:  inboundChatType,
+		SenderID:  senderID,
+		MessageID: messageID,
+		Mentioned: isMentioned,
+		Raw:       metadata,
+	}
+	if sender != nil && sender.TenantKey != nil && *sender.TenantKey != "" {
+		inboundCtx.SpaceType = "tenant"
+		inboundCtx.SpaceID = *sender.TenantKey
+	}
+
+	c.HandleInboundContext(ctx, chatID, content, mediaRefs, inboundCtx, senderInfo)
 	return nil
 }
 

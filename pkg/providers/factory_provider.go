@@ -114,7 +114,7 @@ func ResolveAPIBase(cfg *config.ModelConfig) string {
 
 // CreateProviderFromConfig creates a provider based on the ModelConfig.
 // It uses the protocol prefix in the Model field to determine which provider to create.
-// Supported protocol families include OpenAI-compatible prefixes (e.g., openai, openrouter, groq, gemini),
+// Supported protocol families include OpenAI-compatible prefixes (e.g., openai, openrouter, groq),
 // Azure OpenAI, Amazon Bedrock, Anthropic (including messages), and various CLI/compatibility shims.
 // See the switch on protocol in this function for the authoritative list.
 // Returns the provider, the model ID (without protocol prefix), and any error.
@@ -160,6 +160,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
+			cfg.CustomHeaders,
 		), modelID, nil
 
 	case "azure", "azure-openai":
@@ -217,12 +218,11 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		}
 		return provider, modelID, nil
 
-	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "gemini", "venice",
+	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "nvidia", "venice",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
 		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",
 		"coding-plan", "alibaba-coding", "qwen-coding", "mimo":
-
 		// All other OpenAI-compatible HTTP providers
 		if cfg.APIKey() == "" && cfg.APIBase == "" && !isEmptyAPIKeyAllowed(protocol) {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
@@ -239,38 +239,25 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
+			cfg.CustomHeaders,
 		), modelID, nil
 
-	case "nvidia":
+	case "gemini":
+		if cfg.APIKey() == "" && cfg.APIBase == "" {
+			return nil, "", fmt.Errorf("api_key or api_base is required for gemini protocol (model: %s)", cfg.Model)
+		}
 		apiBase := cfg.APIBase
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		p := NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+		return NewGeminiProvider(
 			cfg.APIKey(),
 			apiBase,
 			cfg.Proxy,
-			cfg.MaxTokensField,
 			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
-		)
-		// NVIDIA sometimes prefers api-key header or has issues with Bearer in some environments
-		p.SetUseAzureHeaders(false) // NVIDIA main gateway prefers standard Bearer headers; api-key causes 404s
-		return p, "nvidia/" + modelID, nil
-
-	case "azure-ai", "azure-foundry":
-		// Azure AI Foundry / Studio compatible with OpenAI API format,
-		// but using api-key header instead of Authorization: Bearer.
-		if cfg.APIKey() == "" && cfg.APIBase == "" {
-			return nil, "", fmt.Errorf("api_key or api_base is required for protocol %q", protocol)
-		}
-		return NewAzureAIProvider(
-			cfg.APIKey(),
-			cfg.APIBase,
-			cfg.Proxy,
-			userAgent,
-			cfg.RequestTimeout,
+			cfg.CustomHeaders,
 		), modelID, nil
 
 	case "minimax":
@@ -297,6 +284,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			userAgent,
 			cfg.RequestTimeout,
 			extraBody,
+			cfg.CustomHeaders,
 		), modelID, nil
 
 	case "anthropic":
@@ -324,6 +312,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
+			cfg.CustomHeaders,
 		), modelID, nil
 
 	case "anthropic-messages":

@@ -10,17 +10,14 @@ build/
 *.out
 /picoclaw
 /picoclaw-test
-/golangci-lint
 cmd/**/workspace
 
 # Picoclaw specific
 
 # PicoClaw
 .picoclaw/
-pkg/agent/secret.txt
 config.json
 sessions/
-logs/
 build/
 
 # Coverage
@@ -70,4 +67,5 @@ web/backend/dist/*
 .claude/
 
 docker/data
-workspace/
+
+.omc/

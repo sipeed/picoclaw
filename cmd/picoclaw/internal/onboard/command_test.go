@@ -28,10 +28,5 @@ func TestNewOnboardCommand(t *testing.T) {
 	encFlag := cmd.Flags().Lookup("enc")
 	require.NotNil(t, encFlag, "expected --enc flag to be registered")
 	assert.Equal(t, "false", encFlag.DefValue, "--enc should default to false")
-	yesFlag := cmd.Flags().Lookup("yes")
-	require.NotNil(t, yesFlag, "expected --yes flag to be registered")
-	assert.Equal(t, "false", yesFlag.DefValue, "--yes should default to false")
-	assert.True(t, cmd.HasSubCommands())
-	assert.Len(t, cmd.Commands(), 1)
-	assert.Equal(t, "purge", cmd.Commands()[0].Name())
+	assert.False(t, cmd.HasSubCommands())
 }

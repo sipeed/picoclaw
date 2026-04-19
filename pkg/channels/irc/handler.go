@@ -51,14 +51,11 @@ func (c *IRCChannel) onPrivmsg(conn *ircevent.Connection, e ircmsg.Message) {
 	isDM := !strings.HasPrefix(target, "#") && !strings.HasPrefix(target, "&")
 
 	var chatID string
-	var peer bus.Peer
 
 	if isDM {
 		chatID = nick
-		peer = bus.Peer{Kind: "direct", ID: nick}
 	} else {
 		chatID = target
-		peer = bus.Peer{Kind: "group", ID: target}
 	}
 
 	sender := bus.SenderInfo{
@@ -73,9 +70,11 @@ func (c *IRCChannel) onPrivmsg(conn *ircevent.Connection, e ircmsg.Message) {
 		return
 	}
 
+	isMentioned := false
+
 	// For channel messages, check group trigger (mention detection)
 	if !isDM {
-		isMentioned := isBotMentioned(content, currentNick)
+		isMentioned = isBotMentioned(content, currentNick)
 		if isMentioned {
 			content = stripBotMention(content, currentNick)
 		}
@@ -100,7 +99,21 @@ func (c *IRCChannel) onPrivmsg(conn *ircevent.Connection, e ircmsg.Message) {
 		metadata["channel"] = target
 	}
 
-	c.HandleMessage(c.ctx, peer, messageID, nick, chatID, content, nil, metadata, sender)
+	inboundCtx := bus.InboundContext{
+		Channel:   "irc",
+		ChatID:    chatID,
+		SenderID:  nick,
+		MessageID: messageID,
+		Mentioned: isMentioned,
+		Raw:       metadata,
+	}
+	if isDM {
+		inboundCtx.ChatType = "direct"
+	} else {
+		inboundCtx.ChatType = "group"
+	}
+
+	c.HandleInboundContext(c.ctx, chatID, content, nil, inboundCtx, sender)
 }
 
 // nickMentionedAt returns the byte index where botNick is mentioned in content

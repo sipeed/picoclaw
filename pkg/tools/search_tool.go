@@ -229,7 +229,7 @@ type bm25CachedEngine struct {
 func snapshotToSearchDocs(snap HiddenToolSnapshot) []searchDoc {
 	docs := make([]searchDoc, len(snap.Docs))
 	for i, d := range snap.Docs {
-		docs[i] = searchDoc(d)
+		docs[i] = searchDoc{Name: d.Name, Description: d.Description}
 	}
 	return docs
 }

@@ -39,6 +39,13 @@ var allowedInlineImageMIMETypes = map[string]struct{}{
 	"image/bmp":  {},
 }
 
+func outboundMessageIsThought(msg bus.OutboundMessage) bool {
+	if len(msg.Context.Raw) == 0 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(msg.Context.Raw["message_kind"]), MessageKindThought)
+}
+
 // writeJSON sends a JSON message to the connection with write locking.
 func (pc *picoConn) writeJSON(v any) error {
 	if pc.closed.Load() {
@@ -63,7 +70,8 @@ func (pc *picoConn) close() {
 // It serves as the reference implementation for all optional capability interfaces.
 type PicoChannel struct {
 	*channels.BaseChannel
-	config             config.PicoConfig
+	bc                 *config.Channel
+	config             *config.PicoSettings
 	upgrader           websocket.Upgrader
 	connections        map[string]*picoConn            // connID -> *picoConn
 	sessionConnections map[string]map[string]*picoConn // sessionID -> connID -> *picoConn
@@ -73,12 +81,16 @@ type PicoChannel struct {
 }
 
 // NewPicoChannel creates a new Pico Protocol channel.
-func NewPicoChannel(cfg config.PicoConfig, messageBus *bus.MessageBus) (*PicoChannel, error) {
+func NewPicoChannel(
+	bc *config.Channel,
+	cfg *config.PicoSettings,
+	messageBus *bus.MessageBus,
+) (*PicoChannel, error) {
 	if cfg.Token.String() == "" {
 		return nil, fmt.Errorf("pico token is required")
 	}
 
-	base := channels.NewBaseChannel("pico", cfg, messageBus, cfg.AllowFrom)
+	base := channels.NewBaseChannel("pico", cfg, messageBus, bc.AllowFrom)
 
 	allowOrigins := cfg.AllowOrigins
 	checkOrigin := func(r *http.Request) bool {
@@ -96,6 +108,7 @@ func NewPicoChannel(cfg config.PicoConfig, messageBus *bus.MessageBus) (*PicoCha
 
 	return &PicoChannel{
 		BaseChannel: base,
+		bc:          bc,
 		config:      cfg,
 		upgrader: websocket.Upgrader{
 			CheckOrigin:     checkOrigin,
@@ -247,18 +260,14 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 	if !c.IsRunning() {
 		return nil, channels.ErrNotRunning
 	}
+	isThought := outboundMessageIsThought(msg)
 
 	outMsg := newMessage(TypeMessageCreate, map[string]any{
-		"content": msg.Content,
+		PayloadKeyContent: msg.Content,
+		PayloadKeyThought: isThought,
 	})
 
-	err := c.broadcastToSession(msg.ChatID, outMsg)
-
-	// Send typing stop after the message is delivered
-	stopMsg := newMessage(TypeTypingStop, nil)
-	_ = c.broadcastToSession(msg.ChatID, stopMsg)
-
-	return nil, err
+	return nil, c.broadcastToSession(msg.ChatID, outMsg)
 }
 
 // EditMessage implements channels.MessageEditor.
@@ -286,16 +295,17 @@ func (c *PicoChannel) StartTyping(ctx context.Context, chatID string) (func(), e
 // It sends a placeholder message via the Pico Protocol that will later be
 // edited to the actual response via EditMessage (channels.MessageEditor).
 func (c *PicoChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
-	if !c.config.Placeholder.Enabled {
+	if !c.bc.Placeholder.Enabled {
 		return "", nil
 	}
 
-	text := c.config.Placeholder.GetRandomText()
+	text := c.bc.Placeholder.GetRandomText()
 
 	msgID := uuid.New().String()
 	outMsg := newMessage(TypeMessageCreate, map[string]any{
-		"content":    text,
-		"message_id": msgID,
+		PayloadKeyContent: text,
+		PayloadKeyThought: false,
+		"message_id":      msgID,
 	})
 
 	if err := c.broadcastToSession(chatID, outMsg); err != nil {
@@ -396,53 +406,31 @@ func (c *PicoChannel) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 //  2. Sec-WebSocket-Protocol "token.<value>" (for browsers that can't set headers)
 //  3. Query parameter "token" (only when AllowTokenQuery is on)
 func (c *PicoChannel) authenticate(r *http.Request) bool {
-	token := strings.TrimSpace(c.config.Token.String())
+	token := c.config.Token.String()
 	if token == "" {
-		logger.WarnCF("pico", "Authentication failed: No token configured for channel", nil)
 		return false
 	}
 
 	// Check Authorization header
 	auth := r.Header.Get("Authorization")
 	if after, ok := strings.CutPrefix(auth, "Bearer "); ok {
-		received := strings.TrimSpace(after)
-		if received == token {
+		if after == token {
 			return true
 		}
-		logger.DebugCF("pico", "Token mismatch (Header)", map[string]any{
-			"expected_preview": token[:4] + "...",
-			"received_preview": received[:4] + "...",
-			"expected_len":     len(token),
-			"received_len":     len(received),
-		})
 	}
 
 	// Check Sec-WebSocket-Protocol subprotocol ("token.<value>")
-	if proto := c.matchedSubprotocol(r); proto != "" {
+	if c.matchedSubprotocol(r) != "" {
 		return true
 	}
 
 	// Check query parameter only when explicitly allowed
 	if c.config.AllowTokenQuery {
-		received := strings.TrimSpace(r.URL.Query().Get("token"))
-		if received == token {
+		if r.URL.Query().Get("token") == token {
 			return true
-		}
-		if received != "" {
-			logger.DebugCF("pico", "Token mismatch (Query)", map[string]any{
-				"expected_preview": token[:4] + "...",
-				"received_preview": received[:4] + "...",
-			})
 		}
 	}
 
-	logger.WarnCF("pico", "Authentication failed: No valid token provided in request", map[string]any{
-		"path":         r.URL.Path,
-		"remote_addr":  r.RemoteAddr,
-		"has_auth_hdr": auth != "",
-		"has_token_q":  r.URL.Query().Get("token") != "",
-		"has_subproto": r.Header.Get("Sec-WebSocket-Protocol") != "",
-	})
 	return false
 }
 
@@ -565,19 +553,6 @@ func (c *PicoChannel) handleMessage(pc *picoConn, msg PicoMessage) {
 // handleMessageSend processes an inbound message.send from a client.
 func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 	content, _ := msg.Payload["content"].(string)
-
-	// Robust parameter mapping for HDN compatibility
-	if content == "" {
-		// Fallback to other common field names used by different HDN versions
-		if c, ok := msg.Payload["prompt"].(string); ok {
-			content = c
-		} else if m, ok := msg.Payload["message"].(string); ok {
-			content = m
-		} else if q, ok := msg.Payload["query"].(string); ok {
-			content = q
-		}
-	}
-
 	media, err := parseInlineImageMedia(msg.Payload)
 	if err != nil {
 		errMsg := newErrorWithPayload("invalid_media", err.Error(), map[string]any{
@@ -603,8 +578,6 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 	chatID := "pico:" + sessionID
 	senderID := "pico-user"
 
-	peer := bus.Peer{Kind: "direct", ID: "pico:" + sessionID}
-
 	metadata := map[string]string{
 		"platform":   "pico",
 		"session_id": sessionID,
@@ -627,7 +600,16 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 		return
 	}
 
-	c.HandleMessage(c.ctx, peer, msg.ID, senderID, chatID, content, media, metadata, sender)
+	inboundCtx := bus.InboundContext{
+		Channel:   "pico",
+		ChatID:    chatID,
+		ChatType:  "direct",
+		SenderID:  senderID,
+		MessageID: msg.ID,
+		Raw:       metadata,
+	}
+
+	c.HandleInboundContext(c.ctx, chatID, content, media, inboundCtx, sender)
 }
 
 // truncate truncates a string to maxLen runes.

@@ -1,4 +1,4 @@
-> Voltar ao [README](../../../README.pt-br.md)
+> Voltar ao [README](../../project/README.pt-br.md)
 
 # Discord
 
@@ -8,9 +8,10 @@ Discord é um aplicativo gratuito de chat de voz, vídeo e texto projetado para 
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "discord": {
       "enabled": true,
+      "type": "discord",
       "token": "YOUR_BOT_TOKEN",
       "allow_from": ["YOUR_USER_ID"],
       "group_trigger": {

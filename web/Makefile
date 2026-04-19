@@ -1,4 +1,5 @@
-.PHONY: dev dev-frontend dev-backend build build-frontend build-dev-picoclaw test lint clean
+.PHONY: dev dev-frontend dev-backend build build-frontend build-dev-picoclaw test lint clean \
+	build-android-arm64 build-android-bundle frontend-install
 
 # Go variables
 GO?=CGO_ENABLED=0 go
@@ -9,7 +10,9 @@ GOFLAGS?=-v -tags $(GO_BUILD_TAGS)
 # Build variables
 BUILD_DIR=build
 OUTPUT?=$(BUILD_DIR)/picoclaw-launcher
+OUTPUT_ANDROID_ARM64?=$(BUILD_DIR)/picoclaw-launcher-android-arm64
 FRONTEND_DIR=frontend
+FRONTEND_INSTALL_STAMP=$(FRONTEND_DIR)/node_modules/.picoclaw-install-stamp
 BACKEND_DIR=backend
 BACKEND_DIST=$(BACKEND_DIR)/dist
 PICOCLAW_BINARY_NAME=picoclaw
@@ -91,13 +94,29 @@ build: build-frontend
 	@mkdir -p "$$(dirname "$(OUTPUT)")"
 	${WEB_GO} build $(GOFLAGS) -ldflags "$(LAUNCHER_LDFLAGS)" -o "$(OUTPUT)" ./$(BACKEND_DIR)/
 
-build-frontend:
-	@if [ ! -d $(FRONTEND_DIR)/node_modules ] || \
-		[ $(FRONTEND_DIR)/package.json -nt $(FRONTEND_DIR)/node_modules ] || \
-		[ $(FRONTEND_DIR)/pnpm-lock.yaml -nt $(FRONTEND_DIR)/node_modules ]; then \
+# Build launcher for Android ARM64 (frontend must already be built)
+build-android-arm64: build-frontend
+	@mkdir -p $(BUILD_DIR)
+	GOOS=android GOARCH=arm64 $(GO) build -tags stdjson -ldflags "$(LDFLAGS)" -o "$(OUTPUT_ANDROID_ARM64)" ./$(BACKEND_DIR)/
+
+# Build launcher for all Android architectures
+build-android-bundle: build-frontend
+	@mkdir -p $(BUILD_DIR)
+	GOOS=android GOARCH=arm64 $(GO) build -tags stdjson -ldflags "$(LDFLAGS)" -o "$(BUILD_DIR)/picoclaw-launcher-android-arm64" ./$(BACKEND_DIR)/
+	@echo "All Android launcher builds complete"
+
+frontend-install:
+	@expected_stamp="$$(cat $(FRONTEND_DIR)/package.json $(FRONTEND_DIR)/pnpm-lock.yaml | cksum | awk '{print $$1 ":" $$2}')"; \
+	if [ ! -d $(FRONTEND_DIR)/node_modules ] || \
+		[ ! -x $(FRONTEND_DIR)/node_modules/.bin/tsc ] || \
+		[ ! -f $(FRONTEND_INSTALL_STAMP) ] || \
+		[ "$$(cat $(FRONTEND_INSTALL_STAMP) 2>/dev/null)" != "$$expected_stamp" ]; then \
 		echo "Installing frontend dependencies..."; \
-		cd $(FRONTEND_DIR) && pnpm install --frozen-lockfile; \
+		(cd $(FRONTEND_DIR) && CI=true pnpm install --frozen-lockfile) && \
+		printf '%s\n' "$$expected_stamp" > $(FRONTEND_INSTALL_STAMP); \
 	fi
+
+build-frontend: frontend-install
 	@echo "Building frontend..."
 	@cd $(FRONTEND_DIR) && pnpm build:backend
 
@@ -106,17 +125,13 @@ build-dev-picoclaw:
 	@mkdir -p "$$(dirname "$(PICOCLAW_BINARY)")"
 	@$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o "$(PICOCLAW_BINARY)" ../cmd/picoclaw
 
-test:
+# Run all tests
+test: frontend-install
 	cd $(BACKEND_DIR) && ${WEB_GO} test ./...
-	@if command -v pnpm >/dev/null 2>&1; then \
-		cd $(FRONTEND_DIR) && pnpm lint; \
-	else \
-		echo "pnpm not found, skipping frontend linting"; \
-	fi
-
+	cd $(FRONTEND_DIR) && pnpm lint
 
 # Lint and format
-lint:
+lint: frontend-install
 	cd $(BACKEND_DIR) && ${WEB_GO} vet ./...
 	cd $(FRONTEND_DIR) && pnpm check
 

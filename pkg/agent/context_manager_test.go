@@ -690,6 +690,7 @@ func (m *noopContextManager) Assemble(_ context.Context, req *AssembleRequest) (
 }
 func (m *noopContextManager) Compact(_ context.Context, _ *CompactRequest) error { return nil }
 func (m *noopContextManager) Ingest(_ context.Context, _ *IngestRequest) error   { return nil }
+func (m *noopContextManager) Clear(_ context.Context, _ string) error            { return nil }
 
 // trackingContextManager tracks call counts for each method.
 type trackingContextManager struct {
@@ -725,6 +726,8 @@ func (m *trackingContextManager) Ingest(_ context.Context, req *IngestRequest) e
 	m.mu.Unlock()
 	return nil
 }
+
+func (m *trackingContextManager) Clear(_ context.Context, _ string) error { return nil }
 
 // resetCMRegistry clears the global factory registry and returns a cleanup
 // function that restores the original state after the test.

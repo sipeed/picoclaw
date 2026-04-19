@@ -26,7 +26,8 @@ graph TD
 
     subgraph AgentLoop
         BUS[MessageBus]
-        DRAIN[drainBusToSteering goroutine]
+        ROUTE{Session Routing}
+        WP[Worker Pool]
         SQ[steeringQueue]
         RLI[runLLMIteration]
         TE[Tool Execution Loop]
@@ -37,8 +38,11 @@ graph TD
     DC -->|PublishInbound| BUS
     SL -->|PublishInbound| BUS
 
-    BUS -->|ConsumeInbound while busy| DRAIN
-    DRAIN -->|Steer| SQ
+    BUS -->|ConsumeInbound| ROUTE
+    ROUTE -->|no active turn| WP
+    ROUTE -->|active turn exists| SQ
+    WP -->|Steer| SQ
+    WP -->|process| RLI
 
     RLI -->|1. initial poll| SQ
     TE -->|2. poll after each tool| SQ
@@ -47,32 +51,34 @@ graph TD
     RLI -->|inject into context| LLM
 ```
 
-### Bus drain mechanism
+### Message routing and worker pool
 
-Channels (Telegram, Discord, etc.) publish messages to the `MessageBus` via `PublishInbound`. Without additional wiring, these messages would sit in the bus buffer until the current `processMessage` finishes — meaning steering would never work for real users.
+Channels (Telegram, Discord, etc.) publish messages to the `MessageBus` via `PublishInbound`. The `Run()` loop consumes messages from the bus and routes each one based on its **session key**:
 
-The solution: when `Run()` starts processing a message, it spawns a **drain goroutine** (`drainBusToSteering`) that keeps consuming from the bus and calling `Steer()`. When `processMessage` returns, the drain is canceled and normal consumption resumes.
+- **No active turn for the session**: The session key is atomically reserved via `LoadOrStore(sessionKey, struct{}{})`, and a **worker goroutine** is spawned to process the full turn lifecycle.
+- **Active turn exists for the session**: The message is enqueued directly into the steering queue via `enqueueSteeringMessage`. It will be picked up by the existing worker's steering drain loop.
+- **Non-routable (system)**: Processed synchronously in the main loop.
+
+This enables **parallel processing of messages from different sessions** (up to `max_parallel_turns`) while keeping same-session messages strictly sequential.
 
 ```mermaid
 sequenceDiagram
     participant Bus
     participant Run
-    participant Drain
-    participant AgentLoop
+    participant Worker
+    participant SQ
 
     Run->>Bus: ConsumeInbound() → msg
-    Run->>Drain: spawn drainBusToSteering(ctx)
-    Run->>Run: processMessage(msg)
+    Run->>Run: resolveSteeringTarget(msg) → sessionKey
 
-    Note over Drain: running concurrently
-
-    Bus-->>Drain: ConsumeInbound() → newMsg
-    Drain->>AgentLoop: al.transcribeAudioInMessage(ctx, newMsg)
-    Drain->>AgentLoop: Steer(providers.Message{Content: newMsg.Content})
-
-    Run->>Run: processMessage returns
-    Run->>Drain: cancel context
-    Note over Drain: exits
+    alt no active turn
+        Run->>Run: LoadOrStore(sessionKey, sentinel)
+        Run->>Worker: spawn worker goroutine
+        Worker->>Worker: processMessage(msg)
+        Worker->>SQ: drain steering after turn
+    else active turn exists
+        Run->>SQ: enqueueSteeringMessage(msg)
+    end
 ```
 
 ## Data Structures
@@ -121,7 +127,7 @@ A new field was added to `processOptions`:
 | `Steer` | `Steer(msg providers.Message) error` | Enqueues a steering message. Returns an error if the queue is full or not initialized. Thread-safe, can be called from any goroutine. |
 | `SteeringMode` | `SteeringMode() SteeringMode` | Returns the current dequeue mode. |
 | `SetSteeringMode` | `SetSteeringMode(mode SteeringMode)` | Changes the dequeue mode at runtime. |
-| `Continue` | `Continue(ctx, sessionKey, channel, chatID) (string, error)` | Resumes an idle agent using pending steering messages. Returns `""` if queue is empty. |
+| `Continue` | `Continue(ctx, sessionKey, channel, chatID) (string, error)` | Resumes an idle agent using pending steering messages for the given session. Returns `""` if queue is empty. Uses session-aware active turn checking (won't block on unrelated sessions). |
 
 ## Integration into the Agent Loop
 
@@ -280,15 +286,17 @@ flowchart TD
 {
   "agents": {
     "defaults": {
-      "steering_mode": "one-at-a-time"
+      "steering_mode": "one-at-a-time",
+      "max_parallel_turns": 1
     }
   }
 }
 ```
 
-| Field | Type | Default | Env var |
-|-------|------|---------|---------|
-| `steering_mode` | `string` | `"one-at-a-time"` | `PICOCLAW_AGENTS_DEFAULTS_STEERING_MODE` |
+| Field | Type | Default | Env var | Description |
+|-------|------|---------|---------|-------------|
+| `steering_mode` | `string` | `"one-at-a-time"` | `PICOCLAW_AGENTS_DEFAULTS_STEERING_MODE` | How the steering queue is drained per poll |
+| `max_parallel_turns` | `int` | `1` | `PICOCLAW_AGENTS_DEFAULTS_MAX_PARALLEL_TURNS` | Max concurrent turns. `0` or `1` = sequential; `>1` = parallel across sessions |
 
 
 ## Design decisions and trade-offs
@@ -300,7 +308,8 @@ flowchart TD
 | `one-at-a-time` as default | Gives the model a chance to react to each steering message individually. More predictable behavior than dumping all messages at once. |
 | Skipped tools get explicit error results | The LLM protocol requires a tool result for every tool call in the assistant message. Omitting them would cause API errors. The skip message also informs the model about what was not done. |
 | `Continue()` uses `SkipInitialSteeringPoll` | Prevents race conditions and double-dequeuing when resuming an idle agent. |
-| Queue stored on `AgentLoop`, not `AgentInstance` | Steering is a loop-level concern (it affects the iteration flow), not a per-agent concern. All agents share the same steering queue since `processMessage` is sequential. |
-| Bus drain goroutine in `Run()` | Channels (Telegram, Discord, etc.) publish to the bus via `PublishInbound`. Without the drain, messages would queue in the bus channel buffer and only be consumed after `processMessage` returns — defeating the purpose of steering. The drain goroutine bridges the gap by consuming new bus messages and calling `Steer()` while the agent is busy. |
-| Audio transcription before steering | The drain goroutine calls `al.transcribeAudioInMessage(ctx, msg)` before steering, so voice messages are converted to text before the agent sees them. If transcription fails, the error is silently discarded and the original message is steered as-is. |
+| Queue stored on `AgentLoop`, not `AgentInstance` | Steering is a loop-level concern (it affects the iteration flow), not a per-agent concern. All agents share the steering queue since `processMessage` is sequential. |
+| Worker pool dispatch in `Run()` | Messages are dispatched to a worker pool instead of a single sequential loop. The session key is atomically reserved via `LoadOrStore` before the worker starts, preventing TOCTOU races. Messages from the same session are serialized; different sessions are processed in parallel (up to `max_parallel_turns`). |
+| No bus drain goroutine | The old `drainBusToSteering` goroutine has been removed. The main `Run()` loop now checks `activeTurnStates` for each inbound message: if a turn is active for the session, the message is enqueued directly to the steering queue; otherwise a new worker is spawned. This eliminates the complexity of drain cancellation and requeuing. |
+| Audio transcription in worker | Audio is transcribed within the worker that processes the turn, not in a separate drain goroutine. |
 | `MaxQueueSize = 10` | Prevents unbounded memory growth if a user sends many messages while the agent is busy. Excess messages are dropped with a warning. |

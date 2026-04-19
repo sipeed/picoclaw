@@ -39,11 +39,6 @@ type channelConfigResponse struct {
 	Variant           string   `json:"variant,omitempty"`
 }
 
-type channelSecretPresence struct {
-	key        string
-	configured bool
-}
-
 // registerChannelRoutes binds read-only channel catalog endpoints to the ServeMux.
 func (h *Handler) registerChannelRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/channels/catalog", h.handleListChannelCatalog)
@@ -94,6 +89,25 @@ func findChannelCatalogItem(name string) (channelCatalogItem, bool) {
 	return channelCatalogItem{}, false
 }
 
+var channelSecretFieldMap = map[string][]string{
+	"weixin":          {"token"},
+	"telegram":        {"token"},
+	"discord":         {"token"},
+	"slack":           {"bot_token", "app_token"},
+	"feishu":          {"app_secret", "encrypt_key", "verification_token"},
+	"dingtalk":        {"client_secret"},
+	"line":            {"channel_secret", "channel_access_token"},
+	"qq":              {"app_secret"},
+	"onebot":          {"access_token"},
+	"wecom":           {"secret"},
+	"pico":            {"token"},
+	"matrix":          {"access_token"},
+	"irc":             {"password", "nickserv_password", "sasl_password"},
+	"whatsapp":        {},
+	"whatsapp_native": {},
+	"maixcam":         {},
+}
+
 func buildChannelConfigResponse(cfg *config.Config, item channelCatalogItem) channelConfigResponse {
 	resp := channelConfigResponse{
 		ConfiguredSecrets: []string{},
@@ -101,130 +115,89 @@ func buildChannelConfigResponse(cfg *config.Config, item channelCatalogItem) cha
 		Variant:           item.Variant,
 	}
 
-	switch item.Name {
-	case "weixin":
-		channelCfg := cfg.Channels.Weixin
-		resp.ConfiguredSecrets = collectConfiguredSecrets(
-			channelSecretPresence{key: "token", configured: channelCfg.Token.String() != ""},
-		)
-		channelCfg.Token = config.SecureString{}
-		resp.Config = channelCfg
-	case "telegram":
-		channelCfg := cfg.Channels.Telegram
-		resp.ConfiguredSecrets = collectConfiguredSecrets(
-			channelSecretPresence{key: "token", configured: channelCfg.Token.String() != ""},
-		)
-		channelCfg.Token = config.SecureString{}
-		resp.Config = channelCfg
-	case "discord":
-		channelCfg := cfg.Channels.Discord
-		resp.ConfiguredSecrets = collectConfiguredSecrets(
-			channelSecretPresence{key: "token", configured: channelCfg.Token.String() != ""},
-		)
-		channelCfg.Token = config.SecureString{}
-		resp.Config = channelCfg
-	case "slack":
-		channelCfg := cfg.Channels.Slack
-		resp.ConfiguredSecrets = collectConfiguredSecrets(
-			channelSecretPresence{key: "bot_token", configured: channelCfg.BotToken.String() != ""},
-			channelSecretPresence{key: "app_token", configured: channelCfg.AppToken.String() != ""},
-		)
-		channelCfg.BotToken = config.SecureString{}
-		channelCfg.AppToken = config.SecureString{}
-		resp.Config = channelCfg
-	case "feishu":
-		channelCfg := cfg.Channels.Feishu
-		resp.ConfiguredSecrets = collectConfiguredSecrets(
-			channelSecretPresence{key: "app_secret", configured: channelCfg.AppSecret.String() != ""},
-			channelSecretPresence{key: "encrypt_key", configured: channelCfg.EncryptKey.String() != ""},
-			channelSecretPresence{key: "verification_token", configured: channelCfg.VerificationToken.String() != ""},
-		)
-		channelCfg.AppSecret = config.SecureString{}
-		channelCfg.EncryptKey = config.SecureString{}
-		channelCfg.VerificationToken = config.SecureString{}
-		resp.Config = channelCfg
-	case "dingtalk":
-		channelCfg := cfg.Channels.DingTalk
-		resp.ConfiguredSecrets = collectConfiguredSecrets(
-			channelSecretPresence{key: "client_secret", configured: channelCfg.ClientSecret.String() != ""},
-		)
-		channelCfg.ClientSecret = config.SecureString{}
-		resp.Config = channelCfg
-	case "line":
-		channelCfg := cfg.Channels.LINE
-		resp.ConfiguredSecrets = collectConfiguredSecrets(
-			channelSecretPresence{key: "channel_secret", configured: channelCfg.ChannelSecret.String() != ""},
-			channelSecretPresence{
-				key:        "channel_access_token",
-				configured: channelCfg.ChannelAccessToken.String() != "",
-			},
-		)
-		channelCfg.ChannelSecret = config.SecureString{}
-		channelCfg.ChannelAccessToken = config.SecureString{}
-		resp.Config = channelCfg
-	case "qq":
-		channelCfg := cfg.Channels.QQ
-		resp.ConfiguredSecrets = collectConfiguredSecrets(
-			channelSecretPresence{key: "app_secret", configured: channelCfg.AppSecret.String() != ""},
-		)
-		channelCfg.AppSecret = config.SecureString{}
-		resp.Config = channelCfg
-	case "onebot":
-		channelCfg := cfg.Channels.OneBot
-		resp.ConfiguredSecrets = collectConfiguredSecrets(
-			channelSecretPresence{key: "access_token", configured: channelCfg.AccessToken.String() != ""},
-		)
-		channelCfg.AccessToken = config.SecureString{}
-		resp.Config = channelCfg
-	case "wecom":
-		channelCfg := cfg.Channels.WeCom
-		resp.ConfiguredSecrets = collectConfiguredSecrets(
-			channelSecretPresence{key: "secret", configured: channelCfg.Secret.String() != ""},
-		)
-		channelCfg.Secret = config.SecureString{}
-		resp.Config = channelCfg
-	case "whatsapp", "whatsapp_native":
-		resp.Config = cfg.Channels.WhatsApp
-	case "pico":
-		channelCfg := cfg.Channels.Pico
-		resp.ConfiguredSecrets = collectConfiguredSecrets(
-			channelSecretPresence{key: "token", configured: channelCfg.Token.String() != ""},
-		)
-		channelCfg.Token = config.SecureString{}
-		resp.Config = channelCfg
-	case "maixcam":
-		resp.Config = cfg.Channels.MaixCam
-	case "matrix":
-		channelCfg := cfg.Channels.Matrix
-		resp.ConfiguredSecrets = collectConfiguredSecrets(
-			channelSecretPresence{key: "access_token", configured: channelCfg.AccessToken.String() != ""},
-		)
-		channelCfg.AccessToken = config.SecureString{}
-		resp.Config = channelCfg
-	case "irc":
-		channelCfg := cfg.Channels.IRC
-		resp.ConfiguredSecrets = collectConfiguredSecrets(
-			channelSecretPresence{key: "password", configured: channelCfg.Password.String() != ""},
-			channelSecretPresence{key: "nickserv_password", configured: channelCfg.NickServPassword.String() != ""},
-			channelSecretPresence{key: "sasl_password", configured: channelCfg.SASLPassword.String() != ""},
-		)
-		channelCfg.Password = config.SecureString{}
-		channelCfg.NickServPassword = config.SecureString{}
-		channelCfg.SASLPassword = config.SecureString{}
-		resp.Config = channelCfg
-	default:
-		resp.Config = map[string]any{}
+	bc := cfg.Channels.Get(item.ConfigKey)
+	if bc == nil {
+		bc = defaultChannelConfig(item.ConfigKey)
+		if bc == nil {
+			resp.Config = map[string]any{}
+			return resp
+		}
 	}
+
+	// Detect configured secrets by checking the raw Settings JSON
+	secrets := detectConfiguredSecrets(bc.Settings, item.Name)
+	resp.ConfiguredSecrets = secrets
+
+	// Parse settings into a generic map for JSON response
+	settings := map[string]any{}
+	if len(bc.Settings) > 0 {
+		if err := json.Unmarshal(bc.Settings, &settings); err != nil {
+			resp.Config = map[string]any{}
+			return resp
+		}
+	}
+
+	// Remove secure fields from response
+	for _, key := range secrets {
+		delete(settings, key)
+	}
+	addChannelCommonConfig(settings, bc)
+	resp.Config = settings
 
 	return resp
 }
 
-func collectConfiguredSecrets(secrets ...channelSecretPresence) []string {
-	configured := make([]string, 0, len(secrets))
-	for _, secret := range secrets {
-		if secret.configured {
-			configured = append(configured, secret.key)
+func defaultChannelConfig(configKey string) *config.Channel {
+	return config.DefaultConfig().Channels.Get(configKey)
+}
+
+func addChannelCommonConfig(settings map[string]any, bc *config.Channel) {
+	settings["enabled"] = bc.Enabled
+	if len(bc.AllowFrom) > 0 {
+		settings["allow_from"] = []string(bc.AllowFrom)
+	}
+	if bc.ReasoningChannelID != "" {
+		settings["reasoning_channel_id"] = bc.ReasoningChannelID
+	}
+	if bc.GroupTrigger.MentionOnly || len(bc.GroupTrigger.Prefixes) > 0 {
+		settings["group_trigger"] = bc.GroupTrigger
+	}
+	if bc.Typing.Enabled {
+		settings["typing"] = bc.Typing
+	}
+	if bc.Placeholder.Enabled || len(bc.Placeholder.Text) > 0 {
+		settings["placeholder"] = bc.Placeholder
+	}
+}
+
+func detectConfiguredSecrets(settings config.RawNode, channelName string) []string {
+	var m map[string]any
+	if err := json.Unmarshal(settings, &m); err != nil {
+		return nil
+	}
+
+	fields, ok := channelSecretFieldMap[channelName]
+	if !ok {
+		return nil
+	}
+
+	var found []string
+	for _, key := range fields {
+		if val, exists := m[key]; exists {
+			switch v := val.(type) {
+			case string:
+				if v != "" {
+					found = append(found, key)
+				}
+			case map[string]any:
+				if s, ok := v["s"].(string); ok && s != "" {
+					found = append(found, key)
+				}
+			}
 		}
 	}
-	return configured
+	if found == nil {
+		return []string{}
+	}
+	return found
 }

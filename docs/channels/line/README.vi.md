@@ -1,4 +1,4 @@
-> Quay lại [README](../../../README.vi.md)
+> Quay lại [README](../../project/README.vi.md)
 
 # Line
 
@@ -8,9 +8,10 @@ PicoClaw hỗ trợ LINE thông qua LINE Messaging API kết hợp với webhook
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "line": {
       "enabled": true,
+      "type": "line",
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
       "webhook_path": "/webhook/line",

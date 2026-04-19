@@ -20,6 +20,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
+	"github.com/sipeed/picoclaw/pkg/isolation"
 )
 
 var (
@@ -40,7 +41,6 @@ type ExecTool struct {
 	allowPatterns       []*regexp.Regexp
 	customAllowPatterns []*regexp.Regexp
 	allowedPathPatterns []*regexp.Regexp
-	denyWritePaths      []*regexp.Regexp
 	restrictToWorkspace bool
 	allowRemote         bool
 	sessionManager      *SessionManager
@@ -124,16 +124,6 @@ func NewExecToolWithConfig(
 	cfg *config.Config,
 	allowPaths ...[]*regexp.Regexp,
 ) (*ExecTool, error) {
-	return NewExecToolWithDenyPaths(workingDir, restrict, allowPaths, nil, cfg)
-}
-
-func NewExecToolWithDenyPaths(
-	workingDir string,
-	restrict bool,
-	allowPaths [][]*regexp.Regexp,
-	denyWritePaths []*regexp.Regexp,
-	cfg *config.Config,
-) (*ExecTool, error) {
 	denyPatterns := make([]*regexp.Regexp, 0)
 	customAllowPatterns := make([]*regexp.Regexp, 0)
 	var allowedPathPatterns []*regexp.Regexp
@@ -185,7 +175,6 @@ func NewExecToolWithDenyPaths(
 		allowPatterns:       nil,
 		customAllowPatterns: customAllowPatterns,
 		allowedPathPatterns: allowedPathPatterns,
-		denyWritePaths:      denyWritePaths,
 		restrictToWorkspace: restrict,
 		allowRemote:         allowRemote,
 		sessionManager:      getSessionManager(),
@@ -390,7 +379,9 @@ func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	if err := cmd.Start(); err != nil {
+	// Route shell execution through the shared isolation entry point so exec tool
+	// subprocesses receive the same isolation policy as other integrations.
+	if err := isolation.Start(cmd); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to start command: %v", err))
 	}
 
@@ -533,7 +524,9 @@ func (t *ExecTool) runBackground(ctx context.Context, command, cwd string, ptyEn
 		session.stdinWriter = stdinWriter
 	}
 
-	if err := cmd.Start(); err != nil {
+	// Background sessions use the same startup path so isolation stays consistent
+	// with synchronous exec runs.
+	if err := isolation.Start(cmd); err != nil {
 		if session.ptyMaster != nil {
 			session.ptyMaster.Close()
 		}
@@ -1045,40 +1038,6 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 				return "Command blocked by safety guard (dangerous pattern detected)"
 			}
 		}
-
-		// Check deny write paths - block commands that reference protected directories or variables
-		// We perform a broad check on the entire command string to prevent variable bypasses.
-		if len(t.denyWritePaths) > 0 {
-			// First check: literal occurrences in the whole command
-			for _, pattern := range t.denyWritePaths {
-				if pattern.MatchString(cmd) {
-					return fmt.Sprintf("Command blocked: reference to restricted path detected")
-				}
-			}
-
-			// Second check: check individual words/arguments for deeper validation
-			words := strings.Fields(cmd)
-			for _, word := range words {
-				// Clean whitespace and common shell chars from word to find actual path candidates
-				cleanWord := strings.Trim(word, " ;&|><\"'$()")
-				if cleanWord == "" {
-					continue
-				}
-
-				for _, pattern := range t.denyWritePaths {
-					if pattern.MatchString(cleanWord) {
-						return fmt.Sprintf("Command blocked: cannot access protected path %q", cleanWord)
-					}
-					// Also check path components (e.g. "skills" in "mkdir -p skills/foo")
-					pathParts := strings.Split(cleanWord, "/")
-					for _, part := range pathParts {
-						if part != "" && pattern.MatchString(part) {
-							return fmt.Sprintf("Command blocked: cannot access protected path component %q", part)
-						}
-					}
-				}
-			}
-		}
 	}
 
 	if len(t.allowPatterns) > 0 {
@@ -1107,28 +1066,18 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		// Web URL schemes whose path components (starting with //) should be exempt
 		// from workspace sandbox checks. file: is intentionally excluded so that
 		// file:// URIs are still validated against the workspace boundary.
-		webSchemes := []string{"http:", "https:", "ftp:", "ftps:", "ssh:", "git:", "sftp:"}
+		webSchemes := []string{"http:", "https:", "ftp:", "ftps:", "sftp:", "ssh:", "git:"}
 
 		matchIndices := absolutePathPattern.FindAllStringIndex(cmd, -1)
 
 		for _, loc := range matchIndices {
 			raw := cmd[loc[0]:loc[1]]
 
-			// Check if this is truly the start of a path component.
-			// It should be at the start of the command or preceded by a shell delimiter.
-			if loc[0] > 0 {
-				prev := cmd[loc[0]-1]
-				// Typical shell delimiters that separate command arguments or environment variables.
-				// We include space-like chars, basic separators, and assignment equals.
-				// We also include ':' because it precedes paths in lists ($PATH) and URLs (file://, https://).
-				if !strings.ContainsAny(string(prev), " \t\n\r;|\"&!<>(){}=[]':") {
-					continue
-				}
-			}
-
 			// Skip URL path components that look like they're from web URLs.
 			// When a URL like "https://github.com" is parsed, the regex captures
 			// "//github.com" as a match (the path portion after "https:").
+			// Use the exact match position (loc[0]) so that duplicate //path substrings
+			// in the same command are each evaluated at their own position.
 			if strings.HasPrefix(raw, "//") && loc[0] > 0 {
 				before := cmd[:loc[0]]
 				isWebURL := false

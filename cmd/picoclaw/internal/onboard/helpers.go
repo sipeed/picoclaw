@@ -9,11 +9,12 @@ import (
 	"golang.org/x/term"
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
+	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/cliui"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/credential"
 )
 
-func onboard(encrypt bool, yes bool) {
+func onboard(encrypt bool) {
 	configPath := internal.GetConfigPath()
 
 	configExists := false
@@ -26,14 +27,12 @@ func onboard(encrypt bool, yes bool) {
 			if _, err := os.Stat(sshKeyPath); err == nil {
 				// Both exist — confirm a full reset.
 				fmt.Printf("Config already exists at %s\n", configPath)
-				if !yes {
-					fmt.Print("Overwrite config with defaults? (y/n): ")
-					var response string
-					fmt.Scanln(&response)
-					if response != "y" {
-						fmt.Println("Aborted.")
-						return
-					}
+				fmt.Print("Overwrite config with defaults? (y/n): ")
+				var response string
+				fmt.Scanln(&response)
+				if response != "y" {
+					fmt.Println("Aborted.")
+					return
 				}
 				configExists = false // user agreed to reset; treat as fresh
 			}
@@ -56,7 +55,7 @@ func onboard(encrypt bool, yes bool) {
 		// the current process and disappears when it exits.
 		os.Setenv(credential.PassphraseEnvVar, passphrase)
 
-		if err = setupSSHKey(yes); err != nil {
+		if err = setupSSHKey(); err != nil {
 			fmt.Printf("Error generating SSH key: %v\n", err)
 			os.Exit(1)
 		}
@@ -81,29 +80,7 @@ func onboard(encrypt bool, yes bool) {
 	workspace := cfg.WorkspacePath()
 	createWorkspaceTemplates(workspace)
 
-	fmt.Printf("\n%s picoclaw is ready!\n", internal.Logo)
-	fmt.Println("\nNext steps:")
-	if encrypt {
-		fmt.Println("  1. Set your encryption passphrase before starting picoclaw:")
-		fmt.Println("       export PICOCLAW_KEY_PASSPHRASE=<your-passphrase>   # Linux/macOS")
-		fmt.Println("       set PICOCLAW_KEY_PASSPHRASE=<your-passphrase>      # Windows cmd")
-		fmt.Println("")
-		fmt.Println("  2. Add your API key to", configPath)
-	} else {
-		fmt.Println("  1. Add your API key to", configPath)
-	}
-	fmt.Println("")
-	fmt.Println("     Recommended:")
-	fmt.Println("     - OpenRouter: https://openrouter.ai/keys (access 100+ models)")
-	fmt.Println("     - Ollama:     https://ollama.com (local, free)")
-	fmt.Println("")
-	fmt.Println("     See README.md for 17+ supported providers.")
-	fmt.Println("")
-	if encrypt {
-		fmt.Println("  3. Chat: picoclaw agent -m \"Hello!\"")
-	} else {
-		fmt.Println("  2. Chat: picoclaw agent -m \"Hello!\"")
-	}
+	cliui.PrintOnboardComplete(internal.Logo, encrypt, configPath)
 }
 
 // promptPassphrase reads the encryption passphrase twice from the terminal
@@ -136,7 +113,7 @@ func promptPassphrase() (string, error) {
 // setupSSHKey generates the picoclaw-specific SSH key at ~/.ssh/picoclaw_ed25519.key.
 // If the key already exists the user is warned and asked to confirm overwrite.
 // Answering anything other than "y" keeps the existing key (not an error).
-func setupSSHKey(yes bool) error {
+func setupSSHKey() error {
 	keyPath, err := credential.DefaultSSHKeyPath()
 	if err != nil {
 		return fmt.Errorf("cannot determine SSH key path: %w", err)
@@ -145,14 +122,12 @@ func setupSSHKey(yes bool) error {
 	if _, err := os.Stat(keyPath); err == nil {
 		fmt.Printf("\n⚠️  WARNING: %s already exists.\n", keyPath)
 		fmt.Println("    Overwriting will invalidate any credentials previously encrypted with this key.")
-		if !yes {
-			fmt.Print("    Overwrite? (y/n): ")
-			var response string
-			fmt.Scanln(&response)
-			if response != "y" {
-				fmt.Println("Keeping existing SSH key.")
-				return nil
-			}
+		fmt.Print("    Overwrite? (y/n): ")
+		var response string
+		fmt.Scanln(&response)
+		if response != "y" {
+			fmt.Println("Keeping existing SSH key.")
+			return nil
 		}
 	}
 
@@ -196,6 +171,9 @@ func copyEmbeddedToTarget(targetDir string) error {
 		new_path, err := filepath.Rel("workspace", path)
 		if err != nil {
 			return fmt.Errorf("Failed to get relative path for %s: %v\n", path, err)
+		}
+		if new_path == "AGENTS.md" || new_path == "IDENTITY.md" {
+			return nil
 		}
 
 		// Build target file path

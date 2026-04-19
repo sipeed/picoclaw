@@ -213,6 +213,47 @@ func TestSanitizeHistoryForProvider_DuplicateToolResults(t *testing.T) {
 	}
 }
 
+func TestSanitizeHistoryForProvider_ReusedToolCallIDAcrossRounds(t *testing.T) {
+	history := []providers.Message{
+		msg("user", "first"),
+		assistantWithTools("call_0"),
+		toolResult("call_0"),
+		msg("assistant", "first done"),
+		msg("user", "second"),
+		assistantWithTools("call_0"),
+		toolResult("call_0"),
+		msg("assistant", "second done"),
+	}
+
+	result := sanitizeHistoryForProvider(history)
+	if len(result) != 8 {
+		t.Fatalf("expected 8 messages, got %d: %+v", len(result), roles(result))
+	}
+	assertRoles(t, result, "user", "assistant", "tool", "assistant", "user", "assistant", "tool", "assistant")
+	if result[2].ToolCallID != "call_0" || result[6].ToolCallID != "call_0" {
+		t.Fatalf(
+			"expected both tool results to be preserved, got IDs %q and %q",
+			result[2].ToolCallID,
+			result[6].ToolCallID,
+		)
+	}
+}
+
+func TestSanitizeHistoryForProvider_DropsAssistantWithEmptyToolCallID(t *testing.T) {
+	history := []providers.Message{
+		msg("user", "do something"),
+		assistantWithTools(""),
+		toolResult(""),
+		msg("assistant", "done"),
+	}
+
+	result := sanitizeHistoryForProvider(history)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 messages, got %d: %+v", len(result), roles(result))
+	}
+	assertRoles(t, result, "user", "assistant")
+}
+
 func roles(msgs []providers.Message) []string {
 	r := make([]string, len(msgs))
 	for i, m := range msgs {

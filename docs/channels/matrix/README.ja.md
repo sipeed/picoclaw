@@ -1,4 +1,4 @@
-> [README](../../../README.ja.md) に戻る
+> [README](../../project/README.ja.md) に戻る
 
 # Matrix チャンネル設定ガイド
 
@@ -8,9 +8,10 @@
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "matrix": {
       "enabled": true,
+      "type": "matrix",
       "homeserver": "https://matrix.org",
       "user_id": "@your-bot:matrix.org",
       "access_token": "YOUR_MATRIX_ACCESS_TOKEN",

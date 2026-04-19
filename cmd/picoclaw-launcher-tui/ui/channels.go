@@ -145,8 +145,10 @@ func (a *App) showChannelEditForm(configPath, channelName string, existing map[s
 		}
 
 		updated := make(map[string]any)
-		for k, v := range existing {
-			updated[k] = v
+		if existing != nil {
+			for k, v := range existing {
+				updated[k] = v
+			}
 		}
 		for k, field := range fields {
 			val := field.GetText()

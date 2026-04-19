@@ -1,4 +1,4 @@
-> Quay lại [README](../../../README.vi.md)
+> Quay lại [README](../../project/README.vi.md)
 
 # Hướng dẫn Cấu hình Kênh Matrix
 
@@ -8,9 +8,10 @@ Thêm vào `config.json`:
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "matrix": {
       "enabled": true,
+      "type": "matrix",
       "homeserver": "https://matrix.org",
       "user_id": "@your-bot:matrix.org",
       "access_token": "YOUR_MATRIX_ACCESS_TOKEN",

@@ -56,7 +56,7 @@ func agentCmd(message, sessionKey, model string, debug bool) error {
 
 	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()
-	logger.InfoCF("agent", "Agent initialized",
+	logger.DebugCF("agent", "Agent initialized",
 		map[string]any{
 			"tools_count":      startupInfo["tools"].(map[string]any)["count"],
 			"skills_total":     startupInfo["skills"].(map[string]any)["total"],
@@ -132,7 +132,7 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Printf("%s You: ", internal.Logo)
+		fmt.Print(fmt.Sprintf("%s You: ", internal.Logo))
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {

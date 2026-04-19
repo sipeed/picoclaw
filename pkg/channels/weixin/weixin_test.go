@@ -66,7 +66,7 @@ func TestDownloadAndDecryptCDNBuffer(t *testing.T) {
 				}, nil
 			})},
 		},
-		config: config.WeixinConfig{
+		config: &config.WeixinSettings{
 			CDNBaseURL: "https://cdn.example.com",
 		},
 		typingCache: make(map[string]typingTicketCacheEntry),
@@ -105,7 +105,7 @@ func TestDownloadAndDecryptCDNBufferUsesFullURLWhenProvided(t *testing.T) {
 				return nil, nil
 			})},
 		},
-		config: config.WeixinConfig{
+		config: &config.WeixinSettings{
 			CDNBaseURL: "https://cdn.example.com",
 		},
 		typingCache: make(map[string]typingTicketCacheEntry),
@@ -155,7 +155,7 @@ func TestDownloadAndDecryptCDNBufferFallsBackToConstructedURLWhenFullURLFails(t 
 				}, nil
 			})},
 		},
-		config: config.WeixinConfig{
+		config: &config.WeixinSettings{
 			CDNBaseURL: "https://cdn.example.com",
 		},
 		typingCache: make(map[string]typingTicketCacheEntry),
@@ -224,7 +224,7 @@ func TestUploadBufferToCDN(t *testing.T) {
 				}, nil
 			})},
 		},
-		config: config.WeixinConfig{
+		config: &config.WeixinSettings{
 			CDNBaseURL: "https://cdn.example.com",
 		},
 		typingCache: make(map[string]typingTicketCacheEntry),
@@ -259,7 +259,7 @@ func TestBuildWeixinSyncBufPathUsesPicoclawHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv(config.EnvHome, home)
 
-	wxCfg := config.WeixinConfig{
+	wxCfg := &config.WeixinSettings{
 		BaseURL: "https://ilinkai.weixin.qq.com/",
 	}
 	wxCfg.SetToken("token-123")

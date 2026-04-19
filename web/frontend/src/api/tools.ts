@@ -17,6 +17,31 @@ interface ToolActionResponse {
   status: string
 }
 
+export interface WebSearchProviderOption {
+  id: string
+  label: string
+  configured: boolean
+  current: boolean
+  requires_auth: boolean
+}
+
+export interface WebSearchProviderConfig {
+  enabled: boolean
+  max_results: number
+  base_url?: string
+  api_key?: string
+  api_key_set?: boolean
+}
+
+export interface WebSearchConfigResponse {
+  provider: string
+  current_service: string
+  prefer_native: boolean
+  proxy?: string
+  providers: WebSearchProviderOption[]
+  settings: Record<string, WebSearchProviderConfig>
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await launcherFetch(path, options)
   if (!res.ok) {
@@ -55,4 +80,18 @@ export async function setToolEnabled(
       body: JSON.stringify({ enabled }),
     },
   )
+}
+
+export async function getWebSearchConfig(): Promise<WebSearchConfigResponse> {
+  return request<WebSearchConfigResponse>("/api/tools/web-search-config")
+}
+
+export async function updateWebSearchConfig(
+  payload: WebSearchConfigResponse,
+): Promise<WebSearchConfigResponse> {
+  return request<WebSearchConfigResponse>("/api/tools/web-search-config", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  })
 }

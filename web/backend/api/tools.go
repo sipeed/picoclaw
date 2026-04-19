@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	picotools "github.com/sipeed/picoclaw/pkg/tools"
 )
 
 type toolCatalogEntry struct {
@@ -31,6 +33,39 @@ type toolSupportResponse struct {
 
 type toolStateRequest struct {
 	Enabled bool `json:"enabled"`
+}
+
+type webSearchProviderOption struct {
+	ID           string `json:"id"`
+	Label        string `json:"label"`
+	Configured   bool   `json:"configured"`
+	Current      bool   `json:"current"`
+	RequiresAuth bool   `json:"requires_auth"`
+}
+
+type webSearchProviderConfig struct {
+	Enabled    bool     `json:"enabled"`
+	MaxResults int      `json:"max_results"`
+	BaseURL    string   `json:"base_url,omitempty"`
+	APIKey     string   `json:"api_key,omitempty"`
+	APIKeys    []string `json:"api_keys,omitempty"`
+	APIKeySet  bool     `json:"api_key_set,omitempty"`
+}
+
+type webSearchConfigResponse struct {
+	Provider       string                             `json:"provider"`
+	CurrentService string                             `json:"current_service"`
+	PreferNative   bool                               `json:"prefer_native"`
+	Proxy          string                             `json:"proxy,omitempty"`
+	Providers      []webSearchProviderOption          `json:"providers"`
+	Settings       map[string]webSearchProviderConfig `json:"settings"`
+}
+
+type webSearchConfigRequest struct {
+	Provider     string                             `json:"provider"`
+	PreferNative bool                               `json:"prefer_native"`
+	Proxy        string                             `json:"proxy"`
+	Settings     map[string]webSearchProviderConfig `json:"settings"`
 }
 
 var toolCatalog = []toolCatalogEntry{
@@ -153,6 +188,8 @@ var toolCatalog = []toolCatalogEntry{
 func (h *Handler) registerToolRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/tools", h.handleListTools)
 	mux.HandleFunc("PUT /api/tools/{name}/state", h.handleUpdateToolState)
+	mux.HandleFunc("GET /api/tools/web-search-config", h.handleGetWebSearchConfig)
+	mux.HandleFunc("PUT /api/tools/web-search-config", h.handleUpdateWebSearchConfig)
 }
 
 func (h *Handler) handleListTools(w http.ResponseWriter, r *http.Request) {
@@ -332,4 +369,325 @@ func applyToolState(cfg *config.Config, toolName string, enabled bool) error {
 		return fmt.Errorf("tool %q cannot be updated", toolName)
 	}
 	return nil
+}
+
+func (h *Handler) handleGetWebSearchConfig(w http.ResponseWriter, r *http.Request) {
+	cfg, err := config.LoadConfig(h.configPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(buildWebSearchConfigResponse(cfg)); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) handleUpdateWebSearchConfig(w http.ResponseWriter, r *http.Request) {
+	cfg, err := config.LoadConfig(h.configPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	var req webSearchConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	provider := normalizeWebSearchProvider(req.Provider)
+	if provider == "" {
+		http.Error(w, "invalid web search provider", http.StatusBadRequest)
+		return
+	}
+
+	cfg.Tools.Web.Provider = provider
+	cfg.Tools.Web.PreferNative = req.PreferNative
+	cfg.Tools.Web.Proxy = strings.TrimSpace(req.Proxy)
+
+	if settings, ok := req.Settings["sogou"]; ok {
+		cfg.Tools.Web.Sogou.Enabled = settings.Enabled
+		cfg.Tools.Web.Sogou.MaxResults = settings.MaxResults
+	}
+	if settings, ok := req.Settings["duckduckgo"]; ok {
+		cfg.Tools.Web.DuckDuckGo.Enabled = settings.Enabled
+		cfg.Tools.Web.DuckDuckGo.MaxResults = settings.MaxResults
+	}
+	if settings, ok := req.Settings["brave"]; ok {
+		cfg.Tools.Web.Brave.Enabled = settings.Enabled
+		cfg.Tools.Web.Brave.MaxResults = settings.MaxResults
+		if keys, ok := normalizeWebSearchAPIKeys(settings.APIKeys, settings.APIKey); ok {
+			cfg.Tools.Web.Brave.SetAPIKeys(keys)
+		}
+	}
+	if settings, ok := req.Settings["tavily"]; ok {
+		cfg.Tools.Web.Tavily.Enabled = settings.Enabled
+		cfg.Tools.Web.Tavily.MaxResults = settings.MaxResults
+		cfg.Tools.Web.Tavily.BaseURL = strings.TrimSpace(settings.BaseURL)
+		if keys, ok := normalizeWebSearchAPIKeys(settings.APIKeys, settings.APIKey); ok {
+			cfg.Tools.Web.Tavily.SetAPIKeys(keys)
+		}
+	}
+	if settings, ok := req.Settings["perplexity"]; ok {
+		cfg.Tools.Web.Perplexity.Enabled = settings.Enabled
+		cfg.Tools.Web.Perplexity.MaxResults = settings.MaxResults
+		if keys, ok := normalizeWebSearchAPIKeys(settings.APIKeys, settings.APIKey); ok {
+			cfg.Tools.Web.Perplexity.APIKeys = config.SimpleSecureStrings(keys...)
+		}
+	}
+	if settings, ok := req.Settings["searxng"]; ok {
+		cfg.Tools.Web.SearXNG.Enabled = settings.Enabled
+		cfg.Tools.Web.SearXNG.MaxResults = settings.MaxResults
+		cfg.Tools.Web.SearXNG.BaseURL = strings.TrimSpace(settings.BaseURL)
+	}
+	if settings, ok := req.Settings["glm_search"]; ok {
+		cfg.Tools.Web.GLMSearch.Enabled = settings.Enabled
+		cfg.Tools.Web.GLMSearch.MaxResults = settings.MaxResults
+		cfg.Tools.Web.GLMSearch.BaseURL = strings.TrimSpace(settings.BaseURL)
+		if key := strings.TrimSpace(settings.APIKey); key != "" {
+			cfg.Tools.Web.GLMSearch.APIKey = *config.NewSecureString(key)
+		}
+	}
+	if settings, ok := req.Settings["baidu_search"]; ok {
+		cfg.Tools.Web.BaiduSearch.Enabled = settings.Enabled
+		cfg.Tools.Web.BaiduSearch.MaxResults = settings.MaxResults
+		cfg.Tools.Web.BaiduSearch.BaseURL = strings.TrimSpace(settings.BaseURL)
+		if key := strings.TrimSpace(settings.APIKey); key != "" {
+			cfg.Tools.Web.BaiduSearch.APIKey = *config.NewSecureString(key)
+		}
+	}
+
+	if err := config.SaveConfig(h.configPath, cfg); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(buildWebSearchConfigResponse(cfg)); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
+}
+
+func normalizeWebSearchProvider(provider string) string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "", "auto":
+		return "auto"
+	case "sogou", "brave", "tavily", "duckduckgo", "perplexity", "searxng", "glm_search", "baidu_search":
+		return strings.ToLower(strings.TrimSpace(provider))
+	default:
+		return ""
+	}
+}
+
+func normalizeWebSearchAPIKeys(apiKeys []string, apiKey string) ([]string, bool) {
+	if apiKeys != nil {
+		keys := make([]string, 0, len(apiKeys))
+		seen := make(map[string]struct{}, len(apiKeys))
+		for _, key := range apiKeys {
+			trimmed := strings.TrimSpace(key)
+			if trimmed == "" {
+				continue
+			}
+			if _, ok := seen[trimmed]; ok {
+				continue
+			}
+			seen[trimmed] = struct{}{}
+			keys = append(keys, trimmed)
+		}
+		return keys, true
+	}
+
+	if trimmed := strings.TrimSpace(apiKey); trimmed != "" {
+		return []string{trimmed}, true
+	}
+
+	return nil, false
+}
+
+func buildWebSearchConfigResponse(cfg *config.Config) webSearchConfigResponse {
+	current := resolveCurrentWebSearchProvider(cfg)
+	settings := map[string]webSearchProviderConfig{
+		"sogou": {
+			Enabled:    cfg.Tools.Web.Sogou.Enabled,
+			MaxResults: cfg.Tools.Web.Sogou.MaxResults,
+		},
+		"duckduckgo": {
+			Enabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
+			MaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
+		},
+		"brave": {
+			Enabled:    cfg.Tools.Web.Brave.Enabled,
+			MaxResults: cfg.Tools.Web.Brave.MaxResults,
+			APIKeySet:  len(cfg.Tools.Web.Brave.APIKeys.Values()) > 0,
+		},
+		"tavily": {
+			Enabled:    cfg.Tools.Web.Tavily.Enabled,
+			MaxResults: cfg.Tools.Web.Tavily.MaxResults,
+			BaseURL:    cfg.Tools.Web.Tavily.BaseURL,
+			APIKeySet:  len(cfg.Tools.Web.Tavily.APIKeys.Values()) > 0,
+		},
+		"perplexity": {
+			Enabled:    cfg.Tools.Web.Perplexity.Enabled,
+			MaxResults: cfg.Tools.Web.Perplexity.MaxResults,
+			APIKeySet:  len(cfg.Tools.Web.Perplexity.APIKeys.Values()) > 0,
+		},
+		"searxng": {
+			Enabled:    cfg.Tools.Web.SearXNG.Enabled,
+			MaxResults: cfg.Tools.Web.SearXNG.MaxResults,
+			BaseURL:    cfg.Tools.Web.SearXNG.BaseURL,
+		},
+		"glm_search": {
+			Enabled:    cfg.Tools.Web.GLMSearch.Enabled,
+			MaxResults: cfg.Tools.Web.GLMSearch.MaxResults,
+			BaseURL:    cfg.Tools.Web.GLMSearch.BaseURL,
+			APIKeySet:  cfg.Tools.Web.GLMSearch.APIKey.String() != "",
+		},
+		"baidu_search": {
+			Enabled:    cfg.Tools.Web.BaiduSearch.Enabled,
+			MaxResults: cfg.Tools.Web.BaiduSearch.MaxResults,
+			BaseURL:    cfg.Tools.Web.BaiduSearch.BaseURL,
+			APIKeySet:  cfg.Tools.Web.BaiduSearch.APIKey.String() != "",
+		},
+	}
+
+	providers := []webSearchProviderOption{
+		{
+			ID:         "auto",
+			Label:      "Auto",
+			Configured: current != "",
+			Current: cfg.Tools.Web.Provider == "" ||
+				cfg.Tools.Web.Provider == "auto",
+		},
+		{
+			ID:         "sogou",
+			Label:      "Sogou",
+			Configured: cfg.Tools.Web.Sogou.Enabled,
+			Current:    current == "sogou",
+		},
+		{
+			ID:         "duckduckgo",
+			Label:      "DuckDuckGo",
+			Configured: cfg.Tools.Web.DuckDuckGo.Enabled,
+			Current:    current == "duckduckgo",
+		},
+		{
+			ID:    "brave",
+			Label: "Brave Search",
+			Configured: cfg.Tools.Web.Brave.Enabled &&
+				len(cfg.Tools.Web.Brave.APIKeys.Values()) > 0,
+			Current:      current == "brave",
+			RequiresAuth: true,
+		},
+		{
+			ID:    "tavily",
+			Label: "Tavily",
+			Configured: cfg.Tools.Web.Tavily.Enabled &&
+				len(cfg.Tools.Web.Tavily.APIKeys.Values()) > 0,
+			Current:      current == "tavily",
+			RequiresAuth: true,
+		},
+		{
+			ID:    "perplexity",
+			Label: "Perplexity",
+			Configured: cfg.Tools.Web.Perplexity.Enabled &&
+				len(cfg.Tools.Web.Perplexity.APIKeys.Values()) > 0,
+			Current:      current == "perplexity",
+			RequiresAuth: true,
+		},
+		{
+			ID:    "searxng",
+			Label: "SearXNG",
+			Configured: cfg.Tools.Web.SearXNG.Enabled &&
+				strings.TrimSpace(cfg.Tools.Web.SearXNG.BaseURL) != "",
+			Current: current == "searxng",
+		},
+		{
+			ID:    "glm_search",
+			Label: "GLM Search",
+			Configured: cfg.Tools.Web.GLMSearch.Enabled &&
+				cfg.Tools.Web.GLMSearch.APIKey.String() != "",
+			Current:      current == "glm_search",
+			RequiresAuth: true,
+		},
+		{
+			ID:    "baidu_search",
+			Label: "Baidu Search",
+			Configured: cfg.Tools.Web.BaiduSearch.Enabled &&
+				cfg.Tools.Web.BaiduSearch.APIKey.String() != "",
+			Current:      current == "baidu_search",
+			RequiresAuth: true,
+		},
+	}
+
+	provider := cfg.Tools.Web.Provider
+	if provider == "" {
+		provider = "auto"
+	}
+
+	return webSearchConfigResponse{
+		Provider:       provider,
+		CurrentService: current,
+		PreferNative:   cfg.Tools.Web.PreferNative,
+		Proxy:          cfg.Tools.Web.Proxy,
+		Providers:      providers,
+		Settings:       settings,
+	}
+}
+
+func resolveCurrentWebSearchProvider(cfg *config.Config) string {
+	selected := normalizeWebSearchProvider(cfg.Tools.Web.Provider)
+	if selected != "" && selected != "auto" && webSearchProviderConfigured(cfg, selected) {
+		return selected
+	}
+
+	for _, name := range []string{"perplexity", "brave", "searxng", "tavily"} {
+		if webSearchProviderConfigured(cfg, name) {
+			return name
+		}
+	}
+
+	if webSearchProviderConfigured(cfg, "sogou") && webSearchProviderConfigured(cfg, "duckduckgo") {
+		if picotools.GetPreferredWebSearchLanguage() == "en" {
+			return "duckduckgo"
+		}
+		return "sogou"
+	}
+	if webSearchProviderConfigured(cfg, "sogou") {
+		return "sogou"
+	}
+	if webSearchProviderConfigured(cfg, "duckduckgo") {
+		return "duckduckgo"
+	}
+
+	for _, name := range []string{"baidu_search", "glm_search"} {
+		if webSearchProviderConfigured(cfg, name) {
+			return name
+		}
+	}
+	return ""
+}
+
+func webSearchProviderConfigured(cfg *config.Config, name string) bool {
+	switch name {
+	case "sogou":
+		return cfg.Tools.Web.Sogou.Enabled
+	case "duckduckgo":
+		return cfg.Tools.Web.DuckDuckGo.Enabled
+	case "brave":
+		return cfg.Tools.Web.Brave.Enabled && len(cfg.Tools.Web.Brave.APIKeys.Values()) > 0
+	case "tavily":
+		return cfg.Tools.Web.Tavily.Enabled && len(cfg.Tools.Web.Tavily.APIKeys.Values()) > 0
+	case "perplexity":
+		return cfg.Tools.Web.Perplexity.Enabled && len(cfg.Tools.Web.Perplexity.APIKeys.Values()) > 0
+	case "searxng":
+		return cfg.Tools.Web.SearXNG.Enabled && strings.TrimSpace(cfg.Tools.Web.SearXNG.BaseURL) != ""
+	case "glm_search":
+		return cfg.Tools.Web.GLMSearch.Enabled && cfg.Tools.Web.GLMSearch.APIKey.String() != ""
+	case "baidu_search":
+		return cfg.Tools.Web.BaiduSearch.Enabled && cfg.Tools.Web.BaiduSearch.APIKey.String() != ""
+	default:
+		return false
+	}
 }

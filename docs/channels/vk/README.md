@@ -6,9 +6,10 @@ The VK channel uses Bots Long Poll API for bot-based communication with VK socia
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "vk": {
       "enabled": true,
+      "type": "vk",
       "token": "NOT_HERE",
       "group_id": 123456789,
       "allow_from": ["123456789"],
@@ -100,7 +101,7 @@ The VK channel supports both voice message reception and text-to-speech capabili
 - **ASR (Automatic Speech Recognition)**: Voice messages can be transcribed to text using configured voice models
 - **TTS (Text-to-Speech)**: Text responses can be converted to voice messages
 
-To enable voice transcription, configure a voice model in your providers setup. See [Voice Transcription](../../providers.md#voice-transcription) for details.
+To enable voice transcription, configure a voice model in your providers setup. See [Voice Transcription](../../guides/providers.md#voice-transcription) for details.
 
 ### Group Chat Support
 
@@ -120,9 +121,10 @@ VK has a maximum message length of 4000 characters. PicoClaw automatically split
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "vk": {
       "enabled": true,
+      "type": "vk",
       "token": "NOT_HERE",
       "group_id": 123456789
     }
@@ -134,9 +136,10 @@ VK has a maximum message length of 4000 characters. PicoClaw automatically split
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "vk": {
       "enabled": true,
+      "type": "vk",
       "token": "NOT_HERE",
       "group_id": 123456789,
       "allow_from": ["123456789", "987654321"]
@@ -149,9 +152,10 @@ VK has a maximum message length of 4000 characters. PicoClaw automatically split
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "vk": {
       "enabled": true,
+      "type": "vk",
       "token": "NOT_HERE",
       "group_id": 123456789,
       "group_trigger": {

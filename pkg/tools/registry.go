@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -192,7 +191,7 @@ func (r *ToolRegistry) ExecuteWithContext(
 	channel, chatID string,
 	asyncCallback AsyncCallback,
 ) *ToolResult {
-	logger.InfoCF("tool", "Tool execution started",
+	logger.DebugCF("tool", "Tool execution started",
 		map[string]any{
 			"tool": name,
 			"args": args,
@@ -285,7 +284,7 @@ func (r *ToolRegistry) ExecuteWithContext(
 				"duration": duration.Milliseconds(),
 			})
 	} else {
-		logger.InfoCF("tool", "Tool execution completed",
+		logger.DebugCF("tool", "Tool execution completed",
 			map[string]any{
 				"tool":          name,
 				"duration_ms":   duration.Milliseconds(),
@@ -424,49 +423,21 @@ func (r *ToolRegistry) GetSummaries() []string {
 	return summaries
 }
 
-// Filter removes tools that are not in the whitelist.
-// If enabled is false, it does nothing.
-func (r *ToolRegistry) Filter(whitelist []string, enabled bool) {
-	if !enabled {
-		return
-	}
+// GetAll returns all registered tools (both core and non-core with TTL > 0).
+// Used by SubTurn to inherit parent's tool set.
+func (r *ToolRegistry) GetAll() []Tool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	sorted := r.sortedToolNames()
+	tools := make([]Tool, 0, len(sorted))
+	for _, name := range sorted {
+		entry := r.tools[name]
 
-	whitelistMap := make(map[string]struct{}, len(whitelist))
-	for _, name := range whitelist {
-		whitelistMap[name] = struct{}{}
-	}
-
-	removed := 0
-	for name := range r.tools {
-		allowed := false
-		if _, exact := whitelistMap[name]; exact {
-			allowed = true
-		} else {
-			// Check for prefix matches (e.g. "github" matches "mcp_github_...")
-			for _, w := range whitelist {
-				// Match exact (redundant but safe) or prefix with underscore
-				// We also check for "mcp_" prefix specifically to support MCP tool grouping
-				if strings.HasPrefix(name, "mcp_"+w+"_") ||
-					strings.HasPrefix(name, "tool_"+w+"_") ||
-					strings.HasPrefix(name, w+"_") {
-					allowed = true
-					break
-				}
-			}
-		}
-
-		if !allowed {
-			delete(r.tools, name)
-			removed++
+		// Include core tools and non-core tools with active TTL
+		if entry.IsCore || entry.TTL > 0 {
+			tools = append(tools, entry.Tool)
 		}
 	}
-
-	if removed > 0 {
-		r.version.Add(1)
-		logger.InfoCF("tools", "Filtered tools based on whitelist",
-			map[string]any{"removed": removed, "remaining": len(r.tools)})
-	}
+	return tools
 }

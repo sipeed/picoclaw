@@ -13,8 +13,9 @@ import {
 
 export function useGateway() {
   const gateway = useAtomValue(gatewayAtom)
-  const { status: state, canStart, restartRequired } = gateway
+  const { status: state, canStart, startReason, restartRequired } = gateway
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     return subscribeGatewayPolling()
@@ -23,6 +24,7 @@ export function useGateway() {
   const start = useCallback(async () => {
     if (!canStart) return
 
+    setError(null)
     setLoading(true)
     try {
       await startGateway()
@@ -32,6 +34,7 @@ export function useGateway() {
       })
     } catch (err) {
       console.error("Failed to start gateway:", err)
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
       await refreshGatewayState({ force: true })
       setLoading(false)
@@ -39,12 +42,14 @@ export function useGateway() {
   }, [canStart])
 
   const stop = useCallback(async () => {
+    setError(null)
     setLoading(true)
     beginGatewayStoppingTransition()
     try {
       await stopGateway()
     } catch (err) {
       console.error("Failed to stop gateway:", err)
+      setError(err instanceof Error ? err.message : String(err))
       cancelGatewayStoppingTransition()
     } finally {
       await refreshGatewayState({ force: true })
@@ -55,6 +60,7 @@ export function useGateway() {
   const restart = useCallback(async () => {
     if (state !== "running") return
 
+    setError(null)
     setLoading(true)
     try {
       await restartGateway()
@@ -64,11 +70,22 @@ export function useGateway() {
       })
     } catch (err) {
       console.error("Failed to restart gateway:", err)
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
       await refreshGatewayState({ force: true })
       setLoading(false)
     }
   }, [state])
 
-  return { state, loading, canStart, restartRequired, start, stop, restart }
+  return {
+    state,
+    loading,
+    canStart,
+    startReason,
+    restartRequired,
+    start,
+    stop,
+    restart,
+    error,
+  }
 }

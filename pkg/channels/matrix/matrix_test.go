@@ -1,5 +1,3 @@
-//go:build matrix
-
 package matrix
 
 import (
@@ -439,9 +437,9 @@ func TestMarkdownToHTML(t *testing.T) {
 }
 
 func TestMessageContent(t *testing.T) {
-	richtext := &MatrixChannel{config: config.MatrixConfig{MessageFormat: "richtext"}}
-	plain := &MatrixChannel{config: config.MatrixConfig{MessageFormat: "plain"}}
-	defaultt := &MatrixChannel{config: config.MatrixConfig{}}
+	richtext := &MatrixChannel{config: &config.MatrixSettings{MessageFormat: "richtext"}}
+	plain := &MatrixChannel{config: &config.MatrixSettings{MessageFormat: "plain"}}
+	defaultt := &MatrixChannel{config: &config.MatrixSettings{}}
 
 	for _, c := range []*MatrixChannel{richtext, defaultt} {
 		mc := c.messageContent("**hi**")

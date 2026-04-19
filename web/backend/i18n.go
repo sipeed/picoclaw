@@ -24,8 +24,6 @@ const (
 	AppTooltip         TranslationKey = "AppTooltip"
 	MenuOpen           TranslationKey = "MenuOpen"
 	MenuOpenTooltip    TranslationKey = "MenuOpenTooltip"
-	MenuCopyToken      TranslationKey = "MenuCopyToken"
-	MenuCopyTokenHint  TranslationKey = "MenuCopyTokenHint"
 	MenuAbout          TranslationKey = "MenuAbout"
 	MenuAboutTooltip   TranslationKey = "MenuAboutTooltip"
 	MenuVersion        TranslationKey = "MenuVersion"
@@ -49,8 +47,6 @@ var translations = map[Language]map[TranslationKey]string{
 		AppTooltip:         "%s - Web Console",
 		MenuOpen:           "Open Console",
 		MenuOpenTooltip:    "Open PicoClaw console in browser",
-		MenuCopyToken:      "Copy dashboard token",
-		MenuCopyTokenHint:  "Copy the current web console access token to the clipboard",
 		MenuAbout:          "About",
 		MenuAboutTooltip:   "About PicoClaw",
 		MenuVersion:        "Version: %s",
@@ -68,8 +64,6 @@ var translations = map[Language]map[TranslationKey]string{
 		AppTooltip:         "%s - Web Console",
 		MenuOpen:           "打开控制台",
 		MenuOpenTooltip:    "在浏览器中打开 PicoClaw 控制台",
-		MenuCopyToken:      "复制控制台口令",
-		MenuCopyTokenHint:  "将当前 Web 控制台访问口令复制到剪贴板",
 		MenuAbout:          "关于",
 		MenuAboutTooltip:   "关于 PicoClaw",
 		MenuVersion:        "版本: %s",

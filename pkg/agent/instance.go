@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/isolation"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/memory"
@@ -51,6 +52,10 @@ type AgentInstance struct {
 	// LightProvider is the concrete provider instance for the configured light model.
 	// It is only used when routing selects the light tier for a turn.
 	LightProvider providers.LLMProvider
+	// CandidateProviders maps "provider/model" keys to per-candidate LLMProvider
+	// instances. This allows each fallback model to use its own api_base and api_key
+	// from model_list, instead of inheriting the primary model's provider config.
+	CandidateProviders map[string]providers.LLMProvider
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -59,9 +64,14 @@ func NewAgentInstance(
 	defaults *config.AgentDefaults,
 	cfg *config.Config,
 	provider providers.LLMProvider,
-	isolationID string,
 ) *AgentInstance {
-	workspace := resolveAgentWorkspace(agentCfg, defaults, isolationID)
+	if cfg != nil {
+		// Keep the subprocess isolation runtime aligned with the latest loaded config
+		// before any tools or providers start spawning child processes.
+		isolation.Configure(cfg)
+	}
+
+	workspace := resolveAgentWorkspace(agentCfg, defaults)
 	os.MkdirAll(workspace, 0o755)
 
 	model := resolveAgentModel(agentCfg, defaults)
@@ -73,8 +83,6 @@ func NewAgentInstance(
 	// Compile path whitelist patterns from config.
 	allowReadPaths := buildAllowReadPatterns(cfg)
 	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
-	denyReadPaths := compilePatterns(cfg.Tools.DenyReadPaths)
-	denyWritePaths := compilePatterns(cfg.Tools.DenyWritePaths)
 
 	toolsRegistry := tools.NewToolRegistry()
 
@@ -82,18 +90,16 @@ func NewAgentInstance(
 		maxReadFileSize := cfg.Tools.ReadFile.MaxReadFileSize
 		switch cfg.Tools.ReadFile.EffectiveMode() {
 		case config.ReadFileModeLines:
-			toolsRegistry.Register(tools.NewReadFileLinesTool(
-				workspace, readRestrict, maxReadFileSize, allowReadPaths, denyReadPaths,
-			))
+			toolsRegistry.Register(tools.NewReadFileLinesTool(workspace, readRestrict, maxReadFileSize, allowReadPaths))
 		default:
-			toolsRegistry.Register(tools.NewReadFileBytesTool(workspace, readRestrict, maxReadFileSize, allowReadPaths, denyReadPaths))
+			toolsRegistry.Register(tools.NewReadFileBytesTool(workspace, readRestrict, maxReadFileSize, allowReadPaths))
 		}
 	}
 	if cfg.Tools.IsToolEnabled("write_file") {
-		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths, denyWritePaths))
+		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
 	}
 	if cfg.Tools.IsToolEnabled("list_dir") {
-		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths, denyReadPaths))
+		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
 	}
 	if cfg.Tools.IsToolEnabled("exec") {
 		execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg, allowReadPaths)
@@ -106,32 +112,22 @@ func NewAgentInstance(
 	}
 
 	if cfg.Tools.IsToolEnabled("edit_file") {
-		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths, denyWritePaths))
+		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
 	}
 	if cfg.Tools.IsToolEnabled("append_file") {
-		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths, denyWritePaths))
+		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
 	}
 
-	// Use main agent workspace (no isolation) for sessions so that session history
-	// persists across transient instances. The isolated workspace is only for file tools.
-	mainWorkspace := resolveOriginalAgentWorkspace(agentCfg, defaults)
-	sessionsDir := filepath.Join(mainWorkspace, "sessions")
+	sessionsDir := filepath.Join(workspace, "sessions")
 	sessions := initSessionStore(sessionsDir)
 
 	mcpDiscoveryActive := cfg.Tools.MCP.Enabled && cfg.Tools.MCP.Discovery.Enabled
-	baseWorkspace := mainWorkspace
-	// Resolve effective system prompt (agent manual override > global default)
-	effectiveSystemPrompt := defaults.SystemPrompt
-	if agentCfg != nil && strings.TrimSpace(agentCfg.SystemPrompt) != "" {
-		effectiveSystemPrompt = strings.TrimSpace(agentCfg.SystemPrompt)
-	}
-	contextBuilder := NewContextBuilder(workspace, baseWorkspace).
+	contextBuilder := NewContextBuilder(workspace).
 		WithToolDiscovery(
 			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseBM25,
 			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseRegex,
 		).
-		WithSplitOnMarker(cfg.Agents.Defaults.SplitOnMarker).
-		WithSystemPrompt(effectiveSystemPrompt)
+		WithSplitOnMarker(cfg.Agents.Defaults.SplitOnMarker)
 
 	agentID := routing.DefaultAgentID
 	agentName := ""
@@ -190,6 +186,9 @@ func NewAgentInstance(
 	// Resolve fallback candidates
 	candidates := resolveModelCandidates(cfg, defaults.Provider, model, fallbacks)
 
+	candidateProviders := make(map[string]providers.LLMProvider)
+	populateCandidateProvidersFromNames(cfg, workspace, fallbacks, candidateProviders)
+
 	// Model routing setup: pre-resolve light model candidates at creation time
 	// to avoid repeated model_list lookups on every incoming message.
 	var router *routing.Router
@@ -214,6 +213,7 @@ func NewAgentInstance(
 					})
 					lightCandidates = resolved
 					lightProvider = lp
+					populateCandidateProvidersFromNames(cfg, workspace, []string{rc.LightModel}, candidateProviders)
 				}
 			}
 		} else {
@@ -245,31 +245,58 @@ func NewAgentInstance(
 		Router:                    router,
 		LightCandidates:           lightCandidates,
 		LightProvider:             lightProvider,
+		CandidateProviders:        candidateProviders,
+	}
+}
+
+// populateCandidateProvidersFromNames resolves each model name (alias or
+// "provider/model") via resolvedModelConfig and creates a dedicated LLMProvider
+// for it. This reuses the canonical config resolution path (GetModelConfig) so
+// alias handling and load-balancing stay consistent with the rest of the codebase.
+func populateCandidateProvidersFromNames(
+	cfg *config.Config,
+	workspace string,
+	names []string,
+	out map[string]providers.LLMProvider,
+) {
+	if cfg == nil || len(names) == 0 {
+		return
+	}
+	for _, name := range names {
+		mc, err := resolvedModelConfig(cfg, strings.TrimSpace(name), workspace)
+		if err != nil {
+			logger.WarnCF("agent",
+				"fallback provider: no model_list entry found; will inherit primary provider credentials",
+				map[string]any{"name": name, "error": err.Error()})
+			continue
+		}
+		protocol, modelID := providers.ExtractProtocol(strings.TrimSpace(mc.Model))
+		key := providers.ModelKey(providers.NormalizeProvider(protocol), modelID)
+		if _, exists := out[key]; exists {
+			continue
+		}
+		p, _, err := providers.CreateProviderFromConfig(mc)
+		if err != nil {
+			logger.WarnCF("agent", "fallback provider: failed to create provider",
+				map[string]any{"model": mc.Model, "error": err.Error()})
+			continue
+		}
+		out[key] = p
 	}
 }
 
 // resolveAgentWorkspace determines the workspace directory for an agent.
-func resolveAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentDefaults, isolationID string) string {
-	var base string
+func resolveAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) string {
 	if agentCfg != nil && strings.TrimSpace(agentCfg.Workspace) != "" {
-		base = expandHome(strings.TrimSpace(agentCfg.Workspace))
-	} else if agentCfg == nil || agentCfg.Default || agentCfg.ID == "" || routing.NormalizeAgentID(agentCfg.ID) == "main" {
-		base = expandHome(defaults.Workspace)
-	} else {
-		// For named agents without explicit workspace, use default workspace with agent ID suffix
-		id := routing.NormalizeAgentID(agentCfg.ID)
-		base = filepath.Join(expandHome(defaults.Workspace), "..", "workspace-"+id)
+		return expandHome(strings.TrimSpace(agentCfg.Workspace))
 	}
-
-	if isolationID != "" && isolationID != "direct" {
-		return filepath.Join(base, "sessions", isolationID, "workspace")
+	// Use the configured default workspace (respects PICOCLAW_HOME)
+	if agentCfg == nil || agentCfg.Default || agentCfg.ID == "" || routing.NormalizeAgentID(agentCfg.ID) == "main" {
+		return expandHome(defaults.Workspace)
 	}
-	return base
-}
-
-// resolveOriginalAgentWorkspace determines the original workspace directory for an agent without isolation.
-func resolveOriginalAgentWorkspace(agentCfg *config.AgentConfig, defaults *config.AgentDefaults) string {
-	return resolveAgentWorkspace(agentCfg, defaults, "")
+	// For named agents without explicit workspace, use default workspace with agent ID suffix
+	id := routing.NormalizeAgentID(agentCfg.ID)
+	return filepath.Join(expandHome(defaults.Workspace), "..", "workspace-"+id)
 }
 
 // resolveAgentModel resolves the primary model for an agent.
