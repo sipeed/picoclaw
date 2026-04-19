@@ -246,6 +246,21 @@
   },
   "model_list": [
     {
+      "model_name": "nvidia/nemotron-3-super-120b-a12b",
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "provider": "openrouter"
+    },
+    {
+      "model_name": "google/gemini-2.0-flash-exp:free",
+      "model": "google/gemini-2.0-flash-exp:free",
+      "provider": "openrouter"
+    },
+    {
+      "model_name": "mistralai/mistral-7b-instruct:free",
+      "model": "mistralai/mistral-7b-instruct:free",
+      "provider": "openrouter"
+    },
+    {
       "model_name": "glm-4.7",
       "model": "zhipu/glm-4.7",
       "api_base": "https://open.bigmodel.cn/api/paas/v4",
