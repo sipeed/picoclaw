@@ -61,7 +61,7 @@ spec:
           valueFrom:
             secretKeyRef:
               name: picoclaw-secrets
-              key: OPENROUTER_API_KEY
+              key: openrouter-api-key
         volumeMounts:
         - name: picoclaw-data
           mountPath: /home/picoclaw/.picoclaw
