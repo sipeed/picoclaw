@@ -210,7 +210,7 @@ func (t *FreeRideTool) handleList(ctx context.Context, limit int) *ToolResult {
 		sb.WriteString(fmt.Sprintf("   Parameters: %s\n\n", strings.Join(m.SupportedParameters, ", ")))
 	}
 
-	return SilentResult(sb.String())
+	return UserResult(sb.String()).WithResponseHandled().WithResponseHandled()
 }
 
 func (t *FreeRideTool) handleAuto(ctx context.Context, limit int) *ToolResult {
@@ -268,10 +268,10 @@ func (t *FreeRideTool) handleAuto(ctx context.Context, limit int) *ToolResult {
 			}
 		}
 
-		return SilentResult(msg)
+		return UserResult(msg).WithResponseHandled().WithResponseHandled()
 	}
 
-	return SilentResult("No new free models to add. Your configuration is up to date.")
+	return UserResult("No new free models to add. Your configuration is up to date.").WithResponseHandled().WithResponseHandled()
 }
 
 func (t *FreeRideTool) handleStatus() *ToolResult {
@@ -294,7 +294,7 @@ func (t *FreeRideTool) handleStatus() *ToolResult {
 	}
 	sb.WriteString(fmt.Sprintf("- Managed Free Models: %d\n", openRouterCount))
 
-	return SilentResult(sb.String())
+	return UserResult(sb.String()).WithResponseHandled().WithResponseHandled()
 }
 
 func modelExists(cfg *config.Config, modelName string) bool {

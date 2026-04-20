@@ -60,8 +60,8 @@ func TestFreeRideTool_List(t *testing.T) {
 		t.Fatalf("Expected no error, got %s", result.ForLLM)
 	}
 
-	if !result.Silent {
-		t.Errorf("Expected silent result")
+	if result.Silent {
+		t.Errorf("Expected non-silent result")
 	}
 
 	output := result.ForLLM
