@@ -142,8 +142,8 @@ const gatewayService = new gcp.cloudrunv2.Service("picoclaw-gateway", {
                 ],
                 resources: {
                     limits: {
-                        cpu: "2",
-                        memory: "2048Mi",  // Increased for Chromium browser automation
+                        cpu: "1",
+                        memory: "1536Mi",  // Increased for Chromium browser automation
                     },
                     cpuIdle: true,
                 },

@@ -13,14 +13,21 @@ import (
 	"time"
 )
 
+// WebhookHandler defines the interface for webhook processing handlers
+type WebhookHandler interface {
+	ProcessHandler(w http.ResponseWriter, r *http.Request)
+	StatusHandler(w http.ResponseWriter, r *http.Request)
+}
+
 type Server struct {
-	server     *http.Server
-	mu         sync.RWMutex
-	ready      bool
-	checks     map[string]Check
-	startTime  time.Time
-	reloadFunc func() error
-	authToken  string // optional bearer token for protected endpoints
+	server         *http.Server
+	mu             sync.RWMutex
+	ready          bool
+	checks         map[string]Check
+	startTime      time.Time
+	reloadFunc     func() error
+	authToken      string // optional bearer token for protected endpoints
+	webhookHandler WebhookHandler
 }
 
 type Check struct {
@@ -49,13 +56,15 @@ func NewServer(host string, port int, token string) *Server {
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
 	mux.HandleFunc("/reload", s.reloadHandler)
+	mux.HandleFunc("/webhook/process", s.webhookProcessHandler)
+	mux.HandleFunc("/webhook/status", s.webhookStatusHandler)
 
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	s.server = &http.Server{
 		Addr:         addr,
 		Handler:      mux,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 5 * time.Second,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
 	}
 
 	return s
@@ -117,6 +126,43 @@ func (s *Server) SetReloadFunc(fn func() error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reloadFunc = fn
+}
+
+// SetWebhookHandler sets the webhook handler for async processing
+func (s *Server) SetWebhookHandler(handler WebhookHandler) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.webhookHandler = handler
+}
+
+func (s *Server) webhookProcessHandler(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	handler := s.webhookHandler
+	s.mu.RUnlock()
+
+	if handler == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "webhook processing not configured"})
+		return
+	}
+
+	handler.ProcessHandler(w, r)
+}
+
+func (s *Server) webhookStatusHandler(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	handler := s.webhookHandler
+	s.mu.RUnlock()
+
+	if handler == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "webhook processing not configured"})
+		return
+	}
+
+	handler.StatusHandler(w, r)
 }
 
 func (s *Server) reloadHandler(w http.ResponseWriter, r *http.Request) {
@@ -225,12 +271,14 @@ type HandlerMux interface {
 	HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request))
 }
 
-// RegisterOnMux registers /health, /ready and /reload handlers onto the given mux.
+// RegisterOnMux registers /health, /ready, /reload and webhook handlers onto the given mux.
 // This allows the health endpoints to be served by a shared HTTP server.
 func (s *Server) RegisterOnMux(mux HandlerMux) {
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
 	mux.HandleFunc("/reload", s.reloadHandler)
+	mux.HandleFunc("/webhook/process", s.webhookProcessHandler)
+	mux.HandleFunc("/webhook/status", s.webhookStatusHandler)
 }
 
 func statusString(ok bool) string {

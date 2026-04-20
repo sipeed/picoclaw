@@ -69,7 +69,7 @@ func TestHandleListSessions_JSONLStorage(t *testing.T) {
 	h.RegisterRoutes(mux)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api", nil)
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -131,7 +131,7 @@ func TestHandleListSessions_TitleUsesFirstUserMessage(t *testing.T) {
 	h.RegisterRoutes(mux)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api", nil)
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -183,7 +183,7 @@ func TestHandleGetSession_JSONLStorage(t *testing.T) {
 	h.RegisterRoutes(mux)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-jsonl", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/detail-jsonl", nil)
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -261,7 +261,7 @@ func TestHandleSessions_JSONLScopeDiscovery(t *testing.T) {
 	h.RegisterRoutes(mux)
 
 	listRec := httptest.NewRecorder()
-	listReq := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/api", nil)
 	mux.ServeHTTP(listRec, listReq)
 	if listRec.Code != http.StatusOK {
 		t.Fatalf("list status = %d, want %d, body=%s", listRec.Code, http.StatusOK, listRec.Body.String())
@@ -279,14 +279,14 @@ func TestHandleSessions_JSONLScopeDiscovery(t *testing.T) {
 	}
 
 	detailRec := httptest.NewRecorder()
-	detailReq := httptest.NewRequest(http.MethodGet, "/api/sessions/scope-jsonl", nil)
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/scope-jsonl", nil)
 	mux.ServeHTTP(detailRec, detailReq)
 	if detailRec.Code != http.StatusOK {
 		t.Fatalf("detail status = %d, want %d, body=%s", detailRec.Code, http.StatusOK, detailRec.Body.String())
 	}
 
 	deleteRec := httptest.NewRecorder()
-	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/sessions/scope-jsonl", nil)
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/scope-jsonl", nil)
 	mux.ServeHTTP(deleteRec, deleteReq)
 	if deleteRec.Code != http.StatusNoContent {
 		t.Fatalf("delete status = %d, want %d, body=%s", deleteRec.Code, http.StatusNoContent, deleteRec.Body.String())
@@ -319,7 +319,7 @@ func TestHandleGetSession_OmitsTransientThoughtMessages(t *testing.T) {
 	h.RegisterRoutes(mux)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-transient-thought", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/detail-transient-thought", nil)
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -386,7 +386,7 @@ func TestHandleGetSession_ReconstructsVisibleMessageToolOutput(t *testing.T) {
 	h.RegisterRoutes(mux)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-message-tool", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/detail-message-tool", nil)
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -452,7 +452,7 @@ func TestHandleGetSession_PreservesFinalAssistantReplyAfterMessageToolOutput(t *
 	h.RegisterRoutes(mux)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-message-tool-final-reply", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/detail-message-tool-final-reply", nil)
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -521,7 +521,7 @@ func TestHandleListSessions_MessageCountUsesVisibleTranscript(t *testing.T) {
 	h.RegisterRoutes(mux)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api", nil)
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -578,7 +578,7 @@ func TestHandleGetSession_PreservesToolSummaryAndAssistantContent(t *testing.T) 
 	h.RegisterRoutes(mux)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-tool-summary-and-content", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/detail-tool-summary-and-content", nil)
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -654,7 +654,7 @@ func TestHandleGetSession_UsesConfiguredToolFeedbackMaxArgsLength(t *testing.T) 
 	h.RegisterRoutes(mux)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-tool-summary-max-args", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/detail-tool-summary-max-args", nil)
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -707,7 +707,7 @@ func TestHandleGetSession_IncludesMediaOnlyMessages(t *testing.T) {
 	h.RegisterRoutes(mux)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-media-only", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/detail-media-only", nil)
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -756,7 +756,7 @@ func TestHandleSessions_SupportsJSONLMessagesUpToStoreCap(t *testing.T) {
 	h.RegisterRoutes(mux)
 
 	listRec := httptest.NewRecorder()
-	listReq := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/api", nil)
 	mux.ServeHTTP(listRec, listReq)
 
 	if listRec.Code != http.StatusOK {
@@ -772,7 +772,7 @@ func TestHandleSessions_SupportsJSONLMessagesUpToStoreCap(t *testing.T) {
 	}
 
 	detailRec := httptest.NewRecorder()
-	detailReq := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-large-jsonl", nil)
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/detail-large-jsonl", nil)
 	mux.ServeHTTP(detailRec, detailReq)
 
 	if detailRec.Code != http.StatusOK {
@@ -827,7 +827,7 @@ func TestHandleListSessions_UsesImagePreviewForMediaOnlyMessage(t *testing.T) {
 	h.RegisterRoutes(mux)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api", nil)
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -875,7 +875,7 @@ func TestHandleDeleteSession_JSONLStorage(t *testing.T) {
 	h.RegisterRoutes(mux)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodDelete, "/api/sessions/delete-jsonl", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/delete-jsonl", nil)
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNoContent {
@@ -908,7 +908,7 @@ func TestHandleGetSession_LegacyJSONFallback(t *testing.T) {
 	h.RegisterRoutes(mux)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/sessions/legacy-json", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/legacy-json", nil)
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -931,7 +931,7 @@ func TestHandleSessions_FiltersEmptyJSONLFiles(t *testing.T) {
 	h.RegisterRoutes(mux)
 
 	listRec := httptest.NewRecorder()
-	listReq := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/api", nil)
 	mux.ServeHTTP(listRec, listReq)
 
 	if listRec.Code != http.StatusOK {
@@ -947,7 +947,7 @@ func TestHandleSessions_FiltersEmptyJSONLFiles(t *testing.T) {
 	}
 
 	detailRec := httptest.NewRecorder()
-	detailReq := httptest.NewRequest(http.MethodGet, "/api/sessions/empty-jsonl", nil)
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/empty-jsonl", nil)
 	mux.ServeHTTP(detailRec, detailReq)
 
 	if detailRec.Code != http.StatusNotFound {
@@ -975,7 +975,7 @@ func TestHandleSessions_ListsLegacyJSONLWithoutMeta(t *testing.T) {
 	h.RegisterRoutes(mux)
 
 	listRec := httptest.NewRecorder()
-	listReq := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/api", nil)
 	mux.ServeHTTP(listRec, listReq)
 
 	if listRec.Code != http.StatusOK {
@@ -994,7 +994,7 @@ func TestHandleSessions_ListsLegacyJSONLWithoutMeta(t *testing.T) {
 	}
 
 	detailRec := httptest.NewRecorder()
-	detailReq := httptest.NewRequest(http.MethodGet, "/api/sessions/missing-meta", nil)
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/missing-meta", nil)
 	mux.ServeHTTP(detailRec, detailReq)
 
 	if detailRec.Code != http.StatusOK {
@@ -1018,7 +1018,7 @@ func TestHandleSessions_IgnoresMetaJSONInLegacyFallback(t *testing.T) {
 	h.RegisterRoutes(mux)
 
 	listRec := httptest.NewRecorder()
-	listReq := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/api", nil)
 	mux.ServeHTTP(listRec, listReq)
 
 	if listRec.Code != http.StatusOK {

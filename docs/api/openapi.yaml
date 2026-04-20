@@ -66,6 +66,8 @@ tags:
     description: WeCom QR login flow
   - name: gateway-health
     description: Gateway health and readiness endpoints (port 18790)
+  - name: webhook
+    description: Asynchronous webhook processing
 
 paths:
 
@@ -1518,6 +1520,97 @@ paths:
         "404":
           description: Flow not found
 
+  # ── WEBHOOK ──────────────────────────────────────────────────────────────
+
+  /api/webhook/process:
+    post:
+      tags: [webhook]
+      summary: Submit an asynchronous processing job with webhook callback
+      description: |
+        Accepts a processing job and returns immediately with a job ID (202 Accepted).
+        The job runs in the background, and results are POSTed to the provided webhook URL
+        when processing completes.
+
+        **Processing flow:**
+        1. Submit job → receive job_id
+        2. Backend processes asynchronously
+        3. Result POSTed to webhook_url
+
+        **Webhook callback payload (success):**
+        ```json
+        {
+          "job_id": "uuid",
+          "status": "completed",
+          "result": { "processed_data": "..." },
+          "timestamp": "2026-04-17T10:00:05Z"
+        }
+        ```
+
+        **Webhook callback payload (error):**
+        ```json
+        {
+          "job_id": "uuid",
+          "status": "failed",
+          "error": "error message",
+          "timestamp": "2026-04-17T10:00:05Z"
+        }
+        ```
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookProcessRequest"
+      responses:
+        "202":
+          description: Job accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookProcessResponse"
+        "400":
+          description: Invalid request body or missing webhook_url
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/webhook/status:
+    get:
+      tags: [webhook]
+      summary: Check the status of a submitted job
+      description: |
+        Query the current status of a webhook processing job.
+        The job remains in memory for 2 hours after submission.
+      parameters:
+        - name: job_id
+          in: query
+          required: true
+          description: Job UUID returned from POST /api/webhook/process
+          schema:
+            type: string
+            format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+      responses:
+        "200":
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookJobStatus"
+        "400":
+          description: Missing job_id query parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Job not found (may have been cleaned up)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   # ── GATEWAY HEALTH ───────────────────────────────────────────────────────
 
   /health:
@@ -2122,3 +2215,72 @@ components:
           description: WeCom bot ID (present on confirmed)
         error:
           type: string
+
+    WebhookProcessRequest:
+      type: object
+      required: [webhook_url]
+      properties:
+        webhook_url:
+          type: string
+          format: uri
+          description: URL where results will be POSTed when processing completes
+          example: "https://your-app.com/webhook/callback"
+        payload:
+          type: object
+          description: Arbitrary JSON payload to be processed
+          additionalProperties: true
+          example:
+            data: "your data here"
+            priority: "high"
+
+    WebhookProcessResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          description: Unique identifier for this job
+          example: 550e8400-e29b-41d4-a716-446655440000
+        status:
+          type: string
+          enum: [processing]
+          description: Initial status is always "processing"
+          example: processing
+        timestamp:
+          type: string
+          format: date-time
+          description: Job submission timestamp
+          example: "2026-04-17T10:00:00Z"
+
+    WebhookJobStatus:
+      type: object
+      properties:
+        ID:
+          type: string
+          format: uuid
+          description: Job identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        WebhookURL:
+          type: string
+          description: Callback URL for this job
+          example: "https://your-app.com/webhook/callback"
+        Payload:
+          type: object
+          description: Original payload submitted with the job
+          additionalProperties: true
+        Status:
+          type: string
+          enum: [processing, completed, failed]
+          description: Current job status
+          example: completed
+        CreatedAt:
+          type: string
+          format: date-time
+          description: Job creation timestamp
+          example: "2026-04-17T10:00:00Z"
+        CompletedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Job completion timestamp (null if still processing)
+          example: "2026-04-17T10:00:05Z"

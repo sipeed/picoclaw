@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/sipeed/picoclaw/pkg/webhook"
 	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
 )
 
@@ -25,6 +26,8 @@ type Handler struct {
 	weixinFlows          map[string]*weixinFlow
 	wecomMu              sync.Mutex
 	wecomFlows           map[string]*wecomFlow
+	webhookMu            sync.Mutex
+	webhookProcessor     *webhook.Processor
 }
 
 // NewHandler creates an instance of the API handler.
@@ -108,6 +111,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// WeCom QR login flow
 	h.registerWecomRoutes(mux)
+
+	// Webhook async processing
+	h.registerWebhookRoutes(mux)
 }
 
 // Shutdown gracefully shuts down the handler, stopping the gateway if it was started by this handler.
