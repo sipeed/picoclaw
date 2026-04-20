@@ -21,6 +21,13 @@ picoclaw auth weixin
 picoclaw gateway
 ```
 
+如果要绑定多个微信账号，请为每个账号指定独立的 channel 名称：
+
+```bash
+picoclaw auth weixin --channel weixin_personal
+picoclaw auth weixin --channel weixin_work
+```
+
 ---
 
 ## ⚙️ 配置说明
@@ -44,16 +51,40 @@ picoclaw gateway
 }
 ```
 
+多个微信账号可以通过不同的配置 key + `type: "weixin"` 来配置：
+
+```json
+{
+  "channel_list": {
+    "weixin_personal": {
+      "enabled": true,
+      "type": "weixin",
+      "token": "TOKEN_A",
+      "account_id": "ACCOUNT_A",
+      "allow_from": ["user_id_1"]
+    },
+    "weixin_work": {
+      "enabled": true,
+      "type": "weixin",
+      "token": "TOKEN_B",
+      "account_id": "ACCOUNT_B",
+      "allow_from": ["user_id_2"]
+    }
+  }
+}
+```
+
 ### 字段解析
 
 | 字段 | 说明 |
 |---|---|
 | `enabled` | 设置为 `true` 以在启动时激活该频道。 |
 | `token` | 通过扫码获取的认证令牌。 |
+| `account_id` | (可选) 扫码返回的稳定账号标识，用于保持账号级状态文件路径稳定。 |
 | `allow_from` | (可选) 允许与机器人交互的微信 User ID 列表。如果为空，任何能给此微信号发消息的人都可以触发机器人。 |
 | `proxy` | (可选) HTTP 代理地址（例如 `http://localhost:7890`），适合网络访问受限环境。 |
 
 ## ⚠️ 注意事项
 
-- **单端绑定**: iLink 令牌通常与单个会话绑定。在其他地方重新扫码激活可能会导致旧令牌失效。
+- **一个账号一个 token**: iLink 令牌通常与单个微信账号会话绑定。多个微信账号请作为多个 channel 分别绑定。
 - **频率控制**: 为避免触发微信的风控反垃圾机制，请避免设置死循环触发、高频广播等恶意行为。

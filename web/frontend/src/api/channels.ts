@@ -5,9 +5,12 @@ export type AppConfig = Record<string, unknown>
 
 export interface SupportedChannel {
   name: string
+  type?: string
   display_name?: string
   config_key: string
   variant?: string
+  template?: boolean
+  supports_multiple?: boolean
 }
 
 export interface ChannelConfigResponse {
@@ -82,6 +85,7 @@ export async function patchAppConfig(
 export interface WeixinFlowResponse {
   flow_id: string
   status: "wait" | "scaned" | "confirmed" | "expired" | "error"
+  channel?: string
   qr_data_uri?: string
   account_id?: string
   error?: string
@@ -95,8 +99,15 @@ export interface WecomFlowResponse {
   error?: string
 }
 
-export async function startWeixinFlow(): Promise<WeixinFlowResponse> {
-  return request<WeixinFlowResponse>("/api/weixin/flows", { method: "POST" })
+export async function startWeixinFlow(
+  channel?: string,
+): Promise<WeixinFlowResponse> {
+  const body = channel ? JSON.stringify({ channel }) : undefined
+  return request<WeixinFlowResponse>("/api/weixin/flows", {
+    method: "POST",
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body,
+  })
 }
 
 export async function pollWeixinFlow(

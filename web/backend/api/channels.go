@@ -3,33 +3,39 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 type channelCatalogItem struct {
-	Name      string `json:"name"`
-	ConfigKey string `json:"config_key"`
-	Variant   string `json:"variant,omitempty"`
+	Name             string `json:"name"`
+	Type             string `json:"type,omitempty"`
+	DisplayName      string `json:"display_name,omitempty"`
+	ConfigKey        string `json:"config_key"`
+	Variant          string `json:"variant,omitempty"`
+	Template         bool   `json:"template,omitempty"`
+	SupportsMultiple bool   `json:"supports_multiple,omitempty"`
 }
 
 var channelCatalog = []channelCatalogItem{
-	{Name: "weixin", ConfigKey: "weixin"},
-	{Name: "telegram", ConfigKey: "telegram"},
-	{Name: "discord", ConfigKey: "discord"},
-	{Name: "slack", ConfigKey: "slack"},
-	{Name: "feishu", ConfigKey: "feishu"},
-	{Name: "dingtalk", ConfigKey: "dingtalk"},
-	{Name: "line", ConfigKey: "line"},
-	{Name: "qq", ConfigKey: "qq"},
-	{Name: "onebot", ConfigKey: "onebot"},
-	{Name: "wecom", ConfigKey: "wecom"},
-	{Name: "whatsapp", ConfigKey: "whatsapp", Variant: "bridge"},
-	{Name: "whatsapp_native", ConfigKey: "whatsapp", Variant: "native"},
-	{Name: "pico", ConfigKey: "pico"},
-	{Name: "maixcam", ConfigKey: "maixcam"},
-	{Name: "matrix", ConfigKey: "matrix"},
-	{Name: "irc", ConfigKey: "irc"},
+	{Name: "weixin", Type: "weixin", ConfigKey: "weixin", SupportsMultiple: true},
+	{Name: "telegram", Type: "telegram", ConfigKey: "telegram"},
+	{Name: "discord", Type: "discord", ConfigKey: "discord"},
+	{Name: "slack", Type: "slack", ConfigKey: "slack"},
+	{Name: "feishu", Type: "feishu", ConfigKey: "feishu"},
+	{Name: "dingtalk", Type: "dingtalk", ConfigKey: "dingtalk"},
+	{Name: "line", Type: "line", ConfigKey: "line"},
+	{Name: "qq", Type: "qq", ConfigKey: "qq"},
+	{Name: "onebot", Type: "onebot", ConfigKey: "onebot"},
+	{Name: "wecom", Type: "wecom", ConfigKey: "wecom"},
+	{Name: "whatsapp", Type: "whatsapp", ConfigKey: "whatsapp", Variant: "bridge"},
+	{Name: "whatsapp_native", Type: "whatsapp_native", ConfigKey: "whatsapp", Variant: "native"},
+	{Name: "pico", Type: "pico", ConfigKey: "pico"},
+	{Name: "maixcam", Type: "maixcam", ConfigKey: "maixcam"},
+	{Name: "matrix", Type: "matrix", ConfigKey: "matrix"},
+	{Name: "irc", Type: "irc", ConfigKey: "irc"},
 }
 
 type channelConfigResponse struct {
@@ -49,9 +55,14 @@ func (h *Handler) registerChannelRoutes(mux *http.ServeMux) {
 //
 //	GET /api/channels/catalog
 func (h *Handler) handleListChannelCatalog(w http.ResponseWriter, r *http.Request) {
+	cfg, err := config.LoadConfig(h.configPath)
+	if err != nil {
+		http.Error(w, "Failed to load config", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"channels": channelCatalog,
+		"channels": buildChannelCatalog(cfg),
 	})
 }
 
@@ -60,15 +71,16 @@ func (h *Handler) handleListChannelCatalog(w http.ResponseWriter, r *http.Reques
 //	GET /api/channels/{name}/config
 func (h *Handler) handleGetChannelConfig(w http.ResponseWriter, r *http.Request) {
 	channelName := r.PathValue("name")
-	item, ok := findChannelCatalogItem(channelName)
-	if !ok {
-		http.Error(w, "Channel not found", http.StatusNotFound)
-		return
-	}
 
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
 		http.Error(w, "Failed to load config", http.StatusInternalServerError)
+		return
+	}
+
+	item, ok := findChannelCatalogItem(buildChannelCatalog(cfg), channelName)
+	if !ok {
+		http.Error(w, "Channel not found", http.StatusNotFound)
 		return
 	}
 
@@ -80,13 +92,62 @@ func (h *Handler) handleGetChannelConfig(w http.ResponseWriter, r *http.Request)
 	}
 }
 
-func findChannelCatalogItem(name string) (channelCatalogItem, bool) {
-	for _, item := range channelCatalog {
+func findChannelCatalogItem(items []channelCatalogItem, name string) (channelCatalogItem, bool) {
+	for _, item := range items {
 		if item.Name == name {
 			return item, true
 		}
 	}
 	return channelCatalogItem{}, false
+}
+
+func buildChannelCatalog(cfg *config.Config) []channelCatalogItem {
+	items := append([]channelCatalogItem(nil), channelCatalog...)
+	if cfg == nil || cfg.Channels == nil {
+		return items
+	}
+
+	knownNames := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		knownNames[item.Name] = struct{}{}
+	}
+
+	var dynamic []channelCatalogItem
+	for name, bc := range cfg.Channels {
+		if strings.TrimSpace(name) == "" || bc == nil {
+			continue
+		}
+		if _, exists := knownNames[name]; exists {
+			continue
+		}
+		typeName := strings.TrimSpace(bc.Type)
+		if typeName == "" {
+			typeName = name
+		}
+		if !supportsMultipleChannelType(typeName) {
+			continue
+		}
+		dynamic = append(dynamic, channelCatalogItem{
+			Name:             name,
+			Type:             typeName,
+			ConfigKey:        name,
+			SupportsMultiple: supportsMultipleChannelType(typeName),
+		})
+	}
+	sort.Slice(dynamic, func(i, j int) bool {
+		return dynamic[i].Name < dynamic[j].Name
+	})
+	items = append(items, dynamic...)
+	return items
+}
+
+func supportsMultipleChannelType(typeName string) bool {
+	switch strings.TrimSpace(typeName) {
+	case config.ChannelWeixin:
+		return true
+	default:
+		return false
+	}
 }
 
 var channelSecretFieldMap = map[string][]string{
@@ -118,6 +179,9 @@ func buildChannelConfigResponse(cfg *config.Config, item channelCatalogItem) cha
 	bc := cfg.Channels.Get(item.ConfigKey)
 	if bc == nil {
 		bc = defaultChannelConfig(item.ConfigKey)
+		if bc == nil && item.Type != "" && item.Type != item.ConfigKey {
+			bc = defaultChannelConfig(item.Type)
+		}
 		if bc == nil {
 			resp.Config = map[string]any{}
 			return resp
@@ -125,7 +189,11 @@ func buildChannelConfigResponse(cfg *config.Config, item channelCatalogItem) cha
 	}
 
 	// Detect configured secrets by checking the raw Settings JSON
-	secrets := detectConfiguredSecrets(bc.Settings, item.Name)
+	typeName := item.Type
+	if strings.TrimSpace(typeName) == "" {
+		typeName = item.Name
+	}
+	secrets := detectConfiguredSecrets(bc.Settings, typeName)
 	resp.ConfiguredSecrets = secrets
 
 	// Parse settings into a generic map for JSON response

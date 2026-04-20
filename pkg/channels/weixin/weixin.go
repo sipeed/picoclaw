@@ -97,7 +97,10 @@ func (c *WeixinChannel) Start(ctx context.Context) error {
 	c.SetRunning(true)
 	c.restoreContextTokens()
 	go c.pollLoop(c.ctx)
-	logger.InfoC("weixin", "Weixin channel started")
+	logger.InfoCF("weixin", "Weixin channel started", map[string]any{
+		"channel":    c.channelName(),
+		"account_id": c.accountID(),
+	})
 	return nil
 }
 
@@ -149,6 +152,26 @@ func (c *WeixinChannel) Stop(ctx context.Context) error {
 		c.cancel()
 	}
 	return nil
+}
+
+func (c *WeixinChannel) channelName() string {
+	if c != nil && c.BaseChannel != nil {
+		name := strings.TrimSpace(c.Name())
+		if name != "" {
+			return name
+		}
+	}
+	return config.ChannelWeixin
+}
+
+func (c *WeixinChannel) accountID() string {
+	if c != nil && c.config != nil {
+		accountID := strings.TrimSpace(c.config.AccountID)
+		if accountID != "" {
+			return accountID
+		}
+	}
+	return ""
 }
 
 // pollLoop is the long-poll receive loop. It runs until ctx is canceled.
@@ -358,6 +381,7 @@ func (c *WeixinChannel) handleInboundMessage(ctx context.Context, msg WeixinMess
 	}
 
 	metadata := map[string]string{
+		"account_id":    c.accountID(),
 		"from_user_id":  fromUserID,
 		"context_token": msg.ContextToken,
 		"session_id":    msg.SessionID,
@@ -376,7 +400,8 @@ func (c *WeixinChannel) handleInboundMessage(ctx context.Context, msg WeixinMess
 	}
 
 	inboundCtx := bus.InboundContext{
-		Channel:   "weixin",
+		Channel:   c.channelName(),
+		Account:   c.accountID(),
 		ChatID:    fromUserID,
 		ChatType:  "direct",
 		SenderID:  fromUserID,

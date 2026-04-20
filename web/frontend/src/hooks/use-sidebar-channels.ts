@@ -112,11 +112,16 @@ function isChannelEnabled(
   return true
 }
 
+function getChannelType(channel: SupportedChannel): string {
+  return channel.type ?? channel.name
+}
+
 function buildChannelEnabledMap(
   channels: SupportedChannel[],
   appConfig: AppConfig,
 ): Record<string, boolean> {
-  const channelsConfig = asRecord(asRecord(appConfig).channels)
+  const rootConfig = asRecord(appConfig)
+  const channelsConfig = asRecord(rootConfig.channel_list ?? rootConfig.channels)
   const result: Record<string, boolean> = {}
   for (const channel of channels) {
     result[channel.name] = isChannelEnabled(channel, channelsConfig)
@@ -168,8 +173,16 @@ export function useSidebarChannels({ language, t }: UseSidebarChannelsOptions) {
   React.useEffect(() => {
     let active = true
     reloadChannels(() => active)
+    const handleChannelsUpdated = () => {
+      reloadChannels(() => active)
+    }
+    window.addEventListener("picoclaw:channels-updated", handleChannelsUpdated)
     return () => {
       active = false
+      window.removeEventListener(
+        "picoclaw:channels-updated",
+        handleChannelsUpdated,
+      )
     }
   }, [reloadChannels])
 
@@ -198,9 +211,9 @@ export function useSidebarChannels({ language, t }: UseSidebarChannelsOptions) {
       }
 
       const aImportance =
-        channelImportanceIndex.get(a.name) ?? Number.MAX_SAFE_INTEGER
+        channelImportanceIndex.get(getChannelType(a)) ?? Number.MAX_SAFE_INTEGER
       const bImportance =
-        channelImportanceIndex.get(b.name) ?? Number.MAX_SAFE_INTEGER
+        channelImportanceIndex.get(getChannelType(b)) ?? Number.MAX_SAFE_INTEGER
       if (aImportance !== bImportance) {
         return aImportance - bImportance
       }
@@ -223,7 +236,7 @@ export function useSidebarChannels({ language, t }: UseSidebarChannelsOptions) {
         key: channel.name,
         title: getChannelDisplayName(channel, t),
         url: `/channels/${channel.name}`,
-        icon: CHANNEL_ICON_MAP[channel.name] ?? IconPlug,
+        icon: CHANNEL_ICON_MAP[getChannelType(channel)] ?? IconPlug,
       })),
     [t, visibleChannels],
   )

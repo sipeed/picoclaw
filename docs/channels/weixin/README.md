@@ -21,6 +21,13 @@ After onboarding, you can start the gateway:
 picoclaw gateway
 ```
 
+To bind more than one WeChat account, give each account its own channel name:
+
+```bash
+picoclaw auth weixin --channel weixin_personal
+picoclaw auth weixin --channel weixin_work
+```
+
 ---
 
 ## ⚙️ Configuration
@@ -44,16 +51,40 @@ You can also manually configure the filter rules in `config.json` under the `cha
 }
 ```
 
+Multiple Weixin channels can be configured by using different map keys with `type: "weixin"`:
+
+```json
+{
+  "channel_list": {
+    "weixin_personal": {
+      "enabled": true,
+      "type": "weixin",
+      "token": "TOKEN_A",
+      "account_id": "ACCOUNT_A",
+      "allow_from": ["user_id_1"]
+    },
+    "weixin_work": {
+      "enabled": true,
+      "type": "weixin",
+      "token": "TOKEN_B",
+      "account_id": "ACCOUNT_B",
+      "allow_from": ["user_id_2"]
+    }
+  }
+}
+```
+
 ### Configuration Fields
 
 | Field | Description |
 |---|---|
 | `enabled` | Set to `true` to enable the channel at startup. |
 | `token` | The authentication token obtained via QR login. |
+| `account_id` | (Optional) Stable account identifier returned by QR login. Used to keep per-account state files stable. |
 | `allow_from` | (Optional) List of WeChat User IDs permitted to interact with the bot. If empty, anyone who can send messages to the connected account can trigger the bot. |
 | `proxy` | (Optional) HTTP proxy address (e.g. `http://localhost:7890`) for environments where connection to `ilinkai.weixin.qq.com` is restricted. |
 
 ## ⚠️ Important Notes
 
-- **One Account Only**: The iLink token binds to a single session. Starting a new interaction generally invalidates older tokens if another device authorizes.
+- **One token per account**: Each iLink token binds to a single WeChat account session. Bind multiple accounts as separate channels.
 - **Message Rate Limits**: To avoid getting your account restricted by WeChat anti-spam systems, avoid loop triggers or high-frequency broadcasts.

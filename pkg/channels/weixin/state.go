@@ -44,7 +44,33 @@ func picoclawHomeDir() string {
 	return config.GetHome()
 }
 
+func sanitizeWeixinAccountKey(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9',
+			r == '-', r == '_', r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return strings.Trim(b.String(), "._-")
+}
+
 func genWeixinAccountKey(cfg *config.WeixinSettings) string {
+	if cfg == nil {
+		return "default"
+	}
+	if accountID := sanitizeWeixinAccountKey(cfg.AccountID); accountID != "" {
+		return accountID
+	}
 	token := strings.TrimSpace(cfg.Token.String())
 	if token == "" {
 		return "default"

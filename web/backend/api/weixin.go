@@ -7,7 +7,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -35,6 +37,7 @@ const (
 
 type weixinFlow struct {
 	ID        string
+	Channel   string
 	Qrcode    string // qrcode token from WeChat API (used for status polling)
 	QRDataURI string // base64 PNG data URI for display
 	AccountID string // IlinkBotID returned on confirmed
@@ -47,11 +50,18 @@ type weixinFlow struct {
 
 type weixinFlowResponse struct {
 	FlowID    string `json:"flow_id"`
+	Channel   string `json:"channel,omitempty"`
 	Status    string `json:"status"`
 	QRDataURI string `json:"qr_data_uri,omitempty"`
 	AccountID string `json:"account_id,omitempty"`
 	Error     string `json:"error,omitempty"`
 }
+
+type startWeixinFlowRequest struct {
+	Channel string `json:"channel"`
+}
+
+var weixinChannelNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 // registerWeixinRoutes binds WeChat QR login endpoints to the ServeMux.
 func (h *Handler) registerWeixinRoutes(mux *http.ServeMux) {
@@ -63,6 +73,16 @@ func (h *Handler) registerWeixinRoutes(mux *http.ServeMux) {
 //
 //	POST /api/weixin/flows
 func (h *Handler) handleStartWeixinFlow(w http.ResponseWriter, r *http.Request) {
+	channelName, err := h.parseWeixinFlowChannel(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := h.validateWeixinChannelTarget(channelName); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
@@ -87,6 +107,7 @@ func (h *Handler) handleStartWeixinFlow(w http.ResponseWriter, r *http.Request) 
 	now := time.Now()
 	flow := &weixinFlow{
 		ID:        newWeixinFlowID(),
+		Channel:   channelName,
 		Qrcode:    qrResp.Qrcode,
 		QRDataURI: dataURI,
 		Status:    weixinStatusWait,
@@ -101,6 +122,7 @@ func (h *Handler) handleStartWeixinFlow(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(weixinFlowResponse{
 		FlowID:    flow.ID,
+		Channel:   flow.Channel,
 		Status:    flow.Status,
 		QRDataURI: flow.QRDataURI,
 	})
@@ -128,9 +150,10 @@ func (h *Handler) handlePollWeixinFlow(w http.ResponseWriter, r *http.Request) {
 		flow.Status == weixinStatusError {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(weixinFlowResponse{
-			FlowID: flow.ID,
-			Status: flow.Status,
-			Error:  flow.Error,
+			FlowID:  flow.ID,
+			Channel: flow.Channel,
+			Status:  flow.Status,
+			Error:   flow.Error,
 		})
 		return
 	}
@@ -143,7 +166,12 @@ func (h *Handler) handlePollWeixinFlow(w http.ResponseWriter, r *http.Request) {
 		h.setWeixinFlowError(flowID, fmt.Sprintf("client error: %v", err))
 		flow, _ = h.getWeixinFlow(flowID)
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(weixinFlowResponse{FlowID: flow.ID, Status: flow.Status, Error: flow.Error})
+		_ = json.NewEncoder(w).Encode(weixinFlowResponse{
+			FlowID:  flow.ID,
+			Channel: flow.Channel,
+			Status:  flow.Status,
+			Error:   flow.Error,
+		})
 		return
 	}
 
@@ -153,6 +181,7 @@ func (h *Handler) handlePollWeixinFlow(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(weixinFlowResponse{
 			FlowID:    flow.ID,
+			Channel:   flow.Channel,
 			Status:    flow.Status,
 			QRDataURI: flow.QRDataURI,
 		})
@@ -171,7 +200,7 @@ func (h *Handler) handlePollWeixinFlow(w http.ResponseWriter, r *http.Request) {
 			h.setWeixinFlowError(flowID, "login confirmed but missing bot_token")
 			break
 		}
-		if saveErr := h.saveWeixinBinding(statusResp.BotToken, statusResp.IlinkBotID); saveErr != nil {
+		if saveErr := h.saveWeixinBinding(flow.Channel, statusResp.BotToken, statusResp.IlinkBotID); saveErr != nil {
 			h.setWeixinFlowError(flowID, fmt.Sprintf("failed to save token: %v", saveErr))
 			logger.ErrorCF("weixin", "failed to save token", map[string]any{"error": saveErr.Error()})
 			break
@@ -193,6 +222,7 @@ func (h *Handler) handlePollWeixinFlow(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	resp := weixinFlowResponse{
 		FlowID:    flow.ID,
+		Channel:   flow.Channel,
 		Status:    flow.Status,
 		AccountID: flow.AccountID,
 		Error:     flow.Error,
@@ -205,17 +235,28 @@ func (h *Handler) handlePollWeixinFlow(w http.ResponseWriter, r *http.Request) {
 
 // saveWeixinBinding writes the token/account ID, enables the Weixin channel,
 // and best-effort restarts the gateway when it is currently running.
-func (h *Handler) saveWeixinBinding(token, accountID string) error {
+func (h *Handler) saveWeixinBinding(channelName, token, accountID string) error {
+	channelName = strings.TrimSpace(channelName)
+	if channelName == "" {
+		channelName = config.ChannelWeixin
+	}
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	if cfg.Channels == nil {
+		cfg.Channels = config.ChannelsConfig{}
+	}
 
-	bc := cfg.Channels.Get(config.ChannelWeixin)
+	bc := cfg.Channels.Get(channelName)
 	if bc == nil {
 		bc = &config.Channel{Type: config.ChannelWeixin}
-		cfg.Channels[config.ChannelWeixin] = bc
+		cfg.Channels[channelName] = bc
 	}
+	if strings.TrimSpace(bc.Type) != "" && strings.TrimSpace(bc.Type) != config.ChannelWeixin {
+		return fmt.Errorf("channel %q already exists with type %q", channelName, bc.Type)
+	}
+	bc.Type = config.ChannelWeixin
 	bc.Enabled = true
 
 	var weixinCfg config.WeixinSettings
@@ -265,6 +306,58 @@ func newWeixinFlowID() string {
 		return fmt.Sprintf("wx_%d", time.Now().UnixNano())
 	}
 	return "wx_" + hex.EncodeToString(buf)
+}
+
+func (h *Handler) parseWeixinFlowChannel(r *http.Request) (string, error) {
+	channelName := config.ChannelWeixin
+	if r.Body == nil || r.ContentLength == 0 {
+		return channelName, nil
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		return "", fmt.Errorf("failed to read request body")
+	}
+	defer r.Body.Close()
+	if len(strings.TrimSpace(string(body))) == 0 {
+		return channelName, nil
+	}
+
+	var req startWeixinFlowRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		return "", fmt.Errorf("invalid JSON: %w", err)
+	}
+	if strings.TrimSpace(req.Channel) == "" {
+		return channelName, nil
+	}
+	return strings.TrimSpace(req.Channel), nil
+}
+
+func (h *Handler) validateWeixinChannelTarget(channelName string) error {
+	channelName = strings.TrimSpace(channelName)
+	if channelName == "" {
+		return fmt.Errorf("channel is required")
+	}
+	if !weixinChannelNamePattern.MatchString(channelName) {
+		return fmt.Errorf("invalid channel name %q", channelName)
+	}
+
+	cfg, err := config.LoadConfig(h.configPath)
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	if cfg.Channels == nil {
+		return nil
+	}
+	if bc := cfg.Channels.Get(channelName); bc != nil {
+		typeName := strings.TrimSpace(bc.Type)
+		if typeName == "" {
+			typeName = channelName
+		}
+		if typeName != config.ChannelWeixin {
+			return fmt.Errorf("channel %q already exists with type %q", channelName, typeName)
+		}
+	}
+	return nil
 }
 
 func (h *Handler) storeWeixinFlow(flow *weixinFlow) {

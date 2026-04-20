@@ -8,7 +8,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
-import type { ChannelConfig } from "@/api/channels"
+import type { ChannelConfig, SupportedChannel } from "@/api/channels"
 import { pollWeixinFlow, startWeixinFlow } from "@/api/channels"
 import { Field } from "@/components/shared-form"
 import { Button } from "@/components/ui/button"
@@ -31,6 +31,7 @@ type BindingState =
   | "error"
 
 interface WeixinFormProps {
+  channel: SupportedChannel
   config: ChannelConfig
   onChange: (key: string, value: unknown) => void
   isEdit: boolean
@@ -47,6 +48,7 @@ function asStringArray(value: unknown): string[] {
 }
 
 export function WeixinForm({
+  channel,
   config,
   onChange,
   isEdit,
@@ -126,7 +128,7 @@ export function WeixinForm({
     setQrDataURI(null)
     stopPolling()
     try {
-      const resp = await startWeixinFlow()
+      const resp = await startWeixinFlow(channel.config_key)
       setQrDataURI(resp.qr_data_uri ?? null)
       setBindState("waiting")
       startPolling(resp.flow_id)

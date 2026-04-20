@@ -1,4 +1,5 @@
 import { IconLoader2 } from "@tabler/icons-react"
+import { useNavigate } from "@tanstack/react-router"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
@@ -25,6 +26,7 @@ import { WecomForm } from "@/components/channels/channel-forms/wecom-form"
 import { WeixinForm } from "@/components/channels/channel-forms/weixin-form"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { useGateway } from "@/hooks/use-gateway"
 import { refreshGatewayState } from "@/store/gateway"
@@ -61,13 +63,17 @@ function normalizeConfig(
   rawConfig: ChannelConfig,
 ): ChannelConfig {
   const config = { ...rawConfig }
-  if (channel.name === "whatsapp_native") {
+  if (getChannelType(channel) === "whatsapp_native") {
     config.use_native = true
   }
-  if (channel.name === "whatsapp") {
+  if (getChannelType(channel) === "whatsapp") {
     config.use_native = false
   }
   return config
+}
+
+function getChannelType(channel: SupportedChannel): string {
+  return channel.type ?? channel.name
 }
 
 function buildSavePayload(
@@ -75,7 +81,8 @@ function buildSavePayload(
   editConfig: ChannelConfig,
   enabled: boolean,
 ): ChannelConfig {
-  const payload: ChannelConfig = { enabled, type: channel.config_key }
+  const channelType = getChannelType(channel)
+  const payload: ChannelConfig = { enabled, type: channelType }
   const settings: ChannelConfig = {}
 
   for (const [key, value] of Object.entries(editConfig)) {
@@ -102,10 +109,10 @@ function buildSavePayload(
     }
   }
 
-  if (channel.name === "whatsapp_native") {
+  if (channelType === "whatsapp_native") {
     settings.use_native = true
   }
-  if (channel.name === "whatsapp") {
+  if (channelType === "whatsapp") {
     settings.use_native = false
   }
 
@@ -121,12 +128,13 @@ function isConfigured(
   config: ChannelConfig,
   configuredSecrets: readonly string[],
 ): boolean {
+  const channelType = getChannelType(channel)
   const hasValue = (key: string) =>
     !isMissingRequiredValue(
       getFieldValueForValidation(config, configuredSecrets, key),
     )
 
-  switch (channel.name) {
+  switch (channelType) {
     case "telegram":
       return hasValue("token")
     case "discord":
@@ -203,6 +211,29 @@ function getRequiredFieldKeys(channelName: string): string[] {
   }
 }
 
+function buildSuggestedWeixinChannelName(existingNames: readonly string[]): string {
+  const used = new Set(existingNames)
+  if (!used.has("weixin_2")) {
+    return "weixin_2"
+  }
+  let index = 3
+  for (;;) {
+    const candidate = `weixin_${index}`
+    if (!used.has(candidate)) {
+      return candidate
+    }
+    index++
+  }
+}
+
+function isValidChannelName(name: string): boolean {
+  return /^[A-Za-z0-9_.-]+$/.test(name)
+}
+
+function notifyChannelsUpdated() {
+  window.dispatchEvent(new CustomEvent("picoclaw:channels-updated"))
+}
+
 function isMissingRequiredValue(value: unknown): boolean {
   if (value === null || value === undefined) {
     return true
@@ -232,24 +263,30 @@ const CHANNELS_WITHOUT_DOCS = new Set([
 export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
   const { t, i18n } = useTranslation()
   const { state: gatewayState } = useGateway()
+  const navigate = useNavigate()
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [creatingChannel, setCreatingChannel] = useState(false)
   const [fetchError, setFetchError] = useState("")
   const [serverError, setServerError] = useState("")
+  const [createChannelError, setCreateChannelError] = useState("")
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
+  const [catalogChannels, setCatalogChannels] = useState<SupportedChannel[]>([])
   const [channel, setChannel] = useState<SupportedChannel | null>(null)
   const [baseConfig, setBaseConfig] = useState<ChannelConfig>({})
   const [editConfig, setEditConfig] = useState<ChannelConfig>({})
   const [configuredSecrets, setConfiguredSecrets] = useState<string[]>([])
   const [enabled, setEnabled] = useState(false)
+  const [newWeixinChannelName, setNewWeixinChannelName] = useState("")
 
   const loadData = useCallback(
     async (silent = false) => {
       if (!silent) setLoading(true)
       try {
         const catalog = await getChannelsCatalog()
+        setCatalogChannels(catalog.channels)
         const matched =
           catalog.channels.find((item) => item.name === channelName) ?? null
 
@@ -270,16 +307,25 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
         const channelConfig = await getChannelConfig(channelName)
         const raw = asRecord(channelConfig.config)
         const normalized = normalizeConfig(matched, raw)
+        const currentType = getChannelType(matched)
 
         setChannel(matched)
         setBaseConfig(normalized)
-        setEditConfig(buildEditConfig(matched.name, normalized))
+        setEditConfig(buildEditConfig(currentType, normalized))
         setConfiguredSecrets(channelConfig.configured_secrets ?? [])
         setEnabled(asBool(normalized.enabled))
         setFetchError("")
         setServerError("")
+        setCreateChannelError("")
         setFieldErrors({})
+        setNewWeixinChannelName((prev) => {
+          const next = buildSuggestedWeixinChannelName(
+            catalog.channels.map((item) => item.name),
+          )
+          return prev.trim() === "" ? next : prev
+        })
       } catch (e) {
+        setCatalogChannels([])
         setConfiguredSecrets([])
         setFetchError(e instanceof Error ? e.message : t("channels.loadError"))
       } finally {
@@ -314,7 +360,8 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
 
   const docsUrl = useMemo(() => {
     if (!channel) return ""
-    if (CHANNELS_WITHOUT_DOCS.has(channel.name)) return ""
+    const channelType = getChannelType(channel)
+    if (CHANNELS_WITHOUT_DOCS.has(channelType)) return ""
     const language = (
       i18n.resolvedLanguage ??
       i18n.language ??
@@ -323,7 +370,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
     const base = language.startsWith("zh")
       ? "https://docs.picoclaw.io/zh-Hans/docs/channels"
       : "https://docs.picoclaw.io/docs/channels"
-    return `${base}/${getChannelDocSlug(channel.name)}`
+    return `${base}/${getChannelDocSlug(channelType)}`
   }, [channel, i18n.language, i18n.resolvedLanguage])
 
   const channelDisplayName = useMemo(() => {
@@ -331,21 +378,24 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
     return getChannelDisplayName(channel, t)
   }, [channel, channelName, t])
 
-  const hidesPageLevelEnableToggle = channel?.name === "wecom"
+  const channelType = channel ? getChannelType(channel) : channelName
+  const hidesPageLevelEnableToggle = channelType === "wecom"
+  const supportsMultiple = channel?.supports_multiple === true
 
   const hiddenKeys = useMemo(() => {
     if (!channel) return []
-    if (channel.name === "whatsapp") {
+    const currentType = getChannelType(channel)
+    if (currentType === "whatsapp") {
       return ["use_native"]
     }
-    if (channel.name === "whatsapp_native") {
+    if (currentType === "whatsapp_native") {
       return ["use_native", "bridge_url"]
     }
     return []
   }, [channel])
   const requiredKeys = useMemo(
-    () => getRequiredFieldKeys(channelName),
-    [channelName],
+    () => getRequiredFieldKeys(channelType),
+    [channelType],
   )
 
   const handleChange = useCallback((key: string, value: unknown) => {
@@ -364,7 +414,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
 
   const handleReset = () => {
     if (!channel) return
-    setEditConfig(buildEditConfig(channel.name, baseConfig))
+    setEditConfig(buildEditConfig(getChannelType(channel), baseConfig))
     setEnabled(asBool(baseConfig.enabled))
     setServerError("")
     setFieldErrors({})
@@ -398,6 +448,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
           [channel.config_key]: savePayload,
         },
       })
+      notifyChannelsUpdated()
       await loadData()
     } catch (e) {
       const message =
@@ -411,6 +462,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
   const handleWeixinBindSuccess = useCallback(async () => {
     try {
       setEnabled(true)
+      notifyChannelsUpdated()
       await Promise.all([loadData(true), refreshGatewayState({ force: true })])
     } catch (e) {
       const message =
@@ -423,6 +475,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
   const handleWecomBindSuccess = useCallback(async () => {
     try {
       setEnabled(true)
+      notifyChannelsUpdated()
       await Promise.all([loadData(true), refreshGatewayState({ force: true })])
     } catch (e) {
       const message =
@@ -450,11 +503,54 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
     [loadData, t],
   )
 
+  const handleCreateWeixinChannel = useCallback(async () => {
+    const nextChannelName = newWeixinChannelName.trim()
+    if (nextChannelName === "") {
+      setCreateChannelError(t("channels.weixin.channelNameRequired"))
+      return
+    }
+    if (!isValidChannelName(nextChannelName)) {
+      setCreateChannelError(t("channels.weixin.invalidChannelName"))
+      return
+    }
+    if (catalogChannels.some((item) => item.name === nextChannelName)) {
+      setCreateChannelError(
+        t("channels.weixin.duplicateChannel", { name: nextChannelName }),
+      )
+      return
+    }
+
+    setCreatingChannel(true)
+    setCreateChannelError("")
+    try {
+      await patchAppConfig({
+        channel_list: {
+          [nextChannelName]: {
+            enabled: false,
+            type: "weixin",
+          },
+        },
+      })
+      notifyChannelsUpdated()
+      await navigate({
+        to: "/channels/$name",
+        params: { name: nextChannelName },
+      })
+    } catch (e) {
+      setCreateChannelError(
+        e instanceof Error ? e.message : t("channels.page.saveError"),
+      )
+    } finally {
+      setCreatingChannel(false)
+    }
+  }, [catalogChannels, navigate, newWeixinChannelName, t])
+
   const renderForm = () => {
     if (!channel) return null
     const isEdit = configured
+    const currentType = getChannelType(channel)
 
-    switch (channel.name) {
+    switch (currentType) {
       case "telegram":
         return (
           <TelegramForm
@@ -494,6 +590,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
       case "weixin":
         return (
           <WeixinForm
+            channel={channel}
             config={editConfig}
             onChange={handleChange}
             isEdit={isEdit}
@@ -571,6 +668,50 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
                   {t("channels.page.enableLabel")}
                 </p>
                 <Switch checked={enabled} onCheckedChange={setEnabled} />
+              </div>
+            )}
+
+            {channelType === "weixin" && supportsMultiple && (
+              <div className="bg-card text-card-foreground border-border/60 space-y-4 rounded-xl border px-6 py-5 shadow-sm">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">
+                    {t("channels.weixin.addChannelTitle")}
+                  </p>
+                  <p className="text-muted-foreground text-sm">
+                    {t("channels.weixin.addChannelDesc")}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                  <div className="min-w-0 flex-1">
+                    <label
+                      htmlFor="new-weixin-channel-name"
+                      className="mb-1 block text-sm font-medium"
+                    >
+                      {t("channels.weixin.channelName")}
+                    </label>
+                    <Input
+                      id="new-weixin-channel-name"
+                      value={newWeixinChannelName}
+                      onChange={(e) => {
+                        setNewWeixinChannelName(e.target.value)
+                        setCreateChannelError("")
+                      }}
+                      placeholder="weixin_2"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={() => void handleCreateWeixinChannel()}
+                    disabled={creatingChannel}
+                  >
+                    {creatingChannel
+                      ? t("common.saving")
+                      : t("channels.weixin.createChannel")}
+                  </Button>
+                </div>
+                {createChannelError && (
+                  <p className="text-destructive text-sm">{createChannelError}</p>
+                )}
               </div>
             )}
 

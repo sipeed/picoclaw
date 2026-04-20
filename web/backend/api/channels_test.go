@@ -193,3 +193,119 @@ func TestHandleGetChannelConfig_ReturnsDefaultShapeForMissingChannel(t *testing.
 		t.Fatalf("config.enabled = %#v, want false", got)
 	}
 }
+
+func TestHandleListChannelCatalog_IncludesExistingWeixinInstances(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.Channels["weixin_work"] = &config.Channel{
+		Enabled: true,
+		Type:    config.ChannelWeixin,
+	}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/channels/catalog", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/channels/catalog status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Channels []struct {
+			Name             string `json:"name"`
+			Type             string `json:"type"`
+			ConfigKey        string `json:"config_key"`
+			SupportsMultiple bool   `json:"supports_multiple"`
+		} `json:"channels"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	foundStatic := false
+	foundDynamic := false
+	for _, item := range resp.Channels {
+		if item.Name == "weixin" {
+			foundStatic = item.Type == config.ChannelWeixin && item.SupportsMultiple
+		}
+		if item.Name == "weixin_work" {
+			foundDynamic = item.Type == config.ChannelWeixin &&
+				item.ConfigKey == "weixin_work" &&
+				item.SupportsMultiple
+		}
+	}
+	if !foundStatic {
+		t.Fatal("expected static weixin catalog entry")
+	}
+	if !foundDynamic {
+		t.Fatal("expected dynamic weixin instance in catalog")
+	}
+}
+
+func TestHandleGetChannelConfig_ReturnsDynamicWeixinInstance(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	bc := &config.Channel{Enabled: true, Type: config.ChannelWeixin}
+	wxCfg := &config.WeixinSettings{
+		AccountID: "work-account",
+		BaseURL:   "https://ilinkai.weixin.qq.com/",
+	}
+	wxCfg.SetToken("secret-token")
+	if err := bc.Decode(wxCfg); err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	cfg.Channels["weixin_work"] = bc
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/channels/weixin_work/config", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/channels/weixin_work/config status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Config            map[string]any `json:"config"`
+		ConfiguredSecrets []string       `json:"configured_secrets"`
+		ConfigKey         string         `json:"config_key"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if got := resp.ConfigKey; got != "weixin_work" {
+		t.Fatalf("config_key = %q, want weixin_work", got)
+	}
+	if got := resp.Config["account_id"]; got != "work-account" {
+		t.Fatalf("config.account_id = %#v, want work-account", got)
+	}
+	if _, exists := resp.Config["token"]; exists {
+		t.Fatalf("config should omit token, got %#v", resp.Config["token"])
+	}
+	if len(resp.ConfiguredSecrets) != 1 || resp.ConfiguredSecrets[0] != "token" {
+		t.Fatalf("configured_secrets = %#v, want [token]", resp.ConfiguredSecrets)
+	}
+}

@@ -383,7 +383,7 @@ func (c *WeixinChannel) storeInboundBytes(
 		ContentType:   contentType,
 		Source:        "weixin",
 		CleanupPolicy: media.CleanupPolicyDeleteOnCleanup,
-	}, basechannels.BuildMediaScope("weixin", chatID, messageID))
+	}, basechannels.BuildMediaScope(c.channelName(), chatID, messageID))
 	if err != nil {
 		os.Remove(tmpPath)
 		return "", err

@@ -8,11 +8,14 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
 	basechannels "github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/media"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -266,6 +269,121 @@ func TestBuildWeixinSyncBufPathUsesPicoclawHome(t *testing.T) {
 	got := buildWeixinSyncBufPath(wxCfg)
 	if filepath.Dir(got) != filepath.Join(home, "channels", "weixin", "sync") {
 		t.Fatalf("sync path dir = %q", filepath.Dir(got))
+	}
+}
+
+func TestBuildWeixinSyncBufPathUsesAccountIDWhenAvailable(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(config.EnvHome, home)
+
+	wxCfg := &config.WeixinSettings{
+		AccountID: "wx.account/one",
+		BaseURL:   "https://ilinkai.weixin.qq.com/",
+	}
+	wxCfg.SetToken("token-123")
+
+	got := buildWeixinSyncBufPath(wxCfg)
+	if filepath.Base(got) != "wx.account_one.json" {
+		t.Fatalf("sync path base = %q, want wx.account_one.json", filepath.Base(got))
+	}
+}
+
+func TestHandleInboundMessageUsesChannelInstanceAndAccount(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(config.EnvHome, home)
+
+	msgBus := bus.NewMessageBus()
+	wxCfg := &config.WeixinSettings{
+		AccountID: "account-a",
+		BaseURL:   "https://ilinkai.weixin.qq.com/",
+	}
+	wxCfg.SetToken("token-a")
+	bc := &config.Channel{Enabled: true, Type: config.ChannelWeixin}
+	bc.SetName("weixin_a")
+	ch, err := NewWeixinChannel(bc, wxCfg, msgBus)
+	if err != nil {
+		t.Fatalf("NewWeixinChannel() error = %v", err)
+	}
+	ch.SetName("weixin_a")
+
+	ch.handleInboundMessage(context.Background(), WeixinMessage{
+		FromUserID:   "user-1",
+		ClientID:     "msg-1",
+		ContextToken: "ctx-1",
+		SessionID:    "session-1",
+		ItemList: []MessageItem{
+			{
+				Type:     MessageItemTypeText,
+				TextItem: &TextItem{Text: "hello"},
+			},
+		},
+	})
+
+	select {
+	case got := <-msgBus.InboundChan():
+		if got.Context.Channel != "weixin_a" {
+			t.Fatalf("Context.Channel = %q, want weixin_a", got.Context.Channel)
+		}
+		if got.Context.Account != "account-a" {
+			t.Fatalf("Context.Account = %q, want account-a", got.Context.Account)
+		}
+		if got.Context.ChatID != "user-1" {
+			t.Fatalf("Context.ChatID = %q, want user-1", got.Context.ChatID)
+		}
+		if got.Context.ChatType != "direct" {
+			t.Fatalf("Context.ChatType = %q, want direct", got.Context.ChatType)
+		}
+		if got.Content != "hello" {
+			t.Fatalf("Content = %q, want hello", got.Content)
+		}
+		if got.Context.Raw["account_id"] != "account-a" {
+			t.Fatalf("raw account_id = %q, want account-a", got.Context.Raw["account_id"])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for inbound message")
+	}
+}
+
+type recordingMediaStore struct {
+	scope string
+}
+
+func (s *recordingMediaStore) Store(_ string, _ media.MediaMeta, scope string) (string, error) {
+	s.scope = scope
+	return "media://ref", nil
+}
+
+func (s *recordingMediaStore) Resolve(ref string) (string, error) {
+	return "", nil
+}
+
+func (s *recordingMediaStore) ResolveWithMeta(ref string) (string, media.MediaMeta, error) {
+	return "", media.MediaMeta{}, nil
+}
+
+func (s *recordingMediaStore) ReleaseAll(scope string) error {
+	return nil
+}
+
+func TestStoreInboundBytesUsesChannelInstanceInScope(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	wxCfg := &config.WeixinSettings{BaseURL: "https://ilinkai.weixin.qq.com/"}
+	wxCfg.SetToken("token-a")
+	bc := &config.Channel{Enabled: true, Type: config.ChannelWeixin}
+	bc.SetName("weixin_a")
+	ch, err := NewWeixinChannel(bc, wxCfg, msgBus)
+	if err != nil {
+		t.Fatalf("NewWeixinChannel() error = %v", err)
+	}
+	ch.SetName("weixin_a")
+	store := &recordingMediaStore{}
+	ch.SetMediaStore(store)
+
+	if _, err := ch.storeInboundBytes("user-1", "msg-1", "file.txt", "text/plain", []byte("hello")); err != nil {
+		t.Fatalf("storeInboundBytes() error = %v", err)
+	}
+	if !strings.HasPrefix(store.scope, "weixin_a:user-1:msg-1") {
+		t.Fatalf("media scope = %q, want weixin_a:user-1:msg-1 prefix", store.scope)
 	}
 }
 
