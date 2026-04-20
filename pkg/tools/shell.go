@@ -20,6 +20,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
+	"github.com/sipeed/picoclaw/pkg/isolation"
 )
 
 var (
@@ -389,7 +390,9 @@ func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	if err := cmd.Start(); err != nil {
+	// Route shell execution through the shared isolation entry point so exec tool
+	// subprocesses receive the same isolation policy as other integrations.
+	if err := isolation.Start(cmd); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to start command: %v", err))
 	}
 
@@ -532,7 +535,9 @@ func (t *ExecTool) runBackground(ctx context.Context, command, cwd string, ptyEn
 		session.stdinWriter = stdinWriter
 	}
 
-	if err := cmd.Start(); err != nil {
+	// Background sessions use the same startup path so isolation stays consistent
+	// with synchronous exec runs.
+	if err := isolation.Start(cmd); err != nil {
 		if session.ptyMaster != nil {
 			session.ptyMaster.Close()
 		}
@@ -1111,28 +1116,18 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		// Web URL schemes whose path components (starting with //) should be exempt
 		// from workspace sandbox checks. file: is intentionally excluded so that
 		// file:// URIs are still validated against the workspace boundary.
-		webSchemes := []string{"http:", "https:", "ftp:", "ftps:", "ssh:", "git:", "sftp:"}
+		webSchemes := []string{"http:", "https:", "ftp:", "ftps:", "sftp:", "ssh:", "git:"}
 
 		matchIndices := absolutePathPattern.FindAllStringIndex(cmd, -1)
 
 		for _, loc := range matchIndices {
 			raw := cmd[loc[0]:loc[1]]
 
-			// Check if this is truly the start of a path component.
-			// It should be at the start of the command or preceded by a shell delimiter.
-			if loc[0] > 0 {
-				prev := cmd[loc[0]-1]
-				// Typical shell delimiters that separate command arguments or environment variables.
-				// We include space-like chars, basic separators, and assignment equals.
-				// We also include ':' because it precedes paths in lists ($PATH) and URLs (file://, https://).
-				if !strings.ContainsAny(string(prev), " \t\n\r;|\"&!<>(){}=[]':") {
-					continue
-				}
-			}
-
 			// Skip URL path components that look like they're from web URLs.
 			// When a URL like "https://github.com" is parsed, the regex captures
 			// "//github.com" as a match (the path portion after "https:").
+			// Use the exact match position (loc[0]) so that duplicate //path substrings
+			// in the same command are each evaluated at their own position.
 			if strings.HasPrefix(raw, "//") && loc[0] > 0 {
 				before := cmd[:loc[0]]
 				isWebURL := false

@@ -55,7 +55,7 @@ func newConfiguredHookLoop(t *testing.T, provider *llmHookTestProvider, hooks co
 		Hooks: hooks,
 	}
 
-	return NewAgentLoop(cfg, bus.NewMessageBus(), provider)
+	return NewAgentLoop(cfg, "", bus.NewMessageBus(), provider)
 }
 
 func TestAgentLoop_ProcessDirectWithChannel_AutoMountsBuiltinHook(t *testing.T) {

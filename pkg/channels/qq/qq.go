@@ -56,7 +56,8 @@ type qqAPI interface {
 
 type QQChannel struct {
 	*channels.BaseChannel
-	config         config.QQConfig
+	bc             *config.Channel
+	config         *config.QQSettings
 	api            qqAPI
 	tokenSource    oauth2.TokenSource
 	ctx            context.Context
@@ -82,15 +83,16 @@ type QQChannel struct {
 	stopOnce sync.Once
 }
 
-func NewQQChannel(cfg config.QQConfig, messageBus *bus.MessageBus) (*QQChannel, error) {
-	base := channels.NewBaseChannel("qq", cfg, messageBus, cfg.AllowFrom,
+func NewQQChannel(bc *config.Channel, cfg *config.QQSettings, messageBus *bus.MessageBus) (*QQChannel, error) {
+	base := channels.NewBaseChannel("qq", cfg, messageBus, bc.AllowFrom,
 		channels.WithMaxMessageLength(cfg.MaxMessageLength),
-		channels.WithGroupTrigger(cfg.GroupTrigger),
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+		channels.WithGroupTrigger(bc.GroupTrigger),
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	return &QQChannel{
 		BaseChannel: base,
+		bc:          bc,
 		config:      cfg,
 		dedup:       make(map[string]time.Time),
 		done:        make(chan struct{}),
@@ -161,8 +163,8 @@ func (c *QQChannel) Start(ctx context.Context) error {
 
 	// Pre-register reasoning_channel_id as group chat if configured,
 	// so outbound-only destinations are routed correctly.
-	if c.config.ReasoningChannelID != "" {
-		c.chatType.Store(c.config.ReasoningChannelID, "group")
+	if c.bc.ReasoningChannelID != "" {
+		c.chatType.Store(c.bc.ReasoningChannelID, "group")
 	}
 
 	c.SetRunning(true)
@@ -588,10 +590,20 @@ func qqFileType(partType string) uint64 {
 }
 
 func (c *QQChannel) maxBase64FileSizeBytes() int64 {
+	if c.config == nil {
+		return 0
+	}
 	if c.config.MaxBase64FileSizeMiB <= 0 {
 		return 0
 	}
 	return c.config.MaxBase64FileSizeMiB * bytesPerMiB
+}
+
+func (c *QQChannel) accountID() string {
+	if c.config == nil {
+		return ""
+	}
+	return c.config.AppID
 }
 
 // handleC2CMessage handles QQ private messages.
@@ -647,17 +659,17 @@ func (c *QQChannel) handleC2CMessage() event.C2CMessageEventHandler {
 		metadata := map[string]string{
 			"account_id": senderID,
 		}
+		inboundCtx := bus.InboundContext{
+			Channel:   c.Name(),
+			Account:   c.accountID(),
+			ChatID:    senderID,
+			ChatType:  "direct",
+			SenderID:  senderID,
+			MessageID: data.ID,
+			Raw:       metadata,
+		}
 
-		c.HandleMessage(c.ctx,
-			bus.Peer{Kind: "direct", ID: senderID},
-			data.ID,
-			senderID,
-			senderID,
-			content,
-			mediaPaths,
-			metadata,
-			sender,
-		)
+		c.HandleInboundContext(c.ctx, senderID, content, mediaPaths, inboundCtx, sender)
 
 		return nil
 	}
@@ -725,17 +737,18 @@ func (c *QQChannel) handleGroupATMessage() event.GroupATMessageEventHandler {
 			"account_id": senderID,
 			"group_id":   data.GroupID,
 		}
+		inboundCtx := bus.InboundContext{
+			Channel:   c.Name(),
+			Account:   c.accountID(),
+			ChatID:    data.GroupID,
+			ChatType:  "group",
+			SenderID:  senderID,
+			MessageID: data.ID,
+			Mentioned: true,
+			Raw:       metadata,
+		}
 
-		c.HandleMessage(c.ctx,
-			bus.Peer{Kind: "group", ID: data.GroupID},
-			data.ID,
-			senderID,
-			data.GroupID,
-			content,
-			mediaPaths,
-			metadata,
-			sender,
-		)
+		c.HandleInboundContext(c.ctx, data.GroupID, content, mediaPaths, inboundCtx, sender)
 
 		return nil
 	}

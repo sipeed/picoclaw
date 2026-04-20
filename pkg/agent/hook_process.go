@@ -12,7 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/isolation"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 const (
@@ -90,7 +92,8 @@ type processHookAfterLLMResponse struct {
 
 type processHookBeforeToolResponse struct {
 	processHookDecisionResponse
-	Call *ToolCallHookRequest `json:"call,omitempty"`
+	Call   *ToolCallHookRequest `json:"call,omitempty"`
+	Result *tools.ToolResult    `json:"result,omitempty"` // Result returned directly by hook (for respond action)
 }
 
 type processHookAfterToolResponse struct {
@@ -120,7 +123,9 @@ func NewProcessHook(ctx context.Context, name string, opts ProcessHookOptions) (
 	if err != nil {
 		return nil, fmt.Errorf("create process hook stderr: %w", err)
 	}
-	if err := cmd.Start(); err != nil {
+	// Route hook subprocess startup through the shared isolation entry point so
+	// process hooks inherit the same isolation behavior as other child processes.
+	if err := isolation.Start(cmd); err != nil {
 		return nil, fmt.Errorf("start process hook: %w", err)
 	}
 
@@ -240,6 +245,10 @@ func (ph *ProcessHook) BeforeTool(
 	}
 	if resp.Call == nil {
 		resp.Call = call
+	}
+	// If hook returned a Result, carry it in ToolCallHookRequest
+	if resp.Result != nil {
+		resp.Call.HookResult = resp.Result
 	}
 	return resp.Call, HookDecision{Action: resp.Action, Reason: resp.Reason}, nil
 }

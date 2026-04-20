@@ -39,7 +39,7 @@ func (s *stubJobExecutor) ProcessDirectWithChannel(
 
 func (s *stubJobExecutor) PublishResponseIfNeeded(
 	_ context.Context,
-	channel, chatID, response string,
+	channel, chatID, sessionKey, response string,
 ) {
 	if s.alreadySent {
 		return
@@ -271,8 +271,8 @@ func TestCronTool_ExecuteJobPublishesAgentResponse(t *testing.T) {
 		t.Fatalf("ExecuteJob() = %q, want ok", got)
 	}
 
-	if executor.lastKey != "cron-job-1" {
-		t.Fatalf("sessionKey = %q, want cron-job-1", executor.lastKey)
+	if !strings.HasPrefix(executor.lastKey, "agent:cron-job-1-") {
+		t.Fatalf("sessionKey = %q, want agent:cron-job-1-{uuid}", executor.lastKey)
 	}
 	if executor.lastChan != "telegram" || executor.lastChatID != "chat-1" {
 		t.Fatalf("executor target = %s/%s, want telegram/chat-1", executor.lastChan, executor.lastChatID)

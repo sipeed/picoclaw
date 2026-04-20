@@ -19,6 +19,11 @@ const (
 	TypePong          = "pong"
 
 	PicoTokenPrefix = "pico-"
+
+	PayloadKeyContent = "content"
+	PayloadKeyThought = "thought"
+
+	MessageKindThought = "thought"
 )
 
 // PicoMessage is the wire format for all Pico Protocol messages.
@@ -37,6 +42,11 @@ func newMessage(msgType string, payload map[string]any) PicoMessage {
 		Timestamp: time.Now().UnixMilli(),
 		Payload:   payload,
 	}
+}
+
+func isThoughtPayload(payload map[string]any) bool {
+	thought, _ := payload[PayloadKeyThought].(bool)
+	return thought
 }
 
 func newErrorWithPayload(code, message string, extra map[string]any) PicoMessage {

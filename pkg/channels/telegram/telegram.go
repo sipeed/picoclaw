@@ -47,18 +47,23 @@ type TelegramChannel struct {
 	*channels.BaseChannel
 	bot     *telego.Bot
 	bh      *th.BotHandler
-	config  *config.Config
+	bc      *config.Channel
 	chatIDs map[string]int64
 	ctx     context.Context
 	cancel  context.CancelFunc
+	tgCfg   *config.TelegramSettings
 
 	registerFunc     func(context.Context, []commands.Definition) error
 	commandRegCancel context.CancelFunc
 }
 
-func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChannel, error) {
+func NewTelegramChannel(
+	bc *config.Channel,
+	telegramCfg *config.TelegramSettings,
+	bus *bus.MessageBus,
+) (*TelegramChannel, error) {
+	channelName := bc.Name()
 	var opts []telego.BotOption
-	telegramCfg := cfg.Channels.Telegram
 
 	if telegramCfg.Proxy != "" {
 		proxyURL, parseErr := url.Parse(telegramCfg.Proxy)
@@ -90,20 +95,21 @@ func NewTelegramChannel(cfg *config.Config, bus *bus.MessageBus) (*TelegramChann
 	}
 
 	base := channels.NewBaseChannel(
-		"telegram",
+		channelName,
 		telegramCfg,
 		bus,
-		telegramCfg.AllowFrom,
+		bc.AllowFrom,
 		channels.WithMaxMessageLength(4000),
-		channels.WithGroupTrigger(telegramCfg.GroupTrigger),
-		channels.WithReasoningChannelID(telegramCfg.ReasoningChannelID),
+		channels.WithGroupTrigger(bc.GroupTrigger),
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	return &TelegramChannel{
 		BaseChannel: base,
 		bot:         bot,
-		config:      cfg,
+		bc:          bc,
 		chatIDs:     make(map[string]int64),
+		tgCfg:       telegramCfg,
 	}, nil
 }
 
@@ -174,9 +180,9 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 		return nil, channels.ErrNotRunning
 	}
 
-	useMarkdownV2 := c.config.Channels.Telegram.UseMarkdownV2
+	useMarkdownV2 := c.tgCfg.UseMarkdownV2
 
-	chatID, threadID, err := parseTelegramChatID(msg.ChatID)
+	chatID, threadID, err := resolveTelegramOutboundTarget(msg.ChatID, &msg.Context)
 	if err != nil {
 		return nil, fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
 	}
@@ -360,7 +366,7 @@ func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string) (func(
 
 // EditMessage implements channels.MessageEditor.
 func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
-	useMarkdownV2 := c.config.Channels.Telegram.UseMarkdownV2
+	useMarkdownV2 := c.tgCfg.UseMarkdownV2
 	cid, _, err := parseTelegramChatID(chatID)
 	if err != nil {
 		return err
@@ -435,7 +441,7 @@ func (c *TelegramChannel) DeleteMessage(ctx context.Context, chatID string, mess
 // It sends a placeholder message (e.g. "Thinking... 💭") that will later be
 // edited to the actual response via EditMessage (channels.MessageEditor).
 func (c *TelegramChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
-	phCfg := c.config.Channels.Telegram.Placeholder
+	phCfg := c.bc.Placeholder
 	if !phCfg.Enabled {
 		return "", nil
 	}
@@ -463,7 +469,7 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 		return nil, channels.ErrNotRunning
 	}
 
-	chatID, threadID, err := parseTelegramChatID(msg.ChatID)
+	chatID, threadID, err := resolveTelegramOutboundTarget(msg.ChatID, &msg.Context)
 	if err != nil {
 		return nil, fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
 	}
@@ -691,8 +697,9 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	}
 
 	// In group chats, apply unified group trigger filtering
+	isMentioned := false
 	if message.Chat.Type != "private" {
-		isMentioned := c.isBotMentioned(message)
+		isMentioned = c.isBotMentioned(message)
 		if isMentioned {
 			content = c.stripBotMention(content)
 		}
@@ -738,13 +745,9 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	})
 
 	peerKind := "direct"
-	peerID := fmt.Sprintf("%d", user.ID)
 	if message.Chat.Type != "private" {
 		peerKind = "group"
-		peerID = compositeChatID
 	}
-
-	peer := bus.Peer{Kind: peerKind, ID: peerID}
 	messageID := fmt.Sprintf("%d", message.MessageID)
 
 	metadata := map[string]string{
@@ -753,24 +756,29 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		"first_name": user.FirstName,
 		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
 	}
-	if message.ReplyToMessage != nil {
-		metadata["reply_to_message_id"] = fmt.Sprintf("%d", message.ReplyToMessage.MessageID)
-	}
 
-	// Set parent_peer metadata for per-topic agent binding.
+	inboundCtx := bus.InboundContext{
+		Channel:   c.Name(),
+		ChatID:    fmt.Sprintf("%d", chatID),
+		ChatType:  peerKind,
+		SenderID:  platformID,
+		MessageID: messageID,
+		Mentioned: isMentioned,
+		Raw:       metadata,
+	}
 	if message.Chat.IsForum && threadID != 0 {
-		metadata["parent_peer_kind"] = "topic"
-		metadata["parent_peer_id"] = fmt.Sprintf("%d", threadID)
+		inboundCtx.TopicID = fmt.Sprintf("%d", threadID)
+	}
+	if message.ReplyToMessage != nil {
+		inboundCtx.ReplyToMessageID = fmt.Sprintf("%d", message.ReplyToMessage.MessageID)
 	}
 
-	c.HandleMessage(c.ctx,
-		peer,
-		messageID,
-		platformID,
+	c.HandleMessageWithContext(
+		c.ctx,
 		compositeChatID,
 		content,
 		mediaPaths,
-		metadata,
+		inboundCtx,
 		sender,
 	)
 	return nil
@@ -958,6 +966,28 @@ func parseTelegramChatID(chatID string) (int64, int, error) {
 	return cid, tid, nil
 }
 
+func resolveTelegramOutboundTarget(chatID string, outboundCtx *bus.InboundContext) (int64, int, error) {
+	targetChatID := strings.TrimSpace(chatID)
+	if targetChatID == "" && outboundCtx != nil {
+		targetChatID = strings.TrimSpace(outboundCtx.ChatID)
+	}
+	resolvedChatID, resolvedThreadID, err := parseTelegramChatID(targetChatID)
+	if err != nil {
+		return 0, 0, err
+	}
+	if resolvedThreadID != 0 || outboundCtx == nil {
+		return resolvedChatID, resolvedThreadID, nil
+	}
+	topicID := strings.TrimSpace(outboundCtx.TopicID)
+	if topicID == "" {
+		return resolvedChatID, resolvedThreadID, nil
+	}
+	if threadID, convErr := strconv.Atoi(topicID); convErr == nil {
+		return resolvedChatID, threadID, nil
+	}
+	return resolvedChatID, resolvedThreadID, nil
+}
+
 func logParseFailed(err error, useMarkdownV2 bool) {
 	parsingName := "HTML"
 	if useMarkdownV2 {
@@ -1063,7 +1093,7 @@ func (c *TelegramChannel) stripBotMention(content string) string {
 
 // BeginStream implements channels.StreamingCapable.
 func (c *TelegramChannel) BeginStream(ctx context.Context, chatID string) (channels.Streamer, error) {
-	if !c.config.Channels.Telegram.Streaming.Enabled {
+	if !c.tgCfg.Streaming.Enabled {
 		return nil, fmt.Errorf("streaming disabled in config")
 	}
 
@@ -1072,7 +1102,7 @@ func (c *TelegramChannel) BeginStream(ctx context.Context, chatID string) (chann
 		return nil, err
 	}
 
-	streamCfg := c.config.Channels.Telegram.Streaming
+	streamCfg := c.tgCfg.Streaming
 	return &telegramStreamer{
 		bot:              c.bot,
 		chatID:           cid,

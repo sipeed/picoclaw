@@ -1,0 +1,124 @@
+# v3.466
+no required module provides package v3.466; to add it:
+	go get v3.466
+FAIL	v3.466 [setup failed]
+# Balancing
+package Balancing is not in std (/usr/local/go/src/Balancing)
+FAIL	Balancing [setup failed]
+# Makefile
+package Makefile is not in std (/usr/local/go/src/Makefile)
+FAIL	Makefile [setup failed]
+# across
+package across is not in std (/usr/local/go/src/across)
+FAIL	across [setup failed]
+# components.
+malformed import path "components.": trailing dot in path element
+FAIL	components. [setup failed]
+?   	github.com/sipeed/picoclaw/cmd/freeride-diag	[no test files]
+ok  	github.com/sipeed/picoclaw/cmd/membench	(cached)
+ok  	github.com/sipeed/picoclaw/cmd/picoclaw	(cached)
+ok  	github.com/sipeed/picoclaw/cmd/picoclaw/internal	(cached)
+ok  	github.com/sipeed/picoclaw/cmd/picoclaw/internal/agent	(cached)
+ok  	github.com/sipeed/picoclaw/cmd/picoclaw/internal/auth	(cached)
+ok  	github.com/sipeed/picoclaw/cmd/picoclaw/internal/cliui	(cached)
+ok  	github.com/sipeed/picoclaw/cmd/picoclaw/internal/cron	(cached)
+?   	github.com/sipeed/picoclaw/cmd/picoclaw/internal/freeride	[no test files]
+ok  	github.com/sipeed/picoclaw/cmd/picoclaw/internal/gateway	(cached)
+ok  	github.com/sipeed/picoclaw/cmd/picoclaw/internal/migrate	(cached)
+ok  	github.com/sipeed/picoclaw/cmd/picoclaw/internal/model	(cached)
+ok  	github.com/sipeed/picoclaw/cmd/picoclaw/internal/onboard	(cached)
+ok  	github.com/sipeed/picoclaw/cmd/picoclaw/internal/skills	(cached)
+ok  	github.com/sipeed/picoclaw/cmd/picoclaw/internal/status	(cached)
+ok  	github.com/sipeed/picoclaw/cmd/picoclaw/internal/version	(cached)
+?   	github.com/sipeed/picoclaw/cmd/picoclaw-launcher-tui	[no test files]
+?   	github.com/sipeed/picoclaw/cmd/picoclaw-launcher-tui/config	[no test files]
+?   	github.com/sipeed/picoclaw/cmd/picoclaw-launcher-tui/ui	[no test files]
+?   	github.com/sipeed/picoclaw/examples/pico-echo-server	[no test files]
+?   	github.com/sipeed/picoclaw/pkg	[no test files]
+ok  	github.com/sipeed/picoclaw/pkg/agent	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/audio	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/audio/asr	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/audio/tts	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/auth	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/bus	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/channels	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/channels/dingtalk	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/channels/discord	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/channels/feishu	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/channels/irc	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/channels/line	(cached)
+?   	github.com/sipeed/picoclaw/pkg/channels/maixcam	[no test files]
+ok  	github.com/sipeed/picoclaw/pkg/channels/matrix	(cached)
+?   	github.com/sipeed/picoclaw/pkg/channels/onebot	[no test files]
+ok  	github.com/sipeed/picoclaw/pkg/channels/pico	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/channels/qq	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/channels/slack	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/channels/teams_webhook	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/channels/telegram	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/channels/vk	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/channels/wecom	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/channels/weixin	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/channels/whatsapp	(cached)
+?   	github.com/sipeed/picoclaw/pkg/channels/whatsapp_native	[no test files]
+ok  	github.com/sipeed/picoclaw/pkg/commands	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/config	(cached)
+?   	github.com/sipeed/picoclaw/pkg/constants	[no test files]
+ok  	github.com/sipeed/picoclaw/pkg/credential	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/cron	(cached)
+?   	github.com/sipeed/picoclaw/pkg/devices	[no test files]
+?   	github.com/sipeed/picoclaw/pkg/devices/events	[no test files]
+?   	github.com/sipeed/picoclaw/pkg/devices/sources	[no test files]
+ok  	github.com/sipeed/picoclaw/pkg/fileutil	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/gateway	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/health	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/heartbeat	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/identity	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/isolation	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/logger	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/mcp	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/media	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/memory	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/migrate	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/migrate/internal	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/migrate/sources/openclaw	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/netbind	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/pid	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/providers	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/providers/anthropic	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/providers/anthropic_messages	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/providers/azure	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/providers/bedrock	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/providers/cli	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/providers/common	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/providers/httpapi	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/providers/oauth	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/providers/openai_compat	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/providers/openai_responses_common	(cached)
+?   	github.com/sipeed/picoclaw/pkg/providers/protocoltypes	[no test files]
+ok  	github.com/sipeed/picoclaw/pkg/routing	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/seahorse	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/security	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/security/behavior	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/security/canary	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/security/ipia	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/security/pii	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/security/policy	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/session	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/skills	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/state	(cached)
+?   	github.com/sipeed/picoclaw/pkg/tokenizer	[no test files]
+ok  	github.com/sipeed/picoclaw/pkg/tools	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/tools/fs	(cached)
+?   	github.com/sipeed/picoclaw/pkg/tools/hardware	[no test files]
+ok  	github.com/sipeed/picoclaw/pkg/tools/integration	(cached)
+?   	github.com/sipeed/picoclaw/pkg/tools/shared	[no test files]
+ok  	github.com/sipeed/picoclaw/pkg/updater	(cached)
+ok  	github.com/sipeed/picoclaw/pkg/utils	(cached)
+ok  	github.com/sipeed/picoclaw/web/backend	(cached)
+ok  	github.com/sipeed/picoclaw/web/backend/api	(cached)
+?   	github.com/sipeed/picoclaw/web/backend/dashboardauth	[no test files]
+ok  	github.com/sipeed/picoclaw/web/backend/launcherconfig	(cached)
+ok  	github.com/sipeed/picoclaw/web/backend/middleware	(cached)
+?   	github.com/sipeed/picoclaw/web/backend/model	[no test files]
+ok  	github.com/sipeed/picoclaw/web/backend/utils	(cached)
+FAIL

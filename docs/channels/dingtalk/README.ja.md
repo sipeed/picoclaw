@@ -1,4 +1,4 @@
-> [README](../../../README.ja.md) に戻る
+> [README](../../project/README.ja.md) に戻る
 
 # DingTalk
 
@@ -8,9 +8,10 @@ DingTalkはアリババの企業向けコミュニケーションプラットフ
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "dingtalk": {
       "enabled": true,
+      "type": "dingtalk",
       "client_id": "YOUR_CLIENT_ID",
       "client_secret": "YOUR_CLIENT_SECRET",
       "allow_from": []

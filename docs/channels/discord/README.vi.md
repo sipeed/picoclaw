@@ -1,4 +1,4 @@
-> Quay lại [README](../../../README.vi.md)
+> Quay lại [README](../../project/README.vi.md)
 
 # Discord
 
@@ -8,9 +8,10 @@ Discord là ứng dụng chat thoại, video và văn bản miễn phí được
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "discord": {
       "enabled": true,
+      "type": "discord",
       "token": "YOUR_BOT_TOKEN",
       "allow_from": ["YOUR_USER_ID"],
       "group_trigger": {

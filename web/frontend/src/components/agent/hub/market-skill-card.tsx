@@ -18,6 +18,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 export function MarketSkillCard({
   result,
@@ -35,6 +40,17 @@ export function MarketSkillCard({
   onViewInstalled: () => void
 }) {
   const { t } = useTranslation()
+
+  const installDisabledReason = (() => {
+    if (installPending)
+      return t("pages.agent.skills.marketplace_installDisabled.installing")
+    if (result.installed)
+      return t("pages.agent.skills.marketplace_installDisabled.installed")
+    if (!canInstall)
+      return t("pages.agent.skills.marketplace_installDisabled.cannotInstall")
+    return t("pages.agent.skills.marketplace_install_action")
+  })()
+  const installDisabled = !canInstall || result.installed || installPending
 
   return (
     <Card
@@ -86,24 +102,34 @@ export function MarketSkillCard({
             ) : null}
           </div>
           <div className="flex shrink-0 flex-col items-end gap-2">
-            <Button
-              size="sm"
-              variant={result.installed ? "secondary" : "default"}
-              className="shadow-sm transition-all"
-              disabled={!canInstall || result.installed || installPending}
-              onClick={onInstall}
-            >
-              {installPending ? (
-                <IconLoader2 className="size-4 animate-spin" />
-              ) : result.installed ? (
-                <IconCheck className="size-4" />
-              ) : (
-                <IconPlus className="size-4" />
-              )}
-              {result.installed
-                ? t("pages.agent.skills.marketplace_installed")
-                : t("pages.agent.skills.marketplace_install_action")}
-            </Button>
+            <Tooltip delayDuration={installDisabled ? 0 : 700}>
+              <TooltipTrigger asChild>
+                <span
+                  className={installDisabled ? "cursor-not-allowed" : undefined}
+                  tabIndex={installDisabled ? 0 : undefined}
+                >
+                  <Button
+                    size="sm"
+                    variant={result.installed ? "secondary" : "default"}
+                    className="shadow-sm transition-all"
+                    disabled={installDisabled}
+                    onClick={onInstall}
+                  >
+                    {installPending ? (
+                      <IconLoader2 className="size-4 animate-spin" />
+                    ) : result.installed ? (
+                      <IconCheck className="size-4" />
+                    ) : (
+                      <IconPlus className="size-4" />
+                    )}
+                    {result.installed
+                      ? t("pages.agent.skills.marketplace_installed")
+                      : t("pages.agent.skills.marketplace_install_action")}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{installDisabledReason}</TooltipContent>
+            </Tooltip>
             {result.installed && installedSkill ? (
               <Button
                 variant="outline"

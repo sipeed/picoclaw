@@ -1,4 +1,4 @@
-> Quay lại [README](../../../README.vi.md)
+> Quay lại [README](../../project/README.vi.md)
 
 # Slack
 
@@ -8,9 +8,10 @@ Slack là nền tảng nhắn tin tức thì hàng đầu dành cho doanh nghi�
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "slack": {
       "enabled": true,
+      "type": "slack",
       "bot_token": "xoxb-...",
       "app_token": "xapp-...",
       "allow_from": []

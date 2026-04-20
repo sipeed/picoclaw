@@ -2,8 +2,10 @@ package memory
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -238,6 +240,142 @@ func TestSetSummary_GetSummary(t *testing.T) {
 	}
 	if summary != "updated summary" {
 		t.Errorf("summary = %q", summary)
+	}
+}
+
+func TestSessionMetaScopeAndAliasesPersist(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	scope := json.RawMessage(`{"version":1,"channel":"telegram","values":{"chat":"group:c1"}}`)
+	aliases := []string{"legacy:one", "legacy:one", "canonical"}
+	if err := store.UpsertSessionMeta(ctx, "canonical", scope, aliases); err != nil {
+		t.Fatalf("UpsertSessionMeta() error = %v", err)
+	}
+
+	meta, err := store.GetSessionMeta(ctx, "canonical")
+	if err != nil {
+		t.Fatalf("GetSessionMeta() error = %v", err)
+	}
+	var gotScope map[string]any
+	if err := json.Unmarshal(meta.Scope, &gotScope); err != nil {
+		t.Fatalf("Unmarshal(meta.Scope) error = %v", err)
+	}
+	var wantScope map[string]any
+	if err := json.Unmarshal(scope, &wantScope); err != nil {
+		t.Fatalf("Unmarshal(scope) error = %v", err)
+	}
+	if !reflect.DeepEqual(gotScope, wantScope) {
+		t.Fatalf("meta.Scope = %#v, want %#v", gotScope, wantScope)
+	}
+	if len(meta.Aliases) != 1 || meta.Aliases[0] != "legacy:one" {
+		t.Fatalf("meta.Aliases = %#v, want [legacy:one]", meta.Aliases)
+	}
+}
+
+func TestResolveSessionKeyByAlias(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.AddMessage(ctx, "canonical", "user", "hello"); err != nil {
+		t.Fatalf("AddMessage() error = %v", err)
+	}
+	if err := store.UpsertSessionMeta(ctx, "canonical", nil, []string{"legacy:key"}); err != nil {
+		t.Fatalf("UpsertSessionMeta() error = %v", err)
+	}
+
+	resolved, found, err := store.ResolveSessionKey(ctx, "legacy:key")
+	if err != nil {
+		t.Fatalf("ResolveSessionKey() error = %v", err)
+	}
+	if !found {
+		t.Fatal("ResolveSessionKey() did not find alias")
+	}
+	if resolved != "canonical" {
+		t.Fatalf("resolved = %q, want %q", resolved, "canonical")
+	}
+}
+
+func TestResolveSessionKeyByAlias_PrefersMetadataOverLegacyFile(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.AddMessage(ctx, "legacy:key", "user", "legacy"); err != nil {
+		t.Fatalf("AddMessage(legacy) error = %v", err)
+	}
+	if err := store.AddMessage(ctx, "canonical", "user", "canonical"); err != nil {
+		t.Fatalf("AddMessage(canonical) error = %v", err)
+	}
+	if err := store.UpsertSessionMeta(ctx, "canonical", nil, []string{"legacy:key"}); err != nil {
+		t.Fatalf("UpsertSessionMeta() error = %v", err)
+	}
+
+	resolved, found, err := store.ResolveSessionKey(ctx, "legacy:key")
+	if err != nil {
+		t.Fatalf("ResolveSessionKey() error = %v", err)
+	}
+	if !found {
+		t.Fatal("ResolveSessionKey() did not find alias")
+	}
+	if resolved != "canonical" {
+		t.Fatalf("resolved = %q, want %q", resolved, "canonical")
+	}
+}
+
+func TestResolveSessionKey_DirectHitSkipsCorruptMetadata(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.AddMessage(ctx, "canonical", "user", "hello"); err != nil {
+		t.Fatalf("AddMessage() error = %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(store.dir, "broken.meta.json"),
+		[]byte("{not-json"),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile(broken.meta.json) error = %v", err)
+	}
+
+	resolved, found, err := store.ResolveSessionKey(ctx, "canonical")
+	if err != nil {
+		t.Fatalf("ResolveSessionKey() error = %v", err)
+	}
+	if !found {
+		t.Fatal("ResolveSessionKey() did not find direct session")
+	}
+	if resolved != "canonical" {
+		t.Fatalf("resolved = %q, want %q", resolved, "canonical")
+	}
+}
+
+func TestResolveSessionKey_SkipsCorruptMetadataDuringAliasScan(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.AddMessage(ctx, "canonical", "user", "hello"); err != nil {
+		t.Fatalf("AddMessage() error = %v", err)
+	}
+	if err := store.UpsertSessionMeta(ctx, "canonical", nil, []string{"legacy:key"}); err != nil {
+		t.Fatalf("UpsertSessionMeta() error = %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(store.dir, "broken.meta.json"),
+		[]byte("{not-json"),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile(broken.meta.json) error = %v", err)
+	}
+
+	resolved, found, err := store.ResolveSessionKey(ctx, "legacy:key")
+	if err != nil {
+		t.Fatalf("ResolveSessionKey() error = %v", err)
+	}
+	if !found {
+		t.Fatal("ResolveSessionKey() did not find alias")
+	}
+	if resolved != "canonical" {
+		t.Fatalf("resolved = %q, want %q", resolved, "canonical")
 	}
 }
 

@@ -24,6 +24,7 @@ export async function loadSessionMessages(
     id: `hist-${index}-${Date.now()}`,
     role: message.role,
     content: message.content,
+    kind: message.role === "assistant" ? "normal" : undefined,
     attachments: toChatAttachments(message.media),
     timestamp: fallbackTime,
   }))
@@ -50,7 +51,7 @@ function messageSignature(message: ChatMessage): string {
 
   return `${message.role}\u0000${message.content}\u0000${normalizeMessageTimestamp(
     message.timestamp,
-  )}\u0000${attachmentSignature}`
+  )}\u0000${message.kind ?? ""}\u0000${attachmentSignature}`
 }
 
 function comparableTimestamp(timestamp: number | string): number {

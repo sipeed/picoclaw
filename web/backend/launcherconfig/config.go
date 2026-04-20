@@ -16,6 +16,10 @@ const (
 	FileName = "launcher-config.json"
 	// DefaultPort is the default port for the web launcher.
 	DefaultPort = 18800
+	// EnvLauncherToken overrides launcher dashboard token.
+	EnvLauncherToken = "PICOCLAW_LAUNCHER_TOKEN"
+	// EnvLauncherHost overrides launcher listen host.
+	EnvLauncherHost = "PICOCLAW_LAUNCHER_HOST"
 
 	// dashboardSigningKeyBytes is the HMAC-SHA256 key size (256 bits).
 	dashboardSigningKeyBytes = 32
@@ -59,7 +63,7 @@ func Validate(cfg Config) error {
 
 // EnsureDashboardSecrets returns signing key bytes and the effective dashboard token for this
 // process. The signing key is freshly random each call; the token comes from
-// PICOCLAW_LAUNCHER_TOKEN when set, otherwise launcher-config.json launcher_token,
+// EnvLauncherToken when set, otherwise launcher-config.json launcher_token,
 // otherwise a new random token.
 func EnsureDashboardSecrets(
 	cfg Config,
@@ -69,7 +73,7 @@ func EnsureDashboardSecrets(
 		return "", nil, "", err
 	}
 
-	effectiveToken = strings.TrimSpace(os.Getenv("PICOCLAW_LAUNCHER_TOKEN"))
+	effectiveToken = strings.TrimSpace(os.Getenv(EnvLauncherToken))
 	if effectiveToken != "" {
 		return effectiveToken, signingKey, DashboardTokenSourceEnv, nil
 	}

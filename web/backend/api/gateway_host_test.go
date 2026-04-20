@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/tls"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/netbind"
 	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
 )
 
@@ -26,8 +28,8 @@ func TestGatewayHostOverrideUsesExplicitRuntimePublic(t *testing.T) {
 	h := NewHandler(configPath)
 	h.SetServerOptions(18800, true, true, nil)
 
-	if got := h.gatewayHostOverride(); got != "0.0.0.0" {
-		t.Fatalf("gatewayHostOverride() = %q, want %q", got, "0.0.0.0")
+	if got := h.gatewayHostOverride(); got != "*" {
+		t.Fatalf("gatewayHostOverride() = %q, want %q", got, "*")
 	}
 }
 
@@ -64,8 +66,36 @@ func TestBuildWsURLUsesRequestHostWhenLauncherPublicSaved(t *testing.T) {
 }
 
 func TestGatewayProbeHostUsesLoopbackForWildcardBind(t *testing.T) {
-	if got := gatewayProbeHost("0.0.0.0"); got != "127.0.0.1" {
-		t.Fatalf("gatewayProbeHost() = %q, want %q", got, "127.0.0.1")
+	want := "127.0.0.1"
+	if got := gatewayProbeHost("0.0.0.0"); got != want {
+		t.Fatalf("gatewayProbeHost() = %q, want %q", got, want)
+	}
+}
+
+func TestGatewayProbeHostUsesPreferredLoopbackForEmptyBind(t *testing.T) {
+	want := netbind.ResolveAdaptiveLoopbackHost()
+	if got := gatewayProbeHost(""); got != want {
+		t.Fatalf("gatewayProbeHost(empty) = %q, want %q", got, want)
+	}
+}
+
+func TestGatewayProbeHostUsesPreferredLoopbackForLocalhostBind(t *testing.T) {
+	want := netbind.ResolveAdaptiveLoopbackHost()
+	if got := gatewayProbeHost("localhost"); got != want {
+		t.Fatalf("gatewayProbeHost(localhost) = %q, want %q", got, want)
+	}
+}
+
+func TestGatewayProbeHostUsesLoopbackForIPv6WildcardBind(t *testing.T) {
+	want := "::1"
+	if got := gatewayProbeHost("::"); got != want {
+		t.Fatalf("gatewayProbeHost(::) = %q, want %q", got, want)
+	}
+}
+
+func TestGatewayProbeHostUsesFirstConcreteHostForMultiHostBind(t *testing.T) {
+	if got := gatewayProbeHost("127.0.0.1,::1"); got != "127.0.0.1" {
+		t.Fatalf("gatewayProbeHost(multi) = %q, want %q", got, "127.0.0.1")
 	}
 }
 
@@ -137,8 +167,9 @@ func TestGetGatewayHealthUsesProbeHostForPublicLauncher(t *testing.T) {
 	_ = statusCode
 	_ = err
 
-	if requestedURL != "http://127.0.0.1:18791/health" {
-		t.Fatalf("health url = %q, want %q", requestedURL, "http://127.0.0.1:18791/health")
+	want := "http://" + net.JoinHostPort(netbind.ResolveAdaptiveLoopbackHost(), "18791") + "/health"
+	if requestedURL != want {
+		t.Fatalf("health url = %q, want %q", requestedURL, want)
 	}
 }
 
@@ -238,5 +269,45 @@ func TestBuildWsURLUsesRequestHostNotGatewayBindLoopback(t *testing.T) {
 
 	if got := h.buildWsURL(req); got != "ws://localhost:18800/pico/ws" {
 		t.Fatalf("buildWsURL() = %q, want %q", got, "ws://localhost:18800/pico/ws")
+	}
+}
+
+func TestGatewayHostOverrideWithExplicitHostAndAlignedGatewayHost(t *testing.T) {
+	h := NewHandler(filepath.Join(t.TempDir(), "config.json"))
+	h.SetServerOptions(18800, false, false, nil)
+	h.SetServerBindHost("0.0.0.0", true)
+
+	if got := h.gatewayHostOverride(); got != "0.0.0.0" {
+		t.Fatalf("gatewayHostOverride() = %q, want %q", got, "0.0.0.0")
+	}
+}
+
+func TestGatewayHostOverrideWithExplicitHostAndLocalhostGatewayHost(t *testing.T) {
+	h := NewHandler(filepath.Join(t.TempDir(), "config.json"))
+	h.SetServerOptions(18800, false, false, nil)
+	h.SetServerBindHost("::", true)
+
+	if got := h.gatewayHostOverride(); got != "::" {
+		t.Fatalf("gatewayHostOverride() = %q, want %q", got, "::")
+	}
+}
+
+func TestGatewayHostOverrideWithExplicitMultiHost(t *testing.T) {
+	h := NewHandler(filepath.Join(t.TempDir(), "config.json"))
+	h.SetServerOptions(18800, false, false, nil)
+	h.SetServerBindHost("127.0.0.1,::1", true)
+
+	if got := h.gatewayHostOverride(); got != "127.0.0.1,::1" {
+		t.Fatalf("gatewayHostOverride() = %q, want %q", got, "127.0.0.1,::1")
+	}
+}
+
+func TestGatewayHostExplicitIgnoresPublicFlag(t *testing.T) {
+	h := NewHandler(filepath.Join(t.TempDir(), "config.json"))
+	h.SetServerOptions(18800, true, true, nil)
+	h.SetServerBindHost("127.0.0.1", true)
+
+	if got := h.effectiveLauncherPublic(); got {
+		t.Fatalf("effectiveLauncherPublic() = %t, want false when explicit host is set", got)
 	}
 }

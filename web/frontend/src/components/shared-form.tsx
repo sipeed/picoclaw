@@ -90,9 +90,10 @@ interface KeyInputProps {
   value: string
   onChange: (v: string) => void
   placeholder?: string
+  className?: string
 }
 
-export function KeyInput({ value, onChange, placeholder }: KeyInputProps) {
+export function KeyInput({ value, onChange, placeholder, className }: KeyInputProps) {
   const [show, setShow] = useState(false)
 
   return (
@@ -102,7 +103,7 @@ export function KeyInput({ value, onChange, placeholder }: KeyInputProps) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="pr-10"
+        className={cn("pr-10", className)}
       />
       <button
         type="button"

@@ -242,11 +242,3 @@ func (sm *SessionManager) List() []SessionInfo {
 func generateSessionID() string {
 	return uuid.New().String()[:8]
 }
-
-type SessionInfo struct {
-	ID        string `json:"id"`
-	Command   string `json:"command"`
-	Status    string `json:"status"`
-	PID       int    `json:"pid"`
-	StartedAt int64  `json:"startedAt"`
-}

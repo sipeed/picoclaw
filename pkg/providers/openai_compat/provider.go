@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers/common"
@@ -32,14 +32,13 @@ type (
 )
 
 type Provider struct {
-	apiKey          string
-	apiBase         string
-	maxTokensField  string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
-	httpClient      *http.Client
-	extraBody       map[string]any // Additional fields to inject into request body
-	userAgent       string
-	useAzureHeaders bool         // Use api-key header instead of Authorization: Bearer
-	mu              sync.RWMutex // Protect useAzureHeaders
+	apiKey         string
+	apiBase        string
+	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
+	httpClient     *http.Client
+	extraBody      map[string]any // Additional fields to inject into request body
+	customHeaders  map[string]string
+	userAgent      string
 }
 
 type Option func(*Provider)
@@ -47,24 +46,21 @@ type Option func(*Provider)
 const defaultRequestTimeout = common.DefaultRequestTimeout
 
 var stripModelPrefixProviders = map[string]struct{}{
-	"litellm":       {},
-	"venice":        {},
-	"moonshot":      {},
-	"nvidia":        {},
-	"groq":          {},
-	"ollama":        {},
-	"deepseek":      {},
-	"google":        {},
-	"openrouter":    {},
-	"zhipu":         {},
-	"mistral":       {},
-	"vivgrid":       {},
-	"minimax":       {},
-	"novita":        {},
-	"lmstudio":      {},
-	"azure-ai":      {},
-	"azure-foundry": {},
-	"gemini":        {},
+	"litellm":    {},
+	"venice":     {},
+	"moonshot":   {},
+	"nvidia":     {},
+	"groq":       {},
+	"ollama":     {},
+	"deepseek":   {},
+	"google":     {},
+	"openrouter": {},
+	"zhipu":      {},
+	"mistral":    {},
+	"vivgrid":    {},
+	"minimax":    {},
+	"novita":     {},
+	"lmstudio":   {},
 }
 
 func WithMaxTokensField(maxTokensField string) Option {
@@ -93,16 +89,10 @@ func WithExtraBody(extraBody map[string]any) Option {
 	}
 }
 
-func WithAzureHeaders(use bool) Option {
+func WithCustomHeaders(customHeaders map[string]string) Option {
 	return func(p *Provider) {
-		p.useAzureHeaders = use
+		p.customHeaders = customHeaders
 	}
-}
-
-func (p *Provider) SetUseAzureHeaders(use bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.useAzureHeaders = use
 }
 
 func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
@@ -190,13 +180,46 @@ func (p *Provider) buildRequestBody(
 		}
 	}
 
-	// Merge extra body fields configured per-provider/model.
-	// These are injected last so they take precedence over defaults.
-	for k, v := range p.extraBody {
-		requestBody[k] = v
+	// Thinking support for OpenRouter
+	if level, ok := options["thinking_level"].(string); ok && level != "" && level != "off" {
+		if u, err := url.Parse(p.apiBase); err == nil && u.Hostname() == "openrouter.ai" {
+			// Map level to budget tokens (using same scale as Anthropic)
+			budget := 0
+			switch level {
+			case "low":
+				budget = 4096
+			case "medium":
+				budget = 16384
+			case "high":
+				budget = 32000
+			case "xhigh":
+				budget = 64000
+			}
+			if budget > 0 {
+				requestBody["thinking"] = map[string]any{
+					"type":          "enabled",
+					"budget_tokens": budget,
+				}
+				// Remove temperature when thinking is enabled (strict requirement for some models)
+				delete(requestBody, "temperature")
+			}
+		}
 	}
 
+	// Merge extra body fields configured per-provider/model.
+	// These are injected last so they take precedence over defaults.
+	maps.Copy(requestBody, p.extraBody)
+
 	return requestBody
+}
+
+func (p *Provider) applyCustomHeaders(req *http.Request) {
+	for k, v := range p.customHeaders {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		req.Header.Set(k, v)
+	}
 }
 
 func (p *Provider) Chat(
@@ -227,13 +250,9 @@ func (p *Provider) Chat(
 		req.Header.Set("User-Agent", p.userAgent)
 	}
 	if p.apiKey != "" {
-
-		if p.useAzureHeaders {
-			req.Header.Set("api-key", p.apiKey)
-		} else {
-			req.Header.Set("Authorization", "Bearer "+p.apiKey)
-		}
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
+	p.applyCustomHeaders(req)
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
@@ -277,13 +296,13 @@ func (p *Provider) ChatStream(
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
-	if p.apiKey != "" {
-		if p.useAzureHeaders {
-			req.Header.Set("api-key", p.apiKey)
-		} else {
-			req.Header.Set("Authorization", "Bearer "+p.apiKey)
-		}
+	if p.userAgent != "" {
+		req.Header.Set("User-Agent", p.userAgent)
 	}
+	if p.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
+	p.applyCustomHeaders(req)
 
 	// Use a client without Timeout for streaming — the http.Client.Timeout covers
 	// the entire request lifecycle including body reads, which would kill long streams.
@@ -442,22 +461,12 @@ func parseStreamResponse(
 }
 
 func normalizeModel(model, apiBase string) string {
-	if strings.Contains(strings.ToLower(apiBase), "openrouter.ai") {
-		return model
-	}
-
-	// NVIDIA endpoints (integrate.api.nvidia.com) require the provider prefix
-	// (e.g., nvidia/, meta/, mistral/) for routing. Do not strip them.
-	// We also re-add the prefix if it was likely stripped by the agent's protocol resolution logic.
-	if strings.Contains(strings.ToLower(apiBase), ".nvidia.com") {
-		if !strings.Contains(model, "/") {
-			return "nvidia/" + model
-		}
-		return model
-	}
-
 	before, after, ok := strings.Cut(model, "/")
 	if !ok {
+		return model
+	}
+
+	if strings.Contains(strings.ToLower(apiBase), "openrouter.ai") {
 		return model
 	}
 
@@ -483,6 +492,16 @@ func buildToolsList(tools []ToolDefinition, nativeSearch bool) []any {
 	return result
 }
 
+func (p *Provider) SupportsThinking() bool {
+	// Enable thinking support for OpenRouter.
+	// OpenRouter acts as a passthrough for Anthropic and DeepSeek-R1 models that support thinking.
+	u, err := url.Parse(p.apiBase)
+	if err != nil {
+		return false
+	}
+	return u.Hostname() == "openrouter.ai"
+}
+
 func (p *Provider) SupportsNativeSearch() bool {
 	return isNativeSearchHost(p.apiBase)
 }
@@ -493,7 +512,7 @@ func isNativeSearchHost(apiBase string) bool {
 		return false
 	}
 	host := u.Hostname()
-	return host == "api.openai.com"
+	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
 }
 
 // supportsPromptCacheKey reports whether the given API base is known to
@@ -506,7 +525,5 @@ func supportsPromptCacheKey(apiBase string) bool {
 		return false
 	}
 	host := u.Hostname()
-	// Strictly limit to OpenAI official. Azure OpenAI often rejects this field
-	// depending on model version and region, causing 400 errors.
-	return host == "api.openai.com"
+	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
 }

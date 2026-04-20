@@ -3,19 +3,19 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/netbind"
 )
 
 const DefaultGatewayLogLevel = "warn"
 
 type GatewayConfig struct {
-	Host        string `json:"host"                env:"PICOCLAW_GATEWAY_HOST"`
-	Port        int    `json:"port"                env:"PICOCLAW_GATEWAY_PORT"`
-	APIKey      string `json:"api_key"             env:"PICOCLAW_GATEWAY_API_KEY"`
-	ChatEnabled bool   `json:"chat_enabled"        env:"PICOCLAW_GATEWAY_CHAT_ENABLED"`
-	HotReload   bool   `json:"hot_reload"          env:"PICOCLAW_GATEWAY_HOT_RELOAD"`
-	LogLevel    string `json:"log_level,omitempty" env:"PICOCLAW_LOG_LEVEL"`
+	Host      string `json:"host"                env:"PICOCLAW_GATEWAY_HOST"`
+	Port      int    `json:"port"                env:"PICOCLAW_GATEWAY_PORT"`
+	HotReload bool   `json:"hot_reload"          env:"PICOCLAW_GATEWAY_HOT_RELOAD"`
+	LogLevel  string `json:"log_level,omitempty" env:"PICOCLAW_LOG_LEVEL"`
 }
 
 func canonicalGatewayLogLevel(level logger.LogLevel) string {
@@ -49,6 +49,31 @@ func EffectiveGatewayLogLevel(cfg *Config) string {
 		return DefaultGatewayLogLevel
 	}
 	return normalizeGatewayLogLevel(cfg.Gateway.LogLevel)
+}
+
+func resolveGatewayHostFromEnv(baseHost string) (string, error) {
+	envHost, ok := os.LookupEnv(EnvGatewayHost)
+	if !ok {
+		return normalizeGatewayHostInput(baseHost)
+	}
+
+	envHost = strings.TrimSpace(envHost)
+	if envHost == "" {
+		return normalizeGatewayHostInput(baseHost)
+	}
+
+	return normalizeGatewayHostInput(envHost)
+}
+
+func normalizeGatewayHostInput(host string) (string, error) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		host = strings.TrimSpace(DefaultConfig().Gateway.Host)
+	}
+	if host == "" {
+		host = "localhost"
+	}
+	return netbind.NormalizeHostInput(host)
 }
 
 // ResolveGatewayLogLevel reads the configured gateway log level without triggering

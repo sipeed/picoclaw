@@ -27,6 +27,8 @@ type SessionStore interface {
 	TruncateHistory(key string, keepLast int)
 	// Save persists any pending state to durable storage.
 	Save(key string) error
+	// ListSessions returns all known session keys.
+	ListSessions() []string
 	// Close releases resources held by the store.
 	Close() error
 }

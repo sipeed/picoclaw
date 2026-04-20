@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -22,6 +23,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 // httpClient is a shared HTTP client used for release checks and downloads.
@@ -31,6 +33,14 @@ import (
 // TLS handshake, response header wait), supply a custom Transport with
 // an appropriately configured net.Dialer.
 var httpClient = &http.Client{Timeout: 2 * time.Minute}
+
+func getWithRetry(rawURL string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	return utils.DoRequestWithRetry(httpClient, req)
+}
 
 // DownloadAndExtractRelease downloads a release archive (or uses a direct
 // asset URL) and extracts it to a temporary directory. It returns the
@@ -70,7 +80,7 @@ func DownloadAndExtractRelease(releaseURL, platform, arch string) (string, error
 	tmpPath := tmpFile.Name()
 	defer tmpFile.Close()
 
-	resp, err := httpClient.Get(assetURL)
+	resp, err := getWithRetry(assetURL)
 	if err != nil {
 		os.Remove(tmpPath)
 		return "", err
@@ -214,7 +224,7 @@ func findAssetInfo(releaseURL, platform, arch string) (string, string, error) {
 		apiURL = GetProdReleaseAPIURL()
 	}
 
-	resp, err := httpClient.Get(apiURL)
+	resp, err := getWithRetry(apiURL)
 	if err != nil {
 		return "", "", err
 	}
@@ -337,7 +347,7 @@ func findAssetInfo(releaseURL, platform, arch string) (string, string, error) {
 				strings.Contains(n, "checksums") ||
 				strings.HasSuffix(n, ".sha256") ||
 				strings.HasSuffix(n, ".sha256sum") {
-				resp2, err := httpClient.Get(data.Assets[j].BrowserDownloadURL)
+				resp2, err := getWithRetry(data.Assets[j].BrowserDownloadURL)
 				if err != nil {
 					continue
 				}

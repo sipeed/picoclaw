@@ -76,7 +76,7 @@ func (h *Handler) handleGetVersion(w http.ResponseWriter, r *http.Request) {
 // resolveSystemVersionInfo prefers the actual picoclaw binary version output,
 // and falls back to launcher build metadata when command execution fails.
 func (h *Handler) resolveSystemVersionInfo(ctx context.Context) systemVersionResponse {
-	for i := 0; i < maxVersionResolveAttempts; i++ {
+	for range maxVersionResolveAttempts {
 		gatewayPID, gatewayAlive := currentGatewayVersionState()
 		if cached, ok := versionInfoCache.get(gatewayPID, gatewayAlive); ok {
 			return cached

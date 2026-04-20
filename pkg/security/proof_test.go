@@ -91,7 +91,7 @@ func TestSecurityShield_Integration(t *testing.T) {
 		var cfg config.Config
 		_ = json.Unmarshal([]byte(cfgJSON), &cfg)
 
-		al := agent.NewAgentLoop(&cfg, bus.NewMessageBus(), &mockProvider{toolName: "exec"})
+		al := agent.NewAgentLoop(&cfg, "", bus.NewMessageBus(), &mockProvider{toolName: "exec"})
 		defer al.Close()
 		al.RegisterTool(&dummyTool{name: "exec"})
 
@@ -126,7 +126,7 @@ func TestSecurityShield_Integration(t *testing.T) {
 		var cfg config.Config
 		_ = json.Unmarshal([]byte(cfgJSON), &cfg)
 
-		al := agent.NewAgentLoop(&cfg, bus.NewMessageBus(), &mockProvider{toolName: "ls", Forever: true})
+		al := agent.NewAgentLoop(&cfg, "", bus.NewMessageBus(), &mockProvider{toolName: "ls", Forever: true})
 		defer al.Close()
 		al.RegisterTool(&dummyTool{name: "ls"})
 
@@ -149,7 +149,7 @@ func TestSecurityShield_Integration(t *testing.T) {
 		_ = json.Unmarshal([]byte(cfgJSON), &cfg)
 
 		mock := &mockProvider{Response: "Recognized: [EMAIL_1]"}
-		al := agent.NewAgentLoop(&cfg, bus.NewMessageBus(), mock)
+		al := agent.NewAgentLoop(&cfg, "", bus.NewMessageBus(), mock)
 		defer al.Close()
 
 		// Use a unique session key with fixed prefix to avoid collision
@@ -195,7 +195,7 @@ func TestSecurityShield_Integration(t *testing.T) {
 		_ = json.Unmarshal([]byte(cfgJSON), &cfg)
 
 		// Mock returns the token it found in the prompt
-		al := agent.NewAgentLoop(&cfg, bus.NewMessageBus(), &mockProvider{Response: "The secret is {CANARY}"})
+		al := agent.NewAgentLoop(&cfg, "", bus.NewMessageBus(), &mockProvider{Response: "The secret is {CANARY}"})
 		defer al.Close()
 
 		resp, err := al.ProcessDirect(context.Background(), "spill it", "session-canary")

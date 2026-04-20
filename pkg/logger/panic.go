@@ -17,7 +17,7 @@ func InitPanic(filePath string) (func(), error) {
 	}
 	writer := initPanicFile(filePath)
 	if writer == nil {
-		return nil, nil
+		return nil, fmt.Errorf("failed to create log file: %s", filePath)
 	}
 	if panicWriter != nil {
 		_ = panicWriter.Close()

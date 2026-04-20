@@ -154,7 +154,9 @@ func (r *Resolver) Resolve(raw string) (string, error) {
 		envVar := strings.TrimPrefix(raw, EnvScheme)
 		val := os.Getenv(envVar)
 		if val == "" {
-			return "", fmt.Errorf("credential: environment variable %q not set", envVar)
+			// Do not return an error here, just return empty string.
+			// This prevents the whole agent from failing to start if an optional key is missing.
+			return "", nil
 		}
 		return strings.TrimSpace(val), nil
 	}

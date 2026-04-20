@@ -58,6 +58,29 @@ var protocolMetaByName = map[string]protocolMeta{
 	"longcat":                  {defaultAPIBase: "https://api.longcat.chat/openai"},
 	"modelscope":               {defaultAPIBase: "https://api-inference.modelscope.cn/v1"},
 	"mimo":                     {defaultAPIBase: "https://api.xiaomimimo.com/v1"},
+
+	// Specialty and Custom Protocols
+	"anthropic":           {defaultAPIBase: "https://api.anthropic.com"},
+	"google":              {defaultAPIBase: "https://openrouter.ai/api/v1"}, // Alias for OpenRouter/OpenAI-compatible
+	"elevenlabs":          {},
+	"claude-cli":          {},
+	"codex-cli":           {},
+	"antigravity":         {},
+	"cli":                 {},
+	"fs":                  {},
+	"memory":              {},
+	"dummy":               {},
+	"openai-tts":          {},
+	"gpt-4-v":             {defaultAPIBase: "https://api.openai.com/v1"},
+	"gpt-4o":              {defaultAPIBase: "https://api.openai.com/v1"},
+	"gpt-4-turbo":         {defaultAPIBase: "https://api.openai.com/v1"},
+	"azure":               {},
+	"azure-openai":        {},
+	"bedrock":             {},
+	"github-copilot":      {},
+	"github-copilot-chat": {},
+	"copilot":             {},
+	"claude":              {defaultAPIBase: "https://api.anthropic.com"},
 }
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
@@ -88,15 +111,15 @@ func createCodexAuthProvider() (LLMProvider, error) {
 // If no prefix is specified, it defaults to "openai".
 // Examples:
 //   - "openai/gpt-4o" -> ("openai", "gpt-4o")
-//   - "anthropic/claude-sonnet-4.6" -> ("anthropic", "claude-sonnet-4.6")
-//   - "gpt-4o" -> ("openai", "gpt-4o")  // default protocol
+//   - "anthropic/claude-3-opus" -> ("anthropic", "claude-3-opus")
+//   - "gpt-4o" -> ("openai", "gpt-4o")
 func ExtractProtocol(model string) (protocol, modelID string) {
 	model = strings.TrimSpace(model)
-	protocol, modelID, found := strings.Cut(model, "/")
+	p, m, found := strings.Cut(model, "/")
 	if !found {
 		return "openai", model
 	}
-	return protocol, modelID
+	return p, m
 }
 
 // ResolveAPIBase returns the configured API base, or the protocol default when
@@ -109,12 +132,15 @@ func ResolveAPIBase(cfg *config.ModelConfig) string {
 		return strings.TrimRight(apiBase, "/")
 	}
 	protocol, _ := ExtractProtocol(cfg.Model)
+	if cfg.Protocol != "" {
+		protocol = cfg.Protocol
+	}
 	return strings.TrimRight(getDefaultAPIBase(protocol), "/")
 }
 
 // CreateProviderFromConfig creates a provider based on the ModelConfig.
 // It uses the protocol prefix in the Model field to determine which provider to create.
-// Supported protocol families include OpenAI-compatible prefixes (e.g., openai, openrouter, groq, gemini),
+// Supported protocol families include OpenAI-compatible prefixes (e.g., openai, openrouter, groq),
 // Azure OpenAI, Amazon Bedrock, Anthropic (including messages), and various CLI/compatibility shims.
 // See the switch on protocol in this function for the authoritative list.
 // Returns the provider, the model ID (without protocol prefix), and any error.
@@ -128,6 +154,16 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	}
 
 	protocol, modelID := ExtractProtocol(cfg.Model)
+	if cfg.Protocol != "" {
+		protocol = cfg.Protocol
+		// If protocol was explicitly set, modelID should be the full model string
+		// unless it was already prefixed with the SAME protocol.
+		if p, m, found := strings.Cut(cfg.Model, "/"); found && strings.EqualFold(p, protocol) {
+			modelID = m
+		} else {
+			modelID = cfg.Model
+		}
+	}
 
 	userAgent := cfg.UserAgent
 	if userAgent == "" {
@@ -160,6 +196,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
+			cfg.CustomHeaders,
 		), modelID, nil
 
 	case "azure", "azure-openai":
@@ -217,19 +254,18 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		}
 		return provider, modelID, nil
 
-	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "gemini", "venice",
+	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "nvidia", "venice",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
 		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",
 		"coding-plan", "alibaba-coding", "qwen-coding", "mimo":
-
 		// All other OpenAI-compatible HTTP providers
-		if cfg.APIKey() == "" && cfg.APIBase == "" && !isEmptyAPIKeyAllowed(protocol) {
-			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
-		}
 		apiBase := cfg.APIBase
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
+		}
+		if cfg.APIKey() == "" && apiBase == "" && !isEmptyAPIKeyAllowed(protocol) {
+			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
 		}
 		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 			cfg.APIKey(),
@@ -239,38 +275,25 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
+			cfg.CustomHeaders,
 		), modelID, nil
 
-	case "nvidia":
+	case "gemini":
+		if cfg.APIKey() == "" && cfg.APIBase == "" {
+			return nil, "", fmt.Errorf("api_key or api_base is required for gemini protocol (model: %s)", cfg.Model)
+		}
 		apiBase := cfg.APIBase
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		p := NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+		return NewGeminiProvider(
 			cfg.APIKey(),
 			apiBase,
 			cfg.Proxy,
-			cfg.MaxTokensField,
 			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
-		)
-		// NVIDIA sometimes prefers api-key header or has issues with Bearer in some environments
-		p.SetUseAzureHeaders(false) // NVIDIA main gateway prefers standard Bearer headers; api-key causes 404s
-		return p, "nvidia/" + modelID, nil
-
-	case "azure-ai", "azure-foundry":
-		// Azure AI Foundry / Studio compatible with OpenAI API format,
-		// but using api-key header instead of Authorization: Bearer.
-		if cfg.APIKey() == "" && cfg.APIBase == "" {
-			return nil, "", fmt.Errorf("api_key or api_base is required for protocol %q", protocol)
-		}
-		return NewAzureAIProvider(
-			cfg.APIKey(),
-			cfg.APIBase,
-			cfg.Proxy,
-			userAgent,
-			cfg.RequestTimeout,
+			cfg.CustomHeaders,
 		), modelID, nil
 
 	case "minimax":
@@ -297,6 +320,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			userAgent,
 			cfg.RequestTimeout,
 			extraBody,
+			cfg.CustomHeaders,
 		), modelID, nil
 
 	case "anthropic":
@@ -324,6 +348,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
+			cfg.CustomHeaders,
 		), modelID, nil
 
 	case "anthropic-messages":

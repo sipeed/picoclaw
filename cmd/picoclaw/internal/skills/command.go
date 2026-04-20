@@ -12,7 +12,6 @@ import (
 
 type deps struct {
 	workspace    string
-	installer    *skills.SkillInstaller
 	skillsLoader *skills.SkillsLoader
 }
 
@@ -29,36 +28,18 @@ func NewSkillsCommand() *cobra.Command {
 			}
 
 			d.workspace = cfg.WorkspacePath()
-			installer, err := skills.NewSkillInstaller(
-				d.workspace,
-				cfg.Tools.Skills.Github.Token.String(),
-				cfg.Tools.Skills.Github.Proxy,
-			)
-			if err != nil {
-				return fmt.Errorf("error creating skills installer: %w", err)
-			}
-			d.installer = installer
 
 			// get global config directory and builtin skills directory
 			globalDir := filepath.Dir(internal.GetConfigPath())
 			globalSkillsDir := filepath.Join(globalDir, "skills")
 			builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
-			d.skillsLoader = skills.NewSkillsLoader(
-				d.workspace, d.workspace, globalSkillsDir, builtinSkillsDir, nil, false,
-			)
+			d.skillsLoader = skills.NewSkillsLoader(d.workspace, globalSkillsDir, builtinSkillsDir)
 
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
-	}
-
-	installerFn := func() (*skills.SkillInstaller, error) {
-		if d.installer == nil {
-			return nil, fmt.Errorf("skills installer is not initialized")
-		}
-		return d.installer, nil
 	}
 
 	loaderFn := func() (*skills.SkillsLoader, error) {
@@ -77,10 +58,10 @@ func NewSkillsCommand() *cobra.Command {
 
 	cmd.AddCommand(
 		newListCommand(loaderFn),
-		newInstallCommand(installerFn),
+		newInstallCommand(),
 		newInstallBuiltinCommand(workspaceFn),
 		newListBuiltinCommand(),
-		newRemoveCommand(installerFn),
+		newRemoveCommand(),
 		newSearchCommand(),
 		newShowCommand(loaderFn),
 	)

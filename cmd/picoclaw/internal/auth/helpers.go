@@ -17,24 +17,24 @@ import (
 )
 
 const (
-	supportedProvidersMsg = "supported providers: openai, anthropic, google-antigravity"
+	supportedProvidersMsg = "supported providers: openai, anthropic, google-antigravity, antigravity"
 	defaultAnthropicModel = "claude-sonnet-4.6"
 )
 
-func authLoginCmd(provider string, useDeviceCode bool, useOauth bool) error {
+func authLoginCmd(provider string, useDeviceCode bool, useOauth bool, noBrowser bool) error {
 	switch provider {
 	case "openai":
-		return authLoginOpenAI(useDeviceCode)
+		return authLoginOpenAI(useDeviceCode, noBrowser)
 	case "anthropic":
 		return authLoginAnthropic(useOauth)
 	case "google-antigravity", "antigravity":
-		return authLoginGoogleAntigravity()
+		return authLoginGoogleAntigravity(noBrowser)
 	default:
 		return fmt.Errorf("unsupported provider: %s (%s)", provider, supportedProvidersMsg)
 	}
 }
 
-func authLoginOpenAI(useDeviceCode bool) error {
+func authLoginOpenAI(useDeviceCode bool, noBrowser bool) error {
 	cfg := auth.OpenAIOAuthConfig()
 
 	var cred *auth.AuthCredential
@@ -43,7 +43,7 @@ func authLoginOpenAI(useDeviceCode bool) error {
 	if useDeviceCode {
 		cred, err = auth.LoginDeviceCode(cfg)
 	} else {
-		cred, err = auth.LoginBrowser(cfg)
+		cred, err = auth.LoginBrowserWithOptions(cfg, auth.LoginBrowserOptions{NoBrowser: noBrowser})
 	}
 
 	if err != nil {
@@ -92,10 +92,10 @@ func authLoginOpenAI(useDeviceCode bool) error {
 	return nil
 }
 
-func authLoginGoogleAntigravity() error {
+func authLoginGoogleAntigravity(noBrowser bool) error {
 	cfg := auth.GoogleAntigravityOAuthConfig()
 
-	cred, err := auth.LoginBrowser(cfg)
+	cred, err := auth.LoginBrowserWithOptions(cfg, auth.LoginBrowserOptions{NoBrowser: noBrowser})
 	if err != nil {
 		return fmt.Errorf("login failed: %w", err)
 	}

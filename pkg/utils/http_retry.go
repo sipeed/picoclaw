@@ -24,7 +24,7 @@ func DoRequestWithRetry(client *http.Client, req *http.Request) (*http.Response,
 	var resp *http.Response
 	var err error
 
-	for i := 0; i < maxRetries; i++ {
+	for i := range maxRetries {
 		if i > 0 && resp != nil {
 			resp.Body.Close()
 		}

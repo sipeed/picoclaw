@@ -95,14 +95,24 @@ func saveWeixinConfig(token, baseURL, proxy string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	cfg.Channels.Weixin.Enabled = true
-	cfg.Channels.Weixin.SetToken(token)
-	const defaultBase = "https://ilinkai.weixin.qq.com/"
-	if baseURL != "" && baseURL != defaultBase {
-		cfg.Channels.Weixin.BaseURL = baseURL
+	bc := cfg.Channels.GetByType(config.ChannelWeixin)
+	if bc == nil {
+		bc = &config.Channel{Type: config.ChannelWeixin}
+		cfg.Channels[config.ChannelWeixin] = bc
 	}
-	if proxy != "" {
-		cfg.Channels.Weixin.Proxy = proxy
+	bc.Enabled = true
+
+	if decoded, err := bc.GetDecoded(); err == nil && decoded != nil {
+		if weixinCfg, ok := decoded.(*config.WeixinSettings); ok {
+			weixinCfg.Token = *config.NewSecureString(token)
+			const defaultBase = "https://ilinkai.weixin.qq.com/"
+			if baseURL != "" && baseURL != defaultBase {
+				weixinCfg.BaseURL = baseURL
+			}
+			if proxy != "" {
+				weixinCfg.Proxy = proxy
+			}
+		}
 	}
 
 	return config.SaveConfig(cfgPath, cfg)

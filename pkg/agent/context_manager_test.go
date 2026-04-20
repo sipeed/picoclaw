@@ -465,7 +465,7 @@ func TestLegacyCompact_PostTurn_ExceedsMessageThreshold(t *testing.T) {
 		},
 	}
 	msgBus := bus.NewMessageBus()
-	al := NewAgentLoop(cfg, msgBus, &simpleMockProvider{response: "summary"})
+	al := NewAgentLoop(cfg, "", msgBus, &simpleMockProvider{response: "summary"})
 
 	defaultAgent := al.registry.GetDefaultAgent()
 	if defaultAgent == nil {
@@ -617,7 +617,7 @@ func TestIngestCalledDuringTurn(t *testing.T) {
 	}
 
 	msgBus := bus.NewMessageBus()
-	al := NewAgentLoop(cfg, msgBus, &simpleMockProvider{response: "done"})
+	al := NewAgentLoop(cfg, "", msgBus, &simpleMockProvider{response: "done"})
 	defaultAgent := al.registry.GetDefaultAgent()
 	if defaultAgent == nil {
 		t.Fatal("expected default agent")
@@ -690,6 +690,7 @@ func (m *noopContextManager) Assemble(_ context.Context, req *AssembleRequest) (
 }
 func (m *noopContextManager) Compact(_ context.Context, _ *CompactRequest) error { return nil }
 func (m *noopContextManager) Ingest(_ context.Context, _ *IngestRequest) error   { return nil }
+func (m *noopContextManager) Clear(_ context.Context, _ string) error            { return nil }
 
 // trackingContextManager tracks call counts for each method.
 type trackingContextManager struct {
@@ -726,6 +727,8 @@ func (m *trackingContextManager) Ingest(_ context.Context, req *IngestRequest) e
 	return nil
 }
 
+func (m *trackingContextManager) Clear(_ context.Context, _ string) error { return nil }
+
 // resetCMRegistry clears the global factory registry and returns a cleanup
 // function that restores the original state after the test.
 func resetCMRegistry() func() {
@@ -760,5 +763,5 @@ func testConfig(t *testing.T) *config.Config {
 
 func newCMTestAgentLoop(cfg *config.Config) *AgentLoop {
 	msgBus := bus.NewMessageBus()
-	return NewAgentLoop(cfg, msgBus, &simpleMockProvider{response: "test"})
+	return NewAgentLoop(cfg, "", msgBus, &simpleMockProvider{response: "test"})
 }

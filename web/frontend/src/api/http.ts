@@ -1,14 +1,14 @@
-import { isLauncherLoginPathname } from "@/lib/launcher-login-path"
+import { isLauncherAuthPathname } from "@/lib/launcher-login-path"
 
-function isLauncherLoginPath(): boolean {
+function isLauncherAuthPath(): boolean {
   if (typeof globalThis.location === "undefined") {
     return false
   }
-  if (isLauncherLoginPathname(globalThis.location.pathname || "/")) {
+  if (isLauncherAuthPathname(globalThis.location.pathname || "/")) {
     return true
   }
   try {
-    return isLauncherLoginPathname(
+    return isLauncherAuthPathname(
       new URL(globalThis.location.href).pathname || "/",
     )
   } catch {
@@ -18,7 +18,7 @@ function isLauncherLoginPath(): boolean {
 
 /**
  * Same-origin fetch that sends cookies; redirects to launcher login on 401 JSON responses.
- * Skips redirect while already on the login page to avoid reload loops (e.g. gateway poll).
+ * Skips redirect while already on an auth page (login or setup) to avoid reload loops.
  */
 export async function launcherFetch(
   input: RequestInfo | URL,
@@ -33,7 +33,7 @@ export async function launcherFetch(
     if (
       ct.includes("application/json") &&
       typeof globalThis.location !== "undefined" &&
-      !isLauncherLoginPath()
+      !isLauncherAuthPath()
     ) {
       globalThis.location.assign("/launcher-login")
     }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path"
+	"strings"
 	"sync"
 	"time"
 )
@@ -42,11 +44,25 @@ type InstallResult struct {
 	Summary          string
 }
 
+// RegistryProvider creates a registry instance from configuration.
+// Different hubs can implement this to plug into the shared manager.
+type RegistryProvider interface {
+	IsEnabled() bool
+	BuildRegistry() SkillRegistry
+}
+
 // SkillRegistry is the interface that all skill registries must implement.
 // Each registry represents a different source of skills (e.g., clawhub.ai)
 type SkillRegistry interface {
 	// Name returns the unique name of this registry (e.g., "clawhub").
 	Name() string
+	// ResolveInstallDirName returns the directory name to use under workspace/skills
+	// for a given install target. Different registries can interpret the target
+	// differently (for example, a slug vs owner/repo/path).
+	ResolveInstallDirName(target string) (string, error)
+	// SkillURL returns the web URL for a skill slug if the registry exposes one.
+	// version is optional and can be used by registries whose URLs depend on a ref.
+	SkillURL(slug, version string) string
 	// Search searches the registry for skills matching the query.
 	Search(ctx context.Context, query string, limit int) ([]SearchResult, error)
 	// GetSkillMeta retrieves metadata for a specific skill by slug.
@@ -57,10 +73,31 @@ type SkillRegistry interface {
 	DownloadAndInstall(ctx context.Context, slug, version, targetDir string) (*InstallResult, error)
 }
 
+// InstallTargetNormalizer is implemented by registries that can canonicalize
+// user-provided install targets into a stable slug for origin metadata.
+type InstallTargetNormalizer interface {
+	NormalizeInstallTarget(target string) string
+}
+
+func NormalizeInstallTargetForRegistryInstance(registry SkillRegistry, target string) string {
+	if registry == nil || target == "" {
+		return target
+	}
+	normalizer, ok := registry.(InstallTargetNormalizer)
+	if !ok {
+		return target
+	}
+	normalized := normalizer.NormalizeInstallTarget(target)
+	if normalized == "" {
+		return target
+	}
+	return normalized
+}
+
 // RegistryConfig holds configuration for all skill registries.
 // This is the input to NewRegistryManagerFromConfig.
 type RegistryConfig struct {
-	ClawHub               ClawHubConfig
+	Providers             []RegistryProvider
 	MaxConcurrentSearches int
 }
 
@@ -85,6 +122,29 @@ type RegistryManager struct {
 	mu            sync.RWMutex
 }
 
+func ValidateInstallTarget(target string) error {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return fmt.Errorf("identifier is required and must be a non-empty string")
+	}
+	if strings.Contains(target, "\\") {
+		return fmt.Errorf("identifier %q contains invalid path separators", target)
+	}
+	clean := path.Clean("/" + target)
+	if clean == "/" || strings.HasPrefix(clean, "/../") || clean == "/.." {
+		return fmt.Errorf("identifier %q contains invalid path traversal", target)
+	}
+	if strings.Contains(target, "//") {
+		return fmt.Errorf("identifier %q contains empty path segments", target)
+	}
+	for _, segment := range strings.Split(strings.Trim(target, "/"), "/") {
+		if segment == "." || segment == ".." || segment == "" {
+			return fmt.Errorf("identifier %q contains invalid path segments", target)
+		}
+	}
+	return nil
+}
+
 // NewRegistryManager creates an empty RegistryManager.
 func NewRegistryManager() *RegistryManager {
 	return &RegistryManager{
@@ -100,8 +160,15 @@ func NewRegistryManagerFromConfig(cfg RegistryConfig) *RegistryManager {
 	if cfg.MaxConcurrentSearches > 0 {
 		rm.maxConcurrent = cfg.MaxConcurrentSearches
 	}
-	if cfg.ClawHub.Enabled {
-		rm.AddRegistry(NewClawHubRegistry(cfg.ClawHub))
+	for _, provider := range cfg.Providers {
+		if provider == nil || !provider.IsEnabled() {
+			continue
+		}
+		registry := provider.BuildRegistry()
+		if registry == nil {
+			continue
+		}
+		rm.AddRegistry(registry)
 	}
 	return rm
 }

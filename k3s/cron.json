@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "freeride-auto-daily",
+      "name": "Daily FreeRide Update",
+      "enabled": true,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 3 * * *"
+      },
+      "payload": {
+        "kind": "agent_turn",
+        "message": "freeride auto",
+        "command": "",
+        "channel": "cli",
+        "to": "cron"
+      },
+      "state": {},
+      "createdAtMs": 1713511200000,
+      "updatedAtMs": 1713511200000,
+      "deleteAfterRun": false
+    },
+    {
+      "id": "morning-news-summary",
+      "name": "Morning News Summary",
+      "enabled": true,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 8 * * *"
+      },
+      "payload": {
+        "kind": "agent_turn",
+        "message": "Search the web for the latest AI news and provide a concise summary.",
+        "channel": "telegram",
+        "chat_id": "8271300679",
+        "to": "cron"
+      },
+      "state": {},
+      "createdAtMs": 1713511200000,
+      "updatedAtMs": 1713511200000,
+      "deleteAfterRun": false
+    }
+  ]
+}

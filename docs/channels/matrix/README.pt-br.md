@@ -1,4 +1,4 @@
-> Voltar ao [README](../../../README.pt-br.md)
+> Voltar ao [README](../../project/README.pt-br.md)
 
 # Guia de Configuração do Canal Matrix
 
@@ -8,9 +8,10 @@ Adicione isto ao `config.json`:
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "matrix": {
       "enabled": true,
+      "type": "matrix",
       "homeserver": "https://matrix.org",
       "user_id": "@your-bot:matrix.org",
       "access_token": "YOUR_MATRIX_ACCESS_TOKEN",

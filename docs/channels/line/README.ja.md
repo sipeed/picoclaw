@@ -1,4 +1,4 @@
-> [README](../../../README.ja.md) に戻る
+> [README](../../project/README.ja.md) に戻る
 
 # Line
 
@@ -8,9 +8,10 @@ PicoClaw は LINE Messaging API と Webhook コールバックを通じて LINE 
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "line": {
       "enabled": true,
+      "type": "line",
       "channel_secret": "YOUR_CHANNEL_SECRET",
       "channel_access_token": "YOUR_CHANNEL_ACCESS_TOKEN",
       "webhook_path": "/webhook/line",
