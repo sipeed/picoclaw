@@ -110,7 +110,27 @@ func (t *FreeRideTool) fetchFreeModels(ctx context.Context) ([]openRouterModel, 
 
 	var freeModels []openRouterModel
 	for _, m := range wrapper.Data {
+		// Only consider free models
 		if m.Pricing.Prompt == "0" || m.Pricing.Prompt == "0.0" || m.Pricing.Prompt == "0.00" {
+			// CRITICAL: PeakClaw requires tool support for its steering logic.
+			// Filter out models that don't explicitly support function calling.
+			hasTools := false
+			for _, p := range m.SupportedParameters {
+				if p == "tools" {
+					hasTools = true
+					break
+				}
+			}
+			if !hasTools {
+				continue
+			}
+
+			// Blacklist known tool-blind models with inaccurate metadata
+			lowerID := strings.ToLower(m.ID)
+			if strings.Contains(lowerID, "lyria") || strings.Contains(lowerID, "liquid") {
+				continue
+			}
+
 			freeModels = append(freeModels, m)
 		}
 	}

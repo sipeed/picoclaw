@@ -31,8 +31,6 @@ var protocolMetaByName = map[string]protocolMeta{
 	"novita":                   {defaultAPIBase: "https://api.novita.ai/openai"},
 	"groq":                     {defaultAPIBase: "https://api.groq.com/openai/v1"},
 	"zhipu":                    {defaultAPIBase: "https://open.bigmodel.cn/api/paas/v4"},
-	"gemini":                   {defaultAPIBase: "https://generativelanguage.googleapis.com/v1beta"},
-	"nvidia":                   {defaultAPIBase: "https://integrate.api.nvidia.com/v1"},
 	"ollama":                   {defaultAPIBase: "http://localhost:11434/v1", emptyAPIKeyAllowed: true},
 	"moonshot":                 {defaultAPIBase: "https://api.moonshot.cn/v1"},
 	"shengsuanyun":             {defaultAPIBase: "https://router.shengsuanyun.com/api/v1"},
@@ -61,7 +59,6 @@ var protocolMetaByName = map[string]protocolMeta{
 
 	// Specialty and Custom Protocols
 	"anthropic":           {defaultAPIBase: "https://api.anthropic.com"},
-	"google":              {defaultAPIBase: "https://openrouter.ai/api/v1"}, // Alias for OpenRouter/OpenAI-compatible
 	"elevenlabs":          {},
 	"claude-cli":          {},
 	"codex-cli":           {},
@@ -107,19 +104,38 @@ func createCodexAuthProvider() (LLMProvider, error) {
 	return NewCodexProviderWithTokenSource(cred.AccessToken, cred.AccountID, createCodexTokenSource()), nil
 }
 
+func isKnownProtocol(p string) bool {
+	if _, ok := protocolMetaByName[p]; ok {
+		return true
+	}
+	switch p {
+	case "anthropic", "azure", "azure-openai", "bedrock", "github-copilot", "github-copilot-chat", "copilot", "claude":
+		return true
+	case "antigravity", "claude-cli", "codex-cli", "cli", "fs", "memory", "dummy": // CLI and special shims
+		return true
+	case "elevenlabs", "openai-tts":
+		return true
+	}
+	return false
+}
+
 // ExtractProtocol extracts the protocol prefix and model identifier from a model string.
 // If no prefix is specified, it defaults to "openai".
-// Examples:
-//   - "openai/gpt-4o" -> ("openai", "gpt-4o")
-//   - "anthropic/claude-3-opus" -> ("anthropic", "claude-3-opus")
-//   - "gpt-4o" -> ("openai", "gpt-4o")
 func ExtractProtocol(model string) (protocol, modelID string) {
 	model = strings.TrimSpace(model)
 	p, m, found := strings.Cut(model, "/")
 	if !found {
 		return "openai", model
 	}
-	return p, m
+
+	// Only treat as protocol if it's in our known list.
+	// This prevents organizational model IDs like "google/gemma" or "anthropic/claude"
+	// from having their prefixes stripped when used with OpenAI-compatible providers (OpenRouter).
+	if isKnownProtocol(p) {
+		return p, m
+	}
+
+	return "openai", model
 }
 
 // ResolveAPIBase returns the configured API base, or the protocol default when
@@ -158,7 +174,8 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		protocol = cfg.Protocol
 		// If protocol was explicitly set, modelID should be the full model string
 		// unless it was already prefixed with the SAME protocol.
-		if p, m, found := strings.Cut(cfg.Model, "/"); found && strings.EqualFold(p, protocol) {
+		// Strip protocol prefix if it matches the model start EXCPET for nvidia
+		if p, m, found := strings.Cut(cfg.Model, "/"); found && strings.EqualFold(p, protocol) && !strings.EqualFold(protocol, "nvidia") {
 			modelID = m
 		} else {
 			modelID = cfg.Model

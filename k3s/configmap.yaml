@@ -22,15 +22,12 @@ data:
             "/home/picoclaw/.picoclaw",
             "/tmp"
           ],
-          "provider": "openai",
-          "model_name": "google-gemma-2-9b-it:free",
+          "provider": "nvidia",
+          "model_name": "nemotron-120b",
           "model_fallbacks": [
-            "google-gemma-2-9b-it:free",
-            "qwen-qwen-2.5-72b-instruct:free",
-            "nvidia-nemotron-4-340b-instruct:free",
-            "mistralai-pixtral-12b:free",
-            "openrouter-elephant-alpha",
-            "google-gemma-4-26b-a4b-it:free"
+            "meta-llama-llama-3.3-70b-instruct:free",
+            "qwen-qwen3-coder:free",
+            "openrouter-elephant-alpha"
           ],
           "max_tokens": 32768,
           "max_tool_iterations": 50,
@@ -502,32 +499,64 @@ data:
           "request_timeout": 45
         },
         {
-          "model_name": "google-gemma-4-26b-a4b-it:free",
-          "model": "google/gemma-4-26b-a4b-it:free",
-          "protocol": "openrouter",
-          "enabled": true,
-          "api_keys": [
-            "env://OPENROUTER_API_KEY"
-          ],
-          "request_timeout": 45
-        },
-        {
-          "model_name": "google-gemma-4-31b-it:free",
-          "model": "google/gemma-4-31b-it:free",
-          "protocol": "openrouter",
-          "enabled": true,
-          "api_keys": [
-            "env://OPENROUTER_API_KEY"
-          ],
-          "request_timeout": 45
-        },
-        {
-          "model_name": "nvidia-nemotron-3-super-120b-a12b:free",
-          "model": "nvidia/nemotron-3-super-120b-a12b:free",
-          "protocol": "openrouter",
+          "model_name": "nemotron-120b",
+          "model": "nvidia/nemotron-3-super-120b-a12b",
+          "protocol": "nvidia",
+          "api_base": "https://integrate.api.nvidia.com/v1",
           "enabled": true,
           "api_keys": [
             "env://NVIDIA_API_KEY"
+          ],
+          "request_timeout": 60
+        },
+        {
+          "model_name": "nvidia-nemotron-70b",
+          "model": "nvidia/llama-3.1-nemotron-70b-instruct",
+          "protocol": "nvidia",
+          "api_base": "https://integrate.api.nvidia.com/v1",
+          "enabled": true,
+          "api_keys": [
+            "env://NVIDIA_API_KEY"
+          ],
+          "request_timeout": 60
+        },
+        {
+          "model_name": "google-gemma-3-27b-it:free",
+          "model": "google/gemma-3-27b-it:free",
+          "protocol": "openrouter",
+          "enabled": true,
+          "api_keys": [
+            "env://OPENROUTER_API_KEY"
+          ],
+          "request_timeout": 45
+        },
+        {
+          "model_name": "google-gemma-3-12b-it:free",
+          "model": "google/gemma-3-12b-it:free",
+          "protocol": "openrouter",
+          "enabled": true,
+          "api_keys": [
+            "env://OPENROUTER_API_KEY"
+          ],
+          "request_timeout": 45
+        },
+        {
+          "model_name": "qwen-qwen3-coder:free",
+          "model": "qwen/qwen3-coder:free",
+          "protocol": "openrouter",
+          "enabled": true,
+          "api_keys": [
+            "env://OPENROUTER_API_KEY"
+          ],
+          "request_timeout": 45
+        },
+        {
+          "model_name": "meta-llama-llama-3.3-70b-instruct:free",
+          "model": "meta-llama/llama-3.3-70b-instruct:free",
+          "protocol": "openrouter",
+          "enabled": true,
+          "api_keys": [
+            "env://OPENROUTER_API_KEY"
           ],
           "request_timeout": 45
         },
@@ -542,12 +571,27 @@ data:
           "request_timeout": 45
         },
         {
+          "model_name": "azure-gpt5",
+          "model": "azure/my-gpt5-deployment",
+          "api_base": "https://your-resource.openai.azure.com"
+        },
+        {
+          "model_name": "nvidia-nemotron-3-super-120b-a12b:free",
+          "model": "nvidia/nemotron-3-super-120b-a12b:free",
+          "protocol": "openrouter",
+          "enabled": true,
+          "api_keys": [
+            "env://OPENROUTER_API_KEY"
+          ],
+          "request_timeout": 45
+        },
+        {
           "model_name": "nvidia-nemotron-nano-9b-v2:free",
           "model": "nvidia/nemotron-nano-9b-v2:free",
           "protocol": "openrouter",
           "enabled": true,
           "api_keys": [
-            "env://NVIDIA_API_KEY"
+            "env://OPENROUTER_API_KEY"
           ],
           "request_timeout": 45
         },
@@ -574,26 +618,6 @@ data:
         {
           "model_name": "arcee-ai-trinity-large-preview:free",
           "model": "arcee-ai/trinity-large-preview:free",
-          "protocol": "openrouter",
-          "enabled": true,
-          "api_keys": [
-            "env://OPENROUTER_API_KEY"
-          ],
-          "request_timeout": 45
-        },
-        {
-          "model_name": "google-lyria-3-pro-preview",
-          "model": "google/lyria-3-pro-preview",
-          "protocol": "openrouter",
-          "enabled": true,
-          "api_keys": [
-            "env://OPENROUTER_API_KEY"
-          ],
-          "request_timeout": 45
-        },
-        {
-          "model_name": "google-lyria-3-clip-preview",
-          "model": "google/lyria-3-clip-preview",
           "protocol": "openrouter",
           "enabled": true,
           "api_keys": [

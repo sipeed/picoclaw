@@ -37,7 +37,20 @@ func candidateFromModelConfig(
 		return providers.FallbackCandidate{}, false
 	}
 
-	ref := providers.ParseModelRef(ensureProtocolModel(mc.Model), defaultProvider)
+	modelID := mc.Model
+	protocol := mc.Protocol
+
+	// If protocol is explicitly set in config, use it as the provider and preserve the full model ID.
+	if protocol != "" {
+		return providers.FallbackCandidate{
+			Provider:    providers.NormalizeProvider(protocol),
+			Model:       modelID,
+			RPM:         mc.RPM,
+			IdentityKey: modelConfigIdentityKey(mc),
+		}, true
+	}
+
+	ref := providers.ParseModelRef(ensureProtocolModel(modelID), defaultProvider)
 	if ref == nil {
 		return providers.FallbackCandidate{}, false
 	}

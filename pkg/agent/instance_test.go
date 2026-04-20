@@ -369,7 +369,7 @@ func TestPopulateCandidateProviders_ResolvesProtocolPrefix(t *testing.T) {
 	}
 	populateCandidateProvidersFromNames(cfg, workspace, []string{"gemma"}, out)
 
-	key := providers.ModelKey("gemini", "gemma-3-27b-it")
+	key := providers.ModelKey("openai", "gemini/gemma-3-27b-it")
 	if out[key] == nil {
 		t.Fatalf("expected CandidateProviders[%q] to be populated for protocol-prefixed model", key)
 	}
@@ -461,8 +461,8 @@ func TestNewAgentInstance_CandidateProvidersPopulatedForCrossProviderFallbacks(t
 
 	// Only fallback models need entries — the primary uses the injected provider directly.
 	wantKeys := []string{
-		providers.ModelKey("gemini", "gemma-3-27b-it"),
-		providers.ModelKey("gemini", "gemini-2.5-flash-lite"),
+		providers.ModelKey("openai", "gemini/gemma-3-27b-it"),
+		providers.ModelKey("openai", "gemini/gemini-2.5-flash-lite"),
 	}
 
 	for _, key := range wantKeys {

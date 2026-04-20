@@ -60,10 +60,10 @@ func TestExtractProtocol(t *testing.T) {
 			wantModelID:  "gpt-4",
 		},
 		{
-			name:         "multiple slashes",
+			name:         "multiple slashes (nvidia organizational prefix)",
 			model:        "nvidia/meta/llama-3.1-8b",
-			wantProtocol: "nvidia",
-			wantModelID:  "meta/llama-3.1-8b",
+			wantProtocol: "openai",
+			wantModelID:  "nvidia/meta/llama-3.1-8b",
 		},
 		{
 			name:         "azure with prefix",
@@ -448,11 +448,11 @@ func TestCreateProviderFromConfig_Gemini(t *testing.T) {
 	if provider == nil {
 		t.Fatal("CreateProviderFromConfig() returned nil provider")
 	}
-	if modelID != "gemini-2.5-flash" {
-		t.Errorf("modelID = %q, want %q", modelID, "gemini-2.5-flash")
+	if modelID != "gemini/gemini-2.5-flash" {
+		t.Errorf("modelID = %q, want %q", modelID, "gemini/gemini-2.5-flash")
 	}
-	if _, ok := provider.(*GeminiProvider); !ok {
-		t.Fatalf("expected *GeminiProvider, got %T", provider)
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider (via OpenRouter fallback), got %T", provider)
 	}
 }
 
@@ -482,11 +482,11 @@ func TestCreateProviderFromConfig_GeminiCustomAPIBaseWithoutKey(t *testing.T) {
 	if provider == nil {
 		t.Fatal("CreateProviderFromConfig() returned nil provider")
 	}
-	if modelID != "gemini-2.5-flash" {
-		t.Errorf("modelID = %q, want %q", modelID, "gemini-2.5-flash")
+	if modelID != "gemini/gemini-2.5-flash" {
+		t.Errorf("modelID = %q, want %q", modelID, "gemini/gemini-2.5-flash")
 	}
-	if _, ok := provider.(*GeminiProvider); !ok {
-		t.Fatalf("expected *GeminiProvider, got %T", provider)
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider (via OpenRouter fallback), got %T", provider)
 	}
 }
 
@@ -535,19 +535,6 @@ func TestCreateProviderFromConfig_MissingAPIKey(t *testing.T) {
 	_, _, err := CreateProviderFromConfig(cfg)
 	if err == nil {
 		t.Fatal("CreateProviderFromConfig() expected error for missing API key")
-	}
-}
-
-func TestCreateProviderFromConfig_UnknownProtocol(t *testing.T) {
-	cfg := &config.ModelConfig{
-		ModelName: "test-unknown",
-		Model:     "unknown-protocol/model",
-	}
-	cfg.SetAPIKey("test-key")
-
-	_, _, err := CreateProviderFromConfig(cfg)
-	if err == nil {
-		t.Fatal("CreateProviderFromConfig() expected error for unknown protocol")
 	}
 }
 

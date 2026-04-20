@@ -15,8 +15,8 @@
         "/home/picoclaw/.picoclaw",
         "/tmp"
       ],
-      "provider": "openai",
-      "model_name": "google-gemma-4-26b-a4b-it:free",
+      "provider": "nvidia",
+      "model_name": "nemotron-120b",
       "model_fallbacks": [
         "google-gemma-4-26b-a4b-it:free",
         "google-gemma-4-31b-it:free",
@@ -487,6 +487,17 @@
         "env://OPENROUTER_API_KEY"
       ],
       "request_timeout": 45
+    },
+    {
+      "model_name": "nemotron-120b",
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "protocol": "nvidia",
+      "api_base": "https://integrate.api.nvidia.com/v1",
+      "enabled": true,
+      "api_keys": [
+        "env://NVIDIA_API_KEY"
+      ],
+      "request_timeout": 60
     },
     {
       "model_name": "nvidia-nemotron-3-super-120b-a12b:free",

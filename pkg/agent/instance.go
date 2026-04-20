@@ -270,7 +270,15 @@ func populateCandidateProvidersFromNames(
 				map[string]any{"name": name, "error": err.Error()})
 			continue
 		}
-		protocol, modelID := providers.ExtractProtocol(strings.TrimSpace(mc.Model))
+
+		modelID := mc.Model
+		protocol := mc.Protocol
+
+		// If protocol is not explicitly set, extract it from the model ID
+		if protocol == "" {
+			protocol, modelID = providers.ExtractProtocol(strings.TrimSpace(mc.Model))
+		}
+
 		key := providers.ModelKey(providers.NormalizeProvider(protocol), modelID)
 		if _, exists := out[key]; exists {
 			continue

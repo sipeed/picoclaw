@@ -1413,6 +1413,7 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 			additionalEntry := &ModelConfig{
 				ModelName:      expandedName,
 				Model:          m.Model,
+				Protocol:       m.Protocol,
 				APIBase:        m.APIBase,
 				APIKeys:        SimpleSecureStrings(keys[i]),
 				Proxy:          m.Proxy,
@@ -1426,6 +1427,7 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 				ExtraBody:      m.ExtraBody,
 				CustomHeaders:  m.CustomHeaders,
 				UserAgent:      m.UserAgent,
+				Enabled:        m.Enabled,
 				isVirtual:      true,
 			}
 			expanded = append(expanded, additionalEntry)
@@ -1436,6 +1438,7 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 		primaryEntry := &ModelConfig{
 			ModelName:      originalName,
 			Model:          m.Model,
+			Protocol:       m.Protocol,
 			APIBase:        m.APIBase,
 			Proxy:          m.Proxy,
 			AuthMethod:     m.AuthMethod,
@@ -1449,6 +1452,7 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 			CustomHeaders:  m.CustomHeaders,
 			UserAgent:      m.UserAgent,
 			APIKeys:        SimpleSecureStrings(keys[0]),
+			Enabled:        m.Enabled,
 		}
 
 		// Prepend new fallbacks to existing ones

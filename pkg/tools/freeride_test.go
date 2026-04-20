@@ -27,7 +27,8 @@ func TestFreeRideTool_List(t *testing.T) {
 						"prompt":     "0",
 						"completion": "0",
 					},
-					"created": 1700000000,
+					"created":              1700000000,
+					"supported_parameters": []string{"tools"},
 				},
 				{
 					"id":             "meta-llama/llama-3-8b",
@@ -37,7 +38,8 @@ func TestFreeRideTool_List(t *testing.T) {
 						"prompt":     "0.0001",
 						"completion": "0.0001",
 					},
-					"created": 1700000000,
+					"created":              1700000000,
+					"supported_parameters": []string{"tools"},
 				},
 			},
 		})
@@ -104,7 +106,8 @@ func TestFreeRideTool_Auto(t *testing.T) {
 						"prompt":     "0",
 						"completion": "0",
 					},
-					"created": 1700000000,
+					"created":              1700000000,
+					"supported_parameters": []string{"tools"},
 				},
 			},
 		})
