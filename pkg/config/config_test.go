@@ -1259,6 +1259,11 @@ func TestFlexibleStringSlice_UnmarshalJSON(t *testing.T) {
 		expected []string
 	}{
 		{
+			name:     "null",
+			input:    `null`,
+			expected: nil,
+		},
+		{
 			name:     "single string",
 			input:    `"Thinking..."`,
 			expected: []string{"Thinking..."},
@@ -1285,6 +1290,12 @@ func TestFlexibleStringSlice_UnmarshalJSON(t *testing.T) {
 			var f FlexibleStringSlice
 			if err := json.Unmarshal([]byte(tt.input), &f); err != nil {
 				t.Fatalf("json.Unmarshal(%s) error = %v", tt.input, err)
+			}
+			if tt.expected == nil {
+				if f != nil {
+					t.Fatalf("json.Unmarshal(%s) = %#v, want nil slice", tt.input, f)
+				}
+				return
 			}
 			if len(f) != len(tt.expected) {
 				t.Fatalf("json.Unmarshal(%s) len = %d, want %d", tt.input, len(f), len(tt.expected))
