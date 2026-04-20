@@ -76,6 +76,14 @@ func RegisterBuiltinHook(name string, factory BuiltinHookFactory) error {
 	return nil
 }
 
+// IsBuiltinHookRegistered returns true if a builtin hook factory is registered with the given name.
+func IsBuiltinHookRegistered(name string) bool {
+	builtinHookRegistryMu.RLock()
+	defer builtinHookRegistryMu.RUnlock()
+	_, exists := builtinHookRegistry[name]
+	return exists
+}
+
 func unregisterBuiltinHook(name string) {
 	if name == "" {
 		return
