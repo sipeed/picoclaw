@@ -33,7 +33,7 @@ func (t *MessageTool) Name() string {
 }
 
 func (t *MessageTool) Description() string {
-	return "Send a message to user on a chat channel. Use this when you want to communicate something."
+	return "Send a message to a user on a specific channel. USE sparingly: only for background notifications, out-of-band alerts, or when targetting a DIFFERENT chat. For regular conversation replies, return content directly as text."
 }
 
 func (t *MessageTool) Parameters() map[string]any {
