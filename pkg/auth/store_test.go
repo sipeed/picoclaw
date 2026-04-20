@@ -7,13 +7,15 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 func setTestAuthHome(t *testing.T) string {
 	t.Helper()
 
 	tmpDir := t.TempDir()
-	t.Setenv("PICOCLAW_HOME", filepath.Join(tmpDir, ".picoclaw"))
+	t.Setenv(config.EnvHome, filepath.Join(tmpDir, ".picoclaw"))
 	return tmpDir
 }
 
@@ -294,6 +296,69 @@ func TestLoadStoreMergesAntigravityAliasesPreferringNewerExpiry(t *testing.T) {
 	}
 	if !cred.ExpiresAt.Equal(refreshedExpiry) {
 		t.Fatalf("ExpiresAt = %v, want %v", cred.ExpiresAt, refreshedExpiry)
+	}
+}
+
+func TestLoadStorePrefersCanonicalKeyWhenExpiryMatchesAlias(t *testing.T) {
+	tmpDir := setTestAuthHome(t)
+
+	expiresAt := time.Date(2026, 4, 16, 12, 0, 0, 0, time.UTC)
+	store := map[string]any{
+		"credentials": map[string]any{
+			"antigravity": map[string]any{
+				"access_token":  "legacy-token",
+				"refresh_token": "legacy-refresh",
+				"expires_at":    expiresAt.Format(time.RFC3339),
+				"provider":      "antigravity",
+				"auth_method":   "oauth",
+				"email":         "legacy@example.com",
+			},
+			" Google-Antigravity ": map[string]any{
+				"access_token": "fresh-token",
+				"expires_at":   expiresAt.Format(time.RFC3339),
+				"provider":     " Google-Antigravity ",
+				"auth_method":  "oauth",
+				"project_id":   "project-2",
+			},
+		},
+	}
+	data, err := json.Marshal(store)
+	if err != nil {
+		t.Fatalf("json.Marshal() error: %v", err)
+	}
+	path := filepath.Join(tmpDir, ".picoclaw", "auth.json")
+	err = os.MkdirAll(filepath.Dir(path), 0o755)
+	if err != nil {
+		t.Fatalf("MkdirAll() error: %v", err)
+	}
+	err = os.WriteFile(path, data, 0o600)
+	if err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	loaded, err := LoadStore()
+	if err != nil {
+		t.Fatalf("LoadStore() error: %v", err)
+	}
+	if len(loaded.Credentials) != 1 {
+		t.Fatalf("credential count = %d, want 1", len(loaded.Credentials))
+	}
+
+	cred := loaded.Credentials["google-antigravity"]
+	if cred == nil {
+		t.Fatal("google-antigravity credential missing")
+	}
+	if cred.AccessToken != "fresh-token" {
+		t.Fatalf("AccessToken = %q, want %q", cred.AccessToken, "fresh-token")
+	}
+	if cred.RefreshToken != "legacy-refresh" {
+		t.Fatalf("RefreshToken = %q, want %q", cred.RefreshToken, "legacy-refresh")
+	}
+	if cred.Email != "legacy@example.com" {
+		t.Fatalf("Email = %q, want %q", cred.Email, "legacy@example.com")
+	}
+	if cred.ProjectID != "project-2" {
+		t.Fatalf("ProjectID = %q, want %q", cred.ProjectID, "project-2")
 	}
 }
 

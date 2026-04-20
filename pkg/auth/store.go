@@ -142,6 +142,7 @@ func normalizeStore(store *AuthStore) {
 	canonicalFlags := make(map[string]bool, len(store.Credentials))
 
 	for provider, cred := range store.Credentials {
+		normalizedProvider := strings.ToLower(strings.TrimSpace(provider))
 		canonical := canonicalProvider(provider)
 		normalizedCred := cloneCredential(cred)
 		if normalizedCred != nil {
@@ -153,7 +154,7 @@ func normalizeStore(store *AuthStore) {
 
 		current := normalized[canonical]
 		currentCanonical := canonicalFlags[canonical]
-		candidateCanonical := provider == canonical
+		candidateCanonical := normalizedProvider == canonical
 
 		if shouldPreferCredential(normalizedCred, candidateCanonical, current, currentCanonical) {
 			normalized[canonical] = mergeCredentials(normalizedCred, current)
