@@ -8,7 +8,16 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
+
+// IsBuiltinHookRegistered returns true if a builtin hook factory is registered with the given name.
+func IsBuiltinHookRegistered(name string) bool {
+	builtinHookRegistryMu.RLock()
+	defer builtinHookRegistryMu.RUnlock()
+	_, exists := builtinHookRegistry[name]
+	return exists
+}
 
 type hookRuntime struct {
 	initOnce sync.Once
@@ -143,19 +152,25 @@ func (al *AgentLoop) loadConfiguredHooks(ctx context.Context) (err error) {
 		spec := al.cfg.Hooks.Builtins[name]
 		factory, ok := lookupBuiltinHook(name)
 		if !ok {
+			logger.WarnCF("agent", "Builtin hook not registered", map[string]any{"hook": name})
 			return fmt.Errorf("builtin hook %q is not registered", name)
 		}
 
+		logger.DebugCF("agent", "Executing builtin hook factory", map[string]any{"hook": name})
 		hook, factoryErr := factory(ctx, spec)
 		if factoryErr != nil {
+			logger.ErrorCF("agent", "Builtin hook factory failed", map[string]any{"hook": name, "error": factoryErr.Error()})
 			return fmt.Errorf("build builtin hook %q: %w", name, factoryErr)
 		}
+		logger.DebugCF("agent", "Builtin hook factory finished", map[string]any{"hook": name})
+
 		if err := al.MountHook(HookRegistration{
 			Name:     name,
 			Priority: spec.Priority,
 			Source:   HookSourceInProcess,
 			Hook:     hook,
 		}); err != nil {
+			logger.ErrorCF("agent", "Failed to mount builtin hook", map[string]any{"hook": name, "error": err.Error()})
 			return fmt.Errorf("mount builtin hook %q: %w", name, err)
 		}
 		mounted = append(mounted, name)

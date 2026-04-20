@@ -55,7 +55,7 @@ func (c *Checker) ApproveTool(ctx context.Context, req *agent.ToolApprovalReques
 		if c.Config.AllowedTools[req.Tool] {
 			allowed = true
 		} else {
-			// Check for prefix matches (e.g. "monday" matches "mcp_monday_...")
+			// Check for prefix matches (e.g. "github" matches "mcp_github_...")
 			// Match logic consistent with ToolRegistry.Filter
 			for w, ok := range c.Config.AllowedTools {
 				if !ok {
