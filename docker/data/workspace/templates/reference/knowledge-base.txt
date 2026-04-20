@@ -1,0 +1,83 @@
+Before generating anything, read and follow:
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+- /skills/app-selectors-knowledge-base/SKILL.md
+
+The base path is: /home/picoclaw/.picoclaw/workspace/context/dashboard/src
+If that path is not readable, STOP and report that the mount is missing. Do not proceed.
+
+## PHASE 1 — Source Code Discovery (MANDATORY)
+
+You MUST read EVERY file listed below. Do not skip any. Do not stop early.
+
+### Directory: src/components/knowledge-base/
+List all files in this directory and read each one.
+
+### Specific files to read:
+- src/pages/KnowledgeBasePage.vue
+- src/stores/knowledge.store.ts
+- src/stores/scheduleConfirm.store.ts
+
+After listing, read ALL files found — no exceptions.
+
+## PHASE 2 — Create Reference Document
+
+Create a reference file at: /tests/knowledge-base/KB_REFERENCE.md
+
+### 0. Files Read
+List ALL files read. Must be ≥8 files.
+
+### 1. Knowledge Base Page Navigation
+- Sidebar selector to navigate to Knowledge Base
+- Page URL or route identifier
+- How to verify the page is loaded
+
+### 2. Knowledge Base Card
+- Selector for the KB card container
+- How to locate a card by bucket name
+- Selector for the card title/name
+- Selector for the card status pill (.knowledge-base-status-pill — verify)
+
+### 3. KB Actions
+- Selector for the Schedule button (.schedule-button — verify)
+- Selector for the Sync/Edit button (.sync-button — verify)
+- Selector for the Delete button
+- Selector for the Files button (view files)
+
+### 4. Create KB
+- Selector for the Add/Create button
+- Selector for the creation drawer/modal
+- Fields: name input, type selector (GCS bucket / website crawler), URL input
+- Selector for the Save/Create button
+- Success notification selector and text
+
+### 5. Manage Schedule Modal
+- Selector for the modal/overlay that opens after clicking Schedule
+- How to verify the modal is open
+- Selector for Sync Type display
+- Selector for Cron Expression display
+- Selector for "Create Schedule" button (.create-button — verify)
+- Selector for "Edit Schedule" button (.edit-button — verify)
+
+### 6. Create/Edit Schedule Form
+- How the Sync Type selector works (radio buttons? dropdown?)
+- Correct Playwright selector to click "Full Sync" and "Incremental Sync"
+- How the Cron Expression mode toggle works (SIMPLE vs ADVANCED)
+- Selector for the Cron Expression input field in ADVANCED mode
+- How the cron expression auto-generates when switching to ADVANCED
+- Selector for the Save button inside the form
+
+### 7. KnowledgeBaseDrawer
+- When it opens and how to trigger it
+- Selector for the drawer container
+- Fields inside the drawer
+
+### 8. KnowledgeBaseFilesModal
+- How to open it
+- Selector for the modal
+- Selector for file rows
+
+### 9. Notifications
+- Selector for success snackbar/toast
+- Typical wait timeout

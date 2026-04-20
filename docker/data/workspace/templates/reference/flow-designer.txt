@@ -1,0 +1,80 @@
+Before generating anything, read and follow:
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+- /skills/app-selectors-flow-designer/SKILL.md
+- /skills/app-selectors-flow-designer-canvas/SKILL.md
+
+The base path is: /home/picoclaw/.picoclaw/workspace/context/dashboard/src
+If that path is not readable, STOP and report that the mount is missing. Do not proceed.
+
+## PHASE 1 — Source Code Discovery (MANDATORY)
+
+You MUST read EVERY file listed below. Do not skip any. Do not stop early.
+
+### Directory: src/components/flow-designer/
+List all files in this directory and all subdirectories, then read each one.
+This includes:
+- All .vue files directly in src/components/flow-designer/
+- All .vue files in src/components/flow-designer/dropdown/
+- All .vue files in src/components/flow-designer/nodes/
+
+### Specific files to read:
+- src/pages/FlowDesigner.vue
+- src/pages/FlowCanvas.vue
+- src/stores/flow.store.ts (or flow.ts — check both names)
+
+After listing, read ALL files found — no exceptions.
+
+## PHASE 2 — Create Reference Document
+
+Create a reference file at: /tests/flow-designer/FLOW_DESIGNER_REFERENCE.md
+
+### 0. Files Read
+List ALL files read. Must be ≥10 files.
+
+### 1. Node Types
+- node-container selectors
+- handles (source/target)
+- drag strategy
+
+### 2. Node Config Modals
+- open behavior (click node to open)
+- modal selector
+- fields per node type
+- dropdown interaction
+- Save/Close buttons
+
+### 3. Add Nodes Panel
+- selector for the Add Nodes button
+- wait condition before selecting
+- selection via .nodes-dropdown-item (verify class name from source)
+
+### 4. Flow Name Field
+- selector
+- interaction pattern (click then fill)
+
+### 5. Save Flow
+- save button selector (disk icon)
+- Save Flow Version modal selector
+- version name input selector
+- Save button inside modal
+- success toast selector and text
+
+### 6. Drag-Connect Strategy
+- Vue Flow handle CSS classes (source handle vs target handle)
+- How to drag from one node handle to another
+- Required waits before/after drag
+- Edge verification pattern:
+    const edgesBefore = await page.locator('.vue-flow__edge[data-id]').count();
+    // drag
+    await page.waitForTimeout(1000);
+    const edgesAfter = await page.locator('.vue-flow__edge[data-id]').count();
+    if (edgesAfter <= edgesBefore) throw new Error('Edge NOT created');
+
+### 7. Canvas Transform
+- Selector for .vue-flow__transformationpane
+- How to read scale (tf.scale), tx, ty from the transform attribute
+- Formula for converting logical coordinates to screen coordinates:
+    screenX = logicalX * tf.scale + tf.tx
+    screenY = logicalY * tf.scale + tf.ty

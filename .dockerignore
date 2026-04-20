@@ -8,3 +8,6 @@ config/
 *.md
 LICENSE
 assets/
+
+docker/data/workspace/
+docker/data/config.json

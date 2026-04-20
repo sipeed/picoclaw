@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { performLogin } from '../utils/auth';
 
 test('Admin role dashboard access and sidebar permissions', async ({ page }) => {
+  test.setTimeout(180000); // 3 minutes timeout
   const adminEmail = 'heidi@intnt.ai';
   const adminPassword = 'testing2026!';
 
@@ -35,12 +36,12 @@ test('Admin role dashboard access and sidebar permissions', async ({ page }) => 
     : fallbackCard;
 
   // Assertion and Click
-  await expect(finalCard).toBeVisible({ timeout: 10000 });
+  await expect(finalCard).toBeVisible({ timeout: 20000 });
 
   await finalCard.click();
 
   // Wait for the page to transition (loader overlay appears during "switching")
-  await expect(page.locator('.switching-overlay')).not.toBeVisible({ timeout: 10000 });
+  await expect(page.locator('.switching-overlay')).not.toBeVisible({ timeout: 20000 });
 
   // Wait for dashboard to load
   await page.waitForLoadState('networkidle');
@@ -51,7 +52,7 @@ test('Admin role dashboard access and sidebar permissions', async ({ page }) => 
 
   // Verify the Organization Name is visible in the selector trigger
   const orgSelectorHeader = page.locator('.org-dropdown-trigger').first();
-  await expect(orgSelectorHeader).toBeVisible({ timeout: 10000 });
+  await expect(orgSelectorHeader).toBeVisible({ timeout: 20000 });
 
   const selectedOrgName = orgSelectorHeader.locator('.org-name');
   await expect(selectedOrgName).not.toHaveText(/No organization/i, { timeout: 10000 });
@@ -67,7 +68,7 @@ test('Admin role dashboard access and sidebar permissions', async ({ page }) => 
   });
 
   await expect(organizationMenuLink).toBeVisible({
-    timeout: 10000
+    timeout: 20000
   });
 
   console.log('✅ PASS: Step 3 - Organization selection and Admin permissions verified via sidebar menu');

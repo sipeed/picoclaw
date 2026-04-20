@@ -2,7 +2,7 @@ const { chromium } = require('playwright');
 const fs = require('fs');
 const pathLib = require('path');
 
-const BASE_URL = 'https://dashboard.int3nt.info';
+const BASE_URL = process.env.BASE_URL || 'https://dashboard.int3nt.info';
 const LOGIN_EMAIL = 'heidi@intnt.ai';
 const LOGIN_PASSWORD = 'testing2026!';
 const ORG_NAME = 'Testing2026!';
@@ -934,7 +934,7 @@ async function doLogin(page) {
   await loginButton.click();
 
   try {
-    await page.waitForURL('**/dashboard.int3nt.info/?select_org', { timeout: 20000 });
+    await page.waitForURL('**/?select_org', { timeout: 20000 });
     console.log('  ✓ Login successful, on org selection page');
   } catch (e) {
     console.log('  ⚠️  Login failed or timed out');

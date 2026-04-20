@@ -1,0 +1,82 @@
+Before generating anything, read and follow:
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+- /tests/logs/LOGS_REFERENCE.md
+
+TECH STACK: This app is built with Vue.js and Vuetify. All form validation and modal behaviors follow Vue/Vuetify patterns — apply the rules in /skills/app-selectors/SKILL.md under "Playwright Patterns for This App".
+
+No source discovery needed — the reference document already exists at /tests/logs/LOGS_REFERENCE.md.
+Read it now and use it as the sole source of selectors for this test.
+
+---
+
+## PHASE 1 — Generate Playwright Test
+
+Create test file:
+tests/logs/{{TEST_FILE}}.spec.ts
+
+Test credentials:
+email=heidi@intnt.ai
+password=testing2026!
+org=Testing2026!
+
+IMPORTANT RULES:
+
+1. ONLY use selectors from the SKILL.md files and /tests/logs/LOGS_REFERENCE.md.
+2. NEVER guess or invent selectors not found in those documents.
+3. For login, COPY THE CODE VERBATIM from the "Login Flow (copy-paste ready)" block in /skills/app-selectors/SKILL.md.
+   The correct URL is {{BASE_URL}}/login (with /login — NOT the root URL).
+   The correct selectors are .v-text-field and .organization-card.
+   The login button MUST be: page.getByRole('button', { name: /login/i })
+   CORRECT post-login pattern:
+     await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 });
+     if (page.url().includes('select_org')) {
+       await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
+       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 });
+     }
+4. Selector priority — ALWAYS follow this order:
+   STEP 1: Custom CSS class from SKILL.md or LOGS_REFERENCE.md.
+   STEP 2: Only if no custom class, use a Vuetify class verified in SKILL.md DOM output.
+   STEP 3: Use getByRole() or getByText() with exact visible text as a last resort.
+5. TypeScript-safe Playwright only.
+   FORBIDDEN: triple_click(), doubleClick(), selectText(), clearText(), typeText(), pressKey(), filter({ hasAttribute: ... })
+   CORRECT: await input.click(); await input.fill('text');
+6. File downloads — use page.waitForEvent('download') BEFORE clicking the download button:
+     const [download] = await Promise.all([
+       page.waitForEvent('download'),
+       page.locator('<download-button-selector>').click(),
+     ]);
+     const filePath = await download.path();
+     expect(filePath).toBeTruthy();
+7. Logging rule — MANDATORY FORMAT:
+   BEFORE each step: console.log('📍 Step N: Description');
+   AFTER step assertion succeeds: console.log('✅ PASS: Step N - Description');
+   Full summary block at the end of the test.
+8. STRICT MODE RULE — ALWAYS use .first() or .last() on any locator that can match multiple elements.
+9. Test timeout: set at least 3 minutes.
+   test.setTimeout(180000);
+
+Steps:
+
+{{STEPS}}
+
+---
+
+## EXPECTED RESULT
+
+{{EXPECTED_RESULT}}
+
+---
+
+## PHASE 2 — Run and Fix
+
+Run:
+npx playwright test tests/logs/{{TEST_FILE}}.spec.ts --reporter=line
+
+If fails:
+- analyze
+- fix
+- re-run
+
+Repeat until PASS or blocked

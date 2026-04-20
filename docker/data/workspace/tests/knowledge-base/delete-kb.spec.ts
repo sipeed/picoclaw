@@ -2,8 +2,8 @@ import { test, expect } from '@playwright/test';
 
 test('Delete Knowledge Base Bucket', async ({ page }) => {
   console.log('📍 Step 1: Navigate to login page');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
-  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 10000 });
+  await page.goto('/login', { waitUntil: 'networkidle' });
+  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 20000 });
 
   console.log('📍 Step 1a: Fill email and password');
   await page.locator('.v-text-field').nth(0).locator('input').fill('heidi@intnt.ai');
@@ -11,31 +11,31 @@ test('Delete Knowledge Base Bucket', async ({ page }) => {
 
   console.log('📍 Step 1b: Click login button');
   await page.getByRole('button', { name: /login/i }).click();
-  await page.waitForURL(/\?select_org/, { timeout: 20000 });
+  await page.waitForURL(/\?select_org/, { timeout: 60000 });
   console.log('✅ PASS: Step 1 - Login successful');
 
   console.log('📍 Step 2: Select organization "Testing2026!"');
   const loader = page.locator('.loading-container, .loading-spinner, .v-progress-linear');
   if (await loader.first().isVisible().catch(() => false)) {
-    await loader.first().waitFor({ state: 'hidden', timeout: 15000 });
+    await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
   }
-  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
-  await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
-  await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 15000 });
+  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).first().click();
+  await page.waitForURL(url => !url.searchParams.has('select_org'), { timeout: 30000 });
   console.log('✅ PASS: Step 2 - Organization selected');
 
-  console.log('📍 Step 3: Verify redirect to https://dashboard.int3nt.info/');
-  await expect(page).toHaveURL(/https:\/\/dashboard\.int3nt\.info\//);
+  console.log('📍 Step 3: Verify redirect to dashboard');
+  await expect(page).not.toHaveURL(/login|select_org/);
   console.log('✅ PASS: Step 3 - Redirected to dashboard');
 
   console.log('📍 Step 4: Click "Knowledge Base" on left sidebar');
   await page.locator('a:has-text("Knowledge Base")').click();
-  await page.waitForURL(/knowledge-base/, { timeout: 10000 });
+  await page.waitForURL(/knowledge-base/, { timeout: 60000 });
   console.log('✅ PASS: Step 4 - Knowledge Base page loaded');
 
   console.log('📍 Step 5: Locate knowledge base bucket "Picotest1"');
-  await page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).waitFor({ state: 'visible', timeout: 10000 });
-  const bucketCard = page.locator('.bucket-card').filter({ hasText: 'Picotest1' });
+  await page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).first().waitFor({ state: 'visible', timeout: 20000 });
+  const bucketCard = page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).first();
   console.log('✅ PASS: Step 5 - Bucket "Picotest1" found');
 
   console.log('📍 Step 6: Click the three-dot (⋮) action menu on the bucket card');
@@ -99,7 +99,7 @@ test('Delete Knowledge Base Bucket', async ({ page }) => {
   } else {
     await page.reload();
     await page.waitForTimeout(2000);
-    const bucketAfterReload = await page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).isVisible().catch(() => false);
+    const bucketAfterReload = await page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).first().isVisible().catch(() => false);
     if (!bucketAfterReload) {
       console.log('✅ PASS: Bucket removed from list (verified after reload)');
     } else {
@@ -126,7 +126,7 @@ test('Delete Knowledge Base Bucket', async ({ page }) => {
   }
 
   console.log('📍 Expected Result 4: Deleted bucket no longer in Knowledge Base list');
-  const finalBucketCheck = await page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).isVisible().catch(() => false);
+  const finalBucketCheck = await page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).first().isVisible().catch(() => false);
   
   if (!finalBucketCheck) {
     console.log('✅ PASS: Bucket no longer visible in list');

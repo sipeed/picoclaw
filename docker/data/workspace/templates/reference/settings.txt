@@ -1,0 +1,84 @@
+Before generating anything, read and follow:
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+
+The base path is: /home/picoclaw/.picoclaw/workspace/context/dashboard/src
+If that path is not readable, STOP and report that the mount is missing. Do not proceed.
+
+## PHASE 1 — Source Code Discovery (MANDATORY)
+
+You MUST read EVERY file listed below. Do not skip any. Do not stop early.
+
+### Files to read:
+- src/pages/SettingsPage.vue
+- src/components/FormModal.vue
+- src/components/AlertModal.vue
+- src/components/common/TabsComponent.vue
+- src/components/common/BreadcrumbComponent.vue
+- src/stores/apiKey.store.ts
+- src/stores/snackbar.store.ts
+
+After reading ALL files, continue to Phase 2.
+
+## PHASE 2 — Create Reference Document
+
+Create a reference file at: /tests/settings/SETTINGS_REFERENCE.md
+
+### 0. Files Read
+List every file path you read in Phase 1. If the list contains fewer than 5 files, go back and complete Phase 1.
+
+### 1. Settings Page Navigation
+- Sidebar selector to navigate to Settings
+- Page URL or route identifier
+- How to verify the Settings page is loaded
+
+### 2. API Key List
+- Selector for the API keys table/list
+- How to locate an API key row by name
+- Selector for key status (active/revoked)
+- Selector for the key value (masked or visible)
+
+### 3. Create API Key
+- Selector for the Create/Add API Key button
+- Selector for the modal that opens
+- Selector for the key name input
+- Selector for the key type selector (internal/external, if applicable)
+- Selector for the confirm/create button
+- How the new key value is displayed after creation
+- Selector for copying the key value
+- Success notification selector and text
+
+### 4. Edit API Key
+- How to open the edit modal (button selector on a key row)
+- Selector for the name input in the edit modal
+- Selector for the save button
+- Success notification selector and text
+
+### 5. Revoke API Key
+- Selector for the Revoke button on a key row
+- Selector for the confirmation modal/dialog
+- Selector for the confirm revoke button
+- How the key status changes after revoke (visual indicator)
+- Success notification selector and text
+
+### 6. Reactivate API Key
+- Selector for the Reactivate button on a revoked key row
+- Selector for the confirmation modal/dialog (if any)
+- How the key status changes after reactivation
+- Success notification selector and text
+
+### 7. Tabs (if settings has multiple tabs)
+- Selector for each tab
+- How to verify the active tab
+
+### 8. FormModal Pattern
+- How FormModal renders in the DOM (overlay selector)
+- Selector for inputs inside FormModal
+- Selector for Save/Confirm button
+- Selector for Cancel/Close button
+
+### 9. Notifications
+- Selector for success snackbar/toast
+- Selector for error snackbar/toast
+- Typical wait timeout

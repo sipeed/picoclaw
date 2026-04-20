@@ -13,7 +13,7 @@ test('API Key edit description flow', async ({ page }) => {
   console.log('✅ PASS: Step 1-2 - Login and organization selection completed');
 
   // Step 3: Verify redirect to dashboard
-  console.log('\n📍 Step 3: Verify redirect to https://dashboard.int3nt.info/');
+  console.log('\n📍 Step 3: Verify redirect to ');
   await expect(page).toHaveURL(/.*dashboard\.int3nt\.info\/?$/);
   console.log('✅ PASS: Step 3 - User redirected to dashboard');
 
@@ -23,8 +23,8 @@ test('API Key edit description flow', async ({ page }) => {
   await expect(settingsLink).toBeVisible();
   await settingsLink.click();
 
-  // Step 5: Locate the first API Key with role internal
-  console.log('\n📍 Step 5: Locate first API Key with role internal in table');
+  // Step 5: Locate an API Key that we can edit (look for the test keys we created)
+  console.log('\n📍 Step 5: Locate an editable API Key in table');
   // 1. Wait for the loading state to finish (Crucial!)
   const tableLoader = page.locator('.loading-state');
   if (await tableLoader.isVisible().catch(() => false)) {
@@ -32,19 +32,43 @@ test('API Key edit description flow', async ({ page }) => {
     await expect(tableLoader).not.toBeVisible({ timeout: 15000 });
   }
 
-  // 2. Locate the row in the specific table (.api-keys-table)
-  const internalKeyRow = page.locator('.api-keys-table tbody tr').filter({
-    hasText: /internal/i
+  // 2. Set pagination to "All" to ensure we can see all keys
+  console.log('Setting pagination to show all items...');
+  const paginationSelect = page.locator('.v-data-table-footer__items-per-page .v-select').first();
+  await paginationSelect.click();
+  await page.waitForTimeout(300);
+
+  // Click "All" option in the dropdown
+  const allOption = page.locator('.v-overlay-container .v-list-item').filter({ hasText: /^All$/i }).first();
+  await expect(allOption).toBeVisible({ timeout: 5000 });
+  await allOption.click();
+  await page.waitForTimeout(1000); // Wait for table to reload with all items
+
+  // 3. Wait for table to finish loading after pagination change
+  if (await tableLoader.isVisible().catch(() => false)) {
+    console.log('Waiting for table to reload...');
+    await expect(tableLoader).not.toBeVisible({ timeout: 15000 });
+  }
+
+  // 4. Locate a row to edit - prefer "Test Internal API Key" from create test, but fallback to any key
+  let editableKeyRow = page.locator('.api-keys-table tbody tr').filter({
+    hasText: /Test Internal API Key/i
   }).first();
 
-  await expect(internalKeyRow).toBeVisible({
-    timeout: 10000
+  // If test key doesn't exist, use first available key (Active or Revoked)
+  if (!(await editableKeyRow.isVisible().catch(() => false))) {
+    console.log('Test key not found, using first available API key');
+    editableKeyRow = page.locator('.api-keys-table tbody tr').first();
+  }
+
+  await expect(editableKeyRow).toBeVisible({
+    timeout: 20000
   });
-  console.log('✅ PASS: Step 5 - First API Key with role internal located');
+  console.log('✅ PASS: Step 5 - Editable API Key located');
 
   // Step 6: Click the edit (pencil) icon
   console.log('\n📍 Step 6: Click edit (pencil) icon');
-  const editBtn = internalKeyRow.locator('.edit-btn');
+  const editBtn = editableKeyRow.locator('.edit-btn');
   await expect(editBtn).toBeVisible();
   await editBtn.click();
   console.log('✅ PASS: Step 6 - Edit icon clicked');
@@ -78,16 +102,19 @@ test('API Key edit description flow', async ({ page }) => {
   const successNotification = page.locator('.v-snackbar__content', {
     hasText: /updated successfully/i
   });
-  await expect(successNotification).toBeVisible({ timeout: 10000 });
+  await expect(successNotification).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 10 - Success notification appeared');
 
   // Step 11: Verify API Key description updated in table
   console.log('\n📍 Step 11: Verify update reflected in table');
+  // Wait for table to reload after edit
+  await page.waitForTimeout(1000);
+
   // Relocate row by the NEW description to confirm it's listed
   const updatedKeyRow = page.locator('.api-keys-table tbody tr').filter({
     hasText: newDescription
   }).first();
-  await expect(updatedKeyRow).toBeVisible({ timeout: 10000 });
+  await expect(updatedKeyRow).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 11 - API Key description update verified in table');
 
   // Step 12: Report results

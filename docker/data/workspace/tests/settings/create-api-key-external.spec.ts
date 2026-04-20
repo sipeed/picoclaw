@@ -114,17 +114,29 @@ test('Create API Key flow', async ({ page }) => {
     await expect(tableLoader).not.toBeVisible({ timeout: 15000 });
   }
 
-  // 2. Locate the row by the description text
+  // 2. Set pagination to "All" to ensure we can see the newly created key
+  console.log('Setting pagination to show all items...');
+  const paginationSelect = page.locator('.v-data-table-footer__items-per-page .v-select').first();
+  await paginationSelect.click();
+  await page.waitForTimeout(300);
+
+  // Click "All" option in the dropdown
+  const allOption = page.locator('.v-overlay-container .v-list-item').filter({ hasText: /^All$/i }).first();
+  await expect(allOption).toBeVisible({ timeout: 5000 });
+  await allOption.click();
+  await page.waitForTimeout(1000); // Wait for table to reload with all items
+
+  // 3. Locate the row by the description text
   // We use a more flexible filter that looks specifically at the text content
   const newKeyRow = page.locator('.api-keys-table tbody tr').filter({
     hasText: new RegExp(description, 'i')
   }).first();
 
   await expect(newKeyRow).toBeVisible({
-    timeout: 10000
+    timeout: 20000
   });
 
-  // 3. Verify it has the correct role
+  // 4. Verify it has the correct role
   await expect(newKeyRow.locator('td')).toContainText([/External/i]);
 
   console.log('✅ PASS: Step 13 - New API key successfully verified in table');

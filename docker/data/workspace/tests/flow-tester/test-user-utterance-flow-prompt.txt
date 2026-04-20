@@ -72,10 +72,10 @@ IMPORTANT RULES:
    After login, the app MAY redirect to /?select_org OR directly to the dashboard (if org is remembered).
    NEVER use waitForURL(/\?select_org/) directly — it times out when the server skips org selection.
    CORRECT post-login pattern (waitForURL callback gets a URL object — use .pathname or .href, NOT .includes()):
-     await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
+     await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 });
      if (page.url().includes('select_org')) {  // page.url() returns a string — .includes() is fine here
-       await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
-       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
+       await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click();
+       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 });
      }
 4. Selector priority — ALWAYS follow this order:
    STEP 1: Custom CSS class from SKILL.md (e.g. .tester-select, .version-selector-button, .version-dropdown-menu, .message-field).
@@ -99,10 +99,12 @@ IMPORTANT RULES:
 7. Flow selection dropdown (.tester-select):
    ALWAYS wait for the overlay to stabilise before filtering — the list may take a moment to render.
    ALWAYS use case-insensitive regex /i — flow names in the DB may differ in capitalisation from the UI.
+   If multiple flows with the same name exist, ALWAYS select .last() (the oldest flow).
    CORRECT pattern:
      await page.locator('.tester-select').click();
      await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 5000 });
-     await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /flow name here/i }).click();
+     // If multiple flows with same name exist, select the last one (oldest)
+     await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /user utterance/i }).last().click();
 
 8. Version selection — MANDATORY EXPLICIT SELECTION, auto-select is FORBIDDEN:
    The app auto-selects the FIRST version which is often wrong (e.g. "CustomnodeV1" instead of the target version).
@@ -114,13 +116,13 @@ IMPORTANT RULES:
      await page.locator('.version-selector-button').click();
      await page.locator('.version-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
      // Wait for real items — skeleton .version-item elements have NO click handler
-     // Use timeout: 20000 — version loading can take longer than expected
-     await page.locator('.version-dropdown-menu .version-date').first().waitFor({ state: 'visible', timeout: 20000 });
+     // Use timeout: 40000 — version loading can take longer than expected
+     await page.locator('.version-dropdown-menu .version-date').first().waitFor({ state: 'visible', timeout: 40000 });
      await page.locator('.version-dropdown-menu .version-item')
        .filter({ hasText: /version name here/i })
        .click();
      await expect(page.locator('.version-selector-text'))
-       .not.toContainText('Select Version', { timeout: 20000 });
+       .not.toContainText('Select Version', { timeout: 40000 });
 
 9. Message input: use .message-field input (NOT input[type="text"] or .v-field__input).
    To send: fill the input then press Enter.
@@ -152,7 +154,7 @@ IMPORTANT RULES:
     The store has a loadingMessage guard: if loadingMessage is true, sendMessageToStore() silently rejects the input.
     SSE streaming means loadingMessage can stay true for several seconds after the bot response appears.
     ALWAYS wait for the typing indicator to disappear before sending any message that follows a previous send:
-      await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 20000 });
+      await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 40000 });
     Place this wait BEFORE filling and pressing Enter for the second message onward.
     Failure to do this causes silent message rejection — no error, no user message in chat, no bot reply.
 
@@ -160,8 +162,8 @@ IMPORTANT RULES:
     ALWAYS follow the step-by-step order in the Steps section exactly — it tells you whether to wait first or send first.
     Do NOT assume there is an automatic initial message unless the Steps say to verify one before the first user send.
 
-13. Test timeout: set at least 90 seconds (flows with multi-turn conversation need time for SSE stream + bot response).
-    test.setTimeout(90000);
+13. Test timeout: set at least 180 seconds (flows with multi-turn conversation need time for SSE stream + bot response).
+    test.setTimeout(180000);
     Place this as the FIRST line inside the test() callback.
 
 Create a Playwright test file at /tests/flow-tester/test-user-utterance-flow.spec.ts.
@@ -185,11 +187,11 @@ After creating the test:
 
 ---
 
-Test credentials: email=heidi@intnt.ai password=testing2026! org=Testing2026!
+Test credentials: email=heidi@intnt.ai password=testing2026! org=Testing
 
 Steps:
 1. Perform case "Login"
-2. On Select Organization page, select organization "Testing2026!"
+2. On Select Organization page, select organization "Testing"
 3. User redirected to: https://dashboard.int3nt.info
 4. Click Flow Tester on the left sidebar
 5. On Flow Tester page, locate the Select Conversation Flow dropdown

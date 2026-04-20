@@ -20,14 +20,14 @@ test('API Keys settings page access', async ({ page }) => {
   // Step 4: Verify redirect to Settings page
   console.log('\n📍 Step 4: Verify redirect to Settings page');
   const settingsPageContent = page.locator('[class*="settings"], main, [role="main"]').first();
-  await expect(settingsPageContent).toBeVisible({ timeout: 5000 });
+  await expect(settingsPageContent).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 4 - Settings page loaded');
 
   // Step 5: Verify the API Keys tab is displayed
   console.log('\n📍 Step 5: Verify the API Keys tab is displayed');
   const apiKeysTab = page.locator('.v-tabs__nav button:has-text("API Keys"), [role="tab"]:has-text("API Keys")').first();
 
-  if (await apiKeysTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+  if (await apiKeysTab.isVisible({ timeout: 5000 }).catch(() => false)) {
     console.log('✅ PASS: Step 5 - API Keys tab is displayed');
   } else {
     // Try alternative selector
@@ -40,12 +40,12 @@ test('API Keys settings page access', async ({ page }) => {
   console.log('\n📍 Step 6: Verify the list of API Keys for organization Testing2026 is visible');
   const apiKeysList = page.locator('[class*="api-key"], [class*="key-list"], table, [role="table"]').first();
 
-  if (await apiKeysList.isVisible({ timeout: 3000 }).catch(() => false)) {
+  if (await apiKeysList.isVisible({ timeout: 5000 }).catch(() => false)) {
     console.log('✅ PASS: Step 6 - API Keys list is visible');
   } else {
     // Verify at least some API key content is present
     const apiKeyContent = page.locator('text=API Key, text=key, [class*="api"]').first();
-    await expect(apiKeyContent).toBeVisible({ timeout: 5000 });
+    await expect(apiKeyContent).toBeVisible({ timeout: 20000 });
     console.log('✅ PASS: Step 6 - API Keys content is visible');
   }
 

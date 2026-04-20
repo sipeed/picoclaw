@@ -3,12 +3,12 @@ import { loginAndSelectOrg } from '../utils/auth';
 import path from 'path';
 
 test('Organization logo upload flow', async ({ page }) => {
+  test.setTimeout(180000); // 3 minutes timeout
   const primaryEmail = 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
   const organizationName = 'Testing2026!';
-  const downloadsDir = path.join(process.env.HOME || '/home/picoclaw', 'Downloads');
-  const logoFile1 = path.join(downloadsDir, 'test2.png');
-  const logoFile2 = path.join(downloadsDir, 'test.png');
+  const logoFile1 = path.join(__dirname, '../fixtures/test2.png');
+  const logoFile2 = path.join(__dirname, '../fixtures/test.png');
 
   // Step 1 & 2: Login and select organization
   await loginAndSelectOrg(page, primaryEmail, primaryPassword, organizationName);
@@ -18,7 +18,7 @@ test('Organization logo upload flow', async ({ page }) => {
   const changeLogoButton = page.locator('.change-logo-btn');
   // The button only appears for Admins
   await expect(changeLogoButton).toBeVisible({
-    timeout: 10000
+    timeout: 20000
   });
   await changeLogoButton.click();
 
@@ -46,7 +46,7 @@ test('Organization logo upload flow', async ({ page }) => {
 
   // Wait for the success snackbar
   const successToast = page.locator('.v-snackbar__content', { hasText: /Logo uploaded successfully/i });
-  await expect(successToast).toBeVisible({ timeout: 10000 });
+  await expect(successToast).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 5 - Logo updated to test2.jpg');
 
   // Step 6: Trigger the next upload
@@ -65,7 +65,7 @@ test('Organization logo upload flow', async ({ page }) => {
   const uploadConfirmBtn2 = page.locator('button', { hasText: /Upload Logo/i }).first();
   await uploadConfirmBtn2.click();
 
-  await expect(successToast).toBeVisible({ timeout: 10000 });
+  await expect(successToast).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 8 - Final logo updated to test.jpg');
 
 

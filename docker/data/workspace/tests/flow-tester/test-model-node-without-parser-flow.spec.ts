@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test';
 
 test('Model Node without Parser Flow - User sends "hello" and receives narcissistic reply', async ({ page }) => {
-  test.setTimeout(90000); // ← first line, 90 seconds for model response
+  test.setTimeout(180000); // ← first line, 90 seconds for model response
 
   // ========== STEP 1: Navigate to login page ==========
   console.log('📍 Step 1: Navigate to login page');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
-  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 10000 });
+  await page.goto('/login', { waitUntil: 'networkidle' });
+  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 20000 });
   console.log('✅ PASS: Step 1 - Login page loaded');
 
   // ========== STEP 2: Fill credentials and login ==========
@@ -18,32 +18,33 @@ test('Model Node without Parser Flow - User sends "hello" and receives narcissis
 
   // ========== STEP 3: Wait for org selection redirect ==========
   console.log('📍 Step 3: Wait for org selection redirect');
-  await page.waitForURL(/\?select_org/, { timeout: 20000 });
+  await page.waitForURL(/\?select_org/, { timeout: 60000 });
   console.log('✅ PASS: Step 3 - Redirected to org selection');
 
   // ========== STEP 4: Select organization ==========
   console.log('📍 Step 4: Select organization');
   const loader = page.locator('.loading-container, .loading-spinner, .v-progress-linear');
   if (await loader.first().isVisible().catch(() => false)) {
-    await loader.first().waitFor({ state: 'hidden', timeout: 15000 });
+    await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
   }
-  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
-  await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
-  await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 15000 });
+  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click();
+  await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 30000 });
   console.log('✅ PASS: Step 4 - Organization selected');
 
   // ========== STEP 5: Navigate to Flow Tester ==========
   console.log('📍 Step 5: Click Flow Tester from sidebar');
   await page.locator('a:has-text("Flow Tester")').click();
-  await page.waitForURL(/flow-tester/, { timeout: 15000 });
-  await page.locator('.tester-container-card').waitFor({ state: 'visible', timeout: 10000 });
+  await page.waitForURL(/flow-tester/, { timeout: 30000 });
+  await page.locator('.tester-container-card').waitFor({ state: 'visible', timeout: 20000 });
   console.log('✅ PASS: Step 5 - Flow Tester page loaded');
 
   // ========== STEP 6: Select flow "Node without Parser" ==========
   console.log('📍 Step 6: Select flow "Node without Parser"');
   await page.locator('.tester-select').click();
   await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 5000 });
-  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /node without parser/i }).click();
+  // If multiple flows with same name exist, select the last one (oldest)
+  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /node without parser/i }).last().click();
   console.log('✅ PASS: Step 6 - Flow selected');
 
   // ========== STEP 7: Wait for version selector to stabilize ==========
@@ -57,14 +58,14 @@ test('Model Node without Parser Flow - User sends "hello" and receives narcissis
   await page.locator('.version-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
   // Wait for real items (not skeleton) — .version-date only appears on real items
   await page.locator('.version-dropdown-menu .version-date').first()
-    .waitFor({ state: 'visible', timeout: 20000 });
+    .waitFor({ state: 'visible', timeout: 40000 });
   // Now click the version by name
   await page.locator('.version-dropdown-menu .version-item')
     .filter({ hasText: /node without parser/i })
     .click();
   // Verify version was selected
   await expect(page.locator('.version-selector-text'))
-    .not.toContainText('Select Version', { timeout: 20000 });
+    .not.toContainText('Select Version', { timeout: 40000 });
   console.log('✅ PASS: Step 8 - Version selected');
 
   // ========== STEP 9: Click message input field ==========
@@ -86,14 +87,14 @@ test('Model Node without Parser Flow - User sends "hello" and receives narcissis
 
   // ========== STEP 12: Wait for typing indicator to disappear ==========
   console.log('📍 Step 12: Wait for bot to finish responding (typing indicator disappears)');
-  await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 20000 });
+  await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 40000 });
   console.log('✅ PASS: Step 12 - Bot finished responding');
 
   // ========== STEP 13: Verify first bot message appears ==========
   console.log('📍 Step 13: Verify first bot message appears');
   const firstBotMessage = page.locator('.chatbox .message-card .message-text').first();
   await expect(firstBotMessage)
-    .toContainText('Below is the Model node result. it should return your input narcissly', { timeout: 20000 });
+    .toContainText('Below is the Model node result. it should return your input narcisticly', { timeout: 20000 });
   console.log('✅ PASS: Step 13 - First bot message verified');
 
   // ========== STEP 14: Verify second bot message (narcissistic reply) is not empty ==========

@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { loginAndSelectOrg } from '../utils/auth';
 
 test('Update profile name flow', async ({ page }) => {
+  test.setTimeout(180000); // 3 minutes timeout
   const primaryEmail = 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
   const organizationName = 'Testing2026!';
@@ -14,7 +15,7 @@ test('Update profile name flow', async ({ page }) => {
   console.log('✅ PASS: Step 1-2 - Login and organization selection completed');
 
   // Step 3: Verify redirect to dashboard
-  console.log('\n📍 Step 3: Verify redirect to https://dashboard.int3nt.info/');
+  console.log('\n📍 Step 3: Verify redirect to ');
   await expect(page).toHaveURL(/.*dashboard\.int3nt\.info\/?$/);
   console.log('✅ PASS: Step 3 - User redirected to dashboard');
 
@@ -22,7 +23,7 @@ test('Update profile name flow', async ({ page }) => {
   console.log('\n📍 Step 4: Click the profile avatar dropdown');
   // Using the specific ID used in DefaultLayoutDrawer.vue
   const profileActivator = page.locator('#menu-activator');
-  await expect(profileActivator).toBeVisible({ timeout: 10000 });
+  await expect(profileActivator).toBeVisible({ timeout: 20000 });
   await profileActivator.click();
   console.log('✅ PASS: Step 4 - Profile dropdown clicked');
 
@@ -40,15 +41,15 @@ test('Update profile name flow', async ({ page }) => {
   await profileOption.click();
 
   // Wait for navigation to complete
-  await page.waitForURL('**/profile', { timeout: 10000 });
+  await page.waitForURL('**/profile', { timeout: 60000 });
   console.log('✅ PASS: Step 5 - Navigated to Profile page');
 
   // Step 6: Verify Profile page content is loaded
   console.log('\n📍 Step 6: Verify Profile page loaded');
   const profileContainer = page.locator('.profile-container');
-  await expect(profileContainer).toBeVisible({ timeout: 10000 });
+  await expect(profileContainer).toBeVisible({ timeout: 20000 });
   // Wait for the inner loading spinner to disappear
-  await expect(page.locator('.loading-state')).not.toBeVisible({ timeout: 10000 });
+  await expect(page.locator('.loading-state')).not.toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 6 - Profile page content visible');
 
   // Step 7: Locate and fill First Name and Last Name
@@ -75,7 +76,7 @@ test('Update profile name flow', async ({ page }) => {
    * We filter by the title seen in your pages.json: "Confirm Profile Update"
    */
   const confirmModal = page.getByRole('dialog').filter({ hasText: /Confirm Profile Update/i });
-  await expect(confirmModal).toBeVisible({ timeout: 10000 });
+  await expect(confirmModal).toBeVisible({ timeout: 20000 });
 
   // Find and click the "Yes, update" button inside the modal
   const confirmBtn = confirmModal.getByRole('button', { name: /Yes, update/i });

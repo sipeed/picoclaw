@@ -8,7 +8,7 @@ import { Page, expect } from '@playwright/test';
  */
 export async function performLogin(page: Page, email: string, password: string) {
     console.log(`\n📍 Performing login flow for ${email}`);
-    await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+    await page.goto('/login', { waitUntil: 'networkidle' });
     await expect(page).toHaveURL(/.*login/);
 
     const emailInput = page.locator('.v-text-field').nth(0).locator('input');
@@ -23,7 +23,7 @@ export async function performLogin(page: Page, email: string, password: string) 
     await passwordInput.fill(password);
     await loginButton.click();
 
-    await page.waitForURL('**/dashboard.int3nt.info/?select_org', { timeout: 20000 });
+    await page.waitForURL('**/?select_org', { timeout: 20000 });
     await expect(page).toHaveURL(/.*\?select_org/);
     console.log(`✅ PASS: Login successful with ${email}`);
 }

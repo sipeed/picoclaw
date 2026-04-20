@@ -1,0 +1,83 @@
+Before generating anything, read and follow:
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+
+The base path is: /home/picoclaw/.picoclaw/workspace/context/dashboard/src
+If that path is not readable, STOP and report that the mount is missing. Do not proceed.
+
+## PHASE 1 — Source Code Discovery (MANDATORY)
+
+You MUST read EVERY file listed below. Do not skip any. Do not stop early.
+
+### Files to read:
+- src/pages/OrganizationPage.vue
+- src/components/organization-selector/OrganizationSelector.vue
+- src/components/organization-selector/SelectOrganizationPage.vue
+- src/components/LogoUploadDialog.vue
+- src/components/DragDropFileUpload.vue
+- src/components/FormModal.vue
+- src/components/AlertModal.vue
+- src/stores/organization.store.ts
+- src/stores/auth.store.ts
+
+After reading ALL files, continue to Phase 2.
+
+## PHASE 2 — Create Reference Document
+
+Create a reference file at: /tests/organization/ORGANIZATION_REFERENCE.md
+
+### 0. Files Read
+List every file path you read in Phase 1. If the list contains fewer than 7 files, go back and complete Phase 1.
+
+### 1. Organization Page Navigation
+- Sidebar selector to navigate to the Organization page
+- Page URL or route identifier
+- How to verify the Organization page is loaded
+
+### 2. Member Management
+- Selector for the Members tab/section
+- Selector for the Invite Member button
+- Selector for the invite email input field
+- Selector for the invite role selector/dropdown
+- Selector for the confirm invite button
+- How to locate a member row by email/name
+- Selector for the Activate/Deactivate member button
+- Selector for the deactivate confirmation modal and confirm button
+- Success notification selector and text
+
+### 3. Role Management
+- Selector for the Roles tab/section (if separate from members)
+- How to locate a role by name
+- Selector for assigning/changing a role
+- Selector for role dropdown options
+
+### 4. Logo and Bot Icon Upload
+- How to open the logo upload dialog
+- Selector for the file input (for setInputFiles())
+- Selector for the upload/save button
+- How to verify the upload was successful
+- How to open the bot icon upload (if different from logo)
+
+### 5. Organization Switching
+- How to access org switching (dropdown in header or sidebar)
+- Selector for the org switcher trigger
+- Selector for org items in the switcher dropdown
+- How to verify the org was switched
+
+### 6. FormModal Pattern
+- How FormModal renders in the DOM (overlay selector)
+- Selector for the modal title
+- Selector for inputs inside FormModal
+- Selector for the Save/Confirm button inside FormModal
+- Selector for the Cancel/Close button
+
+### 7. AlertModal (Confirmation Dialog)
+- Selector for the alert/confirmation modal
+- Selector for the confirm/yes button
+- Selector for the cancel/no button
+
+### 8. Notifications
+- Selector for success snackbar/toast
+- Selector for error snackbar/toast
+- Typical wait timeout

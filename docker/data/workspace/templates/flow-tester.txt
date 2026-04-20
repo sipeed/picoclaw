@@ -1,0 +1,117 @@
+Before generating anything, read and follow:
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+- /skills/app-selectors-flow-tester/SKILL.md
+- /tests/flow-tester/FLOW_TESTER_REFERENCE.md
+
+TECH STACK: This app is built with Vue.js and Vuetify. All form validation and modal behaviors follow Vue/Vuetify patterns — apply the rules in /skills/app-selectors/SKILL.md under "Playwright Patterns for This App".
+
+No source discovery needed — the reference document already exists at /tests/flow-tester/FLOW_TESTER_REFERENCE.md.
+Read it now and use it as the sole source of selectors for this test.
+
+---
+
+## PHASE 1 — Generate Playwright Test
+
+Create test file:
+tests/flow-tester/{{TEST_FILE}}.spec.ts
+
+Test credentials:
+email=heidi@intnt.ai
+password=testing2026!
+org=Testing
+
+IMPORTANT RULES:
+
+1. ONLY use selectors from the SKILL.md files and /tests/flow-tester/FLOW_TESTER_REFERENCE.md.
+2. NEVER guess or invent selectors not found in those documents.
+3. For login, COPY THE CODE VERBATIM from the "Login Flow (copy-paste ready)" block in /skills/app-selectors/SKILL.md.
+   Do NOT rewrite it. Do NOT use input[type="email"], input[type="password"], or any selector not in that block.
+   The correct URL is {{BASE_URL}}/login (with /login — NOT the root URL).
+   The correct selectors are .v-text-field (NOT input[type="email"]) and .organization-card.
+   The login button MUST be: page.getByRole('button', { name: /login/i })
+   The button text is "Login" (ONE word). NEVER use filter({ hasText: /Log In/ }) or /^Log In$/ — those will NEVER match.
+   After login, the app MAY redirect to /?select_org OR directly to the dashboard (if org is remembered).
+   NEVER use waitForURL(/\?select_org/) directly — it times out when the server skips org selection.
+   CORRECT post-login pattern (waitForURL callback gets a URL object — use .pathname or .href, NOT .includes()):
+     await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 });
+     if (page.url().includes('select_org')) {
+       await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click();
+       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 });
+     }
+4. Selector priority — ALWAYS follow this order:
+   STEP 1: Custom CSS class from SKILL.md or FLOW_TESTER_REFERENCE.md.
+   STEP 2: Only if no custom class, use a Vuetify class verified in SKILL.md DOM output.
+   STEP 3: NEVER guess or invent a selector. Use getByRole() or getByText() with exact visible text as a last resort.
+
+   FLOW AND VERSION NAME MATCHING — always use case-insensitive regex:
+   ALWAYS use the /i flag on flow and version name regexes to avoid silent mismatches:
+     CORRECT:   .filter({ hasText: /custom node/i })
+     INCORRECT: .filter({ hasText: /Custom Node/ })
+
+   FLOW DROPDOWN — ALWAYS wait for overlay to stabilise before filtering:
+     await page.locator('.tester-select').click();
+     await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 5000 });
+     await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /custom node/i }).click();
+5. TypeScript-safe Playwright only. NEVER invent or guess Playwright API methods.
+   FORBIDDEN: triple_click(), triple_click?.(), doubleClick(), selectText(), clearText(), typeText(), pressKey(),
+              filter({ hasAttribute: ... })
+   CORRECT alternatives:
+   - Fill a field: await input.click(); await input.fill('text');
+   - Press Enter: await input.press('Enter');
+   - Click send button: await page.locator('.message-field .v-field__append-inner').click();
+6. Logging rule — MANDATORY FORMAT:
+   BEFORE each step: console.log('📍 Step N: Description');
+   AFTER step assertion succeeds: console.log('✅ PASS: Step N - Description');
+   NEVER print "✅ PASS" before the assertion/action that verifies the step.
+   At the end of the test, include a full summary block:
+     console.log('\n' + '='.repeat(70));
+     console.log('📊 TEST SUMMARY');
+     console.log('='.repeat(70));
+     console.log('✅ Step 1: PASS - Description');
+     console.log('='.repeat(70));
+7. Version selection — SELECT THE LATEST VERSION (first item in the dropdown):
+   CORRECT pattern (copy exactly):
+     await page.locator('.version-selector-button').click();
+     await page.locator('.version-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
+     await page.locator('.version-dropdown-menu .version-date').first()
+       .waitFor({ state: 'visible', timeout: 40000 });
+     await page.locator('.version-dropdown-menu .version-item').first().click();
+     await expect(page.locator('.version-selector-text'))
+       .not.toContainText('Select Version', { timeout: 40000 });
+8. CRITICAL — Wait for bot to finish before asserting bot responses:
+   ALWAYS wait for .typing-indicator to disappear before asserting the bot response:
+     await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 120000 });
+9. Bot message targeting — scope to .message-card (not .message-card-user):
+   First bot response: page.locator('.chatbox .message-card .message-text').first()
+   Last bot response:  page.locator('.chatbox .message-card .message-text').last()
+   NEVER use .chatbox .message-text.first() — it will match the user message.
+10. STRICT MODE RULE — ALWAYS use .first() or .last() on any locator that can match multiple elements.
+11. Test timeout: set at least 3 minutes.
+    test.setTimeout(180000);
+    Place this as the FIRST line inside the test() callback.
+
+Steps:
+
+{{STEPS}}
+
+---
+
+## EXPECTED RESULT
+
+{{EXPECTED_RESULT}}
+
+---
+
+## PHASE 2 — Run and Fix
+
+Run:
+npx playwright test tests/flow-tester/{{TEST_FILE}}.spec.ts --reporter=line
+
+If fails:
+- analyze
+- fix
+- re-run
+
+Repeat until PASS or blocked

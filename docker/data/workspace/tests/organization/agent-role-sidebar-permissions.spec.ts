@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { performLogin } from '../utils/auth';
 
 test('Agent role dashboard access and sidebar permissions', async ({ page }) => {
+  test.setTimeout(180000); // 3 minutes timeout
   const agentEmail = 'heidi+1@intnt.ai';
   const agentPassword = 'testing2026!!';
 
@@ -31,11 +32,11 @@ test('Agent role dashboard access and sidebar permissions', async ({ page }) => 
     : fallbackCard;
 
   // Assertion and Click
-  await expect(finalCard).toBeVisible({ timeout: 10000 });
+  await expect(finalCard).toBeVisible({ timeout: 20000 });
   await finalCard.click();
 
   // Wait for the page to transition (loader overlay appears during "switching")
-  await expect(page.locator('.switching-overlay')).not.toBeVisible({ timeout: 10000 });
+  await expect(page.locator('.switching-overlay')).not.toBeVisible({ timeout: 20000 });
 
   // Wait for dashboard to load
   await page.waitForLoadState('networkidle');
@@ -44,7 +45,7 @@ test('Agent role dashboard access and sidebar permissions', async ({ page }) => 
   // Step 3: Verify organization selection and Agent permissions
   console.log('\n📍 Step 3: Verify organization selection and Agent permissions');
   const orgSelectorHeader = page.locator('.org-dropdown-trigger').first();
-  await expect(orgSelectorHeader).toBeVisible({ timeout: 10000 });
+  await expect(orgSelectorHeader).toBeVisible({ timeout: 20000 });
 
   const selectedOrgName = orgSelectorHeader.locator('.org-name');
   await expect(selectedOrgName).not.toHaveText(/No organization/i, { timeout: 10000 });

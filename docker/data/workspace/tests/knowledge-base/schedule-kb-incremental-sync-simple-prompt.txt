@@ -85,10 +85,10 @@ IMPORTANT RULES:
    After login, the app MAY redirect to /?select_org OR directly to the dashboard (if org is remembered).
    NEVER use waitForURL(/\?select_org/) directly — it times out when the server skips org selection.
    CORRECT post-login pattern (waitForURL callback gets a URL object — use .pathname or .href, NOT .includes()):
-     await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
+     await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 });
      if (page.url().includes('select_org')) {  // page.url() returns a string — .includes() is fine here
        await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
-       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
+       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 });
      }
 4. Selector priority — ALWAYS follow this order:
    STEP 1: Custom CSS class from SKILL.md (e.g. .schedule-button, .sync-button, .create-button).
@@ -112,7 +112,7 @@ IMPORTANT RULES:
      console.log('='.repeat(70));
 7. Modal loading states: after a modal/overlay opens, ALWAYS wait for any loading indicator to disappear
    before asserting content or interacting with form fields. Use:
-     await page.locator('.v-overlay--active').locator('text=/loading/i').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+     await page.locator('.v-overlay--active').locator('text=/loading/i').waitFor({ state: 'hidden', timeout: 40000 }).catch(() => {});
 8. For modal form fields (Sync Type, Cron mode toggle, etc.): NEVER guess component types.
    Always derive selectors from the reference document you created in Phase 2.
    If a toggle or selector is not documented, use getByRole() or getByText() with exact visible text.
@@ -137,7 +137,7 @@ IMPORTANT RULES:
      page.locator('.v-overlay--active .v-list-item').filter({ hasText: /^Day 1$/ })  ← anchored regex
    The same applies to any numbered item: "Day 2", "Week 1", "Month 1", etc.
 10. Test timeout: set at least 60 seconds.
-    test.setTimeout(60000);
+    test.setTimeout(180000);
     Place this as the FIRST line inside the test() callback.
 
 Create a Playwright test file at /tests/knowledge-base/schedule-kb-incremental-sync-simple.spec.ts.

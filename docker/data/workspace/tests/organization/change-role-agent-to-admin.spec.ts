@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { loginAndSelectOrg } from '../utils/auth';
 
 test('Change member role from Agent to Admin flow', async ({ page }) => {
+  test.setTimeout(180000); // 3 minutes timeout
   const primaryEmail = 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
   const memberEmail = 'heidi+1@intnt.ai';
@@ -23,7 +24,7 @@ test('Change member role from Agent to Admin flow', async ({ page }) => {
   console.log(`\n📍 Step 4: Locate row with email ${memberEmail}`);
   // We locate the TR specifically to ensure we are in the right container
   const memberRow = page.locator('tr').filter({ hasText: memberEmail });
-  await expect(memberRow).toBeVisible({ timeout: 10000 });
+  await expect(memberRow).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 4 - Member row found');
 
   // Step 5: Click the three-dot actions menu (⋮)

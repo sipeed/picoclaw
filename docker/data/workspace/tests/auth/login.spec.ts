@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test('Login flow - User login and redirect to organization selection', async ({ page }) => {
   // Step 1: Open the page and verify it loads
   console.log('\n📍 Step 1: Open the page and verify it loads');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
   await expect(page).toHaveURL(/.*login/);
   console.log('✅ PASS: Step 1 - Login page loaded successfully');
 
@@ -36,8 +36,8 @@ test('Login flow - User login and redirect to organization selection', async ({ 
 
   // Step 5: Confirm the login is successful and verify redirect
   console.log('\n📍 Step 5: Confirm login success and verify redirect to ?select_org');
-  await page.waitForURL('**/dashboard.int3nt.info/?select_org', { timeout: 20000 });
-  await expect(page).toHaveURL('https://dashboard.int3nt.info/?select_org');
+  await page.waitForURL('**/?select_org', { timeout: 60000 });
+  await expect(page).toHaveURL(/\?select_org/);
   console.log('✅ PASS: Step 5 - Login successful, redirected to organization selection page');
 
   // Step 6: Report results

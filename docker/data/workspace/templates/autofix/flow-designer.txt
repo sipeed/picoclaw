@@ -1,0 +1,55 @@
+## YOUR ONLY JOB
+
+Run a Playwright test. If it fails, edit the spec file to fix it. Run again. Repeat until it passes.
+
+## STRICT RULES — violating these is failure
+
+❌ DO NOT create any .md files
+❌ DO NOT create any .sh files
+❌ DO NOT create any summary, report, or documentation files of any kind
+❌ DO NOT describe what you will do — just do it
+❌ DO NOT say "fixes applied" or "test is running" without having actually done the action
+❌ DO NOT predict "Expected Result: PASS" — run it and report real output only
+✅ DO edit /{{SPEC_FILE}} directly when a fix is needed
+✅ DO run the actual test command and show real terminal output
+✅ DO loop: run → check output → fix if failed → run again → repeat
+
+## Before your first run — read these files
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+- /skills/app-selectors-flow-designer/SKILL.md
+- /skills/app-selectors-flow-designer-canvas/SKILL.md
+- /tests/flow-designer/FLOW_DESIGNER_REFERENCE.md
+- /{{SPEC_FILE}}
+
+## The loop
+
+STEP 1 — Run this exact command:
+  cd /workspace && npx playwright test {{SPEC_FILE}} --reporter=line
+
+STEP 2 — Check real output:
+  - All tests PASSED → print the terminal output and stop. Done.
+  - Test FAILED → go to STEP 3.
+
+STEP 3 — Fix the spec file:
+  a) Read the error message and failing line number from the terminal output.
+  b) If the error mentions an error-context.md path, read that file.
+  c) Read /{{SPEC_FILE}}.
+  d) Find the exact line that caused the error.
+  e) Edit the file to fix it. Use the fix guide below.
+  f) Go back to STEP 1.
+
+## Fix guide
+
+| Error message contains | Root cause | Fix |
+|------------------------|-----------|-----|
+| `inputValue: Node is not an <input>` | `.inputValue()` called on a v-select div | Replace with `await expect(locator).toContainText(/text/)` |
+| `locator.fill: timeout` or `intercepts pointer events` on array input | `input[type="text"]` matches comboboxes — nth(N) lands on wrong element | Use `.array-item-fields input[type="text"]` scoped to array sections; `.first()` / `.last()` |
+| `locator.fill: timeout` waiting for array input | Item not yet rendered after clicking Add Item | Add `await input.waitFor({ state: 'visible', timeout: 5000 })` before fill |
+| `locator.evaluate: timeout` on `.vue-flow__node` filter | Clicked `.vue-flow__node` wrapper — does not open modal | Change to: `page.locator('.node-container').filter({ hasText: /TYPE/ }).first().evaluate(el => (el as HTMLElement).click())` |
+| `waitForURL: timeout` on `\?select_org` | `waitForURL(/\?select_org/)` fails when server skips org selection | Replace with: `await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 }); if (page.url().includes('select_org')) { await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click(); await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 }); }` |
+| Edge count did not increase | Edge drag failed silently | Increase post-drag waitForTimeout to 1500ms; ensure hover 200ms before mousedown, dwell 200ms on target before mouseup |
+| `toHaveValue` on dropdown | v-select is a div, not an input | Use `toContainText()` |
+| `strict mode violation` | Locator matched multiple elements | Add `.first()` or `.nth(N)` |
+| `locator.click: timeout` on modal button | Modal not fully open yet | Add `await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 20000 })` before clicking |

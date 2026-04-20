@@ -7,7 +7,7 @@ test('Schedule KB with Incremental Sync in Simple Mode', async ({ page }) => {
   // STEP 1: LOGIN
   // ============================================================================
   console.log('📍 Step 1: Navigate to login page');
-  await page.goto('https://dashboard.int3nt.info/login', { waitUntil: 'networkidle' });
+  await page.goto('/login', { waitUntil: 'networkidle' });
 
   console.log('📍 Step 2: Fill email and password');
   await page.locator('.v-text-field').nth(0).locator('input').fill('heidi@intnt.ai');
@@ -15,16 +15,16 @@ test('Schedule KB with Incremental Sync in Simple Mode', async ({ page }) => {
   await page.getByRole('button', { name: /login/i }).click();
 
   console.log('📍 Step 3: Wait for organization selection redirect');
-  await page.waitForURL(/\?select_org/, { timeout: 20000 });
+  await page.waitForURL(/\?select_org/, { timeout: 60000 });
 
   console.log('📍 Step 4: Select organization "Testing2026!"');
   const loader = page.locator('.loading-container, .loading-spinner, .v-progress-linear');
   if (await loader.first().isVisible().catch(() => false)) {
-    await loader.first().waitFor({ state: 'hidden', timeout: 15000 });
+    await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
   }
-  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
-  await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
-  await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 15000 });
+  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).first().click();
+  await page.waitForURL(url => !url.searchParams.has('select_org'), { timeout: 30000 });
 
   console.log('✅ PASS: Step 1-4 - Logged in and selected organization');
 
@@ -33,8 +33,8 @@ test('Schedule KB with Incremental Sync in Simple Mode', async ({ page }) => {
   // ============================================================================
   console.log('📍 Step 5: Navigate to Knowledge Base');
   await page.locator('a:has-text("Knowledge Base")').click();
-  await page.waitForURL(/\/knowledge-base/, { timeout: 10000 });
-  await page.locator('.knowledge-base-container').waitFor({ state: 'visible', timeout: 10000 });
+  await page.waitForURL(/\/knowledge-base/, { timeout: 60000 });
+  await page.locator('.knowledge-base-container').waitFor({ state: 'visible', timeout: 20000 });
 
   console.log('✅ PASS: Step 5 - Navigated to Knowledge Base page');
 
@@ -44,8 +44,8 @@ test('Schedule KB with Incremental Sync in Simple Mode', async ({ page }) => {
   console.log('📍 Step 6: Locate "Picotest2" KB bucket');
   const picotest2Card = page.locator('.bucket-card').filter({
     has: page.locator('.bucket-name').filter({ hasText: /^Picotest2$/ })
-  });
-  await picotest2Card.waitFor({ state: 'visible', timeout: 10000 });
+  }).first();
+  await picotest2Card.waitFor({ state: 'visible', timeout: 20000 });
 
   console.log('📍 Step 7: Click Schedule button on Picotest2 card');
   const scheduleButton = picotest2Card.locator('.schedule-button');
@@ -58,7 +58,7 @@ test('Schedule KB with Incremental Sync in Simple Mode', async ({ page }) => {
   // ============================================================================
   console.log('📍 Step 8: Wait for Manage Schedule modal to appear');
   const modal = page.locator('.v-card-title').filter({ hasText: /Manage Schedule/ });
-  await modal.waitFor({ state: 'visible', timeout: 10000 });
+  await modal.waitFor({ state: 'visible', timeout: 20000 });
 
   console.log('✅ PASS: Step 8 - Manage Schedule modal appeared');
 

@@ -1,0 +1,65 @@
+Before generating anything, read and follow:
+
+- /skills/playwright/SKILL.md
+- /skills/app-selectors/SKILL.md
+
+The base path is: /home/picoclaw/.picoclaw/workspace/context/dashboard/src
+If that path is not readable, STOP and report that the mount is missing. Do not proceed.
+
+## PHASE 1 — Source Code Discovery (MANDATORY)
+
+You MUST read EVERY file listed below. Do not skip any. Do not stop early.
+
+### Files to read:
+- src/pages/LogsPage.vue
+- src/components/DataTable.vue
+- src/stores/flow.store.ts
+- src/stores/snackbar.store.ts
+
+After reading ALL files, continue to Phase 2.
+
+## PHASE 2 — Create Reference Document
+
+Create a reference file at: /tests/logs/LOGS_REFERENCE.md
+
+### 0. Files Read
+List every file path you read in Phase 1. If the list contains fewer than 3 files, go back and complete Phase 1.
+
+### 1. Logs Page Navigation
+- Sidebar selector to navigate to Logs
+- Page URL or route identifier
+- How to verify the Logs page is loaded
+
+### 2. Logs Table
+- Selector for the logs table/list container
+- Selector for a log row
+- How to identify columns (timestamp, flow name, session ID, etc.)
+- Selector for filtering/searching logs (if a search input exists)
+- Selector for date range picker (if applicable)
+
+### 3. Log Row Interaction
+- How to open a log detail (click row or expand button)
+- Selector for the expanded log detail panel/modal
+- Selector for closing the detail panel
+
+### 4. Download Logs
+- Selector for the Download/Export button
+- File format (CSV, JSON, etc.)
+- Correct Playwright pattern for file download:
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.locator('<download-button-selector>').click(),
+    ]);
+    const filePath = await download.path();
+    expect(filePath).toBeTruthy();
+- Any filters that must be applied before downloading
+
+### 5. DataTable Component
+- How DataTable renders in the DOM
+- Selector for table rows
+- Selector for table headers
+- Selector for pagination controls (if any)
+
+### 6. Notifications
+- Selector for success snackbar/toast (e.g., download started)
+- Typical wait timeout
