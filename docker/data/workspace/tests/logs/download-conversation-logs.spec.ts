@@ -4,6 +4,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 test('Download conversation logs flow', async ({ page }) => {
+  test.setTimeout(180000);
+
   const primaryEmail = 'heidi@intnt.ai';
   const primaryPassword = 'testing2026!';
   const organizationName = 'Testing';

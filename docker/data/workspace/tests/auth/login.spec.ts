@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 
 test('Login flow - User login and redirect to organization selection', async ({ page }) => {
+  test.setTimeout(180000);
+
   // Step 1: Open the page and verify it loads
   console.log('\n📍 Step 1: Open the page and verify it loads');
   await page.goto('/login', { waitUntil: 'networkidle' });

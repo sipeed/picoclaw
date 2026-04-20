@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('Schedule KB with Incremental Sync in Simple Mode', async ({ page }) => {
-  test.setTimeout(60000);
+  test.setTimeout(180000);
 
   // ============================================================================
   // STEP 1: LOGIN

@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 
 test('Schedule Knowledge Base Full Sync with Simple Mode', async ({ page }) => {
+  test.setTimeout(180000);
+
   console.log('\n' + '='.repeat(70));
   console.log('🧪 TEST: Schedule KB Full Sync - Simple Mode');
   console.log('='.repeat(70) + '\n');

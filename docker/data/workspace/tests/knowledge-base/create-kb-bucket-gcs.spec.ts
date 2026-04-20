@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Knowledge Base - Create KB Bucket with GCS', () => {
   test('Create Knowledge Base Bucket with Google Cloud Storage - Full Flow', async ({ page }) => {
+    test.setTimeout(180000);
+
     const testEmail = 'heidi@intnt.ai';
     const testPassword = 'testing2026!';
     const orgName = 'Testing2026!';

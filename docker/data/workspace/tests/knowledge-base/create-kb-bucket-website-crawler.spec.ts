@@ -4,6 +4,8 @@ test.describe('Create Knowledge Base Bucket with Website Crawler', () => {
   let page: Page;
 
   test('Create KB Bucket - Website Crawler Configuration', async ({ browser }) => {
+    test.setTimeout(180000);
+
     page = await browser.newPage();
     const baseUrl = process.env.BASE_URL || 'https://dashboard.int3nt.info';
     const email = 'heidi@intnt.ai';

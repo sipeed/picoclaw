@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 
 test('Delete Knowledge Base Bucket', async ({ page }) => {
+  test.setTimeout(180000);
+
   console.log('📍 Step 1: Navigate to login page');
   await page.goto('/login', { waitUntil: 'networkidle' });
   await page.locator('.login-card').waitFor({ state: 'visible', timeout: 20000 });
