@@ -107,10 +107,6 @@ type toolFeedbackMessageCleaner interface {
 	DismissToolFeedbackMessage(ctx context.Context, chatID string)
 }
 
-type toolFeedbackMessageFinalizer interface {
-	FinalizeToolFeedbackMessage(ctx context.Context, msg bus.OutboundMessage) ([]string, bool)
-}
-
 type asyncTask struct {
 	cancel context.CancelFunc
 }
@@ -229,15 +225,18 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 	}
 
 	isToolFeedback := outboundMessageIsToolFeedback(msg)
-	if !isToolFeedback {
-		if finalizer, ok := ch.(toolFeedbackMessageFinalizer); ok {
-			if msgIDs, handled := finalizer.FinalizeToolFeedbackMessage(ctx, msg); handled {
-				return msgIDs, true
-			}
+
+	// 3. If a stream already finalized this chat, stale tool feedback must be
+	// dropped without consuming the final-response marker. Streaming finalization
+	// bypasses the worker queue, so older queued feedback can arrive before the
+	// normal final outbound message that cleans up the marker and placeholder.
+	if isToolFeedback {
+		if _, loaded := m.streamActive.Load(key); loaded {
+			return nil, true
 		}
 	}
 
-	// 3. If a stream already finalized this message, delete the placeholder and skip send
+	// 4. If a stream already finalized this message, delete the placeholder and skip send
 	if _, loaded := m.streamActive.LoadAndDelete(key); loaded {
 		if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 			if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
@@ -255,7 +254,7 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 		return nil, true
 	}
 
-	// 4. Try editing placeholder
+	// 5. Try editing placeholder
 	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
 			if editor, ok := ch.(MessageEditor); ok {
@@ -859,11 +858,20 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 // splitOutboundMessageContent splits regular outbound content by maxLen, but
 // keeps tool feedback in a single message by truncating the explanation body.
 func splitOutboundMessageContent(msg bus.OutboundMessage, maxLen int) []string {
-	if maxLen > 0 && len([]rune(msg.Content)) > maxLen {
+	if maxLen > 0 {
 		if outboundMessageIsToolFeedback(msg) {
-			return []string{utils.FitToolFeedbackMessage(msg.Content, maxLen)}
+			animationSafeLen := maxLen - MaxToolFeedbackAnimationFrameLength()
+			if animationSafeLen <= 0 {
+				animationSafeLen = maxLen
+			}
+			if len([]rune(msg.Content)) > animationSafeLen {
+				return []string{utils.FitToolFeedbackMessage(msg.Content, animationSafeLen)}
+			}
+			return []string{msg.Content}
 		}
-		return SplitMessage(msg.Content, maxLen)
+		if len([]rune(msg.Content)) > maxLen {
+			return SplitMessage(msg.Content, maxLen)
+		}
 	}
 	return []string{msg.Content}
 }

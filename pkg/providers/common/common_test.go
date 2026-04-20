@@ -199,6 +199,67 @@ func TestSerializeMessages_StripsInternalToolCallExtraContent(t *testing.T) {
 	}
 }
 
+func TestSerializeMessages_PreservesTopLevelThoughtSignature(t *testing.T) {
+	messages := []Message{
+		{
+			Role: "assistant",
+			ToolCalls: []ToolCall{{
+				ID:               "call_1",
+				Type:             "function",
+				ThoughtSignature: "sig-1",
+				Function: &FunctionCall{
+					Name:      "read_file",
+					Arguments: `{"path":"README.md"}`,
+				},
+			}},
+		},
+	}
+
+	result := SerializeMessages(messages)
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	payload := string(data)
+	if !strings.Contains(payload, `"thought_signature":"sig-1"`) {
+		t.Fatalf("serialized payload should preserve top-level thought signature: %s", payload)
+	}
+}
+
+func TestSerializeMessages_PreservesGoogleExtraThoughtSignature(t *testing.T) {
+	messages := []Message{
+		{
+			Role: "assistant",
+			ToolCalls: []ToolCall{{
+				ID:   "call_1",
+				Type: "function",
+				Function: &FunctionCall{
+					Name:      "read_file",
+					Arguments: `{"path":"README.md"}`,
+				},
+				ExtraContent: &ExtraContent{
+					Google: &GoogleExtra{ThoughtSignature: "sig-1"},
+				},
+			}},
+		},
+	}
+
+	result := SerializeMessages(messages)
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	payload := string(data)
+	if strings.Contains(payload, "extra_content") {
+		t.Fatalf("serialized payload should not include extra_content: %s", payload)
+	}
+	if !strings.Contains(payload, `"thought_signature":"sig-1"`) {
+		t.Fatalf("serialized payload should preserve google thought signature: %s", payload)
+	}
+}
+
 // --- ParseResponse tests ---
 
 func TestParseResponse_BasicContent(t *testing.T) {

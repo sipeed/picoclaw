@@ -186,6 +186,50 @@ func TestSend_NonToolFeedbackDeletesTrackedProgressMessage(t *testing.T) {
 	}
 }
 
+func TestEditMessage_UsesContextCancellation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(time.Second):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"id":"msg-1"}`)
+		}
+	}))
+	defer server.Close()
+
+	origChannels := discordgo.EndpointChannels
+	discordgo.EndpointChannels = server.URL + "/channels/"
+	defer func() {
+		discordgo.EndpointChannels = origChannels
+	}()
+
+	session, err := discordgo.New("Bot test-token")
+	if err != nil {
+		t.Fatalf("discordgo.New() error: %v", err)
+	}
+	session.Client = server.Client()
+
+	ch := &DiscordChannel{
+		BaseChannel: channels.NewBaseChannel("discord", nil, bus.NewMessageBus(), nil),
+		session:     session,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err = ch.EditMessage(ctx, "chat-1", "msg-1", "still running")
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected EditMessage() to fail when context times out")
+	}
+	if elapsed >= 500*time.Millisecond {
+		t.Fatalf("EditMessage() ignored context timeout, elapsed=%v", elapsed)
+	}
+}
+
 func TestFinalizeTrackedToolFeedbackMessage_StopsTrackingBeforeEdit(t *testing.T) {
 	ch := &DiscordChannel{
 		progress: channels.NewToolFeedbackAnimator(nil),

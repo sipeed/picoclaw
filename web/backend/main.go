@@ -544,7 +544,7 @@ func main() {
 	// API Routes (e.g. /api/status)
 	apiHandler = api.NewHandler(absPath)
 	apiHandler.SetDebug(debug)
-	if _, err = apiHandler.EnsurePicoChannel(""); err != nil {
+	if _, err = apiHandler.EnsurePicoChannel(); err != nil {
 		logger.ErrorC("web", fmt.Sprintf("Warning: failed to ensure pico channel on startup: %v", err))
 	}
 	apiHandler.SetServerOptions(portNum, effectivePublic, explicitPublic, launcherCfg.AllowedCIDRs)

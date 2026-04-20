@@ -462,10 +462,8 @@ func defaultChannels() ChannelsConfig {
 				"use_markdown_v2": false,
 			},
 		},
-		"feishu": map[string]any{},
-		"discord": map[string]any{
-			"placeholder": map[string]any{"enabled": true, "text": []string{"Thinking... 💭"}},
-		},
+		"feishu":  map[string]any{},
+		"discord": map[string]any{},
 		"maixcam": map[string]any{
 			"settings": map[string]any{"host": "0.0.0.0", "port": 18790},
 		},

@@ -4131,6 +4131,85 @@ func TestRunAgentLoop_PicoSkipsInterimPublishWhenNotAllowed(t *testing.T) {
 	}
 }
 
+func TestRun_PicoToolFeedbackSuppressesDuplicateInterimAssistantContent(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				ToolFeedback: config.ToolFeedbackConfig{
+					Enabled: true,
+				},
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &picoInterleavedContentProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	agent := al.GetRegistry().GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent")
+	}
+	agent.Tools.Register(&toolLimitTestTool{})
+
+	runCtx, runCancel := context.WithCancel(context.Background())
+	defer runCancel()
+
+	runDone := make(chan error, 1)
+	go func() {
+		runDone <- al.Run(runCtx)
+	}()
+
+	if err := msgBus.PublishInbound(context.Background(), bus.InboundMessage{
+		Channel:  "pico",
+		SenderID: "user-1",
+		ChatID:   "session-1",
+		Content:  "run with tools",
+	}); err != nil {
+		t.Fatalf("PublishInbound() error = %v", err)
+	}
+
+	outputs := make([]string, 0, 2)
+	deadline := time.After(2 * time.Second)
+	for len(outputs) < 2 {
+		select {
+		case outbound := <-msgBus.OutboundChan():
+			outputs = append(outputs, outbound.Content)
+		case <-deadline:
+			t.Fatalf("timed out waiting for pico outputs, got %v", outputs)
+		}
+	}
+
+	if outputs[0] != "🔧 `tool_limit_test_tool`\nintermediate model text" {
+		t.Fatalf("first outbound content = %q, want tool feedback summary", outputs[0])
+	}
+	if outputs[1] != "final model text" {
+		t.Fatalf("second outbound content = %q, want %q", outputs[1], "final model text")
+	}
+
+	runCancel()
+	select {
+	case err := <-runDone:
+		if err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for Run() to exit")
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		t.Fatalf("unexpected extra pico output after tool feedback + final reply: %+v", outbound)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
 func TestResolveMediaRefs_ResolvesToBase64(t *testing.T) {
 	store := media.NewFileMediaStore()
 	dir := t.TempDir()

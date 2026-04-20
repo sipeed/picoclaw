@@ -1,8 +1,8 @@
-> 返回 [README](../../../README.zh.md)
+> 返回 [README](../../project/README.zh.md)
 
 # Telegram
 
-Telegram Channel 通过 Telegram 机器人 API 使用长轮询实现基于机器人的通信。它支持文本消息、媒体附件（照片、语音、音频、文档）、语音转录（配置见[提供商与模型配置](../../zh/providers.md#语音转录)），以及内置命令处理器。
+Telegram Channel 通过 Telegram 机器人 API 使用长轮询实现基于机器人的通信。它支持文本消息、媒体附件（照片、语音、音频、文档）、语音转录（配置见[提供商与模型配置](../../guides/providers.zh.md#语音转录)），以及内置命令处理器。
 
 ## 配置
 

@@ -635,7 +635,11 @@ turnLoop:
 		}
 		logger.DebugCF("agent", "LLM response", llmResponseFields)
 
-		if al.bus != nil && ts.channel == "pico" && len(response.ToolCalls) > 0 && ts.opts.AllowInterimPicoPublish {
+		if al.bus != nil &&
+			ts.channel == "pico" &&
+			len(response.ToolCalls) > 0 &&
+			ts.opts.AllowInterimPicoPublish &&
+			!shouldPublishToolFeedback(al.cfg, ts) {
 			if strings.TrimSpace(response.Content) != "" {
 				outCtx, outCancel := context.WithTimeout(turnCtx, 3*time.Second)
 				err := al.bus.PublishOutbound(outCtx, bus.OutboundMessage{

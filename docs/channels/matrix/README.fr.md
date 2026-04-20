@@ -1,4 +1,4 @@
-> Retour au [README](../../../README.fr.md)
+> Retour au [README](../../project/README.fr.md)
 
 # Guide de configuration du canal Matrix
 

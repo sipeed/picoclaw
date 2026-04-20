@@ -218,6 +218,10 @@ func validLauncherDashboardAuth(r *http.Request, cfg LauncherDashboardAuthConfig
 }
 
 func rejectLauncherDashboardAuth(w http.ResponseWriter, r *http.Request, canonicalPath string) {
+	if canonicalPath == "/pico/ws" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	if strings.HasPrefix(canonicalPath, "/api/") {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)

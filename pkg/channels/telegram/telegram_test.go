@@ -350,6 +350,22 @@ func TestSend_ToolFeedbackStaysSingleMessageAfterHTMLExpansion(t *testing.T) {
 	assert.Len(t, caller.calls, 1, "tool feedback should stay a single Telegram message after HTML escaping")
 }
 
+func TestFitToolFeedbackForTelegram_ReservesAnimationFrame(t *testing.T) {
+	content := "🔧 `read_file`\n" + strings.Repeat("a", 4096)
+
+	fitted := fitToolFeedbackForTelegram(content, false, 4096)
+	animated := strings.Replace(
+		fitted,
+		"`\n",
+		strings.Repeat(".", channels.MaxToolFeedbackAnimationFrameLength())+"`\n",
+		1,
+	)
+
+	if got := len([]rune(parseContent(animated, false))); got > 4096 {
+		t.Fatalf("animated parsed length = %d, want <= 4096", got)
+	}
+}
+
 func TestSend_LongMessage_SingleCall(t *testing.T) {
 	// With WithMaxMessageLength(4000), the Manager pre-splits messages before
 	// they reach Send(). A message at exactly 4000 chars should go through

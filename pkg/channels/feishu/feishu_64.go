@@ -158,13 +158,11 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]st
 	isToolFeedback := outboundMessageIsToolFeedback(msg)
 	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(msg.ChatID)
 	if isToolFeedback {
-		animatedContent := channels.InitialAnimatedToolFeedbackContent(msg.Content)
-		if msgID, ok := c.currentToolFeedbackMessage(msg.ChatID); ok {
-			if err := c.EditMessage(ctx, msg.ChatID, msgID, animatedContent); err == nil {
-				c.RecordToolFeedbackMessage(msg.ChatID, msgID, msg.Content)
-				return []string{msgID}, nil
+		if msgID, handled, err := c.progress.Update(ctx, msg.ChatID, msg.Content); handled {
+			if err != nil {
+				return nil, err
 			}
-			c.ClearToolFeedbackMessage(msg.ChatID)
+			return []string{msgID}, nil
 		}
 	} else {
 		if msgIDs, handled := c.FinalizeToolFeedbackMessage(ctx, msg); handled {

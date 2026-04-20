@@ -18,8 +18,6 @@ const (
 	TypeError         = "error"
 	TypePong          = "pong"
 
-	PicoTokenPrefix = "pico-"
-
 	PayloadKeyContent = "content"
 	PayloadKeyThought = "thought"
 

@@ -169,12 +169,23 @@ func serializeToolCalls(toolCalls []ToolCall) []openaiToolCall {
 		}
 
 		if tc.Function != nil {
+			thoughtSignature := tc.Function.ThoughtSignature
+			if thoughtSignature == "" {
+				thoughtSignature = tc.ThoughtSignature
+			}
+			if thoughtSignature == "" && tc.ExtraContent != nil && tc.ExtraContent.Google != nil {
+				thoughtSignature = tc.ExtraContent.Google.ThoughtSignature
+			}
 			wireCall.Function = &openaiFunctionCall{
 				Name:             tc.Function.Name,
 				Arguments:        tc.Function.Arguments,
-				ThoughtSignature: tc.Function.ThoughtSignature,
+				ThoughtSignature: thoughtSignature,
 			}
 		} else if tc.Name != "" || len(tc.Arguments) > 0 || tc.ThoughtSignature != "" {
+			thoughtSignature := tc.ThoughtSignature
+			if thoughtSignature == "" && tc.ExtraContent != nil && tc.ExtraContent.Google != nil {
+				thoughtSignature = tc.ExtraContent.Google.ThoughtSignature
+			}
 			argsJSON := "{}"
 			if len(tc.Arguments) > 0 {
 				if encoded, err := json.Marshal(tc.Arguments); err == nil {
@@ -184,7 +195,7 @@ func serializeToolCalls(toolCalls []ToolCall) []openaiToolCall {
 			wireCall.Function = &openaiFunctionCall{
 				Name:             tc.Name,
 				Arguments:        argsJSON,
-				ThoughtSignature: tc.ThoughtSignature,
+				ThoughtSignature: thoughtSignature,
 			}
 		}
 

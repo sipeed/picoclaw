@@ -204,13 +204,11 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 		toolFeedbackContent = fitToolFeedbackForTelegram(msg.Content, useMarkdownV2, 4096)
 	}
 	if isToolFeedback {
-		animatedContent := channels.InitialAnimatedToolFeedbackContent(toolFeedbackContent)
-		if msgID, ok := c.currentToolFeedbackMessage(msg.ChatID); ok {
-			if err := c.EditMessage(ctx, msg.ChatID, msgID, animatedContent); err == nil {
-				c.RecordToolFeedbackMessage(msg.ChatID, msgID, toolFeedbackContent)
-				return []string{msgID}, nil
+		if msgID, handled, err := c.progress.Update(ctx, msg.ChatID, toolFeedbackContent); handled {
+			if err != nil {
+				return nil, err
 			}
-			c.ClearToolFeedbackMessage(msg.ChatID)
+			return []string{msgID}, nil
 		}
 	}
 	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(msg.ChatID)
@@ -1077,7 +1075,11 @@ func fitToolFeedbackForTelegram(content string, useMarkdownV2 bool, maxParsedLen
 	if content == "" || maxParsedLen <= 0 {
 		return ""
 	}
-	if len([]rune(parseContent(content, useMarkdownV2))) <= maxParsedLen {
+	animationSafeLen := maxParsedLen - channels.MaxToolFeedbackAnimationFrameLength()
+	if animationSafeLen <= 0 {
+		animationSafeLen = maxParsedLen
+	}
+	if len([]rune(parseContent(content, useMarkdownV2))) <= animationSafeLen {
 		return content
 	}
 
@@ -1092,7 +1094,7 @@ func fitToolFeedbackForTelegram(content string, useMarkdownV2 bool, maxParsedLen
 			high = mid - 1
 			continue
 		}
-		if len([]rune(parseContent(candidate, useMarkdownV2))) <= maxParsedLen {
+		if len([]rune(parseContent(candidate, useMarkdownV2))) <= animationSafeLen {
 			best = candidate
 			low = mid + 1
 			continue

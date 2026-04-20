@@ -13,6 +13,18 @@ const initialToolFeedbackAnimationFrame = ""
 
 var toolFeedbackAnimationFrames = []string{"..", "."}
 
+// MaxToolFeedbackAnimationFrameLength returns the largest frame suffix length
+// so callers can reserve room before sending messages to length-limited APIs.
+func MaxToolFeedbackAnimationFrameLength() int {
+	maxLen := len([]rune(initialToolFeedbackAnimationFrame))
+	for _, frame := range toolFeedbackAnimationFrames {
+		if frameLen := len([]rune(frame)); frameLen > maxLen {
+			maxLen = frameLen
+		}
+	}
+	return maxLen
+}
+
 type toolFeedbackAnimationState struct {
 	messageID   string
 	baseContent string
@@ -96,6 +108,28 @@ func (a *ToolFeedbackAnimator) Take(chatID string) (string, string, bool) {
 	}
 	stopToolFeedbackAnimation(entry)
 	return entry.messageID, entry.baseContent, true
+}
+
+// Update edits an existing tracked feedback message. If the edit fails, the
+// previous feedback state is restored so callers can retry without orphaning
+// the old progress message.
+func (a *ToolFeedbackAnimator) Update(ctx context.Context, chatID, content string) (string, bool, error) {
+	if a == nil || a.editFn == nil {
+		return "", false, nil
+	}
+	msgID, baseContent, ok := a.Take(chatID)
+	if !ok {
+		return "", false, nil
+	}
+
+	animatedContent := InitialAnimatedToolFeedbackContent(content)
+	if err := a.editFn(ctx, strings.TrimSpace(chatID), msgID, animatedContent); err != nil {
+		a.Record(chatID, msgID, baseContent)
+		return "", true, err
+	}
+
+	a.Record(chatID, msgID, content)
+	return msgID, true, nil
 }
 
 func (a *ToolFeedbackAnimator) StopAll() {

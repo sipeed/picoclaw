@@ -1,6 +1,10 @@
 package channels
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
+)
 
 func TestFormatAnimatedToolFeedbackContent(t *testing.T) {
 	got := formatAnimatedToolFeedbackContent("🔧 `read_file`\nReading config file", "running..")
@@ -59,5 +63,59 @@ func TestToolFeedbackAnimator_TakeStopsTrackingAndReturnsState(t *testing.T) {
 	}
 	if _, ok := animator.Current("chat-1"); ok {
 		t.Fatal("expected tracked message to be removed after Take()")
+	}
+}
+
+func TestToolFeedbackAnimator_UpdateStopsTrackingBeforeEdit(t *testing.T) {
+	var animator *ToolFeedbackAnimator
+	animator = NewToolFeedbackAnimator(func(_ context.Context, chatID, messageID, content string) error {
+		if _, ok := animator.Current(chatID); ok {
+			t.Fatal("expected tracked tool feedback to be stopped before edit")
+		}
+		if messageID != "msg-1" {
+			t.Fatalf("messageID = %q, want msg-1", messageID)
+		}
+		if content != "🔧 `write_file`\nUpdating config" {
+			t.Fatalf("content = %q, want updated animated content", content)
+		}
+		return nil
+	})
+	defer animator.StopAll()
+
+	animator.Record("chat-1", "msg-1", "🔧 `read_file`\nChecking config")
+
+	msgID, handled, err := animator.Update(context.Background(), "chat-1", "🔧 `write_file`\nUpdating config")
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if !handled {
+		t.Fatal("Update() handled = false, want true")
+	}
+	if msgID != "msg-1" {
+		t.Fatalf("Update() msgID = %q, want msg-1", msgID)
+	}
+}
+
+func TestToolFeedbackAnimator_UpdateFailureRestoresTracking(t *testing.T) {
+	editErr := errors.New("edit failed")
+	animator := NewToolFeedbackAnimator(func(context.Context, string, string, string) error {
+		return editErr
+	})
+	defer animator.StopAll()
+
+	animator.Record("chat-1", "msg-1", "🔧 `read_file`\nChecking config")
+
+	msgID, handled, err := animator.Update(context.Background(), "chat-1", "🔧 `write_file`\nUpdating config")
+	if !handled {
+		t.Fatal("Update() handled = false, want true")
+	}
+	if !errors.Is(err, editErr) {
+		t.Fatalf("Update() error = %v, want editErr", err)
+	}
+	if msgID != "" {
+		t.Fatalf("Update() msgID = %q, want empty on failed edit", msgID)
+	}
+	if currentID, ok := animator.Current("chat-1"); !ok || currentID != "msg-1" {
+		t.Fatalf("Current() after failed Update = (%q, %v), want (msg-1, true)", currentID, ok)
 	}
 }

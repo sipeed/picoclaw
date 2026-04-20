@@ -11,16 +11,21 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/channels/pico"
 	"github.com/sipeed/picoclaw/pkg/config"
 	ppid "github.com/sipeed/picoclaw/pkg/pid"
 )
+
+func newPicoProxyRequest(method, path string) *http.Request {
+	req := httptest.NewRequest(method, "http://launcher.local:18800"+path, nil)
+	req.Header.Set("Origin", "http://launcher.local:18800")
+	return req
+}
 
 func TestEnsurePicoChannel_FreshConfig(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
 
-	changed, err := h.EnsurePicoChannel("")
+	changed, err := h.EnsurePicoChannel()
 	if err != nil {
 		t.Fatalf("EnsurePicoChannel() error = %v", err)
 	}
@@ -51,7 +56,7 @@ func TestEnsurePicoChannel_DoesNotEnableTokenQuery(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
 
-	if _, err := h.EnsurePicoChannel(""); err != nil {
+	if _, err := h.EnsurePicoChannel(); err != nil {
 		t.Fatalf("EnsurePicoChannel() error = %v", err)
 	}
 
@@ -71,11 +76,11 @@ func TestEnsurePicoChannel_DoesNotEnableTokenQuery(t *testing.T) {
 	}
 }
 
-func TestEnsurePicoChannel_DoesNotSetWildcardOrigins(t *testing.T) {
+func TestEnsurePicoChannel_LeavesAllowOriginsEmptyByDefault(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
 
-	if _, err := h.EnsurePicoChannel("http://localhost:18800"); err != nil {
+	if _, err := h.EnsurePicoChannel(); err != nil {
 		t.Fatalf("EnsurePicoChannel() error = %v", err)
 	}
 
@@ -90,45 +95,16 @@ func TestEnsurePicoChannel_DoesNotSetWildcardOrigins(t *testing.T) {
 		t.Fatalf("GetDecoded() error = %v", err)
 	}
 	picoCfg := decoded.(*config.PicoSettings)
-	for _, origin := range picoCfg.AllowOrigins {
-		if origin == "*" {
-			t.Error("setup must not set wildcard origin '*'")
-		}
-	}
-}
-
-func TestEnsurePicoChannel_NoOriginWithoutCaller(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "config.json")
-	h := NewHandler(configPath)
-
-	if _, err := h.EnsurePicoChannel(""); err != nil {
-		t.Fatalf("EnsurePicoChannel() error = %v", err)
-	}
-
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-
-	bc := cfg.Channels["pico"]
-	decoded, err := bc.GetDecoded()
-	if err != nil {
-		t.Fatalf("GetDecoded() error = %v", err)
-	}
-	picoCfg := decoded.(*config.PicoSettings)
-	// Without a caller origin, allow_origins stays empty (CheckOrigin
-	// allows all when the list is empty, so the channel still works).
 	if len(picoCfg.AllowOrigins) != 0 {
-		t.Errorf("allow_origins = %v, want empty when no caller origin", picoCfg.AllowOrigins)
+		t.Errorf("allow_origins = %v, want empty", picoCfg.AllowOrigins)
 	}
 }
 
-func TestEnsurePicoChannel_SetsCallerOrigin(t *testing.T) {
+func TestEnsurePicoChannel_NoOriginConfigurationRequired(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
 
-	lanOrigin := "http://192.168.1.9:18800"
-	if _, err := h.EnsurePicoChannel(lanOrigin); err != nil {
+	if _, err := h.EnsurePicoChannel(); err != nil {
 		t.Fatalf("EnsurePicoChannel() error = %v", err)
 	}
 
@@ -143,8 +119,8 @@ func TestEnsurePicoChannel_SetsCallerOrigin(t *testing.T) {
 		t.Fatalf("GetDecoded() error = %v", err)
 	}
 	picoCfg := decoded.(*config.PicoSettings)
-	if len(picoCfg.AllowOrigins) != 1 || picoCfg.AllowOrigins[0] != lanOrigin {
-		t.Errorf("allow_origins = %v, want [%s]", picoCfg.AllowOrigins, lanOrigin)
+	if len(picoCfg.AllowOrigins) != 0 {
+		t.Errorf("allow_origins = %v, want empty", picoCfg.AllowOrigins)
 	}
 }
 
@@ -169,7 +145,7 @@ func TestEnsurePicoChannel_PreservesUserSettings(t *testing.T) {
 
 	h := NewHandler(configPath)
 
-	changed, err := h.EnsurePicoChannel("")
+	changed, err := h.EnsurePicoChannel()
 	if err != nil {
 		t.Fatalf("EnsurePicoChannel() error = %v", err)
 	}
@@ -213,7 +189,7 @@ func TestEnsurePicoChannel_ExistingConfigWithoutSecurityFile(t *testing.T) {
 
 	h := NewHandler(configPath)
 
-	changed, err := h.EnsurePicoChannel("")
+	changed, err := h.EnsurePicoChannel()
 	if err != nil {
 		t.Fatalf("EnsurePicoChannel() error = %v", err)
 	}
@@ -253,7 +229,7 @@ func TestEnsurePicoChannel_ConfiguresPicoWithoutGateway(t *testing.T) {
 	}
 
 	h := NewHandler(configPath)
-	if _, err := h.EnsurePicoChannel(""); err != nil {
+	if _, err := h.EnsurePicoChannel(); err != nil {
 		t.Fatalf("EnsurePicoChannel() error = %v", err)
 	}
 
@@ -280,10 +256,8 @@ func TestEnsurePicoChannel_Idempotent(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
 
-	origin := "http://localhost:18800"
-
 	// First call sets things up
-	if _, err := h.EnsurePicoChannel(origin); err != nil {
+	if _, err := h.EnsurePicoChannel(); err != nil {
 		t.Fatalf("first EnsurePicoChannel() error = %v", err)
 	}
 
@@ -297,7 +271,7 @@ func TestEnsurePicoChannel_Idempotent(t *testing.T) {
 	token1 := picoCfg.Token.String()
 
 	// Second call should be a no-op
-	changed, err := h.EnsurePicoChannel(origin)
+	changed, err := h.EnsurePicoChannel()
 	if err != nil {
 		t.Fatalf("second EnsurePicoChannel() error = %v", err)
 	}
@@ -317,7 +291,7 @@ func TestEnsurePicoChannel_Idempotent(t *testing.T) {
 	}
 }
 
-func TestHandlePicoSetup_IncludesRequestOrigin(t *testing.T) {
+func TestHandlePicoSetup_DoesNotPersistRequestOrigin(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
 
@@ -342,8 +316,8 @@ func TestHandlePicoSetup_IncludesRequestOrigin(t *testing.T) {
 		t.Fatalf("GetDecoded() error = %v", err)
 	}
 	picoCfg := decoded.(*config.PicoSettings)
-	if len(picoCfg.AllowOrigins) != 1 || picoCfg.AllowOrigins[0] != "http://10.0.0.5:3000" {
-		t.Errorf("allow_origins = %v, want [http://10.0.0.5:3000]", picoCfg.AllowOrigins)
+	if len(picoCfg.AllowOrigins) != 0 {
+		t.Errorf("allow_origins = %v, want empty", picoCfg.AllowOrigins)
 	}
 }
 
@@ -365,8 +339,8 @@ func TestHandlePicoSetup_Response(t *testing.T) {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	if resp["token"] == nil || resp["token"] == "" {
-		t.Error("response should contain a non-empty token")
+	if _, ok := resp["token"]; ok {
+		t.Error("response must not expose the raw pico token")
 	}
 	if resp["ws_url"] == nil || resp["ws_url"] == "" {
 		t.Error("response should contain ws_url")
@@ -376,6 +350,45 @@ func TestHandlePicoSetup_Response(t *testing.T) {
 	}
 	if resp["changed"] != true {
 		t.Error("response should have changed=true on first setup")
+	}
+	if resp["configured"] != true {
+		t.Error("response should have configured=true")
+	}
+}
+
+func TestHandleGetPicoInfo_OmitsToken(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+
+	if _, err := h.EnsurePicoChannel(); err != nil {
+		t.Fatalf("EnsurePicoChannel() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://launcher.local/api/pico/info", nil)
+	rec := httptest.NewRecorder()
+
+	h.handleGetPicoInfo(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if _, ok := resp["token"]; ok {
+		t.Fatal("info response must not expose the raw pico token")
+	}
+	if resp["enabled"] != true {
+		t.Fatalf("enabled = %#v, want true", resp["enabled"])
+	}
+	if resp["configured"] != true {
+		t.Fatalf("configured = %#v, want true", resp["configured"])
+	}
+	if resp["ws_url"] == nil || resp["ws_url"] == "" {
+		t.Fatal("response should contain ws_url")
 	}
 }
 
@@ -438,18 +451,8 @@ func TestHandleWebSocketProxyReloadsGatewayTargetFromConfig(t *testing.T) {
 
 	gateway.pidData = &ppid.PidFileData{}
 	gateway.picoToken = "pico"
-	req1 := httptest.NewRequest(http.MethodGet, "/pico/ws", nil)
-	req1.Header.Set(protocolKey, tokenPrefix+"wrong_token")
+	req1 := newPicoProxyRequest(http.MethodGet, "/pico/ws")
 	rec1 := httptest.NewRecorder()
-	handler(rec1, req1)
-
-	if rec1.Code != http.StatusForbidden {
-		t.Fatalf("first status = %d, want %d", rec1.Code, http.StatusForbidden)
-	}
-
-	req1 = httptest.NewRequest(http.MethodGet, "/pico/ws", nil)
-	req1.Header.Set(protocolKey, tokenPrefix+"pico")
-	rec1 = httptest.NewRecorder()
 	handler(rec1, req1)
 
 	if rec1.Code != http.StatusOK {
@@ -464,8 +467,7 @@ func TestHandleWebSocketProxyReloadsGatewayTargetFromConfig(t *testing.T) {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
-	req2 := httptest.NewRequest(http.MethodGet, "/pico/ws", nil)
-	req2.Header.Set(protocolKey, tokenPrefix+"pico")
+	req2 := newPicoProxyRequest(http.MethodGet, "/pico/ws")
 	rec2 := httptest.NewRecorder()
 	handler(rec2, req2)
 
@@ -539,8 +541,7 @@ func TestHandleWebSocketProxyLoadsCachedPicoTokenWhenMissing(t *testing.T) {
 	gateway.pidData = &ppid.PidFileData{}
 	gateway.picoToken = ""
 
-	req := httptest.NewRequest(http.MethodGet, "/pico/ws?session_id=test-session", nil)
-	req.Header.Set(protocolKey, tokenPrefix+"cached-token")
+	req := newPicoProxyRequest(http.MethodGet, "/pico/ws?session_id=test-session")
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 
@@ -625,8 +626,7 @@ func TestHandleWebSocketProxyLoadsPidDataOnDemand(t *testing.T) {
 	setGatewayRuntimeStatusLocked("stopped")
 	gateway.mu.Unlock()
 
-	req := httptest.NewRequest(http.MethodGet, "/pico/ws?session_id=test-session", nil)
-	req.Header.Set(protocolKey, tokenPrefix+"ui-token")
+	req := newPicoProxyRequest(http.MethodGet, "/pico/ws?session_id=test-session")
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 
@@ -634,7 +634,7 @@ func TestHandleWebSocketProxyLoadsPidDataOnDemand(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 
-	expected := tokenPrefix + pico.PicoTokenPrefix + pidData.Token + "ui-token"
+	expected := tokenPrefix + "ui-token"
 	if got := rec.Body.String(); got != expected {
 		t.Fatalf("forwarded protocol = %q, want %q", got, expected)
 	}
@@ -696,8 +696,7 @@ func TestHandleWebSocketProxyRejectsStalePidDataAfterProcessExit(t *testing.T) {
 	setGatewayRuntimeStatusLocked("running")
 	gateway.mu.Unlock()
 
-	req := httptest.NewRequest(http.MethodGet, "/pico/ws?session_id=test-session", nil)
-	req.Header.Set(protocolKey, tokenPrefix+"ui-token")
+	req := newPicoProxyRequest(http.MethodGet, "/pico/ws?session_id=test-session")
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 
@@ -708,6 +707,78 @@ func TestHandleWebSocketProxyRejectsStalePidDataAfterProcessExit(t *testing.T) {
 	defer gateway.mu.Unlock()
 	if gateway.pidData != nil {
 		t.Fatal("gateway.pidData should be cleared after stale process exit is detected")
+	}
+}
+
+func TestHandleWebSocketProxy_AllowsArbitraryOrigin(t *testing.T) {
+	origMatcher := gatewayProcessMatcher
+	gatewayProcessMatcher = func(int) (bool, bool) { return true, true }
+	t.Cleanup(func() { gatewayProcessMatcher = origMatcher })
+
+	home := t.TempDir()
+	t.Setenv("PICOCLAW_HOME", home)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	handler := h.handleWebSocketProxy()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/pico/ws" {
+			t.Fatalf("path = %q, want %q", r.URL.Path, "/pico/ws")
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "proxied")
+	}))
+	defer server.Close()
+
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Host = "127.0.0.1"
+	cfg.Gateway.Port = mustGatewayTestPort(t, server.URL)
+	bc := cfg.Channels["pico"]
+	bc.Enabled = true
+	decoded, err := bc.GetDecoded()
+	if err != nil {
+		t.Fatalf("GetDecoded() error = %v", err)
+	}
+	decoded.(*config.PicoSettings).SetToken("ui-token")
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	cmd := startGatewayLikeProcess(t)
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	})
+	writeTestPidFile(t, ppid.PidFileData{
+		PID:   cmd.Process.Pid,
+		Token: "test-token",
+		Host:  cfg.Gateway.Host,
+		Port:  cfg.Gateway.Port,
+	})
+	t.Cleanup(func() {
+		ppid.RemovePidFile(globalConfigDir())
+	})
+
+	origPidData := gateway.pidData
+	origPicoToken := gateway.picoToken
+	t.Cleanup(func() {
+		gateway.pidData = origPidData
+		gateway.picoToken = origPicoToken
+	})
+
+	gateway.pidData = &ppid.PidFileData{}
+	gateway.picoToken = "ui-token"
+
+	req := httptest.NewRequest(http.MethodGet, "http://launcher.local/pico/ws?session_id=test-session", nil)
+	req.Header.Set("Origin", "http://evil.example")
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 }
 

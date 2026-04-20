@@ -176,13 +176,11 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]s
 
 	isToolFeedback := outboundMessageIsToolFeedback(msg)
 	if isToolFeedback {
-		animatedContent := channels.InitialAnimatedToolFeedbackContent(msg.Content)
-		if msgID, ok := c.currentToolFeedbackMessage(channelID); ok {
-			if err := c.EditMessage(ctx, channelID, msgID, animatedContent); err == nil {
-				c.RecordToolFeedbackMessage(channelID, msgID, msg.Content)
-				return []string{msgID}, nil
+		if msgID, handled, err := c.progress.Update(ctx, channelID, msg.Content); handled {
+			if err != nil {
+				return nil, err
 			}
-			c.ClearToolFeedbackMessage(channelID)
+			return []string{msgID}, nil
 		}
 	}
 	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(channelID)
@@ -367,13 +365,13 @@ func (c *DiscordChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMes
 
 // EditMessage implements channels.MessageEditor.
 func (c *DiscordChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
-	_, err := c.session.ChannelMessageEdit(chatID, messageID, content)
+	_, err := c.session.ChannelMessageEdit(chatID, messageID, content, discordgo.WithContext(ctx))
 	return err
 }
 
 // DeleteMessage implements channels.MessageDeleter.
 func (c *DiscordChannel) DeleteMessage(ctx context.Context, chatID string, messageID string) error {
-	return c.session.ChannelMessageDelete(chatID, messageID)
+	return c.session.ChannelMessageDelete(chatID, messageID, discordgo.WithContext(ctx))
 }
 
 // SendPlaceholder implements channels.PlaceholderCapable.

@@ -486,6 +486,15 @@ func visibleSessionMessages(messages []providers.Message, toolFeedbackMaxArgsLen
 				transcript = append(transcript, visibleToolMessages...)
 			}
 
+			// When assistant content exactly matches the rendered tool summary or
+			// tool-delivered message, skip it to avoid duplicates. Distinct content
+			// must remain visible in restored session history.
+			if len(msg.ToolCalls) > 0 &&
+				len(msg.Media) == 0 &&
+				assistantToolCallContentDuplicated(msg.Content, toolSummaryMessages, visibleToolMessages) {
+				continue
+			}
+
 			// Pico web chat can persist both visible `message` tool output and a
 			// later plain assistant reply in the same turn. Hide only the fixed
 			// internal summary that marks handled tool delivery.
@@ -502,6 +511,43 @@ func visibleSessionMessages(messages []providers.Message, toolFeedbackMaxArgsLen
 	}
 
 	return transcript
+}
+
+func assistantToolCallContentDuplicated(
+	content string,
+	toolSummaryMessages []sessionChatMessage,
+	visibleToolMessages []sessionChatMessage,
+) bool {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return false
+	}
+
+	for _, msg := range toolSummaryMessages {
+		if toolSummaryContainsContent(msg.Content, content) {
+			return true
+		}
+	}
+	for _, msg := range visibleToolMessages {
+		if strings.TrimSpace(msg.Content) == content {
+			return true
+		}
+	}
+	return false
+}
+
+func toolSummaryContainsContent(summary, content string) bool {
+	summary = strings.TrimSpace(summary)
+	content = strings.TrimSpace(content)
+	if summary == "" || content == "" {
+		return false
+	}
+	if summary == content {
+		return true
+	}
+
+	_, body, hasBody := strings.Cut(summary, "\n")
+	return hasBody && strings.TrimSpace(body) == content
 }
 
 func assistantMessageTransientThought(msg providers.Message) bool {
@@ -539,17 +585,39 @@ func visibleAssistantToolSummaryMessages(
 			continue
 		}
 
-		explanation := ""
-		if tc.ExtraContent != nil {
-			explanation = strings.TrimSpace(tc.ExtraContent.ToolFeedbackExplanation)
-		}
 		messages = append(messages, sessionChatMessage{
-			Role:    "assistant",
-			Content: utils.FormatToolFeedbackMessage(name, utils.Truncate(explanation, toolFeedbackMaxArgsLength)),
+			Role: "assistant",
+			Content: utils.FormatToolFeedbackMessage(
+				name,
+				visibleAssistantToolSummaryText(tc, toolFeedbackMaxArgsLength),
+			),
 		})
 	}
 
 	return messages
+}
+
+func visibleAssistantToolSummaryText(
+	tc providers.ToolCall,
+	toolFeedbackMaxArgsLength int,
+) string {
+	if tc.ExtraContent != nil {
+		if explanation := strings.TrimSpace(tc.ExtraContent.ToolFeedbackExplanation); explanation != "" {
+			return utils.Truncate(explanation, toolFeedbackMaxArgsLength)
+		}
+	}
+
+	argsJSON := ""
+	if tc.Function != nil {
+		argsJSON = tc.Function.Arguments
+	}
+	if strings.TrimSpace(argsJSON) == "" && len(tc.Arguments) > 0 {
+		if encodedArgs, err := json.Marshal(tc.Arguments); err == nil {
+			argsJSON = string(encodedArgs)
+		}
+	}
+
+	return utils.Truncate(strings.TrimSpace(argsJSON), toolFeedbackMaxArgsLength)
 }
 
 func visibleAssistantToolMessages(toolCalls []providers.ToolCall) []sessionChatMessage {

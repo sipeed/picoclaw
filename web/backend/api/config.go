@@ -94,8 +94,6 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Refresh cached pico token in case user changed it.
-	refreshPicoToken(&cfg)
 	h.applyRuntimeLogLevel()
 	logger.Infof("configuration updated successfully")
 
@@ -193,8 +191,6 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Refresh cached pico token in case user changed it.
-	refreshPicoToken(&newCfg)
 	h.applyRuntimeLogLevel()
 	logger.Infof("configuration updated successfully")
 
