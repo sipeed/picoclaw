@@ -3693,8 +3693,8 @@ func TestProcessMessage_MessageToolPublishesOutboundWithTurnMetadata(t *testing.
 	if err != nil {
 		t.Fatalf("processMessage() error = %v", err)
 	}
-	if response == "" {
-		t.Fatal("expected processMessage() to return a final loop response")
+	if response != "" {
+		t.Fatalf("expected empty loop response when tool handles delivery, got %q", response)
 	}
 
 	select {

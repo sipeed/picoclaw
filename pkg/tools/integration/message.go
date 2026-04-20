@@ -137,7 +137,8 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 
 	// Silent: user already received the message directly
 	return &ToolResult{
-		ForLLM: fmt.Sprintf("Message sent to %s:%s", channel, chatID),
-		Silent: true,
+		ForLLM:          fmt.Sprintf("Message sent to %s:%s", channel, chatID),
+		Silent:          true,
+		ResponseHandled: true,
 	}
 }
