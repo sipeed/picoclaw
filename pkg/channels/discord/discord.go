@@ -45,12 +45,9 @@ type DiscordChannel struct {
 	cancel     context.CancelFunc
 	typingMu   sync.Mutex
 	typingStop map[string]chan struct{} // chatID → stop signal
-	progress   *channels.ToolFeedbackAnimator
-	botUserID  string // stored for mention checking
+	botUserID  string                   // stored for mention checking
 	bus        *bus.MessageBus
 	tts        tts.TTSProvider
-	playTTSFn  func(context.Context, *discordgo.VoiceConnection, string, uint64)
-	ttsVoiceFn func(string) (*discordgo.VoiceConnection, bool)
 	voiceMu    sync.RWMutex
 	voiceSSRC  map[string]map[uint32]string // guildID -> ssrc -> userID
 
@@ -87,7 +84,7 @@ func NewDiscordChannel(
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
-	ch := &DiscordChannel{
+	return &DiscordChannel{
 		BaseChannel: base,
 		bc:          bc,
 		session:     session,
@@ -96,11 +93,7 @@ func NewDiscordChannel(
 		typingStop:  make(map[string]chan struct{}),
 		bus:         bus,
 		voiceSSRC:   make(map[string]map[uint32]string),
-	}
-	ch.playTTSFn = ch.playTTS
-	ch.ttsVoiceFn = ch.voiceConnectionForTTS
-	ch.progress = channels.NewToolFeedbackAnimator(ch.EditMessage)
-	return ch, nil
+	}, nil
 }
 
 func (c *DiscordChannel) Start(ctx context.Context) error {
@@ -149,9 +142,6 @@ func (c *DiscordChannel) Stop(ctx context.Context) error {
 	if c.cancel != nil {
 		c.cancel()
 	}
-	if c.progress != nil {
-		c.progress.StopAll()
-	}
 
 	if err := c.session.Close(); err != nil {
 		return fmt.Errorf("failed to close discord session: %w", err)
@@ -174,86 +164,30 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]s
 		return nil, nil
 	}
 
-	isToolFeedback := outboundMessageIsToolFeedback(msg)
-	if isToolFeedback {
-		if msgID, handled, err := c.progress.Update(ctx, channelID, msg.Content); handled {
-			if err != nil {
-				return nil, err
+	if c.tts != nil {
+		if ch, err := c.session.State.Channel(channelID); err == nil && ch.GuildID != "" {
+			if vc, ok := c.session.VoiceConnections[ch.GuildID]; ok && vc != nil {
+				// Cancel any previous TTS playback
+				c.ttsMu.Lock()
+				if c.cancelTTS != nil {
+					c.cancelTTS()
+				}
+				ttsCtx, ttsCancel := context.WithCancel(c.ctx)
+				c.ttsPlayID++
+				playID := c.ttsPlayID
+				c.cancelTTS = ttsCancel
+				c.ttsMu.Unlock()
+
+				go c.playTTS(ttsCtx, vc, msg.Content, playID)
 			}
-			return []string{msgID}, nil
-		}
-	}
-	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(channelID)
-	c.maybeStartTTS(channelID, msg.Content, isToolFeedback)
-	if !isToolFeedback {
-		if msgIDs, handled := c.FinalizeToolFeedbackMessage(ctx, msg); handled {
-			return msgIDs, nil
 		}
 	}
 
-	content := msg.Content
-	if isToolFeedback {
-		content = channels.InitialAnimatedToolFeedbackContent(msg.Content)
-	}
-	msgID, err := c.sendChunk(ctx, channelID, content, msg.ReplyToMessageID)
+	msgID, err := c.sendChunk(ctx, channelID, msg.Content, msg.ReplyToMessageID)
 	if err != nil {
 		return nil, err
 	}
-	if isToolFeedback {
-		c.RecordToolFeedbackMessage(channelID, msgID, msg.Content)
-	} else if hasTrackedMsg {
-		c.dismissTrackedToolFeedbackMessage(ctx, channelID, trackedMsgID)
-	}
 	return []string{msgID}, nil
-}
-
-func (c *DiscordChannel) maybeStartTTS(channelID, content string, isToolFeedback bool) {
-	if c.tts == nil || isToolFeedback {
-		return
-	}
-
-	voiceFn := c.ttsVoiceFn
-	if voiceFn == nil {
-		voiceFn = c.voiceConnectionForTTS
-	}
-	vc, ok := voiceFn(channelID)
-	if !ok || vc == nil {
-		return
-	}
-
-	// Cancel any previous TTS playback.
-	c.ttsMu.Lock()
-	if c.cancelTTS != nil {
-		c.cancelTTS()
-	}
-	ttsCtx, ttsCancel := context.WithCancel(c.ctx)
-	c.ttsPlayID++
-	playID := c.ttsPlayID
-	c.cancelTTS = ttsCancel
-	playFn := c.playTTSFn
-	c.ttsMu.Unlock()
-
-	if playFn == nil {
-		playFn = c.playTTS
-	}
-	go playFn(ttsCtx, vc, content, playID)
-}
-
-func (c *DiscordChannel) voiceConnectionForTTS(channelID string) (*discordgo.VoiceConnection, bool) {
-	if c.session == nil || c.session.State == nil {
-		return nil, false
-	}
-
-	ch, err := c.session.State.Channel(channelID)
-	if err != nil || ch == nil || ch.GuildID == "" {
-		return nil, false
-	}
-
-	vc, ok := c.session.VoiceConnections[ch.GuildID]
-	if !ok || vc == nil {
-		return nil, false
-	}
-	return vc, true
 }
 
 // SendMedia implements the channels.MediaSender interface.
@@ -266,7 +200,6 @@ func (c *DiscordChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMes
 	if channelID == "" {
 		return nil, fmt.Errorf("channel ID is empty")
 	}
-	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(channelID)
 
 	store := c.GetMediaStore()
 	if store == nil {
@@ -348,9 +281,6 @@ func (c *DiscordChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMes
 		if r.err != nil {
 			return nil, fmt.Errorf("discord send media: %w", channels.ErrTemporary)
 		}
-		if hasTrackedMsg {
-			c.dismissTrackedToolFeedbackMessage(ctx, channelID, trackedMsgID)
-		}
 		return []string{r.id}, nil
 	case <-sendCtx.Done():
 		// Close all file readers
@@ -365,13 +295,8 @@ func (c *DiscordChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMes
 
 // EditMessage implements channels.MessageEditor.
 func (c *DiscordChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
-	_, err := c.session.ChannelMessageEdit(chatID, messageID, content, discordgo.WithContext(ctx))
+	_, err := c.session.ChannelMessageEdit(chatID, messageID, content)
 	return err
-}
-
-// DeleteMessage implements channels.MessageDeleter.
-func (c *DiscordChannel) DeleteMessage(ctx context.Context, chatID string, messageID string) error {
-	return c.session.ChannelMessageDelete(chatID, messageID, discordgo.WithContext(ctx))
 }
 
 // SendPlaceholder implements channels.PlaceholderCapable.
@@ -390,81 +315,6 @@ func (c *DiscordChannel) SendPlaceholder(ctx context.Context, chatID string) (st
 	}
 
 	return msg.ID, nil
-}
-
-func outboundMessageIsToolFeedback(msg bus.OutboundMessage) bool {
-	if len(msg.Context.Raw) == 0 {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(msg.Context.Raw["message_kind"]), "tool_feedback")
-}
-
-func (c *DiscordChannel) currentToolFeedbackMessage(chatID string) (string, bool) {
-	if c.progress == nil {
-		return "", false
-	}
-	return c.progress.Current(chatID)
-}
-
-func (c *DiscordChannel) takeToolFeedbackMessage(chatID string) (string, string, bool) {
-	if c.progress == nil {
-		return "", "", false
-	}
-	return c.progress.Take(chatID)
-}
-
-func (c *DiscordChannel) RecordToolFeedbackMessage(chatID, messageID, content string) {
-	if c.progress == nil {
-		return
-	}
-	c.progress.Record(chatID, messageID, content)
-}
-
-func (c *DiscordChannel) ClearToolFeedbackMessage(chatID string) {
-	if c.progress == nil {
-		return
-	}
-	c.progress.Clear(chatID)
-}
-
-func (c *DiscordChannel) DismissToolFeedbackMessage(ctx context.Context, chatID string) {
-	msgID, ok := c.currentToolFeedbackMessage(chatID)
-	if !ok {
-		return
-	}
-	c.dismissTrackedToolFeedbackMessage(ctx, chatID, msgID)
-}
-
-func (c *DiscordChannel) dismissTrackedToolFeedbackMessage(ctx context.Context, chatID, messageID string) {
-	if strings.TrimSpace(chatID) == "" || strings.TrimSpace(messageID) == "" {
-		return
-	}
-	c.ClearToolFeedbackMessage(chatID)
-	_ = c.DeleteMessage(ctx, chatID, messageID)
-}
-
-func (c *DiscordChannel) finalizeTrackedToolFeedbackMessage(
-	ctx context.Context,
-	chatID string,
-	content string,
-	editFn func(context.Context, string, string, string) error,
-) ([]string, bool) {
-	msgID, baseContent, ok := c.takeToolFeedbackMessage(chatID)
-	if !ok || editFn == nil {
-		return nil, false
-	}
-	if err := editFn(ctx, chatID, msgID, content); err != nil {
-		c.RecordToolFeedbackMessage(chatID, msgID, baseContent)
-		return nil, false
-	}
-	return []string{msgID}, true
-}
-
-func (c *DiscordChannel) FinalizeToolFeedbackMessage(ctx context.Context, msg bus.OutboundMessage) ([]string, bool) {
-	if outboundMessageIsToolFeedback(msg) {
-		return nil, false
-	}
-	return c.finalizeTrackedToolFeedbackMessage(ctx, msg.ChatID, msg.Content, c.EditMessage)
 }
 
 func (c *DiscordChannel) sendChunk(ctx context.Context, channelID, content, replyToID string) (string, error) {

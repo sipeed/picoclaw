@@ -45,18 +45,16 @@ var (
 
 type TelegramChannel struct {
 	*channels.BaseChannel
-	bot      *telego.Bot
-	bh       *th.BotHandler
-	bc       *config.Channel
-	chatIDs  map[string]int64
-	ctx      context.Context
-	cancel   context.CancelFunc
-	tgCfg    *config.TelegramSettings
-	progress *channels.ToolFeedbackAnimator
+	bot     *telego.Bot
+	bh      *th.BotHandler
+	bc      *config.Channel
+	chatIDs map[string]int64
+	ctx     context.Context
+	cancel  context.CancelFunc
+	tgCfg   *config.TelegramSettings
 
-	registerFunc      func(context.Context, []commands.Definition) error
-	commandRegDelayFn func(int) time.Duration
-	commandRegCancel  context.CancelFunc
+	registerFunc     func(context.Context, []commands.Definition) error
+	commandRegCancel context.CancelFunc
 }
 
 func NewTelegramChannel(
@@ -106,15 +104,13 @@ func NewTelegramChannel(
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
-	ch := &TelegramChannel{
+	return &TelegramChannel{
 		BaseChannel: base,
 		bot:         bot,
 		bc:          bc,
 		chatIDs:     make(map[string]int64),
 		tgCfg:       telegramCfg,
-	}
-	ch.progress = channels.NewToolFeedbackAnimator(ch.EditMessage)
-	return ch, nil
+	}, nil
 }
 
 func (c *TelegramChannel) Start(ctx context.Context) error {
@@ -172,9 +168,6 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	if c.cancel != nil {
 		c.cancel()
 	}
-	if c.progress != nil {
-		c.progress.StopAll()
-	}
 	if c.commandRegCancel != nil {
 		c.commandRegCancel()
 	}
@@ -198,35 +191,12 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 		return nil, nil
 	}
 
-	isToolFeedback := outboundMessageIsToolFeedback(msg)
-	toolFeedbackContent := msg.Content
-	if isToolFeedback {
-		toolFeedbackContent = fitToolFeedbackForTelegram(msg.Content, useMarkdownV2, 4096)
-	}
-	if isToolFeedback {
-		if msgID, handled, err := c.progress.Update(ctx, msg.ChatID, toolFeedbackContent); handled {
-			if err != nil {
-				return nil, err
-			}
-			return []string{msgID}, nil
-		}
-	}
-	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(msg.ChatID)
-	if !isToolFeedback {
-		if msgIDs, handled := c.FinalizeToolFeedbackMessage(ctx, msg); handled {
-			return msgIDs, nil
-		}
-	}
-
 	// The Manager already splits messages to ≤4000 chars (WithMaxMessageLength),
 	// so msg.Content is guaranteed to be within that limit. We still need to
 	// check if HTML expansion pushes it beyond Telegram's 4096-char API limit.
 	replyToID := msg.ReplyToMessageID
 	var messageIDs []string
 	queue := []string{msg.Content}
-	if isToolFeedback {
-		queue = []string{channels.InitialAnimatedToolFeedbackContent(toolFeedbackContent)}
-	}
 	for len(queue) > 0 {
 		chunk := queue[0]
 		queue = queue[1:]
@@ -234,13 +204,6 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 		content := parseContent(chunk, useMarkdownV2)
 
 		if len([]rune(content)) > 4096 {
-			if isToolFeedback {
-				fittedChunk := fitToolFeedbackForTelegram(chunk, useMarkdownV2, 4096)
-				if fittedChunk != "" && fittedChunk != chunk {
-					queue = append([]string{fittedChunk}, queue...)
-					continue
-				}
-			}
 			runeChunk := []rune(chunk)
 			ratio := float64(len(runeChunk)) / float64(len([]rune(content)))
 			smallerLen := int(float64(4096) * ratio * 0.95) // 5% safety margin
@@ -305,12 +268,6 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 		messageIDs = append(messageIDs, msgID)
 		// Only the first chunk should be a reply; subsequent chunks are normal messages.
 		replyToID = ""
-	}
-
-	if isToolFeedback && len(messageIDs) > 0 {
-		c.RecordToolFeedbackMessage(msg.ChatID, messageIDs[0], toolFeedbackContent)
-	} else if !isToolFeedback && hasTrackedMsg {
-		c.dismissTrackedToolFeedbackMessage(ctx, msg.ChatID, trackedMsgID)
 	}
 
 	return messageIDs, nil
@@ -480,81 +437,6 @@ func (c *TelegramChannel) DeleteMessage(ctx context.Context, chatID string, mess
 	})
 }
 
-func outboundMessageIsToolFeedback(msg bus.OutboundMessage) bool {
-	if len(msg.Context.Raw) == 0 {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(msg.Context.Raw["message_kind"]), "tool_feedback")
-}
-
-func (c *TelegramChannel) currentToolFeedbackMessage(chatID string) (string, bool) {
-	if c.progress == nil {
-		return "", false
-	}
-	return c.progress.Current(chatID)
-}
-
-func (c *TelegramChannel) takeToolFeedbackMessage(chatID string) (string, string, bool) {
-	if c.progress == nil {
-		return "", "", false
-	}
-	return c.progress.Take(chatID)
-}
-
-func (c *TelegramChannel) RecordToolFeedbackMessage(chatID, messageID, content string) {
-	if c.progress == nil {
-		return
-	}
-	c.progress.Record(chatID, messageID, content)
-}
-
-func (c *TelegramChannel) ClearToolFeedbackMessage(chatID string) {
-	if c.progress == nil {
-		return
-	}
-	c.progress.Clear(chatID)
-}
-
-func (c *TelegramChannel) DismissToolFeedbackMessage(ctx context.Context, chatID string) {
-	msgID, ok := c.currentToolFeedbackMessage(chatID)
-	if !ok {
-		return
-	}
-	c.dismissTrackedToolFeedbackMessage(ctx, chatID, msgID)
-}
-
-func (c *TelegramChannel) dismissTrackedToolFeedbackMessage(ctx context.Context, chatID, messageID string) {
-	if strings.TrimSpace(chatID) == "" || strings.TrimSpace(messageID) == "" {
-		return
-	}
-	c.ClearToolFeedbackMessage(chatID)
-	_ = c.DeleteMessage(ctx, chatID, messageID)
-}
-
-func (c *TelegramChannel) finalizeTrackedToolFeedbackMessage(
-	ctx context.Context,
-	chatID string,
-	content string,
-	editFn func(context.Context, string, string, string) error,
-) ([]string, bool) {
-	msgID, baseContent, ok := c.takeToolFeedbackMessage(chatID)
-	if !ok || editFn == nil {
-		return nil, false
-	}
-	if err := editFn(ctx, chatID, msgID, content); err != nil {
-		c.RecordToolFeedbackMessage(chatID, msgID, baseContent)
-		return nil, false
-	}
-	return []string{msgID}, true
-}
-
-func (c *TelegramChannel) FinalizeToolFeedbackMessage(ctx context.Context, msg bus.OutboundMessage) ([]string, bool) {
-	if outboundMessageIsToolFeedback(msg) {
-		return nil, false
-	}
-	return c.finalizeTrackedToolFeedbackMessage(ctx, msg.ChatID, msg.Content, c.EditMessage)
-}
-
 // SendPlaceholder implements channels.PlaceholderCapable.
 // It sends a placeholder message (e.g. "Thinking... 💭") that will later be
 // edited to the actual response via EditMessage (channels.MessageEditor).
@@ -586,7 +468,6 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 	if !c.IsRunning() {
 		return nil, channels.ErrNotRunning
 	}
-	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(msg.ChatID)
 
 	chatID, threadID, err := resolveTelegramOutboundTarget(msg.ChatID, &msg.Context)
 	if err != nil {
@@ -693,10 +574,6 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 			})
 			return nil, fmt.Errorf("telegram send media: %w", channels.ErrTemporary)
 		}
-	}
-
-	if hasTrackedMsg {
-		c.dismissTrackedToolFeedbackMessage(ctx, msg.ChatID, trackedMsgID)
 	}
 
 	return messageIDs, nil
@@ -1068,41 +945,6 @@ func parseContent(text string, useMarkdownV2 bool) string {
 	}
 
 	return markdownToTelegramHTML(text)
-}
-
-func fitToolFeedbackForTelegram(content string, useMarkdownV2 bool, maxParsedLen int) string {
-	content = strings.TrimSpace(content)
-	if content == "" || maxParsedLen <= 0 {
-		return ""
-	}
-	animationSafeLen := maxParsedLen - channels.MaxToolFeedbackAnimationFrameLength()
-	if animationSafeLen <= 0 {
-		animationSafeLen = maxParsedLen
-	}
-	if len([]rune(parseContent(content, useMarkdownV2))) <= animationSafeLen {
-		return content
-	}
-
-	low := 1
-	high := len([]rune(content))
-	best := utils.Truncate(content, 1)
-
-	for low <= high {
-		mid := (low + high) / 2
-		candidate := utils.FitToolFeedbackMessage(content, mid)
-		if candidate == "" {
-			high = mid - 1
-			continue
-		}
-		if len([]rune(parseContent(candidate, useMarkdownV2))) <= animationSafeLen {
-			best = candidate
-			low = mid + 1
-			continue
-		}
-		high = mid - 1
-	}
-
-	return best
 }
 
 // parseTelegramChatID splits "chatID/threadID" into its components.

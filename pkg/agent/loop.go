@@ -112,7 +112,6 @@ const (
 	pendingTurnPrefix          = "pending-"
 	metadataKeyMessageKind     = "message_kind"
 	messageKindThought         = "thought"
-	messageKindToolFeedback    = "tool_feedback"
 	metadataKeyAccountID       = "account_id"
 	metadataKeyGuildID         = "guild_id"
 	metadataKeyTeamID          = "team_id"

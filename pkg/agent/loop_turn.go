@@ -635,11 +635,7 @@ turnLoop:
 		}
 		logger.DebugCF("agent", "LLM response", llmResponseFields)
 
-		if al.bus != nil &&
-			ts.channel == "pico" &&
-			len(response.ToolCalls) > 0 &&
-			ts.opts.AllowInterimPicoPublish &&
-			!shouldPublishToolFeedback(al.cfg, ts) {
+		if al.bus != nil && ts.channel == "pico" && len(response.ToolCalls) > 0 && ts.opts.AllowInterimPicoPublish {
 			if strings.TrimSpace(response.Content) != "" {
 				outCtx, outCancel := context.WithTimeout(turnCtx, 3*time.Second)
 				err := al.bus.PublishOutbound(outCtx, bus.OutboundMessage{
@@ -709,19 +705,7 @@ turnLoop:
 		}
 		for _, tc := range normalizedToolCalls {
 			argumentsJSON, _ := json.Marshal(tc.Arguments)
-			toolFeedbackExplanation := toolFeedbackExplanationForToolCall(
-				response,
-				tc,
-				messages,
-				al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(),
-			)
 			extraContent := tc.ExtraContent
-			if strings.TrimSpace(toolFeedbackExplanation) != "" {
-				if extraContent == nil {
-					extraContent = &providers.ExtraContent{}
-				}
-				extraContent.ToolFeedbackExplanation = toolFeedbackExplanation
-			}
 			thoughtSignature := ""
 			if tc.Function != nil {
 				thoughtSignature = tc.Function.ThoughtSignature
@@ -799,16 +783,21 @@ turnLoop:
 						)
 
 						// Send tool feedback to chat channel if enabled (same as normal tool execution)
-						if shouldPublishToolFeedback(al.cfg, ts) {
-							toolFeedbackExplanation := toolFeedbackExplanationForToolCall(
-								response,
-								tc,
-								messages,
+						if al.cfg.Agents.Defaults.IsToolFeedbackEnabled() &&
+							ts.channel != "" &&
+							!ts.opts.SuppressToolFeedback {
+							argsJSON, _ := json.Marshal(toolArgs)
+							feedbackPreview := utils.Truncate(
+								string(argsJSON),
 								al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(),
 							)
-							feedbackMsg := utils.FormatToolFeedbackMessage(toolName, toolFeedbackExplanation)
+							feedbackMsg := utils.FormatToolFeedbackMessage(toolName, feedbackPreview)
 							fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
-							_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurnWithKind(ts, feedbackMsg, messageKindToolFeedback))
+							_ = al.bus.PublishOutbound(fbCtx, bus.OutboundMessage{
+								Channel: ts.channel,
+								ChatID:  ts.chatID,
+								Content: feedbackMsg,
+							})
 							fbCancel()
 						}
 
@@ -1078,16 +1067,16 @@ turnLoop:
 			)
 
 			// Send tool feedback to chat channel if enabled (from HEAD)
-			if shouldPublishToolFeedback(al.cfg, ts) {
-				toolFeedbackExplanation := toolFeedbackExplanationForToolCall(
-					response,
-					tc,
-					messages,
+			if al.cfg.Agents.Defaults.IsToolFeedbackEnabled() &&
+				ts.channel != "" &&
+				!ts.opts.SuppressToolFeedback {
+				feedbackPreview := utils.Truncate(
+					string(argsJSON),
 					al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(),
 				)
-				feedbackMsg := utils.FormatToolFeedbackMessage(tc.Name, toolFeedbackExplanation)
+				feedbackMsg := utils.FormatToolFeedbackMessage(tc.Name, feedbackPreview)
 				fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
-				_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurnWithKind(ts, feedbackMsg, messageKindToolFeedback))
+				_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurn(ts, feedbackMsg))
 				fbCancel()
 			}
 
