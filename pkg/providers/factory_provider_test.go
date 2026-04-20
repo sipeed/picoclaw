@@ -60,7 +60,7 @@ func TestExtractProtocol(t *testing.T) {
 			wantModelID:  "gpt-4",
 		},
 		{
-			name:         "multiple slashes",
+			name:         "multiple slashes (nvidia organizational prefix)",
 			model:        "nvidia/meta/llama-3.1-8b",
 			wantProtocol: "nvidia",
 			wantModelID:  "meta/llama-3.1-8b",
@@ -535,19 +535,6 @@ func TestCreateProviderFromConfig_MissingAPIKey(t *testing.T) {
 	_, _, err := CreateProviderFromConfig(cfg)
 	if err == nil {
 		t.Fatal("CreateProviderFromConfig() expected error for missing API key")
-	}
-}
-
-func TestCreateProviderFromConfig_UnknownProtocol(t *testing.T) {
-	cfg := &config.ModelConfig{
-		ModelName: "test-unknown",
-		Model:     "unknown-protocol/model",
-	}
-	cfg.SetAPIKey("test-key")
-
-	_, _, err := CreateProviderFromConfig(cfg)
-	if err == nil {
-		t.Fatal("CreateProviderFromConfig() expected error for unknown protocol")
 	}
 }
 

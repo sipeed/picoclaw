@@ -63,6 +63,7 @@ func TestClassifyError_StatusCodes(t *testing.T) {
 		{523, FailoverTimeout},
 		{524, FailoverTimeout},
 		{529, FailoverTimeout},
+		{404, FailoverNotFound},
 	}
 
 	for _, tt := range tests {
@@ -427,6 +428,7 @@ func TestFailoverError_IsRetriable(t *testing.T) {
 		{FailoverOverloaded, true},
 		{FailoverFormat, false},
 		{FailoverContextOverflow, false},
+		{FailoverNotFound, true},
 		{FailoverUnknown, true},
 	}
 

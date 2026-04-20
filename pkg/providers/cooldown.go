@@ -1,7 +1,9 @@
 package providers
 
 import (
+	"encoding/json"
 	"math"
+	"os"
 	"sync"
 	"time"
 )
@@ -11,11 +13,12 @@ const (
 )
 
 // CooldownTracker manages per-provider cooldown state for the fallback chain.
-// Thread-safe via sync.RWMutex. In-memory only (resets on restart).
+// Thread-safe via sync.RWMutex. Supports persistence to disk.
 type CooldownTracker struct {
 	mu            sync.RWMutex
 	entries       map[string]*cooldownEntry
 	failureWindow time.Duration
+	persistPath   string
 	nowFunc       func() time.Time // for testing
 }
 
@@ -63,6 +66,8 @@ func (ct *CooldownTracker) MarkFailure(provider string, reason FailoverReason) {
 	} else {
 		entry.CooldownEnd = now.Add(calculateStandardCooldown(entry.ErrorCount))
 	}
+
+	ct.save()
 }
 
 // MarkSuccess resets all counters and cooldowns for a provider.
@@ -80,6 +85,8 @@ func (ct *CooldownTracker) MarkSuccess(provider string) {
 	entry.CooldownEnd = time.Time{}
 	entry.DisabledUntil = time.Time{}
 	entry.DisabledReason = ""
+
+	ct.save()
 }
 
 // IsAvailable returns true if the provider is not in cooldown or disabled.
@@ -160,6 +167,59 @@ func (ct *CooldownTracker) FailureCount(provider string, reason FailoverReason) 
 		return 0
 	}
 	return entry.FailureCounts[reason]
+}
+
+// SetPersistencePath sets the path for state persistence and triggers an immediate load.
+func (ct *CooldownTracker) SetPersistencePath(path string) error {
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+
+	ct.persistPath = path
+	return ct.load()
+}
+
+func (ct *CooldownTracker) save() {
+	if ct.persistPath == "" {
+		return
+	}
+
+	data, err := json.MarshalIndent(ct.entries, "", "  ")
+	if err != nil {
+		return
+	}
+
+	_ = os.WriteFile(ct.persistPath, data, 0o644)
+}
+
+func (ct *CooldownTracker) load() error {
+	if ct.persistPath == "" {
+		return nil
+	}
+
+	data, err := os.ReadFile(ct.persistPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	var saved map[string]*cooldownEntry
+	if err := json.Unmarshal(data, &saved); err != nil {
+		return err
+	}
+
+	// Filter out expired cooldowns during load
+	now := ct.nowFunc()
+	ct.entries = make(map[string]*cooldownEntry)
+	for k, v := range saved {
+		if (!v.CooldownEnd.IsZero() && now.Before(v.CooldownEnd)) ||
+			(!v.DisabledUntil.IsZero() && now.Before(v.DisabledUntil)) {
+			ct.entries[k] = v
+		}
+	}
+
+	return nil
 }
 
 func (ct *CooldownTracker) getOrCreate(provider string) *cooldownEntry {

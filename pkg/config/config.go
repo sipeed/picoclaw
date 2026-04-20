@@ -530,8 +530,9 @@ type VoiceConfig struct {
 // Default protocol is "openai" if no prefix is specified.
 type ModelConfig struct {
 	// Required fields
-	ModelName string `json:"model_name"` // User-facing alias for the model
-	Model     string `json:"model"`      // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-sonnet-4.6")
+	ModelName string `json:"model_name"`         // User-facing alias for the model
+	Model     string `json:"model"`              // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-sonnet-4.6")
+	Protocol  string `json:"protocol,omitempty"` // Explicit protocol (e.g., "openai", "openrouter", "anthropic")
 
 	// HTTP-based providers
 	APIBase   string   `json:"api_base,omitempty"`  // API endpoint URL
@@ -822,6 +823,7 @@ type ToolsConfig struct {
 	Subagent        ToolConfig         `json:"subagent"          yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
 	WebFetch        ToolConfig         `json:"web_fetch"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
 	WriteFile       ToolConfig         `json:"write_file"        yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
+	Freeride        ToolConfig         `json:"freeride"          yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_FREERIDE_"`
 }
 
 // IsFilterSensitiveDataEnabled returns true if sensitive data filtering is enabled
@@ -1422,6 +1424,7 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 				MaxTokensField: m.MaxTokensField,
 				RequestTimeout: m.RequestTimeout,
 				ThinkingLevel:  m.ThinkingLevel,
+				Protocol:       m.Protocol,
 				ExtraBody:      m.ExtraBody,
 				CustomHeaders:  m.CustomHeaders,
 				UserAgent:      m.UserAgent,
@@ -1441,6 +1444,7 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 			ConnectMode:    m.ConnectMode,
 			Workspace:      m.Workspace,
 			RPM:            m.RPM,
+			Protocol:       m.Protocol,
 			MaxTokensField: m.MaxTokensField,
 			RequestTimeout: m.RequestTimeout,
 			ThinkingLevel:  m.ThinkingLevel,
@@ -1507,6 +1511,8 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.SendTTS.Enabled
 	case "write_file":
 		return t.WriteFile.Enabled
+	case "freeride":
+		return t.Freeride.Enabled
 	case "mcp":
 		return t.MCP.Enabled
 	default:

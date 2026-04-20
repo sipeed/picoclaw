@@ -84,19 +84,38 @@ func createCodexAuthProvider() (LLMProvider, error) {
 	return NewCodexProviderWithTokenSource(cred.AccessToken, cred.AccountID, createCodexTokenSource()), nil
 }
 
+func isKnownProtocol(p string) bool {
+	if _, ok := protocolMetaByName[p]; ok {
+		return true
+	}
+	switch p {
+	case "anthropic", "azure", "azure-openai", "bedrock", "github-copilot", "github-copilot-chat", "copilot", "claude":
+		return true
+	case "antigravity", "claude-cli", "codex-cli", "cli", "fs", "memory", "dummy":
+		return true
+	case "elevenlabs", "openai-tts":
+		return true
+	}
+	return false
+}
+
 // ExtractProtocol extracts the protocol prefix and model identifier from a model string.
 // If no prefix is specified, it defaults to "openai".
-// Examples:
-//   - "openai/gpt-4o" -> ("openai", "gpt-4o")
-//   - "anthropic/claude-sonnet-4.6" -> ("anthropic", "claude-sonnet-4.6")
-//   - "gpt-4o" -> ("openai", "gpt-4o")  // default protocol
 func ExtractProtocol(model string) (protocol, modelID string) {
 	model = strings.TrimSpace(model)
-	protocol, modelID, found := strings.Cut(model, "/")
+	p, m, found := strings.Cut(model, "/")
 	if !found {
 		return "openai", model
 	}
-	return protocol, modelID
+
+	// Only treat as protocol if it's in our known list.
+	// This prevents organizational model IDs like "google/gemma" or "anthropic/claude"
+	// from having their prefixes stripped when used with OpenAI-compatible providers (OpenRouter).
+	if isKnownProtocol(p) {
+		return p, m
+	}
+
+	return "openai", model
 }
 
 // ResolveAPIBase returns the configured API base, or the protocol default when
@@ -128,6 +147,16 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	}
 
 	protocol, modelID := ExtractProtocol(cfg.Model)
+	if cfg.Protocol != "" {
+		protocol = cfg.Protocol
+		// If protocol was explicitly set, modelID should be the full model string
+		// unless it was already prefixed with the SAME protocol.
+		if p, m, found := strings.Cut(cfg.Model, "/"); found && strings.EqualFold(p, protocol) {
+			modelID = m
+		} else {
+			modelID = cfg.Model
+		}
+	}
 
 	userAgent := cfg.UserAgent
 	if userAgent == "" {

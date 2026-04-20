@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -299,6 +300,9 @@ func resolveKey(v string) (string, error) {
 	secResolverMu.RUnlock()
 	if resolver == nil {
 		resolver = credential.NewResolver("")
+	}
+	if strings.HasPrefix(v, "env://") {
+		return os.Getenv(strings.TrimPrefix(v, "env://")), nil
 	}
 	if strings.HasPrefix(v, "enc://") || strings.HasPrefix(v, "file://") {
 		decrypted, err := resolver.Resolve(v)

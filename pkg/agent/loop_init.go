@@ -5,6 +5,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/audio/tts"
@@ -44,6 +45,10 @@ func NewAgentLoop(
 	var stateManager *state.Manager
 	if defaultAgent != nil {
 		stateManager = state.NewManager(defaultAgent.Workspace)
+		// Enable persistent cooldowns so that model rate limits/failures
+		// are remembered across agent restarts.
+		cooldownPath := filepath.Join(filepath.Dir(filepath.Clean(defaultAgent.Workspace)), "cooldowns.json")
+		_ = cooldown.SetPersistencePath(cooldownPath)
 	}
 
 	eventBus := NewEventBus()

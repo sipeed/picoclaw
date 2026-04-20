@@ -1,10 +1,81 @@
 package providers
 
 import (
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestCooldown_Persistence(t *testing.T) {
+	tempDir := t.TempDir()
+	persistPath := filepath.Join(tempDir, "cooldowns.json")
+
+	now := time.Now()
+	ct, current := newTestTracker(now)
+	if err := ct.SetPersistencePath(persistPath); err != nil {
+		t.Fatalf("SetPersistencePath failed: %v", err)
+	}
+
+	// 1. Mark a failure and verify it saves
+	ct.MarkFailure("openai", FailoverRateLimit) // 1 min cooldown
+	if ct.IsAvailable("openai") {
+		t.Error("openai should be in cooldown")
+	}
+
+	if _, err := os.Stat(persistPath); os.IsNotExist(err) {
+		t.Fatal("persistence file was not created")
+	}
+
+	// 2. Create a NEW tracker and load the file
+	ct2, _ := newTestTracker(now)
+	if err := ct2.SetPersistencePath(persistPath); err != nil {
+		t.Fatalf("SetPersistencePath on second tracker failed: %v", err)
+	}
+
+	if ct2.IsAvailable("openai") {
+		t.Error("newly loaded tracker should still have openai in cooldown")
+	}
+	if ct2.ErrorCount("openai") != 1 {
+		t.Errorf("error count = %d, want 1", ct2.ErrorCount("openai"))
+	}
+
+	// 3. Mark success and verify it clears and persists
+	ct2.MarkSuccess("openai")
+	if !ct2.IsAvailable("openai") {
+		t.Error("openai should be available after success")
+	}
+
+	ct3, _ := newTestTracker(now)
+	if err := ct3.SetPersistencePath(persistPath); err != nil {
+		t.Fatalf("SetPersistencePath on third tracker failed: %v", err)
+	}
+	if !ct3.IsAvailable("openai") {
+		t.Error("fourth tracker should see openai as available after success was persisted")
+	}
+
+	// 4. Verify expiration filtering
+	ct3.MarkFailure("anthropic", FailoverRateLimit) // 1 min cooldown
+	*current = now.Add(2 * time.Minute)             // Advance time past expiration
+
+	ct4, ct4Current := newTestTracker(*current) // ct4 sees the future
+	if err := ct4.SetPersistencePath(persistPath); err != nil {
+		t.Fatalf("SetPersistencePath on fourth tracker failed: %v", err)
+	}
+
+	// Since current time (2 min later) is past the 1 min cooldown, it should be filtered out on load
+	if !ct4.IsAvailable("anthropic") {
+		t.Error("anthropic should be available (expired cooldown filtered on load)")
+	}
+
+	// Verify that MarkFailure on ct4 uses the correct time
+	ct4.MarkFailure("groq", FailoverRateLimit)
+	if ct4.IsAvailable("groq") {
+		t.Error("groq should be in cooldown on ct4")
+	}
+	_ = ct4Current // keep compiler happy
+}
 
 func newTestTracker(now time.Time) (*CooldownTracker, *time.Time) {
 	current := now
