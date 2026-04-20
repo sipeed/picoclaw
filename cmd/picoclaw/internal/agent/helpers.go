@@ -97,6 +97,18 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 	}
 	defer rl.Close()
 
+	// Listen for outbound messages on the bus (e.g. from the 'message' tool)
+	// and print them to the console.
+	go func() {
+		for outbound := range agentLoop.GetBus().OutboundChan() {
+			if outbound.Content != "" {
+				fmt.Printf("\n%s %s\n", internal.Logo, outbound.Content)
+				// Re-print the prompt to keep it at the bottom
+				rl.Refresh()
+			}
+		}
+	}()
+
 	for {
 		line, err := rl.Readline()
 		if err != nil {
@@ -130,6 +142,15 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 }
 
 func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
+	// Listen for outbound messages on the bus
+	go func() {
+		for outbound := range agentLoop.GetBus().OutboundChan() {
+			if outbound.Content != "" {
+				fmt.Printf("\n%s %s\n\n%s You: ", internal.Logo, outbound.Content, internal.Logo)
+			}
+		}
+	}()
+
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		fmt.Print(fmt.Sprintf("%s You: ", internal.Logo))
