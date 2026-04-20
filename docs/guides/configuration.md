@@ -820,7 +820,7 @@ The old `providers` configuration is **deprecated** and has been removed in V2. 
 PicoClaw routes providers by protocol family:
 
 - **OpenAI-compatible**: OpenRouter, Groq, Zhipu, vLLM-style endpoints, and most others.
-- **Gemini Native**: Google Gemini via the native `models/*:generateContent` and `models/*:streamGenerateContent` endpoints.
+- **Gemini native**: Google Gemini via the native `models/*:generateContent` and `models/*:streamGenerateContent` endpoints.
 - **Anthropic**: Claude-native API behavior.
 - **Codex/OAuth**: OpenAI OAuth/token authentication route.
 
