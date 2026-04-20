@@ -1475,6 +1475,10 @@ turnLoop:
 	}
 
 	ts.setPhase(TurnPhaseFinalizing)
+	// pico: freeride provenance marker
+	if used, model := ts.GetFallbackInfo(); used && model != "" {
+		finalContent += "\n\n🦞 provenance: fallback via " + model
+	}
 	ts.setFinalContent(finalContent)
 	if !ts.opts.NoHistory {
 		finalMsg := providers.Message{Role: "assistant", Content: finalContent}
