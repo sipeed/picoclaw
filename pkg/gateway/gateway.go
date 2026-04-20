@@ -3,11 +3,12 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"sort"
-	"strings"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -25,9 +26,10 @@ import (
 	_ "github.com/sipeed/picoclaw/pkg/channels/line"
 	_ "github.com/sipeed/picoclaw/pkg/channels/maixcam"
 	_ "github.com/sipeed/picoclaw/pkg/channels/onebot"
-	"github.com/sipeed/picoclaw/pkg/channels/pico"
+	_ "github.com/sipeed/picoclaw/pkg/channels/pico"
 	_ "github.com/sipeed/picoclaw/pkg/channels/qq"
 	_ "github.com/sipeed/picoclaw/pkg/channels/slack"
+	_ "github.com/sipeed/picoclaw/pkg/channels/teams_webhook"
 	_ "github.com/sipeed/picoclaw/pkg/channels/telegram"
 	_ "github.com/sipeed/picoclaw/pkg/channels/vk"
 	_ "github.com/sipeed/picoclaw/pkg/channels/wecom"
@@ -41,6 +43,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/netbind"
 	"github.com/sipeed/picoclaw/pkg/pid"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/state"
@@ -110,7 +113,7 @@ func (p *startupBlockedProvider) GetDefaultModel() string {
 }
 
 // Run starts the gateway runtime using the configuration loaded from configPath.
-func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error {
+func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) (runErr error) {
 	panicPath := filepath.Join(homePath, logPath, panicFile)
 	panicFunc, err := logger.InitPanic(panicPath)
 	if err != nil {
@@ -128,14 +131,25 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	} else {
 		logger.SetLevelFromString(config.ResolveGatewayLogLevel(configPath))
 	}
+	defer func() {
+		if runErr != nil {
+			logger.ErrorCF("gateway", "Gateway startup failed", map[string]any{
+				"config_path": configPath,
+				"error":       runErr.Error(),
+				"home_path":   homePath,
+				"allow_empty": allowEmptyStartup,
+				"debug":       debug,
+			})
+		}
+	}()
 
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
-		logger.Fatalf("error loading config: %v", err)
+		return fmt.Errorf("error loading config: %w", err)
 	}
 
 	if err = preCheckConfig(cfg); err != nil {
-		logger.Fatalf("config pre-check failed: %v", err)
+		return fmt.Errorf("config pre-check failed: %w", err)
 	}
 
 	// Debug mode permanently overrides the config log level to DEBUG.
@@ -147,13 +161,30 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 		logger.Infof("Log level set to %q", effectiveLogLevel)
 	}
 
+	bindPlan, listenResult, err := openGatewayListeners(cfg.Gateway.Host, cfg.Gateway.Port)
+	if err != nil {
+		return fmt.Errorf("error opening gateway listeners: %w", err)
+	}
+
 	// Enforce singleton: write PID file with generated token.
-	pidData, err := pid.WritePidFile(homePath, cfg.Gateway.Host, cfg.Gateway.Port)
+	pidData, err := pid.WritePidFile(homePath, bindPlan.ProbeHost, cfg.Gateway.Port)
 	if err != nil {
 		logger.Warnf("write pid file failed: %v", err)
+		for _, ln := range listenResult.Listeners {
+			_ = ln.Close()
+		}
 		return fmt.Errorf("singleton check failed: %w", err)
 	}
 	defer pid.RemovePidFile(homePath)
+	closeListeners := true
+	defer func() {
+		if !closeListeners {
+			return
+		}
+		for _, ln := range listenResult.Listeners {
+			_ = ln.Close()
+		}
+	}()
 
 	provider, modelID, err := createStartupProvider(cfg, allowEmptyStartup)
 	if err != nil {
@@ -181,10 +212,11 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 			"skills_available": skillsInfo["available"],
 		})
 
-	runningServices, err := setupAndStartServices(cfg, agentLoop, msgBus, pidData.Token)
+	runningServices, err := setupAndStartServices(cfg, agentLoop, msgBus, pidData.Token, listenResult)
 	if err != nil {
 		return err
 	}
+	closeListeners = false
 
 	// Setup manual reload channel for /reload endpoint
 	manualReloadChan := make(chan struct{}, 1)
@@ -205,7 +237,9 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) error 
 	runningServices.HealthServer.SetReloadFunc(reloadTrigger)
 	agentLoop.SetReloadFunc(reloadTrigger)
 
-	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
+	for _, bindHost := range listenResult.BindHosts {
+		fmt.Printf("✓ Gateway started on %s\n", net.JoinHostPort(bindHost, strconv.Itoa(cfg.Gateway.Port)))
+	}
 	fmt.Println("Press Ctrl+C to stop")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -281,8 +315,6 @@ func executeReload(
 ) error {
 	defer runningServices.reloading.Store(false)
 
-	overridePicoToken(newCfg, runningServices.authToken)
-
 	return handleConfigReload(ctx, agentLoop, newCfg, provider, runningServices, msgBus, allowEmptyStartup, debug)
 }
 
@@ -308,6 +340,7 @@ func setupAndStartServices(
 	agentLoop *agent.AgentLoop,
 	msgBus *bus.MessageBus,
 	authToken string,
+	listenResult netbind.OpenResult,
 ) (*services, error) {
 	runningServices := &services{}
 
@@ -350,8 +383,6 @@ func setupAndStartServices(
 		fms.Start()
 	}
 
-	overridePicoToken(cfg, authToken)
-
 	runningServices.ChannelManager, err = channels.NewManager(cfg, msgBus, runningServices.MediaStore)
 	if err != nil {
 		if fms, ok := runningServices.MediaStore.(*media.FileMediaStore); ok {
@@ -378,10 +409,20 @@ func setupAndStartServices(
 		fmt.Println("⚠ Warning: No channels enabled")
 	}
 
-	addr := fmt.Sprintf("%s:%d", cfg.Gateway.Host, cfg.Gateway.Port)
 	runningServices.authToken = authToken
-	runningServices.HealthServer = health.NewServer(cfg.Gateway.Host, cfg.Gateway.Port, authToken)
-	runningServices.ChannelManager.SetupHTTPServer(addr, runningServices.HealthServer)
+	runningServices.HealthServer = health.NewServer(listenResult.ProbeHost, cfg.Gateway.Port, authToken)
+
+	var listenAddr string
+	if len(listenResult.Listeners) > 0 {
+		listenAddr = listenResult.Listeners[0].Addr().String()
+	} else {
+		listenAddr = net.JoinHostPort(listenResult.ProbeHost, strconv.Itoa(cfg.Gateway.Port))
+	}
+	runningServices.ChannelManager.SetupHTTPServerListeners(
+		listenResult.Listeners,
+		listenAddr,
+		runningServices.HealthServer,
+	)
 
 	if err = runningServices.ChannelManager.StartAll(context.Background()); err != nil {
 		return nil, fmt.Errorf("error starting channels: %w", err)
@@ -397,10 +438,10 @@ func setupAndStartServices(
 		voiceAgent.Start(vaCtx)
 	}
 
+	healthAddr := net.JoinHostPort(listenResult.ProbeHost, strconv.Itoa(cfg.Gateway.Port))
 	fmt.Printf(
-		"✓ Health endpoints available at http://%s:%d/health, /ready and /reload (POST)\n",
-		cfg.Gateway.Host,
-		cfg.Gateway.Port,
+		"✓ Health endpoints available at http://%s/health, /ready and /reload (POST)\n",
+		healthAddr,
 	)
 
 	stateManager := state.NewManager(cfg.WorkspacePath())
@@ -740,20 +781,6 @@ func setupCronTool(
 	}
 
 	return cronService, nil
-}
-
-// overridePicoToken replaces the pico channel token with the one from the PID file.
-// The PID file is the single source of truth for the pico auth token;
-// it is generated once at gateway startup and remains unchanged across reloads.
-func overridePicoToken(cfg *config.Config, token string) {
-	if !cfg.Channels.Pico.Enabled {
-		return
-	}
-	picoToken := cfg.Channels.Pico.Token.String()
-	if picoToken == "" || strings.HasPrefix(picoToken, pico.PicoTokenPrefix) {
-		return
-	}
-	cfg.Channels.Pico.SetToken(pico.PicoTokenPrefix + token + picoToken)
 }
 
 func createHeartbeatHandler(agentLoop *agent.AgentLoop) func(prompt, channel, chatID string) *tools.ToolResult {

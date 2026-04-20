@@ -173,6 +173,8 @@ func isPublicLauncherDashboardPath(method, p string) bool {
 		return method == http.MethodPost
 	case "/api/auth/status":
 		return method == http.MethodGet
+	case "/api/auth/setup":
+		return method == http.MethodPost
 	}
 	return false
 }
@@ -183,7 +185,7 @@ func isPublicLauncherDashboardStatic(method, p string) bool {
 	if method != http.MethodGet && method != http.MethodHead {
 		return false
 	}
-	if p == "/launcher-login" {
+	if p == "/launcher-login" || p == "/launcher-setup" {
 		return true
 	}
 	if strings.HasPrefix(p, "/assets/") {
@@ -216,6 +218,10 @@ func validLauncherDashboardAuth(r *http.Request, cfg LauncherDashboardAuthConfig
 }
 
 func rejectLauncherDashboardAuth(w http.ResponseWriter, r *http.Request, canonicalPath string) {
+	if canonicalPath == "/pico/ws" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	if strings.HasPrefix(canonicalPath, "/api/") {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)

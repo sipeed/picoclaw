@@ -1,4 +1,4 @@
-> 返回 [README](../../../README.zh.md)
+> 返回 [README](../../project/README.zh.md)
 
 # 飞书
 
@@ -8,9 +8,10 @@
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "feishu": {
       "enabled": true,
+      "type": "feishu",
       "app_id": "cli_xxx",
       "app_secret": "xxx",
       "encrypt_key": "",

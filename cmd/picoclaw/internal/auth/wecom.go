@@ -19,6 +19,7 @@ import (
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 const (
@@ -155,11 +156,31 @@ func defaultWeComQRFlowOptions(timeout time.Duration) wecomQRFlowOptions {
 }
 
 func applyWeComAuthResult(cfg *config.Config, botInfo wecomQRBotInfo) {
-	cfg.Channels.WeCom.Enabled = true
-	cfg.Channels.WeCom.BotID = botInfo.BotID
-	cfg.Channels.WeCom.SetSecret(botInfo.Secret)
-	if strings.TrimSpace(cfg.Channels.WeCom.WebSocketURL) == "" {
-		cfg.Channels.WeCom.WebSocketURL = wecomDefaultWebSocketURL
+	bc := cfg.Channels.GetByType(config.ChannelWeCom)
+	if bc == nil {
+		bc = &config.Channel{Type: config.ChannelWeCom}
+		cfg.Channels["wecom"] = bc
+	}
+	bc.Enabled = true
+
+	decoded, err := bc.GetDecoded()
+	if err != nil {
+		logger.ErrorCF("wecom", "failed to decode WeCom settings", map[string]any{
+			"error": err.Error(),
+		})
+		return
+	}
+	wecomCfg, ok := decoded.(*config.WeComSettings)
+	if !ok {
+		logger.ErrorCF("wecom", "unexpected WeCom settings type", map[string]any{
+			"got": fmt.Sprintf("%T", decoded),
+		})
+		return
+	}
+	wecomCfg.BotID = botInfo.BotID
+	wecomCfg.Secret = *config.NewSecureString(botInfo.Secret)
+	if strings.TrimSpace(wecomCfg.WebSocketURL) == "" {
+		wecomCfg.WebSocketURL = wecomDefaultWebSocketURL
 	}
 }
 

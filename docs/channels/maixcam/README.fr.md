@@ -1,4 +1,4 @@
-> Retour au [README](../../../README.fr.md)
+> Retour au [README](../../project/README.fr.md)
 
 # MaixCam
 
@@ -8,9 +8,10 @@ MaixCam est un canal dédié à la connexion aux caméras AI Sipeed MaixCAM et M
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "maixcam": {
       "enabled": true,
+      "type": "maixcam",
       "host": "0.0.0.0",
       "port": 18790,
       "allow_from": []

@@ -1,4 +1,4 @@
-> 返回 [README](../../../README.zh.md)
+> 返回 [README](../../project/README.zh.md)
 
 # Slack
 
@@ -8,9 +8,10 @@ Slack 是全球领先的企业级即时通讯平台。PicoClaw 采用 Slack 的 
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "slack": {
       "enabled": true,
+      "type": "slack",
       "bot_token": "xoxb-...",
       "app_token": "xapp-...",
       "allow_from": []

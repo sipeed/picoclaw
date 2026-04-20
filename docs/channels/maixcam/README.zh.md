@@ -1,4 +1,4 @@
-> 返回 [README](../../../README.zh.md)
+> 返回 [README](../../project/README.zh.md)
 
 # MaixCam
 
@@ -8,9 +8,10 @@ MaixCam 是专用于连接矽速科技 MaixCAM 与 MaixCAM2 AI 摄像设备的�
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "maixcam": {
       "enabled": true,
+      "type": "maixcam",
       "host": "0.0.0.0",
       "port": 18790,
       "allow_from": []

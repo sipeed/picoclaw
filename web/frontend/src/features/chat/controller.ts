@@ -1,7 +1,6 @@
 import { getDefaultStore } from "jotai"
 import { toast } from "sonner"
 
-import { getPicoToken } from "@/api/pico"
 import {
   loadSessionMessages,
   mergeHistoryMessages,
@@ -12,11 +11,7 @@ import {
   generateSessionId,
   readStoredSessionId,
 } from "@/features/chat/state"
-import {
-  invalidateSocket,
-  isCurrentSocket,
-  normalizeWsUrlForBrowser,
-} from "@/features/chat/websocket"
+import { invalidateSocket, isCurrentSocket } from "@/features/chat/websocket"
 import i18n from "@/i18n"
 import {
   type ChatAttachment,
@@ -135,7 +130,6 @@ export async function connectChat() {
   updateChatStore({ connectionState: "connecting" })
 
   try {
-    const { token, ws_url } = await getPicoToken()
     const sessionId = activeSessionIdRef
 
     if (generation !== connectionGeneration) {
@@ -143,17 +137,10 @@ export async function connectChat() {
       return
     }
 
-    if (!token) {
-      console.error("No pico token available")
-      updateChatStore({ connectionState: "error" })
-      isConnecting = false
-      scheduleReconnect(generation, sessionId)
-      return
-    }
-
-    const finalWsUrl = normalizeWsUrlForBrowser(ws_url)
-    const url = `${finalWsUrl}?session_id=${encodeURIComponent(sessionId)}`
-    const socket = new WebSocket(url, [`token.${token}`])
+    const wsScheme = window.location.protocol === "https:" ? "wss:" : "ws:"
+    const wsUrl = `${wsScheme}//${window.location.host}/pico/ws`
+    const url = `${wsUrl}?session_id=${encodeURIComponent(sessionId)}`
+    const socket = new WebSocket(url)
 
     if (generation !== connectionGeneration) {
       isConnecting = false

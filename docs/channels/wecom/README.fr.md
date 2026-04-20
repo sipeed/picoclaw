@@ -1,4 +1,4 @@
-> Retour au [README](../../../README.fr.md)
+> Retour au [README](../../project/README.fr.md)
 
 # WeCom
 
@@ -56,9 +56,10 @@ Si vous disposez déjà d'un `bot_id` et d'un `secret` depuis la plateforme WeCo
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "wecom": {
       "enabled": true,
+      "type": "wecom",
       "bot_id": "YOUR_BOT_ID",
       "secret": "YOUR_SECRET",
       "websocket_url": "wss://openws.work.weixin.qq.com",

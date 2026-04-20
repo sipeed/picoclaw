@@ -10,6 +10,11 @@ import { useTranslation } from "react-i18next"
 
 import type { ModelInfo } from "@/api/models"
 import { Button } from "@/components/ui/button"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 interface ModelCardProps {
   model: ModelInfo
@@ -32,6 +37,23 @@ export function ModelCard({
   const statusLabel = t(`models.status.${status}`)
   const canSetDefault =
     model.available && !model.is_default && !model.is_virtual
+
+  const setDefaultLabel = t("models.action.setDefault")
+  const setDefaultDisabledReason = (() => {
+    if (settingDefault) return t("models.action.setDefaultDisabled.setting")
+    if (!model.available)
+      return t("models.action.setDefaultDisabled.unavailable")
+    if (model.is_default) return t("models.action.setDefaultDisabled.isDefault")
+    if (model.is_virtual) return t("models.action.setDefaultDisabled.isVirtual")
+    return setDefaultLabel
+  })()
+
+  const editLabel = t("models.action.edit")
+  const deleteLabel = t("models.action.delete")
+  const deleteDisabledReason = model.is_default
+    ? t("models.action.deleteDisabled.isDefault")
+    : deleteLabel
+  const deleteDisabled = model.is_default
 
   return (
     <div
@@ -81,40 +103,85 @@ export function ModelCard({
               <IconStarFilled className="size-3.5" />
             </span>
           ) : (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => onSetDefault(model)}
-              disabled={settingDefault || !canSetDefault}
-              title={t("models.action.setDefault")}
-            >
-              {settingDefault ? (
-                <IconLoader2 className="size-3.5 animate-spin" />
-              ) : (
-                <IconStar className="size-3.5" />
-              )}
-            </Button>
+            <Tooltip delayDuration={!canSetDefault || settingDefault ? 0 : 700}>
+              <TooltipTrigger asChild>
+                <span
+                  className={
+                    !canSetDefault || settingDefault
+                      ? "cursor-not-allowed"
+                      : undefined
+                  }
+                  tabIndex={!canSetDefault || settingDefault ? 0 : undefined}
+                  role={!canSetDefault || settingDefault ? "button" : undefined}
+                  aria-disabled={
+                    !canSetDefault || settingDefault ? true : undefined
+                  }
+                  aria-label={
+                    !canSetDefault || settingDefault
+                      ? setDefaultLabel
+                      : undefined
+                  }
+                  title={
+                    !canSetDefault || settingDefault
+                      ? setDefaultLabel
+                      : undefined
+                  }
+                >
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => onSetDefault(model)}
+                    disabled={settingDefault || !canSetDefault}
+                    aria-label={setDefaultLabel}
+                    title={setDefaultLabel}
+                  >
+                    {settingDefault ? (
+                      <IconLoader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <IconStar className="size-3.5" />
+                    )}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{setDefaultDisabledReason}</TooltipContent>
+            </Tooltip>
           )}
 
           <Button
             variant="ghost"
             size="icon-sm"
             onClick={() => onEdit(model)}
-            title={t("models.action.edit")}
+            aria-label={editLabel}
+            title={editLabel}
           >
             <IconEdit className="size-3.5" />
           </Button>
 
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => onDelete(model)}
-            disabled={model.is_default}
-            title={t("models.action.delete")}
-            className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-          >
-            <IconTrash className="size-3.5" />
-          </Button>
+          <Tooltip delayDuration={deleteDisabled ? 0 : 700}>
+            <TooltipTrigger asChild>
+              <span
+                className={deleteDisabled ? "cursor-not-allowed" : undefined}
+                tabIndex={deleteDisabled ? 0 : undefined}
+                role={deleteDisabled ? "button" : undefined}
+                aria-disabled={deleteDisabled ? true : undefined}
+                aria-label={deleteDisabled ? deleteLabel : undefined}
+                title={deleteDisabled ? deleteLabel : undefined}
+              >
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => onDelete(model)}
+                  disabled={deleteDisabled}
+                  aria-label={deleteLabel}
+                  title={deleteLabel}
+                  className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                >
+                  <IconTrash className="size-3.5" />
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{deleteDisabledReason}</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 

@@ -34,7 +34,7 @@ const (
 
 type WeComChannel struct {
 	*channels.BaseChannel
-	config config.WeComConfig
+	config *config.WeComSettings
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -108,7 +108,7 @@ func (s *recentMessageSet) Mark(id string) bool {
 	return true
 }
 
-func NewChannel(cfg config.WeComConfig, messageBus *bus.MessageBus) (*WeComChannel, error) {
+func NewChannel(bc *config.Channel, cfg *config.WeComSettings, messageBus *bus.MessageBus) (*WeComChannel, error) {
 	if cfg.BotID == "" || cfg.Secret.String() == "" {
 		return nil, fmt.Errorf("wecom bot_id and secret are required")
 	}
@@ -120,8 +120,8 @@ func NewChannel(cfg config.WeComConfig, messageBus *bus.MessageBus) (*WeComChann
 		"wecom",
 		cfg,
 		messageBus,
-		cfg.AllowFrom,
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+		bc.AllowFrom,
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	ch := &WeComChannel{
@@ -570,7 +570,6 @@ func (c *WeComChannel) dispatchIncoming(reqID string, msg wecomIncomingMessage) 
 		return err
 	}
 
-	peer := bus.Peer{Kind: peerKind, ID: actualChatID}
 	metadata := map[string]string{
 		"channel":   "wecom",
 		"req_id":    reqID,
@@ -583,7 +582,20 @@ func (c *WeComChannel) dispatchIncoming(reqID string, msg wecomIncomingMessage) 
 		metadata["quote_text"] = quoteText
 	}
 
-	c.HandleMessage(c.ctx, peer, msg.MsgID, senderID, actualChatID, content, mediaRefs, metadata, sender)
+	inboundCtx := bus.InboundContext{
+		Channel:   c.Name(),
+		Account:   strings.TrimSpace(msg.AIBotID),
+		ChatID:    actualChatID,
+		ChatType:  peerKind,
+		SenderID:  senderID,
+		MessageID: msg.MsgID,
+		ReplyHandles: map[string]string{
+			"req_id": reqID,
+		},
+		Raw: metadata,
+	}
+
+	c.HandleInboundContext(c.ctx, actualChatID, content, mediaRefs, inboundCtx, sender)
 	return nil
 }
 

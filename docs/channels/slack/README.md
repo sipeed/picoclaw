@@ -8,9 +8,10 @@ Slack is a leading enterprise instant messaging platform. PicoClaw uses Slack's 
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "slack": {
       "enabled": true,
+      "type": "slack",
       "bot_token": "xoxb-...",
       "app_token": "xapp-...",
       "allow_from": []

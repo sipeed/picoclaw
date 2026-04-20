@@ -15,18 +15,23 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/netbind"
+	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/web/backend/api"
+	"github.com/sipeed/picoclaw/web/backend/dashboardauth"
 	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
 	"github.com/sipeed/picoclaw/web/backend/middleware"
 	"github.com/sipeed/picoclaw/web/backend/utils"
@@ -43,14 +48,12 @@ const (
 var (
 	appVersion = config.Version
 
-	server     *http.Server
+	servers    []*http.Server
 	serverAddr string
 	// browserLaunchURL is opened by openBrowser() (auto-open + tray "open console").
 	// Includes ?token= for same-machine dashboard login; keep serverAddr without secrets for other use.
 	browserLaunchURL string
 	apiHandler       *api.Handler
-	// launcherDashboardTokenForClipboard is read by the system tray "copy token" action (GUI mode).
-	launcherDashboardTokenForClipboard string
 
 	noBrowser *bool
 )
@@ -66,9 +69,277 @@ func dashboardTokenConfigHelpPath(source launcherconfig.DashboardTokenSource, la
 	return launcherPath
 }
 
+func resolveLauncherHostInput(flagHost string, explicitFlag bool, envHost string) (string, bool, error) {
+	if explicitFlag {
+		normalized, err := netbind.NormalizeHostInput(flagHost)
+		if err != nil {
+			return "", false, err
+		}
+		return normalized, true, nil
+	}
+
+	envHost = strings.TrimSpace(envHost)
+	if envHost == "" {
+		return "", false, nil
+	}
+
+	normalized, err := netbind.NormalizeHostInput(envHost)
+	if err != nil {
+		return "", false, err
+	}
+	return normalized, true, nil
+}
+
+func openLauncherListeners(hostInput string, public bool, port string) (netbind.OpenResult, error) {
+	defaultMode := netbind.DefaultLoopback
+	if strings.TrimSpace(hostInput) == "" && public {
+		defaultMode = netbind.DefaultAny
+	}
+
+	plan, err := netbind.BuildPlan(hostInput, defaultMode)
+	if err != nil {
+		return netbind.OpenResult{}, err
+	}
+	return netbind.OpenPlan(plan, port)
+}
+
+func appendUniqueHost(hosts []string, seen map[string]struct{}, host string) []string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return hosts
+	}
+	key := strings.ToLower(host)
+	if _, ok := seen[key]; ok {
+		return hosts
+	}
+	seen[key] = struct{}{}
+	return append(hosts, host)
+}
+
+func hasWildcardBindHosts(bindHosts []string) bool {
+	for _, bindHost := range bindHosts {
+		if netbind.IsUnspecifiedHost(bindHost) {
+			return true
+		}
+	}
+	return false
+}
+
+func wildcardBindHostFamilies(bindHosts []string) (hasIPv4, hasIPv6 bool) {
+	for _, bindHost := range bindHosts {
+		host := strings.TrimSpace(bindHost)
+		if host == "" {
+			continue
+		}
+
+		if !netbind.IsUnspecifiedHost(host) {
+			continue
+		}
+
+		ip := net.ParseIP(strings.Trim(host, "[]"))
+		if ip == nil {
+			continue
+		}
+		if ip.To4() != nil {
+			hasIPv4 = true
+			continue
+		}
+		hasIPv6 = true
+	}
+
+	return hasIPv4, hasIPv6
+}
+
+func wildcardAdvertiseIP(bindHosts []string, ipv4, ipv6 string) string {
+	hasIPv4Wildcard, hasIPv6Wildcard := wildcardBindHostFamilies(bindHosts)
+	v4 := strings.TrimSpace(ipv4)
+	v6 := strings.TrimSpace(ipv6)
+
+	switch {
+	case hasIPv4Wildcard && hasIPv6Wildcard:
+		if v6 != "" {
+			return v6
+		}
+		return v4
+	case hasIPv6Wildcard:
+		return v6
+	case hasIPv4Wildcard:
+		return v4
+	default:
+		return ""
+	}
+}
+
+func advertiseIPForWildcardBindHosts(bindHosts []string) string {
+	return wildcardAdvertiseIP(bindHosts, utils.GetLocalIPv4(), utils.GetLocalIPv6())
+}
+
+func appendLauncherConsoleHostList(hosts []string, seen map[string]struct{}, values []string) []string {
+	for _, value := range values {
+		hosts = appendUniqueHost(hosts, seen, value)
+	}
+	return hosts
+}
+
+func shouldShowLocalhostConsoleEntry(hostInput string) bool {
+	normalizedHostInput := strings.TrimSpace(hostInput)
+	if normalizedHostInput == "" {
+		return true
+	}
+
+	for token := range strings.SplitSeq(normalizedHostInput, ",") {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			continue
+		}
+		if token == "*" || strings.EqualFold(token, "localhost") {
+			return true
+		}
+
+		ip := net.ParseIP(strings.Trim(token, "[]"))
+		if ip == nil {
+			continue
+		}
+		if ip4 := ip.To4(); ip4 != nil {
+			if ip4.String() == "127.0.0.1" || ip4.String() == "0.0.0.0" {
+				return true
+			}
+			continue
+		}
+		if ip.String() == "::1" || ip.String() == "::" {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isConsoleDisplayGlobalIPv6(ip net.IP) bool {
+	if ip == nil || ip.IsLoopback() || ip.To4() != nil {
+		return false
+	}
+	ip = ip.To16()
+	if ip == nil {
+		return false
+	}
+	return ip[0]&0xe0 == 0x20
+}
+
+func launcherConsoleHostsWithLocalAddrs(
+	hostInput string,
+	public bool,
+	ipv4s []string,
+	globalIPv6s []string,
+) []string {
+	hosts := make([]string, 0, 8)
+	seen := make(map[string]struct{}, 8)
+
+	if shouldShowLocalhostConsoleEntry(hostInput) {
+		hosts = appendUniqueHost(hosts, seen, "localhost")
+	}
+
+	normalizedHostInput := strings.TrimSpace(hostInput)
+	if normalizedHostInput == "" {
+		if public {
+			hosts = appendLauncherConsoleHostList(hosts, seen, globalIPv6s)
+			hosts = appendLauncherConsoleHostList(hosts, seen, ipv4s)
+		}
+		return hosts
+	}
+
+	hasStar := false
+	hasIPv4Any := false
+	hasIPv6Any := false
+	for _, token := range strings.Split(normalizedHostInput, ",") {
+		switch strings.TrimSpace(token) {
+		case "*":
+			hasStar = true
+		case "0.0.0.0":
+			hasIPv4Any = true
+		case "::":
+			hasIPv6Any = true
+		}
+	}
+
+	if hasStar {
+		hosts = appendLauncherConsoleHostList(hosts, seen, globalIPv6s)
+		hosts = appendLauncherConsoleHostList(hosts, seen, ipv4s)
+		return hosts
+	}
+
+	for _, token := range strings.Split(normalizedHostInput, ",") {
+		token = strings.TrimSpace(token)
+		if token == "" || strings.EqualFold(token, "localhost") || netbind.IsLoopbackHost(token) {
+			continue
+		}
+
+		ip := net.ParseIP(strings.Trim(token, "[]"))
+		switch {
+		case token == "::":
+			hosts = appendLauncherConsoleHostList(hosts, seen, globalIPv6s)
+		case token == "0.0.0.0":
+			hosts = appendLauncherConsoleHostList(hosts, seen, ipv4s)
+		case ip != nil && ip.To4() != nil:
+			if hasIPv4Any {
+				continue
+			}
+			hosts = appendUniqueHost(hosts, seen, ip.String())
+		case ip != nil:
+			if hasIPv6Any {
+				continue
+			}
+			if isConsoleDisplayGlobalIPv6(ip) {
+				hosts = appendUniqueHost(hosts, seen, ip.String())
+			}
+		default:
+			hosts = appendUniqueHost(hosts, seen, token)
+		}
+	}
+
+	return hosts
+}
+
+func launcherConsoleHosts(hostInput string, public bool) []string {
+	return launcherConsoleHostsWithLocalAddrs(
+		hostInput,
+		public,
+		utils.GetLocalIPv4s(),
+		utils.GetGlobalIPv6s(),
+	)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+// maskSecret masks a secret for display. It always shows up to the first 3
+// runes. The last 4 runes are only appended when at least 5 runes remain
+// hidden in the middle (i.e. string length >= 12), so an 8-char minimum
+// password never exposes its tail. Strings of 3 chars or fewer are fully
+// masked.
+func maskSecret(s string) string {
+	runes := []rune(s)
+	n := len(runes)
+	const prefixLen, suffixLen, minHidden = 3, 4, 5
+	if n < prefixLen+suffixLen+minHidden {
+		if n <= prefixLen {
+			return "**********"
+		}
+		return string(runes[:prefixLen]) + "**********"
+	}
+	return string(runes[:prefixLen]) + "**********" + string(runes[n-suffixLen:])
+}
+
 func main() {
 	port := flag.String("port", "18800", "Port to listen on")
-	public := flag.Bool("public", false, "Listen on all interfaces (0.0.0.0) instead of localhost only")
+	host := flag.String("host", "", "Host to listen on (overrides -public when set)")
+	public := flag.Bool("public", false, "Listen on all interfaces (dual-stack) instead of localhost only")
 	noBrowser = flag.Bool("no-browser", false, "Do not auto-open browser on startup")
 	lang := flag.String("lang", "", "Language: en (English) or zh (Chinese). Default: auto-detect from system locale")
 	console := flag.Bool("console", false, "Console mode, no GUI")
@@ -95,6 +366,8 @@ func main() {
 			os.Args[0],
 		)
 		fmt.Fprintf(os.Stderr, "      Allow access from other devices on the local network\n")
+		fmt.Fprintf(os.Stderr, "  %s -host :: ./config.json\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "      Bind launcher host explicitly with exact host semantics\n")
 		fmt.Fprintf(os.Stderr, "  %s -console -d ./config.json\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "      Run in the terminal with debug logs enabled\n")
 	}
@@ -132,6 +405,7 @@ func main() {
 	if *lang != "" {
 		SetLanguage(*lang)
 	}
+	tools.SetPreferredWebSearchLanguage(string(GetLanguage()))
 
 	// Resolve config path
 	configPath := utils.GetDefaultConfigPath()
@@ -158,8 +432,9 @@ func main() {
 		logger.DebugC(
 			"web",
 			fmt.Sprintf(
-				"Launcher flags: console=%t public=%t no_browser=%t config=%s",
+				"Launcher flags: console=%t host=%q public=%t no_browser=%t config=%s",
 				enableConsole,
+				*host,
 				*public,
 				*noBrowser,
 				absPath,
@@ -169,10 +444,13 @@ func main() {
 
 	var explicitPort bool
 	var explicitPublic bool
+	var explicitHost bool
 	flag.Visit(func(f *flag.Flag) {
 		switch f.Name {
 		case "port":
 			explicitPort = true
+		case "host":
+			explicitHost = true
 		case "public":
 			explicitPublic = true
 		}
@@ -193,6 +471,23 @@ func main() {
 	if !explicitPublic {
 		effectivePublic = launcherCfg.Public
 	}
+	envHost := strings.TrimSpace(os.Getenv(launcherconfig.EnvLauncherHost))
+
+	hostInput, hostOverrideActive, err := resolveLauncherHostInput(*host, explicitHost, envHost)
+	if err != nil {
+		logger.Fatalf("Invalid host %q: %v", firstNonEmpty(strings.TrimSpace(*host), envHost), err)
+	}
+	if hostOverrideActive {
+		effectivePublic = false
+	}
+
+	if !explicitHost && hostOverrideActive {
+		logger.InfoC("web", "Using launcher host from environment PICOCLAW_LAUNCHER_HOST")
+	}
+
+	if hostOverrideActive && explicitPublic {
+		logger.InfoC("web", "Ignoring -public because launcher host was explicitly set")
+	}
 
 	portNum, err := strconv.Atoi(effectivePort)
 	if err != nil || portNum < 1 || portNum > 65535 {
@@ -202,49 +497,58 @@ func main() {
 		logger.Fatalf("Invalid port %q: %v", effectivePort, err)
 	}
 
-	dashboardToken, dashboardSigningKey, dashboardTokenSource, dashErr := launcherconfig.EnsureDashboardSecrets(
+	openResult, err := openLauncherListeners(hostInput, effectivePublic, effectivePort)
+	if err != nil {
+		logger.Fatalf("Failed to open launcher listener(s): %v", err)
+	}
+	listeners := openResult.Listeners
+
+	dashboardToken, dashboardSigningKey, _, dashErr := launcherconfig.EnsureDashboardSecrets(
 		launcherCfg,
 	)
 	if dashErr != nil {
 		logger.Fatalf("Dashboard auth setup failed: %v", dashErr)
 	}
 	dashboardSessionCookie := middleware.SessionCookieValue(dashboardSigningKey, dashboardToken)
-	launcherDashboardTokenForClipboard = dashboardToken
 
-	// Determine listen address
-	var addr string
-	if effectivePublic {
-		addr = "0.0.0.0:" + effectivePort
+	fmt.Println("dashboardToken: ", dashboardToken)
+	// Open the bcrypt password store (creates the DB file on first run).
+	authStore, authStoreErr := dashboardauth.New(picoHome)
+	var passwordStore api.PasswordStore
+	if authStoreErr == nil {
+		passwordStore = authStore
+		defer authStore.Close()
+	} else if errors.Is(authStoreErr, dashboardauth.ErrUnsupportedPlatform) {
+		logger.InfoC(
+			"web",
+			fmt.Sprintf(
+				"Dashboard password store unavailable on this platform; falling back to token login: %v",
+				authStoreErr,
+			),
+		)
+		authStoreErr = nil
 	} else {
-		addr = "127.0.0.1:" + effectivePort
+		logger.ErrorC("web", fmt.Sprintf("Warning: could not open auth store: %v", authStoreErr))
 	}
 
 	// Initialize Server components
 	mux := http.NewServeMux()
 
-	tokenLogFileAbs := ""
-	if fileLoggingEnabled {
-		tokenLogFileAbs = filepath.Join(picoHome, logPath, logFile)
-	}
 	api.RegisterLauncherAuthRoutes(mux, api.LauncherAuthRouteOpts{
 		DashboardToken: dashboardToken,
 		SessionCookie:  dashboardSessionCookie,
-		TokenHelp: api.LauncherAuthTokenHelp{
-			EnvVarName:    "PICOCLAW_LAUNCHER_TOKEN",
-			LogFileAbs:    tokenLogFileAbs,
-			ConfigFileAbs: dashboardTokenConfigHelpPath(dashboardTokenSource, launcherPath),
-			TrayCopyMenu:  trayOffersDashboardTokenCopy(),
-			ConsoleStdout: enableConsole,
-		},
+		PasswordStore:  passwordStore,
+		StoreError:     authStoreErr,
 	})
 
 	// API Routes (e.g. /api/status)
 	apiHandler = api.NewHandler(absPath)
 	apiHandler.SetDebug(debug)
-	if _, err = apiHandler.EnsurePicoChannel(""); err != nil {
+	if _, err = apiHandler.EnsurePicoChannel(); err != nil {
 		logger.ErrorC("web", fmt.Sprintf("Warning: failed to ensure pico channel on startup: %v", err))
 	}
 	apiHandler.SetServerOptions(portNum, effectivePublic, explicitPublic, launcherCfg.AllowedCIDRs)
+	apiHandler.SetServerBindHost(hostInput, hostOverrideActive)
 	apiHandler.RegisterRoutes(mux)
 
 	// Frontend Embedded Assets
@@ -271,49 +575,30 @@ func main() {
 
 	// Print startup banner and token (console mode only).
 	if enableConsole || debug {
+		consoleHosts := launcherConsoleHosts(hostInput, effectivePublic)
+
 		fmt.Print(utils.Banner)
 		fmt.Println()
 		fmt.Println("  Open the following URL in your browser:")
 		fmt.Println()
-		fmt.Printf("    >> http://localhost:%s <<\n", effectivePort)
-		if effectivePublic {
-			if ip := utils.GetLocalIP(); ip != "" {
-				fmt.Printf("    >> http://%s:%s <<\n", ip, effectivePort)
-			}
+		for _, host := range consoleHosts {
+			fmt.Printf("    >> http://%s <<\n", net.JoinHostPort(host, effectivePort))
 		}
 		fmt.Println()
-		switch dashboardTokenSource {
-		case launcherconfig.DashboardTokenSourceRandom:
-			fmt.Printf("  Dashboard token (this run): %s\n", dashboardToken)
-		case launcherconfig.DashboardTokenSourceEnv:
-			fmt.Printf("  Dashboard token: %s (from PICOCLAW_LAUNCHER_TOKEN)\n", dashboardToken)
-		case launcherconfig.DashboardTokenSourceConfig:
-			fmt.Printf("  Dashboard token: %s (from %s)\n", dashboardToken, launcherPath)
-		}
-		fmt.Println()
-	}
-
-	switch dashboardTokenSource {
-	case launcherconfig.DashboardTokenSourceEnv:
-		logger.InfoC("web", "Dashboard token: environment PICOCLAW_LAUNCHER_TOKEN")
-	case launcherconfig.DashboardTokenSourceConfig:
-		logger.InfoC("web", fmt.Sprintf("Dashboard token: configured in %s", launcherPath))
-	case launcherconfig.DashboardTokenSourceRandom:
-		if !enableConsole {
-			logger.InfoC("web", "Dashboard token (this run): "+dashboardToken)
-		}
 	}
 
 	// Log startup info to file
-	logger.InfoC("web", fmt.Sprintf("Server will listen on http://localhost:%s", effectivePort))
-	if effectivePublic {
-		if ip := utils.GetLocalIP(); ip != "" {
-			logger.InfoC("web", fmt.Sprintf("Public access enabled at http://%s:%s", ip, effectivePort))
+	for _, ln := range listeners {
+		logger.InfoC("web", fmt.Sprintf("Server will listen on http://%s", ln.Addr().String()))
+	}
+	if hasWildcardBindHosts(openResult.BindHosts) {
+		if ip := advertiseIPForWildcardBindHosts(openResult.BindHosts); ip != "" {
+			logger.InfoC("web", fmt.Sprintf("Public access enabled at http://%s", net.JoinHostPort(ip, effectivePort)))
 		}
 	}
 
 	// Share the local URL with the launcher runtime.
-	serverAddr = fmt.Sprintf("http://localhost:%s", effectivePort)
+	serverAddr = fmt.Sprintf("http://%s", net.JoinHostPort(openResult.ProbeHost, effectivePort))
 	if dashboardToken != "" {
 		browserLaunchURL = serverAddr + "?token=" + url.QueryEscape(dashboardToken)
 	} else {
@@ -328,14 +613,19 @@ func main() {
 		apiHandler.TryAutoStartGateway()
 	}()
 
-	// Start the Server in a goroutine
-	server = &http.Server{Addr: addr, Handler: handler}
-	go func() {
-		logger.InfoC("web", fmt.Sprintf("Server listening on %s", addr))
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatalf("Server failed to start: %v", err)
-		}
-	}()
+	// Start the server(s) in goroutines.
+	servers = make([]*http.Server, 0, len(listeners))
+	for _, ln := range listeners {
+		srv := &http.Server{Handler: handler}
+		servers = append(servers, srv)
+
+		go func(s *http.Server, l net.Listener) {
+			logger.InfoC("web", fmt.Sprintf("Server listening on %s", l.Addr().String()))
+			if serveErr := s.Serve(l); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+				logger.Fatalf("Server failed to start on %s: %v", l.Addr().String(), serveErr)
+			}
+		}(srv, ln)
+	}
 
 	defer shutdownApp()
 

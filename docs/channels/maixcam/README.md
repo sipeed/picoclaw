@@ -8,9 +8,10 @@ MaixCam is a dedicated channel for connecting to Sipeed MaixCAM and MaixCAM2 AI 
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "maixcam": {
       "enabled": true,
+      "type": "maixcam",
       "host": "0.0.0.0",
       "port": 18790,
       "allow_from": []

@@ -23,12 +23,6 @@ func TestLauncherAuthLoginAndStatus(t *testing.T) {
 	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
 		DashboardToken: tok,
 		SessionCookie:  sess,
-		TokenHelp: LauncherAuthTokenHelp{
-			EnvVarName:    "PICOCLAW_LAUNCHER_TOKEN",
-			LogFileAbs:    "/tmp/launcher.log",
-			TrayCopyMenu:  true,
-			ConsoleStdout: false,
-		},
 	})
 
 	t.Run("status_unauthenticated", func(t *testing.T) {
@@ -38,23 +32,20 @@ func TestLauncherAuthLoginAndStatus(t *testing.T) {
 			t.Fatalf("status code = %d", rec.Code)
 		}
 		var body struct {
-			Authenticated bool                   `json:"authenticated"`
-			TokenHelp     *LauncherAuthTokenHelp `json:"token_help"`
+			Authenticated bool `json:"authenticated"`
+			Initialized   bool `json:"initialized"`
 		}
 		if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if body.Authenticated || body.TokenHelp == nil {
-			t.Fatalf("unexpected body: %+v", body)
-		}
-		if body.TokenHelp.EnvVarName != "PICOCLAW_LAUNCHER_TOKEN" || body.TokenHelp.LogFileAbs != "/tmp/launcher.log" {
-			t.Fatalf("token_help = %+v", body.TokenHelp)
+		if body.Authenticated {
+			t.Fatalf("unexpected authenticated=true: %+v", body)
 		}
 	})
 
 	t.Run("login_ok", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"token":"`+tok+`"}`))
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"password":"`+tok+`"}`))
 		req.Header.Set("Content-Type", "application/json")
 		req.RemoteAddr = "127.0.0.1:12345"
 		mux.ServeHTTP(rec, req)
@@ -84,6 +75,67 @@ func TestLauncherAuthLoginAndStatus(t *testing.T) {
 	})
 }
 
+func TestLauncherAuthLegacyTokenFallbackReportsInitialized(t *testing.T) {
+	key := make([]byte, 32)
+	const tok = "legacy-fallback-token"
+	sess := middleware.SessionCookieValue(key, tok)
+	mux := http.NewServeMux()
+	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
+		DashboardToken: tok,
+		SessionCookie:  sess,
+	})
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/auth/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status code = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var body struct {
+		Authenticated bool `json:"authenticated"`
+		Initialized   bool `json:"initialized"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.Initialized {
+		t.Fatalf("initialized = false, want true in legacy token fallback mode")
+	}
+	if body.Authenticated {
+		t.Fatalf("unexpected authenticated=true: %+v", body)
+	}
+
+	rec = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"password":"`+tok+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login code = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLauncherAuthSetupRejectedInLegacyTokenFallback(t *testing.T) {
+	key := make([]byte, 32)
+	sess := middleware.SessionCookieValue(key, "legacy-token")
+	mux := http.NewServeMux()
+	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
+		DashboardToken: "legacy-token",
+		SessionCookie:  sess,
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/auth/setup",
+		strings.NewReader(`{"password":"12345678","confirm":"12345678"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("setup code = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestLauncherAuthLogoutRequiresPostAndJSON(t *testing.T) {
 	key := make([]byte, 32)
 	sess := middleware.SessionCookieValue(key, "tok")
@@ -91,7 +143,6 @@ func TestLauncherAuthLogoutRequiresPostAndJSON(t *testing.T) {
 	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
 		DashboardToken: "tok",
 		SessionCookie:  sess,
-		TokenHelp:      LauncherAuthTokenHelp{EnvVarName: "PICOCLAW_LAUNCHER_TOKEN"},
 	})
 
 	rec := httptest.NewRecorder()
@@ -125,11 +176,10 @@ func TestLauncherAuthLoginRateLimit(t *testing.T) {
 	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
 		DashboardToken: tok,
 		SessionCookie:  sess,
-		TokenHelp:      LauncherAuthTokenHelp{EnvVarName: "X"},
 	})
 
 	// 11 failing logins by wrong token; each consumes allow() slot after valid JSON.
-	wrongBody := `{"token":"wrong"}`
+	wrongBody := `{"password":"wrong"}`
 	for i := 0; i < loginAttemptsPerIP; i++ {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(wrongBody))
@@ -187,7 +237,6 @@ func TestLauncherAuthLogoutEmptyBody(t *testing.T) {
 	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
 		DashboardToken: "tok",
 		SessionCookie:  sess,
-		TokenHelp:      LauncherAuthTokenHelp{EnvVarName: "X"},
 	})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
@@ -206,7 +255,6 @@ func TestLauncherAuthLogoutRejectsTrailingJSON(t *testing.T) {
 	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
 		DashboardToken: "tok",
 		SessionCookie:  sess,
-		TokenHelp:      LauncherAuthTokenHelp{EnvVarName: "X"},
 	})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", strings.NewReader(`{}{}`))

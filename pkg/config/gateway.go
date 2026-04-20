@@ -3,8 +3,10 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/netbind"
 )
 
 const DefaultGatewayLogLevel = "warn"
@@ -47,6 +49,31 @@ func EffectiveGatewayLogLevel(cfg *Config) string {
 		return DefaultGatewayLogLevel
 	}
 	return normalizeGatewayLogLevel(cfg.Gateway.LogLevel)
+}
+
+func resolveGatewayHostFromEnv(baseHost string) (string, error) {
+	envHost, ok := os.LookupEnv(EnvGatewayHost)
+	if !ok {
+		return normalizeGatewayHostInput(baseHost)
+	}
+
+	envHost = strings.TrimSpace(envHost)
+	if envHost == "" {
+		return normalizeGatewayHostInput(baseHost)
+	}
+
+	return normalizeGatewayHostInput(envHost)
+}
+
+func normalizeGatewayHostInput(host string) (string, error) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		host = strings.TrimSpace(DefaultConfig().Gateway.Host)
+	}
+	if host == "" {
+		host = "localhost"
+	}
+	return netbind.NormalizeHostInput(host)
 }
 
 // ResolveGatewayLogLevel reads the configured gateway log level without triggering

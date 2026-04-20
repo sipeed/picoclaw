@@ -1,4 +1,4 @@
-> Voltar ao [README](../../../README.pt-br.md)
+> Voltar ao [README](../../project/README.pt-br.md)
 
 # Feishu
 
@@ -8,9 +8,10 @@ Feishu (nome internacional: Lark) é uma plataforma de colaboração empresarial
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "feishu": {
       "enabled": true,
+      "type": "feishu",
       "app_id": "cli_xxx",
       "app_secret": "xxx",
       "encrypt_key": "",

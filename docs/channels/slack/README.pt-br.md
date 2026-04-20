@@ -1,4 +1,4 @@
-> Voltar ao [README](../../../README.pt-br.md)
+> Voltar ao [README](../../project/README.pt-br.md)
 
 # Slack
 
@@ -8,9 +8,10 @@ O Slack é uma das principais plataformas de mensagens instantâneas para empres
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "slack": {
       "enabled": true,
+      "type": "slack",
       "bot_token": "xoxb-...",
       "app_token": "xapp-...",
       "allow_from": []

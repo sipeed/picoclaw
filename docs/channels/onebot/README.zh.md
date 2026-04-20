@@ -1,4 +1,4 @@
-> 返回 [README](../../../README.zh.md)
+> 返回 [README](../../project/README.zh.md)
 
 # OneBot
 
@@ -8,9 +8,10 @@ OneBot 是一个面向 QQ 机器人的开放协议标准，为多种 QQ 机器�
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "onebot": {
       "enabled": true,
+      "type": "onebot",
       "ws_url": "ws://localhost:8080",
       "access_token": "",
       "allow_from": []

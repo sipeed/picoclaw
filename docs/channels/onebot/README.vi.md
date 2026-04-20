@@ -1,4 +1,4 @@
-> Quay lại [README](../../../README.vi.md)
+> Quay lại [README](../../project/README.vi.md)
 
 # OneBot
 
@@ -8,9 +8,10 @@ OneBot là tiêu chuẩn giao thức mở dành cho bot QQ, cung cấp giao di�
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "onebot": {
       "enabled": true,
+      "type": "onebot",
       "ws_url": "ws://localhost:8080",
       "access_token": "",
       "allow_from": []

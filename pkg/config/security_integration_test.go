@@ -53,7 +53,7 @@ func TestSecurityConfigIntegration(t *testing.T) {
       "model_name": "test-model",
       "model": "openai/test-model",
       "api_base": "https://api.openai.com/v1",
-      "api_key": "sk-from-config-json-direct"
+      "api_keys": ["sk-from-config-json-direct"]
     }
   ],
   "channels": {
@@ -108,7 +108,13 @@ skills:
 		assert.Equal(t, "sk-from-security-yml", cfg.ModelList[0].APIKey())
 
 		// Verify channel token from config.json takes precedence
-		assert.Equal(t, "token-from-security-yml", cfg.Channels.Telegram.Token.String())
+		var tgTokenCfg *TelegramSettings
+		if bc := cfg.Channels.Get("telegram"); bc != nil {
+			if decoded, err := bc.GetDecoded(); err == nil && decoded != nil {
+				tgTokenCfg = decoded.(*TelegramSettings)
+			}
+		}
+		assert.Equal(t, "token-from-security-yml", tgTokenCfg.Token.String())
 
 		assert.Equal(t, "sk-from-security-yml", cfg.ModelList[0].APIKeys[0].String())
 
@@ -332,8 +338,9 @@ web:
 skills:
   github:
     token: "file://github_token.txt"
-  clawhub:
-    auth_token: "file://clawhub_auth_token.txt"
+  registries:
+    clawhub:
+      auth_token: "file://clawhub_auth_token.txt"
 `
 		err = os.WriteFile(securityPath, []byte(securityContent), 0o600)
 		require.NoError(t, err)
@@ -350,68 +357,95 @@ skills:
 		assert.Equal(t, "sk-model-from-file-12345", cfg.ModelList[0].APIKey())
 		t.Logf("Model APIKey(): %s", cfg.ModelList[0].APIKey())
 
+		// Helper function to decode channel settings
+		decodeChannel := func(name string) any {
+			bc := cfg.Channels.Get(name)
+			if bc == nil {
+				return nil
+			}
+			decoded, _ := bc.GetDecoded()
+			return decoded
+		}
+
+		// Helper to get SecureString value
+		secureStr := func(s SecureString) string {
+			return s.String()
+		}
+
 		// Verify Channel tokens via Key() methods
 		// Telegram
-		assert.Equal(t, "123456789:ABCdefGHIjklMNOpqrsTUVwxyz", cfg.Channels.Telegram.Token.String())
-		t.Logf("Telegram Token(): %s", cfg.Channels.Telegram.Token.String())
+		tgSec := decodeChannel("telegram")
+		assert.Equal(t, "123456789:ABCdefGHIjklMNOpqrsTUVwxyz", secureStr(tgSec.(*TelegramSettings).Token))
+		t.Logf("Telegram Token(): %s", secureStr(tgSec.(*TelegramSettings).Token))
 
 		// Feishu
-		assert.Equal(t, "feishu_test_app_secret", cfg.Channels.Feishu.AppSecret.String())
-		assert.Equal(t, "feishu_test_encrypt_key", cfg.Channels.Feishu.EncryptKey.String())
-		assert.Equal(t, "feishu_test_verification_token", cfg.Channels.Feishu.VerificationToken.String())
-		t.Logf("Feishu AppSecret(): %s", cfg.Channels.Feishu.AppSecret.String())
-		t.Logf("Feishu EncryptKey(): %s", cfg.Channels.Feishu.EncryptKey.String())
-		t.Logf("Feishu VerificationToken(): %s", cfg.Channels.Feishu.VerificationToken.String())
+		feiSec := decodeChannel("feishu")
+		assert.Equal(t, "feishu_test_app_secret", secureStr(feiSec.(*FeishuSettings).AppSecret))
+		assert.Equal(t, "feishu_test_encrypt_key", secureStr(feiSec.(*FeishuSettings).EncryptKey))
+		assert.Equal(t, "feishu_test_verification_token", secureStr(feiSec.(*FeishuSettings).VerificationToken))
+		t.Logf("Feishu AppSecret(): %s", secureStr(feiSec.(*FeishuSettings).AppSecret))
+		t.Logf("Feishu EncryptKey(): %s", secureStr(feiSec.(*FeishuSettings).EncryptKey))
+		t.Logf("Feishu VerificationToken(): %s", secureStr(feiSec.(*FeishuSettings).VerificationToken))
 
 		// Discord
-		assert.Equal(t, "discord_test_bot_token_xyz", cfg.Channels.Discord.Token.String())
-		t.Logf("Discord Token(): %s", cfg.Channels.Discord.Token.String())
+		discSec := decodeChannel("discord")
+		assert.Equal(t, "discord_test_bot_token_xyz", secureStr(discSec.(*DiscordSettings).Token))
+		t.Logf("Discord Token(): %s", secureStr(discSec.(*DiscordSettings).Token))
 
 		// DingTalk
-		assert.Equal(t, "dingtalk_test_client_secret", cfg.Channels.DingTalk.ClientSecret.String())
-		t.Logf("DingTalk ClientSecret(): %s", cfg.Channels.DingTalk.ClientSecret.String())
+		dtSec := decodeChannel("dingtalk")
+		assert.Equal(t, "dingtalk_test_client_secret", secureStr(dtSec.(*DingTalkSettings).ClientSecret))
+		t.Logf("DingTalk ClientSecret(): %s", secureStr(dtSec.(*DingTalkSettings).ClientSecret))
 
 		// Slack
-		assert.Equal(t, "xoxb-slack-bot-token-123", cfg.Channels.Slack.BotToken.String())
-		assert.Equal(t, "xapp-slack-app-token-456", cfg.Channels.Slack.AppToken.String())
-		t.Logf("Slack BotToken(): %s", cfg.Channels.Slack.BotToken.String())
-		t.Logf("Slack AppToken(): %s", cfg.Channels.Slack.AppToken.String())
+		slSec := decodeChannel("slack")
+		assert.Equal(t, "xoxb-slack-bot-token-123", secureStr(slSec.(*SlackSettings).BotToken))
+		assert.Equal(t, "xapp-slack-app-token-456", secureStr(slSec.(*SlackSettings).AppToken))
+		t.Logf("Slack BotToken(): %s", secureStr(slSec.(*SlackSettings).BotToken))
+		t.Logf("Slack AppToken(): %s", secureStr(slSec.(*SlackSettings).AppToken))
 
 		// Matrix
-		assert.Equal(t, "matrix_test_access_token", cfg.Channels.Matrix.AccessToken.String())
-		t.Logf("Matrix AccessToken(): %s", cfg.Channels.Matrix.AccessToken.String())
+		matSec := decodeChannel("matrix")
+		assert.Equal(t, "matrix_test_access_token", secureStr(matSec.(*MatrixSettings).AccessToken))
+		t.Logf("Matrix AccessToken(): %s", secureStr(matSec.(*MatrixSettings).AccessToken))
 
 		// LINE
-		assert.Equal(t, "line_test_channel_secret", cfg.Channels.LINE.ChannelSecret.String())
-		assert.Equal(t, "line_test_channel_access_token", cfg.Channels.LINE.ChannelAccessToken.String())
-		t.Logf("LINE ChannelSecret(): %s", cfg.Channels.LINE.ChannelSecret.String())
-		t.Logf("LINE ChannelAccessToken(): %s", cfg.Channels.LINE.ChannelAccessToken.String())
+		lineSec := decodeChannel("line")
+		assert.Equal(t, "line_test_channel_secret", secureStr(lineSec.(*LINESettings).ChannelSecret))
+		assert.Equal(t, "line_test_channel_access_token", secureStr(lineSec.(*LINESettings).ChannelAccessToken))
+		t.Logf("LINE ChannelSecret(): %s", secureStr(lineSec.(*LINESettings).ChannelSecret))
+		t.Logf("LINE ChannelAccessToken(): %s", secureStr(lineSec.(*LINESettings).ChannelAccessToken))
 
 		// OneBot
-		assert.Equal(t, "onebot_test_access_token", cfg.Channels.OneBot.AccessToken.String())
-		t.Logf("OneBot AccessToken(): %s", cfg.Channels.OneBot.AccessToken.String())
+		obSec := decodeChannel("onebot")
+		assert.Equal(t, "onebot_test_access_token", secureStr(obSec.(*OneBotSettings).AccessToken))
+		t.Logf("OneBot AccessToken(): %s", secureStr(obSec.(*OneBotSettings).AccessToken))
 
 		// WeCom
-		assert.Equal(t, "test_wecom_bot_id", cfg.Channels.WeCom.BotID)
-		assert.Equal(t, "wecom_test_secret", cfg.Channels.WeCom.Secret.String())
-		t.Logf("WeCom BotID: %s", cfg.Channels.WeCom.BotID)
-		t.Logf("WeCom Secret(): %s", cfg.Channels.WeCom.Secret.String())
+		wcSec := decodeChannel("wecom")
+		assert.Equal(t, "test_wecom_bot_id", wcSec.(*WeComSettings).BotID)
+		assert.Equal(t, "wecom_test_secret", secureStr(wcSec.(*WeComSettings).Secret))
+		t.Logf("WeCom BotID: %s", wcSec.(*WeComSettings).BotID)
+		t.Logf("WeCom Secret(): %s", secureStr(wcSec.(*WeComSettings).Secret))
 
 		// Pico
-		assert.Equal(t, "pico_test_token", cfg.Channels.Pico.Token.String())
-		t.Logf("Pico Token(): %s", cfg.Channels.Pico.Token.String())
+		picoSec := decodeChannel("pico")
+		assert.Equal(t, "pico_test_token", secureStr(picoSec.(*PicoSettings).Token))
+		t.Logf("Pico Token(): %s", secureStr(picoSec.(*PicoSettings).Token))
 
 		// IRC
-		assert.Equal(t, "irc_test_password", cfg.Channels.IRC.Password.String())
-		assert.Equal(t, "irc_test_nickserv_password", cfg.Channels.IRC.NickServPassword.String())
-		assert.Equal(t, "irc_test_sasl_password", cfg.Channels.IRC.SASLPassword.String())
-		t.Logf("IRC Password(): %s", cfg.Channels.IRC.Password.String())
-		t.Logf("IRC NickServPassword(): %s", cfg.Channels.IRC.NickServPassword.String())
-		t.Logf("IRC SASLPassword(): %s", cfg.Channels.IRC.SASLPassword.String())
+		ircSec := decodeChannel("irc")
+		assert.Equal(t, "irc_test_password", secureStr(ircSec.(*IRCSettings).Password))
+		assert.Equal(t, "irc_test_nickserv_password", secureStr(ircSec.(*IRCSettings).NickServPassword))
+		assert.Equal(t, "irc_test_sasl_password", secureStr(ircSec.(*IRCSettings).SASLPassword))
+		t.Logf("IRC Password(): %s", secureStr(ircSec.(*IRCSettings).Password))
+		t.Logf("IRC NickServPassword(): %s", secureStr(ircSec.(*IRCSettings).NickServPassword))
+		t.Logf("IRC SASLPassword(): %s", secureStr(ircSec.(*IRCSettings).SASLPassword))
 
 		// QQ
-		assert.Equal(t, "qq_test_app_secret", cfg.Channels.QQ.AppSecret.String())
-		t.Logf("QQ AppSecret(): %s", cfg.Channels.QQ.AppSecret.String())
+		qqSec := decodeChannel("qq")
+		assert.Equal(t, "qq_test_app_secret", secureStr(qqSec.(*QQSettings).AppSecret))
+		t.Logf("QQ AppSecret(): %s", secureStr(qqSec.(*QQSettings).AppSecret))
 
 		// Verify Web tool API keys
 		assert.Equal(t, "BSA-brave-from-file-67890", cfg.Tools.Web.Brave.APIKey())
@@ -431,9 +465,172 @@ skills:
 		assert.Equal(t, "ghp-github-from-file-abc123", cfg.Tools.Skills.Github.Token.String())
 		t.Logf("Github Token(): %s", cfg.Tools.Skills.Github.Token.String())
 
-		assert.Equal(t, "clawhub-auth-token-from-file", cfg.Tools.Skills.Registries.ClawHub.AuthToken.String())
-		t.Logf("ClawHub AuthToken(): %s", cfg.Tools.Skills.Registries.ClawHub.AuthToken.String())
+		clawHub, ok := cfg.Tools.Skills.Registries.Get("clawhub")
+		assert.True(t, ok)
+		assert.Equal(t, "clawhub-auth-token-from-file", clawHub.AuthToken.String())
+		t.Logf("ClawHub AuthToken(): %s", clawHub.AuthToken.String())
 
 		t.Log("All security keys are successfully accessible via their respective Key() methods")
+	})
+
+	t.Run("Github registry token supports security overlay", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		githubTokenFile := filepath.Join(tmpDir, "github_registry_token.txt")
+		err := os.WriteFile(githubTokenFile, []byte("ghp-github-registry-token-from-file"), 0o600)
+		require.NoError(t, err)
+
+		configPath := filepath.Join(tmpDir, "config.json")
+		configContent := `{
+  "version": 1,
+  "tools": {
+    "skills": {
+      "registries": {
+        "github": {
+	          "enabled": true,
+	          "proxy": "http://127.0.0.1:7890"
+        }
+      }
+    }
+  }
+}`
+		err = os.WriteFile(configPath, []byte(configContent), 0o644)
+		require.NoError(t, err)
+
+		securityPath := filepath.Join(tmpDir, SecurityConfigFile)
+		securityContent := `skills:
+  registries:
+    github:
+      auth_token: "file://github_registry_token.txt"
+`
+		err = os.WriteFile(securityPath, []byte(securityContent), 0o600)
+		require.NoError(t, err)
+
+		cfg, err := LoadConfig(configPath)
+		require.NoError(t, err)
+
+		githubRegistry, ok := cfg.Tools.Skills.Registries.Get("github")
+		require.True(t, ok)
+		assert.Equal(t, "ghp-github-registry-token-from-file", githubRegistry.AuthToken.String())
+		assert.Equal(t, "http://127.0.0.1:7890", githubRegistry.Param["proxy"])
+	})
+
+	t.Run("Custom registry token supports security overlay", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		customTokenFile := filepath.Join(tmpDir, "custom_registry_token.txt")
+		err := os.WriteFile(customTokenFile, []byte("custom-registry-token-from-file"), 0o600)
+		require.NoError(t, err)
+
+		configPath := filepath.Join(tmpDir, "config.json")
+		configContent := `{
+  "version": 1,
+  "tools": {
+    "skills": {
+      "registries": {
+        "custom": {
+          "enabled": true,
+          "base_url": "https://skills.example.com"
+        }
+      }
+    }
+  }
+}`
+		err = os.WriteFile(configPath, []byte(configContent), 0o644)
+		require.NoError(t, err)
+
+		securityPath := filepath.Join(tmpDir, SecurityConfigFile)
+		securityContent := `skills:
+  registries:
+    custom:
+      auth_token: "file://custom_registry_token.txt"
+`
+		err = os.WriteFile(securityPath, []byte(securityContent), 0o600)
+		require.NoError(t, err)
+
+		cfg, err := LoadConfig(configPath)
+		require.NoError(t, err)
+
+		customRegistry, ok := cfg.Tools.Skills.Registries.Get("custom")
+		require.True(t, ok)
+		assert.Equal(t, "https://skills.example.com", customRegistry.BaseURL)
+		assert.Equal(t, "custom-registry-token-from-file", customRegistry.AuthToken.String())
+
+		githubRegistry, ok := cfg.Tools.Skills.Registries.Get("github")
+		require.True(t, ok)
+		assert.Equal(t, "https://github.com", githubRegistry.BaseURL)
+	})
+
+	t.Run("Legacy direct registry security entries remain supported", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		configPath := filepath.Join(tmpDir, "config.json")
+		configContent := `{
+  "version": 1,
+  "tools": {
+    "skills": {
+      "registries": {
+        "clawhub": {
+          "enabled": true,
+          "base_url": "https://clawhub.ai"
+        }
+      }
+    }
+  }
+}`
+		err := os.WriteFile(configPath, []byte(configContent), 0o644)
+		require.NoError(t, err)
+
+		securityPath := filepath.Join(tmpDir, SecurityConfigFile)
+		securityContent := `skills:
+  clawhub:
+    auth_token: "legacy-clawhub-token"
+`
+		err = os.WriteFile(securityPath, []byte(securityContent), 0o600)
+		require.NoError(t, err)
+
+		cfg, err := LoadConfig(configPath)
+		require.NoError(t, err)
+
+		registry, ok := cfg.Tools.Skills.Registries.Get("clawhub")
+		require.True(t, ok)
+		assert.Equal(t, "legacy-clawhub-token", registry.AuthToken.String())
+	})
+
+	t.Run("Legacy github security token populates github registry", func(t *testing.T) {
+		tmpDir := t.TempDir()
+
+		configPath := filepath.Join(tmpDir, "config.json")
+		configContent := `{
+  "version": 1,
+  "tools": {
+    "skills": {
+      "registries": {
+        "github": {
+          "enabled": true,
+          "base_url": "https://github.com"
+        }
+      }
+    }
+  }
+}`
+		err := os.WriteFile(configPath, []byte(configContent), 0o644)
+		require.NoError(t, err)
+
+		securityPath := filepath.Join(tmpDir, SecurityConfigFile)
+		securityContent := `skills:
+  github:
+    token: "legacy-github-token"
+`
+		err = os.WriteFile(securityPath, []byte(securityContent), 0o600)
+		require.NoError(t, err)
+
+		cfg, err := LoadConfig(configPath)
+		require.NoError(t, err)
+
+		registry, ok := cfg.Tools.Skills.Registries.Get("github")
+		require.True(t, ok)
+		assert.Equal(t, "legacy-github-token", cfg.Tools.Skills.Github.Token.String())
+		assert.Equal(t, "legacy-github-token", registry.AuthToken.String())
 	})
 }
