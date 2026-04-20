@@ -339,7 +339,7 @@ Répond HEARTBEAT_OK        Utilisateur reçoit le résultat
 | **Anthropic**           | `anthropic/`    | `https://api.anthropic.com/v1`                      | Anthropic | [Obtenir](https://console.anthropic.com)                         |
 | **智谱 AI (GLM)**       | `zhipu/`        | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Obtenir](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
 | **DeepSeek**            | `deepseek/`     | `https://api.deepseek.com/v1`                       | OpenAI    | [Obtenir](https://platform.deepseek.com)                         |
-| **Google Gemini**       | `gemini/`       | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [Obtenir](https://aistudio.google.com/api-keys)                  |
+| **Google Gemini**       | `gemini/`       | `https://generativelanguage.googleapis.com/v1beta`  | Gemini    | [Obtenir](https://aistudio.google.com/api-keys)                  |
 | **Groq**                | `groq/`         | `https://api.groq.com/openai/v1`                    | OpenAI    | [Obtenir](https://console.groq.com)                              |
 | **通义千问 (Qwen)**     | `qwen/`         | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Obtenir](https://dashscope.console.aliyun.com)                  |
 | **Ollama**              | `ollama/`       | `http://localhost:11434/v1`                         | OpenAI    | Local (pas de clé)                                               |
@@ -369,8 +369,11 @@ L'ancienne configuration `providers` est **dépréciée** et a été supprimée 
 PicoClaw route les providers par famille de protocole :
 
 - **Compatible OpenAI** : OpenRouter, Groq, Zhipu, endpoints vLLM et la plupart des autres.
+- **Gemini natif** : Google Gemini via les endpoints natifs `models/*:generateContent` et `models/*:streamGenerateContent`.
 - **Anthropic** : Comportement natif de l'API Claude.
 - **Codex/OAuth** : Route d'authentification OAuth/token OpenAI.
+
+Cela maintient le runtime léger tout en faisant des nouveaux backends compatibles OpenAI principalement une opération de configuration (`api_base` + `api_keys`).
 
 ### Tâches Planifiées / Rappels
 

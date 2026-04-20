@@ -441,7 +441,7 @@ Agent 读取 HEARTBEAT.md
 | **Anthropic**           | `anthropic/`      | `https://api.anthropic.com/v1`                      | Anthropic | [获取](https://console.anthropic.com)                            |
 | **智谱 AI (GLM)**       | `zhipu/`          | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [获取](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys)    |
 | **DeepSeek**            | `deepseek/`       | `https://api.deepseek.com/v1`                       | OpenAI    | [获取](https://platform.deepseek.com)                            |
-| **Google Gemini**       | `gemini/`         | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [获取](https://aistudio.google.com/api-keys)                     |
+| **Google Gemini**       | `gemini/`         | `https://generativelanguage.googleapis.com/v1beta`  | Gemini    | [获取](https://aistudio.google.com/api-keys)                     |
 | **Groq**                | `groq/`           | `https://api.groq.com/openai/v1`                    | OpenAI    | [获取](https://console.groq.com)                                 |
 | **Moonshot**            | `moonshot/`       | `https://api.moonshot.cn/v1`                        | OpenAI    | [获取](https://platform.moonshot.cn)                             |
 | **通义千问 (Qwen)**     | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [获取](https://dashscope.console.aliyun.com)                     |
@@ -652,10 +652,11 @@ PicoClaw 只剥离最外层的 `litellm/` 前缀再发送请求，因此 `litell
 PicoClaw 按协议族路由提供商：
 
 - **OpenAI 兼容**：OpenRouter、Groq、智谱、vLLM 风格端点及大多数其他提供商。
+- **Gemini 原生**：Google Gemini 通过原生 `models/*:generateContent` 和 `models/*:streamGenerateContent` 端点接入。
 - **Anthropic**：Claude 原生 API 行为。
 - **Codex/OAuth**：OpenAI OAuth/Token 认证路由。
 
-这使运行时保持轻量，同时让接入新的 OpenAI 兼容后端基本只需配置 `api_base` + `api_key`。
+这使运行时保持轻量，同时让接入新的 OpenAI 兼容后端基本只需配置 `api_base` + `api_keys`。
 
 <details>
 <summary><b>智谱（旧版 providers 格式）</b></summary>
