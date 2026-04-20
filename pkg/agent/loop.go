@@ -274,6 +274,10 @@ func (al *AgentLoop) GetConfigPath() string {
 	return al.configPath
 }
 
+func (al *AgentLoop) GetBus() *bus.MessageBus {
+	return al.bus
+}
+
 // Close releases resources held by agent session stores. Call after Stop.
 func (al *AgentLoop) Close() {
 	mcpManager := al.mcp.takeManager()
