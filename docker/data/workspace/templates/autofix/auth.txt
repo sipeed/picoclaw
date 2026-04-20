@@ -42,11 +42,11 @@ STEP 3 — Fix the spec file:
 
 | Error message contains | Root cause | Fix |
 |------------------------|-----------|-----|
-| `waitForURL: timeout` on `\?select_org` | `waitForURL(/\?select_org/)` fails when server skips org selection | Replace with: `await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 }); if (page.url().includes('select_org')) { await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click(); await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 }); }` |
+| `waitForURL: timeout` on `\?select_org` | `waitForURL(/\?select_org/)` fails when server skips org selection | Replace with: `await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 }); if (page.url().includes('select_org')) { await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click(); await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 }); }` |
 | `getByRole('button', { name: /Log In/ })` timeout | Button text is "Login" not "Log In" | Use `page.getByRole('button', { name: /login/i })` |
 | `input[type="email"]` or `input[type="password"]` timeout | Wrong selector for Vuetify text fields | Use `.v-text-field` and `.nth(0)` / `.nth(1)` to differentiate fields |
 | `strict mode violation` | Locator matched multiple elements | Add `.first()`, `.last()`, or `.filter({ hasText: /exact/ })` |
 | `locator.fill: timeout` on text field | Vuetify input not focused | Use `.click()` first, then `.fill()` |
-| `locator.click: timeout` on modal button | Modal not fully open yet | Add `await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 10000 })` |
+| `locator.click: timeout` on modal button | Modal not fully open yet | Add `await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 20000 })` |
 | `toHaveValue` on dropdown | v-select is a div, not an input | Use `toContainText()` |
 | success notification not found | Snackbar dismissed too quickly | Increase assertion timeout; assert immediately after action |

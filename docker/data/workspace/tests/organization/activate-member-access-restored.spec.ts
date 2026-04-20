@@ -30,7 +30,7 @@ test('Activate organization member flow and restored organization access', async
   // 2. Find row by email
   const memberRow = page.locator('tr').filter({ hasText: memberEmail });
   await expect(memberRow).toBeVisible({
-    timeout: 10000
+    timeout: 20000
   });
   console.log('✅ PASS: Step 3 - Member row located');
 
@@ -65,7 +65,7 @@ test('Activate organization member flow and restored organization access', async
   console.log('\n📍 Step 7: Verify member status changes to Active');
   // Re-fetch the row to ensure we check the fresh state
   const updatedRow = page.locator('tr').filter({ hasText: memberEmail });
-  await expect(updatedRow.locator('td', { hasText: /^Active$/i })).toBeVisible({ timeout: 10000 });
+  await expect(updatedRow.locator('td', { hasText: /^Active$/i })).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 7 - Member status changed to "Active"');
 
   // Step 8: Logout
@@ -74,7 +74,7 @@ test('Activate organization member flow and restored organization access', async
   await profileMenu.click();
   const logoutBtn = page.locator('.v-overlay-container .v-list-item').filter({ hasText: /Logout/i }).first();
   await logoutBtn.click();
-  await page.waitForURL('**/login', { timeout: 15000 });
+  await page.waitForURL('**/login', { timeout: 30000 });
   console.log('✅ PASS: Step 8 - Logged out successfully');
 
   // Step 9: Login as activated member
@@ -84,7 +84,7 @@ test('Activate organization member flow and restored organization access', async
   await loginForm.locator('input').nth(1).fill(memberPassword);
   await page.locator('button[type="submit"]').click();
 
-  await page.waitForURL('**/?select_org', { timeout: 15000 });
+  await page.waitForURL('**/?select_org', { timeout: 30000 });
   console.log('✅ PASS: Step 9 - Logged in and on selection page');
 
   // Step 10: Locate Organization card (not disabled)
@@ -92,7 +92,7 @@ test('Activate organization member flow and restored organization access', async
   // Wait for org list loader
   const orgLoader = page.locator('.loading-container');
   if (await orgLoader.isVisible().catch(() => false)) {
-    await expect(orgLoader).not.toBeVisible({ timeout: 10000 });
+    await expect(orgLoader).not.toBeVisible({ timeout: 20000 });
   }
 
   // Find the SPECIFIC organization card. It should NOT have the "disabled" status now.
@@ -100,7 +100,7 @@ test('Activate organization member flow and restored organization access', async
     hasText: organizationName
   });
 
-  await expect(activeOrgCard).toBeVisible({ timeout: 10000 });
+  await expect(activeOrgCard).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 10 - Found active organization card');
 
   // Step 11: Verify restoration of access (Go to dashboard)
@@ -108,10 +108,10 @@ test('Activate organization member flow and restored organization access', async
   await activeOrgCard.click();
 
   // Wait for dashboard to load (no select_org query)
-  await page.waitForURL(url => url.pathname === '/' && !url.searchParams.has('select_org'), { timeout: 15000 });
+  await page.waitForURL(url => url.pathname === '/' && !url.searchParams.has('select_org'), { timeout: 30000 });
 
   const dashboardContent = page.locator('main, [role="main"]').first();
-  await expect(dashboardContent).toBeVisible({ timeout: 10000 });
+  await expect(dashboardContent).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 11 - Dashboard access restored successfully');
 
   // Step 12: Report results

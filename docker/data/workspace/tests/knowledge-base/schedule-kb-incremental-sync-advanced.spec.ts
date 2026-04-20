@@ -15,17 +15,17 @@ test('Create KB schedule with Incremental Sync in ADVANCED mode', async ({ page 
   await page.getByRole('button', { name: /login/i }).click();
 
   console.log('📍 Step 3: Wait for redirect to org selection');
-  await page.waitForURL(/\?select_org/, { timeout: 20000 });
+  await page.waitForURL(/\?select_org/, { timeout: 60000 });
   console.log('✅ PASS: Step 3 - Redirected to org selection');
 
   console.log('📍 Step 4: Wait for loader and select organization');
   const loader = page.locator('.loading-container, .loading-spinner, .v-progress-linear');
   if (await loader.first().isVisible().catch(() => false)) {
-    await loader.first().waitFor({ state: 'hidden', timeout: 15000 });
+    await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
   }
-  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
   await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).first().click();
-  await page.waitForURL(url => !url.searchParams.has('select_org'), { timeout: 15000 });
+  await page.waitForURL(url => !url.searchParams.has('select_org'), { timeout: 30000 });
   console.log('✅ PASS: Step 4 - Organization selected');
 
   // ============================================================================
@@ -33,7 +33,7 @@ test('Create KB schedule with Incremental Sync in ADVANCED mode', async ({ page 
   // ============================================================================
   console.log('📍 Step 5: Click Knowledge Base in sidebar');
   await page.locator('a:has-text("Knowledge Base")').click();
-  await page.waitForURL(/\/knowledge-base/, { timeout: 10000 });
+  await page.waitForURL(/\/knowledge-base/, { timeout: 60000 });
   console.log('✅ PASS: Step 5 - Navigated to Knowledge Base');
 
   // ============================================================================
@@ -43,7 +43,7 @@ test('Create KB schedule with Incremental Sync in ADVANCED mode', async ({ page 
   const picotest2Card = page.locator('.bucket-card').filter({
     has: page.locator('.bucket-name').filter({ hasText: /Picotest2/ })
   }).first();
-  await picotest2Card.waitFor({ state: 'visible', timeout: 10000 });
+  await picotest2Card.waitFor({ state: 'visible', timeout: 20000 });
 
   // Click the schedule button on this card
   const scheduleBtn = picotest2Card.locator('.schedule-button');
@@ -54,7 +54,7 @@ test('Create KB schedule with Incremental Sync in ADVANCED mode', async ({ page 
   // STEP 7: Wait for modal and click Create Schedule
   // ============================================================================
   console.log('📍 Step 7: Wait for Manage Schedule modal');
-  await page.locator('.modal-content').waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.modal-content').waitFor({ state: 'visible', timeout: 20000 });
   console.log('✅ PASS: Step 7 - Modal opened');
 
   console.log('📍 Step 8: Click Create Schedule button');

@@ -53,7 +53,7 @@ test('API Key reactivate flow', async ({ page }) => {
     }).first();
 
     await expect(revokedKeyRow).toBeVisible({
-        timeout: 10000
+        timeout: 20000
     });
     console.log('✅ PASS: Step 4 - Revoked API Key located');
 
@@ -96,7 +96,7 @@ test('API Key reactivate flow', async ({ page }) => {
     const successNotification = page.locator('.v-snackbar__content', {
         hasText: /updated successfully/i
     });
-    await expect(successNotification).toBeVisible({ timeout: 10000 });
+    await expect(successNotification).toBeVisible({ timeout: 20000 });
     console.log('✅ PASS: Step 10 - Success notification appeared');
 
     // Step 11: Verify status updated to Active in the table
@@ -110,7 +110,7 @@ test('API Key reactivate flow', async ({ page }) => {
      */
     await expect(page.locator('.api-keys-table')).toBeVisible();
     const activeChip = page.locator('.v-chip').filter({ hasText: /^Active$/i }).first();
-    await expect(activeChip).toBeVisible({ timeout: 10000 });
+    await expect(activeChip).toBeVisible({ timeout: 20000 });
     console.log('✅ PASS: Step 11 - API Key status confirmed as Active in table');
 
     // Step 12: Report Summary

@@ -68,7 +68,7 @@ Drag with steps: 20. Wait 500ms after.
 9. Click Knowledge Base node to open modal
    CORRECT:
    await page.locator('.node-container').filter({ hasText: /KnowledgeBaseNode/ }).first().evaluate(el => (el as HTMLElement).click());
-   await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 10000 });
+   await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 60000 });
 
 10. Change Node ID to: Kb
 

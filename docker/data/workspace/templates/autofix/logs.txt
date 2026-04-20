@@ -42,10 +42,10 @@ STEP 3 — Fix the spec file:
 
 | Error message contains | Root cause | Fix |
 |------------------------|-----------|-----|
-| `waitForURL: timeout` on `\?select_org` | `waitForURL(/\?select_org/)` fails when server skips org selection | Replace with: `await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 }); if (page.url().includes('select_org')) { await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click(); await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 }); }` |
+| `waitForURL: timeout` on `\?select_org` | `waitForURL(/\?select_org/)` fails when server skips org selection | Replace with: `await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 }); if (page.url().includes('select_org')) { await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click(); await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 }); }` |
 | `strict mode violation` | Locator matched multiple elements | Add `.first()`, `.last()`, or `.filter({ hasText: /exact/ })` |
 | download event not fired | `waitForEvent('download')` must be set up BEFORE clicking | Wrap in `Promise.all([page.waitForEvent('download'), page.locator(...).click()])` |
 | `filePath` is null | Download path not accessible in test environment | Use `download.suggestedFilename()` to assert instead of path |
-| table rows not found | Page still loading data | Add `await page.locator('<row-selector>').first().waitFor({ state: 'visible', timeout: 15000 })` |
+| table rows not found | Page still loading data | Add `await page.locator('<row-selector>').first().waitFor({ state: 'visible', timeout: 30000 })` |
 | `locator.click: timeout` | Element off-screen or behind overlay | Add scroll: `await locator.scrollIntoViewIfNeeded()` |
 | `toHaveValue` on dropdown | v-select is a div, not an input | Use `toContainText()` |

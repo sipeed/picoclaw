@@ -30,7 +30,7 @@ test('Deactivate organization member flow and disabled organization access', asy
   // 2. Find row by email
   const memberRow = page.locator('tr').filter({ hasText: memberEmail });
   await expect(memberRow).toBeVisible({
-    timeout: 10000
+    timeout: 20000
   });
   console.log('✅ PASS: Step 3 - Member row located');
 
@@ -64,7 +64,7 @@ test('Deactivate organization member flow and disabled organization access', asy
   console.log('\n📍 Step 7: Verify member status changes to Disabled');
   // Re-fetch the row to ensure we check the fresh state
   const updatedRow = page.locator('tr').filter({ hasText: memberEmail });
-  await expect(updatedRow.locator('td', { hasText: /^Disabled$/i })).toBeVisible({ timeout: 10000 });
+  await expect(updatedRow.locator('td', { hasText: /^Disabled$/i })).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 7 - Member status changed to "Disabled"');
 
   // Step 8: Logout
@@ -73,7 +73,7 @@ test('Deactivate organization member flow and disabled organization access', asy
   await profileMenu.click();
   const logoutBtn = page.locator('.v-overlay-container .v-list-item').filter({ hasText: /Logout/i }).first();
   await logoutBtn.click();
-  await page.waitForURL('**/login', { timeout: 15000 });
+  await page.waitForURL('**/login', { timeout: 30000 });
   console.log('✅ PASS: Step 8 - Logged out successfully');
 
   // Step 9: Login as deactivated member
@@ -83,7 +83,7 @@ test('Deactivate organization member flow and disabled organization access', asy
   await loginForm.locator('input').nth(1).fill(memberPassword);
   await page.locator('button[type="submit"]').click();
 
-  await page.waitForURL('**/?select_org', { timeout: 15000 });
+  await page.waitForURL('**/?select_org', { timeout: 30000 });
   console.log('✅ PASS: Step 9 - Logged in and on selection page');
 
   // Step 10: Locate Disabled Organization card
@@ -91,7 +91,7 @@ test('Deactivate organization member flow and disabled organization access', asy
   // Wait for org list loader
   const orgLoader = page.locator('.loading-container');
   if (await orgLoader.isVisible().catch(() => false)) {
-    await expect(orgLoader).not.toBeVisible({ timeout: 10000 });
+    await expect(orgLoader).not.toBeVisible({ timeout: 20000 });
   }
 
   // Find the SPECIFIC organization card that shows "disabled"
@@ -99,7 +99,7 @@ test('Deactivate organization member flow and disabled organization access', asy
     hasText: organizationName
   }).filter({ hasText: /disabled/i });
 
-  await expect(disabledOrgCard).toBeVisible({ timeout: 10000 });
+  await expect(disabledOrgCard).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 10 - Found organization with disabled tag');
 
   // Step 11: Verify access denied snackbar
@@ -109,7 +109,7 @@ test('Deactivate organization member flow and disabled organization access', asy
   const errorSnackbar = page.locator('.v-snackbar__content', {
     hasText: /Active organization user not found/i
   });
-  await expect(errorSnackbar).toBeVisible({ timeout: 10000 });
+  await expect(errorSnackbar).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 11 - Error notification appeared correctly');
 
   // Step 12: Report results

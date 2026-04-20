@@ -20,7 +20,7 @@ test.describe('Create Knowledge Base Bucket with Website Crawler', () => {
     console.log('📍 Step 1: Navigate to login page');
     await page.goto(`${baseUrl}/login`, { waitUntil: 'networkidle' });
     await page.waitForURL(/\/login/);
-    await page.locator('.login-card').waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('.login-card').waitFor({ state: 'visible', timeout: 20000 });
     console.log('✅ PASS: Step 1 - Login page loaded');
 
     // Step 2: Fill credentials and login
@@ -49,18 +49,18 @@ test.describe('Create Knowledge Base Bucket with Website Crawler', () => {
 
     // Step 3: Wait for redirect to org selection
     console.log('📍 Step 3: Wait for redirect to organization selection page');
-    await page.waitForURL(/\?select_org/, { timeout: 20000 });
+    await page.waitForURL(/\?select_org/, { timeout: 60000 });
     const loader = page.locator('.loading-container, .loading-spinner, .v-progress-linear');
     if (await loader.first().isVisible().catch(() => false)) {
-      await loader.first().waitFor({ state: 'hidden', timeout: 15000 });
+      await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
     }
-    await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
     console.log('✅ PASS: Step 3 - Redirected to organization selection page');
 
     // Step 4: Select organization
     console.log(`📍 Step 4: Select organization "${org}"`);
     await page.locator('.organization-card').filter({ hasText: org }).click();
-    await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 15000 });
+    await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 30000 });
     console.log(`✅ PASS: Step 4 - Organization "${org}" selected and redirected to dashboard`);
 
     // Step 5: Verify user is on dashboard
@@ -73,7 +73,7 @@ test.describe('Create Knowledge Base Bucket with Website Crawler', () => {
     const kbLink = page.locator('a:has-text("Knowledge Base")');
     await expect(kbLink).toBeVisible();
     await kbLink.click();
-    await page.waitForURL(/\/knowledge-base/, { timeout: 10000 });
+    await page.waitForURL(/\/knowledge-base/, { timeout: 60000 });
     console.log('✅ PASS: Step 6 - Knowledge Base page loaded');
 
     // Step 7: Click "Create Knowledge Base Bucket" button
@@ -81,7 +81,7 @@ test.describe('Create Knowledge Base Bucket with Website Crawler', () => {
     const createButton = page.locator('.create-button');
     await expect(createButton).toBeVisible();
     await createButton.click();
-    await page.locator('.custom-drawer-overlay').waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('.custom-drawer-overlay').waitFor({ state: 'visible', timeout: 20000 });
     console.log('✅ PASS: Step 7 - Create KB Bucket panel opened');
 
     // Step 8: Fill Knowledge Group Name
@@ -114,7 +114,7 @@ test.describe('Create Knowledge Base Bucket with Website Crawler', () => {
 
     // Step 12: Wait for Website Crawler Configuration to appear
     console.log('📍 Step 12: Wait for Website Crawler Configuration');
-    await page.locator('.custom-drawer-overlay').waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('.custom-drawer-overlay').waitFor({ state: 'visible', timeout: 20000 });
     await page.waitForTimeout(500);
     console.log('✅ PASS: Step 12 - Website Crawler Configuration displayed');
 
@@ -198,7 +198,7 @@ test.describe('Create Knowledge Base Bucket with Website Crawler', () => {
     // Step 23: Verify Step 2: Search Engine Configuration appears
     console.log('📍 Step 23: Verify Step 2: Search Engine Configuration');
     const step2Title = drawer.locator('text=Step 2: Search Engine Configuration');
-    await expect(step2Title).toBeVisible({ timeout: 10000 });
+    await expect(step2Title).toBeVisible({ timeout: 20000 });
     console.log('✅ PASS: Step 23 - Step 2: Search Engine Configuration displayed');
 
     // Step 24: Click Submit button

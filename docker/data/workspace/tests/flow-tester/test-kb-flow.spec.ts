@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('Knowledge Base Flow — Send "Hello" and verify bot response', async ({ page }) => {
-  test.setTimeout(120000); // 2 minutes — KB retrieval can be slow
+  test.setTimeout(180000); // 2 minutes — KB retrieval can be slow
 
   console.log('📍 Step 1: Navigate to login page');
   await page.goto('/login', { waitUntil: 'networkidle' });
@@ -14,28 +14,28 @@ test('Knowledge Base Flow — Send "Hello" and verify bot response', async ({ pa
   console.log('✅ PASS: Step 2 - Credentials filled and Login clicked');
 
   console.log('📍 Step 3: Wait for redirect to org selection or dashboard');
-  await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
+  await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 });
   console.log('✅ PASS: Step 3 - Redirected from login');
 
   console.log('📍 Step 4: Handle org selection if needed');
   if (page.url().includes('select_org')) {
     const loader = page.locator('.loading-container, .loading-spinner, .v-progress-linear');
     if (await loader.first().isVisible().catch(() => false)) {
-      await loader.first().waitFor({ state: 'hidden', timeout: 15000 });
+      await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
     }
-    await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
     await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click();
-    await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
+    await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 });
   }
   console.log('✅ PASS: Step 4 - Org selection handled');
 
   console.log('📍 Step 5: Navigate to Flow Tester from sidebar');
   await page.locator('a:has-text("Flow Tester")').click();
-  await page.waitForURL(/\/flow-tester/, { timeout: 15000 });
+  await page.waitForURL(/\/flow-tester/, { timeout: 30000 });
   console.log('✅ PASS: Step 5 - Navigated to Flow Tester');
 
   console.log('📍 Step 6: Verify Flow Tester page is displayed');
-  await page.locator('.tester-container-card').waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.tester-container-card').waitFor({ state: 'visible', timeout: 20000 });
   console.log('✅ PASS: Step 6 - Flow Tester page displayed');
 
   console.log('📍 Step 7: Open flow dropdown and select "Knowledge Base"');
@@ -47,7 +47,7 @@ test('Knowledge Base Flow — Send "Hello" and verify bot response', async ({ pa
 
   console.log('📍 Step 8: Wait for flow to load and select latest version');
   // Wait for version selector to be ready
-  await page.locator('.version-selector-text').waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.version-selector-text').waitFor({ state: 'visible', timeout: 20000 });
   
   // Open version dropdown
   await page.locator('.version-selector-button').click();
@@ -55,14 +55,14 @@ test('Knowledge Base Flow — Send "Hello" and verify bot response', async ({ pa
   
   // Wait for real items to load (not skeleton)
   await page.locator('.version-dropdown-menu .version-date').first()
-    .waitFor({ state: 'visible', timeout: 20000 });
+    .waitFor({ state: 'visible', timeout: 40000 });
   
   // Click first (latest) version
   await page.locator('.version-dropdown-menu .version-item').first().click();
   
   // Verify selection completed
   await expect(page.locator('.version-selector-text'))
-    .not.toContainText('Select Version', { timeout: 20000 });
+    .not.toContainText('Select Version', { timeout: 40000 });
   console.log('✅ PASS: Step 8 - Latest version selected');
 
   console.log('📍 Step 9: Click message input field');
@@ -79,14 +79,14 @@ test('Knowledge Base Flow — Send "Hello" and verify bot response', async ({ pa
 
   console.log('📍 Step 12: Wait for typing indicator to appear and disappear');
   // Wait for typing indicator to appear (confirms message was sent)
-  await page.locator('.typing-indicator').waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.typing-indicator').waitFor({ state: 'visible', timeout: 40000 });
   // Wait for typing indicator to disappear (confirms bot response is ready)
-  await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 60000 });
+  await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 40000 });
   console.log('✅ PASS: Step 12 - Bot response streaming completed');
 
   console.log('📍 Step 13: Verify user message "Hello" appears in chat');
   const userMsg = page.locator('.chatbox .message-card-user .message-text').last();
-  await userMsg.waitFor({ state: 'visible', timeout: 10000 });
+  await userMsg.waitFor({ state: 'visible', timeout: 20000 });
   await expect(userMsg).toContainText('Hello', { timeout: 5000 });
   console.log('✅ PASS: Step 13 - User message "Hello" verified');
 

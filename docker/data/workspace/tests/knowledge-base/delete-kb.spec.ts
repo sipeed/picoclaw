@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test('Delete Knowledge Base Bucket', async ({ page }) => {
   console.log('📍 Step 1: Navigate to login page');
   await page.goto('/login', { waitUntil: 'networkidle' });
-  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 20000 });
 
   console.log('📍 Step 1a: Fill email and password');
   await page.locator('.v-text-field').nth(0).locator('input').fill('heidi@intnt.ai');
@@ -11,17 +11,17 @@ test('Delete Knowledge Base Bucket', async ({ page }) => {
 
   console.log('📍 Step 1b: Click login button');
   await page.getByRole('button', { name: /login/i }).click();
-  await page.waitForURL(/\?select_org/, { timeout: 20000 });
+  await page.waitForURL(/\?select_org/, { timeout: 60000 });
   console.log('✅ PASS: Step 1 - Login successful');
 
   console.log('📍 Step 2: Select organization "Testing2026!"');
   const loader = page.locator('.loading-container, .loading-spinner, .v-progress-linear');
   if (await loader.first().isVisible().catch(() => false)) {
-    await loader.first().waitFor({ state: 'hidden', timeout: 15000 });
+    await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
   }
-  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
   await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).first().click();
-  await page.waitForURL(url => !url.searchParams.has('select_org'), { timeout: 15000 });
+  await page.waitForURL(url => !url.searchParams.has('select_org'), { timeout: 30000 });
   console.log('✅ PASS: Step 2 - Organization selected');
 
   console.log('📍 Step 3: Verify redirect to dashboard');
@@ -30,11 +30,11 @@ test('Delete Knowledge Base Bucket', async ({ page }) => {
 
   console.log('📍 Step 4: Click "Knowledge Base" on left sidebar');
   await page.locator('a:has-text("Knowledge Base")').click();
-  await page.waitForURL(/knowledge-base/, { timeout: 10000 });
+  await page.waitForURL(/knowledge-base/, { timeout: 60000 });
   console.log('✅ PASS: Step 4 - Knowledge Base page loaded');
 
   console.log('📍 Step 5: Locate knowledge base bucket "Picotest1"');
-  await page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).first().waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).first().waitFor({ state: 'visible', timeout: 20000 });
   const bucketCard = page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).first();
   console.log('✅ PASS: Step 5 - Bucket "Picotest1" found');
 

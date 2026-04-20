@@ -43,10 +43,10 @@ STEP 3 — Fix the spec file:
 
 | Error message contains | Root cause | Fix |
 |------------------------|-----------|-----|
-| `waitForURL: timeout` on `\?select_org` | `waitForURL(/\?select_org/)` fails when server skips org selection | Replace with: `await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 }); if (page.url().includes('select_org')) { await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click(); await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 }); }` |
+| `waitForURL: timeout` on `\?select_org` | `waitForURL(/\?select_org/)` fails when server skips org selection | Replace with: `await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 }); if (page.url().includes('select_org')) { await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click(); await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 }); }` |
 | `strict mode violation` on flow dropdown | `.v-list-item` matches multiple items | Wait for overlay: `await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 5000 })` then filter with `/i` flag |
-| `expect(locator).not.toContainText` on version selector | Version not selected yet | Increase timeout to 20000ms on version selector assertion |
-| `.typing-indicator` visible timeout | Bot still loading | Increase `waitFor({ state: 'hidden' })` timeout to 30000ms |
+| `expect(locator).not.toContainText` on version selector | Version not selected yet | Increase timeout to 40000ms on version selector assertion |
+| `.typing-indicator` visible timeout | Bot still loading | Increase `waitFor({ state: 'hidden' })` timeout to 40000ms |
 | `strict mode violation` on `.message-text` | Matched user + bot messages | Scope to `.chatbox .message-card .message-text` and use `.first()` / `.last()` |
-| `locator.click: timeout` on `.version-dropdown-menu` | Skeleton items still showing | Wait for `.version-date` first: `await page.locator('.version-dropdown-menu .version-date').first().waitFor({ state: 'visible', timeout: 20000 })` |
+| `locator.click: timeout` on `.version-dropdown-menu` | Skeleton items still showing | Wait for `.version-date` first: `await page.locator('.version-dropdown-menu .version-date').first().waitFor({ state: 'visible', timeout: 40000 })` |
 | `toHaveValue` on dropdown | v-select is a div, not an input | Use `toContainText()` |

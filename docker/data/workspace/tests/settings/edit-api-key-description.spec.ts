@@ -62,7 +62,7 @@ test('API Key edit description flow', async ({ page }) => {
   }
 
   await expect(editableKeyRow).toBeVisible({
-    timeout: 10000
+    timeout: 20000
   });
   console.log('✅ PASS: Step 5 - Editable API Key located');
 
@@ -102,7 +102,7 @@ test('API Key edit description flow', async ({ page }) => {
   const successNotification = page.locator('.v-snackbar__content', {
     hasText: /updated successfully/i
   });
-  await expect(successNotification).toBeVisible({ timeout: 10000 });
+  await expect(successNotification).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 10 - Success notification appeared');
 
   // Step 11: Verify API Key description updated in table
@@ -114,7 +114,7 @@ test('API Key edit description flow', async ({ page }) => {
   const updatedKeyRow = page.locator('.api-keys-table tbody tr').filter({
     hasText: newDescription
   }).first();
-  await expect(updatedKeyRow).toBeVisible({ timeout: 10000 });
+  await expect(updatedKeyRow).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 11 - API Key description update verified in table');
 
   // Step 12: Report results

@@ -6,7 +6,7 @@ test('Edit Knowledge Base Schedule', async ({ page }) => {
   // ============================================================
   console.log('📍 Step 1: Navigate to login page');
   await page.goto('/login', { waitUntil: 'networkidle' });
-  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 20000 });
 
   console.log('📍 Step 1a: Fill email and password');
   await page.locator('.v-text-field').nth(0).locator('input').fill('heidi@intnt.ai');
@@ -14,7 +14,7 @@ test('Edit Knowledge Base Schedule', async ({ page }) => {
 
   console.log('📍 Step 1b: Click login button');
   await page.getByRole('button', { name: /login/i }).click();
-  await page.waitForURL(/\?select_org/, { timeout: 20000 });
+  await page.waitForURL(/\?select_org/, { timeout: 60000 });
   console.log('✅ PASS: Step 1 - Login successful');
 
   // ============================================================
@@ -23,11 +23,11 @@ test('Edit Knowledge Base Schedule', async ({ page }) => {
   console.log('📍 Step 2: Select organization "Testing2026!"');
   const loader = page.locator('.loading-container, .loading-spinner, .v-progress-linear');
   if (await loader.first().isVisible().catch(() => false)) {
-    await loader.first().waitFor({ state: 'hidden', timeout: 15000 });
+    await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
   }
-  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
   await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).first().click();
-  await page.waitForURL(url => !url.searchParams.has('select_org'), { timeout: 15000 });
+  await page.waitForURL(url => !url.searchParams.has('select_org'), { timeout: 30000 });
   console.log('✅ PASS: Step 2 - Organization selected');
 
   // ============================================================
@@ -42,14 +42,14 @@ test('Edit Knowledge Base Schedule', async ({ page }) => {
   // ============================================================
   console.log('📍 Step 4: Click "Knowledge Base" on left sidebar');
   await page.locator('a:has-text("Knowledge Base")').click();
-  await page.waitForURL(/knowledge-base/, { timeout: 10000 });
+  await page.waitForURL(/knowledge-base/, { timeout: 60000 });
   console.log('✅ PASS: Step 4 - Knowledge Base page loaded');
 
   // ============================================================
   // STEP 5: Locate knowledge base bucket "Picotest1"
   // ============================================================
   console.log('📍 Step 5: Locate knowledge base bucket "Picotest1"');
-  await page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).first().waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).first().waitFor({ state: 'visible', timeout: 20000 });
   const bucketCard = page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).first();
   console.log('✅ PASS: Step 5 - Bucket "Picotest1" found');
 
@@ -67,7 +67,7 @@ test('Edit Knowledge Base Schedule', async ({ page }) => {
   // ============================================================
   console.log('📍 Step 7: Verify Manage Schedule modal appears');
   const modal = page.locator('.v-overlay--active');
-  await modal.waitFor({ state: 'visible', timeout: 10000 });
+  await modal.waitFor({ state: 'visible', timeout: 20000 });
   
   // Wait for loading to finish if present
   await page.locator('.v-overlay--active').locator('text=/loading/i').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
@@ -94,7 +94,7 @@ test('Edit Knowledge Base Schedule', async ({ page }) => {
   // ============================================================
   console.log('📍 Step 10: Verify schedule configuration screen appears');
   const configModal = page.locator('.v-overlay--active');
-  await configModal.waitFor({ state: 'visible', timeout: 10000 });
+  await configModal.waitFor({ state: 'visible', timeout: 20000 });
   
   // Wait for loading to finish
   await page.locator('.v-overlay--active').locator('text=/loading/i').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});

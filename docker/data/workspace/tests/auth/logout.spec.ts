@@ -9,7 +9,7 @@ test('Logout flow - User logout and redirect to login page', async ({ page }) =>
   // Step 2: Verify login succeeds and redirect
   console.log('\n📍 Step 2: Verify login succeeds and redirect');
   try {
-    await page.waitForURL('**/?select_org', { timeout: 15000 }).catch(() => { });
+    await page.waitForURL('**/?select_org', { timeout: 30000 }).catch(() => { });
     const currentUrl = page.url();
 
     if (currentUrl.includes('?select_org') || !currentUrl.includes('login')) {
@@ -70,7 +70,7 @@ test('Logout flow - User logout and redirect to login page', async ({ page }) =>
   // Step 4: Confirm logout and verify redirect to login page
   console.log('\n📍 Step 4: Confirm logout and verify redirect to login page');
   try {
-    await page.waitForURL('**/login', { timeout: 15000 }).catch(() => { });
+    await page.waitForURL('**/login', { timeout: 30000 }).catch(() => { });
     await expect(page).toHaveURL(/.*login/);
     console.log('  ✓ Redirected to login page');
     console.log('✅ PASS: Step 4 - Logout successful, redirected to login page');

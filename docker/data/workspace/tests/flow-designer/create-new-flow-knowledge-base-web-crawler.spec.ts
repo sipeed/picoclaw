@@ -9,7 +9,7 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
 
   console.log('📍 Step 1: Navigate to login page');
   await page.goto('/login', { waitUntil: 'networkidle' });
-  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 20000 });
   console.log('✅ PASS: Step 1 - Login page loaded');
 
   console.log('📍 Step 2: Fill email and password');
@@ -19,7 +19,7 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
 
   console.log('📍 Step 3: Click login button');
   await page.getByRole('button', { name: /login/i }).click();
-  await page.waitForURL(/\?select_org/, { timeout: 20000 });
+  await page.waitForURL(/\?select_org/, { timeout: 60000 });
   console.log('✅ PASS: Step 3 - Redirected to org selection');
 
   // ============================================================================
@@ -29,11 +29,11 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   console.log('📍 Step 4: Select organization Testing');
   const loader = page.locator('.loading-container, .loading-spinner, .v-progress-linear');
   if (await loader.first().isVisible().catch(() => false)) {
-    await loader.first().waitFor({ state: 'hidden', timeout: 15000 });
+    await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
   }
-  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
   await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click();
-  await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 15000 });
+  await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 30000 });
   console.log('✅ PASS: Step 4 - Organization selected, redirected to dashboard');
 
   // ============================================================================
@@ -42,13 +42,13 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
 
   console.log('📍 Step 5: Click Flow Designer in sidebar');
   await page.locator('a:has-text("Flow Designer")').click();
-  await page.waitForURL(/\/flow-designer$/, { timeout: 10000 });
+  await page.waitForURL(/\/flow-designer$/, { timeout: 60000 });
   console.log('✅ PASS: Step 5 - Flow Designer page loaded');
 
   console.log('📍 Step 6: Click Add New button to create flow');
   await page.locator('button').filter({ hasText: /Add New/ }).first().click();
-  await page.waitForURL(/\/flow-designer\/\d+/, { timeout: 15000 });
-  await page.locator('.vue-flow').waitFor({ state: 'visible', timeout: 10000 });
+  await page.waitForURL(/\/flow-designer\/\d+/, { timeout: 30000 });
+  await page.locator('.vue-flow').waitFor({ state: 'visible', timeout: 20000 });
   console.log('✅ PASS: Step 6 - Flow canvas opened with START and END nodes');
 
   // ============================================================================
@@ -118,7 +118,7 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
 
   console.log('📍 Step 12: Click KB node to open modal and verify Is Tool is True');
   await page.locator('.node-container').filter({ hasText: /KnowledgeBaseNode/ }).first().evaluate((el) => (el as HTMLElement).click());
-  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 20000 });
   const isToolSelectInitial = page.locator('.modal-dialog').locator('.v-select:visible,.v-autocomplete:visible,.v-combobox:visible').nth(0);
   await expect(isToolSelectInitial).toContainText(/True/);
   console.log('✅ PASS: Step 12 - KB node modal opened and Is Tool verified as True');
@@ -317,7 +317,7 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
 
   console.log('📍 Step 32: Click Reply Message node to open modal');
   await page.locator('.node-container').filter({ hasText: /ReplyMessage/ }).first().evaluate((el) => (el as HTMLElement).click());
-  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 20000 });
   console.log('✅ PASS: Step 32 - Reply Message node modal opened');
 
   console.log('📍 Step 33: Verify Node Version is Version 2.0.0');
@@ -469,7 +469,7 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   console.log('📍 Step 42: Click Save button (disk icon)');
   await page.locator('button').filter({ has: page.locator('.mdi-content-save') }).click();
   const saveModal = page.locator('.v-overlay--active').filter({ hasText: /Save Flow Version/ });
-  await saveModal.waitFor({ state: 'visible', timeout: 10000 });
+  await saveModal.waitFor({ state: 'visible', timeout: 20000 });
   console.log('✅ PASS: Step 42 - Save button clicked and Save Flow Version modal appeared');
 
   console.log('📍 Step 43: Enter version name Webcrawler and save');

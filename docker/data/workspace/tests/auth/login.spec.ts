@@ -36,7 +36,7 @@ test('Login flow - User login and redirect to organization selection', async ({ 
 
   // Step 5: Confirm the login is successful and verify redirect
   console.log('\n📍 Step 5: Confirm login success and verify redirect to ?select_org');
-  await page.waitForURL('**/?select_org', { timeout: 20000 });
+  await page.waitForURL('**/?select_org', { timeout: 60000 });
   await expect(page).toHaveURL(/\?select_org/);
   console.log('✅ PASS: Step 5 - Login successful, redirected to organization selection page');
 

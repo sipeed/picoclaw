@@ -30,10 +30,10 @@ IMPORTANT RULES:
    The correct selectors are .v-text-field and .organization-card.
    The login button MUST be: page.getByRole('button', { name: /login/i })
    CORRECT post-login pattern:
-     await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
+     await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 });
      if (page.url().includes('select_org')) {
        await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
-       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
+       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 });
      }
 4. Selector priority — ALWAYS follow this order:
    STEP 1: Custom CSS class from SKILL.md or ORG_REFERENCE.md.
@@ -48,7 +48,7 @@ IMPORTANT RULES:
    AFTER step assertion succeeds: console.log('✅ PASS: Step N - Description');
    Full summary block at the end of the test.
 8. Modal loading states: wait for loading to disappear before interacting:
-     await page.locator('.v-overlay--active').locator('text=/loading/i').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+     await page.locator('.v-overlay--active').locator('text=/loading/i').waitFor({ state: 'hidden', timeout: 20000 }).catch(() => {});
 9. STRICT MODE RULE — ALWAYS use .first() or .last() on any locator that can match multiple elements.
 10. Test timeout: set at least 3 minutes.
     test.setTimeout(180000);

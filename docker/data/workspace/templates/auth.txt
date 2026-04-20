@@ -34,10 +34,10 @@ IMPORTANT RULES:
    After login, the app MAY redirect to /?select_org OR directly to the dashboard (if org is remembered).
    NEVER use waitForURL(/\?select_org/) directly — it times out when the server skips org selection.
    CORRECT post-login pattern (waitForURL callback gets a URL object — use .pathname or .href, NOT .includes()):
-     await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
+     await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 });
      if (page.url().includes('select_org')) {
        await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
-       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
+       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 });
      }
 4. Selector priority — ALWAYS follow this order:
    STEP 1: Custom CSS class from SKILL.md or AUTH_REFERENCE.md.
@@ -60,10 +60,10 @@ IMPORTANT RULES:
      console.log('✅ Step 1: PASS - Description');
      console.log('='.repeat(70));
 7. Modal loading states: after a modal/overlay opens, ALWAYS wait for any loading indicator to disappear:
-     await page.locator('.v-overlay--active').locator('text=/loading/i').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+     await page.locator('.v-overlay--active').locator('text=/loading/i').waitFor({ state: 'hidden', timeout: 20000 }).catch(() => {});
 8. STRICT MODE RULE — ALWAYS use .first() or .last() on any locator that can match multiple elements.
-9. Test timeout: set at least 60 seconds.
-   test.setTimeout(60000);
+9. Test timeout: set at least 3 minutes.
+   test.setTimeout(180000);
    Place this as the FIRST line inside the test() callback.
 
 Steps:

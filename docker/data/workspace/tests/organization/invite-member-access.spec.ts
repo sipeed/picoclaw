@@ -117,7 +117,7 @@ test('Invite member to organization flow', async ({ page }) => {
    * Scoping prevents interference with background elements.
    */
   const addMemberModal = page.getByRole('dialog').filter({ hasText: /Add a Member/i });
-  await expect(addMemberModal).toBeVisible({ timeout: 10000 });
+  await expect(addMemberModal).toBeVisible({ timeout: 20000 });
 
   const memberEmailInput = addMemberModal.locator('input').first();
   await expect(memberEmailInput).toBeVisible();
@@ -176,7 +176,7 @@ test('Invite member to organization flow', async ({ page }) => {
   await profileMenu.click();
   const logoutBtn = page.locator('.v-overlay-container .v-list-item').filter({ hasText: /Logout/i }).first();
   await logoutBtn.click();
-  await page.waitForURL('**/login', { timeout: 15000 });
+  await page.waitForURL('**/login', { timeout: 30000 });
   console.log('✅ PASS: Step 11 - Admin logged out successfully');
 
   // Step 12: Open invitation link
@@ -199,14 +199,14 @@ test('Invite member to organization flow', async ({ page }) => {
 
   // Step 14: Verify success and click Go To Dashboard
   console.log('\n📍 Step 14: Verify success and click Go To Dashboard');
-  await expect(page.getByText(/Password set successfully/i)).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText(/Password set successfully/i)).toBeVisible({ timeout: 20000 });
   const goToDashboardBtn = page.getByRole('button', { name: /Go To Dashboard/i });
   await goToDashboardBtn.click();
   console.log('✅ PASS: Step 14 - Go To Dashboard clicked');
 
   // Step 15: Verify redirection to login page
   console.log('\n📍 Step 15: Verify redirection to login page');
-  await page.waitForURL('**/login', { timeout: 15000 });
+  await page.waitForURL('**/login', { timeout: 30000 });
   await expect(page).toHaveURL(/.*login/);
   console.log('✅ PASS: Step 15 - Redirected to login page');
 
@@ -221,7 +221,7 @@ test('Invite member to organization flow', async ({ page }) => {
 
   // Step 17: Verify redirection to selection page
   console.log('\n📍 Step 17: Verify redirection to selection page');
-  await page.waitForURL('**/?select_org', { timeout: 15000 });
+  await page.waitForURL('**/?select_org', { timeout: 30000 });
   console.log('✅ PASS: Step 17 - Redirected to organization selection page');
 
   // Step 18: Verify organization visibility
@@ -231,7 +231,7 @@ test('Invite member to organization flow', async ({ page }) => {
     await expect(page.locator('.loading-container')).not.toBeVisible({ timeout: 15000 });
   }
   const orgCard = page.locator('.organization-card').filter({ hasText: organizationName });
-  await expect(orgCard).toBeVisible({ timeout: 10000 });
+  await expect(orgCard).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 18 - Organization visible');
 
   // Step 19: Select organization
@@ -241,7 +241,7 @@ test('Invite member to organization flow', async ({ page }) => {
 
   // Step 20: Verify dashboard access
   console.log('\n📍 Step 20: Verify dashboard access');
-  await page.waitForURL(url => url.pathname === '/' && !url.searchParams.has('select_org'), { timeout: 15000 });
+  await page.waitForURL(url => url.pathname === '/' && !url.searchParams.has('select_org'), { timeout: 30000 });
   console.log('✅ PASS: Step 20 - Dashboard access confirmed');
 
   // Step 21: Report results

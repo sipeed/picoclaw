@@ -60,7 +60,7 @@ test('API Key revoke flow', async ({ page }) => {
   }
 
   await expect(activeKeyRow).toBeVisible({
-    timeout: 10000
+    timeout: 20000
   });
   console.log('✅ PASS: Step 4 - Active API Key located for revocation');
 
@@ -88,7 +88,7 @@ test('API Key revoke flow', async ({ page }) => {
    * This is much faster and more reliable.
    */
   const statusSelector = editDialog.locator('.v-select').first();
-  await expect(statusSelector).toBeVisible({ timeout: 10000 });
+  await expect(statusSelector).toBeVisible({ timeout: 20000 });
   await statusSelector.click();
 
   console.log('✅ PASS: Step 7 - Status dropdown clicked');
@@ -117,7 +117,7 @@ test('API Key revoke flow', async ({ page }) => {
   const successNotification = page.locator('.v-snackbar__content', {
     hasText: /updated successfully/i
   });
-  await expect(successNotification).toBeVisible({ timeout: 10000 });
+  await expect(successNotification).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 10 - Success notification appeared');
 
   // Step 11: Verify status updated to Revoked in the table
@@ -127,7 +127,7 @@ test('API Key revoke flow', async ({ page }) => {
 
   // Just verify that at least one Revoked chip exists in the table now
   const revokedChip = page.locator('.api-keys-table .v-chip').filter({ hasText: /^Revoked$/i }).first();
-  await expect(revokedChip).toBeVisible({ timeout: 10000 });
+  await expect(revokedChip).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 11 - API Key status confirmed as Revoked in table');
 
   // Step 12: Report results

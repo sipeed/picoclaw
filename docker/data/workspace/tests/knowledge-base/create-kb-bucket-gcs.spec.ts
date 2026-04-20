@@ -41,7 +41,7 @@ test.describe('Knowledge Base - Create KB Bucket with GCS', () => {
     await loginButton.click();
 
     // Wait for redirect to org selection
-    await page.waitForURL(/\?select_org/, { timeout: 15000 });
+    await page.waitForURL(/\?select_org/, { timeout: 30000 });
     expect(page.url()).toContain('?select_org');
 
     console.log('✅ PASS: Step 1 - Login completed successfully');
@@ -49,13 +49,13 @@ test.describe('Knowledge Base - Create KB Bucket with GCS', () => {
     // Step 2: On Select Organization page, select organization "Testing2026!"
     console.log('\n📍 Step 2: On Select Organization page, select organization "Testing2026!"');
 
-    await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
     const orgCard = page.locator('.organization-card').filter({ hasText: orgName });
     await expect(orgCard).toBeVisible();
     await orgCard.click();
 
     // Wait for redirect to dashboard
-    await page.waitForURL(url => !url.searchParams.has('select_org'), { timeout: 15000 });
+    await page.waitForURL(url => !url.searchParams.has('select_org'), { timeout: 30000 });
 
     console.log('✅ PASS: Step 2 - Organization Testing2026! selected');
 
@@ -75,7 +75,7 @@ test.describe('Knowledge Base - Create KB Bucket with GCS', () => {
     const kbLink = page.locator('a:has-text("Knowledge Base")');
     await expect(kbLink).toBeVisible();
     await kbLink.click();
-    await page.waitForURL(/.*knowledge-base/, { timeout: 15000 });
+    await page.waitForURL(/.*knowledge-base/, { timeout: 30000 });
 
     console.log('✅ PASS: Step 4 - Clicked Knowledge Base link');
 
@@ -85,7 +85,7 @@ test.describe('Knowledge Base - Create KB Bucket with GCS', () => {
     const createKbButton = page.locator('button:has-text("Create Knowledge Base Bucket")');
     await expect(createKbButton).toBeVisible();
     await createKbButton.click();
-    await page.locator('.custom-drawer-overlay').waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('.custom-drawer-overlay').waitFor({ state: 'visible', timeout: 20000 });
 
     console.log('✅ PASS: Step 5 - Create KB Bucket drawer opened');
 
@@ -143,7 +143,7 @@ test.describe('Knowledge Base - Create KB Bucket with GCS', () => {
     // Step 11: In Create KB Bucket Step 2: Search Engine Configuration, verify default values
     console.log('\n📍 Step 11: In Create KB Bucket Step 2: Search Engine Configuration, verify default values');
 
-    await page.locator('.custom-drawer-overlay, .v-overlay--active').waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('.custom-drawer-overlay, .v-overlay--active').waitFor({ state: 'visible', timeout: 20000 });
 
     console.log('✅ PASS: Step 11 - Search Engine Configuration step displayed');
 

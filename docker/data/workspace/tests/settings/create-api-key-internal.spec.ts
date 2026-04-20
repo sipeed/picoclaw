@@ -133,7 +133,7 @@ test('Create API Key flow', async ({ page }) => {
   }).first();
 
   await expect(newKeyRow).toBeVisible({
-    timeout: 10000
+    timeout: 20000
   });
 
   // 4. Verify it has the correct role

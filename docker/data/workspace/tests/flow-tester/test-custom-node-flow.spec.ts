@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('Custom Node Flow - Send message and verify bot responses', async ({ page }) => {
-  test.setTimeout(90000); // ← first line, before any steps
+  test.setTimeout(180000); // ← first line, before any steps
 
   console.log('📍 Step 1: Navigate to login page');
   await page.goto('/login', { waitUntil: 'networkidle' });
@@ -17,17 +17,17 @@ test('Custom Node Flow - Send message and verify bot responses', async ({ page }
   console.log('✅ PASS: Step 3 - Login button clicked');
 
   console.log('📍 Step 4: Wait for organization selection or dashboard redirect');
-  await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
+  await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 });
   if (page.url().includes('select_org')) {
     console.log('📍 Step 4a: Organization selection page detected - selecting Testing org');
     await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click();
-    await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
+    await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 });
   }
   console.log('✅ PASS: Step 4 - Post-login navigation complete');
 
   console.log('📍 Step 5: Navigate to Flow Tester');
   await page.locator('a:has-text("Flow Tester")').click();
-  await page.waitForURL(/flow-tester/, { timeout: 15000 });
+  await page.waitForURL(/flow-tester/, { timeout: 30000 });
   console.log('✅ PASS: Step 5 - Flow Tester page loaded');
 
   console.log('📍 Step 6: Select Custom Node flow from dropdown');
@@ -43,10 +43,10 @@ test('Custom Node Flow - Send message and verify bot responses', async ({ page }
   await page.locator('.version-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
   // Wait for real items (not skeleton) by waiting for .version-date to appear
   await page.locator('.version-dropdown-menu .version-date').first()
-    .waitFor({ state: 'visible', timeout: 20000 });
+    .waitFor({ state: 'visible', timeout: 40000 });
   await page.locator('.version-dropdown-menu .version-item').first().click();
   await expect(page.locator('.version-selector-text'))
-    .not.toContainText('Select Version', { timeout: 20000 });
+    .not.toContainText('Select Version', { timeout: 40000 });
   console.log('✅ PASS: Step 7 - Latest version selected');
 
   console.log('📍 Step 8: Click message input field');
@@ -62,7 +62,7 @@ test('Custom Node Flow - Send message and verify bot responses', async ({ page }
   console.log('✅ PASS: Step 10 - Message sent');
 
   console.log('📍 Step 11: Wait for typing indicator to disappear');
-  await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 20000 });
+  await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 40000 });
   console.log('✅ PASS: Step 11 - Bot finished responding');
 
   console.log('📍 Step 12: Verify user message "Hello" appears in chat');

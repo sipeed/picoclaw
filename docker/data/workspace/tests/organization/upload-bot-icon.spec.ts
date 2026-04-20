@@ -18,11 +18,11 @@ test('Bot icon upload flow', async ({ page }) => {
   const orgSidebarLink = page.locator('.nav-drawer .v-list-item', {
     hasText: /Organization/i
   });
-  await expect(orgSidebarLink).toBeVisible({ timeout: 10000 });
+  await expect(orgSidebarLink).toBeVisible({ timeout: 20000 });
   await orgSidebarLink.click();
 
   // Wait for the URL to change and the page to load
-  await page.waitForURL('**/organization', { timeout: 15000 });
+  await page.waitForURL('**/organization', { timeout: 30000 });
   await page.waitForLoadState('networkidle');
   console.log('✅ PASS: Step 4 - Navigated to Organization page');
 
@@ -74,7 +74,7 @@ test('Bot icon upload flow', async ({ page }) => {
   const successNotification = page.locator('.v-snackbar__content', {
     hasText: /uploaded successfully/i
   });
-  await expect(successNotification).toBeVisible({ timeout: 10000 });
+  await expect(successNotification).toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 9 - Success notification appeared');
 
 

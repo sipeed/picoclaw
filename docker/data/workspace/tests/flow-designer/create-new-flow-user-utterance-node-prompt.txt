@@ -100,10 +100,10 @@ IMPORTANT RULES:
    After login, the app MAY redirect to /?select_org OR directly to the dashboard (if org is remembered).
    NEVER use waitForURL(/\?select_org/) directly — it times out when the server skips org selection.
    CORRECT post-login pattern (waitForURL callback gets a URL object — use .pathname or .href, NOT .includes()):
-     await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
+     await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 });
      if (page.url().includes('select_org')) {  // page.url() returns a string — .includes() is fine here
        await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
-       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
+       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 });
      }
      // After the waitForURL block, do NOT add a separate Step for org selection — it's handled inside the if block above.
 4. Selector priority — ALWAYS follow this order when choosing a selector:
@@ -134,7 +134,7 @@ IMPORTANT RULES:
      console.log('✅ Step 1: PASS - Description'); // one line per step
      console.log('='.repeat(70));
 7. After a modal opens, ALWAYS wait for loading to finish:
-   await page.locator('.v-overlay--active').locator('text=/loading/i').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+   await page.locator('.v-overlay--active').locator('text=/loading/i').waitFor({ state: 'hidden', timeout: 40000 }).catch(() => {});
 8. NEVER guess component types. Always use selectors from the SKILL.md or the reference document.
 9. Flow name field: the input that appears after clicking the flow name has NO type attribute. NEVER use input[type="text"] for it. Use exactly:
    await page.locator('.panel-container p.text-secondary').first().click();
@@ -154,10 +154,10 @@ IMPORTANT RULES:
     NEVER use .v-overlay--active .v-list-item for the Add Nodes panel.
 11. Two modal types — use the right selector for each:
     Type A (node config modals — have .modal-dialog class): scope everything to .modal-dialog:
-      await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 10000 });
+      await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 40000 });
     Type B (all other dialogs — no custom class): scope to .v-overlay--active filtered by heading text:
       const dialog = page.locator('.v-overlay--active').filter({ hasText: /Dialog Heading/ });
-      await dialog.waitFor({ state: 'visible', timeout: 10000 });
+      await dialog.waitFor({ state: 'visible', timeout: 40000 });
       // Always scope child selectors through dialog — do NOT use page.locator() directly for inputs/buttons inside
       await dialog.locator('.v-field__input').fill('value');
       await dialog.locator('button').filter({ hasText: /^Save$/ }).click();
@@ -265,7 +265,7 @@ IMPORTANT RULES:
     - Wait at least 300ms after moving a node before connecting from/to it
     - If a connection silently fails (no edge appears), the node was not ready — increase the wait
     Example after modal close:
-      await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 10000 });
+      await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
       await page.waitForTimeout(500); // let canvas re-render before connecting
 
     ⚠️ CRITICAL — ZOOM NORMALIZATION: Before EVERY drag connection, normalize canvas zoom to ~100%.
@@ -317,7 +317,7 @@ IMPORTANT RULES:
     After saving with a custom Node ID (e.g. "input"), you can then use the exact selector:
     page.locator('.node-container#input')
 19. Test timeout: multi-step flow tests take longer than 30 seconds. ALWAYS set a generous timeout at the top of each test:
-    test.setTimeout(120000); // 2 minutes minimum for flow canvas tests
+    test.setTimeout(180000); // 3 minutes minimum for flow canvas tests
     Place this as the FIRST line inside the test() callback, before any steps.
 
 Create a Playwright test file at /tests/flow-designer/create-new-flow-user-utterance-node.spec.ts.

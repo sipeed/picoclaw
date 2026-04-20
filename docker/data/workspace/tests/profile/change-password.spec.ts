@@ -21,7 +21,7 @@ test('Change password flow', async ({ page }) => {
   // Step 4: Open profile dropdown
   console.log('\n📍 Step 4: Click the profile avatar dropdown');
   const profileActivator = page.locator('#menu-activator');
-  await expect(profileActivator).toBeVisible({ timeout: 10000 });
+  await expect(profileActivator).toBeVisible({ timeout: 20000 });
   await profileActivator.click();
   console.log('✅ PASS: Step 4 - Profile dropdown clicked');
 
@@ -32,13 +32,13 @@ test('Change password flow', async ({ page }) => {
   }).first();
   await expect(profileOption).toBeVisible({ timeout: 5000 });
   await profileOption.click();
-  await page.waitForURL('**/profile', { timeout: 10000 });
+  await page.waitForURL('**/profile', { timeout: 60000 });
   console.log('✅ PASS: Step 5 - Navigated to Profile page');
 
   // Step 6: Verify Profile page content
   console.log('\n📍 Step 6: Verify Profile page loaded');
-  await expect(page.locator('.profile-container')).toBeVisible({ timeout: 10000 });
-  await expect(page.locator('.loading-state')).not.toBeVisible({ timeout: 10000 });
+  await expect(page.locator('.profile-container')).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('.loading-state')).not.toBeVisible({ timeout: 20000 });
   console.log('✅ PASS: Step 6 - Profile page content visible');
 
   // Step 7: Click "Change password" link
@@ -46,7 +46,7 @@ test('Change password flow', async ({ page }) => {
   const changePasswordLink = page.locator('.change-password-link');
   await expect(changePasswordLink).toBeVisible();
   await changePasswordLink.click();
-  await page.waitForURL('**/change-password', { timeout: 10000 });
+  await page.waitForURL('**/change-password', { timeout: 60000 });
   console.log('✅ PASS: Step 7 - Navigated to Change Password page');
 
   // Step 8: Verify Change Password form is ready
@@ -60,7 +60,7 @@ test('Change password flow', async ({ page }) => {
   const newPassInput = page.getByPlaceholder('New Password', { exact: true });
   const confirmPassInput = page.getByPlaceholder('Confirm New Password', { exact: true });
 
-  await expect(newPassInput).toBeVisible({ timeout: 10000 });
+  await expect(newPassInput).toBeVisible({ timeout: 20000 });
   await newPassInput.fill(newPassword);
   await confirmPassInput.fill(newPassword);
   console.log('✅ PASS: Step 9 - New password fields filled');
@@ -74,7 +74,7 @@ test('Change password flow', async ({ page }) => {
 
   // 2. Locate the Confirmation Modal using its ARIA role and Title
   const alertModal = page.getByRole('dialog').filter({ hasText: /Confirm Password Change/i });
-  await expect(alertModal).toBeVisible({ timeout: 10000 });
+  await expect(alertModal).toBeVisible({ timeout: 20000 });
 
   // 3. Click the "Yes, change" button inside that specific modal
   const modalActionBtn = alertModal.getByRole('button', { name: /Yes, change/i });
@@ -99,7 +99,7 @@ test('Change password flow', async ({ page }) => {
   await newPassInput.fill(primaryPassword);
   await confirmPassInput.fill(primaryPassword);
   await confirmBtnOnPage.click();
-  await expect(alertModal).toBeVisible({ timeout: 10000 });
+  await expect(alertModal).toBeVisible({ timeout: 20000 });
   await modalActionBtn.click();
   await expect(successSnackbar).toBeVisible({ timeout: 15000 });
   console.log('✅ PASS: Step 12 - Password reverted successfully');

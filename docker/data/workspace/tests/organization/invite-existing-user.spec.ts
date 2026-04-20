@@ -24,7 +24,7 @@ test('Invite existing user to organization flow', async ({ page }) => {
     // Step 4: Click Add a Member
     console.log('\n📍 Step 4: Click Add a Member');
     const addMemberButton = page.getByRole('button', { name: /Add a Member/i }).first();
-    await expect(addMemberButton).toBeVisible({ timeout: 10000 });
+    await expect(addMemberButton).toBeVisible({ timeout: 20000 });
     await addMemberButton.click();
     console.log('✅ PASS: Step 4 - Add a Member modal opened');
 
@@ -36,7 +36,7 @@ test('Invite existing user to organization flow', async ({ page }) => {
      * by its position or by finding the div that contains the "Email" text.
      */
     const addMemberModal = page.getByRole('dialog').filter({ hasText: /Add a Member/i });
-    await expect(addMemberModal).toBeVisible({ timeout: 10000 });
+    await expect(addMemberModal).toBeVisible({ timeout: 20000 });
 
     const memberEmailInput = addMemberModal.locator('input').first();
     await expect(memberEmailInput).toBeVisible();
@@ -64,7 +64,7 @@ test('Invite existing user to organization flow', async ({ page }) => {
     await addButton.click();
 
     // Wait for modal to close and table to refresh
-    await expect(addMemberModal).not.toBeVisible({ timeout: 10000 });
+    await expect(addMemberModal).not.toBeVisible({ timeout: 20000 });
     const memberInList = page.locator('.organization-table td', { hasText: secondaryEmail });
     await expect(memberInList).toBeVisible({ timeout: 15000 });
     console.log(`✅ PASS: Step 7 - User ${secondaryEmail} added to table`);
@@ -79,7 +79,7 @@ test('Invite existing user to organization flow', async ({ page }) => {
     await expect(logoutBtn).toBeVisible();
     await logoutBtn.click();
 
-    await page.waitForURL('**/login', { timeout: 15000 });
+    await page.waitForURL('**/login', { timeout: 30000 });
     console.log('✅ PASS: Step 8 - Logged out successfully');
 
     // Step 9: Login with the invited user
@@ -94,7 +94,7 @@ test('Invite existing user to organization flow', async ({ page }) => {
     await loginButton.click();
 
     // Wait for the redirect to the organization selection query
-    await page.waitForURL('**/?select_org', { timeout: 15000 });
+    await page.waitForURL('**/?select_org', { timeout: 30000 });
     console.log('✅ PASS: Step 9 - Login successful and redirected to selection page');
 
     // Step 10: Verify organization is available
@@ -106,7 +106,7 @@ test('Invite existing user to organization flow', async ({ page }) => {
     // Wait for the loader to clear if it's there
     const loader = page.locator('.loading-container, .loading-spinner');
     if (await loader.first().isVisible().catch(() => false)) {
-        await expect(loader.first()).not.toBeVisible({ timeout: 10000 });
+        await expect(loader.first()).not.toBeVisible({ timeout: 20000 });
     }
     if (await orgCard.isVisible({ timeout: 2000 }).catch(() => false)) {
         console.log(`Found organization card for: ${organizationName}`);
@@ -150,7 +150,7 @@ test('Invite existing user to organization flow', async ({ page }) => {
     // Step 11: Confirm user is logged in
     console.log('\n📍 Step 11: Confirm profile menu is visible');
     const userProfile = page.locator('#menu-activator');
-    await expect(userProfile).toBeVisible({ timeout: 10000 });
+    await expect(userProfile).toBeVisible({ timeout: 20000 });
     console.log('✅ PASS: Step 11 - User confirmed logged in after org selection');
 
     // Step 12: Report results

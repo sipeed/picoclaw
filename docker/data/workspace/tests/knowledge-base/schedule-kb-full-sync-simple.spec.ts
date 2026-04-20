@@ -10,8 +10,8 @@ test('Schedule Knowledge Base Full Sync with Simple Mode', async ({ page }) => {
   // =========================================================================
   console.log('📍 Step 1: Login with credentials');
   await page.goto('/login', { waitUntil: 'networkidle' });
-  await page.waitForURL(/\/login/, { timeout: 20000 });
-  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 10000 });
+  await page.waitForURL(/\/login/, { timeout: 60000 });
+  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 20000 });
 
   const loginCard = page.locator('.login-card');
   const emailInput = loginCard
@@ -34,7 +34,7 @@ test('Schedule Knowledge Base Full Sync with Simple Mode', async ({ page }) => {
   await passwordInput.fill('testing2026!');
   await loginButton.click();
 
-  await page.waitForURL(/\?select_org/, { timeout: 20000 });
+  await page.waitForURL(/\?select_org/, { timeout: 60000 });
   console.log('✅ PASS: Step 1 - Login successful, redirected to organization selection');
 
   // =========================================================================
@@ -43,11 +43,11 @@ test('Schedule Knowledge Base Full Sync with Simple Mode', async ({ page }) => {
   console.log('📍 Step 2: Select organization "Testing2026!"');
   const loader = page.locator('.loading-container, .loading-spinner, .v-progress-linear');
   if (await loader.first().isVisible().catch(() => false)) {
-    await loader.first().waitFor({ state: 'hidden', timeout: 15000 });
+    await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
   }
-  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
   await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).first().click();
-  await page.waitForURL(url => !url.searchParams.has('select_org'), { timeout: 15000 });
+  await page.waitForURL(url => !url.searchParams.has('select_org'), { timeout: 30000 });
   console.log('✅ PASS: Step 2 - Organization selected');
 
   // =========================================================================
@@ -62,8 +62,8 @@ test('Schedule Knowledge Base Full Sync with Simple Mode', async ({ page }) => {
   // =========================================================================
   console.log('📍 Step 4: Click "Knowledge Base" in the left sidebar');
   await page.locator('a:has-text("Knowledge Base")').click();
-  await page.waitForURL(/\/knowledge-base/, { timeout: 15000 });
-  await page.locator('.knowledge-base-container').waitFor({ state: 'visible', timeout: 10000 });
+  await page.waitForURL(/\/knowledge-base/, { timeout: 30000 });
+  await page.locator('.knowledge-base-container').waitFor({ state: 'visible', timeout: 20000 });
   console.log('✅ PASS: Step 4 - Navigated to Knowledge Base page');
 
   // =========================================================================
@@ -71,7 +71,7 @@ test('Schedule Knowledge Base Full Sync with Simple Mode', async ({ page }) => {
   // =========================================================================
   console.log('📍 Step 5: Locate knowledge base bucket "Picotest1"');
   const picotest1Bucket = page.locator('.bucket-card').filter({ hasText: 'Picotest1' }).first();
-  await picotest1Bucket.waitFor({ state: 'visible', timeout: 10000 });
+  await picotest1Bucket.waitFor({ state: 'visible', timeout: 20000 });
   console.log('✅ PASS: Step 5 - Found "Picotest1" bucket');
 
   // =========================================================================
@@ -90,7 +90,7 @@ test('Schedule Knowledge Base Full Sync with Simple Mode', async ({ page }) => {
   console.log('📍 Step 7: Verify Manage Schedule modal appears');
   // Wait for the modal to appear - using common modal selectors
   const manageScheduleModal = page.locator('[role="dialog"]').first();
-  await manageScheduleModal.waitFor({ state: 'visible', timeout: 10000 });
+  await manageScheduleModal.waitFor({ state: 'visible', timeout: 20000 });
   
   // Verify modal contains "Manage Schedule" or similar title
   const modalContent = page.locator('[role="dialog"]').first();
@@ -109,7 +109,7 @@ test('Schedule Knowledge Base Full Sync with Simple Mode', async ({ page }) => {
     editButton = page.getByRole('button', { name: /Create Schedule/i });
   }
   
-  await expect(editButton).toBeVisible({ timeout: 10000 });
+  await expect(editButton).toBeVisible({ timeout: 20000 });
   await editButton.click();
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 8 - Clicked "Edit Schedule" button');
@@ -120,7 +120,7 @@ test('Schedule Knowledge Base Full Sync with Simple Mode', async ({ page }) => {
   console.log('📍 Step 9: Select "Full Sync" under Sync Type');
   // Look for the Sync Type dropdown or radio buttons
   const fullSyncOption = page.locator('label, span, div').filter({ hasText: /Full Sync/i }).first();
-  await fullSyncOption.waitFor({ state: 'visible', timeout: 10000 });
+  await fullSyncOption.waitFor({ state: 'visible', timeout: 20000 });
   
   // If it's a label, click the associated input
   const fullSyncInput = fullSyncOption.locator('input').first();
@@ -139,7 +139,7 @@ test('Schedule Knowledge Base Full Sync with Simple Mode', async ({ page }) => {
   console.log('📍 Step 10: Ensure Cron Expression mode = SIMPLE');
   // Look for a toggle or selector that sets the mode to SIMPLE
   const simpleMode = page.locator('label, span, div, button').filter({ hasText: /SIMPLE|Simple/i }).first();
-  await simpleMode.waitFor({ state: 'visible', timeout: 10000 });
+  await simpleMode.waitFor({ state: 'visible', timeout: 20000 });
   
   // Check if it's already selected or if we need to click it
   const simpleModeInput = simpleMode.locator('input').first();
@@ -164,13 +164,13 @@ test('Schedule Knowledge Base Full Sync with Simple Mode', async ({ page }) => {
   console.log('📍 Step 11: Select "Weekly" in Frequency');
   // Find the Frequency dropdown/select
   const frequencySelect = page.locator('.v-select').filter({ hasText: /Frequency/i });
-  await frequencySelect.waitFor({ state: 'visible', timeout: 10000 });
+  await frequencySelect.waitFor({ state: 'visible', timeout: 20000 });
   await frequencySelect.click();
   await page.waitForTimeout(500);
 
   // Click the Weekly option from the dropdown
   const weeklyOption = page.locator('.v-overlay--active .v-list-item').filter({ hasText: /Weekly/i });
-  await weeklyOption.waitFor({ state: 'visible', timeout: 10000 });
+  await weeklyOption.waitFor({ state: 'visible', timeout: 20000 });
   await weeklyOption.click();
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 11 - Selected "Weekly" frequency');

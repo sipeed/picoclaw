@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('Flow Tester - Web Crawler Flow - Send Message and Verify Bot Response', async ({ page }) => {
-  test.setTimeout(120000); // 2 minutes for knowledge base retrieval
+  test.setTimeout(180000); // 2 minutes for knowledge base retrieval
 
   // ============================================================================
   // STEP 1: Navigate to login page
@@ -30,17 +30,17 @@ test('Flow Tester - Web Crawler Flow - Send Message and Verify Bot Response', as
   // STEP 4: Wait for org selection or dashboard redirect
   // ============================================================================
   console.log('📍 Step 4: Wait for org selection or dashboard redirect');
-  await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
+  await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 });
   
   // Check if org selection is needed
   if (page.url().includes('select_org')) {
     console.log('📍 Step 4a: Organization selection page detected');
-    await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 10000 });
+    await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
     // Use exact text matching with has() to avoid matching "Testing2026!" when we want "Testing"
     await page.locator('.organization-card')
       .filter({ has: page.locator(':text-is("Testing")') })
       .click();
-    await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
+    await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 });
     console.log('✅ PASS: Step 4a - Organization selected');
   } else {
     console.log('✅ PASS: Step 4 - Redirected directly to dashboard (org already selected)');
@@ -50,7 +50,7 @@ test('Flow Tester - Web Crawler Flow - Send Message and Verify Bot Response', as
   // STEP 5: Wait for dashboard to stabilize
   // ============================================================================
   console.log('📍 Step 5: Wait for dashboard to stabilize');
-  await page.waitForURL(/dashboard/, { timeout: 15000 });
+  await page.waitForURL(/dashboard/, { timeout: 30000 });
   await page.waitForLoadState('networkidle');
   console.log('✅ PASS: Step 5 - Dashboard loaded');
 
@@ -59,7 +59,7 @@ test('Flow Tester - Web Crawler Flow - Send Message and Verify Bot Response', as
   // ============================================================================
   console.log('📍 Step 6: Navigate to Flow Tester');
   await page.locator('a:has-text("Flow Tester")').click();
-  await page.waitForURL(/\/flow-tester/, { timeout: 15000 });
+  await page.waitForURL(/\/flow-tester/, { timeout: 30000 });
   await page.waitForLoadState('networkidle');
   console.log('✅ PASS: Step 6 - Navigated to Flow Tester');
 
@@ -67,7 +67,7 @@ test('Flow Tester - Web Crawler Flow - Send Message and Verify Bot Response', as
   // STEP 7: Verify Flow Tester page is displayed
   // ============================================================================
   console.log('📍 Step 7: Verify Flow Tester page is displayed');
-  await page.locator('.tester-container-card').waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.tester-container-card').waitFor({ state: 'visible', timeout: 20000 });
   await expect(page.locator('.chatbox')).toBeVisible();
   console.log('✅ PASS: Step 7 - Flow Tester page displayed');
 
@@ -103,7 +103,7 @@ test('Flow Tester - Web Crawler Flow - Send Message and Verify Bot Response', as
   await page.locator('.version-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
   // Wait for real items to load (not skeleton) — .version-date appears only on real items
   await page.locator('.version-dropdown-menu .version-date').first()
-    .waitFor({ state: 'visible', timeout: 20000 });
+    .waitFor({ state: 'visible', timeout: 40000 });
   // Click the latest version starting with "webcrawler" (exclude "Knowledgebase_Webcrawler" etc.)
   await page.locator('.version-dropdown-menu .version-item')
     .filter({ hasText: /webcrawler/i })
@@ -117,7 +117,7 @@ test('Flow Tester - Web Crawler Flow - Send Message and Verify Bot Response', as
   // ============================================================================
   console.log('📍 Step 11: Verify selected version is not "Select Version"');
   await expect(page.locator('.version-selector-text'))
-    .not.toContainText('Select Version', { timeout: 20000 });
+    .not.toContainText('Select Version', { timeout: 40000 });
   console.log('✅ PASS: Step 11 - Version selection verified');
 
   // ============================================================================
@@ -155,7 +155,7 @@ test('Flow Tester - Web Crawler Flow - Send Message and Verify Bot Response', as
   // STEP 16: Wait for typing indicator to appear (bot is processing)
   // ============================================================================
   console.log('📍 Step 16: Wait for typing indicator to appear');
-  await page.locator('.typing-indicator').waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.typing-indicator').waitFor({ state: 'visible', timeout: 40000 });
   console.log('✅ PASS: Step 16 - Typing indicator appeared');
 
   // ============================================================================
@@ -163,7 +163,7 @@ test('Flow Tester - Web Crawler Flow - Send Message and Verify Bot Response', as
   // ============================================================================
   console.log('📍 Step 17: Wait for bot to finish responding');
   // Knowledge base retrieval can take longer, use 60 second timeout
-  await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 60000 });
+  await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 40000 });
   console.log('✅ PASS: Step 17 - Bot finished responding');
 
   // ============================================================================

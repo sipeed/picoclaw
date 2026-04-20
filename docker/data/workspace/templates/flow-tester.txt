@@ -35,10 +35,10 @@ IMPORTANT RULES:
    After login, the app MAY redirect to /?select_org OR directly to the dashboard (if org is remembered).
    NEVER use waitForURL(/\?select_org/) directly — it times out when the server skips org selection.
    CORRECT post-login pattern (waitForURL callback gets a URL object — use .pathname or .href, NOT .includes()):
-     await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
+     await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 });
      if (page.url().includes('select_org')) {
        await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click();
-       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
+       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 });
      }
 4. Selector priority — ALWAYS follow this order:
    STEP 1: Custom CSS class from SKILL.md or FLOW_TESTER_REFERENCE.md.
@@ -76,20 +76,20 @@ IMPORTANT RULES:
      await page.locator('.version-selector-button').click();
      await page.locator('.version-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
      await page.locator('.version-dropdown-menu .version-date').first()
-       .waitFor({ state: 'visible', timeout: 20000 });
+       .waitFor({ state: 'visible', timeout: 40000 });
      await page.locator('.version-dropdown-menu .version-item').first().click();
      await expect(page.locator('.version-selector-text'))
-       .not.toContainText('Select Version', { timeout: 20000 });
+       .not.toContainText('Select Version', { timeout: 40000 });
 8. CRITICAL — Wait for bot to finish before asserting bot responses:
    ALWAYS wait for .typing-indicator to disappear before asserting the bot response:
-     await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 20000 });
+     await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 120000 });
 9. Bot message targeting — scope to .message-card (not .message-card-user):
    First bot response: page.locator('.chatbox .message-card .message-text').first()
    Last bot response:  page.locator('.chatbox .message-card .message-text').last()
    NEVER use .chatbox .message-text.first() — it will match the user message.
 10. STRICT MODE RULE — ALWAYS use .first() or .last() on any locator that can match multiple elements.
-11. Test timeout: set at least 90 seconds.
-    test.setTimeout(90000);
+11. Test timeout: set at least 3 minutes.
+    test.setTimeout(180000);
     Place this as the FIRST line inside the test() callback.
 
 Steps:

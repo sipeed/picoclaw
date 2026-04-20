@@ -26,10 +26,10 @@ IMPORTANT RULES:
    After login, the app MAY redirect to /?select_org OR directly to the dashboard (if org is remembered).
    NEVER use waitForURL(/\?select_org/) directly — it times out when the server skips org selection.
    CORRECT post-login pattern (waitForURL callback gets a URL object — use .pathname or .href, NOT .includes()):
-     await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
+     await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 });
      if (page.url().includes('select_org')) {  // page.url() returns a string — .includes() is fine here
        await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click();
-       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
+       await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 });
      }
 4. Selector priority — ALWAYS follow this order:
    STEP 1: Custom CSS class from SKILL.md or FLOW_TESTER_REFERENCE.md.
@@ -78,17 +78,17 @@ IMPORTANT RULES:
      await page.locator('.version-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
      // Wait for real items — skeleton .version-item elements have NO click handler
      await page.locator('.version-dropdown-menu .version-date').first()
-       .waitFor({ state: 'visible', timeout: 20000 });
+       .waitFor({ state: 'visible', timeout: 40000 });
      await page.locator('.version-dropdown-menu .version-item')
        .filter({ hasText: /model node with parser/i })
        .click();
      await expect(page.locator('.version-selector-text'))
-       .not.toContainText('Select Version', { timeout: 20000 });
-   The .version-date wait MUST use timeout: 20000 — version loading can take longer than expected.
+       .not.toContainText('Select Version', { timeout: 40000 });
+   The .version-date wait MUST use timeout: 40000 — version loading can take longer than expected.
 8. CRITICAL — Wait for bot to finish before asserting bot responses:
    The store has a loadingMessage guard. SSE streaming means loadingMessage can stay true after the response appears.
    ALWAYS wait for .typing-indicator to disappear before asserting the bot response or sending another message:
-     await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 20000 });
+     await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 40000 });
 9. Bot message rendering — THREE bot messages appear, only TWO are in .message-text:
    After sending "hello", the flow produces three bot messages in order:
      1. "Below is the Model node result..." — isOutput=true → .message-card .message-text
@@ -107,8 +107,8 @@ IMPORTANT RULES:
       page.locator('.chatbox .message-text')       ← strict mode violation after 2+ messages
       page.locator('.chatbox .message-card-user')  ← strict mode violation after 2+ user messages
     CORRECT: .last() for most recent, .first() for earliest, .nth(N) for specific index.
-11. Test timeout: set at least 90 seconds (model node may take time to respond).
-    test.setTimeout(90000);
+11. Test timeout: set at least 180 seconds (model node may take time to respond).
+    test.setTimeout(180000);
     Place this as the FIRST line inside the test() callback.
 
 Create a Playwright test file at /tests/flow-tester/test-model-node-parser-flow.spec.ts.

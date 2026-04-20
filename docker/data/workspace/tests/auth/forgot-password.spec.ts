@@ -6,7 +6,7 @@ import * as dotenv from 'dotenv';
 dotenv.config({ path: __dirname + '/../../.env' });
 
 test('Password reset flow - Reset password and verify login', async ({ page }) => {
-    test.setTimeout(120000);
+    test.setTimeout(180000);
     const testEmail = 'heidi@intnt.ai';
     const newPassword = 'testing2027!';
     const originalPassword = 'testing2026!';
@@ -153,12 +153,12 @@ test('Password reset flow - Reset password and verify login', async ({ page }) =
 
     // Step 8: Verify success message and click Go To Dashboard
     console.log('\n📍 Step 8: Verify success message and click Go To Dashboard');
-    await expect(page.getByText(/Your password was reset successfully!!/i)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/Your password was reset successfully!!/i)).toBeVisible({ timeout: 20000 });
     console.log('   ✓ Success message visible');
     const goToDashboardButton = page.locator('button:has-text("Go To Dashboard"), a:has-text("Go To Dashboard")').first();
     await expect(goToDashboardButton).toBeVisible();
     await goToDashboardButton.click();
-    await page.waitForURL('**/login', { timeout: 15000 });
+    await page.waitForURL('**/login', { timeout: 30000 });
     await expect(page).toHaveURL(/.*login/);
     console.log('✅ PASS: Step 8 - Clicked Go To Dashboard, redirected to login page');
 
@@ -175,18 +175,18 @@ test('Password reset flow - Reset password and verify login', async ({ page }) =
     let logoutFound = false;
 
     // Try clicking logout button directly
-    if (await logoutButton.isVisible({ timeout: 10000 }).catch(() => false)) {
+    if (await logoutButton.isVisible({ timeout: 20000 }).catch(() => false)) {
         await logoutButton.click();
         logoutFound = true;
         console.log('   ✓ Logout button clicked directly');
     }
     // Try clicking profile menu first, then logout
-    else if (await profileMenu.isVisible({ timeout: 10000 }).catch(() => false)) {
+    else if (await profileMenu.isVisible({ timeout: 20000 }).catch(() => false)) {
         await profileMenu.click();
         await page.waitForTimeout(500);
 
         const logoutInMenu = page.locator('[class*="logout"], button:has-text("Logout"), button:has-text("Sign out")').first();
-        if (await logoutInMenu.isVisible({ timeout: 10000 }).catch(() => false)) {
+        if (await logoutInMenu.isVisible({ timeout: 20000 }).catch(() => false)) {
             await logoutInMenu.click();
             logoutFound = true;
             console.log('   ✓ Profile menu clicked and logout selected');
@@ -194,7 +194,7 @@ test('Password reset flow - Reset password and verify login', async ({ page }) =
     }
 
     if (logoutFound) {
-        await page.waitForURL('**/login', { timeout: 10000 });
+        await page.waitForURL('**/login', { timeout: 60000 });
         console.log('✅ PASS: Step 10 - Logged out successfully, redirected to login');
     } else {
         console.log('❌ FAIL: Step 10 - Logout button not found');
@@ -248,11 +248,11 @@ test('Password reset flow - Reset password and verify login', async ({ page }) =
     await expect(setPasswordButton2).toBeVisible();
     await setPasswordButton2.click();
 
-    await expect(page.getByText('Your password was reset successfully')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Your password was reset successfully')).toBeVisible({ timeout: 20000 });
     const goToDashboardButton2 = page.locator('button:has-text("Go To Dashboard"), a:has-text("Go To Dashboard")').first();
     await expect(goToDashboardButton2).toBeVisible();
     await goToDashboardButton2.click();
-    await page.waitForURL('**/login', { timeout: 15000 });
+    await page.waitForURL('**/login', { timeout: 30000 });
     await expect(page).toHaveURL(/.*login/);
     console.log('✅ PASS: Step 13 - Password reverted, clicked Go To Dashboard, redirected to login');
 

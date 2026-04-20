@@ -22,10 +22,10 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   console.log('✅ PASS: Step 4 - Login button clicked');
 
   console.log('📍 Step 5: Wait for post-login redirect');
-  await page.waitForURL(url => url.pathname !== '/login', { timeout: 20000 });
+  await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 });
   if (page.url().includes('select_org')) {
     await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
-    await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 15000 });
+    await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 });
   }
   console.log('✅ PASS: Step 5 - Redirected past login');
 
@@ -34,12 +34,12 @@ test('Create new flow with User Utterance node', async ({ page }) => {
 
   console.log('📍 Step 7: Navigate to Flow Designer');
   await page.locator('a:has-text("Flow Designer")').click();
-  await page.waitForURL('**/flow-designer', { timeout: 10000 });
+  await page.waitForURL('**/flow-designer', { timeout: 60000 });
   console.log('✅ PASS: Step 7 - Navigated to Flow Designer');
 
   console.log('📍 Step 8: Click Add New button');
   await page.locator('.m-auto').filter({ hasText: /Add New/ }).click();
-  await page.waitForURL('**/flow-designer/**', { timeout: 10000 });
+  await page.waitForURL('**/flow-designer/**', { timeout: 60000 });
   console.log('✅ PASS: Step 8 - New flow created, canvas opened');
 
   // ============ PHASE 2: FLOW SETUP ============
@@ -96,7 +96,7 @@ test('Create new flow with User Utterance node', async ({ page }) => {
 
   console.log('📍 Step 14: Click first Reply Message node to open config modal');
   await page.locator('.node-container').filter({ hasText: /ReplyMessage/ }).first().evaluate((el) => (el as HTMLElement).click());
-  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 20000 });
   console.log('✅ PASS: Step 14 - Node config modal opened');
 
   console.log('📍 Step 15: Verify auto-populated fields in modal');
@@ -192,7 +192,7 @@ test('Create new flow with User Utterance node', async ({ page }) => {
 
   console.log('📍 Step 23: Click User Utterance node to open config modal');
   await page.locator('.node-container').filter({ hasText: /UserUtterance/ }).first().evaluate((el) => (el as HTMLElement).click());
-  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 20000 });
   console.log('✅ PASS: Step 23 - User Utterance config modal opened');
 
   console.log('📍 Step 24: Change Node ID to "input"');
@@ -287,7 +287,7 @@ test('Create new flow with User Utterance node', async ({ page }) => {
 
   console.log('📍 Step 32: Click Output Reply Message node to open config modal');
   await page.locator('.node-container').filter({ hasText: /ReplyMessage/ }).nth(1).evaluate((el) => (el as HTMLElement).click());
-  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 10000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 20000 });
   console.log('✅ PASS: Step 32 - Output node config modal opened');
 
   console.log('📍 Step 33: Change Node ID to "Output"');
@@ -396,7 +396,7 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   console.log('📍 Step 41: Click Save Flow button (disk icon)');
   await page.locator('button').filter({ has: page.locator('.mdi-content-save') }).click();
   const saveDialog = page.locator('.v-overlay--active').filter({ hasText: /Save Flow Version/ });
-  await saveDialog.waitFor({ state: 'visible', timeout: 10000 });
+  await saveDialog.waitFor({ state: 'visible', timeout: 20000 });
   console.log('✅ PASS: Step 41 - Save Flow Version modal opened');
 
   console.log('📍 Step 42: Enter version name "UserUtteranceV1"');

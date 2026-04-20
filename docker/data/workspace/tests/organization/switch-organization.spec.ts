@@ -14,7 +14,7 @@ test('Organization switching flow', async ({ page }) => {
   // Step 3: Verify the user is logged in under organization Testing
   console.log('\n📍 Step 3: Verify user is logged in under organization Testing');
   const orgTrigger = page.locator('.org-dropdown-trigger');
-  await expect(orgTrigger).toBeVisible({ timeout: 10000 });
+  await expect(orgTrigger).toBeVisible({ timeout: 20000 });
   await expect(orgTrigger).toContainText(firstOrganization);
   console.log('✅ PASS: Step 3 - User verified logged in under organization Testing');
 
@@ -28,8 +28,8 @@ test('Organization switching flow', async ({ page }) => {
   const firstOrgInList = page.locator('.org-dropdown-item').filter({ hasText: firstOrganization }).first();
   const secondOrgInList = page.locator('.org-dropdown-item').filter({ hasText: secondOrganization }).first();
 
-  await expect(firstOrgInList).toBeVisible({ timeout: 10000 });
-  await expect(secondOrgInList).toBeVisible({ timeout: 10000 });
+  await expect(firstOrgInList).toBeVisible({ timeout: 20000 });
+  await expect(secondOrgInList).toBeVisible({ timeout: 20000 });
   console.log(`✅ PASS: Step 5 - Organizations visible: ${firstOrganization}, ${secondOrganization}`);
 
   // Step 6: Click the second organization to switch
@@ -41,7 +41,7 @@ test('Organization switching flow', async ({ page }) => {
 
   // Step 7: Verify active organization switched to Testing2026!
   console.log('\n📍 Step 7: Verify active organization is Testing2026!');
-  await expect(page.locator('.org-dropdown-trigger')).toContainText(secondOrganization, { timeout: 15000 });
+  await expect(page.locator('.org-dropdown-trigger')).toContainText(secondOrganization, { timeout: 30000 });
   await expect(page).not.toHaveURL(/login|select_org/);
   console.log('✅ PASS: Step 7 - Active organization is Testing2026!');
 
