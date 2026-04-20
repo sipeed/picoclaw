@@ -257,6 +257,8 @@ func classifyByStatus(status int) FailoverReason {
 		return FailoverRateLimit
 	case status == 400:
 		return FailoverFormat
+	case status == 404:
+		return FailoverNotFound
 	case transientStatusCodes[status]:
 		return FailoverTimeout
 	}

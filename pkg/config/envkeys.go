@@ -55,3 +55,10 @@ func GetHome() string {
 	}
 	return homePath
 }
+
+func GetDefaultConfigPath() string {
+	if cfgPath := os.Getenv(EnvConfig); cfgPath != "" {
+		return cfgPath
+	}
+	return filepath.Join(GetHome(), "config.json")
+}

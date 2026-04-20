@@ -37,14 +37,20 @@ func candidateFromModelConfig(
 		return providers.FallbackCandidate{}, false
 	}
 
-	ref := providers.ParseModelRef(ensureProtocolModel(mc.Model), defaultProvider)
-	if ref == nil {
-		return providers.FallbackCandidate{}, false
+	provider := providers.NormalizeProvider(mc.Protocol)
+	model := mc.Model
+	if provider == "" {
+		ref := providers.ParseModelRef(ensureProtocolModel(model), defaultProvider)
+		if ref == nil {
+			return providers.FallbackCandidate{}, false
+		}
+		provider = ref.Provider
+		model = ref.Model
 	}
 
 	return providers.FallbackCandidate{
-		Provider:    ref.Provider,
-		Model:       ref.Model,
+		Provider:    provider,
+		Model:       model,
 		RPM:         mc.RPM,
 		IdentityKey: modelConfigIdentityKey(mc),
 	}, true
