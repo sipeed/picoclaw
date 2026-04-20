@@ -206,10 +206,12 @@ func TestGetCredentialCanonicalizesLegacyAntigravityProvider(t *testing.T) {
 		t.Fatalf("json.Marshal() error: %v", err)
 	}
 	path := filepath.Join(tmpDir, ".picoclaw", "auth.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	err = os.MkdirAll(filepath.Dir(path), 0o755)
+	if err != nil {
 		t.Fatalf("MkdirAll() error: %v", err)
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	err = os.WriteFile(path, data, 0o600)
+	if err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
 	}
 
@@ -257,10 +259,12 @@ func TestLoadStoreMergesAntigravityAliasesPreferringNewerExpiry(t *testing.T) {
 		t.Fatalf("json.Marshal() error: %v", err)
 	}
 	path := filepath.Join(tmpDir, ".picoclaw", "auth.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	err = os.MkdirAll(filepath.Dir(path), 0o755)
+	if err != nil {
 		t.Fatalf("MkdirAll() error: %v", err)
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	err = os.WriteFile(path, data, 0o600)
+	if err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
 	}
 
@@ -311,20 +315,23 @@ func TestSetCredentialReplacesLegacyAntigravityEntry(t *testing.T) {
 		t.Fatalf("json.Marshal() error: %v", err)
 	}
 	path := filepath.Join(tmpDir, ".picoclaw", "auth.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	err = os.MkdirAll(filepath.Dir(path), 0o755)
+	if err != nil {
 		t.Fatalf("MkdirAll() error: %v", err)
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	err = os.WriteFile(path, data, 0o600)
+	if err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
 	}
 
 	refreshedExpiry := time.Date(2026, 4, 16, 12, 30, 0, 0, time.UTC)
-	if err := SetCredential("google-antigravity", &AuthCredential{
+	err = SetCredential("google-antigravity", &AuthCredential{
 		AccessToken: "fresh-token",
 		ExpiresAt:   refreshedExpiry,
 		Provider:    "google-antigravity",
 		AuthMethod:  "oauth",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("SetCredential() error: %v", err)
 	}
 
@@ -365,14 +372,17 @@ func TestDeleteCredentialRemovesLegacyAntigravityAlias(t *testing.T) {
 		t.Fatalf("json.Marshal() error: %v", err)
 	}
 	path := filepath.Join(tmpDir, ".picoclaw", "auth.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	err = os.MkdirAll(filepath.Dir(path), 0o755)
+	if err != nil {
 		t.Fatalf("MkdirAll() error: %v", err)
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	err = os.WriteFile(path, data, 0o600)
+	if err != nil {
 		t.Fatalf("WriteFile() error: %v", err)
 	}
 
-	if err := DeleteCredential(" google-antigravity "); err != nil {
+	err = DeleteCredential(" google-antigravity ")
+	if err != nil {
 		t.Fatalf("DeleteCredential() error: %v", err)
 	}
 
