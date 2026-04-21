@@ -111,6 +111,7 @@ const (
 	sessionKeyAgentPrefix      = "agent:"
 	pendingTurnPrefix          = "pending-"
 	metadataKeyMessageKind     = "message_kind"
+	metadataKeyStructuredData  = "structured_data"
 	messageKindThought         = "thought"
 	metadataKeyAccountID       = "account_id"
 	metadataKeyGuildID         = "guild_id"
@@ -520,13 +521,15 @@ func (al *AgentLoop) runAgentLoop(
 			opts.Dispatch.SessionKey,
 			opts.Dispatch.SessionScope,
 		)
+		outboundCtx := outboundContextFromInbound(
+			opts.Dispatch.InboundContext,
+			opts.Dispatch.Channel(),
+			opts.Dispatch.ChatID(),
+			opts.Dispatch.ReplyToMessageID(),
+		)
+		attachPlanTodoFallback(&outboundCtx, result.finalContent)
 		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-			Context: outboundContextFromInbound(
-				opts.Dispatch.InboundContext,
-				opts.Dispatch.Channel(),
-				opts.Dispatch.ChatID(),
-				opts.Dispatch.ReplyToMessageID(),
-			),
+			Context:      outboundCtx,
 			AgentID:      agentID,
 			SessionKey:   sessionKey,
 			Scope:        scope,

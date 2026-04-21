@@ -266,3 +266,30 @@ func TestToolResultContentForLLM_AppendsArtifactPaths(t *testing.T) {
 		t.Fatalf("expected artifact guidance note in ContentForLLM, got %q", content)
 	}
 }
+
+func TestToolResultShouldPublishDirectly_DefaultsToFalseForPlainUserResult(t *testing.T) {
+	result := UserResult("user visible message")
+
+	if result.ShouldPublishDirectly(true) {
+		t.Fatal("expected plain UserResult not to publish directly by default")
+	}
+}
+
+func TestToolResultShouldPublishDirectly_RequiresSendResponseForExplicitDirect(t *testing.T) {
+	result := UserResult("user visible message").WithDirectUserResponse()
+
+	if result.ShouldPublishDirectly(false) {
+		t.Fatal("expected direct user response to respect sendResponse=false")
+	}
+	if !result.ShouldPublishDirectly(true) {
+		t.Fatal("expected direct user response to publish when sendResponse=true")
+	}
+}
+
+func TestToolResultShouldPublishDirectly_ResponseHandledAlwaysPublishes(t *testing.T) {
+	result := UserResult("handled").WithResponseHandled()
+
+	if !result.ShouldPublishDirectly(false) {
+		t.Fatal("expected handled response to publish even when sendResponse=false")
+	}
+}

@@ -3,28 +3,15 @@ package integrationtools
 import (
 	"context"
 	"fmt"
-	"sync"
 )
 
-type SendCallbackWithContext func(ctx context.Context, channel, chatID, content, replyToMessageID string) error
-
-// sentTarget records the channel+chatID that the message tool sent to.
-type sentTarget struct {
-	Channel string
-	ChatID  string
-}
-
 type MessageTool struct {
-	sendCallback SendCallbackWithContext
-	mu           sync.Mutex
-	// sentTargets tracks targets sent to in the current round, keyed by session key
-	// to support parallel turns for different sessions.
-	sentTargets map[string][]sentTarget
+	messageDispatchTool
 }
 
 func NewMessageTool() *MessageTool {
 	return &MessageTool{
-		sentTargets: make(map[string][]sentTarget),
+		messageDispatchTool: newMessageDispatchTool(),
 	}
 }
 
@@ -33,16 +20,65 @@ func (t *MessageTool) Name() string {
 }
 
 func (t *MessageTool) Description() string {
-	return "Send a message to user on a chat channel. Use this when you want to communicate something."
+	return "Send a structured or plain-text message to the user. Use for interactive UI elements (options, cards, forms, progress, todos, alerts) that need immediate rendering. Always include content as plain-text fallback."
 }
 
 func (t *MessageTool) Parameters() map[string]any {
+	optionItemSchema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"label":       map[string]any{"type": "string"},
+			"value":       map[string]any{"type": "string"},
+			"description": map[string]any{"type": "string"},
+		},
+		"required": []string{"label", "value"},
+	}
+	actionItemSchema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"label": map[string]any{"type": "string"},
+			"value": map[string]any{"type": "string"},
+		},
+		"required": []string{"label"},
+	}
+	structuredPartSchema := map[string]any{
+		"type": "object",
+		"oneOf": []any{
+			map[string]any{
+				"description": "Interactive options list for the user to choose from.",
+				"properties": map[string]any{
+					"type":    map[string]any{"type": "string", "const": "options"},
+					"options": map[string]any{"type": "array", "items": optionItemSchema, "minItems": 1},
+					"mode":    map[string]any{"type": "string", "enum": []string{"single", "multiple"}, "default": "single"},
+				},
+				"required": []string{"type", "options"},
+			},
+			map[string]any{
+				"description": "Rich card. Built-in semantic kinds: 'form', 'progress', 'todo', 'alert'. Custom kinds are also accepted and passed through to the frontend renderer.",
+				"properties": map[string]any{
+					"type":    map[string]any{"type": "string", "const": "card"},
+					"title":   map[string]any{"type": "string"},
+					"kind":    map[string]any{"type": "string", "description": "Semantic subtype. Built-in: 'form'|'progress'|'todo'|'alert'. Custom values are forwarded to the frontend as-is."},
+					"blocks":  map[string]any{"type": "array"},
+					"actions": map[string]any{"type": "array", "items": actionItemSchema},
+				},
+				"required": []string{"type"},
+			},
+			map[string]any{
+				"description": "Custom part type. Any object with a 'type' string field is accepted and forwarded to the frontend renderer as-is.",
+				"properties": map[string]any{
+					"type": map[string]any{"type": "string"},
+				},
+				"required": []string{"type"},
+			},
+		},
+	}
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"content": map[string]any{
 				"type":        "string",
-				"description": "The message content to send",
+				"description": "The visible text summary to send. Keep this even when using structured UI payloads so non-structured clients still have a readable fallback.",
 			},
 			"channel": map[string]any{
 				"type":        "string",
@@ -56,45 +92,20 @@ func (t *MessageTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Optional: reply target message ID for channels that support threaded replies",
 			},
+			"structured": map[string]any{
+				"description": "Optional structured payload for rich UI rendering. Can be a single part or an array of parts.",
+				"oneOf": []any{
+					structuredPartSchema,
+					map[string]any{
+						"type":     "array",
+						"items":    structuredPartSchema,
+						"minItems": 1,
+					},
+				},
+			},
 		},
 		"required": []string{"content"},
 	}
-}
-
-// ResetSentInRound resets the per-round send tracker for the given session key.
-// Called by the agent loop at the start of each inbound message processing round.
-func (t *MessageTool) ResetSentInRound(sessionKey string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	// Delete the key entirely to prevent unbounded map growth over time
-	// with many unique sessions. Truncating the slice keeps the key alive.
-	delete(t.sentTargets, sessionKey)
-}
-
-// HasSentInRound returns true if the message tool sent a message during the current round.
-func (t *MessageTool) HasSentInRound(sessionKey string) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return len(t.sentTargets[sessionKey]) > 0
-}
-
-// HasSentTo returns true if the message tool sent to the specific channel+chatID
-// during the current round. Used by PublishResponseIfNeeded to avoid suppressing
-// the final response when the message tool only sent to a different conversation.
-func (t *MessageTool) HasSentTo(sessionKey, channel, chatID string) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	for _, st := range t.sentTargets[sessionKey] {
-		if st.Channel == channel && st.ChatID == chatID {
-			return true
-		}
-	}
-	return false
-}
-
-func (t *MessageTool) SetSendCallback(callback SendCallbackWithContext) {
-	t.sendCallback = callback
 }
 
 func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
@@ -103,41 +114,51 @@ func (t *MessageTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 		return &ToolResult{ForLLM: "content is required", IsError: true}
 	}
 
-	channel, _ := args["channel"].(string)
-	chatID, _ := args["chat_id"].(string)
-	replyToMessageID, _ := args["reply_to_message_id"].(string)
-
-	if channel == "" {
-		channel = ToolChannel(ctx)
+	structured, err := parseMessageStructuredArgs(args)
+	if err != nil {
+		return &ToolResult{ForLLM: err.Error(), IsError: true}
 	}
-	if chatID == "" {
-		chatID = ToolChatID(ctx)
-	}
+	return t.executeSend(ctx, args, content, structured)
+}
 
-	if channel == "" || chatID == "" {
-		return &ToolResult{ForLLM: "No target channel/chat specified", IsError: true}
+func parseMessageStructuredArgs(args map[string]any) (any, error) {
+	if _, exists := args["options"]; exists {
+		return nil, fmt.Errorf("message does not accept top-level options; use structured.type='options'")
 	}
 
-	if t.sendCallback == nil {
-		return &ToolResult{ForLLM: "Message sending not configured", IsError: true}
+	if rawStructured, ok := args["structured"]; ok && rawStructured != nil {
+		return normalizeStructuredPayload(rawStructured)
 	}
 
-	if err := t.sendCallback(ctx, channel, chatID, content, replyToMessageID); err != nil {
-		return &ToolResult{
-			ForLLM:  fmt.Sprintf("sending message: %v", err),
-			IsError: true,
-			Err:     err,
+	return nil, nil
+}
+
+func normalizeStructuredPayload(rawStructured any) (any, error) {
+	switch structured := rawStructured.(type) {
+	case map[string]any:
+		return normalizeStructuredEntry(structured, "structured")
+	case []any:
+		if len(structured) == 0 {
+			return nil, fmt.Errorf("structured must not be empty")
 		}
-	}
-
-	sessionKey := ToolSessionKey(ctx)
-	t.mu.Lock()
-	t.sentTargets[sessionKey] = append(t.sentTargets[sessionKey], sentTarget{Channel: channel, ChatID: chatID})
-	t.mu.Unlock()
-
-	// Silent: user already received the message directly
-	return &ToolResult{
-		ForLLM: fmt.Sprintf("Message sent to %s:%s", channel, chatID),
-		Silent: true,
+		result := make([]any, 0, len(structured))
+		for index, item := range structured {
+			entry, ok := item.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("structured[%d] must be an object", index)
+			}
+			normalized, err := normalizeStructuredEntry(entry, fmt.Sprintf("structured[%d]", index))
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, normalized)
+		}
+		return result, nil
+	default:
+		return nil, fmt.Errorf("structured must be an object or array")
 	}
 }
+
+// StructuredPart is implemented by every canonical and alias structured part type.
+// Parse validates and ingests raw LLM input; ToMap serializes back to the wire format.
+// This mirrors VS Code's ChatResponsePart design: each kind owns its own schema.

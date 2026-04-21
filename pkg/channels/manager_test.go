@@ -66,6 +66,32 @@ type mockMediaChannel struct {
 	sentMediaMessages []bus.OutboundMediaMessage
 }
 
+type mockStructuredEditorChannel struct {
+	mockChannel
+	structuredEditCalls int
+	lastStructuredEdit  struct {
+		chatID     string
+		messageID  string
+		content    string
+		structured any
+	}
+}
+
+func (m *mockStructuredEditorChannel) EditStructuredMessage(
+	_ context.Context,
+	chatID string,
+	messageID string,
+	content string,
+	structured any,
+) error {
+	m.structuredEditCalls++
+	m.lastStructuredEdit.chatID = chatID
+	m.lastStructuredEdit.messageID = messageID
+	m.lastStructuredEdit.content = content
+	m.lastStructuredEdit.structured = structured
+	return nil
+}
+
 func (m *mockMediaChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
 	m.sentMediaMessages = append(m.sentMediaMessages, msg)
 	if m.sendMediaFn != nil {
@@ -763,6 +789,44 @@ func TestPreSend_PlaceholderEditSuccess(t *testing.T) {
 	}
 	if sendCalled {
 		t.Fatal("expected Send to NOT be called when placeholder edited")
+	}
+}
+
+func TestPreSend_PlaceholderStructuredEditSuccess(t *testing.T) {
+	m := newTestManager()
+	ch := &mockStructuredEditorChannel{}
+
+	m.RecordPlaceholder("test", "123", "456")
+
+	msg := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "progress update"})
+	if msg.Context.Raw == nil {
+		msg.Context.Raw = make(map[string]string, 1)
+	}
+	msg.Context.Raw["structured_data"] = `{"type":"progress","kind":"agent/tool-exec","title":"read_file","status":"running"}`
+
+	_, edited := m.preSend(context.Background(), "test", msg, ch)
+
+	if !edited {
+		t.Fatal("expected preSend to return true for structured placeholder edit")
+	}
+	if ch.structuredEditCalls != 1 {
+		t.Fatalf("expected EditStructuredMessage to be called once, got %d", ch.structuredEditCalls)
+	}
+	if ch.editedMessages != 0 {
+		t.Fatal("expected plain EditMessage to NOT be called when structured editor exists")
+	}
+	if len(ch.sentMessages) != 0 {
+		t.Fatal("expected Send to NOT be called when placeholder structured edit succeeds")
+	}
+	structured, ok := ch.lastStructuredEdit.structured.(map[string]any)
+	if !ok {
+		t.Fatalf("structured payload = %#v, want map[string]any", ch.lastStructuredEdit.structured)
+	}
+	if structured["type"] != "progress" || structured["status"] != "running" {
+		t.Fatalf("structured payload = %#v, want progress/running", structured)
+	}
+	if ch.lastStructuredEdit.messageID != "456" {
+		t.Fatalf("messageID = %q, want 456", ch.lastStructuredEdit.messageID)
 	}
 }
 

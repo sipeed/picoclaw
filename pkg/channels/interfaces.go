@@ -20,6 +20,12 @@ type MessageEditor interface {
 	EditMessage(ctx context.Context, chatID string, messageID string, content string) error
 }
 
+// StructuredMessageEditor extends MessageEditor for channels that can update
+// an existing message while preserving a structured payload.
+type StructuredMessageEditor interface {
+	EditStructuredMessage(ctx context.Context, chatID string, messageID string, content string, structured any) error
+}
+
 // MessageDeleter — channels that can delete a message by ID.
 type MessageDeleter interface {
 	DeleteMessage(ctx context.Context, chatID string, messageID string) error

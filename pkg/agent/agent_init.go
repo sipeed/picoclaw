@@ -4,6 +4,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -157,14 +158,22 @@ func registerSharedTools(
 
 		// Message tool
 		if cfg.Tools.IsToolEnabled("message") {
-			messageTool := tools.NewMessageTool()
-			messageTool.SetSendCallback(func(
+			sendStructuredMessage := func(
 				ctx context.Context,
 				channel, chatID, content, replyToMessageID string,
+				structured any,
 			) error {
 				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer pubCancel()
 				outboundCtx := bus.NewOutboundContext(channel, chatID, replyToMessageID)
+				if structured != nil {
+					if encoded, err := json.Marshal(structured); err == nil {
+						if outboundCtx.Raw == nil {
+							outboundCtx.Raw = make(map[string]string, 1)
+						}
+						outboundCtx.Raw[metadataKeyStructuredData] = string(encoded)
+					}
+				}
 				outboundAgentID, outboundSessionKey, outboundScope := outboundTurnMetadata(
 					tools.ToolAgentID(ctx),
 					tools.ToolSessionKey(ctx),
@@ -178,7 +187,10 @@ func registerSharedTools(
 					Content:          content,
 					ReplyToMessageID: replyToMessageID,
 				})
-			})
+			}
+
+			messageTool := tools.NewMessageTool()
+			messageTool.SetStructuredSendCallback(sendStructuredMessage)
 			agent.Tools.Register(messageTool)
 		}
 		if cfg.Tools.IsToolEnabled("reaction") {

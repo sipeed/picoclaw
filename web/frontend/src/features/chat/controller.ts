@@ -14,6 +14,7 @@ import {
 import { invalidateSocket, isCurrentSocket } from "@/features/chat/websocket"
 import i18n from "@/i18n"
 import {
+  type ChatInteractionMode,
   type ChatAttachment,
   getChatState,
   updateChatStore,
@@ -33,12 +34,29 @@ let connectionGeneration = 0
 let reconnectTimer: number | null = null
 let reconnectAttempts = 0
 let shouldMaintainConnection = false
+let refreshFromHistoryPromise: Promise<void> | null = null
+let refreshFromHistoryTimer: number | null = null
 
 function clearReconnectTimer() {
   if (reconnectTimer !== null) {
     window.clearTimeout(reconnectTimer)
     reconnectTimer = null
   }
+}
+
+function clearRefreshFromHistoryTimer() {
+  if (refreshFromHistoryTimer !== null) {
+    window.clearTimeout(refreshFromHistoryTimer)
+    refreshFromHistoryTimer = null
+  }
+}
+
+function scheduleRefreshFromHistory(delayMs: number) {
+  clearRefreshFromHistoryTimer()
+  refreshFromHistoryTimer = window.setTimeout(() => {
+    refreshFromHistoryTimer = null
+    void refreshActiveSessionFromHistory()
+  }, delayMs)
 }
 
 function shouldReconnectFor(generation: number, sessionId: string): boolean {
@@ -89,6 +107,7 @@ function disconnectChatInternal({
 }) {
   connectionGeneration += 1
   clearReconnectTimer()
+  clearRefreshFromHistoryTimer()
 
   if (clearDesiredConnection) {
     shouldMaintainConnection = false
@@ -182,7 +201,11 @@ export async function connectChat() {
 
       try {
         const message = JSON.parse(event.data) as PicoMessage
-        handlePicoMessage(message, sessionId)
+          const result = handlePicoMessage(message, sessionId)
+          if (result.shouldRefreshHistory) {
+          const delayMs = message.type === "typing.stop" ? 250 : 1200
+          scheduleRefreshFromHistory(delayMs)
+          }
       } catch {
         console.warn("Non-JSON message from pico:", event.data)
       }
@@ -318,11 +341,13 @@ export async function hydrateActiveSession() {
 interface SendChatMessageInput {
   content: string
   attachments?: ChatAttachment[]
+  mode?: ChatInteractionMode
 }
 
 export function sendChatMessage({
   content,
   attachments = [],
+  mode = "agent",
 }: SendChatMessageInput) {
   if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
     console.warn("WebSocket not connected")
@@ -364,6 +389,7 @@ export function sendChatMessage({
         payload: {
           content: normalizedContent,
           media: normalizedAttachments.map((attachment) => attachment.url),
+          mode,
         },
       }),
     )
@@ -376,6 +402,34 @@ export function sendChatMessage({
     }))
     return false
   }
+}
+
+async function refreshActiveSessionFromHistory() {
+  if (refreshFromHistoryPromise) {
+    return refreshFromHistoryPromise
+  }
+
+  const sessionId = activeSessionIdRef
+  refreshFromHistoryPromise = loadSessionMessages(sessionId)
+    .then((historyMessages) => {
+      const currentState = getChatState()
+      if (currentState.activeSessionId !== sessionId) {
+        return
+      }
+
+      updateChatStore({
+        messages: historyMessages,
+        hasHydratedActiveSession: true,
+      })
+    })
+    .catch((error) => {
+      console.error("Failed to refresh active session history:", error)
+    })
+    .finally(() => {
+      refreshFromHistoryPromise = null
+    })
+
+  return refreshFromHistoryPromise
 }
 
 export async function switchChatSession(sessionId: string) {

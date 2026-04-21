@@ -4,13 +4,14 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 func (al *AgentLoop) maybePublishError(ctx context.Context, channel, chatID, sessionKey string, err error) bool {
@@ -37,6 +38,14 @@ func (al *AgentLoop) publishResponseOrError(
 }
 
 func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatID, sessionKey, response string) {
+	al.publishResponseWithContextIfNeeded(ctx, nil, channel, chatID, sessionKey, response)
+}
+
+func (al *AgentLoop) publishResponseWithContextIfNeeded(
+	ctx context.Context,
+	inboundCtx *bus.InboundContext,
+	channel, chatID, sessionKey, response string,
+) {
 	if response == "" {
 		return
 	}
@@ -44,11 +53,7 @@ func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatI
 	alreadySentToSameChat := false
 	defaultAgent := al.GetRegistry().GetDefaultAgent()
 	if defaultAgent != nil {
-		if tool, ok := defaultAgent.Tools.Get("message"); ok {
-			if mt, ok := tool.(*tools.MessageTool); ok {
-				alreadySentToSameChat = mt.HasSentTo(sessionKey, channel, chatID)
-			}
-		}
+		alreadySentToSameChat = anySentTrackingToolSentTo(defaultAgent, sessionKey, channel, chatID)
 	}
 
 	if alreadySentToSameChat {
@@ -60,8 +65,14 @@ func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatI
 		return
 	}
 
+	outboundCtx := bus.NewOutboundContext(channel, chatID, "")
+	if inboundCtx != nil {
+		outboundCtx = outboundContextFromInbound(inboundCtx, channel, chatID, "")
+	}
+	attachPlanTodoFallback(&outboundCtx, response)
+
 	msg := bus.OutboundMessage{
-		Context: bus.NewOutboundContext(channel, chatID, ""),
+		Context: outboundCtx,
 		Content: response,
 	}
 	if sessionKey != "" {
@@ -70,9 +81,10 @@ func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatI
 	al.bus.PublishOutbound(ctx, msg)
 	logger.InfoCF("agent", "Published outbound response",
 		map[string]any{
-			"channel":     channel,
-			"chat_id":     chatID,
-			"content_len": len(response),
+			"channel":        channel,
+			"chat_id":        chatID,
+			"content_len":    len(response),
+			"has_structured": strings.TrimSpace(outboundCtx.Raw[metadataKeyStructuredData]) != "",
 		})
 }
 
@@ -121,6 +133,68 @@ func (al *AgentLoop) publishPicoReasoning(ctx context.Context, reasoningContent,
 			})
 		}
 	}
+}
+
+func (al *AgentLoop) publishPicoStructured(ctx context.Context, chatID, content string, structured any) {
+	if chatID == "" || structured == nil {
+		return
+	}
+	if ctx.Err() != nil {
+		return
+	}
+
+	rawStructured, err := json.Marshal(structured)
+	if err != nil {
+		logger.WarnCF("agent", "Failed to encode pico structured payload", map[string]any{
+			"channel": "pico",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	pubCtx, pubCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer pubCancel()
+
+	if err := al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+		Context: bus.InboundContext{
+			Channel: "pico",
+			ChatID:  chatID,
+			Raw: map[string]string{
+				metadataKeyStructuredData: string(rawStructured),
+			},
+		},
+		Content: content,
+	}); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
+			errors.Is(err, bus.ErrBusClosed) {
+			logger.DebugCF("agent", "Pico structured publish skipped (timeout/cancel)", map[string]any{
+				"channel": "pico",
+				"error":   err.Error(),
+			})
+		} else {
+			logger.WarnCF("agent", "Failed to publish pico structured payload", map[string]any{
+				"channel": "pico",
+				"error":   err.Error(),
+			})
+		}
+	}
+}
+
+func (al *AgentLoop) publishPicoToolProgress(ctx context.Context, chatID, toolName, status, detail string) {
+	if toolName == "" || chatID == "" {
+		return
+	}
+	content := fmt.Sprintf("%s: %s", toolName, status)
+	if detail != "" {
+		content = fmt.Sprintf("%s\n%s", content, detail)
+	}
+	al.publishPicoStructured(ctx, chatID, content, map[string]any{
+		"type":    "progress",
+		"kind":    "agent/tool-exec",
+		"title":   toolName,
+		"status":  status,
+		"content": detail,
+	})
 }
 
 func (al *AgentLoop) handleReasoning(

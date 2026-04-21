@@ -1,6 +1,10 @@
 package pico
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 // Protocol message types.
 const (
@@ -18,10 +22,18 @@ const (
 	TypeError         = "error"
 	TypePong          = "pong"
 
-	PayloadKeyContent = "content"
-	PayloadKeyThought = "thought"
+	PicoTokenPrefix = "pico-"
+
+	PayloadKeyContent    = "content"
+	PayloadKeyThought    = "thought"
+	PayloadKeyStructured = "structured"
+	PayloadKeyMode       = "mode"
 
 	MessageKindThought = "thought"
+
+	ChatModeAgent = "agent"
+	ChatModeAsk   = "ask"
+	ChatModePlan  = "plan"
 )
 
 // PicoMessage is the wire format for all Pico Protocol messages.
@@ -35,6 +47,15 @@ type PicoMessage struct {
 
 // newMessage creates a PicoMessage with the given type and payload.
 func newMessage(msgType string, payload map[string]any) PicoMessage {
+	if msgType == TypeMessageCreate {
+		if payload == nil {
+			payload = make(map[string]any, 1)
+		}
+		if _, exists := payload["message_id"]; !exists {
+			payload["message_id"] = uuid.NewString()
+		}
+	}
+
 	return PicoMessage{
 		Type:      msgType,
 		Timestamp: time.Now().UnixMilli(),

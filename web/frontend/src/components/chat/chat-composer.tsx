@@ -1,17 +1,11 @@
-import { IconArrowUp, IconPhotoPlus, IconX } from "@tabler/icons-react"
+import { IconArrowUp, IconChecklist, IconMessageCircleQuestion, IconPhotoPlus, IconSparkles, IconX } from "@tabler/icons-react"
 import type { KeyboardEvent } from "react"
 import { useTranslation } from "react-i18next"
 import TextareaAutosize from "react-textarea-autosize"
 
-import { ContextUsageRing } from "@/components/chat/context-usage-ring"
 import { Button } from "@/components/ui/button"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import type { ChatAttachment, ContextUsage } from "@/store/chat"
+import type { ChatAttachment, ChatInteractionMode } from "@/store/chat"
 
 export type ChatInputDisabledReason =
   | "gatewayUnknown"
@@ -28,27 +22,27 @@ export type ChatInputDisabledReason =
 interface ChatComposerProps {
   input: string
   attachments: ChatAttachment[]
+  mode: ChatInteractionMode
   onInputChange: (value: string) => void
+  onModeChange: (mode: ChatInteractionMode) => void
   onAddImages: () => void
   onRemoveAttachment: (index: number) => void
   onSend: () => void
-  onContextDetail?: () => void
   inputDisabledReason: ChatInputDisabledReason | null
   canSend: boolean
-  contextUsage?: ContextUsage
 }
 
 export function ChatComposer({
   input,
   attachments,
+  mode,
   onInputChange,
+  onModeChange,
   onAddImages,
   onRemoveAttachment,
   onSend,
-  onContextDetail,
   inputDisabledReason,
   canSend,
-  contextUsage,
 }: ChatComposerProps) {
   const { t } = useTranslation()
   const canInput = inputDisabledReason === null
@@ -66,15 +60,52 @@ export function ChatComposer({
     }
   }
 
+	const modeOptions: Array<{
+		value: ChatInteractionMode
+		label: string
+		icon: typeof IconSparkles
+	}> = [
+		{ value: "agent", label: t("chat.mode.agent"), icon: IconSparkles },
+		{ value: "ask", label: t("chat.mode.ask"), icon: IconMessageCircleQuestion },
+		{ value: "plan", label: t("chat.mode.plan"), icon: IconChecklist },
+	]
+
   return (
-    <div className="before:bg-background pointer-events-none relative z-10 -mt-[24px] shrink-0 overflow-y-auto px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] [scrollbar-gutter:stable] before:pointer-events-none before:absolute before:inset-x-0 before:top-[24px] before:bottom-0 before:content-[''] md:px-8 md:pb-8 lg:px-24 xl:px-48">
-      <div className="bg-card border-border/60 pointer-events-auto relative mx-auto flex max-w-[1000px] flex-col rounded-2xl border p-3 shadow-sm">
+    <div className="shrink-0 px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:px-5 md:pb-5">
+      <div className="bg-background mx-auto flex max-w-[880px] flex-col gap-3 rounded-xl border border-border/70 px-3 py-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-1.5 px-1">
+          {modeOptions.map((option) => {
+            const Icon = option.icon
+            const active = mode === option.value
+            return (
+              <Button
+                key={option.value}
+                type="button"
+                variant={active ? "secondary" : "ghost"}
+                size="sm"
+                className={cn(
+                  "h-8 gap-2 rounded-md px-3 text-xs",
+                  active && "bg-foreground text-background hover:bg-foreground/90 hover:text-background",
+                )}
+                onClick={() => onModeChange(option.value)}
+                disabled={!canInput}
+              >
+                <Icon className="size-3.5" />
+                <span>{option.label}</span>
+              </Button>
+            )
+          })}
+          <span className="text-muted-foreground ml-auto hidden text-xs md:inline">
+            {t(`chat.modeHint.${mode}`)}
+          </span>
+        </div>
+
         {attachments.length > 0 && (
-          <div className="mb-3 flex flex-wrap gap-2 px-2">
+          <div className="flex flex-wrap gap-2 px-1">
             {attachments.map((attachment, index) => (
               <div
                 key={`${attachment.url}-${index}`}
-                className="bg-background relative h-20 w-20 overflow-hidden rounded-xl border"
+                className="bg-muted/30 relative h-20 w-20 overflow-hidden rounded-lg border border-border/70"
               >
                 <img
                   src={attachment.url}
@@ -84,7 +115,7 @@ export function ChatComposer({
                 <button
                   type="button"
                   onClick={() => onRemoveAttachment(index)}
-                  className="bg-background/85 text-foreground absolute top-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full border shadow-sm transition hover:bg-white"
+                  className="bg-background/90 text-foreground absolute top-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-md border border-border/70 shadow-sm transition hover:bg-accent"
                   aria-label={t("chat.removeImage")}
                   title={t("chat.removeImage")}
                 >
@@ -103,20 +134,25 @@ export function ChatComposer({
           disabled={!canInput}
           title={disabledMessage || undefined}
           className={cn(
-            "placeholder:text-muted-foreground/50 max-h-[200px] min-h-[64px] resize-none border-0 bg-transparent px-2 py-1 text-[15px] shadow-none transition-colors focus-visible:ring-0 focus-visible:outline-none dark:bg-transparent",
+            "placeholder:text-muted-foreground/70 max-h-[220px] min-h-[72px] resize-none border-0 bg-transparent px-1 py-1 text-[14px] leading-6 shadow-none transition-colors focus-visible:ring-0 focus-visible:outline-none dark:bg-transparent",
             !canInput && "cursor-not-allowed",
           )}
           minRows={1}
           maxRows={8}
         />
+        {!canInput && disabledMessage && (
+          <div className="text-muted-foreground px-1 py-1 text-xs">
+            {disabledMessage}
+          </div>
+        )}
 
-        <div className="mt-2 flex items-center justify-between px-1">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center justify-between border-t border-border/60 pt-2">
+          <div className="flex items-center gap-1.5">
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              className="text-muted-foreground hover:text-foreground h-8 w-8 rounded-full"
+              className="text-muted-foreground hover:text-foreground h-8 w-8 rounded-md"
               onClick={onAddImages}
               disabled={!canInput}
               aria-label={t("chat.attachImage")}
@@ -124,37 +160,23 @@ export function ChatComposer({
             >
               <IconPhotoPlus className="size-4" />
             </Button>
+            <span className="text-muted-foreground hidden text-xs md:inline">
+              Enter to send, Shift+Enter for newline
+            </span>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            {contextUsage && (
-              <ContextUsageRing usage={contextUsage} onDetailClick={onContextDetail} />
-            )}
-            {canInput ? (
-              <Tooltip delayDuration={700}>
-                <TooltipTrigger asChild>
-                  <span tabIndex={!canSend ? 0 : undefined}>
-                    <Button
-                      type="button"
-                      size="icon"
-                      className="size-8 rounded-full bg-violet-500 text-white transition-transform hover:bg-violet-600 active:scale-95"
-                      onClick={onSend}
-                      disabled={!canSend}
-                      aria-label={t("chat.sendMessage")}
-                    >
-                      <IconArrowUp className="size-4" />
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent
-                  className="border-border/70 bg-muted text-foreground border text-center whitespace-pre-line shadow-lg shadow-black/10 dark:shadow-black/30"
-                  arrowClassName="bg-muted fill-muted"
-                >
-                  {t("chat.sendHint")}
-                </TooltipContent>
-              </Tooltip>
-            ) : null}
-          </div>
+          {canInput ? (
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 gap-2 rounded-md bg-foreground px-3 text-background transition-colors hover:bg-foreground/85"
+              onClick={onSend}
+              disabled={!canSend}
+            >
+              <IconArrowUp className="size-4" />
+              <span>{t("chat.send")}</span>
+            </Button>
+          ) : null}
         </div>
       </div>
     </div>

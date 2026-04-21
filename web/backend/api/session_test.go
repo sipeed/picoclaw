@@ -328,21 +328,25 @@ func TestHandleGetSession_OmitsTransientThoughtMessages(t *testing.T) {
 
 	var resp struct {
 		Messages []struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
+			Role       string         `json:"role"`
+			Content    string         `json:"content"`
+			Structured map[string]any `json:"structured"`
 		} `json:"messages"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
-	if len(resp.Messages) != 2 {
-		t.Fatalf("len(resp.Messages) = %d, want 2", len(resp.Messages))
+	if len(resp.Messages) != 3 {
+		t.Fatalf("len(resp.Messages) = %d, want 3", len(resp.Messages))
 	}
 	if resp.Messages[0].Role != "user" || resp.Messages[0].Content != "hello" {
 		t.Fatalf("first message = %#v, want user/hello", resp.Messages[0])
 	}
-	if resp.Messages[1].Role != "assistant" || resp.Messages[1].Content != "final visible answer" {
-		t.Fatalf("second message = %#v, want assistant/final visible answer", resp.Messages[1])
+	if resp.Messages[1].Role != "assistant" || resp.Messages[1].Content != "internal chain of thought" {
+		t.Fatalf("second message = %#v, want assistant/internal chain of thought", resp.Messages[1])
+	}
+	if resp.Messages[2].Role != "assistant" || resp.Messages[2].Content != "final visible answer" {
+		t.Fatalf("third message = %#v, want assistant/final visible answer", resp.Messages[2])
 	}
 }
 
@@ -395,8 +399,9 @@ func TestHandleGetSession_ReconstructsVisibleMessageToolOutputWithoutDuplicateSu
 
 	var resp struct {
 		Messages []struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
+			Role       string         `json:"role"`
+			Content    string         `json:"content"`
+			Structured map[string]any `json:"structured"`
 		} `json:"messages"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
@@ -466,8 +471,9 @@ func TestHandleGetSession_PreservesFinalAssistantReplyAfterMessageToolOutput(t *
 
 	var resp struct {
 		Messages []struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
+			Role       string         `json:"role"`
+			Content    string         `json:"content"`
+			Structured map[string]any `json:"structured"`
 		} `json:"messages"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
@@ -484,6 +490,286 @@ func TestHandleGetSession_PreservesFinalAssistantReplyAfterMessageToolOutput(t *
 	}
 	if resp.Messages[2].Role != "assistant" || resp.Messages[2].Content != "final assistant reply" {
 		t.Fatalf("final assistant message = %#v, want final assistant reply", resp.Messages[2])
+	}
+}
+
+func TestHandleGetSession_HidesAssistantPreludeWhenToolCallsArePresent(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore() error = %v", err)
+	}
+
+	sessionKey := picoSessionPrefix + "detail-tool-prelude-hidden"
+	for _, msg := range []providers.Message{
+		{Role: "user", Content: "check workspace"},
+		{
+			Role:    "assistant",
+			Content: "我来再次执行这个任务。",
+			ToolCalls: []providers.ToolCall{
+				{
+					ID:   "call_1",
+					Type: "function",
+					Function: &providers.FunctionCall{
+						Name:      "list_dir",
+						Arguments: `{}`,
+					},
+				},
+			},
+		},
+		{Role: "assistant", Content: "final assistant reply"},
+	} {
+		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+			t.Fatalf("AddFullMessage() error = %v", err)
+		}
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-tool-prelude-hidden", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Messages []struct {
+			Role       string         `json:"role"`
+			Content    string         `json:"content"`
+			Structured map[string]any `json:"structured"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Messages) != 3 {
+		t.Fatalf("len(resp.Messages) = %d, want 3", len(resp.Messages))
+	}
+	if resp.Messages[1].Structured["type"] != "progress" {
+		t.Fatalf("tool summary message = %#v, want structured progress card", resp.Messages[1])
+	}
+	if resp.Messages[2].Content != "final assistant reply" {
+		t.Fatalf("final assistant message = %#v, want final assistant reply", resp.Messages[2])
+	}
+	for _, msg := range resp.Messages {
+		if msg.Content == "我来再次执行这个任务。" {
+			t.Fatalf("unexpected tool-call prelude content in visible transcript: %#v", resp.Messages)
+		}
+	}
+}
+
+func TestHandleGetSession_ReconstructsVisibleMessageToolOptions(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore() error = %v", err)
+	}
+
+	sessionKey := picoSessionPrefix + "detail-message-tool-options"
+	for _, msg := range []providers.Message{
+		{Role: "user", Content: "pick"},
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{
+				{
+					ID:   "call_1",
+					Type: "function",
+					Function: &providers.FunctionCall{
+						Name:      "message",
+						Arguments: `{"content":"Choose one:","options":[{"label":"A","value":"alpha"},{"label":"B","value":"beta"}]}`,
+					},
+				},
+			},
+		},
+	} {
+		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+			t.Fatalf("AddFullMessage() error = %v", err)
+		}
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-message-tool-options", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Messages []struct {
+			Role       string `json:"role"`
+			Content    string `json:"content"`
+			Structured struct {
+				Type    string `json:"type"`
+				Options []struct {
+					Label string `json:"label"`
+					Value string `json:"value"`
+				} `json:"options"`
+			} `json:"structured"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Messages) != 3 {
+		t.Fatalf("len(resp.Messages) = %d, want 3", len(resp.Messages))
+	}
+	if !strings.Contains(resp.Messages[1].Content, "`message`") {
+		t.Fatalf("tool summary message = %#v, want message tool summary", resp.Messages[1])
+	}
+	if resp.Messages[2].Structured.Type != "options" || len(resp.Messages[2].Structured.Options) != 2 {
+		t.Fatalf("structured = %#v, want options payload", resp.Messages[2].Structured)
+	}
+}
+
+func TestHandleGetSession_ReconstructsCustomCardStructuredPayload(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore() error = %v", err)
+	}
+
+	sessionKey := picoSessionPrefix + "detail-message-tool-custom-card"
+	for _, msg := range []providers.Message{
+		{Role: "user", Content: "show card"},
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{
+				{
+					ID:   "call_1",
+					Type: "function",
+					Function: &providers.FunctionCall{
+						Name:      "message",
+						Arguments: `{"content":"审批摘要","structured":{"type":"card","kind":"custom/approval-card","title":"待审批","blocks":[{"type":"text","text":"张三提交了请假申请"},{"type":"actions","actions":[{"label":"批准","value":"approve"},{"label":"拒绝","value":"reject"}]}]}}`,
+					},
+				},
+			},
+		},
+	} {
+		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+			t.Fatalf("AddFullMessage() error = %v", err)
+		}
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-message-tool-custom-card", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Messages []struct {
+			Content    string `json:"content"`
+			Structured struct {
+				Type   string `json:"type"`
+				Kind   string `json:"kind"`
+				Title  string `json:"title"`
+				Blocks []struct {
+					Type string `json:"type"`
+				} `json:"blocks"`
+			} `json:"structured"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Messages) != 3 {
+		t.Fatalf("len(resp.Messages) = %d, want 3", len(resp.Messages))
+	}
+	if resp.Messages[2].Structured.Type != "card" {
+		t.Fatalf("structured type = %q, want card", resp.Messages[2].Structured.Type)
+	}
+	if resp.Messages[2].Structured.Kind != "custom/approval-card" {
+		t.Fatalf("structured kind = %q, want custom/approval-card", resp.Messages[2].Structured.Kind)
+	}
+	if len(resp.Messages[2].Structured.Blocks) != 2 {
+		t.Fatalf("blocks = %#v, want 2 blocks", resp.Messages[2].Structured.Blocks)
+	}
+}
+
+func TestHandleGetSession_ReconstructsStructuredPayloadList(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore() error = %v", err)
+	}
+
+	sessionKey := picoSessionPrefix + "detail-message-tool-structured-list"
+	for _, msg := range []providers.Message{
+		{Role: "user", Content: "show list"},
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{{
+				ID:   "call_1",
+				Type: "function",
+				Function: &providers.FunctionCall{
+					Name:      "message",
+					Arguments: `{"content":"组合消息","structured":[{"type":"progress","title":"同步中","status":"running"},{"type":"alert","level":"info","content":"等待确认"}]}`,
+				},
+			}},
+		},
+	} {
+		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+			t.Fatalf("AddFullMessage() error = %v", err)
+		}
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-message-tool-structured-list", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Messages []struct {
+			Structured []struct {
+				Type string `json:"type"`
+			} `json:"structured"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Messages) != 3 {
+		t.Fatalf("len(resp.Messages) = %d, want 3", len(resp.Messages))
+	}
+	if len(resp.Messages[2].Structured) != 2 {
+		t.Fatalf("structured = %#v, want 2 items", resp.Messages[2].Structured)
+	}
+	if resp.Messages[2].Structured[0].Type != "progress" || resp.Messages[2].Structured[1].Type != "alert" {
+		t.Fatalf("structured types = %#v, want progress/alert", resp.Messages[2].Structured)
 	}
 }
 
@@ -545,7 +831,7 @@ func TestHandleListSessions_MessageCountUsesVisibleTranscript(t *testing.T) {
 	}
 }
 
-func TestHandleGetSession_PreservesToolSummaryAndAssistantContent(t *testing.T) {
+func TestHandleGetSession_HidesAssistantContentWhenToolSummaryExists(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 
@@ -593,8 +879,91 @@ func TestHandleGetSession_PreservesToolSummaryAndAssistantContent(t *testing.T) 
 
 	var resp struct {
 		Messages []struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
+			Role       string         `json:"role"`
+			Content    string         `json:"content"`
+			Structured map[string]any `json:"structured"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Messages) != 2 {
+		t.Fatalf("len(resp.Messages) = %d, want 2", len(resp.Messages))
+	}
+	if resp.Messages[0].Role != "user" || resp.Messages[0].Content != "check file" {
+		t.Fatalf("first message = %#v, want user/check file", resp.Messages[0])
+	}
+	if resp.Messages[1].Structured["type"] != "progress" || resp.Messages[1].Structured["title"] != "read_file" {
+		t.Fatalf("tool summary message = %#v, want structured read_file progress", resp.Messages[1])
+	}
+	if resp.Messages[1].Structured["status"] != "completed" {
+		t.Fatalf("tool summary status = %#v, want completed", resp.Messages[1].Structured)
+	}
+	if got := resp.Messages[1].Structured["content"]; got != "README.md:1-10" {
+		t.Fatalf("tool summary content = %#v, want README.md:1-10", got)
+	}
+	for _, msg := range resp.Messages {
+		if msg.Content == "model final reply" {
+			t.Fatalf("unexpected assistant tool-call content in visible transcript: %#v", resp.Messages)
+		}
+	}
+}
+
+func TestHandleGetSession_ToolSummaryUsesArgumentPreview(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore() error = %v", err)
+	}
+
+	sessionKey := picoSessionPrefix + "detail-tool-summary-args"
+	for _, msg := range []providers.Message{
+		{Role: "user", Content: "inspect workspace"},
+		{
+			Role: "assistant",
+			ToolCalls: []providers.ToolCall{
+				{
+					ID:   "call_1",
+					Type: "function",
+					Function: &providers.FunctionCall{
+						Name:      "list_dir",
+						Arguments: `{"path":"/tmp/workspace"}`,
+					},
+				},
+				{
+					ID:   "call_2",
+					Type: "function",
+					Function: &providers.FunctionCall{
+						Name:      "fetch_webpage",
+						Arguments: `{"urls":["https://example.com"],"query":"release notes"}`,
+					},
+				},
+			},
+		},
+	} {
+		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+			t.Fatalf("AddFullMessage() error = %v", err)
+		}
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-tool-summary-args", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Messages []struct {
+			Structured map[string]any `json:"structured"`
 		} `json:"messages"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
@@ -603,14 +972,11 @@ func TestHandleGetSession_PreservesToolSummaryAndAssistantContent(t *testing.T) 
 	if len(resp.Messages) != 3 {
 		t.Fatalf("len(resp.Messages) = %d, want 3", len(resp.Messages))
 	}
-	if resp.Messages[0].Role != "user" || resp.Messages[0].Content != "check file" {
-		t.Fatalf("first message = %#v, want user/check file", resp.Messages[0])
+	if got := resp.Messages[1].Structured["content"]; got != "/tmp/workspace" {
+		t.Fatalf("list_dir summary content = %#v, want /tmp/workspace", got)
 	}
-	if !strings.Contains(resp.Messages[1].Content, "`read_file`") {
-		t.Fatalf("tool summary message = %#v, want read_file summary", resp.Messages[1])
-	}
-	if resp.Messages[2].Role != "assistant" || resp.Messages[2].Content != "model final reply" {
-		t.Fatalf("assistant message = %#v, want model final reply", resp.Messages[2])
+	if got := resp.Messages[2].Structured["content"]; got != "release notes | https://example.com" {
+		t.Fatalf("fetch_webpage summary content = %#v, want release notes | https://example.com", got)
 	}
 	for _, msg := range resp.Messages {
 		if msg.Role == "tool" || strings.Contains(msg.Content, "raw read_file result") {
@@ -639,7 +1005,7 @@ func TestHandleGetSession_UsesConfiguredToolFeedbackMaxArgsLength(t *testing.T) 
 		t.Fatalf("NewJSONLStore() error = %v", err)
 	}
 
-	argsJSON := `{"path":"README.md","start_line":1,"end_line":10,"extra":"abcdefghijklmnopqrstuvwxyz"}`
+	argsJSON := `{"content":"abcdefghijklmnopqrstuvwxyz0123456789"}`
 	sessionKey := picoSessionPrefix + "detail-tool-summary-max-args"
 	err = store.AddFullMessage(nil, sessionKey, providers.Message{Role: "user", Content: "check file"})
 	if err != nil {
@@ -651,7 +1017,7 @@ func TestHandleGetSession_UsesConfiguredToolFeedbackMaxArgsLength(t *testing.T) 
 			ID:   "call_1",
 			Type: "function",
 			Function: &providers.FunctionCall{
-				Name:      "read_file",
+				Name:      "message",
 				Arguments: argsJSON,
 			},
 		}},

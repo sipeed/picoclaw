@@ -10,15 +10,23 @@ import (
 )
 
 func (al *AgentLoop) processMessageSync(ctx context.Context, msg bus.InboundMessage) {
+	msg = bus.NormalizeInboundMessage(msg)
 	if al.channelManager != nil {
 		defer al.channelManager.InvokeTypingStop(msg.Channel, msg.ChatID)
 	}
 
 	response, err := al.processMessage(ctx, msg)
-	al.publishResponseOrError(ctx, msg.Channel, msg.ChatID, msg.SessionKey, response, err)
+	if err != nil {
+		if !al.maybePublishError(ctx, msg.Channel, msg.ChatID, msg.SessionKey, err) {
+			return
+		}
+		return
+	}
+	al.publishResponseWithContextIfNeeded(ctx, &msg.Context, msg.Channel, msg.ChatID, msg.SessionKey, response)
 }
 
 func (al *AgentLoop) runTurnWithSteering(ctx context.Context, initialMsg bus.InboundMessage) {
+	initialMsg = bus.NormalizeInboundMessage(initialMsg)
 	// Process the initial message
 	response, err := al.processMessage(ctx, initialMsg)
 	if err != nil {
@@ -77,7 +85,7 @@ func (al *AgentLoop) runTurnWithSteering(ctx context.Context, initialMsg bus.Inb
 
 	// Publish final response
 	if finalResponse != "" {
-		al.PublishResponseIfNeeded(ctx, target.Channel, target.ChatID, target.SessionKey, finalResponse)
+		al.publishResponseWithContextIfNeeded(ctx, &initialMsg.Context, target.Channel, target.ChatID, target.SessionKey, finalResponse)
 	}
 }
 

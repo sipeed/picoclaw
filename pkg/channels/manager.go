@@ -8,6 +8,7 @@ package channels
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -116,6 +117,19 @@ func outboundMediaChatID(msg bus.OutboundMediaMessage) string {
 	return msg.ChatID
 }
 
+func outboundStructuredPayload(msg bus.OutboundMessage) any {
+	rawStructured := msg.Context.Raw["structured_data"]
+	if rawStructured == "" {
+		return nil
+	}
+
+	var structured any
+	if err := json.Unmarshal([]byte(rawStructured), &structured); err != nil {
+		return nil
+	}
+	return structured
+}
+
 // RecordPlaceholder registers a placeholder message for later editing.
 // Implements PlaceholderRecorder.
 func (m *Manager) RecordPlaceholder(channel, chatID, placeholderID string) {
@@ -214,6 +228,13 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 	// 4. Try editing placeholder
 	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
+			if structured := outboundStructuredPayload(msg); structured != nil {
+				if editor, ok := ch.(StructuredMessageEditor); ok {
+					if err := editor.EditStructuredMessage(ctx, chatID, entry.id, msg.Content, structured); err == nil {
+						return []string{entry.id}, true
+					}
+				}
+			}
 			if editor, ok := ch.(MessageEditor); ok {
 				if err := editor.EditMessage(ctx, chatID, entry.id, msg.Content); err == nil {
 					return []string{entry.id}, true

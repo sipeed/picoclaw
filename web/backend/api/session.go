@@ -46,9 +46,11 @@ type sessionListItem struct {
 }
 
 type sessionChatMessage struct {
-	Role    string   `json:"role"`
-	Content string   `json:"content"`
-	Media   []string `json:"media,omitempty"`
+	Role       string   `json:"role"`
+	Content    string   `json:"content"`
+	Kind       string   `json:"kind,omitempty"`
+	Media      []string `json:"media,omitempty"`
+	Structured any      `json:"structured,omitempty"`
 }
 
 // legacyPicoSessionPrefix is the legacy key prefix used by older Pico JSON/JSONL
@@ -460,9 +462,6 @@ func visibleSessionMessages(messages []providers.Message, toolFeedbackMaxArgsLen
 
 	for _, msg := range messages {
 		switch msg.Role {
-		case "tool":
-			continue
-
 		case "user":
 			if sessionMessageVisible(msg) {
 				transcript = append(transcript, sessionChatMessage{
@@ -473,10 +472,15 @@ func visibleSessionMessages(messages []providers.Message, toolFeedbackMaxArgsLen
 			}
 
 		case "assistant":
-			// Reasoning-only assistant messages are transient display artifacts and
-			// should not be restored from session history.
-			if assistantMessageTransientThought(msg) {
-				continue
+			if strings.TrimSpace(msg.ReasoningContent) != "" {
+				transcript = append(transcript, sessionChatMessage{
+					Role:    "assistant",
+					Content: msg.ReasoningContent,
+					Kind:    "thought",
+				})
+				if assistantMessageTransientThought(msg) {
+					continue
+				}
 			}
 
 			toolSummaryMessages := visibleAssistantToolSummaryMessages(msg.ToolCalls, toolFeedbackMaxArgsLength)
@@ -487,6 +491,13 @@ func visibleSessionMessages(messages []providers.Message, toolFeedbackMaxArgsLen
 			visibleToolMessages := visibleAssistantToolMessages(msg.ToolCalls)
 			if len(visibleToolMessages) > 0 {
 				transcript = append(transcript, visibleToolMessages...)
+			}
+
+			// Tool-call assistant content is usually a transient preamble such as
+			// "I'll check that now." Keep the reconstructed tool summaries/cards and
+			// hide the raw assistant content to match the live Copilot-style UI.
+			if len(msg.ToolCalls) > 0 {
+				continue
 			}
 
 			// Pico web chat can persist both visible `message` tool output and a
@@ -504,18 +515,7 @@ func visibleSessionMessages(messages []providers.Message, toolFeedbackMaxArgsLen
 		}
 	}
 
-	return filterSessionChatMessages(transcript)
-}
-
-func filterSessionChatMessages(messages []sessionChatMessage) []sessionChatMessage {
-	filtered := messages[:0]
-	for _, msg := range messages {
-		if msg.Role != "user" && msg.Role != "assistant" {
-			continue
-		}
-		filtered = append(filtered, msg)
-	}
-	return filtered
+	return transcript
 }
 
 func assistantMessageTransientThought(msg providers.Message) bool {
@@ -542,16 +542,38 @@ func visibleAssistantToolSummaryMessages(
 
 	messages := make([]sessionChatMessage, 0, len(toolCalls))
 	for _, tc := range toolCalls {
-		name, argsJSON := toolCallNameAndArguments(tc)
+		name := tc.Name
+		argsJSON := ""
+		if tc.Function != nil {
+			if name == "" {
+				name = tc.Function.Name
+			}
+			argsJSON = tc.Function.Arguments
+		}
+
 		if strings.TrimSpace(name) == "" {
 			continue
 		}
-		if name == "web_search" || name == "web_fetch" {
+
+		if name != "message" {
+			content := visibleAssistantToolProgressContent(name, argsJSON, tc.Arguments, toolFeedbackMaxArgsLength)
+			messages = append(messages, sessionChatMessage{
+				Role:    "assistant",
+				Content: "",
+				Structured: map[string]any{
+					"type":    "progress",
+					"kind":    "agent/tool-exec",
+					"title":   name,
+					"status":  "completed",
+					"content": content,
+				},
+			})
 			continue
 		}
-		if name == "message" {
-			if _, ok := parseMessageToolContent(argsJSON); ok {
-				continue
+
+		if strings.TrimSpace(argsJSON) == "" && len(tc.Arguments) > 0 {
+			if encodedArgs, err := json.Marshal(tc.Arguments); err == nil {
+				argsJSON = string(encodedArgs)
 			}
 		}
 
@@ -569,6 +591,138 @@ func visibleAssistantToolSummaryMessages(
 	return messages
 }
 
+func visibleAssistantToolProgressContent(
+	toolName string,
+	argsJSON string,
+	rawArgs map[string]any,
+	maxArgsLength int,
+) string {
+	if maxArgsLength <= 0 {
+		maxArgsLength = defaultToolFeedbackMaxArgsLength()
+	}
+
+	args := map[string]any{}
+	if strings.TrimSpace(argsJSON) != "" {
+		_ = json.Unmarshal([]byte(argsJSON), &args)
+	}
+	for key, value := range rawArgs {
+		if _, exists := args[key]; !exists {
+			args[key] = value
+		}
+	}
+
+	if summary := summarizeToolArgs(toolName, args); summary != "" {
+		return summary
+	}
+
+	preview := strings.TrimSpace(argsJSON)
+	if preview == "" && len(rawArgs) > 0 {
+		if encoded, err := json.Marshal(rawArgs); err == nil {
+			preview = string(encoded)
+		}
+	}
+	if preview == "" {
+		return "Tool executed during this turn."
+	}
+
+	return utils.Truncate(preview, maxArgsLength)
+}
+
+func summarizeToolArgs(toolName string, args map[string]any) string {
+	if len(args) == 0 {
+		return ""
+	}
+
+	path := firstNonEmptyString(args, "path", "filePath", "file_path", "dirPath", "dir_path", "resourcePath", "workspaceFolder")
+	query := firstNonEmptyString(args, "query", "command", "goal", "target")
+	url := firstNonEmptyString(args, "url")
+	urls := stringSliceSummary(args["urls"])
+	packages := stringSliceSummary(args["packageList"])
+
+	parts := make([]string, 0, 3)
+	if path != "" {
+		if toolName == "read_file" {
+			if start, ok := numericArg(args, "startLine", "start_line"); ok {
+				if end, ok := numericArg(args, "endLine", "end_line"); ok {
+					parts = append(parts, path+":"+strconv.Itoa(start)+"-"+strconv.Itoa(end))
+				} else {
+					parts = append(parts, path+":"+strconv.Itoa(start))
+				}
+			} else {
+				parts = append(parts, path)
+			}
+		} else {
+			parts = append(parts, path)
+		}
+	}
+	if query != "" && query != path {
+		parts = append(parts, query)
+	}
+	if url != "" {
+		parts = append(parts, url)
+	} else if urls != "" {
+		parts = append(parts, urls)
+	}
+	if packages != "" {
+		parts = append(parts, packages)
+	}
+
+	return strings.Join(parts, " | ")
+}
+
+func firstNonEmptyString(args map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := args[key]; ok {
+			switch typed := value.(type) {
+			case string:
+				if trimmed := strings.TrimSpace(typed); trimmed != "" {
+					return trimmed
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func numericArg(args map[string]any, keys ...string) (int, bool) {
+	for _, key := range keys {
+		value, ok := args[key]
+		if !ok {
+			continue
+		}
+		switch typed := value.(type) {
+		case float64:
+			return int(typed), true
+		case int:
+			return typed, true
+		case int64:
+			return int(typed), true
+		case json.Number:
+			if parsed, err := typed.Int64(); err == nil {
+				return int(parsed), true
+			}
+		}
+	}
+	return 0, false
+}
+
+func stringSliceSummary(value any) string {
+	switch typed := value.(type) {
+	case []string:
+		return strings.Join(typed, ", ")
+	case []any:
+		items := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
+				items = append(items, strings.TrimSpace(text))
+			}
+		}
+		return strings.Join(items, ", ")
+	default:
+		return ""
+	}
+}
+
 func visibleAssistantToolMessages(toolCalls []providers.ToolCall) []sessionChatMessage {
 	if len(toolCalls) == 0 {
 		return nil
@@ -576,51 +730,144 @@ func visibleAssistantToolMessages(toolCalls []providers.ToolCall) []sessionChatM
 
 	messages := make([]sessionChatMessage, 0, len(toolCalls))
 	for _, tc := range toolCalls {
-		name, argsJSON := toolCallNameAndArguments(tc)
-		if name != "message" {
-			continue
+		name := tc.Name
+		argsJSON := ""
+		if tc.Function != nil {
+			if name == "" {
+				name = tc.Function.Name
+			}
+			argsJSON = tc.Function.Arguments
 		}
-		content, ok := parseMessageToolContent(argsJSON)
-		if !ok {
-			continue
+
+		switch name {
+		case "message":
+			var args map[string]any
+			if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+				continue
+			}
+			content, _ := args["content"].(string)
+			structured := visibleStructuredMessageArg(args)
+			if strings.TrimSpace(content) == "" && structured == nil {
+				continue
+			}
+			messages = append(messages, sessionChatMessage{
+				Role:       "assistant",
+				Content:    content,
+				Structured: structured,
+			})
 		}
-		messages = append(messages, sessionChatMessage{
-			Role:    "assistant",
-			Content: content,
-		})
 	}
 
 	return messages
 }
 
-func toolCallNameAndArguments(tc providers.ToolCall) (string, string) {
-	name := tc.Name
-	argsJSON := ""
-	if tc.Function != nil {
-		if name == "" {
-			name = tc.Function.Name
+func visibleStructuredMessageArg(args map[string]any) any {
+	if rawStructured, ok := args["structured"]; ok && rawStructured != nil {
+		switch structured := rawStructured.(type) {
+		case map[string]any:
+			msgType, _ := structured["type"].(string)
+			if strings.TrimSpace(msgType) != "" {
+				return structured
+			}
+		case []any:
+			parts := make([]any, 0, len(structured))
+			for _, item := range structured {
+				entry, ok := item.(map[string]any)
+				if !ok {
+					continue
+				}
+				msgType, _ := entry["type"].(string)
+				if strings.TrimSpace(msgType) == "" {
+					continue
+				}
+				parts = append(parts, entry)
+			}
+			if len(parts) > 0 {
+				return parts
+			}
 		}
-		argsJSON = tc.Function.Arguments
 	}
-	if strings.TrimSpace(argsJSON) == "" && len(tc.Arguments) > 0 {
-		if encodedArgs, err := json.Marshal(tc.Arguments); err == nil {
-			argsJSON = string(encodedArgs)
-		}
-	}
-	return name, argsJSON
-}
 
-func parseMessageToolContent(argsJSON string) (string, bool) {
-	var args struct {
-		Content string `json:"content"`
+	var rawOptions []any
+	switch optionsValue := args["options"].(type) {
+	case []any:
+		rawOptions = optionsValue
+	case map[string]any:
+		items, ok := optionsValue["options"].([]any)
+		if !ok || len(items) == 0 {
+			return nil
+		}
+		rawOptions = items
+		result := map[string]any{
+			"type":    "options",
+			"options": []map[string]any{},
+		}
+		for _, key := range []string{"mode", "selectionMode", "selection_mode", "multiple", "multi", "multiSelect", "multi_select", "allowCustom", "allow_custom", "customPlaceholder", "custom_placeholder", "submitLabel", "submit_label"} {
+			if value, exists := optionsValue[key]; exists {
+				result[key] = value
+			}
+		}
+
+		options := make([]map[string]any, 0, len(rawOptions))
+		for _, item := range rawOptions {
+			entry, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			label, _ := entry["label"].(string)
+			value, _ := entry["value"].(string)
+			if strings.TrimSpace(label) == "" || strings.TrimSpace(value) == "" {
+				continue
+			}
+			option := map[string]any{
+				"label": label,
+				"value": value,
+			}
+			if description, _ := entry["description"].(string); strings.TrimSpace(description) != "" {
+				option["description"] = description
+			}
+			options = append(options, option)
+		}
+		if len(options) == 0 {
+			return nil
+		}
+		result["options"] = options
+		return result
+	default:
+		return nil
 	}
-	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "", false
+	if len(rawOptions) == 0 {
+		return nil
 	}
-	if strings.TrimSpace(args.Content) == "" {
-		return "", false
+
+	options := make([]map[string]any, 0, len(rawOptions))
+	for _, item := range rawOptions {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		label, _ := entry["label"].(string)
+		value, _ := entry["value"].(string)
+		if strings.TrimSpace(label) == "" || strings.TrimSpace(value) == "" {
+			continue
+		}
+		option := map[string]any{
+			"label": label,
+			"value": value,
+		}
+		if description, _ := entry["description"].(string); strings.TrimSpace(description) != "" {
+			option["description"] = description
+		}
+		options = append(options, option)
 	}
-	return args.Content, true
+	if len(options) == 0 {
+		return nil
+	}
+
+	return map[string]any{
+		"type":    "options",
+		"options": options,
+	}
 }
 
 // sessionsDir resolves the path to the gateway's session storage directory.

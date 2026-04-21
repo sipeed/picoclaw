@@ -8,8 +8,10 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels/pico"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -149,12 +151,8 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	scopeKey := resolveScopeKey(allocation.SessionKey, msg.SessionKey)
 	sessionKey := scopeKey
 
-	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
-	if tool, ok := agent.Tools.Get("message"); ok {
-		if resetter, ok := tool.(interface{ ResetSentInRound(sessionKey string) }); ok {
-			resetter.ResetSentInRound(sessionKey)
-		}
-	}
+	// Reset message-like tool state for this round so we don't skip publishing due to a previous round.
+	resetSentTrackingTools(agent, sessionKey)
 
 	logger.InfoCF("agent", "Routed message",
 		map[string]any{
@@ -182,7 +180,10 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		DefaultResponse:         defaultResponse,
 		EnableSummary:           true,
 		SendResponse:            false,
-		AllowInterimPicoPublish: true,
+		AllowInterimPicoPublish: false,
+	}
+	if steering := modeSteeringMessages(msg.Context.Raw); len(steering) > 0 {
+		opts.InitialSteeringMessages = append(opts.InitialSteeringMessages, steering...)
 	}
 
 	// context-dependent commands check their own Runtime fields and report
@@ -201,6 +202,30 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	return al.runAgentLoop(ctx, agent, opts)
+}
+
+func modeSteeringMessages(raw map[string]string) []providers.Message {
+	if len(raw) == 0 {
+		return nil
+	}
+	mode := strings.ToLower(strings.TrimSpace(raw[pico.PayloadKeyMode]))
+	if mode == "" {
+		return nil
+	}
+
+	var instruction string
+	switch mode {
+	case pico.ChatModeAsk:
+		instruction = "Chat mode is ASK. Prioritize answering the user's question directly and clearly. Prefer explanation, diagnosis, and guidance over taking actions. Avoid tool calls unless they are required to answer accurately or the user explicitly asks you to inspect something. Do not make code changes, execute tasks, or act on behalf of the user unless they clearly request that."
+	case pico.ChatModePlan:
+		instruction = "Chat mode is PLAN. Produce a concrete plan, design, or approach before execution. Do not make code changes, do not run tools that change state, and do not carry out the plan. Limit tool use to minimal read-only inspection only when necessary to produce a better plan. Emphasize steps, tradeoffs, assumptions, and risks. When the plan has discrete tasks, you must call the message tool exactly once with a structured todo payload so the Web UI can render a task list. Do not answer with plain markdown bullets or prose only when a task list is possible. Use structured payload shape {type:'todo', title:string, content?:string, items:[{title:string, status:'not-started'|'in-progress'|'completed', detail?:string}]}. Keep at most one item in-progress. Include a short plain-text content fallback in the same message tool call. If there are no discrete tasks, then a normal text answer is acceptable."
+	case pico.ChatModeAgent:
+		instruction = "Chat mode is AGENT. You may inspect the workspace, call tools, make code changes, and complete the task end-to-end when appropriate. Prefer execution over discussion when the user is asking for work to be done."
+	default:
+		return nil
+	}
+
+	return []providers.Message{{Role: "user", Content: instruction}}
 }
 
 func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {

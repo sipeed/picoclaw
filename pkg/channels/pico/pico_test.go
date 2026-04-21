@@ -123,6 +123,24 @@ func TestBroadcastToSession_TargetsOnlyRequestedSession(t *testing.T) {
 	}
 }
 
+func TestNewMessage_AssignsMessageIDForCreate(t *testing.T) {
+	msg := newMessage(TypeMessageCreate, map[string]any{"content": "hello"})
+	messageID, ok := msg.Payload["message_id"].(string)
+	if !ok || messageID == "" {
+		t.Fatalf("message_id = %#v, want non-empty string", msg.Payload["message_id"])
+	}
+}
+
+func TestNewMessage_PreservesExistingMessageIDForCreate(t *testing.T) {
+	msg := newMessage(TypeMessageCreate, map[string]any{
+		"content":    "hello",
+		"message_id": "custom-id",
+	})
+	if msg.Payload["message_id"] != "custom-id" {
+		t.Fatalf("message_id = %#v, want custom-id", msg.Payload["message_id"])
+	}
+}
+
 func (c *PicoChannel) addConnForTest(pc *picoConn) {
 	c.connsMu.Lock()
 	defer c.connsMu.Unlock()

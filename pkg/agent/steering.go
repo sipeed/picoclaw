@@ -385,11 +385,7 @@ func (al *AgentLoop) Continue(ctx context.Context, sessionKey, channel, chatID s
 		return "", fmt.Errorf("no agent available for session %q", sessionKey)
 	}
 
-	if tool, ok := agent.Tools.Get("message"); ok {
-		if resetter, ok := tool.(interface{ ResetSentInRound(sessionKey string) }); ok {
-			resetter.ResetSentInRound(sessionKey)
-		}
-	}
+	resetSentTrackingTools(agent, sessionKey)
 
 	var scope *session.SessionScope
 	if metaStore, ok := agent.Sessions.(session.MetadataAwareSessionStore); ok {

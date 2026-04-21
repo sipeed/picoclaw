@@ -262,12 +262,23 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 	}
 	isThought := outboundMessageIsThought(msg)
 
-	payload := map[string]any{
+	outMsg := newMessage(TypeMessageCreate, map[string]any{
 		PayloadKeyContent: msg.Content,
 		PayloadKeyThought: isThought,
+	})
+	if rawStructured := strings.TrimSpace(msg.Context.Raw["structured_data"]); rawStructured != "" {
+		var structured any
+		if err := json.Unmarshal([]byte(rawStructured), &structured); err == nil {
+			outMsg.Payload[PayloadKeyStructured] = structured
+		}
 	}
-	setContextUsagePayload(payload, msg.ContextUsage)
-	outMsg := newMessage(TypeMessageCreate, payload)
+	logger.InfoCF("pico", "Sending websocket message",
+		map[string]any{
+			"chat_id":        msg.ChatID,
+			"message_type":   outMsg.Type,
+			"has_thought":    isThought,
+			"has_structured": outMsg.Payload[PayloadKeyStructured] != nil,
+		})
 
 	return nil, c.broadcastToSession(msg.ChatID, outMsg)
 }
@@ -277,6 +288,21 @@ func (c *PicoChannel) EditMessage(ctx context.Context, chatID string, messageID 
 	outMsg := newMessage(TypeMessageUpdate, map[string]any{
 		"message_id": messageID,
 		"content":    content,
+	})
+	return c.broadcastToSession(chatID, outMsg)
+}
+
+func (c *PicoChannel) EditStructuredMessage(
+	ctx context.Context,
+	chatID string,
+	messageID string,
+	content string,
+	structured any,
+) error {
+	outMsg := newMessage(TypeMessageUpdate, map[string]any{
+		"message_id": messageID,
+		"content":    content,
+		"structured": structured,
 	})
 	return c.broadcastToSession(chatID, outMsg)
 }
@@ -585,6 +611,9 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 		"session_id": sessionID,
 		"conn_id":    pc.id,
 	}
+	if mode, _ := msg.Payload[PayloadKeyMode].(string); strings.TrimSpace(mode) != "" {
+		metadata[PayloadKeyMode] = strings.TrimSpace(mode)
+	}
 
 	logger.DebugCF("pico", "Received message", map[string]any{
 		"session_id": sessionID,
@@ -717,17 +746,4 @@ func validateInlineImageDataURL(mediaURL string) error {
 	}
 
 	return nil
-}
-
-// setContextUsagePayload adds context window usage stats to a pico payload.
-func setContextUsagePayload(payload map[string]any, u *bus.ContextUsage) {
-	if u == nil {
-		return
-	}
-	payload["context_usage"] = map[string]any{
-		"used_tokens":        u.UsedTokens,
-		"total_tokens":       u.TotalTokens,
-		"compress_at_tokens": u.CompressAtTokens,
-		"used_percent":       u.UsedPercent,
-	}
 }

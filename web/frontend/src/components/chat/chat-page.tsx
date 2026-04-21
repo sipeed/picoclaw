@@ -1,5 +1,5 @@
 import { IconPlus } from "@tabler/icons-react"
-import { type ChangeEvent, useEffect, useRef, useState } from "react"
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
@@ -19,8 +19,15 @@ import { useChatModels } from "@/hooks/use-chat-models"
 import { useGateway } from "@/hooks/use-gateway"
 import { usePicoChat } from "@/hooks/use-pico-chat"
 import { useSessionHistory } from "@/hooks/use-session-history"
-import type { ConnectionState } from "@/store/chat"
-import type { ChatAttachment } from "@/store/chat"
+import type {
+  ChatAttachment,
+  ChatInteractionMode,
+  ChatMessage,
+  ChatStructuredContent,
+  ChatStructuredProgress,
+  ChatStructuredValue,
+  ConnectionState,
+} from "@/store/chat"
 import type { GatewayState } from "@/store/gateway"
 
 const MAX_IMAGE_SIZE_BYTES = 7 * 1024 * 1024
@@ -32,6 +39,92 @@ const ALLOWED_IMAGE_TYPES = new Set([
   "image/webp",
   "image/bmp",
 ])
+
+function flattenStructuredParts(
+  structured: ChatStructuredValue | undefined,
+): ChatStructuredContent[] {
+  if (!structured) {
+    return []
+  }
+  return Array.isArray(structured) ? structured : [structured]
+}
+
+function isToolProgressPart(
+  part: ChatStructuredContent,
+): part is ChatStructuredProgress {
+  return part.type === "progress" && part.kind === "agent/tool-exec"
+}
+
+function isProgressOnlyAssistantMessage(message: ChatMessage): boolean {
+  if (message.role !== "assistant" || message.kind === "thought") {
+    return false
+  }
+
+  if (message.content.trim() || (message.attachments?.length ?? 0) > 0) {
+    return false
+  }
+
+  const parts = flattenStructuredParts(message.structured)
+  return parts.length > 0 && parts.every(isToolProgressPart)
+}
+
+function isMergeableAssistantResultMessage(message: ChatMessage): boolean {
+  return message.role === "assistant" && message.kind !== "thought"
+}
+
+function mergeStructuredValues(
+  left: ChatStructuredValue | undefined,
+  right: ChatStructuredValue | undefined,
+): ChatStructuredValue | undefined {
+  const merged = [...flattenStructuredParts(left), ...flattenStructuredParts(right)]
+  if (merged.length === 0) {
+    return undefined
+  }
+  return merged
+}
+
+function aggregateRenderableMessages(messages: ChatMessage[]): ChatMessage[] {
+  const aggregated: ChatMessage[] = []
+
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index]
+
+    if (!isProgressOnlyAssistantMessage(message)) {
+      aggregated.push(message)
+      continue
+    }
+
+    let mergedMessage = message
+    let cursor = index + 1
+
+    while (cursor < messages.length && isProgressOnlyAssistantMessage(messages[cursor])) {
+      const progressMessage = messages[cursor]
+      mergedMessage = {
+        ...mergedMessage,
+        id: `${mergedMessage.id}__${progressMessage.id}`,
+        structured: mergeStructuredValues(mergedMessage.structured, progressMessage.structured),
+        timestamp: progressMessage.timestamp,
+      }
+      cursor += 1
+    }
+
+    const nextMessage = messages[cursor]
+    if (nextMessage && isMergeableAssistantResultMessage(nextMessage)) {
+      mergedMessage = {
+        ...nextMessage,
+        id: `${mergedMessage.id}__${nextMessage.id}`,
+        structured: mergeStructuredValues(mergedMessage.structured, nextMessage.structured),
+      }
+      index = cursor
+    } else {
+      index = cursor - 1
+    }
+
+    aggregated.push(mergedMessage)
+  }
+
+  return aggregated
+}
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -109,13 +202,13 @@ export function ChatPage() {
   const [hasScrolled, setHasScrolled] = useState(false)
   const [input, setInput] = useState("")
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
+  const [mode, setMode] = useState<ChatInteractionMode>("agent")
 
   const {
     messages,
     connectionState,
     isTyping,
     activeSessionId,
-    contextUsage,
     sendMessage,
     switchSession,
     newChat,
@@ -154,7 +247,7 @@ export function ChatPage() {
   })
 
   const syncScrollState = (element: HTMLDivElement) => {
-    const { clientHeight, scrollHeight, scrollTop } = element
+    const { scrollTop, scrollHeight, clientHeight } = element
     setHasScrolled(scrollTop > 0)
     setIsAtBottom(scrollHeight - scrollTop <= clientHeight + 10)
   }
@@ -178,11 +271,17 @@ export function ChatPage() {
       sendMessage({
         content: input,
         attachments,
+        mode,
       })
     ) {
       setInput("")
       setAttachments([])
     }
+  }
+
+  const handleSelectOption = (value: string) => {
+    if (!canInput) return
+    sendMessage({ content: value, mode })
   }
 
   const handleAddImages = () => {
@@ -245,13 +344,17 @@ export function ChatPage() {
 
   const canSubmit =
     canInput && (Boolean(input.trim()) || attachments.length > 0)
+  const renderMessages = useMemo(
+    () => aggregateRenderableMessages(messages),
+    [messages],
+  )
 
   return (
-    <div className="bg-background/95 flex h-full flex-col">
+    <div className="bg-muted/35 flex h-full min-h-0 flex-col">
       <PageHeader
         title={t("navigation.chat")}
         className={`transition-shadow ${
-          hasScrolled ? "shadow-xs" : "shadow-none"
+          hasScrolled ? "border-border/60 bg-background/90 shadow-xs backdrop-blur" : "border-transparent bg-transparent shadow-none"
         }`}
         titleExtra={
           hasAvailableModels && (
@@ -292,13 +395,15 @@ export function ChatPage() {
         />
       </PageHeader>
 
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-6 [scrollbar-gutter:stable] md:px-8 lg:px-24 xl:px-48"
-      >
-        <div className="mx-auto flex w-full max-w-250 flex-col gap-8 pb-8">
-          {messages.length === 0 && !isTyping && (
+      <div className="min-h-0 flex-1 px-2 pb-2 md:px-4 md:pb-4">
+        <div className="bg-background/92 ring-border/60 mx-auto flex h-full w-full max-w-[1380px] min-h-0 flex-col overflow-hidden rounded-2xl border shadow-sm ring-1">
+          <div
+            ref={scrollRef}
+            onScroll={handleScroll}
+            className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8 lg:px-10"
+          >
+            <div className="mx-auto flex w-full max-w-[880px] flex-col gap-5 pb-12">
+          {renderMessages.length === 0 && !isTyping && (
             <ChatEmptyState
               hasAvailableModels={hasAvailableModels}
               defaultModelName={defaultModelName}
@@ -306,24 +411,47 @@ export function ChatPage() {
             />
           )}
 
-          {messages.map((msg) => (
-            <div key={msg.id} className="flex w-full">
+          {renderMessages.map((msg) => (
+            <div
+              key={msg.id}
+              className="flex w-full"
+            >
               {msg.role === "assistant" ? (
                 <AssistantMessage
                   content={msg.content}
                   isThought={msg.kind === "thought"}
                   timestamp={msg.timestamp}
+                  structured={msg.structured}
+                  onSelectOption={handleSelectOption}
                 />
               ) : (
                 <UserMessage
                   content={msg.content}
                   attachments={msg.attachments}
+                  timestamp={msg.timestamp}
                 />
               )}
             </div>
           ))}
 
           {isTyping && <TypingIndicator />}
+            </div>
+          </div>
+
+          <div className="border-border/70 bg-background/96 border-t">
+            <ChatComposer
+              input={input}
+              attachments={attachments}
+              mode={mode}
+              onInputChange={setInput}
+              onModeChange={setMode}
+              onAddImages={handleAddImages}
+              onRemoveAttachment={handleRemoveAttachment}
+              onSend={handleSend}
+              inputDisabledReason={inputDisabledReason}
+              canSend={canSubmit}
+            />
+          </div>
         </div>
       </div>
 
@@ -333,23 +461,6 @@ export function ChatPage() {
         accept="image/jpeg,image/png,image/gif,image/webp,image/bmp"
         className="hidden"
         onChange={handleImageSelection}
-      />
-
-      <ChatComposer
-        input={input}
-        attachments={attachments}
-        onInputChange={setInput}
-        onAddImages={handleAddImages}
-        onRemoveAttachment={handleRemoveAttachment}
-        onSend={handleSend}
-        onContextDetail={() => {
-          if (sendMessage({ content: "/context", attachments: [] })) {
-            setInput("")
-          }
-        }}
-        inputDisabledReason={inputDisabledReason}
-        canSend={canSubmit}
-        contextUsage={contextUsage}
       />
     </div>
   )

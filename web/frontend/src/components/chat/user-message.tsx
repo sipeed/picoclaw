@@ -1,54 +1,57 @@
-import { cn } from "@/lib/utils"
+import { formatMessageTime } from "@/hooks/use-pico-chat"
 import type { ChatAttachment } from "@/store/chat"
 
 interface UserMessageProps {
   content: string
   attachments?: ChatAttachment[]
+  timestamp?: string | number
 }
 
-export function UserMessage({ content, attachments = [] }: UserMessageProps) {
+export function UserMessage({
+  content,
+  attachments = [],
+  timestamp,
+}: UserMessageProps) {
   const hasText = content.trim().length > 0
-  const isCommand = content.trim().startsWith("/")
   const imageAttachments = attachments.filter(
     (attachment) => attachment.type === "image",
   )
+  const formattedTimestamp = timestamp ? formatMessageTime(timestamp) : ""
 
   return (
-    <div className="flex w-full flex-col items-end gap-1.5">
+    <div className="ml-auto flex w-full max-w-[820px] justify-end gap-3">
+      <div className="flex min-w-0 max-w-[80%] flex-col items-end gap-2">
+        <div className="text-muted-foreground flex items-center gap-2 text-[11px] uppercase tracking-[0.14em]">
+          <span>You</span>
+          {formattedTimestamp ? <span className="opacity-60">{formattedTimestamp}</span> : null}
+        </div>
       {imageAttachments.length > 0 && (
-        <div className="flex max-w-[70%] flex-wrap justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           {imageAttachments.map((attachment, index) => (
-            <img
+            <div
               key={`${attachment.url}-${index}`}
-              src={attachment.url}
-              alt={attachment.filename || "Uploaded image"}
-              className="max-h-72 max-w-full object-cover"
-            />
+              className="overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm"
+            >
+              <img
+                src={attachment.url}
+                alt={attachment.filename || "Uploaded image"}
+                className="max-h-72 max-w-full object-cover"
+              />
+            </div>
           ))}
         </div>
       )}
 
       {hasText && (
-        <div
-          className={cn(
-            "max-w-[70%] wrap-break-word whitespace-pre-wrap",
-            isCommand
-              ? "rounded-xl border border-zinc-200 bg-transparent px-4 py-3 font-mono text-[14px] text-zinc-800 dark:border-zinc-800/60 dark:bg-[#121212] dark:text-zinc-200 dark:shadow-sm"
-              : "rounded-2xl rounded-tr-sm bg-violet-500 px-5 py-3 text-[15px] leading-relaxed text-white shadow-sm",
-          )}
-        >
-          {isCommand ? (
-            <div className="flex items-start gap-2.5">
-              <span className="font-bold text-emerald-600 select-none dark:text-emerald-400">
-                ❯
-              </span>
-              <span className="mt-[1px]">{content}</span>
-            </div>
-          ) : (
-            content
-          )}
+        <div className="w-full rounded-xl border border-blue-200/70 bg-blue-50/70 px-4 py-3 text-[14px] leading-6 wrap-break-word whitespace-pre-wrap text-slate-900 shadow-sm dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-slate-100">
+          {content}
         </div>
       )}
+      </div>
+
+      <div className="bg-muted text-muted-foreground mt-5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/70 text-[11px] font-semibold uppercase">
+        You
+      </div>
     </div>
   )
 }

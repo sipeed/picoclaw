@@ -59,6 +59,12 @@ type ToolResult struct {
 	// user's request at the channel/output level, so the agent loop can stop
 	// without a follow-up assistant response.
 	ResponseHandled bool `json:"response_handled,omitempty"`
+
+	// DirectUserResponse explicitly allows the raw ForUser payload to be sent
+	// straight to the chat channel before the model produces a final reply.
+	// Keep this false by default so the primary interaction path is
+	// tool-result -> model -> assistant reply.
+	DirectUserResponse bool `json:"direct_user_response,omitempty"`
 }
 
 // ContentForLLM returns the normalized textual content to append to the
@@ -91,6 +97,18 @@ func (tr *ToolResult) ContentForLLM() string {
 		return content
 	}
 	return ""
+}
+
+// ShouldPublishDirectly reports whether the raw ForUser payload should be sent
+// straight to the user channel instead of only flowing back to the model.
+func (tr *ToolResult) ShouldPublishDirectly(sendResponse bool) bool {
+	if tr == nil || tr.Silent || tr.ForUser == "" {
+		return false
+	}
+	if tr.ResponseHandled {
+		return true
+	}
+	return sendResponse && tr.DirectUserResponse
 }
 
 // NewToolResult creates a basic ToolResult with content for the LLM.
@@ -219,5 +237,12 @@ func (tr *ToolResult) WithError(err error) *ToolResult {
 // WithResponseHandled marks the tool result as already delivered to the user.
 func (tr *ToolResult) WithResponseHandled() *ToolResult {
 	tr.ResponseHandled = true
+	return tr
+}
+
+// WithDirectUserResponse marks the result for immediate raw delivery to the
+// user channel in addition to feeding the result back to the model.
+func (tr *ToolResult) WithDirectUserResponse() *ToolResult {
+	tr.DirectUserResponse = true
 	return tr
 }
