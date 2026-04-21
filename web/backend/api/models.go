@@ -10,6 +10,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 // registerModelRoutes binds model list management endpoints to the ServeMux.
@@ -26,6 +27,7 @@ func (h *Handler) registerModelRoutes(mux *http.ServeMux) {
 type modelResponse struct {
 	Index      int    `json:"index"`
 	ModelName  string `json:"model_name"`
+	Provider   string `json:"provider,omitempty"`
 	Model      string `json:"model"`
 	APIBase    string `json:"api_base,omitempty"`
 	APIKey     string `json:"api_key"`
@@ -73,10 +75,12 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 
 	models := make([]modelResponse, 0, len(cfg.ModelList))
 	for i, m := range cfg.ModelList {
+		provider, modelID := providers.ExtractProtocol(m)
 		models = append(models, modelResponse{
 			Index:          i,
 			ModelName:      m.ModelName,
-			Model:          m.Model,
+			Provider:       provider,
+			Model:          modelID,
 			APIBase:        m.APIBase,
 			APIKey:         maskAPIKey(m.APIKey()),
 			Proxy:          m.Proxy,
@@ -176,6 +180,12 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
+	var rawFields map[string]json.RawMessage
+	if err = json.Unmarshal(body, &rawFields); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+
 	type custom struct {
 		config.ModelConfig
 		APIKey string `json:"api_key"`
@@ -225,6 +235,12 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 		mc.CustomHeaders = cfg.ModelList[idx].CustomHeaders
 	} else if len(mc.CustomHeaders) == 0 {
 		mc.CustomHeaders = nil
+	}
+	// Preserve the existing Provider when the caller omits it. This keeps the
+	// update API backward-compatible for clients that haven't started sending
+	// the new field yet, while still allowing explicit clearing via "".
+	if _, ok := rawFields["provider"]; !ok {
+		mc.Provider = cfg.ModelList[idx].Provider
 	}
 
 	cfg.ModelList[idx] = &mc.ModelConfig

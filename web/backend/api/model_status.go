@@ -87,7 +87,7 @@ func hasModelConfiguration(m *config.ModelConfig) bool {
 	apiKey := strings.TrimSpace(m.APIKey())
 
 	if authMethod == "oauth" || authMethod == "token" {
-		if provider, ok := oauthProviderForModel(m.Model); ok {
+		if provider, ok := oauthProviderForModel(m); ok {
 			cred, err := oauthGetCredential(provider)
 			if err != nil || cred == nil {
 				return false
@@ -123,7 +123,7 @@ func requiresRuntimeProbe(m *config.ModelConfig) bool {
 		return true
 	}
 
-	protocol := modelProtocol(m.Model)
+	protocol := modelProtocol(m)
 
 	switch protocol {
 	case "claude-cli", "claudecli", "codex-cli", "codexcli", "github-copilot", "copilot":
@@ -172,7 +172,7 @@ func (s *modelProbeCacheState) probe(cacheKey string, probeFunc func() bool) boo
 
 func runLocalModelProbe(m *config.ModelConfig) bool {
 	apiBase := modelProbeAPIBase(m)
-	protocol, modelID := splitModel(m.Model)
+	protocol, modelID := splitModel(m)
 	switch protocol {
 	case "ollama":
 		return probeOllamaModelFunc(apiBase, modelID)
@@ -191,7 +191,7 @@ func runLocalModelProbe(m *config.ModelConfig) bool {
 }
 
 func modelProbeCacheKey(m *config.ModelConfig) string {
-	protocol, modelID := splitModel(m.Model)
+	protocol, modelID := splitModel(m)
 
 	apiBaseRaw := modelProbeAPIBase(m)
 	apiBase := strings.ToLower(strings.TrimRight(strings.TrimSpace(apiBaseRaw), "/"))
@@ -384,7 +384,7 @@ func modelProbeAPIBase(m *config.ModelConfig) string {
 		return normalizeModelProbeAPIBase(apiBase)
 	}
 
-	protocol := modelProtocol(m.Model)
+	protocol := modelProtocol(m)
 	if providers.IsEmptyAPIKeyAllowedForProtocol(protocol) {
 		return providers.DefaultAPIBaseForProtocol(protocol)
 	}
@@ -419,8 +419,8 @@ func normalizeModelProbeAPIBase(raw string) string {
 	return u.String()
 }
 
-func oauthProviderForModel(model string) (string, bool) {
-	switch modelProtocol(model) {
+func oauthProviderForModel(m *config.ModelConfig) (string, bool) {
+	switch modelProtocol(m) {
 	case "openai":
 		return oauthProviderOpenAI, true
 	case "anthropic":
@@ -432,18 +432,14 @@ func oauthProviderForModel(model string) (string, bool) {
 	}
 }
 
-func modelProtocol(model string) string {
-	protocol, _ := splitModel(model)
+func modelProtocol(m *config.ModelConfig) string {
+	protocol, _ := splitModel(m)
 	return protocol
 }
 
-func splitModel(model string) (protocol, modelID string) {
-	model = strings.ToLower(strings.TrimSpace(model))
-	protocol, _, found := strings.Cut(model, "/")
-	if !found {
-		return "openai", model
-	}
-	return protocol, strings.TrimSpace(model[strings.Index(model, "/")+1:])
+func splitModel(m *config.ModelConfig) (protocol, modelID string) {
+	protocol, modelID = providers.ExtractProtocol(m)
+	return strings.ToLower(strings.TrimSpace(protocol)), strings.ToLower(strings.TrimSpace(modelID))
 }
 
 func hasLocalAPIBase(raw string) bool {

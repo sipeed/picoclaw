@@ -239,8 +239,8 @@
       "modelNamePlaceholder": "e.g. my-gpt4",
       "modelNameHint": "A short name used to identify this model in conversations.",
       "modelId": "Model Identifier",
-      "modelIdPlaceholder": "e.g. openai/gpt-4o",
-      "modelIdHint": "Format: protocol/model-id. Supported: openai, anthropic, gemini, groq, …",
+      "modelIdPlaceholder": "e.g. gpt-4o or openai/gpt-4o",
+      "modelIdHint": "If Provider is not specified, values such as openai/gpt-4o are interpreted using the provider/model format. If Provider is specified, this field is treated as the canonical model ID and is not parsed for a provider prefix.",
       "errorRequired": "This field is required.",
       "errorDuplicateModelName": "Model alias already exists. Please use a different name.",
       "saveError": "Failed to add model",
@@ -255,6 +255,9 @@
       "toggle": "Advanced options"
     },
     "field": {
+      "provider": "Provider",
+      "providerPlaceholder": "e.g. openai",
+      "providerHint": "Optional. If specified, this value is used as the effective provider, and Model Identifier is interpreted as the canonical model ID.",
       "apiBase": "API Base URL",
       "apiKey": "API Key",
       "apiKeyPlaceholder": "Enter your API key",

@@ -20,19 +20,28 @@ const PROVIDER_PRIORITY: Record<string, number> = {
   zhipu: 4,
   deepseek: 5,
   openrouter: 6,
-  qwen: 7,
-  moonshot: 8,
-  groq: 9,
-  "github-copilot": 10,
-  antigravity: 11,
-  nvidia: 12,
-  cerebras: 13,
-  shengsuanyun: 14,
-  ollama: 15,
-  vllm: 16,
-  mistral: 17,
-  avian: 18,
-  mimo: 19,
+  "qwen-portal": 7,
+  "qwen-intl": 8,
+  moonshot: 9,
+  groq: 10,
+  "github-copilot": 11,
+  antigravity: 12,
+  nvidia: 13,
+  cerebras: 14,
+  shengsuanyun: 15,
+  venice: 16,
+  vivgrid: 17,
+  minimax: 18,
+  longcat: 19,
+  modelscope: 20,
+  mistral: 21,
+  avian: 22,
+  azure: 23,
+  ollama: 24,
+  vllm: 25,
+  lmstudio: 26,
+  zai: 27,
+  mimo: 28,
 }
 
 interface ProviderGroup {
@@ -95,10 +104,10 @@ export function ModelsPage() {
 
   const grouped: Record<string, { label: string; models: ModelInfo[] }> = {}
   for (const model of models) {
-    const providerKey = getProviderKey(model.model)
+    const providerKey = getProviderKey(model.provider)
     if (!grouped[providerKey]) {
       grouped[providerKey] = {
-        label: getProviderLabel(model.model),
+        label: getProviderLabel(model.provider),
         models: [],
       }
     }

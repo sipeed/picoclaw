@@ -392,6 +392,49 @@ func TestHandleListModels_StatusMarksUnreachableLocalModel(t *testing.T) {
 	}
 }
 
+func TestHandleListModels_RuntimeProbeUsesExplicitProviderField(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+	resetOAuthHooks(t)
+	resetModelProbeHooks(t)
+
+	var gotProbe string
+	probeOpenAICompatibleModelFunc = func(apiBase, modelID, apiKey string) bool {
+		gotProbe = apiBase + "|" + modelID + "|" + apiKey
+		return true
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "vllm-local",
+		Provider:  "vllm",
+		Model:     "custom-model",
+		APIBase:   "http://127.0.0.1:8000/v1",
+	}}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	if gotProbe != "http://127.0.0.1:8000/v1|custom-model|" {
+		t.Fatalf("probe = %q, want %q", gotProbe, "http://127.0.0.1:8000/v1|custom-model|")
+	}
+}
+
 func TestHandleAddModel_PersistsAPIKey(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
@@ -427,6 +470,41 @@ func TestHandleAddModel_PersistsAPIKey(t *testing.T) {
 	}
 	if added.APIKey() != "sk-new-model-key" {
 		t.Fatalf("api_key = %q, want %q", added.APIKey(), "sk-new-model-key")
+	}
+}
+
+func TestHandleAddModel_PersistsProvider(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models", bytes.NewBufferString(`{
+		"model_name":"nvidia-glm",
+		"provider":"nvidia",
+		"model":"z-ai/glm-5.1",
+		"api_key":"nv-key"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	added := cfg.ModelList[len(cfg.ModelList)-1]
+	if added.Provider != "nvidia" {
+		t.Fatalf("provider = %q, want %q", added.Provider, "nvidia")
+	}
+	if added.Model != "z-ai/glm-5.1" {
+		t.Fatalf("model = %q, want %q", added.Model, "z-ai/glm-5.1")
 	}
 }
 
@@ -533,6 +611,206 @@ func TestHandleUpdateModel_CustomHeadersPreserveAndClear(t *testing.T) {
 	}
 	if afterClear.ModelList[0].CustomHeaders != nil {
 		t.Fatalf("custom_headers = %#v, want nil", afterClear.ModelList[0].CustomHeaders)
+	}
+}
+
+func TestHandleUpdateModel_PersistsProvider(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "editable",
+		Model:     "gpt-4o",
+		Provider:  "openai",
+	}}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"editable",
+		"provider":"openrouter",
+		"model":"openai/gpt-4o"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updated, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if got := updated.ModelList[0].Provider; got != "openrouter" {
+		t.Fatalf("provider = %q, want %q", got, "openrouter")
+	}
+}
+
+func TestHandleUpdateModel_PreservesProviderWhenOmitted(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "editable",
+		Model:     "z-ai/glm-5.1",
+		Provider:  "nvidia",
+	}}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"editable",
+		"model":"z-ai/glm-5.1"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updated, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if got := updated.ModelList[0].Provider; got != "nvidia" {
+		t.Fatalf("provider = %q, want %q", got, "nvidia")
+	}
+}
+
+func TestHandleListModels_ReturnsProviderField(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "nvidia-glm",
+		Provider:  "nvidia",
+		Model:     "z-ai/glm-5.1",
+		APIKeys:   config.SimpleSecureStrings("nv-key"),
+	}}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Models []modelResponse `json:"models"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
+	}
+	if got := resp.Models[0].Provider; got != "nvidia" {
+		t.Fatalf("provider = %q, want %q", got, "nvidia")
+	}
+}
+
+func TestHandleListModels_ReturnsEffectiveProviderField(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "plain-openai",
+			Model:     "gpt-4o",
+		},
+		{
+			ModelName: "explicit-google",
+			Provider:  "google",
+			Model:     "gemini-2.5-pro",
+		},
+		{
+			ModelName: "explicit-qwen-intl",
+			Provider:  "qwen-international",
+			Model:     "qwen3-coder-plus",
+		},
+	}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Models []modelResponse `json:"models"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if len(resp.Models) != 3 {
+		t.Fatalf("len(models) = %d, want 3", len(resp.Models))
+	}
+
+	if got := resp.Models[0].Provider; got != "openai" {
+		t.Fatalf("provider[0] = %q, want %q", got, "openai")
+	}
+	if got := resp.Models[0].Model; got != "gpt-4o" {
+		t.Fatalf("model[0] = %q, want %q", got, "gpt-4o")
+	}
+	if got := resp.Models[1].Provider; got != "gemini" {
+		t.Fatalf("provider[1] = %q, want %q", got, "gemini")
+	}
+	if got := resp.Models[1].Model; got != "gemini-2.5-pro" {
+		t.Fatalf("model[1] = %q, want %q", got, "gemini-2.5-pro")
+	}
+	if got := resp.Models[2].Provider; got != "qwen-intl" {
+		t.Fatalf("provider[2] = %q, want %q", got, "qwen-intl")
+	}
+	if got := resp.Models[2].Model; got != "qwen3-coder-plus" {
+		t.Fatalf("model[2] = %q, want %q", got, "qwen3-coder-plus")
 	}
 }
 

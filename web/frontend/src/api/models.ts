@@ -6,6 +6,7 @@ import { refreshGatewayState } from "@/store/gateway"
 export interface ModelInfo {
   index: number
   model_name: string
+  provider?: string
   model: string
   api_base?: string
   api_key: string

@@ -746,7 +746,7 @@ func (h *Handler) syncProviderAuthMethod(provider, authMethod string) error {
 
 	found := false
 	for i := range cfg.ModelList {
-		if modelBelongsToProvider(provider, cfg.ModelList[i].Model) {
+		if modelBelongsToProvider(provider, cfg.ModelList[i]) {
 			cfg.ModelList[i].AuthMethod = authMethod
 			found = true
 		}
@@ -759,18 +759,15 @@ func (h *Handler) syncProviderAuthMethod(provider, authMethod string) error {
 	return oauthSaveConfig(h.configPath, cfg)
 }
 
-func modelBelongsToProvider(provider, model string) bool {
-	lower := strings.ToLower(strings.TrimSpace(model))
+func modelBelongsToProvider(provider string, modelCfg *config.ModelConfig) bool {
+	protocol, _ := providers.ExtractProtocol(modelCfg)
 	switch provider {
 	case oauthProviderOpenAI:
-		return lower == "openai" || strings.HasPrefix(lower, "openai/")
+		return protocol == "openai"
 	case oauthProviderAnthropic:
-		return lower == "anthropic" || strings.HasPrefix(lower, "anthropic/")
+		return protocol == "anthropic"
 	case oauthProviderGoogleAntigravity:
-		return lower == "antigravity" ||
-			lower == "google-antigravity" ||
-			strings.HasPrefix(lower, "antigravity/") ||
-			strings.HasPrefix(lower, "google-antigravity/")
+		return protocol == "antigravity" || protocol == "google-antigravity"
 	default:
 		return false
 	}
@@ -781,19 +778,22 @@ func defaultModelConfigForProvider(provider, authMethod string) *config.ModelCon
 	case oauthProviderOpenAI:
 		return &config.ModelConfig{
 			ModelName:  "gpt-5.4",
-			Model:      "openai/gpt-5.4",
+			Provider:   "openai",
+			Model:      "gpt-5.4",
 			AuthMethod: authMethod,
 		}
 	case oauthProviderAnthropic:
 		return &config.ModelConfig{
 			ModelName:  "claude-sonnet-4.6",
-			Model:      "anthropic/claude-sonnet-4.6",
+			Provider:   "anthropic",
+			Model:      "claude-sonnet-4.6",
 			AuthMethod: authMethod,
 		}
 	case oauthProviderGoogleAntigravity:
 		return &config.ModelConfig{
 			ModelName:  "gemini-flash",
-			Model:      "antigravity/gemini-3-flash",
+			Provider:   "antigravity",
+			Model:      "gemini-3-flash",
 			AuthMethod: authMethod,
 		}
 	default:

@@ -239,8 +239,8 @@
       "modelNamePlaceholder": "例如 my-gpt4",
       "modelNameHint": "用于在对话中识别此模型的简短名称。",
       "modelId": "模型标识符",
-      "modelIdPlaceholder": "例如 openai/gpt-4o",
-      "modelIdHint": "格式：协议/模型ID。支持：openai、anthropic、gemini、groq 等。",
+      "modelIdPlaceholder": "例如 gpt-4o 或 openai/gpt-4o",
+      "modelIdHint": "未指定 Provider 时，诸如 openai/gpt-4o 的值将按 provider/model 格式解析。已指定 Provider 时，此字段将作为规范模型 ID 使用，不再解析其中的 provider 前缀。",
       "errorRequired": "此字段为必填项。",
       "errorDuplicateModelName": "模型别名已存在，请使用其他名称。",
       "saveError": "添加模型失败",
@@ -255,6 +255,9 @@
       "toggle": "高级选项"
     },
     "field": {
+      "provider": "Provider",
+      "providerPlaceholder": "例如 openai",
+      "providerHint": "可选。指定后，将以该值作为最终 provider，并将“模型标识符”字段解释为规范模型 ID。",
       "apiBase": "API Base URL",
       "apiKey": "API Key",
       "apiKeyPlaceholder": "请输入 API Key",
