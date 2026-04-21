@@ -38,7 +38,7 @@
   "chat": {
     "welcome": "今天我能为您做些什么？",
     "welcomeDesc": "您可以询问我天气、设置或其他任何任务，我随时为您效劳。",
-    "placeholder": "输入新消息...\n按 Enter 发送，Shift + Enter 换行",
+    "placeholder": "输入新消息...",
     "disabledPlaceholder": {
       "gatewayUnknown": "无法对话：网关状态仍在检测中。请稍候重试，如仍无效请刷新页面或重启 Launcher。",
       "gatewayStarting": "无法对话：网关正在启动。请等待启动完成后重试。",
@@ -60,6 +60,7 @@
       "step4": "马上就好..."
     },
     "reasoningLabel": "思考",
+    "toolLabel": "工具",
     "history": "历史记录",
     "noHistory": "暂无对话历史",
     "historyLoadFailed": "加载历史记录失败",
@@ -72,6 +73,8 @@
       "notConnected": "服务未运行，请先启动以进行对话。",
       "noModel": "未设置默认模型，请前往模型页面进行配置。"
     },
+    "sendMessage": "发送消息",
+    "sendHint": "按 Enter 发送\nShift + Enter 换行",
     "attachImage": "添加图片",
     "removeImage": "移除图片",
     "uploadedImage": "已上传图片",

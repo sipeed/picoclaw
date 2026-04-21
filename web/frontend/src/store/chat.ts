@@ -48,6 +48,8 @@ const DEFAULT_CHAT_STATE: ChatStoreState = {
 
 export const chatAtom = atom<ChatStoreState>(DEFAULT_CHAT_STATE)
 
+export const showThoughtsAtom = atom<boolean>(true)
+
 const store = getDefaultStore()
 
 export function getChatState() {

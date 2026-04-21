@@ -38,7 +38,7 @@
   "chat": {
     "welcome": "How can I help you today?",
     "welcomeDesc": "Ask me about weather, settings, or any other tasks. I'm here to assist you.",
-    "placeholder": "Start a new message...\nPress Enter to send, Shift + Enter for a new line",
+    "placeholder": "Start a new message...",
     "disabledPlaceholder": {
       "gatewayUnknown": "Unable to chat: Gateway status is still being checked. Please wait, then refresh the page or restart Launcher if needed.",
       "gatewayStarting": "Unable to chat: Gateway is starting. Wait for startup to complete, then try again.",
@@ -60,6 +60,7 @@
       "step4": "Almost there..."
     },
     "reasoningLabel": "Reasoning",
+    "toolLabel": "Tool",
     "history": "History",
     "noHistory": "No chat history yet",
     "historyLoadFailed": "Failed to load chat history",
@@ -72,6 +73,8 @@
       "notConnected": "Gateway is not running. Start it to chat.",
       "noModel": "No default model configured. Go to Models page to set one."
     },
+    "sendMessage": "Send message",
+    "sendHint": "Press Enter to send\nShift + Enter for a new line",
     "attachImage": "Add images",
     "removeImage": "Remove image",
     "uploadedImage": "Uploaded image",
