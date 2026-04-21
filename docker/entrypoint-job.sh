@@ -96,7 +96,10 @@ run_group() {
   echo "=================================================="
   echo "GROUP: $group_name"
   echo "=================================================="
-  "$PW/node_modules/.bin/playwright" test "$@" --reporter=line
+  # Run tests one by one in the order specified to preserve execution order
+  for test_file in "$@"; do
+    "$PW/node_modules/.bin/playwright" test "$test_file" --reporter=line
+  done
 }
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
