@@ -1097,7 +1097,7 @@ func (c *TelegramChannel) BeginStream(ctx context.Context, chatID string) (chann
 		return nil, fmt.Errorf("streaming disabled in config")
 	}
 
-	cid, _, err := parseTelegramChatID(chatID)
+	cid, tid, err := parseTelegramChatID(chatID)
 	if err != nil {
 		return nil, err
 	}
@@ -1106,6 +1106,7 @@ func (c *TelegramChannel) BeginStream(ctx context.Context, chatID string) (chann
 	return &telegramStreamer{
 		bot:              c.bot,
 		chatID:           cid,
+		threadID:         tid,
 		draftID:          cryptoRandInt(),
 		throttleInterval: time.Duration(streamCfg.ThrottleSeconds) * time.Second,
 		minGrowth:        streamCfg.MinGrowthChars,
@@ -1118,6 +1119,7 @@ func (c *TelegramChannel) BeginStream(ctx context.Context, chatID string) (chann
 type telegramStreamer struct {
 	bot              *telego.Bot
 	chatID           int64
+	threadID         int
 	draftID          int
 	throttleInterval time.Duration
 	minGrowth        int
@@ -1145,10 +1147,11 @@ func (s *telegramStreamer) Update(ctx context.Context, content string) error {
 	htmlContent := markdownToTelegramHTML(content)
 
 	err := s.bot.SendMessageDraft(ctx, &telego.SendMessageDraftParams{
-		ChatID:    s.chatID,
-		DraftID:   s.draftID,
-		Text:      htmlContent,
-		ParseMode: telego.ModeHTML,
+		ChatID:          s.chatID,
+		MessageThreadID: s.threadID,
+		DraftID:         s.draftID,
+		Text:            htmlContent,
+		ParseMode:       telego.ModeHTML,
 	})
 	if err != nil {
 		// First error → degrade silently (e.g. no forum mode)
@@ -1167,6 +1170,9 @@ func (s *telegramStreamer) Update(ctx context.Context, content string) error {
 func (s *telegramStreamer) Finalize(ctx context.Context, content string) error {
 	htmlContent := markdownToTelegramHTML(content)
 	tgMsg := tu.Message(tu.ID(s.chatID), htmlContent)
+	if s.threadID != 0 {
+		tgMsg.MessageThreadID = s.threadID
+	}
 	tgMsg.ParseMode = telego.ModeHTML
 
 	if _, err := s.bot.SendMessage(ctx, tgMsg); err != nil {
@@ -1181,11 +1187,29 @@ func (s *telegramStreamer) Finalize(ctx context.Context, content string) error {
 			return fmt.Errorf("telegram finalize: %w", err)
 		}
 	}
+
+	// Always clear the partial draft after final delivery to avoid UI ghosts (best-effort)
+	if !s.failed {
+		_ = s.bot.SendMessageDraft(ctx, &telego.SendMessageDraftParams{
+			ChatID:          s.chatID,
+			MessageThreadID: s.threadID,
+			DraftID:         s.draftID,
+			Text:            "",
+		})
+	}
+
 	return nil
 }
 
 func (s *telegramStreamer) Cancel(ctx context.Context) {
-	// Draft auto-expires on Telegram's side; nothing to clean up.
+	if !s.failed {
+		_ = s.bot.SendMessageDraft(ctx, &telego.SendMessageDraftParams{
+			ChatID:          s.chatID,
+			MessageThreadID: s.threadID,
+			DraftID:         s.draftID,
+			Text:            "",
+		})
+	}
 }
 
 // cryptoRandInt returns a non-zero random int using crypto/rand.
