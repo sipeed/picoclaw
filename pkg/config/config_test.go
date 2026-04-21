@@ -1933,7 +1933,7 @@ func TestDefaultConfig_MinimaxExtraBody(t *testing.T) {
 
 	var minimaxCfg *ModelConfig
 	for i := range cfg.ModelList {
-		if cfg.ModelList[i].Model == "minimax/MiniMax-M2.5" {
+		if cfg.ModelList[i].Provider == "minimax" && cfg.ModelList[i].Model == "MiniMax-M2.5" {
 			minimaxCfg = cfg.ModelList[i]
 			break
 		}

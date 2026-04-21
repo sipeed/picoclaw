@@ -128,7 +128,7 @@ func useTestSideQuestionProvider(al *AgentLoop, provider providers.LLMProvider) 
 	al.providerFactory = func(mc *config.ModelConfig) (providers.LLMProvider, string, error) {
 		model := provider.GetDefaultModel()
 		if mc != nil {
-			if _, modelID := providers.ExtractProtocol(mc.Model); modelID != "" {
+			if _, modelID := providers.ExtractProtocol(mc); modelID != "" {
 				model = modelID
 			}
 		}

@@ -523,15 +523,16 @@ type VoiceConfig struct {
 
 // ModelConfig represents a model-centric provider configuration.
 // It allows adding new providers (especially OpenAI-compatible ones) via configuration only.
-// The model field uses protocol prefix format: [protocol/]model-identifier
-// Supported protocols include openai, anthropic, antigravity, claude-cli,
+// The Model field may be either a plain model identifier or a provider-prefixed
+// identifier such as "openai/gpt-5.4" or "nvidia/z-ai/glm-5.1".
+// Supported providers include openai, anthropic, antigravity, claude-cli,
 // codex-cli, github-copilot, and named OpenAI-compatible protocols such as
 // groq, deepseek, modelscope, and novita.
-// Default protocol is "openai" if no prefix is specified.
 type ModelConfig struct {
 	// Required fields
 	ModelName string `json:"model_name"` // User-facing alias for the model
-	Model     string `json:"model"`      // Protocol/model-identifier (e.g., "openai/gpt-4o", "anthropic/claude-sonnet-4.6")
+	Provider  string `json:"provider"`   // Provider name for routing and selection. When empty, provider resolution infers it from Model.
+	Model     string `json:"model"`      // Model identifier, optionally provider-prefixed.
 
 	// HTTP-based providers
 	APIBase   string   `json:"api_base,omitempty"`  // API endpoint URL
@@ -1411,6 +1412,7 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 			// Create a copy for the additional key
 			additionalEntry := &ModelConfig{
 				ModelName:      expandedName,
+				Provider:       m.Provider,
 				Model:          m.Model,
 				APIBase:        m.APIBase,
 				APIKeys:        SimpleSecureStrings(keys[i]),
@@ -1434,6 +1436,7 @@ func expandMultiKeyModels(models []*ModelConfig) []*ModelConfig {
 		// Create the primary entry with first key and fallbacks
 		primaryEntry := &ModelConfig{
 			ModelName:      originalName,
+			Provider:       m.Provider,
 			Model:          m.Model,
 			APIBase:        m.APIBase,
 			Proxy:          m.Proxy,

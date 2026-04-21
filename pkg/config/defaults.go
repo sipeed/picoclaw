@@ -61,129 +61,148 @@ func DefaultConfig() *Config {
 			// Zhipu AI (智谱) - https://open.bigmodel.cn/usercenter/apikeys
 			{
 				ModelName: "glm-4.7",
-				Model:     "zhipu/glm-4.7",
+				Provider:  "zhipu",
+				Model:     "glm-4.7",
 				APIBase:   "https://open.bigmodel.cn/api/paas/v4",
 			},
 
 			// OpenAI - https://platform.openai.com/api-keys
 			{
 				ModelName: "gpt-5.4",
-				Model:     "openai/gpt-5.4",
+				Provider:  "openai",
+				Model:     "gpt-5.4",
 				APIBase:   "https://api.openai.com/v1",
 			},
 
 			// Anthropic Claude - https://console.anthropic.com/settings/keys
 			{
 				ModelName: "claude-sonnet-4.6",
-				Model:     "anthropic/claude-sonnet-4.6",
+				Provider:  "anthropic",
+				Model:     "claude-sonnet-4.6",
 				APIBase:   "https://api.anthropic.com/v1",
 			},
 
 			// DeepSeek - https://platform.deepseek.com/
 			{
 				ModelName: "deepseek-chat",
-				Model:     "deepseek/deepseek-chat",
+				Provider:  "deepseek",
+				Model:     "deepseek-chat",
 				APIBase:   "https://api.deepseek.com/v1",
 			},
 
 			// Venice AI - https://venice.ai
 			{
 				ModelName: "venice-uncensored",
-				Model:     "venice/venice-uncensored",
+				Provider:  "venice",
+				Model:     "venice-uncensored",
 				APIBase:   "https://api.venice.ai/api/v1",
 			},
 
 			// Google Gemini - https://ai.google.dev/
 			{
 				ModelName: "gemini-2.0-flash",
-				Model:     "gemini/gemini-2.0-flash-exp",
+				Provider:  "gemini",
+				Model:     "gemini-2.0-flash-exp",
 				APIBase:   "https://generativelanguage.googleapis.com/v1beta",
 			},
 
 			// Qwen (通义千问) - https://dashscope.console.aliyun.com/apiKey
 			{
 				ModelName: "qwen-plus",
-				Model:     "qwen/qwen-plus",
+				Provider:  "qwen",
+				Model:     "qwen-plus",
 				APIBase:   "https://dashscope.aliyuncs.com/compatible-mode/v1",
 			},
 
 			// Moonshot (月之暗面) - https://platform.moonshot.cn/console/api-keys
 			{
 				ModelName: "moonshot-v1-8k",
-				Model:     "moonshot/moonshot-v1-8k",
+				Provider:  "moonshot",
+				Model:     "moonshot-v1-8k",
 				APIBase:   "https://api.moonshot.cn/v1",
 			},
 
 			// Groq - https://console.groq.com/keys
 			{
 				ModelName: "llama-3.3-70b",
-				Model:     "groq/llama-3.3-70b-versatile",
+				Provider:  "groq",
+				Model:     "llama-3.3-70b-versatile",
 				APIBase:   "https://api.groq.com/openai/v1",
 			},
 
 			// OpenRouter (100+ models) - https://openrouter.ai/keys
 			{
 				ModelName: "openrouter-auto",
-				Model:     "openrouter/auto",
+				Provider:  "openrouter",
+				Model:     "auto",
 				APIBase:   "https://openrouter.ai/api/v1",
 			},
 			{
 				ModelName: "openrouter-gpt-5.4",
-				Model:     "openrouter/openai/gpt-5.4",
+				Provider:  "openrouter",
+				Model:     "openai/gpt-5.4",
 				APIBase:   "https://openrouter.ai/api/v1",
 			},
 
 			// NVIDIA - https://build.nvidia.com/
 			{
 				ModelName: "nemotron-4-340b",
-				Model:     "nvidia/nemotron-4-340b-instruct",
+				Provider:  "nvidia",
+				Model:     "nemotron-4-340b-instruct",
 				APIBase:   "https://integrate.api.nvidia.com/v1",
 			},
 
 			// Cerebras - https://inference.cerebras.ai/
 			{
 				ModelName: "cerebras-llama-3.3-70b",
-				Model:     "cerebras/llama-3.3-70b",
+				Provider:  "cerebras",
+				Model:     "llama-3.3-70b",
 				APIBase:   "https://api.cerebras.ai/v1",
 			},
 
 			// Vivgrid - https://vivgrid.com
 			{
 				ModelName: "vivgrid-auto",
-				Model:     "vivgrid/auto",
+				Provider:  "vivgrid",
+				Model:     "auto",
 				APIBase:   "https://api.vivgrid.com/v1",
 			},
 
 			// Volcengine (火山引擎) - https://console.volcengine.com/ark
 			{
 				ModelName: "ark-code-latest",
-				Model:     "volcengine/ark-code-latest",
+				Provider:  "volcengine",
+				Model:     "ark-code-latest",
 				APIBase:   "https://ark.cn-beijing.volces.com/api/v3",
 			},
 			{
 				ModelName: "doubao-pro",
-				Model:     "volcengine/doubao-pro-32k",
+				Provider:  "volcengine",
+				Model:     "doubao-pro-32k",
 				APIBase:   "https://ark.cn-beijing.volces.com/api/v3",
 			},
 
 			// ShengsuanYun (神算云)
 			{
 				ModelName: "deepseek-v3",
-				Model:     "shengsuanyun/deepseek-v3",
+				Provider:  "shengsuanyun",
+				Model:     "deepseek-v3",
 				APIBase:   "https://api.shengsuanyun.com/v1",
 			},
 
 			// Antigravity (Google Cloud Code Assist) - OAuth only
 			{
 				ModelName:  "gemini-flash",
-				Model:      "antigravity/gemini-3-flash",
+				Provider:   "antigravity",
+				Model:      "gemini-3-flash",
 				AuthMethod: "oauth",
 			},
 
 			// GitHub Copilot - https://github.com/settings/tokens
 			{
 				ModelName:  "copilot-gpt-5.4",
-				Model:      "github-copilot/gpt-5.4",
+				Provider:   "github-copilot",
+				Model:      "gpt-5.4",
 				APIBase:    "http://localhost:4321",
 				AuthMethod: "oauth",
 			},
@@ -191,33 +210,38 @@ func DefaultConfig() *Config {
 			// Ollama (local) - https://ollama.com
 			{
 				ModelName: "llama3",
-				Model:     "ollama/llama3",
+				Provider:  "ollama",
+				Model:     "llama3",
 				APIBase:   "http://localhost:11434/v1",
 			},
 
 			// Mistral AI - https://console.mistral.ai/api-keys
 			{
 				ModelName: "mistral-small",
-				Model:     "mistral/mistral-small-latest",
+				Provider:  "mistral",
+				Model:     "mistral-small-latest",
 				APIBase:   "https://api.mistral.ai/v1",
 			},
 
 			// Avian - https://avian.io
 			{
 				ModelName: "deepseek-v3.2",
-				Model:     "avian/deepseek/deepseek-v3.2",
+				Provider:  "avian",
+				Model:     "deepseek/deepseek-v3.2",
 				APIBase:   "https://api.avian.io/v1",
 			},
 			{
 				ModelName: "kimi-k2.5",
-				Model:     "avian/moonshotai/kimi-k2.5",
+				Provider:  "avian",
+				Model:     "moonshotai/kimi-k2.5",
 				APIBase:   "https://api.avian.io/v1",
 			},
 
 			// Minimax - https://api.minimaxi.com/
 			{
 				ModelName: "MiniMax-M2.5",
-				Model:     "minimax/MiniMax-M2.5",
+				Provider:  "minimax",
+				Model:     "MiniMax-M2.5",
 				APIBase:   "https://api.minimaxi.com/v1",
 				ExtraBody: map[string]any{"reasoning_split": true},
 			},
@@ -225,28 +249,32 @@ func DefaultConfig() *Config {
 			// LongCat - https://longcat.chat/platform
 			{
 				ModelName: "LongCat-Flash-Thinking",
-				Model:     "longcat/LongCat-Flash-Thinking",
+				Provider:  "longcat",
+				Model:     "LongCat-Flash-Thinking",
 				APIBase:   "https://api.longcat.chat/openai",
 			},
 
 			// ModelScope (魔搭社区) - https://modelscope.cn/my/tokens
 			{
 				ModelName: "modelscope-qwen",
-				Model:     "modelscope/Qwen/Qwen3-235B-A22B-Instruct-2507",
+				Provider:  "modelscope",
+				Model:     "Qwen/Qwen3-235B-A22B-Instruct-2507",
 				APIBase:   "https://api-inference.modelscope.cn/v1",
 			},
 
 			// VLLM (local) - http://localhost:8000
 			{
 				ModelName: "local-model",
-				Model:     "vllm/custom-model",
+				Provider:  "vllm",
+				Model:     "custom-model",
 				APIBase:   "http://localhost:8000/v1",
 			},
 
 			// LM Studio (local) - http://localhost:1234
 			{
 				ModelName: "lmstudio-local",
-				Model:     "lmstudio/openai/gpt-oss-20b",
+				Provider:  "lmstudio",
+				Model:     "openai/gpt-oss-20b",
 				APIBase:   "http://localhost:1234/v1",
 			},
 
@@ -254,7 +282,8 @@ func DefaultConfig() *Config {
 			// model_name is a user-friendly alias; the model field's path after "azure/" is your deployment name
 			{
 				ModelName: "azure-gpt5",
-				Model:     "azure/my-gpt5-deployment",
+				Provider:  "azure",
+				Model:     "my-gpt5-deployment",
 				APIBase:   "https://your-resource.openai.azure.com",
 			},
 		},

@@ -37,14 +37,14 @@ func candidateFromModelConfig(
 		return providers.FallbackCandidate{}, false
 	}
 
-	ref := providers.ParseModelRef(ensureProtocolModel(mc.Model), defaultProvider)
-	if ref == nil {
+	protocol, modelID := providers.ExtractProtocol(mc)
+	if strings.TrimSpace(modelID) == "" {
 		return providers.FallbackCandidate{}, false
 	}
 
 	return providers.FallbackCandidate{
-		Provider:    ref.Provider,
-		Model:       ref.Model,
+		Provider:    protocol,
+		Model:       modelID,
 		RPM:         mc.RPM,
 		IdentityKey: modelConfigIdentityKey(mc),
 	}, true
@@ -72,7 +72,7 @@ func lookupModelConfigByRef(cfg *config.Config, raw string) *config.ModelConfig 
 		if fullModel == raw {
 			return mc
 		}
-		_, modelID := providers.ExtractProtocol(fullModel)
+		_, modelID := providers.ExtractProtocol(mc)
 		if modelID == raw {
 			return mc
 		}

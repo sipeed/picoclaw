@@ -39,20 +39,23 @@ Set `rpm` on any model in `model_list`:
 ```yaml
 model_list:
   - model_name: gpt-4o-free
-    model: openai/gpt-4o
+    provider: openai
+    model: gpt-4o
     api_base: https://api.openai.com/v1
     rpm: 3          # max 3 requests per minute
     api_keys:
       - sk-...
 
   - model_name: claude-haiku
-    model: anthropic/claude-haiku-4-5
+    provider: anthropic
+    model: claude-haiku-4-5
     rpm: 60         # 60 rpm (Anthropic free tier)
     api_keys:
       - sk-ant-...
 
   - model_name: local-llm
-    model: openai/llama3
+    provider: ollama
+    model: llama3
     api_base: http://localhost:11434/v1
     # no rpm → unrestricted
 ```
@@ -68,7 +71,8 @@ When a model has fallbacks configured, each candidate is rate-limited **independ
 ```yaml
 model_list:
   - model_name: gpt4-with-fallback
-    model: openai/gpt-4o
+    provider: openai
+    model: gpt-4o
     rpm: 5
     fallbacks:
       - gpt-4o-mini   # must also be in model_list; its own rpm applies

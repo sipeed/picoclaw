@@ -24,7 +24,7 @@ func providerFromModelConfig(mc *config.ModelConfig) TTSProvider {
 		return nil
 	}
 
-	protocol, modelID := providers.ExtractProtocol(mc.Model)
+	protocol, modelID := providers.ExtractProtocol(mc)
 	if modelID == "" {
 		modelID = strings.TrimSpace(mc.Model)
 	}

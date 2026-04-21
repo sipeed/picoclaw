@@ -59,7 +59,7 @@ func authLoginOpenAI(useDeviceCode bool, noBrowser bool) error {
 		// Update or add openai in ModelList
 		foundOpenAI := false
 		for i := range appCfg.ModelList {
-			if isOpenAIModel(appCfg.ModelList[i].Model) {
+			if isOpenAIModel(appCfg.ModelList[i]) {
 				appCfg.ModelList[i].AuthMethod = "oauth"
 				foundOpenAI = true
 				break
@@ -130,7 +130,7 @@ func authLoginGoogleAntigravity(noBrowser bool) error {
 		// Update or add antigravity in ModelList
 		foundAntigravity := false
 		for i := range appCfg.ModelList {
-			if isAntigravityModel(appCfg.ModelList[i].Model) {
+			if isAntigravityModel(appCfg.ModelList[i]) {
 				appCfg.ModelList[i].AuthMethod = "oauth"
 				foundAntigravity = true
 				break
@@ -206,7 +206,7 @@ func authLoginAnthropicSetupToken() error {
 	if err == nil {
 		found := false
 		for i := range appCfg.ModelList {
-			if isAnthropicModel(appCfg.ModelList[i].Model) {
+			if isAnthropicModel(appCfg.ModelList[i]) {
 				appCfg.ModelList[i].AuthMethod = "oauth"
 				found = true
 				break
@@ -282,7 +282,7 @@ func authLoginPasteToken(provider string) error {
 			// Update ModelList
 			found := false
 			for i := range appCfg.ModelList {
-				if isAnthropicModel(appCfg.ModelList[i].Model) {
+				if isAnthropicModel(appCfg.ModelList[i]) {
 					appCfg.ModelList[i].AuthMethod = "token"
 					found = true
 					break
@@ -300,7 +300,7 @@ func authLoginPasteToken(provider string) error {
 			// Update ModelList
 			found := false
 			for i := range appCfg.ModelList {
-				if isOpenAIModel(appCfg.ModelList[i].Model) {
+				if isOpenAIModel(appCfg.ModelList[i]) {
 					appCfg.ModelList[i].AuthMethod = "token"
 					found = true
 					break
@@ -342,15 +342,15 @@ func authLogoutCmd(provider string) error {
 			for i := range appCfg.ModelList {
 				switch provider {
 				case "openai":
-					if isOpenAIModel(appCfg.ModelList[i].Model) {
+					if isOpenAIModel(appCfg.ModelList[i]) {
 						appCfg.ModelList[i].AuthMethod = ""
 					}
 				case "anthropic":
-					if isAnthropicModel(appCfg.ModelList[i].Model) {
+					if isAnthropicModel(appCfg.ModelList[i]) {
 						appCfg.ModelList[i].AuthMethod = ""
 					}
 				case "google-antigravity", "antigravity":
-					if isAntigravityModel(appCfg.ModelList[i].Model) {
+					if isAntigravityModel(appCfg.ModelList[i]) {
 						appCfg.ModelList[i].AuthMethod = ""
 					}
 				}
@@ -484,22 +484,20 @@ func authModelsCmd() error {
 	return nil
 }
 
-// isAntigravityModel checks if a model string belongs to antigravity provider
-func isAntigravityModel(model string) bool {
-	return model == "antigravity" ||
-		model == "google-antigravity" ||
-		strings.HasPrefix(model, "antigravity/") ||
-		strings.HasPrefix(model, "google-antigravity/")
+// isAntigravityModel checks if a model config belongs to an Antigravity provider.
+func isAntigravityModel(modelCfg *config.ModelConfig) bool {
+	protocol, _ := providers.ExtractProtocol(modelCfg)
+	return protocol == "antigravity" || protocol == "google-antigravity"
 }
 
-// isOpenAIModel checks if a model string belongs to openai provider
-func isOpenAIModel(model string) bool {
-	return model == "openai" ||
-		strings.HasPrefix(model, "openai/")
+// isOpenAIModel checks if a model config belongs to the OpenAI provider.
+func isOpenAIModel(modelCfg *config.ModelConfig) bool {
+	protocol, _ := providers.ExtractProtocol(modelCfg)
+	return protocol == "openai"
 }
 
-// isAnthropicModel checks if a model string belongs to anthropic provider
-func isAnthropicModel(model string) bool {
-	return model == "anthropic" ||
-		strings.HasPrefix(model, "anthropic/")
+// isAnthropicModel checks if a model config belongs to the Anthropic provider.
+func isAnthropicModel(modelCfg *config.ModelConfig) bool {
+	protocol, _ := providers.ExtractProtocol(modelCfg)
+	return protocol == "anthropic"
 }

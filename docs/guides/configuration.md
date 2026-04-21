@@ -493,7 +493,7 @@ The subagent has access to tools (message, web_search, etc.) and can communicate
 
 ### Model Configuration (model_list)
 
-> **What's New?** PicoClaw now uses a **model-centric** configuration approach. Simply specify `vendor/model` format (e.g., `zhipu/glm-4.7`) to add new providers — **zero code changes required!**
+> **What's New?** PicoClaw now prefers explicit `provider` + native `model` configuration (for example `"provider": "zhipu", "model": "glm-4.7"`). The legacy single-field `provider/model` form remains supported for compatibility when `provider` is omitted.
 
 This design also enables **multi-agent support** with flexible provider selection:
 
@@ -546,7 +546,8 @@ chmod 600 ~/.picoclaw/.security.yml
   "model_list": [
     {
       "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4"
+      "provider": "openai",
+      "model": "gpt-5.4"
       // api_key loaded from .security.yml
     }
   ],
@@ -570,31 +571,31 @@ For complete documentation, see [`../security/security_configuration.md`](../sec
 
 #### All Supported Vendors
 
-| Vendor                  | `model` Prefix    | Default API Base                                    | Protocol  | API Key                                                          |
+| Vendor                  | `provider` Value  | Default API Base                                    | Protocol  | API Key                                                          |
 | ----------------------- | ----------------- | --------------------------------------------------- | --------- | ---------------------------------------------------------------- |
-| **OpenAI**              | `openai/`         | `https://api.openai.com/v1`                         | OpenAI    | [Get Key](https://platform.openai.com)                           |
-| **Anthropic**           | `anthropic/`      | `https://api.anthropic.com/v1`                      | Anthropic | [Get Key](https://console.anthropic.com)                         |
-| **智谱 AI (GLM)**       | `zhipu/`          | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
-| **DeepSeek**            | `deepseek/`       | `https://api.deepseek.com/v1`                       | OpenAI    | [Get Key](https://platform.deepseek.com)                         |
-| **Google Gemini**       | `gemini/`         | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [Get Key](https://aistudio.google.com/api-keys)                  |
-| **Groq**                | `groq/`           | `https://api.groq.com/openai/v1`                    | OpenAI    | [Get Key](https://console.groq.com)                              |
-| **Moonshot**            | `moonshot/`       | `https://api.moonshot.cn/v1`                        | OpenAI    | [Get Key](https://platform.moonshot.cn)                          |
-| **通义千问 (Qwen)**     | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Get Key](https://dashscope.console.aliyun.com)                  |
-| **NVIDIA**              | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [Get Key](https://build.nvidia.com)                              |
-| **Ollama**              | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | Local (no key needed)                                            |
-| **LM Studio**           | `lmstudio/`       | `http://localhost:1234/v1`                          | OpenAI    | Optional (local default: no key)                                 |
-| **OpenRouter**          | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            |
-| **LiteLLM Proxy**       | `litellm/`        | `http://localhost:4000/v1`                          | OpenAI    | Your LiteLLM proxy key                                           |
-| **VLLM**                | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
-| **Cerebras**            | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [Get Key](https://cerebras.ai)                                   |
-| **VolcEngine (Doubao)** | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
-| **神算云**              | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | —                                                                |
-| **BytePlus**            | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [Get Key](https://www.byteplus.com)                              |
-| **Vivgrid**             | `vivgrid/`        | `https://api.vivgrid.com/v1`                        | OpenAI    | [Get Key](https://vivgrid.com)                                   |
-| **LongCat**             | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [Get Key](https://longcat.chat/platform)                         |
-| **ModelScope (魔搭)**   | `modelscope/`     | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [Get Token](https://modelscope.cn/my/tokens)                     |
-| **Antigravity**         | `antigravity/`    | Google Cloud                                        | Custom    | OAuth only                                                       |
-| **GitHub Copilot**      | `github-copilot/` | `localhost:4321`                                    | gRPC      | —                                                                |
+| **OpenAI**              | `openai`          | `https://api.openai.com/v1`                         | OpenAI    | [Get Key](https://platform.openai.com)                           |
+| **Anthropic**           | `anthropic`       | `https://api.anthropic.com/v1`                      | Anthropic | [Get Key](https://console.anthropic.com)                         |
+| **智谱 AI (GLM)**       | `zhipu`           | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
+| **DeepSeek**            | `deepseek`        | `https://api.deepseek.com/v1`                       | OpenAI    | [Get Key](https://platform.deepseek.com)                         |
+| **Google Gemini**       | `gemini`          | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [Get Key](https://aistudio.google.com/api-keys)                  |
+| **Groq**                | `groq`            | `https://api.groq.com/openai/v1`                    | OpenAI    | [Get Key](https://console.groq.com)                              |
+| **Moonshot**            | `moonshot`        | `https://api.moonshot.cn/v1`                        | OpenAI    | [Get Key](https://platform.moonshot.cn)                          |
+| **通义千问 (Qwen)**     | `qwen`            | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Get Key](https://dashscope.console.aliyun.com)                  |
+| **NVIDIA**              | `nvidia`          | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [Get Key](https://build.nvidia.com)                              |
+| **Ollama**              | `ollama`          | `http://localhost:11434/v1`                         | OpenAI    | Local (no key needed)                                            |
+| **LM Studio**           | `lmstudio`        | `http://localhost:1234/v1`                          | OpenAI    | Optional (local default: no key)                                 |
+| **OpenRouter**          | `openrouter`      | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            |
+| **LiteLLM Proxy**       | `litellm`         | `http://localhost:4000/v1`                          | OpenAI    | Your LiteLLM proxy key                                           |
+| **VLLM**                | `vllm`            | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
+| **Cerebras**            | `cerebras`        | `https://api.cerebras.ai/v1`                        | OpenAI    | [Get Key](https://cerebras.ai)                                   |
+| **VolcEngine (Doubao)** | `volcengine`      | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
+| **神算云**              | `shengsuanyun`    | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | —                                                                |
+| **BytePlus**            | `byteplus`        | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [Get Key](https://www.byteplus.com)                              |
+| **Vivgrid**             | `vivgrid`         | `https://api.vivgrid.com/v1`                        | OpenAI    | [Get Key](https://vivgrid.com)                                   |
+| **LongCat**             | `longcat`         | `https://api.longcat.chat/openai`                   | OpenAI    | [Get Key](https://longcat.chat/platform)                         |
+| **ModelScope (魔搭)**   | `modelscope`      | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [Get Token](https://modelscope.cn/my/tokens)                     |
+| **Antigravity**         | `antigravity`     | Google Cloud                                        | Custom    | OAuth only                                                       |
+| **GitHub Copilot**      | `github-copilot`  | `localhost:4321`                                    | gRPC      | —                                                                |
 
 #### Basic Configuration
 
@@ -603,22 +604,26 @@ For complete documentation, see [`../security/security_configuration.md`](../sec
   "model_list": [
     {
       "model_name": "ark-code-latest",
-      "model": "volcengine/ark-code-latest",
+      "provider": "volcengine",
+      "model": "ark-code-latest",
       "api_keys": ["sk-your-api-key"]
     },
     {
       "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
       "api_keys": ["sk-your-openai-key"]
     },
     {
       "model_name": "claude-sonnet-4.6",
-      "model": "anthropic/claude-sonnet-4.6",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4.6",
       "api_keys": ["sk-ant-your-key"]
     },
     {
       "model_name": "glm-4.7",
-      "model": "zhipu/glm-4.7",
+      "provider": "zhipu",
+      "model": "glm-4.7",
       "api_keys": ["your-zhipu-key"]
     }
   ],
@@ -634,6 +639,13 @@ For complete documentation, see [`../security/security_configuration.md`](../sec
 >
 > **Note**: The `enabled` field can be set to `false` to disable a model entry without removing it. When omitted, it defaults to `true` during migration for models that have API keys.
 
+Resolution rules:
+
+- Prefer explicit `"provider": "openai", "model": "gpt-5.4"`.
+- If `provider` is set, PicoClaw sends `model` unchanged.
+- If `provider` is omitted, PicoClaw treats the first `/` segment in `model` as the provider and everything after that first `/` as the runtime model ID.
+- This means `"model": "openrouter/openai/gpt-5.4"` still works as a compatibility form and sends `openai/gpt-5.4` to OpenRouter.
+
 #### Vendor-Specific Examples
 
 > **Tip**: You can omit `api_key` fields and store them in `.security.yml` for better security. See [Security Configuration](#-security-configuration-recommended).
@@ -644,7 +656,8 @@ For complete documentation, see [`../security/security_configuration.md`](../sec
 ```json
 {
   "model_name": "gpt-5.4",
-  "model": "openai/gpt-5.4"
+  "provider": "openai",
+  "model": "gpt-5.4"
   // api_key: set in .security.yml
 }
 ```
@@ -657,7 +670,8 @@ For complete documentation, see [`../security/security_configuration.md`](../sec
 ```json
 {
   "model_name": "ark-code-latest",
-  "model": "volcengine/ark-code-latest"
+  "provider": "volcengine",
+  "model": "ark-code-latest"
   // api_key: set in .security.yml
 }
 ```
@@ -670,7 +684,8 @@ For complete documentation, see [`../security/security_configuration.md`](../sec
 ```json
 {
   "model_name": "glm-4.7",
-  "model": "zhipu/glm-4.7"
+  "provider": "zhipu",
+  "model": "glm-4.7"
   // api_key: set in .security.yml
 }
 ```
@@ -683,7 +698,8 @@ For complete documentation, see [`../security/security_configuration.md`](../sec
 ```json
 {
   "model_name": "deepseek-chat",
-  "model": "deepseek/deepseek-chat"
+  "provider": "deepseek",
+  "model": "deepseek-chat"
   // api_key: set in .security.yml
 }
 ```
@@ -696,7 +712,8 @@ For complete documentation, see [`../security/security_configuration.md`](../sec
 ```json
 {
   "model_name": "claude-sonnet-4.6",
-  "model": "anthropic/claude-sonnet-4.6"
+  "provider": "anthropic",
+  "model": "claude-sonnet-4.6"
   // api_key: set in .security.yml
 }
 ```
@@ -708,7 +725,8 @@ For direct Anthropic API access or custom endpoints that only support Anthropic'
 ```json
 {
   "model_name": "claude-opus-4-6",
-  "model": "anthropic-messages/claude-opus-4-6",
+  "provider": "anthropic-messages",
+  "model": "claude-opus-4-6",
   "api_keys": ["sk-ant-your-key"],
   "api_base": "https://api.anthropic.com"
 }
@@ -724,7 +742,8 @@ For direct Anthropic API access or custom endpoints that only support Anthropic'
 ```json
 {
   "model_name": "llama3",
-  "model": "ollama/llama3"
+  "provider": "ollama",
+  "model": "llama3"
 }
 ```
 
@@ -736,12 +755,13 @@ For direct Anthropic API access or custom endpoints that only support Anthropic'
 ```json
 {
   "model_name": "lmstudio-local",
-  "model": "lmstudio/openai/gpt-oss-20b"
+  "provider": "lmstudio",
+  "model": "openai/gpt-oss-20b"
 }
 ```
 
 `api_base` defaults to `http://localhost:1234/v1`. API key is optional unless your LM Studio server enables authentication.<br/>
-PicoClaw sends OpenAI-compatible requests to LM Studio, and strips the `lmstudio/` prefix before sending requests, so `lmstudio/openai/gpt-oss-20b` sends `openai/gpt-oss-20b` to the LM Studio server.
+With explicit `provider`, PicoClaw sends `openai/gpt-oss-20b` unchanged to LM Studio. The legacy compatibility form `"model": "lmstudio/openai/gpt-oss-20b"` still resolves to the same upstream model ID when `provider` is omitted.
 
 </details>
 
@@ -751,13 +771,14 @@ PicoClaw sends OpenAI-compatible requests to LM Studio, and strips the `lmstudio
 ```json
 {
   "model_name": "my-custom-model",
-  "model": "openai/custom-model",
+  "provider": "openai",
+  "model": "custom-model",
   "api_base": "https://my-proxy.com/v1"
   // api_key: set in .security.yml
 }
 ```
 
-PicoClaw strips only the outer `litellm/` prefix before sending the request, so `litellm/lite-gpt4` sends `lite-gpt4`, while `litellm/openai/gpt-4o` sends `openai/gpt-4o`.
+With explicit `provider`, PicoClaw sends `model` unchanged. That means `"provider": "litellm", "model": "lite-gpt4"` sends `lite-gpt4`, while `"provider": "litellm", "model": "openai/gpt-4o"` sends `openai/gpt-4o`. The legacy compatibility forms `litellm/lite-gpt4` and `litellm/openai/gpt-4o` still resolve the same way when `provider` is omitted.
 
 </details>
 
@@ -782,7 +803,8 @@ model_list:
   "model_list": [
     {
       "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
       "api_base": "https://api.openai.com/v1"
       // api_keys loaded from .security.yml
     }
@@ -797,13 +819,15 @@ model_list:
   "model_list": [
     {
       "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
       "api_base": "https://api1.example.com/v1",
       "api_keys": ["sk-key1"]
     },
     {
       "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
       "api_base": "https://api2.example.com/v1",
       "api_keys": ["sk-key2"]
     }
@@ -862,7 +886,7 @@ This keeps the runtime lightweight while making new OpenAI-compatible backends m
 {
   "agents": {
     "defaults": {
-      "model": "anthropic/claude-opus-4-5"
+      "model_name": "claude-opus-4-5"
     }
   },
   "session": {

@@ -881,7 +881,11 @@ func TestAgentLoop_HookRespond_InterruptSkipsRemaining(t *testing.T) {
 		resultCh <- result{resp: resp, err: err}
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-tool1ExecCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for tool execution to start")
+	}
 
 	if err := al.InterruptGraceful("stop now"); err != nil {
 		t.Fatalf("InterruptGraceful failed: %v", err)

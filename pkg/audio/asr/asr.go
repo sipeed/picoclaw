@@ -19,16 +19,16 @@ type TranscriptionResponse struct {
 	Duration float64 `json:"duration,omitempty"`
 }
 
-func supportsAudioTranscription(model string) bool {
-	protocol, _ := providers.ExtractProtocol(model)
+func supportsAudioTranscription(modelCfg *config.ModelConfig) bool {
+	protocol, _ := providers.ExtractProtocol(modelCfg)
 
 	switch protocol {
 	case "openai", "azure", "azure-openai",
 		"litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
-		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
+		"vivgrid", "volcengine", "vllm", "qwen", "qwen-portal", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "minimax", "longcat", "modelscope", "novita",
-		"coding-plan", "alibaba-coding", "qwen-coding":
+		"coding-plan", "alibaba-coding", "qwen-coding", "zai":
 		// These protocols all go through the OpenAI-compatible or Azure provider path in
 		// providers.CreateProviderFromConfig, so they are the only ones that can supply
 		// the audio media payload shape expected by NewAudioModelTranscriber.
@@ -41,15 +41,15 @@ func supportsAudioTranscription(model string) bool {
 	}
 }
 
-func supportsWhisperTranscription(model string) bool {
-	protocol, _ := providers.ExtractProtocol(model)
+func supportsWhisperTranscription(modelCfg *config.ModelConfig) bool {
+	protocol, _ := providers.ExtractProtocol(modelCfg)
 
 	switch protocol {
 	case "openai", "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
-		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
+		"vivgrid", "volcengine", "vllm", "qwen", "qwen-portal", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "minimax", "longcat", "modelscope", "novita",
-		"coding-plan", "alibaba-coding", "qwen-coding", "mimo":
+		"coding-plan", "alibaba-coding", "qwen-coding", "zai", "mimo":
 		return true
 	default:
 		return false
@@ -61,11 +61,11 @@ func whisperModelID(modelCfg *config.ModelConfig) string {
 		return ""
 	}
 
-	if !supportsWhisperTranscription(modelCfg.Model) {
+	if !supportsWhisperTranscription(modelCfg) {
 		return ""
 	}
 
-	_, modelID := providers.ExtractProtocol(strings.TrimSpace(modelCfg.Model))
+	_, modelID := providers.ExtractProtocol(modelCfg)
 	if strings.Contains(strings.ToLower(modelID), "whisper") {
 		return modelID
 	}
@@ -77,14 +77,14 @@ func transcriberFromModelConfig(modelCfg *config.ModelConfig) Transcriber {
 		return nil
 	}
 
-	protocol, _ := providers.ExtractProtocol(modelCfg.Model)
+	protocol, _ := providers.ExtractProtocol(modelCfg)
 	if protocol == "elevenlabs" && modelCfg.APIKey() != "" {
 		return NewElevenLabsTranscriber(modelCfg.APIKey(), modelCfg.APIBase)
 	}
 	if modelID := whisperModelID(modelCfg); modelID != "" {
 		return NewWhisperTranscriber(modelCfg)
 	}
-	if supportsAudioTranscription(modelCfg.Model) {
+	if supportsAudioTranscription(modelCfg) {
 		return NewAudioModelTranscriber(modelCfg)
 	}
 	return nil
@@ -95,7 +95,7 @@ func fallbackTranscriberFromModelConfig(modelCfg *config.ModelConfig) Transcribe
 		return nil
 	}
 
-	protocol, _ := providers.ExtractProtocol(modelCfg.Model)
+	protocol, _ := providers.ExtractProtocol(modelCfg)
 	if protocol == "elevenlabs" && modelCfg.APIKey() != "" {
 		return NewElevenLabsTranscriber(modelCfg.APIKey(), modelCfg.APIBase)
 	}

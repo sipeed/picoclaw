@@ -104,6 +104,7 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 		name         string
 		aliasName    string
 		modelName    string
+		provider     string
 		apiBase      string
 		wantProvider string
 		wantModel    string
@@ -123,6 +124,15 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 			apiBase:      "https://api.z.ai/api/coding/paas/v4",
 			wantProvider: "openai",
 			wantModel:    "glm-5",
+		},
+		{
+			name:         "explicit provider overrides model prefix",
+			aliasName:    "nvidia-gpt",
+			modelName:    "z-ai/glm-5.1",
+			provider:     "nvidia",
+			apiBase:      "https://integrate.api.nvidia.com/v1",
+			wantProvider: "nvidia",
+			wantModel:    "z-ai/glm-5.1",
 		},
 	}
 
@@ -145,6 +155,7 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 					{
 						ModelName: tt.aliasName,
 						Model:     tt.modelName,
+						Provider:  tt.provider,
 						APIBase:   tt.apiBase,
 					},
 				},

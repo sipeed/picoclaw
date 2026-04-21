@@ -32,7 +32,7 @@ func NewWhisperTranscriber(modelCfg *config.ModelConfig) *WhisperTranscriber {
 		return nil
 	}
 
-	protocol, modelID := providers.ExtractProtocol(modelCfg.Model)
+	protocol, modelID := providers.ExtractProtocol(modelCfg)
 	if modelID == "" {
 		modelID = strings.TrimSpace(modelCfg.Model)
 	}
