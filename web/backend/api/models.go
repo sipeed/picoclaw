@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -48,6 +49,27 @@ type modelResponse struct {
 	Status    string `json:"status"`
 	IsDefault bool   `json:"is_default"`
 	IsVirtual bool   `json:"is_virtual"`
+}
+
+func normalizeExplicitProviderModel(mc *config.ModelConfig) {
+	if mc == nil {
+		return
+	}
+
+	provider := strings.TrimSpace(mc.Provider)
+	model := strings.TrimSpace(mc.Model)
+	if provider == "" || model == "" {
+		return
+	}
+
+	prefix, rest, found := strings.Cut(model, "/")
+	if !found || strings.TrimSpace(rest) == "" {
+		return
+	}
+
+	if providers.NormalizeProvider(prefix) == providers.NormalizeProvider(provider) {
+		mc.Model = strings.TrimSpace(rest)
+	}
 }
 
 // handleListModels returns all model_list entries with masked API keys.
@@ -139,6 +161,7 @@ func (h *Handler) handleAddModel(w http.ResponseWriter, r *http.Request) {
 	if mc.APIKey != "" {
 		mc.ModelConfig.SetAPIKey(mc.APIKey)
 	}
+	normalizeExplicitProviderModel(&mc.ModelConfig)
 
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
@@ -241,7 +264,31 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	// the new field yet, while still allowing explicit clearing via "".
 	if _, ok := rawFields["provider"]; !ok {
 		mc.Provider = cfg.ModelList[idx].Provider
+		// Older clients still round-trip the legacy model field only. When the
+		// stored config encodes provider/model in Model and has no explicit
+		// Provider field yet, continue preserving that hidden provider prefix.
+		// This keeps provider-omitted updates backward-compatible even when an
+		// older client edits the visible model ID.
+		if strings.TrimSpace(cfg.ModelList[idx].Provider) == "" {
+			existingProtocol, existingModelID := providers.ExtractProtocol(cfg.ModelList[idx])
+			existingRawModel := strings.TrimSpace(cfg.ModelList[idx].Model)
+			incomingModel := strings.TrimSpace(mc.Model)
+			if existingRawModel != "" && existingRawModel != existingModelID && incomingModel != "" {
+				if incomingModel == existingModelID {
+					mc.Model = existingRawModel
+				} else if strings.Contains(incomingModel, "/") && !strings.Contains(existingModelID, "/") {
+					// Older clients never saw the hidden provider prefix for simple
+					// legacy entries such as "openai/gpt-4o". If they now send an
+					// explicit provider/model string, treat it as the caller's full
+					// intent instead of re-applying the old hidden prefix.
+					mc.Model = incomingModel
+				} else if !strings.HasPrefix(incomingModel, existingProtocol+"/") {
+					mc.Model = existingProtocol + "/" + incomingModel
+				}
+			}
+		}
 	}
+	normalizeExplicitProviderModel(&mc.ModelConfig)
 
 	cfg.ModelList[idx] = &mc.ModelConfig
 

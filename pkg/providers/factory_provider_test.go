@@ -84,6 +84,18 @@ func TestExtractProtocol(t *testing.T) {
 			wantModelID:  "z-ai/glm-5.1",
 		},
 		{
+			name:         "explicit provider strips redundant matching prefix",
+			config:       &config.ModelConfig{Provider: "openai", Model: "openai/gpt-4o"},
+			wantProtocol: "openai",
+			wantModelID:  "gpt-4o",
+		},
+		{
+			name:         "explicit provider strips redundant aliased prefix",
+			config:       &config.ModelConfig{Provider: "qwen", Model: "qwen/qwen-plus"},
+			wantProtocol: "qwen-portal",
+			wantModelID:  "qwen-plus",
+		},
+		{
 			name:         "empty provider segment",
 			config:       &config.ModelConfig{Model: "/gpt-4o"},
 			wantProtocol: "",
@@ -149,6 +161,27 @@ func TestCreateProviderFromConfig_UsesExplicitProvider(t *testing.T) {
 	}
 	if got := ResolveAPIBase(cfg); got != "https://integrate.api.nvidia.com/v1" {
 		t.Fatalf("ResolveAPIBase() = %q, want NVIDIA default API base", got)
+	}
+}
+
+func TestCreateProviderFromConfig_StripsRedundantExplicitProviderPrefix(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-openai",
+		Provider:  "openai",
+		Model:     "openai/gpt-4o",
+		APIBase:   "https://api.example.com/v1",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "gpt-4o" {
+		t.Fatalf("modelID = %q, want %q", modelID, "gpt-4o")
 	}
 }
 

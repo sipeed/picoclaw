@@ -107,7 +107,13 @@ func ExtractProtocol(cfg *config.ModelConfig) (protocol, modelID string) {
 
 	model := strings.TrimSpace(cfg.Model)
 	if provider := strings.TrimSpace(cfg.Provider); provider != "" {
-		return NormalizeProvider(provider), model
+		normalized := NormalizeProvider(provider)
+		if prefix, rest, found := strings.Cut(model, "/"); found {
+			if NormalizeProvider(prefix) == normalized && strings.TrimSpace(rest) != "" {
+				return normalized, strings.TrimSpace(rest)
+			}
+		}
+		return normalized, model
 	}
 	if model == "" {
 		return "", ""

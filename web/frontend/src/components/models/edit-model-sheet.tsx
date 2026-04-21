@@ -118,7 +118,7 @@ export function EditModelSheet({
     try {
       await updateModel(model.index, {
         model_name: model.model_name,
-        provider: form.provider.trim() || undefined,
+        provider: form.provider.trim(),
         model: form.modelId.trim(),
         api_base: form.apiBase || undefined,
         api_key: form.apiKey || undefined,

@@ -60,6 +60,12 @@ func lookupModelConfigByRef(cfg *config.Config, raw string) *config.ModelConfig 
 		return mc
 	}
 
+	rawRef := providers.ParseModelRef(raw, "")
+	rawKey := ""
+	if rawRef != nil && strings.TrimSpace(rawRef.Provider) != "" && strings.TrimSpace(rawRef.Model) != "" {
+		rawKey = providers.ModelKey(rawRef.Provider, rawRef.Model)
+	}
+
 	for i := range cfg.ModelList {
 		mc := cfg.ModelList[i]
 		if mc == nil {
@@ -72,8 +78,11 @@ func lookupModelConfigByRef(cfg *config.Config, raw string) *config.ModelConfig 
 		if fullModel == raw {
 			return mc
 		}
-		_, modelID := providers.ExtractProtocol(mc)
+		protocol, modelID := providers.ExtractProtocol(mc)
 		if modelID == raw {
+			return mc
+		}
+		if rawKey != "" && providers.ModelKey(protocol, modelID) == rawKey {
 			return mc
 		}
 	}

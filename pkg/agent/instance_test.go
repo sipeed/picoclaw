@@ -229,6 +229,43 @@ func TestNewAgentInstance_PreservesDistinctLimiterIdentityForSharedResolvedModel
 	}
 }
 
+func TestNewAgentInstance_PreservesConfigIdentityForExplicitProviderModelRef(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: tmpDir,
+				ModelName: "nvidia/z-ai/glm-5.1",
+			},
+		},
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "nvidia-glm",
+				Provider:  "nvidia",
+				Model:     "z-ai/glm-5.1",
+				RPM:       7,
+			},
+		},
+	}
+
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	if len(agent.Candidates) != 1 {
+		t.Fatalf("len(Candidates) = %d, want 1", len(agent.Candidates))
+	}
+
+	candidate := agent.Candidates[0]
+	if candidate.Provider != "nvidia" || candidate.Model != "z-ai/glm-5.1" {
+		t.Fatalf("candidate = %s/%s, want nvidia/z-ai/glm-5.1", candidate.Provider, candidate.Model)
+	}
+	if candidate.IdentityKey != "model_name:nvidia-glm" {
+		t.Fatalf("identity key = %q, want %q", candidate.IdentityKey, "model_name:nvidia-glm")
+	}
+	if candidate.RPM != 7 {
+		t.Fatalf("RPM = %d, want 7", candidate.RPM)
+	}
+}
+
 func TestNewAgentInstance_AllowsMediaTempDirForReadListAndExec(t *testing.T) {
 	workspace := t.TempDir()
 	mediaDir := media.TempDir()
