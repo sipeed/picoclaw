@@ -73,6 +73,8 @@ type openaiMessage struct {
 	Role             string     `json:"role"`
 	Content          string     `json:"content"`
 	ReasoningContent string     `json:"reasoning_content,omitempty"`
+	Reasoning        string     `json:"reasoning,omitempty"`
+	Thinking         string     `json:"thinking,omitempty"`
 	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string     `json:"tool_call_id,omitempty"`
 }
@@ -89,6 +91,8 @@ func SerializeMessages(messages []Message) []any {
 				Role:             m.Role,
 				Content:          m.Content,
 				ReasoningContent: m.ReasoningContent,
+				Reasoning:        m.Reasoning,
+				Thinking:         m.Thinking,
 				ToolCalls:        m.ToolCalls,
 				ToolCallID:       m.ToolCallID,
 			})
@@ -138,6 +142,12 @@ func SerializeMessages(messages []Message) []any {
 		if m.ReasoningContent != "" {
 			msg["reasoning_content"] = m.ReasoningContent
 		}
+		if m.Reasoning != "" {
+			msg["reasoning"] = m.Reasoning
+		}
+		if m.Thinking != "" {
+			msg["thinking"] = m.Thinking
+		}
 		out = append(out, msg)
 	}
 	return out
@@ -173,6 +183,7 @@ func ParseResponse(body io.Reader) (*LLMResponse, error) {
 				Content          string            `json:"content"`
 				ReasoningContent string            `json:"reasoning_content"`
 				Reasoning        string            `json:"reasoning"`
+				Thinking         string            `json:"thinking"`
 				ReasoningDetails []ReasoningDetail `json:"reasoning_details"`
 				ToolCalls        []struct {
 					ID       string `json:"id"`
@@ -239,10 +250,22 @@ func ParseResponse(body io.Reader) (*LLMResponse, error) {
 		toolCalls = append(toolCalls, toolCall)
 	}
 
+	content := choice.Message.Content
+	if content == "" {
+		if choice.Message.Thinking != "" {
+			content = choice.Message.Thinking
+		} else if choice.Message.Reasoning != "" {
+			content = choice.Message.Reasoning
+		} else if choice.Message.ReasoningContent != "" {
+			content = choice.Message.ReasoningContent
+		}
+	}
+
 	return &LLMResponse{
-		Content:          choice.Message.Content,
+		Content:          content,
 		ReasoningContent: choice.Message.ReasoningContent,
 		Reasoning:        choice.Message.Reasoning,
+		Thinking:         choice.Message.Thinking,
 		ReasoningDetails: choice.Message.ReasoningDetails,
 		ToolCalls:        toolCalls,
 		FinishReason:     normalizeFinishReason(choice.FinishReason),
