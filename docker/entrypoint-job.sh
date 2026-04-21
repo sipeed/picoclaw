@@ -116,15 +116,11 @@ case "$JOB_TYPE" in
       tests/auth/logout.spec.ts \
       tests/auth/forgot-password.spec.ts
 
-    run_group "Knowledge Base - Create" \
+    run_group "Knowledge Base" \
       tests/knowledge-base/create-kb-bucket-gcs.spec.ts \
-      tests/knowledge-base/create-kb-bucket-website-crawler.spec.ts
-
-    run_group "Knowledge Base - Schedule" \
+      tests/knowledge-base/create-kb-bucket-website-crawler.spec.ts \
       tests/knowledge-base/schedule-kb-incremental-sync-advanced.spec.ts \
-      tests/knowledge-base/schedule-kb-full-sync-simple.spec.ts
-
-    run_group "Knowledge Base - Edit & Delete" \
+      tests/knowledge-base/schedule-kb-full-sync-simple.spec.ts \
       tests/knowledge-base/edit-kb-schedule.spec.ts \
       tests/knowledge-base/delete-kb.spec.ts
 
@@ -187,6 +183,87 @@ case "$JOB_TYPE" in
     "$PW/node_modules/.bin/playwright" test "$JOB_SPEC" --reporter=line
     ;;
 
+  run-feature)
+    if [ -z "$JOB_FEATURE" ]; then
+      echo "ERROR: JOB_FEATURE is required for JOB_TYPE=run-feature"
+      exit 1
+    fi
+    setup_playwright
+    case "$JOB_FEATURE" in
+      auth)
+        run_group "Auth" \
+          tests/auth/login.spec.ts \
+          tests/auth/logout.spec.ts \
+          tests/auth/forgot-password.spec.ts
+        ;;
+      knowledge-base)
+        run_group "Knowledge Base" \
+          tests/knowledge-base/create-kb-bucket-gcs.spec.ts \
+          tests/knowledge-base/create-kb-bucket-website-crawler.spec.ts \
+          tests/knowledge-base/schedule-kb-incremental-sync-advanced.spec.ts \
+          tests/knowledge-base/schedule-kb-full-sync-simple.spec.ts \
+          tests/knowledge-base/edit-kb-schedule.spec.ts \
+          tests/knowledge-base/delete-kb.spec.ts
+        ;;
+      flow-designer)
+        run_group "Flow Designer" \
+          tests/flow-designer/create-new-flow-user-utterance-node.spec.ts \
+          tests/flow-designer/create-new-flow-custom-node.spec.ts \
+          tests/flow-designer/create-new-flow-model-node-parser.spec.ts \
+          tests/flow-designer/create-new-flow-model-node-without-parser.spec.ts \
+          tests/flow-designer/create-new-flow-knowledge-base-node.spec.ts \
+          tests/flow-designer/create-new-flow-knowledge-base-web-crawler.spec.ts
+        ;;
+      flow-tester)
+        run_group "Flow Tester" \
+          tests/flow-tester/test-user-utterance-flow.spec.ts \
+          tests/flow-tester/test-custom-node-flow.spec.ts \
+          tests/flow-tester/test-model-node-parser-flow.spec.ts \
+          tests/flow-tester/test-model-node-without-parser-flow.spec.ts \
+          tests/flow-tester/test-kb-flow.spec.ts \
+          tests/flow-tester/test-kb-web-crawler-flow.spec.ts
+        ;;
+      profile)
+        run_group "Profile" \
+          tests/profile/update-profile-name.spec.ts \
+          tests/profile/change-password.spec.ts \
+          tests/profile/change-email.spec.ts
+        ;;
+      organization)
+        run_group "Organization" \
+          tests/organization/switch-organization.spec.ts \
+          tests/organization/agent-role-sidebar-permissions.spec.ts \
+          tests/organization/change-role-agent-to-admin.spec.ts \
+          tests/organization/admin-role-sidebar-permissions.spec.ts \
+          tests/organization/change-role-admin-to-developer.spec.ts \
+          tests/organization/developer-role-sidebar-permissions.spec.ts \
+          tests/organization/change-role-developer-to-agent.spec.ts \
+          tests/organization/deactivate-member-access-control.spec.ts \
+          tests/organization/activate-member-access-restored.spec.ts \
+          tests/organization/upload-bot-icon.spec.ts \
+          tests/organization/upload-organization-logo.spec.ts \
+          tests/organization/invite-member-access.spec.ts
+        ;;
+      settings)
+        run_group "Settings" \
+          tests/settings/view-api-keys-settings.spec.ts \
+          tests/settings/create-api-key-internal.spec.ts \
+          tests/settings/create-api-key-external.spec.ts \
+          tests/settings/edit-api-key-description.spec.ts \
+          tests/settings/revoke-api-key.spec.ts \
+          tests/settings/reactivate-api-key.spec.ts
+        ;;
+      logs)
+        run_group "Logs" \
+          tests/logs/download-conversation-logs.spec.ts
+        ;;
+      *)
+        echo "ERROR: Unknown JOB_FEATURE=$JOB_FEATURE (valid: auth, knowledge-base, flow-designer, flow-tester, profile, organization, settings, logs)"
+        exit 1
+        ;;
+    esac
+    ;;
+
   autofix)
     if [ -z "$JOB_SPEC" ]; then
       echo "ERROR: JOB_SPEC is required for JOB_TYPE=autofix"
@@ -242,7 +319,7 @@ process.stdout.write(t);
     ;;
 
   *)
-    echo "ERROR: Unknown JOB_TYPE=$JOB_TYPE (valid: run-all, run, autofix, generate, prompt)"
+    echo "ERROR: Unknown JOB_TYPE=$JOB_TYPE (valid: run-all, run, run-feature, autofix, generate, prompt)"
     exit 1
     ;;
 esac

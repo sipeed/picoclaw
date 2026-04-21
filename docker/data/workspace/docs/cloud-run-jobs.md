@@ -53,32 +53,60 @@ gcloud run jobs execute picoclaw-e2e \
 
 ---
 
-## JOB_TYPE=run
+## JOB_TYPE=run-feature
 
-Runs a single Playwright spec file **or an entire folder** of tests.
+Runs all tests for a specific feature area, matching the `npm run test:<feature>` commands in package.json.
 
 **Required env vars:**
 | Var | Description |
 |---|---|
-| `JOB_SPEC` | Spec file path or folder path (e.g. `tests/auth/login.spec.ts` or `tests/knowledge-base`) |
+| `JOB_FEATURE` | Feature name (e.g. `auth`, `knowledge-base`, `flow-designer`, `flow-tester`, `profile`, `organization`, `settings`, `logs`) |
 
 ```bash
-# Single spec file
+# Run all knowledge-base tests
+gcloud run jobs execute picoclaw-e2e \
+  --region=europe-west4 \
+  --container=picoclaw \
+  --update-env-vars="JOB_TYPE=run-feature" \
+  --update-env-vars="JOB_FEATURE=knowledge-base"
+
+# Run all flow-tester tests
+gcloud run jobs execute picoclaw-e2e \
+  --region=europe-west4 \
+  --container=picoclaw \
+  --update-env-vars="JOB_TYPE=run-feature" \
+  --update-env-vars="JOB_FEATURE=flow-tester"
+```
+
+**Available features:** `auth`, `knowledge-base`, `flow-designer`, `flow-tester`, `profile`, `organization`, `settings`, `logs`
+
+Tests run in the same order as defined in package.json `test:<feature>` scripts.
+
+---
+
+## JOB_TYPE=run
+
+Runs a single Playwright spec file.
+
+**When to use:**
+- Running one specific test file
+- For running all tests in a feature area, use `JOB_TYPE=run-feature` instead
+
+**Required env vars:**
+| Var | Description |
+|---|---|
+| `JOB_SPEC` | Spec file path (e.g. `tests/auth/login.spec.ts`) |
+
+```bash
+# Run a single test file
 gcloud run jobs execute picoclaw-e2e \
   --region=europe-west4 \
   --container=picoclaw \
   --update-env-vars="JOB_TYPE=run" \
   --update-env-vars="JOB_SPEC=tests/auth/login.spec.ts"
-
-# All tests in a folder
-gcloud run jobs execute picoclaw-e2e \
-  --region=europe-west4 \
-  --container=picoclaw \
-  --update-env-vars="JOB_TYPE=run" \
-  --update-env-vars="JOB_SPEC=tests/knowledge-base"
 ```
 
-**Available folders:** `tests/auth`, `tests/knowledge-base`, `tests/flow-designer`, `tests/flow-tester`, `tests/profile`, `tests/organization`, `tests/settings`, `tests/logs`
+> **Note:** To run all tests for a feature area (e.g., all knowledge-base tests), use `JOB_TYPE=run-feature` with `JOB_FEATURE=knowledge-base` instead.
 
 ---
 
