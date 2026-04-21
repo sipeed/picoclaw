@@ -218,6 +218,61 @@ func TestNewAgentInstance_PreservesDistinctLimiterIdentityForSharedResolvedModel
 	}
 }
 
+func TestNewAgentInstance_ResolvesThinkingLevelFromModelReference(t *testing.T) {
+	tests := []struct {
+		name         string
+		primary      string
+		wantThinking ThinkingLevel
+	}{
+		{
+			name:         "full protocol reference",
+			primary:      "anthropic/claude-sonnet-4.6",
+			wantThinking: ThinkingHigh,
+		},
+		{
+			name:         "bare model id",
+			primary:      "claude-sonnet-4.6",
+			wantThinking: ThinkingHigh,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+
+			cfg := &config.Config{
+				Agents: config.AgentsConfig{
+					Defaults: config.AgentDefaults{
+						Workspace: tmpDir,
+						ModelName: "main-model",
+					},
+					List: []config.AgentConfig{
+						{
+							ID: "main",
+							Model: &config.AgentModelConfig{
+								Primary: tt.primary,
+							},
+						},
+					},
+				},
+				ModelList: []*config.ModelConfig{
+					{
+						ModelName:     "main-model",
+						Model:         "anthropic/claude-sonnet-4.6",
+						ThinkingLevel: "high",
+						APIBase:       "https://example.invalid",
+					},
+				},
+			}
+
+			agent := NewAgentInstance(&cfg.Agents.List[0], &cfg.Agents.Defaults, cfg, &mockProvider{})
+			if agent.ThinkingLevel != tt.wantThinking {
+				t.Fatalf("ThinkingLevel = %q, want %q", agent.ThinkingLevel, tt.wantThinking)
+			}
+		})
+	}
+}
+
 func TestNewAgentInstance_AllowsMediaTempDirForReadListAndExec(t *testing.T) {
 	workspace := t.TempDir()
 	mediaDir := media.TempDir()
