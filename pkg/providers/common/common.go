@@ -240,8 +240,9 @@ func ParseResponse(body io.Reader) (*LLMResponse, error) {
 					ID       string `json:"id"`
 					Type     string `json:"type"`
 					Function *struct {
-						Name      string          `json:"name"`
-						Arguments json.RawMessage `json:"arguments"`
+						Name             string          `json:"name"`
+						Arguments        json.RawMessage `json:"arguments"`
+						ThoughtSignature string          `json:"thought_signature"`
 					} `json:"function"`
 					ExtraContent *struct {
 						Google *struct {
@@ -273,9 +274,11 @@ func ParseResponse(body io.Reader) (*LLMResponse, error) {
 		arguments := make(map[string]any)
 		name := ""
 
-		// Extract thought_signature from Gemini/Google-specific extra content
 		thoughtSignature := ""
-		if tc.ExtraContent != nil && tc.ExtraContent.Google != nil {
+		if tc.Function != nil {
+			thoughtSignature = tc.Function.ThoughtSignature
+		}
+		if thoughtSignature == "" && tc.ExtraContent != nil && tc.ExtraContent.Google != nil {
 			thoughtSignature = tc.ExtraContent.Google.ThoughtSignature
 		}
 
@@ -291,9 +294,12 @@ func ParseResponse(body io.Reader) (*LLMResponse, error) {
 			ThoughtSignature: thoughtSignature,
 		}
 
-		if tc.ExtraContent != nil {
+		if thoughtSignature != "" || tc.ExtraContent != nil {
 			extraContent := &ExtraContent{
-				ToolFeedbackExplanation: tc.ExtraContent.ToolFeedbackExplanation,
+				ToolFeedbackExplanation: "",
+			}
+			if tc.ExtraContent != nil {
+				extraContent.ToolFeedbackExplanation = tc.ExtraContent.ToolFeedbackExplanation
 			}
 			if thoughtSignature != "" {
 				extraContent.Google = &GoogleExtra{

@@ -392,6 +392,58 @@ func TestHandleGetPicoInfo_OmitsToken(t *testing.T) {
 	}
 }
 
+func TestHandleRegenPicoToken_RefreshesGatewayTokenCache(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+
+	if _, err := h.EnsurePicoChannel(); err != nil {
+		t.Fatalf("EnsurePicoChannel() error = %v", err)
+	}
+
+	origPicoToken := gateway.picoToken
+	t.Cleanup(func() {
+		gateway.mu.Lock()
+		gateway.picoToken = origPicoToken
+		gateway.mu.Unlock()
+	})
+
+	gateway.mu.Lock()
+	gateway.picoToken = "stale-token"
+	gateway.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "http://launcher.local/api/pico/token", nil)
+	rec := httptest.NewRecorder()
+	h.handleRegenPicoToken(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	bc := cfg.Channels["pico"]
+	decoded, err := bc.GetDecoded()
+	if err != nil {
+		t.Fatalf("GetDecoded() error = %v", err)
+	}
+	token := decoded.(*config.PicoSettings).Token.String()
+	if token == "" {
+		t.Fatal("expected regenerated pico token to be persisted")
+	}
+	if token == "stale-token" {
+		t.Fatal("expected regenerated pico token to differ from stale cache")
+	}
+
+	gateway.mu.Lock()
+	defer gateway.mu.Unlock()
+	if gateway.picoToken != token {
+		t.Fatalf("gateway.picoToken = %q, want %q", gateway.picoToken, token)
+	}
+}
+
 func TestHandleWebSocketProxyReloadsGatewayTargetFromConfig(t *testing.T) {
 	origMatcher := gatewayProcessMatcher
 	gatewayProcessMatcher = func(int) (bool, bool) { return true, true }

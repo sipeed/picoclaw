@@ -203,17 +203,18 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 	if isToolFeedback {
 		toolFeedbackContent = fitToolFeedbackForTelegram(msg.Content, useMarkdownV2, 4096)
 	}
+	trackedChatID := telegramToolFeedbackChatKey(msg.ChatID, &msg.Context)
 	if isToolFeedback {
-		if msgID, handled, err := c.progress.Update(ctx, msg.ChatID, toolFeedbackContent); handled {
+		if msgID, handled, err := c.progress.Update(ctx, trackedChatID, toolFeedbackContent); handled {
 			if err != nil {
 				return nil, err
 			}
 			return []string{msgID}, nil
 		}
 	}
-	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(msg.ChatID)
+	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(trackedChatID)
 	if !isToolFeedback {
-		if msgIDs, handled := c.FinalizeToolFeedbackMessage(ctx, msg); handled {
+		if msgIDs, handled := c.finalizeToolFeedbackMessageForChat(ctx, trackedChatID, msg); handled {
 			return msgIDs, nil
 		}
 	}
@@ -308,9 +309,9 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 	}
 
 	if isToolFeedback && len(messageIDs) > 0 {
-		c.RecordToolFeedbackMessage(msg.ChatID, messageIDs[0], toolFeedbackContent)
+		c.RecordToolFeedbackMessage(trackedChatID, messageIDs[0], toolFeedbackContent)
 	} else if !isToolFeedback && hasTrackedMsg {
-		c.dismissTrackedToolFeedbackMessage(ctx, msg.ChatID, trackedMsgID)
+		c.dismissTrackedToolFeedbackMessage(ctx, trackedChatID, trackedMsgID)
 	}
 
 	return messageIDs, nil
@@ -552,7 +553,15 @@ func (c *TelegramChannel) FinalizeToolFeedbackMessage(ctx context.Context, msg b
 	if outboundMessageIsToolFeedback(msg) {
 		return nil, false
 	}
-	return c.finalizeTrackedToolFeedbackMessage(ctx, msg.ChatID, msg.Content, c.EditMessage)
+	return c.finalizeToolFeedbackMessageForChat(ctx, telegramToolFeedbackChatKey(msg.ChatID, &msg.Context), msg)
+}
+
+func (c *TelegramChannel) finalizeToolFeedbackMessageForChat(
+	ctx context.Context,
+	chatID string,
+	msg bus.OutboundMessage,
+) ([]string, bool) {
+	return c.finalizeTrackedToolFeedbackMessage(ctx, chatID, msg.Content, c.EditMessage)
 }
 
 // SendPlaceholder implements channels.PlaceholderCapable.
@@ -586,7 +595,8 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 	if !c.IsRunning() {
 		return nil, channels.ErrNotRunning
 	}
-	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(msg.ChatID)
+	trackedChatID := telegramToolFeedbackChatKey(msg.ChatID, &msg.Context)
+	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(trackedChatID)
 
 	chatID, threadID, err := resolveTelegramOutboundTarget(msg.ChatID, &msg.Context)
 	if err != nil {
@@ -696,7 +706,7 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 	}
 
 	if hasTrackedMsg {
-		c.dismissTrackedToolFeedbackMessage(ctx, msg.ChatID, trackedMsgID)
+		c.dismissTrackedToolFeedbackMessage(ctx, trackedChatID, trackedMsgID)
 	}
 
 	return messageIDs, nil
@@ -1105,6 +1115,18 @@ func fitToolFeedbackForTelegram(content string, useMarkdownV2 bool, maxParsedLen
 	return best
 }
 
+func telegramToolFeedbackChatKey(chatID string, outboundCtx *bus.InboundContext) string {
+	resolvedChatID, threadID, err := resolveTelegramOutboundTarget(chatID, outboundCtx)
+	if err != nil || threadID == 0 {
+		return strings.TrimSpace(chatID)
+	}
+	return fmt.Sprintf("%d/%d", resolvedChatID, threadID)
+}
+
+func (c *TelegramChannel) ToolFeedbackMessageChatID(chatID string, outboundCtx *bus.InboundContext) string {
+	return telegramToolFeedbackChatKey(chatID, outboundCtx)
+}
+
 // parseTelegramChatID splits "chatID/threadID" into its components.
 // Returns threadID=0 when no "/" is present (non-forum messages).
 func parseTelegramChatID(chatID string) (int64, int, error) {
@@ -1255,7 +1277,7 @@ func (c *TelegramChannel) BeginStream(ctx context.Context, chatID string) (chann
 		return nil, fmt.Errorf("streaming disabled in config")
 	}
 
-	cid, _, err := parseTelegramChatID(chatID)
+	cid, threadID, err := parseTelegramChatID(chatID)
 	if err != nil {
 		return nil, err
 	}
@@ -1264,6 +1286,7 @@ func (c *TelegramChannel) BeginStream(ctx context.Context, chatID string) (chann
 	return &telegramStreamer{
 		bot:              c.bot,
 		chatID:           cid,
+		threadID:         threadID,
 		draftID:          cryptoRandInt(),
 		throttleInterval: time.Duration(streamCfg.ThrottleSeconds) * time.Second,
 		minGrowth:        streamCfg.MinGrowthChars,
@@ -1276,6 +1299,7 @@ func (c *TelegramChannel) BeginStream(ctx context.Context, chatID string) (chann
 type telegramStreamer struct {
 	bot              *telego.Bot
 	chatID           int64
+	threadID         int
 	draftID          int
 	throttleInterval time.Duration
 	minGrowth        int
@@ -1303,10 +1327,11 @@ func (s *telegramStreamer) Update(ctx context.Context, content string) error {
 	htmlContent := markdownToTelegramHTML(content)
 
 	err := s.bot.SendMessageDraft(ctx, &telego.SendMessageDraftParams{
-		ChatID:    s.chatID,
-		DraftID:   s.draftID,
-		Text:      htmlContent,
-		ParseMode: telego.ModeHTML,
+		ChatID:          s.chatID,
+		MessageThreadID: s.threadID,
+		DraftID:         s.draftID,
+		Text:            htmlContent,
+		ParseMode:       telego.ModeHTML,
 	})
 	if err != nil {
 		// First error → degrade silently (e.g. no forum mode)
@@ -1325,6 +1350,7 @@ func (s *telegramStreamer) Update(ctx context.Context, content string) error {
 func (s *telegramStreamer) Finalize(ctx context.Context, content string) error {
 	htmlContent := markdownToTelegramHTML(content)
 	tgMsg := tu.Message(tu.ID(s.chatID), htmlContent)
+	tgMsg.MessageThreadID = s.threadID
 	tgMsg.ParseMode = telego.ModeHTML
 
 	if _, err := s.bot.SendMessage(ctx, tgMsg); err != nil {

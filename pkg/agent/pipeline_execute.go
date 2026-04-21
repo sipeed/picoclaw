@@ -349,7 +349,7 @@ toolLoop:
 				messages,
 				al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(),
 			)
-			feedbackMsg := utils.FormatToolFeedbackMessage(tc.Name, toolFeedbackExplanation)
+			feedbackMsg := utils.FormatToolFeedbackMessage(toolName, toolFeedbackExplanation)
 			fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
 			_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurnWithKind(ts, feedbackMsg, messageKindToolFeedback))
 			fbCancel()

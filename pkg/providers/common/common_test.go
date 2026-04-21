@@ -745,3 +745,27 @@ func TestParseResponse_WithThoughtSignature(t *testing.T) {
 			out.ToolCalls[0].ExtraContent.Google.ThoughtSignature, "sig123")
 	}
 }
+
+func TestParseResponse_WithFunctionThoughtSignature(t *testing.T) {
+	body := `{"choices":[{"message":{"content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"test_tool","arguments":"{}","thought_signature":"sig456"}}]},"finish_reason":"tool_calls"}]}`
+	out, err := ParseResponse(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("ParseResponse() error = %v", err)
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].ThoughtSignature != "sig456" {
+		t.Fatalf("ThoughtSignature = %q, want %q", out.ToolCalls[0].ThoughtSignature, "sig456")
+	}
+	if out.ToolCalls[0].ExtraContent == nil || out.ToolCalls[0].ExtraContent.Google == nil {
+		t.Fatal("ExtraContent.Google is nil")
+	}
+	if out.ToolCalls[0].ExtraContent.Google.ThoughtSignature != "sig456" {
+		t.Fatalf(
+			"ExtraContent.Google.ThoughtSignature = %q, want %q",
+			out.ToolCalls[0].ExtraContent.Google.ThoughtSignature,
+			"sig456",
+		)
+	}
+}

@@ -107,6 +107,10 @@ type toolFeedbackMessageCleaner interface {
 	DismissToolFeedbackMessage(ctx context.Context, chatID string)
 }
 
+type toolFeedbackMessageTargetResolver interface {
+	ToolFeedbackMessageChatID(chatID string, outboundCtx *bus.InboundContext) string
+}
+
 type asyncTask struct {
 	cancel context.CancelFunc
 }
@@ -134,13 +138,31 @@ func outboundMediaChatID(msg bus.OutboundMediaMessage) string {
 	return msg.ChatID
 }
 
-func dismissTrackedToolFeedbackMessage(ctx context.Context, ch Channel, chatID string) {
+func trackedToolFeedbackMessageChatID(ch Channel, chatID string, outboundCtx *bus.InboundContext) string {
+	if resolver, ok := ch.(toolFeedbackMessageTargetResolver); ok {
+		if resolved := strings.TrimSpace(resolver.ToolFeedbackMessageChatID(chatID, outboundCtx)); resolved != "" {
+			return resolved
+		}
+	}
+	return strings.TrimSpace(chatID)
+}
+
+func dismissTrackedToolFeedbackMessage(
+	ctx context.Context,
+	ch Channel,
+	chatID string,
+	outboundCtx *bus.InboundContext,
+) {
+	trackedChatID := trackedToolFeedbackMessageChatID(ch, chatID, outboundCtx)
+	if trackedChatID == "" {
+		return
+	}
 	if cleaner, ok := ch.(toolFeedbackMessageCleaner); ok {
-		cleaner.DismissToolFeedbackMessage(ctx, chatID)
+		cleaner.DismissToolFeedbackMessage(ctx, trackedChatID)
 		return
 	}
 	if tracker, ok := ch.(toolFeedbackMessageTracker); ok {
-		tracker.ClearToolFeedbackMessage(chatID)
+		tracker.ClearToolFeedbackMessage(trackedChatID)
 	}
 }
 
@@ -249,7 +271,7 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 			}
 		}
 		if !isToolFeedback {
-			dismissTrackedToolFeedbackMessage(ctx, ch, chatID)
+			dismissTrackedToolFeedbackMessage(ctx, ch, chatID, &msg.Context)
 		}
 		return nil, true
 	}
@@ -263,10 +285,11 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 					content = InitialAnimatedToolFeedbackContent(msg.Content)
 				}
 				if err := editor.EditMessage(ctx, chatID, entry.id, content); err == nil {
+					trackedChatID := trackedToolFeedbackMessageChatID(ch, chatID, &msg.Context)
 					if tracker, ok := ch.(toolFeedbackMessageTracker); ok && isToolFeedback {
-						tracker.RecordToolFeedbackMessage(chatID, entry.id, msg.Content)
+						tracker.RecordToolFeedbackMessage(trackedChatID, entry.id, msg.Content)
 					} else if !isToolFeedback {
-						dismissTrackedToolFeedbackMessage(ctx, ch, chatID)
+						dismissTrackedToolFeedbackMessage(ctx, ch, chatID, &msg.Context)
 					}
 					return []string{entry.id}, true
 				}
@@ -366,7 +389,7 @@ func (m *Manager) GetStreamer(ctx context.Context, channelName, chatID string) (
 	return &finalizeHookStreamer{
 		Streamer: streamer,
 		onFinalize: func(finalizeCtx context.Context) {
-			dismissTrackedToolFeedbackMessage(finalizeCtx, ch, chatID)
+			dismissTrackedToolFeedbackMessage(finalizeCtx, ch, chatID, nil)
 			m.streamActive.Store(key, true)
 		},
 	}, true

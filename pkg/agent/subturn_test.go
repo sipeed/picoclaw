@@ -1650,6 +1650,38 @@ func TestGrandchildAbort_CascadingCancellation(t *testing.T) {
 	}
 }
 
+func TestNestedSubTurn_GracefulFinishSignalsDirectChildren(t *testing.T) {
+	parentCtx := context.Background()
+	parentTS := &turnState{
+		ctx:            parentCtx,
+		turnID:         "parent-graceful",
+		depth:          1,
+		pendingResults: make(chan *tools.ToolResult, 16),
+	}
+	parentTS.ctx, parentTS.cancelFunc = context.WithCancel(parentCtx)
+
+	childTS := &turnState{
+		ctx:             context.Background(),
+		turnID:          "child-graceful",
+		depth:           2,
+		parentTurnState: parentTS,
+		pendingResults:  make(chan *tools.ToolResult, 16),
+	}
+
+	if childTS.IsParentEnded() {
+		t.Fatal("IsParentEnded should be false before parent finishes")
+	}
+
+	parentTS.Finish(false)
+
+	if !parentTS.parentEnded.Load() {
+		t.Fatal("parentEnded should be true after graceful finish")
+	}
+	if !childTS.IsParentEnded() {
+		t.Fatal("nested child should observe parent graceful finish")
+	}
+}
+
 // TestSpawnDuringAbort_RaceCondition verifies behavior when trying to spawn
 // a sub-turn while the parent is being aborted.
 func TestSpawnDuringAbort_RaceCondition(t *testing.T) {

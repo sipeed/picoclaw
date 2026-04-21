@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -403,6 +404,24 @@ func (h *toolRewriteHook) AfterTool(
 	return next, HookDecision{Action: HookActionModify}, nil
 }
 
+type toolRenameHook struct{}
+
+func (h *toolRenameHook) BeforeTool(
+	ctx context.Context,
+	call *ToolCallHookRequest,
+) (*ToolCallHookRequest, HookDecision, error) {
+	next := call.Clone()
+	next.Tool = "echo_text_rewritten"
+	return next, HookDecision{Action: HookActionModify}, nil
+}
+
+func (h *toolRenameHook) AfterTool(
+	ctx context.Context,
+	result *ToolResultHookResponse,
+) (*ToolResultHookResponse, HookDecision, error) {
+	return result.Clone(), HookDecision{Action: HookActionContinue}, nil
+}
+
 func TestAgentLoop_Hooks_ToolInterceptorCanRewrite(t *testing.T) {
 	provider := &toolHookProvider{}
 	al, agent, cleanup := newHookTestLoop(t, provider)
@@ -427,6 +446,75 @@ func TestAgentLoop_Hooks_ToolInterceptorCanRewrite(t *testing.T) {
 	}
 	if resp != "after:modified" {
 		t.Fatalf("expected rewritten tool result, got %q", resp)
+	}
+}
+
+type echoTextRewrittenTool struct{}
+
+func (t *echoTextRewrittenTool) Name() string {
+	return "echo_text_rewritten"
+}
+
+func (t *echoTextRewrittenTool) Description() string {
+	return "echo a rewritten text argument"
+}
+
+func (t *echoTextRewrittenTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"text": map[string]any{
+				"type": "string",
+			},
+		},
+	}
+}
+
+func (t *echoTextRewrittenTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	text, _ := args["text"].(string)
+	return tools.SilentResult("rewritten:" + text)
+}
+
+func TestAgentLoop_Hooks_ToolFeedbackUsesRewrittenToolName(t *testing.T) {
+	provider := &toolHookProvider{}
+	al, agent, cleanup := newHookTestLoop(t, provider)
+	defer cleanup()
+
+	al.cfg.Agents.Defaults.ToolFeedback.Enabled = true
+	al.RegisterTool(&echoTextTool{})
+	al.RegisterTool(&echoTextRewrittenTool{})
+	if err := al.MountHook(NamedHook("tool-rename", &toolRenameHook{})); err != nil {
+		t.Fatalf("MountHook failed: %v", err)
+	}
+
+	_, err := al.runAgentLoop(context.Background(), agent, processOptions{
+		SessionKey:      "session-1",
+		Channel:         "cli",
+		ChatID:          "direct",
+		UserMessage:     "run tool",
+		DefaultResponse: defaultResponse,
+		EnableSummary:   false,
+		SendResponse:    false,
+	})
+	if err != nil {
+		t.Fatalf("runAgentLoop failed: %v", err)
+	}
+
+	msgBus, ok := al.bus.(*bus.MessageBus)
+	if !ok {
+		t.Fatalf("expected concrete MessageBus, got %T", al.bus)
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if !strings.Contains(outbound.Content, "`echo_text_rewritten`") {
+			t.Fatalf("tool feedback content = %q, want rewritten tool name", outbound.Content)
+		}
+		if strings.Contains(outbound.Content, "`echo_text`") {
+			t.Fatalf("tool feedback content = %q, want no original tool name", outbound.Content)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected outbound tool feedback")
 	}
 }
 

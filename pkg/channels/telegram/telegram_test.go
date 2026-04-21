@@ -299,6 +299,81 @@ func TestSend_NonToolFeedbackDeletesTrackedProgressMessage(t *testing.T) {
 	assert.False(t, ok, "tracked tool feedback should be cleared after final reply")
 }
 
+func TestSend_ToolFeedbackTrackingIsTopicScoped(t *testing.T) {
+	nextMessageID := 0
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			nextMessageID++
+			return successResponseWithMessageID(t, nextMessageID), nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:  "-1001234567890",
+		Content: "🔧 `read_file`",
+		Context: bus.InboundContext{
+			Channel: "telegram",
+			ChatID:  "-1001234567890",
+			TopicID: "42",
+			Raw: map[string]string{
+				"message_kind": "tool_feedback",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	_, ok := ch.currentToolFeedbackMessage("-1001234567890")
+	assert.False(t, ok, "base chat should not track topic-specific tool feedback")
+
+	msgID, ok := ch.currentToolFeedbackMessage("-1001234567890/42")
+	require.True(t, ok, "topic chat should track tool feedback")
+	assert.Equal(t, "1", msgID)
+}
+
+func TestSend_TopicReplyDoesNotFinalizeDifferentTopicToolFeedback(t *testing.T) {
+	nextMessageID := 0
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			nextMessageID++
+			return successResponseWithMessageID(t, nextMessageID), nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:  "-1001234567890",
+		Content: "🔧 `read_file`",
+		Context: bus.InboundContext{
+			Channel: "telegram",
+			ChatID:  "-1001234567890",
+			TopicID: "42",
+			Raw: map[string]string{
+				"message_kind": "tool_feedback",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	ids, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:  "-1001234567890",
+		Content: "final reply in another topic",
+		Context: bus.InboundContext{
+			Channel: "telegram",
+			ChatID:  "-1001234567890",
+			TopicID: "43",
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, caller.calls, 2)
+	assert.Equal(t, []string{"2"}, ids)
+	assert.Contains(t, caller.calls[1].URL, "sendMessage")
+	assert.NotContains(t, caller.calls[1].URL, "editMessageText")
+
+	_, ok := ch.currentToolFeedbackMessage("-1001234567890/42")
+	assert.True(t, ok, "tool feedback in the original topic should remain tracked")
+}
+
 func TestFinalizeTrackedToolFeedbackMessage_StopsTrackingBeforeEdit(t *testing.T) {
 	ch := newTestChannel(t, &stubCaller{
 		callFn: func(context.Context, string, *ta.RequestData) (*ta.Response, error) {
@@ -658,6 +733,58 @@ func TestSend_UsesContextTopicIDWhenChatIDDoesNotIncludeThread(t *testing.T) {
 	assert.Equal(t, int64(-1001234567890), params.ChatID)
 	assert.Equal(t, 42, params.MessageThreadID)
 	assert.Equal(t, "Hello from topic context", params.Text)
+}
+
+func TestBeginStream_UpdateUsesForumThreadID(t *testing.T) {
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			return &ta.Response{Ok: true, Result: []byte("true")}, nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+	ch.tgCfg.Streaming.Enabled = true
+
+	streamer, err := ch.BeginStream(context.Background(), "-1001234567890/42")
+	require.NoError(t, err)
+	require.NoError(t, streamer.Update(context.Background(), "partial"))
+	require.Len(t, caller.calls, 1)
+	assert.Contains(t, caller.calls[0].URL, "sendMessageDraft")
+
+	var params struct {
+		ChatID          int64  `json:"chat_id"`
+		MessageThreadID int    `json:"message_thread_id"`
+		Text            string `json:"text"`
+	}
+	require.NoError(t, json.Unmarshal(caller.calls[0].Data.BodyRaw, &params))
+	assert.Equal(t, int64(-1001234567890), params.ChatID)
+	assert.Equal(t, 42, params.MessageThreadID)
+	assert.Equal(t, "partial", params.Text)
+}
+
+func TestBeginStream_FinalizeUsesForumThreadID(t *testing.T) {
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			return successResponse(t), nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+	ch.tgCfg.Streaming.Enabled = true
+
+	streamer, err := ch.BeginStream(context.Background(), "-1001234567890/42")
+	require.NoError(t, err)
+	require.NoError(t, streamer.Finalize(context.Background(), "final"))
+	require.Len(t, caller.calls, 1)
+	assert.Contains(t, caller.calls[0].URL, "sendMessage")
+
+	var params struct {
+		ChatID          int64  `json:"chat_id"`
+		MessageThreadID int    `json:"message_thread_id"`
+		Text            string `json:"text"`
+	}
+	require.NoError(t, json.Unmarshal(caller.calls[0].Data.BodyRaw, &params))
+	assert.Equal(t, int64(-1001234567890), params.ChatID)
+	assert.Equal(t, 42, params.MessageThreadID)
+	assert.Equal(t, "final", params.Text)
 }
 
 func TestHandleMessage_ForumTopic_SetsMetadata(t *testing.T) {

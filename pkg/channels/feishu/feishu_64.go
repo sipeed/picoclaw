@@ -50,7 +50,8 @@ type FeishuChannel struct {
 	mu     sync.Mutex
 	cancel context.CancelFunc
 
-	progress *channels.ToolFeedbackAnimator
+	progress        *channels.ToolFeedbackAnimator
+	deleteMessageFn func(context.Context, string, string) error
 }
 
 type cachedMessage struct {
@@ -76,6 +77,7 @@ func NewFeishuChannel(bc *config.Channel, cfg *config.FeishuSettings, bus *bus.M
 		tokenCache:  tc,
 		client:      lark.NewClient(cfg.AppID, cfg.AppSecret.String(), opts...),
 	}
+	ch.deleteMessageFn = ch.deleteMessageAPI
 	ch.progress = channels.NewToolFeedbackAnimator(ch.EditMessage)
 	ch.SetOwner(ch)
 	return ch, nil
@@ -156,19 +158,24 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]st
 	}
 
 	isToolFeedback := outboundMessageIsToolFeedback(msg)
-	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(msg.ChatID)
 	if isToolFeedback {
 		if msgID, handled, err := c.progress.Update(ctx, msg.ChatID, msg.Content); handled {
 			if err != nil {
-				return nil, err
+				// Feishu can fall back to plain text for a previous progress
+				// message, and those messages cannot be patched through the card
+				// edit API. Drop the stale tracker and recreate the progress
+				// message so later tool feedback is not blocked.
+				c.resetTrackedToolFeedbackAfterEditFailure(ctx, msg.ChatID)
+			} else {
+				return []string{msgID}, nil
 			}
-			return []string{msgID}, nil
 		}
 	} else {
 		if msgIDs, handled := c.FinalizeToolFeedbackMessage(ctx, msg); handled {
 			return msgIDs, nil
 		}
 	}
+	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(msg.ChatID)
 
 	// Build interactive card with markdown content
 	sendContent := msg.Content
@@ -256,6 +263,14 @@ func (c *FeishuChannel) EditMessage(ctx context.Context, chatID, messageID, cont
 
 // DeleteMessage implements channels.MessageDeleter.
 func (c *FeishuChannel) DeleteMessage(ctx context.Context, chatID, messageID string) error {
+	deleteFn := c.deleteMessageFn
+	if deleteFn == nil {
+		deleteFn = c.deleteMessageAPI
+	}
+	return deleteFn(ctx, chatID, messageID)
+}
+
+func (c *FeishuChannel) deleteMessageAPI(ctx context.Context, chatID, messageID string) error {
 	req := larkim.NewDeleteMessageReqBuilder().
 		MessageId(messageID).
 		Build()
@@ -355,12 +370,24 @@ func (c *FeishuChannel) DismissToolFeedbackMessage(ctx context.Context, chatID s
 	c.dismissTrackedToolFeedbackMessage(ctx, chatID, msgID)
 }
 
+func (c *FeishuChannel) resetTrackedToolFeedbackAfterEditFailure(ctx context.Context, chatID string) {
+	msgID, ok := c.currentToolFeedbackMessage(chatID)
+	if !ok {
+		return
+	}
+	c.dismissTrackedToolFeedbackMessage(ctx, chatID, msgID)
+}
+
 func (c *FeishuChannel) dismissTrackedToolFeedbackMessage(ctx context.Context, chatID, messageID string) {
 	if strings.TrimSpace(chatID) == "" || strings.TrimSpace(messageID) == "" {
 		return
 	}
 	c.ClearToolFeedbackMessage(chatID)
-	_ = c.DeleteMessage(ctx, chatID, messageID)
+	deleteFn := c.deleteMessageFn
+	if deleteFn == nil {
+		deleteFn = c.deleteMessageAPI
+	}
+	_ = deleteFn(ctx, chatID, messageID)
 }
 
 func (c *FeishuChannel) finalizeTrackedToolFeedbackMessage(

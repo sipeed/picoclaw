@@ -554,9 +554,9 @@ func (ts *turnState) Finish(isHardAbort bool) {
 		ts.mu.Unlock()
 	})
 
-	// If this is a graceful finish (not hard abort), signal to children
-	if !isHardAbort && ts.parentTurnState == nil {
-		// This is a root turn finishing gracefully
+	// Any graceful finish must signal direct children so nested SubTurns can
+	// observe parent completion and decide whether to stop or continue.
+	if !isHardAbort {
 		ts.parentEnded.Store(true)
 	}
 

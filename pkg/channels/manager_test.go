@@ -786,6 +786,21 @@ func (m *mockMessageEditor) FinalizeToolFeedbackMessage(
 	return m.finalizeFn(ctx, msg)
 }
 
+type mockResolvedToolFeedbackEditor struct {
+	mockMessageEditor
+	resolveChatIDFn func(chatID string, outboundCtx *bus.InboundContext) string
+}
+
+func (m *mockResolvedToolFeedbackEditor) ToolFeedbackMessageChatID(
+	chatID string,
+	outboundCtx *bus.InboundContext,
+) string {
+	if m.resolveChatIDFn != nil {
+		return m.resolveChatIDFn(chatID, outboundCtx)
+	}
+	return chatID
+}
+
 func TestPreSend_PlaceholderEditSuccess(t *testing.T) {
 	m := newTestManager()
 	var sendCalled bool
@@ -862,6 +877,54 @@ func TestPreSend_ToolFeedbackPlaceholderEditRecordsTrackedMessage(t *testing.T) 
 	}
 	if ch.recordedChatID != "123" || ch.recordedMessageID != "456" {
 		t.Fatalf("expected tracked message 123/456, got %q/%q", ch.recordedChatID, ch.recordedMessageID)
+	}
+}
+
+func TestPreSend_ToolFeedbackPlaceholderEditUsesResolvedTrackedChatID(t *testing.T) {
+	m := newTestManager()
+
+	ch := &mockResolvedToolFeedbackEditor{
+		mockMessageEditor: mockMessageEditor{
+			editFn: func(_ context.Context, chatID, messageID, content string) error {
+				if chatID != "-100123" || messageID != "456" || content != "hello" {
+					t.Fatalf("unexpected edit args: %s %s %s", chatID, messageID, content)
+				}
+				return nil
+			},
+		},
+		resolveChatIDFn: func(chatID string, outboundCtx *bus.InboundContext) string {
+			if chatID != "-100123" {
+				t.Fatalf("expected raw chat ID, got %q", chatID)
+			}
+			if outboundCtx == nil || outboundCtx.TopicID != "42" {
+				t.Fatalf("expected topic-aware outbound context, got %+v", outboundCtx)
+			}
+			return chatID + "/" + outboundCtx.TopicID
+		},
+	}
+
+	m.RecordPlaceholder("test", "-100123", "456")
+
+	msg := testOutboundMessage(bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "-100123",
+		Content: "hello",
+		Context: bus.InboundContext{
+			Channel: "test",
+			ChatID:  "-100123",
+			TopicID: "42",
+			Raw: map[string]string{
+				"message_kind": "tool_feedback",
+			},
+		},
+	})
+	_, edited := m.preSend(context.Background(), "test", msg, ch)
+	if !edited {
+		t.Fatal("expected preSend to edit placeholder")
+	}
+	if ch.recordedChatID != "-100123/42" || ch.recordedMessageID != "456" {
+		t.Fatalf("expected resolved tracked message -100123/42/456, got %q/%q",
+			ch.recordedChatID, ch.recordedMessageID)
 	}
 }
 
@@ -1091,6 +1154,48 @@ func TestGetStreamer_FinalizeDismissesTrackedToolFeedback(t *testing.T) {
 	}
 	if _, ok := m.streamActive.Load("test:123"); !ok {
 		t.Fatal("expected streamActive marker to be recorded after finalize")
+	}
+}
+
+func TestPreSend_PlaceholderEditSuccessDismissesResolvedTrackedToolFeedback(t *testing.T) {
+	m := newTestManager()
+
+	ch := &mockResolvedToolFeedbackEditor{
+		mockMessageEditor: mockMessageEditor{
+			editFn: func(_ context.Context, chatID, messageID, content string) error {
+				if chatID != "-100123" || messageID != "456" || content != "done" {
+					t.Fatalf("unexpected edit args: %s %s %s", chatID, messageID, content)
+				}
+				return nil
+			},
+		},
+		resolveChatIDFn: func(chatID string, outboundCtx *bus.InboundContext) string {
+			if outboundCtx == nil || outboundCtx.TopicID != "42" {
+				t.Fatalf("expected topic-aware outbound context, got %+v", outboundCtx)
+			}
+			return chatID + "/" + outboundCtx.TopicID
+		},
+	}
+
+	m.RecordPlaceholder("test", "-100123", "456")
+
+	msg := testOutboundMessage(bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "-100123",
+		Content: "done",
+		Context: bus.InboundContext{
+			Channel: "test",
+			ChatID:  "-100123",
+			TopicID: "42",
+		},
+	})
+
+	_, edited := m.preSend(context.Background(), "test", msg, ch)
+	if !edited {
+		t.Fatal("expected preSend to edit placeholder")
+	}
+	if ch.dismissedChatID != "-100123/42" {
+		t.Fatalf("expected resolved tracked dismissal, got %q", ch.dismissedChatID)
 	}
 }
 

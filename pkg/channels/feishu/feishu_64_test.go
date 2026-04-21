@@ -364,3 +364,29 @@ func TestFinalizeTrackedToolFeedbackMessage_EditFailureKeepsTrackedMessage(t *te
 		t.Fatalf("expected tracked tool feedback to remain after failed edit, got (%q, %v)", msgID, ok)
 	}
 }
+
+func TestResetTrackedToolFeedbackAfterEditFailure_DismissesTrackedMessage(t *testing.T) {
+	var (
+		deletedChatID string
+		deletedMsgID  string
+	)
+
+	ch := &FeishuChannel{
+		progress: channels.NewToolFeedbackAnimator(nil),
+		deleteMessageFn: func(_ context.Context, chatID, messageID string) error {
+			deletedChatID = chatID
+			deletedMsgID = messageID
+			return nil
+		},
+	}
+	ch.RecordToolFeedbackMessage("chat-1", "msg-1", "🔧 `read_file`")
+
+	ch.resetTrackedToolFeedbackAfterEditFailure(context.Background(), "chat-1")
+
+	if deletedChatID != "chat-1" || deletedMsgID != "msg-1" {
+		t.Fatalf("unexpected delete target: chat=%q msg=%q", deletedChatID, deletedMsgID)
+	}
+	if _, ok := ch.currentToolFeedbackMessage("chat-1"); ok {
+		t.Fatal("expected tracked tool feedback to be cleared after edit failure reset")
+	}
+}
