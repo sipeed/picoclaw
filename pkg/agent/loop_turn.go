@@ -1263,15 +1263,20 @@ turnLoop:
 				allResponsesHandled = false
 			}
 
+			forUserContent := toolResult.ForUser
+			if toolResult.IsError && forUserContent == "" {
+				forUserContent = toolResult.ContentForLLM()
+			}
+
 			shouldSendForUser := !toolResult.Silent &&
-				toolResult.ForUser != "" &&
-				(ts.opts.SendResponse || toolResult.ResponseHandled)
+				forUserContent != "" &&
+				(ts.opts.SendResponse || toolResult.ResponseHandled || toolResult.IsError)
 			if shouldSendForUser {
-				al.bus.PublishOutbound(ctx, outboundMessageForTurn(ts, toolResult.ForUser))
+				al.bus.PublishOutbound(ctx, outboundMessageForTurn(ts, forUserContent))
 				logger.DebugCF("agent", "Sent tool result to user",
 					map[string]any{
 						"tool":        toolName,
-						"content_len": len(toolResult.ForUser),
+						"content_len": len(forUserContent),
 					})
 			}
 			contentForLLM := toolResult.ContentForLLM()
