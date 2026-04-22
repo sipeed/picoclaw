@@ -181,17 +181,16 @@ func (h *Handler) handlePicoMediaProxy() http.HandlerFunc {
 		}
 
 		gateway.mu.Lock()
-		uiToken := gateway.picoToken
+		picoToken := gateway.picoToken
 		gateway.mu.Unlock()
 
-		token := tokenPrefix + uiToken
-		if token == "" {
+		if picoToken == "" {
 			logger.Warnf("Missing Pico token for media proxy")
 			http.Error(w, "Invalid Pico token", http.StatusForbidden)
 			return
 		}
 
-		h.createPicoHTTPProxy(token).ServeHTTP(w, r)
+		h.createPicoHTTPProxy(picoToken).ServeHTTP(w, r)
 	}
 }
 

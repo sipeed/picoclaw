@@ -720,7 +720,7 @@ func TestCreatePicoHTTPProxyInjectsGatewayAuth(t *testing.T) {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
-	proxy := h.createPicoHTTPProxy(tokenPrefix + "test-token" + "ui-token")
+	proxy := h.createPicoHTTPProxy("ui-token")
 	var capturedPath string
 	var capturedAuth string
 	proxy.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -744,9 +744,80 @@ func TestCreatePicoHTTPProxyInjectsGatewayAuth(t *testing.T) {
 	if capturedPath != "/pico/media/attachment-1" {
 		t.Fatalf("capturedPath = %q, want %q", capturedPath, "/pico/media/attachment-1")
 	}
-	expected := "Bearer " + tokenPrefix + "test-token" + "ui-token"
+	expected := "Bearer ui-token"
 	if capturedAuth != expected {
 		t.Fatalf("Authorization = %q, want %q", capturedAuth, expected)
+	}
+}
+
+func TestHandlePicoMediaProxyUsesRawBearerToken(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("PICOCLAW_HOME", home)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+	handler := h.handlePicoMediaProxy()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/pico/media/attachment-1" {
+			t.Fatalf("path = %q, want %q", r.URL.Path, "/pico/media/attachment-1")
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer ui-token" {
+			t.Fatalf("Authorization = %q, want %q", got, "Bearer ui-token")
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "proxied-media")
+	}))
+	defer server.Close()
+
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Host = "127.0.0.1"
+	cfg.Gateway.Port = mustGatewayTestPort(t, server.URL)
+	bc := cfg.Channels["pico"]
+	bc.Enabled = true
+	decoded, err := bc.GetDecoded()
+	if err != nil {
+		t.Fatalf("GetDecoded() error = %v", err)
+	}
+	decoded.(*config.PicoSettings).SetToken("ui-token")
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	cmd := startGatewayLikeProcess(t)
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	})
+
+	origPidData := gateway.pidData
+	origPicoToken := gateway.picoToken
+	origCmd := gateway.cmd
+	t.Cleanup(func() {
+		gateway.mu.Lock()
+		gateway.pidData = origPidData
+		gateway.picoToken = origPicoToken
+		gateway.cmd = origCmd
+		gateway.mu.Unlock()
+	})
+
+	gateway.mu.Lock()
+	gateway.pidData = &ppid.PidFileData{PID: cmd.Process.Pid}
+	gateway.picoToken = "ui-token"
+	gateway.cmd = cmd
+	gateway.mu.Unlock()
+
+	req := newPicoProxyRequest(http.MethodGet, "/pico/media/attachment-1")
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if body := rec.Body.String(); body != "proxied-media" {
+		t.Fatalf("body = %q, want %q", body, "proxied-media")
 	}
 }
 
