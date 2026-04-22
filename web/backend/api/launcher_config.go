@@ -4,16 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
 )
 
 type launcherConfigPayload struct {
-	Port          int      `json:"port"`
-	Public        bool     `json:"public"`
-	AllowedCIDRs  []string `json:"allowed_cidrs"`
-	LauncherToken string   `json:"launcher_token"`
+	Port         int      `json:"port"`
+	Public       bool     `json:"public"`
+	AllowedCIDRs []string `json:"allowed_cidrs"`
 }
 
 func (h *Handler) registerLauncherConfigRoutes(mux *http.ServeMux) {
@@ -50,10 +48,9 @@ func (h *Handler) handleGetLauncherConfig(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(launcherConfigPayload{
-		Port:          cfg.Port,
-		Public:        cfg.Public,
-		AllowedCIDRs:  append([]string(nil), cfg.AllowedCIDRs...),
-		LauncherToken: cfg.LauncherToken,
+		Port:         cfg.Port,
+		Public:       cfg.Public,
+		AllowedCIDRs: append([]string(nil), cfg.AllowedCIDRs...),
 	})
 }
 
@@ -64,12 +61,15 @@ func (h *Handler) handleUpdateLauncherConfig(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	cfg := launcherconfig.Config{
-		Port:          payload.Port,
-		Public:        payload.Public,
-		AllowedCIDRs:  append([]string(nil), payload.AllowedCIDRs...),
-		LauncherToken: strings.TrimSpace(payload.LauncherToken),
+	cfg, err := h.loadLauncherConfig()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load launcher config: %v", err), http.StatusInternalServerError)
+		return
 	}
+	cfg.Port = payload.Port
+	cfg.Public = payload.Public
+	cfg.AllowedCIDRs = append([]string(nil), payload.AllowedCIDRs...)
+	cfg.LegacyLauncherToken = ""
 	if err := launcherconfig.Validate(cfg); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -82,9 +82,8 @@ func (h *Handler) handleUpdateLauncherConfig(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(launcherConfigPayload{
-		Port:          cfg.Port,
-		Public:        cfg.Public,
-		AllowedCIDRs:  append([]string(nil), cfg.AllowedCIDRs...),
-		LauncherToken: cfg.LauncherToken,
+		Port:         cfg.Port,
+		Public:       cfg.Public,
+		AllowedCIDRs: append([]string(nil), cfg.AllowedCIDRs...),
 	})
 }

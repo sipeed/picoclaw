@@ -10,6 +10,14 @@ import { useTranslation } from "react-i18next"
 
 import type { ChannelConfig } from "@/api/channels"
 import { pollWeixinFlow, startWeixinFlow } from "@/api/channels"
+import {
+  type ArrayFieldFlusher,
+  ChannelArrayListField,
+} from "@/components/channels/channel-array-list-field"
+import {
+  asStringArray,
+  parseAllowFromInput,
+} from "@/components/channels/channel-array-utils"
 import { Field } from "@/components/shared-form"
 import { Button } from "@/components/ui/button"
 import {
@@ -35,15 +43,15 @@ interface WeixinFormProps {
   onChange: (key: string, value: unknown) => void
   isEdit: boolean
   onBindSuccess?: () => void
+  registerArrayFieldFlusher?: (
+    fieldPath: string,
+    flusher: ArrayFieldFlusher | null,
+  ) => void
+  arrayFieldResetVersion?: number
 }
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : ""
-}
-
-function asStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value.filter((item): item is string => typeof item === "string")
 }
 
 export function WeixinForm({
@@ -51,6 +59,8 @@ export function WeixinForm({
   onChange,
   isEdit,
   onBindSuccess,
+  registerArrayFieldFlusher,
+  arrayFieldResetVersion,
 }: WeixinFormProps) {
   const { t } = useTranslation()
 
@@ -321,24 +331,17 @@ export function WeixinForm({
 
       <Card className="shadow-sm">
         <CardContent className="divide-border/60 divide-y px-6 py-0 [&>div]:py-5">
-          <Field
+          <ChannelArrayListField
             label={t("channels.field.allowFrom")}
             hint={t("channels.form.desc.allowFrom")}
-          >
-            <Input
-              value={asStringArray(config.allow_from).join(", ")}
-              onChange={(e) =>
-                onChange(
-                  "allow_from",
-                  e.target.value
-                    .split(",")
-                    .map((s: string) => s.trim())
-                    .filter(Boolean),
-                )
-              }
-              placeholder={t("channels.field.allowFromPlaceholder")}
-            />
-          </Field>
+            value={asStringArray(config.allow_from)}
+            onChange={(value) => onChange("allow_from", value)}
+            placeholder={t("channels.field.allowFromPlaceholder")}
+            parser={parseAllowFromInput}
+            fieldPath="allow_from"
+            registerFlusher={registerArrayFieldFlusher}
+            resetVersion={arrayFieldResetVersion}
+          />
 
           <Field
             label={t("channels.field.proxy")}

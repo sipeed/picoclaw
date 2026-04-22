@@ -295,6 +295,22 @@ export function AppHeader() {
         </DropdownMenu>
 
         {/* Theme Toggle */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          onClick={toggleTheme}
+        >
+          {theme === "dark" ? (
+            <IconSun className="size-4.5" />
+          ) : (
+            <IconMoon className="size-4.5" />
+          )}
+        </Button>
+
+        <Separator className="mx-2 my-2" orientation="vertical" />
+
+        {/* Logout */}
         <Tooltip delayDuration={700}>
           <TooltipTrigger asChild>
             <Button
@@ -309,19 +325,6 @@ export function AppHeader() {
           </TooltipTrigger>
           <TooltipContent>{t("header.logout.tooltip")}</TooltipContent>
         </Tooltip>
-
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8"
-          onClick={toggleTheme}
-        >
-          {theme === "dark" ? (
-            <IconSun className="size-4.5" />
-          ) : (
-            <IconMoon className="size-4.5" />
-          )}
-        </Button>
       </div>
     </header>
   )

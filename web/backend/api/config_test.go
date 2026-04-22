@@ -230,6 +230,285 @@ func TestHandlePatchConfig_SavesChannelListSettingsPatch(t *testing.T) {
 	}
 }
 
+func TestHandlePatchConfig_NormalizesStringChannelArrayFields(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"channel_list": {
+			"pico": {
+				"type": "pico",
+				"allow_from": " ou_a\u200b，\u2060ou_b\tou_c\u202e，ou_a ",
+				"group_trigger": {
+					"prefixes": "/，!;\n?，/"
+				},
+				"settings": {
+					"allow_origins": "https://a.example.com，http://localhost:5173，https://a.example.com"
+				}
+			},
+			"irc": {
+				"type": "irc",
+				"settings": {
+					"channels": "#ops,\n#dev,\n#ops",
+					"request_caps": "multi-prefix，echo-message\tbatch，multi-prefix"
+				}
+			}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	picoChannel := cfg.Channels[config.ChannelPico]
+	if len(picoChannel.AllowFrom) != 3 ||
+		picoChannel.AllowFrom[0] != "ou_a" ||
+		picoChannel.AllowFrom[1] != "ou_b" ||
+		picoChannel.AllowFrom[2] != "ou_c" {
+		t.Fatalf("pico allow_from = %#v, want [\"ou_a\", \"ou_b\", \"ou_c\"]", picoChannel.AllowFrom)
+	}
+	if len(picoChannel.GroupTrigger.Prefixes) != 3 ||
+		picoChannel.GroupTrigger.Prefixes[0] != "/" ||
+		picoChannel.GroupTrigger.Prefixes[1] != "!;" ||
+		picoChannel.GroupTrigger.Prefixes[2] != "?" {
+		t.Fatalf(
+			"pico group_trigger.prefixes = %#v, want [\"/\", \"!;\", \"?\"]",
+			picoChannel.GroupTrigger.Prefixes,
+		)
+	}
+
+	decoded, err := picoChannel.GetDecoded()
+	if err != nil {
+		t.Fatalf("GetDecoded() pico error = %v", err)
+	}
+	picoCfg := decoded.(*config.PicoSettings)
+	if len(picoCfg.AllowOrigins) != 2 ||
+		picoCfg.AllowOrigins[0] != "https://a.example.com" ||
+		picoCfg.AllowOrigins[1] != "http://localhost:5173" {
+		t.Fatalf(
+			"pico allow_origins = %#v, want [\"https://a.example.com\", \"http://localhost:5173\"]",
+			picoCfg.AllowOrigins,
+		)
+	}
+
+	ircChannel := cfg.Channels[config.ChannelIRC]
+	decoded, err = ircChannel.GetDecoded()
+	if err != nil {
+		t.Fatalf("GetDecoded() irc error = %v", err)
+	}
+	ircCfg := decoded.(*config.IRCSettings)
+	if len(ircCfg.Channels) != 2 ||
+		ircCfg.Channels[0] != "#ops" ||
+		ircCfg.Channels[1] != "#dev" {
+		t.Fatalf("irc channels = %#v, want [\"#ops\", \"#dev\"]", ircCfg.Channels)
+	}
+	if len(ircCfg.RequestCaps) != 3 ||
+		ircCfg.RequestCaps[0] != "multi-prefix" ||
+		ircCfg.RequestCaps[1] != "echo-message" ||
+		ircCfg.RequestCaps[2] != "batch" {
+		t.Fatalf(
+			"irc request_caps = %#v, want [\"multi-prefix\", \"echo-message\", \"batch\"]",
+			ircCfg.RequestCaps,
+		)
+	}
+}
+
+func TestHandlePatchConfig_NormalizesSingleNumericAllowFrom(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"channel_list": {
+			"telegram": {
+				"type": "telegram",
+				"allow_from": 123456
+			}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	telegramChannel := cfg.Channels[config.ChannelTelegram]
+	if len(telegramChannel.AllowFrom) != 1 || telegramChannel.AllowFrom[0] != "123456" {
+		t.Fatalf("telegram allow_from = %#v, want [\"123456\"]", telegramChannel.AllowFrom)
+	}
+}
+
+func TestHandlePatchConfig_RejectsInvalidChannelArrayFields(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	telegramChannel := cfg.Channels[config.ChannelTelegram]
+	telegramChannel.AllowFrom = config.FlexibleStringSlice{"existing-user"}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "object allow_from",
+			body: `{
+				"channel_list": {
+					"telegram": {
+						"type": "telegram",
+						"allow_from": {"id": "bad"}
+					}
+				}
+			}`,
+		},
+		{
+			name: "boolean allow_from",
+			body: `{
+				"channel_list": {
+					"telegram": {
+						"type": "telegram",
+						"allow_from": true
+					}
+				}
+			}`,
+		},
+		{
+			name: "object settings array",
+			body: `{
+				"channel_list": {
+					"irc": {
+						"type": "irc",
+						"settings": {
+							"channels": {"name": "#ops"}
+						}
+					}
+				}
+			}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := NewHandler(configPath)
+			mux := http.NewServeMux()
+			h.RegisterRoutes(mux)
+
+			req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf(
+					"PATCH /api/config status = %d, want %d, body=%s",
+					rec.Code,
+					http.StatusBadRequest,
+					rec.Body.String(),
+				)
+			}
+
+			cfg, err := config.LoadConfig(configPath)
+			if err != nil {
+				t.Fatalf("LoadConfig() error = %v", err)
+			}
+			telegramChannel := cfg.Channels[config.ChannelTelegram]
+			if len(telegramChannel.AllowFrom) != 1 || telegramChannel.AllowFrom[0] != "existing-user" {
+				t.Fatalf("telegram allow_from = %#v, want unchanged [\"existing-user\"]", telegramChannel.AllowFrom)
+			}
+		})
+	}
+}
+
+func TestHandlePatchConfig_ClearingAllowFromDoesNotLeaveEmptyStringItem(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	feishuChannel := cfg.Channels[config.ChannelFeishu]
+	feishuChannel.Enabled = true
+	feishuChannel.AllowFrom = config.FlexibleStringSlice{"ou_existing_user"}
+	decoded, err := feishuChannel.GetDecoded()
+	if err != nil {
+		t.Fatalf("GetDecoded() error = %v", err)
+	}
+	feishuCfg := decoded.(*config.FeishuSettings)
+	feishuCfg.AppID = "cli_existing_app"
+	feishuCfg.AppSecret = *config.NewSecureString("existing-secret")
+	if err = config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"channel_list": {
+			"feishu": {
+				"enabled": true,
+				"allow_from": "",
+				"settings": {
+					"app_id": "cli_existing_app"
+				}
+			}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err = config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	feishuChannel = cfg.Channels[config.ChannelFeishu]
+	if len(feishuChannel.AllowFrom) != 0 {
+		t.Fatalf("feishu allow_from = %#v, want empty slice", feishuChannel.AllowFrom)
+	}
+
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile(configPath) error = %v", err)
+	}
+	if strings.Contains(string(configData), `"allow_from": [""]`) {
+		t.Fatalf("config file should not contain empty-string allow_from item: %s", string(configData))
+	}
+}
+
 func TestHandlePatchConfig_CreatesMissingChannelWithTypeAndSecret(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()

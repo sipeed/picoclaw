@@ -11,7 +11,6 @@ export interface LauncherConfig {
   port: number
   public: boolean
   allowed_cidrs: string[]
-  launcher_token: string
 }
 
 export interface SystemVersionInfo {

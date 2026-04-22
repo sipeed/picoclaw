@@ -22,6 +22,13 @@ export interface ChatMessage {
   attachments?: ChatAttachment[]
 }
 
+export interface ContextUsage {
+  used_tokens: number
+  total_tokens: number
+  compress_at_tokens: number
+  used_percent: number
+}
+
 export type ConnectionState =
   | "disconnected"
   | "connecting"
@@ -34,6 +41,7 @@ export interface ChatStoreState {
   isTyping: boolean
   activeSessionId: string
   hasHydratedActiveSession: boolean
+  contextUsage?: ContextUsage
 }
 
 type ChatStorePatch = Partial<ChatStoreState>
@@ -47,6 +55,8 @@ const DEFAULT_CHAT_STATE: ChatStoreState = {
 }
 
 export const chatAtom = atom<ChatStoreState>(DEFAULT_CHAT_STATE)
+
+export const showThoughtsAtom = atom<boolean>(true)
 
 const store = getDefaultStore()
 

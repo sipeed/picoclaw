@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/netbind"
-	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
+	"github.com/sipeed/picoclaw/web/backend/middleware"
 )
 
 func TestShouldEnableLauncherFileLogging(t *testing.T) {
@@ -43,60 +43,50 @@ func TestShouldEnableLauncherFileLogging(t *testing.T) {
 	}
 }
 
-func TestDashboardTokenConfigHelpPath(t *testing.T) {
-	const launcherPath = "/tmp/launcher-config.json"
-
+func TestShouldEnableLocalAutoLogin(t *testing.T) {
 	tests := []struct {
-		name   string
-		source launcherconfig.DashboardTokenSource
-		want   string
+		name       string
+		noBrowser  bool
+		probeHost  string
+		wantEnable bool
 	}{
-		{
-			name:   "env token does not expose config path",
-			source: launcherconfig.DashboardTokenSourceEnv,
-			want:   "",
-		},
-		{
-			name:   "config token exposes config path",
-			source: launcherconfig.DashboardTokenSourceConfig,
-			want:   launcherPath,
-		},
-		{
-			name:   "random token does not expose config path",
-			source: launcherconfig.DashboardTokenSourceRandom,
-			want:   "",
-		},
+		{name: "loopback localhost", probeHost: "localhost", wantEnable: true},
+		{name: "loopback ipv4", probeHost: "127.0.0.1", wantEnable: true},
+		{name: "loopback ipv6", probeHost: "::1", wantEnable: true},
+		{name: "browser disabled", noBrowser: true, probeHost: "localhost", wantEnable: false},
+		{name: "non-loopback host", probeHost: "192.168.1.50", wantEnable: false},
+		{name: "non-loopback hostname", probeHost: "example.com", wantEnable: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := dashboardTokenConfigHelpPath(tt.source, launcherPath); got != tt.want {
-				t.Fatalf("dashboardTokenConfigHelpPath(%q, %q) = %q, want %q", tt.source, launcherPath, got, tt.want)
+			if got := shouldEnableLocalAutoLogin(tt.noBrowser, tt.probeHost); got != tt.wantEnable {
+				t.Fatalf(
+					"shouldEnableLocalAutoLogin(%t, %q) = %t, want %t",
+					tt.noBrowser,
+					tt.probeHost,
+					got,
+					tt.wantEnable,
+				)
 			}
 		})
 	}
 }
 
-func TestMaskSecret(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"sdhjflsjdflksdf", "sdh**********ksdf"},
-		{"abcdefghijklmnopqrstuvwxyz", "abc**********wxyz"},
-		{"abcdefghijkl", "abc**********ijkl"},
-		{"abcdefgh", "abc**********"},
-		{"abcdefghijk", "abc**********"},
-		{"abcdefg", "abc**********"},
-		{"abcd", "abc**********"},
-		{"abc", "**********"},
-		{"", "**********"},
+func TestLauncherBrowserLaunchSuffix(t *testing.T) {
+	autoLogin, err := middleware.NewLauncherDashboardLocalAutoLogin(time.Minute)
+	if err != nil {
+		t.Fatalf("NewLauncherDashboardLocalAutoLogin() error = %v", err)
 	}
 
-	for _, tt := range tests {
-		if got := maskSecret(tt.input); got != tt.want {
-			t.Errorf("maskSecret(%q) = %q, want %q", tt.input, got, tt.want)
-		}
+	if got := launcherBrowserLaunchSuffix(true, autoLogin); got != middleware.LauncherDashboardSetupPath {
+		t.Fatalf("setup suffix = %q", got)
+	}
+	if got := launcherBrowserLaunchSuffix(false, autoLogin); !strings.HasPrefix(got, "/launcher-auto-login?nonce=") {
+		t.Fatalf("auto-login suffix = %q", got)
+	}
+	if got := launcherBrowserLaunchSuffix(false, nil); got != "" {
+		t.Fatalf("empty suffix = %q, want empty", got)
 	}
 }
 

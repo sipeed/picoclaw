@@ -3,9 +3,15 @@ import type { KeyboardEvent } from "react"
 import { useTranslation } from "react-i18next"
 import TextareaAutosize from "react-textarea-autosize"
 
+import { ContextUsageRing } from "@/components/chat/context-usage-ring"
 import { Button } from "@/components/ui/button"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import type { ChatAttachment } from "@/store/chat"
+import type { ChatAttachment, ContextUsage } from "@/store/chat"
 
 export type ChatInputDisabledReason =
   | "gatewayUnknown"
@@ -26,8 +32,10 @@ interface ChatComposerProps {
   onAddImages: () => void
   onRemoveAttachment: (index: number) => void
   onSend: () => void
+  onContextDetail?: () => void
   inputDisabledReason: ChatInputDisabledReason | null
   canSend: boolean
+  contextUsage?: ContextUsage
 }
 
 export function ChatComposer({
@@ -37,8 +45,10 @@ export function ChatComposer({
   onAddImages,
   onRemoveAttachment,
   onSend,
+  onContextDetail,
   inputDisabledReason,
   canSend,
+  contextUsage,
 }: ChatComposerProps) {
   const { t } = useTranslation()
   const canInput = inputDisabledReason === null
@@ -57,8 +67,8 @@ export function ChatComposer({
   }
 
   return (
-    <div className="bg-background shrink-0 px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] md:px-8 md:pb-8 lg:px-24 xl:px-48">
-      <div className="bg-card border-border/80 mx-auto flex max-w-[1000px] flex-col rounded-2xl border p-3 shadow-md">
+    <div className="before:bg-background pointer-events-none relative z-10 -mt-[24px] shrink-0 overflow-y-auto px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] [scrollbar-gutter:stable] before:pointer-events-none before:absolute before:inset-x-0 before:top-[24px] before:bottom-0 before:content-[''] md:px-8 md:pb-8 lg:px-24 xl:px-48">
+      <div className="bg-card border-border/60 pointer-events-auto relative mx-auto flex max-w-[1000px] flex-col rounded-2xl border p-3 shadow-sm">
         {attachments.length > 0 && (
           <div className="mb-3 flex flex-wrap gap-2 px-2">
             {attachments.map((attachment, index) => (
@@ -93,17 +103,12 @@ export function ChatComposer({
           disabled={!canInput}
           title={disabledMessage || undefined}
           className={cn(
-            "placeholder:text-muted-foreground/50 max-h-[200px] min-h-[60px] resize-none border-0 bg-transparent px-2 py-1 text-[15px] shadow-none transition-colors focus-visible:ring-0 focus-visible:outline-none dark:bg-transparent",
+            "placeholder:text-muted-foreground/50 max-h-[200px] min-h-[64px] resize-none border-0 bg-transparent px-2 py-1 text-[15px] shadow-none transition-colors focus-visible:ring-0 focus-visible:outline-none dark:bg-transparent",
             !canInput && "cursor-not-allowed",
           )}
           minRows={1}
           maxRows={8}
         />
-        {!canInput && disabledMessage && (
-          <div className="text-muted-foreground px-3 py-1 text-xs">
-            {disabledMessage}
-          </div>
-        )}
 
         <div className="mt-2 flex items-center justify-between px-1">
           <div className="flex items-center gap-1">
@@ -121,17 +126,35 @@ export function ChatComposer({
             </Button>
           </div>
 
-          {canInput ? (
-            <Button
-              type="button"
-              size="icon"
-              className="size-8 rounded-full bg-violet-500 text-white transition-transform hover:bg-violet-600 active:scale-95"
-              onClick={onSend}
-              disabled={!canSend}
-            >
-              <IconArrowUp className="size-4" />
-            </Button>
-          ) : null}
+          <div className="flex items-center gap-1.5">
+            {contextUsage && (
+              <ContextUsageRing usage={contextUsage} onDetailClick={onContextDetail} />
+            )}
+            {canInput ? (
+              <Tooltip delayDuration={700}>
+                <TooltipTrigger asChild>
+                  <span tabIndex={!canSend ? 0 : undefined}>
+                    <Button
+                      type="button"
+                      size="icon"
+                      className="size-8 rounded-full bg-violet-500 text-white transition-transform hover:bg-violet-600 active:scale-95"
+                      onClick={onSend}
+                      disabled={!canSend}
+                      aria-label={t("chat.sendMessage")}
+                    >
+                      <IconArrowUp className="size-4" />
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent
+                  className="border-border/70 bg-muted text-foreground border text-center whitespace-pre-line shadow-lg shadow-black/10 dark:shadow-black/30"
+                  arrowClassName="bg-muted fill-muted"
+                >
+                  {t("chat.sendHint")}
+                </TooltipContent>
+              </Tooltip>
+            ) : null}
+          </div>
         </div>
       </div>
     </div>

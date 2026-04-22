@@ -12,12 +12,12 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -51,7 +51,6 @@ var (
 	servers    []*http.Server
 	serverAddr string
 	// browserLaunchURL is opened by openBrowser() (auto-open + tray "open console").
-	// Includes ?token= for same-machine dashboard login; keep serverAddr without secrets for other use.
 	browserLaunchURL string
 	apiHandler       *api.Handler
 
@@ -62,11 +61,34 @@ func shouldEnableLauncherFileLogging(enableConsole, debug bool) bool {
 	return !enableConsole || debug
 }
 
-func dashboardTokenConfigHelpPath(source launcherconfig.DashboardTokenSource, launcherPath string) string {
-	if source != launcherconfig.DashboardTokenSourceConfig {
-		return ""
+func shouldEnableLocalAutoLogin(noBrowser bool, probeHost string) bool {
+	return !noBrowser && isLoopbackLaunchHost(probeHost)
+}
+
+func isLoopbackLaunchHost(host string) bool {
+	host = strings.TrimSpace(host)
+	if strings.EqualFold(host, "localhost") {
+		return true
 	}
-	return launcherPath
+	host = strings.Trim(host, "[]")
+	if i := strings.LastIndex(host, "%"); i >= 0 {
+		host = host[:i]
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func launcherBrowserLaunchSuffix(
+	needsSetup bool,
+	localAutoLogin *middleware.LauncherDashboardLocalAutoLogin,
+) string {
+	if needsSetup {
+		return middleware.LauncherDashboardSetupPath
+	}
+	if localAutoLogin != nil {
+		return localAutoLogin.URLPath()
+	}
+	return ""
 }
 
 func resolveLauncherHostInput(flagHost string, explicitFlag bool, envHost string) (string, bool, error) {
@@ -318,24 +340,6 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// maskSecret masks a secret for display. It always shows up to the first 3
-// runes. The last 4 runes are only appended when at least 5 runes remain
-// hidden in the middle (i.e. string length >= 12), so an 8-char minimum
-// password never exposes its tail. Strings of 3 chars or fewer are fully
-// masked.
-func maskSecret(s string) string {
-	runes := []rune(s)
-	n := len(runes)
-	const prefixLen, suffixLen, minHidden = 3, 4, 5
-	if n < prefixLen+suffixLen+minHidden {
-		if n <= prefixLen {
-			return "**********"
-		}
-		return string(runes[:prefixLen]) + "**********"
-	}
-	return string(runes[:prefixLen]) + "**********" + string(runes[n-suffixLen:])
-}
-
 func main() {
 	port := flag.String("port", "18800", "Port to listen on")
 	host := flag.String("host", "", "Host to listen on (overrides -public when set)")
@@ -503,15 +507,11 @@ func main() {
 	}
 	listeners := openResult.Listeners
 
-	dashboardToken, dashboardSigningKey, _, dashErr := launcherconfig.EnsureDashboardSecrets(
-		launcherCfg,
-	)
+	dashboardSessionCookie, dashErr := middleware.NewLauncherDashboardSessionCookie()
 	if dashErr != nil {
 		logger.Fatalf("Dashboard auth setup failed: %v", dashErr)
 	}
-	dashboardSessionCookie := middleware.SessionCookieValue(dashboardSigningKey, dashboardToken)
 
-	fmt.Println("dashboardToken: ", dashboardToken)
 	// Open the bcrypt password store (creates the DB file on first run).
 	authStore, authStoreErr := dashboardauth.New(picoHome)
 	var passwordStore api.PasswordStore
@@ -522,23 +522,62 @@ func main() {
 		logger.InfoC(
 			"web",
 			fmt.Sprintf(
-				"Dashboard password store unavailable on this platform; falling back to token login: %v",
+				"Dashboard SQLite password store unavailable on this platform; using launcher-config password storage: %v",
 				authStoreErr,
 			),
 		)
+		passwordStore = launcherconfig.NewPasswordStore(launcherPath, launcherCfg)
 		authStoreErr = nil
 	} else {
 		logger.ErrorC("web", fmt.Sprintf("Warning: could not open auth store: %v", authStoreErr))
+	}
+
+	migrationResult, migrationErr := launcherconfig.MigrateLegacyLauncherToken(
+		context.Background(),
+		passwordStore,
+		launcherPath,
+		launcherCfg,
+	)
+	if migrationErr != nil {
+		logger.Fatalf("Failed to migrate legacy launcher token to password login: %v", migrationErr)
+	}
+	if migrationResult.Migrated {
+		logger.InfoC("web", "Migrated legacy launcher token to dashboard password login")
+	}
+	if migrationResult.CleanupErr != nil {
+		logger.WarnC(
+			"web",
+			fmt.Sprintf(
+				"Legacy launcher token password migration succeeded, but failed to remove launcher_token from %s: %v",
+				launcherPath,
+				migrationResult.CleanupErr,
+			),
+		)
+	}
+
+	var localAutoLogin *middleware.LauncherDashboardLocalAutoLogin
+	needsInitialSetup := false
+	if passwordStore != nil {
+		initialized, initErr := passwordStore.IsInitialized(context.Background())
+		if initErr != nil {
+			logger.ErrorC("web", fmt.Sprintf("Warning: could not check dashboard password state: %v", initErr))
+		} else if !initialized {
+			needsInitialSetup = true
+		} else if shouldEnableLocalAutoLogin(*noBrowser, openResult.ProbeHost) {
+			localAutoLogin, err = middleware.NewLauncherDashboardLocalAutoLogin(5 * time.Minute)
+			if err != nil {
+				logger.Fatalf("Failed to create local auto-login grant: %v", err)
+			}
+		}
 	}
 
 	// Initialize Server components
 	mux := http.NewServeMux()
 
 	api.RegisterLauncherAuthRoutes(mux, api.LauncherAuthRouteOpts{
-		DashboardToken: dashboardToken,
-		SessionCookie:  dashboardSessionCookie,
-		PasswordStore:  passwordStore,
-		StoreError:     authStoreErr,
+		SessionCookie: dashboardSessionCookie,
+		PasswordStore: passwordStore,
+		StoreError:    authStoreErr,
 	})
 
 	// API Routes (e.g. /api/status)
@@ -561,7 +600,7 @@ func main() {
 
 	dashAuth := middleware.LauncherDashboardAuth(middleware.LauncherDashboardAuthConfig{
 		ExpectedCookie: dashboardSessionCookie,
-		Token:          dashboardToken,
+		LocalAutoLogin: localAutoLogin,
 	}, accessControlledMux)
 
 	// Apply middleware stack
@@ -573,13 +612,21 @@ func main() {
 		),
 	)
 
-	// Print startup banner and token (console mode only).
+	// Print startup banner (console mode only).
 	if enableConsole || debug {
 		consoleHosts := launcherConsoleHosts(hostInput, effectivePublic)
 
 		fmt.Print(utils.Banner)
 		fmt.Println()
-		fmt.Println("  Open the following URL in your browser:")
+		if needsInitialSetup {
+			if *noBrowser {
+				fmt.Println("  First-time setup: open /launcher-setup to create the dashboard password.")
+			} else {
+				fmt.Println("  Launcher will open /launcher-setup automatically.")
+			}
+			fmt.Println()
+		}
+		fmt.Println("  Dashboard address:")
 		fmt.Println()
 		for _, host := range consoleHosts {
 			fmt.Printf("    >> http://%s <<\n", net.JoinHostPort(host, effectivePort))
@@ -599,11 +646,7 @@ func main() {
 
 	// Share the local URL with the launcher runtime.
 	serverAddr = fmt.Sprintf("http://%s", net.JoinHostPort(openResult.ProbeHost, effectivePort))
-	if dashboardToken != "" {
-		browserLaunchURL = serverAddr + "?token=" + url.QueryEscape(dashboardToken)
-	} else {
-		browserLaunchURL = serverAddr
-	}
+	browserLaunchURL = serverAddr + launcherBrowserLaunchSuffix(needsInitialSetup, localAutoLogin)
 
 	// Auto-open browser will be handled by the launcher runtime.
 

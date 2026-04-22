@@ -45,7 +45,7 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 Mở http://localhost:18800 trong trình duyệt. Launcher tự động quản lý tiến trình gateway.
 
 > [!WARNING]
-> Web console chưa hỗ trợ xác thực. Tránh để lộ ra internet công cộng.
+> Web console được bảo vệ bằng mật khẩu đăng nhập dashboard. Không để lộ launcher ra mạng không tin cậy hoặc internet công cộng.
 
 ### Chế Độ Agent (One-shot)
 

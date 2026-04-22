@@ -115,6 +115,7 @@ export function ChatPage() {
     connectionState,
     isTyping,
     activeSessionId,
+    contextUsage,
     sendMessage,
     switchSession,
     newChat,
@@ -153,7 +154,7 @@ export function ChatPage() {
   })
 
   const syncScrollState = (element: HTMLDivElement) => {
-    const { scrollTop, scrollHeight, clientHeight } = element
+    const { clientHeight, scrollHeight, scrollTop } = element
     setHasScrolled(scrollTop > 0)
     setIsAtBottom(scrollHeight - scrollTop <= clientHeight + 10)
   }
@@ -294,7 +295,7 @@ export function ChatPage() {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8 lg:px-24 xl:px-48"
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-6 [scrollbar-gutter:stable] md:px-8 lg:px-24 xl:px-48"
       >
         <div className="mx-auto flex w-full max-w-250 flex-col gap-8 pb-8">
           {messages.length === 0 && !isTyping && (
@@ -341,8 +342,14 @@ export function ChatPage() {
         onAddImages={handleAddImages}
         onRemoveAttachment={handleRemoveAttachment}
         onSend={handleSend}
+        onContextDetail={() => {
+          if (sendMessage({ content: "/context", attachments: [] })) {
+            setInput("")
+          }
+        }}
         inputDisabledReason={inputDisabledReason}
         canSend={canSubmit}
+        contextUsage={contextUsage}
       />
     </div>
   )

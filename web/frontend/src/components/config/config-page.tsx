@@ -7,6 +7,7 @@ import { toast } from "sonner"
 
 import { patchAppConfig } from "@/api/channels"
 import { launcherFetch } from "@/api/http"
+import { postLauncherDashboardSetup } from "@/api/launcher-auth"
 import {
   getAutoStartStatus,
   getLauncherConfig,
@@ -94,7 +95,8 @@ export function ConfigPage() {
       port: String(launcherConfig.port),
       publicAccess: launcherConfig.public,
       allowedCIDRsText: (launcherConfig.allowed_cidrs ?? []).join("\n"),
-      launcherToken: launcherConfig.launcher_token ?? "",
+      dashboardPassword: "",
+      dashboardPasswordConfirm: "",
     }
     setLauncherForm(parsed)
     setLauncherBaseline(parsed)
@@ -107,8 +109,14 @@ export function ConfigPage() {
   }, [autoStartStatus])
 
   const configDirty = JSON.stringify(form) !== JSON.stringify(baseline)
-  const launcherDirty =
-    JSON.stringify(launcherForm) !== JSON.stringify(launcherBaseline)
+  const launcherSettingsDirty =
+    launcherForm.port !== launcherBaseline.port ||
+    launcherForm.publicAccess !== launcherBaseline.publicAccess ||
+    launcherForm.allowedCIDRsText !== launcherBaseline.allowedCIDRsText
+  const launcherPasswordDirty =
+    launcherForm.dashboardPassword.trim() !== "" ||
+    launcherForm.dashboardPasswordConfirm.trim() !== ""
+  const launcherDirty = launcherSettingsDirty || launcherPasswordDirty
   const autoStartDirty = autoStartEnabled !== autoStartBaseline
   const isDirty = configDirty || launcherDirty || autoStartDirty
 
@@ -143,6 +151,19 @@ export function ConfigPage() {
   const handleSave = async () => {
     try {
       setSaving(true)
+      const password = launcherForm.dashboardPassword.trim()
+      const confirm = launcherForm.dashboardPasswordConfirm.trim()
+      if (launcherPasswordDirty) {
+        if (!password) {
+          throw new Error(t("pages.config.dashboard_password_required"))
+        }
+        if (password !== confirm) {
+          throw new Error(t("pages.config.dashboard_password_mismatch"))
+        }
+        if (Array.from(password).length < 8) {
+          throw new Error(t("pages.config.dashboard_password_min_length"))
+        }
+      }
 
       if (configDirty) {
         const workspace = form.workspace.trim()
@@ -255,7 +276,8 @@ export function ConfigPage() {
         queryClient.invalidateQueries({ queryKey: ["config"] })
       }
 
-      if (launcherDirty) {
+      let savedLauncherForm: LauncherForm | null = null
+      if (launcherSettingsDirty) {
         const port = parseIntField(launcherForm.port, "Service port", {
           min: 1,
           max: 65535,
@@ -265,7 +287,6 @@ export function ConfigPage() {
           port,
           public: launcherForm.publicAccess,
           allowed_cidrs: allowedCIDRs,
-          launcher_token: launcherForm.launcherToken.trim(),
         })
         const parsedLauncher: LauncherForm = {
           port: String(savedLauncherConfig.port),
@@ -273,14 +294,33 @@ export function ConfigPage() {
           allowedCIDRsText: (savedLauncherConfig.allowed_cidrs ?? []).join(
             "\n",
           ),
-          launcherToken: savedLauncherConfig.launcher_token ?? "",
+          dashboardPassword: "",
+          dashboardPasswordConfirm: "",
         }
+        savedLauncherForm = parsedLauncher
         setLauncherForm(parsedLauncher)
         setLauncherBaseline(parsedLauncher)
         queryClient.setQueryData(
           ["system", "launcher-config"],
           savedLauncherConfig,
         )
+      }
+
+      if (launcherPasswordDirty) {
+        const result = await postLauncherDashboardSetup(password, confirm)
+        if (!result.ok) {
+          throw new Error(result.error)
+        }
+
+        const clearedLauncherForm = savedLauncherForm ?? {
+          ...launcherForm,
+          dashboardPassword: "",
+          dashboardPasswordConfirm: "",
+        }
+        setLauncherForm(clearedLauncherForm)
+        if (savedLauncherForm) {
+          setLauncherBaseline(savedLauncherForm)
+        }
       }
 
       if (autoStartDirty) {
@@ -303,6 +343,22 @@ export function ConfigPage() {
       setSaving(false)
     }
   }
+
+  const actionButtons = (
+    <div className="flex justify-end gap-2">
+      <Button
+        variant="outline"
+        onClick={handleReset}
+        disabled={!isDirty || saving}
+      >
+        {t("common.reset")}
+      </Button>
+      <Button onClick={handleSave} disabled={!isDirty || saving}>
+        <IconDeviceFloppy className="size-4" />
+        {saving ? t("common.saving") : t("common.save")}
+      </Button>
+    </div>
+  )
 
   return (
     <div className="flex h-full flex-col">
@@ -340,12 +396,6 @@ export function ConfigPage() {
             </div>
           ) : (
             <div className="space-y-6">
-              {isDirty && (
-                <div className="bg-yellow-50 px-3 py-2 text-sm text-yellow-700">
-                  {t("pages.config.unsaved_changes")}
-                </div>
-              )}
-
               <LauncherSection
                 launcherForm={launcherForm}
                 onFieldChange={updateLauncherField}
@@ -374,23 +424,21 @@ export function ConfigPage() {
                 onAutoStartChange={setAutoStartEnabled}
               />
 
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={handleReset}
-                  disabled={!isDirty || saving}
-                >
-                  {t("common.reset")}
-                </Button>
-                <Button onClick={handleSave} disabled={!isDirty || saving}>
-                  <IconDeviceFloppy className="size-4" />
-                  {saving ? t("common.saving") : t("common.save")}
-                </Button>
-              </div>
+              {!isDirty && actionButtons}
             </div>
           )}
         </div>
       </div>
+      {isDirty && (
+        <div className="border-border/70 bg-background/95 supports-backdrop-filter:bg-background/80 shrink-0 border-t px-3 py-3 shadow-[0_-12px_30px_rgba(15,23,42,0.10)] backdrop-blur lg:px-6">
+          <div className="mx-auto flex w-full max-w-[1000px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-muted-foreground/70 text-xs">
+              {t("pages.config.unsaved_changes")}
+            </div>
+            {actionButtons}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

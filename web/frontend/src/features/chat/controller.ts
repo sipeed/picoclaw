@@ -392,6 +392,7 @@ export async function switchChatSession(sessionId: string) {
       messages: historyMessages,
       isTyping: false,
       hasHydratedActiveSession: true,
+      contextUsage: undefined,
     })
 
     if (store.get(gatewayAtom).status === "running") {
@@ -415,6 +416,7 @@ export async function newChatSession() {
     messages: [],
     isTyping: false,
     hasHydratedActiveSession: true,
+    contextUsage: undefined,
   })
 
   if (store.get(gatewayAtom).status === "running") {

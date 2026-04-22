@@ -69,15 +69,16 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 
 ### Web 启动器控制台
 
-用 **picoclaw-launcher** 打开浏览器控制台前需要先登录。**访问口令**与 **会话签名密钥**默认在**每次启动时在内存中生成**（重启后随机口令会变）。若设置环境变量 **`PICOCLAW_LAUNCHER_TOKEN`**，则该进程使用固定口令（启动日志中不会打印具体口令值）。
-
-**到哪里找口令**：**控制台模式**（`-console`）请看启动时的终端输出；**托盘 / GUI 模式**可使用托盘菜单中的「复制控制台口令」，并在 **`$PICOCLAW_HOME/logs/launcher.log`**（未设置 `PICOCLAW_HOME` 时一般为 `~/.picoclaw/logs/launcher.log`）中查看本次启动写入的随机口令。登录页在未登录时会根据当前运行方式展示提示（含日志文件绝对路径等；**接口与页面均不会返回口令本身**）。
+用 **picoclaw-launcher** 打开浏览器控制台前需要先使用密码登录。首次启动时打开 `/launcher-setup` 创建 dashboard 登录密码；后续手动登录使用 `/launcher-login`。
 
 - **配置文件**：与 `config.json` 同一目录（若设置了 `PICOCLAW_CONFIG`，则与它所指的文件同目录）。启动器专用文件名为 `launcher-config.json`。
-- **登录与链接**：在登录页输入口令；自动打开浏览器时可在 URL 上使用 `?token=`。全站响应携带 **`Referrer-Policy: no-referrer`**，减轻 `token` 经 `Referer` 头泄露的风险。
+- **密码存储**：支持的平台会把 bcrypt 后的密码哈希存入 `launcher-auth.db`。如果当前平台不支持 SQLite 密码存储，则把 bcrypt 哈希存入 `launcher-config.json`。
+- **旧配置迁移**：旧版 `launcher_token` 会一次性迁移为密码登录，并从保存后的 launcher 配置中移除。
+- **本地自动登录**：launcher 启动后自动打开本地浏览器时，会使用仅允许 loopback 访问的一次性引导入口自动设置会话 Cookie。
+- **不再支持的鉴权方式**：不再支持 URL token 登录（`?token=...`）、`PICOCLAW_LAUNCHER_TOKEN` 和 `Authorization: Bearer` dashboard 鉴权。
 - **退出登录**：应使用 **`POST /api/auth/logout`**，且请求头为 **`Content-Type: application/json`**（请求体可为 `{}`），勿使用可被第三方页面触发的 GET 链接登出。
 - **暴力尝试**：`POST /api/auth/login` 对同一远程地址有 **每分钟尝试次数上限**（超限返回 HTTP 429）。
-- **会话时长**：登录后的 HttpOnly 会话 Cookie 默认约 **7 天**有效，到期需重新用口令登录。
+- **会话时长**：登录后的 HttpOnly 会话 Cookie 默认约 **31 天**有效，但 launcher 进程重启后已有会话会失效。
 
 ### 技能来源 (Skill Sources)
 
@@ -441,7 +442,7 @@ Agent 读取 HEARTBEAT.md
 | **Anthropic**           | `anthropic`       | `https://api.anthropic.com/v1`                      | Anthropic | [获取](https://console.anthropic.com)                            |
 | **智谱 AI (GLM)**       | `zhipu`           | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [获取](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys)    |
 | **DeepSeek**            | `deepseek`        | `https://api.deepseek.com/v1`                       | OpenAI    | [获取](https://platform.deepseek.com)                            |
-| **Google Gemini**       | `gemini`          | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [获取](https://aistudio.google.com/api-keys)                     |
+| **Google Gemini**       | `gemini`          | `https://generativelanguage.googleapis.com/v1beta`  | Gemini    | [获取](https://aistudio.google.com/api-keys)                     |
 | **Groq**                | `groq`            | `https://api.groq.com/openai/v1`                    | OpenAI    | [获取](https://console.groq.com)                                 |
 | **Moonshot**            | `moonshot`        | `https://api.moonshot.cn/v1`                        | OpenAI    | [获取](https://platform.moonshot.cn)                             |
 | **通义千问 (Qwen)**     | `qwen`            | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [获取](https://dashscope.console.aliyun.com)                     |
@@ -674,10 +675,11 @@ Agent 读取 HEARTBEAT.md
 PicoClaw 按协议族路由提供商：
 
 - **OpenAI 兼容**：OpenRouter、Groq、智谱、vLLM 风格端点及大多数其他提供商。
+- **Gemini 原生**：Google Gemini 通过原生 `models/*:generateContent` 和 `models/*:streamGenerateContent` 端点接入。
 - **Anthropic**：Claude 原生 API 行为。
 - **Codex/OAuth**：OpenAI OAuth/Token 认证路由。
 
-这使运行时保持轻量，同时让接入新的 OpenAI 兼容后端基本只需配置 `api_base` + `api_key`。
+这使运行时保持轻量，同时让接入新的 OpenAI 兼容后端基本只需配置 `api_base` + `api_keys`。
 
 <details>
 <summary><b>智谱（旧版 providers 格式）</b></summary>
