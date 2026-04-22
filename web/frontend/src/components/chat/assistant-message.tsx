@@ -99,8 +99,8 @@ export function AssistantMessage({
             className={cn(
               "prose dark:prose-invert prose-pre:my-2 prose-pre:overflow-x-auto prose-pre:rounded-lg prose-pre:border prose-pre:bg-zinc-100 prose-pre:p-0 prose-pre:text-zinc-900 dark:prose-pre:bg-zinc-950 dark:prose-pre:text-zinc-100 max-w-none [overflow-wrap:anywhere] break-words",
               isThought
-                ? "prose-p:my-1.5 px-3 pt-0 pb-3 text-[13px] leading-relaxed opacity-70"
-                : "prose-p:my-2 p-4 text-[15px] leading-relaxed",
+                ? "prose-p:my-1.5 prose-p:whitespace-pre-wrap px-3 pt-0 pb-3 text-[13px] leading-relaxed opacity-70"
+                : "prose-p:my-2 prose-p:whitespace-pre-wrap p-4 text-[15px] leading-relaxed",
             )}
           >
             <ReactMarkdown
