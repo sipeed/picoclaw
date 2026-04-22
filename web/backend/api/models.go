@@ -51,27 +51,6 @@ type modelResponse struct {
 	IsVirtual bool   `json:"is_virtual"`
 }
 
-func normalizeExplicitProviderModel(mc *config.ModelConfig) {
-	if mc == nil {
-		return
-	}
-
-	provider := strings.TrimSpace(mc.Provider)
-	model := strings.TrimSpace(mc.Model)
-	if provider == "" || model == "" {
-		return
-	}
-
-	prefix, rest, found := strings.Cut(model, "/")
-	if !found || strings.TrimSpace(rest) == "" {
-		return
-	}
-
-	if providers.NormalizeProvider(prefix) == providers.NormalizeProvider(provider) {
-		mc.Model = strings.TrimSpace(rest)
-	}
-}
-
 // handleListModels returns all model_list entries with masked API keys.
 //
 //	GET /api/models
@@ -161,7 +140,6 @@ func (h *Handler) handleAddModel(w http.ResponseWriter, r *http.Request) {
 	if mc.APIKey != "" {
 		mc.ModelConfig.SetAPIKey(mc.APIKey)
 	}
-	normalizeExplicitProviderModel(&mc.ModelConfig)
 
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
@@ -288,7 +266,6 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	normalizeExplicitProviderModel(&mc.ModelConfig)
 
 	cfg.ModelList[idx] = &mc.ModelConfig
 

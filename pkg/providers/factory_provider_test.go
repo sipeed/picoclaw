@@ -84,16 +84,16 @@ func TestExtractProtocol(t *testing.T) {
 			wantModelID:  "z-ai/glm-5.1",
 		},
 		{
-			name:         "explicit provider strips redundant matching prefix",
+			name:         "explicit provider preserves matching prefix",
 			config:       &config.ModelConfig{Provider: "openai", Model: "openai/gpt-4o"},
 			wantProtocol: "openai",
-			wantModelID:  "gpt-4o",
+			wantModelID:  "openai/gpt-4o",
 		},
 		{
-			name:         "explicit provider strips redundant aliased prefix",
+			name:         "explicit provider preserves aliased prefix",
 			config:       &config.ModelConfig{Provider: "qwen", Model: "qwen/qwen-plus"},
 			wantProtocol: "qwen-portal",
-			wantModelID:  "qwen-plus",
+			wantModelID:  "qwen/qwen-plus",
 		},
 		{
 			name:         "empty provider segment",
@@ -164,7 +164,7 @@ func TestCreateProviderFromConfig_UsesExplicitProvider(t *testing.T) {
 	}
 }
 
-func TestCreateProviderFromConfig_StripsRedundantExplicitProviderPrefix(t *testing.T) {
+func TestCreateProviderFromConfig_PreservesExplicitProviderPrefixedModel(t *testing.T) {
 	cfg := &config.ModelConfig{
 		ModelName: "test-openai",
 		Provider:  "openai",
@@ -180,8 +180,8 @@ func TestCreateProviderFromConfig_StripsRedundantExplicitProviderPrefix(t *testi
 	if provider == nil {
 		t.Fatal("CreateProviderFromConfig() returned nil provider")
 	}
-	if modelID != "gpt-4o" {
-		t.Fatalf("modelID = %q, want %q", modelID, "gpt-4o")
+	if modelID != "openai/gpt-4o" {
+		t.Fatalf("modelID = %q, want %q", modelID, "openai/gpt-4o")
 	}
 }
 

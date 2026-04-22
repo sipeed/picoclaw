@@ -508,7 +508,7 @@ func TestHandleAddModel_PersistsProvider(t *testing.T) {
 	}
 }
 
-func TestHandleAddModel_NormalizesRedundantExplicitProviderPrefix(t *testing.T) {
+func TestHandleAddModel_PreservesExplicitProviderPrefixedModel(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 
@@ -538,8 +538,8 @@ func TestHandleAddModel_NormalizesRedundantExplicitProviderPrefix(t *testing.T) 
 	if got := added.Provider; got != "openai" {
 		t.Fatalf("provider = %q, want %q", got, "openai")
 	}
-	if got := added.Model; got != "gpt-4o-mini" {
-		t.Fatalf("model = %q, want %q", got, "gpt-4o-mini")
+	if got := added.Model; got != "openai/gpt-4o-mini" {
+		t.Fatalf("model = %q, want %q", got, "openai/gpt-4o-mini")
 	}
 }
 
@@ -662,7 +662,7 @@ func TestHandleUpdateModel_PersistsProvider(t *testing.T) {
 		Model:     "gpt-4o",
 		Provider:  "openai",
 	}}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	if err = config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -692,49 +692,7 @@ func TestHandleUpdateModel_PersistsProvider(t *testing.T) {
 	}
 }
 
-func TestHandleUpdateModel_PreservesProviderWhenOmitted(t *testing.T) {
-	configPath, cleanup := setupOAuthTestEnv(t)
-	defer cleanup()
-
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	cfg.ModelList = []*config.ModelConfig{{
-		ModelName: "editable",
-		Model:     "z-ai/glm-5.1",
-		Provider:  "nvidia",
-	}}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
-		t.Fatalf("SaveConfig() error = %v", err)
-	}
-
-	h := NewHandler(configPath)
-	mux := http.NewServeMux()
-	h.RegisterRoutes(mux)
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
-		"model_name":"editable",
-		"model":"z-ai/glm-5.1"
-	}`))
-	req.Header.Set("Content-Type", "application/json")
-	mux.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
-	}
-
-	updated, err := config.LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	if got := updated.ModelList[0].Provider; got != "nvidia" {
-		t.Fatalf("provider = %q, want %q", got, "nvidia")
-	}
-}
-
-func TestHandleUpdateModel_NormalizesRedundantExplicitProviderPrefix(t *testing.T) {
+func TestHandleUpdateModel_PreservesExplicitProviderPrefixedModel(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 
@@ -747,7 +705,7 @@ func TestHandleUpdateModel_NormalizesRedundantExplicitProviderPrefix(t *testing.
 		Model:     "gpt-4o",
 		Provider:  "openai",
 	}}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	if err = config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -775,8 +733,54 @@ func TestHandleUpdateModel_NormalizesRedundantExplicitProviderPrefix(t *testing.
 	if got := updated.ModelList[0].Provider; got != "openai" {
 		t.Fatalf("provider = %q, want %q", got, "openai")
 	}
-	if got := updated.ModelList[0].Model; got != "gpt-5.4" {
-		t.Fatalf("model = %q, want %q", got, "gpt-5.4")
+	if got := updated.ModelList[0].Model; got != "openai/gpt-5.4" {
+		t.Fatalf("model = %q, want %q", got, "openai/gpt-5.4")
+	}
+}
+
+func TestHandleListModels_PreservesExplicitProviderPrefixedModel(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "openrouter-auto-explicit",
+		Provider:  "openrouter",
+		Model:     "openrouter/auto",
+	}}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Models []modelResponse `json:"models"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
+	}
+	if got := resp.Models[0].Provider; got != "openrouter" {
+		t.Fatalf("provider = %q, want %q", got, "openrouter")
+	}
+	if got := resp.Models[0].Model; got != "openrouter/auto" {
+		t.Fatalf("model = %q, want %q", got, "openrouter/auto")
 	}
 }
 
@@ -792,7 +796,7 @@ func TestHandleUpdateModel_PreservesLegacyModelPrefixWhenProviderOmitted(t *test
 		ModelName: "legacy-openrouter",
 		Model:     "openrouter/openai/gpt-5.4",
 	}}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	if err = config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -813,7 +817,7 @@ func TestHandleUpdateModel_PreservesLegacyModelPrefixWhenProviderOmitted(t *test
 	var listResp struct {
 		Models []modelResponse `json:"models"`
 	}
-	if err := json.Unmarshal(recList.Body.Bytes(), &listResp); err != nil {
+	if err = json.Unmarshal(recList.Body.Bytes(), &listResp); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 	if len(listResp.Models) != 1 {
@@ -862,7 +866,7 @@ func TestHandleUpdateModel_PreservesLegacyModelPrefixWhenProviderOmittedAndModel
 		ModelName: "legacy-openrouter",
 		Model:     "openrouter/openai/gpt-5.4",
 	}}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	if err = config.SaveConfig(configPath, cfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -891,50 +895,6 @@ func TestHandleUpdateModel_PreservesLegacyModelPrefixWhenProviderOmittedAndModel
 	}
 	if got := updated.ModelList[0].Model; got != "openrouter/openai/gpt-5.5" {
 		t.Fatalf("model = %q, want %q", got, "openrouter/openai/gpt-5.5")
-	}
-}
-
-func TestHandleUpdateModel_OmittedProviderAllowsLegacyProviderChangeForSimpleVisibleModel(t *testing.T) {
-	configPath, cleanup := setupOAuthTestEnv(t)
-	defer cleanup()
-
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	cfg.ModelList = []*config.ModelConfig{{
-		ModelName: "legacy-openai",
-		Model:     "openai/gpt-5.4",
-	}}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
-		t.Fatalf("SaveConfig() error = %v", err)
-	}
-
-	h := NewHandler(configPath)
-	mux := http.NewServeMux()
-	h.RegisterRoutes(mux)
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
-		"model_name":"legacy-openai",
-		"model":"anthropic/claude-sonnet-4.6"
-	}`))
-	req.Header.Set("Content-Type", "application/json")
-	mux.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
-	}
-
-	updated, err := config.LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	if got := updated.ModelList[0].Provider; got != "" {
-		t.Fatalf("provider = %q, want empty", got)
-	}
-	if got := updated.ModelList[0].Model; got != "anthropic/claude-sonnet-4.6" {
-		t.Fatalf("model = %q, want %q", got, "anthropic/claude-sonnet-4.6")
 	}
 }
 

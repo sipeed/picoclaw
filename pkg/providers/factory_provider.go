@@ -99,6 +99,7 @@ func createCodexAuthProvider() (LLMProvider, error) {
 //   - Model "openai/gpt-4o" -> ("openai", "gpt-4o")
 //   - Model "nvidia/z-ai/glm-5.1" -> ("nvidia", "z-ai/glm-5.1")
 //   - Provider "nvidia", Model "z-ai/glm-5.1" -> ("nvidia", "z-ai/glm-5.1")
+//   - Provider "openai", Model "openai/gpt-4o" -> ("openai", "openai/gpt-4o")
 //   - Model "gpt-4o" -> ("openai", "gpt-4o")
 func ExtractProtocol(cfg *config.ModelConfig) (protocol, modelID string) {
 	if cfg == nil {
@@ -107,13 +108,7 @@ func ExtractProtocol(cfg *config.ModelConfig) (protocol, modelID string) {
 
 	model := strings.TrimSpace(cfg.Model)
 	if provider := strings.TrimSpace(cfg.Provider); provider != "" {
-		normalized := NormalizeProvider(provider)
-		if prefix, rest, found := strings.Cut(model, "/"); found {
-			if NormalizeProvider(prefix) == normalized && strings.TrimSpace(rest) != "" {
-				return normalized, strings.TrimSpace(rest)
-			}
-		}
-		return normalized, model
+		return NormalizeProvider(provider), model
 	}
 	if model == "" {
 		return "", ""
