@@ -1,10 +1,10 @@
-name: Create Tag and Release
+name: Release
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (required, e.g. v0.2.0)"
+        description: "Existing tag to release (e.g. v0.2.0)"
         required: true
         type: string
       prerelease:
@@ -24,35 +24,23 @@ on:
         default: true
 
 jobs:
-  create-tag:
-    name: Create Git Tag
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Create and push tag
-        shell: bash
-        env:
-          RELEASE_TAG: ${{ inputs.tag }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
-          git push origin "$RELEASE_TAG"
-
   release:
     name: GoReleaser Release
-    needs: create-tag
     runs-on: ubuntu-latest
     permissions:
       contents: write
       packages: write
     steps:
+      - name: Verify tag exists
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh api "repos/${{ github.repository }}/git/ref/tags/${{ inputs.tag }}" --silent 2>/dev/null; then
+            echo "::error::Tag '${{ inputs.tag }}' does not exist. Create it first using the 'Create Tag' workflow."
+            exit 1
+          fi
+
       - name: Checkout tag
         uses: actions/checkout@v6
         with:
