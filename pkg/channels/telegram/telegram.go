@@ -1115,6 +1115,13 @@ func fitToolFeedbackForTelegram(content string, useMarkdownV2 bool, maxParsedLen
 	return best
 }
 
+func (c *TelegramChannel) PrepareToolFeedbackMessageContent(content string) string {
+	if c == nil || c.tgCfg == nil {
+		return strings.TrimSpace(content)
+	}
+	return fitToolFeedbackForTelegram(content, c.tgCfg.UseMarkdownV2, 4096)
+}
+
 func telegramToolFeedbackChatKey(chatID string, outboundCtx *bus.InboundContext) string {
 	resolvedChatID, threadID, err := resolveTelegramOutboundTarget(chatID, outboundCtx)
 	if err != nil || threadID == 0 {

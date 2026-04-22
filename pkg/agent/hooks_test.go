@@ -892,6 +892,77 @@ func TestAgentLoop_HookRespond_BusFallback(t *testing.T) {
 	}
 }
 
+func TestAgentLoop_HookRespond_ResponseHandledMediaPreservesOutboundContext(t *testing.T) {
+	provider := &multiToolProvider{
+		toolCalls: []providers.ToolCall{
+			{ID: "call-1", Name: "media_tool", Arguments: map[string]any{}},
+		},
+		finalContent: "done",
+	}
+	al, agent, cleanup := newHookTestLoop(t, provider)
+	defer cleanup()
+
+	hook := &respondWithMediaHook{
+		respondTools:    map[string]bool{"media_tool": true},
+		media:           []string{"media://test/image.png"},
+		responseHandled: true,
+		forLLM:          "media sent successfully",
+	}
+	if err := al.MountHook(NamedHook("media-hook", hook)); err != nil {
+		t.Fatalf("MountHook failed: %v", err)
+	}
+
+	telegramChannel := &fakeMediaChannel{fakeChannel: fakeChannel{id: "rid-telegram"}}
+	al.channelManager = newStartedTestChannelManager(t,
+		al.bus.(*bus.MessageBus), al.mediaStore, "telegram", telegramChannel)
+
+	_, err := al.runAgentLoop(context.Background(), agent, processOptions{
+		Dispatch: DispatchRequest{
+			SessionKey: "session-topic-media",
+			SessionScope: &session.SessionScope{
+				Version:    session.ScopeVersionV1,
+				AgentID:    agent.ID,
+				Channel:    "telegram",
+				Dimensions: []string{"chat"},
+				Values: map[string]string{
+					"chat": "forum:-100123/42",
+				},
+			},
+			InboundContext: &bus.InboundContext{
+				Channel:  "telegram",
+				ChatID:   "-100123",
+				TopicID:  "42",
+				ChatType: "group",
+				SenderID: "user1",
+			},
+			UserMessage: "send media",
+		},
+		DefaultResponse: defaultResponse,
+		EnableSummary:   false,
+		SendResponse:    false,
+	})
+	if err != nil {
+		t.Fatalf("runAgentLoop failed: %v", err)
+	}
+
+	if len(telegramChannel.sentMedia) != 1 {
+		t.Fatalf("expected exactly 1 sent media message, got %d", len(telegramChannel.sentMedia))
+	}
+	sent := telegramChannel.sentMedia[0]
+	if sent.Context.Channel != "telegram" || sent.Context.ChatID != "-100123" || sent.Context.TopicID != "42" {
+		t.Fatalf("unexpected media context: %+v", sent.Context)
+	}
+	if sent.AgentID != agent.ID {
+		t.Fatalf("sent media agent_id = %q, want %q", sent.AgentID, agent.ID)
+	}
+	if sent.SessionKey != "session-topic-media" {
+		t.Fatalf("sent media session_key = %q, want session-topic-media", sent.SessionKey)
+	}
+	if sent.Scope == nil || sent.Scope.Values["chat"] != "forum:-100123/42" {
+		t.Fatalf("unexpected sent media scope: %+v", sent.Scope)
+	}
+}
+
 type multiToolProvider struct {
 	mu           sync.Mutex
 	callCount    int

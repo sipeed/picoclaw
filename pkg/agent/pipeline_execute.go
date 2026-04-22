@@ -126,6 +126,15 @@ toolLoop:
 						outboundMedia := bus.OutboundMediaMessage{
 							Channel: ts.channel,
 							ChatID:  ts.chatID,
+							Context: outboundContextFromInbound(
+								ts.opts.Dispatch.InboundContext,
+								ts.channel,
+								ts.chatID,
+								ts.opts.Dispatch.ReplyToMessageID(),
+							),
+							AgentID:    ts.agent.ID,
+							SessionKey: ts.sessionKey,
+							Scope:      outboundScopeFromSessionScope(ts.opts.Dispatch.SessionScope),
 							Parts:   parts,
 						}
 						if al.channelManager != nil && ts.channel != "" && !constants.IsInternalChannel(ts.channel) {

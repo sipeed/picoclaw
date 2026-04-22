@@ -119,6 +119,7 @@ func (m *mockStreamer) Cancel(context.Context) {}
 type mockStreamingChannel struct {
 	mockMessageEditor
 	streamer Streamer
+	resolveChatIDFn func(chatID string, outboundCtx *bus.InboundContext) string
 }
 
 func (m *mockStreamingChannel) BeginStream(context.Context, string) (Streamer, error) {
@@ -126,6 +127,16 @@ func (m *mockStreamingChannel) BeginStream(context.Context, string) (Streamer, e
 		return nil, errors.New("missing streamer")
 	}
 	return m.streamer, nil
+}
+
+func (m *mockStreamingChannel) ToolFeedbackMessageChatID(
+	chatID string,
+	outboundCtx *bus.InboundContext,
+) string {
+	if m.resolveChatIDFn != nil {
+		return m.resolveChatIDFn(chatID, outboundCtx)
+	}
+	return chatID
 }
 
 // newTestManager creates a minimal Manager suitable for unit tests.
@@ -754,6 +765,7 @@ type mockMessageEditor struct {
 	finalizeCalled    bool
 	recordedChatID    string
 	recordedMessageID string
+	recordedContent   string
 	clearedChatID     string
 	dismissedChatID   string
 }
@@ -762,9 +774,10 @@ func (m *mockMessageEditor) EditMessage(ctx context.Context, chatID, messageID, 
 	return m.editFn(ctx, chatID, messageID, content)
 }
 
-func (m *mockMessageEditor) RecordToolFeedbackMessage(chatID, messageID, _ string) {
+func (m *mockMessageEditor) RecordToolFeedbackMessage(chatID, messageID, content string) {
 	m.recordedChatID = chatID
 	m.recordedMessageID = messageID
+	m.recordedContent = content
 }
 
 func (m *mockMessageEditor) ClearToolFeedbackMessage(chatID string) {
@@ -799,6 +812,18 @@ func (m *mockResolvedToolFeedbackEditor) ToolFeedbackMessageChatID(
 		return m.resolveChatIDFn(chatID, outboundCtx)
 	}
 	return chatID
+}
+
+type mockPreparedToolFeedbackEditor struct {
+	mockMessageEditor
+	prepareFn func(content string) string
+}
+
+func (m *mockPreparedToolFeedbackEditor) PrepareToolFeedbackMessageContent(content string) string {
+	if m.prepareFn != nil {
+		return m.prepareFn(content)
+	}
+	return content
 }
 
 func TestPreSend_PlaceholderEditSuccess(t *testing.T) {
@@ -925,6 +950,56 @@ func TestPreSend_ToolFeedbackPlaceholderEditUsesResolvedTrackedChatID(t *testing
 	if ch.recordedChatID != "-100123/42" || ch.recordedMessageID != "456" {
 		t.Fatalf("expected resolved tracked message -100123/42/456, got %q/%q",
 			ch.recordedChatID, ch.recordedMessageID)
+	}
+}
+
+func TestPreSend_ToolFeedbackPlaceholderEditUsesPreparedContent(t *testing.T) {
+	m := newTestManager()
+
+	const rawContent = "🔧 `read_file`\n" + "<raw>"
+	const preparedContent = "🔧 `read_file`\n&lt;raw&gt;"
+
+	ch := &mockPreparedToolFeedbackEditor{
+		mockMessageEditor: mockMessageEditor{
+			editFn: func(_ context.Context, chatID, messageID, content string) error {
+				if chatID != "123" || messageID != "456" {
+					t.Fatalf("unexpected edit target: %s/%s", chatID, messageID)
+				}
+				if content != InitialAnimatedToolFeedbackContent(preparedContent) {
+					t.Fatalf("unexpected prepared content: %q", content)
+				}
+				return nil
+			},
+		},
+		prepareFn: func(content string) string {
+			if content != rawContent {
+				t.Fatalf("unexpected raw tool feedback: %q", content)
+			}
+			return preparedContent
+		},
+	}
+
+	m.RecordPlaceholder("test", "123", "456")
+
+	msg := testOutboundMessage(bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "123",
+		Content: rawContent,
+		Context: bus.InboundContext{
+			Channel: "test",
+			ChatID:  "123",
+			Raw: map[string]string{
+				"message_kind": "tool_feedback",
+			},
+		},
+	})
+
+	_, edited := m.preSend(context.Background(), "test", msg, ch)
+	if !edited {
+		t.Fatal("expected preSend to edit placeholder")
+	}
+	if ch.recordedContent != preparedContent {
+		t.Fatalf("expected tracked content %q, got %q", preparedContent, ch.recordedContent)
 	}
 }
 
@@ -1153,6 +1228,45 @@ func TestGetStreamer_FinalizeDismissesTrackedToolFeedback(t *testing.T) {
 		t.Fatalf("expected tracked tool feedback to be dismissed for chat 123, got %q", ch.dismissedChatID)
 	}
 	if _, ok := m.streamActive.Load("test:123"); !ok {
+		t.Fatal("expected streamActive marker to be recorded after finalize")
+	}
+}
+
+func TestGetStreamer_FinalizeDismissesResolvedTrackedToolFeedback(t *testing.T) {
+	m := newTestManager()
+	ch := &mockStreamingChannel{
+		mockMessageEditor: mockMessageEditor{},
+		streamer: &mockStreamer{
+			finalizeFn: func(_ context.Context, content string) error {
+				if content != "final reply" {
+					t.Fatalf("unexpected finalize content: %q", content)
+				}
+				return nil
+			},
+		},
+		resolveChatIDFn: func(chatID string, outboundCtx *bus.InboundContext) string {
+			if outboundCtx == nil {
+				t.Fatal("expected outbound context during stream finalize")
+			}
+			if outboundCtx.ChatID != "-100123/42" {
+				t.Fatalf("unexpected outbound context: %+v", outboundCtx)
+			}
+			return outboundCtx.ChatID
+		},
+	}
+	m.channels["test"] = ch
+
+	streamer, ok := m.GetStreamer(context.Background(), "test", "-100123/42")
+	if !ok {
+		t.Fatal("expected streamer to be available")
+	}
+	if err := streamer.Finalize(context.Background(), "final reply"); err != nil {
+		t.Fatalf("Finalize() error = %v", err)
+	}
+	if ch.dismissedChatID != "-100123/42" {
+		t.Fatalf("expected resolved tracked tool feedback dismissal, got %q", ch.dismissedChatID)
+	}
+	if _, ok := m.streamActive.Load("test:-100123/42"); !ok {
 		t.Fatal("expected streamActive marker to be recorded after finalize")
 	}
 }

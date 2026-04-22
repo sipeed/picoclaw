@@ -111,6 +111,10 @@ type toolFeedbackMessageTargetResolver interface {
 	ToolFeedbackMessageChatID(chatID string, outboundCtx *bus.InboundContext) string
 }
 
+type toolFeedbackMessageContentPreparer interface {
+	PrepareToolFeedbackMessageContent(content string) string
+}
+
 type asyncTask struct {
 	cancel context.CancelFunc
 }
@@ -164,6 +168,19 @@ func dismissTrackedToolFeedbackMessage(
 	if tracker, ok := ch.(toolFeedbackMessageTracker); ok {
 		tracker.ClearToolFeedbackMessage(trackedChatID)
 	}
+}
+
+func prepareToolFeedbackMessageContent(ch Channel, content string) string {
+	prepared := strings.TrimSpace(content)
+	if prepared == "" {
+		return ""
+	}
+	if preparer, ok := ch.(toolFeedbackMessageContentPreparer); ok {
+		if candidate := strings.TrimSpace(preparer.PrepareToolFeedbackMessageContent(prepared)); candidate != "" {
+			return candidate
+		}
+	}
+	return prepared
 }
 
 // RecordPlaceholder registers a placeholder message for later editing.
@@ -281,13 +298,15 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
 			if editor, ok := ch.(MessageEditor); ok {
 				content := msg.Content
+				trackedContent := msg.Content
 				if isToolFeedback {
-					content = InitialAnimatedToolFeedbackContent(msg.Content)
+					trackedContent = prepareToolFeedbackMessageContent(ch, msg.Content)
+					content = InitialAnimatedToolFeedbackContent(trackedContent)
 				}
 				if err := editor.EditMessage(ctx, chatID, entry.id, content); err == nil {
 					trackedChatID := trackedToolFeedbackMessageChatID(ch, chatID, &msg.Context)
 					if tracker, ok := ch.(toolFeedbackMessageTracker); ok && isToolFeedback {
-						tracker.RecordToolFeedbackMessage(trackedChatID, entry.id, msg.Content)
+						tracker.RecordToolFeedbackMessage(trackedChatID, entry.id, trackedContent)
 					} else if !isToolFeedback {
 						dismissTrackedToolFeedbackMessage(ctx, ch, chatID, &msg.Context)
 					}
@@ -389,7 +408,15 @@ func (m *Manager) GetStreamer(ctx context.Context, channelName, chatID string) (
 	return &finalizeHookStreamer{
 		Streamer: streamer,
 		onFinalize: func(finalizeCtx context.Context) {
-			dismissTrackedToolFeedbackMessage(finalizeCtx, ch, chatID, nil)
+			dismissTrackedToolFeedbackMessage(
+				finalizeCtx,
+				ch,
+				chatID,
+				&bus.InboundContext{
+					Channel: channelName,
+					ChatID:  chatID,
+				},
+			)
 			m.streamActive.Store(key, true)
 		},
 	}, true

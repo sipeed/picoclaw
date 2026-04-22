@@ -57,6 +57,10 @@ func outboundMessageIsToolFeedback(msg bus.OutboundMessage) bool {
 	return strings.EqualFold(strings.TrimSpace(msg.Context.Raw["message_kind"]), "tool_feedback")
 }
 
+func outboundMessageFinalizesTrackedToolFeedback(msg bus.OutboundMessage) bool {
+	return !outboundMessageIsToolFeedback(msg) && !outboundMessageIsThought(msg)
+}
+
 // writeJSON sends a JSON message to the connection with write locking.
 func (pc *picoConn) writeJSON(v any) error {
 	if pc.closed.Load() {
@@ -294,7 +298,7 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 		}
 	}
 	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(msg.ChatID)
-	if !isToolFeedback {
+	if outboundMessageFinalizesTrackedToolFeedback(msg) {
 		if msgIDs, handled := c.FinalizeToolFeedbackMessage(ctx, msg); handled {
 			return msgIDs, nil
 		}
@@ -319,7 +323,7 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 	}
 	if isToolFeedback {
 		c.RecordToolFeedbackMessage(msg.ChatID, msgID, msg.Content)
-	} else if hasTrackedMsg {
+	} else if hasTrackedMsg && outboundMessageFinalizesTrackedToolFeedback(msg) {
 		c.dismissTrackedToolFeedbackMessage(ctx, msg.ChatID, trackedMsgID)
 	}
 	return []string{msgID}, nil
@@ -327,11 +331,7 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 
 // EditMessage implements channels.MessageEditor.
 func (c *PicoChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
-	outMsg := newMessage(TypeMessageUpdate, map[string]any{
-		"message_id": messageID,
-		"content":    content,
-	})
-	return c.broadcastToSession(chatID, outMsg)
+	return c.editMessage(ctx, chatID, messageID, content, nil)
 }
 
 // DeleteMessage implements channels.MessageDeleter.
@@ -394,13 +394,14 @@ func (c *PicoChannel) finalizeTrackedToolFeedbackMessage(
 	ctx context.Context,
 	chatID string,
 	content string,
-	editFn func(context.Context, string, string, string) error,
+	editFn func(context.Context, string, string, string, *bus.ContextUsage) error,
+	contextUsage *bus.ContextUsage,
 ) ([]string, bool) {
 	msgID, baseContent, ok := c.takeToolFeedbackMessage(chatID)
 	if !ok || editFn == nil {
 		return nil, false
 	}
-	if err := editFn(ctx, chatID, msgID, content); err != nil {
+	if err := editFn(ctx, chatID, msgID, content, contextUsage); err != nil {
 		c.RecordToolFeedbackMessage(chatID, msgID, baseContent)
 		return nil, false
 	}
@@ -408,10 +409,10 @@ func (c *PicoChannel) finalizeTrackedToolFeedbackMessage(
 }
 
 func (c *PicoChannel) FinalizeToolFeedbackMessage(ctx context.Context, msg bus.OutboundMessage) ([]string, bool) {
-	if outboundMessageIsToolFeedback(msg) {
+	if !outboundMessageFinalizesTrackedToolFeedback(msg) {
 		return nil, false
 	}
-	return c.finalizeTrackedToolFeedbackMessage(ctx, msg.ChatID, msg.Content, c.EditMessage)
+	return c.finalizeTrackedToolFeedbackMessage(ctx, msg.ChatID, msg.Content, c.editMessage, msg.ContextUsage)
 }
 
 // StartTyping implements channels.TypingCapable.
@@ -1067,4 +1068,20 @@ func setContextUsagePayload(payload map[string]any, u *bus.ContextUsage) {
 		"compress_at_tokens": u.CompressAtTokens,
 		"used_percent":       u.UsedPercent,
 	}
+}
+
+func (c *PicoChannel) editMessage(
+	ctx context.Context,
+	chatID string,
+	messageID string,
+	content string,
+	contextUsage *bus.ContextUsage,
+) error {
+	payload := map[string]any{
+		"message_id": messageID,
+		"content":    content,
+	}
+	setContextUsagePayload(payload, contextUsage)
+	outMsg := newMessage(TypeMessageUpdate, payload)
+	return c.broadcastToSession(chatID, outMsg)
 }

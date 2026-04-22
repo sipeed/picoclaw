@@ -46,15 +46,19 @@ func TestFinalizeTrackedToolFeedbackMessage_StopsTrackingBeforeEdit(t *testing.T
 		context.Background(),
 		"pico:chat-1",
 		"final reply",
-		func(_ context.Context, chatID, messageID, content string) error {
+		func(_ context.Context, chatID, messageID, content string, contextUsage *bus.ContextUsage) error {
 			if _, ok := ch.currentToolFeedbackMessage(chatID); ok {
 				t.Fatal("expected tracked tool feedback to be stopped before edit")
 			}
 			if chatID != "pico:chat-1" || messageID != "msg-1" || content != "final reply" {
 				t.Fatalf("unexpected edit args: %s %s %s", chatID, messageID, content)
 			}
+			if contextUsage != nil {
+				t.Fatalf("unexpected context usage: %+v", contextUsage)
+			}
 			return nil
 		},
+		nil,
 	)
 	if !handled {
 		t.Fatal("expected finalizeTrackedToolFeedbackMessage to handle tracked message")
@@ -87,6 +91,105 @@ func TestDismissTrackedToolFeedbackMessage_DeletesProgressMessage(t *testing.T) 
 	}
 	if _, ok := ch.currentToolFeedbackMessage("pico:chat-1"); ok {
 		t.Fatal("expected tracked tool feedback to be cleared after dismissal")
+	}
+}
+
+func TestSend_ThoughtMessageDoesNotFinalizeTrackedToolFeedback(t *testing.T) {
+	ch := newTestPicoChannel(t)
+
+	if err := ch.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer ch.Stop(context.Background())
+
+	clientConn, received, cleanup := newTestPicoWebSocket(t)
+	defer cleanup()
+	ch.addConnForTest(&picoConn{id: "conn-1", conn: clientConn, sessionID: "sess-1"})
+
+	ch.RecordToolFeedbackMessage("pico:sess-1", "msg-progress", "🔧 `read_file`\nReading config")
+
+	if _, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:  "pico:sess-1",
+		Content: "thinking trace",
+		Context: bus.InboundContext{
+			Channel: "pico",
+			ChatID:  "pico:sess-1",
+			Raw: map[string]string{
+				"message_kind": MessageKindThought,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("Send(thought) error = %v", err)
+	}
+
+	select {
+	case msg := <-received:
+		if msg.Type != TypeMessageCreate {
+			t.Fatalf("thought message type = %q, want %q", msg.Type, TypeMessageCreate)
+		}
+		payload := msg.Payload
+		if got := payload[PayloadKeyContent]; got != "thinking trace" {
+			t.Fatalf("thought content = %#v, want %q", got, "thinking trace")
+		}
+		if got := payload[PayloadKeyThought]; got != true {
+			t.Fatalf("thought flag = %#v, want true", got)
+		}
+		if got := payload["message_id"]; got == "msg-progress" || got == nil || got == "" {
+			t.Fatalf("thought message_id = %#v, want new non-progress id", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected thought message to be delivered")
+	}
+
+	if msgID, ok := ch.currentToolFeedbackMessage("pico:sess-1"); !ok || msgID != "msg-progress" {
+		t.Fatalf("tracked tool feedback = (%q, %v), want (msg-progress, true)", msgID, ok)
+	}
+
+	if _, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:  "pico:sess-1",
+		Content: "final reply",
+		Context: bus.InboundContext{
+			Channel: "pico",
+			ChatID:  "pico:sess-1",
+		},
+		ContextUsage: &bus.ContextUsage{
+			UsedTokens:       321,
+			TotalTokens:      4096,
+			CompressAtTokens: 3072,
+			UsedPercent:      8,
+		},
+	}); err != nil {
+		t.Fatalf("Send(final) error = %v", err)
+	}
+
+	select {
+	case msg := <-received:
+		if msg.Type != TypeMessageUpdate {
+			t.Fatalf("final message type = %q, want %q", msg.Type, TypeMessageUpdate)
+		}
+		payload := msg.Payload
+		if got := payload["message_id"]; got != "msg-progress" {
+			t.Fatalf("final message_id = %#v, want %q", got, "msg-progress")
+		}
+		if got := payload[PayloadKeyContent]; got != "final reply" {
+			t.Fatalf("final content = %#v, want %q", got, "final reply")
+		}
+		rawUsage, ok := payload["context_usage"].(map[string]any)
+		if !ok {
+			t.Fatalf("final context_usage = %#v, want map payload", payload["context_usage"])
+		}
+		if got, ok := rawUsage["used_tokens"].(float64); !ok || got != 321 {
+			t.Fatalf("used_tokens = %#v, want 321", rawUsage["used_tokens"])
+		}
+		if got, ok := rawUsage["total_tokens"].(float64); !ok || got != 4096 {
+			t.Fatalf("total_tokens = %#v, want 4096", rawUsage["total_tokens"])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected final reply to finalize tracked tool feedback")
+	}
+
+	if _, ok := ch.currentToolFeedbackMessage("pico:sess-1"); ok {
+		t.Fatal("expected tracked tool feedback to be cleared after final reply")
 	}
 }
 

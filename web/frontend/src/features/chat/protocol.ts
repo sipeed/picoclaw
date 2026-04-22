@@ -4,6 +4,7 @@ import { normalizeUnixTimestamp } from "@/features/chat/state"
 import {
   type AssistantMessageKind,
   type ChatAttachment,
+  type ChatMessage,
   type ContextUsage,
   updateChatStore,
 } from "@/store/chat"
@@ -90,6 +91,35 @@ function parseContextUsage(
   }
 }
 
+function isToolFeedbackMessage(message: ChatMessage): boolean {
+  if (message.role !== "assistant") {
+    return false
+  }
+
+  const firstLine = message.content.split("\n", 1)[0]?.trim() ?? ""
+  return /^🔧\s+`[^`]+`/.test(firstLine)
+}
+
+function findToolFeedbackMessageIndex(messages: ChatMessage[]): number {
+  let lastUserIndex = -1
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].role === "user") {
+      lastUserIndex = i
+      break
+    }
+  }
+
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (i <= lastUserIndex) {
+      break
+    }
+    if (isToolFeedbackMessage(messages[i])) {
+      return i
+    }
+  }
+  return -1
+}
+
 export function handlePicoMessage(
   message: PicoMessage,
   expectedSessionId: string,
@@ -138,21 +168,64 @@ export function handlePicoMessage(
       const hasKind = hasAssistantKindPayload(payload)
       const kind = parseAssistantMessageKind(payload)
       const attachments = parseAttachments(payload)
+      const contextUsage = parseContextUsage(payload)
+      const timestamp =
+        message.timestamp !== undefined &&
+        Number.isFinite(Number(message.timestamp))
+          ? normalizeUnixTimestamp(Number(message.timestamp))
+          : Date.now()
       if (!messageId) {
         break
       }
 
       updateChatStore((prev) => ({
-        messages: prev.messages.map((msg) =>
-          msg.id === messageId
-            ? {
-                ...msg,
-                content,
-                ...(hasKind ? { kind } : {}),
-                ...(attachments ? { attachments } : {}),
-              }
-            : msg,
-        ),
+        messages: (() => {
+          let found = false
+          const messages = prev.messages.map((msg) => {
+            if (msg.id !== messageId) {
+              return msg
+            }
+            found = true
+            return {
+              ...msg,
+              id: messageId,
+              content,
+              ...(hasKind ? { kind } : {}),
+              ...(attachments ? { attachments } : {}),
+            }
+          })
+          if (found) {
+            return messages
+          }
+
+          const fallbackIndex = findToolFeedbackMessageIndex(messages)
+          if (fallbackIndex >= 0) {
+            return messages.map((msg, index) =>
+              index === fallbackIndex
+                ? {
+                    ...msg,
+                    id: messageId,
+                    content,
+                    ...(hasKind ? { kind } : {}),
+                    ...(attachments ? { attachments } : {}),
+                  }
+                : msg,
+            )
+          }
+
+          return [
+            ...messages,
+            {
+              id: messageId,
+              role: "assistant" as const,
+              content,
+              ...(hasKind ? { kind } : {}),
+              ...(attachments ? { attachments } : {}),
+              timestamp,
+            },
+          ]
+        })(),
+        ...(contextUsage ? { contextUsage } : {}),
       }))
       break
     }
@@ -164,7 +237,19 @@ export function handlePicoMessage(
       }
 
       updateChatStore((prev) => ({
-        messages: prev.messages.filter((msg) => msg.id !== messageId),
+        messages: (() => {
+          const exactMessages = prev.messages.filter((msg) => msg.id !== messageId)
+          if (exactMessages.length !== prev.messages.length) {
+            return exactMessages
+          }
+
+          const fallbackIndex = findToolFeedbackMessageIndex(prev.messages)
+          if (fallbackIndex < 0) {
+            return prev.messages
+          }
+
+          return prev.messages.filter((_, index) => index !== fallbackIndex)
+        })(),
       }))
       break
     }
