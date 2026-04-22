@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -57,6 +61,32 @@ func TestFinalizeTrackedToolFeedbackMessage_StopsTrackingBeforeEdit(t *testing.T
 	}
 	if len(msgIDs) != 1 || msgIDs[0] != "msg-1" {
 		t.Fatalf("finalizeTrackedToolFeedbackMessage() ids = %v, want [msg-1]", msgIDs)
+	}
+}
+
+func TestDismissTrackedToolFeedbackMessage_DeletesProgressMessage(t *testing.T) {
+	ch := &PicoChannel{
+		progress: channels.NewToolFeedbackAnimator(nil),
+	}
+	ch.RecordToolFeedbackMessage("pico:chat-1", "msg-1", "🔧 `read_file`")
+
+	var deleted struct {
+		chatID    string
+		messageID string
+	}
+	ch.deleteMessageFn = func(_ context.Context, chatID string, messageID string) error {
+		deleted.chatID = chatID
+		deleted.messageID = messageID
+		return nil
+	}
+
+	ch.DismissToolFeedbackMessage(context.Background(), "pico:chat-1")
+
+	if deleted.chatID != "pico:chat-1" || deleted.messageID != "msg-1" {
+		t.Fatalf("unexpected delete target: %+v", deleted)
+	}
+	if _, ok := ch.currentToolFeedbackMessage("pico:chat-1"); ok {
+		t.Fatal("expected tracked tool feedback to be cleared after dismissal")
 	}
 }
 
@@ -197,6 +227,75 @@ func TestSendMedia_ResolvesMediaBeforeDelivery(t *testing.T) {
 	}
 }
 
+func TestSendMedia_DismissesTrackedToolFeedbackMessage(t *testing.T) {
+	ch := newTestPicoChannel(t)
+	store := media.NewFileMediaStore()
+	ch.SetMediaStore(store)
+
+	if err := ch.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer ch.Stop(context.Background())
+
+	clientConn, received, cleanup := newTestPicoWebSocket(t)
+	defer cleanup()
+	ch.addConnForTest(&picoConn{id: "conn-1", conn: clientConn, sessionID: "sess-1"})
+
+	localPath := filepath.Join(t.TempDir(), "report.txt")
+	if err := os.WriteFile(localPath, []byte("attachment body"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	ref, err := store.Store(localPath, media.MediaMeta{
+		Filename:    "report.txt",
+		ContentType: "text/plain",
+	}, "test-scope")
+	if err != nil {
+		t.Fatalf("Store() error = %v", err)
+	}
+
+	ch.RecordToolFeedbackMessage("pico:sess-1", "msg-progress", "🔧 `read_file`")
+
+	var deleted struct {
+		chatID    string
+		messageID string
+	}
+	ch.deleteMessageFn = func(_ context.Context, chatID string, messageID string) error {
+		deleted.chatID = chatID
+		deleted.messageID = messageID
+		return nil
+	}
+
+	_, err = ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
+		ChatID: "pico:sess-1",
+		Parts: []bus.MediaPart{{
+			Ref:         ref,
+			Type:        "file",
+			Filename:    "report.txt",
+			ContentType: "text/plain",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("SendMedia() error = %v", err)
+	}
+
+	select {
+	case msg := <-received:
+		if msg.Type != TypeMessageCreate {
+			t.Fatalf("message type = %q, want %q", msg.Type, TypeMessageCreate)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected media message to be delivered")
+	}
+
+	if deleted.chatID != "pico:sess-1" || deleted.messageID != "msg-progress" {
+		t.Fatalf("unexpected delete target: %+v", deleted)
+	}
+	if _, ok := ch.currentToolFeedbackMessage("pico:sess-1"); ok {
+		t.Fatal("expected tracked tool feedback to be cleared after media delivery")
+	}
+}
+
 func TestPicoDownloadURLForRef(t *testing.T) {
 	got, err := picoDownloadURLForRef("media://attachment-1")
 	if err != nil {
@@ -267,4 +366,40 @@ func (c *PicoChannel) addConnForTest(pc *picoConn) {
 		c.sessionConnections[pc.sessionID] = bySession
 	}
 	bySession[pc.id] = pc
+}
+
+func newTestPicoWebSocket(t *testing.T) (*websocket.Conn, <-chan PicoMessage, func()) {
+	t.Helper()
+
+	received := make(chan PicoMessage, 4)
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("Upgrade() error = %v", err)
+			return
+		}
+		defer conn.Close()
+		for {
+			var msg PicoMessage
+			if err := conn.ReadJSON(&msg); err != nil {
+				return
+			}
+			received <- msg
+		}
+	}))
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	clientConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		server.Close()
+		t.Fatalf("Dial() error = %v", err)
+	}
+
+	cleanup := func() {
+		clientConn.Close()
+		server.Close()
+	}
+
+	return clientConn, received, cleanup
 }

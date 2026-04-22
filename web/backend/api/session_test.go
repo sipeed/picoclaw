@@ -897,6 +897,90 @@ func TestHandleGetSession_PreservesMediaWhenAssistantToolCallContentDuplicatesSu
 	}
 }
 
+func TestHandleGetSession_PreservesAttachmentsWhenAssistantToolCallContentDuplicatesSummary(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore() error = %v", err)
+	}
+
+	sessionKey := picoSessionPrefix + "detail-tool-summary-duplicate-content-with-attachments"
+	for _, msg := range []providers.Message{
+		{Role: "user", Content: "check report"},
+		{
+			Role:    "assistant",
+			Content: "Reviewing the generated report.",
+			Attachments: []providers.Attachment{{
+				Type:        "file",
+				URL:         "https://example.com/report.txt",
+				Filename:    "report.txt",
+				ContentType: "text/plain",
+			}},
+			ToolCalls: []providers.ToolCall{
+				{
+					ID:   "call_1",
+					Type: "function",
+					Function: &providers.FunctionCall{
+						Name:      "read_file",
+						Arguments: `{"path":"report.txt"}`,
+					},
+					ExtraContent: &providers.ExtraContent{
+						ToolFeedbackExplanation: "Reviewing the generated report.",
+					},
+				},
+			},
+		},
+	} {
+		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+			t.Fatalf("AddFullMessage() error = %v", err)
+		}
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/sessions/detail-tool-summary-duplicate-content-with-attachments",
+		nil,
+	)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Messages []sessionChatMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Messages) != 3 {
+		t.Fatalf("len(resp.Messages) = %d, want 3", len(resp.Messages))
+	}
+	if !strings.Contains(resp.Messages[1].Content, "`read_file`") {
+		t.Fatalf("tool summary message = %#v, want read_file summary", resp.Messages[1])
+	}
+	if resp.Messages[2].Role != "assistant" {
+		t.Fatalf("assistant message role = %q, want assistant", resp.Messages[2].Role)
+	}
+	if resp.Messages[2].Content != "Reviewing the generated report." {
+		t.Fatalf("assistant content = %q, want preserved duplicated content", resp.Messages[2].Content)
+	}
+	if len(resp.Messages[2].Attachments) != 1 {
+		t.Fatalf("len(assistant.Attachments) = %d, want 1", len(resp.Messages[2].Attachments))
+	}
+	if resp.Messages[2].Attachments[0].URL != "https://example.com/report.txt" {
+		t.Fatalf("attachment url = %q, want report URL", resp.Messages[2].Attachments[0].URL)
+	}
+}
+
 func TestHandleGetSession_UsesConfiguredToolFeedbackMaxArgsLength(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()

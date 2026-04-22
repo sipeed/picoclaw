@@ -90,6 +90,7 @@ type PicoChannel struct {
 	ctx                context.Context
 	cancel             context.CancelFunc
 	progress           *channels.ToolFeedbackAnimator
+	deleteMessageFn    func(context.Context, string, string) error
 }
 
 // NewPicoChannel creates a new Pico Protocol channel.
@@ -131,6 +132,7 @@ func NewPicoChannel(
 		sessionConnections: make(map[string]map[string]*picoConn),
 	}
 	ch.progress = channels.NewToolFeedbackAnimator(ch.EditMessage)
+	ch.deleteMessageFn = ch.DeleteMessage
 	return ch, nil
 }
 
@@ -332,6 +334,14 @@ func (c *PicoChannel) EditMessage(ctx context.Context, chatID string, messageID 
 	return c.broadcastToSession(chatID, outMsg)
 }
 
+// DeleteMessage implements channels.MessageDeleter.
+func (c *PicoChannel) DeleteMessage(ctx context.Context, chatID string, messageID string) error {
+	outMsg := newMessage(TypeMessageDelete, map[string]any{
+		"message_id": messageID,
+	})
+	return c.broadcastToSession(chatID, outMsg)
+}
+
 func (c *PicoChannel) currentToolFeedbackMessage(chatID string) (string, bool) {
 	if c.progress == nil {
 		return "", false
@@ -373,6 +383,11 @@ func (c *PicoChannel) dismissTrackedToolFeedbackMessage(ctx context.Context, cha
 		return
 	}
 	c.ClearToolFeedbackMessage(chatID)
+	deleteFn := c.deleteMessageFn
+	if deleteFn == nil {
+		deleteFn = c.DeleteMessage
+	}
+	_ = deleteFn(ctx, chatID, messageID)
 }
 
 func (c *PicoChannel) finalizeTrackedToolFeedbackMessage(
@@ -442,6 +457,7 @@ func (c *PicoChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessag
 	if !c.IsRunning() {
 		return nil, channels.ErrNotRunning
 	}
+	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(msg.ChatID)
 
 	store := c.GetMediaStore()
 	if store == nil {
@@ -516,6 +532,9 @@ func (c *PicoChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessag
 
 	if err := c.broadcastToSession(msg.ChatID, outMsg); err != nil {
 		return nil, err
+	}
+	if hasTrackedMsg {
+		c.dismissTrackedToolFeedbackMessage(ctx, msg.ChatID, trackedMsgID)
 	}
 
 	return []string{msgID}, nil

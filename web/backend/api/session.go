@@ -515,6 +515,7 @@ func visibleSessionMessages(messages []providers.Message, toolFeedbackMaxArgsLen
 			// must remain visible in restored session history.
 			if len(msg.ToolCalls) > 0 &&
 				len(msg.Media) == 0 &&
+				len(attachments) == 0 &&
 				assistantToolCallContentDuplicated(msg.Content, toolSummaryMessages, visibleToolMessages) {
 				continue
 			}
