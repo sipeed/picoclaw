@@ -3,9 +3,12 @@ package telegram
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/mymmrac/telego"
 
 	"github.com/sipeed/picoclaw/pkg/commands"
 )
@@ -92,5 +95,39 @@ func TestStartCommandRegistration_StopsAfterCancel(t *testing.T) {
 	time.Sleep(30 * time.Millisecond)
 	if attempts.Load() != stable {
 		t.Fatalf("expected retries to quiesce after cancel, got %d -> %d", stable, attempts.Load())
+	}
+}
+
+func TestBuildTelegramBotCommands_AddsModelsShortcutWhenMissing(t *testing.T) {
+	defs := []commands.Definition{
+		{Name: "help", Description: "Help"},
+		{Name: "list", Description: "List"},
+	}
+
+	got := buildTelegramBotCommands(defs)
+
+	models := telego.BotCommand{
+		Command:     "models",
+		Description: "List models or switch: /models <name>",
+	}
+	if !slices.Contains(got, models) {
+		t.Fatalf("expected models shortcut in bot commands, got: %#v", got)
+	}
+}
+
+func TestBuildTelegramBotCommands_DoesNotDuplicateExistingModelsCommand(t *testing.T) {
+	defs := []commands.Definition{
+		{Name: "models", Description: "Configured models"},
+	}
+
+	got := buildTelegramBotCommands(defs)
+	count := 0
+	for _, cmd := range got {
+		if cmd.Command == "models" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 models command, got %d (%#v)", count, got)
 	}
 }
