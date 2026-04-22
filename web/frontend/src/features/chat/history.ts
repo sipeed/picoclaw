@@ -1,6 +1,39 @@
 import { getSessionHistory } from "@/api/sessions"
 import { normalizeUnixTimestamp } from "@/features/chat/state"
-import type { ChatMessage } from "@/store/chat"
+import type { ChatAttachment, ChatMessage } from "@/store/chat"
+
+function toChatAttachments({
+  media,
+  attachments,
+}: {
+  media?: string[]
+  attachments?: {
+    type?: "image" | "audio" | "video" | "file"
+    url: string
+    filename?: string
+    content_type?: string
+  }[]
+}): ChatAttachment[] | undefined {
+  const normalizedAttachments = attachments
+    ?.filter((attachment) => attachment.url)
+    .map(
+      (attachment) =>
+        ({
+          type: attachment.type ?? "file",
+          url: attachment.url,
+          filename: attachment.filename,
+          contentType: attachment.content_type,
+        }) satisfies ChatAttachment,
+    )
+
+  const legacyMediaAttachments = (media ?? [])
+    .filter((item) => item.startsWith("data:image/"))
+    .map((url) => ({ type: "image" as const, url }))
+
+  const merged = [...(normalizedAttachments ?? []), ...legacyMediaAttachments]
+
+  return merged.length > 0 ? merged : undefined
+}
 
 export async function loadSessionMessages(
   sessionId: string,
@@ -12,6 +45,11 @@ export async function loadSessionMessages(
     id: `hist-${index}-${Date.now()}`,
     role: message.role,
     content: message.content,
+    kind: message.role === "assistant" ? "normal" : undefined,
+    attachments: toChatAttachments({
+      media: message.media,
+      attachments: message.attachments,
+    }),
     timestamp: fallbackTime,
   }))
 }
@@ -31,9 +69,16 @@ function normalizeMessageTimestamp(timestamp: number | string): string {
 }
 
 function messageSignature(message: ChatMessage): string {
+  const attachmentSignature = (message.attachments ?? [])
+    .map(
+      (attachment) =>
+        `${attachment.type}\u0001${attachment.url}\u0001${attachment.filename ?? ""}`,
+    )
+    .join("\u0002")
+
   return `${message.role}\u0000${message.content}\u0000${normalizeMessageTimestamp(
     message.timestamp,
-  )}`
+  )}\u0000${message.kind ?? ""}\u0000${attachmentSignature}`
 }
 
 function comparableTimestamp(timestamp: number | string): number {

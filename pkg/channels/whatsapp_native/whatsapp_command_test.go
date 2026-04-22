@@ -20,7 +20,7 @@ import (
 func TestHandleIncoming_DoesNotConsumeGenericCommandsLocally(t *testing.T) {
 	messageBus := bus.NewMessageBus()
 	ch := &WhatsAppNativeChannel{
-		BaseChannel: channels.NewBaseChannel("whatsapp_native", config.WhatsAppConfig{}, messageBus, nil),
+		BaseChannel: channels.NewBaseChannel("whatsapp_native", config.WhatsAppSettings{}, messageBus, nil),
 		runCtx:      context.Background(),
 	}
 

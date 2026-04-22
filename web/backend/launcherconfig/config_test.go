@@ -1,11 +1,10 @@
 package launcherconfig
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/sipeed/picoclaw/web/backend/middleware"
 )
 
 func TestLoadReturnsFallbackWhenMissing(t *testing.T) {
@@ -25,9 +24,11 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "launcher-config.json")
 	want := Config{
-		Port:         18080,
-		Public:       true,
-		AllowedCIDRs: []string{"192.168.1.0/24", "10.0.0.0/8"},
+		Port:                  18080,
+		Public:                true,
+		AllowedCIDRs:          []string{"192.168.1.0/24", "10.0.0.0/8"},
+		DashboardPasswordHash: "$2a$12$saved-dashboard-password-hash",
+		LegacyLauncherToken:   "legacy-token-should-not-persist",
 	}
 
 	if err := Save(path, want); err != nil {
@@ -39,6 +40,12 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	}
 	if got.Port != want.Port || got.Public != want.Public {
 		t.Fatalf("Load() = %+v, want %+v", got, want)
+	}
+	if got.DashboardPasswordHash != want.DashboardPasswordHash {
+		t.Fatalf("dashboard_password_hash = %q, want %q", got.DashboardPasswordHash, want.DashboardPasswordHash)
+	}
+	if got.LegacyLauncherToken != "" {
+		t.Fatalf("legacy launcher_token = %q, want empty after Save", got.LegacyLauncherToken)
 	}
 	if len(got.AllowedCIDRs) != len(want.AllowedCIDRs) {
 		t.Fatalf("allowed_cidrs len = %d, want %d", len(got.AllowedCIDRs), len(want.AllowedCIDRs))
@@ -55,6 +62,21 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	}
 	if perm := stat.Mode().Perm(); perm != 0o600 {
 		t.Fatalf("file perm = %o, want 600", perm)
+	}
+}
+
+func TestLoadReadsLegacyLauncherTokenForMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "launcher-config.json")
+	if err := os.WriteFile(path, []byte(`{"port":18800,"launcher_token":"legacy-token"}`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	got, err := Load(path, Default())
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got.LegacyLauncherToken != "legacy-token" {
+		t.Fatalf("legacy launcher_token = %q, want legacy-token", got.LegacyLauncherToken)
 	}
 }
 
@@ -77,51 +99,6 @@ func TestValidateRejectsInvalidCIDR(t *testing.T) {
 	}
 }
 
-func TestEnsureDashboardSecrets_GeneratesEphemeral(t *testing.T) {
-	t.Setenv("PICOCLAW_LAUNCHER_TOKEN", "")
-
-	tok, key, newTok, err := EnsureDashboardSecrets()
-	if err != nil {
-		t.Fatalf("EnsureDashboardSecrets() error = %v", err)
-	}
-	if !newTok || tok == "" || len(key) != dashboardSigningKeyBytes {
-		t.Fatalf("unexpected first call: newTok=%v tok=%q keyLen=%d", newTok, tok, len(key))
-	}
-	mac := middleware.SessionCookieValue(key, tok)
-	if mac == "" {
-		t.Fatal("empty session mac")
-	}
-
-	tok2, key2, newTok2, err := EnsureDashboardSecrets()
-	if err != nil {
-		t.Fatalf("EnsureDashboardSecrets() second error = %v", err)
-	}
-	if !newTok2 {
-		t.Fatal("second call without env should generate another random token")
-	}
-	if tok2 == tok {
-		t.Fatal("expected a new random dashboard token")
-	}
-	if string(key2) == string(key) {
-		t.Fatal("expected a new signing key")
-	}
-}
-
-func TestEnsureDashboardSecrets_EnvOverridesGenerated(t *testing.T) {
-	t.Setenv("PICOCLAW_LAUNCHER_TOKEN", "env-only-token-override")
-
-	tok, _, newTok, err := EnsureDashboardSecrets()
-	if err != nil {
-		t.Fatalf("EnsureDashboardSecrets() error = %v", err)
-	}
-	if tok != "env-only-token-override" {
-		t.Fatalf("token = %q, want env value", tok)
-	}
-	if newTok {
-		t.Fatal("newRandomDashboardToken should be false when env is set")
-	}
-}
-
 func TestNormalizeCIDRs(t *testing.T) {
 	got := NormalizeCIDRs([]string{" 192.168.1.0/24 ", "", "10.0.0.0/8", "192.168.1.0/24"})
 	want := []string{"192.168.1.0/24", "10.0.0.0/8"}
@@ -132,5 +109,44 @@ func TestNormalizeCIDRs(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("got[%d] = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func TestPasswordStoreSetAndVerify(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "launcher-config.json")
+	store := NewPasswordStore(path, Default())
+	ctx := context.Background()
+
+	initialized, err := store.IsInitialized(ctx)
+	if err != nil {
+		t.Fatalf("IsInitialized() error = %v", err)
+	}
+	if initialized {
+		t.Fatal("IsInitialized() = true, want false before SetPassword")
+	}
+
+	if err = store.SetPassword(ctx, "dashboard-password"); err != nil {
+		t.Fatalf("SetPassword() error = %v", err)
+	}
+	initialized, err = store.IsInitialized(ctx)
+	if err != nil {
+		t.Fatalf("IsInitialized() after SetPassword error = %v", err)
+	}
+	if !initialized {
+		t.Fatal("IsInitialized() = false, want true after SetPassword")
+	}
+	ok, err := store.VerifyPassword(ctx, "dashboard-password")
+	if err != nil {
+		t.Fatalf("VerifyPassword() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("VerifyPassword(correct) = false, want true")
+	}
+	ok, err = store.VerifyPassword(ctx, "wrong-password")
+	if err != nil {
+		t.Fatalf("VerifyPassword(wrong) error = %v", err)
+	}
+	if ok {
+		t.Fatal("VerifyPassword(wrong) = true, want false")
 	}
 }

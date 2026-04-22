@@ -18,6 +18,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 export function MarketSkillCard({
   result,
@@ -36,9 +41,20 @@ export function MarketSkillCard({
 }) {
   const { t } = useTranslation()
 
+  const installDisabledReason = (() => {
+    if (installPending)
+      return t("pages.agent.skills.marketplace_installDisabled.installing")
+    if (result.installed)
+      return t("pages.agent.skills.marketplace_installDisabled.installed")
+    if (!canInstall)
+      return t("pages.agent.skills.marketplace_installDisabled.cannotInstall")
+    return t("pages.agent.skills.marketplace_install_action")
+  })()
+  const installDisabled = !canInstall || result.installed || installPending
+
   return (
     <Card
-      className="group relative overflow-hidden border-border/40 bg-card/40 transition-all hover:border-border/80 hover:bg-card hover:shadow-md"
+      className="group border-border/40 bg-card/40 hover:border-border/80 hover:bg-card relative overflow-hidden transition-all hover:shadow-md"
       size="sm"
     >
       {result.installed && (
@@ -51,16 +67,16 @@ export function MarketSkillCard({
               <CardTitle className="text-base font-semibold tracking-tight">
                 {result.display_name || result.slug}
               </CardTitle>
-              <span className="inline-flex items-center rounded-md bg-muted/60 px-2 py-0.5 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase ring-1 ring-inset ring-border/50">
+              <span className="bg-muted/60 text-muted-foreground ring-border/50 inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase ring-1 ring-inset">
                 {result.registry_name}
               </span>
               {result.installed ? (
-                <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 ring-1 ring-inset ring-emerald-500/20">
+                <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 ring-1 ring-emerald-500/20 ring-inset">
                   {t("pages.agent.skills.marketplace_installed")}
                 </span>
               ) : null}
             </div>
-            <div className="font-mono text-xs text-muted-foreground opacity-80">
+            <div className="text-muted-foreground font-mono text-xs opacity-80">
               {result.slug}
               {result.version ? (
                 <span className="text-muted-foreground/60">
@@ -78,7 +94,7 @@ export function MarketSkillCard({
                   href={result.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex text-xs text-primary/80 transition-colors hover:text-primary hover:underline hover:underline-offset-4"
+                  className="text-primary/80 hover:text-primary inline-flex text-xs transition-colors hover:underline hover:underline-offset-4"
                 >
                   {result.url}
                 </a>
@@ -86,30 +102,40 @@ export function MarketSkillCard({
             ) : null}
           </div>
           <div className="flex shrink-0 flex-col items-end gap-2">
-            <Button
-              size="sm"
-              variant={result.installed ? "secondary" : "default"}
-              className="shadow-sm transition-all"
-              disabled={!canInstall || result.installed || installPending}
-              onClick={onInstall}
-            >
-              {installPending ? (
-                <IconLoader2 className="size-4 animate-spin" />
-              ) : result.installed ? (
-                <IconCheck className="size-4" />
-              ) : (
-                <IconPlus className="size-4" />
-              )}
-              {result.installed
-                ? t("pages.agent.skills.marketplace_installed")
-                : t("pages.agent.skills.marketplace_install_action")}
-            </Button>
+            <Tooltip delayDuration={installDisabled ? 0 : 700}>
+              <TooltipTrigger asChild>
+                <span
+                  className={installDisabled ? "cursor-not-allowed" : undefined}
+                  tabIndex={installDisabled ? 0 : undefined}
+                >
+                  <Button
+                    size="sm"
+                    variant={result.installed ? "secondary" : "default"}
+                    className="shadow-sm transition-all"
+                    disabled={installDisabled}
+                    onClick={onInstall}
+                  >
+                    {installPending ? (
+                      <IconLoader2 className="size-4 animate-spin" />
+                    ) : result.installed ? (
+                      <IconCheck className="size-4" />
+                    ) : (
+                      <IconPlus className="size-4" />
+                    )}
+                    {result.installed
+                      ? t("pages.agent.skills.marketplace_installed")
+                      : t("pages.agent.skills.marketplace_install_action")}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{installDisabledReason}</TooltipContent>
+            </Tooltip>
             {result.installed && installedSkill ? (
               <Button
                 variant="outline"
                 size="xs"
                 onClick={onViewInstalled}
-                className="w-full shadow-sm hover:bg-muted"
+                className="hover:bg-muted w-full shadow-sm"
               >
                 <IconFileInfo className="mr-1 size-3.5" />
                 {t("pages.agent.skills.marketplace_view_installed")}

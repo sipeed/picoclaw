@@ -1,3 +1,6 @@
+import { IconLoader2, IconTrash } from "@tabler/icons-react"
+import { useTranslation } from "react-i18next"
+
 import type { SkillSupportItem } from "@/api/skills"
 import {
   AlertDialog,
@@ -9,8 +12,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { IconLoader2, IconTrash } from "@tabler/icons-react"
-import { useTranslation } from "react-i18next"
 
 interface DeleteDialogProps {
   open: boolean

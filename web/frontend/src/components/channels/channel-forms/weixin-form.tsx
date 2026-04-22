@@ -10,8 +10,23 @@ import { useTranslation } from "react-i18next"
 
 import type { ChannelConfig } from "@/api/channels"
 import { pollWeixinFlow, startWeixinFlow } from "@/api/channels"
+import {
+  type ArrayFieldFlusher,
+  ChannelArrayListField,
+} from "@/components/channels/channel-array-list-field"
+import {
+  asStringArray,
+  parseAllowFromInput,
+} from "@/components/channels/channel-array-utils"
 import { Field } from "@/components/shared-form"
 import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 
 type BindingState =
@@ -28,15 +43,15 @@ interface WeixinFormProps {
   onChange: (key: string, value: unknown) => void
   isEdit: boolean
   onBindSuccess?: () => void
+  registerArrayFieldFlusher?: (
+    fieldPath: string,
+    flusher: ArrayFieldFlusher | null,
+  ) => void
+  arrayFieldResetVersion?: number
 }
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : ""
-}
-
-function asStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value.filter((item): item is string => typeof item === "string")
 }
 
 export function WeixinForm({
@@ -44,6 +59,8 @@ export function WeixinForm({
   onChange,
   isEdit,
   onBindSuccess,
+  registerArrayFieldFlusher,
+  arrayFieldResetVersion,
 }: WeixinFormProps) {
   const { t } = useTranslation()
 
@@ -301,51 +318,43 @@ export function WeixinForm({
   }
 
   return (
-    <div className="space-y-5">
-      {/* QR Bind Section */}
-      <div className="border-border/60 bg-muted/30 rounded-xl border">
-        <div className="border-border/60 border-b px-4 py-3">
-          <p className="text-sm font-medium">
+    <div className="space-y-6">
+      <Card className="shadow-sm">
+        <CardHeader className="border-border/60 border-b px-6">
+          <CardTitle className="text-foreground text-sm font-medium">
             {t("channels.weixin.bindTitle")}
-          </p>
-          <p className="text-muted-foreground mt-0.5 text-xs">
-            {t("channels.weixin.bindDesc")}
-          </p>
-        </div>
-        {renderBindSection()}
-      </div>
+          </CardTitle>
+          <CardDescription>{t("channels.weixin.bindDesc")}</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">{renderBindSection()}</CardContent>
+      </Card>
 
-      {/* allow_from */}
-      <Field
-        label={t("channels.field.allowFrom")}
-        hint={t("channels.form.desc.allowFrom")}
-      >
-        <Input
-          value={asStringArray(config.allow_from).join(", ")}
-          onChange={(e) =>
-            onChange(
-              "allow_from",
-              e.target.value
-                .split(",")
-                .map((s: string) => s.trim())
-                .filter(Boolean),
-            )
-          }
-          placeholder={t("channels.field.allowFromPlaceholder")}
-        />
-      </Field>
+      <Card className="shadow-sm">
+        <CardContent className="divide-border/60 divide-y px-6 py-0 [&>div]:py-5">
+          <ChannelArrayListField
+            label={t("channels.field.allowFrom")}
+            hint={t("channels.form.desc.allowFrom")}
+            value={asStringArray(config.allow_from)}
+            onChange={(value) => onChange("allow_from", value)}
+            placeholder={t("channels.field.allowFromPlaceholder")}
+            parser={parseAllowFromInput}
+            fieldPath="allow_from"
+            registerFlusher={registerArrayFieldFlusher}
+            resetVersion={arrayFieldResetVersion}
+          />
 
-      {/* proxy */}
-      <Field
-        label={t("channels.field.proxy")}
-        hint={t("channels.form.desc.proxy")}
-      >
-        <Input
-          value={asString(config.proxy)}
-          onChange={(e) => onChange("proxy", e.target.value)}
-          placeholder="http://localhost:7890"
-        />
-      </Field>
+          <Field
+            label={t("channels.field.proxy")}
+            hint={t("channels.form.desc.proxy")}
+          >
+            <Input
+              value={asString(config.proxy)}
+              onChange={(e) => onChange("proxy", e.target.value)}
+              placeholder="http://localhost:7890"
+            />
+          </Field>
+        </CardContent>
+      </Card>
     </div>
   )
 }

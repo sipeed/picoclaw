@@ -480,6 +480,11 @@ func TestProviderChat_StripsKnownProviderPrefixes(t *testing.T) {
 			wantModel: "openai/gpt-oss-20b",
 		},
 		{
+			name:      "strips venice prefix",
+			input:     "venice/venice-uncensored",
+			wantModel: "venice-uncensored",
+		},
+		{
 			name:      "strips deepseek prefix",
 			input:     "deepseek/deepseek-chat",
 			wantModel: "deepseek-chat",
@@ -586,6 +591,9 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	}
 	if got := normalizeModel("lmstudio/openai/gpt-oss-20b", "http://localhost:1234/v1"); got != "openai/gpt-oss-20b" {
 		t.Fatalf("normalizeModel(lmstudio) = %q, want %q", got, "openai/gpt-oss-20b")
+	}
+	if got := normalizeModel("venice/venice-uncensored", "https://api.venice.ai/api/v1"); got != "venice-uncensored" {
+		t.Fatalf("normalizeModel(venice) = %q, want %q", got, "venice-uncensored")
 	}
 	if got := normalizeModel("openrouter/auto", "https://openrouter.ai/api/v1"); got != "openrouter/auto" {
 		t.Fatalf("normalizeModel(openrouter) = %q, want %q", got, "openrouter/auto")
@@ -699,6 +707,111 @@ func TestProviderChat_ExtraBodyOverridesOptions(t *testing.T) {
 	// ExtraBody takes precedence over options since it is merged last.
 	if got := requestBody["temperature"]; got != float64(0.9) {
 		t.Fatalf("temperature = %v, want 0.9 (from extraBody, overriding options)", got)
+	}
+}
+
+func TestProviderChat_CustomHeadersInjected(t *testing.T) {
+	var gotSource, gotAuth, gotUserAgent string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotSource = r.Header.Get("X-Source")
+		gotAuth = r.Header.Get("Authorization")
+		gotUserAgent = r.Header.Get("User-Agent")
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider(
+		"key",
+		server.URL,
+		"",
+		WithUserAgent("PicoClaw/Test"),
+		WithCustomHeaders(map[string]string{
+			"X-Source":      "coding-plan",
+			"Authorization": "Token custom-auth",
+			"User-Agent":    "Custom-UA/1.0",
+		}),
+	)
+
+	_, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"gpt-4o",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if gotSource != "coding-plan" {
+		t.Fatalf("X-Source = %q, want %q", gotSource, "coding-plan")
+	}
+	if gotAuth != "Token custom-auth" {
+		t.Fatalf("Authorization = %q, want %q", gotAuth, "Token custom-auth")
+	}
+	if gotUserAgent != "Custom-UA/1.0" {
+		t.Fatalf("User-Agent = %q, want %q", gotUserAgent, "Custom-UA/1.0")
+	}
+}
+
+func TestProviderChatStream_CustomHeadersInjected(t *testing.T) {
+	var gotSource, gotAuth, gotUserAgent string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotSource = r.Header.Get("X-Source")
+		gotAuth = r.Header.Get("Authorization")
+		gotUserAgent = r.Header.Get("User-Agent")
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	p := NewProvider(
+		"key",
+		server.URL,
+		"",
+		WithUserAgent("PicoClaw/Test"),
+		WithCustomHeaders(map[string]string{
+			"X-Source":      "coding-plan",
+			"Authorization": "Token stream-auth",
+			"User-Agent":    "Custom-UA/Stream",
+		}),
+	)
+
+	out, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"gpt-4o",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+	if out.Content != "ok" {
+		t.Fatalf("Content = %q, want %q", out.Content, "ok")
+	}
+	if gotSource != "coding-plan" {
+		t.Fatalf("X-Source = %q, want %q", gotSource, "coding-plan")
+	}
+	if gotAuth != "Token stream-auth" {
+		t.Fatalf("Authorization = %q, want %q", gotAuth, "Token stream-auth")
+	}
+	if gotUserAgent != "Custom-UA/Stream" {
+		t.Fatalf("User-Agent = %q, want %q", gotUserAgent, "Custom-UA/Stream")
 	}
 }
 

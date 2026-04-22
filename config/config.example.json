@@ -49,6 +49,11 @@
       "api_key": "sk-your-deepseek-key"
     },
     {
+      "model_name": "venice-uncensored",
+      "model": "venice/venice-uncensored",
+      "api_key": "your-venice-api-key"
+    },
+    {
       "model_name": "lmstudio-local",
       "model": "lmstudio/openai/gpt-oss-20b"
     },
@@ -264,8 +269,13 @@
         "base_url": "",
         "max_results": 0
       },
-      "duckduckgo": {
+      "provider": "auto",
+      "sogou": {
         "enabled": true,
+        "max_results": 5
+      },
+      "duckduckgo": {
+        "enabled": false,
         "max_results": 5
       },
       "perplexity": {
@@ -377,9 +387,16 @@
           "timeout": 0,
           "max_zip_size": 0,
           "max_response_size": 0
+        },
+        "github": {
+          "enabled": true,
+          "base_url": "https://github.com",
+          "auth_token": "",
+          "proxy": "http://127.0.0.1:7891"
         }
       },
       "github": {
+        "base_url": "https://github.com",
         "proxy": "http://127.0.0.1:7891",
         "token": ""
       },
@@ -416,7 +433,8 @@
       "enabled": true
     },
     "read_file": {
-      "enabled": true
+      "enabled": true,
+      "mode": "bytes"
     },
     "send_tts": {
       "enabled": false
@@ -459,7 +477,7 @@
   },
   "gateway": {
     "_comment": "Default log level is set to 'fatal'. Other available options are 'debug', 'info', 'warn' and 'error'.",
-    "host": "127.0.0.1",
+    "host": "localhost",
     "port": 18790,
     "hot_reload": false,
     "log_level": "fatal"

@@ -351,15 +351,17 @@ func spawnSubTurn(
 	}
 
 	// Create processOptions for the child turn
+	dispatch := DispatchRequest{
+		SessionKey:     childID,
+		UserMessage:    cfg.SystemPrompt,
+		Media:          nil,
+		InboundContext: cloneInboundContext(parentTS.opts.Dispatch.InboundContext),
+	}
 	opts := processOptions{
-		SessionKey:              childID,
-		Channel:                 parentTS.channel,
-		ChatID:                  parentTS.chatID,
-		SenderID:                parentTS.opts.SenderID,
+		Dispatch:                dispatch,
+		SenderID:                parentTS.opts.Dispatch.SenderID(),
 		SenderDisplayName:       parentTS.opts.SenderDisplayName,
-		UserMessage:             cfg.SystemPrompt, // Task description becomes the first user message
 		SystemPromptOverride:    cfg.ActualSystemPrompt,
-		Media:                   nil,
 		InitialSteeringMessages: cfg.InitialMessages,
 		DefaultResponse:         "",
 		EnableSummary:           false,
@@ -369,7 +371,11 @@ func spawnSubTurn(
 	}
 
 	// Create event scope for the child turn
-	scope := al.newTurnEventScope(agent.ID, childID)
+	scope := al.newTurnEventScope(
+		agent.ID,
+		childID,
+		newTurnContext(opts.Dispatch.InboundContext, opts.Dispatch.RouteResult, opts.Dispatch.SessionScope),
+	)
 
 	// Create child turnState using the new API
 	childTS := newTurnState(&agent, opts, scope)
@@ -456,7 +462,8 @@ func spawnSubTurn(
 	}()
 
 	// 8. Execute sub-turn via the real agent loop.
-	turnRes, turnErr := al.runTurn(childCtx, childTS)
+	pipeline := NewPipeline(al)
+	turnRes, turnErr := al.runTurn(childCtx, childTS, pipeline)
 
 	// Release the concurrency semaphore immediately after runTurn completes,
 	// before the cleanup defer runs. This prevents a deadlock where:
@@ -511,6 +518,7 @@ func deliverSubTurnResult(al *AgentLoop, parentTS *turnState, childID string, re
 	// We use defer/recover to catch any unlikely channel panics if it were ever closed.
 	defer func() {
 		if r := recover(); r != nil {
+			logger.RecoverPanicNoExit(r)
 			logger.WarnCF("subturn", "recovered panic sending to pendingResults", map[string]any{
 				"parent_id": parentTS.turnID,
 				"child_id":  childID,
@@ -603,6 +611,7 @@ type ephemeralSessionStoreIface interface {
 	SetHistory(key string, history []providers.Message)
 	TruncateHistory(key string, keepLast int)
 	Save(key string) error
+	ListSessions() []string
 	Close() error
 }
 
@@ -662,8 +671,9 @@ func (e *ephemeralSessionStore) TruncateHistory(_ string, keepLast int) {
 	e.history = e.history[len(e.history)-keepLast:]
 }
 
-func (e *ephemeralSessionStore) Save(_ string) error { return nil }
-func (e *ephemeralSessionStore) Close() error        { return nil }
+func (e *ephemeralSessionStore) Save(_ string) error    { return nil }
+func (e *ephemeralSessionStore) Close() error           { return nil }
+func (e *ephemeralSessionStore) ListSessions() []string { return nil }
 
 func (e *ephemeralSessionStore) truncateLocked() {
 	if len(e.history) > maxEphemeralHistorySize {

@@ -24,6 +24,7 @@ import { Textarea } from "@/components/ui/textarea"
 
 interface AddForm {
   modelName: string
+  provider: string
   model: string
   apiBase: string
   apiKey: string
@@ -36,10 +37,12 @@ interface AddForm {
   requestTimeout: string
   thinkingLevel: string
   extraBody: string
+  customHeaders: string
 }
 
 const EMPTY_ADD_FORM: AddForm = {
   modelName: "",
+  provider: "",
   model: "",
   apiBase: "",
   apiKey: "",
@@ -52,6 +55,7 @@ const EMPTY_ADD_FORM: AddForm = {
   requestTimeout: "",
   thinkingLevel: "",
   extraBody: "",
+  customHeaders: "",
 }
 
 interface AddModelSheetProps {
@@ -117,9 +121,11 @@ export function AddModelSheet({
     setServerError("")
     try {
       const modelName = form.modelName.trim()
+      const provider = form.provider.trim()
       const modelId = form.model.trim()
       await addModel({
         model_name: modelName,
+        provider: provider || undefined,
         model: modelId,
         api_base: form.apiBase.trim() || undefined,
         api_key: form.apiKey.trim() || undefined,
@@ -135,6 +141,9 @@ export function AddModelSheet({
         thinking_level: form.thinkingLevel.trim() || undefined,
         extra_body: form.extraBody.trim()
           ? JSON.parse(form.extraBody.trim())
+          : undefined,
+        custom_headers: form.customHeaders.trim()
+          ? JSON.parse(form.customHeaders.trim())
           : undefined,
       })
       if (setAsDefault) {
@@ -179,6 +188,17 @@ export function AddModelSheet({
                   {fieldErrors.modelName}
                 </p>
               )}
+            </Field>
+
+            <Field
+              label={t("models.field.provider")}
+              hint={t("models.field.providerHint")}
+            >
+              <Input
+                value={form.provider}
+                onChange={setField("provider")}
+                placeholder={t("models.field.providerPlaceholder")}
+              />
             </Field>
 
             <Field
@@ -321,6 +341,18 @@ export function AddModelSheet({
                   value={form.extraBody}
                   onChange={setField("extraBody")}
                   placeholder='{"key": "value"}'
+                  rows={3}
+                />
+              </Field>
+
+              <Field
+                label={t("models.field.customHeaders")}
+                hint={t("models.field.customHeadersHint")}
+              >
+                <Textarea
+                  value={form.customHeaders}
+                  onChange={setField("customHeaders")}
+                  placeholder='{"X-Source": "coding-plan"}'
                   rows={3}
                 />
               </Field>

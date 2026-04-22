@@ -1,9 +1,13 @@
 import { IconPlus } from "@tabler/icons-react"
-import { useEffect, useRef, useState } from "react"
+import { type ChangeEvent, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
 
 import { AssistantMessage } from "@/components/chat/assistant-message"
-import { ChatComposer } from "@/components/chat/chat-composer"
+import {
+  ChatComposer,
+  type ChatInputDisabledReason,
+} from "@/components/chat/chat-composer"
 import { ChatEmptyState } from "@/components/chat/chat-empty-state"
 import { ModelSelector } from "@/components/chat/model-selector"
 import { SessionHistoryMenu } from "@/components/chat/session-history-menu"
@@ -15,19 +19,103 @@ import { useChatModels } from "@/hooks/use-chat-models"
 import { useGateway } from "@/hooks/use-gateway"
 import { usePicoChat } from "@/hooks/use-pico-chat"
 import { useSessionHistory } from "@/hooks/use-session-history"
+import type { ConnectionState } from "@/store/chat"
+import type { ChatAttachment } from "@/store/chat"
+import type { GatewayState } from "@/store/gateway"
+
+const MAX_IMAGE_SIZE_BYTES = 7 * 1024 * 1024
+const MAX_IMAGE_SIZE_LABEL = "7 MB"
+const ALLOWED_IMAGE_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/bmp",
+])
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result)
+        return
+      }
+      reject(new Error("Failed to read file"))
+    }
+    reader.onerror = () =>
+      reject(reader.error || new Error("Failed to read file"))
+    reader.readAsDataURL(file)
+  })
+}
+
+function resolveChatInputDisabledReason({
+  hasDefaultModel,
+  connectionState,
+  gatewayState,
+}: {
+  hasDefaultModel: boolean
+  connectionState: ConnectionState
+  gatewayState: GatewayState
+}): ChatInputDisabledReason | null {
+  if (gatewayState === "unknown") {
+    return "gatewayUnknown"
+  }
+
+  if (gatewayState === "starting") {
+    return "gatewayStarting"
+  }
+
+  if (gatewayState === "restarting") {
+    return "gatewayRestarting"
+  }
+
+  if (gatewayState === "stopping") {
+    return "gatewayStopping"
+  }
+
+  if (gatewayState === "stopped") {
+    return "gatewayStopped"
+  }
+
+  if (gatewayState === "error") {
+    return "gatewayError"
+  }
+
+  if (connectionState === "connecting") {
+    return "websocketConnecting"
+  }
+
+  if (connectionState === "error") {
+    return "websocketError"
+  }
+
+  if (connectionState === "disconnected") {
+    return "websocketDisconnected"
+  }
+
+  if (!hasDefaultModel) {
+    return "noDefaultModel"
+  }
+
+  return null
+}
 
 export function ChatPage() {
   const { t } = useTranslation()
   const scrollRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [hasScrolled, setHasScrolled] = useState(false)
   const [input, setInput] = useState("")
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([])
 
   const {
     messages,
     connectionState,
     isTyping,
     activeSessionId,
+    contextUsage,
     sendMessage,
     switchSession,
     newChat,
@@ -35,7 +123,6 @@ export function ChatPage() {
 
   const { state: gwState } = useGateway()
   const isGatewayRunning = gwState === "running"
-  const isChatConnected = connectionState === "connected"
 
   const {
     defaultModelName,
@@ -45,7 +132,13 @@ export function ChatPage() {
     localModels,
     handleSetDefault,
   } = useChatModels({ isConnected: isGatewayRunning })
-  const canSend = isChatConnected && Boolean(defaultModelName)
+  const hasDefaultModel = Boolean(defaultModelName)
+  const inputDisabledReason = resolveChatInputDisabledReason({
+    hasDefaultModel,
+    connectionState,
+    gatewayState: gwState,
+  })
+  const canInput = inputDisabledReason === null
 
   const {
     sessions,
@@ -61,7 +154,7 @@ export function ChatPage() {
   })
 
   const syncScrollState = (element: HTMLDivElement) => {
-    const { scrollTop, scrollHeight, clientHeight } = element
+    const { clientHeight, scrollHeight, scrollTop } = element
     setHasScrolled(scrollTop > 0)
     setIsAtBottom(scrollHeight - scrollTop <= clientHeight + 10)
   }
@@ -80,18 +173,85 @@ export function ChatPage() {
   }, [messages, isTyping, isAtBottom])
 
   const handleSend = () => {
-    if (!input.trim() || !canSend) return
-    if (sendMessage(input.trim())) {
+    if ((!input.trim() && attachments.length === 0) || !canInput) return
+    if (
+      sendMessage({
+        content: input,
+        attachments,
+      })
+    ) {
       setInput("")
+      setAttachments([])
     }
   }
+
+  const handleAddImages = () => {
+    if (!canInput) return
+    fileInputRef.current?.click()
+  }
+
+  const handleRemoveAttachment = (index: number) => {
+    setAttachments((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
+  }
+
+  const handleImageSelection = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ""
+
+    if (files.length === 0) {
+      return
+    }
+
+    const nextAttachments: ChatAttachment[] = []
+    for (const file of files) {
+      if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+        toast.error(
+          t("chat.invalidImage", {
+            name: file.name,
+          }),
+        )
+        continue
+      }
+
+      if (file.size > MAX_IMAGE_SIZE_BYTES) {
+        toast.error(
+          t("chat.imageTooLarge", {
+            name: file.name,
+            size: MAX_IMAGE_SIZE_LABEL,
+          }),
+        )
+        continue
+      }
+
+      try {
+        nextAttachments.push({
+          type: "image",
+          filename: file.name,
+          url: await readFileAsDataUrl(file),
+        })
+      } catch {
+        toast.error(
+          t("chat.imageReadFailed", {
+            name: file.name,
+          }),
+        )
+      }
+    }
+
+    if (nextAttachments.length > 0) {
+      setAttachments(nextAttachments.slice(0, 1))
+    }
+  }
+
+  const canSubmit =
+    canInput && (Boolean(input.trim()) || attachments.length > 0)
 
   return (
     <div className="bg-background/95 flex h-full flex-col">
       <PageHeader
         title={t("navigation.chat")}
         className={`transition-shadow ${
-          hasScrolled ? "shadow-sm" : "shadow-none"
+          hasScrolled ? "shadow-xs" : "shadow-none"
         }`}
         titleExtra={
           hasAvailableModels && (
@@ -135,7 +295,7 @@ export function ChatPage() {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8 lg:px-24 xl:px-48"
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-6 [scrollbar-gutter:stable] md:px-8 lg:px-24 xl:px-48"
       >
         <div className="mx-auto flex w-full max-w-250 flex-col gap-8 pb-8">
           {messages.length === 0 && !isTyping && (
@@ -151,10 +311,15 @@ export function ChatPage() {
               {msg.role === "assistant" ? (
                 <AssistantMessage
                   content={msg.content}
+                  attachments={msg.attachments}
+                  isThought={msg.kind === "thought"}
                   timestamp={msg.timestamp}
                 />
               ) : (
-                <UserMessage content={msg.content} />
+                <UserMessage
+                  content={msg.content}
+                  attachments={msg.attachments}
+                />
               )}
             </div>
           ))}
@@ -163,12 +328,29 @@ export function ChatPage() {
         </div>
       </div>
 
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/gif,image/webp,image/bmp"
+        className="hidden"
+        onChange={handleImageSelection}
+      />
+
       <ChatComposer
         input={input}
+        attachments={attachments}
         onInputChange={setInput}
+        onAddImages={handleAddImages}
+        onRemoveAttachment={handleRemoveAttachment}
         onSend={handleSend}
-        isConnected={isChatConnected}
-        hasDefaultModel={Boolean(defaultModelName)}
+        onContextDetail={() => {
+          if (sendMessage({ content: "/context", attachments: [] })) {
+            setInput("")
+          }
+        }}
+        inputDisabledReason={inputDisabledReason}
+        canSend={canSubmit}
+        contextUsage={contextUsage}
       />
     </div>
   )

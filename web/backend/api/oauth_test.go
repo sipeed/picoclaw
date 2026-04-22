@@ -214,6 +214,54 @@ func TestOAuthLogoutClearsCredentialAndConfig(t *testing.T) {
 	}
 }
 
+func TestOAuthLogoutClearsAuthMethodForExplicitProviderField(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+	resetOAuthHooks(t)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+	cfg.ModelList = append(cfg.ModelList, &config.ModelConfig{
+		ModelName:  "gpt-5.4",
+		Provider:   "openai",
+		Model:      "gpt-5.4",
+		AuthMethod: "oauth",
+	})
+	if err = config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig error: %v", err)
+	}
+	if err = auth.SetCredential(oauthProviderOpenAI, &auth.AuthCredential{
+		AccessToken: "token-before-logout",
+		Provider:    oauthProviderOpenAI,
+		AuthMethod:  "oauth",
+	}); err != nil {
+		t.Fatalf("SetCredential error: %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/oauth/logout", bytes.NewBufferString(`{"provider":"openai"}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updated, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+	if got := updated.ModelList[len(updated.ModelList)-1].AuthMethod; got != "" {
+		t.Fatalf("auth_method = %q, want empty", got)
+	}
+}
+
 func setupOAuthTestEnv(t *testing.T) (string, func()) {
 	t.Helper()
 

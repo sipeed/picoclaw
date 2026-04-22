@@ -29,4 +29,38 @@ func TestNewGatewayCommand(t *testing.T) {
 	assert.True(t, cmd.HasFlags())
 	assert.NotNil(t, cmd.Flags().Lookup("debug"))
 	assert.NotNil(t, cmd.Flags().Lookup("allow-empty"))
+	assert.NotNil(t, cmd.Flags().Lookup("host"))
+}
+
+func TestResolveGatewayHostOverride(t *testing.T) {
+	tests := []struct {
+		name     string
+		explicit bool
+		host     string
+		wantHost string
+		wantErr  bool
+	}{
+		{name: "implicit empty host is allowed", explicit: false, host: "", wantHost: "", wantErr: false},
+		{name: "explicit empty host rejected", explicit: true, host: "   ", wantHost: "", wantErr: true},
+		{name: "explicit localhost kept", explicit: true, host: " localhost ", wantHost: "localhost", wantErr: false},
+		{
+			name:     "explicit multi host normalized",
+			explicit: true,
+			host:     " [::1] , 127.0.0.1 ",
+			wantHost: "::1,127.0.0.1",
+			wantErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveGatewayHostOverride(tt.explicit, tt.host)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("resolveGatewayHostOverride() err = %v, wantErr %t", err, tt.wantErr)
+			}
+			if got != tt.wantHost {
+				t.Fatalf("resolveGatewayHostOverride() host = %q, want %q", got, tt.wantHost)
+			}
+		})
+	}
 }

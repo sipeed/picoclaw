@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 func TestLoadOpenClawConfig(t *testing.T) {
@@ -708,11 +710,16 @@ func TestToStandardConfig(t *testing.T) {
 		t.Errorf("expected api key 'sk-ant-test', got '%s'", foundAPIKey)
 	}
 
-	if !stdCfg.Channels.Telegram.Enabled {
+	if !stdCfg.Channels["telegram"].Enabled {
 		t.Error("telegram should be enabled")
 	}
-	if stdCfg.Channels.Telegram.Token.String() != "test-token" {
-		t.Errorf("expected token 'test-token', got '%s'", stdCfg.Channels.Telegram.Token.String())
+	decoded, err := stdCfg.Channels["telegram"].GetDecoded()
+	if err != nil {
+		t.Fatalf("GetDecoded() error = %v", err)
+	}
+	if tCfg, ok := decoded.(*config.TelegramSettings); ok &&
+		tCfg.Token.String() != "test-token" {
+		t.Errorf("expected token 'test-token', got '%s'", tCfg.Token.String())
 	}
 
 	if stdCfg.Gateway.Port != 8080 {

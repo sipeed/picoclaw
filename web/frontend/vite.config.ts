@@ -29,7 +29,11 @@ export default defineConfig({
         target: "http://localhost:18800",
         changeOrigin: true,
       },
-      "/ws": {
+      "/pico/media": {
+        target: "http://localhost:18800",
+        changeOrigin: true,
+      },
+      "/pico/ws": {
         target: "ws://localhost:18800",
         ws: true,
       },

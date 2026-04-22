@@ -121,23 +121,18 @@ When a gateway process is started by the launcher, the launcher:
 
 ### Launcher Authentication
 
-The dashboard is protected by a launcher access token.
+The dashboard is protected by password login.
 
-- If `PICOCLAW_LAUNCHER_TOKEN` is set, that token is used.
-- Otherwise a random token is generated for each launcher process.
-- The browser auto-open URL includes `?token=...` so local launches can sign in automatically.
+- First run uses `/launcher-setup` to create the dashboard password.
 - Manual login uses `/launcher-login`.
-- API clients may also authenticate with `Authorization: Bearer <token>`.
-
-Where users can retrieve the token depends on launch mode:
-
-- Console mode: printed to stdout
-- GUI mode: available through the tray menu on supported builds
-- GUI mode without stdout:
-  - random per-run tokens are written to the launcher log
-  - default log path: `~/.picoclaw/logs/launcher.log`
-  - if `PICOCLAW_HOME` is set, use `$PICOCLAW_HOME/logs/launcher.log`
-  - env-pinned tokens are not reprinted there; the log only notes that `PICOCLAW_LAUNCHER_TOKEN` is in use
+- Successful login sets an HttpOnly session cookie.
+- Existing sessions are invalidated when the launcher process restarts; otherwise the browser cookie expires after 31 days.
+- When the launcher auto-opens a local browser after startup, it uses a one-shot loopback-only bootstrap endpoint to set the session cookie automatically.
+- On supported platforms, the password is stored as a bcrypt hash in `launcher-auth.db`.
+- On platforms where the SQLite password store is unavailable, the launcher stores the bcrypt hash in `launcher-config.json`.
+- Legacy `launcher_token` values are migrated once into password login and are removed from saved launcher config.
+- `PICOCLAW_LAUNCHER_TOKEN` is deprecated and ignored; after upgrading from env-token auth, open `/launcher-setup` to create a password.
+- URL token login and `Authorization: Bearer` dashboard auth are not supported.
 
 ### Network Exposure
 
@@ -155,7 +150,7 @@ With `-public` or `public: true`, it listens on all interfaces:
 
 When public access is enabled:
 
-- the launcher can still protect the dashboard with the access token
+- the launcher still protects the dashboard with password login
 - optional `allowed_cidrs` can restrict which client IP ranges may connect
 - the gateway host is overridden so remote clients can still use the launcher-managed proxy paths
 
@@ -336,19 +331,8 @@ web/
 ### You have to sign in again after the launcher restarts
 
 Existing dashboard sessions do not survive launcher restarts.
-That is expected: each launcher process generates a new signed session value, so old cookies become invalid.
-
-To make re-login easier, set a stable token:
-
-```bash
-export PICOCLAW_LAUNCHER_TOKEN="replace-with-a-long-random-token"
-```
-
-Notes:
-
-- a stable token does not preserve the old cookie-based session by itself
-- when the launcher opens the browser automatically, it appends `?token=...` and signs in again automatically
-- if you reopen the dashboard manually, use the same stable token on `/launcher-login`
+That is expected: each launcher process generates a new session value, so old cookies become invalid.
+Sign in again with the dashboard password on `/launcher-login`.
 
 ### "Start Gateway" stays disabled
 
@@ -377,7 +361,7 @@ If you run only `make dev-backend`, either run `make dev-frontend` alongside it 
 ## Related Docs
 
 - Main project overview: [`../README.md`](../README.md)
-- Configuration guide: [`../docs/configuration.md`](../docs/configuration.md)
-- Providers: [`../docs/providers.md`](../docs/providers.md)
-- Troubleshooting: [`../docs/troubleshooting.md`](../docs/troubleshooting.md)
+- Configuration guide: [`../docs/guides/configuration.md`](../docs/guides/configuration.md)
+- Providers: [`../docs/guides/providers.md`](../docs/guides/providers.md)
+- Troubleshooting: [`../docs/operations/troubleshooting.md`](../docs/operations/troubleshooting.md)
 - Official docs site: [docs.picoclaw.io](https://docs.picoclaw.io)

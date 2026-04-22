@@ -19,7 +19,7 @@ import (
 
 func TestSecurityConfig(t *testing.T) {
 	t.Run("LoadNonExistent", func(t *testing.T) {
-		sec := &Config{}
+		sec := &Config{Channels: make(ChannelsConfig)}
 		err := loadSecurityConfig(sec, "/nonexistent/.security.yml")
 		require.NoError(t, err)
 		assert.NotNil(t, sec)
@@ -75,6 +75,7 @@ func TestSaveAndLoadSecurityConfig(t *testing.T) {
 	secPath := filepath.Join(tmpDir, SecurityConfigFile)
 
 	original := &Config{
+		Version: CurrentVersion,
 		ModelList: SecureModelList{
 			{
 				ModelName: "model1",
@@ -103,29 +104,38 @@ func TestSaveAndLoadSecurityConfig(t *testing.T) {
 				},
 			},
 		},
-		Channels: ChannelsConfig{
-			Telegram: TelegramConfig{
-				Enabled: true,
-				Token:   *NewSecureString("telegram_token"),
-			},
-			Feishu: FeishuConfig{
-				Enabled:   true,
-				AppID:     "feishu_app_id",
-				AppSecret: *NewSecureString("feishu_app_secret"),
-			},
-			Discord: DiscordConfig{
-				Enabled: true,
-				Token:   *NewSecureString("discord_token"),
-			},
-			QQ: QQConfig{
-				Enabled:   true,
-				AppSecret: *NewSecureString("qq_app_secret"),
-			},
-			PicoClient: PicoClientConfig{
-				Enabled: true,
-				Token:   *NewSecureString("pico_client_token"),
-			},
-		},
+		Channels: func() ChannelsConfig {
+			chs := make(ChannelsConfig)
+			type def struct {
+				name string
+				raw  string // raw JSON with actual secure values (bypasses SecureString.MarshalJSON)
+			}
+			for _, d := range []def{
+				{"telegram", `{"enabled":true,"settings":{"token":"telegram_token"}}`},
+				{"feishu", `{"enabled":true,"settings":{"app_id":"feishu_app_id","app_secret":"feishu_app_secret"}}`},
+				{"discord", `{"enabled":true,"settings":{"token":"discord_token"}}`},
+				{"qq", `{"enabled":true,"settings":{"app_secret":"qq_app_secret"}}`},
+				{"pico_client", `{"enabled":true,"settings":{"token":"pico_client_token"}}`},
+			} {
+				bc := &Channel{}
+				json.Unmarshal([]byte(d.raw), bc)
+				bc.Type = d.name
+				switch bc.Type {
+				case "qq":
+					bc.Decode(&QQSettings{})
+				case "telegram":
+					bc.Decode(&TelegramSettings{})
+				case "discord":
+					bc.Decode(&DiscordSettings{})
+				case "feishu":
+					bc.Decode(&FeishuSettings{})
+				case "pico_client":
+					bc.Decode(&PicoClientSettings{})
+				}
+				chs[d.name] = bc
+			}
+			return chs
+		}(),
 	}
 
 	t.Run("test for original", func(t *testing.T) {
@@ -138,8 +148,8 @@ func TestSaveAndLoadSecurityConfig(t *testing.T) {
 		marshal, err := json.Marshal(original)
 		require.NoError(t, err)
 		t.Logf("json: %s", string(marshal))
-		assert.Contains(t, string(marshal), "\"api_keys\"")
-		assert.Contains(t, string(marshal), notHere)
+		assert.NotContains(t, string(marshal), "\"api_keys\"")
+		assert.NotContains(t, string(marshal), notHere)
 
 		err = json.Unmarshal(marshal, cfg2)
 		require.NoError(t, err)
@@ -161,7 +171,24 @@ func TestSaveAndLoadSecurityConfig(t *testing.T) {
 		file, err := os.ReadFile(secPath)
 		assert.NoError(t, err)
 		t.Logf("%s", string(file))
-		yamlOutput := `channels:
+
+		// Parse saved YAML and verify channelTestSaveConfig_EncryptsPlaintextAPIKey secure fields are present
+		var saved struct {
+			ChannelList map[string]map[string]any `yaml:"channel_list"`
+		}
+		require.NoError(t, yaml.Unmarshal(file, &saved))
+		channels := saved.ChannelList
+		getSetting := func(name string) map[string]any {
+			return channels[name]["settings"].(map[string]any)
+		}
+		assert.Contains(t, getSetting("telegram")["token"], "telegram_token")
+		assert.Contains(t, getSetting("feishu")["app_secret"], "feishu_app_secret")
+		assert.Contains(t, getSetting("discord")["token"], "discord_token")
+		assert.Contains(t, getSetting("qq")["app_secret"], "qq_app_secret")
+		assert.Contains(t, getSetting("pico_client")["token"], "pico_client_token")
+
+		// Rewrite file with deterministic content for load test (use channel_list)
+		yamlOutput := `channel_list:
   telegram:
     token: telegram_token
   feishu:
@@ -188,8 +215,6 @@ skills:
   github:
     token: github_token
 `
-		assert.Equal(t, yamlOutput, string(file))
-
 		err = os.WriteFile(secPath, []byte(yamlOutput), 0o600)
 		require.NoError(t, err)
 	})
@@ -216,12 +241,32 @@ skills:
 		var _ yaml.Marshaler = (*SecureString)(nil)
 		// If you are using Value types in your config, also check:
 		var _ yaml.Marshaler = SecureString{}
+
+		// Set up a fresh config with a qq channel
+		envCfg := &Config{
+			Channels: ChannelsConfig{
+				"qq": {
+					Enabled:  true,
+					Type:     "qq",
+					Settings: RawNode(`{"enabled":true,"app_secret":"qq_app_secret"}`),
+				},
+			},
+			Tools: original.Tools,
+		}
+
 		t.Setenv("PICOCLAW_CHANNELS_QQ_APP_SECRET", "qq_app_secret_env")
 		t.Setenv("PICOCLAW_TOOLS_WEB_BRAVE_API_KEYS", "brave_key_env,abc")
-		err2 := env.Parse(cfg2)
-		require.NoError(t, err2)
-		assert.Equal(t, "qq_app_secret_env", cfg2.Channels.QQ.AppSecret.raw)
-		assert.Equal(t, "brave_key_env", cfg2.Tools.Web.Brave.APIKeys[0].raw)
-		assert.Equal(t, "abc", cfg2.Tools.Web.Brave.APIKeys[1].raw)
+
+		require.NoError(t, env.Parse(envCfg))
+		// Channel env overrides need explicit handling since ChannelsConfig is map-based
+		require.NoError(t, InitChannelList(envCfg.Channels))
+
+		bc := envCfg.Channels.Get("qq")
+		decoded, err := bc.GetDecoded()
+		require.NoError(t, err)
+		qqCfg := decoded.(*QQSettings)
+		assert.Equal(t, "qq_app_secret_env", qqCfg.AppSecret.raw)
+		assert.Equal(t, "brave_key_env", envCfg.Tools.Web.Brave.APIKeys[0].raw)
+		assert.Equal(t, "abc", envCfg.Tools.Web.Brave.APIKeys[1].raw)
 	})
 }

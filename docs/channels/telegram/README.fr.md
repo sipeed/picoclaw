@@ -1,4 +1,4 @@
-> Retour au [README](../../../README.fr.md)
+> Retour au [README](../../project/README.fr.md)
 
 # Telegram
 
@@ -8,9 +8,10 @@ Le canal Telegram utilise le long polling via l'API Bot Telegram pour une commun
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "telegram": {
       "enabled": true,
+      "type": "telegram",
       "token": "123456789:ABCdefGHIjklMNOpqrsTUVwxyz",
       "allow_from": ["123456789"],
       "proxy": "",
@@ -42,9 +43,10 @@ Vous pouvez définir `use_markdown_v2: true` pour activer les options de formata
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "telegram": {
       "enabled": true,
+      "type": "telegram",
       "token": "YOUR_BOT_TOKEN",
       "allow_from": ["YOUR_USER_ID"],
       "use_markdown_v2": true

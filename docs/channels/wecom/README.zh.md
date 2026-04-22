@@ -1,4 +1,4 @@
-> 返回 [README](../../../README.zh.md)
+> 返回 [README](../../project/README.zh.md)
 
 # 企业微信（WeCom）
 
@@ -56,9 +56,10 @@ picoclaw auth wecom --timeout 10m
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "wecom": {
       "enabled": true,
+      "type": "wecom",
       "bot_id": "YOUR_BOT_ID",
       "secret": "YOUR_SECRET",
       "websocket_url": "wss://openws.work.weixin.qq.com",

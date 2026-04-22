@@ -6,7 +6,6 @@ import { useTranslation } from "react-i18next"
 import {
   getLauncherAuthStatus,
   postLauncherDashboardLogin,
-  type LauncherAuthTokenHelp,
 } from "@/api/launcher-auth"
 import { Button } from "@/components/ui/button"
 import {
@@ -29,41 +28,42 @@ import { useTheme } from "@/hooks/use-theme"
 function LauncherLoginPage() {
   const { t, i18n } = useTranslation()
   const { theme, toggleTheme } = useTheme()
-  const [token, setToken] = React.useState("")
+  const [password, setPassword] = React.useState("")
   const [submitting, setSubmitting] = React.useState(false)
   const [error, setError] = React.useState("")
-  const [tokenHelp, setTokenHelp] = React.useState<LauncherAuthTokenHelp | null>(
-    null,
-  )
 
+  // If the password store has never been initialized, go to setup instead.
   React.useEffect(() => {
-    let cancelled = false
     void getLauncherAuthStatus()
       .then((s) => {
-        if (cancelled || s.authenticated || !s.token_help) {
-          return
+        if (!s.initialized) {
+          globalThis.location.assign("/launcher-setup")
         }
-        setTokenHelp(s.token_help)
       })
       .catch(() => {
-        /* ignore; login form still usable */
+        /* network error — stay on login page */
       })
-    return () => {
-      cancelled = true
-    }
   }, [])
 
-  const loginWithToken = React.useCallback(
-    async (tokenValue: string) => {
+  const loginWithPassword = React.useCallback(
+    async (passwordValue: string) => {
       setError("")
       setSubmitting(true)
       try {
-        const ok = await postLauncherDashboardLogin(tokenValue)
-        if (ok) {
+        const result = await postLauncherDashboardLogin(passwordValue)
+        if (result.ok) {
           globalThis.location.assign("/")
           return
         }
-        setError(t("launcherLogin.errorInvalid"))
+        if (result.status === 409) {
+          globalThis.location.assign("/launcher-setup")
+          return
+        }
+        if (result.status === 401) {
+          setError(t("launcherLogin.errorInvalid"))
+          return
+        }
+        setError(result.error)
       } catch {
         setError(t("launcherLogin.errorNetwork"))
       } finally {
@@ -75,7 +75,7 @@ function LauncherLoginPage() {
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    await loginWithToken(token)
+    await loginWithPassword(password)
   }
 
   return (
@@ -120,18 +120,18 @@ function LauncherLoginPage() {
           <CardContent>
             <form className="flex flex-col gap-4" onSubmit={onSubmit}>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="launcher-token">
-                  {t("launcherLogin.tokenLabel")}
+                <Label htmlFor="launcher-password">
+                  {t("launcherLogin.passwordLabel")}
                 </Label>
                 <Input
-                  id="launcher-token"
-                  name="token"
+                  id="launcher-password"
+                  name="password"
                   type="password"
                   autoComplete="current-password"
                   required
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  placeholder={t("launcherLogin.tokenPlaceholder")}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={t("launcherLogin.passwordPlaceholder")}
                 />
               </div>
               <Button type="submit" disabled={submitting}>
@@ -143,35 +143,6 @@ function LauncherLoginPage() {
                 </p>
               ) : null}
             </form>
-            {tokenHelp ? (
-              <div className="border-border/60 mt-6 border-t pt-4">
-                <p className="text-muted-foreground mb-2 text-sm font-medium">
-                  {t("launcherLogin.helpTitle")}
-                </p>
-                <ul className="text-muted-foreground list-inside list-disc space-y-1.5 text-sm">
-                  {tokenHelp.console_stdout ? (
-                    <li>{t("launcherLogin.helpConsole")}</li>
-                  ) : null}
-                  {tokenHelp.tray_copy_menu ? (
-                    <li>{t("launcherLogin.helpTray")}</li>
-                  ) : null}
-                  {tokenHelp.log_file ? (
-                    <li>
-                      {t("launcherLogin.helpLogFile", {
-                        path: tokenHelp.log_file,
-                      })}
-                    </li>
-                  ) : null}
-                  {tokenHelp.env_var_name ? (
-                    <li>
-                      {t("launcherLogin.helpEnv", {
-                        env: tokenHelp.env_var_name,
-                      })}
-                    </li>
-                  ) : null}
-                </ul>
-              </div>
-            ) : null}
           </CardContent>
         </Card>
       </div>

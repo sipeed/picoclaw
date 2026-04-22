@@ -19,68 +19,103 @@ import (
 func TestExtractProtocol(t *testing.T) {
 	tests := []struct {
 		name         string
-		model        string
+		config       *config.ModelConfig
 		wantProtocol string
 		wantModelID  string
 	}{
 		{
 			name:         "openai with prefix",
-			model:        "openai/gpt-4o",
+			config:       &config.ModelConfig{Model: "openai/gpt-4o"},
 			wantProtocol: "openai",
 			wantModelID:  "gpt-4o",
 		},
 		{
 			name:         "anthropic with prefix",
-			model:        "anthropic/claude-sonnet-4.6",
+			config:       &config.ModelConfig{Model: "anthropic/claude-sonnet-4.6"},
 			wantProtocol: "anthropic",
 			wantModelID:  "claude-sonnet-4.6",
 		},
 		{
 			name:         "no prefix - defaults to openai",
-			model:        "gpt-4o",
+			config:       &config.ModelConfig{Model: "gpt-4o"},
 			wantProtocol: "openai",
 			wantModelID:  "gpt-4o",
 		},
 		{
 			name:         "groq with prefix",
-			model:        "groq/llama-3.1-70b",
+			config:       &config.ModelConfig{Model: "groq/llama-3.1-70b"},
 			wantProtocol: "groq",
 			wantModelID:  "llama-3.1-70b",
 		},
 		{
 			name:         "empty string",
-			model:        "",
-			wantProtocol: "openai",
+			config:       &config.ModelConfig{Model: ""},
+			wantProtocol: "",
 			wantModelID:  "",
 		},
 		{
 			name:         "with whitespace",
-			model:        "  openai/gpt-4  ",
+			config:       &config.ModelConfig{Model: "  openai/gpt-4  "},
 			wantProtocol: "openai",
 			wantModelID:  "gpt-4",
 		},
 		{
 			name:         "multiple slashes",
-			model:        "nvidia/meta/llama-3.1-8b",
+			config:       &config.ModelConfig{Model: "nvidia/meta/llama-3.1-8b"},
 			wantProtocol: "nvidia",
 			wantModelID:  "meta/llama-3.1-8b",
 		},
 		{
+			name:         "normalizes provider",
+			config:       &config.ModelConfig{Model: "z.ai/glm-5.1"},
+			wantProtocol: "zai",
+			wantModelID:  "glm-5.1",
+		},
+		{
 			name:         "azure with prefix",
-			model:        "azure/my-gpt5-deployment",
+			config:       &config.ModelConfig{Model: "azure/my-gpt5-deployment"},
 			wantProtocol: "azure",
 			wantModelID:  "my-gpt5-deployment",
+		},
+		{
+			name:         "explicit provider keeps model",
+			config:       &config.ModelConfig{Provider: "nvidia", Model: "z-ai/glm-5.1"},
+			wantProtocol: "nvidia",
+			wantModelID:  "z-ai/glm-5.1",
+		},
+		{
+			name:         "explicit provider preserves matching prefix",
+			config:       &config.ModelConfig{Provider: "openai", Model: "openai/gpt-4o"},
+			wantProtocol: "openai",
+			wantModelID:  "openai/gpt-4o",
+		},
+		{
+			name:         "explicit provider preserves aliased prefix",
+			config:       &config.ModelConfig{Provider: "qwen", Model: "qwen/qwen-plus"},
+			wantProtocol: "qwen-portal",
+			wantModelID:  "qwen/qwen-plus",
+		},
+		{
+			name:         "empty provider segment",
+			config:       &config.ModelConfig{Model: "/gpt-4o"},
+			wantProtocol: "",
+			wantModelID:  "gpt-4o",
+		},
+		{
+			name:         "nil config",
+			wantProtocol: "",
+			wantModelID:  "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			protocol, modelID := ExtractProtocol(tt.model)
+			protocol, modelID := ExtractProtocol(tt.config)
 			if protocol != tt.wantProtocol {
-				t.Errorf("ExtractProtocol(%q) protocol = %q, want %q", tt.model, protocol, tt.wantProtocol)
+				t.Errorf("ExtractProtocol() protocol = %q, want %q", protocol, tt.wantProtocol)
 			}
 			if modelID != tt.wantModelID {
-				t.Errorf("ExtractProtocol(%q) modelID = %q, want %q", tt.model, modelID, tt.wantModelID)
+				t.Errorf("ExtractProtocol() modelID = %q, want %q", modelID, tt.wantModelID)
 			}
 		})
 	}
@@ -106,12 +141,57 @@ func TestCreateProviderFromConfig_OpenAI(t *testing.T) {
 	}
 }
 
+func TestCreateProviderFromConfig_UsesExplicitProvider(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-explicit-provider",
+		Model:     "z-ai/glm-5.1",
+		Provider:  "nvidia",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "z-ai/glm-5.1" {
+		t.Fatalf("modelID = %q, want z-ai/glm-5.1", modelID)
+	}
+	if got := ResolveAPIBase(cfg); got != "https://integrate.api.nvidia.com/v1" {
+		t.Fatalf("ResolveAPIBase() = %q, want NVIDIA default API base", got)
+	}
+}
+
+func TestCreateProviderFromConfig_PreservesExplicitProviderPrefixedModel(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-openai",
+		Provider:  "openai",
+		Model:     "openai/gpt-4o",
+		APIBase:   "https://api.example.com/v1",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "openai/gpt-4o" {
+		t.Fatalf("modelID = %q, want %q", modelID, "openai/gpt-4o")
+	}
+}
+
 func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 	tests := []struct {
 		name     string
 		protocol string
 	}{
 		{"openai", "openai"},
+		{"venice", "venice"},
 		{"groq", "groq"},
 		{"novita", "novita"},
 		{"openrouter", "openrouter"},
@@ -157,6 +237,12 @@ func TestGetDefaultAPIBase_LiteLLM(t *testing.T) {
 func TestGetDefaultAPIBase_LMStudio(t *testing.T) {
 	if got := getDefaultAPIBase("lmstudio"); got != "http://localhost:1234/v1" {
 		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "lmstudio", got, "http://localhost:1234/v1")
+	}
+}
+
+func TestGetDefaultAPIBase_Venice(t *testing.T) {
+	if got := getDefaultAPIBase("venice"); got != "https://api.venice.ai/api/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "venice", got, "https://api.venice.ai/api/v1")
 	}
 }
 
@@ -362,6 +448,28 @@ func TestCreateProviderFromConfig_Mimo(t *testing.T) {
 	}
 }
 
+func TestCreateProviderFromConfig_Venice(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-venice",
+		Model:     "venice/venice-uncensored",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "venice-uncensored" {
+		t.Errorf("modelID = %q, want %q", modelID, "venice-uncensored")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+}
+
 func TestGetDefaultAPIBase_Mimo(t *testing.T) {
 	if got := getDefaultAPIBase("mimo"); got != "https://api.xiaomimimo.com/v1" {
 		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "mimo", got, "https://api.xiaomimimo.com/v1")
@@ -402,6 +510,62 @@ func TestCreateProviderFromConfig_Antigravity(t *testing.T) {
 	}
 	if modelID != "gemini-2.0-flash" {
 		t.Errorf("modelID = %q, want %q", modelID, "gemini-2.0-flash")
+	}
+}
+
+func TestCreateProviderFromConfig_Gemini(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-gemini",
+		Model:     "gemini/gemini-2.5-flash",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "gemini-2.5-flash" {
+		t.Errorf("modelID = %q, want %q", modelID, "gemini-2.5-flash")
+	}
+	if _, ok := provider.(*GeminiProvider); !ok {
+		t.Fatalf("expected *GeminiProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_GeminiMissingAPIKey(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-gemini-no-key",
+		Model:     "gemini/gemini-2.5-flash",
+	}
+
+	_, _, err := CreateProviderFromConfig(cfg)
+	if err == nil {
+		t.Fatal("CreateProviderFromConfig() expected error for missing gemini API key")
+	}
+}
+
+func TestCreateProviderFromConfig_GeminiCustomAPIBaseWithoutKey(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-gemini-custom-base",
+		Model:     "gemini/gemini-2.5-flash",
+		APIBase:   "https://proxy.example.com/v1beta",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "gemini-2.5-flash" {
+		t.Errorf("modelID = %q, want %q", modelID, "gemini-2.5-flash")
+	}
+	if _, ok := provider.(*GeminiProvider); !ok {
+		t.Fatalf("expected *GeminiProvider, got %T", provider)
 	}
 }
 
@@ -616,8 +780,9 @@ func TestCreateProviderFromConfig_QwenInternationalAlias(t *testing.T) {
 			if provider == nil {
 				t.Fatal("CreateProviderFromConfig() returned nil provider")
 			}
-			if modelID != "qwen-max" {
-				t.Errorf("modelID = %q, want %q", modelID, "qwen-max")
+			wantModelID := "qwen-max"
+			if modelID != wantModelID {
+				t.Errorf("modelID = %q, want %q", modelID, wantModelID)
 			}
 			if _, ok := provider.(*HTTPProvider); !ok {
 				t.Fatalf("expected *HTTPProvider, got %T", provider)
@@ -650,8 +815,9 @@ func TestCreateProviderFromConfig_QwenUSAlias(t *testing.T) {
 			if provider == nil {
 				t.Fatal("CreateProviderFromConfig() returned nil provider")
 			}
-			if modelID != "qwen-max" {
-				t.Errorf("modelID = %q, want %q", modelID, "qwen-max")
+			wantModelID := "qwen-max"
+			if modelID != wantModelID {
+				t.Errorf("modelID = %q, want %q", modelID, wantModelID)
 			}
 			if _, ok := provider.(*HTTPProvider); !ok {
 				t.Fatalf("expected *HTTPProvider, got %T", provider)
@@ -684,8 +850,9 @@ func TestCreateProviderFromConfig_CodingPlanAnthropic(t *testing.T) {
 			if provider == nil {
 				t.Fatal("CreateProviderFromConfig() returned nil provider")
 			}
-			if modelID != "claude-sonnet-4-20250514" {
-				t.Errorf("modelID = %q, want %q", modelID, "claude-sonnet-4-20250514")
+			wantModelID := "claude-sonnet-4-20250514"
+			if modelID != wantModelID {
+				t.Errorf("modelID = %q, want %q", modelID, wantModelID)
 			}
 			// coding-plan-anthropic uses Anthropic Messages provider
 			// Verify it's the anthropic messages provider by checking interface
@@ -814,6 +981,150 @@ func TestCreateProviderFromConfig_MinimaxPreservesUserExtraBody(t *testing.T) {
 	// Verify user's custom field is preserved
 	if got, ok := requestBody["custom_field"]; !ok || got != "test" {
 		t.Fatalf("custom_field = %v, want test", got)
+	}
+}
+
+func TestCreateProviderFromConfig_CustomHeaders(t *testing.T) {
+	var gotSource, gotAuth string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotSource = r.Header.Get("X-Source")
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.ModelConfig{
+		ModelName:     "test-headers",
+		Model:         "openai/gpt-4o",
+		APIBase:       server.URL,
+		CustomHeaders: map[string]string{"X-Source": "coding-plan", "Authorization": "Token config-auth"},
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+
+	_, err = provider.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		modelID,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if gotSource != "coding-plan" {
+		t.Fatalf("X-Source = %q, want %q", gotSource, "coding-plan")
+	}
+	if gotAuth != "Token config-auth" {
+		t.Fatalf("Authorization = %q, want %q", gotAuth, "Token config-auth")
+	}
+}
+
+// openaiCompatResponse is the JSON response used by OpenAI-compatible providers.
+const openaiCompatResponse = `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`
+
+// anthropicResponse is the JSON response used by Anthropic providers.
+const anthropicResponse = `{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","model":"claude-sonnet-4-20250514","usage":{"input_tokens":10,"output_tokens":5}}`
+
+func TestCreateProviderFromConfig_UserAgent(t *testing.T) {
+	defaultUA := "PicoClaw/" + config.Version
+
+	tests := []struct {
+		name      string
+		model     string
+		userAgent string
+		apiKey    string
+		response  string
+		wantUA    string
+		chatOpts  map[string]any
+	}{
+		{
+			name:     "openai default user agent",
+			model:    "openai/gpt-4o",
+			apiKey:   "test-key",
+			response: openaiCompatResponse,
+			wantUA:   defaultUA,
+		},
+		{
+			name:      "openai custom user agent",
+			model:     "openai/gpt-4o",
+			apiKey:    "test-key",
+			userAgent: "MyAgent/1.2.3",
+			response:  openaiCompatResponse,
+			wantUA:    "MyAgent/1.2.3",
+		},
+		{
+			name:     "anthropic default user agent",
+			model:    "anthropic/claude-sonnet-4-20250514",
+			apiKey:   "test-key",
+			response: anthropicResponse,
+			wantUA:   defaultUA,
+		},
+		{
+			name:     "anthropic-messages default user agent",
+			model:    "anthropic-messages/claude-sonnet-4-20250514",
+			apiKey:   "test-key",
+			response: anthropicResponse,
+			wantUA:   defaultUA,
+			chatOpts: map[string]any{"max_tokens": 1024},
+		},
+		{
+			name:     "azure default user agent",
+			model:    "azure/my-deployment",
+			apiKey:   "test-azure-key",
+			response: openaiCompatResponse,
+			wantUA:   defaultUA,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var receivedUA string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				receivedUA = r.Header.Get("User-Agent")
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tt.response))
+			}))
+			defer server.Close()
+
+			cfg := &config.ModelConfig{
+				ModelName: "test-ua-" + tt.name,
+				Model:     tt.model,
+				APIBase:   server.URL,
+				UserAgent: tt.userAgent,
+			}
+			cfg.SetAPIKey(tt.apiKey)
+
+			provider, modelID, err := CreateProviderFromConfig(cfg)
+			if err != nil {
+				t.Fatalf("CreateProviderFromConfig() error = %v", err)
+			}
+			if provider == nil {
+				t.Fatal("CreateProviderFromConfig() returned nil provider")
+			}
+
+			_, err = provider.Chat(
+				t.Context(),
+				[]Message{{Role: "user", Content: "hi"}},
+				nil,
+				modelID,
+				tt.chatOpts,
+			)
+			if err != nil {
+				t.Fatalf("Chat() error = %v", err)
+			}
+
+			if receivedUA != tt.wantUA {
+				t.Errorf("User-Agent = %q, want %q", receivedUA, tt.wantUA)
+			}
+		})
 	}
 }
 

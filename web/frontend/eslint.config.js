@@ -22,10 +22,19 @@ export default defineConfig([
       globals: globals.browser,
     },
     rules: {
+      "react-hooks/set-state-in-effect": "off",
       "react-refresh/only-export-components": [
         "warn",
         { allowConstantExport: true },
       ],
+    },
+  },
+  {
+    files: ["src/routes/**/*.{ts,tsx}"],
+    rules: {
+      // TanStack Router route modules must export Route objects, so this rule
+      // produces false positives for framework-managed files.
+      "react-refresh/only-export-components": "off",
     },
   },
 ])

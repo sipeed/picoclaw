@@ -86,6 +86,7 @@ type Event struct {
 	Kind    EventKind
 	Time    time.Time
 	Meta    EventMeta
+	Context *TurnContext
 	Payload any
 }
 
@@ -98,6 +99,7 @@ type EventMeta struct {
 	Iteration    int
 	TracePath    string
 	Source       string
+	turnContext  *TurnContext
 }
 
 // TurnEndStatus describes the terminal state of a turn.
@@ -114,8 +116,6 @@ const (
 
 // TurnStartPayload describes the start of a turn.
 type TurnStartPayload struct {
-	Channel     string
-	ChatID      string
 	UserMessage string
 	MediaCount  int
 }
@@ -167,6 +167,8 @@ const (
 	ContextCompressReasonProactive ContextCompressReason = "proactive_budget"
 	// ContextCompressReasonRetry indicates compression during context-error retry handling.
 	ContextCompressReasonRetry ContextCompressReason = "llm_retry"
+	// ContextCompressReasonSummarize indicates post-turn async summarization.
+	ContextCompressReasonSummarize ContextCompressReason = "summarize"
 )
 
 // ContextCompressPayload describes a forced history compression.
@@ -215,8 +217,6 @@ type SteeringInjectedPayload struct {
 // FollowUpQueuedPayload describes an async follow-up queued back into the inbound bus.
 type FollowUpQueuedPayload struct {
 	SourceTool string
-	Channel    string
-	ChatID     string
 	ContentLen int
 }
 

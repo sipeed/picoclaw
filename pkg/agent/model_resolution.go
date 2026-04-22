@@ -8,44 +8,111 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-func buildModelListResolver(cfg *config.Config) func(raw string) (string, bool) {
-	ensureProtocol := func(model string) string {
-		model = strings.TrimSpace(model)
-		if model == "" {
-			return ""
-		}
-		if strings.Contains(model, "/") {
-			return model
-		}
-		return "openai/" + model
+func ensureProtocolModel(model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return ""
+	}
+	if strings.Contains(model, "/") {
+		return model
+	}
+	return "openai/" + model
+}
+
+func modelConfigIdentityKey(mc *config.ModelConfig) string {
+	if mc == nil {
+		return ""
+	}
+	if name := strings.TrimSpace(mc.ModelName); name != "" {
+		return "model_name:" + name
+	}
+	return ""
+}
+
+func candidateFromModelConfig(
+	defaultProvider string,
+	mc *config.ModelConfig,
+) (providers.FallbackCandidate, bool) {
+	if mc == nil {
+		return providers.FallbackCandidate{}, false
 	}
 
-	return func(raw string) (string, bool) {
-		raw = strings.TrimSpace(raw)
-		if raw == "" || cfg == nil {
-			return "", false
-		}
-
-		if mc, err := cfg.GetModelConfig(raw); err == nil && mc != nil && strings.TrimSpace(mc.Model) != "" {
-			return ensureProtocol(mc.Model), true
-		}
-
-		for i := range cfg.ModelList {
-			fullModel := strings.TrimSpace(cfg.ModelList[i].Model)
-			if fullModel == "" {
-				continue
-			}
-			if fullModel == raw {
-				return ensureProtocol(fullModel), true
-			}
-			_, modelID := providers.ExtractProtocol(fullModel)
-			if modelID == raw {
-				return ensureProtocol(fullModel), true
-			}
-		}
-
-		return "", false
+	protocol, modelID := providers.ExtractProtocol(mc)
+	if strings.TrimSpace(modelID) == "" {
+		return providers.FallbackCandidate{}, false
 	}
+
+	return providers.FallbackCandidate{
+		Provider:    protocol,
+		Model:       modelID,
+		RPM:         mc.RPM,
+		IdentityKey: modelConfigIdentityKey(mc),
+	}, true
+}
+
+func lookupModelConfigByRef(cfg *config.Config, raw string) *config.ModelConfig {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || cfg == nil {
+		return nil
+	}
+
+	if mc, err := cfg.GetModelConfig(raw); err == nil && mc != nil && strings.TrimSpace(mc.Model) != "" {
+		return mc
+	}
+
+	rawRef := providers.ParseModelRef(raw, "")
+	rawKey := ""
+	if rawRef != nil && strings.TrimSpace(rawRef.Provider) != "" && strings.TrimSpace(rawRef.Model) != "" {
+		rawKey = providers.ModelKey(rawRef.Provider, rawRef.Model)
+	}
+
+	for i := range cfg.ModelList {
+		mc := cfg.ModelList[i]
+		if mc == nil {
+			continue
+		}
+		fullModel := strings.TrimSpace(mc.Model)
+		if fullModel == "" {
+			continue
+		}
+		if fullModel == raw {
+			return mc
+		}
+		protocol, modelID := providers.ExtractProtocol(mc)
+		if modelID == raw {
+			return mc
+		}
+		if rawKey != "" && providers.ModelKey(protocol, modelID) == rawKey {
+			return mc
+		}
+	}
+
+	return nil
+}
+
+func resolveModelCandidate(
+	cfg *config.Config,
+	defaultProvider string,
+	raw string,
+) (providers.FallbackCandidate, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return providers.FallbackCandidate{}, false
+	}
+
+	if mc := lookupModelConfigByRef(cfg, raw); mc != nil {
+		return candidateFromModelConfig(defaultProvider, mc)
+	}
+
+	ref := providers.ParseModelRef(raw, defaultProvider)
+	if ref == nil {
+		return providers.FallbackCandidate{}, false
+	}
+
+	return providers.FallbackCandidate{
+		Provider: ref.Provider,
+		Model:    ref.Model,
+	}, true
 }
 
 func resolveModelCandidates(
@@ -54,14 +121,29 @@ func resolveModelCandidates(
 	primary string,
 	fallbacks []string,
 ) []providers.FallbackCandidate {
-	return providers.ResolveCandidatesWithLookup(
-		providers.ModelConfig{
-			Primary:   primary,
-			Fallbacks: fallbacks,
-		},
-		defaultProvider,
-		buildModelListResolver(cfg),
-	)
+	seen := make(map[string]bool)
+	candidates := make([]providers.FallbackCandidate, 0, 1+len(fallbacks))
+
+	addCandidate := func(raw string) {
+		candidate, ok := resolveModelCandidate(cfg, defaultProvider, raw)
+		if !ok {
+			return
+		}
+
+		key := candidate.StableKey()
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		candidates = append(candidates, candidate)
+	}
+
+	addCandidate(primary)
+	for _, fallback := range fallbacks {
+		addCandidate(fallback)
+	}
+
+	return candidates
 }
 
 func resolvedCandidateModel(candidates []providers.FallbackCandidate, fallback string) string {

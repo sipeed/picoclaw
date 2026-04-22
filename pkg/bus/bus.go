@@ -12,6 +12,12 @@ import (
 // ErrBusClosed is returned when publishing to a closed MessageBus.
 var ErrBusClosed = errors.New("message bus closed")
 
+var (
+	ErrMissingInboundContext       = errors.New("inbound message context is required")
+	ErrMissingOutboundContext      = errors.New("outbound message context is required")
+	ErrMissingOutboundMediaContext = errors.New("outbound media context is required")
+)
+
 const defaultBusBufferSize = 64
 
 // StreamDelegate is implemented by the channel Manager to provide streaming
@@ -49,7 +55,7 @@ func NewMessageBus() *MessageBus {
 		inbound:       make(chan InboundMessage, defaultBusBufferSize),
 		outbound:      make(chan OutboundMessage, defaultBusBufferSize),
 		outboundMedia: make(chan OutboundMediaMessage, defaultBusBufferSize),
-		audioChunks:   make(chan AudioChunk, defaultBusBufferSize*4), // Audio chunks need more buffer
+		audioChunks:   make(chan AudioChunk, defaultBusBufferSize*4), // Audio chunks need more buffer.
 		voiceControls: make(chan VoiceControl, defaultBusBufferSize),
 		done:          make(chan struct{}),
 	}
@@ -84,6 +90,10 @@ func publish[T any](ctx context.Context, mb *MessageBus, ch chan T, msg T) error
 }
 
 func (mb *MessageBus) PublishInbound(ctx context.Context, msg InboundMessage) error {
+	msg = NormalizeInboundMessage(msg)
+	if msg.Context.isZero() {
+		return ErrMissingInboundContext
+	}
 	return publish(ctx, mb, mb.inbound, msg)
 }
 
@@ -92,6 +102,10 @@ func (mb *MessageBus) InboundChan() <-chan InboundMessage {
 }
 
 func (mb *MessageBus) PublishOutbound(ctx context.Context, msg OutboundMessage) error {
+	msg = NormalizeOutboundMessage(msg)
+	if msg.Context.isZero() {
+		return ErrMissingOutboundContext
+	}
 	return publish(ctx, mb, mb.outbound, msg)
 }
 
@@ -100,6 +114,10 @@ func (mb *MessageBus) OutboundChan() <-chan OutboundMessage {
 }
 
 func (mb *MessageBus) PublishOutboundMedia(ctx context.Context, msg OutboundMediaMessage) error {
+	msg = NormalizeOutboundMediaMessage(msg)
+	if msg.Context.isZero() {
+		return ErrMissingOutboundMediaContext
+	}
 	return publish(ctx, mb, mb.outboundMedia, msg)
 }
 

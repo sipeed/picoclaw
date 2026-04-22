@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
-	"fmt"
 	"maps"
+	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -31,6 +33,7 @@ type Check struct {
 type StatusResponse struct {
 	Status string           `json:"status"`
 	Uptime string           `json:"uptime"`
+	PID    int              `json:"pid,omitempty"`
 	Checks map[string]Check `json:"checks,omitempty"`
 }
 
@@ -47,7 +50,7 @@ func NewServer(host string, port int, token string) *Server {
 	mux.HandleFunc("/ready", s.readyHandler)
 	mux.HandleFunc("/reload", s.reloadHandler)
 
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	s.server = &http.Server{
 		Addr:         addr,
 		Handler:      mux,
@@ -170,6 +173,7 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	resp := StatusResponse{
 		Status: "ok",
 		Uptime: uptime.String(),
+		PID:    os.Getpid(),
 	}
 
 	json.NewEncoder(w).Encode(resp)

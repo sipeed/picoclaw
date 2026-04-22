@@ -1,8 +1,6 @@
 package launcherconfig
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -16,18 +14,19 @@ const (
 	FileName = "launcher-config.json"
 	// DefaultPort is the default port for the web launcher.
 	DefaultPort = 18800
-
-	// dashboardSigningKeyBytes is the HMAC-SHA256 key size (256 bits).
-	dashboardSigningKeyBytes = 32
-	// dashboardTokenEntropyBytes is CSPRNG length before base64 for the per-run dashboard token (256 bits).
-	dashboardTokenEntropyBytes = 32
+	// EnvLauncherHost overrides launcher listen host.
+	EnvLauncherHost = "PICOCLAW_LAUNCHER_HOST"
 )
 
 // Config stores launch parameters for the web backend service.
 type Config struct {
-	Port         int      `json:"port"`
-	Public       bool     `json:"public"`
-	AllowedCIDRs []string `json:"allowed_cidrs,omitempty"`
+	Port                  int      `json:"port"`
+	Public                bool     `json:"public"`
+	AllowedCIDRs          []string `json:"allowed_cidrs,omitempty"`
+	DashboardPasswordHash string   `json:"dashboard_password_hash,omitempty"`
+	// LegacyLauncherToken is read only for one-time migration from the removed
+	// token login flow. Save always clears it so new configs do not persist it.
+	LegacyLauncherToken string `json:"launcher_token,omitempty"`
 }
 
 // Default returns default launcher settings.
@@ -46,34 +45,6 @@ func Validate(cfg Config) error {
 		}
 	}
 	return nil
-}
-
-// EnsureDashboardSecrets returns signing key bytes and the effective dashboard token for this
-// process. The signing key is freshly random each call; the token comes from the environment
-// variable PICOCLAW_LAUNCHER_TOKEN when set, otherwise a new random token.
-func EnsureDashboardSecrets() (effectiveToken string, signingKey []byte, newRandomDashboardToken bool, err error) {
-	signingKey = make([]byte, dashboardSigningKeyBytes)
-	if _, err = rand.Read(signingKey); err != nil {
-		return "", nil, false, err
-	}
-
-	effectiveToken = strings.TrimSpace(os.Getenv("PICOCLAW_LAUNCHER_TOKEN"))
-	if effectiveToken != "" {
-		return effectiveToken, signingKey, false, nil
-	}
-	tok, genErr := randomDashboardToken()
-	if genErr != nil {
-		return "", nil, false, genErr
-	}
-	return tok, signingKey, true, nil
-}
-
-func randomDashboardToken() (string, error) {
-	buf := make([]byte, dashboardTokenEntropyBytes)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
 // NormalizeCIDRs trims entries, removes empty values, and deduplicates CIDRs.
@@ -124,6 +95,8 @@ func Load(path string, fallback Config) (Config, error) {
 		return Config{}, err
 	}
 	cfg.AllowedCIDRs = NormalizeCIDRs(cfg.AllowedCIDRs)
+	cfg.DashboardPasswordHash = strings.TrimSpace(cfg.DashboardPasswordHash)
+	cfg.LegacyLauncherToken = strings.TrimSpace(cfg.LegacyLauncherToken)
 	if err := Validate(cfg); err != nil {
 		return Config{}, err
 	}
@@ -133,6 +106,8 @@ func Load(path string, fallback Config) (Config, error) {
 // Save writes launcher settings to disk.
 func Save(path string, cfg Config) error {
 	cfg.AllowedCIDRs = NormalizeCIDRs(cfg.AllowedCIDRs)
+	cfg.DashboardPasswordHash = strings.TrimSpace(cfg.DashboardPasswordHash)
+	cfg.LegacyLauncherToken = ""
 	if err := Validate(cfg); err != nil {
 		return err
 	}

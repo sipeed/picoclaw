@@ -24,6 +24,7 @@ type protocolMeta struct {
 
 var protocolMetaByName = map[string]protocolMeta{
 	"openai":                   {defaultAPIBase: "https://api.openai.com/v1"},
+	"venice":                   {defaultAPIBase: "https://api.venice.ai/api/v1"},
 	"openrouter":               {defaultAPIBase: "https://openrouter.ai/api/v1"},
 	"litellm":                  {defaultAPIBase: "http://localhost:4000/v1"},
 	"lmstudio":                 {defaultAPIBase: "http://localhost:1234/v1", emptyAPIKeyAllowed: true},
@@ -40,6 +41,7 @@ var protocolMetaByName = map[string]protocolMeta{
 	"vivgrid":                  {defaultAPIBase: "https://api.vivgrid.com/v1"},
 	"volcengine":               {defaultAPIBase: "https://ark.cn-beijing.volces.com/api/v3"},
 	"qwen":                     {defaultAPIBase: "https://dashscope.aliyuncs.com/compatible-mode/v1"},
+	"qwen-portal":              {defaultAPIBase: "https://dashscope.aliyuncs.com/compatible-mode/v1"},
 	"qwen-intl":                {defaultAPIBase: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"},
 	"qwen-international":       {defaultAPIBase: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"},
 	"dashscope-intl":           {defaultAPIBase: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"},
@@ -50,6 +52,7 @@ var protocolMetaByName = map[string]protocolMeta{
 	"qwen-coding":              {defaultAPIBase: "https://coding-intl.dashscope.aliyuncs.com/v1"},
 	"coding-plan-anthropic":    {defaultAPIBase: "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic"},
 	"alibaba-coding-anthropic": {defaultAPIBase: "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic"},
+	"zai":                      {defaultAPIBase: "https://api.z.ai/api/coding/paas/v4"},
 	"vllm":                     {defaultAPIBase: "http://localhost:8000/v1", emptyAPIKeyAllowed: true},
 	"mistral":                  {defaultAPIBase: "https://api.mistral.ai/v1"},
 	"avian":                    {defaultAPIBase: "https://api.avian.io/v1"},
@@ -83,19 +86,43 @@ func createCodexAuthProvider() (LLMProvider, error) {
 	return NewCodexProviderWithTokenSource(cred.AccessToken, cred.AccountID, createCodexTokenSource()), nil
 }
 
-// ExtractProtocol extracts the protocol prefix and model identifier from a model string.
-// If no prefix is specified, it defaults to "openai".
+// ExtractProtocol extracts the effective protocol and model identifier from a
+// model configuration.
+//
+// The explicit Provider field takes precedence. When Provider is empty, the
+// protocol is inferred from Model. Plain model names default to "openai".
+// Provider-prefixed models strip the first slash-separated segment from the
+// returned model ID.
+//
+// The returned protocol is normalized to the provider's canonical spelling.
 // Examples:
-//   - "openai/gpt-4o" -> ("openai", "gpt-4o")
-//   - "anthropic/claude-sonnet-4.6" -> ("anthropic", "claude-sonnet-4.6")
-//   - "gpt-4o" -> ("openai", "gpt-4o")  // default protocol
-func ExtractProtocol(model string) (protocol, modelID string) {
-	model = strings.TrimSpace(model)
-	protocol, modelID, found := strings.Cut(model, "/")
+//   - Model "openai/gpt-4o" -> ("openai", "gpt-4o")
+//   - Model "nvidia/z-ai/glm-5.1" -> ("nvidia", "z-ai/glm-5.1")
+//   - Provider "nvidia", Model "z-ai/glm-5.1" -> ("nvidia", "z-ai/glm-5.1")
+//   - Provider "openai", Model "openai/gpt-4o" -> ("openai", "openai/gpt-4o")
+//   - Model "gpt-4o" -> ("openai", "gpt-4o")
+func ExtractProtocol(cfg *config.ModelConfig) (protocol, modelID string) {
+	if cfg == nil {
+		return "", ""
+	}
+
+	model := strings.TrimSpace(cfg.Model)
+	if provider := strings.TrimSpace(cfg.Provider); provider != "" {
+		return NormalizeProvider(provider), model
+	}
+	if model == "" {
+		return "", ""
+	}
+
+	protocol, rest, found := strings.Cut(model, "/")
 	if !found {
 		return "openai", model
 	}
-	return protocol, modelID
+	protocol = strings.TrimSpace(protocol)
+	if protocol == "" {
+		return "", strings.TrimSpace(rest)
+	}
+	return NormalizeProvider(protocol), strings.TrimSpace(rest)
 }
 
 // ResolveAPIBase returns the configured API base, or the protocol default when
@@ -107,16 +134,16 @@ func ResolveAPIBase(cfg *config.ModelConfig) string {
 	if apiBase := strings.TrimSpace(cfg.APIBase); apiBase != "" {
 		return strings.TrimRight(apiBase, "/")
 	}
-	protocol, _ := ExtractProtocol(cfg.Model)
+	protocol, _ := ExtractProtocol(cfg)
 	return strings.TrimRight(getDefaultAPIBase(protocol), "/")
 }
 
 // CreateProviderFromConfig creates a provider based on the ModelConfig.
-// It uses the protocol prefix in the Model field to determine which provider to create.
-// Supported protocol families include OpenAI-compatible prefixes (e.g., openai, openrouter, groq, gemini),
+// It uses ExtractProtocol to determine which provider to create.
+// Supported protocol families include OpenAI-compatible prefixes (e.g., openai, openrouter, groq),
 // Azure OpenAI, Amazon Bedrock, Anthropic (including messages), and various CLI/compatibility shims.
 // See the switch on protocol in this function for the authoritative list.
-// Returns the provider, the model ID (without protocol prefix), and any error.
+// Returns the provider, the effective model ID from ExtractProtocol, and any error.
 func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, error) {
 	if cfg == nil {
 		return nil, "", fmt.Errorf("config is nil")
@@ -126,7 +153,12 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return nil, "", fmt.Errorf("model is required")
 	}
 
-	protocol, modelID := ExtractProtocol(cfg.Model)
+	protocol, modelID := ExtractProtocol(cfg)
+
+	userAgent := cfg.UserAgent
+	if userAgent == "" {
+		userAgent = fmt.Sprintf("PicoClaw/%s", config.Version)
+	}
 
 	switch protocol {
 	case "openai":
@@ -151,8 +183,10 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
+			cfg.CustomHeaders,
 		), modelID, nil
 
 	case "azure", "azure-openai":
@@ -170,6 +204,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.APIKey(),
 			cfg.APIBase,
 			cfg.Proxy,
+			userAgent,
 			cfg.RequestTimeout,
 		), modelID, nil
 
@@ -209,11 +244,11 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		}
 		return provider, modelID, nil
 
-	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "gemini", "nvidia",
+	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "nvidia", "venice",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
-		"vivgrid", "volcengine", "vllm", "qwen", "qwen-intl", "qwen-international", "dashscope-intl",
+		"vivgrid", "volcengine", "vllm", "qwen", "qwen-portal", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",
-		"coding-plan", "alibaba-coding", "qwen-coding", "mimo":
+		"coding-plan", "alibaba-coding", "qwen-coding", "zai", "mimo":
 		// All other OpenAI-compatible HTTP providers
 		if cfg.APIKey() == "" && cfg.APIBase == "" && !isEmptyAPIKeyAllowed(protocol) {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
@@ -227,8 +262,28 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
+			cfg.CustomHeaders,
+		), modelID, nil
+
+	case "gemini":
+		if cfg.APIKey() == "" && cfg.APIBase == "" {
+			return nil, "", fmt.Errorf("api_key or api_base is required for gemini protocol (model: %s)", cfg.Model)
+		}
+		apiBase := cfg.APIBase
+		if apiBase == "" {
+			apiBase = getDefaultAPIBase(protocol)
+		}
+		return NewGeminiProvider(
+			cfg.APIKey(),
+			apiBase,
+			cfg.Proxy,
+			userAgent,
+			cfg.RequestTimeout,
+			cfg.ExtraBody,
+			cfg.CustomHeaders,
 		), modelID, nil
 
 	case "minimax":
@@ -252,8 +307,10 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			userAgent,
 			cfg.RequestTimeout,
 			extraBody,
+			cfg.CustomHeaders,
 		), modelID, nil
 
 	case "anthropic":
@@ -278,8 +335,10 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			apiBase,
 			cfg.Proxy,
 			cfg.MaxTokensField,
+			userAgent,
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
+			cfg.CustomHeaders,
 		), modelID, nil
 
 	case "anthropic-messages":
@@ -294,6 +353,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return anthropicmessages.NewProviderWithTimeout(
 			cfg.APIKey(),
 			apiBase,
+			userAgent,
 			cfg.RequestTimeout,
 		), modelID, nil
 
@@ -309,6 +369,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return anthropicmessages.NewProviderWithTimeout(
 			cfg.APIKey(),
 			apiBase,
+			userAgent,
 			cfg.RequestTimeout,
 		), modelID, nil
 

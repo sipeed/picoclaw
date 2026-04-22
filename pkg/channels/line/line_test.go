@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 func TestWebhookRejectsOversizedBody(t *testing.T) {
@@ -66,7 +68,9 @@ func TestWebhookRejectsNonPostMethod(t *testing.T) {
 }
 
 func TestWebhookRejectsInvalidSignature(t *testing.T) {
-	ch := &LINEChannel{}
+	ch := &LINEChannel{
+		config: &config.LINESettings{},
+	}
 
 	body := `{"events":[]}`
 	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(body))

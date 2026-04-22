@@ -9,6 +9,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 func TestNewAgentInstance_UsesDefaultsTemperatureAndMaxTokens(t *testing.T) {
@@ -103,6 +104,7 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 		name         string
 		aliasName    string
 		modelName    string
+		provider     string
 		apiBase      string
 		wantProvider string
 		wantModel    string
@@ -122,6 +124,15 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 			apiBase:      "https://api.z.ai/api/coding/paas/v4",
 			wantProvider: "openai",
 			wantModel:    "glm-5",
+		},
+		{
+			name:         "explicit provider overrides model prefix",
+			aliasName:    "nvidia-gpt",
+			modelName:    "z-ai/glm-5.1",
+			provider:     "nvidia",
+			apiBase:      "https://integrate.api.nvidia.com/v1",
+			wantProvider: "nvidia",
+			wantModel:    "z-ai/glm-5.1",
 		},
 	}
 
@@ -144,6 +155,7 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 					{
 						ModelName: tt.aliasName,
 						Model:     tt.modelName,
+						Provider:  tt.provider,
 						APIBase:   tt.apiBase,
 					},
 				},
@@ -162,6 +174,95 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 				t.Fatalf("candidate model = %q, want %q", agent.Candidates[0].Model, tt.wantModel)
 			}
 		})
+	}
+}
+
+func TestNewAgentInstance_PreservesDistinctLimiterIdentityForSharedResolvedModel(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:      tmpDir,
+				ModelName:      "glm-4.7",
+				ModelFallbacks: []string{"glm-4.7__key_1"},
+			},
+		},
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "glm-4.7",
+				Model:     "zhipu/glm-4.7",
+				RPM:       1,
+			},
+			{
+				ModelName: "glm-4.7__key_1",
+				Model:     "zhipu/glm-4.7",
+				RPM:       3,
+			},
+		},
+	}
+
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	if len(agent.Candidates) != 2 {
+		t.Fatalf("len(Candidates) = %d, want 2", len(agent.Candidates))
+	}
+
+	first := agent.Candidates[0]
+	second := agent.Candidates[1]
+	if first.Provider != "zhipu" || first.Model != "glm-4.7" {
+		t.Fatalf("first candidate = %s/%s, want zhipu/glm-4.7", first.Provider, first.Model)
+	}
+	if second.Provider != "zhipu" || second.Model != "glm-4.7" {
+		t.Fatalf("second candidate = %s/%s, want zhipu/glm-4.7", second.Provider, second.Model)
+	}
+	if first.IdentityKey != "model_name:glm-4.7" {
+		t.Fatalf("first identity key = %q, want %q", first.IdentityKey, "model_name:glm-4.7")
+	}
+	if second.IdentityKey != "model_name:glm-4.7__key_1" {
+		t.Fatalf("second identity key = %q, want %q", second.IdentityKey, "model_name:glm-4.7__key_1")
+	}
+	if first.RPM != 1 {
+		t.Fatalf("first RPM = %d, want 1", first.RPM)
+	}
+	if second.RPM != 3 {
+		t.Fatalf("second RPM = %d, want 3", second.RPM)
+	}
+}
+
+func TestNewAgentInstance_PreservesConfigIdentityForExplicitProviderModelRef(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: tmpDir,
+				ModelName: "nvidia/z-ai/glm-5.1",
+			},
+		},
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "nvidia-glm",
+				Provider:  "nvidia",
+				Model:     "z-ai/glm-5.1",
+				RPM:       7,
+			},
+		},
+	}
+
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	if len(agent.Candidates) != 1 {
+		t.Fatalf("len(Candidates) = %d, want 1", len(agent.Candidates))
+	}
+
+	candidate := agent.Candidates[0]
+	if candidate.Provider != "nvidia" || candidate.Model != "z-ai/glm-5.1" {
+		t.Fatalf("candidate = %s/%s, want nvidia/z-ai/glm-5.1", candidate.Provider, candidate.Model)
+	}
+	if candidate.IdentityKey != "model_name:nvidia-glm" {
+		t.Fatalf("identity key = %q, want %q", candidate.IdentityKey, "model_name:nvidia-glm")
+	}
+	if candidate.RPM != 7 {
+		t.Fatalf("RPM = %d, want 7", candidate.RPM)
 	}
 }
 
@@ -245,6 +346,240 @@ func TestNewAgentInstance_AllowsMediaTempDirForReadListAndExec(t *testing.T) {
 	}
 	if !strings.Contains(execResult.ForLLM, "attachment content") {
 		t.Fatalf("exec output missing media content: %s", execResult.ForLLM)
+	}
+}
+
+// TestPopulateCandidateProviders_NilCfgIsNoop verifies that passing a nil
+// config does not panic and leaves the output map empty.
+func TestPopulateCandidateProviders_NilCfgIsNoop(t *testing.T) {
+	out := map[string]providers.LLMProvider{}
+	populateCandidateProvidersFromNames(nil, t.TempDir(), []string{"gpt-4o"}, out)
+	if len(out) != 0 {
+		t.Fatalf("expected empty map, got %d entries", len(out))
+	}
+}
+
+// TestPopulateCandidateProviders_SkipsExistingKeys verifies that a key already
+// present in the output map is not overwritten.
+func TestPopulateCandidateProviders_SkipsExistingKeys(t *testing.T) {
+	existing := &mockProvider{}
+	key := providers.ModelKey("openai", "gpt-4o")
+	out := map[string]providers.LLMProvider{key: existing}
+
+	cfg := &config.Config{
+		ModelList: []*config.ModelConfig{
+			{ModelName: "my-gpt", Model: "openai/gpt-4o", APIKeys: config.SimpleSecureStrings("test-key")},
+		},
+	}
+	populateCandidateProvidersFromNames(cfg, t.TempDir(), []string{"my-gpt"}, out)
+
+	if out[key] != existing {
+		t.Fatal("existing provider entry was overwritten; expected it to be preserved")
+	}
+}
+
+// TestPopulateCandidateProviders_ResolvesAlias verifies that a model_name
+// alias (e.g. "my-gpt") is resolved via GetModelConfig and the provider
+// is created using the underlying model's config.
+func TestPopulateCandidateProviders_ResolvesAlias(t *testing.T) {
+	workspace := t.TempDir()
+	out := map[string]providers.LLMProvider{}
+
+	cfg := &config.Config{
+		ModelList: []*config.ModelConfig{
+			{ModelName: "my-gpt", Model: "openai/gpt-4o", APIBase: "https://api.openai.com/v1", Workspace: workspace},
+		},
+	}
+	populateCandidateProvidersFromNames(cfg, workspace, []string{"my-gpt"}, out)
+
+	key := providers.ModelKey("openai", "gpt-4o")
+	if out[key] == nil {
+		t.Fatalf("expected CandidateProviders[%q] to be populated for alias", key)
+	}
+}
+
+// TestPopulateCandidateProviders_ResolvesProtocolPrefix verifies that a
+// model_list entry using full "provider/model" notation (e.g.
+// "gemini/gemma-3-27b-it") is matched correctly when referenced by model_name.
+func TestPopulateCandidateProviders_ResolvesProtocolPrefix(t *testing.T) {
+	workspace := t.TempDir()
+	out := map[string]providers.LLMProvider{}
+
+	cfg := &config.Config{
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "gemma",
+				Model:     "gemini/gemma-3-27b-it",
+				APIKeys:   config.SimpleSecureStrings("gemini-test-key"),
+				Workspace: workspace,
+			},
+		},
+	}
+	populateCandidateProvidersFromNames(cfg, workspace, []string{"gemma"}, out)
+
+	key := providers.ModelKey("gemini", "gemma-3-27b-it")
+	if out[key] == nil {
+		t.Fatalf("expected CandidateProviders[%q] to be populated for protocol-prefixed model", key)
+	}
+}
+
+// TestPopulateCandidateProviders_EmptyNamesIsNoop verifies the early-exit
+// path when the names slice is empty.
+func TestPopulateCandidateProviders_EmptyNamesIsNoop(t *testing.T) {
+	out := map[string]providers.LLMProvider{}
+	cfg := &config.Config{
+		ModelList: []*config.ModelConfig{
+			{ModelName: "my-gpt", Model: "openai/gpt-4o", APIKeys: config.SimpleSecureStrings("key")},
+		},
+	}
+	populateCandidateProvidersFromNames(cfg, t.TempDir(), nil, out)
+	if len(out) != 0 {
+		t.Fatalf("expected empty map, got %d entries", len(out))
+	}
+}
+
+// TestPopulateCandidateProviders_EmptyModelListIsNoop verifies the early-exit
+// path when model_list is empty — no provider can be created.
+func TestPopulateCandidateProviders_EmptyModelListIsNoop(t *testing.T) {
+	out := map[string]providers.LLMProvider{}
+	cfg := &config.Config{}
+	populateCandidateProvidersFromNames(cfg, t.TempDir(), []string{"gpt-4o"}, out)
+	if len(out) != 0 {
+		t.Fatalf("expected empty map, got %d entries", len(out))
+	}
+}
+
+// TestPopulateCandidateProviders_UnmatchedNameIsSkipped verifies that a
+// name with no matching model_list entry is skipped and does not
+// cause a panic or leave a nil entry in the map.
+func TestPopulateCandidateProviders_UnmatchedNameIsSkipped(t *testing.T) {
+	out := map[string]providers.LLMProvider{}
+	cfg := &config.Config{
+		ModelList: []*config.ModelConfig{
+			{ModelName: "my-gpt", Model: "openai/gpt-4o", APIKeys: config.SimpleSecureStrings("key")},
+		},
+	}
+	populateCandidateProvidersFromNames(cfg, t.TempDir(), []string{"nonexistent-model"}, out)
+
+	if len(out) != 0 {
+		t.Fatalf("expected empty map for unmatched name, got %d entries", len(out))
+	}
+}
+
+// TestNewAgentInstance_CandidateProvidersPopulatedForCrossProviderFallbacks
+// mirrors the exact scenario from bug #2140: primary model on OpenRouter with
+// Gemini fallbacks. Each entry must get its own provider instance so that
+// fallback requests go to the correct API endpoint, not the primary's.
+func TestNewAgentInstance_CandidateProvidersPopulatedForCrossProviderFallbacks(t *testing.T) {
+	workspace := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:      workspace,
+				ModelName:      "mistral-small-3.1",
+				ModelFallbacks: []string{"gemma-3-27b", "gemini-images"},
+			},
+		},
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "mistral-small-3.1",
+				Model:     "openrouter/mistralai/mistral-small-3.1-24b-instruct:free",
+				APIBase:   "https://openrouter.ai/api/v1",
+				APIKeys:   config.SimpleSecureStrings("sk-or-test"),
+				Workspace: workspace,
+			},
+			{
+				ModelName: "gemma-3-27b",
+				Model:     "gemini/gemma-3-27b-it",
+				APIKeys:   config.SimpleSecureStrings("AIzaSy-test"),
+				Workspace: workspace,
+			},
+			{
+				ModelName: "gemini-images",
+				Model:     "gemini/gemini-2.5-flash-lite",
+				APIKeys:   config.SimpleSecureStrings("AIzaSy-test"),
+				Workspace: workspace,
+			},
+		},
+	}
+
+	primaryProvider := &mockProvider{}
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, primaryProvider)
+
+	// Only fallback models need entries — the primary uses the injected provider directly.
+	wantKeys := []string{
+		providers.ModelKey("gemini", "gemma-3-27b-it"),
+		providers.ModelKey("gemini", "gemini-2.5-flash-lite"),
+	}
+
+	for _, key := range wantKeys {
+		p, ok := agent.CandidateProviders[key]
+		if !ok {
+			t.Errorf("CandidateProviders missing key %q", key)
+			continue
+		}
+		if p == nil {
+			t.Errorf("CandidateProviders[%q] is nil", key)
+		}
+		// Each fallback must use its own provider, not the injected primary.
+		if p == primaryProvider {
+			t.Errorf(
+				"CandidateProviders[%q] is the same instance as the primary provider; fallback would inherit primary credentials",
+				key,
+			)
+		}
+	}
+
+	if t.Failed() {
+		t.Logf("CandidateProviders keys present: %v", func() []string {
+			keys := make([]string, 0, len(agent.CandidateProviders))
+			for k := range agent.CandidateProviders {
+				keys = append(keys, k)
+			}
+			return keys
+		}())
+	}
+}
+
+func TestNewAgentInstance_ReadFileModeSelectsSchema(t *testing.T) {
+	workspace := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				ModelName: "test-model",
+			},
+		},
+		Tools: config.ToolsConfig{
+			ReadFile: config.ReadFileToolConfig{
+				Enabled:         true,
+				Mode:            config.ReadFileModeLines,
+				MaxReadFileSize: 4096,
+			},
+		},
+	}
+
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	readTool, ok := agent.Tools.Get("read_file")
+	if !ok {
+		t.Fatal("read_file tool not registered")
+	}
+
+	params := readTool.Parameters()
+	props, _ := params["properties"].(map[string]any)
+	if _, ok := props["start_line"]; !ok {
+		t.Fatalf("expected line-mode schema to expose start_line, got %#v", props)
+	}
+	if _, ok := props["max_lines"]; !ok {
+		t.Fatalf("expected line-mode schema to expose max_lines, got %#v", props)
+	}
+	if _, ok := props["offset"]; ok {
+		t.Fatalf("did not expect line-mode schema to expose offset, got %#v", props)
+	}
+	if _, ok := props["length"]; ok {
+		t.Fatalf("did not expect line-mode schema to expose length, got %#v", props)
 	}
 }
 

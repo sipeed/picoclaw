@@ -210,11 +210,26 @@ func (h *Handler) saveWeixinBinding(token, accountID string) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	cfg.Channels.Weixin.SetToken(token)
-	cfg.Channels.Weixin.Enabled = true
-	if accountID != "" {
-		cfg.Channels.Weixin.AccountID = accountID
+
+	bc := cfg.Channels.Get(config.ChannelWeixin)
+	if bc == nil {
+		bc = &config.Channel{Type: config.ChannelWeixin}
+		cfg.Channels[config.ChannelWeixin] = bc
 	}
+	bc.Enabled = true
+
+	var weixinCfg config.WeixinSettings
+	if err := bc.Decode(&weixinCfg); err != nil {
+		logger.ErrorCF("weixin", "failed to decode weixin settings", map[string]any{
+			"error": err.Error(),
+		})
+		return fmt.Errorf("decode weixin settings: %w", err)
+	}
+	weixinCfg.Token = *config.NewSecureString(token)
+	if accountID != "" {
+		weixinCfg.AccountID = accountID
+	}
+
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		return err
 	}

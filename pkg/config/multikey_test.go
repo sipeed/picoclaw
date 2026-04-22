@@ -188,6 +188,7 @@ func TestExpandMultiKeyModels_Deduplication(t *testing.T) {
 func TestExpandMultiKeyModels_PreservesOtherFields(t *testing.T) {
 	modelCfg := &ModelConfig{
 		ModelName:      "gpt-4",
+		Provider:       "openrouter",
 		Model:          "openai/gpt-4o",
 		APIBase:        "https://api.example.com",
 		Proxy:          "http://proxy:8080",
@@ -205,6 +206,9 @@ func TestExpandMultiKeyModels_PreservesOtherFields(t *testing.T) {
 	primary := result[1]
 	if primary.APIBase != "https://api.example.com" {
 		t.Errorf("expected api_base preserved, got %q", primary.APIBase)
+	}
+	if primary.Provider != "openrouter" {
+		t.Errorf("expected provider preserved, got %q", primary.Provider)
 	}
 	if primary.Proxy != "http://proxy:8080" {
 		t.Errorf("expected proxy preserved, got %q", primary.Proxy)
@@ -224,6 +228,9 @@ func TestExpandMultiKeyModels_PreservesOtherFields(t *testing.T) {
 
 	// Check additional entry also preserves fields
 	additional := result[0]
+	if additional.Provider != "openrouter" {
+		t.Errorf("expected additional provider preserved, got %q", additional.Provider)
+	}
 	if additional.APIBase != "https://api.example.com" {
 		t.Errorf("expected additional api_base preserved, got %q", additional.APIBase)
 	}

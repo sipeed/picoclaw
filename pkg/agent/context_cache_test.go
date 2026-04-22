@@ -707,6 +707,38 @@ func TestEmptyWorkspaceBaselineDetectsNewFiles(t *testing.T) {
 	}
 }
 
+func TestBuildMessages_IncludesMediaOnlyCurrentMessage(t *testing.T) {
+	tmpDir := setupWorkspace(t, nil)
+	defer os.RemoveAll(tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+	msgs := cb.BuildMessages(
+		nil,
+		"",
+		"",
+		[]string{"data:image/png;base64,abc123"},
+		"pico",
+		"chat-1",
+		"",
+		"",
+	)
+
+	if len(msgs) != 2 {
+		t.Fatalf("len(msgs) = %d, want 2", len(msgs))
+	}
+
+	userMsg := msgs[1]
+	if userMsg.Role != "user" {
+		t.Fatalf("userMsg.Role = %q, want %q", userMsg.Role, "user")
+	}
+	if userMsg.Content != "" {
+		t.Fatalf("userMsg.Content = %q, want empty string", userMsg.Content)
+	}
+	if len(userMsg.Media) != 1 || userMsg.Media[0] != "data:image/png;base64,abc123" {
+		t.Fatalf("userMsg.Media = %#v, want image payload", userMsg.Media)
+	}
+}
+
 // BenchmarkBuildMessagesWithCache measures caching performance.
 func BenchmarkBuildMessagesWithCache(b *testing.B) {
 	tmpDir, _ := os.MkdirTemp("", "picoclaw-bench-*")

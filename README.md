@@ -18,7 +18,7 @@
     <a href="https://discord.gg/V4sAZ9XWpN"><img src="https://img.shields.io/badge/Discord-Community-4c60eb?style=flat&logo=discord&logoColor=white" alt="Discord"></a>
   </p>
 
-[中文](README.zh.md) | [日本語](README.ja.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | [Bahasa Indonesia](README.id.md) | [Malay](README.my.md) | **English**
+[中文](docs/project/README.zh.md) | [日本語](docs/project/README.ja.md) | [한국어](docs/project/README.ko.md) | [Português](docs/project/README.pt-br.md) | [Tiếng Việt](docs/project/README.vi.md) | [Français](docs/project/README.fr.md) | [Italiano](docs/project/README.it.md) | [Bahasa Indonesia](docs/project/README.id.md) | [Malay](docs/project/README.ms.md) | **English**
 
 </div>
 
@@ -112,7 +112,7 @@ _*Recent builds may use 10-20MB due to rapid PR merges. Resource optimization is
 
 </div>
 
-> **[Hardware Compatibility List](docs/hardware-compatibility.md)** — See all tested boards, from $5 RISC-V to Raspberry Pi to Android phones. Your board not listed? Submit a PR!
+> **[Hardware Compatibility List](docs/guides/hardware-compatibility.md)** — See all tested boards, from $5 RISC-V to Raspberry Pi to Android phones. Your board not listed? Submit a PR!
 
 <p align="center">
 <img src="assets/hardware-banner.jpg" alt="PicoClaw Hardware Compatibility" width="100%">
@@ -164,22 +164,32 @@ Alternatively, download the binary for your platform from the [GitHub Releases](
 
 ### Build from source (for development)
 
+Prerequisites:
+
+- Go 1.25+
+- Node.js 22+ and pnpm 10.33.0+ for Web UI / launcher builds
+
 ```bash
 git clone https://github.com/sipeed/picoclaw.git
 
 cd picoclaw
 make deps
 
-# Build core binary
+# Install frontend dependencies
+(cd web/frontend && pnpm install --frozen-lockfile)
+
+# Build the core binary for the current platform
 make build
 
-# Build Web UI Launcher (required for WebUI mode)
+# Build the Web UI Launcher (required for WebUI mode)
 make build-launcher
 
-# Build for multiple platforms
+# Build core binaries for all Makefile-managed platforms
 make build-all
 
-# Build for Raspberry Pi Zero 2 W (32-bit: make build-linux-arm; 64-bit: make build-linux-arm64)
+# Build for Raspberry Pi Zero 2 W
+# 32-bit: make build-linux-arm
+# 64-bit: make build-linux-arm64
 make build-pi-zero
 
 # Build and install
@@ -215,7 +225,7 @@ picoclaw-launcher
 <img src="assets/launcher-webui.jpg" alt="WebUI Launcher" width="600">
 </p>
 
-**Getting started:** 
+**Getting started:**
 
 Open the WebUI, then: **1)** Configure a Provider (add your LLM API key) -> **2)** Configure a Channel (e.g., Telegram) -> **3)** Start the Gateway -> **4)** Chat!
 
@@ -293,17 +303,36 @@ picoclaw-launcher-tui
 <img src="assets/launcher-tui.jpg" alt="TUI Launcher" width="600">
 </p>
 
-**Getting started:** 
+**Getting started:**
 
 Use the TUI menus to: **1)** Configure a Provider -> **2)** Configure a Channel -> **3)** Start the Gateway -> **4)** Chat!
 
 For detailed TUI documentation, see [docs.picoclaw.io](https://docs.picoclaw.io).
 
+<a id="-run-on-old-android-phones"></a>
 ### 📱 Android
 
 Give your decade-old phone a second life! Turn it into a smart AI Assistant with PicoClaw.
 
-**Option 1: Termux (available now)**
+**Option 1: APK Install**
+
+Preview:
+
+<table>
+  <tr>
+    <td><img src="assets/fui_main_page.jpg" width="200"></td>
+    <td><img src="assets/fui_web_page.jpg" width="200"></td>
+    <td><img src="assets/fui_log_page.jpg" width="200"></td>
+    <td><img src="assets/fui_setting_page.jpg" width="200"></td>
+  </tr>
+</table>
+
+Download the APK from [picoclaw.io](https://picoclaw.io/download/) and install directly. No Termux required!
+
+**Option 2: Termux**
+
+<details>
+<summary><b>Terminal Launcher (for resource-constrained environments)</b></summary>
 
 1. Install [Termux](https://github.com/termux/termux-app) (download from [GitHub Releases](https://github.com/termux/termux-app/releases), or search in F-Droid / Google Play)
 2. Run the following commands:
@@ -319,13 +348,6 @@ termux-chroot ./picoclaw onboard   # chroot provides a standard Linux filesystem
 Then follow the Terminal Launcher section below to complete configuration.
 
 <img src="assets/termux.jpg" alt="PicoClaw on Termux" width="512">
-
-**Option 2: APK Install**
-
-Download the APK from [picoclaw.io](https://picoclaw.io/download/) and install directly. No Termux required!
-
-<details>
-<summary><b>Terminal Launcher (for resource-constrained environments)</b></summary>
 
 For minimal environments where only the `picoclaw` core binary is available (no Launcher UI), you can configure everything via the command line and a JSON config file.
 
@@ -357,8 +379,8 @@ This creates `~/.picoclaw/config.json` and the workspace directory.
 ```
 
 > See `config/config.example.json` in the repo for a complete configuration template with all available options.
-> 
-> Please note: config.example.json format is version 0, with sensitive codes in it, and will be auto migrated to version 1+, then, the config.json will only store insensitive data, the sensitive codes will be stored in .security.yml, if you need manually modify the codes, please see `docs/security_configuration.md` for more details.
+>
+> Please note: config.example.json format is version 0, with sensitive codes in it, and will be auto migrated to version 1+, then, the config.json will only store insensitive data, the sensitive codes will be stored in .security.yml, if you need manually modify the codes, please see `docs/security/security_configuration.md` for more details.
 
 
 **3. Chat**
@@ -437,20 +459,20 @@ PicoClaw supports 30+ LLM providers through the `model_list` configuration. Use 
 }
 ```
 
-For full provider configuration details, see [Providers & Models](docs/providers.md).
+For full provider configuration details, see [Providers & Models](docs/guides/providers.md).
 
 </details>
 
 ## 💬 Channels (Chat Apps)
 
-Talk to your PicoClaw through 17+ messaging platforms:
+Talk to your PicoClaw through 18+ messaging platforms:
 
 | Channel | Setup | Protocol | Docs |
 |---------|-------|----------|------|
 | **Telegram** | Easy (bot token) | Long polling | [Guide](docs/channels/telegram/README.md) |
 | **Discord** | Easy (bot token + intents) | WebSocket | [Guide](docs/channels/discord/README.md) |
-| **WhatsApp** | Easy (QR scan or bridge URL) | Native / Bridge | [Guide](docs/chat-apps.md#whatsapp) |
-| **Weixin** | Easy (Native QR scan) | iLink API | [Guide](docs/chat-apps.md#weixin) |
+| **WhatsApp** | Easy (QR scan or bridge URL) | Native / Bridge | [Guide](docs/guides/chat-apps.md#whatsapp) |
+| **Weixin** | Easy (Native QR scan) | iLink API | [Guide](docs/guides/chat-apps.md#weixin) |
 | **QQ** | Easy (AppID + AppSecret) | WebSocket | [Guide](docs/channels/qq/README.md) |
 | **Slack** | Easy (bot + app token) | Socket Mode | [Guide](docs/channels/slack/README.md) |
 | **Matrix** | Medium (homeserver + token) | Sync API | [Guide](docs/channels/matrix/README.md) |
@@ -458,7 +480,8 @@ Talk to your PicoClaw through 17+ messaging platforms:
 | **Feishu / Lark** | Medium (App ID + Secret) | WebSocket/SDK | [Guide](docs/channels/feishu/README.md) |
 | **LINE** | Medium (credentials + webhook) | Webhook | [Guide](docs/channels/line/README.md) |
 | **WeCom** | Easy (QR login or manual) | WebSocket | [Guide](docs/channels/wecom/README.md) |
-| **IRC** | Medium (server + nick) | IRC protocol | [Guide](docs/chat-apps.md#irc) |
+| **VK** | Easy (group token) | Long Poll | [Guide](docs/channels/vk/README.md) |
+| **IRC** | Medium (server + nick) | IRC protocol | [Guide](docs/guides/chat-apps.md#irc) |
 | **OneBot** | Medium (WebSocket URL) | OneBot v11 | [Guide](docs/channels/onebot/README.md) |
 | **MaixCam** | Easy (enable) | TCP socket | [Guide](docs/channels/maixcam/README.md) |
 | **Pico** | Easy (enable) | Native protocol | Built-in |
@@ -466,9 +489,9 @@ Talk to your PicoClaw through 17+ messaging platforms:
 
 > All webhook-based channels share a single Gateway HTTP server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). Feishu uses WebSocket/SDK mode and does not use the shared HTTP server.
 
-> Log verbosity is controlled by `gateway.log_level` (default: `warn`). Supported values: `debug`, `info`, `warn`, `error`, `fatal`. Can also be set via `PICOCLAW_LOG_LEVEL`. See [Configuration](docs/configuration.md#gateway-log-level) for details.
+> Log verbosity is controlled by `gateway.log_level` (default: `warn`). Supported values: `debug`, `info`, `warn`, `error`, `fatal`. Can also be set via `PICOCLAW_LOG_LEVEL`. See [Configuration](docs/guides/configuration.md#gateway-log-level) for details.
 
-For detailed channel setup instructions, see [Chat Apps Configuration](docs/chat-apps.md).
+For detailed channel setup instructions, see [Chat Apps Configuration](docs/guides/chat-apps.md).
 
 ## 🔧 Tools
 
@@ -488,7 +511,7 @@ PicoClaw can search the web to provide up-to-date information. Configure in `too
 
 ### ⚙️ Other Tools
 
-PicoClaw includes built-in tools for file operations, code execution, scheduling, and more. See [Tools Configuration](docs/tools_configuration.md) for details.
+PicoClaw includes built-in tools for file operations, code execution, scheduling, and more. See [Tools Configuration](docs/reference/tools_configuration.md) for details.
 
 ## 🎯 Skills
 
@@ -501,7 +524,7 @@ picoclaw skills search "web scraping"
 picoclaw skills install <skill-name>
 ```
 
-**Configure ClawHub token** (optional, for higher rate limits):
+**Configure skill registries**:
 
 Add to your `config.json`:
 ```json
@@ -511,6 +534,11 @@ Add to your `config.json`:
       "registries": {
         "clawhub": {
           "auth_token": "your-clawhub-token"
+        },
+        "github": {
+          "base_url": "https://github.com",
+          "auth_token": "your-github-token",
+          "proxy": ""
         }
       }
     }
@@ -518,7 +546,9 @@ Add to your `config.json`:
 }
 ```
 
-For more details, see [Tools Configuration - Skills](docs/tools_configuration.md#skills-tool).
+`tools.skills.github.*` is deprecated. Use `tools.skills.registries.github.*` instead.
+
+For more details, see [Tools Configuration - Skills](docs/reference/tools_configuration.md#skills-tool).
 
 ## 🔗 MCP (Model Context Protocol)
 
@@ -541,7 +571,7 @@ PicoClaw natively supports [MCP](https://modelcontextprotocol.io/) — connect a
 }
 ```
 
-For full MCP configuration (stdio, SSE, HTTP transports, Tool Discovery), see [Tools Configuration - MCP](docs/tools_configuration.md#mcp-tool).
+For full MCP configuration (stdio, SSE, HTTP transports, Tool Discovery), see [Tools Configuration - MCP](docs/reference/tools_configuration.md#mcp-tool).
 
 ## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> Join the Agent Social Network
 
@@ -578,7 +608,7 @@ PicoClaw supports scheduled reminders and recurring tasks through the `cron` too
 * **Recurring tasks**: "Remind me every 2 hours" -> triggers every 2 hours
 * **Cron expressions**: "Remind me at 9am daily" -> uses cron expression
 
-See [docs/cron.md](docs/cron.md) for current schedule types, execution modes, command-job gates, and persistence details.
+See [docs/reference/cron.md](docs/reference/cron.md) for current schedule types, execution modes, command-job gates, and persistence details.
 
 ## 📚 Documentation
 
@@ -586,18 +616,18 @@ For detailed guides beyond this README:
 
 | Topic | Description |
 |-------|-------------|
-| [Docker & Quick Start](docs/docker.md) | Docker Compose setup, Launcher/Agent modes |
-| [Chat Apps](docs/chat-apps.md) | All 17+ channel setup guides |
-| [Configuration](docs/configuration.md) | Environment variables, workspace layout, security sandbox |
-| [Scheduled Tasks and Cron Jobs](docs/cron.md) | Cron schedule types, deliver modes, command gates, job storage |
-| [Providers & Models](docs/providers.md) | 30+ LLM providers, model routing, model_list configuration |
-| [Spawn & Async Tasks](docs/spawn-tasks.md) | Quick tasks, long tasks with spawn, async sub-agent orchestration |
-| [Hooks](docs/hooks/README.md) | Event-driven hook system: observers, interceptors, approval hooks |
-| [Steering](docs/steering.md) | Inject messages into a running agent loop between tool calls |
-| [SubTurn](docs/subturn.md) | Subagent coordination, concurrency control, lifecycle |
-| [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |
-| [Tools Configuration](docs/tools_configuration.md) | Per-tool enable/disable, exec policies, MCP, Skills |
-| [Hardware Compatibility](docs/hardware-compatibility.md) | Tested boards, minimum requirements |
+| [Docker & Quick Start](docs/guides/docker.md) | Docker Compose setup, Launcher/Agent modes |
+| [Chat Apps](docs/guides/chat-apps.md) | All 17+ channel setup guides |
+| [Configuration](docs/guides/configuration.md) | Environment variables, workspace layout, security sandbox |
+| [Scheduled Tasks and Cron Jobs](docs/reference/cron.md) | Cron schedule types, deliver modes, command gates, job storage |
+| [Providers & Models](docs/guides/providers.md) | 30+ LLM providers, model routing, model_list configuration |
+| [Spawn & Async Tasks](docs/guides/spawn-tasks.md) | Quick tasks, long tasks with spawn, async sub-agent orchestration |
+| [Hooks](docs/architecture/hooks/README.md) | Event-driven hook system: observers, interceptors, approval hooks |
+| [Steering](docs/architecture/steering.md) | Inject messages into a running agent loop between tool calls |
+| [SubTurn](docs/architecture/subturn.md) | Subagent coordination, concurrency control, lifecycle |
+| [Troubleshooting](docs/operations/troubleshooting.md) | Common issues and solutions |
+| [Tools Configuration](docs/reference/tools_configuration.md) | Per-tool enable/disable, exec policies, MCP, Skills |
+| [Hardware Compatibility](docs/guides/hardware-compatibility.md) | Tested boards, minimum requirements |
 
 ## 🤝 Contribute & Roadmap
 

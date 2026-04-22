@@ -6,10 +6,12 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 // registerModelRoutes binds model list management endpoints to the ServeMux.
@@ -26,19 +28,21 @@ func (h *Handler) registerModelRoutes(mux *http.ServeMux) {
 type modelResponse struct {
 	Index      int    `json:"index"`
 	ModelName  string `json:"model_name"`
+	Provider   string `json:"provider,omitempty"`
 	Model      string `json:"model"`
 	APIBase    string `json:"api_base,omitempty"`
 	APIKey     string `json:"api_key"`
 	Proxy      string `json:"proxy,omitempty"`
 	AuthMethod string `json:"auth_method,omitempty"`
 	// Advanced fields
-	ConnectMode    string         `json:"connect_mode,omitempty"`
-	Workspace      string         `json:"workspace,omitempty"`
-	RPM            int            `json:"rpm,omitempty"`
-	MaxTokensField string         `json:"max_tokens_field,omitempty"`
-	RequestTimeout int            `json:"request_timeout,omitempty"`
-	ThinkingLevel  string         `json:"thinking_level,omitempty"`
-	ExtraBody      map[string]any `json:"extra_body,omitempty"`
+	ConnectMode    string            `json:"connect_mode,omitempty"`
+	Workspace      string            `json:"workspace,omitempty"`
+	RPM            int               `json:"rpm,omitempty"`
+	MaxTokensField string            `json:"max_tokens_field,omitempty"`
+	RequestTimeout int               `json:"request_timeout,omitempty"`
+	ThinkingLevel  string            `json:"thinking_level,omitempty"`
+	ExtraBody      map[string]any    `json:"extra_body,omitempty"`
+	CustomHeaders  map[string]string `json:"custom_headers,omitempty"`
 	// Meta
 	Enabled   bool   `json:"enabled"`
 	Available bool   `json:"available"`
@@ -72,10 +76,12 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 
 	models := make([]modelResponse, 0, len(cfg.ModelList))
 	for i, m := range cfg.ModelList {
+		provider, modelID := providers.ExtractProtocol(m)
 		models = append(models, modelResponse{
 			Index:          i,
 			ModelName:      m.ModelName,
-			Model:          m.Model,
+			Provider:       provider,
+			Model:          modelID,
 			APIBase:        m.APIBase,
 			APIKey:         maskAPIKey(m.APIKey()),
 			Proxy:          m.Proxy,
@@ -87,6 +93,7 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 			RequestTimeout: m.RequestTimeout,
 			ThinkingLevel:  m.ThinkingLevel,
 			ExtraBody:      m.ExtraBody,
+			CustomHeaders:  m.CustomHeaders,
 			Enabled:        m.Enabled,
 			Available:      modelStatuses[i].Available,
 			Status:         modelStatuses[i].Status,
@@ -174,6 +181,12 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
+	var rawFields map[string]json.RawMessage
+	if err = json.Unmarshal(body, &rawFields); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+
 	type custom struct {
 		config.ModelConfig
 		APIKey string `json:"api_key"`
@@ -215,6 +228,43 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 		mc.ExtraBody = cfg.ModelList[idx].ExtraBody
 	} else if len(mc.ExtraBody) == 0 {
 		mc.ExtraBody = nil
+	}
+	// Preserve existing CustomHeaders when omitted (nil), but clear it when
+	// the frontend sends an empty object {} to indicate the field should
+	// be removed.
+	if mc.CustomHeaders == nil {
+		mc.CustomHeaders = cfg.ModelList[idx].CustomHeaders
+	} else if len(mc.CustomHeaders) == 0 {
+		mc.CustomHeaders = nil
+	}
+	// Preserve the existing Provider when the caller omits it. This keeps the
+	// update API backward-compatible for clients that haven't started sending
+	// the new field yet, while still allowing explicit clearing via "".
+	if _, ok := rawFields["provider"]; !ok {
+		mc.Provider = cfg.ModelList[idx].Provider
+		// Older clients still round-trip the legacy model field only. When the
+		// stored config encodes provider/model in Model and has no explicit
+		// Provider field yet, continue preserving that hidden provider prefix.
+		// This keeps provider-omitted updates backward-compatible even when an
+		// older client edits the visible model ID.
+		if strings.TrimSpace(cfg.ModelList[idx].Provider) == "" {
+			existingProtocol, existingModelID := providers.ExtractProtocol(cfg.ModelList[idx])
+			existingRawModel := strings.TrimSpace(cfg.ModelList[idx].Model)
+			incomingModel := strings.TrimSpace(mc.Model)
+			if existingRawModel != "" && existingRawModel != existingModelID && incomingModel != "" {
+				if incomingModel == existingModelID {
+					mc.Model = existingRawModel
+				} else if strings.Contains(incomingModel, "/") && !strings.Contains(existingModelID, "/") {
+					// Older clients never saw the hidden provider prefix for simple
+					// legacy entries such as "openai/gpt-4o". If they now send an
+					// explicit provider/model string, treat it as the caller's full
+					// intent instead of re-applying the old hidden prefix.
+					mc.Model = incomingModel
+				} else if !strings.HasPrefix(incomingModel, existingProtocol+"/") {
+					mc.Model = existingProtocol + "/" + incomingModel
+				}
+			}
+		}
 	}
 
 	cfg.ModelList[idx] = &mc.ModelConfig

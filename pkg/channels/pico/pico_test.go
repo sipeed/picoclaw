@@ -6,20 +6,25 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/media"
 )
 
 func newTestPicoChannel(t *testing.T) *PicoChannel {
 	t.Helper()
 
-	cfg := config.PicoConfig{}
+	bc := &config.Channel{Type: config.ChannelPico, Enabled: true}
+	cfg := &config.PicoSettings{}
 	cfg.SetToken("test-token")
-	ch, err := NewPicoChannel(cfg, bus.NewMessageBus())
+	ch, err := NewPicoChannel(bc, cfg, bus.NewMessageBus())
 	if err != nil {
 		t.Fatalf("NewPicoChannel: %v", err)
 	}
@@ -121,6 +126,98 @@ func TestBroadcastToSession_TargetsOnlyRequestedSession(t *testing.T) {
 	}
 	if !errors.Is(err, channels.ErrSendFailed) {
 		t.Fatalf("expected ErrSendFailed, got %v", err)
+	}
+}
+
+func TestSendMedia_ResolvesMediaBeforeDelivery(t *testing.T) {
+	ch := newTestPicoChannel(t)
+	store := media.NewFileMediaStore()
+	ch.SetMediaStore(store)
+
+	if err := ch.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer ch.Stop(context.Background())
+
+	localPath := filepath.Join(t.TempDir(), "report.txt")
+	if err := os.WriteFile(localPath, []byte("attachment body"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	ref, err := store.Store(localPath, media.MediaMeta{
+		Filename:    "report.txt",
+		ContentType: "text/plain",
+	}, "test-scope")
+	if err != nil {
+		t.Fatalf("Store() error = %v", err)
+	}
+
+	closedConn := &picoConn{id: "closed", sessionID: "sess-1"}
+	closedConn.closed.Store(true)
+	ch.addConnForTest(closedConn)
+
+	_, err = ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
+		ChatID: "pico:sess-1",
+		Parts: []bus.MediaPart{{
+			Ref:         ref,
+			Type:        "file",
+			Filename:    "report.txt",
+			ContentType: "text/plain",
+		}},
+	})
+	if !errors.Is(err, channels.ErrSendFailed) {
+		t.Fatalf("SendMedia() error = %v, want ErrSendFailed", err)
+	}
+}
+
+func TestPicoDownloadURLForRef(t *testing.T) {
+	got, err := picoDownloadURLForRef("media://attachment-1")
+	if err != nil {
+		t.Fatalf("picoDownloadURLForRef() error = %v", err)
+	}
+	if got != "/pico/media/attachment-1" {
+		t.Fatalf("picoDownloadURLForRef() = %q, want %q", got, "/pico/media/attachment-1")
+	}
+}
+
+func TestHandleMediaDownload_ServesStoredFile(t *testing.T) {
+	ch := newTestPicoChannel(t)
+	store := media.NewFileMediaStore()
+	ch.SetMediaStore(store)
+
+	if err := ch.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer ch.Stop(context.Background())
+
+	localPath := filepath.Join(t.TempDir(), "report.txt")
+	if err := os.WriteFile(localPath, []byte("downloadable"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	ref, err := store.Store(localPath, media.MediaMeta{
+		Filename:    "report.txt",
+		ContentType: "text/plain",
+	}, "test-scope")
+	if err != nil {
+		t.Fatalf("Store() error = %v", err)
+	}
+
+	refID := strings.TrimPrefix(ref, "media://")
+	req := httptest.NewRequest("GET", "/pico/media/"+refID, nil)
+	req.Header.Set("Authorization", "Bearer test-token")
+	rec := httptest.NewRecorder()
+
+	ch.ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if body := rec.Body.String(); body != "downloadable" {
+		t.Fatalf("body = %q, want %q", body, "downloadable")
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/plain" {
+		t.Fatalf("Content-Type = %q, want %q", got, "text/plain")
 	}
 }
 

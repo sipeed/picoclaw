@@ -11,7 +11,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
@@ -85,6 +87,7 @@ type Manager struct {
 	dispatchTask  *asyncTask
 	mux           *dynamicServeMux
 	httpServer    *http.Server
+	httpListeners []net.Listener
 	mu            sync.RWMutex
 	placeholders  sync.Map          // "channel:chatID" → placeholderID (string)
 	typingStops   sync.Map          // "channel:chatID" → func()
@@ -95,6 +98,22 @@ type Manager struct {
 
 type asyncTask struct {
 	cancel context.CancelFunc
+}
+
+func outboundMessageChannel(msg bus.OutboundMessage) string {
+	return msg.Context.Channel
+}
+
+func outboundMessageChatID(msg bus.OutboundMessage) string {
+	return msg.ChatID
+}
+
+func outboundMediaChannel(msg bus.OutboundMediaMessage) string {
+	return msg.Context.Channel
+}
+
+func outboundMediaChatID(msg bus.OutboundMediaMessage) string {
+	return msg.ChatID
 }
 
 // RecordPlaceholder registers a placeholder message for later editing.
@@ -160,7 +179,8 @@ func (m *Manager) RecordReactionUndo(channel, chatID string, undo func()) {
 // preSend handles typing stop, reaction undo, and placeholder editing before sending a message.
 // Returns the delivered message IDs and true when delivery completed before a normal Send.
 func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMessage, ch Channel) ([]string, bool) {
-	key := name + ":" + msg.ChatID
+	chatID := outboundMessageChatID(msg)
+	key := name + ":" + chatID
 
 	// 1. Stop typing
 	if v, loaded := m.typingStops.LoadAndDelete(key); loaded {
@@ -182,9 +202,9 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 			if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
 				// Prefer deleting the placeholder (cleaner UX than editing to same content)
 				if deleter, ok := ch.(MessageDeleter); ok {
-					deleter.DeleteMessage(ctx, msg.ChatID, entry.id) // best effort
+					deleter.DeleteMessage(ctx, chatID, entry.id) // best effort
 				} else if editor, ok := ch.(MessageEditor); ok {
-					editor.EditMessage(ctx, msg.ChatID, entry.id, msg.Content) // fallback
+					editor.EditMessage(ctx, chatID, entry.id, msg.Content) // fallback
 				}
 			}
 		}
@@ -195,7 +215,7 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
 			if editor, ok := ch.(MessageEditor); ok {
-				if err := editor.EditMessage(ctx, msg.ChatID, entry.id, msg.Content); err == nil {
+				if err := editor.EditMessage(ctx, chatID, entry.id, msg.Content); err == nil {
 					return []string{entry.id}, true
 				}
 				// edit failed → fall through to normal Send
@@ -211,7 +231,8 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 // delivery never edits the placeholder because there is no text payload to
 // replace it with; it only attempts to delete the placeholder when possible.
 func (m *Manager) preSendMedia(ctx context.Context, name string, msg bus.OutboundMediaMessage, ch Channel) {
-	key := name + ":" + msg.ChatID
+	chatID := outboundMediaChatID(msg)
+	key := name + ":" + chatID
 
 	// 1. Stop typing
 	if v, loaded := m.typingStops.LoadAndDelete(key); loaded {
@@ -234,7 +255,7 @@ func (m *Manager) preSendMedia(ctx context.Context, name string, msg bus.Outboun
 	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
 			if deleter, ok := ch.(MessageDeleter); ok {
-				deleter.DeleteMessage(ctx, msg.ChatID, entry.id) // best effort
+				deleter.DeleteMessage(ctx, chatID, entry.id) // best effort
 			}
 		}
 	}
@@ -310,22 +331,27 @@ func (s *finalizeHookStreamer) Finalize(ctx context.Context, content string) err
 	return nil
 }
 
-// initChannel is a helper that looks up a factory by name and creates the channel.
-func (m *Manager) initChannel(name, displayName string) {
-	f, ok := getFactory(name)
+// initChannel is a helper that looks up a factory by type name and creates the channel.
+// typeName is the channel type used for factory lookup (e.g., "telegram").
+// channelName is the config map key used as the channel's runtime name (e.g., "my_telegram").
+func (m *Manager) initChannel(typeName, channelName string) {
+	f, ok := getFactory(typeName)
 	if !ok {
 		logger.WarnCF("channels", "Factory not registered", map[string]any{
-			"channel": displayName,
+			"channel": channelName,
+			"type":    typeName,
 		})
 		return
 	}
 	logger.DebugCF("channels", "Attempting to initialize channel", map[string]any{
-		"channel": displayName,
+		"channel": channelName,
+		"type":    typeName,
 	})
-	ch, err := f(m.config, m.bus)
+	ch, err := f(channelName, typeName, m.config, m.bus)
 	if err != nil {
 		logger.ErrorCF("channels", "Failed to initialize channel", map[string]any{
-			"channel": displayName,
+			"channel": channelName,
+			"type":    typeName,
 			"error":   err.Error(),
 		})
 	} else {
@@ -343,86 +369,100 @@ func (m *Manager) initChannel(name, displayName string) {
 		if setter, ok := ch.(interface{ SetOwner(ch Channel) }); ok {
 			setter.SetOwner(ch)
 		}
-		m.channels[name] = ch
+		m.channels[channelName] = ch
 		logger.InfoCF("channels", "Channel enabled successfully", map[string]any{
-			"channel": displayName,
+			"channel": channelName,
+			"type":    typeName,
 		})
 	}
 }
 
+func (m *Manager) getChannelConfigAndEnabled(channelName string) (*config.Channel, bool) {
+	bc, ok := m.config.Channels[channelName]
+	if !ok || bc == nil {
+		return nil, false
+	}
+	if !bc.Enabled {
+		return bc, false
+	}
+
+	// Use Type to determine the config struct for validation.
+	// The map key (channelName) is the config key, which may differ from the type.
+	channelType := bc.Type
+	if channelType == "" {
+		channelType = channelName
+	}
+
+	// Settings have already been decoded by InitChannelList, so we just need to
+	// type-assert and check the relevant fields.
+	decoded, err := bc.GetDecoded()
+	if err != nil {
+		return bc, false
+	}
+	//nolint:revive
+	switch settings := decoded.(type) {
+	case *config.WhatsAppSettings:
+		if channelType == config.ChannelWhatsApp {
+			return bc, settings.BridgeURL != ""
+		}
+		return bc, channelType == config.ChannelWhatsAppNative && settings.UseNative
+	case *config.MatrixSettings:
+		return bc, settings.Homeserver != "" && settings.UserID != "" && settings.AccessToken.String() != ""
+	case *config.WeComSettings:
+		return bc, settings.BotID != "" && settings.Secret.String() != ""
+	case *config.PicoClientSettings:
+		return bc, settings.URL != ""
+	case *config.DingTalkSettings:
+		return bc, settings.ClientID != ""
+	case *config.SlackSettings:
+		return bc, settings.BotToken.String() != ""
+	case *config.WeixinSettings:
+		return bc, settings.Token.String() != ""
+	case *config.PicoSettings:
+		return bc, settings.Token.String() != ""
+	case *config.IRCSettings:
+		return bc, settings.Server != ""
+	case *config.LINESettings:
+		return bc, settings.ChannelAccessToken.String() != ""
+	case *config.OneBotSettings:
+		return bc, settings.WSUrl != ""
+	case *config.QQSettings:
+		return bc, settings.AppSecret.String() != ""
+	case *config.TelegramSettings:
+		return bc, settings.Token.String() != ""
+	case *config.FeishuSettings:
+		return bc, settings.AppSecret.String() != ""
+	case *config.MaixCamSettings:
+		return bc, true
+	case *config.TeamsWebhookSettings:
+		return bc, true
+	case *config.DiscordSettings:
+		return bc, settings.Token.String() != ""
+	case *config.VKSettings:
+		return bc, settings.GroupID != 0 && settings.Token.String() != ""
+	}
+
+	return bc, bc.Enabled
+}
+
+// initChannels initializes all enabled channels based on the configuration.
+// It iterates config entries and uses bc.Type to look up the appropriate factory.
 func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 	logger.InfoC("channels", "Initializing channel manager")
 
-	if channels.Telegram.Enabled && channels.Telegram.Token.String() != "" {
-		m.initChannel("telegram", "Telegram")
-	}
-
-	if channels.WhatsApp.Enabled {
-		waCfg := channels.WhatsApp
-		if waCfg.UseNative {
-			m.initChannel("whatsapp_native", "WhatsApp Native")
-		} else if waCfg.BridgeURL != "" {
-			m.initChannel("whatsapp", "WhatsApp")
+	for name, bc := range *channels {
+		if !bc.Enabled {
+			continue
 		}
-	}
-
-	if channels.Feishu.Enabled {
-		m.initChannel("feishu", "Feishu")
-	}
-
-	if channels.Discord.Enabled && channels.Discord.Token.String() != "" {
-		m.initChannel("discord", "Discord")
-	}
-
-	if channels.MaixCam.Enabled {
-		m.initChannel("maixcam", "MaixCam")
-	}
-
-	if channels.QQ.Enabled {
-		m.initChannel("qq", "QQ")
-	}
-
-	if channels.DingTalk.Enabled && channels.DingTalk.ClientID != "" {
-		m.initChannel("dingtalk", "DingTalk")
-	}
-
-	if channels.Slack.Enabled && channels.Slack.BotToken.String() != "" {
-		m.initChannel("slack", "Slack")
-	}
-
-	if channels.Matrix.Enabled &&
-		m.config.Channels.Matrix.Homeserver != "" &&
-		m.config.Channels.Matrix.UserID != "" &&
-		m.config.Channels.Matrix.AccessToken.String() != "" {
-		m.initChannel("matrix", "Matrix")
-	}
-
-	if channels.LINE.Enabled && channels.LINE.ChannelAccessToken.String() != "" {
-		m.initChannel("line", "LINE")
-	}
-
-	if channels.OneBot.Enabled && channels.OneBot.WSUrl != "" {
-		m.initChannel("onebot", "OneBot")
-	}
-
-	if channels.WeCom.Enabled && channels.WeCom.BotID != "" && channels.WeCom.Secret.String() != "" {
-		m.initChannel("wecom", "WeCom")
-	}
-
-	if channels.Weixin.Enabled && channels.Weixin.Token.String() != "" {
-		m.initChannel("weixin", "Weixin")
-	}
-
-	if channels.Pico.Enabled && channels.Pico.Token.String() != "" {
-		m.initChannel("pico", "Pico")
-	}
-
-	if channels.PicoClient.Enabled && channels.PicoClient.URL != "" {
-		m.initChannel("pico_client", "Pico Client")
-	}
-
-	if channels.IRC.Enabled && channels.IRC.Server != "" {
-		m.initChannel("irc", "IRC")
+		_, ready := m.getChannelConfigAndEnabled(name)
+		if !ready {
+			continue
+		}
+		typeName := bc.Type
+		if typeName == "" {
+			typeName = name
+		}
+		m.initChannel(typeName, name)
 	}
 
 	logger.InfoCF("channels", "Channel initialization completed", map[string]any{
@@ -436,6 +476,12 @@ func (m *Manager) initChannels(channels *config.ChannelsConfig) error {
 // It registers health endpoints from the health server and discovers channels
 // that implement WebhookHandler and/or HealthChecker to register their handlers.
 func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
+	m.SetupHTTPServerListeners(nil, addr, healthServer)
+}
+
+// SetupHTTPServerListeners creates a shared HTTP server on pre-opened listeners.
+// When listeners is empty it falls back to Addr-based ListenAndServe behavior.
+func (m *Manager) SetupHTTPServerListeners(listeners []net.Listener, addr string, healthServer *health.Server) {
 	m.mux = newDynamicServeMux()
 
 	// Register health endpoints
@@ -452,6 +498,7 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}
+	m.httpListeners = append([]net.Listener(nil), listeners...)
 }
 
 // registerHTTPHandlersLocked registers webhook and health-check handlers for
@@ -513,6 +560,8 @@ func (m *Manager) StartAll(ctx context.Context) error {
 
 	dispatchCtx, cancel := context.WithCancel(ctx)
 	m.dispatchTask = &asyncTask{cancel: cancel}
+	failedStarts := make([]error, 0, len(m.channels))
+	failedNames := make([]string, 0, len(m.channels))
 
 	for name, channel := range m.channels {
 		logger.InfoCF("channels", "Starting channel", map[string]any{
@@ -523,13 +572,51 @@ func (m *Manager) StartAll(ctx context.Context) error {
 				"channel": name,
 				"error":   err.Error(),
 			})
+			failedStarts = append(failedStarts, fmt.Errorf("channel %s: %w", name, err))
+			failedNames = append(failedNames, name)
 			continue
 		}
 		// Lazily create worker only after channel starts successfully
-		w := newChannelWorker(name, channel)
+		channelType := name
+		if m.config != nil {
+			if bc := m.config.Channels.Get(name); bc != nil && bc.Type != "" {
+				channelType = bc.Type
+			}
+		}
+		w := newChannelWorker(name, channel, channelType)
 		m.workers[name] = w
 		go m.runWorker(dispatchCtx, name, w)
 		go m.runMediaWorker(dispatchCtx, name, w)
+	}
+
+	if len(m.channels) > 0 && len(m.workers) == 0 {
+		if m.dispatchTask != nil {
+			m.dispatchTask.cancel()
+			m.dispatchTask = nil
+		}
+
+		sort.Strings(failedNames)
+		if len(failedStarts) == 0 {
+			return fmt.Errorf("failed to start any enabled channels")
+		}
+
+		logger.ErrorCF("channels", "All enabled channels failed to start", map[string]any{
+			"failed":          len(failedNames),
+			"total":           len(m.channels),
+			"failed_channels": failedNames,
+		})
+
+		return fmt.Errorf("failed to start any enabled channels: %w", errors.Join(failedStarts...))
+	}
+
+	if len(failedNames) > 0 {
+		sort.Strings(failedNames)
+		logger.WarnCF("channels", "Some channels failed to start", map[string]any{
+			"failed":          len(failedNames),
+			"started":         len(m.workers),
+			"total":           len(m.channels),
+			"failed_channels": failedNames,
+		})
 	}
 
 	// Start the dispatcher that reads from the bus and routes to workers
@@ -541,19 +628,40 @@ func (m *Manager) StartAll(ctx context.Context) error {
 
 	// Start shared HTTP server if configured
 	if m.httpServer != nil {
-		go func() {
-			logger.InfoCF("channels", "Shared HTTP server listening", map[string]any{
-				"addr": m.httpServer.Addr,
-			})
-			if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				logger.FatalCF("channels", "Shared HTTP server error", map[string]any{
-					"error": err.Error(),
-				})
+		if len(m.httpListeners) > 0 {
+			for _, listener := range m.httpListeners {
+				ln := listener
+				go func() {
+					logger.InfoCF("channels", "Shared HTTP server listening", map[string]any{
+						"addr": ln.Addr().String(),
+					})
+					if err := m.httpServer.Serve(ln); err != nil && err != http.ErrServerClosed {
+						logger.FatalCF("channels", "Shared HTTP server error", map[string]any{
+							"addr":  ln.Addr().String(),
+							"error": err.Error(),
+						})
+					}
+				}()
 			}
-		}()
+		} else {
+			go func() {
+				logger.InfoCF("channels", "Shared HTTP server listening", map[string]any{
+					"addr": m.httpServer.Addr,
+				})
+				if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					logger.FatalCF("channels", "Shared HTTP server error", map[string]any{
+						"error": err.Error(),
+					})
+				}
+			}()
+		}
 	}
 
-	logger.InfoC("channels", "All channels started")
+	logger.InfoCF("channels", "Channel startup completed", map[string]any{
+		"started": len(m.workers),
+		"failed":  len(failedNames),
+		"total":   len(m.channels),
+	})
 	return nil
 }
 
@@ -573,6 +681,7 @@ func (m *Manager) StopAll(ctx context.Context) error {
 			})
 		}
 		m.httpServer = nil
+		m.httpListeners = nil
 	}
 
 	// Cancel dispatcher
@@ -622,10 +731,10 @@ func (m *Manager) StopAll(ctx context.Context) error {
 }
 
 // newChannelWorker creates a channelWorker with a rate limiter configured
-// for the given channel name.
-func newChannelWorker(name string, ch Channel) *channelWorker {
+// for the given channel type. channelType is used for rate limit lookup.
+func newChannelWorker(name string, ch Channel, channelType string) *channelWorker {
 	rateVal := float64(defaultRateLimit)
-	if r, ok := channelRateConfig[name]; ok {
+	if r, ok := channelRateConfig[channelType]; ok {
 		rateVal = r
 	}
 	burst := int(math.Max(1, math.Ceil(rateVal/2)))
@@ -756,7 +865,7 @@ func (m *Manager) sendWithRetry(
 	// All retries exhausted or permanent failure
 	logger.ErrorCF("channels", "Send failed", map[string]any{
 		"channel": name,
-		"chat_id": msg.ChatID,
+		"chat_id": outboundMessageChatID(msg),
 		"error":   lastErr.Error(),
 		"retries": maxRetries,
 	})
@@ -818,7 +927,7 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 	dispatchLoop(
 		ctx, m,
 		m.bus.OutboundChan(),
-		func(msg bus.OutboundMessage) string { return msg.Channel },
+		func(msg bus.OutboundMessage) string { return outboundMessageChannel(msg) },
 		func(ctx context.Context, w *channelWorker, msg bus.OutboundMessage) bool {
 			select {
 			case w.queue <- msg:
@@ -838,7 +947,7 @@ func (m *Manager) dispatchOutboundMedia(ctx context.Context) {
 	dispatchLoop(
 		ctx, m,
 		m.bus.OutboundMediaChan(),
-		func(msg bus.OutboundMediaMessage) string { return msg.Channel },
+		func(msg bus.OutboundMediaMessage) string { return outboundMediaChannel(msg) },
 		func(ctx context.Context, w *channelWorker, msg bus.OutboundMediaMessage) bool {
 			select {
 			case w.mediaQueue <- msg:
@@ -937,7 +1046,7 @@ func (m *Manager) sendMediaWithRetry(
 	// All retries exhausted or permanent failure
 	logger.ErrorCF("channels", "SendMedia failed", map[string]any{
 		"channel": name,
-		"chat_id": msg.ChatID,
+		"chat_id": outboundMediaChatID(msg),
 		"error":   lastErr.Error(),
 		"retries": maxRetries,
 	})
@@ -1081,7 +1190,13 @@ func (m *Manager) Reload(ctx context.Context, cfg *config.Config) error {
 			continue
 		}
 		// Lazily create worker only after channel starts successfully
-		w := newChannelWorker(name, channel)
+		channelType := name
+		if m.config != nil {
+			if bc := m.config.Channels.Get(name); bc != nil && bc.Type != "" {
+				channelType = bc.Type
+			}
+		}
+		w := newChannelWorker(name, channel, channelType)
 		m.workers[name] = w
 		go m.runWorker(dispatchCtx, name, w)
 		go m.runMediaWorker(dispatchCtx, name, w)
@@ -1130,16 +1245,19 @@ func (m *Manager) UnregisterChannel(name string) {
 // delivered (or all retries are exhausted), which preserves ordering when
 // a subsequent operation depends on the message having been sent.
 func (m *Manager) SendMessage(ctx context.Context, msg bus.OutboundMessage) error {
+	msg = bus.NormalizeOutboundMessage(msg)
+	channelName := outboundMessageChannel(msg)
+
 	m.mu.RLock()
-	_, exists := m.channels[msg.Channel]
-	w, wExists := m.workers[msg.Channel]
+	_, exists := m.channels[channelName]
+	w, wExists := m.workers[channelName]
 	m.mu.RUnlock()
 
 	if !exists {
-		return fmt.Errorf("channel %s not found", msg.Channel)
+		return fmt.Errorf("channel %s not found", channelName)
 	}
 	if !wExists || w == nil {
-		return fmt.Errorf("channel %s has no active worker", msg.Channel)
+		return fmt.Errorf("channel %s has no active worker", channelName)
 	}
 
 	maxLen := 0
@@ -1150,10 +1268,10 @@ func (m *Manager) SendMessage(ctx context.Context, msg bus.OutboundMessage) erro
 		for _, chunk := range SplitMessage(msg.Content, maxLen) {
 			chunkMsg := msg
 			chunkMsg.Content = chunk
-			m.sendWithRetry(ctx, msg.Channel, w, chunkMsg)
+			m.sendWithRetry(ctx, channelName, w, chunkMsg)
 		}
 	} else {
-		m.sendWithRetry(ctx, msg.Channel, w, msg)
+		m.sendWithRetry(ctx, channelName, w, msg)
 	}
 	return nil
 }
@@ -1163,19 +1281,22 @@ func (m *Manager) SendMessage(ctx context.Context, msg bus.OutboundMessage) erro
 // retries are exhausted), which preserves ordering when later agent behavior
 // depends on actual media delivery.
 func (m *Manager) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	msg = bus.NormalizeOutboundMediaMessage(msg)
+	channelName := outboundMediaChannel(msg)
+
 	m.mu.RLock()
-	_, exists := m.channels[msg.Channel]
-	w, wExists := m.workers[msg.Channel]
+	_, exists := m.channels[channelName]
+	w, wExists := m.workers[channelName]
 	m.mu.RUnlock()
 
 	if !exists {
-		return fmt.Errorf("channel %s not found", msg.Channel)
+		return fmt.Errorf("channel %s not found", channelName)
 	}
 	if !wExists || w == nil {
-		return fmt.Errorf("channel %s has no active worker", msg.Channel)
+		return fmt.Errorf("channel %s has no active worker", channelName)
 	}
 
-	_, err := m.sendMediaWithRetry(ctx, msg.Channel, w, msg)
+	_, err := m.sendMediaWithRetry(ctx, channelName, w, msg)
 	return err
 }
 
@@ -1190,10 +1311,10 @@ func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, conten
 	}
 
 	msg := bus.OutboundMessage{
-		Channel: channelName,
-		ChatID:  chatID,
+		Context: bus.NewOutboundContext(channelName, chatID, ""),
 		Content: content,
 	}
+	msg = bus.NormalizeOutboundMessage(msg)
 
 	if wExists && w != nil {
 		select {

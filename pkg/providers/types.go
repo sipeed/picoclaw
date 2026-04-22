@@ -19,6 +19,7 @@ type (
 	GoogleExtra            = protocoltypes.GoogleExtra
 	ContentBlock           = protocoltypes.ContentBlock
 	CacheControl           = protocoltypes.CacheControl
+	Attachment             = protocoltypes.Attachment
 )
 
 type LLMProvider interface {
@@ -74,6 +75,7 @@ const (
 	FailoverAuth            FailoverReason = "auth"
 	FailoverRateLimit       FailoverReason = "rate_limit"
 	FailoverBilling         FailoverReason = "billing"
+	FailoverNetwork         FailoverReason = "network"
 	FailoverTimeout         FailoverReason = "timeout"
 	FailoverFormat          FailoverReason = "format"
 	FailoverContextOverflow FailoverReason = "context_overflow"

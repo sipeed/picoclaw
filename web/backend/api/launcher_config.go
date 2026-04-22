@@ -61,11 +61,15 @@ func (h *Handler) handleUpdateLauncherConfig(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	cfg := launcherconfig.Config{
-		Port:         payload.Port,
-		Public:       payload.Public,
-		AllowedCIDRs: append([]string(nil), payload.AllowedCIDRs...),
+	cfg, err := h.loadLauncherConfig()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load launcher config: %v", err), http.StatusInternalServerError)
+		return
 	}
+	cfg.Port = payload.Port
+	cfg.Public = payload.Public
+	cfg.AllowedCIDRs = append([]string(nil), payload.AllowedCIDRs...)
+	cfg.LegacyLauncherToken = ""
 	if err := launcherconfig.Validate(cfg); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

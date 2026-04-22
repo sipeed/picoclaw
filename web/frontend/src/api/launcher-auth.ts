@@ -1,29 +1,33 @@
 /**
- * Dashboard launcher token login. Uses plain fetch (not launcherFetch) to avoid
- * redirect loops on 401 while on the login page.
+ * Dashboard launcher auth API.
+ * Uses plain fetch (not launcherFetch) to avoid redirect loops on auth pages.
  */
+export type LoginResult =
+  | { ok: true }
+  | { ok: false; status: number; error: string }
+
 export async function postLauncherDashboardLogin(
-  token: string,
-): Promise<boolean> {
+  password: string,
+): Promise<LoginResult> {
   const res = await fetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "same-origin",
-    body: JSON.stringify({ token: token.trim() }),
+    body: JSON.stringify({ password: password.trim() }),
   })
-  return res.ok
-}
+  if (res.ok) return { ok: true }
 
-export type LauncherAuthTokenHelp = {
-  env_var_name: string
-  log_file?: string
-  tray_copy_menu: boolean
-  console_stdout: boolean
+  return {
+    ok: false,
+    status: res.status,
+    error: await readLauncherAuthError(res),
+  }
 }
 
 export type LauncherAuthStatus = {
   authenticated: boolean
-  token_help?: LauncherAuthTokenHelp
+  /** true when a bcrypt password has been stored in the DB */
+  initialized: boolean
 }
 
 export async function getLauncherAuthStatus(): Promise<LauncherAuthStatus> {
@@ -45,4 +49,34 @@ export async function postLauncherDashboardLogout(): Promise<boolean> {
     body: "{}",
   })
   return res.ok
+}
+
+export type SetupResult = { ok: true } | { ok: false; error: string }
+
+export async function postLauncherDashboardSetup(
+  password: string,
+  confirm: string,
+): Promise<SetupResult> {
+  const res = await fetch("/api/auth/setup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      password: password.trim(),
+      confirm: confirm.trim(),
+    }),
+  })
+  if (res.ok) return { ok: true }
+  return { ok: false, error: await readLauncherAuthError(res) }
+}
+
+async function readLauncherAuthError(res: Response): Promise<string> {
+  let msg = `Request failed with status ${res.status}`
+  try {
+    const j = (await res.json()) as { error?: string }
+    if (j.error) msg = j.error
+  } catch {
+    /* ignore */
+  }
+  return msg
 }
