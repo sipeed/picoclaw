@@ -12,9 +12,8 @@ import (
 	"github.com/sipeed/picoclaw/web/backend/middleware"
 )
 
-// PasswordStore is the interface for bcrypt-backed dashboard password persistence.
-// Implemented by dashboardauth.Store; a nil value falls back to the legacy
-// static-token comparison.
+// PasswordStore is the interface for dashboard password persistence.
+// Implemented by dashboardauth.Store and launcherconfig.PasswordStore.
 type PasswordStore interface {
 	IsInitialized(ctx context.Context) (bool, error)
 	SetPassword(ctx context.Context, plain string) error
@@ -23,18 +22,13 @@ type PasswordStore interface {
 
 // LauncherAuthRouteOpts configures dashboard auth handlers.
 type LauncherAuthRouteOpts struct {
-	// DashboardToken is the fallback plaintext token used when PasswordStore is
-	// nil or not yet initialized (env-var / config-file source, and ?token= auto-login).
-	DashboardToken string
-	SessionCookie  string
-	SecureCookie   func(*http.Request) bool
-	// PasswordStore enables bcrypt-backed password persistence. When non-nil and
-	// initialized, web-form login verifies against the stored hash instead of
-	// the plaintext DashboardToken.
+	SessionCookie string
+	SecureCookie  func(*http.Request) bool
+	// PasswordStore enables password login. It must be non-nil for auth to work.
 	PasswordStore PasswordStore
 	// StoreError holds the error returned when opening the password store. When
-	// non-nil and PasswordStore is nil, the auth endpoints surface a recovery
-	// message instead of an opaque 501/503.
+	// non-nil and PasswordStore is nil, auth endpoints fail closed with a
+	// recovery message.
 	StoreError error
 }
 
@@ -59,7 +53,6 @@ func RegisterLauncherAuthRoutes(mux *http.ServeMux, opts LauncherAuthRouteOpts) 
 		secure = middleware.DefaultLauncherDashboardSecureCookie
 	}
 	h := &launcherAuthHandlers{
-		token:         opts.DashboardToken,
 		sessionCookie: opts.SessionCookie,
 		secureCookie:  secure,
 		store:         opts.PasswordStore,
@@ -73,7 +66,6 @@ func RegisterLauncherAuthRoutes(mux *http.ServeMux, opts LauncherAuthRouteOpts) 
 }
 
 type launcherAuthHandlers struct {
-	token         string
 	sessionCookie string
 	secureCookie  func(*http.Request) bool
 	store         PasswordStore
@@ -81,29 +73,18 @@ type launcherAuthHandlers struct {
 	loginLimit    *loginRateLimiter
 }
 
-func (h *launcherAuthHandlers) usesLegacyTokenAuth() bool {
-	return h.store == nil && h.storeErr == nil && h.token != ""
-}
-
 // isStoreInitialized safely queries the store.
-// Returns (true, nil) when legacy token auth is active without a password store.
-// Returns (false, nil) when no store/token fallback is configured.
 // Returns (false, err) on store errors — callers must treat this as a 5xx, not as
 // "uninitialized", to keep auth fail-closed.
-// Exception: handleLogin swallows storeErr and falls back to token auth so
-// that a corrupt DB does not lock out all access.
 func (h *launcherAuthHandlers) isStoreInitialized(ctx context.Context) (bool, error) {
 	if h.store == nil {
 		if h.storeErr != nil {
 			return false, fmt.Errorf(
 				"password store unavailable (%w); "+
-					"to recover, stop the application, delete the database file and restart ",
+					"to recover, stop the application, reset dashboard password storage, and restart",
 				h.storeErr)
 		}
-		if h.usesLegacyTokenAuth() {
-			return true, nil
-		}
-		return false, nil
+		return false, fmt.Errorf("password store not configured")
 	}
 	return h.store.IsInitialized(ctx)
 }
@@ -123,35 +104,25 @@ func (h *launcherAuthHandlers) handleLogin(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	in := strings.TrimSpace(body.Password)
-	var ok bool
 
 	initialized, initErr := h.isStoreInitialized(r.Context())
 	if initErr != nil {
-		if h.storeErr != nil {
-			// Store failed to open at startup — token login remains available.
-			initialized = false
-		} else {
-			w.WriteHeader(http.StatusInternalServerError)
-			writeErrorf(w, "%v", initErr)
-			return
-		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+		writeErrorf(w, "%v", initErr)
+		return
+	}
+	if !initialized {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":"password has not been set"}`))
+		return
 	}
 
-	if initialized && h.store != nil {
-		// Bcrypt path: verify against the stored hash.
-		var err error
-		ok, err = h.store.VerifyPassword(r.Context(), in)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			writeErrorf(w, "password verification failed: %v", err)
-			return
-		}
-	} else {
-		// Fallback: constant-time compare against the plaintext token.
-		ok = len(in) == len(h.token) &&
-			subtle.ConstantTimeCompare([]byte(in), []byte(h.token)) == 1
+	ok, err := h.store.VerifyPassword(r.Context(), in)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		writeErrorf(w, "password verification failed: %v", err)
+		return
 	}
-
 	if !ok {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"invalid password"}`))
@@ -221,22 +192,19 @@ func (h *launcherAuthHandlers) handleStatus(w http.ResponseWriter, r *http.Reque
 // handleSetup sets or changes the dashboard password.
 //
 // Rules:
-//   - If the store has no password yet, the endpoint is open (no session required).
+//   - If the store has no password yet, anyone who can reach the setup endpoint
+//     may initialize the password.
 //   - If a password is already set, the caller must hold a valid session cookie.
 func (h *launcherAuthHandlers) handleSetup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if h.usesLegacyTokenAuth() {
-		w.WriteHeader(http.StatusNotImplemented)
-		_, _ = w.Write(
-			[]byte(`{"error":"password setup is unavailable on this platform; use the dashboard token instead"}`),
-		)
-		return
-	}
-
 	if h.store == nil {
-		w.WriteHeader(http.StatusNotImplemented)
-		_, _ = w.Write([]byte(`{"error":"password store not configured"}`))
+		w.WriteHeader(http.StatusServiceUnavailable)
+		if h.storeErr != nil {
+			writeErrorf(w, "password store unavailable: %v", h.storeErr)
+		} else {
+			_, _ = w.Write([]byte(`{"error":"password store not configured"}`))
+		}
 		return
 	}
 

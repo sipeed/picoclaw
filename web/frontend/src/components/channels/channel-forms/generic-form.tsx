@@ -2,6 +2,14 @@ import { useTranslation } from "react-i18next"
 
 import type { ChannelConfig } from "@/api/channels"
 import {
+  type ArrayFieldFlusher,
+  ChannelArrayListField,
+} from "@/components/channels/channel-array-list-field"
+import {
+  asStringArray,
+  parseAllowFromInput,
+} from "@/components/channels/channel-array-utils"
+import {
   getSecretInputPlaceholder,
   isSecretField,
 } from "@/components/channels/channel-config-fields"
@@ -16,6 +24,11 @@ interface GenericFormProps {
   hiddenKeys?: string[]
   requiredKeys?: string[]
   fieldErrors?: Record<string, string>
+  registerArrayFieldFlusher?: (
+    fieldPath: string,
+    flusher: ArrayFieldFlusher | null,
+  ) => void
+  arrayFieldResetVersion?: number
 }
 
 // Fields to skip in the generic form (handled by enabled toggle or internal).
@@ -48,11 +61,6 @@ function asString(value: unknown): string {
   return typeof value === "string" ? value : ""
 }
 
-function asStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value.filter((item): item is string => typeof item === "string")
-}
-
 function asRecord(value: unknown): Record<string, unknown> {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, unknown>
@@ -71,6 +79,8 @@ export function GenericForm({
   hiddenKeys = [],
   requiredKeys = [],
   fieldErrors = {},
+  registerArrayFieldFlusher,
+  arrayFieldResetVersion,
 }: GenericFormProps) {
   const { t } = useTranslation()
   const hiddenFieldSet = new Set(hiddenKeys)
@@ -187,26 +197,18 @@ export function GenericForm({
 
     if (Array.isArray(value)) {
       return (
-        <Field
+        <ChannelArrayListField
           key={key}
           label={formatLabel(key)}
           required={isRequired}
           hint={buildHint(key)}
           error={fieldErrors[key]}
-        >
-          <Input
-            value={asStringArray(value).join(", ")}
-            onChange={(e) =>
-              onChange(
-                key,
-                e.target.value
-                  .split(",")
-                  .map((s: string) => s.trim())
-                  .filter(Boolean),
-              )
-            }
-          />
-        </Field>
+          value={asStringArray(value)}
+          onChange={(nextValue) => onChange(key, nextValue)}
+          fieldPath={key}
+          registerFlusher={registerArrayFieldFlusher}
+          resetVersion={arrayFieldResetVersion}
+        />
       )
     }
 
@@ -281,46 +283,31 @@ export function GenericForm({
 
             {config.allow_from !== undefined &&
               !hiddenFieldSet.has("allow_from") && (
-                <Field
+                <ChannelArrayListField
                   label={t("channels.field.allowFrom")}
                   hint={t("channels.form.desc.allowFrom")}
-                >
-                  <Input
-                    value={asStringArray(config.allow_from).join(", ")}
-                    onChange={(e) =>
-                      onChange(
-                        "allow_from",
-                        e.target.value
-                          .split(",")
-                          .map((s: string) => s.trim())
-                          .filter(Boolean),
-                      )
-                    }
-                    placeholder={t("channels.field.allowFromPlaceholder")}
-                  />
-                </Field>
+                  value={asStringArray(config.allow_from)}
+                  onChange={(value) => onChange("allow_from", value)}
+                  placeholder={t("channels.field.allowFromPlaceholder")}
+                  parser={parseAllowFromInput}
+                  fieldPath="allow_from"
+                  registerFlusher={registerArrayFieldFlusher}
+                  resetVersion={arrayFieldResetVersion}
+                />
               )}
 
             {config.allow_origins !== undefined &&
               !hiddenFieldSet.has("allow_origins") && (
-                <Field
+                <ChannelArrayListField
                   label={t("channels.field.allowOrigins")}
                   hint={t("channels.form.desc.allowOrigins")}
-                >
-                  <Input
-                    value={asStringArray(config.allow_origins).join(", ")}
-                    onChange={(e) =>
-                      onChange(
-                        "allow_origins",
-                        e.target.value
-                          .split(",")
-                          .map((s: string) => s.trim())
-                          .filter(Boolean),
-                      )
-                    }
-                    placeholder={t("channels.field.allowOriginsPlaceholder")}
-                  />
-                </Field>
+                  value={asStringArray(config.allow_origins)}
+                  onChange={(value) => onChange("allow_origins", value)}
+                  placeholder={t("channels.field.allowOriginsPlaceholder")}
+                  fieldPath="allow_origins"
+                  registerFlusher={registerArrayFieldFlusher}
+                  resetVersion={arrayFieldResetVersion}
+                />
               )}
 
             {config.allow_token_query !== undefined &&
@@ -356,26 +343,21 @@ export function GenericForm({
                     />
                   </div>
 
-                  <Field
+                  <ChannelArrayListField
                     label={t("channels.field.groupTriggerPrefixes")}
                     hint={t("channels.form.desc.groupTriggerPrefixes")}
-                  >
-                    <Input
-                      value={asStringArray(groupTriggerConfig.prefixes).join(
-                        ", ",
-                      )}
-                      onChange={(e) =>
-                        onChange("group_trigger", {
-                          ...groupTriggerConfig,
-                          prefixes: e.target.value
-                            .split(",")
-                            .map((s: string) => s.trim())
-                            .filter(Boolean),
-                        })
-                      }
-                      placeholder={t("channels.field.groupTriggerPrefixes")}
-                    />
-                  </Field>
+                    value={asStringArray(groupTriggerConfig.prefixes)}
+                    onChange={(value) =>
+                      onChange("group_trigger", {
+                        ...groupTriggerConfig,
+                        prefixes: value,
+                      })
+                    }
+                    placeholder={t("channels.field.groupTriggerPrefixes")}
+                    fieldPath="group_trigger.prefixes"
+                    registerFlusher={registerArrayFieldFlusher}
+                    resetVersion={arrayFieldResetVersion}
+                  />
                 </>
               )}
 

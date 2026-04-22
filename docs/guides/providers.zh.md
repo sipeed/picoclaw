@@ -52,7 +52,7 @@
 | **Anthropic**       | `anthropic/`      | `https://api.anthropic.com/v1`                      | Anthropic | [获取密钥](https://console.anthropic.com)                         |
 | **智谱 AI (GLM)**   | `zhipu/`          | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [获取密钥](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
 | **DeepSeek**        | `deepseek/`       | `https://api.deepseek.com/v1`                       | OpenAI    | [获取密钥](https://platform.deepseek.com)                         |
-| **Google Gemini**   | `gemini/`         | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [获取密钥](https://aistudio.google.com/api-keys)                  |
+| **Google Gemini**   | `gemini/`         | `https://generativelanguage.googleapis.com/v1beta`  | Gemini    | [获取密钥](https://aistudio.google.com/api-keys)                  |
 | **Groq**            | `groq/`           | `https://api.groq.com/openai/v1`                    | OpenAI    | [获取密钥](https://console.groq.com)                              |
 | **Moonshot**        | `moonshot/`       | `https://api.moonshot.cn/v1`                        | OpenAI    | [获取密钥](https://platform.moonshot.cn)                          |
 | **通义千问 (Qwen)** | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [获取密钥](https://dashscope.console.aliyun.com)                  |
@@ -116,7 +116,7 @@
 | `api_keys` | string[] | 是* | 认证密钥。多个密钥可按请求轮换。本地 provider（Ollama、LM Studio、VLLM）不需要 |
 | `api_base` | string | 否 | 覆盖默认的 API 端点 URL |
 | `proxy` | string | 否 | 此模型条目的 HTTP 代理 URL |
-| `user_agent` | string | 否 | 自定义 `User-Agent` 请求头（支持 OpenAI 兼容、Anthropic 和 Azure provider） |
+| `user_agent` | string | 否 | 自定义 `User-Agent` 请求头（支持 OpenAI 兼容、Gemini、Anthropic 和 Azure provider） |
 | `request_timeout` | int | 否 | 请求超时时间（秒），默认值因 provider 而异 |
 | `max_tokens_field` | string | 否 | 覆盖请求体中 max tokens 的字段名（如 o1 模型使用 `max_completion_tokens`） |
 | `thinking_level` | string | 否 | 扩展思考级别：`off`、`low`、`medium`、`high`、`xhigh` 或 `adaptive` |
@@ -386,10 +386,11 @@ PicoClaw 在发送请求前仅去除外层 `litellm/` 前缀，因此 `litellm/l
 PicoClaw 按协议族路由 Provider：
 
 - OpenAI 兼容协议：OpenRouter、OpenAI 兼容网关、Groq、智谱、vLLM 风格端点。
+- Gemini 原生协议：Google Gemini 通过原生 `models/*:generateContent` 和 `models/*:streamGenerateContent` 端点接入。
 - Anthropic 协议：Claude 原生 API 行为。
 - Codex/OAuth 路径：OpenAI OAuth/Token 认证路由。
 
-这使得运行时保持轻量，同时让新的 OpenAI 兼容后端基本只需配置操作（`api_base` + `api_key`）。
+这使得运行时保持轻量，同时让新的 OpenAI 兼容后端基本只需配置操作（`api_base` + `api_keys`）。
 
 <details>
 <summary><b>智谱 (Zhipu) 配置示例</b></summary>

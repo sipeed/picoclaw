@@ -45,7 +45,7 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 Abra http://localhost:18800 no seu navegador. O launcher gerencia o processo do gateway automaticamente.
 
 > [!WARNING]
-> O console web ainda não suporta autenticação. Evite expô-lo na internet pública.
+> O console web é protegido por senha de login do dashboard. Não exponha o launcher a redes não confiáveis nem à internet pública.
 
 ### Modo Agent (One-shot)
 

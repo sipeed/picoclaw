@@ -340,7 +340,7 @@ Responde HEARTBEAT_OK      Usuário recebe resultado diretamente
 | **Anthropic**           | `anthropic/`    | `https://api.anthropic.com/v1`                      | Anthropic | [Obter](https://console.anthropic.com)                           |
 | **智谱 AI (GLM)**       | `zhipu/`        | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Obter](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys)   |
 | **DeepSeek**            | `deepseek/`     | `https://api.deepseek.com/v1`                       | OpenAI    | [Obter](https://platform.deepseek.com)                           |
-| **Google Gemini**       | `gemini/`       | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [Obter](https://aistudio.google.com/api-keys)                    |
+| **Google Gemini**       | `gemini/`       | `https://generativelanguage.googleapis.com/v1beta`  | Gemini    | [Obter](https://aistudio.google.com/api-keys)                    |
 | **Groq**                | `groq/`         | `https://api.groq.com/openai/v1`                    | OpenAI    | [Obter](https://console.groq.com)                                |
 | **通义千问 (Qwen)**     | `qwen/`         | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Obter](https://dashscope.console.aliyun.com)                    |
 | **Ollama**              | `ollama/`       | `http://localhost:11434/v1`                         | OpenAI    | Local (sem chave)                                                |
@@ -370,8 +370,11 @@ A configuração antiga `providers` está **depreciada** e foi removida no V2. C
 PicoClaw roteia providers por família de protocolo:
 
 - **Compatível com OpenAI**: OpenRouter, Groq, Zhipu, endpoints vLLM e a maioria dos outros.
+- **Gemini nativo**: Google Gemini via endpoints nativos `models/*:generateContent` e `models/*:streamGenerateContent`.
 - **Anthropic**: Comportamento nativo da API Claude.
 - **Codex/OAuth**: Rota de autenticação OAuth/token OpenAI.
+
+Isso mantém o runtime leve enquanto torna novos backends compatíveis com OpenAI basicamente uma operação de configuração (`api_base` + `api_keys`).
 
 ### Tarefas Agendadas / Lembretes
 

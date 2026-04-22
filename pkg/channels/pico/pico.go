@@ -296,11 +296,13 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 	}
 	msgID := uuid.New().String()
 
-	outMsg := newMessage(TypeMessageCreate, map[string]any{
+	payload := map[string]any{
 		PayloadKeyContent: content,
 		PayloadKeyThought: isThought,
 		"message_id":      msgID,
-	})
+	}
+	setContextUsagePayload(payload, msg.ContextUsage)
+	outMsg := newMessage(TypeMessageCreate, payload)
 
 	if err := c.broadcastToSession(msg.ChatID, outMsg); err != nil {
 		return nil, err
@@ -825,4 +827,17 @@ func validateInlineImageDataURL(mediaURL string) error {
 	}
 
 	return nil
+}
+
+// setContextUsagePayload adds context window usage stats to a pico payload.
+func setContextUsagePayload(payload map[string]any, u *bus.ContextUsage) {
+	if u == nil {
+		return
+	}
+	payload["context_usage"] = map[string]any{
+		"used_tokens":        u.UsedTokens,
+		"total_tokens":       u.TotalTokens,
+		"compress_at_tokens": u.CompressAtTokens,
+		"used_percent":       u.UsedPercent,
+	}
 }

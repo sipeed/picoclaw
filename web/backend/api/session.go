@@ -460,6 +460,9 @@ func visibleSessionMessages(messages []providers.Message, toolFeedbackMaxArgsLen
 
 	for _, msg := range messages {
 		switch msg.Role {
+		case "tool":
+			continue
+
 		case "user":
 			if sessionMessageVisible(msg) {
 				transcript = append(transcript, sessionChatMessage{
@@ -510,7 +513,18 @@ func visibleSessionMessages(messages []providers.Message, toolFeedbackMaxArgsLen
 		}
 	}
 
-	return transcript
+	return filterSessionChatMessages(transcript)
+}
+
+func filterSessionChatMessages(messages []sessionChatMessage) []sessionChatMessage {
+	filtered := messages[:0]
+	for _, msg := range messages {
+		if msg.Role != "user" && msg.Role != "assistant" {
+			continue
+		}
+		filtered = append(filtered, msg)
+	}
+	return filtered
 }
 
 func assistantToolCallContentDuplicated(
@@ -574,15 +588,22 @@ func visibleAssistantToolSummaryMessages(
 
 	messages := make([]sessionChatMessage, 0, len(toolCalls))
 	for _, tc := range toolCalls {
-		name := tc.Name
-		if tc.Function != nil {
-			if name == "" {
-				name = tc.Function.Name
+		name, argsJSON := toolCallNameAndArguments(tc)
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+		if name == "web_search" || name == "web_fetch" {
+			continue
+		}
+		if name == "message" {
+			if _, ok := parseMessageToolContent(argsJSON); ok {
+				continue
 			}
 		}
 
-		if strings.TrimSpace(name) == "" {
-			continue
+		argsPreview := strings.TrimSpace(argsJSON)
+		if argsPreview == "" {
+			argsPreview = "{}"
 		}
 
 		messages = append(messages, sessionChatMessage{
@@ -627,34 +648,51 @@ func visibleAssistantToolMessages(toolCalls []providers.ToolCall) []sessionChatM
 
 	messages := make([]sessionChatMessage, 0, len(toolCalls))
 	for _, tc := range toolCalls {
-		name := tc.Name
-		argsJSON := ""
-		if tc.Function != nil {
-			if name == "" {
-				name = tc.Function.Name
-			}
-			argsJSON = tc.Function.Arguments
+		name, argsJSON := toolCallNameAndArguments(tc)
+		if name != "message" {
+			continue
 		}
-
-		switch name {
-		case "message":
-			var args struct {
-				Content string `json:"content"`
-			}
-			if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-				continue
-			}
-			if strings.TrimSpace(args.Content) == "" {
-				continue
-			}
-			messages = append(messages, sessionChatMessage{
-				Role:    "assistant",
-				Content: args.Content,
-			})
+		content, ok := parseMessageToolContent(argsJSON)
+		if !ok {
+			continue
 		}
+		messages = append(messages, sessionChatMessage{
+			Role:    "assistant",
+			Content: content,
+		})
 	}
 
 	return messages
+}
+
+func toolCallNameAndArguments(tc providers.ToolCall) (string, string) {
+	name := tc.Name
+	argsJSON := ""
+	if tc.Function != nil {
+		if name == "" {
+			name = tc.Function.Name
+		}
+		argsJSON = tc.Function.Arguments
+	}
+	if strings.TrimSpace(argsJSON) == "" && len(tc.Arguments) > 0 {
+		if encodedArgs, err := json.Marshal(tc.Arguments); err == nil {
+			argsJSON = string(encodedArgs)
+		}
+	}
+	return name, argsJSON
+}
+
+func parseMessageToolContent(argsJSON string) (string, bool) {
+	var args struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", false
+	}
+	if strings.TrimSpace(args.Content) == "" {
+		return "", false
+	}
+	return args.Content, true
 }
 
 // sessionsDir resolves the path to the gateway's session storage directory.

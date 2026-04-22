@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -208,6 +209,36 @@ func (cb *ContextBuilder) BuildSystemPromptWithCache() string {
 		})
 
 	return prompt
+}
+
+// EstimateSystemTokens estimates the token count of the full system message
+// that would be sent to the LLM, mirroring the composition logic in BuildMessages.
+// It includes: static prompt, dynamic context, active skills, and summary with
+// wrapping prefixes and separators. This avoids needing all per-request parameters
+// that BuildMessages requires (media, channel, chatID, sender, etc.).
+func (cb *ContextBuilder) EstimateSystemTokens(summary string, activeSkills []string) int {
+	staticPrompt := cb.BuildSystemPromptWithCache()
+
+	// Dynamic context is small and varies per request; use a representative estimate.
+	// Actual buildDynamicContext produces ~200-400 chars of time/runtime/session info.
+	const dynamicContextChars = 300
+
+	totalChars := utf8.RuneCountInString(staticPrompt) + dynamicContextChars
+
+	if skillsText := cb.buildActiveSkillsContext(activeSkills); skillsText != "" {
+		totalChars += utf8.RuneCountInString(skillsText)
+		totalChars += 7 // separator \n\n---\n\n
+	}
+
+	if summary != "" {
+		// Matches the CONTEXT_SUMMARY: prefix added in BuildMessages
+		const summaryPrefix = "CONTEXT_SUMMARY: The following is an approximate summary of prior conversation " +
+			"for reference only. It may be incomplete or outdated — always defer to explicit instructions.\n\n"
+		totalChars += utf8.RuneCountInString(summaryPrefix) + utf8.RuneCountInString(summary)
+		totalChars += 7 // separator
+	}
+
+	return totalChars * 2 / 5 // same heuristic as tokenizer.EstimateMessageTokens
 }
 
 // InvalidateCache clears the cached system prompt.

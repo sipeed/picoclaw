@@ -56,13 +56,22 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	var cfg config.Config
-	if err = json.Unmarshal(body, &cfg); err != nil {
+	var raw map[string]any
+	if err = json.Unmarshal(body, &raw); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
 	}
-	var raw map[string]any
-	if err = json.Unmarshal(body, &raw); err != nil {
+	if err = normalizeChannelArrayFields(raw); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid channel array field: %v", err), http.StatusBadRequest)
+		return
+	}
+	normalizedBody, err := json.Marshal(raw)
+	if err != nil {
+		http.Error(w, "Failed to normalize config payload", http.StatusBadRequest)
+		return
+	}
+	var cfg config.Config
+	if err = json.Unmarshal(normalizedBody, &cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -154,6 +163,10 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Recursively merge patch into base
 	mergeMap(base, patch)
+	if err = normalizeChannelArrayFields(base); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid channel array field: %v", err), http.StatusBadRequest)
+		return
+	}
 
 	// Convert merged map back to Config struct
 	merged, err := json.Marshal(base)
@@ -380,6 +393,184 @@ func asMapField(value map[string]any, key string) (map[string]any, bool) {
 	}
 	m, isMap := raw.(map[string]any)
 	return m, isMap
+}
+
+var (
+	allowFromHiddenCharsRe = regexp.MustCompile("[\u200B\u200C\u200D\u200E\u200F\u202A-\u202E\u2060-\u2069\uFEFF]")
+	allowFromSplitRe       = regexp.MustCompile("[,\uFF0C、;；\r\n\t]+")
+	conservativeSplitRe    = regexp.MustCompile("[,\uFF0C\r\n\t]+")
+)
+
+type stringArrayParserOptions struct {
+	stripHiddenChars bool
+}
+
+func normalizeChannelArrayFields(raw map[string]any) error {
+	channelsMap, hasChannels := asMapField(raw, "channel_list")
+	if !hasChannels {
+		return nil
+	}
+
+	defaultCfg := config.DefaultConfig()
+	for channelName, rawChannel := range channelsMap {
+		chMap, ok := rawChannel.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		if rawAllowFrom, exists := chMap["allow_from"]; exists {
+			normalized, err := normalizeStringArrayValue(rawAllowFrom, stringArrayParserOptions{
+				stripHiddenChars: true,
+			})
+			if err != nil {
+				return fmt.Errorf("channel_list.%s.allow_from: %w", channelName, err)
+			}
+			chMap["allow_from"] = normalized
+		}
+
+		if groupTrigger, ok := asMapField(chMap, "group_trigger"); ok {
+			if rawPrefixes, exists := groupTrigger["prefixes"]; exists {
+				normalized, err := normalizeStringArrayValue(rawPrefixes, stringArrayParserOptions{})
+				if err != nil {
+					return fmt.Errorf("channel_list.%s.group_trigger.prefixes: %w", channelName, err)
+				}
+				groupTrigger["prefixes"] = normalized
+			}
+		}
+
+		settingsMap, hasSettings := asMapField(chMap, "settings")
+		if !hasSettings {
+			continue
+		}
+
+		settingsType := channelSettingsType(defaultCfg, channelName, chMap)
+		if settingsType == nil {
+			continue
+		}
+
+		for i := range settingsType.NumField() {
+			field := settingsType.Field(i)
+			if !field.IsExported() || !isStringSliceType(field.Type) {
+				continue
+			}
+			jsonKey := strings.Split(field.Tag.Get("json"), ",")[0]
+			if jsonKey == "" || jsonKey == "-" {
+				continue
+			}
+			rawValue, exists := settingsMap[jsonKey]
+			if !exists {
+				continue
+			}
+
+			options := stringArrayParserOptions{}
+			if jsonKey == "allow_from" {
+				options.stripHiddenChars = true
+			}
+			normalized, err := normalizeStringArrayValue(rawValue, options)
+			if err != nil {
+				return fmt.Errorf("channel_list.%s.settings.%s: %w", channelName, jsonKey, err)
+			}
+			settingsMap[jsonKey] = normalized
+		}
+	}
+	return nil
+}
+
+func channelSettingsType(
+	defaultCfg *config.Config,
+	channelName string,
+	channelMap map[string]any,
+) reflect.Type {
+	if channelType, _ := channelMap["type"].(string); channelType != "" {
+		if bc := defaultCfg.Channels.GetByType(channelType); bc != nil {
+			if decoded, err := bc.GetDecoded(); err == nil && decoded != nil {
+				return derefType(reflect.TypeOf(decoded))
+			}
+		}
+	}
+
+	if bc := defaultCfg.Channels.Get(channelName); bc != nil {
+		if decoded, err := bc.GetDecoded(); err == nil && decoded != nil {
+			return derefType(reflect.TypeOf(decoded))
+		}
+	}
+
+	return nil
+}
+
+func derefType(typ reflect.Type) reflect.Type {
+	for typ != nil && typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+	return typ
+}
+
+func isStringSliceType(typ reflect.Type) bool {
+	typ = derefType(typ)
+	return typ != nil && typ.Kind() == reflect.Slice && typ.Elem().Kind() == reflect.String
+}
+
+func normalizeStringArrayValue(value any, options stringArrayParserOptions) ([]string, error) {
+	switch typed := value.(type) {
+	case nil:
+		return nil, nil
+	case string:
+		return parseStringArrayValue(typed, options), nil
+	case float64:
+		return normalizeStringArrayItems([]string{fmt.Sprintf("%.0f", typed)}, options), nil
+	case []string:
+		return normalizeStringArrayItems(typed, options), nil
+	case []any:
+		items := make([]string, 0, len(typed))
+		for _, item := range typed {
+			switch raw := item.(type) {
+			case string:
+				items = append(items, raw)
+			case float64:
+				items = append(items, fmt.Sprintf("%.0f", raw))
+			default:
+				return nil, fmt.Errorf("unsupported list item type %T", item)
+			}
+		}
+		return normalizeStringArrayItems(items, options), nil
+	default:
+		return nil, fmt.Errorf("unsupported list field type %T", value)
+	}
+}
+
+func parseStringArrayValue(raw string, options stringArrayParserOptions) []string {
+	if strings.TrimSpace(raw) == "" {
+		return []string{}
+	}
+	splitRe := conservativeSplitRe
+	if options.stripHiddenChars {
+		splitRe = allowFromSplitRe
+	}
+	return normalizeStringArrayItems(splitRe.Split(raw, -1), options)
+}
+
+func normalizeStringArrayItems(items []string, options stringArrayParserOptions) []string {
+	result := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		normalized := item
+		if options.stripHiddenChars {
+			normalized = allowFromHiddenCharsRe.ReplaceAllString(normalized, "")
+		}
+		normalized = strings.TrimSpace(normalized)
+		if normalized == "" {
+			continue
+		}
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	if len(result) == 0 {
+		return []string{}
+	}
+	return result
 }
 
 func getSecretString(m map[string]any, key string) (string, bool) {

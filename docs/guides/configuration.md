@@ -71,15 +71,16 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 
 ### Web launcher dashboard
 
-**picoclaw-launcher** serves a browser UI that requires sign-in first. By default, the **dashboard token** and **session signing key** are **generated in memory on each start** (a new random token after every restart). Set **`PICOCLAW_LAUNCHER_TOKEN`** to pin a fixed token for that process (startup logs do not print the secret when this env var is used).
-
-**Where to read the token**: In **console mode** (`-console`), it is printed at startup. In **tray / GUI mode**, use the tray action **Copy dashboard token**, and check **`$PICOCLAW_HOME/logs/launcher.log`** (typically `~/.picoclaw/logs/launcher.log` if `PICOCLAW_HOME` is unset) for the random token logged on startup. The login page shows hints that match how the launcher is running (including the absolute log path); **responses do not include the token itself**.
+**picoclaw-launcher** serves a browser UI that requires password sign-in first. On first run, open `/launcher-setup` to create the dashboard password. Later manual sign-ins use `/launcher-login`.
 
 - **Config file**: Same directory as `config.json` (or the file pointed to by `PICOCLAW_CONFIG`). The launcher-specific file is `launcher-config.json`.
-- **Sign-in and links**: Enter the token on the login page, or open with `?token=` when the browser is launched automatically. All responses include **`Referrer-Policy: no-referrer`** to reduce leakage of `token` via the `Referer` header.
+- **Password storage**: On supported platforms, the password is stored as a bcrypt hash in `launcher-auth.db`. On platforms where the SQLite password store is unavailable, the bcrypt hash is stored in `launcher-config.json`.
+- **Legacy migration**: Older `launcher_token` values are migrated once into password login and removed from saved launcher config.
+- **Local auto-login**: When the launcher auto-opens a local browser after startup, it uses a one-shot loopback-only bootstrap endpoint to set the session cookie automatically.
+- **Unsupported auth paths**: URL token login (`?token=...`), `PICOCLAW_LAUNCHER_TOKEN`, and `Authorization: Bearer` dashboard auth are no longer supported.
 - **Sign-out**: Use **`POST /api/auth/logout`** with **`Content-Type: application/json`** (body may be `{}`). Do not rely on a GET URL for logout (CSRF-safe pattern).
 - **Brute-force**: **`POST /api/auth/login`** is **rate-limited per client IP per minute** (HTTP 429 when exceeded).
-- **Session lifetime**: The HttpOnly session cookie lasts about **7 days** by default; sign in again with the token after it expires.
+- **Session lifetime**: The HttpOnly session cookie lasts about **31 days** by default, but sessions are invalidated when the launcher process restarts.
 
 ### Skill Sources
 
@@ -576,7 +577,7 @@ For complete documentation, see [`../security/security_configuration.md`](../sec
 | **Anthropic**           | `anthropic/`      | `https://api.anthropic.com/v1`                      | Anthropic | [Get Key](https://console.anthropic.com)                         |
 | **智谱 AI (GLM)**       | `zhipu/`          | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
 | **DeepSeek**            | `deepseek/`       | `https://api.deepseek.com/v1`                       | OpenAI    | [Get Key](https://platform.deepseek.com)                         |
-| **Google Gemini**       | `gemini/`         | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [Get Key](https://aistudio.google.com/api-keys)                  |
+| **Google Gemini**       | `gemini/`         | `https://generativelanguage.googleapis.com/v1beta`  | Gemini    | [Get Key](https://aistudio.google.com/api-keys)                  |
 | **Groq**                | `groq/`           | `https://api.groq.com/openai/v1`                    | OpenAI    | [Get Key](https://console.groq.com)                              |
 | **Moonshot**            | `moonshot/`       | `https://api.moonshot.cn/v1`                        | OpenAI    | [Get Key](https://platform.moonshot.cn)                          |
 | **通义千问 (Qwen)**     | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Get Key](https://dashscope.console.aliyun.com)                  |
@@ -820,6 +821,7 @@ The old `providers` configuration is **deprecated** and has been removed in V2. 
 PicoClaw routes providers by protocol family:
 
 - **OpenAI-compatible**: OpenRouter, Groq, Zhipu, vLLM-style endpoints, and most others.
+- **Gemini native**: Google Gemini via the native `models/*:generateContent` and `models/*:streamGenerateContent` endpoints.
 - **Anthropic**: Claude-native API behavior.
 - **Codex/OAuth**: OpenAI OAuth/token authentication route.
 

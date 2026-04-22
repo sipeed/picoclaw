@@ -154,7 +154,7 @@ Identify protocol via prefix in `model` field:
 | `openai/` | OpenAI-compatible | Most common, includes DeepSeek, Qwen, Groq, etc. |
 | `anthropic/` | Anthropic | Claude series specific |
 | `antigravity/` | Antigravity | Google Cloud Code Assist |
-| `gemini/` | Gemini | Google Gemini native API (if needed) |
+| `gemini/` | Gemini | Google Gemini native API |
 
 ---
 
