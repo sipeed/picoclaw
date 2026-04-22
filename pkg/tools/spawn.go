@@ -124,7 +124,7 @@ Task: %s`,
 		go func() {
 			result, err := t.spawner.SpawnSubTurn(ctx, SubTurnConfig{
 				Model:        t.defaultModel,
-				Tools:        nil, // Will inherit from parent via context
+				Tools:        nil, // Inherit from the parent turn registry at runtime.
 				SystemPrompt: systemPrompt,
 				MaxTokens:    t.maxTokens,
 				Temperature:  t.temperature,
