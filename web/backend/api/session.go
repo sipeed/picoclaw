@@ -709,11 +709,6 @@ func visibleAssistantToolSummaryMessages(
 			}
 		}
 
-		argsPreview := strings.TrimSpace(argsJSON)
-		if argsPreview == "" {
-			argsPreview = "{}"
-		}
-
 		messages = append(messages, sessionChatMessage{
 			Role: "assistant",
 			Content: utils.FormatToolFeedbackMessage(
