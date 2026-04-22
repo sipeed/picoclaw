@@ -698,6 +698,142 @@ func TestGatewayStatusIncludesStartConditionWhenNotReady(t *testing.T) {
 	}
 }
 
+func TestGatewayStatusRunningSkipsRuntimeProbeForStartCondition(t *testing.T) {
+	resetGatewayTestState(t)
+	resetModelProbeHooks(t)
+
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "local-vllm",
+		Model:     "vllm/custom-model",
+		APIBase:   "http://127.0.0.1:8000/v1",
+	}}
+	cfg.Agents.Defaults.ModelName = "local-vllm"
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	process, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatalf("FindProcess() error = %v", err)
+	}
+	gateway.mu.Lock()
+	gateway.cmd = &exec.Cmd{Process: process}
+	gateway.bootDefaultModel = "local-vllm"
+	setGatewayRuntimeStatusLocked("running")
+	gateway.mu.Unlock()
+
+	probeCalls := 0
+	probeOpenAICompatibleModelFunc = func(apiBase, modelID, apiKey string) bool {
+		probeCalls++
+		return false
+	}
+	gatewayHealthGet = func(string, time.Duration) (*http.Response, error) {
+		return mockGatewayHealthResponse(http.StatusOK, os.Getpid()), nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if got := body["gateway_status"]; got != "running" {
+		t.Fatalf("gateway_status = %#v, want %q", got, "running")
+	}
+	if got := body["gateway_start_allowed"]; got != true {
+		t.Fatalf("gateway_start_allowed = %#v, want true", got)
+	}
+	if probeCalls != 0 {
+		t.Fatalf("runtime probe calls = %d, want 0 while running status is healthy", probeCalls)
+	}
+}
+
+func TestGatewayStatusStoppedStillUsesRuntimeProbeForStartCondition(t *testing.T) {
+	resetGatewayTestState(t)
+	resetModelProbeHooks(t)
+
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "local-vllm",
+		Model:     "vllm/custom-model",
+		APIBase:   "http://127.0.0.1:8000/v1",
+	}}
+	cfg.Agents.Defaults.ModelName = "local-vllm"
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	gateway.mu.Lock()
+	gateway.cmd = nil
+	gateway.bootDefaultModel = ""
+	setGatewayRuntimeStatusLocked("stopped")
+	gateway.mu.Unlock()
+
+	probeCalls := 0
+	probeOpenAICompatibleModelFunc = func(apiBase, modelID, apiKey string) bool {
+		probeCalls++
+		return false
+	}
+	gatewayHealthGet = func(string, time.Duration) (*http.Response, error) {
+		return nil, errors.New("no gateway running")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if got := body["gateway_status"]; got != "stopped" {
+		t.Fatalf("gateway_status = %#v, want %q", got, "stopped")
+	}
+	if got := body["gateway_start_allowed"]; got != false {
+		t.Fatalf("gateway_start_allowed = %#v, want false", got)
+	}
+	if reason, _ := body["gateway_start_reason"].(string); !strings.Contains(reason, "not reachable") {
+		t.Fatalf("gateway_start_reason = %#v, want contains %q", body["gateway_start_reason"], "not reachable")
+	}
+	if probeCalls != 1 {
+		t.Fatalf("runtime probe calls = %d, want 1 while stopped status checks start-readiness", probeCalls)
+	}
+}
+
 func TestGatewayStatusKeepsRunningWhenHealthProbeFailsAfterRunning(t *testing.T) {
 	resetGatewayTestState(t)
 
@@ -1042,6 +1178,100 @@ func TestGatewayStatusRequiresRestartAfterDefaultModelChange(t *testing.T) {
 	}
 	if got := body["gateway_restart_required"]; got != true {
 		t.Fatalf("gateway_restart_required = %#v, want true", got)
+	}
+}
+
+func TestGatewayStatusRunningRestartRequiredUsesRuntimeProbeForNewLocalDefault(t *testing.T) {
+	resetGatewayTestState(t)
+	resetModelProbeHooks(t)
+
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "remote-openai",
+			Model:     "openai/gpt-5.4",
+		},
+		{
+			ModelName: "local-vllm",
+			Model:     "vllm/custom-model",
+			APIBase:   "http://127.0.0.1:8000/v1",
+		},
+	}
+	cfg.ModelList[0].SetAPIKey("remote-key")
+	cfg.Agents.Defaults.ModelName = "remote-openai"
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	process, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatalf("FindProcess() error = %v", err)
+	}
+
+	bootSignature := computeConfigSignature(cfg)
+	gateway.mu.Lock()
+	gateway.cmd = &exec.Cmd{Process: process}
+	gateway.bootDefaultModel = "remote-openai"
+	gateway.bootConfigSignature = bootSignature
+	setGatewayRuntimeStatusLocked("running")
+	gateway.mu.Unlock()
+
+	updatedCfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	updatedCfg.Agents.Defaults.ModelName = "local-vllm"
+	if err := config.SaveConfig(configPath, updatedCfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	probeCalls := 0
+	probeOpenAICompatibleModelFunc = func(apiBase, modelID, apiKey string) bool {
+		probeCalls++
+		return false
+	}
+	gatewayHealthGet = func(string, time.Duration) (*http.Response, error) {
+		return mockGatewayHealthResponse(http.StatusOK, os.Getpid()), nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if got := body["gateway_status"]; got != "running" {
+		t.Fatalf("gateway_status = %#v, want %q", got, "running")
+	}
+	if got := body["gateway_restart_required"]; got != true {
+		t.Fatalf("gateway_restart_required = %#v, want true", got)
+	}
+	if got := body["gateway_start_allowed"]; got != false {
+		t.Fatalf("gateway_start_allowed = %#v, want false", got)
+	}
+	if reason, _ := body["gateway_start_reason"].(string); !strings.Contains(reason, "not reachable") {
+		t.Fatalf("gateway_start_reason = %#v, want contains %q", body["gateway_start_reason"], "not reachable")
+	}
+	if probeCalls != 1 {
+		t.Fatalf("runtime probe calls = %d, want 1 when running status requires restart", probeCalls)
 	}
 }
 
