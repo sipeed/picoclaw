@@ -390,7 +390,7 @@ func newTestPicoWebSocket(t *testing.T) (*websocket.Conn, <-chan PicoMessage, fu
 	}))
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
-	clientConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	clientConn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		server.Close()
 		t.Fatalf("Dial() error = %v", err)
@@ -400,6 +400,6 @@ func newTestPicoWebSocket(t *testing.T) (*websocket.Conn, <-chan PicoMessage, fu
 		clientConn.Close()
 		server.Close()
 	}
-
+	defer resp.Body.Close()
 	return clientConn, received, cleanup
 }
