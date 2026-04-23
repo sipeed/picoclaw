@@ -75,6 +75,14 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxS
 				continue
 			}
 
+			if strings.HasPrefix(mime, "audio/") {
+				dataURL := encodeImageToDataURL(localPath, mime, info, maxSize)
+				if dataURL != "" {
+					result[i].Audio = append(result[i].Audio, dataURL)
+				}
+				continue
+			}
+
 			pathTags = append(pathTags, buildPathTag(mime, localPath))
 		}
 
