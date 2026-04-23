@@ -72,6 +72,10 @@ func (sm *SessionManager) AddFullMessage(sessionKey string, msg providers.Messag
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
+	if strings.TrimSpace(msg.Timestamp) == "" {
+		msg.Timestamp = time.Now().Format(time.RFC3339Nano)
+	}
+
 	session, ok := sm.sessions[sessionKey]
 	if !ok {
 		session = &Session{

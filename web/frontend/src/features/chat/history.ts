@@ -50,7 +50,7 @@ export async function loadSessionMessages(
       media: message.media,
       attachments: message.attachments,
     }),
-    timestamp: fallbackTime,
+    timestamp: message.timestamp?.trim() || fallbackTime,
   }))
 }
 
