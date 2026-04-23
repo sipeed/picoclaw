@@ -991,10 +991,111 @@ func chatWithCacheKey(t *testing.T, apiBase string) map[string]any {
 	return requestBody
 }
 
+func chatStreamWithRequestBody(t *testing.T, apiBase string, opts ...Option) map[string]any {
+	t.Helper()
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(
+			w,
+			"data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n",
+		)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "", opts...)
+	p.apiBase = apiBase
+	p.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			r.URL, _ = url.Parse(server.URL + r.URL.Path)
+			return http.DefaultTransport.RoundTrip(r)
+		}),
+	}
+
+	_, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"test-model",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+	return requestBody
+}
+
 func TestProviderChat_PromptCacheKeySentToOpenAI(t *testing.T) {
 	body := chatWithCacheKey(t, "https://api.openai.com/v1")
 	if body["prompt_cache_key"] != "agent-main" {
 		t.Fatalf("prompt_cache_key = %v, want %q", body["prompt_cache_key"], "agent-main")
+	}
+}
+
+func TestProviderChatStream_IncludesUsageForOpenAI(t *testing.T) {
+	body := chatStreamWithRequestBody(t, "https://api.openai.com/v1")
+	streamOptions, ok := body["stream_options"].(map[string]any)
+	if !ok {
+		t.Fatalf("stream_options = %T, want map[string]any", body["stream_options"])
+	}
+	if got := streamOptions["include_usage"]; got != true {
+		t.Fatalf("stream_options.include_usage = %v, want true", got)
+	}
+}
+
+func TestProviderChatStream_PreservesExistingStreamOptions(t *testing.T) {
+	body := chatStreamWithRequestBody(
+		t,
+		"https://api.openai.com/v1",
+		WithExtraBody(map[string]any{
+			"stream_options": map[string]any{"custom_flag": true},
+		}),
+	)
+	streamOptions, ok := body["stream_options"].(map[string]any)
+	if !ok {
+		t.Fatalf("stream_options = %T, want map[string]any", body["stream_options"])
+	}
+	if got := streamOptions["custom_flag"]; got != true {
+		t.Fatalf("stream_options.custom_flag = %v, want true", got)
+	}
+	if got := streamOptions["include_usage"]; got != true {
+		t.Fatalf("stream_options.include_usage = %v, want true", got)
+	}
+}
+
+func TestProviderChatStream_OmitsUsageForNonOpenAI(t *testing.T) {
+	tests := []struct {
+		name    string
+		apiBase string
+	}{
+		{"mistral", "https://api.mistral.ai/v1"},
+		{"gemini", "https://generativelanguage.googleapis.com/v1beta"},
+		{"deepseek", "https://api.deepseek.com/v1"},
+		{"groq", "https://api.groq.com/openai/v1"},
+		{"minimax", "https://api.minimaxi.com/v1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := chatStreamWithRequestBody(t, tt.apiBase)
+			if _, exists := body["stream_options"]; exists {
+				t.Fatalf("stream_options should NOT be sent to %s, but was included in request", tt.name)
+			}
+		})
 	}
 }
 

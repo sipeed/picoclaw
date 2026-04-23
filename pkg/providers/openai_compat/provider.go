@@ -257,6 +257,14 @@ func (p *Provider) ChatStream(
 
 	requestBody := p.buildRequestBody(messages, tools, model, options)
 	requestBody["stream"] = true
+	if supportsStreamingUsage(p.apiBase) {
+		streamOptions := map[string]any{}
+		if existing, ok := requestBody["stream_options"].(map[string]any); ok {
+			streamOptions = maps.Clone(existing)
+		}
+		streamOptions["include_usage"] = true
+		requestBody["stream_options"] = streamOptions
+	}
 
 	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
@@ -471,6 +479,13 @@ func (p *Provider) SupportsNativeSearch() bool {
 }
 
 func isNativeSearchHost(apiBase string) bool {
+	return isOpenAINativeBaseURL(apiBase)
+}
+
+// isOpenAINativeBaseURL reports whether the given API base is the OpenAI or
+// Azure OpenAI native endpoint family. We reuse it for request fields that are
+// known to work only on those native hosts.
+func isOpenAINativeBaseURL(apiBase string) bool {
 	u, err := url.Parse(apiBase)
 	if err != nil {
 		return false
@@ -479,15 +494,10 @@ func isNativeSearchHost(apiBase string) bool {
 	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
 }
 
-// supportsPromptCacheKey reports whether the given API base is known to
-// support the prompt_cache_key request field. Currently only OpenAI's own
-// API and Azure OpenAI support this. All other OpenAI-compatible providers
-// (Mistral, Gemini, DeepSeek, Groq, etc.) reject unknown fields with 422 errors.
 func supportsPromptCacheKey(apiBase string) bool {
-	u, err := url.Parse(apiBase)
-	if err != nil {
-		return false
-	}
-	host := u.Hostname()
-	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
+	return isOpenAINativeBaseURL(apiBase)
+}
+
+func supportsStreamingUsage(apiBase string) bool {
+	return isOpenAINativeBaseURL(apiBase)
 }
