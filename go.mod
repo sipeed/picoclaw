@@ -34,7 +34,7 @@ require (
 	github.com/pion/rtp v1.10.1
 	github.com/pion/webrtc/v3 v3.3.6
 	github.com/rivo/tview v0.42.0
-	github.com/rs/zerolog v1.35.0
+	github.com/rs/zerolog v1.35.1
 	github.com/slack-go/slack v0.17.3
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
