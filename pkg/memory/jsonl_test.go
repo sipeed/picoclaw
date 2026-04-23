@@ -61,8 +61,14 @@ func TestAddMessage_BasicRoundtrip(t *testing.T) {
 	if history[0].Role != "user" || history[0].Content != "hello" {
 		t.Errorf("msg[0] = %+v", history[0])
 	}
+	if history[0].Timestamp == "" {
+		t.Errorf("msg[0].Timestamp is empty")
+	}
 	if history[1].Role != "assistant" || history[1].Content != "hi there" {
 		t.Errorf("msg[1] = %+v", history[1])
+	}
+	if history[1].Timestamp == "" {
+		t.Errorf("msg[1].Timestamp is empty")
 	}
 }
 
