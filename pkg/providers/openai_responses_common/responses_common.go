@@ -10,6 +10,7 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
 
+	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -118,7 +119,7 @@ func BuildMultipartContent(text string, media []string) responses.ResponseInputM
 				},
 			})
 		} else if strings.HasPrefix(mediaURL, "data:audio/") {
-			if format, data, ok := ParseDataAudioURL(mediaURL); ok {
+			if format, data, ok := common.ParseDataAudioURL(mediaURL); ok {
 				parts = append(parts, responses.ResponseInputContentUnionParam{
 					OfInputFile: &responses.ResponseInputFileParam{
 						FileData: openai.Opt(data),
@@ -130,25 +131,6 @@ func BuildMultipartContent(text string, media []string) responses.ResponseInputM
 	}
 
 	return parts
-}
-
-// ParseDataAudioURL extracts the format and base64 data from a data:audio/... URL.
-func ParseDataAudioURL(mediaURL string) (format, data string, ok bool) {
-	if !strings.HasPrefix(mediaURL, "data:audio/") {
-		return "", "", false
-	}
-	payload := strings.TrimPrefix(mediaURL, "data:audio/")
-	meta, data, found := strings.Cut(payload, ",")
-	if !found {
-		return "", "", false
-	}
-	format, _, _ = strings.Cut(meta, ";")
-	format = strings.TrimSpace(format)
-	data = strings.TrimSpace(data)
-	if format == "" || data == "" {
-		return "", "", false
-	}
-	return format, data, true
 }
 
 // ResolveToolCall extracts the function name and JSON arguments string from a ToolCall.

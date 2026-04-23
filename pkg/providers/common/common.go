@@ -127,7 +127,7 @@ func SerializeMessages(messages []Message) []any {
 				continue
 			}
 
-			if format, data, ok := parseDataAudioURL(mediaURL); ok {
+			if format, data, ok := ParseDataAudioURL(mediaURL); ok {
 				parts = append(parts, map[string]any{
 					"type": "input_audio",
 					"input_audio": map[string]any{
@@ -205,7 +205,8 @@ func serializeToolCalls(toolCalls []ToolCall) []openaiToolCall {
 	return out
 }
 
-func parseDataAudioURL(mediaURL string) (format, data string, ok bool) {
+// ParseDataAudioURL extracts the format and base64 data from a data:audio/... URL.
+func ParseDataAudioURL(mediaURL string) (format, data string, ok bool) {
 	if !strings.HasPrefix(mediaURL, "data:audio/") {
 		return "", "", false
 	}

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -51,7 +52,7 @@ func NewProvider(apiKey, apiBase, userAgent string) *Provider {
 
 // NewProviderWithTimeout creates a provider with custom request timeout.
 func NewProviderWithTimeout(apiKey, apiBase, userAgent string, timeoutSeconds int) *Provider {
-	baseURL := normalizeBaseURL(apiBase)
+	baseURL := common.NormalizeBaseURL(apiBase, defaultBaseURL, true)
 	timeout := defaultRequestTimeout
 	if timeoutSeconds > 0 {
 		timeout = time.Duration(timeoutSeconds) * time.Second
@@ -161,7 +162,7 @@ func buildRequestBody(
 	options map[string]any,
 ) (map[string]any, error) {
 	// max_tokens is required and guaranteed by agent loop
-	maxTokens, ok := asInt(options["max_tokens"])
+	maxTokens, ok := common.AsInt(options["max_tokens"])
 	if !ok {
 		return nil, fmt.Errorf("max_tokens is required in options")
 	}
@@ -173,7 +174,7 @@ func buildRequestBody(
 	}
 
 	// Set temperature from options
-	if temp, ok := asFloat(options["temperature"]); ok {
+	if temp, ok := common.AsFloat(options["temperature"]); ok {
 		result["temperature"] = temp
 	}
 
@@ -359,61 +360,6 @@ func parseResponseBody(body []byte) (*LLMResponse, error) {
 			TotalTokens:      int(resp.Usage.InputTokens + resp.Usage.OutputTokens),
 		},
 	}, nil
-}
-
-// normalizeBaseURL ensures the base URL is properly formatted.
-// It removes /v1 suffix if present (to avoid duplication) and always appends /v1.
-// This handles edge cases like "https://api.example.com/v1/proxy" correctly.
-func normalizeBaseURL(apiBase string) string {
-	base := strings.TrimSpace(apiBase)
-	if base == "" {
-		return defaultBaseURL
-	}
-
-	// Remove trailing slashes
-	base = strings.TrimRight(base, "/")
-
-	// Remove /v1 suffix if present (will be re-added)
-	// This prevents duplication for URLs like "https://api.example.com/v1/proxy"
-	if before, ok := strings.CutSuffix(base, "/v1"); ok {
-		base = before
-	}
-
-	// Ensure we don't have an empty string after cutting
-	if base == "" {
-		return defaultBaseURL
-	}
-
-	// Add /v1 suffix (required by Anthropic Messages API)
-	return base + "/v1"
-}
-
-// Helper functions for type conversion
-
-func asInt(v any) (int, bool) {
-	switch val := v.(type) {
-	case int:
-		return val, true
-	case float64:
-		return int(val), true
-	case int64:
-		return int(val), true
-	default:
-		return 0, false
-	}
-}
-
-func asFloat(v any) (float64, bool) {
-	switch val := v.(type) {
-	case float64:
-		return val, true
-	case int:
-		return float64(val), true
-	case int64:
-		return float64(val), true
-	default:
-		return 0, false
-	}
 }
 
 // Anthropic API response structures

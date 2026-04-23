@@ -470,7 +470,9 @@ func (p *Provider) SupportsNativeSearch() bool {
 	return isNativeSearchHost(p.apiBase)
 }
 
-func isNativeSearchHost(apiBase string) bool {
+// isNativeOpenAIOrAzureEndpoint reports whether the given API base points to
+// OpenAI's own API or an Azure OpenAI deployment.
+func isNativeOpenAIOrAzureEndpoint(apiBase string) bool {
 	u, err := url.Parse(apiBase)
 	if err != nil {
 		return false
@@ -479,15 +481,14 @@ func isNativeSearchHost(apiBase string) bool {
 	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
 }
 
+func isNativeSearchHost(apiBase string) bool {
+	return isNativeOpenAIOrAzureEndpoint(apiBase)
+}
+
 // supportsPromptCacheKey reports whether the given API base is known to
 // support the prompt_cache_key request field. Currently only OpenAI's own
 // API and Azure OpenAI support this. All other OpenAI-compatible providers
 // (Mistral, Gemini, DeepSeek, Groq, etc.) reject unknown fields with 422 errors.
 func supportsPromptCacheKey(apiBase string) bool {
-	u, err := url.Parse(apiBase)
-	if err != nil {
-		return false
-	}
-	host := u.Hostname()
-	return host == "api.openai.com" || strings.HasSuffix(host, ".openai.azure.com")
+	return isNativeOpenAIOrAzureEndpoint(apiBase)
 }

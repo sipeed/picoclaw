@@ -660,6 +660,37 @@ func TestAsFloat(t *testing.T) {
 	}
 }
 
+// --- ParseDataAudioURL tests ---
+
+func TestParseDataAudioURL(t *testing.T) {
+	tests := []struct {
+		name       string
+		mediaURL   string
+		wantFormat string
+		wantData   string
+		wantOK     bool
+	}{
+		{"valid mp3", "data:audio/mp3;base64,SGVsbG8=", "mp3", "SGVsbG8=", true},
+		{"valid wav", "data:audio/wav;base64,AAAA", "wav", "AAAA", true},
+		{"not audio", "data:image/png;base64,abc", "", "", false},
+		{"no comma", "data:audio/mp3;base64", "", "", false},
+		{"empty data", "data:audio/mp3;base64,", "", "", false},
+		{"empty string", "", "", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			format, data, ok := ParseDataAudioURL(tt.mediaURL)
+			if ok != tt.wantOK || format != tt.wantFormat || data != tt.wantData {
+				t.Errorf(
+					"ParseDataAudioURL(%q) = (%q, %q, %v), want (%q, %q, %v)",
+					tt.mediaURL, format, data, ok,
+					tt.wantFormat, tt.wantData, tt.wantOK,
+				)
+			}
+		})
+	}
+}
+
 // --- WrapHTMLResponseError tests ---
 
 func TestWrapHTMLResponseError(t *testing.T) {
