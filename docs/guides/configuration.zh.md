@@ -69,15 +69,16 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 
 ### Web 启动器控制台
 
-用 **picoclaw-launcher** 打开浏览器控制台前需要先登录。**访问口令**与 **会话签名密钥**默认在**每次启动时在内存中生成**（重启后随机口令会变）。若设置环境变量 **`PICOCLAW_LAUNCHER_TOKEN`**，则该进程使用固定口令（启动日志中不会打印具体口令值）。
-
-**到哪里找口令**：**控制台模式**（`-console`）请看启动时的终端输出；**托盘 / GUI 模式**可使用托盘菜单中的「复制控制台口令」，并在 **`$PICOCLAW_HOME/logs/launcher.log`**（未设置 `PICOCLAW_HOME` 时一般为 `~/.picoclaw/logs/launcher.log`）中查看本次启动写入的随机口令。登录页在未登录时会根据当前运行方式展示提示（含日志文件绝对路径等；**接口与页面均不会返回口令本身**）。
+用 **picoclaw-launcher** 打开浏览器控制台前需要先使用密码登录。首次启动时打开 `/launcher-setup` 创建 dashboard 登录密码；后续手动登录使用 `/launcher-login`。
 
 - **配置文件**：与 `config.json` 同一目录（若设置了 `PICOCLAW_CONFIG`，则与它所指的文件同目录）。启动器专用文件名为 `launcher-config.json`。
-- **登录与链接**：在登录页输入口令；自动打开浏览器时可在 URL 上使用 `?token=`。全站响应携带 **`Referrer-Policy: no-referrer`**，减轻 `token` 经 `Referer` 头泄露的风险。
+- **密码存储**：支持的平台会把 bcrypt 后的密码哈希存入 `launcher-auth.db`。如果当前平台不支持 SQLite 密码存储，则把 bcrypt 哈希存入 `launcher-config.json`。
+- **旧配置迁移**：旧版 `launcher_token` 会一次性迁移为密码登录，并从保存后的 launcher 配置中移除。
+- **本地自动登录**：launcher 启动后自动打开本地浏览器时，会使用仅允许 loopback 访问的一次性引导入口自动设置会话 Cookie。
+- **不再支持的鉴权方式**：不再支持 URL token 登录（`?token=...`）、`PICOCLAW_LAUNCHER_TOKEN` 和 `Authorization: Bearer` dashboard 鉴权。
 - **退出登录**：应使用 **`POST /api/auth/logout`**，且请求头为 **`Content-Type: application/json`**（请求体可为 `{}`），勿使用可被第三方页面触发的 GET 链接登出。
 - **暴力尝试**：`POST /api/auth/login` 对同一远程地址有 **每分钟尝试次数上限**（超限返回 HTTP 429）。
-- **会话时长**：登录后的 HttpOnly 会话 Cookie 默认约 **7 天**有效，到期需重新用口令登录。
+- **会话时长**：登录后的 HttpOnly 会话 Cookie 默认约 **31 天**有效，但 launcher 进程重启后已有会话会失效。
 
 ### 技能来源 (Skill Sources)
 
@@ -424,7 +425,7 @@ Agent 读取 HEARTBEAT.md
 
 ### 模型配置 (model_list)
 
-> **新特性：** PicoClaw 现在采用**以模型为中心**的配置方式。只需指定 `vendor/model` 格式（例如 `zhipu/glm-4.7`）即可接入新提供商——**无需修改任何代码！**
+> **新特性：** PicoClaw 现在优先推荐显式 `provider` + 原生 `model` 的配置方式，例如 `"provider": "zhipu", "model": "glm-4.7"`。如果未设置 `provider`，旧的单字段 `provider/model` 写法仍然兼容。
 
 这一设计同时支持**多 Agent**场景，灵活选择提供商：
 
@@ -435,31 +436,31 @@ Agent 读取 HEARTBEAT.md
 
 #### 所有支持的厂商
 
-| 厂商                    | `model` 前缀      | 默认 API Base                                       | 协议      | API Key                                                          |
+| 厂商                    | `provider` 值     | 默认 API Base                                       | 协议      | API Key                                                          |
 | ----------------------- | ----------------- | --------------------------------------------------- | --------- | ---------------------------------------------------------------- |
-| **OpenAI**              | `openai/`         | `https://api.openai.com/v1`                         | OpenAI    | [获取](https://platform.openai.com)                              |
-| **Anthropic**           | `anthropic/`      | `https://api.anthropic.com/v1`                      | Anthropic | [获取](https://console.anthropic.com)                            |
-| **智谱 AI (GLM)**       | `zhipu/`          | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [获取](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys)    |
-| **DeepSeek**            | `deepseek/`       | `https://api.deepseek.com/v1`                       | OpenAI    | [获取](https://platform.deepseek.com)                            |
-| **Google Gemini**       | `gemini/`         | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI    | [获取](https://aistudio.google.com/api-keys)                     |
-| **Groq**                | `groq/`           | `https://api.groq.com/openai/v1`                    | OpenAI    | [获取](https://console.groq.com)                                 |
-| **Moonshot**            | `moonshot/`       | `https://api.moonshot.cn/v1`                        | OpenAI    | [获取](https://platform.moonshot.cn)                             |
-| **通义千问 (Qwen)**     | `qwen/`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [获取](https://dashscope.console.aliyun.com)                     |
-| **NVIDIA**              | `nvidia/`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [获取](https://build.nvidia.com)                                 |
-| **Ollama**              | `ollama/`         | `http://localhost:11434/v1`                         | OpenAI    | 本地（无需 Key）                                                 |
-| **LM Studio**           | `lmstudio/`       | `http://localhost:1234/v1`                          | OpenAI    | 可选（本地默认无需密钥）                                         |
-| **OpenRouter**          | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [获取](https://openrouter.ai/keys)                               |
-| **LiteLLM Proxy**       | `litellm/`        | `http://localhost:4000/v1`                          | OpenAI    | 你的 LiteLLM 代理 Key                                            |
-| **VLLM**                | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | 本地                                                             |
-| **Cerebras**            | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [获取](https://cerebras.ai)                                      |
-| **火山引擎 (豆包)**     | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [获取](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
-| **神算云**              | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | —                                                                |
-| **BytePlus**            | `byteplus/`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [获取](https://www.byteplus.com)                                 |
-| **Vivgrid**             | `vivgrid/`        | `https://api.vivgrid.com/v1`                        | OpenAI    | [获取](https://vivgrid.com)                                      |
-| **LongCat**             | `longcat/`        | `https://api.longcat.chat/openai`                   | OpenAI    | [获取](https://longcat.chat/platform)                            |
-| **ModelScope (魔搭)**   | `modelscope/`     | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [获取](https://modelscope.cn/my/tokens)                          |
-| **Antigravity**         | `antigravity/`    | Google Cloud                                        | Custom    | 仅 OAuth                                                         |
-| **GitHub Copilot**      | `github-copilot/` | `localhost:4321`                                    | gRPC      | —                                                                |
+| **OpenAI**              | `openai`          | `https://api.openai.com/v1`                         | OpenAI    | [获取](https://platform.openai.com)                              |
+| **Anthropic**           | `anthropic`       | `https://api.anthropic.com/v1`                      | Anthropic | [获取](https://console.anthropic.com)                            |
+| **智谱 AI (GLM)**       | `zhipu`           | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [获取](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys)    |
+| **DeepSeek**            | `deepseek`        | `https://api.deepseek.com/v1`                       | OpenAI    | [获取](https://platform.deepseek.com)                            |
+| **Google Gemini**       | `gemini`          | `https://generativelanguage.googleapis.com/v1beta`  | Gemini    | [获取](https://aistudio.google.com/api-keys)                     |
+| **Groq**                | `groq`            | `https://api.groq.com/openai/v1`                    | OpenAI    | [获取](https://console.groq.com)                                 |
+| **Moonshot**            | `moonshot`        | `https://api.moonshot.cn/v1`                        | OpenAI    | [获取](https://platform.moonshot.cn)                             |
+| **通义千问 (Qwen)**     | `qwen`            | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [获取](https://dashscope.console.aliyun.com)                     |
+| **NVIDIA**              | `nvidia`          | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [获取](https://build.nvidia.com)                                 |
+| **Ollama**              | `ollama`          | `http://localhost:11434/v1`                         | OpenAI    | 本地（无需 Key）                                                 |
+| **LM Studio**           | `lmstudio`        | `http://localhost:1234/v1`                          | OpenAI    | 可选（本地默认无需密钥）                                         |
+| **OpenRouter**          | `openrouter`      | `https://openrouter.ai/api/v1`                      | OpenAI    | [获取](https://openrouter.ai/keys)                               |
+| **LiteLLM Proxy**       | `litellm`         | `http://localhost:4000/v1`                          | OpenAI    | 你的 LiteLLM 代理 Key                                            |
+| **VLLM**                | `vllm`            | `http://localhost:8000/v1`                          | OpenAI    | 本地                                                             |
+| **Cerebras**            | `cerebras`        | `https://api.cerebras.ai/v1`                        | OpenAI    | [获取](https://cerebras.ai)                                      |
+| **火山引擎 (豆包)**     | `volcengine`      | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [获取](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
+| **神算云**              | `shengsuanyun`    | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | —                                                                |
+| **BytePlus**            | `byteplus`        | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [获取](https://www.byteplus.com)                                 |
+| **Vivgrid**             | `vivgrid`         | `https://api.vivgrid.com/v1`                        | OpenAI    | [获取](https://vivgrid.com)                                      |
+| **LongCat**             | `longcat`         | `https://api.longcat.chat/openai`                   | OpenAI    | [获取](https://longcat.chat/platform)                            |
+| **ModelScope (魔搭)**   | `modelscope`      | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [获取](https://modelscope.cn/my/tokens)                          |
+| **Antigravity**         | `antigravity`     | Google Cloud                                        | Custom    | 仅 OAuth                                                         |
+| **GitHub Copilot**      | `github-copilot`  | `localhost:4321`                                    | gRPC      | —                                                                |
 
 #### 基础配置
 
@@ -468,22 +469,26 @@ Agent 读取 HEARTBEAT.md
   "model_list": [
     {
       "model_name": "ark-code-latest",
-      "model": "volcengine/ark-code-latest",
+      "provider": "volcengine",
+      "model": "ark-code-latest",
       "api_keys": ["sk-your-api-key"]
     },
     {
       "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
       "api_keys": ["sk-your-openai-key"]
     },
     {
       "model_name": "claude-sonnet-4.6",
-      "model": "anthropic/claude-sonnet-4.6",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4.6",
       "api_keys": ["sk-ant-your-key"]
     },
     {
       "model_name": "glm-4.7",
-      "model": "zhipu/glm-4.7",
+      "provider": "zhipu",
+      "model": "glm-4.7",
       "api_keys": ["your-zhipu-key"]
     }
   ],
@@ -495,6 +500,13 @@ Agent 读取 HEARTBEAT.md
 }
 ```
 
+解析规则：
+
+- 推荐显式写成 `"provider": "openai", "model": "gpt-5.4"`。
+- 如果设置了 `provider`，PicoClaw 会将 `model` 原样发送。
+- 如果未设置 `provider`，PicoClaw 会把 `model` 第一个 `/` 之前的字段当作 provider，并把第一个 `/` 之后的全部内容当作最终模型 ID。
+- 这意味着 `"model": "openrouter/openai/gpt-5.4"` 这样的兼容写法仍然可用，并会把 `openai/gpt-5.4` 发送给 OpenRouter。
+
 #### 各厂商配置示例
 
 <details>
@@ -503,7 +515,8 @@ Agent 读取 HEARTBEAT.md
 ```json
 {
   "model_name": "gpt-5.4",
-  "model": "openai/gpt-5.4",
+  "provider": "openai",
+  "model": "gpt-5.4",
   "api_keys": ["sk-..."]
 }
 ```
@@ -516,7 +529,8 @@ Agent 读取 HEARTBEAT.md
 ```json
 {
   "model_name": "ark-code-latest",
-  "model": "volcengine/ark-code-latest",
+  "provider": "volcengine",
+  "model": "ark-code-latest",
   "api_keys": ["sk-..."]
 }
 ```
@@ -529,7 +543,8 @@ Agent 读取 HEARTBEAT.md
 ```json
 {
   "model_name": "glm-4.7",
-  "model": "zhipu/glm-4.7",
+  "provider": "zhipu",
+  "model": "glm-4.7",
   "api_keys": ["your-key"]
 }
 ```
@@ -542,7 +557,8 @@ Agent 读取 HEARTBEAT.md
 ```json
 {
   "model_name": "deepseek-chat",
-  "model": "deepseek/deepseek-chat",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
   "api_keys": ["sk-..."]
 }
 ```
@@ -555,7 +571,8 @@ Agent 读取 HEARTBEAT.md
 ```json
 {
   "model_name": "claude-sonnet-4.6",
-  "model": "anthropic/claude-sonnet-4.6",
+  "provider": "anthropic",
+  "model": "claude-sonnet-4.6",
   "api_keys": ["sk-ant-your-key"]
 }
 ```
@@ -567,7 +584,8 @@ Agent 读取 HEARTBEAT.md
 ```json
 {
   "model_name": "claude-opus-4-6",
-  "model": "anthropic-messages/claude-opus-4-6",
+  "provider": "anthropic-messages",
+  "model": "claude-opus-4-6",
   "api_keys": ["sk-ant-your-key"],
   "api_base": "https://api.anthropic.com"
 }
@@ -583,7 +601,8 @@ Agent 读取 HEARTBEAT.md
 ```json
 {
   "model_name": "llama3",
-  "model": "ollama/llama3"
+  "provider": "ollama",
+  "model": "llama3"
 }
 ```
 
@@ -595,12 +614,13 @@ Agent 读取 HEARTBEAT.md
 ```json
 {
   "model_name": "lmstudio-local",
-  "model": "lmstudio/openai/gpt-oss-20b"
+  "provider": "lmstudio",
+  "model": "openai/gpt-oss-20b"
 }
 ```
 
 `api_base` 默认是 `http://localhost:1234/v1`。除非你在 LM Studio 侧启用了认证，否则不需要配置 API Key。
-PicoClaw 向 LM Studio 的 OpenAI 兼容终结点发送请求，且将移除首个 `lmstudio/` 前缀，因此 `lmstudio/openai/gpt-oss-20b` 会发送 `openai/gpt-oss-20b`。
+显式设置 `provider` 后，PicoClaw 会把 `openai/gpt-oss-20b` 原样发送给 LM Studio。旧的兼容写法 `"model": "lmstudio/openai/gpt-oss-20b"` 在未设置 `provider` 时也会解析成相同的上游模型 ID。
 
 </details>
 
@@ -610,13 +630,14 @@ PicoClaw 向 LM Studio 的 OpenAI 兼容终结点发送请求，且将移除首�
 ```json
 {
   "model_name": "my-custom-model",
-  "model": "openai/custom-model",
+  "provider": "openai",
+  "model": "custom-model",
   "api_base": "https://my-proxy.com/v1",
   "api_keys": ["sk-..."]
 }
 ```
 
-PicoClaw 只剥离最外层的 `litellm/` 前缀再发送请求，因此 `litellm/lite-gpt4` 发送 `lite-gpt4`，而 `litellm/openai/gpt-4o` 发送 `openai/gpt-4o`。
+显式设置 `provider` 后，PicoClaw 会将 `model` 原样发送。因此 `"provider": "litellm", "model": "lite-gpt4"` 会发送 `lite-gpt4`，而 `"provider": "litellm", "model": "openai/gpt-4o"` 会发送 `openai/gpt-4o`。旧的兼容写法 `litellm/lite-gpt4` 和 `litellm/openai/gpt-4o` 在未设置 `provider` 时也会得到相同结果。
 
 </details>
 
@@ -629,13 +650,15 @@ PicoClaw 只剥离最外层的 `litellm/` 前缀再发送请求，因此 `litell
   "model_list": [
     {
       "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
       "api_base": "https://api1.example.com/v1",
       "api_keys": ["sk-key1"]
     },
     {
       "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
       "api_base": "https://api2.example.com/v1",
       "api_keys": ["sk-key2"]
     }
@@ -652,10 +675,11 @@ PicoClaw 只剥离最外层的 `litellm/` 前缀再发送请求，因此 `litell
 PicoClaw 按协议族路由提供商：
 
 - **OpenAI 兼容**：OpenRouter、Groq、智谱、vLLM 风格端点及大多数其他提供商。
+- **Gemini 原生**：Google Gemini 通过原生 `models/*:generateContent` 和 `models/*:streamGenerateContent` 端点接入。
 - **Anthropic**：Claude 原生 API 行为。
 - **Codex/OAuth**：OpenAI OAuth/Token 认证路由。
 
-这使运行时保持轻量，同时让接入新的 OpenAI 兼容后端基本只需配置 `api_base` + `api_key`。
+这使运行时保持轻量，同时让接入新的 OpenAI 兼容后端基本只需配置 `api_base` + `api_keys`。
 
 <details>
 <summary><b>智谱（旧版 providers 格式）</b></summary>
@@ -689,7 +713,7 @@ PicoClaw 按协议族路由提供商：
 {
   "agents": {
     "defaults": {
-      "model": "anthropic/claude-opus-4-5"
+      "model_name": "claude-opus-4-5"
     }
   },
   "session": {

@@ -17,7 +17,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/channels/pico"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/health"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -37,26 +36,10 @@ var gateway = struct {
 	startupDeadline     time.Time
 	logs                *LogBuffer
 	pidData             *ppid.PidFileData // pid file data read from picoclaw.pid.json
-	picoToken           string            // cached pico token from config (for proxy auth validation)
+	picoToken           string            // cached raw pico token for upstream gateway proxy injection
 }{
 	runtimeStatus: "stopped",
 	logs:          NewLogBuffer(200),
-}
-
-// refreshPicoToken updates gateway.picoToken from cfg
-func refreshPicoToken(cfg *config.Config) {
-	gateway.mu.Lock()
-	defer gateway.mu.Unlock()
-	var picoCfg config.PicoSettings
-	if bc := cfg.Channels.GetByType(config.ChannelPico); bc != nil {
-		decoded, err := bc.GetDecoded()
-		if err == nil && decoded != nil {
-			if p, ok := decoded.(*config.PicoSettings); ok {
-				picoCfg = *p
-			}
-		}
-	}
-	gateway.picoToken = picoCfg.Token.String()
 }
 
 // refreshPicoTokensLocked reads the pico token from config and caches it.
@@ -101,18 +84,15 @@ const (
 	tokenPrefix = "token."
 )
 
-// picoComposedToken returns "pico-"+pidToken+picoToken for gateway auth.
-func picoComposedToken(token string) string {
+// picoGatewayProtocol returns the gateway-facing pico subprotocol that the
+// launcher should inject when proxying browser traffic upstream.
+func picoGatewayProtocol() string {
 	gateway.mu.Lock()
 	defer gateway.mu.Unlock()
-	// if not initial pico token, don't allow gateway auth
-	if gateway.picoToken == "" || gateway.pidData == nil {
+	if gateway.picoToken == "" {
 		return ""
 	}
-	if tokenPrefix+gateway.picoToken != token {
-		return ""
-	}
-	return pico.PicoTokenPrefix + gateway.pidData.Token + gateway.picoToken
+	return tokenPrefix + gateway.picoToken
 }
 
 var (
@@ -752,7 +732,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	gateway.logs.Reset()
 
 	// Ensure Pico Channel is configured before starting gateway
-	changed, err := h.EnsurePicoChannel("")
+	changed, err := h.EnsurePicoChannel()
 	if err != nil {
 		logger.ErrorC("gateway", fmt.Sprintf("Warning: failed to ensure pico channel: %v", err))
 		// Non-fatal: gateway can still start without pico channel

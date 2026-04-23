@@ -31,13 +31,11 @@ func TestStartCommandRegistration_DoesNotBlock(t *testing.T) {
 }
 
 func TestStartCommandRegistration_RetriesUntilSuccessThenStops(t *testing.T) {
-	ch := &TelegramChannel{}
+	ch := &TelegramChannel{
+		commandRegDelayFn: func(int) time.Duration { return 5 * time.Millisecond },
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	origBackoff := commandRegistrationBackoff
-	commandRegistrationBackoff = []time.Duration{5 * time.Millisecond}
-	defer func() { commandRegistrationBackoff = origBackoff }()
 
 	var attempts atomic.Int32
 	ch.registerFunc = func(context.Context, []commands.Definition) error {
@@ -69,12 +67,10 @@ func TestStartCommandRegistration_RetriesUntilSuccessThenStops(t *testing.T) {
 }
 
 func TestStartCommandRegistration_StopsAfterCancel(t *testing.T) {
-	ch := &TelegramChannel{}
+	ch := &TelegramChannel{
+		commandRegDelayFn: func(int) time.Duration { return 5 * time.Millisecond },
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-
-	origBackoff := commandRegistrationBackoff
-	commandRegistrationBackoff = []time.Duration{5 * time.Millisecond}
-	defer func() { commandRegistrationBackoff = origBackoff }()
 	defer cancel()
 
 	var attempts atomic.Int32

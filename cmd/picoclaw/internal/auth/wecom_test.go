@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -18,6 +19,19 @@ import (
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
+
+func newIPv4TestServer(t *testing.T, handler http.Handler) *httptest.Server {
+	t.Helper()
+
+	server := httptest.NewUnstartedServer(handler)
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	server.Listener = listener
+	server.Start()
+	t.Cleanup(server.Close)
+	return server
+}
 
 func TestNewWeComCommand(t *testing.T) {
 	cmd := newWeComCommand()
@@ -53,7 +67,7 @@ func TestBuildWeComQRCodePageURL(t *testing.T) {
 }
 
 func TestFetchWeComQRCode(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newIPv4TestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/generate", r.URL.Path)
 		assert.Equal(t, wecomQRSourceID, r.URL.Query().Get("source"))
 		assert.Equal(t, wecomQRSourceID, r.URL.Query().Get("sourceID"))
@@ -61,7 +75,6 @@ func TestFetchWeComQRCode(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"data":{"scode":"scode-1","auth_url":"https://example.com/qr"}}`))
 	}))
-	defer server.Close()
 
 	opts := normalizeWeComQRFlowOptions(wecomQRFlowOptions{
 		HTTPClient:  server.Client(),
@@ -78,7 +91,7 @@ func TestFetchWeComQRCode(t *testing.T) {
 func TestPollWeComQRCodeResult(t *testing.T) {
 	var calls atomic.Int32
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := newIPv4TestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		call := calls.Add(1)
 		assert.Equal(t, "/query", r.URL.Path)
 		assert.Equal(t, "scode-1", r.URL.Query().Get("scode"))
@@ -92,7 +105,6 @@ func TestPollWeComQRCodeResult(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":{"status":"success","bot_info":{"botid":"bot-1","secret":"secret-1"}}}`))
 		}
 	}))
-	defer server.Close()
 
 	var output bytes.Buffer
 	opts := normalizeWeComQRFlowOptions(wecomQRFlowOptions{

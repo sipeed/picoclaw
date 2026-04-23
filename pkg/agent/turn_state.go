@@ -1,3 +1,5 @@
+// PicoClaw - Ultra-lightweight personal AI agent
+
 package agent
 
 import (
@@ -14,6 +16,10 @@ import (
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
+// =============================================================================
+// TurnPhase - represents the current phase of a turn
+// =============================================================================
+
 type TurnPhase string
 
 const (
@@ -24,6 +30,65 @@ const (
 	TurnPhaseCompleted  TurnPhase = "completed"
 	TurnPhaseAborted    TurnPhase = "aborted"
 )
+
+// =============================================================================
+// Control signals - returned from Pipeline methods to drive runTurn's coordinator loop
+// =============================================================================
+
+type Control int
+
+const (
+	// ControlContinue tells the coordinator to jump back to the top of the turn loop
+	// (equivalent to the original "goto turnLoop").
+	ControlContinue Control = iota
+	// ControlBreak tells the coordinator to exit the turn loop and proceed to Finalize.
+	ControlBreak
+	// ControlToolLoop tells the coordinator to execute the tool loop.
+	ControlToolLoop
+)
+
+// ToolControl signals returned from ExecuteTools to drive tool loop iteration.
+type ToolControl int
+
+const (
+	// ToolControlContinue tells the tool loop to jump to the next iteration
+	// (pendingMessages arrived, SubTurn results, etc.).
+	ToolControlContinue ToolControl = iota
+	// ToolControlBreak tells the tool loop to exit and return to the coordinator.
+	ToolControlBreak
+	// ToolControlFinalize tells the coordinator that all tool responses were
+	// handled and the turn should finalize without another LLM call.
+	ToolControlFinalize
+)
+
+// LLMPhase indicates which phase the turn is executing in.
+type LLMPhase int
+
+const (
+	LLMPhaseSetup LLMPhase = iota
+	LLMPhasePreLLM
+	LLMPhaseLLMCall
+	LLMPhaseProcessing
+	LLMPhaseToolLoop
+	LLMPhaseTools
+	LLMPhaseFinalizing
+	LLMPhaseCompleted
+	LLMPhaseAborted
+)
+
+// =============================================================================
+// turnResult - returned from runTurn
+// =============================================================================
+
+type turnResult struct {
+	finalContent string
+	status       TurnEndStatus
+	followUps    []bus.InboundMessage
+}
+
+// =============================================================================
+// ActiveTurnInfo - public info about an active turn
+// =============================================================================
 
 type ActiveTurnInfo struct {
 	TurnID       string
@@ -40,11 +105,69 @@ type ActiveTurnInfo struct {
 	ChildTurnIDs []string
 }
 
-type turnResult struct {
+// =============================================================================
+// turnExecution - mutable state that persists across turn loop iterations
+// =============================================================================
+
+type turnExecution struct {
+	// Core message state (accumulates throughout the turn)
+	messages        []providers.Message // built from ContextBuilder, grows per-iteration
+	pendingMessages []providers.Message // steering/SubTurn messages awaiting injection
+	history         []providers.Message // from ContextManager.Assemble
+	summary         string
+
+	// Turn output
 	finalContent string
-	status       TurnEndStatus
-	followUps    []bus.InboundMessage
+
+	// Iteration tracking
+	iteration int
+
+	// Per-iteration state set by Pipeline.PreLLM
+	activeCandidates []providers.FallbackCandidate
+	activeModel      string
+	activeProvider   providers.LLMProvider
+	usedLight        bool
+
+	// LLM call per-iteration state
+	response            *providers.LLMResponse
+	normalizedToolCalls []providers.ToolCall
+	allResponsesHandled bool
+	callMessages        []providers.Message
+	providerToolDefs    []providers.ToolDefinition
+	llmModel            string
+	llmOpts             map[string]any
+	gracefulTerminal    bool
+	useNativeSearch     bool
+
+	// Phase tracking
+	phase LLMPhase
+
+	// Abort signaling for coordinator (set by Pipeline methods)
+	abortedByHardAbort bool // true when hard abort triggered during LLM/tools
+	abortedByHook      bool // true when HookActionAbortTurn triggered
 }
+
+// newTurnExecution creates a turnExecution initialized from turnState and options.
+func newTurnExecution(
+	agent *AgentInstance,
+	opts processOptions,
+	history []providers.Message,
+	summary string,
+	messages []providers.Message,
+) *turnExecution {
+	return &turnExecution{
+		history:         history,
+		summary:         summary,
+		messages:        messages,
+		pendingMessages: append([]providers.Message(nil), opts.InitialSteeringMessages...),
+		iteration:       0,
+		phase:           LLMPhaseSetup,
+	}
+}
+
+// =============================================================================
+// turnState - the full state for a turn, constructed once per turn
+// =============================================================================
 
 type turnState struct {
 	mu sync.RWMutex
@@ -108,6 +231,10 @@ type turnState struct {
 	// Back-reference to the owning AgentLoop (set for SubTurns only, used for hard abort cascade)
 	al *AgentLoop
 }
+
+// =============================================================================
+// turnState constructors and active turn management
+// =============================================================================
 
 func newTurnState(agent *AgentInstance, opts processOptions, scope turnEventScope) *turnState {
 	ts := &turnState{
@@ -193,6 +320,10 @@ func (al *AgentLoop) GetActiveTurnBySession(sessionKey string) *ActiveTurnInfo {
 	info := ts.snapshot()
 	return &info
 }
+
+// =============================================================================
+// turnState - getters and setters
+// =============================================================================
 
 func (ts *turnState) snapshot() ActiveTurnInfo {
 	ts.mu.RLock()
@@ -402,7 +533,9 @@ func (ts *turnState) interruptHintMessage() providers.Message {
 	}
 }
 
+// =============================================================================
 // SubTurn-related methods
+// =============================================================================
 
 // Finish marks the turn as finished and closes the pendingResults channel
 func (ts *turnState) Finish(isHardAbort bool) {
@@ -421,9 +554,9 @@ func (ts *turnState) Finish(isHardAbort bool) {
 		ts.mu.Unlock()
 	})
 
-	// If this is a graceful finish (not hard abort), signal to children
-	if !isHardAbort && ts.parentTurnState == nil {
-		// This is a root turn finishing gracefully
+	// Any graceful finish must signal direct children so nested SubTurns can
+	// observe parent completion and decide whether to stop or continue.
+	if !isHardAbort {
 		ts.parentEnded.Store(true)
 	}
 
@@ -493,7 +626,9 @@ func (ts *turnState) SetLastUsage(usage *providers.UsageInfo) {
 	ts.lastUsage = usage
 }
 
-// Context helper functions for SubTurn
+// =============================================================================
+// Context helper functions for turnState
+// =============================================================================
 
 type turnStateKeyType struct{}
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -34,9 +35,6 @@ func TestGetLauncherConfigUsesRuntimeFallback(t *testing.T) {
 	if got.Port != 19999 || !got.Public {
 		t.Fatalf("response = %+v, want port=19999 public=true", got)
 	}
-	if got.LauncherToken != "" {
-		t.Fatalf("response launcher_token = %q, want empty", got.LauncherToken)
-	}
 	if len(got.AllowedCIDRs) != 1 || got.AllowedCIDRs[0] != "192.168.1.0/24" {
 		t.Fatalf("response allowed_cidrs = %v, want [192.168.1.0/24]", got.AllowedCIDRs)
 	}
@@ -44,6 +42,14 @@ func TestGetLauncherConfigUsesRuntimeFallback(t *testing.T) {
 
 func TestPutLauncherConfigPersists(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
+	path := launcherconfig.PathForAppConfig(configPath)
+	if err := os.WriteFile(
+		path,
+		[]byte(`{"port":18800,"public":false,"dashboard_password_hash":"saved-hash","launcher_token":"legacy-token"}`),
+		0o600,
+	); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
 	h := NewHandler(configPath)
 
 	mux := http.NewServeMux()
@@ -54,7 +60,7 @@ func TestPutLauncherConfigPersists(t *testing.T) {
 		http.MethodPut,
 		"/api/system/launcher-config",
 		strings.NewReader(
-			`{"port":18080,"public":true,"allowed_cidrs":["192.168.1.0/24"],"launcher_token":"saved-token"}`,
+			`{"port":18080,"public":true,"allowed_cidrs":["192.168.1.0/24"]}`,
 		),
 	)
 	req.Header.Set("Content-Type", "application/json")
@@ -64,7 +70,6 @@ func TestPutLauncherConfigPersists(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	path := launcherconfig.PathForAppConfig(configPath)
 	cfg, err := launcherconfig.Load(path, launcherconfig.Default())
 	if err != nil {
 		t.Fatalf("launcherconfig.Load() error = %v", err)
@@ -72,8 +77,11 @@ func TestPutLauncherConfigPersists(t *testing.T) {
 	if cfg.Port != 18080 || !cfg.Public {
 		t.Fatalf("saved config = %+v, want port=18080 public=true", cfg)
 	}
-	if cfg.LauncherToken != "saved-token" {
-		t.Fatalf("saved launcher_token = %q, want %q", cfg.LauncherToken, "saved-token")
+	if cfg.DashboardPasswordHash != "saved-hash" {
+		t.Fatalf("saved dashboard_password_hash = %q, want saved-hash", cfg.DashboardPasswordHash)
+	}
+	if cfg.LegacyLauncherToken != "" {
+		t.Fatalf("saved legacy launcher_token = %q, want empty", cfg.LegacyLauncherToken)
 	}
 	if len(cfg.AllowedCIDRs) != 1 || cfg.AllowedCIDRs[0] != "192.168.1.0/24" {
 		t.Fatalf("saved config allowed_cidrs = %v, want [192.168.1.0/24]", cfg.AllowedCIDRs)

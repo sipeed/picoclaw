@@ -29,7 +29,7 @@ The session system has four jobs:
 | Session adapter | `pkg/session/jsonl_backend.go` | Adapts `pkg/memory.Store` to `SessionStore`, including alias and scope metadata support. |
 | Durable storage | `pkg/memory/jsonl.go` | Append-only JSONL storage plus `.meta.json` sidecar metadata. |
 | Scope and key building | `pkg/session/scope.go`, `pkg/session/key.go`, `pkg/session/allocator.go` | Builds structured scopes, opaque canonical keys, and legacy aliases from routing results. |
-| Runtime integration | `pkg/agent/instance.go`, `pkg/agent/loop.go`, `pkg/agent/loop_message.go` | Initializes the store, allocates session scope, and persists metadata before turns run. |
+| Runtime integration | `pkg/agent/instance.go`, `pkg/agent/agent.go`, `pkg/agent/agent_message.go` | Initializes the store, allocates session scope, and persists metadata before turns run. |
 
 ## Session Data Model
 
@@ -90,7 +90,7 @@ The agent loop also preserves explicit incoming session keys when the caller alr
 - opaque canonical key
 - legacy `agent:...` key
 
-That behavior lives in `pkg/agent/loop_utils.go:resolveScopeKey`.
+That behavior lives in `pkg/agent/agent_utils.go:resolveScopeKey`.
 
 ## Allocation Flow
 
@@ -108,7 +108,7 @@ InboundMessage
 
 More concretely:
 
-1. `pkg/agent/loop_message.go` resolves the agent route from normalized inbound context.
+1. `pkg/agent/agent_message.go` resolves the agent route from normalized inbound context.
 2. `session.AllocateRouteSession` converts the route's `SessionPolicy` plus inbound context into a structured `SessionScope`.
 3. The allocator builds:
    - `SessionKey`: canonical routed session key
@@ -251,5 +251,5 @@ The session system is consumed by more than the agent loop:
 - `pkg/session/allocator.go`
 - `pkg/memory/jsonl.go`
 - `pkg/agent/instance.go`
-- `pkg/agent/loop.go`
-- `pkg/agent/loop_message.go`
+- `pkg/agent/agent.go`
+- `pkg/agent/agent_message.go`

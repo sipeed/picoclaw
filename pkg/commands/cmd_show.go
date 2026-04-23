@@ -33,6 +33,12 @@ func showCommand() Definition {
 				Description: "Registered agents",
 				Handler:     agentsHandler(),
 			},
+			{
+				Name:        "mcp",
+				Description: "Active tools for an MCP server",
+				ArgsUsage:   "<server>",
+				Handler:     showMCPToolsHandler(),
+			},
 		},
 	}
 }

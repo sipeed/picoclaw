@@ -132,11 +132,6 @@ export function useToolsPage() {
     return new Map(providers.map((provider) => [provider.id, provider.label]))
   }, [webSearchDraft])
 
-  const currentProviderLabel = webSearchDraft?.current_service
-    ? (providerLabelMap.get(webSearchDraft.current_service) ??
-      webSearchDraft.current_service)
-    : t("pages.agent.tools.web_search.none", "None")
-
   const pendingToolName = toggleToolMutation.isPending
     ? (toggleToolMutation.variables?.name ?? null)
     : null
@@ -168,7 +163,6 @@ export function useToolsPage() {
 
   return {
     activeTab,
-    currentProviderLabel,
     expandedProvider,
     groupedTools: groupedTools.groupedTools,
     pendingToolName,

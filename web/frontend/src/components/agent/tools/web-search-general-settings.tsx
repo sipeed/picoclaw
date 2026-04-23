@@ -36,7 +36,7 @@ export function WebSearchGeneralSettings({
           label={t("pages.agent.tools.web_search.provider", "Primary Provider")}
           description={t(
             "pages.agent.tools.web_search.provider_description",
-            "Select the default search engine that agents will fallback to.",
+            "Select the default provider to use when the web search tool handles a request.",
           )}
         >
           <Select
@@ -95,7 +95,7 @@ export function WebSearchGeneralSettings({
           )}
           description={t(
             "pages.agent.tools.web_search.prefer_native_hint",
-            "Bypass external providers if the agent inherently supports web search tools.",
+            "When enabled, the model may use its built-in search capability instead of the configured provider list.",
           )}
         >
           <Switch

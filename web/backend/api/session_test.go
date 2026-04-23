@@ -218,6 +218,136 @@ func TestHandleGetSession_JSONLStorage(t *testing.T) {
 	}
 }
 
+func TestHandleGetSession_HidesHandledToolAttachmentsBackedByMediaRefs(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore() error = %v", err)
+	}
+
+	sessionKey := legacyPicoSessionPrefix + "attachment-history"
+	for _, msg := range []providers.Message{
+		{Role: "user", Content: "send me the report"},
+		{
+			Role:    "assistant",
+			Content: handledToolResponseSummaryText,
+			Attachments: []providers.Attachment{{
+				Type:        "file",
+				Ref:         "media://attachment-1",
+				Filename:    "report.txt",
+				ContentType: "text/plain",
+			}},
+		},
+	} {
+		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+			t.Fatalf("AddFullMessage() error = %v", err)
+		}
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/attachment-history", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Messages []sessionChatMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if len(resp.Messages) != 1 {
+		t.Fatalf("len(resp.Messages) = %d, want 1", len(resp.Messages))
+	}
+	if resp.Messages[0].Role != "user" || resp.Messages[0].Content != "send me the report" {
+		t.Fatalf("message = %#v, want only user request", resp.Messages[0])
+	}
+}
+
+func TestHandleGetSession_ExposesHandledToolAttachmentsWithDurableURL(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore() error = %v", err)
+	}
+
+	sessionKey := legacyPicoSessionPrefix + "attachment-history-durable"
+	for _, msg := range []providers.Message{
+		{Role: "user", Content: "send me the report"},
+		{
+			Role:    "assistant",
+			Content: handledToolResponseSummaryText,
+			Attachments: []providers.Attachment{{
+				Type:        "file",
+				URL:         "https://example.com/report.txt",
+				Filename:    "report.txt",
+				ContentType: "text/plain",
+			}},
+		},
+	} {
+		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+			t.Fatalf("AddFullMessage() error = %v", err)
+		}
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/attachment-history-durable", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Messages []sessionChatMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if len(resp.Messages) != 2 {
+		t.Fatalf("len(resp.Messages) = %d, want 2", len(resp.Messages))
+	}
+
+	assistant := resp.Messages[1]
+	if assistant.Role != "assistant" {
+		t.Fatalf("assistant role = %q, want assistant", assistant.Role)
+	}
+	if assistant.Content != "" {
+		t.Fatalf("assistant content = %q, want empty string", assistant.Content)
+	}
+	if len(assistant.Attachments) != 1 {
+		t.Fatalf("len(assistant.Attachments) = %d, want 1", len(assistant.Attachments))
+	}
+	if assistant.Attachments[0].URL != "https://example.com/report.txt" {
+		t.Fatalf(
+			"attachment url = %q, want %q",
+			assistant.Attachments[0].URL,
+			"https://example.com/report.txt",
+		)
+	}
+	if assistant.Attachments[0].Filename != "report.txt" {
+		t.Fatalf("attachment filename = %q, want %q", assistant.Attachments[0].Filename, "report.txt")
+	}
+}
+
 func TestHandleSessions_JSONLScopeDiscovery(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
@@ -346,7 +476,7 @@ func TestHandleGetSession_OmitsTransientThoughtMessages(t *testing.T) {
 	}
 }
 
-func TestHandleGetSession_ReconstructsVisibleMessageToolOutput(t *testing.T) {
+func TestHandleGetSession_ReconstructsVisibleMessageToolOutputWithoutDuplicateSummary(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 
@@ -402,14 +532,19 @@ func TestHandleGetSession_ReconstructsVisibleMessageToolOutput(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
-	if len(resp.Messages) != 3 {
-		t.Fatalf("len(resp.Messages) = %d, want 3", len(resp.Messages))
+	if len(resp.Messages) != 2 {
+		t.Fatalf("len(resp.Messages) = %d, want 2", len(resp.Messages))
 	}
-	if !strings.Contains(resp.Messages[1].Content, "`message`") {
-		t.Fatalf("tool summary message = %#v, want message tool summary", resp.Messages[1])
+	if resp.Messages[0].Role != "user" || resp.Messages[0].Content != "test" {
+		t.Fatalf("first message = %#v, want user/test", resp.Messages[0])
 	}
-	if resp.Messages[2].Role != "assistant" || resp.Messages[2].Content != "visible tool output" {
-		t.Fatalf("assistant message = %#v, want visible tool output", resp.Messages[2])
+	if resp.Messages[1].Role != "assistant" || resp.Messages[1].Content != "visible tool output" {
+		t.Fatalf("assistant message = %#v, want visible tool output", resp.Messages[1])
+	}
+	for _, msg := range resp.Messages {
+		if msg.Role == "tool" || strings.Contains(msg.Content, "`message`") {
+			t.Fatalf("unexpected raw tool or duplicate message-tool summary: %#v", msg)
+		}
 	}
 }
 
@@ -468,17 +603,17 @@ func TestHandleGetSession_PreservesFinalAssistantReplyAfterMessageToolOutput(t *
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
-	if len(resp.Messages) != 4 {
-		t.Fatalf("len(resp.Messages) = %d, want 4", len(resp.Messages))
+	if len(resp.Messages) != 3 {
+		t.Fatalf("len(resp.Messages) = %d, want 3", len(resp.Messages))
 	}
-	if !strings.Contains(resp.Messages[1].Content, "`message`") {
-		t.Fatalf("tool summary message = %#v, want message tool summary", resp.Messages[1])
+	if resp.Messages[0].Role != "user" || resp.Messages[0].Content != "test" {
+		t.Fatalf("first message = %#v, want user/test", resp.Messages[0])
 	}
-	if resp.Messages[2].Role != "assistant" || resp.Messages[2].Content != "visible tool output" {
-		t.Fatalf("interim assistant message = %#v, want visible tool output", resp.Messages[2])
+	if resp.Messages[1].Role != "assistant" || resp.Messages[1].Content != "visible tool output" {
+		t.Fatalf("interim assistant message = %#v, want visible tool output", resp.Messages[1])
 	}
-	if resp.Messages[3].Role != "assistant" || resp.Messages[3].Content != "final assistant reply" {
-		t.Fatalf("final assistant message = %#v, want final assistant reply", resp.Messages[3])
+	if resp.Messages[2].Role != "assistant" || resp.Messages[2].Content != "final assistant reply" {
+		t.Fatalf("final assistant message = %#v, want final assistant reply", resp.Messages[2])
 	}
 }
 
@@ -535,12 +670,12 @@ func TestHandleListSessions_MessageCountUsesVisibleTranscript(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("len(items) = %d, want 1", len(items))
 	}
-	if items[0].MessageCount != 3 {
-		t.Fatalf("items[0].MessageCount = %d, want 3", items[0].MessageCount)
+	if items[0].MessageCount != 2 {
+		t.Fatalf("items[0].MessageCount = %d, want 2", items[0].MessageCount)
 	}
 }
 
-func TestHandleGetSession_PreservesToolSummaryAndAssistantContent(t *testing.T) {
+func TestHandleGetSession_DoesNotDuplicateAssistantToolCallContent(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 
@@ -555,7 +690,7 @@ func TestHandleGetSession_PreservesToolSummaryAndAssistantContent(t *testing.T) 
 		{Role: "user", Content: "check file"},
 		{
 			Role:    "assistant",
-			Content: "model final reply",
+			Content: "Read the file before replying.",
 			ToolCalls: []providers.ToolCall{
 				{
 					ID:   "call_1",
@@ -564,9 +699,13 @@ func TestHandleGetSession_PreservesToolSummaryAndAssistantContent(t *testing.T) 
 						Name:      "read_file",
 						Arguments: `{"path":"README.md","start_line":1,"end_line":10}`,
 					},
+					ExtraContent: &providers.ExtraContent{
+						ToolFeedbackExplanation: "Read the file before replying.",
+					},
 				},
 			},
 		},
+		{Role: "tool", Content: "raw read_file result", ToolCallID: "call_1"},
 	} {
 		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
 			t.Fatalf("AddFullMessage() error = %v", err)
@@ -594,8 +733,8 @@ func TestHandleGetSession_PreservesToolSummaryAndAssistantContent(t *testing.T) 
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
-	if len(resp.Messages) != 3 {
-		t.Fatalf("len(resp.Messages) = %d, want 3", len(resp.Messages))
+	if len(resp.Messages) != 2 {
+		t.Fatalf("len(resp.Messages) = %d, want 2", len(resp.Messages))
 	}
 	if resp.Messages[0].Role != "user" || resp.Messages[0].Content != "check file" {
 		t.Fatalf("first message = %#v, want user/check file", resp.Messages[0])
@@ -603,8 +742,242 @@ func TestHandleGetSession_PreservesToolSummaryAndAssistantContent(t *testing.T) 
 	if !strings.Contains(resp.Messages[1].Content, "`read_file`") {
 		t.Fatalf("tool summary message = %#v, want read_file summary", resp.Messages[1])
 	}
-	if resp.Messages[2].Role != "assistant" || resp.Messages[2].Content != "model final reply" {
-		t.Fatalf("assistant message = %#v, want model final reply", resp.Messages[2])
+	if !strings.Contains(resp.Messages[1].Content, "Read the file before replying.") {
+		t.Fatalf("tool summary message = %#v, want tool explanation", resp.Messages[1])
+	}
+}
+
+func TestHandleGetSession_PreservesDistinctAssistantToolCallContent(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore() error = %v", err)
+	}
+
+	sessionKey := picoSessionPrefix + "detail-tool-summary-distinct-content"
+	for _, msg := range []providers.Message{
+		{Role: "user", Content: "check file"},
+		{
+			Role:    "assistant",
+			Content: "I will summarize the findings after reading the file.",
+			ToolCalls: []providers.ToolCall{
+				{
+					ID:   "call_1",
+					Type: "function",
+					Function: &providers.FunctionCall{
+						Name:      "read_file",
+						Arguments: `{"path":"README.md","start_line":1,"end_line":10}`,
+					},
+					ExtraContent: &providers.ExtraContent{
+						ToolFeedbackExplanation: "Read the file before replying.",
+					},
+				},
+			},
+		},
+	} {
+		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+			t.Fatalf("AddFullMessage() error = %v", err)
+		}
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-tool-summary-distinct-content", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Messages) != 3 {
+		t.Fatalf("len(resp.Messages) = %d, want 3", len(resp.Messages))
+	}
+	if !strings.Contains(resp.Messages[1].Content, "`read_file`") {
+		t.Fatalf("tool summary message = %#v, want read_file summary", resp.Messages[1])
+	}
+	if resp.Messages[2].Role != "assistant" ||
+		resp.Messages[2].Content != "I will summarize the findings after reading the file." {
+		t.Fatalf("assistant content = %#v, want preserved distinct content", resp.Messages[2])
+	}
+}
+
+func TestHandleGetSession_PreservesMediaWhenAssistantToolCallContentDuplicatesSummary(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore() error = %v", err)
+	}
+
+	sessionKey := picoSessionPrefix + "detail-tool-summary-duplicate-content-with-media"
+	for _, msg := range []providers.Message{
+		{Role: "user", Content: "check screenshot"},
+		{
+			Role:    "assistant",
+			Content: "Reviewing the generated screenshot.",
+			Media:   []string{"data:image/png;base64,abc123"},
+			ToolCalls: []providers.ToolCall{
+				{
+					ID:   "call_1",
+					Type: "function",
+					Function: &providers.FunctionCall{
+						Name:      "view_image",
+						Arguments: `{"path":"artifact.png"}`,
+					},
+					ExtraContent: &providers.ExtraContent{
+						ToolFeedbackExplanation: "Reviewing the generated screenshot.",
+					},
+				},
+			},
+		},
+	} {
+		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+			t.Fatalf("AddFullMessage() error = %v", err)
+		}
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-tool-summary-duplicate-content-with-media", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Messages []struct {
+			Role    string   `json:"role"`
+			Content string   `json:"content"`
+			Media   []string `json:"media"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Messages) != 3 {
+		t.Fatalf("len(resp.Messages) = %d, want 3", len(resp.Messages))
+	}
+	if !strings.Contains(resp.Messages[1].Content, "`view_image`") {
+		t.Fatalf("tool summary message = %#v, want view_image summary", resp.Messages[1])
+	}
+	if resp.Messages[2].Role != "assistant" {
+		t.Fatalf("assistant message role = %q, want assistant", resp.Messages[2].Role)
+	}
+	if resp.Messages[2].Content != "Reviewing the generated screenshot." {
+		t.Fatalf("assistant content = %q, want preserved duplicated content with media", resp.Messages[2].Content)
+	}
+	if len(resp.Messages[2].Media) != 1 || resp.Messages[2].Media[0] != "data:image/png;base64,abc123" {
+		t.Fatalf("assistant media = %#v, want preserved media", resp.Messages[2].Media)
+	}
+	for _, msg := range resp.Messages {
+		if msg.Role == "tool" || strings.Contains(msg.Content, "raw read_file result") {
+			t.Fatalf("unexpected raw tool result in history: %#v", msg)
+		}
+	}
+}
+
+func TestHandleGetSession_PreservesAttachmentsWhenAssistantToolCallContentDuplicatesSummary(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore() error = %v", err)
+	}
+
+	sessionKey := picoSessionPrefix + "detail-tool-summary-duplicate-content-with-attachments"
+	for _, msg := range []providers.Message{
+		{Role: "user", Content: "check report"},
+		{
+			Role:    "assistant",
+			Content: "Reviewing the generated report.",
+			Attachments: []providers.Attachment{{
+				Type:        "file",
+				URL:         "https://example.com/report.txt",
+				Filename:    "report.txt",
+				ContentType: "text/plain",
+			}},
+			ToolCalls: []providers.ToolCall{
+				{
+					ID:   "call_1",
+					Type: "function",
+					Function: &providers.FunctionCall{
+						Name:      "read_file",
+						Arguments: `{"path":"report.txt"}`,
+					},
+					ExtraContent: &providers.ExtraContent{
+						ToolFeedbackExplanation: "Reviewing the generated report.",
+					},
+				},
+			},
+		},
+	} {
+		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+			t.Fatalf("AddFullMessage() error = %v", err)
+		}
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/sessions/detail-tool-summary-duplicate-content-with-attachments",
+		nil,
+	)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Messages []sessionChatMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Messages) != 3 {
+		t.Fatalf("len(resp.Messages) = %d, want 3", len(resp.Messages))
+	}
+	if !strings.Contains(resp.Messages[1].Content, "`read_file`") {
+		t.Fatalf("tool summary message = %#v, want read_file summary", resp.Messages[1])
+	}
+	if resp.Messages[2].Role != "assistant" {
+		t.Fatalf("assistant message role = %q, want assistant", resp.Messages[2].Role)
+	}
+	if resp.Messages[2].Content != "Reviewing the generated report." {
+		t.Fatalf("assistant content = %q, want preserved duplicated content", resp.Messages[2].Content)
+	}
+	if len(resp.Messages[2].Attachments) != 1 {
+		t.Fatalf("len(assistant.Attachments) = %d, want 1", len(resp.Messages[2].Attachments))
+	}
+	if resp.Messages[2].Attachments[0].URL != "https://example.com/report.txt" {
+		t.Fatalf("attachment url = %q, want report URL", resp.Messages[2].Attachments[0].URL)
 	}
 }
 
@@ -629,6 +1002,7 @@ func TestHandleGetSession_UsesConfiguredToolFeedbackMaxArgsLength(t *testing.T) 
 	}
 
 	argsJSON := `{"path":"README.md","start_line":1,"end_line":10,"extra":"abcdefghijklmnopqrstuvwxyz"}`
+	explanation := "Read README.md first to confirm the current project structure before editing the config example."
 	sessionKey := picoSessionPrefix + "detail-tool-summary-max-args"
 	err = store.AddFullMessage(nil, sessionKey, providers.Message{Role: "user", Content: "check file"})
 	if err != nil {
@@ -642,6 +1016,9 @@ func TestHandleGetSession_UsesConfiguredToolFeedbackMaxArgsLength(t *testing.T) 
 			Function: &providers.FunctionCall{
 				Name:      "read_file",
 				Arguments: argsJSON,
+			},
+			ExtraContent: &providers.ExtraContent{
+				ToolFeedbackExplanation: explanation,
 			},
 		}},
 	})
@@ -675,12 +1052,92 @@ func TestHandleGetSession_UsesConfiguredToolFeedbackMaxArgsLength(t *testing.T) 
 		t.Fatalf("len(resp.Messages) = %d, want at least 2", len(resp.Messages))
 	}
 
-	wantPreview := utils.Truncate(argsJSON, 20)
+	wantPreview := utils.Truncate(explanation, 20)
 	if !strings.Contains(resp.Messages[1].Content, wantPreview) {
 		t.Fatalf("tool summary = %q, want preview %q", resp.Messages[1].Content, wantPreview)
 	}
 	if strings.Contains(resp.Messages[1].Content, argsJSON) {
 		t.Fatalf("tool summary = %q, expected configured truncation", resp.Messages[1].Content)
+	}
+	if !strings.Contains(resp.Messages[1].Content, "`read_file`") {
+		t.Fatalf("tool summary = %q, want read_file summary", resp.Messages[1].Content)
+	}
+}
+
+func TestHandleGetSession_FallsBackToLegacyToolArgumentsWhenExplanationMissing(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.Agents.Defaults.ToolFeedback.MaxArgsLength = 20
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	dir := sessionsTestDir(t, configPath)
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore() error = %v", err)
+	}
+
+	argsJSON := `{"path":"README.md","start_line":1,"end_line":10,"extra":"abcdefghijklmnopqrstuvwxyz"}`
+	sessionKey := picoSessionPrefix + "detail-tool-summary-legacy-args"
+	if err := store.AddFullMessage(
+		nil,
+		sessionKey,
+		providers.Message{Role: "user", Content: "check file"},
+	); err != nil {
+		t.Fatalf("AddFullMessage(user) error = %v", err)
+	}
+	if err := store.AddFullMessage(nil, sessionKey, providers.Message{
+		Role: "assistant",
+		ToolCalls: []providers.ToolCall{{
+			ID:   "call_1",
+			Type: "function",
+			Function: &providers.FunctionCall{
+				Name:      "read_file",
+				Arguments: argsJSON,
+			},
+		}},
+	}); err != nil {
+		t.Fatalf("AddFullMessage(assistant) error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-tool-summary-legacy-args", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Messages) < 2 {
+		t.Fatalf("len(resp.Messages) = %d, want at least 2", len(resp.Messages))
+	}
+
+	wantPreview := utils.Truncate(argsJSON, 20)
+	if !strings.Contains(resp.Messages[1].Content, "`read_file`") {
+		t.Fatalf("tool summary = %q, want read_file summary", resp.Messages[1].Content)
+	}
+	if !strings.Contains(resp.Messages[1].Content, wantPreview) {
+		t.Fatalf("tool summary = %q, want legacy args preview %q", resp.Messages[1].Content, wantPreview)
 	}
 }
 

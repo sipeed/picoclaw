@@ -121,6 +121,18 @@ func resetGatewayTestState(t *testing.T) {
 	})
 }
 
+func TestPicoGatewayProtocol(t *testing.T) {
+	resetGatewayTestState(t)
+
+	gateway.mu.Lock()
+	gateway.picoToken = "ui-token"
+	gateway.mu.Unlock()
+
+	if got := picoGatewayProtocol(); got != tokenPrefix+"ui-token" {
+		t.Fatalf("picoGatewayProtocol() = %q, want %q", got, tokenPrefix+"ui-token")
+	}
+}
+
 type gatewayStartEnvSnapshot struct {
 	GatewayHost    string `json:"gateway_host"`
 	GatewayHostSet bool   `json:"gateway_host_set"`

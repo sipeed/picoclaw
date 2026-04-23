@@ -14,6 +14,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/providers/common"
 )
 
 const (
@@ -221,7 +222,7 @@ func (p *AntigravityProvider) buildRequest(
 			}
 		case "user":
 			if msg.ToolCallID != "" {
-				toolName := resolveToolResponseName(msg.ToolCallID, toolCallNames)
+				toolName := common.ResolveToolResponseName(msg.ToolCallID, toolCallNames)
 				// Tool result
 				req.Contents = append(req.Contents, antigravityContent{
 					Role: "user",
@@ -248,7 +249,7 @@ func (p *AntigravityProvider) buildRequest(
 				content.Parts = append(content.Parts, antigravityPart{Text: msg.Content})
 			}
 			for _, tc := range msg.ToolCalls {
-				toolName, toolArgs, thoughtSignature := normalizeStoredToolCall(tc)
+				toolName, toolArgs, thoughtSignature := common.NormalizeStoredToolCall(tc)
 				if toolName == "" {
 					logger.WarnCF(
 						"provider.antigravity",
@@ -275,7 +276,7 @@ func (p *AntigravityProvider) buildRequest(
 				req.Contents = append(req.Contents, content)
 			}
 		case "tool":
-			toolName := resolveToolResponseName(msg.ToolCallID, toolCallNames)
+			toolName := common.ResolveToolResponseName(msg.ToolCallID, toolCallNames)
 			req.Contents = append(req.Contents, antigravityContent{
 				Role: "user",
 				Parts: []antigravityPart{{
@@ -326,60 +327,6 @@ func (p *AntigravityProvider) buildRequest(
 	}
 
 	return req
-}
-
-func normalizeStoredToolCall(tc ToolCall) (string, map[string]any, string) {
-	name := tc.Name
-	args := tc.Arguments
-	thoughtSignature := ""
-
-	if name == "" && tc.Function != nil {
-		name = tc.Function.Name
-		thoughtSignature = tc.Function.ThoughtSignature
-	} else if tc.Function != nil {
-		thoughtSignature = tc.Function.ThoughtSignature
-	}
-
-	if args == nil {
-		args = map[string]any{}
-	}
-
-	if len(args) == 0 && tc.Function != nil && tc.Function.Arguments != "" {
-		var parsed map[string]any
-		if err := json.Unmarshal([]byte(tc.Function.Arguments), &parsed); err == nil && parsed != nil {
-			args = parsed
-		}
-	}
-
-	return name, args, thoughtSignature
-}
-
-func resolveToolResponseName(toolCallID string, toolCallNames map[string]string) string {
-	if toolCallID == "" {
-		return ""
-	}
-
-	if name, ok := toolCallNames[toolCallID]; ok && name != "" {
-		return name
-	}
-
-	return inferToolNameFromCallID(toolCallID)
-}
-
-func inferToolNameFromCallID(toolCallID string) string {
-	if !strings.HasPrefix(toolCallID, "call_") {
-		return toolCallID
-	}
-
-	rest := strings.TrimPrefix(toolCallID, "call_")
-	if idx := strings.LastIndex(rest, "_"); idx > 0 {
-		candidate := rest[:idx]
-		if candidate != "" {
-			return candidate
-		}
-	}
-
-	return toolCallID
 }
 
 // --- Response parsing ---

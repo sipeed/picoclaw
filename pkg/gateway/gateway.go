@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -27,7 +26,7 @@ import (
 	_ "github.com/sipeed/picoclaw/pkg/channels/line"
 	_ "github.com/sipeed/picoclaw/pkg/channels/maixcam"
 	_ "github.com/sipeed/picoclaw/pkg/channels/onebot"
-	"github.com/sipeed/picoclaw/pkg/channels/pico"
+	_ "github.com/sipeed/picoclaw/pkg/channels/pico"
 	_ "github.com/sipeed/picoclaw/pkg/channels/qq"
 	_ "github.com/sipeed/picoclaw/pkg/channels/slack"
 	_ "github.com/sipeed/picoclaw/pkg/channels/teams_webhook"
@@ -316,8 +315,6 @@ func executeReload(
 ) error {
 	defer runningServices.reloading.Store(false)
 
-	overridePicoToken(newCfg, runningServices.authToken)
-
 	return handleConfigReload(ctx, agentLoop, newCfg, provider, runningServices, msgBus, allowEmptyStartup, debug)
 }
 
@@ -385,8 +382,6 @@ func setupAndStartServices(
 	if fms, ok := runningServices.MediaStore.(*media.FileMediaStore); ok {
 		fms.Start()
 	}
-
-	overridePicoToken(cfg, authToken)
 
 	runningServices.ChannelManager, err = channels.NewManager(cfg, msgBus, runningServices.MediaStore)
 	if err != nil {
@@ -786,23 +781,6 @@ func setupCronTool(
 	}
 
 	return cronService, nil
-}
-
-// overridePicoToken replaces the pico channel token with the one from the PID file.
-// The PID file is the single source of truth for the pico auth token;
-// it is generated once at gateway startup and remains unchanged across reloads.
-func overridePicoToken(cfg *config.Config, token string) {
-	picoBC := cfg.Channels.GetByType(config.ChannelPico)
-	if picoBC == nil || !picoBC.Enabled {
-		return
-	}
-	var picoCfg config.PicoSettings
-	picoBC.Decode(&picoCfg)
-	picoToken := picoCfg.Token.String()
-	if picoToken == "" || strings.HasPrefix(picoToken, pico.PicoTokenPrefix) {
-		return
-	}
-	picoCfg.SetToken(pico.PicoTokenPrefix + token + picoToken)
 }
 
 func createHeartbeatHandler(agentLoop *agent.AgentLoop) func(prompt, channel, chatID string) *tools.ToolResult {

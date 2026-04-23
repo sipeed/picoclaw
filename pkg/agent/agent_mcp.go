@@ -67,6 +67,12 @@ func (r *mcpRuntime) hasManager() bool {
 	return r.manager != nil
 }
 
+func (r *mcpRuntime) getManager() *mcp.Manager {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.manager
+}
+
 // ensureMCPInitialized loads MCP servers/tools once so both Run() and direct
 // agent mode share the same initialization path.
 func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
@@ -100,6 +106,7 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
 		}
 
 		if err := mcpManager.LoadFromMCPConfig(ctx, al.cfg.Tools.MCP, workspacePath); err != nil {
+			al.mcp.setInitErr(fmt.Errorf("failed to load MCP servers: %w", err))
 			logger.WarnCF("agent", "Failed to load MCP servers, MCP tools will not be available",
 				map[string]any{
 					"error": err.Error(),

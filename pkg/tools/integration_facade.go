@@ -4,6 +4,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/sipeed/picoclaw/pkg/audio/tts"
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	integrationtools "github.com/sipeed/picoclaw/pkg/tools/integration"
@@ -70,6 +71,18 @@ func SetPreferredWebSearchLanguage(lang string) {
 
 func GetPreferredWebSearchLanguage() string {
 	return integrationtools.GetPreferredWebSearchLanguage()
+}
+
+func WebSearchToolOptionsFromConfig(cfg *config.Config) WebSearchToolOptions {
+	return integrationtools.WebSearchToolOptionsFromConfig(cfg)
+}
+
+func WebSearchProviderReady(opts WebSearchToolOptions, name string) bool {
+	return integrationtools.WebSearchProviderReady(opts, name)
+}
+
+func ResolveWebSearchProviderName(opts WebSearchToolOptions, query string) (string, error) {
+	return integrationtools.ResolveWebSearchProviderName(opts, query)
 }
 
 func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {

@@ -22,6 +22,11 @@ import (
 type FlexibleStringSlice []string
 
 func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*f = nil
+		return nil
+	}
+
 	// Accept a single JSON string for convenience, e.g.:
 	// "text": "Thinking..."
 	var singleString string

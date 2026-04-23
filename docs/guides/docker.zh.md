@@ -45,7 +45,7 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 在浏览器中打开 <http://localhost:18800>。Launcher 会自动管理 Gateway 进程。
 
 > [!WARNING]
-> Web 控制台通过 dashboard 令牌鉴权（默认每次启动在内存中生成；可用 `PICOCLAW_LAUNCHER_TOKEN` 固定）。**不要**将启动器暴露到不可信网络或公网。完整说明见 [配置指南](configuration.md) 中的「Web 启动器控制台」一节。
+> Web 控制台通过 dashboard 登录密码保护。**不要**将启动器暴露到不可信网络或公网。完整说明见 [配置指南](configuration.md) 中的「Web 启动器控制台」一节。
 
 ### Agent 模式 (一次性运行)
 
@@ -93,19 +93,22 @@ picoclaw onboard
   "model_list": [
     {
       "model_name": "ark-code-latest",
-      "model": "volcengine/ark-code-latest",
+      "provider": "volcengine",
+      "model": "ark-code-latest",
       "api_keys": ["sk-your-api-key"],
       "api_base":"https://ark.cn-beijing.volces.com/api/coding/v3"
     },
     {
       "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
       "api_keys": ["your-api-key"],
       "request_timeout": 300
     },
     {
       "model_name": "claude-sonnet-4.6",
-      "model": "anthropic/claude-sonnet-4.6",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4.6",
       "api_keys": ["your-anthropic-key"]
     }
   ],

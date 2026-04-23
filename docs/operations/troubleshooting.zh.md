@@ -9,16 +9,22 @@
 - `Error creating provider: model "openrouter/free" not found in model_list`
 - OpenRouter 返回 400：`"free is not a valid model ID"`
 
-**原因：** `model_list` 条目中的 `model` 字段是发送给 API 的内容。对于 OpenRouter，你必须使用**完整的**模型 ID，而不是简写。
+**原因：** PicoClaw 现在按两步解析 provider 和 model：
 
-- **错误：** `"model": "free"` → OpenRouter 收到 `free` 并拒绝。
-- **正确：** `"model": "openrouter/free"` → OpenRouter 收到 `openrouter/free`（自动免费层路由）。
+- 如果设置了 `provider`，则会把 `model` 原样发送给该 provider。
+- 如果未设置 `provider`，则会把 `model` 第一个 `/` 之前的字段当作 provider，并把第一个 `/` 之后的全部内容当作最终发送的模型 ID。
+
+对于 OpenRouter 免费层路由，推荐显式设置 `provider`。
+
+- **错误：** `"model": "free"` → 不会选中 OpenRouter，`free` 也不是可直接路由的 OpenRouter 模型配置。
+- **正确：** `"provider": "openrouter", "model": "free"` → OpenRouter 收到 `free`。
+- **也兼容：** `"model": "openrouter/free"` → provider 解析为 `openrouter`，最终模型 ID 解析为 `free`。
 
 **修复方法：** 在 `~/.picoclaw/config.json`（或你的配置路径）中：
 
 1. **agents.defaults.model_name** 必须匹配 `model_list` 中的某个 `model_name`（例如 `"openrouter-free"`）。
-2. 该条目的 **model** 必须是有效的 OpenRouter 模型 ID，例如：
-   - `"openrouter/free"` – 自动免费层
+2. 该条目推荐显式设置 **provider** 为 `openrouter`，并在 **model** 中填写有效的 OpenRouter 模型 ID，例如：
+   - `"free"` – 自动免费层
    - `"google/gemini-2.0-flash-exp:free"`
    - `"meta-llama/llama-3.1-8b-instruct:free"`
 
@@ -34,8 +40,9 @@
   "model_list": [
     {
       "model_name": "openrouter-free",
-      "model": "openrouter/free",
-      "api_key": "sk-or-v1-YOUR_OPENROUTER_KEY",
+      "provider": "openrouter",
+      "model": "free",
+      "api_keys": ["sk-or-v1-YOUR_OPENROUTER_KEY"],
       "api_base": "https://openrouter.ai/api/v1"
     }
   ]

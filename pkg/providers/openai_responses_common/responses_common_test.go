@@ -506,42 +506,6 @@ func TestParseResponseBody_CanceledStatus(t *testing.T) {
 	}
 }
 
-// --- ParseDataAudioURL tests ---
-
-func TestParseDataAudioURL_Valid(t *testing.T) {
-	format, data, ok := ParseDataAudioURL("data:audio/mp3;base64,SGVsbG8=")
-	if !ok {
-		t.Fatal("expected ok=true")
-	}
-	if format != "mp3" {
-		t.Errorf("format = %q, want %q", format, "mp3")
-	}
-	if data != "SGVsbG8=" {
-		t.Errorf("data = %q, want %q", data, "SGVsbG8=")
-	}
-}
-
-func TestParseDataAudioURL_NotAudio(t *testing.T) {
-	_, _, ok := ParseDataAudioURL("data:image/png;base64,abc")
-	if ok {
-		t.Error("expected ok=false for non-audio URL")
-	}
-}
-
-func TestParseDataAudioURL_MalformedNoComma(t *testing.T) {
-	_, _, ok := ParseDataAudioURL("data:audio/mp3;base64")
-	if ok {
-		t.Error("expected ok=false for malformed URL")
-	}
-}
-
-func TestParseDataAudioURL_EmptyData(t *testing.T) {
-	_, _, ok := ParseDataAudioURL("data:audio/mp3;base64,")
-	if ok {
-		t.Error("expected ok=false for empty data")
-	}
-}
-
 // --- BuildMultipartContent tests ---
 
 func TestBuildMultipartContent_TextOnly(t *testing.T) {

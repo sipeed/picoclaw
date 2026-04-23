@@ -69,12 +69,14 @@ PicoClaw 里用户能直接感知到的“路由”主要有两部分：
   "model_list": [
     {
       "model_name": "gpt-main",
-      "model": "openai/gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
       "api_keys": ["sk-main"]
     },
     {
       "model_name": "flash-light",
-      "model": "gemini/gemini-2.0-flash-exp",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash-exp",
       "api_keys": ["sk-light"]
     }
   ],

@@ -1,63 +1,6 @@
 package httpapi
 
-import (
-	"encoding/json"
-	"strings"
-)
-
-func normalizeStoredToolCall(tc ToolCall) (string, map[string]any, string) {
-	name := tc.Name
-	args := tc.Arguments
-	thoughtSignature := ""
-
-	if name == "" && tc.Function != nil {
-		name = tc.Function.Name
-		thoughtSignature = tc.Function.ThoughtSignature
-	} else if tc.Function != nil {
-		thoughtSignature = tc.Function.ThoughtSignature
-	}
-
-	if args == nil {
-		args = map[string]any{}
-	}
-
-	if len(args) == 0 && tc.Function != nil && tc.Function.Arguments != "" {
-		var parsed map[string]any
-		if err := json.Unmarshal([]byte(tc.Function.Arguments), &parsed); err == nil && parsed != nil {
-			args = parsed
-		}
-	}
-
-	return name, args, thoughtSignature
-}
-
-func resolveToolResponseName(toolCallID string, toolCallNames map[string]string) string {
-	if toolCallID == "" {
-		return ""
-	}
-
-	if name, ok := toolCallNames[toolCallID]; ok && name != "" {
-		return name
-	}
-
-	return inferToolNameFromCallID(toolCallID)
-}
-
-func inferToolNameFromCallID(toolCallID string) string {
-	if !strings.HasPrefix(toolCallID, "call_") {
-		return toolCallID
-	}
-
-	rest := strings.TrimPrefix(toolCallID, "call_")
-	if idx := strings.LastIndex(rest, "_"); idx > 0 {
-		candidate := rest[:idx]
-		if candidate != "" {
-			return candidate
-		}
-	}
-
-	return toolCallID
-}
+import "strings"
 
 func extractPartThoughtSignature(thoughtSignature string, thoughtSignatureSnake string) string {
 	if thoughtSignature != "" {

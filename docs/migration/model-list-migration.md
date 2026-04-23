@@ -8,7 +8,7 @@ The new `model_list` configuration offers several advantages:
 
 - **Zero-code provider addition**: Add OpenAI-compatible providers with configuration only
 - **Load balancing**: Configure multiple endpoints for the same model
-- **Protocol-based routing**: Use prefixes like `openai/`, `anthropic/`, etc.
+- **Explicit provider resolution**: Prefer `provider` + native `model`, with legacy `provider/model` compatibility when needed
 - **Cleaner configuration**: Model-centric instead of vendor-centric
 
 ## Timeline
@@ -54,18 +54,21 @@ The new `model_list` configuration offers several advantages:
   "model_list": [
     {
       "model_name": "gpt4",
-      "model": "openai/gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
       "api_keys": ["sk-your-openai-key"],
       "api_base": "https://api.openai.com/v1"
     },
     {
       "model_name": "claude-sonnet-4.6",
-      "model": "anthropic/claude-sonnet-4.6",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4.6",
       "api_keys": ["sk-ant-your-key"]
     },
     {
       "model_name": "deepseek",
-      "model": "deepseek/deepseek-chat",
+      "provider": "deepseek",
+      "model": "deepseek-chat",
       "api_keys": ["sk-your-deepseek-key"]
     }
   ],
@@ -79,40 +82,46 @@ The new `model_list` configuration offers several advantages:
 
 > **Note**: The `enabled` field can be omitted — during V1→V2 migration it is auto-inferred (models with API keys or the `local-model` name are enabled by default). For new configs, you can explicitly set `"enabled": false` to disable a model entry without removing it.
 
-## Protocol Prefixes
+## Provider / Model Resolution
 
-The `model` field uses a protocol prefix format: `[protocol/]model-identifier`
+Preferred format:
 
-| Prefix | Description | Example |
-|--------|-------------|---------|
-| `openai/` | OpenAI API (default) | `openai/gpt-5.4` |
-| `anthropic/` | Anthropic API | `anthropic/claude-opus-4` |
-| `antigravity/` | Google via Antigravity OAuth | `antigravity/gemini-2.0-flash` |
-| `gemini/` | Google Gemini API | `gemini/gemini-2.0-flash-exp` |
-| `claude-cli/` | Claude CLI (local) | `claude-cli/claude-sonnet-4.6` |
-| `codex-cli/` | Codex CLI (local) | `codex-cli/codex-4` |
-| `github-copilot/` | GitHub Copilot | `github-copilot/gpt-4o` |
-| `openrouter/` | OpenRouter | `openrouter/anthropic/claude-sonnet-4.6` |
-| `groq/` | Groq API | `groq/llama-3.1-70b` |
-| `deepseek/` | DeepSeek API | `deepseek/deepseek-chat` |
-| `cerebras/` | Cerebras API | `cerebras/llama-3.3-70b` |
-| `qwen/` | Alibaba Qwen | `qwen/qwen-max` |
-| `zhipu/` | Zhipu AI | `zhipu/glm-4` |
-| `nvidia/` | NVIDIA NIM | `nvidia/llama-3.1-nemotron-70b` |
-| `ollama/` | Ollama (local) | `ollama/llama3` |
-| `vllm/` | vLLM (local) | `vllm/my-model` |
-| `moonshot/` | Moonshot AI | `moonshot/moonshot-v1-8k` |
-| `shengsuanyun/` | ShengSuanYun | `shengsuanyun/deepseek-v3` |
-| `volcengine/` | Volcengine | `volcengine/doubao-pro-32k` |
+```json
+{
+  "provider": "openai",
+  "model": "gpt-5.4"
+}
+```
 
-**Note**: If no prefix is specified, `openai/` is used as the default.
+Legacy compatibility format:
+
+```json
+{
+  "model": "openai/gpt-5.4"
+}
+```
+
+Resolution rules:
+
+1. If `provider` is set, PicoClaw sends `model` unchanged.
+2. If `provider` is omitted, PicoClaw treats the first `/` segment in `model` as the provider and everything after that first `/` as the runtime model ID.
+
+Examples:
+
+| Config | Resolved Provider | Model Sent Upstream |
+|--------|-------------------|---------------------|
+| `"provider": "openai", "model": "gpt-5.4"` | `openai` | `gpt-5.4` |
+| `"model": "openai/gpt-5.4"` | `openai` | `gpt-5.4` |
+| `"provider": "openrouter", "model": "google/gemini-2.0-flash-exp:free"` | `openrouter` | `google/gemini-2.0-flash-exp:free` |
+| `"model": "openrouter/google/gemini-2.0-flash-exp:free"` | `openrouter` | `google/gemini-2.0-flash-exp:free` |
 
 ## ModelConfig Fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `model_name` | Yes | User-facing alias for the model |
-| `model` | Yes | Protocol and model identifier (e.g., `openai/gpt-5.4`) |
+| `provider` | No | Preferred provider identifier. When set, `model` is sent unchanged |
+| `model` | Yes | Native model ID when `provider` is set, or legacy `provider/model` when `provider` is omitted |
 | `api_base` | No | API endpoint URL |
 | `api_keys` | No | API authentication keys (array; supports multiple keys for load balancing) |
 | `enabled` | No | Whether this model entry is active. Defaults to `true` during migration for models with API keys or named `local-model`. Set to `false` to disable. |
@@ -136,7 +145,8 @@ There are two ways to configure load balancing:
   "model_list": [
     {
       "model_name": "gpt4",
-      "model": "openai/gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
       "api_keys": ["sk-key1", "sk-key2", "sk-key3"],
       "api_base": "https://api.openai.com/v1"
     }
@@ -162,19 +172,22 @@ model_list:
   "model_list": [
     {
       "model_name": "gpt4",
-      "model": "openai/gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
       "api_keys": ["sk-key1"],
       "api_base": "https://api1.example.com/v1"
     },
     {
       "model_name": "gpt4",
-      "model": "openai/gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
       "api_keys": ["sk-key2"],
       "api_base": "https://api2.example.com/v1"
     },
     {
       "model_name": "gpt4",
-      "model": "openai/gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
       "api_keys": ["sk-key3"],
       "api_base": "https://api3.example.com/v1"
     }
@@ -193,7 +206,8 @@ With `model_list`, adding a new provider requires zero code changes:
   "model_list": [
     {
       "model_name": "my-custom-llm",
-      "model": "openai/my-model-v1",
+      "provider": "openai",
+      "model": "my-model-v1",
       "api_keys": ["your-api-key"],
       "api_base": "https://api.your-provider.com/v1"
     }
@@ -201,7 +215,7 @@ With `model_list`, adding a new provider requires zero code changes:
 }
 ```
 
-Just specify `openai/` as the protocol (or omit it for the default), and provide your provider's API base URL.
+Just set `provider` to `openai` (or another supported provider), and provide your provider's API base URL.
 
 ## Backward Compatibility
 
@@ -216,7 +230,7 @@ During the migration period, your existing V0/V1 config will be auto-migrated to
 
 - [ ] Identify all providers you're currently using
 - [ ] Create `model_list` entries for each provider
-- [ ] Use appropriate protocol prefixes
+- [ ] Prefer explicit `provider` values and native model IDs
 - [ ] Update `agents.defaults.model_name` to reference the new `model_name`
 - [ ] Test that all models work correctly
 - [ ] Remove or comment out the old `providers` section
@@ -234,10 +248,10 @@ model "xxx" not found in model_list or providers
 ### Unknown protocol error
 
 ```
-unknown protocol "xxx" in model "xxx/model-name"
+unknown provider "xxx" in model "xxx/model-name"
 ```
 
-**Solution**: Use a supported protocol prefix. See the [Protocol Prefixes](#protocol-prefixes) table above.
+**Solution**: Use a supported `provider` value, or use the legacy `provider/model` compatibility form correctly. See [Provider / Model Resolution](#provider--model-resolution).
 
 ### Missing API key error
 

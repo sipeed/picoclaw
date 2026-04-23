@@ -1,39 +1,86 @@
 package middleware
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
+	"crypto/rand"
 	"crypto/subtle"
-	"encoding/hex"
+	"encoding/base64"
+	"errors"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
+	"sync"
 	"time"
 )
 
-// LauncherDashboardCookieName is the HttpOnly cookie set after a successful token login.
+// LauncherDashboardCookieName is the HttpOnly cookie set after a successful password login.
 const LauncherDashboardCookieName = "picoclaw_launcher_auth"
 
-// launcherDashboardSessionMaxAgeSec is the session cookie lifetime (7 days).
-const launcherDashboardSessionMaxAgeSec = 7 * 24 * 3600
+// launcherDashboardSessionMaxAgeSec is the dashboard session cookie lifetime (31 days).
+const launcherDashboardSessionMaxAgeSec = 31 * 24 * 3600
 
-const launcherSessionMACLabel = "picoclaw-launcher-v1"
+const (
+	launcherSessionCookieBytes = 32
+	launcherGrantNonceBytes    = 32
+	// LauncherDashboardLocalAutoLoginPath is the one-shot local browser
+	// bootstrap endpoint used by the launcher-managed auto-open flow.
+	LauncherDashboardLocalAutoLoginPath = "/launcher-auto-login"
+	// LauncherDashboardSetupPath is the setup page used before the dashboard
+	// password is initialized.
+	LauncherDashboardSetupPath = "/launcher-setup"
+)
 
-// SessionCookieValue is the expected cookie value for the given signing key and dashboard token.
-func SessionCookieValue(signingKey []byte, dashboardToken string) string {
-	mac := hmac.New(sha256.New, signingKey)
-	_, _ = mac.Write([]byte(launcherSessionMACLabel))
-	_, _ = mac.Write([]byte{0})
-	_, _ = mac.Write([]byte(dashboardToken))
-	return hex.EncodeToString(mac.Sum(nil))
+// NewLauncherDashboardSessionCookie creates the per-process session cookie value.
+func NewLauncherDashboardSessionCookie() (string, error) {
+	return randomURLToken(launcherSessionCookieBytes)
+}
+
+func randomURLToken(n int) (string, error) {
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
 // LauncherDashboardAuthConfig holds runtime material for dashboard access checks.
 type LauncherDashboardAuthConfig struct {
 	ExpectedCookie string
-	Token          string
+	// LocalAutoLogin enables one-shot startup auto-login.
+	LocalAutoLogin *LauncherDashboardLocalAutoLogin
 	// SecureCookie sets the session cookie's Secure flag. If nil, DefaultLauncherDashboardSecureCookie is used.
 	SecureCookie func(*http.Request) bool
+}
+
+// LauncherDashboardLocalAutoLogin is an in-memory, one-shot startup grant.
+// It is not a reusable credential; it only lets the launcher-opened browser
+// receive the current process session cookie.
+type LauncherDashboardLocalAutoLogin struct {
+	grant *launcherDashboardOneTimeGrant
+}
+
+type launcherDashboardOneTimeGrant struct {
+	mu       sync.Mutex
+	expires  time.Time
+	consumed bool
+	nonce    string
+	now      func() time.Time
+}
+
+// NewLauncherDashboardLocalAutoLogin creates a one-shot local auto-login grant.
+func NewLauncherDashboardLocalAutoLogin(ttl time.Duration) (*LauncherDashboardLocalAutoLogin, error) {
+	grant, err := newLauncherDashboardOneTimeGrant(ttl)
+	if err != nil {
+		return nil, err
+	}
+	return &LauncherDashboardLocalAutoLogin{
+		grant: grant,
+	}, nil
+}
+
+// URLPath returns the one-shot local auto-login URL path including its nonce.
+func (a *LauncherDashboardLocalAutoLogin) URLPath() string {
+	return launcherGrantQueryPath(LauncherDashboardLocalAutoLoginPath, a.grant)
 }
 
 // DefaultLauncherDashboardSecureCookie mirrors typical production HTTPS detection (TLS or X-Forwarded-Proto).
@@ -44,7 +91,7 @@ func DefaultLauncherDashboardSecureCookie(r *http.Request) bool {
 	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
-// SetLauncherDashboardSessionCookie writes the HttpOnly session cookie after successful dashboard token login.
+// SetLauncherDashboardSessionCookie writes the HttpOnly session cookie after successful dashboard password login.
 func SetLauncherDashboardSessionCookie(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -82,12 +129,13 @@ func ClearLauncherDashboardSessionCookie(w http.ResponseWriter, r *http.Request,
 	})
 }
 
-// LauncherDashboardAuth requires a valid session cookie or Authorization: Bearer <token>
-// before calling next. Public paths are login page and /api/auth/* handlers.
+// LauncherDashboardAuth requires a valid session cookie before calling next.
+// Public paths are login/setup pages and /api/auth/* handlers.
 func LauncherDashboardAuth(cfg LauncherDashboardAuthConfig, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := canonicalAuthPath(r.URL.Path)
-		if handled := tryLauncherQueryTokenLogin(w, r, p, cfg); handled {
+		if p == LauncherDashboardLocalAutoLoginPath {
+			handleLauncherLocalAutoLogin(w, r, cfg)
 			return
 		}
 		if isPublicLauncherDashboardPath(r.Method, p) {
@@ -105,45 +153,84 @@ func LauncherDashboardAuth(cfg LauncherDashboardAuthConfig, next http.Handler) h
 // canonicalAuthPath matches path cleaning used for routing decisions so
 // prefixes like /assets/../ cannot bypass auth (CVE-class traversal).
 
-// tryLauncherQueryTokenLogin validates ?token= on GET only (non-/api), sets the session
-// cookie when correct, and redirects with 303 so the follow-up is a plain GET without side effects.
-// Invalid token is rejected like any other unauthenticated browser request.
-func tryLauncherQueryTokenLogin(
-	w http.ResponseWriter,
-	r *http.Request,
-	canonicalPath string,
-	cfg LauncherDashboardAuthConfig,
-) bool {
-	if r.Method != http.MethodGet {
-		return false
+func handleLauncherLocalAutoLogin(w http.ResponseWriter, r *http.Request, cfg LauncherDashboardAuthConfig) {
+	if validLauncherDashboardAuth(r, cfg) {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
 	}
-	if canonicalPath == "/api" || strings.HasPrefix(canonicalPath, "/api/") {
-		return false
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, _ = w.Write([]byte("method not allowed"))
+		return
 	}
-	qToken := strings.TrimSpace(r.URL.Query().Get("token"))
-	if qToken == "" {
-		return false
+	if r.Method == http.MethodHead {
+		rejectLauncherDashboardAuth(w, r, LauncherDashboardLocalAutoLoginPath)
+		return
 	}
-	if len(qToken) != len(cfg.Token) || subtle.ConstantTimeCompare([]byte(qToken), []byte(cfg.Token)) != 1 {
-		rejectLauncherDashboardAuth(w, r, canonicalPath)
-		return true
+	if cfg.LocalAutoLogin != nil && cfg.LocalAutoLogin.consume(r.URL.Query().Get("nonce")) {
+		SetLauncherDashboardSessionCookie(w, r, cfg.ExpectedCookie, cfg.SecureCookie)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
 	}
-	SetLauncherDashboardSessionCookie(w, r, cfg.ExpectedCookie, cfg.SecureCookie)
-	http.Redirect(w, r, redirectAfterQueryTokenLogin(r, canonicalPath), http.StatusSeeOther)
-	return true
+	rejectLauncherDashboardAuth(w, r, LauncherDashboardLocalAutoLoginPath)
 }
 
-func redirectAfterQueryTokenLogin(r *http.Request, canonicalPath string) string {
-	if canonicalPath == "/launcher-login" {
-		return "/"
+func (a *LauncherDashboardLocalAutoLogin) consume(nonce string) bool {
+	if a == nil || a.grant == nil {
+		return false
 	}
-	q := r.URL.Query()
-	q.Del("token")
-	enc := q.Encode()
-	if enc != "" {
-		return canonicalPath + "?" + enc
+	return a.grant.use(nonce, nil) == nil
+}
+
+func newLauncherDashboardOneTimeGrant(ttl time.Duration) (*launcherDashboardOneTimeGrant, error) {
+	nonce, err := randomURLToken(launcherGrantNonceBytes)
+	if err != nil {
+		return nil, err
 	}
-	return canonicalPath
+	return &launcherDashboardOneTimeGrant{
+		expires: time.Now().Add(ttl),
+		nonce:   nonce,
+		now:     time.Now,
+	}, nil
+}
+
+func launcherGrantQueryPath(basePath string, grant *launcherDashboardOneTimeGrant) string {
+	if grant == nil {
+		return basePath
+	}
+	return basePath + "?nonce=" + url.QueryEscape(grant.nonce)
+}
+
+// ErrInvalidLauncherDashboardGrant reports that an auto-login grant is missing,
+// expired, already consumed, or otherwise invalid.
+var ErrInvalidLauncherDashboardGrant = errors.New("invalid launcher dashboard grant")
+
+func (g *launcherDashboardOneTimeGrant) use(nonce string, fn func() error) error {
+	if g == nil {
+		return ErrInvalidLauncherDashboardGrant
+	}
+	if len(nonce) != len(g.nonce) ||
+		subtle.ConstantTimeCompare([]byte(nonce), []byte(g.nonce)) != 1 {
+		return ErrInvalidLauncherDashboardGrant
+	}
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	now := time.Now
+	if g.now != nil {
+		now = g.now
+	}
+	if g.consumed || !now().Before(g.expires) {
+		return ErrInvalidLauncherDashboardGrant
+	}
+	if fn != nil {
+		if err := fn(); err != nil {
+			return err
+		}
+	}
+	g.consumed = true
+	return nil
 }
 
 func canonicalAuthPath(raw string) string {
@@ -206,18 +293,14 @@ func validLauncherDashboardAuth(r *http.Request, cfg LauncherDashboardAuthConfig
 			return true
 		}
 	}
-	auth := r.Header.Get("Authorization")
-	const prefix = "Bearer "
-	if strings.HasPrefix(auth, prefix) {
-		token := strings.TrimSpace(auth[len(prefix):])
-		if len(token) == len(cfg.Token) && subtle.ConstantTimeCompare([]byte(token), []byte(cfg.Token)) == 1 {
-			return true
-		}
-	}
 	return false
 }
 
 func rejectLauncherDashboardAuth(w http.ResponseWriter, r *http.Request, canonicalPath string) {
+	if canonicalPath == "/pico/ws" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	if strings.HasPrefix(canonicalPath, "/api/") {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)

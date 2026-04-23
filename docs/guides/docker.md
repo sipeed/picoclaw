@@ -27,7 +27,7 @@ docker compose -f docker/docker-compose.yml --profile gateway up -d
 > **Docker Users**: By default, the Gateway listens on `127.0.0.1` which is not accessible from the host. If you need to access the health endpoints or expose ports, set `PICOCLAW_GATEWAY_HOST=0.0.0.0` in your environment or update `config.json`.
 
 > [!NOTE]
-> The `gateway` profile only serves the webhook handlers (including Pico when enabled) and health endpoints on the gateway port, so it does not expose generic REST chat endpoints such as `/chat` or `/a2a`. Launcher mode adds the browser UI plus `/api/pico/token` and a `/pico/ws` proxy on the launcher port, but `/pico/ws` is also available directly on the gateway whenever the Pico channel is enabled.
+> The `gateway` profile only serves the webhook handlers (including Pico when enabled) and health endpoints on the gateway port, so it does not expose generic REST chat endpoints such as `/chat` or `/a2a`. Launcher mode adds the browser UI plus `/api/pico/info` and an authenticated `/pico/ws` proxy on the launcher port, but `/pico/ws` is also available directly on the gateway whenever the Pico channel is enabled.
 
 ```bash
 # 5. Check logs
@@ -48,7 +48,7 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 Open http://localhost:18800 in your browser. The launcher manages the gateway process automatically.
 
 > [!WARNING]
-> The web console uses a dashboard token (in-memory per run unless `PICOCLAW_LAUNCHER_TOKEN` is set). **Do not** expose the launcher to untrusted networks or the public internet. See [Web launcher dashboard](configuration.md#web-launcher-dashboard) in the Configuration Guide.
+> The web console is protected by dashboard password login. **Do not** expose the launcher to untrusted networks or the public internet. See [Web launcher dashboard](configuration.md#web-launcher-dashboard) in the Configuration Guide.
 
 ### Agent Mode (One-shot)
 
@@ -94,19 +94,22 @@ picoclaw onboard
   "model_list": [
     {
       "model_name": "ark-code-latest",
-      "model": "volcengine/ark-code-latest",
+      "provider": "volcengine",
+      "model": "ark-code-latest",
       "api_keys": ["sk-your-api-key"],
       "api_base":"https://ark.cn-beijing.volces.com/api/coding/v3"
     },
     {
       "model_name": "gpt-5.4",
-      "model": "openai/gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
       "api_keys": ["your-api-key"],
       "request_timeout": 300
     },
     {
       "model_name": "claude-sonnet-4.6",
-      "model": "anthropic/claude-sonnet-4.6",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4.6",
       "api_keys": ["your-anthropic-key"]
     }
   ],

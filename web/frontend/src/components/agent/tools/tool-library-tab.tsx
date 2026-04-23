@@ -1,7 +1,8 @@
-import { IconSearch } from "@tabler/icons-react"
+import { IconSearch, IconSettings } from "@tabler/icons-react"
 import { useTranslation } from "react-i18next"
 
 import type { ToolSupportItem } from "@/api/tools"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import {
@@ -29,6 +30,7 @@ interface ToolLibraryTabProps {
   pendingToolName: string | null
   onSearchQueryChange: (value: string) => void
   onStatusFilterChange: (value: ToolStatusFilter) => void
+  onOpenWebSearchSettings: () => void
   onToggleTool: (name: string, enabled: boolean) => void
 }
 
@@ -43,6 +45,7 @@ export function ToolLibraryTab({
   pendingToolName,
   onSearchQueryChange,
   onStatusFilterChange,
+  onOpenWebSearchSettings,
   onToggleTool,
 }: ToolLibraryTabProps) {
   const { t } = useTranslation()
@@ -131,6 +134,7 @@ export function ToolLibraryTab({
                     key={tool.name}
                     tool={tool}
                     isPending={pendingToolName === tool.name}
+                    onOpenWebSearchSettings={onOpenWebSearchSettings}
                     onToggleTool={onToggleTool}
                   />
                 ))}
@@ -146,10 +150,12 @@ export function ToolLibraryTab({
 function ToolCard({
   tool,
   isPending,
+  onOpenWebSearchSettings,
   onToggleTool,
 }: {
   tool: ToolSupportItem
   isPending: boolean
+  onOpenWebSearchSettings: () => void
   onToggleTool: (name: string, enabled: boolean) => void
 }) {
   const { t } = useTranslation()
@@ -157,8 +163,10 @@ function ToolCard({
     ? t(`pages.agent.tools.reasons.${tool.reason_code}`)
     : ""
   const isEnabled = tool.status === "enabled"
+  const isToggledOn = tool.status !== "disabled"
   const isDisabled = tool.status === "disabled"
   const isBlocked = tool.status === "blocked"
+  const isWebSearchTool = tool.name === "web_search"
 
   return (
     <Card
@@ -170,23 +178,40 @@ function ToolCard({
         isDisabled && "opacity-[0.80] hover:opacity-100",
       )}
     >
-      <CardContent className="flex h-full flex-col p-6">
-        <div className="mb-3 flex items-start justify-between gap-4">
+      <CardContent className="flex h-full flex-col px-5 py-1">
+        <div className="mb-0.5 flex items-start justify-between gap-4">
           <div className="flex min-w-0 flex-1 items-center gap-3">
-            <h4 className="text-foreground/90 min-w-0 break-all font-mono text-sm font-semibold tracking-tight">
+            <h4 className="text-foreground/90 min-w-0 font-mono text-sm font-semibold tracking-tight break-all">
               {tool.name}
             </h4>
             <ToolStatusBadge status={tool.status} />
           </div>
-          <Switch
-            checked={isEnabled}
-            disabled={isPending}
-            onCheckedChange={(checked) => onToggleTool(tool.name, checked)}
-            className={cn(
-              "shrink-0",
-              isEnabled && "shadow-xs ring-1 ring-emerald-500/20",
+          <div className="flex h-8 shrink-0 items-center gap-2">
+            {isWebSearchTool && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={onOpenWebSearchSettings}
+                className="text-muted-foreground hover:text-foreground hover:bg-muted/60 size-8 rounded-lg"
+                aria-label={t(
+                  "pages.agent.tools.web_search.open_settings",
+                  "Open Settings",
+                )}
+              >
+                <IconSettings className="size-4" />
+              </Button>
             )}
-          />
+            <Switch
+              checked={isToggledOn}
+              disabled={isPending}
+              onCheckedChange={(checked) => onToggleTool(tool.name, checked)}
+              className={cn(
+                "shrink-0",
+                isEnabled && "shadow-xs ring-1 ring-emerald-500/20",
+              )}
+            />
+          </div>
         </div>
 
         <p className="text-muted-foreground/80 flex-1 text-[14px] leading-relaxed">

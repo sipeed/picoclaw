@@ -48,24 +48,6 @@ func (al *AgentLoop) emitEvent(kind EventKind, meta EventMeta, payload any) {
 	al.eventBus.Emit(evt)
 }
 
-func (al *AgentLoop) hookAbortError(ts *turnState, stage string, decision HookDecision) error {
-	reason := decision.Reason
-	if reason == "" {
-		reason = "hook requested turn abort"
-	}
-
-	err := fmt.Errorf("hook aborted turn during %s: %s", stage, reason)
-	al.emitEvent(
-		EventKindError,
-		ts.eventMeta("hooks", "turn.error"),
-		ErrorPayload{
-			Stage:   "hook." + stage,
-			Message: err.Error(),
-		},
-	)
-	return err
-}
-
 func (al *AgentLoop) logEvent(evt Event) {
 	fields := map[string]any{
 		"event_kind":  evt.Kind.String(),

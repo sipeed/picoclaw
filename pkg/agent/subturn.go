@@ -462,7 +462,8 @@ func spawnSubTurn(
 	}()
 
 	// 8. Execute sub-turn via the real agent loop.
-	turnRes, turnErr := al.runTurn(childCtx, childTS)
+	pipeline := NewPipeline(al)
+	turnRes, turnErr := al.runTurn(childCtx, childTS, pipeline)
 
 	// Release the concurrency semaphore immediately after runTurn completes,
 	// before the cleanup defer runs. This prevents a deadlock where:

@@ -67,9 +67,11 @@ Telegram command menu registration remains channel-local discovery UX; generic c
 
 If command registration fails (network/API transient errors), the channel still starts and PicoClaw retries registration in the background.
 
-You can also manage installed skills directly from Telegram:
+You can also inspect skills and MCP servers directly from Telegram:
 
 - `/list skills`
+- `/list mcp`
+- `/show mcp <server>`
 - `/use <skill> <message>`
 - `/use <skill>` and then send the actual request in the next message
 - `/use clear`

@@ -48,13 +48,6 @@ func TestBuildRequestUsesFunctionFieldsWhenToolCallNameMissing(t *testing.T) {
 	}
 }
 
-func TestResolveToolResponseNameInfersNameFromGeneratedCallID(t *testing.T) {
-	got := resolveToolResponseName("call_search_docs_999", map[string]string{})
-	if got != "search_docs" {
-		t.Fatalf("expected inferred tool name search_docs, got %q", got)
-	}
-}
-
 func TestParseSSEResponse_SplitsThoughtAndVisibleContent(t *testing.T) {
 	p := &AntigravityProvider{}
 	body := "data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hidden reasoning\",\"thought\":true},{\"text\":\"visible answer\"}],\"role\":\"model\"},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":8,\"candidatesTokenCount\":17,\"totalTokenCount\":216}}}\n" +

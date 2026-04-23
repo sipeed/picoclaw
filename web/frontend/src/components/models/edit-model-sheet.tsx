@@ -23,6 +23,8 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 
 interface EditForm {
+  provider: string
+  modelId: string
   apiKey: string
   apiBase: string
   proxy: string
@@ -52,6 +54,8 @@ export function EditModelSheet({
 }: EditModelSheetProps) {
   const { t } = useTranslation()
   const [form, setForm] = useState<EditForm>({
+    provider: "",
+    modelId: "",
     apiKey: "",
     apiBase: "",
     proxy: "",
@@ -72,6 +76,8 @@ export function EditModelSheet({
   useEffect(() => {
     if (model) {
       setForm({
+        provider: model.provider ?? "",
+        modelId: model.model,
         apiKey: "",
         apiBase: model.api_base ?? "",
         proxy: model.proxy ?? "",
@@ -103,12 +109,17 @@ export function EditModelSheet({
 
   const handleSave = async () => {
     if (!model) return
+    if (!form.modelId.trim()) {
+      setError(t("models.add.errorRequired"))
+      return
+    }
     setSaving(true)
     setError("")
     try {
       await updateModel(model.index, {
         model_name: model.model_name,
-        model: model.model,
+        provider: form.provider.trim(),
+        model: form.modelId.trim(),
         api_base: form.apiBase || undefined,
         api_key: form.apiKey || undefined,
         proxy: form.proxy || undefined,
@@ -166,6 +177,29 @@ export function EditModelSheet({
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="space-y-5 px-6 py-5">
+            <Field
+              label={t("models.field.provider")}
+              hint={t("models.field.providerHint")}
+            >
+              <Input
+                value={form.provider}
+                onChange={setField("provider")}
+                placeholder={t("models.field.providerPlaceholder")}
+              />
+            </Field>
+
+            <Field
+              label={t("models.add.modelId")}
+              hint={t("models.add.modelIdHint")}
+            >
+              <Input
+                value={form.modelId}
+                onChange={setField("modelId")}
+                placeholder={t("models.add.modelIdPlaceholder")}
+                className="font-mono text-sm"
+              />
+            </Field>
+
             {!isOAuth && (
               <Field
                 label={t("models.field.apiKey")}

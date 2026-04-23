@@ -2,7 +2,9 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,17 +14,43 @@ import (
 	"github.com/sipeed/picoclaw/web/backend/middleware"
 )
 
-func TestLauncherAuthLoginAndStatus(t *testing.T) {
-	key := make([]byte, 32)
-	for i := range key {
-		key[i] = 0x55
+type fakePasswordStore struct {
+	initialized bool
+	password    string
+	err         error
+}
+
+func (s *fakePasswordStore) IsInitialized(context.Context) (bool, error) {
+	if s.err != nil {
+		return false, s.err
 	}
-	const tok = "dashboard-test-token-9"
-	sess := middleware.SessionCookieValue(key, tok)
+	return s.initialized, nil
+}
+
+func (s *fakePasswordStore) SetPassword(_ context.Context, plain string) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.password = plain
+	s.initialized = true
+	return nil
+}
+
+func (s *fakePasswordStore) VerifyPassword(_ context.Context, plain string) (bool, error) {
+	if s.err != nil {
+		return false, s.err
+	}
+	return s.initialized && plain == s.password, nil
+}
+
+func TestLauncherAuthLoginAndStatus(t *testing.T) {
+	const password = "dashboard-test-password"
+	const sess = "session-cookie-value"
+	store := &fakePasswordStore{initialized: true, password: password}
 	mux := http.NewServeMux()
 	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
-		DashboardToken: tok,
-		SessionCookie:  sess,
+		SessionCookie: sess,
+		PasswordStore: store,
 	})
 
 	t.Run("status_unauthenticated", func(t *testing.T) {
@@ -45,7 +73,7 @@ func TestLauncherAuthLoginAndStatus(t *testing.T) {
 
 	t.Run("login_ok", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"password":"`+tok+`"}`))
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"password":"`+password+`"}`))
 		req.Header.Set("Content-Type", "application/json")
 		req.RemoteAddr = "127.0.0.1:12345"
 		mux.ServeHTTP(rec, req)
@@ -75,14 +103,13 @@ func TestLauncherAuthLoginAndStatus(t *testing.T) {
 	})
 }
 
-func TestLauncherAuthLegacyTokenFallbackReportsInitialized(t *testing.T) {
-	key := make([]byte, 32)
-	const tok = "legacy-fallback-token"
-	sess := middleware.SessionCookieValue(key, tok)
+func TestLauncherAuthUninitializedStoreRequiresSetup(t *testing.T) {
+	const sess = "session-cookie-value"
+	store := &fakePasswordStore{}
 	mux := http.NewServeMux()
 	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
-		DashboardToken: tok,
-		SessionCookie:  sess,
+		SessionCookie: sess,
+		PasswordStore: store,
 	})
 
 	rec := httptest.NewRecorder()
@@ -98,29 +125,80 @@ func TestLauncherAuthLegacyTokenFallbackReportsInitialized(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if !body.Initialized {
-		t.Fatalf("initialized = false, want true in legacy token fallback mode")
+	if body.Initialized {
+		t.Fatalf("initialized = true, want false before setup")
 	}
 	if body.Authenticated {
 		t.Fatalf("unexpected authenticated=true: %+v", body)
 	}
 
 	rec = httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"password":"`+tok+`"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"password":"not-set-yet"}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("login before setup code = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(
+		http.MethodPost,
+		"/api/auth/setup",
+		strings.NewReader(`{"password":"12345678","confirm":"12345678"}`),
+	)
 	req.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("login code = %d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("setup code = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"password":"12345678"}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login after setup code = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
-func TestLauncherAuthSetupRejectedInLegacyTokenFallback(t *testing.T) {
-	key := make([]byte, 32)
-	sess := middleware.SessionCookieValue(key, "legacy-token")
+func TestLauncherAuthSetupRequiresSessionWhenInitialized(t *testing.T) {
+	const sess = "session-cookie-value"
+	store := &fakePasswordStore{initialized: true, password: "old-password"}
 	mux := http.NewServeMux()
 	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
-		DashboardToken: "legacy-token",
-		SessionCookie:  sess,
+		SessionCookie: sess,
+		PasswordStore: store,
+	})
+
+	body := strings.NewReader(`{"password":"new-password","confirm":"new-password"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/setup", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("setup without session code = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	body = strings.NewReader(`{"password":"new-password","confirm":"new-password"}`)
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/setup", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: middleware.LauncherDashboardCookieName, Value: sess})
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("setup with session code = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if store.password != "new-password" {
+		t.Fatalf("password = %q, want new-password", store.password)
+	}
+}
+
+func TestLauncherAuthInitialSetupAllowsDirectSetup(t *testing.T) {
+	store := &fakePasswordStore{}
+	mux := http.NewServeMux()
+	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
+		SessionCookie: "session-cookie-value",
+		PasswordStore: store,
 	})
 
 	rec := httptest.NewRecorder()
@@ -131,18 +209,46 @@ func TestLauncherAuthSetupRejectedInLegacyTokenFallback(t *testing.T) {
 	)
 	req.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotImplemented {
-		t.Fatalf("setup code = %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("setup without grant code = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLauncherAuthStoreUnavailableFailsClosed(t *testing.T) {
+	mux := http.NewServeMux()
+	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
+		SessionCookie: "session-cookie-value",
+		StoreError:    errors.New("open auth store"),
+	})
+
+	for _, tc := range []struct {
+		name   string
+		method string
+		path   string
+		body   string
+	}{
+		{name: "status", method: http.MethodGet, path: "/api/auth/status"},
+		{name: "login", method: http.MethodPost, path: "/api/auth/login", body: `{"password":"password"}`},
+		{name: "setup", method: http.MethodPost, path: "/api/auth/setup", body: `{"password":"12345678","confirm":"12345678"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			if tc.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			mux.ServeHTTP(rec, req)
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Fatalf("code = %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
 
 func TestLauncherAuthLogoutRequiresPostAndJSON(t *testing.T) {
-	key := make([]byte, 32)
-	sess := middleware.SessionCookieValue(key, "tok")
 	mux := http.NewServeMux()
 	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
-		DashboardToken: "tok",
-		SessionCookie:  sess,
+		SessionCookie: "session-cookie-value",
 	})
 
 	rec := httptest.NewRecorder()
@@ -169,16 +275,14 @@ func TestLauncherAuthLogoutRequiresPostAndJSON(t *testing.T) {
 }
 
 func TestLauncherAuthLoginRateLimit(t *testing.T) {
-	key := make([]byte, 32)
-	const tok = "rate-limit-tok-xxxxxxxx"
-	sess := middleware.SessionCookieValue(key, tok)
+	store := &fakePasswordStore{initialized: true, password: "correct-password"}
 	mux := http.NewServeMux()
 	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
-		DashboardToken: tok,
-		SessionCookie:  sess,
+		SessionCookie: "session-cookie-value",
+		PasswordStore: store,
 	})
 
-	// 11 failing logins by wrong token; each consumes allow() slot after valid JSON.
+	// 11 failing logins by wrong password; each consumes allow() slot after valid JSON.
 	wrongBody := `{"password":"wrong"}`
 	for i := 0; i < loginAttemptsPerIP; i++ {
 		rec := httptest.NewRecorder()
@@ -231,12 +335,9 @@ func TestReferrerPolicyMiddleware(t *testing.T) {
 }
 
 func TestLauncherAuthLogoutEmptyBody(t *testing.T) {
-	key := make([]byte, 32)
-	sess := middleware.SessionCookieValue(key, "tok")
 	mux := http.NewServeMux()
 	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
-		DashboardToken: "tok",
-		SessionCookie:  sess,
+		SessionCookie: "session-cookie-value",
 	})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
@@ -249,12 +350,9 @@ func TestLauncherAuthLogoutEmptyBody(t *testing.T) {
 }
 
 func TestLauncherAuthLogoutRejectsTrailingJSON(t *testing.T) {
-	key := make([]byte, 32)
-	sess := middleware.SessionCookieValue(key, "tok")
 	mux := http.NewServeMux()
 	RegisterLauncherAuthRoutes(mux, LauncherAuthRouteOpts{
-		DashboardToken: "tok",
-		SessionCookie:  sess,
+		SessionCookie: "session-cookie-value",
 	})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", strings.NewReader(`{}{}`))

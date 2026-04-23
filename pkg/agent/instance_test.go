@@ -104,6 +104,7 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 		name         string
 		aliasName    string
 		modelName    string
+		provider     string
 		apiBase      string
 		wantProvider string
 		wantModel    string
@@ -123,6 +124,15 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 			apiBase:      "https://api.z.ai/api/coding/paas/v4",
 			wantProvider: "openai",
 			wantModel:    "glm-5",
+		},
+		{
+			name:         "explicit provider overrides model prefix",
+			aliasName:    "nvidia-gpt",
+			modelName:    "z-ai/glm-5.1",
+			provider:     "nvidia",
+			apiBase:      "https://integrate.api.nvidia.com/v1",
+			wantProvider: "nvidia",
+			wantModel:    "z-ai/glm-5.1",
 		},
 	}
 
@@ -145,6 +155,7 @@ func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 					{
 						ModelName: tt.aliasName,
 						Model:     tt.modelName,
+						Provider:  tt.provider,
 						APIBase:   tt.apiBase,
 					},
 				},
@@ -215,6 +226,43 @@ func TestNewAgentInstance_PreservesDistinctLimiterIdentityForSharedResolvedModel
 	}
 	if second.RPM != 3 {
 		t.Fatalf("second RPM = %d, want 3", second.RPM)
+	}
+}
+
+func TestNewAgentInstance_PreservesConfigIdentityForExplicitProviderModelRef(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: tmpDir,
+				ModelName: "nvidia/z-ai/glm-5.1",
+			},
+		},
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "nvidia-glm",
+				Provider:  "nvidia",
+				Model:     "z-ai/glm-5.1",
+				RPM:       7,
+			},
+		},
+	}
+
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	if len(agent.Candidates) != 1 {
+		t.Fatalf("len(Candidates) = %d, want 1", len(agent.Candidates))
+	}
+
+	candidate := agent.Candidates[0]
+	if candidate.Provider != "nvidia" || candidate.Model != "z-ai/glm-5.1" {
+		t.Fatalf("candidate = %s/%s, want nvidia/z-ai/glm-5.1", candidate.Provider, candidate.Model)
+	}
+	if candidate.IdentityKey != "model_name:nvidia-glm" {
+		t.Fatalf("identity key = %q, want %q", candidate.IdentityKey, "model_name:nvidia-glm")
+	}
+	if candidate.RPM != 7 {
+		t.Fatalf("RPM = %d, want 7", candidate.RPM)
 	}
 }
 

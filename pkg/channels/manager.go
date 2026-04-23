@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/health"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 const (
@@ -96,6 +98,23 @@ type Manager struct {
 	channelHashes map[string]string // channel name → config hash
 }
 
+type toolFeedbackMessageTracker interface {
+	RecordToolFeedbackMessage(chatID, messageID, content string)
+	ClearToolFeedbackMessage(chatID string)
+}
+
+type toolFeedbackMessageCleaner interface {
+	DismissToolFeedbackMessage(ctx context.Context, chatID string)
+}
+
+type toolFeedbackMessageTargetResolver interface {
+	ToolFeedbackMessageChatID(chatID string, outboundCtx *bus.InboundContext) string
+}
+
+type toolFeedbackMessageContentPreparer interface {
+	PrepareToolFeedbackMessageContent(content string) string
+}
+
 type asyncTask struct {
 	cancel context.CancelFunc
 }
@@ -108,12 +127,60 @@ func outboundMessageChatID(msg bus.OutboundMessage) string {
 	return msg.ChatID
 }
 
+func outboundMessageIsToolFeedback(msg bus.OutboundMessage) bool {
+	if len(msg.Context.Raw) == 0 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(msg.Context.Raw["message_kind"]), "tool_feedback")
+}
+
 func outboundMediaChannel(msg bus.OutboundMediaMessage) string {
 	return msg.Context.Channel
 }
 
 func outboundMediaChatID(msg bus.OutboundMediaMessage) string {
 	return msg.ChatID
+}
+
+func trackedToolFeedbackMessageChatID(ch Channel, chatID string, outboundCtx *bus.InboundContext) string {
+	if resolver, ok := ch.(toolFeedbackMessageTargetResolver); ok {
+		if resolved := strings.TrimSpace(resolver.ToolFeedbackMessageChatID(chatID, outboundCtx)); resolved != "" {
+			return resolved
+		}
+	}
+	return strings.TrimSpace(chatID)
+}
+
+func dismissTrackedToolFeedbackMessage(
+	ctx context.Context,
+	ch Channel,
+	chatID string,
+	outboundCtx *bus.InboundContext,
+) {
+	trackedChatID := trackedToolFeedbackMessageChatID(ch, chatID, outboundCtx)
+	if trackedChatID == "" {
+		return
+	}
+	if cleaner, ok := ch.(toolFeedbackMessageCleaner); ok {
+		cleaner.DismissToolFeedbackMessage(ctx, trackedChatID)
+		return
+	}
+	if tracker, ok := ch.(toolFeedbackMessageTracker); ok {
+		tracker.ClearToolFeedbackMessage(trackedChatID)
+	}
+}
+
+func prepareToolFeedbackMessageContent(ch Channel, content string) string {
+	prepared := strings.TrimSpace(content)
+	if prepared == "" {
+		return ""
+	}
+	if preparer, ok := ch.(toolFeedbackMessageContentPreparer); ok {
+		if candidate := strings.TrimSpace(preparer.PrepareToolFeedbackMessageContent(prepared)); candidate != "" {
+			return candidate
+		}
+	}
+	return prepared
 }
 
 // RecordPlaceholder registers a placeholder message for later editing.
@@ -196,7 +263,19 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 		}
 	}
 
-	// 3. If a stream already finalized this message, delete the placeholder and skip send
+	isToolFeedback := outboundMessageIsToolFeedback(msg)
+
+	// 3. If a stream already finalized this chat, stale tool feedback must be
+	// dropped without consuming the final-response marker. Streaming finalization
+	// bypasses the worker queue, so older queued feedback can arrive before the
+	// normal final outbound message that cleans up the marker and placeholder.
+	if isToolFeedback {
+		if _, loaded := m.streamActive.Load(key); loaded {
+			return nil, true
+		}
+	}
+
+	// 4. If a stream already finalized this message, delete the placeholder and skip send
 	if _, loaded := m.streamActive.LoadAndDelete(key); loaded {
 		if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 			if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
@@ -208,14 +287,29 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 				}
 			}
 		}
+		if !isToolFeedback {
+			dismissTrackedToolFeedbackMessage(ctx, ch, chatID, &msg.Context)
+		}
 		return nil, true
 	}
 
-	// 4. Try editing placeholder
+	// 5. Try editing placeholder
 	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
 			if editor, ok := ch.(MessageEditor); ok {
-				if err := editor.EditMessage(ctx, chatID, entry.id, msg.Content); err == nil {
+				content := msg.Content
+				trackedContent := msg.Content
+				if isToolFeedback {
+					trackedContent = prepareToolFeedbackMessageContent(ch, msg.Content)
+					content = InitialAnimatedToolFeedbackContent(trackedContent)
+				}
+				if err := editor.EditMessage(ctx, chatID, entry.id, content); err == nil {
+					trackedChatID := trackedToolFeedbackMessageChatID(ch, chatID, &msg.Context)
+					if tracker, ok := ch.(toolFeedbackMessageTracker); ok && isToolFeedback {
+						tracker.RecordToolFeedbackMessage(trackedChatID, entry.id, trackedContent)
+					} else if !isToolFeedback {
+						dismissTrackedToolFeedbackMessage(ctx, ch, chatID, &msg.Context)
+					}
 					return []string{entry.id}, true
 				}
 				// edit failed → fall through to normal Send
@@ -312,22 +406,35 @@ func (m *Manager) GetStreamer(ctx context.Context, channelName, chatID string) (
 	// Mark streamActive on Finalize so preSend knows to clean up the placeholder
 	key := channelName + ":" + chatID
 	return &finalizeHookStreamer{
-		Streamer:   streamer,
-		onFinalize: func() { m.streamActive.Store(key, true) },
+		Streamer: streamer,
+		onFinalize: func(finalizeCtx context.Context) {
+			dismissTrackedToolFeedbackMessage(
+				finalizeCtx,
+				ch,
+				chatID,
+				&bus.InboundContext{
+					Channel: channelName,
+					ChatID:  chatID,
+				},
+			)
+			m.streamActive.Store(key, true)
+		},
 	}, true
 }
 
 // finalizeHookStreamer wraps a Streamer to run a hook on Finalize.
 type finalizeHookStreamer struct {
 	Streamer
-	onFinalize func()
+	onFinalize func(context.Context)
 }
 
 func (s *finalizeHookStreamer) Finalize(ctx context.Context, content string) error {
 	if err := s.Streamer.Finalize(ctx, content); err != nil {
 		return err
 	}
-	s.onFinalize()
+	if s.onFinalize != nil {
+		s.onFinalize(ctx)
+	}
 	return nil
 }
 
@@ -769,18 +876,21 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 			// Collect all message chunks to send
 			var chunks []string
 
-			// Step 1: Try marker-based splitting if enabled
-			if m.config != nil && m.config.Agents.Defaults.SplitOnMarker {
+			// Step 1: Try marker-based splitting if enabled.
+			// Tool feedback must stay a single message, so it skips marker splitting.
+			if m.config != nil && m.config.Agents.Defaults.SplitOnMarker && !outboundMessageIsToolFeedback(msg) {
 				if markerChunks := SplitByMarker(msg.Content); len(markerChunks) > 1 {
 					for _, chunk := range markerChunks {
-						chunks = append(chunks, splitByLength(chunk, maxLen)...)
+						chunkMsg := msg
+						chunkMsg.Content = chunk
+						chunks = append(chunks, splitOutboundMessageContent(chunkMsg, maxLen)...)
 					}
 				}
 			}
 
 			// Step 2: Fallback to length-based splitting if no chunks from marker
 			if len(chunks) == 0 {
-				chunks = splitByLength(msg.Content, maxLen)
+				chunks = splitOutboundMessageContent(msg, maxLen)
 			}
 
 			// Step 3: Send all chunks
@@ -795,12 +905,25 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 	}
 }
 
-// splitByLength splits content by maxLen if needed, otherwise returns single chunk.
-func splitByLength(content string, maxLen int) []string {
-	if maxLen > 0 && len([]rune(content)) > maxLen {
-		return SplitMessage(content, maxLen)
+// splitOutboundMessageContent splits regular outbound content by maxLen, but
+// keeps tool feedback in a single message by truncating the explanation body.
+func splitOutboundMessageContent(msg bus.OutboundMessage, maxLen int) []string {
+	if maxLen > 0 {
+		if outboundMessageIsToolFeedback(msg) {
+			animationSafeLen := maxLen - MaxToolFeedbackAnimationFrameLength()
+			if animationSafeLen <= 0 {
+				animationSafeLen = maxLen
+			}
+			if len([]rune(msg.Content)) > animationSafeLen {
+				return []string{utils.FitToolFeedbackMessage(msg.Content, animationSafeLen)}
+			}
+			return []string{msg.Content}
+		}
+		if len([]rune(msg.Content)) > maxLen {
+			return SplitMessage(msg.Content, maxLen)
+		}
 	}
-	return []string{content}
+	return []string{msg.Content}
 }
 
 // sendWithRetry sends a message through the channel with rate limiting and
@@ -1264,13 +1387,16 @@ func (m *Manager) SendMessage(ctx context.Context, msg bus.OutboundMessage) erro
 	if mlp, ok := w.ch.(MessageLengthProvider); ok {
 		maxLen = mlp.MaxMessageLength()
 	}
-	if maxLen > 0 && len([]rune(msg.Content)) > maxLen {
-		for _, chunk := range SplitMessage(msg.Content, maxLen) {
+	if chunks := splitOutboundMessageContent(msg, maxLen); len(chunks) > 1 {
+		for _, chunk := range chunks {
 			chunkMsg := msg
 			chunkMsg.Content = chunk
 			m.sendWithRetry(ctx, channelName, w, chunkMsg)
 		}
 	} else {
+		if len(chunks) == 1 {
+			msg.Content = chunks[0]
+		}
 		m.sendWithRetry(ctx, channelName, w, msg)
 	}
 	return nil

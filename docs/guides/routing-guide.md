@@ -69,12 +69,14 @@ This guide explains how to configure both for real deployments.
   "model_list": [
     {
       "model_name": "gpt-main",
-      "model": "openai/gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
       "api_keys": ["sk-main"]
     },
     {
       "model_name": "flash-light",
-      "model": "gemini/gemini-2.0-flash-exp",
+      "provider": "gemini",
+      "model": "gemini-2.0-flash-exp",
       "api_keys": ["sk-light"]
     }
   ],

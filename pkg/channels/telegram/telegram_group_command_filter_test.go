@@ -108,7 +108,7 @@ func TestHandleMessage_GroupMentionOnly_BotCommandEntity(t *testing.T) {
 				t.Fatalf("handleMessage error: %v", err)
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Microsecond)
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 			defer cancel()
 			select {
 			case <-ctx.Done():

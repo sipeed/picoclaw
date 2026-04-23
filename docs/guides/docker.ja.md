@@ -45,7 +45,7 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 ブラウザで http://localhost:18800 を開いてください。Launcher が Gateway プロセスを自動管理します。
 
 > [!WARNING]
-> Web コンソールはまだ認証をサポートしていません。公開インターネットに公開しないでください。
+> Web コンソールは dashboard ログインパスワードで保護されます。信頼できないネットワークや公開インターネットには公開しないでください。
 
 ### Agent モード (ワンショット)
 

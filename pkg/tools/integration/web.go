@@ -1113,12 +1113,147 @@ type WebSearchToolOptions struct {
 	Proxy                 string
 }
 
+func WebSearchToolOptionsFromConfig(cfg *config.Config) WebSearchToolOptions {
+	return WebSearchToolOptions{
+		Provider:              cfg.Tools.Web.Provider,
+		BraveAPIKeys:          cfg.Tools.Web.Brave.APIKeys.Values(),
+		BraveMaxResults:       cfg.Tools.Web.Brave.MaxResults,
+		BraveEnabled:          cfg.Tools.Web.Brave.Enabled,
+		TavilyAPIKeys:         cfg.Tools.Web.Tavily.APIKeys.Values(),
+		TavilyBaseURL:         cfg.Tools.Web.Tavily.BaseURL,
+		TavilyMaxResults:      cfg.Tools.Web.Tavily.MaxResults,
+		TavilyEnabled:         cfg.Tools.Web.Tavily.Enabled,
+		SogouMaxResults:       cfg.Tools.Web.Sogou.MaxResults,
+		SogouEnabled:          cfg.Tools.Web.Sogou.Enabled,
+		DuckDuckGoMaxResults:  cfg.Tools.Web.DuckDuckGo.MaxResults,
+		DuckDuckGoEnabled:     cfg.Tools.Web.DuckDuckGo.Enabled,
+		PerplexityAPIKeys:     cfg.Tools.Web.Perplexity.APIKeys.Values(),
+		PerplexityMaxResults:  cfg.Tools.Web.Perplexity.MaxResults,
+		PerplexityEnabled:     cfg.Tools.Web.Perplexity.Enabled,
+		SearXNGBaseURL:        cfg.Tools.Web.SearXNG.BaseURL,
+		SearXNGMaxResults:     cfg.Tools.Web.SearXNG.MaxResults,
+		SearXNGEnabled:        cfg.Tools.Web.SearXNG.Enabled,
+		GLMSearchAPIKey:       cfg.Tools.Web.GLMSearch.APIKey.String(),
+		GLMSearchBaseURL:      cfg.Tools.Web.GLMSearch.BaseURL,
+		GLMSearchEngine:       cfg.Tools.Web.GLMSearch.SearchEngine,
+		GLMSearchMaxResults:   cfg.Tools.Web.GLMSearch.MaxResults,
+		GLMSearchEnabled:      cfg.Tools.Web.GLMSearch.Enabled,
+		BaiduSearchAPIKey:     cfg.Tools.Web.BaiduSearch.APIKey.String(),
+		BaiduSearchBaseURL:    cfg.Tools.Web.BaiduSearch.BaseURL,
+		BaiduSearchMaxResults: cfg.Tools.Web.BaiduSearch.MaxResults,
+		BaiduSearchEnabled:    cfg.Tools.Web.BaiduSearch.Enabled,
+		Proxy:                 cfg.Tools.Web.Proxy,
+	}
+}
+
+func WebSearchProviderReady(opts WebSearchToolOptions, name string) bool {
+	return opts.providerReady(name)
+}
+
+func ResolveWebSearchProviderName(opts WebSearchToolOptions, query string) (string, error) {
+	return opts.resolveProviderName(query)
+}
+
+var (
+	knownWebSearchProviders = []string{
+		"sogou",
+		"duckduckgo",
+		"brave",
+		"tavily",
+		"perplexity",
+		"searxng",
+		"glm_search",
+		"baidu_search",
+	}
+	autoPrimaryWebSearchProviders  = []string{"perplexity", "brave", "searxng", "tavily"}
+	autoFallbackWebSearchProviders = []string{"baidu_search", "glm_search"}
+)
+
+func isKnownWebSearchProvider(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	for _, known := range knownWebSearchProviders {
+		if name == known {
+			return true
+		}
+	}
+	return false
+}
+
+func (opts WebSearchToolOptions) providerReady(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "sogou":
+		return opts.SogouEnabled
+	case "duckduckgo":
+		return opts.DuckDuckGoEnabled
+	case "brave":
+		return opts.BraveEnabled && len(opts.BraveAPIKeys) > 0
+	case "tavily":
+		return opts.TavilyEnabled && len(opts.TavilyAPIKeys) > 0
+	case "perplexity":
+		return opts.PerplexityEnabled && len(opts.PerplexityAPIKeys) > 0
+	case "searxng":
+		return opts.SearXNGEnabled && strings.TrimSpace(opts.SearXNGBaseURL) != ""
+	case "glm_search":
+		return opts.GLMSearchEnabled && strings.TrimSpace(opts.GLMSearchAPIKey) != ""
+	case "baidu_search":
+		return opts.BaiduSearchEnabled && strings.TrimSpace(opts.BaiduSearchAPIKey) != ""
+	default:
+		return false
+	}
+}
+
+func (opts WebSearchToolOptions) normalizedProviderName() string {
+	providerName := strings.ToLower(strings.TrimSpace(opts.Provider))
+	if providerName != "" && providerName != "auto" && !isKnownWebSearchProvider(providerName) {
+		// Tolerate stale or manually edited config values at runtime by
+		// treating them as "auto" and falling back to the next ready provider.
+		return "auto"
+	}
+	return providerName
+}
+
+func (opts WebSearchToolOptions) resolveProviderName(query string) (string, error) {
+	providerName := opts.normalizedProviderName()
+	if providerName != "" && providerName != "auto" && opts.providerReady(providerName) {
+		return providerName, nil
+	}
+
+	for _, name := range autoPrimaryWebSearchProviders {
+		if opts.providerReady(name) {
+			return name, nil
+		}
+	}
+
+	sogouReady := opts.providerReady("sogou")
+	duckReady := opts.providerReady("duckduckgo")
+	if sogouReady && duckReady {
+		if prefersDuckDuckGoQuery(query) {
+			return "duckduckgo", nil
+		}
+		return "sogou", nil
+	}
+	if sogouReady {
+		return "sogou", nil
+	}
+	if duckReady {
+		return "duckduckgo", nil
+	}
+
+	for _, name := range autoFallbackWebSearchProviders {
+		if opts.providerReady(name) {
+			return name, nil
+		}
+	}
+
+	return "", nil
+}
+
 func (opts WebSearchToolOptions) providerByName(name string) (SearchProvider, int, error) {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "", "auto":
 		return nil, 0, nil
 	case "sogou":
-		if !opts.SogouEnabled {
+		if !opts.providerReady("sogou") {
 			return nil, 0, nil
 		}
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
@@ -1134,7 +1269,7 @@ func (opts WebSearchToolOptions) providerByName(name string) (SearchProvider, in
 			client: client,
 		}, maxResults, nil
 	case "perplexity":
-		if !opts.PerplexityEnabled {
+		if !opts.providerReady("perplexity") {
 			return nil, 0, nil
 		}
 		client, err := utils.CreateHTTPClient(opts.Proxy, perplexityTimeout)
@@ -1151,7 +1286,7 @@ func (opts WebSearchToolOptions) providerByName(name string) (SearchProvider, in
 			client:  client,
 		}, maxResults, nil
 	case "brave":
-		if !opts.BraveEnabled {
+		if !opts.providerReady("brave") {
 			return nil, 0, nil
 		}
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
@@ -1168,7 +1303,7 @@ func (opts WebSearchToolOptions) providerByName(name string) (SearchProvider, in
 			client:  client,
 		}, maxResults, nil
 	case "searxng":
-		if !opts.SearXNGEnabled {
+		if !opts.providerReady("searxng") {
 			return nil, 0, nil
 		}
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
@@ -1185,7 +1320,7 @@ func (opts WebSearchToolOptions) providerByName(name string) (SearchProvider, in
 			client:  client,
 		}, maxResults, nil
 	case "tavily":
-		if !opts.TavilyEnabled {
+		if !opts.providerReady("tavily") {
 			return nil, 0, nil
 		}
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
@@ -1203,7 +1338,7 @@ func (opts WebSearchToolOptions) providerByName(name string) (SearchProvider, in
 			client:  client,
 		}, maxResults, nil
 	case "duckduckgo":
-		if !opts.DuckDuckGoEnabled {
+		if !opts.providerReady("duckduckgo") {
 			return nil, 0, nil
 		}
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
@@ -1219,7 +1354,7 @@ func (opts WebSearchToolOptions) providerByName(name string) (SearchProvider, in
 			client: client,
 		}, maxResults, nil
 	case "baidu_search":
-		if !opts.BaiduSearchEnabled {
+		if !opts.providerReady("baidu_search") {
 			return nil, 0, nil
 		}
 		client, err := utils.CreateHTTPClient(opts.Proxy, perplexityTimeout)
@@ -1237,7 +1372,7 @@ func (opts WebSearchToolOptions) providerByName(name string) (SearchProvider, in
 			client:  client,
 		}, maxResults, nil
 	case "glm_search":
-		if !opts.GLMSearchEnabled {
+		if !opts.providerReady("glm_search") {
 			return nil, 0, nil
 		}
 		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
@@ -1297,62 +1432,35 @@ func prefersDuckDuckGoQuery(text string) bool {
 }
 
 func (opts WebSearchToolOptions) buildProviderResolver() (func(query string) (SearchProvider, int), error) {
-	providerName := strings.ToLower(strings.TrimSpace(opts.Provider))
-	if providerName != "" && providerName != "auto" {
-		provider, maxResults, err := opts.providerByName(providerName)
+	providersByName := make(map[string]SearchProvider, len(knownWebSearchProviders))
+	maxResultsByName := make(map[string]int, len(knownWebSearchProviders))
+
+	for _, name := range knownWebSearchProviders {
+		if !opts.providerReady(name) {
+			continue
+		}
+		provider, maxResults, err := opts.providerByName(name)
 		if err != nil {
 			return nil, err
 		}
 		if provider == nil {
-			return func(string) (SearchProvider, int) { return nil, 0 }, nil
+			continue
 		}
-		return func(string) (SearchProvider, int) { return provider, maxResults }, nil
+		providersByName[name] = provider
+		maxResultsByName[name] = maxResults
 	}
 
-	for _, name := range []string{"perplexity", "brave", "searxng", "tavily"} {
-		provider, maxResults, err := opts.providerByName(name)
+	return func(query string) (SearchProvider, int) {
+		name, err := opts.resolveProviderName(query)
 		if err != nil {
-			return nil, err
+			return nil, 0
 		}
-		if provider != nil {
-			return func(string) (SearchProvider, int) { return provider, maxResults }, nil
+		provider, ok := providersByName[name]
+		if !ok {
+			return nil, 0
 		}
-	}
-
-	sogouProvider, sogouMaxResults, err := opts.providerByName("sogou")
-	if err != nil {
-		return nil, err
-	}
-	duckProvider, duckMaxResults, err := opts.providerByName("duckduckgo")
-	if err != nil {
-		return nil, err
-	}
-	if sogouProvider != nil && duckProvider != nil {
-		return func(query string) (SearchProvider, int) {
-			if prefersDuckDuckGoQuery(query) {
-				return duckProvider, duckMaxResults
-			}
-			return sogouProvider, sogouMaxResults
-		}, nil
-	}
-	if sogouProvider != nil {
-		return func(string) (SearchProvider, int) { return sogouProvider, sogouMaxResults }, nil
-	}
-	if duckProvider != nil {
-		return func(string) (SearchProvider, int) { return duckProvider, duckMaxResults }, nil
-	}
-
-	for _, name := range []string{"baidu_search", "glm_search"} {
-		provider, maxResults, err := opts.providerByName(name)
-		if err != nil {
-			return nil, err
-		}
-		if provider != nil {
-			return func(string) (SearchProvider, int) { return provider, maxResults }, nil
-		}
-	}
-
-	return func(string) (SearchProvider, int) { return nil, 0 }, nil
+		return provider, maxResultsByName[name]
+	}, nil
 }
 
 func NewWebSearchTool(opts WebSearchToolOptions) (*WebSearchTool, error) {

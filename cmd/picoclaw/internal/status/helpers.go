@@ -3,12 +3,12 @@ package status
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/cliui"
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 func statusCmd() {
@@ -44,12 +44,13 @@ func statusCmd() {
 		// not depend on a legacy cfg.Providers field (which may not exist under some
 		// build tags). We infer provider availability from model_list entries.
 		hasProtocolKey := func(protocol string) bool {
-			prefix := protocol + "/"
+			want := providers.NormalizeProvider(protocol)
 			for _, m := range cfg.ModelList {
 				if m == nil {
 					continue
 				}
-				if strings.HasPrefix(m.Model, prefix) && m.APIKey() != "" {
+				got, _ := providers.ExtractProtocol(m)
+				if got == want && m.APIKey() != "" {
 					return true
 				}
 			}
@@ -67,12 +68,13 @@ func statusCmd() {
 			return "", false
 		}
 		findProtocolBase := func(protocol string) (string, bool) {
-			prefix := protocol + "/"
+			want := providers.NormalizeProvider(protocol)
 			for _, m := range cfg.ModelList {
 				if m == nil {
 					continue
 				}
-				if strings.HasPrefix(m.Model, prefix) && m.APIBase != "" {
+				got, _ := providers.ExtractProtocol(m)
+				if got == want && m.APIBase != "" {
 					return m.APIBase, true
 				}
 			}

@@ -1,6 +1,15 @@
 import { useTranslation } from "react-i18next"
 
 import type { ChannelConfig } from "@/api/channels"
+import {
+  type ArrayFieldFlusher,
+  ChannelArrayListField,
+} from "@/components/channels/channel-array-list-field"
+import {
+  asStringArray,
+  parseAllowFromInput,
+  parseConservativeStringListInput,
+} from "@/components/channels/channel-array-utils"
 import { getSecretInputPlaceholder } from "@/components/channels/channel-config-fields"
 import { Field, KeyInput, SwitchCardField } from "@/components/shared-form"
 import { Card, CardContent } from "@/components/ui/card"
@@ -11,6 +20,11 @@ interface FeishuFormProps {
   onChange: (key: string, value: unknown) => void
   configuredSecrets: string[]
   fieldErrors?: Record<string, string>
+  registerArrayFieldFlusher?: (
+    fieldPath: string,
+    flusher: ArrayFieldFlusher | null,
+  ) => void
+  arrayFieldResetVersion?: number
 }
 
 function asString(value: unknown): string {
@@ -21,9 +35,11 @@ function asBool(value: unknown): boolean {
   return typeof value === "boolean" ? value : false
 }
 
-function asStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return []
-  return value.filter((item): item is string => typeof item === "string")
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+  return {}
 }
 
 export function FeishuForm({
@@ -31,8 +47,11 @@ export function FeishuForm({
   onChange,
   configuredSecrets,
   fieldErrors = {},
+  registerArrayFieldFlusher,
+  arrayFieldResetVersion,
 }: FeishuFormProps) {
   const { t } = useTranslation()
+  const groupTriggerConfig = asRecord(config.group_trigger)
 
   return (
     <div className="space-y-6">
@@ -104,24 +123,17 @@ export function FeishuForm({
             />
           </Field>
 
-          <Field
+          <ChannelArrayListField
             label={t("channels.field.allowFrom")}
             hint={t("channels.form.desc.allowFrom")}
-          >
-            <Input
-              value={asStringArray(config.allow_from).join(", ")}
-              onChange={(e) =>
-                onChange(
-                  "allow_from",
-                  e.target.value
-                    .split(",")
-                    .map((s: string) => s.trim())
-                    .filter(Boolean),
-                )
-              }
-              placeholder={t("channels.field.allowFromPlaceholder")}
-            />
-          </Field>
+            value={asStringArray(config.allow_from)}
+            onChange={(value) => onChange("allow_from", value)}
+            placeholder={t("channels.field.allowFromPlaceholder")}
+            parser={parseAllowFromInput}
+            fieldPath="allow_from"
+            registerFlusher={registerArrayFieldFlusher}
+            resetVersion={arrayFieldResetVersion}
+          />
 
           <div>
             <SwitchCardField
@@ -132,6 +144,37 @@ export function FeishuForm({
               ariaLabel={t("channels.field.isLark")}
             />
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="py-3 shadow-sm">
+        <CardContent className="divide-border/60 divide-y px-6 py-0 [&>div]:py-5">
+          <div>
+            <SwitchCardField
+              label={t("channels.field.groupTriggerMentionOnly")}
+              hint={t("channels.form.desc.groupTriggerMentionOnly")}
+              checked={asBool(groupTriggerConfig.mention_only)}
+              onCheckedChange={(checked) => {
+                onChange("group_trigger", {
+                  ...groupTriggerConfig,
+                  mention_only: checked,
+                })
+              }}
+              ariaLabel={t("channels.field.groupTriggerMentionOnly")}
+            />
+          </div>
+
+          <ChannelArrayListField
+            label={t("channels.field.randomReactionEmoji")}
+            hint={t("channels.form.desc.randomReactionEmoji")}
+            value={asStringArray(config.random_reaction_emoji)}
+            onChange={(value) => onChange("random_reaction_emoji", value)}
+            placeholder={t("channels.field.randomReactionEmojiPlaceholder")}
+            parser={parseConservativeStringListInput}
+            fieldPath="random_reaction_emoji"
+            registerFlusher={registerArrayFieldFlusher}
+            resetVersion={arrayFieldResetVersion}
+          />
         </CardContent>
       </Card>
     </div>

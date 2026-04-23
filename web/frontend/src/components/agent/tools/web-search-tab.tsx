@@ -10,7 +10,6 @@ import { WebSearchProviderSettings } from "./web-search-provider-settings"
 
 interface WebSearchTabProps {
   draft: WebSearchConfigResponse | null
-  currentProviderLabel: string
   providerLabelMap: Map<string, string>
   expandedProvider: string | null
   isLoading: boolean
@@ -23,7 +22,6 @@ interface WebSearchTabProps {
 
 export function WebSearchTab({
   draft,
-  currentProviderLabel,
   providerLabelMap,
   expandedProvider,
   isLoading,
@@ -52,21 +50,16 @@ export function WebSearchTab({
         <>
           <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
             <div className="max-w-xl space-y-3">
-              <div className="flex items-center gap-3">
-                <h1 className="text-foreground/90 text-2xl font-semibold tracking-tight">
-                  {t(
-                    "pages.agent.tools.web_search.title",
-                    "Web Search Configuration",
-                  )}
-                </h1>
-                <div className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-semibold tracking-wide text-emerald-600 uppercase dark:text-emerald-400">
-                  {currentProviderLabel}
-                </div>
-              </div>
+              <h1 className="text-foreground/90 text-2xl font-semibold tracking-tight">
+                {t(
+                  "pages.agent.tools.web_search.title",
+                  "Web Search Configuration",
+                )}
+              </h1>
               <p className="text-muted-foreground/80 text-[14px] leading-relaxed">
                 {t(
                   "pages.agent.tools.web_search.description",
-                  "Provide web search capability for agents to find the latest real-world info. Automatically routes to the optimal active provider.",
+                  "Configure how the web search tool behaves by default, including whether the model may use its built-in search capability.",
                 )}
               </p>
             </div>

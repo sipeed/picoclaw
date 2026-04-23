@@ -19,68 +19,103 @@ import (
 func TestExtractProtocol(t *testing.T) {
 	tests := []struct {
 		name         string
-		model        string
+		config       *config.ModelConfig
 		wantProtocol string
 		wantModelID  string
 	}{
 		{
 			name:         "openai with prefix",
-			model:        "openai/gpt-4o",
+			config:       &config.ModelConfig{Model: "openai/gpt-4o"},
 			wantProtocol: "openai",
 			wantModelID:  "gpt-4o",
 		},
 		{
 			name:         "anthropic with prefix",
-			model:        "anthropic/claude-sonnet-4.6",
+			config:       &config.ModelConfig{Model: "anthropic/claude-sonnet-4.6"},
 			wantProtocol: "anthropic",
 			wantModelID:  "claude-sonnet-4.6",
 		},
 		{
 			name:         "no prefix - defaults to openai",
-			model:        "gpt-4o",
+			config:       &config.ModelConfig{Model: "gpt-4o"},
 			wantProtocol: "openai",
 			wantModelID:  "gpt-4o",
 		},
 		{
 			name:         "groq with prefix",
-			model:        "groq/llama-3.1-70b",
+			config:       &config.ModelConfig{Model: "groq/llama-3.1-70b"},
 			wantProtocol: "groq",
 			wantModelID:  "llama-3.1-70b",
 		},
 		{
 			name:         "empty string",
-			model:        "",
-			wantProtocol: "openai",
+			config:       &config.ModelConfig{Model: ""},
+			wantProtocol: "",
 			wantModelID:  "",
 		},
 		{
 			name:         "with whitespace",
-			model:        "  openai/gpt-4  ",
+			config:       &config.ModelConfig{Model: "  openai/gpt-4  "},
 			wantProtocol: "openai",
 			wantModelID:  "gpt-4",
 		},
 		{
 			name:         "multiple slashes",
-			model:        "nvidia/meta/llama-3.1-8b",
+			config:       &config.ModelConfig{Model: "nvidia/meta/llama-3.1-8b"},
 			wantProtocol: "nvidia",
 			wantModelID:  "meta/llama-3.1-8b",
 		},
 		{
+			name:         "normalizes provider",
+			config:       &config.ModelConfig{Model: "z.ai/glm-5.1"},
+			wantProtocol: "zai",
+			wantModelID:  "glm-5.1",
+		},
+		{
 			name:         "azure with prefix",
-			model:        "azure/my-gpt5-deployment",
+			config:       &config.ModelConfig{Model: "azure/my-gpt5-deployment"},
 			wantProtocol: "azure",
 			wantModelID:  "my-gpt5-deployment",
+		},
+		{
+			name:         "explicit provider keeps model",
+			config:       &config.ModelConfig{Provider: "nvidia", Model: "z-ai/glm-5.1"},
+			wantProtocol: "nvidia",
+			wantModelID:  "z-ai/glm-5.1",
+		},
+		{
+			name:         "explicit provider preserves matching prefix",
+			config:       &config.ModelConfig{Provider: "openai", Model: "openai/gpt-4o"},
+			wantProtocol: "openai",
+			wantModelID:  "openai/gpt-4o",
+		},
+		{
+			name:         "explicit provider preserves aliased prefix",
+			config:       &config.ModelConfig{Provider: "qwen", Model: "qwen/qwen-plus"},
+			wantProtocol: "qwen-portal",
+			wantModelID:  "qwen/qwen-plus",
+		},
+		{
+			name:         "empty provider segment",
+			config:       &config.ModelConfig{Model: "/gpt-4o"},
+			wantProtocol: "",
+			wantModelID:  "gpt-4o",
+		},
+		{
+			name:         "nil config",
+			wantProtocol: "",
+			wantModelID:  "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			protocol, modelID := ExtractProtocol(tt.model)
+			protocol, modelID := ExtractProtocol(tt.config)
 			if protocol != tt.wantProtocol {
-				t.Errorf("ExtractProtocol(%q) protocol = %q, want %q", tt.model, protocol, tt.wantProtocol)
+				t.Errorf("ExtractProtocol() protocol = %q, want %q", protocol, tt.wantProtocol)
 			}
 			if modelID != tt.wantModelID {
-				t.Errorf("ExtractProtocol(%q) modelID = %q, want %q", tt.model, modelID, tt.wantModelID)
+				t.Errorf("ExtractProtocol() modelID = %q, want %q", modelID, tt.wantModelID)
 			}
 		})
 	}
@@ -103,6 +138,50 @@ func TestCreateProviderFromConfig_OpenAI(t *testing.T) {
 	}
 	if modelID != "gpt-4o" {
 		t.Errorf("modelID = %q, want %q", modelID, "gpt-4o")
+	}
+}
+
+func TestCreateProviderFromConfig_UsesExplicitProvider(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-explicit-provider",
+		Model:     "z-ai/glm-5.1",
+		Provider:  "nvidia",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "z-ai/glm-5.1" {
+		t.Fatalf("modelID = %q, want z-ai/glm-5.1", modelID)
+	}
+	if got := ResolveAPIBase(cfg); got != "https://integrate.api.nvidia.com/v1" {
+		t.Fatalf("ResolveAPIBase() = %q, want NVIDIA default API base", got)
+	}
+}
+
+func TestCreateProviderFromConfig_PreservesExplicitProviderPrefixedModel(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-openai",
+		Provider:  "openai",
+		Model:     "openai/gpt-4o",
+		APIBase:   "https://api.example.com/v1",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "openai/gpt-4o" {
+		t.Fatalf("modelID = %q, want %q", modelID, "openai/gpt-4o")
 	}
 }
 
@@ -701,8 +780,9 @@ func TestCreateProviderFromConfig_QwenInternationalAlias(t *testing.T) {
 			if provider == nil {
 				t.Fatal("CreateProviderFromConfig() returned nil provider")
 			}
-			if modelID != "qwen-max" {
-				t.Errorf("modelID = %q, want %q", modelID, "qwen-max")
+			wantModelID := "qwen-max"
+			if modelID != wantModelID {
+				t.Errorf("modelID = %q, want %q", modelID, wantModelID)
 			}
 			if _, ok := provider.(*HTTPProvider); !ok {
 				t.Fatalf("expected *HTTPProvider, got %T", provider)
@@ -735,8 +815,9 @@ func TestCreateProviderFromConfig_QwenUSAlias(t *testing.T) {
 			if provider == nil {
 				t.Fatal("CreateProviderFromConfig() returned nil provider")
 			}
-			if modelID != "qwen-max" {
-				t.Errorf("modelID = %q, want %q", modelID, "qwen-max")
+			wantModelID := "qwen-max"
+			if modelID != wantModelID {
+				t.Errorf("modelID = %q, want %q", modelID, wantModelID)
 			}
 			if _, ok := provider.(*HTTPProvider); !ok {
 				t.Fatalf("expected *HTTPProvider, got %T", provider)
@@ -769,8 +850,9 @@ func TestCreateProviderFromConfig_CodingPlanAnthropic(t *testing.T) {
 			if provider == nil {
 				t.Fatal("CreateProviderFromConfig() returned nil provider")
 			}
-			if modelID != "claude-sonnet-4-20250514" {
-				t.Errorf("modelID = %q, want %q", modelID, "claude-sonnet-4-20250514")
+			wantModelID := "claude-sonnet-4-20250514"
+			if modelID != wantModelID {
+				t.Errorf("modelID = %q, want %q", modelID, wantModelID)
 			}
 			// coding-plan-anthropic uses Anthropic Messages provider
 			// Verify it's the anthropic messages provider by checking interface

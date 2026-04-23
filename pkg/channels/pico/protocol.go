@@ -12,13 +12,12 @@ const (
 	// TypeMessageCreate is sent from server to client.
 	TypeMessageCreate = "message.create"
 	TypeMessageUpdate = "message.update"
+	TypeMessageDelete = "message.delete"
 	TypeMediaCreate   = "media.create"
 	TypeTypingStart   = "typing.start"
 	TypeTypingStop    = "typing.stop"
 	TypeError         = "error"
 	TypePong          = "pong"
-
-	PicoTokenPrefix = "pico-"
 
 	PayloadKeyContent = "content"
 	PayloadKeyThought = "thought"

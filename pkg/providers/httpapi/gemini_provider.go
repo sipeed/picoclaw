@@ -185,7 +185,7 @@ func (p *GeminiProvider) buildRequestBody(
 
 		case "user":
 			if msg.ToolCallID != "" {
-				toolName := resolveToolResponseName(msg.ToolCallID, toolCallNames)
+				toolName := common.ResolveToolResponseName(msg.ToolCallID, toolCallNames)
 				contents = append(contents, geminiContent{
 					Role: "user",
 					Parts: []geminiPart{{
@@ -210,7 +210,7 @@ func (p *GeminiProvider) buildRequestBody(
 				content.Parts = append(content.Parts, geminiPart{Text: msg.Content})
 			}
 			for _, tc := range msg.ToolCalls {
-				toolName, toolArgs, thoughtSignature := normalizeStoredToolCall(tc)
+				toolName, toolArgs, thoughtSignature := common.NormalizeStoredToolCall(tc)
 				if toolName == "" {
 					continue
 				}
@@ -234,7 +234,7 @@ func (p *GeminiProvider) buildRequestBody(
 			}
 
 		case "tool":
-			toolName := resolveToolResponseName(msg.ToolCallID, toolCallNames)
+			toolName := common.ResolveToolResponseName(msg.ToolCallID, toolCallNames)
 			contents = append(contents, geminiContent{
 				Role: "user",
 				Parts: []geminiPart{{

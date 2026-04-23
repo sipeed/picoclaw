@@ -44,7 +44,7 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 Buka http://localhost:18800 dalam pelayar anda. Launcher mengurus proses gateway secara automatik.
 
 > [!WARNING]
-> Konsol web belum menyokong autentikasi. Elakkan mendedahkannya ke internet awam.
+> Konsol web dilindungi oleh kata laluan log masuk dashboard. Jangan dedahkannya kepada rangkaian tidak dipercayai atau internet awam.
 
 ### Mod Agent (One-shot)
 

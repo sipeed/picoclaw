@@ -340,7 +340,7 @@ HEARTBEAT_OK を返信        ユーザーが直接結果を受信
 | **Anthropic**           | `anthropic/`           | `https://api.anthropic.com/v1`                      | Anthropic  | [取得](https://console.anthropic.com)                            |
 | **智谱 AI (GLM)**       | `zhipu/`               | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI     | [取得](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys)    |
 | **DeepSeek**            | `deepseek/`            | `https://api.deepseek.com/v1`                       | OpenAI     | [取得](https://platform.deepseek.com)                            |
-| **Google Gemini**       | `gemini/`              | `https://generativelanguage.googleapis.com/v1beta`  | OpenAI     | [取得](https://aistudio.google.com/api-keys)                     |
+| **Google Gemini**       | `gemini/`              | `https://generativelanguage.googleapis.com/v1beta`  | Gemini     | [取得](https://aistudio.google.com/api-keys)                     |
 | **Groq**                | `groq/`                | `https://api.groq.com/openai/v1`                    | OpenAI     | [取得](https://console.groq.com)                                 |
 | **通義千問 (Qwen)**     | `qwen/`                | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI     | [取得](https://dashscope.console.aliyun.com)                     |
 | **Ollama**              | `ollama/`              | `http://localhost:11434/v1`                         | OpenAI     | ローカル（キー不要）                                             |
@@ -370,8 +370,11 @@ HEARTBEAT_OK を返信        ユーザーが直接結果を受信
 PicoClaw はプロトコルファミリーで Provider をルーティングします：
 
 - **OpenAI 互換**：OpenRouter、Groq、Zhipu、vLLM スタイルのエンドポイントなど。
+- **Gemini ネイティブ**：Google Gemini のネイティブ `models/*:generateContent` / `models/*:streamGenerateContent` エンドポイント。
 - **Anthropic**：Claude ネイティブ API の動作。
 - **Codex/OAuth**：OpenAI OAuth/トークン認証ルート。
+
+これによりランタイムを軽量に保ちつつ、新しい OpenAI 互換バックエンドの追加をほぼ設定操作（`api_base` + `api_keys`）のみで実現します。
 
 ### スケジュールタスク / リマインダー
 

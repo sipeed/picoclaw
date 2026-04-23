@@ -9,6 +9,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -131,5 +132,50 @@ func TestServerIsDeferred(t *testing.T) {
 					tt.discoveryEnabled, tt.serverDeferred, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestEnsureMCPInitialized_LoadFailureSetsInitErr(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+	defer al.Close()
+
+	cfg.Tools = config.ToolsConfig{
+		MCP: config.MCPConfig{
+			ToolConfig: config.ToolConfig{Enabled: true},
+			Servers: map[string]config.MCPServerConfig{
+				"broken": {
+					Enabled: true,
+					Command: "picoclaw-command-that-does-not-exist-for-mcp-tests",
+				},
+			},
+		},
+	}
+
+	err := al.ensureMCPInitialized(context.Background())
+	if err == nil {
+		t.Fatal("ensureMCPInitialized() error = nil, want load failure")
+	}
+	if !strings.Contains(err.Error(), "failed to load MCP servers") {
+		t.Fatalf("ensureMCPInitialized() error = %q, want wrapped load failure", err.Error())
+	}
+
+	initErr := al.mcp.getInitErr()
+	if initErr == nil {
+		t.Fatal("getInitErr() = nil, want cached load failure")
+	}
+	if !strings.Contains(initErr.Error(), "failed to load MCP servers") {
+		t.Fatalf("getInitErr() = %q, want wrapped load failure", initErr.Error())
+	}
+	if al.mcp.getManager() != nil {
+		t.Fatal("expected MCP manager to remain nil after load failure")
+	}
+
+	err = al.ensureMCPInitialized(context.Background())
+	if err == nil {
+		t.Fatal("second ensureMCPInitialized() error = nil, want cached load failure")
+	}
+	if !strings.Contains(err.Error(), "failed to load MCP servers") {
+		t.Fatalf("second ensureMCPInitialized() error = %q, want wrapped load failure", err.Error())
 	}
 }

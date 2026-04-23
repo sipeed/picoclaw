@@ -14,6 +14,7 @@ import (
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/media"
 )
@@ -38,6 +39,34 @@ func TestMatrixLocalpartMentionRegexp(t *testing.T) {
 		if got := re.MatchString(tc.text); got != tc.want {
 			t.Fatalf("text=%q match=%v want=%v", tc.text, got, tc.want)
 		}
+	}
+}
+
+func TestFinalizeTrackedToolFeedbackMessage_StopsTrackingBeforeEdit(t *testing.T) {
+	ch := &MatrixChannel{
+		progress: channels.NewToolFeedbackAnimator(nil),
+	}
+	ch.RecordToolFeedbackMessage("!room:matrix.org", "$event1", "🔧 `read_file`")
+
+	msgIDs, handled := ch.finalizeTrackedToolFeedbackMessage(
+		context.Background(),
+		"!room:matrix.org",
+		"final reply",
+		func(_ context.Context, chatID, messageID, content string) error {
+			if _, ok := ch.currentToolFeedbackMessage(chatID); ok {
+				t.Fatal("expected tracked tool feedback to be stopped before edit")
+			}
+			if chatID != "!room:matrix.org" || messageID != "$event1" || content != "final reply" {
+				t.Fatalf("unexpected edit args: %s %s %s", chatID, messageID, content)
+			}
+			return nil
+		},
+	)
+	if !handled {
+		t.Fatal("expected finalizeTrackedToolFeedbackMessage to handle tracked message")
+	}
+	if len(msgIDs) != 1 || msgIDs[0] != "$event1" {
+		t.Fatalf("finalizeTrackedToolFeedbackMessage() ids = %v, want [$event1]", msgIDs)
 	}
 }
 

@@ -50,7 +50,7 @@ func TestBuildWsURLUsesRequestHostWhenLauncherPublicSaved(t *testing.T) {
 	cfg.Gateway.Host = "127.0.0.1"
 	cfg.Gateway.Port = 18790
 
-	req := httptest.NewRequest("GET", "http://launcher.local/api/pico/token", nil)
+	req := httptest.NewRequest("GET", "http://launcher.local/api/pico/info", nil)
 	req.Host = "192.168.1.9:18800"
 
 	if got := h.buildWsURL(req); got != "ws://192.168.1.9:18800/pico/ws" {
@@ -181,12 +181,12 @@ func TestBuildWsURLUsesWSSWhenForwardedProtoIsHTTPS(t *testing.T) {
 	cfg.Gateway.Host = "0.0.0.0"
 	cfg.Gateway.Port = 18790
 
-	req := httptest.NewRequest("GET", "http://launcher.local/api/pico/token", nil)
+	req := httptest.NewRequest("GET", "http://launcher.local/api/pico/info", nil)
 	req.Host = "chat.example.com"
 	req.Header.Set("X-Forwarded-Proto", "https")
 
-	if got := h.buildWsURL(req); got != "wss://chat.example.com:18800/pico/ws" {
-		t.Fatalf("buildWsURL() = %q, want %q", got, "wss://chat.example.com:18800/pico/ws")
+	if got := h.buildWsURL(req); got != "wss://chat.example.com:443/pico/ws" {
+		t.Fatalf("buildWsURL() = %q, want %q", got, "wss://chat.example.com:443/pico/ws")
 	}
 }
 
@@ -198,12 +198,12 @@ func TestBuildWsURLUsesWSSWhenRequestIsTLS(t *testing.T) {
 	cfg.Gateway.Host = "0.0.0.0"
 	cfg.Gateway.Port = 18790
 
-	req := httptest.NewRequest("GET", "https://launcher.local/api/pico/token", nil)
+	req := httptest.NewRequest("GET", "https://launcher.local/api/pico/info", nil)
 	req.Host = "secure.example.com"
 	req.TLS = &tls.ConnectionState{}
 
-	if got := h.buildWsURL(req); got != "wss://secure.example.com:18800/pico/ws" {
-		t.Fatalf("buildWsURL() = %q, want %q", got, "wss://secure.example.com:18800/pico/ws")
+	if got := h.buildWsURL(req); got != "wss://secure.example.com:443/pico/ws" {
+		t.Fatalf("buildWsURL() = %q, want %q", got, "wss://secure.example.com:443/pico/ws")
 	}
 }
 
@@ -224,7 +224,7 @@ func TestBuildPicoURLsPreferXForwardedHost(t *testing.T) {
 	cfg.Gateway.Host = "0.0.0.0"
 	cfg.Gateway.Port = 18790
 
-	req := httptest.NewRequest("GET", "http://127.0.0.1:18800/api/pico/token", nil)
+	req := httptest.NewRequest("GET", "http://127.0.0.1:18800/api/pico/info", nil)
 	req.Host = "127.0.0.1:18800"
 	req.Header.Set("X-Forwarded-Host", "vscode-tunnel.example.com")
 	req.Header.Set("X-Forwarded-Proto", "https")
@@ -249,13 +249,30 @@ func TestBuildWsURLPrefersForwardedHTTPOverTLS(t *testing.T) {
 	cfg.Gateway.Host = "0.0.0.0"
 	cfg.Gateway.Port = 18790
 
-	req := httptest.NewRequest("GET", "https://launcher.local/api/pico/token", nil)
+	req := httptest.NewRequest("GET", "https://launcher.local/api/pico/info", nil)
 	req.Host = "chat.example.com"
 	req.TLS = &tls.ConnectionState{}
 	req.Header.Set("X-Forwarded-Proto", "http")
 
-	if got := h.buildWsURL(req); got != "ws://chat.example.com:18800/pico/ws" {
-		t.Fatalf("buildWsURL() = %q, want %q", got, "ws://chat.example.com:18800/pico/ws")
+	if got := h.buildWsURL(req); got != "ws://chat.example.com:80/pico/ws" {
+		t.Fatalf("buildWsURL() = %q, want %q", got, "ws://chat.example.com:80/pico/ws")
+	}
+}
+
+func TestBuildWsURLDoesNotTrustOriginWhenProxyOmitsForwardedProto(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+
+	req := httptest.NewRequest("GET", "http://launcher.local/api/pico/info", nil)
+	req.Host = "fs-952210-xwj.picoclaw.lan.sipeed.com"
+	req.Header.Set("Origin", "https://fs-952210-xwj.picoclaw.lan.sipeed.com")
+
+	if got := h.buildWsURL(req); got != "ws://fs-952210-xwj.picoclaw.lan.sipeed.com:80/pico/ws" {
+		t.Fatalf(
+			"buildWsURL() = %q, want %q",
+			got,
+			"ws://fs-952210-xwj.picoclaw.lan.sipeed.com:80/pico/ws",
+		)
 	}
 }
 
@@ -264,7 +281,7 @@ func TestBuildWsURLUsesRequestHostNotGatewayBindLoopback(t *testing.T) {
 	h := NewHandler(configPath)
 	h.SetServerOptions(18800, false, false, nil)
 
-	req := httptest.NewRequest("GET", "http://localhost:18800/api/pico/token", nil)
+	req := httptest.NewRequest("GET", "http://localhost:18800/api/pico/info", nil)
 	req.Host = "localhost:18800"
 
 	if got := h.buildWsURL(req); got != "ws://localhost:18800/pico/ws" {

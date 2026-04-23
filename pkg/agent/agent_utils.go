@@ -11,6 +11,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/commands"
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -82,6 +83,98 @@ func outboundMessageForTurn(ts *turnState, content string) bus.OutboundMessage {
 		Scope:      scope,
 		Content:    content,
 	}
+}
+
+func outboundMessageForTurnWithKind(ts *turnState, content, kind string) bus.OutboundMessage {
+	msg := outboundMessageForTurn(ts, content)
+	if strings.TrimSpace(kind) == "" {
+		return msg
+	}
+	if msg.Context.Raw == nil {
+		msg.Context.Raw = make(map[string]string, 1)
+	}
+	msg.Context.Raw[metadataKeyMessageKind] = kind
+	return msg
+}
+
+func latestUserContent(messages []providers.Message) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		if msg.Role != "user" {
+			continue
+		}
+		if content := strings.TrimSpace(msg.Content); content != "" {
+			return content
+		}
+	}
+	return ""
+}
+
+func toolFeedbackExplanationFromResponse(
+	response *providers.LLMResponse,
+	messages []providers.Message,
+	maxLen int,
+) string {
+	if response == nil {
+		return ""
+	}
+	explanation := strings.TrimSpace(response.Content)
+	if explanation == "" {
+		explanation = toolFeedbackExplanationFromToolCalls(response.ToolCalls)
+	}
+	if explanation == "" {
+		explanation = toolFeedbackExplanationFromMessages(messages)
+	}
+	return utils.Truncate(explanation, maxLen)
+}
+
+func toolFeedbackExplanationFromToolCalls(toolCalls []providers.ToolCall) string {
+	for _, tc := range toolCalls {
+		if tc.ExtraContent == nil {
+			continue
+		}
+		if explanation := strings.TrimSpace(tc.ExtraContent.ToolFeedbackExplanation); explanation != "" {
+			return explanation
+		}
+	}
+	return ""
+}
+
+func toolFeedbackExplanationForToolCall(
+	response *providers.LLMResponse,
+	toolCall providers.ToolCall,
+	messages []providers.Message,
+	maxLen int,
+) string {
+	if toolCall.ExtraContent != nil {
+		if explanation := strings.TrimSpace(toolCall.ExtraContent.ToolFeedbackExplanation); explanation != "" {
+			return utils.Truncate(explanation, maxLen)
+		}
+	}
+	if response == nil {
+		return utils.Truncate(toolFeedbackExplanationFromMessages(messages), maxLen)
+	}
+
+	explanation := strings.TrimSpace(response.Content)
+	if explanation == "" {
+		explanation = toolFeedbackExplanationFromMessages(messages)
+	}
+	return utils.Truncate(explanation, maxLen)
+}
+
+func toolFeedbackExplanationFromMessages(messages []providers.Message) string {
+	explanation := latestUserContent(messages)
+	if explanation != "" {
+		return utils.ToolFeedbackContinuationHint + ": " + explanation
+	}
+	return ""
+}
+
+func shouldPublishToolFeedback(cfg *config.Config, ts *turnState) bool {
+	if ts == nil || ts.channel == "" || ts.opts.SuppressToolFeedback {
+		return false
+	}
+	return cfg != nil && cfg.Agents.Defaults.IsToolFeedbackEnabled()
 }
 
 func cloneEventArguments(args map[string]any) map[string]any {
