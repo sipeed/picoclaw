@@ -1,298 +1,401 @@
-# Agent 自进化技能生命周期设计
+# PicoClaw 自进化技能系统设计
 
-## 概要
+## 1. 文档目标
 
-本设计为 PicoClaw 增加一套轻量级的自进化闭环，让 agent 能从已完成任务中学习可复用流程，同时不拖慢用户主交互路径。
+这份文档面向第一次接触该设计的开发者，目标只有三个：
 
-系统将短期学习证据与正式技能分开管理：
+1. 讲清楚这套自进化系统和现有 PicoClaw 的关系
+2. 讲清楚自进化系统内部各部分之间的关系
+3. 讲清楚一条真实任务是如何流入这套系统，并最终影响 `SKILL.md`
 
-- `Learning Note`：任务结束后写下的一条极小结构化学习笔记
-- `Learning Topic`：由多条相关学习笔记聚合而成的学习主题
-- `Skill Draft`：从成熟主题中提炼出的候选技能草案
-- `Skill Profile`：正式技能的生命周期与版本档案
+为了降低理解成本，本文不再把概念拆得过细，而是把原来的 `Learning Note` 和 `Learning Topic` 合并到同一个概念家族里。
 
-v1 版本采用 workspace 级作用域、分级治理策略，并明确要求：
+## 2. 一句话定义
 
-- 重学习逻辑不进入热路径
-- 新技能先进入候选态
-- 支持合并、替换、回滚
-- 支持长期不用技能的冷却、归档、删除
+PicoClaw 自进化技能系统的作用是：
 
-## 目标
+“在不拖慢用户当前任务的前提下，把多次任务中反复出现、确实有价值的做法，沉淀成可审核、可回滚、可淘汰的 workspace 技能。”
 
-- 让 agent 能从真实任务中学习可复用流程
-- 让系统能从反复试错中学出“捷径型”技能
-- 不显著增加日常任务的延迟和提示词 token 成本
-- 通过候选态、验证、回滚和生命周期治理，避免技能集被污染
-- 尽量优先演化已有技能，而不是不断新增新技能
+## 3. 先看现有 PicoClaw，再看自进化系统
 
-## 非目标
+### 3.1 PicoClaw 现在已有的核心概念
 
-- v1 不做跨 workspace 的全局自进化
-- v1 不允许对高影响技能进行完全无治理的自主破坏式修改
-- v1 不允许在用户同步回复路径中运行依赖 LLM 的学习逻辑
-- 不替代现有 `memory` 或 `skills` 子系统
+当前 PicoClaw 可以简单理解成 4 层：
 
-## 与 PicoClaw 现有结构的关系
+1. `Session / Turn`
+   - 用户发来一条消息，agent 跑一轮推理、工具调用和回复
+2. `Memory`
+   - 保存事实、偏好、每日笔记，不等于技能
+3. `Skill`
+   - `workspace/skills/<name>/SKILL.md`
+   - 是正式的流程型能力
+4. `Skills Loader`
+   - 从 workspace / global / builtin 读取正式技能并注入运行时
 
-PicoClaw 当前已经具备：
+### 3.2 现在缺的是什么
 
-- `pkg/skills`：workspace / global / builtin 技能加载能力
-- `pkg/agent/context.go`：系统提示词中的技能摘要注入
-- `pkg/agent/memory.go`：基于 markdown 的轻量记忆能力
+PicoClaw 现在缺的是中间层：
 
-当前缺少的是位于“有价值经验”与“正式技能”之间的生命周期层。本设计补上这层能力，但不改变现有子系统的角色：
+- 任务结束后，哪些经验值得留下？
+- 多次类似任务后，什么时候该变成技能？
+- 变成技能时，是新增、补充、替换还是合并？
+- 新技能如果有问题，怎么回滚？
+- 长期不用的技能，怎么降温和退出？
 
-- `memory` 继续负责 durable facts 和 notes
-- `skills` 继续负责正式的 `SKILL.md` 技能资产
-- 新的 evolution 子系统负责判断什么时候经验应当沉淀为技能，以及这些技能之后如何演化和退出
+这就是自进化系统要补上的部分。
 
-## 设计原则
+### 3.3 自进化系统在整个 PicoClaw 里的位置
 
-- 热路径必须足够小：正常回合只允许写少量学习证据
-- 重工作必须走冷路径：聚类、提案生成、相似性比对、清理都异步进行
-- 记忆与技能必须分离：流程学习不能混进通用 memory
-- 候选态优先：新学到的流程先进入候选池，而不是直接变成正式技能
-- 优先保留已有价值内容：`append` 比 `replace` 更稳，`replace` 比 `merge` 更稳
-- 回滚必须便宜且确定：一旦结构异常，应当能稳定恢复旧版本
-- 人类可审阅性是一级约束：生成物、侧车元数据和最终技能结构都必须方便人工阅读、审核和理解
+逻辑关系如下：
 
-## 人类可审阅性要求
+```text
+用户任务
+  -> PicoClaw 正常执行
+  -> 任务结束后写入学习记录
+  -> 后台维护流程分析学习记录
+  -> 产出技能草案
+  -> 草案通过审核/验证后更新正式技能
+  -> 正式技能继续由现有 Skills Loader 加载
+```
 
-系统不仅要优化 agent 的执行效果，也必须优化人工审核体验。
+换句话说：
 
-这一要求适用于三个层面：
+- 自进化系统不替代 `memory`
+- 自进化系统不替代 `skills loader`
+- 自进化系统只负责“经验如何进入正式技能体系”
 
-1. 运行时元数据
-   - 侧车元数据要能解释一个技能是做什么的、为什么存在、改了什么、风险在哪
-2. 正式技能内容
-   - 生成或更新后的 `SKILL.md` 应当像一份紧凑的操作文档，而不是难以审阅的机器碎片
-3. 实现结构
-   - evolution 子系统应将学习证据、候选逻辑、生命周期逻辑拆成边界清晰的模块，降低人工读代码的心智负担
+## 4. 概念简化后的最终模型
 
-理想情况下，人工审核者应当能快速回答：
+为了简化理解，本设计只保留 3 个新的核心数据概念。
 
-- 这个技能解决什么问题？
-- 它应该在什么场景下使用？
-- 它的首选起手路径是什么？
-- 它明确建议避免哪些错误路径？
-- 它为什么被创建或修改？
-- 这次变更是低风险还是高影响？
+### 4.1 `Learning Record`
 
-## 与 OpenClaw 的对照
+中文建议叫：`学习记录`
 
-本设计借鉴 OpenClaw 中两套已被验证的思路，同时针对 PicoClaw 的轻量目标做约束性调整。
+这是原来 `Learning Note` 和 `Learning Topic` 合并后的概念家族。
 
-### 借鉴点
+它有两种固定类型：
 
-- 来自 `memory-core` dreaming：
-  - 先收集短期证据，再做 durable promotion
-  - 通过阈值而不是一次命中就晋升
-  - 用后台维护而不是不断往主 prompt 里塞上下文
-- 来自 `skill-workshop`：
-  - 用 proposal / candidate 思维做技能演化
-  - 支持 `create` / `append` / `replace`
-  - 在应用前做扫描与隔离
+1. `task`
+   - 表示“单次任务结束后留下的一条原始学习记录”
+2. `pattern`
+   - 表示“后台把多条相似 task 记录聚合后的模式记录”
 
-### 需要调整的点
+所以：
 
-- PicoClaw v1 不应在同步 `agent_end` 路径上运行 LLM reviewer
-- PicoClaw 需要比 OpenClaw 更强的版本备份与回滚机制
-- PicoClaw 需要正式技能生命周期：`active -> cold -> archived -> deleted`
+- 原 `Learning Note` 不再单独作为公开概念存在
+- 原 `Learning Topic` 不再单独作为公开概念存在
+- 对外统一叫 `Learning Record`
+- 仅在实现层区分 `kind=task` 和 `kind=pattern`
 
-## 面向人的术语体系
+这样做的好处：
 
-为了方便文档、日志、未来 UI 和代码审核，设计中统一采用以下更直观的命名：
+- 对第一次读文档的人更直观
+- 少一个术语层级
+- 仍然保留实现上“单次记录”和“聚合记录”的必要区别
 
-- `Learning Note`：一条学习笔记
-- `Learning Topic`：一个学习主题
-- `Skill Draft`：一份技能草案
-- `Skill Profile`：一个正式技能的档案卡
+### 4.2 `Skill Draft`
 
-只有 `skills/<name>/SKILL.md` 才是真正的正式技能。其余对象都是运行时的内部管理结构。
+中文建议叫：`技能草案`
 
-## 总体架构
+它表示一份尚未正式生效的技能变更提案。
 
-evolution 子系统可以拆成四层：
+可能是：
 
-1. 证据层
-   - 保存 `Learning Note`
-   - 低成本、追加式、热路径安全
-2. 模式层
-   - 把若干学习笔记聚成 `Learning Topic`
-   - 负责判断成熟度和是否值得晋升
-3. 候选层
-   - 生成并管理 `Skill Draft`
-   - 负责匹配、验证、隔离、候选入池
-4. 生命周期层
-   - 管理正式技能的 `Skill Profile`
-   - 负责激活、冷却、归档、删除和回滚记录
+- 新建一个技能
+- 给已有技能补一段
+- 替换已有技能的一段
+- 合并多个技能
 
-## 热路径与冷路径
+### 4.3 `Skill Profile`
 
-### 热路径
+中文建议叫：`技能档案`
 
-允许出现在正常用户回合中的动作：
+它不是技能正文，而是正式技能的侧车元数据。
 
-- 写一条 `Learning Note`
-- 附加轻量规则信号，例如：
-  - 疑似重复模式
-  - 观察到用户纠正
-  - 观察到最终成功路径
-  - 观察到技能缺口
+它负责记录：
 
-不允许出现在正常用户回合中的动作：
+- 当前版本
+- 使用次数
+- 最近使用时间
+- 风险等级
+- 为什么创建或修改
+- 有没有回滚过
+- 当前处于 active / cold / archived / deleted 哪个状态
 
-- LLM 生成技能草案
-- 对全量技能做深度相似性比较
-- 草案转正式技能
-- 生命周期清理
-- 对大量技能做 reviewer 扫描
+### 4.4 三个概念之间的关系
 
-### 冷路径
+```text
+Learning Record(task)
+  -> 聚合
+Learning Record(pattern)
+  -> 生成
+Skill Draft
+  -> 接受并应用
+正式 SKILL.md + Skill Profile
+```
 
-由 heartbeat、cron、maintenance run 或显式管理动作触发：
+## 5. 与当前 PicoClaw 概念的完整关系
 
-- 聚合学习笔记形成主题
-- 计算主题成熟度
-- 检索相似的已有技能
-- 生成 `Skill Draft`
-- 运行结构校验和安全扫描
-- 将草案转入 candidate / quarantined / accepted
-- 更新 `Skill Profile` 的使用状态与生命周期
-- 执行 cold / archived / deleted 清理
+这部分必须明确，否则很容易误把系统看成“又做了一套 skill 系统”。
 
-## LLM 依赖边界
+### 5.1 `Memory` 与自进化系统
 
-### 不依赖 LLM 的步骤
+- `Memory` 存事实、偏好、每日信息
+- 自进化系统存流程学习证据与技能候选
 
-- 写入 `Learning Note`
-- 打规则信号
-- 聚合 `Learning Topic`
-- 主题成熟度评分
-- 非 LLM 的相似技能召回
+它们的区别是：
+
+- `memory` 回答“记住了什么”
+- 自进化系统回答“以后应该怎么做”
+
+### 5.2 `Skill` 与自进化系统
+
+- `Skill` 是正式资产，表现形式是 `SKILL.md`
+- 自进化系统不是 skill，本身不会被 skills loader 当作 skill 加载
+
+它们的关系是：
+
+- 自进化系统负责产出或更新正式 skill
+- 正式 skill 仍由现有 `pkg/skills` 体系加载
+
+### 5.3 `Tool` 与自进化系统
+
+v1 中，自进化系统不是普通用户工具，也不是普通 workspace 技能。
+
+它的定位是：
+
+- 一段集成在 runtime 中的程序逻辑
+- 通过任务完成钩子和后台维护流程运行
+
+未来可以增加 operator tool 或 UI，但这不影响核心设计。
+
+### 5.4 `Session / Turn` 与自进化系统
+
+- 正常用户回合只负责写入原始学习记录
+- 不负责生成技能草案
+- 不负责审核草案
+- 不负责应用草案
+
+所以自进化系统对用户当前任务的影响应当非常小。
+
+## 6. 运行路径总览
+
+系统有且只有两条路径：
+
+### 6.1 热路径：任务结束后立即发生
+
+热路径目标：
+
+- 不依赖 LLM
+- 不明显增加当前任务延迟
+- 只记录最小必要证据
+
+热路径步骤：
+
+1. 用户任务结束
+2. agent loop 产出任务结果
+3. 自进化系统写一条 `Learning Record(kind=task)`
+
+热路径禁止做的事：
+
+- 调用 LLM 生成技能草案
+- 读取大量已有技能
+- 对全量技能做相似性比较
+- 直接修改 `SKILL.md`
+- 清理 lifecycle
+
+### 6.2 冷路径：后台维护流程
+
+冷路径目标：
+
+- 处理重逻辑
+- 允许依赖 LLM，但不能挡住用户当前任务
+
+冷路径步骤：
+
+1. 读取若干 `Learning Record(kind=task)`
+2. 聚合成 `Learning Record(kind=pattern)`
+3. 计算该模式是否成熟
+4. 召回相似正式技能
+5. 如果值得升级，则让 LLM 生成 `Skill Draft`
+6. 对草案做结构校验与安全扫描
+7. 将草案放入 candidate / quarantined / accepted
+8. 若草案被接受，则更新正式 `SKILL.md`
+9. 更新对应 `Skill Profile`
+10. 对长期不用技能执行 cold / archived / deleted 迁移
+
+## 7. LLM 依赖清单
+
+### 7.1 不依赖 LLM 的部分
+
+- 写 `Learning Record(kind=task)`
+- 聚合 `Learning Record(kind=pattern)`
+- 计算模式成熟度
+- 召回相似技能的第一阶段过滤
 - 结构校验
 - 安全扫描
-- 版本备份与回滚
-- 使用计数与生命周期迁移
+- 版本备份
+- 回滚
+- 生命周期状态更新
 
-### 依赖 LLM 的步骤
+### 7.2 依赖 LLM 的部分
 
-- 生成 `Skill Draft` 的正文或 patch
-- 把一个成熟 `Learning Topic` 重写成：
-  - 新 workflow skill
-  - 一个追加段落
-  - 一个替换 patch
-  - 一个以“起手路径”为核心的 shortcut 段落
+- 从 `Learning Record(kind=pattern)` 生成 `Skill Draft`
 
-### 明确的性能风险点
+只有这一处是必须依赖 LLM 的核心点。
 
-最大的体验风险，是把依赖 LLM 的 review 或 draft 生成放在任务同步结束时做。  
-因此 v1 必须保证：所有依赖 LLM 的学习动作都不进入用户回复热路径。
+### 7.3 明确的性能风险
 
-## 核心对象
+最容易拖慢用户体验的地方只有两个：
 
-## `Learning Note`
+1. 把草案生成放到同步任务结束后
+2. 每次任务都去全量扫描已有技能
 
-用途：
+因此 v1 的硬约束是：
 
-- 记录一次已完成任务里可能值得学习的结构化证据
+- 草案生成必须走冷路径
+- 相似技能召回必须先走轻量规则或索引
 
-建议字段：
+## 8. 三个核心数据对象的精确定义
+
+这部分不再用“建议字段”这种模糊说法，而是直接说明每个对象：
+
+- 以什么形式存在
+- 存在哪
+- 谁写
+- 谁读
+- 在什么阶段使用
+
+### 8.1 `Learning Record`
+
+#### 它是什么
+
+`Learning Record` 是自进化系统的输入数据。
+
+它有两种固定类型：
+
+- `kind=task`
+- `kind=pattern`
+
+#### 它以什么形式存在
+
+推荐持久化形式：
+
+```text
+<stateDir>/evolution/<workspace-hash>/learning-records.jsonl
+```
+
+每条记录一行 JSON，带 `kind` 字段。
+
+这样做的原因：
+
+- 追加写成本低
+- 易于审计
+- 易于后续做聚合和回放
+
+#### 谁写它
+
+- 热路径写 `kind=task`
+- 冷路径维护流程写 `kind=pattern`
+
+#### 谁读它
+
+- 冷路径聚合器读取 `kind=task`
+- 草案生成器读取 `kind=pattern`
+- 审计工具或未来 UI 可读取两者
+
+#### 它在哪些阶段使用
+
+- `kind=task`：作为单次任务学习证据
+- `kind=pattern`：作为生成技能草案的直接输入
+
+#### `kind=task` 必含字段
 
 - `id`
-- `created_at`
+- `kind`
 - `workspace_id`
 - `session_key`
+- `created_at`
 - `task_hash`
 - `task_summary`
 - `success`
 - `tool_calls_count`
 - `tool_kinds`
-- `had_user_correction`
 - `active_skill_names`
-- `signals`
-- `artifact_refs`
+- `had_user_correction`
 - `attempt_trail`
+- `signals`
 
-实现形态：
-
-- 集成在 runtime 中的内部程序数据
-- 存在 state 中，而不是 `skills/`
-- 不注入日常 prompt
-
-是否依赖 LLM：
-
-- 否
-
-## `Learning Topic`
-
-用途：
-
-- 表示若干 `Learning Note` 聚合出的可复用流程主题
-
-建议字段：
+#### `kind=pattern` 必含字段
 
 - `id`
+- `kind`
+- `workspace_id`
 - `created_at`
 - `updated_at`
-- `workspace_id`
-- `fingerprint`
-- `title_hint`
-- `tool_signature`
-- `event_ids`
+- `source_record_ids`
+- `pattern_key`
+- `summary`
 - `event_count`
 - `success_rate`
-- `correction_rate`
-- `diversity_score`
-- `recency_score`
-- `promotion_score`
-- `matched_skill_candidates`
+- `repeat_score`
+- `maturity_score`
 - `winning_path`
+- `matched_skill_names`
 - `status`
 
-实现形态：
+#### 为什么必须存在
 
-- 集成在 runtime 中的内部程序数据
-- 由后台维护逻辑构建
+它的作用是把“单次任务经验”和“重复模式经验”从正式 skill 里隔离出去。  
+如果没有它，系统就只能在任务结束后直接写 skill，这会导致：
 
-是否依赖 LLM：
+- 噪声大
+- 风险高
+- 很难解释为什么学出了这个 skill
 
-- v1 不依赖
+### 8.2 `Skill Draft`
 
-## `Skill Draft`
+#### 它是什么
 
-用途：
+`Skill Draft` 是候选技能变更提案。
 
-- 表示一份尚未正式生效的技能变更草案
+#### 它以什么形式存在
 
-建议字段：
+推荐持久化形式：
+
+```text
+<stateDir>/evolution/<workspace-hash>/skill-drafts.json
+```
+
+按数组或 map 存储，每个 draft 带唯一 id 和状态。
+
+#### 谁写它
+
+- 仅冷路径中的 draft generator 写入
+
+#### 谁读它
+
+- 验证器
+- 安全扫描器
+- candidate 决策器
+- 草案应用器
+- 未来的 operator UI / tool
+
+#### 它在哪些阶段使用
+
+- 模式成熟后生成
+- 通过验证后进入 candidate
+- 被接受后转化成正式 skill 更新
+
+#### 必含字段
 
 - `id`
+- `workspace_id`
 - `created_at`
 - `updated_at`
-- `workspace_id`
-- `source_topic_id`
-- `source_note_ids`
+- `source_pattern_id`
 - `target_skill_name`
-- `draft_type`
-- `change_kind`
-- `reason`
-- `description`
-- `body_or_patch`
-- `similar_skill_refs`
-- `human_summary`
-- `usage_scope`
-- `preferred_entry_path`
-- `avoid_patterns`
-- `review_notes`
-- `risk_level`
-- `llm_generation_meta`
-- `scan_findings`
-- `status`
-
-其中：
-
 - `draft_type`
   - `workflow`
   - `shortcut`
@@ -301,439 +404,372 @@ evolution 子系统可以拆成四层：
   - `append`
   - `replace`
   - `merge`
+- `human_summary`
+- `usage_scope`
+- `preferred_entry_path`
+- `avoid_patterns`
+- `review_notes`
+- `risk_level`
+- `body_or_patch`
+- `similar_skill_refs`
+- `scan_findings`
+- `status`
 
-实现形态：
+#### 为什么必须存在
 
-- 存在 state 中的候选资产
-- 在被接受并应用前，不属于正式技能集
+它的作用是防止系统直接把学习结果写进正式技能。
 
-是否依赖 LLM：
+如果没有 `Skill Draft` 这一层，就无法优雅支持：
 
-- 生成草案正文时依赖
+- 候选态
+- 安全扫描
+- 人工审核
+- 回滚前的变更解释
 
-面向人工审核的要求：
+### 8.3 `Skill Profile`
 
-- 每份草案都应当能在不回看完整 transcript 的前提下被理解
-- `human_summary` 要用 1-3 句话说明核心用途
-- `usage_scope` 要明确适用范围
-- `preferred_entry_path` 要在适用时说明首选起手路径
-- `avoid_patterns` 要列出常见死路或反模式
-- `review_notes` 要解释为什么本次判定是 `create` / `append` / `replace` / `merge`
+#### 它是什么
 
-## `Skill Profile`
+`Skill Profile` 是正式技能的生命周期档案。
 
-用途：
+#### 它以什么形式存在
 
-- 管理一个正式技能的生命周期与版本元数据
+推荐持久化形式：
 
-建议字段：
+```text
+<stateDir>/evolution/<workspace-hash>/profiles/<skill-name>.json
+```
+
+它不是 `SKILL.md` 正文，而是旁边的审计与生命周期卡。
+
+#### 谁写它
+
+- 草案应用器在技能生效时写入或更新
+- 生命周期管理器在冷却、归档、删除时更新
+- 运行时命中统计器在技能使用后更新
+
+#### 谁读它
+
+- 生命周期管理器
+- 命中排序逻辑
+- 回滚逻辑
+- 未来的 operator surface
+
+#### 它在哪些阶段使用
+
+- 技能应用时
+- 技能被命中时
+- 技能进入 cold / archived / deleted 时
+- 技能发生回滚时
+
+#### 必含字段
 
 - `skill_name`
 - `workspace_id`
 - `current_version`
 - `status`
+  - `active`
+  - `cold`
+  - `archived`
+  - `deleted`
 - `origin`
+  - `manual`
+  - `imported`
+  - `evolved`
+- `human_summary`
+- `intended_use_cases`
+- `non_goals`
+- `preferred_entry_path`
+- `avoid_patterns`
+- `review_checklist`
+- `risk_level`
+- `change_reason`
 - `last_used_at`
 - `use_count`
 - `success_count`
 - `shortcut_win_count`
 - `superseded_count`
-- `specificity_score`
 - `retention_score`
-- `cooldown_reason`
-- `archive_reason`
-- `last_matched_topic_id`
-- `human_summary`
-- `review_tags`
-- `owner_scope`
-- `intended_use_cases`
-- `non_goals`
-- `risk_level`
-- `change_reason`
-- `preferred_entry_path`
-- `avoid_patterns`
-- `review_checklist`
 - `version_history`
 
-实现形态：
+#### 为什么必须存在
 
-- 正式 `SKILL.md` 周围的侧车元数据
-- 是内部程序数据，不是 skill 正文本身
+如果只有 `SKILL.md` 而没有 `Skill Profile`，审核者很难回答：
 
-是否依赖 LLM：
+- 这个技能最近还在用吗？
+- 这个技能是系统学出来的还是人工写的？
+- 这个技能为什么被改过？
+- 上一个稳定版本在哪里？
 
-- 生命周期管理本身不依赖
+## 9. 技能变更的完整逻辑
 
-面向人工审核的要求：
+### 9.1 草案类型
 
-- `Skill Profile` 应当像一张审计卡，而不只是流水账
-- 审核者应当能快速看出：
-  - 技能要做什么
-  - 技能不应该做什么
-  - 它为什么被引入或修改
-  - 它是 shortcut 型还是完整 workflow 型
-  - 高风险修改需要额外验证哪些点
+`Skill Draft` 有两类：
 
-## 正式技能的可读性约定
+1. `workflow`
+   - 学到的是完整流程
+2. `shortcut`
+   - 学到的是“这类任务起手应该先走哪条路径”
 
-系统在落地或更新正式 `SKILL.md` 时，应优先采用方便人工扫描的结构。
+### 9.2 变更类型
 
-推荐章节顺序：
+草案支持 4 种变更：
 
-1. 简短用途摘要
-2. 何时使用
-3. `Start Here`
-4. `Workflow`
-5. `Avoid Common Dead Ends`
-6. 验证或审核提示
-7. 必要时的参考资料
+1. `create`
+   - 没有合适技能时，新建
+2. `append`
+   - 现有技能是对的，只需要补充
+3. `replace`
+   - 现有技能某一段已经过时或错误，需要替换
+4. `merge`
+   - 多个相近技能合并成一个更清晰的技能
 
-生成内容应当倾向于：
+### 9.3 默认优先级
 
-- 简短的祈使句 bullet
-- 明确的适用边界
-- 如果学到了 shortcut，就把首选起手路径写清楚
-- 如果观察到了重复死路，就明确写出反模式
+为降低风险，默认决策优先级是：
 
-生成内容应当避免：
+```text
+append > create > replace > merge
+```
 
-- 回放完整 transcript
-- 含糊的自传式解释
-- 用长篇叙述替代简洁检查清单
-- 把关键起手路径埋在文件深处
+### 9.4 为什么要支持 shortcut
 
-## 从试错链中学习“捷径技能”
+一个典型场景是：
 
-系统必须支持这样一种学习：一次任务里 agent 尝试了多个 skill 或方法，前面多次失败或绕远，最后一个路径成功。
+- agent 尝试了多个 skill
+- 前几个 skill 失败或绕远
+- 最后一个路径稳定成功
 
-这学到的不是“最后一个 skill 很好”，而是一个路由教训：
+这时系统学到的不是“最后一个 skill 很好”，而是：
 
-- 前面那些路径在这类任务里通常浪费时间或不稳定
-- 最后成功的路径更适合作为类似任务的默认起手路径
+- 以后遇到类似任务，应当优先从最后那条成功路径开始
 
-### 必须记录的证据
-
-`Learning Note.attempt_trail` 需要记录有顺序的尝试链，例如：
-
-- 试了什么 skill / 方法
-- 结果类型：`failed`、`partial`、`superseded`、`success`
-- 如果可以结构化识别，记录失败原因
-
-### 必须支持的晋升结果
-
-如果重复出现相同的 winning path 证据，系统可以生成 `shortcut` 类型的 `Skill Draft`。
-
-这类草案通常会变成：
+这类学习结果应写成：
 
 - `## Start Here`
 - `## Preferred Path`
 - `## Avoid Common Dead Ends`
 
-这样下次类似任务就能从正确路径开始，而不是再走一遍旧的试错链。
+而不是简单复制一次完整流程。
 
-## 草案生成与匹配流程
+## 10. 回滚与安全逻辑
 
-当一个 `Learning Topic` 达到成熟阈值时，按以下流程处理：
+### 10.1 安全扫描
 
-1. 召回最相近的正式技能与候选草案
-2. 判断这次变更更适合：
-   - `create`
-   - `append`
-   - `replace`
-   - `merge`
-3. 调用 LLM 生成草案正文或 patch
-4. 运行结构校验
-5. 运行安全扫描
-6. 根据结果进入：
-   - `candidate`
-   - `quarantined`
-   - 只有满足进一步晋升条件时才进入 `accepted`
+每一份 `Skill Draft` 在进入正式技能前，都必须经过：
 
-## 变更类型决策规则
+- 结构校验
+- 安全扫描
 
-## `create`
+失败结果：
 
-适用条件：
+- 不进入正式技能
+- 状态改为 `quarantined`
 
-- 没有足够相近的正式技能
-- 学到的是当前 workspace 中真正新的流程
+### 10.2 备份
 
-## `append`
-
-适用条件：
-
-- 目标技能整体是对的
-- 新学习只是在补充一个段落、例外、检查点或 shortcut
-
-默认情况下，能安全 `append` 时优先 `append`。
-
-## `replace`
-
-适用条件：
-
-- 现有技能中的某一段明显过时、错误或具有误导性
-- 新内容要覆盖旧路径，而不是仅做补充
-
-这种情况必须先做版本备份。
-
-## `merge`
-
-适用条件：
-
-- 两个重叠技能应整合成一个更清晰的技能
-- 或一个新草案已经实质上覆盖了多个窄技能
-
-这是风险最高的操作，v1 默认只进入候选态，不应静默自动生效。
-
-## `Skill Draft` 状态机
-
-建议状态：
-
-- `draft`
-- `candidate`
-- `quarantined`
-- `accepted`
-- `rejected`
-- `superseded`
-- `rolled_back`
-
-迁移主链路：
-
-1. 主题达到成熟阈值
-2. LLM 生成 `draft`
-3. 经过验证 / 扫描：
-   - 干净 -> `candidate`
-   - 被阻断 -> `quarantined`
-4. 后续晋升：
-   - 低风险场景可自动接受
-   - 高影响场景需人工确认
-5. 被应用后生成或更新正式技能与 `Skill Profile`
-6. 如果应用后技能结构异常 -> `rolled_back`
-
-## 候选草案转正规则
-
-## 低风险自动转正
-
-仅适用于低影响变更，例如：
-
-- 很窄的 `append`
-- 不会覆盖核心流程的 shortcut guidance
-- 给已有 workspace skill 增补少量说明
-
-需要同时满足：
-
-- 结构校验通过
-- 安全扫描通过
-- 后续相似任务再次验证该草案有效
-- 不涉及高风险的 `replace` 或 `merge`
-
-## 人工确认转正
-
-以下场景应默认需要人工确认：
-
-- `replace`
-- `merge`
-- 较大的 `create`
-- 会显著改变默认行为的草案
-
-这与前述分级治理一致：
-
-- 低风险可自动演化
-- 高影响必须确认
-
-## 验证、安全与回滚
-
-## 结构验证与安全扫描
-
-每份草案都必须经过：
-
-- resulting skill 结构验证
-- 针对 prompt injection、权限绕过、危险 shell 模式的安全扫描
-
-如果失败，草案直接进入 `quarantined`，不触碰正式技能。
-
-## 备份规则
-
-凡是要修改已有技能的操作，都必须先做备份，包括：
+以下操作必须先备份旧技能：
 
 - `append`
 - `replace`
 - `merge`
 
-备份内容至少包括：
+推荐备份路径：
 
-- 原始 `SKILL.md`
-- 若有改动，相关支持文件
-- proposal / draft id
-- 时间戳
+```text
+<stateDir>/evolution/<workspace-hash>/backups/<skill-name>/<timestamp>/
+```
 
-## 回滚触发条件
+### 10.3 回滚触发条件
 
-v1 中回滚是确定性的、结构驱动的，不做行为回滚。
+v1 采用结构驱动回滚，不做行为回滚。
 
-触发回滚的典型条件：
+触发条件包括：
 
-- 新技能在落地后结构校验失败
-- 关键文件缺失
-- frontmatter 不合法
-- patch 没正确应用
-- 结果技能为空或超限
-- loader 无法再识别该技能
+- 应用后 `SKILL.md` 结构不合法
+- frontmatter 非法
+- patch 应用失败
+- 文件缺失
+- skills loader 无法再识别该技能
 
-## 回滚记录
+### 10.4 回滚记录
 
-`Skill Profile.version_history` 应至少记录：
+所有回滚都必须写入 `Skill Profile.version_history`，记录：
 
-- 哪份草案被应用
-- 使用了哪个备份恢复
-- 为什么回滚
-- 回滚后当前版本是什么
+- 触发回滚的草案 id
+- 回滚原因
+- 恢复到的版本
+- 对人工审核有帮助的变更摘要
 
-同时，还应保留面向人工的审阅轨迹：
+## 11. 生命周期逻辑
 
-- 简短变更摘要
-- 这是 `workflow` 还是 `shortcut`
-- 这是 `create` / `append` / `replace` / `merge`
-- 为什么旧路径被认为不足
-
-## 正式技能生命周期
-
-正式技能状态统一为：
+正式技能状态固定为：
 
 - `active`
 - `cold`
 - `archived`
 - `deleted`
 
-## `active`
+### 11.1 各状态含义
 
-- 参与正常技能使用与推荐
+- `active`
+  - 正常参与运行时
+- `cold`
+  - 保留但降权
+- `archived`
+  - 保留但默认不再参与正常推荐
+- `deleted`
+  - 已删除，仅保留极简墓碑
 
-## `cold`
-
-- 仍被保留，但默认降权
-- 适合那些“以前有用，但最近明显降频”的技能
-
-## `archived`
-
-- 保留文件与档案，默认退出主舞台
-- 不参与常规推荐，但可以在以后重新恢复
-
-## `deleted`
-
-- 在长时间无关且保留价值低时正式删除
-- 仍保留极简 tombstone，避免系统马上又学出一个已知低价值技能
-
-## 保留分与误删保护
-
-技能删除不能只看时间，必须综合 `retention_score`：
-
-- 最近使用时间
-- 历史使用频率
-- 成功可靠性
-- 是否经常成为最终成功路径
-- 与当前 workspace 的特异性
-
-## 必须遵守的保护规则
-
-- `manual` 来源的技能在 v1 不自动删除
-- 低频但高价值技能不自动删除
-- 最近被 `replace` 的旧技能版本必须保留一个回滚保护窗口
-- 新近转正的技能不应立刻进入冷却
-
-## 生命周期迁移规则
+### 11.2 状态迁移
 
 - `active -> cold`
-  - 使用下降，且越来越经常被其他路径取代
+  - 最近不常用，且经常被别的技能或路径替代
 - `cold -> active`
-  - 再次命中并证明有效时恢复
+  - 再次命中并证明有效
 - `cold -> archived`
-  - 冷却后继续长期不用，且保留价值有限
+  - 长期不用，且保留价值有限
 - `archived -> active`
-  - 再次命中并成功时解档恢复
+  - 后续再次命中并成功
 - `archived -> deleted`
-  - 长期无关、保留价值低且不触发保护规则时删除
+  - 长期无关、保留价值低、且不触发保护规则
 
-## 一个完整例子
+### 11.3 误删保护
 
-例子：多次中文城市天气任务中，最终总是 native-name lookup 成功，而前面的通用 geocode 路径浪费时间。
+以下技能不应轻易自动删除：
 
-1. 每次完成任务后写一条 `Learning Note`
-2. 多条笔记聚成 `Learning Topic`，例如 `weather-cn-routing`
-3. 主题中反复出现相同 winning path：
-   - 通用 geocode 容易绕远或出错
-   - native-name resolution 更稳定
-4. 冷路径 maintenance run 调用 LLM 生成一个 `shortcut` 类型的 `Skill Draft`
-5. 匹配逻辑判断：最合适的是对现有 `weather` skill 做 `append`
-6. 草案内容变成：
+- `origin=manual`
+- 低频但高价值
+- 最近刚被替换、仍承担回滚支点作用
+- 新近转正、还在观察窗口内
 
-```md
-## Start Here
+## 12. 与 OpenClaw 自进化能力的区别
 
-For Chinese-city weather requests, try native-name resolution first.
-Do not start with generic geocoding unless the native query is ambiguous.
-```
+这部分单独列出，避免混淆。
 
-7. 草案通过结构校验和安全扫描，进入 `candidate`
-8. 后续相似任务再次验证有效后，草案被接受并应用
-9. `weather` 的 `Skill Profile` 记下一条新版本记录
-10. 如果应用后技能结构异常，系统立即回滚到旧版本
+### 12.1 OpenClaw 已有、PicoClaw 也应借鉴的能力
 
-## 在 PicoClaw 中的实现形态
+| 能力 | OpenClaw | 本设计 |
+|---|---|---|
+| 短期证据再晋升 | 有，体现在 memory dreaming | 有，体现在 `Learning Record(kind=task -> pattern)` |
+| proposal/candidate 思路 | 有，体现在 `skill-workshop` | 有，体现在 `Skill Draft` |
+| `create/append/replace` | 有 | 有 |
+| 安全扫描与隔离 | 有 | 有 |
 
-这套能力在 v1 中应实现为集成式 runtime 子系统，而不是普通 workspace skill，也不是面向用户的常规 tool。
+### 12.2 OpenClaw 有，但本设计明确不照搬的点
 
-建议落点：
+| 能力 | OpenClaw | 本设计的选择 |
+|---|---|---|
+| 同步 `agent_end` 上的 reviewer 风格学习 | 有相关设计 | v1 不做，避免拖慢用户当前任务 |
+| 技能学习与运行时更紧耦合 | 相对更重 | PicoClaw v1 更强调冷路径异步化 |
 
-- 任务完成后的证据写入逻辑靠近 `pkg/agent`
-- evolution state 存在 workspace 或 state-dir 所属的数据区域
-- 正式技能仍然保存在 `workspace/skills`
-- 生命周期元数据与备份存在 state 或受控侧车文件中
+### 12.3 本设计有、OpenClaw 当前不完整或没有明确提供的点
 
-未来可以补 operator surface，但核心机制本身不是“一个技能”。它是帮助系统决定“什么时候该有技能、技能应该如何变化”的一段集成程序。
+| 能力 | OpenClaw | 本设计 |
+|---|---|---|
+| 从“多次试错后最后成功路径”学习 shortcut | 没有明确独立建模 | 有，作为 `shortcut` 草案 |
+| 正式技能的 `active/cold/archived/deleted` 生命周期 | 没有完整公开模型 | 有 |
+| 明确的版本备份与结构驱动回滚 | 相对较弱或不完整 | 有，且是硬要求 |
+| 面向人工审核的 `Skill Profile` | 没有完整强调 | 有，作为一等设计目标 |
+| 将 `Learning Note` / `Topic` 统一成更易理解的公开概念 | 没有 | 有，统一成 `Learning Record` |
 
-实现可读性也应当是设计约束：
+## 13. 三个典型运行例子
 
-- 将证据采集、主题聚合、草案生成、生命周期迁移拆成清晰模块
-- 尽量避免笼统的 manager 大类命名
-- 将面向人工的元数据存为稳定 schema，而不是埋在瞬时日志里
-- 让状态迁移既能从代码读清楚，也能从持久化元数据中审计出来，而不必回放原始 transcript
+### 例子 1：天气技能学出 shortcut
 
-## 成功标准
+场景：
 
-如果满足以下条件，则说明设计成功：
+- 多次中文城市天气查询
+- agent 常常先试通用 geocode
+- 最后 native-name query 才稳定成功
 
-- 常见用户回合依然快，没有新引入 LLM 学习延迟
-- 新学到的流程先以候选态出现，而不是静默改写正式技能
-- 反复试错能沉淀成可复用的 shortcut guidance
-- 高影响技能修改可以确定性回滚
-- 长期不用技能可以退出 active 集合，同时不误删少见但有价值的能力
+运行路径：
 
-## 风险与权衡
+1. 每次任务结束写一个 `Learning Record(kind=task)`
+2. 冷路径聚合出一个 `Learning Record(kind=pattern)`，识别到稳定 winning path
+3. LLM 生成一个 `Skill Draft(draft_type=shortcut, change_kind=append)`
+4. 草案建议给 `weather` skill 增加 `Start Here`
+5. 通过验证后进入 candidate
+6. 再次命中成功后转正
+7. `weather/SKILL.md` 被补充，`Skill Profile` 更新版本
 
-- 候选治理会增加实现复杂度，但能显著降低 prompt 和技能集污染
-- 非 LLM 的相似技能匹配不一定完美，但 v1 为了热路径成本，这个取舍是合理的
-- `merge` 很强大，但也是最高风险能力，前期必须保守
-- 生命周期清理如果评分太粗糙，可能会过度修剪，这也是为什么 manual / rare / rollback-relevant 技能要得到更强保护
+### 例子 2：修复一个已有错误技能
 
-## 推荐的 v1 实施范围
+场景：
 
-v1 建议包含：
+- 某个已有技能里包含过时流程
+- 后续多次任务都证明这段流程会误导 agent
 
-- `Learning Note`
-- `Learning Topic`
+运行路径：
+
+1. 多次任务写入 `Learning Record(kind=task)`
+2. 聚合成 `kind=pattern`
+3. 冷路径发现应使用 `replace`
+4. 生成 `Skill Draft(change_kind=replace)`
+5. 应用前先备份旧技能
+6. 如果新版本结构异常，则立即回滚
+7. `Skill Profile.version_history` 记录这次替换和回滚
+
+### 例子 3：一个阶段性技能被清退
+
+场景：
+
+- 某个 release 流程技能只在一次项目迁移期间有用
+- 后续几个月都不再命中
+
+运行路径：
+
+1. 技能长时间未使用
+2. `Skill Profile.retention_score` 持续下降
+3. 状态从 `active -> cold`
+4. 继续长时间无命中，则 `cold -> archived`
+5. 若之后依然长期无关，且不属于 manual / high-value 类型，则可 `archived -> deleted`
+
+## 14. 推荐的 v1 实施范围
+
+v1 应包含：
+
+- `Learning Record`
 - `Skill Draft`
 - `Skill Profile`
-- 冷路径 LLM 草案生成
+- 热路径只写 `kind=task`
+- 冷路径聚合出 `kind=pattern`
+- 冷路径 LLM 生成草案
 - `create` / `append` / `replace`
-- `shortcut` 类型草案
-- 结构验证、扫描、候选态、备份、回滚
-- `active` / `cold` / `archived` / `deleted`
+- shortcut 学习
+- 结构验证
+- 安全扫描
+- 备份
+- 回滚
+- lifecycle 四状态
 
-v1 建议暂缓：
+v1 暂缓：
 
-- 跨 workspace 演化
-- 行为回滚
+- 跨 workspace 自进化
+- 行为级回滚
 - 全自动 `merge`
-- 全生命周期对象的完整 UI
-- 热路径上的 LLM reranking
+- 完整 UI
+- 热路径 LLM rerank
+
+## 15. 结论
+
+这套设计的核心逻辑关系可以简化成一句话：
+
+```text
+PicoClaw 正常执行任务
+  -> 自进化系统记录学习证据
+  -> 自进化系统在后台把重复经验提炼成技能草案
+  -> 草案经过验证和治理后更新正式技能
+  -> 正式技能继续回到 PicoClaw 现有技能体系中运行
+```
+
+因此：
+
+- PicoClaw 是主系统
+- 自进化系统是主系统旁边的一条“技能学习与治理管道”
+- 正式技能仍然属于 PicoClaw 现有 skill 概念
+- 自进化系统不是独立 agent，不是普通 tool，也不是普通 skill
+
+这就是 PicoClaw 与自进化系统的完整关系；  
+而 `Learning Record -> Skill Draft -> Skill Profile -> 正式 Skill`，就是自进化系统内部的完整逻辑关系。
