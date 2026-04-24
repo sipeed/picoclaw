@@ -2,13 +2,15 @@
 	build-android-arm64 build-android-bundle
 
 # Go variables
-GO?=CGO_ENABLED=0 go
+GO?=go
 WEB_GO?=$(GO)
+CGO_ENABLED?=0
 GO_BUILD_TAGS?=goolm,stdjson
 GOFLAGS?=-v -tags $(GO_BUILD_TAGS)
 GOCACHE?=$(abspath ../.cache/go-build)
 GOMODCACHE?=$(abspath ../.cache/go-mod)
 GOTOOLCHAIN?=local
+export CGO_ENABLED
 export GOCACHE
 export GOMODCACHE
 export GOTOOLCHAIN
@@ -28,8 +30,6 @@ LAUNCHER_GUI_LDFLAG=
 
 ifeq ($(OS),Windows_NT)
 	POWERSHELL=powershell -NoProfile -Command
-	GO=go
-	WEB_GO=go
 	WINDOWS_GOARCH_RAW:=$(strip $(shell go env GOARCH 2>NUL))
 endif
 

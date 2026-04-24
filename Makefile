@@ -9,8 +9,6 @@ EXT=
 
 ifeq ($(OS),Windows_NT)
 	POWERSHELL=powershell -NoProfile -Command
-	GO=go
-	WEB_GO=go
 	WINDOWS_GOARCH_RAW:=$(strip $(shell go env GOARCH 2>NUL))
 endif
 
@@ -34,13 +32,15 @@ CONFIG_PKG=github.com/sipeed/picoclaw/pkg/config
 LDFLAGS=-X $(CONFIG_PKG).Version=$(VERSION) -X $(CONFIG_PKG).GitCommit=$(GIT_COMMIT) -X $(CONFIG_PKG).BuildTime=$(BUILD_TIME) -X $(CONFIG_PKG).GoVersion=$(GO_VERSION) -s -w
 
 # Go variables
-GO?=CGO_ENABLED=0 go
+GO?=go
 WEB_GO?=$(GO)
+CGO_ENABLED?=0
 GO_BUILD_TAGS?=goolm,stdjson
 GOFLAGS?=-v -tags $(GO_BUILD_TAGS)
 GOCACHE?=$(CURDIR)/.cache/go-build
 GOMODCACHE?=$(CURDIR)/.cache/go-mod
 GOTOOLCHAIN?=local
+export CGO_ENABLED
 export GOCACHE
 export GOMODCACHE
 export GOTOOLCHAIN
