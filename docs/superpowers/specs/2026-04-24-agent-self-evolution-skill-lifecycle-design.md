@@ -1,198 +1,204 @@
-# Agent Self-Evolution Skill Lifecycle Design
+# Agent 自进化技能生命周期设计
 
-## Summary
+## 概要
 
-This design adds a lightweight self-evolution loop for PicoClaw that can learn reusable workflows from completed tasks without slowing down the user's main interaction path.
+本设计为 PicoClaw 增加一套轻量级的自进化闭环，让 agent 能从已完成任务中学习可复用流程，同时不拖慢用户主交互路径。
 
-The system separates short-lived learning evidence from durable skills:
+系统将短期学习证据与正式技能分开管理：
 
-- `Learning Note`: a tiny structured note written after a task.
-- `Learning Topic`: a grouped pattern of related notes.
-- `Skill Draft`: a candidate skill change proposed from a mature topic.
-- `Skill Profile`: lifecycle metadata for a formal workspace skill.
+- `Learning Note`：任务结束后写下的一条极小结构化学习笔记
+- `Learning Topic`：由多条相关学习笔记聚合而成的学习主题
+- `Skill Draft`：从成熟主题中提炼出的候选技能草案
+- `Skill Profile`：正式技能的生命周期与版本档案
 
-The design is workspace-scoped in v1, uses graded governance, keeps heavy learning work off the hot path, and supports candidate review, merge/replace decisions, rollback, and eventual cold/archive/delete handling for stale skills.
+v1 版本采用 workspace 级作用域、分级治理策略，并明确要求：
 
-## Goals
+- 重学习逻辑不进入热路径
+- 新技能先进入候选态
+- 支持合并、替换、回滚
+- 支持长期不用技能的冷却、归档、删除
 
-- Let the agent learn reusable workflows from real tasks.
-- Allow the system to learn "shortcut" strategies from repeated trial-and-error traces.
-- Avoid increasing normal turn latency or prompt token cost in the common path.
-- Keep learned behavior governable through candidates, validation, rollback, and lifecycle state.
-- Prefer evolving existing skills over endlessly creating new ones.
+## 目标
 
-## Non-Goals
+- 让 agent 能从真实任务中学习可复用流程
+- 让系统能从反复试错中学出“捷径型”技能
+- 不显著增加日常任务的延迟和提示词 token 成本
+- 通过候选态、验证、回滚和生命周期治理，避免技能集被污染
+- 尽量优先演化已有技能，而不是不断新增新技能
 
-- Global cross-workspace skill evolution in v1.
-- Fully autonomous destructive edits to high-impact skills without governance.
-- LLM-dependent logic on the synchronous user reply path.
-- Replacing the existing `memory` or `skills` subsystems.
+## 非目标
 
-## Context and Existing PicoClaw Structure
+- v1 不做跨 workspace 的全局自进化
+- v1 不允许对高影响技能进行完全无治理的自主破坏式修改
+- v1 不允许在用户同步回复路径中运行依赖 LLM 的学习逻辑
+- 不替代现有 `memory` 或 `skills` 子系统
 
-PicoClaw already has:
+## 与 PicoClaw 现有结构的关系
 
-- workspace/global/builtin skill loading in `pkg/skills`
-- prompt-time skill summary injection in `pkg/agent/context.go`
-- lightweight markdown-based memory in `pkg/agent/memory.go`
+PicoClaw 当前已经具备：
 
-What is missing is a lifecycle layer between "a useful thing happened" and "a skill should exist or evolve." This design adds that missing middle layer without changing the role of existing memory or skill loading code:
+- `pkg/skills`：workspace / global / builtin 技能加载能力
+- `pkg/agent/context.go`：系统提示词中的技能摘要注入
+- `pkg/agent/memory.go`：基于 markdown 的轻量记忆能力
 
-- `memory` remains the place for durable facts and notes.
-- `skills` remains the place for formal reusable procedures (`SKILL.md`).
-- the new evolution subsystem decides when experience should become a candidate skill and how that skill should live or die over time.
+当前缺少的是位于“有价值经验”与“正式技能”之间的生命周期层。本设计补上这层能力，但不改变现有子系统的角色：
 
-## Design Principles
+- `memory` 继续负责 durable facts 和 notes
+- `skills` 继续负责正式的 `SKILL.md` 技能资产
+- 新的 evolution 子系统负责判断什么时候经验应当沉淀为技能，以及这些技能之后如何演化和退出
 
-- Hot path must stay tiny: normal turns only emit small learning evidence.
-- Heavy work must be cold path: clustering, proposal generation, comparison, and cleanup happen asynchronously.
-- Skills and memory stay separate: procedural learning must not be mixed into generic memory.
-- Candidate-first governance: new learned procedures enter as candidates before formal adoption.
-- Prefer preserving good skill content: `append` is safer than `replace`; `replace` is safer than `merge`.
-- Keep rollback cheap and deterministic.
-- Human reviewability is a first-class requirement: learned artifacts, sidecar metadata, and final skill structure must be easy for a human maintainer to read, audit, and reason about during code review.
+## 设计原则
 
-## Human Reviewability Requirement
+- 热路径必须足够小：正常回合只允许写少量学习证据
+- 重工作必须走冷路径：聚类、提案生成、相似性比对、清理都异步进行
+- 记忆与技能必须分离：流程学习不能混进通用 memory
+- 候选态优先：新学到的流程先进入候选池，而不是直接变成正式技能
+- 优先保留已有价值内容：`append` 比 `replace` 更稳，`replace` 比 `merge` 更稳
+- 回滚必须便宜且确定：一旦结构异常，应当能稳定恢复旧版本
+- 人类可审阅性是一级约束：生成物、侧车元数据和最终技能结构都必须方便人工阅读、审核和理解
 
-The system must optimize not only for agent execution but also for human comprehension.
+## 人类可审阅性要求
 
-This applies at three levels:
+系统不仅要优化 agent 的执行效果，也必须优化人工审核体验。
 
-1. Runtime metadata
-   - sidecar metadata should explain what a skill is for, why it exists, what changed, and how risky the change is
-2. Formal skill content
-   - generated or updated `SKILL.md` files should be readable as compact operational documentation, not opaque machine-written blobs
-3. Implementation structure
-   - the evolution subsystem should keep learning evidence, candidate logic, and lifecycle logic in clearly named units so humans can review code changes without reconstructing the whole state machine mentally
+这一要求适用于三个层面：
 
-The intended outcome is that a human reviewing a learned skill or its implementation can answer quickly:
+1. 运行时元数据
+   - 侧车元数据要能解释一个技能是做什么的、为什么存在、改了什么、风险在哪
+2. 正式技能内容
+   - 生成或更新后的 `SKILL.md` 应当像一份紧凑的操作文档，而不是难以审阅的机器碎片
+3. 实现结构
+   - evolution 子系统应将学习证据、候选逻辑、生命周期逻辑拆成边界清晰的模块，降低人工读代码的心智负担
 
-- What problem does this skill solve?
-- When should it be used?
-- What is the preferred first path?
-- What paths should be avoided?
-- Why was it created or changed?
-- Is this change low-risk or high-impact?
+理想情况下，人工审核者应当能快速回答：
 
-## Comparison with OpenClaw
+- 这个技能解决什么问题？
+- 它应该在什么场景下使用？
+- 它的首选起手路径是什么？
+- 它明确建议避免哪些错误路径？
+- 它为什么被创建或修改？
+- 这次变更是低风险还是高影响？
 
-This design borrows two proven ideas from OpenClaw while extending them for PicoClaw's lightweight runtime goals.
+## 与 OpenClaw 的对照
 
-### What to borrow
+本设计借鉴 OpenClaw 中两套已被验证的思路，同时针对 PicoClaw 的轻量目标做约束性调整。
 
-- From `memory-core` dreaming:
-  - short-term evidence before durable promotion
-  - thresholded promotion
-  - background maintenance instead of constant prompt inflation
-- From `skill-workshop`:
-  - proposal-oriented skill evolution
-  - `create` / `append` / `replace` style changes
-  - quarantine and scanning before application
+### 借鉴点
 
-### What to change
+- 来自 `memory-core` dreaming：
+  - 先收集短期证据，再做 durable promotion
+  - 通过阈值而不是一次命中就晋升
+  - 用后台维护而不是不断往主 prompt 里塞上下文
+- 来自 `skill-workshop`：
+  - 用 proposal / candidate 思维做技能演化
+  - 支持 `create` / `append` / `replace`
+  - 在应用前做扫描与隔离
 
-- PicoClaw should avoid running LLM reviewers on the synchronous `agent_end` path in v1.
-- PicoClaw needs stronger version backup and rollback than OpenClaw's current proposal application model.
-- PicoClaw should add a true lifecycle for formal skills: `active -> cold -> archived -> deleted`.
+### 需要调整的点
 
-## User-Facing Mental Model
+- PicoClaw v1 不应在同步 `agent_end` 路径上运行 LLM reviewer
+- PicoClaw 需要比 OpenClaw 更强的版本备份与回滚机制
+- PicoClaw 需要正式技能生命周期：`active -> cold -> archived -> deleted`
 
-The system should use intuitive names in docs, logs, and future UI:
+## 面向人的术语体系
 
-- `Learning Note`: one tiny learning card from a finished task
-- `Learning Topic`: a grouped pattern that may be worth turning into a skill
-- `Skill Draft`: a candidate skill update that has not become official yet
-- `Skill Profile`: the lifecycle and version card for an official skill
+为了方便文档、日志、未来 UI 和代码审核，设计中统一采用以下更直观的命名：
 
-Only `skills/<name>/SKILL.md` is a real formal skill. The other objects are runtime/internal management structures.
+- `Learning Note`：一条学习笔记
+- `Learning Topic`：一个学习主题
+- `Skill Draft`：一份技能草案
+- `Skill Profile`：一个正式技能的档案卡
 
-## High-Level Architecture
+只有 `skills/<name>/SKILL.md` 才是真正的正式技能。其余对象都是运行时的内部管理结构。
 
-The evolution subsystem has four conceptual layers:
+## 总体架构
 
-1. Evidence layer
-   - stores `Learning Note`
-   - low-cost, append-only, hot-path safe
-2. Pattern layer
-   - groups notes into `Learning Topic`
-   - computes maturity and promotion-worthiness
-3. Candidate layer
-   - materializes `Skill Draft`
-   - performs matching, validation, quarantine, and candidate storage
-4. Lifecycle layer
-   - manages formal `Skill Profile`
-   - handles activation, cooling, archiving, deletion, and rollback metadata
+evolution 子系统可以拆成四层：
 
-## Hot Path vs Cold Path
+1. 证据层
+   - 保存 `Learning Note`
+   - 低成本、追加式、热路径安全
+2. 模式层
+   - 把若干学习笔记聚成 `Learning Topic`
+   - 负责判断成熟度和是否值得晋升
+3. 候选层
+   - 生成并管理 `Skill Draft`
+   - 负责匹配、验证、隔离、候选入池
+4. 生命周期层
+   - 管理正式技能的 `Skill Profile`
+   - 负责激活、冷却、归档、删除和回滚记录
 
-### Hot path
+## 热路径与冷路径
 
-Allowed on the normal user turn:
+### 热路径
 
-- write a `Learning Note`
-- attach lightweight rule-based signals such as:
-  - repeated pattern hint
-  - user correction observed
-  - final winning path observed
-  - likely skill gap observed
+允许出现在正常用户回合中的动作：
 
-Not allowed on the normal user turn:
+- 写一条 `Learning Note`
+- 附加轻量规则信号，例如：
+  - 疑似重复模式
+  - 观察到用户纠正
+  - 观察到最终成功路径
+  - 观察到技能缺口
 
-- LLM proposal generation
-- full skill similarity comparison
-- draft-to-skill application
-- lifecycle cleanup
-- multi-skill review scans over large corpora
+不允许出现在正常用户回合中的动作：
 
-### Cold path
+- LLM 生成技能草案
+- 对全量技能做深度相似性比较
+- 草案转正式技能
+- 生命周期清理
+- 对大量技能做 reviewer 扫描
 
-Triggered by heartbeat, cron, maintenance runs, or explicit operator actions:
+### 冷路径
 
-- group notes into topics
-- score topic maturity
-- retrieve similar existing skills
-- generate `Skill Draft`
-- run structural validation and safety scan
-- move drafts into candidate/quarantine/accepted states
-- update `Skill Profile` usage and lifecycle state
-- perform cold/archive/delete cleanup
+由 heartbeat、cron、maintenance run 或显式管理动作触发：
 
-## LLM Dependency Map
+- 聚合学习笔记形成主题
+- 计算主题成熟度
+- 检索相似的已有技能
+- 生成 `Skill Draft`
+- 运行结构校验和安全扫描
+- 将草案转入 candidate / quarantined / accepted
+- 更新 `Skill Profile` 的使用状态与生命周期
+- 执行 cold / archived / deleted 清理
 
-### Steps that do not require an LLM
+## LLM 依赖边界
 
-- writing `Learning Note`
-- attaching rule-based learning signals
-- topic grouping
-- maturity threshold scoring
-- non-LLM similar-skill retrieval
-- structural validation
-- safety scanning
-- version backup and rollback
-- usage counting and lifecycle transitions
+### 不依赖 LLM 的步骤
 
-### Steps that do require an LLM
+- 写入 `Learning Note`
+- 打规则信号
+- 聚合 `Learning Topic`
+- 主题成熟度评分
+- 非 LLM 的相似技能召回
+- 结构校验
+- 安全扫描
+- 版本备份与回滚
+- 使用计数与生命周期迁移
 
-- generating the text of a `Skill Draft`
-- optionally rewriting a mature `Learning Topic` into:
-  - a new workflow skill
-  - an appended section
-  - a replacement patch
-  - a shortcut-oriented "start here" section
+### 依赖 LLM 的步骤
 
-### Performance hotspot to avoid
+- 生成 `Skill Draft` 的正文或 patch
+- 把一个成熟 `Learning Topic` 重写成：
+  - 新 workflow skill
+  - 一个追加段落
+  - 一个替换 patch
+  - 一个以“起手路径”为核心的 shortcut 段落
 
-The main UX risk is doing LLM-backed review or proposal generation at synchronous task completion time. In v1, all LLM-backed evolution must stay out of the user's reply path.
+### 明确的性能风险点
 
-## Core Objects
+最大的体验风险，是把依赖 LLM 的 review 或 draft 生成放在任务同步结束时做。  
+因此 v1 必须保证：所有依赖 LLM 的学习动作都不进入用户回复热路径。
 
-### Learning Note
+## 核心对象
 
-Purpose:
+## `Learning Note`
 
-- capture a small structured trace of what may be worth learning from a finished task
+用途：
 
-Suggested fields:
+- 记录一次已完成任务里可能值得学习的结构化证据
+
+建议字段：
 
 - `id`
 - `created_at`
@@ -209,23 +215,23 @@ Suggested fields:
 - `artifact_refs`
 - `attempt_trail`
 
-Implementation form:
+实现形态：
 
-- integrated runtime program data
-- stored under state, not in `skills/`
-- not injected into normal prompt flow
+- 集成在 runtime 中的内部程序数据
+- 存在 state 中，而不是 `skills/`
+- 不注入日常 prompt
 
-LLM dependency:
+是否依赖 LLM：
 
-- none
+- 否
 
-### Learning Topic
+## `Learning Topic`
 
-Purpose:
+用途：
 
-- represent a repeatable procedural theme discovered from multiple notes
+- 表示若干 `Learning Note` 聚合出的可复用流程主题
 
-Suggested fields:
+建议字段：
 
 - `id`
 - `created_at`
@@ -245,22 +251,22 @@ Suggested fields:
 - `winning_path`
 - `status`
 
-Implementation form:
+实现形态：
 
-- integrated runtime program data
-- built by background maintenance logic
+- 集成在 runtime 中的内部程序数据
+- 由后台维护逻辑构建
 
-LLM dependency:
+是否依赖 LLM：
 
-- none in v1
+- v1 不依赖
 
-### Skill Draft
+## `Skill Draft`
 
-Purpose:
+用途：
 
-- represent a candidate skill update before it becomes official
+- 表示一份尚未正式生效的技能变更草案
 
-Suggested fields:
+建议字段：
 
 - `id`
 - `created_at`
@@ -285,43 +291,42 @@ Suggested fields:
 - `scan_findings`
 - `status`
 
-`draft_type`:
+其中：
 
-- `workflow`
-- `shortcut`
+- `draft_type`
+  - `workflow`
+  - `shortcut`
+- `change_kind`
+  - `create`
+  - `append`
+  - `replace`
+  - `merge`
 
-`change_kind`:
+实现形态：
 
-- `create`
-- `append`
-- `replace`
-- `merge`
+- 存在 state 中的候选资产
+- 在被接受并应用前，不属于正式技能集
 
-Implementation form:
+是否依赖 LLM：
 
-- candidate asset stored in state
-- not a formal skill until accepted and applied
+- 生成草案正文时依赖
 
-LLM dependency:
+面向人工审核的要求：
 
-- required for draft content generation
+- 每份草案都应当能在不回看完整 transcript 的前提下被理解
+- `human_summary` 要用 1-3 句话说明核心用途
+- `usage_scope` 要明确适用范围
+- `preferred_entry_path` 要在适用时说明首选起手路径
+- `avoid_patterns` 要列出常见死路或反模式
+- `review_notes` 要解释为什么本次判定是 `create` / `append` / `replace` / `merge`
 
-Human-readable intent:
+## `Skill Profile`
 
-- every draft should be understandable without replaying the full source transcript
-- `human_summary` should explain the core purpose in 1-3 sentences
-- `usage_scope` should state where the draft applies
-- `preferred_entry_path` should summarize the recommended start path when relevant
-- `avoid_patterns` should list common dead ends or anti-patterns when relevant
-- `review_notes` should explain why the system chose `create`, `append`, `replace`, or `merge`
+用途：
 
-### Skill Profile
+- 管理一个正式技能的生命周期与版本元数据
 
-Purpose:
-
-- manage the lifecycle and version metadata of a formal skill
-
-Suggested fields:
+建议字段：
 
 - `skill_name`
 - `workspace_id`
@@ -350,139 +355,139 @@ Suggested fields:
 - `review_checklist`
 - `version_history`
 
-Implementation form:
+实现形态：
 
-- sidecar metadata around formal `SKILL.md` files
-- internal program data, not itself a skill
+- 正式 `SKILL.md` 周围的侧车元数据
+- 是内部程序数据，不是 skill 正文本身
 
-LLM dependency:
+是否依赖 LLM：
 
-- none for lifecycle management
+- 生命周期管理本身不依赖
 
-Human-readable intent:
+面向人工审核的要求：
 
-- `Skill Profile` should act like an audit card for reviewers, not just lifecycle bookkeeping
-- a reviewer should be able to inspect the profile and quickly understand:
-  - what the skill is supposed to do
-  - what it should not be used for
-  - why it was introduced or changed
-  - whether it is shortcut-oriented or full-workflow oriented
-  - what to verify before approving a risky update
+- `Skill Profile` 应当像一张审计卡，而不只是流水账
+- 审核者应当能快速看出：
+  - 技能要做什么
+  - 技能不应该做什么
+  - 它为什么被引入或修改
+  - 它是 shortcut 型还是完整 workflow 型
+  - 高风险修改需要额外验证哪些点
 
-## Readable Skill Authoring Conventions
+## 正式技能的可读性约定
 
-When the system materializes or updates a formal `SKILL.md`, it should prefer a structure that is easy for humans to scan during review.
+系统在落地或更新正式 `SKILL.md` 时，应优先采用方便人工扫描的结构。
 
-Recommended section order:
+推荐章节顺序：
 
-1. short purpose summary
-2. when to use
-3. start here
-4. workflow
-5. avoid common dead ends
-6. validation or review hints
-7. references if needed
+1. 简短用途摘要
+2. 何时使用
+3. `Start Here`
+4. `Workflow`
+5. `Avoid Common Dead Ends`
+6. 验证或审核提示
+7. 必要时的参考资料
 
-The generated content should prefer:
+生成内容应当倾向于：
 
-- short imperative bullets
-- explicit scope boundaries
-- direct mention of preferred first step when a shortcut was learned
-- clear anti-patterns when repeated failed paths were observed
+- 简短的祈使句 bullet
+- 明确的适用边界
+- 如果学到了 shortcut，就把首选起手路径写清楚
+- 如果观察到了重复死路，就明确写出反模式
 
-The generated content should avoid:
+生成内容应当避免：
 
-- replaying full transcripts
-- vague autobiographical explanations
-- long narrative paragraphs when a short checklist is clearer
-- burying the key "start here" decision deep in the file
+- 回放完整 transcript
+- 含糊的自传式解释
+- 用长篇叙述替代简洁检查清单
+- 把关键起手路径埋在文件深处
 
-## Shortcut Learning from Trial-and-Error
+## 从试错链中学习“捷径技能”
 
-The system must explicitly support learning from a task where the agent tries multiple skills or methods and the final attempt succeeds.
+系统必须支持这样一种学习：一次任务里 agent 尝试了多个 skill 或方法，前面多次失败或绕远，最后一个路径成功。
 
-This is not just "the last skill was good." It is a routing lesson:
+这学到的不是“最后一个 skill 很好”，而是一个路由教训：
 
-- earlier paths were wasteful or unstable
-- the final path is the preferred entry path for similar tasks
+- 前面那些路径在这类任务里通常浪费时间或不稳定
+- 最后成功的路径更适合作为类似任务的默认起手路径
 
-### Required capture
+### 必须记录的证据
 
-`Learning Note.attempt_trail` should record ordered attempts such as:
+`Learning Note.attempt_trail` 需要记录有顺序的尝试链，例如：
 
-- tried skill/method
-- outcome class: failed, partial, superseded, success
-- why it failed when that can be detected structurally
+- 试了什么 skill / 方法
+- 结果类型：`failed`、`partial`、`superseded`、`success`
+- 如果可以结构化识别，记录失败原因
 
-### Required promotion behavior
+### 必须支持的晋升结果
 
-Repeated winning-path evidence can create a `shortcut` type `Skill Draft`.
+如果重复出现相同的 winning path 证据，系统可以生成 `shortcut` 类型的 `Skill Draft`。
 
-These drafts typically become:
+这类草案通常会变成：
 
-- a `## Start Here` section
-- a `## Preferred Path` section
-- a `## Avoid Common Dead Ends` section
+- `## Start Here`
+- `## Preferred Path`
+- `## Avoid Common Dead Ends`
 
-This allows future similar tasks to start at the successful path instead of replaying old trial-and-error.
+这样下次类似任务就能从正确路径开始，而不是再走一遍旧的试错链。
 
-## Draft Generation and Matching Flow
+## 草案生成与匹配流程
 
-When a `Learning Topic` reaches maturity:
+当一个 `Learning Topic` 达到成熟阈值时，按以下流程处理：
 
-1. retrieve the nearest existing official skills and relevant candidate drafts
-2. classify whether the change is best represented as:
+1. 召回最相近的正式技能与候选草案
+2. 判断这次变更更适合：
    - `create`
    - `append`
    - `replace`
    - `merge`
-3. invoke the LLM to generate a draft body or patch
-4. run structural validation
-5. run safety scanning
-6. place the result into:
+3. 调用 LLM 生成草案正文或 patch
+4. 运行结构校验
+5. 运行安全扫描
+6. 根据结果进入：
    - `candidate`
    - `quarantined`
-   - `accepted` only after promotion conditions are met
+   - 只有满足进一步晋升条件时才进入 `accepted`
 
-## Change Decision Rules
+## 变更类型决策规则
 
-### Create
+## `create`
 
-Use when:
+适用条件：
 
-- no sufficiently similar formal skill exists
-- the learned process is meaningfully new in this workspace
+- 没有足够相近的正式技能
+- 学到的是当前 workspace 中真正新的流程
 
-### Append
+## `append`
 
-Use when:
+适用条件：
 
-- the target skill is fundamentally correct
-- the new learning only adds a section, an exception, a check, or a shortcut
+- 目标技能整体是对的
+- 新学习只是在补充一个段落、例外、检查点或 shortcut
 
-This is the preferred default when safe.
+默认情况下，能安全 `append` 时优先 `append`。
 
-### Replace
+## `replace`
 
-Use when:
+适用条件：
 
-- an existing section is stale, wrong, or misleading
-- the new content is meant to supersede old guidance rather than supplement it
+- 现有技能中的某一段明显过时、错误或具有误导性
+- 新内容要覆盖旧路径，而不是仅做补充
 
-This requires backup before application.
+这种情况必须先做版本备份。
 
-### Merge
+## `merge`
 
-Use when:
+适用条件：
 
-- two overlapping skills should become one clearer skill
-- or a new draft materially subsumes multiple narrow skills
+- 两个重叠技能应整合成一个更清晰的技能
+- 或一个新草案已经实质上覆盖了多个窄技能
 
-This is the riskiest operation and should default to candidate review, not silent acceptance.
+这是风险最高的操作，v1 默认只进入候选态，不应静默自动生效。
 
-## Draft State Machine
+## `Skill Draft` 状态机
 
-Suggested states:
+建议状态：
 
 - `draft`
 - `candidate`
@@ -492,175 +497,175 @@ Suggested states:
 - `superseded`
 - `rolled_back`
 
-Transition outline:
+迁移主链路：
 
-1. topic reaches maturity
-2. LLM creates `draft`
-3. validation/scan:
-   - clean -> `candidate`
-   - blocked -> `quarantined`
-4. later promotion:
-   - accepted automatically for low-risk cases
-   - accepted manually for high-impact cases
-5. applied update creates or updates a formal skill and `Skill Profile`
-6. failed application or invalid resulting skill -> `rolled_back`
+1. 主题达到成熟阈值
+2. LLM 生成 `draft`
+3. 经过验证 / 扫描：
+   - 干净 -> `candidate`
+   - 被阻断 -> `quarantined`
+4. 后续晋升：
+   - 低风险场景可自动接受
+   - 高影响场景需人工确认
+5. 被应用后生成或更新正式技能与 `Skill Profile`
+6. 如果应用后技能结构异常 -> `rolled_back`
 
-## Candidate Promotion Rules
+## 候选草案转正规则
 
-### Low-risk automatic promotion
+## 低风险自动转正
 
-Allowed only for low-impact changes such as:
+仅适用于低影响变更，例如：
 
-- narrow `append`
-- shortcut guidance that does not delete or rewrite core workflow
-- small additions to an existing workspace skill
+- 很窄的 `append`
+- 不会覆盖核心流程的 shortcut guidance
+- 给已有 workspace skill 增补少量说明
 
-Conditions:
+需要同时满足：
 
-- structure validation passes
-- safety scan passes
-- later similar tasks confirm usefulness
-- no high-risk replacement or merge is involved
+- 结构校验通过
+- 安全扫描通过
+- 后续相似任务再次验证该草案有效
+- 不涉及高风险的 `replace` 或 `merge`
 
-### Manual or explicit confirmation
+## 人工确认转正
 
-Required for:
+以下场景应默认需要人工确认：
 
 - `replace`
 - `merge`
-- large `create`
-- drafts that significantly change default behavior
+- 较大的 `create`
+- 会显著改变默认行为的草案
 
-This matches the graded governance requirement:
+这与前述分级治理一致：
 
-- low-risk changes may self-progress
-- high-impact changes require confirmation
+- 低风险可自动演化
+- 高影响必须确认
 
-## Validation, Safety, and Rollback
+## 验证、安全与回滚
 
-### Validation and safety
+## 结构验证与安全扫描
 
-Every draft must pass:
+每份草案都必须经过：
 
-- structural validation of the resulting skill layout
-- safety scanning for prompt injection, permission bypass, and dangerous shell patterns
+- resulting skill 结构验证
+- 针对 prompt injection、权限绕过、危险 shell 模式的安全扫描
 
-If these checks fail, the draft becomes `quarantined` and never touches official skills.
+如果失败，草案直接进入 `quarantined`，不触碰正式技能。
 
-### Backup rules
+## 备份规则
 
-Before applying any modification to an existing skill, create a backup for:
+凡是要修改已有技能的操作，都必须先做备份，包括：
 
 - `append`
 - `replace`
 - `merge`
 
-Backup must include:
+备份内容至少包括：
 
-- original `SKILL.md`
-- supported companion files if modified
-- proposal id
-- timestamp
+- 原始 `SKILL.md`
+- 若有改动，相关支持文件
+- proposal / draft id
+- 时间戳
 
-### Rollback triggers
+## 回滚触发条件
 
-In v1 rollback is deterministic and structure-driven, not behavior-driven.
+v1 中回滚是确定性的、结构驱动的，不做行为回滚。
 
-Rollback should occur when:
+触发回滚的典型条件：
 
-- the new skill fails structural validation after materialization
-- required files are missing
-- frontmatter is invalid
-- patch application did not resolve correctly
-- the resulting skill is empty or oversized
-- the loader can no longer recognize the resulting skill
+- 新技能在落地后结构校验失败
+- 关键文件缺失
+- frontmatter 不合法
+- patch 没正确应用
+- 结果技能为空或超限
+- loader 无法再识别该技能
 
-### Rollback recording
+## 回滚记录
 
-`Skill Profile.version_history` should record:
+`Skill Profile.version_history` 应至少记录：
 
-- which draft was applied
-- which backup was used
-- why rollback occurred
-- what version became current again
+- 哪份草案被应用
+- 使用了哪个备份恢复
+- 为什么回滚
+- 回滚后当前版本是什么
 
-It should also preserve a human-readable review trail for each version:
+同时，还应保留面向人工的审阅轨迹：
 
-- short change summary
-- whether the change was `workflow` or `shortcut`
-- whether it was `create`, `append`, `replace`, or `merge`
-- why the old path was considered insufficient
+- 简短变更摘要
+- 这是 `workflow` 还是 `shortcut`
+- 这是 `create` / `append` / `replace` / `merge`
+- 为什么旧路径被认为不足
 
-## Formal Skill Lifecycle
+## 正式技能生命周期
 
-Official skills use these states:
+正式技能状态统一为：
 
 - `active`
 - `cold`
 - `archived`
 - `deleted`
 
-### Active
+## `active`
 
-- participates in normal skill use and recommendation
+- 参与正常技能使用与推荐
 
-### Cold
+## `cold`
 
-- retained but deprioritized
-- suitable for skills that were useful but are no longer frequently relevant
+- 仍被保留，但默认降权
+- 适合那些“以前有用，但最近明显降频”的技能
 
-### Archived
+## `archived`
 
-- preserved for later recovery
-- excluded from normal recommendation and prompt-time preference
+- 保留文件与档案，默认退出主舞台
+- 不参与常规推荐，但可以在以后重新恢复
 
-### Deleted
+## `deleted`
 
-- formal removal after extended inactivity and low retained value
-- leave behind a minimal tombstone record so the system does not immediately relearn a known-low-value skill
+- 在长时间无关且保留价值低时正式删除
+- 仍保留极简 tombstone，避免系统马上又学出一个已知低价值技能
 
-## Retention and Anti-Deletion Safeguards
+## 保留分与误删保护
 
-Skill deletion must not rely on age alone. Compute a retention score using:
+技能删除不能只看时间，必须综合 `retention_score`：
 
-- recency
-- usage frequency
-- success reliability
-- whether the skill often becomes the final winning path
-- specificity to the workspace
+- 最近使用时间
+- 历史使用频率
+- 成功可靠性
+- 是否经常成为最终成功路径
+- 与当前 workspace 的特异性
 
-### Required safeguards
+## 必须遵守的保护规则
 
-- manually authored skills should not auto-delete in v1
-- low-frequency but high-value skills should not auto-delete
-- recently replaced skills must keep rollback-capable history for a protection window
-- newly accepted skills should not immediately enter cooling
+- `manual` 来源的技能在 v1 不自动删除
+- 低频但高价值技能不自动删除
+- 最近被 `replace` 的旧技能版本必须保留一个回滚保护窗口
+- 新近转正的技能不应立刻进入冷却
 
-### Lifecycle transition rules
+## 生命周期迁移规则
 
 - `active -> cold`
-  - when usage falls and the skill is increasingly superseded
+  - 使用下降，且越来越经常被其他路径取代
 - `cold -> active`
-  - when it becomes useful again
+  - 再次命中并证明有效时恢复
 - `cold -> archived`
-  - after extended inactivity with limited retained value
+  - 冷却后继续长期不用，且保留价值有限
 - `archived -> active`
-  - when re-matched successfully
+  - 再次命中并成功时解档恢复
 - `archived -> deleted`
-  - only after prolonged irrelevance and when safeguards do not block deletion
+  - 长期无关、保留价值低且不触发保护规则时删除
 
-## Example End-to-End Flow
+## 一个完整例子
 
-Example: Chinese-city weather tasks repeatedly end with a final native-name lookup path succeeding after several poorer attempts.
+例子：多次中文城市天气任务中，最终总是 native-name lookup 成功，而前面的通用 geocode 路径浪费时间。
 
-1. Each completed task writes a `Learning Note`.
-2. Those notes group into a `Learning Topic` such as `weather-cn-routing`.
-3. The topic records a repeated winning path:
-   - generic geocode path is wasteful
-   - native-name resolution wins
-4. A cold-path maintenance run asks the LLM to create a `shortcut` `Skill Draft`.
-5. The matching step decides `append` is best for the existing `weather` skill.
-6. The generated draft adds:
+1. 每次完成任务后写一条 `Learning Note`
+2. 多条笔记聚成 `Learning Topic`，例如 `weather-cn-routing`
+3. 主题中反复出现相同 winning path：
+   - 通用 geocode 容易绕远或出错
+   - native-name resolution 更稳定
+4. 冷路径 maintenance run 调用 LLM 生成一个 `shortcut` 类型的 `Skill Draft`
+5. 匹配逻辑判断：最合适的是对现有 `weather` skill 做 `append`
+6. 草案内容变成：
 
 ```md
 ## Start Here
@@ -669,66 +674,66 @@ For Chinese-city weather requests, try native-name resolution first.
 Do not start with generic geocoding unless the native query is ambiguous.
 ```
 
-7. The draft passes structural validation and safety scan and enters `candidate`.
-8. After similar tasks confirm the shortcut again, it is accepted and applied.
-9. The updated `weather` skill gets a new `Skill Profile` version entry.
-10. If the applied change breaks skill structure, PicoClaw restores the previous version immediately.
+7. 草案通过结构校验和安全扫描，进入 `candidate`
+8. 后续相似任务再次验证有效后，草案被接受并应用
+9. `weather` 的 `Skill Profile` 记下一条新版本记录
+10. 如果应用后技能结构异常，系统立即回滚到旧版本
 
-## Implementation Shape in PicoClaw
+## 在 PicoClaw 中的实现形态
 
-This should be implemented as an integrated runtime subsystem, not as a normal workspace skill and not as a user-facing tool in v1.
+这套能力在 v1 中应实现为集成式 runtime 子系统，而不是普通 workspace skill，也不是面向用户的常规 tool。
 
-Recommended rough placement:
+建议落点：
 
-- agent/runtime hooks near `pkg/agent` for learning-note emission
-- evolution state store under workspace or state-dir owned data
-- formal skills still live under `workspace/skills`
-- lifecycle metadata and backups stored beside state data or as controlled sidecars
+- 任务完成后的证据写入逻辑靠近 `pkg/agent`
+- evolution state 存在 workspace 或 state-dir 所属的数据区域
+- 正式技能仍然保存在 `workspace/skills`
+- 生命周期元数据与备份存在 state 或受控侧车文件中
 
-Potential future operator surfaces may exist, but the core mechanism is not itself "a skill." It is integrated program logic that learns when skills should exist.
+未来可以补 operator surface，但核心机制本身不是“一个技能”。它是帮助系统决定“什么时候该有技能、技能应该如何变化”的一段集成程序。
 
-Implementation readability should also be treated as a design constraint:
+实现可读性也应当是设计约束：
 
-- keep evidence capture, topic grouping, draft generation, and lifecycle transitions in clearly separated modules
-- prefer explicit names over generic manager classes
-- store human-facing metadata in a stable schema rather than burying explanations in transient logs
-- make state transitions auditable from code and persisted metadata without requiring replay of the original task transcript
+- 将证据采集、主题聚合、草案生成、生命周期迁移拆成清晰模块
+- 尽量避免笼统的 manager 大类命名
+- 将面向人工的元数据存为稳定 schema，而不是埋在瞬时日志里
+- 让状态迁移既能从代码读清楚，也能从持久化元数据中审计出来，而不必回放原始 transcript
 
-## Success Criteria
+## 成功标准
 
-The design is successful if:
+如果满足以下条件，则说明设计成功：
 
-- common user turns remain fast and do not incur new LLM learning latency
-- learned procedures first appear as candidates rather than silently mutating official skills
-- repeated trial-and-error can become reusable shortcut guidance
-- high-impact skill changes can be rolled back deterministically
-- stale learned skills can cool down and eventually leave the active set without deleting rare but valuable knowledge
+- 常见用户回合依然快，没有新引入 LLM 学习延迟
+- 新学到的流程先以候选态出现，而不是静默改写正式技能
+- 反复试错能沉淀成可复用的 shortcut guidance
+- 高影响技能修改可以确定性回滚
+- 长期不用技能可以退出 active 集合，同时不误删少见但有价值的能力
 
-## Risks and Tradeoffs
+## 风险与权衡
 
-- Candidate governance adds complexity but prevents prompt and skill pollution.
-- Non-LLM similarity matching may be imperfect; that is acceptable in v1 if it avoids hot-path cost.
-- Merge logic is powerful but risky; keep it conservative in early versions.
-- Lifecycle cleanup can accidentally over-prune if retention scoring is too naive; this is why manual, rare, and rollback-relevant skills get stronger protection.
+- 候选治理会增加实现复杂度，但能显著降低 prompt 和技能集污染
+- 非 LLM 的相似技能匹配不一定完美，但 v1 为了热路径成本，这个取舍是合理的
+- `merge` 很强大，但也是最高风险能力，前期必须保守
+- 生命周期清理如果评分太粗糙，可能会过度修剪，这也是为什么 manual / rare / rollback-relevant 技能要得到更强保护
 
-## Recommended V1 Scope
+## 推荐的 v1 实施范围
 
-Include:
+v1 建议包含：
 
 - `Learning Note`
 - `Learning Topic`
 - `Skill Draft`
 - `Skill Profile`
-- cold-path LLM draft generation
+- 冷路径 LLM 草案生成
 - `create` / `append` / `replace`
-- `shortcut` drafts
-- validation, scan, candidate state, backup, rollback
+- `shortcut` 类型草案
+- 结构验证、扫描、候选态、备份、回滚
 - `active` / `cold` / `archived` / `deleted`
 
-Defer:
+v1 建议暂缓：
 
-- cross-workspace evolution
-- behavior-based rollback
-- fully automatic `merge`
-- full UI for all lifecycle objects
-- LLM reranking on the hot path
+- 跨 workspace 演化
+- 行为回滚
+- 全自动 `merge`
+- 全生命周期对象的完整 UI
+- 热路径上的 LLM reranking
