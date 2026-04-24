@@ -6,6 +6,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Prepare an embedded file system
+// 1. Remove any vestigial `workspace` folder that might be present
+// 2. Duplicate `workspace` folder into the module
+// 3. Embed the module's `workspace` folder into the executable
+//
+//go:generate rm -rf ./workspace
 //go:generate cp -r ../../../../workspace .
 //go:embed workspace
 var embeddedFiles embed.FS
