@@ -50,6 +50,29 @@ What is missing is a lifecycle layer between "a useful thing happened" and "a sk
 - Candidate-first governance: new learned procedures enter as candidates before formal adoption.
 - Prefer preserving good skill content: `append` is safer than `replace`; `replace` is safer than `merge`.
 - Keep rollback cheap and deterministic.
+- Human reviewability is a first-class requirement: learned artifacts, sidecar metadata, and final skill structure must be easy for a human maintainer to read, audit, and reason about during code review.
+
+## Human Reviewability Requirement
+
+The system must optimize not only for agent execution but also for human comprehension.
+
+This applies at three levels:
+
+1. Runtime metadata
+   - sidecar metadata should explain what a skill is for, why it exists, what changed, and how risky the change is
+2. Formal skill content
+   - generated or updated `SKILL.md` files should be readable as compact operational documentation, not opaque machine-written blobs
+3. Implementation structure
+   - the evolution subsystem should keep learning evidence, candidate logic, and lifecycle logic in clearly named units so humans can review code changes without reconstructing the whole state machine mentally
+
+The intended outcome is that a human reviewing a learned skill or its implementation can answer quickly:
+
+- What problem does this skill solve?
+- When should it be used?
+- What is the preferred first path?
+- What paths should be avoided?
+- Why was it created or changed?
+- Is this change low-risk or high-impact?
 
 ## Comparison with OpenClaw
 
@@ -252,6 +275,12 @@ Suggested fields:
 - `description`
 - `body_or_patch`
 - `similar_skill_refs`
+- `human_summary`
+- `usage_scope`
+- `preferred_entry_path`
+- `avoid_patterns`
+- `review_notes`
+- `risk_level`
 - `llm_generation_meta`
 - `scan_findings`
 - `status`
@@ -277,6 +306,15 @@ LLM dependency:
 
 - required for draft content generation
 
+Human-readable intent:
+
+- every draft should be understandable without replaying the full source transcript
+- `human_summary` should explain the core purpose in 1-3 sentences
+- `usage_scope` should state where the draft applies
+- `preferred_entry_path` should summarize the recommended start path when relevant
+- `avoid_patterns` should list common dead ends or anti-patterns when relevant
+- `review_notes` should explain why the system chose `create`, `append`, `replace`, or `merge`
+
 ### Skill Profile
 
 Purpose:
@@ -300,6 +338,16 @@ Suggested fields:
 - `cooldown_reason`
 - `archive_reason`
 - `last_matched_topic_id`
+- `human_summary`
+- `review_tags`
+- `owner_scope`
+- `intended_use_cases`
+- `non_goals`
+- `risk_level`
+- `change_reason`
+- `preferred_entry_path`
+- `avoid_patterns`
+- `review_checklist`
 - `version_history`
 
 Implementation form:
@@ -310,6 +358,44 @@ Implementation form:
 LLM dependency:
 
 - none for lifecycle management
+
+Human-readable intent:
+
+- `Skill Profile` should act like an audit card for reviewers, not just lifecycle bookkeeping
+- a reviewer should be able to inspect the profile and quickly understand:
+  - what the skill is supposed to do
+  - what it should not be used for
+  - why it was introduced or changed
+  - whether it is shortcut-oriented or full-workflow oriented
+  - what to verify before approving a risky update
+
+## Readable Skill Authoring Conventions
+
+When the system materializes or updates a formal `SKILL.md`, it should prefer a structure that is easy for humans to scan during review.
+
+Recommended section order:
+
+1. short purpose summary
+2. when to use
+3. start here
+4. workflow
+5. avoid common dead ends
+6. validation or review hints
+7. references if needed
+
+The generated content should prefer:
+
+- short imperative bullets
+- explicit scope boundaries
+- direct mention of preferred first step when a shortcut was learned
+- clear anti-patterns when repeated failed paths were observed
+
+The generated content should avoid:
+
+- replaying full transcripts
+- vague autobiographical explanations
+- long narrative paragraphs when a short checklist is clearer
+- burying the key "start here" decision deep in the file
 
 ## Shortcut Learning from Trial-and-Error
 
@@ -498,6 +584,13 @@ Rollback should occur when:
 - why rollback occurred
 - what version became current again
 
+It should also preserve a human-readable review trail for each version:
+
+- short change summary
+- whether the change was `workflow` or `shortcut`
+- whether it was `create`, `append`, `replace`, or `merge`
+- why the old path was considered insufficient
+
 ## Formal Skill Lifecycle
 
 Official skills use these states:
@@ -593,6 +686,13 @@ Recommended rough placement:
 - lifecycle metadata and backups stored beside state data or as controlled sidecars
 
 Potential future operator surfaces may exist, but the core mechanism is not itself "a skill." It is integrated program logic that learns when skills should exist.
+
+Implementation readability should also be treated as a design constraint:
+
+- keep evidence capture, topic grouping, draft generation, and lifecycle transitions in clearly separated modules
+- prefer explicit names over generic manager classes
+- store human-facing metadata in a stable schema rather than burying explanations in transient logs
+- make state transitions auditable from code and persisted metadata without requiring replay of the original task transcript
 
 ## Success Criteria
 
