@@ -20,6 +20,15 @@ type Config struct {
 	DBPath                   string   `json:"dbPath"`
 	IgnoreSessionPatterns    []string `json:"ignoreSessionPatterns,omitempty"`
 	StatelessSessionPatterns []string `json:"statelessSessionPatterns,omitempty"`
+	FreshTailSize            int      `json:"fresh_tail_size,omitempty"`
+}
+
+// GetFreshTailSize returns the configured fresh tail size or the default.
+func (c Config) GetFreshTailSize() int {
+	if c.FreshTailSize > 0 {
+		return c.FreshTailSize
+	}
+	return FreshTailCount
 }
 
 // CompleteFn is the LLM completion function type.

@@ -197,6 +197,38 @@ func TestAssemblerBudgetFitsAll(t *testing.T) {
 	}
 }
 
+func TestAssemblerUsesConfiguredFreshTailSize(t *testing.T) {
+	s, convID := setupAssemblerStore(t)
+	ctx := context.Background()
+
+	msgs := make([]*Message, 6)
+	items := make([]ContextItem, 6)
+	for i := 0; i < 6; i++ {
+		m, _ := s.AddMessage(ctx, convID, "user", "msg", 10)
+		msgs[i] = m
+		items[i] = ContextItem{
+			Ordinal:    (i + 1) * 100,
+			ItemType:   "message",
+			MessageID:  m.ID,
+			TokenCount: 10,
+		}
+	}
+	s.UpsertContextItems(ctx, convID, items)
+
+	a := &Assembler{store: s, config: Config{FreshTailSize: 3}}
+	result, err := a.Assemble(ctx, convID, AssembleInput{Budget: 30})
+	if err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+
+	if len(result.Messages) != 3 {
+		t.Fatalf("Messages = %d, want 3", len(result.Messages))
+	}
+	if result.Messages[0].ID != msgs[3].ID {
+		t.Errorf("first message ID = %d, want %d", result.Messages[0].ID, msgs[3].ID)
+	}
+}
+
 func TestAssemblerSummaryXMLFormat(t *testing.T) {
 	s, convID := setupAssemblerStore(t)
 	ctx := context.Background()

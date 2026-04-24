@@ -22,7 +22,7 @@ type seahorseContextManager struct {
 }
 
 // newSeahorseContextManager creates a seahorse-backed ContextManager.
-func newSeahorseContextManager(_ json.RawMessage, al *AgentLoop) (ContextManager, error) {
+func newSeahorseContextManager(cfg json.RawMessage, al *AgentLoop) (ContextManager, error) {
 	if al == nil {
 		return nil, fmt.Errorf("seahorse: AgentLoop is required")
 	}
@@ -32,13 +32,19 @@ func newSeahorseContextManager(_ json.RawMessage, al *AgentLoop) (ContextManager
 	agent := al.registry.GetDefaultAgent()
 	dbPath := agent.Workspace + "/sessions/seahorse.db"
 
+	seahorseConfig := seahorse.Config{DBPath: dbPath}
+	if len(cfg) > 0 {
+		if err := json.Unmarshal(cfg, &seahorseConfig); err != nil {
+			return nil, fmt.Errorf("seahorse: decode config: %w", err)
+		}
+		seahorseConfig.DBPath = dbPath
+	}
+
 	// Create CompleteFn from provider
 	completeFn := providerToCompleteFn(agent.Provider, agent.Model)
 
 	// Create engine
-	engine, err := seahorse.NewEngine(seahorse.Config{
-		DBPath: dbPath,
-	}, completeFn)
+	engine, err := seahorse.NewEngine(seahorseConfig, completeFn)
 	if err != nil {
 		return nil, fmt.Errorf("seahorse: create engine: %w", err)
 	}

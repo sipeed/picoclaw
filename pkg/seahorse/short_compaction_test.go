@@ -164,6 +164,25 @@ func TestCompactLeaf(t *testing.T) {
 	}
 }
 
+func TestCompactLeafUsesConfiguredFreshTailSize(t *testing.T) {
+	ce, s, convID := newTestCompactionEngine(t)
+	ce.config = Config{FreshTailSize: 2}
+	ctx := context.Background()
+
+	for i := 0; i < 10; i++ {
+		m, _ := s.AddMessage(ctx, convID, "user", "message content for compaction test", 100)
+		s.AppendContextMessage(ctx, convID, m.ID)
+	}
+
+	summaryID, err := ce.compactLeaf(ctx, convID)
+	if err != nil {
+		t.Fatalf("compactLeaf: %v", err)
+	}
+	if summaryID == nil {
+		t.Fatal("expected compactLeaf to compact with custom fresh tail size")
+	}
+}
+
 func TestCompactLeafNoCandidate(t *testing.T) {
 	ce, _, convID := newTestCompactionEngine(t)
 	ctx := context.Background()
