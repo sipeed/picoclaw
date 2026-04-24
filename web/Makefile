@@ -163,7 +163,7 @@ endif
 
 build-frontend:
 ifeq ($(OS),Windows_NT)
-	@if not exist "$(FRONTEND_DIR)\node_modules" (echo Installing frontend dependencies... && cd $(FRONTEND_DIR) && pnpm install --frozen-lockfile --store-dir .pnpm-store) else echo Frontend dependencies already installed.
+	@$(POWERSHELL) "$$frontend='$(FRONTEND_DIR)'; if (-not (Test-Path -LiteralPath ($$frontend + '/node_modules'))) { Write-Host 'Installing frontend dependencies...'; Push-Location $$frontend; try { pnpm install --frozen-lockfile --store-dir .pnpm-store } finally { Pop-Location } } else { Write-Host 'Frontend dependencies already installed.' }"
 else
 	@if [ ! -d $(FRONTEND_DIR)/node_modules ] || \
 		[ $(FRONTEND_DIR)/package.json -nt $(FRONTEND_DIR)/node_modules ] || \
