@@ -7,6 +7,8 @@ type (
 	HTTPProvider   = httpapi.HTTPProvider
 )
 
+var _ EmbeddingProvider = (*HTTPProvider)(nil)
+
 func NewGeminiProvider(
 	apiKey string,
 	apiBase string,

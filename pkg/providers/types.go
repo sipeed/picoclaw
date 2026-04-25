@@ -33,6 +33,24 @@ type LLMProvider interface {
 	GetDefaultModel() string
 }
 
+// EmbeddingProvider exposes OpenAI-compatible embeddings helpers.
+// Callers can request a local output width, but the provider must still send
+// the full native vector upstream and truncate client-side if needed.
+type EmbeddingProvider interface {
+	EmbedQuery(
+		ctx context.Context,
+		input string,
+		model string,
+		dimensions int,
+	) ([]float64, error)
+	EmbedBatch(
+		ctx context.Context,
+		inputs []string,
+		model string,
+		dimensions int,
+	) ([][]float64, error)
+}
+
 type StatefulProvider interface {
 	LLMProvider
 	Close()

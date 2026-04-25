@@ -70,6 +70,24 @@ func (p *HTTPProvider) ChatStream(
 	return p.delegate.ChatStream(ctx, messages, tools, model, options, onChunk)
 }
 
+func (p *HTTPProvider) EmbedQuery(
+	ctx context.Context,
+	input string,
+	model string,
+	dimensions int,
+) ([]float64, error) {
+	return p.delegate.EmbedQuery(ctx, input, model, dimensions)
+}
+
+func (p *HTTPProvider) EmbedBatch(
+	ctx context.Context,
+	inputs []string,
+	model string,
+	dimensions int,
+) ([][]float64, error) {
+	return p.delegate.EmbedBatch(ctx, inputs, model, dimensions)
+}
+
 func (p *HTTPProvider) GetDefaultModel() string {
 	return ""
 }
