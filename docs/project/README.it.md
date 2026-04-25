@@ -554,7 +554,20 @@ PicoClaw supporta nativamente [MCP](https://modelcontextprotocol.io/) — connet
 }
 ```
 
-Per la configurazione MCP completa (trasporti stdio, SSE, HTTP, Tool Discovery), vedi [Configurazione degli Strumenti - MCP](../reference/tools_configuration.md#mcp-tool).
+Puoi gestire i casi MCP più comuni direttamente dalla CLI senza modificare a mano il JSON:
+
+```bash
+picoclaw mcp add filesystem -- npx -y @modelcontextprotocol/server-filesystem /tmp
+picoclaw mcp list
+picoclaw mcp test filesystem
+```
+
+`picoclaw mcp` agisce come configuration manager: aggiorna `config.json` sotto `tools.mcp.servers`, ma non mantiene in esecuzione il processo del server.
+
+Usa `picoclaw mcp edit` quando ti servono campi avanzati che non sono coperti da `picoclaw mcp add`.
+Per esempio, `picoclaw mcp add` supporta `--deferred` e `--env-file`, mentre `picoclaw mcp edit` resta utile per modifiche JSON dirette e opzioni MCP meno comuni.
+
+Per la configurazione MCP completa (trasporti stdio, SSE, HTTP, Tool Discovery), vedi [Configurazione degli Strumenti - MCP](../reference/tools_configuration.md#mcp-tool). Per la reference della CLI, vedi [MCP Server CLI](../reference/mcp-cli.md).
 
 ## <img src="../../assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> Unisciti al Social Network degli Agent
 
@@ -574,6 +587,11 @@ Connetti PicoClaw al Social Network degli Agent semplicemente inviando un singol
 | `picoclaw status`         | Mostra lo stato                    |
 | `picoclaw version`        | Mostra le info sulla versione      |
 | `picoclaw model`          | Visualizza o cambia il modello predefinito |
+| `picoclaw mcp list`       | Elenca i server MCP configurati    |
+| `picoclaw mcp add ...`    | Aggiunge o aggiorna un server MCP  |
+| `picoclaw mcp test`       | Verifica la raggiungibilità di un server MCP |
+| `picoclaw mcp edit`       | Apre la config per modifiche MCP avanzate |
+| `picoclaw mcp remove`     | Rimuove un server MCP dalla config |
 | `picoclaw cron list`      | Elenca tutti i job pianificati     |
 | `picoclaw cron add ...`   | Aggiunge un job pianificato        |
 | `picoclaw cron disable`   | Disabilita un job pianificato      |
@@ -600,6 +618,7 @@ Per guide dettagliate oltre questo README:
 | [Docker & Avvio Rapido](../guides/docker.md) | Configurazione Docker Compose, modalità Launcher/Agent |
 | [App di Chat](../guides/chat-apps.md) | Tutte le guide di configurazione per 17+ channel |
 | [Configurazione](../guides/configuration.md) | Variabili d'ambiente, struttura del workspace, sandbox di sicurezza |
+| [MCP Server CLI](../reference/mcp-cli.md) | Aggiunta, elenco, test, modifica e rimozione dei server MCP da CLI |
 | [Provider & Modelli](../guides/providers.md) | 30+ provider LLM, routing dei modelli, configurazione model_list |
 | [Spawn & Task Asincroni](../guides/spawn-tasks.md) | Task veloci, task lunghi con spawn, orchestrazione asincrona di sub-agent |
 | [Hooks](../architecture/hooks/README.md) | Sistema di hook event-driven: observer, interceptor, approval hook |

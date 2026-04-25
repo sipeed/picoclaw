@@ -11,6 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/sipeed/picoclaw/pkg/media"
+	toolshared "github.com/sipeed/picoclaw/pkg/tools/shared"
 )
 
 // MockMCPManager is a mock implementation of MCPManager interface for testing
@@ -101,6 +102,22 @@ func TestMCPTool_Name(t *testing.T) {
 				t.Errorf("Expected name '%s', got '%s'", tt.expected, result)
 			}
 		})
+	}
+}
+
+func TestMCPTool_PromptMetadata(t *testing.T) {
+	manager := &MockMCPManager{}
+	tool := NewMCPTool(manager, "GitHub Server", &mcp.Tool{Name: "create_issue"})
+
+	metadata := tool.PromptMetadata()
+	if metadata.Layer != toolshared.ToolPromptLayerCapability {
+		t.Fatalf("metadata.Layer = %q, want %q", metadata.Layer, toolshared.ToolPromptLayerCapability)
+	}
+	if metadata.Slot != toolshared.ToolPromptSlotMCP {
+		t.Fatalf("metadata.Slot = %q, want %q", metadata.Slot, toolshared.ToolPromptSlotMCP)
+	}
+	if metadata.Source != "mcp:github_server" {
+		t.Fatalf("metadata.Source = %q, want mcp:github_server", metadata.Source)
 	}
 }
 

@@ -606,6 +606,8 @@
       "split_on_marker_hint": "Split long messages into short ones like real human chatting.",
       "tool_feedback_enabled": "Tool Feedback",
       "tool_feedback_enabled_hint": "Send a short execution note into the current chat before each tool runs.",
+      "tool_feedback_separate_messages": "Separate Feedback Messages",
+      "tool_feedback_separate_messages_hint": "Keep each tool feedback update as its own chat message instead of reusing a single placeholder/progress message.",
       "tool_feedback_max_args_length": "Tool Feedback Length",
       "tool_feedback_max_args_length_hint": "Maximum number of characters shown in each tool feedback message. Set to 0 to use the default.",
       "exec_enabled": "Allow Commands",

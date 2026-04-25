@@ -136,6 +136,22 @@ func TestLoadEnvFileNotFound(t *testing.T) {
 	}
 }
 
+func TestExpandHomeCommandPath(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	want := filepath.Join(homeDir, "bin", "my-mcp")
+	got := expandHomeCommandPath("~" + string(os.PathSeparator) + filepath.Join("bin", "my-mcp"))
+	if got != want {
+		t.Fatalf("expandHomeCommandPath() = %q, want %q", got, want)
+	}
+
+	if got := expandHomeCommandPath("npx"); got != "npx" {
+		t.Fatalf("expandHomeCommandPath() should leave bare commands unchanged, got %q", got)
+	}
+}
+
 func TestEnvFilePriority(t *testing.T) {
 	// Create a temporary .env file
 	tmpDir := t.TempDir()

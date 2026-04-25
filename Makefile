@@ -7,19 +7,43 @@ CMD_DIR=cmd/$(BINARY_NAME)
 MAIN_GO=$(CMD_DIR)/main.go
 EXT=
 
+ifeq ($(OS),Windows_NT)
+	POWERSHELL=powershell -NoProfile -Command
+	WINDOWS_GOARCH_RAW:=$(strip $(shell go env GOARCH 2>NUL))
+endif
+
 # Version
-VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-GIT_COMMIT=$(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "dev")
-BUILD_TIME=$(shell date +%FT%T%z)
-GO_VERSION=$(shell $(GO) version | awk '{print $$3}')
+ifeq ($(OS),Windows_NT)
+	VERSION_RAW:=$(strip $(shell git describe --tags --always --dirty 2>NUL))
+	GIT_COMMIT_RAW:=$(strip $(shell git rev-parse --short=8 HEAD 2>NUL))
+	BUILD_TIME_RAW:=$(strip $(shell powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-ddTHH:mm:ssK'"))
+	GO_VERSION_RAW:=$(strip $(shell go env GOVERSION 2>NUL))
+else
+	VERSION_RAW:=$(strip $(shell git describe --tags --always --dirty 2>/dev/null))
+	GIT_COMMIT_RAW:=$(strip $(shell git rev-parse --short=8 HEAD 2>/dev/null))
+	BUILD_TIME_RAW:=$(strip $(shell date +%FT%T%z))
+	GO_VERSION_RAW:=$(strip $(shell go env GOVERSION 2>/dev/null))
+endif
+VERSION?=$(if $(VERSION_RAW),$(VERSION_RAW),dev)
+GIT_COMMIT=$(if $(GIT_COMMIT_RAW),$(GIT_COMMIT_RAW),dev)
+BUILD_TIME=$(if $(BUILD_TIME_RAW),$(BUILD_TIME_RAW),dev)
+GO_VERSION=$(if $(GO_VERSION_RAW),$(GO_VERSION_RAW),unknown)
 CONFIG_PKG=github.com/sipeed/picoclaw/pkg/config
 LDFLAGS=-X $(CONFIG_PKG).Version=$(VERSION) -X $(CONFIG_PKG).GitCommit=$(GIT_COMMIT) -X $(CONFIG_PKG).BuildTime=$(BUILD_TIME) -X $(CONFIG_PKG).GoVersion=$(GO_VERSION) -s -w
 
 # Go variables
-GO?=CGO_ENABLED=0 go
+GO?=go
 WEB_GO?=$(GO)
+CGO_ENABLED?=0
 GO_BUILD_TAGS?=goolm,stdjson
 GOFLAGS?=-v -tags $(GO_BUILD_TAGS)
+GOCACHE?=$(CURDIR)/.cache/go-build
+GOMODCACHE?=$(CURDIR)/.cache/go-mod
+GOTOOLCHAIN?=local
+export CGO_ENABLED
+export GOCACHE
+export GOMODCACHE
+export GOTOOLCHAIN
 comma:=,
 empty:=
 space:=$(empty) $(empty)
@@ -73,8 +97,21 @@ BUILTIN_SKILLS_DIR=$(CURDIR)/skills
 LNCMD=ln -sf
 
 # OS detection
-UNAME_S?=$(shell uname -s)
-UNAME_M?=$(shell uname -m)
+ifeq ($(OS),Windows_NT)
+	UNAME_S=Windows
+	ifeq ($(WINDOWS_GOARCH_RAW),amd64)
+		UNAME_M=x86_64
+	else ifeq ($(WINDOWS_GOARCH_RAW),arm64)
+		UNAME_M=arm64
+	else ifeq ($(WINDOWS_GOARCH_RAW),386)
+		UNAME_M=x86
+	else
+		UNAME_M=$(if $(WINDOWS_GOARCH_RAW),$(WINDOWS_GOARCH_RAW),x86_64)
+	endif
+else
+	UNAME_S?=$(shell uname -s)
+	UNAME_M?=$(shell uname -m)
+endif
 
 # Platform-specific settings
 ifeq ($(UNAME_S),Linux)
@@ -122,6 +159,18 @@ else
 
 endif
 
+ifeq ($(OS),Windows_NT)
+	PLATFORM=windows
+	ifeq ($(UNAME_M),x86_64)
+		ARCH?=amd64
+	else ifeq ($(UNAME_M),arm64)
+		ARCH?=arm64
+	else
+		ARCH?=$(UNAME_M)
+	endif
+	EXT=.exe
+endif
+
 BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)
 
 # Default target
@@ -130,21 +179,37 @@ all: build
 ## generate: Run generate
 generate:
 	@echo "Run generate..."
+ifeq ($(OS),Windows_NT)
+	@$(POWERSHELL) "if (Test-Path -LiteralPath './$(CMD_DIR)/workspace') { Remove-Item -LiteralPath './$(CMD_DIR)/workspace' -Recurse -Force }"
+else
 	@rm -r ./$(CMD_DIR)/workspace 2>/dev/null || true
+endif
 	@$(GO) generate ./...
 	@echo "Run generate complete"
 
 ## build: Build the picoclaw binary for current platform
 build: generate
 	@echo "Building $(BINARY_NAME)$(EXT) for $(PLATFORM)/$(ARCH)..."
+ifeq ($(OS),Windows_NT)
+	@$(POWERSHELL) "New-Item -ItemType Directory -Force -Path '$(BUILD_DIR)' | Out-Null"
+	@$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_PATH)$(EXT) ./$(CMD_DIR)
+	@$(POWERSHELL) "Copy-Item -LiteralPath '$(BINARY_PATH)$(EXT)' -Destination '$(BUILD_DIR)/$(BINARY_NAME)$(EXT)' -Force"
+else
 	@mkdir -p $(BUILD_DIR)
 	@GOARCH=${ARCH} $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_PATH)$(EXT) ./$(CMD_DIR)
 	@echo "Build complete: $(BINARY_PATH)$(EXT)"
 	@$(LNCMD) $(BINARY_NAME)-$(PLATFORM)-$(ARCH)$(EXT) $(BUILD_DIR)/$(BINARY_NAME)$(EXT)
+endif
+	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)$(EXT)"
 
 ## build-launcher: Build the picoclaw-launcher (web console) binary
 build-launcher:
 	@echo "Building picoclaw-launcher for $(PLATFORM)/$(ARCH)..."
+ifeq ($(OS),Windows_NT)
+	@$(POWERSHELL) "New-Item -ItemType Directory -Force -Path '$(BUILD_DIR)' | Out-Null"
+	@$(MAKE) -C web build PLATFORM="$(PLATFORM)" ARCH="$(ARCH)" EXT="$(EXT)" OUTPUT="$(CURDIR)/$(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXT)" GO_BUILD_TAGS="$(GO_BUILD_TAGS)"
+	@$(POWERSHELL) "Copy-Item -LiteralPath '$(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXT)' -Destination '$(BUILD_DIR)/picoclaw-launcher$(EXT)' -Force"
+else
 	@mkdir -p $(BUILD_DIR)
 	@GOARCH=${ARCH} $(MAKE) -C web build \
 		OUTPUT="$(CURDIR)/$(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXT)" \
@@ -152,6 +217,7 @@ build-launcher:
 		GO_BUILD_TAGS='$(GO_BUILD_TAGS)' \
 		LDFLAGS='$(LDFLAGS)'
 	@$(LNCMD) picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXT) $(BUILD_DIR)/picoclaw-launcher$(EXT)
+endif
 	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher$(EXT)"
 
 build-launcher-frontend:
@@ -160,10 +226,16 @@ build-launcher-frontend:
 ## build-launcher-tui: Build the picoclaw-launcher TUI binary
 build-launcher-tui:
 	@echo "Building picoclaw-launcher-tui for $(PLATFORM)/$(ARCH)..."
+ifeq ($(OS),Windows_NT)
+	@$(POWERSHELL) "New-Item -ItemType Directory -Force -Path '$(BUILD_DIR)' | Out-Null"
+	@$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/picoclaw-launcher-tui-$(PLATFORM)-$(ARCH)$(EXT) ./cmd/picoclaw-launcher-tui
+	@$(POWERSHELL) "Copy-Item -LiteralPath '$(BUILD_DIR)/picoclaw-launcher-tui-$(PLATFORM)-$(ARCH)$(EXT)' -Destination '$(BUILD_DIR)/picoclaw-launcher-tui$(EXT)' -Force"
+else
 	@mkdir -p $(BUILD_DIR)
 	@$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/picoclaw-launcher-tui-$(PLATFORM)-$(ARCH) ./cmd/picoclaw-launcher-tui
 	@ln -sf picoclaw-launcher-tui-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/picoclaw-launcher-tui
-	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher-tui"
+endif
+	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher-tui$(EXT)"
 
 ## build-whatsapp-native: Build with WhatsApp native (whatsmeow) support; larger binary
 build-whatsapp-native: generate
@@ -290,7 +362,11 @@ uninstall-all:
 ## clean: Remove build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
+ifeq ($(OS),Windows_NT)
+	@$(POWERSHELL) "if (Test-Path -LiteralPath '$(BUILD_DIR)') { Remove-Item -LiteralPath '$(BUILD_DIR)' -Recurse -Force }"
+else
 	@rm -rf $(BUILD_DIR)
+endif
 	@echo "Clean complete"
 
 ## vet: Run go vet for static analysis

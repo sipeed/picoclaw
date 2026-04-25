@@ -1063,8 +1063,11 @@ func TestHandleGetSession_UsesConfiguredToolFeedbackMaxArgsLength(t *testing.T) 
 	if !strings.Contains(resp.Messages[1].Content, wantPreview) {
 		t.Fatalf("tool summary = %q, want preview %q", resp.Messages[1].Content, wantPreview)
 	}
-	if strings.Contains(resp.Messages[1].Content, argsJSON) {
-		t.Fatalf("tool summary = %q, expected configured truncation", resp.Messages[1].Content)
+	wantArgsPreview := visibleAssistantToolArgsPreview(providers.ToolCall{
+		Function: &providers.FunctionCall{Arguments: argsJSON},
+	}, 20)
+	if !strings.Contains(resp.Messages[1].Content, wantArgsPreview) {
+		t.Fatalf("tool summary = %q, want args preview %q", resp.Messages[1].Content, wantArgsPreview)
 	}
 	if !strings.Contains(resp.Messages[1].Content, "`read_file`") {
 		t.Fatalf("tool summary = %q, want read_file summary", resp.Messages[1].Content)
@@ -1139,7 +1142,9 @@ func TestHandleGetSession_FallsBackToLegacyToolArgumentsWhenExplanationMissing(t
 		t.Fatalf("len(resp.Messages) = %d, want at least 2", len(resp.Messages))
 	}
 
-	wantPreview := utils.Truncate(argsJSON, 20)
+	wantPreview := visibleAssistantToolArgsPreview(providers.ToolCall{
+		Function: &providers.FunctionCall{Arguments: argsJSON},
+	}, 20)
 	if !strings.Contains(resp.Messages[1].Content, "`read_file`") {
 		t.Fatalf("tool summary = %q, want read_file summary", resp.Messages[1].Content)
 	}

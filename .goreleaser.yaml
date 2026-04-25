@@ -151,8 +151,8 @@ dockers_v2:
     ids:
       - picoclaw
     images:
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw"
-      - 'docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}'
+      - "ghcr.io/{{ .Env.REPO_OWNER }}/picoclaw"
+      - '{{ with .Env.DOCKERHUB_IMAGE_NAME }}docker.io/{{ . }}{{ end }}'
     tags:
       - '{{ if isEnvSet "NIGHTLY_BUILD" }}nightly{{ else }}{{ .Tag }}{{ end }}'
       - '{{ if isEnvSet "NIGHTLY_BUILD" }}nightly{{ else }}latest{{ end }}'
@@ -168,8 +168,8 @@ dockers_v2:
       - picoclaw-launcher
       - picoclaw-launcher-tui
     images:
-      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw"
-      - 'docker.io/{{ .Env.DOCKERHUB_IMAGE_NAME }}'
+      - "ghcr.io/{{ .Env.REPO_OWNER }}/picoclaw"
+      - '{{ with .Env.DOCKERHUB_IMAGE_NAME }}docker.io/{{ . }}{{ end }}'
     tags:
       - '{{ if isEnvSet "NIGHTLY_BUILD" }}nightly-launcher{{ else }}{{ .Tag }}-launcher{{ end }}'
       - '{{ if isEnvSet "NIGHTLY_BUILD" }}nightly-launcher{{ else }}launcher{{ end }}'
@@ -224,7 +224,7 @@ nfpms:
       {{- else if eq .Arch "arm" }}armv{{ .Arm }}
       {{- else }}{{ .Arch }}{{ end }}
     vendor: picoclaw
-    homepage: https://github.com/{{ .Env.GITHUB_REPOSITORY_OWNER }}/picoclaw
+    homepage: https://github.com/{{ .Env.REPO_OWNER }}/picoclaw
     maintainer: picoclaw contributors
     description: picoclaw - a tool for managing and running tasks
     license: MIT

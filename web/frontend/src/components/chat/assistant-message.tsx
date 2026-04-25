@@ -6,7 +6,6 @@ import {
   IconDownload,
   IconFileText,
 } from "@tabler/icons-react"
-import { useAtom } from "jotai"
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import ReactMarkdown from "react-markdown"
@@ -18,7 +17,7 @@ import remarkGfm from "remark-gfm"
 import { Button } from "@/components/ui/button"
 import { formatMessageTime } from "@/hooks/use-pico-chat"
 import { cn } from "@/lib/utils"
-import { type ChatAttachment, showThoughtsAtom } from "@/store/chat"
+import { type ChatAttachment } from "@/store/chat"
 
 interface AssistantMessageProps {
   content: string
@@ -42,7 +41,7 @@ export function AssistantMessage({
   const fileAttachments = attachments.filter(
     (attachment) => attachment.type !== "image",
   )
-  const [isExpanded, setIsExpanded] = useAtom(showThoughtsAtom)
+  const [isExpanded, setIsExpanded] = useState(true)
   const formattedTimestamp =
     timestamp !== "" ? formatMessageTime(timestamp) : ""
 

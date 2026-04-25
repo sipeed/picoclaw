@@ -55,6 +55,10 @@ dist/
 
 # Windows Application Icon/Resource
 *.syso
+.cache/
+web/frontend/.pnpm-store/
+_tmp_*
+web/frontend/_tmp_*
 
 # Test telegram integration
 cmd/telegram/

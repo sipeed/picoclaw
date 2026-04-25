@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -147,6 +148,268 @@ func (h *llmObserverHook) AfterLLM(
 	next := resp.Clone()
 	next.Response.Content = "hooked content"
 	return next, HookDecision{Action: HookActionModify}, nil
+}
+
+type llmSystemRewriteHook struct{}
+
+func (h *llmSystemRewriteHook) BeforeLLM(
+	ctx context.Context,
+	req *LLMHookRequest,
+) (*LLMHookRequest, HookDecision, error) {
+	next := req.Clone()
+	next.Model = "changed-model"
+	next.Messages[0].Content = "rewritten system"
+	return next, HookDecision{Action: HookActionModify}, nil
+}
+
+func (h *llmSystemRewriteHook) AfterLLM(
+	ctx context.Context,
+	resp *LLMHookResponse,
+) (*LLMHookResponse, HookDecision, error) {
+	return resp.Clone(), HookDecision{Action: HookActionContinue}, nil
+}
+
+type llmUserAppendHook struct{}
+
+func (h *llmUserAppendHook) BeforeLLM(
+	ctx context.Context,
+	req *LLMHookRequest,
+) (*LLMHookRequest, HookDecision, error) {
+	next := req.Clone()
+	next.Messages = append(next.Messages, providers.Message{Role: "user", Content: "extra user context"})
+	return next, HookDecision{Action: HookActionModify}, nil
+}
+
+func (h *llmUserAppendHook) AfterLLM(
+	ctx context.Context,
+	resp *LLMHookResponse,
+) (*LLMHookResponse, HookDecision, error) {
+	return resp.Clone(), HookDecision{Action: HookActionContinue}, nil
+}
+
+type llmJSONRoundTripUserAppendHook struct{}
+
+type jsonRoundTripLLMHookRequest struct {
+	Model    string                     `json:"model"`
+	Messages []providers.Message        `json:"messages,omitempty"`
+	Tools    []providers.ToolDefinition `json:"tools,omitempty"`
+}
+
+func (h *llmJSONRoundTripUserAppendHook) BeforeLLM(
+	ctx context.Context,
+	req *LLMHookRequest,
+) (*LLMHookRequest, HookDecision, error) {
+	payload := jsonRoundTripLLMHookRequest{
+		Model:    req.Model,
+		Messages: req.Messages,
+		Tools:    req.Tools,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, HookDecision{}, err
+	}
+	var decoded jsonRoundTripLLMHookRequest
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return nil, HookDecision{}, err
+	}
+	next := req.Clone()
+	next.Model = decoded.Model
+	next.Messages = decoded.Messages
+	next.Tools = decoded.Tools
+	next.Messages = append(next.Messages, providers.Message{Role: "user", Content: "json extra user context"})
+	return next, HookDecision{Action: HookActionModify}, nil
+}
+
+func (h *llmJSONRoundTripUserAppendHook) AfterLLM(
+	ctx context.Context,
+	resp *LLMHookResponse,
+) (*LLMHookResponse, HookDecision, error) {
+	return resp.Clone(), HookDecision{Action: HookActionContinue}, nil
+}
+
+type llmToolRewriteHook struct{}
+
+func (h *llmToolRewriteHook) BeforeLLM(
+	ctx context.Context,
+	req *LLMHookRequest,
+) (*LLMHookRequest, HookDecision, error) {
+	next := req.Clone()
+	next.Model = "changed-model"
+	next.Tools[0].Function.Description = "rewritten tool"
+	next.Tools = append(next.Tools, providers.ToolDefinition{
+		Type: "function",
+		Function: providers.ToolFunctionDefinition{
+			Name:        "hook_tool",
+			Description: "hook tool",
+			Parameters:  map[string]any{"type": "object"},
+		},
+		PromptLayer:  string(PromptLayerCapability),
+		PromptSlot:   string(PromptSlotTooling),
+		PromptSource: "hook:test",
+	})
+	return next, HookDecision{Action: HookActionModify}, nil
+}
+
+func (h *llmToolRewriteHook) AfterLLM(
+	ctx context.Context,
+	resp *LLMHookResponse,
+) (*LLMHookResponse, HookDecision, error) {
+	return resp.Clone(), HookDecision{Action: HookActionContinue}, nil
+}
+
+func TestHookManager_BeforeLLMControlsSystemPromptMutation(t *testing.T) {
+	hm := NewHookManager(nil)
+	if err := hm.Mount(NamedHook("rewrite-system", &llmSystemRewriteHook{})); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+
+	req := &LLMHookRequest{
+		Model: "original-model",
+		Messages: []providers.Message{
+			{
+				Role:    "system",
+				Content: "original system",
+				SystemParts: []providers.ContentBlock{
+					{Type: "text", Text: "original system"},
+				},
+			},
+			{Role: "user", Content: "hello"},
+		},
+	}
+
+	got, decision := hm.BeforeLLM(context.Background(), req)
+	if decision.normalizedAction() != HookActionContinue {
+		t.Fatalf("decision = %v, want continue", decision)
+	}
+	if got.Model != "changed-model" {
+		t.Fatalf("model = %q, want changed-model", got.Model)
+	}
+	if got.Messages[0].Content != "original system" {
+		t.Fatalf("system content = %q, want original system", got.Messages[0].Content)
+	}
+	if got.Messages[1].Content != "hello" {
+		t.Fatalf("user content = %q, want hello", got.Messages[1].Content)
+	}
+}
+
+func TestHookManager_BeforeLLMAllowsNonSystemMessageMutation(t *testing.T) {
+	hm := NewHookManager(nil)
+	if err := hm.Mount(NamedHook("append-user", &llmUserAppendHook{})); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+
+	req := &LLMHookRequest{
+		Model: "model",
+		Messages: []providers.Message{
+			{Role: "system", Content: "system"},
+			{Role: "user", Content: "hello"},
+		},
+	}
+
+	got, _ := hm.BeforeLLM(context.Background(), req)
+	if len(got.Messages) != 3 {
+		t.Fatalf("messages len = %d, want 3", len(got.Messages))
+	}
+	if got.Messages[2].Role != "user" || got.Messages[2].Content != "extra user context" {
+		t.Fatalf("appended message = %#v, want extra user context", got.Messages[2])
+	}
+}
+
+func TestHookManager_BeforeLLMAllowsJSONRoundTripNonSystemMessageMutation(t *testing.T) {
+	hm := NewHookManager(nil)
+	if err := hm.Mount(NamedHook("json-append-user", &llmJSONRoundTripUserAppendHook{})); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+
+	req := &LLMHookRequest{
+		Model: "model",
+		Messages: []providers.Message{
+			{
+				Role:         "system",
+				Content:      "system",
+				PromptLayer:  string(PromptLayerKernel),
+				PromptSlot:   string(PromptSlotIdentity),
+				PromptSource: string(PromptSourceKernel),
+				SystemParts: []providers.ContentBlock{
+					{
+						Type:         "text",
+						Text:         "system",
+						CacheControl: &providers.CacheControl{Type: "ephemeral"},
+						PromptLayer:  string(PromptLayerKernel),
+						PromptSlot:   string(PromptSlotIdentity),
+						PromptSource: string(PromptSourceKernel),
+					},
+				},
+			},
+			{Role: "user", Content: "hello"},
+		},
+		Tools: []providers.ToolDefinition{
+			{
+				Type: "function",
+				Function: providers.ToolFunctionDefinition{
+					Name:        "mcp_github_create_issue",
+					Description: "create issue",
+					Parameters:  map[string]any{"type": "object"},
+				},
+				PromptLayer:  string(PromptLayerCapability),
+				PromptSlot:   string(PromptSlotMCP),
+				PromptSource: "mcp:github",
+			},
+		},
+	}
+
+	got, _ := hm.BeforeLLM(context.Background(), req)
+	if len(got.Messages) != 3 {
+		t.Fatalf("messages len = %d, want 3", len(got.Messages))
+	}
+	if got.Messages[2].Role != "user" || got.Messages[2].Content != "json extra user context" {
+		t.Fatalf("appended message = %#v, want json extra user context", got.Messages[2])
+	}
+}
+
+func TestHookManager_BeforeLLMControlsToolDefinitionMutation(t *testing.T) {
+	hm := NewHookManager(nil)
+	if err := hm.Mount(NamedHook("rewrite-tool", &llmToolRewriteHook{})); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+
+	req := &LLMHookRequest{
+		Model: "original-model",
+		Messages: []providers.Message{
+			{Role: "system", Content: "system"},
+			{Role: "user", Content: "hello"},
+		},
+		Tools: []providers.ToolDefinition{
+			{
+				Type: "function",
+				Function: providers.ToolFunctionDefinition{
+					Name:        "mcp_github_create_issue",
+					Description: "create issue",
+					Parameters:  map[string]any{"type": "object"},
+				},
+				PromptLayer:  string(PromptLayerCapability),
+				PromptSlot:   string(PromptSlotMCP),
+				PromptSource: "mcp:github",
+			},
+		},
+	}
+
+	got, decision := hm.BeforeLLM(context.Background(), req)
+	if decision.normalizedAction() != HookActionContinue {
+		t.Fatalf("decision = %v, want continue", decision)
+	}
+	if got.Model != "changed-model" {
+		t.Fatalf("model = %q, want changed-model", got.Model)
+	}
+	if len(got.Tools) != 1 {
+		t.Fatalf("tools len = %d, want original 1", len(got.Tools))
+	}
+	if got.Tools[0].Function.Description != "create issue" {
+		t.Fatalf("tool description = %q, want original", got.Tools[0].Function.Description)
+	}
+	if got.Tools[0].PromptSource != "mcp:github" || got.Tools[0].PromptSlot != string(PromptSlotMCP) {
+		t.Fatalf("tool prompt metadata = %#v, want original mcp metadata", got.Tools[0])
+	}
 }
 
 func TestAgentLoop_Hooks_ObserverAndLLMInterceptor(t *testing.T) {
@@ -1166,6 +1429,56 @@ func TestAgentLoop_HookRespond_SteeringSkipsRemaining(t *testing.T) {
 			t.Fatalf("expected skip reason 'queued user steering message', got %q", payload.Reason)
 		}
 	}
+}
+
+func TestCloneStringAnyMap_EmptyMapReturnsNonNil(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   map[string]any
+		wantNil bool
+		wantLen int
+	}{
+		{
+			name:    "nil input returns empty map",
+			input:   nil,
+			wantNil: false,
+			wantLen: 0,
+		},
+		{
+			name:    "empty map returns empty map",
+			input:   map[string]any{},
+			wantNil: false,
+			wantLen: 0,
+		},
+		{
+			name:    "populated map is cloned",
+			input:   map[string]any{"key": "value"},
+			wantNil: false,
+			wantLen: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := cloneStringAnyMap(tt.input)
+			if result == nil {
+				t.Fatal("cloneStringAnyMap returned nil — MCP tool calls " +
+					"with no arguments would send null instead of {}")
+			}
+			if len(result) != tt.wantLen {
+				t.Fatalf("expected len %d, got %d", tt.wantLen, len(result))
+			}
+		})
+	}
+
+	t.Run("clone does not share underlying map", func(t *testing.T) {
+		src := map[string]any{"a": 1}
+		cloned := cloneStringAnyMap(src)
+		cloned["b"] = 2
+		if _, ok := src["b"]; ok {
+			t.Fatal("modifying clone should not affect source")
+		}
+	})
 }
 
 func filterEvents(events []Event, kind EventKind) []Event {

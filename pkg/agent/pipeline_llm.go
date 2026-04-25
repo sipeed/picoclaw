@@ -319,10 +319,8 @@ func (p *Pipeline) CallLLM(
 				exec.history = asmResp.History
 				exec.summary = asmResp.Summary
 			}
-			exec.messages = ts.agent.ContextBuilder.BuildMessages(
-				exec.history, exec.summary, "",
-				nil, ts.channel, ts.chatID, ts.opts.Dispatch.SenderID(), ts.opts.SenderDisplayName,
-				activeSkillNames(ts.agent, ts.opts)...,
+			exec.messages = ts.agent.ContextBuilder.BuildMessagesFromPrompt(
+				promptBuildRequestForTurn(ts, exec.history, exec.summary, "", nil),
 			)
 			exec.callMessages = exec.messages
 			if exec.gracefulTerminal {

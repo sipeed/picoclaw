@@ -606,6 +606,8 @@
       "split_on_marker_hint": "像真人聊天一样，把长难句拆成多条短消息快速发出",
       "tool_feedback_enabled": "工具反馈",
       "tool_feedback_enabled_hint": "在每次执行工具前，先向当前会话发送一条简短的执行说明",
+      "tool_feedback_separate_messages": "分开发送反馈消息",
+      "tool_feedback_separate_messages_hint": "让每次工具反馈都保留为独立消息，而不是反复复用同一条占位/进度消息",
       "tool_feedback_max_args_length": "工具反馈长度",
       "tool_feedback_max_args_length_hint": "每条工具反馈消息中展示的字符上限。设为 0 时使用默认值",
       "exec_enabled": "允许命令执行",

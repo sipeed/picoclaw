@@ -13,7 +13,8 @@
       "split_on_marker": false,
       "tool_feedback": {
         "enabled": false,
-        "max_args_length": 300
+        "max_args_length": 300,
+        "separate_messages": false
       }
     }
   },

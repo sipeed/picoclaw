@@ -4,6 +4,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -168,6 +169,18 @@ func toolFeedbackExplanationFromMessages(messages []providers.Message) string {
 		return utils.ToolFeedbackContinuationHint + ": " + explanation
 	}
 	return ""
+}
+
+func toolFeedbackArgsPreview(args map[string]any, maxLen int) string {
+	if args == nil {
+		args = map[string]any{}
+	}
+
+	argsJSON, err := json.MarshalIndent(args, "", "  ")
+	if err != nil {
+		return utils.Truncate(fmt.Sprintf("%v", args), maxLen)
+	}
+	return utils.Truncate(string(argsJSON), maxLen)
 }
 
 func shouldPublishToolFeedback(cfg *config.Config, ts *turnState) bool {

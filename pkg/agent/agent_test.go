@@ -1965,6 +1965,17 @@ func TestToolFeedbackExplanationFromResponse_DoesNotUseReasoningContent(t *testi
 	}
 }
 
+func TestToolFeedbackArgsPreview_UsesJSONAndTruncates(t *testing.T) {
+	got := toolFeedbackArgsPreview(map[string]any{
+		"path":  "README.md",
+		"limit": 42,
+	}, 128)
+	want := "{\n  \"limit\": 42,\n  \"path\": \"README.md\"\n}"
+	if got != want {
+		t.Fatalf("toolFeedbackArgsPreview() = %q, want %q", got, want)
+	}
+}
+
 type picoInterleavedContentProvider struct {
 	calls int
 }
@@ -3940,6 +3951,12 @@ func TestProcessMessage_PublishesToolFeedbackWhenEnabled(t *testing.T) {
 		if !strings.Contains(outbound.Content, "check tool feedback") {
 			t.Fatalf("tool feedback content = %q, want current user intent fallback", outbound.Content)
 		}
+		if !strings.Contains(outbound.Content, "\"path\":") {
+			t.Fatalf("tool feedback content = %q, want serialized tool arguments", outbound.Content)
+		}
+		if !strings.Contains(outbound.Content, heartbeatFile) {
+			t.Fatalf("tool feedback content = %q, want tool argument value", outbound.Content)
+		}
 		if strings.Contains(outbound.Content, "Previous turn explanation") {
 			t.Fatalf("tool feedback content = %q, want no previous assistant fallback", outbound.Content)
 		}
@@ -4011,6 +4028,12 @@ func TestProcessMessage_DoesNotLeakReasoningContentInToolFeedback(t *testing.T) 
 		}
 		if !strings.Contains(outbound.Content, "check reasoning fallback") {
 			t.Fatalf("tool feedback content = %q, want current user intent fallback", outbound.Content)
+		}
+		if !strings.Contains(outbound.Content, "\"path\":") {
+			t.Fatalf("tool feedback content = %q, want serialized tool arguments", outbound.Content)
+		}
+		if !strings.Contains(outbound.Content, heartbeatFile) {
+			t.Fatalf("tool feedback content = %q, want tool argument value", outbound.Content)
 		}
 		if strings.Contains(outbound.Content, "Read README.md first") {
 			t.Fatalf("tool feedback content = %q, should not leak hidden reasoning", outbound.Content)
@@ -4310,7 +4333,7 @@ func TestRun_PicoToolFeedbackSuppressesDuplicateInterimAssistantContent(t *testi
 		}
 	}
 
-	if outputs[0] != "🔧 `tool_limit_test_tool`\nintermediate model text" {
+	if outputs[0] != "🔧 `tool_limit_test_tool`\nintermediate model text\n```json\n{\n  \"value\": \"x\"\n}\n```" {
 		t.Fatalf("first outbound content = %q, want tool feedback summary", outputs[0])
 	}
 	if outputs[1] != "final model text" {

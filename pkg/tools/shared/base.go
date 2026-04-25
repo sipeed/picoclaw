@@ -14,6 +14,24 @@ type Tool interface {
 	Execute(ctx context.Context, args map[string]any) *ToolResult
 }
 
+const (
+	ToolPromptLayerCapability = "capability"
+	ToolPromptSlotTooling     = "tooling"
+	ToolPromptSlotMCP         = "mcp"
+	ToolPromptSourceRegistry  = "tool_registry:native"
+	ToolPromptSourceDiscovery = "tool_registry:discovery"
+)
+
+type PromptMetadata struct {
+	Layer  string
+	Slot   string
+	Source string
+}
+
+type PromptMetadataProvider interface {
+	PromptMetadata() PromptMetadata
+}
+
 // --- Request-scoped tool context (channel / chatID) ---
 //
 // Carried via context.Value so that concurrent tool calls each receive

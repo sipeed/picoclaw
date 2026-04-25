@@ -15,6 +15,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
+	toolshared "github.com/sipeed/picoclaw/pkg/tools/shared"
 )
 
 // MCPManager defines the interface for MCP manager operations
@@ -159,6 +160,14 @@ func (t *MCPTool) Description() string {
 	}
 	// Add server info to description
 	return fmt.Sprintf("[MCP:%s] %s", t.serverName, desc)
+}
+
+func (t *MCPTool) PromptMetadata() toolshared.PromptMetadata {
+	return toolshared.PromptMetadata{
+		Layer:  toolshared.ToolPromptLayerCapability,
+		Slot:   toolshared.ToolPromptSlotMCP,
+		Source: "mcp:" + sanitizeIdentifierComponent(t.serverName),
+	}
 }
 
 // Parameters returns the tool parameters schema

@@ -352,6 +352,7 @@ func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
 		name, _ := fn["name"].(string)
 		desc, _ := fn["description"].(string)
 		params, _ := fn["parameters"].(map[string]any)
+		metadata := promptMetadataForTool(entry.Tool)
 
 		definitions = append(definitions, providers.ToolDefinition{
 			Type: "function",
@@ -360,9 +361,33 @@ func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
 				Description: desc,
 				Parameters:  params,
 			},
+			PromptLayer:  metadata.Layer,
+			PromptSlot:   metadata.Slot,
+			PromptSource: metadata.Source,
 		})
 	}
 	return definitions
+}
+
+func promptMetadataForTool(tool Tool) PromptMetadata {
+	metadata := PromptMetadata{
+		Layer:  ToolPromptLayerCapability,
+		Slot:   ToolPromptSlotTooling,
+		Source: ToolPromptSourceRegistry,
+	}
+	if provider, ok := tool.(PromptMetadataProvider); ok {
+		provided := provider.PromptMetadata()
+		if provided.Layer != "" {
+			metadata.Layer = provided.Layer
+		}
+		if provided.Slot != "" {
+			metadata.Slot = provided.Slot
+		}
+		if provided.Source != "" {
+			metadata.Source = provided.Source
+		}
+	}
+	return metadata
 }
 
 // List returns a list of all registered tool names.

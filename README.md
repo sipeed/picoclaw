@@ -571,7 +571,20 @@ PicoClaw natively supports [MCP](https://modelcontextprotocol.io/) — connect a
 }
 ```
 
-For full MCP configuration (stdio, SSE, HTTP transports, Tool Discovery), see [Tools Configuration - MCP](docs/reference/tools_configuration.md#mcp-tool).
+You can manage common MCP setups directly from the CLI instead of editing JSON by hand:
+
+```bash
+picoclaw mcp add filesystem -- npx -y @modelcontextprotocol/server-filesystem /tmp
+picoclaw mcp list
+picoclaw mcp test filesystem
+```
+
+`picoclaw mcp` is a configuration manager: it updates `config.json` under `tools.mcp.servers`, but it does not keep the server process running itself.
+
+Use `picoclaw mcp edit` when you need advanced fields that are not covered by `picoclaw mcp add`.
+For example, `picoclaw mcp add` supports `--deferred` and `--env-file`, while `picoclaw mcp edit` is still useful for direct JSON editing and uncommon MCP settings.
+
+For full MCP configuration (stdio, SSE, HTTP transports, Tool Discovery), see [Tools Configuration - MCP](docs/reference/tools_configuration.md#mcp-tool). For CLI usage and examples, see [MCP Server CLI](docs/reference/mcp-cli.md).
 
 ## <img src="assets/clawdchat-icon.png" width="24" height="24" alt="ClawdChat"> Join the Agent Social Network
 
@@ -591,6 +604,11 @@ Connect PicoClaw to the Agent Social Network simply by sending a single message 
 | `picoclaw status`         | Show status                      |
 | `picoclaw version`        | Show version info                |
 | `picoclaw model`          | View or switch the default model |
+| `picoclaw mcp list`       | List configured MCP servers      |
+| `picoclaw mcp add ...`    | Add or update an MCP server entry |
+| `picoclaw mcp test`       | Probe a configured MCP server    |
+| `picoclaw mcp edit`       | Open config for advanced MCP editing |
+| `picoclaw mcp remove`     | Remove an MCP server entry       |
 | `picoclaw cron list`      | List all scheduled jobs          |
 | `picoclaw cron add ...`   | Add a scheduled job              |
 | `picoclaw cron disable`   | Disable a scheduled job          |
@@ -619,6 +637,7 @@ For detailed guides beyond this README:
 | [Docker & Quick Start](docs/guides/docker.md) | Docker Compose setup, Launcher/Agent modes |
 | [Chat Apps](docs/guides/chat-apps.md) | All 17+ channel setup guides |
 | [Configuration](docs/guides/configuration.md) | Environment variables, workspace layout, security sandbox |
+| [MCP Server CLI](docs/reference/mcp-cli.md) | Add, list, test, edit, and remove MCP server entries from the CLI |
 | [Scheduled Tasks and Cron Jobs](docs/reference/cron.md) | Cron schedule types, deliver modes, command gates, job storage |
 | [Providers & Models](docs/guides/providers.md) | 30+ LLM providers, model routing, model_list configuration |
 | [Spawn & Async Tasks](docs/guides/spawn-tasks.md) | Quick tasks, long tasks with spawn, async sub-agent orchestration |

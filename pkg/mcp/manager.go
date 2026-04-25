@@ -25,6 +25,24 @@ type headerTransport struct {
 	headers map[string]string
 }
 
+func expandHomeCommandPath(command string) string {
+	if command == "" || command[0] != '~' {
+		return command
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return command
+	}
+	if command == "~" {
+		return home
+	}
+	if strings.HasPrefix(command, "~/") || strings.HasPrefix(command, "~\\") {
+		return filepath.Join(home, command[2:])
+	}
+	return command
+}
+
 func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Clone the request to avoid modifying the original
 	req = req.Clone(req.Context())
@@ -324,7 +342,7 @@ func (m *Manager) ConnectServer(
 				"command": cfg.Command,
 			})
 		// Create command with context
-		cmd := exec.CommandContext(ctx, cfg.Command, cfg.Args...)
+		cmd := exec.CommandContext(ctx, expandHomeCommandPath(cfg.Command), cfg.Args...)
 
 		// Build environment variables with proper override semantics
 		// Use a map to ensure config variables override file variables
