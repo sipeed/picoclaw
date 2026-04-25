@@ -166,8 +166,8 @@ func TestHandleGetSession_JSONLStorage(t *testing.T) {
 
 	sessionKey := legacyPicoSessionPrefix + "detail-jsonl"
 	for _, msg := range []providers.Message{
-		{Role: "user", Content: "first"},
-		{Role: "assistant", Content: "second"},
+		{Role: "user", Content: "first", Timestamp: "2026-04-23T11:05:00+08:00"},
+		{Role: "assistant", Content: "second", Timestamp: "2026-04-23T11:06:00+08:00"},
 		{Role: "tool", Content: "ignored"},
 	} {
 		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
@@ -194,8 +194,9 @@ func TestHandleGetSession_JSONLStorage(t *testing.T) {
 		ID       string `json:"id"`
 		Summary  string `json:"summary"`
 		Messages []struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
+			Role      string `json:"role"`
+			Content   string `json:"content"`
+			Timestamp string `json:"timestamp"`
 		} `json:"messages"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
@@ -213,8 +214,14 @@ func TestHandleGetSession_JSONLStorage(t *testing.T) {
 	if resp.Messages[0].Role != "user" || resp.Messages[0].Content != "first" {
 		t.Fatalf("first message = %#v, want user/first", resp.Messages[0])
 	}
+	if resp.Messages[0].Timestamp != "2026-04-23T11:05:00+08:00" {
+		t.Fatalf("resp.Messages[0].Timestamp = %q, want %q", resp.Messages[0].Timestamp, "2026-04-23T11:05:00+08:00")
+	}
 	if resp.Messages[1].Role != "assistant" || resp.Messages[1].Content != "second" {
 		t.Fatalf("second message = %#v, want assistant/second", resp.Messages[1])
+	}
+	if resp.Messages[1].Timestamp != "2026-04-23T11:06:00+08:00" {
+		t.Fatalf("resp.Messages[1].Timestamp = %q, want %q", resp.Messages[1].Timestamp, "2026-04-23T11:06:00+08:00")
 	}
 }
 

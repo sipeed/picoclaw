@@ -38,20 +38,7 @@ export function formatMessageTime(dateRaw: number | string | Date): string {
   if (!date.isValid()) {
     return ""
   }
-  const now = dayjs()
-
-  const isToday = date.isSame(now, "day")
-  const isThisYear = date.isSame(now, "year")
-
-  if (isToday) {
-    return date.format("LT")
-  }
-
-  if (isThisYear) {
-    return date.format("MMM D LT")
-  }
-
-  return date.format("ll LT")
+  return date.format("YYYY-MM-DD HH:mm")
 }
 
 export function usePicoChat() {

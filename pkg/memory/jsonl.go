@@ -522,8 +522,9 @@ func (s *JSONLStore) AddMessage(
 	_ context.Context, sessionKey, role, content string,
 ) error {
 	return s.addMsg(sessionKey, providers.Message{
-		Role:    role,
-		Content: content,
+		Role:      role,
+		Content:   content,
+		Timestamp: time.Now().Format(time.RFC3339Nano),
 	})
 }
 
@@ -538,6 +539,10 @@ func (s *JSONLStore) addMsg(sessionKey string, msg providers.Message) error {
 	l := s.sessionLock(sessionKey)
 	l.Lock()
 	defer l.Unlock()
+
+	if strings.TrimSpace(msg.Timestamp) == "" {
+		msg.Timestamp = time.Now().Format(time.RFC3339Nano)
+	}
 
 	// Append the message as a single JSON line.
 	line, err := json.Marshal(msg)

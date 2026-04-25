@@ -49,6 +49,7 @@ type sessionListItem struct {
 type sessionChatMessage struct {
 	Role        string                  `json:"role"`
 	Content     string                  `json:"content"`
+	Timestamp   string                  `json:"timestamp,omitempty"`
 	Media       []string                `json:"media,omitempty"`
 	Attachments []sessionChatAttachment `json:"attachments,omitempty"`
 }
@@ -478,6 +479,7 @@ func visibleSessionMessages(messages []providers.Message, toolFeedbackMaxArgsLen
 
 	for _, msg := range messages {
 		attachments := sessionAttachments(msg)
+		timestamp := strings.TrimSpace(msg.Timestamp)
 
 		switch msg.Role {
 		case "tool":
@@ -487,6 +489,7 @@ func visibleSessionMessages(messages []providers.Message, toolFeedbackMaxArgsLen
 			chatMsg := sessionChatMessage{
 				Role:        "user",
 				Content:     msg.Content,
+				Timestamp:   timestamp,
 				Media:       append([]string(nil), msg.Media...),
 				Attachments: attachments,
 			}
@@ -501,12 +504,16 @@ func visibleSessionMessages(messages []providers.Message, toolFeedbackMaxArgsLen
 				continue
 			}
 
-			toolSummaryMessages := visibleAssistantToolSummaryMessages(msg.ToolCalls, toolFeedbackMaxArgsLength)
+			toolSummaryMessages := visibleAssistantToolSummaryMessages(
+				msg.ToolCalls,
+				timestamp,
+				toolFeedbackMaxArgsLength,
+			)
 			if len(toolSummaryMessages) > 0 {
 				transcript = append(transcript, toolSummaryMessages...)
 			}
 
-			visibleToolMessages := visibleAssistantToolMessages(msg.ToolCalls)
+			visibleToolMessages := visibleAssistantToolMessages(msg.ToolCalls, timestamp)
 			if len(visibleToolMessages) > 0 {
 				transcript = append(transcript, visibleToolMessages...)
 			}
@@ -535,6 +542,7 @@ func visibleSessionMessages(messages []providers.Message, toolFeedbackMaxArgsLen
 			chatMsg := sessionChatMessage{
 				Role:        "assistant",
 				Content:     content,
+				Timestamp:   timestamp,
 				Media:       append([]string(nil), msg.Media...),
 				Attachments: attachments,
 			}
@@ -695,6 +703,7 @@ func assistantMessageInternalOnly(msg providers.Message) bool {
 
 func visibleAssistantToolSummaryMessages(
 	toolCalls []providers.ToolCall,
+	timestamp string,
 	toolFeedbackMaxArgsLength int,
 ) []sessionChatMessage {
 	if len(toolCalls) == 0 {
@@ -726,6 +735,7 @@ func visibleAssistantToolSummaryMessages(
 				visibleAssistantToolFeedbackExplanation(tc, toolFeedbackMaxArgsLength),
 				visibleAssistantToolArgsPreview(tc, toolFeedbackMaxArgsLength),
 			),
+			Timestamp: timestamp,
 		})
 	}
 
@@ -769,7 +779,7 @@ func visibleAssistantToolArgsPreview(
 	return utils.Truncate(argsJSON, toolFeedbackMaxArgsLength)
 }
 
-func visibleAssistantToolMessages(toolCalls []providers.ToolCall) []sessionChatMessage {
+func visibleAssistantToolMessages(toolCalls []providers.ToolCall, timestamp string) []sessionChatMessage {
 	if len(toolCalls) == 0 {
 		return nil
 	}
@@ -785,8 +795,9 @@ func visibleAssistantToolMessages(toolCalls []providers.ToolCall) []sessionChatM
 			continue
 		}
 		messages = append(messages, sessionChatMessage{
-			Role:    "assistant",
-			Content: content,
+			Role:      "assistant",
+			Content:   content,
+			Timestamp: timestamp,
 		})
 	}
 
