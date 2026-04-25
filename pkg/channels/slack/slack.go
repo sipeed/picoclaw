@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -29,6 +30,7 @@ type SlackChannel struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	pendingAcks  sync.Map
+	seenMessages sync.Map // "channel_id:ts" -> true (dedup message/app_mention race)
 }
 
 type slackMessageRef struct {
@@ -286,6 +288,14 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 		return
 	}
 
+	// Deduplicate against app_mention events which Slack often sends in parallel.
+	dedupKey := ev.Channel + ":" + ev.TimeStamp
+	if _, loaded := c.seenMessages.LoadOrStore(dedupKey, true); loaded {
+		return
+	}
+	// Simple TTL: clean up from map after 1 minute (sufficient for Slack race)
+	time.AfterFunc(1*time.Minute, func() { c.seenMessages.Delete(dedupKey) })
+
 	// check allowlist to avoid downloading attachments for rejected users
 	sender := bus.SenderInfo{
 		Platform:    "slack",
@@ -314,12 +324,13 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 		Timestamp: messageTS,
 	})
 
-	content := ev.Text
-	content = c.stripBotMention(content)
+	rawContent := ev.Text
+	content := c.stripBotMention(rawContent)
+	isMentioned := rawContent != content // Detect if bot was @mentioned
 
 	// In non-DM channels, apply group trigger filtering
 	if !strings.HasPrefix(channelID, "D") {
-		respond, cleaned := c.ShouldRespondInGroup(false, content)
+		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
 		if !respond {
 			return
 		}
@@ -403,6 +414,14 @@ func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
 		return
 	}
 
+	// Deduplicate against message events which Slack often sends in parallel.
+	dedupKey := ev.Channel + ":" + ev.TimeStamp
+	if _, loaded := c.seenMessages.LoadOrStore(dedupKey, true); loaded {
+		return
+	}
+	// Simple TTL: clean up from map after 1 minute (sufficient for Slack race)
+	time.AfterFunc(1*time.Minute, func() { c.seenMessages.Delete(dedupKey) })
+
 	if !c.IsAllowedSender(bus.SenderInfo{
 		Platform:    "slack",
 		PlatformID:  ev.User,
@@ -424,11 +443,9 @@ func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
 	threadTS := ev.ThreadTimeStamp
 	messageTS := ev.TimeStamp
 
-	var chatID string
+	chatID := channelID
 	if threadTS != "" {
 		chatID = channelID + "/" + threadTS
-	} else {
-		chatID = channelID + "/" + messageTS
 	}
 
 	c.pendingAcks.Store(chatID, slackMessageRef{
