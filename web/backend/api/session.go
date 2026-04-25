@@ -503,7 +503,11 @@ func visibleSessionMessages(messages []providers.Message, toolFeedbackMaxArgsLen
 				continue
 			}
 
-			toolSummaryMessages := visibleAssistantToolSummaryMessages(msg.ToolCalls, timestamp, toolFeedbackMaxArgsLength)
+			toolSummaryMessages := visibleAssistantToolSummaryMessages(
+				msg.ToolCalls,
+				timestamp,
+				toolFeedbackMaxArgsLength,
+			)
 			if len(toolSummaryMessages) > 0 {
 				transcript = append(transcript, toolSummaryMessages...)
 			}
