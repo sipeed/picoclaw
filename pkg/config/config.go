@@ -247,8 +247,9 @@ type SubTurnConfig struct {
 }
 
 type ToolFeedbackConfig struct {
-	Enabled       bool `json:"enabled"         env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED"`
-	MaxArgsLength int  `json:"max_args_length" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH"`
+	Enabled          bool `json:"enabled"           env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED"`
+	MaxArgsLength    int  `json:"max_args_length"   env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH"`
+	SeparateMessages bool `json:"separate_messages" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_SEPARATE_MESSAGES"`
 }
 
 type AgentDefaults struct {
@@ -297,6 +298,13 @@ func (d *AgentDefaults) GetToolFeedbackMaxArgsLength() int {
 // IsToolFeedbackEnabled returns true when tool feedback messages should be sent to the chat.
 func (d *AgentDefaults) IsToolFeedbackEnabled() bool {
 	return d.ToolFeedback.Enabled
+}
+
+// IsToolFeedbackSeparateMessagesEnabled returns true when each tool feedback
+// update should be sent as its own chat message instead of editing a single
+// in-place progress message.
+func (d *AgentDefaults) IsToolFeedbackSeparateMessagesEnabled() bool {
+	return d.ToolFeedback.SeparateMessages
 }
 
 // GetModelName returns the effective model name for the agent defaults.

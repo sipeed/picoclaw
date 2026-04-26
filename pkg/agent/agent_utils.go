@@ -4,7 +4,9 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"strings"
 	"time"
@@ -168,6 +170,18 @@ func toolFeedbackExplanationFromMessages(messages []providers.Message) string {
 		return utils.ToolFeedbackContinuationHint + ": " + explanation
 	}
 	return ""
+}
+
+func toolFeedbackArgsPreview(args map[string]any, maxLen int) string {
+	if args == nil {
+		args = map[string]any{}
+	}
+
+	argsJSON, err := json.MarshalIndent(args, "", "  ")
+	if err != nil {
+		return utils.Truncate(fmt.Sprintf("%v", args), maxLen)
+	}
+	return utils.Truncate(string(argsJSON), maxLen)
 }
 
 func shouldPublishToolFeedback(cfg *config.Config, ts *turnState) bool {
@@ -465,17 +479,28 @@ func sideQuestionResponseContent(response *providers.LLMResponse) string {
 	if response == nil {
 		return ""
 	}
-	if response.Content != "" {
+	if strings.TrimSpace(response.Content) != "" {
 		return response.Content
 	}
-	return response.ReasoningContent
+	return responseReasoningContent(response)
+}
+
+func responseReasoningContent(response *providers.LLMResponse) string {
+	if response == nil {
+		return ""
+	}
+	if strings.TrimSpace(response.Reasoning) != "" {
+		return response.Reasoning
+	}
+	if strings.TrimSpace(response.ReasoningContent) != "" {
+		return response.ReasoningContent
+	}
+	return ""
 }
 
 func shallowCloneLLMOptions(opts map[string]any) map[string]any {
 	clone := make(map[string]any, len(opts))
-	for k, v := range opts {
-		clone[k] = v
-	}
+	maps.Copy(clone, opts)
 	return clone
 }
 

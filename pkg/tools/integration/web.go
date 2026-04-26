@@ -58,8 +58,6 @@ var (
 	reSogouRealURL = regexp.MustCompile(`url=([^&]+)`)
 )
 
-var preferredWebSearchLanguage atomic.Value
-
 type APIKeyPool struct {
 	keys    []string
 	current uint32
@@ -248,27 +246,6 @@ func mapBaiduRecencyFilter(rangeCode string) string {
 	default:
 		return ""
 	}
-}
-
-func normalizePreferredWebSearchLanguage(lang string) string {
-	lang = strings.ToLower(strings.TrimSpace(lang))
-	switch {
-	case strings.HasPrefix(lang, "zh"), lang == "chinese":
-		return "zh"
-	case strings.HasPrefix(lang, "en"), lang == "english":
-		return "en"
-	default:
-		return ""
-	}
-}
-
-func SetPreferredWebSearchLanguage(lang string) {
-	preferredWebSearchLanguage.Store(normalizePreferredWebSearchLanguage(lang))
-}
-
-func GetPreferredWebSearchLanguage() string {
-	lang, _ := preferredWebSearchLanguage.Load().(string)
-	return lang
 }
 
 type BraveSearchProvider struct {
@@ -1420,7 +1397,7 @@ func containsLatinLetter(text string) bool {
 func prefersDuckDuckGoQuery(text string) bool {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
-		return GetPreferredWebSearchLanguage() == "en"
+		return false
 	}
 	if containsHan(trimmed) {
 		return false
@@ -1428,7 +1405,7 @@ func prefersDuckDuckGoQuery(text string) bool {
 	if containsLatinLetter(trimmed) {
 		return true
 	}
-	return GetPreferredWebSearchLanguage() == "en"
+	return false
 }
 
 func (opts WebSearchToolOptions) buildProviderResolver() (func(query string) (SearchProvider, int), error) {

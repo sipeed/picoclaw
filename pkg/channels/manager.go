@@ -170,6 +170,20 @@ func dismissTrackedToolFeedbackMessage(
 	}
 }
 
+func clearTrackedToolFeedbackMessage(
+	ch Channel,
+	chatID string,
+	outboundCtx *bus.InboundContext,
+) {
+	trackedChatID := trackedToolFeedbackMessageChatID(ch, chatID, outboundCtx)
+	if trackedChatID == "" {
+		return
+	}
+	if tracker, ok := ch.(toolFeedbackMessageTracker); ok {
+		tracker.ClearToolFeedbackMessage(trackedChatID)
+	}
+}
+
 func prepareToolFeedbackMessageContent(ch Channel, content string) string {
 	prepared := strings.TrimSpace(content)
 	if prepared == "" {
@@ -181,6 +195,13 @@ func prepareToolFeedbackMessageContent(ch Channel, content string) string {
 		}
 	}
 	return prepared
+}
+
+func (m *Manager) toolFeedbackSeparateMessagesEnabled() bool {
+	if m == nil || m.config == nil {
+		return false
+	}
+	return m.config.Agents.Defaults.IsToolFeedbackSeparateMessagesEnabled()
 }
 
 // RecordPlaceholder registers a placeholder message for later editing.
@@ -264,6 +285,7 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 	}
 
 	isToolFeedback := outboundMessageIsToolFeedback(msg)
+	separateToolFeedbackMessages := m.toolFeedbackSeparateMessagesEnabled()
 
 	// 3. If a stream already finalized this chat, stale tool feedback must be
 	// dropped without consuming the final-response marker. Streaming finalization
@@ -288,14 +310,28 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 			}
 		}
 		if !isToolFeedback {
-			dismissTrackedToolFeedbackMessage(ctx, ch, chatID, &msg.Context)
+			if separateToolFeedbackMessages {
+				clearTrackedToolFeedbackMessage(ch, chatID, &msg.Context)
+			} else {
+				dismissTrackedToolFeedbackMessage(ctx, ch, chatID, &msg.Context)
+			}
 		}
 		return nil, true
+	}
+
+	if separateToolFeedbackMessages {
+		clearTrackedToolFeedbackMessage(ch, chatID, &msg.Context)
 	}
 
 	// 5. Try editing placeholder
 	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
 		if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
+			if isToolFeedback && separateToolFeedbackMessages {
+				if deleter, ok := ch.(MessageDeleter); ok {
+					deleter.DeleteMessage(ctx, chatID, entry.id) // best effort
+				}
+				return nil, false
+			}
 			if editor, ok := ch.(MessageEditor); ok {
 				content := msg.Content
 				trackedContent := msg.Content
@@ -344,6 +380,10 @@ func (m *Manager) preSendMedia(ctx context.Context, name string, msg bus.Outboun
 
 	// 3. Clear any finalized stream marker for this chat before media delivery.
 	m.streamActive.LoadAndDelete(key)
+
+	if m.toolFeedbackSeparateMessagesEnabled() {
+		clearTrackedToolFeedbackMessage(ch, chatID, &msg.Context)
+	}
 
 	// 4. Delete placeholder if present.
 	if v, loaded := m.placeholders.LoadAndDelete(key); loaded {
@@ -408,15 +448,26 @@ func (m *Manager) GetStreamer(ctx context.Context, channelName, chatID string) (
 	return &finalizeHookStreamer{
 		Streamer: streamer,
 		onFinalize: func(finalizeCtx context.Context) {
-			dismissTrackedToolFeedbackMessage(
-				finalizeCtx,
-				ch,
-				chatID,
-				&bus.InboundContext{
-					Channel: channelName,
-					ChatID:  chatID,
-				},
-			)
+			if m.toolFeedbackSeparateMessagesEnabled() {
+				clearTrackedToolFeedbackMessage(
+					ch,
+					chatID,
+					&bus.InboundContext{
+						Channel: channelName,
+						ChatID:  chatID,
+					},
+				)
+			} else {
+				dismissTrackedToolFeedbackMessage(
+					finalizeCtx,
+					ch,
+					chatID,
+					&bus.InboundContext{
+						Channel: channelName,
+						ChatID:  chatID,
+					},
+				)
+			}
 			m.streamActive.Store(key, true)
 		},
 	}, true

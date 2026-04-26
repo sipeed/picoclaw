@@ -787,6 +787,9 @@ func TestDefaultConfig_ToolFeedbackDisabled(t *testing.T) {
 	if cfg.Agents.Defaults.ToolFeedback.Enabled {
 		t.Fatal("DefaultConfig().Agents.Defaults.ToolFeedback.Enabled should be false")
 	}
+	if cfg.Agents.Defaults.ToolFeedback.SeparateMessages {
+		t.Fatal("DefaultConfig().Agents.Defaults.ToolFeedback.SeparateMessages should be false")
+	}
 }
 
 func TestLoadConfig_ToolFeedbackDefaultsFalseWhenUnset(t *testing.T) {
@@ -806,6 +809,9 @@ func TestLoadConfig_ToolFeedbackDefaultsFalseWhenUnset(t *testing.T) {
 	}
 	if cfg.Agents.Defaults.ToolFeedback.Enabled {
 		t.Fatal("agents.defaults.tool_feedback.enabled should remain false when unset in config file")
+	}
+	if cfg.Agents.Defaults.ToolFeedback.SeparateMessages {
+		t.Fatal("agents.defaults.tool_feedback.separate_messages should remain false when unset in config file")
 	}
 }
 

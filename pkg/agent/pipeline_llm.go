@@ -319,10 +319,8 @@ func (p *Pipeline) CallLLM(
 				exec.history = asmResp.History
 				exec.summary = asmResp.Summary
 			}
-			exec.messages = ts.agent.ContextBuilder.BuildMessages(
-				exec.history, exec.summary, "",
-				nil, ts.channel, ts.chatID, ts.opts.Dispatch.SenderID(), ts.opts.SenderDisplayName,
-				activeSkillNames(ts.agent, ts.opts)...,
+			exec.messages = ts.agent.ContextBuilder.BuildMessagesFromPrompt(
+				promptBuildRequestForTurn(ts, exec.history, exec.summary, "", nil),
 			)
 			exec.callMessages = exec.messages
 			if exec.gracefulTerminal {
@@ -384,10 +382,7 @@ func (p *Pipeline) CallLLM(
 		}
 	}
 
-	reasoningContent := exec.response.Reasoning
-	if reasoningContent == "" {
-		reasoningContent = exec.response.ReasoningContent
-	}
+	reasoningContent := responseReasoningContent(exec.response)
 	if ts.channel == "pico" {
 		go al.publishPicoReasoning(turnCtx, reasoningContent, ts.chatID)
 	} else {
@@ -496,7 +491,7 @@ func (p *Pipeline) CallLLM(
 	assistantMsg := providers.Message{
 		Role:             "assistant",
 		Content:          exec.response.Content,
-		ReasoningContent: exec.response.ReasoningContent,
+		ReasoningContent: reasoningContent,
 	}
 	for _, tc := range exec.normalizedToolCalls {
 		argumentsJSON, _ := json.Marshal(tc.Arguments)

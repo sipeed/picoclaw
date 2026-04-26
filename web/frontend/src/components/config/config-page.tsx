@@ -244,6 +244,7 @@ export function ConfigPage() {
               tool_feedback: {
                 enabled: form.toolFeedbackEnabled,
                 max_args_length: toolFeedbackMaxArgsLength,
+                separate_messages: form.toolFeedbackSeparateMessages,
               },
               max_tokens: maxTokens,
               context_window: contextWindow,

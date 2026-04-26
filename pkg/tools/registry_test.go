@@ -39,6 +39,15 @@ func (m *mockContextAwareTool) Execute(ctx context.Context, _ map[string]any) *T
 	return m.result
 }
 
+type mockPromptMetadataTool struct {
+	mockRegistryTool
+	metadata PromptMetadata
+}
+
+func (m *mockPromptMetadataTool) PromptMetadata() PromptMetadata {
+	return m.metadata
+}
+
 type mockAsyncRegistryTool struct {
 	mockRegistryTool
 	lastCB AsyncCallback
@@ -372,6 +381,47 @@ func TestToolToSchema(t *testing.T) {
 	}
 	if fn["parameters"] == nil {
 		t.Error("expected parameters to be set")
+	}
+}
+
+func TestToolRegistry_ToProviderDefsAttachesPromptMetadata(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(newMockTool("native", "native tool"))
+	r.Register(&mockPromptMetadataTool{
+		mockRegistryTool: mockRegistryTool{
+			name:   "mcp_demo",
+			desc:   "mcp tool",
+			params: map[string]any{"type": "object"},
+		},
+		metadata: PromptMetadata{
+			Layer:  ToolPromptLayerCapability,
+			Slot:   ToolPromptSlotMCP,
+			Source: "mcp:demo",
+		},
+	})
+
+	defs := r.ToProviderDefs()
+	if len(defs) != 2 {
+		t.Fatalf("ToProviderDefs() len = %d, want 2", len(defs))
+	}
+
+	byName := make(map[string]providers.ToolDefinition, len(defs))
+	for _, def := range defs {
+		byName[def.Function.Name] = def
+	}
+
+	native := byName["native"]
+	if native.PromptLayer != ToolPromptLayerCapability ||
+		native.PromptSlot != ToolPromptSlotTooling ||
+		native.PromptSource != ToolPromptSourceRegistry {
+		t.Fatalf("native prompt metadata = %#v, want default tooling source", native)
+	}
+
+	mcp := byName["mcp_demo"]
+	if mcp.PromptLayer != ToolPromptLayerCapability ||
+		mcp.PromptSlot != ToolPromptSlotMCP ||
+		mcp.PromptSource != "mcp:demo" {
+		t.Fatalf("mcp prompt metadata = %#v, want mcp source", mcp)
 	}
 }
 

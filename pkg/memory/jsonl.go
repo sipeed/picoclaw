@@ -10,12 +10,14 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/providers/messageutil"
 )
 
 const (
@@ -405,11 +407,8 @@ func (s *JSONLStore) promoteAliasHistoryLocked(
 }
 
 func (s *JSONLStore) sessionHasVisibleContentLocked(sessionKey string, meta SessionMeta) (bool, error) {
-	if meta.Count-meta.Skip > 0 || strings.TrimSpace(meta.Summary) != "" {
+	if strings.TrimSpace(meta.Summary) != "" {
 		return true, nil
-	}
-	if meta.Count != 0 || meta.Skip != 0 {
-		return false, nil
 	}
 	history, err := readMessages(s.jsonlPath(sessionKey), meta.Skip)
 	if err != nil {
@@ -482,6 +481,9 @@ func readMessages(path string, skip int) ([]providers.Message, error) {
 				lineNum, filepath.Base(path), err)
 			continue
 		}
+		if messageutil.IsTransientAssistantThoughtMessage(msg) {
+			continue
+		}
 		msgs = append(msgs, msg)
 	}
 	if scanner.Err() != nil {
@@ -494,28 +496,44 @@ func readMessages(path string, skip int) ([]providers.Message, error) {
 	return msgs, nil
 }
 
-// countLines counts the total number of non-empty lines in a .jsonl file.
-// Used by TruncateHistory to reconcile a stale meta.Count without
-// the overhead of unmarshaling every message.
-func countLines(path string) (int, error) {
+// scanRetainedMessageLines returns the total number of non-empty raw JSONL
+// lines plus the raw line numbers that survive readMessages filtering.
+// TruncateHistory uses this to compute keepLast against retained messages
+// while preserving the raw-line skip offset stored in metadata.
+func scanRetainedMessageLines(path string) (int, []int, error) {
 	f, err := os.Open(path)
 	if os.IsNotExist(err) {
-		return 0, nil
+		return 0, []int{}, nil
 	}
 	if err != nil {
-		return 0, fmt.Errorf("memory: open jsonl: %w", err)
+		return 0, nil, fmt.Errorf("memory: open jsonl: %w", err)
 	}
 	defer f.Close()
 
-	n := 0
+	rawCount := 0
+	retained := make([]int, 0)
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxLineSize)
 	for scanner.Scan() {
-		if len(scanner.Bytes()) > 0 {
-			n++
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
 		}
+		rawCount++
+
+		var msg providers.Message
+		if err := json.Unmarshal(line, &msg); err != nil {
+			continue
+		}
+		if messageutil.IsTransientAssistantThoughtMessage(msg) {
+			continue
+		}
+		retained = append(retained, rawCount)
 	}
-	return n, scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return 0, nil, err
+	}
+	return rawCount, retained, nil
 }
 
 func (s *JSONLStore) AddMessage(
@@ -535,6 +553,10 @@ func (s *JSONLStore) AddFullMessage(
 
 // addMsg is the shared implementation for AddMessage and AddFullMessage.
 func (s *JSONLStore) addMsg(sessionKey string, msg providers.Message) error {
+	if messageutil.IsTransientAssistantThoughtMessage(msg) {
+		return nil
+	}
+
 	l := s.sessionLock(sessionKey)
 	l.Lock()
 	defer l.Unlock()
@@ -655,24 +677,26 @@ func (s *JSONLStore) TruncateHistory(
 		return err
 	}
 
-	// Always reconcile meta.Count with the actual line count on disk.
-	// A crash between the JSONL append and the meta update in addMsg
-	// leaves meta.Count stale (e.g. file has 101 lines but meta says
-	// 100). Counting lines is cheap — no unmarshal, just a scan — and
-	// TruncateHistory is not a hot path, so always re-count.
-	n, countErr := countLines(s.jsonlPath(sessionKey))
-	if countErr != nil {
-		return countErr
+	rawCount, retainedRawLines, scanErr := scanRetainedMessageLines(s.jsonlPath(sessionKey))
+	if scanErr != nil {
+		return scanErr
 	}
-	meta.Count = n
-
-	if keepLast <= 0 {
+	meta.Count = rawCount
+	if meta.Skip > meta.Count {
 		meta.Skip = meta.Count
-	} else {
-		effective := meta.Count - meta.Skip
-		if keepLast < effective {
-			meta.Skip = meta.Count - keepLast
-		}
+	}
+
+	activeStart := sort.Search(len(retainedRawLines), func(i int) bool {
+		return retainedRawLines[i] > meta.Skip
+	})
+	activeRetainedCount := len(retainedRawLines) - activeStart
+
+	switch {
+	case keepLast <= 0 || activeRetainedCount == 0:
+		meta.Skip = meta.Count
+	case keepLast < activeRetainedCount:
+		activeRawLines := retainedRawLines[activeStart:]
+		meta.Skip = activeRawLines[activeRetainedCount-keepLast-1]
 	}
 	meta.UpdatedAt = time.Now()
 
@@ -684,6 +708,8 @@ func (s *JSONLStore) SetHistory(
 	sessionKey string,
 	history []providers.Message,
 ) error {
+	history = messageutil.FilterInvalidHistoryMessages(history)
+
 	l := s.sessionLock(sessionKey)
 	l.Lock()
 	defer l.Unlock()
@@ -762,6 +788,8 @@ func (s *JSONLStore) Compact(
 func (s *JSONLStore) rewriteJSONL(
 	sessionKey string, msgs []providers.Message,
 ) error {
+	msgs = messageutil.FilterInvalidHistoryMessages(msgs)
+
 	var buf bytes.Buffer
 	for i, msg := range msgs {
 		line, err := json.Marshal(msg)

@@ -111,7 +111,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 			case result, ok := <-ts.pendingResults:
 				if ok && result != nil && result.ForLLM != "" {
 					content := al.cfg.FilterSensitiveData(result.ForLLM)
-					msg := providers.Message{Role: "user", Content: fmt.Sprintf("[SubTurn Result] %s", content)}
+					msg := subTurnResultPromptMessage(content)
 					pendingMessages = append(pendingMessages, msg)
 				}
 			default:

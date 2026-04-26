@@ -202,7 +202,7 @@ func TestProviderChat_ParsesReasoningContent(t *testing.T) {
 	}
 }
 
-func TestProviderChat_PreservesReasoningContentInHistory(t *testing.T) {
+func TestProviderChat_StripsReasoningContentForNonDeepSeekHistory(t *testing.T) {
 	var requestBody map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -225,8 +225,6 @@ func TestProviderChat_PreservesReasoningContentInHistory(t *testing.T) {
 
 	p := NewProvider("key", server.URL, "")
 
-	// Simulate a multi-turn conversation where the assistant's previous
-	// reply included reasoning_content (e.g. from kimi-k2.5).
 	messages := []Message{
 		{Role: "user", Content: "What is 1+1?"},
 		{Role: "assistant", Content: "2", ReasoningContent: "Let me think... 1+1=2"},
@@ -238,7 +236,6 @@ func TestProviderChat_PreservesReasoningContentInHistory(t *testing.T) {
 		t.Fatalf("Chat() error = %v", err)
 	}
 
-	// Verify reasoning_content is preserved in the serialized request.
 	reqMessages, ok := requestBody["messages"].([]any)
 	if !ok {
 		t.Fatalf("messages is not []any: %T", requestBody["messages"])
@@ -247,9 +244,286 @@ func TestProviderChat_PreservesReasoningContentInHistory(t *testing.T) {
 	if !ok {
 		t.Fatalf("assistant message is not map[string]any: %T", reqMessages[1])
 	}
-	if assistantMsg["reasoning_content"] != "Let me think... 1+1=2" {
-		t.Errorf("reasoning_content not preserved in request, got %v", assistantMsg["reasoning_content"])
+	if _, exists := assistantMsg["reasoning_content"]; exists {
+		t.Fatalf(
+			"reasoning_content should be stripped for non-DeepSeek providers, got %v",
+			assistantMsg["reasoning_content"],
+		)
 	}
+}
+
+func TestProviderChat_DeepSeekOmitsReasoningContentForNonToolTurnHistory(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	p.apiBase = "https://api.deepseek.com/v1"
+	p.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			r.URL, _ = url.Parse(server.URL + r.URL.Path)
+			return http.DefaultTransport.RoundTrip(r)
+		}),
+	}
+
+	messages := []Message{
+		{Role: "user", Content: "What is 1+1?"},
+		{Role: "assistant", Content: "2", ReasoningContent: "Let me think... 1+1=2"},
+		{Role: "user", Content: "What about 2+2?"},
+	}
+
+	_, err := p.Chat(t.Context(), messages, nil, "deepseek-v4-flash", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	reqMessages, ok := requestBody["messages"].([]any)
+	if !ok {
+		t.Fatalf("messages is not []any: %T", requestBody["messages"])
+	}
+	assistantMsg, ok := reqMessages[1].(map[string]any)
+	if !ok {
+		t.Fatalf("assistant message is not map[string]any: %T", reqMessages[1])
+	}
+	if _, exists := assistantMsg["reasoning_content"]; exists {
+		t.Fatalf(
+			"reasoning_content should be omitted for DeepSeek non-tool turns, got %v",
+			assistantMsg["reasoning_content"],
+		)
+	}
+}
+
+func TestProviderChat_DeepSeekPreservesReasoningContentForToolTurnHistory(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	p.SetProviderName("deepseek")
+
+	messages := []Message{
+		{Role: "user", Content: "How's the weather tomorrow?"},
+		{
+			Role:             "assistant",
+			Content:          "Let me check the date first.",
+			ReasoningContent: "I need tomorrow's date before checking the weather.",
+			ToolCalls: []ToolCall{{
+				ID:   "call_1",
+				Type: "function",
+				Function: &FunctionCall{
+					Name:      "get_date",
+					Arguments: "{}",
+				},
+			}},
+		},
+		{Role: "tool", ToolCallID: "call_1", Content: "2026-04-24"},
+		{
+			Role:             "assistant",
+			Content:          "Tomorrow is 2026-04-25.",
+			ReasoningContent: "Now I can share the final answer.",
+		},
+		{Role: "user", Content: "What about Guangzhou?"},
+	}
+
+	_, err := p.Chat(t.Context(), messages, nil, "deepseek-v4-flash", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	reqMessages, ok := requestBody["messages"].([]any)
+	if !ok {
+		t.Fatalf("messages is not []any: %T", requestBody["messages"])
+	}
+	if len(reqMessages) != len(messages) {
+		t.Fatalf("len(messages) = %d, want %d", len(reqMessages), len(messages))
+	}
+
+	firstAssistant, ok := reqMessages[1].(map[string]any)
+	if !ok {
+		t.Fatalf("first assistant message is not map[string]any: %T", reqMessages[1])
+	}
+	if firstAssistant["reasoning_content"] != "I need tomorrow's date before checking the weather." {
+		t.Fatalf("first assistant reasoning_content = %v, want preserved", firstAssistant["reasoning_content"])
+	}
+
+	finalAssistant, ok := reqMessages[3].(map[string]any)
+	if !ok {
+		t.Fatalf("final assistant message is not map[string]any: %T", reqMessages[3])
+	}
+	if finalAssistant["reasoning_content"] != "Now I can share the final answer." {
+		t.Fatalf("final assistant reasoning_content = %v, want preserved", finalAssistant["reasoning_content"])
+	}
+}
+
+func TestProviderChat_HistoryCanonicalizationMatrix(t *testing.T) {
+	baseMessages := []Message{
+		{Role: "user", Content: "turn1"},
+		{Role: "assistant", Content: "plain visible", ReasoningContent: "plain thought"},
+		{Role: "user", Content: "turn2"},
+		{
+			Role:             "assistant",
+			Content:          "",
+			ReasoningContent: "tool thought",
+			ToolCalls: []ToolCall{{
+				ID:   "call_read_file",
+				Type: "function",
+				Function: &FunctionCall{
+					Name:      "read_file",
+					Arguments: `{"path":"README.md"}`,
+				},
+			}},
+		},
+		{Role: "tool", ToolCallID: "call_read_file", Content: "file content"},
+		{Role: "user", Content: "turn3"},
+		{
+			Role:    "assistant",
+			Content: "tool visible only",
+			ToolCalls: []ToolCall{{
+				ID:   "call_list_dir",
+				Type: "function",
+				Function: &FunctionCall{
+					Name:      "list_dir",
+					Arguments: `{"path":"."}`,
+				},
+			}},
+		},
+		{Role: "tool", ToolCallID: "call_list_dir", Content: "dir listing"},
+		{Role: "user", Content: "turn4"},
+		{
+			Role:             "assistant",
+			Content:          "tool visible and thought",
+			ReasoningContent: "tool mixed thought",
+			ToolCalls: []ToolCall{{
+				ID:   "call_exec",
+				Type: "function",
+				Function: &FunctionCall{
+					Name:      "exec",
+					Arguments: `{"command":"pwd"}`,
+				},
+			}},
+		},
+		{Role: "tool", ToolCallID: "call_exec", Content: "pwd output"},
+		{Role: "user", Content: "current turn"},
+	}
+
+	captureRequestMessages := func(t *testing.T, providerName string) []map[string]any {
+		t.Helper()
+
+		var requestBody map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			resp := map[string]any{
+				"choices": []map[string]any{
+					{
+						"message":       map[string]any{"content": "ok"},
+						"finish_reason": "stop",
+					},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		}))
+		defer server.Close()
+
+		p := NewProvider("key", server.URL, "")
+		if providerName != "" {
+			p.SetProviderName(providerName)
+		}
+
+		_, err := p.Chat(t.Context(), baseMessages, nil, "test-model", nil)
+		if err != nil {
+			t.Fatalf("Chat() error = %v", err)
+		}
+
+		rawMessages, ok := requestBody["messages"].([]any)
+		if !ok {
+			t.Fatalf("messages is not []any: %T", requestBody["messages"])
+		}
+
+		out := make([]map[string]any, 0, len(rawMessages))
+		for i, raw := range rawMessages {
+			msg, ok := raw.(map[string]any)
+			if !ok {
+				t.Fatalf("messages[%d] is %T, want map[string]any", i, raw)
+			}
+			out = append(out, msg)
+		}
+		return out
+	}
+
+	t.Run("deepseek", func(t *testing.T) {
+		msgs := captureRequestMessages(t, "deepseek")
+		if len(msgs) != len(baseMessages) {
+			t.Fatalf("len(messages) = %d, want %d", len(msgs), len(baseMessages))
+		}
+
+		if _, ok := msgs[1]["reasoning_content"]; ok {
+			t.Fatalf(
+				"turn1 reasoning_content should be stripped for DeepSeek non-tool turn, got %v",
+				msgs[1]["reasoning_content"],
+			)
+		}
+		if msgs[3]["reasoning_content"] != "tool thought" {
+			t.Fatalf("turn2 reasoning_content = %v, want preserved", msgs[3]["reasoning_content"])
+		}
+		if _, ok := msgs[6]["reasoning_content"]; ok {
+			t.Fatalf("turn3 reasoning_content should be absent, got %v", msgs[6]["reasoning_content"])
+		}
+		if msgs[9]["reasoning_content"] != "tool mixed thought" {
+			t.Fatalf("turn4 reasoning_content = %v, want preserved", msgs[9]["reasoning_content"])
+		}
+		if msgs[9]["content"] != "tool visible and thought" {
+			t.Fatalf("turn4 content = %v, want preserved", msgs[9]["content"])
+		}
+	})
+
+	t.Run("non-deepseek", func(t *testing.T) {
+		msgs := captureRequestMessages(t, "")
+		for i, msg := range msgs {
+			if _, ok := msg["reasoning_content"]; ok {
+				t.Fatalf(
+					"messages[%d] reasoning_content should be stripped for non-DeepSeek providers, got %v",
+					i,
+					msg["reasoning_content"],
+				)
+			}
+		}
+	})
 }
 
 func TestProviderChat_HTTPError(t *testing.T) {

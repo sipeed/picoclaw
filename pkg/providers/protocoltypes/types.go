@@ -61,6 +61,13 @@ type ContentBlock struct {
 	Type         string        `json:"type"` // "text"
 	Text         string        `json:"text"`
 	CacheControl *CacheControl `json:"cache_control,omitempty"`
+
+	// Prompt metadata is internal to the agent runtime. It records which
+	// structured prompt segment produced this block without changing provider
+	// JSON.
+	PromptLayer  string `json:"-"`
+	PromptSlot   string `json:"-"`
+	PromptSource string `json:"-"`
 }
 
 type Attachment struct {
@@ -80,11 +87,24 @@ type Message struct {
 	SystemParts      []ContentBlock `json:"system_parts,omitempty"` // structured system blocks for cache-aware adapters
 	ToolCalls        []ToolCall     `json:"tool_calls,omitempty"`
 	ToolCallID       string         `json:"tool_call_id,omitempty"`
+
+	// Prompt metadata is internal to the agent runtime. It records where a
+	// message or system part came from without changing provider/session JSON.
+	PromptLayer  string `json:"-"`
+	PromptSlot   string `json:"-"`
+	PromptSource string `json:"-"`
 }
 
 type ToolDefinition struct {
 	Type     string                 `json:"type"`
 	Function ToolFunctionDefinition `json:"function"`
+
+	// Prompt metadata is internal to the agent runtime. Tool definitions are
+	// model-visible capability prompts even though providers send them outside
+	// the system message.
+	PromptLayer  string `json:"-"`
+	PromptSlot   string `json:"-"`
+	PromptSource string `json:"-"`
 }
 
 type ToolFunctionDefinition struct {

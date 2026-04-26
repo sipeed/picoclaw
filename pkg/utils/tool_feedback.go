@@ -7,21 +7,31 @@ import (
 
 const ToolFeedbackContinuationHint = "Continuing the current task."
 
-// FormatToolFeedbackMessage renders the model-provided explanation for why a
-// tool is being executed. When the model does not provide one, it keeps only
-// the tool line and does not expose raw arguments or fallback text.
-func FormatToolFeedbackMessage(toolName, explanation string) string {
+// FormatToolFeedbackMessage renders a tool feedback message for chat channels.
+// It keeps the tool name on the first line for animation and can include both
+// a human explanation and the serialized tool arguments in the body.
+func FormatToolFeedbackMessage(toolName, explanation, argsPreview string) string {
 	toolName = strings.TrimSpace(toolName)
 	explanation = strings.TrimSpace(explanation)
+	argsPreview = strings.TrimSpace(argsPreview)
+
+	bodyLines := make([]string, 0, 2)
+	if explanation != "" {
+		bodyLines = append(bodyLines, explanation)
+	}
+	if argsPreview != "" {
+		bodyLines = append(bodyLines, "```json\n"+argsPreview+"\n```")
+	}
+	body := strings.Join(bodyLines, "\n")
 
 	if toolName == "" {
-		return explanation
+		return body
 	}
-	if explanation == "" {
+	if body == "" {
 		return fmt.Sprintf("\U0001f527 `%s`", toolName)
 	}
 
-	return fmt.Sprintf("\U0001f527 `%s`\n%s", toolName, explanation)
+	return fmt.Sprintf("\U0001f527 `%s`\n%s", toolName, body)
 }
 
 // FitToolFeedbackMessage keeps tool feedback within a single outbound message.

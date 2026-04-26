@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers/common"
+	"github.com/sipeed/picoclaw/pkg/providers/messageutil"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -34,6 +35,7 @@ type (
 type Provider struct {
 	apiKey         string
 	apiBase        string
+	providerName   string
 	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
 	httpClient     *http.Client
 	extraBody      map[string]any // Additional fields to inject into request body
@@ -95,6 +97,12 @@ func WithCustomHeaders(customHeaders map[string]string) Option {
 	}
 }
 
+func WithProviderName(providerName string) Option {
+	return func(p *Provider) {
+		p.providerName = strings.ToLower(strings.TrimSpace(providerName))
+	}
+}
+
 func NewProvider(apiKey, apiBase, proxy string, opts ...Option) *Provider {
 	p := &Provider{
 		apiKey:     apiKey,
@@ -136,7 +144,7 @@ func (p *Provider) buildRequestBody(
 
 	requestBody := map[string]any{
 		"model":    model,
-		"messages": common.SerializeMessages(messages),
+		"messages": common.SerializeMessages(p.prepareMessagesForRequest(messages)),
 	}
 
 	// When fallback uses a different provider (e.g. DeepSeek), that provider must not inject web_search_preview.
@@ -194,6 +202,111 @@ func (p *Provider) applyCustomHeaders(req *http.Request) {
 		}
 		req.Header.Set(k, v)
 	}
+}
+
+func (p *Provider) SetProviderName(providerName string) {
+	p.providerName = strings.ToLower(strings.TrimSpace(providerName))
+}
+
+func (p *Provider) prepareMessagesForRequest(messages []Message) []Message {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	if p.isDeepSeekReasoningProvider() {
+		return filterDeepSeekReasoningMessages(messages)
+	}
+	return stripReasoningMessages(messages)
+}
+
+func (p *Provider) isDeepSeekReasoningProvider() bool {
+	return p.providerName == "deepseek" || isDeepSeekHost(p.apiBase)
+}
+
+func isDeepSeekHost(apiBase string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(apiBase))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	return host == "deepseek.com" || strings.HasSuffix(host, ".deepseek.com")
+}
+
+func filterDeepSeekReasoningMessages(messages []Message) []Message {
+	out := make([]Message, 0, len(messages))
+	start := 0
+
+	flush := func(end int) {
+		if end <= start {
+			return
+		}
+		out = append(out, filterDeepSeekReasoningTurn(messages[start:end])...)
+		start = end
+	}
+
+	for i := 1; i < len(messages); i++ {
+		if messages[i].Role == "user" {
+			flush(i)
+		}
+	}
+	flush(len(messages))
+
+	return out
+}
+
+func filterDeepSeekReasoningTurn(messages []Message) []Message {
+	hasToolInteraction := false
+	for _, msg := range messages {
+		if msg.Role == "tool" || (msg.Role == "assistant" && len(msg.ToolCalls) > 0) {
+			hasToolInteraction = true
+			break
+		}
+	}
+
+	out := make([]Message, 0, len(messages))
+	for _, msg := range messages {
+		if messageutil.IsTransientAssistantThoughtMessage(msg) {
+			continue
+		}
+
+		cloned := msg
+		if cloned.Role == "assistant" && strings.TrimSpace(cloned.ReasoningContent) != "" && !hasToolInteraction {
+			cloned.ReasoningContent = ""
+		}
+		if assistantMessageEmpty(cloned) {
+			continue
+		}
+		out = append(out, cloned)
+	}
+
+	return out
+}
+
+func stripReasoningMessages(messages []Message) []Message {
+	out := make([]Message, 0, len(messages))
+	for _, msg := range messages {
+		if messageutil.IsTransientAssistantThoughtMessage(msg) {
+			continue
+		}
+
+		cloned := msg
+		cloned.ReasoningContent = ""
+		if assistantMessageEmpty(cloned) {
+			continue
+		}
+		out = append(out, cloned)
+	}
+	return out
+}
+
+func assistantMessageEmpty(msg Message) bool {
+	return msg.Role == "assistant" &&
+		strings.TrimSpace(msg.Content) == "" &&
+		strings.TrimSpace(msg.ReasoningContent) == "" &&
+		len(msg.ToolCalls) == 0 &&
+		len(msg.Media) == 0 &&
+		len(msg.Attachments) == 0 &&
+		strings.TrimSpace(msg.ToolCallID) == ""
 }
 
 func (p *Provider) Chat(

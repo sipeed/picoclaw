@@ -164,7 +164,7 @@ func isLikelyGatewayProcess(pid int) (bool, bool) {
 			`$p=Get-CimInstance Win32_Process -Filter "ProcessId = %d"; if ($null -eq $p) { "" } else { $p.CommandLine }`,
 			pid,
 		)
-		out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd).Output()
+		out, err := launcherExecCommand("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd).Output()
 		if err == nil {
 			cmdline := strings.TrimSpace(string(out))
 			if cmdline != "" {
@@ -173,7 +173,7 @@ func isLikelyGatewayProcess(pid int) (bool, bool) {
 		}
 
 		// Fallback: determine only whether the process still exists.
-		out, err = exec.Command("tasklist", "/FI", "PID eq "+strconv.Itoa(pid), "/FO", "CSV", "/NH").Output()
+		out, err = launcherExecCommand("tasklist", "/FI", "PID eq "+strconv.Itoa(pid), "/FO", "CSV", "/NH").Output()
 		if err != nil {
 			return false, false
 		}
@@ -187,7 +187,7 @@ func isLikelyGatewayProcess(pid int) (bool, bool) {
 			if strings.Contains(line, "\"picoclaw.exe\"") {
 				return true, true
 			}
-			return false, false
+			return false, true
 		}
 		if strings.Contains(line, "no tasks are running") {
 			return false, true
@@ -195,7 +195,7 @@ func isLikelyGatewayProcess(pid int) (bool, bool) {
 		return false, true
 	}
 
-	out, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
+	out, err := launcherExecCommand("ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
 	if err != nil {
 		return false, false
 	}
@@ -706,6 +706,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	logger.InfoC("gateway", fmt.Sprintf("Starting gateway process (%s)", execPath))
 
 	cmd = gatewayExecCommand(execPath, h.gatewayCommandArgs()...)
+	applyLauncherProcAttrs(cmd)
 	cmd.Env = os.Environ()
 	// Forward the launcher's config path via the environment variable that
 	// GetConfigPath() already reads, so the gateway sub-process uses the same
