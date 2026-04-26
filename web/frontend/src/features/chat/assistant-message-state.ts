@@ -19,14 +19,25 @@ export interface AssistantMessageUpdateState {
   toolCalls?: AssistantToolCalls
 }
 
+function normalizeAssistantMessageKind(
+  payload: Record<string, unknown>,
+): string | undefined {
+  if (typeof payload.kind !== "string") {
+    return undefined
+  }
+  const kind = payload.kind.trim().toLowerCase()
+  return kind || undefined
+}
+
 function parseAssistantMessageKind(
   payload: Record<string, unknown>,
   toolCalls?: AssistantToolCalls,
 ): AssistantMessageKind {
-  if (payload.thought === true) {
+  const kind = normalizeAssistantMessageKind(payload)
+  if (kind === "thought") {
     return "thought"
   }
-  if (payload.kind === "tool_calls" || toolCalls) {
+  if (kind === "tool_calls" || toolCalls) {
     return "tool_calls"
   }
   return "normal"
@@ -36,8 +47,7 @@ function hasExplicitAssistantKindPayload(
   payload: Record<string, unknown>,
 ): boolean {
   return (
-    typeof payload.thought === "boolean" ||
-    payload.kind === "tool_calls" ||
+    normalizeAssistantMessageKind(payload) !== undefined ||
     payload.tool_calls !== undefined
   )
 }

@@ -323,10 +323,12 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 
 	payload := map[string]any{
 		PayloadKeyContent: content,
-		PayloadKeyThought: isThought,
 		"message_id":      msgID,
 	}
-	if isToolCalls {
+	switch {
+	case isThought:
+		payload[PayloadKeyKind] = MessageKindThought
+	case isToolCalls:
 		payload[PayloadKeyKind] = MessageKindToolCalls
 		if toolCalls, ok := picoToolCallsPayload(msg); ok {
 			payload[PayloadKeyToolCalls] = toolCalls
@@ -457,7 +459,6 @@ func (c *PicoChannel) SendPlaceholder(ctx context.Context, chatID string) (strin
 	msgID := uuid.New().String()
 	outMsg := newMessage(TypeMessageCreate, map[string]any{
 		PayloadKeyContent: text,
-		PayloadKeyThought: false,
 		"message_id":      msgID,
 	})
 
