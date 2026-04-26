@@ -18,6 +18,8 @@ import (
 const (
 	codexDefaultModel        = "gpt-5.3-codex"
 	codexDefaultInstructions = "You are Codex, a coding assistant."
+
+	codexAPIURL = "https://chatgpt.com/backend-api/codex"
 )
 
 type CodexProvider struct {
@@ -30,11 +32,15 @@ type CodexProvider struct {
 const defaultCodexInstructions = "You are Codex, a coding assistant."
 
 func NewCodexProvider(token, accountID string) *CodexProvider {
+	return NewCodexProviderWithOptions(token, accountID)
+}
+
+func NewCodexProviderWithOptions(token, accountID string) *CodexProvider {
 	opts := []option.RequestOption{
-		option.WithBaseURL("https://chatgpt.com/backend-api/codex"),
+		option.WithBaseURL(codexAPIURL),
 		option.WithAPIKey(token),
-		option.WithHeader("originator", "codex_cli_rs"),
 		option.WithHeader("OpenAI-Beta", "responses=experimental"),
+		option.WithHeader("originator", "codex_cli_rs"),
 	}
 	if accountID != "" {
 		opts = append(opts, option.WithHeader("Chatgpt-Account-Id", accountID))
@@ -51,6 +57,14 @@ func NewCodexProviderWithTokenSource(
 	token, accountID string, tokenSource func() (string, string, error),
 ) *CodexProvider {
 	p := NewCodexProvider(token, accountID)
+	p.tokenSource = tokenSource
+	return p
+}
+
+func NewCodexProviderWithTokenSourceAndOptions(
+	token, accountID string, tokenSource func() (string, string, error),
+) *CodexProvider {
+	p := NewCodexProviderWithOptions(token, accountID)
 	p.tokenSource = tokenSource
 	return p
 }
@@ -104,9 +118,13 @@ func (p *CodexProvider) Chat(
 	defer stream.Close()
 
 	var resp *responses.Response
+	var streamedText strings.Builder
 	for stream.Next() {
 		evt := stream.Current()
-		if evt.Type == "response.completed" || evt.Type == "response.failed" || evt.Type == "response.incomplete" {
+		switch evt.Type {
+		case "response.output_text.delta":
+			streamedText.WriteString(evt.Delta)
+		case "response.completed", "response.failed", "response.incomplete":
 			evtResp := evt.Response
 			if evtResp.ID != "" {
 				evtRespCopy := evtResp
@@ -153,7 +171,14 @@ func (p *CodexProvider) Chat(
 		return nil, fmt.Errorf("codex API call: stream ended without completed response")
 	}
 
-	return orc.ParseResponseFromStruct(resp), nil
+	parsed := orc.ParseResponseFromStruct(resp)
+	if parsed.Content == "" && streamedText.Len() > 0 {
+		parsed.Content = streamedText.String()
+		if parsed.FinishReason == "" {
+			parsed.FinishReason = "stop"
+		}
+	}
+	return parsed, nil
 }
 
 func (p *CodexProvider) GetDefaultModel() string {

@@ -432,6 +432,48 @@ func TestCodexProvider_ChatRoundTrip_WebSearchDisabled(t *testing.T) {
 	}
 }
 
+func TestCodexProvider_ChatRoundTrip_UsesOutputTextDeltas(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			http.Error(w, "not found: "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+
+		resp := map[string]any{
+			"id":     "resp_test",
+			"object": "response",
+			"status": "completed",
+			"output": []any{},
+			"usage": map[string]any{
+				"input_tokens":          4,
+				"output_tokens":         1,
+				"total_tokens":          5,
+				"input_tokens_details":  map[string]any{"cached_tokens": 0},
+				"output_tokens_details": map[string]any{"reasoning_tokens": 0},
+			},
+		}
+		writeTextDeltaSSE(w, "hel")
+		writeTextDeltaSSE(w, "lo")
+		writeCompletedSSE(w, resp)
+	}))
+	defer server.Close()
+
+	provider := NewCodexProvider("test-token", "acc-123")
+	provider.enableWebSearch = false
+	provider.client = createOpenAITestClient(server.URL, "test-token", "acc-123")
+
+	resp, err := provider.Chat(t.Context(), []Message{{Role: "user", Content: "Hello"}}, nil, "gpt-5.4", map[string]any{})
+	if err != nil {
+		t.Fatalf("Chat() error: %v", err)
+	}
+	if resp.Content != "hello" {
+		t.Errorf("Content = %q, want %q", resp.Content, "hello")
+	}
+	if resp.Usage.TotalTokens != 5 {
+		t.Errorf("TotalTokens = %d, want 5", resp.Usage.TotalTokens)
+	}
+}
+
 func TestCodexProvider_ChatRoundTrip_TokenSourceFallbackAccountID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/responses" {
@@ -646,4 +688,15 @@ func writeCompletedSSE(w http.ResponseWriter, response map[string]any) {
 	fmt.Fprintf(w, "event: response.completed\n")
 	fmt.Fprintf(w, "data: %s\n\n", string(b))
 	fmt.Fprintf(w, "data: [DONE]\n\n")
+}
+
+func writeTextDeltaSSE(w http.ResponseWriter, delta string) {
+	event := map[string]any{
+		"type":  "response.output_text.delta",
+		"delta": delta,
+	}
+	b, _ := json.Marshal(event)
+	w.Header().Set("Content-Type", "text/event-stream")
+	fmt.Fprintf(w, "event: response.output_text.delta\n")
+	fmt.Fprintf(w, "data: %s\n\n", string(b))
 }
