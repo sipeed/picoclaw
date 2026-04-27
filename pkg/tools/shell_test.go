@@ -1621,12 +1621,38 @@ func TestShellTool_FindRootBlocked(t *testing.T) {
 		t.Fatalf("unable to configure exec tool: %s", err)
 	}
 
+	// Commands that attempt to traverse or list the root filesystem.
+	// Each must be blocked by either a deny-pattern match or the
+	// workspace-boundary check.
 	blocked := []string{
+		// deny pattern: find /
 		"find / -name 'private*' -type f 2>/dev/null",
-		"find /etc -name 'passwd'",
 		"find / -type f -name '*.key'",
+		"find / -maxdepth 1",
+		// deny pattern: ls /
 		"ls /",
+		"ls / -la",
+		// workspace check: find /<path>
+		"find /etc -name 'passwd'",
+		"find /var/log -name '*.log'",
+		// workspace check: ls /<path>
 		"ls /etc",
+		"ls /root",
+		// shell metacharacter bypass attempts
+		"find /;",
+		"find /& ",
+		"find /| cat",
+		"find /&& echo done",
+		"find /|| echo fail",
+		"ls /;",
+		"ls /& ",
+		"ls /| wc -l",
+		"ls /&& echo done",
+		"ls /|| echo fail",
+		// uppercase / mixed case (matching is case-insensitive)
+		"FIND /",
+		"Ls /",
+		"Find / -name passwd",
 	}
 
 	for _, cmd := range blocked {
@@ -1650,10 +1676,19 @@ func TestShellTool_FindInWorkspaceAllowed(t *testing.T) {
 		t.Fatalf("unable to configure exec tool: %s", err)
 	}
 
+	// Legitimate workspace-relative commands that must not be blocked.
 	allowed := []string{
 		"find . -name '*.go'",
 		"find -name '*.txt'",
+		"find workspace -type d",
 		"echo hello",
+		"ls -la",
+		// these match the find/ls prefix but not the root-path pattern
+		"findfile",
+		"lst",
+		// find/ls used on single-component relative paths (no slash)
+		"find sub -name '*.go'",
+		"ls sub",
 	}
 
 	for _, cmd := range allowed {
@@ -1663,6 +1698,57 @@ func TestShellTool_FindInWorkspaceAllowed(t *testing.T) {
 		})
 		if result.IsError && strings.Contains(result.ForLLM, "blocked") {
 			t.Errorf("command should not be blocked: %s\n  error: %s", cmd, result.ForLLM)
+		}
+	}
+}
+
+func TestShellTool_FindRootBlocked_DenyDisabled(t *testing.T) {
+	// When deny patterns are disabled, find / and ls / should still be
+	// caught by the workspace-boundary check (since / is outside the
+	// workspace).
+	tmpDir := t.TempDir()
+	cfg := &config.Config{}
+	cfg.Tools.Exec.EnableDenyPatterns = false
+
+	tool, err := NewExecToolWithConfig(tmpDir, true, cfg)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	// These are blocked by workspace restriction even without deny patterns.
+	blocked := []string{
+		"find /etc -name passwd",
+		"ls /etc",
+		"find /;",
+		"ls /;",
+	}
+
+	for _, cmd := range blocked {
+		result := tool.Execute(context.Background(), map[string]any{
+			"action":  "run",
+			"command": cmd,
+		})
+		if !result.IsError {
+			t.Errorf("expected command to be blocked (workspace check): %s", cmd)
+		}
+	}
+
+	// find / and ls / with bare root *can* execute when deny patterns
+	// are disabled because / is in safePaths.
+	bareRoot := []string{
+		"find / -maxdepth 1",
+		"ls /",
+	}
+	for _, cmd := range bareRoot {
+		result := tool.Execute(context.Background(), map[string]any{
+			"action":  "run",
+			"command": cmd,
+		})
+		if result.IsError && strings.Contains(result.ForLLM, "blocked") {
+			t.Errorf(
+				"bare root command should not be workspace-blocked (safePaths): %s\n  error: %s",
+				cmd, result.ForLLM,
+			)
 		}
 	}
 }
