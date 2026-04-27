@@ -184,7 +184,14 @@ func (p *Pipeline) CallLLM(
 
 	// Retry loop
 	var err error
-	maxRetries := 2
+	maxRetries := p.Cfg.Agents.Defaults.MaxLLMRetries
+	if maxRetries <= 0 {
+		maxRetries = 2
+	}
+	backoffSecs := p.Cfg.Agents.Defaults.LLMRetryBackoffSecs
+	if backoffSecs <= 0 {
+		backoffSecs = 2
+	}
 	for retry := 0; retry <= maxRetries; retry++ {
 		exec.response, err = callLLM(exec.callMessages, exec.providerToolDefs)
 		if err == nil {
@@ -232,6 +239,15 @@ func (p *Pipeline) CallLLM(
 			strings.Contains(errMsg, "timed out") ||
 			strings.Contains(errMsg, "timeout exceeded")
 
+		isNetworkError := !isTimeoutError && (strings.Contains(errMsg, "connection reset") ||
+			strings.Contains(errMsg, "connection refused") ||
+			strings.Contains(errMsg, "broken pipe") ||
+			strings.Contains(errMsg, "no such host") ||
+			strings.Contains(errMsg, "network is unreachable") ||
+			strings.Contains(errMsg, "read tcp") ||
+			strings.Contains(errMsg, "write tcp") ||
+			strings.Contains(errMsg, "eof"))
+
 		isContextError := !isTimeoutError && (strings.Contains(errMsg, "context_length_exceeded") ||
 			strings.Contains(errMsg, "context window") ||
 			strings.Contains(errMsg, "context_window") ||
@@ -244,7 +260,7 @@ func (p *Pipeline) CallLLM(
 			strings.Contains(errMsg, "request too large"))
 
 		if isTimeoutError && retry < maxRetries {
-			backoff := time.Duration(retry+1) * 5 * time.Second
+			backoff := time.Duration(retry+1) * time.Duration(backoffSecs) * time.Second
 			al.emitEvent(
 				EventKindLLMRetry,
 				ts.eventMeta("runTurn", "turn.llm.retry"),
@@ -257,6 +273,35 @@ func (p *Pipeline) CallLLM(
 				},
 			)
 			logger.WarnCF("agent", "Timeout error, retrying after backoff", map[string]any{
+				"error":   err.Error(),
+				"retry":   retry,
+				"backoff": backoff.String(),
+			})
+			if sleepErr := sleepWithContext(turnCtx, backoff); sleepErr != nil {
+				if ts.hardAbortRequested() {
+					_ = ts.requestHardAbort()
+					return ControlBreak, nil
+				}
+				err = sleepErr
+				break
+			}
+			continue
+		}
+
+		if isNetworkError && retry < maxRetries {
+			backoff := time.Duration(retry+1) * time.Duration(backoffSecs) * time.Second
+			al.emitEvent(
+				EventKindLLMRetry,
+				ts.eventMeta("runTurn", "turn.llm.retry"),
+				LLMRetryPayload{
+					Attempt:    retry + 1,
+					MaxRetries: maxRetries,
+					Reason:     "network",
+					Error:      err.Error(),
+					Backoff:    backoff,
+				},
+			)
+			logger.WarnCF("agent", "Network error, retrying after backoff", map[string]any{
 				"error":   err.Error(),
 				"retry":   retry,
 				"backoff": backoff.String(),

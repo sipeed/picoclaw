@@ -11,6 +11,8 @@
       "summarize_message_threshold": 20,
       "summarize_token_percent": 75,
       "split_on_marker": false,
+      "max_llm_retries": 2,
+      "llm_retry_backoff_secs": 2,
       "tool_feedback": {
         "enabled": false,
         "max_args_length": 300,
