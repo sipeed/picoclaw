@@ -45,6 +45,11 @@ type ContextBuilder struct {
 	// build time. This catches nested file creations/deletions/mtime changes
 	// that may not update the top-level skill root directory mtime.
 	skillFilesAtCache map[string]time.Time
+
+	// sourcePathsAtCache stores the active non-skill tracked paths captured
+	// when the cache was built, so cache hits do not need to re-detect the
+	// bootstrap file family.
+	sourcePathsAtCache []string
 }
 
 func (cb *ContextBuilder) WithToolDiscovery(useBM25, useRegex bool) *ContextBuilder {
@@ -291,6 +296,7 @@ func (cb *ContextBuilder) BuildSystemPromptWithCache() string {
 	cb.cachedAt = baseline.maxMtime
 	cb.existedAtCache = baseline.existed
 	cb.skillFilesAtCache = baseline.skillFiles
+	cb.sourcePathsAtCache = append(cb.sourcePathsAtCache[:0], baseline.sourcePaths...)
 
 	logger.DebugCF("agent", "System prompt cached",
 		map[string]any{
@@ -354,6 +360,7 @@ func (cb *ContextBuilder) InvalidateCache() {
 	cb.cachedAt = time.Time{}
 	cb.existedAtCache = nil
 	cb.skillFilesAtCache = nil
+	cb.sourcePathsAtCache = nil
 
 	logger.DebugCF("agent", "System prompt cache invalidated", nil)
 }
@@ -362,10 +369,25 @@ func (cb *ContextBuilder) InvalidateCache() {
 // invalidation (bootstrap files + memory). Skill roots are handled separately
 // because they require both directory-level and recursive file-level checks.
 func (cb *ContextBuilder) sourcePaths() []string {
-	agentDefinition := cb.LoadAgentDefinition()
-	paths := agentDefinition.trackedPaths(cb.workspace)
-	paths = append(paths, filepath.Join(cb.workspace, "memory", "MEMORY.md"))
-	return uniquePaths(paths)
+	agentPath := filepath.Join(cb.workspace, string(AgentDefinitionSourceAgent))
+	paths := []string{
+		agentPath,
+		filepath.Join(cb.workspace, "SOUL.md"),
+		filepath.Join(cb.workspace, "USER.md"),
+		filepath.Join(cb.workspace, "memory", "MEMORY.md"),
+	}
+
+	// Cache invalidation only needs to know which bootstrap path family is active.
+	// Avoid loading/parsing AGENT.md on every cache hit; existence is sufficient
+	// because the structured format always wins when present.
+	if _, err := os.Stat(agentPath); err == nil {
+		return paths
+	}
+
+	return append(paths,
+		filepath.Join(cb.workspace, string(AgentDefinitionSourceAgents)),
+		filepath.Join(cb.workspace, "IDENTITY.md"),
+	)
 }
 
 // skillRoots returns all skill root directories that can affect
@@ -385,9 +407,10 @@ func (cb *ContextBuilder) skillRoots() []string {
 // cacheBaseline holds the file existence snapshot and the latest observed
 // mtime across all tracked paths. Used as the cache reference point.
 type cacheBaseline struct {
-	existed    map[string]bool
-	skillFiles map[string]time.Time
-	maxMtime   time.Time
+	existed     map[string]bool
+	skillFiles  map[string]time.Time
+	sourcePaths []string
+	maxMtime    time.Time
 }
 
 // buildCacheBaseline records which tracked paths currently exist and computes
@@ -395,9 +418,10 @@ type cacheBaseline struct {
 // Called under write lock when the cache is built.
 func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
 	skillRoots := cb.skillRoots()
+	sourcePaths := cb.sourcePaths()
 
 	// All paths whose existence we track: source files + all skill roots.
-	allPaths := append(cb.sourcePaths(), skillRoots...)
+	allPaths := append(append([]string(nil), sourcePaths...), skillRoots...)
 
 	existed := make(map[string]bool, len(allPaths))
 	skillFiles := make(map[string]time.Time)
@@ -437,7 +461,12 @@ func (cb *ContextBuilder) buildCacheBaseline() cacheBaseline {
 		maxMtime = time.Unix(1, 0)
 	}
 
-	return cacheBaseline{existed: existed, skillFiles: skillFiles, maxMtime: maxMtime}
+	return cacheBaseline{
+		existed:     existed,
+		skillFiles:  skillFiles,
+		sourcePaths: sourcePaths,
+		maxMtime:    maxMtime,
+	}
 }
 
 // sourceFilesChangedLocked checks whether any workspace source file has been
@@ -453,7 +482,10 @@ func (cb *ContextBuilder) sourceFilesChangedLocked() bool {
 	}
 
 	// Check tracked source files (bootstrap + memory).
-	if slices.ContainsFunc(cb.sourcePaths(), cb.fileChangedSince) {
+	if len(cb.sourcePathsAtCache) == 0 {
+		return true
+	}
+	if slices.ContainsFunc(cb.sourcePathsAtCache, cb.fileChangedSince) {
 		return true
 	}
 
