@@ -1613,3 +1613,56 @@ func TestEncodeKeyTokenWithPtyKeyMode(t *testing.T) {
 		})
 	}
 }
+
+func TestShellTool_FindRootBlocked(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	blocked := []string{
+		"find / -name 'private*' -type f 2>/dev/null",
+		"find /etc -name 'passwd'",
+		"find / -type f -name '*.key'",
+		"ls /",
+		"ls /etc",
+	}
+
+	for _, cmd := range blocked {
+		result := tool.Execute(context.Background(), map[string]any{
+			"action":  "run",
+			"command": cmd,
+		})
+		if !result.IsError {
+			t.Errorf("expected command to be blocked: %s", cmd)
+		}
+		if !strings.Contains(result.ForLLM, "blocked") {
+			t.Errorf("expected 'blocked' message for: %s\ngot: %s", cmd, result.ForLLM)
+		}
+	}
+}
+
+func TestShellTool_FindInWorkspaceAllowed(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	allowed := []string{
+		"find . -name '*.go'",
+		"find -name '*.txt'",
+		"echo hello",
+	}
+
+	for _, cmd := range allowed {
+		result := tool.Execute(context.Background(), map[string]any{
+			"action":  "run",
+			"command": cmd,
+		})
+		if result.IsError && strings.Contains(result.ForLLM, "blocked") {
+			t.Errorf("command should not be blocked: %s\n  error: %s", cmd, result.ForLLM)
+		}
+	}
+}
