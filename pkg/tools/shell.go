@@ -95,8 +95,8 @@ var (
 		regexp.MustCompile(`\bssh\b.*@`),
 		regexp.MustCompile(`\beval\b`),
 		regexp.MustCompile(`\bsource\s+.*\.sh\b`),
-		regexp.MustCompile(`\bfind\s+/\b`),       // find / - traverse entire filesystem
-		regexp.MustCompile(`\bls\s+/\b`),         // ls / - list root directory
+		regexp.MustCompile(`\bfind\s+/(\s|$)`),   // find / - traverse entire filesystem
+		regexp.MustCompile(`\bls\s+/(\s|$)`),     // ls / - list root directory
 	}
 
 	// absolutePathPattern matches absolute file paths in commands (Unix and Windows).
