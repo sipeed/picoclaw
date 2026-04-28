@@ -47,7 +47,11 @@ func withMCPHeadersFromRaw(ctx context.Context, raw map[string]string) context.C
 	var headers map[string]string
 	for k, v := range raw {
 		after, ok := strings.CutPrefix(k, "mcp:")
-		if !ok || after == "" {
+		if !ok {
+			continue
+		}
+		after = strings.TrimSpace(after)
+		if after == "" {
 			continue
 		}
 		if headers == nil {
