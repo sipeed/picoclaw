@@ -47,6 +47,7 @@ export function ModelsPage() {
   const [settingDefaultIndex, setSettingDefaultIndex] = useState<number | null>(
     null,
   )
+  const addDisabled = loading || providerOptions.length === 0
 
   const fetchModels = useCallback(async () => {
     try {
@@ -141,7 +142,12 @@ export function ModelsPage() {
     <div className="flex h-full flex-col">
       <PageHeader title={t("navigation.models")}>
         <div className="flex items-center gap-3">
-          <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={addDisabled}
+            onClick={() => setAddOpen(true)}
+          >
             <IconPlus className="size-4" />
             {t("models.add.button")}
           </Button>

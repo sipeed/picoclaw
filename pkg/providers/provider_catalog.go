@@ -36,7 +36,7 @@ var attachedModelProviderMetaByName = map[string]attachedModelProviderMeta{
 		protocolMeta:  protocolMeta{defaultAPIBase: "https://api.anthropic.com/v1"},
 		createAllowed: true,
 	},
-	"bedrock":        {},
+	"bedrock":        {createAllowed: true},
 	"antigravity":    {createAllowed: true, defaultAuthMethod: "oauth", authMethodLocked: true},
 	"claude-cli":     {createAllowed: true},
 	"codex-cli":      {createAllowed: true},

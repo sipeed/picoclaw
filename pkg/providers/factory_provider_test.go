@@ -984,8 +984,8 @@ func TestModelProviderOptions(t *testing.T) {
 	}
 	if option, ok := seen["bedrock"]; !ok {
 		t.Fatal("bedrock option missing")
-	} else if option.CreateAllowed {
-		t.Fatal("bedrock should not be creatable from the web form")
+	} else if !option.CreateAllowed {
+		t.Fatal("bedrock should be creatable and defer credential/build errors to runtime")
 	}
 	if option, ok := seen["antigravity"]; !ok {
 		t.Fatal("antigravity option missing")

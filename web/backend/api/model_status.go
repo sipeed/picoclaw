@@ -93,7 +93,6 @@ func hasModelConfiguration(m *config.ModelConfig) bool {
 		if configured, checked := hasStoredOAuthCredential(m); checked {
 			return configured
 		}
-		return true
 	}
 
 	if authMethod == "" && providerUsesImplicitOAuth(protocol) {

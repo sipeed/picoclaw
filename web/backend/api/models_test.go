@@ -253,6 +253,27 @@ func TestHandleListModels_AvailabilityForOAuthModelWithCredential(t *testing.T) 
 	}
 }
 
+func TestHasModelConfiguration_OAuthWithoutMappedCredentialFallsBackToAPIKey(t *testing.T) {
+	noKey := &config.ModelConfig{
+		Provider:   "gemini",
+		Model:      "gemini-2.5-flash",
+		AuthMethod: "oauth",
+	}
+	if hasModelConfiguration(noKey) {
+		t.Fatal("oauth model without credential mapping and api key should be unconfigured")
+	}
+
+	withKey := &config.ModelConfig{
+		Provider:   "gemini",
+		Model:      "gemini-2.5-flash",
+		AuthMethod: "oauth",
+		APIKeys:    config.SimpleSecureStrings("gemini-key"),
+	}
+	if !hasModelConfiguration(withKey) {
+		t.Fatal("oauth model without credential mapping should fall back to api key configuration")
+	}
+}
+
 func TestHandleListModels_AntigravityImplicitOAuthAvailability(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
