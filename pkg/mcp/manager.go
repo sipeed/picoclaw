@@ -17,6 +17,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	toolshared "github.com/sipeed/picoclaw/pkg/tools/shared"
 )
 
 // headerTransport is an http.RoundTripper that adds custom headers to requests
@@ -44,15 +45,15 @@ func expandHomeCommandPath(command string) string {
 }
 
 func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Clone the request to avoid modifying the original
 	req = req.Clone(req.Context())
-
-	// Add custom headers
 	for key, value := range t.headers {
 		req.Header.Set(key, value)
 	}
-
-	// Use the base transport
+	if dynamic := toolshared.MCPHeaders(req.Context()); len(dynamic) > 0 {
+		for key, value := range dynamic {
+			req.Header.Set(key, value)
+		}
+	}
 	base := t.base
 	if base == nil {
 		base = http.DefaultTransport
@@ -341,15 +342,13 @@ func connectServer(
 			DisableStandaloneSSE: disableStandaloneSSE,
 		}
 
-		// Add custom headers if provided
+		sseTransport.HTTPClient = &http.Client{
+			Transport: &headerTransport{
+				base:    http.DefaultTransport,
+				headers: cfg.Headers,
+			},
+		}
 		if len(cfg.Headers) > 0 {
-			// Create a custom HTTP client with header-injecting transport
-			sseTransport.HTTPClient = &http.Client{
-				Transport: &headerTransport{
-					base:    http.DefaultTransport,
-					headers: cfg.Headers,
-				},
-			}
 			logger.DebugCF("mcp", "Added custom HTTP headers",
 				map[string]any{
 					"server":       name,
