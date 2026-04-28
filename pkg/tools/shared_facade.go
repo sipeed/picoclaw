@@ -61,6 +61,14 @@ func WithToolSessionContext(
 	return toolshared.WithToolSessionContext(ctx, agentID, sessionKey, scope)
 }
 
+func WithMCPHeaders(ctx context.Context, headers map[string]string) context.Context {
+	return toolshared.WithMCPHeaders(ctx, headers)
+}
+
+func MCPHeaders(ctx context.Context) map[string]string {
+	return toolshared.MCPHeaders(ctx)
+}
+
 func ToolChannel(ctx context.Context) string {
 	return toolshared.ToolChannel(ctx)
 }
