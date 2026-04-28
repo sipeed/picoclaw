@@ -89,7 +89,7 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   const targetY1 = 100 * tf.scale + tf.ty;
   await page.mouse.move(firstReplyBBox.x + firstReplyBBox.width / 2, firstReplyBBox.y + firstReplyBBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(targetX1, targetY1, { steps: 20 });
+  await page.mouse.move(targetX1, targetY1, { steps: 50 });
   await page.mouse.up();
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 13 - First Reply Message positioned');
@@ -146,8 +146,8 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   await page.mouse.move(srcBox1.x + srcBox1.width / 2, srcBox1.y + srcBox1.height / 2);
   await page.waitForTimeout(200);
   await page.mouse.down();
-  await page.mouse.move(tgtBox1.x + tgtBox1.width / 2, tgtBox1.y + tgtBox1.height / 2, { steps: 20 });
-  await page.waitForTimeout(200);
+  await page.mouse.move(tgtBox1.x + tgtBox1.width / 2, tgtBox1.y + tgtBox1.height / 2, { steps: 50 });
+  await page.waitForTimeout(500);
   await page.mouse.up();
   await page.waitForTimeout(1000);
   console.log('✅ PASS: Step 18 - START → Reply Message connected');
@@ -185,7 +185,7 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   const targetY2 = 200 * tfUU.scale + tfUU.ty;
   await page.mouse.move(userUtteranceBBox.x + userUtteranceBBox.width / 2, userUtteranceBBox.y + userUtteranceBBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(targetX2, targetY2, { steps: 20 });
+  await page.mouse.move(targetX2, targetY2, { steps: 50 });
   await page.mouse.up();
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 22 - User Utterance positioned');
@@ -241,8 +241,8 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   await page.mouse.move(srcBox2.x + srcBox2.width / 2, srcBox2.y + srcBox2.height / 2);
   await page.waitForTimeout(200);
   await page.mouse.down();
-  await page.mouse.move(tgtBox2.x + tgtBox2.width / 2, tgtBox2.y + tgtBox2.height / 2, { steps: 20 });
-  await page.waitForTimeout(200);
+  await page.mouse.move(tgtBox2.x + tgtBox2.width / 2, tgtBox2.y + tgtBox2.height / 2, { steps: 50 });
+  await page.waitForTimeout(500);
   await page.mouse.up();
   await page.waitForTimeout(1000);
   console.log('✅ PASS: Step 27 - Reply Message → input connected');
@@ -280,7 +280,7 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   const targetY3 = 300 * tfReply2.scale + tfReply2.ty;
   await page.mouse.move(secondReplyBBox.x + secondReplyBBox.width / 2, secondReplyBBox.y + secondReplyBBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(targetX3, targetY3, { steps: 20 });
+  await page.mouse.move(targetX3, targetY3, { steps: 50 });
   await page.mouse.up();
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 31 - Output Reply Message positioned');
@@ -346,8 +346,8 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   await page.mouse.move(srcBox3.x + srcBox3.width / 2, srcBox3.y + srcBox3.height / 2);
   await page.waitForTimeout(200);
   await page.mouse.down();
-  await page.mouse.move(tgtBox3.x + tgtBox3.width / 2, tgtBox3.y + tgtBox3.height / 2, { steps: 20 });
-  await page.waitForTimeout(200);
+  await page.mouse.move(tgtBox3.x + tgtBox3.width / 2, tgtBox3.y + tgtBox3.height / 2, { steps: 50 });
+  await page.waitForTimeout(500);
   await page.mouse.up();
   await page.waitForTimeout(1000);
   console.log('✅ PASS: Step 37 - input → Output connected');
@@ -380,8 +380,8 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   await page.mouse.move(srcBox4.x + srcBox4.width / 2, srcBox4.y + srcBox4.height / 2);
   await page.waitForTimeout(200);
   await page.mouse.down();
-  await page.mouse.move(tgtBox4.x + tgtBox4.width / 2, tgtBox4.y + tgtBox4.height / 2, { steps: 20 });
-  await page.waitForTimeout(200);
+  await page.mouse.move(tgtBox4.x + tgtBox4.width / 2, tgtBox4.y + tgtBox4.height / 2, { steps: 50 });
+  await page.waitForTimeout(500);
   await page.mouse.up();
   await page.waitForTimeout(1000);
   console.log('✅ PASS: Step 39 - Output → END connected');

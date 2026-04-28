@@ -85,18 +85,69 @@ Steps:
 
 ---
 
-## EDGE VERIFICATION RULE (MANDATORY for any drag-connect step)
+## DRAG CONNECTION RULES (MANDATORY for every drag-connect step)
 
+### 1. Zoom normalization — run BEFORE EVERY drag connection
+
+Vue Flow zoom persists between operations. After modal interactions the canvas may be at minimum zoom (20%) where handles are too small. Zoom-out-only silently fails at min zoom — always zoom IN first to a known max, then zoom out.
+
+```typescript
+// Before EVERY drag connection:
+await page.mouse.move(640, 360);
+await page.keyboard.down('Control');
+for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); } // zoom in to max (400%)
+await page.keyboard.up('Control');
+await page.waitForTimeout(200);
+await page.keyboard.down('Control');
+for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); } // zoom out to ~100%
+await page.keyboard.up('Control');
+await page.waitForTimeout(500);
+```
+
+### 2. Re-read canvas transform after zoom
+
+The transform read at canvas open becomes stale after any zoom operation. Any node positioned AFTER the first zoom normalization block MUST re-read the transform immediately before positioning — name each re-read descriptively (tfReply, tfCustom, etc.):
+
+```typescript
+const tfReply = await page.locator('.vue-flow__transformationpane').evaluate(el => {
+  const m = new DOMMatrix((el as HTMLElement).style.transform);
+  return { scale: m.a, tx: m.e, ty: m.f };
+});
+const targetX = 250 * tfReply.scale + tfReply.tx;
+const targetY = 200 * tfReply.scale + tfReply.ty;
+```
+
+### 3. Drag pattern for handle connections
+
+Use steps: 50 (not 20) and wait 500ms before mouse.up() so Vue Flow registers the hover on the target handle:
+
+```typescript
 const edgesBefore = await page.locator('.vue-flow__edge[data-id]').count();
 
-// drag
+const sourceHandle = page.locator('.vue-flow__node')
+  .filter({ has: page.locator('.node-container#SOURCE_ID') })
+  .locator('.vue-flow__handle-bottom');
+const targetHandle = page.locator('.vue-flow__node')
+  .filter({ has: page.locator('.node-container#TARGET_ID') })
+  .locator('.vue-flow__handle-top');
 
+const sourceBox = await sourceHandle.boundingBox();
+const targetBox = await targetHandle.boundingBox();
+if (!sourceBox || !targetBox) throw new Error('Handles not found for SOURCE → TARGET');
+
+await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+await page.waitForTimeout(200);
+await page.mouse.down();
+await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 50 });
+await page.waitForTimeout(500);
+await page.mouse.up();
 await page.waitForTimeout(1000);
 
 const edgesAfter = await page.locator('.vue-flow__edge[data-id]').count();
 if (edgesAfter <= edgesBefore) {
-  throw new Error(`Edge NOT created — before: ${edgesBefore}, after: ${edgesAfter}`);
+  throw new Error(`Edge SOURCE → TARGET NOT created — before: ${edgesBefore}, after: ${edgesAfter}`);
 }
+```
 
 ---
 

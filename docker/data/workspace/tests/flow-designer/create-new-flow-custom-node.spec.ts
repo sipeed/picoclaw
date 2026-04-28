@@ -100,7 +100,7 @@ test('Create new flow with Custom Node', async ({ page }) => {
   if (!replyBBox1) throw new Error('First Reply Message node not found');
   await page.mouse.move(replyBBox1.x + replyBBox1.width / 2, replyBBox1.y + replyBBox1.height / 2);
   await page.mouse.down();
-  await page.mouse.move(200 * tf.scale + tf.tx, 80 * tf.scale + tf.ty, { steps: 20 });
+  await page.mouse.move(200 * tf.scale + tf.tx, 80 * tf.scale + tf.ty, { steps: 50 });
   await page.mouse.up();
   await page.waitForTimeout(500);
 
@@ -183,8 +183,8 @@ test('Create new flow with Custom Node', async ({ page }) => {
   await page.mouse.move(startBox.x + startBox.width / 2, startBox.y + startBox.height / 2);
   await page.waitForTimeout(200);
   await page.mouse.down();
-  await page.mouse.move(replyBox1.x + replyBox1.width / 2, replyBox1.y + replyBox1.height / 2, { steps: 20 });
-  await page.waitForTimeout(200);
+  await page.mouse.move(replyBox1.x + replyBox1.width / 2, replyBox1.y + replyBox1.height / 2, { steps: 50 });
+  await page.waitForTimeout(500);
   await page.mouse.up();
   await page.waitForTimeout(1000);
 
@@ -223,7 +223,7 @@ test('Create new flow with Custom Node', async ({ page }) => {
   if (!customBBox) throw new Error('Custom Node not found on canvas');
   await page.mouse.move(customBBox.x + customBBox.width / 2, customBBox.y + customBBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(450 * tfCustom.scale + tfCustom.tx, 80 * tfCustom.scale + tfCustom.ty, { steps: 20 });
+  await page.mouse.move(450 * tfCustom.scale + tfCustom.tx, 80 * tfCustom.scale + tfCustom.ty, { steps: 50 });
   await page.mouse.up();
   await page.waitForTimeout(500);
 
@@ -308,8 +308,8 @@ test('Create new flow with Custom Node', async ({ page }) => {
   await page.mouse.move(replySourceBox1.x + replySourceBox1.width / 2, replySourceBox1.y + replySourceBox1.height / 2);
   await page.waitForTimeout(200);
   await page.mouse.down();
-  await page.mouse.move(customTargetBox.x + customTargetBox.width / 2, customTargetBox.y + customTargetBox.height / 2, { steps: 20 });
-  await page.waitForTimeout(200);
+  await page.mouse.move(customTargetBox.x + customTargetBox.width / 2, customTargetBox.y + customTargetBox.height / 2, { steps: 50 });
+  await page.waitForTimeout(500);
   await page.mouse.up();
   await page.waitForTimeout(1000);
 
@@ -348,7 +348,7 @@ test('Create new flow with Custom Node', async ({ page }) => {
   if (!outputBBox) throw new Error('Second Reply Message node not found');
   await page.mouse.move(outputBBox.x + outputBBox.width / 2, outputBBox.y + outputBBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(700 * tfOutput.scale + tfOutput.tx, 80 * tfOutput.scale + tfOutput.ty, { steps: 20 });
+  await page.mouse.move(700 * tfOutput.scale + tfOutput.tx, 80 * tfOutput.scale + tfOutput.ty, { steps: 50 });
   await page.mouse.up();
   await page.waitForTimeout(500);
 
@@ -428,8 +428,8 @@ test('Create new flow with Custom Node', async ({ page }) => {
   await page.mouse.move(customSourceBox.x + customSourceBox.width / 2, customSourceBox.y + customSourceBox.height / 2);
   await page.waitForTimeout(200);
   await page.mouse.down();
-  await page.mouse.move(outputTargetBox.x + outputTargetBox.width / 2, outputTargetBox.y + outputTargetBox.height / 2, { steps: 20 });
-  await page.waitForTimeout(200);
+  await page.mouse.move(outputTargetBox.x + outputTargetBox.width / 2, outputTargetBox.y + outputTargetBox.height / 2, { steps: 50 });
+  await page.waitForTimeout(500);
   await page.mouse.up();
   await page.waitForTimeout(1000);
 
@@ -471,8 +471,8 @@ test('Create new flow with Custom Node', async ({ page }) => {
   await page.mouse.move(outputSourceBox.x + outputSourceBox.width / 2, outputSourceBox.y + outputSourceBox.height / 2);
   await page.waitForTimeout(200);
   await page.mouse.down();
-  await page.mouse.move(endTargetBox.x + endTargetBox.width / 2, endTargetBox.y + endTargetBox.height / 2, { steps: 20 });
-  await page.waitForTimeout(200);
+  await page.mouse.move(endTargetBox.x + endTargetBox.width / 2, endTargetBox.y + endTargetBox.height / 2, { steps: 50 });
+  await page.waitForTimeout(500);
   await page.mouse.up();
   await page.waitForTimeout(1000);
 

@@ -107,7 +107,7 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   const targetY1 = 100 * tf.scale + tf.ty;
   await page.mouse.move(kbBBox.x + kbBBox.width / 2, kbBBox.y + kbBBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(targetX1, targetY1, { steps: 20 });
+  await page.mouse.move(targetX1, targetY1, { steps: 50 });
   await page.mouse.up();
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 11 - Knowledge Base node positioned');
@@ -240,10 +240,14 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
 
   console.log('📍 Step 28: Connect START → wc');
 
-  // Zoom out to ~100% before connecting
+  // Zoom in to max first, then zoom out to ~100% — zoom-out-only silently fails at min zoom
   await page.mouse.move(640, 360);
   await page.keyboard.down('Control');
-  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, 100); }
+  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); } // zoom in to max (400%)
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(200);
+  await page.keyboard.down('Control');
+  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); } // zoom out to ~100%
   await page.keyboard.up('Control');
   await page.waitForTimeout(500);
 
@@ -263,8 +267,8 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   await page.mouse.move(startBox.x + startBox.width / 2, startBox.y + startBox.height / 2);
   await page.waitForTimeout(200);
   await page.mouse.down();
-  await page.mouse.move(wcBox.x + wcBox.width / 2, wcBox.y + wcBox.height / 2, { steps: 20 });
-  await page.waitForTimeout(200);
+  await page.mouse.move(wcBox.x + wcBox.width / 2, wcBox.y + wcBox.height / 2, { steps: 50 });
+  await page.waitForTimeout(500);
   await page.mouse.up();
   await page.waitForTimeout(1000);
 
@@ -302,11 +306,16 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   const replyBBox = await replyWrapper.boundingBox();
   if (!replyBBox) throw new Error('Reply Message node not found');
 
-  const targetX2 = 250 * tf.scale + tf.tx;
-  const targetY2 = 200 * tf.scale + tf.ty;
+  // Re-read transform — tf is stale after zoom normalization during KB node config
+  const tfReply = await page.locator('.vue-flow__transformationpane').evaluate(el => {
+    const m = new DOMMatrix((el as HTMLElement).style.transform);
+    return { scale: m.a, tx: m.e, ty: m.f };
+  });
+  const targetX2 = 250 * tfReply.scale + tfReply.tx;
+  const targetY2 = 200 * tfReply.scale + tfReply.ty;
   await page.mouse.move(replyBBox.x + replyBBox.width / 2, replyBBox.y + replyBBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(targetX2, targetY2, { steps: 20 });
+  await page.mouse.move(targetX2, targetY2, { steps: 50 });
   await page.mouse.up();
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 31 - Reply Message node positioned');
@@ -397,8 +406,8 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   await page.mouse.move(wcSourceBox.x + wcSourceBox.width / 2, wcSourceBox.y + wcSourceBox.height / 2);
   await page.waitForTimeout(200);
   await page.mouse.down();
-  await page.mouse.move(replyTargetBox.x + replyTargetBox.width / 2, replyTargetBox.y + replyTargetBox.height / 2, { steps: 20 });
-  await page.waitForTimeout(200);
+  await page.mouse.move(replyTargetBox.x + replyTargetBox.width / 2, replyTargetBox.y + replyTargetBox.height / 2, { steps: 50 });
+  await page.waitForTimeout(500);
   await page.mouse.up();
   await page.waitForTimeout(1000);
 
@@ -440,8 +449,8 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   await page.mouse.move(replySourceBox.x + replySourceBox.width / 2, replySourceBox.y + replySourceBox.height / 2);
   await page.waitForTimeout(200);
   await page.mouse.down();
-  await page.mouse.move(endTargetBox.x + endTargetBox.width / 2, endTargetBox.y + endTargetBox.height / 2, { steps: 20 });
-  await page.waitForTimeout(200);
+  await page.mouse.move(endTargetBox.x + endTargetBox.width / 2, endTargetBox.y + endTargetBox.height / 2, { steps: 50 });
+  await page.waitForTimeout(500);
   await page.mouse.up();
   await page.waitForTimeout(1000);
 

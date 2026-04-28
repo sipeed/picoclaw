@@ -102,7 +102,7 @@ test('Create new flow with Model node without parser', async ({ page }) => {
   const targetY1 = 80 * tf.scale + tf.ty;
   await page.mouse.move(replyBBox1.x + replyBBox1.width / 2, replyBBox1.y + replyBBox1.height / 2);
   await page.mouse.down();
-  await page.mouse.move(targetX1, targetY1, { steps: 20 });
+  await page.mouse.move(targetX1, targetY1, { steps: 50 });
   await page.mouse.up();
   await page.waitForTimeout(500);
 
@@ -193,8 +193,8 @@ test('Create new flow with Model node without parser', async ({ page }) => {
   await page.mouse.move(startBox.x + startBox.width / 2, startBox.y + startBox.height / 2);
   await page.waitForTimeout(200);
   await page.mouse.down();
-  await page.mouse.move(replyBox1.x + replyBox1.width / 2, replyBox1.y + replyBox1.height / 2, { steps: 20 });
-  await page.waitForTimeout(200);
+  await page.mouse.move(replyBox1.x + replyBox1.width / 2, replyBox1.y + replyBox1.height / 2, { steps: 50 });
+  await page.waitForTimeout(500);
   await page.mouse.up();
   await page.waitForTimeout(1000);
 
@@ -235,7 +235,7 @@ test('Create new flow with Model node without parser', async ({ page }) => {
   const targetY2 = 80 * tfModel.scale + tfModel.ty;
   await page.mouse.move(modelBBox.x + modelBBox.width / 2, modelBBox.y + modelBBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(targetX2, targetY2, { steps: 20 });
+  await page.mouse.move(targetX2, targetY2, { steps: 50 });
   await page.mouse.up();
   await page.waitForTimeout(500);
 
@@ -356,8 +356,8 @@ test('Create new flow with Model node without parser', async ({ page }) => {
   await page.mouse.move(replySourceBox.x + replySourceBox.width / 2, replySourceBox.y + replySourceBox.height / 2);
   await page.waitForTimeout(200);
   await page.mouse.down();
-  await page.mouse.move(modelTargetBox.x + modelTargetBox.width / 2, modelTargetBox.y + modelTargetBox.height / 2, { steps: 20 });
-  await page.waitForTimeout(200);
+  await page.mouse.move(modelTargetBox.x + modelTargetBox.width / 2, modelTargetBox.y + modelTargetBox.height / 2, { steps: 50 });
+  await page.waitForTimeout(500);
   await page.mouse.up();
   await page.waitForTimeout(1000);
 
@@ -399,7 +399,7 @@ test('Create new flow with Model node without parser', async ({ page }) => {
   const targetY3 = 80 * tfOutput.scale + tfOutput.ty;
   await page.mouse.move(outputBBox.x + outputBBox.width / 2, outputBBox.y + outputBBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(targetX3, targetY3, { steps: 20 });
+  await page.mouse.move(targetX3, targetY3, { steps: 50 });
   await page.mouse.up();
   await page.waitForTimeout(500);
 
@@ -501,8 +501,8 @@ test('Create new flow with Model node without parser', async ({ page }) => {
   await page.mouse.move(modelSourceBox.x + modelSourceBox.width / 2, modelSourceBox.y + modelSourceBox.height / 2);
   await page.waitForTimeout(200);
   await page.mouse.down();
-  await page.mouse.move(outputTargetBox.x + outputTargetBox.width / 2, outputTargetBox.y + outputTargetBox.height / 2, { steps: 20 });
-  await page.waitForTimeout(200);
+  await page.mouse.move(outputTargetBox.x + outputTargetBox.width / 2, outputTargetBox.y + outputTargetBox.height / 2, { steps: 50 });
+  await page.waitForTimeout(500);
   await page.mouse.up();
   await page.waitForTimeout(1000);
 
@@ -544,8 +544,8 @@ test('Create new flow with Model node without parser', async ({ page }) => {
   await page.mouse.move(outputSourceBox.x + outputSourceBox.width / 2, outputSourceBox.y + outputSourceBox.height / 2);
   await page.waitForTimeout(200);
   await page.mouse.down();
-  await page.mouse.move(endTargetBox.x + endTargetBox.width / 2, endTargetBox.y + endTargetBox.height / 2, { steps: 20 });
-  await page.waitForTimeout(200);
+  await page.mouse.move(endTargetBox.x + endTargetBox.width / 2, endTargetBox.y + endTargetBox.height / 2, { steps: 50 });
+  await page.waitForTimeout(500);
   await page.mouse.up();
   await page.waitForTimeout(1000);
 

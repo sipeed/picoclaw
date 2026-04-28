@@ -30,7 +30,25 @@ await page.waitForTimeout(500);
 
 **NEVER skip this block** even for the very first connection.
 
-### 2. Re-read canvas transform after zoom changes (MANDATORY)
+### 2. Drag pattern — use steps: 50 and wait 500ms before mouse.up() (MANDATORY)
+
+On Cloud Run (slower CPU), Vue Flow needs time to register the hover on the target handle before the mouse releases. Using too few steps or releasing too quickly causes the edge to silently not be created even when the handle is found.
+
+**Correct drag pattern for ALL handle connections:**
+
+```typescript
+await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+await page.waitForTimeout(200);
+await page.mouse.down();
+await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 50 }); // NOT steps: 20
+await page.waitForTimeout(500); // wait for Vue Flow to register the hover BEFORE releasing
+await page.mouse.up();
+await page.waitForTimeout(1000);
+```
+
+**Why steps: 50 and 500ms dwell:** On slow environments (Cloud Run), `steps: 20` moves the mouse too fast for Vue Flow's pointermove handler. The 500ms dwell before `mouse.up()` ensures the connection snaps to the target handle before release.
+
+### 3. Re-read canvas transform after zoom changes (MANDATORY)
 
 The `tf` variable read at test start becomes **stale** as soon as any zoom operation runs. Using a stale transform for node positioning silently moves nodes to wrong screen positions.
 
