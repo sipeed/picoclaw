@@ -651,10 +651,11 @@ func TestHeaderTransport_DynamicHeaders(t *testing.T) {
 	})
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://example.com", nil)
 
-	_, err := transport.RoundTrip(req)
+	resp, err := transport.RoundTrip(req)
 	if err != nil {
 		t.Fatalf("RoundTrip() error = %v", err)
 	}
+	resp.Body.Close()
 
 	if got := captured.Get("X-Static"); got != "from-config" {
 		t.Errorf("X-Static = %q, want %q", got, "from-config")
@@ -686,10 +687,11 @@ func TestHeaderTransport_DynamicOverridesStatic(t *testing.T) {
 	})
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://example.com", nil)
 
-	_, err := transport.RoundTrip(req)
+	resp, err := transport.RoundTrip(req)
 	if err != nil {
 		t.Fatalf("RoundTrip() error = %v", err)
 	}
+	resp.Body.Close()
 
 	if got := captured.Get("Authorization"); got != "Bearer dynamic" {
 		t.Errorf("Authorization = %q, want dynamic to override static %q", got, "Bearer dynamic")
@@ -711,10 +713,11 @@ func TestHeaderTransport_NoDynamicHeaders(t *testing.T) {
 	}
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://example.com", nil)
-	_, err := transport.RoundTrip(req)
+	resp, err := transport.RoundTrip(req)
 	if err != nil {
 		t.Fatalf("RoundTrip() error = %v", err)
 	}
+	resp.Body.Close()
 
 	if got := captured.Get("X-Static"); got != "val" {
 		t.Errorf("X-Static = %q, want %q", got, "val")
