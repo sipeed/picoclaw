@@ -72,13 +72,35 @@ func whisperModelID(modelCfg *config.ModelConfig) string {
 	return ""
 }
 
+func isElevenLabsTranscriptionModel(modelCfg *config.ModelConfig) bool {
+	if modelCfg == nil || modelCfg.APIKey() == "" {
+		return false
+	}
+
+	protocol, _ := providers.ExtractProtocol(modelCfg)
+	if protocol == "elevenlabs" {
+		return true
+	}
+	if strings.TrimSpace(modelCfg.Provider) != "" {
+		return false
+	}
+
+	legacyProvider, legacyModel, found := strings.Cut(strings.TrimSpace(modelCfg.Model), "/")
+	if !found || strings.TrimSpace(legacyModel) == "" {
+		return false
+	}
+
+	// Keep legacy elevenlabs/... ASR configs working even though the shared
+	// provider catalog no longer treats elevenlabs as a general model provider.
+	return providers.NormalizeProvider(legacyProvider) == "elevenlabs"
+}
+
 func transcriberFromModelConfig(modelCfg *config.ModelConfig) Transcriber {
 	if modelCfg == nil {
 		return nil
 	}
 
-	protocol, _ := providers.ExtractProtocol(modelCfg)
-	if protocol == "elevenlabs" && modelCfg.APIKey() != "" {
+	if isElevenLabsTranscriptionModel(modelCfg) {
 		return NewElevenLabsTranscriber(modelCfg.APIKey(), modelCfg.APIBase)
 	}
 	if modelID := whisperModelID(modelCfg); modelID != "" {
@@ -95,8 +117,7 @@ func fallbackTranscriberFromModelConfig(modelCfg *config.ModelConfig) Transcribe
 		return nil
 	}
 
-	protocol, _ := providers.ExtractProtocol(modelCfg)
-	if protocol == "elevenlabs" && modelCfg.APIKey() != "" {
+	if isElevenLabsTranscriptionModel(modelCfg) {
 		return NewElevenLabsTranscriber(modelCfg.APIKey(), modelCfg.APIBase)
 	}
 	if modelID := whisperModelID(modelCfg); modelID != "" {

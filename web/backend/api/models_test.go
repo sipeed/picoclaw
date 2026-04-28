@@ -34,6 +34,33 @@ func resetModelProbeHooks(t *testing.T) {
 	})
 }
 
+func addModelAndLoadLatest(t *testing.T, configPath string, body string) *config.ModelConfig {
+	t.Helper()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if len(cfg.ModelList) == 0 {
+		t.Fatal("model_list should contain the newly added model")
+	}
+
+	return cfg.ModelList[len(cfg.ModelList)-1]
+}
+
 func TestHandleListModels_AvailabilityUsesRuntimeProbesForLocalModels(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
@@ -97,7 +124,8 @@ func TestHandleListModels_AvailabilityUsesRuntimeProbesForLocalModels(t *testing
 		},
 	}
 	cfg.Agents.Defaults.ModelName = "openai-oauth"
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -116,7 +144,8 @@ func TestHandleListModels_AvailabilityUsesRuntimeProbesForLocalModels(t *testing
 	var resp struct {
 		Models []modelResponse `json:"models"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
@@ -184,16 +213,17 @@ func TestHandleListModels_AvailabilityForOAuthModelWithCredential(t *testing.T) 
 		AuthMethod: "oauth",
 	}}
 	cfg.Agents.Defaults.ModelName = "claude-oauth"
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
-	if err := auth.SetCredential(oauthProviderAnthropic, &auth.AuthCredential{
+	if setCredentialErr := auth.SetCredential(oauthProviderAnthropic, &auth.AuthCredential{
 		AccessToken: "anthropic-token",
 		Provider:    oauthProviderAnthropic,
 		AuthMethod:  "oauth",
-	}); err != nil {
-		t.Fatalf("SetCredential() error = %v", err)
+	}); setCredentialErr != nil {
+		t.Fatalf("SetCredential() error = %v", setCredentialErr)
 	}
 
 	h := NewHandler(configPath)
@@ -211,7 +241,8 @@ func TestHandleListModels_AvailabilityForOAuthModelWithCredential(t *testing.T) 
 	var resp struct {
 		Models []modelResponse `json:"models"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 	if len(resp.Models) != 1 {
@@ -237,7 +268,8 @@ func TestHandleListModels_AntigravityImplicitOAuthAvailability(t *testing.T) {
 		Provider:  "antigravity",
 		Model:     "gemini-3-flash",
 	}}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -264,8 +296,8 @@ func TestHandleListModels_AntigravityImplicitOAuthAvailability(t *testing.T) {
 	var resp struct {
 		Models []modelResponse `json:"models"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
+	if unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &resp); unmarshalErr != nil {
+		t.Fatalf("Unmarshal() error = %v", unmarshalErr)
 	}
 	if len(resp.Models) != 1 {
 		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
@@ -290,8 +322,8 @@ func TestHandleListModels_BedrockUsesAmbientCredentialStatus(t *testing.T) {
 		Provider:  "bedrock",
 		Model:     "us.anthropic.claude-sonnet-4-20250514-v1:0",
 	}}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
-		t.Fatalf("SaveConfig() error = %v", err)
+	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
+		t.Fatalf("SaveConfig() error = %v", saveErr)
 	}
 
 	h := NewHandler(configPath)
@@ -309,8 +341,8 @@ func TestHandleListModels_BedrockUsesAmbientCredentialStatus(t *testing.T) {
 	var resp struct {
 		Models []modelResponse `json:"models"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
+	if unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &resp); unmarshalErr != nil {
+		t.Fatalf("Unmarshal() error = %v", unmarshalErr)
 	}
 	if len(resp.Models) != 1 {
 		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
@@ -356,8 +388,8 @@ func TestHandleListModels_CLIProvidersRequireInstalledCommands(t *testing.T) {
 			Model:     "codex-cli",
 		},
 	}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
-		t.Fatalf("SaveConfig() error = %v", err)
+	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
+		t.Fatalf("SaveConfig() error = %v", saveErr)
 	}
 
 	h := NewHandler(configPath)
@@ -376,8 +408,8 @@ func TestHandleListModels_CLIProvidersRequireInstalledCommands(t *testing.T) {
 		Models          []modelResponse                 `json:"models"`
 		ProviderOptions []providers.ModelProviderOption `json:"provider_options"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
+	if unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &resp); unmarshalErr != nil {
+		t.Fatalf("Unmarshal() error = %v", unmarshalErr)
 	}
 
 	modelsByName := make(map[string]modelResponse, len(resp.Models))
@@ -521,8 +553,8 @@ func TestHandleListModels_NormalizesWildcardLocalAPIBaseForProbe(t *testing.T) {
 	var resp struct {
 		Models []modelResponse `json:"models"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
+	if unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &resp); unmarshalErr != nil {
+		t.Fatalf("Unmarshal() error = %v", unmarshalErr)
 	}
 	if len(resp.Models) != 1 {
 		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
@@ -802,28 +834,11 @@ func TestHandleAddModel_DefaultsAntigravityToOAuth(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 
-	h := NewHandler(configPath)
-	mux := http.NewServeMux()
-	h.RegisterRoutes(mux)
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/models", bytes.NewBufferString(`{
+	added := addModelAndLoadLatest(t, configPath, `{
 		"model_name":"gemini-flash",
 		"provider":"antigravity",
 		"model":"gemini-3-flash"
-	}`))
-	req.Header.Set("Content-Type", "application/json")
-	mux.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
-	}
-
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	added := cfg.ModelList[len(cfg.ModelList)-1]
+	}`)
 	if got := added.AuthMethod; got != "oauth" {
 		t.Fatalf("auth_method = %q, want %q", got, "oauth")
 	}
@@ -833,29 +848,12 @@ func TestHandleAddModel_NormalizesMixedCaseAuthMethod(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 
-	h := NewHandler(configPath)
-	mux := http.NewServeMux()
-	h.RegisterRoutes(mux)
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/models", bytes.NewBufferString(`{
+	added := addModelAndLoadLatest(t, configPath, `{
 		"model_name":"openai-oauth",
 		"provider":"openai",
 		"model":"gpt-5.4",
 		"auth_method":"OAuth"
-	}`))
-	req.Header.Set("Content-Type", "application/json")
-	mux.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
-	}
-
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	added := cfg.ModelList[len(cfg.ModelList)-1]
+	}`)
 	if got := added.AuthMethod; got != "oauth" {
 		t.Fatalf("auth_method = %q, want %q", got, "oauth")
 	}
@@ -1104,7 +1102,8 @@ func TestHandleListModels_PreservesExplicitProviderPrefixedModel(t *testing.T) {
 		Provider:  "openrouter",
 		Model:     "openrouter/auto",
 	}}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -1123,7 +1122,8 @@ func TestHandleListModels_PreservesExplicitProviderPrefixedModel(t *testing.T) {
 	var resp struct {
 		Models []modelResponse `json:"models"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 	if len(resp.Models) != 1 {
@@ -1263,7 +1263,8 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 		ModelName: "legacy-openrouter",
 		Model:     "openrouter/openai/gpt-5.4",
 	}}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -1283,8 +1284,8 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 		Models          []modelResponse                 `json:"models"`
 		ProviderOptions []providers.ModelProviderOption `json:"provider_options"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
+	if unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &resp); unmarshalErr != nil {
+		t.Fatalf("Unmarshal() error = %v", unmarshalErr)
 	}
 	if len(resp.Models) != 1 {
 		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
@@ -1470,8 +1471,8 @@ func TestHandleUpdateModel_AllowsExistingBedrockProvider(t *testing.T) {
 		Model:     "us.anthropic.claude-sonnet-4-20250514-v1:0",
 		APIBase:   "us-west-2",
 	}}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
-		t.Fatalf("SaveConfig() error = %v", err)
+	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
+		t.Fatalf("SaveConfig() error = %v", saveErr)
 	}
 
 	h := NewHandler(configPath)
