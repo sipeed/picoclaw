@@ -25,7 +25,7 @@ Examples:
   picoclaw model                    # Show current default model
   picoclaw model gpt-5.2           # Set gpt-5.2 as default
   picoclaw model claude-sonnet-4.6 # Set claude-sonnet-4.6 as default
-  picoclaw model local-model       # Set local VLLM/OVMS server as default
+  picoclaw model local-model       # Set local vLLM/OVMS server as default
 
 Note: 'local-model' is a special value for using a local OpenAI-compatible server
 (running at localhost:8000 by default) which does not require an API key.
