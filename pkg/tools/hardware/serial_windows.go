@@ -4,7 +4,6 @@ package hardwaretools
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 	"time"
