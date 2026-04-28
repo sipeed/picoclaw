@@ -132,14 +132,30 @@ func ToolSessionScope(ctx context.Context) *session.SessionScope {
 }
 
 // WithMCPHeaders returns a child context carrying per-request headers for MCP HTTP transports.
+// The map is cloned to prevent callers from mutating it after storage.
 func WithMCPHeaders(ctx context.Context, headers map[string]string) context.Context {
-	return context.WithValue(ctx, ctxKeyMCPHeaders, headers)
+	if len(headers) == 0 {
+		return ctx
+	}
+	clone := make(map[string]string, len(headers))
+	for k, v := range headers {
+		clone[k] = v
+	}
+	return context.WithValue(ctx, ctxKeyMCPHeaders, clone)
 }
 
 // MCPHeaders extracts per-request MCP headers from ctx, or nil if unset.
+// Returns a clone so callers cannot mutate the stored map.
 func MCPHeaders(ctx context.Context) map[string]string {
 	v, _ := ctx.Value(ctxKeyMCPHeaders).(map[string]string)
-	return v
+	if len(v) == 0 {
+		return nil
+	}
+	clone := make(map[string]string, len(v))
+	for k, val := range v {
+		clone[k] = val
+	}
+	return clone
 }
 
 // AsyncCallback is a function type that async tools use to notify completion.
