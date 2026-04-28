@@ -36,6 +36,7 @@ type Config struct {
 	Isolation IsolationConfig `json:"isolation,omitempty" yaml:"-"`
 	Agents    AgentsConfig    `json:"agents"              yaml:"-"`
 	Session   SessionConfig   `json:"session,omitempty"   yaml:"-"`
+	Evolution EvolutionConfig `json:"evolution,omitempty" yaml:"-"`
 	Channels  ChannelsConfig  `json:"channel_list"        yaml:"channel_list"`
 	ModelList SecureModelList `json:"model_list"          yaml:"model_list"` // New model-centric provider configuration
 	Gateway   GatewayConfig   `json:"gateway"             yaml:"-"`
@@ -49,6 +50,32 @@ type Config struct {
 
 	// cache for sensitive values and compiled regex (computed once)
 	sensitiveCache *SensitiveDataCache
+}
+
+type EvolutionConfig struct {
+	Enabled         bool    `json:"enabled,omitempty"`
+	Mode            string  `json:"mode,omitempty"`
+	StateDir        string  `json:"state_dir,omitempty"`
+	MinCaseCount    int     `json:"min_case_count,omitempty"`
+	MinSuccessRate  float64 `json:"min_success_rate,omitempty"`
+	AutoRunColdPath bool    `json:"auto_run_cold_path,omitempty"`
+	AutoApply       bool    `json:"auto_apply,omitempty"`
+}
+
+func (c EvolutionConfig) EffectiveMode() string {
+	if !c.Enabled {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Mode)) {
+	case "review":
+		return "review"
+	case "apply":
+		return "apply"
+	case "", "observe":
+		return "observe"
+	default:
+		return "observe"
+	}
 }
 
 // IsolationConfig controls subprocess isolation for commands started by PicoClaw.

@@ -613,3 +613,29 @@ func TestTurnState_HardAbortRequested(t *testing.T) {
 		t.Error("expected hard abort to be requested")
 	}
 }
+
+func TestTurnState_SkillContextSnapshotsTrackLatestSuccessfulPath(t *testing.T) {
+	ts := &turnState{}
+
+	ts.recordSkillContextSnapshot(skillContextTriggerInitialBuild, []string{"skill-a"})
+	ts.recordSkillContextSnapshot(skillContextTriggerContextRetryRebuild, []string{"skill-b", "skill-c"})
+
+	if got := ts.attemptedSkillsSnapshot(); len(got) != 3 || got[0] != "skill-a" || got[1] != "skill-b" || got[2] != "skill-c" {
+		t.Fatalf("attemptedSkillsSnapshot = %v, want [skill-a skill-b skill-c]", got)
+	}
+
+	if got := ts.latestSkillContextSnapshot(); len(got) != 2 || got[0] != "skill-b" || got[1] != "skill-c" {
+		t.Fatalf("latestSkillContextSnapshot = %v, want [skill-b skill-c]", got)
+	}
+
+	snapshots := ts.skillContextSnapshotsSnapshot()
+	if len(snapshots) != 2 {
+		t.Fatalf("len(skillContextSnapshotsSnapshot()) = %d, want 2", len(snapshots))
+	}
+	if snapshots[0].Sequence != 1 || snapshots[0].Trigger != skillContextTriggerInitialBuild {
+		t.Fatalf("snapshots[0] = %+v, want sequence=1 trigger=%q", snapshots[0], skillContextTriggerInitialBuild)
+	}
+	if snapshots[1].Sequence != 2 || snapshots[1].Trigger != skillContextTriggerContextRetryRebuild {
+		t.Fatalf("snapshots[1] = %+v, want sequence=2 trigger=%q", snapshots[1], skillContextTriggerContextRetryRebuild)
+	}
+}

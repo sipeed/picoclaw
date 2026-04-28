@@ -31,6 +31,12 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 	}
 	ts.captureRestorePoint(history, summary)
 
+	contextualSkills := ts.activeSkills
+	if ts.agent.ContextBuilder != nil {
+		contextualSkills = ts.agent.ContextBuilder.ResolveActiveSkillsForContext(ts.activeSkills)
+	}
+	ts.recordSkillContextSnapshot(skillContextTriggerInitialBuild, contextualSkills)
+
 	messages := ts.agent.ContextBuilder.BuildMessages(
 		history,
 		summary,
@@ -40,7 +46,7 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 		ts.chatID,
 		ts.opts.Dispatch.SenderID(),
 		ts.opts.SenderDisplayName,
-		activeSkillNames(ts.agent, ts.opts)...,
+		contextualSkills...,
 	)
 
 	messages = resolveMediaRefs(messages, p.MediaStore, maxMediaSize)
@@ -73,7 +79,7 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 				history, summary, ts.userMessage,
 				ts.media, ts.channel, ts.chatID,
 				ts.opts.Dispatch.SenderID(), ts.opts.SenderDisplayName,
-				activeSkillNames(ts.agent, ts.opts)...,
+				contextualSkills...,
 			)
 			messages = resolveMediaRefs(messages, p.MediaStore, maxMediaSize)
 		}

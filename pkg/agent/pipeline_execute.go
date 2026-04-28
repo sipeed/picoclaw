@@ -198,6 +198,7 @@ toolLoop:
 							Async:      hookResult.Async,
 						},
 					)
+					ts.recordToolKind(toolName)
 
 					messages = append(messages, toolResultMsg)
 					if !ts.opts.NoHistory {
@@ -570,6 +571,7 @@ toolLoop:
 				Async:      toolResult.Async,
 			},
 		)
+		ts.recordToolKind(toolName)
 		messages = append(messages, toolResultMsg)
 		if !ts.opts.NoHistory {
 			ts.agent.Sessions.AddFullMessage(ts.sessionKey, toolResultMsg)

@@ -171,6 +171,96 @@ func TestDefaultConfig_MCPMaxInlineTextChars(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_EvolutionDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+
+	assert.False(t, cfg.Evolution.Enabled)
+	assert.Equal(t, "observe", cfg.Evolution.Mode)
+	assert.Equal(t, "", cfg.Evolution.StateDir)
+	assert.Equal(t, 3, cfg.Evolution.MinCaseCount)
+	assert.Equal(t, 0.7, cfg.Evolution.MinSuccessRate)
+	assert.False(t, cfg.Evolution.AutoRunColdPath)
+	assert.False(t, cfg.Evolution.AutoApply)
+}
+
+func TestEvolutionConfig_EffectiveMode(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  EvolutionConfig
+		want string
+	}{
+		{
+			name: "disabled returns empty",
+			cfg: EvolutionConfig{
+				Enabled: false,
+				Mode:    "apply",
+			},
+			want: "",
+		},
+		{
+			name: "enabled empty mode defaults to observe",
+			cfg: EvolutionConfig{
+				Enabled: true,
+			},
+			want: "observe",
+		},
+		{
+			name: "enabled whitespace mode defaults to observe",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    " \t\n ",
+			},
+			want: "observe",
+		},
+		{
+			name: "enabled returns configured mode",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    "review",
+			},
+			want: "review",
+		},
+		{
+			name: "enabled trims and normalizes mode",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    " Review ",
+			},
+			want: "review",
+		},
+		{
+			name: "enabled returns apply mode",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    "apply",
+			},
+			want: "apply",
+		},
+		{
+			name: "enabled normalizes uppercase apply",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    "APPLY",
+			},
+			want: "apply",
+		},
+		{
+			name: "enabled unknown mode falls back to observe",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    "propose",
+			},
+			want: "observe",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.cfg.EffectiveMode())
+		})
+	}
+}
+
 func TestLoadConfig_MCPMaxInlineTextChars(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")

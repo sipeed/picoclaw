@@ -319,10 +319,15 @@ func (p *Pipeline) CallLLM(
 				exec.history = asmResp.History
 				exec.summary = asmResp.Summary
 			}
+			contextualSkills := ts.activeSkills
+			if ts.agent.ContextBuilder != nil {
+				contextualSkills = ts.agent.ContextBuilder.ResolveActiveSkillsForContext(ts.activeSkills)
+			}
+			ts.recordSkillContextSnapshot(skillContextTriggerContextRetryRebuild, contextualSkills)
 			exec.messages = ts.agent.ContextBuilder.BuildMessages(
 				exec.history, exec.summary, "",
 				nil, ts.channel, ts.chatID, ts.opts.Dispatch.SenderID(), ts.opts.SenderDisplayName,
-				activeSkillNames(ts.agent, ts.opts)...,
+				contextualSkills...,
 			)
 			exec.callMessages = exec.messages
 			if exec.gracefulTerminal {

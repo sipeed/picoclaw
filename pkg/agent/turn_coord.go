@@ -27,14 +27,30 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 
 	turnStatus := TurnEndStatusCompleted
 	defer func() {
+		attemptedSkills := ts.attemptedSkillsSnapshot()
+		skillContextSnapshots := ts.skillContextSnapshotsSnapshot()
+		finalSuccessfulPath := []string(nil)
+		if turnStatus == TurnEndStatusCompleted {
+			if latest := ts.latestSkillContextSnapshot(); len(latest) > 0 {
+				finalSuccessfulPath = latest
+			} else {
+				finalSuccessfulPath = append([]string(nil), attemptedSkills...)
+			}
+		}
 		al.emitEvent(
 			EventKindTurnEnd,
 			ts.eventMeta("runTurn", "turn.end"),
 			TurnEndPayload{
-				Status:          turnStatus,
-				Iterations:      ts.currentIteration(),
-				Duration:        time.Since(ts.startedAt),
-				FinalContentLen: ts.finalContentLen(),
+				Status:                turnStatus,
+				Workspace:             ts.workspace,
+				Iterations:            ts.currentIteration(),
+				Duration:              time.Since(ts.startedAt),
+				FinalContentLen:       ts.finalContentLen(),
+				ActiveSkills:          append([]string(nil), ts.activeSkills...),
+				AttemptedSkills:       attemptedSkills,
+				FinalSuccessfulPath:   finalSuccessfulPath,
+				SkillContextSnapshots: skillContextSnapshots,
+				ToolKinds:             ts.toolKindsSnapshot(),
 			},
 		)
 	}()

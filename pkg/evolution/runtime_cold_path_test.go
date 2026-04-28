@@ -1,0 +1,603 @@
+package evolution_test
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/evolution"
+	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/skills"
+)
+
+type stubDraftGenerator struct {
+	draft evolution.SkillDraft
+	err   error
+}
+
+func (g stubDraftGenerator) GenerateDraft(
+	_ context.Context,
+	_ evolution.LearningRecord,
+	_ []skills.SkillInfo,
+) (evolution.SkillDraft, error) {
+	return g.draft, g.err
+}
+
+type sequenceDraftGenerator struct {
+	results []draftGenerationResult
+	index   int
+}
+
+type draftGenerationResult struct {
+	draft evolution.SkillDraft
+	err   error
+}
+
+func (g *sequenceDraftGenerator) GenerateDraft(
+	_ context.Context,
+	_ evolution.LearningRecord,
+	_ []skills.SkillInfo,
+) (evolution.SkillDraft, error) {
+	if g.index >= len(g.results) {
+		return evolution.SkillDraft{}, nil
+	}
+	result := g.results[g.index]
+	g.index++
+	return result.draft, result.err
+}
+
+func TestRuntime_RunColdPathOnce_GeneratesCandidateDraft(t *testing.T) {
+	root := t.TempDir()
+	paths := evolution.NewPaths(root, "")
+	store := evolution.NewStore(paths)
+
+	rule := evolution.LearningRecord{
+		ID:          "rule-1",
+		Kind:        evolution.RecordKindRule,
+		WorkspaceID: root,
+		CreatedAt:   time.Unix(1700000000, 0).UTC(),
+		Summary:     "weather native-name path",
+		Status:      evolution.RecordStatus("ready"),
+		EventCount:  4,
+	}
+	if err := store.AppendLearningRecords([]evolution.LearningRecord{rule}); err != nil {
+		t.Fatalf("AppendLearningRecords: %v", err)
+	}
+
+	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
+		Config: config.EvolutionConfig{Enabled: true, Mode: "review"},
+		Now:    func() time.Time { return time.Unix(1700001000, 0).UTC() },
+		DraftGenerator: stubDraftGenerator{
+			draft: evolution.SkillDraft{
+				ID:              "draft-1",
+				WorkspaceID:     root,
+				SourceRecordID:  "rule-1",
+				TargetSkillName: "weather",
+				DraftType:       evolution.DraftTypeShortcut,
+				ChangeKind:      evolution.ChangeKindAppend,
+				HumanSummary:    "prefer native-name path first",
+				BodyOrPatch:     "## Start Here\nUse native-name query first.",
+			},
+		},
+		Store:          store,
+		SkillsRecaller: evolution.NewSkillsRecaller(root),
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
+		t.Fatalf("RunColdPathOnce: %v", err)
+	}
+
+	drafts, err := store.LoadDrafts()
+	if err != nil {
+		t.Fatalf("LoadDrafts: %v", err)
+	}
+	if len(drafts) != 1 {
+		t.Fatalf("len(drafts) = %d, want 1", len(drafts))
+	}
+	if drafts[0].Status != evolution.DraftStatusCandidate {
+		t.Fatalf("Status = %q, want %q", drafts[0].Status, evolution.DraftStatusCandidate)
+	}
+}
+
+func TestRuntime_RunColdPathOnce_QuarantinesInvalidDraft(t *testing.T) {
+	root := t.TempDir()
+	store := evolution.NewStore(evolution.NewPaths(root, ""))
+
+	rule := evolution.LearningRecord{
+		ID:          "rule-1",
+		Kind:        evolution.RecordKindRule,
+		WorkspaceID: root,
+		CreatedAt:   time.Unix(1700000000, 0).UTC(),
+		Summary:     "release path",
+		Status:      evolution.RecordStatus("ready"),
+		EventCount:  4,
+	}
+	if err := store.AppendLearningRecords([]evolution.LearningRecord{rule}); err != nil {
+		t.Fatalf("AppendLearningRecords: %v", err)
+	}
+
+	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
+		Config: config.EvolutionConfig{Enabled: true, Mode: "review"},
+		DraftGenerator: stubDraftGenerator{
+			draft: evolution.SkillDraft{
+				ID:              "draft-1",
+				WorkspaceID:     root,
+				SourceRecordID:  "rule-1",
+				TargetSkillName: "",
+				DraftType:       evolution.DraftTypeShortcut,
+				ChangeKind:      evolution.ChangeKindAppend,
+				HumanSummary:    "broken",
+				BodyOrPatch:     "",
+			},
+		},
+		Store:          store,
+		SkillsRecaller: evolution.NewSkillsRecaller(root),
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
+		t.Fatalf("RunColdPathOnce: %v", err)
+	}
+
+	drafts, err := store.LoadDrafts()
+	if err != nil {
+		t.Fatalf("LoadDrafts: %v", err)
+	}
+	if len(drafts) != 1 {
+		t.Fatalf("len(drafts) = %d, want 1", len(drafts))
+	}
+	if drafts[0].Status != evolution.DraftStatusQuarantined {
+		t.Fatalf("Status = %q, want %q", drafts[0].Status, evolution.DraftStatusQuarantined)
+	}
+	if len(drafts[0].ScanFindings) == 0 {
+		t.Fatal("expected scan findings for invalid draft")
+	}
+}
+
+func TestRuntime_RunColdPathOnce_DoesNotWriteSkillFile(t *testing.T) {
+	root := t.TempDir()
+	skillPath := filepath.Join(root, "skills", "weather", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(skillPath, []byte("---\nname: weather\ndescription: test\n---\n# Weather"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	store := evolution.NewStore(evolution.NewPaths(root, ""))
+	rule := evolution.LearningRecord{
+		ID:          "rule-1",
+		Kind:        evolution.RecordKindRule,
+		WorkspaceID: root,
+		CreatedAt:   time.Unix(1700000000, 0).UTC(),
+		Summary:     "weather native-name path",
+		Status:      evolution.RecordStatus("ready"),
+		EventCount:  4,
+	}
+	if err := store.AppendLearningRecords([]evolution.LearningRecord{rule}); err != nil {
+		t.Fatalf("AppendLearningRecords: %v", err)
+	}
+
+	original, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("ReadFile(original): %v", err)
+	}
+
+	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
+		Config: config.EvolutionConfig{Enabled: true, Mode: "apply"},
+		DraftGenerator: stubDraftGenerator{
+			draft: evolution.SkillDraft{
+				ID:              "draft-1",
+				WorkspaceID:     root,
+				SourceRecordID:  "rule-1",
+				TargetSkillName: "weather",
+				DraftType:       evolution.DraftTypeShortcut,
+				ChangeKind:      evolution.ChangeKindAppend,
+				HumanSummary:    "prefer native-name path first",
+				BodyOrPatch:     "## Start Here\nUse native-name query first.",
+			},
+		},
+		Store:          store,
+		SkillsRecaller: evolution.NewSkillsRecaller(root),
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
+		t.Fatalf("RunColdPathOnce: %v", err)
+	}
+
+	got, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("ReadFile(after): %v", err)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("skill file changed unexpectedly:\n%s", string(got))
+	}
+}
+
+func TestRuntime_RunColdPathOnce_UsesDefaultDraftGenerator(t *testing.T) {
+	root := t.TempDir()
+	store := evolution.NewStore(evolution.NewPaths(root, ""))
+
+	rule := evolution.LearningRecord{
+		ID:          "rule-1",
+		Kind:        evolution.RecordKindRule,
+		WorkspaceID: root,
+		CreatedAt:   time.Unix(1700000000, 0).UTC(),
+		Summary:     "weather native-name path",
+		Status:      evolution.RecordStatus("ready"),
+		EventCount:  4,
+		SuccessRate: 1,
+		WinningPath: []string{"weather"},
+	}
+	if err := store.AppendLearningRecords([]evolution.LearningRecord{rule}); err != nil {
+		t.Fatalf("AppendLearningRecords: %v", err)
+	}
+
+	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
+		Config: config.EvolutionConfig{Enabled: true, Mode: "review"},
+		Store:  store,
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
+		t.Fatalf("RunColdPathOnce: %v", err)
+	}
+
+	drafts, err := store.LoadDrafts()
+	if err != nil {
+		t.Fatalf("LoadDrafts: %v", err)
+	}
+	if len(drafts) != 1 {
+		t.Fatalf("len(drafts) = %d, want 1", len(drafts))
+	}
+	if drafts[0].TargetSkillName != "weather" {
+		t.Fatalf("TargetSkillName = %q, want weather", drafts[0].TargetSkillName)
+	}
+	if drafts[0].Status != evolution.DraftStatusCandidate {
+		t.Fatalf("Status = %q, want %q", drafts[0].Status, evolution.DraftStatusCandidate)
+	}
+	if drafts[0].BodyOrPatch == "" {
+		t.Fatal("expected generated draft body")
+	}
+}
+
+func TestRuntime_RunColdPathOnce_UsesLLMDraftGeneratorWhenProviderAvailable(t *testing.T) {
+	root := t.TempDir()
+	store := evolution.NewStore(evolution.NewPaths(root, ""))
+
+	rule := evolution.LearningRecord{
+		ID:          "rule-1",
+		Kind:        evolution.RecordKindRule,
+		WorkspaceID: root,
+		CreatedAt:   time.Unix(1700000000, 0).UTC(),
+		Summary:     "weather native-name path",
+		Status:      evolution.RecordStatus("ready"),
+		EventCount:  4,
+		SuccessRate: 1,
+		WinningPath: []string{"weather"},
+	}
+	if err := store.AppendLearningRecords([]evolution.LearningRecord{rule}); err != nil {
+		t.Fatalf("AppendLearningRecords: %v", err)
+	}
+
+	provider := &llmDraftRuntimeProvider{
+		response: &providers.LLMResponse{
+			Content: `{"target_skill_name":"weather","draft_type":"shortcut","change_kind":"append","human_summary":"Prefer native-name path first","body_or_patch":"## Start Here\nUse native-name query first."}`,
+		},
+	}
+	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
+		Config:         config.EvolutionConfig{Enabled: true, Mode: "review"},
+		Store:          store,
+		DraftGenerator: evolution.NewDraftGeneratorForWorkspace(root, provider, "runtime-explicit-model"),
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
+		t.Fatalf("RunColdPathOnce: %v", err)
+	}
+
+	drafts, err := store.LoadDrafts()
+	if err != nil {
+		t.Fatalf("LoadDrafts: %v", err)
+	}
+	if len(drafts) != 1 {
+		t.Fatalf("len(drafts) = %d, want 1", len(drafts))
+	}
+	if provider.calls != 1 {
+		t.Fatalf("provider.calls = %d, want 1", provider.calls)
+	}
+	if drafts[0].HumanSummary != "Prefer native-name path first" {
+		t.Fatalf("HumanSummary = %q, want %q", drafts[0].HumanSummary, "Prefer native-name path first")
+	}
+}
+
+func TestRuntime_RunColdPathOnce_UsesDefaultDraftGeneratorWhenFactoryHasNoProvider(t *testing.T) {
+	root := t.TempDir()
+	store := evolution.NewStore(evolution.NewPaths(root, ""))
+
+	rule := evolution.LearningRecord{
+		ID:          "rule-1",
+		Kind:        evolution.RecordKindRule,
+		WorkspaceID: root,
+		CreatedAt:   time.Unix(1700000000, 0).UTC(),
+		Summary:     "weather native-name path",
+		Status:      evolution.RecordStatus("ready"),
+		EventCount:  4,
+		SuccessRate: 1,
+		WinningPath: []string{"weather"},
+	}
+	if err := store.AppendLearningRecords([]evolution.LearningRecord{rule}); err != nil {
+		t.Fatalf("AppendLearningRecords: %v", err)
+	}
+
+	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
+		Config:         config.EvolutionConfig{Enabled: true, Mode: "review"},
+		Store:          store,
+		DraftGenerator: evolution.NewDraftGeneratorForWorkspace(root, nil, ""),
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
+		t.Fatalf("RunColdPathOnce: %v", err)
+	}
+
+	drafts, err := store.LoadDrafts()
+	if err != nil {
+		t.Fatalf("LoadDrafts: %v", err)
+	}
+	if len(drafts) != 1 {
+		t.Fatalf("len(drafts) = %d, want 1", len(drafts))
+	}
+	if drafts[0].TargetSkillName != "weather" {
+		t.Fatalf("TargetSkillName = %q, want weather", drafts[0].TargetSkillName)
+	}
+	if drafts[0].BodyOrPatch == "" {
+		t.Fatal("expected generated draft body")
+	}
+}
+
+func TestRuntime_RunColdPathOnce_UsesGeneratorFactoryWorkspaceForFallback(t *testing.T) {
+	root := t.TempDir()
+	store := evolution.NewStore(evolution.NewPaths(root, ""))
+
+	if err := os.MkdirAll(filepath.Join(root, "skills", "weather"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	skillBody := "---\nname: weather\ndescription: workspace weather helper\n---\n# Weather\n## Start Here\nUse the workspace-specific path.\n"
+	if err := os.WriteFile(filepath.Join(root, "skills", "weather", "SKILL.md"), []byte(skillBody), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	rule := evolution.LearningRecord{
+		ID:          "rule-1",
+		Kind:        evolution.RecordKindRule,
+		WorkspaceID: root,
+		CreatedAt:   time.Unix(1700000000, 0).UTC(),
+		Summary:     "weather native-name path",
+		Status:      evolution.RecordStatus("ready"),
+		EventCount:  4,
+		SuccessRate: 1,
+		WinningPath: []string{"weather"},
+	}
+	if err := store.AppendLearningRecords([]evolution.LearningRecord{rule}); err != nil {
+		t.Fatalf("AppendLearningRecords: %v", err)
+	}
+
+	provider := &llmDraftRuntimeProvider{
+		response:     &providers.LLMResponse{Content: `not-json`},
+		defaultModel: "runtime-test-model",
+	}
+
+	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
+		Config: config.EvolutionConfig{Enabled: true, Mode: "review"},
+		Store:  store,
+		GeneratorFactory: func(workspace string) evolution.DraftGenerator {
+			return evolution.NewDraftGeneratorForWorkspace(workspace, provider, "runtime-explicit-model")
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
+		t.Fatalf("RunColdPathOnce: %v", err)
+	}
+
+	drafts, err := store.LoadDrafts()
+	if err != nil {
+		t.Fatalf("LoadDrafts: %v", err)
+	}
+	if len(drafts) != 1 {
+		t.Fatalf("len(drafts) = %d, want 1", len(drafts))
+	}
+	if drafts[0].ChangeKind != evolution.ChangeKindAppend {
+		t.Fatalf("ChangeKind = %q, want %q", drafts[0].ChangeKind, evolution.ChangeKindAppend)
+	}
+	if !strings.Contains(drafts[0].BodyOrPatch, "## Learned Evolution") {
+		t.Fatalf("BodyOrPatch = %q, want appended learned evolution section", drafts[0].BodyOrPatch)
+	}
+}
+
+func TestRuntime_RunColdPathOnce_PersistsEarlierDraftWhenLaterRuleFails(t *testing.T) {
+	root := t.TempDir()
+	store := evolution.NewStore(evolution.NewPaths(root, ""))
+
+	rules := []evolution.LearningRecord{
+		{
+			ID:          "rule-1",
+			Kind:        evolution.RecordKindRule,
+			WorkspaceID: root,
+			CreatedAt:   time.Unix(1700000000, 0).UTC(),
+			Summary:     "weather native-name path",
+			Status:      evolution.RecordStatus("ready"),
+			EventCount:  4,
+		},
+		{
+			ID:          "rule-2",
+			Kind:        evolution.RecordKindRule,
+			WorkspaceID: root,
+			CreatedAt:   time.Unix(1700000100, 0).UTC(),
+			Summary:     "release path",
+			Status:      evolution.RecordStatus("ready"),
+			EventCount:  4,
+		},
+	}
+	if err := store.AppendLearningRecords(rules); err != nil {
+		t.Fatalf("AppendLearningRecords: %v", err)
+	}
+
+	generator := &sequenceDraftGenerator{
+		results: []draftGenerationResult{
+			{
+				draft: evolution.SkillDraft{
+					ID:              "draft-1",
+					TargetSkillName: "weather",
+					DraftType:       evolution.DraftTypeShortcut,
+					ChangeKind:      evolution.ChangeKindAppend,
+					HumanSummary:    "prefer native-name path first",
+					BodyOrPatch:     "## Start Here\nUse native-name query first.",
+				},
+			},
+			{
+				err: context.DeadlineExceeded,
+			},
+		},
+	}
+
+	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
+		Config:         config.EvolutionConfig{Enabled: true, Mode: "review"},
+		Store:          store,
+		DraftGenerator: generator,
+		SkillsRecaller: evolution.NewSkillsRecaller(root),
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	err = rt.RunColdPathOnce(context.Background(), root)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("RunColdPathOnce error = %v, want %v", err, context.DeadlineExceeded)
+	}
+
+	drafts, loadErr := store.LoadDrafts()
+	if loadErr != nil {
+		t.Fatalf("LoadDrafts: %v", loadErr)
+	}
+	if len(drafts) != 1 {
+		t.Fatalf("len(drafts) = %d, want 1", len(drafts))
+	}
+	if drafts[0].SourceRecordID != "rule-1" {
+		t.Fatalf("SourceRecordID = %q, want rule-1", drafts[0].SourceRecordID)
+	}
+}
+
+func TestRuntime_RunColdPathOnce_RegeneratesAfterQuarantinedDraft(t *testing.T) {
+	root := t.TempDir()
+	store := evolution.NewStore(evolution.NewPaths(root, ""))
+
+	rule := evolution.LearningRecord{
+		ID:          "rule-1",
+		Kind:        evolution.RecordKindRule,
+		WorkspaceID: root,
+		CreatedAt:   time.Unix(1700000000, 0).UTC(),
+		Summary:     "weather native-name path",
+		Status:      evolution.RecordStatus("ready"),
+		EventCount:  4,
+	}
+	if err := store.AppendLearningRecords([]evolution.LearningRecord{rule}); err != nil {
+		t.Fatalf("AppendLearningRecords: %v", err)
+	}
+	if err := store.SaveDrafts([]evolution.SkillDraft{{
+		ID:              "draft-old",
+		WorkspaceID:     root,
+		CreatedAt:       time.Unix(1700000100, 0).UTC(),
+		SourceRecordID:  "rule-1",
+		TargetSkillName: "weather",
+		DraftType:       evolution.DraftTypeShortcut,
+		ChangeKind:      evolution.ChangeKindAppend,
+		HumanSummary:    "broken attempt",
+		BodyOrPatch:     "## Start Here\nBroken content.",
+		Status:          evolution.DraftStatusQuarantined,
+		ScanFindings:    []string{"apply failed"},
+	}}); err != nil {
+		t.Fatalf("SaveDrafts: %v", err)
+	}
+
+	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
+		Config: config.EvolutionConfig{Enabled: true, Mode: "review"},
+		Store:  store,
+		DraftGenerator: stubDraftGenerator{
+			draft: evolution.SkillDraft{
+				ID:              "draft-new",
+				TargetSkillName: "weather",
+				DraftType:       evolution.DraftTypeShortcut,
+				ChangeKind:      evolution.ChangeKindAppend,
+				HumanSummary:    "fixed attempt",
+				BodyOrPatch:     "## Start Here\nUse native-name query first.",
+			},
+		},
+		SkillsRecaller: evolution.NewSkillsRecaller(root),
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
+		t.Fatalf("RunColdPathOnce: %v", err)
+	}
+
+	drafts, err := store.LoadDrafts()
+	if err != nil {
+		t.Fatalf("LoadDrafts: %v", err)
+	}
+	if len(drafts) != 2 {
+		t.Fatalf("len(drafts) = %d, want 2", len(drafts))
+	}
+	if drafts[1].ID != "draft-new" {
+		t.Fatalf("drafts[1].ID = %q, want draft-new", drafts[1].ID)
+	}
+}
+
+type llmDraftRuntimeProvider struct {
+	response     *providers.LLMResponse
+	err          error
+	calls        int
+	defaultModel string
+}
+
+func (p *llmDraftRuntimeProvider) Chat(
+	_ context.Context,
+	_ []providers.Message,
+	_ []providers.ToolDefinition,
+	_ string,
+	_ map[string]any,
+) (*providers.LLMResponse, error) {
+	p.calls++
+	return p.response, p.err
+}
+
+func (p *llmDraftRuntimeProvider) GetDefaultModel() string {
+	if p.defaultModel != "" {
+		return p.defaultModel
+	}
+	return "runtime-test-model"
+}

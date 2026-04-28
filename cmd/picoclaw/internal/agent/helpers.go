@@ -43,6 +43,7 @@ func agentCmd(message, sessionKey, model string, debug bool) error {
 	if err != nil {
 		return fmt.Errorf("error creating provider: %w", err)
 	}
+	provider = providers.WithDefaultModel(provider, modelID)
 
 	// Use the resolved model ID from provider creation
 	if modelID != "" {

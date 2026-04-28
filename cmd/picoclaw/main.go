@@ -18,6 +18,7 @@ import (
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/auth"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/cliui"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/cron"
+	evolutioncmd "github.com/sipeed/picoclaw/cmd/picoclaw/internal/evolution"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/gateway"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/migrate"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/model"
@@ -89,6 +90,7 @@ picoclaw --no-color status`,
 		cron.NewCronCommand(),
 		migrate.NewMigrateCommand(),
 		skills.NewSkillsCommand(),
+		evolutioncmd.NewEvolutionCommand(),
 		model.NewModelCommand(),
 		updater.NewUpdateCommand("picoclaw"),
 		version.NewVersionCommand(),

@@ -5,6 +5,7 @@ package agent
 import (
 	"context"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -176,13 +177,18 @@ type turnState struct {
 	opts  processOptions
 	scope turnEventScope
 
-	turnID     string
-	agentID    string
-	sessionKey string
-	turnCtx    *TurnContext
+	turnID            string
+	agentID           string
+	sessionKey        string
+	activeSkills      []string
+	attemptedSkills   []string
+	skillContextTrace []SkillContextSnapshot
+	toolKinds         []string
+	turnCtx           *TurnContext
 
 	channel     string
 	chatID      string
+	workspace   string
 	userMessage string
 	media       []string
 
@@ -238,19 +244,21 @@ type turnState struct {
 
 func newTurnState(agent *AgentInstance, opts processOptions, scope turnEventScope) *turnState {
 	ts := &turnState{
-		agent:       agent,
-		opts:        opts,
-		scope:       scope,
-		turnID:      scope.turnID,
-		agentID:     agent.ID,
-		sessionKey:  opts.Dispatch.SessionKey,
-		turnCtx:     cloneTurnContext(scope.context),
-		channel:     opts.Dispatch.Channel(),
-		chatID:      opts.Dispatch.ChatID(),
-		userMessage: opts.Dispatch.UserMessage,
-		media:       append([]string(nil), opts.Dispatch.Media...),
-		phase:       TurnPhaseSetup,
-		startedAt:   time.Now(),
+		agent:        agent,
+		opts:         opts,
+		scope:        scope,
+		turnID:       scope.turnID,
+		agentID:      agent.ID,
+		sessionKey:   opts.Dispatch.SessionKey,
+		activeSkills: activeSkillNames(agent, opts),
+		turnCtx:      cloneTurnContext(scope.context),
+		channel:      opts.Dispatch.Channel(),
+		chatID:       opts.Dispatch.ChatID(),
+		workspace:    agent.Workspace,
+		userMessage:  opts.Dispatch.UserMessage,
+		media:        append([]string(nil), opts.Dispatch.Media...),
+		phase:        TurnPhaseSetup,
+		startedAt:    time.Now(),
 	}
 
 	// Bind session store and capture initial history length for rollback logic
@@ -373,6 +381,117 @@ func (ts *turnState) finalContentLen() int {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 	return len(ts.finalContent)
+}
+
+func (ts *turnState) recordToolKind(tool string) {
+	tool = strings.TrimSpace(tool)
+	if tool == "" {
+		return
+	}
+
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+
+	for _, existing := range ts.toolKinds {
+		if existing == tool {
+			return
+		}
+	}
+	ts.toolKinds = append(ts.toolKinds, tool)
+}
+
+func (ts *turnState) toolKindsSnapshot() []string {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return append([]string(nil), ts.toolKinds...)
+}
+
+func (ts *turnState) recordAttemptedSkills(skillNames []string) {
+	if len(skillNames) == 0 {
+		return
+	}
+
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+
+	for _, skillName := range skillNames {
+		skillName = strings.TrimSpace(skillName)
+		if skillName == "" {
+			continue
+		}
+		seen := false
+		for _, existing := range ts.attemptedSkills {
+			if existing == skillName {
+				seen = true
+				break
+			}
+		}
+		if seen {
+			continue
+		}
+		ts.attemptedSkills = append(ts.attemptedSkills, skillName)
+	}
+}
+
+func (ts *turnState) attemptedSkillsSnapshot() []string {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return append([]string(nil), ts.attemptedSkills...)
+}
+
+func (ts *turnState) recordSkillContextSnapshot(trigger string, skillNames []string) {
+	if len(skillNames) == 0 {
+		return
+	}
+
+	filtered := make([]string, 0, len(skillNames))
+	for _, skillName := range skillNames {
+		skillName = strings.TrimSpace(skillName)
+		if skillName == "" {
+			continue
+		}
+		filtered = append(filtered, skillName)
+	}
+	if len(filtered) == 0 {
+		return
+	}
+
+	ts.recordAttemptedSkills(filtered)
+
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.skillContextTrace = append(ts.skillContextTrace, SkillContextSnapshot{
+		Sequence:   len(ts.skillContextTrace) + 1,
+		Trigger:    trigger,
+		SkillNames: append([]string(nil), filtered...),
+	})
+}
+
+func (ts *turnState) latestSkillContextSnapshot() []string {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	if len(ts.skillContextTrace) == 0 {
+		return nil
+	}
+	return append([]string(nil), ts.skillContextTrace[len(ts.skillContextTrace)-1].SkillNames...)
+}
+
+func (ts *turnState) skillContextSnapshotsSnapshot() []SkillContextSnapshot {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	if len(ts.skillContextTrace) == 0 {
+		return nil
+	}
+
+	snapshots := make([]SkillContextSnapshot, 0, len(ts.skillContextTrace))
+	for _, snapshot := range ts.skillContextTrace {
+		snapshots = append(snapshots, SkillContextSnapshot{
+			Sequence:   snapshot.Sequence,
+			Trigger:    snapshot.Trigger,
+			SkillNames: append([]string(nil), snapshot.SkillNames...),
+		})
+	}
+	return snapshots
 }
 
 func (ts *turnState) setTurnCancel(cancel context.CancelFunc) {

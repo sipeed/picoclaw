@@ -48,6 +48,12 @@ func NewAgentLoop(
 	}
 
 	eventBus := NewEventBus()
+	bridge, err := newEvolutionBridge(registry, cfg, provider)
+	if err != nil {
+		logger.WarnCF("agent", "Failed to initialize evolution bridge", map[string]any{
+			"error": err.Error(),
+		})
+	}
 
 	// Determine worker pool size from config (default: 1 = sequential)
 	workerPoolSize := cfg.Agents.Defaults.MaxParallelTurns
@@ -63,6 +69,7 @@ func NewAgentLoop(
 		eventBus:    eventBus,
 		fallback:    fallbackChain,
 		cmdRegistry: commands.NewRegistry(commands.BuiltinDefinitions()),
+		evolution:   bridge,
 		steering:    newSteeringQueue(parseSteeringMode(cfg.Agents.Defaults.SteeringMode)),
 		workerSem:   make(chan struct{}, workerPoolSize),
 	}
@@ -70,6 +77,13 @@ func NewAgentLoop(
 	al.hooks = NewHookManager(eventBus)
 	configureHookManagerFromConfig(al.hooks, cfg)
 	al.contextManager = al.resolveContextManager()
+	if bridge != nil {
+		if err := al.MountHook(NamedHook(evolutionObserverHookName, bridge)); err != nil {
+			logger.WarnCF("agent", "Failed to mount evolution observer", map[string]any{
+				"error": err.Error(),
+			})
+		}
+	}
 
 	// Register shared tools to all agents (now that al is created)
 	registerSharedTools(al, cfg, msgBus, registry, provider)
