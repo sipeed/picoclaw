@@ -79,8 +79,16 @@ type Attachment struct {
 }
 
 type Message struct {
-	Role             string         `json:"role"`
-	Content          string         `json:"content"`
+	Role    string `json:"role"`
+	Content string `json:"content"`
+	// Name carries per-message sender attribution for multi-user sessions
+	// (Discord/Telegram/Slack groups, etc.). It is the sanitized SenderID
+	// from the inbound channel and is OpenAI-Chat-Completions wire-safe
+	// (matches `^[a-zA-Z0-9_-]{1,64}$`). Adapters that natively support a
+	// per-message name field (OpenAI) emit it directly; adapters that do
+	// not (Anthropic, Bedrock) prefix it onto user content at marshal
+	// time without mutating the persisted message.
+	Name             string         `json:"name,omitempty"`
 	Media            []string       `json:"media,omitempty"`
 	Attachments      []Attachment   `json:"attachments,omitempty"`
 	ReasoningContent string         `json:"reasoning_content,omitempty"`
