@@ -526,6 +526,112 @@ func TestProviderChat_HistoryCanonicalizationMatrix(t *testing.T) {
 	})
 }
 
+func TestProviderChat_DeepSeekDocsReplayRequirements(t *testing.T) {
+	// DeepSeek's thinking-mode and multi-round chat docs distinguish two cases:
+	// - for a plain assistant turn between two user messages without tool calls,
+	//   reasoning_content does not need to be replayed and the API ignores it if sent;
+	// - for a turn that participates in a tool-interaction round, assistant
+	//   reasoning_content must be replayed on subsequent requests.
+	//
+	// Keep this behavior explicit here so future changes do not "fix" the
+	// non-tool stripping based on issue reports that are broader than the
+	// vendor documentation.
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	p.SetProviderName("deepseek")
+
+	messages := []Message{
+		{Role: "user", Content: "Who wrote The Hobbit?"},
+		{Role: "assistant", Content: "J.R.R. Tolkien.", ReasoningContent: "I know this from general knowledge."},
+		{Role: "user", Content: "What's the weather tomorrow?"},
+		{
+			Role:             "assistant",
+			Content:          "Let me check the date first.",
+			ReasoningContent: "I need tomorrow's date before checking the weather.",
+			ToolCalls: []ToolCall{{
+				ID:   "call_date",
+				Type: "function",
+				Function: &FunctionCall{
+					Name:      "get_date",
+					Arguments: "{}",
+				},
+			}},
+		},
+		{Role: "tool", ToolCallID: "call_date", Content: "2026-04-29"},
+		{
+			Role:             "assistant",
+			Content:          "Tomorrow is 2026-04-30.",
+			ReasoningContent: "Now I can continue with the weather request.",
+		},
+		{Role: "user", Content: "What about Guangzhou?"},
+	}
+
+	_, err := p.Chat(t.Context(), messages, nil, "deepseek-v4-flash", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	reqMessages, ok := requestBody["messages"].([]any)
+	if !ok {
+		t.Fatalf("messages is not []any: %T", requestBody["messages"])
+	}
+	if len(reqMessages) != len(messages) {
+		t.Fatalf("len(messages) = %d, want %d", len(reqMessages), len(messages))
+	}
+
+	plainAssistant, ok := reqMessages[1].(map[string]any)
+	if !ok {
+		t.Fatalf("plain assistant message is not map[string]any: %T", reqMessages[1])
+	}
+	if _, exists := plainAssistant["reasoning_content"]; exists {
+		t.Fatalf(
+			"plain DeepSeek turn should omit reasoning_content on replay, got %v",
+			plainAssistant["reasoning_content"],
+		)
+	}
+
+	toolAssistant, ok := reqMessages[3].(map[string]any)
+	if !ok {
+		t.Fatalf("tool assistant message is not map[string]any: %T", reqMessages[3])
+	}
+	if toolAssistant["reasoning_content"] != "I need tomorrow's date before checking the weather." {
+		t.Fatalf(
+			"tool assistant reasoning_content = %v, want preserved",
+			toolAssistant["reasoning_content"],
+		)
+	}
+
+	finalAssistant, ok := reqMessages[5].(map[string]any)
+	if !ok {
+		t.Fatalf("final assistant message is not map[string]any: %T", reqMessages[5])
+	}
+	if finalAssistant["reasoning_content"] != "Now I can continue with the weather request." {
+		t.Fatalf(
+			"final assistant reasoning_content = %v, want preserved",
+			finalAssistant["reasoning_content"],
+		)
+	}
+}
+
 func TestProviderChat_HTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
