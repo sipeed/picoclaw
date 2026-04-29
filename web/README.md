@@ -47,7 +47,7 @@ The current frontend exposes these major pages and flows:
   - Current built-in flows: OpenAI, Anthropic, and Google Antigravity.
 - `/channels/*`
   - Configure supported channels from a shared catalog.
-  - Current catalog: `weixin`, `telegram`, `discord`, `slack`, `feishu`, `dingtalk`, `line`, `qq`, `onebot`, `wecom`, `whatsapp`, `whatsapp_native`, `pico`, `maixcam`, `matrix`, `irc`.
+  - Current catalog: `weixin`, `telegram`, `discord`, `slack`, `feishu`, `dingtalk`, `line`, `qq`, `onebot`, `wecom`, `whatsapp`, `whatsapp_native`, `pico`, `maixcam`, `matrix`, `irc`, `mqtt`.
   - Includes QR-based binding helpers for WeChat and WeCom.
 - `/agent/skills`
   - Browse built-in, global, and workspace skills.

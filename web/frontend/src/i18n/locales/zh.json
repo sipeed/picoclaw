@@ -325,7 +325,8 @@
       "maixcam": "MaixCam",
       "matrix": "Matrix",
       "irc": "IRC",
-      "weixin": "微信"
+      "weixin": "微信",
+      "mqtt": "MQTT"
     },
     "weixin": {
       "bindTitle": "微信账号绑定",
@@ -450,11 +451,35 @@
         "channels": "要加入的 IRC 频道列表",
         "requestCaps": "连接时请求的 IRC 扩展能力列表",
         "maxBase64FileSizeMiB": "本地文件转为 base64 上传的最大体积，单位 MiB；0 表示不限制，仅影响本地文件，不影响 URL 直传",
-        "genericField": "用于配置{{field}}"
+        "genericField": "用于配置{{field}}",
+        "broker": "MQTT Broker 地址。",
+        "mqttAgentId": "本实例的唯一标识，用于构造 topic 路径。",
+        "topicPrefix": "Topic 前缀，默认为 /picoclaw。",
+        "mqttUsername": "Broker 认证用户名（可选）。",
+        "mqttPassword": "Broker 认证密码（可选）。",
+        "mqttClientId": "MQTT 客户端 ID，留空自动生成。",
+        "keepAlive": "心跳间隔（秒），默认 60。",
+        "qos": "消息质量等级：0=最多一次，1=至少一次，2=恰好一次。"
       }
     },
     "validation": {
       "requiredField": "请填写该字段"
+    },
+    "mqtt": {
+      "protocolTitle": "接入协议",
+      "protocolDesc": "客户端按以下 topic 和 payload 格式收发消息",
+      "uplink": "上行（客户端 → Agent）",
+      "downlink": "下行（Agent → 客户端）",
+      "topicParams": "Topic 参数说明",
+      "fieldText": "text",
+      "uplinkTextDesc": "用户自然语言指令（必填）",
+      "downlinkTextDesc": "Agent 回复文本，流式场景下多条按序拼接即为完整回复",
+      "topicPrefixDesc": "topic 前缀，与上方配置一致",
+      "agentIdDesc": "Agent ID，与上方配置一致",
+      "clientIdDesc": "客户端自定义标识，建议首次启动时生成 UUID 并持久化，同一设备保持不变",
+      "clientIdPlaceholder": "留空自动生成",
+      "secretSet": "已设置，留空表示不修改",
+      "secretEmpty": "未配置"
     }
   },
   "pages": {

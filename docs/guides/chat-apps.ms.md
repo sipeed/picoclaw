@@ -4,7 +4,7 @@
 
 ## 💬 Aplikasi Sembang
 
-Berbual dengan picoclaw anda melalui Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk, LINE, WeCom, Feishu, Slack, IRC, OneBot, MaixCam, atau Pico (protokol asli)
+Berbual dengan picoclaw anda melalui Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk, LINE, WeCom, Feishu, Slack, IRC, OneBot, MQTT, MaixCam, atau Pico (protokol asli)
 
 > **Nota**: Semua saluran berasaskan webhook (LINE, WeCom, dan sebagainya) diservis pada satu pelayan HTTP Gateway yang dikongsi (`gateway.host`:`gateway.port`, lalai `127.0.0.1:18790`). Tiada port khusus per saluran untuk dikonfigurasikan. Nota: Feishu menggunakan mod WebSocket/SDK dan tidak menggunakan pelayan HTTP webhook yang dikongsi.
 
@@ -22,6 +22,7 @@ Berbual dengan picoclaw anda melalui Telegram, Discord, WhatsApp, Matrix, QQ, Di
 | **Slack**        | Sederhana (Bot token + App token)          |
 | **IRC**          | Sederhana (pelayan + konfigurasi TLS)      |
 | **OneBot**       | Sederhana (QQ melalui protokol OneBot)     |
+| **MQTT**         | Mudah (broker + agent_id)                  |
 | **MaixCam**      | Mudah (integrasi perkakasan Sipeed)        |
 | **Pico**         | Protokol PicoClaw asli                     |
 
@@ -443,5 +444,69 @@ picoclaw gateway
 ```
 
 > **Nota**: WeCom AI Bot menggunakan protokol streaming pull — tiada isu timeout balasan. Tugasan panjang (>30 saat) akan bertukar secara automatik kepada penghantaran push `response_url`.
+
+</details>
+
+<a id="mqtt"></a>
+<details>
+<summary><b>MQTT</b></summary>
+
+Mana-mana client MQTT boleh berkomunikasi dengan PicoClaw melalui broker. Peranti atau perkhidmatan menerbitkan permintaan ke broker; PicoClaw melanggan, memproses dan menerbitkan respons kembali.
+
+**1. Konfigurasi**
+
+```json
+{
+  "channel_list": {
+    "mqtt": {
+      "enabled": true,
+      "type": "mqtt",
+      "settings": {
+        "broker": "ssl://your-broker:8883",
+        "agent_id": "assistant",
+        "topic_prefix": "/picoclaw",
+        "keep_alive": 60,
+        "qos": 0
+      }
+    }
+  }
+}
+```
+
+Nama pengguna dan kata laluan dalam `~/.picoclaw/.security.yml`:
+
+```yaml
+channel_list:
+  mqtt:
+    settings:
+      username: nama_pengguna
+      password: kata_laluan
+```
+
+**Format topik**
+
+```
+{prefix}/{agent_id}/{client_id}/request    # Client → PicoClaw
+{prefix}/{agent_id}/{client_id}/response   # PicoClaw → Client
+```
+
+`client_id` ditetapkan oleh aplikasi client anda untuk mengenal pasti peranti atau sesi.
+
+**2. Jalankan**
+
+```bash
+picoclaw gateway
+```
+
+**3. Uji**
+
+```bash
+mosquitto_pub -t "/picoclaw/assistant/device1/request" \
+  -m '{"text": "Helo"}'
+
+mosquitto_sub -t "/picoclaw/assistant/device1/response"
+```
+
+Untuk semua pilihan konfigurasi, lihat [Dokumentasi Saluran MQTT](../channels/mqtt/README.md).
 
 </details>

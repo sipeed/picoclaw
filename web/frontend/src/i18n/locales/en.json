@@ -325,7 +325,8 @@
       "maixcam": "MaixCam",
       "matrix": "Matrix",
       "irc": "IRC",
-      "weixin": "WeChat"
+      "weixin": "WeChat",
+      "mqtt": "MQTT"
     },
     "weixin": {
       "bindTitle": "WeChat Account Binding",
@@ -450,11 +451,35 @@
         "channels": "IRC channels to join.",
         "requestCaps": "IRC capability list requested on connect.",
         "maxBase64FileSizeMiB": "Maximum size in MiB for converting local files to base64 before upload. 0 means unlimited. Applies only to local files, not URL uploads.",
-        "genericField": "Used to configure {{field}}."
+        "genericField": "Used to configure {{field}}.",
+        "broker": "MQTT broker address.",
+        "mqttAgentId": "Unique identifier for this instance, used to build the topic path.",
+        "topicPrefix": "Topic prefix. Defaults to /picoclaw.",
+        "mqttUsername": "Broker authentication username (optional).",
+        "mqttPassword": "Broker authentication password (optional).",
+        "mqttClientId": "MQTT client ID. Leave blank to auto-generate.",
+        "keepAlive": "Keepalive interval in seconds. Defaults to 60.",
+        "qos": "Message quality of service level: 0 = at most once, 1 = at least once, 2 = exactly once."
       }
     },
     "validation": {
       "requiredField": "This field is required."
+    },
+    "mqtt": {
+      "protocolTitle": "Protocol Reference",
+      "protocolDesc": "Clients send and receive messages using the following topic and payload format.",
+      "uplink": "Uplink (Client → Agent)",
+      "downlink": "Downlink (Agent → Client)",
+      "topicParams": "Topic Parameters",
+      "fieldText": "text",
+      "uplinkTextDesc": "Natural language instruction from the user (required).",
+      "downlinkTextDesc": "Agent reply text. In streaming mode, concatenate multiple messages in order for the full response.",
+      "topicPrefixDesc": "Topic prefix, matches the configuration above.",
+      "agentIdDesc": "Agent ID, matches the configuration above.",
+      "clientIdDesc": "Client-defined identifier. Recommended: generate a UUID on first launch and persist it so the same device always uses the same ID.",
+      "clientIdPlaceholder": "Auto-generated if blank",
+      "secretSet": "Already configured. Leave blank to keep unchanged.",
+      "secretEmpty": "Not configured"
     }
   },
   "pages": {

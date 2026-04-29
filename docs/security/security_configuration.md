@@ -89,6 +89,13 @@ channels:
     nickserv_password: "your-irc-nickserv-password"
     sasl_password: "your-irc-sasl-password"
 
+# Channel Settings (nested format for channels that use settings block)
+channel_list:
+  mqtt:
+    settings:
+      username: "your-mqtt-username"
+      password: "your-mqtt-password"
+
 # Web Tool API Keys
 web:
   brave:
@@ -225,6 +232,19 @@ channels:
 - `channels.telegram.token` → `config.channels.telegram.token`
 - `channels.feishu.app_secret` → `config.channels.feishu.app_secret`
 - etc.
+
+Channels that use a `settings` block (e.g. MQTT) use the `channel_list` key instead:
+
+```yaml
+channel_list:
+  mqtt:
+    settings:
+      username: "value"
+      password: "value"
+```
+
+- `channel_list.mqtt.settings.username` → `config.channel_list.mqtt.settings.username`
+- `channel_list.mqtt.settings.password` → `config.channel_list.mqtt.settings.password`
 
 ### Web Tools
 

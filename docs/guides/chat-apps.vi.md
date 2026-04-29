@@ -4,7 +4,7 @@
 
 ## 💬 Ứng Dụng Chat
 
-Trò chuyện với picoclaw của bạn qua Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk, LINE, WeCom, Feishu, Slack, IRC, OneBot hoặc MaixCam
+Trò chuyện với picoclaw của bạn qua Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk, LINE, WeCom, Feishu, Slack, IRC, OneBot, MQTT hoặc MaixCam
 
 > **Lưu ý**: Tất cả các kênh dựa trên webhook (LINE, WeCom, v.v.) được phục vụ trên một máy chủ HTTP Gateway chung (`gateway.host`:`gateway.port`, mặc định `127.0.0.1:18790`). Không có port riêng cho từng kênh. Lưu ý: Feishu sử dụng chế độ WebSocket/SDK và không sử dụng máy chủ HTTP webhook chung.
 
@@ -23,6 +23,7 @@ Trò chuyện với picoclaw của bạn qua Telegram, Discord, WhatsApp, Matrix
 | **Feishu (飞书)**    | ⭐⭐⭐ Nâng cao    | Cộng tác doanh nghiệp, nhiều tính năng                | [Tài liệu](../channels/feishu/README.vi.md)                                                                     |
 | **IRC**              | ⭐⭐ Trung bình    | Máy chủ + cấu hình TLS                                | [Tài liệu](#irc) |
 | **OneBot**           | ⭐⭐ Trung bình    | Tương thích NapCat/Go-CQHTTP, hệ sinh thái cộng đồng  | [Tài liệu](../channels/onebot/README.vi.md)                                                                     |
+| **MQTT**             | ⭐ Dễ              | Bất kỳ client MQTT nào qua broker pub/sub            | [Tài liệu](../channels/mqtt/README.vi.md)                                                                    |
 | **MaixCam**          | ⭐ Dễ              | Kênh tích hợp phần cứng cho camera AI Sipeed          | [Tài liệu](../channels/maixcam/README.vi.md)                                                                    |
 | **Pico**             | ⭐ Dễ              | Kênh giao thức bản địa PicoClaw                       |                                                                                                                  |
 
@@ -694,5 +695,69 @@ Kênh tích hợp được thiết kế đặc biệt cho phần cứng camera A
 ```bash
 picoclaw gateway
 ```
+
+</details>
+
+<a id="mqtt"></a>
+<details>
+<summary><b>MQTT</b></summary>
+
+Bất kỳ client MQTT nào đều có thể giao tiếp với PicoClaw qua broker. Thiết bị hoặc dịch vụ publish yêu cầu lên broker; PicoClaw subscribe, xử lý và publish phản hồi trở lại.
+
+**1. Cấu hình**
+
+```json
+{
+  "channel_list": {
+    "mqtt": {
+      "enabled": true,
+      "type": "mqtt",
+      "settings": {
+        "broker": "ssl://your-broker:8883",
+        "agent_id": "assistant",
+        "topic_prefix": "/picoclaw",
+        "keep_alive": 60,
+        "qos": 0
+      }
+    }
+  }
+}
+```
+
+Tên người dùng và mật khẩu trong `~/.picoclaw/.security.yml`:
+
+```yaml
+channel_list:
+  mqtt:
+    settings:
+      username: ten_nguoi_dung
+      password: mat_khau
+```
+
+**Định dạng topic**
+
+```
+{prefix}/{agent_id}/{client_id}/request    # Client → PicoClaw
+{prefix}/{agent_id}/{client_id}/response   # PicoClaw → Client
+```
+
+`client_id` do ứng dụng client đặt để phân biệt thiết bị hoặc phiên.
+
+**2. Khởi động**
+
+```bash
+picoclaw gateway
+```
+
+**3. Kiểm tra**
+
+```bash
+mosquitto_pub -t "/picoclaw/assistant/device1/request" \
+  -m '{"text": "Xin chào"}'
+
+mosquitto_sub -t "/picoclaw/assistant/device1/response"
+```
+
+Xem đầy đủ tùy chọn cấu hình tại [Tài liệu Kênh MQTT](../channels/mqtt/README.vi.md).
 
 </details>
