@@ -135,9 +135,10 @@ func TestLoadImage_SuccessPath(t *testing.T) {
 		t.Errorf("expected ForLLM to contain '[image:' marker, got: %s", result.ForLLM)
 	}
 
-	// 4. ForLLM should also contain the media:// ref
-	if !strings.Contains(result.ForLLM, result.Media[0]) {
-		t.Errorf("expected ForLLM to contain media ref %q, got: %s", result.Media[0], result.ForLLM)
+	// 4. ForLLM should contain the generic [image: photo] placeholder
+	//    (resolveMediaRefs will replace it with the actual path later)
+	if !strings.Contains(result.ForLLM, "[image: photo]") {
+		t.Errorf("expected ForLLM to contain '[image: photo]' placeholder, got: %s", result.ForLLM)
 	}
 
 	// 5. Verify the ref is resolvable in the store
