@@ -428,6 +428,7 @@ func parseStreamResponse(
 
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 1MB initial, 10MB max
+	var pendingData string
 	for scanner.Scan() {
 		// Check for context cancellation between chunks
 		if err := ctx.Err(); err != nil {
@@ -442,6 +443,13 @@ func parseStreamResponse(
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
 			break
+		}
+
+		// Some SSE implementations can split a JSON payload across multiple data lines.
+		// Keep incomplete fragments and retry parse when the next fragment arrives.
+		payload := data
+		if pendingData != "" {
+			payload = pendingData + payload
 		}
 
 		var chunk struct {
@@ -462,9 +470,17 @@ func parseStreamResponse(
 			Usage *UsageInfo `json:"usage"`
 		}
 
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue // skip malformed chunks
+		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			// Keep buffer only for likely truncated JSON.
+			// For other malformed payloads, drop it to avoid poisoning later valid chunks.
+			if strings.Contains(err.Error(), "unexpected end of JSON input") {
+				pendingData = payload
+			} else {
+				pendingData = ""
+			}
+			continue
 		}
+		pendingData = ""
 
 		if chunk.Usage != nil {
 			usage = chunk.Usage
