@@ -266,6 +266,85 @@ func TestProcessMessage_IncludesCurrentSenderInDynamicContext(t *testing.T) {
 	}
 }
 
+// TestProcessMessage_AttachesSenderAttributionToUserMessage exercises the
+// end-to-end flow for issue #2702: a real-user inbound message reaches
+// the provider with a sanitized Name field so multi-user conversations
+// can be disambiguated by the model. The sanitization step is what makes
+// the value safe for OpenAI's `name` constraint (`^[a-zA-Z0-9_-]{1,64}$`).
+func TestProcessMessage_AttachesSenderAttributionToUserMessage(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	if _, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
+		Channel:  "discord",
+		SenderID: "discord:123",
+		Sender:   bus.SenderInfo{DisplayName: "Alice"},
+		ChatID:   "group-1",
+		Content:  "My name is Alice",
+	})); err != nil {
+		t.Fatalf("processMessage(): %v", err)
+	}
+
+	if len(provider.lastMessages) == 0 {
+		t.Fatal("provider received no messages")
+	}
+	last := provider.lastMessages[len(provider.lastMessages)-1]
+	if last.Role != "user" || last.Content != "My name is Alice" {
+		t.Fatalf("last message = %+v, want user/My name is Alice", last)
+	}
+	// "discord:123" → "discord_123" (colon disallowed in OpenAI name).
+	if last.Name != "discord_123" {
+		t.Errorf("last.Name = %q, want discord_123 (sanitized)", last.Name)
+	}
+}
+
+// TestProcessMessage_NoSenderAttributionForCronTrigger verifies that
+// synthetic trigger sources (cron/heartbeat/async callbacks) do not
+// produce per-message sender attribution. Otherwise an Anthropic adapter
+// would render `[cron] [System: cron] ...` double prefixes.
+func TestProcessMessage_NoSenderAttributionForCronTrigger(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	if _, err := al.ProcessDirectWithChannel(
+		context.Background(), "scheduled task", "agent:main:cli:direct:cron", "cli", "direct",
+	); err != nil {
+		t.Fatalf("ProcessDirectWithChannel(): %v", err)
+	}
+
+	if len(provider.lastMessages) == 0 {
+		t.Fatal("provider received no messages")
+	}
+	last := provider.lastMessages[len(provider.lastMessages)-1]
+	if last.Name != "" {
+		t.Errorf("last.Name = %q, want empty for cron-triggered message", last.Name)
+	}
+}
+
 func TestProcessMessage_UseCommandLoadsRequestedSkill(t *testing.T) {
 	tmpDir := t.TempDir()
 	skillDir := filepath.Join(tmpDir, "skills", "shell")
