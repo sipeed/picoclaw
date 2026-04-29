@@ -253,9 +253,23 @@ func (e *Engine) Ingest(ctx context.Context, sessionKey string, messages []Messa
 		var added *Message
 		var err error
 		if len(msg.Parts) > 0 {
-			added, err = e.store.AddMessageWithParts(ctx, conv.ConversationID, msg.Role, msg.Parts, msg.TokenCount)
+			added, err = e.store.AddMessageWithPartsAndReasoning(
+				ctx,
+				conv.ConversationID,
+				msg.Role,
+				msg.Parts,
+				msg.ReasoningContent,
+				msg.TokenCount,
+			)
 		} else {
-			added, err = e.store.AddMessage(ctx, conv.ConversationID, msg.Role, msg.Content, msg.TokenCount)
+			added, err = e.store.AddMessageWithReasoning(
+				ctx,
+				conv.ConversationID,
+				msg.Role,
+				msg.Content,
+				msg.ReasoningContent,
+				msg.TokenCount,
+			)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("add message: %w", err)
@@ -532,13 +546,13 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen] + "..."
 }
 
-// messageMatches compares two messages using (role, content) or (role, parts).
-// TokenCount is NOT compared because it may be re-estimated differently
-// during bootstrap (e.g., via tokenizer.EstimateMessageTokens).
+// messageMatches compares two messages using role + reasoning_content and then
+// either content or parts. TokenCount is NOT compared because it may be
+// re-estimated differently during bootstrap (e.g., via tokenizer.EstimateMessageTokens).
 // For messages with Parts (tool_use, tool_result), compare Parts instead of Content
-// since AddMessageWithParts stores empty Content in DB.
+// because structured messages are matched by their parts payload.
 func messageMatches(a, b Message) bool {
-	if a.Role != b.Role {
+	if a.Role != b.Role || a.ReasoningContent != b.ReasoningContent {
 		return false
 	}
 	// If either message has Parts, compare Parts
