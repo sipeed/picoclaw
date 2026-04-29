@@ -106,12 +106,14 @@ func TestRunSchemaAddsMessagesReasoningContentColumn(t *testing.T) {
 		t.Fatalf("create legacy messages table: %v", err)
 	}
 
-	if err := runSchema(db); err != nil {
+	err = runSchema(db)
+	if err != nil {
 		t.Fatalf("runSchema: %v", err)
 	}
 
 	var count int
-	err = db.QueryRow(`SELECT count(*) FROM pragma_table_info('messages') WHERE name = 'reasoning_content'`).Scan(&count)
+	err = db.QueryRow(`SELECT count(*) FROM pragma_table_info('messages') WHERE name = 'reasoning_content'`).
+		Scan(&count)
 	if err != nil {
 		t.Fatalf("query pragma_table_info: %v", err)
 	}

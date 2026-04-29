@@ -360,7 +360,8 @@ func (s *Store) GetMessageCount(ctx context.Context, convID int64) (int, error) 
 func (s *Store) GetMessageByID(ctx context.Context, messageID int64) (*Message, error) {
 	var msg Message
 	var createdAt string
-	err := s.db.QueryRowContext(ctx,
+	err := s.db.QueryRowContext(
+		ctx,
 		"SELECT message_id, conversation_id, role, content, reasoning_content, token_count, created_at FROM messages WHERE message_id = ?",
 		messageID,
 	).Scan(&msg.ID, &msg.ConversationID, &msg.Role, &msg.Content, &msg.ReasoningContent, &msg.TokenCount, &createdAt)

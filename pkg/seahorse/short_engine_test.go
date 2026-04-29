@@ -630,11 +630,18 @@ func TestBootstrapRepairsMissingReasoningContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddMessage user: %v", err)
 	}
+
 	assistantMsg, err := eng.store.AddMessage(ctx, conv.ConversationID, "assistant", "world", 3)
 	if err != nil {
 		t.Fatalf("AddMessage assistant: %v", err)
 	}
-	if err := eng.store.AppendContextMessages(ctx, conv.ConversationID, []int64{userMsg.ID, assistantMsg.ID}); err != nil {
+
+	err = eng.store.AppendContextMessages(
+		ctx,
+		conv.ConversationID,
+		[]int64{userMsg.ID, assistantMsg.ID},
+	)
+	if err != nil {
 		t.Fatalf("AppendContextMessages: %v", err)
 	}
 
