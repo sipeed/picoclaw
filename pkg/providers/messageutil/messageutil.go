@@ -1,6 +1,7 @@
 package messageutil
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -36,6 +37,35 @@ func SanitizeMessageName(raw string) string {
 		cleaned = cleaned[:maxMessageNameLen]
 	}
 	return cleaned
+}
+
+// IsSystemSenderID reports whether senderID identifies an internal trigger
+// (cron, heartbeat, async tool callback, system channel) rather than a real
+// human user. These should not propagate as message-level sender attribution
+// because they don't represent distinct actors in a multi-user conversation.
+func IsSystemSenderID(senderID string) bool {
+	id := strings.ToLower(strings.TrimSpace(senderID))
+	switch id {
+	case "", "cron", "heartbeat", "system":
+		return true
+	}
+	return strings.HasPrefix(id, "async:")
+}
+
+// ApplyUserNamePrefix returns the message content with a `[name] ` prefix
+// when msg carries sender attribution that the calling adapter cannot send
+// natively (Anthropic, Bedrock, etc.). The persisted msg is not mutated.
+//
+// Returns msg.Content unchanged when:
+//   - the role is not "user"
+//   - msg.Name is empty
+//   - msg.ToolCallID is set (tool result, not a user utterance)
+//   - msg.Content is empty (avoid producing a bare "[name] ")
+func ApplyUserNamePrefix(msg protocoltypes.Message) string {
+	if msg.Role != "user" || msg.Name == "" || msg.ToolCallID != "" || msg.Content == "" {
+		return msg.Content
+	}
+	return fmt.Sprintf("[%s] %s", msg.Name, msg.Content)
 }
 
 // IsTransientAssistantThoughtMessage reports whether msg is an invalid

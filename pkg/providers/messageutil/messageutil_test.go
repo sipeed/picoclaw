@@ -6,8 +6,11 @@
 package messageutil
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
 func TestSanitizeMessageName(t *testing.T) {
@@ -63,5 +66,93 @@ func TestSanitizeMessageName_OutputAlwaysWireSafe(t *testing.T) {
 				t.Errorf("SanitizeMessageName(%q) = %q contains invalid rune %q", in, got, r)
 			}
 		}
+	}
+}
+
+func TestIsSystemSenderID(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		{"", true},
+		{"   ", true},
+		{"cron", true},
+		{"CRON", true},
+		{"heartbeat", true},
+		{"system", true},
+		{"async:tool_call", true},
+		{"ASYNC:Foo", true},
+		{"alice", false},
+		{"U07AB12C3DEF", false},
+		{"141455495", false},
+		{"alice#1234", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			if got := IsSystemSenderID(tt.in); got != tt.want {
+				t.Errorf("IsSystemSenderID(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestApplyUserNamePrefix(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  protocoltypes.Message
+		want string
+	}{
+		{
+			name: "user with name",
+			msg:  protocoltypes.Message{Role: "user", Name: "alice", Content: "hello"},
+			want: "[alice] hello",
+		},
+		{
+			name: "user without name",
+			msg:  protocoltypes.Message{Role: "user", Content: "hello"},
+			want: "hello",
+		},
+		{
+			name: "user with name but empty content",
+			msg:  protocoltypes.Message{Role: "user", Name: "alice", Content: ""},
+			want: "",
+		},
+		{
+			name: "user tool result is not prefixed",
+			msg:  protocoltypes.Message{Role: "user", Name: "alice", Content: `{"ok":true}`, ToolCallID: "call_1"},
+			want: `{"ok":true}`,
+		},
+		{
+			name: "assistant with name not prefixed",
+			msg:  protocoltypes.Message{Role: "assistant", Name: "alice", Content: "I am the assistant"},
+			want: "I am the assistant",
+		},
+		{
+			name: "tool role with name not prefixed",
+			msg:  protocoltypes.Message{Role: "tool", Name: "alice", Content: `{"x":1}`},
+			want: `{"x":1}`,
+		},
+		{
+			name: "system role with name not prefixed",
+			msg:  protocoltypes.Message{Role: "system", Name: "alice", Content: "instructions"},
+			want: "instructions",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ApplyUserNamePrefix(tt.msg)
+			if got != tt.want {
+				t.Errorf("ApplyUserNamePrefix(%+v) = %q, want %q", tt.msg, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestApplyUserNamePrefix_DoesNotMutateInput(t *testing.T) {
+	msg := protocoltypes.Message{Role: "user", Name: "alice", Content: "hello"}
+	original := msg
+	_ = ApplyUserNamePrefix(msg)
+	if !reflect.DeepEqual(msg, original) {
+		t.Errorf("ApplyUserNamePrefix mutated the input message: got %+v, want %+v", msg, original)
 	}
 }
