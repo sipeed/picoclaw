@@ -35,7 +35,7 @@ docker compose -f docker/docker-compose.yml --profile gateway down
 
 ### Mod Launcher (Konsol Web)
 
-Imej `launcher` merangkumi ketiga-tiga binari (`picoclaw`, `picoclaw-launcher`, `picoclaw-launcher-tui`) dan memulakan konsol web secara lalai, yang menyediakan UI berasaskan pelayar untuk konfigurasi dan sembang.
+Imej `launcher` merangkumi kedua-dua binari (`picoclaw`, `picoclaw-launcher`) dan memulakan konsol web secara lalai, yang menyediakan UI berasaskan pelayar untuk konfigurasi dan sembang.
 
 ```bash
 docker compose -f docker/docker-compose.yml --profile launcher up -d

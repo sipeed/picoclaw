@@ -36,7 +36,7 @@ docker compose -f docker/docker-compose.yml --profile gateway down
 
 ### Launcher モード (Web コンソール)
 
-`launcher` イメージには 3 つのバイナリ（`picoclaw`、`picoclaw-launcher`、`picoclaw-launcher-tui`）がすべて含まれており、デフォルトで Web コンソールを起動します。ブラウザベースの設定・チャット画面を提供します。
+`launcher` イメージには 2 つのバイナリ（`picoclaw`、`picoclaw-launcher`）が含まれており、デフォルトで Web コンソールを起動します。ブラウザベースの設定・チャット画面を提供します。
 
 ```bash
 docker compose -f docker/docker-compose.yml --profile launcher up -d

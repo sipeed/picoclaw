@@ -289,24 +289,6 @@ macOS에서는 인터넷에서 다운로드한 앱이고 Mac App Store 공증을
 
 </details>
 
-### 💻 TUI Launcher (헤드리스 / SSH 권장)
-
-TUI(Terminal UI) Launcher는 설정과 관리를 위한 모든 기능을 갖춘 터미널 인터페이스를 제공합니다. 서버, Raspberry Pi, 기타 헤드리스 환경에 적합합니다.
-
-```bash
-picoclaw-launcher-tui
-```
-
-<p align="center">
-<img src="../../assets/launcher-tui.jpg" alt="TUI Launcher" width="600">
-</p>
-
-**시작 방법:**
-
-TUI 메뉴를 사용해 다음 순서로 진행하세요. **1)** 프로바이더 설정 -> **2)** 채널 설정 -> **3)** 게이트웨이 시작 -> **4)** 채팅!
-
-자세한 TUI 문서는 [docs.picoclaw.io](https://docs.picoclaw.io)를 참고하세요.
-
 ### 📱 Android
 
 오래된 스마트폰에 새 생명을 불어넣어 보세요! PicoClaw를 설치하면 스마트 AI 어시스턴트로 바꿀 수 있습니다.

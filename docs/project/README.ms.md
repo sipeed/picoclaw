@@ -286,24 +286,6 @@ Selepas langkah sekali ini, `picoclaw-launcher` akan dibuka secara normal pada p
 
 </details>
 
-### 💻 Pelancar TUI (Disyorkan untuk Headless / SSH)
-
-Pelancar TUI menyediakan antara muka terminal lengkap untuk konfigurasi dan pengurusan. Sesuai untuk pelayan, Raspberry Pi, dan persekitaran tanpa kepala lain.
-
-```bash
-picoclaw-launcher-tui
-```
-
-<p align="center">
-<img src="../../assets/launcher-tui.jpg" alt="Pelancar TUI" width="600">
-</p>
-
-**Memulakan:**
-
-Gunakan menu TUI untuk: **1)** Konfigurasikan Penyedia -> **2)** Konfigurasikan Saluran -> **3)** Mulakan Gateway -> **4)** Sembang!
-
-Untuk dokumentasi TUI terperinci, lihat [docs.picoclaw.io](https://docs.picoclaw.io).
-
 ### 📱 Android
 
 Berikan telefon lama anda kehidupan baru! Jadikannya Pembantu AI pintar dengan PicoClaw.
