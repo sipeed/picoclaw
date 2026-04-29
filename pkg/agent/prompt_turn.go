@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/providers/messageutil"
 )
 
 func promptBuildRequestForTurn(
@@ -95,10 +96,19 @@ func promptMessageWithDefaultMetadata(
 	return promptMessageWithMetadata(msg, layer, slot, source)
 }
 
-func userPromptMessage(content string, media []string) providers.Message {
+// userPromptMessage builds the per-turn user message that gets persisted
+// to session history and sent to the LLM. senderID is the raw inbound
+// sender ID; it is sanitized into the OpenAI-compatible Name field unless
+// it identifies a system trigger (cron, heartbeat, async callback), in
+// which case Name is left empty so synthetic events do not appear as
+// distinct human users in the conversation.
+func userPromptMessage(content string, media []string, senderID string) providers.Message {
 	msg := providers.Message{
 		Role:    "user",
 		Content: content,
+	}
+	if !messageutil.IsSystemSenderID(senderID) {
+		msg.Name = messageutil.SanitizeMessageName(senderID)
 	}
 	if len(media) > 0 {
 		msg.Media = append([]string(nil), media...)

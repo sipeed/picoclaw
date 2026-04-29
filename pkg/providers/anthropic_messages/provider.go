@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers/common"
+	"github.com/sipeed/picoclaw/pkg/providers/messageutil"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -213,10 +214,13 @@ func buildRequestBody(
 					"content": []map[string]any{toolResultBlock},
 				})
 			} else {
-				// Regular user message
+				// Regular user message. Anthropic has no per-message author
+				// identity, so any sender attribution from msg.Name is rendered
+				// as a `[name] ` prefix on the content. The persisted message
+				// is not mutated — only the wire payload carries the prefix.
 				apiMessages = append(apiMessages, map[string]any{
 					"role":    "user",
-					"content": msg.Content,
+					"content": messageutil.ApplyUserNamePrefix(msg),
 				})
 			}
 

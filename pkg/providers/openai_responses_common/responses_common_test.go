@@ -577,3 +577,69 @@ func TestTranslateTools_SerializesToJSON(t *testing.T) {
 		t.Errorf("JSON should contain web_search, got: %s", s)
 	}
 }
+
+// --- Sender attribution (Name field) tests ---
+
+// TestTranslateMessages_UserNamePrefixed verifies that sender attribution
+// from Message.Name is rendered as a `[name] ` prefix on plain-text user
+// messages sent to the OpenAI Responses API. The API supports per-message
+// name natively, but the SDK type used here (EasyInputMessageParam) does
+// not surface it, so prefixing is the consistent fallback shared with
+// Anthropic / Bedrock adapters.
+func TestTranslateMessages_UserNamePrefixed(t *testing.T) {
+	msgs := []protocoltypes.Message{
+		{Role: "user", Content: "My name is Alice", Name: "U_alice"},
+	}
+	input, _ := TranslateMessages(msgs)
+	if len(input) != 1 || input[0].OfMessage == nil {
+		t.Fatalf("expected one EasyInputMessage, got %+v", input)
+	}
+	data, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if !strings.Contains(string(data), "[U_alice] My name is Alice") {
+		t.Errorf("expected prefixed content in payload, got: %s", string(data))
+	}
+}
+
+// TestTranslateMessages_UserNamePrefixedMultipart verifies the same
+// behavior on the multipart code path used when media is attached.
+func TestTranslateMessages_UserNamePrefixedMultipart(t *testing.T) {
+	msgs := []protocoltypes.Message{
+		{
+			Role:    "user",
+			Content: "look at this",
+			Name:    "U_alice",
+			Media:   []string{"data:image/png;base64,abc"},
+		},
+	}
+	input, _ := TranslateMessages(msgs)
+	if len(input) != 1 || input[0].OfInputMessage == nil {
+		t.Fatalf("expected InputMessage with multipart content, got %+v", input)
+	}
+	data, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if !strings.Contains(string(data), "[U_alice] look at this") {
+		t.Errorf("expected prefixed text part in payload, got: %s", string(data))
+	}
+}
+
+// TestTranslateMessages_ToolResultNotPrefixed protects against accidentally
+// prefixing tool result outputs (msg.ToolCallID set) — those are function
+// outputs, not user utterances.
+func TestTranslateMessages_ToolResultNotPrefixed(t *testing.T) {
+	msgs := []protocoltypes.Message{
+		{Role: "user", Content: `{"temp":72}`, ToolCallID: "call_1", Name: "alice"},
+	}
+	input, _ := TranslateMessages(msgs)
+	if len(input) != 1 || input[0].OfFunctionCallOutput == nil {
+		t.Fatalf("expected FunctionCallOutput, got %+v", input)
+	}
+	data, _ := json.Marshal(input)
+	if strings.Contains(string(data), "[alice]") {
+		t.Errorf("tool result must not carry sender prefix, got: %s", string(data))
+	}
+}

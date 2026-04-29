@@ -69,12 +69,11 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 	}
 
 	if !ts.opts.NoHistory && (strings.TrimSpace(ts.userMessage) != "" || len(ts.media) > 0) {
-		rootMsg := userPromptMessage(ts.userMessage, ts.media)
-		if len(rootMsg.Media) > 0 {
-			ts.agent.Sessions.AddFullMessage(ts.sessionKey, rootMsg)
-		} else {
-			ts.agent.Sessions.AddMessage(ts.sessionKey, rootMsg.Role, rootMsg.Content)
-		}
+		rootMsg := userPromptMessage(ts.userMessage, ts.media, ts.opts.Dispatch.SenderID())
+		// AddFullMessage preserves all message fields (Name, Media, etc.).
+		// AddMessage(role, content) would silently drop Name attribution,
+		// breaking multi-user history disambiguation.
+		ts.agent.Sessions.AddFullMessage(ts.sessionKey, rootMsg)
 		ts.recordPersistedMessage(rootMsg)
 		ts.ingestMessage(ctx, p.al, rootMsg)
 	}

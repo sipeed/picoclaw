@@ -294,6 +294,42 @@ func TestBuildUserContent_SkipsNonBase64Data(t *testing.T) {
 	assert.Len(t, content, 1)
 }
 
+// TestBuildUserContent_UserNamePrefixed verifies that sender attribution
+// from Message.Name is rendered as a `[name] ` prefix on the Bedrock text
+// block. Bedrock's Converse API has no per-message author identity shared
+// across model families, so prefixing keeps multi-user disambiguation
+// consistent regardless of the underlying model (Claude, Llama, etc.).
+func TestBuildUserContent_UserNamePrefixed(t *testing.T) {
+	msg := Message{
+		Role:    "user",
+		Content: "My name is Alice",
+		Name:    "U_alice",
+	}
+
+	content := buildUserContent(msg)
+
+	assert.Len(t, content, 1)
+	textBlock, ok := content[0].(*types.ContentBlockMemberText)
+	require.True(t, ok)
+	assert.Equal(t, "[U_alice] My name is Alice", textBlock.Value)
+}
+
+// TestBuildUserContent_NoNameNoPrefix protects backward compatibility for
+// direct (single-user) channels: no sender, no prefix.
+func TestBuildUserContent_NoNameNoPrefix(t *testing.T) {
+	msg := Message{
+		Role:    "user",
+		Content: "Hello",
+	}
+
+	content := buildUserContent(msg)
+
+	assert.Len(t, content, 1)
+	textBlock, ok := content[0].(*types.ContentBlockMemberText)
+	require.True(t, ok)
+	assert.Equal(t, "Hello", textBlock.Value)
+}
+
 func TestBuildAssistantContent_SkipsEmptyToolName(t *testing.T) {
 	msg := Message{
 		Content: "Response",
