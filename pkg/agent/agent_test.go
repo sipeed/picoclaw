@@ -4661,7 +4661,7 @@ func TestRun_PicoToolFeedbackSuppressesDuplicateInterimAssistantContent(t *testi
 	}
 }
 
-func TestResolveMediaRefs_ImageBase64AndPathTag(t *testing.T) {
+func TestResolveMediaRefs_ImageInjectsPathTag(t *testing.T) {
 	store := media.NewFileMediaStore()
 	dir := t.TempDir()
 
@@ -4689,16 +4689,60 @@ func TestResolveMediaRefs_ImageBase64AndPathTag(t *testing.T) {
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
 
-	if len(result[0].Media) != 1 {
-		t.Fatalf("expected 1 resolved media, got %d", len(result[0].Media))
-	}
-	if !strings.HasPrefix(result[0].Media[0], "data:image/png;base64,") {
-		t.Fatalf("expected data:image/png;base64, prefix, got %q", result[0].Media[0][:40])
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected 0 media (images use path tags), got %d", len(result[0].Media))
 	}
 	localPath, _, _ := store.ResolveWithMeta(ref)
 	expectedContent := "describe this [image:" + localPath + "]"
 	if result[0].Content != expectedContent {
 		t.Fatalf("expected content %q, got %q", expectedContent, result[0].Content)
+	}
+}
+
+func TestResolveMediaRefs_ToolRoleImageAppendedAsUserMessage(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	pngPath := filepath.Join(dir, "tool-result.png")
+	pngHeader := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+		0x00, 0x00, 0x00, 0x0D, // IHDR length
+		0x49, 0x48, 0x44, 0x52, // "IHDR"
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, // 1x1 RGB
+		0x00, 0x00, 0x00, // no interlace
+		0x90, 0x77, 0x53, 0xDE, // CRC
+	}
+	if err := os.WriteFile(pngPath, pngHeader, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ref, _ := store.Store(pngPath, media.MediaMeta{}, "test")
+
+	messages := []providers.Message{
+		{Role: "tool", Content: "Image loaded", Media: []string{ref}},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	// Tool message should have path tag but no base64
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected 0 media in tool message, got %d", len(result[0].Media))
+	}
+	localPath, _, _ := store.ResolveWithMeta(ref)
+	if !strings.Contains(result[0].Content, "[image:"+localPath+"]") {
+		t.Fatalf("expected image path tag in tool content, got %q", result[0].Content)
+	}
+
+	// A synthetic user message with base64 should follow
+	if len(result) != 2 {
+		t.Fatalf("expected 2 messages (tool + synthetic user), got %d", len(result))
+	}
+	if result[1].Role != "user" {
+		t.Fatalf("expected synthetic message role=user, got %q", result[1].Role)
+	}
+	if len(result[1].Media) != 1 {
+		t.Fatalf("expected 1 base64 media in synthetic user message, got %d", len(result[1].Media))
+	}
+	if !strings.HasPrefix(result[1].Media[0], "data:image/png;base64,") {
+		t.Fatalf("expected data:image/png;base64, prefix, got %q", result[1].Media[0][:40])
 	}
 }
 
@@ -4806,11 +4850,8 @@ func TestResolveMediaRefs_UsesMetaContentType(t *testing.T) {
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
 
-	if len(result[0].Media) != 1 {
-		t.Fatalf("expected 1 media, got %d", len(result[0].Media))
-	}
-	if !strings.HasPrefix(result[0].Media[0], "data:image/jpeg;base64,") {
-		t.Fatalf("expected jpeg prefix, got %q", result[0].Media[0][:30])
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected 0 media (images use path tags), got %d", len(result[0].Media))
 	}
 	localPath, _, _ := store.ResolveWithMeta(ref)
 	expectedContent := "hi [image:" + localPath + "]"
@@ -4948,11 +4989,8 @@ func TestResolveMediaRefs_MixedImageAndFile(t *testing.T) {
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
 
-	if len(result[0].Media) != 1 {
-		t.Fatalf("expected 1 media (image base64 only), got %d", len(result[0].Media))
-	}
-	if !strings.HasPrefix(result[0].Media[0], "data:image/png;base64,") {
-		t.Fatal("expected image to be base64 encoded")
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected 0 media (all types use path tags), got %d", len(result[0].Media))
 	}
 	imgLocalPath, _, _ := store.ResolveWithMeta(imgRef)
 	pdfLocalPath, _, _ := store.ResolveWithMeta(fileRef)
