@@ -192,6 +192,17 @@ func clearTrackedToolFeedbackMessage(
 	}
 }
 
+// DismissToolFeedback clears any tracked tool feedback animation for the
+// given channel/chat. This is called when a turn ends without a final
+// response (e.g., ResponseHandled tools) to stop orphaned animation goroutines.
+func (m *Manager) DismissToolFeedback(ctx context.Context, channelName, chatID string) {
+	ch, ok := m.GetChannel(channelName)
+	if !ok {
+		return
+	}
+	dismissTrackedToolFeedbackMessage(ctx, ch, chatID, nil)
+}
+
 func prepareToolFeedbackMessageContent(ch Channel, content string) string {
 	prepared := strings.TrimSpace(content)
 	if prepared == "" {
