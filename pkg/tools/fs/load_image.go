@@ -150,7 +150,7 @@ func (t *LoadImageTool) Execute(ctx context.Context, args map[string]any) *ToolR
 	// Build the tool result text. The media:// ref in Media will be picked
 	// up by resolveMediaRefs in agent_media.go and base64-encoded for tool
 	// result messages (role="tool"), so the LLM can see the image content.
-	msg := fmt.Sprintf("Image loaded: %s\n[image: %s]", filename, ref)
+	msg := fmt.Sprintf("Image loaded: %s\n[image: photo]", filename)
 
 	return &ToolResult{
 		ForLLM:  msg,

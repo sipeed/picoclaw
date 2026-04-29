@@ -4746,6 +4746,52 @@ func TestResolveMediaRefs_ToolRoleImageAppendedAsUserMessage(t *testing.T) {
 	}
 }
 
+func TestResolveMediaRefs_MultiToolCallPreservesOrdering(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	// Create image for tool #1
+	pngPath := filepath.Join(dir, "loaded.png")
+	pngHeader := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02,
+		0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE,
+	}
+	os.WriteFile(pngPath, pngHeader, 0o644)
+	imgRef, _ := store.Store(pngPath, media.MediaMeta{}, "test")
+
+	// Simulate: assistant called load_image + read_file, two tool results follow
+	messages := []providers.Message{
+		{Role: "assistant", Content: "Let me load the image and read the file."},
+		{Role: "tool", Content: "Image loaded [image: photo]", Media: []string{imgRef}},
+		{Role: "tool", Content: "file contents here"},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	// assistant, tool#1, tool#2 must remain contiguous — no user in between
+	if result[0].Role != "assistant" {
+		t.Fatalf("result[0] expected assistant, got %q", result[0].Role)
+	}
+	if result[1].Role != "tool" {
+		t.Fatalf("result[1] expected tool, got %q", result[1].Role)
+	}
+	if result[2].Role != "tool" {
+		t.Fatalf("result[2] expected tool, got %q", result[2].Role)
+	}
+
+	// Synthetic user message should come AFTER the tool block
+	if len(result) != 4 {
+		t.Fatalf("expected 4 messages (assistant + 2 tool + synthetic user), got %d", len(result))
+	}
+	if result[3].Role != "user" {
+		t.Fatalf("result[3] expected user, got %q", result[3].Role)
+	}
+	if len(result[3].Media) != 1 || !strings.HasPrefix(result[3].Media[0], "data:image/png;base64,") {
+		t.Fatal("expected synthetic user message to contain base64 image")
+	}
+}
+
 func TestResolveMediaRefs_OversizedImageSkipsBase64KeepsPathTag(t *testing.T) {
 	store := media.NewFileMediaStore()
 	dir := t.TempDir()

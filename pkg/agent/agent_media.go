@@ -24,7 +24,8 @@ import (
 // For user messages: images get path tags only ([image:/path]) so the LLM
 // can decide whether to view them via load_image or operate on the file.
 // For tool messages: images are base64-encoded and appended as a synthetic
-// user message (many APIs don't support image_url in tool messages).
+// user message after the contiguous tool-message block ends, preserving
+// the required assistant→tool ordering for LLM APIs.
 // Non-image files always get path tags regardless of role.
 // Returns a new slice; original messages are not mutated.
 func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxSize int) []providers.Message {
@@ -33,17 +34,36 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxS
 	}
 
 	result := make([]providers.Message, 0, len(messages))
+	var pendingToolImages []string
 
-	for _, m := range messages {
+	for idx, m := range messages {
+		// When leaving a tool-message block, flush any accumulated images
+		// as a synthetic user message.
+		if m.Role != "tool" && len(pendingToolImages) > 0 {
+			result = append(result, providers.Message{
+				Role:    "user",
+				Content: "[Loaded image from tool result above]",
+				Media:   pendingToolImages,
+			})
+			pendingToolImages = nil
+		}
+
 		if len(m.Media) == 0 {
 			result = append(result, m)
+			if idx == len(messages)-1 && len(pendingToolImages) > 0 {
+				result = append(result, providers.Message{
+					Role:    "user",
+					Content: "[Loaded image from tool result above]",
+					Media:   pendingToolImages,
+				})
+				pendingToolImages = nil
+			}
 			continue
 		}
 
 		msg := m
 		resolved := make([]string, 0, len(m.Media))
 		var pathTags []string
-		var toolImageDataURLs []string
 
 		for _, ref := range m.Media {
 			if !strings.HasPrefix(ref, "media://") {
@@ -72,13 +92,10 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxS
 			mime := detectMIME(localPath, meta)
 			pathTags = append(pathTags, buildPathTag(mime, localPath))
 
-			// For tool results (e.g. load_image), base64-encode images into a
-			// separate user message — many LLM APIs don't support image_url in
-			// tool messages.
 			if m.Role == "tool" && strings.HasPrefix(mime, "image/") {
 				dataURL := encodeImageToDataURL(localPath, mime, info, maxSize)
 				if dataURL != "" {
-					toolImageDataURLs = append(toolImageDataURLs, dataURL)
+					pendingToolImages = append(pendingToolImages, dataURL)
 				}
 			}
 		}
@@ -89,14 +106,14 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxS
 		}
 		result = append(result, msg)
 
-		// Append a synthetic user message carrying the image data so the LLM
-		// can see it (tool messages don't support image_url in most APIs).
-		if len(toolImageDataURLs) > 0 {
+		// If this is the last message and we have pending images, flush them.
+		if idx == len(messages)-1 && len(pendingToolImages) > 0 {
 			result = append(result, providers.Message{
-				Role:  "user",
+				Role:    "user",
 				Content: "[Loaded image from tool result above]",
-				Media: toolImageDataURLs,
+				Media:   pendingToolImages,
 			})
+			pendingToolImages = nil
 		}
 	}
 
