@@ -948,6 +948,14 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 		"conn_id":    pc.id,
 	}
 
+	if payloadMeta, ok := msg.Payload["metadata"].(map[string]any); ok {
+		for k, v := range payloadMeta {
+			if s, ok := v.(string); ok && s != "" {
+				metadata[k] = s
+			}
+		}
+	}
+
 	logger.DebugCF("pico", "Received message", map[string]any{
 		"session_id": sessionID,
 		"preview":    truncate(content, 50),
