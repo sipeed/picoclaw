@@ -404,6 +404,7 @@ PicoClaw supports 30+ LLM providers through the `model_list` configuration. Use 
 | [Xiaomi MiMo](https://platform.xiaomimimo.com/) | `mimo/` | Required | MiMo models |
 | [Ollama](https://ollama.com/) | `ollama/` | Not needed | Local models, self-hosted |
 | [vLLM](https://docs.vllm.ai/) | `vllm/` | Not needed | Local deployment, OpenAI-compatible |
+| [OVMS](https://docs.openvino.ai/2026/model-server/ovms_docs_llm_quickstart.html) | `ovms/` | Not needed | Intel OpenVINO Model Server, OpenAI-compatible |
 | [LiteLLM](https://docs.litellm.ai/) | `litellm/` | Varies | Proxy for 100+ providers |
 | [Azure OpenAI](https://portal.azure.com/) | `azure/` | Required | Enterprise Azure deployment |
 | [GitHub Copilot](https://github.com/features/copilot) | `github-copilot/` | OAuth | Device code login |
@@ -413,7 +414,7 @@ PicoClaw supports 30+ LLM providers through the `model_list` configuration. Use 
 > \* AWS Bedrock requires build tag: `go build -tags bedrock`. Set `api_base` to a region name (e.g., `us-east-1`) for automatic endpoint resolution across all AWS partitions (aws, aws-cn, aws-us-gov). When using a full endpoint URL instead, you must also configure `AWS_REGION` via environment variable or AWS config/profile.
 
 <details>
-<summary><b>Local deployment (Ollama, vLLM, etc.)</b></summary>
+<summary><b>Local deployment (Ollama, vLLM, OVMS, etc.)</b></summary>
 
 **Ollama:**
 ```json
@@ -436,6 +437,19 @@ PicoClaw supports 30+ LLM providers through the `model_list` configuration. Use 
       "model_name": "local-vllm",
       "model": "vllm/your-model",
       "api_base": "http://localhost:8000/v1"
+    }
+  ]
+}
+```
+
+**OVMS (OpenVINO Model Server):**
+```json
+{
+  "model_list": [
+    {
+      "model_name": "local-ovms",
+      "model": "ovms/your-model",
+      "api_base": "http://localhost:8000/v3"
     }
   ]
 }

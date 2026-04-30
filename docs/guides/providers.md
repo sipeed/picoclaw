@@ -64,6 +64,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **OpenRouter**      | `openrouter`      | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            |
 | **LiteLLM Proxy**   | `litellm`         | `http://localhost:4000/v1`                          | OpenAI    | Your LiteLLM proxy key                                           |
 | **VLLM**            | `vllm`            | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
+| **OVMS**            | `ovms`           | `http://localhost:8000/v3`                          | OpenAI    | Local (no key needed)                                            |
 | **Cerebras**        | `cerebras`        | `https://api.cerebras.ai/v1`                        | OpenAI    | [Get Key](https://cerebras.ai)                                   |
 | **VolcEngine (Doubao)** | `volcengine`  | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
 | **神算云**          | `shengsuanyun`    | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                |
@@ -121,7 +122,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | `model_name` | string | Yes | Unique name used to reference this model in agent config |
 | `provider` | string | No | Preferred provider identifier. When present, PicoClaw sends `model` unchanged to that provider |
 | `model` | string | Yes | Native model ID when `provider` is set. If `provider` is omitted, the legacy `provider/model` form is still supported |
-| `api_keys` | string[] | Yes* | API key(s) for authentication. Multiple keys enable per-request rotation. Not required for local providers (Ollama, LM Studio, VLLM) |
+| `api_keys` | string[] | Yes* | API key(s) for authentication. Multiple keys enable per-request rotation. Not required for local providers (Ollama, LM Studio, VLLM, OVMS) |
 | `api_base` | string | No | Override the default API endpoint URL |
 | `proxy` | string | No | HTTP proxy URL for this model entry |
 | `user_agent` | string | No | Custom `User-Agent` header sent with API requests (supported by OpenAI-compatible, Gemini, Anthropic, and Azure providers) |
@@ -454,7 +455,7 @@ For detailed migration guide, see [migration/model-list-migration.md](../migrati
 
 PicoClaw routes providers by protocol family:
 
-- OpenAI-compatible protocol: OpenRouter, OpenAI-compatible gateways, Groq, Zhipu, and vLLM-style endpoints.
+- OpenAI-compatible protocol: OpenRouter, OpenAI-compatible gateways, Groq, Zhipu, OVMS, and vLLM-style endpoints.
 - Gemini native protocol: Google Gemini via the native `models/*:generateContent` and `models/*:streamGenerateContent` endpoints.
 - Anthropic protocol: Claude-native API behavior.
 - Codex/OAuth path: OpenAI OAuth/token authentication route.

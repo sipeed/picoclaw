@@ -369,7 +369,7 @@ HEARTBEAT_OK を返信        ユーザーが直接結果を受信
 
 PicoClaw はプロトコルファミリーで Provider をルーティングします：
 
-- **OpenAI 互換**：OpenRouter、Groq、Zhipu、vLLM スタイルのエンドポイントなど。
+- **OpenAI 互換**：OpenRouter、Groq、Zhipu、vLLM スタイルのエンドポイント、OVMSなど。
 - **Gemini ネイティブ**：Google Gemini のネイティブ `models/*:generateContent` / `models/*:streamGenerateContent` エンドポイント。
 - **Anthropic**：Claude ネイティブ API の動作。
 - **Codex/OAuth**：OpenAI OAuth/トークン認証ルート。

@@ -452,6 +452,7 @@ Agent 读取 HEARTBEAT.md
 | **OpenRouter**          | `openrouter`      | `https://openrouter.ai/api/v1`                      | OpenAI    | [获取](https://openrouter.ai/keys)                               |
 | **LiteLLM Proxy**       | `litellm`         | `http://localhost:4000/v1`                          | OpenAI    | 你的 LiteLLM 代理 Key                                            |
 | **VLLM**                | `vllm`            | `http://localhost:8000/v1`                          | OpenAI    | 本地                                                             |
+| **OVMS**                | `ovms`           | `http://localhost:8000/v3`                          | OpenAI    | 本地（无需密钥）                                                 |
 | **Cerebras**            | `cerebras`        | `https://api.cerebras.ai/v1`                        | OpenAI    | [获取](https://cerebras.ai)                                      |
 | **火山引擎 (豆包)**     | `volcengine`      | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [获取](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
 | **神算云**              | `shengsuanyun`    | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | —                                                                |
@@ -674,7 +675,7 @@ Agent 读取 HEARTBEAT.md
 
 PicoClaw 按协议族路由提供商：
 
-- **OpenAI 兼容**：OpenRouter、Groq、智谱、vLLM 风格端点及大多数其他提供商。
+- **OpenAI 兼容**：OpenRouter、Groq、智谱、vLLM 风格端点、OVMS 及大多数其他提供商。
 - **Gemini 原生**：Google Gemini 通过原生 `models/*:generateContent` 和 `models/*:streamGenerateContent` 端点接入。
 - **Anthropic**：Claude 原生 API 行为。
 - **Codex/OAuth**：OpenAI OAuth/Token 认证路由。

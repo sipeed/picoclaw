@@ -398,13 +398,14 @@ PicoClaw supporta 30+ provider LLM tramite la configurazione `model_list`. Usa i
 | [Xiaomi MiMo](https://platform.xiaomimimo.com/) | `mimo/` | Richiesta | Modelli MiMo |
 | [Ollama](https://ollama.com/) | `ollama/` | Non necessaria | Modelli locali, self-hosted |
 | [vLLM](https://docs.vllm.ai/) | `vllm/` | Non necessaria | Deploy locale, compatibile OpenAI |
+| [OVMS](https://docs.openvino.ai/2026/model-server/ovms_docs_llm_quickstart.html) | `ovms/` | Non necessaria | Intel OpenVINO Model Server, compatibile OpenAI |
 | [LiteLLM](https://docs.litellm.ai/) | `litellm/` | Variabile | Proxy per 100+ provider |
 | [Azure OpenAI](https://portal.azure.com/) | `azure/` | Richiesta | Deploy Azure enterprise |
 | [GitHub Copilot](https://github.com/features/copilot) | `github-copilot/` | OAuth | Login con device code |
 | [Antigravity](https://console.cloud.google.com/) | `antigravity/` | OAuth | Google Cloud AI |
 
 <details>
-<summary><b>Deploy locale (Ollama, vLLM, ecc.)</b></summary>
+<summary><b>Deploy locale (Ollama, vLLM, OVMS, ecc.)</b></summary>
 
 **Ollama:**
 ```json
@@ -427,6 +428,19 @@ PicoClaw supporta 30+ provider LLM tramite la configurazione `model_list`. Usa i
       "model_name": "local-vllm",
       "model": "vllm/your-model",
       "api_base": "http://localhost:8000/v1"
+    }
+  ]
+}
+```
+
+**OVMS (OpenVINO Model Server):**
+```json
+{
+  "model_list": [
+    {
+      "model_name": "local-ovms",
+      "model": "ovms/your-model",
+      "api_base": "http://localhost:8000/v3"
     }
   ]
 }
