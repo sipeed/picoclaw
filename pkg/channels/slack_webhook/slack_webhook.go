@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -67,7 +68,9 @@ func NewSlackWebhookChannel(
 		BaseChannel: base,
 		bc:          bc,
 		config:      cfg,
-		client:      &http.Client{},
+		client: &http.Client{
+			Timeout: 30 * time.Second,
+		},
 	}, nil
 }
 
@@ -134,7 +137,7 @@ func (c *SlackWebhookChannel) Send(ctx context.Context, msg bus.OutboundMessage)
 	resp, err := c.client.Do(req)
 	if err != nil {
 		logger.ErrorCF("slack_webhook", "Failed to send message", map[string]any{
-			"target": msg.ChatID,
+			"target": targetName,
 		})
 		return nil, fmt.Errorf("slack_webhook: send failed: %w", channels.ClassifyNetError(err))
 	}
@@ -142,14 +145,14 @@ func (c *SlackWebhookChannel) Send(ctx context.Context, msg bus.OutboundMessage)
 
 	if resp.StatusCode >= 400 {
 		logger.ErrorCF("slack_webhook", "Slack API error", map[string]any{
-			"target": msg.ChatID,
+			"target": targetName,
 			"status": resp.StatusCode,
 		})
 		return nil, fmt.Errorf("slack_webhook: send failed: %w", channels.ClassifySendError(resp.StatusCode, fmt.Errorf("status %d", resp.StatusCode)))
 	}
 
 	logger.DebugCF("slack_webhook", "Message sent successfully", map[string]any{
-		"target": msg.ChatID,
+		"target": targetName,
 	})
 
 	return nil, nil
@@ -184,7 +187,9 @@ func (c *SlackWebhookChannel) buildBlocks(content string) []map[string]any {
 	for _, seg := range segments {
 		if seg.isTable {
 			tableText := renderTable(seg.content)
-			blocks = append(blocks, c.textSection(tableText))
+			for _, chunk := range splitText(tableText, maxTextBlockLength) {
+				blocks = append(blocks, c.textSection(chunk))
+			}
 		} else {
 			text := strings.TrimSpace(seg.content)
 			if text == "" {
@@ -215,23 +220,25 @@ func (c *SlackWebhookChannel) textSection(text string) map[string]any {
 }
 
 func splitText(text string, maxLen int) []string {
-	if len(text) <= maxLen {
+	runes := []rune(text)
+	if len(runes) <= maxLen {
 		return []string{text}
 	}
 
 	var chunks []string
-	for len(text) > maxLen {
+	for len(runes) > maxLen {
 		splitAt := maxLen
-		if idx := strings.LastIndex(text[:maxLen], "\n"); idx > 0 {
-			splitAt = idx + 1
-		} else if idx := strings.LastIndex(text[:maxLen], " "); idx > 0 {
-			splitAt = idx + 1
+		window := string(runes[:maxLen])
+		if idx := strings.LastIndex(window, "\n"); idx > 0 {
+			splitAt = len([]rune(window[:idx])) + 1
+		} else if idx := strings.LastIndex(window, " "); idx > 0 {
+			splitAt = len([]rune(window[:idx])) + 1
 		}
-		chunks = append(chunks, text[:splitAt])
-		text = text[splitAt:]
+		chunks = append(chunks, string(runes[:splitAt]))
+		runes = runes[splitAt:]
 	}
-	if len(text) > 0 {
-		chunks = append(chunks, text)
+	if len(runes) > 0 {
+		chunks = append(chunks, string(runes))
 	}
 	return chunks
 }

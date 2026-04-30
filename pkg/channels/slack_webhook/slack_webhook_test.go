@@ -3,15 +3,18 @@ package slackwebhook
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -79,10 +82,12 @@ func TestNewSlackWebhookChannel_Validation(t *testing.T) {
 }
 
 func TestSlackWebhookChannel_Send(t *testing.T) {
-	var receivedPayload map[string]any
+	payloadCh := make(chan map[string]any, 1)
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &receivedPayload)
+		var payload map[string]any
+		json.Unmarshal(body, &payload)
+		payloadCh <- payload
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -115,6 +120,7 @@ func TestSlackWebhookChannel_Send(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify payload structure
+	receivedPayload := <-payloadCh
 	assert.Equal(t, "TestBot", receivedPayload["username"])
 	assert.Equal(t, ":test:", receivedPayload["icon_emoji"])
 	blocks, ok := receivedPayload["blocks"].([]any)
@@ -123,9 +129,9 @@ func TestSlackWebhookChannel_Send(t *testing.T) {
 }
 
 func TestSlackWebhookChannel_FallbackToDefault(t *testing.T) {
-	var requestCount int
+	var requestCount atomic.Int32
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount++
+		requestCount.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -149,7 +155,7 @@ func TestSlackWebhookChannel_FallbackToDefault(t *testing.T) {
 		ChatID:  "unknown_target",
 	})
 	require.NoError(t, err)
-	assert.Equal(t, 1, requestCount)
+	assert.Equal(t, int32(1), requestCount.Load())
 }
 
 func TestSlackWebhookChannel_ErrorClassification(t *testing.T) {
@@ -188,7 +194,12 @@ func TestSlackWebhookChannel_ErrorClassification(t *testing.T) {
 
 			_, err := ch.Send(context.Background(), bus.OutboundMessage{Content: "Test"})
 			require.Error(t, err)
-			// Error classification is internal; just verify we got an error
+
+			if tt.expectTemp {
+				assert.True(t, errors.Is(err, channels.ErrTemporary), "expected temporary error for %d", tt.statusCode)
+			} else {
+				assert.True(t, errors.Is(err, channels.ErrSendFailed), "expected permanent error for %d", tt.statusCode)
+			}
 		})
 	}
 }
