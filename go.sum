@@ -103,8 +103,8 @@ github.com/ergochat/readline v0.1.3 h1:/DytGTmwdUJcLAe3k3VJgowh5vNnsdifYT6uVaf4p
 github.com/ergochat/readline v0.1.3/go.mod h1:o3ux9QLHLm77bq7hDB21UTm6HlV2++IPDMfIfKDuOgY=
 github.com/fsnotify/fsnotify v1.4.7/go.mod h1:jwhsz4b93w/PPRr/qN1Yymfu8t87LnFCMoQvtojpjFo=
 github.com/fsnotify/fsnotify v1.4.9/go.mod h1:znqG4EE+3YCdAaPaxE2ZRY/06pZUdp0tY4IgpuI1SZQ=
-github.com/github/copilot-sdk/go v0.2.0 h1:RnrIIirmtp4wGgqSQFJ2k9phbeveIxOtYZqDogoNEa0=
-github.com/github/copilot-sdk/go v0.2.0/go.mod h1:uGWkjVYcp2DV9DgtqYihh5tEoJjNqxIFaUNnrwY4FxM=
+github.com/github/copilot-sdk/go v0.3.0 h1:LPMpoJzUTfrPbr/5e7s5QKvi66PMmREnbZ9kRxPe6ls=
+github.com/github/copilot-sdk/go v0.3.0/go.mod h1:uGWkjVYcp2DV9DgtqYihh5tEoJjNqxIFaUNnrwY4FxM=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
 github.com/go-logr/logr v1.4.3 h1:CjnDlHq8ikf6E492q6eKboGOC0T8CDaOvkHCIg8idEI=
 github.com/go-logr/logr v1.4.3/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=
