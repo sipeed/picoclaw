@@ -14,6 +14,17 @@ import (
 	orc "github.com/sipeed/picoclaw/pkg/providers/openai_responses_common"
 )
 
+func mustUnmarshalOutputItem(t *testing.T, raw string) responses.ResponseOutputItemUnion {
+	t.Helper()
+
+	var item responses.ResponseOutputItemUnion
+	if err := json.Unmarshal([]byte(raw), &item); err != nil {
+		t.Fatalf("unmarshal output item: %v", err)
+	}
+
+	return item
+}
+
 func TestBuildCodexParams_BasicMessage(t *testing.T) {
 	messages := []Message{
 		{Role: "user", Content: "Hello"},
@@ -236,6 +247,65 @@ func TestParseCodexResponse_TextOutput(t *testing.T) {
 	}
 	if result.Usage.TotalTokens != 15 {
 		t.Errorf("TotalTokens = %d, want 15", result.Usage.TotalTokens)
+	}
+}
+
+func TestHydrateCodexResponseOutput_UsesStreamItemsWhenCompletedOutputIsEmpty(t *testing.T) {
+	resp := &responses.Response{}
+	streamItem := mustUnmarshalOutputItem(t, `{
+		"id": "msg_1",
+		"type": "message",
+		"role": "assistant",
+		"status": "completed",
+		"content": [
+			{"type": "output_text", "text": "PONG"}
+		]
+	}`)
+
+	resp = hydrateCodexResponseOutput(resp, []responses.ResponseOutputItemUnion{streamItem}, "gpt-5.4", "gpt-5.4", "acct_123")
+	result := orc.ParseResponseFromStruct(resp)
+
+	if result.Content != "PONG" {
+		t.Fatalf("Content = %q, want %q", result.Content, "PONG")
+	}
+}
+
+func TestHydrateCodexResponseOutput_PreservesExistingCompletedOutput(t *testing.T) {
+	resp := &responses.Response{}
+	if err := json.Unmarshal([]byte(`{
+		"id": "resp_test",
+		"object": "response",
+		"status": "completed",
+		"output": [
+			{
+				"id": "msg_1",
+				"type": "message",
+				"role": "assistant",
+				"status": "completed",
+				"content": [
+					{"type": "output_text", "text": "from-completed"}
+				]
+			}
+		]
+	}`), resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	streamItem := mustUnmarshalOutputItem(t, `{
+		"id": "msg_2",
+		"type": "message",
+		"role": "assistant",
+		"status": "completed",
+		"content": [
+			{"type": "output_text", "text": "from-stream"}
+		]
+	}`)
+
+	resp = hydrateCodexResponseOutput(resp, []responses.ResponseOutputItemUnion{streamItem}, "gpt-5.4", "gpt-5.4", "acct_123")
+	result := orc.ParseResponseFromStruct(resp)
+
+	if result.Content != "from-completed" {
+		t.Fatalf("Content = %q, want %q", result.Content, "from-completed")
 	}
 }
 

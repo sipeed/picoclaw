@@ -104,8 +104,12 @@ func (p *CodexProvider) Chat(
 	defer stream.Close()
 
 	var resp *responses.Response
+	var outputItems []responses.ResponseOutputItemUnion
 	for stream.Next() {
 		evt := stream.Current()
+		if evt.Type == "response.output_item.done" {
+			outputItems = append(outputItems, evt.Item)
+		}
 		if evt.Type == "response.completed" || evt.Type == "response.failed" || evt.Type == "response.incomplete" {
 			evtResp := evt.Response
 			if evtResp.ID != "" {
@@ -153,7 +157,30 @@ func (p *CodexProvider) Chat(
 		return nil, fmt.Errorf("codex API call: stream ended without completed response")
 	}
 
+	resp = hydrateCodexResponseOutput(resp, outputItems, model, resolvedModel, accountID)
 	return orc.ParseResponseFromStruct(resp), nil
+}
+
+func hydrateCodexResponseOutput(
+	resp *responses.Response, outputItems []responses.ResponseOutputItemUnion, model, resolvedModel, accountID string,
+) *responses.Response {
+	if resp == nil || len(resp.Output) > 0 || len(outputItems) == 0 {
+		return resp
+	}
+
+	resp.Output = outputItems
+	logger.WarnCF(
+		"provider.codex",
+		"Codex completed response had empty output; reconstructed output from streamed output_item.done events",
+		map[string]any{
+			"requested_model":       model,
+			"resolved_model":        resolvedModel,
+			"streamed_output_items": len(outputItems),
+			"account_id_present":    accountID != "",
+		},
+	)
+
+	return resp
 }
 
 func (p *CodexProvider) GetDefaultModel() string {
