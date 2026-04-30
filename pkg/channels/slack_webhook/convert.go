@@ -86,29 +86,45 @@ func convertMarkdownToMrkdwn(text string) string {
 func splitContentWithTables(content string) []contentSegment {
 	var segments []contentSegment
 
-	matches := markdownTableRe.FindAllStringSubmatchIndex(content, -1)
+	// Protect code blocks from table detection
+	var codeBlocks []string
+	protected := codeBlockRe.ReplaceAllStringFunc(content, func(match string) string {
+		codeBlocks = append(codeBlocks, match)
+		return "\x00CODEBLOCK\x00"
+	})
+
+	matches := markdownTableRe.FindAllStringSubmatchIndex(protected, -1)
 	if len(matches) == 0 {
 		return []contentSegment{{content: content, isTable: false}}
+	}
+
+	// Restore code blocks in protected content for position mapping
+	restoreCodeBlocks := func(s string) string {
+		result := s
+		for _, block := range codeBlocks {
+			result = strings.Replace(result, "\x00CODEBLOCK\x00", block, 1)
+		}
+		return result
 	}
 
 	lastEnd := 0
 	for _, match := range matches {
 		if match[0] > lastEnd {
 			segments = append(segments, contentSegment{
-				content: content[lastEnd:match[0]],
+				content: restoreCodeBlocks(protected[lastEnd:match[0]]),
 				isTable: false,
 			})
 		}
 		segments = append(segments, contentSegment{
-			content: content[match[0]:match[1]],
+			content: restoreCodeBlocks(protected[match[0]:match[1]]),
 			isTable: true,
 		})
 		lastEnd = match[1]
 	}
 
-	if lastEnd < len(content) {
+	if lastEnd < len(protected) {
 		segments = append(segments, contentSegment{
-			content: content[lastEnd:],
+			content: restoreCodeBlocks(protected[lastEnd:]),
 			isTable: false,
 		})
 	}
@@ -124,6 +140,7 @@ func renderTable(tableStr string) string {
 
 	// Parse all rows to get column widths
 	var allRows [][]string
+	maxCols := 0
 	for i, line := range lines {
 		if i == 1 && isSeparatorRow(line) {
 			continue
@@ -131,6 +148,9 @@ func renderTable(tableStr string) string {
 		cells := parseTableRow(line)
 		if len(cells) > 0 {
 			allRows = append(allRows, cells)
+			if len(cells) > maxCols {
+				maxCols = len(cells)
+			}
 		}
 	}
 
@@ -138,12 +158,13 @@ func renderTable(tableStr string) string {
 		return "```\n" + tableStr + "\n```"
 	}
 
-	// Calculate max width for each column
-	colWidths := make([]int, len(allRows[0]))
+	// Calculate max width for each column using rune count
+	colWidths := make([]int, maxCols)
 	for _, row := range allRows {
 		for i, cell := range row {
-			if i < len(colWidths) && len(cell) > colWidths[i] {
-				colWidths[i] = len(cell)
+			runeLen := len([]rune(cell))
+			if runeLen > colWidths[i] {
+				colWidths[i] = runeLen
 			}
 		}
 	}
@@ -203,10 +224,11 @@ func renderTable(tableStr string) string {
 }
 
 func padRight(s string, width int) string {
-	if len(s) >= width {
+	runeLen := len([]rune(s))
+	if runeLen >= width {
 		return s
 	}
-	return s + strings.Repeat(" ", width-len(s))
+	return s + strings.Repeat(" ", width-runeLen)
 }
 
 func isSeparatorRow(line string) bool {

@@ -520,8 +520,8 @@ type SlackWebhookSettings struct {
 // SlackWebhookTarget represents a single Slack Incoming Webhook destination.
 type SlackWebhookTarget struct {
 	WebhookURL SecureString `json:"webhook_url,omitzero" yaml:"webhook_url,omitempty"`
-	Username   string       `json:"username,omitempty"   yaml:"-"`
-	IconEmoji  string       `json:"icon_emoji,omitempty" yaml:"-"`
+	Username   string       `json:"username,omitempty"   yaml:"username,omitempty"`
+	IconEmoji  string       `json:"icon_emoji,omitempty" yaml:"icon_emoji,omitempty"`
 }
 
 type HeartbeatConfig struct {

@@ -50,7 +50,7 @@ func NewSlackWebhookChannel(
 		}
 		parsed, err := url.Parse(webhookURL)
 		if err != nil {
-			return nil, fmt.Errorf("slack_webhook: webhook %q has invalid URL: %w", name, err)
+			return nil, fmt.Errorf("slack_webhook: webhook %q has invalid URL format", name)
 		}
 		if !strings.EqualFold(parsed.Scheme, "https") {
 			return nil, fmt.Errorf("slack_webhook: webhook %q must use HTTPS (got %q)", name, parsed.Scheme)
@@ -148,13 +148,20 @@ func (c *SlackWebhookChannel) Send(ctx context.Context, msg bus.OutboundMessage)
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		respText := strings.TrimSpace(string(respBody))
+		if respText == "" {
+			respText = http.StatusText(resp.StatusCode)
+			if respText == "" {
+				respText = "unknown error"
+			}
+		}
 		logger.ErrorCF("slack_webhook", "Slack API error", map[string]any{
 			"target":   targetName,
 			"status":   resp.StatusCode,
-			"response": string(respBody),
+			"response": respText,
 		})
-		return nil, fmt.Errorf("slack_webhook: send failed (status %d: %s): %w",
-			resp.StatusCode, string(respBody), channels.ClassifySendError(resp.StatusCode, nil))
+		sendErr := fmt.Errorf("status %d: %s", resp.StatusCode, respText)
+		return nil, fmt.Errorf("slack_webhook: %w", channels.ClassifySendError(resp.StatusCode, sendErr))
 	}
 
 	logger.DebugCF("slack_webhook", "Message sent successfully", map[string]any{
@@ -237,38 +244,47 @@ func splitText(text string, maxLen int) []string {
 	for len(runes) > maxLen {
 		splitAt := findSplitPoint(runes, maxLen, inFence)
 		chunk := string(runes[:splitAt])
+
+		chunkEndsInFence := endsInsideFence(chunk, inFence)
+
+		// If splitting inside a fence, wrap chunks to be self-contained
+		if inFence && !strings.HasPrefix(strings.TrimSpace(chunk), "```") {
+			chunk = "```\n" + chunk
+		}
+		if chunkEndsInFence {
+			chunk = strings.TrimSuffix(chunk, "\n") + "\n```"
+		}
+
 		chunks = append(chunks, chunk)
-		inFence = endsInsideFence(chunk, inFence)
+		inFence = chunkEndsInFence
 		runes = runes[splitAt:]
 	}
+
 	if len(runes) > 0 {
-		chunks = append(chunks, string(runes))
+		remainder := string(runes)
+		// Wrap remainder if we're still in a fence
+		if inFence && !strings.HasPrefix(strings.TrimSpace(remainder), "```") {
+			remainder = "```\n" + remainder
+		}
+		chunks = append(chunks, remainder)
 	}
 	return chunks
 }
 
-func findSplitPoint(runes []rune, maxLen int, inFence bool) int {
+func findSplitPoint(runes []rune, maxLen int, _ bool) int {
 	window := string(runes[:maxLen])
 
-	// Try splitting on newline, but avoid splitting inside a fence
+	// Try splitting on newline
 	if idx := strings.LastIndex(window, "\n"); idx > 0 {
-		splitAt := len([]rune(window[:idx])) + 1
-		chunk := string(runes[:splitAt])
-		if !endsInsideFence(chunk, inFence) {
-			return splitAt
-		}
+		return len([]rune(window[:idx])) + 1
 	}
 
-	// Try splitting on space, but only if we won't end up inside a fence
+	// Try splitting on space
 	if idx := strings.LastIndex(window, " "); idx > 0 {
-		splitAt := len([]rune(window[:idx])) + 1
-		chunk := string(runes[:splitAt])
-		if !endsInsideFence(chunk, inFence) {
-			return splitAt
-		}
+		return len([]rune(window[:idx])) + 1
 	}
 
-	// If we're in a fence or would split into one, try to split before the fence
+	// Try to split before a fence marker
 	if idx := strings.LastIndex(window, "```"); idx > 0 {
 		return len([]rune(window[:idx]))
 	}
