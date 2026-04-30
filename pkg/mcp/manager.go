@@ -498,6 +498,12 @@ func (m *Manager) CallTool(
 	}
 	defer m.wg.Done()
 
+	// Some MCP servers (notably @playwright/mcp) reject `arguments: null` with
+	// a Zod validation error ("expected record, received null") when a tool
+	// has no required parameters. Always send an empty object instead of nil.
+	if arguments == nil {
+		arguments = map[string]any{}
+	}
 	params := &mcp.CallToolParams{
 		Name:      toolName,
 		Arguments: arguments,
