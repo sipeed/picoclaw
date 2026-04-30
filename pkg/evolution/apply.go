@@ -115,7 +115,18 @@ func (a *Applier) rollbackSkill(skillPath, backupPath string, hadOriginal bool) 
 	if err := os.Remove(skillPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	skillDir := filepath.Dir(skillPath)
+	if err := os.Remove(skillDir); err != nil && !os.IsNotExist(err) && !isDirNotEmptyError(err) {
+		return err
+	}
 	return nil
+}
+
+func isDirNotEmptyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "directory not empty")
 }
 
 func validateAppliedSkillBody(body string) error {

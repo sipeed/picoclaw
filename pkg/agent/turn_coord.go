@@ -46,11 +46,14 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 				Iterations:            ts.currentIteration(),
 				Duration:              time.Since(ts.startedAt),
 				FinalContentLen:       ts.finalContentLen(),
+				UserMessage:           ts.userMessage,
+				FinalContent:          ts.finalContentSnapshot(),
 				ActiveSkills:          append([]string(nil), ts.activeSkills...),
 				AttemptedSkills:       attemptedSkills,
 				FinalSuccessfulPath:   finalSuccessfulPath,
 				SkillContextSnapshots: skillContextSnapshots,
 				ToolKinds:             ts.toolKindsSnapshot(),
+				ToolExecutions:        ts.toolExecutionsSnapshot(),
 			},
 		)
 	}()

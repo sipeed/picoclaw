@@ -243,3 +243,68 @@ func TestOrganizer_BuildRulesCapturesLateAddedSkillHintFromSnapshots(t *testing.
 		t.Fatalf("FinalSnapshotTrigger = %q, want context_retry_rebuild", got)
 	}
 }
+
+func TestOrganizer_BuildRulesUsesAddedSkillNamesWithoutSnapshots(t *testing.T) {
+	ok := true
+	cases := []evolution.LearningRecord{
+		{
+			ID:              "case-1",
+			Kind:            evolution.RecordKindCase,
+			WorkspaceID:     "ws-1",
+			CreatedAt:       time.Unix(1700000000, 0).UTC(),
+			Summary:         "weather shanghai",
+			UserGoal:        "check weather in shanghai",
+			Status:          evolution.RecordStatus("new"),
+			Success:         &ok,
+			UsedSkillNames:  []string{"geocode", "weather"},
+			AddedSkillNames: []string{"weather"},
+		},
+		{
+			ID:              "case-2",
+			Kind:            evolution.RecordKindCase,
+			WorkspaceID:     "ws-1",
+			CreatedAt:       time.Unix(1700000100, 0).UTC(),
+			Summary:         "weather beijing",
+			UserGoal:        "check weather in beijing",
+			Status:          evolution.RecordStatus("new"),
+			Success:         &ok,
+			UsedSkillNames:  []string{"geocode", "weather"},
+			AddedSkillNames: []string{"weather"},
+		},
+		{
+			ID:              "case-3",
+			Kind:            evolution.RecordKindCase,
+			WorkspaceID:     "ws-1",
+			CreatedAt:       time.Unix(1700000200, 0).UTC(),
+			Summary:         "weather hangzhou",
+			UserGoal:        "check weather in hangzhou",
+			Status:          evolution.RecordStatus("new"),
+			Success:         &ok,
+			UsedSkillNames:  []string{"geocode", "weather"},
+			AddedSkillNames: []string{"weather"},
+		},
+	}
+
+	org := evolution.NewOrganizer(evolution.OrganizerOptions{
+		MinCaseCount:   3,
+		MinSuccessRate: 0.7,
+		Now:            func() time.Time { return time.Unix(1700001000, 0).UTC() },
+	})
+
+	rules, err := org.BuildRules(cases)
+	if err != nil {
+		t.Fatalf("BuildRules: %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("len(rules) = %d, want 1", len(rules))
+	}
+	if got := rules[0].WinningPath; len(got) != 2 || got[0] != "geocode" || got[1] != "weather" {
+		t.Fatalf("WinningPath = %v, want [geocode weather]", got)
+	}
+	if got := rules[0].LateAddedSkills; len(got) != 1 || got[0] != "weather" {
+		t.Fatalf("LateAddedSkills = %v, want [weather]", got)
+	}
+	if got := rules[0].FinalSnapshotTrigger; got != "loaded_during_task" {
+		t.Fatalf("FinalSnapshotTrigger = %q, want loaded_during_task", got)
+	}
+}

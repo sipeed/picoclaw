@@ -38,6 +38,22 @@ type draftGenerationResult struct {
 	err   error
 }
 
+type stubSuccessJudge struct {
+	decisions map[string]evolution.TaskSuccessDecision
+	calls     []string
+}
+
+func (j *stubSuccessJudge) JudgeTaskRecord(
+	_ context.Context,
+	record evolution.LearningRecord,
+) (evolution.TaskSuccessDecision, error) {
+	j.calls = append(j.calls, record.ID)
+	if decision, ok := j.decisions[record.ID]; ok {
+		return decision, nil
+	}
+	return evolution.TaskSuccessDecision{Success: true, Reason: "default success"}, nil
+}
+
 func (g *sequenceDraftGenerator) GenerateDraft(
 	_ context.Context,
 	_ evolution.LearningRecord,
@@ -70,7 +86,7 @@ func TestRuntime_RunColdPathOnce_GeneratesCandidateDraft(t *testing.T) {
 	}
 
 	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
-		Config: config.EvolutionConfig{Enabled: true, Mode: "review"},
+		Config: config.EvolutionConfig{Enabled: true, Mode: "draft"},
 		Now:    func() time.Time { return time.Unix(1700001000, 0).UTC() },
 		DraftGenerator: stubDraftGenerator{
 			draft: evolution.SkillDraft{
@@ -107,6 +123,137 @@ func TestRuntime_RunColdPathOnce_GeneratesCandidateDraft(t *testing.T) {
 	}
 }
 
+func TestRuntime_RunColdPathOnce_AdmitsOnlyRecordsApprovedBySuccessJudge(t *testing.T) {
+	root := t.TempDir()
+	store := evolution.NewStore(evolution.NewPaths(root, ""))
+	ok := true
+	failed := false
+
+	records := []evolution.LearningRecord{
+		{
+			ID:             "task-failed",
+			Kind:           evolution.RecordKindTask,
+			WorkspaceID:    root,
+			CreatedAt:      time.Unix(1700000000, 0).UTC(),
+			Summary:        "failed weather attempt",
+			UserGoal:       "check weather in shanghai",
+			FinalOutput:    "tool failed",
+			Status:         evolution.RecordStatus("new"),
+			Success:        &failed,
+			UsedSkillNames: []string{"weather"},
+			ToolKinds:      []string{"read_file"},
+		},
+		{
+			ID:             "task-rejected",
+			Kind:           evolution.RecordKindTask,
+			WorkspaceID:    root,
+			CreatedAt:      time.Unix(1700000100, 0).UTC(),
+			Summary:        "partial weather answer",
+			UserGoal:       "check weather in shanghai",
+			FinalOutput:    "I will check it next",
+			Status:         evolution.RecordStatus("new"),
+			Success:        &ok,
+			UsedSkillNames: []string{"weather"},
+			ToolKinds:      []string{"read_file"},
+			ToolExecutions: []evolution.ToolExecutionRecord{{Name: "read_file", Success: true}},
+		},
+		{
+			ID:              "task-admitted",
+			Kind:            evolution.RecordKindTask,
+			WorkspaceID:     root,
+			CreatedAt:       time.Unix(1700000200, 0).UTC(),
+			Summary:         "weather answer delivered",
+			UserGoal:        "check weather in shanghai",
+			FinalOutput:     "sunny, 26C",
+			Status:          evolution.RecordStatus("new"),
+			Success:         &ok,
+			UsedSkillNames:  []string{"weather"},
+			AddedSkillNames: []string{"weather"},
+			ToolKinds:       []string{"read_file"},
+			ToolExecutions:  []evolution.ToolExecutionRecord{{Name: "read_file", Success: true}},
+			AttemptTrail: &evolution.AttemptTrail{
+				AttemptedSkills:     []string{"weather"},
+				FinalSuccessfulPath: []string{"weather"},
+			},
+		},
+	}
+	if err := store.AppendLearningRecords(records); err != nil {
+		t.Fatalf("AppendLearningRecords: %v", err)
+	}
+
+	judge := &stubSuccessJudge{
+		decisions: map[string]evolution.TaskSuccessDecision{
+			"task-rejected": {Success: false, Reason: "only partial reasoning"},
+			"task-admitted": {Success: true, Reason: "goal achieved"},
+		},
+	}
+
+	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
+		Config:         config.EvolutionConfig{Enabled: true, Mode: "draft"},
+		Store:          store,
+		SuccessJudge:   judge,
+		Organizer:      evolution.NewOrganizer(evolution.OrganizerOptions{MinCaseCount: 1, MinSuccessRate: 1}),
+		SkillsRecaller: evolution.NewSkillsRecaller(root),
+		DraftGenerator: stubDraftGenerator{
+			draft: evolution.SkillDraft{
+				ID:              "draft-weather",
+				TargetSkillName: "weather",
+				DraftType:       evolution.DraftTypeShortcut,
+				ChangeKind:      evolution.ChangeKindAppend,
+				HumanSummary:    "prefer the proven weather path",
+				BodyOrPatch:     "## Start Here\nUse the weather path directly.",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
+		t.Fatalf("RunColdPathOnce: %v", err)
+	}
+
+	if len(judge.calls) != 2 || judge.calls[0] != "task-rejected" || judge.calls[1] != "task-admitted" {
+		t.Fatalf("judge calls = %v, want [task-rejected task-admitted]", judge.calls)
+	}
+
+	allRecords, err := store.LoadLearningRecords()
+	if err != nil {
+		t.Fatalf("LoadLearningRecords: %v", err)
+	}
+
+	var pattern evolution.LearningRecord
+	foundPattern := false
+	for _, record := range allRecords {
+		if record.Kind != evolution.RecordKindPattern {
+			continue
+		}
+		pattern = record
+		foundPattern = true
+		break
+	}
+	if !foundPattern {
+		t.Fatal("expected generated pattern record")
+	}
+	if len(pattern.SourceRecordIDs) != 1 || pattern.SourceRecordIDs[0] != "task-admitted" {
+		t.Fatalf("SourceRecordIDs = %v, want [task-admitted]", pattern.SourceRecordIDs)
+	}
+	if got := pattern.WinningPath; len(got) != 1 || got[0] != "weather" {
+		t.Fatalf("WinningPath = %v, want [weather]", got)
+	}
+
+	drafts, err := store.LoadDrafts()
+	if err != nil {
+		t.Fatalf("LoadDrafts: %v", err)
+	}
+	if len(drafts) != 1 {
+		t.Fatalf("len(drafts) = %d, want 1", len(drafts))
+	}
+	if drafts[0].SourceRecordID != pattern.ID {
+		t.Fatalf("draft SourceRecordID = %q, want %q", drafts[0].SourceRecordID, pattern.ID)
+	}
+}
+
 func TestRuntime_RunColdPathOnce_QuarantinesInvalidDraft(t *testing.T) {
 	root := t.TempDir()
 	store := evolution.NewStore(evolution.NewPaths(root, ""))
@@ -125,7 +272,7 @@ func TestRuntime_RunColdPathOnce_QuarantinesInvalidDraft(t *testing.T) {
 	}
 
 	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
-		Config: config.EvolutionConfig{Enabled: true, Mode: "review"},
+		Config: config.EvolutionConfig{Enabled: true, Mode: "draft"},
 		DraftGenerator: stubDraftGenerator{
 			draft: evolution.SkillDraft{
 				ID:              "draft-1",
@@ -247,7 +394,7 @@ func TestRuntime_RunColdPathOnce_UsesDefaultDraftGenerator(t *testing.T) {
 	}
 
 	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
-		Config: config.EvolutionConfig{Enabled: true, Mode: "review"},
+		Config: config.EvolutionConfig{Enabled: true, Mode: "draft"},
 		Store:  store,
 	})
 	if err != nil {
@@ -301,7 +448,7 @@ func TestRuntime_RunColdPathOnce_UsesLLMDraftGeneratorWhenProviderAvailable(t *t
 		},
 	}
 	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
-		Config:         config.EvolutionConfig{Enabled: true, Mode: "review"},
+		Config:         config.EvolutionConfig{Enabled: true, Mode: "draft"},
 		Store:          store,
 		DraftGenerator: evolution.NewDraftGeneratorForWorkspace(root, provider, "runtime-explicit-model"),
 	})
@@ -348,7 +495,7 @@ func TestRuntime_RunColdPathOnce_UsesDefaultDraftGeneratorWhenFactoryHasNoProvid
 	}
 
 	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
-		Config:         config.EvolutionConfig{Enabled: true, Mode: "review"},
+		Config:         config.EvolutionConfig{Enabled: true, Mode: "draft"},
 		Store:          store,
 		DraftGenerator: evolution.NewDraftGeneratorForWorkspace(root, nil, ""),
 	})
@@ -408,7 +555,7 @@ func TestRuntime_RunColdPathOnce_UsesGeneratorFactoryWorkspaceForFallback(t *tes
 	}
 
 	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
-		Config: config.EvolutionConfig{Enabled: true, Mode: "review"},
+		Config: config.EvolutionConfig{Enabled: true, Mode: "draft"},
 		Store:  store,
 		GeneratorFactory: func(workspace string) evolution.DraftGenerator {
 			return evolution.NewDraftGeneratorForWorkspace(workspace, provider, "runtime-explicit-model")
@@ -484,7 +631,7 @@ func TestRuntime_RunColdPathOnce_PersistsEarlierDraftWhenLaterRuleFails(t *testi
 	}
 
 	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
-		Config:         config.EvolutionConfig{Enabled: true, Mode: "review"},
+		Config:         config.EvolutionConfig{Enabled: true, Mode: "draft"},
 		Store:          store,
 		DraftGenerator: generator,
 		SkillsRecaller: evolution.NewSkillsRecaller(root),
@@ -543,7 +690,7 @@ func TestRuntime_RunColdPathOnce_RegeneratesAfterQuarantinedDraft(t *testing.T) 
 	}
 
 	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
-		Config: config.EvolutionConfig{Enabled: true, Mode: "review"},
+		Config: config.EvolutionConfig{Enabled: true, Mode: "draft"},
 		Store:  store,
 		DraftGenerator: stubDraftGenerator{
 			draft: evolution.SkillDraft{

@@ -84,16 +84,24 @@ func TestEvolutionBridge_ObserveWritesCaseRecord(t *testing.T) {
 		t.Fatalf("tool_kinds = %#v, want [echo_text]", toolKinds)
 	}
 
-	activeSkillsRaw, exists := record["active_skill_names"]
+	activeSkillsRaw, exists := record["initial_skill_names"]
 	if !exists {
-		t.Fatal("active_skill_names field missing")
+		t.Fatal("initial_skill_names field missing")
 	}
 	activeSkills, ok := activeSkillsRaw.([]any)
 	if !ok {
-		t.Fatalf("active_skill_names wrong type: %#v", activeSkillsRaw)
+		t.Fatalf("initial_skill_names wrong type: %#v", activeSkillsRaw)
 	}
 	if len(activeSkills) != 1 || activeSkills[0] != "observe-skill" {
-		t.Fatalf("active_skill_names = %#v, want [observe-skill]", activeSkills)
+		t.Fatalf("initial_skill_names = %#v, want [observe-skill]", activeSkills)
+	}
+	toolExecsRaw, exists := record["tool_executions"]
+	if !exists {
+		t.Fatal("tool_executions field missing")
+	}
+	toolExecs, ok := toolExecsRaw.([]any)
+	if !ok || len(toolExecs) != 1 {
+		t.Fatalf("tool_executions wrong type: %#v", toolExecsRaw)
 	}
 }
 
@@ -238,14 +246,13 @@ func TestEvolutionBridge_ObserveDoesNotCreateDraftFile(t *testing.T) {
 	assertNotExists(t, filepath.Join(tmpDir, "state", "evolution", "skill-drafts.json"))
 }
 
-func TestEvolutionBridge_AutoRunColdPathCreatesDraftFile(t *testing.T) {
+func TestEvolutionBridge_DraftModeAutomaticallyRunsColdPathAndCreatesDraftFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	seedReadyRule(t, tmpDir)
 
 	al := newEvolutionTestLoop(t, tmpDir, config.EvolutionConfig{
-		Enabled:         true,
-		Mode:            "review",
-		AutoRunColdPath: true,
+		Enabled: true,
+		Mode:    "draft",
 	}, &simpleMockProvider{response: "ok"})
 	defer al.Close()
 
@@ -261,14 +268,13 @@ func TestEvolutionBridge_AutoRunColdPathCreatesDraftFile(t *testing.T) {
 	waitForDrafts(t, filepath.Join(tmpDir, "state", "evolution", "skill-drafts.json"), 1)
 }
 
-func TestEvolutionBridge_AutoRunColdPathUsesProviderBackedDraftGenerator(t *testing.T) {
+func TestEvolutionBridge_DraftModeUsesProviderBackedDraftGenerator(t *testing.T) {
 	tmpDir := t.TempDir()
 	seedReadyRule(t, tmpDir)
 
 	al := newEvolutionTestLoop(t, tmpDir, config.EvolutionConfig{
-		Enabled:         true,
-		Mode:            "review",
-		AutoRunColdPath: true,
+		Enabled: true,
+		Mode:    "draft",
 	}, &simpleMockProvider{
 		response: `{"target_skill_name":"weather","draft_type":"shortcut","change_kind":"append","human_summary":"Prefer native-name path first","body_or_patch":"## Start Here\nUse native-name query first."}`,
 	})
@@ -289,7 +295,7 @@ func TestEvolutionBridge_AutoRunColdPathUsesProviderBackedDraftGenerator(t *test
 	}
 }
 
-func TestEvolutionBridge_AutoRunColdPathUsesProviderDefaultModel(t *testing.T) {
+func TestEvolutionBridge_DraftModeUsesProviderDefaultModel(t *testing.T) {
 	tmpDir := t.TempDir()
 	seedReadyRule(t, tmpDir)
 
@@ -299,9 +305,8 @@ func TestEvolutionBridge_AutoRunColdPathUsesProviderDefaultModel(t *testing.T) {
 	}
 
 	al := newEvolutionTestLoop(t, tmpDir, config.EvolutionConfig{
-		Enabled:         true,
-		Mode:            "review",
-		AutoRunColdPath: true,
+		Enabled: true,
+		Mode:    "draft",
 	}, provider)
 	defer al.Close()
 
@@ -316,15 +321,13 @@ func TestEvolutionBridge_AutoRunColdPathUsesProviderDefaultModel(t *testing.T) {
 	}
 }
 
-func TestEvolutionBridge_AutoRunColdPathApplyModeWithoutAutoApplyKeepsCandidateDraft(t *testing.T) {
+func TestEvolutionBridge_DraftModeKeepsCandidateDraft(t *testing.T) {
 	tmpDir := t.TempDir()
 	seedReadyRule(t, tmpDir)
 
 	al := newEvolutionTestLoop(t, tmpDir, config.EvolutionConfig{
-		Enabled:         true,
-		Mode:            "apply",
-		AutoRunColdPath: true,
-		AutoApply:       false,
+		Enabled: true,
+		Mode:    "draft",
 	}, &simpleMockProvider{
 		response: `{"target_skill_name":"weather","draft_type":"shortcut","change_kind":"create","human_summary":"Create weather helper","body_or_patch":"---\nname: weather\ndescription: weather helper\n---\n# Weather\n## Start Here\nUse native-name query first.\n"}`,
 	})
@@ -344,7 +347,7 @@ func TestEvolutionBridge_AutoRunColdPathApplyModeWithoutAutoApplyKeepsCandidateD
 	assertProfileNotExists(t, tmpDir, "weather")
 }
 
-func TestEvolutionBridge_AutoRunColdPathApplyModeAutoAppliesMergeDraft(t *testing.T) {
+func TestEvolutionBridge_ApplyModeAutomaticallyRunsColdPathAndAppliesMergeDraft(t *testing.T) {
 	tmpDir := t.TempDir()
 	seedReadyRule(t, tmpDir)
 
@@ -359,10 +362,8 @@ func TestEvolutionBridge_AutoRunColdPathApplyModeAutoAppliesMergeDraft(t *testin
 	}
 
 	al := newEvolutionTestLoop(t, tmpDir, config.EvolutionConfig{
-		Enabled:         true,
-		Mode:            "apply",
-		AutoRunColdPath: true,
-		AutoApply:       true,
+		Enabled: true,
+		Mode:    "apply",
 	}, &simpleMockProvider{
 		response: `{"target_skill_name":"weather","draft_type":"shortcut","change_kind":"merge","human_summary":"Merge native-name path","body_or_patch":"Prefer native-name query first."}`,
 	})
@@ -398,14 +399,13 @@ func TestEvolutionBridge_AutoRunColdPathApplyModeAutoAppliesMergeDraft(t *testin
 	}
 }
 
-func TestEvolutionBridge_AutoRunColdPathDisabledDoesNotCreateDraftFile(t *testing.T) {
+func TestEvolutionBridge_ObserveModeDoesNotRunColdPathOrCreateDraftFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	seedReadyRule(t, tmpDir)
 
 	al := newEvolutionTestLoop(t, tmpDir, config.EvolutionConfig{
-		Enabled:         true,
-		Mode:            "review",
-		AutoRunColdPath: false,
+		Enabled: true,
+		Mode:    "observe",
 	}, &simpleMockProvider{response: "ok"})
 	defer al.Close()
 
@@ -516,21 +516,24 @@ func TestEvolutionBridge_TurnEndUsesExplicitAttemptTrail(t *testing.T) {
 	if len(finalPath) != 2 || finalPath[0] != "geocode" || finalPath[1] != "weather" {
 		t.Fatalf("final_successful_path = %#v, want [geocode weather]", finalPath)
 	}
-	skillSnapshots, ok := attemptTrailRaw["skill_context_snapshots"].([]any)
-	if !ok {
-		t.Fatalf("skill_context_snapshots wrong type: %#v", attemptTrailRaw["skill_context_snapshots"])
+	if _, exists := attemptTrailRaw["skill_context_snapshots"]; exists {
+		t.Fatalf("skill_context_snapshots should not be persisted: %#v", attemptTrailRaw["skill_context_snapshots"])
 	}
-	if len(skillSnapshots) != 2 {
-		t.Fatalf("len(skill_context_snapshots) = %d, want 2", len(skillSnapshots))
+	initialSkills, ok := record["initial_skill_names"].([]any)
+	if !ok || len(initialSkills) != 1 || initialSkills[0] != "weather" {
+		t.Fatalf("initial_skill_names = %#v, want [weather]", record["initial_skill_names"])
+	}
+	addedSkills, ok := record["added_skill_names"].([]any)
+	if !ok || len(addedSkills) != 1 || addedSkills[0] != "geocode" {
+		t.Fatalf("added_skill_names = %#v, want [geocode]", record["added_skill_names"])
 	}
 }
 
 func TestEvolutionBridge_CloseStopsColdPathRunnerIdempotently(t *testing.T) {
 	cfg := &config.Config{
 		Evolution: config.EvolutionConfig{
-			Enabled:         true,
-			Mode:            "review",
-			AutoRunColdPath: true,
+			Enabled: true,
+			Mode:    "draft",
 		},
 	}
 
@@ -660,12 +663,17 @@ func waitForEvolutionRecord(t *testing.T, path string) map[string]any {
 		data, err := os.ReadFile(path)
 		if err == nil {
 			lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-			if len(lines) == 1 && lines[0] != "" {
+			for i := len(lines) - 1; i >= 0; i-- {
+				if strings.TrimSpace(lines[i]) == "" {
+					continue
+				}
 				var record map[string]any
-				if err := json.Unmarshal([]byte(lines[0]), &record); err != nil {
+				if err := json.Unmarshal([]byte(lines[i]), &record); err != nil {
 					t.Fatalf("json.Unmarshal(%s): %v", path, err)
 				}
-				return record
+				if kind, _ := record["kind"].(string); kind == string(evolution.RecordKindTask) {
+					return record
+				}
 			}
 		}
 		time.Sleep(10 * time.Millisecond)

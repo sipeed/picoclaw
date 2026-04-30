@@ -98,6 +98,9 @@ func (g *DefaultDraftGenerator) GenerateDraft(_ context.Context, rule LearningRe
 }
 
 func inferTargetSkillName(rule LearningRecord, matches []skills.SkillInfo) string {
+	if target := inferCombinedSkillName(rule); target != "" {
+		return target
+	}
 	if len(matches) > 0 && strings.TrimSpace(matches[0].Name) != "" {
 		return strings.TrimSpace(matches[0].Name)
 	}
@@ -116,6 +119,134 @@ func inferTargetSkillName(rule LearningRecord, matches []skills.SkillInfo) strin
 		return tokens[0]
 	}
 	return ""
+}
+
+func inferCombinedSkillName(rule LearningRecord) string {
+	path := normalizePath(rule.WinningPath)
+	if len(path) < 2 {
+		return ""
+	}
+
+	tokens := tokenizeForEvolution(rule.Summary)
+	suffix := commonWinningPathSuffix(path)
+	if len(tokens) == 1 && isNumericToken(tokens[0]) && suffix != "" {
+		if candidate := validSkillNameOrEmpty("calculate-" + tokens[0] + "-via-" + pluralizeSuffix(suffix)); candidate != "" {
+			return candidate
+		}
+	}
+	if len(tokens) >= 2 {
+		prefix := strings.Join(tokens[:minInt(len(tokens), 4)], "-")
+		if suffix != "" {
+			if candidate := validSkillNameOrEmpty(prefix + "-via-" + pluralizeSuffix(suffix)); candidate != "" {
+				return candidate
+			}
+		}
+		if candidate := validSkillNameOrEmpty(prefix + "-shortcut"); candidate != "" {
+			return candidate
+		}
+	}
+
+	compressedPath := compressedWinningPathName(path)
+	if candidate := validSkillNameOrEmpty("combined-" + compressedPath); candidate != "" {
+		return candidate
+	}
+	if candidate := validSkillNameOrEmpty(path[0] + "-to-" + path[len(path)-1] + "-shortcut"); candidate != "" {
+		return candidate
+	}
+	return ""
+}
+
+func commonWinningPathSuffix(path []string) string {
+	if len(path) < 2 {
+		return ""
+	}
+
+	var suffix string
+	for i, name := range path {
+		parts := strings.Split(strings.TrimSpace(name), "-")
+		if len(parts) == 0 {
+			return ""
+		}
+		last := strings.TrimSpace(parts[len(parts)-1])
+		if last == "" {
+			return ""
+		}
+		if i == 0 {
+			suffix = last
+			continue
+		}
+		if suffix != last {
+			return ""
+		}
+	}
+	return suffix
+}
+
+func compressedWinningPathName(path []string) string {
+	suffix := commonWinningPathSuffix(path)
+	fragments := make([]string, 0, len(path)+1)
+	for _, name := range path {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		if suffix != "" {
+			trimmed = strings.TrimSuffix(trimmed, "-"+suffix)
+			trimmed = strings.TrimSuffix(trimmed, suffix)
+			trimmed = strings.Trim(trimmed, "-")
+		}
+		if trimmed != "" {
+			fragments = append(fragments, trimmed)
+		}
+	}
+	if suffix != "" {
+		fragments = append(fragments, pluralizeSuffix(suffix))
+	}
+	if len(fragments) == 0 {
+		return strings.Join(path, "-")
+	}
+	return strings.Join(fragments, "-")
+}
+
+func pluralizeSuffix(suffix string) string {
+	suffix = strings.TrimSpace(strings.ToLower(suffix))
+	if suffix == "" {
+		return ""
+	}
+	if strings.HasSuffix(suffix, "s") {
+		return suffix
+	}
+	return suffix + "s"
+}
+
+func isNumericToken(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func validSkillNameOrEmpty(candidate string) string {
+	candidate = strings.Trim(candidate, "-")
+	candidate = strings.Join(strings.FieldsFunc(candidate, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
+	}), "-")
+	candidate = strings.ToLower(strings.Trim(candidate, "-"))
+	if candidate == "" {
+		return ""
+	}
+	if len(candidate) > skills.MaxNameLength {
+		return ""
+	}
+	if err := skills.ValidateSkillName(candidate); err != nil {
+		return ""
+	}
+	return candidate
 }
 
 func (g *DefaultDraftGenerator) loadBaseSkillContent(target string, matches []skills.SkillInfo) (string, bool, error) {

@@ -16,8 +16,8 @@ func TestDefaultDraftGenerator_PrefersLateAddedSkillAsTargetWhenNoMatches(t *tes
 	generator := evolution.NewDefaultDraftGenerator(t.TempDir())
 
 	draft, err := generator.GenerateDraft(context.Background(), evolution.LearningRecord{
-		Summary:              "weather native-name path",
-		WinningPath:          []string{"geocode", "weather"},
+		Summary:              "weather lookup",
+		WinningPath:          []string{"weather"},
 		LateAddedSkills:      []string{"weather"},
 		FinalSnapshotTrigger: "context_retry_rebuild",
 		EventCount:           4,
@@ -31,6 +31,35 @@ func TestDefaultDraftGenerator_PrefersLateAddedSkillAsTargetWhenNoMatches(t *tes
 	}
 	if !strings.Contains(draft.BodyOrPatch, "Late-added skill") {
 		t.Fatalf("BodyOrPatch = %q, want late-added skill guidance", draft.BodyOrPatch)
+	}
+}
+
+func TestDefaultDraftGenerator_PrefersCombinedSkillForStableMultiSkillPath(t *testing.T) {
+	workspace := t.TempDir()
+	generator := evolution.NewDefaultDraftGenerator(workspace)
+
+	draft, err := generator.GenerateDraft(context.Background(), evolution.LearningRecord{
+		Summary:         "调用三一定理计算100",
+		WinningPath:     []string{"three-one-theorem", "four-two-theorem", "five-three-theorem"},
+		LateAddedSkills: []string{"three-one-theorem", "four-two-theorem", "five-three-theorem"},
+		EventCount:      3,
+		SuccessRate:     1,
+	}, []skills.SkillInfo{
+		{Name: "three-one-theorem", Path: filepath.Join(workspace, "skills", "three-one-theorem", "SKILL.md"), Source: "workspace"},
+		{Name: "four-two-theorem", Path: filepath.Join(workspace, "skills", "four-two-theorem", "SKILL.md"), Source: "workspace"},
+		{Name: "five-three-theorem", Path: filepath.Join(workspace, "skills", "five-three-theorem", "SKILL.md"), Source: "workspace"},
+	})
+	if err != nil {
+		t.Fatalf("GenerateDraft: %v", err)
+	}
+	if draft.TargetSkillName != "calculate-100-via-theorems" {
+		t.Fatalf("TargetSkillName = %q, want calculate-100-via-theorems", draft.TargetSkillName)
+	}
+	if draft.ChangeKind != evolution.ChangeKindCreate {
+		t.Fatalf("ChangeKind = %q, want create", draft.ChangeKind)
+	}
+	if !strings.Contains(draft.BodyOrPatch, "---\nname: calculate-100-via-theorems") {
+		t.Fatalf("BodyOrPatch should contain full skill document:\n%s", draft.BodyOrPatch)
 	}
 }
 
@@ -106,5 +135,11 @@ func TestLLMDraftGenerator_BuildPromptIncludesLateAddedSkillHint(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "Final snapshot trigger: context_retry_rebuild") {
 		t.Fatalf("prompt missing final snapshot trigger:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Prefer creating a new combined shortcut skill") {
+		t.Fatalf("prompt missing combined skill guidance:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Suggested target skill name:") {
+		t.Fatalf("prompt missing suggested target skill name:\n%s", prompt)
 	}
 }

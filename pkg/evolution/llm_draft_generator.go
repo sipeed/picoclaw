@@ -105,8 +105,20 @@ func (g *LLMDraftGenerator) buildPrompt(rule LearningRecord, matches []skills.Sk
 		"Matched skill refs: " + summarizeSkillMatches(matches),
 		"Matched skill names: " + joinOrFallback(rule.MatchedSkillNames, "none"),
 		"",
+		combinedSkillGuidance(rule),
 		"body_or_patch should contain the full draft body or patch content as plain text.",
 	}, "\n")
+}
+
+func combinedSkillGuidance(rule LearningRecord) string {
+	if target := inferCombinedSkillName(rule); target != "" {
+		return strings.Join([]string{
+			"This rule represents a stable multi-step successful path.",
+			"Prefer creating a new combined shortcut skill instead of modifying one component skill.",
+			"Suggested target skill name: " + target,
+		}, "\n")
+	}
+	return "Prefer updating an existing skill only when the learned pattern clearly belongs inside that single skill."
 }
 
 func parseLLMDraft(content string) (SkillDraft, bool) {

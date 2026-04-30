@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/evolution"
@@ -53,6 +54,32 @@ func TestRuntime_FinalizeTurnWithEmptyWorkspaceDoesNothing(t *testing.T) {
 	}
 }
 
+func TestRuntime_FinalizeTurnSkipsHeartbeat(t *testing.T) {
+	workspace := t.TempDir()
+	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
+		Config: config.EvolutionConfig{Enabled: true, Mode: "apply"},
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
+		Workspace:    workspace,
+		TurnID:       "heartbeat-turn",
+		SessionKey:   "heartbeat",
+		Status:       "completed",
+		UserMessage:  "# Heartbeat Check",
+		FinalContent: "HEARTBEAT_OK",
+	}); err != nil {
+		t.Fatalf("FinalizeTurn: %v", err)
+	}
+
+	paths := evolution.NewPaths(workspace, "")
+	if _, err := os.Stat(paths.LearningRecords); !os.IsNotExist(err) {
+		t.Fatalf("heartbeat should not create learning records, stat err = %v", err)
+	}
+}
+
 func TestRuntime_FinalizeTurnWritesRecordWithOverride(t *testing.T) {
 	workspace := t.TempDir()
 	override := filepath.Join(t.TempDir(), "custom-state")
@@ -71,25 +98,36 @@ func TestRuntime_FinalizeTurnWritesRecordWithOverride(t *testing.T) {
 	}
 
 	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
-		Workspace:        workspace,
-		TurnID:           "turn-1",
-		SessionKey:       "session-1",
-		AgentID:          "agent-1",
-		Status:           "completed",
-		ToolKinds:        []string{"web", "read_file"},
+		Workspace:    workspace,
+		TurnID:       "turn-1",
+		SessionKey:   "session-1",
+		AgentID:      "agent-1",
+		Status:       "completed",
+		UserMessage:  "summarize the release notes",
+		FinalContent: "Here is the summary.",
+		ToolKinds:    []string{"web", "read_file"},
+		ToolExecutions: []evolution.ToolExecutionRecord{
+			{Name: "web", Success: true},
+			{Name: "read_file", Success: true},
+		},
 		ActiveSkillNames: []string{"skill-a"},
 	}); err != nil {
 		t.Fatalf("FinalizeTurn first call: %v", err)
 	}
 
 	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
-		Workspace:        workspace,
-		WorkspaceID:      "ws-explicit",
-		TurnID:           "turn-2",
-		SessionKey:       "session-2",
-		AgentID:          "agent-2",
-		Status:           "error",
-		ToolKinds:        []string{"bash"},
+		Workspace:    workspace,
+		WorkspaceID:  "ws-explicit",
+		TurnID:       "turn-2",
+		SessionKey:   "session-2",
+		AgentID:      "agent-2",
+		Status:       "error",
+		UserMessage:  "run the bash command",
+		FinalContent: "bash failed",
+		ToolKinds:    []string{"bash"},
+		ToolExecutions: []evolution.ToolExecutionRecord{
+			{Name: "bash", Success: false, ErrorSummary: "exit status 1"},
+		},
 		ActiveSkillNames: []string{"skill-b"},
 	}); err != nil {
 		t.Fatalf("FinalizeTurn second call: %v", err)
@@ -119,14 +157,35 @@ func TestRuntime_FinalizeTurnWritesRecordWithOverride(t *testing.T) {
 	if first.SessionKey != "session-1" {
 		t.Fatalf("first SessionKey = %q, want %q", first.SessionKey, "session-1")
 	}
-	if first.Summary != "turn turn-1 finished with status=completed" {
+	if first.Summary != "summarize the release notes" {
 		t.Fatalf("first Summary = %q", first.Summary)
+	}
+	if first.UserGoal != "summarize the release notes" {
+		t.Fatalf("first UserGoal = %q", first.UserGoal)
+	}
+	if first.FinalOutput != "Here is the summary." {
+		t.Fatalf("first FinalOutput = %q", first.FinalOutput)
 	}
 	if first.Success == nil || !*first.Success {
 		t.Fatalf("first Success = %v, want true", first.Success)
 	}
 	if len(first.ToolKinds) != 2 || first.ToolKinds[0] != "web" || first.ToolKinds[1] != "read_file" {
 		t.Fatalf("first ToolKinds = %v", first.ToolKinds)
+	}
+	if len(first.ToolExecutions) != 2 || !first.ToolExecutions[0].Success || first.ToolExecutions[0].Name != "web" {
+		t.Fatalf("first ToolExecutions = %+v", first.ToolExecutions)
+	}
+	if len(first.InitialSkillNames) != 1 || first.InitialSkillNames[0] != "skill-a" {
+		t.Fatalf("first InitialSkillNames = %v", first.InitialSkillNames)
+	}
+	if len(first.AddedSkillNames) != 0 {
+		t.Fatalf("first AddedSkillNames = %v, want empty", first.AddedSkillNames)
+	}
+	if len(first.UsedSkillNames) != 0 {
+		t.Fatalf("first UsedSkillNames = %v, want empty", first.UsedSkillNames)
+	}
+	if len(first.AllLoadedSkillNames) != 1 || first.AllLoadedSkillNames[0] != "skill-a" {
+		t.Fatalf("first AllLoadedSkillNames = %v", first.AllLoadedSkillNames)
 	}
 	if len(first.ActiveSkillNames) != 1 || first.ActiveSkillNames[0] != "skill-a" {
 		t.Fatalf("first ActiveSkillNames = %v", first.ActiveSkillNames)
@@ -169,8 +228,14 @@ func TestRuntime_FinalizeTurnWritesRecordWithOverride(t *testing.T) {
 	if second.SessionKey != "session-2" {
 		t.Fatalf("second SessionKey = %q, want %q", second.SessionKey, "session-2")
 	}
+	if second.UserGoal != "run the bash command" {
+		t.Fatalf("second UserGoal = %q", second.UserGoal)
+	}
 	if second.Success == nil || *second.Success {
 		t.Fatalf("second Success = %v, want false", second.Success)
+	}
+	if len(second.ToolExecutions) != 1 || second.ToolExecutions[0].ErrorSummary != "exit status 1" {
+		t.Fatalf("second ToolExecutions = %+v", second.ToolExecutions)
 	}
 	if second.AttemptTrail == nil {
 		t.Fatal("second AttemptTrail should not be nil")
@@ -241,14 +306,126 @@ func TestRuntime_FinalizeTurnWritesPotentiallyLearnableSignal(t *testing.T) {
 	if len(record.Signals) != 1 || record.Signals[0] != "potentially_learnable" {
 		t.Fatalf("Signals = %v, want [potentially_learnable]", record.Signals)
 	}
+	if got := record.InitialSkillNames; len(got) != 1 || got[0] != "geocode" {
+		t.Fatalf("InitialSkillNames = %v, want [geocode]", got)
+	}
+	if got := record.AddedSkillNames; len(got) != 1 || got[0] != "weather" {
+		t.Fatalf("AddedSkillNames = %v, want [weather]", got)
+	}
+	if got := record.UsedSkillNames; len(got) != 1 || got[0] != "weather" {
+		t.Fatalf("UsedSkillNames = %v, want [weather]", got)
+	}
+	if got := record.AllLoadedSkillNames; len(got) != 2 || got[0] != "geocode" || got[1] != "weather" {
+		t.Fatalf("AllLoadedSkillNames = %v, want [geocode weather]", got)
+	}
 	if record.AttemptTrail == nil {
 		t.Fatal("AttemptTrail should not be nil")
 	}
-	if got := record.AttemptTrail.FinalSuccessfulPath; len(got) != 2 || got[0] != "geocode" || got[1] != "weather" {
-		t.Fatalf("FinalSuccessfulPath = %v, want [geocode weather]", got)
+	if got := record.AttemptTrail.FinalSuccessfulPath; len(got) != 1 || got[0] != "weather" {
+		t.Fatalf("FinalSuccessfulPath = %v, want [weather]", got)
 	}
-	if got := record.AttemptTrail.SkillContextSnapshots; len(got) != 2 {
-		t.Fatalf("SkillContextSnapshots = %v, want 2 snapshots", got)
+	if got := record.AttemptTrail.SkillContextSnapshots; len(got) != 0 {
+		t.Fatalf("SkillContextSnapshots = %v, want empty", got)
+	}
+}
+
+func TestRuntime_FinalizeTurnUsesSkillNamesFromToolExecutions(t *testing.T) {
+	workspace := t.TempDir()
+	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
+		Config: config.EvolutionConfig{Enabled: true, Mode: "apply"},
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
+		Workspace:    workspace,
+		TurnID:       "turn-skill-chain",
+		SessionKey:   "session-skill-chain",
+		AgentID:      "main",
+		Status:       "completed",
+		UserMessage:  "调用三一定理计算100",
+		FinalContent: "done",
+		ToolExecutions: []evolution.ToolExecutionRecord{
+			{Name: "read_file", Success: true, SkillNames: []string{"three-one"}},
+			{Name: "read_file", Success: true, SkillNames: []string{"four-two"}},
+			{Name: "read_file", Success: true, SkillNames: []string{"five-three"}},
+		},
+	}); err != nil {
+		t.Fatalf("FinalizeTurn: %v", err)
+	}
+
+	paths := evolution.NewPaths(workspace, "")
+	data, err := os.ReadFile(paths.LearningRecords)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("record file line count = %d, want 1", len(lines))
+	}
+
+	var record evolution.LearningRecord
+	if err := json.Unmarshal([]byte(lines[0]), &record); err != nil {
+		t.Fatalf("Unmarshal record: %v", err)
+	}
+	if got := record.AddedSkillNames; len(got) != 3 || got[0] != "three-one" || got[1] != "four-two" || got[2] != "five-three" {
+		t.Fatalf("AddedSkillNames = %v, want [three-one four-two five-three]", got)
+	}
+	if got := record.UsedSkillNames; len(got) != 3 || got[0] != "three-one" || got[1] != "four-two" || got[2] != "five-three" {
+		t.Fatalf("UsedSkillNames = %v, want [three-one four-two five-three]", got)
+	}
+	if got := record.AllLoadedSkillNames; len(got) != 3 || got[0] != "three-one" || got[1] != "four-two" || got[2] != "five-three" {
+		t.Fatalf("AllLoadedSkillNames = %v, want [three-one four-two five-three]", got)
+	}
+}
+
+func TestRuntime_FinalizeTurnPreservesUTF8WhenTruncatingChineseOutput(t *testing.T) {
+	workspace := t.TempDir()
+	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
+		Config: config.EvolutionConfig{Enabled: true, Mode: "apply"},
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	longChinese := strings.Repeat("中文输出", 80)
+	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
+		Workspace:    workspace,
+		TurnID:       "turn-utf8",
+		SessionKey:   "session-utf8",
+		AgentID:      "main",
+		Status:       "completed",
+		UserMessage:  "请处理这段中文输出",
+		FinalContent: longChinese,
+	}); err != nil {
+		t.Fatalf("FinalizeTurn: %v", err)
+	}
+
+	paths := evolution.NewPaths(workspace, "")
+	data, err := os.ReadFile(paths.LearningRecords)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("record file line count = %d, want 1", len(lines))
+	}
+
+	var record evolution.LearningRecord
+	if err := json.Unmarshal([]byte(lines[0]), &record); err != nil {
+		t.Fatalf("Unmarshal record: %v", err)
+	}
+	if !utf8.ValidString(record.FinalOutput) {
+		t.Fatalf("FinalOutput is not valid UTF-8: %q", record.FinalOutput)
+	}
+	if strings.ContainsRune(record.FinalOutput, '\uFFFD') {
+		t.Fatalf("FinalOutput contains replacement rune: %q", record.FinalOutput)
+	}
+	if !strings.HasSuffix(record.FinalOutput, "...") {
+		t.Fatalf("FinalOutput = %q, want truncated suffix ...", record.FinalOutput)
 	}
 }
 
@@ -306,8 +483,14 @@ func TestRuntime_FinalizeTurnPrefersExplicitAttemptTrail(t *testing.T) {
 	if got := record.AttemptTrail.FinalSuccessfulPath; len(got) != 2 || got[0] != "geocode" || got[1] != "weather" {
 		t.Fatalf("FinalSuccessfulPath = %v, want [geocode weather]", got)
 	}
-	if got := record.AttemptTrail.SkillContextSnapshots; len(got) != 2 || got[1].Trigger != "context_retry_rebuild" {
-		t.Fatalf("SkillContextSnapshots = %+v, want explicit snapshots preserved", got)
+	if got := record.AttemptTrail.SkillContextSnapshots; len(got) != 0 {
+		t.Fatalf("SkillContextSnapshots = %+v, want empty", got)
+	}
+	if got := record.InitialSkillNames; len(got) != 1 || got[0] != "weather" {
+		t.Fatalf("InitialSkillNames = %v, want [weather]", got)
+	}
+	if got := record.AddedSkillNames; len(got) != 1 || got[0] != "geocode" {
+		t.Fatalf("AddedSkillNames = %v, want [geocode]", got)
 	}
 	if len(record.Signals) != 1 || record.Signals[0] != "potentially_learnable" {
 		t.Fatalf("Signals = %v, want [potentially_learnable]", record.Signals)

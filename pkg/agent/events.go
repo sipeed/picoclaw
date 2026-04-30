@@ -131,6 +131,13 @@ type SkillContextSnapshot struct {
 	SkillNames []string `json:"skill_names,omitempty"`
 }
 
+type ToolExecutionRecord struct {
+	Name         string   `json:"name"`
+	Success      bool     `json:"success"`
+	ErrorSummary string   `json:"error_summary,omitempty"`
+	SkillNames   []string `json:"skill_names,omitempty"`
+}
+
 // TurnEndPayload describes the completion of a turn.
 type TurnEndPayload struct {
 	Status                TurnEndStatus
@@ -138,11 +145,14 @@ type TurnEndPayload struct {
 	Iterations            int
 	Duration              time.Duration
 	FinalContentLen       int
+	UserMessage           string
+	FinalContent          string
 	ActiveSkills          []string
 	AttemptedSkills       []string
 	FinalSuccessfulPath   []string
 	SkillContextSnapshots []SkillContextSnapshot
 	ToolKinds             []string
+	ToolExecutions        []ToolExecutionRecord
 }
 
 // LLMRequestPayload describes an outbound LLM request.

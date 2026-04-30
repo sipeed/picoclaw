@@ -174,13 +174,13 @@ func TestDefaultConfig_MCPMaxInlineTextChars(t *testing.T) {
 func TestDefaultConfig_EvolutionDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 
-	assert.False(t, cfg.Evolution.Enabled)
-	assert.Equal(t, "observe", cfg.Evolution.Mode)
+	assert.True(t, cfg.Evolution.Enabled)
+	assert.Equal(t, "apply", cfg.Evolution.Mode)
 	assert.Equal(t, "", cfg.Evolution.StateDir)
 	assert.Equal(t, 3, cfg.Evolution.MinCaseCount)
 	assert.Equal(t, 0.7, cfg.Evolution.MinSuccessRate)
-	assert.False(t, cfg.Evolution.AutoRunColdPath)
-	assert.False(t, cfg.Evolution.AutoApply)
+	assert.True(t, cfg.Evolution.RunsColdPathAutomatically())
+	assert.True(t, cfg.Evolution.AutoAppliesDrafts())
 }
 
 func TestEvolutionConfig_EffectiveMode(t *testing.T) {
@@ -216,17 +216,17 @@ func TestEvolutionConfig_EffectiveMode(t *testing.T) {
 			name: "enabled returns configured mode",
 			cfg: EvolutionConfig{
 				Enabled: true,
-				Mode:    "review",
+				Mode:    "draft",
 			},
-			want: "review",
+			want: "draft",
 		},
 		{
 			name: "enabled trims and normalizes mode",
 			cfg: EvolutionConfig{
 				Enabled: true,
-				Mode:    " Review ",
+				Mode:    " Draft ",
 			},
-			want: "review",
+			want: "draft",
 		},
 		{
 			name: "enabled returns apply mode",
@@ -257,6 +257,59 @@ func TestEvolutionConfig_EffectiveMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.want, tt.cfg.EffectiveMode())
+		})
+	}
+}
+
+func TestEvolutionConfig_ModeSemantics(t *testing.T) {
+	tests := []struct {
+		name          string
+		cfg           EvolutionConfig
+		wantRunsCold  bool
+		wantAutoApply bool
+	}{
+		{
+			name: "disabled does not run cold path",
+			cfg: EvolutionConfig{
+				Enabled: false,
+				Mode:    "apply",
+			},
+			wantRunsCold:  false,
+			wantAutoApply: false,
+		},
+		{
+			name: "observe only records hot path",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    "observe",
+			},
+			wantRunsCold:  false,
+			wantAutoApply: false,
+		},
+		{
+			name: "draft runs cold path without applying",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    "draft",
+			},
+			wantRunsCold:  true,
+			wantAutoApply: false,
+		},
+		{
+			name: "apply runs cold path and auto applies",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    "apply",
+			},
+			wantRunsCold:  true,
+			wantAutoApply: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.wantRunsCold, tt.cfg.RunsColdPathAutomatically())
+			assert.Equal(t, tt.wantAutoApply, tt.cfg.AutoAppliesDrafts())
 		})
 	}
 }

@@ -184,6 +184,7 @@ type turnState struct {
 	attemptedSkills   []string
 	skillContextTrace []SkillContextSnapshot
 	toolKinds         []string
+	toolExecutions    []ToolExecutionRecord
 	turnCtx           *TurnContext
 
 	channel     string
@@ -383,6 +384,12 @@ func (ts *turnState) finalContentLen() int {
 	return len(ts.finalContent)
 }
 
+func (ts *turnState) finalContentSnapshot() string {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return ts.finalContent
+}
+
 func (ts *turnState) recordToolKind(tool string) {
 	tool = strings.TrimSpace(tool)
 	if tool == "" {
@@ -404,6 +411,43 @@ func (ts *turnState) toolKindsSnapshot() []string {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 	return append([]string(nil), ts.toolKinds...)
+}
+
+func (ts *turnState) recordToolExecution(tool string, success bool, errorSummary string, skillNames []string) {
+	tool = strings.TrimSpace(tool)
+	if tool == "" {
+		return
+	}
+
+	ts.recordToolKind(tool)
+
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.toolExecutions = append(ts.toolExecutions, ToolExecutionRecord{
+		Name:         tool,
+		Success:      success,
+		ErrorSummary: strings.TrimSpace(errorSummary),
+		SkillNames:   append([]string(nil), skillNames...),
+	})
+}
+
+func (ts *turnState) toolExecutionsSnapshot() []ToolExecutionRecord {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	if len(ts.toolExecutions) == 0 {
+		return nil
+	}
+
+	out := make([]ToolExecutionRecord, 0, len(ts.toolExecutions))
+	for _, exec := range ts.toolExecutions {
+		out = append(out, ToolExecutionRecord{
+			Name:         exec.Name,
+			Success:      exec.Success,
+			ErrorSummary: exec.ErrorSummary,
+			SkillNames:   append([]string(nil), exec.SkillNames...),
+		})
+	}
+	return out
 }
 
 func (ts *turnState) recordAttemptedSkills(skillNames []string) {

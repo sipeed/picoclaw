@@ -62,30 +62,44 @@ type SkillContextSnapshot struct {
 	SkillNames []string `json:"skill_names,omitempty"`
 }
 
+type ToolExecutionRecord struct {
+	Name         string   `json:"name"`
+	Success      bool     `json:"success"`
+	ErrorSummary string   `json:"error_summary,omitempty"`
+	SkillNames   []string `json:"skill_names,omitempty"`
+}
+
 type LearningRecord struct {
-	ID                   string         `json:"id"`
-	Kind                 RecordKind     `json:"kind"`
-	WorkspaceID          string         `json:"workspace_id"`
-	CreatedAt            time.Time      `json:"created_at"`
-	UpdatedAt            *time.Time     `json:"updated_at,omitempty"`
-	SessionKey           string         `json:"session_key,omitempty"`
-	TaskHash             string         `json:"task_hash,omitempty"`
-	Summary              string         `json:"summary"`
-	Source               map[string]any `json:"source,omitempty"`
-	Status               RecordStatus   `json:"status"`
-	Success              *bool          `json:"success,omitempty"`
-	ToolKinds            []string       `json:"tool_kinds,omitempty"`
-	ActiveSkillNames     []string       `json:"active_skill_names,omitempty"`
-	AttemptTrail         *AttemptTrail  `json:"attempt_trail,omitempty"`
-	Signals              []string       `json:"signals,omitempty"`
-	SourceRecordIDs      []string       `json:"source_record_ids,omitempty"`
-	EventCount           int            `json:"event_count,omitempty"`
-	SuccessRate          float64        `json:"success_rate,omitempty"`
-	MaturityScore        float64        `json:"maturity_score,omitempty"`
-	WinningPath          []string       `json:"winning_path,omitempty"`
-	LateAddedSkills      []string       `json:"late_added_skills,omitempty"`
-	FinalSnapshotTrigger string         `json:"final_snapshot_trigger,omitempty"`
-	MatchedSkillNames    []string       `json:"matched_skill_names,omitempty"`
+	ID                   string                `json:"id"`
+	Kind                 RecordKind            `json:"kind"`
+	WorkspaceID          string                `json:"workspace_id"`
+	CreatedAt            time.Time             `json:"created_at"`
+	UpdatedAt            *time.Time            `json:"updated_at,omitempty"`
+	SessionKey           string                `json:"session_key,omitempty"`
+	TaskHash             string                `json:"task_hash,omitempty"`
+	Summary              string                `json:"summary"`
+	UserGoal             string                `json:"user_goal,omitempty"`
+	FinalOutput          string                `json:"final_output,omitempty"`
+	Source               map[string]any        `json:"source,omitempty"`
+	Status               RecordStatus          `json:"status"`
+	Success              *bool                 `json:"success,omitempty"`
+	ToolKinds            []string              `json:"tool_kinds,omitempty"`
+	ToolExecutions       []ToolExecutionRecord `json:"tool_executions,omitempty"`
+	InitialSkillNames    []string              `json:"initial_skill_names,omitempty"`
+	AddedSkillNames      []string              `json:"added_skill_names,omitempty"`
+	UsedSkillNames       []string              `json:"used_skill_names,omitempty"`
+	AllLoadedSkillNames  []string              `json:"all_loaded_skill_names,omitempty"`
+	ActiveSkillNames     []string              `json:"active_skill_names,omitempty"`
+	AttemptTrail         *AttemptTrail         `json:"attempt_trail,omitempty"`
+	Signals              []string              `json:"signals,omitempty"`
+	SourceRecordIDs      []string              `json:"source_record_ids,omitempty"`
+	EventCount           int                   `json:"event_count,omitempty"`
+	SuccessRate          float64               `json:"success_rate,omitempty"`
+	MaturityScore        float64               `json:"maturity_score,omitempty"`
+	WinningPath          []string              `json:"winning_path,omitempty"`
+	LateAddedSkills      []string              `json:"late_added_skills,omitempty"`
+	FinalSnapshotTrigger string                `json:"final_snapshot_trigger,omitempty"`
+	MatchedSkillNames    []string              `json:"matched_skill_names,omitempty"`
 }
 
 type SkillDraft struct {

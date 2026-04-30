@@ -90,7 +90,7 @@ func (o *Organizer) BuildRules(records []LearningRecord) ([]LearningRecord, erro
 			Kind:                 RecordKindPattern,
 			WorkspaceID:          cluster[0].WorkspaceID,
 			CreatedAt:            o.now(),
-			Summary:              buildRuleSummary(ruleKey, winningPath),
+			Summary:              buildRuleSummary(cluster, ruleKey, winningPath),
 			Source:               map[string]any{"cluster_key": ruleKey},
 			Status:               RecordStatus("ready"),
 			SourceRecordIDs:      collectRecordIDs(cluster),
@@ -108,16 +108,7 @@ func (o *Organizer) BuildRules(records []LearningRecord) ([]LearningRecord, erro
 }
 
 func normalizeRuleKey(record LearningRecord) string {
-	if path := normalizeFinalSuccessfulPath(record); len(path) > 0 {
-		return strings.Join(path, " ")
-	}
-	if path := normalizeAttemptedSkills(record); len(path) > 0 {
-		return strings.Join(path, " ")
-	}
-	if path := normalizePath(record.ActiveSkillNames); len(path) > 0 {
-		return strings.Join(path, " ")
-	}
-	if path := normalizePath(record.MatchedSkillNames); len(path) > 0 {
+	if path := preferredRulePath(record); len(path) > 0 {
 		return strings.Join(path, " ")
 	}
 	if path := normalizePath(record.ToolKinds); len(path) > 0 {
@@ -132,6 +123,28 @@ func normalizeRuleKey(record LearningRecord) string {
 		tokens = tokens[:6]
 	}
 	return strings.Join(tokens, " ")
+}
+
+func preferredRulePath(record LearningRecord) []string {
+	if path := normalizeFinalSuccessfulPath(record); len(path) > 0 {
+		return path
+	}
+	if path := normalizePath(record.UsedSkillNames); len(path) > 0 {
+		return path
+	}
+	if path := normalizePath(record.AddedSkillNames); len(path) > 0 {
+		return path
+	}
+	if path := normalizeAttemptedSkills(record); len(path) > 0 {
+		return path
+	}
+	if path := normalizePath(record.ActiveSkillNames); len(path) > 0 {
+		return path
+	}
+	if path := normalizePath(record.MatchedSkillNames); len(path) > 0 {
+		return path
+	}
+	return nil
 }
 
 func normalizePath(values []string) []string {
@@ -202,13 +215,7 @@ func clusterWinningPath(cluster []LearningRecord) []string {
 	order := make([]string, 0)
 
 	for _, record := range cluster {
-		path := normalizeFinalSuccessfulPath(record)
-		if len(path) == 0 {
-			path = normalizeAttemptedSkills(record)
-		}
-		if len(path) == 0 {
-			path = normalizePath(record.ActiveSkillNames)
-		}
+		path := preferredRulePath(record)
 		if len(path) == 0 {
 			path = normalizePath(record.ToolKinds)
 		}
@@ -287,6 +294,9 @@ func clusterLateAddedSkills(cluster []LearningRecord, winningPath []string) ([]s
 }
 
 func lateAddedSkillsFromRecord(record LearningRecord) ([]string, string) {
+	if skills := normalizePath(record.AddedSkillNames); len(skills) > 0 {
+		return skills, "loaded_during_task"
+	}
 	if record.AttemptTrail == nil || len(record.AttemptTrail.SkillContextSnapshots) == 0 {
 		return nil, ""
 	}
@@ -359,9 +369,29 @@ func stableRuleID(workspaceID, key string) string {
 	return "rule-" + hex.EncodeToString(sum[:6])
 }
 
-func buildRuleSummary(key string, winningPath []string) string {
+func buildRuleSummary(cluster []LearningRecord, key string, winningPath []string) string {
+	if goal := representativeGoal(cluster); goal != "" && len(winningPath) > 0 {
+		return goal + " via " + strings.Join(winningPath, " -> ")
+	}
+	if goal := representativeGoal(cluster); goal != "" {
+		return goal
+	}
 	if len(winningPath) > 0 {
 		return strings.Join(winningPath, " -> ")
 	}
 	return key
+}
+
+func representativeGoal(cluster []LearningRecord) string {
+	for _, record := range cluster {
+		if goal := strings.TrimSpace(record.UserGoal); goal != "" {
+			return goal
+		}
+	}
+	for _, record := range cluster {
+		if summary := strings.TrimSpace(record.Summary); summary != "" {
+			return summary
+		}
+	}
+	return ""
 }

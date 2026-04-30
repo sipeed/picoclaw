@@ -129,6 +129,39 @@ func TestApplier_RollsBackOnInvalidSkillBody(t *testing.T) {
 	}
 }
 
+func TestApplier_FailedNewSkillDoesNotLeaveEmptyDirectory(t *testing.T) {
+	workspace := t.TempDir()
+	applier := evolution.NewApplier(evolution.NewPaths(workspace, ""), func() time.Time {
+		return time.Unix(1700000000, 0).UTC()
+	})
+
+	draft := evolution.SkillDraft{
+		ID:              "draft-invalid-new-skill",
+		WorkspaceID:     workspace,
+		SourceRecordID:  "rule-invalid-new-skill",
+		TargetSkillName: "calculate-100-via-theorems",
+		DraftType:       evolution.DraftTypeWorkflow,
+		ChangeKind:      evolution.ChangeKindCreate,
+		HumanSummary:    "broken new skill",
+		BodyOrPatch:     "invalid-frontmatter",
+		Status:          evolution.DraftStatusAccepted,
+	}
+
+	err := applier.ApplyDraft(context.Background(), workspace, draft)
+	if err == nil {
+		t.Fatal("expected ApplyDraft to fail")
+	}
+
+	skillPath := filepath.Join(workspace, "skills", "calculate-100-via-theorems", "SKILL.md")
+	if _, statErr := os.Stat(skillPath); !os.IsNotExist(statErr) {
+		t.Fatalf("expected no skill file, got err=%v", statErr)
+	}
+	skillDir := filepath.Dir(skillPath)
+	if _, statErr := os.Stat(skillDir); !os.IsNotExist(statErr) {
+		t.Fatalf("expected no leftover skill dir, got err=%v", statErr)
+	}
+}
+
 func TestApplier_ReplaceDraftFailsWhenSkillDoesNotExist(t *testing.T) {
 	workspace := t.TempDir()
 	applier := evolution.NewApplier(evolution.NewPaths(workspace, ""), func() time.Time {

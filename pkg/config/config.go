@@ -53,13 +53,11 @@ type Config struct {
 }
 
 type EvolutionConfig struct {
-	Enabled         bool    `json:"enabled,omitempty"`
-	Mode            string  `json:"mode,omitempty"`
-	StateDir        string  `json:"state_dir,omitempty"`
-	MinCaseCount    int     `json:"min_case_count,omitempty"`
-	MinSuccessRate  float64 `json:"min_success_rate,omitempty"`
-	AutoRunColdPath bool    `json:"auto_run_cold_path,omitempty"`
-	AutoApply       bool    `json:"auto_apply,omitempty"`
+	Enabled        bool    `json:"enabled,omitempty"`
+	Mode           string  `json:"mode,omitempty"`
+	StateDir       string  `json:"state_dir,omitempty"`
+	MinCaseCount   int     `json:"min_case_count,omitempty"`
+	MinSuccessRate float64 `json:"min_success_rate,omitempty"`
 }
 
 func (c EvolutionConfig) EffectiveMode() string {
@@ -67,8 +65,8 @@ func (c EvolutionConfig) EffectiveMode() string {
 		return ""
 	}
 	switch strings.ToLower(strings.TrimSpace(c.Mode)) {
-	case "review":
-		return "review"
+	case "draft":
+		return "draft"
 	case "apply":
 		return "apply"
 	case "", "observe":
@@ -76,6 +74,19 @@ func (c EvolutionConfig) EffectiveMode() string {
 	default:
 		return "observe"
 	}
+}
+
+func (c EvolutionConfig) RunsColdPathAutomatically() bool {
+	switch c.EffectiveMode() {
+	case "draft", "apply":
+		return true
+	default:
+		return false
+	}
+}
+
+func (c EvolutionConfig) AutoAppliesDrafts() bool {
+	return c.EffectiveMode() == "apply"
 }
 
 // IsolationConfig controls subprocess isolation for commands started by PicoClaw.

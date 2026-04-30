@@ -45,12 +45,10 @@ func DefaultConfig() *Config {
 			Dimensions: []string{"chat"},
 		},
 		Evolution: EvolutionConfig{
-			Enabled:         false,
-			Mode:            "observe",
-			MinCaseCount:    3,
-			MinSuccessRate:  0.7,
-			AutoRunColdPath: false,
-			AutoApply:       false,
+			Enabled:        false,
+			Mode:           "apply",
+			MinCaseCount:   2,
+			MinSuccessRate: 0.4,
 		},
 		Channels: defaultChannels(),
 		Hooks: HooksConfig{
