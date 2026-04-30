@@ -759,6 +759,73 @@ func TestBootstrapRepairsMissingReasoningContentWithoutDroppingSummaries(t *test
 	}
 }
 
+func TestBootstrapRepairsMissingReasoningContentOnPrefixBeforeAppendingDelta(t *testing.T) {
+	eng := newTestEngine(t)
+	ctx := context.Background()
+	sessionKey := "agent:repair-reasoning-prefix"
+
+	conv, err := eng.store.GetOrCreateConversation(ctx, sessionKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateConversation: %v", err)
+	}
+
+	userMsg, err := eng.store.AddMessage(ctx, conv.ConversationID, "user", "hello", 3)
+	if err != nil {
+		t.Fatalf("AddMessage user: %v", err)
+	}
+	assistantMsg, err := eng.store.AddMessage(ctx, conv.ConversationID, "assistant", "world", 3)
+	if err != nil {
+		t.Fatalf("AddMessage assistant: %v", err)
+	}
+
+	err = eng.store.AppendContextMessages(
+		ctx,
+		conv.ConversationID,
+		[]int64{userMsg.ID, assistantMsg.ID},
+	)
+	if err != nil {
+		t.Fatalf("AppendContextMessages: %v", err)
+	}
+
+	err = eng.Bootstrap(ctx, sessionKey, []Message{
+		{Role: "user", Content: "hello", TokenCount: 3},
+		{Role: "assistant", Content: "world", ReasoningContent: "let me think this through", TokenCount: 3},
+		{Role: "user", Content: "follow-up", TokenCount: 2},
+	})
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+
+	stored, err := eng.store.GetMessages(ctx, conv.ConversationID, 10, 0)
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if len(stored) != 3 {
+		t.Fatalf("stored messages = %d, want 3", len(stored))
+	}
+	if stored[1].ReasoningContent != "let me think this through" {
+		t.Errorf(
+			"stored[1].ReasoningContent = %q, want %q",
+			stored[1].ReasoningContent,
+			"let me think this through",
+		)
+	}
+	if stored[2].Content != "follow-up" {
+		t.Errorf("stored[2].Content = %q, want %q", stored[2].Content, "follow-up")
+	}
+
+	items, err := eng.store.GetContextItems(ctx, conv.ConversationID)
+	if err != nil {
+		t.Fatalf("GetContextItems: %v", err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("context items = %d, want 3", len(items))
+	}
+	if items[2].ItemType != "message" || items[2].MessageID != stored[2].ID {
+		t.Errorf("last context item = %+v, want appended message %d", items[2], stored[2].ID)
+	}
+}
+
 func TestEngineBootstrapDelta(t *testing.T) {
 	eng := newTestEngine(t)
 	ctx := context.Background()

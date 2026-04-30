@@ -434,7 +434,7 @@ func (e *Engine) Bootstrap(ctx context.Context, sessionKey string, messages []Me
 	// Fast path: DB has same count and exact match → no-op
 	if len(dbMsgs) == len(messages) {
 		matched := true
-		for i := 0; i < len(messages); i++ {
+		for i := range messages {
 			if !messageMatches(dbMsgs[i], messages[i]) {
 				matched = false
 				break
@@ -451,18 +451,15 @@ func (e *Engine) Bootstrap(ctx context.Context, sessionKey string, messages []Me
 	// summaries/context behind after a partial raw-message rebuild.
 	if repaired, err := e.repairBootstrapReasoningContent(ctx, dbMsgs, messages); err != nil {
 		return fmt.Errorf("bootstrap: repair reasoning_content: %w", err)
-	} else if repaired {
+	} else if repaired && len(dbMsgs) == len(messages) {
 		return nil
 	}
 
 	// Find longest matching prefix from the start
 	anchor := -1
-	compareLen := len(dbMsgs)
-	if compareLen > len(messages) {
-		compareLen = len(messages)
-	}
+	compareLen := min(len(dbMsgs), len(messages))
 
-	for i := 0; i < compareLen; i++ {
+	for i := range compareLen {
 		if messageMatches(dbMsgs[i], messages[i]) {
 			anchor = i
 		} else {
@@ -549,16 +546,19 @@ func (e *Engine) Bootstrap(ctx context.Context, sessionKey string, messages []Me
 }
 
 func (e *Engine) repairBootstrapReasoningContent(ctx context.Context, dbMsgs, messages []Message) (bool, error) {
-	if len(dbMsgs) != len(messages) || len(dbMsgs) == 0 {
+	if len(dbMsgs) == 0 || len(messages) == 0 {
 		return false, nil
 	}
 
+	overlap := min(len(messages), len(dbMsgs))
+
 	var updates []struct {
+		index            int
 		messageID        int64
 		reasoningContent string
 	}
 
-	for i := range messages {
+	for i := range overlap {
 		if !messageMatchesIgnoringReasoning(dbMsgs[i], messages[i]) {
 			return false, nil
 		}
@@ -569,9 +569,11 @@ func (e *Engine) repairBootstrapReasoningContent(ctx context.Context, dbMsgs, me
 			return false, nil
 		}
 		updates = append(updates, struct {
+			index            int
 			messageID        int64
 			reasoningContent string
 		}{
+			index:            i,
 			messageID:        dbMsgs[i].ID,
 			reasoningContent: messages[i].ReasoningContent,
 		})
@@ -585,6 +587,7 @@ func (e *Engine) repairBootstrapReasoningContent(ctx context.Context, dbMsgs, me
 		if err := e.store.UpdateMessageReasoningContent(ctx, update.messageID, update.reasoningContent); err != nil {
 			return false, err
 		}
+		dbMsgs[update.index].ReasoningContent = update.reasoningContent
 	}
 
 	logger.InfoCF("seahorse", "bootstrap: repaired missing reasoning_content", map[string]any{
