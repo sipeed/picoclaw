@@ -669,6 +669,96 @@ func TestBootstrapRepairsMissingReasoningContent(t *testing.T) {
 	}
 }
 
+func TestBootstrapRepairsMissingReasoningContentWithoutDroppingSummaries(t *testing.T) {
+	eng := newTestEngine(t)
+	ctx := context.Background()
+	sessionKey := "agent:repair-reasoning-summary"
+
+	conv, err := eng.store.GetOrCreateConversation(ctx, sessionKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateConversation: %v", err)
+	}
+
+	userMsg, err := eng.store.AddMessage(ctx, conv.ConversationID, "user", "hello", 3)
+	if err != nil {
+		t.Fatalf("AddMessage user: %v", err)
+	}
+	assistantMsg, err := eng.store.AddMessage(ctx, conv.ConversationID, "assistant", "world", 3)
+	if err != nil {
+		t.Fatalf("AddMessage assistant: %v", err)
+	}
+
+	err = eng.store.AppendContextMessages(
+		ctx,
+		conv.ConversationID,
+		[]int64{userMsg.ID, assistantMsg.ID},
+	)
+	if err != nil {
+		t.Fatalf("AppendContextMessages: %v", err)
+	}
+
+	summary, err := eng.store.CreateSummary(ctx, CreateSummaryInput{
+		ConversationID: conv.ConversationID,
+		Kind:           SummaryKindLeaf,
+		Depth:          0,
+		Content:        "summary before repair",
+		TokenCount:     10,
+	})
+	if err != nil {
+		t.Fatalf("CreateSummary: %v", err)
+	}
+
+	err = eng.store.AppendContextSummary(ctx, conv.ConversationID, summary.SummaryID)
+	if err != nil {
+		t.Fatalf("AppendContextSummary: %v", err)
+	}
+
+	err = eng.Bootstrap(ctx, sessionKey, []Message{
+		{Role: "user", Content: "hello", TokenCount: 3},
+		{Role: "assistant", Content: "world", ReasoningContent: "let me think this through", TokenCount: 3},
+	})
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+
+	stored, err := eng.store.GetMessages(ctx, conv.ConversationID, 10, 0)
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if len(stored) != 2 {
+		t.Fatalf("stored messages = %d, want 2", len(stored))
+	}
+	if stored[1].ReasoningContent != "let me think this through" {
+		t.Errorf(
+			"stored[1].ReasoningContent = %q, want %q",
+			stored[1].ReasoningContent,
+			"let me think this through",
+		)
+	}
+
+	summaries, err := eng.store.GetSummariesByConversation(ctx, conv.ConversationID)
+	if err != nil {
+		t.Fatalf("GetSummariesByConversation: %v", err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("summaries = %d, want 1", len(summaries))
+	}
+	if summaries[0].SummaryID != summary.SummaryID {
+		t.Errorf("SummaryID = %q, want %q", summaries[0].SummaryID, summary.SummaryID)
+	}
+
+	items, err := eng.store.GetContextItems(ctx, conv.ConversationID)
+	if err != nil {
+		t.Fatalf("GetContextItems: %v", err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("context items = %d, want 3", len(items))
+	}
+	if items[2].ItemType != "summary" || items[2].SummaryID != summary.SummaryID {
+		t.Errorf("summary context item = %+v, want summary %q", items[2], summary.SummaryID)
+	}
+}
+
 func TestEngineBootstrapDelta(t *testing.T) {
 	eng := newTestEngine(t)
 	ctx := context.Background()

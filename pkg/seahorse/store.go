@@ -376,6 +376,28 @@ func (s *Store) GetMessageByID(ctx context.Context, messageID int64) (*Message, 
 	return &msg, nil
 }
 
+// UpdateMessageReasoningContent updates reasoning_content for an existing message.
+func (s *Store) UpdateMessageReasoningContent(ctx context.Context, messageID int64, reasoningContent string) error {
+	result, err := s.db.ExecContext(
+		ctx,
+		"UPDATE messages SET reasoning_content = ? WHERE message_id = ?",
+		reasoningContent,
+		messageID,
+	)
+	if err != nil {
+		return fmt.Errorf("update message reasoning_content: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update message reasoning_content rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("message %d not found", messageID)
+	}
+	return nil
+}
+
 func (s *Store) loadMessageParts(ctx context.Context, msgID int64) ([]MessagePart, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT part_id, message_id, type, text, name, arguments, tool_call_id, media_uri, mime_type

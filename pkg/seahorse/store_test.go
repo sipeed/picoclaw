@@ -353,6 +353,31 @@ func TestStoreGetMessageByID(t *testing.T) {
 	}
 }
 
+func TestStoreUpdateMessageReasoningContent(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	conv, _ := s.GetOrCreateConversation(ctx, "agent:update-reasoning")
+
+	msg, err := s.AddMessage(ctx, conv.ConversationID, "assistant", "answer", 3)
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	err = s.UpdateMessageReasoningContent(ctx, msg.ID, "thinking")
+	if err != nil {
+		t.Fatalf("UpdateMessageReasoningContent: %v", err)
+	}
+
+	found, err := s.GetMessageByID(ctx, msg.ID)
+	if err != nil {
+		t.Fatalf("GetMessageByID: %v", err)
+	}
+	if found.ReasoningContent != "thinking" {
+		t.Errorf("ReasoningContent = %q, want %q", found.ReasoningContent, "thinking")
+	}
+}
+
 // --- Summary Operations ---
 
 func TestStoreCreateAndGetSummary(t *testing.T) {

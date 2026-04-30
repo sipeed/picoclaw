@@ -445,6 +445,16 @@ func (e *Engine) Bootstrap(ctx context.Context, sessionKey string, messages []Me
 		}
 	}
 
+	// Migration repair path: old SeaHorse rows may be missing reasoning_content
+	// even though the canonical JSONL history already has it. Backfill those
+	// rows in place so we do not treat this as edited history and leave stale
+	// summaries/context behind after a partial raw-message rebuild.
+	if repaired, err := e.repairBootstrapReasoningContent(ctx, dbMsgs, messages); err != nil {
+		return fmt.Errorf("bootstrap: repair reasoning_content: %w", err)
+	} else if repaired {
+		return nil
+	}
+
 	// Find longest matching prefix from the start
 	anchor := -1
 	compareLen := len(dbMsgs)
@@ -538,6 +548,51 @@ func (e *Engine) Bootstrap(ctx context.Context, sessionKey string, messages []Me
 	return nil
 }
 
+func (e *Engine) repairBootstrapReasoningContent(ctx context.Context, dbMsgs, messages []Message) (bool, error) {
+	if len(dbMsgs) != len(messages) || len(dbMsgs) == 0 {
+		return false, nil
+	}
+
+	var updates []struct {
+		messageID        int64
+		reasoningContent string
+	}
+
+	for i := range messages {
+		if !messageMatchesIgnoringReasoning(dbMsgs[i], messages[i]) {
+			return false, nil
+		}
+		if dbMsgs[i].ReasoningContent == messages[i].ReasoningContent {
+			continue
+		}
+		if dbMsgs[i].ReasoningContent != "" || messages[i].ReasoningContent == "" {
+			return false, nil
+		}
+		updates = append(updates, struct {
+			messageID        int64
+			reasoningContent string
+		}{
+			messageID:        dbMsgs[i].ID,
+			reasoningContent: messages[i].ReasoningContent,
+		})
+	}
+
+	if len(updates) == 0 {
+		return false, nil
+	}
+
+	for _, update := range updates {
+		if err := e.store.UpdateMessageReasoningContent(ctx, update.messageID, update.reasoningContent); err != nil {
+			return false, err
+		}
+	}
+
+	logger.InfoCF("seahorse", "bootstrap: repaired missing reasoning_content", map[string]any{
+		"messages": len(updates),
+	})
+	return true, nil
+}
+
 // truncate shortens a string for logging.
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
@@ -553,6 +608,13 @@ func truncate(s string, maxLen int) string {
 // because structured messages are matched by their parts payload.
 func messageMatches(a, b Message) bool {
 	if a.Role != b.Role || a.ReasoningContent != b.ReasoningContent {
+		return false
+	}
+	return messageMatchesIgnoringReasoning(a, b)
+}
+
+func messageMatchesIgnoringReasoning(a, b Message) bool {
+	if a.Role != b.Role {
 		return false
 	}
 	// If either message has Parts, compare Parts
