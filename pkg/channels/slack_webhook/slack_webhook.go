@@ -130,7 +130,7 @@ func (c *SlackWebhookChannel) Send(ctx context.Context, msg bus.OutboundMessage)
 		return nil, fmt.Errorf("slack_webhook: failed to marshal payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", target.WebhookURL.String(), bytes.NewReader(jsonData))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.WebhookURL.String(), bytes.NewReader(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("slack_webhook: failed to create request: %w", err)
 	}

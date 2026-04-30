@@ -8,7 +8,7 @@ import (
 
 func init() {
 	channels.RegisterFactory(
-		config.ChannelSlackWebhook,
+		config.ChannelSlackWebHook,
 		func(channelName, channelType string, cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
 			bc := cfg.Channels[channelName]
 			decoded, err := bc.GetDecoded()
@@ -23,7 +23,7 @@ func init() {
 			if err != nil {
 				return nil, err
 			}
-			if channelName != config.ChannelSlackWebhook {
+			if channelName != config.ChannelSlackWebHook {
 				ch.SetName(channelName)
 			}
 			return ch, nil
