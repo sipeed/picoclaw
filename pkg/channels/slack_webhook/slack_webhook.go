@@ -120,6 +120,7 @@ func (c *SlackWebhookChannel) Send(ctx context.Context, msg bus.OutboundMessage)
 			"using":     "default",
 		})
 		target = c.config.Webhooks["default"]
+		targetName = "default"
 	}
 
 	payload := c.buildPayload(msg, target)
