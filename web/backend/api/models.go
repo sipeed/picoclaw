@@ -44,53 +44,12 @@ type modelResponse struct {
 	ExtraBody      map[string]any    `json:"extra_body,omitempty"`
 	CustomHeaders  map[string]string `json:"custom_headers,omitempty"`
 	// Meta
-	Enabled   bool   `json:"enabled"`
-	Available bool   `json:"available"`
-	Status    string `json:"status"`
-	IsDefault bool   `json:"is_default"`
-	IsVirtual bool   `json:"is_virtual"`
-}
-
-func legacyUnsupportedASRProviderAndModel(rawModel string) (provider, modelID string, ok bool) {
-	provider, modelID, found := strings.Cut(strings.TrimSpace(rawModel), "/")
-	if !found {
-		return "", "", false
-	}
-
-	provider = providers.NormalizeProvider(provider)
-	modelID = strings.TrimSpace(modelID)
-	if modelID == "" {
-		return "", "", false
-	}
-
-	switch provider {
-	case "elevenlabs":
-		// Keep the documented legacy ASR-only form elevenlabs/scribe_v1 stable
-		// even though elevenlabs is not part of the general model provider
-		// catalog exposed by the Web model-management UI.
-		return provider, modelID, true
-	default:
-		return "", "", false
-	}
-}
-
-func isLegacyUnsupportedASRModelConfig(mc *config.ModelConfig) bool {
-	if mc == nil || strings.TrimSpace(mc.Provider) != "" {
-		return false
-	}
-
-	_, _, ok := legacyUnsupportedASRProviderAndModel(mc.Model)
-	return ok
-}
-
-func responseProviderAndModel(mc *config.ModelConfig) (provider, modelID string) {
-	if strings.TrimSpace(mc.Provider) == "" {
-		if legacyProvider, legacyModelID, ok := legacyUnsupportedASRProviderAndModel(mc.Model); ok {
-			return legacyProvider, legacyModelID
-		}
-	}
-
-	return providers.ExtractProtocol(mc)
+	Enabled             bool   `json:"enabled"`
+	Available           bool   `json:"available"`
+	Status              string `json:"status"`
+	IsDefault           bool   `json:"is_default"`
+	IsVirtual           bool   `json:"is_virtual"`
+	DefaultModelAllowed bool   `json:"default_model_allowed"`
 }
 
 func normalizeStoredModelConfig(mc *config.ModelConfig) bool {
@@ -121,9 +80,19 @@ func normalizeStoredModelConfig(mc *config.ModelConfig) bool {
 			mc.Provider = normalizedProvider
 			changed = true
 		}
-		return changed
-	}
-	if isLegacyUnsupportedASRModelConfig(mc) {
+		if mc.Provider == "elevenlabs" {
+			if _, strippedModel, found := strings.Cut(
+				model,
+				"/",
+			); found &&
+				providers.NormalizeProvider(strings.TrimSpace(provider)) == "elevenlabs" {
+				strippedModel = strings.TrimSpace(strippedModel)
+				if strippedModel != "" && strippedModel != mc.Model {
+					mc.Model = strippedModel
+					changed = true
+				}
+			}
+		}
 		return changed
 	}
 
@@ -151,12 +120,17 @@ func normalizeIncomingModelConfig(mc *config.ModelConfig) {
 	mc.Provider = strings.TrimSpace(mc.Provider)
 	mc.AuthMethod = strings.ToLower(strings.TrimSpace(mc.AuthMethod))
 	if mc.Provider == "" {
-		if isLegacyUnsupportedASRModelConfig(mc) {
-			return
-		}
 		mc.Provider, mc.Model = providers.SplitModelProviderAndID(mc.Model, "openai")
 	} else {
 		mc.Provider = providers.NormalizeProvider(mc.Provider)
+		if mc.Provider == "elevenlabs" {
+			if _, strippedModel, found := strings.Cut(mc.Model, "/"); found {
+				strippedModel = strings.TrimSpace(strippedModel)
+				if strippedModel != "" {
+					mc.Model = strippedModel
+				}
+			}
+		}
 	}
 	if mc.Provider == "antigravity" && mc.AuthMethod == "" {
 		mc.AuthMethod = "oauth"
@@ -199,6 +173,11 @@ func modelProviderOptionsForResponse() []providers.ModelProviderOption {
 	return options
 }
 
+func defaultModelAllowedForModelConfig(mc *config.ModelConfig) bool {
+	provider, _ := providers.ExtractProtocol(mc)
+	return providers.IsDefaultModelProvider(provider)
+}
+
 func validateIncomingModelConfig(mc *config.ModelConfig, existing *config.ModelConfig) error {
 	if mc == nil {
 		return fmt.Errorf("model config is required")
@@ -207,9 +186,6 @@ func validateIncomingModelConfig(mc *config.ModelConfig, existing *config.ModelC
 		return err
 	}
 	if strings.TrimSpace(mc.Provider) == "" {
-		if existing != nil && isLegacyUnsupportedASRModelConfig(existing) && isLegacyUnsupportedASRModelConfig(mc) {
-			return nil
-		}
 		return fmt.Errorf("provider is required")
 	}
 	if !providers.IsSupportedModelProvider(mc.Provider) {
@@ -266,29 +242,30 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 
 	models := make([]modelResponse, 0, len(cfg.ModelList))
 	for i, m := range cfg.ModelList {
-		provider, modelID := responseProviderAndModel(m)
+		provider, modelID := providers.ExtractProtocol(m)
 		models = append(models, modelResponse{
-			Index:          i,
-			ModelName:      m.ModelName,
-			Provider:       provider,
-			Model:          modelID,
-			APIBase:        m.APIBase,
-			APIKey:         maskAPIKey(m.APIKey()),
-			Proxy:          m.Proxy,
-			AuthMethod:     m.AuthMethod,
-			ConnectMode:    m.ConnectMode,
-			Workspace:      m.Workspace,
-			RPM:            m.RPM,
-			MaxTokensField: m.MaxTokensField,
-			RequestTimeout: m.RequestTimeout,
-			ThinkingLevel:  m.ThinkingLevel,
-			ExtraBody:      m.ExtraBody,
-			CustomHeaders:  m.CustomHeaders,
-			Enabled:        m.Enabled,
-			Available:      modelStatuses[i].Available,
-			Status:         modelStatuses[i].Status,
-			IsDefault:      m.ModelName == defaultModel,
-			IsVirtual:      m.IsVirtual(),
+			Index:               i,
+			ModelName:           m.ModelName,
+			Provider:            provider,
+			Model:               modelID,
+			APIBase:             m.APIBase,
+			APIKey:              maskAPIKey(m.APIKey()),
+			Proxy:               m.Proxy,
+			AuthMethod:          m.AuthMethod,
+			ConnectMode:         m.ConnectMode,
+			Workspace:           m.Workspace,
+			RPM:                 m.RPM,
+			MaxTokensField:      m.MaxTokensField,
+			RequestTimeout:      m.RequestTimeout,
+			ThinkingLevel:       m.ThinkingLevel,
+			ExtraBody:           m.ExtraBody,
+			CustomHeaders:       m.CustomHeaders,
+			Enabled:             m.Enabled,
+			Available:           modelStatuses[i].Available,
+			Status:              modelStatuses[i].Status,
+			IsDefault:           m.ModelName == defaultModel,
+			IsVirtual:           m.IsVirtual(),
+			DefaultModelAllowed: defaultModelAllowedForModelConfig(m),
 		})
 	}
 
@@ -439,34 +416,18 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(cfg.ModelList[idx].Provider) == "" {
 			existingRawModel := strings.TrimSpace(cfg.ModelList[idx].Model)
 			incomingModel := strings.TrimSpace(mc.Model)
-			if legacyProvider, legacyModelID, ok := legacyUnsupportedASRProviderAndModel(existingRawModel); ok {
-				if incomingModel != "" {
-					if incomingModel == legacyModelID {
-						mc.Model = existingRawModel
-					} else if strings.Contains(incomingModel, "/") && !strings.Contains(legacyModelID, "/") {
-						// Older clients only saw the visible legacy ASR model ID
-						// (for example "scribe_v1"). If they now send an explicit
-						// provider/model string, keep that full intent instead of
-						// silently re-applying the hidden ElevenLabs prefix.
-						mc.Model = incomingModel
-					} else if !strings.HasPrefix(incomingModel, legacyProvider+"/") {
-						mc.Model = legacyProvider + "/" + incomingModel
-					}
-				}
-			} else {
-				existingProtocol, existingModelID := providers.ExtractProtocol(cfg.ModelList[idx])
-				if existingRawModel != "" && existingRawModel != existingModelID && incomingModel != "" {
-					if incomingModel == existingModelID {
-						mc.Model = existingRawModel
-					} else if strings.Contains(incomingModel, "/") && !strings.Contains(existingModelID, "/") {
-						// Older clients never saw the hidden provider prefix for simple
-						// legacy entries such as "openai/gpt-4o". If they now send an
-						// explicit provider/model string, treat it as the caller's full
-						// intent instead of re-applying the old hidden prefix.
-						mc.Model = incomingModel
-					} else if !strings.HasPrefix(incomingModel, existingProtocol+"/") {
-						mc.Model = existingProtocol + "/" + incomingModel
-					}
+			existingProtocol, existingModelID := providers.ExtractProtocol(cfg.ModelList[idx])
+			if existingRawModel != "" && existingRawModel != existingModelID && incomingModel != "" {
+				if incomingModel == existingModelID {
+					mc.Model = existingRawModel
+				} else if strings.Contains(incomingModel, "/") && !strings.Contains(existingModelID, "/") {
+					// Older clients never saw the hidden provider prefix for simple
+					// legacy entries such as "openai/gpt-4o". If they now send an
+					// explicit provider/model string, treat it as the caller's full
+					// intent instead of re-applying the old hidden prefix.
+					mc.Model = incomingModel
+				} else if !strings.HasPrefix(incomingModel, existingProtocol+"/") {
+					mc.Model = existingProtocol + "/" + incomingModel
 				}
 			}
 		}
@@ -476,6 +437,12 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	if err = validateIncomingModelConfig(&mc.ModelConfig, cfg.ModelList[idx]); err != nil {
 		http.Error(w, fmt.Sprintf("Validation error: %v", err), http.StatusBadRequest)
 		return
+	}
+	if cfg.Agents.Defaults.ModelName == cfg.ModelList[idx].ModelName &&
+		!defaultModelAllowedForModelConfig(&mc.ModelConfig) {
+		// Allow users to recover from legacy/invalid defaults by saving the model
+		// and clearing the default chat model reference in the same write.
+		cfg.Agents.Defaults.ModelName = ""
 	}
 
 	cfg.ModelList[idx] = &mc.ModelConfig
@@ -578,6 +545,19 @@ func (h *Handler) handleSetDefaultModel(w http.ResponseWriter, r *http.Request) 
 	if isVirtual {
 		http.Error(w, fmt.Sprintf("Cannot set virtual model %q as default", req.ModelName), http.StatusBadRequest)
 		return
+	}
+	for _, m := range cfg.ModelList {
+		if m.ModelName == req.ModelName {
+			if !defaultModelAllowedForModelConfig(m) {
+				http.Error(
+					w,
+					fmt.Sprintf("Model %q cannot be used as the default chat model", req.ModelName),
+					http.StatusBadRequest,
+				)
+				return
+			}
+			break
+		}
 	}
 
 	cfg.Agents.Defaults.ModelName = req.ModelName

@@ -357,6 +357,44 @@ func TestGatewayStartReady_NoDefaultModel(t *testing.T) {
 	}
 }
 
+func TestGatewayStartReady_RejectsASROnlyDefaultModel(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "elevenlabs-asr",
+		Provider:  "elevenlabs",
+		Model:     "scribe_v1",
+		APIKeys:   config.SimpleSecureStrings("sk_elevenlabs_test"),
+	}}
+	cfg.Agents.Defaults.ModelName = "elevenlabs-asr"
+
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	ready, reason, err := h.gatewayStartReady()
+	if err != nil {
+		t.Fatalf("gatewayStartReady() error = %v", err)
+	}
+	if ready {
+		t.Fatal("gatewayStartReady() ready = true, want false")
+	}
+	if reason != `default model "elevenlabs-asr" is not usable for chat` {
+		t.Fatalf(
+			"gatewayStartReady() reason = %q, want %q",
+			reason,
+			`default model "elevenlabs-asr" is not usable for chat`,
+		)
+	}
+}
+
 func TestLooksLikeGatewayCommandLine(t *testing.T) {
 	cases := []struct {
 		name    string

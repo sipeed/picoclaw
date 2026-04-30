@@ -78,21 +78,7 @@ func isElevenLabsTranscriptionModel(modelCfg *config.ModelConfig) bool {
 	}
 
 	protocol, _ := providers.ExtractProtocol(modelCfg)
-	if protocol == "elevenlabs" {
-		return true
-	}
-	if strings.TrimSpace(modelCfg.Provider) != "" {
-		return false
-	}
-
-	legacyProvider, legacyModel, found := strings.Cut(strings.TrimSpace(modelCfg.Model), "/")
-	if !found || strings.TrimSpace(legacyModel) == "" {
-		return false
-	}
-
-	// Keep legacy elevenlabs/... ASR configs working even though the shared
-	// provider catalog no longer treats elevenlabs as a general model provider.
-	return providers.NormalizeProvider(legacyProvider) == "elevenlabs"
+	return protocol == "elevenlabs"
 }
 
 func transcriberFromModelConfig(modelCfg *config.ModelConfig) Transcriber {

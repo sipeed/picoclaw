@@ -151,6 +151,10 @@ export function EditModelSheet({
   const providerError = selectedProviderOption
     ? ""
     : t("models.field.providerInvalid")
+  const defaultModelAllowed =
+    selectedProviderOption?.default_model_allowed !== false
+  const willClearDefaultOnSave =
+    model?.is_default === true && defaultModelAllowed === false
   const apiBasePlaceholder =
     getProviderDefaultAPIBase(form.provider, providerOptions) ||
     "https://api.example.com/v1"
@@ -167,7 +171,7 @@ export function EditModelSheet({
         initialForm.authMethod = option.default_auth_method ?? ""
       }
       setForm(initialForm)
-      setSetAsDefault(model.is_default)
+      setSetAsDefault(model.is_default && model.default_model_allowed !== false)
       setError("")
     }
   }, [model, providerOptions])
@@ -199,6 +203,10 @@ export function EditModelSheet({
       }
       return { ...f, provider: value, authMethod }
     })
+    const nextOption = findProviderOption(value, providerOptions)
+    if (nextOption?.default_model_allowed === false) {
+      setSetAsDefault(false)
+    }
   }
 
   const handleSave = async () => {
@@ -358,9 +366,16 @@ export function EditModelSheet({
 
             <SwitchCardField
               label={t("models.defaultOnSave.label")}
-              hint={t("models.defaultOnSave.description")}
+              hint={
+                willClearDefaultOnSave
+                  ? t("models.defaultOnSave.clearOnSave")
+                  : defaultModelAllowed
+                    ? t("models.defaultOnSave.description")
+                    : t("models.defaultOnSave.unsupportedProvider")
+              }
               checked={setAsDefault}
               onCheckedChange={setSetAsDefault}
+              disabled={!defaultModelAllowed}
             />
 
             <AdvancedSection>

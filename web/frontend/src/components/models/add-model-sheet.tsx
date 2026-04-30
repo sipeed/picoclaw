@@ -134,6 +134,8 @@ export function AddModelSheet({
     .trim()
     .toLowerCase()
   const isOAuth = effectiveAuthMethod === "oauth"
+  const defaultModelAllowed =
+    selectedProviderOption?.default_model_allowed !== false
   const apiBasePlaceholder =
     getProviderDefaultAPIBase(form.provider, providerOptions) ||
     "https://api.example.com/v1"
@@ -189,6 +191,10 @@ export function AddModelSheet({
       }
       return { ...f, provider: value, authMethod }
     })
+    const nextOption = findProviderOption(value, providerOptions)
+    if (nextOption?.default_model_allowed === false) {
+      setSetAsDefault(false)
+    }
     if (fieldErrors.provider) {
       setFieldErrors((prev) => ({ ...prev, provider: undefined }))
     }
@@ -345,9 +351,14 @@ export function AddModelSheet({
 
             <SwitchCardField
               label={t("models.defaultOnSave.label")}
-              hint={t("models.defaultOnSave.description")}
+              hint={
+                defaultModelAllowed
+                  ? t("models.defaultOnSave.description")
+                  : t("models.defaultOnSave.unsupportedProvider")
+              }
               checked={setAsDefault}
               onCheckedChange={setSetAsDefault}
+              disabled={!defaultModelAllowed}
             />
 
             <AdvancedSection>

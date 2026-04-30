@@ -7,19 +7,21 @@ import (
 
 // ModelProviderOption describes a canonical provider entry exposed to the Web UI.
 type ModelProviderOption struct {
-	ID                 string `json:"id"`
-	DefaultAPIBase     string `json:"default_api_base"`
-	EmptyAPIKeyAllowed bool   `json:"empty_api_key_allowed"`
-	CreateAllowed      bool   `json:"create_allowed"`
-	DefaultAuthMethod  string `json:"default_auth_method,omitempty"`
-	AuthMethodLocked   bool   `json:"auth_method_locked,omitempty"`
+	ID                  string `json:"id"`
+	DefaultAPIBase      string `json:"default_api_base"`
+	EmptyAPIKeyAllowed  bool   `json:"empty_api_key_allowed"`
+	CreateAllowed       bool   `json:"create_allowed"`
+	DefaultModelAllowed bool   `json:"default_model_allowed"`
+	DefaultAuthMethod   string `json:"default_auth_method,omitempty"`
+	AuthMethodLocked    bool   `json:"auth_method_locked,omitempty"`
 }
 
 type attachedModelProviderMeta struct {
 	protocolMeta
-	createAllowed     bool
-	defaultAuthMethod string
-	authMethodLocked  bool
+	createAllowed       bool
+	defaultModelAllowed bool
+	defaultAuthMethod   string
+	authMethodLocked    bool
 }
 
 // attachedModelProviderMetaByName augments protocolMetaByName for provider
@@ -27,20 +29,39 @@ type attachedModelProviderMeta struct {
 // kept out of the core HTTP metadata map because they have special auth/runtime
 // semantics.
 var attachedModelProviderMetaByName = map[string]attachedModelProviderMeta{
-	"azure": {createAllowed: true},
+	"azure": {createAllowed: true, defaultModelAllowed: true},
 	"anthropic": {
-		protocolMeta:  protocolMeta{defaultAPIBase: "https://api.anthropic.com/v1"},
-		createAllowed: true,
+		protocolMeta:        protocolMeta{defaultAPIBase: "https://api.anthropic.com/v1"},
+		createAllowed:       true,
+		defaultModelAllowed: true,
 	},
 	"anthropic-messages": {
-		protocolMeta:  protocolMeta{defaultAPIBase: "https://api.anthropic.com/v1"},
-		createAllowed: true,
+		protocolMeta:        protocolMeta{defaultAPIBase: "https://api.anthropic.com/v1"},
+		createAllowed:       true,
+		defaultModelAllowed: true,
 	},
-	"bedrock":        {createAllowed: true},
-	"antigravity":    {createAllowed: true, defaultAuthMethod: "oauth", authMethodLocked: true},
-	"claude-cli":     {createAllowed: true},
-	"codex-cli":      {createAllowed: true},
-	"github-copilot": {protocolMeta: protocolMeta{defaultAPIBase: "localhost:4321"}, createAllowed: true},
+	"bedrock": {createAllowed: true, defaultModelAllowed: true},
+	"antigravity": {
+		createAllowed:       true,
+		defaultModelAllowed: true,
+		defaultAuthMethod:   "oauth",
+		authMethodLocked:    true,
+	},
+	"claude-cli": {createAllowed: true, defaultModelAllowed: true},
+	"codex-cli":  {createAllowed: true, defaultModelAllowed: true},
+	"github-copilot": {
+		protocolMeta:        protocolMeta{defaultAPIBase: "localhost:4321"},
+		createAllowed:       true,
+		defaultModelAllowed: true,
+	},
+	// ElevenLabs is intentionally exposed only as an ASR-capable provider. It
+	// belongs in the shared model catalog because ASR is configured via
+	// model_list, but it must not be selectable as the default chat model.
+	"elevenlabs": {
+		protocolMeta:        protocolMeta{defaultAPIBase: "https://api.elevenlabs.io"},
+		createAllowed:       true,
+		defaultModelAllowed: false,
+	},
 }
 
 // ModelProviderOptions returns the canonical provider catalog exposed to the Web UI.
@@ -51,10 +72,11 @@ func ModelProviderOptions() []ModelProviderOption {
 			continue
 		}
 		optionsByID[provider] = ModelProviderOption{
-			ID:                 provider,
-			DefaultAPIBase:     DefaultAPIBaseForProtocol(provider),
-			EmptyAPIKeyAllowed: IsEmptyAPIKeyAllowedForProtocol(provider),
-			CreateAllowed:      true,
+			ID:                  provider,
+			DefaultAPIBase:      DefaultAPIBaseForProtocol(provider),
+			EmptyAPIKeyAllowed:  IsEmptyAPIKeyAllowedForProtocol(provider),
+			CreateAllowed:       true,
+			DefaultModelAllowed: true,
 		}
 	}
 	for provider, meta := range attachedModelProviderMetaByName {
@@ -62,12 +84,13 @@ func ModelProviderOptions() []ModelProviderOption {
 			continue
 		}
 		optionsByID[provider] = ModelProviderOption{
-			ID:                 provider,
-			DefaultAPIBase:     meta.defaultAPIBase,
-			EmptyAPIKeyAllowed: meta.emptyAPIKeyAllowed,
-			CreateAllowed:      meta.createAllowed,
-			DefaultAuthMethod:  meta.defaultAuthMethod,
-			AuthMethodLocked:   meta.authMethodLocked,
+			ID:                  provider,
+			DefaultAPIBase:      meta.defaultAPIBase,
+			EmptyAPIKeyAllowed:  meta.emptyAPIKeyAllowed,
+			CreateAllowed:       meta.createAllowed,
+			DefaultModelAllowed: meta.defaultModelAllowed,
+			DefaultAuthMethod:   meta.defaultAuthMethod,
+			AuthMethodLocked:    meta.authMethodLocked,
 		}
 	}
 
@@ -107,6 +130,21 @@ func IsCreatableModelProvider(provider string) bool {
 	}
 	meta, ok := attachedModelProviderMetaByName[normalized]
 	return ok && meta.createAllowed
+}
+
+// IsDefaultModelProvider reports whether provider can be used as the default
+// chat model. Some providers such as ASR-only entries are intentionally
+// exposed in model_list management but cannot drive the gateway default model.
+func IsDefaultModelProvider(provider string) bool {
+	normalized := NormalizeProvider(provider)
+	if normalized == "" {
+		return false
+	}
+	if _, ok := protocolMetaByName[normalized]; ok {
+		return true
+	}
+	meta, ok := attachedModelProviderMetaByName[normalized]
+	return ok && meta.defaultModelAllowed
 }
 
 // SplitModelProviderAndID separates a legacy "provider/model" string into its

@@ -820,7 +820,7 @@ func TestHandleAddModel_AllowsBedrockProvider(t *testing.T) {
 	}
 }
 
-func TestHandleAddModel_PreservesLegacyElevenLabsASRConfig(t *testing.T) {
+func TestHandleAddModel_NormalizesLegacyElevenLabsASRConfig(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 
@@ -862,11 +862,11 @@ func TestHandleAddModel_PreservesLegacyElevenLabsASRConfig(t *testing.T) {
 	if len(updated.ModelList) != 2 {
 		t.Fatalf("len(model_list) = %d, want 2", len(updated.ModelList))
 	}
-	if got := updated.ModelList[0].Provider; got != "" {
-		t.Fatalf("provider = %q, want preserved empty provider for legacy ElevenLabs ASR config", got)
+	if got := updated.ModelList[0].Provider; got != "elevenlabs" {
+		t.Fatalf("provider = %q, want %q after normalization", got, "elevenlabs")
 	}
-	if got := updated.ModelList[0].Model; got != "elevenlabs/scribe_v1" {
-		t.Fatalf("model = %q, want preserved legacy ElevenLabs model ref", got)
+	if got := updated.ModelList[0].Model; got != "scribe_v1" {
+		t.Fatalf("model = %q, want %q after normalization", got, "scribe_v1")
 	}
 }
 
@@ -1208,7 +1208,7 @@ func TestHandleListModels_PreservesExplicitProviderPrefixedModel(t *testing.T) {
 	}
 }
 
-func TestHandleListModels_ExposesLegacyElevenLabsASRProvider(t *testing.T) {
+func TestHandleListModels_ExposesElevenLabsASRProvider(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 
@@ -1247,10 +1247,13 @@ func TestHandleListModels_ExposesLegacyElevenLabsASRProvider(t *testing.T) {
 		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
 	}
 	if got := resp.Models[0].Provider; got != "elevenlabs" {
-		t.Fatalf("provider = %q, want %q for legacy unsupported ASR entry", got, "elevenlabs")
+		t.Fatalf("provider = %q, want %q", got, "elevenlabs")
 	}
 	if got := resp.Models[0].Model; got != "scribe_v1" {
-		t.Fatalf("model = %q, want %q for legacy unsupported ASR entry", got, "scribe_v1")
+		t.Fatalf("model = %q, want %q", got, "scribe_v1")
+	}
+	if resp.Models[0].DefaultModelAllowed {
+		t.Fatal("elevenlabs ASR model should not be allowed as the default chat model")
 	}
 }
 
@@ -1324,7 +1327,7 @@ func TestHandleUpdateModel_PreservesLegacyModelPrefixWhenProviderOmitted(t *test
 	}
 }
 
-func TestHandleUpdateModel_PreservesLegacyElevenLabsASRWhenProviderOmitted(t *testing.T) {
+func TestHandleUpdateModel_MigratesLegacyElevenLabsASRWhenProviderOmitted(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 
@@ -1386,14 +1389,60 @@ func TestHandleUpdateModel_PreservesLegacyElevenLabsASRWhenProviderOmitted(t *te
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	if got := updated.ModelList[0].Provider; got != "" {
-		t.Fatalf("provider = %q, want preserved empty provider", got)
+	if got := updated.ModelList[0].Provider; got != "elevenlabs" {
+		t.Fatalf("provider = %q, want %q", got, "elevenlabs")
 	}
-	if got := updated.ModelList[0].Model; got != "elevenlabs/scribe_v1" {
-		t.Fatalf("model = %q, want preserved legacy model ref", got)
+	if got := updated.ModelList[0].Model; got != "scribe_v1" {
+		t.Fatalf("model = %q, want %q", got, "scribe_v1")
 	}
 	if got := updated.ModelList[0].APIBase; got != "https://api.elevenlabs.io" {
 		t.Fatalf("api_base = %q, want %q", got, "https://api.elevenlabs.io")
+	}
+}
+
+func TestHandleUpdateModel_ClearsDefaultWhenSavingASROnlyModel(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "elevenlabs-asr",
+		Provider:  "elevenlabs",
+		Model:     "scribe_v1",
+		APIKeys:   config.SimpleSecureStrings("sk_elevenlabs_test"),
+	}}
+	cfg.Agents.Defaults.ModelName = "elevenlabs-asr"
+	if err = config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"elevenlabs-asr",
+		"provider":"elevenlabs",
+		"model":"scribe_v1",
+		"api_base":"https://api.elevenlabs.io"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updated, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if got := updated.Agents.Defaults.ModelName; got != "" {
+		t.Fatalf("default model = %q, want cleared default", got)
 	}
 }
 
@@ -1511,6 +1560,16 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 		t.Fatal("github-copilot provider option missing")
 	} else if option.DefaultAPIBase != "localhost:4321" {
 		t.Fatalf("github-copilot default_api_base = %q, want %q", option.DefaultAPIBase, "localhost:4321")
+	}
+	if option, ok := optionsByID["elevenlabs"]; !ok {
+		t.Fatal("elevenlabs provider option missing")
+	} else {
+		if option.DefaultAPIBase != "https://api.elevenlabs.io" {
+			t.Fatalf("elevenlabs default_api_base = %q, want %q", option.DefaultAPIBase, "https://api.elevenlabs.io")
+		}
+		if option.DefaultModelAllowed {
+			t.Fatal("elevenlabs should be marked as not allowed for default chat model selection")
+		}
 	}
 	if option, ok := optionsByID["lmstudio"]; !ok {
 		t.Fatal("lmstudio provider option missing")
@@ -1806,6 +1865,45 @@ func TestHandleSetDefaultModel_RejectsNonexistentModel(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "not found") {
 		t.Fatalf("error message should mention 'not found', got: %s", rec.Body.String())
+	}
+}
+
+func TestHandleSetDefaultModel_RejectsElevenLabsASRProvider(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "elevenlabs-asr",
+			Provider:  "elevenlabs",
+			Model:     "scribe_v1",
+			APIKeys:   config.SimpleSecureStrings("sk_elevenlabs_test"),
+		},
+	}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models/default", bytes.NewBufferString(`{
+		"model_name": "elevenlabs-asr"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "cannot be used as the default chat model") {
+		t.Fatalf("body = %q, want default chat model rejection", rec.Body.String())
 	}
 }
 

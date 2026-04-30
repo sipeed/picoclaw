@@ -36,7 +36,10 @@ export function ModelCard({
   const status = model.status
   const statusLabel = t(`models.status.${status}`)
   const canSetDefault =
-    model.available && !model.is_default && !model.is_virtual
+    model.available &&
+    !model.is_default &&
+    !model.is_virtual &&
+    model.default_model_allowed !== false
 
   const setDefaultLabel = t("models.action.setDefault")
   const setDefaultDisabledReason = (() => {
@@ -45,6 +48,9 @@ export function ModelCard({
       return t("models.action.setDefaultDisabled.unavailable")
     if (model.is_default) return t("models.action.setDefaultDisabled.isDefault")
     if (model.is_virtual) return t("models.action.setDefaultDisabled.isVirtual")
+    if (model.default_model_allowed === false) {
+      return t("models.action.setDefaultDisabled.unsupportedProvider")
+    }
     return setDefaultLabel
   })()
 

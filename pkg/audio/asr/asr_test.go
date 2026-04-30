@@ -47,6 +47,21 @@ func TestDetectTranscriber(t *testing.T) {
 			wantName: "elevenlabs",
 		},
 		{
+			name: "explicit elevenlabs provider selects elevenlabs transcriber",
+			cfg: &config.Config{
+				Voice: config.VoiceConfig{ModelName: "my-asr-model"},
+				ModelList: []*config.ModelConfig{
+					{
+						ModelName: "my-asr-model",
+						Provider:  "elevenlabs",
+						Model:     "scribe_v1",
+						APIKeys:   config.SimpleSecureStrings("sk_elevenlabs_test"),
+					},
+				},
+			},
+			wantName: "elevenlabs",
+		},
+		{
 			name: "voice model name alias selects whisper transcriber for groq",
 			cfg: &config.Config{
 				Voice: config.VoiceConfig{ModelName: "my-asr-model"},

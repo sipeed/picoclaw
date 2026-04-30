@@ -987,6 +987,16 @@ func TestModelProviderOptions(t *testing.T) {
 	} else if !option.CreateAllowed {
 		t.Fatal("bedrock should be creatable and defer credential/build errors to runtime")
 	}
+	if option, ok := seen["elevenlabs"]; !ok {
+		t.Fatal("elevenlabs option missing")
+	} else {
+		if option.DefaultAPIBase != "https://api.elevenlabs.io" {
+			t.Fatalf("elevenlabs default_api_base = %q, want %q", option.DefaultAPIBase, "https://api.elevenlabs.io")
+		}
+		if option.DefaultModelAllowed {
+			t.Fatal("elevenlabs should be ASR-only and therefore not allowed as a default chat model")
+		}
+	}
 	if option, ok := seen["antigravity"]; !ok {
 		t.Fatal("antigravity option missing")
 	} else {

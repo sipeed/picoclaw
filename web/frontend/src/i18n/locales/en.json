@@ -236,7 +236,8 @@
         "setting": "Setting as default...",
         "unavailable": "Cannot set unavailable model as default",
         "isDefault": "Already the default model",
-        "isVirtual": "Cannot set virtual model as default"
+        "isVirtual": "Cannot set virtual model as default",
+        "unsupportedProvider": "This provider is ASR-only and cannot be the default chat model"
       },
       "deleteDisabled": {
         "isDefault": "Cannot delete the default model"
@@ -244,7 +245,9 @@
     },
     "defaultOnSave": {
       "label": "Default Model",
-      "description": "Automatically set this model as default after saving."
+      "description": "Automatically set this model as default after saving.",
+      "unsupportedProvider": "This provider can be saved in model_list, but it cannot be used as the default chat model.",
+      "clearOnSave": "Saving this ASR-only model will clear the current default chat model selection."
     },
     "add": {
       "button": "Add Model",

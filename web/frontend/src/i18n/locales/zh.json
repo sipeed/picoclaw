@@ -236,7 +236,8 @@
         "setting": "正在设为默认...",
         "unavailable": "无法将不可用的模型设为默认",
         "isDefault": "该模型已是默认模型",
-        "isVirtual": "无法将虚拟模型设为默认"
+        "isVirtual": "无法将虚拟模型设为默认",
+        "unsupportedProvider": "该 Provider 仅用于 ASR，不能设为默认聊天模型"
       },
       "deleteDisabled": {
         "isDefault": "无法删除默认模型"
@@ -244,7 +245,9 @@
     },
     "defaultOnSave": {
       "label": "默认模型",
-      "description": "保存后自动将该模型设置为默认模型。"
+      "description": "保存后自动将该模型设置为默认模型。",
+      "unsupportedProvider": "该 Provider 可以保存在 model_list 中，但不能作为默认聊天模型使用。",
+      "clearOnSave": "保存这个仅用于 ASR 的模型后，会清除当前的默认聊天模型设置。"
     },
     "add": {
       "button": "添加模型",
