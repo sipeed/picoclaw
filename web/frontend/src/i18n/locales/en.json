@@ -617,6 +617,8 @@
       "workspace_hint": "Base directory for agent file operations.",
       "restrict_workspace": "Restrict to Workspace",
       "restrict_workspace_hint": "Only allow file operations inside workspace.",
+      "streaming_enabled": "Streaming Response",
+      "streaming_enabled_hint": "Render live model output in chat and keep markdown updating as new text arrives.",
       "split_on_marker": "Chatty Mode",
       "split_on_marker_hint": "Split long messages into short ones like real human chatting.",
       "tool_feedback_enabled": "Tool Feedback",

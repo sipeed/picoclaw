@@ -9,12 +9,8 @@ import {
 } from "@tabler/icons-react"
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
-import ReactMarkdown from "react-markdown"
-import rehypeHighlight from "rehype-highlight"
-import rehypeRaw from "rehype-raw"
-import rehypeSanitize from "rehype-sanitize"
-import remarkGfm from "remark-gfm"
 
+import { StreamingMarkdown } from "@/components/chat/streaming-markdown"
 import { Button } from "@/components/ui/button"
 import { formatMessageTime } from "@/hooks/use-pico-chat"
 import { cn } from "@/lib/utils"
@@ -29,6 +25,8 @@ interface AssistantMessageProps {
   attachments?: ChatAttachment[]
   kind?: AssistantMessageKind
   toolCalls?: ChatToolCall[]
+  streamingEnabled?: boolean
+  isStreaming?: boolean
   timestamp?: string | number
 }
 
@@ -37,6 +35,8 @@ export function AssistantMessage({
   attachments = [],
   kind = "normal",
   toolCalls = [],
+  streamingEnabled = true,
+  isStreaming = false,
   timestamp = "",
 }: AssistantMessageProps) {
   const { t } = useTranslation()
@@ -184,21 +184,16 @@ export function AssistantMessage({
             </div>
           )}
           {(!isCollapsedBlock || isExpanded) && !isToolCalls && hasText && (
-            <div
+            <StreamingMarkdown
+              content={content}
+              animate={streamingEnabled && isStreaming}
               className={cn(
                 "prose dark:prose-invert prose-pre:my-2 prose-pre:overflow-x-auto prose-pre:rounded-lg prose-pre:border prose-pre:bg-zinc-100 prose-pre:p-0 prose-pre:text-zinc-900 dark:prose-pre:bg-zinc-950 dark:prose-pre:text-zinc-100 max-w-none [overflow-wrap:anywhere] break-words",
                 isThought
                   ? "prose-p:my-1.5 prose-p:whitespace-pre-wrap px-3 pt-0 pb-3 text-[13px] leading-relaxed opacity-70"
                   : "prose-p:my-2 prose-p:whitespace-pre-wrap p-4 text-[15px] leading-relaxed",
               )}
-            >
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw, rehypeSanitize, rehypeHighlight]}
-              >
-                {content}
-              </ReactMarkdown>
-            </div>
+            />
           )}
 
           {!isCollapsedBlock && hasText && (

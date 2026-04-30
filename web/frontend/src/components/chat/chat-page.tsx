@@ -1,9 +1,10 @@
-import { IconPlus } from "@tabler/icons-react"
+import { IconArrowDown, IconPlus } from "@tabler/icons-react"
 import { useAtom } from "jotai"
-import { type ChangeEvent, useEffect, useRef, useState } from "react"
+import { type ChangeEvent, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
+import { launcherFetch } from "@/api/http"
 import { AssistantMessage } from "@/components/chat/assistant-message"
 import {
   ChatComposer,
@@ -17,10 +18,12 @@ import { UserMessage } from "@/components/chat/user-message"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
+import { useChatAutoScroll } from "@/hooks/use-chat-auto-scroll"
 import { useChatModels } from "@/hooks/use-chat-models"
 import { useGateway } from "@/hooks/use-gateway"
 import { usePicoChat } from "@/hooks/use-pico-chat"
 import { useSessionHistory } from "@/hooks/use-session-history"
+import { useQuery } from "@tanstack/react-query"
 import type { ConnectionState } from "@/store/chat"
 import type { ChatAttachment } from "@/store/chat"
 import { showAssistantDetailsAtom } from "@/store/chat"
@@ -106,10 +109,7 @@ function resolveChatInputDisabledReason({
 
 export function ChatPage() {
   const { t } = useTranslation()
-  const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [isAtBottom, setIsAtBottom] = useState(true)
-  const [hasScrolled, setHasScrolled] = useState(false)
   const [input, setInput] = useState("")
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [showAssistantDetails, setShowAssistantDetails] = useAtom(
@@ -159,24 +159,36 @@ export function ChatPage() {
     onDeletedActiveSession: newChat,
   })
 
-  const syncScrollState = (element: HTMLDivElement) => {
-    const { clientHeight, scrollHeight, scrollTop } = element
-    setHasScrolled(scrollTop > 0)
-    setIsAtBottom(scrollHeight - scrollTop <= clientHeight + 10)
-  }
-
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    syncScrollState(e.currentTarget)
-  }
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      if (isAtBottom) {
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+  const { data: appConfig } = useQuery({
+    queryKey: ["config"],
+    queryFn: async () => {
+      const res = await launcherFetch("/api/config")
+      if (!res.ok) {
+        throw new Error("Failed to load config")
       }
-      syncScrollState(scrollRef.current)
-    }
-  }, [messages, isTyping, isAtBottom])
+      return res.json() as Promise<Record<string, unknown>>
+    },
+    staleTime: 60_000,
+  })
+  const streamingEnabled =
+    (
+      (appConfig?.agents as { defaults?: { streaming_enabled?: boolean } })
+        ?.defaults?.streaming_enabled
+    ) !== false
+  const hasStreamingMessage =
+    streamingEnabled &&
+    messages.some((message) => message.role === "assistant" && message.streaming)
+  const {
+    scrollRef,
+    isAtBottom,
+    hasScrolled,
+    handleScroll,
+    handleManualScrollIntent,
+    scrollToBottom,
+  } = useChatAutoScroll({
+    deps: [messages, isTyping],
+    streaming: hasStreamingMessage,
+  })
 
   const handleSend = () => {
     if ((!input.trim() && attachments.length === 0) || !canInput) return
@@ -253,7 +265,7 @@ export function ChatPage() {
     canInput && (Boolean(input.trim()) || attachments.length > 0)
 
   return (
-    <div className="bg-background/95 flex h-full flex-col">
+    <div className="bg-background/95 relative flex h-full flex-col">
       <PageHeader
         title={t("navigation.chat")}
         className={`transition-shadow ${
@@ -313,6 +325,8 @@ export function ChatPage() {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
+        onWheelCapture={handleManualScrollIntent}
+        onTouchStart={handleManualScrollIntent}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-6 [scrollbar-gutter:stable] md:px-8 lg:px-24 xl:px-48"
       >
         <div className="mx-auto flex w-full max-w-250 flex-col gap-8 pb-8">
@@ -340,6 +354,8 @@ export function ChatPage() {
                     attachments={msg.attachments}
                     kind={msg.kind}
                     toolCalls={msg.toolCalls}
+                    isStreaming={msg.streaming}
+                    streamingEnabled={streamingEnabled}
                     timestamp={msg.timestamp}
                   />
                 ) : (
@@ -363,6 +379,18 @@ export function ChatPage() {
         className="hidden"
         onChange={handleImageSelection}
       />
+
+      {!isAtBottom && messages.length > 0 && (
+        <Button
+          type="button"
+          size="icon"
+          className="absolute right-6 bottom-28 z-20 rounded-full shadow-lg md:right-8"
+          aria-label="Scroll to bottom"
+          onClick={() => scrollToBottom()}
+        >
+          <IconArrowDown className="size-4" />
+        </Button>
+      )}
 
       <ChatComposer
         input={input}

@@ -242,6 +242,7 @@ export function ConfigPage() {
             defaults: {
               workspace,
               restrict_to_workspace: form.restrictToWorkspace,
+              streaming_enabled: form.streamingEnabled,
               split_on_marker: form.splitOnMarker,
               tool_feedback: {
                 enabled: form.toolFeedbackEnabled,
