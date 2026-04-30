@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -144,11 +145,14 @@ func (c *SlackWebhookChannel) Send(ctx context.Context, msg bus.OutboundMessage)
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		logger.ErrorCF("slack_webhook", "Slack API error", map[string]any{
-			"target": targetName,
-			"status": resp.StatusCode,
+			"target":   targetName,
+			"status":   resp.StatusCode,
+			"response": string(respBody),
 		})
-		return nil, fmt.Errorf("slack_webhook: send failed: %w", channels.ClassifySendError(resp.StatusCode, fmt.Errorf("status %d", resp.StatusCode)))
+		return nil, fmt.Errorf("slack_webhook: send failed (status %d: %s): %w",
+			resp.StatusCode, string(respBody), channels.ClassifySendError(resp.StatusCode, nil))
 	}
 
 	logger.DebugCF("slack_webhook", "Message sent successfully", map[string]any{
@@ -226,19 +230,47 @@ func splitText(text string, maxLen int) []string {
 	}
 
 	var chunks []string
+	inFence := false
+
 	for len(runes) > maxLen {
-		splitAt := maxLen
-		window := string(runes[:maxLen])
-		if idx := strings.LastIndex(window, "\n"); idx > 0 {
-			splitAt = len([]rune(window[:idx])) + 1
-		} else if idx := strings.LastIndex(window, " "); idx > 0 {
-			splitAt = len([]rune(window[:idx])) + 1
-		}
-		chunks = append(chunks, string(runes[:splitAt]))
+		splitAt := findSplitPoint(runes, maxLen, inFence)
+		chunk := string(runes[:splitAt])
+		chunks = append(chunks, chunk)
+		inFence = endsInsideFence(chunk, inFence)
 		runes = runes[splitAt:]
 	}
 	if len(runes) > 0 {
 		chunks = append(chunks, string(runes))
 	}
 	return chunks
+}
+
+func findSplitPoint(runes []rune, maxLen int, inFence bool) int {
+	window := string(runes[:maxLen])
+
+	if idx := strings.LastIndex(window, "\n"); idx > 0 {
+		splitAt := len([]rune(window[:idx])) + 1
+		if !inFence || !endsInsideFence(string(runes[:splitAt]), inFence) {
+			return splitAt
+		}
+	}
+
+	if idx := strings.LastIndex(window, " "); idx > 0 {
+		splitAt := len([]rune(window[:idx])) + 1
+		if !inFence {
+			return splitAt
+		}
+	}
+
+	if inFence {
+		if idx := strings.LastIndex(window, "```"); idx > 0 {
+			return len([]rune(window[:idx]))
+		}
+	}
+
+	return maxLen
+}
+
+func endsInsideFence(text string, wasInFence bool) bool {
+	return wasInFence != (strings.Count(text, "```")%2 == 1)
 }

@@ -127,9 +127,9 @@ func TestSplitContentWithTables(t *testing.T) {
 
 func TestRenderTable(t *testing.T) {
 	tests := []struct {
-		name        string
-		input       string
-		expectCode  bool
+		name       string
+		input      string
+		expectCode bool
 	}{
 		{
 			name:       "narrow table renders as text",
