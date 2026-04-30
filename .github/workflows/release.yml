@@ -194,24 +194,30 @@ jobs:
           MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
         run: |
-          pip3 install rcodesign
+          cleanup() {
+            rm -rf .venv-rcodesign
+            rm -f cert.p12 notary-key.p8
+          }
+          trap cleanup EXIT
+
+          python3 -m venv .venv-rcodesign
+          ./.venv-rcodesign/bin/python -m pip install --upgrade pip
+          ./.venv-rcodesign/bin/python -m pip install rcodesign
 
           echo "$MACOS_SIGN_P12" | base64 -d > cert.p12
 
-          rcodesign sign \
+          ./.venv-rcodesign/bin/rcodesign sign \
             --p12-file cert.p12 \
             --p12-password "$MACOS_SIGN_PASSWORD" \
             picoclaw-launcher-cgo
 
           echo "$MACOS_NOTARY_KEY" > notary-key.p8
 
-          rcodesign notary-submit \
+          ./.venv-rcodesign/bin/rcodesign notary-submit \
             --api-key-path notary-key.p8 \
             --api-issuer "$MACOS_NOTARY_ISSUER_ID" \
             --wait \
             picoclaw-launcher-cgo
-
-          rm -f cert.p12 notary-key.p8
 
       - name: Upload launcher artifact
         uses: actions/upload-artifact@v4
