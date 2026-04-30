@@ -705,7 +705,7 @@ toolLoop:
 		ts.setPhase(TurnPhaseCompleted)
 		ts.setFinalContent("")
 		if al.channelManager != nil && ts.channel != "" {
-			al.channelManager.DismissToolFeedback(ctx, ts.channel, ts.chatID)
+			al.channelManager.DismissToolFeedback(ctx, ts.channel, ts.chatID, ts.opts.InboundContext)
 		}
 		logger.InfoCF("agent", "Tool output satisfied delivery; ending turn without follow-up LLM",
 			map[string]any{

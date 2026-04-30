@@ -48,5 +48,7 @@ type ChannelManager interface {
 	// DismissToolFeedback clears any tracked tool feedback animation for the
 	// given channel/chat. Call this when a turn ends without a final response
 	// (e.g., ResponseHandled tools) to avoid orphaned animation goroutines.
-	DismissToolFeedback(ctx context.Context, channel, chatID string)
+	// outboundCtx carries topic/thread info needed for channels that use
+	// scoped tracker keys (e.g., Telegram forum topics); may be nil.
+	DismissToolFeedback(ctx context.Context, channel, chatID string, outboundCtx *bus.InboundContext)
 }
