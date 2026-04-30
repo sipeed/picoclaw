@@ -28,7 +28,7 @@ require (
 	github.com/muesli/termenv v0.16.0
 	github.com/mymmrac/telego v1.8.0
 	github.com/open-dingtalk/dingtalk-stream-sdk-go v0.9.1
-	github.com/openai/openai-go/v3 v3.22.0
+	github.com/openai/openai-go/v3 v3.33.0
 	github.com/pion/rtp v1.10.1
 	github.com/pion/webrtc/v3 v3.3.6
 	github.com/rs/zerolog v1.35.1
