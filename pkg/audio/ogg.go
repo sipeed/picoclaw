@@ -40,11 +40,17 @@ func DecodeOggOpus(r io.Reader, onFrame func([]byte) error) error {
 			// If lacing is less than 255, the packet is complete
 			if lacing < 255 {
 				if packet.Len() > 0 {
-					packetBytes := packet.Bytes()
+					raw := packet.Bytes()
 					// Ignore Ogg Opus headers
-					if !bytes.HasPrefix(packetBytes, []byte("OpusHead")) &&
-						!bytes.HasPrefix(packetBytes, []byte("OpusTags")) {
-						if err := onFrame(packetBytes); err != nil {
+					if !bytes.HasPrefix(raw, []byte("OpusHead")) &&
+						!bytes.HasPrefix(raw, []byte("OpusTags")) {
+						// Copy the frame data: packet.Reset() reuses the
+						// underlying array, so the slice would be
+						// overwritten by subsequent packets before the
+						// consumer (e.g. OpusSend channel) reads it.
+						frame := make([]byte, len(raw))
+						copy(frame, raw)
+						if err := onFrame(frame); err != nil {
 							return err
 						}
 					}
