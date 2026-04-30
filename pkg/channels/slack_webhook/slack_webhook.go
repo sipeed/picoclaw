@@ -238,40 +238,59 @@ func splitText(text string, maxLen int) []string {
 		return []string{text}
 	}
 
+	const fencePrefix = "```\n"
+	const fenceSuffix = "\n```"
+	fencePrefixLen := len([]rune(fencePrefix))
+	fenceSuffixLen := len([]rune(fenceSuffix))
+
 	var chunks []string
 	inFence := false
 
-	for len(runes) > maxLen {
-		splitAt := findSplitPoint(runes, maxLen, inFence)
-		chunk := string(runes[:splitAt])
-
-		chunkEndsInFence := endsInsideFence(chunk, inFence)
-
-		// If splitting inside a fence, wrap chunks to be self-contained
-		if inFence && !strings.HasPrefix(strings.TrimSpace(chunk), "```") {
-			chunk = "```\n" + chunk
+	for len(runes) > 0 {
+		// Calculate content budget reserving space for fence markers
+		prefixLen := 0
+		if inFence {
+			prefixLen = fencePrefixLen
 		}
-		if chunkEndsInFence {
-			chunk = strings.TrimSuffix(chunk, "\n") + "\n```"
+		contentBudget := maxLen - prefixLen - fenceSuffixLen
+		if contentBudget <= 0 {
+			contentBudget = maxLen
 		}
+
+		splitAt := len(runes)
+		if splitAt > contentBudget {
+			splitAt = findSplitPoint(runes, contentBudget)
+			if splitAt <= 0 || splitAt > contentBudget {
+				splitAt = contentBudget
+			}
+		}
+
+		chunkBody := string(runes[:splitAt])
+		chunkEndsInFence := endsInsideFence(chunkBody, inFence)
+		chunk := wrapFenceChunk(chunkBody, inFence, chunkEndsInFence)
 
 		chunks = append(chunks, chunk)
 		inFence = chunkEndsInFence
 		runes = runes[splitAt:]
 	}
 
-	if len(runes) > 0 {
-		remainder := string(runes)
-		// Wrap remainder if we're still in a fence
-		if inFence && !strings.HasPrefix(strings.TrimSpace(remainder), "```") {
-			remainder = "```\n" + remainder
-		}
-		chunks = append(chunks, remainder)
-	}
 	return chunks
 }
 
-func findSplitPoint(runes []rune, maxLen int, _ bool) int {
+func wrapFenceChunk(text string, wasInFence bool, endsInFence bool) string {
+	if wasInFence && !strings.HasPrefix(strings.TrimSpace(text), "```") {
+		text = "```\n" + text
+	}
+	if endsInFence {
+		text = strings.TrimSuffix(text, "\n") + "\n```"
+	}
+	return text
+}
+
+func findSplitPoint(runes []rune, maxLen int) int {
+	if len(runes) <= maxLen {
+		return len(runes)
+	}
 	window := string(runes[:maxLen])
 
 	// Try splitting on newline

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -32,7 +33,9 @@ func TestNewSlackWebhookChannel_Validation(t *testing.T) {
 		{
 			name: "missing default",
 			webhooks: map[string]config.SlackWebhookTarget{
-				"alerts": {WebhookURL: *config.NewSecureString("https://hooks.slack.com/services/T/B/x")},
+				"alerts": {
+					WebhookURL: *config.NewSecureString("https://hooks.slack.com/services/T/B/x"),
+				},
 			},
 			expectErr: "a 'default' webhook target is required",
 		},
@@ -46,7 +49,9 @@ func TestNewSlackWebhookChannel_Validation(t *testing.T) {
 		{
 			name: "non-HTTPS URL",
 			webhooks: map[string]config.SlackWebhookTarget{
-				"default": {WebhookURL: *config.NewSecureString("http://hooks.slack.com/services/T/B/x")},
+				"default": {
+					WebhookURL: *config.NewSecureString("http://hooks.slack.com/services/T/B/x"),
+				},
 			},
 			expectErr: "must use HTTPS",
 		},
@@ -176,9 +181,11 @@ func TestSlackWebhookChannel_ErrorClassification(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(tt.statusCode)
-			}))
+			server := httptest.NewTLSServer(
+				http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(tt.statusCode)
+				}),
+			)
 			defer server.Close()
 
 			cfg := &config.SlackWebhookSettings{
@@ -199,10 +206,76 @@ func TestSlackWebhookChannel_ErrorClassification(t *testing.T) {
 			require.Error(t, err)
 
 			if tt.expectTemp {
-				assert.True(t, errors.Is(err, channels.ErrTemporary), "expected temporary error for %d", tt.statusCode)
+				assert.True(
+					t,
+					errors.Is(err, channels.ErrTemporary),
+					"expected temporary error for %d",
+					tt.statusCode,
+				)
 			} else {
 				assert.True(t, errors.Is(err, channels.ErrSendFailed), "expected permanent error for %d", tt.statusCode)
 			}
 		})
 	}
+}
+
+func TestSplitText_ChunkSizeLimit(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		maxLen int
+	}{
+		{
+			name:   "plain text",
+			input:  strings.Repeat("a", 5000),
+			maxLen: 3000,
+		},
+		{
+			name:   "text with code block",
+			input:  "```\n" + strings.Repeat("x", 5000) + "\n```",
+			maxLen: 3000,
+		},
+		{
+			name: "multiple code blocks",
+			input: "text\n```\n" + strings.Repeat(
+				"code ",
+				800,
+			) + "\n```\nmore text\n```\n" + strings.Repeat(
+				"more ",
+				800,
+			) + "\n```",
+			maxLen: 3000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chunks := splitText(tt.input, tt.maxLen)
+			for i, chunk := range chunks {
+				runeLen := len([]rune(chunk))
+				assert.LessOrEqual(t, runeLen, tt.maxLen,
+					"chunk %d has %d runes, exceeds max %d", i, runeLen, tt.maxLen)
+			}
+		})
+	}
+}
+
+func TestSplitText_FenceIntegrity(t *testing.T) {
+	input := "```\n" + strings.Repeat("line of code\n", 300) + "```"
+
+	chunks := splitText(input, 3000)
+	require.Greater(t, len(chunks), 1, "expected multiple chunks")
+
+	for i, chunk := range chunks {
+		openCount := strings.Count(chunk, "```")
+		assert.Equal(t, 0, openCount%2,
+			"chunk %d has unbalanced fence markers (count=%d)", i, openCount)
+	}
+}
+
+func TestSplitText_ShortText(t *testing.T) {
+	input := "short text"
+	chunks := splitText(input, 3000)
+	require.Len(t, chunks, 1)
+	assert.Equal(t, input, chunks[0])
 }

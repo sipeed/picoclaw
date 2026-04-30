@@ -172,7 +172,10 @@ func renderTable(tableStr string) string {
 	// Check if table is narrow enough for mrkdwn format
 	totalWidth := 0
 	for _, w := range colWidths {
-		totalWidth += w + 3 // " | " separator
+		totalWidth += w
+	}
+	if len(colWidths) > 1 {
+		totalWidth += 3 * (len(colWidths) - 1) // " | " separators between columns
 	}
 	if totalWidth <= maxTableRowWidth {
 		// Render as formatted text with bold headers
