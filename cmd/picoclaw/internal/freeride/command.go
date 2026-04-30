@@ -3,6 +3,7 @@ package freeride
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -37,7 +38,8 @@ func newListCommand() *cobra.Command {
 		Use:   "list",
 		Short: "List available free models from OpenRouter",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			t := tools.NewFreeRideTool(internal.GetConfigPath(), nil)
+			cdPath := filepath.Join(internal.GetPicoclawHome(), "freeride_cooldown.json")
+			t := tools.NewFreeRideTool(internal.GetConfigPath(), cdPath, nil)
 			result := t.Execute(context.Background(), map[string]any{
 				"command": "list",
 				"limit":   float64(limit),
@@ -56,7 +58,8 @@ func newAutoCommand() *cobra.Command {
 		Use:   "auto",
 		Short: "Automatically configure best free models as fallbacks",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			t := tools.NewFreeRideTool(internal.GetConfigPath(), nil)
+			cdPath := filepath.Join(internal.GetPicoclawHome(), "freeride_cooldown.json")
+			t := tools.NewFreeRideTool(internal.GetConfigPath(), cdPath, nil)
 			result := t.Execute(context.Background(), map[string]any{
 				"command": "auto",
 				"limit":   float64(limit),
@@ -74,7 +77,8 @@ func newStatusCommand() *cobra.Command {
 		Use:   "status",
 		Short: "Check current FreeRide configuration",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			t := tools.NewFreeRideTool(internal.GetConfigPath(), nil)
+			cdPath := filepath.Join(internal.GetPicoclawHome(), "freeride_cooldown.json")
+			t := tools.NewFreeRideTool(internal.GetConfigPath(), cdPath, nil)
 			result := t.Execute(context.Background(), map[string]any{
 				"command": "status",
 			})
@@ -90,7 +94,8 @@ func newSetTimeoutCommand() *cobra.Command {
 		Use:   "settimeout",
 		Short: "Set request timeout for all OpenRouter models",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			t := tools.NewFreeRideTool(internal.GetConfigPath(), nil)
+			cdPath := filepath.Join(internal.GetPicoclawHome(), "freeride_cooldown.json")
+			t := tools.NewFreeRideTool(internal.GetConfigPath(), cdPath, nil)
 			result := t.Execute(context.Background(), map[string]any{
 				"command": "settimeout",
 				"timeout": float64(timeout),
