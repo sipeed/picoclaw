@@ -1,6 +1,7 @@
 package slackwebhook
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -86,11 +87,14 @@ func convertMarkdownToMrkdwn(text string) string {
 func splitContentWithTables(content string) []contentSegment {
 	var segments []contentSegment
 
-	// Protect code blocks from table detection
+	// Protect code blocks from table detection using unique placeholders
 	var codeBlocks []string
+	blockIdx := 0
 	protected := codeBlockRe.ReplaceAllStringFunc(content, func(match string) string {
 		codeBlocks = append(codeBlocks, match)
-		return "\x00CODEBLOCK\x00"
+		placeholder := fmt.Sprintf("\x00CODEBLOCK_%d\x00", blockIdx)
+		blockIdx++
+		return placeholder
 	})
 
 	matches := markdownTableRe.FindAllStringSubmatchIndex(protected, -1)
@@ -98,11 +102,12 @@ func splitContentWithTables(content string) []contentSegment {
 		return []contentSegment{{content: content, isTable: false}}
 	}
 
-	// Restore code blocks in protected content for position mapping
+	// Restore code blocks using indexed placeholders
 	restoreCodeBlocks := func(s string) string {
 		result := s
-		for _, block := range codeBlocks {
-			result = strings.Replace(result, "\x00CODEBLOCK\x00", block, 1)
+		for i, block := range codeBlocks {
+			placeholder := fmt.Sprintf("\x00CODEBLOCK_%d\x00", i)
+			result = strings.Replace(result, placeholder, block, 1)
 		}
 		return result
 	}

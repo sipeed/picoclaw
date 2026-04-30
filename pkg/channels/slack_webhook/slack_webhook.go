@@ -50,7 +50,7 @@ func NewSlackWebhookChannel(
 		}
 		parsed, err := url.Parse(webhookURL)
 		if err != nil {
-			return nil, fmt.Errorf("slack_webhook: webhook %q has invalid URL format", name)
+			return nil, fmt.Errorf("slack_webhook: webhook %q has invalid URL format: %w", name, err)
 		}
 		if !strings.EqualFold(parsed.Scheme, "https") {
 			return nil, fmt.Errorf("slack_webhook: webhook %q must use HTTPS (got %q)", name, parsed.Scheme)
