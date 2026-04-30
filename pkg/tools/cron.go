@@ -10,7 +10,6 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/cron"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -43,7 +42,7 @@ func NewCronTool(
 	execEnabled := true
 	if config != nil {
 		allowCommand = config.Tools.Cron.AllowCommand
-		execEnabled = config.Tools.Exec.Enabled
+		execEnabled = config.Tools.Exec.Enabled && config.Tools.Exec.AllowRemote
 	}
 
 	var execTool *ExecTool
@@ -192,17 +191,12 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 		return ErrorResult("one of at_seconds, every_seconds, or cron_expr is required")
 	}
 
-	// GHSA-pv8c-p6jf-3fpp: command scheduling requires internal channel. When
-	// allow_command is disabled, explicit confirmation is required as an override.
-	// Non-command reminders remain open to all channels.
+	// If command is set, check if execution is allowed and if confirmation is provided when required
 	command, _ := args["command"].(string)
 	commandConfirm, _ := args["command_confirm"].(bool)
 	if command != "" {
 		if !t.execEnabled {
 			return ErrorResult("command execution is disabled")
-		}
-		if !constants.IsInternalChannel(channel) {
-			return ErrorResult("scheduling command execution is restricted to internal channels")
 		}
 		if !t.allowCommand && !commandConfirm {
 			return ErrorResult("command_confirm=true is required when allow_command is disabled")
@@ -320,6 +314,7 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		}
 
 		args := map[string]any{
+			"action":    "run",
 			"command":   job.Payload.Command,
 			"__channel": channel,
 			"__chat_id": chatID,
