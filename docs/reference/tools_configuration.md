@@ -258,6 +258,17 @@ For schedule types, execution modes (`deliver`, agent turn, and command jobs), p
 
 The MCP tool enables integration with external Model Context Protocol servers.
 
+If you prefer not to edit JSON manually, PicoClaw also provides an MCP configuration manager CLI:
+
+- `picoclaw mcp add` — add or update a server (supports `--deferred` / `--no-deferred`)
+- `picoclaw mcp list` — list all configured servers with status and deferred state
+- `picoclaw mcp show <name>` — show full details and the tool list for one server
+- `picoclaw mcp test <name>` — connectivity check for one server
+- `picoclaw mcp remove <name>` — remove a server entry
+- `picoclaw mcp edit` — open `config.json` in `$EDITOR` for advanced edits
+
+These commands manage the same `tools.mcp.servers` section documented below. See [MCP Server CLI](mcp-cli.md) for command syntax, examples, and behavior details.
+
 ### Tool Discovery (Lazy Loading)
 
 When connecting to multiple MCP servers, exposing hundreds of tools simultaneously can exhaust the LLM's context window

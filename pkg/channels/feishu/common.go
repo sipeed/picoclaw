@@ -64,6 +64,62 @@ func extractJSONStringField(content, field string) string {
 // Format: {"image_key": "img_xxx"}
 func extractImageKey(content string) string { return extractJSONStringField(content, "image_key") }
 
+// extractPostImageKeys extracts all image_key values from a Feishu post (rich text)
+// message. Post messages have nested arrays of elements where images appear as
+// {"tag":"img","image_key":"img_xxx"}.
+func extractPostImageKeys(rawContent string) []string {
+	if rawContent == "" {
+		return nil
+	}
+
+	var post map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(rawContent), &post); err != nil {
+		return nil
+	}
+
+	var keys []string
+	seen := make(map[string]struct{})
+
+	collectFromRows := func(contentRaw json.RawMessage) {
+		var rows [][]map[string]any
+		if err := json.Unmarshal(contentRaw, &rows); err != nil {
+			return
+		}
+		for _, row := range rows {
+			for _, elem := range row {
+				if tag, _ := elem["tag"].(string); tag == "img" {
+					if ik, _ := elem["image_key"].(string); ik != "" {
+						if _, dup := seen[ik]; !dup {
+							seen[ik] = struct{}{}
+							keys = append(keys, ik)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Flat format: {"title":"...", "content":[[...]]}
+	if contentRaw, ok := post["content"]; ok {
+		collectFromRows(contentRaw)
+	}
+
+	// Localized format: {"zh_cn": {"title":"...", "content":[[...]]}, ...}
+	for _, raw := range post {
+		var locale map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &locale); err != nil {
+			continue
+		}
+		contentRaw, ok := locale["content"]
+		if !ok {
+			continue
+		}
+		collectFromRows(contentRaw)
+	}
+
+	return keys
+}
+
 // extractFileKey extracts the file_key from a Feishu file/audio message content JSON.
 // Format: {"file_key": "file_xxx", "file_name": "...", ...}
 func extractFileKey(content string) string { return extractJSONStringField(content, "file_key") }

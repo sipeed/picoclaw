@@ -247,8 +247,9 @@ type SubTurnConfig struct {
 }
 
 type ToolFeedbackConfig struct {
-	Enabled       bool `json:"enabled"         env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED"`
-	MaxArgsLength int  `json:"max_args_length" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH"`
+	Enabled          bool `json:"enabled"           env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED"`
+	MaxArgsLength    int  `json:"max_args_length"   env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH"`
+	SeparateMessages bool `json:"separate_messages" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_SEPARATE_MESSAGES"`
 }
 
 type AgentDefaults struct {
@@ -286,7 +287,7 @@ func (d *AgentDefaults) GetMaxMediaSize() int {
 	return DefaultMaxMediaSize
 }
 
-// GetToolFeedbackMaxArgsLength returns the max visible text length for tool feedback messages.
+// GetToolFeedbackMaxArgsLength returns the max visible text length for tool argument previews.
 func (d *AgentDefaults) GetToolFeedbackMaxArgsLength() int {
 	if d.ToolFeedback.MaxArgsLength > 0 {
 		return d.ToolFeedback.MaxArgsLength
@@ -297,6 +298,13 @@ func (d *AgentDefaults) GetToolFeedbackMaxArgsLength() int {
 // IsToolFeedbackEnabled returns true when tool feedback messages should be sent to the chat.
 func (d *AgentDefaults) IsToolFeedbackEnabled() bool {
 	return d.ToolFeedback.Enabled
+}
+
+// IsToolFeedbackSeparateMessagesEnabled returns true when each tool feedback
+// update should be sent as its own chat message instead of editing a single
+// in-place progress message.
+func (d *AgentDefaults) IsToolFeedbackSeparateMessagesEnabled() bool {
+	return d.ToolFeedback.SeparateMessages
 }
 
 // GetModelName returns the effective model name for the agent defaults.
@@ -815,6 +823,7 @@ type ToolsConfig struct {
 	ListDir         ToolConfig         `json:"list_dir"          yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_LIST_DIR_"`
 	Message         ToolConfig         `json:"message"           yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_MESSAGE_"`
 	ReadFile        ReadFileToolConfig `json:"read_file"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_READ_FILE_"`
+	Serial          ToolConfig         `json:"serial"            yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SERIAL_"`
 	SendFile        ToolConfig         `json:"send_file"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SEND_FILE_"`
 	SendTTS         ToolConfig         `json:"send_tts"          yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SEND_TTS_"`
 	Spawn           ToolConfig         `json:"spawn"             yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPAWN_"`
@@ -988,7 +997,9 @@ func LoadConfig(path string) (*Config, error) {
 		Version int `json:"version"`
 	}
 	if e := json.Unmarshal(data, &versionInfo); e != nil {
-		return nil, fmt.Errorf("failed to detect config version: %w", e)
+		e = wrapJSONError(data, e, "config.json")
+		logger.ErrorCF("config", formatDiagnosticLogMessage("Malformed config file", e), map[string]any{"path": path})
+		return nil, e
 	}
 	if len(data) <= 10 {
 		logger.Warn(fmt.Sprintf("content is [%s]", string(data)))
@@ -1003,10 +1014,23 @@ func LoadConfig(path string) (*Config, error) {
 			"config migrate start",
 			map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
 		)
+		if err = validateLegacyConfigDiagnostics(data); err != nil {
+			logger.ErrorCF(
+				"config",
+				formatDiagnosticLogMessage("Failed to load config", err),
+				map[string]any{"path": path},
+			)
+			return nil, err
+		}
 
 		var m map[string]any
 		m, err = loadConfigMap(path)
 		if err != nil {
+			logger.ErrorCF(
+				"config",
+				formatDiagnosticLogMessage("Failed to load config", err),
+				map[string]any{"path": path},
+			)
 			return nil, err
 		}
 
@@ -1048,10 +1072,23 @@ func LoadConfig(path string) (*Config, error) {
 			"config migrate start",
 			map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
 		)
+		if err = validateLegacyConfigDiagnostics(data); err != nil {
+			logger.ErrorCF(
+				"config",
+				formatDiagnosticLogMessage("Failed to load config", err),
+				map[string]any{"path": path},
+			)
+			return nil, err
+		}
 
 		var m map[string]any
 		m, err = loadConfigMap(path)
 		if err != nil {
+			logger.ErrorCF(
+				"config",
+				formatDiagnosticLogMessage("Failed to load config", err),
+				map[string]any{"path": path},
+			)
 			return nil, err
 		}
 
@@ -1093,9 +1130,22 @@ func LoadConfig(path string) (*Config, error) {
 			"config migrate start",
 			map[string]any{"from": versionInfo.Version, "to": CurrentVersion},
 		)
+		if err = validateLegacyConfigDiagnostics(data); err != nil {
+			logger.ErrorCF(
+				"config",
+				formatDiagnosticLogMessage("Failed to load config", err),
+				map[string]any{"path": path},
+			)
+			return nil, err
+		}
 		var m map[string]any
 		m, err = loadConfigMap(path)
 		if err != nil {
+			logger.ErrorCF(
+				"config",
+				formatDiagnosticLogMessage("Failed to load config", err),
+				map[string]any{"path": path},
+			)
 			return nil, err
 		}
 		migrateErr := migrateV2ToV3(m)
@@ -1130,6 +1180,11 @@ func LoadConfig(path string) (*Config, error) {
 		// Current version
 		cfg, err = loadConfig(data)
 		if err != nil {
+			logger.ErrorCF(
+				"config",
+				formatDiagnosticLogMessage("Failed to load config", err),
+				map[string]any{"path": path},
+			)
 			return nil, err
 		}
 		// Load security configuration
@@ -1494,6 +1549,8 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.Message.Enabled
 	case "read_file":
 		return t.ReadFile.Enabled
+	case "serial":
+		return t.Serial.Enabled
 	case "spawn":
 		return t.Spawn.Enabled
 	case "spawn_status":

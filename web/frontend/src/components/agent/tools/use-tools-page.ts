@@ -4,12 +4,13 @@ import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
 import {
+  type WebSearchConfigResponse,
   getTools,
   getWebSearchConfig,
   setToolEnabled,
   updateWebSearchConfig,
-  type WebSearchConfigResponse,
 } from "@/api/tools"
+import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
 
 import type { GroupedTools, ToolStatusFilter, ToolsPageTab } from "./types"
@@ -35,24 +36,38 @@ export function useToolsPage() {
     queryFn: getWebSearchConfig,
   })
 
-  const tools = useMemo(() => toolsQuery.data?.tools ?? [], [toolsQuery.data?.tools])
+  const tools = useMemo(
+    () => toolsQuery.data?.tools ?? [],
+    [toolsQuery.data?.tools],
+  )
   const normalizedSearchQuery = deferredSearchQuery.trim().toLowerCase()
   const webSearchDraft = webSearchDraftOverride ?? webSearchQuery.data ?? null
+  const isWebSearchDirty = useMemo(() => {
+    if (!webSearchDraft || !webSearchQuery.data) {
+      return false
+    }
+    return (
+      JSON.stringify(webSearchDraft) !== JSON.stringify(webSearchQuery.data)
+    )
+  }, [webSearchDraft, webSearchQuery.data])
 
   const toggleToolMutation = useMutation({
     mutationFn: async ({ name, enabled }: { name: string; enabled: boolean }) =>
       setToolEnabled(name, enabled),
-    onSuccess: (_, variables) => {
-      toast.success(
+    onSuccess: async (_, variables) => {
+      const gateway = await refreshGatewayState({ force: true })
+      showSaveSuccessOrRestartToast(
+        t,
         variables.enabled
           ? t("pages.agent.tools.enable_success", "Tool enabled successfully")
           : t(
               "pages.agent.tools.disable_success",
               "Tool disabled successfully",
             ),
+        t("navigation.tools", "Tools"),
+        gateway?.restartRequired === true,
       )
       void queryClient.invalidateQueries({ queryKey: ["tools"] })
-      void refreshGatewayState({ force: true })
     },
     onError: (error) => {
       toast.error(
@@ -65,20 +80,23 @@ export function useToolsPage() {
 
   const saveWebSearchMutation = useMutation({
     mutationFn: updateWebSearchConfig,
-    onSuccess: (updatedConfig) => {
+    onSuccess: async (updatedConfig) => {
       queryClient.setQueryData(["tools", "web-search-config"], updatedConfig)
       setWebSearchDraftOverride(null)
-      toast.success(
+      const gateway = await refreshGatewayState({ force: true })
+      showSaveSuccessOrRestartToast(
+        t,
         t(
           "pages.agent.tools.web_search.save_success",
           "Settings saved successfully",
         ),
+        t("pages.agent.tools.web_search.title", "Web Search Configuration"),
+        gateway?.restartRequired === true,
       )
       void queryClient.invalidateQueries({
         queryKey: ["tools", "web-search-config"],
       })
       void queryClient.invalidateQueries({ queryKey: ["tools"] })
-      void refreshGatewayState({ force: true })
     },
     onError: (error) => {
       toast.error(
@@ -105,7 +123,9 @@ export function useToolsPage() {
       }
 
       if (normalizedSearchQuery) {
-        const matchesName = tool.name.toLowerCase().includes(normalizedSearchQuery)
+        const matchesName = tool.name
+          .toLowerCase()
+          .includes(normalizedSearchQuery)
         const matchesDescription = (tool.description || "")
           .toLowerCase()
           .includes(normalizedSearchQuery)
@@ -177,6 +197,7 @@ export function useToolsPage() {
     isToolsLoading: toolsQuery.isLoading,
     isWebSearchLoading: webSearchQuery.isLoading,
     isWebSearchSaving: saveWebSearchMutation.isPending,
+    isWebSearchDirty,
     setActiveTab,
     setSearchQuery,
     setStatusFilter,

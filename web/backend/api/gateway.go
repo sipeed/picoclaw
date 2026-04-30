@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +11,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"reflect"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -164,7 +167,7 @@ func isLikelyGatewayProcess(pid int) (bool, bool) {
 			`$p=Get-CimInstance Win32_Process -Filter "ProcessId = %d"; if ($null -eq $p) { "" } else { $p.CommandLine }`,
 			pid,
 		)
-		out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd).Output()
+		out, err := launcherExecCommand("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd).Output()
 		if err == nil {
 			cmdline := strings.TrimSpace(string(out))
 			if cmdline != "" {
@@ -173,7 +176,7 @@ func isLikelyGatewayProcess(pid int) (bool, bool) {
 		}
 
 		// Fallback: determine only whether the process still exists.
-		out, err = exec.Command("tasklist", "/FI", "PID eq "+strconv.Itoa(pid), "/FO", "CSV", "/NH").Output()
+		out, err = launcherExecCommand("tasklist", "/FI", "PID eq "+strconv.Itoa(pid), "/FO", "CSV", "/NH").Output()
 		if err != nil {
 			return false, false
 		}
@@ -187,7 +190,7 @@ func isLikelyGatewayProcess(pid int) (bool, bool) {
 			if strings.Contains(line, "\"picoclaw.exe\"") {
 				return true, true
 			}
-			return false, false
+			return false, true
 		}
 		if strings.Contains(line, "no tasks are running") {
 			return false, true
@@ -195,7 +198,7 @@ func isLikelyGatewayProcess(pid int) (bool, bool) {
 		return false, true
 	}
 
-	out, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
+	out, err := launcherExecCommand("ps", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
 	if err != nil {
 		return false, false
 	}
@@ -431,6 +434,10 @@ func computeConfigSignature(cfg *config.Config) string {
 	}
 	if cfg.Tools.Web.Enabled {
 		toolSignatures = append(toolSignatures, "web")
+		webConfig, err := json.Marshal(canonicalizeSignatureValue(reflect.ValueOf(cfg.Tools.Web)))
+		if err == nil {
+			parts = append(parts, "webcfg:"+string(webConfig))
+		}
 	}
 	if cfg.Tools.WebFetch.Enabled {
 		toolSignatures = append(toolSignatures, "web_fetch")
@@ -474,7 +481,173 @@ func computeConfigSignature(cfg *config.Config) string {
 	if len(toolSignatures) > 0 {
 		parts = append(parts, "tools:"+strings.Join(toolSignatures, ","))
 	}
+	channelSignatures := computeChannelSignatures(cfg.Channels)
+	if len(channelSignatures) > 0 {
+		parts = append(parts, "channels:"+strings.Join(channelSignatures, ","))
+	}
 	return strings.Join(parts, ";")
+}
+
+func computeChannelSignatures(channels config.ChannelsConfig) []string {
+	if len(channels) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(channels))
+	for name := range channels {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+
+	signatures := make([]string, 0, len(keys))
+	for _, name := range keys {
+		channel := channels[name]
+		if channel == nil {
+			signatures = append(signatures, name+":<nil>")
+			continue
+		}
+
+		payload := struct {
+			Enabled            bool                       `json:"enabled"`
+			Type               string                     `json:"type"`
+			AllowFrom          config.FlexibleStringSlice `json:"allow_from,omitempty"`
+			ReasoningChannelID string                     `json:"reasoning_channel_id,omitempty"`
+			GroupTrigger       config.GroupTriggerConfig  `json:"group_trigger,omitempty"`
+			Typing             config.TypingConfig        `json:"typing,omitempty"`
+			Placeholder        config.PlaceholderConfig   `json:"placeholder,omitempty"`
+			Settings           json.RawMessage            `json:"settings,omitempty"`
+		}{
+			Enabled:            channel.Enabled,
+			Type:               channel.Type,
+			AllowFrom:          channel.AllowFrom,
+			ReasoningChannelID: channel.ReasoningChannelID,
+			GroupTrigger:       channel.GroupTrigger,
+			Typing:             channel.Typing,
+			Placeholder:        channel.Placeholder,
+			Settings:           normalizeChannelSettings(channel),
+		}
+
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			signatures = append(signatures, name+":<invalid>")
+			continue
+		}
+		signatures = append(signatures, name+":"+string(encoded))
+	}
+
+	return signatures
+}
+
+func normalizeChannelSettings(channel *config.Channel) json.RawMessage {
+	if channel == nil {
+		return nil
+	}
+
+	decoded, err := channel.GetDecoded()
+	if err == nil && decoded != nil {
+		normalized, err := json.Marshal(canonicalizeSignatureValue(reflect.ValueOf(decoded)))
+		if err == nil {
+			return normalized
+		}
+	}
+
+	return normalizeRawJSON(channel.Settings)
+}
+
+func normalizeRawJSON(raw config.RawNode) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return bytes.TrimSpace(raw)
+	}
+
+	normalized, err := json.Marshal(value)
+	if err != nil {
+		return bytes.TrimSpace(raw)
+	}
+	return normalized
+}
+
+func canonicalizeSignatureValue(value reflect.Value) any {
+	if !value.IsValid() {
+		return nil
+	}
+
+	if value.CanInterface() {
+		switch typed := value.Interface().(type) {
+		case config.SecureString:
+			return typed.String()
+		case *config.SecureString:
+			if typed == nil {
+				return ""
+			}
+			return typed.String()
+		case config.SecureStrings:
+			return typed.Values()
+		case *config.SecureStrings:
+			if typed == nil {
+				return nil
+			}
+			return typed.Values()
+		}
+	}
+
+	switch value.Kind() {
+	case reflect.Interface, reflect.Pointer:
+		if value.IsNil() {
+			return nil
+		}
+		return canonicalizeSignatureValue(value.Elem())
+	case reflect.Struct:
+		result := make(map[string]any)
+		valueType := value.Type()
+		for i := 0; i < value.NumField(); i++ {
+			field := valueType.Field(i)
+			if field.PkgPath != "" {
+				continue
+			}
+			tag := field.Tag.Get("json")
+			name := field.Name
+			if tag != "" {
+				if comma := strings.Index(tag, ","); comma >= 0 {
+					tag = tag[:comma]
+				}
+				if tag == "-" {
+					continue
+				}
+				if tag != "" {
+					name = tag
+				}
+			}
+			result[name] = canonicalizeSignatureValue(value.Field(i))
+		}
+		return result
+	case reflect.Slice, reflect.Array:
+		length := value.Len()
+		result := make([]any, 0, length)
+		for i := 0; i < length; i++ {
+			result = append(result, canonicalizeSignatureValue(value.Index(i)))
+		}
+		return result
+	case reflect.Map:
+		if value.Type().Key().Kind() != reflect.String {
+			return value.Interface()
+		}
+		result := make(map[string]any, value.Len())
+		iter := value.MapRange()
+		for iter.Next() {
+			result[iter.Key().String()] = canonicalizeSignatureValue(iter.Value())
+		}
+		return result
+	default:
+		if value.CanInterface() {
+			return value.Interface()
+		}
+		return nil
+	}
 }
 
 func gatewayRestartRequiredBySignature(bootSignature, currentSignature, gatewayStatus string) bool {
@@ -706,6 +879,7 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	logger.InfoC("gateway", fmt.Sprintf("Starting gateway process (%s)", execPath))
 
 	cmd = gatewayExecCommand(execPath, h.gatewayCommandArgs()...)
+	applyLauncherProcAttrs(cmd)
 	cmd.Env = os.Environ()
 	// Forward the launcher's config path via the environment variable that
 	// GetConfigPath() already reads, so the gateway sub-process uses the same
@@ -741,6 +915,11 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	// Already holding gateway.mu from caller.
 	if changed {
 		refreshPicoTokensLocked(h.configPath)
+		cfg, err = config.LoadConfig(h.configPath)
+		if err != nil {
+			return 0, fmt.Errorf("failed to reload config after ensuring pico channel: %w", err)
+		}
+		defaultModelName = strings.TrimSpace(cfg.Agents.Defaults.GetModelName())
 	}
 
 	if err := cmd.Start(); err != nil {

@@ -4,13 +4,17 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 func (al *AgentLoop) maybePublishError(ctx context.Context, channel, chatID, sessionKey string, err error) bool {
@@ -120,6 +124,95 @@ func (al *AgentLoop) publishPicoReasoning(ctx context.Context, reasoningContent,
 				"error":   err.Error(),
 			})
 		}
+	}
+}
+
+func (al *AgentLoop) publishPicoToolCallInterim(
+	ctx context.Context,
+	ts *turnState,
+	reasoningContent string,
+	content string,
+	toolCalls []providers.ToolCall,
+) {
+	if ts == nil || ts.chatID == "" || al == nil || al.bus == nil {
+		return
+	}
+
+	if strings.TrimSpace(reasoningContent) != "" {
+		pubCtx, pubCancel := context.WithTimeout(ctx, 3*time.Second)
+		err := al.bus.PublishOutbound(
+			pubCtx,
+			outboundMessageForTurnWithKind(ts, reasoningContent, messageKindThought),
+		)
+		pubCancel()
+		if err != nil && !errors.Is(err, context.DeadlineExceeded) &&
+			!errors.Is(err, context.Canceled) &&
+			!errors.Is(err, bus.ErrBusClosed) {
+			logger.WarnCF("agent", "Failed to publish pico reasoning", map[string]any{
+				"channel": ts.channel,
+				"chat_id": ts.chatID,
+				"error":   err.Error(),
+			})
+		}
+	}
+
+	if !ts.opts.AllowInterimPicoPublish {
+		return
+	}
+
+	visibleToolCalls := utils.BuildVisibleToolCalls(
+		toolCalls,
+		al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(),
+	)
+	duplicateToolCallContent := len(visibleToolCalls) > 0 &&
+		utils.ToolCallExplanationDuplicatesContent(content, toolCalls)
+
+	if strings.TrimSpace(content) != "" && !duplicateToolCallContent {
+		pubCtx, pubCancel := context.WithTimeout(ctx, 3*time.Second)
+		err := al.bus.PublishOutbound(pubCtx, outboundMessageForTurn(ts, content))
+		pubCancel()
+		if err != nil && !errors.Is(err, context.DeadlineExceeded) &&
+			!errors.Is(err, context.Canceled) &&
+			!errors.Is(err, bus.ErrBusClosed) {
+			logger.WarnCF("agent", "Failed to publish pico interim assistant content", map[string]any{
+				"channel": ts.channel,
+				"chat_id": ts.chatID,
+				"error":   err.Error(),
+			})
+		}
+	}
+
+	if len(visibleToolCalls) == 0 {
+		return
+	}
+
+	rawToolCalls, err := json.Marshal(visibleToolCalls)
+	if err != nil {
+		logger.WarnCF("agent", "Failed to serialize pico tool calls", map[string]any{
+			"channel": ts.channel,
+			"chat_id": ts.chatID,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	msg := outboundMessageForTurnWithKind(ts, "", messageKindToolCalls)
+	if msg.Context.Raw == nil {
+		msg.Context.Raw = map[string]string{}
+	}
+	msg.Context.Raw[metadataKeyToolCalls] = string(rawToolCalls)
+
+	pubCtx, pubCancel := context.WithTimeout(ctx, 3*time.Second)
+	err = al.bus.PublishOutbound(pubCtx, msg)
+	pubCancel()
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) &&
+		!errors.Is(err, context.Canceled) &&
+		!errors.Is(err, bus.ErrBusClosed) {
+		logger.WarnCF("agent", "Failed to publish pico tool calls", map[string]any{
+			"channel": ts.channel,
+			"chat_id": ts.chatID,
+			"error":   err.Error(),
+		})
 	}
 }
 

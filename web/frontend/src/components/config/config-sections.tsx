@@ -114,6 +114,18 @@ export function AgentDefaultsSection({
       />
 
       {form.toolFeedbackEnabled && (
+        <SwitchCardField
+          label={t("pages.config.tool_feedback_separate_messages")}
+          hint={t("pages.config.tool_feedback_separate_messages_hint")}
+          layout="setting-row"
+          checked={form.toolFeedbackSeparateMessages}
+          onCheckedChange={(checked) =>
+            onFieldChange("toolFeedbackSeparateMessages", checked)
+          }
+        />
+      )}
+
+      {form.toolFeedbackEnabled && (
         <Field
           label={t("pages.config.tool_feedback_max_args_length")}
           hint={t("pages.config.tool_feedback_max_args_length_hint")}

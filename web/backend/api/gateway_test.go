@@ -286,6 +286,61 @@ func TestStartGatewayLocked_ForwardsWildcardHostForPublicLauncher(t *testing.T) 
 	}
 }
 
+func TestStartGatewayLocked_UsesReloadedConfigForBootSignature(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sleep command differs on Windows")
+	}
+
+	resetGatewayTestState(t)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := config.DefaultConfig()
+	delete(cfg.Channels, "pico")
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	h.SetServerOptions(18800, false, false, nil)
+	gatewayExecCommand = func(_ string, _ ...string) *exec.Cmd {
+		return exec.Command("sleep", "30")
+	}
+
+	originalSignature := computeConfigSignature(cfg)
+	pid, err := h.startGatewayLocked("starting", 0)
+	if err != nil {
+		t.Fatalf("startGatewayLocked() error = %v", err)
+	}
+	if pid <= 0 {
+		t.Fatalf("startGatewayLocked() pid = %d, want > 0", pid)
+	}
+
+	gateway.mu.Lock()
+	cmd := gateway.cmd
+	bootSignature := gateway.bootConfigSignature
+	gateway.mu.Unlock()
+	t.Cleanup(func() {
+		if cmd != nil && cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		if cmd != nil {
+			_ = cmd.Wait()
+		}
+	})
+
+	updatedCfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	expectedSignature := computeConfigSignature(updatedCfg)
+	if expectedSignature == originalSignature {
+		t.Fatal("expected EnsurePicoChannel() to change the config signature during gateway start")
+	}
+	if bootSignature != expectedSignature {
+		t.Fatalf("bootConfigSignature = %q, want %q", bootSignature, expectedSignature)
+	}
+}
+
 func TestGatewayStartReady_NoDefaultModel(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
@@ -1079,6 +1134,136 @@ func TestGatewayStatusRequiresRestartAfterToolChange(t *testing.T) {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
 	updatedCfg.Tools.WriteFile.Enabled = false
+	if err := config.SaveConfig(configPath, updatedCfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	gatewayHealthGet = func(string, time.Duration) (*http.Response, error) {
+		return mockGatewayHealthResponse(http.StatusOK, os.Getpid()), nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if got := body["gateway_status"]; got != "running" {
+		t.Fatalf("gateway_status = %#v, want %q", got, "running")
+	}
+	if got := body["gateway_restart_required"]; got != true {
+		t.Fatalf("gateway_restart_required = %#v, want true", got)
+	}
+}
+
+func TestGatewayStatusRequiresRestartAfterChannelChange(t *testing.T) {
+	resetGatewayTestState(t)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.ModelName = cfg.ModelList[0].ModelName
+	cfg.ModelList[0].SetAPIKey("test-key")
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	process, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatalf("FindProcess() error = %v", err)
+	}
+
+	bootSignature := computeConfigSignature(cfg)
+	gateway.mu.Lock()
+	gateway.cmd = &exec.Cmd{Process: process}
+	gateway.bootDefaultModel = cfg.ModelList[0].ModelName
+	gateway.bootConfigSignature = bootSignature
+	setGatewayRuntimeStatusLocked("running")
+	gateway.mu.Unlock()
+
+	updatedCfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	telegram := updatedCfg.Channels.Get("telegram")
+	if telegram == nil {
+		t.Fatalf("expected default telegram channel config")
+	}
+	telegram.Enabled = !telegram.Enabled
+	if err := config.SaveConfig(configPath, updatedCfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	gatewayHealthGet = func(string, time.Duration) (*http.Response, error) {
+		return mockGatewayHealthResponse(http.StatusOK, os.Getpid()), nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if got := body["gateway_status"]; got != "running" {
+		t.Fatalf("gateway_status = %#v, want %q", got, "running")
+	}
+	if got := body["gateway_restart_required"]; got != true {
+		t.Fatalf("gateway_restart_required = %#v, want true", got)
+	}
+}
+
+func TestGatewayStatusRequiresRestartAfterWebSearchConfigChange(t *testing.T) {
+	resetGatewayTestState(t)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.ModelName = cfg.ModelList[0].ModelName
+	cfg.ModelList[0].SetAPIKey("test-key")
+	cfg.Tools.Web.Enabled = true
+	cfg.Tools.Web.Provider = "sogou"
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	process, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatalf("FindProcess() error = %v", err)
+	}
+
+	bootSignature := computeConfigSignature(cfg)
+	gateway.mu.Lock()
+	gateway.cmd = &exec.Cmd{Process: process}
+	gateway.bootDefaultModel = cfg.ModelList[0].ModelName
+	gateway.bootConfigSignature = bootSignature
+	setGatewayRuntimeStatusLocked("running")
+	gateway.mu.Unlock()
+
+	updatedCfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	updatedCfg.Tools.Web.Provider = "duckduckgo"
 	if err := config.SaveConfig(configPath, updatedCfg); err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}

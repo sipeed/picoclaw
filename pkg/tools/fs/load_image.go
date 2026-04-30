@@ -147,10 +147,10 @@ func (t *LoadImageTool) Execute(ctx context.Context, args map[string]any) *ToolR
 		return ErrorResult(fmt.Sprintf("failed to register image in media store: %v", err))
 	}
 
-	// Build the tool result text. The media:// ref will be picked up by
-	// resolveMediaRefs in loop_media.go and converted to a base64 data URL
-	// before the next LLM call, exactly like channel-received images.
-	msg := fmt.Sprintf("Image loaded: %s\n[image: %s]", filename, ref)
+	// Build the tool result text. The media:// ref in Media will be picked
+	// up by resolveMediaRefs in agent_media.go and base64-encoded for tool
+	// result messages (role="tool"), so the LLM can see the image content.
+	msg := fmt.Sprintf("Image loaded: %s\n[image: photo]", filename)
 
 	return &ToolResult{
 		ForLLM:  msg,

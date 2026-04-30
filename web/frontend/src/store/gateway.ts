@@ -172,7 +172,7 @@ export async function refreshGatewayState(
     if (options.force) {
       return refreshGatewayState()
     }
-    return
+    return getDefaultStore().get(gatewayAtom)
   }
 
   gatewayPollingRequest = (async () => {
@@ -195,6 +195,8 @@ export async function refreshGatewayState(
       gatewayPollingTimer = null
     }
   }
+
+  return getDefaultStore().get(gatewayAtom)
 }
 
 export function subscribeGatewayPolling() {

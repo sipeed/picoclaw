@@ -187,6 +187,7 @@ func (al *AgentLoop) enqueueSteeringMessage(scope, agentID string, msg providers
 		return fmt.Errorf("steering queue is not initialized")
 	}
 
+	msg = steeringPromptMessage(msg)
 	if err := al.steering.pushScope(scope, msg); err != nil {
 		logger.WarnCF("agent", "Failed to enqueue steering message", map[string]any{
 			"error": err.Error(),

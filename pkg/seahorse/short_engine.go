@@ -253,9 +253,23 @@ func (e *Engine) Ingest(ctx context.Context, sessionKey string, messages []Messa
 		var added *Message
 		var err error
 		if len(msg.Parts) > 0 {
-			added, err = e.store.AddMessageWithParts(ctx, conv.ConversationID, msg.Role, msg.Parts, msg.TokenCount)
+			added, err = e.store.AddMessageWithPartsAndReasoning(
+				ctx,
+				conv.ConversationID,
+				msg.Role,
+				msg.Parts,
+				msg.ReasoningContent,
+				msg.TokenCount,
+			)
 		} else {
-			added, err = e.store.AddMessage(ctx, conv.ConversationID, msg.Role, msg.Content, msg.TokenCount)
+			added, err = e.store.AddMessageWithReasoning(
+				ctx,
+				conv.ConversationID,
+				msg.Role,
+				msg.Content,
+				msg.ReasoningContent,
+				msg.TokenCount,
+			)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("add message: %w", err)
@@ -420,7 +434,7 @@ func (e *Engine) Bootstrap(ctx context.Context, sessionKey string, messages []Me
 	// Fast path: DB has same count and exact match → no-op
 	if len(dbMsgs) == len(messages) {
 		matched := true
-		for i := 0; i < len(messages); i++ {
+		for i := range messages {
 			if !messageMatches(dbMsgs[i], messages[i]) {
 				matched = false
 				break
@@ -431,14 +445,21 @@ func (e *Engine) Bootstrap(ctx context.Context, sessionKey string, messages []Me
 		}
 	}
 
-	// Find longest matching prefix from the start
-	anchor := -1
-	compareLen := len(dbMsgs)
-	if compareLen > len(messages) {
-		compareLen = len(messages)
+	// Migration repair path: old SeaHorse rows may be missing reasoning_content
+	// even though the canonical JSONL history already has it. Backfill those
+	// rows in place so we do not treat this as edited history and leave stale
+	// summaries/context behind after a partial raw-message rebuild.
+	if repaired, err := e.repairBootstrapReasoningContent(ctx, dbMsgs, messages); err != nil {
+		return fmt.Errorf("bootstrap: repair reasoning_content: %w", err)
+	} else if repaired && len(dbMsgs) == len(messages) {
+		return nil
 	}
 
-	for i := 0; i < compareLen; i++ {
+	// Find longest matching prefix from the start
+	anchor := -1
+	compareLen := min(len(dbMsgs), len(messages))
+
+	for i := range compareLen {
 		if messageMatches(dbMsgs[i], messages[i]) {
 			anchor = i
 		} else {
@@ -524,6 +545,57 @@ func (e *Engine) Bootstrap(ctx context.Context, sessionKey string, messages []Me
 	return nil
 }
 
+func (e *Engine) repairBootstrapReasoningContent(ctx context.Context, dbMsgs, messages []Message) (bool, error) {
+	if len(dbMsgs) == 0 || len(messages) == 0 {
+		return false, nil
+	}
+
+	overlap := min(len(messages), len(dbMsgs))
+
+	var updates []struct {
+		index            int
+		messageID        int64
+		reasoningContent string
+	}
+
+	for i := range overlap {
+		if !messageMatchesIgnoringReasoning(dbMsgs[i], messages[i]) {
+			return false, nil
+		}
+		if dbMsgs[i].ReasoningContent == messages[i].ReasoningContent {
+			continue
+		}
+		if dbMsgs[i].ReasoningContent != "" || messages[i].ReasoningContent == "" {
+			return false, nil
+		}
+		updates = append(updates, struct {
+			index            int
+			messageID        int64
+			reasoningContent string
+		}{
+			index:            i,
+			messageID:        dbMsgs[i].ID,
+			reasoningContent: messages[i].ReasoningContent,
+		})
+	}
+
+	if len(updates) == 0 {
+		return false, nil
+	}
+
+	for _, update := range updates {
+		if err := e.store.UpdateMessageReasoningContent(ctx, update.messageID, update.reasoningContent); err != nil {
+			return false, err
+		}
+		dbMsgs[update.index].ReasoningContent = update.reasoningContent
+	}
+
+	logger.InfoCF("seahorse", "bootstrap: repaired missing reasoning_content", map[string]any{
+		"messages": len(updates),
+	})
+	return true, nil
+}
+
 // truncate shortens a string for logging.
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
@@ -532,12 +604,19 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen] + "..."
 }
 
-// messageMatches compares two messages using (role, content) or (role, parts).
-// TokenCount is NOT compared because it may be re-estimated differently
-// during bootstrap (e.g., via tokenizer.EstimateMessageTokens).
+// messageMatches compares two messages using role + reasoning_content and then
+// either content or parts. TokenCount is NOT compared because it may be
+// re-estimated differently during bootstrap (e.g., via tokenizer.EstimateMessageTokens).
 // For messages with Parts (tool_use, tool_result), compare Parts instead of Content
-// since AddMessageWithParts stores empty Content in DB.
+// because structured messages are matched by their parts payload.
 func messageMatches(a, b Message) bool {
+	if a.Role != b.Role || a.ReasoningContent != b.ReasoningContent {
+		return false
+	}
+	return messageMatchesIgnoringReasoning(a, b)
+}
+
+func messageMatchesIgnoringReasoning(a, b Message) bool {
 	if a.Role != b.Role {
 		return false
 	}

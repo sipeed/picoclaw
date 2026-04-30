@@ -178,7 +178,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+		provider := NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 			cfg.APIKey(),
 			apiBase,
 			cfg.Proxy,
@@ -187,7 +187,9 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
 			cfg.CustomHeaders,
-		), modelID, nil
+		)
+		provider.SetProviderName(protocol)
+		return provider, modelID, nil
 
 	case "azure", "azure-openai":
 		// Azure OpenAI uses deployment-based URLs, api-key header auth,
@@ -257,7 +259,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if apiBase == "" {
 			apiBase = getDefaultAPIBase(protocol)
 		}
-		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+		provider := NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 			cfg.APIKey(),
 			apiBase,
 			cfg.Proxy,
@@ -266,7 +268,9 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
 			cfg.CustomHeaders,
-		), modelID, nil
+		)
+		provider.SetProviderName(protocol)
+		return provider, modelID, nil
 
 	case "gemini":
 		if cfg.APIKey() == "" && cfg.APIBase == "" {
@@ -302,7 +306,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if _, ok := extraBody["reasoning_split"]; !ok {
 			extraBody["reasoning_split"] = true
 		}
-		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+		provider := NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 			cfg.APIKey(),
 			apiBase,
 			cfg.Proxy,
@@ -311,7 +315,9 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.RequestTimeout,
 			extraBody,
 			cfg.CustomHeaders,
-		), modelID, nil
+		)
+		provider.SetProviderName(protocol)
+		return provider, modelID, nil
 
 	case "anthropic":
 		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
@@ -330,7 +336,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		if cfg.APIKey() == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
-		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+		provider := NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
 			cfg.APIKey(),
 			apiBase,
 			cfg.Proxy,
@@ -339,7 +345,9 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.RequestTimeout,
 			cfg.ExtraBody,
 			cfg.CustomHeaders,
-		), modelID, nil
+		)
+		provider.SetProviderName(protocol)
+		return provider, modelID, nil
 
 	case "anthropic-messages":
 		// Anthropic Messages API with native format (HTTP-based, no SDK)

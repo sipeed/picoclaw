@@ -34,6 +34,14 @@ func (t *RegexSearchTool) Description() string {
 	return "Search available hidden tools on-demand using a regex pattern. Returns JSON schemas of discovered tools."
 }
 
+func (t *RegexSearchTool) PromptMetadata() PromptMetadata {
+	return PromptMetadata{
+		Layer:  ToolPromptLayerCapability,
+		Slot:   ToolPromptSlotTooling,
+		Source: ToolPromptSourceDiscovery,
+	}
+}
+
 func (t *RegexSearchTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
@@ -93,6 +101,14 @@ func (t *BM25SearchTool) Name() string {
 
 func (t *BM25SearchTool) Description() string {
 	return "Search available hidden tools on-demand using natural language query describing the action you need to perform. Returns JSON schemas of discovered tools."
+}
+
+func (t *BM25SearchTool) PromptMetadata() PromptMetadata {
+	return PromptMetadata{
+		Layer:  ToolPromptLayerCapability,
+		Slot:   ToolPromptSlotTooling,
+		Source: ToolPromptSourceDiscovery,
+	}
 }
 
 func (t *BM25SearchTool) Parameters() map[string]any {

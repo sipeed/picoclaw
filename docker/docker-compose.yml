@@ -4,6 +4,9 @@ services:
   #   docker compose -f docker/docker-compose.yml run --rm picoclaw-agent -m "Hello"
   # ─────────────────────────────────────────────
   picoclaw-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     image: docker.io/sipeed/picoclaw:latest
     container_name: picoclaw-agent
     profiles:
@@ -22,6 +25,9 @@ services:
   #   docker compose -f docker/docker-compose.yml --profile gateway up
   # ─────────────────────────────────────────────
   picoclaw-gateway:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     image: docker.io/sipeed/picoclaw:latest
     container_name: picoclaw-gateway
     restart: unless-stopped
@@ -38,6 +44,9 @@ services:
   #   docker compose -f docker/docker-compose.yml --profile launcher up
   # ─────────────────────────────────────────────
   picoclaw-launcher:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.launcher
     image: docker.io/sipeed/picoclaw:launcher
     container_name: picoclaw-launcher
     restart: unless-stopped

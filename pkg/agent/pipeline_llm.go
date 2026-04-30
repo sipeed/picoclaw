@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -319,10 +318,8 @@ func (p *Pipeline) CallLLM(
 				exec.history = asmResp.History
 				exec.summary = asmResp.Summary
 			}
-			exec.messages = ts.agent.ContextBuilder.BuildMessages(
-				exec.history, exec.summary, "",
-				nil, ts.channel, ts.chatID, ts.opts.Dispatch.SenderID(), ts.opts.SenderDisplayName,
-				activeSkillNames(ts.agent, ts.opts)...,
+			exec.messages = ts.agent.ContextBuilder.BuildMessagesFromPrompt(
+				promptBuildRequestForTurn(ts, exec.history, exec.summary, "", nil),
 			)
 			exec.callMessages = exec.messages
 			if exec.gracefulTerminal {
@@ -384,11 +381,12 @@ func (p *Pipeline) CallLLM(
 		}
 	}
 
-	reasoningContent := exec.response.Reasoning
-	if reasoningContent == "" {
-		reasoningContent = exec.response.ReasoningContent
-	}
-	if ts.channel == "pico" {
+	reasoningContent := responseReasoningContent(exec.response)
+	shouldPublishPicoToolCallInterim := ts.channel == "pico" && len(exec.response.ToolCalls) > 0
+	if shouldPublishPicoToolCallInterim {
+		// Pico tool-call turns publish their reasoning/content/tool summary as a
+		// structured sequence after the tool-call payload is normalized below.
+	} else if ts.channel == "pico" {
 		go al.publishPicoReasoning(turnCtx, reasoningContent, ts.chatID)
 	} else {
 		go al.handleReasoning(
@@ -423,30 +421,6 @@ func (p *Pipeline) CallLLM(
 		llmResponseFields["total_tokens"] = exec.response.Usage.TotalTokens
 	}
 	logger.DebugCF("agent", "LLM response", llmResponseFields)
-
-	if al.bus != nil &&
-		ts.channel == "pico" &&
-		len(exec.response.ToolCalls) > 0 &&
-		ts.opts.AllowInterimPicoPublish &&
-		!shouldPublishToolFeedback(al.cfg, ts) {
-		if strings.TrimSpace(exec.response.Content) != "" {
-			outCtx, outCancel := context.WithTimeout(turnCtx, 3*time.Second)
-			publishErr := al.bus.PublishOutbound(outCtx, bus.OutboundMessage{
-				Channel: ts.channel,
-				ChatID:  ts.chatID,
-				Content: exec.response.Content,
-			})
-			outCancel()
-			if publishErr != nil {
-				logger.WarnCF("agent", "Failed to publish pico interim tool-call content", map[string]any{
-					"error":     publishErr.Error(),
-					"channel":   ts.channel,
-					"chat_id":   ts.chatID,
-					"iteration": iteration,
-				})
-			}
-		}
-	}
 
 	// No-tool-call path: steering check and direct response
 	if len(exec.response.ToolCalls) == 0 || exec.gracefulTerminal {
@@ -496,7 +470,7 @@ func (p *Pipeline) CallLLM(
 	assistantMsg := providers.Message{
 		Role:             "assistant",
 		Content:          exec.response.Content,
-		ReasoningContent: exec.response.ReasoningContent,
+		ReasoningContent: reasoningContent,
 	}
 	for _, tc := range exec.normalizedToolCalls {
 		argumentsJSON, _ := json.Marshal(tc.Arguments)
@@ -504,7 +478,6 @@ func (p *Pipeline) CallLLM(
 			exec.response,
 			tc,
 			exec.messages,
-			al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(),
 		)
 		extraContent := tc.ExtraContent
 		if strings.TrimSpace(toolFeedbackExplanation) != "" {
@@ -535,6 +508,15 @@ func (p *Pipeline) CallLLM(
 		ts.agent.Sessions.AddFullMessage(ts.sessionKey, assistantMsg)
 		ts.recordPersistedMessage(assistantMsg)
 		ts.ingestMessage(turnCtx, al, assistantMsg)
+	}
+	if shouldPublishPicoToolCallInterim {
+		al.publishPicoToolCallInterim(
+			turnCtx,
+			ts,
+			reasoningContent,
+			exec.response.Content,
+			assistantMsg.ToolCalls,
+		)
 	}
 
 	return ControlToolLoop, nil

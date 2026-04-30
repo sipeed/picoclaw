@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
 import { launcherFetch } from "@/api/http"
+import { ConfigChangeNotice } from "@/components/config-change-notice"
 import { PageHeader } from "@/components/page-header"
 import {
   AlertDialog,
@@ -20,6 +21,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
 
 export function RawConfigPage() {
@@ -49,7 +51,6 @@ export function RawConfigPage() {
       }
     },
     onSuccess: (_, submittedConfig) => {
-      toast.success(t("pages.config.save_success"))
       try {
         const savedConfig = JSON.parse(submittedConfig)
         setLastSavedConfig(savedConfig)
@@ -58,7 +59,14 @@ export function RawConfigPage() {
       } catch {
         queryClient.invalidateQueries({ queryKey: ["config"] })
       }
-      void refreshGatewayState({ force: true })
+      void refreshGatewayState({ force: true }).then((gateway) => {
+        showSaveSuccessOrRestartToast(
+          t,
+          t("pages.config.save_success"),
+          t("navigation.config"),
+          gateway?.restartRequired === true,
+        )
+      })
     },
     onError: () => {
       toast.error(t("pages.config.save_error"))
@@ -141,9 +149,12 @@ export function RawConfigPage() {
           ) : (
             <div className="flex min-h-0 flex-1 flex-col gap-3">
               {isDirty && (
-                <div className="shrink-0 rounded-lg border border-yellow-200 bg-yellow-50 p-2 text-sm text-yellow-700">
-                  {t("pages.config.unsaved_changes")}
-                </div>
+                <ConfigChangeNotice
+                  kind="save"
+                  title={t("common.saveChangesTitle")}
+                  description={t("pages.config.unsaved_changes")}
+                  className="shrink-0"
+                />
               )}
               <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border shadow-sm">
                 <Textarea

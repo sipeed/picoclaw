@@ -91,6 +91,53 @@ func TestRunMigrationsIdempotent(t *testing.T) {
 	}
 }
 
+func TestRunSchemaAddsMessagesReasoningContentColumn(t *testing.T) {
+	db := openTestDB(t)
+
+	_, err := db.Exec(`CREATE TABLE messages (
+		message_id INTEGER PRIMARY KEY AUTOINCREMENT,
+		conversation_id INTEGER NOT NULL,
+		role TEXT NOT NULL,
+		content TEXT NOT NULL DEFAULT '',
+		token_count INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	)`)
+	if err != nil {
+		t.Fatalf("create legacy messages table: %v", err)
+	}
+
+	err = runSchema(db)
+	if err != nil {
+		t.Fatalf("runSchema: %v", err)
+	}
+
+	var count int
+	err = db.QueryRow(`SELECT count(*) FROM pragma_table_info('messages') WHERE name = 'reasoning_content'`).
+		Scan(&count)
+	if err != nil {
+		t.Fatalf("query pragma_table_info: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("reasoning_content column count = %d, want 1", count)
+	}
+
+	_, err = db.Exec(
+		`INSERT INTO conversations (session_key, created_at, updated_at) VALUES (?, datetime('now'), datetime('now'))`,
+		"reasoning-column-test",
+	)
+	if err != nil {
+		t.Fatalf("insert conversation: %v", err)
+	}
+
+	_, err = db.Exec(
+		`INSERT INTO messages (conversation_id, role, content, reasoning_content, token_count)
+		 VALUES (1, 'assistant', 'answer', 'thinking', 1)`,
+	)
+	if err != nil {
+		t.Fatalf("insert message with reasoning_content: %v", err)
+	}
+}
+
 func TestMigrationConversationUnique(t *testing.T) {
 	db := openTestDB(t)
 	if err := runSchema(db); err != nil {

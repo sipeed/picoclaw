@@ -102,7 +102,7 @@ func postStartPlatformIsolation(cmd *exec.Cmd, isolation config.IsolationConfig,
 		return fmt.Errorf("open process for job assignment: %w", err)
 	}
 
-	if err := windows.AssignProcessToJobObject(job, proc); err != nil {
+	if err = windows.AssignProcessToJobObject(job, proc); err != nil {
 		_ = windows.CloseHandle(proc)
 		_ = windows.CloseHandle(job)
 		if resources.token != 0 {

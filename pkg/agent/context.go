@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -21,12 +22,11 @@ import (
 )
 
 type ContextBuilder struct {
-	workspace          string
-	skillsLoader       *skills.SkillsLoader
-	memory             *MemoryStore
-	toolDiscoveryBM25  bool
-	toolDiscoveryRegex bool
-	splitOnMarker      bool
+	workspace      string
+	skillsLoader   *skills.SkillsLoader
+	memory         *MemoryStore
+	splitOnMarker  bool
+	promptRegistry *PromptRegistry
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -48,8 +48,16 @@ type ContextBuilder struct {
 }
 
 func (cb *ContextBuilder) WithToolDiscovery(useBM25, useRegex bool) *ContextBuilder {
-	cb.toolDiscoveryBM25 = useBM25
-	cb.toolDiscoveryRegex = useRegex
+	if useBM25 || useRegex {
+		if err := cb.RegisterPromptContributor(toolDiscoveryPromptContributor{
+			useBM25:  useBM25,
+			useRegex: useRegex,
+		}); err != nil {
+			logger.WarnCF("agent", "Failed to register tool discovery prompt contributor", map[string]any{
+				"error": err.Error(),
+			})
+		}
+	}
 	return cb
 }
 
@@ -73,15 +81,38 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 	globalSkillsDir := filepath.Join(getGlobalConfigDir(), "skills")
 
 	return &ContextBuilder{
-		workspace:    workspace,
-		skillsLoader: skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
-		memory:       NewMemoryStore(workspace),
+		workspace:      workspace,
+		skillsLoader:   skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
+		memory:         NewMemoryStore(workspace),
+		promptRegistry: NewPromptRegistry(),
 	}
+}
+
+func (cb *ContextBuilder) RegisterPromptSource(desc PromptSourceDescriptor) error {
+	err := cb.promptRegistryOrDefault().RegisterSource(desc)
+	if err == nil {
+		cb.InvalidateCache()
+	}
+	return err
+}
+
+func (cb *ContextBuilder) RegisterPromptContributor(contributor PromptContributor) error {
+	err := cb.promptRegistryOrDefault().RegisterContributor(contributor)
+	if err == nil {
+		cb.InvalidateCache()
+	}
+	return err
+}
+
+func (cb *ContextBuilder) promptRegistryOrDefault() *PromptRegistry {
+	if cb.promptRegistry == nil {
+		cb.promptRegistry = NewPromptRegistry()
+	}
+	return cb.promptRegistry
 }
 
 func (cb *ContextBuilder) getIdentity() string {
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
-	toolDiscovery := cb.getDiscoveryRule()
 	version := config.FormatVersion()
 
 	return fmt.Sprintf(
@@ -103,22 +134,20 @@ Your workspace is at: %s
 
 3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md
 
-4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.
-
-%s`,
-		version, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath, toolDiscovery)
+4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`,
+		version, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath)
 }
 
-func (cb *ContextBuilder) getDiscoveryRule() string {
-	if !cb.toolDiscoveryBM25 && !cb.toolDiscoveryRegex {
+func formatToolDiscoveryRule(useBM25, useRegex bool) string {
+	if !useBM25 && !useRegex {
 		return ""
 	}
 
 	var toolNames []string
-	if cb.toolDiscoveryBM25 {
+	if useBM25 {
 		toolNames = append(toolNames, `"tool_search_tool_bm25"`)
 	}
-	if cb.toolDiscoveryRegex {
+	if useRegex {
 		toolNames = append(toolNames, `"tool_search_tool_regex"`)
 	}
 
@@ -129,43 +158,103 @@ func (cb *ContextBuilder) getDiscoveryRule() string {
 }
 
 func (cb *ContextBuilder) BuildSystemPrompt() string {
-	parts := []string{}
+	return renderPromptPartsLegacy(cb.BuildSystemPromptParts())
+}
+
+func (cb *ContextBuilder) BuildSystemPromptParts() []PromptPart {
+	stack := NewPromptStack(cb.promptRegistryOrDefault())
+	add := func(part PromptPart) {
+		if err := stack.Add(part); err != nil {
+			logger.WarnCF("agent", "Skipping invalid prompt part", map[string]any{
+				"id":     part.ID,
+				"layer":  part.Layer,
+				"slot":   part.Slot,
+				"source": part.Source.ID,
+				"error":  err.Error(),
+			})
+		}
+	}
 
 	// Core identity section
-	parts = append(parts, cb.getIdentity())
+	add(PromptPart{
+		ID:      "kernel.identity",
+		Layer:   PromptLayerKernel,
+		Slot:    PromptSlotIdentity,
+		Source:  PromptSource{ID: PromptSourceKernel, Name: "identity"},
+		Title:   "picoclaw identity",
+		Content: cb.getIdentity(),
+		Stable:  true,
+		Cache:   PromptCacheEphemeral,
+	})
 
 	// Bootstrap files
 	bootstrapContent := cb.LoadBootstrapFiles()
 	if bootstrapContent != "" {
-		parts = append(parts, bootstrapContent)
+		add(PromptPart{
+			ID:      "instruction.workspace",
+			Layer:   PromptLayerInstruction,
+			Slot:    PromptSlotWorkspace,
+			Source:  PromptSource{ID: PromptSourceWorkspace, Name: "workspace"},
+			Title:   "workspace instructions",
+			Content: bootstrapContent,
+			Stable:  true,
+			Cache:   PromptCacheEphemeral,
+		})
 	}
 
 	// Skills - show summary, AI can read full content with read_file tool
 	skillsSummary := cb.skillsLoader.BuildSkillsSummary()
 	if skillsSummary != "" {
-		parts = append(parts, fmt.Sprintf(`# Skills
+		add(PromptPart{
+			ID:     "capability.skill_catalog",
+			Layer:  PromptLayerCapability,
+			Slot:   PromptSlotSkillCatalog,
+			Source: PromptSource{ID: PromptSourceSkillCatalog, Name: "skill:index"},
+			Title:  "skill catalog",
+			Content: fmt.Sprintf(`# Skills
 
 The following skills extend your capabilities. To use a skill, read its SKILL.md file using the read_file tool.
 
-%s`, skillsSummary))
+%s`, skillsSummary),
+			Stable: true,
+			Cache:  PromptCacheEphemeral,
+		})
 	}
 
 	// Memory context
 	memoryContext := cb.memory.GetMemoryContext()
 	if memoryContext != "" {
-		parts = append(parts, "# Memory\n\n"+memoryContext)
+		add(PromptPart{
+			ID:      "context.memory",
+			Layer:   PromptLayerContext,
+			Slot:    PromptSlotMemory,
+			Source:  PromptSource{ID: PromptSourceMemory, Name: "memory:workspace"},
+			Title:   "memory",
+			Content: "# Memory\n\n" + memoryContext,
+			Stable:  true,
+			Cache:   PromptCacheEphemeral,
+		})
 	}
 
 	// Multi-Message Sending (if enabled)
 	if cb.splitOnMarker {
-		parts = append(parts, `# MULTI-MESSAGE OUTPUT
+		add(PromptPart{
+			ID:     "context.output_policy.split_on_marker",
+			Layer:  PromptLayerContext,
+			Slot:   PromptSlotOutput,
+			Source: PromptSource{ID: PromptSourceOutputPolicy, Name: "split_on_marker"},
+			Title:  "multi-message output policy",
+			Content: `# MULTI-MESSAGE OUTPUT
 You MUST frequently use <|[SPLIT]|> to break your responses into multiple short messages. NEVER output a single long wall of text. Actively split distinct concepts or parts. Example: Message part 1<|[SPLIT]|>Message part 2<|[SPLIT]|>Message part 3
 
-Each part separated by the marker will be sent as an independent message.`)
+Each part separated by the marker will be sent as an independent message.`,
+			Stable: true,
+			Cache:  PromptCacheEphemeral,
+		})
 	}
 
-	// Join with "---" separator
-	return strings.Join(parts, "\n\n---\n\n")
+	stack.Seal()
+	return stack.Parts()
 }
 
 // BuildSystemPromptWithCache returns the cached system prompt if available
@@ -228,6 +317,19 @@ func (cb *ContextBuilder) EstimateSystemTokens(summary string, activeSkills []st
 	if skillsText := cb.buildActiveSkillsContext(activeSkills); skillsText != "" {
 		totalChars += utf8.RuneCountInString(skillsText)
 		totalChars += 7 // separator \n\n---\n\n
+	}
+
+	if contributedParts, err := cb.promptRegistryOrDefault().Collect(context.Background(), PromptBuildRequest{
+		Summary:      summary,
+		ActiveSkills: append([]string(nil), activeSkills...),
+	}); err == nil {
+		for _, part := range contributedParts {
+			if strings.TrimSpace(part.Content) == "" {
+				continue
+			}
+			totalChars += utf8.RuneCountInString(part.Content)
+			totalChars += 7 // separator
+		}
 	}
 
 	if summary != "" {
@@ -548,6 +650,20 @@ func (cb *ContextBuilder) BuildMessages(
 	channel, chatID, senderID, senderDisplayName string,
 	activeSkills ...string,
 ) []providers.Message {
+	return cb.BuildMessagesFromPrompt(PromptBuildRequest{
+		History:           history,
+		Summary:           summary,
+		CurrentMessage:    currentMessage,
+		Media:             media,
+		Channel:           channel,
+		ChatID:            chatID,
+		SenderID:          senderID,
+		SenderDisplayName: senderDisplayName,
+		ActiveSkills:      append([]string(nil), activeSkills...),
+	})
+}
+
+func (cb *ContextBuilder) BuildMessagesFromPrompt(req PromptBuildRequest) []providers.Message {
 	messages := []providers.Message{}
 
 	// The static part (identity, bootstrap, skills, memory) is cached locally to
@@ -562,7 +678,7 @@ func (cb *ContextBuilder) BuildMessages(
 	staticPrompt := cb.BuildSystemPromptWithCache()
 
 	// Build short dynamic context (time, runtime, session) — changes per request
-	dynamicCtx := cb.buildDynamicContext(channel, chatID, senderID, senderDisplayName)
+	dynamicCtx := cb.buildDynamicContext(req.Channel, req.ChatID, req.SenderID, req.SenderDisplayName)
 
 	// Compose a single system message: static (cached) + dynamic + optional summary.
 	// Keeping all system content in one message ensures every provider adapter can
@@ -573,25 +689,77 @@ func (cb *ContextBuilder) BuildMessages(
 	// cache-aware adapters (Anthropic) can set per-block cache_control.
 	// The static block is marked "ephemeral" — its prefix hash is stable
 	// across requests, enabling LLM-side KV cache reuse.
-	stringParts := []string{staticPrompt, dynamicCtx}
+	stringParts := []string{staticPrompt}
 
 	contentBlocks := []providers.ContentBlock{
-		{Type: "text", Text: staticPrompt, CacheControl: &providers.CacheControl{Type: "ephemeral"}},
-		{Type: "text", Text: dynamicCtx},
+		promptContentBlock(PromptPart{
+			ID:      "kernel.static",
+			Layer:   PromptLayerKernel,
+			Slot:    PromptSlotIdentity,
+			Source:  PromptSource{ID: PromptSourceKernel, Name: "static"},
+			Content: staticPrompt,
+		}, &providers.CacheControl{Type: "ephemeral"}),
 	}
 
-	if skillsText := cb.buildActiveSkillsContext(activeSkills); skillsText != "" {
-		stringParts = append(stringParts, skillsText)
-		contentBlocks = append(contentBlocks, providers.ContentBlock{Type: "text", Text: skillsText})
+	promptParts := append([]PromptPart(nil), req.Overlays...)
+	promptParts = append(promptParts, cb.buildActiveSkillsPromptParts(req.ActiveSkills)...)
+	if contributedParts, err := cb.promptRegistryOrDefault().Collect(context.Background(), req); err != nil {
+		logger.WarnCF("agent", "Prompt contributor collection failed", map[string]any{
+			"error": err.Error(),
+		})
+	} else {
+		promptParts = append(promptParts, contributedParts...)
 	}
 
-	if summary != "" {
-		summaryText := fmt.Sprintf(
-			"CONTEXT_SUMMARY: The following is an approximate summary of prior conversation "+
-				"for reference only. It may be incomplete or outdated — always defer to explicit instructions.\n\n%s",
-			summary)
-		stringParts = append(stringParts, summaryText)
-		contentBlocks = append(contentBlocks, providers.ContentBlock{Type: "text", Text: summaryText})
+	if len(promptParts) > 0 {
+		for _, overlay := range sortPromptParts(promptParts) {
+			if strings.TrimSpace(overlay.Content) == "" {
+				continue
+			}
+			if err := cb.promptRegistryOrDefault().ValidatePart(overlay); err != nil {
+				logger.WarnCF("agent", "Skipping invalid prompt overlay", map[string]any{
+					"id":     overlay.ID,
+					"layer":  overlay.Layer,
+					"slot":   overlay.Slot,
+					"source": overlay.Source.ID,
+					"error":  err.Error(),
+				})
+				continue
+			}
+			stringParts = append(stringParts, overlay.Content)
+			contentBlocks = append(contentBlocks, promptContentBlock(overlay, nil))
+		}
+	}
+
+	runtimePart := PromptPart{
+		ID:      "context.runtime",
+		Layer:   PromptLayerContext,
+		Slot:    PromptSlotRuntime,
+		Source:  PromptSource{ID: PromptSourceRuntime, Name: "runtime"},
+		Title:   "runtime context",
+		Content: dynamicCtx,
+		Stable:  false,
+		Cache:   PromptCacheNone,
+	}
+	stringParts = append(stringParts, dynamicCtx)
+	contentBlocks = append(contentBlocks, promptContentBlock(runtimePart, nil))
+
+	if req.Summary != "" {
+		summaryPart := PromptPart{
+			ID:     "context.summary",
+			Layer:  PromptLayerContext,
+			Slot:   PromptSlotSummary,
+			Source: PromptSource{ID: PromptSourceSummary, Name: "context.summary"},
+			Title:  "context summary",
+			Content: fmt.Sprintf(
+				"CONTEXT_SUMMARY: The following is an approximate summary of prior conversation "+
+					"for reference only. It may be incomplete or outdated — always defer to explicit instructions.\n\n%s",
+				req.Summary),
+			Stable: false,
+			Cache:  PromptCacheNone,
+		}
+		stringParts = append(stringParts, summaryPart.Content)
+		contentBlocks = append(contentBlocks, promptContentBlock(summaryPart, nil))
 	}
 
 	fullSystemPrompt := strings.Join(stringParts, "\n\n---\n\n")
@@ -608,7 +776,8 @@ func (cb *ContextBuilder) BuildMessages(
 			"static_chars":  len(staticPrompt),
 			"dynamic_chars": len(dynamicCtx),
 			"total_chars":   len(fullSystemPrompt),
-			"has_summary":   summary != "",
+			"has_summary":   req.Summary != "",
+			"overlays":      len(req.Overlays),
 			"cached":        isCached,
 		})
 
@@ -619,7 +788,7 @@ func (cb *ContextBuilder) BuildMessages(
 			"preview": preview,
 		})
 
-	history = sanitizeHistoryForProvider(history)
+	history := sanitizeHistoryForProvider(req.History)
 
 	// Single system message containing all context — compatible with all providers.
 	// SystemParts enables cache-aware adapters to set per-block cache_control;
@@ -636,15 +805,8 @@ func (cb *ContextBuilder) BuildMessages(
 	// Add current user message. Media-only turns must still be preserved so
 	// multimodal providers receive the uploaded image even when the user sends
 	// no accompanying text.
-	if strings.TrimSpace(currentMessage) != "" || len(media) > 0 {
-		msg := providers.Message{
-			Role:    "user",
-			Content: currentMessage,
-		}
-		if len(media) > 0 {
-			msg.Media = append([]string(nil), media...)
-		}
-		messages = append(messages, msg)
+	if strings.TrimSpace(req.CurrentMessage) != "" || len(req.Media) > 0 {
+		messages = append(messages, userPromptMessage(req.CurrentMessage, req.Media))
 	}
 
 	return messages
@@ -868,6 +1030,26 @@ func (cb *ContextBuilder) buildActiveSkillsContext(skillNames []string) string {
 The following skills are active for this request. Follow them when relevant.
 
 %s`, content)
+}
+
+func (cb *ContextBuilder) buildActiveSkillsPromptParts(skillNames []string) []PromptPart {
+	skillsText := cb.buildActiveSkillsContext(skillNames)
+	if strings.TrimSpace(skillsText) == "" {
+		return nil
+	}
+
+	return []PromptPart{
+		{
+			ID:      "capability.active_skills",
+			Layer:   PromptLayerCapability,
+			Slot:    PromptSlotActiveSkill,
+			Source:  PromptSource{ID: PromptSourceActiveSkills, Name: "skill:active"},
+			Title:   "active skills",
+			Content: skillsText,
+			Stable:  false,
+			Cache:   PromptCacheNone,
+		},
+	}
 }
 
 func (cb *ContextBuilder) ListSkillNames() []string {

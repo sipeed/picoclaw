@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
+
 import { PageHeader } from "@/components/page-header"
 
 import { ToolLibraryTab } from "./tool-library-tab"
@@ -26,6 +27,7 @@ export function ToolsPage() {
     isToolsLoading,
     isWebSearchLoading,
     isWebSearchSaving,
+    isWebSearchDirty,
     setActiveTab,
     setSearchQuery,
     setStatusFilter,
@@ -72,6 +74,7 @@ export function ToolsPage() {
               isLoading={isWebSearchLoading}
               hasError={hasWebSearchError}
               isSaving={isWebSearchSaving}
+              isDirty={isWebSearchDirty}
               onSave={saveWebSearchConfig}
               onToggleProviderExpand={toggleExpandedProvider}
               onUpdateDraft={updateWebSearchDraft}

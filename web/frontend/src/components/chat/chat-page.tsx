@@ -1,4 +1,5 @@
 import { IconPlus } from "@tabler/icons-react"
+import { useAtom } from "jotai"
 import { type ChangeEvent, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
@@ -15,12 +16,14 @@ import { TypingIndicator } from "@/components/chat/typing-indicator"
 import { UserMessage } from "@/components/chat/user-message"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 import { useChatModels } from "@/hooks/use-chat-models"
 import { useGateway } from "@/hooks/use-gateway"
 import { usePicoChat } from "@/hooks/use-pico-chat"
 import { useSessionHistory } from "@/hooks/use-session-history"
 import type { ConnectionState } from "@/store/chat"
 import type { ChatAttachment } from "@/store/chat"
+import { showAssistantDetailsAtom } from "@/store/chat"
 import type { GatewayState } from "@/store/gateway"
 
 const MAX_IMAGE_SIZE_BYTES = 7 * 1024 * 1024
@@ -109,6 +112,9 @@ export function ChatPage() {
   const [hasScrolled, setHasScrolled] = useState(false)
   const [input, setInput] = useState("")
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
+  const [showAssistantDetails, setShowAssistantDetails] = useAtom(
+    showAssistantDetailsAtom,
+  )
 
   const {
     messages,
@@ -265,6 +271,18 @@ export function ChatPage() {
           )
         }
       >
+        <div className="border-border/60 hidden items-center gap-2 rounded-lg border px-3 py-1.5 sm:flex">
+          <span className="text-muted-foreground text-sm">
+            {t("chat.showAssistantDetails")}
+          </span>
+          <Switch
+            checked={showAssistantDetails}
+            onCheckedChange={setShowAssistantDetails}
+            aria-label={t("chat.showAssistantDetails")}
+            size="sm"
+          />
+        </div>
+
         <Button
           variant="secondary"
           size="sm"
@@ -306,23 +324,33 @@ export function ChatPage() {
             />
           )}
 
-          {messages.map((msg) => (
-            <div key={msg.id} className="flex w-full">
-              {msg.role === "assistant" ? (
-                <AssistantMessage
-                  content={msg.content}
-                  attachments={msg.attachments}
-                  isThought={msg.kind === "thought"}
-                  timestamp={msg.timestamp}
-                />
-              ) : (
-                <UserMessage
-                  content={msg.content}
-                  attachments={msg.attachments}
-                />
-              )}
-            </div>
-          ))}
+          {messages.map((msg) => {
+            if (
+              !showAssistantDetails &&
+              (msg.kind === "thought" || msg.kind === "tool_calls")
+            ) {
+              return null
+            }
+
+            return (
+              <div key={msg.id} className="flex w-full">
+                {msg.role === "assistant" ? (
+                  <AssistantMessage
+                    content={msg.content}
+                    attachments={msg.attachments}
+                    kind={msg.kind}
+                    toolCalls={msg.toolCalls}
+                    timestamp={msg.timestamp}
+                  />
+                ) : (
+                  <UserMessage
+                    content={msg.content}
+                    attachments={msg.attachments}
+                  />
+                )}
+              </div>
+            )
+          })}
 
           {isTyping && <TypingIndicator />}
         </div>

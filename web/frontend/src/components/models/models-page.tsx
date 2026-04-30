@@ -1,10 +1,13 @@
 import { IconLoader2, IconPlus, IconStar } from "@tabler/icons-react"
 import { useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
 
 import { type ModelInfo, getModels, setDefaultModel } from "@/api/models"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
+import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
+import { refreshGatewayState } from "@/store/gateway"
 
 import { AddModelSheet } from "./add-model-sheet"
 import { DeleteModelDialog } from "./delete-model-dialog"
@@ -95,8 +98,15 @@ export function ModelsPage() {
     try {
       await setDefaultModel(model.model_name)
       await fetchModels()
-    } catch {
-      // ignore
+      const gateway = await refreshGatewayState({ force: true })
+      showSaveSuccessOrRestartToast(
+        t,
+        t("models.defaultChangeSuccess"),
+        model.model_name,
+        gateway?.restartRequired === true,
+      )
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("models.loadError"))
     } finally {
       setSettingDefaultIndex(null)
     }

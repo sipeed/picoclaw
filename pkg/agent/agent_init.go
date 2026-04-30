@@ -128,6 +128,9 @@ func registerSharedTools(
 		if cfg.Tools.IsToolEnabled("spi") {
 			agent.Tools.Register(tools.NewSPITool())
 		}
+		if cfg.Tools.IsToolEnabled("serial") {
+			agent.Tools.Register(tools.NewSerialTool())
+		}
 
 		// Message tool
 		if cfg.Tools.IsToolEnabled("message") {

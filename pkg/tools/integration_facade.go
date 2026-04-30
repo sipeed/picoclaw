@@ -65,14 +65,6 @@ func NewAPIKeyPool(keys []string) *APIKeyPool {
 	return integrationtools.NewAPIKeyPool(keys)
 }
 
-func SetPreferredWebSearchLanguage(lang string) {
-	integrationtools.SetPreferredWebSearchLanguage(lang)
-}
-
-func GetPreferredWebSearchLanguage() string {
-	return integrationtools.GetPreferredWebSearchLanguage()
-}
-
 func WebSearchToolOptionsFromConfig(cfg *config.Config) WebSearchToolOptions {
 	return integrationtools.WebSearchToolOptionsFromConfig(cfg)
 }

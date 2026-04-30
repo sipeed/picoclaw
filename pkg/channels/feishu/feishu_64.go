@@ -803,6 +803,14 @@ func (c *FeishuChannel) downloadInboundMedia(
 			refs = append(refs, ref)
 		}
 
+	case larkim.MsgTypePost:
+		for _, imageKey := range extractPostImageKeys(rawContent) {
+			ref := c.downloadResource(ctx, messageID, imageKey, "image", ".jpg", store, scope)
+			if ref != "" {
+				refs = append(refs, ref)
+			}
+		}
+
 	case larkim.MsgTypeInteractive:
 		// Extract and download images embedded in interactive cards
 		feishuKeys, _ := extractCardImageKeys(rawContent)
@@ -842,12 +850,41 @@ func (c *FeishuChannel) downloadInboundMedia(
 // downloadResource downloads a message resource (image/file) from Feishu,
 // writes it to the project media directory, and stores the reference in MediaStore.
 // fallbackExt (e.g. ".jpg") is appended when the resolved filename has no extension.
+//
+// For image resources, if the primary MessageResource.Get API fails (which
+// requires im:message or im:message:readonly scope), a fallback to the
+// Image.Get API (which requires im:resource scope) is attempted. This ensures
+// image downloads succeed regardless of which permission the user has granted.
 func (c *FeishuChannel) downloadResource(
 	ctx context.Context,
 	messageID, fileKey, resourceType, fallbackExt string,
 	store media.MediaStore,
 	scope string,
 ) string {
+	file, filename := c.fetchResourceData(ctx, messageID, fileKey, resourceType)
+	if file == nil {
+		return ""
+	}
+	if closer, ok := file.(io.Closer); ok {
+		defer closer.Close()
+	}
+
+	if filename == "" {
+		filename = fileKey
+	}
+	if filepath.Ext(filename) == "" && fallbackExt != "" {
+		filename += fallbackExt
+	}
+
+	return c.storeResourceFile(ctx, messageID, fileKey, filename, file, store, scope)
+}
+
+// fetchResourceData tries to download a resource from Feishu, first via
+// MessageResource.Get, then falling back to Image.Get for image resources.
+func (c *FeishuChannel) fetchResourceData(
+	ctx context.Context,
+	messageID, fileKey, resourceType string,
+) (io.Reader, string) {
 	req := larkim.NewGetMessageResourceReqBuilder().
 		MessageId(messageID).
 		FileKey(fileKey).
@@ -855,41 +892,80 @@ func (c *FeishuChannel) downloadResource(
 		Build()
 
 	resp, err := c.client.Im.V1.MessageResource.Get(ctx, req)
+	if err == nil && resp.Success() && resp.File != nil {
+		return resp.File, resp.FileName
+	}
+
 	if err != nil {
-		logger.ErrorCF("feishu", "Failed to download resource", map[string]any{
+		logger.WarnCF("feishu", "MessageResource.Get failed", map[string]any{
 			"message_id": messageID,
 			"file_key":   fileKey,
 			"error":      err.Error(),
 		})
-		return ""
+	} else if !resp.Success() {
+		c.invalidateTokenOnAuthError(resp.Code)
+		logger.WarnCF("feishu", "MessageResource.Get api error", map[string]any{
+			"message_id": messageID,
+			"file_key":   fileKey,
+			"code":       resp.Code,
+			"msg":        resp.Msg,
+		})
+	} else {
+		logger.WarnCF("feishu", "MessageResource.Get returned empty file body", map[string]any{
+			"message_id": messageID,
+			"file_key":   fileKey,
+		})
+	}
+
+	if resourceType != "image" {
+		return nil, ""
+	}
+
+	return c.fetchImageDirect(ctx, fileKey)
+}
+
+// fetchImageDirect downloads an image using the Image.Get API
+// (/open-apis/im/v1/images/:image_key), which requires the im:resource scope.
+func (c *FeishuChannel) fetchImageDirect(ctx context.Context, imageKey string) (io.Reader, string) {
+	req := larkim.NewGetImageReqBuilder().
+		ImageKey(imageKey).
+		Build()
+
+	resp, err := c.client.Im.V1.Image.Get(ctx, req)
+	if err != nil {
+		logger.ErrorCF("feishu", "Image.Get fallback failed", map[string]any{
+			"image_key": imageKey,
+			"error":     err.Error(),
+		})
+		return nil, ""
 	}
 	if !resp.Success() {
 		c.invalidateTokenOnAuthError(resp.Code)
-		logger.ErrorCF("feishu", "Resource download api error", map[string]any{
-			"code": resp.Code,
-			"msg":  resp.Msg,
+		logger.ErrorCF("feishu", "Image.Get fallback api error", map[string]any{
+			"image_key": imageKey,
+			"code":      resp.Code,
+			"msg":       resp.Msg,
 		})
-		return ""
+		return nil, ""
 	}
-
 	if resp.File == nil {
-		return ""
-	}
-	// Safely close the underlying reader if it implements io.Closer (e.g. HTTP response body).
-	if closer, ok := resp.File.(io.Closer); ok {
-		defer closer.Close()
+		return nil, ""
 	}
 
-	filename := resp.FileName
-	if filename == "" {
-		filename = fileKey
-	}
-	// If filename still has no extension, append the fallback (like Telegram's ext parameter).
-	if filepath.Ext(filename) == "" && fallbackExt != "" {
-		filename += fallbackExt
-	}
+	logger.DebugCF("feishu", "Image downloaded via Image.Get fallback", map[string]any{
+		"image_key": imageKey,
+	})
+	return resp.File, resp.FileName
+}
 
-	// Write to the shared picoclaw_media directory using a unique name to avoid collisions.
+// storeResourceFile writes downloaded resource data to disk and registers it in the MediaStore.
+func (c *FeishuChannel) storeResourceFile(
+	ctx context.Context,
+	messageID, fileKey, filename string,
+	file io.Reader,
+	store media.MediaStore,
+	scope string,
+) string {
 	mediaDir := media.TempDir()
 	if mkdirErr := os.MkdirAll(mediaDir, 0o700); mkdirErr != nil {
 		logger.ErrorCF("feishu", "Failed to create media directory", map[string]any{
@@ -908,7 +984,7 @@ func (c *FeishuChannel) downloadResource(
 		return ""
 	}
 
-	if _, copyErr := io.Copy(out, resp.File); copyErr != nil {
+	if _, copyErr := io.Copy(out, file); copyErr != nil {
 		out.Close()
 		os.Remove(localPath)
 		logger.ErrorCF("feishu", "Failed to write resource to file", map[string]any{
@@ -943,8 +1019,8 @@ func appendMediaTags(content, messageType string, mediaRefs []string) string {
 		return content
 	}
 
-	// Don't append tags to JSON content (interactive cards) - would produce invalid JSON
-	if messageType == larkim.MsgTypeInteractive {
+	// Don't append tags to JSON content - would produce invalid JSON
+	if messageType == larkim.MsgTypeInteractive || messageType == larkim.MsgTypePost {
 		return content
 	}
 

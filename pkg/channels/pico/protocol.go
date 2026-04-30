@@ -1,6 +1,9 @@
 package pico
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Protocol message types.
 const (
@@ -19,10 +22,13 @@ const (
 	TypeError         = "error"
 	TypePong          = "pong"
 
-	PayloadKeyContent = "content"
-	PayloadKeyThought = "thought"
+	PayloadKeyContent   = "content"
+	PayloadKeyThought   = "thought"
+	PayloadKeyKind      = "kind"
+	PayloadKeyToolCalls = "tool_calls"
 
-	MessageKindThought = "thought"
+	MessageKindThought   = "thought"
+	MessageKindToolCalls = "tool_calls"
 )
 
 // PicoMessage is the wire format for all Pico Protocol messages.
@@ -44,6 +50,13 @@ func newMessage(msgType string, payload map[string]any) PicoMessage {
 }
 
 func isThoughtPayload(payload map[string]any) bool {
+	kind, _ := payload[PayloadKeyKind].(string)
+	if strings.EqualFold(strings.TrimSpace(kind), MessageKindThought) {
+		return true
+	}
+
+	// Keep pico_client inbound-compatible with legacy servers that still send
+	// the pre-kind boolean thought marker.
 	thought, _ := payload[PayloadKeyThought].(bool)
 	return thought
 }

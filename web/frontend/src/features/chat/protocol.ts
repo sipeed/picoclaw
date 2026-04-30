@@ -1,10 +1,12 @@
 import { toast } from "sonner"
 
+import {
+  parseAssistantMessageCreateState,
+  parseAssistantMessageUpdateState,
+} from "@/features/chat/assistant-message-state"
 import { normalizeUnixTimestamp } from "@/features/chat/state"
 import {
-  type AssistantMessageKind,
   type ChatAttachment,
-  type ChatMessage,
   type ContextUsage,
   updateChatStore,
 } from "@/store/chat"
@@ -15,16 +17,6 @@ export interface PicoMessage {
   session_id?: string
   timestamp?: number | string
   payload?: Record<string, unknown>
-}
-
-function parseAssistantMessageKind(
-  payload: Record<string, unknown>,
-): AssistantMessageKind {
-  return payload.thought === true ? "thought" : "normal"
-}
-
-function hasAssistantKindPayload(payload: Record<string, unknown>): boolean {
-  return typeof payload.thought === "boolean"
 }
 
 function parseAttachments(
@@ -91,35 +83,6 @@ function parseContextUsage(
   }
 }
 
-function isToolFeedbackMessage(message: ChatMessage): boolean {
-  if (message.role !== "assistant") {
-    return false
-  }
-
-  const firstLine = message.content.split("\n", 1)[0]?.trim() ?? ""
-  return /^🔧\s+`[^`]+`/.test(firstLine)
-}
-
-function findToolFeedbackMessageIndex(messages: ChatMessage[]): number {
-  let lastUserIndex = -1
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (messages[i].role === "user") {
-      lastUserIndex = i
-      break
-    }
-  }
-
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (i <= lastUserIndex) {
-      break
-    }
-    if (isToolFeedbackMessage(messages[i])) {
-      return i
-    }
-  }
-  return -1
-}
-
 export function handlePicoMessage(
   message: PicoMessage,
   expectedSessionId: string,
@@ -133,9 +96,9 @@ export function handlePicoMessage(
   switch (message.type) {
     case "message.create":
     case "media.create": {
-      const content = (payload.content as string) || ""
       const messageId = (payload.message_id as string) || `pico-${Date.now()}`
-      const kind = parseAssistantMessageKind(payload)
+      const { content, kind, toolCalls } =
+        parseAssistantMessageCreateState(payload)
       const attachments = parseAttachments(payload)
       const contextUsage = parseContextUsage(payload)
       const timestamp =
@@ -152,6 +115,7 @@ export function handlePicoMessage(
             role: "assistant",
             content,
             kind,
+            ...(toolCalls ? { toolCalls } : {}),
             attachments,
             timestamp,
           },
@@ -163,10 +127,7 @@ export function handlePicoMessage(
     }
 
     case "message.update": {
-      const content = (payload.content as string) || ""
       const messageId = payload.message_id as string
-      const hasKind = hasAssistantKindPayload(payload)
-      const kind = parseAssistantMessageKind(payload)
       const attachments = parseAttachments(payload)
       const contextUsage = parseContextUsage(payload)
       const timestamp =
@@ -186,11 +147,14 @@ export function handlePicoMessage(
               return msg
             }
             found = true
+            const { content, kind, toolCalls } =
+              parseAssistantMessageUpdateState(payload, msg)
             return {
               ...msg,
               id: messageId,
               content,
-              ...(hasKind ? { kind } : {}),
+              kind,
+              toolCalls,
               ...(attachments ? { attachments } : {}),
             }
           })
@@ -198,20 +162,8 @@ export function handlePicoMessage(
             return messages
           }
 
-          const fallbackIndex = findToolFeedbackMessageIndex(messages)
-          if (fallbackIndex >= 0) {
-            return messages.map((msg, index) =>
-              index === fallbackIndex
-                ? {
-                    ...msg,
-                    id: messageId,
-                    content,
-                    ...(hasKind ? { kind } : {}),
-                    ...(attachments ? { attachments } : {}),
-                  }
-                : msg,
-            )
-          }
+          const { content, kind, toolCalls } =
+            parseAssistantMessageUpdateState(payload)
 
           return [
             ...messages,
@@ -219,7 +171,8 @@ export function handlePicoMessage(
               id: messageId,
               role: "assistant" as const,
               content,
-              ...(hasKind ? { kind } : {}),
+              kind,
+              toolCalls,
               ...(attachments ? { attachments } : {}),
               timestamp,
             },
@@ -237,19 +190,7 @@ export function handlePicoMessage(
       }
 
       updateChatStore((prev) => ({
-        messages: (() => {
-          const exactMessages = prev.messages.filter((msg) => msg.id !== messageId)
-          if (exactMessages.length !== prev.messages.length) {
-            return exactMessages
-          }
-
-          const fallbackIndex = findToolFeedbackMessageIndex(prev.messages)
-          if (fallbackIndex < 0) {
-            return prev.messages
-          }
-
-          return prev.messages.filter((_, index) => index !== fallbackIndex)
-        })(),
+        messages: prev.messages.filter((msg) => msg.id !== messageId),
       }))
       break
     }

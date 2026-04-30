@@ -291,6 +291,100 @@ func TestStripMentionPlaceholders(t *testing.T) {
 	}
 }
 
+func TestExtractPostImageKeys(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    []string
+	}{
+		{
+			name:    "empty content",
+			content: "",
+			want:    nil,
+		},
+		{
+			name:    "invalid JSON",
+			content: "not json",
+			want:    nil,
+		},
+		{
+			name:    "post with no images",
+			content: `{"zh_cn":{"title":"Title","content":[[{"tag":"text","text":"hello"}]]}}`,
+			want:    nil,
+		},
+		{
+			name:    "post with one image",
+			content: `{"zh_cn":{"title":"","content":[[{"tag":"img","image_key":"img_v3_001"}]]}}`,
+			want:    []string{"img_v3_001"},
+		},
+		{
+			name:    "post with multiple images",
+			content: `{"zh_cn":{"title":"","content":[[{"tag":"text","text":"see"},{"tag":"img","image_key":"img_001"}],[{"tag":"img","image_key":"img_002"}]]}}`,
+			want:    []string{"img_001", "img_002"},
+		},
+		{
+			name:    "post with text and image mixed in row",
+			content: `{"zh_cn":{"title":"","content":[[{"tag":"text","text":"hi"},{"tag":"img","image_key":"img_mix"}]]}}`,
+			want:    []string{"img_mix"},
+		},
+		{
+			name:    "en_us locale",
+			content: `{"en_us":{"title":"","content":[[{"tag":"img","image_key":"img_en"}]]}}`,
+			want:    []string{"img_en"},
+		},
+		{
+			name:    "multiple locales with distinct images",
+			content: `{"zh_cn":{"title":"","content":[[{"tag":"img","image_key":"img_zh"}]]},"en_us":{"title":"","content":[[{"tag":"img","image_key":"img_en"}]]}}`,
+			want:    []string{"img_zh", "img_en"},
+		},
+		{
+			name:    "duplicate image_key across locales is deduplicated",
+			content: `{"zh_cn":{"title":"","content":[[{"tag":"img","image_key":"img_same"}]]},"en_us":{"title":"","content":[[{"tag":"img","image_key":"img_same"}]]}}`,
+			want:    []string{"img_same"},
+		},
+		{
+			name:    "image with empty image_key",
+			content: `{"zh_cn":{"title":"","content":[[{"tag":"img","image_key":""}]]}}`,
+			want:    nil,
+		},
+		{
+			name:    "flat format without locale wrapper",
+			content: `{"title":"","content":[[{"tag":"img","image_key":"img_v3_flat","width":1826,"height":338}],[{"tag":"text","text":" check this image","style":[]}]]}`,
+			want:    []string{"img_v3_flat"},
+		},
+		{
+			name:    "flat format multiple images",
+			content: `{"title":"","content":[[{"tag":"img","image_key":"img_flat_1"}],[{"tag":"img","image_key":"img_flat_2"},{"tag":"text","text":"desc"}]]}`,
+			want:    []string{"img_flat_1", "img_flat_2"},
+		},
+		{
+			name:    "flat format no images",
+			content: `{"title":"Test","content":[[{"tag":"text","text":"just text"}]]}`,
+			want:    nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractPostImageKeys(tt.content)
+			if len(got) != len(tt.want) {
+				t.Errorf("extractPostImageKeys() = %v, want %v", got, tt.want)
+				return
+			}
+			// Use set comparison to avoid map iteration order dependency
+			gotSet := make(map[string]bool, len(got))
+			for _, v := range got {
+				gotSet[v] = true
+			}
+			for _, v := range tt.want {
+				if !gotSet[v] {
+					t.Errorf("extractPostImageKeys() missing expected key %q; got %v", v, got)
+				}
+			}
+		})
+	}
+}
+
 func TestExtractCardImageKeys(t *testing.T) {
 	tests := []struct {
 		name             string

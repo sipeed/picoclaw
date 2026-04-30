@@ -15,6 +15,7 @@ import {
   setAutoStartEnabled as updateAutoStartEnabled,
   setLauncherConfig as updateLauncherConfig,
 } from "@/api/system"
+import { ConfigChangeNotice } from "@/components/config-change-notice"
 import {
   AgentDefaultsSection,
   CronSection,
@@ -36,6 +37,7 @@ import {
 import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
 
 export function ConfigPage() {
@@ -244,6 +246,7 @@ export function ConfigPage() {
               tool_feedback: {
                 enabled: form.toolFeedbackEnabled,
                 max_args_length: toolFeedbackMaxArgsLength,
+                separate_messages: form.toolFeedbackSeparateMessages,
               },
               max_tokens: maxTokens,
               context_window: contextWindow,
@@ -333,8 +336,13 @@ export function ConfigPage() {
         queryClient.setQueryData(["system", "autostart"], status)
       }
 
-      toast.success(t("pages.config.save_success"))
-      void refreshGatewayState({ force: true })
+      const gateway = await refreshGatewayState({ force: true })
+      showSaveSuccessOrRestartToast(
+        t,
+        t("pages.config.save_success"),
+        t("navigation.config"),
+        gateway?.restartRequired === true,
+      )
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : t("pages.config.save_error"),
@@ -432,8 +440,12 @@ export function ConfigPage() {
       {isDirty && (
         <div className="border-border/70 bg-background/95 supports-backdrop-filter:bg-background/80 shrink-0 border-t px-3 py-3 shadow-[0_-12px_30px_rgba(15,23,42,0.10)] backdrop-blur lg:px-6">
           <div className="mx-auto flex w-full max-w-[1000px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-muted-foreground/70 text-xs">
-              {t("pages.config.unsaved_changes")}
+            <div className="flex-1">
+              <ConfigChangeNotice
+                kind="save"
+                title={t("common.saveChangesTitle")}
+                description={t("pages.config.unsaved_changes")}
+              />
             </div>
             {actionButtons}
           </div>

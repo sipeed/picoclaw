@@ -80,14 +80,18 @@ toolLoop:
 						},
 					)
 
-					if shouldPublishToolFeedback(al.cfg, ts) {
+					if shouldPublishToolFeedback(al.cfg, ts) && ts.channel != "pico" {
+						toolFeedbackMaxLen := al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength()
 						toolFeedbackExplanation := toolFeedbackExplanationForToolCall(
 							exec.response,
 							tc,
 							messages,
-							al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(),
 						)
-						feedbackMsg := utils.FormatToolFeedbackMessage(toolName, toolFeedbackExplanation)
+						feedbackMsg := utils.FormatToolFeedbackMessage(
+							toolName,
+							toolFeedbackExplanation,
+							toolFeedbackArgsPreview(toolArgs, toolFeedbackMaxLen),
+						)
 						fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
 						_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurnWithKind(ts, feedbackMsg, messageKindToolFeedback))
 						fbCancel()
@@ -260,7 +264,7 @@ toolLoop:
 						case result, ok := <-ts.pendingResults:
 							if ok && result != nil && result.ForLLM != "" {
 								content := al.cfg.FilterSensitiveData(result.ForLLM)
-								msg := providers.Message{Role: "user", Content: fmt.Sprintf("[SubTurn Result] %s", content)}
+								msg := subTurnResultPromptMessage(content)
 								messages = append(messages, msg)
 								ts.agent.Sessions.AddFullMessage(ts.sessionKey, msg)
 							}
@@ -357,14 +361,18 @@ toolLoop:
 			},
 		)
 
-		if shouldPublishToolFeedback(al.cfg, ts) {
+		if shouldPublishToolFeedback(al.cfg, ts) && ts.channel != "pico" {
+			toolFeedbackMaxLen := al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength()
 			toolFeedbackExplanation := toolFeedbackExplanationForToolCall(
 				exec.response,
 				tc,
 				messages,
-				al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength(),
 			)
-			feedbackMsg := utils.FormatToolFeedbackMessage(toolName, toolFeedbackExplanation)
+			feedbackMsg := utils.FormatToolFeedbackMessage(
+				toolName,
+				toolFeedbackExplanation,
+				toolFeedbackArgsPreview(toolArgs, toolFeedbackMaxLen),
+			)
 			fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
 			_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurnWithKind(ts, feedbackMsg, messageKindToolFeedback))
 			fbCancel()
@@ -631,7 +639,7 @@ toolLoop:
 			case result, ok := <-ts.pendingResults:
 				if ok && result != nil && result.ForLLM != "" {
 					content := al.cfg.FilterSensitiveData(result.ForLLM)
-					msg := providers.Message{Role: "user", Content: fmt.Sprintf("[SubTurn Result] %s", content)}
+					msg := subTurnResultPromptMessage(content)
 					messages = append(messages, msg)
 					ts.agent.Sessions.AddFullMessage(ts.sessionKey, msg)
 				}
@@ -696,6 +704,9 @@ toolLoop:
 		}
 		ts.setPhase(TurnPhaseCompleted)
 		ts.setFinalContent("")
+		if al.channelManager != nil && ts.channel != "" {
+			al.channelManager.DismissToolFeedback(ctx, ts.channel, ts.chatID, ts.opts.InboundContext)
+		}
 		logger.InfoCF("agent", "Tool output satisfied delivery; ending turn without follow-up LLM",
 			map[string]any{
 				"agent_id":   ts.agent.ID,

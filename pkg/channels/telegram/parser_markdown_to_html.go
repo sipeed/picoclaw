@@ -2,8 +2,12 @@ package telegram
 
 import (
 	"fmt"
+	"html"
+	"regexp"
 	"strings"
 )
+
+var reRawURL = regexp.MustCompile(`https?://[^\s<]+`)
 
 func markdownToTelegramHTML(text string) string {
 	if text == "" {
@@ -18,6 +22,9 @@ func markdownToTelegramHTML(text string) string {
 
 	links := extractLinks(text)
 	text = links.text
+
+	rawURLs := extractRawURLs(text)
+	text = rawURLs.text
 
 	text = reHeading.ReplaceAllString(text, "$1")
 
@@ -43,8 +50,17 @@ func markdownToTelegramHTML(text string) string {
 
 	for i, lnk := range links.links {
 		label := escapeHTML(lnk[0])
-		url := lnk[1]
+		url := escapeHTMLAttr(lnk[1])
 		text = strings.ReplaceAll(text, fmt.Sprintf("\x00LK%d\x00", i), fmt.Sprintf(`<a href="%s">%s</a>`, url, label))
+	}
+
+	for i, rawURL := range rawURLs.urls {
+		escaped := escapeHTML(rawURL)
+		text = strings.ReplaceAll(
+			text,
+			fmt.Sprintf("\x00RU%d\x00", i),
+			fmt.Sprintf(`<a href="%s">%s</a>`, escapeHTMLAttr(rawURL), escaped),
+		)
 	}
 
 	for i, code := range inlineCodes.codes {
@@ -92,6 +108,11 @@ type codeBlockMatch struct {
 	codes []string
 }
 
+type rawURLMatch struct {
+	text string
+	urls []string
+}
+
 func extractCodeBlocks(text string) codeBlockMatch {
 	matches := reCodeBlock.FindAllStringSubmatch(text, -1)
 
@@ -108,6 +129,24 @@ func extractCodeBlocks(text string) codeBlockMatch {
 	})
 
 	return codeBlockMatch{text: text, codes: codes}
+}
+
+func extractRawURLs(text string) rawURLMatch {
+	matches := reRawURL.FindAllString(text, -1)
+
+	urls := make([]string, 0, len(matches))
+	for _, match := range matches {
+		urls = append(urls, match)
+	}
+
+	i := 0
+	text = reRawURL.ReplaceAllStringFunc(text, func(string) string {
+		placeholder := fmt.Sprintf("\x00RU%d\x00", i)
+		i++
+		return placeholder
+	})
+
+	return rawURLMatch{text: text, urls: urls}
 }
 
 type inlineCodeMatch struct {
@@ -138,4 +177,8 @@ func escapeHTML(text string) string {
 	text = strings.ReplaceAll(text, "<", "&lt;")
 	text = strings.ReplaceAll(text, ">", "&gt;")
 	return text
+}
+
+func escapeHTMLAttr(text string) string {
+	return html.EscapeString(text)
 }

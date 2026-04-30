@@ -199,6 +199,47 @@ func TestStoreAddAndGetMessages(t *testing.T) {
 	}
 }
 
+func TestStoreAddAndGetMessagesWithReasoningContent(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	conv, _ := s.GetOrCreateConversation(ctx, "agent:reasoning")
+
+	msg, err := s.AddMessageWithReasoning(
+		ctx,
+		conv.ConversationID,
+		"assistant",
+		"hello world",
+		"let me think",
+		5,
+	)
+	if err != nil {
+		t.Fatalf("AddMessageWithReasoning: %v", err)
+	}
+	if msg.ReasoningContent != "let me think" {
+		t.Fatalf("ReasoningContent = %q, want %q", msg.ReasoningContent, "let me think")
+	}
+
+	msgs, err := s.GetMessages(ctx, conv.ConversationID, 10, 0)
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("got %d messages, want 1", len(msgs))
+	}
+	if msgs[0].ReasoningContent != "let me think" {
+		t.Errorf("ReasoningContent = %q, want %q", msgs[0].ReasoningContent, "let me think")
+	}
+
+	found, err := s.GetMessageByID(ctx, msg.ID)
+	if err != nil {
+		t.Fatalf("GetMessageByID: %v", err)
+	}
+	if found.ReasoningContent != "let me think" {
+		t.Errorf("GetMessageByID ReasoningContent = %q, want %q", found.ReasoningContent, "let me think")
+	}
+}
+
 func TestStoreAddMessageWithParts(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
@@ -230,6 +271,43 @@ func TestStoreAddMessageWithParts(t *testing.T) {
 	}
 	if msgs[0].Parts[0].ToolCallID != "tc_123" {
 		t.Errorf("part[0].ToolCallID = %q, want tc_123", msgs[0].Parts[0].ToolCallID)
+	}
+}
+
+func TestStoreAddMessageWithPartsAndReasoningContent(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	conv, _ := s.GetOrCreateConversation(ctx, "agent:parts-reasoning")
+
+	parts := []MessagePart{
+		{Type: "tool_use", Name: "read_file", Arguments: `{"path":"/tmp/test"}`, ToolCallID: "tc_123"},
+	}
+	_, err := s.AddMessageWithPartsAndReasoning(
+		ctx,
+		conv.ConversationID,
+		"assistant",
+		parts,
+		"need to inspect the file first",
+		10,
+	)
+	if err != nil {
+		t.Fatalf("AddMessageWithPartsAndReasoning: %v", err)
+	}
+
+	msgs, err := s.GetMessages(ctx, conv.ConversationID, 10, 0)
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	if msgs[0].ReasoningContent != "need to inspect the file first" {
+		t.Errorf(
+			"ReasoningContent = %q, want %q",
+			msgs[0].ReasoningContent,
+			"need to inspect the file first",
+		)
 	}
 }
 
@@ -272,6 +350,31 @@ func TestStoreGetMessageByID(t *testing.T) {
 	_, err = s.GetMessageByID(ctx, 99999)
 	if err == nil {
 		t.Error("expected error for nonexistent message")
+	}
+}
+
+func TestStoreUpdateMessageReasoningContent(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	conv, _ := s.GetOrCreateConversation(ctx, "agent:update-reasoning")
+
+	msg, err := s.AddMessage(ctx, conv.ConversationID, "assistant", "answer", 3)
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+
+	err = s.UpdateMessageReasoningContent(ctx, msg.ID, "thinking")
+	if err != nil {
+		t.Fatalf("UpdateMessageReasoningContent: %v", err)
+	}
+
+	found, err := s.GetMessageByID(ctx, msg.ID)
+	if err != nil {
+		t.Fatalf("GetMessageByID: %v", err)
+	}
+	if found.ReasoningContent != "thinking" {
+		t.Errorf("ReasoningContent = %q, want %q", found.ReasoningContent, "thinking")
 	}
 }
 

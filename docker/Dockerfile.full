@@ -1,7 +1,7 @@
 # ============================================================
 # Stage 1: Build the picoclaw binary
 # ============================================================
-FROM golang:1.26.0-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 RUN apk add --no-cache git make
 

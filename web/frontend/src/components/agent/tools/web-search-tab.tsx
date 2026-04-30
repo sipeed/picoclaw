@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next"
 
 import type { WebSearchConfigResponse } from "@/api/tools"
+import { ConfigChangeNotice } from "@/components/config-change-notice"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 
@@ -15,6 +16,7 @@ interface WebSearchTabProps {
   isLoading: boolean
   hasError: boolean
   isSaving: boolean
+  isDirty: boolean
   onSave: () => void
   onToggleProviderExpand: (providerId: string) => void
   onUpdateDraft: WebSearchDraftUpdater
@@ -27,6 +29,7 @@ export function WebSearchTab({
   isLoading,
   hasError,
   isSaving,
+  isDirty,
   onSave,
   onToggleProviderExpand,
   onUpdateDraft,
@@ -66,12 +69,20 @@ export function WebSearchTab({
 
             <Button
               onClick={onSave}
-              disabled={isSaving}
+              disabled={!isDirty || isSaving}
               className="h-10 shrink-0 rounded-xl px-6 shadow-sm transition-all active:scale-95"
             >
               {t("pages.agent.tools.web_search.save", "Save Changes")}
             </Button>
           </div>
+
+          {isDirty && (
+            <ConfigChangeNotice
+              kind="save"
+              title={t("common.saveChangesTitle")}
+              description={t("pages.agent.tools.web_search.unsaved_prompt")}
+            />
+          )}
 
           <div className="space-y-10">
             <WebSearchGeneralSettings

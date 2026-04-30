@@ -162,20 +162,31 @@ func (s *Store) getMessageTimeRange(ctx context.Context, convID int64) (time.Tim
 
 // AddMessage appends a message to a conversation.
 func (s *Store) AddMessage(ctx context.Context, convID int64, role, content string, tokenCount int) (*Message, error) {
+	return s.AddMessageWithReasoning(ctx, convID, role, content, "", tokenCount)
+}
+
+// AddMessageWithReasoning appends a message with reasoning content to a conversation.
+func (s *Store) AddMessageWithReasoning(
+	ctx context.Context,
+	convID int64,
+	role, content, reasoningContent string,
+	tokenCount int,
+) (*Message, error) {
 	result, err := s.db.ExecContext(ctx,
-		"INSERT INTO messages (conversation_id, role, content, token_count) VALUES (?, ?, ?, ?)",
-		convID, role, content, tokenCount,
+		"INSERT INTO messages (conversation_id, role, content, reasoning_content, token_count) VALUES (?, ?, ?, ?, ?)",
+		convID, role, content, reasoningContent, tokenCount,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("add message: %w", err)
 	}
 	id, _ := result.LastInsertId()
 	return &Message{
-		ID:             id,
-		ConversationID: convID,
-		Role:           role,
-		Content:        content,
-		TokenCount:     tokenCount,
+		ID:               id,
+		ConversationID:   convID,
+		Role:             role,
+		Content:          content,
+		ReasoningContent: reasoningContent,
+		TokenCount:       tokenCount,
 	}, nil
 }
 
@@ -213,6 +224,18 @@ func (s *Store) AddMessageWithParts(
 	parts []MessagePart,
 	tokenCount int,
 ) (*Message, error) {
+	return s.AddMessageWithPartsAndReasoning(ctx, convID, role, parts, "", tokenCount)
+}
+
+// AddMessageWithPartsAndReasoning adds a message with structured parts and reasoning content.
+func (s *Store) AddMessageWithPartsAndReasoning(
+	ctx context.Context,
+	convID int64,
+	role string,
+	parts []MessagePart,
+	reasoningContent string,
+	tokenCount int,
+) (*Message, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
@@ -223,8 +246,8 @@ func (s *Store) AddMessageWithParts(
 	readableContent := partsToReadableContent(parts)
 
 	result, err := tx.ExecContext(ctx,
-		"INSERT INTO messages (conversation_id, role, content, token_count) VALUES (?, ?, ?, ?)",
-		convID, role, readableContent, tokenCount,
+		"INSERT INTO messages (conversation_id, role, content, reasoning_content, token_count) VALUES (?, ?, ?, ?, ?)",
+		convID, role, readableContent, reasoningContent, tokenCount,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("add message: %w", err)
@@ -256,11 +279,12 @@ func (s *Store) AddMessageWithParts(
 
 	// Return message with parts
 	msg := &Message{
-		ID:             msgID,
-		ConversationID: convID,
-		Role:           role,
-		TokenCount:     tokenCount,
-		Parts:          make([]MessagePart, len(parts)),
+		ID:               msgID,
+		ConversationID:   convID,
+		Role:             role,
+		ReasoningContent: reasoningContent,
+		TokenCount:       tokenCount,
+		Parts:            make([]MessagePart, len(parts)),
 	}
 	for i, p := range parts {
 		p.MessageID = msgID
@@ -271,7 +295,7 @@ func (s *Store) AddMessageWithParts(
 
 // GetMessages retrieves messages for a conversation.
 func (s *Store) GetMessages(ctx context.Context, convID int64, limit int, beforeID int64) ([]Message, error) {
-	query := "SELECT message_id, conversation_id, role, content, token_count, created_at FROM messages WHERE conversation_id = ?"
+	query := "SELECT message_id, conversation_id, role, content, reasoning_content, token_count, created_at FROM messages WHERE conversation_id = ?"
 	args := []any{convID}
 	if beforeID > 0 {
 		query += " AND message_id < ?"
@@ -298,6 +322,7 @@ func (s *Store) GetMessages(ctx context.Context, convID int64, limit int, before
 			&msg.ConversationID,
 			&msg.Role,
 			&msg.Content,
+			&msg.ReasoningContent,
 			&msg.TokenCount,
 			&createdAt,
 		); err != nil {
@@ -335,10 +360,11 @@ func (s *Store) GetMessageCount(ctx context.Context, convID int64) (int, error) 
 func (s *Store) GetMessageByID(ctx context.Context, messageID int64) (*Message, error) {
 	var msg Message
 	var createdAt string
-	err := s.db.QueryRowContext(ctx,
-		"SELECT message_id, conversation_id, role, content, token_count, created_at FROM messages WHERE message_id = ?",
+	err := s.db.QueryRowContext(
+		ctx,
+		"SELECT message_id, conversation_id, role, content, reasoning_content, token_count, created_at FROM messages WHERE message_id = ?",
 		messageID,
-	).Scan(&msg.ID, &msg.ConversationID, &msg.Role, &msg.Content, &msg.TokenCount, &createdAt)
+	).Scan(&msg.ID, &msg.ConversationID, &msg.Role, &msg.Content, &msg.ReasoningContent, &msg.TokenCount, &createdAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("message %d not found", messageID)
 	}
@@ -348,6 +374,28 @@ func (s *Store) GetMessageByID(ctx context.Context, messageID int64) (*Message, 
 	msg.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
 	msg.Parts, _ = s.loadMessageParts(ctx, msg.ID)
 	return &msg, nil
+}
+
+// UpdateMessageReasoningContent updates reasoning_content for an existing message.
+func (s *Store) UpdateMessageReasoningContent(ctx context.Context, messageID int64, reasoningContent string) error {
+	result, err := s.db.ExecContext(
+		ctx,
+		"UPDATE messages SET reasoning_content = ? WHERE message_id = ?",
+		reasoningContent,
+		messageID,
+	)
+	if err != nil {
+		return fmt.Errorf("update message reasoning_content: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update message reasoning_content rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("message %d not found", messageID)
+	}
+	return nil
 }
 
 func (s *Store) loadMessageParts(ctx context.Context, msgID int64) ([]MessagePart, error) {
@@ -534,7 +582,7 @@ func (s *Store) LinkSummaryToMessages(ctx context.Context, summaryID string, mes
 // GetSummarySourceMessages retrieves source messages for a summary.
 func (s *Store) GetSummarySourceMessages(ctx context.Context, summaryID string) ([]Message, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT m.message_id, m.conversation_id, m.role, m.content, m.token_count, m.created_at
+		`SELECT m.message_id, m.conversation_id, m.role, m.content, m.reasoning_content, m.token_count, m.created_at
 		 FROM summary_messages sm
 		 JOIN messages m ON m.message_id = sm.message_id
 		 WHERE sm.summary_id = ?
@@ -555,6 +603,7 @@ func (s *Store) GetSummarySourceMessages(ctx context.Context, summaryID string) 
 			&msg.ConversationID,
 			&msg.Role,
 			&msg.Content,
+			&msg.ReasoningContent,
 			&msg.TokenCount,
 			&createdAt,
 		); err != nil {

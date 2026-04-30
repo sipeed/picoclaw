@@ -65,7 +65,8 @@ Debug logs are server-side only. If you want the agent to send a visible notific
     "defaults": {
       "tool_feedback": {
         "enabled": true,
-        "max_args_length": 300
+        "max_args_length": 300,
+        "separate_messages": true
       }
     }
   }
@@ -85,6 +86,7 @@ When `enabled` is `true`, every tool call sends a short message to the chat befo
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | bool | `false` | Send a chat notification for each tool call |
+| `separate_messages` | bool | `false` | Keep every tool feedback update as a separate chat message instead of reusing a single placeholder/progress message |
 | `max_args_length` | int | `300` | Maximum characters of the serialised arguments included in the notification |
 
 ### Environment variables

@@ -43,11 +43,10 @@ func TestSecurityConfigIntegration(t *testing.T) {
 	t.Run("Full workflow with security references", func(t *testing.T) {
 		tmpDir := t.TempDir()
 
-		// Create config.json with direct security values (not ref: references)
-		// These values should take precedence over .security.yml
+		// Create config.json with direct security values using the current schema.
 		configPath := filepath.Join(tmpDir, "config.json")
 		configContent := `{
-  "version": 1,
+  "version": 2,
   "model_list": [
     {
       "model_name": "test-model",

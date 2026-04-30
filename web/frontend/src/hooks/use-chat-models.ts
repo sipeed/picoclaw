@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
 
 import { type ModelInfo, getModels, setDefaultModel } from "@/api/models"
+import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
+import { refreshGatewayState } from "@/store/gateway"
 
 interface UseChatModelsOptions {
   isConnected: boolean
@@ -18,6 +22,7 @@ function isLocalModel(model: ModelInfo): boolean {
 }
 
 export function useChatModels({ isConnected }: UseChatModelsOptions) {
+  const { t } = useTranslation()
   const [modelList, setModelList] = useState<ModelInfo[]>([])
   const [defaultModelName, setDefaultModelName] = useState("")
   const setDefaultRequestIdRef = useRef(0)
@@ -58,11 +63,19 @@ export function useChatModels({ isConnected }: UseChatModelsOptions) {
         if (data.models.some((m) => m.model_name === data.default_model)) {
           setDefaultModelName(data.default_model)
         }
+        const gateway = await refreshGatewayState({ force: true })
+        showSaveSuccessOrRestartToast(
+          t,
+          t("models.defaultChangeSuccess"),
+          modelName,
+          gateway?.restartRequired === true,
+        )
       } catch (err) {
         console.error("Failed to set default model:", err)
+        toast.error(err instanceof Error ? err.message : t("models.loadError"))
       }
     },
-    [defaultModelName],
+    [defaultModelName, t],
   )
 
   const hasAvailableModels = useMemo(

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import { type ModelInfo, setDefaultModel, updateModel } from "@/api/models"
+import { ConfigChangeNotice } from "@/components/config-change-notice"
 import { maskedSecretPlaceholder } from "@/components/secret-placeholder"
 import {
   AdvancedSection,
@@ -21,6 +22,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
+import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
+import { refreshGatewayState } from "@/store/gateway"
 
 interface EditForm {
   provider: string
@@ -44,6 +47,29 @@ interface EditModelSheetProps {
   open: boolean
   onClose: () => void
   onSaved: () => void
+}
+
+function buildInitialEditForm(model: ModelInfo): EditForm {
+  return {
+    provider: model.provider ?? "",
+    modelId: model.model,
+    apiKey: "",
+    apiBase: model.api_base ?? "",
+    proxy: model.proxy ?? "",
+    authMethod: model.auth_method ?? "",
+    connectMode: model.connect_mode ?? "",
+    workspace: model.workspace ?? "",
+    rpm: model.rpm ? String(model.rpm) : "",
+    maxTokensField: model.max_tokens_field ?? "",
+    requestTimeout: model.request_timeout ? String(model.request_timeout) : "",
+    thinkingLevel: model.thinking_level ?? "",
+    extraBody: model.extra_body
+      ? JSON.stringify(model.extra_body, null, 2)
+      : "",
+    customHeaders: model.custom_headers
+      ? JSON.stringify(model.custom_headers, null, 2)
+      : "",
+  }
 }
 
 export function EditModelSheet({
@@ -72,31 +98,15 @@ export function EditModelSheet({
   const [saving, setSaving] = useState(false)
   const [setAsDefault, setSetAsDefault] = useState(false)
   const [error, setError] = useState("")
+  const initialForm = model ? buildInitialEditForm(model) : null
+  const isDirty =
+    model != null &&
+    (JSON.stringify(form) !== JSON.stringify(initialForm) ||
+      setAsDefault !== model.is_default)
 
   useEffect(() => {
     if (model) {
-      setForm({
-        provider: model.provider ?? "",
-        modelId: model.model,
-        apiKey: "",
-        apiBase: model.api_base ?? "",
-        proxy: model.proxy ?? "",
-        authMethod: model.auth_method ?? "",
-        connectMode: model.connect_mode ?? "",
-        workspace: model.workspace ?? "",
-        rpm: model.rpm ? String(model.rpm) : "",
-        maxTokensField: model.max_tokens_field ?? "",
-        requestTimeout: model.request_timeout
-          ? String(model.request_timeout)
-          : "",
-        thinkingLevel: model.thinking_level ?? "",
-        extraBody: model.extra_body
-          ? JSON.stringify(model.extra_body, null, 2)
-          : "",
-        customHeaders: model.custom_headers
-          ? JSON.stringify(model.custom_headers, null, 2)
-          : "",
-      })
+      setForm(buildInitialEditForm(model))
       setSetAsDefault(model.is_default)
       setError("")
     }
@@ -142,6 +152,13 @@ export function EditModelSheet({
       if (setAsDefault && !model.is_default) {
         await setDefaultModel(model.model_name)
       }
+      const gateway = await refreshGatewayState({ force: true })
+      showSaveSuccessOrRestartToast(
+        t,
+        t("models.edit.saveSuccess"),
+        model.model_name,
+        gateway?.restartRequired === true,
+      )
       onSaved()
       onClose()
     } catch (e) {
@@ -359,10 +376,17 @@ export function EditModelSheet({
         </div>
 
         <SheetFooter className="border-t-muted border-t px-6 py-4">
+          {isDirty && (
+            <ConfigChangeNotice
+              kind="save"
+              title={t("common.saveChangesTitle")}
+              description={t("models.unsavedPrompt")}
+            />
+          )}
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             {t("common.cancel")}
           </Button>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button onClick={handleSave} disabled={!isDirty || saving}>
             {saving && <IconLoader2 className="size-4 animate-spin" />}
             {t("common.save")}
           </Button>
