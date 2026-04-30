@@ -141,7 +141,8 @@ func (c *SlackWebhookChannel) Send(ctx context.Context, msg bus.OutboundMessage)
 		logger.ErrorCF("slack_webhook", "Failed to send message", map[string]any{
 			"target": targetName,
 		})
-		return nil, fmt.Errorf("slack_webhook: send failed: %w", channels.ClassifyNetError(err))
+		// Don't expose raw error - it may contain webhook URL secrets
+		return nil, fmt.Errorf("slack_webhook: network error: %w", channels.ErrTemporary)
 	}
 	defer resp.Body.Close()
 
@@ -249,24 +250,27 @@ func splitText(text string, maxLen int) []string {
 func findSplitPoint(runes []rune, maxLen int, inFence bool) int {
 	window := string(runes[:maxLen])
 
+	// Try splitting on newline, but avoid splitting inside a fence
 	if idx := strings.LastIndex(window, "\n"); idx > 0 {
 		splitAt := len([]rune(window[:idx])) + 1
-		if !inFence || !endsInsideFence(string(runes[:splitAt]), inFence) {
+		chunk := string(runes[:splitAt])
+		if !endsInsideFence(chunk, inFence) {
 			return splitAt
 		}
 	}
 
+	// Try splitting on space, but only if we won't end up inside a fence
 	if idx := strings.LastIndex(window, " "); idx > 0 {
 		splitAt := len([]rune(window[:idx])) + 1
-		if !inFence {
+		chunk := string(runes[:splitAt])
+		if !endsInsideFence(chunk, inFence) {
 			return splitAt
 		}
 	}
 
-	if inFence {
-		if idx := strings.LastIndex(window, "```"); idx > 0 {
-			return len([]rune(window[:idx]))
-		}
+	// If we're in a fence or would split into one, try to split before the fence
+	if idx := strings.LastIndex(window, "```"); idx > 0 {
+		return len([]rune(window[:idx]))
 	}
 
 	return maxLen
