@@ -393,10 +393,8 @@ It also applies cooldown tracking per candidate to avoid immediately retrying a 
   ],
   "agents": {
     "defaults": {
-      "model": {
-        "primary": "qwen-main",
-        "fallbacks": ["deepseek-backup", "gemini-backup"]
-      }
+      "model_name": "qwen-main",
+      "model_fallbacks": ["deepseek-backup", "gemini-backup"]
     }
   }
 }
