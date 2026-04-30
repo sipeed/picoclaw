@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -50,7 +51,7 @@ func (p *Pipeline) Finalize(
 		ts.ingestMessage(turnCtx, al, finalMsg)
 		if err := ts.agent.Sessions.Save(ts.sessionKey); err != nil {
 			al.emitEvent(
-				EventKindError,
+				runtimeevents.KindAgentError,
 				ts.eventMeta("runTurn", "turn.error"),
 				ErrorPayload{
 					Stage:   "session_save",

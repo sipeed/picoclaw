@@ -16,6 +16,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
@@ -127,19 +128,47 @@ type ServerConnection struct {
 
 // Manager manages multiple MCP server connections
 type Manager struct {
-	servers map[string]*ServerConnection
-	mu      sync.RWMutex
-	closed  atomic.Bool    // changed from bool to atomic.Bool to avoid TOCTOU race
-	wg      sync.WaitGroup // tracks in-flight CallTool calls
+	servers       map[string]*ServerConnection
+	runtimeEvents runtimeevents.Bus
+	mu            sync.RWMutex
+	closed        atomic.Bool    // changed from bool to atomic.Bool to avoid TOCTOU race
+	wg            sync.WaitGroup // tracks in-flight CallTool calls
 }
 
 var connectServerFunc = connectServer
 
+// ManagerOption configures an MCP manager.
+type ManagerOption func(*Manager)
+
+// WithRuntimeEvents injects the runtime event bus used for MCP observations.
+func WithRuntimeEvents(eventBus runtimeevents.Bus) ManagerOption {
+	return func(m *Manager) {
+		m.runtimeEvents = eventBus
+	}
+}
+
+// ServerEventPayload describes MCP server connection events.
+type ServerEventPayload struct {
+	Server    string `json:"server"`
+	Type      string `json:"type,omitempty"`
+	URL       string `json:"url,omitempty"`
+	Command   string `json:"command,omitempty"`
+	Tool      string `json:"tool,omitempty"`
+	ToolCount int    `json:"tool_count,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
 // NewManager creates a new MCP manager
-func NewManager() *Manager {
-	return &Manager{
+func NewManager(opts ...ManagerOption) *Manager {
+	m := &Manager{
 		servers: make(map[string]*ServerConnection),
 	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(m)
+		}
+	}
+	return m
 }
 
 // LoadFromConfig loads MCP servers from configuration
@@ -264,8 +293,10 @@ func (m *Manager) ConnectServer(
 	name string,
 	cfg config.MCPServerConfig,
 ) error {
+	m.publishServerEvent(runtimeevents.KindMCPServerConnecting, name, cfg, 0, nil)
 	conn, err := connectServerFunc(ctx, name, cfg)
 	if err != nil {
+		m.publishServerEvent(runtimeevents.KindMCPServerFailed, name, cfg, 0, err)
 		return err
 	}
 
@@ -274,10 +305,19 @@ func (m *Manager) ConnectServer(
 
 	if m.closed.Load() {
 		_ = conn.Session.Close()
+		m.publishServerEvent(runtimeevents.KindMCPServerFailed, name, cfg, 0, fmt.Errorf("manager is closed"))
 		return fmt.Errorf("manager is closed")
 	}
 
 	m.servers[name] = conn
+	for _, tool := range conn.Tools {
+		toolName := ""
+		if tool != nil {
+			toolName = tool.Name
+		}
+		m.publishToolDiscovered(name, cfg, toolName)
+	}
+	m.publishServerEvent(runtimeevents.KindMCPServerConnected, name, cfg, len(conn.Tools), nil)
 	return nil
 }
 

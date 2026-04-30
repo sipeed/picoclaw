@@ -19,6 +19,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
@@ -5456,6 +5457,7 @@ func TestParallelMessageProcessing_SameSessionProcessedSequentially(t *testing.T
 	var mu sync.Mutex
 	turnIDs := make(map[string]bool)
 	var wg sync.WaitGroup
+	var firstResponse sync.Once
 	wg.Add(1) // Only 1 turn should be created for same session
 
 	cfg := &config.Config{
@@ -5478,19 +5480,27 @@ func TestParallelMessageProcessing_SameSessionProcessedSequentially(t *testing.T
 
 	al := NewAgentLoop(cfg, msgBus, &concurrentMockProvider{
 		responseFunc: func(callID int) string {
-			wg.Done()
+			firstResponse.Do(func() {
+				wg.Done()
+			})
 			return "ok"
 		},
 	})
 	defer al.Close()
 
-	sub := al.SubscribeEvents(64)
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		64,
+		runtimeevents.KindAgentTurnStart,
+	)
+	defer closeRuntimeEvents()
 
 	go func() {
-		for evt := range sub.C {
-			if evt.Kind == EventKindTurnStart {
+		for evt := range runtimeCh {
+			if evt.Kind == runtimeevents.KindAgentTurnStart {
 				mu.Lock()
-				turnIDs[evt.Meta.TurnID] = true
+				turnIDs[evt.Scope.TurnID] = true
 				mu.Unlock()
 			}
 		}

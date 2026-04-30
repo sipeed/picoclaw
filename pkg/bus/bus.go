@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
@@ -48,6 +49,13 @@ type MessageBus struct {
 	closed         atomic.Bool
 	wg             sync.WaitGroup
 	streamDelegate atomic.Value // stores StreamDelegate
+	eventPublisher atomic.Value // stores EventPublisher
+}
+
+// EventPublisher is the minimal runtime event publisher used by MessageBus.
+type EventPublisher interface {
+	Publish(ctx context.Context, evt runtimeevents.Event) runtimeevents.PublishResult
+	PublishNonBlocking(evt runtimeevents.Event) runtimeevents.PublishResult
 }
 
 func NewMessageBus() *MessageBus {
@@ -92,9 +100,14 @@ func publish[T any](ctx context.Context, mb *MessageBus, ch chan T, msg T) error
 func (mb *MessageBus) PublishInbound(ctx context.Context, msg InboundMessage) error {
 	msg = NormalizeInboundMessage(msg)
 	if msg.Context.isZero() {
+		mb.publishFailure("inbound", runtimeScopeFromInboundContext(msg.Context), ErrMissingInboundContext)
 		return ErrMissingInboundContext
 	}
-	return publish(ctx, mb, mb.inbound, msg)
+	if err := publish(ctx, mb, mb.inbound, msg); err != nil {
+		mb.publishFailure("inbound", runtimeScopeFromInboundContext(msg.Context), err)
+		return err
+	}
+	return nil
 }
 
 func (mb *MessageBus) InboundChan() <-chan InboundMessage {
@@ -104,9 +117,14 @@ func (mb *MessageBus) InboundChan() <-chan InboundMessage {
 func (mb *MessageBus) PublishOutbound(ctx context.Context, msg OutboundMessage) error {
 	msg = NormalizeOutboundMessage(msg)
 	if msg.Context.isZero() {
+		mb.publishFailure("outbound", runtimeScopeFromInboundContext(msg.Context), ErrMissingOutboundContext)
 		return ErrMissingOutboundContext
 	}
-	return publish(ctx, mb, mb.outbound, msg)
+	if err := publish(ctx, mb, mb.outbound, msg); err != nil {
+		mb.publishFailure("outbound", runtimeScopeFromInboundContext(msg.Context), err)
+		return err
+	}
+	return nil
 }
 
 func (mb *MessageBus) OutboundChan() <-chan OutboundMessage {
@@ -116,9 +134,14 @@ func (mb *MessageBus) OutboundChan() <-chan OutboundMessage {
 func (mb *MessageBus) PublishOutboundMedia(ctx context.Context, msg OutboundMediaMessage) error {
 	msg = NormalizeOutboundMediaMessage(msg)
 	if msg.Context.isZero() {
+		mb.publishFailure("outbound_media", runtimeScopeFromInboundContext(msg.Context), ErrMissingOutboundMediaContext)
 		return ErrMissingOutboundMediaContext
 	}
-	return publish(ctx, mb, mb.outboundMedia, msg)
+	if err := publish(ctx, mb, mb.outboundMedia, msg); err != nil {
+		mb.publishFailure("outbound_media", runtimeScopeFromInboundContext(msg.Context), err)
+		return err
+	}
+	return nil
 }
 
 func (mb *MessageBus) OutboundMediaChan() <-chan OutboundMediaMessage {
@@ -126,7 +149,11 @@ func (mb *MessageBus) OutboundMediaChan() <-chan OutboundMediaMessage {
 }
 
 func (mb *MessageBus) PublishAudioChunk(ctx context.Context, chunk AudioChunk) error {
-	return publish(ctx, mb, mb.audioChunks, chunk)
+	if err := publish(ctx, mb, mb.audioChunks, chunk); err != nil {
+		mb.publishFailure("audio_chunk", runtimeScopeFromAudioChunk(chunk), err)
+		return err
+	}
+	return nil
 }
 
 func (mb *MessageBus) AudioChunksChan() <-chan AudioChunk {
@@ -134,7 +161,11 @@ func (mb *MessageBus) AudioChunksChan() <-chan AudioChunk {
 }
 
 func (mb *MessageBus) PublishVoiceControl(ctx context.Context, ctrl VoiceControl) error {
-	return publish(ctx, mb, mb.voiceControls, ctrl)
+	if err := publish(ctx, mb, mb.voiceControls, ctrl); err != nil {
+		mb.publishFailure("voice_control", runtimeScopeFromVoiceControl(ctrl), err)
+		return err
+	}
+	return nil
 }
 
 func (mb *MessageBus) VoiceControlsChan() <-chan VoiceControl {
@@ -144,6 +175,11 @@ func (mb *MessageBus) VoiceControlsChan() <-chan VoiceControl {
 // SetStreamDelegate registers a StreamDelegate (typically the channel Manager).
 func (mb *MessageBus) SetStreamDelegate(d StreamDelegate) {
 	mb.streamDelegate.Store(d)
+}
+
+// SetEventPublisher registers a runtime event publisher for bus errors and lifecycle events.
+func (mb *MessageBus) SetEventPublisher(p EventPublisher) {
+	mb.eventPublisher.Store(p)
 }
 
 // GetStreamer returns a Streamer for the given channel+chatID via the delegate.
@@ -156,6 +192,7 @@ func (mb *MessageBus) GetStreamer(ctx context.Context, channel, chatID string) (
 
 func (mb *MessageBus) Close() {
 	mb.closeOnce.Do(func() {
+		mb.publishCloseEvent(runtimeevents.KindBusCloseStarted, 0)
 		// notify all blocked publishers to exit
 		close(mb.done)
 
@@ -195,6 +232,8 @@ func (mb *MessageBus) Close() {
 			logger.DebugCF("bus", "Drained buffered messages during close", map[string]any{
 				"count": drained,
 			})
+			mb.publishCloseEvent(runtimeevents.KindBusCloseDrained, drained)
 		}
+		mb.publishCloseEvent(runtimeevents.KindBusCloseCompleted, drained)
 	})
 }

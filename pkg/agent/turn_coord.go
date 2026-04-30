@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
@@ -28,7 +29,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 	turnStatus := TurnEndStatusCompleted
 	defer func() {
 		al.emitEvent(
-			EventKindTurnEnd,
+			runtimeevents.KindAgentTurnEnd,
 			ts.eventMeta("runTurn", "turn.end"),
 			TurnEndPayload{
 				Status:          turnStatus,
@@ -40,7 +41,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 	}()
 
 	al.emitEvent(
-		EventKindTurnStart,
+		runtimeevents.KindAgentTurnStart,
 		ts.eventMeta("runTurn", "turn.start"),
 		TurnStartPayload{
 			UserMessage: ts.userMessage,
@@ -140,7 +141,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 					})
 			}
 			al.emitEvent(
-				EventKindSteeringInjected,
+				runtimeevents.KindAgentSteeringInjected,
 				ts.eventMeta("runTurn", "turn.steering.injected"),
 				SteeringInjectedPayload{
 					Count:           len(pendingMessages),
@@ -249,7 +250,7 @@ func (al *AgentLoop) abortTurn(ts *turnState) (turnResult, error) {
 	if !ts.opts.NoHistory {
 		if err := ts.restoreSession(ts.agent); err != nil {
 			al.emitEvent(
-				EventKindError,
+				runtimeevents.KindAgentError,
 				ts.eventMeta("abortTurn", "turn.error"),
 				ErrorPayload{
 					Stage:   "session_restore",
@@ -414,7 +415,7 @@ func (al *AgentLoop) askSideQuestion(
 	llmModel := activeModel
 	if al.hooks != nil {
 		llmReq, decision := al.hooks.BeforeLLM(ctx, &LLMHookRequest{
-			Meta: EventMeta{
+			Meta: HookMeta{
 				Source:      "askSideQuestion",
 				TracePath:   "turn.llm.request",
 				turnContext: cloneTurnContext(turnCtx),
@@ -494,8 +495,8 @@ func (al *AgentLoop) askSideQuestion(
 	resp, err = callSideLLM(messages)
 	if err != nil && hasMediaRefs(messages) && isVisionUnsupportedError(err) {
 		al.emitEvent(
-			EventKindLLMRetry,
-			EventMeta{
+			runtimeevents.KindAgentLLMRetry,
+			HookMeta{
 				Source:      "askSideQuestion",
 				TracePath:   "turn.llm.retry",
 				turnContext: cloneTurnContext(turnCtx),
@@ -521,7 +522,7 @@ func (al *AgentLoop) askSideQuestion(
 	// Apply after_llm hooks
 	if al.hooks != nil {
 		llmResp, decision := al.hooks.AfterLLM(ctx, &LLMHookResponse{
-			Meta: EventMeta{
+			Meta: HookMeta{
 				Source:      "askSideQuestion",
 				TracePath:   "turn.llm.response",
 				turnContext: cloneTurnContext(turnCtx),

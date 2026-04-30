@@ -97,7 +97,7 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
 	}
 
 	al.mcp.initOnce.Do(func() {
-		mcpManager := mcp.NewManager()
+		mcpManager := mcp.NewManager(mcp.WithRuntimeEvents(al.runtimeEvents))
 
 		defaultAgent := al.registry.GetDefaultAgent()
 		workspacePath := al.cfg.WorkspacePath()
@@ -164,6 +164,7 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
 					mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
 					mcpTool.SetWorkspace(agent.Workspace)
 					mcpTool.SetMaxInlineTextRunes(al.cfg.Tools.MCP.GetMaxInlineTextChars())
+					mcpTool.SetEventPublisher(al.runtimeEvents)
 
 					if registerAsHidden {
 						agent.Tools.RegisterHidden(mcpTool)
