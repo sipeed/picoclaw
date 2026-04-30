@@ -122,36 +122,91 @@ func renderTable(tableStr string) string {
 		return "```\n" + tableStr + "\n```"
 	}
 
-	// Check if any row exceeds max width
-	for _, line := range lines {
-		if len(line) > maxTableRowWidth {
-			return "```\n" + tableStr + "\n```"
-		}
-	}
-
-	// Render as formatted text with bold headers
-	var result strings.Builder
+	// Parse all rows to get column widths
+	var allRows [][]string
 	for i, line := range lines {
 		if i == 1 && isSeparatorRow(line) {
 			continue
 		}
 		cells := parseTableRow(line)
-		if len(cells) == 0 {
-			continue
+		if len(cells) > 0 {
+			allRows = append(allRows, cells)
 		}
-		if i == 0 {
-			// Header row - bold each cell
-			var boldCells []string
-			for _, cell := range cells {
-				boldCells = append(boldCells, "*"+strings.TrimSpace(cell)+"*")
-			}
-			result.WriteString(strings.Join(boldCells, " | "))
-		} else {
-			result.WriteString(strings.Join(cells, " | "))
-		}
-		result.WriteString("\n")
 	}
-	return strings.TrimSuffix(result.String(), "\n")
+
+	if len(allRows) == 0 {
+		return "```\n" + tableStr + "\n```"
+	}
+
+	// Calculate max width for each column
+	colWidths := make([]int, len(allRows[0]))
+	for _, row := range allRows {
+		for i, cell := range row {
+			if i < len(colWidths) && len(cell) > colWidths[i] {
+				colWidths[i] = len(cell)
+			}
+		}
+	}
+
+	// Check if table is narrow enough for mrkdwn format
+	totalWidth := 0
+	for _, w := range colWidths {
+		totalWidth += w + 3 // " | " separator
+	}
+	if totalWidth <= maxTableRowWidth {
+		// Render as formatted text with bold headers
+		var result strings.Builder
+		for i, row := range allRows {
+			if i == 0 {
+				var boldCells []string
+				for _, cell := range row {
+					boldCells = append(boldCells, "*"+cell+"*")
+				}
+				result.WriteString(strings.Join(boldCells, " | "))
+			} else {
+				result.WriteString(strings.Join(row, " | "))
+			}
+			result.WriteString("\n")
+		}
+		return strings.TrimSuffix(result.String(), "\n")
+	}
+
+	// Render as aligned code block
+	var result strings.Builder
+	result.WriteString("```\n")
+	for i, row := range allRows {
+		var paddedCells []string
+		for j, cell := range row {
+			if j < len(colWidths) {
+				paddedCells = append(paddedCells, padRight(cell, colWidths[j]))
+			} else {
+				paddedCells = append(paddedCells, cell)
+			}
+		}
+		result.WriteString("| ")
+		result.WriteString(strings.Join(paddedCells, " | "))
+		result.WriteString(" |\n")
+
+		// Add separator after header
+		if i == 0 {
+			var sepParts []string
+			for _, w := range colWidths {
+				sepParts = append(sepParts, strings.Repeat("-", w))
+			}
+			result.WriteString("|-")
+			result.WriteString(strings.Join(sepParts, "-|-"))
+			result.WriteString("-|\n")
+		}
+	}
+	result.WriteString("```")
+	return result.String()
+}
+
+func padRight(s string, width int) string {
+	if len(s) >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-len(s))
 }
 
 func isSeparatorRow(line string) bool {

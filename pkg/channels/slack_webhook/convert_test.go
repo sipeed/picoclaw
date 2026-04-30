@@ -1,6 +1,7 @@
 package slackwebhook
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -154,4 +155,33 @@ func TestRenderTable(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRenderTable_Alignment(t *testing.T) {
+	input := "| Name | Status | Count |\n|---|---|---|\n| foo | OK | 1 |\n| barbaz | PENDING | 123 |"
+	result := renderTable(input)
+
+	// Should be mrkdwn (narrow table)
+	assert.NotContains(t, result, "```")
+	assert.Contains(t, result, "*Name*")
+
+	// Test wide table alignment
+	wideInput := "| This is a very long column header | Another extremely long column header here |\n|---|---|\n| Short | Longer value here |"
+	wideResult := renderTable(wideInput)
+
+	assert.Contains(t, wideResult, "```")
+	// Check that columns are padded - header and value should have same column width
+	lines := strings.Split(wideResult, "\n")
+	// Find the header line and a data line
+	var headerLine, dataLine string
+	for _, line := range lines {
+		if strings.Contains(line, "This is a very long") {
+			headerLine = line
+		}
+		if strings.Contains(line, "Short") {
+			dataLine = line
+		}
+	}
+	// Both lines should have same length (aligned columns)
+	assert.Equal(t, len(headerLine), len(dataLine), "columns should be aligned")
 }
