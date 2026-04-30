@@ -469,6 +469,41 @@ default (deferred). `aws` explicitly opts in to deferred mode even though it is 
 > `discovery.enabled: false` globally (all tools visible by default) and still mark individual
 > high-volume servers as `"deferred": true` to avoid polluting the context with their tools.
 
+#### 5) Engram — Persistent Memory for AI Agents
+
+[Engram](https://github.com/Gentleman-Programming/engram) provides persistent, searchable memory across conversations via MCP. It stores observations in SQLite with FTS5 full-text search — ideal for turning PicoClaw into a personal advisor that remembers.
+
+**Install:**
+```bash
+# macOS/Linux
+brew install gentleman-programming/tap/engram
+
+# Or build from source (pure Go, no CGO required)
+go install github.com/Gentleman-Programming/engram/cmd/engram@latest
+```
+
+**Configure in `config.json`:**
+```json
+{
+  "tools": {
+    "mcp": {
+      "enabled": true,
+      "servers": {
+        "engram": {
+          "enabled": true,
+          "command": "engram",
+          "args": ["mcp", "--tools=agent", "--project=<your-project>"]
+        }
+      }
+    }
+  }
+}
+```
+
+Replace `<your-project>` with a name that identifies your agent or environment.
+
+This gives your agent memory tools such as `mem_save`, `mem_search`, `mem_context`, and `mem_session_summary`. See the [Engram documentation](https://github.com/Gentleman-Programming/engram) for the full tool reference.
+
 ## Skills Tool
 
 The skills tool configures skill discovery and installation via registries like ClawHub and GitHub.
