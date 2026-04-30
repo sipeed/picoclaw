@@ -1,0 +1,69 @@
+# ─────────────────────────────────────────────
+# PicoClaw Agent and PicoClaw Gateway should not be run together
+# ─────────────────────────────────────────────
+services:
+  # ─────────────────────────────────────────────
+  # PicoClaw Agent (one-shot query)
+  #   docker compose -f docker/docker-compose.local.yml --profile agent run --rm picoclaw-agent -m "Hello"
+  #   podman compose -f docker/docker-compose.local.yml --profile agent run --rm picoclaw-agent -m "Hello"
+  # ─────────────────────────────────────────────
+  picoclaw-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    # Uncomment for manual image builds
+    # Necessary when Podman requires SELinux to be disabled during the build stage
+    #image: picoclaw-agent
+    userns_mode: "keep-id"
+    user: "${UID:-1000}:${GID:-1000}"
+    container_name: picoclaw-agent
+    # Default: SELinux disabled for testing. In production, remove 'label=disable'
+    # and implement a seccomp profile for better security.
+    security_opt:
+      - label=disable
+    profiles:
+      - agent
+    # Uncomment to access host network; leave commented unless needed.
+    #extra_hosts:
+    #  - "host.docker.internal:host-gateway"
+    environment:
+      - PICOCLAW_HOME=/home/picoclaw/.picoclaw
+    # Uncomment for Podman pod health check compatibility
+    #  - PICOCLAW_GATEWAY_HOST=0.0.0.0
+    volumes:
+      - ./data:/home/picoclaw/.picoclaw:Z
+    entrypoint: ["picoclaw", "agent"]
+    stdin_open: true
+    tty: true
+
+  # ─────────────────────────────────────────────
+  # PicoClaw Gateway (Long-running Bot)
+  #   docker compose -f docker/docker-compose.local.yml --profile gateway up -d
+  #   podman compose -f docker/docker-compose.local.yml --profile gateway up -d
+  # ─────────────────────────────────────────────
+  picoclaw-gateway:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    # Uncomment for manual image builds
+    # Necessary when Podman requires SELinux to be disabled during the build stage
+    #image: picoclaw-gateway
+    userns_mode: "keep-id"
+    user: "${UID:-1000}:${GID:-1000}"
+    # Default: SELinux disabled for testing. In production, remove 'label=disable'
+    # and implement a seccomp profile for better security.
+    security_opt:
+      - label=disable
+    container_name: picoclaw-gateway
+    restart: unless-stopped
+    profiles:
+      - gateway
+    # Uncomment to access host network; leave commented unless needed.
+    #extra_hosts:
+    #  - "host.docker.internal:host-gateway"
+    environment:
+      - PICOCLAW_HOME=/home/picoclaw/.picoclaw
+    # Uncomment for Podman pod health check compatibility
+    #  - PICOCLAW_GATEWAY_HOST=0.0.0.0
+    volumes:
+      - ./data:/home/picoclaw/.picoclaw:Z
