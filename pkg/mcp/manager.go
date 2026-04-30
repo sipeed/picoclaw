@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -341,14 +342,18 @@ func connectServer(
 			DisableStandaloneSSE: disableStandaloneSSE,
 		}
 
+		// Set up HTTP client with a connection timeout to avoid hanging
+		// indefinitely when the MCP server is unreachable.
+		mcpHTTPClient := &http.Client{
+			Timeout: 30 * time.Second,
+		}
+
 		// Add custom headers if provided
 		if len(cfg.Headers) > 0 {
 			// Create a custom HTTP client with header-injecting transport
-			sseTransport.HTTPClient = &http.Client{
-				Transport: &headerTransport{
-					base:    http.DefaultTransport,
-					headers: cfg.Headers,
-				},
+			mcpHTTPClient.Transport = &headerTransport{
+				base:    http.DefaultTransport,
+				headers: cfg.Headers,
 			}
 			logger.DebugCF("mcp", "Added custom HTTP headers",
 				map[string]any{
@@ -356,6 +361,8 @@ func connectServer(
 					"header_count": len(cfg.Headers),
 				})
 		}
+
+		sseTransport.HTTPClient = mcpHTTPClient
 
 		transport = sseTransport
 	case "stdio":

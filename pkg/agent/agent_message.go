@@ -48,7 +48,8 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 		return "", err
 	}
 	if err := al.ensureMCPInitialized(ctx); err != nil {
-		return "", err
+		logger.WarnCF("agent", "MCP initialization failed, processing without MCP tools",
+			map[string]any{"error": err.Error()})
 	}
 
 	msg := bus.InboundMessage{
@@ -73,7 +74,8 @@ func (al *AgentLoop) ProcessHeartbeat(
 		return "", err
 	}
 	if err := al.ensureMCPInitialized(ctx); err != nil {
-		return "", err
+		logger.WarnCF("agent", "MCP initialization failed, processing heartbeat without MCP tools",
+			map[string]any{"error": err.Error()})
 	}
 
 	agent := al.GetRegistry().GetDefaultAgent()
