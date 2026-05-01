@@ -112,6 +112,17 @@ var (
 		substr("messages.1.content.1.tool_use.id"),
 		substr("invalid request format"),
 	}
+	// modelNotFoundPatterns detects errors indicating the model is unavailable at
+	// the provider, which should trigger fallback to the next candidate.
+	modelNotFoundPatterns = []errorPattern{
+		substr("no endpoints found"),
+		substr("model not found"),
+		substr("does not exist"),
+		rxp(`model .* not available`),
+		substr("model_not_found"),
+		rxp(`\b404\b`),
+	}
+
 	contextOverflowPatterns = []errorPattern{
 		rxp(`context[_ ]?length[_ ]?exceeded`),
 		rxp(`context[_ ]?window[_ ]?exceeded`),
@@ -128,6 +139,18 @@ var (
 
 	imageSizePatterns = []errorPattern{
 		rxp(`image exceeds.*mb`),
+	}
+
+	// contextWindowPatterns detects context window / token limit exhaustion errors.
+	contextWindowPatterns = []errorPattern{
+		rxp(`context.*(window|length).*exceed`),
+		rxp(`max.*token.*(limit|exceed)`),
+		rxp(`total tokens.*exceed`),
+		substr("context_length_exceeded"),
+		substr("maximum context length"),
+		rxp(`invalidparameter.*token`),
+		rxp(`tokens?.*exceed`),
+		rxp(`exceeds? the (model|max).*token`),
 	}
 
 	// Transient HTTP status codes that map to timeout (server-side failures).
@@ -257,6 +280,8 @@ func classifyByStatus(status int) FailoverReason {
 		return FailoverRateLimit
 	case status == 400:
 		return FailoverFormat
+	case status == 404:
+		return FailoverModelNotFound
 	case transientStatusCodes[status]:
 		return FailoverTimeout
 	}
@@ -290,6 +315,9 @@ func classifyByMessage(msg string) FailoverReason {
 	if matchesAny(msg, contextOverflowPatterns) {
 		return FailoverContextOverflow
 	}
+	if matchesAny(msg, modelNotFoundPatterns) {
+		return FailoverModelNotFound
+	}
 	return ""
 }
 
@@ -312,6 +340,17 @@ func IsImageDimensionError(msg string) bool {
 // IsImageSizeError returns true if the message indicates an image file size error.
 func IsImageSizeError(msg string) bool {
 	return matchesAny(msg, imageSizePatterns)
+}
+
+// IsContextWindowError returns true if the error indicates a context window / token limit
+// exhaustion. Uses targeted regex/substring patterns to reduce false positives
+// (e.g. "invalidparameter" is scoped to token-related errors only).
+func IsContextWindowError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return matchesAny(msg, contextWindowPatterns)
 }
 
 // matchesAny checks if msg matches any of the patterns.

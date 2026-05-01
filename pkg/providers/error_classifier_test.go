@@ -425,6 +425,7 @@ func TestFailoverError_IsRetriable(t *testing.T) {
 		{FailoverNetwork, true},
 		{FailoverTimeout, true},
 		{FailoverOverloaded, true},
+		{FailoverModelNotFound, true},
 		{FailoverFormat, false},
 		{FailoverContextOverflow, false},
 		{FailoverUnknown, true},
@@ -496,5 +497,77 @@ func TestIsImageSizeError(t *testing.T) {
 	}
 	if IsImageSizeError("normal error message") {
 		t.Error("should not match normal error")
+	}
+}
+
+func TestIsContextWindowError(t *testing.T) {
+	// Should match token-related errors
+	positives := []string{
+		"context window length exceeded",
+		"maximum context length is 128000 tokens",
+		"context_length_exceeded",
+		"max token limit reached",
+		"total tokens exceeded model limit",
+		"tokens exceeded the maximum",
+		"exceeds the model token limit",
+		"invalidparameter: max_tokens exceeded",
+	}
+	for _, msg := range positives {
+		if !IsContextWindowError(errors.New(msg)) {
+			t.Errorf("expected true for %q", msg)
+		}
+	}
+
+	// Should NOT match non-token errors (false positive regression test)
+	negatives := []string{
+		"invalidparameter: temperature must be between 0 and 2",
+		"invalidparameter: model not found",
+		"invalid authentication token",
+		"normal error message",
+	}
+	for _, msg := range negatives {
+		if IsContextWindowError(errors.New(msg)) {
+			t.Errorf("expected false for %q (false positive)", msg)
+		}
+	}
+
+	// Nil error
+	if IsContextWindowError(nil) {
+		t.Error("expected false for nil error")
+	}
+}
+
+func TestClassifyError_ModelNotFound(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{
+			"openrouter 404 no endpoints",
+			fmt.Errorf("API request failed:\n  Status: 404\n  Body:   {\"error\":{\"message\":\"No endpoints found for qwen3.6-plus-preview:free.\",\"code\":404}}"),
+		},
+		{
+			"model not found",
+			errors.New("model not found: gpt-99"),
+		},
+		{
+			"does not exist",
+			errors.New("The model `gpt-99` does not exist"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ClassifyError(tt.err, "openrouter", "test-model")
+			if result == nil {
+				t.Fatal("expected non-nil classification for model-not-found error")
+			}
+			if result.Reason != FailoverModelNotFound {
+				t.Errorf("reason = %q, want %q", result.Reason, FailoverModelNotFound)
+			}
+			if !result.IsRetriable() {
+				t.Error("model_not_found should be retriable (trigger fallback)")
+			}
+		})
 	}
 }

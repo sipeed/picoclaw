@@ -574,6 +574,45 @@ type ModelConfig struct {
 	isVirtual bool
 }
 
+// UnmarshalJSON implements custom JSON unmarshaling for ModelConfig to handle
+// both "api_key" (singular string, legacy) and "api_keys" (array, current).
+func (c *ModelConfig) UnmarshalJSON(data []byte) error {
+	// Use an alias to prevent infinite recursion.
+	type Alias ModelConfig
+
+	// Auxiliary struct captures the legacy singular "api_key" field.
+	aux := &struct {
+		*Alias
+		APIKeySingular json.RawMessage `json:"api_key,omitempty"`
+	}{
+		Alias: (*Alias)(c),
+	}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	// If "api_key" was provided, merge it into APIKeys.
+	if len(aux.APIKeySingular) > 0 && string(aux.APIKeySingular) != "null" {
+		var single string
+		if err := json.Unmarshal(aux.APIKeySingular, &single); err == nil && strings.TrimSpace(single) != "" {
+			// Prepend the singular key; avoid duplicates.
+			found := false
+			for _, k := range c.APIKeys {
+				if k.String() == single {
+					found = true
+					break
+				}
+			}
+			if !found {
+				c.APIKeys = append(SecureStrings{NewSecureString(single)}, c.APIKeys...)
+			}
+		}
+	}
+
+	return nil
+}
+
 // APIKey returns the first API key from apiKeys
 func (c *ModelConfig) APIKey() string {
 	if len(c.APIKeys) > 0 {
@@ -1416,12 +1455,38 @@ func (c *Config) GetModelConfig(modelName string) (*ModelConfig, error) {
 	return matches[idx], nil
 }
 
-// findMatches finds all ModelConfig entries with the given model_name.
+// findMatches finds all ModelConfig entries matching the given name.
+// It matches on ModelName first; if no matches are found, it falls back to
+// matching on the full Model field (e.g., "openai/gpt-4o") or the bare model
+// ID after the protocol prefix (e.g., "gpt-4o").
 func (c *Config) findMatches(modelName string) []*ModelConfig {
+	// Primary: match on ModelName (the user-facing alias).
 	var matches []*ModelConfig
 	for i := range c.ModelList {
 		if c.ModelList[i].ModelName == modelName {
 			matches = append(matches, c.ModelList[i])
+		}
+	}
+	if len(matches) > 0 {
+		return matches
+	}
+
+	// Fallback: match on the Model field (protocol/model-id) or bare model ID.
+	for i := range c.ModelList {
+		mc := c.ModelList[i]
+		model := strings.TrimSpace(mc.Model)
+		if model == "" {
+			continue
+		}
+		if model == modelName {
+			matches = append(matches, mc)
+			continue
+		}
+		// Extract bare model ID: everything after the first "/".
+		if idx := strings.Index(model, "/"); idx >= 0 {
+			if model[idx+1:] == modelName {
+				matches = append(matches, mc)
+			}
 		}
 	}
 	return matches

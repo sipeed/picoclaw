@@ -30,6 +30,33 @@ func TestGetModelConfig_Found(t *testing.T) {
 	}
 }
 
+func TestGetModelConfig_ByModelID(t *testing.T) {
+	cfg := &Config{
+		Version: CurrentVersion,
+		ModelList: []*ModelConfig{
+			{ModelName: "my-alias", Model: "openai/gpt-4o", APIKeys: SimpleSecureStrings("key1"), ThinkingLevel: "high"},
+		},
+	}
+
+	// Lookup by full model ID should work when model_name doesn't match.
+	result, err := cfg.GetModelConfig("openai/gpt-4o")
+	if err != nil {
+		t.Fatalf("GetModelConfig(full model) error = %v", err)
+	}
+	if result.ThinkingLevel != "high" {
+		t.Errorf("ThinkingLevel = %q, want %q", result.ThinkingLevel, "high")
+	}
+
+	// Lookup by bare model ID (without protocol prefix).
+	result, err = cfg.GetModelConfig("gpt-4o")
+	if err != nil {
+		t.Fatalf("GetModelConfig(bare model ID) error = %v", err)
+	}
+	if result.ModelName != "my-alias" {
+		t.Errorf("ModelName = %q, want %q", result.ModelName, "my-alias")
+	}
+}
+
 func TestGetModelConfig_NotFound(t *testing.T) {
 	cfg := &Config{
 		ModelList: []*ModelConfig{
@@ -293,5 +320,88 @@ func TestModelConfig_RequestTimeoutDefaultZeroValue(t *testing.T) {
 
 	if cfg.RequestTimeout != 0 {
 		t.Fatalf("RequestTimeout = %d, want 0", cfg.RequestTimeout)
+	}
+}
+
+func TestModelConfig_APIKeySingular(t *testing.T) {
+	// Regression test: "api_key" (singular string) must be accepted
+	// and populate APIKeys, so the Authorization header is set.
+	jsonData := `{
+		"model_name": "openrouter-test",
+		"model": "openrouter/qwen/qwen3.6-plus:free",
+		"api_base": "https://openrouter.ai/api/v1",
+		"api_key": "sk-or-v1-test"
+	}`
+
+	var cfg ModelConfig
+	if err := json.Unmarshal([]byte(jsonData), &cfg); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if cfg.APIKey() != "sk-or-v1-test" {
+		t.Fatalf("APIKey() = %q, want %q", cfg.APIKey(), "sk-or-v1-test")
+	}
+}
+
+func TestModelConfig_APIKeysPlural(t *testing.T) {
+	// "api_keys" (plural array) must still work.
+	jsonData := `{
+		"model_name": "multi-key",
+		"model": "openai/gpt-4o",
+		"api_keys": ["key-a", "key-b"]
+	}`
+
+	var cfg ModelConfig
+	if err := json.Unmarshal([]byte(jsonData), &cfg); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if cfg.APIKey() != "key-a" {
+		t.Fatalf("APIKey() = %q, want %q", cfg.APIKey(), "key-a")
+	}
+	if len(cfg.APIKeys) != 2 {
+		t.Fatalf("len(APIKeys) = %d, want 2", len(cfg.APIKeys))
+	}
+}
+
+func TestModelConfig_APIKeyBothForms(t *testing.T) {
+	// When both "api_key" and "api_keys" are provided, the singular key
+	// should be prepended (if not already present in the array).
+	jsonData := `{
+		"model_name": "both",
+		"model": "openai/gpt-4o",
+		"api_key": "key-singular",
+		"api_keys": ["key-plural"]
+	}`
+
+	var cfg ModelConfig
+	if err := json.Unmarshal([]byte(jsonData), &cfg); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if cfg.APIKey() != "key-singular" {
+		t.Fatalf("APIKey() = %q, want %q", cfg.APIKey(), "key-singular")
+	}
+	if len(cfg.APIKeys) != 2 {
+		t.Fatalf("len(APIKeys) = %d, want 2", len(cfg.APIKeys))
+	}
+}
+
+func TestModelConfig_APIKeyDuplicate(t *testing.T) {
+	// If api_key is already in api_keys, don't duplicate it.
+	jsonData := `{
+		"model_name": "dup",
+		"model": "openai/gpt-4o",
+		"api_key": "same-key",
+		"api_keys": ["same-key"]
+	}`
+
+	var cfg ModelConfig
+	if err := json.Unmarshal([]byte(jsonData), &cfg); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if len(cfg.APIKeys) != 1 {
+		t.Fatalf("len(APIKeys) = %d, want 1 (deduped)", len(cfg.APIKeys))
 	}
 }
