@@ -2,35 +2,6 @@
 
 > Back to [README](../README.md)
 
-### Providers
-
-> [!NOTE]
-> Voice transcription can use a configured multimodal model via `voice.model_name`. Groq Whisper remains available as a fallback when no voice model is configured.
-
-| Provider     | Purpose                                 | Get API Key                                                  |
-| ------------ | --------------------------------------- | ------------------------------------------------------------ |
-| `gemini`     | LLM (Gemini direct)                     | [aistudio.google.com](https://aistudio.google.com)           |
-| `zhipu`      | LLM (Zhipu direct)                      | [bigmodel.cn](https://bigmodel.cn)                           |
-| `zai-coding` | LLM (Z.AI Coding Plan)                | [z.ai](https://z.ai/manage-apikey/apikey-list)           |
-| `volcengine` | LLM(Volcengine direct)                  | [volcengine.com](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw)                 |
-| `openrouter` | LLM (recommended, access to all models) | [openrouter.ai](https://openrouter.ai)                       |
-| `anthropic`  | LLM (Claude direct)                     | [console.anthropic.com](https://console.anthropic.com)       |
-| `openai`     | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)           |
-| `venice`     | LLM (Venice AI direct)                  | [venice.ai](https://venice.ai)                               |
-| `deepseek`   | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com)       |
-| `qwen`       | LLM (Qwen direct)                       | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
-| `groq`       | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)                 |
-| `cerebras`   | LLM (Cerebras direct)                   | [cerebras.ai](https://cerebras.ai)                           |
-| `vivgrid`    | LLM (Vivgrid direct)                    | [vivgrid.com](https://vivgrid.com)                           |
-| `nvidia`     | LLM (NVIDIA NIM)                        | [build.nvidia.com](https://build.nvidia.com)                 |
-| `moonshot`   | LLM (Kimi/Moonshot direct)              | [platform.moonshot.cn](https://platform.moonshot.cn)         |
-| `minimax`    | LLM (Minimax direct)                    | [platform.minimaxi.com](https://platform.minimaxi.com)      |
-| `avian`      | LLM (Avian direct)                      | [avian.io](https://avian.io)                                 |
-| `mistral`    | LLM (Mistral direct)                    | [console.mistral.ai](https://console.mistral.ai)            |
-| `longcat`    | LLM (Longcat direct)                    | [longcat.ai](https://longcat.ai)                             |
-| `modelscope` | LLM (ModelScope direct)                 | [modelscope.cn](https://modelscope.cn)                       |
-| `mimo`       | LLM (Xiaomi MiMo direct)                | [platform.xiaomimimo.com](https://platform.xiaomimimo.com)   |
-
 ### Model Configuration (model_list)
 
 > **What's New?** PicoClaw now prefers explicit `provider` + native `model` configuration (for example `"provider": "zhipu", "model": "glm-4.7"`). The legacy single-field `provider/model` form remains supported for compatibility when `provider` is omitted.
@@ -44,37 +15,43 @@ This design also enables **multi-agent support** with flexible provider selectio
 - **Load balancing**: Distribute requests across multiple endpoints
 - **Centralized configuration**: Manage all providers in one place
 
+> [!NOTE]
+> Voice transcription can use a configured multimodal model via `voice.model_name`. Groq Whisper remains available as a fallback when no voice model is configured.
+
 #### 📋 All Supported Vendors
 
-| Vendor              | `provider` Value  | Default API Base                                    | Protocol  | API Key                                                          |
-| ------------------- | ----------------- |-----------------------------------------------------| --------- | ---------------------------------------------------------------- |
-| **OpenAI**          | `openai`          | `https://api.openai.com/v1`                         | OpenAI    | [Get Key](https://platform.openai.com)                           |
-| **Venice AI**       | `venice`          | `https://api.venice.ai/api/v1`                      | OpenAI    | [Get Key](https://venice.ai)                                     |
-| **Anthropic**       | `anthropic`       | `https://api.anthropic.com/v1`                      | Anthropic | [Get Key](https://console.anthropic.com)                         |
-| **智谱 AI (GLM)**   | `zhipu`           | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
-| **Z.AI Coding Plan** | `openai`         | `https://api.z.ai/api/coding/paas/v4`               | OpenAI    | [Get Key](https://z.ai/manage-apikey/apikey-list)                |
-| **DeepSeek**        | `deepseek`        | `https://api.deepseek.com/v1`                       | OpenAI    | [Get Key](https://platform.deepseek.com)                         |
-| **Google Gemini**   | `gemini`          | `https://generativelanguage.googleapis.com/v1beta`  | Gemini    | [Get Key](https://aistudio.google.com/api-keys)                  |
-| **Groq**            | `groq`            | `https://api.groq.com/openai/v1`                    | OpenAI    | [Get Key](https://console.groq.com)                              |
-| **Moonshot**        | `moonshot`        | `https://api.moonshot.cn/v1`                        | OpenAI    | [Get Key](https://platform.moonshot.cn)                          |
-| **通义千问 (Qwen)** | `qwen`            | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Get Key](https://dashscope.console.aliyun.com)                  |
-| **NVIDIA**          | `nvidia`          | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [Get Key](https://build.nvidia.com)                              |
-| **Ollama**          | `ollama`          | `http://localhost:11434/v1`                         | OpenAI    | Local (no key needed)                                            |
-| **LM Studio**       | `lmstudio`        | `http://localhost:1234/v1`                          | OpenAI    | Optional (local default: no key)                                 |
-| **OpenRouter**      | `openrouter`      | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            |
-| **LiteLLM Proxy**   | `litellm`         | `http://localhost:4000/v1`                          | OpenAI    | Your LiteLLM proxy key                                           |
-| **VLLM**            | `vllm`            | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
-| **Cerebras**        | `cerebras`        | `https://api.cerebras.ai/v1`                        | OpenAI    | [Get Key](https://cerebras.ai)                                   |
-| **VolcEngine (Doubao)** | `volcengine`  | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
-| **神算云**          | `shengsuanyun`    | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                |
-| **BytePlus**        | `byteplus`        | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [Get Key](https://www.byteplus.com)                              |
-| **Vivgrid**         | `vivgrid`         | `https://api.vivgrid.com/v1`                        | OpenAI    | [Get Key](https://vivgrid.com)                                   |
-| **LongCat**         | `longcat`         | `https://api.longcat.chat/openai`                   | OpenAI    | [Get Key](https://longcat.chat/platform)                         |
-| **ModelScope (魔搭)**| `modelscope`     | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [Get Token](https://modelscope.cn/my/tokens)                     |
-| **Xiaomi MiMo**     | `mimo`            | `https://api.xiaomimimo.com/v1`                     | OpenAI    | [Get Key](https://platform.xiaomimimo.com)                       |
-| **Azure OpenAI**    | `azure`           | `https://{resource}.openai.azure.com`               | Azure     | [Get Key](https://portal.azure.com)                              |
-| **Antigravity**     | `antigravity`     | Google Cloud                                        | Custom    | OAuth only                                                       |
-| **GitHub Copilot**  | `github-copilot`  | `localhost:4321`                                    | gRPC      | -                                                                |
+| Vendor                  | `provider` Value | Default API Base                                    | Protocol  | API Key                                                          | Purpose                                 |
+| ----------------------- | ---------------- | --------------------------------------------------- | --------- | ---------------------------------------------------------------- | --------------------------------------- |
+| **OpenAI**              | `openai`         | `https://api.openai.com/v1`                         | OpenAI    | [Get Key](https://platform.openai.com)                           | LLM (GPT direct)                        |
+| **Venice AI**           | `venice`         | `https://api.venice.ai/api/v1`                      | OpenAI    | [Get Key](https://venice.ai)                                     | LLM (Venice AI direct)                  |
+| **Anthropic**           | `anthropic`      | `https://api.anthropic.com/v1`                      | Anthropic | [Get Key](https://console.anthropic.com)                         | LLM (Claude direct)                     |
+| **智谱 AI (GLM)**         | `zhipu`          | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) | LLM (Zhipu direct)                      |
+| **Z.AI Coding Plan**    | `openai`         | `https://api.z.ai/api/coding/paas/v4`               | OpenAI    | [Get Key](https://z.ai/manage-apikey/apikey-list)                | LLM (Z.AI Coding Plan)                  |
+| **DeepSeek**            | `deepseek`       | `https://api.deepseek.com/v1`                       | OpenAI    | [Get Key](https://platform.deepseek.com)                         | LLM (DeepSeek direct)                   |
+| **Google Gemini**       | `gemini`         | `https://generativelanguage.googleapis.com/v1beta`  | Gemini    | [Get Key](https://aistudio.google.com/api-keys)                  | LLM (Gemini direct)                     |
+| **Groq**                | `groq`           | `https://api.groq.com/openai/v1`                    | OpenAI    | [Get Key](https://console.groq.com)                              | LLM + **Voice transcription** (Whisper)     |
+| **Moonshot**            | `moonshot`       | `https://api.moonshot.cn/v1`                        | OpenAI    | [Get Key](https://platform.moonshot.cn)                          | LLM (Kimi/Moonshot direct)              |
+| **通义千问 (Qwen)**         | `qwen`           | `https://dashscope.aliyuncs.com/compatible-mode/v1` | OpenAI    | [Get Key](https://dashscope.console.aliyun.com)                 | LLM (Qwen direct)                       |
+| **NVIDIA**              | `nvidia`         | `https://integrate.api.nvidia.com/v1`               | OpenAI    | [Get Key](https://build.nvidia.com)                              | LLM (NVIDIA NIM)                        |
+| **Ollama**              | `ollama`         | `http://localhost:11434/v1`                         | OpenAI    | Local (no key needed)                                            | LLM (Ollama direct)                     |
+| **LM Studio**           | `lmstudio`       | `http://localhost:1234/v1`                          | OpenAI    | Optional (local default: no key)                                 | LLM (LM Studio direct)                  |
+| **OpenRouter**          | `openrouter`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            | LLM (recommended, access to all models) |
+| **LiteLLM Proxy**       | `litellm`        | `http://localhost:4000/v1`                          | OpenAI    | Your LiteLLM proxy key                                           | LLM (LiteLLM proxy)                     |
+| **VLLM**                | `vllm`           | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            | LLM (vLLM direct)                       |
+| **Cerebras**            | `cerebras`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [Get Key](https://cerebras.ai)                                   | LLM (Cerebras direct)                   |
+| **VolcEngine (Doubao)** | `volcengine`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://www.volcengine.com/activity/codingplan)        | LLM (Volcengine direct)                 |
+| **神算云**                 | `shengsuanyun`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                | LLM (shengsuanyun direct)               |
+| **BytePlus**            | `byteplus`       | `https://ark.ap-southeast.bytepluses.com/api/v3`    | OpenAI    | [Get Key](https://www.byteplus.com)                              | LLM (BytePlus direct)                   |
+| **Vivgrid**             | `vivgrid`        | `https://api.vivgrid.com/v1`                        | OpenAI    | [Get Key](https://vivgrid.com)                                   | LLM (Vivgrid direct)                    |
+| **LongCat**             | `longcat`        | `https://api.longcat.chat/openai`                   | OpenAI    | [Get Key](https://longcat.chat/platform)                         | LLM (Longcat direct)                    |
+| **ModelScope (魔搭)**     | `modelscope`     | `https://api-inference.modelscope.cn/v1`            | OpenAI    | [Get Key](https://modelscope.cn/my/tokens)                        | LLM (ModelScope direct)                 |
+| **Xiaomi MiMo**         | `mimo`           | `https://api.xiaomimimo.com/v1`                     | OpenAI    | [Get Key](https://platform.xiaomimimo.com)                       | LLM (Xiaomi MiMo direct)                |
+| **Minimax**             | `anthropic-messages`        | `https://api.minimaxi.com/anthropic`                       | Anthropic    | [Get Key](https://platform.minimaxi.com/user-center/basic-information/interface-key) OR [Get Key](https://platform.minimaxi.com/user-center/payment/token-plan)                       | LLM (Minimax direct)                    |
+| **Avian**               | `avian`          | `https://api.avian.io/v1`                           | OpenAI    | [Get Key](https://avian.io)                                      | LLM (Avian direct)                      |
+| **Mistral**             | `mistral`        | `https://api.mistral.ai/v1`                         | OpenAI    | [Get Key](https://console.mistral.ai)                            | LLM (Mistral direct)                    |
+| **Azure OpenAI**        | `azure`          | `https://{resource}.openai.azure.com`               | Azure     | [Get Key](https://portal.azure.com)                              | LLM (Azure OpenAI / GPT via Azure)      |
+| **Antigravity**         | `antigravity`    | Google Cloud                                        | Custom    | OAuth only                                                       | LLM (Antigravity direct)                |
+| **GitHub Copilot**      | `github-copilot` | `localhost:4321`                                    | gRPC      | -                                                                | LLM (GitHub Copilot)                    |
 
 #### Basic Configuration
 
