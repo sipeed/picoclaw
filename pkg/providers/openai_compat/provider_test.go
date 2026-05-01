@@ -632,6 +632,138 @@ func TestProviderChat_DeepSeekDocsReplayRequirements(t *testing.T) {
 	}
 }
 
+func TestProviderChat_DeepSeekModelViaProxyPreservesReasoningForToolTurns(t *testing.T) {
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	// Provider is "openai" (not "deepseek"), host is localhost (not deepseek.com),
+	// but model name contains "deepseek" — we should still route to the DeepSeek
+	// reasoning-content filter.
+	p.SetProviderName("openai")
+	p.httpClient = &http.Client{
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			r.URL, _ = url.Parse(server.URL + r.URL.Path)
+			return http.DefaultTransport.RoundTrip(r)
+		}),
+	}
+
+	messages := []Message{
+		{Role: "user", Content: "get date"},
+		{
+			Role:             "assistant",
+			Content:          "",
+			ReasoningContent: "I need tomorrow's date before checking the weather.",
+			ToolCalls: []ToolCall{
+				{ID: "call_date", Name: "get_date", Arguments: map[string]any{}},
+			},
+		},
+		{Role: "tool", ToolCallID: "call_date", Content: "2026-04-29"},
+		{
+			Role:             "assistant",
+			Content:          "Tomorrow is 2026-04-30.",
+			ReasoningContent: "Now I can share the weather.",
+		},
+		{Role: "user", Content: "What about Guangzhou?"},
+	}
+
+	_, err := p.Chat(t.Context(), messages, nil, "deepseek-v4-flash", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	reqMessages, ok := requestBody["messages"].([]any)
+	if !ok {
+		t.Fatalf("messages is not []any: %T", requestBody["messages"])
+	}
+
+	// Tool-interaction assistant (index 1) must preserve reasoning_content.
+	toolAssistant, ok := reqMessages[1].(map[string]any)
+	if !ok {
+		t.Fatalf("tool assistant message is not map[string]any: %T", reqMessages[1])
+	}
+	if toolAssistant["reasoning_content"] != "I need tomorrow's date before checking the weather." {
+		t.Fatalf(
+			"tool assistant reasoning_content = %v, want preserved for DeepSeek model via proxy",
+			toolAssistant["reasoning_content"],
+		)
+	}
+}
+
+func TestIsDeepSeekReasoningProvider_ModelDetection(t *testing.T) {
+	tests := []struct {
+		name         string
+		providerName string
+		apiBase      string
+		model        string
+		want         bool
+	}{
+		{
+			name:         "provider name is deepseek",
+			providerName: "deepseek",
+			apiBase:      "https://api.openai.com/v1",
+			model:        "gpt-5.4",
+			want:         true,
+		},
+		{
+			name:         "api base is deepseek.com",
+			providerName: "openai",
+			apiBase:      "https://api.deepseek.com/v1",
+			model:        "gpt-5.4",
+			want:         true,
+		},
+		{
+			name:         "model contains deepseek via proxy",
+			providerName: "openai",
+			apiBase:      "https://opencode.ai/zen/go/v1",
+			model:        "deepseek-v4-flash",
+			want:         true,
+		},
+		{
+			name:         "model contains deepseek-chat",
+			providerName: "openai",
+			apiBase:      "https://api.openai.com/v1",
+			model:        "deepseek-chat",
+			want:         true,
+		},
+		{
+			name:         "no deepseek anywhere",
+			providerName: "openai",
+			apiBase:      "https://api.openai.com/v1",
+			model:        "gpt-5.4",
+			want:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewProvider("key", tt.apiBase, "")
+			p.SetProviderName(tt.providerName)
+			got := p.isDeepSeekReasoningProvider(tt.model)
+			if got != tt.want {
+				t.Fatalf("isDeepSeekReasoningProvider(%q) = %v, want %v", tt.model, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestProviderChat_HTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)

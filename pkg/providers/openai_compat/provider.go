@@ -144,7 +144,7 @@ func (p *Provider) buildRequestBody(
 
 	requestBody := map[string]any{
 		"model":    model,
-		"messages": common.SerializeMessages(p.prepareMessagesForRequest(messages)),
+		"messages": common.SerializeMessages(p.prepareMessagesForRequest(messages, model)),
 	}
 
 	// When fallback uses a different provider (e.g. DeepSeek), that provider must not inject web_search_preview.
@@ -208,19 +208,19 @@ func (p *Provider) SetProviderName(providerName string) {
 	p.providerName = strings.ToLower(strings.TrimSpace(providerName))
 }
 
-func (p *Provider) prepareMessagesForRequest(messages []Message) []Message {
+func (p *Provider) prepareMessagesForRequest(messages []Message, model string) []Message {
 	if len(messages) == 0 {
 		return nil
 	}
 
-	if p.isDeepSeekReasoningProvider() {
+	if p.isDeepSeekReasoningProvider(model) {
 		return filterDeepSeekReasoningMessages(messages)
 	}
 	return stripReasoningMessages(messages)
 }
 
-func (p *Provider) isDeepSeekReasoningProvider() bool {
-	return p.providerName == "deepseek" || isDeepSeekHost(p.apiBase)
+func (p *Provider) isDeepSeekReasoningProvider(model string) bool {
+	return p.providerName == "deepseek" || isDeepSeekHost(p.apiBase) || isDeepSeekModel(model)
 }
 
 func isDeepSeekHost(apiBase string) bool {
@@ -230,6 +230,10 @@ func isDeepSeekHost(apiBase string) bool {
 	}
 	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
 	return host == "deepseek.com" || strings.HasSuffix(host, ".deepseek.com")
+}
+
+func isDeepSeekModel(model string) bool {
+	return strings.Contains(strings.ToLower(model), "deepseek")
 }
 
 func filterDeepSeekReasoningMessages(messages []Message) []Message {
