@@ -326,7 +326,7 @@ func DefaultConfig() *Config {
 					MaxResults: 5,
 				},
 				DuckDuckGo: DuckDuckGoConfig{
-					Enabled:    false,
+					Enabled:    true,
 					MaxResults: 5,
 				},
 				Perplexity: PerplexityConfig{

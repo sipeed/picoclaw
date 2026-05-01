@@ -670,13 +670,13 @@ func (c *TavilyConfig) SetAPIKeys(keys []string) {
 }
 
 type DuckDuckGoConfig struct {
-	Enabled    bool `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_ENABLED"`
-	MaxResults int  `json:"max_results" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
+	Enabled    bool `json:"enabled"     yaml:"enabled" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_ENABLED"`
+	MaxResults int  `json:"max_results" yaml:"max_results" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
 }
 
 type SogouConfig struct {
-	Enabled    bool `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_SOGOU_ENABLED"`
-	MaxResults int  `json:"max_results" env:"PICOCLAW_TOOLS_WEB_SOGOU_MAX_RESULTS"`
+	Enabled    bool `json:"enabled"     yaml:"enabled" env:"PICOCLAW_TOOLS_WEB_SOGOU_ENABLED"`
+	MaxResults int  `json:"max_results" yaml:"max_results" env:"PICOCLAW_TOOLS_WEB_SOGOU_MAX_RESULTS"`
 }
 
 type PerplexityConfig struct {
@@ -725,8 +725,8 @@ type WebToolsConfig struct {
 	ToolConfig  `                  yaml:"-"                      envPrefix:"PICOCLAW_TOOLS_WEB_"`
 	Brave       BraveConfig       `yaml:"brave,omitempty"                                        json:"brave"`
 	Tavily      TavilyConfig      `yaml:"tavily,omitempty"                                       json:"tavily"`
-	Sogou       SogouConfig       `yaml:"-"                                                      json:"sogou"`
-	DuckDuckGo  DuckDuckGoConfig  `yaml:"-"                                                      json:"duckduckgo"`
+	Sogou       SogouConfig       `yaml:"sogou,omitempty"                                                      json:"sogou"`
+	DuckDuckGo  DuckDuckGoConfig  `yaml:"duckduckgo,omitempty"                                                      json:"duckduckgo"`
 	Perplexity  PerplexityConfig  `yaml:"perplexity,omitempty"                                   json:"perplexity"`
 	SearXNG     SearXNGConfig     `yaml:"-"                                                      json:"searxng"`
 	GLMSearch   GLMSearchConfig   `yaml:"glm_search,omitempty"                                   json:"glm_search"`
