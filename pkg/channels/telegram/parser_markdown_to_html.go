@@ -14,6 +14,9 @@ func markdownToTelegramHTML(text string) string {
 		return ""
 	}
 
+	// Wrap pipe tables in fenced code blocks so Telegram renders them legibly.
+	text = wrapTablesInCodeBlocks(text)
+
 	codeBlocks := extractCodeBlocks(text)
 	text = codeBlocks.text
 

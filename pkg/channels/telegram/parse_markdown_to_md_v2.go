@@ -5,6 +5,22 @@ import (
 	"strings"
 )
 
+// reTable matches a markdown pipe table (header line + separator line + at least one body row).
+// The (?m) flag makes ^ match at line boundaries.
+// Trailing newline(s) are deliberately excluded from the match so that blank lines
+// between the table and following content are preserved.
+var reTable = regexp.MustCompile(`(?m)^(\|[^\n]+\|\r?\n\|[-:\|\s]+\|\r?\n(?:\|[^\n]+\|\r?\n?)+)`)
+
+// wrapTablesInCodeBlocks wraps each pipe table in a fenced code block so that
+// Telegram renders it with monospace alignment. This must run before any entity
+// processing so the ``` delimiters are recognized as code blocks.
+func wrapTablesInCodeBlocks(text string) string {
+	return reTable.ReplaceAllStringFunc(text, func(match string) string {
+		match = strings.TrimRight(match, "\r\n")
+		return "```\n" + match + "\n```"
+	})
+}
+
 // mdV2SpecialChars are all characters that must be escaped in Telegram MarkdownV2
 var mdV2SpecialChars = map[rune]bool{
 	'*':  true,
@@ -89,6 +105,9 @@ var verbatimEntities = map[string]bool{
 //
 // Reference: https://core.telegram.org/bots/api#formatting-options
 func markdownToTelegramMarkdownV2(text string) string {
+	// 0. Wrap pipe tables in fenced code blocks so Telegram renders them legibly.
+	text = wrapTablesInCodeBlocks(text)
+
 	// 1. Convert Markdown headings → *escaped heading text*
 	text = reHeading.ReplaceAllStringFunc(text, func(match string) string {
 		sub := reHeading.FindStringSubmatch(match)

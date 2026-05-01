@@ -116,7 +116,7 @@ func (cb *ContextBuilder) getIdentity() string {
 	version := config.FormatVersion()
 
 	return fmt.Sprintf(
-		`# picoclaw 🦞 (%s)
+			`# picoclaw 🦞 (%s)
 
 You are picoclaw, a helpful AI assistant.
 
@@ -134,7 +134,9 @@ Your workspace is at: %s
 
 3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md
 
-4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`,
+4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.
+
+5. **Telegram output** — Telegram does not support markdown tables. If you need to present tabular data, use a fenced code block or a structured list instead. Markdown pipe tables will be automatically wrapped in code blocks, but it is better to avoid them entirely.`,
 		version, workspacePath, workspacePath, workspacePath, workspacePath, workspacePath)
 }
 

@@ -56,6 +56,34 @@ func Test_markdownToTelegramMarkdownV2(t *testing.T) {
 			input:    "<Market Capitalization>",
 			expected: "\\<Market Capitalization\\>",
 		},
+		{
+			name: "pipe table is wrapped in code block",
+			input: "| Header 1 | Header 2 |\n" +
+				"|----------|----------|\n" +
+				"| Cell 1   | Cell 2   |\n" +
+				"| Cell 3   | Cell 4   |",
+			expected: "```\n" +
+				"| Header 1 | Header 2 |\n" +
+				"|----------|----------|\n" +
+				"| Cell 1   | Cell 2   |\n" +
+				"| Cell 3   | Cell 4   |\n" +
+				"```",
+		},
+		{
+			name: "pipe table surrounded by text",
+			input: "Some text\n\n" +
+				"| A | B |\n" +
+				"|---|---|\n" +
+				"| 1 | 2 |\n\n" +
+				"More text",
+			expected: "Some text\n\n" +
+				"```\n" +
+				"| A | B |\n" +
+				"|---|---|\n" +
+				"| 1 | 2 |\n" +
+				"```\n" +
+				"More text",
+		},
 	}
 
 	for _, tc := range cases {

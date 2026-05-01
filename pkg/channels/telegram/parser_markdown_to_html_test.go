@@ -70,6 +70,16 @@ func Test_markdownToTelegramHTML(t *testing.T) {
 			input:    "```json\n{\n  \"path\": \"README.md\"\n}\n```",
 			expected: "<pre><code>{\n  \"path\": \"README.md\"\n}\n</code></pre>",
 		},
+		{
+			name: "pipe table is wrapped in code block",
+			input: "| Header 1 | Header 2 |\n" +
+				"|----------|----------|\n" +
+				"| Cell 1   | Cell 2   |",
+			expected: "<pre><code>| Header 1 | Header 2 |\n" +
+				"|----------|----------|\n" +
+				"| Cell 1   | Cell 2   |\n" +
+				"</code></pre>",
+		},
 	}
 
 	for _, tc := range cases {
