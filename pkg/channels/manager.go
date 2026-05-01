@@ -627,6 +627,8 @@ func (m *Manager) getChannelConfigAndEnabled(channelName string) (*config.Channe
 		return bc, settings.Token.String() != ""
 	case *config.VKSettings:
 		return bc, settings.GroupID != 0 && settings.Token.String() != ""
+	case *config.MQTTSettings:
+		return bc, settings.Broker != "" && settings.AgentID != ""
 	}
 
 	return bc, bc.Enabled
