@@ -255,14 +255,6 @@ func filterDeepSeekReasoningMessages(messages []Message) []Message {
 }
 
 func filterDeepSeekReasoningTurn(messages []Message) []Message {
-	hasToolInteraction := false
-	for _, msg := range messages {
-		if msg.Role == "tool" || (msg.Role == "assistant" && len(msg.ToolCalls) > 0) {
-			hasToolInteraction = true
-			break
-		}
-	}
-
 	out := make([]Message, 0, len(messages))
 	for _, msg := range messages {
 		if messageutil.IsTransientAssistantThoughtMessage(msg) {
@@ -270,13 +262,10 @@ func filterDeepSeekReasoningTurn(messages []Message) []Message {
 		}
 
 		cloned := msg
-		// DeepSeek thinking-mode replay only requires reasoning_content for
-		// turns that participate in a tool interaction round. For plain
-		// assistant turns between two user messages, the docs say the API will
-		// ignore reasoning_content on replay, so we strip it here.
-		if cloned.Role == "assistant" && strings.TrimSpace(cloned.ReasoningContent) != "" && !hasToolInteraction {
-			cloned.ReasoningContent = ""
-		}
+		// DeepSeek thinking-mode requires reasoning_content to be echoed
+		// back for ALL assistant turns. If missing the API returns 400:
+		// "The reasoning_content in the thinking mode must be passed back
+		// to the API."
 		if assistantMessageEmpty(cloned) {
 			continue
 		}
