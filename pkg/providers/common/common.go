@@ -69,9 +69,15 @@ func NewHTTPClient(proxy string) *http.Client {
 // openaiMessage is the wire-format message for OpenAI-compatible APIs.
 // It mirrors protocoltypes.Message but omits SystemParts, which is an
 // internal field that would be unknown to third-party endpoints.
+//
+// Name carries the OpenAI Chat Completions optional `name` field, used to
+// disambiguate participants in multi-user conversations. It is emitted
+// only when set; the upstream value has already been sanitized to match
+// the API constraint `^[a-zA-Z0-9_-]{1,64}$`.
 type openaiMessage struct {
 	Role             string           `json:"role"`
 	Content          string           `json:"content"`
+	Name             string           `json:"name,omitempty"`
 	ReasoningContent string           `json:"reasoning_content,omitempty"`
 	ToolCalls        []openaiToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string           `json:"tool_call_id,omitempty"`
@@ -92,7 +98,8 @@ type openaiFunctionCall struct {
 // SerializeMessages converts internal Message structs to the OpenAI wire format.
 //   - Strips SystemParts (unknown to third-party endpoints)
 //   - Converts messages with Media to multipart content format (text + image_url parts)
-//   - Preserves ToolCallID, ToolCalls, and ReasoningContent for all messages
+//   - Preserves ToolCallID, ToolCalls, ReasoningContent, and Name (sender
+//     attribution for multi-user sessions) for all messages
 func SerializeMessages(messages []Message) []any {
 	out := make([]any, 0, len(messages))
 	for _, m := range messages {
@@ -101,6 +108,7 @@ func SerializeMessages(messages []Message) []any {
 			out = append(out, openaiMessage{
 				Role:             m.Role,
 				Content:          m.Content,
+				Name:             m.Name,
 				ReasoningContent: m.ReasoningContent,
 				ToolCalls:        toolCalls,
 				ToolCallID:       m.ToolCallID,
@@ -141,6 +149,9 @@ func SerializeMessages(messages []Message) []any {
 		msg := map[string]any{
 			"role":    m.Role,
 			"content": parts,
+		}
+		if m.Name != "" {
+			msg["name"] = m.Name
 		}
 		if m.ToolCallID != "" {
 			msg["tool_call_id"] = m.ToolCallID

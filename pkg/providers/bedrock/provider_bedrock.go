@@ -27,6 +27,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 
 	"github.com/sipeed/picoclaw/pkg/providers/common"
+	"github.com/sipeed/picoclaw/pkg/providers/messageutil"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -319,13 +320,19 @@ func convertMessages(messages []Message) ([]types.Message, []types.SystemContent
 }
 
 // buildUserContent builds Bedrock content blocks for a user message.
+//
+// Sender attribution from msg.Name is rendered as a `[name] ` prefix on
+// the text block. Bedrock's Converse API has no per-message author identity
+// shared across all model families, so prefixing keeps the multi-user
+// attribution behavior consistent with the Anthropic adapter regardless
+// of which underlying model the request lands on.
 func buildUserContent(msg Message) []types.ContentBlock {
 	var content []types.ContentBlock
 
 	// Add text content
-	if msg.Content != "" {
+	if textValue := messageutil.ApplyUserNamePrefix(msg); textValue != "" {
 		content = append(content, &types.ContentBlockMemberText{
-			Value: msg.Content,
+			Value: textValue,
 		})
 	}
 

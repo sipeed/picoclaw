@@ -800,3 +800,101 @@ func TestParseResponse_WithFunctionThoughtSignature(t *testing.T) {
 		)
 	}
 }
+
+// --- SerializeMessages: sender attribution (Name field) tests ---
+
+// TestSerializeMessages_NameFieldInPlainPath verifies that the OpenAI Chat
+// Completions `name` field is emitted on plain-text user messages when
+// providers.Message.Name is set. This is the primary multi-user attribution
+// channel for OpenAI-compatible endpoints.
+func TestSerializeMessages_NameFieldInPlainPath(t *testing.T) {
+	messages := []Message{
+		{Role: "user", Content: "My name is Alice", Name: "U07AB12C3DEF"},
+		{Role: "user", Content: "What's my name?", Name: "U99XY99ZZZZZ"},
+	}
+	result := SerializeMessages(messages)
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	var msgs []map[string]any
+	if err := json.Unmarshal(data, &msgs); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("len(msgs) = %d, want 2", len(msgs))
+	}
+	if msgs[0]["name"] != "U07AB12C3DEF" {
+		t.Errorf("msgs[0].name = %v, want U07AB12C3DEF", msgs[0]["name"])
+	}
+	if msgs[1]["name"] != "U99XY99ZZZZZ" {
+		t.Errorf("msgs[1].name = %v, want U99XY99ZZZZZ", msgs[1]["name"])
+	}
+}
+
+// TestSerializeMessages_NameFieldInMultipartPath verifies that the `name`
+// field is emitted on the multipart map representation used when a user
+// message also carries Media (images/audio).
+func TestSerializeMessages_NameFieldInMultipartPath(t *testing.T) {
+	messages := []Message{
+		{
+			Role:    "user",
+			Content: "look at this",
+			Name:    "alice",
+			Media:   []string{"data:image/png;base64,abc"},
+		},
+	}
+	result := SerializeMessages(messages)
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	var msgs []map[string]any
+	if err := json.Unmarshal(data, &msgs); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if msgs[0]["name"] != "alice" {
+		t.Errorf("msgs[0].name = %v, want alice", msgs[0]["name"])
+	}
+	// Sanity: multipart content array still present
+	if _, ok := msgs[0]["content"].([]any); !ok {
+		t.Errorf("msgs[0].content = %T, want array", msgs[0]["content"])
+	}
+}
+
+// TestSerializeMessages_NameFieldOmittedWhenEmpty verifies that the `name`
+// key is absent (not just empty) for messages without sender attribution,
+// preserving wire-level backward compatibility.
+func TestSerializeMessages_NameFieldOmittedWhenEmpty(t *testing.T) {
+	messages := []Message{
+		{Role: "user", Content: "hi"},
+	}
+	result := SerializeMessages(messages)
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if strings.Contains(string(data), `"name"`) {
+		t.Errorf("plain-path serialization should omit empty name; got %s", string(data))
+	}
+}
+
+// TestSerializeMessages_NameFieldOmittedWhenEmptyMultipart is the multipart
+// counterpart of the omit-when-empty check.
+func TestSerializeMessages_NameFieldOmittedWhenEmptyMultipart(t *testing.T) {
+	messages := []Message{
+		{Role: "user", Content: "look", Media: []string{"data:image/png;base64,abc"}},
+	}
+	result := SerializeMessages(messages)
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if strings.Contains(string(data), `"name"`) {
+		t.Errorf("multipart-path serialization should omit empty name; got %s", string(data))
+	}
+}

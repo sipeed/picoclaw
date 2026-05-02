@@ -717,3 +717,95 @@ func TestProviderChatErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildRequestBody_UserNamePrefixed verifies that sender attribution
+// (Message.Name) is rendered as a `[name] ` prefix on the user content
+// sent to the Anthropic Messages API. Anthropic has no native per-message
+// author identity, so prefixing is the wire-level fallback.
+func TestBuildRequestBody_UserNamePrefixed(t *testing.T) {
+	messages := []Message{
+		{Role: "user", Content: "My name is Alice", Name: "U07AB12C3DEF"},
+	}
+	body, err := buildRequestBody(messages, nil, "test-model", map[string]any{"max_tokens": 1024})
+	if err != nil {
+		t.Fatalf("buildRequestBody: %v", err)
+	}
+	apiMessages, ok := body["messages"].([]any)
+	if !ok || len(apiMessages) != 1 {
+		t.Fatalf("messages = %T (%d), want 1-element []any", body["messages"], len(apiMessages))
+	}
+	first, ok := apiMessages[0].(map[string]any)
+	if !ok {
+		t.Fatalf("messages[0] = %T, want map[string]any", apiMessages[0])
+	}
+	got := first["content"]
+	want := "[U07AB12C3DEF] My name is Alice"
+	if got != want {
+		t.Errorf("content = %q, want %q", got, want)
+	}
+}
+
+// TestBuildRequestBody_NoNameNoPrefix verifies that messages without
+// sender attribution flow through the wire path unchanged, preserving
+// backward compatibility for direct (single-user) channels.
+func TestBuildRequestBody_NoNameNoPrefix(t *testing.T) {
+	messages := []Message{
+		{Role: "user", Content: "Hello, world!"},
+	}
+	body, err := buildRequestBody(messages, nil, "test-model", map[string]any{"max_tokens": 1024})
+	if err != nil {
+		t.Fatalf("buildRequestBody: %v", err)
+	}
+	apiMessages := body["messages"].([]any)
+	first := apiMessages[0].(map[string]any)
+	if first["content"] != "Hello, world!" {
+		t.Errorf("content = %q, want unchanged %q", first["content"], "Hello, world!")
+	}
+}
+
+// TestBuildRequestBody_ToolResultNotPrefixed verifies that tool result
+// messages (msg.ToolCallID set) are never prefixed even if Name is
+// somehow set, because tool results are not user utterances.
+func TestBuildRequestBody_ToolResultNotPrefixed(t *testing.T) {
+	messages := []Message{
+		{Role: "assistant", Content: "Let me check"},
+		{Role: "user", Content: `{"temp":72}`, ToolCallID: "call_1", Name: "alice"},
+	}
+	body, err := buildRequestBody(messages, nil, "test-model", map[string]any{"max_tokens": 1024})
+	if err != nil {
+		t.Fatalf("buildRequestBody: %v", err)
+	}
+	data, _ := json.Marshal(body)
+	// The tool_result block must contain the raw content, not a prefixed form.
+	if !strings.Contains(string(data), `"content":"{\"temp\":72}"`) {
+		t.Errorf("expected tool_result content to be raw JSON, got: %s", string(data))
+	}
+	if strings.Contains(string(data), `[alice]`) {
+		t.Errorf("tool_result content should not carry sender prefix, got: %s", string(data))
+	}
+}
+
+// TestBuildRequestBody_MultiUserHistory verifies the issue #2702 scenario:
+// two distinct users in the same session each get their own attributed
+// message in the wire payload, so the model can disambiguate who said what.
+func TestBuildRequestBody_MultiUserHistory(t *testing.T) {
+	messages := []Message{
+		{Role: "user", Content: "My name is Alice", Name: "U_alice"},
+		{Role: "assistant", Content: "Hi Alice!"},
+		{Role: "user", Content: "What's my name?", Name: "U_bob"},
+	}
+	body, err := buildRequestBody(messages, nil, "test-model", map[string]any{"max_tokens": 1024})
+	if err != nil {
+		t.Fatalf("buildRequestBody: %v", err)
+	}
+	apiMessages := body["messages"].([]any)
+	if len(apiMessages) != 3 {
+		t.Fatalf("len(messages) = %d, want 3", len(apiMessages))
+	}
+	if got := apiMessages[0].(map[string]any)["content"]; got != "[U_alice] My name is Alice" {
+		t.Errorf("messages[0].content = %q, want prefixed Alice content", got)
+	}
+	if got := apiMessages[2].(map[string]any)["content"]; got != "[U_bob] What's my name?" {
+		t.Errorf("messages[2].content = %q, want prefixed Bob content", got)
+	}
+}

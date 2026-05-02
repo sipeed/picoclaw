@@ -11,6 +11,7 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 
 	"github.com/sipeed/picoclaw/pkg/providers/common"
+	"github.com/sipeed/picoclaw/pkg/providers/messageutil"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -36,7 +37,10 @@ func TranslateMessages(messages []protocoltypes.Message) (input responses.Respon
 					},
 				})
 			} else if len(msg.Media) > 0 {
-				content := BuildMultipartContent(msg.Content, msg.Media)
+				// Render sender attribution as a `[name] ` prefix on the
+				// text portion of the multipart payload. The persisted
+				// message is not mutated.
+				content := BuildMultipartContent(messageutil.ApplyUserNamePrefix(msg), msg.Media)
 				input = append(input, responses.ResponseInputItemUnionParam{
 					OfInputMessage: &responses.ResponseInputItemMessageParam{
 						Role:    "user",
@@ -46,8 +50,10 @@ func TranslateMessages(messages []protocoltypes.Message) (input responses.Respon
 			} else {
 				input = append(input, responses.ResponseInputItemUnionParam{
 					OfMessage: &responses.EasyInputMessageParam{
-						Role:    responses.EasyInputMessageRoleUser,
-						Content: responses.EasyInputMessageContentUnionParam{OfString: openai.Opt(msg.Content)},
+						Role: responses.EasyInputMessageRoleUser,
+						Content: responses.EasyInputMessageContentUnionParam{
+							OfString: openai.Opt(messageutil.ApplyUserNamePrefix(msg)),
+						},
 					},
 				})
 			}
