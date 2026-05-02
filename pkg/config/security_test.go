@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/caarlos0/env/v11"
@@ -268,5 +269,99 @@ skills:
 		assert.Equal(t, "qq_app_secret_env", qqCfg.AppSecret.raw)
 		assert.Equal(t, "brave_key_env", envCfg.Tools.Web.Brave.APIKeys[0].raw)
 		assert.Equal(t, "abc", envCfg.Tools.Web.Brave.APIKeys[1].raw)
+	})
+}
+
+// TestCollectSensitiveWithMapValues verifies that collectSensitive handles
+// non-addressable values from map lookups without panicking.
+// This is a regression test for the bug where iterating over maps containing
+// SecureString values would panic with "reflect.Value.Addr of unaddressable value".
+func TestCollectSensitiveWithMapValues(t *testing.T) {
+	// Test struct that mimics TeamsWebhookConfig with a map of targets
+	type WebhookTarget struct {
+		WebhookURL SecureString `json:"webhook_url" yaml:"webhook_url"`
+		Title      string       `json:"title"       yaml:"title"`
+	}
+	type WebhookConfig struct {
+		Enabled  bool                     `json:"enabled"  yaml:"enabled"`
+		Webhooks map[string]WebhookTarget `json:"webhooks" yaml:"webhooks"`
+	}
+
+	t.Run("map with SecureString values does not panic", func(t *testing.T) {
+		cfg := WebhookConfig{
+			Enabled: true,
+			Webhooks: map[string]WebhookTarget{
+				"default": {
+					WebhookURL: *NewSecureString("https://secret-webhook-url.com/abc123"),
+					Title:      "Default Webhook",
+				},
+				"alerts": {
+					WebhookURL: *NewSecureString("https://another-secret.com/xyz789"),
+					Title:      "Alerts Webhook",
+				},
+			},
+		}
+
+		var values []string
+		// This should not panic - previously it would panic with:
+		// "reflect.Value.Addr of unaddressable value"
+		assert.NotPanics(t, func() {
+			collectSensitive(reflect.ValueOf(&cfg), &values)
+		})
+
+		// Verify the sensitive values were collected
+		assert.Len(t, values, 2)
+		assert.Contains(t, values, "https://secret-webhook-url.com/abc123")
+		assert.Contains(t, values, "https://another-secret.com/xyz789")
+	})
+
+	t.Run("nested map with SecureString values", func(t *testing.T) {
+		type NestedConfig struct {
+			Outer map[string]map[string]SecureString
+		}
+
+		cfg := NestedConfig{
+			Outer: map[string]map[string]SecureString{
+				"level1": {
+					"secret1": *NewSecureString("nested-secret-1"),
+					"secret2": *NewSecureString("nested-secret-2"),
+				},
+			},
+		}
+
+		var values []string
+		assert.NotPanics(t, func() {
+			collectSensitive(reflect.ValueOf(&cfg), &values)
+		})
+
+		assert.Len(t, values, 2)
+		assert.Contains(t, values, "nested-secret-1")
+		assert.Contains(t, values, "nested-secret-2")
+	})
+
+	t.Run("empty map does not panic", func(t *testing.T) {
+		cfg := WebhookConfig{
+			Enabled:  true,
+			Webhooks: map[string]WebhookTarget{},
+		}
+
+		var values []string
+		assert.NotPanics(t, func() {
+			collectSensitive(reflect.ValueOf(&cfg), &values)
+		})
+		assert.Empty(t, values)
+	})
+
+	t.Run("nil map does not panic", func(t *testing.T) {
+		cfg := WebhookConfig{
+			Enabled:  true,
+			Webhooks: nil,
+		}
+
+		var values []string
+		assert.NotPanics(t, func() {
+			collectSensitive(reflect.ValueOf(&cfg), &values)
+		})
+		assert.Empty(t, values)
 	})
 }
