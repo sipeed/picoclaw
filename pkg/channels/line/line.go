@@ -74,6 +74,7 @@ func NewLINEChannel(
 		channels.WithMaxMessageLength(5000),
 		channels.WithGroupTrigger(bc.GroupTrigger),
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
+		channels.WithChannelType(bc.Type),
 	)
 
 	return &LINEChannel{

@@ -88,6 +88,7 @@ func NewQQChannel(bc *config.Channel, cfg *config.QQSettings, messageBus *bus.Me
 		channels.WithMaxMessageLength(cfg.MaxMessageLength),
 		channels.WithGroupTrigger(bc.GroupTrigger),
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
+		channels.WithChannelType(bc.Type),
 	)
 
 	return &QQChannel{

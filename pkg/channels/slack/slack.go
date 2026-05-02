@@ -56,6 +56,7 @@ func NewSlackChannel(
 		channels.WithMaxMessageLength(40000),
 		channels.WithGroupTrigger(bc.GroupTrigger),
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
+		channels.WithChannelType(bc.Type),
 	)
 
 	return &SlackChannel{
@@ -381,7 +382,6 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 	})
 
 	inboundCtx := bus.InboundContext{
-		Channel:   c.Name(),
 		Account:   c.teamID,
 		ChatID:    channelID,
 		ChatType:  peerKind,
@@ -456,7 +456,6 @@ func (c *SlackChannel) handleAppMention(ev *slackevents.AppMentionEvent) {
 		"team_id":    c.teamID,
 	}
 	inboundCtx := bus.InboundContext{
-		Channel:   c.Name(),
 		Account:   c.teamID,
 		ChatID:    channelID,
 		ChatType:  mentionPeerKind,
@@ -521,7 +520,6 @@ func (c *SlackChannel) handleSlashCommand(event socketmode.Event) {
 		peerKind = "direct"
 	}
 	inboundCtx := bus.InboundContext{
-		Channel:   c.Name(),
 		Account:   c.teamID,
 		ChatID:    channelID,
 		ChatType:  peerKind,

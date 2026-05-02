@@ -53,10 +53,11 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 
 	msg := bus.InboundMessage{
 		Context: bus.InboundContext{
-			Channel:  channel,
-			ChatID:   chatID,
-			ChatType: "direct",
-			SenderID: "cron",
+			Channel:     channel,
+			ChannelType: channel, // For direct calls, channel name equals channel type
+			ChatID:      chatID,
+			ChatType:    "direct",
+			SenderID:    "cron",
 		},
 		Content:    content,
 		SessionKey: sessionKey,
@@ -86,10 +87,11 @@ func (al *AgentLoop) ProcessHeartbeat(
 	}
 	if channel != "" || chatID != "" {
 		dispatch.InboundContext = &bus.InboundContext{
-			Channel:  channel,
-			ChatID:   chatID,
-			ChatType: "direct",
-			SenderID: "heartbeat",
+			Channel:     channel,
+			ChannelType: channel, // For heartbeat, channel name equals channel type
+			ChatID:      chatID,
+			ChatType:    "direct",
+			SenderID:    "heartbeat",
 		}
 	}
 	return al.runAgentLoop(ctx, agent, processOptions{
@@ -247,7 +249,7 @@ func (al *AgentLoop) processSystemMessage(
 	// Parse origin channel from chat_id (format: "channel:chat_id")
 	var originChannel, originChatID string
 	if idx := strings.Index(msg.ChatID, ":"); idx > 0 {
-		originChannel = msg.ChatID[:idx]
+		originChannel = msg.ChatID[:idx] // e.g. "telegram"
 		originChatID = msg.ChatID[idx+1:]
 	} else {
 		originChannel = "cli"

@@ -52,6 +52,7 @@ func NewDingTalkChannel(
 		channels.WithMaxMessageLength(20000),
 		channels.WithGroupTrigger(bc.GroupTrigger),
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
+		channels.WithChannelType(bc.Type),
 	)
 
 	return &DingTalkChannel{

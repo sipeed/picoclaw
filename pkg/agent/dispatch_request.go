@@ -27,6 +27,13 @@ func (r DispatchRequest) Channel() string {
 	return r.InboundContext.Channel
 }
 
+func (r DispatchRequest) ChannelType() string {
+	if r.InboundContext == nil {
+		return ""
+	}
+	return r.InboundContext.ChannelType
+}
+
 func (r DispatchRequest) ChatID() string {
 	if r.InboundContext == nil {
 		return ""
@@ -92,6 +99,10 @@ func normalizeProcessOptions(opts processOptions) processOptions {
 				SenderID:         strings.TrimSpace(opts.SenderID),
 				MessageID:        strings.TrimSpace(opts.MessageID),
 				ReplyToMessageID: strings.TrimSpace(opts.ReplyToMessageID),
+			}
+			// Set ChannelType from Channel if not already set
+			if inbound.ChannelType == "" && inbound.Channel != "" {
+				inbound.ChannelType = inbound.Channel
 			}
 			inbound.ChatType = inferChatTypeFromSessionScope(opts.Dispatch.SessionScope)
 			if inbound.Channel != "" || inbound.ChatID != "" || inbound.SenderID != "" ||

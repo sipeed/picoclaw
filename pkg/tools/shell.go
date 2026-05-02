@@ -21,6 +21,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/isolation"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 var (
@@ -35,6 +36,7 @@ func getSessionManager() *SessionManager {
 }
 
 type ExecTool struct {
+	cfg                 *config.Config
 	workingDir          string
 	timeout             time.Duration
 	denyPatterns        []*regexp.Regexp
@@ -169,6 +171,7 @@ func NewExecToolWithConfig(
 	}
 
 	return &ExecTool{
+		cfg:                 cfg,
 		workingDir:          workingDir,
 		timeout:             timeout,
 		denyPatterns:        denyPatterns,
@@ -270,12 +273,30 @@ func (t *ExecTool) executeRun(ctx context.Context, args map[string]any) *ToolRes
 	// GHSA-pv8c-p6jf-3fpp: block exec from remote channels (e.g. Telegram webhooks)
 	// unless explicitly opted-in via config. Fail-closed: empty channel = blocked.
 	if !t.allowRemote {
-		channel := ToolChannel(ctx)
-		if channel == "" {
-			channel, _ = args["__channel"].(string)
+		channelName := ToolChannel(ctx)
+		if channelName == "" {
+			channelName, _ = args["__channel"].(string)
 		}
-		channel = strings.TrimSpace(channel)
-		if channel == "" || !constants.IsInternalChannel(channel) {
+		channelName = strings.TrimSpace(channelName)
+		if channelName == "" {
+			return ErrorResult("exec is restricted to internal channels")
+		}
+
+		var channelType string
+		if t.cfg != nil {
+			if channelConfig := t.cfg.Channels.Get(channelName); channelConfig != nil {
+				channelType = channelConfig.Type
+			}
+		}
+		// Fallback: if channelType is not determined from config, use channelName
+		if channelType == "" {
+			channelType = channelName
+			logger.DebugCF("shell", "Channel type not found in config, falling back to name", map[string]any{
+				"channel_name": channelName,
+			})
+		}
+
+		if !constants.IsInternalChannel(channelType) {
 			return ErrorResult("exec is restricted to internal channels")
 		}
 	}
