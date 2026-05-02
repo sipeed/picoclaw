@@ -623,6 +623,8 @@ func (m *Manager) getChannelConfigAndEnabled(channelName string) (*config.Channe
 		return bc, true
 	case *config.TeamsWebhookSettings:
 		return bc, true
+	case *config.SlackWebhookSettings:
+		return bc, true
 	case *config.DiscordSettings:
 		return bc, settings.Token.String() != ""
 	case *config.VKSettings:

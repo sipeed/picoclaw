@@ -512,6 +512,18 @@ type TeamsWebhookTarget struct {
 	Title      string       `json:"title,omitempty"      yaml:"-"`
 }
 
+// SlackWebhookSettings configures the output-only Slack webhook channel.
+type SlackWebhookSettings struct {
+	Webhooks map[string]SlackWebhookTarget `json:"webhooks" yaml:"webhooks,omitempty"`
+}
+
+// SlackWebhookTarget represents a single Slack Incoming Webhook destination.
+type SlackWebhookTarget struct {
+	WebhookURL SecureString `json:"webhook_url,omitzero" yaml:"webhook_url,omitempty"`
+	Username   string       `json:"username,omitempty"   yaml:"username,omitempty"`
+	IconEmoji  string       `json:"icon_emoji,omitempty" yaml:"icon_emoji,omitempty"`
+}
+
 type HeartbeatConfig struct {
 	Enabled  bool `json:"enabled"  env:"PICOCLAW_HEARTBEAT_ENABLED"`
 	Interval int  `json:"interval" env:"PICOCLAW_HEARTBEAT_INTERVAL"` // minutes, min 5
