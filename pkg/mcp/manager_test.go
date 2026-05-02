@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	toolshared "github.com/sipeed/picoclaw/pkg/tools/shared"
 )
 
 func TestLoadEnvFile(t *testing.T) {
@@ -536,4 +538,106 @@ func (t *scriptedTransport) Close() error {
 
 func (t *scriptedTransport) SessionID() string {
 	return t.sessionID
+}
+
+func TestHeaderTransport_DynamicHeaders(t *testing.T) {
+	captured := make(http.Header)
+	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		for k, v := range req.Header {
+			captured[k] = v
+		}
+		return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+	})
+
+	transport := &headerTransport{
+		base:    base,
+		headers: map[string]string{"X-Static": "from-config"},
+	}
+
+	ctx := toolshared.WithMCPHeaders(context.Background(), map[string]string{
+		"Authorization": "Bearer tok123",
+		"X-Custom":      "dynamic-val",
+	})
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://example.com", nil)
+
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	resp.Body.Close()
+
+	if got := captured.Get("X-Static"); got != "from-config" {
+		t.Errorf("X-Static = %q, want %q", got, "from-config")
+	}
+	if got := captured.Get("Authorization"); got != "Bearer tok123" {
+		t.Errorf("Authorization = %q, want %q", got, "Bearer tok123")
+	}
+	if got := captured.Get("X-Custom"); got != "dynamic-val" {
+		t.Errorf("X-Custom = %q, want %q", got, "dynamic-val")
+	}
+}
+
+func TestHeaderTransport_DynamicOverridesStatic(t *testing.T) {
+	captured := make(http.Header)
+	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		for k, v := range req.Header {
+			captured[k] = v
+		}
+		return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+	})
+
+	transport := &headerTransport{
+		base:    base,
+		headers: map[string]string{"Authorization": "Bearer static"},
+	}
+
+	ctx := toolshared.WithMCPHeaders(context.Background(), map[string]string{
+		"Authorization": "Bearer dynamic",
+	})
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://example.com", nil)
+
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	resp.Body.Close()
+
+	if got := captured.Get("Authorization"); got != "Bearer dynamic" {
+		t.Errorf("Authorization = %q, want dynamic to override static %q", got, "Bearer dynamic")
+	}
+}
+
+func TestHeaderTransport_NoDynamicHeaders(t *testing.T) {
+	captured := make(http.Header)
+	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		for k, v := range req.Header {
+			captured[k] = v
+		}
+		return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+	})
+
+	transport := &headerTransport{
+		base:    base,
+		headers: map[string]string{"X-Static": "val"},
+	}
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://example.com", nil)
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	resp.Body.Close()
+
+	if got := captured.Get("X-Static"); got != "val" {
+		t.Errorf("X-Static = %q, want %q", got, "val")
+	}
+	if got := captured.Get("Authorization"); got != "" {
+		t.Errorf("Authorization should be empty, got %q", got)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }

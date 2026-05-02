@@ -50,6 +50,7 @@ var (
 	ctxKeyAgentID          = &toolCtxKey{"agentID"}
 	ctxKeySessionKey       = &toolCtxKey{"sessionKey"}
 	ctxKeySessionScope     = &toolCtxKey{"sessionScope"}
+	ctxKeyMCPHeaders       = &toolCtxKey{"mcpHeaders"}
 )
 
 // WithToolContext returns a child context carrying channel and chatID.
@@ -128,6 +129,33 @@ func ToolSessionKey(ctx context.Context) string {
 func ToolSessionScope(ctx context.Context) *session.SessionScope {
 	scope, _ := ctx.Value(ctxKeySessionScope).(*session.SessionScope)
 	return session.CloneScope(scope)
+}
+
+// WithMCPHeaders returns a child context carrying per-request headers for MCP HTTP transports.
+// The map is cloned to prevent callers from mutating it after storage.
+func WithMCPHeaders(ctx context.Context, headers map[string]string) context.Context {
+	if len(headers) == 0 {
+		return ctx
+	}
+	clone := make(map[string]string, len(headers))
+	for k, v := range headers {
+		clone[k] = v
+	}
+	return context.WithValue(ctx, ctxKeyMCPHeaders, clone)
+}
+
+// MCPHeaders extracts per-request MCP headers from ctx, or nil if unset.
+// Returns a clone so callers cannot mutate the stored map.
+func MCPHeaders(ctx context.Context) map[string]string {
+	v, _ := ctx.Value(ctxKeyMCPHeaders).(map[string]string)
+	if len(v) == 0 {
+		return nil
+	}
+	clone := make(map[string]string, len(v))
+	for k, val := range v {
+		clone[k] = val
+	}
+	return clone
 }
 
 // AsyncCallback is a function type that async tools use to notify completion.
