@@ -444,8 +444,12 @@ func RefreshAccessToken(cred *AuthCredential, cfg OAuthProviderConfig) (*AuthCre
 		"client_id":     {cfg.ClientID},
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {cred.RefreshToken},
-		"scope":         {"openid profile email"},
 	}
+	scopes := cfg.Scopes
+	if scopes == "" {
+		scopes = "openid profile email"
+	}
+	data.Set("scope", scopes)
 	if cfg.ClientSecret != "" {
 		data.Set("client_secret", cfg.ClientSecret)
 	}
@@ -596,11 +600,13 @@ func parseTokenResponse(body []byte, provider string) (*AuthCredential, error) {
 		AuthMethod:   "oauth",
 	}
 
-	// Recent OpenAI OAuth responses may only include chatgpt_account_id in id_token claims.
-	if id := extractAccountID(tokenResp.IDToken); id != "" {
-		cred.AccountID = id
-	} else if id := extractAccountID(tokenResp.AccessToken); id != "" {
-		cred.AccountID = id
+	if accountID := extractAccountID(tokenResp.IDToken); accountID != "" {
+		cred.AccountID = accountID
+	} else if accountID := extractAccountID(tokenResp.AccessToken); accountID != "" {
+		cred.AccountID = accountID
+	} else if accountID := extractAccountID(tokenResp.IDToken); accountID != "" {
+		// Recent OpenAI OAuth responses may only include chatgpt_account_id in id_token claims.
+		cred.AccountID = accountID
 	}
 
 	return cred, nil
