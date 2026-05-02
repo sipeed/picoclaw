@@ -293,6 +293,31 @@ For direct Anthropic API access or custom endpoints that only support Anthropic'
 `api_base` defaults to `http://localhost:1234/v1`. API key is optional unless your LM Studio server enables authentication.<br/>
 With explicit `provider`, PicoClaw sends `openai/gpt-oss-20b` unchanged to the LM Studio server. The legacy compatibility form `"model": "lmstudio/openai/gpt-oss-20b"` still resolves to the same upstream model ID when `provider` is omitted.
 
+**OpenRouter reasoning models (suppressing thinking output)**
+
+Some OpenRouter reasoning models (for example `nvidia/nemotron-3-super-120b-a12b:free`) emit their chain-of-thought into `message.content` rather than a separate reasoning channel. With a strict prompt like `Reply with exactly: PONG`, the visible reply may then start with reasoning preamble such as `We need to ...` before the requested text.
+
+Pass `extra_body.reasoning.exclude = true` so OpenRouter strips the reasoning server-side:
+
+```json
+{
+  "model_name": "openrouter-nemotron-free",
+  "provider": "openrouter",
+  "model": "nvidia/nemotron-3-super-120b-a12b:free",
+  "api_base": "https://openrouter.ai/api/v1",
+  "api_keys": ["sk-or-v1-..."],
+  "extra_body": {
+    "reasoning": {
+      "exclude": true
+    }
+  }
+}
+```
+
+This is shipped as a default `model_list` entry (`openrouter-nemotron-free`); add your `api_keys` to enable it.
+
+Tradeoff: only set this on entries that should hide reasoning. If you rely on OpenRouter to surface reasoning tokens (for example to render thinking separately), leave `extra_body` unset on those models. PicoClaw does not auto-inject `reasoning.exclude` for OpenRouter, since reasoning visibility is a per-model preference.
+
 **Custom Proxy/API**
 
 ```json

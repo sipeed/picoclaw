@@ -2019,6 +2019,53 @@ func TestDefaultConfig_MinimaxExtraBody(t *testing.T) {
 	}
 }
 
+// TestDefaultConfig_OpenRouterNemotronReasoningExcluded verifies the default
+// OpenRouter Nemotron entry ships with reasoning suppression so reasoning
+// preamble does not leak into visible assistant content.
+func TestDefaultConfig_OpenRouterNemotronReasoningExcluded(t *testing.T) {
+	cfg := DefaultConfig()
+
+	var nemo *ModelConfig
+	for i := range cfg.ModelList {
+		if cfg.ModelList[i].Provider == "openrouter" &&
+			cfg.ModelList[i].Model == "nvidia/nemotron-3-super-120b-a12b:free" {
+			nemo = cfg.ModelList[i]
+			break
+		}
+	}
+	if nemo == nil {
+		t.Fatal("OpenRouter Nemotron model not found in ModelList")
+	}
+	if nemo.ExtraBody == nil {
+		t.Fatal("OpenRouter Nemotron ExtraBody should not be nil")
+	}
+	reasoning, ok := nemo.ExtraBody["reasoning"].(map[string]any)
+	if !ok {
+		t.Fatalf("ExtraBody[reasoning] = %T, want map[string]any", nemo.ExtraBody["reasoning"])
+	}
+	if got, ok := reasoning["exclude"]; !ok || got != true {
+		t.Fatalf("ExtraBody[reasoning][exclude] = %v, want true", got)
+	}
+
+	// Round-trip the model entry through JSON to confirm the nested
+	// reasoning map survives marshal/unmarshal the same way config files do.
+	data, err := json.Marshal(nemo)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	var rt ModelConfig
+	if err := json.Unmarshal(data, &rt); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	rtReasoning, ok := rt.ExtraBody["reasoning"].(map[string]any)
+	if !ok {
+		t.Fatalf("round-tripped ExtraBody[reasoning] = %T, want map[string]any", rt.ExtraBody["reasoning"])
+	}
+	if got, ok := rtReasoning["exclude"]; !ok || got != true {
+		t.Fatalf("round-tripped ExtraBody[reasoning][exclude] = %v, want true", got)
+	}
+}
+
 func TestFilterSensitiveData(t *testing.T) {
 	// Test with nil security config
 	cfg := &Config{}

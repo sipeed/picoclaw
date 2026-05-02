@@ -144,6 +144,20 @@ func DefaultConfig() *Config {
 				Model:     "openai/gpt-5.4",
 				APIBase:   "https://openrouter.ai/api/v1",
 			},
+			// OpenRouter reasoning models that emit thinking into message.content
+			// require server-side reasoning suppression to avoid leaking the
+			// chain-of-thought into the visible assistant reply. See
+			// docs/operations/troubleshooting.md ("OpenRouter reasoning model
+			// leaks thinking into reply").
+			{
+				ModelName: "openrouter-nemotron-free",
+				Provider:  "openrouter",
+				Model:     "nvidia/nemotron-3-super-120b-a12b:free",
+				APIBase:   "https://openrouter.ai/api/v1",
+				ExtraBody: map[string]any{
+					"reasoning": map[string]any{"exclude": true},
+				},
+			},
 
 			// NVIDIA - https://build.nvidia.com/
 			{

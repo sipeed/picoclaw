@@ -48,3 +48,30 @@ Example snippet:
 ```
 
 Get your key at [OpenRouter Keys](https://openrouter.ai/keys).
+
+## OpenRouter reasoning model leaks thinking into reply
+
+**Symptom:** With an OpenRouter reasoning model (for example `nvidia/nemotron-3-super-120b-a12b:free`), even a strict prompt like `Reply with exactly: PONG` produces a reply whose visible content begins with reasoning preamble such as `We need to follow the instruction ...` before the requested text.
+
+**Cause:** Some OpenRouter reasoning models put their chain-of-thought into `message.content` rather than a separate reasoning channel. Without server-side suppression, that reasoning surfaces as the assistant's visible reply.
+
+**Fix:** Set `extra_body.reasoning.exclude = true` on the model entry so OpenRouter strips reasoning before returning content:
+
+```json
+{
+  "model_name": "openrouter-nemotron-free",
+  "provider": "openrouter",
+  "model": "nvidia/nemotron-3-super-120b-a12b:free",
+  "api_base": "https://openrouter.ai/api/v1",
+  "api_keys": ["sk-or-v1-YOUR_OPENROUTER_KEY"],
+  "extra_body": {
+    "reasoning": {
+      "exclude": true
+    }
+  }
+}
+```
+
+PicoClaw ships this as a default `model_list` entry (`openrouter-nemotron-free`); set `api_keys` to use it.
+
+**Tradeoff:** apply this per-model, not globally. Some users want OpenRouter to return reasoning tokens (for example to render thinking separately), so PicoClaw does not auto-inject `reasoning.exclude` for all OpenRouter models.
