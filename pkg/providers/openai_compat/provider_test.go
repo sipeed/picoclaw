@@ -1494,6 +1494,45 @@ func TestIsNativeSearchHost(t *testing.T) {
 	}
 }
 
+func TestSupportsVideo_Mimo(t *testing.T) {
+	p := NewProvider("key", "https://api.xiaomimimo.com/v1", "")
+	if !p.SupportsVideo() {
+		t.Fatal("Mimo provider should support video")
+	}
+}
+
+func TestSupportsVideo_DeepSeek(t *testing.T) {
+	p := NewProvider("key", "https://api.deepseek.com/v1", "")
+	if p.SupportsVideo() {
+		t.Fatal("DeepSeek provider should not support video")
+	}
+}
+
+func TestSupportsAudio_OpenAI(t *testing.T) {
+	p := NewProvider("key", "https://api.openai.com/v1", "")
+	if !p.SupportsAudio() {
+		t.Fatal("OpenAI provider should support audio")
+	}
+}
+
+func TestSupportsAudio_DeepSeek(t *testing.T) {
+	p := NewProvider("key", "https://api.deepseek.com/v1", "")
+	if p.SupportsAudio() {
+		t.Fatal("DeepSeek provider should not support audio")
+	}
+}
+
+func TestSupportsVideo_QwenByProviderName(t *testing.T) {
+	p := NewProvider("key", "https://dashscope.aliyuncs.com/compatible-mode/v1", "",
+		WithProviderName("qwen"))
+	if !p.SupportsVideo() {
+		t.Fatal("Qwen provider should support video")
+	}
+	if !p.SupportsAudio() {
+		t.Fatal("Qwen provider should support audio")
+	}
+}
+
 func TestSupportsNativeSearch_OpenAI(t *testing.T) {
 	p := NewProvider("key", "https://api.openai.com/v1", "")
 	if !p.SupportsNativeSearch() {
@@ -1653,6 +1692,39 @@ func TestProviderChat_NativeSearchIgnoredOnNonOpenAI(t *testing.T) {
 	// Should not have tools at all (no tools passed, and we must not add web_search_preview)
 	if toolsRaw, ok := requestBody["tools"]; ok {
 		t.Fatalf("tools should be omitted for non-OpenAI when only native_search was requested, got %v", toolsRaw)
+	}
+}
+
+func TestProviderChatStream_ParsesReasoningContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"reasoning_content":"Let me think"},"finish_reason":null}]}`)
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"reasoning_content":"... 1+1=2"},"finish_reason":null}]}`)
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"The answer is 2"},"finish_reason":"stop"}]}`)
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "data: [DONE]")
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "1+1=?"}},
+		nil,
+		"mimo-v2.5",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+	if out.ReasoningContent != "Let me think... 1+1=2" {
+		t.Fatalf("ReasoningContent = %q, want %q", out.ReasoningContent, "Let me think... 1+1=2")
+	}
+	if out.Content != "The answer is 2" {
+		t.Fatalf("Content = %q, want %q", out.Content, "The answer is 2")
 	}
 }
 

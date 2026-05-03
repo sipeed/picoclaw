@@ -30,6 +30,7 @@ import {
   EMPTY_LAUNCHER_FORM,
   type LauncherForm,
   buildFormFromConfig,
+  dmScopeToDimensions,
   parseCIDRText,
   parseIntField,
   parseMultilineList,
@@ -256,7 +257,7 @@ export function ConfigPage() {
             },
           },
           session: {
-            dm_scope: dmScope,
+            dimensions: dmScopeToDimensions(dmScope),
           },
           tools: {
             cron: {

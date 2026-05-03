@@ -78,6 +78,14 @@ func (p *HTTPProvider) SupportsNativeSearch() bool {
 	return p.delegate.SupportsNativeSearch()
 }
 
+func (p *HTTPProvider) SupportsVideo() bool {
+	return p.delegate.SupportsVideo()
+}
+
+func (p *HTTPProvider) SupportsAudio() bool {
+	return p.delegate.SupportsAudio()
+}
+
 func (p *HTTPProvider) SetProviderName(providerName string) {
 	if p == nil || p.delegate == nil {
 		return

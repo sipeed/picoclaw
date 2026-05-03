@@ -66,6 +66,38 @@ export const DM_SCOPE_OPTIONS = [
   },
 ] as const
 
+/**
+ * Convert a legacy dm_scope value to the new dimensions array.
+ */
+export function dmScopeToDimensions(scope: string): string[] {
+  switch (scope) {
+    case "per-channel-peer":
+      return ["chat", "sender"]
+    case "per-channel":
+      return ["chat"]
+    case "per-peer":
+      return ["sender"]
+    case "global":
+      return []
+    default:
+      return ["chat"]
+  }
+}
+
+/**
+ * Convert a dimensions array back to a legacy dm_scope value for display.
+ */
+export function dimensionsToDmScope(dimensions: unknown): string {
+  if (!Array.isArray(dimensions)) return "per-channel-peer"
+  const dims = dimensions.filter((d): d is string => typeof d === "string")
+  const hasChat = dims.includes("chat")
+  const hasSender = dims.includes("sender")
+  if (hasChat && hasSender) return "per-channel-peer"
+  if (hasChat && !hasSender) return "per-channel"
+  if (!hasChat && hasSender) return "per-peer"
+  return "global"
+}
+
 export const EMPTY_FORM: CoreConfigForm = {
   workspace: "",
   restrictToWorkspace: true,
@@ -211,7 +243,9 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
       defaults.summarize_token_percent,
       EMPTY_FORM.summarizeTokenPercent,
     ),
-    dmScope: asString(session.dm_scope) || EMPTY_FORM.dmScope,
+    dmScope: session.dimensions !== undefined
+      ? dimensionsToDmScope(session.dimensions)
+      : (asString(session.dm_scope) || EMPTY_FORM.dmScope),
     heartbeatEnabled:
       heartbeat.enabled === undefined
         ? EMPTY_FORM.heartbeatEnabled

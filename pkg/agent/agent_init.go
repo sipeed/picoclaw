@@ -248,7 +248,7 @@ func registerSharedTools(
 			// This keeps subagent vision support working even when the optimized
 			// sub-turn spawner path is unavailable.
 			subagentManager.SetMediaResolver(func(msgs []providers.Message) []providers.Message {
-				return resolveMediaRefs(msgs, al.mediaStore, cfg.Agents.Defaults.GetMaxMediaSize())
+				return resolveMediaRefs(msgs, al.mediaStore, cfg.Agents.Defaults.GetMaxMediaSize(), mediaInlinePolicy{})
 			})
 
 			// Set the spawner that links into AgentLoop's turnState

@@ -135,6 +135,17 @@ func SerializeMessages(messages []Message) []any {
 						"format": format,
 					},
 				})
+				continue
+			}
+
+			if strings.HasPrefix(mediaURL, "data:video/") {
+				parts = append(parts, map[string]any{
+					"type": "video_url",
+					"video_url": map[string]any{
+						"url": mediaURL,
+					},
+				})
+				continue
 			}
 		}
 

@@ -68,6 +68,21 @@ type NativeSearchCapable interface {
 	SupportsNativeSearch() bool
 }
 
+// VideoCapable is an optional interface for providers that support inline
+// video content (e.g. Mimo, Qwen). When a provider does not implement this
+// interface, video media refs are resolved to path tags only.
+type VideoCapable interface {
+	SupportsVideo() bool
+}
+
+// AudioCapable is an optional interface for providers that support inline
+// audio content (e.g. OpenAI GPT-4o-audio, Mimo, Qwen). When a provider
+// does not implement this interface, audio media refs are resolved to path
+// tags only.
+type AudioCapable interface {
+	SupportsAudio() bool
+}
+
 // FailoverReason classifies why an LLM request failed for fallback decisions.
 type FailoverReason string
 

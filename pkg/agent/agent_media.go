@@ -31,16 +31,44 @@ var (
 	filePlaceholderRegex  = regexp.MustCompile(`\[file(:\s+[^\]]*)?\]`)
 )
 
+// mediaInlinePolicy controls which media types are encoded as inline data URLs.
+type mediaInlinePolicy struct {
+	video bool
+	audio bool
+}
+
+// mediaInlinePolicyFromProvider probes the provider's capability interfaces
+// to build an inline policy. Providers that do not implement VideoCapable or
+// AudioCapable default to false (path tags only).
+func mediaInlinePolicyFromProvider(p providers.LLMProvider) mediaInlinePolicy {
+	var policy mediaInlinePolicy
+	if vc, ok := p.(providers.VideoCapable); ok {
+		policy.video = vc.SupportsVideo()
+	}
+	if ac, ok := p.(providers.AudioCapable); ok {
+		policy.audio = ac.SupportsAudio()
+	}
+	return policy
+}
+
 // resolveMediaRefs resolves media:// refs in messages.
 // For user messages: images get path tags only ([image:/path]) so the LLM
 // can decide whether to view them via load_image or operate on the file.
+// Video and audio refs are encoded as inline data URLs (with size guard)
+// only when the active provider declares support via the policy parameter.
 // For tool messages: images are base64-encoded and appended as a synthetic
 // user message only after the contiguous tool-message block ends, so we don't
 // break the tool-results-must-immediately-follow-assistant constraint that
-// LLM APIs enforce.
-// Non-image files always get path tags regardless of role.
+// LLM APIs enforce. Video and audio in tool messages follow the same pattern
+// when the provider supports them.
+// Non-image/video/audio files always get path tags regardless of role.
 // Returns a new slice; original messages are not mutated.
-func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxSize int) []providers.Message {
+func resolveMediaRefs(
+	messages []providers.Message,
+	store media.MediaStore,
+	maxSize int,
+	policy mediaInlinePolicy,
+) []providers.Message {
 	if store == nil {
 		return messages
 	}
@@ -104,10 +132,23 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxS
 			mime := detectMIME(localPath, meta)
 			pathTags = append(pathTags, buildPathTag(mime, localPath))
 
-			if m.Role == "tool" && strings.HasPrefix(mime, "image/") {
-				dataURL := encodeImageToDataURL(localPath, mime, info, maxSize)
+			isImage := strings.HasPrefix(mime, "image/")
+			isVideo := strings.HasPrefix(mime, "video/")
+			isAudio := strings.HasPrefix(mime, "audio/")
+			shouldInline := (isVideo && policy.video) || (isAudio && policy.audio)
+
+			if m.Role == "tool" && (isImage || shouldInline) {
+				// Tool-role media: encode and defer as synthetic user message
+				dataURL := encodeMediaToDataURL(localPath, mime, info, maxSize)
 				if dataURL != "" {
 					pendingToolImages = append(pendingToolImages, dataURL)
+				}
+			} else if shouldInline {
+				// User/assistant-role video & audio: encode inline as data URL
+				// only when the active provider declares support
+				dataURL := encodeMediaToDataURL(localPath, mime, info, maxSize)
+				if dataURL != "" {
+					resolved = append(resolved, dataURL)
 				}
 			}
 		}
@@ -132,9 +173,9 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxS
 	return result
 }
 
-// encodeImageToDataURL base64-encodes an image file into a data URL.
+// encodeMediaToDataURL base64-encodes a media file (image, video, audio) into a data URL.
 // Returns empty string if the file exceeds maxSize or encoding fails.
-func encodeImageToDataURL(localPath, mime string, info os.FileInfo, maxSize int) string {
+func encodeMediaToDataURL(localPath, mime string, info os.FileInfo, maxSize int) string {
 	if info.Size() > int64(maxSize) {
 		logger.WarnCF("agent", "Media file too large, skipping", map[string]any{
 			"path":     localPath,

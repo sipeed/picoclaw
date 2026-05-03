@@ -31,7 +31,8 @@ func (p *Pipeline) CallLLM(
 
 	// PreLLM: resolve media refs (except on iteration 1 where user media is already resolved)
 	if iteration > 1 {
-		exec.messages = resolveMediaRefs(exec.messages, p.MediaStore, maxMediaSize)
+		policy := mediaInlinePolicyFromProvider(ts.agent.Provider)
+		exec.messages = resolveMediaRefs(exec.messages, p.MediaStore, maxMediaSize, policy)
 	}
 
 	// PreLLM: graceful terminal handling
@@ -292,7 +293,7 @@ func (p *Pipeline) CallLLM(
 		if isNetworkError && retry < maxRetries {
 			backoff := time.Duration(retry+1) * time.Duration(backoffSecs) * time.Second
 			al.emitEvent(
-				EventKindLLMRetry,
+				runtimeevents.KindAgentLLMRetry,
 				ts.eventMeta("runTurn", "turn.llm.retry"),
 				LLMRetryPayload{
 					Attempt:    retry + 1,
