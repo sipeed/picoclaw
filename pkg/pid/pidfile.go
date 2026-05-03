@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -45,6 +46,18 @@ func generateToken() string {
 	return hex.EncodeToString(b)
 }
 
+// Does a heath check of the port if already a gateway is running
+func isGatewayAlive(port int) bool {
+	url := fmt.Sprintf("http://localhost:%d/health", port)
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == 200
+}
+
 // WritePidFile creates (or overwrites) the PID file atomically.
 // It returns an error if another gateway instance appears to be running
 // (a valid PID file exists with a live process).
@@ -63,7 +76,7 @@ func WritePidFile(homePath, host string, port int) (*PidFileData, error) {
 			// PID file on a shared volume, the host's PID 1 (init) would
 			// pass the isProcessRunning check, blocking new gateway starts.
 			// Treat recorded PID 1 as always stale.
-			if data.PID != 1 && isProcessRunning(data.PID) {
+			if data.PID != 1 && isProcessRunning(data.PID) && isGatewayAlive(data.Port) {
 				return nil, fmt.Errorf("gateway is already running (PID: %d, version: %s)", data.PID, data.Version)
 			}
 			logger.Warnf("not running (PID: %d) so will remove the pid file: %s", data.PID, pidPath)
