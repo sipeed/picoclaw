@@ -320,7 +320,15 @@ func registerSharedTools(
 				subagentTool := tools.NewSubagentTool(subagentManager)
 				subagentTool.SetSpawner(NewSubTurnSpawner(al))
 				agent.Tools.Register(subagentTool)
+
 			}
+				// Register the synchronous batched subagent tool
+				multiSubagentTool := tools.NewMultiSubagentTool(subagentManager)
+				multiSubagentTool.SetSpawner(NewSubTurnSpawner(al))
+				multiSubagentTool.SetAllowlistChecker(func(targetAgentID string) bool {
+					return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
+				})
+				agent.Tools.Register(multiSubagentTool)
 			if spawnStatusEnabled {
 				agent.Tools.Register(tools.NewSpawnStatusTool(subagentManager))
 			}
