@@ -1202,3 +1202,42 @@ func TestCreateProviderFromConfig_BedrockWithEndpointURL(t *testing.T) {
 	// Unexpected error - fail the test
 	t.Errorf("unexpected error from bedrock provider: %v", err)
 }
+
+func TestCreateProviderFromConfig_ToolSchemaTransformWrapsProvider(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName:           "claude-cli-test",
+		Provider:            "claude-cli",
+		Model:               "claude-sonnet-4.6",
+		Workspace:           t.TempDir(),
+		ToolSchemaTransform: "simple",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if modelID != "claude-sonnet-4.6" {
+		t.Fatalf("modelID = %q, want %q", modelID, "claude-sonnet-4.6")
+	}
+	if _, ok := provider.(*toolSchemaTransformProvider); !ok {
+		t.Fatalf("provider = %T, want *toolSchemaTransformProvider", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_InvalidToolSchemaTransform(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName:           "claude-cli-test",
+		Provider:            "claude-cli",
+		Model:               "claude-sonnet-4.6",
+		Workspace:           t.TempDir(),
+		ToolSchemaTransform: "invalid",
+	}
+
+	_, _, err := CreateProviderFromConfig(cfg)
+	if err == nil {
+		t.Fatal("CreateProviderFromConfig() expected error for invalid tool_schema_transform")
+	}
+	if !strings.Contains(err.Error(), "tool_schema_transform") {
+		t.Fatalf("error = %v, want mention tool_schema_transform", err)
+	}
+}

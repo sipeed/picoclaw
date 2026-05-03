@@ -116,23 +116,47 @@ This design also enables **multi-agent support** with flexible provider selectio
 
 #### `model_list` Entry Fields
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `model_name` | string | Yes | Unique name used to reference this model in agent config |
-| `provider` | string | No | Preferred provider identifier. When present, PicoClaw sends `model` unchanged to that provider |
-| `model` | string | Yes | Native model ID when `provider` is set. If `provider` is omitted, the legacy `provider/model` form is still supported |
-| `api_keys` | string[] | Yes* | API key(s) for authentication. Multiple keys enable per-request rotation. Not required for local providers (Ollama, LM Studio, VLLM) |
-| `api_base` | string | No | Override the default API endpoint URL |
-| `proxy` | string | No | HTTP proxy URL for this model entry |
-| `user_agent` | string | No | Custom `User-Agent` header sent with API requests (supported by OpenAI-compatible, Gemini, Anthropic, and Azure providers) |
-| `request_timeout` | int | No | Request timeout in seconds (default varies by provider) |
-| `max_tokens_field` | string | No | Override the max tokens field name in request body (e.g., `max_completion_tokens` for o1 models) |
-| `thinking_level` | string | No | Extended thinking level: `off`, `low`, `medium`, `high`, `xhigh`, or `adaptive` |
-| `extra_body` | object | No | Additional fields to inject into every request body |
+| Field | Type | Required | Description                                                                                                                                                                                                                                 |
+|-------|------|----------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `model_name` | string | Yes | Unique name used to reference this model in agent config                                                                                                                                                                                    |
+| `provider` | string | No | Preferred provider identifier. When present, PicoClaw sends `model` unchanged to that provider                                                                                                                                              |
+| `model` | string | Yes | Native model ID when `provider` is set. If `provider` is omitted, the legacy `provider/model` form is still supported                                                                                                                       |
+| `api_keys` | string[] | Yes* | API key(s) for authentication. Multiple keys enable per-request rotation. Not required for local providers (Ollama, LM Studio, VLLM)                                                                                                        |
+| `api_base` | string | No | Override the default API endpoint URL                                                                                                                                                                                                       |
+| `proxy` | string | No | HTTP proxy URL for this model entry                                                                                                                                                                                                         |
+| `user_agent` | string | No | Custom `User-Agent` header sent with API requests (supported by OpenAI-compatible, Gemini, Anthropic, and Azure providers)                                                                                                                  |
+| `request_timeout` | int | No | Request timeout in seconds (default varies by provider)                                                                                                                                                                                     |
+| `max_tokens_field` | string | No | Override the max tokens field name in request body (e.g., `max_completion_tokens` for o1 models)                                                                                                                                            |
+| `thinking_level` | string | No | Extended thinking level: `off`, `low`, `medium`, `high`, `xhigh`, or `adaptive`                                                                                                                                                             |
+| `tool_schema_transform` | string | No | Optional compatibility transform for tool parameter schemas. Default: disabled. Supported values: `simple`.                                                                                             |
+| `extra_body` | object | No | Additional fields to inject into every request body                                                                                                                                                                                         |
 | `custom_headers` | object | No | Additional HTTP headers to inject into every request (e.g., `{"X-Source":"coding-plan"}`). If a key matches a built-in header, the custom value overrides the built-in one (e.g., `Authorization`, `User-Agent`, `Content-Type`, `Accept`). |
-| `rpm` | int | No | Per-minute request rate limit |
-| `fallbacks` | string[] | No | Fallback model names for automatic failover |
-| `enabled` | bool | No | Whether this model entry is active (default: `true`) |
+| `rpm` | int | No | Per-minute request rate limit                                                                                                                                                                                                               |
+| `fallbacks` | string[] | No | Fallback model names for automatic failover                                                                                                                                                                                                 |
+| `enabled` | bool | No | Whether this model entry is active (default: `true`)                                                                                                                                                                                        |
+
+#### Tool Schema Compatibility
+
+By default, PicoClaw now forwards tool JSON Schemas unchanged.
+
+Some providers reject advanced JSON Schema features such as `$ref`, `$defs`, `anyOf`, `oneOf`, `allOf`, `pattern`, or numeric/string constraints inside tool declarations. For those models, you can opt into a compatibility transform per model entry with `tool_schema_transform`.
+
+Use `simple` when the upstream provider expects the conservative style function schema subset:
+
+```json
+{
+  "model_name": "gemini-2.5-flash-safe-tools",
+  "provider": "gemini",
+  "model": "gemini-2.5-flash",
+  "api_keys": ["your-gemini-key"],
+  "tool_schema_transform": "simple"
+}
+```
+
+Notes:
+
+- Default behavior is disabled. If you omit `tool_schema_transform`, PicoClaw sends the original tool schema.
+- The setting is per model entry, so you can enable it only for the providers that need it.
 
 #### Provider / Model Resolution
 

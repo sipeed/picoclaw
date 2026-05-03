@@ -264,7 +264,7 @@ func (p *GeminiProvider) buildRequestBody(
 			funcDecls = append(funcDecls, geminiFunctionDeclaration{
 				Name:        t.Function.Name,
 				Description: t.Function.Description,
-				Parameters:  sanitizeSchemaForGemini(t.Function.Parameters),
+				Parameters:  t.Function.Parameters,
 			})
 		}
 		if len(funcDecls) > 0 {

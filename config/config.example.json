@@ -41,6 +41,7 @@
     },
     {
       "model_name": "gemini",
+      "_comment": "Optional: set \"tool_schema_transform\": \"simple\" for providers that reject complex tool JSON Schema.",
       "model": "antigravity/gemini-2.0-flash",
       "auth_method": "oauth"
     },
