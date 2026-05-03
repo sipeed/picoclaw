@@ -20,19 +20,24 @@ import (
 type ElevenLabsTranscriber struct {
 	apiKey     string
 	apiBase    string
+	modelID    string
 	httpClient *http.Client
 }
 
-func NewElevenLabsTranscriber(apiKey, apiBase string) *ElevenLabsTranscriber {
+func NewElevenLabsTranscriber(apiKey, apiBase, modelID string) *ElevenLabsTranscriber {
 	logger.DebugCF("voice", "Creating ElevenLabs transcriber", map[string]any{"has_api_key": apiKey != ""})
 
 	if apiBase == "" {
 		apiBase = "https://api.elevenlabs.io"
 	}
+	if modelID == "" || modelID != ElevenLabsSupportedModelID() {
+		modelID = ElevenLabsSupportedModelID()
+	}
 
 	return &ElevenLabsTranscriber{
 		apiKey:  apiKey,
 		apiBase: apiBase,
+		modelID: modelID,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 		},
@@ -74,7 +79,7 @@ func (t *ElevenLabsTranscriber) Transcribe(ctx context.Context, audioFilePath st
 		return nil, fmt.Errorf("failed to copy file content: %w", err)
 	}
 
-	if err = writer.WriteField("model_id", "scribe_v1"); err != nil {
+	if err = writer.WriteField("model_id", t.modelID); err != nil {
 		return nil, fmt.Errorf("failed to write model_id field: %w", err)
 	}
 

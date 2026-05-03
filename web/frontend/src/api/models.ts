@@ -26,12 +26,24 @@ export interface ModelInfo {
   status: "available" | "unconfigured" | "unreachable"
   is_default: boolean
   is_virtual: boolean
+  default_model_allowed?: boolean
+}
+
+export interface ModelProviderOption {
+  id: string
+  default_api_base: string
+  empty_api_key_allowed: boolean
+  create_allowed: boolean
+  default_model_allowed: boolean
+  default_auth_method?: string
+  auth_method_locked?: boolean
 }
 
 interface ModelsListResponse {
   models: ModelInfo[]
   total: number
   default_model: string
+  provider_options: ModelProviderOption[]
 }
 
 interface ModelActionResponse {

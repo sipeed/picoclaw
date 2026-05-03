@@ -82,7 +82,8 @@ model_list:
   "model_list": [
     {
       "model_name": "elevenlabs-asr",
-      "model": "elevenlabs/scribe_v1"
+      "provider": "elevenlabs",
+      "model": "scribe_v1"
     }
   ]
 }
@@ -130,7 +131,7 @@ PicoClaw 目前主要支持三种 ASR 路径：
 
 | 路径 | 示例模型 | 行为说明 |
 | --- | --- | --- |
-| ElevenLabs ASR | `elevenlabs/scribe_v1` | 使用 ElevenLabs 的语音转录接口。 |
+| ElevenLabs ASR | `provider: elevenlabs`，`model: scribe_v1` | 使用 ElevenLabs 的语音转录接口。 |
 | Whisper 接口模型 | `openai/whisper-1`、`groq/whisper-large-v3` | 使用 OpenAI 兼容的 `/audio/transcriptions` 接口。 |
 | 支持音频的聊天模型 **（重构中）** | `openai/gpt-4o-audio-preview`、`gemini/gemini-2.5-flash` | 把音频发给多模态聊天模型，并要求它返回转录结果。 |
 
@@ -142,7 +143,7 @@ PicoClaw 目前主要支持三种 ASR 路径：
 
 1. **首选路径**：根据 `voice.model_name` 在 `model_list` 中找到对应模型。
 2. 如果找到的模型属于以下类型：
-   - `elevenlabs/...`，则使用 ElevenLabs transcriber。
+   - `provider=elevenlabs` 的模型，则使用 ElevenLabs transcriber。
    - OpenAI 兼容的 Whisper 模型，则使用 Whisper transcriber。
    - 支持音频输入的聊天模型，则使用 `AudioModelTranscriber`。
 3. **回退路径**：如果没有设置 `voice.model_name`，PicoClaw 会为了兼容旧配置，扫描 `model_list` 中可自动识别的 ASR 条目。

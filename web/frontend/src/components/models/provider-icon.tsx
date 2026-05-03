@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 
 const PROVIDER_ICON_SLUGS: Record<string, string> = {
   openai: "openai",
+  elevenlabs: "elevenlabs",
   anthropic: "anthropic",
   azure: "microsoftazure",
   gemini: "googlegemini",
@@ -21,6 +22,7 @@ const PROVIDER_ICON_SLUGS: Record<string, string> = {
 
 const PROVIDER_DOMAINS: Record<string, string> = {
   openai: "openai.com",
+  elevenlabs: "elevenlabs.io",
   anthropic: "anthropic.com",
   azure: "azure.com",
   gemini: "gemini.google.com",

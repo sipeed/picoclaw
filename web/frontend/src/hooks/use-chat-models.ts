@@ -27,17 +27,26 @@ export function useChatModels({ isConnected }: UseChatModelsOptions) {
   const [defaultModelName, setDefaultModelName] = useState("")
   const setDefaultRequestIdRef = useRef(0)
 
+  const syncDefaultModelName = useCallback(
+    (models: ModelInfo[], defaultModel: string) => {
+      if (models.some((m) => m.model_name === defaultModel)) {
+        setDefaultModelName(defaultModel)
+        return
+      }
+      setDefaultModelName("")
+    },
+    [],
+  )
+
   const loadModels = useCallback(async () => {
     try {
       const data = await getModels()
       setModelList(data.models)
-      if (data.models.some((m) => m.model_name === data.default_model)) {
-        setDefaultModelName(data.default_model)
-      }
+      syncDefaultModelName(data.models, data.default_model)
     } catch {
       // silently fail
     }
-  }, [])
+  }, [syncDefaultModelName])
 
   useEffect(() => {
     const timerId = setTimeout(() => {
@@ -60,9 +69,7 @@ export function useChatModels({ isConnected }: UseChatModelsOptions) {
         }
 
         setModelList(data.models)
-        if (data.models.some((m) => m.model_name === data.default_model)) {
-          setDefaultModelName(data.default_model)
-        }
+        syncDefaultModelName(data.models, data.default_model)
         const gateway = await refreshGatewayState({ force: true })
         showSaveSuccessOrRestartToast(
           t,
@@ -75,30 +82,41 @@ export function useChatModels({ isConnected }: UseChatModelsOptions) {
         toast.error(err instanceof Error ? err.message : t("models.loadError"))
       }
     },
-    [defaultModelName, t],
+    [defaultModelName, syncDefaultModelName, t],
+  )
+
+  const defaultSelectableModels = useMemo(
+    () =>
+      modelList.filter(
+        (m) => m.default_model_allowed !== false && m.is_virtual !== true,
+      ),
+    [modelList],
   )
 
   const hasAvailableModels = useMemo(
-    () => modelList.some((m) => m.available),
-    [modelList],
+    () => defaultSelectableModels.some((m) => m.available),
+    [defaultSelectableModels],
   )
 
   const oauthModels = useMemo(
-    () => modelList.filter((m) => m.available && m.auth_method === "oauth"),
-    [modelList],
+    () =>
+      defaultSelectableModels.filter(
+        (m) => m.available && m.auth_method === "oauth",
+      ),
+    [defaultSelectableModels],
   )
 
   const localModels = useMemo(
-    () => modelList.filter((m) => m.available && isLocalModel(m)),
-    [modelList],
+    () => defaultSelectableModels.filter((m) => m.available && isLocalModel(m)),
+    [defaultSelectableModels],
   )
 
   const apiKeyModels = useMemo(
     () =>
-      modelList.filter(
+      defaultSelectableModels.filter(
         (m) => m.available && m.auth_method !== "oauth" && !isLocalModel(m),
       ),
-    [modelList],
+    [defaultSelectableModels],
   )
 
   return {
