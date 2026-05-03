@@ -2518,6 +2518,57 @@ func TestProcessMessage_UsesRouteSessionKey(t *testing.T) {
 	}
 }
 
+func TestProcessMessageSync_PreservesInboundTopicOnFinalResponse(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &simpleMockProvider{response: "topic response"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	msg := testInboundMessage(bus.InboundMessage{
+		Context: bus.InboundContext{
+			Channel:   "telegram",
+			ChatID:    "-1001234567890",
+			ChatType:  "group",
+			TopicID:   "42",
+			SenderID:  "user1",
+			MessageID: "123",
+		},
+		Content: "hello topic",
+	})
+
+	al.processMessageSync(context.Background(), msg)
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Content != "topic response" {
+			t.Fatalf("outbound content = %q, want topic response", outbound.Content)
+		}
+		if outbound.Channel != "telegram" || outbound.ChatID != "-1001234567890" {
+			t.Fatalf("outbound route = %s/%s, want telegram/-1001234567890", outbound.Channel, outbound.ChatID)
+		}
+		if outbound.Context.TopicID != "42" {
+			t.Fatalf("outbound topic = %q, want 42; context=%+v", outbound.Context.TopicID, outbound.Context)
+		}
+		if outbound.Context.MessageID != "123" {
+			t.Fatalf("outbound context message ID = %q, want 123", outbound.Context.MessageID)
+		}
+	case <-time.After(responseTimeout):
+		t.Fatal("timed out waiting for outbound response")
+	}
+}
+
 func TestProcessMessage_CommandOutcomes(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
