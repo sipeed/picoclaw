@@ -862,6 +862,13 @@ type SogouConfig struct {
 	MaxResults int  `json:"max_results" env:"PICOCLAW_TOOLS_WEB_SOGOU_MAX_RESULTS"`
 }
 
+type GeminiSearchConfig struct {
+	Enabled    bool         `json:"enabled"          yaml:"-"                 env:"PICOCLAW_TOOLS_WEB_GEMINI_ENABLED"`
+	APIKey     SecureString `json:"api_key,omitzero" yaml:"api_key,omitempty" env:"PICOCLAW_TOOLS_WEB_GEMINI_API_KEY"`
+	Model      string       `json:"model"            yaml:"-"                 env:"PICOCLAW_TOOLS_WEB_GEMINI_MODEL"`
+	MaxResults int          `json:"max_results"      yaml:"-"                 env:"PICOCLAW_TOOLS_WEB_GEMINI_MAX_RESULTS"`
+}
+
 type PerplexityConfig struct {
 	Enabled    bool          `json:"enabled"           yaml:"-"                  env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_ENABLED"`
 	APIKeys    SecureStrings `json:"api_keys,omitzero" yaml:"api_keys,omitempty" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_API_KEYS"`
@@ -906,15 +913,16 @@ type BaiduSearchConfig struct {
 
 type WebToolsConfig struct {
 	ToolConfig  `                  yaml:"-"                      envPrefix:"PICOCLAW_TOOLS_WEB_"`
-	Brave       BraveConfig       `yaml:"brave,omitempty"                                        json:"brave"`
-	Tavily      TavilyConfig      `yaml:"tavily,omitempty"                                       json:"tavily"`
-	Sogou       SogouConfig       `yaml:"-"                                                      json:"sogou"`
-	DuckDuckGo  DuckDuckGoConfig  `yaml:"-"                                                      json:"duckduckgo"`
-	Perplexity  PerplexityConfig  `yaml:"perplexity,omitempty"                                   json:"perplexity"`
-	SearXNG     SearXNGConfig     `yaml:"-"                                                      json:"searxng"`
-	GLMSearch   GLMSearchConfig   `yaml:"glm_search,omitempty"                                   json:"glm_search"`
-	BaiduSearch BaiduSearchConfig `yaml:"baidu_search,omitempty"                                 json:"baidu_search"`
-	Provider    string            `yaml:"-"                                                      json:"provider,omitempty" env:"PICOCLAW_TOOLS_WEB_PROVIDER"`
+	Brave       BraveConfig        `yaml:"brave,omitempty"                                        json:"brave"`
+	Tavily      TavilyConfig       `yaml:"tavily,omitempty"                                       json:"tavily"`
+	Sogou       SogouConfig        `yaml:"-"                                                      json:"sogou"`
+	DuckDuckGo  DuckDuckGoConfig   `yaml:"-"                                                      json:"duckduckgo"`
+	Gemini      GeminiSearchConfig `yaml:"gemini,omitempty"                                      json:"gemini"`
+	Perplexity  PerplexityConfig   `yaml:"perplexity,omitempty"                                   json:"perplexity"`
+	SearXNG     SearXNGConfig      `yaml:"-"                                                      json:"searxng"`
+	GLMSearch   GLMSearchConfig    `yaml:"glm_search,omitempty"                                   json:"glm_search"`
+	BaiduSearch BaiduSearchConfig  `yaml:"baidu_search,omitempty"                                 json:"baidu_search"`
+	Provider    string             `yaml:"-"                                                      json:"provider,omitempty" env:"PICOCLAW_TOOLS_WEB_PROVIDER"`
 	// PreferNative controls whether to use provider-native web search when
 	// the active LLM supports it (e.g. OpenAI web_search_preview). When true,
 	// the client-side web_search tool is hidden to avoid duplicate search surfaces,
@@ -991,7 +999,6 @@ type ToolsConfig struct {
 	// FilterMinLength is the minimum content length required for filtering.
 	// Content shorter than this will be returned unchanged for performance.
 	// Default: 8
-<<<<<<< HEAD
 	FilterMinLength int                      `json:"filter_min_length" yaml:"-"                env:"PICOCLAW_TOOLS_FILTER_MIN_LENGTH"`
 	Web             WebToolsConfig           `json:"web"               yaml:"web,omitempty"`
 	Cron            CronToolsConfig          `json:"cron"              yaml:"-"`

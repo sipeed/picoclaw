@@ -341,6 +341,11 @@ func DefaultConfig() *Config {
 					Enabled:    false,
 					MaxResults: 5,
 				},
+				Gemini: GeminiSearchConfig{
+					Enabled:    false,
+					Model:      "gemini-2.5-flash",
+					MaxResults: 5,
+				},
 				Perplexity: PerplexityConfig{
 					Enabled:    false,
 					MaxResults: 5,

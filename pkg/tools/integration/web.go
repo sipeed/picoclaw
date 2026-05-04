@@ -472,6 +472,110 @@ type SogouSearchProvider struct {
 	client *http.Client
 }
 
+type GeminiSearchProvider struct {
+	apiKey string
+	model  string
+	proxy  string
+	client *http.Client
+}
+
+func (p *GeminiSearchProvider) Search(
+	ctx context.Context,
+	query string,
+	count int,
+	rangeCode string,
+) (string, error) {
+	if strings.TrimSpace(p.apiKey) == "" {
+		return "", errors.New("no API key provided")
+	}
+	model := strings.TrimSpace(p.model)
+	if model == "" {
+		model = "gemini-2.5-flash"
+	}
+
+	payload := map[string]any{
+		"contents": []map[string]any{{
+			"parts": []map[string]string{{"text": query}},
+		}},
+		"tools": []map[string]any{{"google_search": map[string]any{}}},
+	}
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	endpoint := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", url.PathEscape(model))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-goog-api-key", p.apiKey)
+	req.Header.Set("User-Agent", fmt.Sprintf(userAgentHonest, config.Version))
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("gemini search api error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var searchResp struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"content"`
+			GroundingMetadata struct {
+				GroundingChunks []struct {
+					Web struct {
+						URI   string `json:"uri"`
+						Title string `json:"title"`
+					} `json:"web"`
+				} `json:"groundingChunks"`
+			} `json:"groundingMetadata"`
+		} `json:"candidates"`
+	}
+	if err := json.Unmarshal(body, &searchResp); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+	if len(searchResp.Candidates) == 0 {
+		return fmt.Sprintf("No results for: %s", query), nil
+	}
+
+	candidate := searchResp.Candidates[0]
+	lines := []string{fmt.Sprintf("Results for: %s (via Gemini Google Search)", query)}
+	for _, part := range candidate.Content.Parts {
+		if strings.TrimSpace(part.Text) != "" {
+			lines = append(lines, strings.TrimSpace(part.Text))
+		}
+	}
+	citationCount := 0
+	for _, chunk := range candidate.GroundingMetadata.GroundingChunks {
+		if strings.TrimSpace(chunk.Web.URI) == "" {
+			continue
+		}
+		citationCount++
+		title := strings.TrimSpace(chunk.Web.Title)
+		if title == "" {
+			title = chunk.Web.URI
+		}
+		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", citationCount, title, chunk.Web.URI))
+		if citationCount >= count {
+			break
+		}
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
 func (p *SogouSearchProvider) Search(
 	ctx context.Context,
 	query string,
@@ -1072,6 +1176,10 @@ type WebSearchToolOptions struct {
 	SogouEnabled          bool
 	DuckDuckGoMaxResults  int
 	DuckDuckGoEnabled     bool
+	GeminiAPIKey          string
+	GeminiModel           string
+	GeminiMaxResults      int
+	GeminiEnabled         bool
 	PerplexityAPIKeys     []string
 	PerplexityMaxResults  int
 	PerplexityEnabled     bool
@@ -1104,6 +1212,10 @@ func WebSearchToolOptionsFromConfig(cfg *config.Config) WebSearchToolOptions {
 		SogouEnabled:          cfg.Tools.Web.Sogou.Enabled,
 		DuckDuckGoMaxResults:  cfg.Tools.Web.DuckDuckGo.MaxResults,
 		DuckDuckGoEnabled:     cfg.Tools.Web.DuckDuckGo.Enabled,
+		GeminiAPIKey:          cfg.Tools.Web.Gemini.APIKey.String(),
+		GeminiModel:           cfg.Tools.Web.Gemini.Model,
+		GeminiMaxResults:      cfg.Tools.Web.Gemini.MaxResults,
+		GeminiEnabled:         cfg.Tools.Web.Gemini.Enabled,
 		PerplexityAPIKeys:     cfg.Tools.Web.Perplexity.APIKeys.Values(),
 		PerplexityMaxResults:  cfg.Tools.Web.Perplexity.MaxResults,
 		PerplexityEnabled:     cfg.Tools.Web.Perplexity.Enabled,
@@ -1135,6 +1247,7 @@ var (
 	knownWebSearchProviders = []string{
 		"sogou",
 		"duckduckgo",
+		"gemini",
 		"brave",
 		"tavily",
 		"perplexity",
@@ -1142,7 +1255,7 @@ var (
 		"glm_search",
 		"baidu_search",
 	}
-	autoPrimaryWebSearchProviders  = []string{"perplexity", "brave", "searxng", "tavily"}
+	autoPrimaryWebSearchProviders  = []string{"gemini", "perplexity", "brave", "searxng", "tavily"}
 	autoFallbackWebSearchProviders = []string{"baidu_search", "glm_search"}
 )
 
@@ -1162,6 +1275,8 @@ func (opts WebSearchToolOptions) providerReady(name string) bool {
 		return opts.SogouEnabled
 	case "duckduckgo":
 		return opts.DuckDuckGoEnabled
+	case "gemini":
+		return opts.GeminiEnabled && strings.TrimSpace(opts.GeminiAPIKey) != ""
 	case "brave":
 		return opts.BraveEnabled && len(opts.BraveAPIKeys) > 0
 	case "tavily":
@@ -1278,6 +1393,24 @@ func (opts WebSearchToolOptions) providerByName(name string) (SearchProvider, in
 			keyPool: NewAPIKeyPool(opts.BraveAPIKeys),
 			proxy:   opts.Proxy,
 			client:  client,
+		}, maxResults, nil
+	case "gemini":
+		if !opts.providerReady("gemini") {
+			return nil, 0, nil
+		}
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create HTTP client for Gemini: %w", err)
+		}
+		maxResults := 10
+		if opts.GeminiMaxResults > 0 {
+			maxResults = min(opts.GeminiMaxResults, 10)
+		}
+		return &GeminiSearchProvider{
+			apiKey: opts.GeminiAPIKey,
+			model:  opts.GeminiModel,
+			proxy:  opts.Proxy,
+			client: client,
 		}, maxResults, nil
 	case "searxng":
 		if !opts.providerReady("searxng") {

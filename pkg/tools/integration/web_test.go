@@ -1853,6 +1853,43 @@ func TestWebTool_AutoProviderPrefersConfiguredProvidersBeforeSogou(t *testing.T)
 	}
 }
 
+func TestWebTool_AutoProviderPrefersGeminiBeforeOtherConfiguredProviders(t *testing.T) {
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		GeminiEnabled:        true,
+		GeminiAPIKey:         "google-key",
+		GeminiModel:          "gemini-2.5-flash",
+		GeminiMaxResults:     5,
+		BraveEnabled:         true,
+		BraveAPIKeys:         []string{"brave-key"},
+		BraveMaxResults:      5,
+		SogouEnabled:         true,
+		SogouMaxResults:      5,
+		DuckDuckGoEnabled:    true,
+		DuckDuckGoMaxResults: 5,
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+	if _, ok := tool.provider.(*GeminiSearchProvider); !ok {
+		t.Fatalf("expected GeminiSearchProvider, got %T", tool.provider)
+	}
+}
+
+func TestWebTool_GeminiRequiresAPIKey(t *testing.T) {
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		Provider:        "gemini",
+		GeminiEnabled:   true,
+		SogouEnabled:    true,
+		SogouMaxResults: 5,
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+	if _, ok := tool.provider.(*SogouSearchProvider); !ok {
+		t.Fatalf("expected SogouSearchProvider after missing Gemini API key fallback, got %T", tool.provider)
+	}
+}
+
 func TestWebTool_ExplicitProviderFallsBackWhenMissingCredentials(t *testing.T) {
 	tool, err := NewWebSearchTool(WebSearchToolOptions{
 		Provider:        "brave",
