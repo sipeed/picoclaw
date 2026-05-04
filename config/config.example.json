@@ -282,6 +282,12 @@
         "enabled": false,
         "max_results": 5
       },
+      "gemini": {
+        "enabled": false,
+        "api_key": "",
+        "model": "gemini-2.5-flash",
+        "max_results": 5
+      },
       "perplexity": {
         "enabled": false,
         "api_key": "pplx-xxx",
