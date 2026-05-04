@@ -374,6 +374,83 @@ func TestCodexProvider_ChatRoundTrip(t *testing.T) {
 	}
 }
 
+func TestCodexProvider_ChatRoundTrip_ToolCallFromStreamItem(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			http.Error(w, "not found: "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+
+		var reqBody map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if reqBody["stream"] != true {
+			http.Error(w, "stream must be true", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		itemDone := map[string]any{
+			"type":            "response.output_item.done",
+			"sequence_number": 1,
+			"output_index":    0,
+			"item": map[string]any{
+				"id":        "fc_1",
+				"type":      "function_call",
+				"call_id":   "call_abc",
+				"name":      "nutritiondb__list_weight_entries",
+				"arguments": `{"limit":5}`,
+				"status":    "completed",
+			},
+		}
+		b, _ := json.Marshal(itemDone)
+		fmt.Fprintf(w, "event: response.output_item.done\n")
+		fmt.Fprintf(w, "data: %s\n\n", string(b))
+
+		resp := map[string]any{
+			"id":     "resp_test",
+			"object": "response",
+			"status": "completed",
+			"output": []map[string]any{},
+			"usage": map[string]any{
+				"input_tokens":          10,
+				"output_tokens":         5,
+				"total_tokens":          15,
+				"input_tokens_details":  map[string]any{"cached_tokens": 0},
+				"output_tokens_details": map[string]any{"reasoning_tokens": 0},
+			},
+		}
+		writeCompletedSSE(w, resp)
+	}))
+	defer server.Close()
+
+	provider := NewCodexProvider("test-token", "acc-123")
+	provider.client = createOpenAITestClient(server.URL, "test-token", "acc-123")
+
+	resp, err := provider.Chat(t.Context(), []Message{{Role: "user", Content: "latest weights"}}, nil, "gpt-5.4", nil)
+	if err != nil {
+		t.Fatalf("Chat() error: %v", err)
+	}
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(resp.ToolCalls))
+	}
+	tc := resp.ToolCalls[0]
+	if tc.ID != "call_abc" {
+		t.Errorf("ToolCall.ID = %q, want call_abc", tc.ID)
+	}
+	if tc.Name != "nutritiondb__list_weight_entries" {
+		t.Errorf("ToolCall.Name = %q, want nutritiondb__list_weight_entries", tc.Name)
+	}
+	if tc.Arguments["limit"] != float64(5) {
+		t.Errorf("ToolCall.Arguments[limit] = %v, want 5", tc.Arguments["limit"])
+	}
+	if resp.FinishReason != "tool_calls" {
+		t.Errorf("FinishReason = %q, want tool_calls", resp.FinishReason)
+	}
+}
+
 func TestCodexProvider_ChatRoundTrip_WebSearchDisabled(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/responses" {

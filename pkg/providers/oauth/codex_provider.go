@@ -2,6 +2,7 @@ package oauthprovider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -105,6 +107,7 @@ func (p *CodexProvider) Chat(
 
 	var resp *responses.Response
 	var streamText strings.Builder
+	var streamToolCalls []ToolCall
 	for stream.Next() {
 		evt := stream.Current()
 		if evt.Type == "response.output_text.done" {
@@ -112,6 +115,12 @@ func (p *CodexProvider) Chat(
 			if textDone.Text != "" {
 				streamText.Reset()
 				streamText.WriteString(textDone.Text)
+			}
+		}
+		if evt.Type == "response.output_item.done" {
+			done := evt.AsResponseOutputItemDone()
+			if tc, ok := codexToolCallFromOutputItem(done.Item); ok {
+				streamToolCalls = append(streamToolCalls, tc)
 			}
 		}
 		if evt.Type == "response.completed" || evt.Type == "response.failed" || evt.Type == "response.incomplete" {
@@ -165,7 +174,42 @@ func (p *CodexProvider) Chat(
 	if parsed.Content == "" && len(parsed.ToolCalls) == 0 && streamText.Len() > 0 {
 		parsed.Content = streamText.String()
 	}
+	if len(parsed.ToolCalls) == 0 && len(streamToolCalls) > 0 {
+		parsed.ToolCalls = streamToolCalls
+		parsed.FinishReason = "tool_calls"
+	}
 	return parsed, nil
+}
+
+func codexToolCallFromOutputItem(item responses.ResponseOutputItemUnion) (ToolCall, bool) {
+	if item.Type != "function_call" {
+		return ToolCall{}, false
+	}
+
+	call := item.AsFunctionCall()
+	if call.Name == "" {
+		return ToolCall{}, false
+	}
+
+	var args map[string]any
+	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+		args = map[string]any{"raw": call.Arguments}
+	}
+
+	id := call.CallID
+	if id == "" {
+		id = call.ID
+	}
+
+	return ToolCall{
+		ID:        id,
+		Name:      call.Name,
+		Arguments: args,
+		Function: &FunctionCall{
+			Name:      call.Name,
+			Arguments: call.Arguments,
+		},
+	}, true
 }
 
 func (p *CodexProvider) GetDefaultModel() string {
@@ -229,6 +273,9 @@ func buildCodexParams(
 			OfInputItemList: inputItems,
 		},
 		Store: openai.Opt(false),
+		Reasoning: shared.ReasoningParam{
+			Effort: shared.ReasoningEffortNone,
+		},
 	}
 
 	if instructions != "" {
