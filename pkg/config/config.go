@@ -991,6 +991,7 @@ type ToolsConfig struct {
 	// FilterMinLength is the minimum content length required for filtering.
 	// Content shorter than this will be returned unchanged for performance.
 	// Default: 8
+<<<<<<< HEAD
 	FilterMinLength int                      `json:"filter_min_length" yaml:"-"                env:"PICOCLAW_TOOLS_FILTER_MIN_LENGTH"`
 	Web             WebToolsConfig           `json:"web"               yaml:"web,omitempty"`
 	Cron            CronToolsConfig          `json:"cron"              yaml:"-"`
@@ -1014,6 +1015,7 @@ type ToolsConfig struct {
 	SpawnStatus     ToolConfig               `json:"spawn_status"      yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPAWN_STATUS_"`
 	SPI             ToolConfig               `json:"spi"               yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPI_"`
 	Subagent        ToolConfig               `json:"subagent"          yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
+	UpdatePlan      ToolConfig               `json:"update_plan"       yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_UPDATE_PLAN_"`
 	WebFetch        ToolConfig               `json:"web_fetch"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
 	WriteFile       ToolConfig               `json:"write_file"        yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
 }
@@ -1747,6 +1749,8 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.SPI.Enabled
 	case "subagent":
 		return t.Subagent.Enabled
+	case "update_plan":
+		return t.UpdatePlan.Enabled
 	case "web_fetch":
 		return t.WebFetch.Enabled
 	case "send_file":
