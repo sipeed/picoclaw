@@ -292,7 +292,7 @@ func (p *Pipeline) CallLLM(
 		if isNetworkError && retry < maxRetries {
 			backoff := time.Duration(retry+1) * time.Duration(backoffSecs) * time.Second
 			al.emitEvent(
-				EventKindLLMRetry,
+				runtimeevents.KindAgentLLMRetry,
 				ts.eventMeta("runTurn", "turn.llm.retry"),
 				LLMRetryPayload{
 					Attempt:    retry + 1,
