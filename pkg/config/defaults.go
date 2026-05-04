@@ -455,6 +455,9 @@ func DefaultConfig() *Config {
 			Subagent: ToolConfig{
 				Enabled: true,
 			},
+			UpdatePlan: ToolConfig{
+				Enabled: false,
+			},
 			WebFetch: ToolConfig{
 				Enabled: true,
 			},
