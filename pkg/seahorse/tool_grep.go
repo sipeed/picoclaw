@@ -131,6 +131,13 @@ func (t *GrepTool) Execute(ctx context.Context, args map[string]any) *tools.Tool
 	if allConv, ok := args["all_conversations"].(bool); ok {
 		input.AllConversations = allConv
 	}
+	if !input.AllConversations {
+		conversationID, err := t.engine.ConversationIDForSession(ctx, tools.ToolSessionKey(ctx))
+		if err != nil {
+			return tools.ErrorResult("Grep failed: resolve current conversation: " + err.Error())
+		}
+		input.ConversationID = conversationID
+	}
 	if limit, ok := args["limit"].(float64); ok {
 		input.Limit = int(limit)
 	}

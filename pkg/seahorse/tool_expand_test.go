@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 func TestExpandToolByMessageIDs(t *testing.T) {
@@ -132,5 +134,41 @@ func TestExpandToolWithParts(t *testing.T) {
 	}
 	if !foundToolResult {
 		t.Error("missing tool_result part")
+	}
+}
+
+func TestExpandToolScopesToCurrentSession(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	current, _ := s.GetOrCreateConversation(ctx, "session:current")
+	other, _ := s.GetOrCreateConversation(ctx, "session:other")
+	currentMsg, _ := s.AddMessage(ctx, current.ConversationID, "user", "current message", 5)
+	otherMsg, _ := s.AddMessage(ctx, other.ConversationID, "user", "other message", 5)
+
+	tool := NewExpandTool(&RetrievalEngine{store: s})
+	toolCtx := tools.WithToolSessionContext(ctx, "agent", "session:current", nil)
+	result := tool.Execute(toolCtx, map[string]any{
+		"message_ids": []any{
+			float64(currentMsg.ID),
+			float64(otherMsg.ID),
+		},
+	})
+	if result.IsError {
+		t.Fatalf("Execute returned error: %s", result.ContentForLLM())
+	}
+
+	var output struct {
+		Messages []struct {
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(result.ContentForLLM()), &output); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if len(output.Messages) != 1 {
+		t.Fatalf("messages = %d, want 1: %#v", len(output.Messages), output.Messages)
+	}
+	if output.Messages[0].Content != "current message" {
+		t.Fatalf("content = %q, want current message", output.Messages[0].Content)
 	}
 }

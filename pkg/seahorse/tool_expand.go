@@ -82,7 +82,12 @@ func (t *ExpandTool) Execute(ctx context.Context, args map[string]any) *tools.To
 		}
 	}
 
-	result, err := t.engine.ExpandMessages(ctx, messageIDs)
+	conversationID, err := t.engine.ConversationIDForSession(ctx, tools.ToolSessionKey(ctx))
+	if err != nil {
+		return tools.ErrorResult("Expand failed: resolve current conversation: " + err.Error())
+	}
+
+	result, err := t.engine.ExpandMessagesScoped(ctx, messageIDs, conversationID, false)
 	if err != nil {
 		return tools.ErrorResult("Expand failed: " + err.Error())
 	}
