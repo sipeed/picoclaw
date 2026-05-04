@@ -104,8 +104,16 @@ func (p *CodexProvider) Chat(
 	defer stream.Close()
 
 	var resp *responses.Response
+	var streamText strings.Builder
 	for stream.Next() {
 		evt := stream.Current()
+		if evt.Type == "response.output_text.done" {
+			textDone := evt.AsResponseOutputTextDone()
+			if textDone.Text != "" {
+				streamText.Reset()
+				streamText.WriteString(textDone.Text)
+			}
+		}
 		if evt.Type == "response.completed" || evt.Type == "response.failed" || evt.Type == "response.incomplete" {
 			evtResp := evt.Response
 			if evtResp.ID != "" {
@@ -153,7 +161,11 @@ func (p *CodexProvider) Chat(
 		return nil, fmt.Errorf("codex API call: stream ended without completed response")
 	}
 
-	return orc.ParseResponseFromStruct(resp), nil
+	parsed := orc.ParseResponseFromStruct(resp)
+	if parsed.Content == "" && len(parsed.ToolCalls) == 0 && streamText.Len() > 0 {
+		parsed.Content = streamText.String()
+	}
+	return parsed, nil
 }
 
 func (p *CodexProvider) GetDefaultModel() string {
@@ -242,29 +254,6 @@ func buildCodexParams(
 
 func CreateCodexTokenSource() func() (string, string, error) {
 	return func() (string, string, error) {
-		cred, err := auth.GetCredential("openai")
-		if err != nil {
-			return "", "", fmt.Errorf("loading auth credentials: %w", err)
-		}
-		if cred == nil {
-			return "", "", fmt.Errorf("no credentials for openai. Run: picoclaw auth login --provider openai")
-		}
-
-		if cred.AuthMethod == "oauth" && cred.NeedsRefresh() && cred.RefreshToken != "" {
-			oauthCfg := auth.OpenAIOAuthConfig()
-			refreshed, err := auth.RefreshAccessToken(cred, oauthCfg)
-			if err != nil {
-				return "", "", fmt.Errorf("refreshing token: %w", err)
-			}
-			if refreshed.AccountID == "" {
-				refreshed.AccountID = cred.AccountID
-			}
-			if err := auth.SetCredential("openai", refreshed); err != nil {
-				return "", "", fmt.Errorf("saving refreshed token: %w", err)
-			}
-			return refreshed.AccessToken, refreshed.AccountID, nil
-		}
-
-		return cred.AccessToken, cred.AccountID, nil
+		return auth.GetOpenAIToken()
 	}
 }
