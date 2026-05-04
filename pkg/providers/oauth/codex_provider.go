@@ -220,6 +220,10 @@ func (p *CodexProvider) SupportsNativeSearch() bool {
 	return p.enableWebSearch
 }
 
+func (p *CodexProvider) SupportsThinking() bool {
+	return true
+}
+
 func resolveCodexModel(model string) (string, string) {
 	m := strings.ToLower(strings.TrimSpace(model))
 	if m == "" {
@@ -274,7 +278,7 @@ func buildCodexParams(
 		},
 		Store: openai.Opt(false),
 		Reasoning: shared.ReasoningParam{
-			Effort: shared.ReasoningEffortNone,
+			Effort: codexReasoningEffort(options["thinking_level"]),
 		},
 	}
 
@@ -297,6 +301,22 @@ func buildCodexParams(
 	}
 
 	return params
+}
+
+func codexReasoningEffort(raw any) shared.ReasoningEffort {
+	level, _ := raw.(string)
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "low":
+		return shared.ReasoningEffortLow
+	case "medium", "adaptive":
+		return shared.ReasoningEffortMedium
+	case "high":
+		return shared.ReasoningEffortHigh
+	case "xhigh", "max":
+		return shared.ReasoningEffortXhigh
+	default:
+		return shared.ReasoningEffortNone
+	}
 }
 
 func CreateCodexTokenSource() func() (string, string, error) {

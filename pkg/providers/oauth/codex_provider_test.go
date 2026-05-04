@@ -10,6 +10,7 @@ import (
 	"github.com/openai/openai-go/v3"
 	openaiopt "github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 
 	orc "github.com/sipeed/picoclaw/pkg/providers/openai_responses_common"
 )
@@ -34,6 +35,9 @@ func TestBuildCodexParams_BasicMessage(t *testing.T) {
 	if params.MaxOutputTokens.Valid() {
 		t.Fatalf("MaxOutputTokens should not be set for Codex backend")
 	}
+	if params.Reasoning.Effort != shared.ReasoningEffortNone {
+		t.Fatalf("Reasoning.Effort = %q, want none", params.Reasoning.Effort)
+	}
 }
 
 func TestBuildCodexParams_SystemAsInstructions(t *testing.T) {
@@ -47,6 +51,44 @@ func TestBuildCodexParams_SystemAsInstructions(t *testing.T) {
 	}
 	if params.Instructions.Or("") != "You are helpful" {
 		t.Errorf("Instructions = %q, want %q", params.Instructions.Or(""), "You are helpful")
+	}
+}
+
+func TestBuildCodexParams_ThinkingLevel(t *testing.T) {
+	tests := []struct {
+		name  string
+		level any
+		want  shared.ReasoningEffort
+	}{
+		{name: "default", level: nil, want: shared.ReasoningEffortNone},
+		{name: "off", level: "off", want: shared.ReasoningEffortNone},
+		{name: "low", level: "low", want: shared.ReasoningEffortLow},
+		{name: "medium", level: "medium", want: shared.ReasoningEffortMedium},
+		{name: "adaptive", level: "adaptive", want: shared.ReasoningEffortMedium},
+		{name: "high", level: "high", want: shared.ReasoningEffortHigh},
+		{name: "xhigh", level: "xhigh", want: shared.ReasoningEffortXhigh},
+		{name: "max", level: "max", want: shared.ReasoningEffortXhigh},
+		{name: "unknown", level: "banana", want: shared.ReasoningEffortNone},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := map[string]any{}
+			if tt.level != nil {
+				opts["thinking_level"] = tt.level
+			}
+			params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, nil, "gpt-5.4", opts, false)
+			if params.Reasoning.Effort != tt.want {
+				t.Fatalf("Reasoning.Effort = %q, want %q", params.Reasoning.Effort, tt.want)
+			}
+		})
+	}
+}
+
+func TestCodexProvider_SupportsThinking(t *testing.T) {
+	provider := NewCodexProvider("test-token", "acc-123")
+	if !provider.SupportsThinking() {
+		t.Fatal("CodexProvider should support thinking_level")
 	}
 }
 
