@@ -336,6 +336,10 @@ export function ConfigPage() {
                   server.headersText,
                   `MCP server ${server.name} headers`,
                 ),
+                command: null,
+                args: null,
+                env: null,
+                env_file: null,
               },
             ] as const
           }
@@ -348,12 +352,16 @@ export function ConfigPage() {
             server.name,
             {
               enabled: server.enabled,
+              type: "stdio",
               command: server.command,
               args: parseMultilineList(server.argsText),
               env: parseJSONObjectField(
                 server.envText,
                 `MCP server ${server.name} env`,
               ),
+              url: null,
+              headers: null,
+              env_file: null,
             },
           ] as const
         })
