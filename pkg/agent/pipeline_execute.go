@@ -10,6 +10,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/constants"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -72,7 +73,7 @@ toolLoop:
 						})
 
 					al.emitEvent(
-						EventKindToolExecStart,
+						runtimeevents.KindAgentToolExecStart,
 						ts.eventMeta("runTurn", "turn.tool.start"),
 						ToolExecStartPayload{
 							Tool:      toolName,
@@ -191,7 +192,7 @@ toolLoop:
 					}
 
 					al.emitEvent(
-						EventKindToolExecEnd,
+						runtimeevents.KindAgentToolExecEnd,
 						ts.eventMeta("runTurn", "turn.tool.end"),
 						ToolExecEndPayload{
 							Tool:       toolName,
@@ -237,7 +238,7 @@ toolLoop:
 							for j := i + 1; j < len(normalizedToolCalls); j++ {
 								skippedTC := normalizedToolCalls[j]
 								al.emitEvent(
-									EventKindToolExecSkipped,
+									runtimeevents.KindAgentToolExecSkipped,
 									ts.eventMeta("runTurn", "turn.tool.skipped"),
 									ToolExecSkippedPayload{
 										Tool:   skippedTC.Name,
@@ -284,7 +285,7 @@ toolLoop:
 				exec.allResponsesHandled = false
 				denyContent := hookDeniedToolContent("Tool execution denied by hook", decision.Reason)
 				al.emitEvent(
-					EventKindToolExecSkipped,
+					runtimeevents.KindAgentToolExecSkipped,
 					ts.eventMeta("runTurn", "turn.tool.skipped"),
 					ToolExecSkippedPayload{
 						Tool:   toolName,
@@ -323,7 +324,7 @@ toolLoop:
 				exec.allResponsesHandled = false
 				denyContent := hookDeniedToolContent("Tool execution denied by approval hook", approval.Reason)
 				al.emitEvent(
-					EventKindToolExecSkipped,
+					runtimeevents.KindAgentToolExecSkipped,
 					ts.eventMeta("runTurn", "turn.tool.skipped"),
 					ToolExecSkippedPayload{
 						Tool:   toolName,
@@ -353,7 +354,7 @@ toolLoop:
 				"iteration": iteration,
 			})
 		al.emitEvent(
-			EventKindToolExecStart,
+			runtimeevents.KindAgentToolExecStart,
 			ts.eventMeta("runTurn", "turn.tool.start"),
 			ToolExecStartPayload{
 				Tool:      toolName,
@@ -401,7 +402,7 @@ toolLoop:
 					"channel":     ts.channel,
 				})
 			al.emitEvent(
-				EventKindFollowUpQueued,
+				runtimeevents.KindAgentFollowUpQueued,
 				ts.scope.meta(iteration, "runTurn", "turn.follow_up.queued"),
 				FollowUpQueuedPayload{
 					SourceTool: asyncToolName,
@@ -567,7 +568,7 @@ toolLoop:
 			toolResultMsg.Media = append(toolResultMsg.Media, toolResult.Media...)
 		}
 		al.emitEvent(
-			EventKindToolExecEnd,
+			runtimeevents.KindAgentToolExecEnd,
 			ts.eventMeta("runTurn", "turn.tool.end"),
 			ToolExecEndPayload{
 				Tool:       toolName,
@@ -612,7 +613,7 @@ toolLoop:
 				for j := i + 1; j < len(normalizedToolCalls); j++ {
 					skippedTC := normalizedToolCalls[j]
 					al.emitEvent(
-						EventKindToolExecSkipped,
+						runtimeevents.KindAgentToolExecSkipped,
 						ts.eventMeta("runTurn", "turn.tool.skipped"),
 						ToolExecSkippedPayload{
 							Tool:   skippedTC.Name,
@@ -704,6 +705,9 @@ toolLoop:
 		}
 		ts.setPhase(TurnPhaseCompleted)
 		ts.setFinalContent("")
+		if al.channelManager != nil && ts.channel != "" {
+			al.channelManager.DismissToolFeedback(ctx, ts.channel, ts.chatID, ts.opts.InboundContext)
+		}
 		logger.InfoCF("agent", "Tool output satisfied delivery; ending turn without follow-up LLM",
 			map[string]any{
 				"agent_id":   ts.agent.ID,

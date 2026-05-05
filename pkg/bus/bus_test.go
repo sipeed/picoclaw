@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 )
 
 func TestPublishConsume(t *testing.T) {
@@ -168,6 +170,86 @@ func TestPublishInbound_BackfillsContextFromLegacyFields(t *testing.T) {
 	}
 	if got.Context.MessageID != "msg-1" {
 		t.Fatalf("expected context message ID msg-1, got %q", got.Context.MessageID)
+	}
+}
+
+func TestMessageBusPublishesRuntimeFailureAndCloseEvents(t *testing.T) {
+	eventBus := runtimeevents.NewBus()
+	defer func() {
+		if err := eventBus.Close(); err != nil {
+			t.Errorf("event bus close failed: %v", err)
+		}
+	}()
+
+	_, eventsCh, err := eventBus.Channel().OfKind(
+		runtimeevents.KindBusPublishFailed,
+		runtimeevents.KindBusCloseStarted,
+		runtimeevents.KindBusCloseDrained,
+		runtimeevents.KindBusCloseCompleted,
+	).SubscribeChan(t.Context(), runtimeevents.SubscribeOptions{Name: "bus-events", Buffer: 4})
+	if err != nil {
+		t.Fatalf("SubscribeChan failed: %v", err)
+	}
+
+	mb := NewMessageBus()
+	mb.SetEventPublisher(eventBus)
+
+	if err := mb.PublishInbound(context.Background(), InboundMessage{}); err == nil {
+		t.Fatal("expected PublishInbound to fail")
+	}
+	failed := receiveBusRuntimeEvent(t, eventsCh)
+	if failed.Kind != runtimeevents.KindBusPublishFailed ||
+		failed.Source.Name != "inbound" ||
+		failed.Severity != runtimeevents.SeverityError {
+		t.Fatalf("publish failed event = %+v", failed)
+	}
+	if failed.Attrs["stream"] != "inbound" || failed.Attrs["error"] == "" {
+		t.Fatalf("publish failed attrs = %#v, want stream and error", failed.Attrs)
+	}
+
+	if err := mb.PublishOutbound(context.Background(), OutboundMessage{
+		Context: NewOutboundContext("telegram", "chat-1", ""),
+		Content: "queued",
+	}); err != nil {
+		t.Fatalf("PublishOutbound failed: %v", err)
+	}
+	mb.Close()
+
+	seen := map[runtimeevents.Kind]bool{}
+	var drainedAttrs map[string]any
+	for range 3 {
+		evt := receiveBusRuntimeEvent(t, eventsCh)
+		seen[evt.Kind] = true
+		if evt.Kind == runtimeevents.KindBusCloseDrained {
+			drainedAttrs = evt.Attrs
+		}
+	}
+	for _, kind := range []runtimeevents.Kind{
+		runtimeevents.KindBusCloseStarted,
+		runtimeevents.KindBusCloseDrained,
+		runtimeevents.KindBusCloseCompleted,
+	} {
+		if !seen[kind] {
+			t.Fatalf("missing %s event, seen=%v", kind, seen)
+		}
+	}
+	if drainedAttrs["drained"] != 1 {
+		t.Fatalf("bus close drained attrs = %#v, want drained count", drainedAttrs)
+	}
+}
+
+func receiveBusRuntimeEvent(t *testing.T, ch <-chan runtimeevents.Event) runtimeevents.Event {
+	t.Helper()
+
+	select {
+	case evt, ok := <-ch:
+		if !ok {
+			t.Fatal("runtime event channel closed before expected event")
+		}
+		return evt
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for runtime event")
+		return runtimeevents.Event{}
 	}
 }
 

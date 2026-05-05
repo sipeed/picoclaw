@@ -289,24 +289,6 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 
 </details>
 
-### 💻 TUI Launcher（ヘッドレス / SSH 向け推奨）
-
-TUI（Terminal UI）Launcher は設定と管理のためのフル機能ターミナルインターフェースを提供します。サーバー、Raspberry Pi、その他のヘッドレス環境に最適です。
-
-```bash
-picoclaw-launcher-tui
-```
-
-<p align="center">
-<img src="../../assets/launcher-tui.jpg" alt="TUI Launcher" width="600">
-</p>
-
-**始め方:**
-
-TUI メニューを使って：**1)** Provider を設定 → **2)** Channel を設定 → **3)** Gateway を起動 → **4)** チャット！
-
-TUI の詳細なドキュメントは [docs.picoclaw.io](https://docs.picoclaw.io) を参照してください。
-
 <a id="-run-on-old-android-phones"></a>
 ### 📱 Android
 

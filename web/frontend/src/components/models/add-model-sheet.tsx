@@ -59,6 +59,7 @@ interface AddForm {
   maxTokensField: string
   requestTimeout: string
   thinkingLevel: string
+  toolSchemaTransform: string
   extraBody: string
   customHeaders: string
 }
@@ -77,6 +78,7 @@ const EMPTY_ADD_FORM: AddForm = {
   maxTokensField: "",
   requestTimeout: "",
   thinkingLevel: "",
+  toolSchemaTransform: "",
   extraBody: "",
   customHeaders: "",
 }
@@ -225,6 +227,7 @@ export function AddModelSheet({
           ? Number(form.requestTimeout)
           : undefined,
         thinking_level: form.thinkingLevel.trim() || undefined,
+        tool_schema_transform: form.toolSchemaTransform.trim() || undefined,
         extra_body: form.extraBody.trim()
           ? JSON.parse(form.extraBody.trim())
           : undefined,
@@ -456,6 +459,17 @@ export function AddModelSheet({
                   value={form.maxTokensField}
                   onChange={setField("maxTokensField")}
                   placeholder="max_completion_tokens"
+                />
+              </Field>
+
+              <Field
+                label={t("models.field.toolSchemaTransform")}
+                hint={t("models.field.toolSchemaTransformHint")}
+              >
+                <Input
+                  value={form.toolSchemaTransform}
+                  onChange={setField("toolSchemaTransform")}
+                  placeholder="google"
                 />
               </Field>
 

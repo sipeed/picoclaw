@@ -19,6 +19,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
@@ -1781,17 +1782,22 @@ func (m *artifactThenSendProvider) Chat(
 		if messages[i].Role != "tool" {
 			continue
 		}
-		start := strings.Index(messages[i].Content, "[file:")
-		if start < 0 {
-			continue
+		for _, prefix := range []string{"[image:", "[file:", "[audio:", "[video:"} {
+			start := strings.Index(messages[i].Content, prefix)
+			if start < 0 {
+				continue
+			}
+			rest := messages[i].Content[start+len(prefix):]
+			end := strings.Index(rest, "]")
+			if end < 0 {
+				continue
+			}
+			artifactPath = rest[:end]
+			break
 		}
-		rest := messages[i].Content[start+len("[file:"):]
-		end := strings.Index(rest, "]")
-		if end < 0 {
-			continue
+		if artifactPath != "" {
+			break
 		}
-		artifactPath = rest[:end]
-		break
 	}
 	if artifactPath == "" {
 		return nil, fmt.Errorf("provider did not receive artifact path in tool result")
@@ -4656,7 +4662,7 @@ func TestRun_PicoToolFeedbackSuppressesDuplicateInterimAssistantContent(t *testi
 	}
 }
 
-func TestResolveMediaRefs_ResolvesToBase64(t *testing.T) {
+func TestResolveMediaRefs_ImageInjectsPathTag(t *testing.T) {
 	store := media.NewFileMediaStore()
 	dir := t.TempDir()
 
@@ -4684,15 +4690,110 @@ func TestResolveMediaRefs_ResolvesToBase64(t *testing.T) {
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
 
-	if len(result[0].Media) != 1 {
-		t.Fatalf("expected 1 resolved media, got %d", len(result[0].Media))
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected 0 media (images use path tags), got %d", len(result[0].Media))
 	}
-	if !strings.HasPrefix(result[0].Media[0], "data:image/png;base64,") {
-		t.Fatalf("expected data:image/png;base64, prefix, got %q", result[0].Media[0][:40])
+	localPath, _, _ := store.ResolveWithMeta(ref)
+	expectedContent := "describe this [image:" + localPath + "]"
+	if result[0].Content != expectedContent {
+		t.Fatalf("expected content %q, got %q", expectedContent, result[0].Content)
 	}
 }
 
-func TestResolveMediaRefs_SkipsOversizedFile(t *testing.T) {
+func TestResolveMediaRefs_ToolRoleImageAppendedAsUserMessage(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	pngPath := filepath.Join(dir, "tool-result.png")
+	pngHeader := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+		0x00, 0x00, 0x00, 0x0D, // IHDR length
+		0x49, 0x48, 0x44, 0x52, // "IHDR"
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, // 1x1 RGB
+		0x00, 0x00, 0x00, // no interlace
+		0x90, 0x77, 0x53, 0xDE, // CRC
+	}
+	if err := os.WriteFile(pngPath, pngHeader, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ref, _ := store.Store(pngPath, media.MediaMeta{}, "test")
+
+	messages := []providers.Message{
+		{Role: "tool", Content: "Image loaded", Media: []string{ref}},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	// Tool message should have path tag but no base64
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected 0 media in tool message, got %d", len(result[0].Media))
+	}
+	localPath, _, _ := store.ResolveWithMeta(ref)
+	if !strings.Contains(result[0].Content, "[image:"+localPath+"]") {
+		t.Fatalf("expected image path tag in tool content, got %q", result[0].Content)
+	}
+
+	// A synthetic user message with base64 should follow
+	if len(result) != 2 {
+		t.Fatalf("expected 2 messages (tool + synthetic user), got %d", len(result))
+	}
+	if result[1].Role != "user" {
+		t.Fatalf("expected synthetic message role=user, got %q", result[1].Role)
+	}
+	if len(result[1].Media) != 1 {
+		t.Fatalf("expected 1 base64 media in synthetic user message, got %d", len(result[1].Media))
+	}
+	if !strings.HasPrefix(result[1].Media[0], "data:image/png;base64,") {
+		t.Fatalf("expected data:image/png;base64, prefix, got %q", result[1].Media[0][:40])
+	}
+}
+
+func TestResolveMediaRefs_MultiToolCallPreservesOrdering(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	// Create image for tool #1
+	pngPath := filepath.Join(dir, "loaded.png")
+	pngHeader := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02,
+		0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE,
+	}
+	os.WriteFile(pngPath, pngHeader, 0o644)
+	imgRef, _ := store.Store(pngPath, media.MediaMeta{}, "test")
+
+	// Simulate: assistant called load_image + read_file, two tool results follow
+	messages := []providers.Message{
+		{Role: "assistant", Content: "Let me load the image and read the file."},
+		{Role: "tool", Content: "Image loaded [image: photo]", Media: []string{imgRef}},
+		{Role: "tool", Content: "file contents here"},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	// assistant, tool#1, tool#2 must remain contiguous — no user in between
+	if result[0].Role != "assistant" {
+		t.Fatalf("result[0] expected assistant, got %q", result[0].Role)
+	}
+	if result[1].Role != "tool" {
+		t.Fatalf("result[1] expected tool, got %q", result[1].Role)
+	}
+	if result[2].Role != "tool" {
+		t.Fatalf("result[2] expected tool, got %q", result[2].Role)
+	}
+
+	// Synthetic user message should come AFTER the tool block
+	if len(result) != 4 {
+		t.Fatalf("expected 4 messages (assistant + 2 tool + synthetic user), got %d", len(result))
+	}
+	if result[3].Role != "user" {
+		t.Fatalf("result[3] expected user, got %q", result[3].Role)
+	}
+	if len(result[3].Media) != 1 || !strings.HasPrefix(result[3].Media[0], "data:image/png;base64,") {
+		t.Fatal("expected synthetic user message to contain base64 image")
+	}
+}
+
+func TestResolveMediaRefs_OversizedImageSkipsBase64KeepsPathTag(t *testing.T) {
 	store := media.NewFileMediaStore()
 	dir := t.TempDir()
 
@@ -4713,6 +4814,11 @@ func TestResolveMediaRefs_SkipsOversizedFile(t *testing.T) {
 
 	if len(result[0].Media) != 0 {
 		t.Fatalf("expected 0 media (oversized), got %d", len(result[0].Media))
+	}
+	localPath, _, _ := store.ResolveWithMeta(ref)
+	expected := "hi [image:" + localPath + "]"
+	if result[0].Content != expected {
+		t.Fatalf("expected content %q, got %q", expected, result[0].Content)
 	}
 }
 
@@ -4791,11 +4897,13 @@ func TestResolveMediaRefs_UsesMetaContentType(t *testing.T) {
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
 
-	if len(result[0].Media) != 1 {
-		t.Fatalf("expected 1 media, got %d", len(result[0].Media))
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected 0 media (images use path tags), got %d", len(result[0].Media))
 	}
-	if !strings.HasPrefix(result[0].Media[0], "data:image/jpeg;base64,") {
-		t.Fatalf("expected jpeg prefix, got %q", result[0].Media[0][:30])
+	localPath, _, _ := store.ResolveWithMeta(ref)
+	expectedContent := "hi [image:" + localPath + "]"
+	if result[0].Content != expectedContent {
+		t.Fatalf("expected content %q, got %q", expectedContent, result[0].Content)
 	}
 }
 
@@ -4885,6 +4993,98 @@ func TestResolveMediaRefs_NoGenericTagAppendsPath(t *testing.T) {
 	}
 }
 
+func TestInjectPathTags_HandlesVariousChannelPlaceholders(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		tag     string
+		want    string
+	}{
+		// Telegram / Feishu format
+		{"image_photo", "[image: photo]", "[image:/tmp/p.png]", "[image:/tmp/p.png]"},
+		// WeCom / WeChat / Line format
+		{"bare_image", "[image]", "[image:/tmp/p.png]", "[image:/tmp/p.png]"},
+		// QQ / Discord format with filename
+		{"image_filename", "[image: pic.jpg]", "[image:/tmp/p.png]", "[image:/tmp/p.png]"},
+		{"audio_with_filename", "[audio: voice.m4a]", "[audio:/tmp/a.m4a]", "[audio:/tmp/a.m4a]"},
+		{"bare_audio", "[audio]", "[audio:/tmp/a.m4a]", "[audio:/tmp/a.m4a]"},
+		{"bare_video", "[video]", "[video:/tmp/v.mp4]", "[video:/tmp/v.mp4]"},
+		{"bare_file", "[file]", "[file:/tmp/f.pdf]", "[file:/tmp/f.pdf]"},
+		// Mixed surrounding text
+		{
+			"with_text",
+			"hello [image] world",
+			"[image:/tmp/p.png]",
+			"hello [image:/tmp/p.png] world",
+		},
+		// No placeholder — append
+		{"no_placeholder", "hello world", "[image:/tmp/p.png]", "hello world [image:/tmp/p.png]"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := injectPathTags(tc.content, []string{tc.tag})
+			if got != tc.want {
+				t.Errorf("expected %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestInjectPathTags_DoesNotReplacePathTag(t *testing.T) {
+	// If content already contains a path tag, we must not touch it.
+	content := "see [image:/already/placed.png] thanks"
+	got := injectPathTags(content, []string{"[image:/new/path.png]"})
+	want := "see [image:/already/placed.png] thanks [image:/new/path.png]"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestInjectPathTags_PrependsForJSONContent(t *testing.T) {
+	jsonContent := `{"schema":"2.0","body":{"elements":[{"tag":"img","img_key":"img_123"}]}}`
+	got := injectPathTags(jsonContent, []string{"[image:/tmp/photo.png]"})
+	want := "[image:/tmp/photo.png]\n" + jsonContent
+	if got != want {
+		t.Fatalf("expected tag prepended to JSON, got %q", got)
+	}
+}
+
+func TestInjectPathTags_BracketTextNotTreatedAsJSON(t *testing.T) {
+	content := "[update] see attached report"
+	got := injectPathTags(content, []string{"[file:/tmp/report.pdf]"})
+	want := "[update] see attached report [file:/tmp/report.pdf]"
+	if got != want {
+		t.Fatalf("expected tag appended to bracket text, got %q", got)
+	}
+}
+
+func TestResolveMediaRefs_JSONContentPrependsPathTag(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	pngPath := filepath.Join(dir, "card_img.png")
+	pngHeader := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02,
+		0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE,
+	}
+	os.WriteFile(pngPath, pngHeader, 0o644)
+	ref, _ := store.Store(pngPath, media.MediaMeta{ContentType: "image/png"}, "test")
+
+	jsonContent := `{"schema":"2.0","body":{"elements":[{"tag":"img","img_key":"img_123"}]}}`
+	messages := []providers.Message{
+		{Role: "user", Content: jsonContent, Media: []string{ref}},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	want := "[image:" + pngPath + "]\n" + jsonContent
+	if result[0].Content != want {
+		t.Fatalf("expected path tag prepended to JSON content, got %q", result[0].Content)
+	}
+}
+
 func TestResolveMediaRefs_EmptyContentGetsPathTag(t *testing.T) {
 	store := media.NewFileMediaStore()
 	dir := t.TempDir()
@@ -4928,13 +5128,12 @@ func TestResolveMediaRefs_MixedImageAndFile(t *testing.T) {
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
 
-	if len(result[0].Media) != 1 {
-		t.Fatalf("expected 1 media (image only), got %d", len(result[0].Media))
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected 0 media (all types use path tags), got %d", len(result[0].Media))
 	}
-	if !strings.HasPrefix(result[0].Media[0], "data:image/png;base64,") {
-		t.Fatal("expected image to be base64 encoded")
-	}
-	expectedContent := "check these [file:" + pdfPath + "]"
+	imgLocalPath, _, _ := store.ResolveWithMeta(imgRef)
+	pdfLocalPath, _, _ := store.ResolveWithMeta(fileRef)
+	expectedContent := "check these [file:" + pdfLocalPath + "] [image:" + imgLocalPath + "]"
 	if result[0].Content != expectedContent {
 		t.Fatalf("expected content %q, got %q", expectedContent, result[0].Content)
 	}
@@ -5258,6 +5457,7 @@ func TestParallelMessageProcessing_SameSessionProcessedSequentially(t *testing.T
 	var mu sync.Mutex
 	turnIDs := make(map[string]bool)
 	var wg sync.WaitGroup
+	var firstResponse sync.Once
 	wg.Add(1) // Only 1 turn should be created for same session
 
 	cfg := &config.Config{
@@ -5280,19 +5480,27 @@ func TestParallelMessageProcessing_SameSessionProcessedSequentially(t *testing.T
 
 	al := NewAgentLoop(cfg, msgBus, &concurrentMockProvider{
 		responseFunc: func(callID int) string {
-			wg.Done()
+			firstResponse.Do(func() {
+				wg.Done()
+			})
 			return "ok"
 		},
 	})
 	defer al.Close()
 
-	sub := al.SubscribeEvents(64)
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		64,
+		runtimeevents.KindAgentTurnStart,
+	)
+	defer closeRuntimeEvents()
 
 	go func() {
-		for evt := range sub.C {
-			if evt.Kind == EventKindTurnStart {
+		for evt := range runtimeCh {
+			if evt.Kind == runtimeevents.KindAgentTurnStart {
 				mu.Lock()
-				turnIDs[evt.Meta.TurnID] = true
+				turnIDs[evt.Scope.TurnID] = true
 				mu.Unlock()
 			}
 		}

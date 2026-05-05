@@ -24,6 +24,7 @@ type stubJobExecutor struct {
 	publishedResp   string
 	publishedChan   string
 	publishedChatID string
+	publishedKey    string
 }
 
 func (s *stubJobExecutor) ProcessDirectWithChannel(
@@ -47,6 +48,7 @@ func (s *stubJobExecutor) PublishResponseIfNeeded(
 	s.publishedResp = response
 	s.publishedChan = channel
 	s.publishedChatID = chatID
+	s.publishedKey = sessionKey
 }
 
 func newTestCronToolWithExecutorAndConfig(t *testing.T, executor JobExecutor, cfg *config.Config) *CronTool {
@@ -282,6 +284,9 @@ func TestCronTool_ExecuteJobPublishesAgentResponse(t *testing.T) {
 	}
 	if executor.publishedResp != "generated reply" {
 		t.Fatalf("published response = %q, want generated reply", executor.publishedResp)
+	}
+	if executor.publishedKey != executor.lastKey {
+		t.Fatalf("published sessionKey = %q, want %q", executor.publishedKey, executor.lastKey)
 	}
 	if executor.publishedChan != "telegram" || executor.publishedChatID != "chat-1" {
 		t.Fatalf("published target = %s/%s, want telegram/chat-1", executor.publishedChan, executor.publishedChatID)

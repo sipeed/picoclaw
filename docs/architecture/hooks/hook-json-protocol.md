@@ -437,21 +437,28 @@ Approval hook for deciding whether to allow execution of sensitive tools.
 
 ---
 
-## 7. `hook.event` (notification)
+## 7. `hook.runtime_event` (notification)
 
-Observer event, broadcast only, no response required. `id` is `0` or absent.
+Runtime observer event, broadcast only, no response required. `id` is `0` or absent.
 
 ```json
 {
   "jsonrpc": "2.0",
-  "method": "hook.event",
+  "method": "hook.runtime_event",
   "params": {
-    "Kind": "tool_exec_start",
-    "Meta": {
-      "AgentID": "agent-1",
-      "TurnID": "turn-1"
+    "kind": "agent.tool.exec_start",
+    "source": {
+      "component": "agent",
+      "name": "agent-1"
     },
-    "Payload": {
+    "scope": {
+      "agent_id": "agent-1",
+      "session_key": "session-1",
+      "turn_id": "turn-1",
+      "channel": "cli",
+      "chat_id": "chat-1"
+    },
+    "payload": {
       "Tool": "echo_text",
       "Arguments": {"text": "hello"}
     }
@@ -460,12 +467,14 @@ Observer event, broadcast only, no response required. `id` is `0` or absent.
 ```
 
 Common `Kind` values:
-- `turn_start` / `turn_end`
-- `llm_request` / `llm_response`
-- `tool_exec_start` / `tool_exec_end` / `tool_exec_skipped`
-- `steering_injected`
-- `interrupt_received`
-- `error`
+- `agent.turn.start` / `agent.turn.end`
+- `agent.llm.request` / `agent.llm.response`
+- `agent.tool.exec_start` / `agent.tool.exec_end` / `agent.tool.exec_skipped`
+- `agent.steering.injected`
+- `agent.interrupt.received`
+- `agent.error`
+
+Legacy observe configuration names such as `turn_end` and `tool_exec_start` are still accepted and normalized to runtime event names. New process hook notifications use `hook.runtime_event`.
 
 ---
 

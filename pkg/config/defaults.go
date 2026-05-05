@@ -39,7 +39,9 @@ func DefaultConfig() *Config {
 					MaxArgsLength:    300,
 					SeparateMessages: false,
 				},
-				SplitOnMarker: false,
+				SplitOnMarker:       false,
+				MaxLLMRetries:       2,
+				LLMRetryBackoffSecs: 2,
 			},
 		},
 		Session: SessionConfig{
@@ -293,6 +295,9 @@ func DefaultConfig() *Config {
 			Port:      18790,
 			HotReload: false,
 			LogLevel:  DefaultGatewayLogLevel,
+		},
+		Events: EventsConfig{
+			Logging: defaultEventLoggingConfig(),
 		},
 		Tools: ToolsConfig{
 			FilterSensitiveData: true,

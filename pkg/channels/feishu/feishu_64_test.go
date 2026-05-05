@@ -180,6 +180,13 @@ func TestAppendMediaTags(t *testing.T) {
 			mediaRefs:   []string{"ref1"},
 			want:        `{"schema":"2.0","body":{"elements":[{"tag":"img","img_key":"img_123"}]}}`,
 		},
+		{
+			name:        "post message with images returns content unchanged",
+			content:     `{"zh_cn":{"title":"","content":[[{"tag":"img","image_key":"img_001"}]]}}`,
+			messageType: "post",
+			mediaRefs:   []string{"ref1"},
+			want:        `{"zh_cn":{"title":"","content":[[{"tag":"img","image_key":"img_001"}]]}}`,
+		},
 	}
 
 	for _, tt := range tests {

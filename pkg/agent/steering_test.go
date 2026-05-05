@@ -14,6 +14,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
@@ -1051,16 +1052,16 @@ func TestAgentLoop_Continue_PreservesSteeringMedia(t *testing.T) {
 
 	foundResolvedMedia := false
 	for _, msg := range msgs {
-		if msg.Role != "user" || msg.Content != "describe this image" || len(msg.Media) != 1 {
+		if msg.Role != "user" || !strings.Contains(msg.Content, "describe this image") {
 			continue
 		}
-		if strings.HasPrefix(msg.Media[0], "data:image/png;base64,") {
+		if strings.Contains(msg.Content, "[image:") {
 			foundResolvedMedia = true
 			break
 		}
 	}
 	if !foundResolvedMedia {
-		t.Fatal("expected continue path to inject steering media into the provider request")
+		t.Fatal("expected continue path to inject image path tag into the provider request")
 	}
 
 	defaultAgent := al.registry.GetDefaultAgent()
@@ -1134,8 +1135,14 @@ func TestAgentLoop_InterruptGraceful_UsesTerminalNoToolCall(t *testing.T) {
 	al.RegisterTool(tool2)
 	sessionKey := session.BuildMainSessionKey(routing.DefaultAgentID)
 
-	sub := al.SubscribeEvents(32)
-	defer al.UnsubscribeEvents(sub.ID)
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		32,
+		runtimeevents.KindAgentInterruptReceived,
+		runtimeevents.KindAgentTurnEnd,
+	)
+	defer closeRuntimeEvents()
 
 	type result struct {
 		resp string
@@ -1222,8 +1229,8 @@ func TestAgentLoop_InterruptGraceful_UsesTerminalNoToolCall(t *testing.T) {
 		t.Fatal("expected remaining tool to be marked as skipped after graceful interrupt")
 	}
 
-	events := collectEventStream(sub.C)
-	interruptEvt, ok := findEvent(events, EventKindInterruptReceived)
+	events := collectRuntimeEventStream(runtimeCh)
+	interruptEvt, ok := findRuntimeEvent(events, runtimeevents.KindAgentInterruptReceived)
 	if !ok {
 		t.Fatal("expected interrupt received event")
 	}
@@ -1235,7 +1242,7 @@ func TestAgentLoop_InterruptGraceful_UsesTerminalNoToolCall(t *testing.T) {
 		t.Fatalf("expected graceful interrupt payload, got %q", interruptPayload.Kind)
 	}
 
-	turnEndEvt, ok := findEvent(events, EventKindTurnEnd)
+	turnEndEvt, ok := findRuntimeEvent(events, runtimeevents.KindAgentTurnEnd)
 	if !ok {
 		t.Fatal("expected turn end event")
 	}
@@ -1299,8 +1306,14 @@ func TestAgentLoop_InterruptHard_RestoresSession(t *testing.T) {
 	}
 	defaultAgent.Sessions.SetHistory(sessionKey, originalHistory)
 
-	sub := al.SubscribeEvents(16)
-	defer al.UnsubscribeEvents(sub.ID)
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		16,
+		runtimeevents.KindAgentInterruptReceived,
+		runtimeevents.KindAgentTurnEnd,
+	)
+	defer closeRuntimeEvents()
 
 	type result struct {
 		resp string
@@ -1353,8 +1366,8 @@ func TestAgentLoop_InterruptHard_RestoresSession(t *testing.T) {
 		t.Fatalf("expected history rollback after hard abort, got %#v", finalHistory)
 	}
 
-	events := collectEventStream(sub.C)
-	interruptEvt, ok := findEvent(events, EventKindInterruptReceived)
+	events := collectRuntimeEventStream(runtimeCh)
+	interruptEvt, ok := findRuntimeEvent(events, runtimeevents.KindAgentInterruptReceived)
 	if !ok {
 		t.Fatal("expected interrupt received event")
 	}
@@ -1366,7 +1379,7 @@ func TestAgentLoop_InterruptHard_RestoresSession(t *testing.T) {
 		t.Fatalf("expected hard interrupt payload, got %q", interruptPayload.Kind)
 	}
 
-	turnEndEvt, ok := findEvent(events, EventKindTurnEnd)
+	turnEndEvt, ok := findRuntimeEvent(events, runtimeevents.KindAgentTurnEnd)
 	if !ok {
 		t.Fatal("expected turn end event")
 	}

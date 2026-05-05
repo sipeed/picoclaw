@@ -36,7 +36,7 @@ docker compose -f docker/docker-compose.yml --profile gateway down
 
 ### Mode Launcher (Console Web)
 
-L'image `launcher` inclut les trois binaires (`picoclaw`, `picoclaw-launcher`, `picoclaw-launcher-tui`) et démarre la console web par défaut, qui fournit une interface navigateur pour la configuration et le chat.
+L'image `launcher` inclut les deux binaires (`picoclaw`, `picoclaw-launcher`) et démarre la console web par défaut, qui fournit une interface navigateur pour la configuration et le chat.
 
 ```bash
 docker compose -f docker/docker-compose.yml --profile launcher up -d

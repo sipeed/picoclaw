@@ -1054,6 +1054,37 @@ func TestHandleAddModel_PersistsCustomHeaders(t *testing.T) {
 	}
 }
 
+func TestHandleAddModel_PersistsToolSchemaTransform(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models", bytes.NewBufferString(`{
+		"model_name":"new-model-transform",
+		"model":"openai/gpt-4o-mini",
+		"tool_schema_transform":"simple"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	added := cfg.ModelList[len(cfg.ModelList)-1]
+	if got := added.ToolSchemaTransform; got != "simple" {
+		t.Fatalf("tool_schema_transform = %q, want %q", got, "simple")
+	}
+}
+
 func TestHandleUpdateModel_CustomHeadersPreserveAndClear(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
@@ -1116,6 +1147,69 @@ func TestHandleUpdateModel_CustomHeadersPreserveAndClear(t *testing.T) {
 	}
 	if afterClear.ModelList[0].CustomHeaders != nil {
 		t.Fatalf("custom_headers = %#v, want nil", afterClear.ModelList[0].CustomHeaders)
+	}
+}
+
+func TestHandleUpdateModel_ToolSchemaTransformPreserveAndClear(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName:           "editable",
+		Model:               "openai/gpt-4o-mini",
+		APIKeys:             config.SimpleSecureStrings("sk-existing"),
+		ToolSchemaTransform: "simple",
+	}}
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	recPreserve := httptest.NewRecorder()
+	reqPreserve := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"editable",
+		"model":"openai/gpt-4o-mini"
+	}`))
+	reqPreserve.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recPreserve, reqPreserve)
+	if recPreserve.Code != http.StatusOK {
+		t.Fatalf("preserve status = %d, want %d, body=%s", recPreserve.Code, http.StatusOK, recPreserve.Body.String())
+	}
+
+	afterPreserve, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() after preserve error = %v", err)
+	}
+	if got := afterPreserve.ModelList[0].ToolSchemaTransform; got != "simple" {
+		t.Fatalf("preserved tool_schema_transform = %q, want %q", got, "simple")
+	}
+
+	recClear := httptest.NewRecorder()
+	reqClear := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"editable",
+		"model":"openai/gpt-4o-mini",
+		"tool_schema_transform":""
+	}`))
+	reqClear.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recClear, reqClear)
+	if recClear.Code != http.StatusOK {
+		t.Fatalf("clear status = %d, want %d, body=%s", recClear.Code, http.StatusOK, recClear.Body.String())
+	}
+
+	afterClear, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() after clear error = %v", err)
+	}
+	if afterClear.ModelList[0].ToolSchemaTransform != "" {
+		t.Fatalf("tool_schema_transform = %q, want empty", afterClear.ModelList[0].ToolSchemaTransform)
 	}
 }
 
