@@ -391,4 +391,30 @@ type ToolResult struct {
   "ForUser": "This command is not allowed for security reasons",
   "IsError": true
 }
+
+## Permission System (New)
+
+When `tools.exec.ask_permission = true` (default), the exec tool will ask for user permission before accessing paths outside workspace.
+
+### How It Works
+
+1. Exec tool detects command accesses path outside workspace
+2. Checks PermissionCache - if no permission, returns early
+3. LLM calls `request_permission` tool
+4. Tool returns prompt for user: "Allow once" or "Allow for session"
+5. User responds, LLM re-calls exec tool
+6. Permission cached for "once" (consumed after use) or "session" (persists)
+
+### Request Permission Tool
+
+| Field | Description |
+|-------|-------------|
+| `path` | Path that needs permission |
+| `command` | Original command (for context) |
+
+### Permission Options
+
+- **once**: Permission consumed after first use
+- **session**: Permission persists for entire session
+- **no**: Access denied
 ```

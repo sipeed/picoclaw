@@ -261,8 +261,15 @@ The `ToolRegistry` (`pkg/tools/registry.go`) manages all tools:
 |-----------|-------------|----------|------------|
 | `tool_search_tool_regex` | Discover hidden MCP tools by regex | discovery | `mcp.discovery.use_regex` |
 | `tool_search_tool_bm25` | Discover hidden MCP tools by semantics | discovery | `mcp.discovery.use_bm25` |
+| `request_permission` | Request user permission for outside-workspace access | permission | `exec.ask_permission` |
 
 **Dependencies**: Requires `mcp` and `mcp.discovery` to be enabled
+
+### Permission Tools
+
+| Tool Name | Description | Category | Config Key |
+|-----------|-------------|----------|------------|
+| `request_permission` | Request user permission for outside-workspace access | permission | `exec.ask_permission` |
 
 ## Backend API Endpoints
 
