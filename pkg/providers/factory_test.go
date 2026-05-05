@@ -104,6 +104,32 @@ func TestCreateProviderReturnsClaudeProviderForAnthropicOAuth(t *testing.T) {
 	// TODO: Test custom APIBase when createClaudeAuthProvider supports it
 }
 
+func TestCreateImageGenerationProviderFromModelUsesCodexOAuth(t *testing.T) {
+	originalGetCredential := getCredential
+	t.Cleanup(func() { getCredential = originalGetCredential })
+
+	getCredential = func(provider string) (*auth.AuthCredential, error) {
+		if provider != "openai" {
+			t.Fatalf("provider = %q, want openai", provider)
+		}
+		return &auth.AuthCredential{
+			AccessToken: "openai-token",
+			AccountID:   "acct-123",
+		}, nil
+	}
+
+	provider, model, err := CreateImageGenerationProviderFromModel("openai/gpt-image-2")
+	if err != nil {
+		t.Fatalf("CreateImageGenerationProviderFromModel() error = %v", err)
+	}
+	if model != "gpt-image-2" {
+		t.Fatalf("model = %q, want gpt-image-2", model)
+	}
+	if provider.ImageGenerationProviderID() != "openai-codex" {
+		t.Fatalf("provider id = %q, want openai-codex", provider.ImageGenerationProviderID())
+	}
+}
+
 func TestCreateProviderReturnsCodexProviderForOpenAIOAuth(t *testing.T) {
 	// TODO: This test requires openai protocol to support auth_method: "oauth"
 	// which is not yet implemented in the new factory_provider.go

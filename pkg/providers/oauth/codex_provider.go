@@ -58,8 +58,6 @@ func NewCodexProviderWithTokenSource(
 func (p *CodexProvider) Chat(
 	ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any,
 ) (*LLMResponse, error) {
-	var opts []option.RequestOption
-	accountID := p.accountID
 	resolvedModel, fallbackReason := resolveCodexModel(model)
 	if fallbackReason != "" {
 		logger.WarnCF(
@@ -72,18 +70,11 @@ func (p *CodexProvider) Chat(
 			},
 		)
 	}
-	if p.tokenSource != nil {
-		tok, accID, err := p.tokenSource()
-		if err != nil {
-			return nil, fmt.Errorf("refreshing token: %w", err)
-		}
-		opts = append(opts, option.WithAPIKey(tok))
-		if accID != "" {
-			accountID = accID
-		}
+	opts, accountID, err := p.requestOptions()
+	if err != nil {
+		return nil, err
 	}
 	if accountID != "" {
-		opts = append(opts, option.WithHeader("Chatgpt-Account-Id", accountID))
 	} else {
 		logger.WarnCF(
 			"provider.codex",
@@ -114,7 +105,7 @@ func (p *CodexProvider) Chat(
 			}
 		}
 	}
-	err := stream.Err()
+	err = stream.Err()
 	if err != nil {
 		fields := map[string]any{
 			"requested_model":    model,

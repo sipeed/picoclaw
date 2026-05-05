@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 const (
@@ -23,24 +24,27 @@ const (
 type ImageGenerateTool struct {
 	workspace  string
 	model      string
-	provider   imageGenerationProvider
+	provider   providers.ImageGenerationCapable
+	resolver   ImageGenerationProviderResolver
 	mediaStore media.MediaStore
 }
 
 type ImageGenerateToolOption func(*ImageGenerateTool)
 
-type imageGenerationProvider interface {
-	ID() string
-	DefaultModel() string
-	GenerateImages(ctx context.Context, req imageGenerationRequest) ([]generatedImage, error)
-}
+type ImageGenerationProviderResolver func(model string) (providers.ImageGenerationCapable, string, error)
 
-type imageGenerationProviderFactory func() imageGenerationProvider
-
-func WithImageGenerationProvider(provider imageGenerationProvider) ImageGenerateToolOption {
+func WithImageGenerationProvider(provider providers.ImageGenerationCapable) ImageGenerateToolOption {
 	return func(t *ImageGenerateTool) {
 		if provider != nil {
 			t.provider = provider
+		}
+	}
+}
+
+func WithImageGenerationProviderResolver(resolver ImageGenerationProviderResolver) ImageGenerateToolOption {
+	return func(t *ImageGenerateTool) {
+		if resolver != nil {
+			t.resolver = resolver
 		}
 	}
 }
@@ -51,19 +55,10 @@ func NewImageGenerateTool(
 	store media.MediaStore,
 	options ...ImageGenerateToolOption,
 ) *ImageGenerateTool {
-	spec := parseImageGenerationModel(model)
-	factory := imageGenerationProviderFactories[spec.Provider]
-	if factory == nil {
-		factory = imageGenerationProviderFactories[defaultImageGenerationProvider]
-	}
-	provider := factory()
-	if spec.Model == "" && provider != nil {
-		spec.Model = provider.DefaultModel()
-	}
 	tool := &ImageGenerateTool{
 		workspace:  workspace,
-		model:      spec.Model,
-		provider:   provider,
+		model:      model,
+		resolver:   providers.CreateImageGenerationProviderFromModel,
 		mediaStore: store,
 	}
 	for _, option := range options {
@@ -124,11 +119,19 @@ func (t *ImageGenerateTool) Execute(ctx context.Context, args map[string]any) *T
 	if t.mediaStore == nil {
 		return ErrorResult("media store not configured")
 	}
+	if t.provider == nil && t.resolver != nil {
+		provider, model, err := t.resolver(t.model)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("image generation provider not configured: %v", err)).WithError(err)
+		}
+		t.provider = provider
+		t.model = model
+	}
 	if t.provider == nil {
 		return ErrorResult("image generation provider not configured")
 	}
 
-	req := imageGenerationRequest{
+	req := providers.ImageGenerationRequest{
 		Prompt:       prompt,
 		Model:        t.model,
 		Size:         readStringDefault(args, "size", defaultImageGenerationSize),
@@ -137,12 +140,16 @@ func (t *ImageGenerateTool) Execute(ctx context.Context, args map[string]any) *T
 		Count:        readImageCount(args["count"]),
 	}
 	if strings.TrimSpace(req.Model) == "" {
-		req.Model = t.provider.DefaultModel()
+		req.Model = t.provider.DefaultImageGenerationModel()
 	}
-	images, err := t.provider.GenerateImages(ctx, req)
+	resp, err := t.provider.GenerateImage(ctx, req)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("image generation failed: %v", err)).WithError(err)
 	}
+	if resp == nil {
+		return ErrorResult("image generation returned no response")
+	}
+	images := resp.Images
 	if len(images) == 0 {
 		return ErrorResult("image generation returned no images")
 	}
@@ -168,7 +175,7 @@ func (t *ImageGenerateTool) Execute(ctx context.Context, args map[string]any) *T
 		paths = append(paths, path)
 	}
 
-	message := fmt.Sprintf("Generated %d image(s) with %s via %s.", len(refs), req.Model, t.provider.ID())
+	message := fmt.Sprintf("Generated %d image(s) with %s via %s.", len(refs), req.Model, t.provider.ImageGenerationProviderID())
 	result := MediaResult(message, refs).WithResponseHandled()
 	result.ArtifactTags = make([]string, 0, len(paths))
 	for _, path := range paths {
@@ -177,22 +184,7 @@ func (t *ImageGenerateTool) Execute(ctx context.Context, args map[string]any) *T
 	return result
 }
 
-type imageGenerationRequest struct {
-	Prompt       string
-	Model        string
-	Size         string
-	Quality      string
-	OutputFormat string
-	Count        int
-}
-
-type generatedImage struct {
-	Data     []byte
-	MimeType string
-	Ext      string
-}
-
-func writeGeneratedImage(image generatedImage, index int) (string, error) {
+func writeGeneratedImage(image providers.GeneratedImage, index int) (string, error) {
 	dir, err := os.MkdirTemp("", "picoclaw-image-generate-*")
 	if err != nil {
 		return "", err
@@ -247,15 +239,4 @@ func readImageCount(raw any) int {
 		return maxImageGenerationResults
 	}
 	return count
-}
-
-func imageMimeAndExtension(outputFormat string) (string, string) {
-	switch strings.ToLower(strings.TrimSpace(outputFormat)) {
-	case "jpeg", "jpg":
-		return "image/jpeg", "jpg"
-	case "webp":
-		return "image/webp", "webp"
-	default:
-		return "image/png", "png"
-	}
 }
