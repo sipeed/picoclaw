@@ -195,6 +195,50 @@ func TestLoadConfig_MCPMaxInlineTextChars(t *testing.T) {
 	}
 }
 
+func TestImageGenerateToolsConfig_EffectiveModel(t *testing.T) {
+	defaults := AgentDefaults{ImageModel: "legacy-image-model"}
+
+	if got := (ImageGenerateToolsConfig{}).EffectiveModel(defaults); got != "legacy-image-model" {
+		t.Fatalf("legacy fallback model = %q, want legacy-image-model", got)
+	}
+
+	cfg := ImageGenerateToolsConfig{Model: "openai-codex/gpt-image-2"}
+	if got := cfg.EffectiveModel(defaults); got != "openai-codex/gpt-image-2" {
+		t.Fatalf("tool model = %q, want openai-codex/gpt-image-2", got)
+	}
+
+	if got := (ImageGenerateToolsConfig{}).EffectiveModel(AgentDefaults{}); got != "gpt-image-2" {
+		t.Fatalf("default model = %q, want gpt-image-2", got)
+	}
+}
+
+func TestLoadConfig_ImageGenerateModel(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := `{
+		"tools": {
+			"image_generate": {
+				"enabled": true,
+				"model": "openai-codex/gpt-image-2"
+			}
+		}
+	}`
+	if err := os.WriteFile(configPath, []byte(raw), 0o644); err != nil {
+		t.Fatalf("WriteFile(configPath): %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if !cfg.Tools.ImageGenerate.Enabled {
+		t.Fatal("cfg.Tools.ImageGenerate.Enabled should be true")
+	}
+	if got := cfg.Tools.ImageGenerate.Model; got != "openai-codex/gpt-image-2" {
+		t.Fatalf("cfg.Tools.ImageGenerate.Model = %q, want openai-codex/gpt-image-2", got)
+	}
+}
+
 func TestConfig_BackwardCompat_NoAgentsList(t *testing.T) {
 	jsonData := `{
 		"agents": {

@@ -156,6 +156,30 @@ If `range` is omitted, PicoClaw performs an unrestricted search.
 }
 ```
 
+## Image Generation Tool
+
+The `image_generate` tool creates image files through a provider that supports
+image generation.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | false | Enable the image generation tool |
+| `model` | string | `gpt-image-2` | Image generation model. Values may include a provider prefix, for example `openai-codex/gpt-image-2` |
+
+If `tools.image_generate.model` is not set, PicoClaw falls back to the legacy
+`agents.defaults.image_model` setting, then to `gpt-image-2`.
+
+```json
+{
+  "tools": {
+    "image_generate": {
+      "enabled": true,
+      "model": "openai-codex/gpt-image-2"
+    }
+  }
+}
+```
+
 ## Exec Tool
 
 The exec tool is used to execute shell commands.

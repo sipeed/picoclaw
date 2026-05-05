@@ -216,10 +216,7 @@ func registerSharedTools(
 		}
 
 		if cfg.Tools.IsToolEnabled("image_generate") {
-			imageModel := cfg.Agents.Defaults.ImageModel
-			if imageModel == "" {
-				imageModel = "gpt-image-2"
-			}
+			imageModel := cfg.Tools.ImageGenerate.EffectiveModel(cfg.Agents.Defaults)
 			agent.Tools.Register(tools.NewImageGenerateTool(agent.Workspace, imageModel, nil))
 		}
 
