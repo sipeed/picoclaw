@@ -45,8 +45,8 @@ type ExecTool struct {
 	restrictToWorkspace bool
 	allowRemote         bool
 	sessionManager      *SessionManager
-	permissionCache     *PermissionCache
-	askPermission      bool
+	PermissionCache     *PermissionCache
+	AskPermission       bool
 }
 
 var (
@@ -239,7 +239,7 @@ func (t *ExecTool) Parameters() map[string]any {
 }
 
 func (t *ExecTool) checkPermission(command string) string {
-	if !t.askPermission {
+	if !t.AskPermission {
 		return "granted"
 	}
 
@@ -249,7 +249,7 @@ func (t *ExecTool) checkPermission(command string) string {
 	}
 
 	if t.restrictToWorkspace && t.isOutsideWorkspace(path) {
-		if perm := t.permissionCache.Check(path); perm != "" {
+		if perm := t.PermissionCache.Check(path); perm != "" {
 			if perm == "denied" {
 				return "denied"
 			}

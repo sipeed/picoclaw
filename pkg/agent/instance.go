@@ -101,14 +101,21 @@ func NewAgentInstance(
 	if cfg.Tools.IsToolEnabled("list_dir") {
 		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
 	}
+	var permissionCache *tools.PermissionCache
 	if cfg.Tools.IsToolEnabled("exec") {
 		execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg, allowReadPaths)
 		if err != nil {
 			logger.ErrorCF("agent", "Failed to initialize exec tool; continuing without exec",
 				map[string]any{"error": err.Error()})
-		} else {
-			toolsRegistry.Register(execTool)
-		}
+	} else {
+		execTool.PermissionCache = permissionCache
+		execTool.AskPermission = cfg.Tools.Exec.AskPermission
+		toolsRegistry.Register(execTool)
+	}
+	}
+
+	if permissionCache != nil {
+		toolsRegistry.Register(tools.NewRequestPermissionTool(permissionCache))
 	}
 
 	if cfg.Tools.IsToolEnabled("edit_file") {
