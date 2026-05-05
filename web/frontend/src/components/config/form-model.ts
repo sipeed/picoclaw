@@ -34,7 +34,7 @@ export interface CoreConfigForm {
   mcpServers: MCPServerForm[]
 }
 
-export type MCPServerType = "http" | "stdio"
+export type MCPServerType = "http" | "sse" | "stdio"
 
 export interface MCPServerForm {
   id: string
@@ -155,7 +155,10 @@ function asNumberString(value: unknown, fallback: string): string {
 }
 
 function toMCPServerType(value: unknown): MCPServerType {
-  return value === "http" ? "http" : "stdio"
+  if (value === "http" || value === "sse") {
+    return value
+  }
+  return "stdio"
 }
 
 function makeMCPServerID(name: string): string {
@@ -176,6 +179,8 @@ function mapMCPServers(value: unknown): MCPServerForm[] {
     const argsList = Array.isArray(cfg.args)
       ? cfg.args.filter((item): item is string => typeof item === "string")
       : []
+    const url = asString(cfg.url)
+    const type = cfg.type === undefined ? (url ? "sse" : "stdio") : toMCPServerType(cfg.type)
     const env = asRecord(cfg.env)
     const headers = asRecord(cfg.headers)
 
@@ -183,8 +188,8 @@ function mapMCPServers(value: unknown): MCPServerForm[] {
       id: makeMCPServerID(name),
       name,
       enabled: cfg.enabled !== false,
-      type: toMCPServerType(cfg.type),
-      url: asString(cfg.url),
+      type,
+      url,
       command: asString(cfg.command),
       argsText: argsList.join("\n"),
       envText: JSON.stringify(env, null, 2),

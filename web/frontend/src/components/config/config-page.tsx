@@ -291,16 +291,16 @@ export function ConfigPage() {
           .map((name) => [name, null] as const)
 
         const upsertServerEntries = normalizedServers.map((server) => {
-          if (server.type === "http") {
+          if (server.type !== "stdio") {
             if (server.url === "") {
-              throw new Error(`MCP server ${server.name} requires an HTTP URL.`)
+              throw new Error(`MCP server ${server.name} requires a URL.`)
             }
 
             return [
               server.name,
               {
                 enabled: server.enabled,
-                type: "http",
+                type: server.type,
                 url: server.url,
                 headers: parseJSONObjectField(
                   server.headersText,

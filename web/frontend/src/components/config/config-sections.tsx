@@ -380,6 +380,7 @@ export function MCPSection({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="stdio">stdio</SelectItem>
+                        <SelectItem value="sse">sse</SelectItem>
                         <SelectItem value="http">http</SelectItem>
                       </SelectContent>
                     </Select>
