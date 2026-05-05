@@ -14,6 +14,7 @@ import (
 
 const (
 	codexDefaultImageGenerationModel = "gpt-image-2"
+	codexDefaultImageGenerationSize  = "1024x1024"
 	maxImageGenerationResults        = 4
 	maxImageGenerationSSEBytes       = 64 * 1024 * 1024
 	maxImageGenerationEvents         = 512
@@ -93,9 +94,14 @@ func (p *CodexProvider) requestOptions() ([]option.RequestOption, string, error)
 }
 
 func buildCodexImageParams(req ImageGenerationRequest) responses.ResponseNewParams {
+	size := strings.TrimSpace(req.Size)
+	if size == "" {
+		size = codexDefaultImageGenerationSize
+	}
+
 	tool := responses.ToolUnionParam{OfImageGeneration: &responses.ToolImageGenerationParam{
 		Model: req.Model,
-		Size:  req.Size,
+		Size:  size,
 	}}
 	if req.Quality != "" {
 		tool.OfImageGeneration.Quality = req.Quality
@@ -104,10 +110,17 @@ func buildCodexImageParams(req ImageGenerationRequest) responses.ResponseNewPara
 		tool.OfImageGeneration.OutputFormat = req.OutputFormat
 	}
 
+	content := responses.ResponseInputMessageContentListParam{
+		responses.ResponseInputContentParamOfInputText(req.Prompt),
+	}
+	input := responses.ResponseInputParam{
+		responses.ResponseInputItemParamOfMessage(content, responses.EasyInputMessageRoleUser),
+	}
+
 	return responses.ResponseNewParams{
 		Model: "gpt-5.4",
 		Input: responses.ResponseNewParamsInputUnion{
-			OfString: openai.Opt(req.Prompt),
+			OfInputItemList: input,
 		},
 		Instructions: openai.Opt("You are an image generation assistant."),
 		Tools:        []responses.ToolUnionParam{tool},

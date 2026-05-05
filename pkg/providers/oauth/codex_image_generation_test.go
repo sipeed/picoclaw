@@ -2,6 +2,8 @@ package oauthprovider
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/openai/openai-go/v3/responses"
@@ -50,6 +52,22 @@ func TestBuildCodexImageParams(t *testing.T) {
 	})
 	if params.Model != "gpt-5.4" {
 		t.Fatalf("request model = %q, want gpt-5.4", params.Model)
+	}
+	if params.Input.OfString.Valid() {
+		t.Fatalf("input uses string form, want structured message input")
+	}
+	if len(params.Input.OfInputItemList) != 1 {
+		t.Fatalf("input item count = %d, want 1", len(params.Input.OfInputItemList))
+	}
+	data, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal params: %v", err)
+	}
+	payload := string(data)
+	for _, want := range []string{`"input":[`, `"role":"user"`, `"type":"input_text"`, `"text":"make a tiny icon"`} {
+		if !strings.Contains(payload, want) {
+			t.Fatalf("payload missing %s: %s", want, payload)
+		}
 	}
 	if len(params.Tools) != 1 || params.Tools[0].OfImageGeneration == nil {
 		t.Fatalf("expected one image_generation tool, got %#v", params.Tools)
