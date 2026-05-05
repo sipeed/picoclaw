@@ -1618,8 +1618,8 @@ func TestExecTool_CheckPermission(t *testing.T) {
 	pc := NewPermissionCache()
 
 	tool := &ExecTool{
-		permissionCache:      pc,
-		askPermission:       true,
+		PermissionCache:      pc,
+		AskPermission:       true,
 		workingDir:          "/workspace",
 		restrictToWorkspace: true,
 	}
