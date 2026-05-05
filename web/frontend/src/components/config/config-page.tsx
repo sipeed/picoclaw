@@ -22,6 +22,7 @@ import {
   DevicesSection,
   ExecSection,
   LauncherSection,
+  MCPSection,
   RuntimeSection,
 } from "@/components/config/config-sections"
 import {
@@ -29,9 +30,11 @@ import {
   EMPTY_FORM,
   EMPTY_LAUNCHER_FORM,
   type LauncherForm,
+  type MCPServerForm,
   buildFormFromConfig,
   parseCIDRText,
   parseIntField,
+  parseJSONObjectField,
   parseMultilineList,
 } from "@/components/config/form-model"
 import { PageHeader } from "@/components/page-header"
@@ -143,6 +146,42 @@ export function ConfigPage() {
     setLauncherForm((prev) => ({ ...prev, [key]: value }))
   }
 
+  const handleMCPServerAdd = () => {
+    const nextIndex = form.mcpServers.length + 1
+    const server: MCPServerForm = {
+      id: `mcp-${Date.now()}-${nextIndex}`,
+      name: "",
+      enabled: true,
+      type: "stdio",
+      url: "",
+      command: "",
+      argsText: "",
+      envText: "{}",
+      headersText: "{}",
+    }
+    updateField("mcpServers", [...form.mcpServers, server])
+  }
+
+  const handleMCPServerRemove = (id: string) => {
+    updateField(
+      "mcpServers",
+      form.mcpServers.filter((server) => server.id !== id),
+    )
+  }
+
+  const handleMCPServerFieldChange = <K extends keyof MCPServerForm>(
+    id: string,
+    key: K,
+    value: MCPServerForm[K],
+  ) => {
+    updateField(
+      "mcpServers",
+      form.mcpServers.map((server) =>
+        server.id === id ? { ...server, [key]: value } : server,
+      ),
+    )
+  }
+
   const handleReset = () => {
     setForm(baseline)
     setLauncherForm(launcherBaseline)
@@ -214,9 +253,85 @@ export function ConfigPage() {
           "Cron exec timeout",
           { min: 0 },
         )
+        const mcpDiscoveryTTL = parseIntField(
+          form.mcpDiscoveryTTL,
+          "MCP discovery ttl",
+          { min: 0 },
+        )
+        const mcpDiscoveryMaxSearchResults = parseIntField(
+          form.mcpDiscoveryMaxSearchResults,
+          "MCP discovery max search results",
+          { min: 0 },
+        )
         const execConfigPatch: Record<string, unknown> = {
           enabled: form.execEnabled,
         }
+
+        const baselineServerNames = new Set(
+          baseline.mcpServers
+            .map((server) => server.name.trim())
+            .filter((name) => name !== ""),
+        )
+
+        const normalizedServers = form.mcpServers
+          .map((server) => ({
+            ...server,
+            name: server.name.trim(),
+            url: server.url.trim(),
+            command: server.command.trim(),
+          }))
+          .filter((server) => server.name !== "")
+
+        const currentServerNames = new Set(
+          normalizedServers.map((server) => server.name),
+        )
+
+        const removedServerEntries = Array.from(baselineServerNames)
+          .filter((name) => !currentServerNames.has(name))
+          .map((name) => [name, null] as const)
+
+        const upsertServerEntries = normalizedServers.map((server) => {
+          if (server.type === "http") {
+            if (server.url === "") {
+              throw new Error(`MCP server ${server.name} requires an HTTP URL.`)
+            }
+
+            return [
+              server.name,
+              {
+                enabled: server.enabled,
+                type: "http",
+                url: server.url,
+                headers: parseJSONObjectField(
+                  server.headersText,
+                  `MCP server ${server.name} headers`,
+                ),
+              },
+            ] as const
+          }
+
+          if (server.command === "") {
+            throw new Error(`MCP server ${server.name} requires a command.`)
+          }
+
+          return [
+            server.name,
+            {
+              enabled: server.enabled,
+              command: server.command,
+              args: parseMultilineList(server.argsText),
+              env: parseJSONObjectField(
+                server.envText,
+                `MCP server ${server.name} env`,
+              ),
+            },
+          ] as const
+        })
+
+        const mcpServersPatch = Object.fromEntries([
+          ...upsertServerEntries,
+          ...removedServerEntries,
+        ])
 
         if (form.execEnabled) {
           execConfigPatch.allow_remote = form.allowRemote
@@ -264,6 +379,17 @@ export function ConfigPage() {
               exec_timeout_minutes: cronExecTimeoutMinutes,
             },
             exec: execConfigPatch,
+            mcp: {
+              enabled: form.mcpEnabled,
+              discovery: {
+                enabled: form.mcpDiscoveryEnabled,
+                ttl: mcpDiscoveryTTL,
+                max_search_results: mcpDiscoveryMaxSearchResults,
+                use_bm25: form.mcpDiscoveryUseBM25,
+                use_regex: form.mcpDiscoveryUseRegex,
+              },
+              servers: mcpServersPatch,
+            },
           },
           heartbeat: {
             enabled: form.heartbeatEnabled,
@@ -413,6 +539,14 @@ export function ConfigPage() {
               <AgentDefaultsSection form={form} onFieldChange={updateField} />
 
               <RuntimeSection form={form} onFieldChange={updateField} />
+
+              <MCPSection
+                form={form}
+                onFieldChange={updateField}
+                onAddServer={handleMCPServerAdd}
+                onRemoveServer={handleMCPServerRemove}
+                onServerFieldChange={handleMCPServerFieldChange}
+              />
 
               <ExecSection form={form} onFieldChange={updateField} />
 
