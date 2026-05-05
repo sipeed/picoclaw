@@ -21,16 +21,17 @@ import (
 )
 
 const (
-	defaultImageGenerationModel   = "gpt-image-2"
-	defaultImageGenerationBaseURL = "https://chatgpt.com/backend-api/codex"
-	defaultImageGenerationSize    = "1024x1024"
-	defaultImageGenerationTimeout = 180 * time.Second
-	maxImageGenerationResults     = 4
-	maxImageGenerationSSEBytes    = 64 * 1024 * 1024
-	maxImageGenerationEvents      = 512
+	defaultImageGenerationProvider = "openai-codex"
+	defaultImageGenerationModel    = "gpt-image-2"
+	defaultImageGenerationBaseURL  = "https://chatgpt.com/backend-api/codex"
+	defaultImageGenerationSize     = "1024x1024"
+	defaultImageGenerationTimeout  = 180 * time.Second
+	maxImageGenerationResults      = 4
+	maxImageGenerationSSEBytes     = 64 * 1024 * 1024
+	maxImageGenerationEvents       = 512
 )
 
-// ImageGenerateTool generates images through OpenAI/Codex OAuth and returns
+// ImageGenerateTool generates images through a provider adapter and returns
 // generated files through the MediaStore outbound media pipeline.
 type ImageGenerateTool struct {
 	workspace  string
@@ -45,6 +46,14 @@ type imageGenerationProvider interface {
 	ID() string
 	DefaultModel() string
 	GenerateImages(ctx context.Context, req imageGenerationRequest) ([]generatedImage, error)
+}
+
+type imageGenerationProviderFactory func() imageGenerationProvider
+
+var imageGenerationProviderFactories = map[string]imageGenerationProviderFactory{
+	defaultImageGenerationProvider: func() imageGenerationProvider {
+		return newOpenAICodexImageGenerationProvider()
+	},
 }
 
 func WithImageGenerateBaseURL(baseURL string) ImageGenerateToolOption {
@@ -85,13 +94,18 @@ func NewImageGenerateTool(
 	store media.MediaStore,
 	options ...ImageGenerateToolOption,
 ) *ImageGenerateTool {
-	if strings.TrimSpace(model) == "" {
-		model = defaultImageGenerationModel
+	spec := parseImageGenerationModel(model)
+	factory := imageGenerationProviderFactories[spec.Provider]
+	if factory == nil {
+		factory = imageGenerationProviderFactories[defaultImageGenerationProvider]
 	}
-	provider := newOpenAICodexImageGenerationProvider()
+	provider := factory()
+	if spec.Model == "" && provider != nil {
+		spec.Model = provider.DefaultModel()
+	}
 	tool := &ImageGenerateTool{
 		workspace:  workspace,
-		model:      stripProviderPrefix(model),
+		model:      spec.Model,
 		provider:   provider,
 		mediaStore: store,
 	}
@@ -110,7 +124,7 @@ func (t *ImageGenerateTool) Name() string { return "image_generate" }
 func (t *ImageGenerateTool) Description() string {
 	return `Generate an image from a prompt and send it to the current chat.
 
-Uses OpenAI/Codex OAuth with gpt-image-2 by default. Use this when the user asks to create an image, infographic, diagram, poster, visual summary, or other generated raster artwork.`
+Use this when the user asks to create an image, infographic, diagram, poster, visual summary, or other generated raster artwork. The active image backend is selected from the configured image model provider prefix.`
 }
 
 func (t *ImageGenerateTool) Parameters() map[string]any {
@@ -493,15 +507,35 @@ func readImageCount(raw any) int {
 	return count
 }
 
-func stripProviderPrefix(model string) string {
+type imageGenerationModelSpec struct {
+	Provider string
+	Model    string
+}
+
+func parseImageGenerationModel(model string) imageGenerationModelSpec {
 	model = strings.TrimSpace(model)
-	if strings.HasPrefix(model, "openai/") {
-		return strings.TrimPrefix(model, "openai/")
+	if model == "" {
+		return imageGenerationModelSpec{
+			Provider: defaultImageGenerationProvider,
+			Model:    defaultImageGenerationModel,
+		}
 	}
-	if strings.HasPrefix(model, "openai-codex/") {
-		return strings.TrimPrefix(model, "openai-codex/")
+	provider, modelName, ok := strings.Cut(model, "/")
+	if !ok || strings.TrimSpace(provider) == "" || strings.TrimSpace(modelName) == "" {
+		return imageGenerationModelSpec{
+			Provider: defaultImageGenerationProvider,
+			Model:    model,
+		}
 	}
-	return model
+	provider = strings.TrimSpace(provider)
+	modelName = strings.TrimSpace(modelName)
+	if provider == "openai" {
+		provider = defaultImageGenerationProvider
+	}
+	return imageGenerationModelSpec{
+		Provider: provider,
+		Model:    modelName,
+	}
 }
 
 func imageMimeAndExtension(outputFormat string) (string, string) {

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -10,6 +11,28 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/media"
 )
+
+type fakeImageGenerationProvider struct {
+	id           string
+	defaultModel string
+	request      imageGenerationRequest
+}
+
+func (p *fakeImageGenerationProvider) ID() string { return p.id }
+
+func (p *fakeImageGenerationProvider) DefaultModel() string { return p.defaultModel }
+
+func (p *fakeImageGenerationProvider) GenerateImages(
+	_ context.Context,
+	req imageGenerationRequest,
+) ([]generatedImage, error) {
+	p.request = req
+	return []generatedImage{{
+		Data:     []byte("fake-image"),
+		MimeType: "image/png",
+		Ext:      "png",
+	}}, nil
+}
 
 func TestImageGenerateToolCodexOAuthRequestAndMediaResult(t *testing.T) {
 	var captured map[string]any
@@ -87,6 +110,79 @@ func TestImageGenerateToolCodexOAuthRequestAndMediaResult(t *testing.T) {
 	}
 	if path == "" {
 		t.Fatal("generated media path is empty")
+	}
+}
+
+func TestImageGenerateToolCanUseInjectedProvider(t *testing.T) {
+	store := media.NewFileMediaStore()
+	provider := &fakeImageGenerationProvider{
+		id:           "test-provider",
+		defaultModel: "test-default-image-model",
+	}
+	tool := NewImageGenerateTool(
+		t.TempDir(),
+		"test-provider/custom-image-model",
+		store,
+		WithImageGenerationProvider(provider),
+	)
+
+	result := tool.Execute(
+		WithToolContext(t.Context(), "telegram", "chat-1"),
+		map[string]any{"prompt": "make a tiny icon"},
+	)
+	if result.IsError {
+		t.Fatalf("Execute returned error: %s", result.ContentForLLM())
+	}
+	if provider.request.Model != "custom-image-model" {
+		t.Fatalf("model = %q, want custom-image-model", provider.request.Model)
+	}
+	if len(result.Media) != 1 {
+		t.Fatalf("media refs = %d, want 1", len(result.Media))
+	}
+}
+
+func TestParseImageGenerationModel(t *testing.T) {
+	tests := []struct {
+		name         string
+		model        string
+		wantProvider string
+		wantModel    string
+	}{
+		{
+			name:         "empty uses default provider and model",
+			model:        "",
+			wantProvider: "openai-codex",
+			wantModel:    "gpt-image-2",
+		},
+		{
+			name:         "bare model uses default provider",
+			model:        "custom-image-model",
+			wantProvider: "openai-codex",
+			wantModel:    "custom-image-model",
+		},
+		{
+			name:         "openai alias routes to codex oauth provider",
+			model:        "openai/gpt-image-2",
+			wantProvider: "openai-codex",
+			wantModel:    "gpt-image-2",
+		},
+		{
+			name:         "future provider prefix is preserved",
+			model:        "gemini/imagen-4",
+			wantProvider: "gemini",
+			wantModel:    "imagen-4",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseImageGenerationModel(tt.model)
+			if got.Provider != tt.wantProvider {
+				t.Fatalf("provider = %q, want %q", got.Provider, tt.wantProvider)
+			}
+			if got.Model != tt.wantModel {
+				t.Fatalf("model = %q, want %q", got.Model, tt.wantModel)
+			}
+		})
 	}
 }
 
