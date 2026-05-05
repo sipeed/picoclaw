@@ -9,6 +9,7 @@ web/backend/ — Backend API server (Go, dashboard auth, middleware)
 workspace/ — Runtime workspace (skills, memory)
 docs/ — Documentation (architecture, channels, guides, migration, reference)
 docs/reference/tools-api.md — Complete tools API documentation: available tools, data structures, backend API endpoints, MCP integration
+docs/reference/exec-tool.md — Exec tool deep dive: how it works, security measures, how to disable/sandbox/remove completely
 config/ — Configuration templates and examples
 build/ — Build scripts and artifacts
 docker/ — Docker containerization files

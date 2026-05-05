@@ -20,4 +20,15 @@ Decisions:
 Rejected: None
 Open: None
 
+## 2026-05-05 00:02 [saved]
+Goal: Document exec tool internals and how to sandbox/remove it
+Decisions:
+- Created docs/reference/exec-tool.md with comprehensive exec tool documentation
+- Documented exec flow: LLM invocation → action routing → sync/background execution → isolation wrapper
+- Documented 40+ built-in deny patterns (rm -rf, dd, shutdown, sudo, docker, etc.)
+- Documented 3 ways to disable: config (enabled=false), disable remote, strict timeout
+- Documented complete removal steps (delete files, remove registration, config, defaults)
+- Documented sandboxing options: bubblewrap (Linux), restricted tokens (Windows), workspace restriction, custom deny patterns
+- Listed all key files: shell.go, session.go, spawn.go, instance.go, config.go, defaults.go, isolation/
+Rejected: None
 Open: None
