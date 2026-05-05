@@ -861,20 +861,35 @@ func getInt64Arg(args map[string]any, key string, defaultVal int64) (int64, erro
 	}
 }
 
+type PermissionChecker interface {
+	Check(path string) string
+}
+
 type WriteFileTool struct {
-	fs fileSystem
+	fs                  fileSystem
+	workspace           string
+	restrictToWorkspace bool
+	permissionCache    PermissionChecker
+	askPermission    bool
 }
 
 func NewWriteFileTool(
 	workspace string,
 	restrict bool,
+	permCache PermissionChecker,
 	allowPaths ...[]*regexp.Regexp,
 ) *WriteFileTool {
 	var patterns []*regexp.Regexp
 	if len(allowPaths) > 0 {
 		patterns = allowPaths[0]
 	}
-	return &WriteFileTool{fs: buildFs(workspace, restrict, patterns)}
+	return &WriteFileTool{
+		fs:                  buildFs(workspace, restrict, patterns),
+		workspace:           workspace,
+		restrictToWorkspace: restrict,
+		permissionCache:    permCache,
+		askPermission:     permCache != nil,
+	}
 }
 
 func (t *WriteFileTool) Name() string {
@@ -907,10 +922,51 @@ func (t *WriteFileTool) Parameters() map[string]any {
 	}
 }
 
+func (t *WriteFileTool) checkPermission(path string) string {
+	if !t.restrictToWorkspace || !t.askPermission || t.permissionCache == nil {
+		return "granted"
+	}
+
+	if !t.isOutsideWorkspace(path) {
+		return "granted"
+	}
+
+	if perm := t.permissionCache.Check(path); perm != "" {
+		if perm == "denied" {
+			return "denied"
+		}
+		return "granted"
+	}
+
+	return "needs_permission"
+}
+
+func (t *WriteFileTool) isOutsideWorkspace(path string) bool {
+	if t.workspace == "" {
+		return false
+	}
+
+	absWorkspace, _ := filepath.Abs(t.workspace)
+	absPath, _ := filepath.Abs(path)
+
+	return !strings.HasPrefix(absPath, absWorkspace)
+}
+
 func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	path, ok := args["path"].(string)
 	if !ok {
 		return ErrorResult("path is required")
+	}
+
+	switch t.checkPermission(path) {
+	case "needs_permission":
+		logger.InfoCF("write_file", "Permission needed", map[string]any{"path": path})
+		return &ToolResult{
+			ForLLM:  fmt.Sprintf("Permission needed for path: %s. Call request_permission tool with path='%s'.", path, path),
+			ForUser: fmt.Sprintf("⚠️ Permission required to write to %s", path),
+		}
+	case "denied":
+		return ErrorResult(fmt.Sprintf("Access to %s was denied", path))
 	}
 
 	content, ok := args["content"].(string)
@@ -936,15 +992,19 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolR
 }
 
 type ListDirTool struct {
-	fs fileSystem
+	fs             fileSystem
+	permissionCache interface{ Check(path string) string }
 }
 
-func NewListDirTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *ListDirTool {
+func NewListDirTool(workspace string, restrict bool, permCache any, allowPaths ...[]*regexp.Regexp) *ListDirTool {
 	var patterns []*regexp.Regexp
 	if len(allowPaths) > 0 {
 		patterns = allowPaths[0]
 	}
-	return &ListDirTool{fs: buildFs(workspace, restrict, patterns)}
+	return &ListDirTool{
+		fs:             buildFs(workspace, restrict, patterns),
+		permissionCache: permCache.(interface{ Check(path string) string }),
+	}
 }
 
 func (t *ListDirTool) Name() string {

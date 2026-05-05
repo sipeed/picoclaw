@@ -32,3 +32,21 @@ Decisions:
 - Listed all key files: shell.go, session.go, spawn.go, instance.go, config.go, defaults.go, isolation/
 Rejected: None
 Open: None
+
+## 2026-05-05 00:03 [saved]
+Goal: Implement exec tool permission system via subagent-driven-development
+Decisions:
+- Executed plan docs/superpowers-optimized/plans/2026-05-05-exec-permission.md
+- Task 1: Created PermissionCache (commit 843552ad)
+- Task 2: Added PermissionCache tests (commit cf494c7b)
+- Task 3: Created RequestPermissionTool (commit 7804b120)
+- Task 4: Modified ExecTool to check permissions (commit 9ac94f32)
+- Task 5: Added ask_permission to config (commit 8feb6892)
+- Task 6: Wired up PermissionCache in agent (commit 9455c2d6)
+- Task 7: Build passes, permission tests PASS
+- Task 8: Updated documentation (commit 4c74b13c)
+- Fixed test file to use exported field names (PermissionCache, AskPermission) (commit f46cf4c7)
+Rejected: None
+Open: None
+
+Open: None

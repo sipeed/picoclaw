@@ -94,35 +94,44 @@ func NewAgentInstance(
 		default:
 			toolsRegistry.Register(tools.NewReadFileBytesTool(workspace, readRestrict, maxReadFileSize, allowReadPaths))
 		}
+}
+// Create permission cache once for all tools that need it
+	var permissionCache *tools.PermissionCache
+	if (cfg.Tools.IsToolEnabled("exec") && cfg.Tools.Exec.AskPermission) ||
+		cfg.Tools.IsToolEnabled("list_dir") ||
+		cfg.Tools.IsToolEnabled("write_file") ||
+		cfg.Tools.IsToolEnabled("edit_file") ||
+		cfg.Tools.IsToolEnabled("append_file") {
+		permissionCache = tools.NewPermissionCache()
 	}
+
 	if cfg.Tools.IsToolEnabled("write_file") {
-		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
+		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, permissionCache, allowWritePaths))
 	}
 	if cfg.Tools.IsToolEnabled("list_dir") {
-		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
+		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, permissionCache, allowReadPaths))
 	}
-	var permissionCache *tools.PermissionCache
 	if cfg.Tools.IsToolEnabled("exec") {
 		execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg, allowReadPaths)
 		if err != nil {
 			logger.ErrorCF("agent", "Failed to initialize exec tool; continuing without exec",
 				map[string]any{"error": err.Error()})
-	} else {
-		execTool.PermissionCache = permissionCache
-		execTool.AskPermission = cfg.Tools.Exec.AskPermission
-		toolsRegistry.Register(execTool)
+		} else {
+			if permissionCache != nil {
+				execTool.PermissionCache = permissionCache
+			}
+			execTool.AskPermission = cfg.Tools.Exec.AskPermission
+			toolsRegistry.Register(execTool)
+		}
 	}
-	}
-
-	if permissionCache != nil {
-		toolsRegistry.Register(tools.NewRequestPermissionTool(permissionCache))
-	}
-
 	if cfg.Tools.IsToolEnabled("edit_file") {
-		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
+		toolsRegistry.Register(tools.NewEditFileToolWithPermission(workspace, restrict, permissionCache, allowWritePaths))
 	}
 	if cfg.Tools.IsToolEnabled("append_file") {
-		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, permissionCache, allowWritePaths))
+	}
+	if permissionCache != nil {
+		toolsRegistry.Register(tools.NewRequestPermissionTool(permissionCache))
 	}
 
 	sessionsDir := filepath.Join(workspace, "sessions")

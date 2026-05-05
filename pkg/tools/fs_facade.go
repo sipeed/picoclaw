@@ -50,17 +50,27 @@ func NewReadFileLinesTool(
 func NewWriteFileTool(
 	workspace string,
 	restrict bool,
+	permCache any,
 	allowPaths ...[]*regexp.Regexp,
 ) *WriteFileTool {
-	return fstools.NewWriteFileTool(workspace, restrict, allowPaths...)
+	var pc fstools.PermissionChecker
+	if permCache != nil {
+		pc = permCache.(fstools.PermissionChecker)
+	}
+	return fstools.NewWriteFileTool(workspace, restrict, pc, allowPaths...)
 }
 
 func NewListDirTool(
 	workspace string,
 	restrict bool,
+	permCache any,
 	allowPaths ...[]*regexp.Regexp,
 ) *ListDirTool {
-	return fstools.NewListDirTool(workspace, restrict, allowPaths...)
+	var checker interface{ Check(path string) string }
+	if permCache != nil {
+		checker = permCache.(interface{ Check(path string) string })
+	}
+	return fstools.NewListDirTool(workspace, restrict, checker, allowPaths...)
 }
 
 func NewEditFileTool(
@@ -71,12 +81,30 @@ func NewEditFileTool(
 	return fstools.NewEditFileTool(workspace, restrict, allowPaths...)
 }
 
+func NewEditFileToolWithPermission(
+	workspace string,
+	restrict bool,
+	permCache any,
+	allowPaths ...[]*regexp.Regexp,
+) *EditFileTool {
+	var checker interface{ Check(path string) string }
+	if permCache != nil {
+		checker = permCache.(interface{ Check(path string) string })
+	}
+	return fstools.NewEditFileToolWithPermission(workspace, restrict, checker, allowPaths...)
+}
+
 func NewAppendFileTool(
 	workspace string,
 	restrict bool,
+	permCache any,
 	allowPaths ...[]*regexp.Regexp,
 ) *AppendFileTool {
-	return fstools.NewAppendFileTool(workspace, restrict, allowPaths...)
+	var checker interface{ Check(path string) string }
+	if permCache != nil {
+		checker = permCache.(interface{ Check(path string) string })
+	}
+	return fstools.NewAppendFileTool(workspace, restrict, checker, allowPaths...)
 }
 
 func NewLoadImageTool(
