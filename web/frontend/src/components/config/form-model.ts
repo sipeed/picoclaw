@@ -168,12 +168,9 @@ function toMCPServerType(value: unknown): MCPServerType {
 }
 
 function makeMCPServerID(name: string): string {
-  const normalized = name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-  if (normalized.length > 0) {
-    return `mcp-${normalized}`
+  const encoded = encodeURIComponent(name)
+  if (encoded.length > 0) {
+    return `mcp-${encoded}`
   }
   return `mcp-${Math.random().toString(36).slice(2, 10)}`
 }
