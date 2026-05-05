@@ -5,6 +5,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/agent/interfaces"
@@ -157,6 +158,7 @@ func registerSharedTools(
 					tools.ToolSessionKey(ctx),
 					tools.ToolSessionScope(ctx),
 				)
+				inheritToolTopic(ctx, &outboundCtx, channel, chatID, outboundScope)
 				return msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
 					Context:          outboundCtx,
 					AgentID:          outboundAgentID,
@@ -337,5 +339,31 @@ func registerSharedTools(
 		} else if (spawnEnabled || spawnStatusEnabled) && !cfg.Tools.IsToolEnabled("subagent") {
 			logger.WarnCF("agent", "spawn/spawn_status tools require subagent to be enabled", nil)
 		}
+	}
+}
+
+func inheritToolTopic(
+	ctx context.Context,
+	outboundCtx *bus.InboundContext,
+	channel, chatID string,
+	scope *bus.OutboundScope,
+) {
+	if outboundCtx == nil || strings.TrimSpace(outboundCtx.TopicID) != "" {
+		return
+	}
+	if strings.TrimSpace(channel) != strings.TrimSpace(tools.ToolChannel(ctx)) ||
+		strings.TrimSpace(chatID) != strings.TrimSpace(tools.ToolChatID(ctx)) {
+		return
+	}
+	if scope == nil || scope.Values == nil {
+		return
+	}
+	if topic := strings.TrimPrefix(strings.TrimSpace(scope.Values["topic"]), "topic:"); topic != "" {
+		outboundCtx.TopicID = topic
+		return
+	}
+	chatScope := strings.TrimSpace(scope.Values["chat"])
+	if idx := strings.LastIndex(chatScope, "/"); idx >= 0 && idx+1 < len(chatScope) {
+		outboundCtx.TopicID = strings.TrimSpace(chatScope[idx+1:])
 	}
 }
