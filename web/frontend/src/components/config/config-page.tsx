@@ -152,11 +152,13 @@ export function ConfigPage() {
       id: `mcp-${Date.now()}-${nextIndex}`,
       name: "",
       enabled: true,
+      deferredOverride: null,
       type: "stdio",
       url: "",
       command: "",
       argsText: "",
       envText: "{}",
+      envFile: "",
       headersText: "{}",
     }
     updateField("mcpServers", [...form.mcpServers, server])
@@ -264,16 +266,20 @@ export function ConfigPage() {
           "Cron exec timeout",
           { min: 0 },
         )
-        const mcpDiscoveryTTL = parseIntField(
-          form.mcpDiscoveryTTL,
-          "MCP discovery ttl",
-          { min: 0 },
-        )
-        const mcpDiscoveryMaxSearchResults = parseIntField(
-          form.mcpDiscoveryMaxSearchResults,
-          "MCP discovery max search results",
-          { min: 0 },
-        )
+        const mcpDiscoveryValidationEnabled =
+          form.mcpEnabled && form.mcpDiscoveryEnabled
+        const mcpDiscoveryTTL = mcpDiscoveryValidationEnabled
+          ? parseIntField(form.mcpDiscoveryTTL, "MCP discovery ttl", {
+              min: 0,
+            })
+          : Number.parseInt(EMPTY_FORM.mcpDiscoveryTTL, 10)
+        const mcpDiscoveryMaxSearchResults = mcpDiscoveryValidationEnabled
+          ? parseIntField(
+              form.mcpDiscoveryMaxSearchResults,
+              "MCP discovery max search results",
+              { min: 0 },
+            )
+          : Number.parseInt(EMPTY_FORM.mcpDiscoveryMaxSearchResults, 10)
         const execConfigPatch: Record<string, unknown> = {
           enabled: form.execEnabled,
         }
@@ -290,6 +296,7 @@ export function ConfigPage() {
             name: server.name.trim(),
             url: server.url.trim(),
             command: server.command.trim(),
+            envFile: server.envFile.trim(),
           }))
           .filter((server) => server.name !== "")
 
@@ -321,6 +328,11 @@ export function ConfigPage() {
           .map((name) => [name, null] as const)
 
         const upsertServerEntries = normalizedServers.map((server) => {
+          const deferredPatch =
+            server.deferredOverride === null
+              ? {}
+              : { deferred: server.deferredOverride }
+
           if (server.type !== "stdio") {
             if (server.url === "") {
               throw new Error(`MCP server ${server.name} requires a URL.`)
@@ -329,6 +341,7 @@ export function ConfigPage() {
             return [
               server.name,
               {
+                ...deferredPatch,
                 enabled: server.enabled,
                 type: server.type,
                 url: server.url,
@@ -351,6 +364,7 @@ export function ConfigPage() {
           return [
             server.name,
             {
+              ...deferredPatch,
               enabled: server.enabled,
               type: "stdio",
               command: server.command,
@@ -359,9 +373,9 @@ export function ConfigPage() {
                 server.envText,
                 `MCP server ${server.name} env`,
               ),
+              env_file: server.envFile === "" ? null : server.envFile,
               url: null,
               headers: null,
-              env_file: null,
             },
           ] as const
         })

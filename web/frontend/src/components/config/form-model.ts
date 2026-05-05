@@ -40,11 +40,13 @@ export interface MCPServerForm {
   id: string
   name: string
   enabled: boolean
+  deferredOverride: boolean | null
   type: MCPServerType
   url: string
   command: string
   argsText: string
   envText: string
+  envFile: string
   headersText: string
 }
 
@@ -144,6 +146,10 @@ function asBool(value: unknown): boolean {
   return value === true
 }
 
+function asOptionalBool(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null
+}
+
 function asNumberString(value: unknown, fallback: string): string {
   if (typeof value === "number" && Number.isFinite(value)) {
     return String(value)
@@ -193,11 +199,13 @@ function mapMCPServers(value: unknown): MCPServerForm[] {
       id: makeMCPServerID(name),
       name,
       enabled: cfg.enabled !== false,
+      deferredOverride: asOptionalBool(cfg.deferred),
       type,
       url,
       command: asString(cfg.command),
       argsText: argsList.join("\n"),
       envText: JSON.stringify(env, null, 2),
+      envFile: asString(cfg.env_file),
       headersText: JSON.stringify(headers, null, 2),
     }
   })

@@ -401,7 +401,7 @@ export function MCPSection({
                     />
                   </div>
 
-                  {server.type === "http" ? (
+                  {server.type !== "stdio" ? (
                     <div className="mt-3 grid gap-3">
                       <Input
                         value={server.url}
