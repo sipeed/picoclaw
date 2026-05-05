@@ -273,6 +273,14 @@ func DefaultConfig() *Config {
 				APIBase:   "http://localhost:8000/v1",
 			},
 
+			// OVMS (local) - http://localhost:8000
+			{
+				ModelName: "local-ovms",
+				Provider:  "ovms",
+				Model:     "custom-model",
+				APIBase:   "http://localhost:8000/v3",
+			},
+
 			// LM Studio (local) - http://localhost:1234
 			{
 				ModelName: "lmstudio-local",

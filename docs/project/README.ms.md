@@ -394,6 +394,7 @@ PicoClaw menyokong 30+ penyedia LLM melalui konfigurasi `model_list`. Gunakan fo
 | [Xiaomi MiMo](https://platform.xiaomimimo.com/) | `mimo/` | Diperlukan | Model MiMo |
 | [Ollama](https://ollama.com/) | `ollama/` | Tidak perlu | Model tempatan, self-hosted |
 | [vLLM](https://docs.vllm.ai/) | `vllm/` | Tidak perlu | Deployment tempatan, serasi OpenAI |
+| [OVMS](https://docs.openvino.ai/2026/model-server/ovms_docs_llm_quickstart.html) | `ovms/` | Tidak perlu | Intel OpenVINO Model Server, serasi OpenAI |
 | [LiteLLM](https://docs.litellm.ai/) | `litellm/` | Berbeza | Proksi untuk 100+ penyedia |
 | [Azure OpenAI](https://portal.azure.com/) | `azure/` | Diperlukan | Deployment Azure perusahaan |
 | [GitHub Copilot](https://github.com/features/copilot) | `github-copilot/` | OAuth | Log masuk kod peranti |
@@ -403,7 +404,7 @@ PicoClaw menyokong 30+ penyedia LLM melalui konfigurasi `model_list`. Gunakan fo
 > \* AWS Bedrock memerlukan tag binaan: `go build -tags bedrock`. Tetapkan `api_base` kepada nama rantau (cth. `us-east-1`) untuk resolusi endpoint automatik merentasi semua partition AWS. Apabila menggunakan URL endpoint penuh, anda juga perlu mengkonfigurasi `AWS_REGION` melalui pemboleh ubah persekitaran.
 
 <details>
-<summary><b>Deployment tempatan (Ollama, vLLM, dll.)</b></summary>
+<summary><b>Deployment tempatan (Ollama, vLLM, OVMS, dll.)</b></summary>
 
 **Ollama:**
 ```json
@@ -426,6 +427,19 @@ PicoClaw menyokong 30+ penyedia LLM melalui konfigurasi `model_list`. Gunakan fo
       "model_name": "local-vllm",
       "model": "vllm/your-model",
       "api_base": "http://localhost:8000/v1"
+    }
+  ]
+}
+```
+
+**OVMS (OpenVINO Model Server):**
+```json
+{
+  "model_list": [
+    {
+      "model_name": "local-ovms",
+      "model": "ovms/your-model",
+      "api_base": "http://localhost:8000/v3"
     }
   ]
 }

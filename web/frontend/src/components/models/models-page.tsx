@@ -42,9 +42,10 @@ const PROVIDER_PRIORITY: Record<string, number> = {
   azure: 23,
   ollama: 24,
   vllm: 25,
-  lmstudio: 26,
-  zai: 27,
-  mimo: 28,
+  ovms: 26,
+  lmstudio: 27,
+  zai: 28,
+  mimo: 29,
 }
 
 interface ProviderGroup {

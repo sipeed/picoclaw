@@ -55,6 +55,7 @@ Cette conception permet également le **support multi-agents** avec une sélecti
 | **OpenRouter**      | `openrouter/`     | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            |
 | **LiteLLM Proxy**   | `litellm/`        | `http://localhost:4000/v1`                          | OpenAI    | Your LiteLLM proxy key                                            |
 | **VLLM**            | `vllm/`           | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
+| **OVMS**            | `ovms/`           | `http://localhost:8000/v3`                          | OpenAI    | Local (no key needed)                                            |
 | **Cerebras**        | `cerebras/`       | `https://api.cerebras.ai/v1`                        | OpenAI    | [Get Key](https://cerebras.ai)                                   |
 | **VolcEngine (Doubao)** | `volcengine/`     | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw)                        |
 | **神算云**          | `shengsuanyun/`   | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | -                                                                |
@@ -105,7 +106,7 @@ Cette conception permet également le **support multi-agents** avec une sélecti
 |-------|------|--------|-------------|
 | `model_name` | string | Oui | Nom unique pour référencer ce modèle dans la config agent |
 | `model` | string | Oui | Identifiant fournisseur/modèle (ex : `openai/gpt-5.4`, `azure/gpt-5.4`, `anthropic/claude-sonnet-4.6`) |
-| `api_keys` | string[] | Oui* | Clé(s) API pour l'authentification. Plusieurs clés permettent la rotation par requête. Non requis pour les fournisseurs locaux (Ollama, LM Studio, VLLM) |
+| `api_keys` | string[] | Oui* | Clé(s) API pour l'authentification. Plusieurs clés permettent la rotation par requête. Non requis pour les fournisseurs locaux (Ollama, LM Studio, VLLM, OVMS) |
 | `api_base` | string | Non | Remplace l'URL de base API par défaut |
 | `proxy` | string | Non | URL du proxy HTTP pour cette entrée de modèle |
 | `user_agent` | string | Non | En-tête `User-Agent` personnalisé pour les requêtes API (supporté par les providers compatibles OpenAI, Gemini, Anthropic et Azure) |
@@ -298,7 +299,7 @@ Pour un guide de migration détaillé, voir [migration/model-list-migration.md](
 
 PicoClaw route les fournisseurs par famille de protocoles :
 
-- Protocole compatible OpenAI : OpenRouter, passerelles compatibles OpenAI, Groq, Zhipu et endpoints de type vLLM.
+- Protocole compatible OpenAI : OpenRouter, passerelles compatibles OpenAI, Groq, Zhipu et endpoints de type vLLM et OVMS.
 - Protocole Gemini natif : Google Gemini via les endpoints natifs `models/*:generateContent` et `models/*:streamGenerateContent`.
 - Protocole Anthropic : Comportement natif de l'API Claude.
 - Chemin Codex/OAuth : Route d'authentification OAuth/token OpenAI.

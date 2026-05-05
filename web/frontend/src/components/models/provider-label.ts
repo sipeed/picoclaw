@@ -20,6 +20,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   mistral: "Mistral AI",
   avian: "Avian",
   vllm: "VLLM (local)",
+  ovms: "OVMS (local)",
   zhipu: "Zhipu AI (智谱)",
   zai: "Z.ai",
   mimo: "Xiaomi MiMo",

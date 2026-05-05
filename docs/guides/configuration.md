@@ -592,6 +592,7 @@ For complete documentation, see [`../security/security_configuration.md`](../sec
 | **OpenRouter**          | `openrouter`      | `https://openrouter.ai/api/v1`                      | OpenAI    | [Get Key](https://openrouter.ai/keys)                            |
 | **LiteLLM Proxy**       | `litellm`         | `http://localhost:4000/v1`                          | OpenAI    | Your LiteLLM proxy key                                           |
 | **VLLM**                | `vllm`            | `http://localhost:8000/v1`                          | OpenAI    | Local                                                            |
+| **OVMS**                | `ovms`           | `http://localhost:8000/v3`                          | OpenAI    | Local (no key needed)                                            |
 | **Cerebras**            | `cerebras`        | `https://api.cerebras.ai/v1`                        | OpenAI    | [Get Key](https://cerebras.ai)                                   |
 | **VolcEngine (Doubao)** | `volcengine`      | `https://ark.cn-beijing.volces.com/api/v3`          | OpenAI    | [Get Key](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
 | **神算云**              | `shengsuanyun`    | `https://router.shengsuanyun.com/api/v1`            | OpenAI    | —                                                                |
@@ -848,7 +849,7 @@ The old `providers` configuration is **deprecated** and has been removed in V2. 
 
 PicoClaw routes providers by protocol family:
 
-- **OpenAI-compatible**: OpenRouter, Groq, Zhipu, vLLM-style endpoints, and most others.
+- **OpenAI-compatible**: OpenRouter, Groq, Zhipu, vLLM-style endpoints, OVMS, and most others.
 - **Gemini native**: Google Gemini via the native `models/*:generateContent` and `models/*:streamGenerateContent` endpoints.
 - **Anthropic**: Claude-native API behavior.
 - **Codex/OAuth**: OpenAI OAuth/token authentication route.

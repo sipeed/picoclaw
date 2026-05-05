@@ -369,7 +369,7 @@ A configuração antiga `providers` está **depreciada** e foi removida no V2. C
 
 PicoClaw roteia providers por família de protocolo:
 
-- **Compatível com OpenAI**: OpenRouter, Groq, Zhipu, endpoints vLLM e a maioria dos outros.
+- **Compatível com OpenAI**: OpenRouter, Groq, Zhipu, endpoints vLLM, OVMS e a maioria dos outros.
 - **Gemini nativo**: Google Gemini via endpoints nativos `models/*:generateContent` e `models/*:streamGenerateContent`.
 - **Anthropic**: Comportamento nativo da API Claude.
 - **Codex/OAuth**: Rota de autenticação OAuth/token OpenAI.

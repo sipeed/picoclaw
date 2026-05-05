@@ -89,6 +89,56 @@ func TestProbeLocalModelAvailability_LMStudioUsesOpenAICompatibleProbe(t *testin
 	}
 }
 
+func TestRequiresRuntimeProbe_OVMS(t *testing.T) {
+	if !requiresRuntimeProbe(&config.ModelConfig{
+		Model: "ovms/llama3",
+	}) {
+		t.Fatal("requiresRuntimeProbe(ovms with default base) = false, want true")
+	}
+
+	if requiresRuntimeProbe(&config.ModelConfig{
+		Model:   "ovms/llama3",
+		APIBase: "https://api.example.com/v3",
+	}) {
+		t.Fatal("requiresRuntimeProbe(ovms with remote base) = true, want false")
+	}
+}
+
+func TestModelProbeAPIBase_OVMSDefault(t *testing.T) {
+	got := modelProbeAPIBase(&config.ModelConfig{Model: "ovms/llama3"})
+	if got != "http://localhost:8000/v3" {
+		t.Fatalf("modelProbeAPIBase(ovms) = %q, want %q", got, "http://localhost:8000/v3")
+	}
+}
+
+func TestProbeLocalModelAvailability_OVMSUsesOpenAICompatibleProbe(t *testing.T) {
+	originalProbe := probeOpenAICompatibleModelFunc
+	defer func() { probeOpenAICompatibleModelFunc = originalProbe }()
+
+	called := false
+	probeOpenAICompatibleModelFunc = func(apiBase, modelID, apiKey string) bool {
+		called = true
+		if apiBase != "http://localhost:8000/v3" {
+			t.Fatalf("apiBase = %q, want %q", apiBase, "http://localhost:8000/v3")
+		}
+		if modelID != "llama3" {
+			t.Fatalf("modelID = %q, want %q", modelID, "llama3")
+		}
+		if apiKey != "" {
+			t.Fatalf("apiKey = %q, want empty", apiKey)
+		}
+		return true
+	}
+
+	model := &config.ModelConfig{Model: "ovms/llama3"}
+	if !probeLocalModelAvailability(model) {
+		t.Fatal("probeLocalModelAvailability(ovms) = false, want true")
+	}
+	if !called {
+		t.Fatal("probeOpenAICompatibleModelFunc was not called for ovms")
+	}
+}
+
 func TestModelProbeCacheKey_DifferentAPIKeysProduceDifferentKeys(t *testing.T) {
 	base := &config.ModelConfig{
 		ModelName:   "local-vllm",

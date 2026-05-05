@@ -26,7 +26,7 @@ func supportsAudioTranscription(modelCfg *config.ModelConfig) bool {
 	case "openai", "azure", "azure-openai",
 		"litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
-		"vivgrid", "volcengine", "vllm", "qwen", "qwen-portal", "qwen-intl", "qwen-international", "dashscope-intl",
+		"vivgrid", "volcengine", "vllm", "ovms", "qwen", "qwen-portal", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "minimax", "longcat", "modelscope", "novita",
 		"coding-plan", "alibaba-coding", "qwen-coding", "zai":
 		// These protocols all go through the OpenAI-compatible or Azure provider path in
@@ -47,7 +47,7 @@ func supportsWhisperTranscription(modelCfg *config.ModelConfig) bool {
 	switch protocol {
 	case "openai", "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
-		"vivgrid", "volcengine", "vllm", "qwen", "qwen-portal", "qwen-intl", "qwen-international", "dashscope-intl",
+		"vivgrid", "volcengine", "vllm", "ovms", "qwen", "qwen-portal", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "minimax", "longcat", "modelscope", "novita",
 		"coding-plan", "alibaba-coding", "qwen-coding", "zai", "mimo":
 		return true

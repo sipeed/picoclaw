@@ -206,6 +206,35 @@ func TestDetectTranscriber(t *testing.T) {
 			},
 			wantName: "audio-model",
 		},
+		{
+			name: "ovms voice model name selects audio model transcriber",
+			cfg: &config.Config{
+				Voice: config.VoiceConfig{ModelName: "local-ovms"},
+				ModelList: []*config.ModelConfig{
+					{
+						ModelName: "local-ovms",
+						Model:     "ovms/custom-model",
+						APIBase:   "http://localhost:8000/v3",
+					},
+				},
+			},
+			wantName: "audio-model",
+		},
+		{
+			name: "ovms voice model name with whisper model selects whisper transcriber",
+			cfg: &config.Config{
+				Voice: config.VoiceConfig{ModelName: "local-ovms"},
+				ModelList: []*config.ModelConfig{
+					{
+						ModelName: "local-ovms",
+						Model:     "ovms/whisper-large-v3",
+						APIBase:   "http://localhost:8000/v3",
+						APIKeys:   config.SimpleSecureStrings("sk-ovms-test"),
+					},
+				},
+			},
+			wantName: "whisper",
+		},
 	}
 
 	for _, tc := range tests {

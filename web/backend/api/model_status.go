@@ -176,7 +176,7 @@ func runLocalModelProbe(m *config.ModelConfig) bool {
 	switch protocol {
 	case "ollama":
 		return probeOllamaModelFunc(apiBase, modelID)
-	case "vllm", "lmstudio":
+	case "vllm", "ovms", "lmstudio":
 		return probeOpenAICompatibleModelFunc(apiBase, modelID, m.APIKey())
 	case "github-copilot", "copilot":
 		return probeTCPServiceFunc(apiBase)

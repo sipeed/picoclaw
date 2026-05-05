@@ -43,7 +43,7 @@
 
 * **Provider**
   * [**Architecture Upgrade**](https://github.com/sipeed/picoclaw/issues/283): Refactor from "Vendor-based" to "Protocol-based" classification (e.g., OpenAI-compatible, Ollama-compatible). *(Status: In progress by @Daming, ETA 5 days)*
-  * **Local Models**: Deep integration with **Ollama**, **vLLM**, **LM Studio**, and **Mistral** (local inference).
+  * **Local Models**: Deep integration with **Ollama**, **vLLM**, **OVMS**, **LM Studio**, and **Mistral** (local inference).
   * **Online Models**: Continued support for frontier closed-source models.
 
 

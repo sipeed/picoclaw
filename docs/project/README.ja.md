@@ -399,13 +399,14 @@ PicoClaw は `model_list` 設定を通じて 30 以上の LLM Provider をサポ
 | [Xiaomi MiMo](https://platform.xiaomimimo.com/) | `mimo/` | 必須 | MiMo モデル |
 | [Ollama](https://ollama.com/) | `ollama/` | 不要 | ローカルモデル、セルフホスト |
 | [vLLM](https://docs.vllm.ai/) | `vllm/` | 不要 | ローカルデプロイ、OpenAI 互換 |
+| [OVMS](https://docs.openvino.ai/2026/model-server/ovms_docs_llm_quickstart.html) | `ovms/` | 不要 | Intel OpenVINO Model Server、OpenAI 互換 |
 | [LiteLLM](https://docs.litellm.ai/) | `litellm/` | 場合による | 100 以上の Provider のプロキシ |
 | [Azure OpenAI](https://portal.azure.com/) | `azure/` | 必須 | エンタープライズ Azure デプロイ |
 | [GitHub Copilot](https://github.com/features/copilot) | `github-copilot/` | OAuth | デバイスコードログイン |
 | [Antigravity](https://console.cloud.google.com/) | `antigravity/` | OAuth | Google Cloud AI |
 
 <details>
-<summary><b>ローカルデプロイ（Ollama、vLLM など）</b></summary>
+<summary><b>ローカルデプロイ（Ollama、vLLM、OVMS など）</b></summary>
 
 **Ollama:**
 ```json
@@ -428,6 +429,19 @@ PicoClaw は `model_list` 設定を通じて 30 以上の LLM Provider をサポ
       "model_name": "local-vllm",
       "model": "vllm/your-model",
       "api_base": "http://localhost:8000/v1"
+    }
+  ]
+}
+```
+
+**OVMS (OpenVINO Model Server):**
+```json
+{
+  "model_list": [
+    {
+      "model_name": "local-ovms",
+      "model": "ovms/your-model",
+      "api_base": "http://localhost:8000/v3"
     }
   ]
 }
