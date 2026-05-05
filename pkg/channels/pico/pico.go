@@ -44,6 +44,23 @@ var allowedInlineImageMIMETypes = map[string]struct{}{
 	"image/bmp":  {},
 }
 
+// reservedRawKeys are internal metadata keys that cannot be overwritten by client-provided metadata.
+// This prevents clients from spoofing internal identity or session information.
+var reservedRawKeys = map[string]struct{}{
+	"platform":     {},
+	"session_id":   {},
+	"conn_id":      {},
+	"message_id":   {},
+	"sender_id":    {},
+	"chat_id":      {},
+	"message_kind": {},
+}
+
+func isReservedRawKey(key string) bool {
+	_, reserved := reservedRawKeys[key]
+	return reserved
+}
+
 func outboundMessageIsThought(msg bus.OutboundMessage) bool {
 	if len(msg.Context.Raw) == 0 {
 		return false
@@ -951,6 +968,9 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 	if payloadMeta, ok := msg.Payload["metadata"].(map[string]any); ok {
 		for k, v := range payloadMeta {
 			if s, ok := v.(string); ok && s != "" {
+				if isReservedRawKey(k) {
+					continue
+				}
 				metadata[k] = s
 			}
 		}

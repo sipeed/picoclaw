@@ -547,3 +547,32 @@ func newTestPicoWebSocket(t *testing.T) (*websocket.Conn, <-chan PicoMessage, fu
 	defer resp.Body.Close()
 	return clientConn, received, cleanup
 }
+
+func TestIsReservedRawKey(t *testing.T) {
+	reserved := []string{
+		"platform",
+		"session_id",
+		"conn_id",
+		"message_id",
+		"sender_id",
+		"chat_id",
+		"message_kind",
+	}
+	for _, key := range reserved {
+		if !isReservedRawKey(key) {
+			t.Errorf("isReservedRawKey(%q) = false, want true", key)
+		}
+	}
+
+	allowed := []string{
+		"mcp:Authorization",
+		"mcp:X-Custom-Header",
+		"custom_field",
+		"user_data",
+	}
+	for _, key := range allowed {
+		if isReservedRawKey(key) {
+			t.Errorf("isReservedRawKey(%q) = true, want false", key)
+		}
+	}
+}

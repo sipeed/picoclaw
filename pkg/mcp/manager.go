@@ -23,8 +23,9 @@ import (
 
 // headerTransport is an http.RoundTripper that adds custom headers to requests
 type headerTransport struct {
-	base    http.RoundTripper
-	headers map[string]string
+	base           http.RoundTripper
+	headers        map[string]string
+	dynamicHeaders *config.DynamicHeadersConfig
 }
 
 func expandHomeCommandPath(command string) string {
@@ -51,7 +52,8 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		req.Header.Set(key, value)
 	}
 	if dynamic := toolshared.MCPHeaders(req.Context()); len(dynamic) > 0 {
-		for key, value := range dynamic {
+		filtered := t.filterDynamicHeaders(dynamic)
+		for key, value := range filtered {
 			req.Header.Set(key, value)
 		}
 	}
@@ -60,6 +62,39 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		base = http.DefaultTransport
 	}
 	return base.RoundTrip(req)
+}
+
+// filterDynamicHeaders applies the allowlist and limits from DynamicHeadersConfig.
+// Returns nil if no dynamic headers config is set (secure by default).
+func (t *headerTransport) filterDynamicHeaders(headers map[string]string) map[string]string {
+	if t.dynamicHeaders == nil || len(t.dynamicHeaders.Allowed) == 0 {
+		return nil
+	}
+
+	allowedSet := make(map[string]struct{}, len(t.dynamicHeaders.Allowed))
+	for _, h := range t.dynamicHeaders.Allowed {
+		allowedSet[strings.ToLower(h)] = struct{}{}
+	}
+
+	maxCount := t.dynamicHeaders.GetMaxCount()
+	maxValueLen := t.dynamicHeaders.GetMaxValueLen()
+
+	result := make(map[string]string)
+	count := 0
+	for key, value := range headers {
+		if count >= maxCount {
+			break
+		}
+		if _, ok := allowedSet[strings.ToLower(key)]; !ok {
+			continue
+		}
+		if len(value) > maxValueLen {
+			value = value[:maxValueLen]
+		}
+		result[key] = value
+		count++
+	}
+	return result
 }
 
 // loadEnvFile loads environment variables from a file in .env format
@@ -384,8 +419,9 @@ func connectServer(
 
 		sseTransport.HTTPClient = &http.Client{
 			Transport: &headerTransport{
-				base:    http.DefaultTransport,
-				headers: cfg.Headers,
+				base:           http.DefaultTransport,
+				headers:        cfg.Headers,
+				dynamicHeaders: cfg.DynamicHeaders,
 			},
 		}
 		if len(cfg.Headers) > 0 {
