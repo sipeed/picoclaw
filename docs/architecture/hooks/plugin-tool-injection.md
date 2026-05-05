@@ -556,6 +556,7 @@ This provides a flexible and elegant solution for plugin development.
 **Important**: The `respond` action bypasses `ApproveTool` approval checks.
 
 This means:
+
 - A `before_tool` hook can return `respond` for **any tool name**, including sensitive tools (like `bash`)
 - The tool won't go through the approval process, directly returning the hook-provided result
 - This is designed for plugin tools but introduces security risks
