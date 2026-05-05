@@ -338,6 +338,20 @@ export function ConfigPage() {
               throw new Error(`MCP server ${server.name} requires a URL.`)
             }
 
+            try {
+              const parsedURL = new URL(server.url)
+              if (
+                parsedURL.protocol !== "http:" &&
+                parsedURL.protocol !== "https:"
+              ) {
+                throw new Error("invalid protocol")
+              }
+            } catch {
+              throw new Error(
+                `MCP server ${server.name} requires a valid HTTP(S) URL.`,
+              )
+            }
+
             return [
               server.name,
               {

@@ -399,6 +399,42 @@ export function MCPSection({
                         onServerFieldChange(server.id, "enabled", checked)
                       }
                     />
+
+                    <Select
+                      value={
+                        server.deferredOverride === null
+                          ? "inherit"
+                          : server.deferredOverride
+                            ? "deferred"
+                            : "eager"
+                      }
+                      onValueChange={(value) =>
+                        onServerFieldChange(
+                          server.id,
+                          "deferredOverride",
+                          value === "inherit" ? null : value === "deferred",
+                        )
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={t(
+                            "pages.config.mcp_server_discovery_mode",
+                          )}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="inherit">
+                          {t("pages.config.mcp_server_discovery_mode_inherit")}
+                        </SelectItem>
+                        <SelectItem value="deferred">
+                          {t("pages.config.mcp_server_discovery_mode_deferred")}
+                        </SelectItem>
+                        <SelectItem value="eager">
+                          {t("pages.config.mcp_server_discovery_mode_eager")}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   {server.type !== "stdio" ? (
@@ -438,6 +474,19 @@ export function MCPSection({
                           onServerFieldChange(
                             server.id,
                             "command",
+                            e.target.value,
+                          )
+                        }
+                      />
+                      <Input
+                        value={server.envFile}
+                        placeholder={t(
+                          "pages.config.mcp_server_env_file_placeholder",
+                        )}
+                        onChange={(e) =>
+                          onServerFieldChange(
+                            server.id,
+                            "envFile",
                             e.target.value,
                           )
                         }
