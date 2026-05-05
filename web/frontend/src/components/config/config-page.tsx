@@ -217,6 +217,17 @@ export function ConfigPage() {
           throw new Error("Session scope is required.")
         }
 
+        if (
+          form.mcpEnabled &&
+          form.mcpDiscoveryEnabled &&
+          !form.mcpDiscoveryUseBM25 &&
+          !form.mcpDiscoveryUseRegex
+        ) {
+          throw new Error(
+            "MCP discovery requires at least one search method (BM25 or regex).",
+          )
+        }
+
         const maxTokens = parseIntField(form.maxTokens, "Max tokens", {
           min: 1,
         })
@@ -281,6 +292,25 @@ export function ConfigPage() {
             command: server.command.trim(),
           }))
           .filter((server) => server.name !== "")
+
+        const serverNameCounts = new Map<string, number>()
+        for (const server of normalizedServers) {
+          serverNameCounts.set(
+            server.name,
+            (serverNameCounts.get(server.name) ?? 0) + 1,
+          )
+        }
+
+        const duplicateNames = Array.from(serverNameCounts.entries())
+          .filter(([, count]) => count > 1)
+          .map(([name]) => name)
+          .sort((a, b) => a.localeCompare(b))
+
+        if (duplicateNames.length > 0) {
+          throw new Error(
+            `MCP server names must be unique. Duplicates: ${duplicateNames.join(", ")}.`,
+          )
+        }
 
         const currentServerNames = new Set(
           normalizedServers.map((server) => server.name),
