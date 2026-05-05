@@ -310,6 +310,9 @@ export function MCPSection({
                 hint={t("pages.config.mcp_discovery_use_bm25_hint")}
                 layout="setting-row"
                 checked={form.mcpDiscoveryUseBM25}
+                disabled={
+                  form.mcpDiscoveryUseBM25 && !form.mcpDiscoveryUseRegex
+                }
                 onCheckedChange={(checked) =>
                   onFieldChange("mcpDiscoveryUseBM25", checked)
                 }
@@ -320,6 +323,9 @@ export function MCPSection({
                 hint={t("pages.config.mcp_discovery_use_regex_hint")}
                 layout="setting-row"
                 checked={form.mcpDiscoveryUseRegex}
+                disabled={
+                  form.mcpDiscoveryUseRegex && !form.mcpDiscoveryUseBM25
+                }
                 onCheckedChange={(checked) =>
                   onFieldChange("mcpDiscoveryUseRegex", checked)
                 }

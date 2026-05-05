@@ -180,7 +180,12 @@ function mapMCPServers(value: unknown): MCPServerForm[] {
       ? cfg.args.filter((item): item is string => typeof item === "string")
       : []
     const url = asString(cfg.url)
-    const type = cfg.type === undefined ? (url ? "sse" : "stdio") : toMCPServerType(cfg.type)
+    const type =
+      cfg.type === undefined
+        ? url
+          ? "sse"
+          : "stdio"
+        : toMCPServerType(cfg.type)
     const env = asRecord(cfg.env)
     const headers = asRecord(cfg.headers)
 
