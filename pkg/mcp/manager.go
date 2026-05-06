@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -382,17 +383,24 @@ func connectServer(
 			DisableStandaloneSSE: disableStandaloneSSE,
 		}
 
-		// Set up HTTP client with a connection timeout to avoid hanging
-		// indefinitely when the MCP server is unreachable.
+		// Set up HTTP client with transport-level timeouts to avoid hanging
+		// indefinitely during connection establishment, while allowing SSE
+		// streams to remain open without a global request timeout.
+		baseTransport := &http.Transport{
+			DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
+		}
+
 		mcpHTTPClient := &http.Client{
-			Timeout: 30 * time.Second,
+			Transport: baseTransport,
 		}
 
 		// Add custom headers if provided
 		if len(cfg.Headers) > 0 {
 			// Create a custom HTTP client with header-injecting transport
 			mcpHTTPClient.Transport = &headerTransport{
-				base:    http.DefaultTransport,
+				base:    baseTransport,
 				headers: cfg.Headers,
 			}
 			logger.DebugCF("mcp", "Added custom HTTP headers",
@@ -464,8 +472,11 @@ func connectServer(
 		)
 	}
 
-	// Connect to server
-	session, err := client.Connect(ctx, transport, nil)
+	// Connect to server with a timeout-scoped context to avoid hanging
+	// indefinitely when the MCP server is unreachable.
+	connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	session, err := client.Connect(connectCtx, transport, nil)
+	cancel()
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
@@ -480,8 +491,10 @@ func connectServer(
 			"protocol":      initResult.ProtocolVersion,
 		})
 
-	// List available tools if supported
-	tools, err := listServerTools(ctx, name, session, initResult)
+	// List available tools if supported, with a timeout-scoped context
+	listCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	tools, err := listServerTools(listCtx, name, session, initResult)
+	cancel()
 	if err != nil {
 		_ = session.Close()
 		return nil, err
