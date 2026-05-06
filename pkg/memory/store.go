@@ -6,6 +6,14 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
+// SessionMessage represents a message in a session with optional tags and metadata.
+type SessionMessage struct {
+	Role     string
+	Content  string
+	Tags     []string
+	Metadata map[string]interface{}
+}
+
 // Store defines an interface for persistent session storage.
 // Each method is an atomic operation — there is no separate Save() call.
 type Store interface {
