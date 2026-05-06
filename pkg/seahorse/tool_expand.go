@@ -100,7 +100,9 @@ func (t *ExpandTool) Execute(ctx context.Context, args map[string]any) *tools.To
 			return tools.ErrorResult("Expand failed: resolve current conversation: " + err.Error())
 		}
 		if !found {
-			return tools.ErrorResult("Expand failed: no current conversation found for this session. Use all_conversations: true to expand across conversations.")
+			return tools.ErrorResult(
+				"Expand failed: no current conversation found for this session. Use all_conversations: true to expand across conversations.",
+			)
 		}
 	}
 
