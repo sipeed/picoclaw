@@ -21,6 +21,7 @@ type stubJobExecutor struct {
 	lastKey         string
 	lastChan        string
 	lastChatID      string
+	scheduledUsed   bool
 	publishedResp   string
 	publishedChan   string
 	publishedChatID string
@@ -31,6 +32,18 @@ func (s *stubJobExecutor) ProcessDirectWithChannel(
 	_ context.Context,
 	content, sessionKey, channel, chatID string,
 ) (string, error) {
+	s.lastPrompt = content
+	s.lastKey = sessionKey
+	s.lastChan = channel
+	s.lastChatID = chatID
+	return s.response, s.err
+}
+
+func (s *stubJobExecutor) ProcessScheduledWithChannel(
+	_ context.Context,
+	content, sessionKey, channel, chatID string,
+) (string, error) {
+	s.scheduledUsed = true
 	s.lastPrompt = content
 	s.lastKey = sessionKey
 	s.lastChan = channel
@@ -281,6 +294,9 @@ func TestCronTool_ExecuteJobPublishesAgentResponse(t *testing.T) {
 	}
 	if executor.lastPrompt != "send me a poem" {
 		t.Fatalf("prompt = %q, want original message", executor.lastPrompt)
+	}
+	if !executor.scheduledUsed {
+		t.Fatal("expected cron agent job to use scheduled executor path")
 	}
 	if executor.publishedResp != "generated reply" {
 		t.Fatalf("published response = %q, want generated reply", executor.publishedResp)

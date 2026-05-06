@@ -23,6 +23,10 @@ type JobExecutor interface {
 	PublishResponseIfNeeded(ctx context.Context, channel, chatID, sessionKey, response string)
 }
 
+type scheduledJobExecutor interface {
+	ProcessScheduledWithChannel(ctx context.Context, content, sessionKey, channel, chatID string) (string, error)
+}
+
 // CronTool provides scheduling capabilities for the agent
 type CronTool struct {
 	cronService  *cron.CronService
@@ -344,14 +348,28 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 
 	sessionKey := fmt.Sprintf("agent:cron-%s-%s", job.ID, uuid.New().String())
 
-	// Call agent with the job message
-	response, err := t.executor.ProcessDirectWithChannel(
-		ctx,
-		job.Payload.Message,
-		sessionKey,
-		channel,
-		chatID,
-	)
+	// Call agent with the job message. Scheduled agent turns should not emit
+	// interactive progress/tool-feedback messages; they should only publish a
+	// final response when the job has something actionable to say.
+	var response string
+	var err error
+	if scheduledExecutor, ok := t.executor.(scheduledJobExecutor); ok {
+		response, err = scheduledExecutor.ProcessScheduledWithChannel(
+			ctx,
+			job.Payload.Message,
+			sessionKey,
+			channel,
+			chatID,
+		)
+	} else {
+		response, err = t.executor.ProcessDirectWithChannel(
+			ctx,
+			job.Payload.Message,
+			sessionKey,
+			channel,
+			chatID,
+		)
+	}
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
