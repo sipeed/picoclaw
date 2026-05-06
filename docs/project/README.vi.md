@@ -289,24 +289,6 @@ Sau bước này, `picoclaw-launcher` sẽ mở bình thường trong các lần
 
 </details>
 
-### 💻 TUI Launcher (Khuyến nghị cho Headless / SSH)
-
-TUI (Terminal UI) Launcher cung cấp giao diện terminal đầy đủ tính năng để cấu hình và quản lý. Lý tưởng cho máy chủ, Raspberry Pi và các môi trường headless khác.
-
-```bash
-picoclaw-launcher-tui
-```
-
-<p align="center">
-<img src="../../assets/launcher-tui.jpg" alt="TUI Launcher" width="600">
-</p>
-
-**Bắt đầu:**
-
-Sử dụng menu TUI để: **1)** Cấu hình Provider -> **2)** Cấu hình Channel -> **3)** Khởi động Gateway -> **4)** Trò chuyện!
-
-Để biết tài liệu TUI chi tiết, xem [docs.picoclaw.io](https://docs.picoclaw.io).
-
 <a id="-run-on-old-android-phones"></a>
 ### 📱 Android
 

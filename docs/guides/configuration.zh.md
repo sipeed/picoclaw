@@ -753,6 +753,42 @@ PicoClaw 按协议族路由提供商：
 
 </details>
 
+### 事件日志
+
+PicoClaw 的 runtime events 会覆盖 agent、channel、gateway、message bus 和 MCP 等运行时组件。默认只打印 `agent.*` 事件，其他事件仍会发布到 runtime event bus，但不会进入日志。
+
+```json
+{
+  "events": {
+    "logging": {
+      "enabled": true,
+      "include": ["agent.*"],
+      "exclude": [],
+      "min_severity": "info",
+      "include_payload": false
+    }
+  }
+}
+```
+
+常用配置：
+
+```json
+{
+  "events": {
+    "logging": {
+      "include": ["*"],
+      "exclude": ["agent.llm.delta"],
+      "min_severity": "warn"
+    }
+  }
+}
+```
+
+`include` / `exclude` 支持精确事件名和 `gateway.*`、`channel.lifecycle.*` 这类模式。`include_payload` 默认关闭，避免把完整用户消息或工具参数写入日志；agent 事件会默认输出长度、计数、状态等摘要字段。
+
+更多字段说明和示例见 [Runtime Events 与事件日志](../architecture/runtime-events.zh.md)。
+
 ### 定时任务 / 提醒
 
 PicoClaw 通过 `cron` 工具支持 cron 风格的定时任务。Agent 可以设置、列出和取消在指定时间触发的提醒或周期性任务。
@@ -775,6 +811,7 @@ PicoClaw 通过 `cron` 工具支持 cron 风格的定时任务。Agent 可以设
 | 主题 | 说明 |
 | ---- | ---- |
 | [敏感数据过滤](../security/sensitive_data_filtering.zh.md) | 在发送给 LLM 前，从工具结果中过滤 API 密钥和令牌 |
+| [Runtime Events 与事件日志](../architecture/runtime-events.zh.md) | 统一运行时事件、日志过滤和调试配置 |
 | [Hook 系统](../architecture/hooks/README.zh.md) | 事件驱动 Hook：观察者、拦截器、审批 Hook |
 | [Steering](../architecture/steering.md) | 在工具调用间向运行中的 Agent 注入消息 |
 | [SubTurn](../architecture/subturn.md) | 子 Agent 协调、并发控制、生命周期管理 |

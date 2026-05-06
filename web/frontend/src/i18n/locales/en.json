@@ -294,6 +294,8 @@
       "thinkingLevelHint": "Extended thinking budget: off, low, medium, high, xhigh, adaptive.",
       "maxTokensField": "Max Tokens Field",
       "maxTokensFieldHint": "Override the request field name for max tokens, e.g. max_completion_tokens.",
+      "toolSchemaTransform": "Tool Schema Transform",
+      "toolSchemaTransformHint": "Optional compatibility transform for tool JSON schemas. Leave blank for native behavior. Supported values: simple.",
       "extraBody": "Extra Body",
       "extraBodyHint": "Additional JSON fields to inject into the request body, e.g. {\"reasoning_split\": true}.",
       "customHeaders": "Custom Headers",
@@ -604,6 +606,7 @@
         },
         "reasons": {
           "requires_linux": "This tool only works on Linux hosts with the required device files exposed.",
+          "requires_serial_platform": "This tool currently supports Linux, macOS, and Windows hosts with accessible serial ports.",
           "requires_skills": "Enable `tools.skills` before this skill-registry tool can be used.",
           "requires_subagent": "Enable `tools.subagent` before the spawn tool can delegate work.",
           "requires_mcp_discovery": "Enable `tools.mcp.discovery` before MCP discovery tools become available.",

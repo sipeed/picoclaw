@@ -13,6 +13,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/commands"
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -24,6 +25,7 @@ func NewAgentLoop(
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
 	provider providers.LLMProvider,
+	opts ...AgentLoopOption,
 ) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
@@ -47,8 +49,6 @@ func NewAgentLoop(
 		stateManager = state.NewManager(defaultAgent.Workspace)
 	}
 
-	eventBus := NewEventBus()
-
 	// Determine worker pool size from config (default: 1 = sequential)
 	workerPoolSize := cfg.Agents.Defaults.MaxParallelTurns
 	if workerPoolSize <= 0 {
@@ -56,18 +56,28 @@ func NewAgentLoop(
 	}
 
 	al := &AgentLoop{
-		bus:         msgBus,
-		cfg:         cfg,
-		registry:    registry,
-		state:       stateManager,
-		eventBus:    eventBus,
-		fallback:    fallbackChain,
-		cmdRegistry: commands.NewRegistry(commands.BuiltinDefinitions()),
-		steering:    newSteeringQueue(parseSteeringMode(cfg.Agents.Defaults.SteeringMode)),
-		workerSem:   make(chan struct{}, workerPoolSize),
+		bus:               msgBus,
+		cfg:               cfg,
+		registry:          registry,
+		state:             stateManager,
+		fallback:          fallbackChain,
+		cmdRegistry:       commands.NewRegistry(commands.BuiltinDefinitions()),
+		steering:          newSteeringQueue(parseSteeringMode(cfg.Agents.Defaults.SteeringMode)),
+		workerSem:         make(chan struct{}, workerPoolSize),
+		ownsRuntimeEvents: true,
 	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(al)
+		}
+	}
+	if al.runtimeEvents == nil {
+		al.runtimeEvents = runtimeevents.NewBus()
+		al.ownsRuntimeEvents = true
+	}
+	al.refreshRuntimeEventLogger(cfg)
 	al.providerFactory = providers.CreateProviderFromConfig
-	al.hooks = NewHookManager(eventBus)
+	al.hooks = NewHookManager(al.runtimeEvents.Channel())
 	configureHookManagerFromConfig(al.hooks, cfg)
 	al.contextManager = al.resolveContextManager()
 
@@ -127,6 +137,9 @@ func registerSharedTools(
 		}
 		if cfg.Tools.IsToolEnabled("spi") {
 			agent.Tools.Register(tools.NewSPITool())
+		}
+		if cfg.Tools.IsToolEnabled("serial") {
+			agent.Tools.Register(tools.NewSerialTool())
 		}
 
 		// Message tool

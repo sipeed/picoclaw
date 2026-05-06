@@ -10,6 +10,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
@@ -22,30 +23,38 @@ const (
 // ====================== Test Helper: Event Collector ======================
 type eventCollector struct {
 	mu     sync.Mutex
-	events []Event
+	events []runtimeevents.Event
 }
 
 func newEventCollector(t *testing.T, al *AgentLoop) (*eventCollector, func()) {
 	t.Helper()
 	c := &eventCollector{}
-	sub := al.SubscribeEvents(16)
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		16,
+		runtimeevents.KindAgentSubTurnSpawn,
+		runtimeevents.KindAgentSubTurnEnd,
+		runtimeevents.KindAgentSubTurnResultDelivered,
+		runtimeevents.KindAgentSubTurnOrphan,
+	)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for evt := range sub.C {
+		for evt := range runtimeCh {
 			c.mu.Lock()
 			c.events = append(c.events, evt)
 			c.mu.Unlock()
 		}
 	}()
 	cleanup := func() {
-		al.UnsubscribeEvents(sub.ID)
+		closeRuntimeEvents()
 		<-done
 	}
 	return c, cleanup
 }
 
-func (c *eventCollector) hasEventOfKind(kind EventKind) bool {
+func (c *eventCollector) hasEventOfKind(kind runtimeevents.Kind) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, e := range c.events {
@@ -131,7 +140,7 @@ func TestSpawnSubTurn(t *testing.T) {
 				agent:          al.registry.GetDefaultAgent(),
 			}
 
-			// Subscribe to real EventBus to capture events
+			// Subscribe to runtime events to capture sub-turn lifecycle.
 			collector, collectCleanup := newEventCollector(t, al)
 			defer collectCleanup()
 
@@ -158,12 +167,12 @@ func TestSpawnSubTurn(t *testing.T) {
 			// Verify event emission
 			time.Sleep(10 * time.Millisecond) // let event goroutine flush
 			if tt.wantSpawn {
-				if !collector.hasEventOfKind(EventKindSubTurnSpawn) {
+				if !collector.hasEventOfKind(runtimeevents.KindAgentSubTurnSpawn) {
 					t.Error("SubTurnSpawnEvent not emitted")
 				}
 			}
 			if tt.wantEnd {
-				if !collector.hasEventOfKind(EventKindSubTurnEnd) {
+				if !collector.hasEventOfKind(runtimeevents.KindAgentSubTurnEnd) {
 					t.Error("SubTurnEndEvent not emitted")
 				}
 			}
@@ -316,8 +325,8 @@ func TestSpawnSubTurn_OrphanResultRouting(t *testing.T) {
 
 	time.Sleep(10 * time.Millisecond) // let event goroutine flush
 	// Verify Orphan event is emitted
-	if !collector.hasEventOfKind(EventKindSubTurnOrphan) {
-		t.Error("SubTurnOrphanResultEvent not emitted for finished parent")
+	if !collector.hasEventOfKind(runtimeevents.KindAgentSubTurnOrphan) {
+		t.Error("agent.subturn.orphan not emitted for finished parent")
 	}
 
 	// Verify history is NOT polluted
@@ -591,12 +600,16 @@ func TestNestedSubTurnHierarchy(t *testing.T) {
 	var spawnedTurns []turnInfo
 	var mu sync.Mutex
 
-	// Subscribe to real EventBus to capture spawn events
-	sub := al.SubscribeEvents(16)
-	defer al.UnsubscribeEvents(sub.ID)
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		16,
+		runtimeevents.KindAgentSubTurnSpawn,
+	)
+	defer closeRuntimeEvents()
 	go func() {
-		for evt := range sub.C {
-			if evt.Kind == EventKindSubTurnSpawn {
+		for evt := range runtimeCh {
+			if evt.Kind == runtimeevents.KindAgentSubTurnSpawn {
 				p, _ := evt.Payload.(SubTurnSpawnPayload)
 				mu.Lock()
 				spawnedTurns = append(spawnedTurns, turnInfo{
@@ -879,7 +892,7 @@ func TestSpawnSubTurn_PanicRecovery(t *testing.T) {
 
 	time.Sleep(10 * time.Millisecond) // let event goroutine flush
 	// SubTurnEndEvent should still be emitted
-	if !collector.hasEventOfKind(EventKindSubTurnEnd) {
+	if !collector.hasEventOfKind(runtimeevents.KindAgentSubTurnEnd) {
 		t.Error("SubTurnEndEvent not emitted after panic")
 	}
 
@@ -1229,18 +1242,23 @@ func TestDeliverSubTurnResult_RaceWithFinish(t *testing.T) {
 	al, _, _, _, cleanup := newTestAgentLoop(t) //nolint:dogsled
 	defer cleanup()
 
-	// Collect events via real EventBus
 	var mu sync.Mutex
 	var deliveredCount, orphanCount int
-	sub := al.SubscribeEvents(64)
-	defer al.UnsubscribeEvents(sub.ID)
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		64,
+		runtimeevents.KindAgentSubTurnResultDelivered,
+		runtimeevents.KindAgentSubTurnOrphan,
+	)
+	defer closeRuntimeEvents()
 	go func() {
-		for evt := range sub.C {
+		for evt := range runtimeCh {
 			mu.Lock()
 			switch evt.Kind {
-			case EventKindSubTurnResultDelivered:
+			case runtimeevents.KindAgentSubTurnResultDelivered:
 				deliveredCount++
-			case EventKindSubTurnOrphan:
+			case runtimeevents.KindAgentSubTurnOrphan:
 				orphanCount++
 			}
 			mu.Unlock()
@@ -1795,13 +1813,20 @@ func TestAsyncSubTurn_ParentFinishesEarly(t *testing.T) {
 	provider := &slowMockProvider{delay: 5 * time.Second} // SubTurn takes 5 seconds
 	al := NewAgentLoop(cfg, msgBus, provider)
 
-	// Capture events via real EventBus
 	var mu sync.Mutex
-	var events []Event
-	sub := al.SubscribeEvents(32)
-	defer al.UnsubscribeEvents(sub.ID)
+	var events []runtimeevents.Event
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		32,
+		runtimeevents.KindAgentSubTurnSpawn,
+		runtimeevents.KindAgentSubTurnEnd,
+		runtimeevents.KindAgentSubTurnResultDelivered,
+		runtimeevents.KindAgentSubTurnOrphan,
+	)
+	defer closeRuntimeEvents()
 	go func() {
-		for evt := range sub.C {
+		for evt := range runtimeCh {
 			mu.Lock()
 			events = append(events, evt)
 			mu.Unlock()

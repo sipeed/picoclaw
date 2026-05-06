@@ -259,6 +259,64 @@ func TestGeminiProvider_ChatStreamSkipsEmptyDataFrames(t *testing.T) {
 	}
 }
 
+func TestGeminiProvider_BuildRequestBody_PreservesComplexToolSchemasByDefault(t *testing.T) {
+	provider := NewGeminiProvider("test-key", "https://example.com/v1beta", "", "", 0, nil, nil)
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"parent": map[string]any{
+				"anyOf": []any{
+					map[string]any{"$ref": "#/$defs/pageParent"},
+					map[string]any{"$ref": "#/$defs/databaseParent"},
+				},
+			},
+		},
+		"$defs": map[string]any{
+			"pageParent": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"page_id": map[string]any{"type": "string"},
+				},
+				"required": []any{"page_id"},
+			},
+			"databaseParent": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"database_id": map[string]any{"type": "string"},
+				},
+				"required": []any{"database_id"},
+			},
+		},
+	}
+
+	body := provider.buildRequestBody(
+		[]Message{{Role: "user", Content: "hello"}},
+		[]ToolDefinition{{
+			Type: "function",
+			Function: ToolFunctionDefinition{
+				Name:        "mcp_notion_create",
+				Description: "Create a Notion object",
+				Parameters:  schema,
+			},
+		}},
+		"gemini-3-flash-preview",
+		nil,
+	)
+
+	tools, ok := body["tools"].([]geminiTool)
+	if !ok || len(tools) != 1 {
+		t.Fatalf("tools = %#v, want one geminiTool", body["tools"])
+	}
+	got, ok := tools[0].FunctionDeclarations[0].Parameters.(map[string]any)
+	if !ok {
+		t.Fatalf("parameters = %#v, want map", tools[0].FunctionDeclarations[0].Parameters)
+	}
+
+	if got["$defs"] == nil {
+		t.Fatalf("parameters = %#v, want raw schema with $defs preserved by default", got)
+	}
+}
+
 func TestGeminiProvider_ChatStreamReturnsErrorOnInvalidDataFrame(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

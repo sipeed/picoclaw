@@ -131,8 +131,8 @@ func TestSend_ThoughtMessageDoesNotFinalizeTrackedToolFeedback(t *testing.T) {
 		if got := payload[PayloadKeyContent]; got != "thinking trace" {
 			t.Fatalf("thought content = %#v, want %q", got, "thinking trace")
 		}
-		if got := payload[PayloadKeyThought]; got != true {
-			t.Fatalf("thought flag = %#v, want true", got)
+		if got := payload[PayloadKeyKind]; got != MessageKindThought {
+			t.Fatalf("thought kind = %#v, want %q", got, MessageKindThought)
 		}
 		if got := payload["message_id"]; got == "msg-progress" || got == nil || got == "" {
 			t.Fatalf("thought message_id = %#v, want new non-progress id", got)
@@ -190,6 +190,47 @@ func TestSend_ThoughtMessageDoesNotFinalizeTrackedToolFeedback(t *testing.T) {
 
 	if _, ok := ch.currentToolFeedbackMessage("pico:sess-1"); ok {
 		t.Fatal("expected tracked tool feedback to be cleared after final reply")
+	}
+}
+
+func TestSendPlaceholder_EmitsNormalMessageWithoutKind(t *testing.T) {
+	ch := newTestPicoChannel(t)
+	ch.bc.Placeholder.Enabled = true
+
+	if err := ch.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer ch.Stop(context.Background())
+
+	clientConn, received, cleanup := newTestPicoWebSocket(t)
+	defer cleanup()
+	ch.addConnForTest(&picoConn{id: "conn-1", conn: clientConn, sessionID: "sess-1"})
+
+	msgID, err := ch.SendPlaceholder(context.Background(), "pico:sess-1")
+	if err != nil {
+		t.Fatalf("SendPlaceholder() error = %v", err)
+	}
+	if msgID == "" {
+		t.Fatal("expected placeholder message id")
+	}
+
+	select {
+	case msg := <-received:
+		if msg.Type != TypeMessageCreate {
+			t.Fatalf("placeholder message type = %q, want %q", msg.Type, TypeMessageCreate)
+		}
+		payload := msg.Payload
+		if got := payload["message_id"]; got != msgID {
+			t.Fatalf("placeholder message_id = %#v, want %q", got, msgID)
+		}
+		if got := payload[PayloadKeyContent]; got != "Thinking..." {
+			t.Fatalf("placeholder content = %#v, want %q", got, "Thinking...")
+		}
+		if got, ok := payload[PayloadKeyKind]; ok {
+			t.Fatalf("placeholder kind = %#v, want absent", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected placeholder message to be delivered")
 	}
 }
 

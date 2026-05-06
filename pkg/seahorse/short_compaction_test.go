@@ -3,6 +3,7 @@ package seahorse
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -694,6 +695,69 @@ func TestGenerateLeafSummaryEscalationToAggressive(t *testing.T) {
 	}
 	if !foundAggressive {
 		t.Error("expected aggressive LLM call (level 2 escalation)")
+	}
+}
+
+func TestGenerateLeafSummaryEscalatesWhenLevel1MissesTarget(t *testing.T) {
+	var calls []string
+	normalContent := strings.Repeat("n", 1000)    // ~404 tokens: below input, above target
+	aggressiveContent := strings.Repeat("a", 450) // ~184 tokens: within aggressive target
+	escalateComplete := func(ctx context.Context, prompt string, opts CompleteOptions) (string, error) {
+		if contains(prompt, "Aggressive summary policy") {
+			calls = append(calls, "aggressive")
+			return aggressiveContent, nil
+		}
+		calls = append(calls, "normal")
+		return normalContent, nil
+	}
+
+	s := openTestStore(t)
+	ce, _ := newTestCompactionEngineWithStore(s, escalateComplete)
+
+	msgs := []Message{
+		{Role: "user", Content: "hello world", TokenCount: 500},
+		{Role: "assistant", Content: "response", TokenCount: 500},
+	}
+
+	content, err := ce.generateLeafSummary(context.Background(), msgs, "")
+	if err != nil {
+		t.Fatalf("generateLeafSummary: %v", err)
+	}
+	if content != aggressiveContent {
+		t.Fatalf("expected aggressive summary after level 1 missed target")
+	}
+	if len(calls) != 2 || calls[0] != "normal" || calls[1] != "aggressive" {
+		t.Fatalf("expected normal then aggressive calls, got %v", calls)
+	}
+}
+
+func TestGenerateLeafSummaryAcceptsContentAtTargetBoundary(t *testing.T) {
+	exactTargetContent := strings.Repeat("x", 488) // (488 + 12) * 2 / 5 = 200 tokens
+	var aggressiveCalled bool
+	complete := func(ctx context.Context, prompt string, opts CompleteOptions) (string, error) {
+		if contains(prompt, "Aggressive summary policy") {
+			aggressiveCalled = true
+		}
+		return exactTargetContent, nil
+	}
+
+	s := openTestStore(t)
+	ce, _ := newTestCompactionEngineWithStore(s, complete)
+
+	msgs := []Message{
+		{Role: "user", Content: "hello world", TokenCount: 286},
+		{Role: "assistant", Content: "response", TokenCount: 286},
+	}
+
+	content, err := ce.generateLeafSummary(context.Background(), msgs, "")
+	if err != nil {
+		t.Fatalf("generateLeafSummary: %v", err)
+	}
+	if content != exactTargetContent {
+		t.Fatalf("expected level 1 summary at target boundary to be accepted")
+	}
+	if aggressiveCalled {
+		t.Fatal("did not expect aggressive retry when level 1 hit target exactly")
 	}
 }
 

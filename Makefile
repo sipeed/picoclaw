@@ -171,6 +171,18 @@ ifeq ($(OS),Windows_NT)
 	EXT=.exe
 endif
 
+ifneq ($(strip $(GOOS)),)
+	PLATFORM:=$(GOOS)
+endif
+
+ifneq ($(strip $(GOARCH)),)
+	ARCH:=$(GOARCH)
+endif
+
+ifeq ($(PLATFORM),windows)
+	EXT=.exe
+endif
+
 BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)
 
 # Default target
@@ -181,10 +193,11 @@ generate:
 	@echo "Run generate..."
 ifeq ($(OS),Windows_NT)
 	@$(POWERSHELL) "if (Test-Path -LiteralPath './$(CMD_DIR)/workspace') { Remove-Item -LiteralPath './$(CMD_DIR)/workspace' -Recurse -Force }"
+	@$(POWERSHELL) "$$env:GOOS=''; $$env:GOARCH=''; $(GO) generate ./..."
 else
 	@rm -r ./$(CMD_DIR)/workspace 2>/dev/null || true
+	@GOOS=$$($(GO) env GOHOSTOS) GOARCH=$$($(GO) env GOHOSTARCH) $(GO) generate ./...
 endif
-	@$(GO) generate ./...
 	@echo "Run generate complete"
 
 ## build: Build the picoclaw binary for current platform
@@ -196,7 +209,7 @@ ifeq ($(OS),Windows_NT)
 	@$(POWERSHELL) "Copy-Item -LiteralPath '$(BINARY_PATH)$(EXT)' -Destination '$(BUILD_DIR)/$(BINARY_NAME)$(EXT)' -Force"
 else
 	@mkdir -p $(BUILD_DIR)
-	@GOARCH=${ARCH} $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_PATH)$(EXT) ./$(CMD_DIR)
+	@GOOS=$(PLATFORM) GOARCH=$(ARCH) $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_PATH)$(EXT) ./$(CMD_DIR)
 	@echo "Build complete: $(BINARY_PATH)$(EXT)"
 	@$(LNCMD) $(BINARY_NAME)-$(PLATFORM)-$(ARCH)$(EXT) $(BUILD_DIR)/$(BINARY_NAME)$(EXT)
 endif
@@ -211,7 +224,7 @@ ifeq ($(OS),Windows_NT)
 	@$(POWERSHELL) "Copy-Item -LiteralPath '$(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXT)' -Destination '$(BUILD_DIR)/picoclaw-launcher$(EXT)' -Force"
 else
 	@mkdir -p $(BUILD_DIR)
-	@GOARCH=${ARCH} $(MAKE) -C web build \
+	@GOOS=$(PLATFORM) GOARCH=$(ARCH) $(MAKE) -C web build \
 		OUTPUT="$(CURDIR)/$(BUILD_DIR)/picoclaw-launcher-$(PLATFORM)-$(ARCH)$(EXT)" \
 		WEB_GO='$(WEB_GO)' \
 		GO_BUILD_TAGS='$(GO_BUILD_TAGS)' \
@@ -222,20 +235,6 @@ endif
 
 build-launcher-frontend:
 	@$(MAKE) -C web build-frontend
-
-## build-launcher-tui: Build the picoclaw-launcher TUI binary
-build-launcher-tui:
-	@echo "Building picoclaw-launcher-tui for $(PLATFORM)/$(ARCH)..."
-ifeq ($(OS),Windows_NT)
-	@$(POWERSHELL) "New-Item -ItemType Directory -Force -Path '$(BUILD_DIR)' | Out-Null"
-	@$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/picoclaw-launcher-tui-$(PLATFORM)-$(ARCH)$(EXT) ./cmd/picoclaw-launcher-tui
-	@$(POWERSHELL) "Copy-Item -LiteralPath '$(BUILD_DIR)/picoclaw-launcher-tui-$(PLATFORM)-$(ARCH)$(EXT)' -Destination '$(BUILD_DIR)/picoclaw-launcher-tui$(EXT)' -Force"
-else
-	@mkdir -p $(BUILD_DIR)
-	@$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/picoclaw-launcher-tui-$(PLATFORM)-$(ARCH) ./cmd/picoclaw-launcher-tui
-	@ln -sf picoclaw-launcher-tui-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/picoclaw-launcher-tui
-endif
-	@echo "Build complete: $(BUILD_DIR)/picoclaw-launcher-tui$(EXT)"
 
 ## build-whatsapp-native: Build with WhatsApp native (whatsmeow) support; larger binary
 build-whatsapp-native: generate

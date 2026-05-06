@@ -36,7 +36,7 @@ docker compose -f docker/docker-compose.yml --profile gateway down
 
 ### Launcher 模式 (Web 控制台)
 
-`launcher` 镜像包含所有三个二进制文件（`picoclaw`、`picoclaw-launcher`、`picoclaw-launcher-tui`），默认启动 Web 控制台，提供基于浏览器的配置和聊天界面。
+`launcher` 镜像包含两个二进制文件（`picoclaw`、`picoclaw-launcher`），默认启动 Web 控制台，提供基于浏览器的配置和聊天界面。
 
 ```bash
 docker compose -f docker/docker-compose.yml --profile launcher up -d

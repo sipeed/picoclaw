@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-//go:generate go run ../../../../scripts/copydir.go "${DOLLAR}{codespace}/workspace" ./workspace
+//go:generate go run ../../../../scripts/copydir.go ../../../../workspace ./workspace
 //go:embed workspace
 var embeddedFiles embed.FS
 

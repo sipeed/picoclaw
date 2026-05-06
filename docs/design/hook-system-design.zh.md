@@ -1,11 +1,15 @@
 # PicoClaw Hook 系统设计（基于 `refactor/agent`）
 
+> 当前状态：本文是 hook 系统的早期设计记录。事件系统升级后，观察型 hook 的主路径已经切到
+> `pkg/events.Event`、`RuntimeEventObserver` 和进程 hook 的 `hook.runtime_event`。
+> 旧 `agent.Event`、`EventKind`、`hook.event` 兼容层已经删除。
+
 ## 背景
 
 本设计围绕两个议题展开：
 
 - `#1316`：把 agent loop 重构为事件驱动、可中断、可追加、可观测
-- `#1796`：在 EventBus 稳定后，把 hooks 设计为 EventBus 的 consumer，而不是重新发明一套事件模型
+- `#1796`：在 runtime event bus 稳定后，把 hooks 设计为事件 consumer，而不是重新发明一套事件模型
 
 当前分支已经完成了第一步里的“事件系统基础”，但还没有真正的 hook 挂载层。因此这里的目标不是重新设计 event，而是在已有实现上补出一层可扩展、可拦截、可外挂的 HookManager。
 
@@ -52,20 +56,18 @@ pi-mono 的核心思路更接近当前分支：
 
 当前分支已经具备 hook 系统的地基：
 
-- `pkg/agent/events.go` 定义了稳定的 `EventKind`、`EventMeta` 和 payload
-- `pkg/agent/eventbus.go` 提供了非阻塞 fan-out 的 `EventBus`
+- `pkg/events` 定义 runtime event envelope、kind、scope、source、severity 和 fan-out bus
+- `pkg/agent/event_payloads.go` 保留 agent domain payload
+- agent domain payload 保留在 `pkg/agent/event_payloads.go`
 - `pkg/agent/loop.go` 中的 `runTurn()` 已在 turn、llm、tool、interrupt、follow-up、summary 等节点发射事件
 - `pkg/agent/steering.go` 已支持 steering、graceful interrupt、hard abort
 - `pkg/agent/turn.go` 已维护 turn phase、恢复点、active turn、abort 状态
 
 ### 现有缺口
 
-当前分支还缺四件事：
-
-- 没有 HookManager，只有 EventBus
-- 没有 Before/After LLM、Before/After Tool 这种同步拦截点
-- 没有审批型 hook
-- 子 agent 仍走 `pkg/tools/SubagentManager + RunToolLoop`，没有接入 `pkg/agent` 的 turn tree 和事件流
+早期设计时的缺口包括 HookManager、Before/After LLM、Before/After Tool、审批型 hook
+以及 sub-turn 接入。当前实现已经覆盖主 turn 的 HookManager、LLM/Tool 拦截和审批；
+sub-turn 事件已接入 runtime event bus。
 
 ### 一个关键现实
 
@@ -73,19 +75,19 @@ pi-mono 的核心思路更接近当前分支：
 
 ## 设计原则
 
-- Hook 必须建立在 `pkg/agent` 的 EventBus 和 turn 上下文之上
-- EventBus 负责广播，HookManager 负责拦截，两者职责分离
+- Hook 必须建立在 `pkg/events` runtime event bus 和 turn 上下文之上
+- runtime event bus 负责广播，HookManager 负责拦截，两者职责分离
 - 项目内挂载要简单，项目外挂载必须走 IPC
 - 观察型 hook 不能阻塞 loop；拦截型 hook 必须有超时
 - 先覆盖主 turn，不把 sub-turn 一次做满
-- 不新增第二套用户事件命名系统，优先复用 `EventKind.String()`
+- 不新增第二套用户事件命名系统，新观察点统一使用 `pkg/events.Kind`
 
 ## 总体架构
 
 分成三层：
 
-1. `EventBus`
-   负责广播只读事件，现有实现直接复用
+1. `pkg/events` runtime event bus
+   负责广播只读事件，覆盖 agent、channel、gateway、bus、MCP 等运行时组件
 
 2. `HookManager`
    负责管理 hook、排序、超时、错误隔离，并在 `runTurn()` 的明确检查点执行同步拦截
@@ -97,7 +99,7 @@ pi-mono 的核心思路更接近当前分支：
 
 换句话说：
 
-- EventBus 是“发生了什么”
+- runtime event bus 是“发生了什么”
 - HookManager 是“谁能介入”
 - HookMount 是“这些 hook 从哪里来”
 
@@ -113,11 +115,11 @@ pi-mono 的核心思路更接近当前分支：
 
 ```go
 type EventObserver interface {
-    OnEvent(ctx context.Context, evt agent.Event) error
+    OnRuntimeEvent(ctx context.Context, evt events.Event) error
 }
 ```
 
-这类 hook 直接订阅 EventBus 即可。
+这类 hook 直接订阅 runtime event bus 即可。
 
 适用场景：
 
@@ -156,7 +158,7 @@ type ToolApprover interface {
 
 ## 对外暴露的最小 hook 面
 
-V1 不需要把所有 EventKind 都变成可拦截点。
+V1 不需要把所有 runtime event kind 都变成可拦截点。
 
 建议只开放这些同步 hook：
 
@@ -168,19 +170,19 @@ V1 不需要把所有 EventKind 都变成可拦截点。
 
 其余节点继续作为只读事件暴露：
 
-- `turn_start`
-- `turn_end`
-- `llm_request`
-- `llm_response`
-- `tool_exec_start`
-- `tool_exec_end`
-- `tool_exec_skipped`
-- `steering_injected`
-- `follow_up_queued`
-- `interrupt_received`
-- `context_compress`
-- `session_summarize`
-- `error`
+- `agent.turn.start`
+- `agent.turn.end`
+- `agent.llm.request`
+- `agent.llm.response`
+- `agent.tool.exec_start`
+- `agent.tool.exec_end`
+- `agent.tool.exec_skipped`
+- `agent.steering.injected`
+- `agent.follow_up.queued`
+- `agent.interrupt.received`
+- `agent.context.compress`
+- `agent.session.summarize`
+- `agent.error`
 
 `subturn_*` 在 V1 中保留名字，但不承诺一定触发，直到子 turn 迁移完成。
 
@@ -369,7 +371,7 @@ PicoClaw 启动外部进程，并在其 stdin/stdout 上跑协议。
 ### 观察链路
 
 ```text
-runTurn() -> emitEvent() -> EventBus -> observers
+runTurn() -> emitEvent() -> runtime event bus -> observers
 ```
 
 ### 拦截链路
@@ -453,7 +455,7 @@ V1 不做复杂自动发现。
 ### Phase 3
 
 - 把 `SubagentManager` 迁移到 `runTurn/sub-turn`
-- 接通 `subturn_spawn` / `subturn_end` / `subturn_result_delivered`
+- 接通 `agent.subturn.spawn` / `agent.subturn.end` / `agent.subturn.result_delivered`
 
 ### Phase 4
 
@@ -464,13 +466,13 @@ V1 不做复杂自动发现。
 
 最适合 PicoClaw 当前分支的方案，不是直接复制 OpenClaw 的 hooks，也不是完整照搬 pi-mono 的 extension system，而是：
 
-- 以现有 `EventBus` 为只读观察面
+- 以 `pkg/events` runtime event bus 为只读观察面
 - 以新增 `HookManager` 为同步拦截面
 - 项目内通过 Go 对象直接挂载
 - 项目外通过 `stdio JSON-RPC` 进程通信挂载
 
 这样做有三个好处：
 
-- 和 `#1796` 一致，hooks 只是 EventBus 之上的消费层
+- 和 `#1796` 一致，hooks 只是 runtime event bus 之上的消费层
 - 和当前 `refactor/agent` 实现一致，不需要推翻已有事件系统
 - 同时满足“仓内简单挂载”和“仓外进程通信挂载”两个硬需求

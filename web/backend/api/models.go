@@ -35,14 +35,15 @@ type modelResponse struct {
 	Proxy      string `json:"proxy,omitempty"`
 	AuthMethod string `json:"auth_method,omitempty"`
 	// Advanced fields
-	ConnectMode    string            `json:"connect_mode,omitempty"`
-	Workspace      string            `json:"workspace,omitempty"`
-	RPM            int               `json:"rpm,omitempty"`
-	MaxTokensField string            `json:"max_tokens_field,omitempty"`
-	RequestTimeout int               `json:"request_timeout,omitempty"`
-	ThinkingLevel  string            `json:"thinking_level,omitempty"`
-	ExtraBody      map[string]any    `json:"extra_body,omitempty"`
-	CustomHeaders  map[string]string `json:"custom_headers,omitempty"`
+	ConnectMode         string            `json:"connect_mode,omitempty"`
+	Workspace           string            `json:"workspace,omitempty"`
+	RPM                 int               `json:"rpm,omitempty"`
+	MaxTokensField      string            `json:"max_tokens_field,omitempty"`
+	RequestTimeout      int               `json:"request_timeout,omitempty"`
+	ThinkingLevel       string            `json:"thinking_level,omitempty"`
+	ToolSchemaTransform string            `json:"tool_schema_transform,omitempty"`
+	ExtraBody           map[string]any    `json:"extra_body,omitempty"`
+	CustomHeaders       map[string]string `json:"custom_headers,omitempty"`
 	// Meta
 	Enabled   bool   `json:"enabled"`
 	Available bool   `json:"available"`
@@ -78,27 +79,28 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 	for i, m := range cfg.ModelList {
 		provider, modelID := providers.ExtractProtocol(m)
 		models = append(models, modelResponse{
-			Index:          i,
-			ModelName:      m.ModelName,
-			Provider:       provider,
-			Model:          modelID,
-			APIBase:        m.APIBase,
-			APIKey:         maskAPIKey(m.APIKey()),
-			Proxy:          m.Proxy,
-			AuthMethod:     m.AuthMethod,
-			ConnectMode:    m.ConnectMode,
-			Workspace:      m.Workspace,
-			RPM:            m.RPM,
-			MaxTokensField: m.MaxTokensField,
-			RequestTimeout: m.RequestTimeout,
-			ThinkingLevel:  m.ThinkingLevel,
-			ExtraBody:      m.ExtraBody,
-			CustomHeaders:  m.CustomHeaders,
-			Enabled:        m.Enabled,
-			Available:      modelStatuses[i].Available,
-			Status:         modelStatuses[i].Status,
-			IsDefault:      m.ModelName == defaultModel,
-			IsVirtual:      m.IsVirtual(),
+			Index:               i,
+			ModelName:           m.ModelName,
+			Provider:            provider,
+			Model:               modelID,
+			APIBase:             m.APIBase,
+			APIKey:              maskAPIKey(m.APIKey()),
+			Proxy:               m.Proxy,
+			AuthMethod:          m.AuthMethod,
+			ConnectMode:         m.ConnectMode,
+			Workspace:           m.Workspace,
+			RPM:                 m.RPM,
+			MaxTokensField:      m.MaxTokensField,
+			RequestTimeout:      m.RequestTimeout,
+			ThinkingLevel:       m.ThinkingLevel,
+			ToolSchemaTransform: m.ToolSchemaTransform,
+			ExtraBody:           m.ExtraBody,
+			CustomHeaders:       m.CustomHeaders,
+			Enabled:             m.Enabled,
+			Available:           modelStatuses[i].Available,
+			Status:              modelStatuses[i].Status,
+			IsDefault:           m.ModelName == defaultModel,
+			IsVirtual:           m.IsVirtual(),
 		})
 	}
 
@@ -236,6 +238,9 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 		mc.CustomHeaders = cfg.ModelList[idx].CustomHeaders
 	} else if len(mc.CustomHeaders) == 0 {
 		mc.CustomHeaders = nil
+	}
+	if _, ok := rawFields["tool_schema_transform"]; !ok {
+		mc.ToolSchemaTransform = cfg.ModelList[idx].ToolSchemaTransform
 	}
 	// Preserve the existing Provider when the caller omits it. This keeps the
 	// update API backward-compatible for clients that haven't started sending

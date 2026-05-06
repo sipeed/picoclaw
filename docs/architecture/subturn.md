@@ -135,16 +135,16 @@ The agent loop polls for async SubTurn results at two points per iteration:
 
 All active turns are registered in `AgentLoop.activeTurnStates` (`sync.Map`, keyed by session key). A reservation sentinel is stored atomically via `LoadOrStore` before the worker starts, then replaced with the real `*turnState` when `runTurn` registers. This prevents a TOCTOU race where multiple messages for the same session could spawn concurrent workers. The sentinel is cleaned up by the worker's deferred cleanup. This allows `HardAbort` and `/subagents` observability commands to find and operate on active turns.
 
-## Event Bus Integration
+## Runtime Event Integration
 
-SubTurns emit specific events to the PicoClaw `EventBus` for observability and debugging:
+SubTurns emit runtime events through `pkg/events` for observability and debugging:
 
 | Event Kind | When Emitted | Payload |
 |:------|:-------------|:--------|
-| `subturn_spawn` | Sub-turn successfully initialized | `SubTurnSpawnPayload{AgentID, Label, ParentTurnID}` |
-| `subturn_end` | Sub-turn finishes (success or error) | `SubTurnEndPayload{AgentID, Status}` |
-| `subturn_result_delivered` | Async result successfully delivered to parent | `SubTurnResultDeliveredPayload{TargetChannel, TargetChatID, ContentLen}` |
-| `subturn_orphan` | Result cannot be delivered (parent finished or channel full) | `SubTurnOrphanPayload{ParentTurnID, ChildTurnID, Reason}` |
+| `agent.subturn.spawn` | Sub-turn successfully initialized | `SubTurnSpawnPayload{AgentID, Label, ParentTurnID}` |
+| `agent.subturn.end` | Sub-turn finishes (success or error) | `SubTurnEndPayload{AgentID, Status}` |
+| `agent.subturn.result_delivered` | Async result successfully delivered to parent | `SubTurnResultDeliveredPayload{TargetChannel, TargetChatID, ContentLen}` |
+| `agent.subturn.orphan` | Result cannot be delivered (parent finished or channel full) | `SubTurnOrphanPayload{ParentTurnID, ChildTurnID, Reason}` |
 
 ## API Reference
 
@@ -240,13 +240,13 @@ An orphan result occurs when:
 2. The `pendingResults` channel is full (buffer size: 16)
 
 When a result becomes orphan:
-- `SubTurnOrphanResultEvent` is emitted to EventBus
+- `agent.subturn.orphan` is emitted to the runtime event bus
 - The result is **NOT** delivered to the LLM context
 - External systems can listen to this event for custom handling
 
 ### Preventing Orphan Results
 - Use `Critical: true` for important SubTurns that must complete
-- Monitor `SubTurnOrphanResultEvent` for observability
+- Monitor `agent.subturn.orphan` for observability
 - Consider the 16-buffer limit when spawning many async SubTurns
 
 ## Tool Inheritance

@@ -56,5 +56,12 @@ func isVisionUnsupportedError(err error) bool {
 		return true
 	}
 
+	// DeepSeek and other strict providers reject the image_url field at the
+	// JSON schema level with an "unknown variant" error rather than a semantic
+	// "not supported" message.
+	if strings.Contains(msg, "unknown variant") && strings.Contains(msg, "image_url") {
+		return true
+	}
+
 	return false
 }

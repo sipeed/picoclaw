@@ -61,7 +61,7 @@ func cloneStringMap(src map[string]string) map[string]string {
 	return cloned
 }
 
-func cloneEventMeta(meta EventMeta) EventMeta {
+func cloneHookMeta(meta HookMeta) HookMeta {
 	meta.turnContext = cloneTurnContext(meta.turnContext)
 	return meta
 }
