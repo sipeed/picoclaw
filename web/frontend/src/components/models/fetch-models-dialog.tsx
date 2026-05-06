@@ -2,7 +2,7 @@ import { IconDownload, IconLoader2 } from "@tabler/icons-react"
 import { useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 
-import { fetchUpstreamModels, type UpstreamModel } from "@/api/models"
+import { type UpstreamModel, fetchUpstreamModels } from "@/api/models"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -64,12 +64,12 @@ export function FetchModelsDialog({
     }
   }, [provider, apiKey, apiBase, t])
 
-  // Auto-fetch when dialog opens
+  // Auto-fetch when dialog opens (skip if provider requires API key but none is set)
   useEffect(() => {
-    if (open && provider) {
+    if (open && provider && !(needsKey && !apiKey)) {
       handleFetch()
     }
-  }, [open, provider, handleFetch])
+  }, [open, provider, apiKey, needsKey, handleFetch])
 
   const handleFill = () => {
     onFill(Array.from(selected))
@@ -137,7 +137,7 @@ export function FetchModelsDialog({
           )}
 
           {fetching && (
-            <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground">
+            <div className="text-muted-foreground flex items-center justify-center gap-2 py-8">
               <IconLoader2 className="size-5 animate-spin" />
               <span>{t("models.fetch.fetching")}</span>
             </div>
@@ -167,10 +167,11 @@ export function FetchModelsDialog({
                 onChange={(e) => setFilter(e.target.value)}
                 className="h-8"
               />
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <div className="text-muted-foreground flex items-center justify-between text-xs">
                 <span>
                   {t("models.fetch.found", { count: models.length })}
-                  {filter && ` ${t("models.fetch.shown", { count: filteredModels.length })}`}
+                  {filter &&
+                    ` ${t("models.fetch.shown", { count: filteredModels.length })}`}
                 </span>
                 <button
                   type="button"
@@ -186,7 +187,7 @@ export function FetchModelsDialog({
                 {filteredModels.map((m) => (
                   <label
                     key={m.id}
-                    className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+                    className="hover:bg-accent flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
                   >
                     <input
                       type="checkbox"
