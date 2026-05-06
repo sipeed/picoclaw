@@ -5,11 +5,10 @@
  * Messages use i18n keys with interpolation params — callers must
  * translate them via t(key, params).
  */
-
 import {
-  findClosestProvider,
   KNOWN_PROVIDER_KEYS,
   PROVIDER_ALIASES,
+  findClosestProvider,
 } from "./provider-registry"
 
 export type ValidationLevel = "error" | "warning" | "success"

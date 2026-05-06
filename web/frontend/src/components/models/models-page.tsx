@@ -1,4 +1,9 @@
-import { IconDatabase, IconLoader2, IconPlus, IconStar } from "@tabler/icons-react"
+import {
+  IconDatabase,
+  IconLoader2,
+  IconPlus,
+  IconStar,
+} from "@tabler/icons-react"
 import { useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"

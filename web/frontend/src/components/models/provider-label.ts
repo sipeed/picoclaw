@@ -1,7 +1,4 @@
-import {
-  PROVIDER_ALIASES,
-  PROVIDER_LABELS,
-} from "./provider-registry"
+import { PROVIDER_ALIASES, PROVIDER_LABELS } from "./provider-registry"
 
 export function getProviderKey(provider?: string): string {
   const normalized = provider?.trim().toLowerCase()

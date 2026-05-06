@@ -66,10 +66,7 @@ export function WebSearchGeneralSettings({
         </SettingRow>
 
         <SettingRow
-          label={t(
-            "pages.agent.tools.web_search.proxy",
-            "Proxy Configuration",
-          )}
+          label={t("pages.agent.tools.web_search.proxy", "Proxy Configuration")}
           description={t(
             "pages.agent.tools.web_search.proxy_description",
             "Optional global HTTP/S proxy for underlying web requests.",

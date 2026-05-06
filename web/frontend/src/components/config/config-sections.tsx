@@ -545,9 +545,7 @@ export function LauncherSection({
           disabled={disabled}
           autoComplete="new-password"
           placeholder={t("pages.config.dashboard_password_placeholder")}
-          onChange={(e) =>
-            onFieldChange("dashboardPassword", e.target.value)
-          }
+          onChange={(e) => onFieldChange("dashboardPassword", e.target.value)}
         />
       </Field>
 

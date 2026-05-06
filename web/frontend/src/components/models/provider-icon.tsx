@@ -1,9 +1,6 @@
 import { useMemo, useState } from "react"
 
-import {
-  PROVIDER_DOMAINS,
-  PROVIDER_ICON_SLUGS,
-} from "./provider-registry"
+import { PROVIDER_DOMAINS, PROVIDER_ICON_SLUGS } from "./provider-registry"
 
 interface ProviderIconProps {
   providerKey: string

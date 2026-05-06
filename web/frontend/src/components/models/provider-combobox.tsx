@@ -63,10 +63,13 @@ export function ProviderCombobox({
   }
 
   return (
-    <Popover open={open} onOpenChange={(v) => {
-      setOpen(v)
-      if (!v) setCustomMode(false)
-    }}>
+    <Popover
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v)
+        if (!v) setCustomMode(false)
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           variant="outline"
