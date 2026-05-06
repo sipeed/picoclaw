@@ -129,10 +129,12 @@
   },
   "common": {
     "cancel": "Cancel",
+    "close": "Close",
     "save": "Save",
     "saving": "Saving...",
     "reset": "Reset",
     "confirm": "Confirm",
+    "fix": "Fix",
     "saveChangesTitle": "You have unsaved configuration changes",
     "restartRequiredTitle": "Gateway restart required",
     "restartRequiredDesc": "The latest {{name}} configuration has been saved. Restart the gateway for it to take effect."
@@ -236,8 +238,7 @@
         "setting": "Setting as default...",
         "unavailable": "Cannot set unavailable model as default",
         "isDefault": "Already the default model",
-        "isVirtual": "Cannot set virtual model as default",
-        "unsupportedProvider": "This provider is ASR-only and cannot be the default chat model"
+        "isVirtual": "Cannot set virtual model as default"
       },
       "deleteDisabled": {
         "isDefault": "Cannot delete the default model"
@@ -245,9 +246,7 @@
     },
     "defaultOnSave": {
       "label": "Default Model",
-      "description": "Automatically set this model as default after saving.",
-      "unsupportedProvider": "This provider can be saved in model_list, but it cannot be used as the default chat model.",
-      "clearOnSave": "Saving this ASR-only model will clear the current default chat model selection."
+      "description": "Automatically set this model as default after saving."
     },
     "add": {
       "button": "Add Model",
@@ -258,7 +257,7 @@
       "modelNameHint": "A short name used to identify this model in conversations.",
       "modelId": "Model Identifier",
       "modelIdPlaceholder": "e.g. gpt-4o or openai/gpt-4o",
-      "modelIdHint": "This field is sent as the canonical model ID for the selected Provider. If the model ID itself contains slashes, such as openai/gpt-5.4, it is preserved as-is instead of being split again.",
+      "modelIdHint": "If Provider is not specified, values such as openai/gpt-4o are interpreted using the provider/model format. If Provider is specified, this field is treated as the canonical model ID and is not parsed for a provider prefix.",
       "errorRequired": "This field is required.",
       "errorDuplicateModelName": "Model alias already exists. Please use a different name.",
       "saveError": "Failed to add model",
@@ -275,9 +274,9 @@
     },
     "field": {
       "provider": "Provider",
-      "providerPlaceholder": "Select a provider",
-      "providerHint": "Choose a Provider from the backend catalog. The Model Identifier field is interpreted as that Provider's canonical model ID.",
-      "providerInvalid": "The current Provider is invalid. Select a supported Provider.",
+      "providerPlaceholder": "e.g. openai",
+      "providerHint": "Optional. If specified, this value is used as the effective provider, and Model Identifier is interpreted as the canonical model ID.",
+      "selectProviderFirst": "Select a provider first",
       "apiBase": "API Base URL",
       "apiKey": "API Key",
       "apiKeyPlaceholder": "Enter your API key",
@@ -286,7 +285,6 @@
       "proxyHint": "Optional. e.g. http://127.0.0.1:7890",
       "authMethod": "Auth Method",
       "authMethodHint": "Authentication method: oauth, token. Leave blank for API key auth.",
-      "authMethodManagedHint": "This Provider manages its authentication mode automatically.",
       "connectMode": "Connect Mode",
       "connectModeHint": "Connection mode for CLI-based providers: stdio or grpc.",
       "workspace": "Workspace Path",
@@ -304,7 +302,8 @@
       "extraBody": "Extra Body",
       "extraBodyHint": "Additional JSON fields to inject into the request body, e.g. {\"reasoning_split\": true}.",
       "customHeaders": "Custom Headers",
-      "customHeadersHint": "Additional HTTP headers to inject into every request, e.g. {\"X-Source\": \"coding-plan\"}."
+      "customHeadersHint": "Additional HTTP headers to inject into every request, e.g. {\"X-Source\": \"coding-plan\"}.",
+      "invalidJson": "Invalid JSON format"
     },
     "edit": {
       "title": "Configure {{name}}",
@@ -312,6 +311,76 @@
       "oauthNote": "This provider uses OAuth — no API key required.",
       "saveError": "Failed to save",
       "saveSuccess": "Model configuration saved."
+    },
+    "fetch": {
+      "title": "Fetch Available Models",
+      "description": "Fetch model list from the upstream provider.",
+      "providerLabel": "Provider:",
+      "needApiKey": "Please enter an API Key first to fetch models.",
+      "fetching": "Fetching models...",
+      "retry": "Retry",
+      "filterPlaceholder": "Filter models...",
+      "found": "Found {{count}} model",
+      "found_plural": "Found {{count}} models",
+      "shown": "({{count}} shown)",
+      "selectAll": "Select All",
+      "deselectAll": "Deselect All",
+      "fill": "Fill {{count}} Selected Model",
+      "fill_plural": "Fill {{count}} Selected Models",
+      "failed": "Failed to fetch models"
+    },
+    "catalog": {
+      "button": "Saved Catalogs",
+      "title": "Saved Model Catalogs",
+      "description": "Previously fetched model lists, stored per API key. Select models to add to your configuration.",
+      "loading": "Loading catalogs...",
+      "empty": "No saved catalogs yet. Fetch models from a provider to save a catalog.",
+      "filterPlaceholder": "Filter models...",
+      "models": "models",
+      "fetchedAt": "Fetched",
+      "delete": "Delete catalog",
+      "refresh": "Refresh from upstream",
+      "found": "Found {{count}} model",
+      "found_plural": "Found {{count}} models",
+      "selectAll": "Select All",
+      "deselectAll": "Deselect All",
+      "addSelected": "Add {{count}} Selected",
+      "addSuccess": "Added {{count}} model(s) to configuration."
+    },
+    "test": {
+      "title": "Test Model Connectivity",
+      "description": "Verify that the model endpoint is reachable and configured correctly.",
+      "modelLabel": "Model:",
+      "identifierLabel": "Identifier:",
+      "endpointLabel": "Endpoint:",
+      "testConnection": "Test Connection",
+      "testing": "Testing connection...",
+      "success": "Connection successful",
+      "responseTime": "Response time: {{ms}}ms",
+      "failed": "Connection failed",
+      "status": "Status: {{status}}",
+      "testFailed": "Test failed",
+      "testAgain": "Test Again"
+    },
+    "validation": {
+      "whitespace": "Model identifier cannot contain whitespace",
+      "leadingSlash": "Should not start with /",
+      "consecutiveSlash": "Should not contain consecutive /",
+      "useProvider": "Will use \"{{provider}}\" as provider",
+      "defaultToOpenAI": "No provider specified, defaults to OpenAI",
+      "emptyModel": "Model name cannot be empty",
+      "shouldUse": "\"{{provider}}\" should use \"{{alias}}\"",
+      "didYouMean": "Did you mean \"{{closest}}\"?",
+      "unknownProvider": "Unknown provider \"{{provider}}\"",
+      "parsed": "provider={{provider}}, model={{model}}"
+    },
+    "combobox": {
+      "selectProvider": "Select provider...",
+      "searchProvider": "Search provider...",
+      "noProvider": "No provider found.",
+      "local": "local",
+      "custom": "Custom provider...",
+      "customPlaceholder": "Enter provider name..."
     }
   },
   "channels": {

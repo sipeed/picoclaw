@@ -1,12 +1,8 @@
-import { IconLoader2 } from "@tabler/icons-react"
-import { useEffect, useMemo, useState } from "react"
+import { IconDownload, IconLoader2 } from "@tabler/icons-react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
-import {
-  type ModelProviderOption,
-  addModel,
-  setDefaultModel,
-} from "@/api/models"
+import { addModel, getCatalogs, setDefaultModel } from "@/api/models"
 import { ConfigChangeNotice } from "@/components/config-change-notice"
 import { maskedSecretPlaceholder } from "@/components/secret-placeholder"
 import {
@@ -15,15 +11,9 @@ import {
   KeyInput,
   SwitchCardField,
 } from "@/components/shared-form"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import {
   Sheet,
   SheetContent,
@@ -36,14 +26,14 @@ import { Textarea } from "@/components/ui/textarea"
 import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
 
+import { FetchModelsDialog } from "./fetch-models-dialog"
 import {
-  findProviderOption,
-  getProviderDefaultAPIBase,
-  getProviderDefaultAuthMethod,
-  getProviderLabel,
-  getSortedProviderOptions,
-  isProviderAuthMethodLocked,
-} from "./provider-label"
+  type FieldValidation,
+  validateModelField,
+} from "./model-validation"
+import { ProviderCombobox } from "./provider-combobox"
+import { getProviderKey } from "./provider-label"
+import { PROVIDER_MAP } from "./provider-registry"
 
 interface AddForm {
   modelName: string
@@ -66,7 +56,7 @@ interface AddForm {
 
 const EMPTY_ADD_FORM: AddForm = {
   modelName: "",
-  provider: "openai",
+  provider: "",
   model: "",
   apiBase: "",
   apiKey: "",
@@ -83,12 +73,41 @@ const EMPTY_ADD_FORM: AddForm = {
   customHeaders: "",
 }
 
+function normalizeApiBase(value: string): string {
+  return value.trim().replace(/\/+$/, "")
+}
+
+function getNextApiBaseForProviderChange(
+  currentApiBase: string,
+  currentProvider: string,
+  nextProvider: string,
+): string {
+  const normalizedCurrentApiBase = normalizeApiBase(currentApiBase)
+  const currentDefaultApiBase = normalizeApiBase(
+    PROVIDER_MAP.get(currentProvider)?.defaultApiBase ?? "",
+  )
+  const nextDefaultApiBase = PROVIDER_MAP.get(nextProvider)?.defaultApiBase ?? ""
+
+  if (!normalizedCurrentApiBase) {
+    return nextDefaultApiBase
+  }
+
+  if (
+    normalizedCurrentApiBase &&
+    currentDefaultApiBase &&
+    normalizedCurrentApiBase === currentDefaultApiBase
+  ) {
+    return nextDefaultApiBase
+  }
+
+  return currentApiBase
+}
+
 interface AddModelSheetProps {
   open: boolean
   onClose: () => void
   onSaved: () => void
   existingModelNames: string[]
-  providerOptions: ModelProviderOption[]
 }
 
 export function AddModelSheet({
@@ -96,7 +115,6 @@ export function AddModelSheet({
   onClose,
   onSaved,
   existingModelNames,
-  providerOptions,
 }: AddModelSheetProps) {
   const { t } = useTranslation()
   const [form, setForm] = useState<AddForm>(EMPTY_ADD_FORM)
@@ -106,41 +124,15 @@ export function AddModelSheet({
     Partial<Record<keyof AddForm, string>>
   >({})
   const [serverError, setServerError] = useState("")
+  const [modelValidation, setModelValidation] = useState<FieldValidation | null>(null)
+  const [fetchOpen, setFetchOpen] = useState(false)
+  const [fetchedModels, setFetchedModels] = useState<string[]>([])
+  const [catalogModels, setCatalogModels] = useState<string[]>([])
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const apiKeyPlaceholder = maskedSecretPlaceholder(
     form.apiKey,
     t("models.field.apiKeyPlaceholder"),
   )
-  const sortedProviderOptions = useMemo(
-    () => getSortedProviderOptions(providerOptions),
-    [providerOptions],
-  )
-  const creatableProviderOptions = useMemo(
-    () => sortedProviderOptions.filter((option) => option.create_allowed),
-    [sortedProviderOptions],
-  )
-  const selectedProviderOption = findProviderOption(
-    form.provider,
-    providerOptions,
-  )
-  const authMethodLocked = isProviderAuthMethodLocked(
-    form.provider,
-    providerOptions,
-  )
-  const defaultAuthMethod = getProviderDefaultAuthMethod(
-    form.provider,
-    providerOptions,
-  )
-  const effectiveAuthMethod = (
-    authMethodLocked ? defaultAuthMethod : form.authMethod
-  )
-    .trim()
-    .toLowerCase()
-  const isOAuth = effectiveAuthMethod === "oauth"
-  const defaultModelAllowed =
-    selectedProviderOption?.default_model_allowed !== false
-  const apiBasePlaceholder =
-    getProviderDefaultAPIBase(form.provider, providerOptions) ||
-    "https://api.example.com/v1"
   const isDirty =
     JSON.stringify(form) !== JSON.stringify(EMPTY_ADD_FORM) || setAsDefault
 
@@ -150,8 +142,36 @@ export function AddModelSheet({
       setSetAsDefault(false)
       setFieldErrors({})
       setServerError("")
+      setModelValidation(null)
+      setFetchedModels([])
+      setCatalogModels([])
     }
   }, [open])
+
+  // Load catalog models when provider or apiBase changes
+  useEffect(() => {
+    const providerKey = getProviderKey(form.provider || undefined)
+    const apiBase = form.apiBase.trim().replace(/\/+$/, "")
+    if (!form.provider.trim()) {
+      setCatalogModels([])
+      return
+    }
+    let cancelled = false
+    getCatalogs()
+      .then((res) => {
+        if (cancelled) return
+        const matched = (res.entries || []).filter((e) => {
+          const ep = getProviderKey(e.provider || undefined)
+          const eb = (e.api_base ?? "").trim().replace(/\/+$/, "")
+          return ep === providerKey && eb === apiBase
+        })
+        const ids = matched.flatMap((e) => e.models.map((m) => m.id))
+        const unique = [...new Set(ids)]
+        setCatalogModels(unique)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [form.provider, form.apiBase])
 
   const validate = (): boolean => {
     const errors: Partial<Record<keyof AddForm, string>> = {}
@@ -161,10 +181,10 @@ export function AddModelSheet({
     } else if (existingModelNames.some((name) => name.trim() === modelName)) {
       errors.modelName = t("models.add.errorDuplicateModelName")
     }
-    if (!selectedProviderOption) {
-      errors.provider = t("models.field.providerInvalid")
-    }
     if (!form.model.trim()) errors.model = t("models.add.errorRequired")
+    if (modelValidation?.level === "error") {
+      errors.model = t(modelValidation.messageKey, modelValidation.messageParams)
+    }
     setFieldErrors(errors)
     return Object.keys(errors).length === 0
   }
@@ -178,47 +198,109 @@ export function AddModelSheet({
       }
     }
 
-  const setProvider = (value: string) => {
-    setForm((f) => {
-      const previousOption = findProviderOption(f.provider, providerOptions)
-      const nextOption = findProviderOption(value, providerOptions)
-      let authMethod = f.authMethod
-      if (nextOption?.auth_method_locked) {
-        authMethod = nextOption.default_auth_method ?? ""
-      } else if (
-        previousOption?.auth_method_locked &&
-        f.authMethod === (previousOption.default_auth_method ?? "")
-      ) {
-        authMethod = ""
-      }
-      return { ...f, provider: value, authMethod }
-    })
-    const nextOption = findProviderOption(value, providerOptions)
-    if (nextOption?.default_model_allowed === false) {
-      setSetAsDefault(false)
+  const debouncedValidateModel = useCallback(
+    (value: string, provider: string) => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        const result = validateModelField(value, provider || undefined)
+        setModelValidation(result)
+      }, 300)
+    },
+    [],
+  )
+
+  const handleModelChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setForm((f) => ({ ...f, model: value }))
+    if (fieldErrors.model) {
+      setFieldErrors((prev) => ({ ...prev, model: undefined }))
     }
-    if (fieldErrors.provider) {
-      setFieldErrors((prev) => ({ ...prev, provider: undefined }))
+    debouncedValidateModel(value, form.provider)
+  }
+
+  const handleProviderChange = (provider: string) => {
+    setForm((f) => {
+      return {
+        ...f,
+        provider,
+        apiBase: getNextApiBaseForProviderChange(
+          f.apiBase,
+          f.provider,
+          provider,
+        ),
+      }
+    })
+    // Re-validate model with new provider context
+    if (form.model) {
+      debouncedValidateModel(form.model, provider)
     }
   }
 
+  const applyFix = () => {
+    if (modelValidation?.fix) {
+      setForm((f) => ({ ...f, model: modelValidation.fix! }))
+      setModelValidation(null)
+    }
+  }
+
+  const handleCommonModel = (modelId: string) => {
+    setForm((f) => ({ ...f, model: modelId }))
+    setModelValidation(null)
+    if (fieldErrors.model) {
+      setFieldErrors((prev) => ({ ...prev, model: undefined }))
+    }
+  }
+
+  const handleFetchFill = (models: string[]) => {
+    setFetchedModels(models)
+    if (models.length >= 1) {
+      setForm((f) => ({ ...f, model: models[0] }))
+      setModelValidation(null)
+      if (fieldErrors.model) {
+        setFieldErrors((prev) => ({ ...prev, model: undefined }))
+      }
+    }
+  }
+
+  const providerDef = PROVIDER_MAP.get(form.provider)
+  const commonModels = providerDef?.commonModels || []
+
   const handleSave = async () => {
     if (!validate()) return
+
+    let extraBody: Record<string, unknown> | undefined
+    let customHeaders: Record<string, string> | undefined
+    try {
+      if (form.extraBody.trim()) {
+        extraBody = JSON.parse(form.extraBody.trim())
+      }
+    } catch {
+      setServerError(t("models.field.extraBody") + ": " + t("models.field.invalidJson"))
+      return
+    }
+    try {
+      if (form.customHeaders.trim()) {
+        customHeaders = JSON.parse(form.customHeaders.trim())
+      }
+    } catch {
+      setServerError(t("models.field.customHeaders") + ": " + t("models.field.invalidJson"))
+      return
+    }
+
     setSaving(true)
     setServerError("")
     try {
       const modelName = form.modelName.trim()
+      const provider = form.provider.trim()
       const modelId = form.model.trim()
       await addModel({
         model_name: modelName,
-        provider: form.provider.trim(),
+        provider: provider || undefined,
         model: modelId,
         api_base: form.apiBase.trim() || undefined,
         api_key: form.apiKey.trim() || undefined,
         proxy: form.proxy.trim() || undefined,
-        auth_method: authMethodLocked
-          ? defaultAuthMethod || undefined
-          : form.authMethod.trim() || undefined,
+        auth_method: form.authMethod.trim() || undefined,
         connect_mode: form.connectMode.trim() || undefined,
         workspace: form.workspace.trim() || undefined,
         rpm: form.rpm ? Number(form.rpm) : undefined,
@@ -228,12 +310,8 @@ export function AddModelSheet({
           : undefined,
         thinking_level: form.thinkingLevel.trim() || undefined,
         tool_schema_transform: form.toolSchemaTransform.trim() || undefined,
-        extra_body: form.extraBody.trim()
-          ? JSON.parse(form.extraBody.trim())
-          : undefined,
-        custom_headers: form.customHeaders.trim()
-          ? JSON.parse(form.customHeaders.trim())
-          : undefined,
+        extra_body: extraBody,
+        custom_headers: customHeaders,
       })
       if (setAsDefault) {
         await setDefaultModel(modelName)
@@ -255,6 +333,7 @@ export function AddModelSheet({
   }
 
   return (
+    <>
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
       <SheetContent
         side="right"
@@ -289,29 +368,12 @@ export function AddModelSheet({
             <Field
               label={t("models.field.provider")}
               hint={t("models.field.providerHint")}
-              error={fieldErrors.provider}
-              required
             >
-              <Select
-                value={selectedProviderOption?.id}
-                onValueChange={setProvider}
-              >
-                <SelectTrigger
-                  className="w-full"
-                  aria-invalid={!!fieldErrors.provider}
-                >
-                  <SelectValue
-                    placeholder={t("models.field.providerPlaceholder")}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {creatableProviderOptions.map((option) => (
-                    <SelectItem key={option.id} value={option.id}>
-                      {getProviderLabel(option.id)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ProviderCombobox
+                value={form.provider}
+                onChange={handleProviderChange}
+                placeholder={t("models.field.providerPlaceholder")}
+              />
             </Field>
 
             <Field
@@ -320,48 +382,124 @@ export function AddModelSheet({
             >
               <Input
                 value={form.model}
-                onChange={setField("model")}
-                placeholder={t("models.add.modelIdPlaceholder")}
+                onChange={handleModelChange}
+                placeholder={
+                  providerDef
+                    ? `${commonModels[0] || "model-name"}`
+                    : t("models.add.modelIdPlaceholder")
+                }
                 className="font-mono text-sm"
-                aria-invalid={!!fieldErrors.model}
+                aria-invalid={
+                  !!fieldErrors.model || modelValidation?.level === "error"
+                }
               />
-              {fieldErrors.model && (
+              {modelValidation && modelValidation.messageKey && (
+                <div
+                  className={`flex items-center gap-2 text-xs ${
+                    modelValidation.level === "error"
+                      ? "text-destructive"
+                      : modelValidation.level === "warning"
+                        ? "text-yellow-600 dark:text-yellow-500"
+                        : "text-green-600 dark:text-green-500"
+                  }`}
+                >
+                  <span>{t(modelValidation.messageKey, modelValidation.messageParams)}</span>
+                  {modelValidation.fix && (
+                    <button
+                      type="button"
+                      onClick={applyFix}
+                      className="text-primary underline hover:no-underline"
+                    >
+                      {t("common.fix")}
+                    </button>
+                  )}
+                </div>
+              )}
+              {fieldErrors.model && !modelValidation && (
                 <p className="text-destructive text-xs">{fieldErrors.model}</p>
               )}
+              {commonModels.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {commonModels.map((m) => (
+                    <Badge
+                      key={m}
+                      variant="secondary"
+                      className="cursor-pointer font-mono text-xs hover:bg-secondary/80"
+                      onClick={() => handleCommonModel(m)}
+                    >
+                      {m}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              {catalogModels.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {catalogModels.map((m) => (
+                    <Badge
+                      key={m}
+                      variant={form.model === m ? "default" : "outline"}
+                      className="cursor-pointer font-mono text-xs"
+                      onClick={() => handleCommonModel(m)}
+                    >
+                      {m}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              {fetchedModels.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {fetchedModels.map((m) => (
+                    <Badge
+                      key={m}
+                      variant={form.model === m ? "default" : "outline"}
+                      className="cursor-pointer font-mono text-xs"
+                      onClick={() => handleCommonModel(m)}
+                    >
+                      {m}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setFetchOpen(true)}
+                  disabled={!form.provider}
+                >
+                  <IconDownload className="size-3" />
+                  {t("models.fetch.title")}
+                </Button>
+                {!form.provider && (
+                  <span className="text-muted-foreground text-xs">
+                    {t("models.field.selectProviderFirst")}
+                  </span>
+                )}
+              </div>
             </Field>
 
-            {!isOAuth && (
-              <Field label={t("models.field.apiKey")}>
-                <KeyInput
-                  value={form.apiKey}
-                  onChange={(v) => setForm((f) => ({ ...f, apiKey: v }))}
-                  placeholder={apiKeyPlaceholder}
-                />
-              </Field>
-            )}
+            <Field label={t("models.field.apiKey")}>
+              <KeyInput
+                value={form.apiKey}
+                onChange={(v) => setForm((f) => ({ ...f, apiKey: v }))}
+                placeholder={apiKeyPlaceholder}
+              />
+            </Field>
 
-            <Field
-              label={t("models.field.apiBase")}
-              hint={isOAuth ? t("models.edit.oauthNote") : undefined}
-            >
+            <Field label={t("models.field.apiBase")}>
               <Input
                 value={form.apiBase}
                 onChange={setField("apiBase")}
-                placeholder={apiBasePlaceholder}
-                disabled={isOAuth}
+                placeholder="https://api.example.com/v1"
               />
             </Field>
 
             <SwitchCardField
               label={t("models.defaultOnSave.label")}
-              hint={
-                defaultModelAllowed
-                  ? t("models.defaultOnSave.description")
-                  : t("models.defaultOnSave.unsupportedProvider")
-              }
+              hint={t("models.defaultOnSave.description")}
               checked={setAsDefault}
               onCheckedChange={setSetAsDefault}
-              disabled={!defaultModelAllowed}
             />
 
             <AdvancedSection>
@@ -378,17 +516,12 @@ export function AddModelSheet({
 
               <Field
                 label={t("models.field.authMethod")}
-                hint={
-                  authMethodLocked
-                    ? t("models.field.authMethodManagedHint")
-                    : t("models.field.authMethodHint")
-                }
+                hint={t("models.field.authMethodHint")}
               >
                 <Input
-                  value={authMethodLocked ? defaultAuthMethod : form.authMethod}
+                  value={form.authMethod}
                   onChange={setField("authMethod")}
                   placeholder="oauth"
-                  disabled={authMethodLocked}
                 />
               </Field>
 
@@ -517,12 +650,25 @@ export function AddModelSheet({
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             {t("common.cancel")}
           </Button>
-          <Button onClick={handleSave} disabled={!isDirty || saving}>
+          <Button
+            onClick={handleSave}
+            disabled={!isDirty || saving || modelValidation?.level === "error"}
+          >
             {saving && <IconLoader2 className="size-4 animate-spin" />}
             {t("models.add.confirm")}
           </Button>
         </SheetFooter>
       </SheetContent>
+
+      <FetchModelsDialog
+        open={fetchOpen}
+        onClose={() => setFetchOpen(false)}
+        onFill={handleFetchFill}
+        provider={form.provider}
+        apiKey={form.apiKey}
+        apiBase={form.apiBase}
+      />
     </Sheet>
+    </>
   )
 }
