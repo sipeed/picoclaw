@@ -690,12 +690,16 @@ func (cb *ContextBuilder) BuildMessagesFromPrompt(req PromptBuildRequest) []prov
 		}, &providers.CacheControl{Type: "ephemeral"}),
 	}
 
-	// Skip the skill catalog on tool-call continuations: the LLM already saw
-	// it in the initial turn request and doesn't need it re-sent for every
-	// intermediate tool round-trip. This saves significant tokens on providers
-	// without prompt caching (OpenAI-compat).
+	// Inject the skill catalog only when the LLM needs to (re)discover available skills:
+	//   - Turn 1: no history yet, LLM hasn't seen the catalog.
+	//   - After compaction: history was summarized; early turns (including the original
+	//     catalog injection) are gone, so the LLM must see it again.
+	// Skip it on tool-call continuations (mid-turn round-trips) and on ordinary
+	// subsequent turns where the catalog is already in the LLM's context window.
 	isToolContinuation := len(req.History) > 0 && req.History[len(req.History)-1].Role == "tool"
-	if !isToolContinuation {
+	isFirstTurn := len(req.History) == 0
+	isAfterCompaction := req.Summary != ""
+	if !isToolContinuation && (isFirstTurn || isAfterCompaction) {
 		if skillsSummary := cb.skillsLoader.BuildSkillsSummary(); skillsSummary != "" {
 			catalogPart := PromptPart{
 				ID:    "capability.skill_catalog",

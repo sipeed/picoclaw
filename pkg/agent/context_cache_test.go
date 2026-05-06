@@ -614,6 +614,51 @@ description: delete-me-v1
 	}
 }
 
+// TestSkillCatalogInjectionPolicy verifies that the catalog is included only
+// when the LLM needs to (re)discover skills: turn 1 and after compaction.
+func TestSkillCatalogInjectionPolicy(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"skills/demo/SKILL.md": "---\nname: demo\ndescription: \"demo skill\"\n---\n# Demo",
+	})
+	defer os.RemoveAll(tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+	userMsg := providers.Message{Role: "user", Content: "hello"}
+	assistantMsg := providers.Message{Role: "assistant", Content: "hi"}
+	toolMsg := providers.Message{Role: "tool", Content: "result", ToolCallID: "tc1"}
+
+	contains := func(msgs []providers.Message) bool {
+		return strings.Contains(systemPromptFromMessages(msgs), "demo skill")
+	}
+
+	// Turn 1: no history — catalog must appear.
+	if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{})) {
+		t.Error("turn 1 (no history): catalog should be included")
+	}
+
+	// Tool continuation: last message is a tool result — catalog must be skipped.
+	if contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+		History: []providers.Message{userMsg, assistantMsg, toolMsg},
+	})) {
+		t.Error("tool continuation: catalog should be skipped")
+	}
+
+	// Turn > 1, no compaction: catalog must be skipped.
+	if contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+		History: []providers.Message{userMsg, assistantMsg},
+	})) {
+		t.Error("turn > 1, no summary: catalog should be skipped")
+	}
+
+	// After compaction (summary present): catalog must be re-injected.
+	if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+		History: []providers.Message{userMsg, assistantMsg},
+		Summary: "prior conversation summary",
+	})) {
+		t.Error("after compaction (summary present): catalog should be re-injected")
+	}
+}
+
 // TestConcurrentBuildSystemPromptWithCache verifies that multiple goroutines
 // can safely call BuildSystemPromptWithCache concurrently without producing
 // empty results, panics, or data races.
