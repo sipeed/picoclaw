@@ -127,6 +127,24 @@ export async function testModel(index: number): Promise<TestModelResponse> {
   })
 }
 
+export interface TestModelInlineRequest {
+  provider: string
+  model: string
+  api_base?: string
+  api_key?: string
+  auth_method?: string
+}
+
+export async function testModelInline(
+  params: TestModelInlineRequest,
+): Promise<TestModelResponse> {
+  return request<TestModelResponse>("/api/models/test-inline", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  })
+}
+
 export interface UpstreamModel {
   id: string
   owned_by?: string
@@ -180,9 +198,12 @@ export async function getCatalogs(): Promise<CatalogListResponse> {
 }
 
 export async function deleteCatalog(id: string): Promise<void> {
-  await request<Record<string, never>>(`/api/models/catalog/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  })
+  await request<Record<string, never>>(
+    `/api/models/catalog/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+    },
+  )
 }
 
 export type { ModelsListResponse, ModelActionResponse }

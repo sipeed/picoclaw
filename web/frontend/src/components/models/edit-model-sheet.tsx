@@ -6,7 +6,12 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
-import { type ModelInfo, getCatalogs, setDefaultModel, updateModel } from "@/api/models"
+import {
+  type ModelInfo,
+  getCatalogs,
+  setDefaultModel,
+  updateModel,
+} from "@/api/models"
 import { ConfigChangeNotice } from "@/components/config-change-notice"
 import { maskedSecretPlaceholder } from "@/components/secret-placeholder"
 import {
@@ -31,14 +36,10 @@ import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
 
 import { FetchModelsDialog } from "./fetch-models-dialog"
-import {
-  type FieldValidation,
-  validateModelField,
-} from "./model-validation"
+import { type FieldValidation, validateModelField } from "./model-validation"
 import { ProviderCombobox } from "./provider-combobox"
 import { getProviderKey } from "./provider-label"
 import { PROVIDER_API_BASES, PROVIDER_MAP } from "./provider-registry"
-
 import { TestModelDialog } from "./test-model-dialog"
 
 interface EditForm {
@@ -108,9 +109,7 @@ function buildInitialEditForm(model: ModelInfo): EditForm {
     workspace: model.workspace ?? "",
     rpm: model.rpm ? String(model.rpm) : "",
     maxTokensField: model.max_tokens_field ?? "",
-    requestTimeout: model.request_timeout
-      ? String(model.request_timeout)
-      : "",
+    requestTimeout: model.request_timeout ? String(model.request_timeout) : "",
     thinkingLevel: model.thinking_level ?? "",
     toolSchemaTransform: model.tool_schema_transform ?? "", // <-- AGGIUNGI QUESTA RIGA
     extraBody: model.extra_body
@@ -149,7 +148,8 @@ export function EditModelSheet({
   const [saving, setSaving] = useState(false)
   const [setAsDefault, setSetAsDefault] = useState(false)
   const [error, setError] = useState("")
-  const [modelValidation, setModelValidation] = useState<FieldValidation | null>(null)
+  const [modelValidation, setModelValidation] =
+    useState<FieldValidation | null>(null)
   const [testOpen, setTestOpen] = useState(false)
   const [fetchOpen, setFetchOpen] = useState(false)
   const [fetchedModels, setFetchedModels] = useState<string[]>([])
@@ -258,7 +258,9 @@ export function EditModelSheet({
         extraBody = JSON.parse(form.extraBody.trim())
       }
     } catch {
-      setError(t("models.field.extraBody") + ": " + t("models.field.invalidJson"))
+      setError(
+        t("models.field.extraBody") + ": " + t("models.field.invalidJson"),
+      )
       return
     }
     try {
@@ -266,7 +268,9 @@ export function EditModelSheet({
         customHeaders = JSON.parse(form.customHeaders.trim())
       }
     } catch {
-      setError(t("models.field.customHeaders") + ": " + t("models.field.invalidJson"))
+      setError(
+        t("models.field.customHeaders") + ": " + t("models.field.invalidJson"),
+      )
       return
     }
 
@@ -365,9 +369,7 @@ export function EditModelSheet({
                       : t("models.add.modelIdPlaceholder")
                   }
                   className="font-mono text-sm"
-                  aria-invalid={
-                    !!error || modelValidation?.level === "error"
-                  }
+                  aria-invalid={!!error || modelValidation?.level === "error"}
                 />
                 {modelValidation && modelValidation.messageKey && (
                   <div
@@ -379,7 +381,12 @@ export function EditModelSheet({
                           : "text-green-600 dark:text-green-500"
                     }`}
                   >
-                    <span>{t(modelValidation.messageKey, modelValidation.messageParams)}</span>
+                    <span>
+                      {t(
+                        modelValidation.messageKey,
+                        modelValidation.messageParams,
+                      )}
+                    </span>
                     {modelValidation.fix && (
                       <button
                         type="button"
@@ -397,7 +404,7 @@ export function EditModelSheet({
                       <Badge
                         key={m}
                         variant="secondary"
-                        className="cursor-pointer font-mono text-xs hover:bg-secondary/80"
+                        className="hover:bg-secondary/80 cursor-pointer font-mono text-xs"
                         onClick={() => handleCommonModel(m)}
                       >
                         {m}
@@ -658,6 +665,13 @@ export function EditModelSheet({
         model={model}
         open={testOpen}
         onClose={() => setTestOpen(false)}
+        inlineParams={{
+          provider: form.provider,
+          model: form.modelId,
+          apiBase: form.apiBase,
+          apiKey: form.apiKey,
+          authMethod: form.authMethod,
+        }}
       />
 
       <FetchModelsDialog
