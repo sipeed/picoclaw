@@ -31,6 +31,16 @@ func setupWorkspace(t *testing.T, files map[string]string) string {
 	return tmpDir
 }
 
+// systemPromptFromMessages extracts the Content of the first system message.
+func systemPromptFromMessages(msgs []providers.Message) string {
+	for _, m := range msgs {
+		if m.Role == "system" {
+			return m.Content
+		}
+	}
+	return ""
+}
+
 // TestSingleSystemMessage verifies that BuildMessages always produces exactly one
 // system message regardless of summary/history variations.
 // Fix: multiple system messages break Anthropic (top-level system param) and
@@ -468,8 +478,9 @@ description: global-v1
 	}
 
 	cb := NewContextBuilder(tmpDir)
-	sp1 := cb.BuildSystemPromptWithCache()
-	if !strings.Contains(sp1, "global-v1") {
+	// Skill catalog is injected per-request, not in the static cache; check via BuildMessagesFromPrompt.
+	sysMsg1 := systemPromptFromMessages(cb.BuildMessagesFromPrompt(PromptBuildRequest{}))
+	if !strings.Contains(sysMsg1, "global-v1") {
 		t.Fatal("expected initial prompt to contain global skill description")
 	}
 
@@ -493,11 +504,11 @@ description: global-v2
 		t.Fatal("sourceFilesChangedLocked() should detect global skill file content change")
 	}
 
-	sp2 := cb.BuildSystemPromptWithCache()
-	if !strings.Contains(sp2, "global-v2") {
+	sysMsg2 := systemPromptFromMessages(cb.BuildMessagesFromPrompt(PromptBuildRequest{}))
+	if !strings.Contains(sysMsg2, "global-v2") {
 		t.Error("rebuilt prompt should contain updated global skill description")
 	}
-	if sp1 == sp2 {
+	if sysMsg1 == sysMsg2 {
 		t.Error("cache should be invalidated when global skill file content changes")
 	}
 }
@@ -528,8 +539,9 @@ description: builtin-v1
 	}
 
 	cb := NewContextBuilder(tmpDir)
-	sp1 := cb.BuildSystemPromptWithCache()
-	if !strings.Contains(sp1, "builtin-v1") {
+	// Skill catalog is injected per-request, not in the static cache; check via BuildMessagesFromPrompt.
+	sysMsg1 := systemPromptFromMessages(cb.BuildMessagesFromPrompt(PromptBuildRequest{}))
+	if !strings.Contains(sysMsg1, "builtin-v1") {
 		t.Fatal("expected initial prompt to contain builtin skill description")
 	}
 
@@ -553,11 +565,11 @@ description: builtin-v2
 		t.Fatal("sourceFilesChangedLocked() should detect builtin skill file content change")
 	}
 
-	sp2 := cb.BuildSystemPromptWithCache()
-	if !strings.Contains(sp2, "builtin-v2") {
+	sysMsg2 := systemPromptFromMessages(cb.BuildMessagesFromPrompt(PromptBuildRequest{}))
+	if !strings.Contains(sysMsg2, "builtin-v2") {
 		t.Error("rebuilt prompt should contain updated builtin skill description")
 	}
-	if sp1 == sp2 {
+	if sysMsg1 == sysMsg2 {
 		t.Error("cache should be invalidated when builtin skill file content changes")
 	}
 }
@@ -575,8 +587,9 @@ description: delete-me-v1
 	defer os.RemoveAll(tmpDir)
 
 	cb := NewContextBuilder(tmpDir)
-	sp1 := cb.BuildSystemPromptWithCache()
-	if !strings.Contains(sp1, "delete-me-v1") {
+	// Skill catalog is injected per-request, not in the static cache; check via BuildMessagesFromPrompt.
+	sysMsg1 := systemPromptFromMessages(cb.BuildMessagesFromPrompt(PromptBuildRequest{}))
+	if !strings.Contains(sysMsg1, "delete-me-v1") {
 		t.Fatal("expected initial prompt to contain skill description")
 	}
 
@@ -592,11 +605,11 @@ description: delete-me-v1
 		t.Fatal("sourceFilesChangedLocked() should detect deleted skill file")
 	}
 
-	sp2 := cb.BuildSystemPromptWithCache()
-	if strings.Contains(sp2, "delete-me-v1") {
+	sysMsg2 := systemPromptFromMessages(cb.BuildMessagesFromPrompt(PromptBuildRequest{}))
+	if strings.Contains(sysMsg2, "delete-me-v1") {
 		t.Error("rebuilt prompt should not contain deleted skill description")
 	}
-	if sp1 == sp2 {
+	if sysMsg1 == sysMsg2 {
 		t.Error("cache should be invalidated when skill file is deleted")
 	}
 }

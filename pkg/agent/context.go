@@ -202,24 +202,6 @@ func (cb *ContextBuilder) BuildSystemPromptParts() []PromptPart {
 		})
 	}
 
-	// Skills - show summary, AI can read full content with read_file tool
-	skillsSummary := cb.skillsLoader.BuildSkillsSummary()
-	if skillsSummary != "" {
-		add(PromptPart{
-			ID:     "capability.skill_catalog",
-			Layer:  PromptLayerCapability,
-			Slot:   PromptSlotSkillCatalog,
-			Source: PromptSource{ID: PromptSourceSkillCatalog, Name: "skill:index"},
-			Title:  "skill catalog",
-			Content: fmt.Sprintf(`# Skills
-
-The following skills extend your capabilities. To use a skill, read its SKILL.md file using the read_file tool.
-
-%s`, skillsSummary),
-			Stable: true,
-			Cache:  PromptCacheEphemeral,
-		})
-	}
 
 	// Memory context
 	memoryContext := cb.memory.GetMemoryContext()
@@ -313,6 +295,13 @@ func (cb *ContextBuilder) EstimateSystemTokens(summary string, activeSkills []st
 	const dynamicContextChars = 300
 
 	totalChars := utf8.RuneCountInString(staticPrompt) + dynamicContextChars
+
+	// Skill catalog is no longer in the static prompt; add it to the estimate
+	// (EstimateSystemTokens assumes a non-continuation turn).
+	if skillsSummary := cb.skillsLoader.BuildSkillsSummary(); skillsSummary != "" {
+		totalChars += utf8.RuneCountInString(skillsSummary) + 80 // header overhead
+		totalChars += 7                                           // separator
+	}
 
 	if skillsText := cb.buildActiveSkillsContext(activeSkills); skillsText != "" {
 		totalChars += utf8.RuneCountInString(skillsText)
@@ -699,6 +688,28 @@ func (cb *ContextBuilder) BuildMessagesFromPrompt(req PromptBuildRequest) []prov
 			Source:  PromptSource{ID: PromptSourceKernel, Name: "static"},
 			Content: staticPrompt,
 		}, &providers.CacheControl{Type: "ephemeral"}),
+	}
+
+	// Skip the skill catalog on tool-call continuations: the LLM already saw
+	// it in the initial turn request and doesn't need it re-sent for every
+	// intermediate tool round-trip. This saves significant tokens on providers
+	// without prompt caching (OpenAI-compat).
+	isToolContinuation := len(req.History) > 0 && req.History[len(req.History)-1].Role == "tool"
+	if !isToolContinuation {
+		if skillsSummary := cb.skillsLoader.BuildSkillsSummary(); skillsSummary != "" {
+			catalogPart := PromptPart{
+				ID:    "capability.skill_catalog",
+				Layer: PromptLayerCapability,
+				Slot:  PromptSlotSkillCatalog,
+				Source: PromptSource{ID: PromptSourceSkillCatalog, Name: "skill:index"},
+				Title: "skill catalog",
+				Content: fmt.Sprintf("# Skills\n\nThe following skills extend your capabilities. To use a skill, read its SKILL.md file using the read_file tool.\n\n%s", skillsSummary),
+				Stable: true,
+				Cache:  PromptCacheEphemeral,
+			}
+			stringParts = append(stringParts, catalogPart.Content)
+			contentBlocks = append(contentBlocks, promptContentBlock(catalogPart, &providers.CacheControl{Type: "ephemeral"}))
+		}
 	}
 
 	promptParts := append([]PromptPart(nil), req.Overlays...)
