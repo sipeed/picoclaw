@@ -8,6 +8,8 @@ import (
 )
 
 const toolFeedbackAnimationInterval = 3 * time.Second
+const workingSummaryToolFeedbackAnimationInterval = 10 * time.Second
+const maxMergedToolFeedbackLines = 8
 
 const initialToolFeedbackAnimationFrame = ""
 
@@ -122,13 +124,17 @@ func (a *ToolFeedbackAnimator) Update(ctx context.Context, chatID, content strin
 		return "", false, nil
 	}
 
-	animatedContent := InitialAnimatedToolFeedbackContent(content)
+	mergedContent := content
+	if isWorkingSummaryToolFeedback(baseContent) || isWorkingSummaryToolFeedback(content) {
+		mergedContent = mergeToolFeedbackContent(baseContent, content)
+	}
+	animatedContent := InitialAnimatedToolFeedbackContent(mergedContent)
 	if err := a.editFn(ctx, strings.TrimSpace(chatID), msgID, animatedContent); err != nil {
 		a.Record(chatID, msgID, baseContent)
 		return "", true, err
 	}
 
-	a.Record(chatID, msgID, content)
+	a.Record(chatID, msgID, mergedContent)
 	return msgID, true, nil
 }
 
@@ -163,7 +169,7 @@ func (a *ToolFeedbackAnimator) detach(chatID string) *toolFeedbackAnimationState
 func (a *ToolFeedbackAnimator) run(chatID string, entry *toolFeedbackAnimationState) {
 	defer close(entry.done)
 
-	ticker := time.NewTicker(toolFeedbackAnimationInterval)
+	ticker := time.NewTicker(toolFeedbackAnimationIntervalFor(entry.baseContent))
 	defer ticker.Stop()
 
 	frameIdx := 1
@@ -225,6 +231,57 @@ func appendToolFeedbackFrame(firstLine, frame string) string {
 	}
 
 	return firstLine + frame
+}
+
+func mergeToolFeedbackContent(previous, next string) string {
+	previous = strings.TrimSpace(previous)
+	next = strings.TrimSpace(next)
+	if previous == "" {
+		return next
+	}
+	if next == "" {
+		return previous
+	}
+
+	lines := make([]string, 0, maxMergedToolFeedbackLines+1)
+	seen := make(map[string]struct{})
+	addLine := func(line string) {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.EqualFold(line, "Working...") {
+			return
+		}
+		if _, ok := seen[line]; ok {
+			return
+		}
+		seen[line] = struct{}{}
+		lines = append(lines, line)
+	}
+
+	for _, line := range strings.Split(previous, "\n") {
+		addLine(line)
+	}
+	for _, line := range strings.Split(next, "\n") {
+		addLine(line)
+	}
+	if len(lines) > maxMergedToolFeedbackLines {
+		lines = lines[len(lines)-maxMergedToolFeedbackLines:]
+	}
+	if len(lines) == 0 {
+		return "Working..."
+	}
+	return "Working...\n" + strings.Join(lines, "\n")
+}
+
+func isWorkingSummaryToolFeedback(content string) bool {
+	firstLine, _, _ := strings.Cut(strings.TrimSpace(content), "\n")
+	return strings.EqualFold(strings.TrimSpace(firstLine), "Working...")
+}
+
+func toolFeedbackAnimationIntervalFor(content string) time.Duration {
+	if isWorkingSummaryToolFeedback(content) {
+		return workingSummaryToolFeedbackAnimationInterval
+	}
+	return toolFeedbackAnimationInterval
 }
 
 func stopToolFeedbackAnimation(entry *toolFeedbackAnimationState) {

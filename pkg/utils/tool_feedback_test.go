@@ -11,7 +11,7 @@ func TestFormatToolFeedbackMessage(t *testing.T) {
 		"I will read README.md first to confirm the current project structure.",
 		"{\n  \"path\": \"README.md\"\n}",
 	)
-	want := "\U0001f527 `read_file`\nI will read README.md first to confirm the current project structure.\n```json\n{\n  \"path\": \"README.md\"\n}\n```"
+	want := "🔧 `read_file`\nI will read README.md first to confirm the current project structure.\n```json\n{\n  \"path\": \"README.md\"\n}\n```"
 	if got != want {
 		t.Fatalf("FormatToolFeedbackMessage() = %q, want %q", got, want)
 	}
@@ -19,7 +19,7 @@ func TestFormatToolFeedbackMessage(t *testing.T) {
 
 func TestFormatToolFeedbackMessage_EmptyExplanationShowsArgs(t *testing.T) {
 	got := FormatToolFeedbackMessage("read_file", "", "{\n  \"path\": \"README.md\"\n}")
-	want := "\U0001f527 `read_file`\n```json\n{\n  \"path\": \"README.md\"\n}\n```"
+	want := "🔧 `read_file`\n```json\n{\n  \"path\": \"README.md\"\n}\n```"
 	if got != want {
 		t.Fatalf("FormatToolFeedbackMessage() = %q, want %q", got, want)
 	}
@@ -35,9 +35,82 @@ func TestFormatToolFeedbackMessage_EmptyToolNameOmitsToolLine(t *testing.T) {
 
 func TestFormatToolFeedbackMessage_EmptyExplanationAndArgsKeepsOnlyToolLine(t *testing.T) {
 	got := FormatToolFeedbackMessage("read_file", "", "")
-	want := "\U0001f527 `read_file`"
+	want := "🔧 `read_file`"
 	if got != want {
 		t.Fatalf("FormatToolFeedbackMessage() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatToolFeedbackMessageWithStyle_WorkingSummary(t *testing.T) {
+	got := FormatToolFeedbackMessageWithStyle(
+		"working_summary",
+		"read_file",
+		"I will read README.md first to confirm the current project structure.",
+		"{\n  \"path\": \"README.md\"\n}",
+	)
+	want := "Working...\n• tool: `read_file` — `README.md`"
+	if got != want {
+		t.Fatalf("FormatToolFeedbackMessageWithStyle() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatToolFeedbackMessageWithStyle_WorkingSummaryShowsFileBasenameOnly(t *testing.T) {
+	got := FormatToolFeedbackMessageWithStyle(
+		"working_summary",
+		"write_file",
+		"",
+		"{\"path\":\"/home/user/private/config.json\"}",
+	)
+	want := "Working...\n• tool: `write_file` — `config.json`"
+	if got != want {
+		t.Fatalf("FormatToolFeedbackMessageWithStyle() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatToolFeedbackMessageWithStyle_WorkingSummaryShowsExecCommand(t *testing.T) {
+	got := FormatToolFeedbackMessageWithStyle(
+		"working_summary",
+		"exec",
+		"",
+		"{\n  \"action\": \"run\",\n  \"command\": \"scripts/gog_me forms add-question FORM --title Name --type paragraph\",\n  \"timeout\": 120\n}",
+	)
+	want := "Working...\n• tool: `exec` — `gog_me`"
+	if got != want {
+		t.Fatalf("FormatToolFeedbackMessageWithStyle() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatToolFeedbackMessageWithStyle_WorkingSummaryShowsExecScriptNameOnly(t *testing.T) {
+	got := FormatToolFeedbackMessageWithStyle(
+		"working_summary",
+		"exec",
+		"",
+		"{\"command\":\"OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz0123456789 bash -lc /home/server/.picoclaw/main/workspace/tmp_add_questions_anya_form_api.sh --api-key sk-or-v1-abcdefghijklmnopqrstuvwxyz0123456789\"}",
+	)
+	want := "Working...\n• tool: `exec` — `tmp_add_questions_anya_form_api.sh`"
+	if got != want {
+		t.Fatalf("FormatToolFeedbackMessageWithStyle() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatToolFeedbackMessageWithStyle_WorkingSummarySanitizesCodeSpan(t *testing.T) {
+	got := FormatToolFeedbackMessageWithStyle("working_summary", "read_file", "", "{\"path\":\"bad`path\"}")
+	want := "Working...\n• tool: `read_file` — `bad'path`"
+	if got != want {
+		t.Fatalf("FormatToolFeedbackMessageWithStyle() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatToolFeedbackMessageWithStyle_WorkingSummaryOmitsNonFileToolArgs(t *testing.T) {
+	got := FormatToolFeedbackMessageWithStyle(
+		"working_summary",
+		"web_fetch",
+		"",
+		`{"url":"https://example.test/?token=mat_abcdefghijklmnopqrstuvwxyz0123456789"}`,
+	)
+	want := "Working...\n• tool: `web_fetch`"
+	if got != want {
+		t.Fatalf("FormatToolFeedbackMessageWithStyle() = %q, want %q", got, want)
 	}
 }
 

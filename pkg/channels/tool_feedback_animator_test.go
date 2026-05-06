@@ -75,16 +75,17 @@ func TestToolFeedbackAnimator_UpdateStopsTrackingBeforeEdit(t *testing.T) {
 		if messageID != "msg-1" {
 			t.Fatalf("messageID = %q, want msg-1", messageID)
 		}
-		if content != "🔧 `write_file`\nUpdating config" {
+		want := "Working...\n• tool: `read_file`\n• tool: `write_file`"
+		if content != want {
 			t.Fatalf("content = %q, want updated animated content", content)
 		}
 		return nil
 	})
 	defer animator.StopAll()
 
-	animator.Record("chat-1", "msg-1", "🔧 `read_file`\nChecking config")
+	animator.Record("chat-1", "msg-1", "Working...\n• tool: `read_file`")
 
-	msgID, handled, err := animator.Update(context.Background(), "chat-1", "🔧 `write_file`\nUpdating config")
+	msgID, handled, err := animator.Update(context.Background(), "chat-1", "Working...\n• tool: `write_file`")
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
@@ -96,6 +97,51 @@ func TestToolFeedbackAnimator_UpdateStopsTrackingBeforeEdit(t *testing.T) {
 	}
 }
 
+func TestToolFeedbackAnimator_UpdateRawFeedbackReplacesContent(t *testing.T) {
+	var animator *ToolFeedbackAnimator
+	animator = NewToolFeedbackAnimator(func(_ context.Context, chatID, messageID, content string) error {
+		if _, ok := animator.Current(chatID); ok {
+			t.Fatal("expected tracked tool feedback to be stopped before edit")
+		}
+		if messageID != "msg-1" {
+			t.Fatalf("messageID = %q, want msg-1", messageID)
+		}
+		want := "🔧 `write_file`\nWriting config"
+		if content != want {
+			t.Fatalf("content = %q, want replacement content", content)
+		}
+		return nil
+	})
+	defer animator.StopAll()
+
+	animator.Record("chat-1", "msg-1", "🔧 `read_file`\nReading config")
+
+	msgID, handled, err := animator.Update(context.Background(), "chat-1", "🔧 `write_file`\nWriting config")
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if !handled {
+		t.Fatal("Update() handled = false, want true")
+	}
+	if msgID != "msg-1" {
+		t.Fatalf("Update() msgID = %q, want msg-1", msgID)
+	}
+}
+
+func TestToolFeedbackAnimationIntervalForWorkingSummary(t *testing.T) {
+	got := toolFeedbackAnimationIntervalFor("Working...\n• tool: `read_file`")
+	if got != workingSummaryToolFeedbackAnimationInterval {
+		t.Fatalf("toolFeedbackAnimationIntervalFor() = %v, want %v", got, workingSummaryToolFeedbackAnimationInterval)
+	}
+}
+
+func TestToolFeedbackAnimationIntervalForRawFeedback(t *testing.T) {
+	got := toolFeedbackAnimationIntervalFor("🔧 `read_file`\nReading config")
+	if got != toolFeedbackAnimationInterval {
+		t.Fatalf("toolFeedbackAnimationIntervalFor() = %v, want %v", got, toolFeedbackAnimationInterval)
+	}
+}
+
 func TestToolFeedbackAnimator_UpdateFailureRestoresTracking(t *testing.T) {
 	editErr := errors.New("edit failed")
 	animator := NewToolFeedbackAnimator(func(context.Context, string, string, string) error {
@@ -103,9 +149,9 @@ func TestToolFeedbackAnimator_UpdateFailureRestoresTracking(t *testing.T) {
 	})
 	defer animator.StopAll()
 
-	animator.Record("chat-1", "msg-1", "🔧 `read_file`\nChecking config")
+	animator.Record("chat-1", "msg-1", "Working...\n• tool: `read_file`")
 
-	msgID, handled, err := animator.Update(context.Background(), "chat-1", "🔧 `write_file`\nUpdating config")
+	msgID, handled, err := animator.Update(context.Background(), "chat-1", "Working...\n• tool: `write_file`")
 	if !handled {
 		t.Fatal("Update() handled = false, want true")
 	}
