@@ -268,18 +268,26 @@ export function ConfigPage() {
         )
         const mcpDiscoveryValidationEnabled =
           form.mcpEnabled && form.mcpDiscoveryEnabled
-        const mcpDiscoveryTTL = mcpDiscoveryValidationEnabled
-          ? parseIntField(form.mcpDiscoveryTTL, "MCP discovery ttl", {
+        const mcpDiscoveryPatch: Record<string, unknown> = {
+          enabled: form.mcpDiscoveryEnabled,
+          use_bm25: form.mcpDiscoveryUseBM25,
+          use_regex: form.mcpDiscoveryUseRegex,
+        }
+
+        if (mcpDiscoveryValidationEnabled) {
+          mcpDiscoveryPatch.ttl = parseIntField(
+            form.mcpDiscoveryTTL,
+            "MCP discovery ttl",
+            {
               min: 0,
-            })
-          : Number.parseInt(EMPTY_FORM.mcpDiscoveryTTL, 10)
-        const mcpDiscoveryMaxSearchResults = mcpDiscoveryValidationEnabled
-          ? parseIntField(
-              form.mcpDiscoveryMaxSearchResults,
-              "MCP discovery max search results",
-              { min: 0 },
-            )
-          : Number.parseInt(EMPTY_FORM.mcpDiscoveryMaxSearchResults, 10)
+            },
+          )
+          mcpDiscoveryPatch.max_search_results = parseIntField(
+            form.mcpDiscoveryMaxSearchResults,
+            "MCP discovery max search results",
+            { min: 0 },
+          )
+        }
         const execConfigPatch: Record<string, unknown> = {
           enabled: form.execEnabled,
         }
@@ -328,10 +336,7 @@ export function ConfigPage() {
           .map((name) => [name, null] as const)
 
         const upsertServerEntries = normalizedServers.map((server) => {
-          const deferredPatch =
-            server.deferredOverride === null
-              ? {}
-              : { deferred: server.deferredOverride }
+          const deferredPatch = { deferred: server.deferredOverride }
 
           if (server.type !== "stdio") {
             if (server.url === "") {
@@ -447,13 +452,7 @@ export function ConfigPage() {
             exec: execConfigPatch,
             mcp: {
               enabled: form.mcpEnabled,
-              discovery: {
-                enabled: form.mcpDiscoveryEnabled,
-                ttl: mcpDiscoveryTTL,
-                max_search_results: mcpDiscoveryMaxSearchResults,
-                use_bm25: form.mcpDiscoveryUseBM25,
-                use_regex: form.mcpDiscoveryUseRegex,
-              },
+              discovery: mcpDiscoveryPatch,
               servers: mcpServersPatch,
             },
           },
