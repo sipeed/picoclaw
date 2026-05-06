@@ -95,3 +95,35 @@ func (b *LogBuffer) RunID() int {
 
 	return b.runID
 }
+
+// Tail returns up to the last n buffered lines (newest last).
+// If n <= 0, it returns nil.
+func (b *LogBuffer) Tail(n int) []string {
+	if n <= 0 {
+		return nil
+	}
+
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	if b.total == 0 || len(b.lines) == 0 {
+		return nil
+	}
+
+	if n > len(b.lines) {
+		n = len(b.lines)
+	}
+
+	result := make([]string, n)
+
+	if b.total <= b.cap {
+		copy(result, b.lines[len(b.lines)-n:])
+		return result
+	}
+
+	start := (b.total - n) % b.cap
+	for i := 0; i < n; i++ {
+		result[i] = b.lines[(start+i)%b.cap]
+	}
+	return result
+}

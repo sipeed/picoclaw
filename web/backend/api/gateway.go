@@ -941,7 +941,19 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	// Wait for exit in background and clean up
 	go func() {
 		if err := cmd.Wait(); err != nil {
-			logger.ErrorC("gateway", fmt.Sprintf("Gateway process exited: %v", err))
+			tail := gateway.logs.Tail(50)
+			if len(tail) > 0 {
+				logger.ErrorC(
+					"gateway",
+					fmt.Sprintf(
+						"Gateway process exited: %v\nLast gateway logs:\n%s",
+						err,
+						strings.Join(tail, "\n"),
+					),
+				)
+			} else {
+				logger.ErrorC("gateway", fmt.Sprintf("Gateway process exited: %v", err))
+			}
 		} else {
 			logger.InfoC("gateway", "Gateway process exited normally")
 		}
