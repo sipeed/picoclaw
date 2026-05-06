@@ -18,6 +18,7 @@ type SubTurnSpawner interface {
 
 // SubTurnConfig holds configuration for spawning a sub-turn.
 type SubTurnConfig struct {
+	AgentID            string
 	Model              string
 	Tools              []Tool
 	SystemPrompt       string

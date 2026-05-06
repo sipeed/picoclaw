@@ -103,6 +103,7 @@ type subTurnRuntimeConfig struct {
 //	// Result also available in parent's pendingResults channel
 //	// Parent turn will poll and process it in a later iteration
 type SubTurnConfig struct {
+	AgentID      string
 	Model        string
 	Tools        []tools.Tool
 	SystemPrompt string
@@ -224,6 +225,7 @@ func (s *AgentLoopSpawner) SpawnSubTurn(
 
 	// Convert tools.SubTurnConfig to agent.SubTurnConfig
 	agentCfg := SubTurnConfig{
+		AgentID:            cfg.AgentID,
 		Model:              cfg.Model,
 		Tools:              cfg.Tools,
 		SystemPrompt:       cfg.SystemPrompt,
@@ -318,9 +320,14 @@ func spawnSubTurn(
 		return nil, ErrDepthLimitExceeded
 	}
 
-	// 2. Config validation: Model is required unless TargetAgentID is set
-	//    (the target agent provides its own model).
-	if cfg.Model == "" && cfg.TargetAgentID == "" {
+	// 2. Config validation: Model is required unless a target agent is set
+	//    (the target agent provides its own model). Accept both TargetAgentID
+	//    and AgentID for backward compatibility with older spawn callers.
+	targetAgentID := cfg.TargetAgentID
+	if targetAgentID == "" {
+		targetAgentID = cfg.AgentID
+	}
+	if cfg.Model == "" && targetAgentID == "" {
 		return nil, ErrInvalidSubTurnConfig
 	}
 
@@ -338,22 +345,21 @@ func spawnSubTurn(
 
 	childID := al.generateSubTurnID()
 
-	// Resolve the agent instance for the child turn.
-	// When TargetAgentID is set, look up that agent from the registry so the
-	// child runs with the target's workspace, model, tools, and system prompt.
-	// Otherwise fall back to the parent's agent (existing behavior).
-	var baseAgent *AgentInstance
-	if cfg.TargetAgentID != "" {
-		var ok bool
-		baseAgent, ok = al.registry.GetAgent(cfg.TargetAgentID)
-		if !ok {
-			return nil, fmt.Errorf("target agent %q not found in registry", cfg.TargetAgentID)
+	// Get the requested agent instance, falling back to the parent agent and
+	// then to the default agent. The requested agent path lets spawn(agent_id)
+	// use that agent's model, tools, workspace, skills, and injected files.
+	// Wrap it in a shallow copy that uses an ephemeral (in-memory only) session store
+	// so that child turns never pollute or persist to the parent's session history.
+	baseAgent := parentTS.agent
+	if targetAgentID != "" {
+		if targetAgent, ok := al.registry.GetAgent(targetAgentID); ok {
+			baseAgent = targetAgent
+		} else {
+			return nil, fmt.Errorf("target agent %q not found", targetAgentID)
 		}
-	} else {
-		baseAgent = parentTS.agent
-		if baseAgent == nil {
-			baseAgent = al.registry.GetDefaultAgent()
-		}
+	}
+	if baseAgent == nil {
+		baseAgent = al.registry.GetDefaultAgent()
 	}
 	if baseAgent == nil {
 		return nil, errors.New("parent turnState has no agent instance")
