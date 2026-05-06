@@ -383,6 +383,7 @@ func TestSend_FinalReplyDoesNotFinalizeDifferentSessionToolFeedback(t *testing.T
 		},
 	}
 	ch := newTestChannel(t, caller)
+	ch.progress = channels.NewToolFeedbackAnimator(ch.EditMessage)
 
 	baseCtx := bus.InboundContext{
 		Channel: "telegram",
@@ -419,6 +420,67 @@ func TestSend_FinalReplyDoesNotFinalizeDifferentSessionToolFeedback(t *testing.T
 	msgID, ok := ch.currentToolFeedbackMessage("-1001234567890/42#session:subturn-1")
 	require.True(t, ok, "subturn tool feedback should remain tracked")
 	assert.Equal(t, "1", msgID)
+}
+
+func TestSend_SessionScopedToolFeedbackUpdatesExistingTelegramMessage(t *testing.T) {
+	nextMessageID := 0
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			nextMessageID++
+			return successResponseWithMessageID(t, nextMessageID), nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+	ch.progress = channels.NewToolFeedbackAnimator(ch.EditMessage)
+
+	baseCtx := bus.InboundContext{
+		Channel: "telegram",
+		ChatID:  "-1001234567890",
+		TopicID: "42",
+		Raw: map[string]string{
+			"message_kind": "tool_feedback",
+		},
+	}
+
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:     "-1001234567890",
+		SessionKey: "subturn-1",
+		Content:    "Working...\n• tool: `read_file`",
+		Context:    baseCtx,
+	})
+	require.NoError(t, err)
+
+	ids, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:     "-1001234567890",
+		SessionKey: "subturn-1",
+		Content:    "Working...\n• tool: `read_file`\n• tool: `mcp_gpt_researcher_deep_research`",
+		Context:    baseCtx,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"1"}, ids)
+	require.Len(t, caller.calls, 2)
+	assert.Contains(t, caller.calls[1].URL, "editMessageText")
+	assert.NotContains(t, caller.calls[1].URL, "%23session")
+	assert.NotContains(t, caller.calls[1].URL, "#session")
+}
+
+func TestDismissToolFeedbackMessage_SessionScopedKeyDeletesTelegramMessage(t *testing.T) {
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			return successResponse(t), nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+	ch.RecordToolFeedbackMessage("-1001234567890/42#session:subturn-1", "7", "Working...\n• tool: `read_file`")
+
+	ch.DismissToolFeedbackMessage(context.Background(), "-1001234567890/42#session:subturn-1")
+
+	require.Len(t, caller.calls, 1)
+	assert.Contains(t, caller.calls[0].URL, "deleteMessage")
+	assert.NotContains(t, caller.calls[0].URL, "%23session")
+	assert.NotContains(t, caller.calls[0].URL, "#session")
+	_, ok := ch.currentToolFeedbackMessage("-1001234567890/42#session:subturn-1")
+	assert.False(t, ok)
 }
 
 func TestFinalizeTrackedToolFeedbackMessage_StopsTrackingBeforeEdit(t *testing.T) {

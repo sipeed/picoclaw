@@ -468,6 +468,7 @@ func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messag
 
 // DeleteMessage implements channels.MessageDeleter.
 func (c *TelegramChannel) DeleteMessage(ctx context.Context, chatID string, messageID string) error {
+	chatID = telegramToolFeedbackDeliveryChatID(chatID)
 	cid, _, err := parseTelegramChatID(chatID)
 	if err != nil {
 		return err

@@ -447,6 +447,17 @@ func spawnSubTurn(
 
 		// Result Delivery Strategy (Async vs Sync)
 		if cfg.Async {
+			if al != nil && al.channelManager != nil && childTS.channel != "" {
+				dismissCtx, dismissCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				al.channelManager.DismissToolFeedbackForSession(
+					dismissCtx,
+					childTS.channel,
+					childTS.chatID,
+					childTS.opts.InboundContext,
+					childID,
+				)
+				dismissCancel()
+			}
 			deliverSubTurnResult(al, parentTS, childID, result)
 		}
 
