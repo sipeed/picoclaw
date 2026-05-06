@@ -108,7 +108,7 @@ func summarizeToolFeedbackArgs(toolName, argsPreview string) string {
 	}
 	if isFileToolFeedbackTool(normalizedToolName) {
 		if summary := firstStringArg(args, "path", "file_path", "filepath"); summary != "" {
-			return truncateToolFeedbackSummary(filepath.Base(summary))
+			return truncateToolFeedbackSummary(summarizeFilePath(summary))
 		}
 	}
 	return ""
@@ -137,6 +137,27 @@ func firstStringArg(args map[string]any, keys ...string) string {
 
 func normalizeToolFeedbackSummary(text string) string {
 	return redactToolFeedbackSecrets(strings.Join(strings.Fields(text), " "))
+}
+
+func summarizeFilePath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+
+	cleaned := filepath.Clean(path)
+	slashed := filepath.ToSlash(cleaned)
+	if idx := strings.LastIndex(slashed, "/workspace/"); idx >= 0 {
+		relative := strings.TrimPrefix(slashed[idx+len("/workspace/"):], "/")
+		if relative != "" && relative != "." {
+			return relative
+		}
+	}
+
+	if !filepath.IsAbs(cleaned) {
+		return slashed
+	}
+	return filepath.Base(cleaned)
 }
 
 func truncateToolFeedbackSummary(text string) string {

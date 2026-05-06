@@ -67,6 +67,19 @@ func TestFormatToolFeedbackMessageWithStyle_WorkingSummaryShowsFileBasenameOnly(
 	}
 }
 
+func TestFormatToolFeedbackMessageWithStyle_WorkingSummaryShowsWorkspaceRelativeFile(t *testing.T) {
+	got := FormatToolFeedbackMessageWithStyle(
+		"working_summary",
+		"read_file",
+		"",
+		"{\"path\":\"/home/server/.picoclaw/spouse/workspace/memory/MEMORY.md\"}",
+	)
+	want := "Working...\n• tool: `read_file` — `memory/MEMORY.md`"
+	if got != want {
+		t.Fatalf("FormatToolFeedbackMessageWithStyle() = %q, want %q", got, want)
+	}
+}
+
 func TestFormatToolFeedbackMessageWithStyle_WorkingSummaryShowsExecCommand(t *testing.T) {
 	got := FormatToolFeedbackMessageWithStyle(
 		"working_summary",
