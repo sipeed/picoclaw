@@ -25,6 +25,7 @@ import type { ConnectionState } from "@/store/chat"
 import type { ChatAttachment } from "@/store/chat"
 import { showAssistantDetailsAtom } from "@/store/chat"
 import type { GatewayState } from "@/store/gateway"
+import { PermissionPrompt } from "@/components/permission/PermissionPrompt"
 
 const MAX_IMAGE_SIZE_BYTES = 7 * 1024 * 1024
 const MAX_IMAGE_SIZE_LABEL = "7 MB"
@@ -115,6 +116,11 @@ export function ChatPage() {
   const [showAssistantDetails, setShowAssistantDetails] = useAtom(
     showAssistantDetailsAtom,
   )
+  const [permissionRequest, setPermissionRequest] = useState<{
+    toolName: string
+    path: string
+    originalCommand: string
+  } | null>(null)
 
   const {
     messages,
@@ -189,6 +195,45 @@ export function ChatPage() {
       setInput("")
       setAttachments([])
     }
+  }
+
+  // Check for permission requests in messages
+  useEffect(() => {
+    if (permissionRequest) return // Already showing a permission prompt
+
+    // Check the last few messages for request_permission tool calls
+    for (let i = messages.length - 1; i >= Math.max(0, messages.length - 5); i--) {
+      const msg = messages[i]
+      if (msg.role !== "assistant") continue
+      if (!msg.toolCalls) continue
+
+      const permCall = msg.toolCalls.find(
+        (tc) => tc.function?.name === "request_permission"
+      )
+      if (!permCall || !permCall.function) continue
+
+      try {
+        const args = JSON.parse(permCall.function.arguments ?? "{}")
+        if (args.path && args.command) {
+          setPermissionRequest({
+            toolName: "request_permission",
+            path: args.path,
+            originalCommand: args.command,
+          })
+          return
+        }
+      } catch {
+        // Ignore parse errors
+      }
+    }
+  }, [messages, permissionRequest])
+
+  const handlePermissionGranted = () => {
+    setPermissionRequest(null)
+  }
+
+  const handlePermissionDenied = () => {
+    setPermissionRequest(null)
   }
 
   const handleAddImages = () => {
@@ -322,6 +367,18 @@ export function ChatPage() {
               defaultModelName={defaultModelName}
               isConnected={isGatewayRunning}
             />
+          )}
+
+          {permissionRequest && (
+            <div className="flex w-full">
+              <PermissionPrompt
+                toolName={permissionRequest.toolName}
+                path={permissionRequest.path}
+                originalCommand={permissionRequest.originalCommand}
+                onPermissionGranted={handlePermissionGranted}
+                onPermissionDenied={handlePermissionDenied}
+              />
+            </div>
           )}
 
           {messages.map((msg) => {
