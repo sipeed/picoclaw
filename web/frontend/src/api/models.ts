@@ -19,6 +19,7 @@ export interface ModelInfo {
   max_tokens_field?: string
   request_timeout?: number
   thinking_level?: string
+  tool_schema_transform?: string
   extra_body?: Record<string, unknown>
   custom_headers?: Record<string, string>
   // Meta

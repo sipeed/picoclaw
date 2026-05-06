@@ -294,6 +294,8 @@
       "thinkingLevelHint": "扩展思考预算：off、low、medium、high、xhigh、adaptive。",
       "maxTokensField": "Max Tokens 字段名",
       "maxTokensFieldHint": "覆盖请求中 max_tokens 的字段名，例如 max_completion_tokens。",
+      "toolSchemaTransform": "工具 Schema 转换",
+      "toolSchemaTransformHint": "可选的工具 JSON Schema 兼容性转换。留空表示保持原生行为。当前支持值：simple。",
       "extraBody": "Extra Body",
       "extraBodyHint": "要注入到请求体中的额外 JSON 字段，例如 {\"reasoning_split\": true}。",
       "customHeaders": "Custom Headers",

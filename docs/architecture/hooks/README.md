@@ -13,7 +13,7 @@ The repository no longer ships standalone example source files. The Go and Pytho
 
 | Type | Interface | Stage | Can modify data |
 | --- | --- | --- | --- |
-| Observer | `EventObserver` | EventBus broadcast | No |
+| Observer | `RuntimeEventObserver` | Runtime event bus broadcast | No |
 | LLM interceptor | `LLMInterceptor` | `before_llm` / `after_llm` | Yes |
 | Tool interceptor | `ToolInterceptor` | `before_tool` / `after_tool` | Yes |
 | Tool approver | `ToolApprover` | `approve_tool` | No, returns allow/deny |
@@ -136,9 +136,9 @@ Example:
           "/tmp/review_gate.py"
         ],
         "observe": [
-          "tool_exec_start",
-          "tool_exec_end",
-          "tool_exec_skipped"
+          "agent.tool.exec_start",
+          "agent.tool.exec_end",
+          "agent.tool.exec_skipped"
         ],
         "intercept": [
           "before_tool",
@@ -174,7 +174,7 @@ Both examples are intentionally safe: they only log, never rewrite, and never de
 
 The following is a minimal logging hook for in-process use. It implements:
 
-1. `EventObserver`
+1. `RuntimeEventObserver`
 2. `LLMInterceptor`
 3. `ToolInterceptor`
 4. `ToolApprover`
@@ -196,6 +196,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/agent"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
@@ -217,12 +218,12 @@ func NewExampleLoggerHook(opts ExampleLoggerHookOptions) *ExampleLoggerHook {
 	}
 }
 
-func (h *ExampleLoggerHook) OnEvent(ctx context.Context, evt agent.Event) error {
+func (h *ExampleLoggerHook) OnRuntimeEvent(ctx context.Context, evt runtimeevents.Event) error {
 	_ = ctx
 	if h == nil || !h.logEvents {
 		return nil
 	}
-	h.record("event", evt.Meta, map[string]any{
+	h.record("event", evt.Scope, map[string]any{
 		"event":   evt.Kind.String(),
 		"payload": evt.Payload,
 	}, nil)
@@ -275,7 +276,7 @@ func (h *ExampleLoggerHook) ApproveTool(
 	return decision, nil
 }
 
-func (h *ExampleLoggerHook) record(stage string, meta agent.EventMeta, payload any, decision any) {
+func (h *ExampleLoggerHook) record(stage string, refs any, payload any, decision any) {
 	logger.InfoCF("hooks", "Example hook observed", map[string]any{
 		"stage": stage,
 	})
@@ -286,7 +287,7 @@ func (h *ExampleLoggerHook) record(stage string, meta agent.EventMeta, payload a
 	entry := map[string]any{
 		"ts":       time.Now().UTC(),
 		"stage":    stage,
-		"meta":     meta,
+		"refs":     refs,
 		"payload":  payload,
 		"decision": decision,
 	}
@@ -428,7 +429,7 @@ If you only see `before_llm` and `after_llm`, that usually means the request did
 The following script is a minimal process-hook example. It uses only the Python standard library and supports:
 
 1. `hook.hello`
-2. `hook.event`
+2. `hook.runtime_event`
 3. `hook.before_tool`
 4. `hook.approve_tool`
 
@@ -564,8 +565,8 @@ def main() -> int:
             })
 
             if not message_id:
-                if method == "hook.event" and LOG_EVENTS:
-                    log_stderr(f"observed event: {params.get('Kind')}")
+                if method == "hook.runtime_event" and LOG_EVENTS:
+                    log_stderr(f"observed event: {params.get('kind')}")
                 continue
 
             try:
@@ -606,9 +607,9 @@ if __name__ == "__main__":
           "/abs/path/to/review_gate.py"
         ],
         "observe": [
-          "tool_exec_start",
-          "tool_exec_end",
-          "tool_exec_skipped"
+          "agent.tool.exec_start",
+          "agent.tool.exec_end",
+          "agent.tool.exec_skipped"
         ],
         "intercept": [
           "before_tool",
@@ -626,7 +627,7 @@ if __name__ == "__main__":
 ### Environment Variables
 
 - `PICOCLAW_HOOK_LOG_EVENTS`
-  Whether to write `hook.event` summaries to `stderr`, enabled by default
+  Whether to write `hook.runtime_event` summaries to `stderr`, enabled by default
 - `PICOCLAW_HOOK_LOG_FILE`
   Path to an external log file. When set, the script appends inbound hook requests, notifications, and outbound responses as JSON Lines
 
@@ -645,7 +646,7 @@ Typical interpretation:
 
 - Only `hook.hello`
   The process started and completed the handshake, but no business hook request has arrived yet
-- `hook.event`
+- `hook.runtime_event`
   The `observe` configuration is working
 - `hook.before_tool`
   The `intercept: ["before_tool", ...]` configuration is working
@@ -664,7 +665,7 @@ A complete sample:
 ```json
 {"ts":"2026-03-21T14:12:00+00:00","direction":"in","id":1,"method":"hook.hello","params":{"name":"py_review_gate","version":1,"modes":["observe","tool","approve"]},"notification":false}
 {"ts":"2026-03-21T14:12:00+00:00","direction":"out","id":1,"response":{"ok":true,"name":"python-review-gate"},"error":null}
-{"ts":"2026-03-21T14:12:05+00:00","direction":"in","id":0,"method":"hook.event","params":{"Kind":"tool_exec_start"},"notification":true}
+{"ts":"2026-03-21T14:12:05+00:00","direction":"in","id":0,"method":"hook.runtime_event","params":{"kind":"agent.tool.exec_start"},"notification":true}
 {"ts":"2026-03-21T14:12:05+00:00","direction":"in","id":7,"method":"hook.before_tool","params":{"tool":"echo_text","arguments":{"text":"hello"}},"notification":false}
 {"ts":"2026-03-21T14:12:05+00:00","direction":"out","id":7,"response":{"action":"continue"},"error":null}
 ```
@@ -672,7 +673,7 @@ A complete sample:
 Additional notes:
 
 - Timestamps are UTC
-- `notification=true` means it was a notification such as `hook.event`, which does not expect a response
+- `notification=true` means it was a notification such as `hook.runtime_event`, which does not expect a response
 - `id` increases within a single hook process; if the process restarts, the counter starts over
 
 ## Process-Hook Protocol
@@ -681,7 +682,7 @@ Current process hooks use `JSON-RPC over stdio`:
 
 - PicoClaw starts the external process
 - Requests and responses are exchanged as one JSON message per line
-- `hook.event` is a notification and does not need a response
+- `hook.runtime_event` is a notification and does not need a response
 - `hook.before_llm`, `hook.after_llm`, `hook.before_tool`, `hook.after_tool`, and `hook.approve_tool` are request/response calls
 
 The host does not currently accept new RPCs initiated by the process hook. In practice, that means an external hook can only respond to PicoClaw calls; it cannot call back into the host to send channel messages.

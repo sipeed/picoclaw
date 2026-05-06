@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
@@ -41,7 +42,7 @@ func (m *legacyContextManager) Compact(_ context.Context, req *CompactRequest) e
 		// Sync emergency compression — budget exceeded.
 		if result, ok := m.forceCompression(req.SessionKey); ok {
 			m.al.emitEvent(
-				EventKindContextCompress,
+				runtimeevents.KindAgentContextCompress,
 				m.al.newTurnEventScope("", req.SessionKey, nil).meta(0, "forceCompression", "turn.context.compress"),
 				ContextCompressPayload{
 					Reason:            req.Reason,
@@ -246,7 +247,7 @@ func (m *legacyContextManager) summarizeSession(agent *AgentInstance, sessionKey
 		agent.Sessions.TruncateHistory(sessionKey, keepCount)
 		agent.Sessions.Save(sessionKey)
 		m.al.emitEvent(
-			EventKindSessionSummarize,
+			runtimeevents.KindAgentSessionSummarize,
 			m.al.newTurnEventScope(agent.ID, sessionKey, nil).meta(0, "summarizeSession", "turn.session.summarize"),
 			SessionSummarizePayload{
 				SummarizedMessages: len(validMessages),
