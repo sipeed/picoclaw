@@ -135,8 +135,8 @@ type toolFeedbackMessageCleaner interface {
 	DismissToolFeedbackMessage(ctx context.Context, chatID string)
 }
 
-type toolFeedbackMessageTargetResolver interface {
-	ToolFeedbackMessageChatID(chatID string, outboundCtx *bus.InboundContext) string
+type outboundTargetResolver interface {
+	ResolveOutboundChatID(chatID string, outboundCtx *bus.InboundContext) string
 }
 
 type toolFeedbackMessageContentPreparer interface {
@@ -153,6 +153,10 @@ func outboundMessageChannel(msg bus.OutboundMessage) string {
 
 func outboundMessageChatID(msg bus.OutboundMessage) string {
 	return msg.ChatID
+}
+
+func resolvedOutboundMessageChatID(ch Channel, msg bus.OutboundMessage) string {
+	return resolveOutboundChatID(ch, outboundMessageChatID(msg), &msg.Context)
 }
 
 func outboundMessageIsToolFeedback(msg bus.OutboundMessage) bool {
@@ -178,9 +182,22 @@ func outboundMediaChatID(msg bus.OutboundMediaMessage) string {
 	return msg.ChatID
 }
 
-func trackedToolFeedbackMessageChatID(ch Channel, chatID string, outboundCtx *bus.InboundContext) string {
-	if resolver, ok := ch.(toolFeedbackMessageTargetResolver); ok {
-		if resolved := strings.TrimSpace(resolver.ToolFeedbackMessageChatID(chatID, outboundCtx)); resolved != "" {
+func resolvedOutboundMediaChatID(ch Channel, msg bus.OutboundMediaMessage) string {
+	return resolveOutboundChatID(ch, outboundMediaChatID(msg), &msg.Context)
+}
+
+func candidateChatIDs(raw, resolved string) []string {
+	raw = strings.TrimSpace(raw)
+	resolved = strings.TrimSpace(resolved)
+	if raw == "" || raw == resolved {
+		return []string{resolved}
+	}
+	return []string{resolved, raw}
+}
+
+func resolveOutboundChatID(ch Channel, chatID string, outboundCtx *bus.InboundContext) string {
+	if resolver, ok := ch.(outboundTargetResolver); ok {
+		if resolved := strings.TrimSpace(resolver.ResolveOutboundChatID(chatID, outboundCtx)); resolved != "" {
 			return resolved
 		}
 	}
@@ -193,7 +210,7 @@ func dismissTrackedToolFeedbackMessage(
 	chatID string,
 	outboundCtx *bus.InboundContext,
 ) {
-	trackedChatID := trackedToolFeedbackMessageChatID(ch, chatID, outboundCtx)
+	trackedChatID := resolveOutboundChatID(ch, chatID, outboundCtx)
 	if trackedChatID == "" {
 		return
 	}
@@ -211,7 +228,7 @@ func clearTrackedToolFeedbackMessage(
 	chatID string,
 	outboundCtx *bus.InboundContext,
 ) {
-	trackedChatID := trackedToolFeedbackMessageChatID(ch, chatID, outboundCtx)
+	trackedChatID := resolveOutboundChatID(ch, chatID, outboundCtx)
 	if trackedChatID == "" {
 		return
 	}
@@ -320,18 +337,23 @@ func (m *Manager) RecordReactionUndo(channel, chatID string, undo func()) {
 func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMessage, ch Channel) ([]string, bool) {
 	chatID := outboundMessageChatID(msg)
 	key := name + ":" + chatID
+	cleanupChatIDs := candidateChatIDs(chatID, resolvedOutboundMessageChatID(ch, msg))
 
 	// 1. Stop typing
-	if v, loaded := m.typingStops.LoadAndDelete(key); loaded {
-		if entry, ok := v.(typingEntry); ok {
-			entry.stop() // idempotent, safe
+	for _, cleanupChatID := range cleanupChatIDs {
+		if v, loaded := m.typingStops.LoadAndDelete(name + ":" + cleanupChatID); loaded {
+			if entry, ok := v.(typingEntry); ok {
+				entry.stop() // idempotent, safe
+			}
 		}
 	}
 
 	// 2. Undo reaction
-	if v, loaded := m.reactionUndos.LoadAndDelete(key); loaded {
-		if entry, ok := v.(reactionEntry); ok {
-			entry.undo() // idempotent, safe
+	for _, cleanupChatID := range cleanupChatIDs {
+		if v, loaded := m.reactionUndos.LoadAndDelete(name + ":" + cleanupChatID); loaded {
+			if entry, ok := v.(reactionEntry); ok {
+				entry.undo() // idempotent, safe
+			}
 		}
 	}
 
@@ -397,7 +419,7 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 					content = InitialAnimatedToolFeedbackContent(trackedContent)
 				}
 				if err := editor.EditMessage(ctx, chatID, entry.id, content); err == nil {
-					trackedChatID := trackedToolFeedbackMessageChatID(ch, chatID, &msg.Context)
+					trackedChatID := resolveOutboundChatID(ch, chatID, &msg.Context)
 					if tracker, ok := ch.(toolFeedbackMessageTracker); ok && isToolFeedback {
 						tracker.RecordToolFeedbackMessage(trackedChatID, entry.id, trackedContent)
 					} else if !isToolFeedback {
@@ -420,18 +442,23 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 func (m *Manager) preSendMedia(ctx context.Context, name string, msg bus.OutboundMediaMessage, ch Channel) {
 	chatID := outboundMediaChatID(msg)
 	key := name + ":" + chatID
+	cleanupChatIDs := candidateChatIDs(chatID, resolvedOutboundMediaChatID(ch, msg))
 
 	// 1. Stop typing
-	if v, loaded := m.typingStops.LoadAndDelete(key); loaded {
-		if entry, ok := v.(typingEntry); ok {
-			entry.stop() // idempotent, safe
+	for _, cleanupChatID := range cleanupChatIDs {
+		if v, loaded := m.typingStops.LoadAndDelete(name + ":" + cleanupChatID); loaded {
+			if entry, ok := v.(typingEntry); ok {
+				entry.stop() // idempotent, safe
+			}
 		}
 	}
 
 	// 2. Undo reaction
-	if v, loaded := m.reactionUndos.LoadAndDelete(key); loaded {
-		if entry, ok := v.(reactionEntry); ok {
-			entry.undo() // idempotent, safe
+	for _, cleanupChatID := range cleanupChatIDs {
+		if v, loaded := m.reactionUndos.LoadAndDelete(name + ":" + cleanupChatID); loaded {
+			if entry, ok := v.(reactionEntry); ok {
+				entry.undo() // idempotent, safe
+			}
 		}
 	}
 

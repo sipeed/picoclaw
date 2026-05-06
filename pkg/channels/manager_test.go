@@ -130,7 +130,7 @@ func (m *mockStreamingChannel) BeginStream(context.Context, string) (Streamer, e
 	return m.streamer, nil
 }
 
-func (m *mockStreamingChannel) ToolFeedbackMessageChatID(
+func (m *mockStreamingChannel) ResolveOutboundChatID(
 	chatID string,
 	outboundCtx *bus.InboundContext,
 ) string {
@@ -948,7 +948,7 @@ func (m *mockDeletingMessageEditor) DeleteMessage(_ context.Context, chatID, mes
 	return nil
 }
 
-func (m *mockResolvedToolFeedbackEditor) ToolFeedbackMessageChatID(
+func (m *mockResolvedToolFeedbackEditor) ResolveOutboundChatID(
 	chatID string,
 	outboundCtx *bus.InboundContext,
 ) string {
@@ -1898,6 +1898,40 @@ func TestPreSend_TypingStopCalled(t *testing.T) {
 
 	if !stopCalled {
 		t.Fatal("expected typing stop func to be called")
+	}
+}
+
+func TestPreSend_TypingStopUsesResolvedChatID(t *testing.T) {
+	m := newTestManager()
+	var stopCalled bool
+
+	ch := &mockResolvedToolFeedbackEditor{
+		resolveChatIDFn: func(chatID string, outboundCtx *bus.InboundContext) string {
+			if outboundCtx == nil || outboundCtx.TopicID != "42" {
+				return chatID
+			}
+			return chatID + "/" + outboundCtx.TopicID
+		},
+	}
+
+	m.RecordTypingStop("test", "123/42", func() {
+		stopCalled = true
+	})
+
+	msg := testOutboundMessage(bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "123",
+		Content: "hello",
+		Context: bus.InboundContext{
+			Channel: "test",
+			ChatID:  "123",
+			TopicID: "42",
+		},
+	})
+	m.preSend(context.Background(), "test", msg, ch)
+
+	if !stopCalled {
+		t.Fatal("expected typing stop func to be called for resolved topic chat ID")
 	}
 }
 
