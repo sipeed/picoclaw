@@ -88,7 +88,8 @@ toolLoop:
 							tc,
 							messages,
 						)
-						feedbackMsg := utils.FormatToolFeedbackMessage(
+						feedbackMsg := utils.FormatToolFeedbackMessageWithStyle(
+							al.cfg.Agents.Defaults.GetToolFeedbackStyle(),
 							toolName,
 							toolFeedbackExplanation,
 							toolFeedbackArgsPreview(toolArgs, toolFeedbackMaxLen),
@@ -369,7 +370,8 @@ toolLoop:
 				tc,
 				messages,
 			)
-			feedbackMsg := utils.FormatToolFeedbackMessage(
+			feedbackMsg := utils.FormatToolFeedbackMessageWithStyle(
+				al.cfg.Agents.Defaults.GetToolFeedbackStyle(),
 				toolName,
 				toolFeedbackExplanation,
 				toolFeedbackArgsPreview(toolArgs, toolFeedbackMaxLen),

@@ -790,6 +790,9 @@ func TestDefaultConfig_ToolFeedbackDisabled(t *testing.T) {
 	if cfg.Agents.Defaults.ToolFeedback.SeparateMessages {
 		t.Fatal("DefaultConfig().Agents.Defaults.ToolFeedback.SeparateMessages should be false")
 	}
+	if got := cfg.Agents.Defaults.GetToolFeedbackStyle(); got != "" {
+		t.Fatalf("DefaultConfig().Agents.Defaults.GetToolFeedbackStyle() = %q, want empty/raw default", got)
+	}
 }
 
 func TestLoadConfig_ToolFeedbackDefaultsFalseWhenUnset(t *testing.T) {
@@ -812,6 +815,29 @@ func TestLoadConfig_ToolFeedbackDefaultsFalseWhenUnset(t *testing.T) {
 	}
 	if cfg.Agents.Defaults.ToolFeedback.SeparateMessages {
 		t.Fatal("agents.defaults.tool_feedback.separate_messages should remain false when unset in config file")
+	}
+	if got := cfg.Agents.Defaults.GetToolFeedbackStyle(); got != "" {
+		t.Fatalf("agents.defaults.tool_feedback.style = %q, want empty/raw default when unset", got)
+	}
+}
+
+func TestLoadConfig_ToolFeedbackStyle(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(
+		configPath,
+		[]byte(`{"version":1,"agents":{"defaults":{"tool_feedback":{"enabled":true,"style":"working_summary"}}}}`),
+		0o600,
+	); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if got := cfg.Agents.Defaults.GetToolFeedbackStyle(); got != "working_summary" {
+		t.Fatalf("agents.defaults.tool_feedback.style = %q, want working_summary", got)
 	}
 }
 

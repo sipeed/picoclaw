@@ -249,9 +249,10 @@ type SubTurnConfig struct {
 }
 
 type ToolFeedbackConfig struct {
-	Enabled          bool `json:"enabled"           env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED"`
-	MaxArgsLength    int  `json:"max_args_length"   env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH"`
-	SeparateMessages bool `json:"separate_messages" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_SEPARATE_MESSAGES"`
+	Enabled          bool   `json:"enabled"           env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED"`
+	MaxArgsLength    int    `json:"max_args_length"   env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH"`
+	SeparateMessages bool   `json:"separate_messages" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_SEPARATE_MESSAGES"`
+	Style            string `json:"style,omitempty"  env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_STYLE"`
 }
 
 type AgentDefaults struct {
@@ -309,6 +310,10 @@ func (d *AgentDefaults) IsToolFeedbackEnabled() bool {
 // in-place progress message.
 func (d *AgentDefaults) IsToolFeedbackSeparateMessagesEnabled() bool {
 	return d.ToolFeedback.SeparateMessages
+}
+
+func (d *AgentDefaults) GetToolFeedbackStyle() string {
+	return strings.TrimSpace(d.ToolFeedback.Style)
 }
 
 // GetModelName returns the effective model name for the agent defaults.

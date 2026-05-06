@@ -441,6 +441,20 @@ func TestFitToolFeedbackForTelegram_ReservesAnimationFrame(t *testing.T) {
 	}
 }
 
+func TestParseContent_WorkingSummaryToolNamesStayCode(t *testing.T) {
+	content := "Working...\n• tool: `inventorydb__get_location`"
+
+	htmlContent := parseContent(content, false)
+	if !strings.Contains(htmlContent, "<code>inventorydb__get_location</code>") {
+		t.Fatalf("parseContent() HTML = %q, want tool name code span", htmlContent)
+	}
+
+	markdownV2Content := parseContent(content, true)
+	if !strings.Contains(markdownV2Content, "`inventorydb__get_location`") {
+		t.Fatalf("parseContent() MarkdownV2 = %q, want tool name code span", markdownV2Content)
+	}
+}
+
 func TestSend_LongMessage_SingleCall(t *testing.T) {
 	// With WithMaxMessageLength(4000), the Manager pre-splits messages before
 	// they reach Send(). A message at exactly 4000 chars should go through

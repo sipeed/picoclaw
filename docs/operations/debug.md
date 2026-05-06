@@ -66,7 +66,8 @@ Debug logs are server-side only. If you want the agent to send a visible notific
       "tool_feedback": {
         "enabled": true,
         "max_args_length": 300,
-        "separate_messages": true
+        "separate_messages": true,
+        "style": "raw"
       }
     }
   }
@@ -80,6 +81,39 @@ When `enabled` is `true`, every tool call sends a short message to the chat befo
 {"query": "picoclaw release notes"}
 ```
 
+Set `style` to `working_summary` to use a compact, non-argument progress message that can be edited in place as tools run:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "tool_feedback": {
+        "enabled": true,
+        "separate_messages": false,
+        "style": "working_summary"
+      }
+    }
+  }
+}
+```
+
+The message starts as:
+
+```text
+Working...
+• tool: `read_file` — `README.md`
+```
+
+When more tools run, editable channels merge recent tool lines into the same progress message:
+
+```text
+Working...
+• tool: `read_file` — `README.md`
+• tool: `exec` — `test.sh`
+• tool: `write_file` — `config.json`
+```
+
+The `working_summary` style intentionally does not show raw tool arguments, explanations, URLs, command arguments, environment variables, or full paths. It only shows the tool name plus a safe basename for file tools and executable commands where available. This keeps progress visible without exposing secrets in chat history.
 
 ### Options
 
@@ -88,14 +122,17 @@ When `enabled` is `true`, every tool call sends a short message to the chat befo
 | `enabled` | bool | `false` | Send a chat notification for each tool call |
 | `separate_messages` | bool | `false` | Keep every tool feedback update as a separate chat message instead of reusing a single placeholder/progress message |
 | `max_args_length` | int | `300` | Maximum characters of the serialised arguments included in the notification |
+| `style` | string | `raw` | Feedback format. Use `raw` for the original tool/explanation/argument preview, or `working_summary` for compact progress lines without raw arguments |
 
 ### Environment variables
 
-Both fields can also be set via environment variables:
+These fields can also be set via environment variables:
 
 ```bash
 PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED=true
 PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH=300
+PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_SEPARATE_MESSAGES=false
+PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_STYLE=working_summary
 ```
 
 > **Note:** `tool_feedback` is independent of `--debug` mode. It works in production and does not require the gateway to be started with any special flag.
