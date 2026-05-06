@@ -193,6 +193,12 @@ var toolCatalog = []toolCatalogEntry{
 		Category:    "discovery",
 		ConfigKey:   "mcp.discovery.use_bm25",
 	},
+	{
+		Name:        "request_permission",
+		Description: "Request user permission for accessing paths outside workspace.",
+		Category:    "system",
+		ConfigKey:   "request_permission",
+	},
 }
 
 func (h *Handler) registerToolRoutes(mux *http.ServeMux) {

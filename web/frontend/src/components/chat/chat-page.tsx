@@ -369,18 +369,6 @@ export function ChatPage() {
             />
           )}
 
-          {permissionRequest && (
-            <div className="flex w-full">
-              <PermissionPrompt
-                toolName={permissionRequest.toolName}
-                path={permissionRequest.path}
-                originalCommand={permissionRequest.originalCommand}
-                onPermissionGranted={handlePermissionGranted}
-                onPermissionDenied={handlePermissionDenied}
-              />
-            </div>
-          )}
-
           {messages.map((msg) => {
             if (
               !showAssistantDetails &&
@@ -420,6 +408,18 @@ export function ChatPage() {
         className="hidden"
         onChange={handleImageSelection}
       />
+
+      {permissionRequest && (
+        <div className="px-4 pb-2">
+          <PermissionPrompt
+            toolName={permissionRequest.toolName}
+            path={permissionRequest.path}
+            originalCommand={permissionRequest.originalCommand}
+            onPermissionGranted={handlePermissionGranted}
+            onPermissionDenied={handlePermissionDenied}
+          />
+        </div>
+      )}
 
       <ChatComposer
         input={input}
