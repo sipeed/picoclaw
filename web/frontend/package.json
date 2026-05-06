@@ -21,7 +21,7 @@
     "@tabler/icons-react": "^3.40.0",
     "@tailwindcss/vite": "^4.2.2",
     "@tanstack/react-query": "^5.99.0",
-    "@tanstack/react-router": "^1.168.23",
+    "@tanstack/react-router": "^1.169.2",
     "@tanstack/react-router-devtools": "^1.166.13",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
