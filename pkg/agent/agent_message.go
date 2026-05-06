@@ -44,6 +44,21 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 	ctx context.Context,
 	content, sessionKey, channel, chatID string,
 ) (string, error) {
+	return al.processDirectWithChannel(ctx, content, sessionKey, channel, chatID, false)
+}
+
+func (al *AgentLoop) ProcessScheduledWithChannel(
+	ctx context.Context,
+	content, sessionKey, channel, chatID string,
+) (string, error) {
+	return al.processDirectWithChannel(ctx, content, sessionKey, channel, chatID, true)
+}
+
+func (al *AgentLoop) processDirectWithChannel(
+	ctx context.Context,
+	content, sessionKey, channel, chatID string,
+	scheduled bool,
+) (string, error) {
 	if err := al.ensureHooksInitialized(ctx); err != nil {
 		return "", err
 	}
@@ -61,8 +76,46 @@ func (al *AgentLoop) ProcessDirectWithChannel(
 		Content:    content,
 		SessionKey: sessionKey,
 	}
+	if scheduled {
+		return al.processScheduledMessage(ctx, msg)
+	}
 
 	return al.processMessage(ctx, msg)
+}
+
+func (al *AgentLoop) processScheduledMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+	msg = bus.NormalizeInboundMessage(msg)
+	route, agent, routeErr := al.resolveMessageRoute(msg)
+	if routeErr != nil {
+		return "", routeErr
+	}
+	allocation := al.allocateRouteSession(route, msg)
+	sessionKey := resolveScopeKey(allocation.SessionKey, msg.SessionKey)
+
+	if tool, ok := agent.Tools.Get("message"); ok {
+		if resetter, ok := tool.(interface{ ResetSentInRound(sessionKey string) }); ok {
+			resetter.ResetSentInRound(sessionKey)
+		}
+	}
+
+	return al.runAgentLoop(ctx, agent, processOptions{
+		Dispatch: DispatchRequest{
+			SessionKey:     sessionKey,
+			SessionAliases: buildSessionAliases(sessionKey, append(allocation.SessionAliases, msg.SessionKey)...),
+			InboundContext: cloneInboundContext(&msg.Context),
+			RouteResult:    cloneResolvedRoute(&route),
+			SessionScope:   session.CloneScope(&allocation.Scope),
+			UserMessage:    msg.Content,
+			Media:          append([]string(nil), msg.Media...),
+		},
+		SenderID:             msg.SenderID,
+		SenderDisplayName:    msg.Sender.DisplayName,
+		DefaultResponse:      defaultResponse,
+		EnableSummary:        false,
+		SendResponse:         false,
+		SuppressToolFeedback: true,
+		NoHistory:            true,
+	})
 }
 
 func (al *AgentLoop) ProcessHeartbeat(
