@@ -4,9 +4,16 @@ REM Usage: scripts\build-without-make.bat
 
 SETLOCAL ENABLEEXTENSIONS
 
-SET "REPO_ROOT=%~dp0.."
-SET "REPO_ROOT=%REPO_ROOT:~0,-1%"
 SET "GO_TAGS=goolm,stdjson"
+
+REM Resolve the repository root directory from the script location.
+PUSHD "%~dp0.."
+IF ERRORLEVEL 1 (
+    echo ERROR: Failed to resolve repository root from "%~dp0..".
+    EXIT /B 1
+)
+SET "REPO_ROOT=%CD%"
+POPD
 
 REM Ensure Go is available
 where go >nul 2>&1
@@ -57,14 +64,14 @@ IF ERRORLEVEL 1 (
     POPD
     EXIT /B 1
 )
-pnpm install --frozen-lockfile
+CALL pnpm install --frozen-lockfile
 IF ERRORLEVEL 1 (
     echo ERROR: pnpm install failed.
     POPD
     POPD
     EXIT /B 1
 )
-pnpm build:backend
+CALL pnpm build:backend
 IF ERRORLEVEL 1 (
     echo ERROR: pnpm build:backend failed.
     POPD

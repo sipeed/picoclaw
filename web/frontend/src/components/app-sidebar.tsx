@@ -3,6 +3,7 @@ import {
   IconAtom,
   IconChevronsDown,
   IconChevronsUp,
+  IconCpu,
   IconKey,
   IconListDetails,
   IconMessageCircle,
@@ -132,6 +133,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       {
         ...baseNavGroups[2],
         items: [
+          {
+            title: "Agent Cockpit",
+            url: "/agent/cockpit",
+            icon: IconCpu,
+            translateTitle: false,
+          },
           {
             title: "navigation.hub",
             url: "/agent/hub",

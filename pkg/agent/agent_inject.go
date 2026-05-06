@@ -119,3 +119,29 @@ func (al *AgentLoop) GetStartupInfo() map[string]any {
 
 	return info
 }
+
+func (al *AgentLoop) GetMainSubagentTasks(channel, chatID string) []tools.SubagentTask {
+	al.mu.RLock()
+	manager := al.subagents
+	al.mu.RUnlock()
+	if manager == nil {
+		return nil
+	}
+
+	all := manager.ListTaskCopies()
+	if channel == "" && chatID == "" {
+		return all
+	}
+
+	filtered := make([]tools.SubagentTask, 0, len(all))
+	for _, task := range all {
+		if channel != "" && task.OriginChannel != "" && task.OriginChannel != channel {
+			continue
+		}
+		if chatID != "" && task.OriginChatID != "" && task.OriginChatID != chatID {
+			continue
+		}
+		filtered = append(filtered, task)
+	}
+	return filtered
+}
