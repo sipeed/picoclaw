@@ -345,7 +345,8 @@
       "selectAll": "Select All",
       "deselectAll": "Deselect All",
       "addSelected": "Add {{count}} Selected",
-      "addSuccess": "Added {{count}} model(s) to configuration."
+      "addSuccess": "Added {{count}} model(s) to configuration.",
+      "needApiKey": "These models require an API key. You'll need to configure credentials after import."
     },
     "test": {
       "title": "Test Model Connectivity",

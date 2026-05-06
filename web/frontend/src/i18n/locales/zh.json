@@ -347,7 +347,8 @@
       "selectAll": "全选",
       "deselectAll": "取消全选",
       "addSelected": "添加 {{count}} 个选中模型",
-      "addSuccess": "已添加 {{count}} 个模型到配置中。"
+      "addSuccess": "已添加 {{count}} 个模型到配置中。",
+      "needApiKey": "这些模型需要 API Key。导入后需要配置凭证才能使用。"
     },
     "test": {
       "title": "测试模型连通性",

@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input"
 import { refreshGatewayState } from "@/store/gateway"
 
 import { getProviderLabel } from "./provider-label"
+import { PROVIDER_MAP } from "./provider-registry"
 
 interface CatalogDialogProps {
   open: boolean
@@ -89,7 +90,9 @@ export function CatalogDialog({
       const next = new Map(prev)
       const current = next.get(catalogId) || new Set()
       const filtered = filter
-        ? models.filter((m) => m.id.toLowerCase().includes(filter.toLowerCase()))
+        ? models.filter((m) =>
+            m.id.toLowerCase().includes(filter.toLowerCase()),
+          )
         : models
       if (filtered.every((m) => current.has(m.id))) {
         next.set(catalogId, new Set())
@@ -159,14 +162,14 @@ export function CatalogDialog({
 
         <div className="space-y-3">
           {loading && (
-            <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground">
+            <div className="text-muted-foreground flex items-center justify-center gap-2 py-8">
               <IconLoader2 className="size-5 animate-spin" />
               <span>{t("models.catalog.loading")}</span>
             </div>
           )}
 
           {!loading && entries.length === 0 && (
-            <div className="py-8 text-center text-sm text-muted-foreground">
+            <div className="text-muted-foreground py-8 text-center text-sm">
               {t("models.catalog.empty")}
             </div>
           )}
@@ -189,27 +192,27 @@ export function CatalogDialog({
               return (
                 <div
                   key={entry.id}
-                  className="rounded-lg border bg-card text-card-foreground"
+                  className="bg-card text-card-foreground rounded-lg border"
                 >
                   <div
-                    className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-accent/50"
+                    className="hover:bg-accent/50 flex cursor-pointer items-center gap-3 px-3 py-2.5"
                     onClick={() => toggleExpand(entry.id)}
                   >
                     {isExpanded ? (
-                      <IconChevronDown className="size-4 shrink-0 text-muted-foreground" />
+                      <IconChevronDown className="text-muted-foreground size-4 shrink-0" />
                     ) : (
-                      <IconChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                      <IconChevronRight className="text-muted-foreground size-4 shrink-0" />
                     )}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium">
                           {getProviderLabel(entry.provider)}
                         </span>
-                        <span className="font-mono text-xs text-muted-foreground">
+                        <span className="text-muted-foreground font-mono text-xs">
                           {entry.api_key_mask}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <div className="text-muted-foreground flex items-center gap-2 text-xs">
                         <span>
                           {entry.models.length} {t("models.catalog.models")}
                         </span>
@@ -234,7 +237,7 @@ export function CatalogDialog({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="size-7 text-destructive"
+                        className="text-destructive size-7"
                         onClick={(e) => {
                           e.stopPropagation()
                           handleDelete(entry.id)
@@ -248,7 +251,7 @@ export function CatalogDialog({
 
                   {isExpanded && (
                     <div className="border-t px-3 py-2">
-                      <div className="mb-1.5 flex items-center justify-between text-xs text-muted-foreground">
+                      <div className="text-muted-foreground mb-1.5 flex items-center justify-between text-xs">
                         <span>
                           {t("models.catalog.found", {
                             count: filteredModels.length,
@@ -259,9 +262,7 @@ export function CatalogDialog({
                           onClick={() => toggleAll(entry.id, entry.models)}
                           className="text-primary hover:underline"
                         >
-                          {filteredModels.every((m) =>
-                            entrySelected.has(m.id),
-                          )
+                          {filteredModels.every((m) => entrySelected.has(m.id))
                             ? t("models.catalog.deselectAll")
                             : t("models.catalog.selectAll")}
                         </button>
@@ -270,7 +271,7 @@ export function CatalogDialog({
                         {filteredModels.map((m) => (
                           <label
                             key={m.id}
-                            className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-sm hover:bg-accent"
+                            className="hover:bg-accent flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-sm"
                           >
                             <input
                               type="checkbox"
@@ -280,7 +281,7 @@ export function CatalogDialog({
                             />
                             <span className="font-mono text-xs">{m.id}</span>
                             {m.owned_by && (
-                              <span className="ml-auto text-xs text-muted-foreground">
+                              <span className="text-muted-foreground ml-auto text-xs">
                                 {m.owned_by}
                               </span>
                             )}
@@ -288,19 +289,27 @@ export function CatalogDialog({
                         ))}
                       </div>
                       {entrySelected.size > 0 && (
-                        <div className="mt-2 flex justify-end">
-                          <Button
-                            size="sm"
-                            onClick={() => handleAddSelected(entry)}
-                            disabled={adding}
-                          >
-                            {adding && (
-                              <IconLoader2 className="mr-1 size-3 animate-spin" />
-                            )}
-                            {t("models.catalog.addSelected", {
-                              count: entrySelected.size,
-                            })}
-                          </Button>
+                        <div className="mt-2 space-y-2">
+                          {PROVIDER_MAP.get(entry.provider)?.requiresApiKey !==
+                            false && (
+                            <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-2 text-xs text-yellow-700 dark:text-yellow-400">
+                              {t("models.catalog.needApiKey")}
+                            </div>
+                          )}
+                          <div className="flex justify-end">
+                            <Button
+                              size="sm"
+                              onClick={() => handleAddSelected(entry)}
+                              disabled={adding}
+                            >
+                              {adding && (
+                                <IconLoader2 className="mr-1 size-3 animate-spin" />
+                              )}
+                              {t("models.catalog.addSelected", {
+                                count: entrySelected.size,
+                              })}
+                            </Button>
+                          </div>
                         </div>
                       )}
                     </div>
