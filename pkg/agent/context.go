@@ -22,11 +22,12 @@ import (
 )
 
 type ContextBuilder struct {
-	workspace      string
-	skillsLoader   *skills.SkillsLoader
-	memory         *MemoryStore
-	splitOnMarker  bool
-	promptRegistry *PromptRegistry
+	workspace        string
+	skillsLoader     *skills.SkillsLoader
+	memory           *MemoryStore
+	splitOnMarker    bool
+	skillCatalogCfg  config.SkillCatalogConfig
+	promptRegistry   *PromptRegistry
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -63,6 +64,11 @@ func (cb *ContextBuilder) WithToolDiscovery(useBM25, useRegex bool) *ContextBuil
 
 func (cb *ContextBuilder) WithSplitOnMarker(enabled bool) *ContextBuilder {
 	cb.splitOnMarker = enabled
+	return cb
+}
+
+func (cb *ContextBuilder) WithSkillCatalogConfig(cfg config.SkillCatalogConfig) *ContextBuilder {
+	cb.skillCatalogCfg = cfg
 	return cb
 }
 
@@ -690,16 +696,14 @@ func (cb *ContextBuilder) BuildMessagesFromPrompt(req PromptBuildRequest) []prov
 		}, &providers.CacheControl{Type: "ephemeral"}),
 	}
 
-	// Inject the skill catalog only when the LLM needs to (re)discover available skills:
-	//   - Turn 1: no history yet, LLM hasn't seen the catalog.
-	//   - After compaction: history was summarized; early turns (including the original
-	//     catalog injection) are gone, so the LLM must see it again.
-	// Skip it on tool-call continuations (mid-turn round-trips) and on ordinary
-	// subsequent turns where the catalog is already in the LLM's context window.
+	// Determine whether to inject the skill catalog.
+	// Both skip behaviours are opt-in via config (default: always include).
 	isToolContinuation := len(req.History) > 0 && req.History[len(req.History)-1].Role == "tool"
 	isFirstTurn := len(req.History) == 0
 	isAfterCompaction := req.Summary != ""
-	if !isToolContinuation && (isFirstTurn || isAfterCompaction) {
+	skipForTools := cb.skillCatalogCfg.SkipOnTools && isToolContinuation
+	skipForSubsequent := cb.skillCatalogCfg.SkipOnSubsequent && !isFirstTurn && !isAfterCompaction && !isToolContinuation
+	if !skipForTools && !skipForSubsequent {
 		if skillsSummary := cb.skillsLoader.BuildSkillsSummary(); skillsSummary != "" {
 			catalogPart := PromptPart{
 				ID:    "capability.skill_catalog",

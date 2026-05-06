@@ -254,6 +254,17 @@ type ToolFeedbackConfig struct {
 	SeparateMessages bool `json:"separate_messages" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_SEPARATE_MESSAGES"`
 }
 
+type SkillCatalogConfig struct {
+	// SkipOnTools omits the skill catalog from tool-call continuation requests
+	// (mid-turn LLM round-trips). The LLM already received the catalog on the
+	// initial turn request. Default false (catalog always included).
+	SkipOnTools bool `json:"skip_on_tools" env:"PICOCLAW_AGENTS_DEFAULTS_SKILL_CATALOG_SKIP_ON_TOOLS"`
+	// SkipOnSubsequent omits the skill catalog on turns after the first in a
+	// session. The catalog is still re-injected after context compaction.
+	// Default false (catalog always included).
+	SkipOnSubsequent bool `json:"skip_on_subsequent" env:"PICOCLAW_AGENTS_DEFAULTS_SKILL_CATALOG_SKIP_ON_SUBSEQUENT"`
+}
+
 type AgentDefaults struct {
 	Workspace                 string             `json:"workspace"                        env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
 	RestrictToWorkspace       bool               `json:"restrict_to_workspace"            env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
@@ -274,8 +285,9 @@ type AgentDefaults struct {
 	SteeringMode              string             `json:"steering_mode,omitempty"          env:"PICOCLAW_AGENTS_DEFAULTS_STEERING_MODE"`      // "one-at-a-time" (default) or "all"
 	MaxParallelTurns          int                `json:"max_parallel_turns,omitempty"     env:"PICOCLAW_AGENTS_DEFAULTS_MAX_PARALLEL_TURNS"` // Max concurrent turns (0 or 1 = sequential)
 	SubTurn                   SubTurnConfig      `json:"subturn"                                                                                      envPrefix:"PICOCLAW_AGENTS_DEFAULTS_SUBTURN_"`
-	ToolFeedback              ToolFeedbackConfig `json:"tool_feedback,omitempty"`
-	SplitOnMarker             bool               `json:"split_on_marker"                  env:"PICOCLAW_AGENTS_DEFAULTS_SPLIT_ON_MARKER"` // split messages on <|[SPLIT]|> marker
+	ToolFeedback              ToolFeedbackConfig  `json:"tool_feedback,omitempty"`
+	SplitOnMarker             bool                `json:"split_on_marker"                  env:"PICOCLAW_AGENTS_DEFAULTS_SPLIT_ON_MARKER"` // split messages on <|[SPLIT]|> marker
+	SkillCatalog              SkillCatalogConfig  `json:"skill_catalog,omitempty"`
 	ContextManager            string             `json:"context_manager,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_MANAGER"`
 	ContextManagerConfig      json.RawMessage    `json:"context_manager_config,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_MANAGER_CONFIG"`
 	MaxLLMRetries             int                `json:"max_llm_retries,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_LLM_RETRIES"`

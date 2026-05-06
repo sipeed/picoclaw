@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -614,15 +615,14 @@ description: delete-me-v1
 	}
 }
 
-// TestSkillCatalogInjectionPolicy verifies that the catalog is included only
-// when the LLM needs to (re)discover skills: turn 1 and after compaction.
+// TestSkillCatalogInjectionPolicy verifies catalog inclusion under various
+// config combinations.
 func TestSkillCatalogInjectionPolicy(t *testing.T) {
 	tmpDir := setupWorkspace(t, map[string]string{
 		"skills/demo/SKILL.md": "---\nname: demo\ndescription: \"demo skill\"\n---\n# Demo",
 	})
 	defer os.RemoveAll(tmpDir)
 
-	cb := NewContextBuilder(tmpDir)
 	userMsg := providers.Message{Role: "user", Content: "hello"}
 	assistantMsg := providers.Message{Role: "assistant", Content: "hi"}
 	toolMsg := providers.Message{Role: "tool", Content: "result", ToolCallID: "tc1"}
@@ -631,32 +631,90 @@ func TestSkillCatalogInjectionPolicy(t *testing.T) {
 		return strings.Contains(systemPromptFromMessages(msgs), "demo skill")
 	}
 
-	// Turn 1: no history — catalog must appear.
-	if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{})) {
-		t.Error("turn 1 (no history): catalog should be included")
+	newCB := func(skipOnTools, skipOnSubsequent bool) *ContextBuilder {
+		return NewContextBuilder(tmpDir).WithSkillCatalogConfig(config.SkillCatalogConfig{
+			SkipOnTools:      skipOnTools,
+			SkipOnSubsequent: skipOnSubsequent,
+		})
 	}
 
-	// Tool continuation: last message is a tool result — catalog must be skipped.
-	if contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
-		History: []providers.Message{userMsg, assistantMsg, toolMsg},
-	})) {
-		t.Error("tool continuation: catalog should be skipped")
-	}
+	t.Run("default (both false): catalog always included", func(t *testing.T) {
+		cb := newCB(false, false)
+		for _, req := range []PromptBuildRequest{
+			{},
+			{History: []providers.Message{userMsg, assistantMsg}},
+			{History: []providers.Message{userMsg, assistantMsg, toolMsg}},
+			{History: []providers.Message{userMsg, assistantMsg}, Summary: "summary"},
+		} {
+			if !contains(cb.BuildMessagesFromPrompt(req)) {
+				t.Error("catalog should always be included when both flags are false")
+			}
+		}
+	})
 
-	// Turn > 1, no compaction: catalog must be skipped.
-	if contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
-		History: []providers.Message{userMsg, assistantMsg},
-	})) {
-		t.Error("turn > 1, no summary: catalog should be skipped")
-	}
+	t.Run("skip_on_tools: skips tool continuations only", func(t *testing.T) {
+		cb := newCB(true, false)
+		if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{})) {
+			t.Error("turn 1: catalog should be included")
+		}
+		if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+			History: []providers.Message{userMsg, assistantMsg},
+		})) {
+			t.Error("turn > 1 (no tool): catalog should be included")
+		}
+		if contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+			History: []providers.Message{userMsg, assistantMsg, toolMsg},
+		})) {
+			t.Error("tool continuation: catalog should be skipped")
+		}
+	})
 
-	// After compaction (summary present): catalog must be re-injected.
-	if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
-		History: []providers.Message{userMsg, assistantMsg},
-		Summary: "prior conversation summary",
-	})) {
-		t.Error("after compaction (summary present): catalog should be re-injected")
-	}
+	t.Run("skip_on_subsequent: skips turns > 1, re-injects after compaction", func(t *testing.T) {
+		cb := newCB(false, true)
+		if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{})) {
+			t.Error("turn 1: catalog should be included")
+		}
+		if contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+			History: []providers.Message{userMsg, assistantMsg},
+		})) {
+			t.Error("turn > 1, no summary: catalog should be skipped")
+		}
+		if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+			History:  []providers.Message{userMsg, assistantMsg},
+			Summary:  "prior conversation summary",
+		})) {
+			t.Error("after compaction: catalog should be re-injected")
+		}
+		// tool continuation is NOT skipped when only skip_on_subsequent is set
+		if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+			History: []providers.Message{userMsg, assistantMsg, toolMsg},
+		})) {
+			t.Error("tool continuation (skip_on_subsequent only): catalog should be included")
+		}
+	})
+
+	t.Run("both true: skips tool turns and subsequent turns, re-injects after compaction", func(t *testing.T) {
+		cb := newCB(true, true)
+		if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{})) {
+			t.Error("turn 1: catalog should be included")
+		}
+		if contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+			History: []providers.Message{userMsg, assistantMsg, toolMsg},
+		})) {
+			t.Error("tool continuation: catalog should be skipped")
+		}
+		if contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+			History: []providers.Message{userMsg, assistantMsg},
+		})) {
+			t.Error("turn > 1, no summary: catalog should be skipped")
+		}
+		if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+			History: []providers.Message{userMsg, assistantMsg},
+			Summary: "prior conversation summary",
+		})) {
+			t.Error("after compaction: catalog should be re-injected")
+		}
+	})
 }
 
 // TestConcurrentBuildSystemPromptWithCache verifies that multiple goroutines
