@@ -1,13 +1,17 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httputil"
 	"runtime"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 	picotools "github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -196,6 +200,7 @@ func (h *Handler) registerToolRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/tools/{name}/state", h.handleUpdateToolState)
 	mux.HandleFunc("GET /api/tools/web-search-config", h.handleGetWebSearchConfig)
 	mux.HandleFunc("PUT /api/tools/web-search-config", h.handleUpdateWebSearchConfig)
+	mux.HandleFunc("POST /api/permission/grant", h.handleGrantPermission)
 }
 
 func (h *Handler) handleListTools(w http.ResponseWriter, r *http.Request) {
@@ -671,4 +676,83 @@ func resolveCurrentWebSearchProvider(cfg *config.Config) string {
 		return ""
 	}
 	return selected
+}
+
+// handleGrantPermission proxies permission grant requests to the gateway's internal endpoint.
+// Frontend sends POST /api/permission/grant with { "path": "...", "duration": "once"|"session" }
+// We add the default agent ID ("main") and forward to the gateway's /internal/permission/grant.
+//
+//	POST /api/permission/grant
+func (h *Handler) handleGrantPermission(w http.ResponseWriter, r *http.Request) {
+	if !h.gatewayAvailableForProxy() {
+		logger.Warnf("Gateway not available for permission grant proxy")
+		http.Error(w, "Gateway not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Parse incoming request body from frontend
+	var req struct {
+		Path     string `json:"path"`
+		Duration string `json:"duration"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Validate required fields
+	if req.Path == "" || req.Duration == "" {
+		http.Error(w, "path and duration are required", http.StatusBadRequest)
+		return
+	}
+	if req.Duration != "once" && req.Duration != "session" {
+		http.Error(w, "duration must be 'once' or 'session'", http.StatusBadRequest)
+		return
+	}
+
+	// Get gateway auth token from pid data
+	gateway.mu.Lock()
+	pidData := gateway.pidData
+	gateway.mu.Unlock()
+
+	if pidData == nil || pidData.Token == "" {
+		logger.Warnf("Gateway auth token not available for permission grant")
+		http.Error(w, "Gateway auth token not available", http.StatusServiceUnavailable)
+		return
+	}
+	authToken := pidData.Token
+
+	// Prepare request body for gateway's internal endpoint (requires agent_id)
+	grantReq := struct {
+		AgentID  string `json:"agent_id"`
+		Path     string `json:"path"`
+		Duration string `json:"duration"`
+	}{
+		AgentID:  "main", // Default to main agent
+		Path:     req.Path,
+		Duration: req.Duration,
+	}
+
+	// Create reverse proxy to gateway's internal permission grant endpoint
+	target := h.gatewayProxyURL()
+	target.Path = "/internal/permission/grant"
+
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(target)
+			// Inject auth token for gateway health server
+			pr.Out.Header.Set("Authorization", "Bearer "+authToken)
+			// Replace request body with the modified payload that includes agent_id
+			bodyBytes, _ := json.Marshal(grantReq)
+			pr.Out.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+			pr.Out.ContentLength = int64(len(bodyBytes))
+			pr.Out.Header.Set("Content-Type", "application/json")
+		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			logger.Errorf("Failed to proxy permission grant request: %v", err)
+			http.Error(w, "Gateway unavailable: "+err.Error(), http.StatusBadGateway)
+		},
+	}
+
+	proxy.ServeHTTP(w, r)
 }

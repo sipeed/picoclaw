@@ -38,6 +38,7 @@ type AgentInstance struct {
 	Sessions                  session.SessionStore
 	ContextBuilder            *ContextBuilder
 	Tools                     *tools.ToolRegistry
+	PermissionCache           *tools.PermissionCache // Exported for permission grant API
 	Subagents                 *config.SubagentsConfig
 	SkillsFilter              []string
 	Candidates                []providers.FallbackCandidate
@@ -255,6 +256,7 @@ func NewAgentInstance(
 		Sessions:                  sessions,
 		ContextBuilder:            contextBuilder,
 		Tools:                     toolsRegistry,
+		PermissionCache:           permissionCache, // Store reference for API access
 		Subagents:                 subagents,
 		SkillsFilter:              skillsFilter,
 		Candidates:                candidates,
@@ -371,6 +373,20 @@ func (a *AgentInstance) Close() error {
 	if a.Sessions != nil {
 		return a.Sessions.Close()
 	}
+	return nil
+}
+
+// GrantPermission grants permission for a path with the specified duration.
+// Duration can be "once" or "session".
+// Returns an error if the PermissionCache is not initialized.
+func (a *AgentInstance) GrantPermission(path, duration string) error {
+	if a.PermissionCache == nil {
+		return fmt.Errorf("permission cache not initialized for agent %s", a.ID)
+	}
+	if duration != "once" && duration != "session" {
+		return fmt.Errorf("invalid duration %q: must be 'once' or 'session'", duration)
+	}
+	a.PermissionCache.Grant(path, duration)
 	return nil
 }
 

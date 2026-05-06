@@ -242,6 +242,11 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) (runEr
 	runningServices.HealthServer.SetReloadFunc(reloadTrigger)
 	agentLoop.SetReloadFunc(reloadTrigger)
 
+	// Wire permission grant function to allow runtime permission grants via health endpoint
+	runningServices.HealthServer.SetPermissionGrantFunc(func(agentID, path, duration string) error {
+		return agentLoop.GrantPermission(agentID, path, duration)
+	})
+
 	for _, bindHost := range listenResult.BindHosts {
 		fmt.Printf("✓ Gateway started on %s\n", net.JoinHostPort(bindHost, strconv.Itoa(cfg.Gateway.Port)))
 	}

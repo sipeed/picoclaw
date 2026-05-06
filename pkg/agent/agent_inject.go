@@ -3,6 +3,8 @@
 package agent
 
 import (
+	"fmt"
+
 	"github.com/sipeed/picoclaw/pkg/audio/asr"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -27,6 +29,22 @@ func (al *AgentLoop) GetRegistry() *AgentRegistry {
 	al.mu.RLock()
 	defer al.mu.RUnlock()
 	return al.registry
+}
+
+// GrantPermission grants permission for a path to a specific agent.
+// agentID is the normalized agent ID (e.g. "main"), path is the file path,
+// duration is "once" or "session".
+// Returns an error if the agent is not found or the permission cache is not initialized.
+func (al *AgentLoop) GrantPermission(agentID, path, duration string) error {
+	registry := al.GetRegistry()
+	if registry == nil {
+		return fmt.Errorf("agent registry not initialized")
+	}
+	agent, ok := registry.GetAgent(agentID)
+	if !ok {
+		return fmt.Errorf("agent %q not found", agentID)
+	}
+	return agent.GrantPermission(path, duration)
 }
 
 func (al *AgentLoop) GetConfig() *config.Config {

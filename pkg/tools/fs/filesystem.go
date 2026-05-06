@@ -992,8 +992,11 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolR
 }
 
 type ListDirTool struct {
-	fs             fileSystem
-	permissionCache interface{ Check(path string) string }
+	fs                  fileSystem
+	workspace           string
+	restrictToWorkspace bool
+	permissionCache    interface{ Check(path string) string }
+	askPermission      bool
 }
 
 func NewListDirTool(workspace string, restrict bool, permCache any, allowPaths ...[]*regexp.Regexp) *ListDirTool {
@@ -1001,10 +1004,47 @@ func NewListDirTool(workspace string, restrict bool, permCache any, allowPaths .
 	if len(allowPaths) > 0 {
 		patterns = allowPaths[0]
 	}
-	return &ListDirTool{
-		fs:             buildFs(workspace, restrict, patterns),
-		permissionCache: permCache.(interface{ Check(path string) string }),
+	askPerm := false
+	var cache interface{ Check(path string) string }
+	if permCache != nil {
+		cache = permCache.(interface{ Check(path string) string })
+		askPerm = true
 	}
+	return &ListDirTool{
+		fs:                  buildFs(workspace, restrict, patterns),
+		workspace:           workspace,
+		restrictToWorkspace: restrict,
+		permissionCache:    cache,
+		askPermission:      askPerm,
+	}
+}
+
+func (t *ListDirTool) isOutsideWorkspace(path string) bool {
+	if t.workspace == "" {
+		return false
+	}
+	absWorkspace, _ := filepath.Abs(t.workspace)
+	absPath, _ := filepath.Abs(path)
+	return !strings.HasPrefix(absPath, absWorkspace)
+}
+
+func (t *ListDirTool) checkPermission(path string) string {
+	if !t.restrictToWorkspace || !t.askPermission || t.permissionCache == nil {
+		return "granted"
+	}
+
+	if !t.isOutsideWorkspace(path) {
+		return "granted"
+	}
+
+	if perm := t.permissionCache.Check(path); perm != "" {
+		if perm == "denied" {
+			return "denied"
+		}
+		return "granted"
+	}
+
+	return "needs_permission"
 }
 
 func (t *ListDirTool) Name() string {
@@ -1032,6 +1072,27 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]any) *ToolRes
 	path, ok := args["path"].(string)
 	if !ok {
 		path = "."
+	}
+
+	// Resolve path for permission check (use workspace path for "." to check sandbox boundary)
+	checkPath := path
+	if path == "." {
+		if abs, err := filepath.Abs(path); err == nil {
+			checkPath = abs
+		} else if t.workspace != "" {
+			checkPath = t.workspace
+		}
+	}
+
+	switch t.checkPermission(checkPath) {
+	case "needs_permission":
+		logger.InfoCF("list_dir", "Permission needed", map[string]any{"path": checkPath})
+		return &ToolResult{
+			ForLLM:  fmt.Sprintf("Permission needed for path: %s. Call request_permission tool with path='%s'.", checkPath, checkPath),
+			ForUser: fmt.Sprintf("⚠️ Permission required to list %s", checkPath),
+		}
+	case "denied":
+		return ErrorResult(fmt.Sprintf("Access to %s was denied", checkPath))
 	}
 
 	entries, err := t.fs.ReadDir(path)
