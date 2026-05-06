@@ -162,6 +162,45 @@ func newTestAgentLoop(
 	return al, cfg, msgBus, provider, func() { os.RemoveAll(tmpDir) }
 }
 
+func TestPublishResponseWithContextIfNeeded_PreservesSessionMetadata(t *testing.T) {
+	al, _, msgBus, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	inboundCtx := &bus.InboundContext{
+		Channel:  "telegram",
+		ChatID:   "-100123",
+		ChatType: "group",
+		TopicID:  "6",
+		SenderID: "user-1",
+	}
+	al.publishResponseWithContextIfNeeded(
+		context.Background(),
+		"telegram",
+		"-100123",
+		"session-async-1",
+		"done",
+		inboundCtx,
+	)
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Channel != "telegram" || outbound.ChatID != "-100123" {
+			t.Fatalf("unexpected outbound target: channel=%q chat=%q", outbound.Channel, outbound.ChatID)
+		}
+		if outbound.Context.TopicID != "6" {
+			t.Fatalf("outbound topic_id = %q, want 6", outbound.Context.TopicID)
+		}
+		if outbound.AgentID != routing.DefaultAgentID {
+			t.Fatalf("outbound agent_id = %q, want %q", outbound.AgentID, routing.DefaultAgentID)
+		}
+		if outbound.SessionKey != "session-async-1" {
+			t.Fatalf("outbound session_key = %q, want session-async-1", outbound.SessionKey)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected outbound response")
+	}
+}
+
 func TestNewAgentLoop_RegistersWebSearchTool(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Workspace = t.TempDir()
