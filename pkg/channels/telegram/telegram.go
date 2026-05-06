@@ -203,7 +203,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 	if isToolFeedback {
 		toolFeedbackContent = fitToolFeedbackForTelegram(msg.Content, useMarkdownV2, 4096)
 	}
-	trackedChatID := telegramToolFeedbackChatKey(msg.ChatID, &msg.Context)
+	trackedChatID := telegramToolFeedbackTrackerKey(msg)
 	if isToolFeedback {
 		if msgID, handled, err := c.progress.Update(ctx, trackedChatID, toolFeedbackContent); handled {
 			if err != nil {
@@ -411,6 +411,7 @@ func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string) (func(
 // EditMessage implements channels.MessageEditor.
 func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
 	useMarkdownV2 := c.tgCfg.UseMarkdownV2
+	chatID = telegramToolFeedbackDeliveryChatID(chatID)
 	cid, _, err := parseTelegramChatID(chatID)
 	if err != nil {
 		return err
@@ -488,6 +489,23 @@ func outboundMessageIsToolFeedback(msg bus.OutboundMessage) bool {
 	return strings.EqualFold(strings.TrimSpace(msg.Context.Raw["message_kind"]), "tool_feedback")
 }
 
+func telegramToolFeedbackTrackerKey(msg bus.OutboundMessage) string {
+	key := telegramToolFeedbackChatKey(msg.ChatID, &msg.Context)
+	sessionKey := strings.TrimSpace(msg.SessionKey)
+	if key == "" || sessionKey == "" {
+		return key
+	}
+	return key + "#session:" + sessionKey
+}
+
+func telegramToolFeedbackDeliveryChatID(chatID string) string {
+	chatID = strings.TrimSpace(chatID)
+	if idx := strings.Index(chatID, "#session:"); idx >= 0 {
+		return strings.TrimSpace(chatID[:idx])
+	}
+	return chatID
+}
+
 func (c *TelegramChannel) currentToolFeedbackMessage(chatID string) (string, bool) {
 	if c.progress == nil {
 		return "", false
@@ -529,7 +547,7 @@ func (c *TelegramChannel) dismissTrackedToolFeedbackMessage(ctx context.Context,
 		return
 	}
 	c.ClearToolFeedbackMessage(chatID)
-	_ = c.DeleteMessage(ctx, chatID, messageID)
+	_ = c.DeleteMessage(ctx, telegramToolFeedbackDeliveryChatID(chatID), messageID)
 }
 
 func (c *TelegramChannel) finalizeTrackedToolFeedbackMessage(
@@ -542,7 +560,7 @@ func (c *TelegramChannel) finalizeTrackedToolFeedbackMessage(
 	if !ok || editFn == nil {
 		return nil, false
 	}
-	if err := editFn(ctx, chatID, msgID, content); err != nil {
+	if err := editFn(ctx, telegramToolFeedbackDeliveryChatID(chatID), msgID, content); err != nil {
 		c.RecordToolFeedbackMessage(chatID, msgID, baseContent)
 		return nil, false
 	}

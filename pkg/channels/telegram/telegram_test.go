@@ -374,6 +374,53 @@ func TestSend_TopicReplyDoesNotFinalizeDifferentTopicToolFeedback(t *testing.T) 
 	assert.True(t, ok, "tool feedback in the original topic should remain tracked")
 }
 
+func TestSend_FinalReplyDoesNotFinalizeDifferentSessionToolFeedback(t *testing.T) {
+	nextMessageID := 0
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			nextMessageID++
+			return successResponseWithMessageID(t, nextMessageID), nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+
+	baseCtx := bus.InboundContext{
+		Channel: "telegram",
+		ChatID:  "-1001234567890",
+		TopicID: "42",
+	}
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:     "-1001234567890",
+		SessionKey: "subturn-1",
+		Content:    "Working...\n• tool: `read_file`",
+		Context: bus.InboundContext{
+			Channel: "telegram",
+			ChatID:  "-1001234567890",
+			TopicID: "42",
+			Raw: map[string]string{
+				"message_kind": "tool_feedback",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	ids, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:     "-1001234567890",
+		SessionKey: "main-session",
+		Content:    "test",
+		Context:    baseCtx,
+	})
+	require.NoError(t, err)
+	require.Len(t, caller.calls, 2)
+	assert.Equal(t, []string{"2"}, ids)
+	assert.Contains(t, caller.calls[1].URL, "sendMessage")
+	assert.NotContains(t, caller.calls[1].URL, "editMessageText")
+
+	msgID, ok := ch.currentToolFeedbackMessage("-1001234567890/42#session:subturn-1")
+	require.True(t, ok, "subturn tool feedback should remain tracked")
+	assert.Equal(t, "1", msgID)
+}
+
 func TestFinalizeTrackedToolFeedbackMessage_StopsTrackingBeforeEdit(t *testing.T) {
 	ch := newTestChannel(t, &stubCaller{
 		callFn: func(context.Context, string, *ta.RequestData) (*ta.Response, error) {
