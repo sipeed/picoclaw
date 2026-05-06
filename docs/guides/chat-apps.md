@@ -149,6 +149,26 @@ You can also trigger by keyword prefixes (e.g. `!bot`):
 }
 ```
 
+Telegram forum groups can override this behavior per topic. For example, keep the
+bot mention-only in the group, but let it answer normally in topic `1771`:
+
+```json
+{
+  "channel_list": {
+    "telegram": {
+      "group_trigger": {
+        "mention_only": true,
+        "topics": {
+          "1771": { "mention_only": false }
+        }
+      }
+    }
+  }
+}
+```
+
+Topic entries replace the channel-level `group_trigger` for that topic.
+
 **6. Run**
 
 ```bash

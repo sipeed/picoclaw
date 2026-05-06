@@ -957,6 +957,7 @@ BaseChannel is the shared abstraction layer for all channels, providing the foll
 | `IsAllowed(senderID string) bool` | Legacy allow-list check (supports `"id\|username"` and `"@username"` formats) |
 | `IsAllowedSender(sender SenderInfo) bool` | New allow-list check (delegates to `identity.MatchAllowed`) |
 | `ShouldRespondInGroup(isMentioned, content) (bool, string)` | Unified group chat trigger filtering logic |
+| `ShouldRespondInGroupForTopic(isMentioned, content, topicID) (bool, string)` | Unified group chat trigger filtering with a topic-specific override |
 | `HandleMessage(...)` | Unified inbound message handling: permission check → build MediaScope → auto-trigger Typing/Reaction/Placeholder → publish to Bus |
 | `SetMediaStore(s) / GetMediaStore()` | MediaStore injected by Manager |
 | `SetPlaceholderRecorder(r) / GetPlaceholderRecorder()` | PlaceholderRecorder injected by Manager |
