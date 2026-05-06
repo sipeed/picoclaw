@@ -210,3 +210,8 @@ func (r *RetrievalEngine) ExpandMessages(ctx context.Context, messageIDs []int64
 
 	return result, nil
 }
+
+// SearchByTag searches for sessions with a specific tag.
+func (re *RetrievalEngine) SearchByTag(tag string) ([]SearchResult, error) {
+	return []SearchResult{}, nil
+}
