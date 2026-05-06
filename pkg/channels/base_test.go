@@ -178,6 +178,42 @@ func TestShouldRespondInGroup(t *testing.T) {
 	}
 }
 
+func TestShouldRespondInGroupForTopicOverride(t *testing.T) {
+	ch := NewBaseChannel("test", nil, nil, nil, WithGroupTrigger(config.GroupTriggerConfig{
+		MentionOnly: true,
+		Topics: map[string]config.GroupTriggerConfig{
+			"1771": {MentionOnly: false},
+			"1772": {Prefixes: []string{"!bot"}},
+		},
+	}))
+
+	respond, cleaned := ch.ShouldRespondInGroupForTopic(false, "hello", "1771")
+	if !respond {
+		t.Fatal("topic override should allow non-mentioned messages")
+	}
+	if cleaned != "hello" {
+		t.Fatalf("cleaned content = %q, want hello", cleaned)
+	}
+
+	respond, _ = ch.ShouldRespondInGroupForTopic(false, "hello", "42")
+	if respond {
+		t.Fatal("non-overridden topic should keep channel mention_only behavior")
+	}
+
+	respond, cleaned = ch.ShouldRespondInGroupForTopic(false, "!bot hello", "1772")
+	if !respond {
+		t.Fatal("topic override should allow matching prefix")
+	}
+	if cleaned != "hello" {
+		t.Fatalf("cleaned content = %q, want hello", cleaned)
+	}
+
+	respond, _ = ch.ShouldRespondInGroupForTopic(false, "hello", "1772")
+	if respond {
+		t.Fatal("topic override should replace the parent trigger, not merge it")
+	}
+}
+
 func TestIsAllowedSender(t *testing.T) {
 	tests := []struct {
 		name      string

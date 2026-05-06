@@ -945,12 +945,17 @@ func (c *TelegramChannel) handleMessages(ctx context.Context, messages []*telego
 
 	// In group chats, apply unified group trigger filtering
 	isMentioned := false
+	threadID := message.MessageThreadID
 	if message.Chat.Type != "private" {
 		isMentioned = c.isBotMentioned(message)
 		if isMentioned {
 			content = c.stripBotMention(content)
 		}
-		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
+		topicID := ""
+		if message.Chat.IsForum && threadID != 0 {
+			topicID = fmt.Sprintf("%d", threadID)
+		}
+		respond, cleaned := c.ShouldRespondInGroupForTopic(isMentioned, content, topicID)
 		if !respond {
 			return nil
 		}
@@ -979,7 +984,6 @@ func (c *TelegramChannel) handleMessages(ctx context.Context, messages []*telego
 	// Only forum groups (IsForum) are handled; regular group reply threads
 	// must share one session per group.
 	compositeChatID := fmt.Sprintf("%d", chatID)
-	threadID := message.MessageThreadID
 	if message.Chat.IsForum && threadID != 0 {
 		compositeChatID = fmt.Sprintf("%d/%d", chatID, threadID)
 	}
