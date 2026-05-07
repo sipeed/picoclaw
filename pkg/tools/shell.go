@@ -372,6 +372,13 @@ func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
+	cmd.Env = append(os.Environ(),
+		"PICOCLAW_TOOL_CHANNEL="+ToolChannel(ctx),
+		"PICOCLAW_TOOL_CHAT_ID="+ToolChatID(ctx),
+		"PICOCLAW_TOOL_TOPIC_ID="+ToolTopicID(ctx),
+		"PICOCLAW_TOOL_MESSAGE_ID="+ToolMessageID(ctx),
+		"PICOCLAW_TOOL_REPLY_TO_MESSAGE_ID="+ToolReplyToMessageID(ctx),
+	)
 
 	prepareCommandForTermination(cmd)
 
@@ -484,6 +491,13 @@ func (t *ExecTool) runBackground(ctx context.Context, command, cwd string, ptyEn
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
+	cmd.Env = append(os.Environ(),
+		"PICOCLAW_TOOL_CHANNEL="+ToolChannel(ctx),
+		"PICOCLAW_TOOL_CHAT_ID="+ToolChatID(ctx),
+		"PICOCLAW_TOOL_TOPIC_ID="+ToolTopicID(ctx),
+		"PICOCLAW_TOOL_MESSAGE_ID="+ToolMessageID(ctx),
+		"PICOCLAW_TOOL_REPLY_TO_MESSAGE_ID="+ToolReplyToMessageID(ctx),
+	)
 
 	prepareCommandForTermination(cmd)
 
@@ -1072,6 +1086,19 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 
 		for _, loc := range matchIndices {
 			raw := cmd[loc[0]:loc[1]]
+
+			// Skip slash-containing relative command segments like
+			// "scripts/foo.sh". The absolute-path regex matches the "/foo.sh"
+			// substring inside that token, but this is not an absolute path.
+			if strings.HasPrefix(raw, "/") && loc[0] > 0 {
+				prev := cmd[loc[0]-1]
+				if (prev >= 'a' && prev <= 'z') ||
+					(prev >= 'A' && prev <= 'Z') ||
+					(prev >= '0' && prev <= '9') ||
+					prev == '_' || prev == '.' || prev == '-' {
+					continue
+				}
+			}
 
 			// Skip URL path components that look like they're from web URLs.
 			// When a URL like "https://github.com" is parsed, the regex captures
