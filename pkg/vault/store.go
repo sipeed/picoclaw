@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"gopkg.in/yaml.v3"
+
+	"github.com/sipeed/picoclaw/pkg/memory"
 )
 
 type VaultStore struct {
@@ -25,4 +27,14 @@ func (vs *VaultStore) CreateNote(name string, frontmatter map[string]interface{}
 	note += "---\n\n" + content
 	notePath := filepath.Join(vs.rootPath, name+".md")
 	return os.WriteFile(notePath, []byte(note), 0644)
+}
+
+// ReadNote reads a note file and parses frontmatter
+func (vs *VaultStore) ReadNote(name string) (map[string]interface{}, string, error) {
+	notePath := filepath.Join(vs.rootPath, name+".md")
+	content, err := os.ReadFile(notePath)
+	if err != nil {
+		return nil, "", err
+	}
+	return memory.ParseFrontmatter(string(content))
 }
