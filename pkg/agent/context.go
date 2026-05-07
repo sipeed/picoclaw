@@ -275,13 +275,6 @@ Each part separated by the marker will be sent as an independent message.`,
 	return stack.Parts()
 }
 
-func (cb *ContextBuilder) buildAgentDiscoveryContext() string {
-	if cb.agentDiscovery == nil {
-		return ""
-	}
-	return formatAgentDiscoverySection(cb.agentDiscovery(cb.workspace))
-}
-
 // BuildSystemPromptWithCache returns the cached system prompt if available
 // and source files haven't changed, otherwise builds and caches it.
 // Source file changes are detected via mtime checks (cheap stat calls).
