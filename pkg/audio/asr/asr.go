@@ -8,6 +8,12 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
+const elevenLabsSupportedModelID = "scribe_v1"
+
+func ElevenLabsSupportedModelID() string {
+	return elevenLabsSupportedModelID
+}
+
 type Transcriber interface {
 	Name() string
 	Transcribe(ctx context.Context, audioFilePath string) (*TranscriptionResponse, error)
@@ -72,14 +78,23 @@ func whisperModelID(modelCfg *config.ModelConfig) string {
 	return ""
 }
 
+func isElevenLabsTranscriptionModel(modelCfg *config.ModelConfig) bool {
+	if modelCfg == nil || modelCfg.APIKey() == "" {
+		return false
+	}
+
+	protocol, _ := providers.ExtractProtocol(modelCfg)
+	return protocol == "elevenlabs"
+}
+
 func transcriberFromModelConfig(modelCfg *config.ModelConfig) Transcriber {
 	if modelCfg == nil {
 		return nil
 	}
 
-	protocol, _ := providers.ExtractProtocol(modelCfg)
-	if protocol == "elevenlabs" && modelCfg.APIKey() != "" {
-		return NewElevenLabsTranscriber(modelCfg.APIKey(), modelCfg.APIBase)
+	if isElevenLabsTranscriptionModel(modelCfg) {
+		_, modelID := providers.ExtractProtocol(modelCfg)
+		return NewElevenLabsTranscriber(modelCfg.APIKey(), modelCfg.APIBase, modelID)
 	}
 	if modelID := whisperModelID(modelCfg); modelID != "" {
 		return NewWhisperTranscriber(modelCfg)
@@ -95,9 +110,9 @@ func fallbackTranscriberFromModelConfig(modelCfg *config.ModelConfig) Transcribe
 		return nil
 	}
 
-	protocol, _ := providers.ExtractProtocol(modelCfg)
-	if protocol == "elevenlabs" && modelCfg.APIKey() != "" {
-		return NewElevenLabsTranscriber(modelCfg.APIKey(), modelCfg.APIBase)
+	if isElevenLabsTranscriptionModel(modelCfg) {
+		_, modelID := providers.ExtractProtocol(modelCfg)
+		return NewElevenLabsTranscriber(modelCfg.APIKey(), modelCfg.APIBase, modelID)
 	}
 	if modelID := whisperModelID(modelCfg); modelID != "" {
 		return NewWhisperTranscriber(modelCfg)

@@ -4,7 +4,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -171,15 +170,8 @@ func toolFeedbackExplanationFromMessages(messages []providers.Message) string {
 }
 
 func toolFeedbackArgsPreview(args map[string]any, maxLen int) string {
-	if args == nil {
-		args = map[string]any{}
-	}
-
-	argsJSON, err := json.MarshalIndent(args, "", "  ")
-	if err != nil {
-		return utils.Truncate(fmt.Sprintf("%v", args), maxLen)
-	}
-	return utils.Truncate(string(argsJSON), maxLen)
+	argsJSON := utils.FormatArgsJSON(args, true, false)
+	return utils.Truncate(argsJSON, maxLen)
 }
 
 func shouldPublishToolFeedback(cfg *config.Config, ts *turnState) bool {
@@ -293,6 +285,12 @@ func inferMediaType(filename, contentType string) string {
 	ct := strings.ToLower(contentType)
 	fn := strings.ToLower(filename)
 
+	// SVG is an image MIME type, but raster-only delivery endpoints such as
+	// Telegram SendPhoto reject it. Treat it as a file/document instead.
+	if strings.HasPrefix(ct, "image/svg") || filepath.Ext(fn) == ".svg" {
+		return "file"
+	}
+
 	if strings.HasPrefix(ct, "image/") {
 		return "image"
 	}
@@ -306,7 +304,7 @@ func inferMediaType(filename, contentType string) string {
 	// Fallback: infer from extension
 	ext := filepath.Ext(fn)
 	switch ext {
-	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg":
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp":
 		return "image"
 	case ".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma", ".opus":
 		return "audio"

@@ -291,18 +291,17 @@ func (p *AntigravityProvider) buildRequest(
 		}
 	}
 
-	// Build tools (sanitize schemas for Gemini compatibility)
+	// Build tools
 	if len(tools) > 0 {
 		var funcDecls []antigravityFuncDecl
 		for _, t := range tools {
 			if t.Type != "function" {
 				continue
 			}
-			params := sanitizeSchemaForGemini(t.Function.Parameters)
 			funcDecls = append(funcDecls, antigravityFuncDecl{
 				Name:        t.Function.Name,
 				Description: t.Function.Description,
-				Parameters:  params,
+				Parameters:  t.Function.Parameters,
 			})
 		}
 		if len(funcDecls) > 0 {
@@ -444,71 +443,6 @@ func extractPartThoughtSignature(thoughtSignature string, thoughtSignatureSnake 
 		return thoughtSignatureSnake
 	}
 	return ""
-}
-
-// --- Schema sanitization ---
-
-// Google/Gemini doesn't support many JSON Schema keywords that other providers accept.
-var geminiUnsupportedKeywords = map[string]bool{
-	"patternProperties":    true,
-	"additionalProperties": true,
-	"$schema":              true,
-	"$id":                  true,
-	"$ref":                 true,
-	"$defs":                true,
-	"definitions":          true,
-	"examples":             true,
-	"minLength":            true,
-	"maxLength":            true,
-	"minimum":              true,
-	"maximum":              true,
-	"multipleOf":           true,
-	"pattern":              true,
-	"format":               true,
-	"minItems":             true,
-	"maxItems":             true,
-	"uniqueItems":          true,
-	"minProperties":        true,
-	"maxProperties":        true,
-}
-
-func sanitizeSchemaForGemini(schema map[string]any) map[string]any {
-	if schema == nil {
-		return nil
-	}
-
-	result := make(map[string]any)
-	for k, v := range schema {
-		if geminiUnsupportedKeywords[k] {
-			continue
-		}
-		// Recursively sanitize nested objects
-		switch val := v.(type) {
-		case map[string]any:
-			result[k] = sanitizeSchemaForGemini(val)
-		case []any:
-			sanitized := make([]any, len(val))
-			for i, item := range val {
-				if m, ok := item.(map[string]any); ok {
-					sanitized[i] = sanitizeSchemaForGemini(m)
-				} else {
-					sanitized[i] = item
-				}
-			}
-			result[k] = sanitized
-		default:
-			result[k] = v
-		}
-	}
-
-	// Ensure top-level has type: "object" if properties are present
-	if _, hasProps := result["properties"]; hasProps {
-		if _, hasType := result["type"]; !hasType {
-			result["type"] = "object"
-		}
-	}
-
-	return result
 }
 
 // --- Token source ---

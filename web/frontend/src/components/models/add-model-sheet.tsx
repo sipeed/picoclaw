@@ -1,8 +1,12 @@
 import { IconLoader2 } from "@tabler/icons-react"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 
-import { addModel, setDefaultModel } from "@/api/models"
+import {
+  type ModelProviderOption,
+  addModel,
+  setDefaultModel,
+} from "@/api/models"
 import { ConfigChangeNotice } from "@/components/config-change-notice"
 import { maskedSecretPlaceholder } from "@/components/secret-placeholder"
 import {
@@ -14,6 +18,13 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -24,6 +35,15 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
+
+import {
+  findProviderOption,
+  getProviderDefaultAPIBase,
+  getProviderDefaultAuthMethod,
+  getProviderLabel,
+  getSortedProviderOptions,
+  isProviderAuthMethodLocked,
+} from "./provider-label"
 
 interface AddForm {
   modelName: string
@@ -39,13 +59,14 @@ interface AddForm {
   maxTokensField: string
   requestTimeout: string
   thinkingLevel: string
+  toolSchemaTransform: string
   extraBody: string
   customHeaders: string
 }
 
 const EMPTY_ADD_FORM: AddForm = {
   modelName: "",
-  provider: "",
+  provider: "openai",
   model: "",
   apiBase: "",
   apiKey: "",
@@ -57,6 +78,7 @@ const EMPTY_ADD_FORM: AddForm = {
   maxTokensField: "",
   requestTimeout: "",
   thinkingLevel: "",
+  toolSchemaTransform: "",
   extraBody: "",
   customHeaders: "",
 }
@@ -66,6 +88,7 @@ interface AddModelSheetProps {
   onClose: () => void
   onSaved: () => void
   existingModelNames: string[]
+  providerOptions: ModelProviderOption[]
 }
 
 export function AddModelSheet({
@@ -73,6 +96,7 @@ export function AddModelSheet({
   onClose,
   onSaved,
   existingModelNames,
+  providerOptions,
 }: AddModelSheetProps) {
   const { t } = useTranslation()
   const [form, setForm] = useState<AddForm>(EMPTY_ADD_FORM)
@@ -86,6 +110,37 @@ export function AddModelSheet({
     form.apiKey,
     t("models.field.apiKeyPlaceholder"),
   )
+  const sortedProviderOptions = useMemo(
+    () => getSortedProviderOptions(providerOptions),
+    [providerOptions],
+  )
+  const creatableProviderOptions = useMemo(
+    () => sortedProviderOptions.filter((option) => option.create_allowed),
+    [sortedProviderOptions],
+  )
+  const selectedProviderOption = findProviderOption(
+    form.provider,
+    providerOptions,
+  )
+  const authMethodLocked = isProviderAuthMethodLocked(
+    form.provider,
+    providerOptions,
+  )
+  const defaultAuthMethod = getProviderDefaultAuthMethod(
+    form.provider,
+    providerOptions,
+  )
+  const effectiveAuthMethod = (
+    authMethodLocked ? defaultAuthMethod : form.authMethod
+  )
+    .trim()
+    .toLowerCase()
+  const isOAuth = effectiveAuthMethod === "oauth"
+  const defaultModelAllowed =
+    selectedProviderOption?.default_model_allowed !== false
+  const apiBasePlaceholder =
+    getProviderDefaultAPIBase(form.provider, providerOptions) ||
+    "https://api.example.com/v1"
   const isDirty =
     JSON.stringify(form) !== JSON.stringify(EMPTY_ADD_FORM) || setAsDefault
 
@@ -106,6 +161,9 @@ export function AddModelSheet({
     } else if (existingModelNames.some((name) => name.trim() === modelName)) {
       errors.modelName = t("models.add.errorDuplicateModelName")
     }
+    if (!selectedProviderOption) {
+      errors.provider = t("models.field.providerInvalid")
+    }
     if (!form.model.trim()) errors.model = t("models.add.errorRequired")
     setFieldErrors(errors)
     return Object.keys(errors).length === 0
@@ -120,22 +178,47 @@ export function AddModelSheet({
       }
     }
 
+  const setProvider = (value: string) => {
+    setForm((f) => {
+      const previousOption = findProviderOption(f.provider, providerOptions)
+      const nextOption = findProviderOption(value, providerOptions)
+      let authMethod = f.authMethod
+      if (nextOption?.auth_method_locked) {
+        authMethod = nextOption.default_auth_method ?? ""
+      } else if (
+        previousOption?.auth_method_locked &&
+        f.authMethod === (previousOption.default_auth_method ?? "")
+      ) {
+        authMethod = ""
+      }
+      return { ...f, provider: value, authMethod }
+    })
+    const nextOption = findProviderOption(value, providerOptions)
+    if (nextOption?.default_model_allowed === false) {
+      setSetAsDefault(false)
+    }
+    if (fieldErrors.provider) {
+      setFieldErrors((prev) => ({ ...prev, provider: undefined }))
+    }
+  }
+
   const handleSave = async () => {
     if (!validate()) return
     setSaving(true)
     setServerError("")
     try {
       const modelName = form.modelName.trim()
-      const provider = form.provider.trim()
       const modelId = form.model.trim()
       await addModel({
         model_name: modelName,
-        provider: provider || undefined,
+        provider: form.provider.trim(),
         model: modelId,
         api_base: form.apiBase.trim() || undefined,
         api_key: form.apiKey.trim() || undefined,
         proxy: form.proxy.trim() || undefined,
-        auth_method: form.authMethod.trim() || undefined,
+        auth_method: authMethodLocked
+          ? defaultAuthMethod || undefined
+          : form.authMethod.trim() || undefined,
         connect_mode: form.connectMode.trim() || undefined,
         workspace: form.workspace.trim() || undefined,
         rpm: form.rpm ? Number(form.rpm) : undefined,
@@ -144,6 +227,7 @@ export function AddModelSheet({
           ? Number(form.requestTimeout)
           : undefined,
         thinking_level: form.thinkingLevel.trim() || undefined,
+        tool_schema_transform: form.toolSchemaTransform.trim() || undefined,
         extra_body: form.extraBody.trim()
           ? JSON.parse(form.extraBody.trim())
           : undefined,
@@ -205,12 +289,29 @@ export function AddModelSheet({
             <Field
               label={t("models.field.provider")}
               hint={t("models.field.providerHint")}
+              error={fieldErrors.provider}
+              required
             >
-              <Input
-                value={form.provider}
-                onChange={setField("provider")}
-                placeholder={t("models.field.providerPlaceholder")}
-              />
+              <Select
+                value={selectedProviderOption?.id}
+                onValueChange={setProvider}
+              >
+                <SelectTrigger
+                  className="w-full"
+                  aria-invalid={!!fieldErrors.provider}
+                >
+                  <SelectValue
+                    placeholder={t("models.field.providerPlaceholder")}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {creatableProviderOptions.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {getProviderLabel(option.id)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </Field>
 
             <Field
@@ -229,27 +330,38 @@ export function AddModelSheet({
               )}
             </Field>
 
-            <Field label={t("models.field.apiKey")}>
-              <KeyInput
-                value={form.apiKey}
-                onChange={(v) => setForm((f) => ({ ...f, apiKey: v }))}
-                placeholder={apiKeyPlaceholder}
-              />
-            </Field>
+            {!isOAuth && (
+              <Field label={t("models.field.apiKey")}>
+                <KeyInput
+                  value={form.apiKey}
+                  onChange={(v) => setForm((f) => ({ ...f, apiKey: v }))}
+                  placeholder={apiKeyPlaceholder}
+                />
+              </Field>
+            )}
 
-            <Field label={t("models.field.apiBase")}>
+            <Field
+              label={t("models.field.apiBase")}
+              hint={isOAuth ? t("models.edit.oauthNote") : undefined}
+            >
               <Input
                 value={form.apiBase}
                 onChange={setField("apiBase")}
-                placeholder="https://api.example.com/v1"
+                placeholder={apiBasePlaceholder}
+                disabled={isOAuth}
               />
             </Field>
 
             <SwitchCardField
               label={t("models.defaultOnSave.label")}
-              hint={t("models.defaultOnSave.description")}
+              hint={
+                defaultModelAllowed
+                  ? t("models.defaultOnSave.description")
+                  : t("models.defaultOnSave.unsupportedProvider")
+              }
               checked={setAsDefault}
               onCheckedChange={setSetAsDefault}
+              disabled={!defaultModelAllowed}
             />
 
             <AdvancedSection>
@@ -266,12 +378,17 @@ export function AddModelSheet({
 
               <Field
                 label={t("models.field.authMethod")}
-                hint={t("models.field.authMethodHint")}
+                hint={
+                  authMethodLocked
+                    ? t("models.field.authMethodManagedHint")
+                    : t("models.field.authMethodHint")
+                }
               >
                 <Input
-                  value={form.authMethod}
+                  value={authMethodLocked ? defaultAuthMethod : form.authMethod}
                   onChange={setField("authMethod")}
                   placeholder="oauth"
+                  disabled={authMethodLocked}
                 />
               </Field>
 
@@ -342,6 +459,17 @@ export function AddModelSheet({
                   value={form.maxTokensField}
                   onChange={setField("maxTokensField")}
                   placeholder="max_completion_tokens"
+                />
+              </Field>
+
+              <Field
+                label={t("models.field.toolSchemaTransform")}
+                hint={t("models.field.toolSchemaTransformHint")}
+              >
+                <Input
+                  value={form.toolSchemaTransform}
+                  onChange={setField("toolSchemaTransform")}
+                  placeholder="google"
                 />
               </Field>
 

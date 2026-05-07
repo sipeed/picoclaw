@@ -135,6 +135,16 @@ func (p *errorProvider) Chat(
 		return nil, errors.New("context_length_exceeded")
 	case "vision":
 		return nil, errors.New("vision_unsupported")
+	case "connection_reset":
+		return nil, errors.New("connection reset by peer")
+	case "broken_pipe":
+		return nil, errors.New("broken pipe")
+	case "read_tcp":
+		return nil, errors.New("read tcp 127.0.0.1:8080: connection reset")
+	case "eof":
+		return nil, errors.New("EOF")
+	case "connection_refused":
+		return nil, errors.New("connection refused")
 	default:
 		return nil, errors.New("unknown error")
 	}
@@ -364,6 +374,163 @@ func TestPipeline_CallLLM_ContextLengthError(t *testing.T) {
 	_, err = pipeline.CallLLM(context.Background(), context.Background(), ts, exec, 1)
 	// May succeed after compression or fail - either is acceptable
 	t.Logf("CallLLM result after context error: err=%v", err)
+}
+
+func TestPipeline_CallLLM_NetworkErrorRetry(t *testing.T) {
+	testCases := []struct {
+		name    string
+		errType string
+	}{
+		{"connection_reset", "connection_reset"},
+		{"broken_pipe", "broken_pipe"},
+		{"read_tcp", "read_tcp"},
+		{"eof", "eof"},
+		{"connection_refused", "connection_refused"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			errorPrv := &errorProvider{errType: tc.errType}
+			al, agent, cleanup := newTurnCoordTestLoop(t, errorPrv)
+			defer cleanup()
+
+			pipeline := NewPipeline(al)
+			ts := newTurnState(agent, makeTestProcessOpts("test-session"), turnEventScope{
+				turnID:  "turn-1",
+				context: newTurnContext(nil, nil, nil),
+			})
+
+			exec, err := pipeline.SetupTurn(context.Background(), ts)
+			if err != nil {
+				t.Fatalf("SetupTurn failed: %v", err)
+			}
+
+			_, err = pipeline.CallLLM(context.Background(), context.Background(), ts, exec, 1)
+			if err == nil {
+				t.Error("expected error after network error retries")
+			}
+		})
+	}
+}
+
+func TestPipeline_CallLLM_RetryConfigRespected(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:           tmpDir,
+				ModelName:           "test-model",
+				MaxTokens:           4096,
+				MaxToolIterations:   10,
+				MaxLLMRetries:       3,
+				LLMRetryBackoffSecs: 1,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &errorProvider{errType: "connection_reset"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	defer al.Close()
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent")
+	}
+
+	pipeline := NewPipeline(al)
+	ts := newTurnState(agent, makeTestProcessOpts("test-session"), turnEventScope{
+		turnID:  "turn-1",
+		context: newTurnContext(nil, nil, nil),
+	})
+
+	exec, err := pipeline.SetupTurn(context.Background(), ts)
+	if err != nil {
+		t.Fatalf("SetupTurn failed: %v", err)
+	}
+
+	start := time.Now()
+	_, err = pipeline.CallLLM(context.Background(), context.Background(), ts, exec, 1)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Error("expected error after retries")
+	}
+
+	expectedMinTime := 3 * time.Second
+	if elapsed < expectedMinTime {
+		t.Errorf("expected at least %v of backoff, got %v", expectedMinTime, elapsed)
+	}
+}
+
+func TestPipeline_CallLLM_RetryCountLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	counterPrv := &countingErrorProvider{errType: "connection_reset", targetCalls: 5}
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:           tmpDir,
+				ModelName:           "test-model",
+				MaxTokens:           4096,
+				MaxToolIterations:   10,
+				MaxLLMRetries:       2,
+				LLMRetryBackoffSecs: 0,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, counterPrv)
+	defer al.Close()
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent")
+	}
+
+	pipeline := NewPipeline(al)
+	ts := newTurnState(agent, makeTestProcessOpts("test-session"), turnEventScope{
+		turnID:  "turn-1",
+		context: newTurnContext(nil, nil, nil),
+	})
+
+	exec, err := pipeline.SetupTurn(context.Background(), ts)
+	if err != nil {
+		t.Fatalf("SetupTurn failed: %v", err)
+	}
+
+	_, err = pipeline.CallLLM(context.Background(), context.Background(), ts, exec, 1)
+	if err == nil {
+		t.Error("expected error after retries")
+	}
+
+	if counterPrv.callCount != 3 {
+		t.Errorf("expected exactly 3 calls (1 initial + 2 retries), got %d", counterPrv.callCount)
+	}
+}
+
+type countingErrorProvider struct {
+	errType     string
+	targetCalls int
+	callCount   int
+	mu          sync.Mutex
+}
+
+func (p *countingErrorProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	p.mu.Lock()
+	p.callCount++
+	p.mu.Unlock()
+	return nil, errors.New("connection reset by peer")
+}
+
+func (p *countingErrorProvider) GetDefaultModel() string {
+	return "counting-error-model"
 }
 
 // =============================================================================

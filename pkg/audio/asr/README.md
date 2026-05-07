@@ -82,7 +82,8 @@ Notes:
   "model_list": [
     {
       "model_name": "elevenlabs-asr",
-      "model": "elevenlabs/scribe_v1"
+      "provider": "elevenlabs",
+      "model": "scribe_v1"
     }
   ]
 }
@@ -130,7 +131,7 @@ PicoClaw currently supports three main ASR routes:
 
 | Route | Example models | Behavior |
 | --- | --- | --- |
-| ElevenLabs ASR | `elevenlabs/scribe_v1` | Uses the ElevenLabs transcription API. |
+| ElevenLabs ASR | `provider: elevenlabs`, `model: scribe_v1` | Uses the ElevenLabs transcription API. |
 | Whisper endpoint models | `openai/whisper-1`, `groq/whisper-large-v3` | Uses an OpenAI-compatible `/audio/transcriptions` endpoint. |
 | Audio-capable chat models **(Under construction)** | `openai/gpt-4o-audio-preview`, `gemini/gemini-2.5-flash` | Sends audio to a multimodal chat model and asks it to transcribe. |
 
@@ -142,7 +143,7 @@ If you are unsure which one to pick, choose Groq Whisper or ElevenLabs first.
 
 1. **Preferred path**: resolve `voice.model_name` against `model_list`.
 2. If that resolved model is:
-   - `elevenlabs/...`, PicoClaw uses the ElevenLabs transcriber.
+   - an `elevenlabs` provider model, PicoClaw uses the ElevenLabs transcriber.
    - an OpenAI-compatible Whisper model, PicoClaw uses the Whisper transcriber.
    - an audio-capable chat model, PicoClaw uses `AudioModelTranscriber`.
 3. **Fallback path**: if `voice.model_name` is not set, PicoClaw performs a compatibility scan through `model_list` for legacy auto-detected ASR entries.

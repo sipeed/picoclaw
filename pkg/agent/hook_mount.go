@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 )
 
 type hookRuntime struct {
@@ -295,10 +296,11 @@ func processHookObserveKindsFromConfig(observe []string) ([]string, bool, error)
 		case "", "*", "all":
 			return nil, true, nil
 		default:
-			if _, ok := validKinds[kind]; !ok {
+			normalizedKind, ok := validKinds[kind]
+			if !ok {
 				return nil, false, fmt.Errorf("unsupported observe event %q", kind)
 			}
-			normalized = append(normalized, kind)
+			normalized = append(normalized, normalizedKind)
 		}
 	}
 
@@ -308,10 +310,30 @@ func processHookObserveKindsFromConfig(observe []string) ([]string, bool, error)
 	return normalized, true, nil
 }
 
-func validHookEventKinds() map[string]struct{} {
-	kinds := make(map[string]struct{}, int(eventKindCount))
-	for kind := EventKind(0); kind < eventKindCount; kind++ {
-		kinds[kind.String()] = struct{}{}
+func validHookEventKinds() map[string]string {
+	runtimeKinds := runtimeevents.KnownKinds()
+	kinds := make(map[string]string, len(runtimeKinds)*2)
+	for _, kind := range runtimeKinds {
+		kinds[kind.String()] = kind.String()
 	}
+	kinds["turn_start"] = runtimeevents.KindAgentTurnStart.String()
+	kinds["turn_end"] = runtimeevents.KindAgentTurnEnd.String()
+	kinds["llm_request"] = runtimeevents.KindAgentLLMRequest.String()
+	kinds["llm_delta"] = runtimeevents.KindAgentLLMDelta.String()
+	kinds["llm_response"] = runtimeevents.KindAgentLLMResponse.String()
+	kinds["llm_retry"] = runtimeevents.KindAgentLLMRetry.String()
+	kinds["context_compress"] = runtimeevents.KindAgentContextCompress.String()
+	kinds["session_summarize"] = runtimeevents.KindAgentSessionSummarize.String()
+	kinds["tool_exec_start"] = runtimeevents.KindAgentToolExecStart.String()
+	kinds["tool_exec_end"] = runtimeevents.KindAgentToolExecEnd.String()
+	kinds["tool_exec_skipped"] = runtimeevents.KindAgentToolExecSkipped.String()
+	kinds["steering_injected"] = runtimeevents.KindAgentSteeringInjected.String()
+	kinds["follow_up_queued"] = runtimeevents.KindAgentFollowUpQueued.String()
+	kinds["interrupt_received"] = runtimeevents.KindAgentInterruptReceived.String()
+	kinds["subturn_spawn"] = runtimeevents.KindAgentSubTurnSpawn.String()
+	kinds["subturn_end"] = runtimeevents.KindAgentSubTurnEnd.String()
+	kinds["subturn_result_delivered"] = runtimeevents.KindAgentSubTurnResultDelivered.String()
+	kinds["subturn_orphan"] = runtimeevents.KindAgentSubTurnOrphan.String()
+	kinds["error"] = runtimeevents.KindAgentError.String()
 	return kinds
 }

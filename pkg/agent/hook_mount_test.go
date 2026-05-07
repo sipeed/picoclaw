@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -155,7 +156,27 @@ func TestAgentLoop_ProcessDirectWithChannel_AutoMountsProcessHook(t *testing.T) 
 		t.Fatalf("expected process model, got %q", lastModel)
 	}
 
-	waitForFileContains(t, eventLog, "turn_end")
+	waitForFileContains(t, eventLog, "agent.turn.end")
+}
+
+func TestProcessHookObserveKindsFromConfigAcceptsRuntimeNames(t *testing.T) {
+	kinds, enabled, err := processHookObserveKindsFromConfig([]string{
+		"tool_exec_start",
+		"agent.tool.exec_end",
+		"gateway.ready",
+		"mcp.server.failed",
+	})
+	if err != nil {
+		t.Fatalf("processHookObserveKindsFromConfig failed: %v", err)
+	}
+	if !enabled {
+		t.Fatal("expected observe to be enabled")
+	}
+
+	want := []string{"agent.tool.exec_start", "agent.tool.exec_end", "gateway.ready", "mcp.server.failed"}
+	if !slices.Equal(kinds, want) {
+		t.Fatalf("observe kinds = %v, want %v", kinds, want)
+	}
 }
 
 func TestAgentLoop_ProcessDirectWithChannel_InvalidConfiguredHookFails(t *testing.T) {

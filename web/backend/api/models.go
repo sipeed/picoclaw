@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/sipeed/picoclaw/pkg/audio/asr"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -35,20 +36,194 @@ type modelResponse struct {
 	Proxy      string `json:"proxy,omitempty"`
 	AuthMethod string `json:"auth_method,omitempty"`
 	// Advanced fields
-	ConnectMode    string            `json:"connect_mode,omitempty"`
-	Workspace      string            `json:"workspace,omitempty"`
-	RPM            int               `json:"rpm,omitempty"`
-	MaxTokensField string            `json:"max_tokens_field,omitempty"`
-	RequestTimeout int               `json:"request_timeout,omitempty"`
-	ThinkingLevel  string            `json:"thinking_level,omitempty"`
-	ExtraBody      map[string]any    `json:"extra_body,omitempty"`
-	CustomHeaders  map[string]string `json:"custom_headers,omitempty"`
+	ConnectMode         string            `json:"connect_mode,omitempty"`
+	Workspace           string            `json:"workspace,omitempty"`
+	RPM                 int               `json:"rpm,omitempty"`
+	MaxTokensField      string            `json:"max_tokens_field,omitempty"`
+	RequestTimeout      int               `json:"request_timeout,omitempty"`
+	ThinkingLevel       string            `json:"thinking_level,omitempty"`
+	ToolSchemaTransform string            `json:"tool_schema_transform,omitempty"`
+	ExtraBody           map[string]any    `json:"extra_body,omitempty"`
+	CustomHeaders       map[string]string `json:"custom_headers,omitempty"`
 	// Meta
-	Enabled   bool   `json:"enabled"`
-	Available bool   `json:"available"`
-	Status    string `json:"status"`
-	IsDefault bool   `json:"is_default"`
-	IsVirtual bool   `json:"is_virtual"`
+	Enabled             bool   `json:"enabled"`
+	Available           bool   `json:"available"`
+	Status              string `json:"status"`
+	IsDefault           bool   `json:"is_default"`
+	IsVirtual           bool   `json:"is_virtual"`
+	DefaultModelAllowed bool   `json:"default_model_allowed"`
+}
+
+func normalizeStoredModelConfig(mc *config.ModelConfig) bool {
+	if mc == nil {
+		return false
+	}
+
+	changed := false
+	model := strings.TrimSpace(mc.Model)
+	if model != mc.Model {
+		mc.Model = model
+		changed = true
+	}
+	provider := strings.TrimSpace(mc.Provider)
+	if provider != mc.Provider {
+		mc.Provider = provider
+		changed = true
+	}
+	authMethod := strings.ToLower(strings.TrimSpace(mc.AuthMethod))
+	if authMethod != mc.AuthMethod {
+		mc.AuthMethod = authMethod
+		changed = true
+	}
+
+	if provider != "" {
+		normalizedProvider := providers.NormalizeProvider(provider)
+		if providers.IsSupportedModelProvider(normalizedProvider) && normalizedProvider != provider {
+			mc.Provider = normalizedProvider
+			changed = true
+		}
+		if mc.Provider == "elevenlabs" {
+			if _, strippedModel, found := strings.Cut(
+				model,
+				"/",
+			); found &&
+				providers.NormalizeProvider(strings.TrimSpace(provider)) == "elevenlabs" {
+				strippedModel = strings.TrimSpace(strippedModel)
+				if strippedModel != "" && strippedModel != mc.Model {
+					mc.Model = strippedModel
+					changed = true
+				}
+			}
+			if strings.TrimSpace(mc.Model) != asr.ElevenLabsSupportedModelID() {
+				mc.Model = asr.ElevenLabsSupportedModelID()
+				changed = true
+			}
+		}
+		return changed
+	}
+
+	effectiveProvider, modelID := providers.SplitModelProviderAndID(model, "openai")
+	if effectiveProvider == "" {
+		return changed
+	}
+	if mc.Provider != effectiveProvider {
+		mc.Provider = effectiveProvider
+		changed = true
+	}
+	if mc.Model != modelID {
+		mc.Model = modelID
+		changed = true
+	}
+	return changed
+}
+
+func normalizeIncomingModelConfig(mc *config.ModelConfig) {
+	if mc == nil {
+		return
+	}
+
+	mc.Model = strings.TrimSpace(mc.Model)
+	mc.Provider = strings.TrimSpace(mc.Provider)
+	mc.AuthMethod = strings.ToLower(strings.TrimSpace(mc.AuthMethod))
+	if mc.Provider == "" {
+		mc.Provider, mc.Model = providers.SplitModelProviderAndID(mc.Model, "openai")
+	} else {
+		mc.Provider = providers.NormalizeProvider(mc.Provider)
+		if mc.Provider == "elevenlabs" {
+			if _, strippedModel, found := strings.Cut(mc.Model, "/"); found {
+				strippedModel = strings.TrimSpace(strippedModel)
+				if strippedModel != "" {
+					mc.Model = strippedModel
+				}
+			}
+		}
+	}
+	if mc.Provider == "antigravity" && mc.AuthMethod == "" {
+		mc.AuthMethod = "oauth"
+	}
+}
+
+func createAllowedForProvider(provider string) bool {
+	normalized := providers.NormalizeProvider(provider)
+	switch normalized {
+	case "bedrock":
+		// Bedrock currently authenticates through the AWS SDK credential chain
+		// (env vars, shared profiles, IAM roles, etc.), and this Web layer does
+		// not yet have a reliable preflight check for those credential sources.
+		// Keep it creatable in the catalog and let provider construction/runtime
+		// return the concrete AWS error when the environment is incomplete.
+		return true
+	case "claude-cli", "codex-cli":
+		return cliProviderCreateAllowedFromCurrentStatus(normalized)
+	default:
+		return providers.IsCreatableModelProvider(normalized)
+	}
+}
+
+// cliProviderCreateAllowedFromCurrentStatus intentionally reuses the existing
+// local model status pipeline so provider catalog gating follows the same CLI
+// executable probe used by launcher readiness.
+func cliProviderCreateAllowedFromCurrentStatus(provider string) bool {
+	status := modelConfigurationStatus(&config.ModelConfig{
+		Provider: provider,
+		Model:    provider,
+	})
+	return status.Available
+}
+
+func modelProviderOptionsForResponse() []providers.ModelProviderOption {
+	options := providers.ModelProviderOptions()
+	for i := range options {
+		options[i].CreateAllowed = createAllowedForProvider(options[i].ID)
+	}
+	return options
+}
+
+func defaultModelAllowedForModelConfig(mc *config.ModelConfig) bool {
+	provider, _ := providers.ExtractProtocol(mc)
+	return providers.IsDefaultModelProvider(provider)
+}
+
+func validateIncomingModelConfig(mc *config.ModelConfig, existing *config.ModelConfig) error {
+	if mc == nil {
+		return fmt.Errorf("model config is required")
+	}
+	if err := mc.Validate(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(mc.Provider) == "" {
+		return fmt.Errorf("provider is required")
+	}
+	if !providers.IsSupportedModelProvider(mc.Provider) {
+		return fmt.Errorf("provider %q is not supported", mc.Provider)
+	}
+	if mc.Provider == "elevenlabs" && strings.TrimSpace(mc.Model) != asr.ElevenLabsSupportedModelID() {
+		return fmt.Errorf("provider %q only supports model %q", mc.Provider, asr.ElevenLabsSupportedModelID())
+	}
+	if !createAllowedForProvider(mc.Provider) {
+		if existing == nil {
+			return fmt.Errorf("provider %q is not available for new models", mc.Provider)
+		}
+		existingProvider, _ := providers.ExtractProtocol(existing)
+		if providers.NormalizeProvider(existingProvider) != mc.Provider {
+			return fmt.Errorf("provider %q is not available for selection", mc.Provider)
+		}
+	}
+	return nil
+}
+
+func normalizeStoredModelProviders(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+
+	changed := false
+	for _, model := range cfg.ModelList {
+		if normalizeStoredModelConfig(model) {
+			changed = true
+		}
+	}
+	return changed
 }
 
 // handleListModels returns all model_list entries with masked API keys.
@@ -60,6 +235,10 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
 		return
 	}
+
+	// Normalize legacy provider/model storage in memory so GET can round-trip
+	// through the current API shape without mutating the on-disk config.
+	normalizeStoredModelProviders(cfg)
 
 	defaultModel := cfg.Agents.Defaults.GetModelName()
 	modelStatuses := make([]modelConfigurationSummary, len(cfg.ModelList))
@@ -78,35 +257,38 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 	for i, m := range cfg.ModelList {
 		provider, modelID := providers.ExtractProtocol(m)
 		models = append(models, modelResponse{
-			Index:          i,
-			ModelName:      m.ModelName,
-			Provider:       provider,
-			Model:          modelID,
-			APIBase:        m.APIBase,
-			APIKey:         maskAPIKey(m.APIKey()),
-			Proxy:          m.Proxy,
-			AuthMethod:     m.AuthMethod,
-			ConnectMode:    m.ConnectMode,
-			Workspace:      m.Workspace,
-			RPM:            m.RPM,
-			MaxTokensField: m.MaxTokensField,
-			RequestTimeout: m.RequestTimeout,
-			ThinkingLevel:  m.ThinkingLevel,
-			ExtraBody:      m.ExtraBody,
-			CustomHeaders:  m.CustomHeaders,
-			Enabled:        m.Enabled,
-			Available:      modelStatuses[i].Available,
-			Status:         modelStatuses[i].Status,
-			IsDefault:      m.ModelName == defaultModel,
-			IsVirtual:      m.IsVirtual(),
+			Index:               i,
+			ModelName:           m.ModelName,
+			Provider:            provider,
+			Model:               modelID,
+			APIBase:             m.APIBase,
+			APIKey:              maskAPIKey(m.APIKey()),
+			Proxy:               m.Proxy,
+			AuthMethod:          m.AuthMethod,
+			ConnectMode:         m.ConnectMode,
+			Workspace:           m.Workspace,
+			RPM:                 m.RPM,
+			MaxTokensField:      m.MaxTokensField,
+			RequestTimeout:      m.RequestTimeout,
+			ThinkingLevel:       m.ThinkingLevel,
+			ToolSchemaTransform: m.ToolSchemaTransform,
+			ExtraBody:           m.ExtraBody,
+			CustomHeaders:       m.CustomHeaders,
+			Enabled:             m.Enabled,
+			Available:           modelStatuses[i].Available,
+			Status:              modelStatuses[i].Status,
+			IsDefault:           m.ModelName == defaultModel,
+			IsVirtual:           m.IsVirtual(),
+			DefaultModelAllowed: defaultModelAllowedForModelConfig(m),
 		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"models":        models,
-		"total":         len(models),
-		"default_model": defaultModel,
+		"models":           models,
+		"total":            len(models),
+		"default_model":    defaultModel,
+		"provider_options": modelProviderOptionsForResponse(),
 	})
 }
 
@@ -132,7 +314,9 @@ func (h *Handler) handleAddModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = mc.Validate(); err != nil {
+	normalizeIncomingModelConfig(&mc.ModelConfig)
+
+	if err = validateIncomingModelConfig(&mc.ModelConfig, nil); err != nil {
 		http.Error(w, fmt.Sprintf("Validation error: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -148,6 +332,7 @@ func (h *Handler) handleAddModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg.ModelList = append(cfg.ModelList, &mc.ModelConfig)
+	normalizeStoredModelProviders(cfg)
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
@@ -198,11 +383,6 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = mc.Validate(); err != nil {
-		http.Error(w, fmt.Sprintf("Validation error: %v", err), http.StatusBadRequest)
-		return
-	}
-
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
@@ -237,6 +417,9 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	} else if len(mc.CustomHeaders) == 0 {
 		mc.CustomHeaders = nil
 	}
+	if _, ok := rawFields["tool_schema_transform"]; !ok {
+		mc.ToolSchemaTransform = cfg.ModelList[idx].ToolSchemaTransform
+	}
 	// Preserve the existing Provider when the caller omits it. This keeps the
 	// update API backward-compatible for clients that haven't started sending
 	// the new field yet, while still allowing explicit clearing via "".
@@ -248,9 +431,9 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 		// This keeps provider-omitted updates backward-compatible even when an
 		// older client edits the visible model ID.
 		if strings.TrimSpace(cfg.ModelList[idx].Provider) == "" {
-			existingProtocol, existingModelID := providers.ExtractProtocol(cfg.ModelList[idx])
 			existingRawModel := strings.TrimSpace(cfg.ModelList[idx].Model)
 			incomingModel := strings.TrimSpace(mc.Model)
+			existingProtocol, existingModelID := providers.ExtractProtocol(cfg.ModelList[idx])
 			if existingRawModel != "" && existingRawModel != existingModelID && incomingModel != "" {
 				if incomingModel == existingModelID {
 					mc.Model = existingRawModel
@@ -267,7 +450,20 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	normalizeIncomingModelConfig(&mc.ModelConfig)
+	if err = validateIncomingModelConfig(&mc.ModelConfig, cfg.ModelList[idx]); err != nil {
+		http.Error(w, fmt.Sprintf("Validation error: %v", err), http.StatusBadRequest)
+		return
+	}
+	if cfg.Agents.Defaults.ModelName == cfg.ModelList[idx].ModelName &&
+		!defaultModelAllowedForModelConfig(&mc.ModelConfig) {
+		// Allow users to recover from legacy/invalid defaults by saving the model
+		// and clearing the default chat model reference in the same write.
+		cfg.Agents.Defaults.ModelName = ""
+	}
+
 	cfg.ModelList[idx] = &mc.ModelConfig
+	normalizeStoredModelProviders(cfg)
 
 	logger.Debugf("update model config: %#v", mc.ModelConfig)
 
@@ -366,6 +562,19 @@ func (h *Handler) handleSetDefaultModel(w http.ResponseWriter, r *http.Request) 
 	if isVirtual {
 		http.Error(w, fmt.Sprintf("Cannot set virtual model %q as default", req.ModelName), http.StatusBadRequest)
 		return
+	}
+	for _, m := range cfg.ModelList {
+		if m.ModelName == req.ModelName {
+			if !defaultModelAllowedForModelConfig(m) {
+				http.Error(
+					w,
+					fmt.Sprintf("Model %q cannot be used as the default chat model", req.ModelName),
+					http.StatusBadRequest,
+				)
+				return
+			}
+			break
+		}
 	}
 
 	cfg.Agents.Defaults.ModelName = req.ModelName
