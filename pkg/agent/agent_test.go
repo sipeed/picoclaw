@@ -681,6 +681,178 @@ func TestHandleCommand_UseCommandRejectsUnknownSkill(t *testing.T) {
 	}
 }
 
+func TestProcessMessage_ResetCommandStartsFreshSession(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	initialMsg := testInboundMessage(bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "first message",
+	})
+	if _, err := al.processMessage(context.Background(), initialMsg); err != nil {
+		t.Fatalf("initial processMessage() error = %v", err)
+	}
+
+	route, _, err := al.resolveMessageRoute(initialMsg)
+	if err != nil {
+		t.Fatalf("resolveMessageRoute() error = %v", err)
+	}
+	allocation := al.allocateRouteSession(route, initialMsg)
+	routeSessionKey := allocation.SessionKey
+	defaultAgent := al.GetRegistry().GetDefaultAgent()
+	originalHistory := defaultAgent.Sessions.GetHistory(routeSessionKey)
+	if len(originalHistory) == 0 {
+		t.Fatal("expected initial history in routed session")
+	}
+
+	resetReply, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "/reset",
+	}))
+	if err != nil {
+		t.Fatalf("reset processMessage() error = %v", err)
+	}
+	if !strings.Contains(resetReply, "Started a fresh session") {
+		t.Fatalf("reset reply = %q, want fresh-session confirmation", resetReply)
+	}
+
+	overrideSessionKey := al.getSessionOverride(routeSessionKey)
+	if overrideSessionKey == "" || overrideSessionKey == routeSessionKey {
+		t.Fatalf("override session key = %q, want distinct session key", overrideSessionKey)
+	}
+
+	if _, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "second message",
+	})); err != nil {
+		t.Fatalf("second processMessage() error = %v", err)
+	}
+
+	gotOriginalHistory := defaultAgent.Sessions.GetHistory(routeSessionKey)
+	if len(gotOriginalHistory) != len(originalHistory) {
+		t.Fatalf("original history len = %d, want preserved len %d", len(gotOriginalHistory), len(originalHistory))
+	}
+
+	resetHistory := defaultAgent.Sessions.GetHistory(overrideSessionKey)
+	if len(resetHistory) == 0 {
+		t.Fatal("expected fresh session history after /reset")
+	}
+}
+
+func TestProcessMessage_ResetClearRestoresDefaultSession(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	initialMsg := testInboundMessage(bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "before reset",
+	})
+	if _, err := al.processMessage(context.Background(), initialMsg); err != nil {
+		t.Fatalf("initial processMessage() error = %v", err)
+	}
+
+	route, _, err := al.resolveMessageRoute(initialMsg)
+	if err != nil {
+		t.Fatalf("resolveMessageRoute() error = %v", err)
+	}
+	allocation := al.allocateRouteSession(route, initialMsg)
+	routeSessionKey := allocation.SessionKey
+	defaultAgent := al.GetRegistry().GetDefaultAgent()
+	originalHistoryLen := len(defaultAgent.Sessions.GetHistory(routeSessionKey))
+
+	if _, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "/reset",
+	})); err != nil {
+		t.Fatalf("reset processMessage() error = %v", err)
+	}
+	overrideSessionKey := al.getSessionOverride(routeSessionKey)
+	if overrideSessionKey == "" {
+		t.Fatal("expected override session key after /reset")
+	}
+
+	if _, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "during reset",
+	})); err != nil {
+		t.Fatalf("during-reset processMessage() error = %v", err)
+	}
+	overrideHistoryLen := len(defaultAgent.Sessions.GetHistory(overrideSessionKey))
+	if overrideHistoryLen == 0 {
+		t.Fatal("expected override history after reset message")
+	}
+
+	clearReply, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "/reset clear",
+	}))
+	if err != nil {
+		t.Fatalf("reset clear processMessage() error = %v", err)
+	}
+	if !strings.Contains(clearReply, "Soft reset cleared") {
+		t.Fatalf("reset clear reply = %q, want clear confirmation", clearReply)
+	}
+	if got := al.getSessionOverride(routeSessionKey); got != "" {
+		t.Fatalf("override session key after clear = %q, want empty", got)
+	}
+
+	if _, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "after clear",
+	})); err != nil {
+		t.Fatalf("after-clear processMessage() error = %v", err)
+	}
+
+	gotOriginalHistoryLen := len(defaultAgent.Sessions.GetHistory(routeSessionKey))
+	if gotOriginalHistoryLen <= originalHistoryLen {
+		t.Fatalf("original history len = %d, want > %d after reset clear", gotOriginalHistoryLen, originalHistoryLen)
+	}
+	gotOverrideHistoryLen := len(defaultAgent.Sessions.GetHistory(overrideSessionKey))
+	if gotOverrideHistoryLen != overrideHistoryLen {
+		t.Fatalf("override history len = %d, want preserved len %d after reset clear", gotOverrideHistoryLen, overrideHistoryLen)
+	}
+}
+
 func TestProcessMessage_UseCommandArmsSkillForNextMessage(t *testing.T) {
 	tmpDir := t.TempDir()
 	skillDir := filepath.Join(tmpDir, "skills", "shell")

@@ -27,7 +27,7 @@ func (al *AgentLoop) buildContinuationTarget(msg bus.InboundMessage) (*continuat
 	allocation := al.allocateRouteSession(route, msg)
 
 	return &continuationTarget{
-		SessionKey: resolveScopeKey(allocation.SessionKey, msg.SessionKey),
+		SessionKey: al.resolveEffectiveSessionKey(allocation.SessionKey, msg.SessionKey),
 		Channel:    msg.Channel,
 		ChatID:     msg.ChatID,
 	}, nil
@@ -146,7 +146,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	// Resolve session key from the route allocation, while preserving explicit
 	// agent-scoped keys supplied by the caller.
-	scopeKey := resolveScopeKey(allocation.SessionKey, msg.SessionKey)
+	scopeKey := al.resolveEffectiveSessionKey(allocation.SessionKey, msg.SessionKey)
 	sessionKey := scopeKey
 
 	// Reset message-tool state for this round so we don't skip publishing due to a previous round.
@@ -169,13 +169,14 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	opts := processOptions{
 		Dispatch: DispatchRequest{
-			SessionKey:     sessionKey,
-			SessionAliases: buildSessionAliases(sessionKey, append(allocation.SessionAliases, msg.SessionKey)...),
-			InboundContext: cloneInboundContext(&msg.Context),
-			RouteResult:    cloneResolvedRoute(&route),
-			SessionScope:   session.CloneScope(&allocation.Scope),
-			UserMessage:    msg.Content,
-			Media:          append([]string(nil), msg.Media...),
+			RouteSessionKey: allocation.SessionKey,
+			SessionKey:      sessionKey,
+			SessionAliases:  buildSessionAliases(sessionKey, sessionAliasCandidates(allocation.SessionKey, sessionKey, allocation.SessionAliases, msg.SessionKey)...),
+			InboundContext:  cloneInboundContext(&msg.Context),
+			RouteResult:     cloneResolvedRoute(&route),
+			SessionScope:    session.CloneScope(&allocation.Scope),
+			UserMessage:     msg.Content,
+			Media:           append([]string(nil), msg.Media...),
 		},
 		SenderID:                msg.SenderID,
 		SenderDisplayName:       msg.Sender.DisplayName,
