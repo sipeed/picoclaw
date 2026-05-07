@@ -41,6 +41,14 @@ func (al *AgentLoop) publishResponseOrError(
 }
 
 func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatID, sessionKey, response string) {
+	al.publishResponseWithContextIfNeeded(ctx, channel, chatID, sessionKey, response, nil)
+}
+
+func (al *AgentLoop) publishResponseWithContextIfNeeded(
+	ctx context.Context,
+	channel, chatID, sessionKey, response string,
+	inboundCtx *bus.InboundContext,
+) {
 	if response == "" {
 		return
 	}

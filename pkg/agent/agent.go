@@ -258,7 +258,14 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						return
 					}
 					if continued != "" {
-						al.PublishResponseIfNeeded(ctx, target.Channel, target.ChatID, target.SessionKey, continued)
+						al.publishResponseWithContextIfNeeded(
+							ctx,
+							target.Channel,
+							target.ChatID,
+							target.SessionKey,
+							continued,
+							&m.Context,
+						)
 					}
 					return
 				}

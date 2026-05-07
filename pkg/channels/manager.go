@@ -187,6 +187,15 @@ func trackedToolFeedbackMessageChatID(ch Channel, chatID string, outboundCtx *bu
 	return strings.TrimSpace(chatID)
 }
 
+func candidateToolFeedbackMessageChatIDs(raw, resolved string) []string {
+	raw = strings.TrimSpace(raw)
+	resolved = strings.TrimSpace(resolved)
+	if raw == "" || raw == resolved {
+		return []string{resolved}
+	}
+	return []string{resolved, raw}
+}
+
 func dismissTrackedToolFeedbackMessage(
 	ctx context.Context,
 	ch Channel,
@@ -218,9 +227,9 @@ func dismissTrackedToolFeedbackMessageForSession(
 		dismissTrackedToolFeedbackMessage(ctx, ch, chatID, outboundCtx)
 		return
 	}
-	resolvedChatID := resolveOutboundChatID(ch, chatID, outboundCtx)
+	resolvedChatID := trackedToolFeedbackMessageChatID(ch, chatID, outboundCtx)
 	if cleaner, ok := ch.(toolFeedbackMessageCleaner); ok {
-		for _, candidate := range candidateChatIDs(chatID, resolvedChatID) {
+		for _, candidate := range candidateToolFeedbackMessageChatIDs(chatID, resolvedChatID) {
 			if candidate == "" {
 				continue
 			}
@@ -229,7 +238,7 @@ func dismissTrackedToolFeedbackMessageForSession(
 		return
 	}
 	if tracker, ok := ch.(toolFeedbackMessageTracker); ok {
-		for _, candidate := range candidateChatIDs(chatID, resolvedChatID) {
+		for _, candidate := range candidateToolFeedbackMessageChatIDs(chatID, resolvedChatID) {
 			if candidate == "" {
 				continue
 			}
