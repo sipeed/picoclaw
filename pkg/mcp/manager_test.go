@@ -483,6 +483,72 @@ func TestCallTool_ReconnectsWhenHTTPServerLosesSession(t *testing.T) {
 	}
 }
 
+func TestCallTool_ReconnectsWhenStdioSessionCloses(t *testing.T) {
+	originalConnectServerFunc := connectServerFunc
+	t.Cleanup(func() {
+		connectServerFunc = originalConnectServerFunc
+	})
+
+	staleConn, staleTransport, err := newScriptedServerConnection(
+		"session-1",
+		nil,
+		fmt.Errorf(`connection closed: calling "tools/call": client is closing: EOF`),
+	)
+	if err != nil {
+		t.Fatalf("newScriptedServerConnection(stale) error = %v", err)
+	}
+	freshConn, freshTransport, err := newScriptedServerConnection(
+		"session-2",
+		&sdkmcp.CallToolResult{
+			Content: []sdkmcp.Content{
+				&sdkmcp.TextContent{Text: "reconnected after eof"},
+			},
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("newScriptedServerConnection(fresh) error = %v", err)
+	}
+
+	connectCalls := 0
+	connectServerFunc = func(ctx context.Context, name string, cfg config.MCPServerConfig) (*ServerConnection, error) {
+		connectCalls++
+		if connectCalls == 1 {
+			return freshConn, nil
+		}
+		return nil, fmt.Errorf("unexpected reconnect attempt %d", connectCalls)
+	}
+
+	mgr := NewManager()
+	mgr.servers["flaky"] = staleConn
+
+	result, err := mgr.CallTool(context.Background(), "flaky", "echo", map[string]any{
+		"query": "hello",
+	})
+	if err != nil {
+		t.Fatalf("CallTool() error = %v", err)
+	}
+	if result == nil || len(result.Content) != 1 {
+		t.Fatalf("CallTool() returned unexpected content: %#v", result)
+	}
+	text, ok := result.Content[0].(*sdkmcp.TextContent)
+	if !ok {
+		t.Fatalf("CallTool() content type = %T, want *sdkmcp.TextContent", result.Content[0])
+	}
+	if text.Text != "reconnected after eof" {
+		t.Fatalf("CallTool() text = %q, want %q", text.Text, "reconnected after eof")
+	}
+	if connectCalls != 1 {
+		t.Fatalf("connectCalls = %d, want 1", connectCalls)
+	}
+	if staleTransport.toolCallCalls != 1 {
+		t.Fatalf("stale toolCallCalls = %d, want 1", staleTransport.toolCallCalls)
+	}
+	if freshTransport.toolCallCalls != 1 {
+		t.Fatalf("fresh toolCallCalls = %d, want 1", freshTransport.toolCallCalls)
+	}
+}
+
 func TestClose_IdempotentOnEmptyManager(t *testing.T) {
 	mgr := NewManager()
 

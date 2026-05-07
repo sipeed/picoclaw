@@ -609,7 +609,17 @@ func shouldReconnectCallError(err error) bool {
 	if errors.Is(err, mcp.ErrSessionMissing) {
 		return true
 	}
-	return strings.Contains(strings.ToLower(err.Error()), mcp.ErrSessionMissing.Error())
+	errText := strings.ToLower(err.Error())
+	if strings.Contains(errText, mcp.ErrSessionMissing.Error()) {
+		return true
+	}
+
+	// Stdio MCP servers report a lost child process/session through transport
+	// errors rather than ErrSessionMissing. Reconnect once so transient server
+	// exits or stale sessions do not surface to the model as tool failures.
+	return strings.Contains(errText, "client is closing") ||
+		strings.Contains(errText, "connection closed") ||
+		strings.Contains(errText, "eof")
 }
 
 func (m *Manager) reconnectServer(
