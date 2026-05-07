@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -15,14 +17,16 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
-const MaxReadFileSize = 64 * 1024 // 64KB limit to avoid context overflow
+const (
+	MaxReadFileSize  = 64 * 1024        // 64KB limit to avoid context overflow
+	MaxWriteFileSize = 20 * 1024 * 1024 // 20MB cap on a single write to avoid runaway writes
+)
 
 func ValidatePathWithAllowPaths(
 	path, workspace string,
@@ -1089,6 +1093,9 @@ func (r *sandboxFs) ReadFile(path string) ([]byte, error) {
 }
 
 func (r *sandboxFs) WriteFile(path string, data []byte) error {
+	if len(data) > MaxWriteFileSize {
+		return fmt.Errorf("write rejected: %d bytes exceeds %d-byte cap", len(data), MaxWriteFileSize)
+	}
 	return r.execute(path, func(root *os.Root, relPath string) error {
 		dir := filepath.Dir(relPath)
 		if dir != "." && dir != "/" {
@@ -1099,7 +1106,13 @@ func (r *sandboxFs) WriteFile(path string, data []byte) error {
 
 		// Use atomic write pattern with explicit sync for flash storage reliability.
 		// Using 0o600 (owner read/write only) for secure default permissions.
-		tmpRelPath := fmt.Sprintf(".tmp-%d-%d", os.Getpid(), time.Now().UnixNano())
+		// Random suffix prevents collisions and avoids predictable temp names that
+		// could be exploited in concurrent or hostile filesystem scenarios.
+		var rnd [8]byte
+		if _, err := rand.Read(rnd[:]); err != nil {
+			return fmt.Errorf("failed to generate temp file suffix: %w", err)
+		}
+		tmpRelPath := fmt.Sprintf(".tmp-%d-%s", os.Getpid(), hex.EncodeToString(rnd[:]))
 
 		tmpFile, err := root.OpenFile(tmpRelPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if err != nil {
