@@ -706,17 +706,23 @@ func (cb *ContextBuilder) BuildMessagesFromPrompt(req PromptBuildRequest) []prov
 	if !skipForTools && !skipForSubsequent {
 		if skillsSummary := cb.skillsLoader.BuildSkillsSummary(); skillsSummary != "" {
 			catalogPart := PromptPart{
-				ID:      "capability.skill_catalog",
-				Layer:   PromptLayerCapability,
-				Slot:    PromptSlotSkillCatalog,
-				Source:  PromptSource{ID: PromptSourceSkillCatalog, Name: "skill:index"},
-				Title:   "skill catalog",
-				Content: fmt.Sprintf("# Skills\n\nThe following skills extend your capabilities. To use a skill, read its SKILL.md file using the read_file tool.\n\n%s", skillsSummary),
-				Stable:  true,
-				Cache:   PromptCacheEphemeral,
+				ID:     "capability.skill_catalog",
+				Layer:  PromptLayerCapability,
+				Slot:   PromptSlotSkillCatalog,
+				Source: PromptSource{ID: PromptSourceSkillCatalog, Name: "skill:index"},
+				Title:  "skill catalog",
+				Content: fmt.Sprintf(
+					"# Skills\n\nThe following skills extend your capabilities. To use a skill, read its SKILL.md file using the read_file tool.\n\n%s",
+					skillsSummary,
+				),
+				Stable: true,
+				Cache:  PromptCacheEphemeral,
 			}
 			stringParts = append(stringParts, catalogPart.Content)
-			contentBlocks = append(contentBlocks, promptContentBlock(catalogPart, &providers.CacheControl{Type: "ephemeral"}))
+			contentBlocks = append(
+				contentBlocks,
+				promptContentBlock(catalogPart, &providers.CacheControl{Type: "ephemeral"}),
+			)
 		}
 	}
 
