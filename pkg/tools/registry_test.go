@@ -515,6 +515,32 @@ func TestToolRegistry_Clone_PreservesTTLValue(t *testing.T) {
 	}
 }
 
+func TestToolRegistry_Clone_RebindsDiscoveryToolsToClone(t *testing.T) {
+	parent := NewToolRegistry()
+	parent.RegisterHidden(newMockTool("mcp_research", "deep research report tool"))
+	parent.Register(NewBM25SearchTool(parent, 3, 5))
+
+	clone := parent.Clone()
+
+	searchTool, ok := clone.Get("tool_search_tool_bm25")
+	if !ok {
+		t.Fatal("expected cloned registry to expose BM25 search tool")
+	}
+	result := searchTool.Execute(context.Background(), map[string]any{
+		"query": "deep research",
+	})
+	if result == nil || result.IsError {
+		t.Fatalf("search result error: %+v", result)
+	}
+
+	if _, ok := clone.Get("mcp_research"); !ok {
+		t.Fatal("expected search in clone to promote hidden tool in clone")
+	}
+	if _, ok := parent.Get("mcp_research"); ok {
+		t.Fatal("expected search in clone not to promote hidden tool in parent")
+	}
+}
+
 func TestToolRegistry_ConcurrentAccess(t *testing.T) {
 	r := NewToolRegistry()
 	var wg sync.WaitGroup
