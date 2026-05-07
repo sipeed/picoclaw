@@ -215,6 +215,60 @@ func TestReloadHandler_Error(t *testing.T) {
 	}
 }
 
+func TestSubagentStatusHandler_Success(t *testing.T) {
+	s := newTestServer()
+	s.SetSubagentStatusFunc(func(channel, chatID string) (any, error) {
+		return map[string]any{
+			"channel": channel,
+			"chat_id": chatID,
+			"tasks": []map[string]any{
+				{"id": "subagent-1", "status": "running"},
+			},
+		}, nil
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/subagents/status?channel=pico&chat_id=session-1", nil)
+	req.Header.Set("Authorization", "Bearer test")
+	w := httptest.NewRecorder()
+
+	s.subagentStatusHandler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp struct {
+		Channel string           `json:"channel"`
+		ChatID  string           `json:"chat_id"`
+		Tasks   []map[string]any `json:"tasks"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Channel != "pico" || resp.ChatID != "session-1" {
+		t.Fatalf("response = %#v, want channel/chat_id preserved", resp)
+	}
+	if len(resp.Tasks) != 1 {
+		t.Fatalf("tasks len = %d, want 1", len(resp.Tasks))
+	}
+}
+
+func TestSubagentStatusHandler_RequiresAuth(t *testing.T) {
+	s := newTestServer()
+	s.SetSubagentStatusFunc(func(channel, chatID string) (any, error) {
+		return map[string]any{}, nil
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/subagents/status", nil)
+	w := httptest.NewRecorder()
+
+	s.subagentStatusHandler(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
 func TestSetReady_Toggle(t *testing.T) {
 	s := newTestServer()
 

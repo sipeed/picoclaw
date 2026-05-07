@@ -246,6 +246,13 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) (runEr
 	runningServices.HealthServer.SetPermissionGrantFunc(func(agentID, path, duration string) error {
 		return agentLoop.GrantPermission(agentID, path, duration)
 	})
+	runningServices.HealthServer.SetSubagentStatusFunc(func(channel, chatID string) (any, error) {
+		return map[string]any{
+			"channel": channel,
+			"chat_id": chatID,
+			"tasks":   agentLoop.GetMainSubagentTasks(channel, chatID),
+		}, nil
+	})
 
 	for _, bindHost := range listenResult.BindHosts {
 		fmt.Printf("✓ Gateway started on %s\n", net.JoinHostPort(bindHost, strconv.Itoa(cfg.Gateway.Port)))

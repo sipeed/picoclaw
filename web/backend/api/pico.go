@@ -5,8 +5,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httputil"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -17,6 +23,8 @@ import (
 // registerPicoRoutes binds Pico Channel management endpoints to the ServeMux.
 func (h *Handler) registerPicoRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/pico/info", h.handleGetPicoInfo)
+	mux.HandleFunc("GET /api/pico/memory-graph", h.handleGetPicoMemoryGraph)
+	mux.HandleFunc("GET /api/pico/subagents", h.handleGetPicoSubagents)
 	mux.HandleFunc("POST /api/pico/token", h.handleRegenPicoToken)
 	mux.HandleFunc("POST /api/pico/setup", h.handlePicoSetup)
 
@@ -26,6 +34,43 @@ func (h *Handler) registerPicoRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /pico/ws", h.handleWebSocketProxy())
 	mux.HandleFunc("GET /pico/media/{id}", h.handlePicoMediaProxy())
 	mux.HandleFunc("HEAD /pico/media/{id}", h.handlePicoMediaProxy())
+}
+
+type picoSubagentStatusItem struct {
+	ID      string `json:"id"`
+	Label   string `json:"label,omitempty"`
+	Status  string `json:"status"`
+	Created int64  `json:"created"`
+	Result  string `json:"result,omitempty"`
+}
+
+type picoSubagentStatusResponse struct {
+	SessionID string                   `json:"session_id"`
+	Channel   string                   `json:"channel"`
+	ChatID    string                   `json:"chat_id"`
+	Tasks     []picoSubagentStatusItem `json:"tasks"`
+}
+
+type picoMemoryGraphNode struct {
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Kind    string `json:"kind"`
+	Group   string `json:"group"`
+	Preview string `json:"preview,omitempty"`
+	Weight  int    `json:"weight,omitempty"`
+}
+
+type picoMemoryGraphEdge struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+	Kind   string `json:"kind"`
+}
+
+type picoMemoryGraphResponse struct {
+	SessionID   string                `json:"session_id"`
+	GeneratedAt string                `json:"generated_at"`
+	Nodes       []picoMemoryGraphNode `json:"nodes"`
+	Edges       []picoMemoryGraphEdge `json:"edges"`
 }
 
 // createWsProxy creates a reverse proxy to the current gateway WebSocket endpoint.
@@ -205,6 +250,433 @@ func (h *Handler) handleGetPicoInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writePicoInfoResponse(w, r, cfg, nil)
+}
+
+func (h *Handler) handleGetPicoMemoryGraph(w http.ResponseWriter, r *http.Request) {
+	sessionID := strings.TrimSpace(r.URL.Query().Get("session_id"))
+	if sessionID == "" {
+		http.Error(w, "session_id is required", http.StatusBadRequest)
+		return
+	}
+
+	cfg, err := config.LoadConfig(h.configPath)
+	if err != nil {
+		http.Error(w, "failed to load config", http.StatusInternalServerError)
+		return
+	}
+
+	sessionDir := resolveSessionsDir(cfg.Agents.Defaults.Workspace)
+	toolFeedbackMaxArgsLength := cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength()
+	workspaceDir := resolveWorkspaceDir(cfg.Agents.Defaults.Workspace)
+
+	ref, refErr := h.findPicoJSONLSession(sessionDir, sessionID)
+	var sess sessionFile
+	err = refErr
+	if refErr == nil {
+		sess, err = h.readJSONLSession(sessionDir, ref.Key)
+	}
+	if err != nil {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+
+	nodes, edges := buildPicoMemoryGraph(
+		sessionID,
+		detailSessionMessages(sess.Messages, toolFeedbackMaxArgsLength),
+		workspaceDir,
+	)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(picoMemoryGraphResponse{
+		SessionID:   sessionID,
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Nodes:       nodes,
+		Edges:       edges,
+	})
+}
+
+func (h *Handler) handleGetPicoSubagents(w http.ResponseWriter, r *http.Request) {
+	sessionID := strings.TrimSpace(r.URL.Query().Get("session_id"))
+	if sessionID == "" {
+		http.Error(w, "session_id is required", http.StatusBadRequest)
+		return
+	}
+
+	if !h.gatewayAvailableForProxy() {
+		logger.Warnf("Gateway not available for Pico subagent status proxy")
+		http.Error(w, "Gateway not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	gateway.mu.Lock()
+	pidData := gateway.pidData
+	gateway.mu.Unlock()
+
+	if pidData == nil || pidData.Token == "" {
+		logger.Warnf("Gateway auth token not available for Pico subagent status proxy")
+		http.Error(w, "Gateway auth token not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	target := h.gatewayProxyURL()
+	target.Path = "/internal/subagents/status"
+	query := target.Query()
+	query.Set("channel", "pico")
+	query.Set("chat_id", sessionID)
+	target.RawQuery = query.Encode()
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, target.String(), nil)
+	if err != nil {
+		http.Error(w, "Failed to create subagent status request", http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+pidData.Token)
+
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+	if err != nil {
+		logger.Errorf("Failed to fetch Pico subagent status: %v", err)
+		http.Error(w, "Gateway unavailable: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, resp.Body)
+		return
+	}
+
+	var upstream struct {
+		Channel string `json:"channel"`
+		ChatID  string `json:"chat_id"`
+		Tasks   []struct {
+			ID      string `json:"id"`
+			Label   string `json:"label"`
+			Status  string `json:"status"`
+			Created int64  `json:"created"`
+			Result  string `json:"result"`
+		} `json:"tasks"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&upstream); err != nil {
+		http.Error(w, "Failed to decode subagent status response", http.StatusBadGateway)
+		return
+	}
+
+	tasks := make([]picoSubagentStatusItem, 0, len(upstream.Tasks))
+	for _, task := range upstream.Tasks {
+		tasks = append(tasks, picoSubagentStatusItem{
+			ID:      task.ID,
+			Label:   task.Label,
+			Status:  task.Status,
+			Created: task.Created,
+			Result:  summarizeSubagentResult(task.Result),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(picoSubagentStatusResponse{
+		SessionID: sessionID,
+		Channel:   upstream.Channel,
+		ChatID:    upstream.ChatID,
+		Tasks:     tasks,
+	})
+}
+
+func summarizeSubagentResult(result string) string {
+	result = strings.TrimSpace(result)
+	if result == "" {
+		return ""
+	}
+	const maxRunes = 180
+	runes := []rune(result)
+	if len(runes) <= maxRunes {
+		return result
+	}
+	return string(runes[:maxRunes]) + "..."
+}
+
+func resolveWorkspaceDir(workspace string) string {
+	if workspace == "" {
+		home, _ := os.UserHomeDir()
+		workspace = filepath.Join(home, ".picoclaw", "workspace")
+	}
+	if len(workspace) > 0 && workspace[0] == '~' {
+		home, _ := os.UserHomeDir()
+		if len(workspace) > 1 && workspace[1] == '/' {
+			workspace = home + workspace[1:]
+		} else {
+			workspace = home
+		}
+	}
+	return workspace
+}
+
+func buildPicoMemoryGraph(sessionID string, messages []sessionChatMessage, workspaceDir string) ([]picoMemoryGraphNode, []picoMemoryGraphEdge) {
+	nodes := make([]picoMemoryGraphNode, 0, 32)
+	edges := make([]picoMemoryGraphEdge, 0, 48)
+	seenNodes := make(map[string]struct{})
+	seenEdges := make(map[string]struct{})
+
+	addNode := func(node picoMemoryGraphNode) {
+		if _, exists := seenNodes[node.ID]; exists {
+			return
+		}
+		seenNodes[node.ID] = struct{}{}
+		nodes = append(nodes, node)
+	}
+
+	addEdge := func(edge picoMemoryGraphEdge) {
+		key := edge.Source + "\x00" + edge.Target + "\x00" + edge.Kind
+		if _, exists := seenEdges[key]; exists {
+			return
+		}
+		seenEdges[key] = struct{}{}
+		edges = append(edges, edge)
+	}
+
+	const (
+		memoryRootID  = "memory-root"
+		sessionRootID = "session-root"
+	)
+
+	addNode(picoMemoryGraphNode{
+		ID:      memoryRootID,
+		Label:   "Workspace Memory",
+		Kind:    "root",
+		Group:   "memory",
+		Preview: "Long-term memory and recent notes",
+		Weight:  5,
+	})
+	addNode(picoMemoryGraphNode{
+		ID:      sessionRootID,
+		Label:   "Active Session",
+		Kind:    "root",
+		Group:   "session",
+		Preview: sessionID,
+		Weight:  5,
+	})
+	addEdge(picoMemoryGraphEdge{Source: memoryRootID, Target: sessionRootID, Kind: "context"})
+
+	appendMemoryDocumentGraph(memoryRootID, filepath.Join(workspaceDir, "memory", "MEMORY.md"), "memory", "Long-term Memory", 8, addNode, addEdge)
+	appendRecentDailyNoteGraph(memoryRootID, filepath.Join(workspaceDir, "memory"), addNode, addEdge)
+	appendSessionGraph(sessionRootID, messages, addNode, addEdge)
+
+	sort.Slice(nodes, func(i, j int) bool {
+		return nodes[i].ID < nodes[j].ID
+	})
+	sort.Slice(edges, func(i, j int) bool {
+		if edges[i].Source == edges[j].Source {
+			if edges[i].Target == edges[j].Target {
+				return edges[i].Kind < edges[j].Kind
+			}
+			return edges[i].Target < edges[j].Target
+		}
+		return edges[i].Source < edges[j].Source
+	})
+
+	return nodes, edges
+}
+
+func appendMemoryDocumentGraph(
+	rootID string,
+	path string,
+	group string,
+	title string,
+	maxItems int,
+	addNode func(picoMemoryGraphNode),
+	addEdge func(picoMemoryGraphEdge),
+) {
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		return
+	}
+
+	docID := group + ":document"
+	addNode(picoMemoryGraphNode{
+		ID:      docID,
+		Label:   title,
+		Kind:    "document",
+		Group:   group,
+		Preview: filepath.Base(path),
+		Weight:  4,
+	})
+	addEdge(picoMemoryGraphEdge{Source: rootID, Target: docID, Kind: "contains"})
+
+	lines := strings.Split(string(data), "\n")
+	currentParent := docID
+	items := 0
+	headingIndex := 0
+	noteIndex := 0
+
+	for _, rawLine := range lines {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+
+		if strings.HasPrefix(line, "#") {
+			headingText := summarizeGraphText(strings.TrimSpace(strings.TrimLeft(line, "#")), 48)
+			if headingText == "" {
+				continue
+			}
+			headingIndex++
+			headingID := group + ":heading:" + strconv.Itoa(headingIndex)
+			addNode(picoMemoryGraphNode{
+				ID:      headingID,
+				Label:   headingText,
+				Kind:    "heading",
+				Group:   group,
+				Preview: headingText,
+				Weight:  3,
+			})
+			addEdge(picoMemoryGraphEdge{Source: docID, Target: headingID, Kind: "section"})
+			currentParent = headingID
+			continue
+		}
+
+		trimmed := strings.TrimSpace(strings.TrimLeft(line, "-*0123456789. "))
+		if trimmed == "" {
+			continue
+		}
+
+		noteIndex++
+		noteID := group + ":note:" + strconv.Itoa(noteIndex)
+		addNode(picoMemoryGraphNode{
+			ID:      noteID,
+			Label:   summarizeGraphText(trimmed, 38),
+			Kind:    "note",
+			Group:   group,
+			Preview: summarizeGraphText(trimmed, 140),
+			Weight:  2,
+		})
+		addEdge(picoMemoryGraphEdge{Source: currentParent, Target: noteID, Kind: "note"})
+		items++
+		if items >= maxItems {
+			break
+		}
+	}
+}
+
+func appendRecentDailyNoteGraph(
+	rootID string,
+	memoryDir string,
+	addNode func(picoMemoryGraphNode),
+	addEdge func(picoMemoryGraphEdge),
+) {
+	matches, err := filepath.Glob(filepath.Join(memoryDir, "*", "*.md"))
+	if err != nil || len(matches) == 0 {
+		return
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i] > matches[j]
+	})
+
+	for idx, match := range matches {
+		if idx >= 3 {
+			break
+		}
+		appendMemoryDocumentGraph(
+			rootID,
+			match,
+			"daily-"+strconv.Itoa(idx+1),
+			"Daily Note "+filepath.Base(match),
+			4,
+			addNode,
+			addEdge,
+		)
+	}
+}
+
+func appendSessionGraph(
+	rootID string,
+	messages []sessionChatMessage,
+	addNode func(picoMemoryGraphNode),
+	addEdge func(picoMemoryGraphEdge),
+) {
+	if len(messages) == 0 {
+		return
+	}
+
+	start := 0
+	if len(messages) > 8 {
+		start = len(messages) - 8
+	}
+	recent := messages[start:]
+	previousID := rootID
+
+	for index, message := range recent {
+		messageID := "session:message:" + strconv.Itoa(index)
+		label := strings.ToUpper(message.Role)
+		if preview := summarizeGraphText(message.Content, 34); preview != "" {
+			label += ": " + preview
+		}
+		if label == strings.ToUpper(message.Role) && len(message.Attachments) > 0 {
+			label += ": attachment"
+		}
+
+		addNode(picoMemoryGraphNode{
+			ID:      messageID,
+			Label:   label,
+			Kind:    "message",
+			Group:   "session",
+			Preview: summarizeGraphText(message.Content, 160),
+			Weight:  3,
+		})
+		addEdge(picoMemoryGraphEdge{Source: previousID, Target: messageID, Kind: "flow"})
+		previousID = messageID
+
+		for toolIndex, toolCall := range message.ToolCalls {
+			if toolCall.Function == nil {
+				continue
+			}
+			name := strings.TrimSpace(toolCall.Function.Name)
+			if name == "" {
+				continue
+			}
+			toolID := messageID + ":tool:" + strconv.Itoa(toolIndex)
+			addNode(picoMemoryGraphNode{
+				ID:      toolID,
+				Label:   name,
+				Kind:    "tool",
+				Group:   "tool",
+				Preview: summarizeGraphText(toolCall.Function.Arguments, 120),
+				Weight:  2,
+			})
+			addEdge(picoMemoryGraphEdge{Source: messageID, Target: toolID, Kind: "tool"})
+		}
+
+		for attachmentIndex, attachment := range message.Attachments {
+			name := strings.TrimSpace(attachment.Filename)
+			if name == "" {
+				name = attachment.Type
+			}
+			if name == "" {
+				name = "attachment"
+			}
+			attachmentID := messageID + ":attachment:" + strconv.Itoa(attachmentIndex)
+			addNode(picoMemoryGraphNode{
+				ID:      attachmentID,
+				Label:   summarizeGraphText(name, 34),
+				Kind:    "attachment",
+				Group:   "media",
+				Preview: summarizeGraphText(attachment.URL, 120),
+				Weight:  1,
+			})
+			addEdge(picoMemoryGraphEdge{Source: messageID, Target: attachmentID, Kind: "attachment"})
+		}
+	}
+}
+
+func summarizeGraphText(text string, maxRunes int) string {
+	trimmed := strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
+	if trimmed == "" {
+		return ""
+	}
+	runes := []rune(trimmed)
+	if len(runes) <= maxRunes {
+		return trimmed
+	}
+	return string(runes[:maxRunes-1]) + "…"
 }
 
 // handleRegenPicoToken rotates the raw Pico WebSocket token and returns

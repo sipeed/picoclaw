@@ -11,6 +11,8 @@ build/
 /picoclaw
 /picoclaw-test
 cmd/**/workspace
+.gocache/
+dist/
 
 # Picoclaw specific
 

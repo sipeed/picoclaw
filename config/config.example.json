@@ -3,7 +3,7 @@
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
       "restrict_to_workspace": true,
-      "model_name": "gpt-5.4",
+      "model_name": "smollm2",
       "max_tokens": 8192,
       "context_window": 131072,
       "temperature": 0.7,
@@ -21,6 +21,24 @@
     }
   },
   "model_list": [
+    {
+      "model_name": "smollm2",
+      "provider": "ollama",
+      "model": "smollm2:1.7b",
+      "api_base": "http://localhost:11434/v1"
+    },
+    {
+      "model_name": "qwen3.5",
+      "provider": "ollama",
+      "model": "qwen3.5:4b",
+      "api_base": "http://localhost:11434/v1"
+    },
+    {
+      "model_name": "deepseek-v4-pro",
+      "provider": "ollama",
+      "model": "deepseek-v4-pro:cloud",
+      "api_base": "http://localhost:11434/v1"
+    },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
