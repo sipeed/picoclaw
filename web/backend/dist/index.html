@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PicoClaw</title>
+    <script type="module" crossorigin src="/assets/index-C2w0BPus.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/shim-ClcZ9bMo.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-DHuJSidx.css">
+    <link rel="stylesheet" href="/styles/vault.css">
+  </head>
+
+  <body>
+    <div id="root"></div>
+
+    <div id="vault-sidebar" class="sidebar hidden">
+      <div class="sidebar-header">
+        <h3>Vault</h3>
+        <button id="close-sidebar">✕</button>
+      </div>
+      <div id="vault-tree" class="tree-view"></div>
+      <div id="tag-cloud" class="tag-cloud"></div>
+      <div id="session-history" class="session-history"></div>
+      <div id="tool-skills-panel" class="tool-skills-panel"></div>
+    </div>
+    <button id="toggle-sidebar">☰ Vault</button>
+
+    <script src="/vault.js"></script>
+    <script src="/tags.js"></script>
+    <script src="/sessions.js"></script>
+    <script src="/tools-skills.js"></script>
+  </body>
+</html>

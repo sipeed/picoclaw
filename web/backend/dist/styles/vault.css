@@ -1,0 +1,82 @@
+/* web/backend/dist/styles/vault.css */
+.sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 300px;
+  height: 100%;
+  background: var(--background-primary, #1e1e1e);
+  color: var(--text-normal, #dcddde);
+  padding: 10px;
+  overflow-y: auto;
+  z-index: 1000;
+}
+
+.sidebar.hidden {
+  display: none;
+}
+
+.sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.sidebar-header h3 {
+  margin: 0;
+}
+
+.tree-item {
+  padding: 5px 10px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.tree-item:hover {
+  background: var(--background-secondary, #2d2d2d);
+}
+
+.tag-badge {
+  display: inline-block;
+  background: var(--background-secondary, #2d2d2d);
+  border-radius: 12px;
+  padding: 2px 8px;
+  margin: 2px;
+  cursor: pointer;
+  font-size: 0.9em;
+}
+
+.tag-badge:hover {
+  background: var(--interactive-accent, #5865f2);
+  color: white;
+}
+
+.skill-item {
+  padding: 8px;
+  border-bottom: 1px solid var(--background-secondary, #2d2d2d);
+}
+
+.skill-name {
+  font-weight: bold;
+}
+
+.skill-usage {
+  font-size: 0.9em;
+  color: var(--text-muted, #72767d);
+}
+
+.session-item {
+  padding: 8px;
+  border-bottom: 1px solid var(--background-secondary, #2d2d2d);
+  cursor: pointer;
+}
+
+.session-title {
+  font-weight: bold;
+}
+
+.session-tags {
+  font-size: 0.9em;
+  color: var(--text-muted, #72767d);
+}
