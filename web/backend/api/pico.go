@@ -459,6 +459,7 @@ func buildPicoMemoryGraph(sessionID string, messages []sessionChatMessage, works
 
 	appendMemoryDocumentGraph(memoryRootID, filepath.Join(workspaceDir, "memory", "MEMORY.md"), "memory", "Long-term Memory", 8, addNode, addEdge)
 	appendRecentDailyNoteGraph(memoryRootID, filepath.Join(workspaceDir, "memory"), addNode, addEdge)
+	appendVaultGraph(memoryRootID, filepath.Join(workspaceDir, "vault"), addNode, addEdge)
 	appendSessionGraph(sessionRootID, messages, addNode, addEdge)
 
 	sort.Slice(nodes, func(i, j int) bool {
@@ -769,6 +770,65 @@ func (h *Handler) handlePicoSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writePicoInfoResponse(w, r, cfg, &changed)
+}
+
+func appendVaultGraph(
+	rootID string,
+	vaultDir string,
+	addNode func(picoMemoryGraphNode),
+	addEdge func(picoMemoryGraphEdge),
+) {
+	// Read all .md files from vault directory
+	entries, err := os.ReadDir(vaultDir)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".md" {
+			continue
+		}
+
+		notePath := filepath.Join(vaultDir, entry.Name())
+		data, err := os.ReadFile(notePath)
+		if err != nil {
+			continue
+		}
+
+		noteName := strings.TrimSuffix(entry.Name(), ".md")
+		noteID := "vault:" + noteName
+
+		// Parse frontmatter and content
+		fm, body := memory.ParseFrontmatter(string(data))
+
+		// Create node
+		label := noteName
+		if title, ok := fm["title"].(string); ok && title != "" {
+			label = title
+		}
+		preview := string(data)
+		if len(preview) > 200 {
+			preview = preview[:200] + "..."
+		}
+
+		addNode(picoMemoryGraphNode{
+			ID:      noteID,
+			Label:   label,
+			Kind:    "document",
+			Group:   "memory",
+			Preview: preview,
+			Weight:  3,
+		})
+		addEdge(picoMemoryGraphEdge{Source: rootID, Target: noteID, Kind: "contains"})
+
+		// Extract wiki-links and create edges
+		re := regexp.MustCompile(`\[\[([^\]]+)\]`)
+		matches := re.FindAllStringSubmatch(body, -1)
+		for _, m := range matches {
+			targetID := "vault:" + m[1]
+			addEdge(picoMemoryGraphEdge{Source: noteID, Target: targetID, Kind: "wikilink"})
+		}
+	}
 }
 
 // generateSecureToken creates a random 32-character hex string.

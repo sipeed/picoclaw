@@ -3,6 +3,7 @@ package vault
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"gopkg.in/yaml.v3"
 
 	"github.com/sipeed/picoclaw/pkg/memory"
@@ -37,4 +38,15 @@ func (vs *VaultStore) ReadNote(name string) (map[string]interface{}, string, err
 		return nil, "", err
 	}
 	return memory.ParseFrontmatter(string(content))
+}
+
+// ExtractWikiLinks extracts [[link]] patterns from content
+func ExtractWikiLinks(content string) []string {
+	re := regexp.MustCompile(`\[\[([^\]]+)\]`)
+	matches := re.FindAllStringSubmatch(content, -1)
+	links := make([]string, 0, len(matches))
+	for _, m := range matches {
+		links = append(links, m[1])
+	}
+	return links
 }
