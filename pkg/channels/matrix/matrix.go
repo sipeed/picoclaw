@@ -299,6 +299,12 @@ func (c *MatrixChannel) Start(ctx context.Context) error {
 	return nil
 }
 
+func (c *MatrixChannel) ConfigureToolFeedbackAnimator(cfg channels.ToolFeedbackAnimatorConfig) {
+	if c.progress != nil {
+		c.progress.Configure(cfg)
+	}
+}
+
 func (c *MatrixChannel) Stop(ctx context.Context) error {
 	logger.InfoC("matrix", "Stopping Matrix channel")
 	c.SetRunning(false)

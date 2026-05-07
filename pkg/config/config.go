@@ -249,9 +249,11 @@ type SubTurnConfig struct {
 }
 
 type ToolFeedbackConfig struct {
-	Enabled          bool `json:"enabled"           env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED"`
-	MaxArgsLength    int  `json:"max_args_length"   env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH"`
-	SeparateMessages bool `json:"separate_messages" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_SEPARATE_MESSAGES"`
+	Enabled                bool `json:"enabled"                   env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED"`
+	MaxArgsLength          int  `json:"max_args_length"           env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH"`
+	SeparateMessages       bool `json:"separate_messages"         env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_SEPARATE_MESSAGES"`
+	AnimationIntervalSecs  int  `json:"animation_interval_secs"   env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ANIMATION_INTERVAL_SECS"`
+	EditMinIntervalSeconds int  `json:"edit_min_interval_seconds" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_EDIT_MIN_INTERVAL_SECONDS"`
 }
 
 type AgentDefaults struct {
@@ -309,6 +311,20 @@ func (d *AgentDefaults) IsToolFeedbackEnabled() bool {
 // in-place progress message.
 func (d *AgentDefaults) IsToolFeedbackSeparateMessagesEnabled() bool {
 	return d.ToolFeedback.SeparateMessages
+}
+
+func (d *AgentDefaults) GetToolFeedbackAnimationInterval() time.Duration {
+	if d.ToolFeedback.AnimationIntervalSecs > 0 {
+		return time.Duration(d.ToolFeedback.AnimationIntervalSecs) * time.Second
+	}
+	return 3 * time.Second
+}
+
+func (d *AgentDefaults) GetToolFeedbackEditMinInterval() time.Duration {
+	if d.ToolFeedback.EditMinIntervalSeconds > 0 {
+		return time.Duration(d.ToolFeedback.EditMinIntervalSeconds) * time.Second
+	}
+	return 0
 }
 
 // GetModelName returns the effective model name for the agent defaults.

@@ -143,6 +143,10 @@ type toolFeedbackMessageContentPreparer interface {
 	PrepareToolFeedbackMessageContent(content string) string
 }
 
+type toolFeedbackAnimatorConfigurer interface {
+	ConfigureToolFeedbackAnimator(ToolFeedbackAnimatorConfig)
+}
+
 type asyncTask struct {
 	cancel context.CancelFunc
 }
@@ -593,6 +597,12 @@ func (m *Manager) initChannel(typeName, channelName string) {
 		// Inject owner reference so BaseChannel.HandleMessage can auto-trigger typing/reaction
 		if setter, ok := ch.(interface{ SetOwner(ch Channel) }); ok {
 			setter.SetOwner(ch)
+		}
+		if setter, ok := ch.(toolFeedbackAnimatorConfigurer); ok && m.config != nil {
+			setter.ConfigureToolFeedbackAnimator(ToolFeedbackAnimatorConfig{
+				AnimationInterval: m.config.Agents.Defaults.GetToolFeedbackAnimationInterval(),
+				MinEditInterval:   m.config.Agents.Defaults.GetToolFeedbackEditMinInterval(),
+			})
 		}
 		m.channels[channelName] = ch
 		m.publishChannelEvent(
