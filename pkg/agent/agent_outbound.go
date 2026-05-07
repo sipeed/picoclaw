@@ -25,21 +25,6 @@ func (al *AgentLoop) maybePublishError(ctx context.Context, channel, chatID, ses
 	return true
 }
 
-func (al *AgentLoop) publishResponseOrError(
-	ctx context.Context,
-	channel, chatID, sessionKey string,
-	response string,
-	err error,
-) {
-	if err != nil {
-		if !al.maybePublishError(ctx, channel, chatID, sessionKey, err) {
-			return
-		}
-		response = ""
-	}
-	al.PublishResponseIfNeeded(ctx, channel, chatID, sessionKey, response)
-}
-
 func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatID, sessionKey, response string) {
 	al.publishResponseWithContextIfNeeded(ctx, channel, chatID, sessionKey, response, nil)
 }
