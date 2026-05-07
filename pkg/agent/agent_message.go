@@ -227,6 +227,13 @@ func (al *AgentLoop) allocateRouteSession(route routing.ResolvedRoute, msg bus.I
 	})
 }
 
+func originTopicID(origin *bus.InboundContext) string {
+	if origin == nil {
+		return ""
+	}
+	return strings.TrimSpace(origin.TopicID)
+}
+
 func (al *AgentLoop) processSystemMessage(
 	ctx context.Context,
 	msg bus.InboundMessage,
