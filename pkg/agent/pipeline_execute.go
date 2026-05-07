@@ -494,6 +494,19 @@ toolLoop:
 		toolCallID := tc.ID
 		asyncToolName := toolName
 		asyncCallback := func(_ context.Context, result *tools.ToolResult) {
+			if result != nil && result.IsError {
+				content := strings.TrimSpace(result.ForUser)
+				if content == "" {
+					content = strings.TrimSpace(result.ContentForLLM())
+				}
+				if content != "" && !result.Silent {
+					outCtx, outCancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer outCancel()
+					_ = al.bus.PublishOutbound(outCtx, outboundMessageForTurn(ts, content))
+				}
+				return
+			}
+
 			if !result.Silent && result.ForUser != "" {
 				outCtx, outCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer outCancel()
