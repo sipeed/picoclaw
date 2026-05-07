@@ -185,6 +185,17 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		AllowInterimPicoPublish: true,
 	}
 
+	// Multi-tenancy: extract validated workspace / config_dir / allowed_tools /
+	// allowed_skills from msg.Context.Raw and apply to opts. Defined in
+	// agent_tenant.go; isolated there so future upstream syncs don't conflict
+	// across the whole agent_message.go file.
+	tenant, tenantErr := al.extractTenantOverrides(msg)
+	if tenantErr != nil {
+		return "", tenantErr
+	}
+	tenant.applyTo(&opts)
+	tenant.logIfPresent(sessionKey)
+
 	// context-dependent commands check their own Runtime fields and report
 	// "unavailable" when the required capability is nil.
 	if response, handled := al.handleCommand(ctx, msg, agent, &opts); handled {

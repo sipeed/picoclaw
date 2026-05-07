@@ -102,6 +102,16 @@ type processOptions struct {
 	InboundContext          *bus.InboundContext    // Normalized inbound facts for events/hooks
 	RouteResult             *routing.ResolvedRoute // Route decision snapshot for events/hooks
 	SessionScope            *session.SessionScope  // Session scope snapshot for events/hooks
+
+	// Multi-tenancy overrides extracted from inbound message Context.Raw.
+	// Populated by extractTenantOverrides; enforced against the workspace_root
+	// boundary set in agents.defaults.workspace_root. The overrides scope the
+	// effective working directory, config, tool/skill allowlists, and (in a
+	// follow-up PR) sessions and provider credentials for this single turn.
+	WorkspaceOverride string   // Tenant working directory (relative to workspace_root)
+	ConfigDir         string   // Tenant config directory (relative to workspace_root)
+	AllowedTools      []string // Tool name allowlist (empty = all tools)
+	AllowedSkills     []string // Skill name allowlist (empty = all skills)
 }
 
 type continuationTarget struct {
