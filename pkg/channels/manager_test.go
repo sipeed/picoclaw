@@ -898,6 +898,7 @@ type mockMessageEditor struct {
 	recordedContent   string
 	clearedChatID     string
 	dismissedChatID   string
+	dismissedChatIDs  []string
 }
 
 func (m *mockMessageEditor) EditMessage(ctx context.Context, chatID, messageID, content string) error {
@@ -916,6 +917,7 @@ func (m *mockMessageEditor) ClearToolFeedbackMessage(chatID string) {
 
 func (m *mockMessageEditor) DismissToolFeedbackMessage(_ context.Context, chatID string) {
 	m.dismissedChatID = chatID
+	m.dismissedChatIDs = append(m.dismissedChatIDs, chatID)
 }
 
 func (m *mockMessageEditor) FinalizeToolFeedbackMessage(
@@ -956,6 +958,34 @@ func (m *mockResolvedToolFeedbackEditor) ToolFeedbackMessageChatID(
 		return m.resolveChatIDFn(chatID, outboundCtx)
 	}
 	return chatID
+}
+
+func TestDismissToolFeedbackForSession_UsesResolvedTopicScopedKey(t *testing.T) {
+	m := newTestManager()
+	ch := &mockResolvedToolFeedbackEditor{
+		resolveChatIDFn: func(chatID string, outboundCtx *bus.InboundContext) string {
+			if chatID != "-100123" {
+				t.Fatalf("chatID = %q, want -100123", chatID)
+			}
+			if outboundCtx == nil || outboundCtx.TopicID != "6" {
+				t.Fatalf("unexpected outbound context: %+v", outboundCtx)
+			}
+			return "-100123/6"
+		},
+	}
+	m.channels["telegram"] = ch
+
+	m.DismissToolFeedbackForSession(
+		context.Background(),
+		"telegram",
+		"-100123",
+		&bus.InboundContext{Channel: "telegram", ChatID: "-100123", TopicID: "6"},
+		"subturn-1",
+	)
+
+	if len(ch.dismissedChatIDs) == 0 || ch.dismissedChatIDs[0] != "-100123/6#session:subturn-1" {
+		t.Fatalf("dismissed chatIDs = %v, want topic-scoped session key first", ch.dismissedChatIDs)
+	}
 }
 
 type mockPreparedToolFeedbackEditor struct {

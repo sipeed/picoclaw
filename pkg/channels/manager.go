@@ -218,17 +218,23 @@ func dismissTrackedToolFeedbackMessageForSession(
 		dismissTrackedToolFeedbackMessage(ctx, ch, chatID, outboundCtx)
 		return
 	}
-	trackedChatID := resolveOutboundChatID(ch, chatID, outboundCtx)
-	if trackedChatID == "" {
-		return
-	}
-	trackedChatID += "#session:" + sessionKey
+	resolvedChatID := resolveOutboundChatID(ch, chatID, outboundCtx)
 	if cleaner, ok := ch.(toolFeedbackMessageCleaner); ok {
-		cleaner.DismissToolFeedbackMessage(ctx, trackedChatID)
+		for _, candidate := range candidateChatIDs(chatID, resolvedChatID) {
+			if candidate == "" {
+				continue
+			}
+			cleaner.DismissToolFeedbackMessage(ctx, candidate+"#session:"+sessionKey)
+		}
 		return
 	}
 	if tracker, ok := ch.(toolFeedbackMessageTracker); ok {
-		tracker.ClearToolFeedbackMessage(trackedChatID)
+		for _, candidate := range candidateChatIDs(chatID, resolvedChatID) {
+			if candidate == "" {
+				continue
+			}
+			tracker.ClearToolFeedbackMessage(candidate + "#session:" + sessionKey)
+		}
 	}
 }
 
