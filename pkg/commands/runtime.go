@@ -59,7 +59,7 @@ type Runtime struct {
 	GetContextStats    func() *ContextStats
 	SwitchModel        func(value string) (oldModel string, err error)
 	SwitchChannel      func(value string) error
-	ResetSession       func(clear bool) (sessionKey string, err error)
+	ResetSession       func(clearOverride bool) (sessionKey string, err error)
 	ClearHistory       func() error
 	ReloadConfig       func() error
 	StopActiveTurn     func() (StopResult, error)

@@ -49,7 +49,11 @@ func (al *AgentLoop) resolveEffectiveSessionKey(routeSessionKey, msgSessionKey s
 	return routeSessionKey
 }
 
-func sessionAliasCandidates(routeSessionKey, effectiveSessionKey string, routeAliases []string, msgSessionKey string) []string {
+func sessionAliasCandidates(
+	routeSessionKey, effectiveSessionKey string,
+	routeAliases []string,
+	msgSessionKey string,
+) []string {
 	if isExplicitSessionKey(msgSessionKey) {
 		return []string{msgSessionKey}
 	}

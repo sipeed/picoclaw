@@ -792,26 +792,26 @@ func TestProcessMessage_ResetClearRestoresDefaultSession(t *testing.T) {
 	defaultAgent := al.GetRegistry().GetDefaultAgent()
 	originalHistoryLen := len(defaultAgent.Sessions.GetHistory(routeSessionKey))
 
-	if _, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
+	if _, procErr := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
 		Channel:  "telegram",
 		SenderID: "telegram:123",
 		ChatID:   "chat-1",
 		Content:  "/reset",
-	})); err != nil {
-		t.Fatalf("reset processMessage() error = %v", err)
+	})); procErr != nil {
+		t.Fatalf("reset processMessage() error = %v", procErr)
 	}
 	overrideSessionKey := al.getSessionOverride(routeSessionKey)
 	if overrideSessionKey == "" {
 		t.Fatal("expected override session key after /reset")
 	}
 
-	if _, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
+	if _, procErr := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
 		Channel:  "telegram",
 		SenderID: "telegram:123",
 		ChatID:   "chat-1",
 		Content:  "during reset",
-	})); err != nil {
-		t.Fatalf("during-reset processMessage() error = %v", err)
+	})); procErr != nil {
+		t.Fatalf("during-reset processMessage() error = %v", procErr)
 	}
 	overrideHistoryLen := len(defaultAgent.Sessions.GetHistory(overrideSessionKey))
 	if overrideHistoryLen == 0 {
@@ -849,7 +849,11 @@ func TestProcessMessage_ResetClearRestoresDefaultSession(t *testing.T) {
 	}
 	gotOverrideHistoryLen := len(defaultAgent.Sessions.GetHistory(overrideSessionKey))
 	if gotOverrideHistoryLen != overrideHistoryLen {
-		t.Fatalf("override history len = %d, want preserved len %d after reset clear", gotOverrideHistoryLen, overrideHistoryLen)
+		t.Fatalf(
+			"override history len = %d, want preserved len %d after reset clear",
+			gotOverrideHistoryLen,
+			overrideHistoryLen,
+		)
 	}
 }
 

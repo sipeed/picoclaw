@@ -335,7 +335,7 @@ func (al *AgentLoop) buildCommandsRuntime(
 			return al.contextManager.Clear(ctx, opts.SessionKey)
 		}
 
-		rt.ResetSession = func(clear bool) (string, error) {
+		rt.ResetSession = func(clearOverride bool) (string, error) {
 			if opts == nil {
 				return "", fmt.Errorf("process options not available")
 			}
@@ -343,7 +343,7 @@ func (al *AgentLoop) buildCommandsRuntime(
 			if routeSessionKey == "" {
 				return "", fmt.Errorf("route session key not available")
 			}
-			if clear {
+			if clearOverride {
 				return "", al.clearSessionOverride(routeSessionKey)
 			}
 

@@ -171,7 +171,15 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		Dispatch: DispatchRequest{
 			RouteSessionKey: allocation.SessionKey,
 			SessionKey:      sessionKey,
-			SessionAliases:  buildSessionAliases(sessionKey, sessionAliasCandidates(allocation.SessionKey, sessionKey, allocation.SessionAliases, msg.SessionKey)...),
+			SessionAliases: buildSessionAliases(
+				sessionKey,
+				sessionAliasCandidates(
+					allocation.SessionKey,
+					sessionKey,
+					allocation.SessionAliases,
+					msg.SessionKey,
+				)...,
+			),
 			InboundContext:  cloneInboundContext(&msg.Context),
 			RouteResult:     cloneResolvedRoute(&route),
 			SessionScope:    session.CloneScope(&allocation.Scope),
