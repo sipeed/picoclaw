@@ -69,7 +69,6 @@ func isGatewayAlive(host string, port int, expectedPID int) bool {
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return false
 	}
-	fmt.Println("HEllo")
  
 	// Only treat as alive if the reported PID matches the PID file.
 	// This prevents an unrelated service on the same port from being
