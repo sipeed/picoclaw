@@ -246,6 +246,36 @@ func TestSessionOverridesPersist(t *testing.T) {
 	}
 }
 
+func TestToolFeedbackOverridesPersist(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sm := NewManager(tmpDir)
+	if err := sm.SetToolFeedbackOverride("route-session", false); err != nil {
+		t.Fatalf("SetToolFeedbackOverride failed: %v", err)
+	}
+
+	if got, ok := sm.GetToolFeedbackOverride("route-session"); !ok || got {
+		t.Fatalf("GetToolFeedbackOverride() = (%v, %v), want (false, true)", got, ok)
+	}
+
+	sm2 := NewManager(tmpDir)
+	if got, ok := sm2.GetToolFeedbackOverride("route-session"); !ok || got {
+		t.Fatalf("persisted GetToolFeedbackOverride() = (%v, %v), want (false, true)", got, ok)
+	}
+
+	if err := sm2.ClearToolFeedbackOverride("route-session"); err != nil {
+		t.Fatalf("ClearToolFeedbackOverride failed: %v", err)
+	}
+	if got, ok := sm2.GetToolFeedbackOverride("route-session"); ok {
+		t.Fatalf("GetToolFeedbackOverride() after clear = (%v, %v), want (_, false)", got, ok)
+	}
+
+	sm3 := NewManager(tmpDir)
+	if got, ok := sm3.GetToolFeedbackOverride("route-session"); ok {
+		t.Fatalf("persisted GetToolFeedbackOverride() after clear = (%v, %v), want (_, false)", got, ok)
+	}
+}
+
 func TestNewManager_MkdirFailureDoesNotCrash(t *testing.T) {
 	if os.Getenv("BE_CRASHER") == "1" {
 		tmpDir := os.Getenv("CRASH_DIR")

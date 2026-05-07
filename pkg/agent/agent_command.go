@@ -357,6 +357,46 @@ func (al *AgentLoop) buildCommandsRuntime(
 			return nextSessionKey, nil
 		}
 
+		rt.GetToolFeedback = func() (bool, string) {
+			enabledByConfig := al.cfg != nil && al.cfg.Agents.Defaults.IsToolFeedbackEnabled()
+			routeSessionKey := strings.TrimSpace(opts.Dispatch.RouteSessionKey)
+			if routeSessionKey == "" {
+				return enabledByConfig, "config default"
+			}
+			if enabled, ok := al.getToolFeedbackOverride(routeSessionKey); ok {
+				return enabled, "conversation override"
+			}
+			return enabledByConfig, "config default"
+		}
+
+		rt.SetToolFeedback = func(mode string) (bool, string, error) {
+			routeSessionKey := strings.TrimSpace(opts.Dispatch.RouteSessionKey)
+			if routeSessionKey == "" {
+				return false, "", fmt.Errorf("route session key not available")
+			}
+
+			switch strings.ToLower(strings.TrimSpace(mode)) {
+			case "on":
+				if err := al.setToolFeedbackOverride(routeSessionKey, true); err != nil {
+					return false, "", err
+				}
+				return true, "conversation override", nil
+			case "off":
+				if err := al.setToolFeedbackOverride(routeSessionKey, false); err != nil {
+					return false, "", err
+				}
+				return false, "conversation override", nil
+			case "default":
+				if err := al.clearToolFeedbackOverride(routeSessionKey); err != nil {
+					return false, "", err
+				}
+				enabled := al.cfg != nil && al.cfg.Agents.Defaults.IsToolFeedbackEnabled()
+				return enabled, "config default", nil
+			default:
+				return false, "", fmt.Errorf("unsupported mode %q", mode)
+			}
+		}
+
 		rt.AskSideQuestion = func(ctx context.Context, question string) (string, error) {
 			return al.askSideQuestion(ctx, agent, opts, question)
 		}

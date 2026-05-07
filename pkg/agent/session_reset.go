@@ -39,6 +39,27 @@ func (al *AgentLoop) clearSessionOverride(routeSessionKey string) error {
 	return al.state.ClearSessionOverride(routeSessionKey)
 }
 
+func (al *AgentLoop) getToolFeedbackOverride(routeSessionKey string) (bool, bool) {
+	if al == nil || al.state == nil {
+		return false, false
+	}
+	return al.state.GetToolFeedbackOverride(routeSessionKey)
+}
+
+func (al *AgentLoop) setToolFeedbackOverride(routeSessionKey string, enabled bool) error {
+	if al == nil || al.state == nil {
+		return fmt.Errorf("state manager not initialized")
+	}
+	return al.state.SetToolFeedbackOverride(routeSessionKey, enabled)
+}
+
+func (al *AgentLoop) clearToolFeedbackOverride(routeSessionKey string) error {
+	if al == nil || al.state == nil {
+		return fmt.Errorf("state manager not initialized")
+	}
+	return al.state.ClearToolFeedbackOverride(routeSessionKey)
+}
+
 func (al *AgentLoop) resolveEffectiveSessionKey(routeSessionKey, msgSessionKey string) string {
 	if isExplicitSessionKey(msgSessionKey) {
 		return msgSessionKey

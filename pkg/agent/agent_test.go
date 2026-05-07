@@ -24,6 +24,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
+	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -959,6 +960,104 @@ func TestProcessMessage_ResetClearRestoresDefaultSession(t *testing.T) {
 	gotOverrideHistoryLen := len(defaultAgent.Sessions.GetHistory(overrideSessionKey))
 	if gotOverrideHistoryLen != overrideHistoryLen {
 		t.Fatalf("override history len = %d, want preserved len %d after reset clear", gotOverrideHistoryLen, overrideHistoryLen)
+	}
+}
+
+func TestProcessMessage_ToolFeedbackCommandPersistsOverride(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				ToolFeedback: config.ToolFeedbackConfig{
+					Enabled: true,
+					Style:   utils.ToolFeedbackStyleWorkingSummary,
+				},
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	msg := testInboundMessage(bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "/toolfeedback off",
+	})
+	reply, err := al.processMessage(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("toolfeedback off processMessage() error = %v", err)
+	}
+	if !strings.Contains(reply, "Tool feedback is now off") {
+		t.Fatalf("toolfeedback off reply = %q, want off confirmation", reply)
+	}
+
+	route, _, err := al.resolveMessageRoute(msg)
+	if err != nil {
+		t.Fatalf("resolveMessageRoute() error = %v", err)
+	}
+	allocation := al.allocateRouteSession(route, msg)
+	if got, ok := al.getToolFeedbackOverride(allocation.SessionKey); !ok || got {
+		t.Fatalf("tool feedback override = (%v, %v), want (false, true)", got, ok)
+	}
+}
+
+func TestProcessMessage_ToolFeedbackCommandDefaultClearsOverride(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				ToolFeedback: config.ToolFeedbackConfig{
+					Enabled: true,
+					Style:   utils.ToolFeedbackStyleWorkingSummary,
+				},
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	offMsg := testInboundMessage(bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "/toolfeedback off",
+	})
+	if _, err := al.processMessage(context.Background(), offMsg); err != nil {
+		t.Fatalf("toolfeedback off processMessage() error = %v", err)
+	}
+
+	defaultReply, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "telegram:123",
+		ChatID:   "chat-1",
+		Content:  "/toolfeedback default",
+	}))
+	if err != nil {
+		t.Fatalf("toolfeedback default processMessage() error = %v", err)
+	}
+	if !strings.Contains(defaultReply, "Tool feedback is now on") ||
+		!strings.Contains(defaultReply, "config default") {
+		t.Fatalf("toolfeedback default reply = %q, want config default confirmation", defaultReply)
+	}
+
+	route, _, err := al.resolveMessageRoute(offMsg)
+	if err != nil {
+		t.Fatalf("resolveMessageRoute() error = %v", err)
+	}
+	allocation := al.allocateRouteSession(route, offMsg)
+	if got, ok := al.getToolFeedbackOverride(allocation.SessionKey); ok {
+		t.Fatalf("tool feedback override after default = (%v, %v), want (_, false)", got, ok)
 	}
 }
 
@@ -2376,19 +2475,48 @@ func TestShouldPublishToolFeedback_DisablesSubagentFeedback(t *testing.T) {
 		Enabled:   true,
 		Subagents: &subagents,
 	}
+	al := &AgentLoop{cfg: cfg, state: state.NewManager(t.TempDir())}
 
-	if shouldPublishToolFeedback(cfg, &turnState{
+	if shouldPublishToolFeedback(al, &turnState{
 		channel:    "telegram",
 		sessionKey: "subturn-1",
 	}) {
 		t.Fatal("shouldPublishToolFeedback() = true for disabled subagent feedback, want false")
 	}
 
-	if !shouldPublishToolFeedback(cfg, &turnState{
+	if !shouldPublishToolFeedback(al, &turnState{
 		channel:    "telegram",
 		sessionKey: "chat-1",
 	}) {
 		t.Fatal("shouldPublishToolFeedback() = false for main turn, want true")
+	}
+}
+
+func TestShouldPublishToolFeedback_ConversationOverrideWins(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.ToolFeedback.Enabled = false
+	al := &AgentLoop{cfg: cfg, state: state.NewManager(t.TempDir())}
+
+	ts := &turnState{
+		channel:    "telegram",
+		sessionKey: "subturn-1",
+		opts: processOptions{
+			Dispatch: DispatchRequest{RouteSessionKey: "route-1"},
+		},
+	}
+
+	if err := al.setToolFeedbackOverride("route-1", false); err != nil {
+		t.Fatalf("setToolFeedbackOverride(false): %v", err)
+	}
+	if shouldPublishToolFeedback(al, ts) {
+		t.Fatal("shouldPublishToolFeedback() = true with override off, want false")
+	}
+
+	if err := al.setToolFeedbackOverride("route-1", true); err != nil {
+		t.Fatalf("setToolFeedbackOverride(true): %v", err)
+	}
+	if !shouldPublishToolFeedback(al, ts) {
+		t.Fatal("shouldPublishToolFeedback() = false with override on, want true even when config default is off")
 	}
 }
 

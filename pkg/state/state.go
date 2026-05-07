@@ -26,6 +26,10 @@ type State struct {
 	// onto an explicit replacement session key created by a soft reset.
 	SessionOverrides map[string]string `json:"session_overrides,omitempty"`
 
+	// ToolFeedbackOverrides stores per-routed-session enable/disable overrides
+	// for inline tool feedback such as working_summary.
+	ToolFeedbackOverrides map[string]bool `json:"tool_feedback_overrides,omitempty"`
+
 	// Timestamp is the last time this state was updated
 	Timestamp time.Time `json:"timestamp"`
 }
@@ -171,6 +175,69 @@ func (sm *Manager) GetSessionOverride(routeSessionKey string) string {
 		return ""
 	}
 	return sm.state.SessionOverrides[strings.TrimSpace(routeSessionKey)]
+}
+
+// SetToolFeedbackOverride persists a tool feedback enable/disable override for
+// a routed session.
+func (sm *Manager) SetToolFeedbackOverride(routeSessionKey string, enabled bool) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	routeSessionKey = strings.TrimSpace(routeSessionKey)
+	if routeSessionKey == "" {
+		return fmt.Errorf("route session key is required")
+	}
+
+	if sm.state.ToolFeedbackOverrides == nil {
+		sm.state.ToolFeedbackOverrides = make(map[string]bool)
+	}
+	sm.state.ToolFeedbackOverrides[routeSessionKey] = enabled
+	sm.state.Timestamp = time.Now()
+
+	if err := sm.saveAtomic(); err != nil {
+		return fmt.Errorf("failed to save state atomically: %w", err)
+	}
+
+	return nil
+}
+
+// ClearToolFeedbackOverride removes a persisted tool feedback override for a
+// routed session, causing config defaults to apply again.
+func (sm *Manager) ClearToolFeedbackOverride(routeSessionKey string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	routeSessionKey = strings.TrimSpace(routeSessionKey)
+	if routeSessionKey == "" {
+		return fmt.Errorf("route session key is required")
+	}
+	if len(sm.state.ToolFeedbackOverrides) == 0 {
+		return nil
+	}
+
+	delete(sm.state.ToolFeedbackOverrides, routeSessionKey)
+	if len(sm.state.ToolFeedbackOverrides) == 0 {
+		sm.state.ToolFeedbackOverrides = nil
+	}
+	sm.state.Timestamp = time.Now()
+
+	if err := sm.saveAtomic(); err != nil {
+		return fmt.Errorf("failed to save state atomically: %w", err)
+	}
+
+	return nil
+}
+
+// GetToolFeedbackOverride returns the persisted tool feedback override for a
+// routed session and whether an override is present.
+func (sm *Manager) GetToolFeedbackOverride(routeSessionKey string) (bool, bool) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	if len(sm.state.ToolFeedbackOverrides) == 0 {
+		return false, false
+	}
+	value, ok := sm.state.ToolFeedbackOverrides[strings.TrimSpace(routeSessionKey)]
+	return value, ok
 }
 
 // GetLastChannel returns the last channel from the state.

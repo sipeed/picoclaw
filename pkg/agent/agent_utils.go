@@ -12,7 +12,6 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/commands"
-	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -174,10 +173,25 @@ func toolFeedbackArgsPreview(args map[string]any, maxLen int) string {
 	return utils.Truncate(argsJSON, maxLen)
 }
 
-func shouldPublishToolFeedback(cfg *config.Config, ts *turnState) bool {
-	if ts == nil || ts.channel == "" || ts.opts.SuppressToolFeedback {
+func shouldPublishToolFeedback(al *AgentLoop, ts *turnState) bool {
+	if al == nil || ts == nil || ts.channel == "" || ts.opts.SuppressToolFeedback {
 		return false
 	}
+	routeSessionKey := strings.TrimSpace(ts.opts.Dispatch.RouteSessionKey)
+	if routeSessionKey != "" {
+		if enabled, ok := al.getToolFeedbackOverride(routeSessionKey); ok {
+			if !enabled {
+				return false
+			}
+			cfg := al.cfg
+			if cfg != nil && strings.HasPrefix(strings.TrimSpace(ts.sessionKey), "subturn-") &&
+				!cfg.Agents.Defaults.IsSubagentToolFeedbackEnabled() {
+				return false
+			}
+			return true
+		}
+	}
+	cfg := al.cfg
 	if cfg == nil || !cfg.Agents.Defaults.IsToolFeedbackEnabled() {
 		return false
 	}

@@ -16,6 +16,7 @@ func BuiltinDefinitions() []Definition {
 		switchCommand(),
 		checkCommand(),
 		resetCommand(),
+		toolFeedbackCommand(),
 		clearCommand(),
 		contextCommand(),
 		subagentsCommand(),

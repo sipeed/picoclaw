@@ -60,6 +60,8 @@ type Runtime struct {
 	SwitchModel        func(value string) (oldModel string, err error)
 	SwitchChannel      func(value string) error
 	ResetSession       func(clear bool) (sessionKey string, err error)
+	SetToolFeedback    func(mode string) (enabled bool, source string, err error)
+	GetToolFeedback    func() (enabled bool, source string)
 	ClearHistory       func() error
 	ReloadConfig       func() error
 	StopActiveTurn     func() (StopResult, error)
