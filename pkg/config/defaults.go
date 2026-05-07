@@ -38,7 +38,7 @@ func DefaultConfig() *Config {
 					Enabled:                false,
 					MaxArgsLength:          300,
 					SeparateMessages:       false,
-					AnimationIntervalSecs:  3,
+					AnimationIntervalSecs:  0,
 					EditMinIntervalSeconds: 0,
 				},
 				SplitOnMarker:       false,
