@@ -2093,6 +2093,29 @@ func TestToolFeedbackArgsPreview_UsesJSONAndTruncates(t *testing.T) {
 	}
 }
 
+func TestShouldPublishToolFeedback_DisablesSubagentFeedback(t *testing.T) {
+	subagents := false
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.ToolFeedback = config.ToolFeedbackConfig{
+		Enabled:   true,
+		Subagents: &subagents,
+	}
+
+	if shouldPublishToolFeedback(cfg, &turnState{
+		channel:    "telegram",
+		sessionKey: "subturn-1",
+	}) {
+		t.Fatal("shouldPublishToolFeedback() = true for disabled subagent feedback, want false")
+	}
+
+	if !shouldPublishToolFeedback(cfg, &turnState{
+		channel:    "telegram",
+		sessionKey: "chat-1",
+	}) {
+		t.Fatal("shouldPublishToolFeedback() = false for main turn, want true")
+	}
+}
+
 type picoInterleavedContentProvider struct {
 	calls int
 }

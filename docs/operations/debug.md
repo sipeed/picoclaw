@@ -67,6 +67,7 @@ Debug logs are server-side only. If you want the agent to send a visible notific
         "enabled": true,
         "max_args_length": 300,
         "separate_messages": true,
+        "subagents": true,
         "style": "raw"
       }
     }
@@ -90,6 +91,7 @@ Set `style` to `working_summary` to use a compact, non-argument progress message
       "tool_feedback": {
         "enabled": true,
         "separate_messages": false,
+        "subagents": true,
         "style": "working_summary"
       }
     }
@@ -121,6 +123,7 @@ The `working_summary` style intentionally does not show raw tool arguments, expl
 |---|---|---|---|
 | `enabled` | bool | `false` | Send a chat notification for each tool call |
 | `separate_messages` | bool | `false` | Keep every tool feedback update as a separate chat message instead of reusing a single placeholder/progress message |
+| `subagents` | bool | `true` | Also publish visible tool feedback for subagent turns when `enabled` is true |
 | `max_args_length` | int | `300` | Maximum characters of the serialised arguments included in the notification |
 | `style` | string | `raw` | Feedback format. Use `raw` for the original tool/explanation/argument preview, or `working_summary` for compact progress lines without raw arguments |
 

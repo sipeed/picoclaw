@@ -787,6 +787,9 @@ func TestDefaultConfig_ToolFeedbackDisabled(t *testing.T) {
 	if cfg.Agents.Defaults.ToolFeedback.Enabled {
 		t.Fatal("DefaultConfig().Agents.Defaults.ToolFeedback.Enabled should be false")
 	}
+	if !cfg.Agents.Defaults.IsSubagentToolFeedbackEnabled() {
+		t.Fatal("DefaultConfig().Agents.Defaults.IsSubagentToolFeedbackEnabled() should default to true")
+	}
 	if cfg.Agents.Defaults.ToolFeedback.SeparateMessages {
 		t.Fatal("DefaultConfig().Agents.Defaults.ToolFeedback.SeparateMessages should be false")
 	}
@@ -813,6 +816,9 @@ func TestLoadConfig_ToolFeedbackDefaultsFalseWhenUnset(t *testing.T) {
 	if cfg.Agents.Defaults.ToolFeedback.Enabled {
 		t.Fatal("agents.defaults.tool_feedback.enabled should remain false when unset in config file")
 	}
+	if !cfg.Agents.Defaults.IsSubagentToolFeedbackEnabled() {
+		t.Fatal("agents.defaults.tool_feedback.subagents should default to true when unset")
+	}
 	if cfg.Agents.Defaults.ToolFeedback.SeparateMessages {
 		t.Fatal("agents.defaults.tool_feedback.separate_messages should remain false when unset in config file")
 	}
@@ -838,6 +844,26 @@ func TestLoadConfig_ToolFeedbackStyle(t *testing.T) {
 	}
 	if got := cfg.Agents.Defaults.GetToolFeedbackStyle(); got != "working_summary" {
 		t.Fatalf("agents.defaults.tool_feedback.style = %q, want working_summary", got)
+	}
+}
+
+func TestLoadConfig_ToolFeedbackSubagentsFalse(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(
+		configPath,
+		[]byte(`{"version":1,"agents":{"defaults":{"tool_feedback":{"enabled":true,"subagents":false}}}}`),
+		0o600,
+	); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Agents.Defaults.IsSubagentToolFeedbackEnabled() {
+		t.Fatal("agents.defaults.tool_feedback.subagents = true, want false")
 	}
 }
 

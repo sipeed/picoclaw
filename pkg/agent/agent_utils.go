@@ -178,7 +178,14 @@ func shouldPublishToolFeedback(cfg *config.Config, ts *turnState) bool {
 	if ts == nil || ts.channel == "" || ts.opts.SuppressToolFeedback {
 		return false
 	}
-	return cfg != nil && cfg.Agents.Defaults.IsToolFeedbackEnabled()
+	if cfg == nil || !cfg.Agents.Defaults.IsToolFeedbackEnabled() {
+		return false
+	}
+	if strings.HasPrefix(strings.TrimSpace(ts.sessionKey), "subturn-") &&
+		!cfg.Agents.Defaults.IsSubagentToolFeedbackEnabled() {
+		return false
+	}
+	return true
 }
 
 func toolFeedbackTitleForTurn(ts *turnState) string {
