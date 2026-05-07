@@ -833,7 +833,9 @@ func TestLoadConfig_ToolFeedbackThrottleIntervals(t *testing.T) {
 	configPath := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(
 		configPath,
-		[]byte(`{"version":1,"agents":{"defaults":{"tool_feedback":{"enabled":true,"animation_interval_secs":5,"edit_min_interval_seconds":10}}}}`),
+		[]byte(
+			`{"version":1,"agents":{"defaults":{"tool_feedback":{"enabled":true,"animation_interval_secs":5,"edit_min_interval_seconds":10}}}}`,
+		),
 		0o600,
 	); err != nil {
 		t.Fatalf("WriteFile() error: %v", err)

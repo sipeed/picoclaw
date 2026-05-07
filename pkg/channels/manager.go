@@ -144,7 +144,7 @@ type toolFeedbackMessageContentPreparer interface {
 }
 
 type toolFeedbackAnimatorConfigurer interface {
-	ConfigureToolFeedbackAnimator(ToolFeedbackAnimatorConfig)
+	ConfigureToolFeedbackAnimator(cfg ToolFeedbackAnimatorConfig)
 }
 
 type asyncTask struct {
