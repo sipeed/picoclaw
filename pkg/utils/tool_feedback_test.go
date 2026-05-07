@@ -54,6 +54,20 @@ func TestFormatToolFeedbackMessageWithStyle_WorkingSummary(t *testing.T) {
 	}
 }
 
+func TestFormatToolFeedbackMessageWithStyleAndTitle_WorkingSummary(t *testing.T) {
+	got := FormatToolFeedbackMessageWithStyleAndTitle(
+		"working_summary",
+		"DeepResearch",
+		"read_file",
+		"",
+		"{\"path\":\"README.md\"}",
+	)
+	want := "DeepResearch working...\n• tool: `read_file` — `README.md`"
+	if got != want {
+		t.Fatalf("FormatToolFeedbackMessageWithStyleAndTitle() = %q, want %q", got, want)
+	}
+}
+
 func TestFormatToolFeedbackMessageWithStyle_WorkingSummaryShowsFileBasenameOnly(t *testing.T) {
 	got := FormatToolFeedbackMessageWithStyle(
 		"working_summary",

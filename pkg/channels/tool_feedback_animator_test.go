@@ -165,3 +165,20 @@ func TestToolFeedbackAnimator_UpdateFailureRestoresTracking(t *testing.T) {
 		t.Fatalf("Current() after failed Update = (%q, %v), want (msg-1, true)", currentID, ok)
 	}
 }
+
+func TestMergeToolFeedbackContent_PreservesNamedWorkingSummaryHeader(t *testing.T) {
+	got := mergeToolFeedbackContent(
+		"Deep Research working...\n• tool: `read_file`",
+		"Deep Research working...\n• tool: `web_fetch`",
+	)
+	want := "Deep Research working...\n• tool: `read_file`\n• tool: `web_fetch`"
+	if got != want {
+		t.Fatalf("mergeToolFeedbackContent() = %q, want %q", got, want)
+	}
+}
+
+func TestIsWorkingSummaryToolFeedback_AcceptsNamedHeader(t *testing.T) {
+	if !isWorkingSummaryToolFeedback("Deep Research working...\n• tool: `read_file`") {
+		t.Fatal("expected named working summary to be recognized")
+	}
+}

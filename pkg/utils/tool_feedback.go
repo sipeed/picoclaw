@@ -66,22 +66,41 @@ func FormatToolFeedbackMessage(toolName, explanation, argsPreview string) string
 // progress UI should not leak internal paths, large JSON blobs, secrets, or
 // model-drafted reasoning-like text.
 func FormatToolFeedbackMessageWithStyle(style, toolName, explanation, argsPreview string) string {
+	return FormatToolFeedbackMessageWithStyleAndTitle(style, "", toolName, explanation, argsPreview)
+}
+
+func FormatToolFeedbackMessageWithStyleAndTitle(
+	style, title, toolName, explanation, argsPreview string,
+) string {
 	if strings.EqualFold(strings.TrimSpace(style), ToolFeedbackStyleWorkingSummary) {
-		return FormatWorkingSummaryToolFeedbackMessage(toolName, argsPreview)
+		return FormatWorkingSummaryToolFeedbackMessageWithTitle(title, toolName, argsPreview)
 	}
 	return FormatToolFeedbackMessage(toolName, explanation, argsPreview)
 }
 
 func FormatWorkingSummaryToolFeedbackMessage(toolName, argsPreview string) string {
+	return FormatWorkingSummaryToolFeedbackMessageWithTitle("", toolName, argsPreview)
+}
+
+func FormatWorkingSummaryToolFeedbackMessageWithTitle(title, toolName, argsPreview string) string {
 	toolName = strings.TrimSpace(toolName)
+	header := workingSummaryHeader(title)
 	if toolName == "" {
-		return "Working..."
+		return header
 	}
 	line := fmt.Sprintf("• tool: `%s`", sanitizeToolFeedbackCodeSpan(toolName))
 	if summary := summarizeToolFeedbackArgs(toolName, argsPreview); summary != "" {
 		line += fmt.Sprintf(" — `%s`", sanitizeToolFeedbackCodeSpan(summary))
 	}
-	return "Working...\n" + line
+	return header + "\n" + line
+}
+
+func workingSummaryHeader(title string) string {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return "Working..."
+	}
+	return title + " working..."
 }
 
 func sanitizeToolFeedbackCodeSpan(text string) string {

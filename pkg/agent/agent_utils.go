@@ -181,6 +181,44 @@ func shouldPublishToolFeedback(cfg *config.Config, ts *turnState) bool {
 	return cfg != nil && cfg.Agents.Defaults.IsToolFeedbackEnabled()
 }
 
+func toolFeedbackTitleForTurn(ts *turnState) string {
+	if ts == nil || !strings.HasPrefix(strings.TrimSpace(ts.sessionKey), "subturn-") {
+		return ""
+	}
+	if ts.agent == nil {
+		return "Subagent"
+	}
+	if title := displayAgentName(ts.agent.ID); title != "" {
+		return title
+	}
+	return "Subagent"
+}
+
+func displayAgentName(agentID string) string {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return ""
+	}
+	parts := strings.FieldsFunc(agentID, func(r rune) bool {
+		return r == '-' || r == '_' || r == ' '
+	})
+	var b strings.Builder
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(strings.ToUpper(part[:1]))
+		if len(part) > 1 {
+			b.WriteString(part[1:])
+		}
+	}
+	return b.String()
+}
+
 func cloneEventArguments(args map[string]any) map[string]any {
 	if len(args) == 0 {
 		return nil

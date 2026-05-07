@@ -247,7 +247,7 @@ func mergeToolFeedbackContent(previous, next string) string {
 	seen := make(map[string]struct{})
 	addLine := func(line string) {
 		line = strings.TrimSpace(line)
-		if line == "" || strings.EqualFold(line, "Working...") {
+		if line == "" || isWorkingSummaryHeader(line) {
 			return
 		}
 		if _, ok := seen[line]; ok {
@@ -266,15 +266,35 @@ func mergeToolFeedbackContent(previous, next string) string {
 	if len(lines) > maxMergedToolFeedbackLines {
 		lines = lines[len(lines)-maxMergedToolFeedbackLines:]
 	}
-	if len(lines) == 0 {
-		return "Working..."
+	header := workingSummaryHeader(previous)
+	if candidate := workingSummaryHeader(next); candidate != "" {
+		header = candidate
 	}
-	return "Working...\n" + strings.Join(lines, "\n")
+	if header == "" {
+		header = "Working..."
+	}
+	if len(lines) == 0 {
+		return header
+	}
+	return header + "\n" + strings.Join(lines, "\n")
 }
 
 func isWorkingSummaryToolFeedback(content string) bool {
+	return isWorkingSummaryHeader(workingSummaryHeader(content))
+}
+
+func workingSummaryHeader(content string) string {
 	firstLine, _, _ := strings.Cut(strings.TrimSpace(content), "\n")
-	return strings.EqualFold(strings.TrimSpace(firstLine), "Working...")
+	firstLine = strings.TrimSpace(firstLine)
+	if isWorkingSummaryHeader(firstLine) {
+		return firstLine
+	}
+	return ""
+}
+
+func isWorkingSummaryHeader(line string) bool {
+	line = strings.TrimSpace(line)
+	return strings.EqualFold(line, "Working...") || strings.HasSuffix(strings.ToLower(line), " working...")
 }
 
 func toolFeedbackAnimationIntervalFor(content string) time.Duration {
