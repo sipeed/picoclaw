@@ -1,8 +1,12 @@
 services:
   integration-runner:
+    image: golang:1.25-bookworm
     depends_on:
       mcp-streamable-server:
         condition: service_healthy
+    volumes:
+      - .:/src
+    working_dir: /src
     environment:
       PICOCLAW_MCP_REAL_SERVER_JSON: >-
         {"enabled":true,"type":"http","url":"http://mcp-streamable-server:8080/mcp"}
