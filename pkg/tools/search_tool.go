@@ -26,6 +26,13 @@ func NewRegexSearchTool(r *ToolRegistry, ttl int, maxSearchResults int) *RegexSe
 	return &RegexSearchTool{registry: r, ttl: ttl, maxSearchResults: maxSearchResults}
 }
 
+func (t *RegexSearchTool) CloneForRegistry(registry *ToolRegistry) Tool {
+	if t == nil {
+		return NewRegexSearchTool(registry, 0, 0)
+	}
+	return NewRegexSearchTool(registry, t.ttl, t.maxSearchResults)
+}
+
 func (t *RegexSearchTool) Name() string {
 	return "tool_search_tool_regex"
 }
@@ -93,6 +100,13 @@ type BM25SearchTool struct {
 
 func NewBM25SearchTool(r *ToolRegistry, ttl int, maxSearchResults int) *BM25SearchTool {
 	return &BM25SearchTool{registry: r, ttl: ttl, maxSearchResults: maxSearchResults}
+}
+
+func (t *BM25SearchTool) CloneForRegistry(registry *ToolRegistry) Tool {
+	if t == nil {
+		return NewBM25SearchTool(registry, 0, 0)
+	}
+	return NewBM25SearchTool(registry, t.ttl, t.maxSearchResults)
 }
 
 func (t *BM25SearchTool) Name() string {
