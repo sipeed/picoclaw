@@ -468,7 +468,7 @@ func spawnSubTurn(
 					dismissCtx,
 					childTS.channel,
 					childTS.chatID,
-					childTS.opts.InboundContext,
+					childTS.opts.Dispatch.InboundContext,
 					childID,
 				)
 				dismissCancel()
