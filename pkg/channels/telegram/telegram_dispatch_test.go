@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/mymmrac/telego"
 
@@ -36,10 +35,7 @@ func TestHandleMessage_DoesNotConsumeGenericCommandsLocally(t *testing.T) {
 		t.Fatalf("handleMessage error: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	inbound, ok := messageBus.ConsumeInbound(ctx)
+	inbound, ok := <-messageBus.InboundChan()
 	if !ok {
 		t.Fatal("expected inbound message to be forwarded")
 	}

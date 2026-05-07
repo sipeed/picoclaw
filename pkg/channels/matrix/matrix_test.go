@@ -2,14 +2,21 @@ package matrix
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+
+	"github.com/sipeed/picoclaw/pkg/channels"
+	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/media"
 )
 
 func TestMatrixLocalpartMentionRegexp(t *testing.T) {
@@ -32,6 +39,34 @@ func TestMatrixLocalpartMentionRegexp(t *testing.T) {
 		if got := re.MatchString(tc.text); got != tc.want {
 			t.Fatalf("text=%q match=%v want=%v", tc.text, got, tc.want)
 		}
+	}
+}
+
+func TestFinalizeTrackedToolFeedbackMessage_StopsTrackingBeforeEdit(t *testing.T) {
+	ch := &MatrixChannel{
+		progress: channels.NewToolFeedbackAnimator(nil),
+	}
+	ch.RecordToolFeedbackMessage("!room:matrix.org", "$event1", "🔧 `read_file`")
+
+	msgIDs, handled := ch.finalizeTrackedToolFeedbackMessage(
+		context.Background(),
+		"!room:matrix.org",
+		"final reply",
+		func(_ context.Context, chatID, messageID, content string) error {
+			if _, ok := ch.currentToolFeedbackMessage(chatID); ok {
+				t.Fatal("expected tracked tool feedback to be stopped before edit")
+			}
+			if chatID != "!room:matrix.org" || messageID != "$event1" || content != "final reply" {
+				t.Fatalf("unexpected edit args: %s %s %s", chatID, messageID, content)
+			}
+			return nil
+		},
+	)
+	if !handled {
+		t.Fatal("expected finalizeTrackedToolFeedbackMessage to handle tracked message")
+	}
+	if len(msgIDs) != 1 || msgIDs[0] != "$event1" {
+		t.Fatalf("finalizeTrackedToolFeedbackMessage() ids = %v, want [$event1]", msgIDs)
 	}
 }
 
@@ -160,7 +195,7 @@ func TestMatrixMediaTempDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("matrixMediaTempDir failed: %v", err)
 	}
-	if filepath.Base(dir) != matrixMediaTempDirName {
+	if filepath.Base(dir) != media.TempDirName {
 		t.Fatalf("unexpected media dir base: %q", filepath.Base(dir))
 	}
 
@@ -191,6 +226,50 @@ func TestMatrixMediaExt(t *testing.T) {
 	}
 	if got := matrixMediaExt("", "", "file"); got != ".bin" {
 		t.Fatalf("default file extension mismatch: got=%q", got)
+	}
+}
+
+func TestDownloadMedia_WritesResponseToTempFile(t *testing.T) {
+	const wantBody = "matrix-media-payload"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/_matrix/client/v1/media/download/matrix.test/abc123") {
+			t.Fatalf("unexpected download path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte(wantBody))
+	}))
+	defer server.Close()
+
+	client, err := mautrix.NewClient(server.URL, id.UserID("@picoclaw:matrix.test"), "")
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	ch := &MatrixChannel{client: client}
+	msg := &event.MessageEventContent{
+		MsgType: event.MsgImage,
+		Body:    "image.png",
+		URL:     id.ContentURIString("mxc://matrix.test/abc123"),
+		Info:    &event.FileInfo{MimeType: "image/png"},
+	}
+
+	path, err := ch.downloadMedia(context.Background(), msg, "image")
+	if err != nil {
+		t.Fatalf("downloadMedia: %v", err)
+	}
+	defer os.Remove(path)
+
+	if ext := filepath.Ext(path); ext != ".png" {
+		t.Fatalf("temp file extension=%q want=.png", ext)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != wantBody {
+		t.Fatalf("file contents=%q want=%q", string(got), wantBody)
 	}
 }
 
@@ -287,5 +366,125 @@ func TestMatrixOutboundContent(t *testing.T) {
 	)
 	if noCaption.Body != "image.png" {
 		t.Fatalf("unexpected fallback body: %q", noCaption.Body)
+	}
+}
+
+func TestMarkdownToHTML(t *testing.T) {
+	cases := []struct {
+		name     string
+		md       string
+		rendered string
+	}{
+		{
+			name:     "paragraph",
+			md:       "just **some** text with _custom_ formatting and `inline` code",
+			rendered: "<p>just <strong>some</strong> text with <em>custom</em> formatting and <code>inline</code> code</p>",
+		},
+		{
+			name:     "heading",
+			md:       "### Title",
+			rendered: `<h3>Title</h3>`,
+		},
+		{
+			name:     "fenced code block",
+			md:       "```\nfoo()\n```",
+			rendered: "<pre><code>foo()\n</code></pre>",
+		},
+		{
+			name: "loose list",
+			md:   "- Item one\n\n- Item two\n",
+			rendered: `<ul>
+<li><p>Item one</p></li>
+
+<li><p>Item two</p></li>
+</ul>`,
+		},
+		{
+			name: "tight list",
+			md:   "- Alpha\n- Beta\n",
+			rendered: `<ul>
+<li>Alpha</li>
+<li>Beta</li>
+</ul>`,
+		},
+		{
+			name: "list item with nested sublist",
+			md:   "1. Steps overview:\n\n   - Step A\n   - Step B\n",
+			rendered: `<ol>
+<li><p>Steps overview:</p>
+
+<ul>
+<li>Step A</li>
+<li>Step B</li>
+</ul></li>
+</ol>`,
+		},
+		{
+			// Definition list syntax is not enabled; the term and definition are
+			// rendered as a plain paragraph rather than <dl>/<dt>/<dd> elements.
+			name:     "definition list syntax renders as plain paragraph",
+			md:       "Term\n:   Definition of the term.\n",
+			rendered: "<p>Term\n:   Definition of the term.</p>",
+		},
+		{
+			name: "comprehensive document with headings, paragraphs, list, and code block",
+			md:   "# Overview\n\nThis is a sample document designed to demonstrate various Markdown elements in a single block of text.\n\nThe first paragraph introduces the concept of structured data.\n\n## Details\n\nThe following is a list:\n\n*   First\n*   Second\n*   Third\n\nThe second paragraph focuses on details. Below is a generic code snippet:\n\n```python\ndef calculate_area(radius):\n    import math\n    return math.pi * (radius ** 2)\n```\n\nThis concludes the generic sample text.\n",
+			rendered: `<h1>Overview</h1>
+
+<p>This is a sample document designed to demonstrate various Markdown elements in a single block of text.</p>
+
+<p>The first paragraph introduces the concept of structured data.</p>
+
+<h2>Details</h2>
+
+<p>The following is a list:</p>
+
+<ul>
+<li>First</li>
+<li>Second</li>
+<li>Third</li>
+</ul>
+
+<p>The second paragraph focuses on details. Below is a generic code snippet:</p>
+
+<pre><code class="language-python">def calculate_area(radius):
+    import math
+    return math.pi * (radius ** 2)
+</code></pre>
+
+<p>This concludes the generic sample text.</p>`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := markdownToHTML(tc.md); got != tc.rendered {
+				t.Fatalf("markdownToHTML(%q)\n got: %q\nwant: %q", tc.md, got, tc.rendered)
+			}
+		})
+	}
+}
+
+func TestMessageContent(t *testing.T) {
+	richtext := &MatrixChannel{config: &config.MatrixSettings{MessageFormat: "richtext"}}
+	plain := &MatrixChannel{config: &config.MatrixSettings{MessageFormat: "plain"}}
+	defaultt := &MatrixChannel{config: &config.MatrixSettings{}}
+
+	for _, c := range []*MatrixChannel{richtext, defaultt} {
+		mc := c.messageContent("**hi**")
+		if mc.Format != event.FormatHTML {
+			t.Errorf("format %q: expected FormatHTML, got %q", c.config.MessageFormat, mc.Format)
+		}
+		if !strings.Contains(mc.FormattedBody, "<strong>hi</strong>") {
+			t.Errorf("format %q: FormattedBody %q missing <strong>", c.config.MessageFormat, mc.FormattedBody)
+		}
+		if mc.Body != "**hi**" {
+			t.Errorf("format %q: Body should remain plain, got %q", c.config.MessageFormat, mc.Body)
+		}
+	}
+
+	mc := plain.messageContent("**hi**")
+	if mc.Format != "" || mc.FormattedBody != "" {
+		t.Errorf("plain: expected no formatting, got format=%q formattedBody=%q", mc.Format, mc.FormattedBody)
 	}
 }

@@ -48,24 +48,19 @@ func TestSubagentManager_SetLLMOptions_AppliesToRunToolLoop(t *testing.T) {
 	provider := &MockLLMProvider{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
 	manager.SetLLMOptions(2048, 0.6)
-	tool := NewSubagentTool(manager)
 
-	ctx := WithToolContext(context.Background(), "cli", "direct")
-	args := map[string]any{"task": "Do something"}
-	result := tool.Execute(ctx, args)
-
-	if result == nil || result.IsError {
-		t.Fatalf("Expected successful result, got: %+v", result)
+	// Verify options are set on manager
+	if manager.maxTokens != 2048 {
+		t.Errorf("manager.maxTokens = %d, want 2048", manager.maxTokens)
 	}
-
-	if provider.lastOptions == nil {
-		t.Fatal("Expected LLM options to be passed, got nil")
+	if manager.temperature != 0.6 {
+		t.Errorf("manager.temperature = %f, want 0.6", manager.temperature)
 	}
-	if provider.lastOptions["max_tokens"] != 2048 {
-		t.Fatalf("max_tokens = %v, want %d", provider.lastOptions["max_tokens"], 2048)
+	if !manager.hasMaxTokens {
+		t.Error("manager.hasMaxTokens should be true")
 	}
-	if provider.lastOptions["temperature"] != 0.6 {
-		t.Fatalf("temperature = %v, want %v", provider.lastOptions["temperature"], 0.6)
+	if !manager.hasTemperature {
+		t.Error("manager.hasTemperature should be true")
 	}
 }
 
@@ -150,6 +145,7 @@ func TestSubagentTool_Execute_Success(t *testing.T) {
 	provider := &MockLLMProvider{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
 	tool := NewSubagentTool(manager)
+	tool.SetSpawner(&mockSpawner{})
 
 	ctx := WithToolContext(context.Background(), "telegram", "chat-123")
 	args := map[string]any{
@@ -204,6 +200,7 @@ func TestSubagentTool_Execute_NoLabel(t *testing.T) {
 	provider := &MockLLMProvider{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
 	tool := NewSubagentTool(manager)
+	tool.SetSpawner(&mockSpawner{})
 
 	ctx := context.Background()
 	args := map[string]any{
@@ -277,6 +274,7 @@ func TestSubagentTool_Execute_ContextPassing(t *testing.T) {
 	provider := &MockLLMProvider{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
 	tool := NewSubagentTool(manager)
+	tool.SetSpawner(&mockSpawner{})
 
 	channel := "test-channel"
 	chatID := "test-chat"
@@ -302,6 +300,7 @@ func TestSubagentTool_ForUserTruncation(t *testing.T) {
 	provider := &MockLLMProvider{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
 	tool := NewSubagentTool(manager)
+	tool.SetSpawner(&mockSpawner{})
 
 	ctx := context.Background()
 

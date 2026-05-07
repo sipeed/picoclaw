@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 )
 
@@ -24,6 +26,11 @@ type AuthStore struct {
 	Credentials map[string]*AuthCredential `json:"credentials"`
 }
 
+const (
+	providerGoogleAntigravity = "google-antigravity"
+	providerAntigravityAlias  = "antigravity"
+)
+
 func (c *AuthCredential) IsExpired() bool {
 	if c.ExpiresAt.IsZero() {
 		return false
@@ -39,11 +46,126 @@ func (c *AuthCredential) NeedsRefresh() bool {
 }
 
 func authFilePath() string {
-	if home := os.Getenv("PICOCLAW_HOME"); home != "" {
-		return filepath.Join(home, "auth.json")
+	return filepath.Join(config.GetHome(), "auth.json")
+}
+
+func canonicalProvider(provider string) string {
+	normalized := strings.ToLower(strings.TrimSpace(provider))
+	switch normalized {
+	case providerAntigravityAlias:
+		return providerGoogleAntigravity
+	default:
+		return normalized
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".picoclaw", "auth.json")
+}
+
+func cloneCredential(cred *AuthCredential) *AuthCredential {
+	if cred == nil {
+		return nil
+	}
+	cp := *cred
+	return &cp
+}
+
+func mergeCredentials(primary, secondary *AuthCredential) *AuthCredential {
+	if primary == nil {
+		return cloneCredential(secondary)
+	}
+
+	merged := *primary
+	if secondary == nil {
+		return &merged
+	}
+	if merged.AccessToken == "" {
+		merged.AccessToken = secondary.AccessToken
+	}
+	if merged.RefreshToken == "" {
+		merged.RefreshToken = secondary.RefreshToken
+	}
+	if merged.AccountID == "" {
+		merged.AccountID = secondary.AccountID
+	}
+	if merged.ExpiresAt.IsZero() {
+		merged.ExpiresAt = secondary.ExpiresAt
+	}
+	if merged.Provider == "" {
+		merged.Provider = secondary.Provider
+	}
+	if merged.AuthMethod == "" {
+		merged.AuthMethod = secondary.AuthMethod
+	}
+	if merged.Email == "" {
+		merged.Email = secondary.Email
+	}
+	if merged.ProjectID == "" {
+		merged.ProjectID = secondary.ProjectID
+	}
+
+	return &merged
+}
+
+func shouldPreferCredential(
+	candidate *AuthCredential,
+	candidateCanonical bool,
+	current *AuthCredential,
+	currentCanonical bool,
+) bool {
+	if candidate == nil {
+		return false
+	}
+	if current == nil {
+		return true
+	}
+
+	switch {
+	case candidate.ExpiresAt.After(current.ExpiresAt):
+		return true
+	case current.ExpiresAt.After(candidate.ExpiresAt):
+		return false
+	case candidateCanonical != currentCanonical:
+		return candidateCanonical
+	default:
+		return false
+	}
+}
+
+func normalizeStore(store *AuthStore) {
+	if store == nil {
+		return
+	}
+	if store.Credentials == nil {
+		store.Credentials = make(map[string]*AuthCredential)
+		return
+	}
+
+	normalized := make(map[string]*AuthCredential, len(store.Credentials))
+	canonicalFlags := make(map[string]bool, len(store.Credentials))
+
+	for provider, cred := range store.Credentials {
+		normalizedProvider := strings.ToLower(strings.TrimSpace(provider))
+		canonical := canonicalProvider(provider)
+		normalizedCred := cloneCredential(cred)
+		if normalizedCred != nil {
+			normalizedCred.Provider = canonicalProvider(normalizedCred.Provider)
+			if normalizedCred.Provider == "" {
+				normalizedCred.Provider = canonical
+			}
+		}
+
+		current := normalized[canonical]
+		currentCanonical := canonicalFlags[canonical]
+		candidateCanonical := normalizedProvider == canonical
+
+		if shouldPreferCredential(normalizedCred, candidateCanonical, current, currentCanonical) {
+			normalized[canonical] = mergeCredentials(normalizedCred, current)
+			canonicalFlags[canonical] = candidateCanonical
+			continue
+		}
+
+		normalized[canonical] = mergeCredentials(current, normalizedCred)
+	}
+
+	store.Credentials = normalized
 }
 
 func LoadStore() (*AuthStore, error) {
@@ -60,9 +182,7 @@ func LoadStore() (*AuthStore, error) {
 	if err := json.Unmarshal(data, &store); err != nil {
 		return nil, err
 	}
-	if store.Credentials == nil {
-		store.Credentials = make(map[string]*AuthCredential)
-	}
+	normalizeStore(&store)
 	return &store, nil
 }
 
@@ -82,7 +202,7 @@ func GetCredential(provider string) (*AuthCredential, error) {
 	if err != nil {
 		return nil, err
 	}
-	cred, ok := store.Credentials[provider]
+	cred, ok := store.Credentials[canonicalProvider(provider)]
 	if !ok {
 		return nil, nil
 	}
@@ -94,7 +214,17 @@ func SetCredential(provider string, cred *AuthCredential) error {
 	if err != nil {
 		return err
 	}
-	store.Credentials[provider] = cred
+
+	canonical := canonicalProvider(provider)
+	normalized := cloneCredential(cred)
+	if normalized != nil {
+		normalized.Provider = canonicalProvider(normalized.Provider)
+		if normalized.Provider == "" {
+			normalized.Provider = canonical
+		}
+	}
+
+	store.Credentials[canonical] = normalized
 	return SaveStore(store)
 }
 
@@ -103,7 +233,7 @@ func DeleteCredential(provider string) error {
 	if err != nil {
 		return err
 	}
-	delete(store.Credentials, provider)
+	delete(store.Credentials, canonicalProvider(provider))
 	return SaveStore(store)
 }
 

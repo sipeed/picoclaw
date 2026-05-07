@@ -7,7 +7,19 @@ import (
 )
 
 func init() {
-	channels.RegisterFactory("feishu", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
-		return NewFeishuChannel(cfg.Channels.Feishu, b)
-	})
+	channels.RegisterFactory(
+		config.ChannelFeishu,
+		func(channelName, channelType string, cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+			bc := cfg.Channels[channelName]
+			decoded, err := bc.GetDecoded()
+			if err != nil {
+				return nil, err
+			}
+			c, ok := decoded.(*config.FeishuSettings)
+			if !ok {
+				return nil, channels.ErrSendFailed
+			}
+			return NewFeishuChannel(bc, c, b)
+		},
+	)
 }

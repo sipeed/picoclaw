@@ -66,6 +66,10 @@ func (c *TelegramChannel) startCommandRegistration(ctx context.Context, defs []c
 	if register == nil {
 		register = c.RegisterCommands
 	}
+	delayFn := c.commandRegDelayFn
+	if delayFn == nil {
+		delayFn = commandRegistrationDelay
+	}
 
 	regCtx, cancel := context.WithCancel(ctx)
 	c.commandRegCancel = cancel
@@ -91,7 +95,7 @@ func (c *TelegramChannel) startCommandRegistration(ctx context.Context, defs []c
 				return
 			}
 
-			delay := commandRegistrationDelay(attempt)
+			delay := delayFn(attempt)
 			logger.WarnCF("telegram", "Telegram command registration failed; will retry", map[string]any{
 				"error":       err.Error(),
 				"retry_after": delay.String(),

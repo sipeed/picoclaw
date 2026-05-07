@@ -8,12 +8,12 @@ import (
 )
 
 func TestNewInstallSubcommand(t *testing.T) {
-	cmd := newInstallCommand(nil)
+	cmd := newInstallCommand()
 
 	require.NotNil(t, cmd)
 
 	assert.Equal(t, "install", cmd.Use)
-	assert.Equal(t, "Install skill from GitHub", cmd.Short)
+	assert.Equal(t, "Install skill from GitHub or a registry", cmd.Short)
 
 	assert.Nil(t, cmd.Run)
 	assert.NotNil(t, cmd.RunE)
@@ -79,7 +79,7 @@ func TestInstallCommandArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := newInstallCommand(nil)
+			cmd := newInstallCommand()
 
 			if tt.registry != "" {
 				require.NoError(t, cmd.Flags().Set("registry", tt.registry))

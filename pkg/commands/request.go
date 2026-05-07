@@ -41,6 +41,11 @@ func parseCommandName(input string) (string, bool) {
 	return name, true
 }
 
+// CommandName returns the normalized command name for an input if present.
+func CommandName(input string) (string, bool) {
+	return parseCommandName(input)
+}
+
 func trimCommandPrefix(token string) (string, bool) {
 	for _, prefix := range commandPrefixes {
 		if strings.HasPrefix(token, prefix) {

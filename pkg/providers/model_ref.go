@@ -17,18 +17,13 @@ func ParseModelRef(raw string, defaultProvider string) *ModelRef {
 		return nil
 	}
 
-	if idx := strings.Index(raw, "/"); idx > 0 {
-		provider := NormalizeProvider(raw[:idx])
-		model := strings.TrimSpace(raw[idx+1:])
-		if model == "" {
-			return nil
-		}
-		return &ModelRef{Provider: provider, Model: model}
+	provider, model := SplitModelProviderAndID(raw, defaultProvider)
+	if model == "" {
+		return nil
 	}
-
 	return &ModelRef{
-		Provider: NormalizeProvider(defaultProvider),
-		Model:    raw,
+		Provider: provider,
+		Model:    model,
 	}
 }
 
@@ -53,6 +48,24 @@ func NormalizeProvider(provider string) string {
 		return "zhipu"
 	case "google":
 		return "gemini"
+	case "google-antigravity":
+		return "antigravity"
+	case "alibaba-coding", "qwen-coding":
+		return "coding-plan"
+	case "alibaba-coding-anthropic":
+		return "coding-plan-anthropic"
+	case "qwen-international", "dashscope-intl":
+		return "qwen-intl"
+	case "dashscope-us":
+		return "qwen-us"
+	case "azure-openai":
+		return "azure"
+	case "claudecli":
+		return "claude-cli"
+	case "codexcli":
+		return "codex-cli"
+	case "copilot":
+		return "github-copilot"
 	}
 
 	return p

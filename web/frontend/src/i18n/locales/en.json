@@ -1,0 +1,760 @@
+{
+  "navigation": {
+    "chat": "Chat",
+    "model_group": "Models",
+    "models": "Models",
+    "credentials": "Credentials",
+    "agent_group": "Agent",
+    "hub": "Hub",
+    "skills": "Skills",
+    "tools": "Tools",
+    "services": "Services",
+    "channels_group": "Channels",
+    "show_more_channels": "More",
+    "show_less_channels": "Less",
+    "config": "Config",
+    "logs": "Logs"
+  },
+  "launcherLogin": {
+    "title": "Sign in",
+    "description": "Enter the dashboard password to continue.",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "Enter password",
+    "submit": "Sign in",
+    "errorInvalid": "Incorrect password. Please try again.",
+    "errorNetwork": "Network error. Please try again."
+  },
+  "launcherSetup": {
+    "title": "Set dashboard password",
+    "description": "Choose a password to protect access to this dashboard. You will use it every time you sign in.",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "At least 8 characters",
+    "confirmLabel": "Confirm password",
+    "confirmPlaceholder": "Repeat password",
+    "submit": "Set password",
+    "errorMismatch": "Passwords do not match.",
+    "errorNetwork": "Network error. Please try again."
+  },
+  "chat": {
+    "welcome": "How can I help you today?",
+    "welcomeDesc": "Ask me about weather, settings, or any other tasks. I'm here to assist you.",
+    "placeholder": "Start a new message...",
+    "disabledPlaceholder": {
+      "gatewayUnknown": "Unable to chat: Gateway status is still being checked. Please wait, then refresh the page or restart Launcher if needed.",
+      "gatewayStarting": "Unable to chat: Gateway is starting. Wait for startup to complete, then try again.",
+      "gatewayRestarting": "Unable to chat: Gateway is restarting. Please wait for restart to finish.",
+      "gatewayStopping": "Unable to chat: Gateway is stopping. Wait for it to stop, then start Gateway again.",
+      "gatewayStopped": "Unable to chat: Gateway is not started. Click Start Gateway in the top bar, then retry.",
+      "gatewayError": "Unable to chat: Gateway is in an error state. Check logs, then restart Gateway or Launcher.",
+      "websocketConnecting": "Connecting to chat service... Please wait.",
+      "websocketDisconnected": "Unable to chat: WebSocket connection is disconnected. Check network and gateway status, then refresh the page or restart Launcher.",
+      "websocketError": "Unable to chat: WebSocket connection failed. Check network and gateway status, then retry.",
+      "noDefaultModel": "Unable to chat: No default model is selected. Set a default model on the Models page."
+    },
+    "newChat": "New Chat",
+    "notConnected": "Gateway is not running. Start it to chat.",
+    "thinking": {
+      "step1": "Thinking...",
+      "step2": "Analyzing your request...",
+      "step3": "Preparing response...",
+      "step4": "Almost there..."
+    },
+    "reasoningLabel": "Reasoning",
+    "toolCallsLabel": "Tool calls",
+    "toolCallExplanationLabel": "Call note",
+    "toolCallFunctionLabel": "Call summary",
+    "showAssistantDetails": "Show reasoning and tool calls",
+    "toolLabel": "Tool",
+    "history": "History",
+    "noHistory": "No chat history yet",
+    "historyLoadFailed": "Failed to load chat history",
+    "historyOpenFailed": "Failed to open this chat history",
+    "loadingMore": "Loading more...",
+    "deleteSession": "Delete session",
+    "messagesCount": "{{count}} messages",
+    "noModel": "Select model",
+    "inputDisabled": {
+      "notConnected": "Gateway is not running. Start it to chat.",
+      "noModel": "No default model configured. Go to Models page to set one."
+    },
+    "sendMessage": "Send message",
+    "sendHint": "Press Enter to send\nShift + Enter for a new line",
+    "contextTitle": "Context",
+    "contextDetail": "View Details",
+    "attachImage": "Add images",
+    "removeImage": "Remove image",
+    "uploadedImage": "Uploaded image",
+    "invalidImage": "\"{{name}}\" is not a supported image file.",
+    "imageTooLarge": "\"{{name}}\" exceeds the {{size}} limit.",
+    "imageReadFailed": "Failed to read \"{{name}}\".",
+    "empty": {
+      "noConfiguredModel": "No Model Configured",
+      "noConfiguredModelDescription": "You need to configure at least one AI model with an API key before you can start chatting.",
+      "goToModels": "Go to Models",
+      "noSelectedModel": "No Model Selected",
+      "noSelectedModelDescription": "You have configured models, but none is set as default. Select a model before starting chat.",
+      "notRunning": "Gateway Not Running",
+      "notRunningDescription": "Start the gateway service to begin chatting. Use the Start Gateway button in the top bar."
+    },
+    "modelGroup": {
+      "apikey": "API Key",
+      "oauth": "OAuth",
+      "local": "Local"
+    }
+  },
+  "header": {
+    "logout": {
+      "tooltip": "Sign out",
+      "confirm": "Sign out",
+      "description": "Are you sure you want to sign out of the dashboard?"
+    },
+    "gateway": {
+      "stopDialog": {
+        "title": "Stop Gateway Service?",
+        "description": "Are you sure you want to stop the gateway? This will disconnect your active chat sessions and halt inference.",
+        "confirm": "Stop Gateway"
+      },
+      "action": {
+        "start": "Start Gateway",
+        "stop": "Stop Gateway",
+        "restart": "Restart Gateway"
+      },
+      "status": {
+        "starting": "Starting Gateway...",
+        "restarting": "Restarting Gateway...",
+        "stopping": "Stopping Gateway..."
+      },
+      "restartRequired": "Configuration changes require a gateway restart to take effect."
+    }
+  },
+  "common": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving...",
+    "reset": "Reset",
+    "confirm": "Confirm",
+    "saveChangesTitle": "You have unsaved configuration changes",
+    "restartRequiredTitle": "Gateway restart required",
+    "restartRequiredDesc": "The latest {{name}} configuration has been saved. Restart the gateway for it to take effect."
+  },
+  "labels": {
+    "loading": "Loading..."
+  },
+  "footer": {
+    "version": "Version",
+    "commit": "Commit",
+    "build": "Build",
+    "version_unknown": "Unknown"
+  },
+  "credentials": {
+    "description": "Manage OAuth and token-based credentials for supported providers.",
+    "loading": "Loading credentials...",
+    "providers": {
+      "openai": {
+        "description": "Supports browser OAuth, device code, and token login."
+      },
+      "anthropic": {
+        "description": "Uses token login for Claude access."
+      },
+      "antigravity": {
+        "description": "Uses browser OAuth for Google Cloud Code Assist."
+      }
+    },
+    "status": {
+      "connected": "Connected",
+      "needsRefresh": "Needs refresh",
+      "expired": "Expired",
+      "notLoggedIn": "Not logged in"
+    },
+    "actions": {
+      "browser": "Browser OAuth",
+      "deviceCode": "Device Code",
+      "stopLoading": "Stop Loading",
+      "saveToken": "Save",
+      "logout": "Logout"
+    },
+    "logoutDialog": {
+      "title": "Logout provider?",
+      "description": "This will remove your saved credential for {{provider}}."
+    },
+    "fields": {
+      "openaiToken": "OpenAI token",
+      "anthropicToken": "Anthropic token"
+    },
+    "labels": {
+      "account": "Account",
+      "email": "Email",
+      "project": "Project"
+    },
+    "errors": {
+      "loadFailed": "Failed to load credentials",
+      "flowFailed": "Failed to check authentication flow",
+      "loginFailed": "Login failed",
+      "logoutFailed": "Logout failed",
+      "invalidBrowserResponse": "Invalid browser login response",
+      "invalidDeviceResponse": "Invalid device code response",
+      "popupBlocked": "Unable to open a new tab. Please allow popups and try again."
+    },
+    "flow": {
+      "current": "Current authentication status",
+      "pending": "Waiting for authorization...",
+      "success": "Authentication successful",
+      "error": "Authentication failed",
+      "expired": "Authentication session expired"
+    },
+    "device": {
+      "title": "OpenAI Device Login",
+      "description": "Open the verification page and enter the code below. This page will refresh automatically.",
+      "code": "User Code",
+      "url": "Verification URL",
+      "polling": "Polling login status...",
+      "open": "Open Verification Page"
+    }
+  },
+  "models": {
+    "description": "Configure API keys for AI providers. Only configured models are available for chat.",
+    "defaultChangeSuccess": "Default model updated.",
+    "unsavedPrompt": "This change has not been saved yet. Save to write it into the model configuration.",
+    "restartHint": "Model configuration changes take effect after the gateway restarts.",
+    "loadError": "Failed to load models",
+    "noDefaultHintPrefix": "No default model set yet. Click",
+    "noDefaultHintSuffix": "to set one.",
+    "status": {
+      "available": "Available",
+      "unconfigured": "Not configured",
+      "unreachable": "Service unreachable"
+    },
+    "badge": {
+      "default": "Default",
+      "virtual": "Virtual"
+    },
+    "action": {
+      "edit": "Edit API key",
+      "setDefault": "Set as default",
+      "delete": "Delete model",
+      "setDefaultDisabled": {
+        "setting": "Setting as default...",
+        "unavailable": "Cannot set unavailable model as default",
+        "isDefault": "Already the default model",
+        "isVirtual": "Cannot set virtual model as default",
+        "unsupportedProvider": "This provider is ASR-only and cannot be the default chat model"
+      },
+      "deleteDisabled": {
+        "isDefault": "Cannot delete the default model"
+      }
+    },
+    "defaultOnSave": {
+      "label": "Default Model",
+      "description": "Automatically set this model as default after saving.",
+      "unsupportedProvider": "This provider can be saved in model_list, but it cannot be used as the default chat model.",
+      "clearOnSave": "Saving this ASR-only model will clear the current default chat model selection."
+    },
+    "add": {
+      "button": "Add Model",
+      "title": "Add Custom Model",
+      "description": "Add an OpenAI-compatible or native model endpoint.",
+      "modelName": "Model Alias",
+      "modelNamePlaceholder": "e.g. my-gpt4",
+      "modelNameHint": "A short name used to identify this model in conversations.",
+      "modelId": "Model Identifier",
+      "modelIdPlaceholder": "e.g. gpt-4o or openai/gpt-4o",
+      "modelIdHint": "This field is sent as the canonical model ID for the selected Provider. If the model ID itself contains slashes, such as openai/gpt-5.4, it is preserved as-is instead of being split again.",
+      "errorRequired": "This field is required.",
+      "errorDuplicateModelName": "Model alias already exists. Please use a different name.",
+      "saveError": "Failed to add model",
+      "saveSuccess": "Model added.",
+      "confirm": "Add Model"
+    },
+    "delete": {
+      "title": "Delete Model?",
+      "description": "\"{{name}}\" will be permanently removed from your model list. This cannot be undone.",
+      "confirm": "Delete"
+    },
+    "advanced": {
+      "toggle": "Advanced options"
+    },
+    "field": {
+      "provider": "Provider",
+      "providerPlaceholder": "Select a provider",
+      "providerHint": "Choose a Provider from the backend catalog. The Model Identifier field is interpreted as that Provider's canonical model ID.",
+      "providerInvalid": "The current Provider is invalid. Select a supported Provider.",
+      "apiBase": "API Base URL",
+      "apiKey": "API Key",
+      "apiKeyPlaceholder": "Enter your API key",
+      "apiKeyPlaceholderSet": "Leave blank to keep existing key",
+      "proxy": "HTTP Proxy",
+      "proxyHint": "Optional. e.g. http://127.0.0.1:7890",
+      "authMethod": "Auth Method",
+      "authMethodHint": "Authentication method: oauth, token. Leave blank for API key auth.",
+      "authMethodManagedHint": "This Provider manages its authentication mode automatically.",
+      "connectMode": "Connect Mode",
+      "connectModeHint": "Connection mode for CLI-based providers: stdio or grpc.",
+      "workspace": "Workspace Path",
+      "workspaceHint": "Working directory for CLI-based providers (e.g. GitHub Copilot).",
+      "requestTimeout": "Request Timeout (s)",
+      "requestTimeoutHint": "Maximum seconds to wait for a response. 0 = use default.",
+      "rpm": "Rate Limit (RPM)",
+      "rpmHint": "Maximum requests per minute. 0 = no limit.",
+      "thinkingLevel": "Thinking Level",
+      "thinkingLevelHint": "Extended thinking budget: off, low, medium, high, xhigh, adaptive.",
+      "maxTokensField": "Max Tokens Field",
+      "maxTokensFieldHint": "Override the request field name for max tokens, e.g. max_completion_tokens.",
+      "toolSchemaTransform": "Tool Schema Transform",
+      "toolSchemaTransformHint": "Optional compatibility transform for tool JSON schemas. Leave blank for native behavior. Supported values: simple.",
+      "extraBody": "Extra Body",
+      "extraBodyHint": "Additional JSON fields to inject into the request body, e.g. {\"reasoning_split\": true}.",
+      "customHeaders": "Custom Headers",
+      "customHeadersHint": "Additional HTTP headers to inject into every request, e.g. {\"X-Source\": \"coding-plan\"}."
+    },
+    "edit": {
+      "title": "Configure {{name}}",
+      "apiKeyHint": "A key is already set. Leave blank to keep it unchanged.",
+      "oauthNote": "This provider uses OAuth — no API key required.",
+      "saveError": "Failed to save",
+      "saveSuccess": "Model configuration saved."
+    }
+  },
+  "channels": {
+    "loadError": "Failed to load channels",
+    "name": {
+      "telegram": "Telegram",
+      "discord": "Discord",
+      "slack": "Slack",
+      "feishu": "Feishu",
+      "dingtalk": "DingTalk",
+      "line": "LINE",
+      "qq": "QQ",
+      "onebot": "OneBot",
+      "wecom": "WeCom",
+      "whatsapp": "WhatsApp",
+      "whatsapp_native": "WhatsApp Native",
+      "pico": "Web",
+      "maixcam": "MaixCam",
+      "matrix": "Matrix",
+      "irc": "IRC",
+      "weixin": "WeChat"
+    },
+    "weixin": {
+      "bindTitle": "WeChat Account Binding",
+      "bindDesc": "Scan the QR code with WeChat to bind your personal account.",
+      "bind": "Bind WeChat",
+      "rebind": "Re-bind",
+      "bound": "WeChat Bound",
+      "notBound": "WeChat account not bound yet.",
+      "generating": "Generating QR code...",
+      "scanHint": "Open WeChat and scan the QR code",
+      "scanned": "Scanned — please confirm in WeChat",
+      "expired": "QR code expired",
+      "retry": "Try Again",
+      "refresh": "Refresh QR",
+      "errorGeneric": "An error occurred. Please try again."
+    },
+    "wecom": {
+      "bindTitle": "WeCom Binding",
+      "bindDesc": "Scan the QR code with WeCom to bind your AI Bot.",
+      "bind": "Bind WeCom",
+      "rebind": "Re-bind",
+      "bound": "WeCom Bound",
+      "notBound": "WeCom AI Bot not bound yet.",
+      "generating": "Generating QR code...",
+      "scanHint": "Open WeCom and scan the QR code",
+      "scanned": "Scanned, please confirm in WeCom",
+      "expired": "QR code expired",
+      "retry": "Try Again",
+      "refresh": "Refresh QR",
+      "errorGeneric": "An error occurred. Please try again."
+    },
+    "field": {
+      "token": "Bot Token",
+      "tokenPlaceholder": "Enter bot token",
+      "botToken": "Bot Token",
+      "appToken": "App Token",
+      "appId": "App ID",
+      "appSecret": "App Secret",
+      "verificationToken": "Verification Token",
+      "encryptKey": "Encrypt Key",
+      "baseUrl": "API Base URL",
+      "proxy": "HTTP Proxy",
+      "mentionOnly": "Mention Only",
+      "typingEnabled": "Typing Indicator",
+      "placeholderEnabled": "Placeholder Message",
+      "placeholderText": "Placeholder Text",
+      "groupTriggerMentionOnly": "Group Mention Only",
+      "groupTriggerPrefixes": "Group Trigger Prefixes",
+      "groupTriggerPrefixesPlaceholder": "e.g. /, !, ?",
+      "randomReactionEmoji": "Random Reaction Emoji",
+      "randomReactionEmojiPlaceholder": "e.g. THUMBSUP, HEART, SMILE",
+      "isLark": "Lark (International)",
+      "allowFrom": "Allow From",
+      "allowFromPlaceholder": "e.g. 123456, 789012",
+      "allowOrigins": "Allow Origins",
+      "allowOriginsPlaceholder": "e.g. https://example.com, http://localhost:5173",
+      "removeListItem": "Remove {{value}}",
+      "secretPlaceholder": "Enter secret",
+      "secretHintSet": "A value is already set. Leave blank to keep it unchanged."
+    },
+    "page": {
+      "notFound": "Channel \"{{name}}\" is not supported.",
+      "saveSuccess": "Channel configuration saved.",
+      "saveError": "Failed to save channel configuration",
+      "savePrompt": "This change has not been saved yet. Save to write it into the channel configuration.",
+      "docLink": "Documentation",
+      "enableLabel": "Enable channel",
+      "restartRequiredTitle": "Gateway restart required",
+      "restartRequiredDesc": "The latest {{name}} configuration has been saved. Restart the gateway for it to take effect."
+    },
+    "form": {
+      "desc": {
+        "token": "Bot access token used to connect to the platform API.",
+        "botToken": "Bot token used to send and receive messages.",
+        "appToken": "App token used for Socket Mode connections.",
+        "appId": "Unique application ID used for authentication.",
+        "appSecret": "Application secret used for signing and authentication.",
+        "verificationToken": "Verification token for event callbacks.",
+        "encryptKey": "Encryption key used to decrypt callback payloads.",
+        "baseUrl": "Platform API base URL. Official endpoint is used by default.",
+        "proxy": "HTTP proxy address for outbound network access.",
+        "mentionOnly": "Only respond when the bot is explicitly mentioned in group chats.",
+        "typingEnabled": "Display typing status while the assistant is generating a response.",
+        "placeholderEnabled": "Enable temporary placeholder messages before the final reply is sent.",
+        "groupTriggerMentionOnly": "In group chats, respond only when the bot is mentioned.",
+        "groupTriggerPrefixes": "Custom group-chat trigger prefixes. Add items one by one, or paste multiple values at once.",
+        "randomReactionEmoji": "PicoClaw adds emoji reactions to user messages to confirm receipt. Example: \"THUMBSUP\", \"HEART\", \"SMILE\". Leave empty to use the default \"Pin\" emoji.",
+        "isLark": "Use Lark international domain (open.larksuite.com) instead of Feishu domain (open.feishu.cn).",
+        "allowFrom": "Allowed user or group IDs. Add items one by one, or paste multiple values at once.",
+        "allowOrigins": "Allowed origin domains. Add items one by one, or paste multiple values at once.",
+        "wsUrl": "WebSocket service URL.",
+        "reconnectInterval": "Reconnect interval after disconnection (seconds).",
+        "bridgeUrl": "Bridge service URL.",
+        "sessionStorePath": "Local path for session storage.",
+        "useNative": "Whether to use native client mode.",
+        "host": "Service host address.",
+        "port": "Service port.",
+        "homeserver": "Matrix homeserver URL.",
+        "userId": "Account user ID.",
+        "deviceId": "Device ID.",
+        "joinOnInvite": "Automatically join rooms when invited.",
+        "clientId": "Client ID used for platform authentication.",
+        "corpId": "Enterprise Corp ID.",
+        "agentId": "Enterprise application Agent ID.",
+        "webhookUrl": "Full webhook URL.",
+        "webhookHost": "Webhook listening host.",
+        "webhookPort": "Webhook listening port.",
+        "webhookPath": "Webhook route path.",
+        "replyTimeout": "Reply timeout in seconds.",
+        "maxSteps": "Maximum number of processing steps.",
+        "welcomeMessage": "Welcome message content for new sessions.",
+        "allowTokenQuery": "Allow token in URL query parameters.",
+        "pingInterval": "Connection heartbeat interval in seconds.",
+        "readTimeout": "Read timeout in seconds.",
+        "writeTimeout": "Write timeout in seconds.",
+        "maxConnections": "Maximum number of concurrent connections.",
+        "server": "IRC server address.",
+        "tls": "Whether to enable TLS.",
+        "nick": "Bot nickname.",
+        "user": "IRC username.",
+        "realName": "Displayed real name.",
+        "channels": "IRC channels to join.",
+        "requestCaps": "IRC capability list requested on connect.",
+        "maxBase64FileSizeMiB": "Maximum size in MiB for converting local files to base64 before upload. 0 means unlimited. Applies only to local files, not URL uploads.",
+        "genericField": "Used to configure {{field}}."
+      }
+    },
+    "validation": {
+      "requiredField": "This field is required."
+    }
+  },
+  "pages": {
+    "agent": {
+      "load_error": "Failed to load agent support information.",
+      "skills": {
+        "empty": "No skills are currently available.",
+        "install_success": "Installed {{name}}.",
+        "install_error": "Failed to install skill.",
+        "search_placeholder": "Search by name, description, or registry",
+        "source_label": "Type",
+        "sort_label": "Sort",
+        "import": "Import Skill",
+        "import_success": "Skill imported.",
+        "import_error": "Failed to import skill.",
+        "import_invalid_type": "Only Markdown or ZIP skill files are supported.",
+        "import_invalid_size": "Skill file must be 1 MB or smaller.",
+        "import_constraints": "Import a Markdown or ZIP skill file up to 1 MB",
+        "view": "View",
+        "delete": "Delete",
+        "delete_title": "Delete Skill?",
+        "delete_description": "\"{{name}}\" will be removed from workspace skills.",
+        "delete_confirm": "Delete",
+        "delete_success": "Skill deleted.",
+        "delete_error": "Failed to delete skill.",
+        "viewer_title": "Skill Content",
+        "viewer_description": "Read the current effective SKILL.md content here.",
+        "load_detail_error": "Failed to load skill content.",
+        "no_description": "No description provided.",
+        "no_results": "No skills matched the current filters.",
+        "dropzone_title": "Import Into Workspace",
+        "dropzone_description": "Drag a skill file here or pick one from disk.",
+        "dropzone_label": "Drop a skill file here",
+        "dropzone_active": "Release to import this skill",
+        "dropzone_release": "The skill will be normalized and saved into the workspace skills directory.",
+        "marketplace_title": "Discover Skills",
+        "marketplace_description": "Search the skill registries and install useful skills into this workspace",
+        "marketplace_search_placeholder": "Search for capabilities like github, docker, database...",
+        "marketplace_search_action": "Search",
+        "marketplace_search_status": "Search Status",
+        "marketplace_install_status": "Install Status",
+        "marketplace_notice_title": "Security Notice",
+        "marketplace_notice_body": "Registry skills are third-party content. Review the author, page URL, instructions, and any required code or credentials before installing.",
+        "marketplace_status_disabled": "Disabled. Enable the corresponding tool on the Tools page first.",
+        "marketplace_status_enable_hint": "Enable the related tool on the Tools page first.",
+        "marketplace_search_error": "Failed to search registries.",
+        "marketplace_loading_results": "Searching skills...",
+        "marketplace_loading_more": "Loading more skills...",
+        "marketplace_results_title": "{{count}} results for “{{query}}”",
+        "marketplace_results_hint": "Registry results install into the current workspace.",
+        "marketplace_install_action": "Install",
+        "marketplace_installed": "Installed",
+        "marketplace_view_installed": "View Local",
+        "marketplace_installed_hint": "Already available in this workspace as “{{name}}”.",
+        "marketplace_empty_results": "No installable skills matched “{{query}}”.",
+        "marketplace_idle": "Search for a capability to discover installable skills from configured registries.",
+        "marketplace_unavailable": "Registry search is currently unavailable. Check the Skills tools configuration.",
+        "sort": {
+          "name_asc": "Name (A-Z)",
+          "name_desc": "Name (Z-A)",
+          "source": "Type"
+        },
+        "origin": {
+          "all": "All Types",
+          "builtin": "Builtin",
+          "third_party": "Third-Party",
+          "manual": "Manual"
+        },
+        "summary": {
+          "total": "Total Skills"
+        },
+        "detail_tabs": {
+          "preview": "Preview",
+          "raw": "Raw",
+          "meta": "Metadata"
+        },
+        "metadata": {
+          "name": "Name",
+          "description": "Description",
+          "registry": "Registry",
+          "url": "URL",
+          "version": "Installed Version",
+          "lines": "Line Count",
+          "characters": "Character Count"
+        },
+        "marketplace_installDisabled": {
+          "installing": "Installing...",
+          "installed": "Already installed",
+          "cannotInstall": "Cannot install: related tool is not enabled"
+        }
+      },
+      "tools": {
+        "search_placeholder": "Search tools...",
+        "no_results": "No tools match your criteria.",
+        "filter": {
+          "all": "All Status",
+          "enabled": "Enabled",
+          "disabled": "Disabled",
+          "blocked": "Blocked"
+        },
+        "empty": "No tools are available.",
+        "enable_success": "Tool enabled.",
+        "disable_success": "Tool disabled.",
+        "toggle_error": "Failed to update tool state.",
+        "library_title": "Tool Library",
+        "library_description": "Browse and manage the toolset available to your AI agents.",
+        "web_search": {
+          "title": "Web Search",
+          "description": "Provide web search capability for agents to find the latest real-world info. Automatically routes to the optimal active provider.",
+          "unsaved_prompt": "This change has not been saved yet. Save to write it into the Web Search configuration.",
+          "global_settings": "General",
+          "providers_config": "Integrations",
+          "load_error": "Failed to load web search configuration.",
+          "save": "Save Changes",
+          "open_settings": "Open Settings",
+          "save_success": "Settings saved successfully.",
+          "save_error": "Failed to save settings.",
+          "provider": "Primary Provider",
+          "provider_description": "Select the default provider to use when the web search tool handles a request.",
+          "proxy": "HTTPS Proxy",
+          "proxy_description": "Optional global HTTP/S proxy for underlying web requests.",
+          "prefer_native": "Prefer Native Search",
+          "prefer_native_hint": "When enabled, the model may use its built-in search capability instead of the configured provider list.",
+          "provider_hint": "Enable this provider and fill any required connection settings.",
+          "max_results": "Max Results",
+          "base_url": "Base URL",
+          "base_url_placeholder": "Optional endpoint override",
+          "api_key": "API Key / Token",
+          "api_key_placeholder": "Enter API key, leave it blank to keep the original key",
+          "none": "Unavailable"
+        },
+        "status": {
+          "enabled": "Enabled",
+          "disabled": "Disabled",
+          "blocked": "Blocked"
+        },
+        "categories": {
+          "automation": "Automation",
+          "filesystem": "Filesystem",
+          "web": "Web",
+          "communication": "Communication",
+          "skills": "Skills",
+          "agents": "Agents",
+          "hardware": "Hardware",
+          "discovery": "Discovery"
+        },
+        "reasons": {
+          "requires_linux": "This tool only works on Linux hosts with the required device files exposed.",
+          "requires_serial_platform": "This tool currently supports Linux, macOS, and Windows hosts with accessible serial ports.",
+          "requires_skills": "Enable `tools.skills` before this skill-registry tool can be used.",
+          "requires_subagent": "Enable `tools.subagent` before the spawn tool can delegate work.",
+          "requires_mcp_discovery": "Enable `tools.mcp.discovery` before MCP discovery tools become available.",
+          "requires_web_search_provider": "Configure at least one ready external web-search provider."
+        }
+      }
+    },
+    "config": {
+      "load_error": "Failed to load configuration. Please refresh and try again.",
+      "workspace": "Workspace Directory",
+      "workspace_hint": "Base directory for agent file operations.",
+      "restrict_workspace": "Restrict to Workspace",
+      "restrict_workspace_hint": "Only allow file operations inside workspace.",
+      "split_on_marker": "Chatty Mode",
+      "split_on_marker_hint": "Split long messages into short ones like real human chatting.",
+      "tool_feedback_enabled": "Tool Feedback",
+      "tool_feedback_enabled_hint": "Send a short execution note into the current chat before each tool runs.",
+      "tool_feedback_separate_messages": "Separate Feedback Messages",
+      "tool_feedback_separate_messages_hint": "Keep each tool feedback update as its own chat message instead of reusing a single placeholder/progress message.",
+      "tool_feedback_max_args_length": "Tool Args Preview Length",
+      "tool_feedback_max_args_length_hint": "Maximum number of characters shown in each tool argument preview. Set to 0 to use the default.",
+      "exec_enabled": "Allow Commands",
+      "exec_enabled_hint": "Enable or disable command execution for the app. When disabled, no command requests will run.",
+      "allow_remote": "Allow Remote Commands",
+      "allow_remote_hint": "When enabled, remote sessions or non-local contexts can also run commands. When disabled, command execution stays limited to local safe contexts.",
+      "enable_deny_patterns": "Enable Blacklist",
+      "enable_deny_patterns_hint": "When enabled, the app blocks commands that match its built-in dangerous patterns and the custom command blacklist below.",
+      "exec_timeout_seconds": "Command Timeout (seconds)",
+      "exec_timeout_seconds_hint": "Maximum runtime for command requests. Set to 0 to use the default timeout.",
+      "custom_deny_patterns": "Command Blacklist",
+      "custom_deny_patterns_hint": "Add extra command-blocking rules, one regular expression per line. A command matching any rule here will be blocked.",
+      "custom_allow_patterns": "Command Whitelist",
+      "custom_allow_patterns_hint": "Add extra command-allow rules, one regular expression per line. A command matching any rule here skips blacklist matching, but other safety limits still apply.",
+      "custom_patterns_placeholder": "^rm\\s+-rf\\b\n^git\\s+push\\b",
+      "pattern_detector_title": "Pattern Detection Tool",
+      "pattern_detector_hint": "Enter a command to test if it matches any blacklist or whitelist patterns.",
+      "pattern_detector_input_placeholder": "Enter a command to test, e.g., rm -rf /tmp",
+      "pattern_detector_test_button": "Test",
+      "pattern_detector_result_allowed": "Allowed (matches whitelist)",
+      "pattern_detector_result_blocked": "Blocked (matches blacklist)",
+      "pattern_detector_result_no_match": "No match (will use default rules)",
+      "allow_shell_execution": "Allow Scheduled Commands",
+      "allow_shell_execution_hint": "Allow scheduled tasks to run commands by default. When disabled, users must pass command_confirm=true to schedule a command task.",
+      "cron_exec_timeout": "Scheduled Command Timeout (minutes)",
+      "cron_exec_timeout_hint": "Maximum runtime for scheduled commands. Set to 0 to disable the timeout.",
+      "max_tokens": "Max Tokens",
+      "max_tokens_hint": "Upper token limit per model response.",
+      "context_window": "Context Window",
+      "context_window_hint": "Model input context capacity in tokens. Leave empty to use the default (4x max tokens).",
+      "max_tool_iterations": "Max Tool Iterations",
+      "max_tool_iterations_hint": "Maximum tool-call loops in a single task.",
+      "summarize_threshold": "Summarize Message Threshold",
+      "summarize_threshold_hint": "Start summarization after this many messages.",
+      "summarize_token_percent": "Summarize Token Percent",
+      "summarize_token_percent_hint": "Used when conversation summary is triggered.",
+      "session_scope": "Session Scope",
+      "session_scope_hint": "How chat context is isolated across peers/channels.",
+      "session_scope_per_channel_peer": "Per Channel + Peer",
+      "session_scope_per_channel_peer_desc": "Separate context for each user in each channel.",
+      "session_scope_per_channel": "Per Channel",
+      "session_scope_per_channel_desc": "One shared context per channel.",
+      "session_scope_per_peer": "Per Peer",
+      "session_scope_per_peer_desc": "One context per user across channels.",
+      "session_scope_global": "Global",
+      "session_scope_global_desc": "All messages share one global context.",
+      "heartbeat_enabled": "Heartbeat",
+      "heartbeat_enabled_hint": "Send periodic heartbeat messages.",
+      "heartbeat_interval": "Heartbeat Interval (minutes)",
+      "heartbeat_interval_hint": "Interval in minutes between heartbeat signals.",
+      "devices_enabled": "Enable Devices",
+      "devices_enabled_hint": "Enable hardware-device integrations.",
+      "monitor_usb": "Monitor USB",
+      "monitor_usb_hint": "Watch USB plug/unplug events when devices are enabled.",
+      "autostart_label": "Launch at Login",
+      "autostart_hint": "Start PicoClaw Web automatically when you log in.",
+      "autostart_unsupported": "Launch at login is not supported on this platform.",
+      "autostart_load_error": "Failed to load launch-at-login status.",
+      "server_port": "Service Port",
+      "server_port_hint": "HTTP port used by PicoClaw Web.",
+      "launcher_section_hint": "Changes in this section take effect after the launcher restarts.",
+      "gateway_restart_hint": "Changes in this section take effect after the gateway restarts.",
+      "dashboard_password": "Login Password",
+      "dashboard_password_hint": "Set a new login password.",
+      "dashboard_password_placeholder": "At least 8 characters",
+      "dashboard_password_confirm": "Confirm New Password",
+      "dashboard_password_confirm_hint": "Enter the new login password again.",
+      "dashboard_password_confirm_placeholder": "Repeat password",
+      "dashboard_password_required": "Enter and confirm the new login password.",
+      "dashboard_password_mismatch": "The login passwords do not match.",
+      "dashboard_password_min_length": "Login password must be at least 8 characters.",
+      "lan_access": "Enable LAN Access",
+      "lan_access_hint": "Allow access from other devices on your local network.",
+      "allowed_cidrs": "Allowed Network CIDRs",
+      "allowed_cidrs_hint": "Only clients from these CIDR ranges can access the service. One per line or comma-separated. Leave empty to allow all.",
+      "allowed_cidrs_placeholder": "192.168.1.0/24\n10.0.0.0/8",
+      "sections": {
+        "agent": "Agent",
+        "runtime": "Runtime",
+        "exec": "Run Commands",
+        "cron": "Cron Tasks",
+        "launcher": "Launcher",
+        "devices": "Devices"
+      },
+      "open_raw": "Raw Config",
+      "back_to_visual": "Visual Config",
+      "raw_json_title": "Raw JSON Configuration",
+      "json_placeholder": "Enter valid JSON configuration...",
+      "save_success": "Configuration saved successfully.",
+      "save_error": "Failed to save configuration.",
+      "reset_confirm_title": "Reset Changes",
+      "reset_confirm_desc": "Are you sure you want to reset your unsaved changes back to the last saved state?",
+      "reset_success": "Changes have been reset to the last saved state.",
+      "invalid_json": "Invalid JSON format.",
+      "format_success": "JSON formatted successfully.",
+      "format_error": "Invalid JSON format.",
+      "format": "Format",
+      "unsaved_changes": "You have unsaved changes."
+    },
+    "logs": {
+      "log_level_error": "Failed to update log level.",
+      "clear": "Clear logs",
+      "empty": "Waiting for logs..."
+    }
+  },
+  "tour": {
+    "skip": "Skip tour",
+    "prev": "Previous",
+    "next": "Next",
+    "finish": "Finish",
+    "welcome": {
+      "title": "Welcome to PicoClaw",
+      "description": "PicoClaw is a powerful AI assistant platform. Let's take a few seconds to help you complete the basic setup."
+    },
+    "models": {
+      "title": "Configure Models",
+      "description": "Click the \"Models\" menu on the left to configure API keys for AI providers. Only configured models can be used for chat."
+    },
+    "gateway": {
+      "title": "Start Gateway",
+      "description": "After configuring models, click the \"Start Gateway\" button at the top to begin chatting with AI."
+    },
+    "docs": {
+      "title": "View Documentation",
+      "description": "Need more help? Click the documentation button in the top right corner to view detailed guides and configuration docs."
+    }
+  }
+}

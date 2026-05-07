@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -32,6 +33,9 @@ func init() {
 	uniqueIDPrefix = hex.EncodeToString(b[:])
 }
 
+// audioAnnotationRe matches audio/voice annotations injected by channels (e.g. [voice], [audio: file.ogg]).
+var audioAnnotationRe = regexp.MustCompile(`\[(voice|audio)(?::[^\]]*)?\]`)
+
 // uniqueID generates a process-unique ID using a random prefix and an atomic counter.
 // This ID is intended for internal correlation (e.g. media scope keys) and is NOT
 // cryptographically secure — it must not be used in contexts where unpredictability matters.
@@ -44,7 +48,7 @@ type Channel interface {
 	Name() string
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
-	Send(ctx context.Context, msg bus.OutboundMessage) error
+	Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error)
 	IsRunning() bool
 	IsAllowed(senderID string) bool
 	IsAllowedSender(sender bus.SenderInfo) bool
@@ -99,6 +103,16 @@ func NewBaseChannel(
 	allowList []string,
 	opts ...BaseChannelOption,
 ) *BaseChannel {
+	isEmpty := true
+	for _, s := range allowList {
+		if s != "" {
+			isEmpty = false
+			break
+		}
+	}
+	if isEmpty {
+		allowList = []string{}
+	}
 	bc := &BaseChannel{
 		config:    config,
 		bus:       bus,
@@ -108,6 +122,18 @@ func NewBaseChannel(
 	for _, opt := range opts {
 		opt(bc)
 	}
+
+	// Security Audit: Check for open-by-default (unsecured) channels.
+	// PicoClaw aims to be secure-by-default. If allow_from is empty, the bot
+	// currently defaults to accepting messages from ANYONE. To explicitly
+	// acknowledge and permit this (e.g. for a public bot), use ["*"].
+	if len(bc.allowList) == 0 {
+		logger.WarnCF("channels", "SECURITY: Channel allows EVERYONE (allow_from is empty)", map[string]any{
+			"channel": bc.name,
+			"hint":    "Set allow_from to your ID, or use '*' to explicitly acknowledge open access.",
+		})
+	}
+
 	return bc
 }
 
@@ -161,6 +187,12 @@ func (c *BaseChannel) Name() string {
 	return c.name
 }
 
+// SetName updates the channel name. Used by the manager after channel creation
+// to ensure the name matches the config key (which may differ from the type).
+func (c *BaseChannel) SetName(name string) {
+	c.name = name
+}
+
 func (c *BaseChannel) ReasoningChannelID() string {
 	return c.reasoningChannelID
 }
@@ -183,6 +215,9 @@ func (c *BaseChannel) IsAllowed(senderID string) bool {
 	}
 
 	for _, allowed := range c.allowList {
+		if allowed == "*" {
+			return true
+		}
 		// Strip leading "@" from allowed value for username matching
 		trimmed := strings.TrimPrefix(allowed, "@")
 		allowedID := trimmed
@@ -217,7 +252,7 @@ func (c *BaseChannel) IsAllowedSender(sender bus.SenderInfo) bool {
 	}
 
 	for _, allowed := range c.allowList {
-		if identity.MatchAllowed(sender, allowed) {
+		if allowed == "*" || identity.MatchAllowed(sender, allowed) {
 			return true
 		}
 	}
@@ -225,12 +260,11 @@ func (c *BaseChannel) IsAllowedSender(sender bus.SenderInfo) bool {
 	return false
 }
 
-func (c *BaseChannel) HandleMessage(
+func (c *BaseChannel) HandleMessageWithContext(
 	ctx context.Context,
-	peer bus.Peer,
-	messageID, senderID, chatID, content string,
+	deliveryChatID, content string,
 	media []string,
-	metadata map[string]string,
+	inboundCtx bus.InboundContext,
 	senderOpts ...bus.SenderInfo,
 ) {
 	// Use SenderInfo-based allow check when available, else fall back to string
@@ -238,6 +272,7 @@ func (c *BaseChannel) HandleMessage(
 	if len(senderOpts) > 0 {
 		sender = senderOpts[0]
 	}
+	senderID := strings.TrimSpace(inboundCtx.SenderID)
 	if sender.CanonicalID != "" || sender.PlatformID != "" {
 		if !c.IsAllowedSender(sender) {
 			return
@@ -254,40 +289,57 @@ func (c *BaseChannel) HandleMessage(
 		resolvedSenderID = sender.CanonicalID
 	}
 
-	scope := BuildMediaScope(c.name, chatID, messageID)
+	if resolvedSenderID == "" {
+		resolvedSenderID = senderID
+	}
+
+	inboundCtx.Channel = c.name
+	if inboundCtx.ChatID == "" {
+		inboundCtx.ChatID = deliveryChatID
+	}
+	if inboundCtx.SenderID == "" {
+		inboundCtx.SenderID = resolvedSenderID
+	}
+
+	scope := BuildMediaScope(c.name, deliveryChatID, inboundCtx.MessageID)
 
 	msg := bus.InboundMessage{
-		Channel:    c.name,
-		SenderID:   resolvedSenderID,
+		Context:    inboundCtx,
 		Sender:     sender,
-		ChatID:     chatID,
 		Content:    content,
 		Media:      media,
-		Peer:       peer,
-		MessageID:  messageID,
 		MediaScope: scope,
-		Metadata:   metadata,
 	}
+	msg = bus.NormalizeInboundMessage(msg)
 
 	// Auto-trigger typing indicator, message reaction, and placeholder before publishing.
 	// Each capability is independent — all three may fire for the same message.
+	// Note: even when streaming is available, we still show typing + placeholder on inbound.
+	// If streaming actually activates, preSend will skip the placeholder edit (streamActive map)
+	// and the typing stop will still be called. This avoids the problem of compile-time interface
+	// checks incorrectly skipping indicators when streaming may not work at runtime.
 	if c.owner != nil && c.placeholderRecorder != nil {
-		// Typing — independent pipeline
+		// Typing
 		if tc, ok := c.owner.(TypingCapable); ok {
-			if stop, err := tc.StartTyping(ctx, chatID); err == nil {
-				c.placeholderRecorder.RecordTypingStop(c.name, chatID, stop)
+			if stop, err := tc.StartTyping(ctx, deliveryChatID); err == nil {
+				c.placeholderRecorder.RecordTypingStop(c.name, deliveryChatID, stop)
 			}
 		}
-		// Reaction — independent pipeline
-		if rc, ok := c.owner.(ReactionCapable); ok && messageID != "" {
-			if undo, err := rc.ReactToMessage(ctx, chatID, messageID); err == nil {
-				c.placeholderRecorder.RecordReactionUndo(c.name, chatID, undo)
+		// Reaction
+		if rc, ok := c.owner.(ReactionCapable); ok && msg.MessageID != "" {
+			if undo, err := rc.ReactToMessage(ctx, deliveryChatID, msg.MessageID); err == nil {
+				c.placeholderRecorder.RecordReactionUndo(c.name, deliveryChatID, undo)
 			}
 		}
-		// Placeholder — independent pipeline
-		if pc, ok := c.owner.(PlaceholderCapable); ok {
-			if phID, err := pc.SendPlaceholder(ctx, chatID); err == nil && phID != "" {
-				c.placeholderRecorder.RecordPlaceholder(c.name, chatID, phID)
+		// Placeholder — independent pipeline.
+		// Skip when the message contains audio: the agent will send the
+		// placeholder after transcription completes, so the user sees
+		// "Thinking…" only once the voice has been processed.
+		if !audioAnnotationRe.MatchString(content) {
+			if pc, ok := c.owner.(PlaceholderCapable); ok {
+				if phID, err := pc.SendPlaceholder(ctx, deliveryChatID); err == nil && phID != "" {
+					c.placeholderRecorder.RecordPlaceholder(c.name, deliveryChatID, phID)
+				}
 			}
 		}
 	}
@@ -295,7 +347,7 @@ func (c *BaseChannel) HandleMessage(
 	if err := c.bus.PublishInbound(ctx, msg); err != nil {
 		logger.ErrorCF("channels", "Failed to publish inbound message", map[string]any{
 			"channel": c.name,
-			"chat_id": chatID,
+			"chat_id": deliveryChatID,
 			"error":   err.Error(),
 		})
 	}
@@ -304,6 +356,18 @@ func (c *BaseChannel) HandleMessage(
 // Bus returns the underlying MessageBus. This is used by channels that need to
 // publish directly (e.g. to set SessionKey on InboundMessage).
 func (c *BaseChannel) Bus() *bus.MessageBus { return c.bus }
+
+// HandleInboundContext publishes a normalized inbound message using only the
+// structured context.
+func (c *BaseChannel) HandleInboundContext(
+	ctx context.Context,
+	deliveryChatID, content string,
+	media []string,
+	inboundCtx bus.InboundContext,
+	senderOpts ...bus.SenderInfo,
+) {
+	c.HandleMessageWithContext(ctx, deliveryChatID, content, media, inboundCtx, senderOpts...)
+}
 
 func (c *BaseChannel) SetRunning(running bool) {
 	c.running.Store(running)

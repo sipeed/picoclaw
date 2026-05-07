@@ -2,6 +2,7 @@ package skills
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -11,11 +12,22 @@ import (
 
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/fileutil"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 const skillsSearchMaxResults = 20
+
+type installedSkillOriginMeta struct {
+	Version          int    `json:"version"`
+	OriginKind       string `json:"origin_kind,omitempty"`
+	Registry         string `json:"registry,omitempty"`
+	Slug             string `json:"slug,omitempty"`
+	RegistryURL      string `json:"registry_url,omitempty"`
+	InstalledVersion string `json:"installed_version,omitempty"`
+	InstalledAt      int64  `json:"installed_at"`
+}
 
 func skillsListCmd(loader *skills.SkillsLoader) {
 	allSkills := loader.ListSkills()
@@ -35,50 +47,32 @@ func skillsListCmd(loader *skills.SkillsLoader) {
 	}
 }
 
-func skillsInstallCmd(installer *skills.SkillInstaller, repo string) error {
-	fmt.Printf("Installing skill from %s...\n", repo)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := installer.InstallFromGitHub(ctx, repo); err != nil {
-		return fmt.Errorf("failed to install skill: %w", err)
-	}
-
-	fmt.Printf("\u2713 Skill '%s' installed successfully!\n", filepath.Base(repo))
-
-	return nil
-}
-
 // skillsInstallFromRegistry installs a skill from a named registry (e.g. clawhub).
-func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) error {
+func skillsInstallFromRegistry(cfg *config.Config, registryName, target string) error {
 	err := utils.ValidateSkillIdentifier(registryName)
 	if err != nil {
 		return fmt.Errorf("✗  invalid registry name: %w", err)
 	}
 
-	err = utils.ValidateSkillIdentifier(slug)
-	if err != nil {
-		return fmt.Errorf("✗  invalid slug: %w", err)
-	}
-
-	fmt.Printf("Installing skill '%s' from %s registry...\n", slug, registryName)
-
-	registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
-		MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
-		ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
-	})
+	registryMgr := skills.NewRegistryManagerFromToolsConfig(cfg.Tools.Skills)
 
 	registry := registryMgr.GetRegistry(registryName)
 	if registry == nil {
 		return fmt.Errorf("✗  registry '%s' not found or not enabled. check your config.json.", registryName)
 	}
 
+	dirName, err := registry.ResolveInstallDirName(target)
+	if err != nil {
+		return fmt.Errorf("✗  invalid install target %q: %w", target, err)
+	}
+
+	fmt.Printf("Installing skill '%s' from %s registry...\n", target, registryName)
+
 	workspace := cfg.WorkspacePath()
-	targetDir := filepath.Join(workspace, "skills", slug)
+	targetDir := filepath.Join(workspace, "skills", dirName)
 
 	if _, err = os.Stat(targetDir); err == nil {
-		return fmt.Errorf("\u2717 skill '%s' already installed at %s", slug, targetDir)
+		return fmt.Errorf("\u2717 skill '%s' already installed at %s", dirName, targetDir)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -88,7 +82,7 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) er
 		return fmt.Errorf("\u2717 failed to create skills directory: %v", err)
 	}
 
-	result, err := registry.DownloadAndInstall(ctx, slug, "", targetDir)
+	result, err := registry.DownloadAndInstall(ctx, target, "", targetDir)
 	if err != nil {
 		rmErr := os.RemoveAll(targetDir)
 		if rmErr != nil {
@@ -103,14 +97,34 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) er
 			fmt.Printf("\u2717 Failed to remove partial install: %v\n", rmErr)
 		}
 
-		return fmt.Errorf("\u2717 Skill '%s' is flagged as malicious and cannot be installed.\n", slug)
+		return fmt.Errorf("\u2717 Skill '%s' is flagged as malicious and cannot be installed.\n", target)
 	}
 
 	if result.IsSuspicious {
-		fmt.Printf("\u26a0\ufe0f  Warning: skill '%s' is flagged as suspicious.\n", slug)
+		fmt.Printf("\u26a0\ufe0f  Warning: skill '%s' is flagged as suspicious.\n", target)
 	}
 
-	fmt.Printf("\u2713 Skill '%s' v%s installed successfully!\n", slug, result.Version)
+	if !workspaceHasValidSkillDirectory(workspace, dirName) {
+		_ = os.RemoveAll(targetDir)
+		return fmt.Errorf("✗ failed to install skill: registry archive for %q is not a valid skill", target)
+	}
+
+	normalizedSlug, registryURL := skills.BuildInstallMetadataForRegistryInstance(registry, target, result.Version)
+	installedAt := time.Now().UnixMilli()
+	if err := writeInstalledSkillOriginMeta(targetDir, installedSkillOriginMeta{
+		Version:          1,
+		OriginKind:       "third_party",
+		Registry:         registry.Name(),
+		Slug:             normalizedSlug,
+		RegistryURL:      registryURL,
+		InstalledVersion: result.Version,
+		InstalledAt:      installedAt,
+	}); err != nil {
+		_ = os.RemoveAll(targetDir)
+		return fmt.Errorf("✗ failed to persist skill metadata: %w", err)
+	}
+
+	fmt.Printf("\u2713 Skill '%s' v%s installed successfully!\n", dirName, result.Version)
 	if result.Summary != "" {
 		fmt.Printf("  %s\n", result.Summary)
 	}
@@ -118,15 +132,51 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) er
 	return nil
 }
 
-func skillsRemoveCmd(installer *skills.SkillInstaller, skillName string) {
-	fmt.Printf("Removing skill '%s'...\n", skillName)
-
-	if err := installer.Uninstall(skillName); err != nil {
-		fmt.Printf("✗ Failed to remove skill: %v\n", err)
-		os.Exit(1)
+func writeInstalledSkillOriginMeta(targetDir string, meta installedSkillOriginMeta) error {
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
 	}
+	return fileutil.WriteFileAtomic(filepath.Join(targetDir, ".skill-origin.json"), data, 0o600)
+}
 
-	fmt.Printf("✓ Skill '%s' removed successfully!\n", skillName)
+func workspaceHasValidSkillDirectory(workspace, directory string) bool {
+	loader := skills.NewSkillsLoader(workspace, "", "")
+	for _, skill := range loader.ListSkills() {
+		if skill.Source != "workspace" {
+			continue
+		}
+		if filepath.Base(filepath.Dir(skill.Path)) == directory {
+			return true
+		}
+	}
+	return false
+}
+
+func skillsRemoveFromWorkspace(workspace string, toolsConfig config.SkillsToolsConfig, skillName string) error {
+	name := strings.TrimSpace(skillName)
+	name = strings.Trim(name, "/")
+	if name == "" {
+		return fmt.Errorf("skill name is required")
+	}
+	if strings.Contains(name, "/") {
+		dirName, err := skills.GitHubInstallDirNameFromToolsConfig(toolsConfig, name)
+		if err != nil || dirName == "" {
+			return fmt.Errorf("invalid skill name %q", skillName)
+		}
+		name = dirName
+	}
+	if name == "." || name == ".." {
+		return fmt.Errorf("invalid skill name %q", skillName)
+	}
+	skillDir := filepath.Join(workspace, "skills", name)
+	if _, err := os.Stat(skillDir); os.IsNotExist(err) {
+		return fmt.Errorf("skill '%s' not found", name)
+	}
+	if err := os.RemoveAll(skillDir); err != nil {
+		return fmt.Errorf("failed to remove skill '%s': %w", name, err)
+	}
+	return nil
 }
 
 func skillsInstallBuiltinCmd(workspace string) {
@@ -226,10 +276,7 @@ func skillsSearchCmd(query string) {
 		return
 	}
 
-	registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
-		MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
-		ClawHub:               skills.ClawHubConfig(cfg.Tools.Skills.Registries.ClawHub),
-	})
+	registryMgr := skills.NewRegistryManagerFromToolsConfig(cfg.Tools.Skills)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

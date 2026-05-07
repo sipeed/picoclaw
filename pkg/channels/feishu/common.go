@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+
+	"github.com/sipeed/picoclaw/pkg/channels"
 )
 
 // mentionPlaceholderRegex matches @_user_N placeholders inserted by Feishu for mentions.
@@ -62,6 +64,62 @@ func extractJSONStringField(content, field string) string {
 // Format: {"image_key": "img_xxx"}
 func extractImageKey(content string) string { return extractJSONStringField(content, "image_key") }
 
+// extractPostImageKeys extracts all image_key values from a Feishu post (rich text)
+// message. Post messages have nested arrays of elements where images appear as
+// {"tag":"img","image_key":"img_xxx"}.
+func extractPostImageKeys(rawContent string) []string {
+	if rawContent == "" {
+		return nil
+	}
+
+	var post map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(rawContent), &post); err != nil {
+		return nil
+	}
+
+	var keys []string
+	seen := make(map[string]struct{})
+
+	collectFromRows := func(contentRaw json.RawMessage) {
+		var rows [][]map[string]any
+		if err := json.Unmarshal(contentRaw, &rows); err != nil {
+			return
+		}
+		for _, row := range rows {
+			for _, elem := range row {
+				if tag, _ := elem["tag"].(string); tag == "img" {
+					if ik, _ := elem["image_key"].(string); ik != "" {
+						if _, dup := seen[ik]; !dup {
+							seen[ik] = struct{}{}
+							keys = append(keys, ik)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Flat format: {"title":"...", "content":[[...]]}
+	if contentRaw, ok := post["content"]; ok {
+		collectFromRows(contentRaw)
+	}
+
+	// Localized format: {"zh_cn": {"title":"...", "content":[[...]]}, ...}
+	for _, raw := range post {
+		var locale map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &locale); err != nil {
+			continue
+		}
+		contentRaw, ok := locale["content"]
+		if !ok {
+			continue
+		}
+		collectFromRows(contentRaw)
+	}
+
+	return keys
+}
+
 // extractFileKey extracts the file_key from a Feishu file/audio message content JSON.
 // Format: {"file_key": "file_xxx", "file_name": "...", ...}
 func extractFileKey(content string) string { return extractJSONStringField(content, "file_key") }
@@ -83,4 +141,70 @@ func stripMentionPlaceholders(content string, mentions []*larkim.MentionEvent) s
 	// Also clean up any remaining @_user_N patterns
 	content = mentionPlaceholderRegex.ReplaceAllString(content, "")
 	return strings.TrimSpace(content)
+}
+
+// extractCardImageKeys recursively extracts all image keys from a Feishu interactive card.
+// Image keys are used to download images from Feishu API.
+// Returns two slices: Feishu-hosted keys and external URLs.
+func extractCardImageKeys(rawContent string) (feishuKeys []string, externalURLs []string) {
+	if rawContent == "" {
+		return nil, nil
+	}
+
+	var card map[string]any
+	if err := json.Unmarshal([]byte(rawContent), &card); err != nil {
+		return nil, nil
+	}
+
+	extractImageKeysRecursive(card, &feishuKeys, &externalURLs)
+	return feishuKeys, externalURLs
+}
+
+// isExternalURL returns true if the string is an external HTTP/HTTPS URL.
+func isExternalURL(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+// extractImageKeysRecursive traverses card structure to find all image keys.
+// Collects both Feishu-hosted keys and external URLs separately.
+func extractImageKeysRecursive(v any, feishuKeys, externalURLs *[]string) {
+	switch val := v.(type) {
+	case map[string]any:
+		// Check if this is an img element
+		if tag, ok := val["tag"].(string); ok {
+			switch tag {
+			case "img":
+				// Try img_key first (always Feishu-hosted)
+				if imgKey, ok := val["img_key"].(string); ok && imgKey != "" {
+					*feishuKeys = append(*feishuKeys, imgKey)
+				}
+				// Check src - could be Feishu key or external URL
+				if src, ok := val["src"].(string); ok && src != "" {
+					if isExternalURL(src) {
+						*externalURLs = append(*externalURLs, src)
+					} else {
+						*feishuKeys = append(*feishuKeys, src)
+					}
+				}
+			case "icon":
+				// Icon elements use icon_key
+				if iconKey, ok := val["icon_key"].(string); ok && iconKey != "" {
+					*feishuKeys = append(*feishuKeys, iconKey)
+				}
+			}
+		}
+		// Recurse into all nested structures
+		for _, child := range val {
+			extractImageKeysRecursive(child, feishuKeys, externalURLs)
+		}
+	case []any:
+		for _, item := range val {
+			extractImageKeysRecursive(item, feishuKeys, externalURLs)
+		}
+	}
+}
+
+// VoiceCapabilities returns the voice capabilities of the channel.
+func (c *FeishuChannel) VoiceCapabilities() channels.VoiceCapabilities {
+	return channels.VoiceCapabilities{ASR: true, TTS: true}
 }

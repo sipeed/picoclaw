@@ -3,6 +3,7 @@ package heartbeat
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -201,5 +202,49 @@ func TestHeartbeatFilePath(t *testing.T) {
 	expectedPath := filepath.Join(tmpDir, "HEARTBEAT.md")
 	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
 		t.Errorf("Expected HEARTBEAT.md at %s, but it doesn't exist", expectedPath)
+	}
+}
+
+func TestBuildPrompt_DefaultTemplateStaysIdle(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	hs := NewHeartbeatService(tmpDir, 30, true)
+	hs.createDefaultHeartbeatTemplate()
+
+	if prompt := hs.buildPrompt(); prompt != "" {
+		t.Fatalf("buildPrompt() = %q, want empty prompt for untouched default template", prompt)
+	}
+}
+
+func TestBuildPrompt_UserTasksAfterMarkerProducePrompt(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	hs := NewHeartbeatService(tmpDir, 30, true)
+	hs.createDefaultHeartbeatTemplate()
+
+	path := filepath.Join(tmpDir, "HEARTBEAT.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("Failed to read HEARTBEAT.md: %v", err)
+	}
+	updated := string(data) + "\n- Check unread Feishu messages\n"
+	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+		t.Fatalf("Failed to update HEARTBEAT.md: %v", err)
+	}
+
+	prompt := hs.buildPrompt()
+	if prompt == "" {
+		t.Fatal("buildPrompt() = empty, want non-empty prompt when user tasks are present")
+	}
+	if !strings.Contains(prompt, "Check unread Feishu messages") {
+		t.Fatalf("prompt = %q, want user task content", prompt)
 	}
 }

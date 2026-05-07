@@ -19,7 +19,7 @@ type FeishuChannel struct {
 var errUnsupported = errors.New("feishu channel is not supported on 32-bit architectures")
 
 // NewFeishuChannel returns an error on 32-bit architectures where the Feishu SDK is not supported
-func NewFeishuChannel(cfg config.FeishuConfig, bus *bus.MessageBus) (*FeishuChannel, error) {
+func NewFeishuChannel(bc *config.Channel, cfg *config.FeishuSettings, bus *bus.MessageBus) (*FeishuChannel, error) {
 	return nil, errors.New(
 		"feishu channel is not supported on 32-bit architectures (armv7l, 386, etc.). Please use a 64-bit system or disable feishu in your config",
 	)
@@ -36,8 +36,8 @@ func (c *FeishuChannel) Stop(ctx context.Context) error {
 }
 
 // Send is a stub method to satisfy the Channel interface
-func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
-	return errUnsupported
+func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
+	return nil, errUnsupported
 }
 
 // EditMessage is a stub method to satisfy MessageEditor
@@ -56,6 +56,6 @@ func (c *FeishuChannel) ReactToMessage(ctx context.Context, chatID, messageID st
 }
 
 // SendMedia is a stub method to satisfy MediaSender
-func (c *FeishuChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
-	return errUnsupported
+func (c *FeishuChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
+	return nil, errUnsupported
 }

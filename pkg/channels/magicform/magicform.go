@@ -77,7 +77,7 @@ type requestContext struct {
 // MagicFormChannel implements the MagicForm channel plugin.
 type MagicFormChannel struct {
 	*channels.BaseChannel
-	config        config.MagicFormConfig
+	settings      *config.MagicFormSettings
 	workspaceRoot string // effective root: channel-level fallback to global
 	httpClient    *http.Client
 	requests      sync.Map // chatID → *requestContext
@@ -87,18 +87,23 @@ type MagicFormChannel struct {
 
 // NewMagicFormChannel creates a new MagicForm channel.
 // globalWorkspaceRoot is the agents.defaults.workspace_root from the base config.
-// The channel uses its own config.WorkspaceRoot if set, otherwise falls back to
+// The channel uses its own settings.WorkspaceRoot if set, otherwise falls back to
 // globalWorkspaceRoot. If neither is configured, the constructor returns an error
 // because workspace overrides cannot be validated without a root boundary.
-func NewMagicFormChannel(cfg config.MagicFormConfig, globalWorkspaceRoot string, msgBus *bus.MessageBus) (*MagicFormChannel, error) {
+func NewMagicFormChannel(
+	bc *config.Channel,
+	settings *config.MagicFormSettings,
+	globalWorkspaceRoot string,
+	msgBus *bus.MessageBus,
+) (*MagicFormChannel, error) {
 	base := channels.NewBaseChannel(
 		"magicform",
-		cfg,
+		settings,
 		msgBus,
-		cfg.AllowFrom,
+		bc.AllowFrom,
 	)
 
-	effectiveRoot := cfg.WorkspaceRoot
+	effectiveRoot := settings.WorkspaceRoot
 	if effectiveRoot == "" {
 		effectiveRoot = globalWorkspaceRoot
 	}
@@ -111,7 +116,7 @@ func NewMagicFormChannel(cfg config.MagicFormConfig, globalWorkspaceRoot string,
 
 	ch := &MagicFormChannel{
 		BaseChannel:   base,
-		config:        cfg,
+		settings:      settings,
 		workspaceRoot: effectiveRoot,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
@@ -145,8 +150,8 @@ func (c *MagicFormChannel) Stop(_ context.Context) error {
 
 // WebhookPath returns the HTTP path for the inbound webhook.
 func (c *MagicFormChannel) WebhookPath() string {
-	if c.config.WebhookPath != "" {
-		return c.config.WebhookPath
+	if c.settings.WebhookPath != "" {
+		return c.settings.WebhookPath
 	}
 	return "/hooks/magicform"
 }
@@ -238,7 +243,8 @@ func (c *MagicFormChannel) resolveWorkspace(workspace string) (string, error) {
 
 // verifyToken checks the Authorization Bearer token using constant-time comparison.
 func (c *MagicFormChannel) verifyToken(r *http.Request) bool {
-	if c.config.Token == "" {
+	configured := c.settings.Token.String()
+	if configured == "" {
 		return true // No token configured = allow all (dev mode)
 	}
 
@@ -248,7 +254,7 @@ func (c *MagicFormChannel) verifyToken(r *http.Request) bool {
 	}
 
 	token := strings.TrimPrefix(auth, "Bearer ")
-	return subtle.ConstantTimeCompare([]byte(token), []byte(c.config.Token)) == 1
+	return subtle.ConstantTimeCompare([]byte(token), []byte(configured)) == 1
 }
 
 // processWebhook handles an inbound webhook payload asynchronously.
@@ -275,7 +281,6 @@ func (c *MagicFormChannel) processWebhook(ctx context.Context, p WebhookPayload)
 		createdAt:      time.Now(),
 	})
 
-	peer := bus.Peer{Kind: "direct", ID: p.ConversationID}
 	sender := bus.SenderInfo{
 		Platform:    "magicform",
 		PlatformID:  senderID,
@@ -285,48 +290,53 @@ func (c *MagicFormChannel) processWebhook(ctx context.Context, p WebhookPayload)
 	// Session key: per-stack per-conversation isolation
 	sessionKey := fmt.Sprintf("agent:main:magicform:%s:%s", p.StackID, p.ConversationID)
 
-	metadata := map[string]string{
+	// Stash tenant routing + multi-tenancy hints in Context.Raw — the agent loop
+	// reads workspace_override / config_dir / allowed_tools / allowed_skills from here.
+	raw := map[string]string{
 		"platform":        "magicform",
 		"stack_id":        p.StackID,
 		"conversation_id": p.ConversationID,
 	}
-
 	if p.CallbackURL != "" {
-		metadata["callback_url"] = p.CallbackURL
+		raw["callback_url"] = p.CallbackURL
 	}
-
-	// Workspace override — agent loop will pick this up
 	if p.Workspace != "" {
-		metadata["workspace_override"] = p.Workspace
+		raw["workspace_override"] = p.Workspace
 	}
-
-	// Config directory — agent loop reads config.json and copies bootstrap files
 	if p.ConfigDir != "" {
-		metadata["config_dir"] = p.ConfigDir
+		raw["config_dir"] = p.ConfigDir
 	}
-
-	// Tool/skill filtering — passed via metadata, picked up by agent loop
 	if len(p.AllowedTools) > 0 {
-		metadata["allowed_tools"] = strings.Join(trimSlice(p.AllowedTools), ",")
+		raw["allowed_tools"] = strings.Join(trimSlice(p.AllowedTools), ",")
 	}
 	if len(p.AllowedSkills) > 0 {
-		metadata["allowed_skills"] = strings.Join(trimSlice(p.AllowedSkills), ",")
+		raw["allowed_skills"] = strings.Join(trimSlice(p.AllowedSkills), ",")
 	}
 
 	messageID := fmt.Sprintf("mf-%s-%d", p.ConversationID, time.Now().UnixMilli())
 
+	inboundCtx := bus.InboundContext{
+		Channel:   "magicform",
+		ChatID:    chatID,
+		ChatType:  "direct",
+		SpaceID:   p.StackID,
+		SpaceType: "tenant",
+		SenderID:  sender.CanonicalID,
+		MessageID: messageID,
+		Raw:       raw,
+	}
+
 	// Build InboundMessage directly (not via HandleMessage) to set SessionKey.
 	// MagicForm is API-to-API, so typing/reaction/placeholder don't apply.
 	msg := bus.InboundMessage{
+		Context:    inboundCtx,
+		Sender:     sender,
+		Content:    p.Message,
+		SessionKey: sessionKey,
 		Channel:    "magicform",
 		SenderID:   sender.CanonicalID,
-		Sender:     sender,
 		ChatID:     chatID,
-		Content:    p.Message,
-		Peer:       peer,
 		MessageID:  messageID,
-		SessionKey: sessionKey,
-		Metadata:   metadata,
 	}
 
 	if err := c.Bus().PublishInbound(ctx, msg); err != nil {
@@ -350,9 +360,9 @@ func trimSlice(s []string) []string {
 }
 
 // Send delivers the agent response back to MagicForm via HTTP callback.
-func (c *MagicFormChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *MagicFormChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	// For progress/escalation messages, Load (keep) the context since the final
@@ -362,13 +372,13 @@ func (c *MagicFormChannel) Send(ctx context.Context, msg bus.OutboundMessage) er
 	if isFinal {
 		val, ok := c.requests.LoadAndDelete(msg.ChatID)
 		if !ok {
-			return fmt.Errorf("%w: no request context for chatID %s", channels.ErrSendFailed, msg.ChatID)
+			return nil, fmt.Errorf("%w: no request context for chatID %s", channels.ErrSendFailed, msg.ChatID)
 		}
 		reqCtx = val.(*requestContext)
 	} else {
 		val, ok := c.requests.Load(msg.ChatID)
 		if !ok {
-			return fmt.Errorf("%w: no request context for chatID %s", channels.ErrSendFailed, msg.ChatID)
+			return nil, fmt.Errorf("%w: no request context for chatID %s", channels.ErrSendFailed, msg.ChatID)
 		}
 		reqCtx = val.(*requestContext)
 	}
@@ -376,11 +386,11 @@ func (c *MagicFormChannel) Send(ctx context.Context, msg bus.OutboundMessage) er
 	// Resolve callback URL
 	callbackURL := reqCtx.callbackURL
 	if callbackURL == "" {
-		callbackURL = c.config.BackendURL + "/claw-agent/callback"
+		callbackURL = c.settings.BackendURL + "/claw-agent/callback"
 	}
 
 	if callbackURL == "" {
-		return fmt.Errorf("%w: no callback URL available", channels.ErrSendFailed)
+		return nil, fmt.Errorf("%w: no callback URL available", channels.ErrSendFailed)
 	}
 
 	// Build callback payload
@@ -426,27 +436,27 @@ func (c *MagicFormChannel) Send(ctx context.Context, msg bus.OutboundMessage) er
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("%w: marshal callback payload: %v", channels.ErrSendFailed, err)
+		return nil, fmt.Errorf("%w: marshal callback payload: %v", channels.ErrSendFailed, err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, callbackURL, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("%w: create callback request: %v", channels.ErrSendFailed, err)
+		return nil, fmt.Errorf("%w: create callback request: %v", channels.ErrSendFailed, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if c.config.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.config.Token)
+	if tok := c.settings.Token.String(); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return channels.ClassifyNetError(err)
+		return nil, channels.ClassifyNetError(err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return channels.ClassifySendError(resp.StatusCode, fmt.Errorf("callback error: %s", respBody))
+		return nil, channels.ClassifySendError(resp.StatusCode, fmt.Errorf("callback error: %s", respBody))
 	}
 
 	logger.InfoCF("magicform", "Callback sent",
@@ -456,7 +466,7 @@ func (c *MagicFormChannel) Send(ctx context.Context, msg bus.OutboundMessage) er
 			"status":          resp.StatusCode,
 		})
 
-	return nil
+	return nil, nil
 }
 
 // cleanupLoop periodically removes stale request contexts.

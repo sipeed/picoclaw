@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/providers/messageutil"
 )
 
 type Session struct {
@@ -32,7 +33,7 @@ func NewSessionManager(storage string) *SessionManager {
 	}
 
 	if storage != "" {
-		os.MkdirAll(storage, 0o755)
+		os.MkdirAll(storage, 0o700)
 		sm.loadSessions()
 	}
 
@@ -69,6 +70,10 @@ func (sm *SessionManager) AddMessage(sessionKey, role, content string) {
 // AddFullMessage adds a complete message with tool calls and tool call ID to the session.
 // This is used to save the full conversation flow including tool calls and tool results.
 func (sm *SessionManager) AddFullMessage(sessionKey string, msg providers.Message) {
+	if messageutil.IsTransientAssistantThoughtMessage(msg) {
+		return
+	}
+
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -145,13 +150,26 @@ func (sm *SessionManager) TruncateHistory(key string, keepLast int) {
 	session.Updated = time.Now()
 }
 
+func (sm *SessionManager) ListSessions() []string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	keys := make([]string, 0, len(sm.sessions))
+	for k := range sm.sessions {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 // sanitizeFilename converts a session key into a cross-platform safe filename.
-// Session keys use "channel:chatID" (e.g. "telegram:123456") but ':' is the
-// volume separator on Windows, so filepath.Base would misinterpret the key.
-// We replace it with '_'. The original key is preserved inside the JSON file,
-// so loadSessions still maps back to the right in-memory key.
+// Replaces ':' with '_' (session key separator) and '/' and '\' with '_' so
+// composite IDs (e.g. Telegram forum "chatID/threadID") do not create
+// subdirectories or break on Windows. The original key is preserved inside
+// the JSON file, so loadSessions still maps back to the right in-memory key.
 func sanitizeFilename(key string) string {
-	return strings.ReplaceAll(key, ":", "_")
+	s := strings.ReplaceAll(key, ":", "_")
+	s = strings.ReplaceAll(s, "/", "_")
+	s = strings.ReplaceAll(s, "\\", "_")
+	return s
 }
 
 func (sm *SessionManager) Save(key string) error {
@@ -162,10 +180,9 @@ func (sm *SessionManager) Save(key string) error {
 	filename := sanitizeFilename(key)
 
 	// filepath.IsLocal rejects empty names, "..", absolute paths, and
-	// OS-reserved device names (NUL, COM1 … on Windows).
-	// The extra checks reject "." and any directory separators so that
-	// the session file is always written directly inside sm.storage.
-	if filename == "." || !filepath.IsLocal(filename) || strings.ContainsAny(filename, `/\`) {
+	// OS-reserved device names (NUL, COM1 … on Windows). sanitizeFilename
+	// already replaced '/' and '\' with '_', so no subdirs are created.
+	if filename == "." || !filepath.IsLocal(filename) {
 		return os.ErrInvalid
 	}
 
@@ -184,8 +201,7 @@ func (sm *SessionManager) Save(key string) error {
 		Updated: stored.Updated,
 	}
 	if len(stored.Messages) > 0 {
-		snapshot.Messages = make([]providers.Message, len(stored.Messages))
-		copy(snapshot.Messages, stored.Messages)
+		snapshot.Messages = messageutil.FilterInvalidHistoryMessages(stored.Messages)
 	} else {
 		snapshot.Messages = []providers.Message{}
 	}
@@ -214,7 +230,7 @@ func (sm *SessionManager) Save(key string) error {
 		_ = tmpFile.Close()
 		return err
 	}
-	if err := tmpFile.Chmod(0o644); err != nil {
+	if err := tmpFile.Chmod(0o600); err != nil {
 		_ = tmpFile.Close()
 		return err
 	}
@@ -258,10 +274,17 @@ func (sm *SessionManager) loadSessions() error {
 		if err := json.Unmarshal(data, &session); err != nil {
 			continue
 		}
+		session.Messages = messageutil.FilterInvalidHistoryMessages(session.Messages)
 
 		sm.sessions[session.Key] = &session
 	}
 
+	return nil
+}
+
+// Close is a no-op for the in-memory SessionManager; it satisfies the
+// SessionStore interface so callers can release resources uniformly.
+func (sm *SessionManager) Close() error {
 	return nil
 }
 
@@ -272,6 +295,7 @@ func (sm *SessionManager) SetHistory(key string, history []providers.Message) {
 
 	session, ok := sm.sessions[key]
 	if ok {
+		history = messageutil.FilterInvalidHistoryMessages(history)
 		// Create a deep copy to strictly isolate internal state
 		// from the caller's slice.
 		msgs := make([]providers.Message, len(history))

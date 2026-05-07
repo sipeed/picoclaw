@@ -342,3 +342,78 @@ func TestSkillRootsTrimsWhitespaceAndDedups(t *testing.T) {
 		builtin,
 	}, roots)
 }
+
+func TestGetSkillMetadata_UsesMarkdownParagraphWhenNoFrontmatter(t *testing.T) {
+	tmp := t.TempDir()
+	skillDir := filepath.Join(tmp, "workspace", "skills", "plain-skill")
+	require.NoError(t, os.MkdirAll(skillDir, 0o755))
+
+	content := "# Plain Skill\n\nThis is parsed from markdown paragraph.\n"
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644))
+
+	sl := &SkillsLoader{}
+	meta := sl.getSkillMetadata(filepath.Join(skillDir, "SKILL.md"))
+	require.NotNil(t, meta)
+	assert.Equal(t, "plain-skill", meta.Name)
+	assert.Equal(t, "This is parsed from markdown paragraph.", meta.Description)
+}
+
+func TestGetSkillMetadata_FrontmatterOverridesMarkdown(t *testing.T) {
+	tmp := t.TempDir()
+	skillDir := filepath.Join(tmp, "workspace", "skills", "plain-skill")
+	require.NoError(t, os.MkdirAll(skillDir, 0o755))
+
+	content := "---\nname: frontmatter-skill\ndescription: frontmatter description\n---\n\n# Plain Skill\n\nBody description.\n"
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644))
+
+	sl := &SkillsLoader{}
+	meta := sl.getSkillMetadata(filepath.Join(skillDir, "SKILL.md"))
+	require.NotNil(t, meta)
+	assert.Equal(t, "frontmatter-skill", meta.Name)
+	assert.Equal(t, "frontmatter description", meta.Description)
+}
+
+func TestGetSkillMetadata_YAMLMultilineDescription(t *testing.T) {
+	tmp := t.TempDir()
+	skillDir := filepath.Join(tmp, "workspace", "skills", "plain-skill")
+	require.NoError(t, os.MkdirAll(skillDir, 0o755))
+
+	content := "---\nname: frontmatter-skill\ndescription: |\n  line 1: with colon\n  line 2\n---\n\n# Plain Skill\n\nBody description.\n"
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644))
+
+	sl := &SkillsLoader{}
+	meta := sl.getSkillMetadata(filepath.Join(skillDir, "SKILL.md"))
+	require.NotNil(t, meta)
+	assert.Equal(t, "frontmatter-skill", meta.Name)
+	assert.Equal(t, "line 1: with colon\nline 2", meta.Description)
+}
+
+func TestGetSkillMetadata_InvalidHeadingNameFallsBackToDirName(t *testing.T) {
+	tmp := t.TempDir()
+	skillDir := filepath.Join(tmp, "workspace", "skills", "valid-name")
+	require.NoError(t, os.MkdirAll(skillDir, 0o755))
+
+	content := "# Invalid Heading Name\n\nBody description.\n"
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644))
+
+	sl := &SkillsLoader{}
+	meta := sl.getSkillMetadata(filepath.Join(skillDir, "SKILL.md"))
+	require.NotNil(t, meta)
+	assert.Equal(t, "valid-name", meta.Name)
+	assert.Equal(t, "Body description.", meta.Description)
+}
+
+func TestGetSkillMetadata_IgnoresHTMLCommentBlocks(t *testing.T) {
+	tmp := t.TempDir()
+	skillDir := filepath.Join(tmp, "workspace", "skills", "biomed-skill")
+	require.NoError(t, os.MkdirAll(skillDir, 0o755))
+
+	content := "<!--\n# COPYRIGHT NOTICE\n# This file is part of the \"Universal Biomedical Skills\" project.\n# Copyright (c) 2026 MD BABU MIA, PhD <md.babu.mia@mssm.edu>\n# All Rights Reserved.\n#\n# This code is proprietary and confidential.\n# Unauthorized copying of this file, via any medium is strictly prohibited.\n#\n# Provenance: Authenticated by MD BABU MIA\n\n-->\n\n# Biomed Skill\n\nSummarize biomedical papers.\n"
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644))
+
+	sl := &SkillsLoader{}
+	meta := sl.getSkillMetadata(filepath.Join(skillDir, "SKILL.md"))
+	require.NotNil(t, meta)
+	assert.Equal(t, "biomed-skill", meta.Name)
+	assert.Equal(t, "Summarize biomedical papers.", meta.Description)
+}

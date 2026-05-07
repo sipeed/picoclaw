@@ -32,6 +32,10 @@ const (
 	lineBotInfoEndpoint  = lineAPIBase + "/info"
 	lineLoadingEndpoint  = lineAPIBase + "/chat/loading/start"
 	lineReplyTokenMaxAge = 25 * time.Second
+
+	// Limit request body to prevent memory exhaustion (DoS).
+	// LINE webhook payloads are typically a few KB; 1 MiB is generous.
+	maxWebhookBodySize = 1 << 20 // 1 MiB
 )
 
 type replyTokenEntry struct {
@@ -44,7 +48,7 @@ type replyTokenEntry struct {
 // and REST API for sending messages.
 type LINEChannel struct {
 	*channels.BaseChannel
-	config         config.LINEConfig
+	config         *config.LINESettings
 	infoClient     *http.Client // for bot info lookups (short timeout)
 	apiClient      *http.Client // for messaging API calls
 	botUserID      string       // Bot's user ID
@@ -57,15 +61,19 @@ type LINEChannel struct {
 }
 
 // NewLINEChannel creates a new LINE channel instance.
-func NewLINEChannel(cfg config.LINEConfig, messageBus *bus.MessageBus) (*LINEChannel, error) {
-	if cfg.ChannelSecret == "" || cfg.ChannelAccessToken == "" {
+func NewLINEChannel(
+	bc *config.Channel,
+	cfg *config.LINESettings,
+	messageBus *bus.MessageBus,
+) (*LINEChannel, error) {
+	if cfg.ChannelSecret.String() == "" || cfg.ChannelAccessToken.String() == "" {
 		return nil, fmt.Errorf("line channel_secret and channel_access_token are required")
 	}
 
-	base := channels.NewBaseChannel("line", cfg, messageBus, cfg.AllowFrom,
+	base := channels.NewBaseChannel("line", cfg, messageBus, bc.AllowFrom,
 		channels.WithMaxMessageLength(5000),
-		channels.WithGroupTrigger(cfg.GroupTrigger),
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+		channels.WithGroupTrigger(bc.GroupTrigger),
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	return &LINEChannel{
@@ -106,7 +114,7 @@ func (c *LINEChannel) fetchBotInfo() error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.config.ChannelAccessToken)
+	req.Header.Set("Authorization", "Bearer "+c.config.ChannelAccessToken.String())
 
 	resp, err := c.infoClient.Do(req)
 	if err != nil {
@@ -166,12 +174,17 @@ func (c *LINEChannel) webhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxWebhookBodySize+1))
 	if err != nil {
 		logger.ErrorCF("line", "Failed to read request body", map[string]any{
 			"error": err.Error(),
 		})
 		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+	if int64(len(body)) > maxWebhookBodySize {
+		logger.WarnC("line", "Webhook request body too large, rejected")
+		http.Error(w, "Request entity too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 
@@ -207,7 +220,7 @@ func (c *LINEChannel) verifySignature(body []byte, signature string) bool {
 		return false
 	}
 
-	mac := hmac.New(sha256.New, []byte(c.config.ChannelSecret))
+	mac := hmac.New(sha256.New, []byte(c.config.ChannelSecret.String()))
 	mac.Write(body)
 	expected := base64.StdEncoding.EncodeToString(mac.Sum(nil))
 
@@ -292,8 +305,9 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 	storeMedia := func(localPath, filename string) string {
 		if store := c.GetMediaStore(); store != nil {
 			ref, err := store.Store(localPath, media.MediaMeta{
-				Filename: filename,
-				Source:   "line",
+				Filename:      filename,
+				Source:        "line",
+				CleanupPolicy: media.CleanupPolicyDeleteOnCleanup,
 			}, scope)
 			if err == nil {
 				return ref
@@ -340,8 +354,9 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 	}
 
 	// In group chats, apply unified group trigger filtering
+	isMentioned := false
 	if isGroup {
-		isMentioned := c.isBotMentioned(msg)
+		isMentioned = c.isBotMentioned(msg)
 		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
 		if !respond {
 			logger.DebugCF("line", "Ignoring group message by group trigger", map[string]any{
@@ -355,13 +370,6 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 	metadata := map[string]string{
 		"platform":    "line",
 		"source_type": event.Source.Type,
-	}
-
-	var peer bus.Peer
-	if isGroup {
-		peer = bus.Peer{Kind: "group", ID: chatID}
-	} else {
-		peer = bus.Peer{Kind: "direct", ID: senderID}
 	}
 
 	logger.DebugCF("line", "Received message", map[string]any{
@@ -382,7 +390,25 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 		return
 	}
 
-	c.HandleMessage(c.ctx, peer, msg.ID, senderID, chatID, content, mediaPaths, metadata, sender)
+	inboundCtx := bus.InboundContext{
+		Channel:   c.Name(),
+		ChatID:    chatID,
+		ChatType:  map[bool]string{true: "group", false: "direct"}[isGroup],
+		SenderID:  senderID,
+		MessageID: msg.ID,
+		Mentioned: isMentioned,
+		Raw:       metadata,
+	}
+	if event.ReplyToken != "" {
+		inboundCtx.ReplyHandles = map[string]string{
+			"reply_token": event.ReplyToken,
+		}
+		if msg.QuoteToken != "" {
+			inboundCtx.ReplyHandles["quote_token"] = msg.QuoteToken
+		}
+	}
+
+	c.HandleInboundContext(c.ctx, chatID, content, mediaPaths, inboundCtx, sender)
 }
 
 // isBotMentioned checks if the bot is mentioned in the message.
@@ -486,9 +512,9 @@ func (c *LINEChannel) resolveChatID(source lineSource) string {
 
 // Send sends a message to LINE. It first tries the Reply API (free)
 // using a cached reply token, then falls back to the Push API.
-func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	// Load and consume quote token for this chat
@@ -506,28 +532,28 @@ func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 					"chat_id": msg.ChatID,
 					"quoted":  quoteToken != "",
 				})
-				return nil
+				return nil, nil
 			}
 			logger.DebugC("line", "Reply API failed, falling back to Push API")
 		}
 	}
 
 	// Fall back to Push API
-	return c.sendPush(ctx, msg.ChatID, msg.Content, quoteToken)
+	return nil, c.sendPush(ctx, msg.ChatID, msg.Content, quoteToken)
 }
 
 // SendMedia implements the channels.MediaSender interface.
 // LINE requires media to be accessible via public URL; since we only have local files,
 // we fall back to sending a text message with the filename/caption.
 // For full support, an external file hosting service would be needed.
-func (c *LINEChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+func (c *LINEChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	store := c.GetMediaStore()
 	if store == nil {
-		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
 	}
 
 	// LINE Messaging API requires publicly accessible URLs for media messages.
@@ -539,11 +565,11 @@ func (c *LINEChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessag
 		}
 
 		if err := c.sendPush(ctx, msg.ChatID, caption, ""); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 // buildTextMessage creates a text message object, optionally with quoteToken.
@@ -645,7 +671,7 @@ func (c *LINEChannel) callAPI(ctx context.Context, endpoint string, payload any)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.config.ChannelAccessToken)
+	req.Header.Set("Authorization", "Bearer "+c.config.ChannelAccessToken.String())
 
 	resp, err := c.apiClient.Do(req)
 	if err != nil {
@@ -670,7 +696,12 @@ func (c *LINEChannel) downloadContent(messageID, filename string) string {
 	return utils.DownloadFile(url, filename, utils.DownloadOptions{
 		LoggerPrefix: "line",
 		ExtraHeaders: map[string]string{
-			"Authorization": "Bearer " + c.config.ChannelAccessToken,
+			"Authorization": "Bearer " + c.config.ChannelAccessToken.String(),
 		},
 	})
+}
+
+// VoiceCapabilities returns the voice capabilities of the channel.
+func (c *LINEChannel) VoiceCapabilities() channels.VoiceCapabilities {
+	return channels.VoiceCapabilities{ASR: true, TTS: true}
 }

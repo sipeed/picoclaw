@@ -10,6 +10,11 @@ import (
 	"github.com/sipeed/picoclaw/pkg/migrate/internal"
 )
 
+// OpenclawHomeEnvVar is the environment variable that overrides the source
+// openclaw home directory when migrating from openclaw to picoclaw.
+// Default: ~/.openclaw
+const OpenclawHomeEnvVar = "OPENCLAW_HOME"
+
 var providerMapping = map[string]string{
 	"anthropic":  "anthropic",
 	"claude":     "anthropic",
@@ -112,7 +117,7 @@ func resolveSourceHome(override string) (string, error) {
 	if override != "" {
 		return internal.ExpandHome(override), nil
 	}
-	if envHome := os.Getenv("OPENCLAW_HOME"); envHome != "" {
+	if envHome := os.Getenv(OpenclawHomeEnvVar); envHome != "" {
 		return internal.ExpandHome(envHome), nil
 	}
 	home, err := os.UserHomeDir()

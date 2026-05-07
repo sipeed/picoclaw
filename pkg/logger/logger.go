@@ -1,24 +1,29 @@
 package logger
 
 import (
-	"encoding/json"
 	"fmt"
-	"log"
+	"io"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
-	"time"
+
+	"github.com/rs/zerolog"
+	"golang.org/x/term"
 )
 
-type LogLevel int
+type LogLevel = zerolog.Level
 
 const (
-	DEBUG LogLevel = iota
-	INFO
-	WARN
-	ERROR
-	FATAL
+	DEBUG = zerolog.DebugLevel
+	INFO  = zerolog.InfoLevel
+	WARN  = zerolog.WarnLevel
+	ERROR = zerolog.ErrorLevel
+	FATAL = zerolog.FatalLevel
+
+	Component = "component"
 )
 
 var (
@@ -30,35 +35,106 @@ var (
 		FATAL: "FATAL",
 	}
 
-	currentLevel = INFO
-	logger       *Logger
-	once         sync.Once
-	mu           sync.RWMutex
+	currentLevel  = INFO
+	logger        zerolog.Logger
+	logFile       *os.File
+	once          sync.Once
+	mu            sync.RWMutex
+	writers       []io.Writer
+	consoleWriter zerolog.ConsoleWriter
 )
-
-type Logger struct {
-	file *os.File
-}
-
-type LogEntry struct {
-	Level     string         `json:"level"`
-	Timestamp string         `json:"timestamp"`
-	Component string         `json:"component,omitempty"`
-	Message   string         `json:"message"`
-	Fields    map[string]any `json:"fields,omitempty"`
-	Caller    string         `json:"caller,omitempty"`
-}
 
 func init() {
 	once.Do(func() {
-		logger = &Logger{}
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+
+		isTTY := term.IsTerminal(int(os.Stdout.Fd()))
+
+		consoleWriter = zerolog.ConsoleWriter{
+			Out:        os.Stdout,
+			TimeFormat: "15:04:05", // TODO: make it configurable???
+
+			// Custom formatter to handle multiline strings and JSON objects
+			FormatFieldValue: formatFieldValue,
+			PartsOrder: []string{
+				zerolog.TimestampFieldName,
+				zerolog.LevelFieldName,
+				Component,
+				zerolog.CallerFieldName,
+				zerolog.MessageFieldName,
+			},
+			FieldsExclude: []string{Component},
+			FormatPrepare: func(fields map[string]any) error {
+				if isTTY {
+					fields[Component] = fmt.Sprintf("\x1b[33m%v\x1b[0m", fields[Component])
+				}
+				return nil
+			},
+			NoColor: !isTTY,
+		}
+
+		writers = append(writers, consoleWriter)
+
+		logger = zerolog.New(io.MultiWriter(writers...)).With().Timestamp().Caller().Logger()
 	})
+}
+
+func formatFieldValue(i any) string {
+	var s string
+
+	switch val := i.(type) {
+	case string:
+		s = val
+	case []byte:
+		s = string(val)
+	default:
+		return fmt.Sprintf("%v", i)
+	}
+
+	if unquoted, err := strconv.Unquote(s); err == nil {
+		s = unquoted
+	}
+
+	if strings.Contains(s, "\n") {
+		return fmt.Sprintf("\n%s", s)
+	}
+
+	if strings.Contains(s, " ") {
+		if (strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}")) ||
+			(strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]")) {
+			return s
+		}
+		return fmt.Sprintf("%q", s)
+	}
+
+	return s
 }
 
 func SetLevel(level LogLevel) {
 	mu.Lock()
 	defer mu.Unlock()
 	currentLevel = level
+	zerolog.SetGlobalLevel(level)
+}
+
+func SetConsoleLevel(level LogLevel) {
+	mu.Lock()
+	defer mu.Unlock()
+	logger = logger.Level(level)
+}
+
+func DisableConsole() {
+	mu.Lock()
+	defer mu.Unlock()
+	writers[0] = io.Discard
+	logger = logger.Output(io.MultiWriter(writers...))
+}
+
+func EnableConsole() {
+	mu.Lock()
+	defer mu.Unlock()
+	writers[0] = consoleWriter
+	logger = logger.Output(io.MultiWriter(writers...))
 }
 
 func GetLevel() LogLevel {
@@ -67,21 +143,63 @@ func GetLevel() LogLevel {
 	return currentLevel
 }
 
+// ParseLevel converts a case-insensitive level name to a LogLevel.
+// Returns the level and true if valid, or (INFO, false) if unrecognized.
+func ParseLevel(s string) (LogLevel, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "debug":
+		return DEBUG, true
+	case "info":
+		return INFO, true
+	case "warn", "warning":
+		return WARN, true
+	case "error":
+		return ERROR, true
+	case "fatal":
+		return FATAL, true
+	default:
+		return INFO, false
+	}
+}
+
+// SetLevelFromString sets the log level from a string value.
+// If the string is empty or not a recognized level name, the current level is kept.
+func SetLevelFromString(s string) {
+	if s == "" {
+		return
+	}
+	if level, ok := ParseLevel(s); ok {
+		SetLevel(level)
+	}
+}
+
 func EnableFileLogging(filePath string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		return fmt.Errorf("failed to create log directory: %w", err)
+	}
+
+	newFile, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}
 
-	if logger.file != nil {
-		logger.file.Close()
+	// Close old file if exists
+	if logFile != nil {
+		logFile.Close()
 	}
 
-	logger.file = file
-	log.Println("File logging enabled:", filePath)
+	logFile = newFile
+
+	if len(writers) != 1 {
+		return fmt.Errorf("failed to configure file logging: %w", err)
+	}
+
+	writers = append(writers, logFile)
+	logger = logger.Output(io.MultiWriter(writers...))
+
 	return nil
 }
 
@@ -89,10 +207,98 @@ func DisableFileLogging() {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if logger.file != nil {
-		logger.file.Close()
-		logger.file = nil
-		log.Println("File logging disabled")
+	if logFile != nil {
+		logFile.Close()
+		logFile = nil
+	}
+	if len(writers) > 1 {
+		writers = writers[:1]
+		logger = logger.Output(io.MultiWriter(writers...))
+	}
+}
+
+func ConfigureFromEnv() {
+	if logFile := os.Getenv("PICOCLAW_LOG_FILE"); logFile != "" {
+		if strings.HasPrefix(logFile, "~/") {
+			if home := os.Getenv("HOME"); home != "" {
+				logFile = filepath.Join(home, logFile[2:])
+			}
+		}
+
+		if err := EnableFileLogging(logFile); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to enable file logging: %v\n", err)
+		} else {
+			DisableConsole()
+		}
+	}
+}
+
+const (
+	locUnknown = "<unknown>"
+)
+
+func getPackageNameFromFile(filePath string) string {
+	dir := filepath.Dir(filePath)
+	importPath := filepath.ToSlash(dir)
+
+	parts := strings.Split(importPath, "/")
+	if len(parts) == 0 {
+		return locUnknown
+	}
+
+	pkg := parts[len(parts)-1]
+	if pkg == "." {
+		return "<main>"
+	}
+
+	return pkg
+}
+
+func getCallerSkip() (int, string) {
+	for i := 2; i < 15; i++ {
+		pc, file, _, ok := runtime.Caller(i)
+		if !ok {
+			continue
+		}
+
+		fn := runtime.FuncForPC(pc)
+		if fn == nil {
+			continue
+		}
+
+		// bypass common loggers
+		if strings.HasSuffix(file, "/logger.go") ||
+			strings.HasSuffix(file, "/logger_3rd_party.go") ||
+			strings.HasSuffix(file, "/log.go") {
+			continue
+		}
+
+		funcName := fn.Name()
+		if strings.HasPrefix(funcName, "runtime.") {
+			continue
+		}
+
+		return i - 1, getPackageNameFromFile(file)
+	}
+
+	return 3, locUnknown
+}
+
+//nolint:zerologlint
+func getEvent(logger zerolog.Logger, level LogLevel) *zerolog.Event {
+	switch level {
+	case zerolog.DebugLevel:
+		return logger.Debug()
+	case zerolog.InfoLevel:
+		return logger.Info()
+	case zerolog.WarnLevel:
+		return logger.Warn()
+	case zerolog.ErrorLevel:
+		return logger.Error()
+	case zerolog.FatalLevel:
+		return logger.Fatal()
+	default:
+		return logger.Info()
 	}
 }
 
@@ -101,63 +307,41 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 		return
 	}
 
-	entry := LogEntry{
-		Level:     logLevelNames[level],
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Component: component,
-		Message:   message,
-		Fields:    fields,
-	}
+	skip, pkg := getCallerSkip()
 
-	if pc, file, line, ok := runtime.Caller(2); ok {
-		fn := runtime.FuncForPC(pc)
-		if fn != nil {
-			entry.Caller = fmt.Sprintf("%s:%d (%s)", file, line, fn.Name())
-		}
-	}
+	event := getEvent(logger, level)
 
-	if logger.file != nil {
-		jsonData, err := json.Marshal(entry)
-		if err == nil {
-			logger.file.Write(append(jsonData, '\n'))
-		}
-	}
-
-	var fieldStr string
-	if len(fields) > 0 {
-		fieldStr = " " + formatFields(fields)
-	} else {
-		fieldStr = ""
-	}
-
-	logLine := fmt.Sprintf("[%s] [%s]%s %s%s",
-		entry.Timestamp,
-		logLevelNames[level],
-		formatComponent(component),
-		message,
-		fieldStr,
-	)
-
-	log.Println(logLine)
-
-	if level == FATAL {
-		os.Exit(1)
-	}
-}
-
-func formatComponent(component string) string {
 	if component == "" {
-		return ""
+		component = pkg
 	}
-	return fmt.Sprintf(" %s:", component)
+
+	event.Str(Component, component)
+
+	appendFields(event, fields)
+
+	event.CallerSkipFrame(skip).Msg(message)
 }
 
-func formatFields(fields map[string]any) string {
-	parts := make([]string, 0, len(fields))
+func appendFields(event *zerolog.Event, fields map[string]any) {
 	for k, v := range fields {
-		parts = append(parts, fmt.Sprintf("%s=%v", k, v))
+		// Type switch to avoid double JSON serialization of strings
+		switch val := v.(type) {
+		case error:
+			event.Str(k, val.Error())
+		case string:
+			event.Str(k, val)
+		case int:
+			event.Int(k, val)
+		case int64:
+			event.Int64(k, val)
+		case float64:
+			event.Float64(k, val)
+		case bool:
+			event.Bool(k, val)
+		default:
+			event.Interface(k, v) // Fallback for struct, slice and maps
+		}
 	}
-	return fmt.Sprintf("{%s}", strings.Join(parts, ", "))
 }
 
 func Debug(message string) {
@@ -166,6 +350,10 @@ func Debug(message string) {
 
 func DebugC(component string, message string) {
 	logMessage(DEBUG, component, message, nil)
+}
+
+func Debugf(message string, ss ...any) {
+	logMessage(DEBUG, "", fmt.Sprintf(message, ss...), nil)
 }
 
 func DebugF(message string, fields map[string]any) {
@@ -188,6 +376,10 @@ func InfoF(message string, fields map[string]any) {
 	logMessage(INFO, "", message, fields)
 }
 
+func Infof(message string, ss ...any) {
+	logMessage(INFO, "", fmt.Sprintf(message, ss...), nil)
+}
+
 func InfoCF(component string, message string, fields map[string]any) {
 	logMessage(INFO, component, message, fields)
 }
@@ -208,12 +400,20 @@ func WarnCF(component string, message string, fields map[string]any) {
 	logMessage(WARN, component, message, fields)
 }
 
+func Warnf(message string, ss ...any) {
+	logMessage(WARN, "", fmt.Sprintf(message, ss...), nil)
+}
+
 func Error(message string) {
 	logMessage(ERROR, "", message, nil)
 }
 
 func ErrorC(component string, message string) {
 	logMessage(ERROR, component, message, nil)
+}
+
+func Errorf(message string, ss ...any) {
+	logMessage(ERROR, "", fmt.Sprintf(message, ss...), nil)
 }
 
 func ErrorF(message string, fields map[string]any) {
@@ -230,6 +430,10 @@ func Fatal(message string) {
 
 func FatalC(component string, message string) {
 	logMessage(FATAL, component, message, nil)
+}
+
+func Fatalf(message string, ss ...any) {
+	logMessage(FATAL, "", fmt.Sprintf(message, ss...), nil)
 }
 
 func FatalF(message string, fields map[string]any) {

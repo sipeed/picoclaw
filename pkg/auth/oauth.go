@@ -34,6 +34,15 @@ type OAuthProviderConfig struct {
 	Port         int
 }
 
+type LoginBrowserOptions struct {
+	NoBrowser bool
+}
+
+var (
+	openBrowserFunc             = OpenBrowser
+	browserLoginInput io.Reader = os.Stdin
+)
+
 func OpenAIOAuthConfig() OAuthProviderConfig {
 	return OAuthProviderConfig{
 		Issuer:     "https://auth.openai.com",
@@ -92,6 +101,10 @@ func GenerateState() (string, error) {
 }
 
 func LoginBrowser(cfg OAuthProviderConfig) (*AuthCredential, error) {
+	return LoginBrowserWithOptions(cfg, LoginBrowserOptions{})
+}
+
+func LoginBrowserWithOptions(cfg OAuthProviderConfig, opts LoginBrowserOptions) (*AuthCredential, error) {
 	pkce, err := GeneratePKCE()
 	if err != nil {
 		return nil, fmt.Errorf("generating PKCE: %w", err)
@@ -102,55 +115,45 @@ func LoginBrowser(cfg OAuthProviderConfig) (*AuthCredential, error) {
 		return nil, fmt.Errorf("generating state: %w", err)
 	}
 
-	redirectURI := fmt.Sprintf("http://localhost:%d/auth/callback", cfg.Port)
+	redirectURI := oauthCallbackRedirectURI(cfg.Port)
+	callbackPort := cfg.Port
+	var resultCh <-chan callbackResult
+
+	if !opts.NoBrowser {
+		callbackResultCh := make(chan callbackResult, 1)
+		listener, actualPort, err := listenOAuthCallback(cfg.Port)
+		if err != nil {
+			return nil, fmt.Errorf("starting callback server on port %d: %w", cfg.Port, err)
+		}
+
+		redirectURI = oauthCallbackRedirectURI(actualPort)
+		callbackPort = actualPort
+		resultCh = callbackResultCh
+
+		server := &http.Server{Handler: oauthCallbackHandler(state, callbackResultCh)}
+		go func() {
+			_ = server.Serve(listener)
+		}()
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = server.Shutdown(ctx)
+		}()
+	}
 
 	authURL := buildAuthorizeURL(cfg, pkce, state, redirectURI)
 
-	resultCh := make(chan callbackResult, 1)
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/auth/callback", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("state") != state {
-			resultCh <- callbackResult{err: fmt.Errorf("state mismatch")}
-			http.Error(w, "State mismatch", http.StatusBadRequest)
-			return
-		}
-
-		code := r.URL.Query().Get("code")
-		if code == "" {
-			errMsg := r.URL.Query().Get("error")
-			resultCh <- callbackResult{err: fmt.Errorf("no code received: %s", errMsg)}
-			http.Error(w, "No authorization code received", http.StatusBadRequest)
-			return
-		}
-
-		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, "<html><body><h2>Authentication successful!</h2><p>You can close this window.</p></body></html>")
-		resultCh <- callbackResult{code: code}
-	})
-
-	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.Port))
-	if err != nil {
-		return nil, fmt.Errorf("starting callback server on port %d: %w", cfg.Port, err)
-	}
-
-	server := &http.Server{Handler: mux}
-	go server.Serve(listener)
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		server.Shutdown(ctx)
-	}()
-
 	fmt.Printf("Open this URL to authenticate:\n\n%s\n\n", authURL)
 
-	if err := OpenBrowser(authURL); err != nil {
+	if opts.NoBrowser {
+		fmt.Println("Browser auto-open disabled. Open the URL manually to continue.")
+	} else if err := openBrowserFunc(authURL); err != nil {
 		fmt.Printf("Could not open browser automatically.\nPlease open this URL manually:\n\n%s\n\n", authURL)
 	}
 
 	fmt.Printf(
 		"Wait! If you are in a headless environment (like Coolify/VPS) and cannot reach localhost:%d,\n",
-		cfg.Port,
+		callbackPort,
 	)
 	fmt.Println(
 		"please complete the login in your local browser and then PASTE the final redirect URL (or just the code) here.",
@@ -158,11 +161,16 @@ func LoginBrowser(cfg OAuthProviderConfig) (*AuthCredential, error) {
 	fmt.Println("Waiting for authentication (browser or manual paste)...")
 
 	// Start manual input in a goroutine
-	manualCh := make(chan string)
+	manualCh := make(chan string, 1)
+	manualDone := make(chan struct{})
+	defer close(manualDone)
 	go func() {
-		reader := bufio.NewReader(os.Stdin)
+		reader := bufio.NewReader(browserLoginInput)
 		input, _ := reader.ReadString('\n')
-		manualCh <- strings.TrimSpace(input)
+		select {
+		case manualCh <- strings.TrimSpace(input):
+		case <-manualDone:
+		}
 	}()
 
 	select {
@@ -190,6 +198,49 @@ func LoginBrowser(cfg OAuthProviderConfig) (*AuthCredential, error) {
 	case <-time.After(5 * time.Minute):
 		return nil, fmt.Errorf("authentication timed out after 5 minutes")
 	}
+}
+
+func oauthCallbackRedirectURI(port int) string {
+	return fmt.Sprintf("http://localhost:%d/auth/callback", port)
+}
+
+func oauthCallbackHandler(state string, resultCh chan<- callbackResult) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/auth/callback", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("state") != state {
+			resultCh <- callbackResult{err: fmt.Errorf("state mismatch")}
+			http.Error(w, "State mismatch", http.StatusBadRequest)
+			return
+		}
+
+		code := r.URL.Query().Get("code")
+		if code == "" {
+			errMsg := r.URL.Query().Get("error")
+			resultCh <- callbackResult{err: fmt.Errorf("no code received: %s", errMsg)}
+			http.Error(w, "No authorization code received", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, "<html><body><h2>Authentication successful!</h2><p>You can close this window.</p></body></html>")
+		resultCh <- callbackResult{code: code}
+	})
+	return mux
+}
+
+func listenOAuthCallback(port int) (net.Listener, int, error) {
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		return nil, 0, err
+	}
+
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		_ = listener.Close()
+		return nil, 0, fmt.Errorf("unexpected listener address type %T", listener.Addr())
+	}
+
+	return listener, tcpAddr.Port, nil
 }
 
 type callbackResult struct {
@@ -558,13 +609,11 @@ func parseTokenResponse(body []byte, provider string) (*AuthCredential, error) {
 		AuthMethod:   "oauth",
 	}
 
-	if accountID := extractAccountID(tokenResp.IDToken); accountID != "" {
-		cred.AccountID = accountID
-	} else if accountID := extractAccountID(tokenResp.AccessToken); accountID != "" {
-		cred.AccountID = accountID
-	} else if accountID := extractAccountID(tokenResp.IDToken); accountID != "" {
-		// Recent OpenAI OAuth responses may only include chatgpt_account_id in id_token claims.
-		cred.AccountID = accountID
+	// Recent OpenAI OAuth responses may only include chatgpt_account_id in id_token claims.
+	if id := extractAccountID(tokenResp.IDToken); id != "" {
+		cred.AccountID = id
+	} else if id := extractAccountID(tokenResp.AccessToken); id != "" {
+		cred.AccountID = id
 	}
 
 	return cred, nil

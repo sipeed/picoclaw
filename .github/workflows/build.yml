@@ -16,5 +16,5 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build
+      - name: Build core binaries
         run: make build-all

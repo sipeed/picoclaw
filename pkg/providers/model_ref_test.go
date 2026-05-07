@@ -72,7 +72,20 @@ func TestNormalizeProvider(t *testing.T) {
 		{"claude", "anthropic"},
 		{"glm", "zhipu"},
 		{"google", "gemini"},
+		{"google-antigravity", "antigravity"},
 		{"groq", "groq"},
+		{"azure-openai", "azure"},
+		{"claudecli", "claude-cli"},
+		{"codexcli", "codex-cli"},
+		{"copilot", "github-copilot"},
+		// Alibaba Coding Plan aliases
+		{"alibaba-coding", "coding-plan"},
+		{"qwen-coding", "coding-plan"},
+		{"alibaba-coding-anthropic", "coding-plan-anthropic"},
+		// Qwen international aliases
+		{"qwen-international", "qwen-intl"},
+		{"dashscope-intl", "qwen-intl"},
+		{"dashscope-us", "qwen-us"},
 		{"", ""},
 	}
 
@@ -121,5 +134,44 @@ func TestParseModelRef_DefaultProviderNormalization(t *testing.T) {
 	}
 	if ref.Provider != "openai" {
 		t.Errorf("provider = %q, want openai (normalized from GPT)", ref.Provider)
+	}
+}
+
+func TestParseModelRef_UnknownPrefixFallsBackToDefaultProvider(t *testing.T) {
+	ref := ParseModelRef("meta-llama/Llama-3.1-8B-Instruct", "openai")
+	if ref == nil {
+		t.Fatal("expected non-nil ref")
+	}
+	if ref.Provider != "openai" {
+		t.Fatalf("provider = %q, want openai", ref.Provider)
+	}
+	if ref.Model != "meta-llama/Llama-3.1-8B-Instruct" {
+		t.Fatalf("model = %q, want full original model ID", ref.Model)
+	}
+}
+
+func TestParseModelRef_UnknownPrefixPreservesEmptyDefaultProvider(t *testing.T) {
+	ref := ParseModelRef("meta-llama/Llama-3.1-8B-Instruct", "")
+	if ref == nil {
+		t.Fatal("expected non-nil ref")
+	}
+	if ref.Provider != "" {
+		t.Fatalf("provider = %q, want empty", ref.Provider)
+	}
+	if ref.Model != "meta-llama/Llama-3.1-8B-Instruct" {
+		t.Fatalf("model = %q, want full original model ID", ref.Model)
+	}
+}
+
+func TestParseModelRef_KnownNonSelectableProvider(t *testing.T) {
+	ref := ParseModelRef("bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0", "openai")
+	if ref == nil {
+		t.Fatal("expected non-nil ref")
+	}
+	if ref.Provider != "bedrock" {
+		t.Fatalf("provider = %q, want bedrock", ref.Provider)
+	}
+	if ref.Model != "us.anthropic.claude-sonnet-4-20250514-v1:0" {
+		t.Fatalf("model = %q, want preserved bedrock model ID", ref.Model)
 	}
 }

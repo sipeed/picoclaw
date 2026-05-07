@@ -1,0 +1,19 @@
+# Go build output
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+picoclaw-web
+
+# Frontend build artifacts (embedded by Go)
+dist/*
+!dist/.gitkeep
+
+# OS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/

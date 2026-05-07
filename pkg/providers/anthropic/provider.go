@@ -10,6 +10,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 
+	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -42,7 +43,7 @@ func NewProvider(token string) *Provider {
 }
 
 func NewProviderWithBaseURL(token, apiBase string) *Provider {
-	baseURL := normalizeBaseURL(apiBase)
+	baseURL := common.NormalizeBaseURL(apiBase, defaultBaseURL, false)
 	client := anthropic.NewClient(
 		option.WithAuthToken(token),
 		option.WithBaseURL(baseURL),
@@ -180,6 +181,10 @@ func buildParams(
 					blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
 				}
 				for _, tc := range msg.ToolCalls {
+					// Skip tool calls with empty names to avoid API errors
+					if tc.Name == "" {
+						continue
+					}
 					args := tc.Arguments
 					if args == nil && tc.Function != nil && tc.Function.Arguments != "" {
 						if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
@@ -380,21 +385,4 @@ func parseResponse(resp *anthropic.Message) *LLMResponse {
 			TotalTokens:      int(resp.Usage.InputTokens + resp.Usage.OutputTokens),
 		},
 	}
-}
-
-func normalizeBaseURL(apiBase string) string {
-	base := strings.TrimSpace(apiBase)
-	if base == "" {
-		return defaultBaseURL
-	}
-
-	base = strings.TrimRight(base, "/")
-	if before, ok := strings.CutSuffix(base, "/v1"); ok {
-		base = before
-	}
-	if base == "" {
-		return defaultBaseURL
-	}
-
-	return base
 }

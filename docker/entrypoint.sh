@@ -12,4 +12,10 @@ if [ ! -d "${HOME}/.picoclaw/workspace" ] && [ ! -f "${HOME}/.picoclaw/config.js
     exit 0
 fi
 
+# Remove stale PID file from a previous container run.
+# After docker kill / OOM / crash the PID file may linger on the bind-mounted
+# volume and block the next gateway start (the recorded PID could collide with
+# an unrelated process inside the new container).
+rm -f "${HOME}/.picoclaw/.picoclaw.pid"
+
 exec picoclaw gateway "$@"

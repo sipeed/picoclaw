@@ -132,11 +132,12 @@ type OpenClawChannels struct {
 }
 
 type OpenClawTelegramConfig struct {
-	BotToken    *string  `json:"botToken"`
-	AllowFrom   []string `json:"allowFrom"`
-	GroupPolicy *string  `json:"groupPolicy"`
-	DmPolicy    *string  `json:"dmPolicy"`
-	Enabled     *bool    `json:"enabled"`
+	BotToken      *string  `json:"botToken"`
+	AllowFrom     []string `json:"allowFrom"`
+	GroupPolicy   *string  `json:"groupPolicy"`
+	DmPolicy      *string  `json:"dmPolicy"`
+	Enabled       *bool    `json:"enabled"`
+	UseMarkdownV2 *bool    `json:"useMarkdownV2"`
 }
 
 type OpenClawDiscordConfig struct {
@@ -645,10 +646,11 @@ type WhatsAppConfig struct {
 }
 
 type TelegramConfig struct {
-	Enabled   bool     `json:"enabled"`
-	Token     string   `json:"token"`
-	Proxy     string   `json:"proxy"`
-	AllowFrom []string `json:"allow_from"`
+	Enabled       bool     `json:"enabled"`
+	Token         string   `json:"token"`
+	Proxy         string   `json:"proxy"`
+	AllowFrom     []string `json:"allow_from"`
+	UseMarkdownV2 bool     `json:"use_markdown_v2"`
 }
 
 type FeishuConfig struct {
@@ -733,16 +735,18 @@ type WebToolsConfig struct {
 }
 
 type BraveConfig struct {
-	Enabled    bool   `json:"enabled"`
-	APIKey     string `json:"api_key"`
-	MaxResults int    `json:"max_results"`
+	Enabled    bool     `json:"enabled"`
+	APIKey     string   `json:"api_key"`
+	APIKeys    []string `json:"api_keys"`
+	MaxResults int      `json:"max_results"`
 }
 
 type TavilyConfig struct {
-	Enabled    bool   `json:"enabled"`
-	APIKey     string `json:"api_key"`
-	BaseURL    string `json:"base_url"`
-	MaxResults int    `json:"max_results"`
+	Enabled    bool     `json:"enabled"`
+	APIKey     string   `json:"api_key"`
+	APIKeys    []string `json:"api_keys"`
+	BaseURL    string   `json:"base_url"`
+	MaxResults int      `json:"max_results"`
 }
 
 type DuckDuckGoConfig struct {
@@ -751,9 +755,10 @@ type DuckDuckGoConfig struct {
 }
 
 type PerplexityConfig struct {
-	Enabled    bool   `json:"enabled"`
-	APIKey     string `json:"api_key"`
-	MaxResults int    `json:"max_results"`
+	Enabled    bool     `json:"enabled"`
+	APIKey     string   `json:"api_key"`
+	APIKeys    []string `json:"api_keys"`
+	MaxResults int      `json:"max_results"`
 }
 
 type CronConfig struct {
@@ -774,9 +779,11 @@ func (c *OpenClawConfig) convertChannels(warnings *[]string) ChannelsConfig {
 
 	if c.Channels.Telegram != nil {
 		enabled := c.Channels.Telegram.Enabled == nil || *c.Channels.Telegram.Enabled
+		useMarkdownV2 := c.Channels.Telegram.UseMarkdownV2 != nil && *c.Channels.Telegram.UseMarkdownV2
 		channels.Telegram = TelegramConfig{
-			Enabled:   enabled,
-			AllowFrom: c.Channels.Telegram.AllowFrom,
+			Enabled:       enabled,
+			AllowFrom:     c.Channels.Telegram.AllowFrom,
+			UseMarkdownV2: useMarkdownV2,
 		}
 		if c.Channels.Telegram.BotToken != nil {
 			channels.Telegram.Token = *c.Channels.Telegram.BotToken
@@ -974,13 +981,16 @@ func (c *PicoClawConfig) ToStandardConfig() *config.Config {
 	cfg.Agents.Defaults.ModelFallbacks = c.Agents.Defaults.ModelFallbacks
 
 	for _, m := range c.ModelList {
-		cfg.ModelList = append(cfg.ModelList, config.ModelConfig{
+		mc := &config.ModelConfig{
 			ModelName: m.ModelName,
 			Model:     m.Model,
 			APIBase:   m.APIBase,
-			APIKey:    m.APIKey,
 			Proxy:     m.Proxy,
-		})
+		}
+		if m.APIKey != "" {
+			mc.SetAPIKey(m.APIKey)
+		}
+		cfg.ModelList = append(cfg.ModelList, mc)
 	}
 
 	cfg.Channels = c.Channels.ToStandardChannels()
@@ -1008,65 +1018,155 @@ func (c *PicoClawConfig) ToStandardConfig() *config.Config {
 }
 
 func (c ChannelsConfig) ToStandardChannels() config.ChannelsConfig {
-	return config.ChannelsConfig{
-		WhatsApp: config.WhatsAppConfig{
-			Enabled:   c.WhatsApp.Enabled,
-			BridgeURL: c.WhatsApp.BridgeURL,
-		},
-		Telegram: config.TelegramConfig{
-			Enabled: c.Telegram.Enabled,
-			Token:   c.Telegram.Token,
-			Proxy:   c.Telegram.Proxy,
-		},
-		Feishu: config.FeishuConfig{
-			Enabled:           c.Feishu.Enabled,
-			AppID:             c.Feishu.AppID,
-			AppSecret:         c.Feishu.AppSecret,
-			EncryptKey:        c.Feishu.EncryptKey,
-			VerificationToken: c.Feishu.VerificationToken,
-		},
-		Discord: config.DiscordConfig{
-			Enabled:     c.Discord.Enabled,
-			Token:       c.Discord.Token,
-			MentionOnly: c.Discord.MentionOnly,
-		},
-		MaixCam: config.MaixCamConfig{
-			Enabled: c.MaixCam.Enabled,
-			Host:    c.MaixCam.Host,
-			Port:    c.MaixCam.Port,
-		},
-		QQ: config.QQConfig{
-			Enabled:   c.QQ.Enabled,
-			AppID:     c.QQ.AppID,
-			AppSecret: c.QQ.AppSecret,
-		},
-		DingTalk: config.DingTalkConfig{
-			Enabled:      c.DingTalk.Enabled,
-			ClientID:     c.DingTalk.ClientID,
-			ClientSecret: c.DingTalk.ClientSecret,
-		},
-		Slack: config.SlackConfig{
-			Enabled:  c.Slack.Enabled,
-			BotToken: c.Slack.BotToken,
-			AppToken: c.Slack.AppToken,
-		},
-		Matrix: config.MatrixConfig{
-			Enabled:      c.Matrix.Enabled,
-			Homeserver:   c.Matrix.Homeserver,
-			UserID:       c.Matrix.UserID,
-			AccessToken:  c.Matrix.AccessToken,
-			AllowFrom:    c.Matrix.AllowFrom,
-			JoinOnInvite: true,
-		},
-		LINE: config.LINEConfig{
-			Enabled:            c.LINE.Enabled,
-			ChannelSecret:      c.LINE.ChannelSecret,
-			ChannelAccessToken: c.LINE.ChannelAccessToken,
-			WebhookHost:        c.LINE.WebhookHost,
-			WebhookPort:        c.LINE.WebhookPort,
-			WebhookPath:        c.LINE.WebhookPath,
-		},
+	channels := make(config.ChannelsConfig)
+
+	setChannel(channels, "whatsapp", map[string]any{
+		"enabled":    c.WhatsApp.Enabled,
+		"bridge_url": c.WhatsApp.BridgeURL,
+	})
+
+	setChannel(channels, "telegram", func() map[string]any {
+		m := map[string]any{
+			"enabled": c.Telegram.Enabled,
+			"proxy":   c.Telegram.Proxy,
+		}
+		if c.Telegram.Token != "" {
+			m["token"] = config.NewSecureString(c.Telegram.Token)
+		}
+		return m
+	}())
+
+	setChannel(channels, "feishu", func() map[string]any {
+		m := map[string]any{
+			"enabled": c.Feishu.Enabled,
+			"app_id":  c.Feishu.AppID,
+		}
+		if c.Feishu.AppSecret != "" {
+			m["app_secret"] = config.NewSecureString(c.Feishu.AppSecret)
+		}
+		if c.Feishu.EncryptKey != "" {
+			m["encrypt_key"] = config.NewSecureString(c.Feishu.EncryptKey)
+		}
+		if c.Feishu.VerificationToken != "" {
+			m["verification_token"] = config.NewSecureString(c.Feishu.VerificationToken)
+		}
+		return m
+	}())
+
+	setChannel(channels, "discord", func() map[string]any {
+		m := map[string]any{
+			"enabled":      c.Discord.Enabled,
+			"mention_only": c.Discord.MentionOnly,
+		}
+		if c.Discord.Token != "" {
+			m["token"] = config.NewSecureString(c.Discord.Token)
+		}
+		return m
+	}())
+
+	setChannel(channels, "maixcam", map[string]any{
+		"enabled": c.MaixCam.Enabled,
+		"host":    c.MaixCam.Host,
+		"port":    c.MaixCam.Port,
+	})
+
+	setChannel(channels, "qq", func() map[string]any {
+		m := map[string]any{
+			"enabled": c.QQ.Enabled,
+			"app_id":  c.QQ.AppID,
+		}
+		if c.QQ.AppSecret != "" {
+			m["app_secret"] = config.NewSecureString(c.QQ.AppSecret)
+		}
+		return m
+	}())
+
+	setChannel(channels, "dingtalk", func() map[string]any {
+		m := map[string]any{
+			"enabled":   c.DingTalk.Enabled,
+			"client_id": c.DingTalk.ClientID,
+		}
+		if c.DingTalk.ClientSecret != "" {
+			m["client_secret"] = config.NewSecureString(c.DingTalk.ClientSecret)
+		}
+		return m
+	}())
+
+	setChannel(channels, "slack", func() map[string]any {
+		m := map[string]any{
+			"enabled": c.Slack.Enabled,
+		}
+		if c.Slack.BotToken != "" {
+			m["bot_token"] = config.NewSecureString(c.Slack.BotToken)
+		}
+		if c.Slack.AppToken != "" {
+			m["app_token"] = config.NewSecureString(c.Slack.AppToken)
+		}
+		return m
+	}())
+
+	setChannel(channels, "matrix", func() map[string]any {
+		m := map[string]any{
+			"enabled":        c.Matrix.Enabled,
+			"homeserver":     c.Matrix.Homeserver,
+			"user_id":        c.Matrix.UserID,
+			"allow_from":     c.Matrix.AllowFrom,
+			"join_on_invite": true,
+		}
+		if c.Matrix.AccessToken != "" {
+			m["access_token"] = config.NewSecureString(c.Matrix.AccessToken)
+		}
+		return m
+	}())
+
+	setChannel(channels, "line", func() map[string]any {
+		m := map[string]any{
+			"enabled":      c.LINE.Enabled,
+			"webhook_host": c.LINE.WebhookHost,
+			"webhook_port": c.LINE.WebhookPort,
+			"webhook_path": c.LINE.WebhookPath,
+		}
+		if c.LINE.ChannelSecret != "" {
+			m["channel_secret"] = config.NewSecureString(c.LINE.ChannelSecret)
+		}
+		if c.LINE.ChannelAccessToken != "" {
+			m["channel_access_token"] = config.NewSecureString(c.LINE.ChannelAccessToken)
+		}
+		return m
+	}())
+
+	return channels
+}
+
+func setChannel(channels config.ChannelsConfig, name string, cfg any) {
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return
 	}
+	// Wrap in "settings" for nested format
+	var m map[string]any
+	if err = json.Unmarshal(data, &m); err != nil {
+		return
+	}
+	settings := make(map[string]any)
+	for k, v := range m {
+		if _, exists := config.BaseFieldNames[k]; !exists {
+			settings[k] = v
+			delete(m, k)
+		}
+	}
+	if len(settings) > 0 {
+		m["settings"] = settings
+	}
+	nestedData, err := json.Marshal(m)
+	if err != nil {
+		return
+	}
+	bc := &config.Channel{}
+	if err := json.Unmarshal(nestedData, bc); err != nil {
+		return
+	}
+	channels[name] = bc
 }
 
 func (c GatewayConfig) ToStandardGateway() config.GatewayConfig {
@@ -1077,29 +1177,44 @@ func (c GatewayConfig) ToStandardGateway() config.GatewayConfig {
 }
 
 func (c ToolsConfig) ToStandardTools() config.ToolsConfig {
+	brave := config.BraveConfig{
+		Enabled:    c.Web.Brave.Enabled,
+		MaxResults: c.Web.Brave.MaxResults,
+	}
+	if c.Web.Brave.APIKey != "" {
+		brave.SetAPIKey(c.Web.Brave.APIKey)
+	}
+	if len(c.Web.Brave.APIKeys) > 0 {
+		brave.SetAPIKeys(c.Web.Brave.APIKeys)
+	}
+
+	tavily := config.TavilyConfig{
+		Enabled:    c.Web.Tavily.Enabled,
+		BaseURL:    c.Web.Tavily.BaseURL,
+		MaxResults: c.Web.Tavily.MaxResults,
+	}
+	if c.Web.Tavily.APIKey != "" {
+		tavily.SetAPIKey(c.Web.Tavily.APIKey)
+	}
+
+	perplexity := config.PerplexityConfig{
+		Enabled:    c.Web.Perplexity.Enabled,
+		MaxResults: c.Web.Perplexity.MaxResults,
+	}
+	if c.Web.Perplexity.APIKey != "" {
+		perplexity.SetAPIKey(c.Web.Perplexity.APIKey)
+	}
+
 	return config.ToolsConfig{
 		Web: config.WebToolsConfig{
-			Brave: config.BraveConfig{
-				Enabled:    c.Web.Brave.Enabled,
-				APIKey:     c.Web.Brave.APIKey,
-				MaxResults: c.Web.Brave.MaxResults,
-			},
-			Tavily: config.TavilyConfig{
-				Enabled:    c.Web.Tavily.Enabled,
-				APIKey:     c.Web.Tavily.APIKey,
-				BaseURL:    c.Web.Tavily.BaseURL,
-				MaxResults: c.Web.Tavily.MaxResults,
-			},
+			Brave:  brave,
+			Tavily: tavily,
 			DuckDuckGo: config.DuckDuckGoConfig{
 				Enabled:    c.Web.DuckDuckGo.Enabled,
 				MaxResults: c.Web.DuckDuckGo.MaxResults,
 			},
-			Perplexity: config.PerplexityConfig{
-				Enabled:    c.Web.Perplexity.Enabled,
-				APIKey:     c.Web.Perplexity.APIKey,
-				MaxResults: c.Web.Perplexity.MaxResults,
-			},
-			Proxy: c.Web.Proxy,
+			Perplexity: perplexity,
+			Proxy:      c.Web.Proxy,
 		},
 		Cron: config.CronToolsConfig{
 			ExecTimeoutMinutes: c.Cron.ExecTimeoutMinutes,
@@ -1107,6 +1222,7 @@ func (c ToolsConfig) ToStandardTools() config.ToolsConfig {
 		Exec: config.ExecConfig{
 			EnableDenyPatterns: c.Exec.EnableDenyPatterns,
 			CustomDenyPatterns: c.Exec.CustomDenyPatterns,
+			AllowRemote:        config.DefaultConfig().Tools.Exec.AllowRemote,
 		},
 	}
 }

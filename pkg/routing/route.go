@@ -1,32 +1,29 @@
 package routing
 
 import (
+	"fmt"
 	"strings"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
-// RouteInput contains the routing context from an inbound message.
-type RouteInput struct {
-	Channel    string
-	AccountID  string
-	Peer       *RoutePeer
-	ParentPeer *RoutePeer
-	GuildID    string
-	TeamID     string
+// SessionPolicy describes how a routed message should be mapped to a session.
+type SessionPolicy struct {
+	Dimensions    []string
+	IdentityLinks map[string][]string
 }
 
 // ResolvedRoute is the result of agent routing.
 type ResolvedRoute struct {
-	AgentID        string
-	Channel        string
-	AccountID      string
-	SessionKey     string
-	MainSessionKey string
-	MatchedBy      string // "binding.peer", "binding.peer.parent", "binding.guild", "binding.team", "binding.account", "binding.channel", "default"
+	AgentID       string
+	Channel       string
+	AccountID     string
+	SessionPolicy SessionPolicy
+	MatchedBy     string
 }
 
-// RouteResolver determines which agent handles a message based on config bindings.
+// RouteResolver determines which agent handles a message.
 type RouteResolver struct {
 	cfg *config.Config
 }
@@ -36,182 +33,32 @@ func NewRouteResolver(cfg *config.Config) *RouteResolver {
 	return &RouteResolver{cfg: cfg}
 }
 
-// ResolveRoute determines which agent handles the message and constructs session keys.
-// Implements the 7-level priority cascade:
-// peer > parent_peer > guild > team > account > channel_wildcard > default
-func (r *RouteResolver) ResolveRoute(input RouteInput) ResolvedRoute {
-	channel := strings.ToLower(strings.TrimSpace(input.Channel))
-	accountID := NormalizeAccountID(input.AccountID)
-	peer := input.Peer
+// ResolveRoute determines which agent handles the message from a normalized
+// inbound context and returns the session policy that should be used to
+// allocate session state.
+func (r *RouteResolver) ResolveRoute(inbound bus.InboundContext) ResolvedRoute {
+	channel := strings.ToLower(strings.TrimSpace(inbound.Channel))
+	accountID := NormalizeAccountID(inbound.Account)
+	identityLinks := cloneIdentityLinks(r.cfg.Session.IdentityLinks)
+	view := buildDispatchView(inbound, identityLinks)
 
-	dmScope := DMScope(r.cfg.Session.DMScope)
-	if dmScope == "" {
-		dmScope = DMScopeMain
-	}
-	identityLinks := r.cfg.Session.IdentityLinks
-
-	bindings := r.filterBindings(channel, accountID)
-
-	choose := func(agentID string, matchedBy string) ResolvedRoute {
-		resolvedAgentID := r.pickAgentID(agentID)
-		sessionKey := strings.ToLower(BuildAgentPeerSessionKey(SessionKeyParams{
-			AgentID:       resolvedAgentID,
+	if rule := r.matchDispatchRule(view); rule != nil {
+		return ResolvedRoute{
+			AgentID:       r.pickAgentID(rule.Agent),
 			Channel:       channel,
 			AccountID:     accountID,
-			Peer:          peer,
-			DMScope:       dmScope,
-			IdentityLinks: identityLinks,
-		}))
-		mainSessionKey := strings.ToLower(BuildAgentMainSessionKey(resolvedAgentID))
-		return ResolvedRoute{
-			AgentID:        resolvedAgentID,
-			Channel:        channel,
-			AccountID:      accountID,
-			SessionKey:     sessionKey,
-			MainSessionKey: mainSessionKey,
-			MatchedBy:      matchedBy,
+			SessionPolicy: r.sessionPolicy(rule),
+			MatchedBy:     matchedByForRule(rule),
 		}
 	}
 
-	// Priority 1: Peer binding
-	if peer != nil && strings.TrimSpace(peer.ID) != "" {
-		if match := r.findPeerMatch(bindings, peer); match != nil {
-			return choose(match.AgentID, "binding.peer")
-		}
+	return ResolvedRoute{
+		AgentID:       r.pickAgentID(r.resolveDefaultAgentID()),
+		Channel:       channel,
+		AccountID:     accountID,
+		SessionPolicy: r.sessionPolicy(nil),
+		MatchedBy:     "default",
 	}
-
-	// Priority 2: Parent peer binding
-	parentPeer := input.ParentPeer
-	if parentPeer != nil && strings.TrimSpace(parentPeer.ID) != "" {
-		if match := r.findPeerMatch(bindings, parentPeer); match != nil {
-			return choose(match.AgentID, "binding.peer.parent")
-		}
-	}
-
-	// Priority 3: Guild binding
-	guildID := strings.TrimSpace(input.GuildID)
-	if guildID != "" {
-		if match := r.findGuildMatch(bindings, guildID); match != nil {
-			return choose(match.AgentID, "binding.guild")
-		}
-	}
-
-	// Priority 4: Team binding
-	teamID := strings.TrimSpace(input.TeamID)
-	if teamID != "" {
-		if match := r.findTeamMatch(bindings, teamID); match != nil {
-			return choose(match.AgentID, "binding.team")
-		}
-	}
-
-	// Priority 5: Account binding
-	if match := r.findAccountMatch(bindings); match != nil {
-		return choose(match.AgentID, "binding.account")
-	}
-
-	// Priority 6: Channel wildcard binding
-	if match := r.findChannelWildcardMatch(bindings); match != nil {
-		return choose(match.AgentID, "binding.channel")
-	}
-
-	// Priority 7: Default agent
-	return choose(r.resolveDefaultAgentID(), "default")
-}
-
-func (r *RouteResolver) filterBindings(channel, accountID string) []config.AgentBinding {
-	var filtered []config.AgentBinding
-	for _, b := range r.cfg.Bindings {
-		matchChannel := strings.ToLower(strings.TrimSpace(b.Match.Channel))
-		if matchChannel == "" || matchChannel != channel {
-			continue
-		}
-		if !matchesAccountID(b.Match.AccountID, accountID) {
-			continue
-		}
-		filtered = append(filtered, b)
-	}
-	return filtered
-}
-
-func matchesAccountID(matchAccountID, actual string) bool {
-	trimmed := strings.TrimSpace(matchAccountID)
-	if trimmed == "" {
-		return actual == DefaultAccountID
-	}
-	if trimmed == "*" {
-		return true
-	}
-	return strings.ToLower(trimmed) == strings.ToLower(actual)
-}
-
-func (r *RouteResolver) findPeerMatch(bindings []config.AgentBinding, peer *RoutePeer) *config.AgentBinding {
-	for i := range bindings {
-		b := &bindings[i]
-		if b.Match.Peer == nil {
-			continue
-		}
-		peerKind := strings.ToLower(strings.TrimSpace(b.Match.Peer.Kind))
-		peerID := strings.TrimSpace(b.Match.Peer.ID)
-		if peerKind == "" || peerID == "" {
-			continue
-		}
-		if peerKind == strings.ToLower(peer.Kind) && peerID == peer.ID {
-			return b
-		}
-	}
-	return nil
-}
-
-func (r *RouteResolver) findGuildMatch(bindings []config.AgentBinding, guildID string) *config.AgentBinding {
-	for i := range bindings {
-		b := &bindings[i]
-		matchGuild := strings.TrimSpace(b.Match.GuildID)
-		if matchGuild != "" && matchGuild == guildID {
-			return &bindings[i]
-		}
-	}
-	return nil
-}
-
-func (r *RouteResolver) findTeamMatch(bindings []config.AgentBinding, teamID string) *config.AgentBinding {
-	for i := range bindings {
-		b := &bindings[i]
-		matchTeam := strings.TrimSpace(b.Match.TeamID)
-		if matchTeam != "" && matchTeam == teamID {
-			return &bindings[i]
-		}
-	}
-	return nil
-}
-
-func (r *RouteResolver) findAccountMatch(bindings []config.AgentBinding) *config.AgentBinding {
-	for i := range bindings {
-		b := &bindings[i]
-		accountID := strings.TrimSpace(b.Match.AccountID)
-		if accountID == "*" {
-			continue
-		}
-		if b.Match.Peer != nil || b.Match.GuildID != "" || b.Match.TeamID != "" {
-			continue
-		}
-		return &bindings[i]
-	}
-	return nil
-}
-
-func (r *RouteResolver) findChannelWildcardMatch(bindings []config.AgentBinding) *config.AgentBinding {
-	for i := range bindings {
-		b := &bindings[i]
-		accountID := strings.TrimSpace(b.Match.AccountID)
-		if accountID != "*" {
-			continue
-		}
-		if b.Match.Peer != nil || b.Match.GuildID != "" || b.Match.TeamID != "" {
-			continue
-		}
-		return &bindings[i]
-	}
-	return nil
 }
 
 func (r *RouteResolver) pickAgentID(agentID string) string {
@@ -249,4 +96,218 @@ func (r *RouteResolver) resolveDefaultAgentID() string {
 		return NormalizeAgentID(id)
 	}
 	return DefaultAgentID
+}
+
+func (r *RouteResolver) sessionPolicy(rule *config.DispatchRule) SessionPolicy {
+	dimensions := r.cfg.Session.Dimensions
+	if rule != nil && len(rule.SessionDimensions) > 0 {
+		dimensions = rule.SessionDimensions
+	}
+	return SessionPolicy{
+		Dimensions:    normalizeSessionDimensions(dimensions),
+		IdentityLinks: cloneIdentityLinks(r.cfg.Session.IdentityLinks),
+	}
+}
+
+func normalizeSessionDimensions(dimensions []string) []string {
+	if len(dimensions) == 0 {
+		return nil
+	}
+
+	normalized := make([]string, 0, len(dimensions))
+	seen := make(map[string]struct{}, len(dimensions))
+	for _, dimension := range dimensions {
+		dimension = strings.ToLower(strings.TrimSpace(dimension))
+		switch dimension {
+		case "space", "chat", "topic", "sender":
+		default:
+			continue
+		}
+		if _, ok := seen[dimension]; ok {
+			continue
+		}
+		seen[dimension] = struct{}{}
+		normalized = append(normalized, dimension)
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func cloneIdentityLinks(src map[string][]string) map[string][]string {
+	if len(src) == 0 {
+		return nil
+	}
+	cloned := make(map[string][]string, len(src))
+	for canonical, ids := range src {
+		dup := make([]string, len(ids))
+		copy(dup, ids)
+		cloned[canonical] = dup
+	}
+	return cloned
+}
+
+type dispatchView struct {
+	Channel   string
+	Account   string
+	Space     string
+	Chat      string
+	Topic     string
+	Sender    string
+	Mentioned bool
+}
+
+func (r *RouteResolver) matchDispatchRule(view dispatchView) *config.DispatchRule {
+	if r.cfg == nil || r.cfg.Agents.Dispatch == nil || len(r.cfg.Agents.Dispatch.Rules) == 0 {
+		return nil
+	}
+
+	for i := range r.cfg.Agents.Dispatch.Rules {
+		rule := &r.cfg.Agents.Dispatch.Rules[i]
+		if !selectorHasAnyConstraint(rule.When) {
+			continue
+		}
+		if ruleMatchesView(*rule, view) {
+			return rule
+		}
+	}
+	return nil
+}
+
+func ruleMatchesView(rule config.DispatchRule, view dispatchView) bool {
+	when := normalizeDispatchSelector(rule.When)
+	if when.Channel != "" && when.Channel != view.Channel {
+		return false
+	}
+	if when.Account != "" && when.Account != view.Account {
+		return false
+	}
+	if when.Space != "" && when.Space != view.Space {
+		return false
+	}
+	if when.Chat != "" && when.Chat != view.Chat {
+		return false
+	}
+	if when.Topic != "" && when.Topic != view.Topic {
+		return false
+	}
+	if when.Sender != "" && when.Sender != view.Sender {
+		return false
+	}
+	if when.Mentioned != nil && *when.Mentioned != view.Mentioned {
+		return false
+	}
+	return true
+}
+
+func matchedByForRule(rule *config.DispatchRule) string {
+	if rule == nil {
+		return "default"
+	}
+	name := strings.TrimSpace(rule.Name)
+	if name == "" {
+		return "dispatch.rule"
+	}
+	return "dispatch.rule:" + strings.ToLower(name)
+}
+
+func buildDispatchView(inbound bus.InboundContext, identityLinks map[string][]string) dispatchView {
+	view := dispatchView{
+		Channel:   strings.ToLower(strings.TrimSpace(inbound.Channel)),
+		Account:   NormalizeAccountID(inbound.Account),
+		Mentioned: inbound.Mentioned,
+	}
+
+	if spaceID := strings.TrimSpace(inbound.SpaceID); spaceID != "" {
+		spaceType := strings.ToLower(strings.TrimSpace(inbound.SpaceType))
+		if spaceType == "" {
+			spaceType = "space"
+		}
+		view.Space = fmt.Sprintf("%s:%s", spaceType, strings.ToLower(spaceID))
+	}
+
+	if chatID := strings.TrimSpace(inbound.ChatID); chatID != "" {
+		chatType := strings.ToLower(strings.TrimSpace(inbound.ChatType))
+		if chatType == "" {
+			chatType = "direct"
+		}
+		view.Chat = fmt.Sprintf("%s:%s", chatType, strings.ToLower(chatID))
+	}
+
+	if topicID := strings.TrimSpace(inbound.TopicID); topicID != "" {
+		view.Topic = "topic:" + strings.ToLower(topicID)
+	}
+
+	view.Sender = canonicalDispatchSenderID(inbound.Channel, inbound.SenderID, identityLinks)
+
+	return view
+}
+
+func normalizeDispatchSelector(selector config.DispatchSelector) config.DispatchSelector {
+	selector.Channel = strings.ToLower(strings.TrimSpace(selector.Channel))
+	selector.Account = NormalizeAccountID(selector.Account)
+	selector.Space = strings.ToLower(strings.TrimSpace(selector.Space))
+	selector.Chat = strings.ToLower(strings.TrimSpace(selector.Chat))
+	selector.Topic = strings.ToLower(strings.TrimSpace(selector.Topic))
+	selector.Sender = strings.ToLower(strings.TrimSpace(selector.Sender))
+	return selector
+}
+
+func selectorHasAnyConstraint(selector config.DispatchSelector) bool {
+	return strings.TrimSpace(selector.Channel) != "" ||
+		strings.TrimSpace(selector.Account) != "" ||
+		strings.TrimSpace(selector.Space) != "" ||
+		strings.TrimSpace(selector.Chat) != "" ||
+		strings.TrimSpace(selector.Topic) != "" ||
+		strings.TrimSpace(selector.Sender) != "" ||
+		selector.Mentioned != nil
+}
+
+func canonicalDispatchSenderID(channel, rawID string, identityLinks map[string][]string) string {
+	normalizedID := strings.TrimSpace(rawID)
+	if normalizedID == "" {
+		return ""
+	}
+	if linked := resolveLinkedDispatchID(identityLinks, channel, normalizedID); linked != "" {
+		normalizedID = linked
+	}
+	return strings.ToLower(normalizedID)
+}
+
+func resolveLinkedDispatchID(identityLinks map[string][]string, channel, peerID string) string {
+	if len(identityLinks) == 0 {
+		return ""
+	}
+	peerID = strings.TrimSpace(peerID)
+	if peerID == "" {
+		return ""
+	}
+
+	candidates := make(map[string]bool)
+	rawCandidate := strings.ToLower(peerID)
+	if rawCandidate != "" {
+		candidates[rawCandidate] = true
+	}
+	channel = strings.ToLower(strings.TrimSpace(channel))
+	if channel != "" {
+		candidates[fmt.Sprintf("%s:%s", channel, rawCandidate)] = true
+	}
+	if idx := strings.Index(rawCandidate, ":"); idx > 0 && idx < len(rawCandidate)-1 {
+		candidates[rawCandidate[idx+1:]] = true
+	}
+
+	for canonical, ids := range identityLinks {
+		canonicalName := strings.TrimSpace(canonical)
+		if canonicalName == "" {
+			continue
+		}
+		for _, id := range ids {
+			normalized := strings.ToLower(strings.TrimSpace(id))
+			if normalized != "" && candidates[normalized] {
+				return canonicalName
+			}
+		}
+	}
+	return ""
 }

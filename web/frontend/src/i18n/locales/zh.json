@@ -1,0 +1,760 @@
+{
+  "navigation": {
+    "chat": "对话",
+    "model_group": "模型",
+    "models": "模型",
+    "credentials": "凭据",
+    "agent_group": "智能体",
+    "hub": "Hub",
+    "skills": "技能",
+    "tools": "工具",
+    "services": "服务",
+    "channels_group": "频道",
+    "show_more_channels": "更多",
+    "show_less_channels": "收起",
+    "config": "配置",
+    "logs": "日志"
+  },
+  "launcherLogin": {
+    "title": "登录",
+    "description": "请输入控制台密码以继续。",
+    "passwordLabel": "密码",
+    "passwordPlaceholder": "输入密码",
+    "submit": "登录",
+    "errorInvalid": "密码错误，请重试。",
+    "errorNetwork": "网络错误，请重试。"
+  },
+  "launcherSetup": {
+    "title": "设置控制台密码",
+    "description": "设置一个密码来保护控制台访问权限，登录时需要输入此密码。",
+    "passwordLabel": "密码",
+    "passwordPlaceholder": "至少 8 个字符",
+    "confirmLabel": "确认密码",
+    "confirmPlaceholder": "再次输入密码",
+    "submit": "设置密码",
+    "errorMismatch": "两次输入的密码不一致。",
+    "errorNetwork": "网络错误，请重试。"
+  },
+  "chat": {
+    "welcome": "今天我能为您做些什么？",
+    "welcomeDesc": "您可以询问我天气、设置或其他任何任务，我随时为您效劳。",
+    "placeholder": "输入新消息...",
+    "disabledPlaceholder": {
+      "gatewayUnknown": "无法对话：网关状态仍在检测中。请稍候重试，如仍无效请刷新页面或重启 Launcher。",
+      "gatewayStarting": "无法对话：网关正在启动。请等待启动完成后重试。",
+      "gatewayRestarting": "无法对话：网关正在重启。请等待重启完成。",
+      "gatewayStopping": "无法对话：网关正在停止。请等待停止完成后重新启动服务。",
+      "gatewayStopped": "无法对话：网关服务未启动。请点击顶部栏的“启动服务”后重试。",
+      "gatewayError": "无法对话：网关处于错误状态。请检查日志后重启网关或 Launcher。",
+      "websocketConnecting": "正在连接聊天服务，请稍候。",
+      "websocketDisconnected": "无法对话：WebSocket 连接已断开。请检查网络与服务状态，然后刷新页面或重启 Launcher。",
+      "websocketError": "无法对话：WebSocket 连接失败。请检查网络与服务状态后重试。",
+      "noDefaultModel": "无法对话：尚未设置默认模型。请前往模型页面设置默认模型。"
+    },
+    "newChat": "新建对话",
+    "notConnected": "服务未运行，请先启动以进行对话。",
+    "thinking": {
+      "step1": "思考中...",
+      "step2": "分析您的请求...",
+      "step3": "准备回复...",
+      "step4": "马上就好..."
+    },
+    "reasoningLabel": "思考",
+    "toolCallsLabel": "工具调用",
+    "toolCallExplanationLabel": "调用提示",
+    "toolCallFunctionLabel": "调用摘要",
+    "showAssistantDetails": "展示思考过程与工具调用",
+    "toolLabel": "工具",
+    "history": "历史记录",
+    "noHistory": "暂无对话历史",
+    "historyLoadFailed": "加载历史记录失败",
+    "historyOpenFailed": "打开该历史会话失败",
+    "loadingMore": "加载更多...",
+    "deleteSession": "删除会话",
+    "messagesCount": "{{count}} 条消息",
+    "noModel": "选择模型",
+    "inputDisabled": {
+      "notConnected": "服务未运行，请先启动以进行对话。",
+      "noModel": "未设置默认模型，请前往模型页面进行配置。"
+    },
+    "sendMessage": "发送消息",
+    "sendHint": "按 Enter 发送\nShift + Enter 换行",
+    "contextTitle": "上下文",
+    "contextDetail": "查看详情",
+    "attachImage": "添加图片",
+    "removeImage": "移除图片",
+    "uploadedImage": "已上传图片",
+    "invalidImage": "“{{name}}”不是支持的图片文件。",
+    "imageTooLarge": "“{{name}}”超过了 {{size}} 限制。",
+    "imageReadFailed": "读取“{{name}}”失败。",
+    "empty": {
+      "noConfiguredModel": "尚未配置模型",
+      "noConfiguredModelDescription": "请先配置至少一个带有 API Key 的 AI 模型，才能开始对话。",
+      "goToModels": "去模型页配置",
+      "noSelectedModel": "尚未设置模型",
+      "noSelectedModelDescription": "您已配置模型，但尚未设置默认模型。请选择一个模型后开始对话",
+      "notRunning": "服务尚未运行",
+      "notRunningDescription": "请先启动网关服务后再开始对话，可点击顶部栏中的「启动服务」按钮。"
+    },
+    "modelGroup": {
+      "apikey": "API Key",
+      "oauth": "OAuth",
+      "local": "本地模型"
+    }
+  },
+  "header": {
+    "logout": {
+      "tooltip": "退出登录",
+      "confirm": "退出登录",
+      "description": "确定要退出仪表盘登录吗？"
+    },
+    "gateway": {
+      "stopDialog": {
+        "title": "停止服务？",
+        "description": "您确定要停止服务吗？这将断开您当前活动的聊天会话并停止推理。",
+        "confirm": "停止服务"
+      },
+      "action": {
+        "start": "启动服务",
+        "stop": "停止服务",
+        "restart": "重启服务"
+      },
+      "status": {
+        "starting": "服务启动中...",
+        "restarting": "服务重启中...",
+        "stopping": "服务停止中..."
+      },
+      "restartRequired": "配置变更后需要重启服务才能生效。"
+    }
+  },
+  "common": {
+    "cancel": "取消",
+    "save": "保存",
+    "saving": "保存中...",
+    "reset": "重置",
+    "confirm": "确认",
+    "saveChangesTitle": "有未保存的配置更改",
+    "restartRequiredTitle": "需要重启服务",
+    "restartRequiredDesc": "{{name}} 的最新配置已保存。重启服务后才能正式生效。"
+  },
+  "labels": {
+    "loading": "加载中..."
+  },
+  "footer": {
+    "version": "版本",
+    "commit": "提交",
+    "build": "构建",
+    "version_unknown": "未知"
+  },
+  "credentials": {
+    "description": "管理已支持服务商的 OAuth 与 Token 凭据。",
+    "loading": "正在加载凭据...",
+    "providers": {
+      "openai": {
+        "description": "支持浏览器 OAuth、设备码和 Token 登录。"
+      },
+      "anthropic": {
+        "description": "使用 Token 登录 Claude。"
+      },
+      "antigravity": {
+        "description": "使用浏览器 OAuth 登录 Google Cloud Code Assist。"
+      }
+    },
+    "status": {
+      "connected": "已连接",
+      "needsRefresh": "即将过期",
+      "expired": "已过期",
+      "notLoggedIn": "未登录"
+    },
+    "actions": {
+      "browser": "浏览器 OAuth",
+      "deviceCode": "设备码",
+      "stopLoading": "停止加载",
+      "saveToken": "保存",
+      "logout": "退出登录"
+    },
+    "logoutDialog": {
+      "title": "确认退出登录？",
+      "description": "这将删除 {{provider}} 的已保存凭据。"
+    },
+    "fields": {
+      "openaiToken": "OpenAI Token",
+      "anthropicToken": "Anthropic Token"
+    },
+    "labels": {
+      "account": "账号",
+      "email": "邮箱",
+      "project": "项目"
+    },
+    "errors": {
+      "loadFailed": "加载凭据失败",
+      "flowFailed": "查询授权流程失败",
+      "loginFailed": "登录失败",
+      "logoutFailed": "退出登录失败",
+      "invalidBrowserResponse": "浏览器登录响应无效",
+      "invalidDeviceResponse": "设备码响应无效",
+      "popupBlocked": "无法打开新标签页，请允许弹窗后重试。"
+    },
+    "flow": {
+      "current": "当前授权状态",
+      "pending": "等待授权中...",
+      "success": "认证成功",
+      "error": "认证失败",
+      "expired": "授权会话已过期"
+    },
+    "device": {
+      "title": "OpenAI 设备码登录",
+      "description": "请打开验证页面并输入下方代码，此页面会自动刷新授权状态。",
+      "code": "用户代码",
+      "url": "验证地址",
+      "polling": "正在轮询登录状态...",
+      "open": "打开验证页面"
+    }
+  },
+  "models": {
+    "description": "为 AI 服务商配置 API Key。只有已配置的模型可用于对话。",
+    "defaultChangeSuccess": "默认模型已更新。",
+    "unsavedPrompt": "当前修改尚未保存，保存后才会写入模型配置。",
+    "restartHint": "模型配置保存后需要重启服务才能生效。",
+    "loadError": "加载模型列表失败",
+    "noDefaultHintPrefix": "尚未设置默认模型，点击",
+    "noDefaultHintSuffix": "设为默认。",
+    "status": {
+      "available": "可用",
+      "unconfigured": "未配置",
+      "unreachable": "服务不可达"
+    },
+    "badge": {
+      "default": "默认",
+      "virtual": "虚拟"
+    },
+    "action": {
+      "edit": "编辑 API Key",
+      "setDefault": "设为默认",
+      "delete": "删除模型",
+      "setDefaultDisabled": {
+        "setting": "正在设为默认...",
+        "unavailable": "无法将不可用的模型设为默认",
+        "isDefault": "该模型已是默认模型",
+        "isVirtual": "无法将虚拟模型设为默认",
+        "unsupportedProvider": "该 Provider 仅用于 ASR，不能设为默认聊天模型"
+      },
+      "deleteDisabled": {
+        "isDefault": "无法删除默认模型"
+      }
+    },
+    "defaultOnSave": {
+      "label": "默认模型",
+      "description": "保存后自动将该模型设置为默认模型。",
+      "unsupportedProvider": "该 Provider 可以保存在 model_list 中，但不能作为默认聊天模型使用。",
+      "clearOnSave": "保存这个仅用于 ASR 的模型后，会清除当前的默认聊天模型设置。"
+    },
+    "add": {
+      "button": "添加模型",
+      "title": "添加自定义模型",
+      "description": "添加兼容 OpenAI 或原生协议的模型端点。",
+      "modelName": "模型别名",
+      "modelNamePlaceholder": "例如 my-gpt4",
+      "modelNameHint": "用于在对话中识别此模型的简短名称。",
+      "modelId": "模型标识符",
+      "modelIdPlaceholder": "例如 gpt-4o 或 openai/gpt-4o",
+      "modelIdHint": "此字段将作为所选 Provider 的规范模型 ID 使用。若模型标识符本身包含斜杠（如 openai/gpt-5.4），将作为完整 ID 保留，不会再次拆分 Provider。",
+      "errorRequired": "此字段为必填项。",
+      "errorDuplicateModelName": "模型别名已存在，请使用其他名称。",
+      "saveError": "添加模型失败",
+      "saveSuccess": "模型已添加。",
+      "confirm": "添加模型"
+    },
+    "delete": {
+      "title": "确认删除模型？",
+      "description": "「{{name}}」将从模型列表中永久移除，此操作不可撤销。",
+      "confirm": "删除"
+    },
+    "advanced": {
+      "toggle": "高级选项"
+    },
+    "field": {
+      "provider": "Provider",
+      "providerPlaceholder": "请选择 Provider",
+      "providerHint": "请选择一个由后端 catalog 提供的 Provider；“模型标识符”字段会按该 Provider 的规范模型 ID 解释。",
+      "providerInvalid": "当前 Provider 无效，请重新选择一个受支持的 Provider。",
+      "apiBase": "API Base URL",
+      "apiKey": "API Key",
+      "apiKeyPlaceholder": "请输入 API Key",
+      "apiKeyPlaceholderSet": "留空保持原有 Key 不变",
+      "proxy": "HTTP 代理",
+      "proxyHint": "可选。例如 http://127.0.0.1:7890",
+      "authMethod": "认证方式",
+      "authMethodHint": "认证方式：oauth、token。留空表示使用 API Key 认证。",
+      "authMethodManagedHint": "该 Provider 的认证方式由系统自动管理。",
+      "connectMode": "连接模式",
+      "connectModeHint": "CLI 型服务商的连接模式：stdio 或 grpc。",
+      "workspace": "工作目录",
+      "workspaceHint": "CLI 型服务商的工作目录路径（如 GitHub Copilot）。",
+      "requestTimeout": "请求超时（秒）",
+      "requestTimeoutHint": "等待响应的最大秒数，0 表示使用默认值。",
+      "rpm": "速率限制（RPM）",
+      "rpmHint": "每分钟最大请求数，0 表示不限制。",
+      "thinkingLevel": "思考级别",
+      "thinkingLevelHint": "扩展思考预算：off、low、medium、high、xhigh、adaptive。",
+      "maxTokensField": "Max Tokens 字段名",
+      "maxTokensFieldHint": "覆盖请求中 max_tokens 的字段名，例如 max_completion_tokens。",
+      "toolSchemaTransform": "工具 Schema 转换",
+      "toolSchemaTransformHint": "可选的工具 JSON Schema 兼容性转换。留空表示保持原生行为。当前支持值：simple。",
+      "extraBody": "Extra Body",
+      "extraBodyHint": "要注入到请求体中的额外 JSON 字段，例如 {\"reasoning_split\": true}。",
+      "customHeaders": "Custom Headers",
+      "customHeadersHint": "要注入到每个请求中的额外 HTTP Headers，例如 {\"X-Source\": \"coding-plan\"}。"
+    },
+    "edit": {
+      "title": "配置 {{name}}",
+      "apiKeyHint": "已设置 API Key，留空表示不修改。",
+      "oauthNote": "该服务商使用 OAuth 认证，无需 API Key。",
+      "saveError": "保存失败",
+      "saveSuccess": "模型配置已保存。"
+    }
+  },
+  "channels": {
+    "loadError": "加载频道列表失败",
+    "name": {
+      "telegram": "Telegram",
+      "discord": "Discord",
+      "slack": "Slack",
+      "feishu": "飞书",
+      "dingtalk": "钉钉",
+      "line": "LINE",
+      "qq": "QQ",
+      "onebot": "OneBot",
+      "wecom": "企业微信",
+      "whatsapp": "WhatsApp",
+      "whatsapp_native": "WhatsApp Native",
+      "pico": "Web",
+      "maixcam": "MaixCam",
+      "matrix": "Matrix",
+      "irc": "IRC",
+      "weixin": "微信"
+    },
+    "weixin": {
+      "bindTitle": "微信账号绑定",
+      "bindDesc": "使用微信扫描二维码以绑定您的个人微信账号。",
+      "bind": "绑定微信",
+      "rebind": "重新绑定",
+      "bound": "微信已绑定",
+      "notBound": "尚未绑定微信账号。",
+      "generating": "正在生成二维码...",
+      "scanHint": "打开微信，扫描二维码",
+      "scanned": "已扫码 — 请在微信中确认",
+      "expired": "二维码已过期",
+      "retry": "重试",
+      "refresh": "刷新二维码",
+      "errorGeneric": "发生错误，请重试。"
+    },
+    "wecom": {
+      "bindTitle": "企业微信绑定",
+      "bindDesc": "使用企业微信扫描二维码以绑定您的 AI Bot。",
+      "bind": "绑定企业微信",
+      "rebind": "重新绑定",
+      "bound": "企业微信已绑定",
+      "notBound": "尚未绑定企业微信 AI Bot。",
+      "generating": "正在生成二维码...",
+      "scanHint": "打开企业微信，扫描二维码",
+      "scanned": "已扫码，请在企业微信中确认",
+      "expired": "二维码已过期",
+      "retry": "重试",
+      "refresh": "刷新二维码",
+      "errorGeneric": "发生错误，请重试。"
+    },
+    "field": {
+      "token": "Bot Token",
+      "tokenPlaceholder": "输入 Bot Token",
+      "botToken": "Bot Token",
+      "appToken": "App Token",
+      "appId": "App ID",
+      "appSecret": "App Secret",
+      "verificationToken": "Verification Token",
+      "encryptKey": "Encrypt Key",
+      "baseUrl": "API Base URL",
+      "proxy": "HTTP 代理",
+      "mentionOnly": "仅提及时响应",
+      "typingEnabled": "输入中提示",
+      "placeholderEnabled": "占位消息",
+      "placeholderText": "占位文案",
+      "groupTriggerMentionOnly": "群聊仅提及时响应",
+      "groupTriggerPrefixes": "群聊触发前缀",
+      "groupTriggerPrefixesPlaceholder": "例如 /, !, ?",
+      "randomReactionEmoji": "随机表情回应",
+      "randomReactionEmojiPlaceholder": "例如 THUMBSUP, HEART, SMILE",
+      "isLark": "Lark（国际版）",
+      "allowFrom": "允许来源",
+      "allowFromPlaceholder": "例如 123456, 789012",
+      "allowOrigins": "允许来源域名",
+      "allowOriginsPlaceholder": "例如 https://example.com, http://localhost:5173",
+      "removeListItem": "删除 {{value}}",
+      "secretPlaceholder": "输入密钥",
+      "secretHintSet": "配置已保存，留空表示不修改"
+    },
+    "page": {
+      "notFound": "不支持频道“{{name}}”。",
+      "saveSuccess": "频道配置已保存。",
+      "saveError": "保存频道配置失败",
+      "savePrompt": "当前修改尚未保存，点击保存后才会写入频道配置。",
+      "docLink": "配置文档",
+      "enableLabel": "启用频道",
+      "restartRequiredTitle": "需要重启服务",
+      "restartRequiredDesc": "{{name}} 的最新配置已保存。重启服务后才能正式生效。"
+    },
+    "form": {
+      "desc": {
+        "token": "机器人访问令牌，用于连接平台 API",
+        "botToken": "Bot Token，用于发送与接收消息",
+        "appToken": "App Token，用于 Socket 模式连接。",
+        "appId": "应用唯一标识，用于平台鉴权",
+        "appSecret": "应用密钥，用于请求签名和鉴权",
+        "verificationToken": "事件回调验证令牌",
+        "encryptKey": "消息加密密钥，用于解密回调内容",
+        "baseUrl": "平台 API 地址，默认使用官方地址",
+        "proxy": "HTTP 代理地址，用于网络访问",
+        "mentionOnly": "在群聊中仅当明确提及时才响应",
+        "typingEnabled": "在生成回复时显示“正在输入”状态",
+        "placeholderEnabled": "在最终回复发送前，先发送临时占位消息",
+        "groupTriggerMentionOnly": "在群聊中仅当提及机器人时才响应",
+        "groupTriggerPrefixes": "群聊触发前缀。可逐项添加，也支持一次粘贴多个值。",
+        "randomReactionEmoji": "PicoClaw 会对用户消息添加表情回复以确认已收到。例如：\"THUMBSUP\", \"HEART\", \"SMILE\"。留空则使用默认的 \"Pin\" 表情。",
+        "isLark": "使用 Lark 国际版域名（open.larksuite.com）替代飞书域名（open.feishu.cn）",
+        "allowFrom": "允许访问的用户或群组 ID。可逐项添加，也支持一次粘贴多个值。",
+        "allowOrigins": "允许访问的来源域名。可逐项添加，也支持一次粘贴多个值。",
+        "wsUrl": "WebSocket 服务地址",
+        "reconnectInterval": "断线后的重连间隔（秒）",
+        "bridgeUrl": "桥接服务地址",
+        "sessionStorePath": "本地会话存储目录路径",
+        "useNative": "是否使用原生客户端模式连接",
+        "host": "服务监听主机地址",
+        "port": "服务监听端口",
+        "homeserver": "Matrix homeserver 地址",
+        "userId": "账号 ID",
+        "deviceId": "设备 ID",
+        "joinOnInvite": "收到邀请时是否自动加入房间",
+        "clientId": "应用客户端 ID，用于平台鉴权",
+        "corpId": "企业 ID",
+        "agentId": "企业应用 Agent ID",
+        "webhookUrl": "Webhook 完整地址",
+        "webhookHost": "Webhook 监听主机",
+        "webhookPort": "Webhook 监听端口",
+        "webhookPath": "Webhook 路径",
+        "replyTimeout": "回复超时时间（秒）",
+        "maxSteps": "最大步骤数",
+        "welcomeMessage": "新会话欢迎语内容",
+        "allowTokenQuery": "是否允许 URL Query 方式传递 Token",
+        "pingInterval": "连接心跳间隔（秒）",
+        "readTimeout": "读取超时时间（秒）",
+        "writeTimeout": "写入超时时间（秒）",
+        "maxConnections": "最大并发连接数",
+        "server": "IRC 服务器地址",
+        "tls": "是否启用 TLS 连接",
+        "nick": "机器人昵称",
+        "user": "IRC 用户名",
+        "realName": "显示名称",
+        "channels": "要加入的 IRC 频道列表",
+        "requestCaps": "连接时请求的 IRC 扩展能力列表",
+        "maxBase64FileSizeMiB": "本地文件转为 base64 上传的最大体积，单位 MiB；0 表示不限制，仅影响本地文件，不影响 URL 直传",
+        "genericField": "用于配置{{field}}"
+      }
+    },
+    "validation": {
+      "requiredField": "请填写该字段"
+    }
+  },
+  "pages": {
+    "agent": {
+      "load_error": "加载 Agent 支持信息失败。",
+      "skills": {
+        "empty": "当前没有可用技能。",
+        "install_success": "已安装 {{name}}。",
+        "install_error": "安装技能失败。",
+        "search_placeholder": "按名称、描述或技能源搜索",
+        "source_label": "类型",
+        "sort_label": "排序",
+        "import": "导入技能",
+        "import_success": "技能导入成功。",
+        "import_error": "导入技能失败。",
+        "import_invalid_type": "仅支持导入 Markdown 或 ZIP 技能文件。",
+        "import_invalid_size": "技能文件大小不能超过 1 MB。",
+        "import_constraints": "支持导入最大 1 MB 的 Markdown 或 ZIP 文件",
+        "view": "查看",
+        "delete": "删除",
+        "delete_title": "删除技能？",
+        "delete_description": "将从工作区技能中移除「{{name}}」。",
+        "delete_confirm": "删除",
+        "delete_success": "技能已删除。",
+        "delete_error": "删除技能失败。",
+        "viewer_title": "技能内容",
+        "viewer_description": "这里展示当前生效的 SKILL.md 内容。",
+        "load_detail_error": "加载技能内容失败。",
+        "no_description": "未提供描述。",
+        "no_results": "没有技能匹配当前筛选条件。",
+        "dropzone_title": "导入到工作区",
+        "dropzone_description": "将技能文件拖到这里，或从本地选择一个文件。",
+        "dropzone_label": "将技能文件拖到这里",
+        "dropzone_active": "松开即可导入该技能",
+        "dropzone_release": "导入后会自动规范化内容，并保存到工作区技能目录。",
+        "marketplace_title": "安装技能",
+        "marketplace_description": "搜索第三方技能源，并将技能安装到当前工作区",
+        "marketplace_search_placeholder": "搜索 github、docker、database 等技能",
+        "marketplace_search_action": "搜索",
+        "marketplace_search_status": "搜索状态",
+        "marketplace_install_status": "安装状态",
+        "marketplace_notice_title": "安全提示",
+        "marketplace_notice_body": "搜索结果中的 skills 属于第三方内容。安装前请先确认作者、页面 URL、说明文档，以及它要求执行的代码或使用的凭据是否可信。",
+        "marketplace_status_disabled": "当前未启用，请先在工具页启用对应工具。",
+        "marketplace_status_enable_hint": "请先在工具页启用相关工具。",
+        "marketplace_search_error": "搜索技能源失败。",
+        "marketplace_loading_results": "正在搜索技能...",
+        "marketplace_loading_more": "正在加载更多技能...",
+        "marketplace_results_title": "“{{query}}” 共找到 {{count}} 个结果",
+        "marketplace_results_hint": "搜索结果会安装到当前工作区。",
+        "marketplace_install_action": "安装",
+        "marketplace_installed": "已安装",
+        "marketplace_view_installed": "查看本地技能",
+        "marketplace_installed_hint": "该技能已在当前工作区中可用，名称为「{{name}}」。",
+        "marketplace_empty_results": "没有找到与“{{query}}”匹配的可安装技能。",
+        "marketplace_idle": "输入一个关键词，搜索可安装的第三方技能。",
+        "marketplace_unavailable": "当前无法使用技能搜索，请检查 Skills 相关工具配置。",
+        "sort": {
+          "name_asc": "名称（A-Z）",
+          "name_desc": "名称（Z-A）",
+          "source": "按类型"
+        },
+        "origin": {
+          "all": "全部类型",
+          "builtin": "内置",
+          "third_party": "第三方",
+          "manual": "手动导入"
+        },
+        "summary": {
+          "total": "技能总数"
+        },
+        "detail_tabs": {
+          "preview": "预览",
+          "raw": "原始内容",
+          "meta": "元数据"
+        },
+        "metadata": {
+          "name": "名称",
+          "description": "描述",
+          "registry": "来源平台",
+          "url": "链接地址",
+          "version": "已安装版本",
+          "lines": "行数",
+          "characters": "字符数"
+        },
+        "marketplace_installDisabled": {
+          "installing": "正在安装...",
+          "installed": "已安装",
+          "cannotInstall": "无法安装：相关工具未启用"
+        }
+      },
+      "tools": {
+        "search_placeholder": "搜索工具...",
+        "no_results": "没有找到符合条件的工具",
+        "filter": {
+          "all": "所有状态",
+          "enabled": "已启用",
+          "disabled": "已禁用",
+          "blocked": "被阻塞"
+        },
+        "empty": "当前没有可用工具。",
+        "enable_success": "工具已启用。",
+        "disable_success": "工具已禁用。",
+        "toggle_error": "更新工具状态失败。",
+        "library_title": "工具库",
+        "library_description": "浏览并管理由您的 AI 智能体支持的集成工具。",
+        "web_search": {
+          "title": "网页搜索",
+          "description": "为智能体提供网页搜索能力。自动路由到当前处于激活状态的最佳服务。",
+          "unsaved_prompt": "当前修改尚未保存，点击保存后才会写入 Web Search 配置。",
+          "global_settings": "常规",
+          "providers_config": "集成",
+          "load_error": "加载 Web Search 配置失败。",
+          "save": "保存更改",
+          "open_settings": "打开设置",
+          "save_success": "设置保存成功。",
+          "save_error": "保存设置失败。",
+          "provider": "首选服务",
+          "provider_description": "选择在由 Web Search 工具处理请求时默认使用的搜索引擎。",
+          "proxy": "HTTPS 代理",
+          "proxy_description": "用于底层网页请求的可选全局代理配置。",
+          "prefer_native": "优先使用模型搜索",
+          "prefer_native_hint": "启用后，模型在支持时可以直接使用自身搜索能力，而不必走已配置的搜索引擎列表。",
+          "provider_hint": "启用该服务后，可继续填写所需的连接参数。",
+          "max_results": "最大获取结果数",
+          "base_url": "API 请求地址",
+          "base_url_placeholder": "可选，如果需要代理请覆盖终端地址",
+          "api_key": "API 密钥 (Token)",
+          "api_key_placeholder": "请输入密钥，留空则保持原密钥不变",
+          "none": "未配置"
+        },
+        "status": {
+          "enabled": "已启用",
+          "disabled": "已禁用",
+          "blocked": "被阻塞"
+        },
+        "categories": {
+          "automation": "自动化",
+          "filesystem": "文件系统",
+          "web": "网页",
+          "communication": "通信",
+          "skills": "技能",
+          "agents": "Agent",
+          "hardware": "硬件",
+          "discovery": "发现"
+        },
+        "reasons": {
+          "requires_linux": "该工具仅在 Linux 主机上可用，并且需要暴露对应的设备文件。",
+          "requires_serial_platform": "该工具当前支持 Linux、macOS 和 Windows，且要求主机可访问对应串口。",
+          "requires_skills": "需要先启用 `tools.skills`，该技能注册表工具才能使用。",
+          "requires_subagent": "需要先启用 `tools.subagent`，`spawn` 才能委派任务。",
+          "requires_mcp_discovery": "需要先启用 `tools.mcp.discovery`，MCP 发现工具才会可用。",
+          "requires_web_search_provider": "请至少配置一个可用的外部网络搜索 provider。"
+        }
+      }
+    },
+    "config": {
+      "load_error": "加载配置失败，请刷新后重试",
+      "workspace": "工作目录",
+      "workspace_hint": "智能体执行文件读写操作时使用的基础目录",
+      "restrict_workspace": "限制工作目录访问",
+      "restrict_workspace_hint": "仅允许在工作目录内执行文件操作",
+      "split_on_marker": "连续短消息",
+      "split_on_marker_hint": "像真人聊天一样，把长难句拆成多条短消息快速发出",
+      "tool_feedback_enabled": "工具反馈",
+      "tool_feedback_enabled_hint": "在每次执行工具前，先向当前会话发送一条简短的执行说明",
+      "tool_feedback_separate_messages": "分开发送反馈消息",
+      "tool_feedback_separate_messages_hint": "让每次工具反馈都保留为独立消息，而不是反复复用同一条占位/进度消息",
+      "tool_feedback_max_args_length": "工具参数预览长度",
+      "tool_feedback_max_args_length_hint": "每条工具参数预览中展示的字符上限。设为 0 时使用默认值",
+      "exec_enabled": "允许命令执行",
+      "exec_enabled_hint": "控制应用是否允许执行命令。关闭后，所有命令请求都不会执行",
+      "allow_remote": "允许远程命令执行",
+      "allow_remote_hint": "开启后，来自远程会话或非本地上下文的请求也可以执行命令；关闭后，仅允许本地安全上下文执行命令",
+      "enable_deny_patterns": "启用黑名单",
+      "enable_deny_patterns_hint": "开启后，应用会拦截匹配内置危险模式以及下方自定义命令黑名单的命令",
+      "exec_timeout_seconds": "命令超时（秒）",
+      "exec_timeout_seconds_hint": "命令请求的最长运行时间。设置为 0 表示使用默认超时",
+      "custom_deny_patterns": "命令黑名单",
+      "custom_deny_patterns_hint": "用于补充额外的命令拦截规则，每行一个正则表达式。命中任意一条规则的命令都会被阻止",
+      "custom_allow_patterns": "命令白名单",
+      "custom_allow_patterns_hint": "用于补充额外的命令放行规则，每行一个正则表达式。命中任意一条规则的命令会跳过黑名单检查，但仍受其他安全限制约束",
+      "custom_patterns_placeholder": "^rm\\s+-rf\\b\n^git\\s+push\\b",
+      "pattern_detector_title": "规则检测工具",
+      "pattern_detector_hint": "输入命令以检测其是否匹配黑名单或白名单规则",
+      "pattern_detector_input_placeholder": "输入要检测的命令，例如 rm -rf /tmp",
+      "pattern_detector_test_button": "检测",
+      "pattern_detector_result_allowed": "允许（匹配白名单）",
+      "pattern_detector_result_blocked": "阻止（匹配黑名单）",
+      "pattern_detector_result_no_match": "无匹配（将使用默认规则）",
+      "allow_shell_execution": "允许定时任务运行命令",
+      "allow_shell_execution_hint": "开启后，定时任务默认允许运行命令。关闭后，必须显式传入 command_confirm=true 才能创建运行命令的定时任务",
+      "cron_exec_timeout": "定时命令超时（分钟）",
+      "cron_exec_timeout_hint": "定时任务中命令的最长运行时间。设置为 0 表示不限制超时",
+      "max_tokens": "最大 Token 数",
+      "max_tokens_hint": "单次模型响应允许的最大 Token 数",
+      "context_window": "上下文窗口",
+      "context_window_hint": "模型输入上下文容量（Token 数）。留空使用默认值（最大 Token 数的 4 倍）",
+      "max_tool_iterations": "最大工具迭代次数",
+      "max_tool_iterations_hint": "单个任务中允许的工具调用循环上限",
+      "summarize_threshold": "触发摘要的消息阈值",
+      "summarize_threshold_hint": "消息数量达到该值后开始触发摘要",
+      "summarize_token_percent": "摘要目标 Token 百分比",
+      "summarize_token_percent_hint": "在触发会话摘要时使用",
+      "session_scope": "会话隔离范围",
+      "session_scope_hint": "定义不同用户/频道之间如何隔离会话上下文",
+      "session_scope_per_channel_peer": "按频道+用户隔离",
+      "session_scope_per_channel_peer_desc": "同一频道内不同用户使用独立上下文",
+      "session_scope_per_channel": "按频道隔离",
+      "session_scope_per_channel_desc": "同一频道内共享一个上下文",
+      "session_scope_per_peer": "按用户隔离",
+      "session_scope_per_peer_desc": "同一用户跨频道共享一个上下文",
+      "session_scope_global": "全局共享",
+      "session_scope_global_desc": "所有消息共用一个全局上下文",
+      "heartbeat_enabled": "心跳开关",
+      "heartbeat_enabled_hint": "按间隔发送系统心跳",
+      "heartbeat_interval": "心跳间隔（分钟）",
+      "heartbeat_interval_hint": "两次心跳发送之间的分钟间隔",
+      "devices_enabled": "启用设备功能",
+      "devices_enabled_hint": "启用与本机硬件设备相关的能力",
+      "monitor_usb": "监听 USB",
+      "monitor_usb_hint": "在启用设备功能时，监听 USB 插拔事件",
+      "autostart_label": "开机自启",
+      "autostart_hint": "登录系统后自动启动 PicoClaw Web",
+      "autostart_unsupported": "当前平台不支持开机自启",
+      "autostart_load_error": "加载开机自启状态失败",
+      "server_port": "服务端口",
+      "server_port_hint": "PicoClaw Web 的 HTTP 监听端口",
+      "launcher_section_hint": "此分组中的改动需要在重启 launcher 后生效",
+      "gateway_restart_hint": "这组配置保存后，需要重启服务才能正式生效。",
+      "dashboard_password": "登录密码",
+      "dashboard_password_hint": "设置新的登录密码",
+      "dashboard_password_placeholder": "至少 8 个字符",
+      "dashboard_password_confirm": "确认新密码",
+      "dashboard_password_confirm_hint": "再次输入新的登录密码",
+      "dashboard_password_confirm_placeholder": "再次输入密码",
+      "dashboard_password_required": "请输入并确认新的登录密码",
+      "dashboard_password_mismatch": "两次输入的登录密码不一致",
+      "dashboard_password_min_length": "登录密码至少需要 8 个字符",
+      "lan_access": "启用局域网访问",
+      "lan_access_hint": "允许局域网中的其他设备访问当前服务",
+      "allowed_cidrs": "允许访问网段",
+      "allowed_cidrs_hint": "仅允许这些 CIDR 网段的客户端访问服务。可按行或逗号分隔；留空表示允许所有来源",
+      "allowed_cidrs_placeholder": "192.168.1.0/24\n10.0.0.0/8",
+      "sections": {
+        "agent": "智能体",
+        "runtime": "运行时",
+        "exec": "运行命令",
+        "cron": "定时任务",
+        "launcher": "启动器",
+        "devices": "设备"
+      },
+      "open_raw": "原始配置",
+      "back_to_visual": "可视化配置",
+      "raw_json_title": "原始 JSON 配置",
+      "json_placeholder": "请输入有效的 JSON 配置...",
+      "save_success": "配置保存成功",
+      "save_error": "配置保存失败",
+      "reset_confirm_title": "重置更改",
+      "reset_confirm_desc": "您确定要重置回上次保存的状态吗？",
+      "reset_success": "更改已重置为上次保存的状态",
+      "invalid_json": "JSON 格式无效",
+      "format_success": "JSON 格式化成功",
+      "format_error": "JSON 格式无效",
+      "format": "格式化",
+      "unsaved_changes": "您有未保存的更改"
+    },
+    "logs": {
+      "log_level_error": "更新日志等级失败。",
+      "clear": "清空日志",
+      "empty": "等待日志中..."
+    }
+  },
+  "tour": {
+    "skip": "跳过引导",
+    "prev": "上一步",
+    "next": "下一步",
+    "finish": "完成",
+    "welcome": {
+      "title": "欢迎使用 PicoClaw",
+      "description": "PicoClaw 是一个强大的 AI 助手平台。让我们花几秒钟时间，帮您完成基础配置。"
+    },
+    "models": {
+      "title": "配置模型",
+      "description": "点击左侧「模型」菜单，为 AI 服务商配置 API Key。只有配置好的模型才能用于对话。"
+    },
+    "gateway": {
+      "title": "启动服务",
+      "description": "配置好模型后，点击顶部的「启动服务」按钮，即可开始与 AI 对话。"
+    },
+    "docs": {
+      "title": "查看文档",
+      "description": "需要更多帮助？点击右上角的文档按钮，查看详细的使用文档和配置指南。"
+    }
+  }
+}

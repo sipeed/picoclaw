@@ -3,6 +3,7 @@ package tools
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -225,5 +226,43 @@ func TestToolResultJSONStructure(t *testing.T) {
 	}
 	if parsed["silent"] != false {
 		t.Errorf("Expected silent false, got %v", parsed["silent"])
+	}
+}
+
+func TestToolResultContentForLLM_AppendsHandledDeliveryNote(t *testing.T) {
+	result := MediaResult("Screenshot attached.", []string{"media://example"}).WithResponseHandled()
+
+	content := result.ContentForLLM()
+	if !strings.Contains(content, "Screenshot attached.") {
+		t.Fatalf("expected original content in ContentForLLM, got %q", content)
+	}
+	if !strings.Contains(content, handledToolLLMNote) {
+		t.Fatalf("expected handled delivery note in ContentForLLM, got %q", content)
+	}
+}
+
+func TestToolResultContentForLLM_UsesHandledDeliveryNoteWhenEmpty(t *testing.T) {
+	result := (&ToolResult{}).WithResponseHandled()
+
+	if got := result.ContentForLLM(); got != handledToolLLMNote {
+		t.Fatalf("ContentForLLM() = %q, want %q", got, handledToolLLMNote)
+	}
+}
+
+func TestToolResultContentForLLM_AppendsArtifactPaths(t *testing.T) {
+	result := &ToolResult{
+		ForLLM:       "Artifact created.",
+		ArtifactTags: []string{"[file:/tmp/example.png]"},
+	}
+
+	content := result.ContentForLLM()
+	if !strings.Contains(content, "Artifact created.") {
+		t.Fatalf("expected original content in ContentForLLM, got %q", content)
+	}
+	if !strings.Contains(content, "Local artifact paths: [file:/tmp/example.png]") {
+		t.Fatalf("expected artifact path note in ContentForLLM, got %q", content)
+	}
+	if !strings.Contains(content, artifactPathsLLMNote) {
+		t.Fatalf("expected artifact guidance note in ContentForLLM, got %q", content)
 	}
 }

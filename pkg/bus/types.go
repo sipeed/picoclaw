@@ -1,11 +1,5 @@
 package bus
 
-// Peer identifies the routing peer for a message (direct, group, channel, etc.)
-type Peer struct {
-	Kind string `json:"kind"` // "direct" | "group" | "channel" | ""
-	ID   string `json:"id"`
-}
-
 // SenderInfo provides structured sender identity information.
 type SenderInfo struct {
 	Platform    string `json:"platform,omitempty"`     // "telegram", "discord", "slack", ...
@@ -15,18 +9,65 @@ type SenderInfo struct {
 	DisplayName string `json:"display_name,omitempty"` // display name
 }
 
+// InboundContext captures the normalized, platform-agnostic facts about an
+// inbound message. This is the source of truth for routing and session
+// allocation.
+type InboundContext struct {
+	Channel string `json:"channel"`
+	Account string `json:"account,omitempty"`
+
+	ChatID   string `json:"chat_id"`
+	ChatType string `json:"chat_type,omitempty"` // direct / group / channel
+	TopicID  string `json:"topic_id,omitempty"`
+
+	SpaceID   string `json:"space_id,omitempty"`
+	SpaceType string `json:"space_type,omitempty"` // guild / team / workspace / tenant
+
+	SenderID  string `json:"sender_id"`
+	MessageID string `json:"message_id,omitempty"`
+
+	Mentioned bool `json:"mentioned,omitempty"`
+
+	ReplyToMessageID string `json:"reply_to_message_id,omitempty"`
+	ReplyToSenderID  string `json:"reply_to_sender_id,omitempty"`
+
+	ReplyHandles map[string]string `json:"reply_handles,omitempty"`
+	Raw          map[string]string `json:"raw,omitempty"`
+}
+
 type InboundMessage struct {
-	Channel    string            `json:"channel"`
-	SenderID   string            `json:"sender_id"`
-	Sender     SenderInfo        `json:"sender"`
-	ChatID     string            `json:"chat_id"`
-	Content    string            `json:"content"`
-	Media      []string          `json:"media,omitempty"`
-	Peer       Peer              `json:"peer"`                  // routing peer
-	MessageID  string            `json:"message_id,omitempty"`  // platform message ID
-	MediaScope string            `json:"media_scope,omitempty"` // media lifecycle scope
-	SessionKey string            `json:"session_key"`
-	Metadata   map[string]string `json:"metadata,omitempty"`
+	Context    InboundContext `json:"context"`
+	Sender     SenderInfo     `json:"sender"`
+	Content    string         `json:"content"`
+	Media      []string       `json:"media,omitempty"`
+	MediaScope string         `json:"media_scope,omitempty"` // media lifecycle scope
+	SessionKey string         `json:"session_key"`
+
+	// Convenience mirrors derived from Context for runtime consumers.
+	Channel   string `json:"channel"`
+	SenderID  string `json:"sender_id"`
+	ChatID    string `json:"chat_id"`
+	MessageID string `json:"message_id,omitempty"` // platform message ID
+}
+
+// OutboundScope captures the structured session scope associated with an
+// outbound turn result without depending on the session package.
+type OutboundScope struct {
+	Version    int               `json:"version,omitempty"`
+	AgentID    string            `json:"agent_id,omitempty"`
+	Channel    string            `json:"channel,omitempty"`
+	Account    string            `json:"account,omitempty"`
+	Dimensions []string          `json:"dimensions,omitempty"`
+	Values     map[string]string `json:"values,omitempty"`
+}
+
+// ContextUsage describes how much of the model's context window the current
+// session consumes, and how far it is from triggering compression.
+type ContextUsage struct {
+	UsedTokens       int `json:"used_tokens"`
+	TotalTokens      int `json:"total_tokens"`       // model context window
+	CompressAtTokens int `json:"compress_at_tokens"` // threshold that triggers compression
+	UsedPercent      int `json:"used_percent"`       // 0-100
 }
 
 // Outbound message type constants identify the kind of outbound message.
@@ -38,9 +79,15 @@ const (
 )
 
 type OutboundMessage struct {
-	Channel string `json:"channel"`
-	ChatID  string `json:"chat_id"`
-	Content string `json:"content"`
+	Channel          string         `json:"channel"`
+	ChatID           string         `json:"chat_id"`
+	Context          InboundContext `json:"context"`
+	AgentID          string         `json:"agent_id,omitempty"`
+	SessionKey       string         `json:"session_key,omitempty"`
+	Scope            *OutboundScope `json:"scope,omitempty"`
+	Content          string         `json:"content"`
+	ReplyToMessageID string         `json:"reply_to_message_id,omitempty"`
+	ContextUsage     *ContextUsage  `json:"context_usage,omitempty"`
 
 	// Type distinguishes final responses from progress/escalation updates.
 	// Empty string (default) means final response. Channels that don't support
@@ -61,7 +108,7 @@ type OutboundMessage struct {
 
 // OutboundProgress carries progress update details.
 type OutboundProgress struct {
-	Status     string `json:"status"`               // e.g. "thinking"
+	Status     string `json:"status"`
 	ToolName   string `json:"toolName,omitempty"`
 	StepNumber int    `json:"stepNumber,omitempty"`
 	Message    string `json:"message,omitempty"`
@@ -102,7 +149,33 @@ type MediaPart struct {
 
 // OutboundMediaMessage carries media attachments from Agent to channels via the bus.
 type OutboundMediaMessage struct {
-	Channel string      `json:"channel"`
-	ChatID  string      `json:"chat_id"`
-	Parts   []MediaPart `json:"parts"`
+	Channel    string         `json:"channel"`
+	ChatID     string         `json:"chat_id"`
+	Context    InboundContext `json:"context"`
+	AgentID    string         `json:"agent_id,omitempty"`
+	SessionKey string         `json:"session_key,omitempty"`
+	Scope      *OutboundScope `json:"scope,omitempty"`
+	Parts      []MediaPart    `json:"parts"`
+}
+
+// AudioChunk represents a chunk of streaming voice data.
+type AudioChunk struct {
+	SessionID  string `json:"session_id"`
+	SpeakerID  string `json:"speaker_id"` // User ID or SSRC
+	ChatID     string `json:"chat_id"`    // Where to respond
+	Channel    string `json:"channel"`    // Source channel type (e.g. "discord")
+	Sequence   uint64 `json:"sequence"`
+	Timestamp  uint32 `json:"timestamp"`
+	SampleRate int    `json:"sample_rate"`
+	Channels   int    `json:"channels"`
+	Format     string `json:"format"` // "opus", "pcm", etc
+	Data       []byte `json:"data"`
+}
+
+// VoiceControl represents state or commands for voice sessions.
+type VoiceControl struct {
+	SessionID string `json:"session_id"`
+	ChatID    string `json:"chat_id"`
+	Type      string `json:"type"`   // "state", "command"
+	Action    string `json:"action"` // "idle", "listening", "start", "stop", "leave"
 }

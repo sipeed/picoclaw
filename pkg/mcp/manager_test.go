@@ -2,14 +2,21 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 )
 
 func TestLoadEnvFile(t *testing.T) {
@@ -136,6 +143,22 @@ func TestLoadEnvFileNotFound(t *testing.T) {
 	}
 }
 
+func TestExpandHomeCommandPath(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	want := filepath.Join(homeDir, "bin", "my-mcp")
+	got := expandHomeCommandPath("~" + string(os.PathSeparator) + filepath.Join("bin", "my-mcp"))
+	if got != want {
+		t.Fatalf("expandHomeCommandPath() = %q, want %q", got, want)
+	}
+
+	if got := expandHomeCommandPath("npx"); got != "npx" {
+		t.Fatalf("expandHomeCommandPath() should leave bare commands unchanged, got %q", got)
+	}
+}
+
 func TestEnvFilePriority(t *testing.T) {
 	// Create a temporary .env file
 	tmpDir := t.TempDir()
@@ -227,6 +250,95 @@ func TestNewManager_InitialState(t *testing.T) {
 	}
 }
 
+func TestConnectServerPublishesRuntimeEvents(t *testing.T) {
+	originalConnectServerFunc := connectServerFunc
+	t.Cleanup(func() {
+		connectServerFunc = originalConnectServerFunc
+	})
+
+	eventBus := runtimeevents.NewBus()
+	defer func() {
+		if err := eventBus.Close(); err != nil {
+			t.Errorf("event bus close failed: %v", err)
+		}
+	}()
+
+	_, eventsCh, err := eventBus.Channel().OfKind(
+		runtimeevents.KindMCPServerConnected,
+		runtimeevents.KindMCPServerFailed,
+	).SubscribeChan(t.Context(), runtimeevents.SubscribeOptions{Name: "mcp-events", Buffer: 2})
+	if err != nil {
+		t.Fatalf("SubscribeChan failed: %v", err)
+	}
+
+	connectServerFunc = func(
+		_ context.Context,
+		name string,
+		cfg config.MCPServerConfig,
+	) (*ServerConnection, error) {
+		if name == "bad" {
+			return nil, fmt.Errorf("connect failed")
+		}
+		return &ServerConnection{
+			Name:   name,
+			Config: cfg,
+			Tools:  []*sdkmcp.Tool{{Name: "echo"}},
+		}, nil
+	}
+
+	mgr := NewManager(WithRuntimeEvents(eventBus))
+	err = mgr.ConnectServer(context.Background(), "good", config.MCPServerConfig{
+		Type:    "stdio",
+		Command: "echo",
+	})
+	if err != nil {
+		t.Fatalf("ConnectServer(good) error = %v", err)
+	}
+	connected := receiveMCPRuntimeEvent(t, eventsCh)
+	if connected.Kind != runtimeevents.KindMCPServerConnected ||
+		connected.Source.Name != "good" ||
+		connected.Severity != runtimeevents.SeverityInfo {
+		t.Fatalf("connected event = %+v", connected)
+	}
+	if connected.Attrs["server"] != "good" ||
+		connected.Attrs["type"] != "stdio" ||
+		connected.Attrs["tool_count"] != 1 {
+		t.Fatalf("connected attrs = %#v", connected.Attrs)
+	}
+
+	err = mgr.ConnectServer(context.Background(), "bad", config.MCPServerConfig{
+		Type:    "stdio",
+		Command: "echo",
+	})
+	if err == nil {
+		t.Fatal("expected ConnectServer(bad) to fail")
+	}
+	failed := receiveMCPRuntimeEvent(t, eventsCh)
+	if failed.Kind != runtimeevents.KindMCPServerFailed ||
+		failed.Source.Name != "bad" ||
+		failed.Severity != runtimeevents.SeverityError {
+		t.Fatalf("failed event = %+v", failed)
+	}
+	if failed.Attrs["server"] != "bad" || failed.Attrs["error"] != "connect failed" {
+		t.Fatalf("failed attrs = %#v", failed.Attrs)
+	}
+}
+
+func receiveMCPRuntimeEvent(t *testing.T, ch <-chan runtimeevents.Event) runtimeevents.Event {
+	t.Helper()
+
+	select {
+	case evt, ok := <-ch:
+		if !ok {
+			t.Fatal("runtime event channel closed before expected event")
+		}
+		return evt
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for runtime event")
+		return runtimeevents.Event{}
+	}
+}
+
 func TestLoadFromMCPConfig_DisabledOrEmptyServers(t *testing.T) {
 	mgr := NewManager()
 
@@ -296,6 +408,81 @@ func TestCallTool_ErrorsForClosedOrMissingServer(t *testing.T) {
 	})
 }
 
+func TestCallTool_ReconnectsWhenHTTPServerLosesSession(t *testing.T) {
+	originalConnectServerFunc := connectServerFunc
+	t.Cleanup(func() {
+		connectServerFunc = originalConnectServerFunc
+	})
+
+	staleConn, staleTransport, err := newScriptedServerConnection(
+		"session-1",
+		nil,
+		fmt.Errorf(`sending "tools/call": failed to connect (session ID: session-1): %w`, sdkmcp.ErrSessionMissing),
+	)
+	if err != nil {
+		t.Fatalf("newScriptedServerConnection(stale) error = %v", err)
+	}
+	freshConn, freshTransport, err := newScriptedServerConnection(
+		"session-2",
+		&sdkmcp.CallToolResult{
+			Content: []sdkmcp.Content{
+				&sdkmcp.TextContent{Text: "reconnected"},
+			},
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("newScriptedServerConnection(fresh) error = %v", err)
+	}
+
+	connectCalls := 0
+	connectServerFunc = func(ctx context.Context, name string, cfg config.MCPServerConfig) (*ServerConnection, error) {
+		connectCalls++
+		if connectCalls == 1 {
+			return freshConn, nil
+		}
+		return nil, fmt.Errorf("unexpected reconnect attempt %d", connectCalls)
+	}
+
+	mgr := NewManager()
+	mgr.servers["flaky"] = staleConn
+
+	result, err := mgr.CallTool(context.Background(), "flaky", "echo", map[string]any{
+		"query": "hello",
+	})
+	if err != nil {
+		t.Fatalf("CallTool() error = %v", err)
+	}
+	if result == nil || len(result.Content) != 1 {
+		t.Fatalf("CallTool() returned unexpected content: %#v", result)
+	}
+
+	text, ok := result.Content[0].(*sdkmcp.TextContent)
+	if !ok {
+		t.Fatalf("CallTool() content type = %T, want *sdkmcp.TextContent", result.Content[0])
+	}
+	if text.Text != "reconnected" {
+		t.Fatalf("CallTool() text = %q, want %q", text.Text, "reconnected")
+	}
+
+	conn, ok := mgr.GetServer("flaky")
+	if !ok {
+		t.Fatal("expected flaky server to remain connected after reconnect")
+	}
+	if conn.Session.ID() != "session-2" {
+		t.Fatalf("Session.ID() = %q, want %q", conn.Session.ID(), "session-2")
+	}
+	if connectCalls != 1 {
+		t.Fatalf("connectCalls = %d, want 1", connectCalls)
+	}
+	if staleTransport.toolCallCalls != 1 {
+		t.Fatalf("stale toolCallCalls = %d, want 1", staleTransport.toolCallCalls)
+	}
+	if freshTransport.toolCallCalls != 1 {
+		t.Fatalf("fresh toolCallCalls = %d, want 1", freshTransport.toolCallCalls)
+	}
+}
+
 func TestClose_IdempotentOnEmptyManager(t *testing.T) {
 	mgr := NewManager()
 
@@ -305,4 +492,139 @@ func TestClose_IdempotentOnEmptyManager(t *testing.T) {
 	if err := mgr.Close(); err != nil {
 		t.Fatalf("second close should be idempotent, got: %v", err)
 	}
+}
+
+func newScriptedServerConnection(
+	sessionID string,
+	toolCallResult *sdkmcp.CallToolResult,
+	toolCallErr error,
+) (*ServerConnection, *scriptedTransport, error) {
+	transport := &scriptedTransport{
+		sessionID:      sessionID,
+		toolCallResult: toolCallResult,
+		toolCallErr:    toolCallErr,
+	}
+
+	client := sdkmcp.NewClient(&sdkmcp.Implementation{
+		Name:    "picoclaw-test",
+		Version: "1.0.0",
+	}, nil)
+	session, err := client.Connect(context.Background(), transport, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &ServerConnection{
+		Name:    "flaky",
+		Config:  config.MCPServerConfig{Enabled: true, Type: "http", URL: "https://example.invalid/mcp"},
+		Client:  client,
+		Session: session,
+		Tools: []*sdkmcp.Tool{
+			{
+				Name:        "echo",
+				Description: "Echo test tool",
+				InputSchema: map[string]any{"type": "object"},
+			},
+		},
+	}, transport, nil
+}
+
+type scriptedTransport struct {
+	sessionID      string
+	toolCallResult *sdkmcp.CallToolResult
+	toolCallErr    error
+
+	mu            sync.Mutex
+	toolCallCalls int
+	closed        bool
+	incoming      chan jsonrpc.Message
+}
+
+func (t *scriptedTransport) Connect(context.Context) (sdkmcp.Connection, error) {
+	if t.incoming == nil {
+		t.incoming = make(chan jsonrpc.Message, 4)
+	}
+	return t, nil
+}
+
+func (t *scriptedTransport) Read(ctx context.Context) (jsonrpc.Message, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case msg, ok := <-t.incoming:
+		if !ok {
+			return nil, io.EOF
+		}
+		return msg, nil
+	}
+}
+
+func (t *scriptedTransport) Write(ctx context.Context, msg jsonrpc.Message) error {
+	req, ok := msg.(*jsonrpc.Request)
+	if !ok {
+		return nil
+	}
+
+	switch req.Method {
+	case "initialize":
+		payload, err := json.Marshal(&sdkmcp.InitializeResult{
+			ProtocolVersion: "2025-11-25",
+			ServerInfo: &sdkmcp.Implementation{
+				Name:    "scripted-test-server",
+				Version: "1.0.0",
+			},
+			Capabilities: &sdkmcp.ServerCapabilities{
+				Tools: &sdkmcp.ToolCapabilities{},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case t.incoming <- &jsonrpc.Response{ID: req.ID, Result: payload}:
+			return nil
+		}
+
+	case "notifications/initialized":
+		return nil
+
+	case "tools/call":
+		t.mu.Lock()
+		t.toolCallCalls++
+		t.mu.Unlock()
+
+		if t.toolCallErr != nil {
+			return t.toolCallErr
+		}
+
+		payload, err := json.Marshal(t.toolCallResult)
+		if err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case t.incoming <- &jsonrpc.Response{ID: req.ID, Result: payload}:
+			return nil
+		}
+	}
+
+	return fmt.Errorf("unexpected method %q", req.Method)
+}
+
+func (t *scriptedTransport) Close() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed {
+		return nil
+	}
+	t.closed = true
+	close(t.incoming)
+	return nil
+}
+
+func (t *scriptedTransport) SessionID() string {
+	return t.sessionID
 }

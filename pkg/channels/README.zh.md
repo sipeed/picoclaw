@@ -252,28 +252,28 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 **3e. Send 方法的错误返回**
 
 ```go
-// 旧代码：返回普通 error
+// 旧代码：只返回 error
 func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
     if !c.running { return fmt.Errorf("not running") }
     // ...
     if err != nil { return err }
 }
 
-// 新代码：必须返回哨兵错误，供 Manager 判断重试策略
-func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+// 新代码：返回投递后的消息 ID，以及供 Manager 判断重试策略的哨兵错误
+func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
     if !c.IsRunning() {
-        return channels.ErrNotRunning    // ← Manager 不会重试
+        return nil, channels.ErrNotRunning    // ← Manager 不会重试
     }
     // ...
     if err != nil {
         // 使用 ClassifySendError 根据 HTTP 状态码包装错误
-        return channels.ClassifySendError(statusCode, err)
+        return nil, channels.ClassifySendError(statusCode, err)
         // 或手动包装：
-        // return fmt.Errorf("%w: %v", channels.ErrTemporary, err)
-        // return fmt.Errorf("%w: %v", channels.ErrRateLimit, err)
-        // return fmt.Errorf("%w: %v", channels.ErrSendFailed, err)
+        // return nil, fmt.Errorf("%w: %v", channels.ErrTemporary, err)
+        // return nil, fmt.Errorf("%w: %v", channels.ErrRateLimit, err)
+        // return nil, fmt.Errorf("%w: %v", channels.ErrSendFailed, err)
     }
-    return nil
+    return []string{deliveredID}, nil // 如果拿不到 ID，也可以返回 nil, nil
 }
 ```
 
@@ -327,8 +327,13 @@ import (
 )
 
 func init() {
-    channels.RegisterFactory("telegram", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
-        return NewTelegramChannel(cfg, b)
+    channels.RegisterFactory(config.ChannelTelegram, func(channelName, channelType string, cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+        bc := cfg.Channels[channelName]
+        decoded, err := bc.GetDecoded()
+        if err != nil { return nil, err }
+        c, ok := decoded.(*config.TelegramSettings)
+        if !ok { return nil, channels.ErrSendFailed }
+        return NewTelegramChannel(bc, c, b)
     })
 }
 ```
@@ -427,8 +432,13 @@ import (
 )
 
 func init() {
-    channels.RegisterFactory("matrix", func(cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
-        return NewMatrixChannel(cfg, b)
+    channels.RegisterFactory(config.ChannelMatrix, func(channelName, channelType string, cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
+        bc := cfg.Channels[channelName]
+        decoded, err := bc.GetDecoded()
+        if err != nil { return nil, err }
+        c, ok := decoded.(*config.MatrixSettings)
+        if !ok { return nil, channels.ErrSendFailed }
+        return NewMatrixChannel(bc, c, b)
     })
 }
 ```
@@ -502,25 +512,25 @@ func (c *MatrixChannel) Stop(ctx context.Context) error {
     return nil
 }
 
-func (c *MatrixChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *MatrixChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
     // 1. 检查运行状态
     if !c.IsRunning() {
-        return channels.ErrNotRunning
+        return nil, channels.ErrNotRunning
     }
 
     // 2. 发送消息到 Matrix
-    err := c.sendToMatrix(ctx, msg.ChatID, msg.Content)
+    eventID, err := c.sendToMatrix(ctx, msg.ChatID, msg.Content)
     if err != nil {
         // 3. 必须使用错误分类包装
         //    如果你有 HTTP 状态码：
-        //    return channels.ClassifySendError(statusCode, err)
+        //    return nil, channels.ClassifySendError(statusCode, err)
         //    如果是网络错误：
-        //    return channels.ClassifyNetError(err)
+        //    return nil, channels.ClassifyNetError(err)
         //    如果需要手动分类：
-        return fmt.Errorf("%w: %v", channels.ErrTemporary, err)
+        return nil, fmt.Errorf("%w: %v", channels.ErrTemporary, err)
     }
 
-    return nil
+    return []string{eventID}, nil
 }
 
 // ========== 消息接收处理 ==========
@@ -580,9 +590,9 @@ func (c *MatrixChannel) handleIncoming(roomID, senderID, displayName, content st
 
 // ========== 内部方法 ==========
 
-func (c *MatrixChannel) sendToMatrix(ctx context.Context, roomID, content string) error {
+func (c *MatrixChannel) sendToMatrix(ctx context.Context, roomID, content string) (string, error) {
     // 实际的 Matrix SDK 调用
-    return nil
+    return "event-id", nil
 }
 ```
 
@@ -594,16 +604,17 @@ func (c *MatrixChannel) sendToMatrix(ctx context.Context, roomID, content string
 
 ```go
 // 如果平台支持发送图片/文件/音频/视频
-func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
     if !c.IsRunning() {
-        return channels.ErrNotRunning
+        return nil, channels.ErrNotRunning
     }
 
     store := c.GetMediaStore()
     if store == nil {
-        return fmt.Errorf("no media store: %w", channels.ErrSendFailed)
+        return nil, fmt.Errorf("no media store: %w", channels.ErrSendFailed)
     }
 
+    var messageIDs []string
     for _, part := range msg.Parts {
         localPath, err := store.Resolve(part.Ref)
         if err != nil {
@@ -620,8 +631,10 @@ func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
         default:
             // 上传文件到 Matrix
         }
+        // 如果 API 能返回平台消息 ID，就在这里追加。
+        // messageIDs = append(messageIDs, uploadedMessageID)
     }
-    return nil
+    return messageIDs, nil
 }
 ```
 
@@ -769,41 +782,58 @@ if c.owner != nil && c.placeholderRecorder != nil {
 
 ### 3.5 注册配置和 Gateway 接入
 
-#### 在 `pkg/config/config.go` 中添加配置
+#### 添加配置入口
+
+Channels 现在使用统一的 map 类型配置（`map[string]*config.Channel`）。
+每个 channel 条目将通用字段（`enabled`、`type`、`allow_from` 等）放在顶层，
+channel 特定的设置放在 `settings` 子键中：
+
+```json
+{
+  "channels": {
+    "matrix": {
+      "enabled": true,
+      "type": "matrix",
+      "allow_from": ["@user:example.com"],
+      "settings": {
+        "home_server": "https://matrix.org",
+        "user_id": "@bot:example.com",
+        "access_token": "enc://..."
+      }
+    }
+  }
+}
+```
+
+安全字段（token、密码、API 密钥）放入 `.security.yml`：
+
+```yaml
+channels:
+  matrix:
+    access_token: "your-matrix-access-token"
+```
+
+Channel 类型必须在 `pkg/config/config_channel.go` 的 `channelSettingsFactory` 中注册：
 
 ```go
-type ChannelsConfig struct {
+var channelSettingsFactory = map[string]any{
     // ... 现有 channels
-    Matrix  MatrixChannelConfig  `json:"matrix"`
-}
-
-type MatrixChannelConfig struct {
-    Enabled    bool     `json:"enabled"`
-    HomeServer string   `json:"home_server"`
-    Token      string   `json:"token"`
-    AllowFrom  []string `json:"allow_from"`
-    GroupTrigger GroupTriggerConfig `json:"group_trigger"`
-    Placeholder  PlaceholderConfig  `json:"placeholder"`
-    ReasoningChannelID string `json:"reasoning_channel_id"`
+    ChannelMatrix: (MatrixSettings{}),
 }
 ```
 
-#### 在 Manager.initChannels() 中添加入口
+#### 无需修改 Manager
 
-```go
-// pkg/channels/manager.go 的 initChannels() 方法中
-if m.config.Channels.Matrix.Enabled && m.config.Channels.Matrix.Token != "" {
-    m.initChannel("matrix", "Matrix")
-}
-```
+Manager 使用 `InitChannelList()` 来验证类型和解码设置，
+然后通过 `bc.Type` 查找工厂。不需要在 Manager 中添加每个 channel 的条目——
+只需注册工厂和配置条目即可。
 
-> **注意**：如果你的 channel 有多种模式（如 WhatsApp Bridge vs Native），需要在 initChannels 中根据配置分支：
+> **注意**：如果你的 channel 有多种模式（如 WhatsApp Bridge vs Native），
+> 在 `channelSettingsFactory` 中注册两种类型，并根据配置分支：
 > ```go
-> if cfg.UseNative {
->     m.initChannel("whatsapp_native", "WhatsApp Native")
-> } else {
->     m.initChannel("whatsapp", "WhatsApp")
-> }
+> // 在 config_channel.go 中：
+> ChannelWhatsApp:       (WhatsAppSettings{}),
+> ChannelWhatsAppNative: (WhatsAppSettings{}),
 > ```
 
 #### 在 Gateway 中添加 blank import
@@ -943,10 +973,29 @@ channels.WithReasoningChannelID(id)        // 设置思维链路由目标 channe
 **文件**：`pkg/channels/registry.go`
 
 ```go
-type ChannelFactory func(cfg *config.Config, bus *bus.MessageBus) (Channel, error)
+type ChannelFactory func(channelName, channelType string, cfg *config.Config, bus *bus.MessageBus) (Channel, error)
 
-func RegisterFactory(name string, f ChannelFactory)   // 子包 init() 中调用
-func getFactory(name string) (ChannelFactory, bool)    // Manager 内部调用
+func RegisterFactory(name string, f ChannelFactory)    // 子包 init() 中调用
+func getFactory(name string) (ChannelFactory, bool)     // Manager 内部调用
+func GetRegisteredFactoryNames() []string               // 返回所有已注册的工厂名称
+```
+
+为方便使用，`RegisterSafeFactory[S any]` 提供自动类型安全的设置解码：
+
+```go
+// 不使用 RegisterSafeFactory（手动 GetDecoded() + 类型断言）：
+channels.RegisterFactory(config.ChannelTelegram,
+    func(channelName, channelType string, cfg *config.Config, b *bus.MessageBus) (Channel, error) {
+        bc := cfg.Channels[channelName]
+        decoded, err := bc.GetDecoded()
+        if err != nil { return nil, err }
+        c, ok := decoded.(*config.TelegramSettings)
+        if !ok { return nil, ErrSendFailed }
+        return NewTelegramChannel(bc, c, b)
+    })
+
+// 使用 RegisterSafeFactory（同等安全，减少样板代码）：
+channels.RegisterSafeFactory(config.ChannelTelegram, NewTelegramChannel)
 ```
 
 工厂注册表使用 `sync.RWMutex` 保护，在 `init()` 阶段注册（进程启动时完成）。Manager 在 `initChannel()` 中通过名字查找工厂并调用它。
@@ -1254,8 +1303,7 @@ make test                                       # 全量测试
 | `pkg/channels/onebot/` | `"onebot"` | ReactionCapable, MediaSender |
 | `pkg/channels/dingtalk/` | `"dingtalk"` | — |
 | `pkg/channels/feishu/` | `"feishu"` | — (架构特定 build tags: `feishu_32.go` / `feishu_64.go`) |
-| `pkg/channels/wecom/` | `"wecom"` | WebhookHandler, HealthChecker |
-| `pkg/channels/wecom/` | `"wecom_app"` | MediaSender, WebhookHandler, HealthChecker |
+| `pkg/channels/wecom/` | `"wecom"` | MediaSender |
 | `pkg/channels/qq/` | `"qq"` | — |
 | `pkg/channels/whatsapp/` | `"whatsapp"` | — (Bridge 模式) |
 | `pkg/channels/whatsapp_native/` | `"whatsapp_native"` | — (原生 whatsmeow 模式) |
@@ -1270,7 +1318,7 @@ type Channel interface {
     Name() string
     Start(ctx context.Context) error
     Stop(ctx context.Context) error
-    Send(ctx context.Context, msg bus.OutboundMessage) error
+    Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error)
     IsRunning() bool
     IsAllowed(senderID string) bool
     IsAllowedSender(sender bus.SenderInfo) bool
@@ -1279,7 +1327,7 @@ type Channel interface {
 
 // ===== 可选实现 =====
 type MediaSender interface {
-    SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error
+    SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error)
 }
 
 type TypingCapable interface {
@@ -1370,7 +1418,7 @@ agentLoop.Stop()               // 停止 Agent
 
 2. **Feishu 架构特定编译**：Feishu channel 使用 build tags 区分 32 位和 64 位架构（`feishu_32.go` / `feishu_64.go`）。Feishu 使用 SDK 的 WebSocket 模式（非 HTTP webhook），因此不实现 `WebhookHandler`。
 
-3. **WeCom 有两个工厂**：`"wecom"`（Bot 模式，纯 webhook）和 `"wecom_app"`（应用模式，支持 MediaSender）分别注册。两者都实现了 `WebhookHandler` 和 `HealthChecker`。
+3. **WeCom 现在只有一个 channel**：`"wecom"` 采用 WebSocket AI Bot 实现，带路由持久化；访问控制走统一的 channel 白名单机制，不再保留旧的 webhook/app 双分支。
 
 4. **Pico Protocol**：`pkg/channels/pico/` 实现了一个自定义的 PicoClaw 原生协议 channel，通过 WebSocket webhook (`/pico/ws`) 接收消息。
 
@@ -1380,4 +1428,4 @@ agentLoop.Stop()               // 停止 Agent
 
 7. **PlaceholderConfig 的配置与实现**：`PlaceholderConfig` 出现在 6 个 channel config 中（Telegram、Discord、Slack、LINE、OneBot、Pico），但只有实现了 `PlaceholderCapable` + `MessageEditor` 的 channel（Telegram、Discord、Pico）能真正使用占位消息编辑功能。其余 channel 的 `PlaceholderConfig` 为预留字段。
 
-8. **ReasoningChannelID**：大多数 channel config 都包含 `reasoning_channel_id` 字段，用于将 LLM 的思维链（reasoning/thinking）路由到指定 channel（WhatsApp、Telegram、Feishu、Discord、MaixCam、QQ、DingTalk、Slack、LINE、OneBot、WeCom、WeComApp）。注意：`PicoConfig` 目前不包含该字段。`BaseChannel` 通过 `WithReasoningChannelID` 选项和 `ReasoningChannelID()` 方法暴露此配置。
+8. **ReasoningChannelID**：大多数 channel config 都包含 `reasoning_channel_id` 字段，用于将 LLM 的思维链（reasoning/thinking）路由到指定 channel（WhatsApp、Telegram、Feishu、Discord、MaixCam、QQ、DingTalk、Slack、LINE、OneBot、WeCom）。注意：`PicoConfig` 目前不包含该字段。`BaseChannel` 通过 `WithReasoningChannelID` 选项和 `ReasoningChannelID()` 方法暴露此配置。

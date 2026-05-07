@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 func TestLoadOpenClawConfig(t *testing.T) {
@@ -287,6 +289,20 @@ func TestConvertToPicoClaw(t *testing.T) {
 	}
 	if !foundWarning {
 		t.Log("warnings should be generated for skills, memory, cron, and unsupported channels")
+	}
+}
+
+func TestToStandardConfig_ExecAllowRemoteDefaultsTrue(t *testing.T) {
+	cfg := (&PicoClawConfig{
+		Tools: ToolsConfig{
+			Exec: ExecConfig{
+				EnableDenyPatterns: true,
+			},
+		},
+	}).ToStandardConfig()
+
+	if !cfg.Tools.Exec.AllowRemote {
+		t.Fatal("ToStandardConfig() should preserve the default tools.exec.allow_remote=true")
 	}
 }
 
@@ -683,7 +699,7 @@ func TestToStandardConfig(t *testing.T) {
 	for _, m := range stdCfg.ModelList {
 		if m.ModelName == "claude-sonnet-4-20250514" {
 			foundModel = true
-			foundAPIKey = m.APIKey
+			foundAPIKey = m.APIKey()
 			break
 		}
 	}
@@ -694,11 +710,16 @@ func TestToStandardConfig(t *testing.T) {
 		t.Errorf("expected api key 'sk-ant-test', got '%s'", foundAPIKey)
 	}
 
-	if !stdCfg.Channels.Telegram.Enabled {
+	if !stdCfg.Channels["telegram"].Enabled {
 		t.Error("telegram should be enabled")
 	}
-	if stdCfg.Channels.Telegram.Token != "test-token" {
-		t.Errorf("expected token 'test-token', got '%s'", stdCfg.Channels.Telegram.Token)
+	decoded, err := stdCfg.Channels["telegram"].GetDecoded()
+	if err != nil {
+		t.Fatalf("GetDecoded() error = %v", err)
+	}
+	if tCfg, ok := decoded.(*config.TelegramSettings); ok &&
+		tCfg.Token.String() != "test-token" {
+		t.Errorf("expected token 'test-token', got '%s'", tCfg.Token.String())
 	}
 
 	if stdCfg.Gateway.Port != 8080 {

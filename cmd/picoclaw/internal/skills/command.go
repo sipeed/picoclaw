@@ -12,7 +12,6 @@ import (
 
 type deps struct {
 	workspace    string
-	installer    *skills.SkillInstaller
 	skillsLoader *skills.SkillsLoader
 }
 
@@ -29,7 +28,6 @@ func NewSkillsCommand() *cobra.Command {
 			}
 
 			d.workspace = cfg.WorkspacePath()
-			d.installer = skills.NewSkillInstaller(d.workspace)
 
 			// get global config directory and builtin skills directory
 			globalDir := filepath.Dir(internal.GetConfigPath())
@@ -42,13 +40,6 @@ func NewSkillsCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
-	}
-
-	installerFn := func() (*skills.SkillInstaller, error) {
-		if d.installer == nil {
-			return nil, fmt.Errorf("skills installer is not initialized")
-		}
-		return d.installer, nil
 	}
 
 	loaderFn := func() (*skills.SkillsLoader, error) {
@@ -67,10 +58,10 @@ func NewSkillsCommand() *cobra.Command {
 
 	cmd.AddCommand(
 		newListCommand(loaderFn),
-		newInstallCommand(installerFn),
+		newInstallCommand(),
 		newInstallBuiltinCommand(workspaceFn),
 		newListBuiltinCommand(),
-		newRemoveCommand(installerFn),
+		newRemoveCommand(),
 		newSearchCommand(),
 		newShowCommand(loaderFn),
 	)

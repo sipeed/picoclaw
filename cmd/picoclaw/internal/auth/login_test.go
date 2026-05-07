@@ -18,6 +18,7 @@ func TestNewLoginSubCommand(t *testing.T) {
 	assert.True(t, cmd.HasFlags())
 
 	assert.NotNil(t, cmd.Flags().Lookup("device-code"))
+	assert.NotNil(t, cmd.Flags().Lookup("no-browser"))
 
 	providerFlag := cmd.Flags().Lookup("provider")
 	require.NotNil(t, providerFlag)

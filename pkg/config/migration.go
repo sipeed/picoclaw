@@ -6,8 +6,14 @@
 package config
 
 import (
-	"slices"
+	"encoding/json"
+	"fmt"
+	"os"
 	"strings"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // buildModelWithProtocol constructs a model string with protocol prefix.
@@ -21,416 +27,474 @@ func buildModelWithProtocol(protocol, model string) string {
 	return protocol + "/" + model
 }
 
-// providerMigrationConfig defines how to migrate a provider from old config to new format.
-type providerMigrationConfig struct {
-	// providerNames are the possible names used in agents.defaults.provider
-	providerNames []string
-	// protocol is the protocol prefix for the model field
-	protocol string
-	// buildConfig creates the ModelConfig from ProviderConfig
-	buildConfig func(p ProvidersConfig) (ModelConfig, bool)
+type legacyDiagnosticConfig struct {
+	Version     int                    `json:"version"`
+	Isolation   IsolationConfig        `json:"isolation,omitempty"`
+	Agents      legacyDiagnosticAgents `json:"agents,omitempty"`
+	Session     SessionConfig          `json:"session,omitempty"`
+	Channels    map[string]any         `json:"channels,omitempty"`
+	ChannelList ChannelsConfig         `json:"channel_list,omitempty"`
+	ModelList   []map[string]any       `json:"model_list,omitempty"`
+	Gateway     GatewayConfig          `json:"gateway,omitempty"`
+	Hooks       HooksConfig            `json:"hooks,omitempty"`
+	Tools       ToolsConfig            `json:"tools,omitempty"`
+	Heartbeat   HeartbeatConfig        `json:"heartbeat,omitempty"`
+	Devices     DevicesConfig          `json:"devices,omitempty"`
+	Voice       VoiceConfig            `json:"voice,omitempty"`
+	Bindings    json.RawMessage        `json:"bindings,omitempty"`
+	Providers   json.RawMessage        `json:"providers,omitempty"`
 }
 
-// ConvertProvidersToModelList converts the old ProvidersConfig to a slice of ModelConfig.
-// This enables backward compatibility with existing configurations.
-// It preserves the user's configured model from agents.defaults.model when possible.
-func ConvertProvidersToModelList(cfg *Config) []ModelConfig {
-	if cfg == nil {
-		return nil
+type legacyDiagnosticAgents struct {
+	Defaults legacyDiagnosticAgentDefaults `json:"defaults,omitempty"`
+	List     []AgentConfig                 `json:"list,omitempty"`
+	Dispatch *DispatchConfig               `json:"dispatch,omitempty"`
+}
+
+type legacyDiagnosticAgentDefaults struct {
+	AgentDefaults
+	LegacyModel string `json:"model,omitempty"`
+}
+
+func validateLegacyConfigDiagnostics(data []byte) error {
+	var cfg legacyDiagnosticConfig
+	return decodeJSONWithDiagnostics(data, &cfg, "config.json")
+}
+
+func migrateLegacyAgentDefaultsModel(m map[string]any) {
+	agents, ok := m["agents"].(map[string]any)
+	if !ok {
+		return
+	}
+	defaults, ok := agents["defaults"].(map[string]any)
+	if !ok {
+		return
+	}
+	model, hasModel := defaults["model"]
+	if !hasModel {
+		return
+	}
+	if _, hasModelName := defaults["model_name"]; !hasModelName {
+		defaults["model_name"] = model
+	}
+	delete(defaults, "model")
+}
+
+// loadConfigV1 loads a version 1 config (current schema)
+func loadConfig(data []byte) (*Config, error) {
+	cfg := DefaultConfig()
+
+	// Pre-scan the JSON to check how many model_list entries the user provided.
+	// Go's JSON decoder reuses existing slice backing-array elements rather than
+	// zero-initializing them, so fields absent from the user's JSON (e.g. api_base)
+	// would silently inherit values from the DefaultConfig template at the same
+	// index position. We only reset cfg.ModelList when the user actually provides
+	// entries; when count is 0 we keep DefaultConfig's built-in list as fallback.
+	var tmp Config
+	if err := decodeJSONWithDiagnostics(data, &tmp, "config.json"); err != nil {
+		return nil, err
+	}
+	if len(tmp.ModelList) > 0 {
+		cfg.ModelList = nil
 	}
 
-	// Get user's configured provider and model
-	userProvider := strings.ToLower(cfg.Agents.Defaults.Provider)
-	userModel := cfg.Agents.Defaults.GetModelName()
+	if err := decodeJSONWithDiagnostics(data, cfg, "config.json"); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
 
-	p := cfg.Providers
+func mergeAPIKeys(apiKey string, apiKeys []string) []string {
+	seen := make(map[string]struct{})
+	var all []string
 
-	var result []ModelConfig
-
-	// Track if we've applied the legacy model name fix (only for first provider)
-	legacyModelNameApplied := false
-
-	// Define migration rules for each provider
-	migrations := []providerMigrationConfig{
-		{
-			providerNames: []string{"openai", "gpt"},
-			protocol:      "openai",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.OpenAI.APIKey == "" && p.OpenAI.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "openai",
-					Model:          "openai/gpt-5.2",
-					APIKey:         p.OpenAI.APIKey,
-					APIBase:        p.OpenAI.APIBase,
-					Proxy:          p.OpenAI.Proxy,
-					RequestTimeout: p.OpenAI.RequestTimeout,
-					AuthMethod:     p.OpenAI.AuthMethod,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"anthropic", "claude"},
-			protocol:      "anthropic",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.Anthropic.APIKey == "" && p.Anthropic.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "anthropic",
-					Model:          "anthropic/claude-sonnet-4.6",
-					APIKey:         p.Anthropic.APIKey,
-					APIBase:        p.Anthropic.APIBase,
-					Proxy:          p.Anthropic.Proxy,
-					RequestTimeout: p.Anthropic.RequestTimeout,
-					AuthMethod:     p.Anthropic.AuthMethod,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"litellm"},
-			protocol:      "litellm",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.LiteLLM.APIKey == "" && p.LiteLLM.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "litellm",
-					Model:          "litellm/auto",
-					APIKey:         p.LiteLLM.APIKey,
-					APIBase:        p.LiteLLM.APIBase,
-					Proxy:          p.LiteLLM.Proxy,
-					RequestTimeout: p.LiteLLM.RequestTimeout,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"openrouter"},
-			protocol:      "openrouter",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.OpenRouter.APIKey == "" && p.OpenRouter.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "openrouter",
-					Model:          "openrouter/auto",
-					APIKey:         p.OpenRouter.APIKey,
-					APIBase:        p.OpenRouter.APIBase,
-					Proxy:          p.OpenRouter.Proxy,
-					RequestTimeout: p.OpenRouter.RequestTimeout,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"groq"},
-			protocol:      "groq",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.Groq.APIKey == "" && p.Groq.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "groq",
-					Model:          "groq/llama-3.1-70b-versatile",
-					APIKey:         p.Groq.APIKey,
-					APIBase:        p.Groq.APIBase,
-					Proxy:          p.Groq.Proxy,
-					RequestTimeout: p.Groq.RequestTimeout,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"zhipu", "glm"},
-			protocol:      "zhipu",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.Zhipu.APIKey == "" && p.Zhipu.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "zhipu",
-					Model:          "zhipu/glm-4",
-					APIKey:         p.Zhipu.APIKey,
-					APIBase:        p.Zhipu.APIBase,
-					Proxy:          p.Zhipu.Proxy,
-					RequestTimeout: p.Zhipu.RequestTimeout,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"vllm"},
-			protocol:      "vllm",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.VLLM.APIKey == "" && p.VLLM.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "vllm",
-					Model:          "vllm/auto",
-					APIKey:         p.VLLM.APIKey,
-					APIBase:        p.VLLM.APIBase,
-					Proxy:          p.VLLM.Proxy,
-					RequestTimeout: p.VLLM.RequestTimeout,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"gemini", "google"},
-			protocol:      "gemini",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.Gemini.APIKey == "" && p.Gemini.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "gemini",
-					Model:          "gemini/gemini-pro",
-					APIKey:         p.Gemini.APIKey,
-					APIBase:        p.Gemini.APIBase,
-					Proxy:          p.Gemini.Proxy,
-					RequestTimeout: p.Gemini.RequestTimeout,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"nvidia"},
-			protocol:      "nvidia",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.Nvidia.APIKey == "" && p.Nvidia.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "nvidia",
-					Model:          "nvidia/meta/llama-3.1-8b-instruct",
-					APIKey:         p.Nvidia.APIKey,
-					APIBase:        p.Nvidia.APIBase,
-					Proxy:          p.Nvidia.Proxy,
-					RequestTimeout: p.Nvidia.RequestTimeout,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"ollama"},
-			protocol:      "ollama",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.Ollama.APIKey == "" && p.Ollama.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "ollama",
-					Model:          "ollama/llama3",
-					APIKey:         p.Ollama.APIKey,
-					APIBase:        p.Ollama.APIBase,
-					Proxy:          p.Ollama.Proxy,
-					RequestTimeout: p.Ollama.RequestTimeout,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"moonshot", "kimi"},
-			protocol:      "moonshot",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.Moonshot.APIKey == "" && p.Moonshot.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "moonshot",
-					Model:          "moonshot/kimi",
-					APIKey:         p.Moonshot.APIKey,
-					APIBase:        p.Moonshot.APIBase,
-					Proxy:          p.Moonshot.Proxy,
-					RequestTimeout: p.Moonshot.RequestTimeout,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"shengsuanyun"},
-			protocol:      "shengsuanyun",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.ShengSuanYun.APIKey == "" && p.ShengSuanYun.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "shengsuanyun",
-					Model:          "shengsuanyun/auto",
-					APIKey:         p.ShengSuanYun.APIKey,
-					APIBase:        p.ShengSuanYun.APIBase,
-					Proxy:          p.ShengSuanYun.Proxy,
-					RequestTimeout: p.ShengSuanYun.RequestTimeout,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"deepseek"},
-			protocol:      "deepseek",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.DeepSeek.APIKey == "" && p.DeepSeek.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "deepseek",
-					Model:          "deepseek/deepseek-chat",
-					APIKey:         p.DeepSeek.APIKey,
-					APIBase:        p.DeepSeek.APIBase,
-					Proxy:          p.DeepSeek.Proxy,
-					RequestTimeout: p.DeepSeek.RequestTimeout,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"cerebras"},
-			protocol:      "cerebras",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.Cerebras.APIKey == "" && p.Cerebras.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "cerebras",
-					Model:          "cerebras/llama-3.3-70b",
-					APIKey:         p.Cerebras.APIKey,
-					APIBase:        p.Cerebras.APIBase,
-					Proxy:          p.Cerebras.Proxy,
-					RequestTimeout: p.Cerebras.RequestTimeout,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"vivgrid"},
-			protocol:      "vivgrid",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.Vivgrid.APIKey == "" && p.Vivgrid.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "vivgrid",
-					Model:          "vivgrid/auto",
-					APIKey:         p.Vivgrid.APIKey,
-					APIBase:        p.Vivgrid.APIBase,
-					Proxy:          p.Vivgrid.Proxy,
-					RequestTimeout: p.Vivgrid.RequestTimeout,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"volcengine", "doubao"},
-			protocol:      "volcengine",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.VolcEngine.APIKey == "" && p.VolcEngine.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "volcengine",
-					Model:          "volcengine/doubao-pro",
-					APIKey:         p.VolcEngine.APIKey,
-					APIBase:        p.VolcEngine.APIBase,
-					Proxy:          p.VolcEngine.Proxy,
-					RequestTimeout: p.VolcEngine.RequestTimeout,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"github_copilot", "copilot"},
-			protocol:      "github-copilot",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.GitHubCopilot.APIKey == "" && p.GitHubCopilot.APIBase == "" && p.GitHubCopilot.ConnectMode == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:   "github-copilot",
-					Model:       "github-copilot/gpt-5.2",
-					APIBase:     p.GitHubCopilot.APIBase,
-					ConnectMode: p.GitHubCopilot.ConnectMode,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"antigravity"},
-			protocol:      "antigravity",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.Antigravity.APIKey == "" && p.Antigravity.AuthMethod == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:  "antigravity",
-					Model:      "antigravity/gemini-2.0-flash",
-					APIKey:     p.Antigravity.APIKey,
-					AuthMethod: p.Antigravity.AuthMethod,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"qwen", "tongyi"},
-			protocol:      "qwen",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.Qwen.APIKey == "" && p.Qwen.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "qwen",
-					Model:          "qwen/qwen-max",
-					APIKey:         p.Qwen.APIKey,
-					APIBase:        p.Qwen.APIBase,
-					Proxy:          p.Qwen.Proxy,
-					RequestTimeout: p.Qwen.RequestTimeout,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"mistral"},
-			protocol:      "mistral",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.Mistral.APIKey == "" && p.Mistral.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "mistral",
-					Model:          "mistral/mistral-small-latest",
-					APIKey:         p.Mistral.APIKey,
-					APIBase:        p.Mistral.APIBase,
-					Proxy:          p.Mistral.Proxy,
-					RequestTimeout: p.Mistral.RequestTimeout,
-				}, true
-			},
-		},
-		{
-			providerNames: []string{"avian"},
-			protocol:      "avian",
-			buildConfig: func(p ProvidersConfig) (ModelConfig, bool) {
-				if p.Avian.APIKey == "" && p.Avian.APIBase == "" {
-					return ModelConfig{}, false
-				}
-				return ModelConfig{
-					ModelName:      "avian",
-					Model:          "avian/deepseek/deepseek-v3.2",
-					APIKey:         p.Avian.APIKey,
-					APIBase:        p.Avian.APIBase,
-					Proxy:          p.Avian.Proxy,
-					RequestTimeout: p.Avian.RequestTimeout,
-				}, true
-			},
-		},
+	if k := strings.TrimSpace(apiKey); k != "" {
+		if _, exists := seen[k]; !exists {
+			seen[k] = struct{}{}
+			all = append(all, k)
+		}
 	}
 
-	// Process each provider migration
-	for _, m := range migrations {
-		mc, ok := m.buildConfig(p)
-		if !ok {
-			continue
+	for _, k := range apiKeys {
+		if trimmed := strings.TrimSpace(k); trimmed != "" {
+			if _, exists := seen[trimmed]; !exists {
+				seen[trimmed] = struct{}{}
+				all = append(all, trimmed)
+			}
 		}
+	}
 
-		// Check if this is the user's configured provider
-		if slices.Contains(m.providerNames, userProvider) && userModel != "" {
-			// Use the user's configured model instead of default
-			mc.Model = buildModelWithProtocol(m.protocol, userModel)
-		} else if userProvider == "" && userModel != "" && !legacyModelNameApplied {
-			// Legacy config: no explicit provider field but model is specified
-			// Use userModel as ModelName for the FIRST provider so GetModelConfig(model) can find it
-			// This maintains backward compatibility with old configs that relied on implicit provider selection
-			mc.ModelName = userModel
-			mc.Model = buildModelWithProtocol(m.protocol, userModel)
-			legacyModelNameApplied = true
+	return all
+}
+
+func compareInt(v any, expected int) bool {
+	switch val := v.(type) {
+	case int:
+		return val == expected
+	case float64:
+		return val == float64(expected)
+	case nil:
+		return expected == 0
+	default:
+		return false
+	}
+}
+
+// migrateV0ToV1 converts a V0 (legacy, no version field) config JSON to V1 format:
+//  1. Migrates legacy providers to model_list
+//  2. Migrates agents.defaults.model → agents.defaults.model_name
+//  3. Sets version to 1
+func migrateV0ToV1(m map[string]any) error {
+	if !compareInt(m["version"], 0) {
+		return fmt.Errorf("migrateV0ToV1: expected version 0, got %v", m["version"])
+	}
+
+	migrateLegacyAgentDefaultsModel(m)
+
+	// Migrate legacy providers to model_list if no model_list exists
+	if _, hasModelList := m["model_list"]; !hasModelList {
+		if providers, hasProviders := m["providers"]; hasProviders {
+			if provMap, ok := providers.(map[string]any); ok && !isProvidersMapEmpty(provMap) {
+				// Extract user's provider and model from agents.defaults
+				userProvider := ""
+				userModel := ""
+				if agents, ok := m["agents"].(map[string]any); ok {
+					if defaults, ok := agents["defaults"].(map[string]any); ok {
+						if v, ok := defaults["provider"].(string); ok {
+							userProvider = v
+						}
+						// Check both model_name (new) and model (old) fields
+						if v, ok := defaults["model_name"].(string); ok && v != "" {
+							userModel = v
+						} else if v, ok := defaults["model"].(string); ok && v != "" {
+							userModel = v
+						}
+					}
+				}
+
+				modelListRaw := v0ProvidersMapToModelList(provMap, userProvider, userModel)
+				if len(modelListRaw) > 0 {
+					m["model_list"] = modelListRaw
+				}
+			}
 		}
+	}
 
-		result = append(result, mc)
+	// Convert model_list api_key → api_keys
+	if modelList, ok := m["model_list"].([]any); ok {
+		for _, model := range modelList {
+			if mVal, ok := model.(map[string]any); ok {
+				if ss := toUniqueStrings(mVal["api_key"], mVal["api_keys"]); len(ss) > 0 {
+					mVal["api_keys"] = ss
+					delete(mVal, "api_key")
+				}
+			}
+		}
+	}
+
+	m["version"] = 1
+
+	return nil
+}
+
+func toUniqueStrings(s any, ss any) []string {
+	set := make(map[string]struct{})
+
+	// process s
+	if str, ok := s.(string); ok && str != "" {
+		set[str] = struct{}{}
+	}
+
+	// process ss as []any (JSON arrays)
+	if slice, ok := ss.([]any); ok {
+		for _, item := range slice {
+			if str, ok := item.(string); ok && str != "" {
+				set[str] = struct{}{}
+			}
+		}
+	}
+
+	// process ss as []string
+	if slice, ok := ss.([]string); ok {
+		for _, item := range slice {
+			if item != "" {
+				set[item] = struct{}{}
+			}
+		}
+	}
+
+	// map to slice
+	result := make([]string, 0, len(set))
+	for k := range set {
+		result = append(result, k)
 	}
 
 	return result
+}
+
+// migrateV1ToV2 converts a V1 config JSON to V2 format:
+//  1. Migrates legacy "mention_only" to "group_trigger.mention_only"
+//  2. Infers "enabled" field for models
+//  3. Sets version to 2
+func migrateV1ToV2(m map[string]any) error {
+	if !compareInt(m["version"], 1) {
+		return fmt.Errorf("migrateV1ToV2: expected version 1, got %#v", m["version"])
+	}
+
+	// Migrate channels: move "mention_only" to "group_trigger.mention_only"
+	if channels, ok := m["channels"]; ok {
+		if chMap, ok := channels.(map[string]any); ok {
+			for _, ch := range chMap {
+				if chVal, ok := ch.(map[string]any); ok {
+					if mentionOnly, hasMention := chVal["mention_only"]; hasMention {
+						delete(chVal, "mention_only")
+						if gt, hasGT := chVal["group_trigger"].(map[string]any); hasGT {
+							gt["mention_only"] = mentionOnly
+						} else {
+							chVal["group_trigger"] = map[string]any{"mention_only": mentionOnly}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Infer "enabled" field for models matching configV1.migrateModelEnabled behavior
+	if modelList, ok := m["model_list"].([]any); ok {
+		// Convert api_key → api_keys for each model
+		for _, model := range modelList {
+			if mVal, ok := model.(map[string]any); ok {
+				if ss := toUniqueStrings(mVal["api_key"], mVal["api_keys"]); len(ss) > 0 {
+					mVal["api_keys"] = ss
+					delete(mVal, "api_key")
+				}
+			}
+		}
+
+		// Infer enabled status
+		for _, model := range modelList {
+			if mVal, ok := model.(map[string]any); ok {
+				// Skip if explicitly set
+				if _, hasEnabled := mVal["enabled"]; hasEnabled {
+					continue
+				}
+				// Models with API keys are considered enabled
+				if apiKeys, hasAPIKeys := mVal["api_keys"]; hasAPIKeys {
+					// Check for []any or []string
+					hasKeys := false
+					if keys, ok := apiKeys.([]any); ok {
+						hasKeys = len(keys) > 0
+					} else if keys, ok := apiKeys.([]string); ok {
+						hasKeys = len(keys) > 0
+					}
+					if hasKeys {
+						mVal["enabled"] = true
+						continue
+					}
+				}
+				// The reserved "local-model" entry is considered enabled
+				if mVal["model_name"] == "local-model" {
+					mVal["enabled"] = true
+				}
+				logger.Infof("model: %v", mVal)
+			}
+		}
+	} else {
+		logger.Warnf("model_list is not a slice: %#v", m["model_list"])
+	}
+
+	m["version"] = 2
+
+	return nil
+}
+
+// migrateV2ToV3 converts a V2 config JSON to V3 format:
+//  1. Renames "channels" key to "channel_list"
+//  2. Converts flat-format channel entries to nested format (wrapping
+//     channel-specific fields in "settings")
+//  3. Sets version to 3
+func migrateV2ToV3(m map[string]any) error {
+	if !compareInt(m["version"], 2) {
+		return fmt.Errorf("migrateV2ToV3: expected version 2, got %v", m["version"])
+	}
+
+	migrateLegacyAgentDefaultsModel(m)
+	delete(m, "bindings")
+
+	// Rename channels → channel_list
+	if channels, ok := m["channels"]; ok {
+		delete(m, "channels")
+
+		// Convert each channel from flat to nested format
+		if chMap, ok := channels.(map[string]any); ok {
+			for k, ch := range chMap {
+				if chVal, ok := ch.(map[string]any); ok {
+					chVal["type"] = k
+					// If already has "settings" key, leave as-is
+					if _, hasSettings := chVal["settings"]; hasSettings {
+						continue
+					}
+
+					// Migrate Onebot "group_trigger_prefix" → "group_trigger.prefixes"
+					if gtp, hasGTP := chVal["group_trigger_prefix"]; hasGTP {
+						if gt, hasGT := chVal["group_trigger"].(map[string]any); hasGT {
+							if _, hasPrefixes := gt["prefixes"]; !hasPrefixes {
+								gt["prefixes"] = gtp
+							}
+						} else {
+							chVal["group_trigger"] = map[string]any{"prefixes": gtp}
+						}
+						delete(chVal, "group_trigger_prefix")
+					}
+
+					// Separate channel-specific fields into "settings"
+					settings := make(map[string]any)
+					for fieldKey, v := range chVal {
+						if _, exists := BaseFieldNames[fieldKey]; !exists {
+							settings[fieldKey] = v
+							delete(chVal, fieldKey)
+						}
+					}
+					if len(settings) > 0 {
+						chVal["settings"] = settings
+					}
+				}
+			}
+		}
+
+		m["channel_list"] = channels
+	}
+
+	m["version"] = CurrentVersion
+
+	return nil
+}
+
+func loadConfigMap(path string) (map[string]any, error) {
+	var m1, m2 map[string]any
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return m1, nil
+		}
+		return nil, fmt.Errorf("failed to read config: %w", err)
+	}
+	if err = json.Unmarshal(data, &m1); err != nil {
+		return nil, wrapJSONError(data, err, "config.json")
+	}
+	secPath := securityPath(path)
+	data, err = os.ReadFile(secPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return m1, nil
+		}
+		return nil, fmt.Errorf("failed to read security config: %w", err)
+	}
+	if err = yaml.Unmarshal(data, &m2); err != nil {
+		return nil, fmt.Errorf("failed to parse security config: %w", err)
+	}
+	if m2["web"] != nil || m2["skills"] != nil {
+		m3 := make(map[string]any)
+		if m2["web"] != nil {
+			m3["web"] = m2["web"]
+			delete(m2, "web")
+		}
+		if m2["skills"] != nil {
+			m3["skills"] = m2["skills"]
+			delete(m2, "skills")
+			if m, ok := m3["skills"].(map[string]any); ok {
+				if m["clawhub"] != nil {
+					m["registries"] = map[string]any{"clawhub": m["clawhub"]}
+					delete(m, "clawhub")
+				}
+				if gh, ok := m["github"].(map[string]any); ok {
+					registries, _ := m["registries"].(map[string]any)
+					if registries == nil {
+						registries = map[string]any{}
+					}
+					githubRegistry := map[string]any{}
+					for k, v := range gh {
+						githubRegistry[k] = v
+					}
+					if token, ok := githubRegistry["token"]; ok {
+						githubRegistry["auth_token"] = token
+					}
+					registries["github"] = githubRegistry
+					m["registries"] = registries
+				}
+			}
+		}
+		m2["tools"] = m3
+	}
+
+	// Handle model_list merging specially: m1 has array format, m2 has map format
+	if mainML, hasMainML := m1["model_list"]; hasMainML {
+		if secML, hasSecML := m2["model_list"]; hasSecML {
+			if secMap, ok := secML.(map[string]any); ok {
+				// JSON unmarshals arrays as []any, convert to []map[string]any
+				var mainArr []any
+				if rawArr, ok := mainML.([]any); ok {
+					mainArr = make([]any, 0, len(rawArr))
+					for _, item := range rawArr {
+						if mVal, ok := item.(map[string]any); ok {
+							mainArr = append(mainArr, mVal)
+						}
+					}
+				}
+				if len(mainArr) > 0 {
+					// Merge array-style with map-style in-place
+					err = mergeModelListsWithMap(mainArr, secMap)
+					if err != nil {
+						logger.Errorf("mergeModelListsWithMap error: %v", err)
+						return nil, err
+					}
+					m1["model_list"] = mainArr
+				}
+			}
+		}
+	}
+	// Remove model_list from m2 so mergeMap doesn't override the array with map
+	delete(m2, "model_list")
+
+	m := mergeMap(m1, m2)
+	return m, nil
+}
+
+// mergeModelListsWithMap merges array-style model_list with map-style security model_list.
+// It generates indexed keys from model_name (like toNameIndex) and uses them
+// to look up security entries, falling back to ModelName if the indexed key doesn't exist.
+func mergeModelListsWithMap(mainML []any, secML map[string]any) error {
+	// Build indexed keys like toNameIndex does
+	indexedKeys := make(map[string]int)
+	countMap := make(map[string]int)
+	for i, m := range mainML {
+		if mVal, ok := m.(map[string]any); ok {
+			if name, hasName := mVal["model_name"]; hasName {
+				nameStr := name.(string)
+				index := countMap[nameStr]
+				indexedKeys[fmt.Sprintf("%s:%d", nameStr, index)] = i
+				if _, ok := indexedKeys[nameStr]; !ok {
+					indexedKeys[nameStr] = i
+				}
+				countMap[nameStr]++
+			} else {
+				return fmt.Errorf("model_name is required: %#v", mVal)
+			}
+		}
+	}
+
+	for k, v := range secML {
+		if i, ok := indexedKeys[k]; ok {
+			if vv, ok := v.(map[string]any); ok {
+				if mVal, ok := mainML[i].(map[string]any); ok {
+					mVal["api_keys"] = vv["api_keys"]
+				}
+			}
+		} else {
+			logger.Warnf("model_name not found in main config: %s", k)
+		}
+		delete(secML, k)
+	}
+
+	return nil
 }

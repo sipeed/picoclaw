@@ -23,7 +23,7 @@ import (
 
 type OneBotChannel struct {
 	*channels.BaseChannel
-	config        config.OneBotConfig
+	config        *config.OneBotSettings
 	conn          *websocket.Conn
 	ctx           context.Context
 	cancel        context.CancelFunc
@@ -96,10 +96,14 @@ type oneBotMessageSegment struct {
 	Data map[string]any `json:"data"`
 }
 
-func NewOneBotChannel(cfg config.OneBotConfig, messageBus *bus.MessageBus) (*OneBotChannel, error) {
-	base := channels.NewBaseChannel("onebot", cfg, messageBus, cfg.AllowFrom,
-		channels.WithGroupTrigger(cfg.GroupTrigger),
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+func NewOneBotChannel(
+	bc *config.Channel,
+	cfg *config.OneBotSettings,
+	messageBus *bus.MessageBus,
+) (*OneBotChannel, error) {
+	base := channels.NewBaseChannel("onebot", cfg, messageBus, bc.AllowFrom,
+		channels.WithGroupTrigger(bc.GroupTrigger),
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	const dedupSize = 1024
@@ -184,8 +188,8 @@ func (c *OneBotChannel) connect() error {
 	dialer.HandshakeTimeout = 10 * time.Second
 
 	header := make(map[string][]string)
-	if c.config.AccessToken != "" {
-		header["Authorization"] = []string{"Bearer " + c.config.AccessToken}
+	if c.config.AccessToken.String() != "" {
+		header["Authorization"] = []string{"Bearer " + c.config.AccessToken.String()}
 	}
 
 	conn, resp, err := dialer.Dial(c.config.WSUrl, header)
@@ -391,15 +395,15 @@ func (c *OneBotChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (c *OneBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *OneBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	// Check ctx before entering write path
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	default:
 	}
 
@@ -408,12 +412,12 @@ func (c *OneBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	c.mu.Unlock()
 
 	if conn == nil {
-		return fmt.Errorf("OneBot WebSocket not connected")
+		return nil, fmt.Errorf("OneBot WebSocket not connected")
 	}
 
 	action, params, err := c.buildSendRequest(msg)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	echo := fmt.Sprintf("send_%d", atomic.AddInt64(&c.echoCounter, 1))
@@ -426,7 +430,7 @@ func (c *OneBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 
 	data, err := json.Marshal(req)
 	if err != nil {
-		return fmt.Errorf("failed to marshal OneBot request: %w", err)
+		return nil, fmt.Errorf("failed to marshal OneBot request: %w", err)
 	}
 
 	c.writeMu.Lock()
@@ -439,21 +443,21 @@ func (c *OneBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		logger.ErrorCF("onebot", "Failed to send message", map[string]any{
 			"error": err.Error(),
 		})
-		return fmt.Errorf("onebot send: %w", channels.ErrTemporary)
+		return nil, fmt.Errorf("onebot send: %w", channels.ErrTemporary)
 	}
 
-	return nil
+	return nil, nil
 }
 
 // SendMedia implements the channels.MediaSender interface.
-func (c *OneBotChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+func (c *OneBotChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	default:
 	}
 
@@ -462,12 +466,12 @@ func (c *OneBotChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 	c.mu.Unlock()
 
 	if conn == nil {
-		return fmt.Errorf("OneBot WebSocket not connected")
+		return nil, fmt.Errorf("OneBot WebSocket not connected")
 	}
 
 	store := c.GetMediaStore()
 	if store == nil {
-		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
 	}
 
 	// Build media segments
@@ -508,7 +512,7 @@ func (c *OneBotChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 	}
 
 	if len(segments) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	chatID := msg.ChatID
@@ -524,7 +528,7 @@ func (c *OneBotChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 
 	id, err := strconv.ParseInt(rawID, 10, 64)
 	if err != nil {
-		return fmt.Errorf("invalid %s in chatID: %s: %w", idKey, chatID, channels.ErrSendFailed)
+		return nil, fmt.Errorf("invalid %s in chatID: %s: %w", idKey, chatID, channels.ErrSendFailed)
 	}
 
 	echo := fmt.Sprintf("send_%d", atomic.AddInt64(&c.echoCounter, 1))
@@ -537,7 +541,7 @@ func (c *OneBotChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 
 	data, err := json.Marshal(req)
 	if err != nil {
-		return fmt.Errorf("failed to marshal OneBot request: %w", err)
+		return nil, fmt.Errorf("failed to marshal OneBot request: %w", err)
 	}
 
 	c.writeMu.Lock()
@@ -550,10 +554,10 @@ func (c *OneBotChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 		logger.ErrorCF("onebot", "Failed to send media message", map[string]any{
 			"error": err.Error(),
 		})
-		return fmt.Errorf("onebot send media: %w", channels.ErrTemporary)
+		return nil, fmt.Errorf("onebot send media: %w", channels.ErrTemporary)
 	}
 
-	return nil
+	return nil, nil
 }
 
 func (c *OneBotChannel) buildMessageSegments(chatID, content string) []oneBotMessageSegment {
@@ -749,8 +753,9 @@ func (c *OneBotChannel) parseMessageSegments(
 	storeFile := func(localPath, filename string) string {
 		if store != nil {
 			ref, err := store.Store(localPath, media.MediaMeta{
-				Filename: filename,
-				Source:   "onebot",
+				Filename:      filename,
+				Source:        "onebot",
+				CleanupPolicy: media.CleanupPolicyDeleteOnCleanup,
 			}, scope)
 			if err == nil {
 				return ref
@@ -990,8 +995,8 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 
 	senderID := strconv.FormatInt(userID, 10)
 	var chatID string
-
-	var peer bus.Peer
+	var contextChatID string
+	var contextChatType string
 
 	metadata := map[string]string{}
 
@@ -1002,12 +1007,14 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 	switch raw.MessageType {
 	case "private":
 		chatID = "private:" + senderID
-		peer = bus.Peer{Kind: "direct", ID: senderID}
+		contextChatID = senderID
+		contextChatType = "direct"
 
 	case "group":
 		groupIDStr := strconv.FormatInt(groupID, 10)
 		chatID = "group:" + groupIDStr
-		peer = bus.Peer{Kind: "group", ID: groupIDStr}
+		contextChatID = groupIDStr
+		contextChatType = "group"
 		metadata["group_id"] = groupIDStr
 
 		senderUserID, _ := parseJSONInt64(sender.UserID)
@@ -1071,7 +1078,18 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 		return
 	}
 
-	c.HandleMessage(c.ctx, peer, messageID, senderID, chatID, content, parsed.Media, metadata, senderInfo)
+	inboundCtx := bus.InboundContext{
+		Channel:          c.Name(),
+		ChatID:           contextChatID,
+		ChatType:         contextChatType,
+		SenderID:         senderID,
+		MessageID:        messageID,
+		Mentioned:        isBotMentioned,
+		ReplyToMessageID: parsed.ReplyTo,
+		Raw:              metadata,
+	}
+
+	c.HandleInboundContext(c.ctx, chatID, content, parsed.Media, inboundCtx, senderInfo)
 }
 
 func (c *OneBotChannel) isDuplicate(messageID string) bool {
@@ -1102,4 +1120,9 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return string(runes[:n]) + "..."
+}
+
+// VoiceCapabilities returns the voice capabilities of the channel.
+func (c *OneBotChannel) VoiceCapabilities() channels.VoiceCapabilities {
+	return channels.VoiceCapabilities{ASR: true, TTS: true}
 }

@@ -17,6 +17,7 @@ func TestSanitizeFilename(t *testing.T) {
 		{"slack:C01234", "slack_C01234"},
 		{"no-colons-here", "no-colons-here"},
 		{"multiple:colons:here", "multiple_colons_here"},
+		{"agent:main:telegram:group:-1003822706455/12", "agent_main_telegram_group_-1003822706455_12"},
 	}
 
 	for _, tt := range tests {
@@ -64,11 +65,21 @@ func TestSave_RejectsPathTraversal(t *testing.T) {
 	tmpDir := t.TempDir()
 	sm := NewSessionManager(tmpDir)
 
-	badKeys := []string{"", ".", "..", "foo/bar", "foo\\bar"}
+	// Invalid names that must still be rejected.
+	badKeys := []string{"", ".", ".."}
 	for _, key := range badKeys {
 		sm.GetOrCreate(key)
 		if err := sm.Save(key); err == nil {
 			t.Errorf("Save(%q) should have failed but didn't", key)
 		}
+	}
+
+	// Keys containing path separators are sanitized (no subdirs created).
+	sm.GetOrCreate("foo/bar")
+	if err := sm.Save("foo/bar"); err != nil {
+		t.Fatalf("Save(\"foo/bar\") after sanitize should succeed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(tmpDir, "foo_bar.json")); os.IsNotExist(err) {
+		t.Errorf("expected foo_bar.json in storage (sanitized from foo/bar)")
 	}
 }

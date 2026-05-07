@@ -2,8 +2,10 @@ package matrix
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"html"
+	"io"
 	"mime"
 	"net/url"
 	"os"
@@ -13,9 +15,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gomarkdown/markdown"
+	mdhtml "github.com/gomarkdown/markdown/html"
+	"github.com/gomarkdown/markdown/parser"
+	"go.mau.fi/util/dbutil"
 	"maunium.net/go/mautrix"
+	"maunium.net/go/mautrix/crypto/cryptohelper"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
+	_ "modernc.org/sqlite"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -26,16 +34,24 @@ import (
 )
 
 const (
+	sqliteDriver = "sqlite"
+	dbName       = "store.db"
+
 	typingRefreshInterval      = 20 * time.Second
 	typingServerTTL            = 30 * time.Second
 	roomKindCacheTTL           = 5 * time.Minute
 	roomKindCacheCleanupPeriod = 1 * time.Minute
 	roomKindCacheMaxEntries    = 2048
-
-	matrixMediaTempDirName = "picoclaw_media"
 )
 
 var matrixMentionHrefRegexp = regexp.MustCompile(`(?i)<a[^>]+href=["']([^"']+)["']`)
+
+func outboundMessageIsToolFeedback(msg bus.OutboundMessage) bool {
+	if len(msg.Context.Raw) == 0 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(msg.Context.Raw["message_kind"]), "tool_feedback")
+}
 
 type roomKindCacheEntry struct {
 	isGroup   bool
@@ -165,9 +181,10 @@ func (s *typingSession) stop() {
 // MatrixChannel implements the Channel interface for Matrix.
 type MatrixChannel struct {
 	*channels.BaseChannel
+	bc *config.Channel
 
 	client *mautrix.Client
-	config config.MatrixConfig
+	config *config.MatrixSettings
 	syncer *mautrix.DefaultSyncer
 
 	ctx       context.Context
@@ -179,12 +196,21 @@ type MatrixChannel struct {
 
 	roomKindCache     *roomKindCache
 	localpartMentionR *regexp.Regexp
+
+	cryptoHelper *cryptohelper.CryptoHelper
+	cryptoDbPath string
+	progress     *channels.ToolFeedbackAnimator
 }
 
-func NewMatrixChannel(cfg config.MatrixConfig, messageBus *bus.MessageBus) (*MatrixChannel, error) {
+func NewMatrixChannel(
+	bc *config.Channel,
+	cfg *config.MatrixSettings,
+	messageBus *bus.MessageBus,
+	cryptoDatabasePath string,
+) (*MatrixChannel, error) {
 	homeserver := strings.TrimSpace(cfg.Homeserver)
 	userID := strings.TrimSpace(cfg.UserID)
-	accessToken := strings.TrimSpace(cfg.AccessToken)
+	accessToken := strings.TrimSpace(cfg.AccessToken.String())
 	if homeserver == "" {
 		return nil, fmt.Errorf("matrix homeserver is required")
 	}
@@ -212,14 +238,15 @@ func NewMatrixChannel(cfg config.MatrixConfig, messageBus *bus.MessageBus) (*Mat
 		"matrix",
 		cfg,
 		messageBus,
-		cfg.AllowFrom,
+		bc.AllowFrom,
 		channels.WithMaxMessageLength(65536),
-		channels.WithGroupTrigger(cfg.GroupTrigger),
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+		channels.WithGroupTrigger(bc.GroupTrigger),
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
-	return &MatrixChannel{
+	ch := &MatrixChannel{
 		BaseChannel:       base,
+		bc:                bc,
 		client:            client,
 		config:            cfg,
 		syncer:            syncer,
@@ -228,7 +255,10 @@ func NewMatrixChannel(cfg config.MatrixConfig, messageBus *bus.MessageBus) (*Mat
 		roomKindCache:     newRoomKindCache(roomKindCacheMaxEntries, roomKindCacheTTL),
 		localpartMentionR: localpartMentionRegexp(matrixLocalpart(client.UserID)),
 		typingMu:          sync.Mutex{},
-	}, nil
+		cryptoDbPath:      cryptoDatabasePath,
+	}
+	ch.progress = channels.NewToolFeedbackAnimator(ch.EditMessage)
+	return ch, nil
 }
 
 func (c *MatrixChannel) Start(ctx context.Context) error {
@@ -237,7 +267,21 @@ func (c *MatrixChannel) Start(ctx context.Context) error {
 	c.ctx, c.cancel = context.WithCancel(ctx)
 	c.startTime = time.Now()
 
+	// Initialize crypto helper if database and passphrase are configured
+	if c.cryptoDbPath != "" && c.config.CryptoPassphrase != "" {
+		if err := c.initCrypto(ctx); err != nil {
+			logger.WarnCF(
+				"matrix",
+				"Failed to initialize crypto, continuing without encryption support",
+				map[string]any{
+					"error": err.Error(),
+				},
+			)
+		}
+	}
+
 	c.syncer.OnEventType(event.EventMessage, c.handleMessageEvent)
+	c.syncer.OnEventType(event.EventEncrypted, c.handleMessageEvent)
 	c.syncer.OnEventType(event.StateMember, c.handleMemberEvent)
 
 	c.SetRunning(true)
@@ -263,41 +307,158 @@ func (c *MatrixChannel) Stop(ctx context.Context) error {
 		c.cancel()
 	}
 	c.stopTypingSessions(ctx)
+	if c.progress != nil {
+		c.progress.StopAll()
+	}
+
+	// Close crypto helper if initialized
+	if c.cryptoHelper != nil {
+		c.cryptoHelper.Close()
+		c.cryptoHelper = nil
+		c.client.Crypto = nil
+	}
 
 	logger.InfoC("matrix", "Matrix channel stopped")
 	return nil
 }
 
-func (c *MatrixChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *MatrixChannel) initCrypto(ctx context.Context) error {
+	logger.InfoC("matrix", "Initializing crypto helper")
+
+	// Ensure the crypto database directory exists
+	if err := os.MkdirAll(c.cryptoDbPath, 0o700); err != nil {
+		return fmt.Errorf("create crypto database directory: %w", err)
+	}
+
+	// Create database with sqlite driver (modernc.org/sqlite)
+	dbPath := filepath.Join(c.cryptoDbPath, dbName)
+	connStr := "file:" + dbPath + "?_foreign_keys=on"
+
+	db, err := sql.Open(sqliteDriver, connStr)
+	if err != nil {
+		return fmt.Errorf("open crypto database: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
+	// Execute PRAGMA statements
+	// This is equivalent to the "sqlite3-fk-wal" dialect used by cryptohelper
+	pragmaStmts := []string{
+		"PRAGMA foreign_keys = ON",
+		"PRAGMA journal_mode = WAL",
+		"PRAGMA synchronous = NORMAL",
+		"PRAGMA busy_timeout = 5000",
+	}
+	for _, pragma := range pragmaStmts {
+		if _, err = db.ExecContext(ctx, pragma); err != nil {
+			_ = db.Close()
+			return fmt.Errorf("execute %s: %w", pragma, err)
+		}
+	}
+
+	// Wrap with dbutil for dialect support
+	wrappedDB, err := dbutil.NewWithDB(db, sqliteDriver)
+	if err != nil {
+		_ = db.Close()
+		return fmt.Errorf("wrap database: %w", err)
+	}
+
+	cryptoHelper, err := cryptohelper.NewCryptoHelper(c.client, []byte(c.config.CryptoPassphrase), wrappedDB)
+	if err != nil {
+		return fmt.Errorf("create crypto helper: %w", err)
+	}
+
+	if c.client.DeviceID == "" {
+		resp, whoamiErr := c.client.Whoami(ctx)
+		if whoamiErr != nil {
+			_ = db.Close()
+			return fmt.Errorf("get device ID via whoami: %w", whoamiErr)
+		}
+		c.client.DeviceID = resp.DeviceID
+	}
+
+	if err = cryptoHelper.Init(ctx); err != nil {
+		cryptoHelper.Close()
+		return fmt.Errorf("init crypto helper: %w", err)
+	}
+
+	c.client.Crypto = cryptoHelper
+	c.cryptoHelper = cryptoHelper
+
+	logger.InfoC("matrix", "Crypto helper initialized successfully")
+	return nil
+}
+
+func markdownToHTML(md string) string {
+	extensions := (parser.CommonExtensions | parser.NoEmptyLineBeforeBlock) &^ parser.DefinitionLists
+	p := parser.NewWithExtensions(extensions)
+	renderer := mdhtml.NewRenderer(mdhtml.RendererOptions{Flags: mdhtml.UseXHTML})
+	return strings.TrimSpace(string(markdown.ToHTML([]byte(md), p, renderer)))
+}
+
+func (c *MatrixChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	roomID := id.RoomID(strings.TrimSpace(msg.ChatID))
 	if roomID == "" {
-		return fmt.Errorf("matrix room ID is empty: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("matrix room ID is empty: %w", channels.ErrSendFailed)
 	}
 
 	content := strings.TrimSpace(msg.Content)
 	if content == "" {
-		return nil
+		return nil, nil
 	}
 
-	_, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, &event.MessageEventContent{
-		MsgType: event.MsgText,
-		Body:    content,
-	})
-	if err != nil {
-		return fmt.Errorf("matrix send: %w", channels.ErrTemporary)
+	isToolFeedback := outboundMessageIsToolFeedback(msg)
+	if isToolFeedback {
+		if msgID, handled, err := c.progress.Update(ctx, msg.ChatID, content); handled {
+			if err != nil {
+				return nil, err
+			}
+			return []string{msgID}, nil
+		}
 	}
-	return nil
+	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(msg.ChatID)
+	if !isToolFeedback {
+		if msgIDs, handled := c.FinalizeToolFeedbackMessage(ctx, msg); handled {
+			return msgIDs, nil
+		}
+	}
+	if isToolFeedback {
+		content = channels.InitialAnimatedToolFeedbackContent(content)
+	}
+
+	resp, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, c.messageContent(content))
+	if err != nil {
+		return nil, fmt.Errorf("matrix send: %w", channels.ErrTemporary)
+	}
+	msgID := resp.EventID.String()
+	if isToolFeedback {
+		c.RecordToolFeedbackMessage(msg.ChatID, msgID, msg.Content)
+	} else if hasTrackedMsg {
+		c.dismissTrackedToolFeedbackMessage(ctx, msg.ChatID, trackedMsgID)
+	}
+	return []string{msgID}, nil
+}
+
+func (c *MatrixChannel) messageContent(text string) *event.MessageEventContent {
+	mc := &event.MessageEventContent{MsgType: event.MsgText, Body: text}
+	if c.config.MessageFormat != "plain" {
+		mc.Format = event.FormatHTML
+		mc.FormattedBody = markdownToHTML(text)
+	}
+	return mc
 }
 
 // SendMedia implements channels.MediaSender.
-func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
+	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(msg.ChatID)
+
 	sendCtx := ctx
 	if sendCtx == nil {
 		sendCtx = context.Background()
@@ -305,17 +466,18 @@ func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 
 	roomID := id.RoomID(strings.TrimSpace(msg.ChatID))
 	if roomID == "" {
-		return fmt.Errorf("matrix room ID is empty: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("matrix room ID is empty: %w", channels.ErrSendFailed)
 	}
 
 	store := c.GetMediaStore()
 	if store == nil {
-		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
+		return nil, fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
 	}
 
+	var eventIDs []string
 	for _, part := range msg.Parts {
 		if err := sendCtx.Err(); err != nil {
-			return err
+			return nil, err
 		}
 
 		localPath, meta, err := store.ResolveWithMeta(part.Ref)
@@ -380,7 +542,7 @@ func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 				"type":  part.Type,
 				"error": err.Error(),
 			})
-			return fmt.Errorf("matrix upload media: %w", channels.ErrTemporary)
+			return nil, fmt.Errorf("matrix upload media: %w", channels.ErrTemporary)
 		}
 
 		msgType := matrixOutboundMsgType(part.Type, filename, contentType)
@@ -393,17 +555,25 @@ func (c *MatrixChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 			uploadResp.ContentURI.CUString(),
 		)
 
-		if _, err := c.client.SendMessageEvent(sendCtx, roomID, event.EventMessage, content); err != nil {
+		sendResp, err := c.client.SendMessageEvent(sendCtx, roomID, event.EventMessage, content)
+		if err != nil {
 			logger.ErrorCF("matrix", "Failed to send media message", map[string]any{
 				"room_id": roomID.String(),
 				"type":    msgType,
 				"error":   err.Error(),
 			})
-			return fmt.Errorf("matrix send media: %w", channels.ErrTemporary)
+			return nil, fmt.Errorf("matrix send media: %w", channels.ErrTemporary)
+		}
+		if sendResp != nil {
+			eventIDs = append(eventIDs, sendResp.EventID.String())
 		}
 	}
 
-	return nil
+	if hasTrackedMsg {
+		c.dismissTrackedToolFeedbackMessage(ctx, msg.ChatID, trackedMsgID)
+	}
+
+	return eventIDs, nil
 }
 
 // StartTyping implements channels.TypingCapable.
@@ -447,7 +617,7 @@ func (c *MatrixChannel) StartTyping(ctx context.Context, chatID string) (func(),
 
 // SendPlaceholder implements channels.PlaceholderCapable.
 func (c *MatrixChannel) SendPlaceholder(ctx context.Context, chatID string) (string, error) {
-	if !c.config.Placeholder.Enabled {
+	if !c.bc.Placeholder.Enabled {
 		return "", nil
 	}
 
@@ -456,10 +626,7 @@ func (c *MatrixChannel) SendPlaceholder(ctx context.Context, chatID string) (str
 		return "", fmt.Errorf("matrix room ID is empty")
 	}
 
-	text := strings.TrimSpace(c.config.Placeholder.Text)
-	if text == "" {
-		text = "Thinking... 💭"
-	}
+	text := c.bc.Placeholder.GetRandomText()
 
 	resp, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, &event.MessageEventContent{
 		MsgType: event.MsgNotice,
@@ -482,14 +649,94 @@ func (c *MatrixChannel) EditMessage(ctx context.Context, chatID string, messageI
 		return fmt.Errorf("matrix message ID is empty")
 	}
 
-	editContent := &event.MessageEventContent{
-		MsgType: event.MsgText,
-		Body:    content,
-	}
+	editContent := c.messageContent(content)
 	editContent.SetEdit(id.EventID(messageID))
 
 	_, err := c.client.SendMessageEvent(ctx, roomID, event.EventMessage, editContent)
 	return err
+}
+
+// DeleteMessage implements channels.MessageDeleter.
+func (c *MatrixChannel) DeleteMessage(ctx context.Context, chatID string, messageID string) error {
+	roomID := id.RoomID(strings.TrimSpace(chatID))
+	if roomID == "" {
+		return fmt.Errorf("matrix room ID is empty")
+	}
+	eventID := id.EventID(strings.TrimSpace(messageID))
+	if eventID == "" {
+		return fmt.Errorf("matrix message ID is empty")
+	}
+
+	_, err := c.client.RedactEvent(ctx, roomID, eventID)
+	return err
+}
+
+func (c *MatrixChannel) currentToolFeedbackMessage(chatID string) (string, bool) {
+	if c.progress == nil {
+		return "", false
+	}
+	return c.progress.Current(chatID)
+}
+
+func (c *MatrixChannel) takeToolFeedbackMessage(chatID string) (string, string, bool) {
+	if c.progress == nil {
+		return "", "", false
+	}
+	return c.progress.Take(chatID)
+}
+
+func (c *MatrixChannel) RecordToolFeedbackMessage(chatID, messageID, content string) {
+	if c.progress == nil {
+		return
+	}
+	c.progress.Record(chatID, messageID, content)
+}
+
+func (c *MatrixChannel) ClearToolFeedbackMessage(chatID string) {
+	if c.progress == nil {
+		return
+	}
+	c.progress.Clear(chatID)
+}
+
+func (c *MatrixChannel) DismissToolFeedbackMessage(ctx context.Context, chatID string) {
+	msgID, ok := c.currentToolFeedbackMessage(chatID)
+	if !ok {
+		return
+	}
+	c.dismissTrackedToolFeedbackMessage(ctx, chatID, msgID)
+}
+
+func (c *MatrixChannel) dismissTrackedToolFeedbackMessage(ctx context.Context, chatID, messageID string) {
+	if strings.TrimSpace(chatID) == "" || strings.TrimSpace(messageID) == "" {
+		return
+	}
+	c.ClearToolFeedbackMessage(chatID)
+	_ = c.DeleteMessage(ctx, chatID, messageID)
+}
+
+func (c *MatrixChannel) finalizeTrackedToolFeedbackMessage(
+	ctx context.Context,
+	chatID string,
+	content string,
+	editFn func(context.Context, string, string, string) error,
+) ([]string, bool) {
+	msgID, baseContent, ok := c.takeToolFeedbackMessage(chatID)
+	if !ok || editFn == nil {
+		return nil, false
+	}
+	if err := editFn(ctx, chatID, msgID, content); err != nil {
+		c.RecordToolFeedbackMessage(chatID, msgID, baseContent)
+		return nil, false
+	}
+	return []string{msgID}, true
+}
+
+func (c *MatrixChannel) FinalizeToolFeedbackMessage(ctx context.Context, msg bus.OutboundMessage) ([]string, bool) {
+	if outboundMessageIsToolFeedback(msg) {
+		return nil, false
+	}
+	return c.finalizeTrackedToolFeedbackMessage(ctx, msg.ChatID, msg.Content, c.EditMessage)
 }
 
 func (c *MatrixChannel) handleMemberEvent(ctx context.Context, evt *event.Event) {
@@ -537,9 +784,26 @@ func (c *MatrixChannel) handleMessageEvent(ctx context.Context, evt *event.Event
 		return
 	}
 
-	msgEvt := evt.Content.AsMessage()
-	if msgEvt == nil {
-		return
+	var msgEvt *event.MessageEventContent
+	switch evt.Type {
+	case event.EventMessage:
+		// When crypto is enabled, events marked WasEncrypted=true are
+		// re-dispatched by c.cryptoHelper after decryption and will be
+		// processed again in the EventEncrypted branch. Skip to avoid duplication.
+		if c.client.Crypto != nil && evt.Mautrix.WasEncrypted {
+			return
+		}
+
+		msgEvt = evt.Content.AsMessage()
+		if msgEvt == nil || msgEvt.MsgType == "" {
+			return
+		}
+	case event.EventEncrypted:
+		var ok bool
+		msgEvt, ok = c.decryptEvent(ctx, evt)
+		if !ok {
+			return
+		}
 	}
 
 	// Ignore edits.
@@ -586,8 +850,8 @@ func (c *MatrixChannel) handleMessageEvent(ctx context.Context, evt *event.Event
 			logger.DebugCF("matrix", "Ignoring group message by trigger rules", map[string]any{
 				"room_id":      roomID,
 				"is_mentioned": isMentioned,
-				"mention_only": c.config.GroupTrigger.MentionOnly,
-				"prefixes":     c.config.GroupTrigger.Prefixes,
+				"mention_only": c.bc.GroupTrigger.MentionOnly,
+				"prefixes":     c.bc.GroupTrigger.Prefixes,
 			})
 			return
 		}
@@ -602,10 +866,8 @@ func (c *MatrixChannel) handleMessageEvent(ctx context.Context, evt *event.Event
 	}
 
 	peerKind := "direct"
-	peerID := senderID
 	if isGroup {
 		peerKind = "group"
-		peerID = roomID
 	}
 
 	metadata := map[string]string{
@@ -618,17 +880,49 @@ func (c *MatrixChannel) handleMessageEvent(ctx context.Context, evt *event.Event
 		metadata["reply_to_msg_id"] = replyTo.String()
 	}
 
-	c.HandleMessage(
-		c.baseContext(),
-		bus.Peer{Kind: peerKind, ID: peerID},
-		evt.ID.String(),
-		senderID,
-		roomID,
-		content,
-		mediaPaths,
-		metadata,
-		sender,
-	)
+	inboundCtx := bus.InboundContext{
+		Channel:   "matrix",
+		ChatID:    roomID,
+		ChatType:  peerKind,
+		SenderID:  senderID,
+		MessageID: evt.ID.String(),
+		Raw:       metadata,
+	}
+	if replyTo := msgEvt.GetRelatesTo().GetReplyTo(); replyTo != "" {
+		inboundCtx.ReplyToMessageID = replyTo.String()
+	}
+
+	c.HandleInboundContext(c.baseContext(), roomID, content, mediaPaths, inboundCtx, sender)
+}
+
+// decryptEvent decrypts an encrypted event and returns the decrypted message event content.
+// It returns the decrypted content and a boolean indicating whether decryption was successful.
+func (c *MatrixChannel) decryptEvent(ctx context.Context, evt *event.Event) (*event.MessageEventContent, bool) {
+	if c.client.Crypto == nil {
+		logger.DebugCF("matrix", "Received encrypted message but crypto is not enabled", map[string]any{
+			"room_id": evt.RoomID.String(),
+		})
+		return nil, false
+	}
+
+	decrypted, err := c.client.Crypto.Decrypt(ctx, evt)
+	if err != nil {
+		logger.WarnCF("matrix", "Failed to decrypt message", map[string]any{
+			"room_id": evt.RoomID.String(),
+			"error":   err.Error(),
+		})
+		return nil, false
+	}
+
+	if decrypted.Type != event.EventMessage {
+		logger.DebugCF("matrix", "Decrypted event is not a message event", map[string]any{
+			"room_id": evt.RoomID.String(),
+			"type":    decrypted.Type.String(),
+		})
+		return nil, false
+	}
+
+	return decrypted.Content.AsMessage(), true
 }
 
 func (c *MatrixChannel) extractInboundContent(
@@ -681,6 +975,9 @@ func (c *MatrixChannel) extractInboundMedia(
 
 func (c *MatrixChannel) storeMedia(localPath string, meta media.MediaMeta, scope string) string {
 	if store := c.GetMediaStore(); store != nil {
+		if meta.CleanupPolicy == "" {
+			meta.CleanupPolicy = media.CleanupPolicyDeleteOnCleanup
+		}
 		ref, err := store.Store(localPath, meta, scope)
 		if err == nil {
 			return ref
@@ -714,17 +1011,23 @@ func (c *MatrixChannel) downloadMedia(
 	reqCtx, cancel := context.WithTimeout(dlCtx, 20*time.Second)
 	defer cancel()
 
-	data, err := c.client.DownloadBytes(reqCtx, parsed)
+	resp, err := c.client.Download(reqCtx, parsed)
 	if err != nil {
 		return "", err
 	}
+	defer resp.Body.Close()
+
+	reader := resp.Body
+	readerClose := func() error { return nil }
 
 	// Encrypted attachments put URL in msgEvt.File and require client-side decryption.
 	if msgEvt != nil && msgEvt.File != nil && msgEvt.URL == "" {
-		err = msgEvt.File.DecryptInPlace(data)
-		if err != nil {
+		if err = msgEvt.File.PrepareForDecryption(); err != nil {
 			return "", fmt.Errorf("decrypt matrix media: %w", err)
 		}
+		decryptReader := msgEvt.File.DecryptStream(resp.Body)
+		reader = decryptReader
+		readerClose = decryptReader.Close
 	}
 
 	label := matrixMediaLabel(msgEvt, mediaKind)
@@ -737,14 +1040,28 @@ func (c *MatrixChannel) downloadMedia(
 	if err != nil {
 		return "", err
 	}
-	defer tmp.Close()
+	tmpPath := tmp.Name()
+	cleanup := true
+	defer func() {
+		_ = tmp.Close()
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
 
-	if _, err = tmp.Write(data); err != nil {
-		_ = os.Remove(tmp.Name())
+	_, err = io.Copy(tmp, reader)
+	if err != nil {
+		return "", err
+	}
+	if err = readerClose(); err != nil {
+		return "", fmt.Errorf("decrypt matrix media: %w", err)
+	}
+	if err = tmp.Close(); err != nil {
 		return "", err
 	}
 
-	return tmp.Name(), nil
+	cleanup = false
+	return tmpPath, nil
 }
 
 func matrixContentType(msgEvt *event.MessageEventContent) string {
@@ -1072,7 +1389,7 @@ func (c *MatrixChannel) stripSelfMention(text string) string {
 }
 
 func matrixMediaTempDir() (string, error) {
-	mediaDir := filepath.Join(os.TempDir(), matrixMediaTempDirName)
+	mediaDir := media.TempDir()
 	if err := os.MkdirAll(mediaDir, 0o700); err != nil {
 		return "", err
 	}
@@ -1112,4 +1429,9 @@ func stripUserMentionWithRegexp(text string, userID id.UserID, mentionR *regexp.
 	cleaned = strings.TrimSpace(cleaned)
 	cleaned = strings.TrimLeft(cleaned, ",:; ")
 	return strings.TrimSpace(cleaned)
+}
+
+// VoiceCapabilities returns the voice capabilities of the channel.
+func (c *MatrixChannel) VoiceCapabilities() channels.VoiceCapabilities {
+	return channels.VoiceCapabilities{ASR: true, TTS: true}
 }

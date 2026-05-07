@@ -47,6 +47,28 @@ func listCommand() Definition {
 				Description: "Registered agents",
 				Handler:     agentsHandler(),
 			},
+			{
+				Name:        "skills",
+				Description: "Installed skills",
+				Handler: func(_ context.Context, req Request, rt *Runtime) error {
+					if rt == nil || rt.ListSkillNames == nil {
+						return req.Reply(unavailableMsg)
+					}
+					names := rt.ListSkillNames()
+					if len(names) == 0 {
+						return req.Reply("No installed skills")
+					}
+					return req.Reply(fmt.Sprintf(
+						"Installed Skills:\n- %s\n\nUse /use <skill> <message> to force one for a single request, or /use <skill> to apply it to your next message.",
+						strings.Join(names, "\n- "),
+					))
+				},
+			},
+			{
+				Name:        "mcp",
+				Description: "Configured MCP servers",
+				Handler:     listMCPServersHandler(),
+			},
 		},
 	}
 }

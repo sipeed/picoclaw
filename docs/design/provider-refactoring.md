@@ -66,7 +66,7 @@ Problem: Agent needs to know both `provider` and `model`, adding complexity.
 Inspired by [LiteLLM](https://docs.litellm.ai/docs/proxy/configs) design:
 
 1. **Model-centric**: Users care about models, not providers
-2. **Protocol prefix**: Use `protocol/model_name` format, e.g., `openai/gpt-5.2`, `anthropic/claude-sonnet-4.6`
+2. **Protocol prefix**: Use `protocol/model_name` format, e.g., `openai/gpt-5.4`, `anthropic/claude-sonnet-4.6`
 3. **Configuration-driven**: Adding new Providers only requires config changes, no code changes
 
 ### 2.2 New Configuration Structure
@@ -81,8 +81,8 @@ Inspired by [LiteLLM](https://docs.litellm.ai/docs/proxy/configs) design:
       "api_key": "sk-xxx"
     },
     {
-      "model_name": "gpt-5.2",
-      "model": "openai/gpt-5.2",
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-xxx"
     },
     {
@@ -128,7 +128,7 @@ type Config struct {
 type ModelConfig struct {
     // Required
     ModelName string `json:"model_name"`  // user-facing name (alias)
-    Model     string `json:"model"`       // protocol/model, e.g., openai/gpt-5.2
+    Model     string `json:"model"`       // protocol/model, e.g., openai/gpt-5.4
 
     // Common config
     APIBase   string `json:"api_base,omitempty"`
@@ -154,7 +154,7 @@ Identify protocol via prefix in `model` field:
 | `openai/` | OpenAI-compatible | Most common, includes DeepSeek, Qwen, Groq, etc. |
 | `anthropic/` | Anthropic | Claude series specific |
 | `antigravity/` | Antigravity | Google Cloud Code Assist |
-| `gemini/` | Gemini | Google Gemini native API (if needed) |
+| `gemini/` | Gemini | Google Gemini native API |
 
 ---
 
@@ -180,7 +180,7 @@ Identify protocol via prefix in `model` field:
       "model": "deepseek-chat"
     },
     "coder": {
-      "model": "gpt-5.2",
+      "model": "gpt-5.4",
       "system_prompt": "You are a coding assistant..."
     },
     "translator": {
@@ -200,7 +200,7 @@ Each Agent only needs to specify `model` (corresponds to `model_name` in `model_
 model_list:
   - model_name: gpt-4o
     litellm_params:
-      model: openai/gpt-5.2
+      model: openai/gpt-5.4
       api_key: xxx
   - model_name: my-custom
     litellm_params:

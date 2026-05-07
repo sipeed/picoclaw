@@ -4,18 +4,27 @@
       "workspace_root": "/data/workspaces",
       "workspace": "~/.picoclaw/workspace",
       "restrict_to_workspace": true,
-      "model_name": "gpt4",
+      "model_name": "gpt-5.4",
       "max_tokens": 8192,
+      "context_window": 131072,
       "temperature": 0.7,
       "max_tool_iterations": 20,
       "summarize_message_threshold": 20,
-      "summarize_token_percent": 75
+      "summarize_token_percent": 75,
+      "split_on_marker": false,
+      "max_llm_retries": 2,
+      "llm_retry_backoff_secs": 2,
+      "tool_feedback": {
+        "enabled": false,
+        "max_args_length": 300,
+        "separate_messages": false
+      }
     }
   },
   "model_list": [
     {
-      "model_name": "gpt4",
-      "model": "openai/gpt-5.2",
+      "model_name": "gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-your-openai-key",
       "api_base": "https://api.openai.com/v1"
     },
@@ -27,7 +36,15 @@
       "thinking_level": "high"
     },
     {
+      "_comment": "Anthropic Messages API - use native format for direct Anthropic API access",
+      "model_name": "claude-opus-4-6",
+      "model": "anthropic-messages/claude-opus-4-6",
+      "api_key": "sk-ant-your-key",
+      "api_base": "https://api.anthropic.com"
+    },
+    {
       "model_name": "gemini",
+      "_comment": "Optional: set \"tool_schema_transform\": \"simple\" for providers that reject complex tool JSON Schema.",
       "model": "antigravity/gemini-2.0-flash",
       "auth_method": "oauth"
     },
@@ -37,14 +54,40 @@
       "api_key": "sk-your-deepseek-key"
     },
     {
-      "model_name": "loadbalanced-gpt4",
-      "model": "openai/gpt-5.2",
+      "model_name": "venice-uncensored",
+      "model": "venice/venice-uncensored",
+      "api_key": "your-venice-api-key"
+    },
+    {
+      "model_name": "lmstudio-local",
+      "model": "lmstudio/openai/gpt-oss-20b"
+    },
+    {
+      "model_name": "longcat",
+      "model": "longcat/LongCat-Flash-Thinking",
+      "api_key": "your-longcat-api-key"
+    },
+    {
+      "model_name": "modelscope-qwen",
+      "model": "modelscope/Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "api_key": "your-modelscope-access-token",
+      "api_base": "https://api-inference.modelscope.cn/v1"
+    },
+    {
+      "model_name": "azure-gpt5",
+      "model": "azure/my-gpt5-deployment",
+      "api_key": "your-azure-api-key",
+      "api_base": "https://your-resource.openai.azure.com"
+    },
+    {
+      "model_name": "loadbalanced-gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-key1",
       "api_base": "https://api1.example.com/v1"
     },
     {
-      "model_name": "loadbalanced-gpt4",
-      "model": "openai/gpt-5.2",
+      "model_name": "loadbalanced-gpt-5.4",
+      "model": "openai/gpt-5.4",
       "api_key": "sk-key2",
       "api_base": "https://api2.example.com/v1"
     }
@@ -55,10 +98,12 @@
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
       "base_url": "",
       "proxy": "",
-      "allow_from": [
-        "YOUR_USER_ID"
-      ],
-      "reasoning_channel_id": ""
+      "allow_from": ["YOUR_USER_ID"],
+      "use_markdown_v2": false,
+      "reasoning_channel_id": "",
+      "streaming": {
+        "enabled": true
+      }
     },
     "discord": {
       "enabled": false,
@@ -99,8 +144,13 @@
       "encrypt_key": "",
       "verification_token": "",
       "allow_from": [],
+      "placeholder": {
+        "enabled": true,
+        "text": ["Thinking...", "Processing...", "Typing..."]
+      },
       "reasoning_channel_id": "",
-      "random_reaction_emoji": []
+      "random_reaction_emoji": [],
+      "is_lark": false
     },
     "dingtalk": {
       "enabled": false,
@@ -129,9 +179,11 @@
       },
       "placeholder": {
         "enabled": true,
-        "text": "Thinking... 💭"
+        "text": ["Thinking...", "Processing...", "Typing..."]
       },
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "crypto_database_path": "",
+      "crypto_passphrase": "YOUR_MATRIX_CRYPTO_PICKLE_KEY"
     },
     "line": {
       "enabled": false,
@@ -151,38 +203,33 @@
       "reasoning_channel_id": ""
     },
     "wecom": {
-      "_comment": "WeCom Bot - Easier setup, supports group chats",
+      "_comment": "WeCom AI Bot over WebSocket.",
       "enabled": false,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
-      "webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY",
-      "webhook_path": "/webhook/wecom",
+      "bot_id": "YOUR_BOT_ID",
+      "secret": "YOUR_SECRET",
+      "websocket_url": "wss://openws.work.weixin.qq.com",
+      "send_thinking_message": true,
       "allow_from": [],
-      "reply_timeout": 5,
       "reasoning_channel_id": ""
     },
-    "wecom_app": {
-      "_comment": "WeCom App (自建应用) - More features, proactive messaging, private chat only.",
+    "pico": {
       "enabled": false,
-      "corp_id": "YOUR_CORP_ID",
-      "corp_secret": "YOUR_CORP_SECRET",
-      "agent_id": 1000002,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
-      "webhook_path": "/webhook/wecom-app",
-      "allow_from": [],
-      "reply_timeout": 5,
-      "reasoning_channel_id": ""
+      "token": "YOUR_PICO_TOKEN",
+      "allow_token_query": false,
+      "allow_origins": [],
+      "ping_interval": 30,
+      "read_timeout": 60,
+      "max_connections": 100,
+      "allow_from": []
     },
-    "wecom_aibot": {
-      "_comment": "WeCom AI Bot (智能机器人) - Official WeCom AI Bot integration, supports proactive messaging and private chats.",
+    "pico_client": {
       "enabled": false,
-      "token": "YOUR_TOKEN",
-      "encoding_aes_key": "YOUR_43_CHAR_ENCODING_AES_KEY",
-      "webhook_path": "/webhook/wecom-aibot",
-      "max_steps": 10,
-      "welcome_message": "Hello! I'm your AI assistant. How can I help you today?",
-      "reasoning_channel_id": ""
+      "url": "wss://remote-pico-server/pico/ws",
+      "token": "YOUR_PICO_TOKEN",
+      "session_id": "",
+      "ping_interval": 30,
+      "read_timeout": 60,
+      "allow_from": []
     },
     "magicform": {
       "_comment": "MagicForm - Webhook-based channel for MagicForm agentic task delegation",
@@ -216,79 +263,18 @@
       "reasoning_channel_id": ""
     }
   },
-  "providers": {
-    "_comment": "DEPRECATED: Use model_list instead. This will be removed in a future version",
-    "anthropic": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "openai": {
-      "api_key": "",
-      "api_base": "",
-      "web_search": true
-    },
-    "openrouter": {
-      "api_key": "sk-or-v1-xxx",
-      "api_base": ""
-    },
-    "groq": {
-      "api_key": "gsk_xxx",
-      "api_base": ""
-    },
-    "zhipu": {
-      "api_key": "YOUR_ZHIPU_API_KEY",
-      "api_base": ""
-    },
-    "gemini": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "vllm": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "nvidia": {
-      "api_key": "nvapi-xxx",
-      "api_base": "",
-      "proxy": "http://127.0.0.1:7890"
-    },
-    "moonshot": {
-      "api_key": "sk-xxx",
-      "api_base": ""
-    },
-    "qwen": {
-      "api_key": "sk-xxx",
-      "api_base": ""
-    },
-    "ollama": {
-      "api_key": "",
-      "api_base": "http://localhost:11434/v1"
-    },
-    "cerebras": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "volcengine": {
-      "api_key": "",
-      "api_base": ""
-    },
-    "mistral": {
-      "api_key": "",
-      "api_base": "https://api.mistral.ai/v1"
-    },
-    "avian": {
-      "api_key": "",
-      "api_base": "https://api.avian.io/v1"
-    }
-  },
   "tools": {
     "allow_read_paths": null,
     "allow_write_paths": null,
     "web": {
       "enabled": true,
+      "prefer_native": true,
+      "fetch_limit_bytes": 10485760,
+      "format": "plaintext",
       "brave": {
         "enabled": false,
         "api_key": "YOUR_BRAVE_API_KEY",
+        "api_keys": ["YOUR_BRAVE_API_KEY"],
         "max_results": 5
       },
       "tavily": {
@@ -297,13 +283,19 @@
         "base_url": "",
         "max_results": 0
       },
-      "duckduckgo": {
+      "provider": "auto",
+      "sogou": {
         "enabled": true,
+        "max_results": 5
+      },
+      "duckduckgo": {
+        "enabled": false,
         "max_results": 5
       },
       "perplexity": {
         "enabled": false,
-        "api_key": "",
+        "api_key": "pplx-xxx",
+        "api_keys": ["pplx-xxx"],
         "max_results": 5
       },
       "searxng": {
@@ -318,7 +310,14 @@
         "search_engine": "search_std",
         "max_results": 5
       },
-      "fetch_limit_bytes": 10485760
+      "baidu_search": {
+        "enabled": false,
+        "api_key": "",
+        "base_url": "https://qianfan.baidubce.com/v2/ai_search/web_search",
+        "max_results": 10
+      },
+      "fetch_limit_bytes": 10485760,
+      "private_host_whitelist": []
     },
     "cron": {
       "enabled": true,
@@ -326,6 +325,13 @@
     },
     "mcp": {
       "enabled": false,
+      "discovery": {
+        "enabled": false,
+        "ttl": 5,
+        "max_search_results": 5,
+        "use_bm25": true,
+        "use_regex": false
+      },
       "servers": {
         "context7": {
           "enabled": false,
@@ -338,19 +344,12 @@
         "filesystem": {
           "enabled": false,
           "command": "npx",
-          "args": [
-            "-y",
-            "@modelcontextprotocol/server-filesystem",
-            "/tmp"
-          ]
+          "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
         },
         "github": {
           "enabled": false,
           "command": "npx",
-          "args": [
-            "-y",
-            "@modelcontextprotocol/server-github"
-          ],
+          "args": ["-y", "@modelcontextprotocol/server-github"],
           "env": {
             "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_GITHUB_TOKEN"
           }
@@ -358,10 +357,7 @@
         "brave-search": {
           "enabled": false,
           "command": "npx",
-          "args": [
-            "-y",
-            "@modelcontextprotocol/server-brave-search"
-          ],
+          "args": ["-y", "@modelcontextprotocol/server-brave-search"],
           "env": {
             "BRAVE_API_KEY": "YOUR_BRAVE_API_KEY"
           }
@@ -378,10 +374,7 @@
         "slack": {
           "enabled": false,
           "command": "npx",
-          "args": [
-            "-y",
-            "@modelcontextprotocol/server-slack"
-          ],
+          "args": ["-y", "@modelcontextprotocol/server-slack"],
           "env": {
             "SLACK_BOT_TOKEN": "YOUR_SLACK_BOT_TOKEN",
             "SLACK_TEAM_ID": "YOUR_SLACK_TEAM_ID"
@@ -408,7 +401,18 @@
           "timeout": 0,
           "max_zip_size": 0,
           "max_response_size": 0
+        },
+        "github": {
+          "enabled": true,
+          "base_url": "https://github.com",
+          "auth_token": "",
+          "proxy": "http://127.0.0.1:7891"
         }
+      },
+      "github": {
+        "base_url": "https://github.com",
+        "proxy": "http://127.0.0.1:7891",
+        "token": ""
       },
       "max_concurrent_searches": 2,
       "search_cache": {
@@ -443,7 +447,14 @@
       "enabled": true
     },
     "read_file": {
-      "enabled": true
+      "enabled": true,
+      "mode": "bytes"
+    },
+    "serial": {
+      "enabled": false
+    },
+    "send_tts": {
+      "enabled": false
     },
     "spawn": {
       "enabled": true
@@ -469,8 +480,32 @@
     "enabled": false,
     "monitor_usb": true
   },
+  "voice": {
+    "model_name": "",
+    "echo_transcription": false
+  },
+  "hooks": {
+    "enabled": true,
+    "defaults": {
+      "observer_timeout_ms": 500,
+      "interceptor_timeout_ms": 5000,
+      "approval_timeout_ms": 60000
+    }
+  },
+  "events": {
+    "logging": {
+      "enabled": true,
+      "include": ["agent.*"],
+      "exclude": [],
+      "min_severity": "info",
+      "include_payload": false
+    }
+  },
   "gateway": {
-    "host": "127.0.0.1",
-    "port": 18790
+    "_comment": "Default log level is set to 'fatal'. Other available options are 'debug', 'info', 'warn' and 'error'.",
+    "host": "localhost",
+    "port": 18790,
+    "hot_reload": false,
+    "log_level": "fatal"
   }
 }

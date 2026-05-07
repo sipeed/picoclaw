@@ -16,6 +16,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
@@ -23,6 +24,24 @@ import (
 type headerTransport struct {
 	base    http.RoundTripper
 	headers map[string]string
+}
+
+func expandHomeCommandPath(command string) string {
+	if command == "" || command[0] != '~' {
+		return command
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return command
+	}
+	if command == "~" {
+		return home
+	}
+	if strings.HasPrefix(command, "~/") || strings.HasPrefix(command, "~\\") {
+		return filepath.Join(home, command[2:])
+	}
+	return command
 }
 
 func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -99,25 +118,57 @@ func loadEnvFile(path string) (map[string]string, error) {
 
 // ServerConnection represents a connection to an MCP server
 type ServerConnection struct {
-	Name    string
-	Client  *mcp.Client
-	Session *mcp.ClientSession
-	Tools   []*mcp.Tool
+	Name        string
+	Config      config.MCPServerConfig
+	Client      *mcp.Client
+	Session     *mcp.ClientSession
+	Tools       []*mcp.Tool
+	reconnectMu sync.Mutex
 }
 
 // Manager manages multiple MCP server connections
 type Manager struct {
-	servers map[string]*ServerConnection
-	mu      sync.RWMutex
-	closed  atomic.Bool    // changed from bool to atomic.Bool to avoid TOCTOU race
-	wg      sync.WaitGroup // tracks in-flight CallTool calls
+	servers       map[string]*ServerConnection
+	runtimeEvents runtimeevents.Bus
+	mu            sync.RWMutex
+	closed        atomic.Bool    // changed from bool to atomic.Bool to avoid TOCTOU race
+	wg            sync.WaitGroup // tracks in-flight CallTool calls
+}
+
+var connectServerFunc = connectServer
+
+// ManagerOption configures an MCP manager.
+type ManagerOption func(*Manager)
+
+// WithRuntimeEvents injects the runtime event bus used for MCP observations.
+func WithRuntimeEvents(eventBus runtimeevents.Bus) ManagerOption {
+	return func(m *Manager) {
+		m.runtimeEvents = eventBus
+	}
+}
+
+// ServerEventPayload describes MCP server connection events.
+type ServerEventPayload struct {
+	Server    string `json:"server"`
+	Type      string `json:"type,omitempty"`
+	URL       string `json:"url,omitempty"`
+	Command   string `json:"command,omitempty"`
+	Tool      string `json:"tool,omitempty"`
+	ToolCount int    `json:"tool_count,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // NewManager creates a new MCP manager
-func NewManager() *Manager {
-	return &Manager{
+func NewManager(opts ...ManagerOption) *Manager {
+	m := &Manager{
 		servers: make(map[string]*ServerConnection),
 	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(m)
+		}
+	}
+	return m
 }
 
 // LoadFromConfig loads MCP servers from configuration
@@ -242,6 +293,39 @@ func (m *Manager) ConnectServer(
 	name string,
 	cfg config.MCPServerConfig,
 ) error {
+	m.publishServerEvent(runtimeevents.KindMCPServerConnecting, name, cfg, 0, nil)
+	conn, err := connectServerFunc(ctx, name, cfg)
+	if err != nil {
+		m.publishServerEvent(runtimeevents.KindMCPServerFailed, name, cfg, 0, err)
+		return err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.closed.Load() {
+		_ = conn.Session.Close()
+		m.publishServerEvent(runtimeevents.KindMCPServerFailed, name, cfg, 0, fmt.Errorf("manager is closed"))
+		return fmt.Errorf("manager is closed")
+	}
+
+	m.servers[name] = conn
+	for _, tool := range conn.Tools {
+		toolName := ""
+		if tool != nil {
+			toolName = tool.Name
+		}
+		m.publishToolDiscovered(name, cfg, toolName)
+	}
+	m.publishServerEvent(runtimeevents.KindMCPServerConnected, name, cfg, len(conn.Tools), nil)
+	return nil
+}
+
+func connectServer(
+	ctx context.Context,
+	name string,
+	cfg config.MCPServerConfig,
+) (*ServerConnection, error) {
 	logger.InfoCF("mcp", "Connecting to MCP server",
 		map[string]any{
 			"server":     name,
@@ -267,23 +351,34 @@ func (m *Manager) ConnectServer(
 		} else if cfg.Command != "" {
 			transportType = "stdio"
 		} else {
-			return fmt.Errorf("either URL or command must be provided")
+			return nil, fmt.Errorf("either URL or command must be provided")
 		}
 	}
 
 	switch transportType {
 	case "sse", "http":
 		if cfg.URL == "" {
-			return fmt.Errorf("URL is required for SSE/HTTP transport")
+			return nil, fmt.Errorf("URL is required for SSE/HTTP transport")
 		}
+
+		// Configure DisableStandaloneSSE based on transport type.
+		// - "http": Request-response only mode. Disable the standalone SSE stream
+		//   to avoid compatibility issues with servers that don't support GET /mcp.
+		// - "sse": Bidirectional mode. Enable the standalone SSE stream to receive
+		//   server-initiated notifications (e.g., ToolListChangedNotification).
+		// - Empty or auto-detected: Defaults to "sse" behavior (standalone SSE enabled).
+		disableStandaloneSSE := (cfg.Type == "http")
+
 		logger.DebugCF("mcp", "Using SSE/HTTP transport",
 			map[string]any{
-				"server": name,
-				"url":    cfg.URL,
+				"server":               name,
+				"url":                  cfg.URL,
+				"disableStandaloneSSE": disableStandaloneSSE,
 			})
 
 		sseTransport := &mcp.StreamableClientTransport{
-			Endpoint: cfg.URL,
+			Endpoint:             cfg.URL,
+			DisableStandaloneSSE: disableStandaloneSSE,
 		}
 
 		// Add custom headers if provided
@@ -305,7 +400,7 @@ func (m *Manager) ConnectServer(
 		transport = sseTransport
 	case "stdio":
 		if cfg.Command == "" {
-			return fmt.Errorf("command is required for stdio transport")
+			return nil, fmt.Errorf("command is required for stdio transport")
 		}
 		logger.DebugCF("mcp", "Using stdio transport",
 			map[string]any{
@@ -313,7 +408,7 @@ func (m *Manager) ConnectServer(
 				"command": cfg.Command,
 			})
 		// Create command with context
-		cmd := exec.CommandContext(ctx, cfg.Command, cfg.Args...)
+		cmd := exec.CommandContext(ctx, expandHomeCommandPath(cfg.Command), cfg.Args...)
 
 		// Build environment variables with proper override semantics
 		// Use a map to ensure config variables override file variables
@@ -330,7 +425,7 @@ func (m *Manager) ConnectServer(
 		if cfg.EnvFile != "" {
 			envVars, err := loadEnvFile(cfg.EnvFile)
 			if err != nil {
-				return fmt.Errorf("failed to load env file %s: %w", cfg.EnvFile, err)
+				return nil, fmt.Errorf("failed to load env file %s: %w", cfg.EnvFile, err)
 			}
 			for k, v := range envVars {
 				envMap[k] = v
@@ -354,10 +449,9 @@ func (m *Manager) ConnectServer(
 			env = append(env, fmt.Sprintf("%s=%s", k, v))
 		}
 		cmd.Env = env
-
-		transport = &mcp.CommandTransport{Command: cmd}
+		transport = &isolatedCommandTransport{Command: cmd}
 	default:
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"unsupported transport type: %s (supported: stdio, sse, http)",
 			transportType,
 		)
@@ -366,7 +460,7 @@ func (m *Manager) ConnectServer(
 	// Connect to server
 	session, err := client.Connect(ctx, transport, nil)
 	if err != nil {
-		return fmt.Errorf("failed to connect: %w", err)
+		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
 
 	// Get server info
@@ -380,38 +474,19 @@ func (m *Manager) ConnectServer(
 		})
 
 	// List available tools if supported
-	var tools []*mcp.Tool
-	if initResult.Capabilities.Tools != nil {
-		for tool, err := range session.Tools(ctx, nil) {
-			if err != nil {
-				logger.WarnCF("mcp", "Error listing tool",
-					map[string]any{
-						"server": name,
-						"error":  err.Error(),
-					})
-				continue
-			}
-			tools = append(tools, tool)
-		}
-
-		logger.InfoCF("mcp", "Listed tools from MCP server",
-			map[string]any{
-				"server":    name,
-				"toolCount": len(tools),
-			})
+	tools, err := listServerTools(ctx, name, session, initResult)
+	if err != nil {
+		_ = session.Close()
+		return nil, err
 	}
 
-	// Store connection
-	m.mu.Lock()
-	m.servers[name] = &ServerConnection{
+	return &ServerConnection{
 		Name:    name,
+		Config:  cfg,
 		Client:  client,
 		Session: session,
 		Tools:   tools,
-	}
-	m.mu.Unlock()
-
-	return nil
+	}, nil
 }
 
 // GetServers returns all connected servers
@@ -470,10 +545,129 @@ func (m *Manager) CallTool(
 
 	result, err := conn.Session.CallTool(ctx, params)
 	if err != nil {
+		if shouldReconnectCallError(err) {
+			logger.WarnCF("mcp", "MCP server session was lost during tool call, reconnecting",
+				map[string]any{
+					"server": serverName,
+					"tool":   toolName,
+					"error":  err.Error(),
+				})
+
+			reconnectedConn, reconnectErr := m.reconnectServer(ctx, serverName, conn)
+			if reconnectErr != nil {
+				return nil, fmt.Errorf("failed to recover lost MCP session: %w", reconnectErr)
+			}
+
+			result, err = reconnectedConn.Session.CallTool(ctx, params)
+			if err == nil {
+				return result, nil
+			}
+		}
+
 		return nil, fmt.Errorf("failed to call tool: %w", err)
 	}
 
 	return result, nil
+}
+
+func listServerTools(
+	ctx context.Context,
+	name string,
+	session *mcp.ClientSession,
+	initResult *mcp.InitializeResult,
+) ([]*mcp.Tool, error) {
+	var tools []*mcp.Tool
+	if initResult.Capabilities.Tools == nil {
+		return tools, nil
+	}
+
+	for tool, err := range session.Tools(ctx, nil) {
+		if err != nil {
+			logger.WarnCF("mcp", "Error listing tool",
+				map[string]any{
+					"server": name,
+					"error":  err.Error(),
+				})
+			continue
+		}
+		tools = append(tools, tool)
+	}
+
+	logger.InfoCF("mcp", "Listed tools from MCP server",
+		map[string]any{
+			"server":    name,
+			"toolCount": len(tools),
+		})
+
+	return tools, nil
+}
+
+func shouldReconnectCallError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, mcp.ErrSessionMissing) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), mcp.ErrSessionMissing.Error())
+}
+
+func (m *Manager) reconnectServer(
+	ctx context.Context,
+	serverName string,
+	staleConn *ServerConnection,
+) (*ServerConnection, error) {
+	if staleConn == nil {
+		return nil, fmt.Errorf("server %s not found", serverName)
+	}
+
+	staleConn.reconnectMu.Lock()
+	defer staleConn.reconnectMu.Unlock()
+
+	if m.closed.Load() {
+		return nil, fmt.Errorf("manager is closed")
+	}
+
+	m.mu.RLock()
+	currentConn, ok := m.servers[serverName]
+	m.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("server %s not found", serverName)
+	}
+	if currentConn != staleConn {
+		return currentConn, nil
+	}
+
+	freshConn, err := connectServerFunc(ctx, serverName, staleConn.Config)
+	if err != nil {
+		return nil, err
+	}
+
+	m.mu.Lock()
+	if m.closed.Load() {
+		m.mu.Unlock()
+		_ = freshConn.Session.Close()
+		return nil, fmt.Errorf("manager is closed")
+	}
+
+	currentConn, ok = m.servers[serverName]
+	if !ok {
+		m.mu.Unlock()
+		_ = freshConn.Session.Close()
+		return nil, fmt.Errorf("server %s not found", serverName)
+	}
+
+	if currentConn == staleConn {
+		m.servers[serverName] = freshConn
+		staleToClose := staleConn
+		m.mu.Unlock()
+		_ = staleToClose.Session.Close()
+		return freshConn, nil
+	}
+
+	m.mu.Unlock()
+	_ = freshConn.Session.Close()
+	return currentConn, nil
 }
 
 // Close closes all server connections
