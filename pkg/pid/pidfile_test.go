@@ -1,10 +1,14 @@
 package pid
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
-	"testing"
+    "encoding/json"
+    "net"
+    "net/http"
+    "net/http/httptest"
+    "os"
+    "path/filepath"
+    "strconv"
+    "testing"
 )
 
 // tmpDir returns a clean temporary directory for a test.
@@ -49,6 +53,100 @@ func TestPidFilePath(t *testing.T) {
 	if got != want {
 		t.Errorf("pidFilePath(%q) = %q, want %q", dir, got, want)
 	}
+}
+
+//  verifies that an unrelated service on the recorded port is not mistaken for the gateway.
+func TestWritePidFileHealthPIDMismatch(t *testing.T) {
+    mux := http.NewServeMux()
+    mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Content-Type", "application/json")
+        // Return PID 99999 — does not match the PID file entry
+        json.NewEncoder(w).Encode(map[string]any{"pid": 99999, "status": "ok"})
+    })
+    srv := httptest.NewServer(mux)
+    defer srv.Close()
+
+    host, portStr, _ := net.SplitHostPort(srv.Listener.Addr().String())
+    port, _ := strconv.Atoi(portStr)
+
+    dir := tmpDir(t)
+    foreign := PidFileData{
+        PID:   os.Getpid(), // real running PID so it reaches isGatewayAlive
+        Token: "deadbeef12345678deadbeef12345678",
+        Port:  port,
+        Host:  host,
+    }
+    raw, _ := json.MarshalIndent(foreign, "", "  ")
+    os.WriteFile(filepath.Join(dir, pidFileName), raw, 0o600)
+
+    // Should succeed — health PID (99999) != PID file PID (os.Getpid()) = not our gateway
+    data, err := WritePidFile(dir, "127.0.0.1", 18790)
+    if err != nil {
+        t.Fatalf("WritePidFile should treat health PID mismatch as stale, got error: %v", err)
+    }
+    if data.PID != os.Getpid() {
+        t.Errorf("PID = %d, want %d", data.PID, os.Getpid())
+    }
+}
+
+//  verifies that isGatewayAlive uses the host from the PID file instead of hardcoding localhost.
+func TestWritePidFileNonLocalhostHost(t *testing.T) {
+    if !isProcessRunning(os.Getppid()) {
+        t.Skip("skipping: parent process not running in this environment")
+    }
+
+    mux := http.NewServeMux()
+    mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Content-Type", "application/json")
+        // Return parent PID — matches the PID file entry
+        json.NewEncoder(w).Encode(map[string]any{"pid": os.Getppid(), "status": "ok"})
+    })
+    srv := httptest.NewServer(mux)
+    defer srv.Close()
+
+    host, portStr, _ := net.SplitHostPort(srv.Listener.Addr().String())
+    port, _ := strconv.Atoi(portStr)
+
+    dir := tmpDir(t)
+    foreign := PidFileData{
+        PID:   os.Getppid(), // parent PID — real, running, but not us
+        Token: "deadbeef12345678deadbeef12345678",
+        Port:  port,
+        Host:  host,
+    }
+    raw, _ := json.MarshalIndent(foreign, "", "  ")
+    os.WriteFile(filepath.Join(dir, pidFileName), raw, 0o600)
+
+    // Should block — PID exists, health responds with matching PID on non-localhost host
+    _, err := WritePidFile(dir, "127.0.0.1", 18790)
+    if err == nil {
+        t.Fatal("WritePidFile should block startup when gateway is genuinely alive on non-localhost host")
+    }
+}
+
+
+//verifies that a foreign process reusing a crashed gateway's PID is treated as stale.
+func TestWritePidFileForeignPIDReuse(t *testing.T) {
+    dir := tmpDir(t)
+
+    // PID 1 (init/systemd) is always running but won't respond on port 19999
+    foreign := PidFileData{
+        PID:   1,
+        Token: "deadbeef12345678deadbeef12345678",
+        Port:  19999, // nothing listening here
+        Host:  "127.0.0.1",
+    }
+    raw, _ := json.MarshalIndent(foreign, "", "  ")
+    os.WriteFile(filepath.Join(dir, pidFileName), raw, 0o600)
+
+    // Should succeed — foreign PID reuse should be treated as stale
+    data, err := WritePidFile(dir, "127.0.0.1", 18790)
+    if err != nil {
+        t.Fatalf("WritePidFile should treat foreign PID as stale, got error: %v", err)
+    }
+    if data.PID != os.Getpid() {
+        t.Errorf("PID = %d, want %d", data.PID, os.Getpid())
+    }
 }
 
 // TestWritePidFile creates a PID file and verifies its contents.
