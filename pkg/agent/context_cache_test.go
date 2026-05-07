@@ -680,8 +680,8 @@ func TestSkillCatalogInjectionPolicy(t *testing.T) {
 			t.Error("turn > 1, no summary: catalog should be skipped")
 		}
 		if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
-			History:  []providers.Message{userMsg, assistantMsg},
-			Summary:  "prior conversation summary",
+			History: []providers.Message{userMsg, assistantMsg},
+			Summary: "prior conversation summary",
 		})) {
 			t.Error("after compaction: catalog should be re-injected")
 		}
