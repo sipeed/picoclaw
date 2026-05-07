@@ -10,6 +10,7 @@ import (
 	"net/http/httputil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/memory"
 	ppid "github.com/sipeed/picoclaw/pkg/pid"
 )
 
@@ -799,7 +801,10 @@ func appendVaultGraph(
 		noteID := "vault:" + noteName
 
 		// Parse frontmatter and content
-		fm, body := memory.ParseFrontmatter(string(data))
+		fm, body, err := memory.ParseFrontmatter(string(data))
+		if err != nil {
+			continue
+		}
 
 		// Create node
 		label := noteName

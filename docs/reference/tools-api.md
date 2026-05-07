@@ -458,3 +458,57 @@ registry.RegisterHidden(tools.NewRegexSearchTool(registry, 5, 10))
 // Promote hidden tools (make them available to LLM)
 registry.PromoteTools([]string{"tool_search_tool_regex"}, 10)  // TTL=10 turns
 ```
+
+## Agent Management API
+
+PicoClaw provides REST API endpoints for managing custom agents in the cockpit. Agents are stored as Markdown files with YAML frontmatter in `~/.picoclaw/workspace/agents/`.
+
+### Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/agents` | List all agents |
+| GET | `/api/agent?slug={slug}` | Get agent by slug |
+| POST | `/api/agent/create` | Create new agent |
+| PUT | `/api/agent/update?slug={slug}` | Update agent |
+| DELETE | `/api/agent/delete?slug={slug}` | Delete agent |
+| POST | `/api/agent/import` | Import agent from Markdown content |
+
+### Data Types
+
+```typescript
+interface Agent {
+  slug: string
+  name: string
+  description: string
+  system_prompt: string
+  model: string
+  tool_permissions: string[]
+  status: "enabled" | "disabled"
+  created_at: string
+  updated_at: string
+}
+
+interface AgentCreateRequest {
+  name: string
+  description?: string
+  system_prompt: string
+  model: string
+  tool_permissions?: string[]
+}
+```
+
+### Agent File Format
+
+Agents are stored as `.md` files with YAML frontmatter:
+
+```markdown
+---
+name: researcher
+description: Research assistant agent
+model: claude-3-5-sonnet
+slug: researcher
+---
+
+You are a research assistant specialized in finding and summarizing information...
+```

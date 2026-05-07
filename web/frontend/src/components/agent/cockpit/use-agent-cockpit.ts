@@ -7,6 +7,7 @@ import { getPicoMemoryGraph, getPicoSubagents } from "@/api/pico"
 import { getTools, getWebSearchConfig, setToolEnabled } from "@/api/tools"
 import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
+import { useCockpitSkills } from "@/hooks/use-cockpit-skills"
 
 type ToolStatusFilter = "all" | "enabled" | "disabled" | "blocked"
 
@@ -15,6 +16,7 @@ export function useAgentCockpit(sessionId: string) {
   const queryClient = useQueryClient()
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState<ToolStatusFilter>("all")
+  const [activeTab, setActiveTab] = useState<"tools" | "skills" | "agents" | "research">("tools")
   const deferredSearchQuery = useDeferredValue(searchQuery)
 
   const toolsQuery = useQuery({
@@ -37,6 +39,12 @@ export function useAgentCockpit(sessionId: string) {
     enabled: Boolean(sessionId),
     refetchInterval: 10000,
   })
+
+  const {
+    skills,
+    isLoading: skillsLoading,
+    isError: skillsError,
+  } = useCockpitSkills()
 
   const toggleToolMutation = useMutation({
     mutationFn: async ({ name, enabled }: { name: string; enabled: boolean }) =>
@@ -108,29 +116,34 @@ export function useAgentCockpit(sessionId: string) {
     }
   }, [tools])
 
-  return {
-    categoryCounts,
-    groupedTools,
-    pendingToolName: toggleToolMutation.isPending
-      ? (toggleToolMutation.variables?.name ?? null)
-      : null,
-    searchQuery,
-    sessionMemoryGraph: memoryGraphQuery.data ?? null,
-    sessionSubagents: subagentsQuery.data?.tasks ?? [],
-    statusCounts,
-    statusFilter,
-    tools,
-    hasMemoryGraphError: memoryGraphQuery.error != null,
-    webSearchConfig: webSearchQuery.data ?? null,
-    hasSubagentsError: subagentsQuery.error != null,
-    hasToolsError: toolsQuery.error != null,
-    isMemoryGraphLoading: memoryGraphQuery.isLoading,
-    isSubagentsLoading: subagentsQuery.isLoading,
-    isToolsLoading: toolsQuery.isLoading,
-    isWebSearchLoading: webSearchQuery.isLoading,
-    setSearchQuery,
-    setStatusFilter,
-    toggleTool: (name: string, enabled: boolean) =>
-      toggleToolMutation.mutate({ name, enabled }),
-  }
+    return {
+      categoryCounts,
+      groupedTools,
+      pendingToolName: toggleToolMutation.isPending
+        ? (toggleToolMutation.variables?.name ?? null)
+        : null,
+      searchQuery,
+      sessionMemoryGraph: memoryGraphQuery.data ?? null,
+      sessionSubagents: subagentsQuery.data?.tasks ?? [],
+      statusCounts,
+      statusFilter,
+      tools,
+      activeTab,
+      setActiveTab,
+      hasMemoryGraphError: memoryGraphQuery.error != null,
+      webSearchConfig: webSearchQuery.data ?? null,
+      hasSubagentsError: subagentsQuery.error != null,
+      hasToolsError: toolsQuery.error != null,
+      isMemoryGraphLoading: memoryGraphQuery.isLoading,
+      isSubagentsLoading: subagentsQuery.isLoading,
+      isToolsLoading: toolsQuery.isLoading,
+      isWebSearchLoading: webSearchQuery.isLoading,
+      skills,
+      skillsLoading,
+      skillsError,
+      setSearchQuery,
+      setStatusFilter,
+      toggleTool: (name: string, enabled: boolean) =>
+        toggleToolMutation.mutate({ name, enabled }),
+    }
 }

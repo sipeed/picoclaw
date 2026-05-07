@@ -254,6 +254,9 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) (runEr
 		}, nil
 	})
 
+	// Register agent API routes
+	RegisterAgentAPI(runningServices.HealthServer)
+
 	for _, bindHost := range listenResult.BindHosts {
 		fmt.Printf("✓ Gateway started on %s\n", net.JoinHostPort(bindHost, strconv.Itoa(cfg.Gateway.Port)))
 	}

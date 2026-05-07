@@ -1,6 +1,6 @@
 import dayjs from "dayjs"
 import { useMemo } from "react"
-import { IconArrowRight } from "@tabler/icons-react"
+import { IconArrowRight, IconLayoutDashboard, IconUsers, IconBrain, IconFlask } from "@tabler/icons-react"
 
 import { usePicoChat } from "@/hooks/use-pico-chat"
 import { Badge } from "@/components/ui/badge"
@@ -9,6 +9,9 @@ import { cn } from "@/lib/utils"
 
 import { MemoryGraph } from "./memory-graph"
 import { useAgentCockpit } from "./use-agent-cockpit"
+import { AgentsPage } from "../agents"
+import { SkillsPage } from "../skills"
+import { ResearchPage } from "../research/research-page"
 
 function reasonLabel(reasonCode?: string) {
   switch (reasonCode) {
@@ -35,6 +38,8 @@ export function CockpitPage() {
     sessionSubagents,
     sessionMemoryGraph,
     toggleTool,
+    activeTab,
+    setActiveTab,
   } = useAgentCockpit(activeSessionId)
 
   const filteredToolCount = useMemo(
@@ -77,6 +82,56 @@ export function CockpitPage() {
               </p>
             </div>
 
+            <div className="flex items-center gap-4 border-b border-white/10 pb-4">
+              <button
+                onClick={() => setActiveTab("tools")}
+                className={cn(
+                  "flex items-center gap-2 text-xs uppercase tracking-widest font-bold transition-colors",
+                  activeTab === "tools" ? "text-[#F27D26] border-b-2 border-[#F27D26] pb-4 -mb-4.5" : "text-white/40 hover:text-white/60"
+                )}
+              >
+                <IconLayoutDashboard className="size-4" />
+                Tools
+              </button>
+              <button
+                onClick={() => setActiveTab("skills")}
+                className={cn(
+                  "flex items-center gap-2 text-xs uppercase tracking-widest font-bold transition-colors",
+                  activeTab === "skills" ? "text-[#F27D26] border-b-2 border-[#F27D26] pb-4 -mb-4.5" : "text-white/40 hover:text-white/60"
+                )}
+              >
+                <IconBrain className="size-4" />
+                Skills
+              </button>
+              <button
+                onClick={() => setActiveTab("agents")}
+                className={cn(
+                  "flex items-center gap-2 text-xs uppercase tracking-widest font-bold transition-colors",
+                  activeTab === "agents" ? "text-[#F27D26] border-b-2 border-[#F27D26] pb-4 -mb-4.5" : "text-white/40 hover:text-white/60"
+                )}
+              >
+                <IconUsers className="size-4" />
+                Agents
+              </button>
+              <button
+                onClick={() => setActiveTab("research")}
+                className={cn(
+                  "flex items-center gap-2 text-xs uppercase tracking-widest font-bold transition-colors",
+                  activeTab === "research" ? "text-[#F27D26] border-b-2 border-[#F27D26] pb-4 -mb-4.5" : "text-white/40 hover:text-white/60"
+                )}
+              >
+                <IconFlask className="size-4" />
+                Research
+              </button>
+            </div>
+
+            {activeTab === "skills" && <SkillsPage embedded />}
+
+            {activeTab === "agents" && <AgentsPage embedded />}
+
+            {activeTab === "research" && <ResearchPage />}
+
+            {activeTab === "tools" && (
             <section className="grid gap-12">
               {/* Tool Grid */}
               <div className="space-y-8">
@@ -151,40 +206,45 @@ export function CockpitPage() {
                 </div>
               </div>
             </section>
+            )}
           </div>
 
           {/* Right Sidebar */}
           <aside className="space-y-12">
-            {/* Subagents */}
-            <div className="space-y-8">
-              <div className="border-b border-white/10 pb-2">
-                <span className="text-[10px] uppercase tracking-[0.3em] font-bold text-[#F27D26]">Subagent Manifest</span>
-              </div>
-              <div className="space-y-4">
-                {sessionSubagents.length === 0 ? (
-                  <div className="border border-white/10 p-5 bg-[#0A0A0A] text-sm text-white/40">
-                    No subagents have been created in this session yet.
-                  </div>
-                ) : (
-                  sessionSubagents.map((task) => (
-                    <div key={task.id} className="group border border-white/10 p-5 bg-[#0A0A0A] hover:border-white/30 transition-all">
-                      <div className="flex justify-between items-start mb-2">
-                        <span className="font-bold text-sm uppercase tracking-tight">{task.label || task.id}</span>
-                        <span className={cn(
-                          "text-[9px] uppercase font-mono px-1.5 py-0.5",
-                          task.status === "completed" ? "bg-green-500/20 text-green-400" : "bg-[#F27D26]/20 text-[#F27D26]"
-                        )}>
-                          {task.status}
-                        </span>
-                      </div>
-                      <div className="text-[9px] font-mono text-white/30 truncate">
-                        {dayjs(task.created).format("HH:mm:ss [UTC]")}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+             {/* Subagents */}
+             <div className="space-y-8">
+               <div className="border-b border-white/10 pb-2">
+                 <span className="text-[10px] uppercase tracking-[0.3em] font-bold text-[#F27D26]">Subagent Manifest</span>
+               </div>
+               <div className="space-y-4">
+                 {sessionSubagents === null ? (
+                   <div className="border border-white/10 p-5 bg-[#0A0A0A] text-sm text-white/40">
+                     Loading subagents...
+                   </div>
+                 ) : sessionSubagents.length === 0 ? (
+                   <div className="border border-white/10 p-5 bg-[#0A0A0A] text-sm text-white/40">
+                     No subagents have been created in this session yet.
+                   </div>
+                 ) : (
+                   sessionSubagents.map((task) => (
+                     <div key={task.id} className="group border border-white/10 p-5 bg-[#0A0A0A] hover:border-white/30 transition-all">
+                       <div className="flex justify-between items-start mb-2">
+                         <span className="font-bold text-sm uppercase tracking-tight">{task.label || task.id}</span>
+                         <span className={cn(
+                           "text-[9px] uppercase font-mono px-1.5 py-0.5",
+                           task.status === "completed" ? "bg-green-500/20 text-green-400" : "bg-[#F27D26]/20 text-[#F27D26]"
+                         )}>
+                           {task.status}
+                         </span>
+                       </div>
+                       <div className="text-[9px] font-mono text-white/30 truncate">
+                         {dayjs(task.created).format("HH:mm:ss [UTC]")}
+                       </div>
+                     </div>
+                   ))
+                 )}
+               </div>
+             </div>
           </aside>
         </div>
       </div>

@@ -15,6 +15,7 @@ import (
 
 type Server struct {
 	server              *http.Server
+	mux                 *http.ServeMux
 	mu                  sync.RWMutex
 	ready               bool
 	checks              map[string]Check
@@ -46,6 +47,7 @@ func NewServer(host string, port int, token string) *Server {
 		checks:    make(map[string]Check),
 		startTime: time.Now(),
 		authToken: token,
+		mux:       mux,
 	}
 
 	mux.HandleFunc("/health", s.healthHandler)
@@ -57,7 +59,7 @@ func NewServer(host string, port int, token string) *Server {
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	s.server = &http.Server{
 		Addr:         addr,
-		Handler:      mux,
+		Handler:      s.mux,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
 	}
@@ -134,6 +136,11 @@ func (s *Server) SetSubagentStatusFunc(fn func(channel, chatID string) (any, err
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.subagentStatusFunc = fn
+}
+
+// HandleFunc registers a new handler for the given pattern.
+func (s *Server) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
+	s.mux.HandleFunc(pattern, handler)
 }
 
 // permissionGrantHandler handles POST /internal/permission/grant requests.

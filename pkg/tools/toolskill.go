@@ -3,8 +3,7 @@ package tools
 
 import (
 	"io/ioutil"
-	"path/filepath"
-	"strings"
+	"regexp"
 
 	"gopkg.in/yaml.v3"
 )
@@ -43,7 +42,7 @@ func LoadToolSkill(filePath string) (*ToolSkill, error) {
 // extractTagsFromContent extracts tags from markdown content
 func extractTagsFromContent(content string) []string {
 	// Look for #tag patterns
-	re := strings.NewReplacer(`#([a-zA-Z0-9_-]+)`, `$1`)
+	re := regexp.MustCompile(`#([a-zA-Z0-9_-]+)`)
 	matches := re.FindAllStringSubmatch(content, -1)
 	tags := make([]string, 0, len(matches))
 	for _, m := range matches {
