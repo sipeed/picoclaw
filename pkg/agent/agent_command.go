@@ -335,6 +335,28 @@ func (al *AgentLoop) buildCommandsRuntime(
 			return al.contextManager.Clear(ctx, opts.SessionKey)
 		}
 
+		rt.ResetSession = func(clear bool) (string, error) {
+			if opts == nil {
+				return "", fmt.Errorf("process options not available")
+			}
+			routeSessionKey := strings.TrimSpace(opts.Dispatch.RouteSessionKey)
+			if routeSessionKey == "" {
+				return "", fmt.Errorf("route session key not available")
+			}
+			if clear {
+				return "", al.clearSessionOverride(routeSessionKey)
+			}
+
+			nextSessionKey := buildResetSessionKey(agent.ID, routeSessionKey)
+			if nextSessionKey == "" {
+				return "", fmt.Errorf("failed to allocate reset session key")
+			}
+			if err := al.setSessionOverride(routeSessionKey, nextSessionKey); err != nil {
+				return "", err
+			}
+			return nextSessionKey, nil
+		}
+
 		rt.AskSideQuestion = func(ctx context.Context, question string) (string, error) {
 			return al.askSideQuestion(ctx, agent, opts, question)
 		}

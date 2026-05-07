@@ -216,6 +216,36 @@ func TestNewManager_EmptyWorkspace(t *testing.T) {
 	}
 }
 
+func TestSessionOverridesPersist(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	sm := NewManager(tmpDir)
+	if err := sm.SetSessionOverride("route-session", "reset-session"); err != nil {
+		t.Fatalf("SetSessionOverride failed: %v", err)
+	}
+
+	if got := sm.GetSessionOverride("route-session"); got != "reset-session" {
+		t.Fatalf("GetSessionOverride() = %q, want %q", got, "reset-session")
+	}
+
+	sm2 := NewManager(tmpDir)
+	if got := sm2.GetSessionOverride("route-session"); got != "reset-session" {
+		t.Fatalf("persisted GetSessionOverride() = %q, want %q", got, "reset-session")
+	}
+
+	if err := sm2.ClearSessionOverride("route-session"); err != nil {
+		t.Fatalf("ClearSessionOverride failed: %v", err)
+	}
+	if got := sm2.GetSessionOverride("route-session"); got != "" {
+		t.Fatalf("GetSessionOverride() after clear = %q, want empty", got)
+	}
+
+	sm3 := NewManager(tmpDir)
+	if got := sm3.GetSessionOverride("route-session"); got != "" {
+		t.Fatalf("persisted GetSessionOverride() after clear = %q, want empty", got)
+	}
+}
+
 func TestNewManager_MkdirFailureDoesNotCrash(t *testing.T) {
 	if os.Getenv("BE_CRASHER") == "1" {
 		tmpDir := os.Getenv("CRASH_DIR")

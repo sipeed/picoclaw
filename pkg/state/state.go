@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,6 +21,10 @@ type State struct {
 
 	// LastChatID is the last chat ID used for communication
 	LastChatID string `json:"last_chat_id,omitempty"`
+
+	// SessionOverrides maps the default routed session key for a conversation
+	// onto an explicit replacement session key created by a soft reset.
+	SessionOverrides map[string]string `json:"session_overrides,omitempty"`
 
 	// Timestamp is the last time this state was updated
 	Timestamp time.Time `json:"timestamp"`
@@ -106,6 +111,66 @@ func (sm *Manager) SetLastChatID(chatID string) error {
 	}
 
 	return nil
+}
+
+// SetSessionOverride persists a replacement session key for a routed session.
+func (sm *Manager) SetSessionOverride(routeSessionKey, sessionKey string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	routeSessionKey = strings.TrimSpace(routeSessionKey)
+	sessionKey = strings.TrimSpace(sessionKey)
+	if routeSessionKey == "" || sessionKey == "" {
+		return fmt.Errorf("route session key and session key are required")
+	}
+
+	if sm.state.SessionOverrides == nil {
+		sm.state.SessionOverrides = make(map[string]string)
+	}
+	sm.state.SessionOverrides[routeSessionKey] = sessionKey
+	sm.state.Timestamp = time.Now()
+
+	if err := sm.saveAtomic(); err != nil {
+		return fmt.Errorf("failed to save state atomically: %w", err)
+	}
+
+	return nil
+}
+
+// ClearSessionOverride removes a previously persisted replacement session key.
+func (sm *Manager) ClearSessionOverride(routeSessionKey string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	routeSessionKey = strings.TrimSpace(routeSessionKey)
+	if routeSessionKey == "" {
+		return fmt.Errorf("route session key is required")
+	}
+	if len(sm.state.SessionOverrides) == 0 {
+		return nil
+	}
+
+	delete(sm.state.SessionOverrides, routeSessionKey)
+	if len(sm.state.SessionOverrides) == 0 {
+		sm.state.SessionOverrides = nil
+	}
+	sm.state.Timestamp = time.Now()
+
+	if err := sm.saveAtomic(); err != nil {
+		return fmt.Errorf("failed to save state atomically: %w", err)
+	}
+
+	return nil
+}
+
+// GetSessionOverride returns the replacement session key for a routed session.
+func (sm *Manager) GetSessionOverride(routeSessionKey string) string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	if len(sm.state.SessionOverrides) == 0 {
+		return ""
+	}
+	return sm.state.SessionOverrides[strings.TrimSpace(routeSessionKey)]
 }
 
 // GetLastChannel returns the last channel from the state.
