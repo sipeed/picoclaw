@@ -24,6 +24,7 @@ export interface TestInlineParams {
   apiBase: string
   apiKey: string
   authMethod: string
+  modelIndex?: number
 }
 
 interface TestModelDialogProps {
@@ -62,6 +63,7 @@ export function TestModelDialog({
           api_base: inlineParams.apiBase || undefined,
           api_key: inlineParams.apiKey || undefined,
           auth_method: inlineParams.authMethod || undefined,
+          model_index: inlineParams.modelIndex,
         }
         res = await testModelInline(req)
       } else if (model) {

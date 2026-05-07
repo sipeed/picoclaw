@@ -16,6 +16,8 @@ export interface ProviderDefinition {
   priority: number
   commonModels?: string[]
   aliases?: string[]
+  /** Whether this provider supports the OpenAI-compatible /models listing endpoint. */
+  supportsFetch?: boolean
 }
 
 export const PROVIDERS: ProviderDefinition[] = [
@@ -30,6 +32,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     priority: 100,
     commonModels: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1", "o3-mini"],
     aliases: ["gpt"],
+    supportsFetch: true,
   },
   {
     key: "anthropic",
@@ -69,6 +72,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     isLocal: false,
     priority: 85,
     commonModels: ["deepseek-chat", "deepseek-reasoner"],
+    supportsFetch: true,
   },
   {
     key: "openrouter",
@@ -84,6 +88,7 @@ export const PROVIDERS: ProviderDefinition[] = [
       "anthropic/claude-sonnet-4",
       "google/gemini-2.0-flash",
     ],
+    supportsFetch: true,
   },
   {
     key: "qwen-portal",
@@ -97,6 +102,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     priority: 75,
     commonModels: ["qwen-max", "qwen-plus", "qwen-turbo"],
     aliases: ["qwen"],
+    supportsFetch: true,
   },
   {
     key: "qwen-intl",
@@ -109,6 +115,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     priority: 74,
     commonModels: ["qwen-max", "qwen-plus", "qwen-turbo"],
     aliases: ["qwen-international", "dashscope-intl"],
+    supportsFetch: true,
   },
   {
     key: "moonshot",
@@ -120,6 +127,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     isLocal: false,
     priority: 70,
     commonModels: ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
+    supportsFetch: true,
   },
   {
     key: "volcengine",
@@ -132,6 +140,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     isLocal: false,
     priority: 69,
     commonModels: ["doubao-1.5-pro", "doubao-1.5-lite"],
+    supportsFetch: true,
   },
   {
     key: "zhipu",
@@ -144,6 +153,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     isLocal: false,
     priority: 68,
     commonModels: ["glm-4-plus", "glm-4-flash"],
+    supportsFetch: true,
   },
   {
     key: "groq",
@@ -155,6 +165,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     isLocal: false,
     priority: 65,
     commonModels: ["llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
+    supportsFetch: true,
   },
   {
     key: "mistral",
@@ -166,6 +177,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     isLocal: false,
     priority: 64,
     commonModels: ["mistral-large-latest", "mistral-small-latest"],
+    supportsFetch: true,
   },
   {
     key: "nvidia",
@@ -177,6 +189,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     isLocal: false,
     priority: 63,
     commonModels: ["meta/llama-3.1-405b-instruct"],
+    supportsFetch: true,
   },
   {
     key: "cerebras",
@@ -188,6 +201,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     isLocal: false,
     priority: 62,
     commonModels: ["llama3.1-8b", "llama3.1-70b"],
+    supportsFetch: true,
   },
   {
     key: "azure",
@@ -227,6 +241,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     isLocal: true,
     priority: 50,
     commonModels: ["llama3", "mistral", "codellama", "qwen2.5"],
+    supportsFetch: true,
   },
   {
     key: "vllm",
@@ -237,6 +252,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     requiresApiKey: false,
     isLocal: true,
     priority: 49,
+    supportsFetch: true,
   },
   {
     key: "lmstudio",
@@ -247,6 +263,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     requiresApiKey: false,
     isLocal: true,
     priority: 48,
+    supportsFetch: true,
   },
   {
     key: "venice",
@@ -257,6 +274,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     requiresApiKey: true,
     isLocal: false,
     priority: 45,
+    supportsFetch: true,
   },
   {
     key: "shengsuanyun",
@@ -267,6 +285,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     requiresApiKey: true,
     isLocal: false,
     priority: 44,
+    supportsFetch: true,
   },
   {
     key: "vivgrid",
@@ -276,6 +295,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     requiresApiKey: true,
     isLocal: false,
     priority: 43,
+    supportsFetch: true,
   },
   {
     key: "minimax",
@@ -285,6 +305,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     requiresApiKey: true,
     isLocal: false,
     priority: 42,
+    supportsFetch: true,
   },
   {
     key: "longcat",
@@ -294,6 +315,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     requiresApiKey: true,
     isLocal: false,
     priority: 41,
+    supportsFetch: true,
   },
   {
     key: "modelscope",
@@ -304,6 +326,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     requiresApiKey: true,
     isLocal: false,
     priority: 40,
+    supportsFetch: true,
   },
   {
     key: "mimo",
@@ -314,6 +337,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     requiresApiKey: true,
     isLocal: false,
     priority: 39,
+    supportsFetch: true,
   },
   {
     key: "avian",
@@ -323,6 +347,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     requiresApiKey: true,
     isLocal: false,
     priority: 38,
+    supportsFetch: true,
   },
   {
     key: "zai",
@@ -333,6 +358,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     isLocal: false,
     priority: 37,
     aliases: ["z.ai", "z-ai"],
+    supportsFetch: true,
   },
   {
     key: "novita",
@@ -342,6 +368,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     requiresApiKey: true,
     isLocal: false,
     priority: 36,
+    supportsFetch: true,
   },
   {
     key: "litellm",
@@ -351,6 +378,7 @@ export const PROVIDERS: ProviderDefinition[] = [
     requiresApiKey: true,
     isLocal: false,
     priority: 35,
+    supportsFetch: true,
   },
 ]
 
@@ -367,6 +395,10 @@ export const PROVIDER_ALIASES: Record<string, string> = Object.fromEntries(
 )
 
 export const KNOWN_PROVIDER_KEYS = new Set(PROVIDERS.map((p) => p.key))
+
+export const FETCHABLE_PROVIDER_KEYS = new Set(
+  PROVIDERS.filter((p) => p.supportsFetch).map((p) => p.key),
+)
 
 export const PROVIDER_ICON_SLUGS: Record<string, string> = Object.fromEntries(
   PROVIDERS.filter((p) => p.iconSlug).map((p) => [p.key, p.iconSlug!]),

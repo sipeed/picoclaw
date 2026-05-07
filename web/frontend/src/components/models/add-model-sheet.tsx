@@ -34,7 +34,7 @@ import { FetchModelsDialog } from "./fetch-models-dialog"
 import { type FieldValidation, validateModelField } from "./model-validation"
 import { ProviderCombobox } from "./provider-combobox"
 import { getProviderKey } from "./provider-label"
-import { PROVIDER_MAP } from "./provider-registry"
+import { FETCHABLE_PROVIDER_KEYS, PROVIDER_MAP } from "./provider-registry"
 import { TestModelDialog } from "./test-model-dialog"
 
 interface AddForm {
@@ -484,16 +484,17 @@ export function AddModelSheet({
                   </div>
                 )}
                 <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => setFetchOpen(true)}
-                    disabled={!form.provider}
-                  >
-                    <IconDownload className="size-3" />
-                    {t("models.fetch.title")}
-                  </Button>
+                  {form.provider && FETCHABLE_PROVIDER_KEYS.has(form.provider) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setFetchOpen(true)}
+                    >
+                      <IconDownload className="size-3" />
+                      {t("models.fetch.title")}
+                    </Button>
+                  )}
                   {!form.provider && (
                     <span className="text-muted-foreground text-xs">
                       {t("models.field.selectProviderFirst")}

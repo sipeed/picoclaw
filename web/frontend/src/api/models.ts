@@ -133,6 +133,7 @@ export interface TestModelInlineRequest {
   api_base?: string
   api_key?: string
   auth_method?: string
+  model_index?: number
 }
 
 export async function testModelInline(

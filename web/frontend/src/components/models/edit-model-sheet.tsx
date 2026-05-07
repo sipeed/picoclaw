@@ -39,7 +39,7 @@ import { FetchModelsDialog } from "./fetch-models-dialog"
 import { type FieldValidation, validateModelField } from "./model-validation"
 import { ProviderCombobox } from "./provider-combobox"
 import { getProviderKey } from "./provider-label"
-import { PROVIDER_API_BASES, PROVIDER_MAP } from "./provider-registry"
+import { FETCHABLE_PROVIDER_KEYS, PROVIDER_API_BASES, PROVIDER_MAP } from "./provider-registry"
 import { TestModelDialog } from "./test-model-dialog"
 
 interface EditForm {
@@ -441,16 +441,17 @@ export function EditModelSheet({
                   </div>
                 )}
                 <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => setFetchOpen(true)}
-                    disabled={!form.provider}
-                  >
-                    <IconDownload className="size-3" />
-                    {t("models.fetch.title")}
-                  </Button>
+                  {form.provider && FETCHABLE_PROVIDER_KEYS.has(form.provider) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setFetchOpen(true)}
+                    >
+                      <IconDownload className="size-3" />
+                      {t("models.fetch.title")}
+                    </Button>
+                  )}
                 </div>
               </Field>
 
@@ -671,6 +672,7 @@ export function EditModelSheet({
           apiBase: form.apiBase,
           apiKey: form.apiKey,
           authMethod: form.authMethod,
+          modelIndex: model?.index,
         }}
       />
 

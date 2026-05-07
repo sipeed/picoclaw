@@ -17,6 +17,18 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
+// fetchableProviders lists providers that support OpenAI-compatible /models listing.
+var fetchableProviders = map[string]bool{
+	"openai": true, "deepseek": true, "openrouter": true,
+	"qwen-portal": true, "qwen-intl": true, "moonshot": true,
+	"volcengine": true, "zhipu": true, "groq": true,
+	"mistral": true, "nvidia": true, "cerebras": true,
+	"venice": true, "shengsuanyun": true, "vivgrid": true,
+	"minimax": true, "longcat": true, "modelscope": true,
+	"mimo": true, "avian": true, "zai": true, "novita": true,
+	"litellm": true, "vllm": true, "lmstudio": true, "ollama": true,
+}
+
 // registerModelRoutes binds model list management endpoints to the ServeMux.
 func (h *Handler) registerModelRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/models", h.handleListModels)
@@ -684,6 +696,7 @@ func (h *Handler) handleTestInlineModel(w http.ResponseWriter, r *http.Request) 
 		APIBase    string `json:"api_base"`
 		APIKey     string `json:"api_key"`
 		AuthMethod string `json:"auth_method"`
+		ModelIndex *int   `json:"model_index"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
@@ -698,6 +711,21 @@ func (h *Handler) handleTestInlineModel(w http.ResponseWriter, r *http.Request) 
 	}
 	if req.APIKey != "" {
 		m.SetAPIKey(req.APIKey)
+	}
+
+	// When api_key is empty and model_index is provided, fall back to stored credentials.
+	// This lets the edit form test unsaved field changes while using the saved key.
+	if req.APIKey == "" && req.ModelIndex != nil {
+		cfg, err := config.LoadConfig(h.configPath)
+		if err == nil && *req.ModelIndex >= 0 && *req.ModelIndex < len(cfg.ModelList) {
+			stored := cfg.ModelList[*req.ModelIndex]
+			if stored.APIKey() != "" {
+				m.SetAPIKey(stored.APIKey())
+			}
+			if m.APIBase == "" && stored.APIBase != "" {
+				m.APIBase = stored.APIBase
+			}
+		}
 	}
 
 	// Check if configuration exists
@@ -781,6 +809,11 @@ func (h *Handler) handleFetchModels(w http.ResponseWriter, r *http.Request) {
 
 	if req.Provider == "" {
 		http.Error(w, "provider is required", http.StatusBadRequest)
+		return
+	}
+
+	if !fetchableProviders[strings.ToLower(req.Provider)] {
+		http.Error(w, fmt.Sprintf("provider %q does not support model listing", req.Provider), http.StatusBadRequest)
 		return
 	}
 
