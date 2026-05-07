@@ -34,6 +34,10 @@ const (
 
 	defaultMaxChars = 50000
 	maxRedirects    = 5
+
+	// searchMaxResponseSize bounds in-memory reads of search-provider responses
+	// to prevent unbounded memory growth on hostile/buggy upstreams.
+	searchMaxResponseSize int64 = 2 << 20 // 2 MB
 )
 
 // Pre-compiled regexes for HTML text extraction
@@ -293,7 +297,7 @@ func (p *BraveSearchProvider) Search(
 			continue
 		}
 
-		body, err := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(io.LimitReader(resp.Body, searchMaxResponseSize))
 		resp.Body.Close()
 
 		if err != nil {
@@ -413,7 +417,7 @@ func (p *TavilySearchProvider) Search(
 			continue
 		}
 
-		body, err := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(io.LimitReader(resp.Body, searchMaxResponseSize))
 		resp.Body.Close()
 
 		if err != nil {
@@ -501,7 +505,7 @@ func (p *SogouSearchProvider) Search(
 			return "", fmt.Errorf("request failed: %w", err)
 		}
 
-		body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		body, err := io.ReadAll(io.LimitReader(resp.Body, searchMaxResponseSize))
 		resp.Body.Close()
 		if err != nil {
 			return "", fmt.Errorf("failed to read response: %w", err)
@@ -594,7 +598,7 @@ func (p *DuckDuckGoSearchProvider) Search(
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, searchMaxResponseSize))
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
@@ -742,7 +746,7 @@ func (p *PerplexitySearchProvider) Search(
 			continue
 		}
 
-		body, err := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(io.LimitReader(resp.Body, searchMaxResponseSize))
 		resp.Body.Close()
 
 		if err != nil {
@@ -919,7 +923,7 @@ func (p *GLMSearchProvider) Search(
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, searchMaxResponseSize))
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
@@ -1015,7 +1019,7 @@ func (p *BaiduSearchProvider) Search(
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, searchMaxResponseSize))
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
