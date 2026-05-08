@@ -2,14 +2,7 @@ import { IconBook, IconDatabase, IconCircleCheck, IconSparkles } from "@tabler/i
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
-
-interface ResearchAgent {
-  id: string
-  name: string
-  active: boolean
-  progress: number
-  ram: string
-}
+import { ResearchAgent } from "@/api/research"
 
 interface ResearchAgentsProps {
   agents: ResearchAgent[]
