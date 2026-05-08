@@ -43,6 +43,21 @@ import { Button } from "@/components/ui/button"
 import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
 
+function buildStringMapMergePatch(
+  next: Record<string, string>,
+  previous: Record<string, string>,
+): Record<string, string | null> {
+  const patch: Record<string, string | null> = { ...next }
+
+  for (const key of Object.keys(previous)) {
+    if (!(key in next)) {
+      patch[key] = null
+    }
+  }
+
+  return patch
+}
+
 export function ConfigPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -279,13 +294,13 @@ export function ConfigPage() {
             form.mcpDiscoveryTTL,
             "MCP discovery ttl",
             {
-              min: 0,
+              min: 1,
             },
           )
           mcpDiscoveryPatch.max_search_results = parseIntField(
             form.mcpDiscoveryMaxSearchResults,
             "MCP discovery max search results",
-            { min: 0 },
+            { min: 1 },
           )
         }
         const execConfigPatch: Record<string, unknown> = {
@@ -335,8 +350,19 @@ export function ConfigPage() {
           .filter((name) => !currentServerNames.has(name))
           .map((name) => [name, null] as const)
 
+        const baselineServersByName = new Map(
+          baseline.mcpServers
+            .map((server) => ({
+              ...server,
+              name: server.name.trim(),
+            }))
+            .filter((server) => server.name !== "")
+            .map((server) => [server.name, server] as const),
+        )
+
         const upsertServerEntries = normalizedServers.map((server) => {
           const deferredPatch = { deferred: server.deferredOverride }
+          const baselineServer = baselineServersByName.get(server.name)
 
           if (server.type !== "stdio") {
             if (server.url === "") {
@@ -364,9 +390,17 @@ export function ConfigPage() {
                 enabled: server.enabled,
                 type: server.type,
                 url: server.url,
-                headers: parseJSONObjectField(
-                  server.headersText,
-                  `MCP server ${server.name} headers`,
+                headers: buildStringMapMergePatch(
+                  parseJSONObjectField(
+                    server.headersText,
+                    `MCP server ${server.name} headers`,
+                  ),
+                  baselineServer
+                    ? parseJSONObjectField(
+                        baselineServer.headersText,
+                        `Saved MCP server ${server.name} headers`,
+                      )
+                    : {},
                 ),
                 command: null,
                 args: null,
@@ -388,9 +422,17 @@ export function ConfigPage() {
               type: "stdio",
               command: server.command,
               args: parseMultilineList(server.argsText),
-              env: parseJSONObjectField(
-                server.envText,
-                `MCP server ${server.name} env`,
+              env: buildStringMapMergePatch(
+                parseJSONObjectField(
+                  server.envText,
+                  `MCP server ${server.name} env`,
+                ),
+                baselineServer
+                  ? parseJSONObjectField(
+                      baselineServer.envText,
+                      `Saved MCP server ${server.name} env`,
+                    )
+                  : {},
               ),
               env_file: server.envFile === "" ? null : server.envFile,
               url: null,

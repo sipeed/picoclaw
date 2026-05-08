@@ -279,7 +279,7 @@ export function MCPSection({
               >
                 <Input
                   type="number"
-                  min={0}
+                  min={1}
                   value={form.mcpDiscoveryTTL}
                   onChange={(e) =>
                     onFieldChange("mcpDiscoveryTTL", e.target.value)
@@ -294,7 +294,7 @@ export function MCPSection({
               >
                 <Input
                   type="number"
-                  min={0}
+                  min={1}
                   value={form.mcpDiscoveryMaxSearchResults}
                   onChange={(e) =>
                     onFieldChange(
@@ -366,6 +366,7 @@ export function MCPSection({
                       placeholder={t(
                         "pages.config.mcp_server_name_placeholder",
                       )}
+                      aria-label={t("pages.config.mcp_server_name_placeholder")}
                       onChange={(e) =>
                         onServerFieldChange(server.id, "name", e.target.value)
                       }
@@ -381,7 +382,9 @@ export function MCPSection({
                         )
                       }
                     >
-                      <SelectTrigger>
+                      <SelectTrigger
+                        aria-label={t("pages.config.mcp_server_discovery_mode")}
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -416,7 +419,9 @@ export function MCPSection({
                         )
                       }
                     >
-                      <SelectTrigger>
+                      <SelectTrigger
+                        aria-label={t("pages.config.mcp_server_discovery_mode")}
+                      >
                         <SelectValue
                           placeholder={t(
                             "pages.config.mcp_server_discovery_mode",
@@ -444,6 +449,9 @@ export function MCPSection({
                         placeholder={t(
                           "pages.config.mcp_server_url_placeholder",
                         )}
+                        aria-label={t(
+                          "pages.config.mcp_server_url_placeholder",
+                        )}
                         onChange={(e) =>
                           onServerFieldChange(server.id, "url", e.target.value)
                         }
@@ -451,6 +459,9 @@ export function MCPSection({
                       <Textarea
                         value={server.headersText}
                         placeholder={t(
+                          "pages.config.mcp_server_headers_placeholder",
+                        )}
+                        aria-label={t(
                           "pages.config.mcp_server_headers_placeholder",
                         )}
                         className="min-h-[88px] font-mono text-xs"
@@ -470,6 +481,9 @@ export function MCPSection({
                         placeholder={t(
                           "pages.config.mcp_server_command_placeholder",
                         )}
+                        aria-label={t(
+                          "pages.config.mcp_server_command_placeholder",
+                        )}
                         onChange={(e) =>
                           onServerFieldChange(
                             server.id,
@@ -481,6 +495,9 @@ export function MCPSection({
                       <Input
                         value={server.envFile}
                         placeholder={t(
+                          "pages.config.mcp_server_env_file_placeholder",
+                        )}
+                        aria-label={t(
                           "pages.config.mcp_server_env_file_placeholder",
                         )}
                         onChange={(e) =>
@@ -496,6 +513,9 @@ export function MCPSection({
                         placeholder={t(
                           "pages.config.mcp_server_args_placeholder",
                         )}
+                        aria-label={t(
+                          "pages.config.mcp_server_args_placeholder",
+                        )}
                         className="min-h-[88px] font-mono text-xs"
                         onChange={(e) =>
                           onServerFieldChange(
@@ -508,6 +528,9 @@ export function MCPSection({
                       <Textarea
                         value={server.envText}
                         placeholder={t(
+                          "pages.config.mcp_server_env_placeholder",
+                        )}
+                        aria-label={t(
                           "pages.config.mcp_server_env_placeholder",
                         )}
                         className="min-h-[88px] font-mono text-xs"
