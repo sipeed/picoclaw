@@ -50,4 +50,26 @@ type Store interface {
 
 	// Close releases any resources held by the store.
 	Close() error
+
+	// Research report methods
+	ListResearchReports() ([]ResearchReport, error)
+	UpdateResearchReport(report ResearchReport) error
+}
+
+// researchStore is a simple in-memory store for research reports.
+type researchStore struct{}
+
+// ListResearchReports returns all research reports from storage
+func (s *researchStore) ListResearchReports() ([]ResearchReport, error) {
+	// TODO: Implement SQLite query for research_reports table
+	return []ResearchReport{
+		{ID: "1", Title: "AI trends 2026", Pages: 18, Words: 5400, Status: "in-progress", Progress: 75},
+		{ID: "2", Title: "Quantum computing", Pages: 42, Words: 12600, Status: "complete"},
+	}, nil
+}
+
+// UpdateResearchReport updates a research report status or progress
+func (s *researchStore) UpdateResearchReport(report ResearchReport) error {
+	// TODO: Implement SQLite update for research_reports table
+	return nil
 }
