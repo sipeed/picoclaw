@@ -51,4 +51,15 @@ type ChannelManager interface {
 	// outboundCtx carries topic/thread info needed for channels that use
 	// scoped tracker keys (e.g., Telegram forum topics); may be nil.
 	DismissToolFeedback(ctx context.Context, channel, chatID string, outboundCtx *bus.InboundContext)
+
+	// DismissToolFeedbackForSession clears a session-scoped tool feedback
+	// message. This is used for child sub-turns whose progress messages are
+	// visible in the originating chat, but whose result may be delivered
+	// separately from the child channel lifecycle.
+	DismissToolFeedbackForSession(
+		ctx context.Context,
+		channel, chatID string,
+		outboundCtx *bus.InboundContext,
+		sessionKey string,
+	)
 }

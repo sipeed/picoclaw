@@ -529,7 +529,7 @@ func (c *TelegramChannel) dismissTrackedToolFeedbackMessage(ctx context.Context,
 		return
 	}
 	c.ClearToolFeedbackMessage(chatID)
-	_ = c.DeleteMessage(ctx, chatID, messageID)
+	_ = c.DeleteMessage(ctx, telegramToolFeedbackDeliveryChatID(chatID), messageID)
 }
 
 func (c *TelegramChannel) finalizeTrackedToolFeedbackMessage(
@@ -1128,6 +1128,14 @@ func telegramToolFeedbackChatKey(chatID string, outboundCtx *bus.InboundContext)
 		return strings.TrimSpace(chatID)
 	}
 	return fmt.Sprintf("%d/%d", resolvedChatID, threadID)
+}
+
+func telegramToolFeedbackDeliveryChatID(chatID string) string {
+	chatID = strings.TrimSpace(chatID)
+	if idx := strings.Index(chatID, "#session:"); idx >= 0 {
+		return strings.TrimSpace(chatID[:idx])
+	}
+	return chatID
 }
 
 func (c *TelegramChannel) ToolFeedbackMessageChatID(chatID string, outboundCtx *bus.InboundContext) string {
