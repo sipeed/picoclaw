@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -2120,5 +2123,208 @@ func TestSubTurn_IndependentContext(t *testing.T) {
 		}
 	} else {
 		t.Log("✓ SubTurn completed successfully (independent context)")
+	}
+}
+
+// ====================== TargetAgentID Tests ======================
+
+// modelRecordingProvider captures the model passed to Chat for test assertions.
+type modelRecordingProvider struct {
+	mu        sync.Mutex
+	lastModel string
+}
+
+func (rp *modelRecordingProvider) Chat(
+	_ context.Context,
+	_ []providers.Message,
+	_ []providers.ToolDefinition,
+	model string,
+	_ map[string]any,
+) (*providers.LLMResponse, error) {
+	rp.mu.Lock()
+	rp.lastModel = model
+	rp.mu.Unlock()
+	return &providers.LLMResponse{Content: "Mock response"}, nil
+}
+
+func (rp *modelRecordingProvider) GetDefaultModel() string { return "mock-model" }
+
+func (rp *modelRecordingProvider) getLastModel() string {
+	rp.mu.Lock()
+	defer rp.mu.Unlock()
+	return rp.lastModel
+}
+
+// newMultiAgentLoop creates an AgentLoop with two named agents for testing
+// cross-agent delegation via TargetAgentID.
+func newMultiAgentLoop(t *testing.T, provider providers.LLMProvider) (*AgentLoop, func()) {
+	t.Helper()
+	tmpDir, err := os.MkdirTemp("", "multiagent-test-*")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+
+	alphaDir := filepath.Join(tmpDir, "alpha")
+	betaDir := filepath.Join(tmpDir, "beta")
+	os.MkdirAll(alphaDir, 0o755)
+	os.MkdirAll(betaDir, 0o755)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "default-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+			List: []config.AgentConfig{
+				{
+					ID:        "alpha",
+					Workspace: alphaDir,
+					Model:     &config.AgentModelConfig{Primary: "model-alpha"},
+				},
+				{
+					ID:        "beta",
+					Workspace: betaDir,
+					Model:     &config.AgentModelConfig{Primary: "model-beta"},
+				},
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	return al, func() { os.RemoveAll(tmpDir) }
+}
+
+func TestSpawnSubTurn_TargetAgentID_UsesTargetAgent(t *testing.T) {
+	rp := &modelRecordingProvider{}
+	al, cleanup := newMultiAgentLoop(t, rp)
+	defer cleanup()
+
+	alphaAgent, ok := al.registry.GetAgent("alpha")
+	if !ok {
+		t.Fatal("alpha agent not in registry")
+	}
+
+	// Parent is alpha, target is beta
+	parent := &turnState{
+		ctx:            context.Background(),
+		turnID:         "parent-alpha",
+		depth:          0,
+		childTurnIDs:   []string{},
+		pendingResults: make(chan *tools.ToolResult, 4),
+		concurrencySem: make(chan struct{}, testMaxConcurrentSubTurns),
+		session:        &ephemeralSessionStore{},
+		agent:          alphaAgent,
+	}
+
+	result, err := spawnSubTurn(context.Background(), al, parent, SubTurnConfig{
+		TargetAgentID: "beta",
+		SystemPrompt:  "task for beta",
+	})
+	if err != nil {
+		t.Fatalf("spawnSubTurn failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+
+	// The recording provider captures the model passed to Chat().
+	// If TargetAgentID works correctly, the child turn should have
+	// used beta's model, not alpha's.
+	if got := rp.getLastModel(); got != "model-beta" {
+		t.Errorf("child turn used model %q, want %q", got, "model-beta")
+	}
+}
+
+func TestSpawnSubTurn_TargetAgentID_NotFound(t *testing.T) {
+	al, cleanup := newMultiAgentLoop(t, &mockProvider{})
+	defer cleanup()
+
+	alphaAgent, _ := al.registry.GetAgent("alpha")
+	parent := &turnState{
+		ctx:            context.Background(),
+		turnID:         "parent-alpha",
+		depth:          0,
+		childTurnIDs:   []string{},
+		pendingResults: make(chan *tools.ToolResult, 4),
+		concurrencySem: make(chan struct{}, testMaxConcurrentSubTurns),
+		session:        &ephemeralSessionStore{},
+		agent:          alphaAgent,
+	}
+
+	_, err := spawnSubTurn(context.Background(), al, parent, SubTurnConfig{
+		TargetAgentID: "nonexistent",
+		SystemPrompt:  "task",
+	})
+
+	if err == nil {
+		t.Fatal("expected error for nonexistent agent")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+}
+
+func TestSpawnSubTurn_TargetAgentID_EmptyModelAccepted(t *testing.T) {
+	al, cleanup := newMultiAgentLoop(t, &mockProvider{})
+	defer cleanup()
+
+	alphaAgent, _ := al.registry.GetAgent("alpha")
+	parent := &turnState{
+		ctx:            context.Background(),
+		turnID:         "parent-alpha",
+		depth:          0,
+		childTurnIDs:   []string{},
+		pendingResults: make(chan *tools.ToolResult, 4),
+		concurrencySem: make(chan struct{}, testMaxConcurrentSubTurns),
+		session:        &ephemeralSessionStore{},
+		agent:          alphaAgent,
+	}
+
+	// Model is empty but TargetAgentID is set — should NOT fail validation
+	result, err := spawnSubTurn(context.Background(), al, parent, SubTurnConfig{
+		Model:         "", // intentionally empty
+		TargetAgentID: "beta",
+		SystemPrompt:  "task for beta",
+	})
+	if err != nil {
+		t.Fatalf("should accept empty Model when TargetAgentID is set, got: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+}
+
+func TestDelegateToolNotRegistered_SingleAgent(t *testing.T) {
+	// Single-agent setup: delegate should not be registered
+	al, _, _, provider, cleanup := newTestAgentLoop(t)
+	_ = provider
+	defer cleanup()
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("default agent should exist")
+	}
+	if _, has := agent.Tools.Get("delegate"); has {
+		t.Error("delegate tool should not be registered in single-agent setup")
+	}
+}
+
+func TestDelegateToolRegistered_MultiAgent(t *testing.T) {
+	al, cleanup := newMultiAgentLoop(t, &mockProvider{})
+	defer cleanup()
+
+	// Both agents should have the delegate tool
+	for _, id := range []string{"alpha", "beta"} {
+		agent, ok := al.registry.GetAgent(id)
+		if !ok {
+			t.Fatalf("agent %q not found", id)
+		}
+		if _, has := agent.Tools.Get("delegate"); !has {
+			t.Errorf("agent %q should have delegate tool in multi-agent setup", id)
+		}
 	}
 }

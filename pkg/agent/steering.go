@@ -156,6 +156,18 @@ func (sq *steeringQueue) lenScope(scope string) int {
 	return len(sq.queues[normalizeSteeringScope(scope)])
 }
 
+func (sq *steeringQueue) clearScope(scope string) int {
+	sq.mu.Lock()
+	defer sq.mu.Unlock()
+
+	scope = normalizeSteeringScope(scope)
+	count := len(sq.queues[scope])
+	if count > 0 {
+		delete(sq.queues, scope)
+	}
+	return count
+}
+
 // setMode updates the steering mode.
 func (sq *steeringQueue) setMode(mode SteeringMode) {
 	sq.mu.Lock()
@@ -288,6 +300,13 @@ func (al *AgentLoop) pendingSteeringCountForScope(scope string) int {
 		return 0
 	}
 	return al.steering.lenScope(scope)
+}
+
+func (al *AgentLoop) clearSteeringMessagesForScope(scope string) int {
+	if al.steering == nil {
+		return 0
+	}
+	return al.steering.clearScope(scope)
 }
 
 func (al *AgentLoop) continueWithSteeringMessages(
@@ -510,6 +529,10 @@ func (al *AgentLoop) HardAbort(sessionKey string) error {
 		"depth":                  ts.depth,
 		"initial_history_length": ts.initialHistoryLength,
 	})
+
+	// Cancel the active provider/tool turn contexts immediately so long-running
+	// execution stops as soon as possible on the root turn.
+	_ = ts.requestHardAbort()
 
 	// IMPORTANT: Trigger cascading cancellation FIRST to stop all child SubTurns
 	// from adding more messages to the session. This prevents race conditions

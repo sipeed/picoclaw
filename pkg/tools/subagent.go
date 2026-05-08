@@ -30,6 +30,7 @@ type SubTurnConfig struct {
 	ActualSystemPrompt string
 	InitialMessages    []providers.Message
 	InitialTokenBudget *atomic.Int64 // Shared token budget for team members; nil if no budget
+	TargetAgentID      string        // If set, run as this agent (its workspace, model, tools)
 }
 
 type SubagentTask struct {

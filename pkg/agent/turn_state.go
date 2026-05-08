@@ -256,7 +256,10 @@ func newTurnState(agent *AgentInstance, opts processOptions, scope turnEventScop
 	// Bind session store and capture initial history length for rollback logic
 	if agent != nil && agent.Sessions != nil {
 		ts.session = agent.Sessions
-		ts.initialHistoryLength = len(agent.Sessions.GetHistory(opts.Dispatch.SessionKey))
+		history := agent.Sessions.GetHistory(opts.Dispatch.SessionKey)
+		ts.initialHistoryLength = len(history)
+		ts.restorePointHistory = append([]providers.Message(nil), history...)
+		ts.restorePointSummary = agent.Sessions.GetSummary(opts.Dispatch.SessionKey)
 	}
 
 	return ts
