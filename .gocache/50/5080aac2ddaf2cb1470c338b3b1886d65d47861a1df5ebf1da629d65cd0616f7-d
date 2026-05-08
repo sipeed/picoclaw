@@ -1,0 +1,4 @@
+./aliases.go
+./inputitem.go
+./inputtoken.go
+./response.go

@@ -1,0 +1,6 @@
+./base64.go
+./base64_amd64.go
+./decode_amd64.go
+./encode_amd64.go
+./decode_amd64.s
+./encode_amd64.s

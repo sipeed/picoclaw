@@ -8,6 +8,7 @@ import { getTools, getWebSearchConfig, setToolEnabled } from "@/api/tools"
 import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
 import { useCockpitSkills } from "@/hooks/use-cockpit-skills"
+import { listAgents, Agent } from "@/api/agents"
 
 type ToolStatusFilter = "all" | "enabled" | "disabled" | "blocked"
 
@@ -38,6 +39,12 @@ export function useAgentCockpit(sessionId: string) {
     queryFn: () => getPicoMemoryGraph(sessionId),
     enabled: Boolean(sessionId),
     refetchInterval: 10000,
+  })
+
+  // -- Agents query for integration into cockpit
+  const agentsQuery = useQuery({
+    queryKey: ["agents"],
+    queryFn: listAgents,
   })
 
   const {
@@ -74,6 +81,7 @@ export function useAgentCockpit(sessionId: string) {
   })
 
   const tools = toolsQuery.data?.tools ?? []
+  const agents = agentsQuery.data?.agents ?? []
   const normalizedSearchQuery = deferredSearchQuery.trim().toLowerCase()
 
   const groupedTools = useMemo(() => {
@@ -145,5 +153,9 @@ export function useAgentCockpit(sessionId: string) {
       setStatusFilter,
       toggleTool: (name: string, enabled: boolean) =>
         toggleToolMutation.mutate({ name, enabled }),
+      // -- Agents integration
+      agents,
+      agentsLoading: agentsQuery.isLoading,
+      agentsError: agentsQuery.isError,
     }
 }

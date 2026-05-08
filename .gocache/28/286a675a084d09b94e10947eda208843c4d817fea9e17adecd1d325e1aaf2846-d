@@ -1,0 +1,7 @@
+./doc.go
+./pty_unsupported.go
+./run.go
+./start_windows.go
+./winsize.go
+./winsize_unsupported.go
+./ztypes_amd64.go

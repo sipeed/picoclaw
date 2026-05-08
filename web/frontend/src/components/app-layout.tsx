@@ -13,10 +13,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <SidebarProvider className="flex h-dvh flex-col overflow-hidden">
         <AppHeader />
 
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden hex-grid-bg">
           <AppSidebar />
           <div className="flex w-full flex-col overflow-hidden">
-            <main className="flex min-h-0 w-full max-w-full flex-1 flex-col overflow-hidden">
+            <main className="flex min-h-0 w-full max-w-full flex-1 flex-col overflow-hidden scan-line-overlay">
               {children}
             </main>
           </div>

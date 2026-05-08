@@ -1,0 +1,10 @@
+./attr.go
+./doc.go
+./id.go
+./number.go
+./resource.go
+./scope.go
+./span.go
+./status.go
+./traces.go
+./value.go

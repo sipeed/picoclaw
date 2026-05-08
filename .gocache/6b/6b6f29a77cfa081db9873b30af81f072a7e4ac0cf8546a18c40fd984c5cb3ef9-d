@@ -1,0 +1,3 @@
+./keyset.go
+./keyset_amd64.go
+./keyset_amd64.s

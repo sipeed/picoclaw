@@ -316,7 +316,7 @@ func TestLegacyCompact_Overflow(t *testing.T) {
 
 	err := al.contextManager.Compact(context.Background(), &CompactRequest{
 		SessionKey: "session-overflow",
-		Reason:     ContextCompressReasonRetry,
+		Reason:     CompactReasonRetry,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -377,7 +377,7 @@ func TestLegacyCompact_Overflow_ProactiveReason(t *testing.T) {
 
 	err := al.contextManager.Compact(context.Background(), &CompactRequest{
 		SessionKey: "session-proactive",
-		Reason:     ContextCompressReasonProactive,
+		Reason:     CompactReasonProactive,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -413,7 +413,7 @@ func TestLegacyCompact_Overflow_TooShortToCompress(t *testing.T) {
 
 	err := al.contextManager.Compact(context.Background(), &CompactRequest{
 		SessionKey: "session-tiny",
-		Reason:     ContextCompressReasonRetry,
+		Reason:     CompactReasonRetry,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -448,7 +448,7 @@ func TestLegacyCompact_PostTurn_BelowThreshold(t *testing.T) {
 
 	err := al.contextManager.Compact(context.Background(), &CompactRequest{
 		SessionKey: "session-small",
-		Reason:     ContextCompressReasonSummarize,
+		Reason:     CompactReasonProactive,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -504,7 +504,7 @@ func TestLegacyCompact_PostTurn_ExceedsMessageThreshold(t *testing.T) {
 
 	err := al.contextManager.Compact(context.Background(), &CompactRequest{
 		SessionKey: "session-threshold",
-		Reason:     ContextCompressReasonSummarize,
+		Reason:     CompactReasonProactive,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -586,7 +586,7 @@ func TestAgentLoop_UsesCustomContextManager(t *testing.T) {
 
 	err = mock.Compact(context.Background(), &CompactRequest{
 		SessionKey: "s1",
-		Reason:     ContextCompressReasonRetry,
+		Reason:     CompactReasonRetry,
 	})
 	if err != nil {
 		t.Fatalf("Compact error: %v", err)
@@ -680,7 +680,7 @@ func TestLegacyCompact_Overflow_SingleTurnKeepsLastUserMessage(t *testing.T) {
 
 	err := al.contextManager.Compact(context.Background(), &CompactRequest{
 		SessionKey: "session-2msg",
-		Reason:     ContextCompressReasonRetry,
+		Reason:     CompactReasonRetry,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

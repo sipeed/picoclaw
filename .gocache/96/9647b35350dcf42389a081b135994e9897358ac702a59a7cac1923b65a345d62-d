@@ -1,0 +1,4 @@
+./exec.go
+./exec_windows.go
+./lookpath.go
+./lp_windows.go

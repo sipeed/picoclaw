@@ -1,0 +1,5 @@
+./edit.go
+./filesystem.go
+./load_image.go
+./send_file.go
+./shared.go

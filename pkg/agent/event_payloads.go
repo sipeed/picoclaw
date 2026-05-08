@@ -59,7 +59,20 @@ type LLMRetryPayload struct {
 	Backoff    time.Duration
 }
 
+// CompactReason distinguishes between proactive and reactive compaction.
+type CompactReason string
+
+const (
+	// CompactReasonProactive indicates compression before the first LLM call.
+	CompactReasonProactive CompactReason = "proactive"
+	// CompactReasonRetry indicates compression during context-error retry handling.
+	CompactReasonRetry CompactReason = "retry"
+	// CompactReasonOverflow indicates compression during streaming.
+	CompactReasonOverflow CompactReason = "overflow"
+)
+
 // ContextCompressReason identifies why emergency compression ran.
+// Deprecated: use CompactReason instead.
 type ContextCompressReason string
 
 const (

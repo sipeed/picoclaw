@@ -1,0 +1,9 @@
+./client.go
+./definetool.go
+./generated_session_events.go
+./permissions.go
+./process_windows.go
+./sdk_protocol_version.go
+./session.go
+./telemetry.go
+./types.go

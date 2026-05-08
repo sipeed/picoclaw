@@ -38,21 +38,19 @@ func (m *legacyContextManager) Assemble(_ context.Context, req *AssembleRequest)
 
 func (m *legacyContextManager) Compact(_ context.Context, req *CompactRequest) error {
 	switch req.Reason {
-	case ContextCompressReasonProactive, ContextCompressReasonRetry:
+	case CompactReasonProactive, CompactReasonRetry, CompactReasonOverflow:
 		// Sync emergency compression — budget exceeded.
 		if result, ok := m.forceCompression(req.SessionKey); ok {
 			m.al.emitEvent(
 				runtimeevents.KindAgentContextCompress,
 				m.al.newTurnEventScope("", req.SessionKey, nil).meta(0, "forceCompression", "turn.context.compress"),
 				ContextCompressPayload{
-					Reason:            req.Reason,
+					Reason:            ContextCompressReason(req.Reason),
 					DroppedMessages:   result.DroppedMessages,
 					RemainingMessages: result.RemainingMessages,
 				},
 			)
 		}
-	case ContextCompressReasonSummarize:
-		m.maybeSummarize(req.SessionKey)
 	}
 	return nil
 }

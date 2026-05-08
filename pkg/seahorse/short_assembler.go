@@ -28,11 +28,25 @@ type resolvedItem struct {
 	tokenCount int
 }
 
+// CalculateFreshTailBudget determines how many tokens to reserve for recent history.
+// Reserves 25% of the context window, bounded by MinPreserveRecentTokens (2000)
+// and MaxPreserveRecentTokens (8000).
+func CalculateFreshTailBudget(contextWindow int) int {
+	budget := int(float64(contextWindow) * PreserveRecentRatio)
+	if budget < MinPreserveRecentTokens {
+		return MinPreserveRecentTokens
+	}
+	if budget > MaxPreserveRecentTokens {
+		return MaxPreserveRecentTokens
+	}
+	return budget
+}
+
 // Assemble builds budget-constrained context from summaries + messages.
 //
 // Algorithm:
 //  1. Fetch context_items, resolve to full content
-//  2. Split into evictable prefix + protected fresh tail
+//  2. Split into evictable prefix + protected fresh tail (token-budget-aware)
 //  3. If evictable fits in remaining budget → include all
 //  4. Else walk evictable from newest to oldest, keep while fits
 func (a *Assembler) Assemble(ctx context.Context, convID int64, input AssembleInput) (*AssembleResult, error) {
@@ -54,13 +68,31 @@ func (a *Assembler) Assemble(ctx context.Context, convID int64, input AssembleIn
 		resolved[i] = r
 	}
 
-	// Split into evictable prefix and protected fresh tail
-	tailStart := len(resolved) - FreshTailCount
-	if tailStart < 0 {
-		tailStart = 0
+	// Calculate fresh tail based on token budget (not fixed message count)
+	freshTailBudget := CalculateFreshTailBudget(input.Budget)
+	var freshTail []resolvedItem
+	var evictable []resolvedItem
+
+	accum := 0
+	turnCount := 0
+	// Walk backwards from newest to oldest
+	for i := len(resolved) - 1; i >= 0; i-- {
+		// Count turns (user messages indicate a new turn)
+		if resolved[i].itemType == "message" && resolved[i].message != nil && resolved[i].message.Role == "user" {
+			turnCount++
+		}
+		// Protect at least DefaultTailTurns, up to freshTailBudget tokens
+		if turnCount <= DefaultTailTurns || (accum+resolved[i].tokenCount <= freshTailBudget && len(freshTail) < len(resolved)) {
+			freshTail = append(freshTail, resolved[i])
+			accum += resolved[i].tokenCount
+		} else {
+			evictable = append([]resolvedItem{resolved[i]}, evictable...)
+		}
 	}
-	evictable := resolved[:tailStart]
-	freshTail := resolved[tailStart:]
+	// Reverse freshTail to restore chronological order
+	for i, j := 0, len(freshTail)-1; i < j; i, j = i+1, j-1 {
+		freshTail[i], freshTail[j] = freshTail[j], freshTail[i]
+	}
 
 	// Calculate fresh tail tokens
 	freshTailTokens := 0
@@ -144,7 +176,7 @@ func (a *Assembler) Assemble(ctx context.Context, convID int64, input AssembleIn
 			systemPromptAddition = "Your context has been heavily compressed through multi-level summarization.\n" +
 				"- Do NOT assert specific facts (commands, SHAs, paths, timestamps) from summaries without expanding.\n" +
 				"- When uncertain, use expand to recover original detail before making claims.\n" +
-				"- Tool escalation: grep \xe2\x86\x92 describe \xe2\x86\x92 expand"
+				"- Tool escalation: grep → describe → expand"
 		} else {
 			systemPromptAddition = "Some earlier messages have been summarized. Use expand tools to recover details if needed."
 		}

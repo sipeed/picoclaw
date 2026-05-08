@@ -358,10 +358,11 @@ export function ConfigPage() {
         variant="outline"
         onClick={handleReset}
         disabled={!isDirty || saving}
+        className="border-[rgba(0,212,255,0.2)] bg-transparent text-[#94a3b8] hover:bg-[rgba(0,212,255,0.05)]"
       >
         {t("common.reset")}
       </Button>
-      <Button onClick={handleSave} disabled={!isDirty || saving}>
+      <Button onClick={handleSave} disabled={!isDirty || saving} className="bg-[#00d4ff] text-[#0a0e17] hover:bg-[#00d4ff]/90 border-none">
         <IconDeviceFloppy className="size-4" />
         {saving ? t("common.saving") : t("common.save")}
       </Button>
@@ -376,7 +377,7 @@ export function ConfigPage() {
           versionInfo && (
             <Badge
               variant="secondary"
-              className="gap-1 font-mono text-[11px] font-normal opacity-80"
+              className="border border-[rgba(0,212,255,0.15)] bg-[rgba(0,212,255,0.05)] text-[#94a3b8] gap-1 font-mono text-[11px] font-normal opacity-80"
             >
               <IconTag className="size-3 opacity-70" />
               {versionInfo.version}
@@ -384,7 +385,7 @@ export function ConfigPage() {
           )
         }
         children={
-          <Button variant="outline" asChild>
+          <Button variant="outline" asChild className="border-[rgba(0,212,255,0.2)] bg-transparent text-[#00d4ff] hover:bg-[rgba(0,212,255,0.05)]">
             <Link to="/config/raw">
               <IconCode className="size-4" />
               {t("pages.config.open_raw")}
@@ -438,7 +439,7 @@ export function ConfigPage() {
         </div>
       </div>
       {isDirty && (
-        <div className="border-border/70 bg-background/95 supports-backdrop-filter:bg-background/80 shrink-0 border-t px-3 py-3 shadow-[0_-12px_30px_rgba(15,23,42,0.10)] backdrop-blur lg:px-6">
+        <div className="glass-panel-strong border-[rgba(0,212,255,0.15)] shrink-0 border-t px-3 py-3 shadow-[0_-12px_30px_rgba(15,23,42,0.10)] lg:px-6">
           <div className="mx-auto flex w-full max-w-[1000px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex-1">
               <ConfigChangeNotice

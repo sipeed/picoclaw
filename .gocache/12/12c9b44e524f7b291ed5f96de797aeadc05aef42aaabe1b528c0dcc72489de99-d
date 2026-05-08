@@ -1,0 +1,8 @@
+./application.go
+./archive.go
+./audio.go
+./document.go
+./font.go
+./image.go
+./matchers.go
+./video.go

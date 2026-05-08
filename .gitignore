@@ -10,6 +10,7 @@
 /dist/
 /build/
 /out/
+/web/build/
 
 # Logs
 *.log
@@ -33,8 +34,20 @@ pnpm-debug.log*
 # Git rewrite directory (from the current status)
 .git-rewrite/
 
-# Vendor (for Go)
+# Go specific
 /vendor/
+.gocache/
+*.exe
+config/config.json
+
+# Documentation and reports
+PROJECT_STATUS.md
+docs/guides/development-status.md
+docs/superpowers/plans/
+ui-comparison-plan.md
+
+# Workspace and temporary directories
+cmd/picoclaw/internal/onboard/workspace/
 
 # Seahorse generated files (if any)
 # Note: we have seahorse source files, so we only ignore generated ones if they appear
@@ -53,3 +66,10 @@ pnpm-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Application specific
+.picoclaw/
+cmd/picoclaw/main.exe
+cmd/picoclaw/picoclaw.exe
+picoclaw.exe
+trim.txt

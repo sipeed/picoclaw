@@ -1,0 +1,11 @@
+./compile.go
+./equals.go
+./error.go
+./escape.go
+./expression.go
+./machine.go
+./match.go
+./parse.go
+./prog.go
+./uritemplate.go
+./value.go

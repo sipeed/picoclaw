@@ -348,9 +348,9 @@ func (p *Pipeline) CallLLM(
 				))
 			}
 
-			if compactErr := p.ContextManager.Compact(ctx, &CompactRequest{
+if compactErr := p.ContextManager.Compact(ctx, &CompactRequest{
 				SessionKey: ts.sessionKey,
-				Reason:     ContextCompressReasonRetry,
+				Reason:     CompactReasonRetry,
 				Budget:     ts.agent.ContextWindow,
 			}); compactErr != nil {
 				logger.WarnCF("agent", "Context overflow compact failed", map[string]any{
