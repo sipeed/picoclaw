@@ -602,8 +602,8 @@ func (e *CompactionEngine) generateLeafSummary(
 		}
 	}
 
-	// Check if level 1 succeeded
-	if content != "" && tokenizer.EstimateMessageTokens(providers.Message{Content: content}) < inputTokens {
+	// Level 1 only succeeds if it actually reaches the requested target size.
+	if content != "" && tokenizer.EstimateMessageTokens(providers.Message{Content: content}) <= targetTokens {
 		return content, nil
 	}
 
@@ -627,7 +627,7 @@ func (e *CompactionEngine) generateLeafSummary(
 			return "", err
 		}
 	}
-	if content != "" && tokenizer.EstimateMessageTokens(providers.Message{Content: content}) < inputTokens {
+	if content != "" && tokenizer.EstimateMessageTokens(providers.Message{Content: content}) <= aggressiveTarget {
 		return content, nil
 	}
 

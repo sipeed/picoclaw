@@ -74,10 +74,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Docker Hub
-        if: env.DOCKERHUB_USERNAME != ''
         uses: docker/login-action@v4
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         with:
           registry: docker.io
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -89,10 +86,6 @@ jobs:
       - name: Create local tag for GoReleaser
         run: git tag "${{ steps.version.outputs.version }}"
 
-      - name: Lowercase owner for Docker tags
-        id: repo
-        run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
-
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
@@ -101,7 +94,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO_OWNER: ${{ steps.repo.outputs.owner }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           DOCKERHUB_IMAGE_NAME: ${{ vars.DOCKERHUB_REPOSITORY }}
           GOVERSION: ${{ steps.setup-go.outputs.go-version }}
           GORELEASER_CURRENT_TAG: ${{ steps.version.outputs.version }}
@@ -151,154 +144,3 @@ jobs:
             --prerelease \
             --latest=false \
             "${ASSETS[@]}"
-
-  build-macos-launcher:
-    name: Build macOS Launcher (${{ matrix.arch_name }})
-    runs-on: macos-latest
-    permissions:
-      contents: read
-    strategy:
-      matrix:
-        include:
-          - goarch: arm64
-            arch_name: arm64
-          - goarch: amd64
-            arch_name: x86_64
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Setup Go from go.mod
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.33.0
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: web/frontend/pnpm-lock.yaml
-
-      - name: Build frontend
-        run: |
-          cd web/frontend
-          CI=true pnpm install --frozen-lockfile
-          pnpm build:backend
-
-      - name: Compute version
-        id: version
-        run: |
-          DATE=$(date -u +%Y%m%d)
-          SHA=$(git rev-parse --short=8 HEAD)
-          BASE_VERSION=$(git describe --tags --match "v*" --exclude "*nightly*" --abbrev=0 2>/dev/null || true)
-          if [ -z "$BASE_VERSION" ] || [ "$BASE_VERSION" = "v0.0.0" ]; then
-            VERSION="v0.0.0-nightly.${DATE}.${SHA}"
-          else
-            VERSION="${BASE_VERSION}-nightly.${DATE}.${SHA}"
-          fi
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-
-      - name: Build picoclaw-launcher with CGO
-        env:
-          CGO_ENABLED: "1"
-          GOOS: darwin
-          GOARCH: ${{ matrix.goarch }}
-        run: |
-          SDK_PATH=$(xcrun --show-sdk-path)
-          export CGO_CFLAGS="-isysroot ${SDK_PATH} -mmacosx-version-min=11.0"
-          export CGO_LDFLAGS="-isysroot ${SDK_PATH}"
-
-          go generate ./...
-          go build -tags "goolm,stdjson" \
-            -ldflags "-s -w \
-              -X github.com/sipeed/picoclaw/pkg/config.Version=${{ steps.version.outputs.version }} \
-              -X github.com/sipeed/picoclaw/pkg/config.GitCommit=$(git rev-parse --short HEAD) \
-              -X github.com/sipeed/picoclaw/pkg/config.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            -o picoclaw-launcher-cgo \
-            ./web/backend
-
-      - name: Sign and notarize launcher binary
-        if: env.MACOS_SIGN_P12 != ''
-        env:
-          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
-          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
-          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
-        run: |
-          pip3 install rcodesign
-
-          echo "$MACOS_SIGN_P12" | base64 -d > cert.p12
-
-          rcodesign sign \
-            --p12-file cert.p12 \
-            --p12-password "$MACOS_SIGN_PASSWORD" \
-            picoclaw-launcher-cgo
-
-          echo "$MACOS_NOTARY_KEY" > notary-key.p8
-
-          rcodesign notary-submit \
-            --api-key-path notary-key.p8 \
-            --api-issuer "$MACOS_NOTARY_ISSUER_ID" \
-            --wait \
-            picoclaw-launcher-cgo
-
-          rm -f cert.p12 notary-key.p8
-
-      - name: Upload launcher artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-launcher-${{ matrix.arch_name }}
-          path: picoclaw-launcher-cgo
-          retention-days: 1
-
-  patch-macos-archives:
-    name: Patch macOS Archives
-    needs: [nightly, build-macos-launcher]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    strategy:
-      matrix:
-        include:
-          - arch_name: arm64
-          - arch_name: x86_64
-    steps:
-      - name: Download launcher artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-launcher-${{ matrix.arch_name }}
-
-      - name: Patch darwin release archive
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          ARCHIVE_NAME="picoclaw_Darwin_${{ matrix.arch_name }}.tar.gz"
-
-          gh release download nightly \
-            --repo "${{ github.repository }}" \
-            --pattern "${ARCHIVE_NAME}" \
-            --dir ./patch-tmp
-
-          mkdir -p ./patch-extracted
-          tar xzf "./patch-tmp/${ARCHIVE_NAME}" -C ./patch-extracted
-
-          cp picoclaw-launcher-cgo ./patch-extracted/picoclaw-launcher
-          chmod +x ./patch-extracted/picoclaw-launcher
-
-          tar czf "${ARCHIVE_NAME}" -C ./patch-extracted .
-
-          gh release upload nightly \
-            --repo "${{ github.repository }}" \
-            "${ARCHIVE_NAME}" --clobber
-
-          echo "✅ Patched ${ARCHIVE_NAME} with CGO launcher (systray enabled)"

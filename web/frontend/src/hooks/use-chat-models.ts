@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
 
 import { type ModelInfo, getModels, setDefaultModel } from "@/api/models"
+import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
+import { refreshGatewayState } from "@/store/gateway"
 
 interface UseChatModelsOptions {
   isConnected: boolean
@@ -18,21 +22,31 @@ function isLocalModel(model: ModelInfo): boolean {
 }
 
 export function useChatModels({ isConnected }: UseChatModelsOptions) {
+  const { t } = useTranslation()
   const [modelList, setModelList] = useState<ModelInfo[]>([])
   const [defaultModelName, setDefaultModelName] = useState("")
   const setDefaultRequestIdRef = useRef(0)
+
+  const syncDefaultModelName = useCallback(
+    (models: ModelInfo[], defaultModel: string) => {
+      if (models.some((m) => m.model_name === defaultModel)) {
+        setDefaultModelName(defaultModel)
+        return
+      }
+      setDefaultModelName("")
+    },
+    [],
+  )
 
   const loadModels = useCallback(async () => {
     try {
       const data = await getModels()
       setModelList(data.models)
-      if (data.models.some((m) => m.model_name === data.default_model)) {
-        setDefaultModelName(data.default_model)
-      }
+      syncDefaultModelName(data.models, data.default_model)
     } catch {
       // silently fail
     }
-  }, [])
+  }, [syncDefaultModelName])
 
   useEffect(() => {
     const timerId = setTimeout(() => {
@@ -55,37 +69,54 @@ export function useChatModels({ isConnected }: UseChatModelsOptions) {
         }
 
         setModelList(data.models)
-        if (data.models.some((m) => m.model_name === data.default_model)) {
-          setDefaultModelName(data.default_model)
-        }
+        syncDefaultModelName(data.models, data.default_model)
+        const gateway = await refreshGatewayState({ force: true })
+        showSaveSuccessOrRestartToast(
+          t,
+          t("models.defaultChangeSuccess"),
+          modelName,
+          gateway?.restartRequired === true,
+        )
       } catch (err) {
         console.error("Failed to set default model:", err)
+        toast.error(err instanceof Error ? err.message : t("models.loadError"))
       }
     },
-    [defaultModelName],
+    [defaultModelName, syncDefaultModelName, t],
+  )
+
+  const defaultSelectableModels = useMemo(
+    () =>
+      modelList.filter(
+        (m) => m.default_model_allowed !== false && m.is_virtual !== true,
+      ),
+    [modelList],
   )
 
   const hasAvailableModels = useMemo(
-    () => modelList.some((m) => m.available),
-    [modelList],
+    () => defaultSelectableModels.some((m) => m.available),
+    [defaultSelectableModels],
   )
 
   const oauthModels = useMemo(
-    () => modelList.filter((m) => m.available && m.auth_method === "oauth"),
-    [modelList],
+    () =>
+      defaultSelectableModels.filter(
+        (m) => m.available && m.auth_method === "oauth",
+      ),
+    [defaultSelectableModels],
   )
 
   const localModels = useMemo(
-    () => modelList.filter((m) => m.available && isLocalModel(m)),
-    [modelList],
+    () => defaultSelectableModels.filter((m) => m.available && isLocalModel(m)),
+    [defaultSelectableModels],
   )
 
   const apiKeyModels = useMemo(
     () =>
-      modelList.filter(
+      defaultSelectableModels.filter(
         (m) => m.available && m.auth_method !== "oauth" && !isLocalModel(m),
       ),
-    [modelList],
+    [defaultSelectableModels],
   )
 
   return {

@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
@@ -22,30 +26,38 @@ const (
 // ====================== Test Helper: Event Collector ======================
 type eventCollector struct {
 	mu     sync.Mutex
-	events []Event
+	events []runtimeevents.Event
 }
 
 func newEventCollector(t *testing.T, al *AgentLoop) (*eventCollector, func()) {
 	t.Helper()
 	c := &eventCollector{}
-	sub := al.SubscribeEvents(16)
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		16,
+		runtimeevents.KindAgentSubTurnSpawn,
+		runtimeevents.KindAgentSubTurnEnd,
+		runtimeevents.KindAgentSubTurnResultDelivered,
+		runtimeevents.KindAgentSubTurnOrphan,
+	)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for evt := range sub.C {
+		for evt := range runtimeCh {
 			c.mu.Lock()
 			c.events = append(c.events, evt)
 			c.mu.Unlock()
 		}
 	}()
 	cleanup := func() {
-		al.UnsubscribeEvents(sub.ID)
+		closeRuntimeEvents()
 		<-done
 	}
 	return c, cleanup
 }
 
-func (c *eventCollector) hasEventOfKind(kind EventKind) bool {
+func (c *eventCollector) hasEventOfKind(kind runtimeevents.Kind) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, e := range c.events {
@@ -131,7 +143,7 @@ func TestSpawnSubTurn(t *testing.T) {
 				agent:          al.registry.GetDefaultAgent(),
 			}
 
-			// Subscribe to real EventBus to capture events
+			// Subscribe to runtime events to capture sub-turn lifecycle.
 			collector, collectCleanup := newEventCollector(t, al)
 			defer collectCleanup()
 
@@ -158,12 +170,12 @@ func TestSpawnSubTurn(t *testing.T) {
 			// Verify event emission
 			time.Sleep(10 * time.Millisecond) // let event goroutine flush
 			if tt.wantSpawn {
-				if !collector.hasEventOfKind(EventKindSubTurnSpawn) {
+				if !collector.hasEventOfKind(runtimeevents.KindAgentSubTurnSpawn) {
 					t.Error("SubTurnSpawnEvent not emitted")
 				}
 			}
 			if tt.wantEnd {
-				if !collector.hasEventOfKind(EventKindSubTurnEnd) {
+				if !collector.hasEventOfKind(runtimeevents.KindAgentSubTurnEnd) {
 					t.Error("SubTurnEndEvent not emitted")
 				}
 			}
@@ -316,8 +328,8 @@ func TestSpawnSubTurn_OrphanResultRouting(t *testing.T) {
 
 	time.Sleep(10 * time.Millisecond) // let event goroutine flush
 	// Verify Orphan event is emitted
-	if !collector.hasEventOfKind(EventKindSubTurnOrphan) {
-		t.Error("SubTurnOrphanResultEvent not emitted for finished parent")
+	if !collector.hasEventOfKind(runtimeevents.KindAgentSubTurnOrphan) {
+		t.Error("agent.subturn.orphan not emitted for finished parent")
 	}
 
 	// Verify history is NOT polluted
@@ -591,12 +603,16 @@ func TestNestedSubTurnHierarchy(t *testing.T) {
 	var spawnedTurns []turnInfo
 	var mu sync.Mutex
 
-	// Subscribe to real EventBus to capture spawn events
-	sub := al.SubscribeEvents(16)
-	defer al.UnsubscribeEvents(sub.ID)
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		16,
+		runtimeevents.KindAgentSubTurnSpawn,
+	)
+	defer closeRuntimeEvents()
 	go func() {
-		for evt := range sub.C {
-			if evt.Kind == EventKindSubTurnSpawn {
+		for evt := range runtimeCh {
+			if evt.Kind == runtimeevents.KindAgentSubTurnSpawn {
 				p, _ := evt.Payload.(SubTurnSpawnPayload)
 				mu.Lock()
 				spawnedTurns = append(spawnedTurns, turnInfo{
@@ -879,7 +895,7 @@ func TestSpawnSubTurn_PanicRecovery(t *testing.T) {
 
 	time.Sleep(10 * time.Millisecond) // let event goroutine flush
 	// SubTurnEndEvent should still be emitted
-	if !collector.hasEventOfKind(EventKindSubTurnEnd) {
+	if !collector.hasEventOfKind(runtimeevents.KindAgentSubTurnEnd) {
 		t.Error("SubTurnEndEvent not emitted after panic")
 	}
 
@@ -1229,18 +1245,23 @@ func TestDeliverSubTurnResult_RaceWithFinish(t *testing.T) {
 	al, _, _, _, cleanup := newTestAgentLoop(t) //nolint:dogsled
 	defer cleanup()
 
-	// Collect events via real EventBus
 	var mu sync.Mutex
 	var deliveredCount, orphanCount int
-	sub := al.SubscribeEvents(64)
-	defer al.UnsubscribeEvents(sub.ID)
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		64,
+		runtimeevents.KindAgentSubTurnResultDelivered,
+		runtimeevents.KindAgentSubTurnOrphan,
+	)
+	defer closeRuntimeEvents()
 	go func() {
-		for evt := range sub.C {
+		for evt := range runtimeCh {
 			mu.Lock()
 			switch evt.Kind {
-			case EventKindSubTurnResultDelivered:
+			case runtimeevents.KindAgentSubTurnResultDelivered:
 				deliveredCount++
-			case EventKindSubTurnOrphan:
+			case runtimeevents.KindAgentSubTurnOrphan:
 				orphanCount++
 			}
 			mu.Unlock()
@@ -1795,13 +1816,20 @@ func TestAsyncSubTurn_ParentFinishesEarly(t *testing.T) {
 	provider := &slowMockProvider{delay: 5 * time.Second} // SubTurn takes 5 seconds
 	al := NewAgentLoop(cfg, msgBus, provider)
 
-	// Capture events via real EventBus
 	var mu sync.Mutex
-	var events []Event
-	sub := al.SubscribeEvents(32)
-	defer al.UnsubscribeEvents(sub.ID)
+	var events []runtimeevents.Event
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		32,
+		runtimeevents.KindAgentSubTurnSpawn,
+		runtimeevents.KindAgentSubTurnEnd,
+		runtimeevents.KindAgentSubTurnResultDelivered,
+		runtimeevents.KindAgentSubTurnOrphan,
+	)
+	defer closeRuntimeEvents()
 	go func() {
-		for evt := range sub.C {
+		for evt := range runtimeCh {
 			mu.Lock()
 			events = append(events, evt)
 			mu.Unlock()
@@ -2095,5 +2123,208 @@ func TestSubTurn_IndependentContext(t *testing.T) {
 		}
 	} else {
 		t.Log("✓ SubTurn completed successfully (independent context)")
+	}
+}
+
+// ====================== TargetAgentID Tests ======================
+
+// modelRecordingProvider captures the model passed to Chat for test assertions.
+type modelRecordingProvider struct {
+	mu        sync.Mutex
+	lastModel string
+}
+
+func (rp *modelRecordingProvider) Chat(
+	_ context.Context,
+	_ []providers.Message,
+	_ []providers.ToolDefinition,
+	model string,
+	_ map[string]any,
+) (*providers.LLMResponse, error) {
+	rp.mu.Lock()
+	rp.lastModel = model
+	rp.mu.Unlock()
+	return &providers.LLMResponse{Content: "Mock response"}, nil
+}
+
+func (rp *modelRecordingProvider) GetDefaultModel() string { return "mock-model" }
+
+func (rp *modelRecordingProvider) getLastModel() string {
+	rp.mu.Lock()
+	defer rp.mu.Unlock()
+	return rp.lastModel
+}
+
+// newMultiAgentLoop creates an AgentLoop with two named agents for testing
+// cross-agent delegation via TargetAgentID.
+func newMultiAgentLoop(t *testing.T, provider providers.LLMProvider) (*AgentLoop, func()) {
+	t.Helper()
+	tmpDir, err := os.MkdirTemp("", "multiagent-test-*")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+
+	alphaDir := filepath.Join(tmpDir, "alpha")
+	betaDir := filepath.Join(tmpDir, "beta")
+	os.MkdirAll(alphaDir, 0o755)
+	os.MkdirAll(betaDir, 0o755)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "default-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+			List: []config.AgentConfig{
+				{
+					ID:        "alpha",
+					Workspace: alphaDir,
+					Model:     &config.AgentModelConfig{Primary: "model-alpha"},
+				},
+				{
+					ID:        "beta",
+					Workspace: betaDir,
+					Model:     &config.AgentModelConfig{Primary: "model-beta"},
+				},
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	return al, func() { os.RemoveAll(tmpDir) }
+}
+
+func TestSpawnSubTurn_TargetAgentID_UsesTargetAgent(t *testing.T) {
+	rp := &modelRecordingProvider{}
+	al, cleanup := newMultiAgentLoop(t, rp)
+	defer cleanup()
+
+	alphaAgent, ok := al.registry.GetAgent("alpha")
+	if !ok {
+		t.Fatal("alpha agent not in registry")
+	}
+
+	// Parent is alpha, target is beta
+	parent := &turnState{
+		ctx:            context.Background(),
+		turnID:         "parent-alpha",
+		depth:          0,
+		childTurnIDs:   []string{},
+		pendingResults: make(chan *tools.ToolResult, 4),
+		concurrencySem: make(chan struct{}, testMaxConcurrentSubTurns),
+		session:        &ephemeralSessionStore{},
+		agent:          alphaAgent,
+	}
+
+	result, err := spawnSubTurn(context.Background(), al, parent, SubTurnConfig{
+		TargetAgentID: "beta",
+		SystemPrompt:  "task for beta",
+	})
+	if err != nil {
+		t.Fatalf("spawnSubTurn failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+
+	// The recording provider captures the model passed to Chat().
+	// If TargetAgentID works correctly, the child turn should have
+	// used beta's model, not alpha's.
+	if got := rp.getLastModel(); got != "model-beta" {
+		t.Errorf("child turn used model %q, want %q", got, "model-beta")
+	}
+}
+
+func TestSpawnSubTurn_TargetAgentID_NotFound(t *testing.T) {
+	al, cleanup := newMultiAgentLoop(t, &mockProvider{})
+	defer cleanup()
+
+	alphaAgent, _ := al.registry.GetAgent("alpha")
+	parent := &turnState{
+		ctx:            context.Background(),
+		turnID:         "parent-alpha",
+		depth:          0,
+		childTurnIDs:   []string{},
+		pendingResults: make(chan *tools.ToolResult, 4),
+		concurrencySem: make(chan struct{}, testMaxConcurrentSubTurns),
+		session:        &ephemeralSessionStore{},
+		agent:          alphaAgent,
+	}
+
+	_, err := spawnSubTurn(context.Background(), al, parent, SubTurnConfig{
+		TargetAgentID: "nonexistent",
+		SystemPrompt:  "task",
+	})
+
+	if err == nil {
+		t.Fatal("expected error for nonexistent agent")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+}
+
+func TestSpawnSubTurn_TargetAgentID_EmptyModelAccepted(t *testing.T) {
+	al, cleanup := newMultiAgentLoop(t, &mockProvider{})
+	defer cleanup()
+
+	alphaAgent, _ := al.registry.GetAgent("alpha")
+	parent := &turnState{
+		ctx:            context.Background(),
+		turnID:         "parent-alpha",
+		depth:          0,
+		childTurnIDs:   []string{},
+		pendingResults: make(chan *tools.ToolResult, 4),
+		concurrencySem: make(chan struct{}, testMaxConcurrentSubTurns),
+		session:        &ephemeralSessionStore{},
+		agent:          alphaAgent,
+	}
+
+	// Model is empty but TargetAgentID is set — should NOT fail validation
+	result, err := spawnSubTurn(context.Background(), al, parent, SubTurnConfig{
+		Model:         "", // intentionally empty
+		TargetAgentID: "beta",
+		SystemPrompt:  "task for beta",
+	})
+	if err != nil {
+		t.Fatalf("should accept empty Model when TargetAgentID is set, got: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+}
+
+func TestDelegateToolNotRegistered_SingleAgent(t *testing.T) {
+	// Single-agent setup: delegate should not be registered
+	al, _, _, provider, cleanup := newTestAgentLoop(t)
+	_ = provider
+	defer cleanup()
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("default agent should exist")
+	}
+	if _, has := agent.Tools.Get("delegate"); has {
+		t.Error("delegate tool should not be registered in single-agent setup")
+	}
+}
+
+func TestDelegateToolRegistered_MultiAgent(t *testing.T) {
+	al, cleanup := newMultiAgentLoop(t, &mockProvider{})
+	defer cleanup()
+
+	// Both agents should have the delegate tool
+	for _, id := range []string{"alpha", "beta"} {
+		agent, ok := al.registry.GetAgent(id)
+		if !ok {
+			t.Fatalf("agent %q not found", id)
+		}
+		if _, has := agent.Tools.Get("delegate"); !has {
+			t.Errorf("agent %q should have delegate tool in multi-agent setup", id)
+		}
 	}
 }

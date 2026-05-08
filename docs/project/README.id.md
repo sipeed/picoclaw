@@ -289,24 +289,6 @@ Setelah langkah satu kali ini, `picoclaw-launcher` akan terbuka secara normal pa
 
 </details>
 
-### 💻 TUI Launcher (Direkomendasikan untuk Headless / SSH)
-
-TUI (Terminal UI) Launcher menyediakan antarmuka terminal lengkap untuk konfigurasi dan manajemen. Ideal untuk server, Raspberry Pi, dan lingkungan headless lainnya.
-
-```bash
-picoclaw-launcher-tui
-```
-
-<p align="center">
-<img src="../../assets/launcher-tui.jpg" alt="TUI Launcher" width="600">
-</p>
-
-**Memulai:**
-
-Gunakan menu TUI untuk: **1)** Konfigurasi Provider -> **2)** Konfigurasi Channel -> **3)** Mulai Gateway -> **4)** Chat!
-
-Untuk dokumentasi TUI lengkap, lihat [docs.picoclaw.io](https://docs.picoclaw.io).
-
 ### 📱 Android
 
 Berikan kehidupan kedua untuk ponsel lama Anda! Ubah menjadi Asisten AI pintar dengan PicoClaw.
@@ -492,7 +474,7 @@ PicoClaw dapat mencari web untuk memberikan informasi terkini. Konfigurasi di `t
 | Mesin Pencari | API Key | Tier Gratis | Tautan |
 |--------------|---------|-------------|--------|
 | DuckDuckGo | Tidak perlu | Tidak terbatas | Fallback bawaan |
-| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Diperlukan | 1000 kueri/hari | Bertenaga AI, dioptimalkan untuk bahasa Mandarin |
+| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Diperlukan | 1500 kueri/bulan (alokasi harian) | Bertenaga AI, dioptimalkan untuk bahasa Mandarin |
 | [Tavily](https://tavily.com) | Diperlukan | 1000 kueri/bulan | Dioptimalkan untuk AI Agent |
 | [Brave Search](https://brave.com/search/api) | Diperlukan | 2000 kueri/bulan | Cepat dan privat |
 | [Perplexity](https://www.perplexity.ai) | Diperlukan | Berbayar | Pencarian bertenaga AI |

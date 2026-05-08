@@ -27,6 +27,59 @@ func buildModelWithProtocol(protocol, model string) string {
 	return protocol + "/" + model
 }
 
+type legacyDiagnosticConfig struct {
+	Version     int                    `json:"version"`
+	Isolation   IsolationConfig        `json:"isolation,omitempty"`
+	Agents      legacyDiagnosticAgents `json:"agents,omitempty"`
+	Session     SessionConfig          `json:"session,omitempty"`
+	Channels    map[string]any         `json:"channels,omitempty"`
+	ChannelList ChannelsConfig         `json:"channel_list,omitempty"`
+	ModelList   []map[string]any       `json:"model_list,omitempty"`
+	Gateway     GatewayConfig          `json:"gateway,omitempty"`
+	Hooks       HooksConfig            `json:"hooks,omitempty"`
+	Tools       ToolsConfig            `json:"tools,omitempty"`
+	Heartbeat   HeartbeatConfig        `json:"heartbeat,omitempty"`
+	Devices     DevicesConfig          `json:"devices,omitempty"`
+	Voice       VoiceConfig            `json:"voice,omitempty"`
+	Bindings    json.RawMessage        `json:"bindings,omitempty"`
+	Providers   json.RawMessage        `json:"providers,omitempty"`
+}
+
+type legacyDiagnosticAgents struct {
+	Defaults legacyDiagnosticAgentDefaults `json:"defaults,omitempty"`
+	List     []AgentConfig                 `json:"list,omitempty"`
+	Dispatch *DispatchConfig               `json:"dispatch,omitempty"`
+}
+
+type legacyDiagnosticAgentDefaults struct {
+	AgentDefaults
+	LegacyModel string `json:"model,omitempty"`
+}
+
+func validateLegacyConfigDiagnostics(data []byte) error {
+	var cfg legacyDiagnosticConfig
+	return decodeJSONWithDiagnostics(data, &cfg, "config.json")
+}
+
+func migrateLegacyAgentDefaultsModel(m map[string]any) {
+	agents, ok := m["agents"].(map[string]any)
+	if !ok {
+		return
+	}
+	defaults, ok := agents["defaults"].(map[string]any)
+	if !ok {
+		return
+	}
+	model, hasModel := defaults["model"]
+	if !hasModel {
+		return
+	}
+	if _, hasModelName := defaults["model_name"]; !hasModelName {
+		defaults["model_name"] = model
+	}
+	delete(defaults, "model")
+}
+
 // loadConfigV1 loads a version 1 config (current schema)
 func loadConfig(data []byte) (*Config, error) {
 	cfg := DefaultConfig()
@@ -38,14 +91,14 @@ func loadConfig(data []byte) (*Config, error) {
 	// index position. We only reset cfg.ModelList when the user actually provides
 	// entries; when count is 0 we keep DefaultConfig's built-in list as fallback.
 	var tmp Config
-	if err := json.Unmarshal(data, &tmp); err != nil {
+	if err := decodeJSONWithDiagnostics(data, &tmp, "config.json"); err != nil {
 		return nil, err
 	}
 	if len(tmp.ModelList) > 0 {
 		cfg.ModelList = nil
 	}
 
-	if err := json.Unmarshal(data, cfg); err != nil {
+	if err := decodeJSONWithDiagnostics(data, cfg, "config.json"); err != nil {
 		return nil, err
 	}
 	return cfg, nil
@@ -96,17 +149,7 @@ func migrateV0ToV1(m map[string]any) error {
 		return fmt.Errorf("migrateV0ToV1: expected version 0, got %v", m["version"])
 	}
 
-	// Migrate agents.defaults.model → agents.defaults.model_name
-	if agents, ok := m["agents"].(map[string]any); ok {
-		if defaults, ok := agents["defaults"].(map[string]any); ok {
-			if model, hasModel := defaults["model"]; hasModel {
-				if _, hasModelName := defaults["model_name"]; !hasModelName {
-					defaults["model_name"] = model
-				}
-				delete(defaults, "model")
-			}
-		}
-	}
+	migrateLegacyAgentDefaultsModel(m)
 
 	// Migrate legacy providers to model_list if no model_list exists
 	if _, hasModelList := m["model_list"]; !hasModelList {
@@ -275,6 +318,9 @@ func migrateV2ToV3(m map[string]any) error {
 		return fmt.Errorf("migrateV2ToV3: expected version 2, got %v", m["version"])
 	}
 
+	migrateLegacyAgentDefaultsModel(m)
+	delete(m, "bindings")
+
 	// Rename channels → channel_list
 	if channels, ok := m["channels"]; ok {
 		delete(m, "channels")
@@ -334,7 +380,7 @@ func loadConfigMap(path string) (map[string]any, error) {
 		return nil, fmt.Errorf("failed to read config: %w", err)
 	}
 	if err = json.Unmarshal(data, &m1); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
+		return nil, wrapJSONError(data, err, "config.json")
 	}
 	secPath := securityPath(path)
 	data, err = os.ReadFile(secPath)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	toolshared "github.com/sipeed/picoclaw/pkg/tools/shared"
@@ -36,6 +37,16 @@ type MCPTool struct {
 	mediaStore         media.MediaStore
 	workspace          string
 	maxInlineTextRunes int
+	runtimeEvents      runtimeevents.Bus
+}
+
+// MCPToolCallPayload describes MCP tool execution runtime events.
+type MCPToolCallPayload struct {
+	Server     string `json:"server"`
+	Tool       string `json:"tool"`
+	DurationMS int64  `json:"duration_ms,omitempty"`
+	IsError    bool   `json:"is_error,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 // NewMCPTool creates a new MCP tool wrapper
@@ -60,6 +71,11 @@ func (t *MCPTool) SetMaxInlineTextRunes(limit int) {
 	if limit > 0 {
 		t.maxInlineTextRunes = limit
 	}
+}
+
+// SetEventPublisher injects the runtime event bus used for MCP tool observations.
+func (t *MCPTool) SetEventPublisher(eventBus runtimeevents.Bus) {
+	t.runtimeEvents = eventBus
 }
 
 const maxMCPInlineTextRunes = 16 * 1024
@@ -237,24 +253,86 @@ func (t *MCPTool) Parameters() map[string]any {
 
 // Execute executes the MCP tool
 func (t *MCPTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
+	startedAt := time.Now()
+	t.publishRuntimeEvent(ctx, runtimeevents.KindMCPToolCallStart, startedAt, false, "")
+
 	result, err := t.manager.CallTool(ctx, t.serverName, t.tool.Name, args)
 	if err != nil {
+		t.publishRuntimeEvent(ctx, runtimeevents.KindMCPToolCallEnd, startedAt, true, err.Error())
 		return ErrorResult(fmt.Sprintf("MCP tool execution failed: %v", err)).WithError(err)
 	}
 
 	if result == nil {
 		nilErr := fmt.Errorf("MCP tool returned nil result without error")
+		t.publishRuntimeEvent(ctx, runtimeevents.KindMCPToolCallEnd, startedAt, true, nilErr.Error())
 		return ErrorResult("MCP tool execution failed: nil result").WithError(nilErr)
 	}
 
 	// Handle error result from server
 	if result.IsError {
 		errMsg := extractContentText(result.Content)
+		t.publishRuntimeEvent(ctx, runtimeevents.KindMCPToolCallEnd, startedAt, true, errMsg)
 		return ErrorResult(fmt.Sprintf("MCP tool returned error: %s", errMsg)).
 			WithError(fmt.Errorf("MCP tool error: %s", errMsg))
 	}
 
+	t.publishRuntimeEvent(ctx, runtimeevents.KindMCPToolCallEnd, startedAt, false, "")
 	return t.normalizeResultContent(ctx, result.Content)
+}
+
+func (t *MCPTool) publishRuntimeEvent(
+	ctx context.Context,
+	kind runtimeevents.Kind,
+	startedAt time.Time,
+	isError bool,
+	errMsg string,
+) {
+	if t == nil || t.runtimeEvents == nil {
+		return
+	}
+
+	scope := runtimeevents.Scope{
+		AgentID:    toolshared.ToolAgentID(ctx),
+		SessionKey: toolshared.ToolSessionKey(ctx),
+		Channel:    toolshared.ToolChannel(ctx),
+		ChatID:     toolshared.ToolChatID(ctx),
+		MessageID:  toolshared.ToolMessageID(ctx),
+	}
+	payload := MCPToolCallPayload{
+		Server:     t.serverName,
+		Tool:       t.tool.Name,
+		DurationMS: time.Since(startedAt).Milliseconds(),
+		IsError:    isError,
+		Error:      errMsg,
+	}
+	severity := runtimeevents.SeverityInfo
+	if isError {
+		severity = runtimeevents.SeverityError
+	}
+
+	t.runtimeEvents.PublishNonBlocking(runtimeevents.Event{
+		Kind:     kind,
+		Source:   runtimeevents.Source{Component: "mcp", Name: t.serverName},
+		Scope:    scope,
+		Severity: severity,
+		Payload:  payload,
+		Attrs:    mcpToolCallEventAttrs(payload),
+	})
+}
+
+func mcpToolCallEventAttrs(payload MCPToolCallPayload) map[string]any {
+	attrs := map[string]any{
+		"server":      payload.Server,
+		"tool":        payload.Tool,
+		"duration_ms": payload.DurationMS,
+	}
+	if payload.IsError {
+		attrs["is_error"] = payload.IsError
+	}
+	if payload.Error != "" {
+		attrs["error"] = payload.Error
+	}
+	return attrs
 }
 
 // extractContentText extracts text from MCP content array

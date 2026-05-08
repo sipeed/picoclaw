@@ -292,24 +292,6 @@ Après cette étape unique, `picoclaw-launcher` s'ouvrira normalement lors des l
 
 </details>
 
-### 💻 TUI Launcher (Recommandé pour les environnements sans interface / SSH)
-
-Le TUI (Terminal UI) Launcher fournit une interface terminal complète pour la configuration et la gestion. Idéal pour les serveurs, Raspberry Pi et autres environnements sans interface graphique.
-
-```bash
-picoclaw-launcher-tui
-```
-
-<p align="center">
-<img src="../../assets/launcher-tui.jpg" alt="TUI Launcher" width="600">
-</p>
-
-**Pour commencer :**
-
-Utilisez les menus TUI pour : **1)** Configurer un Provider -> **2)** Configurer un Channel -> **3)** Démarrer le Gateway -> **4)** Chattez !
-
-Pour la documentation détaillée du TUI, voir [docs.picoclaw.io](https://docs.picoclaw.io).
-
 <a id="-run-on-old-android-phones"></a>
 ### 📱 Android
 
@@ -497,7 +479,7 @@ PicoClaw peut effectuer des recherches sur le web pour fournir des informations 
 | Moteur de recherche | Clé API | Niveau gratuit | Lien |
 |--------------------|---------|----------------|------|
 | DuckDuckGo | Non requise | Illimité | Fallback intégré |
-| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Requise | 1000 requêtes/jour | IA, optimisé pour le chinois |
+| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Requise | 1500 requêtes/mois (allocation journalière) | IA, optimisé pour le chinois |
 | [Tavily](https://tavily.com) | Requise | 1000 requêtes/mois | Optimisé pour les Agents IA |
 | [Brave Search](https://brave.com/search/api) | Requise | 2000 requêtes/mois | Rapide et privé |
 | [Perplexity](https://www.perplexity.ai) | Requise | Payant | Recherche propulsée par IA |

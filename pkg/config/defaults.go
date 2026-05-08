@@ -39,7 +39,9 @@ func DefaultConfig() *Config {
 					MaxArgsLength:    300,
 					SeparateMessages: false,
 				},
-				SplitOnMarker: false,
+				SplitOnMarker:       false,
+				MaxLLMRetries:       2,
+				LLMRetryBackoffSecs: 2,
 			},
 		},
 		Session: SessionConfig{
@@ -294,6 +296,9 @@ func DefaultConfig() *Config {
 			HotReload: false,
 			LogLevel:  DefaultGatewayLogLevel,
 		},
+		Events: EventsConfig{
+			Logging: defaultEventLoggingConfig(),
+		},
 		Tools: ToolsConfig{
 			FilterSensitiveData: true,
 			FilterMinLength:     8,
@@ -434,6 +439,9 @@ func DefaultConfig() *Config {
 				Enabled:         true,
 				Mode:            ReadFileModeBytes,
 				MaxReadFileSize: 64 * 1024, // 64KB
+			},
+			Serial: ToolConfig{
+				Enabled: false, // Hardware tool - requires host serial ports
 			},
 			Spawn: ToolConfig{
 				Enabled: true,

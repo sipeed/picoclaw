@@ -60,7 +60,10 @@
       "step4": "马上就好..."
     },
     "reasoningLabel": "思考",
-    "showThoughts": "展示思考过程",
+    "toolCallsLabel": "工具调用",
+    "toolCallExplanationLabel": "调用提示",
+    "toolCallFunctionLabel": "调用摘要",
+    "showAssistantDetails": "展示思考过程与工具调用",
     "toolLabel": "工具",
     "history": "历史记录",
     "noHistory": "暂无对话历史",
@@ -129,7 +132,10 @@
     "save": "保存",
     "saving": "保存中...",
     "reset": "重置",
-    "confirm": "确认"
+    "confirm": "确认",
+    "saveChangesTitle": "有未保存的配置更改",
+    "restartRequiredTitle": "需要重启服务",
+    "restartRequiredDesc": "{{name}} 的最新配置已保存。重启服务后才能正式生效。"
   },
   "labels": {
     "loading": "加载中..."
@@ -207,6 +213,9 @@
   },
   "models": {
     "description": "为 AI 服务商配置 API Key。只有已配置的模型可用于对话。",
+    "defaultChangeSuccess": "默认模型已更新。",
+    "unsavedPrompt": "当前修改尚未保存，保存后才会写入模型配置。",
+    "restartHint": "模型配置保存后需要重启服务才能生效。",
     "loadError": "加载模型列表失败",
     "noDefaultHintPrefix": "尚未设置默认模型，点击",
     "noDefaultHintSuffix": "设为默认。",
@@ -227,7 +236,8 @@
         "setting": "正在设为默认...",
         "unavailable": "无法将不可用的模型设为默认",
         "isDefault": "该模型已是默认模型",
-        "isVirtual": "无法将虚拟模型设为默认"
+        "isVirtual": "无法将虚拟模型设为默认",
+        "unsupportedProvider": "该 Provider 仅用于 ASR，不能设为默认聊天模型"
       },
       "deleteDisabled": {
         "isDefault": "无法删除默认模型"
@@ -235,7 +245,9 @@
     },
     "defaultOnSave": {
       "label": "默认模型",
-      "description": "保存后自动将该模型设置为默认模型。"
+      "description": "保存后自动将该模型设置为默认模型。",
+      "unsupportedProvider": "该 Provider 可以保存在 model_list 中，但不能作为默认聊天模型使用。",
+      "clearOnSave": "保存这个仅用于 ASR 的模型后，会清除当前的默认聊天模型设置。"
     },
     "add": {
       "button": "添加模型",
@@ -246,10 +258,11 @@
       "modelNameHint": "用于在对话中识别此模型的简短名称。",
       "modelId": "模型标识符",
       "modelIdPlaceholder": "例如 gpt-4o 或 openai/gpt-4o",
-      "modelIdHint": "未指定 Provider 时，诸如 openai/gpt-4o 的值将按 provider/model 格式解析。已指定 Provider 时，此字段将作为规范模型 ID 使用，不再解析其中的 provider 前缀。",
+      "modelIdHint": "此字段将作为所选 Provider 的规范模型 ID 使用。若模型标识符本身包含斜杠（如 openai/gpt-5.4），将作为完整 ID 保留，不会再次拆分 Provider。",
       "errorRequired": "此字段为必填项。",
       "errorDuplicateModelName": "模型别名已存在，请使用其他名称。",
       "saveError": "添加模型失败",
+      "saveSuccess": "模型已添加。",
       "confirm": "添加模型"
     },
     "delete": {
@@ -262,8 +275,9 @@
     },
     "field": {
       "provider": "Provider",
-      "providerPlaceholder": "例如 openai",
-      "providerHint": "可选。指定后，将以该值作为最终 provider，并将“模型标识符”字段解释为规范模型 ID。",
+      "providerPlaceholder": "请选择 Provider",
+      "providerHint": "请选择一个由后端 catalog 提供的 Provider；“模型标识符”字段会按该 Provider 的规范模型 ID 解释。",
+      "providerInvalid": "当前 Provider 无效，请重新选择一个受支持的 Provider。",
       "apiBase": "API Base URL",
       "apiKey": "API Key",
       "apiKeyPlaceholder": "请输入 API Key",
@@ -272,6 +286,7 @@
       "proxyHint": "可选。例如 http://127.0.0.1:7890",
       "authMethod": "认证方式",
       "authMethodHint": "认证方式：oauth、token。留空表示使用 API Key 认证。",
+      "authMethodManagedHint": "该 Provider 的认证方式由系统自动管理。",
       "connectMode": "连接模式",
       "connectModeHint": "CLI 型服务商的连接模式：stdio 或 grpc。",
       "workspace": "工作目录",
@@ -284,6 +299,8 @@
       "thinkingLevelHint": "扩展思考预算：off、low、medium、high、xhigh、adaptive。",
       "maxTokensField": "Max Tokens 字段名",
       "maxTokensFieldHint": "覆盖请求中 max_tokens 的字段名，例如 max_completion_tokens。",
+      "toolSchemaTransform": "工具 Schema 转换",
+      "toolSchemaTransformHint": "可选的工具 JSON Schema 兼容性转换。留空表示保持原生行为。当前支持值：simple。",
       "extraBody": "Extra Body",
       "extraBodyHint": "要注入到请求体中的额外 JSON 字段，例如 {\"reasoning_split\": true}。",
       "customHeaders": "Custom Headers",
@@ -293,7 +310,8 @@
       "title": "配置 {{name}}",
       "apiKeyHint": "已设置 API Key，留空表示不修改。",
       "oauthNote": "该服务商使用 OAuth 认证，无需 API Key。",
-      "saveError": "保存失败"
+      "saveError": "保存失败",
+      "saveSuccess": "模型配置已保存。"
     }
   },
   "channels": {
@@ -379,6 +397,7 @@
       "notFound": "不支持频道“{{name}}”。",
       "saveSuccess": "频道配置已保存。",
       "saveError": "保存频道配置失败",
+      "savePrompt": "当前修改尚未保存，点击保存后才会写入频道配置。",
       "docLink": "配置文档",
       "enableLabel": "启用频道",
       "restartRequiredTitle": "需要重启服务",
@@ -552,6 +571,7 @@
         "web_search": {
           "title": "网页搜索",
           "description": "为智能体提供网页搜索能力。自动路由到当前处于激活状态的最佳服务。",
+          "unsaved_prompt": "当前修改尚未保存，点击保存后才会写入 Web Search 配置。",
           "global_settings": "常规",
           "providers_config": "集成",
           "load_error": "加载 Web Search 配置失败。",
@@ -590,6 +610,7 @@
         },
         "reasons": {
           "requires_linux": "该工具仅在 Linux 主机上可用，并且需要暴露对应的设备文件。",
+          "requires_serial_platform": "该工具当前支持 Linux、macOS 和 Windows，且要求主机可访问对应串口。",
           "requires_skills": "需要先启用 `tools.skills`，该技能注册表工具才能使用。",
           "requires_subagent": "需要先启用 `tools.subagent`，`spawn` 才能委派任务。",
           "requires_mcp_discovery": "需要先启用 `tools.mcp.discovery`，MCP 发现工具才会可用。",
@@ -609,8 +630,8 @@
       "tool_feedback_enabled_hint": "在每次执行工具前，先向当前会话发送一条简短的执行说明",
       "tool_feedback_separate_messages": "分开发送反馈消息",
       "tool_feedback_separate_messages_hint": "让每次工具反馈都保留为独立消息，而不是反复复用同一条占位/进度消息",
-      "tool_feedback_max_args_length": "工具反馈长度",
-      "tool_feedback_max_args_length_hint": "每条工具反馈消息中展示的字符上限。设为 0 时使用默认值",
+      "tool_feedback_max_args_length": "工具参数预览长度",
+      "tool_feedback_max_args_length_hint": "每条工具参数预览中展示的字符上限。设为 0 时使用默认值",
       "exec_enabled": "允许命令执行",
       "exec_enabled_hint": "控制应用是否允许执行命令。关闭后，所有命令请求都不会执行",
       "allow_remote": "允许远程命令执行",
@@ -670,6 +691,7 @@
       "server_port": "服务端口",
       "server_port_hint": "PicoClaw Web 的 HTTP 监听端口",
       "launcher_section_hint": "此分组中的改动需要在重启 launcher 后生效",
+      "gateway_restart_hint": "这组配置保存后，需要重启服务才能正式生效。",
       "dashboard_password": "登录密码",
       "dashboard_password_hint": "设置新的登录密码",
       "dashboard_password_placeholder": "至少 8 个字符",

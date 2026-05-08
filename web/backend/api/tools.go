@@ -172,6 +172,12 @@ var toolCatalog = []toolCatalogEntry{
 		ConfigKey:   "spi",
 	},
 	{
+		Name:        "serial",
+		Description: "Interact with serial ports exposed on the host.",
+		Category:    "hardware",
+		ConfigKey:   "serial",
+	},
+	{
 		Name:        "tool_search_tool_regex",
 		Description: "Discover hidden MCP tools by regex search when tool discovery is enabled.",
 		Category:    "discovery",
@@ -265,6 +271,8 @@ func buildToolSupport(cfg *config.Config) []toolSupportItem {
 			status, reasonCode = resolveWebSearchToolSupport(cfg)
 		case "i2c", "spi":
 			status, reasonCode = resolveHardwareToolSupport(cfg.Tools.IsToolEnabled(entry.ConfigKey))
+		case "serial":
+			status, reasonCode = resolveSerialToolSupport(cfg.Tools.IsToolEnabled(entry.ConfigKey))
 		default:
 			if cfg.Tools.IsToolEnabled(entry.ConfigKey) {
 				status = "enabled"
@@ -291,6 +299,18 @@ func resolveHardwareToolSupport(enabled bool) (string, string) {
 		return "blocked", "requires_linux"
 	}
 	return "enabled", ""
+}
+
+func resolveSerialToolSupport(enabled bool) (string, string) {
+	if !enabled {
+		return "disabled", ""
+	}
+	switch runtime.GOOS {
+	case "linux", "darwin", "windows":
+		return "enabled", ""
+	default:
+		return "blocked", "requires_serial_platform"
+	}
 }
 
 func resolveDiscoveryToolSupport(cfg *config.Config, methodEnabled bool) (string, string) {
@@ -362,6 +382,8 @@ func applyToolState(cfg *config.Config, toolName string, enabled bool) error {
 		cfg.Tools.I2C.Enabled = enabled
 	case "spi":
 		cfg.Tools.SPI.Enabled = enabled
+	case "serial":
+		cfg.Tools.Serial.Enabled = enabled
 	case "tool_search_tool_regex":
 		cfg.Tools.MCP.Discovery.UseRegex = enabled
 		if enabled {

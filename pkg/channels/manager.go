@@ -23,6 +23,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/health"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
@@ -84,6 +85,7 @@ type Manager struct {
 	channels      map[string]Channel
 	workers       map[string]*channelWorker
 	bus           *bus.MessageBus
+	runtimeEvents runtimeevents.Bus
 	config        *config.Config
 	mediaStore    media.MediaStore
 	dispatchTask  *asyncTask
@@ -96,6 +98,32 @@ type Manager struct {
 	reactionUndos sync.Map          // "channel:chatID" → reactionEntry
 	streamActive  sync.Map          // "channel:chatID" → true (set when streamer.Finalize sent the message)
 	channelHashes map[string]string // channel name → config hash
+}
+
+// ManagerOption configures a channel Manager.
+type ManagerOption func(*Manager)
+
+// WithRuntimeEvents injects the runtime event bus used for channel observations.
+func WithRuntimeEvents(eventBus runtimeevents.Bus) ManagerOption {
+	return func(m *Manager) {
+		m.runtimeEvents = eventBus
+	}
+}
+
+// ChannelLifecyclePayload describes channel lifecycle runtime events.
+type ChannelLifecyclePayload struct {
+	Type  string `json:"type,omitempty"`
+	Error string `json:"error,omitempty"`
+}
+
+// ChannelOutboundPayload describes channel outbound message runtime events.
+type ChannelOutboundPayload struct {
+	Media            bool     `json:"media,omitempty"`
+	ContentLen       int      `json:"content_len,omitempty"`
+	MessageIDs       []string `json:"message_ids,omitempty"`
+	ReplyToMessageID string   `json:"reply_to_message_id,omitempty"`
+	Error            string   `json:"error,omitempty"`
+	Retries          int      `json:"retries,omitempty"`
 }
 
 type toolFeedbackMessageTracker interface {
@@ -132,6 +160,14 @@ func outboundMessageIsToolFeedback(msg bus.OutboundMessage) bool {
 		return false
 	}
 	return strings.EqualFold(strings.TrimSpace(msg.Context.Raw["message_kind"]), "tool_feedback")
+}
+
+func outboundMessageBypassesPlaceholderEdit(msg bus.OutboundMessage) bool {
+	if len(msg.Context.Raw) == 0 {
+		return false
+	}
+	kind := strings.TrimSpace(msg.Context.Raw["message_kind"])
+	return strings.EqualFold(kind, "thought") || strings.EqualFold(kind, "tool_calls")
 }
 
 func outboundMediaChannel(msg bus.OutboundMediaMessage) string {
@@ -182,6 +218,21 @@ func clearTrackedToolFeedbackMessage(
 	if tracker, ok := ch.(toolFeedbackMessageTracker); ok {
 		tracker.ClearToolFeedbackMessage(trackedChatID)
 	}
+}
+
+// DismissToolFeedback clears any tracked tool feedback animation for the
+// given channel/chat. This is called when a turn ends without a final
+// response (e.g., ResponseHandled tools) to stop orphaned animation goroutines.
+// outboundCtx carries topic/thread info for channels that use scoped tracker
+// keys (e.g., Telegram forum topics); may be nil for non-topic channels.
+func (m *Manager) DismissToolFeedback(
+	ctx context.Context, channelName, chatID string, outboundCtx *bus.InboundContext,
+) {
+	ch, ok := m.GetChannel(channelName)
+	if !ok {
+		return
+	}
+	dismissTrackedToolFeedbackMessage(ctx, ch, chatID, outboundCtx)
 }
 
 func prepareToolFeedbackMessageContent(ch Channel, content string) string {
@@ -332,6 +383,12 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 				}
 				return nil, false
 			}
+			if outboundMessageBypassesPlaceholderEdit(msg) {
+				if deleter, ok := ch.(MessageDeleter); ok {
+					deleter.DeleteMessage(ctx, chatID, entry.id) // best effort
+				}
+				return nil, false
+			}
 			if editor, ok := ch.(MessageEditor); ok {
 				content := msg.Content
 				trackedContent := msg.Content
@@ -395,7 +452,12 @@ func (m *Manager) preSendMedia(ctx context.Context, name string, msg bus.Outboun
 	}
 }
 
-func NewManager(cfg *config.Config, messageBus *bus.MessageBus, store media.MediaStore) (*Manager, error) {
+func NewManager(
+	cfg *config.Config,
+	messageBus *bus.MessageBus,
+	store media.MediaStore,
+	opts ...ManagerOption,
+) (*Manager, error) {
 	m := &Manager{
 		channels:      make(map[string]Channel),
 		workers:       make(map[string]*channelWorker),
@@ -403,6 +465,11 @@ func NewManager(cfg *config.Config, messageBus *bus.MessageBus, store media.Medi
 		config:        cfg,
 		mediaStore:    store,
 		channelHashes: make(map[string]string),
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(m)
+		}
 	}
 
 	// Register as streaming delegate so the agent loop can obtain streamers
@@ -528,6 +595,13 @@ func (m *Manager) initChannel(typeName, channelName string) {
 			setter.SetOwner(ch)
 		}
 		m.channels[channelName] = ch
+		m.publishChannelEvent(
+			runtimeevents.KindChannelLifecycleInitialized,
+			channelName,
+			runtimeevents.Scope{Channel: channelName},
+			runtimeevents.SeverityInfo,
+			ChannelLifecyclePayload{Type: typeName},
+		)
 		logger.InfoCF("channels", "Channel enabled successfully", map[string]any{
 			"channel": channelName,
 			"type":    typeName,
@@ -673,6 +747,13 @@ func (m *Manager) registerHTTPHandlersLocked() {
 func (m *Manager) registerChannelHTTPHandler(name string, ch Channel) {
 	if wh, ok := ch.(WebhookHandler); ok {
 		m.mux.Handle(wh.WebhookPath(), wh)
+		m.publishChannelEvent(
+			runtimeevents.KindChannelWebhookRegistered,
+			name,
+			runtimeevents.Scope{Channel: name},
+			runtimeevents.SeverityInfo,
+			ChannelLifecyclePayload{Type: channelTypeForEvent(m, name)},
+		)
 		logger.InfoCF("channels", "Webhook handler registered", map[string]any{
 			"channel": name,
 			"path":    wh.WebhookPath(),
@@ -692,6 +773,13 @@ func (m *Manager) registerChannelHTTPHandler(name string, ch Channel) {
 func (m *Manager) unregisterChannelHTTPHandler(name string, ch Channel) {
 	if wh, ok := ch.(WebhookHandler); ok {
 		m.mux.Unhandle(wh.WebhookPath())
+		m.publishChannelEvent(
+			runtimeevents.KindChannelWebhookUnregistered,
+			name,
+			runtimeevents.Scope{Channel: name},
+			runtimeevents.SeverityInfo,
+			ChannelLifecyclePayload{Type: channelTypeForEvent(m, name)},
+		)
 		logger.InfoCF("channels", "Webhook handler unregistered", map[string]any{
 			"channel": name,
 			"path":    wh.WebhookPath(),
@@ -730,6 +818,13 @@ func (m *Manager) StartAll(ctx context.Context) error {
 				"channel": name,
 				"error":   err.Error(),
 			})
+			m.publishChannelEvent(
+				runtimeevents.KindChannelLifecycleStartFailed,
+				name,
+				runtimeevents.Scope{Channel: name},
+				runtimeevents.SeverityError,
+				ChannelLifecyclePayload{Type: channelTypeForEvent(m, name), Error: err.Error()},
+			)
 			failedStarts = append(failedStarts, fmt.Errorf("channel %s: %w", name, err))
 			failedNames = append(failedNames, name)
 			continue
@@ -745,6 +840,13 @@ func (m *Manager) StartAll(ctx context.Context) error {
 		m.workers[name] = w
 		go m.runWorker(dispatchCtx, name, w)
 		go m.runMediaWorker(dispatchCtx, name, w)
+		m.publishChannelEvent(
+			runtimeevents.KindChannelLifecycleStarted,
+			name,
+			runtimeevents.Scope{Channel: name},
+			runtimeevents.SeverityInfo,
+			ChannelLifecyclePayload{Type: channelType},
+		)
 	}
 
 	if len(m.channels) > 0 && len(m.workers) == 0 {
@@ -881,7 +983,15 @@ func (m *Manager) StopAll(ctx context.Context) error {
 				"channel": name,
 				"error":   err.Error(),
 			})
+			continue
 		}
+		m.publishChannelEvent(
+			runtimeevents.KindChannelLifecycleStopped,
+			name,
+			runtimeevents.Scope{Channel: name},
+			runtimeevents.SeverityInfo,
+			ChannelLifecyclePayload{Type: channelTypeForEvent(m, name)},
+		)
 	}
 
 	logger.InfoC("channels", "All channels stopped")
@@ -991,11 +1101,23 @@ func (m *Manager) sendWithRetry(
 	// Rate limit: wait for token
 	if err := w.limiter.Wait(ctx); err != nil {
 		// ctx canceled, shutting down
+		m.publishChannelEvent(
+			runtimeevents.KindChannelRateLimited,
+			name,
+			scopeFromOutboundContext(msg.Context),
+			runtimeevents.SeverityWarn,
+			ChannelOutboundPayload{
+				ContentLen:       len([]rune(msg.Content)),
+				ReplyToMessageID: msg.ReplyToMessageID,
+				Error:            err.Error(),
+			},
+		)
 		return nil, false
 	}
 
 	// Pre-send: stop typing and try to edit placeholder
 	if msgIDs, handled := m.preSend(ctx, name, msg, w.ch); handled {
+		m.publishOutboundSent(name, msg, msgIDs)
 		return msgIDs, true
 	}
 
@@ -1004,6 +1126,7 @@ func (m *Manager) sendWithRetry(
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		msgIDs, lastErr = w.ch.Send(ctx, msg)
 		if lastErr == nil {
+			m.publishOutboundSent(name, msg, msgIDs)
 			return msgIDs, true
 		}
 
@@ -1043,6 +1166,7 @@ func (m *Manager) sendWithRetry(
 		"error":   lastErr.Error(),
 		"retries": maxRetries,
 	})
+	m.publishOutboundFailed(name, msg, lastErr, false)
 
 	return nil, false
 }
@@ -1105,6 +1229,7 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 		func(ctx context.Context, w *channelWorker, msg bus.OutboundMessage) bool {
 			select {
 			case w.queue <- msg:
+				m.publishOutboundQueued(outboundMessageChannel(msg), msg)
 				return true
 			case <-ctx.Done():
 				return false
@@ -1125,6 +1250,7 @@ func (m *Manager) dispatchOutboundMedia(ctx context.Context) {
 		func(ctx context.Context, w *channelWorker, msg bus.OutboundMediaMessage) bool {
 			select {
 			case w.mediaQueue <- msg:
+				m.publishOutboundMediaQueued(outboundMediaChannel(msg), msg)
 				return true
 			case <-ctx.Done():
 				return false
@@ -1174,6 +1300,16 @@ func (m *Manager) sendMediaWithRetry(
 
 	// Rate limit: wait for token
 	if err := w.limiter.Wait(ctx); err != nil {
+		m.publishChannelEvent(
+			runtimeevents.KindChannelRateLimited,
+			name,
+			scopeFromOutboundContext(msg.Context),
+			runtimeevents.SeverityWarn,
+			ChannelOutboundPayload{
+				Media: true,
+				Error: err.Error(),
+			},
+		)
 		return nil, err
 	}
 
@@ -1185,6 +1321,7 @@ func (m *Manager) sendMediaWithRetry(
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		msgIDs, lastErr = ms.SendMedia(ctx, msg)
 		if lastErr == nil {
+			m.publishOutboundMediaSent(name, msg, msgIDs)
 			return msgIDs, nil
 		}
 
@@ -1224,6 +1361,7 @@ func (m *Manager) sendMediaWithRetry(
 		"error":   lastErr.Error(),
 		"retries": maxRetries,
 	})
+	m.publishOutboundMediaFailed(name, msg, lastErr)
 	return nil, lastErr
 }
 
@@ -1361,6 +1499,13 @@ func (m *Manager) Reload(ctx context.Context, cfg *config.Config) error {
 				"channel": name,
 				"error":   err.Error(),
 			})
+			m.publishChannelEvent(
+				runtimeevents.KindChannelLifecycleStartFailed,
+				name,
+				runtimeevents.Scope{Channel: name},
+				runtimeevents.SeverityError,
+				ChannelLifecyclePayload{Type: channelTypeForEvent(m, name), Error: err.Error()},
+			)
 			continue
 		}
 		// Lazily create worker only after channel starts successfully
@@ -1374,6 +1519,13 @@ func (m *Manager) Reload(ctx context.Context, cfg *config.Config) error {
 		m.workers[name] = w
 		go m.runWorker(dispatchCtx, name, w)
 		go m.runMediaWorker(dispatchCtx, name, w)
+		m.publishChannelEvent(
+			runtimeevents.KindChannelLifecycleStarted,
+			name,
+			runtimeevents.Scope{Channel: name},
+			runtimeevents.SeverityInfo,
+			ChannelLifecyclePayload{Type: channelType},
+		)
 		deferFuncs = append(deferFuncs, func() {
 			m.RegisterChannel(name, channel)
 		})
@@ -1496,6 +1648,7 @@ func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, conten
 	if wExists && w != nil {
 		select {
 		case w.queue <- msg:
+			m.publishOutboundQueued(channelName, msg)
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()

@@ -847,6 +847,72 @@ func TestLoadConfig_WebPreferNativeCanBeDisabled(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_SyntaxErrorReportsLineAndColumn(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := "{\n  \"version\": 2,\n  \"tools\": {\n    \"web\": {\n      \"enabled\": true,,\n      \"format\": \"markdown\"\n    }\n  }\n}\n"
+	if err := os.WriteFile(configPath, []byte(raw), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	_, err := LoadConfig(configPath)
+	if err == nil {
+		t.Fatal("expected syntax error, got nil")
+	}
+	if !strings.Contains(err.Error(), "syntax error at line 5, column 23") {
+		t.Fatalf("expected line/column diagnostic, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "\"enabled\": true,,") {
+		t.Fatalf("expected source snippet in diagnostic, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "^") {
+		t.Fatalf("expected caret marker in diagnostic, got %q", err.Error())
+	}
+}
+
+func TestLoadConfig_TypeErrorReportsFieldPath(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := "{\n  \"version\": 2,\n  \"tools\": {\n    \"web\": {\n      \"fetch_limit_bytes\": \"oops\"\n    }\n  }\n}\n"
+	if err := os.WriteFile(configPath, []byte(raw), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	_, err := LoadConfig(configPath)
+	if err == nil {
+		t.Fatal("expected type error, got nil")
+	}
+	if !strings.Contains(err.Error(), "type error at line 5, column 33") {
+		t.Fatalf("expected line/column diagnostic, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "fetch_limit_bytes") {
+		t.Fatalf("expected field name in diagnostic, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "\"fetch_limit_bytes\": \"oops\"") {
+		t.Fatalf("expected source snippet in diagnostic, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "^") {
+		t.Fatalf("expected caret marker in diagnostic, got %q", err.Error())
+	}
+}
+
+func TestLoadConfig_UnknownFieldsReportsExactPaths(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := "{\n  \"version\": 2,\n  \"tools\": {\n    \"weeb\": {\n      \"enabled\": true\n    },\n    \"web\": {\n      \"fatch_limit_bytes\": 123\n    }\n  }\n}\n"
+	if err := os.WriteFile(configPath, []byte(raw), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	_, err := LoadConfig(configPath)
+	if err == nil {
+		t.Fatal("expected unknown field error, got nil")
+	}
+	if !strings.Contains(err.Error(), "tools.weeb") || !strings.Contains(err.Error(), "tools.web.fatch_limit_bytes") {
+		t.Fatalf("expected exact unknown field paths, got %q", err.Error())
+	}
+}
+
 func TestDefaultConfig_ExecAllowRemoteEnabled(t *testing.T) {
 	cfg := DefaultConfig()
 	if !cfg.Tools.Exec.AllowRemote {
@@ -1355,25 +1421,12 @@ func TestLoadConfig_TelegramPlaceholderTextAcceptsSingleString(t *testing.T) {
 }
 
 // TestLoadConfig_WarnsForPlaintextAPIKey verifies that LoadConfig resolves a plaintext
-// api_key into memory but does NOT rewrite the config file. File writes are the sole
+// api_keys entry into memory but does NOT rewrite the config file. File writes are the sole
 // responsibility of SaveConfig.
 func TestLoadConfig_WarnsForPlaintextAPIKey(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
-	const original = `{"version":1,"model_list":[{"model_name":"test","model":"openai/gpt-4","api_key":"sk-plaintext"}]}`
-	if err := os.WriteFile(cfgPath, []byte(original), 0o600); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
-	secPath := filepath.Join(dir, SecurityConfigFile)
-	const securityConfig = `
-model_list:
-  test:0:
-    api_keys:
-      - "sk-plaintext"
-`
-	if err := os.WriteFile(secPath, []byte(securityConfig), 0o600); err != nil {
-		t.Fatalf("setup: %v", err)
-	}
+	const original = `{"version":2,"model_list":[{"model_name":"test","model":"openai/gpt-4","api_keys":["sk-plaintext"]}]}`
 	if err := os.WriteFile(cfgPath, []byte(original), 0o600); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
@@ -1942,6 +1995,36 @@ func TestModelConfig_CustomHeadersRoundTrip(t *testing.T) {
 	}
 	if got := loaded.ModelList[0].CustomHeaders["X-Agent"]; got != "openclaw" {
 		t.Errorf("CustomHeaders[X-Agent] = %q, want openclaw", got)
+	}
+}
+
+func TestModelConfig_ToolSchemaTransformRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	cfg := &Config{
+		Version: CurrentVersion,
+		ModelList: []*ModelConfig{
+			{
+				ModelName:           "test-model",
+				Model:               "openai/test",
+				APIKeys:             SimpleSecureStrings("sk-test"),
+				ToolSchemaTransform: "simple",
+			},
+		},
+	}
+
+	if err := SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("SaveConfig error: %v", err)
+	}
+
+	loaded, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if got := loaded.ModelList[0].ToolSchemaTransform; got != "simple" {
+		t.Fatalf("ToolSchemaTransform = %q, want %q", got, "simple")
 	}
 }
 

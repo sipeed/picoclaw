@@ -13,7 +13,23 @@ export interface ChatAttachment {
   contentType?: string
 }
 
-export type AssistantMessageKind = "normal" | "thought"
+export interface ChatToolCallFunction {
+  name?: string
+  arguments?: string
+}
+
+export interface ChatToolCallExtraContent {
+  toolFeedbackExplanation?: string
+}
+
+export interface ChatToolCall {
+  id?: string
+  type?: string
+  function?: ChatToolCallFunction
+  extraContent?: ChatToolCallExtraContent
+}
+
+export type AssistantMessageKind = "normal" | "thought" | "tool_calls"
 
 export interface ChatMessage {
   id: string
@@ -22,6 +38,7 @@ export interface ChatMessage {
   timestamp: number | string
   kind?: AssistantMessageKind
   attachments?: ChatAttachment[]
+  toolCalls?: ChatToolCall[]
 }
 
 export interface ContextUsage {
@@ -48,7 +65,8 @@ export interface ChatStoreState {
 
 type ChatStorePatch = Partial<ChatStoreState>
 
-const SHOW_THOUGHTS_STORAGE_KEY = "picoclaw:chat-show-thoughts"
+// Keep the legacy storage value so existing user preferences survive the rename.
+const SHOW_ASSISTANT_DETAILS_STORAGE_KEY = "picoclaw:chat-show-thoughts"
 
 const DEFAULT_CHAT_STATE: ChatStoreState = {
   messages: [],
@@ -59,8 +77,8 @@ const DEFAULT_CHAT_STATE: ChatStoreState = {
 }
 
 export const chatAtom = atom<ChatStoreState>(DEFAULT_CHAT_STATE)
-export const showThoughtsAtom = atomWithStorage<boolean>(
-  SHOW_THOUGHTS_STORAGE_KEY,
+export const showAssistantDetailsAtom = atomWithStorage<boolean>(
+  SHOW_ASSISTANT_DETAILS_STORAGE_KEY,
   true,
 )
 

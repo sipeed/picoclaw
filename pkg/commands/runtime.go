@@ -36,6 +36,12 @@ type ContextStats struct {
 	MessageCount     int
 }
 
+// StopResult describes the outcome of a stop request for the current session.
+type StopResult struct {
+	Stopped  bool
+	TaskName string
+}
+
 // Runtime provides runtime dependencies to command handlers. It is constructed
 // per-request by the agent loop so that per-request state (like session scope)
 // can coexist with long-lived callbacks (like GetModelInfo).
@@ -55,4 +61,5 @@ type Runtime struct {
 	SwitchChannel      func(value string) error
 	ClearHistory       func() error
 	ReloadConfig       func() error
+	StopActiveTurn     func() (StopResult, error)
 }

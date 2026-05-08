@@ -14,6 +14,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -242,6 +243,57 @@ func TestStartAll_PartialFailure_StartsSuccessfulWorkers(t *testing.T) {
 	}
 }
 
+func TestStartAllPublishesLifecycleRuntimeEvents(t *testing.T) {
+	eventBus := runtimeevents.NewBus()
+	defer func() {
+		if err := eventBus.Close(); err != nil {
+			t.Errorf("event bus close failed: %v", err)
+		}
+	}()
+
+	_, eventsCh, err := eventBus.Channel().SubscribeChan(
+		t.Context(),
+		runtimeevents.SubscribeOptions{Name: "channel-lifecycle", Buffer: 4},
+	)
+	if err != nil {
+		t.Fatalf("SubscribeChan failed: %v", err)
+	}
+
+	m := newTestManager()
+	m.runtimeEvents = eventBus
+	m.config = &config.Config{Channels: config.ChannelsConfig{}}
+	m.channels["good"] = &mockChannel{}
+	m.channels["bad"] = &mockChannel{
+		startFn: func(_ context.Context) error { return errors.New("bad start") },
+	}
+
+	if err := m.StartAll(t.Context()); err != nil {
+		t.Fatalf("StartAll() error = %v", err)
+	}
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := m.StopAll(stopCtx); err != nil {
+			t.Errorf("StopAll() error = %v", err)
+		}
+	})
+
+	events := []runtimeevents.Event{
+		receiveChannelRuntimeEvent(t, eventsCh),
+		receiveChannelRuntimeEvent(t, eventsCh),
+	}
+	seen := map[runtimeevents.Kind]runtimeevents.Event{}
+	for _, evt := range events {
+		seen[evt.Kind] = evt
+	}
+	if evt, ok := seen[runtimeevents.KindChannelLifecycleStarted]; !ok || evt.Scope.Channel != "good" {
+		t.Fatalf("missing started event for good channel: %+v", events)
+	}
+	if evt, ok := seen[runtimeevents.KindChannelLifecycleStartFailed]; !ok || evt.Scope.Channel != "bad" {
+		t.Fatalf("missing failed event for bad channel: %+v", events)
+	}
+}
+
 func testOutboundMessage(msg bus.OutboundMessage) bus.OutboundMessage {
 	if msg.Context.Channel == "" && msg.Context.ChatID == "" {
 		msg.Context = bus.NewOutboundContext(msg.Channel, msg.ChatID, msg.ReplyToMessageID)
@@ -254,6 +306,21 @@ func testOutboundMediaMessage(msg bus.OutboundMediaMessage) bus.OutboundMediaMes
 		msg.Context = bus.NewOutboundContext(msg.Channel, msg.ChatID, "")
 	}
 	return bus.NormalizeOutboundMediaMessage(msg)
+}
+
+func receiveChannelRuntimeEvent(t *testing.T, ch <-chan runtimeevents.Event) runtimeevents.Event {
+	t.Helper()
+
+	select {
+	case evt, ok := <-ch:
+		if !ok {
+			t.Fatal("runtime event channel closed before expected event")
+		}
+		return evt
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for runtime event")
+		return runtimeevents.Event{}
+	}
 }
 
 func TestSendWithRetry_Success(t *testing.T) {
@@ -277,6 +344,69 @@ func TestSendWithRetry_Success(t *testing.T) {
 
 	if callCount != 1 {
 		t.Fatalf("expected 1 Send call, got %d", callCount)
+	}
+}
+
+func TestSendWithRetryPublishesOutboundRuntimeEvents(t *testing.T) {
+	eventBus := runtimeevents.NewBus()
+	defer func() {
+		if err := eventBus.Close(); err != nil {
+			t.Errorf("event bus close failed: %v", err)
+		}
+	}()
+
+	_, eventsCh, err := eventBus.Channel().OfKind(
+		runtimeevents.KindChannelMessageOutboundSent,
+		runtimeevents.KindChannelMessageOutboundFailed,
+	).SubscribeChan(t.Context(), runtimeevents.SubscribeOptions{Name: "channel-outbound", Buffer: 2})
+	if err != nil {
+		t.Fatalf("SubscribeChan failed: %v", err)
+	}
+
+	m := newTestManager()
+	m.runtimeEvents = eventBus
+
+	successWorker := &channelWorker{
+		ch:      &mockChannel{},
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+	m.sendWithRetry(
+		context.Background(),
+		"test",
+		successWorker,
+		testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "chat-1", Content: "hello"}),
+	)
+	sent := receiveChannelRuntimeEvent(t, eventsCh)
+	if sent.Kind != runtimeevents.KindChannelMessageOutboundSent || sent.Scope.ChatID != "chat-1" {
+		t.Fatalf("sent event = %+v", sent)
+	}
+	if sent.Attrs["content_len"] != 5 {
+		t.Fatalf("sent attrs = %#v, want content_len", sent.Attrs)
+	}
+
+	failWorker := &channelWorker{
+		ch: &mockChannel{
+			sendFn: func(context.Context, bus.OutboundMessage) error {
+				return fmt.Errorf("send failed: %w", ErrSendFailed)
+			},
+		},
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+	m.sendWithRetry(
+		context.Background(),
+		"test",
+		failWorker,
+		testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "chat-2", Content: "hello"}),
+	)
+	failed := receiveChannelRuntimeEvent(t, eventsCh)
+	if failed.Kind != runtimeevents.KindChannelMessageOutboundFailed || failed.Scope.ChatID != "chat-2" {
+		t.Fatalf("failed event = %+v", failed)
+	}
+	if failed.Severity != runtimeevents.SeverityError {
+		t.Fatalf("failed severity = %q", failed.Severity)
+	}
+	if failed.Attrs["error"] == "" || failed.Attrs["retries"] != maxRetries {
+		t.Fatalf("failed attrs = %#v, want error and retries", failed.Attrs)
 	}
 }
 
@@ -1128,6 +1258,107 @@ func TestPreSend_ToolFeedbackSeparateMessagesDeletesPlaceholderAndSkipsEdit(t *t
 	}
 	if ch.clearedChatID != "123" {
 		t.Fatalf("expected tracked tool feedback state to be cleared before sending, got %q", ch.clearedChatID)
+	}
+}
+
+func TestPreSend_ThoughtPlaceholderDeleteAndSkipsEdit(t *testing.T) {
+	m := newTestManager()
+
+	ch := &mockDeletingMessageEditor{
+		mockMessageEditor: mockMessageEditor{
+			editFn: func(_ context.Context, _, _, _ string) error {
+				t.Fatal("expected thought message to bypass placeholder edit")
+				return nil
+			},
+		},
+	}
+
+	m.RecordPlaceholder("test", "123", "456")
+
+	msg := testOutboundMessage(bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "123",
+		Content: "thinking trace",
+		Context: bus.InboundContext{
+			Channel: "test",
+			ChatID:  "123",
+			Raw: map[string]string{
+				"message_kind": "thought",
+			},
+		},
+	})
+
+	msgIDs, handled := m.preSend(context.Background(), "test", msg, ch)
+	if handled {
+		t.Fatalf(
+			"expected thought message to fall through so the channel can send a structured message, got %v",
+			msgIDs,
+		)
+	}
+	if ch.deleteCalls != 1 {
+		t.Fatalf("expected placeholder deletion, got %d delete calls", ch.deleteCalls)
+	}
+	if ch.deletedChatID != "123" || ch.deletedMessageID != "456" {
+		t.Fatalf("unexpected placeholder deletion target: %s/%s", ch.deletedChatID, ch.deletedMessageID)
+	}
+	if _, ok := m.placeholders.Load("test:123"); ok {
+		t.Fatal("expected placeholder to be consumed before structured thought send")
+	}
+}
+
+func TestSendWithRetry_ToolCallsPlaceholderDeleteAndFallsThroughToSend(t *testing.T) {
+	m := newTestManager()
+
+	ch := &mockDeletingMessageEditor{
+		mockMessageEditor: mockMessageEditor{
+			mockChannel: mockChannel{
+				sendFn: func(_ context.Context, msg bus.OutboundMessage) error {
+					if got := msg.Context.Raw["message_kind"]; got != "tool_calls" {
+						t.Fatalf("expected tool_calls message kind, got %q", got)
+					}
+					if msg.Content != "" {
+						t.Fatalf("expected empty tool_calls content, got %q", msg.Content)
+					}
+					return nil
+				},
+			},
+			editFn: func(_ context.Context, _, _, _ string) error {
+				t.Fatal("expected tool_calls message to bypass placeholder edit")
+				return nil
+			},
+		},
+	}
+
+	m.RecordPlaceholder("test", "123", "456")
+
+	w := &channelWorker{
+		ch:      ch,
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+
+	msg := testOutboundMessage(bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "123",
+		Context: bus.InboundContext{
+			Channel: "test",
+			ChatID:  "123",
+			Raw: map[string]string{
+				"message_kind": "tool_calls",
+				"tool_calls":   `[{"id":"call_1","type":"function","function":{"name":"read_file","arguments":"{}"},"extra_content":{"tool_feedback_explanation":"Looking up config"}}]`,
+			},
+		},
+	})
+
+	m.sendWithRetry(context.Background(), "test", w, msg)
+
+	if ch.deleteCalls != 1 {
+		t.Fatalf("expected placeholder deletion, got %d delete calls", ch.deleteCalls)
+	}
+	if ch.deletedChatID != "123" || ch.deletedMessageID != "456" {
+		t.Fatalf("unexpected placeholder deletion target: %s/%s", ch.deletedChatID, ch.deletedMessageID)
+	}
+	if len(ch.sentMessages) != 1 {
+		t.Fatalf("expected structured tool_calls message to be sent once, got %d", len(ch.sentMessages))
 	}
 }
 

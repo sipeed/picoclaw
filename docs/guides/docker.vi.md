@@ -36,7 +36,7 @@ docker compose -f docker/docker-compose.yml --profile gateway down
 
 ### Chế Độ Launcher (Web Console)
 
-Image `launcher` bao gồm cả ba binary (`picoclaw`, `picoclaw-launcher`, `picoclaw-launcher-tui`) và khởi động web console mặc định, cung cấp giao diện trình duyệt để cấu hình và chat.
+Image `launcher` bao gồm cả hai binary (`picoclaw`, `picoclaw-launcher`) và khởi động web console mặc định, cung cấp giao diện trình duyệt để cấu hình và chat.
 
 ```bash
 docker compose -f docker/docker-compose.yml --profile launcher up -d

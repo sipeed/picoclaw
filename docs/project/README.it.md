@@ -289,24 +289,6 @@ Dopo questo passaggio una tantum, `picoclaw-launcher` si aprirà normalmente ai 
 
 </details>
 
-### 💻 TUI Launcher (Consigliato per Headless / SSH)
-
-Il TUI (Terminal UI) Launcher fornisce un'interfaccia terminale completa per la configurazione e la gestione. Ideale per server, Raspberry Pi e altri ambienti headless.
-
-```bash
-picoclaw-launcher-tui
-```
-
-<p align="center">
-<img src="../../assets/launcher-tui.jpg" alt="TUI Launcher" width="600">
-</p>
-
-**Per iniziare:**
-
-Usa i menu TUI per: **1)** Configurare un Provider -> **2)** Configurare un Channel -> **3)** Avviare il Gateway -> **4)** Chattare!
-
-Per la documentazione dettagliata del TUI, vedi [docs.picoclaw.io](https://docs.picoclaw.io).
-
 ### 📱 Android
 
 Dai una seconda vita al tuo telefono di dieci anni fa! Trasformalo in un assistente IA intelligente con PicoClaw.
@@ -492,7 +474,7 @@ PicoClaw può cercare sul web per fornire informazioni aggiornate. Configura in 
 | Motore di Ricerca | API Key | Piano Gratuito | Link |
 |-------------------|---------|----------------|------|
 | DuckDuckGo | Non necessaria | Illimitato | Fallback integrato |
-| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Richiesta | 1000 query/giorno | IA, ottimizzato per il cinese |
+| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Richiesta | 1500 query/mese (allocazione giornaliera) | IA, ottimizzato per il cinese |
 | [Tavily](https://tavily.com) | Richiesta | 1000 query/mese | Ottimizzato per AI Agent |
 | [Brave Search](https://brave.com/search/api) | Richiesta | 2000 query/mese | Veloce e privato |
 | [Perplexity](https://www.perplexity.ai) | Richiesta | A pagamento | Ricerca potenziata dall'IA |

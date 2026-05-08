@@ -289,24 +289,6 @@ docker compose -f docker/docker-compose.yml --profile launcher up -d
 
 </details>
 
-### 💻 TUI Launcher（ヘッドレス / SSH 向け推奨）
-
-TUI（Terminal UI）Launcher は設定と管理のためのフル機能ターミナルインターフェースを提供します。サーバー、Raspberry Pi、その他のヘッドレス環境に最適です。
-
-```bash
-picoclaw-launcher-tui
-```
-
-<p align="center">
-<img src="../../assets/launcher-tui.jpg" alt="TUI Launcher" width="600">
-</p>
-
-**始め方:**
-
-TUI メニューを使って：**1)** Provider を設定 → **2)** Channel を設定 → **3)** Gateway を起動 → **4)** チャット！
-
-TUI の詳細なドキュメントは [docs.picoclaw.io](https://docs.picoclaw.io) を参照してください。
-
 <a id="-run-on-old-android-phones"></a>
 ### 📱 Android
 
@@ -493,7 +475,7 @@ PicoClaw は最新情報を提供するために Web を検索できます。`to
 | 検索エンジン | API キー | 無料枠 | リンク |
 |------------|---------|--------|-------|
 | DuckDuckGo | 不要 | 無制限 | 内蔵フォールバック |
-| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | 必須 | 1000 クエリ/日 | AI 搭載、中国語に最適化 |
+| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | 必須 | 1500 クエリ/月（日次割り当て） | AI 搭載、中国語に最適化 |
 | [Tavily](https://tavily.com) | 必須 | 1000 クエリ/月 | AI Agent 向けに最適化 |
 | [Brave Search](https://brave.com/search/api) | 必須 | 2000 クエリ/月 | 高速でプライベート |
 | [Perplexity](https://www.perplexity.ai) | 必須 | 有料 | AI 搭載検索 |

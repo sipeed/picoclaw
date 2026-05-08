@@ -10,11 +10,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 )
 
 func TestLoadEnvFile(t *testing.T) {
@@ -245,6 +247,95 @@ func TestNewManager_InitialState(t *testing.T) {
 	}
 	if len(mgr.GetServers()) != 0 {
 		t.Fatalf("expected no servers on new manager, got %d", len(mgr.GetServers()))
+	}
+}
+
+func TestConnectServerPublishesRuntimeEvents(t *testing.T) {
+	originalConnectServerFunc := connectServerFunc
+	t.Cleanup(func() {
+		connectServerFunc = originalConnectServerFunc
+	})
+
+	eventBus := runtimeevents.NewBus()
+	defer func() {
+		if err := eventBus.Close(); err != nil {
+			t.Errorf("event bus close failed: %v", err)
+		}
+	}()
+
+	_, eventsCh, err := eventBus.Channel().OfKind(
+		runtimeevents.KindMCPServerConnected,
+		runtimeevents.KindMCPServerFailed,
+	).SubscribeChan(t.Context(), runtimeevents.SubscribeOptions{Name: "mcp-events", Buffer: 2})
+	if err != nil {
+		t.Fatalf("SubscribeChan failed: %v", err)
+	}
+
+	connectServerFunc = func(
+		_ context.Context,
+		name string,
+		cfg config.MCPServerConfig,
+	) (*ServerConnection, error) {
+		if name == "bad" {
+			return nil, fmt.Errorf("connect failed")
+		}
+		return &ServerConnection{
+			Name:   name,
+			Config: cfg,
+			Tools:  []*sdkmcp.Tool{{Name: "echo"}},
+		}, nil
+	}
+
+	mgr := NewManager(WithRuntimeEvents(eventBus))
+	err = mgr.ConnectServer(context.Background(), "good", config.MCPServerConfig{
+		Type:    "stdio",
+		Command: "echo",
+	})
+	if err != nil {
+		t.Fatalf("ConnectServer(good) error = %v", err)
+	}
+	connected := receiveMCPRuntimeEvent(t, eventsCh)
+	if connected.Kind != runtimeevents.KindMCPServerConnected ||
+		connected.Source.Name != "good" ||
+		connected.Severity != runtimeevents.SeverityInfo {
+		t.Fatalf("connected event = %+v", connected)
+	}
+	if connected.Attrs["server"] != "good" ||
+		connected.Attrs["type"] != "stdio" ||
+		connected.Attrs["tool_count"] != 1 {
+		t.Fatalf("connected attrs = %#v", connected.Attrs)
+	}
+
+	err = mgr.ConnectServer(context.Background(), "bad", config.MCPServerConfig{
+		Type:    "stdio",
+		Command: "echo",
+	})
+	if err == nil {
+		t.Fatal("expected ConnectServer(bad) to fail")
+	}
+	failed := receiveMCPRuntimeEvent(t, eventsCh)
+	if failed.Kind != runtimeevents.KindMCPServerFailed ||
+		failed.Source.Name != "bad" ||
+		failed.Severity != runtimeevents.SeverityError {
+		t.Fatalf("failed event = %+v", failed)
+	}
+	if failed.Attrs["server"] != "bad" || failed.Attrs["error"] != "connect failed" {
+		t.Fatalf("failed attrs = %#v", failed.Attrs)
+	}
+}
+
+func receiveMCPRuntimeEvent(t *testing.T, ch <-chan runtimeevents.Event) runtimeevents.Event {
+	t.Helper()
+
+	select {
+	case evt, ok := <-ch:
+		if !ok {
+			t.Fatal("runtime event channel closed before expected event")
+		}
+		return evt
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for runtime event")
+		return runtimeevents.Event{}
 	}
 }
 

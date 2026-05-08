@@ -60,7 +60,10 @@
       "step4": "Almost there..."
     },
     "reasoningLabel": "Reasoning",
-    "showThoughts": "Show reasoning",
+    "toolCallsLabel": "Tool calls",
+    "toolCallExplanationLabel": "Call note",
+    "toolCallFunctionLabel": "Call summary",
+    "showAssistantDetails": "Show reasoning and tool calls",
     "toolLabel": "Tool",
     "history": "History",
     "noHistory": "No chat history yet",
@@ -129,7 +132,10 @@
     "save": "Save",
     "saving": "Saving...",
     "reset": "Reset",
-    "confirm": "Confirm"
+    "confirm": "Confirm",
+    "saveChangesTitle": "You have unsaved configuration changes",
+    "restartRequiredTitle": "Gateway restart required",
+    "restartRequiredDesc": "The latest {{name}} configuration has been saved. Restart the gateway for it to take effect."
   },
   "labels": {
     "loading": "Loading..."
@@ -207,6 +213,9 @@
   },
   "models": {
     "description": "Configure API keys for AI providers. Only configured models are available for chat.",
+    "defaultChangeSuccess": "Default model updated.",
+    "unsavedPrompt": "This change has not been saved yet. Save to write it into the model configuration.",
+    "restartHint": "Model configuration changes take effect after the gateway restarts.",
     "loadError": "Failed to load models",
     "noDefaultHintPrefix": "No default model set yet. Click",
     "noDefaultHintSuffix": "to set one.",
@@ -227,7 +236,8 @@
         "setting": "Setting as default...",
         "unavailable": "Cannot set unavailable model as default",
         "isDefault": "Already the default model",
-        "isVirtual": "Cannot set virtual model as default"
+        "isVirtual": "Cannot set virtual model as default",
+        "unsupportedProvider": "This provider is ASR-only and cannot be the default chat model"
       },
       "deleteDisabled": {
         "isDefault": "Cannot delete the default model"
@@ -235,7 +245,9 @@
     },
     "defaultOnSave": {
       "label": "Default Model",
-      "description": "Automatically set this model as default after saving."
+      "description": "Automatically set this model as default after saving.",
+      "unsupportedProvider": "This provider can be saved in model_list, but it cannot be used as the default chat model.",
+      "clearOnSave": "Saving this ASR-only model will clear the current default chat model selection."
     },
     "add": {
       "button": "Add Model",
@@ -246,10 +258,11 @@
       "modelNameHint": "A short name used to identify this model in conversations.",
       "modelId": "Model Identifier",
       "modelIdPlaceholder": "e.g. gpt-4o or openai/gpt-4o",
-      "modelIdHint": "If Provider is not specified, values such as openai/gpt-4o are interpreted using the provider/model format. If Provider is specified, this field is treated as the canonical model ID and is not parsed for a provider prefix.",
+      "modelIdHint": "This field is sent as the canonical model ID for the selected Provider. If the model ID itself contains slashes, such as openai/gpt-5.4, it is preserved as-is instead of being split again.",
       "errorRequired": "This field is required.",
       "errorDuplicateModelName": "Model alias already exists. Please use a different name.",
       "saveError": "Failed to add model",
+      "saveSuccess": "Model added.",
       "confirm": "Add Model"
     },
     "delete": {
@@ -262,8 +275,9 @@
     },
     "field": {
       "provider": "Provider",
-      "providerPlaceholder": "e.g. openai",
-      "providerHint": "Optional. If specified, this value is used as the effective provider, and Model Identifier is interpreted as the canonical model ID.",
+      "providerPlaceholder": "Select a provider",
+      "providerHint": "Choose a Provider from the backend catalog. The Model Identifier field is interpreted as that Provider's canonical model ID.",
+      "providerInvalid": "The current Provider is invalid. Select a supported Provider.",
       "apiBase": "API Base URL",
       "apiKey": "API Key",
       "apiKeyPlaceholder": "Enter your API key",
@@ -272,6 +286,7 @@
       "proxyHint": "Optional. e.g. http://127.0.0.1:7890",
       "authMethod": "Auth Method",
       "authMethodHint": "Authentication method: oauth, token. Leave blank for API key auth.",
+      "authMethodManagedHint": "This Provider manages its authentication mode automatically.",
       "connectMode": "Connect Mode",
       "connectModeHint": "Connection mode for CLI-based providers: stdio or grpc.",
       "workspace": "Workspace Path",
@@ -284,6 +299,8 @@
       "thinkingLevelHint": "Extended thinking budget: off, low, medium, high, xhigh, adaptive.",
       "maxTokensField": "Max Tokens Field",
       "maxTokensFieldHint": "Override the request field name for max tokens, e.g. max_completion_tokens.",
+      "toolSchemaTransform": "Tool Schema Transform",
+      "toolSchemaTransformHint": "Optional compatibility transform for tool JSON schemas. Leave blank for native behavior. Supported values: simple.",
       "extraBody": "Extra Body",
       "extraBodyHint": "Additional JSON fields to inject into the request body, e.g. {\"reasoning_split\": true}.",
       "customHeaders": "Custom Headers",
@@ -293,7 +310,8 @@
       "title": "Configure {{name}}",
       "apiKeyHint": "A key is already set. Leave blank to keep it unchanged.",
       "oauthNote": "This provider uses OAuth — no API key required.",
-      "saveError": "Failed to save"
+      "saveError": "Failed to save",
+      "saveSuccess": "Model configuration saved."
     }
   },
   "channels": {
@@ -379,6 +397,7 @@
       "notFound": "Channel \"{{name}}\" is not supported.",
       "saveSuccess": "Channel configuration saved.",
       "saveError": "Failed to save channel configuration",
+      "savePrompt": "This change has not been saved yet. Save to write it into the channel configuration.",
       "docLink": "Documentation",
       "enableLabel": "Enable channel",
       "restartRequiredTitle": "Gateway restart required",
@@ -552,6 +571,7 @@
         "web_search": {
           "title": "Web Search",
           "description": "Provide web search capability for agents to find the latest real-world info. Automatically routes to the optimal active provider.",
+          "unsaved_prompt": "This change has not been saved yet. Save to write it into the Web Search configuration.",
           "global_settings": "General",
           "providers_config": "Integrations",
           "load_error": "Failed to load web search configuration.",
@@ -590,6 +610,7 @@
         },
         "reasons": {
           "requires_linux": "This tool only works on Linux hosts with the required device files exposed.",
+          "requires_serial_platform": "This tool currently supports Linux, macOS, and Windows hosts with accessible serial ports.",
           "requires_skills": "Enable `tools.skills` before this skill-registry tool can be used.",
           "requires_subagent": "Enable `tools.subagent` before the spawn tool can delegate work.",
           "requires_mcp_discovery": "Enable `tools.mcp.discovery` before MCP discovery tools become available.",
@@ -609,8 +630,8 @@
       "tool_feedback_enabled_hint": "Send a short execution note into the current chat before each tool runs.",
       "tool_feedback_separate_messages": "Separate Feedback Messages",
       "tool_feedback_separate_messages_hint": "Keep each tool feedback update as its own chat message instead of reusing a single placeholder/progress message.",
-      "tool_feedback_max_args_length": "Tool Feedback Length",
-      "tool_feedback_max_args_length_hint": "Maximum number of characters shown in each tool feedback message. Set to 0 to use the default.",
+      "tool_feedback_max_args_length": "Tool Args Preview Length",
+      "tool_feedback_max_args_length_hint": "Maximum number of characters shown in each tool argument preview. Set to 0 to use the default.",
       "exec_enabled": "Allow Commands",
       "exec_enabled_hint": "Enable or disable command execution for the app. When disabled, no command requests will run.",
       "allow_remote": "Allow Remote Commands",
@@ -670,6 +691,7 @@
       "server_port": "Service Port",
       "server_port_hint": "HTTP port used by PicoClaw Web.",
       "launcher_section_hint": "Changes in this section take effect after the launcher restarts.",
+      "gateway_restart_hint": "Changes in this section take effect after the gateway restarts.",
       "dashboard_password": "Login Password",
       "dashboard_password_hint": "Set a new login password.",
       "dashboard_password_placeholder": "At least 8 characters",

@@ -1,5 +1,9 @@
 import { getSessionHistory } from "@/api/sessions"
 import { normalizeUnixTimestamp } from "@/features/chat/state"
+import {
+  parseToolCallsValue,
+  toolCallsSignature,
+} from "@/features/chat/tool-calls"
 import type { ChatAttachment, ChatMessage } from "@/store/chat"
 
 function toChatAttachments({
@@ -45,8 +49,11 @@ export async function loadSessionMessages(
     id: `hist-${index}-${Date.now()}`,
     role: message.role,
     content: message.content,
-    kind:
-      message.role === "assistant" ? (message.kind ?? "normal") : undefined,
+    kind: message.role === "assistant" ? (message.kind ?? "normal") : undefined,
+    toolCalls:
+      message.role === "assistant"
+        ? parseToolCallsValue(message.tool_calls)
+        : undefined,
     attachments: toChatAttachments({
       media: message.media,
       attachments: message.attachments,
@@ -79,7 +86,9 @@ function messageSignature(message: ChatMessage): string {
 
   return `${message.role}\u0000${message.content}\u0000${normalizeMessageTimestamp(
     message.timestamp,
-  )}\u0000${message.kind ?? ""}\u0000${attachmentSignature}`
+  )}\u0000${message.kind ?? ""}\u0000${attachmentSignature}\u0000${toolCallsSignature(
+    message.toolCalls,
+  )}`
 }
 
 function comparableTimestamp(timestamp: number | string): number {

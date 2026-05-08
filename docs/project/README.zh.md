@@ -289,24 +289,6 @@ macOS 可能会在首次启动时拦截 `picoclaw-launcher`，因为它从互联
 
 </details>
 
-### 💻 TUI Launcher（推荐无头环境 / SSH）
-
-TUI（终端 UI）Launcher 提供功能完整的终端配置与管理界面，适合服务器、树莓派等无显示器环境。
-
-```bash
-picoclaw-launcher-tui
-```
-
-<p align="center">
-<img src="../../assets/launcher-tui.jpg" alt="TUI Launcher" width="600">
-</p>
-
-**开始使用：**
-
-通过 TUI 菜单：**1)** 配置 Provider -> **2)** 配置 Channel -> **3)** 启动 Gateway -> **4)** 开始聊天！
-
-详细 TUI 文档请参阅 [docs.picoclaw.io](https://docs.picoclaw.io)。
-
 <a id="-run-on-old-android-phones"></a>
 ### 📱 Android
 
@@ -493,7 +475,7 @@ PicoClaw 可以搜索网络以提供最新信息。在 `tools.web` 中配置：
 
 | 搜索引擎 | API Key | 免费额度 | 链接 |
 |---------|---------|---------|------|
-| [百度搜索](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | 必填 | 1000 次/天 | AI 搜索，国内首选 |
+| [百度搜索](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | 必填 | 1500 次/月（按天发放） | AI 搜索，国内首选 |
 | [Tavily](https://tavily.com) | 必填 | 1000 次/月 | 专为 AI Agent 优化 |
 | [GLM Search](https://open.bigmodel.cn/) | 必填 | 视情况 | 智谱网络搜索 |
 | DuckDuckGo | 无需 | 无限制 | 内置备用（国内访问困难） |

@@ -333,18 +333,33 @@ func TestIsThoughtPayload(t *testing.T) {
 		want    bool
 	}{
 		{
-			name:    "explicit thought bool",
+			name:    "explicit thought kind",
+			payload: map[string]any{PayloadKeyKind: MessageKindThought},
+			want:    true,
+		},
+		{
+			name:    "thought kind ignores case and whitespace",
+			payload: map[string]any{PayloadKeyKind: "  ThOuGhT  "},
+			want:    true,
+		},
+		{
+			name:    "legacy thought bool remains supported for inbound compatibility",
 			payload: map[string]any{PayloadKeyThought: true},
 			want:    true,
 		},
 		{
-			name:    "thought false",
+			name:    "legacy thought false",
 			payload: map[string]any{PayloadKeyThought: false},
 			want:    false,
 		},
 		{
-			name:    "thought string ignored",
-			payload: map[string]any{PayloadKeyThought: "true"},
+			name:    "tool calls kind",
+			payload: map[string]any{PayloadKeyKind: MessageKindToolCalls},
+			want:    false,
+		},
+		{
+			name:    "non-string kind ignored",
+			payload: map[string]any{PayloadKeyKind: true},
 			want:    false,
 		},
 		{
@@ -380,13 +395,41 @@ func TestPicoClientChannel_HandleServerMessage_IgnoresThought(t *testing.T) {
 		Type: TypeMessageCreate,
 		Payload: map[string]any{
 			PayloadKeyContent: "internal reasoning",
-			PayloadKeyThought: true,
+			PayloadKeyKind:    MessageKindThought,
 		},
 	})
 
 	select {
 	case msg := <-mb.InboundChan():
 		t.Fatalf("expected no inbound publish for thought payload, got %+v", msg)
+	case <-time.After(150 * time.Millisecond):
+	}
+}
+
+func TestPicoClientChannel_HandleServerMessage_IgnoresLegacyThoughtBool(t *testing.T) {
+	mb := bus.NewMessageBus()
+	bc := &config.Channel{Type: config.ChannelPicoClient, Enabled: true}
+	ch, err := NewPicoClientChannel(bc, &config.PicoClientSettings{
+		URL: "ws://localhost:8080/ws",
+	}, mb)
+	if err != nil {
+		t.Fatalf("NewPicoClientChannel() error = %v", err)
+	}
+
+	ch.ctx = context.Background()
+	pc := &picoConn{sessionID: "sess-thought-legacy"}
+
+	ch.handleServerMessage(pc, PicoMessage{
+		Type: TypeMessageCreate,
+		Payload: map[string]any{
+			PayloadKeyContent: "legacy internal reasoning",
+			PayloadKeyThought: true,
+		},
+	})
+
+	select {
+	case msg := <-mb.InboundChan():
+		t.Fatalf("expected no inbound publish for legacy thought payload, got %+v", msg)
 	case <-time.After(150 * time.Millisecond):
 	}
 }

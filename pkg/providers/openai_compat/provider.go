@@ -270,6 +270,10 @@ func filterDeepSeekReasoningTurn(messages []Message) []Message {
 		}
 
 		cloned := msg
+		// DeepSeek thinking-mode replay only requires reasoning_content for
+		// turns that participate in a tool interaction round. For plain
+		// assistant turns between two user messages, the docs say the API will
+		// ignore reasoning_content on replay, so we strip it here.
 		if cloned.Role == "assistant" && strings.TrimSpace(cloned.ReasoningContent) != "" && !hasToolInteraction {
 			cloned.ReasoningContent = ""
 		}

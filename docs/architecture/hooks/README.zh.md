@@ -13,7 +13,7 @@
 
 | 类型 | 接口 | 作用阶段 | 能否改写 |
 | --- | --- | --- | --- |
-| 观察型 | `EventObserver` | EventBus 广播事件时 | 否 |
+| 观察型 | `RuntimeEventObserver` | runtime event bus 广播事件时 | 否 |
 | LLM 拦截型 | `LLMInterceptor` | `before_llm` / `after_llm` | 是 |
 | Tool 拦截型 | `ToolInterceptor` | `before_tool` / `after_tool` | 是 |
 | Tool 审批型 | `ToolApprover` | `approve_tool` | 否，返回批准/拒绝 |
@@ -136,9 +136,9 @@ HookManager 的排序规则是：
           "/tmp/review_gate.py"
         ],
         "observe": [
-          "tool_exec_start",
-          "tool_exec_end",
-          "tool_exec_skipped"
+          "agent.tool.exec_start",
+          "agent.tool.exec_end",
+          "agent.tool.exec_skipped"
         ],
         "intercept": [
           "before_tool",
@@ -174,7 +174,7 @@ tail -f /tmp/picoclaw-hook-review-gate.log
 
 下面这段代码是一个最小的“记录型” in-process hook。它实现了：
 
-1. `EventObserver`
+1. `RuntimeEventObserver`
 2. `LLMInterceptor`
 3. `ToolInterceptor`
 4. `ToolApprover`
@@ -196,6 +196,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/agent"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
@@ -217,12 +218,12 @@ func NewExampleLoggerHook(opts ExampleLoggerHookOptions) *ExampleLoggerHook {
 	}
 }
 
-func (h *ExampleLoggerHook) OnEvent(ctx context.Context, evt agent.Event) error {
+func (h *ExampleLoggerHook) OnRuntimeEvent(ctx context.Context, evt runtimeevents.Event) error {
 	_ = ctx
 	if h == nil || !h.logEvents {
 		return nil
 	}
-	h.record("event", evt.Meta, map[string]any{
+	h.record("event", evt.Scope, map[string]any{
 		"event":   evt.Kind.String(),
 		"payload": evt.Payload,
 	}, nil)
@@ -275,7 +276,7 @@ func (h *ExampleLoggerHook) ApproveTool(
 	return decision, nil
 }
 
-func (h *ExampleLoggerHook) record(stage string, meta agent.EventMeta, payload any, decision any) {
+func (h *ExampleLoggerHook) record(stage string, refs any, payload any, decision any) {
 	logger.InfoCF("hooks", "Example hook observed", map[string]any{
 		"stage": stage,
 	})
@@ -286,7 +287,7 @@ func (h *ExampleLoggerHook) record(stage string, meta agent.EventMeta, payload a
 	entry := map[string]any{
 		"ts":       time.Now().UTC(),
 		"stage":    stage,
-		"meta":     meta,
+		"refs":     refs,
 		"payload":  payload,
 		"decision": decision,
 	}
@@ -428,7 +429,7 @@ func init() {
 下面这段脚本是一个最小的 `process hook` 示例。它只使用 Python 标准库，支持：
 
 1. `hook.hello`
-2. `hook.event`
+2. `hook.runtime_event`
 3. `hook.before_tool`
 4. `hook.approve_tool`
 
@@ -564,8 +565,8 @@ def main() -> int:
             })
 
             if not message_id:
-                if method == "hook.event" and LOG_EVENTS:
-                    log_stderr(f"observed event: {params.get('Kind')}")
+                if method == "hook.runtime_event" and LOG_EVENTS:
+                    log_stderr(f"observed event: {params.get('kind')}")
                 continue
 
             try:
@@ -606,9 +607,9 @@ if __name__ == "__main__":
           "/abs/path/to/review_gate.py"
         ],
         "observe": [
-          "tool_exec_start",
-          "tool_exec_end",
-          "tool_exec_skipped"
+          "agent.tool.exec_start",
+          "agent.tool.exec_end",
+          "agent.tool.exec_skipped"
         ],
         "intercept": [
           "before_tool",
@@ -626,7 +627,7 @@ if __name__ == "__main__":
 ### 环境变量
 
 - `PICOCLAW_HOOK_LOG_EVENTS`
-  是否把 `hook.event` 写到 `stderr`，默认开启
+  是否把 `hook.runtime_event` 写到 `stderr`，默认开启
 - `PICOCLAW_HOOK_LOG_FILE`
   外部日志文件路径。设置后，脚本会把收到的 hook 请求、notification 和返回结果按 JSON Lines 追加到该文件
 
@@ -645,7 +646,7 @@ if __name__ == "__main__":
 
 - 只看到 `hook.hello`
   说明进程启动并完成握手了，但还没有新的业务 hook 请求真正打进来
-- 看到 `hook.event`
+- 看到 `hook.runtime_event`
   说明 `observe` 配置生效了
 - 看到 `hook.before_tool`
   说明 `intercept: ["before_tool", ...]` 生效了
@@ -664,7 +665,7 @@ if __name__ == "__main__":
 ```json
 {"ts":"2026-03-21T14:12:00+00:00","direction":"in","id":1,"method":"hook.hello","params":{"name":"py_review_gate","version":1,"modes":["observe","tool","approve"]},"notification":false}
 {"ts":"2026-03-21T14:12:00+00:00","direction":"out","id":1,"response":{"ok":true,"name":"python-review-gate"},"error":null}
-{"ts":"2026-03-21T14:12:05+00:00","direction":"in","id":0,"method":"hook.event","params":{"Kind":"tool_exec_start"},"notification":true}
+{"ts":"2026-03-21T14:12:05+00:00","direction":"in","id":0,"method":"hook.runtime_event","params":{"kind":"agent.tool.exec_start"},"notification":true}
 {"ts":"2026-03-21T14:12:05+00:00","direction":"in","id":7,"method":"hook.before_tool","params":{"tool":"echo_text","arguments":{"text":"hello"}},"notification":false}
 {"ts":"2026-03-21T14:12:05+00:00","direction":"out","id":7,"response":{"action":"continue"},"error":null}
 ```
@@ -672,7 +673,7 @@ if __name__ == "__main__":
 补充说明：
 
 - 时间戳是 UTC，不是本地时区
-- `notification=true` 表示这是 `hook.event` 这类不需要响应的通知
+- `notification=true` 表示这是 `hook.runtime_event` 这类不需要响应的通知
 - `id` 会随着当前进程内的请求递增；如果 hook 进程重启，计数会重新开始
 
 ## Process Hook 协议约定
@@ -681,7 +682,7 @@ if __name__ == "__main__":
 
 - PicoClaw 启动外部进程
 - 请求和响应都按“一行一个 JSON 消息”传输
-- `hook.event` 是 notification，不需要响应
+- `hook.runtime_event` 是 notification，不需要响应
 - `hook.before_llm` / `hook.after_llm` / `hook.before_tool` / `hook.after_tool` / `hook.approve_tool` 是 request/response
 
 当前宿主不会接受 process hook 主动发起的新 RPC。也就是说，外部 hook 现在只能“响应 PicoClaw 的调用”，不能反向调用宿主去发送 channel 消息。

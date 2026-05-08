@@ -289,24 +289,6 @@ macOS에서는 인터넷에서 다운로드한 앱이고 Mac App Store 공증을
 
 </details>
 
-### 💻 TUI Launcher (헤드리스 / SSH 권장)
-
-TUI(Terminal UI) Launcher는 설정과 관리를 위한 모든 기능을 갖춘 터미널 인터페이스를 제공합니다. 서버, Raspberry Pi, 기타 헤드리스 환경에 적합합니다.
-
-```bash
-picoclaw-launcher-tui
-```
-
-<p align="center">
-<img src="../../assets/launcher-tui.jpg" alt="TUI Launcher" width="600">
-</p>
-
-**시작 방법:**
-
-TUI 메뉴를 사용해 다음 순서로 진행하세요. **1)** 프로바이더 설정 -> **2)** 채널 설정 -> **3)** 게이트웨이 시작 -> **4)** 채팅!
-
-자세한 TUI 문서는 [docs.picoclaw.io](https://docs.picoclaw.io)를 참고하세요.
-
 ### 📱 Android
 
 오래된 스마트폰에 새 생명을 불어넣어 보세요! PicoClaw를 설치하면 스마트 AI 어시스턴트로 바꿀 수 있습니다.
@@ -498,7 +480,7 @@ PicoClaw는 최신 정보를 제공하기 위해 웹 검색을 수행할 수 있
 | 검색 엔진 | API Key | 무료 제공량 | 링크 |
 |-----------|---------|-------------|------|
 | DuckDuckGo | 불필요 | 무제한 | 내장 백업 검색 |
-| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | 필수 | 하루 1000회 쿼리 | AI 기반, 중국 시장 최적화 |
+| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | 필수 | 월 1500회 쿼리 (일할 할당) | AI 기반, 중국 시장 최적화 |
 | [Tavily](https://tavily.com) | 필수 | 월 1000회 쿼리 | AI 에이전트에 최적화 |
 | [Brave Search](https://brave.com/search/api) | 필수 | 월 2000회 쿼리 | 빠르고 프라이빗함 |
 | [Perplexity](https://www.perplexity.ai) | 필수 | 유료 | AI 기반 검색 |

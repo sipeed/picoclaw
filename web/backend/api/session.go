@@ -2,7 +2,6 @@ package api
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -53,6 +52,7 @@ type sessionChatMessage struct {
 	Kind        string                  `json:"kind,omitempty"`
 	Media       []string                `json:"media,omitempty"`
 	Attachments []sessionChatAttachment `json:"attachments,omitempty"`
+	ToolCalls   []utils.VisibleToolCall `json:"tool_calls,omitempty"`
 }
 
 type sessionChatAttachment struct {
@@ -456,7 +456,10 @@ func truncateRunes(s string, maxLen int) string {
 }
 
 func sessionChatMessageVisible(msg sessionChatMessage) bool {
-	return strings.TrimSpace(msg.Content) != "" || len(msg.Media) > 0 || len(msg.Attachments) > 0
+	return strings.TrimSpace(msg.Content) != "" ||
+		len(msg.Media) > 0 ||
+		len(msg.Attachments) > 0 ||
+		len(msg.ToolCalls) > 0
 }
 
 func sessionChatMessagePreview(msg sessionChatMessage) string {
@@ -474,6 +477,9 @@ func sessionChatMessagePreview(msg sessionChatMessage) string {
 			return "[image]"
 		}
 		return "[attachment]"
+	}
+	if len(msg.ToolCalls) > 0 {
+		return "[tool call]"
 	}
 	return ""
 }
@@ -521,25 +527,11 @@ func sessionTranscriptMessages(
 				}
 			}
 
-			toolSummaryMessages := visibleAssistantToolSummaryMessages(msg.ToolCalls, toolFeedbackMaxArgsLength)
-			if len(toolSummaryMessages) > 0 {
-				transcript = append(transcript, toolSummaryMessages...)
-			}
-
+			toolCallsMsg, hasToolCallsMsg := assistantToolCallsMessage(
+				msg.ToolCalls,
+				toolFeedbackMaxArgsLength,
+			)
 			visibleToolMessages := visibleAssistantToolMessages(msg.ToolCalls)
-			if len(visibleToolMessages) > 0 {
-				transcript = append(transcript, visibleToolMessages...)
-			}
-
-			// When assistant content exactly matches the rendered tool summary or
-			// tool-delivered message, skip it to avoid duplicates. Distinct content
-			// must remain visible in restored session history.
-			if len(msg.ToolCalls) > 0 &&
-				len(msg.Media) == 0 &&
-				len(attachments) == 0 &&
-				assistantToolCallContentDuplicated(msg.Content, toolSummaryMessages, visibleToolMessages) {
-				continue
-			}
 
 			// Pico web chat can persist both visible `message` tool output and a
 			// later plain assistant reply in the same turn. Hide only the fixed
@@ -547,8 +539,17 @@ func sessionTranscriptMessages(
 			content := msg.Content
 			if assistantMessageInternalOnly(msg) {
 				if len(attachments) == 0 {
+					if hasToolCallsMsg {
+						transcript = append(transcript, toolCallsMsg)
+					}
+					if len(visibleToolMessages) > 0 {
+						transcript = append(transcript, visibleToolMessages...)
+					}
 					continue
 				}
+				content = ""
+			}
+			if hasToolCallsMsg && utils.ToolCallExplanationDuplicatesContent(content, msg.ToolCalls) {
 				content = ""
 			}
 
@@ -559,10 +560,22 @@ func sessionTranscriptMessages(
 				Attachments: attachments,
 			}
 			if !sessionChatMessageVisible(chatMsg) {
+				if hasToolCallsMsg {
+					transcript = append(transcript, toolCallsMsg)
+				}
+				if len(visibleToolMessages) > 0 {
+					transcript = append(transcript, visibleToolMessages...)
+				}
 				continue
 			}
 
 			transcript = append(transcript, chatMsg)
+			if hasToolCallsMsg {
+				transcript = append(transcript, toolCallsMsg)
+			}
+			if len(visibleToolMessages) > 0 {
+				transcript = append(transcript, visibleToolMessages...)
+			}
 		}
 	}
 
@@ -578,51 +591,6 @@ func filterSessionChatMessages(messages []sessionChatMessage) []sessionChatMessa
 		filtered = append(filtered, msg)
 	}
 	return filtered
-}
-
-func assistantToolCallContentDuplicated(
-	content string,
-	toolSummaryMessages []sessionChatMessage,
-	visibleToolMessages []sessionChatMessage,
-) bool {
-	content = strings.TrimSpace(content)
-	if content == "" {
-		return false
-	}
-
-	for _, msg := range toolSummaryMessages {
-		if toolSummaryContainsContent(msg.Content, content) {
-			return true
-		}
-	}
-	for _, msg := range visibleToolMessages {
-		if strings.TrimSpace(msg.Content) == content {
-			return true
-		}
-	}
-	return false
-}
-
-func toolSummaryContainsContent(summary, content string) bool {
-	summary = strings.TrimSpace(summary)
-	content = strings.TrimSpace(content)
-	if summary == "" || content == "" {
-		return false
-	}
-	if summary == content {
-		return true
-	}
-
-	_, body, hasBody := strings.Cut(summary, "\n")
-	if !hasBody {
-		return false
-	}
-	body = strings.TrimSpace(body)
-	if body == content {
-		return true
-	}
-	firstSection, _, _ := strings.Cut(body, "\n```")
-	return strings.TrimSpace(firstSection) == content
 }
 
 func sessionAttachments(msg providers.Message) []sessionChatAttachment {
@@ -720,80 +688,34 @@ func assistantThoughtMessage(msg providers.Message) (sessionChatMessage, bool) {
 	}, true
 }
 
-func visibleAssistantToolSummaryMessages(
+func assistantToolCallsMessage(
 	toolCalls []providers.ToolCall,
 	toolFeedbackMaxArgsLength int,
-) []sessionChatMessage {
+) (sessionChatMessage, bool) {
 	if len(toolCalls) == 0 {
-		return nil
+		return sessionChatMessage{}, false
 	}
 	if toolFeedbackMaxArgsLength <= 0 {
 		toolFeedbackMaxArgsLength = defaultToolFeedbackMaxArgsLength()
 	}
 
-	messages := make([]sessionChatMessage, 0, len(toolCalls))
-	for _, tc := range toolCalls {
-		name, argsJSON := toolCallNameAndArguments(tc)
-		if strings.TrimSpace(name) == "" {
-			continue
-		}
-		if name == "web_search" || name == "web_fetch" {
-			continue
-		}
-		if name == "message" {
-			if _, ok := parseMessageToolContent(argsJSON); ok {
-				continue
-			}
-		}
-
-		messages = append(messages, sessionChatMessage{
-			Role: "assistant",
-			Content: utils.FormatToolFeedbackMessage(
-				name,
-				visibleAssistantToolFeedbackExplanation(tc, toolFeedbackMaxArgsLength),
-				visibleAssistantToolArgsPreview(tc, toolFeedbackMaxArgsLength),
-			),
-		})
+	visibleToolCalls := utils.BuildVisibleToolCalls(toolCalls, toolFeedbackMaxArgsLength)
+	if len(visibleToolCalls) == 0 {
+		return sessionChatMessage{}, false
 	}
 
-	return messages
-}
-
-func visibleAssistantToolFeedbackExplanation(
-	tc providers.ToolCall,
-	toolFeedbackMaxArgsLength int,
-) string {
-	if tc.ExtraContent != nil {
-		if explanation := strings.TrimSpace(tc.ExtraContent.ToolFeedbackExplanation); explanation != "" {
-			return utils.Truncate(explanation, toolFeedbackMaxArgsLength)
-		}
-	}
-	return ""
+	return sessionChatMessage{
+		Role:      "assistant",
+		Kind:      "tool_calls",
+		ToolCalls: visibleToolCalls,
+	}, true
 }
 
 func visibleAssistantToolArgsPreview(
 	tc providers.ToolCall,
 	toolFeedbackMaxArgsLength int,
 ) string {
-	argsJSON := ""
-	if tc.Function != nil {
-		argsJSON = tc.Function.Arguments
-	}
-	if strings.TrimSpace(argsJSON) == "" && len(tc.Arguments) > 0 {
-		if encodedArgs, err := json.MarshalIndent(tc.Arguments, "", "  "); err == nil {
-			argsJSON = string(encodedArgs)
-		}
-	}
-	argsJSON = strings.TrimSpace(argsJSON)
-	if argsJSON == "" {
-		return ""
-	}
-	var pretty bytes.Buffer
-	if err := json.Indent(&pretty, []byte(argsJSON), "", "  "); err == nil {
-		argsJSON = pretty.String()
-	}
-
-	return utils.Truncate(argsJSON, toolFeedbackMaxArgsLength)
+	return utils.VisibleToolCallArgumentsPreview(tc, toolFeedbackMaxArgsLength)
 }
 
 func visibleAssistantToolMessages(toolCalls []providers.ToolCall) []sessionChatMessage {
@@ -803,7 +725,7 @@ func visibleAssistantToolMessages(toolCalls []providers.ToolCall) []sessionChatM
 
 	messages := make([]sessionChatMessage, 0, len(toolCalls))
 	for _, tc := range toolCalls {
-		name, argsJSON := toolCallNameAndArguments(tc)
+		name, argsJSON := utils.VisibleToolCallNameAndArguments(tc)
 		if name != "message" {
 			continue
 		}
@@ -818,23 +740,6 @@ func visibleAssistantToolMessages(toolCalls []providers.ToolCall) []sessionChatM
 	}
 
 	return messages
-}
-
-func toolCallNameAndArguments(tc providers.ToolCall) (string, string) {
-	name := tc.Name
-	argsJSON := ""
-	if tc.Function != nil {
-		if name == "" {
-			name = tc.Function.Name
-		}
-		argsJSON = tc.Function.Arguments
-	}
-	if strings.TrimSpace(argsJSON) == "" && len(tc.Arguments) > 0 {
-		if encodedArgs, err := json.Marshal(tc.Arguments); err == nil {
-			argsJSON = string(encodedArgs)
-		}
-	}
-	return name, argsJSON
 }
 
 func parseMessageToolContent(argsJSON string) (string, bool) {
