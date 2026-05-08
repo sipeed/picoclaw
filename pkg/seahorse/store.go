@@ -1640,3 +1640,26 @@ func nullString(s string) sql.NullString {
 func nullInt64(n int64) sql.NullInt64 {
 	return sql.NullInt64{Int64: n, Valid: n != 0}
 }
+
+// ListResearchNodes returns all research graph nodes from storage
+func (s *Store) ListResearchNodes() ([]ResearchGraphNode, error) {
+	// TODO: Implement SQLite query for research_nodes table
+	return []ResearchGraphNode{
+		{Name: "Neural Networks", Abbr: "NN", X: 150, Y: 80},
+		{Name: "Transformers", Abbr: "TFM", X: 150, Y: 120},
+		{Name: "LLM Optimization", Abbr: "LLM", X: 150, Y: 160},
+		{Name: "Edge Computing", Abbr: "EDG", X: 150, Y: 210},
+		{Name: "Multi-Agent Systems", Abbr: "MAS", X: 150, Y: 260},
+		{Name: "Vision Models", Abbr: "VM", X: 150, Y: 310},
+		{Name: "RAG Systems", Abbr: "RAG", X: 650, Y: 80},
+		{Name: "Knowledge Graphs", Abbr: "KG", X: 650, Y: 150},
+		{Name: "Agent Architecture", Abbr: "AA", X: 650, Y: 220},
+		{Name: "Fine-tuning Methods", Abbr: "FTM", X: 650, Y: 290},
+	}, nil
+}
+
+// UpdateResearchNode updates a single research graph node
+func (s *Store) UpdateResearchNode(node ResearchGraphNode) error {
+	// TODO: Implement SQLite update for research_nodes table
+	return nil
+}
