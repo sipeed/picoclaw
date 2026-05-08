@@ -2,24 +2,13 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { IconBook, IconDatabase, IconCircleCheck, IconSparkles, IconShield, IconActivity, IconCpu, IconFileText, IconSettings } from "@tabler/icons-react"
+import { IconShield, IconActivity, IconCpu, IconFileText, IconSettings } from "@tabler/icons-react"
 import { ResearchAgents } from "./research-agents"
 import { ResearchGraph } from "./research-graph"
 import { ResearchConfig } from "./research-config"
 import { ResearchReports } from "./research-reports"
 import { Badge } from "@/components/ui/badge"
-import { listResearchAgents, listResearchGraph, listResearchReports, ResearchAgent, ResearchNode, ResearchReport } from "@/api/research"
-
-const agentIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-  literature: IconBook,
-  extractor: IconDatabase,
-  validator: IconCircleCheck,
-  synthesizer: IconSparkles,
-}
-
-function mapAgentIcon(type: string): React.ComponentType<{ className?: string }> {
-  return agentIcons[type] || IconBook
-}
+import { listResearchAgents, listResearchGraph, listResearchReports } from "@/api/research"
 
 export function ResearchPage() {
   const [researchType, setResearchType] = useState<string>("1.5")

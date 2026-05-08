@@ -33,7 +33,8 @@ export interface ResearchConfig {
 
 // API Functions (TanStack Query compatible)
 export async function listResearchAgents(): Promise<ResearchAgent[]> {
-  return launcherFetch<ResearchAgent[]>("/api/research/agents")
+  const res = await launcherFetch("/api/research/agents")
+  return res.json() as Promise<ResearchAgent[]>
 }
 
 export async function toggleResearchAgent(id: string): Promise<void> {
@@ -41,13 +42,15 @@ export async function toggleResearchAgent(id: string): Promise<void> {
 }
 
 export async function listResearchGraph(): Promise<ResearchNode[]> {
-  const response = await launcherFetch<{ nodes: ResearchNode[] }>("/api/research/graph")
-  return response.nodes
+  const res = await launcherFetch("/api/research/graph")
+  const data = await res.json() as { nodes: ResearchNode[] }
+  return data.nodes
 }
 
 export async function listResearchReports(): Promise<ResearchReport[]> {
-  const response = await launcherFetch<{ reports: ResearchReport[] }>("/api/research/reports")
-  return response.reports
+  const res = await launcherFetch("/api/research/reports")
+  const data = await res.json() as { reports: ResearchReport[] }
+  return data.reports
 }
 
 export async function updateResearchConfig(config: ResearchConfig): Promise<void> {

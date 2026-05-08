@@ -829,6 +829,16 @@ func (s *JSONLStore) ListSessions() []string {
 	return keys
 }
 
+// ListResearchReports returns empty list for now - stub implementation
+func (s *JSONLStore) ListResearchReports() ([]ResearchReport, error) {
+	return []ResearchReport{}, nil
+}
+
+// UpdateResearchReport is a no-op for now - stub implementation
+func (s *JSONLStore) UpdateResearchReport(report ResearchReport) error {
+	return nil
+}
+
 func (s *JSONLStore) Close() error {
 	return nil
 }

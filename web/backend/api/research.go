@@ -5,10 +5,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/agent"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/memory"
+	picoclawagent "github.com/sipeed/picoclaw/pkg/agent"
 	"github.com/sipeed/picoclaw/pkg/seahorse"
+	"github.com/sipeed/picoclaw/pkg/memory"
 )
 
 func (h *Handler) registerResearchRoutes(mux *http.ServeMux) {
@@ -40,10 +39,10 @@ type researchReportResponse struct {
 
 func (h *Handler) handleListResearchAgents(w http.ResponseWriter, r *http.Request) {
 	agents := []researchAgentResponse{
-		{ID: agent.ResearchAgentLiterature, Name: "Literature Analyzer", Active: true, Progress: 94, RAM: "2.8M", Type: "research"},
-		{ID: agent.ResearchAgentExtractor, Name: "Data Extractor", Active: true, Progress: 87, RAM: "3.2M", Type: "research"},
-		{ID: agent.ResearchAgentValidator, Name: "Fact Validator", Active: true, Progress: 76, RAM: "2.1M", Type: "research"},
-		{ID: agent.ResearchAgentSynthesizer, Name: "Synthesizer", Active: true, Progress: 65, RAM: "4.1M", Type: "research"},
+		{ID: picoclawagent.ResearchAgentLiterature, Name: "Literature Analyzer", Active: true, Progress: 94, RAM: "2.8M", Type: "research"},
+		{ID: picoclawagent.ResearchAgentExtractor, Name: "Data Extractor", Active: true, Progress: 87, RAM: "3.2M", Type: "research"},
+		{ID: picoclawagent.ResearchAgentValidator, Name: "Fact Validator", Active: true, Progress: 76, RAM: "2.1M", Type: "research"},
+		{ID: picoclawagent.ResearchAgentSynthesizer, Name: "Synthesizer", Active: true, Progress: 65, RAM: "4.1M", Type: "research"},
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(agents)
@@ -57,20 +56,19 @@ func (h *Handler) handleToggleResearchAgent(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *Handler) handleListResearchGraph(w http.ResponseWriter, r *http.Request) {
-	cfg, err := config.LoadConfig(h.configPath)
-	if err != nil {
-		http.Error(w, `{"error": "failed to load config"}`, http.StatusInternalServerError)
-		return
+	// TODO: Integrate with seahorse store when properly configured
+	nodes := []seahorse.ResearchGraphNode{
+		{Name: "Neural Networks", Abbr: "NN", X: 150, Y: 80},
+		{Name: "Transformers", Abbr: "TFM", X: 150, Y: 120},
+		{Name: "LLM Optimization", Abbr: "LLM", X: 150, Y: 160},
+		{Name: "Edge Computing", Abbr: "EDG", X: 150, Y: 210},
+		{Name: "Multi-Agent Systems", Abbr: "MAS", X: 150, Y: 260},
+		{Name: "Vision Models", Abbr: "VM", X: 150, Y: 310},
+		{Name: "RAG Systems", Abbr: "RAG", X: 650, Y: 80},
+		{Name: "Knowledge Graphs", Abbr: "KG", X: 650, Y: 150},
+		{Name: "Agent Architecture", Abbr: "AA", X: 650, Y: 220},
+		{Name: "Fine-tuning Methods", Abbr: "FTM", X: 650, Y: 290},
 	}
-	store := seahorse.NewStore(cfg)
-	defer store.Close()
-
-	nodes, err := store.ListResearchNodes()
-	if err != nil {
-		http.Error(w, `{"error": "failed to list nodes"}`, http.StatusInternalServerError)
-		return
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(researchGraphResponse{Nodes: nodes})
 }
@@ -81,20 +79,11 @@ func (h *Handler) handleUpdateResearchGraph(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *Handler) handleListResearchReports(w http.ResponseWriter, r *http.Request) {
-	cfg, err := config.LoadConfig(h.configPath)
-	if err != nil {
-		http.Error(w, `{"error": "failed to load config"}`, http.StatusInternalServerError)
-		return
+	// TODO: Integrate with memory store when properly configured
+	reports := []memory.ResearchReport{
+		{ID: "1", Title: "AI trends 2026", Pages: 18, Words: 5400, Status: "in-progress", Progress: 75},
+		{ID: "2", Title: "Quantum computing", Pages: 42, Words: 12600, Status: "complete"},
 	}
-	store := memory.NewStore(cfg)
-	defer store.Close()
-
-	reports, err := store.ListResearchReports()
-	if err != nil {
-		http.Error(w, `{"error": "failed to list reports"}`, http.StatusInternalServerError)
-		return
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(researchReportResponse{Reports: reports})
 }

@@ -42,9 +42,6 @@ export function ResearchReports({ reports }: ResearchReportsProps) {
                   {report.title}
                 </div>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[10px] text-white/40">
-                    {report.timestamp}
-                  </span>
                   {report.pages && (
                     <>
                       <span className="text-white/20">•</span>
