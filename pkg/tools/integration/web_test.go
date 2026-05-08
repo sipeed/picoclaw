@@ -1853,8 +1853,8 @@ func TestWebTool_AutoProviderPrefersConfiguredProvidersBeforeSogou(t *testing.T)
 	}
 }
 
-func TestWebTool_AutoProviderPrefersGeminiBeforeOtherConfiguredProviders(t *testing.T) {
-	tool, err := NewWebSearchTool(WebSearchToolOptions{
+func TestWebTool_AutoProviderPrefersFreeProvidersBeforeGemini(t *testing.T) {
+	opts := WebSearchToolOptions{
 		GeminiEnabled:        true,
 		GeminiAPIKey:         "google-key",
 		GeminiModel:          "gemini-2.5-flash",
@@ -1866,12 +1866,22 @@ func TestWebTool_AutoProviderPrefersGeminiBeforeOtherConfiguredProviders(t *test
 		SogouMaxResults:      5,
 		DuckDuckGoEnabled:    true,
 		DuckDuckGoMaxResults: 5,
-	})
-	if err != nil {
-		t.Fatalf("NewWebSearchTool() error: %v", err)
 	}
-	if _, ok := tool.provider.(*GeminiSearchProvider); !ok {
-		t.Fatalf("expected GeminiSearchProvider, got %T", tool.provider)
+
+	name, err := ResolveWebSearchProviderName(opts, "best robotics companies")
+	if err != nil {
+		t.Fatalf("ResolveWebSearchProviderName() error: %v", err)
+	}
+	if name != "duckduckgo" {
+		t.Fatalf("provider = %q, want duckduckgo", name)
+	}
+
+	name, err = ResolveWebSearchProviderName(opts, "今天上海天气")
+	if err != nil {
+		t.Fatalf("ResolveWebSearchProviderName() error: %v", err)
+	}
+	if name != "sogou" {
+		t.Fatalf("provider = %q, want sogou", name)
 	}
 }
 
@@ -1887,6 +1897,111 @@ func TestWebTool_GeminiRequiresAPIKey(t *testing.T) {
 	}
 	if _, ok := tool.provider.(*SogouSearchProvider); !ok {
 		t.Fatalf("expected SogouSearchProvider after missing Gemini API key fallback, got %T", tool.provider)
+	}
+}
+
+func TestGeminiSearchProvider_SearchSuccess(t *testing.T) {
+	provider := &GeminiSearchProvider{
+		apiKey: "google-key",
+		model:  "gemini-2.5-flash",
+		client: &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.Method != http.MethodPost {
+					t.Fatalf("method = %s, want POST", req.Method)
+				}
+				if got := req.Header.Get("x-goog-api-key"); got != "google-key" {
+					t.Fatalf("x-goog-api-key = %q, want google-key", got)
+				}
+				if !strings.Contains(req.URL.String(), "/models/gemini-2.5-flash:generateContent") {
+					t.Fatalf("unexpected URL: %s", req.URL.String())
+				}
+				rec := httptest.NewRecorder()
+				rec.WriteHeader(http.StatusOK)
+				fmt.Fprint(rec, `{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {"text": "Answer paragraph one."},
+          {"text": "Answer paragraph two."}
+        ]
+      },
+      "groundingMetadata": {
+        "groundingChunks": [
+          {"web": {"uri": "https://example.com/a", "title": "Result A"}},
+          {"web": {"uri": "https://example.com/b", "title": "Result B"}},
+          {"web": {"uri": "https://example.com/c", "title": "Result C"}}
+        ]
+      }
+    }
+  ]
+}`)
+				return rec.Result(), nil
+			}),
+		},
+	}
+
+	out, err := provider.Search(context.Background(), "robotics", 2, "")
+	if err != nil {
+		t.Fatalf("Search() error: %v", err)
+	}
+	if !strings.Contains(out, "Results for: robotics (via Gemini Google Search)") {
+		t.Fatalf("missing header in output: %s", out)
+	}
+	if !strings.Contains(out, "Answer paragraph one.") || !strings.Contains(out, "Answer paragraph two.") {
+		t.Fatalf("missing response text in output: %s", out)
+	}
+	if !strings.Contains(out, "1. Result A") || !strings.Contains(out, "2. Result B") {
+		t.Fatalf("missing citations in output: %s", out)
+	}
+	if strings.Contains(out, "Result C") {
+		t.Fatalf("expected citations to be limited to count=2, got: %s", out)
+	}
+}
+
+func TestGeminiSearchProvider_SearchAPIError(t *testing.T) {
+	provider := &GeminiSearchProvider{
+		apiKey: "google-key",
+		model:  "gemini-2.5-flash",
+		client: &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				rec := httptest.NewRecorder()
+				rec.WriteHeader(http.StatusTooManyRequests)
+				fmt.Fprint(rec, `{"error":"quota exceeded"}`)
+				return rec.Result(), nil
+			}),
+		},
+	}
+
+	_, err := provider.Search(context.Background(), "robotics", 2, "")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "status 429") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGeminiSearchProvider_SearchEmptyCandidates(t *testing.T) {
+	provider := &GeminiSearchProvider{
+		apiKey: "google-key",
+		model:  "gemini-2.5-flash",
+		client: &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				rec := httptest.NewRecorder()
+				rec.WriteHeader(http.StatusOK)
+				fmt.Fprint(rec, `{"candidates":[]}`)
+				return rec.Result(), nil
+			}),
+		},
+	}
+
+	out, err := provider.Search(context.Background(), "robotics", 2, "")
+	if err != nil {
+		t.Fatalf("Search() error: %v", err)
+	}
+	if out != "No results for: robotics" {
+		t.Fatalf("output = %q, want %q", out, "No results for: robotics")
 	}
 }
 
