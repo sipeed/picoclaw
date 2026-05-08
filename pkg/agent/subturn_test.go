@@ -36,22 +36,26 @@ type recordingChannelManager struct {
 }
 
 func (m *recordingChannelManager) GetChannel(name string) (channels.Channel, bool) { return nil, false }
-func (m *recordingChannelManager) GetEnabledChannels() []string                     { return nil }
-func (m *recordingChannelManager) InvokeTypingStop(channel, chatID string)          {}
+func (m *recordingChannelManager) GetEnabledChannels() []string                    { return nil }
+func (m *recordingChannelManager) InvokeTypingStop(channel, chatID string)         {}
 func (m *recordingChannelManager) SendMessage(ctx context.Context, msg bus.OutboundMessage) error {
 	return nil
 }
+
 func (m *recordingChannelManager) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
 	return nil
 }
+
 func (m *recordingChannelManager) SendPlaceholder(ctx context.Context, channel, chatID string) bool {
 	return false
 }
+
 func (m *recordingChannelManager) DismissToolFeedback(
 	ctx context.Context, channel, chatID string, outboundCtx *bus.InboundContext,
 ) {
 	m.dismissedChatIDs = append(m.dismissedChatIDs, fmt.Sprintf("%s:%s", channel, chatID))
 }
+
 func (m *recordingChannelManager) DismissToolFeedbackForSession(
 	ctx context.Context,
 	channel, chatID string,
