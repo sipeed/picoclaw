@@ -480,7 +480,7 @@ PicoClaw는 최신 정보를 제공하기 위해 웹 검색을 수행할 수 있
 | 검색 엔진 | API Key | 무료 제공량 | 링크 |
 |-----------|---------|-------------|------|
 | DuckDuckGo | 불필요 | 무제한 | 내장 백업 검색 |
-| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | 필수 | 하루 1000회 쿼리 | AI 기반, 중국 시장 최적화 |
+| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | 필수 | 월 1500회 쿼리 (일할 할당) | AI 기반, 중국 시장 최적화 |
 | [Tavily](https://tavily.com) | 필수 | 월 1000회 쿼리 | AI 에이전트에 최적화 |
 | [Brave Search](https://brave.com/search/api) | 필수 | 월 2000회 쿼리 | 빠르고 프라이빗함 |
 | [Perplexity](https://www.perplexity.ai) | 필수 | 유료 | AI 기반 검색 |

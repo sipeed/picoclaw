@@ -475,7 +475,7 @@ PicoClaw は最新情報を提供するために Web を検索できます。`to
 | 検索エンジン | API キー | 無料枠 | リンク |
 |------------|---------|--------|-------|
 | DuckDuckGo | 不要 | 無制限 | 内蔵フォールバック |
-| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | 必須 | 1000 クエリ/日 | AI 搭載、中国語に最適化 |
+| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | 必須 | 1500 クエリ/月（日次割り当て） | AI 搭載、中国語に最適化 |
 | [Tavily](https://tavily.com) | 必須 | 1000 クエリ/月 | AI Agent 向けに最適化 |
 | [Brave Search](https://brave.com/search/api) | 必須 | 2000 クエリ/月 | 高速でプライベート |
 | [Perplexity](https://www.perplexity.ai) | 必須 | 有料 | AI 搭載検索 |

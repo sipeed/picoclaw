@@ -484,7 +484,7 @@ PicoClaw can search the web to provide up-to-date information. Configure in `too
 | Search Engine | API Key | Free Tier | Link |
 |--------------|---------|-----------|------|
 | DuckDuckGo | Not needed | Unlimited | Built-in fallback |
-| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Required | 1000 queries/day | AI-powered, China-optimized |
+| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Required | 1500/month (daily allocation) | AI-powered, China-optimized |
 | [Tavily](https://tavily.com) | Required | 1000 queries/month | Optimized for AI Agents |
 | [Brave Search](https://brave.com/search/api) | Required | 2000 queries/month | Fast and private |
 | [Perplexity](https://www.perplexity.ai) | Required | Paid | AI-powered search |

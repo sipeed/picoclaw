@@ -474,7 +474,7 @@ PicoClaw può cercare sul web per fornire informazioni aggiornate. Configura in 
 | Motore di Ricerca | API Key | Piano Gratuito | Link |
 |-------------------|---------|----------------|------|
 | DuckDuckGo | Non necessaria | Illimitato | Fallback integrato |
-| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Richiesta | 1000 query/giorno | IA, ottimizzato per il cinese |
+| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Richiesta | 1500 query/mese (allocazione giornaliera) | IA, ottimizzato per il cinese |
 | [Tavily](https://tavily.com) | Richiesta | 1000 query/mese | Ottimizzato per AI Agent |
 | [Brave Search](https://brave.com/search/api) | Richiesta | 2000 query/mese | Veloce e privato |
 | [Perplexity](https://www.perplexity.ai) | Richiesta | A pagamento | Ricerca potenziata dall'IA |

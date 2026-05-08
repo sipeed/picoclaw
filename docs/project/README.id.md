@@ -474,7 +474,7 @@ PicoClaw dapat mencari web untuk memberikan informasi terkini. Konfigurasi di `t
 | Mesin Pencari | API Key | Tier Gratis | Tautan |
 |--------------|---------|-------------|--------|
 | DuckDuckGo | Tidak perlu | Tidak terbatas | Fallback bawaan |
-| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Diperlukan | 1000 kueri/hari | Bertenaga AI, dioptimalkan untuk bahasa Mandarin |
+| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Diperlukan | 1500 kueri/bulan (alokasi harian) | Bertenaga AI, dioptimalkan untuk bahasa Mandarin |
 | [Tavily](https://tavily.com) | Diperlukan | 1000 kueri/bulan | Dioptimalkan untuk AI Agent |
 | [Brave Search](https://brave.com/search/api) | Diperlukan | 2000 kueri/bulan | Cepat dan privat |
 | [Perplexity](https://www.perplexity.ai) | Diperlukan | Berbayar | Pencarian bertenaga AI |

@@ -475,7 +475,7 @@ PicoClaw 可以搜索网络以提供最新信息。在 `tools.web` 中配置：
 
 | 搜索引擎 | API Key | 免费额度 | 链接 |
 |---------|---------|---------|------|
-| [百度搜索](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | 必填 | 1000 次/天 | AI 搜索，国内首选 |
+| [百度搜索](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | 必填 | 1500 次/月（按天发放） | AI 搜索，国内首选 |
 | [Tavily](https://tavily.com) | 必填 | 1000 次/月 | 专为 AI Agent 优化 |
 | [GLM Search](https://open.bigmodel.cn/) | 必填 | 视情况 | 智谱网络搜索 |
 | DuckDuckGo | 无需 | 无限制 | 内置备用（国内访问困难） |
