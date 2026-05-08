@@ -116,6 +116,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// MCP server management
 	h.registerMCPRoutes(mux)
+
+	// Research endpoints
+	h.registerResearchRoutes(mux)
 }
 
 // Shutdown gracefully shuts down the handler, stopping the gateway if it was started by this handler.
