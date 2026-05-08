@@ -1,11 +1,6 @@
 import { useState } from "react"
 
-interface ResearchNode {
-  name: string
-  abbr: string
-  x: number
-  y: number
-}
+import type { ResearchNode } from "@/api/research"
 
 interface ResearchGraphProps {
   nodes: ResearchNode[]
