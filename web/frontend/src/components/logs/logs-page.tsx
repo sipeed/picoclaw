@@ -26,6 +26,7 @@ export function LogsPage() {
               size="sm"
               onClick={clearLogs}
               disabled={logs.length === 0 || clearing}
+              className="border-[rgba(0,212,255,0.3)] bg-[rgba(0,212,255,0.05)] text-[#00d4ff] hover:bg-[rgba(0,212,255,0.1)]"
             >
               <IconTrash className="size-4" />
               {t("pages.logs.clear")}

@@ -1,5 +1,6 @@
 import { useDeferredValue, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
+import { motion } from "motion/react"
 import { toast } from "sonner"
 
 import {
@@ -20,6 +21,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { IconPlus } from "@tabler/icons-react"
 
 import { AgentCard } from "./agent-card"
 import { AgentFormModal } from "./agent-form-modal"
@@ -60,7 +62,14 @@ export function AgentsPage({ embedded = false }: AgentsPageProps = {}) {
   if (agentsQuery.isLoading) {
     return (
       <div className="flex h-48 items-center justify-center">
-        <p className="text-muted-foreground">Loading agents...</p>
+        <div className="flex items-center gap-2 text-cyan-100/50">
+          <motion.div
+            className="w-2 h-2 rounded-full bg-[#00bcff]"
+            animate={{ opacity: [0.3, 1, 0.3] }}
+            transition={{ duration: 1.5, repeat: Infinity }}
+          />
+          Loading agents...
+        </div>
       </div>
     )
   }
@@ -68,7 +77,7 @@ export function AgentsPage({ embedded = false }: AgentsPageProps = {}) {
   if (agentsQuery.isError) {
     return (
       <div className="flex h-48 items-center justify-center">
-        <p className="text-destructive">Failed to load agents. Please try again.</p>
+        <p className="text-red-400">Failed to load agents. Please try again.</p>
       </div>
     )
   }
@@ -107,7 +116,6 @@ export function AgentsPage({ embedded = false }: AgentsPageProps = {}) {
       toast.error(
         error instanceof Error ? error.message : "Failed to update agent",
       )
-      // Refresh to revert the UI state
       void queryClient.invalidateQueries({ queryKey: ["agents"] })
     }
   }
@@ -121,7 +129,7 @@ export function AgentsPage({ embedded = false }: AgentsPageProps = {}) {
   }
 
   const mainContent = (
-    <div className="mx-auto w-full max-w-6xl">
+    <div className="w-full">
       {/* Header Controls */}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="max-w-md flex-1">
@@ -129,27 +137,28 @@ export function AgentsPage({ embedded = false }: AgentsPageProps = {}) {
             placeholder={t("common.search", "Search agents...")}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="bg-background"
+            className="bg-black/40 border-[#00bcff]/20 text-cyan-100 placeholder:text-cyan-100/30 focus:border-[#00bcff] focus:ring-[#00bcff]/20 backdrop-blur-sm"
           />
         </div>
         <Button
           onClick={() => setIsCreateModalOpen(true)}
-          className="bg-[#F27D26] hover:bg-[#F27D26]/90 text-black"
+          className="bg-[#00bcff]/15 hover:bg-[#00bcff]/25 text-[#00bcff] border border-[#00bcff]/30 hover:border-[#00bcff] shadow-[0_0_15px_rgba(0,188,255,0.1)] transition-all"
         >
-          {t("pages.agent.agents.create_agent", "+ Create Agent")}
+          <IconPlus className="w-4 h-4 mr-1" />
+          {t("pages.agent.agents.create_agent", "Create Agent")}
         </Button>
       </div>
 
       {/* Agent Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
         {filteredAgents.length === 0 ? (
-          <div className="col-span-full rounded-lg border border-dashed border-white/10 p-12 text-center">
-            <p className="text-muted-foreground">
+          <div className="col-span-full rounded-xl border border-dashed border-[#00bcff]/15 p-12 text-center bg-black/20 backdrop-blur-sm">
+            <p className="text-cyan-100/50">
               {deferredSearchQuery
                 ? t("pages.agent.agents.no_results", "No agents found")
                 : t("pages.agent.agents.no_agents", "No agents yet")}
             </p>
-            <p className="mt-2 text-sm text-muted-foreground/60">
+            <p className="mt-2 text-[11px] text-cyan-100/30">
               {deferredSearchQuery
                 ? t("pages.agent.agents.no_results_hint", "Try a different search")
                 : t("pages.agent.agents.no_agents_hint", "Create an agent to get started")}
@@ -198,23 +207,23 @@ export function AgentsPage({ embedded = false }: AgentsPageProps = {}) {
           if (!open) setAgentToDelete(null)
         }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent className="bg-[#0a0e27] border-[#00bcff]/20 text-cyan-100 shadow-[0_0_40px_#00bcff1a]">
           <AlertDialogTitle>
             {t("pages.agent.agents.confirm_delete", "Delete Agent?")}
           </AlertDialogTitle>
-          <p className="text-muted-foreground">
+          <p className="text-cyan-100/50">
             {t(
               "pages.agent.agents.confirm_delete_message",
               `Are you sure you want to delete "${agentToDelete?.name}"? This action cannot be undone.`,
             )}
           </p>
           <AlertDialogFooter>
-            <AlertDialogCancel>
+            <AlertDialogCancel className="border-[#00bcff]/20 text-cyan-100/60 hover:text-cyan-100 hover:bg-[#00bcff]/5">
               {t("common.cancel", "Cancel")}
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
             >
               {t("common.delete", "Delete")}
             </AlertDialogAction>
@@ -234,7 +243,7 @@ export function AgentsPage({ embedded = false }: AgentsPageProps = {}) {
   }
 
   return (
-    <div className="bg-background flex h-full flex-col">
+    <div className="bg-[#0a0e27] flex h-full flex-col">
       <PageHeader title={t("navigation.agents", "Agents")} />
       <div className="flex-1 overflow-auto px-6 py-6 pb-20">
         {mainContent}

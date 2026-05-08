@@ -53,6 +53,30 @@ function readFileAsDataUrl(file: File): Promise<string> {
   })
 }
 
+/** Background Jarvis Orb — large semi-transparent orb behind the chat messages */
+function BackgroundOrb() {
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      {/* Main orb glow - centered in the viewport */}
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+        {/* Outermost ring - very subtle */}
+        <svg className="absolute -left-48 -top-48 h-96 w-96 opacity-[0.07]" viewBox="0 0 400 400">
+          <circle cx="200" cy="200" r="190" fill="none" stroke="rgba(0, 212, 255, 0.3)" strokeWidth="0.5" strokeDasharray="12 8" style={{ animation: "orb-rotate 20s linear infinite", transformOrigin: "center" }} />
+          <circle cx="200" cy="200" r="165" fill="none" stroke="rgba(0, 212, 255, 0.2)" strokeWidth="0.8" strokeDasharray="4 12" style={{ animation: "orb-rotate-reverse 14s linear infinite", transformOrigin: "center" }} />
+          <circle cx="200" cy="200" r="140" fill="none" stroke="rgba(0, 212, 255, 0.35)" strokeWidth="0.5" style={{ animation: "ring-pulse 4s ease-in-out infinite" }} />
+        </svg>
+        {/* Core glow */}
+        <div className="animate-breathe flex h-28 w-28 items-center justify-center rounded-full bg-[rgba(0,212,255,0.04)] shadow-[0_0_60px_rgba(0,212,255,0.12),0_0_120px_rgba(0,212,255,0.06)]">
+          <div className="h-12 w-12 rounded-full bg-[rgba(0,212,255,0.08)] shadow-[0_0_30px_rgba(0,212,255,0.25),0_0_60px_rgba(0,212,255,0.1)]" />
+        </div>
+      </div>
+      {/* Ambient side glows */}
+      <div className="absolute -left-32 top-1/3 h-64 w-64 rounded-full bg-[#00d4ff]/[0.02] blur-[80px]" />
+      <div className="absolute -right-32 bottom-1/4 h-56 w-56 rounded-full bg-[#0ea5e9]/[0.03] blur-[70px]" />
+    </div>
+  )
+}
+
 function resolveChatInputDisabledReason({
   hasDefaultModel,
   connectionState,
@@ -62,46 +86,16 @@ function resolveChatInputDisabledReason({
   connectionState: ConnectionState
   gatewayState: GatewayState
 }): ChatInputDisabledReason | null {
-  if (gatewayState === "unknown") {
-    return "gatewayUnknown"
-  }
-
-  if (gatewayState === "starting") {
-    return "gatewayStarting"
-  }
-
-  if (gatewayState === "restarting") {
-    return "gatewayRestarting"
-  }
-
-  if (gatewayState === "stopping") {
-    return "gatewayStopping"
-  }
-
-  if (gatewayState === "stopped") {
-    return "gatewayStopped"
-  }
-
-  if (gatewayState === "error") {
-    return "gatewayError"
-  }
-
-  if (connectionState === "connecting") {
-    return "websocketConnecting"
-  }
-
-  if (connectionState === "error") {
-    return "websocketError"
-  }
-
-  if (connectionState === "disconnected") {
-    return "websocketDisconnected"
-  }
-
-  if (!hasDefaultModel) {
-    return "noDefaultModel"
-  }
-
+  if (gatewayState === "unknown") return "gatewayUnknown"
+  if (gatewayState === "starting") return "gatewayStarting"
+  if (gatewayState === "restarting") return "gatewayRestarting"
+  if (gatewayState === "stopping") return "gatewayStopping"
+  if (gatewayState === "stopped") return "gatewayStopped"
+  if (gatewayState === "error") return "gatewayError"
+  if (connectionState === "connecting") return "websocketConnecting"
+  if (connectionState === "error") return "websocketError"
+  if (connectionState === "disconnected") return "websocketDisconnected"
+  if (!hasDefaultModel) return "noDefaultModel"
   return null
 }
 
@@ -199,19 +193,15 @@ export function ChatPage() {
 
   // Check for permission requests in messages
   useEffect(() => {
-    if (permissionRequest) return // Already showing a permission prompt
-
-    // Check the last few messages for request_permission tool calls
+    if (permissionRequest) return
     for (let i = messages.length - 1; i >= Math.max(0, messages.length - 5); i--) {
       const msg = messages[i]
       if (msg.role !== "assistant") continue
       if (!msg.toolCalls) continue
-
       const permCall = msg.toolCalls.find(
         (tc) => tc.function?.name === "request_permission"
       )
       if (!permCall || !permCall.function) continue
-
       try {
         const args = JSON.parse(permCall.function.arguments ?? "{}")
         if (args.path && args.command) {
@@ -222,25 +212,16 @@ export function ChatPage() {
           })
           return
         }
-      } catch {
-        // Ignore parse errors
-      }
+      } catch { /* ignore */ }
     }
   }, [messages, permissionRequest])
 
-  const handlePermissionGranted = () => {
-    setPermissionRequest(null)
-  }
-
-  const handlePermissionDenied = () => {
-    setPermissionRequest(null)
-  }
-
+  const handlePermissionGranted = () => setPermissionRequest(null)
+  const handlePermissionDenied = () => setPermissionRequest(null)
   const handleAddImages = () => {
     if (!canInput) return
     fileInputRef.current?.click()
   }
-
   const handleRemoveAttachment = (index: number) => {
     setAttachments((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
   }
@@ -298,11 +279,11 @@ export function ChatPage() {
     canInput && (Boolean(input.trim()) || attachments.length > 0)
 
   return (
-    <div className="bg-background/95 flex h-full flex-col">
+    <div className="flex h-full flex-col bg-[#0a0e17]">
       <PageHeader
         title={t("navigation.chat")}
         className={`transition-shadow ${
-          hasScrolled ? "shadow-xs" : "shadow-none"
+          hasScrolled ? "shadow-[0_1px_0_rgba(0,212,255,0.1)]" : "shadow-none"
         }`}
         titleExtra={
           hasAvailableModels && (
@@ -316,8 +297,8 @@ export function ChatPage() {
           )
         }
       >
-        <div className="border-border/60 hidden items-center gap-2 rounded-lg border px-3 py-1.5 sm:flex">
-          <span className="text-muted-foreground text-sm">
+        <div className="hidden items-center gap-2 rounded-lg border border-[rgba(0,212,255,0.15)] bg-[rgba(0,212,255,0.03)] px-3 py-1.5 sm:flex">
+          <span className="text-xs text-[#64748b]">
             {t("chat.showAssistantDetails")}
           </span>
           <Switch
@@ -332,7 +313,7 @@ export function ChatPage() {
           variant="secondary"
           size="sm"
           onClick={newChat}
-          className="h-9 gap-2"
+          className="h-9 gap-2 border-[rgba(0,212,255,0.2)] bg-[rgba(0,212,255,0.05)] text-[#00d4ff] hover:bg-[rgba(0,212,255,0.1)]"
         >
           <IconPlus className="size-4" />
           <span className="hidden sm:inline">{t("chat.newChat")}</span>
@@ -358,9 +339,15 @@ export function ChatPage() {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-6 [scrollbar-gutter:stable] md:px-8 lg:px-24 xl:px-48"
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-6 [scrollbar-gutter:stable] md:px-8 lg:px-24 xl:px-48 relative"
       >
-        <div className="mx-auto flex w-full max-w-250 flex-col gap-8 pb-8">
+        {/* Background orb behind text */}
+        <BackgroundOrb />
+
+        {/* Scan line overlay */}
+        <div className="scan-line-overlay absolute inset-0 pointer-events-none z-[1]" />
+
+        <div className="mx-auto flex w-full max-w-250 flex-col gap-8 pb-8 relative z-10">
           {messages.length === 0 && !isTyping && (
             <ChatEmptyState
               hasAvailableModels={hasAvailableModels}
