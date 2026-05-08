@@ -54,7 +54,13 @@ func EstimateMessageTokens(msg providers.Message) int {
 	const messageOverhead = 12
 	chars += messageOverhead
 
-	tokens := chars * 2 / 5
+	// Use 4 characters per token (conservative estimate, matching OpenCode's approach).
+	// The previous 2.5 chars/token was too optimistic and led to context
+	// window overflow errors. English text typically uses ~4 chars/token.
+	tokens := chars / 4
+	if chars%4 != 0 {
+		tokens++ // Round up
+	}
 
 	// Media items (images, files) are serialized by provider adapters into
 	// multipart or image_url payloads. Add a fixed per-item token estimate
@@ -87,5 +93,10 @@ func EstimateToolDefsTokens(defs []providers.ToolDefinition) int {
 		totalChars += 20
 	}
 
-	return totalChars * 2 / 5
+	// Use 4 characters per token (conservative estimate, matching OpenCode)
+	result := totalChars / 4
+	if totalChars%4 != 0 {
+		result++ // Round up
+	}
+	return result
 }

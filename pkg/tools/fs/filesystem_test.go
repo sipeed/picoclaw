@@ -94,7 +94,7 @@ func TestFilesystemTool_WriteFile_Success(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "newfile.txt")
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path":    testFile,
@@ -134,7 +134,7 @@ func TestFilesystemTool_WriteFile_LiteralBackslashN(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "literal.txt")
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":    testFile,
 		"content": `aaa\naaa`,
@@ -154,7 +154,7 @@ func TestFilesystemTool_WriteFile_PreservesCRLF(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "crlf.txt")
 	content := "line1\r\nline2\r\n"
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":    testFile,
 		"content": content,
@@ -172,7 +172,7 @@ func TestFilesystemTool_WriteFile_CreateDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "subdir", "newfile.txt")
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path":    testFile,
@@ -198,7 +198,7 @@ func TestFilesystemTool_WriteFile_CreateDir(t *testing.T) {
 
 // TestFilesystemTool_WriteFile_MissingPath verifies error handling for missing path
 func TestFilesystemTool_WriteFile_MissingPath(t *testing.T) {
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"content": "test",
@@ -214,7 +214,7 @@ func TestFilesystemTool_WriteFile_MissingPath(t *testing.T) {
 
 // TestFilesystemTool_WriteFile_MissingContent verifies error handling for missing content
 func TestFilesystemTool_WriteFile_MissingContent(t *testing.T) {
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": "/tmp/test.txt",
@@ -241,7 +241,7 @@ func TestFilesystemTool_WriteFile_OverwriteDefaultBlocked(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "existing.txt")
 	os.WriteFile(testFile, []byte("original"), 0o644)
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":    testFile,
 		"content": "new content",
@@ -264,7 +264,7 @@ func TestFilesystemTool_WriteFile_OverwriteExplicitAllowed(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "existing.txt")
 	os.WriteFile(testFile, []byte("original"), 0o644)
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":      testFile,
 		"content":   "replaced",
@@ -284,7 +284,7 @@ func TestFilesystemTool_WriteFile_NewFileNoOverwriteFlag(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "newfile.txt")
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":    testFile,
 		"content": "brand new",
@@ -304,7 +304,7 @@ func TestFilesystemTool_WriteFile_OverwriteFalseExplicitBlocked(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "existing.txt")
 	os.WriteFile(testFile, []byte("original"), 0o644)
 
-	tool := NewWriteFileTool("", false)
+	tool := NewWriteFileTool("", false, nil, nil)
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":      testFile,
 		"content":   "new content",
@@ -326,7 +326,7 @@ func TestFilesystemTool_WriteFile_OverwriteSandboxed(t *testing.T) {
 	testFile := "file.txt"
 	os.WriteFile(filepath.Join(workspace, testFile), []byte("original"), 0o644)
 
-	tool := NewWriteFileTool(workspace, true)
+	tool := NewWriteFileTool(workspace, true, nil, nil)
 
 	// Without overwrite=true → blocked
 	result := tool.Execute(context.Background(), map[string]any{
@@ -361,7 +361,7 @@ func TestFilesystemTool_ListDir_Success(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "file2.txt"), []byte("content"), 0o644)
 	os.Mkdir(filepath.Join(tmpDir, "subdir"), 0o755)
 
-	tool := NewListDirTool("", false)
+	tool := NewListDirTool("", false, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": tmpDir,
@@ -386,7 +386,7 @@ func TestFilesystemTool_ListDir_Success(t *testing.T) {
 
 // TestFilesystemTool_ListDir_NotFound verifies error handling for non-existent directory
 func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
-	tool := NewListDirTool("", false)
+	tool := NewListDirTool("", false, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": "/nonexistent_directory_12345",
@@ -412,7 +412,7 @@ func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
 
 // TestFilesystemTool_ListDir_DefaultPath verifies default to current directory
 func TestFilesystemTool_ListDir_DefaultPath(t *testing.T) {
-	tool := NewListDirTool("", false)
+	tool := NewListDirTool("", false, nil)
 	ctx := context.Background()
 	args := map[string]any{}
 
@@ -524,7 +524,7 @@ func TestRootMkdirAll(t *testing.T) {
 
 func TestFilesystemTool_WriteFile_Restricted_CreateDir(t *testing.T) {
 	workspace := t.TempDir()
-	tool := NewWriteFileTool(workspace, true)
+	tool := NewWriteFileTool(workspace, true, nil, nil)
 	ctx := context.Background()
 
 	testFile := "deep/nested/path/to/file.txt"
@@ -736,7 +736,7 @@ func TestWhitelistFs_WriteAllowsNewFileUnderAllowedDir(t *testing.T) {
 	targetFile := filepath.Join(allowedDir, "nested", "file.txt")
 
 	patterns := []*regexp.Regexp{regexp.MustCompile(`^` + regexp.QuoteMeta(allowedDir))}
-	tool := NewWriteFileTool(workspace, true, patterns)
+	tool := NewWriteFileTool(workspace, true, nil, patterns)
 
 	result := tool.Execute(context.Background(), map[string]any{
 		"path":    targetFile,

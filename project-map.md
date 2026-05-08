@@ -1,5 +1,5 @@
 # Project Map
-_Generated: 2026-05-07 | Git: $(git rev-parse HEAD 2>/dev/null || echo "local")
+_Generated: 2026-05-08 | Git: 9f011dbe675dc5d97b974c0f5bccbe4f6a968898
 
 ## Directory Structure
 cmd/ — CLI entry points (picoclaw main, membench, internal subcommands)

@@ -74,8 +74,8 @@ export function CockpitPage() {
           <div className="space-y-16">
             {/* Hero Section */}
             <div className="relative">
-              <h1 className="text-[12vw] leading-[0.85] font-black tracking-[-0.07em] uppercase m-0 p-0 text-[#F2F2F2]">
-                AGENT<br/>INTERFACE
+              <h1 className="text-[6vw] leading-[0.85] font-black tracking-[-0.07em] uppercase m-0 p-0 text-[#F2F2F2]">
+                AGENT INTERFACE
               </h1>
               <p className="mt-8 text-xl font-light max-w-xl opacity-60 leading-relaxed border-l-2 border-[#F27D26] pl-6">
                 Active control node for autonomous agents. Managing tool surfaces, memory networks.

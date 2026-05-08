@@ -224,7 +224,7 @@ func TestEditTool_AppendFile_Success(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 	os.WriteFile(testFile, []byte("Initial content"), 0o644)
 
-	tool := NewAppendFileTool("", false)
+	tool := NewAppendFileTool("", false, nil, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path":    testFile,
@@ -264,7 +264,7 @@ func TestEditTool_AppendFile_Success(t *testing.T) {
 
 // TestEditTool_AppendFile_MissingPath verifies error handling for missing path
 func TestEditTool_AppendFile_MissingPath(t *testing.T) {
-	tool := NewAppendFileTool("", false)
+	tool := NewAppendFileTool("", false, nil, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"content": "test",
@@ -280,7 +280,7 @@ func TestEditTool_AppendFile_MissingPath(t *testing.T) {
 
 // TestEditTool_AppendFile_MissingContent verifies error handling for missing content
 func TestEditTool_AppendFile_MissingContent(t *testing.T) {
-	tool := NewAppendFileTool("", false)
+	tool := NewAppendFileTool("", false, nil, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path": "/tmp/test.txt",
@@ -348,7 +348,7 @@ func TestReplaceEditContent(t *testing.T) {
 // This exercises the errors.Is(err, fs.ErrNotExist) path in appendFileWithRW + rootRW.
 func TestAppendFileTool_AppendToNonExistent_Restricted(t *testing.T) {
 	workspace := t.TempDir()
-	tool := NewAppendFileTool(workspace, true)
+	tool := NewAppendFileTool(workspace, true, nil, nil)
 	ctx := context.Background()
 
 	args := map[string]any{
@@ -378,7 +378,7 @@ func TestAppendFileTool_Restricted_Success(t *testing.T) {
 	err := os.WriteFile(filepath.Join(workspace, testFile), []byte("initial"), 0o644)
 	assert.NoError(t, err)
 
-	tool := NewAppendFileTool(workspace, true)
+	tool := NewAppendFileTool(workspace, true, nil, nil)
 	ctx := context.Background()
 	args := map[string]any{
 		"path":    testFile,

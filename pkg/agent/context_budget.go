@@ -99,11 +99,13 @@ func EstimateToolDefsTokens(defs []providers.ToolDefinition) int {
 // isOverContextBudget checks whether the assembled messages plus tool definitions
 // and output reserve would exceed the model's context window. This enables
 // proactive compression before calling the LLM, rather than reacting to 400 errors.
+// Includes a configurable safety buffer (matching OpenCode's COMPACTION_BUFFER).
 func isOverContextBudget(
 	contextWindow int,
 	messages []providers.Message,
 	toolDefs []providers.ToolDefinition,
 	maxTokens int,
+	safetyBuffer int,
 ) bool {
 	msgTokens := 0
 	for _, m := range messages {
@@ -111,7 +113,9 @@ func isOverContextBudget(
 	}
 
 	toolTokens := EstimateToolDefsTokens(toolDefs)
-	total := msgTokens + toolTokens + maxTokens
+	// Add safety buffer (matching OpenCode's approach)
+	// This ensures room for output tokens and prevents edge cases
+	total := msgTokens + toolTokens + maxTokens + safetyBuffer
 
 	return total > contextWindow
 }
