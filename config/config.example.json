@@ -95,7 +95,7 @@
       "model_name": "nvidia-qwen-coder",
       "provider": "nvidia",
       "model": "qwen/qwen2.5-coder-32b-instruct",
-      "api_key": "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",
+      "api_key": "your-nvidia-api-key",
       "api_base": "https://integrate.api.nvidia.com/v1"
     },
     {
