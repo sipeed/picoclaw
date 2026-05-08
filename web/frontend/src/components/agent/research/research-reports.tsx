@@ -1,14 +1,6 @@
 import { IconCheck, IconClock } from "@tabler/icons-react"
 import { cn } from "@/lib/utils"
-
-interface ResearchReport {
-  id: string
-  title: string
-  status: "in-progress" | "complete"
-  timestamp: string
-  pages?: number
-  words?: number
-}
+import type { ResearchReport } from "@/api/research"
 
 interface ResearchReportsProps {
   reports: ResearchReport[]
