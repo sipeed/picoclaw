@@ -60,6 +60,7 @@ type AgentLoop struct {
 	steering       *steeringQueue
 	subagents      *tools.SubagentManager
 	pendingSkills  sync.Map
+	pendingStops   sync.Map
 	mu             sync.RWMutex
 
 	// workerSem limits concurrent turn processing workers.
@@ -179,6 +180,10 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				phase:  TurnPhaseSetup,
 			}
 			if _, loaded := al.activeTurnStates.LoadOrStore(sessionKey, placeholder); loaded {
+				if al.tryHandleStopCommand(ctx, msg, sessionKey) {
+					continue
+				}
+
 				// Another turn is already active (or reserved) for this session — enqueue
 				if err := al.enqueueSteeringMessage(sessionKey, agentID, providers.Message{
 					Role:    "user",
@@ -240,6 +245,24 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 				if al.channelManager != nil {
 					defer al.channelManager.InvokeTypingStop(m.Channel, m.ChatID)
+				}
+
+				if al.takePendingStop(sessionKey) {
+					al.activeTurnStates.Delete(sessionKey)
+					target := &continuationTarget{
+						SessionKey: sessionKey,
+						Channel:    m.Channel,
+						ChatID:     m.ChatID,
+					}
+					continued, continueErr := al.drainQueuedSteeringContinuations(ctx, target)
+					if continueErr != nil {
+						al.maybePublishError(ctx, m.Channel, m.ChatID, sessionKey, continueErr)
+						return
+					}
+					if continued != "" {
+						al.PublishResponseIfNeeded(ctx, target.Channel, target.ChatID, target.SessionKey, continued)
+					}
+					return
 				}
 
 				al.runTurnWithSteering(ctx, m)

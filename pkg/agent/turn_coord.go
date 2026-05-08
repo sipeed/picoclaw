@@ -26,6 +26,10 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 	al.registerActiveTurn(ts)
 	defer al.clearActiveTurn(ts)
 
+	if al.takePendingStop(ts.sessionKey) {
+		_ = ts.requestHardAbort()
+	}
+
 	turnStatus := TurnEndStatusCompleted
 	defer func() {
 		al.emitEvent(
@@ -39,6 +43,11 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 			},
 		)
 	}()
+
+	if ts.hardAbortRequested() {
+		turnStatus = TurnEndStatusAborted
+		return al.abortTurn(ts)
+	}
 
 	al.emitEvent(
 		runtimeevents.KindAgentTurnStart,

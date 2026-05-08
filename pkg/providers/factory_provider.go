@@ -110,19 +110,7 @@ func ExtractProtocol(cfg *config.ModelConfig) (protocol, modelID string) {
 	if provider := strings.TrimSpace(cfg.Provider); provider != "" {
 		return NormalizeProvider(provider), model
 	}
-	if model == "" {
-		return "", ""
-	}
-
-	protocol, rest, found := strings.Cut(model, "/")
-	if !found {
-		return "openai", model
-	}
-	protocol = strings.TrimSpace(protocol)
-	if protocol == "" {
-		return "", strings.TrimSpace(rest)
-	}
-	return NormalizeProvider(protocol), strings.TrimSpace(rest)
+	return SplitModelProviderAndID(model, "openai")
 }
 
 // ResolveAPIBase returns the configured API base, or the protocol default when
@@ -154,6 +142,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	}
 
 	protocol, modelID := ExtractProtocol(cfg)
+	authMethod := strings.ToLower(strings.TrimSpace(cfg.AuthMethod))
 
 	userAgent := cfg.UserAgent
 	if userAgent == "" {
@@ -163,7 +152,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	switch protocol {
 	case "openai":
 		// OpenAI with OAuth/token auth (Codex-style)
-		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
+		if authMethod == "oauth" || authMethod == "token" {
 			provider, err := createCodexAuthProvider()
 			if err != nil {
 				return nil, "", err
@@ -320,7 +309,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return finalizeProviderFromConfig(provider, modelID, cfg)
 
 	case "anthropic":
-		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
+		if authMethod == "oauth" || authMethod == "token" {
 			// Use OAuth credentials from auth store
 			provider, err := createClaudeAuthProvider()
 			if err != nil {
@@ -431,7 +420,7 @@ func finalizeProviderFromConfig(
 }
 
 func isEmptyAPIKeyAllowed(protocol string) bool {
-	meta, ok := protocolMetaByName[protocol]
+	meta, ok := protocolMetaForName(protocol)
 	return ok && meta.emptyAPIKeyAllowed
 }
 
@@ -451,9 +440,19 @@ func DefaultAPIBaseForProtocol(protocol string) string {
 
 // getDefaultAPIBase returns the default API base URL for a given protocol.
 func getDefaultAPIBase(protocol string) string {
-	meta, ok := protocolMetaByName[protocol]
+	meta, ok := protocolMetaForName(protocol)
 	if !ok {
 		return ""
 	}
 	return meta.defaultAPIBase
+}
+
+func protocolMetaForName(protocol string) (protocolMeta, bool) {
+	if meta, ok := protocolMetaByName[protocol]; ok {
+		return meta, true
+	}
+	if meta, ok := attachedModelProviderMetaByName[protocol]; ok {
+		return meta.protocolMeta, true
+	}
+	return protocolMeta{}, false
 }
