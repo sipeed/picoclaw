@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next"
 
 import {
   type ModelInfo,
+  type ModelProviderOption,
   getCatalogs,
   setDefaultModel,
   updateModel,
@@ -65,6 +66,7 @@ interface EditModelSheetProps {
   open: boolean
   onClose: () => void
   onSaved: () => void
+  providerOptions?: ModelProviderOption[]
 }
 
 function normalizeApiBase(value: string): string {
@@ -126,6 +128,7 @@ export function EditModelSheet({
   open,
   onClose,
   onSaved,
+  providerOptions,
 }: EditModelSheetProps) {
   const { t } = useTranslation()
   const [form, setForm] = useState<EditForm>({
@@ -155,6 +158,7 @@ export function EditModelSheet({
   const [fetchedModels, setFetchedModels] = useState<string[]>([])
   const [catalogModels, setCatalogModels] = useState<string[]>([])
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const initialForm = model ? buildInitialEditForm(model) : null
   const isDirty =
     model != null &&
@@ -256,6 +260,8 @@ export function EditModelSheet({
     try {
       if (form.extraBody.trim()) {
         extraBody = JSON.parse(form.extraBody.trim())
+      } else {
+        extraBody = {}
       }
     } catch {
       setError(
@@ -266,6 +272,8 @@ export function EditModelSheet({
     try {
       if (form.customHeaders.trim()) {
         customHeaders = JSON.parse(form.customHeaders.trim())
+      } else {
+        customHeaders = {}
       }
     } catch {
       setError(
@@ -343,7 +351,7 @@ export function EditModelSheet({
             </SheetDescription>
           </SheetHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto" ref={scrollContainerRef}>
             <div className="space-y-5 px-6 py-5">
               <Field
                 label={t("models.field.provider")}
@@ -353,6 +361,8 @@ export function EditModelSheet({
                   value={form.provider}
                   onChange={handleProviderChange}
                   placeholder={t("models.field.providerPlaceholder")}
+                  backendOptions={providerOptions}
+                  containerRef={scrollContainerRef}
                 />
               </Field>
 

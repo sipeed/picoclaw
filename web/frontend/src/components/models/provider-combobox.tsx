@@ -20,27 +20,52 @@ import {
 import { cn } from "@/lib/utils"
 
 import { ProviderIcon } from "./provider-icon"
-import { KNOWN_PROVIDER_KEYS, PROVIDERS } from "./provider-registry"
+import {
+  type MergedProvider,
+  PROVIDERS,
+  mergeWithBackendOptions,
+} from "./provider-registry"
+import type { ModelProviderOption } from "@/api/models"
 
 interface ProviderComboboxProps {
   value: string
   onChange: (value: string) => void
   placeholder?: string
+  backendOptions?: ModelProviderOption[]
+  /** When true, only show providers with create_allowed from the backend. */
+  filterCreateAllowed?: boolean
+  /** Container element for the popover portal. Use to avoid scroll conflicts inside dialogs/sheets. */
+  containerRef?: React.RefObject<HTMLElement | null>
 }
 
 export function ProviderCombobox({
   value,
   onChange,
   placeholder,
+  backendOptions,
+  filterCreateAllowed,
+  containerRef,
 }: ProviderComboboxProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [customMode, setCustomMode] = useState(false)
   const [customValue, setCustomValue] = useState("")
 
-  const sorted = [...PROVIDERS].sort((a, b) => b.priority - a.priority)
-  const selected = sorted.find((p) => p.key === value)
-  const isCustom = value && !KNOWN_PROVIDER_KEYS.has(value)
+  const allProviders: MergedProvider[] = backendOptions
+    ? mergeWithBackendOptions(backendOptions)
+    : [...PROVIDERS]
+        .sort((a, b) => b.priority - a.priority)
+        .map((p) => ({
+          ...p,
+          createAllowed: true,
+          defaultModelAllowed: false,
+        }))
+  const visible = filterCreateAllowed
+    ? allProviders.filter((p) => p.createAllowed)
+    : allProviders
+  const allKeys = new Set(allProviders.map((p) => p.key))
+  const selected = allProviders.find((p) => p.key === value)
+  const isCustom = value && !allKeys.has(value)
 
   const handleSelect = (currentValue: string) => {
     if (currentValue === "__custom__") {
@@ -97,7 +122,7 @@ export function ProviderCombobox({
           <IconChevronDown className="ml-2 size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" container={containerRef?.current}>
         {customMode ? (
           <div className="flex flex-col gap-2 p-2">
             <Input
@@ -142,7 +167,7 @@ export function ProviderCombobox({
             <CommandList>
               <CommandEmpty>{t("models.combobox.noProvider")}</CommandEmpty>
               <CommandGroup>
-                {sorted.map((provider) => (
+                {visible.map((provider) => (
                   <CommandItem
                     key={provider.key}
                     value={provider.key}

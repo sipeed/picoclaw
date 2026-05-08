@@ -4,6 +4,8 @@
  * should derive their data from this registry.
  */
 
+import type { ModelProviderOption } from "@/api/models"
+
 export interface ProviderDefinition {
   key: string
   label: string
@@ -463,4 +465,56 @@ function editDistance(a: string, b: string): number {
     }
   }
   return dp[m][n]
+}
+
+// ── Backend options merge ────────────────────────────────────────────────────
+
+export interface MergedProvider extends ProviderDefinition {
+  createAllowed: boolean
+  defaultModelAllowed: boolean
+  defaultAuthMethod?: string
+  authMethodLocked?: boolean
+}
+
+/**
+ * Merge the frontend PROVIDERS registry with backend provider_options.
+ * Frontend provides presentation data (labels, icons, priority, etc.).
+ * Backend provides authoritative availability and policy fields.
+ */
+export function mergeWithBackendOptions(
+  backendOptions: ModelProviderOption[],
+): MergedProvider[] {
+  const backendMap = new Map(backendOptions.map((o) => [o.id, o]))
+  const merged: MergedProvider[] = []
+
+  // Start with frontend providers, enriched with backend policy
+  for (const p of PROVIDERS) {
+    const backend = backendMap.get(p.key)
+    merged.push({
+      ...p,
+      createAllowed: backend?.create_allowed ?? false,
+      defaultModelAllowed: backend?.default_model_allowed ?? false,
+      defaultAuthMethod: backend?.default_auth_method,
+      authMethodLocked: backend?.auth_method_locked,
+    })
+    if (backend) backendMap.delete(p.key)
+  }
+
+  // Add providers only known to the backend
+  for (const [key, backend] of backendMap) {
+    merged.push({
+      key,
+      label: key,
+      requiresApiKey: !backend.empty_api_key_allowed,
+      isLocal: backend.empty_api_key_allowed,
+      priority: 0,
+      createAllowed: backend.create_allowed,
+      defaultModelAllowed: backend.default_model_allowed,
+      defaultAuthMethod: backend.default_auth_method,
+      authMethodLocked: backend.auth_method_locked,
+      defaultApiBase: backend.default_api_base || undefined,
+    })
+  }
+
+  return merged.sort((a, b) => b.priority - a.priority)
 }

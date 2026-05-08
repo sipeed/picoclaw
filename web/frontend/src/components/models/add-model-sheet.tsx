@@ -6,7 +6,12 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
-import { addModel, getCatalogs, setDefaultModel } from "@/api/models"
+import {
+  type ModelProviderOption,
+  addModel,
+  getCatalogs,
+  setDefaultModel,
+} from "@/api/models"
 import { ConfigChangeNotice } from "@/components/config-change-notice"
 import { maskedSecretPlaceholder } from "@/components/secret-placeholder"
 import {
@@ -111,6 +116,7 @@ interface AddModelSheetProps {
   onClose: () => void
   onSaved: () => void
   existingModelNames: string[]
+  providerOptions?: ModelProviderOption[]
 }
 
 export function AddModelSheet({
@@ -118,6 +124,7 @@ export function AddModelSheet({
   onClose,
   onSaved,
   existingModelNames,
+  providerOptions,
 }: AddModelSheetProps) {
   const { t } = useTranslation()
   const [form, setForm] = useState<AddForm>(EMPTY_ADD_FORM)
@@ -134,6 +141,7 @@ export function AddModelSheet({
   const [fetchedModels, setFetchedModels] = useState<string[]>([])
   const [catalogModels, setCatalogModels] = useState<string[]>([])
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const apiKeyPlaceholder = maskedSecretPlaceholder(
     form.apiKey,
     t("models.field.apiKeyPlaceholder"),
@@ -283,6 +291,8 @@ export function AddModelSheet({
     try {
       if (form.extraBody.trim()) {
         extraBody = JSON.parse(form.extraBody.trim())
+      } else {
+        extraBody = {}
       }
     } catch {
       setServerError(
@@ -293,6 +303,8 @@ export function AddModelSheet({
     try {
       if (form.customHeaders.trim()) {
         customHeaders = JSON.parse(form.customHeaders.trim())
+      } else {
+        customHeaders = {}
       }
     } catch {
       setServerError(
@@ -362,7 +374,7 @@ export function AddModelSheet({
             </SheetDescription>
           </SheetHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto" ref={scrollContainerRef}>
             <div className="space-y-5 px-6 py-5">
               <Field
                 label={t("models.add.modelName")}
@@ -389,6 +401,9 @@ export function AddModelSheet({
                   value={form.provider}
                   onChange={handleProviderChange}
                   placeholder={t("models.field.providerPlaceholder")}
+                  backendOptions={providerOptions}
+                  filterCreateAllowed
+                  containerRef={scrollContainerRef}
                 />
               </Field>
 

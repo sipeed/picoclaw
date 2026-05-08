@@ -8,7 +8,12 @@ import { useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
-import { type ModelInfo, getModels, setDefaultModel } from "@/api/models"
+import {
+  type ModelInfo,
+  type ModelProviderOption,
+  getModels,
+  setDefaultModel,
+} from "@/api/models"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
@@ -33,6 +38,9 @@ interface ProviderGroup {
 export function ModelsPage() {
   const { t } = useTranslation()
   const [models, setModels] = useState<ModelInfo[]>([])
+  const [providerOptions, setProviderOptions] = useState<
+    ModelProviderOption[]
+  >([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState("")
 
@@ -55,6 +63,7 @@ export function ModelsPage() {
         return a.model_name.localeCompare(b.model_name)
       })
       setModels(sorted)
+      setProviderOptions(data.provider_options || [])
       setFetchError("")
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : t("models.loadError"))
@@ -200,6 +209,7 @@ export function ModelsPage() {
         open={editingModel !== null}
         onClose={() => setEditingModel(null)}
         onSaved={fetchModels}
+        providerOptions={providerOptions}
       />
 
       <AddModelSheet
@@ -207,6 +217,7 @@ export function ModelsPage() {
         onClose={() => setAddOpen(false)}
         onSaved={fetchModels}
         existingModelNames={models.map((model) => model.model_name)}
+        providerOptions={providerOptions}
       />
 
       <DeleteModelDialog
