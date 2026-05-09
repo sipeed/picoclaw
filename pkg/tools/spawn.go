@@ -127,6 +127,15 @@ func (t *SpawnTool) execute(
 	// Preferred path: route through SubagentManager so spawn_status and
 	// background execution share the same task registry.
 	if t.manager != nil {
+		wrappedCallback := cb
+		if cb != nil {
+			wrappedCallback = func(cbCtx context.Context, res *ToolResult) {
+				if res != nil {
+					res.WithAsyncDelivery(AsyncDeliveryUserOnly)
+				}
+				cb(cbCtx, res)
+			}
+		}
 		ack, err := t.manager.Spawn(
 			ctx,
 			task,
@@ -134,7 +143,7 @@ func (t *SpawnTool) execute(
 			strings.TrimSpace(agentID),
 			ToolChannel(ctx),
 			ToolChatID(ctx),
-			cb,
+			wrappedCallback,
 		)
 		if err != nil {
 			return ErrorResult(fmt.Sprintf("Spawn failed: %v", err)).WithError(err)

@@ -699,6 +699,7 @@ type asyncFollowUpTool struct {
 	name          string
 	followUpText  string
 	completionSig chan struct{}
+	deliveryMode  tools.AsyncDeliveryMode
 }
 
 func (t *asyncFollowUpTool) Name() string {
@@ -726,7 +727,11 @@ func (t *asyncFollowUpTool) ExecuteAsync(
 	cb tools.AsyncCallback,
 ) *tools.ToolResult {
 	go func() {
-		cb(ctx, &tools.ToolResult{ForLLM: t.followUpText})
+		res := &tools.ToolResult{ForLLM: t.followUpText}
+		if t.deliveryMode != "" {
+			res.WithAsyncDelivery(t.deliveryMode)
+		}
+		cb(ctx, res)
 		if t.completionSig != nil {
 			close(t.completionSig)
 		}
@@ -738,3 +743,84 @@ var (
 	_ tools.Tool          = (*mockCustomTool)(nil)
 	_ tools.AsyncExecutor = (*asyncFollowUpTool)(nil)
 )
+
+func TestAgentLoop_AsyncToolUserOnly_DoesNotEmitFollowUpQueued(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	provider := &toolCallProvider{
+		toolCalls: []providers.ToolCall{
+			{
+				ID:   "call_async_1",
+				Type: "function",
+				Name: "async_followup_user_only",
+				Function: &providers.FunctionCall{
+					Name:      "async_followup_user_only",
+					Arguments: "{}",
+				},
+				Arguments: map[string]any{},
+			},
+		},
+		finalResp: "async launched",
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, provider)
+	doneCh := make(chan struct{})
+	al.RegisterTool(&asyncFollowUpTool{
+		name:          "async_followup_user_only",
+		followUpText:  "background result",
+		completionSig: doneCh,
+		deliveryMode:  tools.AsyncDeliveryUserOnly,
+	})
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("expected default agent")
+	}
+
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		8,
+		runtimeevents.KindAgentFollowUpQueued,
+	)
+	defer closeRuntimeEvents()
+
+	resp, err := al.runAgentLoop(context.Background(), defaultAgent, processOptions{
+		SessionKey:      "session-1",
+		Channel:         "cli",
+		ChatID:          "direct",
+		UserMessage:     "run async tool",
+		DefaultResponse: defaultResponse,
+		EnableSummary:   false,
+		SendResponse:    false,
+	})
+	if err != nil {
+		t.Fatalf("runAgentLoop failed: %v", err)
+	}
+	if resp != "async launched" {
+		t.Fatalf("expected final response 'async launched', got %q", resp)
+	}
+
+	select {
+	case <-doneCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for async tool completion")
+	}
+
+	select {
+	case evt := <-runtimeCh:
+		t.Fatalf("unexpected follow-up queued event: %+v", evt)
+	case <-time.After(200 * time.Millisecond):
+	}
+}

@@ -12,6 +12,14 @@ const (
 	ArtifactPathsLLMNote = "Use `send_file` with one of these paths to send it to the user, or use file/exec tools to save it inside the workspace if requested."
 )
 
+type AsyncDeliveryMode string
+
+const (
+	AsyncDeliveryUserOnly      AsyncDeliveryMode = "user_only"
+	AsyncDeliveryParentOnly    AsyncDeliveryMode = "parent_only"
+	AsyncDeliveryUserAndParent AsyncDeliveryMode = "user_and_parent"
+)
+
 // ToolResult represents the structured return value from tool execution.
 // It provides clear semantics for different types of results and supports
 // async operations, user-facing messages, and error handling.
@@ -36,6 +44,16 @@ type ToolResult struct {
 	// Async indicates whether the tool is running asynchronously.
 	// When true, the tool will complete later and notify via callback.
 	Async bool `json:"async"`
+
+	// AsyncDelivery controls how the final async result should be routed when
+	// the background work completes.
+	//
+	// Empty means "use runtime default behavior".
+	// Supported values:
+	//   - user_only
+	//   - parent_only
+	//   - user_and_parent
+	AsyncDelivery AsyncDeliveryMode `json:"async_delivery,omitempty"`
 
 	// Err is the underlying error (not JSON serialized).
 	// Used for internal error handling and logging.
@@ -219,5 +237,11 @@ func (tr *ToolResult) WithError(err error) *ToolResult {
 // WithResponseHandled marks the tool result as already delivered to the user.
 func (tr *ToolResult) WithResponseHandled() *ToolResult {
 	tr.ResponseHandled = true
+	return tr
+}
+
+// WithAsyncDelivery sets the async delivery policy for this tool result.
+func (tr *ToolResult) WithAsyncDelivery(mode AsyncDeliveryMode) *ToolResult {
+	tr.AsyncDelivery = mode
 	return tr
 }

@@ -164,3 +164,34 @@ func TestSpawnTool_SpawnStatusSeesSpawnedTask(t *testing.T) {
 
 	<-spawner.done
 }
+
+func TestSpawnTool_ExecuteAsync_MarksCallbackResultUserOnly(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	tool := NewSpawnTool(manager)
+	spawner := &mockSpawner{}
+	tool.SetSpawner(spawner)
+
+	done := make(chan *ToolResult, 1)
+	result := tool.ExecuteAsync(context.Background(), map[string]any{
+		"task": "Write a haiku about coding",
+	}, func(_ context.Context, res *ToolResult) {
+		done <- res
+	})
+
+	if result == nil || !result.Async {
+		t.Fatal("expected async acknowledgment result")
+	}
+
+	select {
+	case cbResult := <-done:
+		if cbResult == nil {
+			t.Fatal("expected callback result")
+		}
+		if cbResult.AsyncDelivery != AsyncDeliveryUserOnly {
+			t.Fatalf("AsyncDelivery = %q, want %q", cbResult.AsyncDelivery, AsyncDeliveryUserOnly)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for spawn callback result")
+	}
+}
