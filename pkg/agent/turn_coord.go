@@ -89,11 +89,13 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 			// We do NOT call dequeueSteeringMessagesForScope here because
 			// steering was already consumed from al.steering by ExecuteTools.
 			if len(exec.pendingMessages) > 0 {
+				exec.sawSteering = true
 				pendingMessages = append(pendingMessages, exec.pendingMessages...)
 				exec.pendingMessages = nil
 			}
 		} else if !ts.opts.SkipInitialSteeringPoll {
 			if steerMsgs := al.dequeueSteeringMessagesForScopeWithFallback(ts.sessionKey); len(steerMsgs) > 0 {
+				exec.sawSteering = true
 				pendingMessages = append(pendingMessages, steerMsgs...)
 			}
 		}
@@ -200,6 +202,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 			if finalContent == "" {
 				finalContent = ts.opts.DefaultResponse
 			}
+			finalContent = synthesizeFinalActionSummary(turnCtx, al, ts, exec, finalContent)
 			return pipeline.Finalize(ctx, turnCtx, ts, exec, turnStatus, finalContent)
 		case ControlToolLoop:
 			// Execute tools via Pipeline
@@ -227,6 +230,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 				if exec.allResponsesHandled {
 					finalContent = ""
 				}
+				finalContent = synthesizeFinalActionSummary(turnCtx, al, ts, exec, finalContent)
 				return pipeline.Finalize(ctx, turnCtx, ts, exec, turnStatus, finalContent)
 			}
 		}
@@ -244,6 +248,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 			finalContent = ts.opts.DefaultResponse
 		}
 	}
+	finalContent = synthesizeFinalActionSummary(turnCtx, al, ts, exec, finalContent)
 
 	// Check hard abort before finalizing (may have been set during tool execution)
 	if ts.hardAbortRequested() {

@@ -39,9 +39,10 @@ func DefaultConfig() *Config {
 					MaxArgsLength:    300,
 					SeparateMessages: false,
 				},
-				SplitOnMarker:       false,
-				MaxLLMRetries:       2,
-				LLMRetryBackoffSecs: 2,
+				FinalActionSummaryMode: "",
+				SplitOnMarker:          false,
+				MaxLLMRetries:          2,
+				LLMRetryBackoffSecs:    2,
 			},
 		},
 		Session: SessionConfig{
@@ -496,7 +497,11 @@ func defaultChannels() ChannelsConfig {
 			"typing":      map[string]any{"enabled": true},
 			"placeholder": map[string]any{"enabled": true, "text": []string{"Thinking... 💭"}},
 			"settings": map[string]any{
-				"streaming":       map[string]any{"enabled": true, "throttle_seconds": 3, "min_growth_chars": 200},
+				"streaming": map[string]any{
+					"enabled":          true,
+					"throttle_seconds": 3,
+					"min_growth_chars": 200,
+				},
 				"use_markdown_v2": false,
 			},
 		},

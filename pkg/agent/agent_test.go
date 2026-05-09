@@ -1233,6 +1233,113 @@ func TestProcessMessage_HandledToolProcessesQueuedSteeringBeforeReturning(t *tes
 	}
 }
 
+type activitySummaryWithSteeringProvider struct {
+	calls int
+}
+
+func (m *activitySummaryWithSteeringProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	if len(messages) > 0 && messages[0].Role == "system" &&
+		strings.Contains(messages[0].Content, "formatting the final user-facing reply") {
+		return &providers.LLMResponse{
+			Content: "Записал.\n\nДобавил активности:\n- yoga — 30 мин\n- squats — 20 повторений",
+		}, nil
+	}
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			Content: "Записал yoga — 30 мин.",
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_activity_steering",
+				Type:      "function",
+				Name:      "activity_with_steering_tool",
+				Arguments: map[string]any{},
+			}},
+		}, nil
+	}
+
+	for _, msg := range messages {
+		if msg.Role == "user" && msg.Content == "и еще 20 приседаний" {
+			return &providers.LLMResponse{Content: "Записал squats — 20 повторений."}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("provider did not receive steering or synthesis prompt")
+}
+
+func (m *activitySummaryWithSteeringProvider) GetDefaultModel() string {
+	return "activity-summary-with-steering-model"
+}
+
+type activityWithSteeringTool struct {
+	loop *AgentLoop
+}
+
+func (m *activityWithSteeringTool) Name() string { return "activity_with_steering_tool" }
+func (m *activityWithSteeringTool) Description() string {
+	return "Queues a follow-up steering message after recording an activity"
+}
+
+func (m *activityWithSteeringTool) Parameters() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	}
+}
+
+func (m *activityWithSteeringTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	if err := m.loop.Steer(providers.Message{Role: "user", Content: "и еще 20 приседаний"}); err != nil {
+		return tools.ErrorResult(err.Error()).WithError(err)
+	}
+	return &tools.ToolResult{
+		ForLLM:  "activity recorded",
+		ForUser: "Записал yoga — 30 мин.",
+	}
+}
+
+func TestProcessMessage_FinalActionSummarySynthesizesAcrossSteering(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:              tmpDir,
+				ModelName:              "test-model",
+				MaxTokens:              4096,
+				MaxToolIterations:      10,
+				FinalActionSummaryMode: "llm",
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &activitySummaryWithSteeringProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	al.RegisterTool(&activityWithSteeringTool{loop: al})
+
+	response, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
+		Channel:  "telegram",
+		ChatID:   "chat1",
+		SenderID: "user1",
+		Content:  "я позанимался йогой 30 минут",
+	}))
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+
+	want := "Записал.\n\nДобавил активности:\n- yoga — 30 мин\n- squats — 20 повторений"
+	if response != want {
+		t.Fatalf("response = %q, want %q", response, want)
+	}
+	if provider.calls != 3 {
+		t.Fatalf("expected 3 LLM calls including final synthesis, got %d", provider.calls)
+	}
+}
+
 func TestRunAgentLoop_ResponseHandledToolPublishesForUserWhenSendResponseDisabled(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := config.DefaultConfig()
