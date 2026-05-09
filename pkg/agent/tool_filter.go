@@ -3,7 +3,6 @@ package agent
 import (
 	"path"
 
-	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
@@ -12,33 +11,22 @@ func agentAllowsTool(agent *AgentInstance, toolName string) bool {
 	if agent == nil {
 		return true
 	}
-	if !toolAllowedByPolicy(agent.ToolPolicy, toolName) {
-		return false
-	}
-	return toolAllowedByConfig(agent.ID, agent.ToolFilter, toolName)
+	return toolAllowedByPolicy(agent.ToolPolicy, toolName)
 }
 
-func toolAllowedByConfig(_ string, cfg *config.AgentToolsConfig, toolName string) bool {
-	if cfg == nil {
-		return true
-	}
-
-	return toolAllowedByPolicy(cfg, toolName)
-}
-
-func toolAllowedByPolicy(cfg *config.AgentToolsConfig, toolName string) bool {
-	if cfg == nil {
+func toolAllowedByPolicy(policy *PatternPolicy, toolName string) bool {
+	if policy == nil {
 		return true
 	}
 
 	allowed := true
-	if cfg.Allow != nil {
-		allowed = matchesAnyGlob(toolName, cfg.Allow)
+	if policy.form == patternPolicyFormList || len(policy.Allow) > 0 {
+		allowed = matchesAnyGlob(toolName, policy.Allow)
 	}
 	if !allowed {
 		return false
 	}
-	if len(cfg.Deny) > 0 && matchesAnyGlob(toolName, cfg.Deny) {
+	if len(policy.Deny) > 0 && matchesAnyGlob(toolName, policy.Deny) {
 		return false
 	}
 	return true
@@ -47,7 +35,7 @@ func toolAllowedByPolicy(cfg *config.AgentToolsConfig, toolName string) bool {
 func registerToolWithPolicies(
 	registry *tools.ToolRegistry,
 	tool tools.Tool,
-	policies ...*config.AgentToolsConfig,
+	policies ...*PatternPolicy,
 ) bool {
 	if registry == nil || tool == nil {
 		return false

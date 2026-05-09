@@ -314,13 +314,7 @@ type AgentConfig struct {
 	Workspace string            `json:"workspace,omitempty"`
 	Model     *AgentModelConfig `json:"model,omitempty"`
 	Skills    []string          `json:"skills,omitempty"`
-	Tools     *AgentToolsConfig `json:"tools,omitempty"`
 	Subagents *SubagentsConfig  `json:"subagents,omitempty"`
-}
-
-type AgentToolsConfig struct {
-	Allow []string `json:"allow,omitempty"`
-	Deny  []string `json:"deny,omitempty"`
 }
 
 type SubagentsConfig struct {

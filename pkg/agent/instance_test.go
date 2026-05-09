@@ -951,48 +951,6 @@ tools:
 	}
 }
 
-func TestNewAgentInstance_ConfigToolFilterFurtherRestrictsFrontmatterPolicy(t *testing.T) {
-	workspace := setupWorkspace(t, map[string]string{
-		"AGENT.md": `---
-tools:
-  allow:
-    - read_*
-    - list_*
----
-# Agent
-`,
-	})
-	defer cleanupWorkspace(t, workspace)
-
-	cfg := &config.Config{
-		Agents: config.AgentsConfig{
-			Defaults: config.AgentDefaults{
-				Workspace: workspace,
-				ModelName: "default-model",
-			},
-		},
-		Tools: config.ToolsConfig{
-			ReadFile: config.ReadFileToolConfig{Enabled: true},
-			ListDir:  config.ToolConfig{Enabled: true},
-		},
-	}
-
-	agent := NewAgentInstance(&config.AgentConfig{
-		ID:        "research",
-		Workspace: workspace,
-		Tools: &config.AgentToolsConfig{
-			Deny: []string{"list_dir"},
-		},
-	}, &cfg.Agents.Defaults, cfg, &mockProvider{})
-
-	if _, ok := agent.Tools.Get("read_file"); !ok {
-		t.Fatal("expected read_file to remain allowed")
-	}
-	if _, ok := agent.Tools.Get("list_dir"); ok {
-		t.Fatal("expected config deny to further restrict frontmatter policy")
-	}
-}
-
 func TestNewAgentInstance_MCPServerPolicySupportsAllowAndDenyPatterns(t *testing.T) {
 	workspace := setupWorkspace(t, map[string]string{
 		"AGENT.md": `---

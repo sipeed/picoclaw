@@ -140,9 +140,9 @@ func sortedKeys(values map[string]struct{}) []string {
 	return result
 }
 
-func resolveAgentToolPolicy(definition AgentContextDefinition) *config.AgentToolsConfig {
+func resolveAgentToolPolicy(definition AgentContextDefinition) *PatternPolicy {
 	if frontmatterParseFailed(definition) {
-		return &config.AgentToolsConfig{Allow: []string{}}
+		return &PatternPolicy{Allow: []string{}, form: patternPolicyFormList}
 	}
 	if definition.Agent == nil || !frontmatterDeclaresField(definition, "tools") {
 		return nil
@@ -150,9 +150,9 @@ func resolveAgentToolPolicy(definition AgentContextDefinition) *config.AgentTool
 	return normalizePatternPolicy(definition.Agent.Frontmatter.ToolPolicy)
 }
 
-func resolveAgentMCPServerPolicy(definition AgentContextDefinition) *config.AgentToolsConfig {
+func resolveAgentMCPServerPolicy(definition AgentContextDefinition) *PatternPolicy {
 	if frontmatterParseFailed(definition) {
-		return &config.AgentToolsConfig{Allow: []string{}}
+		return &PatternPolicy{Allow: []string{}, form: patternPolicyFormList}
 	}
 	if definition.Agent == nil || !frontmatterDeclaresField(definition, "mcpServers") {
 		return nil
@@ -160,20 +160,20 @@ func resolveAgentMCPServerPolicy(definition AgentContextDefinition) *config.Agen
 	return normalizePatternPolicy(definition.Agent.Frontmatter.MCPPolicy)
 }
 
-func normalizePatternPolicy(policy *PatternPolicy) *config.AgentToolsConfig {
+func normalizePatternPolicy(policy *PatternPolicy) *PatternPolicy {
 	if policy == nil {
 		return nil
 	}
 
-	cfg := &config.AgentToolsConfig{}
-	cfg.Allow = normalizePatterns(policy.Allow)
-	cfg.Deny = normalizePatterns(policy.Deny)
+	normalized := &PatternPolicy{form: policy.form}
+	normalized.Allow = normalizePatterns(policy.Allow)
+	normalized.Deny = normalizePatterns(policy.Deny)
 
-	if policy.form == patternPolicyFormList && len(cfg.Allow) == 0 {
-		cfg.Allow = []string{}
+	if policy.form == patternPolicyFormList && len(normalized.Allow) == 0 {
+		normalized.Allow = []string{}
 	}
 
-	return cfg
+	return normalized
 }
 
 func normalizePatterns(patterns []string) []string {

@@ -341,7 +341,7 @@ func filterMCPConfigServers(
 	return filtered
 }
 
-func agentHasDiscoverableMCPServers(cfg *config.Config, allowed *config.AgentToolsConfig) bool {
+func agentHasDiscoverableMCPServers(cfg *config.Config, allowed *PatternPolicy) bool {
 	if cfg == nil || !cfg.Tools.MCP.Enabled || !cfg.Tools.MCP.Discovery.Enabled {
 		return false
 	}

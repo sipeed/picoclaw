@@ -41,9 +41,8 @@ type AgentInstance struct {
 	Definition                AgentContextDefinition
 	Subagents                 *config.SubagentsConfig
 	SkillsFilter              []string
-	MCPServerPolicy           *config.AgentToolsConfig
-	ToolPolicy                *config.AgentToolsConfig
-	ToolFilter                *config.AgentToolsConfig
+	MCPServerPolicy           *PatternPolicy
+	ToolPolicy                *PatternPolicy
 	Candidates                []providers.FallbackCandidate
 
 	// Router is non-nil when model routing is configured and the light model
@@ -91,14 +90,10 @@ func NewAgentInstance(
 	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
 	agentToolPolicy := resolveAgentToolPolicy(definition)
 	agentMCPServerPolicy := resolveAgentMCPServerPolicy(definition)
-	var toolFilter *config.AgentToolsConfig
-	if agentCfg != nil {
-		toolFilter = agentCfg.Tools
-	}
 
 	toolsRegistry := tools.NewToolRegistry()
 	registerTool := func(tool tools.Tool) {
-		registerToolWithPolicies(toolsRegistry, tool, agentToolPolicy, toolFilter)
+		registerToolWithPolicies(toolsRegistry, tool, agentToolPolicy)
 	}
 
 	if cfg.Tools.IsToolEnabled("read_file") {
@@ -271,7 +266,6 @@ func NewAgentInstance(
 		SkillsFilter:              skillsFilter,
 		MCPServerPolicy:           agentMCPServerPolicy,
 		ToolPolicy:                agentToolPolicy,
-		ToolFilter:                toolFilter,
 		Candidates:                candidates,
 		Router:                    router,
 		LightCandidates:           lightCandidates,

@@ -292,13 +292,6 @@ Policy rules:
 - `deny` wins on overlap
 - explicit empty list blocks all values for that field
 
-When both frontmatter and config-level tool filtering are present:
-
-- frontmatter is the agent-authored default policy
-- `agents.list[].tools` is a deployment override
-- effective tool visibility is the intersection of both policies
-- in practice, a tool must pass both layers to be registered
-
 ### Agent Discovery (Automatic)
 
 When an agent has spawnable peers and can call `spawn`, PicoClaw injects a structured agent registry into that agent's system prompt on every turn. No extra `list_agents` tool call is required.
@@ -339,29 +332,19 @@ In practice, this means a generalist agent can choose a peer based on its role d
 
 ### Per-agent tool filtering
 
-You can restrict tool visibility per agent with `agents.list[].tools`.
+Per-agent tool filtering is defined in `AGENT.md` frontmatter.
 
-```json
-{
-  "agents": {
-    "list": [
-      {
-        "id": "main",
-        "default": true,
-        "tools": {
-          "deny": ["mcp_gpt_researcher_*"]
-        }
-      },
-      {
-        "id": "deep-research",
-        "tools": {
-          "allow": ["*"]
-        }
-      }
-    ]
-  }
-}
+```md
+---
+tools:
+  deny:
+    - mcp_gpt_researcher_*
+---
+
+# Agent
 ```
+
+This keeps capability policy attached to the agent definition itself, and runtime enforces it during tool registration.
 
 Rules:
 
