@@ -55,23 +55,6 @@ func (al *AgentLoop) maybePublishErrorWithPolicy(
 	return true
 }
 
-func (al *AgentLoop) publishResponseOrError(
-	ctx context.Context,
-	channel, chatID, sessionKey string,
-	response string,
-	err error,
-) {
-	al.publishResponseOrErrorWithPolicy(
-		ctx,
-		channel,
-		chatID,
-		sessionKey,
-		response,
-		err,
-		finalResponseSuppressIfMessageToolSent,
-	)
-}
-
 func (al *AgentLoop) publishResponseOrErrorWithPolicy(
 	ctx context.Context,
 	channel, chatID, sessionKey string,
