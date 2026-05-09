@@ -95,3 +95,26 @@ export async function updateWebSearchConfig(
     body: JSON.stringify(payload),
   })
 }
+
+export interface GrantPermissionRequest {
+  path: string
+  command: string
+  duration: "once" | "session"
+}
+
+export interface GrantPermissionResponse {
+  status: string
+  message?: string
+}
+
+export async function grantPermission(
+  path: string,
+  command: string,
+  duration: "once" | "session"
+): Promise<GrantPermissionResponse> {
+  return request<GrantPermissionResponse>("/api/permission/grant", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, command, duration }),
+  })
+}

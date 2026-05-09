@@ -1,0 +1,8 @@
+./asyncfloat64.go
+./asyncint64.go
+./config.go
+./doc.go
+./instrument.go
+./meter.go
+./syncfloat64.go
+./syncint64.go

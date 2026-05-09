@@ -1,0 +1,6 @@
+---
+name: Simple Agent
+description: A simple test agent
+system_prompt: You are a helpful assistant.
+model: qwen3.5:4b
+---

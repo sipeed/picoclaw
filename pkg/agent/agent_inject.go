@@ -3,6 +3,8 @@
 package agent
 
 import (
+	"fmt"
+
 	"github.com/sipeed/picoclaw/pkg/audio/asr"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -27,6 +29,22 @@ func (al *AgentLoop) GetRegistry() *AgentRegistry {
 	al.mu.RLock()
 	defer al.mu.RUnlock()
 	return al.registry
+}
+
+// GrantPermission grants permission for a path to a specific agent.
+// agentID is the normalized agent ID (e.g. "main"), path is the file path,
+// duration is "once" or "session".
+// Returns an error if the agent is not found or the permission cache is not initialized.
+func (al *AgentLoop) GrantPermission(agentID, path, duration string) error {
+	registry := al.GetRegistry()
+	if registry == nil {
+		return fmt.Errorf("agent registry not initialized")
+	}
+	agent, ok := registry.GetAgent(agentID)
+	if !ok {
+		return fmt.Errorf("agent %q not found", agentID)
+	}
+	return agent.GrantPermission(path, duration)
 }
 
 func (al *AgentLoop) GetConfig() *config.Config {
@@ -100,4 +118,30 @@ func (al *AgentLoop) GetStartupInfo() map[string]any {
 	}
 
 	return info
+}
+
+func (al *AgentLoop) GetMainSubagentTasks(channel, chatID string) []tools.SubagentTask {
+	al.mu.RLock()
+	manager := al.subagents
+	al.mu.RUnlock()
+	if manager == nil {
+		return nil
+	}
+
+	all := manager.ListTaskCopies()
+	if channel == "" && chatID == "" {
+		return all
+	}
+
+	filtered := make([]tools.SubagentTask, 0, len(all))
+	for _, task := range all {
+		if channel != "" && task.OriginChannel != "" && task.OriginChannel != channel {
+			continue
+		}
+		if chatID != "" && task.OriginChatID != "" && task.OriginChatID != chatID {
+			continue
+		}
+		filtered = append(filtered, task)
+	}
+	return filtered
 }

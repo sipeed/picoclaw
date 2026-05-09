@@ -324,6 +324,10 @@ func TestNewAgentInstance_AllowsMediaTempDirForReadListAndExec(t *testing.T) {
 	if !ok {
 		t.Fatal("list_dir tool not registered")
 	}
+	// Grant permission for media temp dir if permission cache exists
+	if pc := agent.PermissionCache.Check(mediaDir); pc == "" {
+		agent.PermissionCache.Grant(mediaDir, "session")
+	}
 	listResult := listTool.Execute(context.Background(), map[string]any{"path": mediaDir})
 	if listResult.IsError {
 		t.Fatalf("list_dir should allow media temp dir, got: %s", listResult.ForLLM)

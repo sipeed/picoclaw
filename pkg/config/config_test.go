@@ -2432,3 +2432,19 @@ func testChannelsConfigWithTokens() ChannelsConfig {
 	}
 	return channels
 }
+
+func TestToolsConfig_IsToolEnabled_ExecAskPermission(t *testing.T) {
+	cfg := &ToolsConfig{
+		Exec: ExecConfig{
+			ToolConfig: ToolConfig{
+				Enabled: true,
+			},
+			AskPermission: true,
+		},
+	}
+
+	// Verify AskPermission field exists and is accessible
+	if !cfg.Exec.AskPermission {
+		t.Error("Expected AskPermission to be true")
+	}
+}

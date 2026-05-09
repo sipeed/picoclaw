@@ -173,7 +173,13 @@ func NewManager(opts ...ManagerOption) *Manager {
 
 // LoadFromConfig loads MCP servers from configuration
 func (m *Manager) LoadFromConfig(ctx context.Context, cfg *config.Config) error {
-	return m.LoadFromMCPConfig(ctx, cfg.Tools.MCP, cfg.WorkspacePath())
+	if cfg == nil {
+		logger.InfoCF("mcp", "Config is nil, MCP not loaded", nil)
+		return nil
+	}
+	mcpCfg := cfg.Tools.MCP
+	// Use pointer to handle zero value properly
+	return m.LoadFromMCPConfig(ctx, mcpCfg, cfg.WorkspacePath())
 }
 
 // LoadFromMCPConfig loads MCP servers from MCP configuration and workspace path.

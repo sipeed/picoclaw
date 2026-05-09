@@ -116,6 +116,9 @@ func (p *startupBlockedProvider) GetDefaultModel() string {
 
 // Run starts the gateway runtime using the configuration loaded from configPath.
 func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) (runErr error) {
+	if homePath != "" {
+		os.Chdir(homePath)
+	}
 	startedAt := time.Now()
 	panicPath := filepath.Join(homePath, logPath, panicFile)
 	panicFunc, err := logger.InitPanic(panicPath)
@@ -242,6 +245,21 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) (runEr
 	}
 	runningServices.HealthServer.SetReloadFunc(reloadTrigger)
 	agentLoop.SetReloadFunc(reloadTrigger)
+
+	// Wire permission grant function to allow runtime permission grants via health endpoint
+	runningServices.HealthServer.SetPermissionGrantFunc(func(agentID, path, duration string) error {
+		return agentLoop.GrantPermission(agentID, path, duration)
+	})
+	runningServices.HealthServer.SetSubagentStatusFunc(func(channel, chatID string) (any, error) {
+		return map[string]any{
+			"channel": channel,
+			"chat_id": chatID,
+			"tasks":   agentLoop.GetMainSubagentTasks(channel, chatID),
+		}, nil
+	})
+
+	// Register agent API routes
+	RegisterAgentAPI(runningServices.HealthServer)
 
 	for _, bindHost := range listenResult.BindHosts {
 		fmt.Printf("✓ Gateway started on %s\n", net.JoinHostPort(bindHost, strconv.Itoa(cfg.Gateway.Port)))

@@ -1,4 +1,4 @@
-//go:build !mipsle && !netbsd && !(freebsd && arm) && !android
+//go:build !mipsle && !netbsd && !(freebsd && arm) && !android && !windows
 
 package gateway
 
@@ -16,7 +16,7 @@ import (
 	//   generated 32-bit FreeBSD code (size_t/uint64 and int32/int64 mismatches
 	//   in libc_freebsd.go).
 	//
-	// This means Matrix is currently unavailable on those targets. The proper
+	// - windows/*: mautrix crypto requires libolm which has no native Windows support. The proper
 	// long-term fix is to split Matrix basic support from its E2EE/sqlite-backed
 	// crypto path, or to upgrade/replace the upstream sqlite dependency once the
 	// affected targets are supported.

@@ -1,0 +1,13 @@
+./errno_windows.go
+./fd.go
+./fd_fsync_windows.go
+./fd_mutex.go
+./fd_poll_runtime.go
+./fd_posix.go
+./fd_windows.go
+./hook_windows.go
+./sendfile.go
+./sendfile_windows.go
+./sockopt.go
+./sockopt_windows.go
+./sockoptip.go

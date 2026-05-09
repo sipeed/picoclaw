@@ -829,6 +829,180 @@ func (s *JSONLStore) ListSessions() []string {
 	return keys
 }
 
+// ListResearchReports returns research reports from storage
+func (s *JSONLStore) ListResearchReports() ([]ResearchReport, error) {
+	// For simplicity, we'll store research reports in a dedicated file
+	// In a real implementation, this would be a proper database table
+	reports := []ResearchReport{}
+	
+	data, err := os.ReadFile(filepath.Join(s.dir, "research_reports.json"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return reports, nil
+		}
+		return nil, fmt.Errorf("memory: read research reports: %w", err)
+	}
+	
+	if err := json.Unmarshal(data, &reports); err != nil {
+		return nil, fmt.Errorf("memory: decode research reports: %w", err)
+	}
+	
+	return reports, nil
+}
+
+// UpdateResearchReport updates a research report
+func (s *JSONLStore) UpdateResearchReport(report ResearchReport) error {
+	reports, err := s.ListResearchReports()
+	if err != nil {
+		return err
+	}
+	
+	// Find and update the report
+	found := false
+	for i, r := range reports {
+		if r.ID == report.ID {
+			reports[i] = report
+			found = true
+			break
+		}
+	}
+	
+	// If not found, add it
+	if !found {
+		reports = append(reports, report)
+	}
+	
+	// Save back to file
+	data, err := json.MarshalIndent(reports, "", "  ")
+	if err != nil {
+		return fmt.Errorf("memory: encode research reports: %w", err)
+	}
+	
+	if err := os.WriteFile(filepath.Join(s.dir, "research_reports.json"), data, 0o644); err != nil {
+		return fmt.Errorf("memory: write research reports: %w", err)
+	}
+	
+	return nil
+}
+
+// ListResearchAgents returns research agents from storage
+func (s *JSONLStore) ListResearchAgents() ([]ResearchAgent, error) {
+	agents := []ResearchAgent{}
+	
+	data, err := os.ReadFile(filepath.Join(s.dir, "research_agents.json"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return agents, nil
+		}
+		return nil, fmt.Errorf("memory: read research agents: %w", err)
+	}
+	
+	if err := json.Unmarshal(data, &agents); err != nil {
+		return nil, fmt.Errorf("memory: decode research agents: %w", err)
+	}
+	
+	return agents, nil
+}
+
+// UpdateResearchAgent updates a research agent
+func (s *JSONLStore) UpdateResearchAgent(agent ResearchAgent) error {
+	agents, err := s.ListResearchAgents()
+	if err != nil {
+		return err
+	}
+	
+	// Find and update the agent
+	found := false
+	for i, a := range agents {
+		if a.ID == agent.ID {
+			agents[i] = agent
+			found = true
+			break
+		}
+	}
+	
+	// If not found, add it
+	if !found {
+		agents = append(agents, agent)
+	}
+	
+	// Save back to file
+	data, err := json.MarshalIndent(agents, "", "  ")
+	if err != nil {
+		return fmt.Errorf("memory: encode research agents: %w", err)
+	}
+	
+	if err := os.WriteFile(filepath.Join(s.dir, "research_agents.json"), data, 0o644); err != nil {
+		return fmt.Errorf("memory: write research agents: %w", err)
+	}
+	
+	return nil
+}
+
+// ListResearchNodes returns research graph nodes from storage
+func (s *JSONLStore) ListResearchNodes() ([]ResearchNode, error) {
+	nodes := []ResearchNode{}
+	
+	data, err := os.ReadFile(filepath.Join(s.dir, "research_nodes.json"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nodes, nil
+		}
+		return nil, fmt.Errorf("memory: read research nodes: %w", err)
+	}
+	
+	if err := json.Unmarshal(data, &nodes); err != nil {
+		return nil, fmt.Errorf("memory: decode research nodes: %w", err)
+	}
+	
+	return nodes, nil
+}
+
+// UpdateResearchNode updates a research graph node
+func (s *JSONLStore) UpdateResearchNode(node ResearchNode) error {
+	nodes, err := s.ListResearchNodes()
+	if err != nil {
+		return err
+	}
+	
+	// Find and update the node
+	found := false
+	for i, n := range nodes {
+		if n.Name == node.Name {
+			nodes[i] = node
+			found = true
+			break
+		}
+	}
+	
+	// If not found, add it
+	if !found {
+		nodes = append(nodes, node)
+	}
+	
+	// Save back to file
+	data, err := json.MarshalIndent(nodes, "", "  ")
+	if err != nil {
+		return fmt.Errorf("memory: encode research nodes: %w", err)
+	}
+	
+	if err := os.WriteFile(filepath.Join(s.dir, "research_nodes.json"), data, 0o644); err != nil {
+		return fmt.Errorf("memory: write research nodes: %w", err)
+	}
+	
+	return nil
+}
+
+// ListReports returns research reports from storage (implements ResearchReportStore)
+func (s *JSONLStore) ListReports() ([]ResearchReport, error) {
+	return s.ListResearchReports()
+}
+
+// UpdateReport updates a research report (implements ResearchReportStore)
+func (s *JSONLStore) UpdateReport(report ResearchReport) error {
+	return s.UpdateResearchReport(report)
+}
+
 func (s *JSONLStore) Close() error {
 	return nil
 }

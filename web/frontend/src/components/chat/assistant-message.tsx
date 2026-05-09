@@ -23,6 +23,7 @@ import {
   type ChatAttachment,
   type ChatToolCall,
 } from "@/store/chat"
+import { CompactToolCall } from "@/components/chat/compact-tool-call"
 
 interface AssistantMessageProps {
   content: string
@@ -141,71 +142,17 @@ export function AssistantMessage({
             </div>
           )}
           {(!isCollapsedBlock || isExpanded) && isToolCalls && hasToolCalls && (
-            <div className="space-y-3 px-3 pt-0 pb-3">
+            <div className="px-3 pt-0 pb-2">
               {toolCalls.map((toolCall, index) => {
-                const explanation =
-                  toolCall.extraContent?.toolFeedbackExplanation?.trim() ?? ""
                 const toolName = toolCall.function?.name?.trim() ?? ""
-                const toolArguments = toolCall.function?.arguments?.trim() ?? ""
-                const hasFunctionSummary = toolName || toolArguments
-
-                if (!explanation && !hasFunctionSummary) {
-                  return null
-                }
-
+                const isRequestPermission = toolName === "request_permission"
+                
                 return (
-                  <div
+                  <CompactToolCall
                     key={toolCall.id ?? `${toolName}-${index}`}
-                    className={cn(
-                      "space-y-3",
-                      index > 0 && "border-border/20 border-t pt-3",
-                    )}
-                  >
-                    {explanation && (
-                      <div className="space-y-1.5">
-                        <div className="text-muted-foreground/55 text-[11px] font-medium tracking-wide uppercase">
-                          {t("chat.toolCallExplanationLabel")}
-                        </div>
-                        <div className="prose dark:prose-invert prose-p:my-1.5 prose-p:whitespace-pre-wrap max-w-none text-[13px] leading-relaxed [overflow-wrap:anywhere] break-words opacity-75">
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            rehypePlugins={[
-                              rehypeRaw,
-                              rehypeSanitize,
-                              rehypeHighlight,
-                            ]}
-                          >
-                            {explanation}
-                          </ReactMarkdown>
-                        </div>
-                      </div>
-                    )}
-
-                    {hasFunctionSummary && (
-                      <div
-                        className={cn(
-                          "space-y-1.5",
-                          explanation && "border-border/20 border-t pt-3",
-                        )}
-                      >
-                        <div className="text-muted-foreground/55 text-[11px] font-medium tracking-wide uppercase">
-                          {t("chat.toolCallFunctionLabel")}
-                        </div>
-                        <div className="bg-background/55 border-border/25 space-y-2 rounded-lg border px-3 py-2.5">
-                          {toolName && (
-                            <div className="text-foreground/75 font-mono text-[12px] font-semibold">
-                              {toolName}
-                            </div>
-                          )}
-                          {toolArguments && (
-                            <pre className="text-muted-foreground/75 overflow-x-auto font-mono text-[12px] leading-relaxed break-words whitespace-pre-wrap">
-                              {toolArguments}
-                            </pre>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                    toolCall={toolCall}
+                    isRequestPermission={isRequestPermission}
+                  />
                 )
               })}
             </div>

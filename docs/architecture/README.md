@@ -9,5 +9,6 @@ Internal architecture notes for major runtime mechanisms and subsystem design.
 - [Runtime Events](runtime-events.md): runtime event envelope, centralized event logging, filters, and examples. ([ZH](runtime-events.zh.md))
 - [Hook System Guide](hooks/README.md): current hook architecture and protocol details.
 - [Agent Refactor](agent-refactor/README.md): notes and checkpoints for the agent refactor work.
+- [Research Subsystem](research-subsystem.md): research capabilities integrated into the autonomous agent system.
 
 For proposal-style or exploratory docs, also see [`../design/`](../design/).

@@ -1613,3 +1613,40 @@ func TestEncodeKeyTokenWithPtyKeyMode(t *testing.T) {
 		})
 	}
 }
+
+func TestExecTool_CheckPermission(t *testing.T) {
+	pc := NewPermissionCache()
+
+	tool := &ExecTool{
+		PermissionCache:      pc,
+		AskPermission:       true,
+		workingDir:          "/workspace",
+		restrictToWorkspace: true,
+	}
+
+	// Test 1: command with outside-workspace path
+	result := tool.checkPermission("ls /desktop")
+	if result != "needs_permission" {
+		t.Errorf("Expected 'needs_permission', got %s", result)
+	}
+
+	// Test 2: command with workspace path
+	result = tool.checkPermission("ls /workspace/folder")
+	if result != "granted" {
+		t.Errorf("Expected 'granted' for workspace path, got %s", result)
+	}
+
+	// Test 3: permission denied
+	pc.Grant("/desktop", "denied")
+	result = tool.checkPermission("ls /desktop")
+	if result != "denied" {
+		t.Errorf("Expected 'denied', got %s", result)
+	}
+
+	// Test 4: permission granted (session)
+	pc.Grant("/desktop", "session")
+	result = tool.checkPermission("ls /desktop")
+	if result != "granted" {
+		t.Errorf("Expected 'granted' for session permission, got %s", result)
+	}
+}

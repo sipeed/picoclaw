@@ -1,0 +1,15 @@
+./aside.go
+./attribute.go
+./block.go
+./block_table.go
+./callout.go
+./caption.go
+./citation.go
+./esc.go
+./figures.go
+./include.go
+./inline.go
+./matter.go
+./options.go
+./parser.go
+./ref.go

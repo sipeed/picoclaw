@@ -3,20 +3,24 @@ import { launcherFetch } from "@/api/http"
 export interface SkillSupportItem {
   name: string
   path: string
-  source: "workspace" | "global" | "builtin" | string
+  source: string
   description: string
-  origin_kind: "builtin" | "third_party" | "manual" | string
+  origin_kind: string
   registry_name?: string
   registry_url?: string
   installed_version?: string
   installed_at?: number
 }
 
+export interface SkillsListResponse {
+  skills: SkillSupportItem[]
+}
+
 export interface SkillDetailResponse extends SkillSupportItem {
   content: string
 }
 
-export interface SkillRegistrySearchResult {
+export interface SkillSearchResultItem {
   score: number
   slug: string
   display_name: string
@@ -28,25 +32,17 @@ export interface SkillRegistrySearchResult {
   installed_name?: string
 }
 
-interface SkillsResponse {
-  skills: SkillSupportItem[]
-}
-
 export interface SkillSearchResponse {
-  results: SkillRegistrySearchResult[]
+  results: SkillSearchResultItem[]
   limit: number
   offset: number
   next_offset?: number
   has_more: boolean
 }
 
-type SkillActionResponse = Partial<SkillSupportItem> & {
-  status?: string
-}
-
 export interface InstallSkillRequest {
   slug: string
-  registry: string
+  registry?: string
   version?: string
   force?: boolean
 }
@@ -61,90 +57,77 @@ export interface InstallSkillResponse {
   skill?: SkillSupportItem
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await launcherFetch(path, options)
-  if (!res.ok) {
-    throw new Error(await extractErrorMessage(res))
-  }
-  return res.json() as Promise<T>
+export async function listSkills(): Promise<SkillsListResponse> {
+  const res = await launcherFetch("/api/skills")
+  if (!res.ok) throw new Error(`Failed to list skills: ${res.status}`)
+  return res.json()
 }
 
-export async function getSkills(): Promise<SkillsResponse> {
-  return request<SkillsResponse>("/api/skills")
+export async function getSkills(): Promise<SkillsListResponse> {
+  return listSkills()
 }
 
 export async function getSkill(name: string): Promise<SkillDetailResponse> {
-  return request<SkillDetailResponse>(`/api/skills/${encodeURIComponent(name)}`)
+  const res = await launcherFetch(`/api/skills/${encodeURIComponent(name)}`)
+  if (!res.ok) throw new Error(`Failed to get skill: ${res.status}`)
+  return res.json()
 }
 
-export async function searchSkills(
-  query: string,
-  limit = 20,
-  offset = 0,
-): Promise<SkillSearchResponse> {
-  const params = new URLSearchParams({
-    q: query,
-    limit: String(limit),
-    offset: String(offset),
-  })
-  return request<SkillSearchResponse>(`/api/skills/search?${params.toString()}`)
+export interface SkillRegistrySearchResult {
+  score: number
+  slug: string
+  display_name: string
+  summary: string
+  version: string
+  registry_name: string
+  url?: string
+  installed: boolean
+  installed_name?: string
 }
 
-export async function installSkill(
-  input: InstallSkillRequest,
-): Promise<InstallSkillResponse> {
-  return request<InstallSkillResponse>("/api/skills/install", {
+export async function searchSkills(query: string, limit = 20, offset = 0): Promise<SkillSearchResponse> {
+  const params = new URLSearchParams({ q: query })
+  if (limit !== 20) params.set("limit", limit.toString())
+  if (offset !== 0) params.set("offset", offset.toString())
+  const res = await launcherFetch(`/api/skills/search?${params.toString()}`)
+  if (!res.ok) throw new Error(`Failed to search skills: ${res.status}`)
+  return res.json()
+}
+
+export async function installSkill(data: InstallSkillRequest): Promise<InstallSkillResponse> {
+  const res = await launcherFetch("/api/skills/install", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify(data),
   })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ message: `Failed to install skill: ${res.status}` }))
+    throw new Error(error.message || `Failed to install skill: ${res.status}`)
+  }
+  return res.json()
 }
 
-export async function importSkill(file: File): Promise<SkillActionResponse> {
-  const formData = new FormData()
-  formData.set("file", file)
+export async function deleteSkill(name: string): Promise<{ status: string }> {
+  const res = await launcherFetch(`/api/skills/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ message: `Failed to delete skill: ${res.status}` }))
+    throw new Error(error.message || `Failed to delete skill: ${res.status}`)
+  }
+  return res.json()
+}
 
+export async function importSkill(file: File): Promise<SkillSupportItem> {
+  const formData = new FormData()
+  formData.append("file", file)
   const res = await launcherFetch("/api/skills/import", {
     method: "POST",
     body: formData,
   })
   if (!res.ok) {
-    throw new Error(await extractErrorMessage(res))
+    const error = await res.json().catch(() => ({ message: `Failed to import skill: ${res.status}` }))
+    throw new Error(error.message || `Failed to import skill: ${res.status}`)
   }
-  return res.json() as Promise<SkillActionResponse>
-}
-
-export async function deleteSkill(name: string): Promise<SkillActionResponse> {
-  return request<SkillActionResponse>(
-    `/api/skills/${encodeURIComponent(name)}`,
-    {
-      method: "DELETE",
-    },
-  )
-}
-
-async function extractErrorMessage(res: Response): Promise<string> {
-  try {
-    const raw = await res.text()
-    if (raw.trim() === "") {
-      return `API error: ${res.status} ${res.statusText}`
-    }
-    try {
-      const body = JSON.parse(raw) as {
-        error?: string
-        errors?: string[]
-      }
-      if (Array.isArray(body.errors) && body.errors.length > 0) {
-        return body.errors.join("; ")
-      }
-      if (typeof body.error === "string" && body.error.trim() !== "") {
-        return body.error
-      }
-    } catch {
-      return raw.trim()
-    }
-  } catch {
-    // ignore invalid body
-  }
-  return `API error: ${res.status} ${res.statusText}`
+  return res.json()
 }

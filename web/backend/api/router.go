@@ -107,6 +107,18 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// WeCom QR login flow
 	h.registerWecomRoutes(mux)
+
+	// Agent management
+	h.registerAgentRoutes(mux)
+
+	// Cron job management
+	h.registerCronRoutes(mux)
+
+	// MCP server management
+	h.registerMCPRoutes(mux)
+
+	// Research endpoints
+	h.registerResearchRoutes(mux)
 }
 
 // Shutdown gracefully shuts down the handler, stopping the gateway if it was started by this handler.

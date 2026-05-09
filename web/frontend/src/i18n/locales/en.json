@@ -49,7 +49,17 @@
       "websocketConnecting": "Connecting to chat service... Please wait.",
       "websocketDisconnected": "Unable to chat: WebSocket connection is disconnected. Check network and gateway status, then refresh the page or restart Launcher.",
       "websocketError": "Unable to chat: WebSocket connection failed. Check network and gateway status, then retry.",
-      "noDefaultModel": "Unable to chat: No default model is selected. Set a default model on the Models page."
+      "noDefaultModel": "Unable to chat: No default model is selected. Set a default model on the Models page.",
+    "permissionRequiredTitle": "Permission Required",
+    "permissionRequiredMessage": "PicoClaw wants to use {{tool}} to access {{path}} which is outside your workspace.",
+    "commandToExecute": "Command to execute:",
+    "permissionDeny": "Deny",
+    "permissionOnce": "Allow once",
+    "permissionSession": "Allow for session",
+    "permissionGrantedOnce": "Permission granted for one-time access to {{path}}",
+    "permissionGrantedSession": "Permission granted for session access to {{path}}",
+      "permissionDenied": "Permission denied for {{path}}",
+      "permissionError": "An error occurred while handling the permission request."
     },
     "newChat": "New Chat",
     "notConnected": "Gateway is not running. Start it to chat.",

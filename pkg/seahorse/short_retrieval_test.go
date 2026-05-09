@@ -322,12 +322,55 @@ func TestRetrievalGrepTotalCounts(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		s.CreateSummary(ctx, CreateSummaryInput{
 			ConversationID: convID,
-			Kind:           SummaryKindLeaf,
-			Depth:          0,
-			Content:        fmt.Sprintf("summary about testing %d", i),
-			TokenCount:     50,
+			Kind:        SummaryKindLeaf,
+			Depth:       0,
+			Content:    fmt.Sprintf("summary about testing %d", i),
+			TokenCount: 50,
 		})
 	}
+
+	// Add 5 messages
+	for i := 0; i < 5; i++ {
+		s.AddMessage(ctx, convID, "user", fmt.Sprintf("message about testing %d", i), 5)
+	}
+
+	// Search with limit smaller than total
+	results, err := r.Grep(ctx, GrepInput{
+		Pattern: "%testing%", // LIKE mode
+		Scope:   "both",
+		Limit:   2,
+	})
+	if err != nil {
+		t.Fatalf("Grep: %v", err)
+	}
+
+	// Should return limited results
+	if len(results.Summaries) > 2 {
+		t.Errorf("expected at most 2 summaries, got %d", len(results.Summaries))
+	}
+	if len(results.Messages) > 2 {
+		t.Errorf("expected at most 2 messages, got %d", len(results.Messages))
+	}
+
+	// But total counts should reflect all matches
+	if results.TotalSummaries != 3 {
+		t.Errorf("expected TotalSummaries=3, got %d", results.TotalSummaries)
+	}
+	if results.TotalMessages != 5 {
+		t.Errorf("expected TotalMessages=5, got %d", results.TotalMessages)
+	}
+}
+
+func TestSearchSessionsByTag(t *testing.T) {
+	r, _, _ := newTestRetrieval(t)
+	results, err := r.SearchByTag("coding")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 results for placeholder, got %d", len(results))
+	}
+}
 
 	// Add 5 messages
 	for i := 0; i < 5; i++ {

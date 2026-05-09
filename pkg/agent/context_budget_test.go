@@ -696,7 +696,7 @@ func TestIsOverContextBudget(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isOverContextBudget(tt.contextWindow, tt.messages, tt.toolDefs, tt.maxTokens)
+			got := isOverContextBudget(tt.contextWindow, tt.messages, tt.toolDefs, tt.maxTokens, 0) // 0 = no safety buffer for these unit tests
 			if got != tt.want {
 				t.Errorf("isOverContextBudget() = %v, want %v", got, tt.want)
 			}
@@ -835,12 +835,12 @@ func TestIsOverContextBudget_RealisticSession(t *testing.T) {
 	}
 
 	// With a large context window, should be within budget.
-	if isOverContextBudget(131072, messages, tools, 32768) {
+	if isOverContextBudget(131072, messages, tools, 32768, 0) {
 		t.Error("realistic session should be within 131072 context window")
 	}
 
 	// With a tiny context window, should exceed budget.
-	if !isOverContextBudget(500, messages, tools, 32768) {
+	if !isOverContextBudget(500, messages, tools, 32768, 0) {
 		t.Error("realistic session should exceed 500 context window")
 	}
 }

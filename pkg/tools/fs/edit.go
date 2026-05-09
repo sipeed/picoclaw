@@ -5,14 +5,26 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 // EditFileTool edits a file by replacing old_text with new_text.
 // The old_text must exist exactly in the file.
 type EditFileTool struct {
-	fs fileSystem
+	fs                  fileSystem
+	workspace           string
+	restrictToWorkspace bool
+	permissionCache    permissionCache
+	askPermission      bool
+}
+
+// permissionCache is an interface for checking permissions, implemented by tools.PermissionCache
+type permissionCache interface {
+	Check(path string) string
 }
 
 // NewEditFileTool creates a new EditFileTool with optional directory restriction.
@@ -21,11 +33,37 @@ func NewEditFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Re
 	if len(allowPaths) > 0 {
 		patterns = allowPaths[0]
 	}
-	return &EditFileTool{fs: buildFs(workspace, restrict, patterns)}
+	return &EditFileTool{
+		fs:                  buildFs(workspace, restrict, patterns),
+		workspace:           workspace,
+		restrictToWorkspace: restrict,
+	}
+}
+
+// NewEditFileToolWithPermission creates a new EditFileTool with permission checking enabled.
+func NewEditFileToolWithPermission(
+	workspace string,
+	restrict bool,
+	permCache permissionCache,
+	allowPaths ...[]*regexp.Regexp,
+) *EditFileTool {
+	tool := NewEditFileTool(workspace, restrict, allowPaths...)
+	tool.permissionCache = permCache
+	tool.askPermission = permCache != nil
+	return tool
 }
 
 func (t *EditFileTool) Name() string {
 	return "edit_file"
+}
+
+func (t *EditFileTool) isOutsideWorkspace(path string) bool {
+	if t.workspace == "" {
+		return false
+	}
+	absWorkspace, _ := filepath.Abs(t.workspace)
+	absPath, _ := filepath.Abs(path)
+	return !strings.HasPrefix(absPath, absWorkspace)
 }
 
 func (t *EditFileTool) Description() string {
@@ -53,6 +91,25 @@ func (t *EditFileTool) Parameters() map[string]any {
 	}
 }
 
+func (t *EditFileTool) checkPermission(path string) string {
+	if !t.restrictToWorkspace || !t.askPermission || t.permissionCache == nil {
+		return "granted"
+	}
+
+	if !t.isOutsideWorkspace(path) {
+		return "granted"
+	}
+
+	if perm := t.permissionCache.Check(path); perm != "" {
+		if perm == "denied" {
+			return "denied"
+		}
+		return "granted"
+	}
+
+	return "needs_permission"
+}
+
 func (t *EditFileTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	path, ok := args["path"].(string)
 	if !ok {
@@ -69,6 +126,17 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("new_text is required")
 	}
 
+	switch t.checkPermission(path) {
+	case "needs_permission":
+		logger.InfoCF("edit_file", "Permission needed", map[string]any{"path": path})
+		return &ToolResult{
+			ForLLM:  fmt.Sprintf("Permission needed for path: %s. Call request_permission tool with path='%s'.", path, path),
+			ForUser: fmt.Sprintf("⚠️ Permission required to edit %s", path),
+		}
+	case "denied":
+		return ErrorResult(fmt.Sprintf("Access to %s was denied", path))
+	}
+
 	if err := editFile(t.fs, path, oldText, newText); err != nil {
 		return ErrorResult(err.Error())
 	}
@@ -76,15 +144,59 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 }
 
 type AppendFileTool struct {
-	fs fileSystem
+	fs                  fileSystem
+	workspace           string
+	restrictToWorkspace bool
+	permissionCache    interface{ Check(path string) string }
+	askPermission      bool
 }
 
-func NewAppendFileTool(workspace string, restrict bool, allowPaths ...[]*regexp.Regexp) *AppendFileTool {
+func NewAppendFileTool(workspace string, restrict bool, permCache any, allowPaths ...[]*regexp.Regexp) *AppendFileTool {
 	var patterns []*regexp.Regexp
 	if len(allowPaths) > 0 {
 		patterns = allowPaths[0]
 	}
-	return &AppendFileTool{fs: buildFs(workspace, restrict, patterns)}
+	askPerm := false
+	var cache interface{ Check(path string) string }
+	if permCache != nil {
+		cache = permCache.(interface{ Check(path string) string })
+		askPerm = true
+	}
+	return &AppendFileTool{
+		fs:                  buildFs(workspace, restrict, patterns),
+		workspace:           workspace,
+		restrictToWorkspace: restrict,
+		permissionCache:    cache,
+		askPermission:      askPerm,
+	}
+}
+
+func (t *AppendFileTool) isOutsideWorkspace(path string) bool {
+	if t.workspace == "" {
+		return false
+	}
+	absWorkspace, _ := filepath.Abs(t.workspace)
+	absPath, _ := filepath.Abs(path)
+	return !strings.HasPrefix(absPath, absWorkspace)
+}
+
+func (t *AppendFileTool) checkPermission(path string) string {
+	if !t.restrictToWorkspace || !t.askPermission || t.permissionCache == nil {
+		return "granted"
+	}
+
+	if !t.isOutsideWorkspace(path) {
+		return "granted"
+	}
+
+	if perm := t.permissionCache.Check(path); perm != "" {
+		if perm == "denied" {
+			return "denied"
+		}
+		return "granted"
+	}
+
+	return "needs_permission"
 }
 
 func (t *AppendFileTool) Name() string {
@@ -116,6 +228,17 @@ func (t *AppendFileTool) Execute(ctx context.Context, args map[string]any) *Tool
 	path, ok := args["path"].(string)
 	if !ok {
 		return ErrorResult("path is required")
+	}
+
+	switch t.checkPermission(path) {
+	case "needs_permission":
+		logger.InfoCF("append_file", "Permission needed", map[string]any{"path": path})
+		return &ToolResult{
+			ForLLM:  fmt.Sprintf("Permission needed for path: %s. Call request_permission tool with path='%s'.", path, path),
+			ForUser: fmt.Sprintf("⚠️ Permission required to append to %s", path),
+		}
+	case "denied":
+		return ErrorResult(fmt.Sprintf("Access to %s was denied", path))
 	}
 
 	content, ok := args["content"].(string)

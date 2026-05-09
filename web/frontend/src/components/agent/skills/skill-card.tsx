@@ -1,6 +1,5 @@
-import { IconFileInfo, IconTrash } from "@tabler/icons-react"
+import { IconTrash, IconWorld, IconFolder } from "@tabler/icons-react"
 import { useTranslation } from "react-i18next"
-
 import type { SkillSupportItem } from "@/api/skills"
 import { Button } from "@/components/ui/button"
 import {
@@ -10,22 +9,36 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
 
 interface SkillCardProps {
   skill: SkillSupportItem
-  onView: () => void
   onDelete: () => void
+  onView?: () => void
 }
 
-export function SkillCard({ skill, onView, onDelete }: SkillCardProps) {
+export function SkillCard({ skill, onDelete, onView: _onView }: SkillCardProps) {
+  void _onView // avoid unused warning
   const { t } = useTranslation()
 
+  function originKindLabel(kind: string): string {
+    switch (kind) {
+      case "builtin": return "Built-in"
+      case "third_party": return "Third Party"
+      case "manual": return "Manual"
+      default: return kind
+    }
+  }
+
+  const kindColor = skill.origin_kind === "builtin"
+    ? "bg-blue-500/20 text-blue-400"
+    : skill.origin_kind === "third_party"
+    ? "bg-purple-500/20 text-purple-400"
+    : "bg-gray-500/20 text-gray-400"
+
   return (
-    <Card
-      className="group border-border/40 bg-card/40 hover:bg-card hover:border-border/80 relative overflow-hidden transition-all hover:shadow-md"
-      size="sm"
-    >
-      <div className="via-primary/10 absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
+    <Card size="sm">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1 space-y-2">
@@ -33,51 +46,49 @@ export function SkillCard({ skill, onView, onDelete }: SkillCardProps) {
               <CardTitle className="text-base font-semibold tracking-tight">
                 {skill.name}
               </CardTitle>
-              {skill.registry_name ? (
-                <span className="bg-muted/60 text-muted-foreground ring-border/50 inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase ring-1 ring-inset">
-                  {skill.registry_name}
-                </span>
-              ) : null}
+              <Badge className={cn("text-[8px] uppercase tracking-widest font-black px-1.5 py-0.5", kindColor)}>
+                {originKindLabel(skill.origin_kind)}
+              </Badge>
+              {skill.installed_version && (
+                <Badge className="bg-white/10 text-white/60 text-[8px] uppercase tracking-widest font-black px-1.5 py-0.5">
+                  v{skill.installed_version}
+                </Badge>
+              )}
             </div>
             <CardDescription className="line-clamp-2 text-sm leading-relaxed">
-              {skill.description || t("pages.agent.skills.no_description")}
+              {skill.description}
             </CardDescription>
-          </div>
-          <div className="flex items-center gap-1 opacity-80 transition-opacity group-hover:opacity-100">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground hover:bg-muted hover:text-foreground"
-              onClick={onView}
-              title={t("pages.agent.skills.view")}
-            >
-              <IconFileInfo className="size-4" />
-            </Button>
-            {skill.source === "workspace" ? (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                onClick={onDelete}
-                title={t("pages.agent.skills.delete")}
-              >
-                <IconTrash className="size-4" />
-              </Button>
-            ) : null}
           </div>
         </div>
       </CardHeader>
-      <CardContent>
-        {skill.registry_url ? (
-          <a
-            href={skill.registry_url}
-            target="_blank"
-            rel="noreferrer"
-            className="text-primary/80 hover:text-primary inline-flex items-center text-xs transition-colors hover:underline hover:underline-offset-4"
-          >
-            {skill.registry_url}
-          </a>
-        ) : null}
+      <CardContent className="pt-0">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 text-xs text-white/60">
+            {skill.registry_name && (
+              <span className="flex items-center gap-1">
+                <IconWorld className="size-3.5" />
+                {skill.registry_name}
+              </span>
+            )}
+            {skill.source && (
+              <span className="flex items-center gap-1">
+                <IconFolder className="size-3.5" />
+                {skill.source}
+              </span>
+            )}
+          </div>
+          {skill.origin_kind === "manual" && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={onDelete}
+              className="text-white/60 hover:text-destructive hover:bg-destructive/10"
+              title={t("common.delete")}
+            >
+              <IconTrash className="size-3.5" />
+            </Button>
+          )}
+        </div>
       </CardContent>
     </Card>
   )

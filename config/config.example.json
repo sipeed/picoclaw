@@ -3,9 +3,10 @@
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
       "restrict_to_workspace": true,
-      "model_name": "gpt-5.4",
+      "model_name": "smollm2",
       "max_tokens": 8192,
       "context_window": 131072,
+      "context_safety_buffer": 20000,
       "temperature": 0.7,
       "max_tool_iterations": 20,
       "summarize_message_threshold": 20,
@@ -21,6 +22,24 @@
     }
   },
   "model_list": [
+    {
+      "model_name": "smollm2",
+      "provider": "ollama",
+      "model": "smollm2:1.7b",
+      "api_base": "http://localhost:11434/v1"
+    },
+    {
+      "model_name": "qwen3.5",
+      "provider": "ollama",
+      "model": "qwen3.5:4b",
+      "api_base": "http://localhost:11434/v1"
+    },
+    {
+      "model_name": "deepseek-v4-pro",
+      "provider": "ollama",
+      "model": "deepseek-v4-pro:cloud",
+      "api_base": "http://localhost:11434/v1"
+    },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
@@ -71,6 +90,13 @@
       "model": "modelscope/Qwen/Qwen3-235B-A22B-Instruct-2507",
       "api_key": "your-modelscope-access-token",
       "api_base": "https://api-inference.modelscope.cn/v1"
+    },
+    {
+      "model_name": "nvidia-qwen-coder",
+      "provider": "nvidia",
+      "model": "qwen/qwen2.5-coder-32b-instruct",
+      "api_key": "your-nvidia-api-key",
+      "api_base": "https://integrate.api.nvidia.com/v1"
     },
     {
       "model_name": "azure-gpt5",

@@ -1,75 +1,75 @@
-# Binaries
-# Go build artifacts
-bin/
-build/
-*.exe
-*.dll
-*.so
-*.dylib
-*.test
-*.out
-/picoclaw
-/picoclaw-test
-cmd/**/workspace
+# Dependencies
+/node_modules/
+/.pnp/
+.pnp.js
 
-# Picoclaw specific
+# Testing
+/coverage/
 
-# PicoClaw
-.picoclaw/
-config.json
-sessions/
-build/
+# Build outputs
+/dist/
+/build/
+/out/
+/web/build/
 
-# Coverage
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# Secrets & Config (keep templates, ignore actual secrets)
-.env
-config/config.json
-.security.yml
-onboard
-
-
-# Test
-coverage.txt
-coverage.html
-
-# OS
+# Misc
 .DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
-# Ralph workspace
-ralph/
-.ralph/
-tasks/
+# Backup and temporary files
+*.bak
+*.tmp
+*.temp
 
-# Plans
-docs/plans/
-docs/superpowers/
+# Git rewrite directory (from the current status)
+.git-rewrite/
 
-# Editors
+# Go specific
+/vendor/
+.gocache/
+*.exe
+config/config.json
+
+# Documentation and reports
+PROJECT_STATUS.md
+docs/guides/development-status.md
+docs/superpowers/plans/
+ui-comparison-plan.md
+
+# Workspace and temporary directories
+cmd/picoclaw/internal/onboard/workspace/
+
+# Seahorse generated files (if any)
+# Note: we have seahorse source files, so we only ignore generated ones if they appear
+# But we don't know the exact pattern, so we leave it commented for now.
+
+# Frontend specific (if not already covered by root node_modules)
+# /web/frontend/node_modules/
+# /web/frontend/.pnp/
+# /web/frontend/.pnp.js
+
+# IDE
 .vscode/
 .idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
-# Added by goreleaser init:
-dist/
-*.vite/
-
-# Windows Application Icon/Resource
-*.syso
-.cache/
-web/frontend/.pnpm-store/
-_tmp_*
-web/frontend/_tmp_*
-
-# Test telegram integration
-cmd/telegram/
-
-# Keep embedded backend dist directory placeholder in VCS
-!web/backend/dist/
-web/backend/dist/*
-!web/backend/dist/.gitkeep
-
-.claude/
-
-docker/data
-
-.omc/
+# Application specific
+.picoclaw/
+cmd/picoclaw/main.exe
+cmd/picoclaw/picoclaw.exe
+picoclaw.exe
+trim.txt

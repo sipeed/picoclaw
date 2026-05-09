@@ -49,7 +49,17 @@
       "websocketConnecting": "正在连接聊天服务，请稍候。",
       "websocketDisconnected": "无法对话：WebSocket 连接已断开。请检查网络与服务状态，然后刷新页面或重启 Launcher。",
       "websocketError": "无法对话：WebSocket 连接失败。请检查网络与服务状态后重试。",
-      "noDefaultModel": "无法对话：尚未设置默认模型。请前往模型页面设置默认模型。"
+      "noDefaultModel": "无法对话：尚未设置默认模型。请前往模型页面设置默认模型。",
+    "permissionRequiredTitle": "需要权限",
+    "permissionRequiredMessage": "PicoClaw 想要使用 {{tool}} 访问 {{path}}，但该路径位于工作区之外。",
+    "commandToExecute": "要执行的命令:",
+    "permissionDeny": "拒绝",
+    "permissionOnce": "仅允许一次",
+    "permissionSession": "允许整个会话",
+    "permissionGrantedOnce": "已授予对 {{path}} 的一次性访问权限",
+    "permissionGrantedSession": "已授予对 {{path}} 的会话访问权限",
+      "permissionDenied": "已拒绝对 {{path}} 的访问权限",
+      "permissionError": "处理权限请求时发生错误。"
     },
     "newChat": "新建对话",
     "notConnected": "服务未运行，请先启动以进行对话。",

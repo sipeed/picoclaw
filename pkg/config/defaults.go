@@ -369,6 +369,7 @@ func DefaultConfig() *Config {
 				EnableDenyPatterns: true,
 				AllowRemote:        true,
 				TimeoutSeconds:     60,
+				AskPermission:      true,  // NEW: enable permission prompts by default
 			},
 			Skills: SkillsToolsConfig{
 				ToolConfig: ToolConfig{

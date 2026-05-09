@@ -316,7 +316,7 @@ func (h *Handler) TryAutoStartGateway() {
 	pidData := h.sanitizeGatewayPidData(ppid.ReadPidFileWithCheck(globalConfigDir()), nil)
 	if pidData != nil {
 		gateway.mu.Lock()
-		ready, reason, err := h.gatewayStartReady()
+		ready, reason, err := h.gatewayStartReady(false) // require model validation for auto-start
 		if err != nil {
 			logger.ErrorC("gateway", fmt.Sprintf("Skip auto-starting gateway: %v", err))
 			gateway.mu.Unlock()
@@ -348,7 +348,7 @@ func (h *Handler) TryAutoStartGateway() {
 		gateway.cmd = nil
 	}
 
-	ready, reason, err := h.gatewayStartReady()
+	ready, reason, err := h.gatewayStartReady(false) // require model validation for auto-start
 	if err != nil {
 		logger.ErrorC("gateway", fmt.Sprintf("Skip auto-starting gateway: %v", err))
 		return
@@ -367,10 +367,16 @@ func (h *Handler) TryAutoStartGateway() {
 }
 
 // gatewayStartReady validates whether current config can start the gateway.
-func (h *Handler) gatewayStartReady() (bool, string, error) {
+// When allowEmpty is true, the check skips model validation (equivalent to -E flag).
+func (h *Handler) gatewayStartReady(allowEmpty bool) (bool, string, error) {
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// When -E flag is used, skip all model validation
+	if allowEmpty {
+		return true, "", nil
 	}
 
 	modelName := strings.TrimSpace(cfg.Agents.Defaults.GetModelName())
@@ -895,14 +901,23 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 		cmd.Env = append(cmd.Env, config.EnvGatewayHost+"="+gatewayHostOverride)
 	}
 
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return 0, fmt.Errorf("failed to create stdout pipe: %w", err)
-	}
+	var stdoutPipe io.ReadCloser
+	var stderrPipe io.ReadCloser
+	if runtime.GOOS == "windows" {
+		devNull, _ := os.Open(os.DevNull)
+		cmd.Stdout = devNull
+		cmd.Stderr = devNull
+		cmd.Stdin = devNull
+	} else {
+		stdoutPipe, err = cmd.StdoutPipe()
+		if err != nil {
+			return 0, fmt.Errorf("failed to create stdout pipe: %w", err)
+		}
 
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return 0, fmt.Errorf("failed to create stderr pipe: %w", err)
+		stderrPipe, err = cmd.StderrPipe()
+		if err != nil {
+			return 0, fmt.Errorf("failed to create stderr pipe: %w", err)
+		}
 	}
 
 	// Clear old logs for this new run
@@ -937,9 +952,11 @@ func (h *Handler) startGatewayLocked(initialStatus string, existingPid int) (int
 	pid = cmd.Process.Pid
 	logger.InfoC("gateway", fmt.Sprintf("Started picoclaw gateway (PID: %d) from %s", pid, execPath))
 
-	// Capture stdout/stderr in background
-	go scanPipe(stdoutPipe, gateway.logs)
-	go scanPipe(stderrPipe, gateway.logs)
+	// Capture stdout/stderr in background (not for Windows with devNull)
+	if runtime.GOOS != "windows" {
+		go scanPipe(stdoutPipe, gateway.logs)
+		go scanPipe(stderrPipe, gateway.logs)
+	}
 
 	// Wait for exit in background and clean up
 	go func() {
@@ -1028,7 +1045,7 @@ func (h *Handler) handleGatewayStart(w http.ResponseWriter, r *http.Request) {
 	if pidData != nil {
 		pid := pidData.PID
 		gateway.mu.Lock()
-		ready, reason, err := h.gatewayStartReady()
+		ready, reason, err := h.gatewayStartReady(true) // allowEmpty=true since -E flag is used
 		if err != nil {
 			gateway.mu.Unlock()
 			http.Error(
@@ -1074,7 +1091,7 @@ func (h *Handler) handleGatewayStart(w http.ResponseWriter, r *http.Request) {
 		setGatewayRuntimeStatusLocked("stopped")
 	}
 
-	ready, reason, err := h.gatewayStartReady()
+	ready, reason, err := h.gatewayStartReady(true) // allowEmpty=true since -E flag is used
 	if err != nil {
 		http.Error(
 			w,
@@ -1140,7 +1157,7 @@ func (h *Handler) handleGatewayStop(w http.ResponseWriter, r *http.Request) {
 // that stops the current gateway (if running) and starts a new one.
 // Returns the PID of the new gateway process or an error.
 func (h *Handler) RestartGateway() (int, error) {
-	ready, reason, err := h.gatewayStartReady()
+	ready, reason, err := h.gatewayStartReady(false) // require model validation for restart
 	if err != nil {
 		return 0, fmt.Errorf("failed to validate gateway start conditions: %w", err)
 	}
@@ -1325,7 +1342,7 @@ func (h *Handler) gatewayStatusData() map[string]any {
 		gatewayStatus,
 	)
 
-	ready, reason, readyErr := h.gatewayStartReady()
+	ready, reason, readyErr := h.gatewayStartReady(false) // require model validation for status check
 	if readyErr != nil {
 		data["gateway_start_allowed"] = false
 		data["gateway_start_reason"] = readyErr.Error()

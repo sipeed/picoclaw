@@ -329,14 +329,17 @@ func (p *Pipeline) CallLLM(
 					Error:      err.Error(),
 				},
 			)
-			logger.WarnCF(
-				"agent",
-				"Context window error detected, attempting compression",
-				map[string]any{
-					"error": err.Error(),
-					"retry": retry,
-				},
-			)
+		// Emit structured context overflow error before attempting compaction
+		overflowErr := &ContextOverflowError{
+			Model:           exec.llmModel,
+			ContextWindow:   ts.agent.ContextWindow,
+			RequestedTokens: ts.agent.ContextWindow,
+			Reason:          "context_length_exceeded",
+		}
+		logger.WarnCF("agent", "Context window error detected", map[string]any{
+			"error": overflowErr.Error(),
+			"retry": retry,
+		})
 
 			if retry == 0 && !constants.IsInternalChannel(ts.channel) {
 				al.bus.PublishOutbound(ctx, outboundMessageForTurn(
@@ -345,9 +348,9 @@ func (p *Pipeline) CallLLM(
 				))
 			}
 
-			if compactErr := p.ContextManager.Compact(ctx, &CompactRequest{
+if compactErr := p.ContextManager.Compact(ctx, &CompactRequest{
 				SessionKey: ts.sessionKey,
-				Reason:     ContextCompressReasonRetry,
+				Reason:     CompactReasonRetry,
 				Budget:     ts.agent.ContextWindow,
 			}); compactErr != nil {
 				logger.WarnCF("agent", "Context overflow compact failed", map[string]any{

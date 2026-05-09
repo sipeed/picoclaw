@@ -11,9 +11,12 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/memory"
 	ppid "github.com/sipeed/picoclaw/pkg/pid"
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 func newPicoProxyRequest(method, path string) *http.Request {
@@ -818,6 +821,188 @@ func TestHandlePicoMediaProxyUsesRawBearerToken(t *testing.T) {
 	}
 	if body := rec.Body.String(); body != "proxied-media" {
 		t.Fatalf("body = %q, want %q", body, "proxied-media")
+	}
+}
+
+func TestHandleGetPicoMemoryGraph_BuildsWorkspaceAndSessionGraph(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	workspaceDir := filepath.Join(t.TempDir(), "workspace")
+	sessionsDir := filepath.Join(workspaceDir, "sessions")
+	memoryDir := filepath.Join(workspaceDir, "memory")
+
+	if err := os.MkdirAll(memoryDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(memoryDir) error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(memoryDir, time.Now().Format("200601")), 0o755); err != nil {
+		t.Fatalf("MkdirAll(dailyNoteDir) error = %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = workspaceDir
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	store, err := memory.NewJSONLStore(sessionsDir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore() error = %v", err)
+	}
+
+	sessionKey := legacyPicoSessionPrefix + "graph-session"
+	for _, msg := range []providers.Message{
+		{Role: "user", Content: "Remember the Nairobi deployment notes."},
+		{Role: "assistant", Content: "Saved the deployment note and linked it to workspace memory."},
+	} {
+		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+			t.Fatalf("AddFullMessage() error = %v", err)
+		}
+	}
+	if err := store.SetSummary(nil, sessionKey, "Graph session"); err != nil {
+		t.Fatalf("SetSummary() error = %v", err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(memoryDir, "MEMORY.md"),
+		[]byte("# Preferences\n- User prefers network graph views\n# Projects\n- PicoClaw cockpit integration"),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile(MEMORY.md) error = %v", err)
+	}
+
+	todayPath := filepath.Join(memoryDir, time.Now().Format("200601"), time.Now().Format("20060102")+".md")
+	if err := os.WriteFile(
+		todayPath,
+		[]byte("# Daily\n- Reviewed active session memory graph"),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile(todayPath) error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/pico/memory-graph?session_id=graph-session", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp picoMemoryGraphResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+
+	if resp.SessionID != "graph-session" {
+		t.Fatalf("resp.SessionID = %q, want %q", resp.SessionID, "graph-session")
+	}
+	if len(resp.Nodes) < 5 {
+		t.Fatalf("len(resp.Nodes) = %d, want at least 5", len(resp.Nodes))
+	}
+
+	foundMemoryRoot := false
+	foundSessionMessage := false
+	for _, node := range resp.Nodes {
+		if node.ID == "memory-root" {
+			foundMemoryRoot = true
+		}
+		if strings.Contains(node.Label, "NAIROBI") || strings.Contains(node.Preview, "Nairobi") {
+			foundSessionMessage = true
+		}
+	}
+	if !foundMemoryRoot {
+		t.Fatal("expected memory-root node in graph")
+	}
+	if !foundSessionMessage {
+		t.Fatal("expected session content to appear in graph nodes")
+	}
+}
+
+func TestHandleGetPicoSubagents_UsesScopedGatewayStatus(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("PICOCLAW_HOME", home)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	h := NewHandler(configPath)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/subagents/status" {
+			t.Fatalf("path = %q, want %q", r.URL.Path, "/internal/subagents/status")
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer gateway-auth-token" {
+			t.Fatalf("Authorization = %q, want %q", got, "Bearer gateway-auth-token")
+		}
+		if got := r.URL.Query().Get("channel"); got != "pico" {
+			t.Fatalf("channel query = %q, want %q", got, "pico")
+		}
+		if got := r.URL.Query().Get("chat_id"); got != "session-42" {
+			t.Fatalf("chat_id query = %q, want %q", got, "session-42")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"channel": "pico",
+			"chat_id": "session-42",
+			"tasks": []map[string]any{
+				{
+					"id":      "subagent-1",
+					"label":   "Research",
+					"status":  "running",
+					"created": int64(1710000000000),
+					"result":  "This is a very long status summary that should still round-trip through the launcher API cleanly.",
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Host = "127.0.0.1"
+	cfg.Gateway.Port = mustGatewayTestPort(t, server.URL)
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	cmd := startGatewayLikeProcess(t)
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	})
+
+	origPidData := gateway.pidData
+	origCmd := gateway.cmd
+	t.Cleanup(func() {
+		gateway.mu.Lock()
+		gateway.pidData = origPidData
+		gateway.cmd = origCmd
+		gateway.mu.Unlock()
+	})
+
+	gateway.mu.Lock()
+	gateway.pidData = &ppid.PidFileData{PID: cmd.Process.Pid, Token: "gateway-auth-token"}
+	gateway.cmd = cmd
+	gateway.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "http://launcher.local/api/pico/subagents?session_id=session-42", nil)
+	rec := httptest.NewRecorder()
+	h.handleGetPicoSubagents(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp picoSubagentStatusResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.SessionID != "session-42" || resp.ChatID != "session-42" || resp.Channel != "pico" {
+		t.Fatalf("response = %#v, want scoped session metadata", resp)
+	}
+	if len(resp.Tasks) != 1 || resp.Tasks[0].ID != "subagent-1" {
+		t.Fatalf("tasks = %#v, want one proxied task", resp.Tasks)
 	}
 }
 

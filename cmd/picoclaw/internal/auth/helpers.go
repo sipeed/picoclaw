@@ -355,11 +355,12 @@ func authLogoutCmd(provider string) error {
 					}
 				}
 			}
-			config.SaveConfig(internal.GetConfigPath(), appCfg)
+			if err := config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
+				fmt.Printf("Warning: could not update config: %v\n", err)
+			}
 		}
 
 		fmt.Printf("Logged out from %s\n", provider)
-
 		return nil
 	}
 
@@ -373,7 +374,9 @@ func authLogoutCmd(provider string) error {
 		for i := range appCfg.ModelList {
 			appCfg.ModelList[i].AuthMethod = ""
 		}
-		config.SaveConfig(internal.GetConfigPath(), appCfg)
+		if err := config.SaveConfig(internal.GetConfigPath(), appCfg); err != nil {
+			fmt.Printf("Warning: could not update config: %v\n", err)
+		}
 	}
 
 	fmt.Println("Logged out from all providers")

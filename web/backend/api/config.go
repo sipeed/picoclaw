@@ -396,9 +396,9 @@ func asMapField(value map[string]any, key string) (map[string]any, bool) {
 }
 
 var (
-	allowFromHiddenCharsRe = regexp.MustCompile("[\u200B\u200C\u200D\u200E\u200F\u202A-\u202E\u2060-\u2069\uFEFF]")
-	allowFromSplitRe       = regexp.MustCompile("[,\uFF0C、;；\r\n\t]+")
-	conservativeSplitRe    = regexp.MustCompile("[,\uFF0C\r\n\t]+")
+	allowFromHiddenCharsRe = regexp.MustCompile("[\U0000200B\U0000200C\U0000200D\U0000200E\U0000200F\U0000202A-\U0000202E\U00002060-\U00002069\U0000FEFF]")
+	allowFromSplitRe       = regexp.MustCompile("[,\U0000FF0C、;；\r\n\t]+")
+	conservativeSplitRe    = regexp.MustCompile("[,\U0000FF0C\r\n\t]+")
 )
 
 type stringArrayParserOptions struct {

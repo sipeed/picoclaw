@@ -129,6 +129,20 @@ type SearchResult struct {
 	TotalCount     int         `json:"totalCount,omitempty"` // Total matching rows (from window function)
 }
 
+// ResearchGraphNode represents a node in the research knowledge graph
+type ResearchGraphNode struct {
+	Name string  `json:"name"`
+	Abbr string  `json:"abbr"`
+	X    float64 `json:"x"`
+	Y    float64 `json:"y"`
+}
+
+// ResearchGraphStore manages research graph nodes
+type ResearchGraphStore interface {
+	ListNodes() ([]ResearchGraphNode, error)
+	UpdateNode(node ResearchGraphNode) error
+}
+
 // EstimateMessageTokens estimates token count for a full message using the
 // shared tokenizer package for consistency with agent.context_budget.
 func EstimateMessageTokens(msg Message) int {

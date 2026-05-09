@@ -67,7 +67,7 @@ func (p *Pipeline) Finalize(
 			turnCtx,
 			&CompactRequest{
 				SessionKey: ts.sessionKey,
-				Reason:     ContextCompressReasonSummarize,
+				Reason:     CompactReasonProactive,
 				Budget:     ts.agent.ContextWindow,
 			},
 		)

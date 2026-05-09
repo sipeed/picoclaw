@@ -1,0 +1,7 @@
+./context.go
+./context_slog.go
+./discard.go
+./logr.go
+./sloghandler.go
+./slogr.go
+./slogsink.go

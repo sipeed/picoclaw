@@ -1,0 +1,13 @@
+./active_help.go
+./args.go
+./bash_completions.go
+./bash_completionsV2.go
+./cobra.go
+./command.go
+./command_win.go
+./completions.go
+./fish_completions.go
+./flag_groups.go
+./powershell_completions.go
+./shell_completions.go
+./zsh_completions.go

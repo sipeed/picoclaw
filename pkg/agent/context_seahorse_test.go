@@ -495,7 +495,7 @@ func TestSeahorseCompactRetryUsesCompactUntilUnder(t *testing.T) {
 	// Compact with retry reason and budget should succeed
 	err = mgr.Compact(ctx, &CompactRequest{
 		SessionKey: "compact-test",
-		Reason:     ContextCompressReasonRetry,
+		Reason:     CompactReasonRetry,
 		Budget:     5000,
 	})
 	if err != nil {

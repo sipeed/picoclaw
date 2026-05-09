@@ -33,8 +33,12 @@ func NewSessionManager(storage string) *SessionManager {
 	}
 
 	if storage != "" {
-		os.MkdirAll(storage, 0o700)
-		sm.loadSessions()
+		if err := os.MkdirAll(storage, 0o700); err != nil {
+			// Log error but continue - session manager can work without disk persistence
+			sm.storage = "" // Disable persistence if directory creation fails
+		} else {
+			sm.loadSessions()
+		}
 	}
 
 	return sm

@@ -1,0 +1,71 @@
+
+[1;38;2;62;93;185m██████╗ ██╗ ██████╗ ██████╗ [1;38;2;213;70;70m ██████╗██╗      █████╗ ██╗    ██╗
+[1;38;2;62;93;185m██╔══██╗██║██╔════╝██╔═══██╗[1;38;2;213;70;70m██╔════╝██║     ██╔══██╗██║    ██║
+[1;38;2;62;93;185m██████╔╝██║██║     ██║   ██║[1;38;2;213;70;70m██║     ██║     ███████║██║ █╗ ██║
+[1;38;2;62;93;185m██╔═══╝ ██║██║     ██║   ██║[1;38;2;213;70;70m██║     ██║     ██╔══██║██║███╗██║
+[1;38;2;62;93;185m██║     ██║╚██████╗╚██████╔╝[1;38;2;213;70;70m╚██████╗███████╗██║  ██║╚███╔███╔╝
+[1;38;2;62;93;185m╚═╝     ╚═╝ ╚═════╝ ╚═════╝ [1;38;2;213;70;70m ╚═════╝╚══════╝╚═╝  ╚═╝ ╚══╝╚══╝
+ [0m
+🔍 Debug mode enabled
+08:09:26 DBG pid pkg\pid\pidfile.go:105 > wrote pid file: C:\Users\user\.picoclaw\.picoclaw.pid success
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=read_file
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=write_file
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=list_dir
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=exec
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=edit_file
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=append_file
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=request_permission
+08:09:26 DBG agent pkg\agent\context.go:358 > System prompt cache invalidated
+08:09:26 INF agent pkg\agent\registry.go:39 > Created implicit main agent (no agents.list configured)
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=web_search
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=web_fetch
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=message
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=reaction
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=send_file
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=load_image
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=find_skills
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=install_skill
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=spawn
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=subagent
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=spawn_status
+
+📦 Agent Status:
+  • Tools: 18 loaded
+  • Skills: 20/20 available
+08:09:26 INF agent pkg\gateway\gateway.go:212 > Agent initialized skills_available=20 skills_total=20 tools_count=18
+08:09:26 DBG tools pkg\tools\registry.go:56 > Registered core tool name=cron
+✓ Cron service started
+08:09:26 INF heartbeat pkg\heartbeat\service.go:100 > Heartbeat service started interval_minutes=30
+✓ Heartbeat service started
+08:09:26 INF media pkg\media\store.go:322 > cleanup enabled interval=5m0s max_age=30m0s
+08:09:26 INF channels pkg\channels\manager.go:683 > Initializing channel manager
+08:09:26 DBG channels pkg\channels\manager.go:571 > Attempting to initialize channel channel=telegram type=telegram
+08:09:26 WRN channels pkg\channels\base.go:131 > SECURITY: Channel allows EVERYONE (allow_from is empty) channel=telegram hint="Set allow_from to your ID, or use '*' to explicitly acknowledge open access."
+08:09:26 INF channels pkg\channels\manager.go:605 > Channel enabled successfully channel=telegram type=telegram
+08:09:26 DBG channels pkg\channels\manager.go:571 > Attempting to initialize channel channel=pico type=pico
+08:09:26 WRN channels pkg\channels\base.go:131 > SECURITY: Channel allows EVERYONE (allow_from is empty) channel=pico hint="Set allow_from to your ID, or use '*' to explicitly acknowledge open access."
+08:09:26 INF channels pkg\channels\manager.go:605 > Channel enabled successfully channel=pico type=pico
+08:09:26 INF channels pkg\channels\manager.go:700 > Channel initialization completed enabled_channels=2
+✓ Channels enabled: [telegram pico]
+08:09:26 INF channels pkg\channels\manager.go:757 > Webhook handler registered channel=pico path=/pico/
+08:09:26 INF channels pkg\channels\manager.go:805 > Starting all channels
+08:09:26 INF channels pkg\channels\manager.go:813 > Starting channel channel=telegram
+08:09:26 INF telegram pkg\channels\telegram\telegram.go:121 > Starting Telegram bot (polling mode)...
+08:09:26 DBG telego ..\..\..\..\go\pkg\mod\github.com\mymmrac\telego@v1.8.0\bot.go:247 > API call to: "https://api.telegram.org/bot8427645642:AAHr****QQPw/getMe"
+08:09:26 DBG telego ..\..\..\..\go\pkg\mod\github.com\mymmrac\telego@v1.8.0\bot.go:247 > API call to: "https://api.telegram.org/bot8427645642:AAHr****QQPw/getUpdates"
+08:09:27 DBG telego ..\..\..\..\go\pkg\mod\github.com\mymmrac\telego@v1.8.0\bot.go:173 > API response getMe: Ok: true, Err: [<nil>], Result: {"id":8427645642,"is_bot":true,"first_name":"Tech Daddy","username":"athdabot","can_join_groups":true,"can_read_all_group_messages":false,"supports_inline_queries":false,"supports_guest_queries":false,"can_connect_to_business":false,"has_main_web_app":false,"has_topics_enabled":false,"allows_users_to_create_topics":false,"can_manage_bots":false}
+08:09:27 INF telegram pkg\channels\telegram\telegram.go:145 > Telegram bot connected username=athdabot
+08:09:27 INF channels pkg\channels\manager.go:813 > Starting channel channel=pico
+08:09:27 DBG telego ..\..\..\..\go\pkg\mod\github.com\mymmrac\telego@v1.8.0\bot.go:247 > API call to: "https://api.telegram.org/bot8427645642:AAHr****QQPw/getMyCommands"
+08:09:27 INF pico pkg\channels\pico\pico.go:248 > Starting Pico Protocol channel
+08:09:27 INF pico pkg\channels\pico\pico.go:251 > Pico Protocol channel started
+08:09:27 INF channels pkg\channels\manager.go:920 > Channel startup completed failed=0 started=2 total=2
+08:09:27 INF channels pkg\channels\manager.go:1182 > Outbound media dispatcher started
+08:09:27 INF channels pkg\channels\manager.go:1182 > Outbound dispatcher started
+08:09:27 INF channels pkg\channels\manager.go:895 > Shared HTTP server listening addr=[::1]:18790
+08:09:27 INF channels pkg\channels\manager.go:895 > Shared HTTP server listening addr=127.0.0.1:18790
+08:09:27 INF voice pkg\gateway\gateway.go:94 > Channel voice capabilities asr=false channel=pico tts=false
+08:09:27 INF voice pkg\gateway\gateway.go:94 > Channel voice capabilities asr=false channel=telegram tts=false
+✓ Health endpoints available at http://localhost:18790/health, /ready and /reload (POST)
+08:09:27 INF devices pkg\devices\service.go:58 > Device event service disabled or no sources
+08:09:27 INF pid pkg\pid\pidfile.go:163 > remove pid file: C:\Users\user\.picoclaw\.picoclaw.pid

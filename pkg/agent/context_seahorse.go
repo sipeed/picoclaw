@@ -130,13 +130,13 @@ func (m *seahorseContextManager) Compact(ctx context.Context, req *CompactReques
 
 	// For retry (LLM overflow), use aggressive CompactUntilUnder to guarantee
 	// context shrinks below budget (spec lines ~1410).
-	if req.Reason == ContextCompressReasonRetry && req.Budget > 0 {
+	if req.Reason == CompactReasonRetry && req.Budget > 0 {
 		_, err := m.engine.CompactUntilUnder(ctx, req.SessionKey, req.Budget)
 		return err
 	}
 
 	_, err := m.engine.Compact(ctx, req.SessionKey, seahorse.CompactInput{
-		Force:  req.Reason == ContextCompressReasonRetry,
+		Force:  req.Reason == CompactReasonRetry,
 		Budget: &req.Budget,
 	})
 	return err

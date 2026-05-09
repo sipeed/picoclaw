@@ -1,0 +1,7 @@
+./i2c.go
+./i2c_other.go
+./serial.go
+./serial_windows.go
+./shared.go
+./spi.go
+./spi_other.go

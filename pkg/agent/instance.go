@@ -38,6 +38,7 @@ type AgentInstance struct {
 	Sessions                  session.SessionStore
 	ContextBuilder            *ContextBuilder
 	Tools                     *tools.ToolRegistry
+	PermissionCache           *tools.PermissionCache // Exported for permission grant API
 	Subagents                 *config.SubagentsConfig
 	SkillsFilter              []string
 	Candidates                []providers.FallbackCandidate
@@ -94,12 +95,22 @@ func NewAgentInstance(
 		default:
 			toolsRegistry.Register(tools.NewReadFileBytesTool(workspace, readRestrict, maxReadFileSize, allowReadPaths))
 		}
+}
+// Create permission cache once for all tools that need it
+	var permissionCache *tools.PermissionCache
+	if (cfg.Tools.IsToolEnabled("exec") && cfg.Tools.Exec.AskPermission) ||
+		cfg.Tools.IsToolEnabled("list_dir") ||
+		cfg.Tools.IsToolEnabled("write_file") ||
+		cfg.Tools.IsToolEnabled("edit_file") ||
+		cfg.Tools.IsToolEnabled("append_file") {
+		permissionCache = tools.NewPermissionCache()
 	}
+
 	if cfg.Tools.IsToolEnabled("write_file") {
-		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
+		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, permissionCache, allowWritePaths))
 	}
 	if cfg.Tools.IsToolEnabled("list_dir") {
-		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
+		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, permissionCache, allowReadPaths))
 	}
 	if cfg.Tools.IsToolEnabled("exec") {
 		execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg, allowReadPaths)
@@ -107,15 +118,21 @@ func NewAgentInstance(
 			logger.ErrorCF("agent", "Failed to initialize exec tool; continuing without exec",
 				map[string]any{"error": err.Error()})
 		} else {
+			if permissionCache != nil {
+				execTool.PermissionCache = permissionCache
+			}
+			execTool.AskPermission = cfg.Tools.Exec.AskPermission
 			toolsRegistry.Register(execTool)
 		}
 	}
-
 	if cfg.Tools.IsToolEnabled("edit_file") {
-		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
+		toolsRegistry.Register(tools.NewEditFileToolWithPermission(workspace, restrict, permissionCache, allowWritePaths))
 	}
 	if cfg.Tools.IsToolEnabled("append_file") {
-		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, permissionCache, allowWritePaths))
+	}
+	if permissionCache != nil {
+		toolsRegistry.Register(tools.NewRequestPermissionTool(permissionCache))
 	}
 
 	sessionsDir := filepath.Join(workspace, "sessions")
@@ -239,6 +256,7 @@ func NewAgentInstance(
 		Sessions:                  sessions,
 		ContextBuilder:            contextBuilder,
 		Tools:                     toolsRegistry,
+		PermissionCache:           permissionCache, // Store reference for API access
 		Subagents:                 subagents,
 		SkillsFilter:              skillsFilter,
 		Candidates:                candidates,
@@ -355,6 +373,20 @@ func (a *AgentInstance) Close() error {
 	if a.Sessions != nil {
 		return a.Sessions.Close()
 	}
+	return nil
+}
+
+// GrantPermission grants permission for a path with the specified duration.
+// Duration can be "once" or "session".
+// Returns an error if the PermissionCache is not initialized.
+func (a *AgentInstance) GrantPermission(path, duration string) error {
+	if a.PermissionCache == nil {
+		return fmt.Errorf("permission cache not initialized for agent %s", a.ID)
+	}
+	if duration != "once" && duration != "session" {
+		return fmt.Errorf("invalid duration %q: must be 'once' or 'session'", duration)
+	}
+	a.PermissionCache.Grant(path, duration)
 	return nil
 }
 

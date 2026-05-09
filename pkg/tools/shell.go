@@ -21,6 +21,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/isolation"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 var (
@@ -44,6 +45,8 @@ type ExecTool struct {
 	restrictToWorkspace bool
 	allowRemote         bool
 	sessionManager      *SessionManager
+	PermissionCache     *PermissionCache
+	AskPermission       bool
 }
 
 var (
@@ -134,9 +137,7 @@ func NewExecToolWithConfig(
 
 	if cfg != nil {
 		execConfig := cfg.Tools.Exec
-		enableDenyPatterns := execConfig.EnableDenyPatterns
-		allowRemote = execConfig.AllowRemote
-		if enableDenyPatterns {
+		if cfg.Tools.Exec.EnableDenyPatterns {
 			denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 			if len(execConfig.CustomDenyPatterns) > 0 {
 				fmt.Printf("Using custom deny patterns: %v\n", execConfig.CustomDenyPatterns)
@@ -159,6 +160,7 @@ func NewExecToolWithConfig(
 			}
 			customAllowPatterns = append(customAllowPatterns, re)
 		}
+		allowRemote = execConfig.AllowRemote
 	} else {
 		denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 	}
@@ -235,10 +237,69 @@ func (t *ExecTool) Parameters() map[string]any {
 	}
 }
 
+func (t *ExecTool) checkPermission(command string) string {
+	if !t.AskPermission {
+		return "granted"
+	}
+
+	path := t.extractPathFromCommand(command)
+	if path == "" {
+		return "granted"
+	}
+
+	if t.restrictToWorkspace && t.isOutsideWorkspace(path) {
+		if perm := t.PermissionCache.Check(path); perm != "" {
+			if perm == "denied" {
+				return "denied"
+			}
+			return "granted"
+		}
+		return "needs_permission"
+	}
+
+	return "granted"
+}
+
+func (t *ExecTool) isOutsideWorkspace(path string) bool {
+	isAbs := filepath.IsAbs(path) || strings.HasPrefix(path, "/")
+	if isAbs {
+		absWorkspace, _ := filepath.Abs(t.workingDir)
+		absPath, _ := filepath.Abs(path)
+		return !strings.HasPrefix(absPath, absWorkspace)
+	}
+	return false
+}
+
+func (t *ExecTool) extractPathFromCommand(command string) string {
+	parts := strings.Fields(command)
+	for _, part := range parts {
+		if filepath.IsAbs(part) || strings.HasPrefix(part, "/") {
+			return part
+		}
+	}
+	return ""
+}
+
 func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
 	action, _ := args["action"].(string)
 	if action == "" {
 		return ErrorResult("action is required")
+	}
+
+	if action == "run" {
+		command, _ := args["command"].(string)
+		switch t.checkPermission(command) {
+		case "needs_permission":
+			path := t.extractPathFromCommand(command)
+			logger.InfoCF("exec", "Permission needed", map[string]any{"command": command, "path": path})
+			return &ToolResult{
+				ForLLM:  fmt.Sprintf("Permission needed for path: %s. Call request_permission tool with path='%s'.", path, path),
+				ForUser: fmt.Sprintf("⚠️ Permission required to access %s", path),
+			}
+		case "denied":
+			path := t.extractPathFromCommand(command)
+			return ErrorResult(fmt.Sprintf("Access to %s was denied", path))
+		}
 	}
 
 	switch action {

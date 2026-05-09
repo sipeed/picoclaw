@@ -14,13 +14,16 @@ import (
 )
 
 type Server struct {
-	server     *http.Server
-	mu         sync.RWMutex
-	ready      bool
-	checks     map[string]Check
-	startTime  time.Time
-	reloadFunc func() error
-	authToken  string // optional bearer token for protected endpoints
+	server              *http.Server
+	mux                 *http.ServeMux
+	mu                  sync.RWMutex
+	ready               bool
+	checks              map[string]Check
+	startTime           time.Time
+	reloadFunc          func() error
+	permissionGrantFunc func(agentID, path, duration string) error
+	subagentStatusFunc  func(channel, chatID string) (any, error)
+	authToken           string // optional bearer token for protected endpoints
 }
 
 type Check struct {
@@ -44,16 +47,19 @@ func NewServer(host string, port int, token string) *Server {
 		checks:    make(map[string]Check),
 		startTime: time.Now(),
 		authToken: token,
+		mux:       mux,
 	}
 
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
 	mux.HandleFunc("/reload", s.reloadHandler)
+	mux.HandleFunc("/internal/permission/grant", s.permissionGrantHandler)
+	mux.HandleFunc("/internal/subagents/status", s.subagentStatusHandler)
 
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	s.server = &http.Server{
 		Addr:         addr,
-		Handler:      mux,
+		Handler:      s.mux,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
 	}
@@ -119,6 +125,91 @@ func (s *Server) SetReloadFunc(fn func() error) {
 	s.reloadFunc = fn
 }
 
+// SetPermissionGrantFunc sets the callback function for granting permissions.
+func (s *Server) SetPermissionGrantFunc(fn func(agentID, path, duration string) error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.permissionGrantFunc = fn
+}
+
+func (s *Server) SetSubagentStatusFunc(fn func(channel, chatID string) (any, error)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.subagentStatusFunc = fn
+}
+
+// HandleFunc registers a new handler for the given pattern.
+func (s *Server) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
+	s.mux.HandleFunc(pattern, handler)
+}
+
+// permissionGrantHandler handles POST /internal/permission/grant requests.
+func (s *Server) permissionGrantHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed, use POST"})
+		return
+	}
+
+	// Token check
+	s.mu.RLock()
+	requiredToken := s.authToken
+	s.mu.RUnlock()
+
+	if requiredToken != "" {
+		given := extractBearerToken(r.Header.Get("Authorization"))
+		if given == "" || subtle.ConstantTimeCompare([]byte(given), []byte(requiredToken)) != 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+			return
+		}
+	}
+
+	// Decode request body
+	var req struct {
+		AgentID  string `json:"agent_id"`
+		Path     string `json:"path"`
+		Duration string `json:"duration"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON: " + err.Error()})
+		return
+	}
+
+	if req.AgentID == "" || req.Path == "" || req.Duration == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "agent_id, path, and duration are required"})
+		return
+	}
+
+	s.mu.RLock()
+	grantFunc := s.permissionGrantFunc
+	s.mu.RUnlock()
+
+	if grantFunc == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "permission grant not configured"})
+		return
+	}
+
+	if err := grantFunc(req.AgentID, req.Path, req.Duration); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
 func (s *Server) reloadHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Content-Type", "application/json")
@@ -163,6 +254,49 @@ func (s *Server) reloadHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "reload triggered"})
+}
+
+func (s *Server) subagentStatusHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed, use GET"})
+		return
+	}
+
+	s.mu.RLock()
+	requiredToken := s.authToken
+	statusFunc := s.subagentStatusFunc
+	s.mu.RUnlock()
+
+	if requiredToken != "" {
+		given := extractBearerToken(r.Header.Get("Authorization"))
+		if given == "" || subtle.ConstantTimeCompare([]byte(given), []byte(requiredToken)) != 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+			return
+		}
+	}
+
+	if statusFunc == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "subagent status not configured"})
+		return
+	}
+
+	payload, err := statusFunc(r.URL.Query().Get("channel"), r.URL.Query().Get("chat_id"))
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(payload)
 }
 
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -231,6 +365,8 @@ func (s *Server) RegisterOnMux(mux HandlerMux) {
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
 	mux.HandleFunc("/reload", s.reloadHandler)
+	mux.HandleFunc("/internal/permission/grant", s.permissionGrantHandler)
+	mux.HandleFunc("/internal/subagents/status", s.subagentStatusHandler)
 }
 
 func statusString(ok bool) string {
