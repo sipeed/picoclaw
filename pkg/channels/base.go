@@ -156,8 +156,26 @@ func (c *BaseChannel) MaxMessageLength() int {
 //   - If prefixes configured but no match and not mentioned → ignore
 //   - Otherwise (no group_trigger configured) → respond to all (permissive default)
 func (c *BaseChannel) ShouldRespondInGroup(isMentioned bool, content string) (bool, string) {
-	gt := c.groupTrigger
+	return shouldRespondInGroup(c.groupTrigger, isMentioned, content)
+}
 
+// ShouldRespondInGroupForTopic applies a topic-specific group trigger override
+// when configured, then falls back to the channel-wide group trigger.
+//
+// Topic entries replace the channel-wide trigger for that topic. This keeps the
+// current bool-based config semantics explicit: { "mention_only": false } is a
+// deliberate permissive override, not an omitted value to merge from the parent.
+func (c *BaseChannel) ShouldRespondInGroupForTopic(isMentioned bool, content string, topicID string) (bool, string) {
+	gt := c.groupTrigger
+	if topicID != "" && gt.Topics != nil {
+		if topicTrigger, ok := gt.Topics[topicID]; ok {
+			gt = topicTrigger
+		}
+	}
+	return shouldRespondInGroup(gt, isMentioned, content)
+}
+
+func shouldRespondInGroup(gt config.GroupTriggerConfig, isMentioned bool, content string) (bool, string) {
 	// Mentioned → always respond
 	if isMentioned {
 		return true, strings.TrimSpace(content)

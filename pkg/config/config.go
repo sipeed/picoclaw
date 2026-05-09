@@ -319,8 +319,9 @@ func (d *AgentDefaults) GetModelName() string {
 
 // GroupTriggerConfig controls when the bot responds in group chats.
 type GroupTriggerConfig struct {
-	MentionOnly bool     `json:"mention_only,omitempty"`
-	Prefixes    []string `json:"prefixes,omitempty"`
+	MentionOnly bool                          `json:"mention_only,omitempty"`
+	Prefixes    []string                      `json:"prefixes,omitempty"`
+	Topics      map[string]GroupTriggerConfig `json:"topics,omitempty"`
 }
 
 // TypingConfig controls typing indicator behavior (Phase 10).

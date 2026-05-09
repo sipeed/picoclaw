@@ -822,6 +822,62 @@ func TestHandleMessage_ForumTopic_SetsMetadata(t *testing.T) {
 	assert.Equal(t, "42", inbound.Context.TopicID)
 }
 
+func TestHandleMessage_ForumTopic_GroupTriggerOverride(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	ch := &TelegramChannel{
+		BaseChannel: channels.NewBaseChannel("telegram", nil, messageBus, nil, channels.WithGroupTrigger(config.GroupTriggerConfig{
+			MentionOnly: true,
+			Topics: map[string]config.GroupTriggerConfig{
+				"42": {MentionOnly: false},
+			},
+		})),
+		chatIDs: make(map[string]int64),
+		ctx:     context.Background(),
+	}
+
+	allowed := &telego.Message{
+		Text:            "topic-only message",
+		MessageID:       10,
+		MessageThreadID: 42,
+		Chat: telego.Chat{
+			ID:      -1001234567890,
+			Type:    "supergroup",
+			IsForum: true,
+		},
+		From: &telego.User{
+			ID:        7,
+			FirstName: "Alice",
+		},
+	}
+	require.NoError(t, ch.handleMessage(context.Background(), allowed))
+
+	inbound, ok := <-messageBus.InboundChan()
+	require.True(t, ok, "expected inbound message for overridden topic")
+	assert.Equal(t, "topic-only message", inbound.Content)
+	assert.Equal(t, "42", inbound.Context.TopicID)
+
+	filtered := &telego.Message{
+		Text:            "other topic message",
+		MessageID:       11,
+		MessageThreadID: 43,
+		Chat: telego.Chat{
+			ID:      -1001234567890,
+			Type:    "supergroup",
+			IsForum: true,
+		},
+		From: &telego.User{
+			ID:        7,
+			FirstName: "Alice",
+		},
+	}
+	require.NoError(t, ch.handleMessage(context.Background(), filtered))
+	select {
+	case msg := <-messageBus.InboundChan():
+		t.Fatalf("unexpected inbound message for non-overridden topic: %+v", msg)
+	default:
+	}
+}
+
 func TestHandleMessage_NoForum_NoThreadMetadata(t *testing.T) {
 	messageBus := bus.NewMessageBus()
 	ch := &TelegramChannel{

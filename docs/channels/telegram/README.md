@@ -28,6 +28,7 @@ The Telegram channel uses long polling via the Telegram Bot API for bot-based co
 | allow_from       | array  | No       | Allowlist of user IDs; empty means all users are allowed           |
 | proxy            | string | No       | Proxy URL for connecting to the Telegram API (e.g. http://127.0.0.1:7890) |
 | use_markdown_v2 | bool   | No       | Enable Telegram MarkdownV2 formatting                              |
+| group_trigger    | object | No       | Group trigger strategy (`mention_only`, `prefixes`, and Telegram forum topic overrides) |
 
 ## Setup
 
@@ -36,6 +37,46 @@ The Telegram channel uses long polling via the Telegram Bot API for bot-based co
 3. Obtain the HTTP API Token
 4. Fill in the Token in the configuration file
 5. (Optional) Configure `allow_from` to restrict which user IDs can interact (you can get IDs via `@userinfobot`)
+
+## Group Trigger
+
+By default, the bot responds to every message in allowed group chats. Use
+`group_trigger.mention_only` to make it respond only when mentioned:
+
+```json
+{
+  "channel_list": {
+    "telegram": {
+      "group_trigger": { "mention_only": true }
+    }
+  }
+}
+```
+
+For Telegram supergroups with forum topics, `group_trigger.topics` can override
+the group trigger for a specific topic ID. Topic entries replace the channel-wide
+trigger for that topic.
+
+This is useful when the bot should stay mention-only in most of a group, but be
+active by default in a dedicated topic:
+
+```json
+{
+  "channel_list": {
+    "telegram": {
+      "group_trigger": {
+        "mention_only": true,
+        "topics": {
+          "1771": { "mention_only": false }
+        }
+      }
+    }
+  }
+}
+```
+
+You can find a topic ID in Telegram update logs or by inspecting
+`message_thread_id` from the Telegram Bot API update payload.
 
 ## Built-in Commands
 
