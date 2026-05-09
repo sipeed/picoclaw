@@ -851,6 +851,97 @@ func TestAgentLoop_Run_AutoContinuesLateSteeringMessage(t *testing.T) {
 	}
 }
 
+func TestAgentLoop_RunTurnWithSteering_PublishesFinalReplyAsNewMessage(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	sessionKey := session.BuildMainSessionKey(routing.DefaultAgentID)
+	provider := &blockingDirectProvider{
+		firstStarted: make(chan struct{}),
+		releaseFirst: make(chan struct{}),
+		firstResp:    "stale direct response",
+		finalResp:    "fresh response after steering",
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	msg := testInboundMessage(bus.InboundMessage{
+		Context: bus.InboundContext{
+			Channel:   "telegram",
+			ChatID:    "-1001234567890",
+			ChatType:  "group",
+			TopicID:   "6",
+			SenderID:  "user-1",
+			MessageID: "475",
+		},
+		SessionKey: sessionKey,
+		Content:    "initial request",
+	})
+
+	done := make(chan struct{})
+	go func() {
+		al.runTurnWithSteering(context.Background(), msg)
+		close(done)
+	}()
+
+	select {
+	case <-provider.firstStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for first LLM call to start")
+	}
+
+	if err := al.Steer(providers.Message{Role: "user", Content: "follow-up instruction"}); err != nil {
+		t.Fatalf("Steer failed: %v", err)
+	}
+	close(provider.releaseFirst)
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for steering turn to finish")
+	}
+
+	var finalOutbound bus.OutboundMessage
+	found := false
+drain:
+	for {
+		select {
+		case outbound := <-msgBus.OutboundChan():
+			if outbound.Content == "fresh response after steering" {
+				finalOutbound = outbound
+				found = true
+			}
+		default:
+			break drain
+		}
+	}
+
+	if !found {
+		t.Fatal("expected final outbound response")
+	}
+	if got := finalOutbound.Context.Raw[metadataKeyMessageKind]; got != messageKindFinalReply {
+		t.Fatalf("message kind = %q, want %q", got, messageKindFinalReply)
+	}
+	if finalOutbound.Context.TopicID != "6" {
+		t.Fatalf("topic_id = %q, want 6", finalOutbound.Context.TopicID)
+	}
+}
+
 func TestAgentLoop_Run_QueuedVoiceMessageIsTranscribedBeforeSteering(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := &config.Config{

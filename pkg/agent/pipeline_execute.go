@@ -587,6 +587,7 @@ toolLoop:
 		}
 
 		if steerMsgs := al.dequeueSteeringMessagesForScope(ts.sessionKey); len(steerMsgs) > 0 {
+			exec.sawSteering = true
 			exec.pendingMessages = append(exec.pendingMessages, steerMsgs...)
 		}
 
@@ -655,6 +656,7 @@ toolLoop:
 	// This covers the case where tools were partially executed and skipped due to steering,
 	// but one tool had ResponseHandled=false (so allResponsesHandled=false).
 	if len(exec.pendingMessages) > 0 {
+		exec.sawSteering = true
 		logger.InfoCF("agent", "Pending steering after partial tool execution; continuing turn",
 			map[string]any{
 				"agent_id":            ts.agent.ID,
@@ -667,6 +669,7 @@ toolLoop:
 
 	// Poll for newly arrived steering
 	if steerMsgs := al.dequeueSteeringMessagesForScope(ts.sessionKey); len(steerMsgs) > 0 {
+		exec.sawSteering = true
 		logger.InfoCF("agent", "Steering arrived after tool delivery; continuing turn",
 			map[string]any{
 				"agent_id":       ts.agent.ID,

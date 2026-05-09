@@ -1306,6 +1306,48 @@ func TestPreSend_ThoughtPlaceholderDeleteAndSkipsEdit(t *testing.T) {
 	}
 }
 
+func TestPreSend_FinalReplyPlaceholderDeleteAndDismissesTrackedFeedback(t *testing.T) {
+	m := newTestManager()
+
+	ch := &mockDeletingMessageEditor{
+		mockMessageEditor: mockMessageEditor{
+			editFn: func(_ context.Context, _, _, _ string) error {
+				t.Fatal("expected final reply to bypass placeholder edit")
+				return nil
+			},
+		},
+	}
+
+	m.RecordPlaceholder("test", "123", "456")
+
+	msg := testOutboundMessage(bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "123",
+		Content: "final aggregated reply",
+		Context: bus.InboundContext{
+			Channel: "test",
+			ChatID:  "123",
+			Raw: map[string]string{
+				"message_kind": "final_reply",
+			},
+		},
+	})
+
+	msgIDs, handled := m.preSend(context.Background(), "test", msg, ch)
+	if handled {
+		t.Fatalf("expected preSend to fall through so the channel can send a new final reply, got %v", msgIDs)
+	}
+	if ch.deleteCalls != 1 {
+		t.Fatalf("expected placeholder deletion, got %d delete calls", ch.deleteCalls)
+	}
+	if ch.deletedChatID != "123" || ch.deletedMessageID != "456" {
+		t.Fatalf("unexpected placeholder deletion target: %s/%s", ch.deletedChatID, ch.deletedMessageID)
+	}
+	if ch.dismissedChatID != "123" {
+		t.Fatalf("expected tracked tool feedback dismissal, got %q", ch.dismissedChatID)
+	}
+}
+
 func TestSendWithRetry_ToolCallsPlaceholderDeleteAndFallsThroughToSend(t *testing.T) {
 	m := newTestManager()
 
