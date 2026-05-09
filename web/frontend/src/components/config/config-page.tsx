@@ -307,144 +307,158 @@ export function ConfigPage() {
           enabled: form.execEnabled,
         }
 
-        const baselineServerNames = new Set(
-          baseline.mcpServers
-            .map((server) => server.name.trim())
-            .filter((name) => name !== ""),
-        )
-
-        const normalizedServers = form.mcpServers
-          .map((server) => ({
-            ...server,
-            name: server.name.trim(),
-            url: server.url.trim(),
-            command: server.command.trim(),
-            envFile: server.envFile.trim(),
-          }))
-          .filter((server) => server.name !== "")
-
-        const serverNameCounts = new Map<string, number>()
-        for (const server of normalizedServers) {
-          serverNameCounts.set(
-            server.name,
-            (serverNameCounts.get(server.name) ?? 0) + 1,
+        let mcpServersPatch: Record<string, Record<string, unknown> | null> = {}
+        if (form.mcpEnabled) {
+          const baselineServerNames = new Set(
+            baseline.mcpServers
+              .map((server) => server.name.trim())
+              .filter((name) => name !== ""),
           )
-        }
 
-        const duplicateNames = Array.from(serverNameCounts.entries())
-          .filter(([, count]) => count > 1)
-          .map(([name]) => name)
-          .sort((a, b) => a.localeCompare(b))
-
-        if (duplicateNames.length > 0) {
-          throw new Error(
-            `MCP server names must be unique. Duplicates: ${duplicateNames.join(", ")}.`,
-          )
-        }
-
-        const currentServerNames = new Set(
-          normalizedServers.map((server) => server.name),
-        )
-
-        const removedServerEntries = Array.from(baselineServerNames)
-          .filter((name) => !currentServerNames.has(name))
-          .map((name) => [name, null] as const)
-
-        const baselineServersByName = new Map(
-          baseline.mcpServers
+          const normalizedServers = form.mcpServers
             .map((server) => ({
               ...server,
               name: server.name.trim(),
+              url: server.url.trim(),
+              command: server.command.trim(),
+              envFile: server.envFile.trim(),
             }))
             .filter((server) => server.name !== "")
-            .map((server) => [server.name, server] as const),
-        )
 
-        const upsertServerEntries = normalizedServers.map((server) => {
-          const deferredPatch = { deferred: server.deferredOverride }
-          const baselineServer = baselineServersByName.get(server.name)
+          const serverNameCounts = new Map<string, number>()
+          for (const server of normalizedServers) {
+            serverNameCounts.set(
+              server.name,
+              (serverNameCounts.get(server.name) ?? 0) + 1,
+            )
+          }
 
-          if (server.type !== "stdio") {
-            if (server.url === "") {
-              throw new Error(`MCP server ${server.name} requires a URL.`)
-            }
+          const duplicateNames = Array.from(serverNameCounts.entries())
+            .filter(([, count]) => count > 1)
+            .map(([name]) => name)
+            .sort((a, b) => a.localeCompare(b))
 
-            try {
-              const parsedURL = new URL(server.url)
-              if (
-                parsedURL.protocol !== "http:" &&
-                parsedURL.protocol !== "https:"
-              ) {
-                throw new Error("invalid protocol")
+          if (duplicateNames.length > 0) {
+            throw new Error(
+              `MCP server names must be unique. Duplicates: ${duplicateNames.join(", ")}.`,
+            )
+          }
+
+          const currentServerNames = new Set(
+            normalizedServers.map((server) => server.name),
+          )
+
+          const removedServerEntries = Array.from(baselineServerNames)
+            .filter((name) => !currentServerNames.has(name))
+            .map((name) => [name, null] as const)
+
+          const baselineServersByName = new Map(
+            baseline.mcpServers
+              .map((server) => ({
+                ...server,
+                name: server.name.trim(),
+              }))
+              .filter((server) => server.name !== "")
+              .map((server) => [server.name, server] as const),
+          )
+
+          const upsertServerEntries = normalizedServers.map((server) => {
+            const deferredPatch = { deferred: server.deferredOverride }
+            const baselineServer = baselineServersByName.get(server.name)
+            const shouldValidateServer = server.enabled
+
+            if (server.type !== "stdio") {
+              if (shouldValidateServer && server.url === "") {
+                throw new Error(`MCP server ${server.name} requires a URL.`)
               }
-            } catch {
-              throw new Error(
-                `MCP server ${server.name} requires a valid HTTP(S) URL.`,
-              )
+
+              if (shouldValidateServer) {
+                try {
+                  const parsedURL = new URL(server.url)
+                  if (
+                    parsedURL.protocol !== "http:" &&
+                    parsedURL.protocol !== "https:"
+                  ) {
+                    throw new Error("invalid protocol")
+                  }
+                } catch {
+                  throw new Error(
+                    `MCP server ${server.name} requires a valid HTTP(S) URL.`,
+                  )
+                }
+              }
+
+              const baselineHeaders = baselineServer
+                ? parseJSONObjectField(
+                    baselineServer.headersText,
+                    `Saved MCP server ${server.name} headers`,
+                  )
+                : {}
+
+              return [
+                server.name,
+                {
+                  ...deferredPatch,
+                  enabled: server.enabled,
+                  type: server.type,
+                  url: server.url,
+                  headers: buildStringMapMergePatch(
+                    shouldValidateServer
+                      ? parseJSONObjectField(
+                          server.headersText,
+                          `MCP server ${server.name} headers`,
+                        )
+                      : baselineHeaders,
+                    baselineHeaders,
+                  ),
+                  command: null,
+                  args: null,
+                  env: null,
+                  env_file: null,
+                },
+              ] as const
             }
+
+            if (shouldValidateServer && server.command === "") {
+              throw new Error(`MCP server ${server.name} requires a command.`)
+            }
+
+            const baselineEnv = baselineServer
+              ? parseJSONObjectField(
+                  baselineServer.envText,
+                  `Saved MCP server ${server.name} env`,
+                )
+              : {}
 
             return [
               server.name,
               {
                 ...deferredPatch,
                 enabled: server.enabled,
-                type: server.type,
-                url: server.url,
-                headers: buildStringMapMergePatch(
-                  parseJSONObjectField(
-                    server.headersText,
-                    `MCP server ${server.name} headers`,
-                  ),
-                  baselineServer
+                type: "stdio",
+                command: server.command,
+                args: parseMultilineList(server.argsText),
+                env: buildStringMapMergePatch(
+                  shouldValidateServer
                     ? parseJSONObjectField(
-                        baselineServer.headersText,
-                        `Saved MCP server ${server.name} headers`,
+                        server.envText,
+                        `MCP server ${server.name} env`,
                       )
-                    : {},
+                    : baselineEnv,
+                  baselineEnv,
                 ),
-                command: null,
-                args: null,
-                env: null,
-                env_file: null,
+                env_file: server.envFile === "" ? null : server.envFile,
+                url: null,
+                headers: null,
               },
             ] as const
-          }
+          })
 
-          if (server.command === "") {
-            throw new Error(`MCP server ${server.name} requires a command.`)
-          }
-
-          return [
-            server.name,
-            {
-              ...deferredPatch,
-              enabled: server.enabled,
-              type: "stdio",
-              command: server.command,
-              args: parseMultilineList(server.argsText),
-              env: buildStringMapMergePatch(
-                parseJSONObjectField(
-                  server.envText,
-                  `MCP server ${server.name} env`,
-                ),
-                baselineServer
-                  ? parseJSONObjectField(
-                      baselineServer.envText,
-                      `Saved MCP server ${server.name} env`,
-                    )
-                  : {},
-              ),
-              env_file: server.envFile === "" ? null : server.envFile,
-              url: null,
-              headers: null,
-            },
-          ] as const
-        })
-
-        const mcpServersPatch = Object.fromEntries([
-          ...upsertServerEntries,
-          ...removedServerEntries,
-        ])
+          mcpServersPatch = Object.fromEntries([
+            ...upsertServerEntries,
+            ...removedServerEntries,
+          ])
+        }
 
         if (form.execEnabled) {
           execConfigPatch.allow_remote = form.allowRemote
