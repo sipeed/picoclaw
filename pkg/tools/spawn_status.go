@@ -90,7 +90,7 @@ func (t *SpawnStatusTool) Execute(ctx context.Context, args map[string]any) *Too
 	// ListTaskCopies returns consistent snapshots under the manager lock.
 	origTasks := t.manager.ListTaskCopies()
 	if len(origTasks) == 0 {
-		return NewToolResult("No subagents have been spawned yet.")
+		return NewToolResult("No visible spawned subagents are registered in the current process. This does not prove that no subagent was ever started for this conversation: the task may have completed earlier, the registry may have been cleared, or the service may have restarted.")
 	}
 
 	tasks := make([]*SubagentTask, 0, len(origTasks))

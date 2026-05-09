@@ -71,8 +71,11 @@ func TestSpawnStatusTool_Empty(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("Expected success, got error: %s", result.ForLLM)
 	}
-	if !strings.Contains(result.ForLLM, "No subagents") {
-		t.Errorf("Expected 'No subagents' message, got: %s", result.ForLLM)
+	if !strings.Contains(result.ForLLM, "No visible spawned subagents are registered in the current process") {
+		t.Errorf("Expected current-process empty-registry message, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "does not prove that no subagent was ever started") {
+		t.Errorf("Expected cautionary wording about past tasks/restarts, got: %s", result.ForLLM)
 	}
 }
 
