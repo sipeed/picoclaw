@@ -484,15 +484,8 @@ func (r *ToolRegistry) Clone() *ToolRegistry {
 		}
 	}
 	for name, entry := range r.tools {
-		tool := entry.Tool
-		switch t := entry.Tool.(type) {
-		case *RegexSearchTool:
-			tool = NewRegexSearchTool(clone, t.ttl, t.maxSearchResults)
-		case *BM25SearchTool:
-			tool = NewBM25SearchTool(clone, t.ttl, t.maxSearchResults)
-		}
 		clone.tools[name] = &ToolEntry{
-			Tool:   tool,
+			Tool:   entry.Tool,
 			IsCore: entry.IsCore,
 			TTL:    entry.TTL,
 		}
