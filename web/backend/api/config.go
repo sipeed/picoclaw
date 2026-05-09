@@ -167,6 +167,7 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid channel array field: %v", err), http.StatusBadRequest)
 		return
 	}
+	migrateDeprecatedSessionFields(base)
 
 	// Convert merged map back to Config struct
 	merged, err := json.Marshal(base)
@@ -383,6 +384,40 @@ func mergeMap(dst, src map[string]any) {
 		} else {
 			dst[key] = srcVal
 		}
+	}
+}
+
+// migrateDeprecatedSessionFields converts deprecated session fields in a raw
+// config map. Currently handles session.dm_scope → session.dimensions.
+func migrateDeprecatedSessionFields(m map[string]any) {
+	session, ok := m["session"].(map[string]any)
+	if !ok {
+		return
+	}
+	dmScope, hasDM := session["dm_scope"]
+	if !hasDM {
+		return
+	}
+	if _, hasDims := session["dimensions"]; !hasDims {
+		if scope, ok := dmScope.(string); ok {
+			session["dimensions"] = dmScopeToDimensions(scope)
+		}
+	}
+	delete(session, "dm_scope")
+}
+
+func dmScopeToDimensions(scope string) []string {
+	switch scope {
+	case "per-channel-peer":
+		return []string{"chat", "sender"}
+	case "per-channel":
+		return []string{"chat"}
+	case "per-peer":
+		return []string{"sender"}
+	case "global":
+		return []string{}
+	default:
+		return []string{"chat"}
 	}
 }
 

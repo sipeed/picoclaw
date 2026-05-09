@@ -31,7 +31,8 @@ func (p *Pipeline) CallLLM(
 
 	// PreLLM: resolve media refs (except on iteration 1 where user media is already resolved)
 	if iteration > 1 {
-		exec.messages = resolveMediaRefs(exec.messages, p.MediaStore, maxMediaSize)
+		policy := mediaInlinePolicyFromProvider(ts.agent.Provider)
+		exec.messages = resolveMediaRefs(exec.messages, p.MediaStore, maxMediaSize, policy)
 	}
 
 	// PreLLM: graceful terminal handling

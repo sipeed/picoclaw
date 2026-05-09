@@ -63,6 +63,14 @@ func (p *GeminiProvider) SupportsThinking() bool {
 	return true
 }
 
+func (p *GeminiProvider) SupportsVideo() bool {
+	return true
+}
+
+func (p *GeminiProvider) SupportsAudio() bool {
+	return true
+}
+
 func (p *GeminiProvider) Chat(
 	ctx context.Context,
 	messages []Message,

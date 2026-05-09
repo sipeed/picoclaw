@@ -419,6 +419,7 @@ func parseStreamResponse(
 	onChunk func(accumulated string),
 ) (*LLMResponse, error) {
 	var textContent strings.Builder
+	var reasoningContent strings.Builder
 	var finishReason string
 	var usage *UsageInfo
 
@@ -451,8 +452,9 @@ func parseStreamResponse(
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content   string `json:"content"`
-					ToolCalls []struct {
+					Content          string `json:"content"`
+					ReasoningContent string `json:"reasoning_content"`
+					ToolCalls        []struct {
 						Index    int    `json:"index"`
 						ID       string `json:"id"`
 						Function *struct {
@@ -479,6 +481,11 @@ func parseStreamResponse(
 		}
 
 		choice := chunk.Choices[0]
+
+		// Accumulate reasoning content (DeepSeek, Mimo, Kimi, etc.)
+		if choice.Delta.ReasoningContent != "" {
+			reasoningContent.WriteString(choice.Delta.ReasoningContent)
+		}
 
 		// Accumulate text content
 		if choice.Delta.Content != "" {
@@ -544,10 +551,11 @@ func parseStreamResponse(
 	}
 
 	return &LLMResponse{
-		Content:      textContent.String(),
-		ToolCalls:    toolCalls,
-		FinishReason: finishReason,
-		Usage:        usage,
+		Content:          textContent.String(),
+		ReasoningContent: reasoningContent.String(),
+		ToolCalls:        toolCalls,
+		FinishReason:     finishReason,
+		Usage:            usage,
 	}, nil
 }
 
@@ -585,6 +593,34 @@ func buildToolsList(tools []ToolDefinition, nativeSearch bool) []any {
 
 func (p *Provider) SupportsNativeSearch() bool {
 	return isNativeSearchHost(p.apiBase)
+}
+
+// SupportsVideo implements providers.VideoCapable.
+func (p *Provider) SupportsVideo() bool {
+	switch p.providerName {
+	case "mimo", "qwen", "qwen-portal", "qwen-intl", "qwen-international",
+		"dashscope-intl", "qwen-us", "dashscope-us":
+		return true
+	}
+	return isMimoHost(p.apiBase)
+}
+
+// SupportsAudio implements providers.AudioCapable.
+func (p *Provider) SupportsAudio() bool {
+	switch p.providerName {
+	case "mimo", "openai", "qwen", "qwen-portal", "qwen-intl", "qwen-international",
+		"dashscope-intl", "qwen-us", "dashscope-us":
+		return true
+	}
+	return isNativeOpenAIOrAzureEndpoint(p.apiBase) || isMimoHost(p.apiBase)
+}
+
+func isMimoHost(apiBase string) bool {
+	u, err := url.Parse(apiBase)
+	if err != nil {
+		return false
+	}
+	return u.Hostname() == "api.xiaomimimo.com"
 }
 
 // isNativeOpenAIOrAzureEndpoint reports whether the given API base points to

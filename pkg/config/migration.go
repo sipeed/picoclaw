@@ -84,6 +84,11 @@ func migrateLegacyAgentDefaultsModel(m map[string]any) {
 func loadConfig(data []byte) (*Config, error) {
 	cfg := DefaultConfig()
 
+	// Sanitize deprecated fields before strict unknown-field validation.
+	// This handles configs written by older versions or frontends that still
+	// use removed fields (e.g. session.dm_scope → session.dimensions).
+	data, _ = sanitizeDeprecatedFields(data)
+
 	// Pre-scan the JSON to check how many model_list entries the user provided.
 	// Go's JSON decoder reuses existing slice backing-array elements rather than
 	// zero-initializing them, so fields absent from the user's JSON (e.g. api_base)
@@ -497,4 +502,78 @@ func mergeModelListsWithMap(mainML []any, secML map[string]any) error {
 	}
 
 	return nil
+}
+
+// sanitizeDeprecatedFields removes known deprecated fields from raw config
+// JSON so that the strict unknown-field validator does not reject them.
+// When possible it migrates deprecated values into their replacements.
+//
+// Known deprecated fields:
+//   - session.dm_scope → session.dimensions (removed in ca9652e1)
+//   - channels → channel_list (renamed in V2→V3 migration)
+//   - bindings (removed in V2→V3 migration)
+//   - providers (removed in V0→V1 migration, replaced by model_list)
+func sanitizeDeprecatedFields(data []byte) ([]byte, error) {
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		return data, err
+	}
+
+	changed := false
+
+	// session.dm_scope → session.dimensions
+	if session, ok := m["session"].(map[string]any); ok {
+		if dmScope, hasDM := session["dm_scope"]; hasDM {
+			if _, hasDims := session["dimensions"]; !hasDims {
+				if scope, ok := dmScope.(string); ok {
+					session["dimensions"] = dmScopeToDimensions(scope)
+				}
+			}
+			delete(session, "dm_scope")
+			changed = true
+		}
+	}
+
+	// channels → channel_list (V2 legacy)
+	if channels, hasChannels := m["channels"]; hasChannels {
+		if _, hasChannelList := m["channel_list"]; !hasChannelList {
+			m["channel_list"] = channels
+		}
+		delete(m, "channels")
+		changed = true
+	}
+
+	// bindings (removed in V2→V3, handled by applyLegacyBindingsMigration)
+	if _, hasBindings := m["bindings"]; hasBindings {
+		delete(m, "bindings")
+		changed = true
+	}
+
+	// providers (V0 legacy, replaced by model_list)
+	if _, hasProviders := m["providers"]; hasProviders {
+		delete(m, "providers")
+		changed = true
+	}
+
+	if !changed {
+		return data, nil
+	}
+	return json.Marshal(m)
+}
+
+// dmScopeToDimensions converts a legacy dm_scope value to the new
+// session dimensions slice.
+func dmScopeToDimensions(scope string) []string {
+	switch scope {
+	case "per-channel-peer":
+		return []string{"chat", "sender"}
+	case "per-channel":
+		return []string{"chat"}
+	case "per-peer":
+		return []string{"sender"}
+	case "global":
+		return []string{}
+	default:
+		return []string{"chat"}
+	}
 }

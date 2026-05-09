@@ -129,6 +129,41 @@ func TestSerializeMessages_WithAudioMedia(t *testing.T) {
 	}
 }
 
+func TestSerializeMessages_WithVideoMedia(t *testing.T) {
+	messages := []Message{
+		{Role: "user", Content: "describe this video", Media: []string{"data:video/mp4;base64,AAAAAA"}},
+	}
+	result := SerializeMessages(messages)
+
+	data, _ := json.Marshal(result)
+	var msgs []map[string]any
+	json.Unmarshal(data, &msgs)
+
+	content, ok := msgs[0]["content"].([]any)
+	if !ok {
+		t.Fatalf("expected array content for media message, got %T", msgs[0]["content"])
+	}
+	if len(content) != 2 {
+		t.Fatalf("expected 2 content parts, got %d", len(content))
+	}
+
+	videoPart, ok := content[1].(map[string]any)
+	if !ok {
+		t.Fatalf("expected video content part to be an object, got %T", content[1])
+	}
+	if videoPart["type"] != "video_url" {
+		t.Fatalf("video part type = %v, want video_url", videoPart["type"])
+	}
+
+	videoURL, ok := videoPart["video_url"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected video_url object, got %T", videoPart["video_url"])
+	}
+	if videoURL["url"] != "data:video/mp4;base64,AAAAAA" {
+		t.Fatalf("video url = %v, want data:video/mp4;base64,AAAAAA", videoURL["url"])
+	}
+}
+
 func TestSerializeMessages_MediaWithToolCallID(t *testing.T) {
 	messages := []Message{
 		{Role: "tool", Content: "result", Media: []string{"data:image/png;base64,xyz"}, ToolCallID: "call_1"},

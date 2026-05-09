@@ -16,6 +16,7 @@ import (
 func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution, error) {
 	cfg := p.Cfg
 	maxMediaSize := cfg.Agents.Defaults.GetMaxMediaSize()
+	policy := mediaInlinePolicyFromProvider(ts.agent.Provider)
 
 	var history []providers.Message
 	var summary string
@@ -35,7 +36,7 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 		promptBuildRequestForTurn(ts, history, summary, ts.userMessage, ts.media),
 	)
 
-	messages = resolveMediaRefs(messages, p.MediaStore, maxMediaSize)
+	messages = resolveMediaRefs(messages, p.MediaStore, maxMediaSize, policy)
 
 	if !ts.opts.NoHistory {
 		toolDefs := ts.agent.Tools.ToProviderDefs()
@@ -64,7 +65,7 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 			messages = ts.agent.ContextBuilder.BuildMessagesFromPrompt(
 				promptBuildRequestForTurn(ts, history, summary, ts.userMessage, ts.media),
 			)
-			messages = resolveMediaRefs(messages, p.MediaStore, maxMediaSize)
+			messages = resolveMediaRefs(messages, p.MediaStore, maxMediaSize, policy)
 		}
 	}
 

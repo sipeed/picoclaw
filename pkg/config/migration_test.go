@@ -6,6 +6,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -394,4 +395,143 @@ func TestMigrateV1ToV3_AlreadyNestedFormat(t *testing.T) {
 	require.Equal(t, "bot-token", settings["token"])
 	// Should NOT have nested settings inside settings
 	require.NotContains(t, settings, "settings")
+}
+
+func TestSanitizeDeprecatedFields_MigratesDMScope(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantDims []string
+	}{
+		{"per-channel-peer", `{"session":{"dm_scope":"per-channel-peer"}}`, []string{"chat", "sender"}},
+		{"per-channel", `{"session":{"dm_scope":"per-channel"}}`, []string{"chat"}},
+		{"per-peer", `{"session":{"dm_scope":"per-peer"}}`, []string{"sender"}},
+		{"global", `{"session":{"dm_scope":"global"}}`, []string{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := sanitizeDeprecatedFields([]byte(tt.input))
+			require.NoError(t, err)
+
+			var m map[string]any
+			require.NoError(t, json.Unmarshal(out, &m))
+
+			session := m["session"].(map[string]any)
+			require.NotContains(t, session, "dm_scope", "dm_scope should be removed")
+
+			dims, ok := session["dimensions"].([]any)
+			require.True(t, ok, "dimensions should be a slice")
+			got := make([]string, len(dims))
+			for i, d := range dims {
+				got[i] = d.(string)
+			}
+			require.Equal(t, tt.wantDims, got)
+		})
+	}
+}
+
+func TestSanitizeDeprecatedFields_PreservesExistingDimensions(t *testing.T) {
+	input := `{"session":{"dm_scope":"global","dimensions":["chat","sender"]}}`
+	out, err := sanitizeDeprecatedFields([]byte(input))
+	require.NoError(t, err)
+
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(out, &m))
+
+	session := m["session"].(map[string]any)
+	require.NotContains(t, session, "dm_scope")
+	dims := session["dimensions"].([]any)
+	require.Equal(t, 2, len(dims), "existing dimensions should be preserved")
+}
+
+func TestSanitizeDeprecatedFields_NoSessionUnchanged(t *testing.T) {
+	input := `{"version":3,"gateway":{"host":"localhost"}}`
+	out, err := sanitizeDeprecatedFields([]byte(input))
+	require.NoError(t, err)
+	require.JSONEq(t, input, string(out))
+}
+
+func TestSanitizeDeprecatedFields_MigratesChannelsToChannelList(t *testing.T) {
+	input := `{"version":3,"channels":{"telegram":{"type":"telegram","enabled":true}}}`
+	out, err := sanitizeDeprecatedFields([]byte(input))
+	require.NoError(t, err)
+
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(out, &m))
+	require.NotContains(t, m, "channels", "channels should be removed")
+	require.Contains(t, m, "channel_list", "channel_list should be present")
+}
+
+func TestSanitizeDeprecatedFields_ChannelsDoesNotOverwriteExistingChannelList(t *testing.T) {
+	input := `{"version":3,"channels":{"old":{"type":"old"}},"channel_list":{"telegram":{"type":"telegram"}}}`
+	out, err := sanitizeDeprecatedFields([]byte(input))
+	require.NoError(t, err)
+
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(out, &m))
+	require.NotContains(t, m, "channels")
+	cl := m["channel_list"].(map[string]any)
+	require.Contains(t, cl, "telegram", "existing channel_list should be preserved")
+	require.NotContains(t, cl, "old", "old channels should not overwrite channel_list")
+}
+
+func TestSanitizeDeprecatedFields_RemovesBindings(t *testing.T) {
+	input := `{"version":3,"bindings":[{"agent":"main"}]}`
+	out, err := sanitizeDeprecatedFields([]byte(input))
+	require.NoError(t, err)
+
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(out, &m))
+	require.NotContains(t, m, "bindings")
+}
+
+func TestSanitizeDeprecatedFields_RemovesProviders(t *testing.T) {
+	input := `{"version":3,"providers":{"openai":{"api_key":"sk-test"}}}`
+	out, err := sanitizeDeprecatedFields([]byte(input))
+	require.NoError(t, err)
+
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(out, &m))
+	require.NotContains(t, m, "providers")
+}
+
+func TestLoadConfig_WithLegacyDMScope(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+
+	raw := `{
+		"version": 3,
+		"session": {
+			"dm_scope": "per-channel-peer"
+		},
+		"model_list": []
+	}`
+	require.NoError(t, os.WriteFile(configPath, []byte(raw), 0o600))
+
+	cfg, err := LoadConfig(configPath)
+	require.NoError(t, err, "LoadConfig should not fail with legacy dm_scope")
+	require.Equal(t, []string{"chat", "sender"}, cfg.Session.Dimensions)
+}
+
+func TestLoadConfig_WithLegacyChannelsField(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.json")
+
+	raw := `{
+		"version": 3,
+		"channels": {
+			"telegram": {
+				"type": "telegram",
+				"enabled": true,
+				"settings": {"token": "test-token"}
+			}
+		},
+		"model_list": []
+	}`
+	require.NoError(t, os.WriteFile(configPath, []byte(raw), 0o600))
+
+	cfg, err := LoadConfig(configPath)
+	require.NoError(t, err, "LoadConfig should not fail with legacy channels field")
+	require.NotNil(t, cfg)
 }
