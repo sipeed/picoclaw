@@ -17,11 +17,41 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+type finalResponseDeliveryPolicy uint8
+
+const (
+	finalResponseSuppressIfMessageToolSent finalResponseDeliveryPolicy = iota
+	finalResponseAlwaysPublish
+)
+
 func (al *AgentLoop) maybePublishError(ctx context.Context, channel, chatID, sessionKey string, err error) bool {
+	return al.maybePublishErrorWithPolicy(
+		ctx,
+		channel,
+		chatID,
+		sessionKey,
+		err,
+		finalResponseSuppressIfMessageToolSent,
+	)
+}
+
+func (al *AgentLoop) maybePublishErrorWithPolicy(
+	ctx context.Context,
+	channel, chatID, sessionKey string,
+	err error,
+	policy finalResponseDeliveryPolicy,
+) bool {
 	if errors.Is(err, context.Canceled) {
 		return false
 	}
-	al.PublishResponseIfNeeded(ctx, channel, chatID, sessionKey, fmt.Sprintf("Error processing message: %v", err))
+	al.publishResponseIfNeededWithPolicy(
+		ctx,
+		channel,
+		chatID,
+		sessionKey,
+		fmt.Sprintf("Error processing message: %v", err),
+		policy,
+	)
 	return true
 }
 
@@ -31,26 +61,61 @@ func (al *AgentLoop) publishResponseOrError(
 	response string,
 	err error,
 ) {
+	al.publishResponseOrErrorWithPolicy(
+		ctx,
+		channel,
+		chatID,
+		sessionKey,
+		response,
+		err,
+		finalResponseSuppressIfMessageToolSent,
+	)
+}
+
+func (al *AgentLoop) publishResponseOrErrorWithPolicy(
+	ctx context.Context,
+	channel, chatID, sessionKey string,
+	response string,
+	err error,
+	policy finalResponseDeliveryPolicy,
+) {
 	if err != nil {
-		if !al.maybePublishError(ctx, channel, chatID, sessionKey, err) {
+		if !al.maybePublishErrorWithPolicy(ctx, channel, chatID, sessionKey, err, policy) {
 			return
 		}
 		response = ""
 	}
-	al.PublishResponseIfNeeded(ctx, channel, chatID, sessionKey, response)
+	al.publishResponseIfNeededWithPolicy(ctx, channel, chatID, sessionKey, response, policy)
 }
 
 func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatID, sessionKey, response string) {
+	al.publishResponseIfNeededWithPolicy(
+		ctx,
+		channel,
+		chatID,
+		sessionKey,
+		response,
+		finalResponseSuppressIfMessageToolSent,
+	)
+}
+
+func (al *AgentLoop) publishResponseIfNeededWithPolicy(
+	ctx context.Context,
+	channel, chatID, sessionKey, response string,
+	policy finalResponseDeliveryPolicy,
+) {
 	if response == "" {
 		return
 	}
 
 	alreadySentToSameChat := false
-	defaultAgent := al.GetRegistry().GetDefaultAgent()
-	if defaultAgent != nil {
-		if tool, ok := defaultAgent.Tools.Get("message"); ok {
-			if mt, ok := tool.(*tools.MessageTool); ok {
-				alreadySentToSameChat = mt.HasSentTo(sessionKey, channel, chatID)
+	if policy == finalResponseSuppressIfMessageToolSent {
+		defaultAgent := al.GetRegistry().GetDefaultAgent()
+		if defaultAgent != nil {
+			if tool, ok := defaultAgent.Tools.Get("message"); ok {
+				if mt, ok := tool.(*tools.MessageTool); ok {
+					alreadySentToSameChat = mt.HasSentTo(sessionKey, channel, chatID)
+				}
 			}
 		}
 	}

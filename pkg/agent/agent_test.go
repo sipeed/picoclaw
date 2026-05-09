@@ -162,6 +162,105 @@ func newTestAgentLoop(
 	return al, cfg, msgBus, provider, func() { os.RemoveAll(tmpDir) }
 }
 
+func TestPublishResponseIfNeededWithPolicy_AlwaysPublishesFinalAfterMessageTool(t *testing.T) {
+	al, _, msgBus, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent")
+	}
+	rawTool, ok := agent.Tools.Get("message")
+	if !ok {
+		mt := tools.NewMessageTool()
+		agent.Tools.Register(mt)
+		rawTool = mt
+	}
+	mt, ok := rawTool.(*tools.MessageTool)
+	if !ok {
+		t.Fatalf("message tool type = %T", rawTool)
+	}
+	mt.SetSendCallback(func(ctx context.Context, channel, chatID, content, replyToMessageID string) error {
+		return nil
+	})
+
+	ctx := tools.WithToolSessionContext(context.Background(), routing.DefaultAgentID, "session-msg-1", nil)
+	res := mt.Execute(ctx, map[string]any{
+		"content": "working on it",
+		"channel": "telegram",
+		"chat_id": "-100123",
+	})
+	if res == nil || res.IsError {
+		t.Fatalf("message tool execute failed: %+v", res)
+	}
+
+	al.publishResponseIfNeededWithPolicy(
+		context.Background(),
+		"telegram",
+		"-100123",
+		"session-msg-1",
+		"final result",
+		finalResponseAlwaysPublish,
+	)
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Content != "final result" {
+			t.Fatalf("outbound content = %q, want final result", outbound.Content)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected outbound response")
+	}
+}
+
+func TestPublishResponseIfNeededWithPolicy_SuppressesWhenMessageToolAlreadySent(t *testing.T) {
+	al, _, msgBus, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent")
+	}
+	rawTool, ok := agent.Tools.Get("message")
+	if !ok {
+		mt := tools.NewMessageTool()
+		agent.Tools.Register(mt)
+		rawTool = mt
+	}
+	mt, ok := rawTool.(*tools.MessageTool)
+	if !ok {
+		t.Fatalf("message tool type = %T", rawTool)
+	}
+	mt.SetSendCallback(func(ctx context.Context, channel, chatID, content, replyToMessageID string) error {
+		return nil
+	})
+
+	ctx := tools.WithToolSessionContext(context.Background(), routing.DefaultAgentID, "session-msg-2", nil)
+	res := mt.Execute(ctx, map[string]any{
+		"content": "working on it",
+		"channel": "telegram",
+		"chat_id": "-100123",
+	})
+	if res == nil || res.IsError {
+		t.Fatalf("message tool execute failed: %+v", res)
+	}
+
+	al.publishResponseIfNeededWithPolicy(
+		context.Background(),
+		"telegram",
+		"-100123",
+		"session-msg-2",
+		"final result",
+		finalResponseSuppressIfMessageToolSent,
+	)
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		t.Fatalf("unexpected outbound response: %+v", outbound)
+	case <-time.After(150 * time.Millisecond):
+	}
+}
+
 func TestNewAgentLoop_RegistersWebSearchTool(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Workspace = t.TempDir()
