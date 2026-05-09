@@ -703,6 +703,44 @@ func TestShellTool_URLBypassPrevented(t *testing.T) {
 	}
 }
 
+// TestShellTool_PowerShellEncodingBypass verifies that PowerShell encoding bypass techniques are blocked.
+func TestShellTool_PowerShellEncodingBypass(t *testing.T) {
+	tool, err := NewExecTool("", false)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Commands using [Text.Encoding] to construct a command string at runtime.
+	encodingBypassCommands := []string{
+		`[Text.Encoding]::ASCII.GetString([byte[]](0x6c,0x73,0x20,0x7e))`,
+		`[Text.Encoding]::ASCII.GetString([byte[]](0x69,0x65,0x78))`,
+		`[System.Text.Encoding]::ASCII.GetString([byte[]](0x69,0x65,0x78))`,
+	}
+
+	for _, cmd := range encodingBypassCommands {
+		result := tool.Execute(ctx, map[string]any{"action": "run", "command": cmd})
+		if !result.IsError {
+			t.Errorf("expected [Text.Encoding] bypass to be blocked: %s", cmd)
+		}
+		if !strings.Contains(result.ForLLM, "blocked") && !strings.Contains(result.ForUser, "blocked") {
+			t.Errorf("expected 'blocked' message for %s, got: %s", cmd, result.ForLLM)
+		}
+	}
+
+	// Commands using PowerShell's -EncodedCommand flag (base64).
+	encodedCommands := []string{
+		`powershell -NoProfile -NonInteractive -EncodedCommand SQBFAHIAaABlAGwAbAAvAC8A`,
+		`pwsh -EncodedCommand aWV4`,
+	}
+
+	for _, cmd := range encodedCommands {
+		result := tool.Execute(ctx, map[string]any{"action": "run", "command": cmd})
+		if !result.IsError {
+			t.Errorf("expected -EncodedCommand to be blocked: %s", cmd)
+		}
+	}
+}
+
 func TestShellTool_Background_ReturnsImmediately(t *testing.T) {
 	tool, err := NewExecTool("", false)
 	require.NoError(t, err)

@@ -95,6 +95,14 @@ var (
 		regexp.MustCompile(`\bssh\b.*@`),
 		regexp.MustCompile(`\beval\b`),
 		regexp.MustCompile(`\bsource\s+.*\.sh\b`),
+		// PowerShell encoding bypass: [Text.Encoding] used to construct command strings.
+		regexp.MustCompile(`\[text\.encoding\]`),
+		// PowerShell -EncodedCommand flag (base64-encoded command).
+		regexp.MustCompile(`-encodedcommand`),
+		// .GetString called on byte array to decode commands.
+		regexp.MustCompile(`\.getstring\(\[byte\[\]`),
+		// FromBase64String used in command construction chain.
+		regexp.MustCompile(`frombase64string\(`),
 	}
 
 	// absolutePathPattern matches absolute file paths in commands (Unix and Windows).
