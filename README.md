@@ -24,6 +24,21 @@
 
 ---
 
+> [!IMPORTANT]
+> **Fork note**
+>
+> This branch is a personal fork that currently carries additional features and behavior on top of `upstream/main`, including:
+>
+> * **Image generation support:** provider-backed image generation tool and pluggable image generation provider wiring.
+> * **Planning and search providers:** `update_plan` tool, Gemini web search provider, and related web-search UI/config support.
+> * **Agent / subagent runtime fixes:** async follow-up origin preservation, direct async error surfacing, final-reply delivery after interim progress messages, improved `spawn` delivery semantics, and safer `spawn_status` behavior.
+> * **Agent capability policy:** frontmatter-based per-agent `tools` / `mcpServers` filtering, replacing the older config-level per-agent tool filter layer.
+> * **Telegram / channel fixes:** forum topic preservation for final replies and message-tool sends, media-group album handling, topic-aware trigger overrides, typing / feedback cleanup, and configurable tool-feedback edit throttling.
+> * **Tooling and workflow fixes:** relative script paths allowed in the exec guard, session-scoped Seahorse retrieval tools, cron feedback suppression for scheduled turns, session reset command, and tool-feedback controls.
+> * **Provider auth support:** OpenAI OAuth support for Codex and transcription flows.
+>
+> Treat this branch as deployment-specific until the corresponding changes are merged upstream.
+
 > **PicoClaw** is an independent open-source project initiated by [Sipeed](https://sipeed.com), written entirely in **Go** from scratch — not a fork of OpenClaw, NanoBot, or any other project.
 
 **PicoClaw** is an ultra-lightweight personal AI assistant inspired by [NanoBot](https://github.com/HKUDS/nanobot). It was rebuilt from the ground up in **Go** through a "self-bootstrapping" process — the AI Agent itself drove the architecture migration and code optimization.
