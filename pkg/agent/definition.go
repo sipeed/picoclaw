@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -31,12 +32,28 @@ type AgentFrontmatter struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	Tools       []string       `json:"tools,omitempty"`
+	ToolPolicy  *PatternPolicy `json:"-"`
 	Model       string         `json:"model,omitempty"`
 	MaxTurns    *int           `json:"maxTurns,omitempty"`
 	Skills      []string       `json:"skills,omitempty"`
 	MCPServers  []string       `json:"mcpServers,omitempty"`
+	MCPPolicy   *PatternPolicy `json:"-"`
 	Fields      map[string]any `json:"-"`
 }
+
+type PatternPolicy struct {
+	Allow []string
+	Deny  []string
+	form  patternPolicyForm
+}
+
+type patternPolicyForm int
+
+const (
+	patternPolicyFormUnset patternPolicyForm = iota
+	patternPolicyFormList
+	patternPolicyFormObject
+)
 
 // AgentPromptDefinition represents the parsed AGENT.md or AGENTS.md prompt file.
 type AgentPromptDefinition struct {
@@ -176,11 +193,9 @@ func parseAgentFrontmatter(path, frontmatter string) (AgentFrontmatter, error) {
 	var typed struct {
 		Name        string   `yaml:"name"`
 		Description string   `yaml:"description"`
-		Tools       []string `yaml:"tools"`
 		Model       string   `yaml:"model"`
 		MaxTurns    *int     `yaml:"maxTurns"`
 		Skills      []string `yaml:"skills"`
-		MCPServers  []string `yaml:"mcpServers"`
 	}
 	if err := yaml.Unmarshal([]byte(frontmatter), &typed); err != nil {
 		logger.WarnCF("agent", "Failed to decode AGENT.md frontmatter fields", map[string]any{
@@ -190,16 +205,123 @@ func parseAgentFrontmatter(path, frontmatter string) (AgentFrontmatter, error) {
 		return AgentFrontmatter{}, err
 	}
 
+	var (
+		toolPolicy *PatternPolicy
+		mcpPolicy  *PatternPolicy
+		err        error
+	)
+	if raw, ok := rawFields["tools"]; ok {
+		toolPolicy, err = parsePatternPolicy(raw, "tools")
+		if err != nil {
+			logger.WarnCF("agent", "Failed to decode AGENT.md tools policy", map[string]any{
+				"path":  path,
+				"error": err.Error(),
+			})
+			return AgentFrontmatter{}, err
+		}
+	}
+
+	if raw, ok := rawFields["mcpServers"]; ok {
+		mcpPolicy, err = parsePatternPolicy(raw, "mcpServers")
+		if err != nil {
+			logger.WarnCF("agent", "Failed to decode AGENT.md mcpServers policy", map[string]any{
+				"path":  path,
+				"error": err.Error(),
+			})
+			return AgentFrontmatter{}, err
+		}
+	}
+
 	return AgentFrontmatter{
 		Name:        strings.TrimSpace(typed.Name),
 		Description: strings.TrimSpace(typed.Description),
-		Tools:       append([]string(nil), typed.Tools...),
+		Tools:       policyAllowPatterns(toolPolicy),
+		ToolPolicy:  toolPolicy,
 		Model:       strings.TrimSpace(typed.Model),
 		MaxTurns:    typed.MaxTurns,
 		Skills:      append([]string(nil), typed.Skills...),
-		MCPServers:  append([]string(nil), typed.MCPServers...),
+		MCPServers:  policyAllowPatterns(mcpPolicy),
+		MCPPolicy:   mcpPolicy,
 		Fields:      rawFields,
 	}, nil
+}
+
+func parsePatternPolicy(raw any, field string) (*PatternPolicy, error) {
+	if raw == nil {
+		return &PatternPolicy{Allow: []string{}, form: patternPolicyFormList}, nil
+	}
+
+	switch value := raw.(type) {
+	case []any:
+		allow, err := parsePatternList(value, field)
+		if err != nil {
+			return nil, err
+		}
+		return &PatternPolicy{Allow: allow, form: patternPolicyFormList}, nil
+	case map[string]any:
+		allow, err := parseNamedPatternList(value, field, "allow")
+		if err != nil {
+			return nil, err
+		}
+		deny, err := parseNamedPatternList(value, field, "deny")
+		if err != nil {
+			return nil, err
+		}
+		return &PatternPolicy{Allow: allow, Deny: deny, form: patternPolicyFormObject}, nil
+	case string:
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return &PatternPolicy{Allow: []string{}, form: patternPolicyFormList}, nil
+		}
+		return &PatternPolicy{Allow: []string{trimmed}, form: patternPolicyFormList}, nil
+	default:
+		return nil, fmt.Errorf("%s must be a list, string, or object with allow/deny", field)
+	}
+}
+
+func parseNamedPatternList(raw map[string]any, field, key string) ([]string, error) {
+	value, ok := raw[key]
+	if !ok {
+		return nil, nil
+	}
+	if value == nil {
+		return []string{}, nil
+	}
+	switch list := value.(type) {
+	case []any:
+		return parsePatternList(list, field+"."+key)
+	case string:
+		trimmed := strings.TrimSpace(list)
+		if trimmed == "" {
+			return []string{}, nil
+		}
+		return []string{trimmed}, nil
+	default:
+		return nil, fmt.Errorf("%s.%s must be a list or string", field, key)
+	}
+}
+
+func parsePatternList(values []any, field string) ([]string, error) {
+	result := make([]string, 0, len(values))
+	for _, raw := range values {
+		s, ok := raw.(string)
+		if !ok {
+			return nil, fmt.Errorf("%s entries must be strings", field)
+		}
+		trimmed := strings.TrimSpace(s)
+		if trimmed == "" {
+			continue
+		}
+		result = append(result, trimmed)
+	}
+	return result, nil
+}
+
+func policyAllowPatterns(policy *PatternPolicy) []string {
+	if policy == nil {
+		return nil
+	}
+	return append([]string(nil), policy.Allow...)
 }
 
 func splitAgentFrontmatter(content string) (frontmatter, body string) {

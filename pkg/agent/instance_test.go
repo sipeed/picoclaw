@@ -639,6 +639,16 @@ Use frontmatter identity.
 				ModelName: "default-model",
 			},
 		},
+		Tools: config.ToolsConfig{
+			MCP: config.MCPConfig{
+				Servers: map[string]config.MCPServerConfig{
+					"github":        {Enabled: true},
+					"github-legacy": {Enabled: true},
+					"filesystem":    {Enabled: true},
+					"slack":         {Enabled: true},
+				},
+			},
+		},
 	}
 
 	agent := NewAgentInstance(&config.AgentConfig{
@@ -897,5 +907,89 @@ func TestNewAgentInstance_ExplicitEmptyToolsFieldBlocksAllTools(t *testing.T) {
 				t.Fatal("expected list_dir to be blocked by explicit empty tools field")
 			}
 		})
+	}
+}
+
+func TestNewAgentInstance_FrontmatterToolPolicySupportsAllowAndDenyPatterns(t *testing.T) {
+	workspace := setupWorkspace(t, map[string]string{
+		"AGENT.md": `---
+tools:
+  allow:
+    - read_*
+    - list_*
+  deny:
+    - list_dir
+---
+# Agent
+`,
+	})
+	defer cleanupWorkspace(t, workspace)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				ModelName: "default-model",
+			},
+		},
+		Tools: config.ToolsConfig{
+			ReadFile: config.ReadFileToolConfig{Enabled: true},
+			ListDir:  config.ToolConfig{Enabled: true},
+		},
+	}
+
+	agent := NewAgentInstance(&config.AgentConfig{
+		ID:        "research",
+		Workspace: workspace,
+	}, &cfg.Agents.Defaults, cfg, &mockProvider{})
+
+	if _, ok := agent.Tools.Get("read_file"); !ok {
+		t.Fatal("expected read_file to be allowed by frontmatter policy")
+	}
+	if _, ok := agent.Tools.Get("list_dir"); ok {
+		t.Fatal("expected list_dir to be denied by frontmatter policy")
+	}
+}
+
+func TestNewAgentInstance_MCPServerPolicySupportsAllowAndDenyPatterns(t *testing.T) {
+	workspace := setupWorkspace(t, map[string]string{
+		"AGENT.md": `---
+mcpServers:
+  allow:
+    - git*
+    - filesystem
+  deny:
+    - github-legacy
+---
+# Agent
+`,
+	})
+	defer cleanupWorkspace(t, workspace)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				ModelName: "default-model",
+			},
+		},
+	}
+
+	agent := NewAgentInstance(&config.AgentConfig{
+		ID:        "research",
+		Workspace: workspace,
+	}, &cfg.Agents.Defaults, cfg, &mockProvider{})
+
+	if !agent.AllowsMCPServer("github") {
+		t.Fatal("expected github to be allowed by glob")
+	}
+	if !agent.AllowsMCPServer("filesystem") {
+		t.Fatal("expected filesystem to be allowed explicitly")
+	}
+	if agent.AllowsMCPServer("github-legacy") {
+		t.Fatal("expected github-legacy to be denied")
+	}
+	if agent.AllowsMCPServer("slack") {
+		t.Fatal("expected slack to be blocked by mcp policy")
 	}
 }

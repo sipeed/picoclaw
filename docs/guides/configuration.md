@@ -215,7 +215,7 @@ For more complete routing and model-tier examples, see the [Routing Guide](routi
 
 Per-agent tool declarations live in `AGENT.md` frontmatter, not in `config.json`.
 
-If `tools` is omitted from frontmatter, the agent gets the normal globally enabled tool set. If `tools` is present, PicoClaw registers only the listed runtime tools for that agent.
+If `tools` is omitted from frontmatter, the agent gets the normal globally enabled tool set. If `tools` is present, PicoClaw applies the declared tool policy during registration.
 
 ```md
 ---
@@ -231,10 +231,36 @@ You are the research agent.
 
 Notes:
 
-- This is an allowlist, not a preference hint.
-- Tool names are matched against the runtime tool name 1:1.
+- List form is shorthand for an allow policy.
+- Tool and MCP server names can be declared either as an exact-name list or as an `allow` / `deny` policy object.
+- Pattern matching uses shell-style globs against the runtime tool name or MCP server name.
 - Use runtime tool names such as `web_search`, `web_fetch`, `spawn`, `subagent`, `send_file`.
 - Tool declarations in `AGENT.md` are used by runtime/tooling, but they are not injected into the discovery prompt.
+
+Examples:
+
+```md
+---
+tools:
+  allow:
+    - mcp_*
+    - web_fetch
+  deny:
+    - mcp_gpt_researcher_*
+mcpServers:
+  allow:
+    - github
+    - filesystem
+---
+```
+
+Policy rules:
+
+- omitted field: no frontmatter restriction
+- list form: allowlist shorthand
+- `deny` is applied after `allow`
+- `deny` wins on overlap
+- explicit empty list blocks all values for that field
 
 ### Agent Discovery (Automatic)
 

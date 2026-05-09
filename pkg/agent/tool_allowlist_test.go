@@ -68,7 +68,7 @@ tools: [serial, reaction, send_tts, load_image, delegate, made_up]
 	}
 }
 
-func TestResolveAgentToolAllowlistDistinguishesMissingAndEmptyToolsField(t *testing.T) {
+func TestResolveAgentToolPolicyDistinguishesMissingAndEmptyToolsField(t *testing.T) {
 	tests := []struct {
 		name      string
 		agentMD   string
@@ -111,22 +111,50 @@ tools:
 			})
 			defer cleanupWorkspace(t, workspace)
 
-			allowlist := resolveAgentToolAllowlist(loadAgentDefinition(workspace))
+			policy := resolveAgentToolPolicy(loadAgentDefinition(workspace))
 
 			if tt.wantNil {
-				if allowlist != nil {
-					t.Fatalf("resolveAgentToolAllowlist() = %v, want nil", allowlist)
+				if policy != nil {
+					t.Fatalf("resolveAgentToolPolicy() = %v, want nil", policy)
 				}
 				return
 			}
 
-			if allowlist == nil {
-				t.Fatal("resolveAgentToolAllowlist() = nil, want explicit empty allowlist")
+			if policy == nil {
+				t.Fatal("resolveAgentToolPolicy() = nil, want explicit empty allowlist")
 			}
-			if len(allowlist) != 0 {
-				t.Fatalf("resolveAgentToolAllowlist() = %v, want empty allowlist", allowlist)
+			if len(policy.Allow) != 0 {
+				t.Fatalf("resolveAgentToolPolicy() = %+v, want empty allowlist", policy)
 			}
 		})
+	}
+}
+
+func TestResolveAgentToolPolicy_ObjectAllowDeny(t *testing.T) {
+	workspace := setupWorkspace(t, map[string]string{
+		"AGENT.md": `---
+tools:
+  allow:
+    - mcp_*
+    - web_fetch
+  deny:
+    - mcp_gpt_researcher_*
+---
+# Agent
+`,
+	})
+	defer cleanupWorkspace(t, workspace)
+
+	policy := resolveAgentToolPolicy(loadAgentDefinition(workspace))
+	if policy == nil {
+		t.Fatal("resolveAgentToolPolicy() = nil, want policy")
+	}
+	if got, want := policy.Allow, []string{"mcp_*", "web_fetch"}; len(got) != len(want) ||
+		got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("allow = %v, want %v", got, want)
+	}
+	if got, want := policy.Deny, []string{"mcp_gpt_researcher_*"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("deny = %v, want %v", got, want)
 	}
 }
 
@@ -180,5 +208,44 @@ mcpServers: [github, FileSystem, slak]
 	unknown := unknownAgentMCPServerNames(cfg, loadAgentDefinition(workspace))
 	if len(unknown) != 1 || unknown[0] != "slak" {
 		t.Fatalf("unknownAgentMCPServerNames() = %v, want [slak]", unknown)
+	}
+}
+
+func TestUnknownDeclarationsIgnoreGlobPatterns(t *testing.T) {
+	workspace := setupWorkspace(t, map[string]string{
+		"AGENT.md": `---
+tools:
+  allow:
+    - mcp_*
+    - web_*
+    - read_file
+mcpServers:
+  allow:
+    - git*
+    - filesystem
+---
+# Agent
+`,
+	})
+	defer cleanupWorkspace(t, workspace)
+
+	registry := agenttools.NewToolRegistry()
+	registry.Register(&allowlistTestTool{name: "read_file"})
+	cfg := &config.Config{
+		Tools: config.ToolsConfig{
+			MCP: config.MCPConfig{
+				Servers: map[string]config.MCPServerConfig{
+					"github":     {Enabled: true},
+					"filesystem": {Enabled: true},
+				},
+			},
+		},
+	}
+
+	if unknown := unknownAgentToolNames(registry, loadAgentDefinition(workspace)); len(unknown) != 0 {
+		t.Fatalf("unknownAgentToolNames() = %v, want none", unknown)
+	}
+	if unknown := unknownAgentMCPServerNames(cfg, loadAgentDefinition(workspace)); len(unknown) != 0 {
+		t.Fatalf("unknownAgentMCPServerNames() = %v, want none", unknown)
 	}
 }
