@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 // mockSpawner implements SubTurnSpawner for testing.
@@ -111,5 +112,86 @@ func TestSpawnTool_Execute_NilManager(t *testing.T) {
 	}
 	if !strings.Contains(result.ForLLM, "Subagent manager not configured") {
 		t.Errorf("Error message should mention manager not configured, got: %s", result.ForLLM)
+	}
+}
+
+func TestSpawnTool_SpawnStatusSeesSpawnedTask(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	spawnTool := NewSpawnTool(manager)
+	spawner := &mockSpawner{done: make(chan struct{})}
+	spawnTool.SetSpawner(spawner)
+	statusTool := NewSpawnStatusTool(manager)
+
+	ctx := WithToolContext(context.Background(), "telegram", "chat-1")
+	args := map[string]any{
+		"task":     "Write a haiku about coding",
+		"label":    "haiku-task",
+		"agent_id": "deep-research",
+	}
+
+	result := spawnTool.Execute(ctx, args)
+	if result == nil {
+		t.Fatal("Result should not be nil")
+	}
+	if result.IsError {
+		t.Fatalf("Expected success for valid task, got error: %s", result.ForLLM)
+	}
+	if !result.Async {
+		t.Fatal("SpawnTool should return async result")
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		status := statusTool.Execute(ctx, map[string]any{})
+		if status == nil {
+			t.Fatal("status result should not be nil")
+		}
+		if status.IsError {
+			t.Fatalf("spawn_status returned error: %s", status.ForLLM)
+		}
+		if strings.Contains(status.ForLLM, "subagent-1") {
+			if !strings.Contains(status.ForLLM, "haiku-task") {
+				t.Fatalf("expected label in status output, got: %s", status.ForLLM)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("spawn_status never observed spawned task; last output: %s", status.ForLLM)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	<-spawner.done
+}
+
+func TestSpawnTool_ExecuteAsync_MarksCallbackResultUserOnly(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	tool := NewSpawnTool(manager)
+	spawner := &mockSpawner{}
+	tool.SetSpawner(spawner)
+
+	done := make(chan *ToolResult, 1)
+	result := tool.ExecuteAsync(context.Background(), map[string]any{
+		"task": "Write a haiku about coding",
+	}, func(_ context.Context, res *ToolResult) {
+		done <- res
+	})
+
+	if result == nil || !result.Async {
+		t.Fatal("expected async acknowledgment result")
+	}
+
+	select {
+	case cbResult := <-done:
+		if cbResult == nil {
+			t.Fatal("expected callback result")
+		}
+		if cbResult.AsyncDelivery != AsyncDeliveryUserOnly {
+			t.Fatalf("AsyncDelivery = %q, want %q", cbResult.AsyncDelivery, AsyncDeliveryUserOnly)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for spawn callback result")
 	}
 }

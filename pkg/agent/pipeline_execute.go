@@ -103,6 +103,42 @@ func inferSkillNamesFromToolCall(ts *turnState, toolName string, toolArgs map[st
 	return names
 }
 
+func effectiveAsyncToolResultDelivery(result *tools.ToolResult) tools.AsyncDeliveryMode {
+	if result == nil || result.AsyncDelivery == "" {
+		return tools.AsyncDeliveryUserAndParent
+	}
+	return result.AsyncDelivery
+}
+
+func shouldPublishAsyncToolResultToUser(result *tools.ToolResult) bool {
+	if result == nil {
+		return false
+	}
+	switch effectiveAsyncToolResultDelivery(result) {
+	case tools.AsyncDeliveryParentOnly:
+		return false
+	default:
+		return !result.Silent && result.ForUser != ""
+	}
+}
+
+func shouldQueueAsyncToolResultForParent(result *tools.ToolResult) bool {
+	if result == nil {
+		return false
+	}
+	content := result.ContentForLLM()
+	if content == "" {
+		return false
+	}
+	switch effectiveAsyncToolResultDelivery(result) {
+	case tools.AsyncDeliveryUserOnly:
+		return false
+	case tools.AsyncDeliveryParentOnly, tools.AsyncDeliveryUserAndParent:
+		return true
+	}
+	return true
+}
+
 // ExecuteTools executes the tool loop, handling BeforeTool/ApproveTool/AfterTool hooks,
 // tool execution with async callbacks, media delivery, and steering injection.
 // Returns ToolControl indicating what the coordinator should do next:
@@ -474,17 +510,17 @@ toolLoop:
 		toolCallID := tc.ID
 		asyncToolName := toolName
 		asyncCallback := func(_ context.Context, result *tools.ToolResult) {
-			if !result.Silent && result.ForUser != "" {
+			if shouldPublishAsyncToolResultToUser(result) {
 				outCtx, outCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer outCancel()
 				_ = al.bus.PublishOutbound(outCtx, outboundMessageForTurn(ts, result.ForUser))
 			}
 
-			content := result.ContentForLLM()
-			if content == "" {
+			if !shouldQueueAsyncToolResultForParent(result) {
 				return
 			}
 
+			content := result.ContentForLLM()
 			content = al.cfg.FilterSensitiveData(content)
 
 			logger.InfoCF("agent", "Async tool completed, publishing result",

@@ -7,6 +7,7 @@ import (
 )
 
 type SpawnTool struct {
+	manager        *SubagentManager
 	spawner        SubTurnSpawner
 	defaultModel   string
 	maxTokens      int
@@ -22,6 +23,7 @@ func NewSpawnTool(manager *SubagentManager) *SpawnTool {
 		return &SpawnTool{}
 	}
 	return &SpawnTool{
+		manager:      manager,
 		defaultModel: manager.defaultModel,
 		maxTokens:    manager.maxTokens,
 		temperature:  manager.temperature,
@@ -31,6 +33,27 @@ func NewSpawnTool(manager *SubagentManager) *SpawnTool {
 // SetSpawner sets the SubTurnSpawner for direct sub-turn execution.
 func (t *SpawnTool) SetSpawner(spawner SubTurnSpawner) {
 	t.spawner = spawner
+	if t.manager != nil && spawner != nil {
+		t.manager.SetSpawner(func(
+			ctx context.Context,
+			task, label, agentID string,
+			tools *ToolRegistry,
+			maxTokens int,
+			temperature float64,
+			hasMaxTokens, hasTemperature bool,
+		) (*ToolResult, error) {
+			return spawner.SpawnSubTurn(ctx, SubTurnConfig{
+				TargetAgentID: strings.TrimSpace(agentID),
+				Model:         t.defaultModel,
+				Tools:         nil,
+				SystemPrompt:  buildSpawnSystemPrompt(task, label),
+				MaxTokens:     maxTokens,
+				Temperature:   temperature,
+				Async:         false,
+				Critical:      true,
+			})
+		})
+	}
 }
 
 func (t *SpawnTool) Name() string {
@@ -101,16 +124,40 @@ func (t *SpawnTool) execute(
 		}
 	}
 
-	// Build system prompt for spawned subagent
-	systemPrompt := fmt.Sprintf(
-		`You are a spawned subagent running in the background. Complete the given task independently and report back when done.
+	// Preferred path: route through SubagentManager so spawn_status and
+	// background execution share the same task registry.
+	if t.manager != nil {
+		wrappedCallback := cb
+		if cb != nil {
+			wrappedCallback = func(cbCtx context.Context, res *ToolResult) {
+				if res != nil {
+					res.WithAsyncDelivery(AsyncDeliveryUserOnly)
+				}
+				cb(cbCtx, res)
+			}
+		}
+		ack, err := t.manager.Spawn(
+			ctx,
+			task,
+			label,
+			strings.TrimSpace(agentID),
+			ToolChannel(ctx),
+			ToolChatID(ctx),
+			wrappedCallback,
+		)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("Spawn failed: %v", err)).WithError(err)
+		}
+		return AsyncResult(ack)
+	}
 
-Task: %s`,
-		task,
-	)
+	// Fallback: manager not configured
+	return ErrorResult("Subagent manager not configured")
+}
 
+func buildSpawnSystemPrompt(task, label string) string {
 	if label != "" {
-		systemPrompt = fmt.Sprintf(
+		return fmt.Sprintf(
 			`You are a spawned subagent labeled "%s" running in the background. Complete the given task independently and report back when done.
 
 Task: %s`,
@@ -118,38 +165,9 @@ Task: %s`,
 			task,
 		)
 	}
-
-	// Use spawner if available (direct SpawnSubTurn call)
-	if t.spawner != nil {
-		// Launch async sub-turn in goroutine
-		go func() {
-			result, err := t.spawner.SpawnSubTurn(ctx, SubTurnConfig{
-				Model:         t.defaultModel,
-				Tools:         nil, // Will inherit from parent via context
-				SystemPrompt:  systemPrompt,
-				MaxTokens:     t.maxTokens,
-				Temperature:   t.temperature,
-				Async:         true, // Async execution
-				Critical:      true, // Background spawn should survive parent turn completion
-				TargetAgentID: targetAgentID,
-			})
-			if err != nil {
-				result = ErrorResult(fmt.Sprintf("Spawn failed: %v", err)).WithError(err)
-			}
-
-			// Call callback if provided
-			if cb != nil {
-				cb(ctx, result)
-			}
-		}()
-
-		// Return immediate acknowledgment
-		if label != "" {
-			return AsyncResult(fmt.Sprintf("Spawned subagent '%s' for task: %s", label, task))
-		}
-		return AsyncResult(fmt.Sprintf("Spawned subagent for task: %s", task))
-	}
-
-	// Fallback: spawner not configured
-	return ErrorResult("Subagent manager not configured")
+	return fmt.Sprintf(
+		`You are a spawned subagent running in the background. Complete the given task independently and report back when done.
+Task: %s`,
+		task,
+	)
 }
