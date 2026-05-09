@@ -49,7 +49,7 @@ func (t *SpawnTool) SetSpawner(spawner SubTurnSpawner) {
 				SystemPrompt:  buildSpawnSystemPrompt(task, label),
 				MaxTokens:     maxTokens,
 				Temperature:   temperature,
-				Async:         true,
+				Async:         false,
 				Critical:      true,
 			})
 		})
@@ -167,7 +167,6 @@ Task: %s`,
 	}
 	return fmt.Sprintf(
 		`You are a spawned subagent running in the background. Complete the given task independently and report back when done.
-
 Task: %s`,
 		task,
 	)
