@@ -137,9 +137,7 @@ func NewExecToolWithConfig(
 
 	if cfg != nil {
 		execConfig := cfg.Tools.Exec
-		enableDenyPatterns := execConfig.EnableDenyPatterns
-		allowRemote = execConfig.AllowRemote
-		if enableDenyPatterns {
+		if cfg.Tools.Exec.EnableDenyPatterns {
 			denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 			if len(execConfig.CustomDenyPatterns) > 0 {
 				fmt.Printf("Using custom deny patterns: %v\n", execConfig.CustomDenyPatterns)
@@ -162,6 +160,7 @@ func NewExecToolWithConfig(
 			}
 			customAllowPatterns = append(customAllowPatterns, re)
 		}
+		allowRemote = execConfig.AllowRemote
 	} else {
 		denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 	}

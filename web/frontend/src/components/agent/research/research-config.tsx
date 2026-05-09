@@ -10,6 +10,8 @@ interface ResearchConfigProps {
   setDepth: (value: string) => void
   restrictToGraph: boolean
   setRestrictToGraph: (value: boolean) => void
+  onSave?: () => void
+  isSaving?: boolean
 }
 
 export function ResearchConfig({
@@ -19,6 +21,8 @@ export function ResearchConfig({
   setDepth,
   restrictToGraph,
   setRestrictToGraph,
+  onSave,
+  isSaving = false,
 }: ResearchConfigProps) {
   const scope = useMemo(() => {
     const type = parseFloat(researchType)
@@ -137,8 +141,12 @@ export function ResearchConfig({
 
       {/* Action Buttons */}
       <div className="space-y-2">
-        <button className="w-full px-4 py-3 rounded-xl bg-gradient-to-r from-[#F27D26] to-[#fb923c] text-black text-xs font-bold hover:from-[#ff8f4a] hover:to-[#fca55a] transition-all shadow-lg shadow-[#F27D26]/20">
-          Start Research
+        <button
+          onClick={onSave}
+          disabled={isSaving}
+          className="w-full px-4 py-3 rounded-xl bg-gradient-to-r from-[#F27D26] to-[#fb923c] text-black text-xs font-bold hover:from-[#ff8f4a] hover:to-[#fca55a] transition-all shadow-lg shadow-[#F27D26]/20 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isSaving ? "Saving..." : "Start Research"}
         </button>
         <button className="w-full px-4 py-2.5 rounded-lg bg-[#050505] border border-white/10 text-white/60 text-xs font-medium hover:border-white/30 hover:text-white transition-all">
           Advanced Settings

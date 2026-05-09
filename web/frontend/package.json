@@ -19,7 +19,6 @@
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",
     "@tabler/icons-react": "^3.43.0",
-    "motion": "^12.0.0",
     "@tailwindcss/vite": "^4.2.4",
     "@tanstack/react-query": "^5.99.0",
     "@tanstack/react-router": "^1.169.2",
@@ -31,6 +30,7 @@
     "i18next": "^26.0.10",
     "i18next-browser-languagedetector": "^8.2.1",
     "jotai": "^2.19.1",
+    "motion": "^12.0.0",
     "radix-ui": "^1.4.3",
     "react": "19.2.5",
     "react-dom": "19.2.5",
@@ -50,6 +50,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/typography": "^0.5.19",
     "@tanstack/router-plugin": "^1.164.0",
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",

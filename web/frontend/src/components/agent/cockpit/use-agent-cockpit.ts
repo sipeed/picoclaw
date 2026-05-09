@@ -8,7 +8,7 @@ import { getTools, getWebSearchConfig, setToolEnabled } from "@/api/tools"
 import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
 import { useCockpitSkills } from "@/hooks/use-cockpit-skills"
-import { listAgents, Agent } from "@/api/agents"
+import { listAgents } from "@/api/agents"
 
 type ToolStatusFilter = "all" | "enabled" | "disabled" | "blocked"
 

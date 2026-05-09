@@ -345,7 +345,7 @@ func TestGatewayStartReady_NoDefaultModel(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	h := NewHandler(configPath)
 
-	ready, reason, err := h.gatewayStartReady()
+	ready, reason, err := h.gatewayStartReady(false)
 	if err != nil {
 		t.Fatalf("gatewayStartReady() error = %v", err)
 	}
@@ -379,7 +379,7 @@ func TestGatewayStartReady_RejectsASROnlyDefaultModel(t *testing.T) {
 	}
 
 	h := NewHandler(configPath)
-	ready, reason, err := h.gatewayStartReady()
+	ready, reason, err := h.gatewayStartReady(false)
 	if err != nil {
 		t.Fatalf("gatewayStartReady() error = %v", err)
 	}
@@ -504,7 +504,7 @@ func TestGatewayStartReady_InvalidDefaultModel(t *testing.T) {
 	}
 
 	h := NewHandler(configPath)
-	ready, reason, err := h.gatewayStartReady()
+	ready, reason, err := h.gatewayStartReady(false)
 	if err != nil {
 		t.Fatalf("gatewayStartReady() error = %v", err)
 	}
@@ -527,7 +527,7 @@ func TestGatewayStartReady_ValidDefaultModel(t *testing.T) {
 	}
 
 	h := NewHandler(configPath)
-	ready, reason, err := h.gatewayStartReady()
+	ready, reason, err := h.gatewayStartReady(false)
 	if err != nil {
 		t.Fatalf("gatewayStartReady() error = %v", err)
 	}
@@ -548,7 +548,7 @@ func TestGatewayStartReady_DefaultModelWithoutCredential(t *testing.T) {
 	}
 
 	h := NewHandler(configPath)
-	ready, reason, err := h.gatewayStartReady()
+	ready, reason, err := h.gatewayStartReady(false)
 	if err != nil {
 		t.Fatalf("gatewayStartReady() error = %v", err)
 	}
@@ -596,7 +596,7 @@ func TestGatewayStartReady_LocalModelWithoutAPIKey(t *testing.T) {
 	}
 
 	h := NewHandler(configPath)
-	ready, reason, err := h.gatewayStartReady()
+	ready, reason, err := h.gatewayStartReady(false)
 	if err != nil {
 		t.Fatalf("gatewayStartReady() error = %v", err)
 	}
@@ -633,7 +633,7 @@ func TestGatewayStartReady_LocalModelWithRunningService(t *testing.T) {
 	}
 
 	h := NewHandler(configPath)
-	ready, reason, err := h.gatewayStartReady()
+	ready, reason, err := h.gatewayStartReady(false)
 	if err != nil {
 		t.Fatalf("gatewayStartReady() error = %v", err)
 	}
@@ -669,7 +669,7 @@ func TestGatewayStartReady_RemoteVLLMWithAPIKeyDoesNotProbe(t *testing.T) {
 	}
 
 	h := NewHandler(configPath)
-	ready, reason, err := h.gatewayStartReady()
+	ready, reason, err := h.gatewayStartReady(false)
 	if err != nil {
 		t.Fatalf("gatewayStartReady() error = %v", err)
 	}
@@ -702,7 +702,7 @@ func TestGatewayStartReady_LocalOllamaUsesDefaultProbeBase(t *testing.T) {
 	}
 
 	h := NewHandler(configPath)
-	ready, reason, err := h.gatewayStartReady()
+	ready, reason, err := h.gatewayStartReady(false)
 	if err != nil {
 		t.Fatalf("gatewayStartReady() error = %v", err)
 	}
@@ -731,7 +731,7 @@ func TestGatewayStartReady_OAuthModelRequiresStoredCredential(t *testing.T) {
 	}
 
 	h := NewHandler(configPath)
-	ready, reason, err := h.gatewayStartReady()
+	ready, reason, err := h.gatewayStartReady(false)
 	if err != nil {
 		t.Fatalf("gatewayStartReady() error = %v", err)
 	}
@@ -751,7 +751,7 @@ func TestGatewayStartReady_OAuthModelRequiresStoredCredential(t *testing.T) {
 		t.Fatalf("SetCredential() error = %v", err)
 	}
 
-	ready, reason, err = h.gatewayStartReady()
+	ready, reason, err = h.gatewayStartReady(false)
 	if err != nil {
 		t.Fatalf("gatewayStartReady() error = %v", err)
 	}
