@@ -244,7 +244,8 @@
     },
     "defaultOnSave": {
       "label": "Modelo Padrão",
-      "description": "Definir automaticamente este modelo como padrão após salvar."
+      "description": "Definir automaticamente este modelo como padrão após salvar.",
+      "unsupportedProvider": "Este provedor pode ser salvo na lista de modelos, mas não pode ser usado como modelo de chat padrão."
     },
     "add": {
       "button": "Adicionar Modelo",

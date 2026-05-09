@@ -1,5 +1,5 @@
 import { IconCheck, IconChevronDown } from "@tabler/icons-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import { Button } from "@/components/ui/button"
@@ -50,6 +50,11 @@ export function ProviderCombobox({
   const [open, setOpen] = useState(false)
   const [customMode, setCustomMode] = useState(false)
   const [customValue, setCustomValue] = useState("")
+  const [containerEl, setContainerEl] = useState<HTMLElement | null>(null)
+
+  useEffect(() => {
+    setContainerEl(containerRef?.current ?? null)
+  }, [containerRef])
 
   const allProviders: MergedProvider[] = backendOptions
     ? mergeWithBackendOptions(backendOptions)
@@ -122,7 +127,7 @@ export function ProviderCombobox({
           <IconChevronDown className="ml-2 size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" container={containerRef?.current}>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" container={containerEl}>
         {customMode ? (
           <div className="flex flex-col gap-2 p-2">
             <Input

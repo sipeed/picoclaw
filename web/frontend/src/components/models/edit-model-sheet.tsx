@@ -3,7 +3,7 @@ import {
   IconLoader2,
   IconPlugConnected,
 } from "@tabler/icons-react"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { type ComponentType, useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import {
@@ -36,12 +36,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
 
-import { FetchModelsDialog } from "./fetch-models-dialog"
 import { type FieldValidation, validateModelField } from "./model-validation"
 import { ProviderCombobox } from "./provider-combobox"
 import { getProviderKey } from "./provider-label"
 import { FETCHABLE_PROVIDER_KEYS, PROVIDER_API_BASES, PROVIDER_MAP } from "./provider-registry"
-import { TestModelDialog } from "./test-model-dialog"
 
 interface EditForm {
   provider: string
@@ -159,6 +157,21 @@ export function EditModelSheet({
   const [catalogModels, setCatalogModels] = useState<string[]>([])
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+  // Dynamic imports for dialogs added in later PRs
+  const [FetchModelsDialogComp, setFetchModelsDialogComp] = useState<ComponentType<{
+    open: boolean; onClose: () => void; onFill: (models: string[]) => void;
+    provider: string; apiKey: string; apiBase: string;
+  }> | null>(null)
+  const [TestModelDialogComp, setTestModelDialogComp] = useState<ComponentType<{
+    model: unknown; open: boolean; onClose: () => void;
+    inlineParams: { provider: string; model: string; apiBase: string; apiKey: string; authMethod: string; modelIndex?: number };
+  }> | null>(null)
+  useEffect(() => {
+    import("./fetch-models-dialog").then((m) => setFetchModelsDialogComp(() => m.FetchModelsDialog)).catch(() => {})
+    import("./test-model-dialog").then((m) => setTestModelDialogComp(() => m.TestModelDialog)).catch(() => {})
+  }, [])
+
   const initialForm = model ? buildInitialEditForm(model) : null
   const isDirty =
     model != null &&
@@ -222,6 +235,10 @@ export function EditModelSheet({
     if (form.modelId) {
       debouncedValidateModel(form.modelId, provider)
     }
+    const allowed = providerOptions?.find((o) => o.id === provider)?.default_model_allowed ?? false
+    if (!allowed) {
+      setSetAsDefault(false)
+    }
   }
 
   const applyFix = () => {
@@ -246,6 +263,9 @@ export function EditModelSheet({
 
   const providerDef = PROVIDER_MAP.get(form.provider)
   const commonModels = providerDef?.commonModels || []
+  const defaultModelAllowed = form.provider
+    ? (providerOptions?.find((o) => o.id === form.provider)?.default_model_allowed ?? false)
+    : false
 
   const handleSave = async () => {
     if (!model) return
@@ -457,6 +477,7 @@ export function EditModelSheet({
                       size="sm"
                       className="h-7 text-xs"
                       onClick={() => setFetchOpen(true)}
+                      disabled={!FetchModelsDialogComp}
                     >
                       <IconDownload className="size-3" />
                       {t("models.fetch.title")}
@@ -497,7 +518,7 @@ export function EditModelSheet({
                   variant="outline"
                   size="sm"
                   onClick={() => setTestOpen(true)}
-                  disabled={!model}
+                  disabled={!model || !TestModelDialogComp}
                 >
                   <IconPlugConnected className="size-4" />
                   {t("models.test.testConnection")}
@@ -506,9 +527,14 @@ export function EditModelSheet({
 
               <SwitchCardField
                 label={t("models.defaultOnSave.label")}
-                hint={t("models.defaultOnSave.description")}
+                hint={
+                  !defaultModelAllowed
+                    ? t("models.defaultOnSave.unsupportedProvider")
+                    : t("models.defaultOnSave.description")
+                }
                 checked={setAsDefault}
                 onCheckedChange={setSetAsDefault}
+                disabled={!defaultModelAllowed}
               />
 
               <AdvancedSection>
@@ -672,28 +698,32 @@ export function EditModelSheet({
         </SheetContent>
       </Sheet>
 
-      <TestModelDialog
-        model={model}
-        open={testOpen}
-        onClose={() => setTestOpen(false)}
-        inlineParams={{
-          provider: form.provider,
-          model: form.modelId,
-          apiBase: form.apiBase,
-          apiKey: form.apiKey,
-          authMethod: form.authMethod,
-          modelIndex: model?.index,
-        }}
-      />
+      {TestModelDialogComp && (
+        <TestModelDialogComp
+          model={model}
+          open={testOpen}
+          onClose={() => setTestOpen(false)}
+          inlineParams={{
+            provider: form.provider,
+            model: form.modelId,
+            apiBase: form.apiBase,
+            apiKey: form.apiKey,
+            authMethod: form.authMethod,
+            modelIndex: model?.index,
+          }}
+        />
+      )}
 
-      <FetchModelsDialog
-        open={fetchOpen}
-        onClose={() => setFetchOpen(false)}
-        onFill={handleFetchFill}
-        provider={form.provider}
-        apiKey={form.apiKey}
-        apiBase={form.apiBase}
-      />
+      {FetchModelsDialogComp && (
+        <FetchModelsDialogComp
+          open={fetchOpen}
+          onClose={() => setFetchOpen(false)}
+          onFill={handleFetchFill}
+          provider={form.provider}
+          apiKey={form.apiKey}
+          apiBase={form.apiBase}
+        />
+      )}
     </>
   )
 }

@@ -246,7 +246,8 @@
     },
     "defaultOnSave": {
       "label": "Default Model",
-      "description": "Automatically set this model as default after saving."
+      "description": "Automatically set this model as default after saving.",
+      "unsupportedProvider": "This provider can be saved in the model list but cannot be used as the default chat model."
     },
     "add": {
       "button": "Add Model",

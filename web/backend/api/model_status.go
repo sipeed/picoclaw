@@ -434,8 +434,11 @@ func modelProbeAPIBase(m *config.ModelConfig) string {
 	}
 
 	protocol := modelProtocol(m)
-	if providers.IsEmptyAPIKeyAllowedForProtocol(protocol) {
-		return providers.DefaultAPIBaseForProtocol(protocol)
+
+	// Resolve the default API base for any known protocol so that probes
+	// work even when the config stores only a provider without an explicit api_base.
+	if defaultBase := providers.DefaultAPIBaseForProtocol(protocol); defaultBase != "" {
+		return normalizeModelProbeAPIBase(defaultBase)
 	}
 
 	switch protocol {
