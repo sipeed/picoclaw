@@ -348,7 +348,11 @@ func createStartupProvider(
 		return &startupBlockedProvider{reason: reason}, "", nil
 	}
 
-	return providers.CreateProvider(cfg)
+	provider, modelID, err := providers.CreateProvider(cfg)
+	if err != nil {
+		return nil, "", err
+	}
+	return provider, modelID, nil
 }
 
 func setupAndStartServices(

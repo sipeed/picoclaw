@@ -47,7 +47,38 @@ func (al *AgentLoop) emitEvent(kind runtimeevents.Kind, meta HookMeta, payload a
 		return
 	}
 
+	deliveredToEvolution := false
+	if kind == runtimeevents.KindAgentTurnEnd {
+		evolution := al.currentEvolutionBridge()
+		if evolution != nil {
+			deliveredToEvolution = evolution.handleRuntimeTurnEnd(evt)
+		}
+	}
+	if deliveredToEvolution {
+		if evt.Attrs == nil {
+			evt.Attrs = make(map[string]any, 1)
+		}
+		evt.Attrs[evolutionDirectDeliveryAttr] = true
+	}
 	al.publishRuntimeEvent(evt)
+}
+
+func (al *AgentLoop) currentEvolutionBridge() *evolutionBridge {
+	if al == nil {
+		return nil
+	}
+	al.mu.RLock()
+	defer al.mu.RUnlock()
+	return al.evolution
+}
+
+func (al *AgentLoop) isCurrentEvolutionBridge(bridge *evolutionBridge) bool {
+	if al == nil || bridge == nil {
+		return false
+	}
+	al.mu.RLock()
+	defer al.mu.RUnlock()
+	return al.evolution == bridge
 }
 
 // MountHook registers an in-process hook on the agent loop.

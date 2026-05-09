@@ -364,9 +364,14 @@ func (p *Pipeline) CallLLM(
 				exec.history = asmResp.History
 				exec.summary = asmResp.Summary
 			}
-			exec.messages = ts.agent.ContextBuilder.BuildMessagesFromPrompt(
-				promptBuildRequestForTurn(ts, exec.history, exec.summary, "", nil),
-			)
+			contextualSkills := ts.activeSkills
+			if ts.agent.ContextBuilder != nil {
+				contextualSkills = ts.agent.ContextBuilder.ResolveActiveSkillsForContext(ts.activeSkills)
+			}
+			ts.recordSkillContextSnapshot(skillContextTriggerContextRetryRebuild, contextualSkills)
+			rebuildPromptReq := promptBuildRequestForTurn(ts, exec.history, exec.summary, "", nil)
+			rebuildPromptReq.ActiveSkills = append([]string(nil), contextualSkills...)
+			exec.messages = ts.agent.ContextBuilder.BuildMessagesFromPrompt(rebuildPromptReq)
 			exec.callMessages = exec.messages
 			if exec.gracefulTerminal {
 				msgs := append([]providers.Message(nil), exec.messages...)

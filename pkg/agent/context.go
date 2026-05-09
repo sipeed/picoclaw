@@ -999,8 +999,26 @@ func (cb *ContextBuilder) AddAssistantMessage(
 }
 
 func (cb *ContextBuilder) buildActiveSkillsContext(skillNames []string) string {
-	if cb.skillsLoader == nil || len(skillNames) == 0 {
+	ordered := cb.ResolveActiveSkillsForContext(skillNames)
+	if len(ordered) == 0 {
 		return ""
+	}
+
+	content := cb.skillsLoader.LoadSkillsForContext(ordered)
+	if strings.TrimSpace(content) == "" {
+		return ""
+	}
+
+	return fmt.Sprintf(`# Active Skills
+
+The following skills are active for this request. Follow them when relevant.
+
+%s`, content)
+}
+
+func (cb *ContextBuilder) ResolveActiveSkillsForContext(skillNames []string) []string {
+	if cb.skillsLoader == nil || len(skillNames) == 0 {
+		return nil
 	}
 
 	var ordered []string
@@ -1017,19 +1035,9 @@ func (cb *ContextBuilder) buildActiveSkillsContext(skillNames []string) string {
 		ordered = append(ordered, canonical)
 	}
 	if len(ordered) == 0 {
-		return ""
+		return nil
 	}
-
-	content := cb.skillsLoader.LoadSkillsForContext(ordered)
-	if strings.TrimSpace(content) == "" {
-		return ""
-	}
-
-	return fmt.Sprintf(`# Active Skills
-
-The following skills are active for this request. Follow them when relevant.
-
-%s`, content)
+	return ordered
 }
 
 func (cb *ContextBuilder) buildActiveSkillsPromptParts(skillNames []string) []PromptPart {
