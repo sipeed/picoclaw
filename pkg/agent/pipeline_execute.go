@@ -350,6 +350,7 @@ toolLoop:
 					}
 
 					if steerMsgs := al.dequeueSteeringMessagesForScope(ts.sessionKey); len(steerMsgs) > 0 {
+						exec.markAdditionalUserInputObserved()
 						exec.pendingMessages = append(exec.pendingMessages, steerMsgs...)
 					}
 
@@ -647,6 +648,11 @@ toolLoop:
 			toolResult = tools.ErrorResult("hook returned nil tool result")
 		}
 
+		toolSummary := strings.TrimSpace(toolResult.ForUser)
+		if toolSummary != "" {
+			exec.actionLog = appendTurnActionRecord(exec.actionLog, "tool_result", toolName, toolSummary, toolResult.IsError)
+		}
+
 		if len(toolResult.Media) > 0 && toolResult.ResponseHandled {
 			parts := make([]bus.MediaPart, 0, len(toolResult.Media))
 			for _, ref := range toolResult.Media {
@@ -756,6 +762,7 @@ toolLoop:
 		}
 
 		if steerMsgs := al.dequeueSteeringMessagesForScope(ts.sessionKey); len(steerMsgs) > 0 {
+			exec.markSteeringObserved()
 			exec.pendingMessages = append(exec.pendingMessages, steerMsgs...)
 		}
 
@@ -824,6 +831,7 @@ toolLoop:
 	// This covers the case where tools were partially executed and skipped due to steering,
 	// but one tool had ResponseHandled=false (so allResponsesHandled=false).
 	if len(exec.pendingMessages) > 0 {
+		exec.markAdditionalUserInputObserved()
 		logger.InfoCF("agent", "Pending steering after partial tool execution; continuing turn",
 			map[string]any{
 				"agent_id":            ts.agent.ID,
@@ -836,6 +844,7 @@ toolLoop:
 
 	// Poll for newly arrived steering
 	if steerMsgs := al.dequeueSteeringMessagesForScope(ts.sessionKey); len(steerMsgs) > 0 {
+		exec.markSteeringObserved()
 		logger.InfoCF("agent", "Steering arrived after tool delivery; continuing turn",
 			map[string]any{
 				"agent_id":       ts.agent.ID,
@@ -847,6 +856,16 @@ toolLoop:
 	}
 
 	// No pending steering: finalize or break depending on allResponsesHandled
+	if shouldFinalizeAfterToolLoopWithRender(al, exec) {
+		logger.InfoCF("agent", "Tool loop completed; rendering terminal reply from accumulated turn context",
+			map[string]any{
+				"agent_id":   ts.agent.ID,
+				"iteration":  iteration,
+				"tool_count": len(normalizedToolCalls),
+			})
+		return ToolControlFinalize
+	}
+
 	if exec.allResponsesHandled {
 		summaryMsg := providers.Message{
 			Role:        "assistant",

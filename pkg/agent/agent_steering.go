@@ -4,6 +4,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -55,7 +56,7 @@ func (al *AgentLoop) runTurnWithSteering(ctx context.Context, initialMsg bus.Inb
 		}
 		response = ""
 	}
-	finalResponse := response
+	responses := appendSteeringResponse(nil, response)
 
 	// Build continuation target
 	target, targetErr := al.buildContinuationTarget(initialMsg)
@@ -80,11 +81,12 @@ func (al *AgentLoop) runTurnWithSteering(ctx context.Context, initialMsg bus.Inb
 				"chat_id": target.ChatID,
 				"error":   continueErr.Error(),
 			})
-	} else if continued != "" {
-		finalResponse = continued
+	} else {
+		responses = appendSteeringResponse(responses, continued)
 	}
 
 	// Publish final response
+	finalResponse := joinSteeringResponses(responses)
 	if finalResponse != "" {
 		al.publishResponseWithContextIfNeeded(
 			ctx,
@@ -92,7 +94,19 @@ func (al *AgentLoop) runTurnWithSteering(ctx context.Context, initialMsg bus.Inb
 			target.ChatID,
 			target.SessionKey,
 			finalResponse,
-			&initialMsg.Context,
+			&bus.InboundContext{
+				Channel: initialMsg.Context.Channel,
+				ChatID:  initialMsg.Context.ChatID,
+				TopicID: initialMsg.Context.TopicID,
+				Raw: func() map[string]string {
+					raw := make(map[string]string, len(initialMsg.Context.Raw)+1)
+					for k, v := range initialMsg.Context.Raw {
+						raw[k] = v
+					}
+					raw[metadataKeyMessageKind] = messageKindFinalReply
+					return raw
+				}(),
+			},
 			finalResponseAlwaysPublish,
 		)
 	}
@@ -106,10 +120,10 @@ func (al *AgentLoop) drainQueuedSteeringContinuations(
 		return "", nil
 	}
 
-	finalResponse := ""
+	responses := make([]string, 0, 2)
 	for al.pendingSteeringCountForScope(target.SessionKey) > 0 {
 		if err := ctx.Err(); err != nil {
-			return finalResponse, err
+			return joinSteeringResponses(responses), err
 		}
 
 		logger.InfoCF("agent", "Continuing queued steering after turn end",
@@ -122,15 +136,33 @@ func (al *AgentLoop) drainQueuedSteeringContinuations(
 
 		continued, continueErr := al.Continue(ctx, target.SessionKey, target.Channel, target.ChatID)
 		if continueErr != nil {
-			return finalResponse, continueErr
+			return joinSteeringResponses(responses), continueErr
 		}
 		if continued == "" {
 			break
 		}
-		finalResponse = continued
+		responses = appendSteeringResponse(responses, continued)
 	}
 
-	return finalResponse, nil
+	return joinSteeringResponses(responses), nil
+}
+
+func appendSteeringResponse(responses []string, response string) []string {
+	response = strings.TrimSpace(response)
+	if response == "" {
+		return responses
+	}
+	if n := len(responses); n > 0 && responses[n-1] == response {
+		return responses
+	}
+	return append(responses, response)
+}
+
+func joinSteeringResponses(responses []string) string {
+	if len(responses) == 0 {
+		return ""
+	}
+	return strings.Join(responses, "\n\n")
 }
 
 func (al *AgentLoop) resolveSteeringTarget(msg bus.InboundMessage) (string, string, bool) {

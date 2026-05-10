@@ -65,12 +65,6 @@ func outboundMessageIsToolCalls(msg bus.OutboundMessage) bool {
 	return strings.EqualFold(strings.TrimSpace(msg.Context.Raw["message_kind"]), MessageKindToolCalls)
 }
 
-func outboundMessageFinalizesTrackedToolFeedback(msg bus.OutboundMessage) bool {
-	return !outboundMessageIsToolFeedback(msg) &&
-		!outboundMessageIsThought(msg) &&
-		!outboundMessageIsToolCalls(msg)
-}
-
 // writeJSON sends a JSON message to the connection with write locking.
 func (pc *picoConn) writeJSON(v any) error {
 	if pc.closed.Load() {
@@ -315,7 +309,7 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 		}
 	}
 	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(msg.ChatID)
-	if outboundMessageFinalizesTrackedToolFeedback(msg) {
+	if channels.OutboundMessageFinalizesTrackedToolFeedback(msg) {
 		if msgIDs, handled := c.FinalizeToolFeedbackMessage(ctx, msg); handled {
 			return msgIDs, nil
 		}
@@ -354,7 +348,7 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 	}
 	if isToolFeedback {
 		c.RecordToolFeedbackMessage(msg.ChatID, msgID, msg.Content)
-	} else if hasTrackedMsg && outboundMessageFinalizesTrackedToolFeedback(msg) {
+	} else if hasTrackedMsg && channels.OutboundMessageDismissesTrackedToolFeedback(msg) {
 		c.dismissTrackedToolFeedbackMessage(ctx, msg.ChatID, trackedMsgID)
 	}
 	return []string{msgID}, nil
@@ -440,7 +434,7 @@ func (c *PicoChannel) finalizeTrackedToolFeedbackMessage(
 }
 
 func (c *PicoChannel) FinalizeToolFeedbackMessage(ctx context.Context, msg bus.OutboundMessage) ([]string, bool) {
-	if !outboundMessageFinalizesTrackedToolFeedback(msg) {
+	if !channels.OutboundMessageFinalizesTrackedToolFeedback(msg) {
 		return nil, false
 	}
 	return c.finalizeTrackedToolFeedbackMessage(ctx, msg.ChatID, msg.Content, c.editMessage, msg.ContextUsage)

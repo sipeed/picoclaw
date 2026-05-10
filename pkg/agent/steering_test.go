@@ -811,6 +811,9 @@ func TestAgentLoop_Run_AutoContinuesLateSteeringMessage(t *testing.T) {
 	if out1.Content != "continued response" {
 		t.Fatalf("expected continued response, got %q", out1.Content)
 	}
+	if got := strings.TrimSpace(out1.Context.Raw[metadataKeyMessageKind]); got != messageKindFinalReply {
+		t.Fatalf("expected continued response to be marked %q, got %q", messageKindFinalReply, got)
+	}
 
 	noExtraCtx, cancelNoExtra := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancelNoExtra()

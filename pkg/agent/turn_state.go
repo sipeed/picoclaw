@@ -82,9 +82,10 @@ const (
 // =============================================================================
 
 type turnResult struct {
-	finalContent string
-	status       TurnEndStatus
-	followUps    []bus.InboundMessage
+	finalContent           string
+	status                 TurnEndStatus
+	followUps              []bus.InboundMessage
+	preferNewOutboundReply bool
 }
 
 // =============================================================================
@@ -118,7 +119,10 @@ type turnExecution struct {
 	summary         string
 
 	// Turn output
-	finalContent string
+	finalContent           string
+	actionLog              []TurnActionRecord
+	sawSteering            bool
+	sawAdditionalUserInput bool
 
 	// Iteration tracking
 	iteration int
@@ -148,6 +152,21 @@ type turnExecution struct {
 	abortedByHook      bool // true when HookActionAbortTurn triggered
 }
 
+func (e *turnExecution) markAdditionalUserInputObserved() {
+	if e == nil {
+		return
+	}
+	e.sawAdditionalUserInput = true
+}
+
+func (e *turnExecution) markSteeringObserved() {
+	if e == nil {
+		return
+	}
+	e.sawSteering = true
+	e.sawAdditionalUserInput = true
+}
+
 // newTurnExecution creates a turnExecution initialized from turnState and options.
 func newTurnExecution(
 	agent *AgentInstance,
@@ -157,12 +176,13 @@ func newTurnExecution(
 	messages []providers.Message,
 ) *turnExecution {
 	return &turnExecution{
-		history:         history,
-		summary:         summary,
-		messages:        messages,
-		pendingMessages: append([]providers.Message(nil), opts.InitialSteeringMessages...),
-		iteration:       0,
-		phase:           LLMPhaseSetup,
+		history:                history,
+		summary:                summary,
+		messages:               messages,
+		pendingMessages:        append([]providers.Message(nil), opts.InitialSteeringMessages...),
+		sawAdditionalUserInput: len(opts.InitialSteeringMessages) > 0,
+		iteration:              0,
+		phase:                  LLMPhaseSetup,
 	}
 }
 

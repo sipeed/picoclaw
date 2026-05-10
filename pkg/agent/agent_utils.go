@@ -97,6 +97,22 @@ func outboundMessageForTurnWithKind(ts *turnState, content, kind string) bus.Out
 	return msg
 }
 
+func outboundContextWithMessageKind(
+	inboundCtx *bus.InboundContext,
+	channel, chatID, replyToMessageID, kind string,
+) bus.InboundContext {
+	ctx := outboundContextFromInbound(inboundCtx, channel, chatID, replyToMessageID)
+	kind = strings.TrimSpace(kind)
+	if kind == "" {
+		return ctx
+	}
+	if ctx.Raw == nil {
+		ctx.Raw = make(map[string]string, 1)
+	}
+	ctx.Raw[metadataKeyMessageKind] = kind
+	return ctx
+}
+
 func latestUserContent(messages []providers.Message) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]

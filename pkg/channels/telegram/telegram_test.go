@@ -272,12 +272,14 @@ func TestSend_ShortMessage_SingleCall(t *testing.T) {
 	assert.Len(t, caller.calls, 1, "short message should result in exactly one SendMessage call")
 }
 
-func TestSend_NonToolFeedbackDeletesTrackedProgressMessage(t *testing.T) {
+func TestSend_FinalReplySendsNewMessageInsteadOfEditingTrackedProgress(t *testing.T) {
 	caller := &stubCaller{
 		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
 			switch {
-			case strings.Contains(url, "editMessageText"):
+			case strings.Contains(url, "sendMessage"):
 				return successResponseWithMessageID(t, 1), nil
+			case strings.Contains(url, "deleteMessage"):
+				return successResponse(t), nil
 			default:
 				t.Fatalf("unexpected API call: %s", url)
 				return nil, nil
@@ -290,12 +292,18 @@ func TestSend_NonToolFeedbackDeletesTrackedProgressMessage(t *testing.T) {
 	ids, err := ch.Send(context.Background(), bus.OutboundMessage{
 		ChatID:  "12345",
 		Content: "final reply",
+		Context: bus.InboundContext{
+			Raw: map[string]string{
+				"message_kind": "final_reply",
+			},
+		},
 	})
 
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"1"}, ids)
-	require.Len(t, caller.calls, 1)
-	assert.Contains(t, caller.calls[0].URL, "editMessageText")
+	require.Len(t, caller.calls, 2)
+	assert.Contains(t, caller.calls[0].URL, "sendMessage")
+	assert.Contains(t, caller.calls[1].URL, "deleteMessage")
 	_, ok := ch.currentToolFeedbackMessage("12345")
 	assert.False(t, ok, "tracked tool feedback should be cleared after final reply")
 }

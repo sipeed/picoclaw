@@ -160,13 +160,6 @@ func (al *AgentLoop) publishResponseWithContextIfNeeded(
 		msg.ContextUsage = computeContextUsage(agent, sessionKey)
 	}
 	al.bus.PublishOutbound(ctx, msg)
-	logger.InfoCF("agent", "Published outbound response",
-		map[string]any{
-			"channel":     channel,
-			"chat_id":     chatID,
-			"topic_id":    msg.Context.TopicID,
-			"content_len": len(response),
-		})
 }
 
 func (al *AgentLoop) targetReasoningChannelID(channelName string) (chatID string) {

@@ -41,6 +41,7 @@ func DefaultConfig() *Config {
 					AnimationIntervalSecs:  0,
 					EditMinIntervalSeconds: 0,
 				},
+				FinalTurnRenderMode: "",
 				SplitOnMarker:       false,
 				MaxLLMRetries:       2,
 				LLMRetryBackoffSecs: 2,
