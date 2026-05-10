@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -484,6 +485,10 @@ toolLoop:
 			toolResult = tools.ErrorResult("hook returned nil tool result")
 		}
 
+		if toolSummary := strings.TrimSpace(toolResult.ForUser); toolSummary != "" {
+			exec.actionLog = appendTurnActionRecord(exec.actionLog, "tool_result", toolName, toolSummary, toolResult.IsError)
+		}
+
 		if len(toolResult.Media) > 0 && toolResult.ResponseHandled {
 			parts := make([]bus.MediaPart, 0, len(toolResult.Media))
 			for _, ref := range toolResult.Media {
@@ -678,6 +683,16 @@ toolLoop:
 	}
 
 	// No pending steering: finalize or break depending on allResponsesHandled
+	if shouldFinalizeAfterToolLoopWithRender(al, exec) {
+		logger.InfoCF("agent", "Tool loop completed; rendering terminal reply from accumulated turn context",
+			map[string]any{
+				"agent_id":   ts.agent.ID,
+				"iteration":  iteration,
+				"tool_count": len(normalizedToolCalls),
+			})
+		return ToolControlFinalize
+	}
+
 	if exec.allResponsesHandled {
 		summaryMsg := providers.Message{
 			Role:        "assistant",

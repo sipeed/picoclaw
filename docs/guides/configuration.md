@@ -136,6 +136,41 @@ Session scope controls how much memory is shared between chats, users, threads, 
 
 For step-by-step recipes and isolation patterns, see the [Session Guide](session-guide.md).
 
+### Final Turn Render
+
+`agents.defaults.final_turn_render_mode` controls an experimental final-response render pass for steering-heavy turns.
+
+When enabled with value `llm`, PicoClaw may do one extra **same-agent** LLM pass after tool execution has already completed:
+
+- it reuses the accumulated turn context
+- it disables tool calling for that final pass
+- it asks the same agent to answer the **full accumulated request chain**, not only the latest follow-up
+
+This is intended for multi-message turns such as:
+
+- `How much did I eat today?`
+- `And yesterday?`
+- `And the day before yesterday?`
+
+Config:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "final_turn_render_mode": "llm"
+    }
+  }
+}
+```
+
+Notes:
+
+- omitted or empty: disabled
+- `llm`: enable same-agent final no-tools render for eligible steering-heavy turns
+- this setting is experimental and is mainly useful when follow-up messages often extend the same in-flight turn
+- this is separate from channel/message delivery behavior; it affects only how the final reply text is rendered
+
 ### Routing
 
 Routing is configured through `agents.dispatch.rules`.
