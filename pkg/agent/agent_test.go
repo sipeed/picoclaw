@@ -5661,3 +5661,288 @@ func (p *concurrentMockProvider) Chat(
 func (p *concurrentMockProvider) GetDefaultModel() string {
 	return "test-model"
 }
+
+type activitySummaryWithSteeringProvider struct {
+	calls int
+}
+
+func (m *activitySummaryWithSteeringProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	if len(messages) > 0 && tools == nil {
+		last := messages[len(messages)-1]
+		if last.Role == "user" && strings.Contains(last.Content, "already-completed turn") {
+			return &providers.LLMResponse{
+				Content: "Записал.\n\nДобавил активности:\n- yoga — 30 мин\n- squats — 20 повторений",
+			}, nil
+		}
+	}
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			Content: "Записал yoga — 30 мин.",
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_activity_steering",
+				Type:      "function",
+				Name:      "activity_with_steering_tool",
+				Arguments: map[string]any{},
+			}},
+		}, nil
+	}
+
+	for _, msg := range messages {
+		if msg.Role == "user" && msg.Content == "и еще 20 приседаний" {
+			return &providers.LLMResponse{Content: "Записал squats — 20 повторений."}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("provider did not receive steering or synthesis prompt")
+}
+
+func (m *activitySummaryWithSteeringProvider) GetDefaultModel() string {
+	return "activity-summary-with-steering-model"
+}
+
+type activityWithSteeringTool struct {
+	loop *AgentLoop
+}
+
+func (m *activityWithSteeringTool) Name() string { return "activity_with_steering_tool" }
+func (m *activityWithSteeringTool) Description() string {
+	return "Queues a follow-up steering message after recording an activity"
+}
+
+func (m *activityWithSteeringTool) Parameters() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	}
+}
+
+func (m *activityWithSteeringTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	if err := m.loop.Steer(providers.Message{Role: "user", Content: "и еще 20 приседаний"}); err != nil {
+		return tools.ErrorResult(err.Error()).WithError(err)
+	}
+	return &tools.ToolResult{
+		ForLLM:  "activity recorded",
+		ForUser: "Записал yoga — 30 мин.",
+	}
+}
+
+func TestProcessMessage_FinalActionSummarySynthesizesAcrossSteering(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:           tmpDir,
+				ModelName:           "test-model",
+				MaxTokens:           4096,
+				MaxToolIterations:   10,
+				FinalTurnRenderMode: "llm",
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &activitySummaryWithSteeringProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	al.RegisterTool(&activityWithSteeringTool{loop: al})
+
+	response, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
+		Channel:  "telegram",
+		ChatID:   "chat1",
+		SenderID: "user1",
+		Content:  "я позанимался йогой 30 минут",
+	}))
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+
+	want := "Записал.\n\nДобавил активности:\n- yoga — 30 мин\n- squats — 20 повторений"
+	if response != want {
+		t.Fatalf("response = %q, want %q", response, want)
+	}
+	if provider.calls != 3 {
+		t.Fatalf("expected 3 LLM calls including final synthesis, got %d", provider.calls)
+	}
+}
+
+type daySummaryAcrossSteeringProvider struct {
+	calls int
+}
+
+func (p *daySummaryAcrossSteeringProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	p.calls++
+	if len(messages) > 0 && tools == nil {
+		last := messages[len(messages)-1]
+		if last.Role == "user" && strings.Contains(last.Content, "already-completed turn") {
+			full := flattenMessageContents(messages)
+			if !strings.Contains(full, "today total: 428 kcal") ||
+				!strings.Contains(full, "yesterday total: 1561 kcal") ||
+				!strings.Contains(full, "day-before total: 1455 kcal") {
+				return nil, fmt.Errorf("final render pass missing accumulated tool results")
+			}
+			return &providers.LLMResponse{
+				Content: "Коротко по итогам:\n- сегодня — 428 ккал\n- вчера — 1561 ккал\n- позавчера — 1455 ккал",
+			}, nil
+		}
+	}
+
+	switch p.calls {
+	case 1:
+		return &providers.LLMResponse{
+			Content: "",
+			ToolCalls: []providers.ToolCall{{
+				ID:   "call_day_today",
+				Type: "function",
+				Name: "day_summary_with_steering_tool",
+				Arguments: map[string]any{
+					"day": "today",
+				},
+			}},
+		}, nil
+	case 2:
+		if !messageExists(messages, "А за вчера?") {
+			return nil, fmt.Errorf("provider did not receive yesterday steering")
+		}
+		return &providers.LLMResponse{
+			Content: "",
+			ToolCalls: []providers.ToolCall{{
+				ID:   "call_day_yesterday",
+				Type: "function",
+				Name: "day_summary_with_steering_tool",
+				Arguments: map[string]any{
+					"day": "yesterday",
+				},
+			}},
+		}, nil
+	case 3:
+		if !messageExists(messages, "И за позавчера?") {
+			return nil, fmt.Errorf("provider did not receive day-before steering")
+		}
+		return &providers.LLMResponse{
+			Content: "",
+			ToolCalls: []providers.ToolCall{{
+				ID:   "call_day_before",
+				Type: "function",
+				Name: "day_summary_with_steering_tool",
+				Arguments: map[string]any{
+					"day": "day_before",
+				},
+			}},
+		}, nil
+	default:
+		return nil, fmt.Errorf("unexpected provider call count %d", p.calls)
+	}
+}
+
+func (p *daySummaryAcrossSteeringProvider) GetDefaultModel() string {
+	return "day-summary-across-steering-model"
+}
+
+type daySummaryWithSteeringTool struct {
+	loop *AgentLoop
+}
+
+func (t *daySummaryWithSteeringTool) Name() string { return "day_summary_with_steering_tool" }
+func (t *daySummaryWithSteeringTool) Description() string {
+	return "Fetches one day summary and queues the next follow-up question"
+}
+
+func (t *daySummaryWithSteeringTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"day": map[string]any{"type": "string"},
+		},
+		"required": []string{"day"},
+	}
+}
+
+func (t *daySummaryWithSteeringTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	day, _ := args["day"].(string)
+	switch day {
+	case "today":
+		if err := t.loop.Steer(providers.Message{Role: "user", Content: "А за вчера?"}); err != nil {
+			return tools.ErrorResult(err.Error()).WithError(err)
+		}
+		return &tools.ToolResult{ForLLM: "today total: 428 kcal"}
+	case "yesterday":
+		if err := t.loop.Steer(providers.Message{Role: "user", Content: "И за позавчера?"}); err != nil {
+			return tools.ErrorResult(err.Error()).WithError(err)
+		}
+		return &tools.ToolResult{ForLLM: "yesterday total: 1561 kcal"}
+	case "day_before":
+		return &tools.ToolResult{ForLLM: "day-before total: 1455 kcal"}
+	default:
+		return tools.ErrorResult("unknown day")
+	}
+}
+
+func TestProcessMessage_FinalActionSummaryRendersAcrossInformationalSteering(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:           tmpDir,
+				ModelName:           "test-model",
+				MaxTokens:           4096,
+				MaxToolIterations:   10,
+				FinalTurnRenderMode: "llm",
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &daySummaryAcrossSteeringProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	al.RegisterTool(&daySummaryWithSteeringTool{loop: al})
+
+	response, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
+		Channel:  "telegram",
+		ChatID:   "chat1",
+		SenderID: "user1",
+		Content:  "А сколько я за сегодня съел?",
+	}))
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+
+	want := "Коротко по итогам:\n- сегодня — 428 ккал\n- вчера — 1561 ккал\n- позавчера — 1455 ккал"
+	if response != want {
+		t.Fatalf("response = %q, want %q", response, want)
+	}
+	if provider.calls != 4 {
+		t.Fatalf("expected 4 LLM calls including final render, got %d", provider.calls)
+	}
+}
+
+func messageExists(messages []providers.Message, want string) bool {
+	for _, msg := range messages {
+		if msg.Role == "user" && msg.Content == want {
+			return true
+		}
+	}
+	return false
+}
+
+func flattenMessageContents(messages []providers.Message) string {
+	parts := make([]string, 0, len(messages))
+	for _, msg := range messages {
+		if strings.TrimSpace(msg.Content) == "" {
+			continue
+		}
+		parts = append(parts, msg.Content)
+	}
+	return strings.Join(parts, "\n")
+}

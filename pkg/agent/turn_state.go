@@ -118,6 +118,8 @@ type turnExecution struct {
 
 	// Turn output
 	finalContent string
+	actionLog    []TurnActionRecord
+	sawSteering  bool
 
 	// Iteration tracking
 	iteration int
@@ -147,6 +149,13 @@ type turnExecution struct {
 	abortedByHook      bool // true when HookActionAbortTurn triggered
 }
 
+func (e *turnExecution) markSteeringObserved() {
+	if e == nil {
+		return
+	}
+	e.sawSteering = true
+}
+
 // newTurnExecution creates a turnExecution initialized from turnState and options.
 func newTurnExecution(
 	agent *AgentInstance,
@@ -160,6 +169,7 @@ func newTurnExecution(
 		summary:         summary,
 		messages:        messages,
 		pendingMessages: append([]providers.Message(nil), opts.InitialSteeringMessages...),
+		sawSteering:     len(opts.InitialSteeringMessages) > 0,
 		iteration:       0,
 		phase:           LLMPhaseSetup,
 	}

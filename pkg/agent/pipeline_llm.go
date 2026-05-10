@@ -474,7 +474,9 @@ func (p *Pipeline) CallLLM(
 		if responseContent == "" && exec.response.ReasoningContent != "" && ts.channel != "pico" {
 			responseContent = exec.response.ReasoningContent
 		}
+		exec.actionLog = appendTurnActionRecord(exec.actionLog, "assistant_direct", "", responseContent, false)
 		if steerMsgs := al.dequeueSteeringMessagesForScope(ts.sessionKey); len(steerMsgs) > 0 {
+			exec.markSteeringObserved()
 			logger.InfoCF("agent", "Steering arrived after direct LLM response; continuing turn",
 				map[string]any{
 					"agent_id":       ts.agent.ID,
