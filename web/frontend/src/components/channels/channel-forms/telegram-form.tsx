@@ -86,6 +86,16 @@ export function TelegramForm({
               placeholder="https://api.telegram.org"
             />
           </Field>
+
+          <div>
+            <SwitchCardField
+              label={t("channels.field.businessMode")}
+              hint={t("channels.form.desc.businessMode")}
+              checked={asBool(config.business_mode)}
+              onCheckedChange={(checked) => onChange("business_mode", checked)}
+              ariaLabel={t("channels.field.businessMode")}
+            />
+          </div>
         </CardContent>
       </Card>
 

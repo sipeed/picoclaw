@@ -271,6 +271,41 @@ func TestSend_ShortMessage_SingleCall(t *testing.T) {
 	assert.Len(t, caller.calls, 1, "short message should result in exactly one SendMessage call")
 }
 
+func TestSend_BusinessMessageIncludesBusinessConnectionID(t *testing.T) {
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			return successResponse(t), nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:  "business:biz-conn-1:777",
+		Content: "hello business",
+		Context: bus.InboundContext{
+			Channel: "telegram",
+			ChatID:  "business:biz-conn-1:777",
+			Account: "biz-conn-1",
+			Raw: map[string]string{
+				"business_connection_id": "biz-conn-1",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, caller.calls, 1)
+
+	var params struct {
+		ChatID               int64  `json:"chat_id"`
+		BusinessConnectionID string `json:"business_connection_id"`
+		Text                 string `json:"text"`
+	}
+	require.NoError(t, json.Unmarshal(caller.calls[0].Data.BodyRaw, &params))
+	assert.Equal(t, int64(777), params.ChatID)
+	assert.Equal(t, "biz-conn-1", params.BusinessConnectionID)
+	assert.Equal(t, "hello business", params.Text)
+}
+
 func TestSend_NonToolFeedbackDeletesTrackedProgressMessage(t *testing.T) {
 	caller := &stubCaller{
 		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
@@ -684,6 +719,17 @@ func TestParseTelegramChatID_InvalidThreadID(t *testing.T) {
 	_, _, err := parseTelegramChatID("-100123/not-a-thread")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid thread ID")
+}
+
+func TestParseTelegramOutboundTarget_BusinessConnectionIDWithColon(t *testing.T) {
+	formatted := formatTelegramDeliveryChatID(777, "biz:conn:1", 42)
+
+	target, err := parseTelegramOutboundTarget(formatted)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(777), target.chatID)
+	assert.Equal(t, 42, target.threadID)
+	assert.Equal(t, "biz:conn:1", target.businessConnectionID)
 }
 
 func TestSend_WithForumThreadID(t *testing.T) {
