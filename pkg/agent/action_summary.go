@@ -33,7 +33,8 @@ func appendTurnActionRecord(
 	}
 	if n := len(records); n > 0 {
 		prev := records[n-1]
-		if prev.Source == rec.Source && prev.Tool == rec.Tool && prev.Text == rec.Text && prev.Error == rec.Error {
+		if prev.Source == rec.Source && prev.Tool == rec.Tool && prev.Text == rec.Text &&
+			prev.Error == rec.Error {
 			return records
 		}
 	}
@@ -70,10 +71,18 @@ func buildFinalTurnRenderInstruction(exec *turnExecution) string {
 	b.WriteString("Write the final user-facing reply for this already-completed turn.\n")
 	b.WriteString("Use the same language and general style as the conversation.\n")
 	b.WriteString("Do not call tools.\n")
-	b.WriteString("Answer the full accumulated user request across this turn, not only the latest follow-up.\n")
-	b.WriteString("If a later follow-up clearly corrected, narrowed, or replaced an earlier request, follow the latest clarified intent.\n")
-	b.WriteString("If later follow-ups added to earlier requests, include the completed additive results together.\n")
-	b.WriteString("Use only the facts already present in the conversation and tool results. Do not invent missing results.\n")
+	b.WriteString(
+		"Answer the full accumulated user request across this turn, not only the latest follow-up.\n",
+	)
+	b.WriteString(
+		"If a later follow-up clearly corrected, narrowed, or replaced an earlier request, follow the latest clarified intent.\n",
+	)
+	b.WriteString(
+		"If later follow-ups added to earlier requests, include the completed additive results together.\n",
+	)
+	b.WriteString(
+		"Use only the facts already present in the conversation and tool results. Do not invent missing results.\n",
+	)
 	b.WriteString("Keep the reply concise and natural.\n")
 
 	if exec == nil || len(exec.actionLog) == 0 {
@@ -96,7 +105,7 @@ func buildFinalTurnRenderInstruction(exec *turnExecution) string {
 		return b.String()
 	}
 	b.WriteString("\nExplicit user-facing outcomes recorded during the turn:\n")
-	b.WriteString(string(raw))
+	_, _ = b.Write(raw)
 	return b.String()
 }
 
@@ -128,7 +137,7 @@ func tryRenderFinalTurnReply(
 	})
 
 	opts := map[string]any{
-		"max_tokens":       min(ts.agent.MaxTokens, 800),
+		"max_tokens":       minInt(ts.agent.MaxTokens, 800),
 		"temperature":      0.2,
 		"prompt_cache_key": ts.agent.ID,
 	}
@@ -186,7 +195,7 @@ func shouldFinalizeAfterToolLoopWithRender(al *AgentLoop, exec *turnExecution) b
 	return !exec.allResponsesHandled
 }
 
-func min(a, b int) int {
+func minInt(a, b int) int {
 	if a < b {
 		return a
 	}
