@@ -370,6 +370,8 @@ func TestProcessMessage_BtwCommandRunsWithoutPersistingHistory(t *testing.T) {
 	defaultAgent.Sessions.SetHistory(sessionKey, initialHistory)
 	defaultAgent.Sessions.SetSummary(sessionKey, "The team decided to keep state request-scoped.")
 
+	initialHistory = defaultAgent.Sessions.GetHistory(sessionKey)
+
 	response, err := al.processMessage(context.Background(), msg)
 	if err != nil {
 		t.Fatalf("processMessage() error = %v", err)
@@ -487,6 +489,8 @@ func TestProcessMessage_BtwCommandUsesIsolatedProvider(t *testing.T) {
 		{Role: "assistant", Content: "Right, keep it request-scoped."},
 	}
 	defaultAgent.Sessions.SetHistory(mainSessionKey, initialHistory)
+
+	initialHistory = defaultAgent.Sessions.GetHistory(mainSessionKey)
 
 	// Process a /btw command
 	response, err := al.processMessage(context.Background(), bus.InboundMessage{
