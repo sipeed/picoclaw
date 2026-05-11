@@ -61,7 +61,7 @@ func (t *SpawnTool) Name() string {
 }
 
 func (t *SpawnTool) Description() string {
-	return "Spawn a subagent to handle a task in the background. Use this for complex or time-consuming tasks that can run independently. The subagent will complete the task and report back when done."
+	return "Spawn a subagent to handle a task in the background. Use this for complex or time-consuming tasks that can run independently. The subagent will complete the task and report back when done. Optional delivery_mode controls whether the final async result goes to the user, the parent agent, or both."
 }
 
 func (t *SpawnTool) Parameters() map[string]any {
@@ -79,6 +79,15 @@ func (t *SpawnTool) Parameters() map[string]any {
 			"agent_id": map[string]any{
 				"type":        "string",
 				"description": "Optional target agent ID to delegate the task to",
+			},
+			"delivery_mode": map[string]any{
+				"type":        "string",
+				"description": "Optional async result routing policy: user_only, parent_only, or user_and_parent. Defaults to user_only.",
+				"enum": []string{
+					string(AsyncDeliveryUserOnly),
+					string(AsyncDeliveryParentOnly),
+					string(AsyncDeliveryUserAndParent),
+				},
 			},
 		},
 		"required": []string{"task"},
@@ -116,6 +125,10 @@ func (t *SpawnTool) execute(
 	label, _ := args["label"].(string)
 	agentID, _ := args["agent_id"].(string)
 	targetAgentID := strings.TrimSpace(agentID)
+	deliveryMode, err := parseSpawnDeliveryMode(args["delivery_mode"])
+	if err != nil {
+		return ErrorResult(err.Error()).WithError(err)
+	}
 
 	// Check allowlist if targeting a specific agent
 	if targetAgentID != "" && t.allowlistCheck != nil {
@@ -131,7 +144,7 @@ func (t *SpawnTool) execute(
 		if cb != nil {
 			wrappedCallback = func(cbCtx context.Context, res *ToolResult) {
 				if res != nil {
-					res.WithAsyncDelivery(AsyncDeliveryUserOnly)
+					res.WithAsyncDelivery(deliveryMode)
 				}
 				cb(cbCtx, res)
 			}
@@ -153,6 +166,24 @@ func (t *SpawnTool) execute(
 
 	// Fallback: manager not configured
 	return ErrorResult("Subagent manager not configured")
+}
+
+func parseSpawnDeliveryMode(raw any) (AsyncDeliveryMode, error) {
+	if raw == nil {
+		return AsyncDeliveryUserOnly, nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("delivery_mode must be a string")
+	}
+	switch AsyncDeliveryMode(strings.TrimSpace(value)) {
+	case AsyncDeliveryUserOnly, AsyncDeliveryParentOnly, AsyncDeliveryUserAndParent:
+		return AsyncDeliveryMode(strings.TrimSpace(value)), nil
+	case "":
+		return AsyncDeliveryUserOnly, nil
+	default:
+		return "", fmt.Errorf("delivery_mode must be one of: user_only, parent_only, user_and_parent")
+	}
 }
 
 func buildSpawnSystemPrompt(task, label string) string {
