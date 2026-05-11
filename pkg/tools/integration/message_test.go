@@ -3,8 +3,13 @@ package integrationtools
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"regexp"
 	"testing"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/session"
 )
 
@@ -12,10 +17,17 @@ func TestMessageTool_Execute_Success(t *testing.T) {
 	tool := NewMessageTool()
 
 	var sentChannel, sentChatID, sentContent string
-	tool.SetSendCallback(func(ctx context.Context, channel, chatID, content, replyToMessageID string) error {
+	tool.SetSendCallback(func(
+		ctx context.Context,
+		channel, chatID, content, replyToMessageID string,
+		mediaParts []bus.MediaPart,
+	) error {
 		sentChannel = channel
 		sentChatID = chatID
 		sentContent = content
+		if len(mediaParts) != 0 {
+			t.Fatalf("expected no media parts, got %d", len(mediaParts))
+		}
 		if ToolAgentID(ctx) != "" || ToolSessionKey(ctx) != "" || ToolSessionScope(ctx) != nil {
 			t.Fatalf("expected empty turn metadata in basic context, got agent=%q session=%q scope=%+v",
 				ToolAgentID(ctx), ToolSessionKey(ctx), ToolSessionScope(ctx))
@@ -67,7 +79,11 @@ func TestMessageTool_Execute_WithCustomChannel(t *testing.T) {
 	tool := NewMessageTool()
 
 	var sentChannel, sentChatID string
-	tool.SetSendCallback(func(ctx context.Context, channel, chatID, content, replyToMessageID string) error {
+	tool.SetSendCallback(func(
+		ctx context.Context,
+		channel, chatID, content, replyToMessageID string,
+		mediaParts []bus.MediaPart,
+	) error {
 		sentChannel = channel
 		sentChatID = chatID
 		return nil
@@ -102,7 +118,11 @@ func TestMessageTool_Execute_SendFailure(t *testing.T) {
 	tool := NewMessageTool()
 
 	sendErr := errors.New("network error")
-	tool.SetSendCallback(func(ctx context.Context, channel, chatID, content, replyToMessageID string) error {
+	tool.SetSendCallback(func(
+		ctx context.Context,
+		channel, chatID, content, replyToMessageID string,
+		mediaParts []bus.MediaPart,
+	) error {
 		return sendErr
 	})
 
@@ -142,12 +162,12 @@ func TestMessageTool_Execute_MissingContent(t *testing.T) {
 
 	result := tool.Execute(ctx, args)
 
-	// Verify error result for missing content
+	// Verify error result for missing content/media
 	if !result.IsError {
-		t.Error("Expected IsError=true for missing content")
+		t.Error("Expected IsError=true for missing content/media")
 	}
-	if result.ForLLM != "content is required" {
-		t.Errorf("Expected ForLLM 'content is required', got '%s'", result.ForLLM)
+	if result.ForLLM != "content or media is required" {
+		t.Errorf("Expected ForLLM 'content or media is required', got '%s'", result.ForLLM)
 	}
 }
 
@@ -155,7 +175,11 @@ func TestMessageTool_Execute_NoTargetChannel(t *testing.T) {
 	tool := NewMessageTool()
 	// No WithToolContext — channel/chatID are empty
 
-	tool.SetSendCallback(func(ctx context.Context, channel, chatID, content, replyToMessageID string) error {
+	tool.SetSendCallback(func(
+		ctx context.Context,
+		channel, chatID, content, replyToMessageID string,
+		mediaParts []bus.MediaPart,
+	) error {
 		return nil
 	})
 
@@ -226,9 +250,9 @@ func TestMessageTool_Parameters(t *testing.T) {
 	}
 
 	// Check required properties
-	required, ok := params["required"].([]string)
-	if !ok || len(required) != 1 || required[0] != "content" {
-		t.Error("Expected 'content' to be required")
+	anyOf, ok := params["anyOf"].([]map[string]any)
+	if !ok || len(anyOf) != 2 {
+		t.Fatal("Expected anyOf content/media requirement")
 	}
 
 	// Check content property
@@ -238,6 +262,14 @@ func TestMessageTool_Parameters(t *testing.T) {
 	}
 	if contentProp["type"] != "string" {
 		t.Error("Expected content type to be 'string'")
+	}
+
+	mediaProp, ok := props["media"].(map[string]any)
+	if !ok {
+		t.Fatal("Expected 'media' property")
+	}
+	if mediaProp["type"] != "array" {
+		t.Error("Expected media type to be 'array'")
 	}
 
 	// Check channel property (optional)
@@ -272,7 +304,11 @@ func TestMessageTool_Execute_WithReplyToMessageID(t *testing.T) {
 	tool := NewMessageTool()
 
 	var sentReplyTo string
-	tool.SetSendCallback(func(ctx context.Context, channel, chatID, content, replyToMessageID string) error {
+	tool.SetSendCallback(func(
+		ctx context.Context,
+		channel, chatID, content, replyToMessageID string,
+		mediaParts []bus.MediaPart,
+	) error {
 		sentReplyTo = replyToMessageID
 		return nil
 	})
@@ -297,7 +333,11 @@ func TestMessageTool_Execute_PropagatesTurnSessionMetadata(t *testing.T) {
 
 	var gotAgentID, gotSessionKey string
 	var gotScope *session.SessionScope
-	tool.SetSendCallback(func(ctx context.Context, channel, chatID, content, replyToMessageID string) error {
+	tool.SetSendCallback(func(
+		ctx context.Context,
+		channel, chatID, content, replyToMessageID string,
+		mediaParts []bus.MediaPart,
+	) error {
 		gotAgentID = ToolAgentID(ctx)
 		gotSessionKey = ToolSessionKey(ctx)
 		gotScope = ToolSessionScope(ctx)
@@ -327,5 +367,57 @@ func TestMessageTool_Execute_PropagatesTurnSessionMetadata(t *testing.T) {
 	}
 	if gotScope == nil || gotScope.Values["chat"] != "direct:test-chat-id" {
 		t.Fatalf("ToolSessionScope() = %+v, want chat scope", gotScope)
+	}
+}
+
+func TestMessageTool_Execute_WithMedia(t *testing.T) {
+	tool := NewMessageTool()
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "photo.jpg")
+	if err := os.WriteFile(imgPath, []byte("fake image bytes"), 0o644); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+	tool.ConfigureLocalMedia(dir, true, 1024*1024, []*regexp.Regexp{})
+	tool.SetMediaStore(store)
+
+	var gotContent string
+	var gotParts []bus.MediaPart
+	tool.SetSendCallback(func(
+		ctx context.Context,
+		channel, chatID, content, replyToMessageID string,
+		mediaParts []bus.MediaPart,
+	) error {
+		gotContent = content
+		gotParts = append([]bus.MediaPart(nil), mediaParts...)
+		return nil
+	})
+
+	ctx := WithToolContext(context.Background(), "telegram", "-1001")
+	result := tool.Execute(ctx, map[string]any{
+		"content": "Caption text",
+		"media": []any{
+			map[string]any{
+				"path": imgPath,
+			},
+		},
+	})
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	if gotContent != "Caption text" {
+		t.Fatalf("content = %q, want Caption text", gotContent)
+	}
+	if len(gotParts) != 1 {
+		t.Fatalf("expected 1 media part, got %d", len(gotParts))
+	}
+	if gotParts[0].Caption != "Caption text" {
+		t.Fatalf("first part caption = %q, want Caption text", gotParts[0].Caption)
+	}
+	if gotParts[0].Ref == "" {
+		t.Fatal("expected media ref to be populated")
+	}
+	if gotParts[0].Type == "" {
+		t.Fatal("expected media type to be inferred")
 	}
 }
