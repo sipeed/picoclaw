@@ -540,15 +540,15 @@ func TestHandleUpdateWebSearchConfig_PreservesAndReplacesMultiKeys(t *testing.T)
 	}
 }
 
-func TestResolveCurrentWebSearchProvider_PrefersFreeProvidersInAutoMode(t *testing.T) {
+func TestResolveCurrentWebSearchProvider_PrefersConfiguredProvidersInAutoMode(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Tools.Web.Provider = "auto"
 	cfg.Tools.Web.Sogou.Enabled = true
 	cfg.Tools.Web.Brave.Enabled = true
 	cfg.Tools.Web.Brave.SetAPIKey("brave-test-key")
 
-	if got := resolveCurrentWebSearchProvider(cfg); got != "sogou" {
-		t.Fatalf("resolveCurrentWebSearchProvider() = %q, want sogou", got)
+	if got := resolveCurrentWebSearchProvider(cfg); got != "brave" {
+		t.Fatalf("resolveCurrentWebSearchProvider() = %q, want brave", got)
 	}
 }
 

@@ -1853,7 +1853,7 @@ func TestWebTool_AutoProviderPrefersConfiguredProvidersBeforeSogou(t *testing.T)
 	}
 }
 
-func TestWebTool_AutoProviderPrefersFreeProvidersBeforeGemini(t *testing.T) {
+func TestWebTool_AutoProviderPrefersConfiguredProvidersBeforeGemini(t *testing.T) {
 	opts := WebSearchToolOptions{
 		GeminiEnabled:        true,
 		GeminiAPIKey:         "google-key",
@@ -1872,16 +1872,16 @@ func TestWebTool_AutoProviderPrefersFreeProvidersBeforeGemini(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveWebSearchProviderName() error: %v", err)
 	}
-	if name != "duckduckgo" {
-		t.Fatalf("provider = %q, want duckduckgo", name)
+	if name != "gemini" {
+		t.Fatalf("provider = %q, want gemini", name)
 	}
 
 	name, err = ResolveWebSearchProviderName(opts, "今天上海天气")
 	if err != nil {
 		t.Fatalf("ResolveWebSearchProviderName() error: %v", err)
 	}
-	if name != "sogou" {
-		t.Fatalf("provider = %q, want sogou", name)
+	if name != "gemini" {
+		t.Fatalf("provider = %q, want gemini", name)
 	}
 }
 

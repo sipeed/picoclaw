@@ -1312,6 +1312,13 @@ func (opts WebSearchToolOptions) resolveProviderName(query string) (string, erro
 
 	sogouReady := opts.providerReady("sogou")
 	duckReady := opts.providerReady("duckduckgo")
+
+	for _, name := range autoPrimaryWebSearchProviders {
+		if opts.providerReady(name) {
+			return name, nil
+		}
+	}
+
 	if sogouReady && duckReady {
 		if prefersDuckDuckGoQuery(query) {
 			return "duckduckgo", nil
@@ -1325,7 +1332,7 @@ func (opts WebSearchToolOptions) resolveProviderName(query string) (string, erro
 		return "duckduckgo", nil
 	}
 
-	for _, name := range autoPrimaryWebSearchProviders {
+	for _, name := range autoFallbackWebSearchProviders {
 		if opts.providerReady(name) {
 			return name, nil
 		}
