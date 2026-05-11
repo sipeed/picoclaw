@@ -1909,8 +1909,8 @@ func TestGeminiSearchProvider_SearchSuccess(t *testing.T) {
 				if req.Method != http.MethodPost {
 					t.Fatalf("method = %s, want POST", req.Method)
 				}
-				if got := req.Header.Get("x-goog-api-key"); got != "google-key" {
-					t.Fatalf("x-goog-api-key = %q, want google-key", got)
+				if got := req.Header.Get("X-Goog-Api-Key"); got != "google-key" {
+					t.Fatalf("X-Goog-Api-Key = %q, want google-key", got)
 				}
 				if !strings.Contains(req.URL.String(), "/models/gemini-2.5-flash:generateContent") {
 					t.Fatalf("unexpected URL: %s", req.URL.String())

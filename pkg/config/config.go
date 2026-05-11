@@ -896,12 +896,12 @@ type BaiduSearchConfig struct {
 }
 
 type WebToolsConfig struct {
-	ToolConfig  `                  yaml:"-"                      envPrefix:"PICOCLAW_TOOLS_WEB_"`
+	ToolConfig  `                   yaml:"-"                      envPrefix:"PICOCLAW_TOOLS_WEB_"`
 	Brave       BraveConfig        `yaml:"brave,omitempty"                                        json:"brave"`
 	Tavily      TavilyConfig       `yaml:"tavily,omitempty"                                       json:"tavily"`
 	Sogou       SogouConfig        `yaml:"-"                                                      json:"sogou"`
 	DuckDuckGo  DuckDuckGoConfig   `yaml:"-"                                                      json:"duckduckgo"`
-	Gemini      GeminiSearchConfig `yaml:"gemini,omitempty"                                      json:"gemini"`
+	Gemini      GeminiSearchConfig `yaml:"gemini,omitempty"                                       json:"gemini"`
 	Perplexity  PerplexityConfig   `yaml:"perplexity,omitempty"                                   json:"perplexity"`
 	SearXNG     SearXNGConfig      `yaml:"-"                                                      json:"searxng"`
 	GLMSearch   GLMSearchConfig    `yaml:"glm_search,omitempty"                                   json:"glm_search"`

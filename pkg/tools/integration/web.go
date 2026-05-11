@@ -504,13 +504,16 @@ func (p *GeminiSearchProvider) Search(
 		return "", fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	endpoint := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", url.PathEscape(model))
+	endpoint := fmt.Sprintf(
+		"https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent",
+		url.PathEscape(model),
+	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-goog-api-key", p.apiKey)
+	req.Header.Set("X-Goog-Api-Key", p.apiKey)
 	req.Header.Set("User-Agent", fmt.Sprintf(userAgentHonest, config.Version))
 
 	resp, err := p.client.Do(req)
@@ -1330,12 +1333,6 @@ func (opts WebSearchToolOptions) resolveProviderName(query string) (string, erro
 	}
 	if duckReady {
 		return "duckduckgo", nil
-	}
-
-	for _, name := range autoFallbackWebSearchProviders {
-		if opts.providerReady(name) {
-			return name, nil
-		}
 	}
 
 	for _, name := range autoFallbackWebSearchProviders {
