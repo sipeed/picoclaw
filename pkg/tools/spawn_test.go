@@ -195,3 +195,59 @@ func TestSpawnTool_ExecuteAsync_MarksCallbackResultUserOnly(t *testing.T) {
 		t.Fatal("timed out waiting for spawn callback result")
 	}
 }
+
+func TestSpawnTool_ExecuteAsync_RespectsExplicitDeliveryMode(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	tool := NewSpawnTool(manager)
+	spawner := &mockSpawner{}
+	tool.SetSpawner(spawner)
+
+	done := make(chan *ToolResult, 1)
+	result := tool.ExecuteAsync(context.Background(), map[string]any{
+		"task":          "Write a haiku about coding",
+		"delivery_mode": string(AsyncDeliveryUserAndParent),
+	}, func(_ context.Context, res *ToolResult) {
+		done <- res
+	})
+
+	if result == nil || !result.Async {
+		t.Fatal("expected async acknowledgment result")
+	}
+
+	select {
+	case cbResult := <-done:
+		if cbResult == nil {
+			t.Fatal("expected callback result")
+		}
+		if cbResult.AsyncDelivery != AsyncDeliveryUserAndParent {
+			t.Fatalf("AsyncDelivery = %q, want %q", cbResult.AsyncDelivery, AsyncDeliveryUserAndParent)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for spawn callback result")
+	}
+}
+
+func TestSpawnTool_Execute_InvalidDeliveryMode(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	tool := NewSpawnTool(manager)
+
+	tests := []map[string]any{
+		{"task": "test", "delivery_mode": 123},
+		{"task": "test", "delivery_mode": "wrong"},
+	}
+
+	for _, args := range tests {
+		result := tool.Execute(context.Background(), args)
+		if result == nil {
+			t.Fatal("expected result")
+		}
+		if !result.IsError {
+			t.Fatalf("expected error for args=%v", args)
+		}
+		if !strings.Contains(result.ForLLM, "delivery_mode") {
+			t.Fatalf("expected delivery_mode error, got: %s", result.ForLLM)
+		}
+	}
+}

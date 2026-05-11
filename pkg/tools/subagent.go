@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -273,14 +274,14 @@ After completing the task, provide a clear summary of what was done.`
 	if err != nil {
 		task.Status = "failed"
 		task.Result = fmt.Sprintf("Error: %v", err)
-		// Check if it was canceled
-		if ctx.Err() != nil {
+		// Only report cancellation when cancellation is the actual cause.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			task.Status = "canceled"
 			task.Result = "Task canceled during execution"
 		}
 		result = &ToolResult{
 			ForLLM:  task.Result,
-			ForUser: "",
+			ForUser: task.Result,
 			Silent:  false,
 			IsError: true,
 			Async:   false,
