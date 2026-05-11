@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,12 +9,25 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/audio/asr"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
+
+// fetchableProviders lists providers that support OpenAI-compatible /models listing.
+var fetchableProviders = map[string]bool{
+	"openai": true, "deepseek": true, "openrouter": true,
+	"qwen-portal": true, "qwen-intl": true, "moonshot": true,
+	"volcengine": true, "zhipu": true, "groq": true,
+	"mistral": true, "nvidia": true, "cerebras": true,
+	"venice": true, "shengsuanyun": true, "vivgrid": true,
+	"minimax": true, "longcat": true, "modelscope": true,
+	"mimo": true, "avian": true, "zai": true, "novita": true,
+	"litellm": true, "vllm": true, "lmstudio": true, "ollama": true,
+}
 
 // registerModelRoutes binds model list management endpoints to the ServeMux.
 func (h *Handler) registerModelRoutes(mux *http.ServeMux) {
@@ -22,6 +36,9 @@ func (h *Handler) registerModelRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/models/default", h.handleSetDefaultModel)
 	mux.HandleFunc("PUT /api/models/{index}", h.handleUpdateModel)
 	mux.HandleFunc("DELETE /api/models/{index}", h.handleDeleteModel)
+	mux.HandleFunc("POST /api/models/fetch", h.handleFetchModels)
+	mux.HandleFunc("GET /api/models/catalog", h.handleListCatalogs)
+	mux.HandleFunc("DELETE /api/models/catalog/{id}", h.handleDeleteCatalog)
 }
 
 // modelResponse is the JSON structure returned for each model in the list.
@@ -613,4 +630,173 @@ func maskAPIKey(key string) string {
 
 	// Show first 3 chars and last 4 chars
 	return key[:3] + "****" + key[len(key)-4:]
+}
+
+// handleFetchModels fetches available models from an upstream provider.
+//
+//	POST /api/models/fetch
+func (h *Handler) handleFetchModels(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		Provider string `json:"provider"`
+		APIKey   string `json:"api_key"`
+		APIBase  string `json:"api_base"`
+	}
+	if err = json.Unmarshal(body, &req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if req.Provider == "" {
+		http.Error(w, "provider is required", http.StatusBadRequest)
+		return
+	}
+
+	if !fetchableProviders[strings.ToLower(req.Provider)] {
+		http.Error(w, fmt.Sprintf("provider %q does not support model listing", req.Provider), http.StatusBadRequest)
+		return
+	}
+
+	apiBase := strings.TrimSpace(req.APIBase)
+	if apiBase == "" {
+		apiBase = providers.DefaultAPIBaseForProtocol(req.Provider)
+	}
+	if apiBase == "" {
+		http.Error(w, fmt.Sprintf("No default API base for provider %q", req.Provider), http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	models, err := fetchUpstreamModels(ctx, req.Provider, apiBase, req.APIKey)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to fetch models: %v", err), http.StatusBadGateway)
+		return
+	}
+
+	// Auto-save fetched models to catalog
+	catalogModels := make([]CatalogModel, len(models))
+	for i, m := range models {
+		catalogModels[i] = CatalogModel{ID: m.ID, OwnedBy: m.OwnedBy}
+	}
+	if saveErr := SaveCatalog(req.Provider, apiBase, req.APIKey, catalogModels); saveErr != nil {
+		// Log but don't fail the request — saving catalog is non-critical
+		logger.Warnf("Failed to save model catalog: %v", saveErr)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"models": models,
+		"total":  len(models),
+	})
+}
+
+type upstreamModel struct {
+	ID      string `json:"id"`
+	OwnedBy string `json:"owned_by,omitempty"`
+}
+
+func fetchUpstreamModels(ctx context.Context, provider, apiBase, apiKey string) ([]upstreamModel, error) {
+	apiBase = strings.TrimRight(strings.TrimSpace(apiBase), "/")
+
+	var fetchURL string
+	switch strings.ToLower(provider) {
+	case "ollama":
+		// Strip /v1 suffix if present to get the Ollama root
+		root := apiBase
+		if strings.HasSuffix(root, "/v1") {
+			root = root[:len(root)-3]
+		}
+		root = strings.TrimRight(root, "/")
+		fetchURL = root + "/api/tags"
+		return fetchOllamaModels(ctx, fetchURL)
+	default:
+		// OpenAI-compatible: /v1/models
+		fetchURL = apiBase + "/models"
+		return fetchOpenAICompatibleModels(ctx, fetchURL, apiKey)
+	}
+}
+
+func fetchOpenAICompatibleModels(ctx context.Context, fetchURL, apiKey string) ([]upstreamModel, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	if apiKey = strings.TrimSpace(apiKey); apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("upstream returned status %d", resp.StatusCode)
+	}
+
+	var parsed struct {
+		Data []struct {
+			ID      string `json:"id"`
+			OwnedBy string `json:"owned_by"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return nil, err
+	}
+
+	models := make([]upstreamModel, 0, len(parsed.Data))
+	for _, m := range parsed.Data {
+		if m.ID != "" {
+			models = append(models, upstreamModel{ID: m.ID, OwnedBy: m.OwnedBy})
+		}
+	}
+	return models, nil
+}
+
+func fetchOllamaModels(ctx context.Context, fetchURL string) ([]upstreamModel, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ollama returned status %d", resp.StatusCode)
+	}
+
+	var parsed struct {
+		Models []struct {
+			Name  string `json:"name"`
+			Model string `json:"model"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return nil, err
+	}
+
+	models := make([]upstreamModel, 0, len(parsed.Models))
+	for _, m := range parsed.Models {
+		id := m.Name
+		if id == "" {
+			id = m.Model
+		}
+		if id != "" {
+			models = append(models, upstreamModel{ID: id})
+		}
+	}
+	return models, nil
 }

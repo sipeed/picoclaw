@@ -3,7 +3,7 @@ import {
   IconLoader2,
   IconPlugConnected,
 } from "@tabler/icons-react"
-import { type ComponentType, useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import {
@@ -36,6 +36,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
 
+import { FetchModelsDialog } from "./fetch-models-dialog"
 import { type FieldValidation, validateModelField } from "./model-validation"
 import { ProviderCombobox } from "./provider-combobox"
 import { getProviderKey } from "./provider-label"
@@ -158,17 +159,12 @@ export function EditModelSheet({
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
-  // Dynamic imports for dialogs added in later PRs
-  const [FetchModelsDialogComp, setFetchModelsDialogComp] = useState<ComponentType<{
-    open: boolean; onClose: () => void; onFill: (models: string[]) => void;
-    provider: string; apiKey: string; apiBase: string;
-  }> | null>(null)
-  const [TestModelDialogComp, setTestModelDialogComp] = useState<ComponentType<{
+  // Dynamic import for TestModelDialog (added in PR3)
+  const [TestModelDialogComp, setTestModelDialogComp] = useState<React.ComponentType<{
     model: unknown; open: boolean; onClose: () => void;
     inlineParams: { provider: string; model: string; apiBase: string; apiKey: string; authMethod: string; modelIndex?: number };
   }> | null>(null)
   useEffect(() => {
-    import("./fetch-models-dialog").then((m) => setFetchModelsDialogComp(() => m.FetchModelsDialog)).catch(() => {})
     import("./test-model-dialog").then((m) => setTestModelDialogComp(() => m.TestModelDialog)).catch(() => {})
   }, [])
 
@@ -477,7 +473,6 @@ export function EditModelSheet({
                       size="sm"
                       className="h-7 text-xs"
                       onClick={() => setFetchOpen(true)}
-                      disabled={!FetchModelsDialogComp}
                     >
                       <IconDownload className="size-3" />
                       {t("models.fetch.title")}
@@ -714,16 +709,14 @@ export function EditModelSheet({
         />
       )}
 
-      {FetchModelsDialogComp && (
-        <FetchModelsDialogComp
-          open={fetchOpen}
-          onClose={() => setFetchOpen(false)}
-          onFill={handleFetchFill}
-          provider={form.provider}
-          apiKey={form.apiKey}
-          apiBase={form.apiBase}
-        />
-      )}
+      <FetchModelsDialog
+        open={fetchOpen}
+        onClose={() => setFetchOpen(false)}
+        onFill={handleFetchFill}
+        provider={form.provider}
+        apiKey={form.apiKey}
+        apiBase={form.apiBase}
+      />
     </>
   )
 }

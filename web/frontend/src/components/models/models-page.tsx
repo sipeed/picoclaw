@@ -4,7 +4,7 @@ import {
   IconPlus,
   IconStar,
 } from "@tabler/icons-react"
-import { type ComponentType, useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
@@ -20,6 +20,7 @@ import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
 
 import { AddModelSheet } from "./add-model-sheet"
+import { CatalogDialog } from "./catalog-dialog"
 import { DeleteModelDialog } from "./delete-model-dialog"
 import { EditModelSheet } from "./edit-model-sheet"
 import { getProviderKey, getProviderLabel } from "./provider-label"
@@ -50,14 +51,6 @@ export function ModelsPage() {
   const [settingDefaultIndex, setSettingDefaultIndex] = useState<number | null>(
     null,
   )
-
-  // Dynamic import for CatalogDialog (added in PR2)
-  const [CatalogDialogComp, setCatalogDialogComp] = useState<ComponentType<{
-    open: boolean; onClose: () => void; onModelAdded: () => void;
-  }> | null>(null)
-  useEffect(() => {
-    import("./catalog-dialog").then((m) => setCatalogDialogComp(() => m.CatalogDialog)).catch(() => {})
-  }, [])
 
   const fetchModels = useCallback(async () => {
     try {
@@ -156,7 +149,6 @@ export function ModelsPage() {
             size="sm"
             variant="outline"
             onClick={() => setCatalogOpen(true)}
-            disabled={!CatalogDialogComp}
           >
             <IconDatabase className="size-4" />
             {t("models.catalog.button")}
@@ -234,13 +226,11 @@ export function ModelsPage() {
         onDeleted={fetchModels}
       />
 
-      {CatalogDialogComp && (
-        <CatalogDialogComp
-          open={catalogOpen}
-          onClose={() => setCatalogOpen(false)}
-          onModelAdded={fetchModels}
-        />
-      )}
+      <CatalogDialog
+        open={catalogOpen}
+        onClose={() => setCatalogOpen(false)}
+        onModelAdded={fetchModels}
+      />
     </div>
   )
 }
