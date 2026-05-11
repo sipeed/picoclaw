@@ -34,7 +34,11 @@ type evolutionBridge struct {
 
 const evolutionDirectDeliveryAttr = "evolution_direct_delivery"
 
-func newEvolutionBridge(registry *AgentRegistry, cfg *config.Config, provider providers.LLMProvider) (*evolutionBridge, error) {
+func newEvolutionBridge(
+	registry *AgentRegistry,
+	cfg *config.Config,
+	provider providers.LLMProvider,
+) (*evolutionBridge, error) {
 	if cfg == nil {
 		return nil, nil
 	}

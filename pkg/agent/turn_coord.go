@@ -219,11 +219,11 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 			if finalContent == "" {
 				finalContent = ts.opts.DefaultResponse
 			}
-			result, err := pipeline.Finalize(ctx, turnCtx, ts, exec, turnStatus, finalContent)
-			if err != nil {
+			result, finalizeErr := pipeline.Finalize(ctx, turnCtx, ts, exec, turnStatus, finalContent)
+			if finalizeErr != nil {
 				turnStatus = TurnEndStatusError
 			}
-			return result, err
+			return result, finalizeErr
 		case ControlToolLoop:
 			// Execute tools via Pipeline
 			toolCtrl := pipeline.ExecuteTools(ctx, turnCtx, ts, exec, iteration)
@@ -250,11 +250,11 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 				if exec.allResponsesHandled {
 					finalContent = ""
 				}
-				result, err := pipeline.Finalize(ctx, turnCtx, ts, exec, turnStatus, finalContent)
-				if err != nil {
+				result, finalizeErr := pipeline.Finalize(ctx, turnCtx, ts, exec, turnStatus, finalContent)
+				if finalizeErr != nil {
 					turnStatus = TurnEndStatusError
 				}
-				return result, err
+				return result, finalizeErr
 			}
 		}
 	}

@@ -28,9 +28,21 @@ func TestRecallSimilarSkills_ReturnsWorkspaceSkillFirst(t *testing.T) {
 		}
 	}
 
-	mustWriteSkill(filepath.Join(workspace, "skills"), "weather", "---\nname: weather\ndescription: weather lookup\n---\n# Weather\nUse weather queries.\n")
-	mustWriteSkill(filepath.Join(globalHome, ".picoclaw", "skills"), "release", "---\nname: release\ndescription: release flow\n---\n# Release\nRelease build.\n")
-	mustWriteSkill(builtinRoot, "weather-fallback", "---\nname: weather-fallback\ndescription: weather backup\n---\n# Weather Fallback\nBackup weather path.\n")
+	mustWriteSkill(
+		filepath.Join(workspace, "skills"),
+		"weather",
+		"---\nname: weather\ndescription: weather lookup\n---\n# Weather\nUse weather queries.\n",
+	)
+	mustWriteSkill(
+		filepath.Join(globalHome, ".picoclaw", "skills"),
+		"release",
+		"---\nname: release\ndescription: release flow\n---\n# Release\nRelease build.\n",
+	)
+	mustWriteSkill(
+		builtinRoot,
+		"weather-fallback",
+		"---\nname: weather-fallback\ndescription: weather backup\n---\n# Weather Fallback\nBackup weather path.\n",
+	)
 
 	recaller := evolution.NewSkillsRecaller(workspace)
 	matches, err := recaller.RecallSimilarSkills(evolution.LearningRecord{

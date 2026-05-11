@@ -45,9 +45,21 @@ func TestDefaultDraftGenerator_PrefersCombinedSkillForStableMultiSkillPath(t *te
 		EventCount:      3,
 		SuccessRate:     1,
 	}, []skills.SkillInfo{
-		{Name: "three-one-theorem", Path: filepath.Join(workspace, "skills", "three-one-theorem", "SKILL.md"), Source: "workspace"},
-		{Name: "four-two-theorem", Path: filepath.Join(workspace, "skills", "four-two-theorem", "SKILL.md"), Source: "workspace"},
-		{Name: "five-three-theorem", Path: filepath.Join(workspace, "skills", "five-three-theorem", "SKILL.md"), Source: "workspace"},
+		{
+			Name:   "three-one-theorem",
+			Path:   filepath.Join(workspace, "skills", "three-one-theorem", "SKILL.md"),
+			Source: "workspace",
+		},
+		{
+			Name:   "four-two-theorem",
+			Path:   filepath.Join(workspace, "skills", "four-two-theorem", "SKILL.md"),
+			Source: "workspace",
+		},
+		{
+			Name:   "five-three-theorem",
+			Path:   filepath.Join(workspace, "skills", "five-three-theorem", "SKILL.md"),
+			Source: "workspace",
+		},
 	})
 	if err != nil {
 		t.Fatalf("GenerateDraft: %v", err)
@@ -85,7 +97,10 @@ func TestDefaultDraftGenerator_CombinedSkillIncludesEvidenceAndSourceOperations(
 		if err := os.WriteFile(skillPath, []byte(content), 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}
-		matches = append(matches, skills.SkillInfo{Name: source.name, Path: skillPath, Source: "workspace", Description: "theorem helper"})
+		matches = append(
+			matches,
+			skills.SkillInfo{Name: source.name, Path: skillPath, Source: "workspace", Description: "theorem helper"},
+		)
 	}
 
 	draft, err := generator.GenerateDraftWithEvidence(context.Background(), evolution.LearningRecord{

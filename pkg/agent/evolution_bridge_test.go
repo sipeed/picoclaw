@@ -355,7 +355,13 @@ func TestEvolutionBridge_ObserveTurnEndPayloadIncludesResolvedAttemptTrail(t *te
 	sub := al.SubscribeEvents(16)
 	defer al.UnsubscribeEvents(sub.ID)
 
-	resp, err := al.ProcessDirectWithChannel(context.Background(), "hello", "session-observe-attempt-trail", "cli", "direct")
+	resp, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"hello",
+		"session-observe-attempt-trail",
+		"cli",
+		"direct",
+	)
 	if err != nil {
 		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
 	}
@@ -412,7 +418,13 @@ func TestEvolutionBridge_ObserveTurnEndUsesLatestSkillSnapshotAfterRetry(t *test
 	sub := al.SubscribeEvents(16)
 	defer al.UnsubscribeEvents(sub.ID)
 
-	resp, err := al.ProcessDirectWithChannel(context.Background(), "hello", "session-observe-retry-snapshot", "cli", "direct")
+	resp, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"hello",
+		"session-observe-retry-snapshot",
+		"cli",
+		"direct",
+	)
 	if err != nil {
 		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
 	}
@@ -437,12 +449,21 @@ func TestEvolutionBridge_ObserveTurnEndUsesLatestSkillSnapshotAfterRetry(t *test
 		t.Fatalf("len(SkillContextSnapshots) = %d, want 2", len(got))
 	}
 	if turnEndPayload.SkillContextSnapshots[0].Trigger != skillContextTriggerInitialBuild {
-		t.Fatalf("SkillContextSnapshots[0].Trigger = %q, want %q", turnEndPayload.SkillContextSnapshots[0].Trigger, skillContextTriggerInitialBuild)
+		t.Fatalf(
+			"SkillContextSnapshots[0].Trigger = %q, want %q",
+			turnEndPayload.SkillContextSnapshots[0].Trigger,
+			skillContextTriggerInitialBuild,
+		)
 	}
 	if turnEndPayload.SkillContextSnapshots[1].Trigger != skillContextTriggerContextRetryRebuild {
-		t.Fatalf("SkillContextSnapshots[1].Trigger = %q, want %q", turnEndPayload.SkillContextSnapshots[1].Trigger, skillContextTriggerContextRetryRebuild)
+		t.Fatalf(
+			"SkillContextSnapshots[1].Trigger = %q, want %q",
+			turnEndPayload.SkillContextSnapshots[1].Trigger,
+			skillContextTriggerContextRetryRebuild,
+		)
 	}
-	if got := turnEndPayload.SkillContextSnapshots[1].SkillNames; len(got) != 2 || got[0] != "base-skill" || got[1] != "late-skill" {
+	if got := turnEndPayload.SkillContextSnapshots[1].SkillNames; len(got) != 2 || got[0] != "base-skill" ||
+		got[1] != "late-skill" {
 		t.Fatalf("SkillContextSnapshots[1].SkillNames = %v, want [base-skill late-skill]", got)
 	}
 }
@@ -500,7 +521,13 @@ func TestEvolutionBridge_ScheduledModeDoesNotRunColdPathAfterTurn(t *testing.T) 
 	}, &simpleMockProvider{response: "ok"})
 	defer al.Close()
 
-	resp, err := al.ProcessDirectWithChannel(context.Background(), "hello", "session-scheduled-cold-path", "cli", "direct")
+	resp, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"hello",
+		"session-scheduled-cold-path",
+		"cli",
+		"direct",
+	)
 	if err != nil {
 		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
 	}
@@ -525,7 +552,13 @@ func TestEvolutionBridge_DraftModeUsesProviderBackedDraftGenerator(t *testing.T)
 	})
 	defer al.Close()
 
-	resp, err := al.ProcessDirectWithChannel(context.Background(), "hello", "session-auto-cold-path-llm", "cli", "direct")
+	resp, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"hello",
+		"session-auto-cold-path-llm",
+		"cli",
+		"direct",
+	)
 	if err != nil {
 		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
 	}
@@ -567,7 +600,13 @@ func TestEvolutionBridge_DraftModeUsesProviderDefaultModel(t *testing.T) {
 	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
 	defer al.Close()
 
-	if _, err := al.ProcessDirectWithChannel(context.Background(), "hello", "session-auto-cold-path-model", "cli", "direct"); err != nil {
+	if _, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"hello",
+		"session-auto-cold-path-model",
+		"cli",
+		"direct",
+	); err != nil {
 		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
 	}
 
@@ -606,7 +645,13 @@ func TestEvolutionBridge_DraftModePrefersConfigDefaultModelName(t *testing.T) {
 	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
 	defer al.Close()
 
-	if _, err := al.ProcessDirectWithChannel(context.Background(), "hello", "session-auto-cold-path-model-config", "cli", "direct"); err != nil {
+	if _, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"hello",
+		"session-auto-cold-path-model-config",
+		"cli",
+		"direct",
+	); err != nil {
 		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
 	}
 
@@ -629,7 +674,13 @@ func TestEvolutionBridge_DraftModeKeepsCandidateDraft(t *testing.T) {
 	})
 	defer al.Close()
 
-	if _, err := al.ProcessDirectWithChannel(context.Background(), "hello", "session-apply-no-auto-apply", "cli", "direct"); err != nil {
+	if _, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"hello",
+		"session-apply-no-auto-apply",
+		"cli",
+		"direct",
+	); err != nil {
 		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
 	}
 
@@ -665,7 +716,13 @@ func TestEvolutionBridge_ApplyModeAutomaticallyRunsColdPathAndAppliesMergeDraft(
 	})
 	defer al.Close()
 
-	if _, err := al.ProcessDirectWithChannel(context.Background(), "hello", "session-apply-merge", "cli", "direct"); err != nil {
+	if _, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"hello",
+		"session-apply-merge",
+		"cli",
+		"direct",
+	); err != nil {
 		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
 	}
 
@@ -705,7 +762,13 @@ func TestEvolutionBridge_ObserveModeDoesNotRunColdPathOrCreateDraftFile(t *testi
 	}, &simpleMockProvider{response: "ok"})
 	defer al.Close()
 
-	resp, err := al.ProcessDirectWithChannel(context.Background(), "hello", "session-no-auto-cold-path", "cli", "direct")
+	resp, err := al.ProcessDirectWithChannel(
+		context.Background(),
+		"hello",
+		"session-no-auto-cold-path",
+		"cli",
+		"direct",
+	)
 	if err != nil {
 		t.Fatalf("ProcessDirectWithChannel failed: %v", err)
 	}
@@ -784,7 +847,11 @@ func TestEvolutionBridge_TurnEndUsesExplicitAttemptTrail(t *testing.T) {
 			FinalSuccessfulPath: []string{"geocode", "weather"},
 			SkillContextSnapshots: []SkillContextSnapshot{
 				{Sequence: 1, Trigger: skillContextTriggerInitialBuild, SkillNames: []string{"weather"}},
-				{Sequence: 2, Trigger: skillContextTriggerContextRetryRebuild, SkillNames: []string{"geocode", "weather"}},
+				{
+					Sequence:   2,
+					Trigger:    skillContextTriggerContextRetryRebuild,
+					SkillNames: []string{"geocode", "weather"},
+				},
 			},
 			ToolKinds: []string{"echo_text"},
 		},
@@ -846,8 +913,8 @@ func TestEvolutionBridge_CloseRejectsLateTurnEndEvents(t *testing.T) {
 		t.Fatalf("newEvolutionBridge: %v", err)
 	}
 
-	if err := bridge.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
+	if closeErr := bridge.Close(); closeErr != nil {
+		t.Fatalf("Close() error = %v", closeErr)
 	}
 
 	err = bridge.OnEvent(context.Background(), Event{
@@ -1035,7 +1102,12 @@ func seedReadyRule(t *testing.T, workspace string) {
 	}
 }
 
-func newEvolutionTestLoop(t *testing.T, workspace string, evo config.EvolutionConfig, provider providers.LLMProvider) *AgentLoop {
+func newEvolutionTestLoop(
+	t *testing.T,
+	workspace string,
+	evo config.EvolutionConfig,
+	provider providers.LLMProvider,
+) *AgentLoop {
 	t.Helper()
 
 	cfg := &config.Config{
@@ -1163,15 +1235,15 @@ func assertProfileNotExists(t *testing.T, workspace, skillName string) {
 	t.Helper()
 
 	store := evolution.NewStore(evolution.NewPaths(workspace, ""))
-	if _, err := store.LoadProfile(skillName); !os.IsNotExist(err) {
-		t.Fatalf("profile %q should not exist, got err = %v", skillName, err)
+	if _, loadErr := store.LoadProfile(skillName); !os.IsNotExist(loadErr) {
+		t.Fatalf("profile %q should not exist, got err = %v", skillName, loadErr)
 	}
 }
 
 func assertNotExists(t *testing.T, path string) {
 	t.Helper()
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("%s should not exist, stat err = %v", path, err)
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("%s should not exist, stat err = %v", path, statErr)
 	}
 }
 

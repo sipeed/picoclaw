@@ -312,59 +312,14 @@ func TestLLMPatternClusterer_MarksAllAcceptedEvidenceClusteredButStoresSuccessfu
 		content:      `{"clusters":[{"label":"weather-lookup","summary":"lookup weather","task_record_ids":["task-success","task-failed"],"cluster_reason":"same weather lookup goal"}]}`,
 		defaultModel: "test-model",
 	}
-	clusterer := evolution.NewLLMPatternClusterer(
+	assertClustererMarksAllAcceptedEvidenceClustered(
+		t,
 		provider,
-		"test-model",
-		evolution.NewHeuristicPatternClusterer(1, nil),
-		1,
-		func() time.Time { return time.Unix(1700000000, 0).UTC() },
+		"weather lookup shanghai",
+		"forecast for shanghai",
+		"could not complete",
+		"1",
 	)
-	success := true
-	failed := false
-	successfulTasks := []evolution.LearningRecord{
-		{
-			ID:          "task-success",
-			Kind:        evolution.RecordKindTask,
-			WorkspaceID: "workspace-a",
-			Summary:     "weather lookup shanghai",
-			FinalOutput: "sunny",
-			Status:      evolution.RecordStatus("new"),
-			Success:     &success,
-		},
-	}
-	evidenceTasks := []evolution.LearningRecord{
-		successfulTasks[0],
-		{
-			ID:          "task-failed",
-			Kind:        evolution.RecordKindTask,
-			WorkspaceID: "workspace-a",
-			Summary:     "forecast for shanghai",
-			FinalOutput: "could not complete",
-			Status:      evolution.RecordStatus("new"),
-			Success:     &failed,
-		},
-	}
-
-	patterns, clusteredIDs, err := clusterer.BuildPatternsWithEvidence(
-		context.Background(),
-		"workspace-a",
-		successfulTasks,
-		evidenceTasks,
-		nil,
-		0.5,
-	)
-	if err != nil {
-		t.Fatalf("BuildPatternsWithEvidence: %v", err)
-	}
-	if len(patterns) != 1 {
-		t.Fatalf("len(patterns) = %d, want 1: %#v", len(patterns), patterns)
-	}
-	if got := strings.Join(patterns[0].TaskRecordIDs, ","); got != "task-success" {
-		t.Fatalf("pattern TaskRecordIDs = %v, want only successful task", patterns[0].TaskRecordIDs)
-	}
-	if got := strings.Join(clusteredIDs, ","); got != "task-success,task-failed" {
-		t.Fatalf("clusteredIDs = %v, want all accepted evidence IDs", clusteredIDs)
-	}
 }
 
 func TestLLMPatternClusterer_FallbackMarksAllAcceptedEvidenceClustered(t *testing.T) {
@@ -372,6 +327,25 @@ func TestLLMPatternClusterer_FallbackMarksAllAcceptedEvidenceClustered(t *testin
 		content:      `not-json`,
 		defaultModel: "test-model",
 	}
+	assertClustererMarksAllAcceptedEvidenceClustered(
+		t,
+		provider,
+		"weather lookup 100",
+		"weather lookup 200",
+		"partial result",
+		"fallback pattern",
+	)
+}
+
+func assertClustererMarksAllAcceptedEvidenceClustered(
+	t *testing.T,
+	provider *llmClusterTestProvider,
+	successSummary string,
+	failedSummary string,
+	failedOutput string,
+	wantPatternDescription string,
+) {
+	t.Helper()
 	clusterer := evolution.NewLLMPatternClusterer(
 		provider,
 		"test-model",
@@ -386,7 +360,7 @@ func TestLLMPatternClusterer_FallbackMarksAllAcceptedEvidenceClustered(t *testin
 			ID:          "task-success",
 			Kind:        evolution.RecordKindTask,
 			WorkspaceID: "workspace-a",
-			Summary:     "weather lookup 100",
+			Summary:     successSummary,
 			FinalOutput: "sunny",
 			Status:      evolution.RecordStatus("new"),
 			Success:     &success,
@@ -398,8 +372,8 @@ func TestLLMPatternClusterer_FallbackMarksAllAcceptedEvidenceClustered(t *testin
 			ID:          "task-failed",
 			Kind:        evolution.RecordKindTask,
 			WorkspaceID: "workspace-a",
-			Summary:     "weather lookup 200",
-			FinalOutput: "partial result",
+			Summary:     failedSummary,
+			FinalOutput: failedOutput,
 			Status:      evolution.RecordStatus("new"),
 			Success:     &failed,
 		},
@@ -417,7 +391,7 @@ func TestLLMPatternClusterer_FallbackMarksAllAcceptedEvidenceClustered(t *testin
 		t.Fatalf("BuildPatternsWithEvidence: %v", err)
 	}
 	if len(patterns) != 1 {
-		t.Fatalf("len(patterns) = %d, want fallback pattern: %#v", len(patterns), patterns)
+		t.Fatalf("len(patterns) = %d, want %s: %#v", len(patterns), wantPatternDescription, patterns)
 	}
 	if got := strings.Join(patterns[0].TaskRecordIDs, ","); got != "task-success" {
 		t.Fatalf("pattern TaskRecordIDs = %v, want only successful task", patterns[0].TaskRecordIDs)

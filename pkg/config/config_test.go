@@ -333,7 +333,12 @@ func TestEvolutionConfig_ColdPathTriggerMode(t *testing.T) {
 	assert.True(t, (EvolutionConfig{Enabled: true, Mode: "draft"}).RunsColdPathAfterTurn())
 	assert.False(t, (EvolutionConfig{Enabled: true, Mode: "draft"}).RunsColdPathScheduled())
 
-	scheduled := EvolutionConfig{Enabled: true, Mode: "apply", ColdPathTrigger: "scheduled", ColdPathTimes: []string{"03:00"}}
+	scheduled := EvolutionConfig{
+		Enabled:         true,
+		Mode:            "apply",
+		ColdPathTrigger: "scheduled",
+		ColdPathTimes:   []string{"03:00"},
+	}
 	assert.Equal(t, "scheduled", scheduled.ColdPathTriggerMode())
 	assert.False(t, scheduled.RunsColdPathAfterTurn())
 	assert.True(t, scheduled.RunsColdPathScheduled())
@@ -448,8 +453,8 @@ func TestSaveConfig_DisabledEvolutionOmitsApplyMode(t *testing.T) {
 	}
 
 	var raw map[string]any
-	if err := json.Unmarshal(data, &raw); err != nil {
-		t.Fatalf("Unmarshal saved config: %v", err)
+	if unmarshalErr := json.Unmarshal(data, &raw); unmarshalErr != nil {
+		t.Fatalf("Unmarshal saved config: %v", unmarshalErr)
 	}
 	evolutionRaw, ok := raw["evolution"].(map[string]any)
 	if !ok {
@@ -464,8 +469,8 @@ func TestSaveConfig_DisabledEvolutionOmitsApplyMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal edited config: %v", err)
 	}
-	if err := os.WriteFile(configPath, edited, 0o600); err != nil {
-		t.Fatalf("WriteFile(configPath): %v", err)
+	if writeErr := os.WriteFile(configPath, edited, 0o600); writeErr != nil {
+		t.Fatalf("WriteFile(configPath): %v", writeErr)
 	}
 
 	loaded, err := LoadConfig(configPath)

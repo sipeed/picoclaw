@@ -15,11 +15,23 @@ import (
 )
 
 type PatternClusterer interface {
-	BuildPatterns(ctx context.Context, workspace string, tasks []LearningRecord, existing []LearningRecord) ([]LearningRecord, []string, error)
+	BuildPatterns(
+		ctx context.Context,
+		workspace string,
+		tasks []LearningRecord,
+		existing []LearningRecord,
+	) ([]LearningRecord, []string, error)
 }
 
 type evidencePatternClusterer interface {
-	BuildPatternsWithEvidence(ctx context.Context, workspace string, successfulTasks []LearningRecord, evidenceTasks []LearningRecord, existing []LearningRecord, minSuccessRatio float64) ([]LearningRecord, []string, error)
+	BuildPatternsWithEvidence(
+		ctx context.Context,
+		workspace string,
+		successfulTasks []LearningRecord,
+		evidenceTasks []LearningRecord,
+		existing []LearningRecord,
+		minSuccessRatio float64,
+	) ([]LearningRecord, []string, error)
 }
 
 type HeuristicPatternClusterer struct {
@@ -37,7 +49,12 @@ func NewHeuristicPatternClusterer(minCaseCount int, now func() time.Time) *Heuri
 	return &HeuristicPatternClusterer{minCaseCount: minCaseCount, now: now}
 }
 
-func (c *HeuristicPatternClusterer) BuildPatterns(_ context.Context, workspace string, tasks []LearningRecord, existing []LearningRecord) ([]LearningRecord, []string, error) {
+func (c *HeuristicPatternClusterer) BuildPatterns(
+	_ context.Context,
+	workspace string,
+	tasks []LearningRecord,
+	existing []LearningRecord,
+) ([]LearningRecord, []string, error) {
 	groups := make(map[string][]LearningRecord)
 	keys := make([]string, 0)
 	for _, task := range tasks {
@@ -68,7 +85,15 @@ func (c *HeuristicPatternClusterer) BuildPatterns(_ context.Context, workspace s
 		if !hasExisting && len(cluster) < c.minCaseCount {
 			continue
 		}
-		pattern := buildPatternFromCluster(workspace, label, heuristicClusterSummary(label, cluster), "heuristic cluster by normalized task summary", cluster, existingPattern, c.now())
+		pattern := buildPatternFromCluster(
+			workspace,
+			label,
+			heuristicClusterSummary(label, cluster),
+			"heuristic cluster by normalized task summary",
+			cluster,
+			existingPattern,
+			c.now(),
+		)
 		patterns = append(patterns, pattern)
 		clusteredIDs = append(clusteredIDs, collectRecordIDs(cluster)...)
 	}
@@ -94,7 +119,13 @@ type llmCluster struct {
 	Reason        string   `json:"cluster_reason"`
 }
 
-func NewLLMPatternClusterer(provider providers.LLMProvider, model string, fallback PatternClusterer, minCount int, now func() time.Time) *LLMPatternClusterer {
+func NewLLMPatternClusterer(
+	provider providers.LLMProvider,
+	model string,
+	fallback PatternClusterer,
+	minCount int,
+	now func() time.Time,
+) *LLMPatternClusterer {
 	if fallback == nil {
 		fallback = NewHeuristicPatternClusterer(minCount, now)
 	}
@@ -113,7 +144,12 @@ func NewLLMPatternClusterer(provider providers.LLMProvider, model string, fallba
 	}
 }
 
-func (c *LLMPatternClusterer) BuildPatterns(ctx context.Context, workspace string, tasks []LearningRecord, existing []LearningRecord) ([]LearningRecord, []string, error) {
+func (c *LLMPatternClusterer) BuildPatterns(
+	ctx context.Context,
+	workspace string,
+	tasks []LearningRecord,
+	existing []LearningRecord,
+) ([]LearningRecord, []string, error) {
 	if c == nil {
 		return NewHeuristicPatternClusterer(0, nil).BuildPatterns(ctx, workspace, tasks, existing)
 	}
@@ -175,14 +211,30 @@ func (c *LLMPatternClusterer) BuildPatternsWithEvidence(
 		fallback = NewHeuristicPatternClusterer(c.minCount, c.now)
 	}
 	if c.provider == nil {
-		return buildFallbackPatternsWithEvidence(ctx, fallback, workspace, successfulTasks, evidenceTasks, existing, minSuccessRatio)
+		return buildFallbackPatternsWithEvidence(
+			ctx,
+			fallback,
+			workspace,
+			successfulTasks,
+			evidenceTasks,
+			existing,
+			minSuccessRatio,
+		)
 	}
 	model := strings.TrimSpace(c.model)
 	if model == "" {
 		model = strings.TrimSpace(c.provider.GetDefaultModel())
 	}
 	if model == "" {
-		return buildFallbackPatternsWithEvidence(ctx, fallback, workspace, successfulTasks, evidenceTasks, existing, minSuccessRatio)
+		return buildFallbackPatternsWithEvidence(
+			ctx,
+			fallback,
+			workspace,
+			successfulTasks,
+			evidenceTasks,
+			existing,
+			minSuccessRatio,
+		)
 	}
 	if len(evidenceTasks) == 0 {
 		evidenceTasks = successfulTasks
@@ -201,17 +253,48 @@ func (c *LLMPatternClusterer) BuildPatternsWithEvidence(
 		},
 	}, nil, model, map[string]any{"temperature": 0})
 	if err != nil || resp == nil || strings.TrimSpace(resp.Content) == "" {
-		return buildFallbackPatternsWithEvidence(ctx, fallback, workspace, successfulTasks, evidenceTasks, existing, minSuccessRatio)
+		return buildFallbackPatternsWithEvidence(
+			ctx,
+			fallback,
+			workspace,
+			successfulTasks,
+			evidenceTasks,
+			existing,
+			minSuccessRatio,
+		)
 	}
 
 	payload, ok := parseLLMClusterResponse(resp.Content)
 	if !ok {
-		return buildFallbackPatternsWithEvidence(ctx, fallback, workspace, successfulTasks, evidenceTasks, existing, minSuccessRatio)
+		return buildFallbackPatternsWithEvidence(
+			ctx,
+			fallback,
+			workspace,
+			successfulTasks,
+			evidenceTasks,
+			existing,
+			minSuccessRatio,
+		)
 	}
 	if len(payload.Clusters) == 0 {
-		return buildFallbackPatternsWithEvidence(ctx, fallback, workspace, successfulTasks, evidenceTasks, existing, minSuccessRatio)
+		return buildFallbackPatternsWithEvidence(
+			ctx,
+			fallback,
+			workspace,
+			successfulTasks,
+			evidenceTasks,
+			existing,
+			minSuccessRatio,
+		)
 	}
-	patterns, clusteredIDs := c.validateAndBuildPatternsWithEvidence(workspace, payload.Clusters, successfulTasks, evidenceTasks, existing, minSuccessRatio)
+	patterns, clusteredIDs := c.validateAndBuildPatternsWithEvidence(
+		workspace,
+		payload.Clusters,
+		successfulTasks,
+		evidenceTasks,
+		existing,
+		minSuccessRatio,
+	)
 	return patterns, clusteredIDs, nil
 }
 
@@ -316,7 +399,12 @@ func buildFallbackPatternsWithEvidence(
 	return filteredPatterns, appendUniqueStrings(nil, clusteredIDs...), nil
 }
 
-func (c *LLMPatternClusterer) validateAndBuildPatterns(workspace string, clusters []llmCluster, tasks []LearningRecord, existing []LearningRecord) ([]LearningRecord, []string) {
+func (c *LLMPatternClusterer) validateAndBuildPatterns(
+	workspace string,
+	clusters []llmCluster,
+	tasks []LearningRecord,
+	existing []LearningRecord,
+) ([]LearningRecord, []string) {
 	taskByID := make(map[string]LearningRecord, len(tasks))
 	for _, task := range tasks {
 		taskByID[task.ID] = task
@@ -354,7 +442,15 @@ func (c *LLMPatternClusterer) validateAndBuildPatterns(workspace string, cluster
 		if len(clusterTasks) == 0 {
 			continue
 		}
-		pattern := buildPatternFromCluster(workspace, label, cluster.Summary, cluster.Reason, clusterTasks, existingPattern, c.now())
+		pattern := buildPatternFromCluster(
+			workspace,
+			label,
+			cluster.Summary,
+			cluster.Reason,
+			clusterTasks,
+			existingPattern,
+			c.now(),
+		)
 		patterns = append(patterns, pattern)
 		clusteredIDs = append(clusteredIDs, collectRecordIDs(clusterTasks)...)
 	}
@@ -420,7 +516,15 @@ func (c *LLMPatternClusterer) validateAndBuildPatternsWithEvidence(
 		if !hasExisting && len(clusterSuccesses) < c.minCount {
 			continue
 		}
-		pattern := buildPatternFromCluster(workspace, label, cluster.Summary, cluster.Reason, clusterSuccesses, existingPattern, c.now())
+		pattern := buildPatternFromCluster(
+			workspace,
+			label,
+			cluster.Summary,
+			cluster.Reason,
+			clusterSuccesses,
+			existingPattern,
+			c.now(),
+		)
 		patterns = append(patterns, pattern)
 		clusteredIDs = append(clusteredIDs, collectRecordIDs(clusterEvidence)...)
 	}
@@ -488,7 +592,12 @@ func buildPatternClusterPrompt(workspace string, tasks []LearningRecord, existin
 	return string(data)
 }
 
-func buildPatternFromCluster(workspace, label, summary, reason string, tasks []LearningRecord, existing LearningRecord, now time.Time) LearningRecord {
+func buildPatternFromCluster(
+	workspace, label, summary, reason string,
+	tasks []LearningRecord,
+	existing LearningRecord,
+	now time.Time,
+) LearningRecord {
 	taskIDs := append([]string(nil), existing.TaskRecordIDs...)
 	taskIDs = appendUniqueStrings(taskIDs, collectRecordIDs(tasks)...)
 	if summary = strings.TrimSpace(summary); summary == "" {

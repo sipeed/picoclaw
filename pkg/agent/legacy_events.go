@@ -42,10 +42,13 @@ func (al *AgentLoop) SubscribeEvents(buffer int) EventSubscription {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	sub, in, err := al.runtimeEvents.Channel().Source("agent").OfKind(legacyAgentEventKinds()...).SubscribeChan(ctx, runtimeevents.SubscribeOptions{
-		Name:   "legacy-agent-events",
-		Buffer: buffer,
-	})
+	sub, in, err := al.runtimeEvents.Channel().
+		Source("agent").
+		OfKind(legacyAgentEventKinds()...).
+		SubscribeChan(ctx, runtimeevents.SubscribeOptions{
+			Name:   "legacy-agent-events",
+			Buffer: buffer,
+		})
 	if err != nil {
 		cancel()
 		close(out)

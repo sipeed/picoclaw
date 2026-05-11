@@ -101,7 +101,10 @@ func TestApplier_CreateDraftRendersDeployableSkillWithoutLearningTrace(t *testin
 	if !strings.Contains(content, "Use native-name query first.") {
 		t.Fatalf("deployed skill lost procedure:\n%s", content)
 	}
-	if !strings.Contains(content, "description: Perform mathematical calculations by applying specific theorems and their associated rules.") {
+	if !strings.Contains(
+		content,
+		"description: Perform mathematical calculations by applying specific theorems and their associated rules.",
+	) {
 		t.Fatalf("deployed skill did not clean description:\n%s", content)
 	}
 }
@@ -682,20 +685,23 @@ func TestApplier_BackupsAreScopedByWorkspace(t *testing.T) {
 	}
 
 	var backupBodies []string
-	if err := filepath.WalkDir(filepath.Join(sharedState, "backups"), func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() || entry.Name() != "SKILL.md" {
+	if err := filepath.WalkDir(
+		filepath.Join(sharedState, "backups"),
+		func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() || entry.Name() != "SKILL.md" {
+				return nil
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			backupBodies = append(backupBodies, string(data))
 			return nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		backupBodies = append(backupBodies, string(data))
-		return nil
-	}); err != nil {
+		},
+	); err != nil {
 		t.Fatalf("WalkDir(backups): %v", err)
 	}
 

@@ -62,13 +62,13 @@ func TestRuntime_RunColdPathOnce_ApplyModeWritesSkillAndProfile(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	skillPath := filepath.Join(root, "skills", "weather", "SKILL.md")
-	if _, err := os.Stat(skillPath); err != nil {
-		t.Fatalf("expected skill file: %v", err)
+	if _, statErr := os.Stat(skillPath); statErr != nil {
+		t.Fatalf("expected skill file: %v", statErr)
 	}
 
 	profile, err := store.LoadProfile("weather")
@@ -90,7 +90,8 @@ func TestRuntime_RunColdPathOnce_ApplyModeWritesSkillAndProfile(t *testing.T) {
 	if len(profile.PreferredEntryPath) != 1 || profile.PreferredEntryPath[0] != "weather" {
 		t.Fatalf("PreferredEntryPath = %v, want [weather]", profile.PreferredEntryPath)
 	}
-	if len(profile.AvoidPatterns) != 1 || profile.AvoidPatterns[0] != "avoid translating city names before querying weather" {
+	if len(profile.AvoidPatterns) != 1 ||
+		profile.AvoidPatterns[0] != "avoid translating city names before querying weather" {
 		t.Fatalf("AvoidPatterns = %v, want populated metadata", profile.AvoidPatterns)
 	}
 
@@ -149,15 +150,15 @@ func TestRuntime_RunColdPathOnce_DraftModeKeepsCandidateDraft(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
-	if _, err := os.Stat(filepath.Join(root, "skills", "weather", "SKILL.md")); !os.IsNotExist(err) {
-		t.Fatalf("expected no applied skill file, got err=%v", err)
+	if _, statErr := os.Stat(filepath.Join(root, "skills", "weather", "SKILL.md")); !os.IsNotExist(statErr) {
+		t.Fatalf("expected no applied skill file, got err=%v", statErr)
 	}
-	if _, err := store.LoadProfile("weather"); !os.IsNotExist(err) {
-		t.Fatalf("expected no profile, got err=%v", err)
+	if _, loadErr := store.LoadProfile("weather"); !os.IsNotExist(loadErr) {
+		t.Fatalf("expected no profile, got err=%v", loadErr)
 	}
 
 	drafts, err := store.LoadDrafts()
@@ -218,17 +219,19 @@ func TestRuntime_RunColdPathOnce_DraftModeRefreshesExistingCandidateWithEvidence
 	}}); err != nil {
 		t.Fatalf("SavePatternRecords: %v", err)
 	}
-	if err := store.SaveDrafts([]evolution.SkillDraft{{
-		ID:              "draft-pattern-1",
-		WorkspaceID:     root,
-		SourceRecordID:  "pattern-1",
-		TargetSkillName: "learned-skill",
-		DraftType:       evolution.DraftTypeShortcut,
-		ChangeKind:      evolution.ChangeKindCreate,
-		HumanSummary:    "old generic draft",
-		BodyOrPatch:     "---\nname: learned-skill\ndescription: old\n---\n# Learned Skill\n\nNo explicit winning path was recorded.\n",
-		Status:          evolution.DraftStatusCandidate,
-	}}); err != nil {
+	if err := store.SaveDrafts([]evolution.SkillDraft{
+		{
+			ID:              "draft-pattern-1",
+			WorkspaceID:     root,
+			SourceRecordID:  "pattern-1",
+			TargetSkillName: "learned-skill",
+			DraftType:       evolution.DraftTypeShortcut,
+			ChangeKind:      evolution.ChangeKindCreate,
+			HumanSummary:    "old generic draft",
+			BodyOrPatch:     "---\nname: learned-skill\ndescription: old\n---\n# Learned Skill\n\nNo explicit winning path was recorded.\n",
+			Status:          evolution.DraftStatusCandidate,
+		},
+	}); err != nil {
 		t.Fatalf("SaveDrafts: %v", err)
 	}
 
@@ -241,8 +244,8 @@ func TestRuntime_RunColdPathOnce_DraftModeRefreshesExistingCandidateWithEvidence
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	drafts, err := store.LoadDrafts()
@@ -326,15 +329,15 @@ func TestRuntime_RunColdPathOnce_ApplyModeAppliesExistingCandidateDraft(t *testi
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
-	if _, err := os.Stat(filepath.Join(root, "skills", "weather", "SKILL.md")); err != nil {
-		t.Fatalf("expected existing candidate to be applied: %v", err)
+	if _, statErr := os.Stat(filepath.Join(root, "skills", "weather", "SKILL.md")); statErr != nil {
+		t.Fatalf("expected existing candidate to be applied: %v", statErr)
 	}
-	if _, err := os.Stat(filepath.Join(root, "skills", "unused-weather", "SKILL.md")); !os.IsNotExist(err) {
-		t.Fatalf("expected source rule to stay skipped after applying existing draft, got err=%v", err)
+	if _, statErr := os.Stat(filepath.Join(root, "skills", "unused-weather", "SKILL.md")); !os.IsNotExist(statErr) {
+		t.Fatalf("expected source rule to stay skipped after applying existing draft, got err=%v", statErr)
 	}
 	profile, err := store.LoadProfile("weather")
 	if err != nil {
@@ -414,15 +417,15 @@ func TestRuntime_RunColdPathOnce_ApplyModeSkipsOrphanCandidateDraft(t *testing.T
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
-	if _, err := os.Stat(filepath.Join(root, "skills", "orphan-weather", "SKILL.md")); !os.IsNotExist(err) {
-		t.Fatalf("orphan candidate draft should not be applied, got err=%v", err)
+	if _, statErr := os.Stat(filepath.Join(root, "skills", "orphan-weather", "SKILL.md")); !os.IsNotExist(statErr) {
+		t.Fatalf("orphan candidate draft should not be applied, got err=%v", statErr)
 	}
-	if _, err := os.Stat(filepath.Join(root, "skills", "valid-weather", "SKILL.md")); err != nil {
-		t.Fatalf("expected current ready rule draft to be applied: %v", err)
+	if _, statErr := os.Stat(filepath.Join(root, "skills", "valid-weather", "SKILL.md")); statErr != nil {
+		t.Fatalf("expected current ready rule draft to be applied: %v", statErr)
 	}
 	drafts, err := store.LoadDrafts()
 	if err != nil {
@@ -483,10 +486,13 @@ func TestRuntime_RunColdPathOnce_ApplyModeNormalizesExistingCombinedCandidateDra
 	}
 
 	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
-		Config:         config.EvolutionConfig{Enabled: true, Mode: "apply"},
-		Now:            func() time.Time { return time.Unix(1700001000, 0).UTC() },
-		Store:          store,
-		Applier:        evolution.NewApplier(evolution.NewPaths(root, ""), func() time.Time { return time.Unix(1700001000, 0).UTC() }),
+		Config: config.EvolutionConfig{Enabled: true, Mode: "apply"},
+		Now:    func() time.Time { return time.Unix(1700001000, 0).UTC() },
+		Store:  store,
+		Applier: evolution.NewApplier(
+			evolution.NewPaths(root, ""),
+			func() time.Time { return time.Unix(1700001000, 0).UTC() },
+		),
 		DraftGenerator: stubDraftGenerator{},
 		Organizer:      evolution.NewOrganizer(evolution.OrganizerOptions{MinCaseCount: 3, MinSuccessRate: 0.7}),
 		SkillsRecaller: evolution.NewSkillsRecaller(root),
@@ -495,8 +501,8 @@ func TestRuntime_RunColdPathOnce_ApplyModeNormalizesExistingCombinedCandidateDra
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	data, err := os.ReadFile(filepath.Join(root, "skills", "calculate-100-via-theorems", "SKILL.md"))
@@ -510,7 +516,8 @@ func TestRuntime_RunColdPathOnce_ApplyModeNormalizesExistingCombinedCandidateDra
 	if strings.Contains(content, "Learned") || strings.Contains(content, "Source Evidence") {
 		t.Fatalf("deployed skill should not expose learning traces:\n%s", content)
 	}
-	if strings.Contains(content, "messy raw component dump") || strings.Contains(content, "## Component Skill Breakdown") {
+	if strings.Contains(content, "messy raw component dump") ||
+		strings.Contains(content, "## Component Skill Breakdown") {
 		t.Fatalf("expected old verbose draft content to be cleaned:\n%s", content)
 	}
 
@@ -585,8 +592,8 @@ func TestRuntime_RunColdPathOnce_ApplyModeRetargetsStableMultiSkillPathIntoCombi
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	skillPath := filepath.Join(root, "skills", "calculate-100-via-theorems", "SKILL.md")
@@ -613,7 +620,8 @@ func TestRuntime_RunColdPathOnce_ApplyModeRetargetsStableMultiSkillPathIntoCombi
 	if strings.Contains(content, "Learned") || strings.Contains(content, "Source Evidence") {
 		t.Fatalf("deployed skill should not expose learning traces:\n%s", content)
 	}
-	if !strings.Contains(content, "Add 31 to the input") || !strings.Contains(content, "Subtract 53 to produce the final result") {
+	if !strings.Contains(content, "Add 31 to the input") ||
+		!strings.Contains(content, "Subtract 53 to produce the final result") {
 		t.Fatalf("missing extracted component skill content:\n%s", content)
 	}
 	if strings.Contains(content, "Extracted guidance") {
@@ -679,10 +687,13 @@ func TestRuntime_RunColdPathOnce_CombinedShortcutKeepsReadableLongGuidance(t *te
 	}
 
 	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
-		Config:  config.EvolutionConfig{Enabled: true, Mode: "apply"},
-		Now:     func() time.Time { return time.Unix(1700001000, 0).UTC() },
-		Store:   store,
-		Applier: evolution.NewApplier(evolution.NewPaths(root, ""), func() time.Time { return time.Unix(1700001000, 0).UTC() }),
+		Config: config.EvolutionConfig{Enabled: true, Mode: "apply"},
+		Now:    func() time.Time { return time.Unix(1700001000, 0).UTC() },
+		Store:  store,
+		Applier: evolution.NewApplier(
+			evolution.NewPaths(root, ""),
+			func() time.Time { return time.Unix(1700001000, 0).UTC() },
+		),
 		DraftGenerator: stubDraftGenerator{draft: evolution.SkillDraft{
 			ID:              "draft-1",
 			WorkspaceID:     root,
@@ -704,8 +715,8 @@ func TestRuntime_RunColdPathOnce_CombinedShortcutKeepsReadableLongGuidance(t *te
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	data, err := os.ReadFile(filepath.Join(root, "skills", "calculate-with-theorem-chain-via-theorems", "SKILL.md"))
@@ -915,8 +926,8 @@ func TestRuntime_RunColdPathOnce_FirstApplyFailureDoesNotCreateGhostProfile(t *t
 		t.Fatalf("error = %v, want ErrApplyDraftFailed", err)
 	}
 
-	if _, err := store.LoadProfile("weather"); !os.IsNotExist(err) {
-		t.Fatalf("expected no profile after first apply failure, got err=%v", err)
+	if _, loadErr := store.LoadProfile("weather"); !os.IsNotExist(loadErr) {
+		t.Fatalf("expected no profile after first apply failure, got err=%v", loadErr)
 	}
 }
 
@@ -987,8 +998,8 @@ func TestRuntime_RunColdPathOnce_DraftSaveFailureRollsBackAppliedSkill(t *testin
 	if _, statErr := os.Stat(skillPath); !os.IsNotExist(statErr) {
 		t.Fatalf("expected applied skill to be rolled back, got err=%v", statErr)
 	}
-	if _, err := store.LoadProfile("weather"); !os.IsNotExist(err) {
-		t.Fatalf("expected no profile after draft save failure, got err=%v", err)
+	if _, loadErr := store.LoadProfile("weather"); !os.IsNotExist(loadErr) {
+		t.Fatalf("expected no profile after draft save failure, got err=%v", loadErr)
 	}
 }
 
@@ -1015,7 +1026,11 @@ func TestRuntime_RunColdPathOnce_AutoRunsLifecycleMaintenance(t *testing.T) {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	skillPath := filepath.Join(skillDir, "SKILL.md")
-	if err := os.WriteFile(skillPath, []byte("---\nname: stale-archived-skill\ndescription: stale\n---\n# Stale Archived Skill\n"), 0o644); err != nil {
+	if err := os.WriteFile(
+		skillPath,
+		[]byte("---\nname: stale-archived-skill\ndescription: stale\n---\n# Stale Archived Skill\n"),
+		0o644,
+	); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	if err := store.SaveProfile(evolution.SkillProfile{
@@ -1044,8 +1059,8 @@ func TestRuntime_RunColdPathOnce_AutoRunsLifecycleMaintenance(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	activeProfile, err := store.LoadProfile("stale-active-skill")
@@ -1070,8 +1085,8 @@ func TestRuntime_RunColdPathOnce_AutoRunsLifecycleMaintenance(t *testing.T) {
 		t.Fatalf("archived profile VersionHistory = %+v, want lifecycle:deleted entry", archivedProfile.VersionHistory)
 	}
 
-	if _, err := os.Stat(skillPath); !os.IsNotExist(err) {
-		t.Fatalf("expected lifecycle delete to remove skill file, stat err = %v", err)
+	if _, statErr := os.Stat(skillPath); !os.IsNotExist(statErr) {
+		t.Fatalf("expected lifecycle delete to remove skill file, stat err = %v", statErr)
 	}
 }
 

@@ -80,8 +80,8 @@ func (s *Store) appendJSONLRecords(ctx context.Context, path string, records []L
 	unlock := lockStoreFile(path)
 	defer unlock()
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+	if mkdirErr := os.MkdirAll(filepath.Dir(path), 0o755); mkdirErr != nil {
+		return mkdirErr
 	}
 
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
@@ -277,8 +277,8 @@ func (s *Store) saveJSONLRecords(path string, records []LearningRecord) error {
 }
 
 func (s *Store) saveJSONLRecordsLocked(path string, records []LearningRecord) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+	if mkdirErr := os.MkdirAll(filepath.Dir(path), 0o755); mkdirErr != nil {
+		return mkdirErr
 	}
 
 	var buf bytes.Buffer
@@ -383,8 +383,8 @@ func (s *Store) SaveProfile(profile SkillProfile) error {
 	unlock := lockStoreFile(path)
 	defer unlock()
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+	if mkdirErr := os.MkdirAll(filepath.Dir(path), 0o755); mkdirErr != nil {
+		return mkdirErr
 	}
 
 	data, err := json.MarshalIndent(profile, "", "  ")
@@ -418,14 +418,14 @@ func (s *Store) UpdateProfile(
 		return err
 	}
 
-	if err := update(&profile, exists); err != nil {
-		return err
+	if updateErr := update(&profile, exists); updateErr != nil {
+		return updateErr
 	}
 	if !exists && isZeroSkillProfile(profile) {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
-		return err
+	if mkdirErr := os.MkdirAll(filepath.Dir(targetPath), 0o755); mkdirErr != nil {
+		return mkdirErr
 	}
 
 	data, err := json.MarshalIndent(profile, "", "  ")

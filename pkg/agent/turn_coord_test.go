@@ -835,7 +835,8 @@ func TestTurnState_SkillContextSnapshotsTrackLatestSuccessfulPath(t *testing.T) 
 	ts.recordSkillContextSnapshot(skillContextTriggerInitialBuild, []string{"skill-a"})
 	ts.recordSkillContextSnapshot(skillContextTriggerContextRetryRebuild, []string{"skill-b", "skill-c"})
 
-	if got := ts.attemptedSkillsSnapshot(); len(got) != 3 || got[0] != "skill-a" || got[1] != "skill-b" || got[2] != "skill-c" {
+	if got := ts.attemptedSkillsSnapshot(); len(got) != 3 || got[0] != "skill-a" || got[1] != "skill-b" ||
+		got[2] != "skill-c" {
 		t.Fatalf("attemptedSkillsSnapshot = %v, want [skill-a skill-b skill-c]", got)
 	}
 

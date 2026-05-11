@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/sipeed/picoclaw/pkg/fileutil"
 	"github.com/sipeed/picoclaw/pkg/skills"
-	"gopkg.in/yaml.v3"
 )
 
 type Applier struct {
@@ -37,14 +38,18 @@ func (a *Applier) ApplyDraft(ctx context.Context, workspace string, draft SkillD
 	return nil
 }
 
-func (a *Applier) applyDraftWithRollback(ctx context.Context, workspace string, draft SkillDraft) (func() error, error) {
+func (a *Applier) applyDraftWithRollback(
+	ctx context.Context,
+	workspace string,
+	draft SkillDraft,
+) (func() error, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 	}
-	if err := skills.ValidateSkillName(draft.TargetSkillName); err != nil {
-		return nil, err
+	if validateErr := skills.ValidateSkillName(draft.TargetSkillName); validateErr != nil {
+		return nil, validateErr
 	}
 
 	existingBody, backupPath, hadOriginal, err := a.backupCurrentSkill(workspace, draft.TargetSkillName)
@@ -53,8 +58,8 @@ func (a *Applier) applyDraftWithRollback(ctx context.Context, workspace string, 
 	}
 
 	skillDir := filepath.Join(workspace, "skills", draft.TargetSkillName)
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
-		return nil, err
+	if mkdirErr := os.MkdirAll(skillDir, 0o755); mkdirErr != nil {
+		return nil, mkdirErr
 	}
 
 	renderedBody, err := renderAppliedBody(draft, existingBody, hadOriginal)
@@ -67,7 +72,11 @@ func (a *Applier) applyDraftWithRollback(ctx context.Context, workspace string, 
 		return nil, err
 	}
 
-	if err := validateAppliedSkillBody(renderedBody, draft.TargetSkillName, allowsExistingFrontmatterFields(draft.ChangeKind, hadOriginal)); err != nil {
+	if err := validateAppliedSkillBody(
+		renderedBody,
+		draft.TargetSkillName,
+		allowsExistingFrontmatterFields(draft.ChangeKind, hadOriginal),
+	); err != nil {
 		if rollbackErr := a.rollbackSkill(skillPath, backupPath, hadOriginal); rollbackErr != nil {
 			return nil, errorsJoin(err, rollbackErr)
 		}
@@ -79,9 +88,11 @@ func (a *Applier) applyDraftWithRollback(ctx context.Context, workspace string, 
 	}, nil
 }
 
-func (a *Applier) backupCurrentSkill(workspace, skillName string) (currentBody, backupPath string, hadOriginal bool, err error) {
-	if err := skills.ValidateSkillName(skillName); err != nil {
-		return "", "", false, err
+func (a *Applier) backupCurrentSkill(
+	workspace, skillName string,
+) (currentBody, backupPath string, hadOriginal bool, err error) {
+	if validateErr := skills.ValidateSkillName(skillName); validateErr != nil {
+		return "", "", false, validateErr
 	}
 
 	skillPath := filepath.Join(workspace, "skills", skillName, "SKILL.md")
@@ -217,7 +228,11 @@ func renderDeployablePatchBody(body, targetSkillName string) (string, error) {
 			return "", err
 		}
 		if name := strings.TrimSpace(fields["name"]); name != "" && name != targetSkillName {
-			return "", fmt.Errorf("skill patch frontmatter name %q does not match target skill %q", name, targetSkillName)
+			return "", fmt.Errorf(
+				"skill patch frontmatter name %q does not match target skill %q",
+				name,
+				targetSkillName,
+			)
 		}
 	}
 	return strings.TrimSpace(stripLeadingH1(markdownBody)), nil

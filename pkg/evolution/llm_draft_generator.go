@@ -35,11 +35,20 @@ func NewLLMDraftGenerator(provider providers.LLMProvider, model string, fallback
 	}
 }
 
-func (g *LLMDraftGenerator) GenerateDraft(ctx context.Context, rule LearningRecord, matches []skills.SkillInfo) (SkillDraft, error) {
+func (g *LLMDraftGenerator) GenerateDraft(
+	ctx context.Context,
+	rule LearningRecord,
+	matches []skills.SkillInfo,
+) (SkillDraft, error) {
 	return g.GenerateDraftWithEvidence(ctx, rule, matches, DraftEvidence{})
 }
 
-func (g *LLMDraftGenerator) GenerateDraftWithEvidence(ctx context.Context, rule LearningRecord, matches []skills.SkillInfo, evidence DraftEvidence) (SkillDraft, error) {
+func (g *LLMDraftGenerator) GenerateDraftWithEvidence(
+	ctx context.Context,
+	rule LearningRecord,
+	matches []skills.SkillInfo,
+	evidence DraftEvidence,
+) (SkillDraft, error) {
 	rule = enrichRuleWithDraftEvidence(rule, evidence)
 	if g == nil || g.provider == nil {
 		return g.generateFallback(ctx, rule, matches, evidence)
@@ -97,7 +106,11 @@ func (g *LLMDraftGenerator) generateFallback(
 	return g.fallback.GenerateDraft(ctx, rule, matches)
 }
 
-func (g *LLMDraftGenerator) buildPrompt(rule LearningRecord, matches []skills.SkillInfo, evidence DraftEvidence) string {
+func (g *LLMDraftGenerator) buildPrompt(
+	rule LearningRecord,
+	matches []skills.SkillInfo,
+	evidence DraftEvidence,
+) string {
 	return strings.Join([]string{
 		"Generate a skill draft JSON object with these required string fields:",
 		`target_skill_name, draft_type, change_kind, human_summary, body_or_patch.`,

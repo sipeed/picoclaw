@@ -49,14 +49,14 @@ func TestStore_AppendLearningRecordsPersistsCaseAndRule(t *testing.T) {
 	if loaded[1].Kind != evolution.RecordKindRule {
 		t.Fatalf("loaded[1].Kind = %q, want %q", loaded[1].Kind, evolution.RecordKindRule)
 	}
-	if _, err := os.Stat(paths.LearningRecords); !os.IsNotExist(err) {
-		t.Fatalf("legacy learning records file should not be written, stat err = %v", err)
+	if _, statErr := os.Stat(paths.LearningRecords); !os.IsNotExist(statErr) {
+		t.Fatalf("legacy learning records file should not be written, stat err = %v", statErr)
 	}
-	if _, err := os.Stat(paths.TaskRecords); err != nil {
-		t.Fatalf("task records file should exist: %v", err)
+	if _, statErr := os.Stat(paths.TaskRecords); statErr != nil {
+		t.Fatalf("task records file should exist: %v", statErr)
 	}
-	if _, err := os.Stat(paths.PatternRecords); err != nil {
-		t.Fatalf("pattern records file should exist: %v", err)
+	if _, statErr := os.Stat(paths.PatternRecords); statErr != nil {
+		t.Fatalf("pattern records file should exist: %v", statErr)
 	}
 }
 
@@ -77,11 +77,11 @@ func TestStore_LoadTaskRecordsMergesLegacyWhenSplitFileExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal legacy: %v", err)
 	}
-	if err := os.MkdirAll(paths.RootDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
+	if mkdirErr := os.MkdirAll(paths.RootDir, 0o755); mkdirErr != nil {
+		t.Fatalf("MkdirAll: %v", mkdirErr)
 	}
-	if err := os.WriteFile(paths.LearningRecords, append(data, '\n'), 0o644); err != nil {
-		t.Fatalf("WriteFile legacy: %v", err)
+	if writeErr := os.WriteFile(paths.LearningRecords, append(data, '\n'), 0o644); writeErr != nil {
+		t.Fatalf("WriteFile legacy: %v", writeErr)
 	}
 
 	current := evolution.LearningRecord{
@@ -92,8 +92,8 @@ func TestStore_LoadTaskRecordsMergesLegacyWhenSplitFileExists(t *testing.T) {
 		Summary:     "current task",
 		Status:      evolution.RecordStatus("new"),
 	}
-	if err := store.AppendTaskRecord(context.Background(), current); err != nil {
-		t.Fatalf("AppendTaskRecord: %v", err)
+	if appendErr := store.AppendTaskRecord(context.Background(), current); appendErr != nil {
+		t.Fatalf("AppendTaskRecord: %v", appendErr)
 	}
 
 	records, err := store.LoadTaskRecords()
@@ -126,11 +126,11 @@ func TestStore_LoadPatternRecordsMergesLegacyWhenSplitFileExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Marshal legacy: %v", err)
 	}
-	if err := os.MkdirAll(paths.RootDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
+	if mkdirErr := os.MkdirAll(paths.RootDir, 0o755); mkdirErr != nil {
+		t.Fatalf("MkdirAll: %v", mkdirErr)
 	}
-	if err := os.WriteFile(paths.LearningRecords, append(data, '\n'), 0o644); err != nil {
-		t.Fatalf("WriteFile legacy: %v", err)
+	if writeErr := os.WriteFile(paths.LearningRecords, append(data, '\n'), 0o644); writeErr != nil {
+		t.Fatalf("WriteFile legacy: %v", writeErr)
 	}
 
 	current := evolution.LearningRecord{
@@ -141,8 +141,8 @@ func TestStore_LoadPatternRecordsMergesLegacyWhenSplitFileExists(t *testing.T) {
 		Summary:     "current pattern",
 		Status:      evolution.RecordStatus("ready"),
 	}
-	if err := store.AppendPatternRecords([]evolution.LearningRecord{current}); err != nil {
-		t.Fatalf("AppendPatternRecords: %v", err)
+	if appendErr := store.AppendPatternRecords([]evolution.LearningRecord{current}); appendErr != nil {
+		t.Fatalf("AppendPatternRecords: %v", appendErr)
 	}
 
 	records, err := store.LoadPatternRecords()
@@ -246,8 +246,8 @@ func TestStore_MergeKeepsSameRecordIDAcrossWorkspaces(t *testing.T) {
 		t.Fatalf("len(loaded) = %d, want 2: %+v", len(loaded), loaded)
 	}
 
-	if err := store.MarkTaskRecordsClustered([]string{"main-turn-1"}); err != nil {
-		t.Fatalf("MarkTaskRecordsClustered: %v", err)
+	if markErr := store.MarkTaskRecordsClustered([]string{"main-turn-1"}); markErr != nil {
+		t.Fatalf("MarkTaskRecordsClustered: %v", markErr)
 	}
 	loaded, err = store.LoadTaskRecords()
 	if err != nil {
@@ -409,12 +409,12 @@ func TestStore_LoadLearningRecordsIgnoresTruncatedTrailingLine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenFile: %v", err)
 	}
-	if _, err := f.WriteString("{\"id\":\"broken\""); err != nil {
+	if _, writeErr := f.WriteString("{\"id\":\"broken\""); writeErr != nil {
 		f.Close()
-		t.Fatalf("WriteString: %v", err)
+		t.Fatalf("WriteString: %v", writeErr)
 	}
-	if err := f.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
+	if closeErr := f.Close(); closeErr != nil {
+		t.Fatalf("Close: %v", closeErr)
 	}
 
 	loaded, err := store.LoadLearningRecords()

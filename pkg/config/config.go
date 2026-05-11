@@ -170,15 +170,6 @@ func (c EvolutionConfig) EffectiveColdPathTimes() []string {
 	return out
 }
 
-func (c EvolutionConfig) legacyRunsColdPathAutomatically() bool {
-	switch c.EffectiveMode() {
-	case "draft", "apply":
-		return true
-	default:
-		return false
-	}
-}
-
 func (c EvolutionConfig) AutoAppliesDrafts() bool {
 	return c.EffectiveMode() == "apply"
 }

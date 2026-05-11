@@ -64,6 +64,12 @@ func inferAvoidPatterns(rule LearningRecord) []string {
 		return nil
 	}
 	return []string{
-		"avoid starting with " + strings.Join(prefix, " -> ") + " before using " + strings.Join(rule.LateAddedSkills, " -> "),
+		"avoid starting with " + strings.Join(
+			prefix,
+			" -> ",
+		) + " before using " + strings.Join(
+			rule.LateAddedSkills,
+			" -> ",
+		),
 	}
 }

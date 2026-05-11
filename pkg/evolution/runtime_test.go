@@ -33,8 +33,8 @@ func TestRuntime_FinalizeTurnDisabledDoesNothing(t *testing.T) {
 	}
 
 	paths := evolution.NewPaths(workspace, "")
-	if _, err := os.Stat(paths.TaskRecords); !os.IsNotExist(err) {
-		t.Fatalf("task records file should not exist, stat err = %v", err)
+	if _, statErr := os.Stat(paths.TaskRecords); !os.IsNotExist(statErr) {
+		t.Fatalf("task records file should not exist, stat err = %v", statErr)
 	}
 }
 
@@ -46,11 +46,11 @@ func TestRuntime_FinalizeTurnWithEmptyWorkspaceDoesNothing(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
+	if finalizeErr := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
 		TurnID: "turn-1",
 		Status: "completed",
-	}); err != nil {
-		t.Fatalf("FinalizeTurn: %v", err)
+	}); finalizeErr != nil {
+		t.Fatalf("FinalizeTurn: %v", finalizeErr)
 	}
 }
 
@@ -63,20 +63,20 @@ func TestRuntime_FinalizeTurnSkipsHeartbeat(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
+	if finalizeErr := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
 		Workspace:    workspace,
 		TurnID:       "heartbeat-turn",
 		SessionKey:   "heartbeat",
 		Status:       "completed",
 		UserMessage:  "# Heartbeat Check",
 		FinalContent: "HEARTBEAT_OK",
-	}); err != nil {
-		t.Fatalf("FinalizeTurn: %v", err)
+	}); finalizeErr != nil {
+		t.Fatalf("FinalizeTurn: %v", finalizeErr)
 	}
 
 	paths := evolution.NewPaths(workspace, "")
-	if _, err := os.Stat(paths.TaskRecords); !os.IsNotExist(err) {
-		t.Fatalf("heartbeat should not create task records, stat err = %v", err)
+	if _, statErr := os.Stat(paths.TaskRecords); !os.IsNotExist(statErr) {
+		t.Fatalf("heartbeat should not create task records, stat err = %v", statErr)
 	}
 }
 
@@ -97,7 +97,7 @@ func TestRuntime_FinalizeTurnWritesRecordWithOverride(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
+	if finalizeErr := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
 		Workspace:    workspace,
 		TurnID:       "turn-1",
 		SessionKey:   "session-1",
@@ -111,11 +111,11 @@ func TestRuntime_FinalizeTurnWritesRecordWithOverride(t *testing.T) {
 			{Name: "read_file", Success: true},
 		},
 		ActiveSkillNames: []string{"skill-a"},
-	}); err != nil {
-		t.Fatalf("FinalizeTurn first call: %v", err)
+	}); finalizeErr != nil {
+		t.Fatalf("FinalizeTurn first call: %v", finalizeErr)
 	}
 
-	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
+	if finalizeErr := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
 		Workspace:    workspace,
 		WorkspaceID:  "ws-explicit",
 		TurnID:       "turn-2",
@@ -129,8 +129,8 @@ func TestRuntime_FinalizeTurnWritesRecordWithOverride(t *testing.T) {
 			{Name: "bash", Success: false, ErrorSummary: "exit status 1"},
 		},
 		ActiveSkillNames: []string{"skill-b"},
-	}); err != nil {
-		t.Fatalf("FinalizeTurn second call: %v", err)
+	}); finalizeErr != nil {
+		t.Fatalf("FinalizeTurn second call: %v", finalizeErr)
 	}
 
 	paths := evolution.NewPaths(workspace, override)
@@ -226,12 +226,12 @@ func TestRuntime_FinalizeTurnGeneratesUniqueTaskRecordIDsAcrossRestartedTurnSequ
 		UserMessage:  "summarize release notes",
 		FinalContent: "done",
 	}
-	if err := rt.FinalizeTurn(context.Background(), input); err != nil {
-		t.Fatalf("FinalizeTurn first: %v", err)
+	if finalizeErr := rt.FinalizeTurn(context.Background(), input); finalizeErr != nil {
+		t.Fatalf("FinalizeTurn first: %v", finalizeErr)
 	}
 	input.SessionKey = "session-b"
-	if err := rt.FinalizeTurn(context.Background(), input); err != nil {
-		t.Fatalf("FinalizeTurn second: %v", err)
+	if finalizeErr := rt.FinalizeTurn(context.Background(), input); finalizeErr != nil {
+		t.Fatalf("FinalizeTurn second: %v", finalizeErr)
 	}
 
 	store := evolution.NewStore(evolution.NewPaths(workspace, ""))
@@ -285,24 +285,24 @@ func TestRuntime_FinalizeTurnSharedStateKeepsSkillProfilesScoped(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
+	if finalizeErr := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
 		Workspace:        workspaceA,
 		TurnID:           "turn-a",
 		SessionKey:       "session-a",
 		Status:           "completed",
 		ActiveSkillNames: []string{"weather"},
-	}); err != nil {
-		t.Fatalf("FinalizeTurn(workspaceA): %v", err)
+	}); finalizeErr != nil {
+		t.Fatalf("FinalizeTurn(workspaceA): %v", finalizeErr)
 	}
 
-	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
+	if finalizeErr := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
 		Workspace:        workspaceB,
 		TurnID:           "turn-b",
 		SessionKey:       "session-b",
 		Status:           "completed",
 		ActiveSkillNames: []string{"weather"},
-	}); err != nil {
-		t.Fatalf("FinalizeTurn(workspaceB): %v", err)
+	}); finalizeErr != nil {
+		t.Fatalf("FinalizeTurn(workspaceB): %v", finalizeErr)
 	}
 
 	loadedA, err := storeA.LoadProfile("weather")
@@ -347,7 +347,7 @@ func TestRuntime_FinalizeTurnWritesPotentiallyLearnableSignal(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
+	if finalizeErr := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
 		Workspace:        workspace,
 		TurnID:           "turn-learnable",
 		SessionKey:       "session-learnable",
@@ -363,8 +363,8 @@ func TestRuntime_FinalizeTurnWritesPotentiallyLearnableSignal(t *testing.T) {
 			{Sequence: 1, Trigger: "initial_build", SkillNames: []string{"geocode"}},
 			{Sequence: 2, Trigger: "context_retry_rebuild", SkillNames: []string{"geocode", "weather"}},
 		},
-	}); err != nil {
-		t.Fatalf("FinalizeTurn: %v", err)
+	}); finalizeErr != nil {
+		t.Fatalf("FinalizeTurn: %v", finalizeErr)
 	}
 
 	paths := evolution.NewPaths(workspace, "")
@@ -411,7 +411,7 @@ func TestRuntime_FinalizeTurnUsesSkillNamesFromToolExecutions(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
+	if finalizeErr := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
 		Workspace:    workspace,
 		TurnID:       "turn-skill-chain",
 		SessionKey:   "session-skill-chain",
@@ -424,8 +424,8 @@ func TestRuntime_FinalizeTurnUsesSkillNamesFromToolExecutions(t *testing.T) {
 			{Name: "read_file", Success: true, SkillNames: []string{"four-two"}},
 			{Name: "read_file", Success: true, SkillNames: []string{"five-three"}},
 		},
-	}); err != nil {
-		t.Fatalf("FinalizeTurn: %v", err)
+	}); finalizeErr != nil {
+		t.Fatalf("FinalizeTurn: %v", finalizeErr)
 	}
 
 	paths := evolution.NewPaths(workspace, "")
@@ -446,7 +446,8 @@ func TestRuntime_FinalizeTurnUsesSkillNamesFromToolExecutions(t *testing.T) {
 	if got := record.AddedSkillNames; len(got) != 0 {
 		t.Fatalf("AddedSkillNames = %v, want empty", got)
 	}
-	if got := record.UsedSkillNames; len(got) != 3 || got[0] != "three-one" || got[1] != "four-two" || got[2] != "five-three" {
+	if got := record.UsedSkillNames; len(got) != 3 || got[0] != "three-one" || got[1] != "four-two" ||
+		got[2] != "five-three" {
 		t.Fatalf("UsedSkillNames = %v, want [three-one four-two five-three]", got)
 	}
 	if got := record.AllLoadedSkillNames; len(got) != 0 {
@@ -464,7 +465,7 @@ func TestRuntime_FinalizeTurnPreservesUTF8WhenTruncatingChineseOutput(t *testing
 	}
 
 	longChinese := strings.Repeat("中文输出", 500)
-	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
+	if finalizeErr := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
 		Workspace:    workspace,
 		TurnID:       "turn-utf8",
 		SessionKey:   "session-utf8",
@@ -472,8 +473,8 @@ func TestRuntime_FinalizeTurnPreservesUTF8WhenTruncatingChineseOutput(t *testing
 		Status:       "completed",
 		UserMessage:  "请处理这段中文输出",
 		FinalContent: longChinese,
-	}); err != nil {
-		t.Fatalf("FinalizeTurn: %v", err)
+	}); finalizeErr != nil {
+		t.Fatalf("FinalizeTurn: %v", finalizeErr)
 	}
 
 	paths := evolution.NewPaths(workspace, "")
@@ -514,7 +515,7 @@ func TestRuntime_FinalizeTurnPrefersExplicitAttemptTrail(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
+	if finalizeErr := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
 		Workspace:           workspace,
 		TurnID:              "turn-explicit-trail",
 		SessionKey:          "session-explicit-trail",
@@ -528,8 +529,8 @@ func TestRuntime_FinalizeTurnPrefersExplicitAttemptTrail(t *testing.T) {
 			{Sequence: 1, Trigger: "initial_build", SkillNames: []string{"weather"}},
 			{Sequence: 2, Trigger: "context_retry_rebuild", SkillNames: []string{"geocode", "weather"}},
 		},
-	}); err != nil {
-		t.Fatalf("FinalizeTurn: %v", err)
+	}); finalizeErr != nil {
+		t.Fatalf("FinalizeTurn: %v", finalizeErr)
 	}
 
 	paths := evolution.NewPaths(workspace, "")
@@ -579,15 +580,15 @@ func TestRuntime_FinalizeTurnUpdatesSkillProfileUsage(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
+	if finalizeErr := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
 		Workspace:        workspace,
 		TurnID:           "turn-1",
 		SessionKey:       "session-1",
 		AgentID:          "agent-1",
 		Status:           "completed",
 		ActiveSkillNames: []string{"skill-a", "skill-a"},
-	}); err != nil {
-		t.Fatalf("FinalizeTurn: %v", err)
+	}); finalizeErr != nil {
+		t.Fatalf("FinalizeTurn: %v", finalizeErr)
 	}
 
 	store := evolution.NewStore(evolution.NewPaths(workspace, ""))
@@ -610,66 +611,37 @@ func TestRuntime_FinalizeTurnUpdatesSkillProfileUsage(t *testing.T) {
 }
 
 func TestRuntime_FinalizeTurnReactivatesColdSkill(t *testing.T) {
-	workspace := t.TempDir()
-	now := time.Unix(1700001000, 0).UTC()
-	store := evolution.NewStore(evolution.NewPaths(workspace, ""))
-
-	if err := store.SaveProfile(evolution.SkillProfile{
-		SkillName:      "skill-cold",
-		WorkspaceID:    workspace,
-		Status:         evolution.SkillStatusCold,
-		Origin:         "evolved",
-		HumanSummary:   "cold skill",
-		LastUsedAt:     now.Add(-24 * time.Hour),
-		UseCount:       2,
-		RetentionScore: 0.2,
-	}); err != nil {
-		t.Fatalf("SaveProfile: %v", err)
-	}
-
-	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
-		Config: config.EvolutionConfig{Enabled: true, Mode: "observe"},
-		Now:    func() time.Time { return now },
-		Store:  store,
-	})
-	if err != nil {
-		t.Fatalf("NewRuntime: %v", err)
-	}
-
-	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
-		Workspace:        workspace,
-		TurnID:           "turn-cold",
-		Status:           "completed",
-		ActiveSkillNames: []string{"skill-cold"},
-	}); err != nil {
-		t.Fatalf("FinalizeTurn: %v", err)
-	}
-
-	profile, err := store.LoadProfile("skill-cold")
-	if err != nil {
-		t.Fatalf("LoadProfile: %v", err)
-	}
-	if profile.Status != evolution.SkillStatusActive {
-		t.Fatalf("Status = %q, want %q", profile.Status, evolution.SkillStatusActive)
-	}
+	assertFinalizeTurnReactivatesSkill(t, "skill-cold", evolution.SkillStatusCold, 2, 0.2, 24*time.Hour)
 }
 
 func TestRuntime_FinalizeTurnReactivatesArchivedSkill(t *testing.T) {
+	assertFinalizeTurnReactivatesSkill(t, "skill-archived", evolution.SkillStatusArchived, 5, 0.1, 48*time.Hour)
+}
+
+func assertFinalizeTurnReactivatesSkill(
+	t *testing.T,
+	skillName string,
+	initialStatus evolution.SkillStatus,
+	useCount int,
+	retentionScore float64,
+	lastUsedAge time.Duration,
+) {
+	t.Helper()
 	workspace := t.TempDir()
 	now := time.Unix(1700002000, 0).UTC()
 	store := evolution.NewStore(evolution.NewPaths(workspace, ""))
 
-	if err := store.SaveProfile(evolution.SkillProfile{
-		SkillName:      "skill-archived",
+	if saveErr := store.SaveProfile(evolution.SkillProfile{
+		SkillName:      skillName,
 		WorkspaceID:    workspace,
-		Status:         evolution.SkillStatusArchived,
+		Status:         initialStatus,
 		Origin:         "evolved",
-		HumanSummary:   "archived skill",
-		LastUsedAt:     now.Add(-48 * time.Hour),
-		UseCount:       5,
-		RetentionScore: 0.1,
-	}); err != nil {
-		t.Fatalf("SaveProfile: %v", err)
+		HumanSummary:   string(initialStatus) + " skill",
+		LastUsedAt:     now.Add(-lastUsedAge),
+		UseCount:       useCount,
+		RetentionScore: retentionScore,
+	}); saveErr != nil {
+		t.Fatalf("SaveProfile: %v", saveErr)
 	}
 
 	rt, err := evolution.NewRuntime(evolution.RuntimeOptions{
@@ -681,16 +653,16 @@ func TestRuntime_FinalizeTurnReactivatesArchivedSkill(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
+	if finalizeErr := rt.FinalizeTurn(context.Background(), evolution.TurnCaseInput{
 		Workspace:        workspace,
-		TurnID:           "turn-archived",
+		TurnID:           "turn-" + skillName,
 		Status:           "completed",
-		ActiveSkillNames: []string{"skill-archived"},
-	}); err != nil {
-		t.Fatalf("FinalizeTurn: %v", err)
+		ActiveSkillNames: []string{skillName},
+	}); finalizeErr != nil {
+		t.Fatalf("FinalizeTurn: %v", finalizeErr)
 	}
 
-	profile, err := store.LoadProfile("skill-archived")
+	profile, err := store.LoadProfile(skillName)
 	if err != nil {
 		t.Fatalf("LoadProfile: %v", err)
 	}

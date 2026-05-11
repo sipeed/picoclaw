@@ -136,8 +136,8 @@ func TestRuntime_RunColdPathOnce_GeneratesCandidateDraft(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	drafts, err := store.LoadDrafts()
@@ -244,8 +244,8 @@ func TestRuntime_RunColdPathOnce_AdmitsOnlyRecordsApprovedBySuccessJudge(t *test
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	if len(judge.calls) != 2 || judge.calls[0] != "task-rejected" || judge.calls[1] != "task-admitted" {
@@ -354,8 +354,8 @@ func TestRuntime_RunColdPathOnce_RejectsClusterBelowMinSuccessRatio(t *testing.T
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	patterns, err := store.LoadPatternRecords()
@@ -442,8 +442,8 @@ func TestRuntime_RunColdPathOnce_FallbackUsesJudgeAdjustedSuccessRatio(t *testin
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	patterns, err := store.LoadPatternRecords()
@@ -530,8 +530,8 @@ func TestRuntime_RunColdPathOnce_FallbackMarksAcceptedFailureEvidenceClustered(t
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	patterns, err := store.LoadPatternRecords()
@@ -615,11 +615,15 @@ func TestRuntime_RunColdPathOnce_DraftEvidenceDoesNotCrossWorkspaceWithDuplicate
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), workspaceA); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), workspaceA); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 	if len(generator.evidence.TaskRecords) != 1 {
-		t.Fatalf("evidence task count = %d, want 1: %#v", len(generator.evidence.TaskRecords), generator.evidence.TaskRecords)
+		t.Fatalf(
+			"evidence task count = %d, want 1: %#v",
+			len(generator.evidence.TaskRecords),
+			generator.evidence.TaskRecords,
+		)
 	}
 	task := generator.evidence.TaskRecords[0]
 	if task.WorkspaceID != workspaceA {
@@ -651,7 +655,9 @@ func TestRuntime_RunColdPathOnce_AdmitsSingleSkillTaskButWaitsForMinTaskCount(t 
 		UsedSkillNames:  []string{"weather"},
 		AddedSkillNames: []string{"weather"},
 		ToolKinds:       []string{"read_file"},
-		ToolExecutions:  []evolution.ToolExecutionRecord{{Name: "read_file", Success: true, SkillNames: []string{"weather"}}},
+		ToolExecutions: []evolution.ToolExecutionRecord{
+			{Name: "read_file", Success: true, SkillNames: []string{"weather"}},
+		},
 		AttemptTrail: &evolution.AttemptTrail{
 			AttemptedSkills:     []string{"weather"},
 			FinalSuccessfulPath: []string{"weather"},
@@ -683,8 +689,8 @@ func TestRuntime_RunColdPathOnce_AdmitsSingleSkillTaskButWaitsForMinTaskCount(t 
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 	if len(judge.calls) != 1 || judge.calls[0] != "task-simple" {
 		t.Fatalf("judge calls = %v, want [task-simple]", judge.calls)
@@ -757,8 +763,8 @@ func TestRuntime_RunColdPathOnce_RejectsTaskWhenSuccessJudgeRejects(t *testing.T
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	allRecords, err := store.LoadLearningRecords()
@@ -817,8 +823,8 @@ func TestRuntime_RunColdPathOnce_QuarantinesInvalidDraft(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	drafts, err := store.LoadDrafts()
@@ -842,7 +848,11 @@ func TestRuntime_RunColdPathOnce_DoesNotWriteSkillFile(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(skillPath, []byte("---\nname: weather\ndescription: test\n---\n# Weather"), 0o644); err != nil {
+	if err := os.WriteFile(
+		skillPath,
+		[]byte("---\nname: weather\ndescription: test\n---\n# Weather"),
+		0o644,
+	); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -886,8 +896,8 @@ func TestRuntime_RunColdPathOnce_DoesNotWriteSkillFile(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	got, err := os.ReadFile(skillPath)
@@ -926,8 +936,8 @@ func TestRuntime_RunColdPathOnce_UsesDefaultDraftGenerator(t *testing.T) {
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	drafts, err := store.LoadDrafts()
@@ -981,8 +991,8 @@ func TestRuntime_RunColdPathOnce_UsesLLMDraftGeneratorWhenProviderAvailable(t *t
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	drafts, err := store.LoadDrafts()
@@ -1028,8 +1038,8 @@ func TestRuntime_RunColdPathOnce_UsesDefaultDraftGeneratorWhenFactoryHasNoProvid
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	drafts, err := store.LoadDrafts()
@@ -1090,8 +1100,8 @@ func TestRuntime_RunColdPathOnce_UsesGeneratorFactoryWorkspaceForFallback(t *tes
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	drafts, err := store.LoadDrafts()
@@ -1233,8 +1243,8 @@ func TestRuntime_RunColdPathOnce_RegeneratesAfterQuarantinedDraft(t *testing.T) 
 		t.Fatalf("NewRuntime: %v", err)
 	}
 
-	if err := rt.RunColdPathOnce(context.Background(), root); err != nil {
-		t.Fatalf("RunColdPathOnce: %v", err)
+	if runErr := rt.RunColdPathOnce(context.Background(), root); runErr != nil {
+		t.Fatalf("RunColdPathOnce: %v", runErr)
 	}
 
 	drafts, err := store.LoadDrafts()

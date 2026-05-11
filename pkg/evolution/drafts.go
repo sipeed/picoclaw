@@ -16,7 +16,12 @@ type DraftGenerator interface {
 }
 
 type EvidenceAwareDraftGenerator interface {
-	GenerateDraftWithEvidence(ctx context.Context, rule LearningRecord, matches []skills.SkillInfo, evidence DraftEvidence) (SkillDraft, error)
+	GenerateDraftWithEvidence(
+		ctx context.Context,
+		rule LearningRecord,
+		matches []skills.SkillInfo,
+		evidence DraftEvidence,
+	) (SkillDraft, error)
 }
 
 type DraftEvidence struct {
@@ -72,11 +77,20 @@ func NewDefaultDraftGenerator(workspace string) *DefaultDraftGenerator {
 	}
 }
 
-func (g *DefaultDraftGenerator) GenerateDraft(_ context.Context, rule LearningRecord, matches []skills.SkillInfo) (SkillDraft, error) {
+func (g *DefaultDraftGenerator) GenerateDraft(
+	_ context.Context,
+	rule LearningRecord,
+	matches []skills.SkillInfo,
+) (SkillDraft, error) {
 	return g.GenerateDraftWithEvidence(context.Background(), rule, matches, DraftEvidence{})
 }
 
-func (g *DefaultDraftGenerator) GenerateDraftWithEvidence(_ context.Context, rule LearningRecord, matches []skills.SkillInfo, evidence DraftEvidence) (SkillDraft, error) {
+func (g *DefaultDraftGenerator) GenerateDraftWithEvidence(
+	_ context.Context,
+	rule LearningRecord,
+	matches []skills.SkillInfo,
+	evidence DraftEvidence,
+) (SkillDraft, error) {
 	rule = enrichRuleWithDraftEvidence(rule, evidence)
 	target := inferTargetSkillName(rule, matches)
 	if target == "" {
@@ -185,7 +199,9 @@ func inferCombinedSkillName(rule LearningRecord) string {
 	tokens := tokenizeForEvolution(rule.Summary)
 	suffix := commonWinningPathSuffix(path)
 	if len(tokens) == 1 && isNumericToken(tokens[0]) && suffix != "" {
-		if candidate := validSkillNameOrEmpty("calculate-" + tokens[0] + "-via-" + pluralizeSuffix(suffix)); candidate != "" {
+		if candidate := validSkillNameOrEmpty(
+			"calculate-" + tokens[0] + "-via-" + pluralizeSuffix(suffix),
+		); candidate != "" {
 			return candidate
 		}
 	}
@@ -334,8 +350,16 @@ func (g *DefaultDraftGenerator) buildHumanSummary(target string, rule LearningRe
 	return fmt.Sprintf("Create %s from learned pattern: %s", target, rule.Summary)
 }
 
-func (g *DefaultDraftGenerator) buildNewSkillBody(target string, rule LearningRecord, evidence DraftEvidence, matches []skills.SkillInfo) string {
-	description := fmt.Sprintf("Use this skill to %s when the task matches this workflow.", sentenceFragment(fallbackString(rule.Summary, target)))
+func (g *DefaultDraftGenerator) buildNewSkillBody(
+	target string,
+	rule LearningRecord,
+	evidence DraftEvidence,
+	matches []skills.SkillInfo,
+) string {
+	description := fmt.Sprintf(
+		"Use this skill to %s when the task matches this workflow.",
+		sentenceFragment(fallbackString(rule.Summary, target)),
+	)
 	body := strings.Join([]string{
 		"# " + titleCaseSkillName(target),
 		"",
@@ -363,7 +387,11 @@ func (g *DefaultDraftGenerator) buildNewSkillBody(target string, rule LearningRe
 	return buildSkillDocument(target, description, body)
 }
 
-func (g *DefaultDraftGenerator) buildAppendBody(rule LearningRecord, evidence DraftEvidence, matches []skills.SkillInfo) string {
+func (g *DefaultDraftGenerator) buildAppendBody(
+	rule LearningRecord,
+	evidence DraftEvidence,
+	matches []skills.SkillInfo,
+) string {
 	return strings.Join([]string{
 		"## Learned Evolution",
 		fmt.Sprintf("- Summary: %s", strings.TrimSpace(rule.Summary)),
@@ -420,26 +448,28 @@ func (g *DefaultDraftGenerator) learnedPatternLine(rule LearningRecord) string {
 		)
 	}
 	if len(rule.WinningPath) > 0 {
-		return fmt.Sprintf("Prefer `%s` because it was the most reliable recent path.", strings.Join(rule.WinningPath, " -> "))
+		return fmt.Sprintf(
+			"Prefer `%s` because it was the most reliable recent path.",
+			strings.Join(rule.WinningPath, " -> "),
+		)
 	}
 	return fmt.Sprintf("Prefer the pattern summarized as `%s`.", strings.TrimSpace(rule.Summary))
 }
 
-func (g *DefaultDraftGenerator) winningPathLine(rule LearningRecord) string {
-	if len(rule.WinningPath) == 0 {
-		return "No explicit winning path was recorded."
-	}
-	return strings.Join(rule.WinningPath, " -> ")
-}
-
 func (g *DefaultDraftGenerator) procedureLine(rule LearningRecord, evidence DraftEvidence) string {
 	if len(rule.WinningPath) > 0 {
-		return fmt.Sprintf("Follow `%s`, applying the concrete operation from each source skill, then return the final result directly.", strings.Join(rule.WinningPath, " -> "))
+		return fmt.Sprintf(
+			"Follow `%s`, applying the concrete operation from each source skill, then return the final result directly.",
+			strings.Join(rule.WinningPath, " -> "),
+		)
 	}
 	if excerpt := firstFinalOutputExcerpt(evidence, 260); excerpt != "" {
 		return "Use the same operation demonstrated by the source task result: " + excerpt
 	}
-	return fmt.Sprintf("Solve tasks matching `%s` using the learned successful workflow, then return the final result directly.", strings.TrimSpace(rule.Summary))
+	return fmt.Sprintf(
+		"Solve tasks matching `%s` using the learned successful workflow, then return the final result directly.",
+		strings.TrimSpace(rule.Summary),
+	)
 }
 
 func (g *DefaultDraftGenerator) expectedResultLine(evidence DraftEvidence) string {

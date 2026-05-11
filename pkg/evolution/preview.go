@@ -75,11 +75,17 @@ func buildLineDiffPreview(currentBody, renderedBody string) string {
 	}
 
 	lines := make([]string, 0, (hunkBeforeEnd-hunkBeforeStart)+(hunkAfterEnd-hunkAfterStart))
-	header := []string{
+	header := make([]string, 0, 3+len(lines))
+	header = append(header,
 		"--- current",
 		"+++ rendered",
-		formatUnifiedHunkHeader(hunkBeforeStart, hunkBeforeEnd-hunkBeforeStart, hunkAfterStart, hunkAfterEnd-hunkAfterStart),
-	}
+		formatUnifiedHunkHeader(
+			hunkBeforeStart,
+			hunkBeforeEnd-hunkBeforeStart,
+			hunkAfterStart,
+			hunkAfterEnd-hunkAfterStart,
+		),
+	)
 	for _, line := range before[hunkBeforeStart:beforeChangeStart] {
 		lines = append(lines, " "+line)
 	}
@@ -96,7 +102,13 @@ func buildLineDiffPreview(currentBody, renderedBody string) string {
 }
 
 func formatUnifiedHunkHeader(beforeStart, beforeCount, afterStart, afterCount int) string {
-	return "@@ -" + formatUnifiedRange(beforeStart+1, beforeCount) + " +" + formatUnifiedRange(afterStart+1, afterCount) + " @@"
+	return "@@ -" + formatUnifiedRange(
+		beforeStart+1,
+		beforeCount,
+	) + " +" + formatUnifiedRange(
+		afterStart+1,
+		afterCount,
+	) + " @@"
 }
 
 func formatUnifiedRange(start, count int) string {

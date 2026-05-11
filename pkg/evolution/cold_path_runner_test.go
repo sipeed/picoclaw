@@ -8,10 +8,10 @@ import (
 )
 
 type blockingColdPathRuntime struct {
-	runCount   atomic.Int32
+	runCount    atomic.Int32
 	cancelCount atomic.Int32
-	started    chan string
-	release    chan struct{}
+	started     chan string
+	release     chan struct{}
 }
 
 func (r *blockingColdPathRuntime) RunColdPathOnce(ctx context.Context, workspace string) error {

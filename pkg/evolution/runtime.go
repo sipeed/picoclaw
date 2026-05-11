@@ -278,11 +278,19 @@ func (rt *Runtime) RunColdPathOnce(ctx context.Context, workspace string) error 
 	admittedCount := 0
 	newRuleCount := 0
 	if rt.patternClusterer != nil {
-		recordsForOrganizer, evidenceRecordsForOrganizer, err := rt.recordsForColdPathInputs(ctx, workspace, taskRecords)
-		if err != nil {
-			return err
+		recordsForOrganizer, evidenceRecordsForOrganizer, inputErr := rt.recordsForColdPathInputs(
+			ctx,
+			workspace,
+			taskRecords,
+		)
+		if inputErr != nil {
+			return inputErr
 		}
-		recordsForOrganizer = rt.filterRecordsByMinSuccessRatio(workspace, evidenceRecordsForOrganizer, recordsForOrganizer)
+		recordsForOrganizer = rt.filterRecordsByMinSuccessRatio(
+			workspace,
+			evidenceRecordsForOrganizer,
+			recordsForOrganizer,
+		)
 		admittedCount = countTaskLearningRecords(recordsForOrganizer)
 		logger.DebugCF("evolution", "Admitted task records for cold path", map[string]any{
 			"workspace":       workspace,
@@ -303,7 +311,12 @@ func (rt *Runtime) RunColdPathOnce(ctx context.Context, workspace string) error 
 				rt.cfg.EffectiveMinSuccessRatio(),
 			)
 		} else {
-			rules, clusteredTaskIDs, err = rt.patternClusterer.BuildPatterns(ctx, workspace, recordsForOrganizer, patternRecords)
+			rules, clusteredTaskIDs, err = rt.patternClusterer.BuildPatterns(
+				ctx,
+				workspace,
+				recordsForOrganizer,
+				patternRecords,
+			)
 		}
 		if err != nil {
 			return err
@@ -319,14 +332,14 @@ func (rt *Runtime) RunColdPathOnce(ctx context.Context, workspace string) error 
 		})
 		if len(rules) > 0 {
 			merged := mergePatternRecords(patternRecords, rules, workspace)
-			if err := store.MergePatternRecords(rules); err != nil {
-				return err
+			if mergeErr := store.MergePatternRecords(rules); mergeErr != nil {
+				return mergeErr
 			}
 			patternRecords = merged
 		}
 		if len(clusteredTaskIDs) > 0 {
-			if err := markTaskRecordsClustered(store, clusteredTaskIDs); err != nil {
-				return err
+			if markErr := markTaskRecordsClustered(store, clusteredTaskIDs); markErr != nil {
+				return markErr
 			}
 		}
 	}
@@ -371,17 +384,21 @@ func (rt *Runtime) RunColdPathOnce(ctx context.Context, workspace string) error 
 		}
 		rule, ok := readyRuleByID[draft.SourceRecordID]
 		if !ok {
-			logger.DebugCF("evolution", "Skipped existing candidate draft because its source pattern is not ready", map[string]any{
-				"workspace":        workspace,
-				"draft_id":         draft.ID,
-				"source_record_id": draft.SourceRecordID,
-				"run_id":           runID,
-			})
+			logger.DebugCF(
+				"evolution",
+				"Skipped existing candidate draft because its source pattern is not ready",
+				map[string]any{
+					"workspace":        workspace,
+					"draft_id":         draft.ID,
+					"source_record_id": draft.SourceRecordID,
+					"run_id":           runID,
+				},
+			)
 			continue
 		}
-		matches, err := recaller.RecallSimilarSkills(rule)
-		if err != nil {
-			return err
+		matches, recallErr := recaller.RecallSimilarSkills(rule)
+		if recallErr != nil {
+			return recallErr
 		}
 		draft.MatchedSkillRefs = collectSkillRefs(matches)
 		var normalizationNotes []string
@@ -393,17 +410,14 @@ func (rt *Runtime) RunColdPathOnce(ctx context.Context, workspace string) error 
 		draft.ScanFindings = appendUniqueStrings(draft.ScanFindings, review.Findings...)
 		changedExistingDrafts = true
 		if draft.Status != DraftStatusCandidate || mode != "apply" || applier == nil {
-			if err := store.SaveDrafts([]SkillDraft{draft}); err != nil {
-				return err
+			if saveErr := store.SaveDrafts([]SkillDraft{draft}); saveErr != nil {
+				return saveErr
 			}
 			continue
 		}
-		if mode != "apply" || applier == nil {
-			continue
-		}
-		updatedDraft, err := rt.applyCandidateDraft(ctx, workspace, store, applier, draft, runID)
-		if err != nil {
-			return err
+		updatedDraft, applyErr := rt.applyCandidateDraft(ctx, workspace, store, applier, draft, runID)
+		if applyErr != nil {
+			return applyErr
 		}
 		if updatedDraft.Status == DraftStatusAccepted {
 			appliedExistingDrafts++
@@ -436,12 +450,16 @@ func (rt *Runtime) RunColdPathOnce(ctx context.Context, workspace string) error 
 		}
 
 		if _, exists := existingBySource[rule.ID]; exists {
-			logger.DebugCF("evolution", "Skipped pattern because a non-quarantined draft already exists", map[string]any{
-				"workspace":    workspace,
-				"pattern_id":   rule.ID,
-				"pattern_info": summarizePatternRecord(rule),
-				"run_id":       runID,
-			})
+			logger.DebugCF(
+				"evolution",
+				"Skipped pattern because a non-quarantined draft already exists",
+				map[string]any{
+					"workspace":    workspace,
+					"pattern_id":   rule.ID,
+					"pattern_info": summarizePatternRecord(rule),
+					"run_id":       runID,
+				},
+			)
 			continue
 		}
 
@@ -639,35 +657,6 @@ func coldPathSuccessRatioKey(workspace string, record LearningRecord) (string, b
 	return key, true
 }
 
-func passesColdPathRuleFilter(record LearningRecord) bool {
-	return coldPathRuleRejectReason(record) == ""
-}
-
-func coldPathRuleRejectReason(record LearningRecord) string {
-	if !isTaskRecordKind(record.Kind) {
-		return "not a task record"
-	}
-	if record.Success == nil || !*record.Success {
-		return "task not completed"
-	}
-	if record.Status != "" && record.Status != RecordStatus("new") {
-		return "task already processed"
-	}
-	if strings.EqualFold(strings.TrimSpace(record.SessionKey), "heartbeat") {
-		return "heartbeat session"
-	}
-	if strings.EqualFold(strings.TrimSpace(record.FinalOutput), "HEARTBEAT_OK") {
-		return "heartbeat output"
-	}
-	if strings.TrimSpace(record.Summary) == "" {
-		return "missing summary"
-	}
-	if strings.TrimSpace(record.FinalOutput) == "" {
-		return "missing final output"
-	}
-	return ""
-}
-
 func coldPathEvidenceRejectReason(record LearningRecord) string {
 	if !isTaskRecordKind(record.Kind) {
 		return "not a task record"
@@ -744,7 +733,13 @@ func (rt *Runtime) applierForWorkspace(workspace string) *Applier {
 	return rt.applier
 }
 
-func (rt *Runtime) finalizeDraft(workspace string, rule LearningRecord, matches []skills.SkillInfo, evidence DraftEvidence, draft SkillDraft) SkillDraft {
+func (rt *Runtime) finalizeDraft(
+	workspace string,
+	rule LearningRecord,
+	matches []skills.SkillInfo,
+	evidence DraftEvidence,
+	draft SkillDraft,
+) SkillDraft {
 	if draft.ID == "" {
 		draft.ID = "draft-" + rule.ID
 	}
@@ -843,7 +838,12 @@ func looksLikeSkillDocument(body string) bool {
 	return strings.HasPrefix(body, "---\n") && strings.Contains(body, "\n# ")
 }
 
-func synthesizeSkillDocumentFromPartialDraft(target string, draft SkillDraft, rule LearningRecord, evidence DraftEvidence) string {
+func synthesizeSkillDocumentFromPartialDraft(
+	target string,
+	draft SkillDraft,
+	rule LearningRecord,
+	evidence DraftEvidence,
+) string {
 	description := strings.TrimSpace(draft.HumanSummary)
 	if description == "" {
 		description = fmt.Sprintf("Learned workflow for %s.", target)
@@ -876,7 +876,13 @@ func synthesizeSkillDocumentFromPartialDraft(target string, draft SkillDraft, ru
 	return buildSkillDocument(target, description, body)
 }
 
-func synthesizeCombinedSkillDocument(target string, draft SkillDraft, rule LearningRecord, matches []skills.SkillInfo, evidence DraftEvidence) string {
+func synthesizeCombinedSkillDocument(
+	target string,
+	draft SkillDraft,
+	rule LearningRecord,
+	matches []skills.SkillInfo,
+	evidence DraftEvidence,
+) string {
 	description := strings.TrimSpace(draft.HumanSummary)
 	if description == "" {
 		description = buildCombinedSkillHumanSummary(target, rule, false)
@@ -908,7 +914,13 @@ func synthesizeCombinedSkillDocument(target string, draft SkillDraft, rule Learn
 	return buildSkillDocument(target, description, body)
 }
 
-func synthesizeCombinedSkillAppendBody(target string, draft SkillDraft, rule LearningRecord, matches []skills.SkillInfo, evidence DraftEvidence) string {
+func synthesizeCombinedSkillAppendBody(
+	target string,
+	draft SkillDraft,
+	rule LearningRecord,
+	matches []skills.SkillInfo,
+	evidence DraftEvidence,
+) string {
 	lines := []string{
 		"## Learned Shortcut Update",
 		fmt.Sprintf("- Shortcut skill: `%s`", target),
@@ -929,7 +941,11 @@ func synthesizeCombinedSkillAppendBody(target string, draft SkillDraft, rule Lea
 
 func synthesizedStartHereLine(rule LearningRecord, target string) string {
 	if len(rule.WinningPath) > 0 {
-		return fmt.Sprintf("Start with `%s` for tasks like `%s`.", strings.Join(rule.WinningPath, " -> "), strings.TrimSpace(rule.Summary))
+		return fmt.Sprintf(
+			"Start with `%s` for tasks like `%s`.",
+			strings.Join(rule.WinningPath, " -> "),
+			strings.TrimSpace(rule.Summary),
+		)
 	}
 	if summary := strings.TrimSpace(rule.Summary); summary != "" {
 		return fmt.Sprintf("Use `%s` when the task matches `%s`.", target, summary)
@@ -945,7 +961,11 @@ func synthesizedCombinedWhenToUseLine(rule LearningRecord, target string) string
 	if len(rule.WinningPath) == 0 {
 		return fmt.Sprintf("Use `%s` when the learned task pattern appears again.", target)
 	}
-	return fmt.Sprintf("Use `%s` as a direct shortcut instead of replaying `%s` step by step.", target, strings.Join(rule.WinningPath, " -> "))
+	return fmt.Sprintf(
+		"Use `%s` as a direct shortcut instead of replaying `%s` step by step.",
+		target,
+		strings.Join(rule.WinningPath, " -> "),
+	)
 }
 
 func synthesizedCombinedProcedure(matches []skills.SkillInfo, rule LearningRecord) string {
@@ -954,7 +974,10 @@ func synthesizedCombinedProcedure(matches []skills.SkillInfo, rule LearningRecor
 		if len(rule.WinningPath) == 0 {
 			return "Use the learned shortcut directly and keep the response focused on the requested result."
 		}
-		return fmt.Sprintf("Apply the recorded path `%s`, then return the final result with only the necessary explanation.", strings.Join(rule.WinningPath, " -> "))
+		return fmt.Sprintf(
+			"Apply the recorded path `%s`, then return the final result with only the necessary explanation.",
+			strings.Join(rule.WinningPath, " -> "),
+		)
 	}
 	return "Follow the source skill guidance below as one compact procedure, then return the final result without replaying unnecessary discovery steps."
 }
@@ -994,12 +1017,18 @@ func synthesizedWrappedPathLine(rule LearningRecord) string {
 func synthesizedCombinedLearnedContent(body string, rule LearningRecord) string {
 	content := strings.TrimSpace(stripSkillFrontmatter(body))
 	if content == "" {
-		return fmt.Sprintf("Learned from `%s`; use this shortcut directly when the same task pattern appears again.", fallbackEvolutionSummary(rule))
+		return fmt.Sprintf(
+			"Learned from `%s`; use this shortcut directly when the same task pattern appears again.",
+			fallbackEvolutionSummary(rule),
+		)
 	}
 	content = removeVerboseCombinedSections(content)
 	content = strings.Join(strings.Fields(content), " ")
 	if content == "" {
-		return fmt.Sprintf("Learned from `%s`; use this shortcut directly when the same task pattern appears again.", fallbackEvolutionSummary(rule))
+		return fmt.Sprintf(
+			"Learned from `%s`; use this shortcut directly when the same task pattern appears again.",
+			fallbackEvolutionSummary(rule),
+		)
 	}
 	content = trimAtReadableBoundary(content, 1200)
 	return "- Learned task: " + fallbackEvolutionSummary(rule) + "\n- Reusable guidance: " + content
@@ -1275,7 +1304,8 @@ func markTaskRecordsClustered(store *Store, ids []string) error {
 func filterReadyRules(records []LearningRecord, workspace string) []LearningRecord {
 	seen := make(map[string]LearningRecord)
 	for _, record := range records {
-		if !isPatternRecordKind(record.Kind) || record.WorkspaceID != workspace || record.Status != RecordStatus("ready") {
+		if !isPatternRecordKind(record.Kind) || record.WorkspaceID != workspace ||
+			record.Status != RecordStatus("ready") {
 			continue
 		}
 		seen[record.ID] = record
@@ -1341,7 +1371,10 @@ func (rt *Runtime) applyCandidateDraft(
 		draft.Status = DraftStatusQuarantined
 		draft.ScanFindings = appendUniqueStrings(draft.ScanFindings, fmt.Sprintf("apply failed: %v", err))
 		if auditErr := rt.recordRollbackAudit(store, draft, err); auditErr != nil {
-			draft.ScanFindings = appendUniqueStrings(draft.ScanFindings, fmt.Sprintf("rollback audit failed: %v", auditErr))
+			draft.ScanFindings = appendUniqueStrings(
+				draft.ScanFindings,
+				fmt.Sprintf("rollback audit failed: %v", auditErr),
+			)
 			if saveErr := store.SaveDrafts([]SkillDraft{draft}); saveErr != nil {
 				return draft, errorsJoin(fmt.Errorf("%w: %v", ErrApplyDraftFailed, err), auditErr, saveErr)
 			}
@@ -1379,7 +1412,10 @@ func (rt *Runtime) applyCandidateDraft(
 		draft.Status = DraftStatusQuarantined
 		draft.ScanFindings = appendUniqueStrings(draft.ScanFindings, fmt.Sprintf("profile save failed: %v", err))
 		if rollbackErr := rollbackApply(); rollbackErr != nil {
-			draft.ScanFindings = appendUniqueStrings(draft.ScanFindings, fmt.Sprintf("apply rollback failed: %v", rollbackErr))
+			draft.ScanFindings = appendUniqueStrings(
+				draft.ScanFindings,
+				fmt.Sprintf("apply rollback failed: %v", rollbackErr),
+			)
 			if saveErr := store.SaveDrafts([]SkillDraft{draft}); saveErr != nil {
 				return draft, errorsJoin(fmt.Errorf("%w: %v", ErrApplyDraftFailed, err), rollbackErr, saveErr)
 			}
@@ -1401,21 +1437,25 @@ func (rt *Runtime) applyCandidateDraft(
 
 func (rt *Runtime) recordRollbackAudit(store *Store, draft SkillDraft, applyErr error) error {
 	now := rt.now()
-	return store.UpdateProfile(draft.WorkspaceID, draft.TargetSkillName, func(profile *SkillProfile, exists bool) error {
-		if !exists {
+	return store.UpdateProfile(
+		draft.WorkspaceID,
+		draft.TargetSkillName,
+		func(profile *SkillProfile, exists bool) error {
+			if !exists {
+				return nil
+			}
+			profile.VersionHistory = append(profile.VersionHistory, SkillVersionEntry{
+				Version:        profile.CurrentVersion,
+				Action:         "rollback",
+				Timestamp:      now,
+				DraftID:        draft.ID,
+				Summary:        fmt.Sprintf("Rolled back failed draft apply: %s", draft.HumanSummary),
+				Rollback:       true,
+				RollbackReason: applyErr.Error(),
+			})
 			return nil
-		}
-		profile.VersionHistory = append(profile.VersionHistory, SkillVersionEntry{
-			Version:        profile.CurrentVersion,
-			Action:         "rollback",
-			Timestamp:      now,
-			DraftID:        draft.ID,
-			Summary:        fmt.Sprintf("Rolled back failed draft apply: %s", draft.HumanSummary),
-			Rollback:       true,
-			RollbackReason: applyErr.Error(),
-		})
-		return nil
-	})
+		},
+	)
 }
 
 func profileOrigin(origin string) string {

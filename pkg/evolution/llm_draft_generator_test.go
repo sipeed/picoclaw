@@ -125,7 +125,13 @@ func TestLLMDraftGenerator_BuildPromptIncludesMatchedSkillContent(t *testing.T) 
 	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(skillPath, []byte("---\nname: three-one-theorem\ndescription: Add 31 then delegate\n---\n# Three One\nAdd 31 to the input, then continue with the next theorem.\n"), 0o644); err != nil {
+	if err := os.WriteFile(
+		skillPath,
+		[]byte(
+			"---\nname: three-one-theorem\ndescription: Add 31 then delegate\n---\n# Three One\nAdd 31 to the input, then continue with the next theorem.\n",
+		),
+		0o644,
+	); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -171,13 +177,22 @@ func TestLLMDraftGenerator_BuildPromptIncludesMatchedSkillContent(t *testing.T) 
 	if !strings.Contains(prompt, "The YAML frontmatter must contain only name and description fields") {
 		t.Fatalf("prompt missing frontmatter instruction:\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "The description field must and only describe what this skill can do and when to use it") {
+	if !strings.Contains(
+		prompt,
+		"The description field must and only describe what this skill can do and when to use it",
+	) {
 		t.Fatalf("prompt missing description field instruction:\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "The deployable Markdown body should only contain what the skill is useful for and how to use it") {
+	if !strings.Contains(
+		prompt,
+		"The deployable Markdown body should only contain what the skill is useful for and how to use it",
+	) {
 		t.Fatalf("prompt missing deployable body scope instruction:\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "provide detailed step-by-step instructions for the exact operation or execution process") {
+	if !strings.Contains(
+		prompt,
+		"provide detailed step-by-step instructions for the exact operation or execution process",
+	) {
 		t.Fatalf("prompt missing step-by-step instruction:\n%s", prompt)
 	}
 	if !strings.Contains(prompt, "body_or_patch is an internal draft and review artifact") {
