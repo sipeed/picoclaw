@@ -1,9 +1,11 @@
 package telegram
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -30,6 +32,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+const telegramGuestMessageUpdates = "guest_message"
+
 var (
 	reHeading    = regexp.MustCompile(`(?m)^#{1,6}\s+([^\n]+)`)
 	reBlockquote = regexp.MustCompile(`^>\s*(.*)$`)
@@ -42,6 +46,34 @@ var (
 	reCodeBlock  = regexp.MustCompile("```[\\w]*\\n?([\\s\\S]*?)```")
 	reInlineCode = regexp.MustCompile("`([^`]+)`")
 )
+
+func telegramAllowedUpdates(businessMode, guestMode bool) []string {
+	updates := []string{
+		telego.MessageUpdates,
+		telego.EditedMessageUpdates,
+		telego.ChannelPostUpdates,
+		telego.EditedChannelPostUpdates,
+		telego.CallbackQueryUpdates,
+		telego.InlineQueryUpdates,
+		telego.ChosenInlineResultUpdates,
+		telego.ShippingQueryUpdates,
+		telego.PreCheckoutQueryUpdates,
+		telego.PollUpdates,
+		telego.PollAnswerUpdates,
+	}
+	if businessMode {
+		updates = append(updates,
+			telego.BusinessConnectionUpdates,
+			telego.BusinessMessageUpdates,
+			telego.EditedBusinessMessageUpdates,
+			telego.DeletedBusinessMessagesUpdates,
+		)
+	}
+	if guestMode {
+		updates = append(updates, telegramGuestMessageUpdates)
+	}
+	return updates
+}
 
 type TelegramChannel struct {
 	*channels.BaseChannel
@@ -57,6 +89,7 @@ type TelegramChannel struct {
 	registerFunc      func(context.Context, []commands.Definition) error
 	commandRegDelayFn func(int) time.Duration
 	commandRegCancel  context.CancelFunc
+	httpClient        *http.Client
 }
 
 func NewTelegramChannel(
@@ -112,6 +145,7 @@ func NewTelegramChannel(
 		bc:          bc,
 		chatIDs:     make(map[string]int64),
 		tgCfg:       telegramCfg,
+		httpClient:  newTelegramHTTPClient(telegramCfg),
 	}
 	ch.progress = channels.NewToolFeedbackAnimator(ch.EditMessage)
 	return ch, nil
@@ -122,12 +156,20 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	updates, err := c.bot.UpdatesViaLongPolling(c.ctx, &telego.GetUpdatesParams{
-		Timeout: 30,
-	})
-	if err != nil {
-		c.cancel()
-		return fmt.Errorf("failed to start long polling: %w", err)
+	updateParams := &telego.GetUpdatesParams{
+		Timeout:        30,
+		AllowedUpdates: telegramAllowedUpdates(c.businessModeEnabled(), c.guestModeEnabled()),
+	}
+	var updates <-chan telego.Update
+	if c.guestModeEnabled() {
+		updates = c.updatesViaLongPollingWithGuest(c.ctx, updateParams)
+	} else {
+		var err error
+		updates, err = c.bot.UpdatesViaLongPolling(c.ctx, updateParams)
+		if err != nil {
+			c.cancel()
+			return fmt.Errorf("failed to start long polling: %w", err)
+		}
 	}
 
 	bh, err := th.NewBotHandler(c.bot, updates)
@@ -140,6 +182,20 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	bh.HandleMessage(func(ctx *th.Context, message telego.Message) error {
 		return c.handleMessage(ctx, &message)
 	}, th.AnyMessage())
+	if c.businessModeEnabled() {
+		bh.HandleBusinessMessage(func(ctx *th.Context, message telego.Message) error {
+			return c.handleBusinessMessage(ctx, &message)
+		}, th.AnyBusinessMessage())
+		bh.HandleEditedBusinessMessage(func(ctx *th.Context, message telego.Message) error {
+			return c.handleBusinessMessage(ctx, &message)
+		}, th.AnyEditedBusinessMessage())
+		bh.HandleBusinessConnection(func(ctx *th.Context, connection telego.BusinessConnection) error {
+			return c.handleBusinessConnection(ctx, connection)
+		}, th.AnyBusinessConnection())
+		bh.HandleDeletedBusinessMessages(func(ctx *th.Context, deleted telego.BusinessMessagesDeleted) error {
+			return c.handleDeletedBusinessMessages(ctx, deleted)
+		}, th.AnyDeletedBusinessMessages())
+	}
 
 	c.SetRunning(true)
 	logger.InfoCF("telegram", "Telegram bot connected", map[string]any{
@@ -182,6 +238,138 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
+func newTelegramHTTPClient(telegramCfg *config.TelegramSettings) *http.Client {
+	if telegramCfg == nil || strings.TrimSpace(telegramCfg.Proxy) == "" {
+		return http.DefaultClient
+	}
+	proxyURL, err := url.Parse(telegramCfg.Proxy)
+	if err != nil {
+		return http.DefaultClient
+	}
+	return &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+}
+
+func (c *TelegramChannel) telegramAPIBaseURL() string {
+	if c != nil && c.tgCfg != nil {
+		if baseURL := strings.TrimRight(strings.TrimSpace(c.tgCfg.BaseURL), "/"); baseURL != "" {
+			return baseURL
+		}
+	}
+	return "https://api.telegram.org"
+}
+
+func (c *TelegramChannel) postTelegramAPI(ctx context.Context, method string, params any, result any) error {
+	if c == nil || c.bot == nil {
+		return fmt.Errorf("telegram bot is nil")
+	}
+	body, err := json.Marshal(params)
+	if err != nil {
+		return err
+	}
+	endpoint := fmt.Sprintf("%s/bot%s/%s", c.telegramAPIBaseURL(), c.bot.Token(), method)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := c.httpClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var apiResp struct {
+		OK          bool            `json:"ok"`
+		Result      json.RawMessage `json:"result"`
+		ErrorCode   int             `json:"error_code,omitempty"`
+		Description string          `json:"description,omitempty"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return err
+	}
+	if !apiResp.OK {
+		if apiResp.Description != "" {
+			return fmt.Errorf("telegram %s: %s", method, apiResp.Description)
+		}
+		return fmt.Errorf("telegram %s: HTTP %d", method, resp.StatusCode)
+	}
+	if result != nil && len(apiResp.Result) > 0 {
+		if err := json.Unmarshal(apiResp.Result, result); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type telegramRawUpdate struct {
+	telego.Update
+	GuestMessage *telegramGuestMessage `json:"guest_message,omitempty"`
+}
+
+func (c *TelegramChannel) updatesViaLongPollingWithGuest(
+	ctx context.Context,
+	params *telego.GetUpdatesParams,
+) <-chan telego.Update {
+	updates := make(chan telego.Update, 100)
+	go c.pollTelegramUpdatesWithGuest(ctx, params, updates)
+	return updates
+}
+
+func (c *TelegramChannel) pollTelegramUpdatesWithGuest(
+	ctx context.Context,
+	params *telego.GetUpdatesParams,
+	updates chan<- telego.Update,
+) {
+	defer close(updates)
+	if params == nil {
+		params = &telego.GetUpdatesParams{Timeout: 30}
+	}
+	pollParams := *params
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		var rawUpdates []telegramRawUpdate
+		if err := c.postTelegramAPI(ctx, "getUpdates", &pollParams, &rawUpdates); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			logger.ErrorCF("telegram", "Guest-mode long polling failed", map[string]any{
+				"error": err.Error(),
+			})
+			time.Sleep(time.Second)
+			continue
+		}
+
+		for _, update := range rawUpdates {
+			if update.UpdateID >= pollParams.Offset {
+				pollParams.Offset = update.UpdateID + 1
+			}
+			if update.GuestMessage != nil {
+				if err := c.handleGuestMessage(ctx, update.GuestMessage); err != nil {
+					logger.ErrorCF("telegram", "Guest message handling failed", map[string]any{
+						"error": err.Error(),
+					})
+				}
+				continue
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case updates <- update.Update:
+			}
+		}
+	}
+}
+
 func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
 		return nil, channels.ErrNotRunning
@@ -189,7 +377,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 
 	useMarkdownV2 := c.tgCfg.UseMarkdownV2
 
-	chatID, threadID, err := resolveTelegramOutboundTarget(msg.ChatID, &msg.Context)
+	target, err := resolveTelegramOutboundTarget(msg.ChatID, &msg.Context)
 	if err != nil {
 		return nil, fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
 	}
@@ -199,6 +387,12 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 	}
 
 	isToolFeedback := outboundMessageIsToolFeedback(msg)
+	if target.guestQueryID != "" {
+		if isToolFeedback {
+			return nil, nil
+		}
+		return c.answerGuestQuery(ctx, target.guestQueryID, msg.Content, useMarkdownV2)
+	}
 	toolFeedbackContent := msg.Content
 	if isToolFeedback {
 		toolFeedbackContent = fitToolFeedbackForTelegram(msg.Content, useMarkdownV2, 4096)
@@ -253,8 +447,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 
 			if smallerLen <= 0 {
 				msgID, err := c.sendChunk(ctx, sendChunkParams{
-					chatID:        chatID,
-					threadID:      threadID,
+					target:        target,
 					content:       content,
 					replyToID:     replyToID,
 					mdFallback:    chunk,
@@ -293,8 +486,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 		}
 
 		msgID, err := c.sendChunk(ctx, sendChunkParams{
-			chatID:        chatID,
-			threadID:      threadID,
+			target:        target,
 			content:       content,
 			replyToID:     replyToID,
 			mdFallback:    chunk,
@@ -318,8 +510,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 }
 
 type sendChunkParams struct {
-	chatID        int64
-	threadID      int
+	target        telegramOutboundTarget
 	content       string
 	replyToID     string
 	mdFallback    string
@@ -332,8 +523,9 @@ func (c *TelegramChannel) sendChunk(
 	ctx context.Context,
 	params sendChunkParams,
 ) (string, error) {
-	tgMsg := tu.Message(tu.ID(params.chatID), params.content)
-	tgMsg.MessageThreadID = params.threadID
+	tgMsg := tu.Message(tu.ID(params.target.chatID), params.content)
+	tgMsg.MessageThreadID = params.target.threadID
+	tgMsg.BusinessConnectionID = params.target.businessConnectionID
 	if params.useMarkdownV2 {
 		tgMsg.WithParseMode(telego.ModeMarkdownV2)
 	} else {
@@ -363,6 +555,55 @@ func (c *TelegramChannel) sendChunk(
 	return strconv.Itoa(pMsg.MessageID), nil
 }
 
+func (c *TelegramChannel) answerGuestQuery(
+	ctx context.Context,
+	guestQueryID string,
+	content string,
+	useMarkdownV2 bool,
+) ([]string, error) {
+	guestQueryID = strings.TrimSpace(guestQueryID)
+	if guestQueryID == "" {
+		return nil, fmt.Errorf("missing guest query ID: %w", channels.ErrSendFailed)
+	}
+	chunks := channels.SplitMessage(content, 4000)
+	if len(chunks) > 0 {
+		content = chunks[0]
+	}
+	parsedContent := parseContent(content, useMarkdownV2)
+	parseMode := telego.ModeHTML
+	if useMarkdownV2 {
+		parseMode = telego.ModeMarkdownV2
+	}
+	params := map[string]any{
+		"guest_query_id": guestQueryID,
+		"result": map[string]any{
+			"type":  "article",
+			"id":    "picoclaw-reply",
+			"title": "PicoClaw",
+			"input_message_content": map[string]any{
+				"message_text": parsedContent,
+				"parse_mode":   parseMode,
+			},
+		},
+	}
+	var result struct {
+		MessageID int `json:"message_id,omitempty"`
+	}
+	if err := c.postTelegramAPI(ctx, "answerGuestQuery", params, &result); err != nil {
+		logParseFailed(err, useMarkdownV2)
+		params["result"].(map[string]any)["input_message_content"] = map[string]any{
+			"message_text": content,
+		}
+		if retryErr := c.postTelegramAPI(ctx, "answerGuestQuery", params, &result); retryErr != nil {
+			return nil, fmt.Errorf("telegram answer guest query: %w", channels.ErrTemporary)
+		}
+	}
+	if result.MessageID == 0 {
+		return nil, nil
+	}
+	return []string{strconv.Itoa(result.MessageID)}, nil
+}
+
 // maxTypingDuration limits how long the typing indicator can run.
 // Prevents endless typing when the LLM fails/hangs and preSend never invokes cancel.
 // Matches channels.Manager's typingStopTTL (5 min) so behavior is consistent.
@@ -375,13 +616,17 @@ const maxTypingDuration = 5 * time.Minute
 // The goroutine also exits automatically after maxTypingDuration if cancel is
 // never called (e.g. when the LLM fails or times out without publishing).
 func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
-	cid, threadID, err := parseTelegramChatID(chatID)
+	target, err := resolveTelegramOutboundTarget(chatID, nil)
 	if err != nil {
 		return func() {}, err
 	}
+	if target.guestQueryID != "" {
+		return func() {}, nil
+	}
 
-	action := tu.ChatAction(tu.ID(cid), telego.ChatActionTyping)
-	action.MessageThreadID = threadID
+	action := tu.ChatAction(tu.ID(target.chatID), telego.ChatActionTyping)
+	action.MessageThreadID = target.threadID
+	action.BusinessConnectionID = target.businessConnectionID
 
 	// Send the first typing action immediately
 	_ = c.bot.SendChatAction(ctx, action)
@@ -398,8 +643,9 @@ func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string) (func(
 			case <-maxCtx.Done():
 				return
 			case <-ticker.C:
-				a := tu.ChatAction(tu.ID(cid), telego.ChatActionTyping)
-				a.MessageThreadID = threadID
+				a := tu.ChatAction(tu.ID(target.chatID), telego.ChatActionTyping)
+				a.MessageThreadID = target.threadID
+				a.BusinessConnectionID = target.businessConnectionID
 				_ = c.bot.SendChatAction(typingCtx, a)
 			}
 		}
@@ -411,16 +657,23 @@ func (c *TelegramChannel) StartTyping(ctx context.Context, chatID string) (func(
 // EditMessage implements channels.MessageEditor.
 func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
 	useMarkdownV2 := c.tgCfg.UseMarkdownV2
-	cid, _, err := parseTelegramChatID(chatID)
+	target, err := resolveTelegramOutboundTarget(chatID, nil)
 	if err != nil {
 		return err
+	}
+	if target.guestQueryID != "" {
+		return nil
 	}
 	mid, err := strconv.Atoi(messageID)
 	if err != nil {
 		return err
 	}
+	if target.guestQueryID != "" {
+		return nil
+	}
 	parsedContent := parseContent(content, useMarkdownV2)
-	editMsg := tu.EditMessageText(tu.ID(cid), mid, parsedContent)
+	editMsg := tu.EditMessageText(tu.ID(target.chatID), mid, parsedContent)
+	editMsg.BusinessConnectionID = target.businessConnectionID
 	if useMarkdownV2 {
 		editMsg.WithParseMode(telego.ModeMarkdownV2)
 	} else {
@@ -439,7 +692,9 @@ func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messag
 		// Network errors or timeouts should NOT trigger a retry with different content.
 		if strings.Contains(err.Error(), "Bad Request") {
 			logParseFailed(err, useMarkdownV2)
-			_, err = c.bot.EditMessageText(ctx, tu.EditMessageText(tu.ID(cid), mid, content))
+			plainEdit := tu.EditMessageText(tu.ID(target.chatID), mid, content)
+			plainEdit.BusinessConnectionID = target.businessConnectionID
+			_, err = c.bot.EditMessageText(ctx, plainEdit)
 		}
 	}
 
@@ -467,7 +722,7 @@ func (c *TelegramChannel) EditMessage(ctx context.Context, chatID string, messag
 
 // DeleteMessage implements channels.MessageDeleter.
 func (c *TelegramChannel) DeleteMessage(ctx context.Context, chatID string, messageID string) error {
-	cid, _, err := parseTelegramChatID(chatID)
+	target, err := resolveTelegramOutboundTarget(chatID, nil)
 	if err != nil {
 		return err
 	}
@@ -475,8 +730,14 @@ func (c *TelegramChannel) DeleteMessage(ctx context.Context, chatID string, mess
 	if err != nil {
 		return err
 	}
+	if target.businessConnectionID != "" {
+		return c.bot.DeleteBusinessMessages(ctx, &telego.DeleteBusinessMessagesParams{
+			BusinessConnectionID: target.businessConnectionID,
+			MessageIDs:           []int{mid},
+		})
+	}
 	return c.bot.DeleteMessage(ctx, &telego.DeleteMessageParams{
-		ChatID:    tu.ID(cid),
+		ChatID:    tu.ID(target.chatID),
 		MessageID: mid,
 	})
 }
@@ -575,13 +836,17 @@ func (c *TelegramChannel) SendPlaceholder(ctx context.Context, chatID string) (s
 
 	text := phCfg.GetRandomText()
 
-	cid, threadID, err := parseTelegramChatID(chatID)
+	target, err := resolveTelegramOutboundTarget(chatID, nil)
 	if err != nil {
 		return "", err
 	}
+	if target.guestQueryID != "" {
+		return "", nil
+	}
 
-	phMsg := tu.Message(tu.ID(cid), text)
-	phMsg.MessageThreadID = threadID
+	phMsg := tu.Message(tu.ID(target.chatID), text)
+	phMsg.MessageThreadID = target.threadID
+	phMsg.BusinessConnectionID = target.businessConnectionID
 	pMsg, err := c.bot.SendMessage(ctx, phMsg)
 	if err != nil {
 		return "", err
@@ -598,7 +863,7 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 	trackedChatID := telegramToolFeedbackChatKey(msg.ChatID, &msg.Context)
 	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(trackedChatID)
 
-	chatID, threadID, err := resolveTelegramOutboundTarget(msg.ChatID, &msg.Context)
+	target, err := resolveTelegramOutboundTarget(msg.ChatID, &msg.Context)
 	if err != nil {
 		return nil, fmt.Errorf("invalid chat ID %s: %w", msg.ChatID, channels.ErrSendFailed)
 	}
@@ -632,10 +897,11 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 		switch part.Type {
 		case "image":
 			params := &telego.SendPhotoParams{
-				ChatID:          tu.ID(chatID),
-				MessageThreadID: threadID,
-				Photo:           telego.InputFile{File: file},
-				Caption:         part.Caption,
+				BusinessConnectionID: target.businessConnectionID,
+				ChatID:               tu.ID(target.chatID),
+				MessageThreadID:      target.threadID,
+				Photo:                telego.InputFile{File: file},
+				Caption:              part.Caption,
 			}
 			tgResult, err = c.bot.SendPhoto(ctx, params)
 			if err != nil && strings.Contains(err.Error(), "PHOTO_INVALID_DIMENSIONS") {
@@ -645,10 +911,11 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 				}
 
 				docParams := &telego.SendDocumentParams{
-					ChatID:          tu.ID(chatID),
-					MessageThreadID: threadID,
-					Document:        telego.InputFile{File: file},
-					Caption:         part.Caption,
+					BusinessConnectionID: target.businessConnectionID,
+					ChatID:               tu.ID(target.chatID),
+					MessageThreadID:      target.threadID,
+					Document:             telego.InputFile{File: file},
+					Caption:              part.Caption,
 				}
 				tgResult, err = c.bot.SendDocument(ctx, docParams)
 			}
@@ -658,35 +925,39 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 			fn := strings.ToLower(part.Filename)
 			if strings.Contains(fn, "voice") && (strings.HasSuffix(fn, ".ogg") || strings.HasSuffix(fn, ".oga")) {
 				vparams := &telego.SendVoiceParams{
-					ChatID:          tu.ID(chatID),
-					MessageThreadID: threadID,
-					Voice:           telego.InputFile{File: file},
-					Caption:         part.Caption,
+					BusinessConnectionID: target.businessConnectionID,
+					ChatID:               tu.ID(target.chatID),
+					MessageThreadID:      target.threadID,
+					Voice:                telego.InputFile{File: file},
+					Caption:              part.Caption,
 				}
 				tgResult, err = c.bot.SendVoice(ctx, vparams)
 			} else {
 				params := &telego.SendAudioParams{
-					ChatID:          tu.ID(chatID),
-					MessageThreadID: threadID,
-					Audio:           telego.InputFile{File: file},
-					Caption:         part.Caption,
+					BusinessConnectionID: target.businessConnectionID,
+					ChatID:               tu.ID(target.chatID),
+					MessageThreadID:      target.threadID,
+					Audio:                telego.InputFile{File: file},
+					Caption:              part.Caption,
 				}
 				tgResult, err = c.bot.SendAudio(ctx, params)
 			}
 		case "video":
 			params := &telego.SendVideoParams{
-				ChatID:          tu.ID(chatID),
-				MessageThreadID: threadID,
-				Video:           telego.InputFile{File: file},
-				Caption:         part.Caption,
+				BusinessConnectionID: target.businessConnectionID,
+				ChatID:               tu.ID(target.chatID),
+				MessageThreadID:      target.threadID,
+				Video:                telego.InputFile{File: file},
+				Caption:              part.Caption,
 			}
 			tgResult, err = c.bot.SendVideo(ctx, params)
 		default: // "file" or unknown types
 			params := &telego.SendDocumentParams{
-				ChatID:          tu.ID(chatID),
-				MessageThreadID: threadID,
-				Document:        telego.InputFile{File: file},
-				Caption:         part.Caption,
+				BusinessConnectionID: target.businessConnectionID,
+				ChatID:               tu.ID(target.chatID),
+				MessageThreadID:      target.threadID,
+				Document:             telego.InputFile{File: file},
+				Caption:              part.Caption,
 			}
 			tgResult, err = c.bot.SendDocument(ctx, params)
 		}
@@ -713,6 +984,164 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 }
 
 func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Message) error {
+	return c.handleTelegramMessage(ctx, message, "", "")
+}
+
+func (c *TelegramChannel) businessModeEnabled() bool {
+	return c != nil && c.tgCfg != nil && c.tgCfg.BusinessMode
+}
+
+func (c *TelegramChannel) guestModeEnabled() bool {
+	return c != nil && c.tgCfg != nil && c.tgCfg.GuestMode
+}
+
+func (c *TelegramChannel) handleBusinessMessage(ctx context.Context, message *telego.Message) error {
+	if !c.businessModeEnabled() {
+		return nil
+	}
+	if message == nil {
+		return fmt.Errorf("message is nil")
+	}
+	businessConnectionID := strings.TrimSpace(message.BusinessConnectionID)
+	if businessConnectionID == "" {
+		return fmt.Errorf("business message missing business_connection_id")
+	}
+	if c.isBusinessOwnerMessage(message) {
+		logger.DebugCF("telegram", "Business message ignored from configured owner", map[string]any{
+			"business_connection_id": businessConnectionID,
+			"user_id":                fmt.Sprintf("%d", message.From.ID),
+		})
+		return nil
+	}
+	if c.isDisabledBusinessCommand(message) {
+		logger.DebugCF("telegram", "Business bot command ignored because business_commands_enable is false", map[string]any{
+			"business_connection_id": businessConnectionID,
+			"user_id":                fmt.Sprintf("%d", message.From.ID),
+		})
+		return nil
+	}
+	c.markBusinessMessageRead(ctx, businessConnectionID, message.Chat.ID, message.MessageID)
+	return c.handleTelegramMessage(ctx, message, businessConnectionID, "")
+}
+
+type telegramGuestMessage struct {
+	telego.Message
+	GuestQueryID string `json:"guest_query_id,omitempty"`
+}
+
+func (m *telegramGuestMessage) UnmarshalJSON(data []byte) error {
+	var message telego.Message
+	if err := json.Unmarshal(data, &message); err != nil {
+		return err
+	}
+	var guestFields struct {
+		GuestQueryID string `json:"guest_query_id,omitempty"`
+	}
+	if err := json.Unmarshal(data, &guestFields); err != nil {
+		return err
+	}
+	m.Message = message
+	m.GuestQueryID = guestFields.GuestQueryID
+	return nil
+}
+
+func (c *TelegramChannel) handleGuestMessage(ctx context.Context, message *telegramGuestMessage) error {
+	if !c.guestModeEnabled() {
+		return nil
+	}
+	if message == nil {
+		return fmt.Errorf("guest message is nil")
+	}
+	guestQueryID := strings.TrimSpace(message.GuestQueryID)
+	if guestQueryID == "" {
+		return fmt.Errorf("guest message missing guest_query_id")
+	}
+	return c.handleTelegramMessage(ctx, &message.Message, "", guestQueryID)
+}
+
+func (c *TelegramChannel) isDisabledBusinessCommand(message *telego.Message) bool {
+	if c == nil || c.tgCfg == nil || c.tgCfg.BusinessCommandsEnable || message == nil {
+		return false
+	}
+	return isTelegramBotCommandMessage(message)
+}
+
+func isTelegramBotCommandMessage(message *telego.Message) bool {
+	if message == nil {
+		return false
+	}
+	for _, entity := range message.Entities {
+		if entity.Type == telego.EntityTypeBotCommand {
+			return true
+		}
+	}
+	return strings.HasPrefix(strings.TrimSpace(message.Text), "/")
+}
+
+func (c *TelegramChannel) isBusinessOwnerMessage(message *telego.Message) bool {
+	if c == nil || c.tgCfg == nil || message == nil || message.From == nil {
+		return false
+	}
+	ownerID := strings.TrimSpace(c.tgCfg.BusinessOwner)
+	if ownerID == "" {
+		return false
+	}
+	return ownerID == fmt.Sprintf("%d", message.From.ID)
+}
+
+func (c *TelegramChannel) markBusinessMessageRead(
+	ctx context.Context,
+	businessConnectionID string,
+	chatID int64,
+	messageID int,
+) {
+	if c == nil || c.bot == nil || strings.TrimSpace(businessConnectionID) == "" || chatID == 0 || messageID == 0 {
+		return
+	}
+	if err := c.bot.ReadBusinessMessage(ctx, &telego.ReadBusinessMessageParams{
+		BusinessConnectionID: businessConnectionID,
+		ChatID:               chatID,
+		MessageID:            messageID,
+	}); err != nil {
+		logger.DebugCF("telegram", "Failed to mark business message as read", map[string]any{
+			"business_connection_id": businessConnectionID,
+			"chat_id":                chatID,
+			"message_id":             messageID,
+			"error":                  err.Error(),
+		})
+	}
+}
+
+func (c *TelegramChannel) handleBusinessConnection(_ context.Context, connection telego.BusinessConnection) error {
+	if !c.businessModeEnabled() {
+		return nil
+	}
+	logger.InfoCF("telegram", "Business connection updated", map[string]any{
+		"business_connection_id": connection.ID,
+		"user_chat_id":           connection.UserChatID,
+		"is_enabled":             connection.IsEnabled,
+	})
+	return nil
+}
+
+func (c *TelegramChannel) handleDeletedBusinessMessages(_ context.Context, deleted telego.BusinessMessagesDeleted) error {
+	if !c.businessModeEnabled() {
+		return nil
+	}
+	logger.DebugCF("telegram", "Business messages deleted", map[string]any{
+		"business_connection_id": deleted.BusinessConnectionID,
+		"chat_id":                deleted.Chat.ID,
+		"message_count":          len(deleted.MessageIDs),
+	})
+	return nil
+}
+
+func (c *TelegramChannel) handleTelegramMessage(
+	ctx context.Context,
+	message *telego.Message,
+	businessConnectionID string,
+	guestQueryID string,
+) error {
 	if message == nil {
 		return fmt.Errorf("message is nil")
 	}
@@ -745,7 +1174,7 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	content := ""
 	mediaPaths := []string{}
 
-	chatIDStr := fmt.Sprintf("%d", chatID)
+	chatIDStr := formatTelegramDeliveryChatID(chatID, businessConnectionID, guestQueryID, 0)
 	messageIDStr := fmt.Sprintf("%d", message.MessageID)
 	scope := channels.BuildMediaScope("telegram", chatIDStr, messageIDStr)
 
@@ -864,10 +1293,10 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	// route to the correct topic and each topic gets its own session.
 	// Only forum groups (IsForum) are handled; regular group reply threads
 	// must share one session per group.
-	compositeChatID := fmt.Sprintf("%d", chatID)
+	compositeChatID := formatTelegramDeliveryChatID(chatID, businessConnectionID, guestQueryID, 0)
 	threadID := message.MessageThreadID
 	if message.Chat.IsForum && threadID != 0 {
-		compositeChatID = fmt.Sprintf("%d/%d", chatID, threadID)
+		compositeChatID = formatTelegramDeliveryChatID(chatID, businessConnectionID, guestQueryID, threadID)
 	}
 
 	logger.DebugCF("telegram", "Received message", map[string]any{
@@ -889,15 +1318,27 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		"first_name": user.FirstName,
 		"is_group":   fmt.Sprintf("%t", message.Chat.Type != "private"),
 	}
+	if businessConnectionID != "" {
+		metadata["business_connection_id"] = businessConnectionID
+	}
+	if guestQueryID != "" {
+		metadata["guest_query_id"] = guestQueryID
+	}
 
 	inboundCtx := bus.InboundContext{
 		Channel:   c.Name(),
-		ChatID:    fmt.Sprintf("%d", chatID),
+		ChatID:    formatTelegramDeliveryChatID(chatID, businessConnectionID, guestQueryID, 0),
 		ChatType:  peerKind,
 		SenderID:  platformID,
 		MessageID: messageID,
 		Mentioned: isMentioned,
 		Raw:       metadata,
+	}
+	if businessConnectionID != "" {
+		inboundCtx.Account = businessConnectionID
+	}
+	if guestQueryID != "" {
+		inboundCtx.Account = guestQueryID
 	}
 	if message.Chat.IsForum && threadID != 0 {
 		inboundCtx.TopicID = fmt.Sprintf("%d", threadID)
@@ -1123,11 +1564,11 @@ func (c *TelegramChannel) PrepareToolFeedbackMessageContent(content string) stri
 }
 
 func telegramToolFeedbackChatKey(chatID string, outboundCtx *bus.InboundContext) string {
-	resolvedChatID, threadID, err := resolveTelegramOutboundTarget(chatID, outboundCtx)
-	if err != nil || threadID == 0 {
+	target, err := resolveTelegramOutboundTarget(chatID, outboundCtx)
+	if err != nil {
 		return strings.TrimSpace(chatID)
 	}
-	return fmt.Sprintf("%d/%d", resolvedChatID, threadID)
+	return target.String()
 }
 
 func (c *TelegramChannel) ToolFeedbackMessageChatID(chatID string, outboundCtx *bus.InboundContext) string {
@@ -1153,26 +1594,131 @@ func parseTelegramChatID(chatID string) (int64, int, error) {
 	return cid, tid, nil
 }
 
-func resolveTelegramOutboundTarget(chatID string, outboundCtx *bus.InboundContext) (int64, int, error) {
+type telegramOutboundTarget struct {
+	businessConnectionID string
+	guestQueryID         string
+	chatID               int64
+	threadID             int
+}
+
+func (t telegramOutboundTarget) String() string {
+	return formatTelegramDeliveryChatID(t.chatID, t.businessConnectionID, t.guestQueryID, t.threadID)
+}
+
+func formatTelegramDeliveryChatID(chatID int64, businessConnectionID string, guestQueryID string, threadID int) string {
+	base := fmt.Sprintf("%d", chatID)
+	if strings.TrimSpace(guestQueryID) != "" {
+		base = fmt.Sprintf("guest:%s:%d", url.QueryEscape(strings.TrimSpace(guestQueryID)), chatID)
+	} else if strings.TrimSpace(businessConnectionID) != "" {
+		base = fmt.Sprintf("business:%s:%d", url.QueryEscape(strings.TrimSpace(businessConnectionID)), chatID)
+	}
+	if threadID != 0 {
+		return fmt.Sprintf("%s/%d", base, threadID)
+	}
+	return base
+}
+
+func parseTelegramOutboundTarget(chatID string) (telegramOutboundTarget, error) {
+	targetChatID := strings.TrimSpace(chatID)
+	if strings.HasPrefix(targetChatID, "business:") {
+		rest := strings.TrimPrefix(targetChatID, "business:")
+		parts := strings.SplitN(rest, ":", 2)
+		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+			return telegramOutboundTarget{}, fmt.Errorf("invalid business chat ID %q", chatID)
+		}
+		businessConnectionID, unescapeErr := url.QueryUnescape(strings.TrimSpace(parts[0]))
+		if unescapeErr != nil {
+			return telegramOutboundTarget{}, fmt.Errorf("invalid business connection ID in chat ID %q: %w", chatID, unescapeErr)
+		}
+		cid, threadID, err := parseTelegramChatID(parts[1])
+		if err != nil {
+			return telegramOutboundTarget{}, err
+		}
+		return telegramOutboundTarget{
+			businessConnectionID: businessConnectionID,
+			chatID:               cid,
+			threadID:             threadID,
+		}, nil
+	}
+	if strings.HasPrefix(targetChatID, "guest:") {
+		rest := strings.TrimPrefix(targetChatID, "guest:")
+		parts := strings.SplitN(rest, ":", 2)
+		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+			return telegramOutboundTarget{}, fmt.Errorf("invalid guest chat ID %q", chatID)
+		}
+		guestQueryID, unescapeErr := url.QueryUnescape(strings.TrimSpace(parts[0]))
+		if unescapeErr != nil {
+			return telegramOutboundTarget{}, fmt.Errorf("invalid guest query ID in chat ID %q: %w", chatID, unescapeErr)
+		}
+		cid, threadID, err := parseTelegramChatID(parts[1])
+		if err != nil {
+			return telegramOutboundTarget{}, err
+		}
+		return telegramOutboundTarget{
+			guestQueryID: guestQueryID,
+			chatID:       cid,
+			threadID:     threadID,
+		}, nil
+	}
+
+	cid, threadID, err := parseTelegramChatID(targetChatID)
+	if err != nil {
+		return telegramOutboundTarget{}, err
+	}
+	return telegramOutboundTarget{chatID: cid, threadID: threadID}, nil
+}
+
+func guestQueryIDFromContext(outboundCtx *bus.InboundContext) string {
+	if outboundCtx == nil {
+		return ""
+	}
+	if outboundCtx.Raw != nil {
+		if guestQueryID := strings.TrimSpace(outboundCtx.Raw["guest_query_id"]); guestQueryID != "" {
+			return guestQueryID
+		}
+	}
+	return ""
+}
+
+func businessConnectionIDFromContext(outboundCtx *bus.InboundContext) string {
+	if outboundCtx == nil {
+		return ""
+	}
+	if outboundCtx.Raw != nil {
+		if businessConnectionID := strings.TrimSpace(outboundCtx.Raw["business_connection_id"]); businessConnectionID != "" {
+			return businessConnectionID
+		}
+	}
+	return strings.TrimSpace(outboundCtx.Account)
+}
+
+func resolveTelegramOutboundTarget(chatID string, outboundCtx *bus.InboundContext) (telegramOutboundTarget, error) {
 	targetChatID := strings.TrimSpace(chatID)
 	if targetChatID == "" && outboundCtx != nil {
 		targetChatID = strings.TrimSpace(outboundCtx.ChatID)
 	}
-	resolvedChatID, resolvedThreadID, err := parseTelegramChatID(targetChatID)
+	resolved, err := parseTelegramOutboundTarget(targetChatID)
 	if err != nil {
-		return 0, 0, err
+		return telegramOutboundTarget{}, err
 	}
-	if resolvedThreadID != 0 || outboundCtx == nil {
-		return resolvedChatID, resolvedThreadID, nil
+	if resolved.businessConnectionID == "" {
+		resolved.businessConnectionID = businessConnectionIDFromContext(outboundCtx)
+	}
+	if resolved.guestQueryID == "" {
+		resolved.guestQueryID = guestQueryIDFromContext(outboundCtx)
+	}
+	if resolved.threadID != 0 || outboundCtx == nil {
+		return resolved, nil
 	}
 	topicID := strings.TrimSpace(outboundCtx.TopicID)
 	if topicID == "" {
-		return resolvedChatID, resolvedThreadID, nil
+		return resolved, nil
 	}
 	if threadID, convErr := strconv.Atoi(topicID); convErr == nil {
-		return resolvedChatID, threadID, nil
+		resolved.threadID = threadID
+		return resolved, nil
 	}
-	return resolvedChatID, resolvedThreadID, nil
+	return resolved, nil
 }
 
 func logParseFailed(err error, useMarkdownV2 bool) {
@@ -1284,16 +1830,19 @@ func (c *TelegramChannel) BeginStream(ctx context.Context, chatID string) (chann
 		return nil, fmt.Errorf("streaming disabled in config")
 	}
 
-	cid, threadID, err := parseTelegramChatID(chatID)
+	target, err := resolveTelegramOutboundTarget(chatID, nil)
 	if err != nil {
 		return nil, err
+	}
+	if target.businessConnectionID != "" {
+		return nil, fmt.Errorf("streaming is not supported for telegram business chats")
 	}
 
 	streamCfg := c.tgCfg.Streaming
 	return &telegramStreamer{
 		bot:              c.bot,
-		chatID:           cid,
-		threadID:         threadID,
+		chatID:           target.chatID,
+		threadID:         target.threadID,
 		draftID:          cryptoRandInt(),
 		throttleInterval: time.Duration(streamCfg.ThrottleSeconds) * time.Second,
 		minGrowth:        streamCfg.MinGrowthChars,

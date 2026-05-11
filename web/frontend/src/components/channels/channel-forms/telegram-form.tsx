@@ -86,6 +86,49 @@ export function TelegramForm({
               placeholder="https://api.telegram.org"
             />
           </Field>
+
+          <div>
+            <SwitchCardField
+              label={t("channels.field.businessMode")}
+              hint={t("channels.form.desc.businessMode")}
+              checked={asBool(config.business_mode)}
+              onCheckedChange={(checked) => onChange("business_mode", checked)}
+              ariaLabel={t("channels.field.businessMode")}
+            />
+          </div>
+
+          <div>
+            <SwitchCardField
+              label={t("channels.field.guestMode")}
+              hint={t("channels.form.desc.guestMode")}
+              checked={asBool(config.guest_mode)}
+              onCheckedChange={(checked) => onChange("guest_mode", checked)}
+              ariaLabel={t("channels.field.guestMode")}
+            />
+          </div>
+
+          <Field
+            label={t("channels.field.businessOwner")}
+            hint={t("channels.form.desc.businessOwner")}
+          >
+            <Input
+              value={asString(config.business_owner)}
+              onChange={(e) => onChange("business_owner", e.target.value)}
+              placeholder="123456789"
+            />
+          </Field>
+
+          <div>
+            <SwitchCardField
+              label={t("channels.field.businessCommandsEnable")}
+              hint={t("channels.form.desc.businessCommandsEnable")}
+              checked={asBool(config.business_commands_enable)}
+              onCheckedChange={(checked) =>
+                onChange("business_commands_enable", checked)
+              }
+              ariaLabel={t("channels.field.businessCommandsEnable")}
+            />
+          </div>
         </CardContent>
       </Card>
 
