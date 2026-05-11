@@ -602,7 +602,7 @@ type PicoSettings struct {
 	Token           SecureString    `json:"token,omitzero"              yaml:"token,omitempty" env:"PICOCLAW_CHANNELS_PICO_TOKEN"`
 	AllowTokenQuery bool            `json:"allow_token_query,omitempty" yaml:"-"`
 	AllowOrigins    []string        `json:"allow_origins,omitempty"     yaml:"-"`
-	Streaming       StreamingConfig `json:"streaming,omitzero"          yaml:"-"`
+	Streaming       StreamingConfig `json:"streaming,omitzero"          yaml:"-"               env:"PICOCLAW_CHANNELS_PICO_STREAMING"`
 	PingInterval    int             `json:"ping_interval,omitempty"     yaml:"-"`
 	ReadTimeout     int             `json:"read_timeout,omitempty"      yaml:"-"`
 	WriteTimeout    int             `json:"write_timeout,omitempty"     yaml:"-"`
