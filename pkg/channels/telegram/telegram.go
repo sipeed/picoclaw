@@ -45,6 +45,7 @@ var (
 )
 
 const defaultMediaGroupDelay = 500 * time.Millisecond
+const telegramCaptionLimit = 1024
 
 type TelegramChannel struct {
 	*channels.BaseChannel
@@ -639,6 +640,34 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 	}
 
 	var messageIDs []string
+	leadingCaption := telegramLeadingCaption(msg.Parts)
+	if len([]rune(leadingCaption)) > telegramCaptionLimit {
+		leadingIDs, leadingErr := c.sendCaptionText(ctx, chatID, threadID, leadingCaption)
+		if leadingErr != nil {
+			return nil, leadingErr
+		}
+		messageIDs = append(messageIDs, leadingIDs...)
+		msg = telegramClearMediaCaptions(msg)
+	}
+
+	if len(msg.Parts) > 1 && telegramCanSendMediaGroup(msg.Parts) {
+		groupIDs, err := c.sendImageMediaGroups(ctx, chatID, threadID, store, msg.Parts)
+		if err != nil {
+			logger.ErrorCF("telegram", "Failed to send media group", map[string]any{
+				"count": len(msg.Parts),
+				"error": err.Error(),
+			})
+			return nil, fmt.Errorf("telegram send media group: %w", channels.ErrTemporary)
+		}
+		if len(groupIDs) > 0 {
+			messageIDs = append(messageIDs, groupIDs...)
+			if hasTrackedMsg {
+				c.dismissTrackedToolFeedbackMessage(ctx, trackedChatID, trackedMsgID)
+			}
+			return messageIDs, nil
+		}
+	}
+
 	for _, part := range msg.Parts {
 		localPath, err := store.Resolve(part.Ref)
 		if err != nil {
@@ -740,6 +769,154 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 	}
 
 	return messageIDs, nil
+}
+
+func telegramCanSendMediaGroup(parts []bus.MediaPart) bool {
+	if len(parts) < 2 {
+		return false
+	}
+	for _, part := range parts {
+		if part.Type != "image" {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *TelegramChannel) sendImageMediaGroups(
+	ctx context.Context,
+	chatID int64,
+	threadID int,
+	store media.MediaStore,
+	parts []bus.MediaPart,
+) ([]string, error) {
+	const maxGroupSize = 10
+
+	messageIDs := make([]string, 0, len(parts))
+	for start := 0; start < len(parts); start += maxGroupSize {
+		end := start + maxGroupSize
+		if end > len(parts) {
+			end = len(parts)
+		}
+		groupIDs, err := c.sendSingleImageMediaGroup(ctx, chatID, threadID, store, parts[start:end])
+		if err != nil {
+			return nil, err
+		}
+		messageIDs = append(messageIDs, groupIDs...)
+	}
+	return messageIDs, nil
+}
+
+func (c *TelegramChannel) sendSingleImageMediaGroup(
+	ctx context.Context,
+	chatID int64,
+	threadID int,
+	store media.MediaStore,
+	parts []bus.MediaPart,
+) ([]string, error) {
+	opened := make([]*os.File, 0, len(parts))
+	defer func() {
+		for _, file := range opened {
+			file.Close()
+		}
+	}()
+
+	inputMedia := make([]telego.InputMedia, 0, len(parts))
+	for i, part := range parts {
+		localPath, err := store.Resolve(part.Ref)
+		if err != nil {
+			logger.ErrorCF("telegram", "Failed to resolve media ref for media group", map[string]any{
+				"ref":   part.Ref,
+				"error": err.Error(),
+			})
+			return nil, err
+		}
+
+		file, err := os.Open(localPath)
+		if err != nil {
+			logger.ErrorCF("telegram", "Failed to open media file for media group", map[string]any{
+				"path":  localPath,
+				"error": err.Error(),
+			})
+			return nil, err
+		}
+		opened = append(opened, file)
+
+		mediaItem := &telego.InputMediaPhoto{
+			Type:  telego.MediaTypePhoto,
+			Media: telego.InputFile{File: file},
+		}
+		if i == 0 {
+			mediaItem.Caption = part.Caption
+		}
+		inputMedia = append(inputMedia, mediaItem)
+	}
+
+	results, err := c.bot.SendMediaGroup(ctx, &telego.SendMediaGroupParams{
+		ChatID:          tu.ID(chatID),
+		MessageThreadID: threadID,
+		Media:           inputMedia,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	messageIDs := make([]string, 0, len(results))
+	for _, result := range results {
+		messageIDs = append(messageIDs, strconv.Itoa(result.MessageID))
+	}
+	return messageIDs, nil
+}
+
+func (c *TelegramChannel) sendCaptionText(
+	ctx context.Context,
+	chatID int64,
+	threadID int,
+	text string,
+) ([]string, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil, nil
+	}
+	chunks := channels.SplitMessage(text, c.MaxMessageLength())
+	messageIDs := make([]string, 0, len(chunks))
+	for _, chunk := range chunks {
+		chunk = strings.TrimSpace(chunk)
+		if chunk == "" {
+			continue
+		}
+		msgID, err := c.sendChunk(ctx, sendChunkParams{
+			chatID:        chatID,
+			threadID:      threadID,
+			content:       chunk,
+			mdFallback:    chunk,
+			useMarkdownV2: false,
+		})
+		if err != nil {
+			return nil, err
+		}
+		messageIDs = append(messageIDs, msgID)
+	}
+	return messageIDs, nil
+}
+
+func telegramLeadingCaption(parts []bus.MediaPart) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(parts[0].Caption)
+}
+
+func telegramClearMediaCaptions(msg bus.OutboundMediaMessage) bus.OutboundMediaMessage {
+	if len(msg.Parts) == 0 {
+		return msg
+	}
+	cloned := msg
+	cloned.Parts = append([]bus.MediaPart(nil), msg.Parts...)
+	for i := range cloned.Parts {
+		cloned.Parts[i].Caption = ""
+	}
+	return cloned
 }
 
 func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Message) error {

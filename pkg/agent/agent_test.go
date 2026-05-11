@@ -261,7 +261,11 @@ func TestPublishResponseIfNeeded_DismissesToolFeedbackWhenMessageToolAlreadySent
 		t.Fatal("expected default agent")
 	}
 	mt := tools.NewMessageTool()
-	mt.SetSendCallback(func(ctx context.Context, channel, chatID, content, replyToMessageID string) error {
+	mt.SetSendCallback(func(
+		ctx context.Context,
+		channel, chatID, content, replyToMessageID string,
+		mediaParts []bus.MediaPart,
+	) error {
 		return nil
 	})
 	defaultAgent.Tools.Register(mt)

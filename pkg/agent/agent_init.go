@@ -161,9 +161,16 @@ func registerSharedTools(
 		// Message tool
 		if cfg.Tools.IsToolEnabled("message") {
 			messageTool := tools.NewMessageTool()
+			messageTool.ConfigureLocalMedia(
+				agent.Workspace,
+				cfg.Agents.Defaults.RestrictToWorkspace,
+				cfg.Agents.Defaults.GetMaxMediaSize(),
+				allowReadPaths,
+			)
 			messageTool.SetSendCallback(func(
 				ctx context.Context,
 				channel, chatID, content, replyToMessageID string,
+				mediaParts []bus.MediaPart,
 			) error {
 				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer pubCancel()
@@ -173,6 +180,15 @@ func registerSharedTools(
 					tools.ToolSessionKey(ctx),
 					tools.ToolSessionScope(ctx),
 				)
+				if len(mediaParts) > 0 {
+					return msgBus.PublishOutboundMedia(pubCtx, bus.OutboundMediaMessage{
+						Context:    outboundCtx,
+						AgentID:    outboundAgentID,
+						SessionKey: outboundSessionKey,
+						Scope:      outboundScope,
+						Parts:      mediaParts,
+					})
+				}
 				return msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
 					Context:          outboundCtx,
 					AgentID:          outboundAgentID,
