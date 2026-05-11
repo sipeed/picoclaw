@@ -1488,7 +1488,15 @@ type skillUsageSummary struct {
 }
 
 func buildSkillUsage(input TurnCaseInput) skillUsageSummary {
-	all := make([]string, 0)
+	capacity := len(input.ActiveSkillNames) + len(input.AttemptedSkillNames) + len(input.FinalSuccessfulPath)
+	for _, snapshot := range input.SkillContextSnapshots {
+		capacity += len(snapshot.SkillNames)
+	}
+	for _, exec := range input.ToolExecutions {
+		capacity += len(exec.SkillNames)
+	}
+
+	all := make([]string, 0, capacity)
 	all = append(all, input.ActiveSkillNames...)
 	all = append(all, input.AttemptedSkillNames...)
 	all = append(all, input.FinalSuccessfulPath...)
