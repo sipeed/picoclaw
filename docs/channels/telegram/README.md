@@ -12,12 +12,12 @@ The Telegram channel uses long polling via the Telegram Bot API for bot-based co
     "telegram": {
       "enabled": true,
       "type": "telegram",
-      "token": "123456789:ABCdefGHIjklMNOpqrsTUVwxyz",
       "allow_from": ["123456789"],
       "settings": {
         "proxy": "",
         "use_markdown_v2": false,
         "business_mode": false,
+        "guest_mode": false,
         "business_owner": "123456789",
         "business_commands_enable": false
       }
@@ -26,13 +26,16 @@ The Telegram channel uses long polling via the Telegram Bot API for bot-based co
 }
 ```
 
-| Field            | Type   | Required | Description                                                        |
-| ---------------- | ------ | -------- | ------------------------------------------------------------------ |
-| enabled          | bool   | Yes      | Whether to enable the Telegram channel                             |
-| token            | string | Yes      | Telegram Bot API Token                                             |
-| allow_from       | array  | No       | Allowlist of user IDs; empty means all users are allowed           |
-| proxy            | string | No       | Proxy URL for connecting to the Telegram API (e.g. http://127.0.0.1:7890) |
-| use_markdown_v2 | bool   | No       | Enable Telegram MarkdownV2 formatting                              |
+| Field                    | Type   | Required | Description                                                              |
+| ------------------------ | ------ | -------- | ------------------------------------------------------------------------ |
+| enabled                  | bool   | Yes      | Whether to enable the Telegram channel                                   |
+| allow_from               | array  | No       | Allowlist of user IDs; empty means all users are allowed                 |
+| settings.proxy           | string | No       | Proxy URL for connecting to the Telegram API (e.g. http://127.0.0.1:7890) |
+| settings.use_markdown_v2 | bool   | No       | Enable Telegram MarkdownV2 formatting                                    |
+| settings.business_mode   | bool   | No       | Enable Telegram Business message handling                                |
+| settings.business_owner  | string | No       | Telegram user ID of the Business account owner to ignore                 |
+| settings.business_commands_enable | bool | No | Allow bot commands in Telegram Business chats                            |
+| settings.guest_mode      | bool   | No       | Enable Telegram Guest Mode update handling and replies                   |
 
 ## Setup
 
@@ -78,16 +81,38 @@ Example:
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "telegram": {
       "enabled": true,
       "type": "telegram",
       "allow_from": ["123456789"],
       "settings": {
-        "token": "YOUR_BOT_TOKEN",
         "business_mode": true,
         "business_owner": "123456789",
         "business_commands_enable": true
+      }
+    }
+  }
+}
+```
+
+## Telegram Guest Mode
+
+Set `settings.guest_mode: true` to receive `guest_message` updates and reply with Telegram's `answerGuestQuery` method. Guest messages come from chats where the bot is not a member, so PicoClaw keeps them in separate sessions using the incoming `guest_query_id`.
+
+When `settings.guest_mode` is false, guest updates are not requested and any decoded guest message is ignored. Placeholder and typing indicators are skipped for guest replies because Telegram requires a single `answerGuestQuery` response.
+
+Example:
+
+```json
+{
+  "channel_list": {
+    "telegram": {
+      "enabled": true,
+      "type": "telegram",
+      "allow_from": ["123456789"],
+      "settings": {
+        "guest_mode": true
       }
     }
   }
@@ -104,9 +129,10 @@ You can set `use_markdown_v2: true` to enable enhanced formatting options. This 
     "telegram": {
       "enabled": true,
       "type": "telegram",
-      "token": "YOUR_BOT_TOKEN",
       "allow_from": ["YOUR_USER_ID"],
-      "use_markdown_v2": true
+      "settings": {
+        "use_markdown_v2": true
+      }
     }
   }
 }
