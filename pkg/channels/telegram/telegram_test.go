@@ -150,6 +150,90 @@ func newTestChannelWithConstructor(
 	}
 }
 
+func TestHandleBusinessMessage_MarksMessageRead(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			if !strings.Contains(url, "readBusinessMessage") {
+				t.Fatalf("unexpected API call: %s", url)
+			}
+			b, err := json.Marshal(true)
+			require.NoError(t, err)
+			return &ta.Response{Ok: true, Result: b}, nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+	ch.BaseChannel = channels.NewBaseChannel("telegram", nil, messageBus, nil)
+	ch.BaseChannel.SetOwner(ch)
+	ch.ctx = context.Background()
+	ch.tgCfg.BusinessMode = true
+
+	msg := &telego.Message{
+		Text:                 "hello from business",
+		MessageID:            17,
+		BusinessConnectionID: "biz-conn-1",
+		Chat: telego.Chat{
+			ID:   777,
+			Type: "private",
+		},
+		From: &telego.User{
+			ID:        42,
+			FirstName: "Alice",
+		},
+	}
+
+	require.NoError(t, ch.handleBusinessMessage(context.Background(), msg))
+	require.Len(t, caller.calls, 1)
+	assert.Contains(t, caller.calls[0].URL, "readBusinessMessage")
+
+	var params struct {
+		BusinessConnectionID string `json:"business_connection_id"`
+		ChatID               int64  `json:"chat_id"`
+		MessageID            int    `json:"message_id"`
+	}
+	require.NoError(t, json.Unmarshal(caller.calls[0].Data.BodyRaw, &params))
+	assert.Equal(t, "biz-conn-1", params.BusinessConnectionID)
+	assert.Equal(t, int64(777), params.ChatID)
+	assert.Equal(t, 17, params.MessageID)
+
+	inbound := <-messageBus.InboundChan()
+	assert.Equal(t, "hello from business", inbound.Content)
+}
+
+func TestHandleBusinessMessage_ReadFailureStillForwardsMessage(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			return nil, errors.New("missing can_read_messages")
+		},
+	}
+	ch := newTestChannel(t, caller)
+	ch.BaseChannel = channels.NewBaseChannel("telegram", nil, messageBus, nil)
+	ch.BaseChannel.SetOwner(ch)
+	ch.ctx = context.Background()
+	ch.tgCfg.BusinessMode = true
+
+	msg := &telego.Message{
+		Text:                 "still forward me",
+		MessageID:            18,
+		BusinessConnectionID: "biz-conn-1",
+		Chat: telego.Chat{
+			ID:   777,
+			Type: "private",
+		},
+		From: &telego.User{
+			ID:        42,
+			FirstName: "Alice",
+		},
+	}
+
+	require.NoError(t, ch.handleBusinessMessage(context.Background(), msg))
+	require.Len(t, caller.calls, 1)
+
+	inbound := <-messageBus.InboundChan()
+	assert.Equal(t, "still forward me", inbound.Content)
+}
+
 func TestSendMedia_ImageFallbacksToDocumentOnInvalidDimensions(t *testing.T) {
 	constructor := &multipartRecordingConstructor{}
 	caller := &stubCaller{
@@ -269,6 +353,41 @@ func TestSend_ShortMessage_SingleCall(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Len(t, caller.calls, 1, "short message should result in exactly one SendMessage call")
+}
+
+func TestSend_BusinessMessageIncludesBusinessConnectionID(t *testing.T) {
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			return successResponse(t), nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:  "business:biz-conn-1:777",
+		Content: "hello business",
+		Context: bus.InboundContext{
+			Channel: "telegram",
+			ChatID:  "business:biz-conn-1:777",
+			Account: "biz-conn-1",
+			Raw: map[string]string{
+				"business_connection_id": "biz-conn-1",
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, caller.calls, 1)
+
+	var params struct {
+		ChatID               int64  `json:"chat_id"`
+		BusinessConnectionID string `json:"business_connection_id"`
+		Text                 string `json:"text"`
+	}
+	require.NoError(t, json.Unmarshal(caller.calls[0].Data.BodyRaw, &params))
+	assert.Equal(t, int64(777), params.ChatID)
+	assert.Equal(t, "biz-conn-1", params.BusinessConnectionID)
+	assert.Equal(t, "hello business", params.Text)
 }
 
 func TestSend_NonToolFeedbackDeletesTrackedProgressMessage(t *testing.T) {
@@ -684,6 +803,17 @@ func TestParseTelegramChatID_InvalidThreadID(t *testing.T) {
 	_, _, err := parseTelegramChatID("-100123/not-a-thread")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid thread ID")
+}
+
+func TestParseTelegramOutboundTarget_BusinessConnectionIDWithColon(t *testing.T) {
+	formatted := formatTelegramDeliveryChatID(777, "biz:conn:1", 42)
+
+	target, err := parseTelegramOutboundTarget(formatted)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(777), target.chatID)
+	assert.Equal(t, 42, target.threadID)
+	assert.Equal(t, "biz:conn:1", target.businessConnectionID)
 }
 
 func TestSend_WithForumThreadID(t *testing.T) {
