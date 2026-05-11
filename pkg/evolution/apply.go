@@ -57,18 +57,8 @@ func (a *Applier) applyDraftWithRollback(
 		return nil, err
 	}
 
-	skillDir := filepath.Join(workspace, "skills", draft.TargetSkillName)
-	if mkdirErr := os.MkdirAll(skillDir, 0o755); mkdirErr != nil {
-		return nil, mkdirErr
-	}
-
 	renderedBody, err := renderAppliedBody(draft, existingBody, hadOriginal)
 	if err != nil {
-		return nil, err
-	}
-
-	skillPath := filepath.Join(skillDir, "SKILL.md")
-	if err := fileutil.WriteFileAtomic(skillPath, []byte(renderedBody), 0o644); err != nil {
 		return nil, err
 	}
 
@@ -77,9 +67,16 @@ func (a *Applier) applyDraftWithRollback(
 		draft.TargetSkillName,
 		allowsExistingFrontmatterFields(draft.ChangeKind, hadOriginal),
 	); err != nil {
-		if rollbackErr := a.rollbackSkill(skillPath, backupPath, hadOriginal); rollbackErr != nil {
-			return nil, errorsJoin(err, rollbackErr)
-		}
+		return nil, err
+	}
+
+	skillDir := filepath.Join(workspace, "skills", draft.TargetSkillName)
+	if mkdirErr := os.MkdirAll(skillDir, 0o755); mkdirErr != nil {
+		return nil, mkdirErr
+	}
+
+	skillPath := filepath.Join(skillDir, "SKILL.md")
+	if err := fileutil.WriteFileAtomic(skillPath, []byte(renderedBody), 0o644); err != nil {
 		return nil, err
 	}
 

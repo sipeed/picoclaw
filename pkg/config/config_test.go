@@ -175,7 +175,7 @@ func TestDefaultConfig_EvolutionDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 
 	assert.False(t, cfg.Evolution.Enabled)
-	assert.Equal(t, "apply", cfg.Evolution.Mode)
+	assert.Equal(t, "observe", cfg.Evolution.Mode)
 	assert.Equal(t, "", cfg.Evolution.StateDir)
 	assert.Equal(t, 2, cfg.Evolution.MinTaskCount)
 	assert.Equal(t, 0.7, cfg.Evolution.MinSuccessRatio)

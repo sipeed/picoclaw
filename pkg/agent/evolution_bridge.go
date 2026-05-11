@@ -213,7 +213,7 @@ func (b *evolutionBridge) handleTurnEndAsync(meta EventMeta, payload TurnEndPayl
 	b.closeMu.Unlock()
 	go func() {
 		defer b.wg.Done()
-		if err := b.runtime.FinalizeTurn(context.Background(), input); err != nil {
+		if err := b.runtime.FinalizeTurn(b.bgCtx, input); err != nil {
 			logger.WarnCF("agent", "Evolution finalize turn failed", map[string]any{
 				"error":     err.Error(),
 				"turn_id":   input.TurnID,

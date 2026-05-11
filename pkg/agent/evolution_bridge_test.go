@@ -298,7 +298,7 @@ func TestEvolutionBridge_DirectDeliveryFailureFallsBackToCurrentRuntimeBridge(t 
 	}
 }
 
-func TestEvolutionBridge_CloseFlushesPendingTurnEndRecord(t *testing.T) {
+func TestEvolutionBridge_CloseCancelsPendingTurnEndRecord(t *testing.T) {
 	tmpDir := t.TempDir()
 	al := newEvolutionTestLoop(t, tmpDir, config.EvolutionConfig{
 		Enabled: true,
@@ -315,14 +315,17 @@ func TestEvolutionBridge_CloseFlushesPendingTurnEndRecord(t *testing.T) {
 		UserMessage:  "close flush task",
 		FinalContent: "ok",
 	})
-	al.Close()
 
-	record := waitForEvolutionRecord(t, filepath.Join(tmpDir, "state", "evolution", "task-records.jsonl"))
-	if got := record["session_key"]; got != "session-close-flush" {
-		t.Fatalf("session_key = %v, want session-close-flush", got)
-	}
-	if got := record["summary"]; got != "close flush task" {
-		t.Fatalf("summary = %v, want close flush task", got)
+	done := make(chan struct{})
+	go func() {
+		al.Close()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close timed out")
 	}
 }
 

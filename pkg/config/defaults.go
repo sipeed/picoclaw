@@ -49,7 +49,7 @@ func DefaultConfig() *Config {
 		},
 		Evolution: EvolutionConfig{
 			Enabled:         false,
-			Mode:            "apply",
+			Mode:            "observe",
 			MinTaskCount:    2,
 			MinSuccessRatio: 0.7,
 			ColdPathTrigger: "after_turn",
