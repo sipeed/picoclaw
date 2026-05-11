@@ -151,7 +151,8 @@ PicoClaw can be deployed on virtually any Linux device!
 <https://private-user-images.githubusercontent.com/83055338/547056448-e7b031ff-d6f5-4468-bcca-5726b6fecb5c.mp4>
 
 🌟 More Deployment Cases Await!
-
+### Community Integrations
+* [meta-picoclaw](https://github.com/skrimby1/meta-picoclaw) - Yocto/OpenEmbedded layer for building PicoClaw into custom Linux distributions.
 ## 📦 Install
 
 ### Download from picoclaw.io (Recommended)
