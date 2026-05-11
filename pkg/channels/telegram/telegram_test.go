@@ -272,7 +272,11 @@ func TestSendMedia_MultipleImagesUseMediaGroup(t *testing.T) {
 
 	firstRef, err := store.Store(firstPath, media.MediaMeta{Filename: "first.png", ContentType: "image/png"}, "scope-1")
 	require.NoError(t, err)
-	secondRef, err := store.Store(secondPath, media.MediaMeta{Filename: "second.png", ContentType: "image/png"}, "scope-1")
+	secondRef, err := store.Store(
+		secondPath,
+		media.MediaMeta{Filename: "second.png", ContentType: "image/png"},
+		"scope-1",
+	)
 	require.NoError(t, err)
 
 	ids, err := ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
@@ -327,7 +331,11 @@ func TestSendMedia_MoreThanTenImagesSplitIntoMediaGroups(t *testing.T) {
 	for i := 0; i < 15; i++ {
 		path := filepath.Join(tmpDir, "image-"+strconv.Itoa(i)+".png")
 		require.NoError(t, os.WriteFile(path, []byte("img-"+strconv.Itoa(i)), 0o644))
-		ref, err := store.Store(path, media.MediaMeta{Filename: filepath.Base(path), ContentType: "image/png"}, "scope-1")
+		ref, err := store.Store(
+			path,
+			media.MediaMeta{Filename: filepath.Base(path), ContentType: "image/png"},
+			"scope-1",
+		)
 		require.NoError(t, err)
 		part := bus.MediaPart{Type: "image", Ref: ref}
 		if i == 0 {
@@ -424,7 +432,11 @@ func TestSendMedia_MediaGroupLongCaptionSendsTextFirst(t *testing.T) {
 
 	firstRef, err := store.Store(firstPath, media.MediaMeta{Filename: "first.png", ContentType: "image/png"}, "scope-1")
 	require.NoError(t, err)
-	secondRef, err := store.Store(secondPath, media.MediaMeta{Filename: "second.png", ContentType: "image/png"}, "scope-1")
+	secondRef, err := store.Store(
+		secondPath,
+		media.MediaMeta{Filename: "second.png", ContentType: "image/png"},
+		"scope-1",
+	)
 	require.NoError(t, err)
 
 	ids, err := ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
@@ -478,7 +490,11 @@ func TestSendMedia_MultiGroupLongCaptionSendsTextBeforeGroups(t *testing.T) {
 	for i := 0; i < 15; i++ {
 		path := filepath.Join(tmpDir, "image-"+strconv.Itoa(i)+".png")
 		require.NoError(t, os.WriteFile(path, []byte("img-"+strconv.Itoa(i)), 0o644))
-		ref, err := store.Store(path, media.MediaMeta{Filename: filepath.Base(path), ContentType: "image/png"}, "scope-1")
+		ref, err := store.Store(
+			path,
+			media.MediaMeta{Filename: filepath.Base(path), ContentType: "image/png"},
+			"scope-1",
+		)
 		require.NoError(t, err)
 		part := bus.MediaPart{Type: "image", Ref: ref}
 		if i == 0 {

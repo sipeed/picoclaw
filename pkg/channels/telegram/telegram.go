@@ -44,8 +44,10 @@ var (
 	reInlineCode = regexp.MustCompile("`([^`]+)`")
 )
 
-const defaultMediaGroupDelay = 500 * time.Millisecond
-const telegramCaptionLimit = 1024
+const (
+	defaultMediaGroupDelay = 500 * time.Millisecond
+	telegramCaptionLimit   = 1024
+)
 
 type TelegramChannel struct {
 	*channels.BaseChannel
