@@ -935,10 +935,23 @@ func TestAgentLoop_Run_QueuedVoiceMessageIsTranscribedBeforeSteering(t *testing.
 
 	subCtx, subCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer subCancel()
+
+	var out1 bus.OutboundMessage
 	select {
-	case <-msgBus.OutboundChan():
+	case out1 = <-msgBus.OutboundChan():
 	case <-subCtx.Done():
 		t.Fatal("expected outbound response")
+	}
+	if out1.Content != "continued response" {
+		t.Fatalf("expected continued response, got %q", out1.Content)
+	}
+
+	noExtraCtx, cancelNoExtra := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancelNoExtra()
+	select {
+	case out2 := <-msgBus.OutboundChan():
+		t.Fatalf("expected stale direct response to be suppressed, got extra outbound %q", out2.Content)
+	case <-noExtraCtx.Done():
 	}
 
 	cancelRun()
