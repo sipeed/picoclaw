@@ -1,10 +1,15 @@
-import { IconLoader2 } from "@tabler/icons-react"
-import { useEffect, useMemo, useState } from "react"
+import {
+  IconDownload,
+  IconLoader2,
+  IconPlugConnected,
+} from "@tabler/icons-react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import {
   type ModelProviderOption,
   addModel,
+  getCatalogs,
   setDefaultModel,
 } from "@/api/models"
 import { ConfigChangeNotice } from "@/components/config-change-notice"
@@ -15,15 +20,9 @@ import {
   KeyInput,
   SwitchCardField,
 } from "@/components/shared-form"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import {
   Sheet,
   SheetContent,
@@ -36,14 +35,12 @@ import { Textarea } from "@/components/ui/textarea"
 import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
 
-import {
-  findProviderOption,
-  getProviderDefaultAPIBase,
-  getProviderDefaultAuthMethod,
-  getProviderLabel,
-  getSortedProviderOptions,
-  isProviderAuthMethodLocked,
-} from "./provider-label"
+import { FetchModelsDialog } from "./fetch-models-dialog"
+import { type FieldValidation, validateModelField } from "./model-validation"
+import { ProviderCombobox } from "./provider-combobox"
+import { getProviderKey } from "./provider-label"
+import { FETCHABLE_PROVIDER_KEYS, PROVIDER_MAP } from "./provider-registry"
+import { TestModelDialog } from "./test-model-dialog"
 
 interface AddForm {
   modelName: string
@@ -66,7 +63,7 @@ interface AddForm {
 
 const EMPTY_ADD_FORM: AddForm = {
   modelName: "",
-  provider: "openai",
+  provider: "",
   model: "",
   apiBase: "",
   apiKey: "",
@@ -83,12 +80,43 @@ const EMPTY_ADD_FORM: AddForm = {
   customHeaders: "",
 }
 
+function normalizeApiBase(value: string): string {
+  return value.trim().replace(/\/+$/, "")
+}
+
+function getNextApiBaseForProviderChange(
+  currentApiBase: string,
+  currentProvider: string,
+  nextProvider: string,
+): string {
+  const normalizedCurrentApiBase = normalizeApiBase(currentApiBase)
+  const currentDefaultApiBase = normalizeApiBase(
+    PROVIDER_MAP.get(currentProvider)?.defaultApiBase ?? "",
+  )
+  const nextDefaultApiBase =
+    PROVIDER_MAP.get(nextProvider)?.defaultApiBase ?? ""
+
+  if (!normalizedCurrentApiBase) {
+    return nextDefaultApiBase
+  }
+
+  if (
+    normalizedCurrentApiBase &&
+    currentDefaultApiBase &&
+    normalizedCurrentApiBase === currentDefaultApiBase
+  ) {
+    return nextDefaultApiBase
+  }
+
+  return currentApiBase
+}
+
 interface AddModelSheetProps {
   open: boolean
   onClose: () => void
   onSaved: () => void
   existingModelNames: string[]
-  providerOptions: ModelProviderOption[]
+  providerOptions?: ModelProviderOption[]
 }
 
 export function AddModelSheet({
@@ -106,41 +134,18 @@ export function AddModelSheet({
     Partial<Record<keyof AddForm, string>>
   >({})
   const [serverError, setServerError] = useState("")
+  const [modelValidation, setModelValidation] =
+    useState<FieldValidation | null>(null)
+  const [fetchOpen, setFetchOpen] = useState(false)
+  const [testOpen, setTestOpen] = useState(false)
+  const [fetchedModels, setFetchedModels] = useState<string[]>([])
+  const [catalogModels, setCatalogModels] = useState<string[]>([])
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const apiKeyPlaceholder = maskedSecretPlaceholder(
     form.apiKey,
     t("models.field.apiKeyPlaceholder"),
   )
-  const sortedProviderOptions = useMemo(
-    () => getSortedProviderOptions(providerOptions),
-    [providerOptions],
-  )
-  const creatableProviderOptions = useMemo(
-    () => sortedProviderOptions.filter((option) => option.create_allowed),
-    [sortedProviderOptions],
-  )
-  const selectedProviderOption = findProviderOption(
-    form.provider,
-    providerOptions,
-  )
-  const authMethodLocked = isProviderAuthMethodLocked(
-    form.provider,
-    providerOptions,
-  )
-  const defaultAuthMethod = getProviderDefaultAuthMethod(
-    form.provider,
-    providerOptions,
-  )
-  const effectiveAuthMethod = (
-    authMethodLocked ? defaultAuthMethod : form.authMethod
-  )
-    .trim()
-    .toLowerCase()
-  const isOAuth = effectiveAuthMethod === "oauth"
-  const defaultModelAllowed =
-    selectedProviderOption?.default_model_allowed !== false
-  const apiBasePlaceholder =
-    getProviderDefaultAPIBase(form.provider, providerOptions) ||
-    "https://api.example.com/v1"
   const isDirty =
     JSON.stringify(form) !== JSON.stringify(EMPTY_ADD_FORM) || setAsDefault
 
@@ -150,8 +155,38 @@ export function AddModelSheet({
       setSetAsDefault(false)
       setFieldErrors({})
       setServerError("")
+      setModelValidation(null)
+      setFetchedModels([])
+      setCatalogModels([])
     }
   }, [open])
+
+  // Load catalog models when provider or apiBase changes
+  useEffect(() => {
+    const providerKey = getProviderKey(form.provider || undefined)
+    const apiBase = form.apiBase.trim().replace(/\/+$/, "")
+    if (!form.provider.trim()) {
+      setCatalogModels([])
+      return
+    }
+    let cancelled = false
+    getCatalogs()
+      .then((res) => {
+        if (cancelled) return
+        const matched = (res.entries || []).filter((e) => {
+          const ep = getProviderKey(e.provider || undefined)
+          const eb = (e.api_base ?? "").trim().replace(/\/+$/, "")
+          return ep === providerKey && eb === apiBase
+        })
+        const ids = matched.flatMap((e) => e.models.map((m) => m.id))
+        const unique = [...new Set(ids)]
+        setCatalogModels(unique)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [form.provider, form.apiBase])
 
   const validate = (): boolean => {
     const errors: Partial<Record<keyof AddForm, string>> = {}
@@ -161,10 +196,13 @@ export function AddModelSheet({
     } else if (existingModelNames.some((name) => name.trim() === modelName)) {
       errors.modelName = t("models.add.errorDuplicateModelName")
     }
-    if (!selectedProviderOption) {
-      errors.provider = t("models.field.providerInvalid")
-    }
     if (!form.model.trim()) errors.model = t("models.add.errorRequired")
+    if (modelValidation?.level === "error") {
+      errors.model = t(
+        modelValidation.messageKey,
+        modelValidation.messageParams,
+      )
+    }
     setFieldErrors(errors)
     return Object.keys(errors).length === 0
   }
@@ -178,47 +216,117 @@ export function AddModelSheet({
       }
     }
 
-  const setProvider = (value: string) => {
-    setForm((f) => {
-      const previousOption = findProviderOption(f.provider, providerOptions)
-      const nextOption = findProviderOption(value, providerOptions)
-      let authMethod = f.authMethod
-      if (nextOption?.auth_method_locked) {
-        authMethod = nextOption.default_auth_method ?? ""
-      } else if (
-        previousOption?.auth_method_locked &&
-        f.authMethod === (previousOption.default_auth_method ?? "")
-      ) {
-        authMethod = ""
-      }
-      return { ...f, provider: value, authMethod }
-    })
-    const nextOption = findProviderOption(value, providerOptions)
-    if (nextOption?.default_model_allowed === false) {
-      setSetAsDefault(false)
+  const debouncedValidateModel = useCallback(
+    (value: string, provider: string) => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        const result = validateModelField(value, provider || undefined)
+        setModelValidation(result)
+      }, 300)
+    },
+    [],
+  )
+
+  const handleModelChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setForm((f) => ({ ...f, model: value }))
+    if (fieldErrors.model) {
+      setFieldErrors((prev) => ({ ...prev, model: undefined }))
     }
-    if (fieldErrors.provider) {
-      setFieldErrors((prev) => ({ ...prev, provider: undefined }))
+    debouncedValidateModel(value, form.provider)
+  }
+
+  const handleProviderChange = (provider: string) => {
+    setForm((f) => {
+      return {
+        ...f,
+        provider,
+        apiBase: getNextApiBaseForProviderChange(
+          f.apiBase,
+          f.provider,
+          provider,
+        ),
+      }
+    })
+    // Re-validate model with new provider context
+    if (form.model) {
+      debouncedValidateModel(form.model, provider)
     }
   }
 
+  const applyFix = () => {
+    if (modelValidation?.fix) {
+      setForm((f) => ({ ...f, model: modelValidation.fix! }))
+      setModelValidation(null)
+    }
+  }
+
+  const handleCommonModel = (modelId: string) => {
+    setForm((f) => ({ ...f, model: modelId }))
+    setModelValidation(null)
+    if (fieldErrors.model) {
+      setFieldErrors((prev) => ({ ...prev, model: undefined }))
+    }
+  }
+
+  const handleFetchFill = (models: string[]) => {
+    setFetchedModels(models)
+    if (models.length >= 1) {
+      setForm((f) => ({ ...f, model: models[0] }))
+      setModelValidation(null)
+      if (fieldErrors.model) {
+        setFieldErrors((prev) => ({ ...prev, model: undefined }))
+      }
+    }
+  }
+
+  const providerDef = PROVIDER_MAP.get(form.provider)
+  const commonModels = providerDef?.commonModels || []
+
   const handleSave = async () => {
     if (!validate()) return
+
+    let extraBody: Record<string, unknown> | undefined
+    let customHeaders: Record<string, string> | undefined
+    try {
+      if (form.extraBody.trim()) {
+        extraBody = JSON.parse(form.extraBody.trim())
+      } else {
+        extraBody = {}
+      }
+    } catch {
+      setServerError(
+        t("models.field.extraBody") + ": " + t("models.field.invalidJson"),
+      )
+      return
+    }
+    try {
+      if (form.customHeaders.trim()) {
+        customHeaders = JSON.parse(form.customHeaders.trim())
+      } else {
+        customHeaders = {}
+      }
+    } catch {
+      setServerError(
+        t("models.field.customHeaders") + ": " + t("models.field.invalidJson"),
+      )
+      return
+    }
+
     setSaving(true)
     setServerError("")
     try {
       const modelName = form.modelName.trim()
+      const provider = form.provider.trim()
       const modelId = form.model.trim()
       await addModel({
         model_name: modelName,
-        provider: form.provider.trim(),
+        provider: provider || undefined,
         model: modelId,
         api_base: form.apiBase.trim() || undefined,
         api_key: form.apiKey.trim() || undefined,
         proxy: form.proxy.trim() || undefined,
-        auth_method: authMethodLocked
-          ? defaultAuthMethod || undefined
-          : form.authMethod.trim() || undefined,
+        auth_method: form.authMethod.trim() || undefined,
         connect_mode: form.connectMode.trim() || undefined,
         workspace: form.workspace.trim() || undefined,
         rpm: form.rpm ? Number(form.rpm) : undefined,
@@ -228,12 +336,8 @@ export function AddModelSheet({
           : undefined,
         thinking_level: form.thinkingLevel.trim() || undefined,
         tool_schema_transform: form.toolSchemaTransform.trim() || undefined,
-        extra_body: form.extraBody.trim()
-          ? JSON.parse(form.extraBody.trim())
-          : undefined,
-        custom_headers: form.customHeaders.trim()
-          ? JSON.parse(form.customHeaders.trim())
-          : undefined,
+        extra_body: extraBody,
+        custom_headers: customHeaders,
       })
       if (setAsDefault) {
         await setDefaultModel(modelName)
@@ -255,82 +359,165 @@ export function AddModelSheet({
   }
 
   return (
-    <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent
-        side="right"
-        className="flex flex-col gap-0 p-0 data-[side=right]:!w-full data-[side=right]:sm:!w-[560px] data-[side=right]:sm:!max-w-[560px]"
-      >
-        <SheetHeader className="border-b-muted border-b px-6 py-5">
-          <SheetTitle className="text-base">{t("models.add.title")}</SheetTitle>
-          <SheetDescription className="text-xs">
-            {t("models.add.description")}
-          </SheetDescription>
-        </SheetHeader>
+    <>
+      <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
+        <SheetContent
+          side="right"
+          className="flex flex-col gap-0 p-0 data-[side=right]:!w-full data-[side=right]:sm:!w-[560px] data-[side=right]:sm:!max-w-[560px]"
+        >
+          <SheetHeader className="border-b-muted border-b px-6 py-5">
+            <SheetTitle className="text-base">
+              {t("models.add.title")}
+            </SheetTitle>
+            <SheetDescription className="text-xs">
+              {t("models.add.description")}
+            </SheetDescription>
+          </SheetHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="space-y-5 px-6 py-5">
-            <Field
-              label={t("models.add.modelName")}
-              hint={t("models.add.modelNameHint")}
-            >
-              <Input
-                value={form.modelName}
-                onChange={setField("modelName")}
-                placeholder={t("models.add.modelNamePlaceholder")}
-                aria-invalid={!!fieldErrors.modelName}
-              />
-              {fieldErrors.modelName && (
-                <p className="text-destructive text-xs">
-                  {fieldErrors.modelName}
-                </p>
-              )}
-            </Field>
-
-            <Field
-              label={t("models.field.provider")}
-              hint={t("models.field.providerHint")}
-              error={fieldErrors.provider}
-              required
-            >
-              <Select
-                value={selectedProviderOption?.id}
-                onValueChange={setProvider}
+          <div className="min-h-0 flex-1 overflow-y-auto" ref={scrollContainerRef}>
+            <div className="space-y-5 px-6 py-5">
+              <Field
+                label={t("models.add.modelName")}
+                hint={t("models.add.modelNameHint")}
               >
-                <SelectTrigger
-                  className="w-full"
-                  aria-invalid={!!fieldErrors.provider}
-                >
-                  <SelectValue
-                    placeholder={t("models.field.providerPlaceholder")}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {creatableProviderOptions.map((option) => (
-                    <SelectItem key={option.id} value={option.id}>
-                      {getProviderLabel(option.id)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
+                <Input
+                  value={form.modelName}
+                  onChange={setField("modelName")}
+                  placeholder={t("models.add.modelNamePlaceholder")}
+                  aria-invalid={!!fieldErrors.modelName}
+                />
+                {fieldErrors.modelName && (
+                  <p className="text-destructive text-xs">
+                    {fieldErrors.modelName}
+                  </p>
+                )}
+              </Field>
 
-            <Field
-              label={t("models.add.modelId")}
-              hint={t("models.add.modelIdHint")}
-            >
-              <Input
-                value={form.model}
-                onChange={setField("model")}
-                placeholder={t("models.add.modelIdPlaceholder")}
-                className="font-mono text-sm"
-                aria-invalid={!!fieldErrors.model}
-              />
-              {fieldErrors.model && (
-                <p className="text-destructive text-xs">{fieldErrors.model}</p>
-              )}
-            </Field>
+              <Field
+                label={t("models.field.provider")}
+                hint={t("models.field.providerHint")}
+              >
+                <ProviderCombobox
+                  value={form.provider}
+                  onChange={handleProviderChange}
+                  placeholder={t("models.field.providerPlaceholder")}
+                  backendOptions={providerOptions}
+                  filterCreateAllowed
+                  containerRef={scrollContainerRef}
+                />
+              </Field>
 
-            {!isOAuth && (
+              <Field
+                label={t("models.add.modelId")}
+                hint={t("models.add.modelIdHint")}
+              >
+                <Input
+                  value={form.model}
+                  onChange={handleModelChange}
+                  placeholder={
+                    providerDef
+                      ? `${commonModels[0] || "model-name"}`
+                      : t("models.add.modelIdPlaceholder")
+                  }
+                  className="font-mono text-sm"
+                  aria-invalid={
+                    !!fieldErrors.model || modelValidation?.level === "error"
+                  }
+                />
+                {modelValidation && modelValidation.messageKey && (
+                  <div
+                    className={`flex items-center gap-2 text-xs ${
+                      modelValidation.level === "error"
+                        ? "text-destructive"
+                        : modelValidation.level === "warning"
+                          ? "text-yellow-600 dark:text-yellow-500"
+                          : "text-green-600 dark:text-green-500"
+                    }`}
+                  >
+                    <span>
+                      {t(
+                        modelValidation.messageKey,
+                        modelValidation.messageParams,
+                      )}
+                    </span>
+                    {modelValidation.fix && (
+                      <button
+                        type="button"
+                        onClick={applyFix}
+                        className="text-primary underline hover:no-underline"
+                      >
+                        {t("common.fix")}
+                      </button>
+                    )}
+                  </div>
+                )}
+                {fieldErrors.model && !modelValidation && (
+                  <p className="text-destructive text-xs">
+                    {fieldErrors.model}
+                  </p>
+                )}
+                {commonModels.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {commonModels.map((m) => (
+                      <Badge
+                        key={m}
+                        variant="secondary"
+                        className="hover:bg-secondary/80 cursor-pointer font-mono text-xs"
+                        onClick={() => handleCommonModel(m)}
+                      >
+                        {m}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {catalogModels.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {catalogModels.map((m) => (
+                      <Badge
+                        key={m}
+                        variant={form.model === m ? "default" : "outline"}
+                        className="cursor-pointer font-mono text-xs"
+                        onClick={() => handleCommonModel(m)}
+                      >
+                        {m}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {fetchedModels.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {fetchedModels.map((m) => (
+                      <Badge
+                        key={m}
+                        variant={form.model === m ? "default" : "outline"}
+                        className="cursor-pointer font-mono text-xs"
+                        onClick={() => handleCommonModel(m)}
+                      >
+                        {m}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  {form.provider && FETCHABLE_PROVIDER_KEYS.has(form.provider) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setFetchOpen(true)}
+                    >
+                      <IconDownload className="size-3" />
+                      {t("models.fetch.title")}
+                    </Button>
+                  )}
+                  {!form.provider && (
+                    <span className="text-muted-foreground text-xs">
+                      {t("models.field.selectProviderFirst")}
+                    </span>
+                  )}
+                </div>
+              </Field>
+
               <Field label={t("models.field.apiKey")}>
                 <KeyInput
                   value={form.apiKey}
@@ -338,191 +525,216 @@ export function AddModelSheet({
                   placeholder={apiKeyPlaceholder}
                 />
               </Field>
-            )}
 
-            <Field
-              label={t("models.field.apiBase")}
-              hint={isOAuth ? t("models.edit.oauthNote") : undefined}
-            >
-              <Input
-                value={form.apiBase}
-                onChange={setField("apiBase")}
-                placeholder={apiBasePlaceholder}
-                disabled={isOAuth}
+              <Field label={t("models.field.apiBase")}>
+                <Input
+                  value={form.apiBase}
+                  onChange={setField("apiBase")}
+                  placeholder="https://api.example.com/v1"
+                />
+              </Field>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTestOpen(true)}
+                  disabled={!form.provider || !form.model}
+                >
+                  <IconPlugConnected className="size-4" />
+                  {t("models.test.testConnection")}
+                </Button>
+              </div>
+
+              <SwitchCardField
+                label={t("models.defaultOnSave.label")}
+                hint={t("models.defaultOnSave.description")}
+                checked={setAsDefault}
+                onCheckedChange={setSetAsDefault}
               />
-            </Field>
 
-            <SwitchCardField
-              label={t("models.defaultOnSave.label")}
-              hint={
-                defaultModelAllowed
-                  ? t("models.defaultOnSave.description")
-                  : t("models.defaultOnSave.unsupportedProvider")
-              }
-              checked={setAsDefault}
-              onCheckedChange={setSetAsDefault}
-              disabled={!defaultModelAllowed}
-            />
+              <AdvancedSection>
+                <Field
+                  label={t("models.field.proxy")}
+                  hint={t("models.field.proxyHint")}
+                >
+                  <Input
+                    value={form.proxy}
+                    onChange={setField("proxy")}
+                    placeholder="http://127.0.0.1:7890"
+                  />
+                </Field>
 
-            <AdvancedSection>
-              <Field
-                label={t("models.field.proxy")}
-                hint={t("models.field.proxyHint")}
-              >
-                <Input
-                  value={form.proxy}
-                  onChange={setField("proxy")}
-                  placeholder="http://127.0.0.1:7890"
-                />
-              </Field>
+                <Field
+                  label={t("models.field.authMethod")}
+                  hint={t("models.field.authMethodHint")}
+                >
+                  <Input
+                    value={form.authMethod}
+                    onChange={setField("authMethod")}
+                    placeholder="oauth"
+                  />
+                </Field>
 
-              <Field
-                label={t("models.field.authMethod")}
-                hint={
-                  authMethodLocked
-                    ? t("models.field.authMethodManagedHint")
-                    : t("models.field.authMethodHint")
-                }
-              >
-                <Input
-                  value={authMethodLocked ? defaultAuthMethod : form.authMethod}
-                  onChange={setField("authMethod")}
-                  placeholder="oauth"
-                  disabled={authMethodLocked}
-                />
-              </Field>
+                <Field
+                  label={t("models.field.connectMode")}
+                  hint={t("models.field.connectModeHint")}
+                >
+                  <Input
+                    value={form.connectMode}
+                    onChange={setField("connectMode")}
+                    placeholder="stdio"
+                  />
+                </Field>
 
-              <Field
-                label={t("models.field.connectMode")}
-                hint={t("models.field.connectModeHint")}
-              >
-                <Input
-                  value={form.connectMode}
-                  onChange={setField("connectMode")}
-                  placeholder="stdio"
-                />
-              </Field>
+                <Field
+                  label={t("models.field.workspace")}
+                  hint={t("models.field.workspaceHint")}
+                >
+                  <Input
+                    value={form.workspace}
+                    onChange={setField("workspace")}
+                    placeholder="/path/to/workspace"
+                  />
+                </Field>
 
-              <Field
-                label={t("models.field.workspace")}
-                hint={t("models.field.workspaceHint")}
-              >
-                <Input
-                  value={form.workspace}
-                  onChange={setField("workspace")}
-                  placeholder="/path/to/workspace"
-                />
-              </Field>
+                <Field
+                  label={t("models.field.requestTimeout")}
+                  hint={t("models.field.requestTimeoutHint")}
+                >
+                  <Input
+                    value={form.requestTimeout}
+                    onChange={setField("requestTimeout")}
+                    placeholder="60"
+                    type="number"
+                    min={0}
+                  />
+                </Field>
 
-              <Field
-                label={t("models.field.requestTimeout")}
-                hint={t("models.field.requestTimeoutHint")}
-              >
-                <Input
-                  value={form.requestTimeout}
-                  onChange={setField("requestTimeout")}
-                  placeholder="60"
-                  type="number"
-                  min={0}
-                />
-              </Field>
+                <Field
+                  label={t("models.field.rpm")}
+                  hint={t("models.field.rpmHint")}
+                >
+                  <Input
+                    value={form.rpm}
+                    onChange={setField("rpm")}
+                    placeholder="60"
+                    type="number"
+                    min={0}
+                  />
+                </Field>
 
-              <Field
-                label={t("models.field.rpm")}
-                hint={t("models.field.rpmHint")}
-              >
-                <Input
-                  value={form.rpm}
-                  onChange={setField("rpm")}
-                  placeholder="60"
-                  type="number"
-                  min={0}
-                />
-              </Field>
+                <Field
+                  label={t("models.field.thinkingLevel")}
+                  hint={t("models.field.thinkingLevelHint")}
+                >
+                  <Input
+                    value={form.thinkingLevel}
+                    onChange={setField("thinkingLevel")}
+                    placeholder="off"
+                  />
+                </Field>
 
-              <Field
-                label={t("models.field.thinkingLevel")}
-                hint={t("models.field.thinkingLevelHint")}
-              >
-                <Input
-                  value={form.thinkingLevel}
-                  onChange={setField("thinkingLevel")}
-                  placeholder="off"
-                />
-              </Field>
+                <Field
+                  label={t("models.field.maxTokensField")}
+                  hint={t("models.field.maxTokensFieldHint")}
+                >
+                  <Input
+                    value={form.maxTokensField}
+                    onChange={setField("maxTokensField")}
+                    placeholder="max_completion_tokens"
+                  />
+                </Field>
 
-              <Field
-                label={t("models.field.maxTokensField")}
-                hint={t("models.field.maxTokensFieldHint")}
-              >
-                <Input
-                  value={form.maxTokensField}
-                  onChange={setField("maxTokensField")}
-                  placeholder="max_completion_tokens"
-                />
-              </Field>
+                <Field
+                  label={t("models.field.toolSchemaTransform")}
+                  hint={t("models.field.toolSchemaTransformHint")}
+                >
+                  <Input
+                    value={form.toolSchemaTransform}
+                    onChange={setField("toolSchemaTransform")}
+                    placeholder="google"
+                  />
+                </Field>
 
-              <Field
-                label={t("models.field.toolSchemaTransform")}
-                hint={t("models.field.toolSchemaTransformHint")}
-              >
-                <Input
-                  value={form.toolSchemaTransform}
-                  onChange={setField("toolSchemaTransform")}
-                  placeholder="google"
-                />
-              </Field>
+                <Field
+                  label={t("models.field.extraBody")}
+                  hint={t("models.field.extraBodyHint")}
+                >
+                  <Textarea
+                    value={form.extraBody}
+                    onChange={setField("extraBody")}
+                    placeholder='{"key": "value"}'
+                    rows={3}
+                  />
+                </Field>
 
-              <Field
-                label={t("models.field.extraBody")}
-                hint={t("models.field.extraBodyHint")}
-              >
-                <Textarea
-                  value={form.extraBody}
-                  onChange={setField("extraBody")}
-                  placeholder='{"key": "value"}'
-                  rows={3}
-                />
-              </Field>
+                <Field
+                  label={t("models.field.customHeaders")}
+                  hint={t("models.field.customHeadersHint")}
+                >
+                  <Textarea
+                    value={form.customHeaders}
+                    onChange={setField("customHeaders")}
+                    placeholder='{"X-Source": "coding-plan"}'
+                    rows={3}
+                  />
+                </Field>
+              </AdvancedSection>
 
-              <Field
-                label={t("models.field.customHeaders")}
-                hint={t("models.field.customHeadersHint")}
-              >
-                <Textarea
-                  value={form.customHeaders}
-                  onChange={setField("customHeaders")}
-                  placeholder='{"X-Source": "coding-plan"}'
-                  rows={3}
-                />
-              </Field>
-            </AdvancedSection>
-
-            {serverError && (
-              <p className="text-destructive bg-destructive/10 rounded-md px-3 py-2 text-sm">
-                {serverError}
-              </p>
-            )}
+              {serverError && (
+                <p className="text-destructive bg-destructive/10 rounded-md px-3 py-2 text-sm">
+                  {serverError}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
 
-        <SheetFooter className="border-t-muted border-t px-6 py-4">
-          {isDirty && (
-            <ConfigChangeNotice
-              kind="save"
-              title={t("common.saveChangesTitle")}
-              description={t("models.unsavedPrompt")}
-            />
-          )}
-          <Button variant="ghost" onClick={onClose} disabled={saving}>
-            {t("common.cancel")}
-          </Button>
-          <Button onClick={handleSave} disabled={!isDirty || saving}>
-            {saving && <IconLoader2 className="size-4 animate-spin" />}
-            {t("models.add.confirm")}
-          </Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+          <SheetFooter className="border-t-muted border-t px-6 py-4">
+            {isDirty && (
+              <ConfigChangeNotice
+                kind="save"
+                title={t("common.saveChangesTitle")}
+                description={t("models.unsavedPrompt")}
+              />
+            )}
+            <Button variant="ghost" onClick={onClose} disabled={saving}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={
+                !isDirty || saving || modelValidation?.level === "error"
+              }
+            >
+              {saving && <IconLoader2 className="size-4 animate-spin" />}
+              {t("models.add.confirm")}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+
+        <FetchModelsDialog
+          open={fetchOpen}
+          onClose={() => setFetchOpen(false)}
+          onFill={handleFetchFill}
+          provider={form.provider}
+          apiKey={form.apiKey}
+          apiBase={form.apiBase}
+        />
+
+        <TestModelDialog
+          model={null}
+          open={testOpen}
+          onClose={() => setTestOpen(false)}
+          inlineParams={{
+            provider: form.provider,
+            model: form.model,
+            apiBase: form.apiBase,
+            apiKey: form.apiKey,
+            authMethod: form.authMethod,
+          }}
+        />
+      </Sheet>
+    </>
   )
 }

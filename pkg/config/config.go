@@ -614,6 +614,21 @@ func (c *ModelConfig) Validate() error {
 	if _, err := providercommon.NormalizeToolSchemaTransform(c.ToolSchemaTransform); err != nil {
 		return err
 	}
+
+	// Reject whitespace in model identifier
+	if strings.ContainsAny(c.Model, " \t\n\r") {
+		return fmt.Errorf("model identifier contains whitespace")
+	}
+
+	// Reject leading slash
+	if strings.HasPrefix(c.Model, "/") {
+		return fmt.Errorf("model identifier must not start with /")
+	}
+
+	// Reject consecutive slashes
+	if strings.Contains(c.Model, "//") {
+		return fmt.Errorf("model identifier must not contain //")
+	}
 	return nil
 }
 
