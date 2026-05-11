@@ -9,7 +9,9 @@ import (
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
+	"github.com/sipeed/picoclaw/pkg/media"
 )
 
 func TestExtractContent(t *testing.T) {
@@ -316,6 +318,43 @@ func TestFinalizeTrackedToolFeedbackMessage_ClearAfterSuccessfulEdit(t *testing.
 	}
 	if _, ok := ch.currentToolFeedbackMessage("chat-1"); ok {
 		t.Fatal("expected tracked tool feedback to be cleared after successful edit")
+	}
+}
+
+func TestSendMedia_SendsCaptionFallbackAfterMedia(t *testing.T) {
+	ch := &FeishuChannel{
+		BaseChannel: channels.NewBaseChannel("feishu", nil, nil, nil),
+		progress:    channels.NewToolFeedbackAnimator(nil),
+	}
+	ch.SetRunning(true)
+	ch.SetMediaStore(media.NewFileMediaStore())
+
+	var mediaOrder []string
+	var textCalls []string
+	ch.sendMediaPartFn = func(ctx context.Context, chatID string, part bus.MediaPart, store media.MediaStore) error {
+		mediaOrder = append(mediaOrder, part.Type)
+		return nil
+	}
+	ch.sendTextFn = func(ctx context.Context, chatID, text string) (string, error) {
+		textCalls = append(textCalls, chatID+"|"+text)
+		return "msg-1", nil
+	}
+
+	_, err := ch.SendMedia(context.Background(), bus.OutboundMediaMessage{
+		ChatID: "oc_123",
+		Parts: []bus.MediaPart{
+			{Type: "image", Caption: "shared caption"},
+			{Type: "file"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SendMedia() error = %v", err)
+	}
+	if len(mediaOrder) != 2 {
+		t.Fatalf("media sends = %v, want 2 sends", mediaOrder)
+	}
+	if len(textCalls) != 1 || textCalls[0] != "oc_123|shared caption" {
+		t.Fatalf("textCalls = %v, want [oc_123|shared caption]", textCalls)
 	}
 }
 
