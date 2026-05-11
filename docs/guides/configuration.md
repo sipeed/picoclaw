@@ -69,6 +69,36 @@ PicoClaw stores data in your configured workspace (default: `~/.picoclaw/workspa
 
 > **Note:** Changes to `AGENT.md`, `SOUL.md`, `USER.md` and `memory/MEMORY.md` are automatically detected at runtime via file modification time (mtime) tracking. You do **not** need to restart the gateway after editing these files — the agent picks up the new content on the next request.
 
+### Agent Self-Evolution
+
+The `evolution` block controls PicoClaw's self-evolution runtime. When enabled, the agent records completed turns as learning records. In higher modes it can group repeated successful patterns, generate skill drafts, and optionally apply accepted drafts into workspace skills.
+
+```json
+{
+  "evolution": {
+    "enabled": false,
+    "mode": "observe",
+    "state_dir": "",
+    "min_task_count": 2,
+    "min_success_ratio": 0.7,
+    "cold_path_trigger": "after_turn",
+    "cold_path_times": []
+  }
+}
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `false` | Enables learning-record capture for completed agent turns. Heartbeat turns are ignored. |
+| `mode` | `observe` | `observe` records data only. `draft` can generate candidate skill drafts. `apply` can apply accepted drafts to workspace skills. |
+| `state_dir` | `""` | Optional directory for evolution state. Leave empty to use the default under the workspace. |
+| `min_task_count` | `2` | Minimum related task records required before a pattern is eligible for draft generation. |
+| `min_success_ratio` | `0.7` | Minimum success ratio for a task cluster. Use a value greater than `0` and up to `1`. |
+| `cold_path_trigger` | `after_turn` | Runs draft generation `after_turn`, on a `scheduled` cadence, or disables automatic cold-path runs when set to `manual`. There is no user-facing manual trigger yet. Applies only in `draft` and `apply` modes. |
+| `cold_path_times` | `[]` | Scheduled run times used when `cold_path_trigger` is `scheduled`, written as `HH:MM` strings. |
+
+Use `observe` first if you want to inspect learning records without generating skill changes. Use `draft` when you want PicoClaw to prepare reviewable improvements. Use `apply` only when you are comfortable letting accepted drafts update workspace skills.
+
 ### Web launcher dashboard
 
 **picoclaw-launcher** serves a browser UI that requires password sign-in first. On first run, open `/launcher-setup` to create the dashboard password. Later manual sign-ins use `/launcher-login`.

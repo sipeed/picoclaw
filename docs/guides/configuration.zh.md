@@ -67,6 +67,36 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 
 > **提示：** 对 `AGENT.md`、`SOUL.md`、`USER.md` 和 `memory/MEMORY.md` 的修改会通过文件修改时间（mtime）在运行时自动检测。**无需重启 gateway**，Agent 将在下一次请求时自动加载最新内容。
 
+### Agent 自进化
+
+`evolution` 配置块控制 PicoClaw 的自进化运行时。启用后，Agent 会把已完成的回合记录为学习记录。在更高模式下，它可以聚类重复出现的成功模式、生成技能草稿，并可选择把已接受的草稿应用到工作区技能中。
+
+```json
+{
+  "evolution": {
+    "enabled": false,
+    "mode": "observe",
+    "state_dir": "",
+    "min_task_count": 2,
+    "min_success_ratio": 0.7,
+    "cold_path_trigger": "after_turn",
+    "cold_path_times": []
+  }
+}
+```
+
+| 字段 | 默认值 | 说明 |
+|------|--------|------|
+| `enabled` | `false` | 启用已完成 Agent 回合的学习记录采集。Heartbeat 回合会被忽略。 |
+| `mode` | `observe` | `observe` 只记录数据；`draft` 可生成候选技能草稿；`apply` 可将已接受草稿应用到工作区技能。 |
+| `state_dir` | `""` | 自进化状态的可选目录。留空时使用工作区下的默认位置。 |
+| `min_task_count` | `2` | 一个模式具备生成草稿资格前所需的最小相关任务记录数。 |
+| `min_success_ratio` | `0.7` | 任务聚类所需的最小成功率，取值需大于 `0`，且不超过 `1`。 |
+| `cold_path_trigger` | `after_turn` | 草稿生成可在 `after_turn` 后运行、按 `scheduled` 定时运行；设置为 `manual` 时会关闭自动冷路径运行。目前还没有用户可用的手动触发入口。仅在 `draft` 和 `apply` 模式下生效。 |
+| `cold_path_times` | `[]` | 当 `cold_path_trigger` 为 `scheduled` 时使用的运行时间，格式为 `HH:MM` 字符串。 |
+
+如果你只想先检查学习记录，建议从 `observe` 开始。需要生成可审查改进时使用 `draft`。只有在你接受让已通过的草稿更新工作区技能时，才使用 `apply`。
+
 ### Web 启动器控制台
 
 用 **picoclaw-launcher** 打开浏览器控制台前需要先使用密码登录。首次启动时打开 `/launcher-setup` 创建 dashboard 登录密码；后续手动登录使用 `/launcher-login`。
