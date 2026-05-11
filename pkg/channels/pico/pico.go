@@ -91,6 +91,56 @@ func (pc *picoConn) close() {
 	}
 }
 
+// picoStreamer implements channels.Streamer for real-time token streaming.
+type picoStreamer struct {
+	channel          *PicoChannel
+	chatID           string
+	messageID        string
+	content          string
+	mu               sync.Mutex
+	finalized        bool
+	lastUpdateAt     time.Time
+	throttleInterval time.Duration
+	minGrowth        int
+}
+
+func (s *picoStreamer) Update(ctx context.Context, content string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.finalized {
+		return nil
+	}
+
+	now := time.Now()
+	growth := len(content) - len(s.content)
+
+	// Skip if not enough growth AND not enough time elapsed
+	if growth < s.minGrowth && time.Since(s.lastUpdateAt) < s.throttleInterval {
+		return nil
+	}
+
+	s.content = content
+	s.lastUpdateAt = now
+	return s.channel.EditMessage(ctx, s.chatID, s.messageID, content)
+}
+
+func (s *picoStreamer) Finalize(ctx context.Context, content string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.finalized {
+		return nil
+	}
+	s.finalized = true
+	s.content = content
+	return s.channel.EditMessage(ctx, s.chatID, s.messageID, content)
+}
+
+func (s *picoStreamer) Cancel(ctx context.Context) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.finalized = true
+}
+
 // PicoChannel implements the native Pico Protocol WebSocket channel.
 // It serves as the reference implementation for all optional capability interfaces.
 type PicoChannel struct {
@@ -677,6 +727,38 @@ func (c *PicoChannel) handleMediaDownload(w http.ResponseWriter, r *http.Request
 	}
 	w.Header().Set("Content-Type", contentType)
 	http.ServeContent(w, r, filename, info.ModTime(), file)
+}
+
+// BeginStream implements channels.StreamingCapable.
+func (c *PicoChannel) BeginStream(ctx context.Context, chatID string) (channels.Streamer, error) {
+	if !c.IsRunning() {
+		return nil, channels.ErrNotRunning
+	}
+	if !c.config.Streaming {
+		return nil, fmt.Errorf("streaming disabled in config")
+	}
+
+	msgID := uuid.New().String()
+	outMsg := newMessage(TypeMessageCreate, map[string]any{
+		PayloadKeyContent: "",
+		PayloadKeyThought: false,
+		"message_id":      msgID,
+	})
+
+	sessionID := strings.TrimPrefix(chatID, "pico:")
+	outMsg.SessionID = sessionID
+
+	if err := c.broadcastToSession(chatID, outMsg); err != nil {
+		return nil, err
+	}
+
+	return &picoStreamer{
+		channel:          c,
+		chatID:           chatID,
+		messageID:        msgID,
+		throttleInterval: 100 * time.Millisecond,
+		minGrowth:        20,
+	}, nil
 }
 
 // broadcastToSession sends a message to all connections with a matching session.

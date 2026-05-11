@@ -23,6 +23,10 @@ type MessageBus interface {
 
 	// InboundChan returns the channel for receiving inbound messages.
 	InboundChan() <-chan bus.InboundMessage
+
+	// GetStreamer returns a Streamer for the given channel+chatID if the channel
+	// supports streaming.
+	GetStreamer(ctx context.Context, channel, chatID string) (bus.Streamer, bool)
 }
 
 // ChannelManager manages channel lifecycle and provides channel access.

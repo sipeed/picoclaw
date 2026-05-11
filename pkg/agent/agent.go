@@ -560,11 +560,33 @@ func (al *AgentLoop) runAgentLoop(
 		newTurnContext(opts.Dispatch.InboundContext, opts.Dispatch.RouteResult, opts.Dispatch.SessionScope),
 	)
 	ts := newTurnState(agent, opts, turnScope)
+
+	// Acquire streamer if channel supports streaming
+	shouldStream := opts.SendResponse || opts.AllowInterimPicoPublish
+	if al.bus != nil && shouldStream && opts.Dispatch.Channel() != "" {
+		if streamer, ok := al.bus.GetStreamer(ctx, opts.Dispatch.Channel(), opts.Dispatch.ChatID()); ok {
+			ts.setStreamer(streamer)
+			logger.DebugCF("agent", "Streaming enabled for turn", map[string]any{
+				"channel": opts.Dispatch.Channel(),
+				"chat_id": opts.Dispatch.ChatID(),
+			})
+		}
+	}
+
 	pipeline := NewPipeline(al)
 	result, err := al.runTurn(ctx, ts, pipeline)
 	if err != nil {
+		if ts.getStreamer() != nil {
+			ts.cancelStreamer(ctx)
+		}
 		return "", err
 	}
+
+	// Handle streamer cleanup on abort or error
+	if ts.getStreamer() != nil && (result.status == TurnEndStatusAborted || result.status == TurnEndStatusError) {
+		ts.cancelStreamer(ctx)
+	}
+
 	if result.status == TurnEndStatusAborted {
 		return "", nil
 	}
@@ -579,7 +601,8 @@ func (al *AgentLoop) runAgentLoop(
 		}
 	}
 
-	if opts.SendResponse && result.finalContent != "" {
+	// Only publish via bus if not already streamed
+	if opts.SendResponse && result.finalContent != "" && !ts.wasStreamed() {
 		agentID, sessionKey, scope := outboundTurnMetadata(
 			agent.ID,
 			opts.Dispatch.SessionKey,
