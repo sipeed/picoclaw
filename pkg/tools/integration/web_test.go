@@ -1848,12 +1848,12 @@ func TestWebTool_AutoProviderPrefersConfiguredProvidersBeforeSogou(t *testing.T)
 	if err != nil {
 		t.Fatalf("NewWebSearchTool() error: %v", err)
 	}
-	if _, ok := tool.provider.(*BraveSearchProvider); !ok {
-		t.Fatalf("expected BraveSearchProvider, got %T", tool.provider)
+	if _, ok := tool.provider.(*SogouSearchProvider); !ok {
+		t.Fatalf("expected SogouSearchProvider, got %T", tool.provider)
 	}
 }
 
-func TestWebTool_AutoProviderPrefersGeminiBeforeOtherConfiguredProviders(t *testing.T) {
+func TestWebTool_AutoProviderPrefersFreeProvidersBeforeGeminiForDefaultQuery(t *testing.T) {
 	tool, err := NewWebSearchTool(WebSearchToolOptions{
 		GeminiEnabled:        true,
 		GeminiAPIKey:         "google-key",
@@ -1870,8 +1870,8 @@ func TestWebTool_AutoProviderPrefersGeminiBeforeOtherConfiguredProviders(t *test
 	if err != nil {
 		t.Fatalf("NewWebSearchTool() error: %v", err)
 	}
-	if _, ok := tool.provider.(*GeminiSearchProvider); !ok {
-		t.Fatalf("expected GeminiSearchProvider, got %T", tool.provider)
+	if _, ok := tool.provider.(*SogouSearchProvider); !ok {
+		t.Fatalf("expected SogouSearchProvider, got %T", tool.provider)
 	}
 }
 

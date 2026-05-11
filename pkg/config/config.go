@@ -372,10 +372,10 @@ type SubTurnConfig struct {
 type ToolFeedbackConfig struct {
 	Enabled                bool   `json:"enabled"                   env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED"`
 	MaxArgsLength          int    `json:"max_args_length"           env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH"`
-	SeparateMessages       bool   `json:"separate_messages"        env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_SEPARATE_MESSAGES"`
+	SeparateMessages       bool   `json:"separate_messages"         env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_SEPARATE_MESSAGES"`
 	Subagents              *bool  `json:"subagents,omitempty"`
-	Style                  string `json:"style,omitempty"          env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_STYLE"`
-	AnimationIntervalSecs  int    `json:"animation_interval_secs"  env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ANIMATION_INTERVAL_SECS"`
+	Style                  string `json:"style,omitempty"           env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_STYLE"`
+	AnimationIntervalSecs  int    `json:"animation_interval_secs"   env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ANIMATION_INTERVAL_SECS"`
 	EditMinIntervalSeconds int    `json:"edit_min_interval_seconds" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_EDIT_MIN_INTERVAL_SECONDS"`
 }
 
@@ -822,8 +822,8 @@ type ToolConfig struct {
 }
 
 type ImageGenerateToolsConfig struct {
-	ToolConfig `yaml:"-" envPrefix:"PICOCLAW_TOOLS_IMAGE_GENERATE_"`
-	Model      string `json:"model,omitempty" yaml:"-" env:"PICOCLAW_TOOLS_IMAGE_GENERATE_MODEL"`
+	ToolConfig `       yaml:"-" envPrefix:"PICOCLAW_TOOLS_IMAGE_GENERATE_"`
+	Model      string `yaml:"-"                                            json:"model,omitempty" env:"PICOCLAW_TOOLS_IMAGE_GENERATE_MODEL"`
 }
 
 func (c ImageGenerateToolsConfig) EffectiveModel(defaults AgentDefaults) string {
@@ -947,12 +947,12 @@ type BaiduSearchConfig struct {
 }
 
 type WebToolsConfig struct {
-	ToolConfig  `                  yaml:"-"                      envPrefix:"PICOCLAW_TOOLS_WEB_"`
+	ToolConfig  `                   yaml:"-"                      envPrefix:"PICOCLAW_TOOLS_WEB_"`
 	Brave       BraveConfig        `yaml:"brave,omitempty"                                        json:"brave"`
 	Tavily      TavilyConfig       `yaml:"tavily,omitempty"                                       json:"tavily"`
 	Sogou       SogouConfig        `yaml:"-"                                                      json:"sogou"`
 	DuckDuckGo  DuckDuckGoConfig   `yaml:"-"                                                      json:"duckduckgo"`
-	Gemini      GeminiSearchConfig `yaml:"gemini,omitempty"                                      json:"gemini"`
+	Gemini      GeminiSearchConfig `yaml:"gemini,omitempty"                                       json:"gemini"`
 	Perplexity  PerplexityConfig   `yaml:"perplexity,omitempty"                                   json:"perplexity"`
 	SearXNG     SearXNGConfig      `yaml:"-"                                                      json:"searxng"`
 	GLMSearch   GLMSearchConfig    `yaml:"glm_search,omitempty"                                   json:"glm_search"`
