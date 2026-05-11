@@ -60,7 +60,7 @@
 
 <p align="center">
   <a href="https://www.aliexpress.com/item/1005006519668532.html">
-    <img src="assets/licheerv-claw.png" alt="LicheeRV-Claw on AliExpress" width="520">
+    <img src="assets/licheerv-claw.jpg" alt="LicheeRV-Claw on AliExpress" width="520">
   </a>
 </p>
 
