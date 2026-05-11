@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,6 +40,8 @@ func (h *Handler) registerModelRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/models/fetch", h.handleFetchModels)
 	mux.HandleFunc("GET /api/models/catalog", h.handleListCatalogs)
 	mux.HandleFunc("DELETE /api/models/catalog/{id}", h.handleDeleteCatalog)
+	mux.HandleFunc("POST /api/models/{index}/test", h.handleTestModel)
+	mux.HandleFunc("POST /api/models/test-inline", h.handleTestInlineModel)
 }
 
 // modelResponse is the JSON structure returned for each model in the list.
@@ -799,4 +802,195 @@ func fetchOllamaModels(ctx context.Context, fetchURL string) ([]upstreamModel, e
 		}
 	}
 	return models, nil
+}
+
+// normalizeAPIBaseForCompare normalizes an API base URL for equality comparison
+// by trimming trailing slashes and lowering the scheme/host.
+func normalizeAPIBaseForCompare(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	raw = strings.TrimRight(raw, "/")
+	u, err := url.Parse(raw)
+	if err != nil {
+		return strings.ToLower(raw)
+	}
+	if u.Host == "" {
+		u, err = url.Parse("//" + raw)
+		if err != nil {
+			return strings.ToLower(raw)
+		}
+	}
+	return strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host) + strings.TrimRight(u.Path, "/")
+}
+
+// handleTestModel tests connectivity to a model endpoint.
+//
+//	POST /api/models/{index}/test
+func (h *Handler) handleTestModel(w http.ResponseWriter, r *http.Request) {
+	idx, err := strconv.Atoi(r.PathValue("index"))
+	if err != nil {
+		http.Error(w, "Invalid index", http.StatusBadRequest)
+		return
+	}
+
+	cfg, err := config.LoadConfig(h.configPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if idx < 0 || idx >= len(cfg.ModelList) {
+		http.Error(w, fmt.Sprintf("Index %d out of range (0-%d)", idx, len(cfg.ModelList)-1), http.StatusNotFound)
+		return
+	}
+
+	m := cfg.ModelList[idx]
+	start := time.Now()
+	summary := modelConfigurationStatus(m)
+	latency := time.Since(start).Milliseconds()
+
+	result := map[string]any{
+		"success":    summary.Available,
+		"latency_ms": latency,
+		"status":     summary.Status,
+	}
+
+	if !summary.Available {
+		if summary.Status == modelStatusUnconfigured {
+			result["error"] = "API key not configured"
+		} else {
+			result["error"] = "Endpoint unreachable"
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// handleTestInlineModel tests connectivity using inline (unsaved) parameters.
+// Unlike handleTestModel which only checks saved config, this endpoint performs
+// a real network probe (e.g. GET /models) to verify the endpoint is reachable.
+//
+//	POST /api/models/test-inline
+func (h *Handler) handleTestInlineModel(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Provider   string `json:"provider"`
+		Model      string `json:"model"`
+		APIBase    string `json:"api_base"`
+		APIKey     string `json:"api_key"`
+		AuthMethod string `json:"auth_method"`
+		ModelIndex *int   `json:"model_index"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	m := &config.ModelConfig{
+		Provider:   strings.TrimSpace(req.Provider),
+		Model:      strings.TrimSpace(req.Model),
+		APIBase:    strings.TrimSpace(req.APIBase),
+		AuthMethod: strings.TrimSpace(req.AuthMethod),
+	}
+	if req.APIKey != "" {
+		m.SetAPIKey(req.APIKey)
+	}
+
+	// When api_key is empty and model_index is provided, fall back to stored credentials.
+	// This lets the edit form test unsaved field changes while using the saved key.
+	// Only reuse the stored key when the provider and effective API base match
+	// the saved model, to prevent attaching a credential to a different endpoint.
+	if req.APIKey == "" && req.ModelIndex != nil {
+		cfg, err := config.LoadConfig(h.configPath)
+		if err == nil && *req.ModelIndex >= 0 && *req.ModelIndex < len(cfg.ModelList) {
+			stored := cfg.ModelList[*req.ModelIndex]
+			storedProvider, _ := providers.ExtractProtocol(stored)
+			reqProvider := providers.NormalizeProvider(m.Provider)
+			providerMatch := reqProvider == "" || reqProvider == providers.NormalizeProvider(storedProvider)
+
+			effectiveReqBase := strings.TrimSpace(m.APIBase)
+			if effectiveReqBase == "" {
+				effectiveReqBase = providers.DefaultAPIBaseForProtocol(reqProvider)
+			}
+			effectiveStoredBase := strings.TrimSpace(stored.APIBase)
+			if effectiveStoredBase == "" {
+				effectiveStoredBase = providers.DefaultAPIBaseForProtocol(storedProvider)
+			}
+			baseMatch := normalizeAPIBaseForCompare(effectiveReqBase) == normalizeAPIBaseForCompare(effectiveStoredBase)
+
+			if providerMatch && baseMatch {
+				if stored.APIKey() != "" {
+					m.SetAPIKey(stored.APIKey())
+				}
+				if m.APIBase == "" && stored.APIBase != "" {
+					m.APIBase = stored.APIBase
+				}
+			}
+		}
+	}
+
+	// Check if configuration exists
+	if !hasModelConfiguration(m) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"success":    false,
+			"latency_ms": 0,
+			"status":     modelStatusUnconfigured,
+			"error":      "API key not configured",
+		})
+		return
+	}
+
+	// Perform a real network probe
+	start := time.Now()
+	available := probeModelConnectivity(m)
+	latency := time.Since(start).Milliseconds()
+
+	result := map[string]any{
+		"success":    available,
+		"latency_ms": latency,
+	}
+	if available {
+		result["status"] = modelStatusAvailable
+	} else {
+		result["status"] = modelStatusUnreachable
+		result["error"] = "Endpoint unreachable"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// probeModelConnectivity performs a real network probe to verify model endpoint reachability.
+func probeModelConnectivity(m *config.ModelConfig) bool {
+	apiBase := modelProbeAPIBase(m)
+	protocol, modelID := splitModel(m)
+
+	switch protocol {
+	case "ollama":
+		return probeOllamaModel(apiBase, modelID)
+	case "vllm", "lmstudio":
+		return probeOpenAICompatibleModel(apiBase, modelID, m.APIKey())
+	case "github-copilot", "copilot":
+		return probeTCPService(apiBase)
+	case "claude-cli", "claudecli":
+		return probeCommandAvailable("claude")
+	case "codex-cli", "codexcli":
+		return probeCommandAvailable("codex")
+	default:
+		// For remote providers (OpenAI, Anthropic, Gemini, DeepSeek, etc.),
+		// make a real GET /models request to verify connectivity and credentials.
+		if apiBase != "" {
+			return probeOpenAICompatibleModel(apiBase, modelID, m.APIKey())
+		}
+		return false
+	}
 }
