@@ -8,6 +8,7 @@
 package bedrock
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -602,6 +603,275 @@ func TestIsSSOTokenError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := isSSOTokenError(tt.err)
 			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// mockStreamReader implements bedrockruntime.ConverseStreamOutputReader for testing.
+type mockStreamReader struct {
+	ch  chan types.ConverseStreamOutput
+	err error
+}
+
+func (r *mockStreamReader) Events() <-chan types.ConverseStreamOutput { return r.ch }
+func (r *mockStreamReader) Close() error                              { return nil }
+func (r *mockStreamReader) Err() error                                { return r.err }
+
+func newMockStream(events []types.ConverseStreamOutput) *bedrockruntime.ConverseStreamEventStream {
+	ch := make(chan types.ConverseStreamOutput, len(events))
+	for _, e := range events {
+		ch <- e
+	}
+	close(ch)
+
+	return bedrockruntime.NewConverseStreamEventStream(func(es *bedrockruntime.ConverseStreamEventStream) {
+		es.Reader = &mockStreamReader{ch: ch}
+	})
+}
+
+func TestParseStreamResponse_TextOnly(t *testing.T) {
+	events := []types.ConverseStreamOutput{
+		&types.ConverseStreamOutputMemberContentBlockDelta{
+			Value: types.ContentBlockDeltaEvent{
+				Delta:             &types.ContentBlockDeltaMemberText{Value: "Hello "},
+				ContentBlockIndex: aws.Int32(0),
+			},
+		},
+		&types.ConverseStreamOutputMemberContentBlockDelta{
+			Value: types.ContentBlockDeltaEvent{
+				Delta:             &types.ContentBlockDeltaMemberText{Value: "World"},
+				ContentBlockIndex: aws.Int32(0),
+			},
+		},
+		&types.ConverseStreamOutputMemberMessageStop{
+			Value: types.MessageStopEvent{StopReason: types.StopReasonEndTurn},
+		},
+		&types.ConverseStreamOutputMemberMetadata{
+			Value: types.ConverseStreamMetadataEvent{
+				Usage: &types.TokenUsage{
+					InputTokens:  aws.Int32(10),
+					OutputTokens: aws.Int32(5),
+				},
+			},
+		},
+	}
+
+	var chunks []string
+	stream := newMockStream(events)
+	resp, err := parseStreamResponse(context.Background(), stream, func(accumulated string) {
+		chunks = append(chunks, accumulated)
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "Hello World", resp.Content)
+	assert.Equal(t, "stop", resp.FinishReason)
+	assert.Empty(t, resp.ToolCalls)
+	require.NotNil(t, resp.Usage)
+	assert.Equal(t, 10, resp.Usage.PromptTokens)
+	assert.Equal(t, 5, resp.Usage.CompletionTokens)
+	assert.Equal(t, 15, resp.Usage.TotalTokens)
+	assert.Equal(t, []string{"Hello ", "Hello World"}, chunks)
+}
+
+func TestParseStreamResponse_ToolCall(t *testing.T) {
+	events := []types.ConverseStreamOutput{
+		&types.ConverseStreamOutputMemberContentBlockStart{
+			Value: types.ContentBlockStartEvent{
+				ContentBlockIndex: aws.Int32(0),
+				Start: &types.ContentBlockStartMemberToolUse{
+					Value: types.ToolUseBlockStart{
+						ToolUseId: aws.String("call_1"),
+						Name:      aws.String("search"),
+					},
+				},
+			},
+		},
+		&types.ConverseStreamOutputMemberContentBlockDelta{
+			Value: types.ContentBlockDeltaEvent{
+				ContentBlockIndex: aws.Int32(0),
+				Delta: &types.ContentBlockDeltaMemberToolUse{
+					Value: types.ToolUseBlockDelta{Input: aws.String(`{"q":`)},
+				},
+			},
+		},
+		&types.ConverseStreamOutputMemberContentBlockDelta{
+			Value: types.ContentBlockDeltaEvent{
+				ContentBlockIndex: aws.Int32(0),
+				Delta: &types.ContentBlockDeltaMemberToolUse{
+					Value: types.ToolUseBlockDelta{Input: aws.String(`"test"}`)},
+				},
+			},
+		},
+		&types.ConverseStreamOutputMemberContentBlockStop{
+			Value: types.ContentBlockStopEvent{ContentBlockIndex: aws.Int32(0)},
+		},
+		&types.ConverseStreamOutputMemberMessageStop{
+			Value: types.MessageStopEvent{StopReason: types.StopReasonToolUse},
+		},
+	}
+
+	stream := newMockStream(events)
+	resp, err := parseStreamResponse(context.Background(), stream, nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, "tool_calls", resp.FinishReason)
+	require.Len(t, resp.ToolCalls, 1)
+	assert.Equal(t, "call_1", resp.ToolCalls[0].ID)
+	assert.Equal(t, "search", resp.ToolCalls[0].Name)
+	assert.Equal(t, map[string]any{"q": "test"}, resp.ToolCalls[0].Arguments)
+	require.NotNil(t, resp.ToolCalls[0].Function)
+	assert.Equal(t, "search", resp.ToolCalls[0].Function.Name)
+	assert.Equal(t, `{"q":"test"}`, resp.ToolCalls[0].Function.Arguments)
+}
+
+func TestParseStreamResponse_TextAndToolCall(t *testing.T) {
+	events := []types.ConverseStreamOutput{
+		&types.ConverseStreamOutputMemberContentBlockDelta{
+			Value: types.ContentBlockDeltaEvent{
+				ContentBlockIndex: aws.Int32(0),
+				Delta:             &types.ContentBlockDeltaMemberText{Value: "Let me search that."},
+			},
+		},
+		&types.ConverseStreamOutputMemberContentBlockStart{
+			Value: types.ContentBlockStartEvent{
+				ContentBlockIndex: aws.Int32(1),
+				Start: &types.ContentBlockStartMemberToolUse{
+					Value: types.ToolUseBlockStart{
+						ToolUseId: aws.String("call_2"),
+						Name:      aws.String("web"),
+					},
+				},
+			},
+		},
+		&types.ConverseStreamOutputMemberContentBlockDelta{
+			Value: types.ContentBlockDeltaEvent{
+				ContentBlockIndex: aws.Int32(1),
+				Delta: &types.ContentBlockDeltaMemberToolUse{
+					Value: types.ToolUseBlockDelta{Input: aws.String(`{"url":"https://example.com"}`)},
+				},
+			},
+		},
+		&types.ConverseStreamOutputMemberContentBlockStop{
+			Value: types.ContentBlockStopEvent{ContentBlockIndex: aws.Int32(1)},
+		},
+		&types.ConverseStreamOutputMemberMessageStop{
+			Value: types.MessageStopEvent{StopReason: types.StopReasonToolUse},
+		},
+	}
+
+	var chunks []string
+	stream := newMockStream(events)
+	resp, err := parseStreamResponse(context.Background(), stream, func(accumulated string) {
+		chunks = append(chunks, accumulated)
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "Let me search that.", resp.Content)
+	assert.Equal(t, "tool_calls", resp.FinishReason)
+	require.Len(t, resp.ToolCalls, 1)
+	assert.Equal(t, "web", resp.ToolCalls[0].Name)
+	assert.Equal(t, []string{"Let me search that."}, chunks)
+}
+
+func TestParseStreamResponse_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Use an unbuffered channel with no events so ctx.Done() is the only ready case.
+	ch := make(chan types.ConverseStreamOutput)
+
+	stream := bedrockruntime.NewConverseStreamEventStream(func(es *bedrockruntime.ConverseStreamEventStream) {
+		es.Reader = &mockStreamReader{ch: ch}
+	})
+
+	_, err := parseStreamResponse(ctx, stream, nil)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestParseStreamResponse_InvalidToolJSON(t *testing.T) {
+	events := []types.ConverseStreamOutput{
+		&types.ConverseStreamOutputMemberContentBlockStart{
+			Value: types.ContentBlockStartEvent{
+				ContentBlockIndex: aws.Int32(0),
+				Start: &types.ContentBlockStartMemberToolUse{
+					Value: types.ToolUseBlockStart{
+						ToolUseId: aws.String("call_bad"),
+						Name:      aws.String("broken"),
+					},
+				},
+			},
+		},
+		&types.ConverseStreamOutputMemberContentBlockDelta{
+			Value: types.ContentBlockDeltaEvent{
+				ContentBlockIndex: aws.Int32(0),
+				Delta: &types.ContentBlockDeltaMemberToolUse{
+					Value: types.ToolUseBlockDelta{Input: aws.String(`{not valid json`)},
+				},
+			},
+		},
+		&types.ConverseStreamOutputMemberContentBlockStop{
+			Value: types.ContentBlockStopEvent{ContentBlockIndex: aws.Int32(0)},
+		},
+		&types.ConverseStreamOutputMemberMessageStop{
+			Value: types.MessageStopEvent{StopReason: types.StopReasonToolUse},
+		},
+	}
+
+	stream := newMockStream(events)
+	resp, err := parseStreamResponse(context.Background(), stream, nil)
+
+	require.NoError(t, err)
+	require.Len(t, resp.ToolCalls, 1)
+	assert.Equal(t, map[string]any{"raw": `{not valid json`}, resp.ToolCalls[0].Arguments)
+	assert.JSONEq(t, `{"raw":"{not valid json"}`, resp.ToolCalls[0].Function.Arguments)
+}
+
+func TestParseStreamResponse_DefaultFinishReason(t *testing.T) {
+	events := []types.ConverseStreamOutput{
+		&types.ConverseStreamOutputMemberContentBlockDelta{
+			Value: types.ContentBlockDeltaEvent{
+				Delta:             &types.ContentBlockDeltaMemberText{Value: "partial"},
+				ContentBlockIndex: aws.Int32(0),
+			},
+		},
+	}
+
+	stream := newMockStream(events)
+	resp, err := parseStreamResponse(context.Background(), stream, nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, "stop", resp.FinishReason)
+}
+
+func TestParseStreamResponse_NilStream(t *testing.T) {
+	_, err := parseStreamResponse(context.Background(), nil, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nil event stream")
+}
+
+func TestParseStreamResponse_StopReasons(t *testing.T) {
+	tests := []struct {
+		reason   types.StopReason
+		expected string
+	}{
+		{types.StopReasonEndTurn, "stop"},
+		{types.StopReasonMaxTokens, "length"},
+		{types.StopReasonToolUse, "tool_calls"},
+		{types.StopReasonStopSequence, "stop"},
+		{types.StopReasonContentFiltered, "content_filter"},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.reason), func(t *testing.T) {
+			events := []types.ConverseStreamOutput{
+				&types.ConverseStreamOutputMemberMessageStop{
+					Value: types.MessageStopEvent{StopReason: tt.reason},
+				},
+			}
+			stream := newMockStream(events)
+			resp, err := parseStreamResponse(context.Background(), stream, nil)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, resp.FinishReason)
 		})
 	}
 }
