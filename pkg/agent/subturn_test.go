@@ -1538,6 +1538,21 @@ func TestSpawnSubTurn_ReturnsStructuredCompletionWithMedia(t *testing.T) {
 	if len(result.Completion.Media) != 1 {
 		t.Fatalf("completion media count = %d, want 1; result=%+v", len(result.Completion.Media), result)
 	}
+	if result.Completion.Media[0].Ref == "" {
+		t.Fatalf("completion media ref is empty: %+v", result.Completion.Media[0])
+	}
+	if result.Completion.Media[0].Type != "image" {
+		t.Fatalf("completion media type = %q, want image", result.Completion.Media[0].Type)
+	}
+	if result.Completion.Media[0].Filename != "artifact.png" {
+		t.Fatalf("completion media filename = %q, want artifact.png", result.Completion.Media[0].Filename)
+	}
+	if result.Completion.Media[0].ContentType != "image/png" {
+		t.Fatalf("completion media content type = %q, want image/png", result.Completion.Media[0].ContentType)
+	}
+	if len(result.Media) != 1 || result.Media[0] != result.Completion.Media[0].Ref {
+		t.Fatalf("legacy result media refs = %#v, completion ref = %q", result.Media, result.Completion.Media[0].Ref)
+	}
 	if result.ForUser != "" {
 		t.Fatalf("parent_only result ForUser = %q, want empty", result.ForUser)
 	}

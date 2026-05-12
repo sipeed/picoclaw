@@ -88,8 +88,18 @@ type ToolResult struct {
 // completes work for another. It intentionally describes data/artifacts only;
 // the caller still owns any user-facing delivery decision.
 type CompletionResult struct {
-	Text  string   `json:"text,omitempty"`
-	Media []string `json:"media,omitempty"`
+	Text  string            `json:"text,omitempty"`
+	Media []CompletionMedia `json:"media,omitempty"`
+}
+
+// CompletionMedia describes a media artifact in a child completion handoff.
+// Ref is the stable media:// reference used by the runtime to resolve bytes;
+// the remaining fields are hints for delivery policy and UI mapping.
+type CompletionMedia struct {
+	Ref         string `json:"ref"`
+	Type        string `json:"type,omitempty"`
+	Filename    string `json:"filename,omitempty"`
+	ContentType string `json:"content_type,omitempty"`
 }
 
 // ContentForLLM returns the normalized textual content to append to the
@@ -136,12 +146,12 @@ func (tr *ToolResult) completionNoteForLLM() string {
 		return ""
 	}
 	type completionForLLM struct {
-		Text  string   `json:"text,omitempty"`
-		Media []string `json:"media,omitempty"`
+		Text  string            `json:"text,omitempty"`
+		Media []CompletionMedia `json:"media,omitempty"`
 	}
 	payload := completionForLLM{
 		Text:  strings.TrimSpace(tr.Completion.Text),
-		Media: append([]string(nil), tr.Completion.Media...),
+		Media: append([]CompletionMedia(nil), tr.Completion.Media...),
 	}
 	if payload.Text == "" && len(payload.Media) == 0 {
 		return ""

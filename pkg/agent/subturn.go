@@ -569,9 +569,9 @@ func spawnSubTurn(
 		if strings.TrimSpace(turnRes.finalContent) != "" || len(turnRes.completionMedia) > 0 {
 			result.WithCompletion(&tools.CompletionResult{
 				Text:  turnRes.finalContent,
-				Media: append([]string(nil), turnRes.completionMedia...),
+				Media: append([]tools.CompletionMedia(nil), turnRes.completionMedia...),
 			})
-			result.Media = append(result.Media, turnRes.completionMedia...)
+			result.Media = append(result.Media, completionMediaRefs(turnRes.completionMedia)...)
 		}
 		if !cfg.Async {
 			switch deliveryMode {
@@ -586,6 +586,17 @@ func spawnSubTurn(
 	}
 
 	return result, err
+}
+
+func completionMediaRefs(items []tools.CompletionMedia) []string {
+	refs := make([]string, 0, len(items))
+	for _, item := range items {
+		ref := strings.TrimSpace(item.Ref)
+		if ref != "" {
+			refs = append(refs, ref)
+		}
+	}
+	return refs
 }
 
 // ====================== Result Delivery ======================

@@ -15,6 +15,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/constants"
 	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -139,13 +140,13 @@ func shouldQueueAsyncToolResultForParent(result *tools.ToolResult) bool {
 	return true
 }
 
-func recordCompletionMedia(exec *turnExecution, refs []string) {
+func recordCompletionMedia(exec *turnExecution, store media.MediaStore, refs []string) {
 	if exec == nil || len(refs) == 0 {
 		return
 	}
 	seen := make(map[string]struct{}, len(exec.completionMedia)+len(refs))
-	for _, ref := range exec.completionMedia {
-		seen[ref] = struct{}{}
+	for _, item := range exec.completionMedia {
+		seen[item.Ref] = struct{}{}
 	}
 	for _, ref := range refs {
 		ref = strings.TrimSpace(ref)
@@ -155,9 +156,24 @@ func recordCompletionMedia(exec *turnExecution, refs []string) {
 		if _, ok := seen[ref]; ok {
 			continue
 		}
-		exec.completionMedia = append(exec.completionMedia, ref)
+		exec.completionMedia = append(exec.completionMedia, buildCompletionMedia(store, ref))
 		seen[ref] = struct{}{}
 	}
+}
+
+func buildCompletionMedia(store media.MediaStore, ref string) tools.CompletionMedia {
+	item := tools.CompletionMedia{Ref: ref}
+	if store == nil {
+		return item
+	}
+	_, meta, err := store.ResolveWithMeta(ref)
+	if err != nil {
+		return item
+	}
+	item.Filename = meta.Filename
+	item.ContentType = meta.ContentType
+	item.Type = inferMediaType(meta.Filename, meta.ContentType)
+	return item
 }
 
 // ExecuteTools executes the tool loop, handling BeforeTool/ApproveTool/AfterTool hooks,
@@ -340,7 +356,7 @@ toolLoop:
 					}
 
 					if len(hookResult.Media) > 0 && !hookResult.ResponseHandled {
-						recordCompletionMedia(exec, hookResult.Media)
+						recordCompletionMedia(exec, al.mediaStore, hookResult.Media)
 						hookResult.ArtifactTags = buildArtifactTags(al.mediaStore, hookResult.Media)
 						contentForLLM = hookResult.ContentForLLM()
 						if al.cfg.Tools.IsFilterSensitiveDataEnabled() {
@@ -735,7 +751,7 @@ toolLoop:
 		}
 
 		if len(toolResult.Media) > 0 && !toolResult.ResponseHandled {
-			recordCompletionMedia(exec, toolResult.Media)
+			recordCompletionMedia(exec, al.mediaStore, toolResult.Media)
 			toolResult.ArtifactTags = buildArtifactTags(al.mediaStore, toolResult.Media)
 		}
 

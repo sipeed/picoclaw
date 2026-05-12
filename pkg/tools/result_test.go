@@ -71,8 +71,15 @@ func TestToolResultWithAsyncDelivery(t *testing.T) {
 
 func TestToolResultContentForLLMIncludesCompletion(t *testing.T) {
 	result := NewToolResult("child finished").WithCompletion(&CompletionResult{
-		Text:  "recipe text",
-		Media: []string{"media://video"},
+		Text: "recipe text",
+		Media: []CompletionMedia{
+			{
+				Ref:         "media://video",
+				Type:        "video",
+				Filename:    "clip.mp4",
+				ContentType: "video/mp4",
+			},
+		},
 	})
 
 	content := result.ContentForLLM()
@@ -85,8 +92,11 @@ func TestToolResultContentForLLMIncludesCompletion(t *testing.T) {
 	if !strings.Contains(content, `"text":"recipe text"`) {
 		t.Fatalf("expected completion text JSON, got %q", content)
 	}
-	if !strings.Contains(content, `"media":["media://video"]`) {
+	if !strings.Contains(content, `"ref":"media://video"`) {
 		t.Fatalf("expected completion media JSON, got %q", content)
+	}
+	if !strings.Contains(content, `"type":"video"`) {
+		t.Fatalf("expected completion media type JSON, got %q", content)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 // Finalize handles turn finalization, either:
@@ -33,7 +34,7 @@ func (p *Pipeline) Finalize(
 		ts.setPhase(TurnPhaseCompleted)
 		return turnResult{
 			finalContent:           finalContent,
-			completionMedia:        append([]string(nil), exec.completionMedia...),
+			completionMedia:        append([]tools.CompletionMedia(nil), exec.completionMedia...),
 			status:                 turnStatus,
 			followUps:              append([]bus.InboundMessage(nil), ts.followUps...),
 			preferNewOutboundReply: exec.sawAdditionalUserInput,
@@ -78,7 +79,7 @@ func (p *Pipeline) Finalize(
 	ts.setPhase(TurnPhaseCompleted)
 	return turnResult{
 		finalContent:           finalContent,
-		completionMedia:        append([]string(nil), exec.completionMedia...),
+		completionMedia:        append([]tools.CompletionMedia(nil), exec.completionMedia...),
 		status:                 turnStatus,
 		followUps:              append([]bus.InboundMessage(nil), ts.followUps...),
 		preferNewOutboundReply: exec.sawAdditionalUserInput,
