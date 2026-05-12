@@ -155,6 +155,15 @@ type asyncTask struct {
 	cancel context.CancelFunc
 }
 
+type deliveryCleanupOptions struct {
+	StopTyping          bool
+	UndoReaction        bool
+	ClearStreamActive   bool
+	DismissToolFeedback bool
+	DeletePlaceholder   bool
+	SessionKey          string
+}
+
 func outboundMessageChannel(msg bus.OutboundMessage) string {
 	return msg.Context.Channel
 }
@@ -212,6 +221,60 @@ func resolveOutboundChatID(ch Channel, chatID string, outboundCtx *bus.InboundCo
 		}
 	}
 	return strings.TrimSpace(chatID)
+}
+
+func (m *Manager) cleanupDeliveryState(
+	ctx context.Context,
+	name string,
+	chatID string,
+	outboundCtx *bus.InboundContext,
+	ch Channel,
+	opts deliveryCleanupOptions,
+) {
+	cleanupChatIDs := candidateChatIDs(chatID, resolveOutboundChatID(ch, chatID, outboundCtx))
+
+	if opts.StopTyping {
+		for _, cleanupChatID := range cleanupChatIDs {
+			if v, loaded := m.typingStops.LoadAndDelete(name + ":" + cleanupChatID); loaded {
+				if entry, ok := v.(typingEntry); ok {
+					entry.stop()
+				}
+			}
+		}
+	}
+
+	if opts.UndoReaction {
+		for _, cleanupChatID := range cleanupChatIDs {
+			if v, loaded := m.reactionUndos.LoadAndDelete(name + ":" + cleanupChatID); loaded {
+				if entry, ok := v.(reactionEntry); ok {
+					entry.undo()
+				}
+			}
+		}
+	}
+
+	if opts.ClearStreamActive {
+		for _, cleanupChatID := range cleanupChatIDs {
+			m.streamActive.LoadAndDelete(name + ":" + cleanupChatID)
+		}
+	}
+
+	if opts.DismissToolFeedback {
+		dismissTrackedToolFeedbackMessage(ctx, ch, chatID, outboundCtx)
+		dismissTrackedToolFeedbackMessageForSession(ctx, ch, chatID, outboundCtx, opts.SessionKey)
+	}
+
+	if opts.DeletePlaceholder {
+		for _, cleanupChatID := range cleanupChatIDs {
+			if v, loaded := m.placeholders.LoadAndDelete(name + ":" + cleanupChatID); loaded {
+				if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
+					if deleter, ok := ch.(MessageDeleter); ok {
+						deleter.DeleteMessage(ctx, cleanupChatID, entry.id)
+					}
+				}
+			}
+		}
+	}
 }
 
 func candidateToolFeedbackMessageChatIDs(raw, resolved string) []string {
@@ -398,25 +461,11 @@ func (m *Manager) RecordReactionUndo(channel, chatID string, undo func()) {
 func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMessage, ch Channel) ([]string, bool) {
 	chatID := outboundMessageChatID(msg)
 	key := name + ":" + chatID
-	cleanupChatIDs := candidateChatIDs(chatID, resolvedOutboundMessageChatID(ch, msg))
 
-	// 1. Stop typing
-	for _, cleanupChatID := range cleanupChatIDs {
-		if v, loaded := m.typingStops.LoadAndDelete(name + ":" + cleanupChatID); loaded {
-			if entry, ok := v.(typingEntry); ok {
-				entry.stop() // idempotent, safe
-			}
-		}
-	}
-
-	// 2. Undo reaction
-	for _, cleanupChatID := range cleanupChatIDs {
-		if v, loaded := m.reactionUndos.LoadAndDelete(name + ":" + cleanupChatID); loaded {
-			if entry, ok := v.(reactionEntry); ok {
-				entry.undo() // idempotent, safe
-			}
-		}
-	}
+	m.cleanupDeliveryState(ctx, name, chatID, &msg.Context, ch, deliveryCleanupOptions{
+		StopTyping:   true,
+		UndoReaction: true,
+	})
 
 	isToolFeedback := outboundMessageIsToolFeedback(msg)
 	separateToolFeedbackMessages := m.toolFeedbackSeparateMessagesEnabled()
@@ -514,44 +563,15 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 // replace it with; it only attempts to delete the placeholder when possible.
 func (m *Manager) preSendMedia(ctx context.Context, name string, msg bus.OutboundMediaMessage, ch Channel) {
 	chatID := outboundMediaChatID(msg)
-	cleanupChatIDs := candidateChatIDs(chatID, resolvedOutboundMediaChatID(ch, msg))
 
-	// 1. Stop typing
-	for _, cleanupChatID := range cleanupChatIDs {
-		if v, loaded := m.typingStops.LoadAndDelete(name + ":" + cleanupChatID); loaded {
-			if entry, ok := v.(typingEntry); ok {
-				entry.stop() // idempotent, safe
-			}
-		}
-	}
-
-	// 2. Undo reaction
-	for _, cleanupChatID := range cleanupChatIDs {
-		if v, loaded := m.reactionUndos.LoadAndDelete(name + ":" + cleanupChatID); loaded {
-			if entry, ok := v.(reactionEntry); ok {
-				entry.undo() // idempotent, safe
-			}
-		}
-	}
-
-	// 3. Clear any finalized stream marker for this chat before media delivery.
-	for _, cleanupChatID := range cleanupChatIDs {
-		m.streamActive.LoadAndDelete(name + ":" + cleanupChatID)
-	}
-
-	dismissTrackedToolFeedbackMessage(ctx, ch, chatID, &msg.Context)
-	dismissTrackedToolFeedbackMessageForSession(ctx, ch, chatID, &msg.Context, msg.SessionKey)
-
-	// 4. Delete placeholder if present.
-	for _, cleanupChatID := range cleanupChatIDs {
-		if v, loaded := m.placeholders.LoadAndDelete(name + ":" + cleanupChatID); loaded {
-			if entry, ok := v.(placeholderEntry); ok && entry.id != "" {
-				if deleter, ok := ch.(MessageDeleter); ok {
-					deleter.DeleteMessage(ctx, cleanupChatID, entry.id) // best effort
-				}
-			}
-		}
-	}
+	m.cleanupDeliveryState(ctx, name, chatID, &msg.Context, ch, deliveryCleanupOptions{
+		StopTyping:          true,
+		UndoReaction:        true,
+		ClearStreamActive:   true,
+		DismissToolFeedback: true,
+		DeletePlaceholder:   true,
+		SessionKey:          msg.SessionKey,
+	})
 }
 
 func NewManager(
