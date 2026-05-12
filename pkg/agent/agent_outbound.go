@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -156,6 +157,157 @@ func (al *AgentLoop) publishResponseWithContextIfNeeded(
 		msg.ContextUsage = computeContextUsage(agent, sessionKey)
 	}
 	al.bus.PublishOutbound(ctx, msg)
+}
+
+func (al *AgentLoop) deliverToolResultToUser(
+	ctx context.Context,
+	ts *turnState,
+	result *tools.ToolResult,
+	toolName string,
+) ([]providers.Attachment, bool, error) {
+	if al == nil || ts == nil || result == nil {
+		return nil, false, nil
+	}
+
+	mediaRefs := toolResultMediaRefs(result)
+	text := toolResultUserText(result)
+	if len(mediaRefs) > 0 {
+		parts := al.mediaPartsFromRefs(mediaRefs, result.Completion, text)
+		outboundMedia := bus.OutboundMediaMessage{
+			Channel: ts.channel,
+			ChatID:  ts.chatID,
+			Context: outboundContextFromInbound(
+				ts.opts.Dispatch.InboundContext,
+				ts.channel,
+				ts.chatID,
+				ts.opts.Dispatch.ReplyToMessageID(),
+			),
+			AgentID:    ts.agent.ID,
+			SessionKey: ts.sessionKey,
+			Scope:      outboundScopeFromSessionScope(ts.opts.Dispatch.SessionScope),
+			Parts:      parts,
+		}
+		if al.channelManager != nil && ts.channel != "" && !constants.IsInternalChannel(ts.channel) {
+			if err := al.channelManager.SendMedia(ctx, outboundMedia); err != nil {
+				logger.WarnCF("agent", "Failed to deliver tool result media",
+					map[string]any{
+						"agent_id": ts.agent.ID,
+						"tool":     toolName,
+						"channel":  ts.channel,
+						"chat_id":  ts.chatID,
+						"error":    err.Error(),
+					})
+				return nil, false, err
+			}
+			return buildProviderAttachments(al.mediaStore, mediaRefs), true, nil
+		}
+		if al.bus != nil {
+			al.bus.PublishOutboundMedia(ctx, outboundMedia)
+		}
+		return nil, false, nil
+	}
+
+	if strings.TrimSpace(text) == "" {
+		return nil, false, nil
+	}
+	if result.Silent && result.Completion == nil {
+		return nil, false, nil
+	}
+	if al.bus == nil {
+		return nil, false, nil
+	}
+	al.bus.PublishOutbound(ctx, outboundMessageForTurn(ts, text))
+	logger.DebugCF("agent", "Sent tool result to user",
+		map[string]any{
+			"tool":        toolName,
+			"content_len": len(text),
+		})
+	return nil, true, nil
+}
+
+func toolResultUserText(result *tools.ToolResult) string {
+	if result == nil {
+		return ""
+	}
+	if text := strings.TrimSpace(result.ForUser); text != "" {
+		return result.ForUser
+	}
+	if result.Completion != nil {
+		return result.Completion.Text
+	}
+	return ""
+}
+
+func toolResultMediaRefs(result *tools.ToolResult) []string {
+	if result == nil {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(result.Media))
+	refs := make([]string, 0, len(result.Media))
+	appendRef := func(ref string) {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			return
+		}
+		if _, ok := seen[ref]; ok {
+			return
+		}
+		seen[ref] = struct{}{}
+		refs = append(refs, ref)
+	}
+	for _, ref := range result.Media {
+		appendRef(ref)
+	}
+	if result.Completion != nil {
+		for _, item := range result.Completion.Media {
+			appendRef(item.Ref)
+		}
+	}
+	return refs
+}
+
+func (al *AgentLoop) mediaPartsFromRefs(
+	refs []string,
+	completion *tools.CompletionResult,
+	caption string,
+) []bus.MediaPart {
+	hints := make(map[string]tools.CompletionMedia)
+	if completion != nil {
+		for _, item := range completion.Media {
+			ref := strings.TrimSpace(item.Ref)
+			if ref != "" {
+				hints[ref] = item
+			}
+		}
+	}
+
+	parts := make([]bus.MediaPart, 0, len(refs))
+	for i, ref := range refs {
+		part := bus.MediaPart{Ref: ref}
+		if item, ok := hints[ref]; ok {
+			part.Type = item.Type
+			part.Filename = item.Filename
+			part.ContentType = item.ContentType
+		}
+		if al != nil && al.mediaStore != nil {
+			if _, meta, err := al.mediaStore.ResolveWithMeta(ref); err == nil {
+				if part.Filename == "" {
+					part.Filename = meta.Filename
+				}
+				if part.ContentType == "" {
+					part.ContentType = meta.ContentType
+				}
+				if part.Type == "" {
+					part.Type = inferMediaType(meta.Filename, meta.ContentType)
+				}
+			}
+		}
+		if i == 0 {
+			part.Caption = caption
+		}
+		parts = append(parts, part)
+	}
+	return parts
 }
 
 func (al *AgentLoop) messageToolSentToSameChat(sessionKey, channel, chatID string) bool {

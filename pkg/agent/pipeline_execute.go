@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/constants"
 	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
@@ -273,71 +272,25 @@ toolLoop:
 						hookResult.ResponseHandled = false
 					}
 
-					shouldSendForUser := !ts.opts.SuppressToolUserDelivery &&
-						!hookResult.Silent && hookResult.ForUser != "" &&
-						(ts.opts.SendResponse || hookResult.ResponseHandled)
-					if shouldSendForUser {
-						al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-							Context: bus.InboundContext{
-								Channel: ts.channel,
-								ChatID:  ts.chatID,
-								Raw: map[string]string{
-									"is_tool_call": "true",
-								},
-							},
-							Content: hookResult.ForUser,
-						})
-					}
-
-					if len(hookResult.Media) > 0 && hookResult.ResponseHandled {
-						parts := make([]bus.MediaPart, 0, len(hookResult.Media))
-						for _, ref := range hookResult.Media {
-							part := bus.MediaPart{Ref: ref}
-							if al.mediaStore != nil {
-								if _, meta, err := al.mediaStore.ResolveWithMeta(ref); err == nil {
-									part.Filename = meta.Filename
-									part.ContentType = meta.ContentType
-									part.Type = inferMediaType(meta.Filename, meta.ContentType)
-								}
-							}
-							parts = append(parts, part)
-						}
-						outboundMedia := bus.OutboundMediaMessage{
-							Channel: ts.channel,
-							ChatID:  ts.chatID,
-							Context: outboundContextFromInbound(
-								ts.opts.Dispatch.InboundContext,
-								ts.channel,
-								ts.chatID,
-								ts.opts.Dispatch.ReplyToMessageID(),
-							),
-							AgentID:    ts.agent.ID,
-							SessionKey: ts.sessionKey,
-							Scope:      outboundScopeFromSessionScope(ts.opts.Dispatch.SessionScope),
-							Parts:      parts,
-						}
-						if al.channelManager != nil && ts.channel != "" && !constants.IsInternalChannel(ts.channel) {
-							if err := al.channelManager.SendMedia(ctx, outboundMedia); err != nil {
-								logger.WarnCF("agent", "Failed to deliver hook media",
-									map[string]any{
-										"agent_id": ts.agent.ID,
-										"tool":     toolName,
-										"channel":  ts.channel,
-										"chat_id":  ts.chatID,
-										"error":    err.Error(),
-									})
-								hookResult.IsError = true
-								hookResult.ForLLM = fmt.Sprintf("failed to deliver attachment: %v", err)
-							} else {
-								handledAttachments = append(
-									handledAttachments,
-									buildProviderAttachments(al.mediaStore, hookResult.Media)...,
-								)
-							}
-						} else if al.bus != nil {
-							al.bus.PublishOutboundMedia(ctx, outboundMedia)
+					if !ts.opts.SuppressToolUserDelivery && hookResult.ResponseHandled {
+						attachments, delivered, err := al.deliverToolResultToUser(ctx, ts, hookResult, toolName)
+						if err != nil {
+							hookResult.IsError = true
+							hookResult.ForLLM = fmt.Sprintf("failed to deliver attachment: %v", err)
+						} else if delivered {
+							handledAttachments = append(handledAttachments, attachments...)
+						} else if len(toolResultMediaRefs(hookResult)) > 0 {
 							hookResult.ResponseHandled = false
 						}
+					}
+
+					shouldSendForUser := !hookResult.ResponseHandled &&
+						!ts.opts.SuppressToolUserDelivery &&
+						!hookResult.Silent &&
+						hookResult.ForUser != "" &&
+						ts.opts.SendResponse
+					if shouldSendForUser {
+						al.bus.PublishOutbound(ctx, outboundMessageForTurn(ts, hookResult.ForUser))
 					}
 
 					if !hookResult.ResponseHandled {
@@ -589,7 +542,17 @@ toolLoop:
 			if shouldPublishAsyncToolResultToUser(result) {
 				outCtx, outCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer outCancel()
-				_ = al.bus.PublishOutbound(outCtx, outboundMessageForTurn(ts, result.ForUser))
+				if _, delivered, err := al.deliverToolResultToUser(outCtx, ts, result, asyncToolName); err != nil {
+					logger.WarnCF("agent", "Failed to deliver async tool result to user",
+						map[string]any{
+							"tool":    asyncToolName,
+							"channel": ts.channel,
+							"chat_id": ts.chatID,
+							"error":   err.Error(),
+						})
+				} else if !delivered && strings.TrimSpace(result.ForUser) != "" && !result.Silent {
+					_ = al.bus.PublishOutbound(outCtx, outboundMessageForTurn(ts, result.ForUser))
+				}
 			}
 
 			if !shouldQueueAsyncToolResultForParent(result) {
@@ -700,52 +663,13 @@ toolLoop:
 			toolResult.ResponseHandled = false
 		}
 
-		if len(toolResult.Media) > 0 && toolResult.ResponseHandled {
-			parts := make([]bus.MediaPart, 0, len(toolResult.Media))
-			for _, ref := range toolResult.Media {
-				part := bus.MediaPart{Ref: ref}
-				if al.mediaStore != nil {
-					if _, meta, err := al.mediaStore.ResolveWithMeta(ref); err == nil {
-						part.Filename = meta.Filename
-						part.ContentType = meta.ContentType
-						part.Type = inferMediaType(meta.Filename, meta.ContentType)
-					}
-				}
-				parts = append(parts, part)
-			}
-			outboundMedia := bus.OutboundMediaMessage{
-				Channel: ts.channel,
-				ChatID:  ts.chatID,
-				Context: outboundContextFromInbound(
-					ts.opts.Dispatch.InboundContext,
-					ts.channel,
-					ts.chatID,
-					ts.opts.Dispatch.ReplyToMessageID(),
-				),
-				AgentID:    ts.agent.ID,
-				SessionKey: ts.sessionKey,
-				Scope:      outboundScopeFromSessionScope(ts.opts.Dispatch.SessionScope),
-				Parts:      parts,
-			}
-			if al.channelManager != nil && ts.channel != "" && !constants.IsInternalChannel(ts.channel) {
-				if err := al.channelManager.SendMedia(ctx, outboundMedia); err != nil {
-					logger.WarnCF("agent", "Failed to deliver handled tool media",
-						map[string]any{
-							"agent_id": ts.agent.ID,
-							"tool":     toolName,
-							"channel":  ts.channel,
-							"chat_id":  ts.chatID,
-							"error":    err.Error(),
-						})
-					toolResult = tools.ErrorResult(fmt.Sprintf("failed to deliver attachment: %v", err)).WithError(err)
-				} else {
-					handledAttachments = append(
-						handledAttachments,
-						buildProviderAttachments(al.mediaStore, toolResult.Media)...,
-					)
-				}
-			} else if al.bus != nil {
-				al.bus.PublishOutboundMedia(ctx, outboundMedia)
+		if !ts.opts.SuppressToolUserDelivery && toolResult.ResponseHandled {
+			attachments, delivered, err := al.deliverToolResultToUser(ctx, ts, toolResult, toolName)
+			if err != nil {
+				toolResult = tools.ErrorResult(fmt.Sprintf("failed to deliver attachment: %v", err)).WithError(err)
+			} else if delivered {
+				handledAttachments = append(handledAttachments, attachments...)
+			} else if len(toolResultMediaRefs(toolResult)) > 0 {
 				toolResult.ResponseHandled = false
 			}
 		}
@@ -759,10 +683,11 @@ toolLoop:
 			exec.allResponsesHandled = false
 		}
 
-		shouldSendForUser := !ts.opts.SuppressToolUserDelivery &&
+		shouldSendForUser := !toolResult.ResponseHandled &&
+			!ts.opts.SuppressToolUserDelivery &&
 			!toolResult.Silent &&
 			toolResult.ForUser != "" &&
-			(ts.opts.SendResponse || toolResult.ResponseHandled)
+			ts.opts.SendResponse
 		if shouldSendForUser {
 			al.bus.PublishOutbound(ctx, outboundMessageForTurn(ts, toolResult.ForUser))
 			logger.DebugCF("agent", "Sent tool result to user",

@@ -1305,6 +1305,70 @@ func TestProcessMessage_MediaToolHandledSkipsFollowUpLLMAndFinalText(t *testing.
 	}
 }
 
+func TestProcessMessage_HandledCompletionMediaUsesCompletionTextAsCaption(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &handledCompletionMediaProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	store := media.NewFileMediaStore()
+	al.SetMediaStore(store)
+	telegramChannel := &fakeMediaChannel{fakeChannel: fakeChannel{id: "rid-telegram"}}
+	al.SetChannelManager(newStartedTestChannelManager(t, msgBus, store, "telegram", telegramChannel))
+
+	videoPath := filepath.Join(tmpDir, "reel.mp4")
+	if err := os.WriteFile(videoPath, []byte("fake video"), 0o644); err != nil {
+		t.Fatalf("WriteFile(videoPath) error = %v", err)
+	}
+
+	const completionText = "Video saved. Recipe translation is below."
+	al.RegisterTool(&handledCompletionMediaTool{
+		store: store,
+		path:  videoPath,
+		text:  completionText,
+	})
+
+	response, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
+		Channel:  "telegram",
+		ChatID:   "chat1",
+		SenderID: "user1",
+		Content:  "save the reel and translate the recipe",
+	}))
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "" {
+		t.Fatalf("expected no final response when completion media handled delivery, got %q", response)
+	}
+	if len(telegramChannel.sentMedia) != 1 {
+		t.Fatalf("expected exactly 1 media message, got %d", len(telegramChannel.sentMedia))
+	}
+	parts := telegramChannel.sentMedia[0].Parts
+	if len(parts) != 1 {
+		t.Fatalf("expected exactly 1 media part, got %d", len(parts))
+	}
+	if parts[0].Caption != completionText {
+		t.Fatalf("caption = %q, want %q", parts[0].Caption, completionText)
+	}
+	if parts[0].Type != "video" {
+		t.Fatalf("media type = %q, want video", parts[0].Type)
+	}
+	if len(telegramChannel.sentMessages) != 0 {
+		t.Fatalf("expected no separate text messages, got %+v", telegramChannel.sentMessages)
+	}
+}
+
 func TestProcessMessage_HandledToolProcessesQueuedSteeringBeforeReturning(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := &config.Config{
@@ -1854,6 +1918,35 @@ func (m *handledMediaProvider) Chat(
 
 func (m *handledMediaProvider) GetDefaultModel() string {
 	return "handled-media-model"
+}
+
+type handledCompletionMediaProvider struct {
+	calls int
+}
+
+func (m *handledCompletionMediaProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_completion_media",
+				Type:      "function",
+				Name:      "handled_completion_media_tool",
+				Arguments: map[string]any{},
+			}},
+		}, nil
+	}
+	return &providers.LLMResponse{}, nil
+}
+
+func (m *handledCompletionMediaProvider) GetDefaultModel() string {
+	return "handled-completion-media-model"
 }
 
 type handledUserProvider struct {
@@ -2460,6 +2553,48 @@ func (m *handledMediaTool) Execute(ctx context.Context, args map[string]any) *to
 		return tools.ErrorResult(err.Error()).WithError(err)
 	}
 	return tools.MediaResult("Attachment delivered by tool.", []string{ref}).WithResponseHandled()
+}
+
+type handledCompletionMediaTool struct {
+	store media.MediaStore
+	path  string
+	text  string
+}
+
+func (m *handledCompletionMediaTool) Name() string { return "handled_completion_media_tool" }
+func (m *handledCompletionMediaTool) Description() string {
+	return "Returns a structured completion with media and marks the response handled"
+}
+
+func (m *handledCompletionMediaTool) Parameters() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	}
+}
+
+func (m *handledCompletionMediaTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	ref, err := m.store.Store(m.path, media.MediaMeta{
+		Filename:    filepath.Base(m.path),
+		ContentType: "video/mp4",
+		Source:      "test:handled_completion_media_tool",
+	}, "test:handled_completion_media")
+	if err != nil {
+		return tools.ErrorResult(err.Error()).WithError(err)
+	}
+	return (&tools.ToolResult{
+		ForLLM:          "Completion media delivered by runtime.",
+		Silent:          true,
+		ResponseHandled: true,
+	}).WithCompletion(&tools.CompletionResult{
+		Text: m.text,
+		Media: []tools.CompletionMedia{{
+			Ref:         ref,
+			Type:        "video",
+			Filename:    filepath.Base(m.path),
+			ContentType: "video/mp4",
+		}},
+	})
 }
 
 type handledUserTool struct{}
