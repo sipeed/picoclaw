@@ -476,6 +476,32 @@ func (ts *turnState) toolExecutionsSnapshot() []ToolExecutionRecord {
 	return out
 }
 
+func (ts *turnState) recentToolExecutionErrorStreak(
+	tool string,
+	match func(ToolExecutionRecord) bool,
+) int {
+	tool = strings.TrimSpace(tool)
+	if tool == "" || match == nil {
+		return 0
+	}
+
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+
+	streak := 0
+	for i := len(ts.toolExecutions) - 1; i >= 0; i-- {
+		rec := ts.toolExecutions[i]
+		if strings.TrimSpace(rec.Name) != tool {
+			break
+		}
+		if rec.Success || !match(rec) {
+			break
+		}
+		streak++
+	}
+	return streak
+}
+
 func (ts *turnState) recordAttemptedSkills(skillNames []string) {
 	if len(skillNames) == 0 {
 		return

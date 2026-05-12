@@ -269,6 +269,9 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 				// ExecuteTools returned ControlBreak:
 				// - allResponsesHandled=true: finalize without DefaultResponse (exec.finalContent empty)
 				// - allResponsesHandled=false: coordinator applies DefaultResponse before finalize
+				if strings.TrimSpace(exec.finalContent) != "" {
+					finalContent = exec.finalContent
+				}
 				if exec.allResponsesHandled {
 					finalContent = ""
 				}

@@ -20,6 +20,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+const repeatedFatalToolErrorStreakLimit = 3
+
 func toolErrorSummary(result *tools.ToolResult) string {
 	if result == nil || !result.IsError {
 		return ""
@@ -29,6 +31,29 @@ func toolErrorSummary(result *tools.ToolResult) string {
 		content = strings.TrimSpace(result.Err.Error())
 	}
 	return utils.Truncate(content, 200)
+}
+
+func isFatalMCPTransportErrorSummary(summary string) bool {
+	summary = strings.ToLower(strings.TrimSpace(summary))
+	if summary == "" || !strings.Contains(summary, "mcp tool execution failed") {
+		return false
+	}
+	return strings.Contains(summary, "client is closing") ||
+		strings.Contains(summary, "connection closed: calling \"tools/call\"") ||
+		strings.Contains(summary, "invalid character") ||
+		strings.Contains(summary, "broken pipe") ||
+		strings.Contains(summary, "eof")
+}
+
+func repeatedFatalToolErrorReply(toolName string) string {
+	toolName = strings.TrimSpace(toolName)
+	if toolName == "" {
+		return "I hit repeated backend tool transport errors and stopped instead of retrying indefinitely. Please try again."
+	}
+	return fmt.Sprintf(
+		"I hit repeated backend tool transport errors while using `%s` and stopped instead of retrying indefinitely. Please try again.",
+		toolName,
+	)
 }
 
 func inferSkillNamesFromToolCall(ts *turnState, toolName string, toolArgs map[string]any) []string {
@@ -728,6 +753,36 @@ toolLoop:
 			toolErrorSummary(toolResult),
 			inferSkillNamesFromToolCall(ts, toolName, toolArgs),
 		)
+
+		if toolResult.IsError {
+			errSummary := toolErrorSummary(toolResult)
+			if isFatalMCPTransportErrorSummary(errSummary) {
+				streak := ts.recentToolExecutionErrorStreak(toolName, func(rec ToolExecutionRecord) bool {
+					return isFatalMCPTransportErrorSummary(rec.ErrorSummary)
+				})
+				if streak >= repeatedFatalToolErrorStreakLimit {
+					logger.WarnCF("agent", "Repeated fatal tool transport errors; aborting turn to avoid retry loop",
+						map[string]any{
+							"agent_id":   ts.agent.ID,
+							"iteration":  iteration,
+							"tool":       toolName,
+							"error":      errSummary,
+							"streak":     streak,
+							"session_id": ts.sessionKey,
+						})
+					exec.finalContent = repeatedFatalToolErrorReply(toolName)
+					exec.allResponsesHandled = false
+					messages = append(messages, toolResultMsg)
+					if !ts.opts.NoHistory {
+						ts.agent.Sessions.AddFullMessage(ts.sessionKey, toolResultMsg)
+						ts.recordPersistedMessage(toolResultMsg)
+						ts.ingestMessage(turnCtx, al, toolResultMsg)
+					}
+					exec.messages = messages
+					return ToolControlBreak
+				}
+			}
+		}
 		messages = append(messages, toolResultMsg)
 		if !ts.opts.NoHistory {
 			ts.agent.Sessions.AddFullMessage(ts.sessionKey, toolResultMsg)
