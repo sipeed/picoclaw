@@ -79,31 +79,31 @@ type AgentLoop struct {
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	Dispatch                DispatchRequest        // Normalized routed request boundary for this turn
-	SessionKey              string                 // Session identifier for history/context
-	SessionAliases          []string               // Compatibility aliases for the session key
-	Channel                 string                 // Target channel for tool execution
-	ChatID                  string                 // Target chat ID for tool execution
-	MessageID               string                 // Current inbound platform message ID
-	ReplyToMessageID        string                 // Current inbound reply target message ID
-	SenderID                string                 // Current sender ID for dynamic context
-	SenderDisplayName       string                 // Current sender display name for dynamic context
-	UserMessage             string                 // User message content (may include prefix)
-	ForcedSkills            []string               // Skills explicitly requested for this message
-	SystemPromptOverride    string                 // Override the default system prompt (Used by SubTurns)
-	Media                   []string               // media:// refs from inbound message
-	InitialSteeringMessages []providers.Message    // Steering messages from refactor/agent
-	DefaultResponse         string                 // Response when LLM returns empty
-	EnableSummary           bool                   // Whether to trigger summarization
-	SendResponse            bool                   // Whether to send response via bus
-	AllowInterimPicoPublish bool                   // Whether pico tool-call interim text can be published when SendResponse is false
-	SuppressToolUserDelivery bool                  // Whether direct user-facing delivery from tools is suppressed for this turn
-	SuppressToolFeedback    bool                   // Whether to suppress inline tool feedback messages
-	NoHistory               bool                   // If true, don't load session history (for heartbeat)
-	SkipInitialSteeringPoll bool                   // If true, skip the steering poll at loop start (used by Continue)
-	InboundContext          *bus.InboundContext    // Normalized inbound facts for events/hooks
-	RouteResult             *routing.ResolvedRoute // Route decision snapshot for events/hooks
-	SessionScope            *session.SessionScope  // Session scope snapshot for events/hooks
+	Dispatch                 DispatchRequest        // Normalized routed request boundary for this turn
+	SessionKey               string                 // Session identifier for history/context
+	SessionAliases           []string               // Compatibility aliases for the session key
+	Channel                  string                 // Target channel for tool execution
+	ChatID                   string                 // Target chat ID for tool execution
+	MessageID                string                 // Current inbound platform message ID
+	ReplyToMessageID         string                 // Current inbound reply target message ID
+	SenderID                 string                 // Current sender ID for dynamic context
+	SenderDisplayName        string                 // Current sender display name for dynamic context
+	UserMessage              string                 // User message content (may include prefix)
+	ForcedSkills             []string               // Skills explicitly requested for this message
+	SystemPromptOverride     string                 // Override the default system prompt (Used by SubTurns)
+	Media                    []string               // media:// refs from inbound message
+	InitialSteeringMessages  []providers.Message    // Steering messages from refactor/agent
+	DefaultResponse          string                 // Response when LLM returns empty
+	EnableSummary            bool                   // Whether to trigger summarization
+	SendResponse             bool                   // Whether to send response via bus
+	AllowInterimPicoPublish  bool                   // Whether pico tool-call interim text can be published when SendResponse is false
+	SuppressToolUserDelivery bool                   // Whether direct user-facing delivery from tools is suppressed for this turn
+	SuppressToolFeedback     bool                   // Whether to suppress inline tool feedback messages
+	NoHistory                bool                   // If true, don't load session history (for heartbeat)
+	SkipInitialSteeringPoll  bool                   // If true, skip the steering poll at loop start (used by Continue)
+	InboundContext           *bus.InboundContext    // Normalized inbound facts for events/hooks
+	RouteResult              *routing.ResolvedRoute // Route decision snapshot for events/hooks
+	SessionScope             *session.SessionScope  // Session scope snapshot for events/hooks
 }
 
 type continuationTarget struct {
@@ -608,7 +608,7 @@ func (al *AgentLoop) runAgentLoop(
 			opts.Dispatch.ChatID(),
 			opts.Dispatch.ReplyToMessageID(),
 		)
-		if result.preferNewOutboundReply {
+		if result.preferNewOutboundReply || agentMessageToolSentToTurnTarget(agent, sessionKey, opts.Dispatch) {
 			outboundCtx = outboundContextWithMessageKind(
 				opts.Dispatch.InboundContext,
 				opts.Dispatch.Channel(),
@@ -639,6 +639,23 @@ func (al *AgentLoop) runAgentLoop(
 	}
 
 	return result.finalContent, nil
+}
+
+func agentMessageToolSentToTurnTarget(agent *AgentInstance, sessionKey string, dispatch DispatchRequest) bool {
+	if agent == nil || agent.Tools == nil || strings.TrimSpace(sessionKey) == "" {
+		return false
+	}
+	tool, ok := agent.Tools.Get("message")
+	if !ok {
+		return false
+	}
+	tracker, ok := tool.(interface {
+		HasSentTo(sessionKey, channel, chatID string) bool
+	})
+	if !ok {
+		return false
+	}
+	return tracker.HasSentTo(sessionKey, dispatch.Channel(), dispatch.ChatID())
 }
 
 // selectCandidates returns the model candidates and resolved model name to use

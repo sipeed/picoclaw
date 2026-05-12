@@ -1805,6 +1805,35 @@ func (m *messageToolProvider) GetDefaultModel() string {
 	return "message-tool-model"
 }
 
+type messageToolThenFinalProvider struct {
+	calls int
+}
+
+func (m *messageToolThenFinalProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_message",
+				Type:      "function",
+				Name:      "message",
+				Arguments: map[string]any{"content": "direct tool message"},
+			}},
+		}, nil
+	}
+	return &providers.LLMResponse{Content: "final answer after message tool"}, nil
+}
+
+func (m *messageToolThenFinalProvider) GetDefaultModel() string {
+	return "message-tool-final-model"
+}
+
 type reasoningVisibleToolProvider struct {
 	filePath string
 	calls    int
@@ -4525,6 +4554,62 @@ func TestProcessMessage_MessageToolPublishesOutboundWithTurnMetadata(t *testing.
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("expected message tool outbound")
+	}
+}
+
+func TestRunAgentLoop_FinalResponseAfterMessageToolUsesNewReply(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Agents.Defaults.ModelName = "test-model"
+	cfg.Agents.Defaults.MaxTokens = 4096
+	cfg.Agents.Defaults.MaxToolIterations = 10
+	cfg.Session.Dimensions = []string{"chat"}
+
+	msgBus := bus.NewMessageBus()
+	provider := &messageToolThenFinalProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent")
+	}
+
+	response, err := al.runAgentLoop(context.Background(), agent, processOptions{
+		Dispatch: DispatchRequest{
+			SessionKey:  "message-tool-final-test",
+			UserMessage: "send media then final answer",
+			InboundContext: &bus.InboundContext{
+				Channel:  "telegram",
+				ChatID:   "chat-1",
+				SenderID: "user-1",
+			},
+		},
+		DefaultResponse: defaultResponse,
+		SendResponse:    true,
+	})
+	if err != nil {
+		t.Fatalf("runAgentLoop() error = %v", err)
+	}
+	if response != "final answer after message tool" {
+		t.Fatalf("response = %q, want final answer after message tool", response)
+	}
+
+	var outbounds []bus.OutboundMessage
+	for len(outbounds) < 2 {
+		select {
+		case outbound := <-msgBus.OutboundChan():
+			outbounds = append(outbounds, outbound)
+		case <-time.After(2 * time.Second):
+			t.Fatalf("expected 2 outbound messages, got %d", len(outbounds))
+		}
+	}
+	if outbounds[0].Content != "direct tool message" {
+		t.Fatalf("first outbound content = %q, want direct tool message", outbounds[0].Content)
+	}
+	if outbounds[1].Content != "final answer after message tool" {
+		t.Fatalf("second outbound content = %q, want final answer after message tool", outbounds[1].Content)
+	}
+	if got := strings.TrimSpace(outbounds[1].Context.Raw[metadataKeyMessageKind]); got != messageKindFinalReply {
+		t.Fatalf("final response message kind = %q, want %q", got, messageKindFinalReply)
 	}
 }
 
