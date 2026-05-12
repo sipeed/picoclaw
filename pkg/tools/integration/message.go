@@ -58,7 +58,8 @@ func (t *MessageTool) Name() string {
 }
 
 func (t *MessageTool) Description() string {
-	return "Send a message to the user on a chat channel. Supports text-only, media-only, or text with media attachments."
+	return "Send a message to the user on a chat channel. Supports text-only, media-only, or text with media attachments. " +
+		"When sending media with substantive text, put the complete user-facing text in content so it becomes the media caption/body; do not use placeholder text like 'attached' and then answer separately."
 }
 
 func (t *MessageTool) Parameters() map[string]any {
@@ -67,7 +68,7 @@ func (t *MessageTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"content": map[string]any{
 				"type":        "string",
-				"description": "Optional message text. When media is present, this text is used as the caption/body for the media message.",
+				"description": "Optional message text. When media is present, this text is used as the caption/body for the media message. If the user asked for media plus a recipe, summary, translation, or other substantive text, include that complete text here instead of a placeholder.",
 			},
 			"media": map[string]any{
 				"type":        "array",

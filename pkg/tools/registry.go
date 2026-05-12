@@ -192,6 +192,19 @@ func (r *ToolRegistry) HasRegistered(name string) bool {
 	return ok
 }
 
+// Unregister removes a tool from the registry if present. It is mainly used
+// when creating scoped child registries with a narrower capability surface.
+func (r *ToolRegistry) Unregister(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.tools[name]; !ok {
+		return
+	}
+	delete(r.tools, name)
+	r.version.Add(1)
+	logger.DebugCF("tools", "Unregistered tool", map[string]any{"name": name})
+}
+
 // HiddenToolSnapshot holds a consistent snapshot of hidden tools and the
 // registry version at which it was taken. Used by BM25SearchTool cache.
 type HiddenToolSnapshot struct {

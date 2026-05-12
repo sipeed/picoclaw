@@ -14,6 +14,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
@@ -1331,6 +1332,220 @@ func TestDeliverSubTurnResult_RaceWithFinish(t *testing.T) {
 	}
 }
 
+type subturnMediaTool struct {
+	store media.MediaStore
+	path  string
+}
+
+func (m *subturnMediaTool) Name() string { return "subturn_media_tool" }
+
+func (m *subturnMediaTool) Description() string {
+	return "Returns an undelivered media artifact"
+}
+
+func (m *subturnMediaTool) Parameters() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	}
+}
+
+func (m *subturnMediaTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	ref, err := m.store.Store(m.path, media.MediaMeta{
+		Filename:    filepath.Base(m.path),
+		ContentType: "image/png",
+		Source:      "test:subturn_media_tool",
+	}, "test:subturn_media")
+	if err != nil {
+		return tools.ErrorResult(err.Error()).WithError(err)
+	}
+	return tools.MediaResult("Created media artifact.", []string{ref})
+}
+
+type subturnToolThenFinalProvider struct {
+	calls int
+}
+
+func (p *subturnToolThenFinalProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	toolDefs []providers.ToolDefinition,
+	model string,
+	options map[string]any,
+) (*providers.LLMResponse, error) {
+	p.calls++
+	if p.calls == 1 {
+		return &providers.LLMResponse{
+			ToolCalls: []providers.ToolCall{
+				{
+					ID:        "call_media",
+					Name:      "subturn_media_tool",
+					Arguments: map[string]any{},
+					Function: &providers.FunctionCall{
+						Name:      "subturn_media_tool",
+						Arguments: "{}",
+					},
+				},
+			},
+		}, nil
+	}
+	return &providers.LLMResponse{Content: "Final child text"}, nil
+}
+
+func (p *subturnToolThenFinalProvider) GetDefaultModel() string {
+	return "subturn-tool-final-model"
+}
+
+type subturnToolCaptureProvider struct {
+	mu       sync.Mutex
+	toolDefs []providers.ToolDefinition
+}
+
+func (p *subturnToolCaptureProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	toolDefs []providers.ToolDefinition,
+	model string,
+	options map[string]any,
+) (*providers.LLMResponse, error) {
+	p.mu.Lock()
+	p.toolDefs = append([]providers.ToolDefinition(nil), toolDefs...)
+	p.mu.Unlock()
+	return &providers.LLMResponse{Content: "child done"}, nil
+}
+
+func (p *subturnToolCaptureProvider) GetDefaultModel() string {
+	return "subturn-tool-capture-model"
+}
+
+func (p *subturnToolCaptureProvider) toolNames() map[string]bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	names := make(map[string]bool, len(p.toolDefs))
+	for _, def := range p.toolDefs {
+		names[def.Function.Name] = true
+	}
+	return names
+}
+
+func TestSpawnSubTurn_DefaultSyncDeliveryRemovesUserDeliveryTools(t *testing.T) {
+	provider := &subturnToolCaptureProvider{}
+	al, cleanup := newMultiAgentLoop(t, provider)
+	defer cleanup()
+
+	alphaAgent, _ := al.registry.GetAgent("alpha")
+	betaAgent, _ := al.registry.GetAgent("beta")
+	for _, name := range []string{
+		"message",
+		"send_file",
+		"send_tts",
+		"reaction",
+		"read_file",
+	} {
+		betaAgent.Tools.Register(&allowlistTestTool{name: name})
+	}
+	parent := &turnState{
+		ctx:            context.Background(),
+		turnID:         "parent-default-sync-delivery",
+		depth:          0,
+		childTurnIDs:   []string{},
+		pendingResults: make(chan *tools.ToolResult, 4),
+		concurrencySem: make(chan struct{}, testMaxConcurrentSubTurns),
+		session:        &ephemeralSessionStore{},
+		agent:          alphaAgent,
+		opts: processOptions{
+			Dispatch: DispatchRequest{
+				SessionKey: "parent-default-sync-delivery",
+			},
+			NoHistory: true,
+		},
+	}
+
+	_, err := spawnSubTurn(context.Background(), al, parent, SubTurnConfig{
+		TargetAgentID: "beta",
+		SystemPrompt:  "capture child tool list",
+		// DeliveryMode intentionally omitted. Sync sub-turns default to parent_only.
+	})
+	if err != nil {
+		t.Fatalf("spawnSubTurn failed: %v", err)
+	}
+
+	names := provider.toolNames()
+	for _, name := range []string{"message", "send_file", "send_tts", "reaction"} {
+		if names[name] {
+			t.Fatalf("child provider saw user-facing delivery tool %q in parent_only mode", name)
+		}
+	}
+	if !names["read_file"] {
+		t.Fatalf("child provider did not see non-delivery tool read_file")
+	}
+}
+
+func TestSpawnSubTurn_ReturnsStructuredCompletionWithMedia(t *testing.T) {
+	al, _, _, _, cleanup := newTestAgentLoop(t) //nolint:dogsled
+	defer cleanup()
+
+	store := media.NewFileMediaStore()
+	al.SetMediaStore(store)
+
+	imgPath := filepath.Join(t.TempDir(), "artifact.png")
+	if err := os.WriteFile(imgPath, []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, 0o600); err != nil {
+		t.Fatalf("write test image: %v", err)
+	}
+	provider := &subturnToolThenFinalProvider{}
+	agent := al.registry.GetDefaultAgent()
+	agent.Provider = provider
+	agent.CandidateProviders = nil
+	al.RegisterTool(&subturnMediaTool{store: store, path: imgPath})
+
+	parentTS := &turnState{
+		ctx:            context.Background(),
+		turnID:         "parent-completion",
+		agent:          agent,
+		agentID:        "main",
+		session:        newEphemeralSession(nil),
+		pendingResults: make(chan *tools.ToolResult, 16),
+		concurrencySem: make(chan struct{}, testMaxConcurrentSubTurns),
+		opts: processOptions{
+			Dispatch: DispatchRequest{
+				SessionKey:  "parent-completion",
+				UserMessage: "parent",
+				InboundContext: &bus.InboundContext{
+					Channel: "telegram",
+					ChatID:  "chat-1",
+				},
+			},
+			NoHistory: true,
+		},
+	}
+	ctx := withTurnState(context.Background(), parentTS)
+	ctx = WithAgentLoop(ctx, al)
+
+	result, err := spawnSubTurn(ctx, al, parentTS, SubTurnConfig{
+		SystemPrompt: "make artifact",
+		Model:        "test-model",
+		DeliveryMode: tools.AsyncDeliveryParentOnly,
+	})
+	if err != nil {
+		t.Fatalf("spawnSubTurn failed: %v", err)
+	}
+	if result == nil || result.Completion == nil {
+		t.Fatalf("expected structured completion, got %+v", result)
+	}
+	if result.Completion.Text != "Final child text" {
+		t.Fatalf("completion text = %q, want Final child text", result.Completion.Text)
+	}
+	if len(result.Completion.Media) != 1 {
+		t.Fatalf("completion media count = %d, want 1; result=%+v", len(result.Completion.Media), result)
+	}
+	if result.ForUser != "" {
+		t.Fatalf("parent_only result ForUser = %q, want empty", result.ForUser)
+	}
+	if !strings.Contains(result.ContentForLLM(), "Structured child completion:") {
+		t.Fatalf("ContentForLLM missing structured completion: %q", result.ContentForLLM())
+	}
+}
+
 // TestConcurrencySemaphore_Timeout verifies that spawning sub-turns times out
 // when all concurrency slots are occupied for too long.
 // Note: This test uses a shorter timeout by temporarily modifying the constant.
@@ -2265,6 +2480,38 @@ func TestSpawnSubTurn_TargetAgentID_NotFound(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not found") {
 		t.Errorf("error should mention 'not found', got: %v", err)
+	}
+}
+
+func TestRemoveUserDeliveryTools(t *testing.T) {
+	registry := tools.NewToolRegistry()
+	for _, name := range []string{
+		"message",
+		"send_file",
+		"send_tts",
+		"reaction",
+		"read_file",
+		"mcp_media_download_async",
+	} {
+		registry.Register(&allowlistTestTool{name: name})
+	}
+
+	removeUserDeliveryTools(registry)
+
+	for _, name := range []string{
+		"message",
+		"send_file",
+		"send_tts",
+		"reaction",
+	} {
+		if registry.HasRegistered(name) {
+			t.Fatalf("expected user-facing delivery tool %q to be removed", name)
+		}
+	}
+	for _, name := range []string{"read_file", "mcp_media_download_async"} {
+		if !registry.HasRegistered(name) {
+			t.Fatalf("expected non-delivery tool %q to remain", name)
+		}
 	}
 }
 

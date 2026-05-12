@@ -83,6 +83,7 @@ const (
 
 type turnResult struct {
 	finalContent           string
+	completionMedia        []string
 	status                 TurnEndStatus
 	followUps              []bus.InboundMessage
 	preferNewOutboundReply bool
@@ -120,6 +121,7 @@ type turnExecution struct {
 
 	// Turn output
 	finalContent           string
+	completionMedia        []string
 	actionLog              []TurnActionRecord
 	sawSteering            bool
 	sawAdditionalUserInput bool

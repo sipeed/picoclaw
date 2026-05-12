@@ -175,6 +175,9 @@ func registerSharedTools(
 				pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer pubCancel()
 				outboundCtx := bus.NewOutboundContext(channel, chatID, replyToMessageID)
+				if topicID := tools.ToolTopicID(ctx); topicID != "" {
+					outboundCtx.TopicID = topicID
+				}
 				outboundAgentID, outboundSessionKey, outboundScope := outboundTurnMetadata(
 					tools.ToolAgentID(ctx),
 					tools.ToolSessionKey(ctx),

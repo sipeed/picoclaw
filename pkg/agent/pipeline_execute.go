@@ -139,6 +139,27 @@ func shouldQueueAsyncToolResultForParent(result *tools.ToolResult) bool {
 	return true
 }
 
+func recordCompletionMedia(exec *turnExecution, refs []string) {
+	if exec == nil || len(refs) == 0 {
+		return
+	}
+	seen := make(map[string]struct{}, len(exec.completionMedia)+len(refs))
+	for _, ref := range exec.completionMedia {
+		seen[ref] = struct{}{}
+	}
+	for _, ref := range refs {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			continue
+		}
+		if _, ok := seen[ref]; ok {
+			continue
+		}
+		exec.completionMedia = append(exec.completionMedia, ref)
+		seen[ref] = struct{}{}
+	}
+}
+
 // ExecuteTools executes the tool loop, handling BeforeTool/ApproveTool/AfterTool hooks,
 // tool execution with async callbacks, media delivery, and steering injection.
 // Returns ToolControl indicating what the coordinator should do next:
@@ -232,7 +253,12 @@ toolLoop:
 
 					toolDuration := time.Duration(0)
 
-					shouldSendForUser := !hookResult.Silent && hookResult.ForUser != "" &&
+					if ts.opts.SuppressToolUserDelivery {
+						hookResult.ResponseHandled = false
+					}
+
+					shouldSendForUser := !ts.opts.SuppressToolUserDelivery &&
+						!hookResult.Silent && hookResult.ForUser != "" &&
 						(ts.opts.SendResponse || hookResult.ResponseHandled)
 					if shouldSendForUser {
 						al.bus.PublishOutbound(ctx, bus.OutboundMessage{
@@ -314,6 +340,7 @@ toolLoop:
 					}
 
 					if len(hookResult.Media) > 0 && !hookResult.ResponseHandled {
+						recordCompletionMedia(exec, hookResult.Media)
 						hookResult.ArtifactTags = buildArtifactTags(al.mediaStore, hookResult.Media)
 						contentForLLM = hookResult.ContentForLLM()
 						if al.cfg.Tools.IsFilterSensitiveDataEnabled() {
@@ -653,6 +680,10 @@ toolLoop:
 			exec.actionLog = appendTurnActionRecord(exec.actionLog, "tool_result", toolName, toolSummary, toolResult.IsError)
 		}
 
+		if ts.opts.SuppressToolUserDelivery {
+			toolResult.ResponseHandled = false
+		}
+
 		if len(toolResult.Media) > 0 && toolResult.ResponseHandled {
 			parts := make([]bus.MediaPart, 0, len(toolResult.Media))
 			for _, ref := range toolResult.Media {
@@ -704,6 +735,7 @@ toolLoop:
 		}
 
 		if len(toolResult.Media) > 0 && !toolResult.ResponseHandled {
+			recordCompletionMedia(exec, toolResult.Media)
 			toolResult.ArtifactTags = buildArtifactTags(al.mediaStore, toolResult.Media)
 		}
 
@@ -711,7 +743,8 @@ toolLoop:
 			exec.allResponsesHandled = false
 		}
 
-		shouldSendForUser := !toolResult.Silent &&
+		shouldSendForUser := !ts.opts.SuppressToolUserDelivery &&
+			!toolResult.Silent &&
 			toolResult.ForUser != "" &&
 			(ts.opts.SendResponse || toolResult.ResponseHandled)
 		if shouldSendForUser {

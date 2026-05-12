@@ -22,6 +22,7 @@ type (
 	Tool                   = toolshared.Tool
 	AsyncCallback          = toolshared.AsyncCallback
 	AsyncExecutor          = toolshared.AsyncExecutor
+	CompletionResult       = toolshared.CompletionResult
 	PromptMetadata         = toolshared.PromptMetadata
 	PromptMetadataProvider = toolshared.PromptMetadataProvider
 	ToolResult             = toolshared.ToolResult

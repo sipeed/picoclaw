@@ -63,6 +63,11 @@ type ToolResult struct {
 	// When non-empty, the agent will publish these as OutboundMediaMessage.
 	Media []string `json:"media,omitempty"`
 
+	// Completion carries a structured child-run result for parent agents.
+	// It is populated by sub-turns/delegation/spawn handoffs so the parent can
+	// see both text and media refs without scraping prose.
+	Completion *CompletionResult `json:"completion,omitempty"`
+
 	// Messages holds the ephemeral session history after execution.
 	// Only populated by SubTurn executions; used by evaluator_optimizer
 	// to carry stateful worker context across evaluation iterations.
@@ -77,6 +82,14 @@ type ToolResult struct {
 	// user's request at the channel/output level, so the agent loop can stop
 	// without a follow-up assistant response.
 	ResponseHandled bool `json:"response_handled,omitempty"`
+}
+
+// CompletionResult is the structured handoff payload used when one agent run
+// completes work for another. It intentionally describes data/artifacts only;
+// the caller still owns any user-facing delivery decision.
+type CompletionResult struct {
+	Text  string   `json:"text,omitempty"`
+	Media []string `json:"media,omitempty"`
 }
 
 // ContentForLLM returns the normalized textual content to append to the
@@ -105,10 +118,39 @@ func (tr *ToolResult) ContentForLLM() string {
 			content += "\n" + artifactNote
 		}
 	}
+	if completionNote := tr.completionNoteForLLM(); completionNote != "" {
+		if content == "" {
+			content = completionNote
+		} else if !strings.Contains(content, completionNote) {
+			content += "\n" + completionNote
+		}
+	}
 	if content != "" {
 		return content
 	}
 	return ""
+}
+
+func (tr *ToolResult) completionNoteForLLM() string {
+	if tr == nil || tr.Completion == nil {
+		return ""
+	}
+	type completionForLLM struct {
+		Text  string   `json:"text,omitempty"`
+		Media []string `json:"media,omitempty"`
+	}
+	payload := completionForLLM{
+		Text:  strings.TrimSpace(tr.Completion.Text),
+		Media: append([]string(nil), tr.Completion.Media...),
+	}
+	if payload.Text == "" && len(payload.Media) == 0 {
+		return ""
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	return "Structured child completion: " + string(data)
 }
 
 // NewToolResult creates a basic ToolResult with content for the LLM.
@@ -243,5 +285,11 @@ func (tr *ToolResult) WithResponseHandled() *ToolResult {
 // WithAsyncDelivery sets the async delivery policy for this tool result.
 func (tr *ToolResult) WithAsyncDelivery(mode AsyncDeliveryMode) *ToolResult {
 	tr.AsyncDelivery = mode
+	return tr
+}
+
+// WithCompletion attaches a structured completion payload to this result.
+func (tr *ToolResult) WithCompletion(completion *CompletionResult) *ToolResult {
+	tr.Completion = completion
 	return tr
 }

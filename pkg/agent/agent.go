@@ -97,6 +97,7 @@ type processOptions struct {
 	EnableSummary           bool                   // Whether to trigger summarization
 	SendResponse            bool                   // Whether to send response via bus
 	AllowInterimPicoPublish bool                   // Whether pico tool-call interim text can be published when SendResponse is false
+	SuppressToolUserDelivery bool                  // Whether direct user-facing delivery from tools is suppressed for this turn
 	SuppressToolFeedback    bool                   // Whether to suppress inline tool feedback messages
 	NoHistory               bool                   // If true, don't load session history (for heartbeat)
 	SkipInitialSteeringPoll bool                   // If true, skip the steering poll at loop start (used by Continue)

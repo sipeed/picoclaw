@@ -69,6 +69,27 @@ func TestToolResultWithAsyncDelivery(t *testing.T) {
 	}
 }
 
+func TestToolResultContentForLLMIncludesCompletion(t *testing.T) {
+	result := NewToolResult("child finished").WithCompletion(&CompletionResult{
+		Text:  "recipe text",
+		Media: []string{"media://video"},
+	})
+
+	content := result.ContentForLLM()
+	if !strings.Contains(content, "child finished") {
+		t.Fatalf("expected base content, got %q", content)
+	}
+	if !strings.Contains(content, "Structured child completion:") {
+		t.Fatalf("expected structured completion note, got %q", content)
+	}
+	if !strings.Contains(content, `"text":"recipe text"`) {
+		t.Fatalf("expected completion text JSON, got %q", content)
+	}
+	if !strings.Contains(content, `"media":["media://video"]`) {
+		t.Fatalf("expected completion media JSON, got %q", content)
+	}
+}
+
 func TestErrorResult(t *testing.T) {
 	result := ErrorResult("operation failed")
 

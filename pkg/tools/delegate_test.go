@@ -91,6 +91,9 @@ func TestDelegateTool_Execute_Success(t *testing.T) {
 	if spawner.lastCfg.SystemPrompt != "summarize the logs" {
 		t.Errorf("SystemPrompt = %q, want %q", spawner.lastCfg.SystemPrompt, "summarize the logs")
 	}
+	if spawner.lastCfg.DeliveryMode != AsyncDeliveryParentOnly {
+		t.Errorf("DeliveryMode = %q, want %q", spawner.lastCfg.DeliveryMode, AsyncDeliveryParentOnly)
+	}
 }
 
 func TestDelegateTool_Execute_EmptyAgentID(t *testing.T) {
@@ -234,6 +237,49 @@ func TestDelegateTool_Execute_NoAllowlistCheck(t *testing.T) {
 
 	if result.IsError {
 		t.Errorf("expected success without allowlist, got error: %s", result.ForLLM)
+	}
+}
+
+func TestDelegateTool_Execute_UserOnlyMarksHandled(t *testing.T) {
+	spawner := &delegateMockSpawner{}
+	tool := NewDelegateTool()
+	tool.SetSpawner(spawner)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"agent_id":      "media",
+		"task":          "deliver this to the user",
+		"delivery_mode": string(AsyncDeliveryUserOnly),
+	})
+
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	if !result.ResponseHandled {
+		t.Fatal("expected delegate user_only result to be marked ResponseHandled")
+	}
+	if !result.Silent {
+		t.Fatal("expected delegate user_only result to be silent in parent")
+	}
+	if spawner.lastCfg.DeliveryMode != AsyncDeliveryUserOnly {
+		t.Fatalf("DeliveryMode = %q, want %q", spawner.lastCfg.DeliveryMode, AsyncDeliveryUserOnly)
+	}
+}
+
+func TestDelegateTool_Execute_InvalidDeliveryMode(t *testing.T) {
+	tool := NewDelegateTool()
+	tool.SetSpawner(&delegateMockSpawner{})
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"agent_id":      "media",
+		"task":          "test",
+		"delivery_mode": "wrong",
+	})
+
+	if !result.IsError {
+		t.Fatal("expected invalid delivery_mode to error")
+	}
+	if !strings.Contains(result.ForLLM, "delivery_mode") {
+		t.Fatalf("expected delivery_mode error, got %q", result.ForLLM)
 	}
 }
 

@@ -57,6 +57,15 @@ func (t *DelegateTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Clear description of the task to delegate",
 			},
+			"delivery_mode": map[string]any{
+				"type":        "string",
+				"description": "Optional sync result routing policy: parent_only, user_only, or user_and_parent. Defaults to parent_only.",
+				"enum": []string{
+					string(AsyncDeliveryParentOnly),
+					string(AsyncDeliveryUserOnly),
+					string(AsyncDeliveryUserAndParent),
+				},
+			},
 		},
 		"required": []string{"agent_id", "task"},
 	}
@@ -72,6 +81,10 @@ func (t *DelegateTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	task, _ := args["task"].(string)
 	if strings.TrimSpace(task) == "" {
 		return ErrorResult("task is required and must be a non-empty string")
+	}
+	deliveryMode, err := parseDelegateDeliveryMode(args["delivery_mode"])
+	if err != nil {
+		return ErrorResult(err.Error()).WithError(err)
 	}
 
 	if t.selfAgentID != "" && agentID == t.selfAgentID {
@@ -90,6 +103,7 @@ func (t *DelegateTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		TargetAgentID: agentID,
 		SystemPrompt:  task,
 		Async:         false,
+		DeliveryMode:  deliveryMode,
 	})
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("delegation to agent %q failed: %v", agentID, err)).WithError(err)
@@ -99,6 +113,28 @@ func (t *DelegateTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	result.ForLLM = fmt.Sprintf("[Response from agent %q]\n%s", agentID, result.ForLLM)
+	if deliveryMode == AsyncDeliveryUserOnly {
+		result.Silent = true
+		result.ResponseHandled = true
+	}
 
 	return result
+}
+
+func parseDelegateDeliveryMode(raw any) (AsyncDeliveryMode, error) {
+	if raw == nil {
+		return AsyncDeliveryParentOnly, nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("delivery_mode must be a string")
+	}
+	switch AsyncDeliveryMode(strings.TrimSpace(value)) {
+	case AsyncDeliveryParentOnly, AsyncDeliveryUserOnly, AsyncDeliveryUserAndParent:
+		return AsyncDeliveryMode(strings.TrimSpace(value)), nil
+	case "":
+		return AsyncDeliveryParentOnly, nil
+	default:
+		return "", fmt.Errorf("delivery_mode must be one of: parent_only, user_only, user_and_parent")
+	}
 }

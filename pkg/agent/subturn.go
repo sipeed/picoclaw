@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -179,6 +180,11 @@ type SubTurnConfig struct {
 	// The target agent's workspace, model, tools, and system prompt are used
 	// instead of the caller's. If empty, the sub-turn runs as the parent agent.
 	TargetAgentID string
+
+	// DeliveryMode controls user-facing delivery ownership for synchronous
+	// delegate/sub-turn flows. Reuses the same enum names as async spawn:
+	// parent_only, user_only, user_and_parent.
+	DeliveryMode tools.AsyncDeliveryMode
 }
 
 // ====================== Context Keys ======================
@@ -237,6 +243,7 @@ func (s *AgentLoopSpawner) SpawnSubTurn(
 		Timeout:            cfg.Timeout,
 		MaxContextRunes:    cfg.MaxContextRunes,
 		TargetAgentID:      cfg.TargetAgentID,
+		DeliveryMode:       cfg.DeliveryMode,
 	}
 
 	return spawnSubTurn(ctx, s.al, parentTS, agentCfg)
@@ -267,12 +274,44 @@ func SpawnSubTurn(ctx context.Context, cfg SubTurnConfig) (*tools.ToolResult, er
 	return spawnSubTurn(ctx, al, parentTS, cfg)
 }
 
+func removeUserDeliveryTools(registry *tools.ToolRegistry) {
+	if registry == nil {
+		return
+	}
+	for _, name := range registry.List() {
+		if isUserDeliveryToolName(name) {
+			registry.Unregister(name)
+		}
+	}
+}
+
+func isUserDeliveryToolName(name string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(name))
+	switch normalized {
+	case "message", "send_file", "send_tts", "reaction":
+		return true
+	}
+	return false
+}
+
+func effectiveSubTurnDeliveryMode(cfg SubTurnConfig) tools.AsyncDeliveryMode {
+	if cfg.DeliveryMode != "" {
+		return cfg.DeliveryMode
+	}
+	if cfg.Async {
+		return tools.AsyncDeliveryUserOnly
+	}
+	return tools.AsyncDeliveryParentOnly
+}
+
 func spawnSubTurn(
 	ctx context.Context,
 	al *AgentLoop,
 	parentTS *turnState,
 	cfg SubTurnConfig,
 ) (result *tools.ToolResult, err error) {
+	deliveryMode := effectiveSubTurnDeliveryMode(cfg)
+
 	// Get effective SubTurn configuration
 	rtCfg := al.getSubTurnConfig()
 
@@ -366,6 +405,9 @@ func spawnSubTurn(
 	// don't pollute the parent's registry.
 	if baseAgent.Tools != nil {
 		agent.Tools = baseAgent.Tools.Clone()
+		if !cfg.Async && deliveryMode == tools.AsyncDeliveryParentOnly {
+			removeUserDeliveryTools(agent.Tools)
+		}
 	}
 
 	// Create processOptions for the child turn
@@ -377,16 +419,17 @@ func spawnSubTurn(
 		SessionScope:   session.CloneScope(parentTS.opts.Dispatch.SessionScope),
 	}
 	opts := processOptions{
-		Dispatch:                dispatch,
-		SenderID:                parentTS.opts.Dispatch.SenderID(),
-		SenderDisplayName:       parentTS.opts.SenderDisplayName,
-		SystemPromptOverride:    cfg.ActualSystemPrompt,
-		InitialSteeringMessages: cfg.InitialMessages,
-		DefaultResponse:         "",
-		EnableSummary:           false,
-		SendResponse:            false,
-		NoHistory:               true, // SubTurns don't use session history
-		SkipInitialSteeringPoll: true,
+		Dispatch:                 dispatch,
+		SenderID:                 parentTS.opts.Dispatch.SenderID(),
+		SenderDisplayName:        parentTS.opts.SenderDisplayName,
+		SystemPromptOverride:     cfg.ActualSystemPrompt,
+		InitialSteeringMessages:  cfg.InitialMessages,
+		DefaultResponse:          "",
+		EnableSummary:            false,
+		SendResponse:             !cfg.Async && (deliveryMode == tools.AsyncDeliveryUserOnly || deliveryMode == tools.AsyncDeliveryUserAndParent),
+		SuppressToolUserDelivery: !cfg.Async && deliveryMode == tools.AsyncDeliveryParentOnly,
+		NoHistory:                true, // SubTurns don't use session history
+		SkipInitialSteeringPoll:  true,
 	}
 
 	// Create event scope for the child turn
@@ -522,6 +565,23 @@ func spawnSubTurn(
 		result = &tools.ToolResult{
 			ForLLM:  turnRes.finalContent,
 			ForUser: turnRes.finalContent,
+		}
+		if strings.TrimSpace(turnRes.finalContent) != "" || len(turnRes.completionMedia) > 0 {
+			result.WithCompletion(&tools.CompletionResult{
+				Text:  turnRes.finalContent,
+				Media: append([]string(nil), turnRes.completionMedia...),
+			})
+			result.Media = append(result.Media, turnRes.completionMedia...)
+		}
+		if !cfg.Async {
+			switch deliveryMode {
+			case tools.AsyncDeliveryParentOnly:
+				result.ForUser = ""
+			case tools.AsyncDeliveryUserOnly:
+				result.ForUser = ""
+				result.Silent = true
+				result.ResponseHandled = true
+			}
 		}
 	}
 

@@ -4528,6 +4528,52 @@ func TestProcessMessage_MessageToolPublishesOutboundWithTurnMetadata(t *testing.
 	}
 }
 
+func TestProcessMessage_MessageToolPublishesOutboundWithTopicContext(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Agents.Defaults.ModelName = "test-model"
+	cfg.Agents.Defaults.MaxTokens = 4096
+	cfg.Agents.Defaults.MaxToolIterations = 10
+	cfg.Session.Dimensions = []string{"chat", "topic"}
+
+	msgBus := bus.NewMessageBus()
+	provider := &messageToolProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
+		Context: bus.InboundContext{
+			Channel:   "telegram",
+			ChatID:    "-100123",
+			ChatType:  "group",
+			TopicID:   "1764",
+			SenderID:  "telegram:1",
+			MessageID: "2050",
+		},
+		Content: "send a direct message",
+	}))
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response == "" {
+		t.Fatal("expected processMessage() to return a final loop response")
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Content != "direct tool message" {
+			t.Fatalf("outbound content = %q, want direct tool message", outbound.Content)
+		}
+		if outbound.Context.Channel != "telegram" || outbound.Context.ChatID != "-100123" {
+			t.Fatalf("unexpected message tool outbound context: %+v", outbound.Context)
+		}
+		if outbound.Context.TopicID != "1764" {
+			t.Fatalf("outbound topic_id = %q, want 1764", outbound.Context.TopicID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected message tool outbound")
+	}
+}
+
 func TestRun_PicoPublishesAssistantContentDuringToolCallsWithoutFinalDuplicate(t *testing.T) {
 	tmpDir := t.TempDir()
 
