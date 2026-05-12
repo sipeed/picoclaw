@@ -112,7 +112,69 @@ var (
 		"/dev/stdout":  true,
 		"/dev/stderr":  true,
 	}
+
+	quotedHeredocStartPattern = regexp.MustCompile(`<<-?\s*(?:'([^'\s]+)'|"([^"\s]+)")`)
 )
+
+func stripQuotedHeredocBodies(command string) string {
+	sanitized := command
+	searchFrom := 0
+
+	for {
+		loc := quotedHeredocStartPattern.FindStringSubmatchIndex(sanitized[searchFrom:])
+		if loc == nil {
+			return sanitized
+		}
+
+		matchStart := searchFrom + loc[0]
+		matchEnd := searchFrom + loc[1]
+		delimStart := searchFrom + loc[2]
+		delimEnd := searchFrom + loc[3]
+		if delimStart == searchFrom-1 || delimEnd == searchFrom-1 {
+			delimStart = searchFrom + loc[4]
+			delimEnd = searchFrom + loc[5]
+		}
+		delim := sanitized[delimStart:delimEnd]
+		allowTabs := strings.Contains(sanitized[matchStart:matchEnd], "<<-")
+
+		newlineRel := strings.IndexByte(sanitized[matchEnd:], '\n')
+		if newlineRel == -1 {
+			return sanitized
+		}
+		bodyStart := matchEnd + newlineRel + 1
+		lineStart := bodyStart
+		foundEnd := false
+
+		for lineStart <= len(sanitized) {
+			lineEnd := len(sanitized)
+			if nextNewline := strings.IndexByte(sanitized[lineStart:], '\n'); nextNewline >= 0 {
+				lineEnd = lineStart + nextNewline
+			}
+
+			line := sanitized[lineStart:lineEnd]
+			compare := strings.TrimSuffix(line, "\r")
+			if allowTabs {
+				compare = strings.TrimLeft(compare, "\t")
+			}
+			if compare == delim {
+				sanitized = sanitized[:bodyStart] + "[quoted heredoc omitted]\n" + sanitized[lineStart:]
+				searchFrom = bodyStart + len("[quoted heredoc omitted]\n")
+				foundEnd = true
+				break
+			}
+
+			if lineEnd == len(sanitized) {
+				lineStart = len(sanitized) + 1
+			} else {
+				lineStart = lineEnd + 1
+			}
+		}
+
+		if !foundEnd {
+			return sanitized
+		}
+	}
+}
 
 func NewExecTool(workingDir string, restrict bool, allowPaths ...[]*regexp.Regexp) (*ExecTool, error) {
 	return NewExecToolWithConfig(workingDir, restrict, nil, allowPaths...)
@@ -1022,6 +1084,7 @@ func (t *ExecTool) executeSendKeys(args map[string]any) *ToolResult {
 func (t *ExecTool) guardCommand(command, cwd string) string {
 	cmd := strings.TrimSpace(command)
 	lower := strings.ToLower(cmd)
+	lowerForDeny := strings.ToLower(stripQuotedHeredocBodies(cmd))
 
 	// Custom allow patterns exempt a command from deny checks.
 	explicitlyAllowed := false
@@ -1034,7 +1097,7 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 
 	if !explicitlyAllowed {
 		for _, pattern := range t.denyPatterns {
-			if pattern.MatchString(lower) {
+			if pattern.MatchString(lowerForDeny) {
 				return "Command blocked by safety guard (dangerous pattern detected)"
 			}
 		}
