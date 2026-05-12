@@ -644,6 +644,12 @@ func (al *AgentLoop) compactAfterFinalDelivery(
 		compactCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 
+		startedAt := time.Now()
+		logger.DebugCF("agent", "Post-delivery context compaction started", map[string]any{
+			"agent_id":    agent.ID,
+			"session_key": sessionKey,
+			"budget":      budget,
+		})
 		if err := al.contextManager.Compact(
 			compactCtx,
 			&CompactRequest{
@@ -656,9 +662,16 @@ func (al *AgentLoop) compactAfterFinalDelivery(
 				"agent_id":     agent.ID,
 				"session_key":  sessionKey,
 				"message_kind": "final_reply",
+				"duration_ms":  time.Since(startedAt).Milliseconds(),
 				"error":        err.Error(),
 			})
+			return
 		}
+		logger.InfoCF("agent", "Post-delivery context compaction completed", map[string]any{
+			"agent_id":    agent.ID,
+			"session_key": sessionKey,
+			"duration_ms": time.Since(startedAt).Milliseconds(),
+		})
 	}()
 }
 
