@@ -36,6 +36,10 @@ const (
 	ToolPromptSlotMCP         = toolshared.ToolPromptSlotMCP
 	ToolPromptSourceRegistry  = toolshared.ToolPromptSourceRegistry
 	ToolPromptSourceDiscovery = toolshared.ToolPromptSourceDiscovery
+
+	AsyncDeliveryUserOnly      = toolshared.AsyncDeliveryUserOnly
+	AsyncDeliveryParentOnly    = toolshared.AsyncDeliveryParentOnly
+	AsyncDeliveryUserAndParent = toolshared.AsyncDeliveryUserAndParent
 )
 
 func WithToolContext(ctx context.Context, channel, chatID string) context.Context {
@@ -100,6 +104,8 @@ func NewToolResult(forLLM string) *ToolResult {
 func SilentResult(forLLM string) *ToolResult {
 	return toolshared.SilentResult(forLLM)
 }
+
+type AsyncDeliveryMode = toolshared.AsyncDeliveryMode
 
 func AsyncResult(forLLM string) *ToolResult {
 	return toolshared.AsyncResult(forLLM)

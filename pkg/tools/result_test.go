@@ -56,6 +56,17 @@ func TestAsyncResult(t *testing.T) {
 	if !result.Async {
 		t.Error("Expected Async to be true")
 	}
+	if result.AsyncDelivery != "" {
+		t.Errorf("Expected empty AsyncDelivery by default, got %q", result.AsyncDelivery)
+	}
+}
+
+func TestToolResultWithAsyncDelivery(t *testing.T) {
+	result := AsyncResult("async task started").WithAsyncDelivery(AsyncDeliveryUserOnly)
+
+	if result.AsyncDelivery != AsyncDeliveryUserOnly {
+		t.Fatalf("AsyncDelivery = %q, want %q", result.AsyncDelivery, AsyncDeliveryUserOnly)
+	}
 }
 
 func TestErrorResult(t *testing.T) {
