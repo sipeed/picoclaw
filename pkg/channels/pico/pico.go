@@ -347,7 +347,7 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 		return nil, err
 	}
 	if isToolFeedback {
-		c.RecordToolFeedbackMessage(msg.ChatID, msgID, msg.Content)
+		c.RecordEditedToolFeedbackMessage(msg.ChatID, msgID, msg.Content)
 	} else if hasTrackedMsg && channels.OutboundMessageDismissesTrackedToolFeedback(msg) {
 		c.dismissTrackedToolFeedbackMessage(ctx, msg.ChatID, trackedMsgID)
 	}
@@ -386,6 +386,13 @@ func (c *PicoChannel) RecordToolFeedbackMessage(chatID, messageID, content strin
 		return
 	}
 	c.progress.Record(chatID, messageID, content)
+}
+
+func (c *PicoChannel) RecordEditedToolFeedbackMessage(chatID, messageID, content string) {
+	if c.progress == nil {
+		return
+	}
+	c.progress.RecordEdited(chatID, messageID, content)
 }
 
 func (c *PicoChannel) ClearToolFeedbackMessage(chatID string) {

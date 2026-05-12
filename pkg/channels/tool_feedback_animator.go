@@ -100,6 +100,17 @@ func (a *ToolFeedbackAnimator) Current(chatID string) (string, bool) {
 }
 
 func (a *ToolFeedbackAnimator) Record(chatID, messageID, content string) {
+	a.record(chatID, messageID, content, false)
+}
+
+// RecordEdited tracks a feedback message after a real send/edit reached the
+// channel. This makes MinEditInterval apply from the first visible progress
+// update, not only after later in-place edits.
+func (a *ToolFeedbackAnimator) RecordEdited(chatID, messageID, content string) {
+	a.record(chatID, messageID, content, true)
+}
+
+func (a *ToolFeedbackAnimator) record(chatID, messageID, content string, edited bool) {
 	if a == nil {
 		return
 	}
@@ -123,6 +134,9 @@ func (a *ToolFeedbackAnimator) Record(chatID, messageID, content string) {
 		previous = old
 	}
 	a.entries[chatID] = entry
+	if edited {
+		a.lastEditAt[chatID] = time.Now()
+	}
 	a.mu.Unlock()
 
 	stopToolFeedbackAnimation(previous)

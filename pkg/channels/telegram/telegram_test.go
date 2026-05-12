@@ -139,6 +139,47 @@ func TestTelegramChannel_ConfigureToolFeedbackAnimator(t *testing.T) {
 	}
 }
 
+func TestSend_ToolFeedbackMinEditIntervalAppliesAfterFirstSend(t *testing.T) {
+	nextMessageID := 0
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			nextMessageID++
+			return successResponseWithMessageID(t, nextMessageID), nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+	ch.ConfigureToolFeedbackAnimator(channels.ToolFeedbackAnimatorConfig{
+		MinEditInterval: time.Hour,
+	})
+
+	first := bus.OutboundMessage{
+		ChatID:  "12345",
+		Content: "Working...\n• tool: `read_file`",
+		Context: bus.InboundContext{
+			Channel: "telegram",
+			ChatID:  "12345",
+			Raw:     map[string]string{"message_kind": "tool_feedback"},
+		},
+	}
+	second := first
+	second.Content = "Working...\n• tool: `write_file`"
+
+	ids, err := ch.Send(context.Background(), first)
+	require.NoError(t, err)
+	require.Len(t, ids, 1)
+	firstProgressID := ids[0]
+	require.Len(t, caller.calls, 1)
+
+	ids, err = ch.Send(context.Background(), second)
+	require.NoError(t, err)
+	require.Equal(t, []string{firstProgressID}, ids)
+	require.Len(t, caller.calls, 1, "second feedback update should be debounced, not edited or sent")
+
+	_, baseContent, ok := ch.takeToolFeedbackMessage("12345")
+	require.True(t, ok)
+	assert.Equal(t, "Working...\n• tool: `read_file`\n• tool: `write_file`", baseContent)
+}
+
 func successUserResponse(t *testing.T, user *telego.User) *ta.Response {
 	t.Helper()
 	b, err := json.Marshal(user)
@@ -170,14 +211,15 @@ func newTestChannelWithConstructor(
 	)
 	base.SetRunning(true)
 
-	return &TelegramChannel{
+	ch := &TelegramChannel{
 		BaseChannel: base,
 		bot:         bot,
 		chatIDs:     make(map[string]int64),
 		bc:          &config.Channel{Type: config.ChannelTelegram, Enabled: true},
 		tgCfg:       &config.TelegramSettings{},
-		progress:    channels.NewToolFeedbackAnimator(nil),
 	}
+	ch.progress = channels.NewToolFeedbackAnimator(ch.EditMessage)
+	return ch
 }
 
 func TestSendMedia_ImageFallbacksToDocumentOnInvalidDimensions(t *testing.T) {

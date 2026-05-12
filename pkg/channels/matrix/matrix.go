@@ -442,7 +442,7 @@ func (c *MatrixChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]st
 	}
 	msgID := resp.EventID.String()
 	if isToolFeedback {
-		c.RecordToolFeedbackMessage(msg.ChatID, msgID, msg.Content)
+		c.RecordEditedToolFeedbackMessage(msg.ChatID, msgID, msg.Content)
 	} else if hasTrackedMsg {
 		c.dismissTrackedToolFeedbackMessage(ctx, msg.ChatID, trackedMsgID)
 	}
@@ -696,6 +696,13 @@ func (c *MatrixChannel) RecordToolFeedbackMessage(chatID, messageID, content str
 		return
 	}
 	c.progress.Record(chatID, messageID, content)
+}
+
+func (c *MatrixChannel) RecordEditedToolFeedbackMessage(chatID, messageID, content string) {
+	if c.progress == nil {
+		return
+	}
+	c.progress.RecordEdited(chatID, messageID, content)
 }
 
 func (c *MatrixChannel) ClearToolFeedbackMessage(chatID string) {

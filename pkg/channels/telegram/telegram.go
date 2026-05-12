@@ -348,7 +348,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 	}
 
 	if isToolFeedback && len(messageIDs) > 0 {
-		c.RecordToolFeedbackMessage(trackedChatID, messageIDs[0], toolFeedbackContent)
+		c.RecordEditedToolFeedbackMessage(trackedChatID, messageIDs[0], toolFeedbackContent)
 	} else if !isToolFeedback && hasTrackedMsg {
 		c.dismissTrackedToolFeedbackMessage(ctx, trackedChatID, trackedMsgID)
 	}
@@ -546,6 +546,13 @@ func (c *TelegramChannel) RecordToolFeedbackMessage(chatID, messageID, content s
 		return
 	}
 	c.progress.Record(chatID, messageID, content)
+}
+
+func (c *TelegramChannel) RecordEditedToolFeedbackMessage(chatID, messageID, content string) {
+	if c.progress == nil {
+		return
+	}
+	c.progress.RecordEdited(chatID, messageID, content)
 }
 
 func (c *TelegramChannel) ClearToolFeedbackMessage(chatID string) {

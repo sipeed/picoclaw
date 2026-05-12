@@ -239,6 +239,37 @@ func TestToolFeedbackAnimator_UpdateDebouncesRecentEditWhenConfigured(t *testing
 	}
 }
 
+func TestToolFeedbackAnimator_UpdateDebouncesAfterRecordedEdit(t *testing.T) {
+	editCalls := 0
+	animator := NewToolFeedbackAnimator(func(context.Context, string, string, string) error {
+		editCalls++
+		return nil
+	})
+	defer animator.StopAll()
+	animator.Configure(ToolFeedbackAnimatorConfig{MinEditInterval: 10 * time.Second})
+
+	animator.RecordEdited("chat-1", "msg-1", "Working...\n• tool: `read_file`")
+
+	msgID, handled, err := animator.Update(context.Background(), "chat-1", "Working...\n• tool: `write_file`")
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if !handled || msgID != "msg-1" {
+		t.Fatalf("Update() = (%q, %v), want (msg-1, true)", msgID, handled)
+	}
+	if editCalls != 0 {
+		t.Fatalf("edit calls = %d, want 0 while debounced after recorded edit", editCalls)
+	}
+	_, baseContent, ok := animator.Take("chat-1")
+	if !ok {
+		t.Fatal("expected debounced update to keep tracking")
+	}
+	want := "Working...\n• tool: `read_file`\n• tool: `write_file`"
+	if baseContent != want {
+		t.Fatalf("tracked content = %q, want %q", baseContent, want)
+	}
+}
+
 func TestToolFeedbackAnimator_RetryAfterDelayParsesTelegramErrorWhenConfigured(t *testing.T) {
 	animator := NewToolFeedbackAnimator(nil)
 	animator.Configure(ToolFeedbackAnimatorConfig{MinEditInterval: 10 * time.Second})

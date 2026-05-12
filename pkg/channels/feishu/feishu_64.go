@@ -194,7 +194,7 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]st
 			return nil, sendErr
 		}
 		if isToolFeedback {
-			c.RecordToolFeedbackMessage(msg.ChatID, msgID, msg.Content)
+			c.RecordEditedToolFeedbackMessage(msg.ChatID, msgID, msg.Content)
 		} else if hasTrackedMsg {
 			c.dismissTrackedToolFeedbackMessage(ctx, msg.ChatID, trackedMsgID)
 		}
@@ -205,7 +205,7 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]st
 	msgID, err := c.sendCard(ctx, msg.ChatID, cardContent)
 	if err == nil {
 		if isToolFeedback {
-			c.RecordToolFeedbackMessage(msg.ChatID, msgID, msg.Content)
+			c.RecordEditedToolFeedbackMessage(msg.ChatID, msgID, msg.Content)
 		} else if hasTrackedMsg {
 			c.dismissTrackedToolFeedbackMessage(ctx, msg.ChatID, trackedMsgID)
 		}
@@ -227,7 +227,7 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]st
 		msgID, textErr := c.sendText(ctx, msg.ChatID, sendContent)
 		if textErr == nil {
 			if isToolFeedback {
-				c.RecordToolFeedbackMessage(msg.ChatID, msgID, msg.Content)
+				c.RecordEditedToolFeedbackMessage(msg.ChatID, msgID, msg.Content)
 			} else if hasTrackedMsg {
 				c.dismissTrackedToolFeedbackMessage(ctx, msg.ChatID, trackedMsgID)
 			}
@@ -357,6 +357,13 @@ func (c *FeishuChannel) RecordToolFeedbackMessage(chatID, messageID, content str
 		return
 	}
 	c.progress.Record(chatID, messageID, content)
+}
+
+func (c *FeishuChannel) RecordEditedToolFeedbackMessage(chatID, messageID, content string) {
+	if c.progress == nil {
+		return
+	}
+	c.progress.RecordEdited(chatID, messageID, content)
 }
 
 func (c *FeishuChannel) ClearToolFeedbackMessage(chatID string) {

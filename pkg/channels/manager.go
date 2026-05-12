@@ -135,6 +135,10 @@ type toolFeedbackMessageTracker interface {
 	ClearToolFeedbackMessage(chatID string)
 }
 
+type toolFeedbackMessageEditTracker interface {
+	RecordEditedToolFeedbackMessage(chatID, messageID, content string)
+}
+
 type toolFeedbackMessageCleaner interface {
 	DismissToolFeedbackMessage(ctx context.Context, chatID string)
 }
@@ -543,7 +547,11 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 				if err := editor.EditMessage(ctx, chatID, entry.id, content); err == nil {
 					trackedChatID := resolveOutboundChatID(ch, chatID, &msg.Context)
 					if tracker, ok := ch.(toolFeedbackMessageTracker); ok && isToolFeedback {
-						tracker.RecordToolFeedbackMessage(trackedChatID, entry.id, trackedContent)
+						if editTracker, ok := ch.(toolFeedbackMessageEditTracker); ok {
+							editTracker.RecordEditedToolFeedbackMessage(trackedChatID, entry.id, trackedContent)
+						} else {
+							tracker.RecordToolFeedbackMessage(trackedChatID, entry.id, trackedContent)
+						}
 					} else if !isToolFeedback {
 						dismissTrackedToolFeedbackMessage(ctx, ch, chatID, &msg.Context)
 					}

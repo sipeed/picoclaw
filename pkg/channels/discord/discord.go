@@ -206,7 +206,7 @@ func (c *DiscordChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]s
 		return nil, err
 	}
 	if isToolFeedback {
-		c.RecordToolFeedbackMessage(channelID, msgID, msg.Content)
+		c.RecordEditedToolFeedbackMessage(channelID, msgID, msg.Content)
 	} else if hasTrackedMsg && channels.OutboundMessageDismissesTrackedToolFeedback(msg) {
 		c.dismissTrackedToolFeedbackMessage(ctx, channelID, trackedMsgID)
 	}
@@ -424,6 +424,13 @@ func (c *DiscordChannel) RecordToolFeedbackMessage(chatID, messageID, content st
 		return
 	}
 	c.progress.Record(chatID, messageID, content)
+}
+
+func (c *DiscordChannel) RecordEditedToolFeedbackMessage(chatID, messageID, content string) {
+	if c.progress == nil {
+		return
+	}
+	c.progress.RecordEdited(chatID, messageID, content)
 }
 
 func (c *DiscordChannel) ClearToolFeedbackMessage(chatID string) {
