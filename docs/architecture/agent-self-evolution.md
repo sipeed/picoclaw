@@ -10,6 +10,14 @@ The cold path groups related task records, checks the configured success thresho
 
 The apply path validates generated `SKILL.md` content before writing. Invalid drafts are rejected before a skill directory or file is created.
 
+## Safety Considerations
+
+Evolution creates a persistent feedback loop: user input can become a task record, task records can be clustered into an LLM-generated draft, and an accepted draft can become `SKILL.md` content that is loaded into future agent prompts. Treat generated skill content as prompt-sensitive material, especially in `apply` mode.
+
+The current local scanner is a narrow guardrail, not a complete safety boundary. It rejects structurally invalid drafts and a small set of obvious secret-like substrings, but it does not reliably detect prompt injection, unsafe instructions, or every form of sensitive data. Use `observe` or `draft` when human review is required before skill changes reach disk.
+
+In `apply` mode, accepted drafts can update workspace skills automatically. Existing skills are backed up before replacement, but recovery is manual: an operator must restore the desired backup if an applied skill should be rolled back.
+
 ## Modes
 
 | Mode | Behavior |

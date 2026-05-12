@@ -296,7 +296,7 @@ export function EvolutionSection({
         <Input
           value={form.evolutionStateDir}
           onChange={(e) => onFieldChange("evolutionStateDir", e.target.value)}
-          placeholder=".picoclaw/evolution"
+          placeholder="e.g. /var/lib/picoclaw/evolution"
         />
       </Field>
 
