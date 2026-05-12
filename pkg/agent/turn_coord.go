@@ -26,19 +26,47 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 	al.registerActiveTurn(ts)
 	defer al.clearActiveTurn(ts)
 
+	if al.takePendingStop(ts.sessionKey) {
+		_ = ts.requestHardAbort()
+	}
+
 	turnStatus := TurnEndStatusCompleted
 	defer func() {
+		attemptedSkills := ts.attemptedSkillsSnapshot()
+		skillContextSnapshots := ts.skillContextSnapshotsSnapshot()
+		finalSuccessfulPath := []string(nil)
+		if turnStatus == TurnEndStatusCompleted {
+			if latest := ts.latestSkillContextSnapshot(); len(latest) > 0 {
+				finalSuccessfulPath = latest
+			} else {
+				finalSuccessfulPath = append([]string(nil), attemptedSkills...)
+			}
+		}
 		al.emitEvent(
 			runtimeevents.KindAgentTurnEnd,
 			ts.eventMeta("runTurn", "turn.end"),
 			TurnEndPayload{
-				Status:          turnStatus,
-				Iterations:      ts.currentIteration(),
-				Duration:        time.Since(ts.startedAt),
-				FinalContentLen: ts.finalContentLen(),
+				Status:                turnStatus,
+				Workspace:             ts.workspace,
+				Iterations:            ts.currentIteration(),
+				Duration:              time.Since(ts.startedAt),
+				FinalContentLen:       ts.finalContentLen(),
+				UserMessage:           ts.userMessage,
+				FinalContent:          ts.finalContentSnapshot(),
+				ActiveSkills:          append([]string(nil), ts.activeSkills...),
+				AttemptedSkills:       attemptedSkills,
+				FinalSuccessfulPath:   finalSuccessfulPath,
+				SkillContextSnapshots: skillContextSnapshots,
+				ToolKinds:             ts.toolKindsSnapshot(),
+				ToolExecutions:        ts.toolExecutionsSnapshot(),
 			},
 		)
 	}()
+
+	if ts.hardAbortRequested() {
+		turnStatus = TurnEndStatusAborted
+		return al.abortTurn(ts)
+	}
 
 	al.emitEvent(
 		runtimeevents.KindAgentTurnStart,
@@ -191,7 +219,11 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 			if finalContent == "" {
 				finalContent = ts.opts.DefaultResponse
 			}
-			return pipeline.Finalize(ctx, turnCtx, ts, exec, turnStatus, finalContent)
+			result, finalizeErr := pipeline.Finalize(ctx, turnCtx, ts, exec, turnStatus, finalContent)
+			if finalizeErr != nil {
+				turnStatus = TurnEndStatusError
+			}
+			return result, finalizeErr
 		case ControlToolLoop:
 			// Execute tools via Pipeline
 			toolCtrl := pipeline.ExecuteTools(ctx, turnCtx, ts, exec, iteration)
@@ -218,7 +250,11 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 				if exec.allResponsesHandled {
 					finalContent = ""
 				}
-				return pipeline.Finalize(ctx, turnCtx, ts, exec, turnStatus, finalContent)
+				result, finalizeErr := pipeline.Finalize(ctx, turnCtx, ts, exec, turnStatus, finalContent)
+				if finalizeErr != nil {
+					turnStatus = TurnEndStatusError
+				}
+				return result, finalizeErr
 			}
 		}
 	}
@@ -242,7 +278,11 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 		return al.abortTurn(ts)
 	}
 
-	return pipeline.Finalize(ctx, turnCtx, ts, exec, turnStatus, finalContent)
+	result, err := pipeline.Finalize(ctx, turnCtx, ts, exec, turnStatus, finalContent)
+	if err != nil {
+		turnStatus = TurnEndStatusError
+	}
+	return result, err
 }
 
 func (al *AgentLoop) abortTurn(ts *turnState) (turnResult, error) {

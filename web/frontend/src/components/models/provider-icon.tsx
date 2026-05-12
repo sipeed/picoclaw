@@ -1,55 +1,6 @@
 import { useMemo, useState } from "react"
 
-const PROVIDER_ICON_SLUGS: Record<string, string> = {
-  openai: "openai",
-  anthropic: "anthropic",
-  azure: "microsoftazure",
-  gemini: "googlegemini",
-  deepseek: "deepseek",
-  "qwen-portal": "alibabacloud",
-  "qwen-intl": "alibabacloud",
-  groq: "groq",
-  openrouter: "openrouter",
-  nvidia: "nvidia",
-  cerebras: "cerebras",
-  volcengine: "bytedance",
-  "github-copilot": "githubcopilot",
-  ollama: "ollama",
-  mistral: "mistralai",
-  zhipu: "zhipu",
-}
-
-const PROVIDER_DOMAINS: Record<string, string> = {
-  openai: "openai.com",
-  anthropic: "anthropic.com",
-  azure: "azure.com",
-  gemini: "gemini.google.com",
-  deepseek: "deepseek.com",
-  "qwen-portal": "qwenlm.ai",
-  "qwen-intl": "alibabacloud.com",
-  moonshot: "moonshot.ai",
-  groq: "groq.com",
-  openrouter: "openrouter.ai",
-  nvidia: "nvidia.com",
-  cerebras: "cerebras.ai",
-  volcengine: "volcengine.com",
-  shengsuanyun: "shengsuanyun.com",
-  antigravity: "antigravity.google",
-  "github-copilot": "github.com",
-  ollama: "ollama.com",
-  lmstudio: "lmstudio.ai",
-  mistral: "mistral.ai",
-  avian: "avian.io",
-  vllm: "vllm.ai",
-  zhipu: "zhipuai.cn",
-  zai: "z.ai",
-  mimo: "xiaomi.com",
-  venice: "venice.ai",
-  vivgrid: "vivgrid.com",
-  minimax: "minimaxi.com",
-  longcat: "longcat.chat",
-  modelscope: "modelscope.cn",
-}
+import { PROVIDER_DOMAINS, PROVIDER_ICON_SLUGS } from "./provider-registry"
 
 interface ProviderIconProps {
   providerKey: string
@@ -80,7 +31,7 @@ export function ProviderIcon({
 
   if (!iconUrl || loadFailed) {
     return (
-      <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm border border-black/10 bg-white text-[9px] font-semibold text-black/70 dark:border-white/20 dark:text-black/70">
+      <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm border border-black/10 bg-white text-[9px] font-semibold text-black/70 dark:border-white/20 dark:text-white/70">
         {initial}
       </span>
     )

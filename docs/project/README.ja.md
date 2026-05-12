@@ -56,6 +56,14 @@
 
 ## 📢 ニュース
 
+2026-05-11 🛒 **LicheeRV-Claw が AliExpress で購入可能に！** [AliExpress](https://www.aliexpress.com/item/1005006519668532.html) から LicheeRV-Claw を購入できるようになり、コンパクトな RISC-V ハードウェアで PicoClaw を試しやすくなりました。
+
+<p align="center">
+  <a href="https://www.aliexpress.com/item/1005006519668532.html">
+    <img src="../../assets/licheerv-claw.jpg" alt="LicheeRV-Claw on AliExpress" width="520">
+  </a>
+</p>
+
 2026-03-31 📱 **Android サポート！** PicoClawがAndroidで動作！APKは[picoclaw.io](https://picoclaw.io/download)からダウンロード
 
 2026-03-25 🚀 **v0.2.4 リリース！** Agent アーキテクチャ全面刷新（SubTurn、Hooks、Steering、EventBus）、WeChat/WeCom 統合、セキュリティ強化（.security.yml、機密データフィルタリング）、新プロバイダー（AWS Bedrock、Azure、Xiaomi MiMo）、35 件のバグ修正。PicoClaw **26K ⭐** 達成！
@@ -475,7 +483,7 @@ PicoClaw は最新情報を提供するために Web を検索できます。`to
 | 検索エンジン | API キー | 無料枠 | リンク |
 |------------|---------|--------|-------|
 | DuckDuckGo | 不要 | 無制限 | 内蔵フォールバック |
-| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | 必須 | 1000 クエリ/日 | AI 搭載、中国語に最適化 |
+| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | 必須 | 1500 クエリ/月（日次割り当て） | AI 搭載、中国語に最適化 |
 | [Tavily](https://tavily.com) | 必須 | 1000 クエリ/月 | AI Agent 向けに最適化 |
 | [Brave Search](https://brave.com/search/api) | 必須 | 2000 クエリ/月 | 高速でプライベート |
 | [Perplexity](https://www.perplexity.ai) | 必須 | 有料 | AI 搭載検索 |

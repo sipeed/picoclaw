@@ -56,11 +56,38 @@ export function AssistantMessage({
   const formattedTimestamp =
     timestamp !== "" ? formatMessageTime(timestamp) : ""
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(content).then(() => {
+  const handleCopy = async () => {
+    const markCopied = () => {
       setIsCopied(true)
       setTimeout(() => setIsCopied(false), 2000)
-    })
+    }
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(content)
+        markCopied()
+        return
+      }
+    } catch {
+      // HTTP 或受限环境下可能不支持 Clipboard API，继续走降级方案
+    }
+
+    const textArea = document.createElement("textarea")
+    textArea.value = content
+    textArea.setAttribute("readonly", "")
+    textArea.style.position = "fixed"
+    textArea.style.left = "-9999px"
+    document.body.appendChild(textArea)
+    textArea.select()
+
+    try {
+      const copied = document.execCommand("copy")
+      if (copied) {
+        markCopied()
+      }
+    } finally {
+      document.body.removeChild(textArea)
+    }
   }
 
   const collapsedLabel = isThought

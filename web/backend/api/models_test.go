@@ -12,6 +12,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 func resetModelProbeHooks(t *testing.T) {
@@ -20,15 +21,44 @@ func resetModelProbeHooks(t *testing.T) {
 	origTCPProbe := probeTCPServiceFunc
 	origOllamaProbe := probeOllamaModelFunc
 	origOpenAIProbe := probeOpenAICompatibleModelFunc
+	origCommandProbe := probeCommandAvailableFunc
 	origNow := modelProbeNowFunc
 	resetModelProbeCache()
 	t.Cleanup(func() {
 		probeTCPServiceFunc = origTCPProbe
 		probeOllamaModelFunc = origOllamaProbe
 		probeOpenAICompatibleModelFunc = origOpenAIProbe
+		probeCommandAvailableFunc = origCommandProbe
 		modelProbeNowFunc = origNow
 		resetModelProbeCache()
 	})
+}
+
+func addModelAndLoadLatest(t *testing.T, configPath string, body string) *config.ModelConfig {
+	t.Helper()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if len(cfg.ModelList) == 0 {
+		t.Fatal("model_list should contain the newly added model")
+	}
+
+	return cfg.ModelList[len(cfg.ModelList)-1]
 }
 
 func TestHandleListModels_AvailabilityUsesRuntimeProbesForLocalModels(t *testing.T) {
@@ -94,7 +124,8 @@ func TestHandleListModels_AvailabilityUsesRuntimeProbesForLocalModels(t *testing
 		},
 	}
 	cfg.Agents.Defaults.ModelName = "openai-oauth"
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -113,7 +144,8 @@ func TestHandleListModels_AvailabilityUsesRuntimeProbesForLocalModels(t *testing
 	var resp struct {
 		Models []modelResponse `json:"models"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
@@ -181,13 +213,90 @@ func TestHandleListModels_AvailabilityForOAuthModelWithCredential(t *testing.T) 
 		AuthMethod: "oauth",
 	}}
 	cfg.Agents.Defaults.ModelName = "claude-oauth"
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
-	if err := auth.SetCredential(oauthProviderAnthropic, &auth.AuthCredential{
+	if setCredentialErr := auth.SetCredential(oauthProviderAnthropic, &auth.AuthCredential{
 		AccessToken: "anthropic-token",
 		Provider:    oauthProviderAnthropic,
+		AuthMethod:  "oauth",
+	}); setCredentialErr != nil {
+		t.Fatalf("SetCredential() error = %v", setCredentialErr)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Models []modelResponse `json:"models"`
+	}
+	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
+	}
+	if !resp.Models[0].Available {
+		t.Fatalf("oauth model available = false, want true with stored credential")
+	}
+}
+
+func TestHasModelConfiguration_OAuthWithoutMappedCredentialFallsBackToAPIKey(t *testing.T) {
+	noKey := &config.ModelConfig{
+		Provider:   "gemini",
+		Model:      "gemini-2.5-flash",
+		AuthMethod: "oauth",
+	}
+	if hasModelConfiguration(noKey) {
+		t.Fatal("oauth model without credential mapping and api key should be unconfigured")
+	}
+
+	withKey := &config.ModelConfig{
+		Provider:   "gemini",
+		Model:      "gemini-2.5-flash",
+		AuthMethod: "oauth",
+		APIKeys:    config.SimpleSecureStrings("gemini-key"),
+	}
+	if !hasModelConfiguration(withKey) {
+		t.Fatal("oauth model without credential mapping should fall back to api key configuration")
+	}
+}
+
+func TestHandleListModels_AntigravityImplicitOAuthAvailability(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+	resetOAuthHooks(t)
+	resetModelProbeHooks(t)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "gemini-flash",
+		Provider:  "antigravity",
+		Model:     "gemini-3-flash",
+	}}
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	if err := auth.SetCredential(oauthProviderGoogleAntigravity, &auth.AuthCredential{
+		AccessToken: "antigravity-token",
+		Provider:    oauthProviderGoogleAntigravity,
 		AuthMethod:  "oauth",
 	}); err != nil {
 		t.Fatalf("SetCredential() error = %v", err)
@@ -208,14 +317,158 @@ func TestHandleListModels_AvailabilityForOAuthModelWithCredential(t *testing.T) 
 	var resp struct {
 		Models []modelResponse `json:"models"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
+	if unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &resp); unmarshalErr != nil {
+		t.Fatalf("Unmarshal() error = %v", unmarshalErr)
 	}
 	if len(resp.Models) != 1 {
 		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
 	}
 	if !resp.Models[0].Available {
-		t.Fatalf("oauth model available = false, want true with stored credential")
+		t.Fatal("antigravity model available = false, want true with stored credential even without auth_method")
+	}
+}
+
+func TestHandleListModels_BedrockUsesAmbientCredentialStatus(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+	resetOAuthHooks(t)
+	resetModelProbeHooks(t)
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "bedrock-claude",
+		Provider:  "bedrock",
+		Model:     "us.anthropic.claude-sonnet-4-20250514-v1:0",
+	}}
+	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
+		t.Fatalf("SaveConfig() error = %v", saveErr)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Models []modelResponse `json:"models"`
+	}
+	if unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &resp); unmarshalErr != nil {
+		t.Fatalf("Unmarshal() error = %v", unmarshalErr)
+	}
+	if len(resp.Models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
+	}
+	if !resp.Models[0].Available {
+		t.Fatal("bedrock model available = false, want true because Bedrock uses ambient AWS credentials")
+	}
+	if resp.Models[0].Status != modelStatusAvailable {
+		t.Fatalf("bedrock model status = %q, want %q", resp.Models[0].Status, modelStatusAvailable)
+	}
+}
+
+func TestHandleListModels_CLIProvidersRequireInstalledCommands(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+	resetOAuthHooks(t)
+	resetModelProbeHooks(t)
+
+	probeCommandAvailableFunc = func(command string) bool {
+		switch command {
+		case "claude":
+			return false
+		case "codex":
+			return true
+		default:
+			return false
+		}
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "claude-cli-model",
+			Provider:  "claude-cli",
+			Model:     "claude-cli",
+		},
+		{
+			ModelName: "codex-cli-model",
+			Provider:  "codex-cli",
+			Model:     "codex-cli",
+		},
+	}
+	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
+		t.Fatalf("SaveConfig() error = %v", saveErr)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Models          []modelResponse                 `json:"models"`
+		ProviderOptions []providers.ModelProviderOption `json:"provider_options"`
+	}
+	if unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &resp); unmarshalErr != nil {
+		t.Fatalf("Unmarshal() error = %v", unmarshalErr)
+	}
+
+	modelsByName := make(map[string]modelResponse, len(resp.Models))
+	for _, model := range resp.Models {
+		modelsByName[model.ModelName] = model
+	}
+	if model := modelsByName["claude-cli-model"]; model.Available || model.Status != modelStatusUnreachable {
+		t.Fatalf(
+			"claude-cli status = (%t, %q), want (%t, %q)",
+			model.Available,
+			model.Status,
+			false,
+			modelStatusUnreachable,
+		)
+	}
+	if model := modelsByName["codex-cli-model"]; !model.Available || model.Status != modelStatusAvailable {
+		t.Fatalf(
+			"codex-cli status = (%t, %q), want (%t, %q)",
+			model.Available,
+			model.Status,
+			true,
+			modelStatusAvailable,
+		)
+	}
+
+	optionsByID := make(map[string]providers.ModelProviderOption, len(resp.ProviderOptions))
+	for _, option := range resp.ProviderOptions {
+		optionsByID[option.ID] = option
+	}
+	if option, ok := optionsByID["claude-cli"]; !ok {
+		t.Fatal("claude-cli provider option missing")
+	} else if option.CreateAllowed {
+		t.Fatal("claude-cli should not be creatable when the claude command is missing")
+	}
+	if option, ok := optionsByID["codex-cli"]; !ok {
+		t.Fatal("codex-cli provider option missing")
+	} else if !option.CreateAllowed {
+		t.Fatal("codex-cli should be creatable when the codex command is available")
 	}
 }
 
@@ -321,8 +574,8 @@ func TestHandleListModels_NormalizesWildcardLocalAPIBaseForProbe(t *testing.T) {
 	var resp struct {
 		Models []modelResponse `json:"models"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
+	if unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &resp); unmarshalErr != nil {
+		t.Fatalf("Unmarshal() error = %v", unmarshalErr)
 	}
 	if len(resp.Models) != 1 {
 		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
@@ -505,6 +758,223 @@ func TestHandleAddModel_PersistsProvider(t *testing.T) {
 	}
 	if added.Model != "z-ai/glm-5.1" {
 		t.Fatalf("model = %q, want %q", added.Model, "z-ai/glm-5.1")
+	}
+}
+
+func TestHandleAddModel_RejectsUnsupportedProvider(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models", bytes.NewBufferString(`{
+		"model_name":"bad-provider",
+		"provider":"not-supported",
+		"model":"gpt-4o-mini"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `provider "not-supported" is not supported`) {
+		t.Fatalf("body = %q, want unsupported provider error", rec.Body.String())
+	}
+}
+
+func TestHandleAddModel_AllowsBedrockProvider(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models", bytes.NewBufferString(`{
+		"model_name":"bedrock-claude",
+		"provider":"bedrock",
+		"model":"us.anthropic.claude-sonnet-4-20250514-v1:0"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	added := cfg.ModelList[len(cfg.ModelList)-1]
+	if got := added.Provider; got != "bedrock" {
+		t.Fatalf("provider = %q, want %q", got, "bedrock")
+	}
+	if got := added.Model; got != "us.anthropic.claude-sonnet-4-20250514-v1:0" {
+		t.Fatalf("model = %q, want bedrock model ID", got)
+	}
+}
+
+func TestHandleAddModel_NormalizesLegacyElevenLabsASRConfig(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "elevenlabs-asr",
+		Model:     "elevenlabs/scribe_v1",
+		APIKeys:   config.SimpleSecureStrings("sk_elevenlabs_test"),
+	}}
+	if err = config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models", bytes.NewBufferString(`{
+		"model_name":"new-model",
+		"provider":"openai",
+		"model":"gpt-4o-mini",
+		"api_key":"sk-new-model-key"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updated, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if len(updated.ModelList) != 2 {
+		t.Fatalf("len(model_list) = %d, want 2", len(updated.ModelList))
+	}
+	if got := updated.ModelList[0].Provider; got != "elevenlabs" {
+		t.Fatalf("provider = %q, want %q after normalization", got, "elevenlabs")
+	}
+	if got := updated.ModelList[0].Model; got != "scribe_v1" {
+		t.Fatalf("model = %q, want %q after normalization", got, "scribe_v1")
+	}
+}
+
+func TestHandleAddModel_NormalizesExplicitElevenLabsUnsupportedModelID(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "elevenlabs-asr",
+		Provider:  "elevenlabs",
+		Model:     "scribe_v2",
+		APIKeys:   config.SimpleSecureStrings("sk_elevenlabs_test"),
+	}}
+	if err = config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models", bytes.NewBufferString(`{
+		"model_name":"new-model",
+		"provider":"openai",
+		"model":"gpt-4o-mini",
+		"api_key":"sk-new-model-key"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updated, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if got := updated.ModelList[0].Provider; got != "elevenlabs" {
+		t.Fatalf("provider = %q, want %q after normalization", got, "elevenlabs")
+	}
+	if got := updated.ModelList[0].Model; got != "scribe_v1" {
+		t.Fatalf("model = %q, want %q after normalization", got, "scribe_v1")
+	}
+}
+
+func TestHandleAddModel_RejectsMissingCLIProviderCommand(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+	resetOAuthHooks(t)
+	resetModelProbeHooks(t)
+
+	probeCommandAvailableFunc = func(command string) bool {
+		return false
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models", bytes.NewBufferString(`{
+		"model_name":"claude-cli-model",
+		"provider":"claude-cli",
+		"model":"claude-cli"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `provider "claude-cli" is not available for new models`) {
+		t.Fatalf("body = %q, want missing cli command error", rec.Body.String())
+	}
+}
+
+func TestHandleAddModel_DefaultsAntigravityToOAuth(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	added := addModelAndLoadLatest(t, configPath, `{
+		"model_name":"gemini-flash",
+		"provider":"antigravity",
+		"model":"gemini-3-flash"
+	}`)
+	if got := added.AuthMethod; got != "oauth" {
+		t.Fatalf("auth_method = %q, want %q", got, "oauth")
+	}
+}
+
+func TestHandleAddModel_NormalizesMixedCaseAuthMethod(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	added := addModelAndLoadLatest(t, configPath, `{
+		"model_name":"openai-oauth",
+		"provider":"openai",
+		"model":"gpt-5.4",
+		"auth_method":"OAuth"
+	}`)
+	if got := added.AuthMethod; got != "oauth" {
+		t.Fatalf("auth_method = %q, want %q", got, "oauth")
 	}
 }
 
@@ -845,7 +1315,8 @@ func TestHandleListModels_PreservesExplicitProviderPrefixedModel(t *testing.T) {
 		Provider:  "openrouter",
 		Model:     "openrouter/auto",
 	}}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -864,7 +1335,8 @@ func TestHandleListModels_PreservesExplicitProviderPrefixedModel(t *testing.T) {
 	var resp struct {
 		Models []modelResponse `json:"models"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 	if len(resp.Models) != 1 {
@@ -875,6 +1347,55 @@ func TestHandleListModels_PreservesExplicitProviderPrefixedModel(t *testing.T) {
 	}
 	if got := resp.Models[0].Model; got != "openrouter/auto" {
 		t.Fatalf("model = %q, want %q", got, "openrouter/auto")
+	}
+}
+
+func TestHandleListModels_ExposesElevenLabsASRProvider(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "elevenlabs-asr",
+		Model:     "elevenlabs/scribe_v1",
+		APIKeys:   config.SimpleSecureStrings("sk_elevenlabs_test"),
+	}}
+	if err = config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Models []modelResponse `json:"models"`
+	}
+	if err = json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
+	}
+	if got := resp.Models[0].Provider; got != "elevenlabs" {
+		t.Fatalf("provider = %q, want %q", got, "elevenlabs")
+	}
+	if got := resp.Models[0].Model; got != "scribe_v1" {
+		t.Fatalf("model = %q, want %q", got, "scribe_v1")
+	}
+	if resp.Models[0].DefaultModelAllowed {
+		t.Fatal("elevenlabs ASR model should not be allowed as the default chat model")
 	}
 }
 
@@ -940,11 +1461,230 @@ func TestHandleUpdateModel_PreservesLegacyModelPrefixWhenProviderOmitted(t *test
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	if got := updated.ModelList[0].Provider; got != "" {
-		t.Fatalf("provider = %q, want empty", got)
+	if got := updated.ModelList[0].Provider; got != "openrouter" {
+		t.Fatalf("provider = %q, want %q", got, "openrouter")
 	}
-	if got := updated.ModelList[0].Model; got != "openrouter/openai/gpt-5.4" {
-		t.Fatalf("model = %q, want %q", got, "openrouter/openai/gpt-5.4")
+	if got := updated.ModelList[0].Model; got != "openai/gpt-5.4" {
+		t.Fatalf("model = %q, want %q", got, "openai/gpt-5.4")
+	}
+}
+
+func TestHandleUpdateModel_MigratesLegacyElevenLabsASRWhenProviderOmitted(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "elevenlabs-asr",
+		Model:     "elevenlabs/scribe_v1",
+		APIKeys:   config.SimpleSecureStrings("sk_elevenlabs_test"),
+	}}
+	if err = config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	recList := httptest.NewRecorder()
+	reqList := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	mux.ServeHTTP(recList, reqList)
+
+	if recList.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d, body=%s", recList.Code, http.StatusOK, recList.Body.String())
+	}
+
+	var listResp struct {
+		Models []modelResponse `json:"models"`
+	}
+	if err = json.Unmarshal(recList.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(listResp.Models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(listResp.Models))
+	}
+	if got := listResp.Models[0].Provider; got != "elevenlabs" {
+		t.Fatalf("provider = %q, want %q", got, "elevenlabs")
+	}
+	if got := listResp.Models[0].Model; got != "scribe_v1" {
+		t.Fatalf("model = %q, want %q", got, "scribe_v1")
+	}
+
+	recUpdate := httptest.NewRecorder()
+	reqUpdate := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"elevenlabs-asr",
+		"model":"scribe_v1",
+		"api_base":"https://api.elevenlabs.io"
+	}`))
+	reqUpdate.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recUpdate, reqUpdate)
+
+	if recUpdate.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want %d, body=%s", recUpdate.Code, http.StatusOK, recUpdate.Body.String())
+	}
+
+	updated, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if got := updated.ModelList[0].Provider; got != "elevenlabs" {
+		t.Fatalf("provider = %q, want %q", got, "elevenlabs")
+	}
+	if got := updated.ModelList[0].Model; got != "scribe_v1" {
+		t.Fatalf("model = %q, want %q", got, "scribe_v1")
+	}
+	if got := updated.ModelList[0].APIBase; got != "https://api.elevenlabs.io" {
+		t.Fatalf("api_base = %q, want %q", got, "https://api.elevenlabs.io")
+	}
+}
+
+func TestHandleUpdateModel_RoundTripsExplicitLegacyElevenLabsModelID(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "elevenlabs-asr",
+		Provider:  "elevenlabs",
+		Model:     "scribe_v2",
+		APIKeys:   config.SimpleSecureStrings("sk_elevenlabs_test"),
+	}}
+	if err = config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	recList := httptest.NewRecorder()
+	reqList := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	mux.ServeHTTP(recList, reqList)
+
+	if recList.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d, body=%s", recList.Code, http.StatusOK, recList.Body.String())
+	}
+
+	var listResp struct {
+		Models []modelResponse `json:"models"`
+	}
+	if err = json.Unmarshal(recList.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(listResp.Models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(listResp.Models))
+	}
+	if got := listResp.Models[0].Provider; got != "elevenlabs" {
+		t.Fatalf("provider = %q, want %q", got, "elevenlabs")
+	}
+	if got := listResp.Models[0].Model; got != "scribe_v1" {
+		t.Fatalf("model = %q, want %q after GET normalization", got, "scribe_v1")
+	}
+
+	recUpdate := httptest.NewRecorder()
+	reqUpdate := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"elevenlabs-asr",
+		"provider":"elevenlabs",
+		"model":"scribe_v1",
+		"api_base":"https://api.elevenlabs.io"
+	}`))
+	reqUpdate.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recUpdate, reqUpdate)
+
+	if recUpdate.Code != http.StatusOK {
+		t.Fatalf("update status = %d, want %d, body=%s", recUpdate.Code, http.StatusOK, recUpdate.Body.String())
+	}
+
+	updated, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if got := updated.ModelList[0].Provider; got != "elevenlabs" {
+		t.Fatalf("provider = %q, want %q", got, "elevenlabs")
+	}
+	if got := updated.ModelList[0].Model; got != "scribe_v1" {
+		t.Fatalf("model = %q, want %q", got, "scribe_v1")
+	}
+	if got := updated.ModelList[0].APIBase; got != "https://api.elevenlabs.io" {
+		t.Fatalf("api_base = %q, want %q", got, "https://api.elevenlabs.io")
+	}
+}
+
+func TestHandleUpdateModel_ClearsDefaultWhenSavingASROnlyModel(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "elevenlabs-asr",
+		Provider:  "elevenlabs",
+		Model:     "scribe_v1",
+		APIKeys:   config.SimpleSecureStrings("sk_elevenlabs_test"),
+	}}
+	cfg.Agents.Defaults.ModelName = "elevenlabs-asr"
+	if err = config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"elevenlabs-asr",
+		"provider":"elevenlabs",
+		"model":"scribe_v1",
+		"api_base":"https://api.elevenlabs.io"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updated, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if got := updated.Agents.Defaults.ModelName; got != "" {
+		t.Fatalf("default model = %q, want cleared default", got)
+	}
+}
+
+func TestHandleAddModel_RejectsUnsupportedElevenLabsModelID(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models", bytes.NewBufferString(`{
+		"model_name":"elevenlabs-asr",
+		"provider":"elevenlabs",
+		"model":"scribe_v2"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `provider "elevenlabs" only supports model "scribe_v1"`) {
+		t.Fatalf("body = %q, want elevenlabs model validation error", rec.Body.String())
 	}
 }
 
@@ -984,11 +1724,125 @@ func TestHandleUpdateModel_PreservesLegacyModelPrefixWhenProviderOmittedAndModel
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	if got := updated.ModelList[0].Provider; got != "" {
-		t.Fatalf("provider = %q, want empty", got)
+	if got := updated.ModelList[0].Provider; got != "openrouter" {
+		t.Fatalf("provider = %q, want %q", got, "openrouter")
 	}
-	if got := updated.ModelList[0].Model; got != "openrouter/openai/gpt-5.5" {
-		t.Fatalf("model = %q, want %q", got, "openrouter/openai/gpt-5.5")
+	if got := updated.ModelList[0].Model; got != "openai/gpt-5.5" {
+		t.Fatalf("model = %q, want %q", got, "openai/gpt-5.5")
+	}
+}
+
+func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "legacy-openrouter",
+		Model:     "openrouter/openai/gpt-5.4",
+	}}
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Models          []modelResponse                 `json:"models"`
+		ProviderOptions []providers.ModelProviderOption `json:"provider_options"`
+	}
+	if unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &resp); unmarshalErr != nil {
+		t.Fatalf("Unmarshal() error = %v", unmarshalErr)
+	}
+	if len(resp.Models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
+	}
+	if got := resp.Models[0].Provider; got != "openrouter" {
+		t.Fatalf("provider = %q, want %q", got, "openrouter")
+	}
+	if got := resp.Models[0].Model; got != "openai/gpt-5.4" {
+		t.Fatalf("model = %q, want %q", got, "openai/gpt-5.4")
+	}
+
+	optionsByID := make(map[string]providers.ModelProviderOption, len(resp.ProviderOptions))
+	for _, option := range resp.ProviderOptions {
+		optionsByID[option.ID] = option
+	}
+	if len(optionsByID) == 0 {
+		t.Fatal("provider_options should not be empty")
+	}
+	if option, ok := optionsByID["openai"]; !ok {
+		t.Fatal("openai provider option missing")
+	} else if option.DefaultAPIBase != "https://api.openai.com/v1" {
+		t.Fatalf("openai default_api_base = %q, want %q", option.DefaultAPIBase, "https://api.openai.com/v1")
+	}
+	if option, ok := optionsByID["anthropic"]; !ok {
+		t.Fatal("anthropic provider option missing")
+	} else if option.DefaultAPIBase != "https://api.anthropic.com/v1" {
+		t.Fatalf("anthropic default_api_base = %q, want %q", option.DefaultAPIBase, "https://api.anthropic.com/v1")
+	}
+	if _, ok := optionsByID["azure"]; !ok {
+		t.Fatal("azure provider option missing")
+	}
+	if option, ok := optionsByID["github-copilot"]; !ok {
+		t.Fatal("github-copilot provider option missing")
+	} else if option.DefaultAPIBase != "localhost:4321" {
+		t.Fatalf("github-copilot default_api_base = %q, want %q", option.DefaultAPIBase, "localhost:4321")
+	}
+	if option, ok := optionsByID["elevenlabs"]; !ok {
+		t.Fatal("elevenlabs provider option missing")
+	} else {
+		if option.DefaultAPIBase != "https://api.elevenlabs.io" {
+			t.Fatalf("elevenlabs default_api_base = %q, want %q", option.DefaultAPIBase, "https://api.elevenlabs.io")
+		}
+		if option.DefaultModelAllowed {
+			t.Fatal("elevenlabs should be marked as not allowed for default chat model selection")
+		}
+	}
+	if option, ok := optionsByID["lmstudio"]; !ok {
+		t.Fatal("lmstudio provider option missing")
+	} else if !option.EmptyAPIKeyAllowed {
+		t.Fatal("lmstudio should allow empty api keys")
+	}
+	if option, ok := optionsByID["bedrock"]; !ok {
+		t.Fatal("bedrock provider option missing")
+	} else if !option.CreateAllowed {
+		t.Fatal("bedrock should stay creatable and defer AWS credential failures to runtime")
+	}
+	if option, ok := optionsByID["antigravity"]; !ok {
+		t.Fatal("antigravity provider option missing")
+	} else {
+		if option.DefaultAuthMethod != "oauth" {
+			t.Fatalf("antigravity default_auth_method = %q, want %q", option.DefaultAuthMethod, "oauth")
+		}
+		if !option.AuthMethodLocked {
+			t.Fatal("antigravity auth method should be locked")
+		}
+	}
+
+	updated, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if got := updated.ModelList[0].Provider; got != "" {
+		t.Fatalf("persisted provider = %q, want unchanged empty provider", got)
+	}
+	if got := updated.ModelList[0].Model; got != "openrouter/openai/gpt-5.4" {
+		t.Fatalf("persisted model = %q, want unchanged legacy model", got)
 	}
 }
 
@@ -1033,6 +1887,115 @@ func TestHandleListModels_ReturnsProviderField(t *testing.T) {
 	}
 	if got := resp.Models[0].Provider; got != "nvidia" {
 		t.Fatalf("provider = %q, want %q", got, "nvidia")
+	}
+}
+
+func TestHandleListModels_PreservesKnownProviderInCatalog(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "bedrock-claude",
+		Model:     "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0",
+	}}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Models          []modelResponse                 `json:"models"`
+		ProviderOptions []providers.ModelProviderOption `json:"provider_options"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
+	}
+	if got := resp.Models[0].Provider; got != "bedrock" {
+		t.Fatalf("provider = %q, want %q", got, "bedrock")
+	}
+	if got := resp.Models[0].Model; got != "us.anthropic.claude-sonnet-4-20250514-v1:0" {
+		t.Fatalf("model = %q, want %q", got, "us.anthropic.claude-sonnet-4-20250514-v1:0")
+	}
+	foundBedrock := false
+	for _, option := range resp.ProviderOptions {
+		if option.ID == "bedrock" {
+			foundBedrock = true
+			if !option.CreateAllowed {
+				t.Fatal("bedrock should stay creatable in provider_options")
+			}
+		}
+	}
+	if !foundBedrock {
+		t.Fatal("bedrock should be included in provider_options for compatibility")
+	}
+}
+
+func TestHandleUpdateModel_AllowsExistingBedrockProvider(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "bedrock-claude",
+		Provider:  "bedrock",
+		Model:     "us.anthropic.claude-sonnet-4-20250514-v1:0",
+		APIBase:   "us-west-2",
+	}}
+	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
+		t.Fatalf("SaveConfig() error = %v", saveErr)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"bedrock-claude",
+		"provider":"bedrock",
+		"model":"us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+		"api_base":"us-east-1"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updated, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if got := updated.ModelList[0].Provider; got != "bedrock" {
+		t.Fatalf("provider = %q, want %q", got, "bedrock")
+	}
+	if got := updated.ModelList[0].Model; got != "us.anthropic.claude-3-7-sonnet-20250219-v1:0" {
+		t.Fatalf("model = %q, want updated bedrock model", got)
+	}
+	if got := updated.ModelList[0].APIBase; got != "us-east-1" {
+		t.Fatalf("api_base = %q, want %q", got, "us-east-1")
 	}
 }
 
@@ -1144,6 +2107,45 @@ func TestHandleSetDefaultModel_RejectsNonexistentModel(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "not found") {
 		t.Fatalf("error message should mention 'not found', got: %s", rec.Body.String())
+	}
+}
+
+func TestHandleSetDefaultModel_RejectsElevenLabsASRProvider(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "elevenlabs-asr",
+			Provider:  "elevenlabs",
+			Model:     "scribe_v1",
+			APIKeys:   config.SimpleSecureStrings("sk_elevenlabs_test"),
+		},
+	}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models/default", bytes.NewBufferString(`{
+		"model_name": "elevenlabs-asr"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "cannot be used as the default chat model") {
+		t.Fatalf("body = %q, want default chat model rejection", rec.Body.String())
 	}
 }
 

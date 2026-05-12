@@ -55,9 +55,11 @@ type AgentLoop struct {
 	transcriber    asr.Transcriber
 	cmdRegistry    *commands.Registry
 	mcp            mcpRuntime
+	evolution      *evolutionBridge
 	hookRuntime    hookRuntime
 	steering       *steeringQueue
 	pendingSkills  sync.Map
+	pendingStops   sync.Map
 	mu             sync.RWMutex
 
 	// workerSem limits concurrent turn processing workers.
@@ -177,6 +179,12 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				phase:  TurnPhaseSetup,
 			}
 			if _, loaded := al.activeTurnStates.LoadOrStore(sessionKey, placeholder); loaded {
+				if al.tryHandleStopCommand(ctx, msg, sessionKey) {
+					continue
+				}
+
+				msg = al.prepareInboundMessageForAgent(ctx, msg)
+
 				// Another turn is already active (or reserved) for this session — enqueue
 				if err := al.enqueueSteeringMessage(sessionKey, agentID, providers.Message{
 					Role:    "user",
@@ -240,6 +248,24 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 					defer al.channelManager.InvokeTypingStop(m.Channel, m.ChatID)
 				}
 
+				if al.takePendingStop(sessionKey) {
+					al.activeTurnStates.Delete(sessionKey)
+					target := &continuationTarget{
+						SessionKey: sessionKey,
+						Channel:    m.Channel,
+						ChatID:     m.ChatID,
+					}
+					continued, continueErr := al.drainQueuedSteeringContinuations(ctx, target)
+					if continueErr != nil {
+						al.maybePublishError(ctx, m.Channel, m.ChatID, sessionKey, continueErr)
+						return
+					}
+					if continued != "" {
+						al.PublishResponseIfNeeded(ctx, target.Channel, target.ChatID, target.SessionKey, continued)
+					}
+					return
+				}
+
 				al.runTurnWithSteering(ctx, m)
 			}(msg)
 
@@ -280,6 +306,15 @@ func (al *AgentLoop) Close() {
 	if mcpManager != nil {
 		if err := mcpManager.Close(); err != nil {
 			logger.ErrorCF("agent", "Failed to close MCP manager",
+				map[string]any{
+					"error": err.Error(),
+				})
+		}
+	}
+	evolution := al.currentEvolutionBridge()
+	if evolution != nil {
+		if err := evolution.Close(); err != nil {
+			logger.ErrorCF("agent", "Failed to close evolution bridge",
 				map[string]any{
 					"error": err.Error(),
 				})
@@ -369,14 +404,29 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 	// Ensure shared tools are re-registered on the new registry
 	registerSharedTools(al, cfg, al.bus, registry, provider)
 
+	newEvolution, evolutionErr := newEvolutionBridge(registry, cfg, provider)
+	if evolutionErr != nil {
+		logger.WarnCF("agent", "Failed to reinitialize evolution bridge during reload",
+			map[string]any{"error": evolutionErr.Error()})
+	}
+	if newEvolution != nil {
+		newEvolution.setCurrentCheck(al.isCurrentEvolutionBridge)
+		if err := newEvolution.subscribeRuntimeEvents(al.runtimeEvents.Channel()); err != nil {
+			logger.WarnCF("agent", "Failed to subscribe reloaded evolution bridge to runtime events",
+				map[string]any{"error": err.Error()})
+		}
+	}
+
 	// Atomically swap the config and registry under write lock
 	// This ensures readers see a consistent pair
 	al.mu.Lock()
 	oldRegistry := al.registry
+	oldEvolution := al.evolution
 
 	// Store new values
 	al.cfg = cfg
 	al.registry = registry
+	al.evolution = newEvolution
 
 	// Also update fallback chain with new config; rebuild rate limiter registry.
 	newRL := providers.NewRateLimiterRegistry()
@@ -401,6 +451,12 @@ func (al *AgentLoop) ReloadProviderAndConfig(
 	if oldMCPManager != nil {
 		if err := oldMCPManager.Close(); err != nil {
 			logger.WarnCF("agent", "Failed to close previous MCP manager during reload",
+				map[string]any{"error": err.Error()})
+		}
+	}
+	if oldEvolution != nil {
+		if err := oldEvolution.Close(); err != nil {
+			logger.WarnCF("agent", "Failed to close previous evolution bridge during reload",
 				map[string]any{"error": err.Error()})
 		}
 	}

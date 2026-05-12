@@ -382,6 +382,9 @@ func (h *Handler) gatewayStartReady() (bool, string, error) {
 	if modelCfg == nil {
 		return false, fmt.Sprintf("default model %q is invalid", modelName), nil
 	}
+	if !defaultModelAllowedForModelConfig(modelCfg) {
+		return false, fmt.Sprintf("default model %q is not usable for chat", modelName), nil
+	}
 
 	if !hasModelConfiguration(modelCfg) {
 		return false, fmt.Sprintf("default model %q has no credentials configured", modelName), nil

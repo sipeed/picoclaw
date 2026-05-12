@@ -42,10 +42,66 @@ func TestBuiltinHelpHandler_ReturnsFormattedMessage(t *testing.T) {
 	if !strings.Contains(reply, "/list [models|channels|agents|skills|mcp]") {
 		t.Fatalf("/help reply missing /list usage, got %q", reply)
 	}
+	if !strings.Contains(reply, "/stop") {
+		t.Fatalf("/help reply missing /stop usage, got %q", reply)
+	}
 	if !strings.Contains(reply, "/use <skill> <message>") {
 		if !strings.Contains(reply, "/use <skill> [message]") {
 			t.Fatalf("/help reply missing /use usage, got %q", reply)
 		}
+	}
+}
+
+func TestBuiltinStop_UsesRuntimeStopper(t *testing.T) {
+	rt := &Runtime{
+		StopActiveTurn: func() (StopResult, error) {
+			return StopResult{
+				Stopped:  true,
+				TaskName: "sync the long running job",
+			}, nil
+		},
+	}
+	defs := BuiltinDefinitions()
+	ex := NewExecutor(NewRegistry(defs), rt)
+
+	var reply string
+	res := ex.Execute(context.Background(), Request{
+		Text: "/stop",
+		Reply: func(text string) error {
+			reply = text
+			return nil
+		},
+	})
+	if res.Outcome != OutcomeHandled {
+		t.Fatalf("/stop: outcome=%v, want=%v", res.Outcome, OutcomeHandled)
+	}
+	if reply != "Task stopped. \"sync the long running job\" was canceled." {
+		t.Fatalf("/stop reply=%q", reply)
+	}
+}
+
+func TestBuiltinStop_NoActiveTask(t *testing.T) {
+	rt := &Runtime{
+		StopActiveTurn: func() (StopResult, error) {
+			return StopResult{}, nil
+		},
+	}
+	defs := BuiltinDefinitions()
+	ex := NewExecutor(NewRegistry(defs), rt)
+
+	var reply string
+	res := ex.Execute(context.Background(), Request{
+		Text: "/stop",
+		Reply: func(text string) error {
+			reply = text
+			return nil
+		},
+	})
+	if res.Outcome != OutcomeHandled {
+		t.Fatalf("/stop: outcome=%v, want=%v", res.Outcome, OutcomeHandled)
+	}
+	if reply != "No active task to stop." {
+		t.Fatalf("/stop reply=%q, want no-active message", reply)
 	}
 }
 

@@ -20,6 +20,15 @@
       }
     }
   },
+  "evolution": {
+    "enabled": false,
+    "mode": "observe",
+    "state_dir": "",
+    "min_task_count": 2,
+    "min_success_ratio": 0.7,
+    "cold_path_trigger": "after_turn",
+    "cold_path_times": []
+  },
   "model_list": [
     {
       "model_name": "gpt-5.4",

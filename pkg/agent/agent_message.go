@@ -102,8 +102,26 @@ func (al *AgentLoop) ProcessHeartbeat(
 	})
 }
 
-func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+func (al *AgentLoop) prepareInboundMessageForAgent(
+	ctx context.Context,
+	msg bus.InboundMessage,
+) bus.InboundMessage {
 	msg = bus.NormalizeInboundMessage(msg)
+
+	var hadAudio bool
+	msg, hadAudio = al.transcribeAudioInMessage(ctx, msg)
+
+	// For audio messages the placeholder was deferred by the channel.
+	// Now that transcription (and optional feedback) is done, send it.
+	if hadAudio && al.channelManager != nil {
+		al.channelManager.SendPlaceholder(ctx, msg.Channel, msg.ChatID)
+	}
+
+	return msg
+}
+
+func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+	msg = al.prepareInboundMessageForAgent(ctx, msg)
 
 	// Add message preview to log (show full content for error messages)
 	var logContent string
@@ -122,15 +140,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			"session_key": msg.SessionKey,
 		},
 	)
-
-	var hadAudio bool
-	msg, hadAudio = al.transcribeAudioInMessage(ctx, msg)
-
-	// For audio messages the placeholder was deferred by the channel.
-	// Now that transcription (and optional feedback) is done, send it.
-	if hadAudio && al.channelManager != nil {
-		al.channelManager.SendPlaceholder(ctx, msg.Channel, msg.ChatID)
-	}
 
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {

@@ -56,6 +56,14 @@
 
 ## 📢 Berita
 
+2026-05-11 🛒 **LicheeRV-Claw tersedia di AliExpress!** Kini Anda dapat membeli LicheeRV-Claw di [AliExpress](https://www.aliexpress.com/item/1005006519668532.html), sehingga lebih mudah mencoba PicoClaw di hardware RISC-V ringkas.
+
+<p align="center">
+  <a href="https://www.aliexpress.com/item/1005006519668532.html">
+    <img src="../../assets/licheerv-claw.jpg" alt="LicheeRV-Claw on AliExpress" width="520">
+  </a>
+</p>
+
 2026-03-31 📱 **Dukungan Android!** PicoClaw sekarang berjalan di Android! Unduh APK di [picoclaw.io](https://picoclaw.io/download)
 
 2026-03-25 🚀 **v0.2.4 Dirilis!** Perombakan arsitektur Agent (SubTurn, Hooks, Steering, EventBus), integrasi WeChat/WeCom, penguatan keamanan (.security.yml, penyaringan data sensitif), provider baru (AWS Bedrock, Azure, Xiaomi MiMo), dan 35 perbaikan bug. PicoClaw telah mencapai **26K Stars**!
@@ -474,7 +482,7 @@ PicoClaw dapat mencari web untuk memberikan informasi terkini. Konfigurasi di `t
 | Mesin Pencari | API Key | Tier Gratis | Tautan |
 |--------------|---------|-------------|--------|
 | DuckDuckGo | Tidak perlu | Tidak terbatas | Fallback bawaan |
-| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Diperlukan | 1000 kueri/hari | Bertenaga AI, dioptimalkan untuk bahasa Mandarin |
+| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Diperlukan | 1500 kueri/bulan (alokasi harian) | Bertenaga AI, dioptimalkan untuk bahasa Mandarin |
 | [Tavily](https://tavily.com) | Diperlukan | 1000 kueri/bulan | Dioptimalkan untuk AI Agent |
 | [Brave Search](https://brave.com/search/api) | Diperlukan | 2000 kueri/bulan | Cepat dan privat |
 | [Perplexity](https://www.perplexity.ai) | Diperlukan | Berbayar | Pencarian bertenaga AI |

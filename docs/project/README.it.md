@@ -56,6 +56,14 @@
 
 ## 📢 Novità
 
+2026-05-11 🛒 **LicheeRV-Claw disponibile su AliExpress!** Ora puoi acquistare LicheeRV-Claw su [AliExpress](https://www.aliexpress.com/item/1005006519668532.html), rendendo più semplice provare PicoClaw su hardware RISC-V compatto.
+
+<p align="center">
+  <a href="https://www.aliexpress.com/item/1005006519668532.html">
+    <img src="../../assets/licheerv-claw.jpg" alt="LicheeRV-Claw on AliExpress" width="520">
+  </a>
+</p>
+
 2026-03-31 📱 **Supporto Android!** PicoClaw ora funziona su Android! Scarica l'APK su [picoclaw.io](https://picoclaw.io/download)
 
 2026-03-25 🚀 **v0.2.4 rilasciata!** Revisione dell'architettura Agent (SubTurn, Hooks, Steering, EventBus), integrazione WeChat/WeCom, rafforzamento della sicurezza (.security.yml, filtraggio dati sensibili), nuovi provider (AWS Bedrock, Azure, Xiaomi MiMo) e 35 correzioni di bug. PicoClaw raggiunge **26K Stars**!
@@ -474,7 +482,7 @@ PicoClaw può cercare sul web per fornire informazioni aggiornate. Configura in 
 | Motore di Ricerca | API Key | Piano Gratuito | Link |
 |-------------------|---------|----------------|------|
 | DuckDuckGo | Non necessaria | Illimitato | Fallback integrato |
-| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Richiesta | 1000 query/giorno | IA, ottimizzato per il cinese |
+| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Richiesta | 1500 query/mese (allocazione giornaliera) | IA, ottimizzato per il cinese |
 | [Tavily](https://tavily.com) | Richiesta | 1000 query/mese | Ottimizzato per AI Agent |
 | [Brave Search](https://brave.com/search/api) | Richiesta | 2000 query/mese | Veloce e privato |
 | [Perplexity](https://www.perplexity.ai) | Richiesta | A pagamento | Ricerca potenziata dall'IA |

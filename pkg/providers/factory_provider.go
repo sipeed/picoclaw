@@ -15,6 +15,7 @@ import (
 	anthropicmessages "github.com/sipeed/picoclaw/pkg/providers/anthropic_messages"
 	"github.com/sipeed/picoclaw/pkg/providers/azure"
 	"github.com/sipeed/picoclaw/pkg/providers/bedrock"
+	"github.com/sipeed/picoclaw/pkg/providers/common"
 )
 
 type protocolMeta struct {
@@ -60,6 +61,8 @@ var protocolMetaByName = map[string]protocolMeta{
 	"longcat":                  {defaultAPIBase: "https://api.longcat.chat/openai"},
 	"modelscope":               {defaultAPIBase: "https://api-inference.modelscope.cn/v1"},
 	"mimo":                     {defaultAPIBase: "https://api.xiaomimimo.com/v1"},
+	"anthropic":                {defaultAPIBase: "https://api.anthropic.com/v1"},
+	"anthropic-messages":       {defaultAPIBase: "https://api.anthropic.com/v1"},
 }
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
@@ -110,19 +113,7 @@ func ExtractProtocol(cfg *config.ModelConfig) (protocol, modelID string) {
 	if provider := strings.TrimSpace(cfg.Provider); provider != "" {
 		return NormalizeProvider(provider), model
 	}
-	if model == "" {
-		return "", ""
-	}
-
-	protocol, rest, found := strings.Cut(model, "/")
-	if !found {
-		return "openai", model
-	}
-	protocol = strings.TrimSpace(protocol)
-	if protocol == "" {
-		return "", strings.TrimSpace(rest)
-	}
-	return NormalizeProvider(protocol), strings.TrimSpace(rest)
+	return SplitModelProviderAndID(model, "openai")
 }
 
 // ResolveAPIBase returns the configured API base, or the protocol default when
@@ -154,6 +145,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	}
 
 	protocol, modelID := ExtractProtocol(cfg)
+	authMethod := strings.ToLower(strings.TrimSpace(cfg.AuthMethod))
 
 	userAgent := cfg.UserAgent
 	if userAgent == "" {
@@ -163,7 +155,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	switch protocol {
 	case "openai":
 		// OpenAI with OAuth/token auth (Codex-style)
-		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
+		if authMethod == "oauth" || authMethod == "token" {
 			provider, err := createCodexAuthProvider()
 			if err != nil {
 				return nil, "", err
@@ -320,7 +312,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return finalizeProviderFromConfig(provider, modelID, cfg)
 
 	case "anthropic":
-		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
+		if authMethod == "oauth" || authMethod == "token" {
 			// Use OAuth credentials from auth store
 			provider, err := createClaudeAuthProvider()
 			if err != nil {
@@ -329,10 +321,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			return finalizeProviderFromConfig(provider, modelID, cfg)
 		}
 		// Use API key with HTTP API
-		apiBase := cfg.APIBase
-		if apiBase == "" {
-			apiBase = "https://api.anthropic.com/v1"
-		}
+		apiBase := common.NormalizeBaseURL(cfg.APIBase, "https://api.anthropic.com/v1", true)
 		if cfg.APIKey() == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
@@ -431,7 +420,7 @@ func finalizeProviderFromConfig(
 }
 
 func isEmptyAPIKeyAllowed(protocol string) bool {
-	meta, ok := protocolMetaByName[protocol]
+	meta, ok := protocolMetaForName(protocol)
 	return ok && meta.emptyAPIKeyAllowed
 }
 
@@ -451,9 +440,19 @@ func DefaultAPIBaseForProtocol(protocol string) string {
 
 // getDefaultAPIBase returns the default API base URL for a given protocol.
 func getDefaultAPIBase(protocol string) string {
-	meta, ok := protocolMetaByName[protocol]
+	meta, ok := protocolMetaForName(protocol)
 	if !ok {
 		return ""
 	}
 	return meta.defaultAPIBase
+}
+
+func protocolMetaForName(protocol string) (protocolMeta, bool) {
+	if meta, ok := protocolMetaByName[protocol]; ok {
+		return meta, true
+	}
+	if meta, ok := attachedModelProviderMetaByName[protocol]; ok {
+		return meta.protocolMeta, true
+	}
+	return protocolMeta{}, false
 }

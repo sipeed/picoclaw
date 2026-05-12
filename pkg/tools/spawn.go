@@ -92,11 +92,12 @@ func (t *SpawnTool) execute(
 
 	label, _ := args["label"].(string)
 	agentID, _ := args["agent_id"].(string)
+	targetAgentID := strings.TrimSpace(agentID)
 
 	// Check allowlist if targeting a specific agent
-	if agentID != "" && t.allowlistCheck != nil {
-		if !t.allowlistCheck(agentID) {
-			return ErrorResult(fmt.Sprintf("not allowed to spawn agent '%s'", agentID))
+	if targetAgentID != "" && t.allowlistCheck != nil {
+		if !t.allowlistCheck(targetAgentID) {
+			return ErrorResult(fmt.Sprintf("not allowed to spawn agent '%s'", targetAgentID))
 		}
 	}
 
@@ -123,12 +124,14 @@ Task: %s`,
 		// Launch async sub-turn in goroutine
 		go func() {
 			result, err := t.spawner.SpawnSubTurn(ctx, SubTurnConfig{
-				Model:        t.defaultModel,
-				Tools:        nil, // Will inherit from parent via context
-				SystemPrompt: systemPrompt,
-				MaxTokens:    t.maxTokens,
-				Temperature:  t.temperature,
-				Async:        true, // Async execution
+				Model:         t.defaultModel,
+				Tools:         nil, // Will inherit from parent via context
+				SystemPrompt:  systemPrompt,
+				MaxTokens:     t.maxTokens,
+				Temperature:   t.temperature,
+				Async:         true, // Async execution
+				Critical:      true, // Background spawn should survive parent turn completion
+				TargetAgentID: targetAgentID,
 			})
 			if err != nil {
 				result = ErrorResult(fmt.Sprintf("Spawn failed: %v", err)).WithError(err)

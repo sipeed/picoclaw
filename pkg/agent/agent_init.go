@@ -49,6 +49,13 @@ func NewAgentLoop(
 		stateManager = state.NewManager(defaultAgent.Workspace)
 	}
 
+	bridge, err := newEvolutionBridge(registry, cfg, provider)
+	if err != nil {
+		logger.WarnCF("agent", "Failed to initialize evolution bridge", map[string]any{
+			"error": err.Error(),
+		})
+	}
+
 	// Determine worker pool size from config (default: 1 = sequential)
 	workerPoolSize := cfg.Agents.Defaults.MaxParallelTurns
 	if workerPoolSize <= 0 {
@@ -62,6 +69,7 @@ func NewAgentLoop(
 		state:             stateManager,
 		fallback:          fallbackChain,
 		cmdRegistry:       commands.NewRegistry(commands.BuiltinDefinitions()),
+		evolution:         bridge,
 		steering:          newSteeringQueue(parseSteeringMode(cfg.Agents.Defaults.SteeringMode)),
 		workerSem:         make(chan struct{}, workerPoolSize),
 		ownsRuntimeEvents: true,
@@ -74,6 +82,14 @@ func NewAgentLoop(
 	if al.runtimeEvents == nil {
 		al.runtimeEvents = runtimeevents.NewBus()
 		al.ownsRuntimeEvents = true
+	}
+	if bridge != nil {
+		bridge.setCurrentCheck(al.isCurrentEvolutionBridge)
+		if err := bridge.subscribeRuntimeEvents(al.runtimeEvents.Channel()); err != nil {
+			logger.WarnCF("agent", "Failed to subscribe evolution bridge to runtime events", map[string]any{
+				"error": err.Error(),
+			})
+		}
 	}
 	al.refreshRuntimeEventLogger(cfg)
 	al.providerFactory = providers.CreateProviderFromConfig
@@ -337,5 +353,22 @@ func registerSharedTools(
 		} else if (spawnEnabled || spawnStatusEnabled) && !cfg.Tools.IsToolEnabled("subagent") {
 			logger.WarnCF("agent", "spawn/spawn_status tools require subagent to be enabled", nil)
 		}
+
+		// Register delegate tool for multi-agent setups.
+		// Auto-enabled when multiple agents exist. Delegation uses the SubTurn
+		// mechanism directly (not SubagentManager) and is independent of the
+		// subagent tool.
+		if len(registry.ListAgentIDs()) > 1 {
+			delegateTool := tools.NewDelegateTool()
+			delegateTool.SetSpawner(NewSubTurnSpawner(al))
+			currentAgentID := agentID
+			delegateTool.SetSelfAgentID(currentAgentID)
+			delegateTool.SetAllowlistChecker(func(targetAgentID string) bool {
+				return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
+			})
+			agent.Tools.Register(delegateTool)
+		}
+
+		warnOnUnknownAgentToolDeclarations(agentID, agent.Workspace, agent.Definition, agent.Tools)
 	}
 }

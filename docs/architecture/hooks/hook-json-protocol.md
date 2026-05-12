@@ -522,7 +522,7 @@ Standard flow for plugin tool injection:
 ```python
 def handle_before_llm(params: dict) -> dict:
     tools = params.get("tools", [])
-    
+
     # Add plugin tool definition
     tools.append({
         "type": "function",
@@ -538,7 +538,7 @@ def handle_before_llm(params: dict) -> dict:
             }
         }
     })
-    
+
     return {
         "action": "modify",
         "request": {
@@ -555,12 +555,12 @@ def handle_before_llm(params: dict) -> dict:
 ```python
 def handle_before_tool(params: dict) -> dict:
     tool = params.get("tool", "")
-    
+
     if tool == "my_plugin_tool":
         # Implement tool logic here
         args = params.get("arguments", {})
         input_text = args.get("input", "")
-        
+
         # Return result directly, no need to register in ToolRegistry
         return {
             "action": "respond",
@@ -570,7 +570,7 @@ def handle_before_tool(params: dict) -> dict:
                 "is_error": False
             }
         }
-    
+
     return {"action": "continue"}
 ```
 

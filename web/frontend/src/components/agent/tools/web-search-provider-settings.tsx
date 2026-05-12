@@ -84,10 +84,7 @@ function ProviderCard({
   const { t } = useTranslation()
   const apiKeyPlaceholder = maskedSecretPlaceholder(
     settings.api_key_set ? `${providerId}-configured` : "",
-    t(
-      "pages.agent.tools.web_search.api_key_placeholder",
-      "Enter API key...",
-    ),
+    t("pages.agent.tools.web_search.api_key_placeholder", "Enter API key..."),
   )
 
   const updateSettings = (
@@ -167,7 +164,10 @@ function ProviderCard({
         >
           <div className="ml-8 flex max-w-xl flex-col gap-5">
             <ProviderField
-              label={t("pages.agent.tools.web_search.max_results", "Max Results")}
+              label={t(
+                "pages.agent.tools.web_search.max_results",
+                "Max Results",
+              )}
             >
               <Input
                 type="number"

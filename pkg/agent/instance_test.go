@@ -10,6 +10,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 func TestNewAgentInstance_UsesDefaultsTemperatureAndMaxTokens(t *testing.T) {
@@ -614,5 +615,287 @@ func TestNewAgentInstance_InvalidExecConfigDoesNotExit(t *testing.T) {
 
 	if _, ok := agent.Tools.Get("read_file"); !ok {
 		t.Fatal("read_file tool should still be registered")
+	}
+}
+
+func TestNewAgentInstance_UsesFrontmatterModelAndSkills(t *testing.T) {
+	workspace := setupWorkspace(t, map[string]string{
+		"AGENT.md": `---
+model: frontmatter-model
+skills: [frontmatter-skill]
+mcpServers: [GitHub, filesystem]
+---
+# Agent
+
+Use frontmatter identity.
+`,
+	})
+	defer cleanupWorkspace(t, workspace)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				ModelName: "default-model",
+			},
+		},
+	}
+
+	agent := NewAgentInstance(&config.AgentConfig{
+		ID:        "research",
+		Workspace: workspace,
+		Model: &config.AgentModelConfig{
+			Primary: "config-model",
+		},
+		Skills: []string{"config-skill"},
+	}, &cfg.Agents.Defaults, cfg, &mockProvider{})
+
+	if agent.Model != "frontmatter-model" {
+		t.Fatalf("agent.Model = %q, want frontmatter-model", agent.Model)
+	}
+	if len(agent.SkillsFilter) != 1 || agent.SkillsFilter[0] != "frontmatter-skill" {
+		t.Fatalf("agent.SkillsFilter = %v, want [frontmatter-skill]", agent.SkillsFilter)
+	}
+	if !agent.AllowsMCPServer("github") {
+		t.Fatal("expected github MCP server to be allowed from frontmatter")
+	}
+	if !agent.AllowsMCPServer("FILESYSTEM") {
+		t.Fatal("expected filesystem MCP server matching to be case-insensitive")
+	}
+	if agent.AllowsMCPServer("slack") {
+		t.Fatal("expected slack MCP server to be blocked by frontmatter allowlist")
+	}
+}
+
+func TestNewAgentInstance_UsesResolvedProviderForFrontmatterPrimaryModel(t *testing.T) {
+	workspace := setupWorkspace(t, map[string]string{
+		"AGENT.md": `---
+model: claude-frontmatter
+---
+# Agent
+`,
+	})
+	defer cleanupWorkspace(t, workspace)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				Provider:  "openai",
+				ModelName: "default-model",
+			},
+		},
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "claude-frontmatter",
+				Model:     "anthropic/claude-3-7-sonnet",
+				APIKeys:   config.SimpleSecureStrings("test-anthropic-key"),
+				Workspace: workspace,
+			},
+		},
+	}
+
+	defaultProvider := &mockProvider{}
+	agent := NewAgentInstance(&config.AgentConfig{
+		ID:        "research",
+		Workspace: workspace,
+	}, &cfg.Agents.Defaults, cfg, defaultProvider)
+
+	if agent.Model != "claude-frontmatter" {
+		t.Fatalf("agent.Model = %q, want %q", agent.Model, "claude-frontmatter")
+	}
+	if len(agent.Candidates) != 1 {
+		t.Fatalf("len(agent.Candidates) = %d, want 1", len(agent.Candidates))
+	}
+	if got := agent.Candidates[0].Provider; got != "anthropic" {
+		t.Fatalf("primary candidate provider = %q, want %q", got, "anthropic")
+	}
+	if got := agent.Candidates[0].Model; got != "claude-3-7-sonnet" {
+		t.Fatalf("primary candidate model = %q, want %q", got, "claude-3-7-sonnet")
+	}
+	if agent.Provider == defaultProvider {
+		t.Fatal("expected primary provider to be resolved from model_list instead of using injected default provider")
+	}
+}
+
+func TestNewAgentInstance_SuppressesToolDiscoveryPromptWhenNoMCPServersSelected(t *testing.T) {
+	workspace := setupWorkspace(t, map[string]string{
+		"AGENT.md": `---
+mcpServers: []
+---
+# Agent
+`,
+	})
+	defer cleanupWorkspace(t, workspace)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				ModelName: "default-model",
+			},
+		},
+		Tools: config.ToolsConfig{
+			MCP: config.MCPConfig{
+				ToolConfig: config.ToolConfig{Enabled: true},
+				Discovery: config.ToolDiscoveryConfig{
+					Enabled:  true,
+					UseBM25:  true,
+					UseRegex: false,
+				},
+				Servers: map[string]config.MCPServerConfig{
+					"github": {Enabled: true},
+				},
+			},
+		},
+	}
+
+	agent := NewAgentInstance(&config.AgentConfig{
+		ID:        "research",
+		Workspace: workspace,
+	}, &cfg.Agents.Defaults, cfg, &mockProvider{})
+
+	if agent.AllowsMCPServer("github") {
+		t.Fatal("expected empty mcpServers allowlist to deny all servers")
+	}
+	messages := agent.ContextBuilder.BuildMessagesFromPrompt(PromptBuildRequest{CurrentMessage: "hello"})
+	if prompt := messages[0].Content; strings.Contains(prompt, tools.BM25SearchToolName) {
+		t.Fatalf("expected no tool discovery prompt when no MCP servers are selected, got %q", prompt)
+	}
+}
+
+func TestNewAgentInstance_IncludesToolDiscoveryPromptWhenDiscoverableMCPServerSelected(t *testing.T) {
+	workspace := setupWorkspace(t, map[string]string{
+		"AGENT.md": `---
+mcpServers: [github]
+---
+# Agent
+`,
+	})
+	defer cleanupWorkspace(t, workspace)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				ModelName: "default-model",
+			},
+		},
+		Tools: config.ToolsConfig{
+			MCP: config.MCPConfig{
+				ToolConfig: config.ToolConfig{Enabled: true},
+				Discovery: config.ToolDiscoveryConfig{
+					Enabled:  true,
+					UseBM25:  true,
+					UseRegex: false,
+				},
+				Servers: map[string]config.MCPServerConfig{
+					"github": {Enabled: true},
+				},
+			},
+		},
+	}
+
+	agent := NewAgentInstance(&config.AgentConfig{
+		ID:        "research",
+		Workspace: workspace,
+	}, &cfg.Agents.Defaults, cfg, &mockProvider{})
+
+	messages := agent.ContextBuilder.BuildMessagesFromPrompt(PromptBuildRequest{CurrentMessage: "hello"})
+	if prompt := messages[0].Content; !strings.Contains(prompt, tools.BM25SearchToolName) {
+		t.Fatalf("expected tool discovery prompt when a discoverable MCP server is selected, got %q", prompt)
+	}
+}
+
+func TestNewAgentInstance_InvalidFrontmatterFailsClosedForToolsAndMCPServers(t *testing.T) {
+	workspace := setupWorkspace(t, map[string]string{
+		"AGENT.md": `---
+tools: [read_file
+mcpServers: [github]
+---
+# Agent
+`,
+	})
+	defer cleanupWorkspace(t, workspace)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				ModelName: "default-model",
+			},
+		},
+		Tools: config.ToolsConfig{
+			ReadFile: config.ReadFileToolConfig{Enabled: true},
+		},
+	}
+
+	agent := NewAgentInstance(&config.AgentConfig{
+		ID:        "research",
+		Workspace: workspace,
+	}, &cfg.Agents.Defaults, cfg, &mockProvider{})
+
+	if _, ok := agent.Tools.Get("read_file"); ok {
+		t.Fatal("expected malformed frontmatter to fail closed and block read_file")
+	}
+	if agent.AllowsMCPServer("github") {
+		t.Fatal("expected malformed frontmatter to fail closed for MCP servers")
+	}
+}
+
+func TestNewAgentInstance_ExplicitEmptyToolsFieldBlocksAllTools(t *testing.T) {
+	tests := []struct {
+		name         string
+		toolsSnippet string
+	}{
+		{
+			name:         "empty list",
+			toolsSnippet: "tools: []",
+		},
+		{
+			name:         "blank field",
+			toolsSnippet: "tools:",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workspace := setupWorkspace(t, map[string]string{
+				"AGENT.md": `---
+` + tt.toolsSnippet + `
+---
+# Agent
+`,
+			})
+			defer cleanupWorkspace(t, workspace)
+
+			cfg := &config.Config{
+				Agents: config.AgentsConfig{
+					Defaults: config.AgentDefaults{
+						Workspace: workspace,
+						ModelName: "default-model",
+					},
+				},
+				Tools: config.ToolsConfig{
+					ReadFile: config.ReadFileToolConfig{Enabled: true},
+					ListDir:  config.ToolConfig{Enabled: true},
+				},
+			}
+
+			agent := NewAgentInstance(&config.AgentConfig{
+				ID:        "research",
+				Workspace: workspace,
+			}, &cfg.Agents.Defaults, cfg, &mockProvider{})
+
+			if got := agent.Tools.List(); len(got) != 0 {
+				t.Fatalf("agent tools = %v, want no registered tools", got)
+			}
+			if _, ok := agent.Tools.Get("read_file"); ok {
+				t.Fatal("expected read_file to be blocked by explicit empty tools field")
+			}
+			if _, ok := agent.Tools.Get("list_dir"); ok {
+				t.Fatal("expected list_dir to be blocked by explicit empty tools field")
+			}
+		})
 	}
 }

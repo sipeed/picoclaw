@@ -83,6 +83,8 @@ func migrateLegacyAgentDefaultsModel(m map[string]any) {
 // loadConfigV1 loads a version 1 config (current schema)
 func loadConfig(data []byte) (*Config, error) {
 	cfg := DefaultConfig()
+	evolutionModeExplicit := configObjectHasField(data, "evolution", "mode")
+	evolutionExplicitWithoutMode := configObjectHasTopLevelField(data, "evolution") && !evolutionModeExplicit
 
 	// Pre-scan the JSON to check how many model_list entries the user provided.
 	// Go's JSON decoder reuses existing slice backing-array elements rather than
@@ -101,7 +103,36 @@ func loadConfig(data []byte) (*Config, error) {
 	if err := decodeJSONWithDiagnostics(data, cfg, "config.json"); err != nil {
 		return nil, err
 	}
+	if evolutionExplicitWithoutMode {
+		cfg.Evolution.Mode = ""
+	}
 	return cfg, nil
+}
+
+func configObjectHasTopLevelField(data []byte, field string) bool {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return false
+	}
+	_, ok := raw[field]
+	return ok
+}
+
+func configObjectHasField(data []byte, objectField, nestedField string) bool {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return false
+	}
+	objectData, ok := raw[objectField]
+	if !ok {
+		return false
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(objectData, &object); err != nil {
+		return false
+	}
+	_, ok = object[nestedField]
+	return ok
 }
 
 func mergeAPIKeys(apiKey string, apiKeys []string) []string {
