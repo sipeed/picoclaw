@@ -1872,16 +1872,16 @@ func TestWebTool_AutoProviderPrefersConfiguredProvidersBeforeGemini(t *testing.T
 	if err != nil {
 		t.Fatalf("ResolveWebSearchProviderName() error: %v", err)
 	}
-	if name != "gemini" {
-		t.Fatalf("provider = %q, want gemini", name)
+	if name != "brave" {
+		t.Fatalf("provider = %q, want brave", name)
 	}
 
 	name, err = ResolveWebSearchProviderName(opts, "今天上海天气")
 	if err != nil {
 		t.Fatalf("ResolveWebSearchProviderName() error: %v", err)
 	}
-	if name != "gemini" {
-		t.Fatalf("provider = %q, want gemini", name)
+	if name != "brave" {
+		t.Fatalf("provider = %q, want brave", name)
 	}
 }
 
