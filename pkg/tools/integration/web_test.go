@@ -1959,6 +1959,22 @@ func TestGeminiSearchProvider_SearchSuccess(t *testing.T) {
 	}
 }
 
+func TestGeminiSearchProvider_SearchRejectsRange(t *testing.T) {
+	provider := &GeminiSearchProvider{
+		apiKey: "google-key",
+		model:  "gemini-2.5-flash",
+		client: http.DefaultClient,
+	}
+
+	_, err := provider.Search(context.Background(), "robotics", 2, "d")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "does not support range") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestGeminiSearchProvider_SearchAPIError(t *testing.T) {
 	provider := &GeminiSearchProvider{
 		apiKey: "google-key",
