@@ -108,7 +108,9 @@ func saveValidatedConfig(cfg *config.Config) error {
 		return fmt.Errorf("config is nil")
 	}
 
-	data, err := json.Marshal(cfg)
+	normalizedCfg := normalizedConfigForSave(cfg)
+
+	data, err := json.Marshal(normalizedCfg)
 	if err != nil {
 		return fmt.Errorf("failed to serialize config: %w", err)
 	}
@@ -117,11 +119,30 @@ func saveValidatedConfig(cfg *config.Config) error {
 		return err
 	}
 
-	if err := config.SaveConfig(internal.GetConfigPath(), cfg); err != nil {
+	if err := config.SaveConfig(internal.GetConfigPath(), normalizedCfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
 	return nil
+}
+
+func normalizedConfigForSave(cfg *config.Config) *config.Config {
+	clone := *cfg
+	if cfg.Tools.MCP.Servers == nil {
+		return &clone
+	}
+
+	clone.Tools = cfg.Tools
+	clone.Tools.MCP = cfg.Tools.MCP
+	clone.Tools.MCP.Servers = make(map[string]config.MCPServerConfig, len(cfg.Tools.MCP.Servers))
+	for name, server := range cfg.Tools.MCP.Servers {
+		if server.Type != "" {
+			server.Type = config.NormalizeMCPTransportType(server.Type)
+		}
+		clone.Tools.MCP.Servers[name] = server
+	}
+
+	return &clone
 }
 
 func validateConfigDocument(data []byte) error {
