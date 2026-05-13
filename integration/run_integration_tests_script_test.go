@@ -25,24 +25,26 @@ func TestRunIntegrationTestsScriptExecutesSuiteCommand(t *testing.T) {
 	})
 
 	suiteName := filepath.Base(suiteDir)
-	if err := os.WriteFile(
+	err = os.WriteFile(
 		filepath.Join(suiteDir, "suite.env"),
 		[]byte("TEST_COMMAND='printf runner-ok'\n"),
 		0o644,
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatalf("WriteFile(suite.env) error = %v", err)
 	}
-	if err := os.WriteFile(
+	err = os.WriteFile(
 		filepath.Join(suiteDir, "docker-compose.yml"),
 		[]byte("services:\n  fake-dependency:\n    image: busybox\n"),
 		0o644,
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatalf("WriteFile(docker-compose.yml) error = %v", err)
 	}
 
 	stubDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "docker.log")
-	if err := os.WriteFile(filepath.Join(stubDir, "docker"), []byte(`#!/bin/sh
+	err = os.WriteFile(filepath.Join(stubDir, "docker"), []byte(`#!/bin/sh
 set -eu
 
 log_file="${DOCKER_LOG:?}"
@@ -78,7 +80,8 @@ case "$subcommand" in
     exit 1
     ;;
 esac
-`), 0o755); err != nil {
+`), 0o755)
+	if err != nil {
 		t.Fatalf("WriteFile(docker stub) error = %v", err)
 	}
 
