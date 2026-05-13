@@ -73,10 +73,12 @@ run_suite() {
     trap cleanup EXIT
 
     echo "==> [$suite_name] resolving services"
-    mapfile -t services < <(docker compose "${compose_args[@]}" config --services)
+    local services=()
+    while IFS= read -r service; do
+      services+=("$service")
+    done < <(docker compose "${compose_args[@]}" config --services)
 
     local dependency_services=()
-    local service
     for service in "${services[@]}"; do
       if [[ "$service" != "$runner_service" ]]; then
         dependency_services+=("$service")
@@ -89,7 +91,9 @@ run_suite() {
     fi
 
     echo "==> [$suite_name] running: $TEST_COMMAND"
-    docker compose "${compose_args[@]}" run --rm "$runner_service" sh -c "$TEST_COMMAND"
+    # integration-runner already uses `bash -lc` as its entrypoint, so pass the
+    # suite command as a single argument for Bash to execute directly.
+    docker compose "${compose_args[@]}" run --rm "$runner_service" "$TEST_COMMAND"
   )
 }
 
