@@ -485,9 +485,6 @@ func (p *GeminiSearchProvider) Search(
 	count int,
 	rangeCode string,
 ) (string, error) {
-	if rangeCode != "" {
-		return "", fmt.Errorf("gemini search does not support range filter")
-	}
 	if strings.TrimSpace(p.apiKey) == "" {
 		return "", errors.New("no API key provided")
 	}

@@ -1959,19 +1959,36 @@ func TestGeminiSearchProvider_SearchSuccess(t *testing.T) {
 	}
 }
 
-func TestGeminiSearchProvider_SearchRejectsRange(t *testing.T) {
+func TestGeminiSearchProvider_SearchIgnoresRange(t *testing.T) {
 	provider := &GeminiSearchProvider{
 		apiKey: "google-key",
 		model:  "gemini-2.5-flash",
-		client: http.DefaultClient,
+		client: &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				rec := httptest.NewRecorder()
+				rec.WriteHeader(http.StatusOK)
+				fmt.Fprint(rec, `{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {"text": "Recent robotics result."}
+        ]
+      }
+    }
+  ]
+}`)
+				return rec.Result(), nil
+			}),
+		},
 	}
 
-	_, err := provider.Search(context.Background(), "robotics", 2, "d")
-	if err == nil {
-		t.Fatal("expected error")
+	out, err := provider.Search(context.Background(), "robotics", 2, "d")
+	if err != nil {
+		t.Fatalf("Search() error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "does not support range") {
-		t.Fatalf("unexpected error: %v", err)
+	if !strings.Contains(out, "Recent robotics result.") {
+		t.Fatalf("missing response text in output: %s", out)
 	}
 }
 
