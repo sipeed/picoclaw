@@ -44,11 +44,36 @@ func (al *AgentLoop) runTurnWithSteering(ctx context.Context, initialMsg bus.Inb
 		return
 	}
 
-	// Drain steering queue using existing Continue mechanism
+	continued, continueErr := al.drainQueuedSteeringContinuations(ctx, target)
+	if continueErr != nil {
+		logger.WarnCF("agent", "Failed to continue queued steering",
+			map[string]any{
+				"channel": target.Channel,
+				"chat_id": target.ChatID,
+				"error":   continueErr.Error(),
+			})
+	} else if continued != "" {
+		finalResponse = continued
+	}
+
+	// Publish final response
+	if finalResponse != "" {
+		al.PublishResponseIfNeeded(ctx, target.Channel, target.ChatID, target.SessionKey, finalResponse)
+	}
+}
+
+func (al *AgentLoop) drainQueuedSteeringContinuations(
+	ctx context.Context,
+	target *continuationTarget,
+) (string, error) {
+	if target == nil {
+		return "", nil
+	}
+
+	finalResponse := ""
 	for al.pendingSteeringCountForScope(target.SessionKey) > 0 {
-		// Check for context cancellation between iterations
-		if ctx.Err() != nil {
-			return
+		if err := ctx.Err(); err != nil {
+			return finalResponse, err
 		}
 
 		logger.InfoCF("agent", "Continuing queued steering after turn end",
@@ -61,13 +86,7 @@ func (al *AgentLoop) runTurnWithSteering(ctx context.Context, initialMsg bus.Inb
 
 		continued, continueErr := al.Continue(ctx, target.SessionKey, target.Channel, target.ChatID)
 		if continueErr != nil {
-			logger.WarnCF("agent", "Failed to continue queued steering",
-				map[string]any{
-					"channel": target.Channel,
-					"chat_id": target.ChatID,
-					"error":   continueErr.Error(),
-				})
-			break
+			return finalResponse, continueErr
 		}
 		if continued == "" {
 			break
@@ -75,10 +94,7 @@ func (al *AgentLoop) runTurnWithSteering(ctx context.Context, initialMsg bus.Inb
 		finalResponse = continued
 	}
 
-	// Publish final response
-	if finalResponse != "" {
-		al.PublishResponseIfNeeded(ctx, target.Channel, target.ChatID, target.SessionKey, finalResponse)
-	}
+	return finalResponse, nil
 }
 
 func (al *AgentLoop) resolveSteeringTarget(msg bus.InboundMessage) (string, string, bool) {

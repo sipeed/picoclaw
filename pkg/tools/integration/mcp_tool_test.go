@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/media"
 	toolshared "github.com/sipeed/picoclaw/pkg/tools/shared"
 )
@@ -296,6 +298,77 @@ func TestMCPTool_Execute_Success(t *testing.T) {
 	}
 	if result.ForLLM != "Found 3 repositories" {
 		t.Errorf("Expected 'Found 3 repositories', got '%s'", result.ForLLM)
+	}
+}
+
+func TestMCPTool_Execute_PublishesRuntimeEvents(t *testing.T) {
+	eventBus := runtimeevents.NewBus()
+	defer func() {
+		if err := eventBus.Close(); err != nil {
+			t.Errorf("event bus close failed: %v", err)
+		}
+	}()
+
+	_, eventsCh, err := eventBus.Channel().OfKind(
+		runtimeevents.KindMCPToolCallStart,
+		runtimeevents.KindMCPToolCallEnd,
+	).SubscribeChan(t.Context(), runtimeevents.SubscribeOptions{Name: "mcp-tool-events", Buffer: 2})
+	if err != nil {
+		t.Fatalf("SubscribeChan failed: %v", err)
+	}
+
+	manager := &MockMCPManager{}
+	mcpTool := NewMCPTool(manager, "github", &mcp.Tool{Name: "search_repos"})
+	mcpTool.SetEventPublisher(eventBus)
+
+	ctx := toolshared.WithToolContext(context.Background(), "telegram", "chat-1")
+	ctx = toolshared.WithToolMessageContext(ctx, "msg-1", "")
+	ctx = toolshared.WithToolSessionContext(ctx, "main", "session-1", nil)
+	result := mcpTool.Execute(ctx, map[string]any{"query": "picoclaw"})
+	if result == nil || result.IsError {
+		t.Fatalf("Execute result = %+v", result)
+	}
+
+	started := receiveMCPToolRuntimeEvent(t, eventsCh)
+	if started.Kind != runtimeevents.KindMCPToolCallStart ||
+		started.Scope.AgentID != "main" ||
+		started.Scope.SessionKey != "session-1" ||
+		started.Scope.Channel != "telegram" ||
+		started.Scope.ChatID != "chat-1" ||
+		started.Scope.MessageID != "msg-1" {
+		t.Fatalf("started event = %+v", started)
+	}
+
+	ended := receiveMCPToolRuntimeEvent(t, eventsCh)
+	if ended.Kind != runtimeevents.KindMCPToolCallEnd || ended.Severity != runtimeevents.SeverityInfo {
+		t.Fatalf("ended event = %+v", ended)
+	}
+	payload, ok := ended.Payload.(MCPToolCallPayload)
+	if !ok {
+		t.Fatalf("ended payload = %T, want MCPToolCallPayload", ended.Payload)
+	}
+	if payload.Server != "github" || payload.Tool != "search_repos" || payload.IsError {
+		t.Fatalf("ended payload = %+v", payload)
+	}
+	if ended.Attrs["server"] != "github" ||
+		ended.Attrs["tool"] != "search_repos" ||
+		ended.Attrs["duration_ms"] == nil {
+		t.Fatalf("ended attrs = %#v", ended.Attrs)
+	}
+}
+
+func receiveMCPToolRuntimeEvent(t *testing.T, ch <-chan runtimeevents.Event) runtimeevents.Event {
+	t.Helper()
+
+	select {
+	case evt, ok := <-ch:
+		if !ok {
+			t.Fatal("runtime event channel closed before expected event")
+		}
+		return evt
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for runtime event")
+		return runtimeevents.Event{}
 	}
 }
 

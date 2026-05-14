@@ -129,13 +129,15 @@
   },
   "common": {
     "cancel": "取消",
+    "close": "关闭",
     "save": "保存",
     "saving": "保存中...",
     "reset": "重置",
     "confirm": "确认",
     "saveChangesTitle": "有未保存的配置更改",
     "restartRequiredTitle": "需要重启服务",
-    "restartRequiredDesc": "{{name}} 的最新配置已保存。重启服务后才能正式生效。"
+    "restartRequiredDesc": "{{name}} 的最新配置已保存。重启服务后才能正式生效。",
+    "fix": "修复"
   },
   "labels": {
     "loading": "加载中..."
@@ -236,7 +238,8 @@
         "setting": "正在设为默认...",
         "unavailable": "无法将不可用的模型设为默认",
         "isDefault": "该模型已是默认模型",
-        "isVirtual": "无法将虚拟模型设为默认"
+        "isVirtual": "无法将虚拟模型设为默认",
+        "unsupportedProvider": "该 Provider 仅用于 ASR，不能设为默认聊天模型"
       },
       "deleteDisabled": {
         "isDefault": "无法删除默认模型"
@@ -244,7 +247,9 @@
     },
     "defaultOnSave": {
       "label": "默认模型",
-      "description": "保存后自动将该模型设置为默认模型。"
+      "description": "保存后自动将该模型设置为默认模型。",
+      "unsupportedProvider": "该 Provider 可以保存在 model_list 中，但不能作为默认聊天模型使用。",
+      "clearOnSave": "保存这个仅用于 ASR 的模型后，会清除当前的默认聊天模型设置。"
     },
     "add": {
       "button": "添加模型",
@@ -255,7 +260,7 @@
       "modelNameHint": "用于在对话中识别此模型的简短名称。",
       "modelId": "模型标识符",
       "modelIdPlaceholder": "例如 gpt-4o 或 openai/gpt-4o",
-      "modelIdHint": "未指定 Provider 时，诸如 openai/gpt-4o 的值将按 provider/model 格式解析。已指定 Provider 时，此字段将作为规范模型 ID 使用，不再解析其中的 provider 前缀。",
+      "modelIdHint": "此字段将作为所选 Provider 的规范模型 ID 使用。若模型标识符本身包含斜杠（如 openai/gpt-5.4），将作为完整 ID 保留，不会再次拆分 Provider。",
       "errorRequired": "此字段为必填项。",
       "errorDuplicateModelName": "模型别名已存在，请使用其他名称。",
       "saveError": "添加模型失败",
@@ -272,8 +277,9 @@
     },
     "field": {
       "provider": "Provider",
-      "providerPlaceholder": "例如 openai",
-      "providerHint": "可选。指定后，将以该值作为最终 provider，并将“模型标识符”字段解释为规范模型 ID。",
+      "providerPlaceholder": "请选择 Provider",
+      "providerHint": "请选择一个由后端 catalog 提供的 Provider；“模型标识符”字段会按该 Provider 的规范模型 ID 解释。",
+      "providerInvalid": "当前 Provider 无效，请重新选择一个受支持的 Provider。",
       "apiBase": "API Base URL",
       "apiKey": "API Key",
       "apiKeyPlaceholder": "请输入 API Key",
@@ -282,6 +288,7 @@
       "proxyHint": "可选。例如 http://127.0.0.1:7890",
       "authMethod": "认证方式",
       "authMethodHint": "认证方式：oauth、token。留空表示使用 API Key 认证。",
+      "authMethodManagedHint": "该 Provider 的认证方式由系统自动管理。",
       "connectMode": "连接模式",
       "connectModeHint": "CLI 型服务商的连接模式：stdio 或 grpc。",
       "workspace": "工作目录",
@@ -294,10 +301,14 @@
       "thinkingLevelHint": "扩展思考预算：off、low、medium、high、xhigh、adaptive。",
       "maxTokensField": "Max Tokens 字段名",
       "maxTokensFieldHint": "覆盖请求中 max_tokens 的字段名，例如 max_completion_tokens。",
+      "toolSchemaTransform": "工具 Schema 转换",
+      "toolSchemaTransformHint": "可选的工具 JSON Schema 兼容性转换。留空表示保持原生行为。当前支持值：simple。",
       "extraBody": "Extra Body",
       "extraBodyHint": "要注入到请求体中的额外 JSON 字段，例如 {\"reasoning_split\": true}。",
       "customHeaders": "Custom Headers",
-      "customHeadersHint": "要注入到每个请求中的额外 HTTP Headers，例如 {\"X-Source\": \"coding-plan\"}。"
+      "customHeadersHint": "要注入到每个请求中的额外 HTTP Headers，例如 {\"X-Source\": \"coding-plan\"}。",
+      "selectProviderFirst": "请先选择服务商",
+      "invalidJson": "JSON 格式不正确"
     },
     "edit": {
       "title": "配置 {{name}}",
@@ -305,6 +316,74 @@
       "oauthNote": "该服务商使用 OAuth 认证，无需 API Key。",
       "saveError": "保存失败",
       "saveSuccess": "模型配置已保存。"
+    },
+    "fetch": {
+      "title": "获取可用模型",
+      "description": "从上游服务商获取模型列表。",
+      "providerLabel": "服务商：",
+      "needApiKey": "请先输入 API Key 再获取模型。",
+      "fetching": "正在获取模型...",
+      "retry": "重试",
+      "filterPlaceholder": "筛选模型...",
+      "found": "已找到 {{count}} 个模型",
+      "shown": "（显示 {{count}} 个）",
+      "selectAll": "全选",
+      "deselectAll": "取消全选",
+      "fill": "填充 {{count}} 个选中的模型",
+      "failed": "获取模型失败"
+    },
+    "catalog": {
+      "button": "已保存目录",
+      "title": "已保存的模型目录",
+      "description": "之前获取的模型列表，按 API Key 分别存储。选择模型以添加到配置中。",
+      "loading": "正在加载目录...",
+      "empty": "暂无已保存的模型目录。从服务商获取模型后将自动保存。",
+      "filterPlaceholder": "筛选模型...",
+      "models": "个模型",
+      "fetchedAt": "获取于",
+      "delete": "删除目录",
+      "refresh": "从上游刷新",
+      "found": "共 {{count}} 个模型",
+      "selectAll": "全选",
+      "deselectAll": "取消全选",
+      "addSelected": "添加 {{count}} 个选中模型",
+      "addSuccess": "已添加 {{count}} 个模型到配置中。",
+      "needApiKey": "这些模型需要 API Key。导入后需要配置凭证才能使用。"
+    },
+    "test": {
+      "title": "测试模型连通性",
+      "description": "验证模型端点是否可达且配置正确。",
+      "modelLabel": "模型：",
+      "identifierLabel": "标识符：",
+      "endpointLabel": "端点：",
+      "testConnection": "测试连接",
+      "testing": "正在测试连接...",
+      "success": "连接成功",
+      "responseTime": "响应时间：{{ms}}ms",
+      "failed": "连接失败",
+      "status": "状态：{{status}}",
+      "testFailed": "测试失败",
+      "testAgain": "重新测试"
+    },
+    "validation": {
+      "whitespace": "模型标识符不能包含空格",
+      "leadingSlash": "不应以 / 开头",
+      "consecutiveSlash": "不应包含连续的 /",
+      "useProvider": "将使用 \"{{provider}}\" 作为服务商",
+      "defaultToOpenAI": "未指定服务商，默认使用 OpenAI",
+      "emptyModel": "模型名称不能为空",
+      "shouldUse": "\"{{provider}}\" 应使用 \"{{alias}}\"",
+      "didYouMean": "您是否想输入 \"{{closest}}\"？",
+      "unknownProvider": "未知服务商 \"{{provider}}\"",
+      "parsed": "服务商={{provider}}，模型={{model}}"
+    },
+    "combobox": {
+      "selectProvider": "选择服务商...",
+      "searchProvider": "搜索服务商...",
+      "noProvider": "未找到服务商。",
+      "local": "本地",
+      "custom": "自定义服务商...",
+      "customPlaceholder": "输入服务商名称..."
     }
   },
   "channels": {
@@ -325,7 +404,8 @@
       "maixcam": "MaixCam",
       "matrix": "Matrix",
       "irc": "IRC",
-      "weixin": "微信"
+      "weixin": "微信",
+      "mqtt": "MQTT"
     },
     "weixin": {
       "bindTitle": "微信账号绑定",
@@ -450,11 +530,35 @@
         "channels": "要加入的 IRC 频道列表",
         "requestCaps": "连接时请求的 IRC 扩展能力列表",
         "maxBase64FileSizeMiB": "本地文件转为 base64 上传的最大体积，单位 MiB；0 表示不限制，仅影响本地文件，不影响 URL 直传",
-        "genericField": "用于配置{{field}}"
+        "genericField": "用于配置{{field}}",
+        "broker": "MQTT Broker 地址。",
+        "mqttAgentId": "本实例的唯一标识，用于构造 topic 路径。",
+        "topicPrefix": "Topic 前缀，默认为 /picoclaw。",
+        "mqttUsername": "Broker 认证用户名（可选）。",
+        "mqttPassword": "Broker 认证密码（可选）。",
+        "mqttClientId": "MQTT 客户端 ID，留空自动生成。",
+        "keepAlive": "心跳间隔（秒），默认 60。",
+        "qos": "消息质量等级：0=最多一次，1=至少一次，2=恰好一次。"
       }
     },
     "validation": {
       "requiredField": "请填写该字段"
+    },
+    "mqtt": {
+      "protocolTitle": "接入协议",
+      "protocolDesc": "客户端按以下 topic 和 payload 格式收发消息",
+      "uplink": "上行（客户端 → Agent）",
+      "downlink": "下行（Agent → 客户端）",
+      "topicParams": "Topic 参数说明",
+      "fieldText": "text",
+      "uplinkTextDesc": "用户自然语言指令（必填）",
+      "downlinkTextDesc": "Agent 回复文本，流式场景下多条按序拼接即为完整回复",
+      "topicPrefixDesc": "topic 前缀，与上方配置一致",
+      "agentIdDesc": "Agent ID，与上方配置一致",
+      "clientIdDesc": "客户端自定义标识，建议首次启动时生成 UUID 并持久化，同一设备保持不变",
+      "clientIdPlaceholder": "留空自动生成",
+      "secretSet": "已设置，留空表示不修改",
+      "secretEmpty": "未配置"
     }
   },
   "pages": {
@@ -701,9 +805,62 @@
       "allowed_cidrs": "允许访问网段",
       "allowed_cidrs_hint": "仅允许这些 CIDR 网段的客户端访问服务。可按行或逗号分隔；留空表示允许所有来源",
       "allowed_cidrs_placeholder": "192.168.1.0/24\n10.0.0.0/8",
+      "evolution_section_hint": "让 Agent 从已完成的回合中学习，并准备技能改进。",
+      "evolution_enabled": "启用自进化",
+      "evolution_enabled_hint": "记录已完成回合的学习数据。Draft 和 Apply 模式还可以生成技能更新。",
+      "evolution_mode": "自进化模式",
+      "evolution_mode_hint": "Observe 只记录数据，Draft 生成候选技能，Apply 可将接受的草稿写入工作区技能。",
+      "evolution_mode_observe": "observe",
+      "evolution_mode_draft": "draft",
+      "evolution_mode_apply": "apply",
+      "evolution_state_dir": "状态目录",
+      "evolution_state_dir_hint": "自进化状态的可选目录。留空时使用工作区默认位置。",
+      "evolution_min_task_count": "最小任务数",
+      "evolution_min_task_count_hint": "一个模式能生成草稿前，至少需要多少个相关任务。",
+      "evolution_min_success_ratio": "最小成功率",
+      "evolution_min_success_ratio_hint": "聚类任务所需的成功率。取值需大于 0，且不超过 1。",
+      "evolution_cold_path_trigger": "冷路径触发方式",
+      "evolution_cold_path_trigger_hint": "选择何时为符合条件的学习记录运行草稿生成。",
+      "evolution_cold_path_after_turn": "每轮结束后",
+      "evolution_cold_path_scheduled": "定时运行",
+      "evolution_cold_path_manual": "关闭自动运行",
+      "evolution_cold_path_times": "定时运行时间",
+      "evolution_cold_path_times_hint": "定时冷路径处理的运行时间。每行填写一个 HH:MM。",
+      "mcp_section_hint": "通过可视化界面配置 MCP 服务器，无需手动编辑 config.json",
+      "mcp_enabled": "启用 MCP",
+      "mcp_enabled_hint": "开启或关闭 MCP 服务集成",
+      "mcp_discovery_enabled": "启用 MCP 发现",
+      "mcp_discovery_enabled_hint": "允许 MCP 发现工具检索已注册的 MCP 服务器",
+      "mcp_discovery_ttl": "发现工具解锁保持轮数",
+      "mcp_discovery_ttl_hint": "已发现的工具保持解锁状态的对话轮数",
+      "mcp_discovery_max_results": "发现最大结果数",
+      "mcp_discovery_max_results_hint": "每次查询返回的 MCP 发现结果上限",
+      "mcp_discovery_use_bm25": "使用 BM25 排序",
+      "mcp_discovery_use_bm25_hint": "在 MCP 发现中启用 BM25 词法评分",
+      "mcp_discovery_use_regex": "启用正则搜索",
+      "mcp_discovery_use_regex_hint": "允许在 MCP 发现中使用正则匹配",
+      "mcp_servers": "MCP 服务器",
+      "mcp_servers_hint": "添加、编辑或删除 MCP 服务器",
+      "mcp_server_new": "新 MCP 服务器",
+      "mcp_server_add": "添加服务器",
+      "mcp_server_remove": "移除",
+      "mcp_server_enabled": "已启用",
+      "mcp_server_discovery_mode": "发现模式",
+      "mcp_server_discovery_mode_inherit": "跟随全局发现模式",
+      "mcp_server_discovery_mode_deferred": "延迟发现",
+      "mcp_server_discovery_mode_eager": "立即注册",
+      "mcp_server_name_placeholder": "服务器名称（例如 github）",
+      "mcp_server_url_placeholder": "服务器 URL（例如 https://example.com/mcp）",
+      "mcp_server_command_placeholder": "命令（例如 npx）",
+      "mcp_server_env_file_placeholder": "环境变量文件路径（可选）",
+      "mcp_server_args_placeholder": "参数（每行一个）",
+      "mcp_server_env_placeholder": "环境变量 JSON 对象",
+      "mcp_server_headers_placeholder": "请求头 JSON 对象",
       "sections": {
         "agent": "智能体",
         "runtime": "运行时",
+        "evolution": "自进化",
+        "mcp": "MCP",
         "exec": "运行命令",
         "cron": "定时任务",
         "launcher": "启动器",

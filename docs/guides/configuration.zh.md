@@ -67,6 +67,36 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 
 > **提示：** 对 `AGENT.md`、`SOUL.md`、`USER.md` 和 `memory/MEMORY.md` 的修改会通过文件修改时间（mtime）在运行时自动检测。**无需重启 gateway**，Agent 将在下一次请求时自动加载最新内容。
 
+### Agent 自进化
+
+`evolution` 配置块控制 PicoClaw 的自进化运行时。启用后，Agent 会把已完成的回合记录为学习记录。在更高模式下，它可以聚类重复出现的成功模式、生成技能草稿，并可选择把已接受的草稿应用到工作区技能中。
+
+```json
+{
+  "evolution": {
+    "enabled": false,
+    "mode": "observe",
+    "state_dir": "",
+    "min_task_count": 2,
+    "min_success_ratio": 0.7,
+    "cold_path_trigger": "after_turn",
+    "cold_path_times": []
+  }
+}
+```
+
+| 字段 | 默认值 | 说明 |
+|------|--------|------|
+| `enabled` | `false` | 启用已完成 Agent 回合的学习记录采集。Heartbeat 回合会被忽略。 |
+| `mode` | `observe` | `observe` 只记录数据；`draft` 可生成候选技能草稿；`apply` 可将已接受草稿应用到工作区技能。 |
+| `state_dir` | `""` | 自进化状态的可选目录。留空时使用工作区下的默认位置。 |
+| `min_task_count` | `2` | 一个模式具备生成草稿资格前所需的最小相关任务记录数。 |
+| `min_success_ratio` | `0.7` | 任务聚类所需的最小成功率，取值需大于 `0`，且不超过 `1`。 |
+| `cold_path_trigger` | `after_turn` | 草稿生成可在 `after_turn` 后运行、按 `scheduled` 定时运行；设置为 `manual` 时会关闭自动冷路径运行。目前还没有用户可用的手动触发入口。仅在 `draft` 和 `apply` 模式下生效。 |
+| `cold_path_times` | `[]` | 当 `cold_path_trigger` 为 `scheduled` 时使用的运行时间，格式为 `HH:MM` 字符串。 |
+
+如果你只想先检查学习记录，建议从 `observe` 开始。需要生成可审查改进时使用 `draft`。只有在你接受让已通过的草稿更新工作区技能时，才使用 `apply`。
+
 ### Web 启动器控制台
 
 用 **picoclaw-launcher** 打开浏览器控制台前需要先使用密码登录。首次启动时打开 `/launcher-setup` 创建 dashboard 登录密码；后续手动登录使用 `/launcher-login`。
@@ -753,6 +783,42 @@ PicoClaw 按协议族路由提供商：
 
 </details>
 
+### 事件日志
+
+PicoClaw 的 runtime events 会覆盖 agent、channel、gateway、message bus 和 MCP 等运行时组件。默认只打印 `agent.*` 事件，其他事件仍会发布到 runtime event bus，但不会进入日志。
+
+```json
+{
+  "events": {
+    "logging": {
+      "enabled": true,
+      "include": ["agent.*"],
+      "exclude": [],
+      "min_severity": "info",
+      "include_payload": false
+    }
+  }
+}
+```
+
+常用配置：
+
+```json
+{
+  "events": {
+    "logging": {
+      "include": ["*"],
+      "exclude": ["agent.llm.delta"],
+      "min_severity": "warn"
+    }
+  }
+}
+```
+
+`include` / `exclude` 支持精确事件名和 `gateway.*`、`channel.lifecycle.*` 这类模式。`include_payload` 默认关闭，避免把完整用户消息或工具参数写入日志；agent 事件会默认输出长度、计数、状态等摘要字段。
+
+更多字段说明和示例见 [Runtime Events 与事件日志](../architecture/runtime-events.zh.md)。
+
 ### 定时任务 / 提醒
 
 PicoClaw 通过 `cron` 工具支持 cron 风格的定时任务。Agent 可以设置、列出和取消在指定时间触发的提醒或周期性任务。
@@ -775,6 +841,7 @@ PicoClaw 通过 `cron` 工具支持 cron 风格的定时任务。Agent 可以设
 | 主题 | 说明 |
 | ---- | ---- |
 | [敏感数据过滤](../security/sensitive_data_filtering.zh.md) | 在发送给 LLM 前，从工具结果中过滤 API 密钥和令牌 |
+| [Runtime Events 与事件日志](../architecture/runtime-events.zh.md) | 统一运行时事件、日志过滤和调试配置 |
 | [Hook 系统](../architecture/hooks/README.zh.md) | 事件驱动 Hook：观察者、拦截器、审批 Hook |
 | [Steering](../architecture/steering.md) | 在工具调用间向运行中的 Agent 注入消息 |
 | [SubTurn](../architecture/subturn.md) | 子 Agent 协调、并发控制、生命周期管理 |

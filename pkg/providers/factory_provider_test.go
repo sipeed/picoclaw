@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -100,6 +101,12 @@ func TestExtractProtocol(t *testing.T) {
 			config:       &config.ModelConfig{Model: "/gpt-4o"},
 			wantProtocol: "",
 			wantModelID:  "gpt-4o",
+		},
+		{
+			name:         "unknown prefix falls back to openai",
+			config:       &config.ModelConfig{Model: "meta-llama/Llama-3.1-8B-Instruct"},
+			wantProtocol: "openai",
+			wantModelID:  "meta-llama/Llama-3.1-8B-Instruct",
 		},
 		{
 			name:         "nil config",
@@ -605,6 +612,41 @@ func TestCreateProviderFromConfig_CodexCLI(t *testing.T) {
 	}
 }
 
+func TestCreateProviderFromConfig_OpenAIMixedCaseAuthMethodUsesOAuthBranch(t *testing.T) {
+	origGetCredential := getCredential
+	getCredential = func(provider string) (*auth.AuthCredential, error) {
+		if provider != "openai" {
+			t.Fatalf("provider = %q, want %q", provider, "openai")
+		}
+		return &auth.AuthCredential{
+			AccessToken: "test-token",
+			AccountID:   "acct-test",
+			Provider:    "openai",
+			AuthMethod:  "oauth",
+		}, nil
+	}
+	t.Cleanup(func() {
+		getCredential = origGetCredential
+	})
+
+	cfg := &config.ModelConfig{
+		ModelName:  "test-openai-oauth",
+		Model:      "openai/gpt-5.4",
+		AuthMethod: "OAuth",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "gpt-5.4" {
+		t.Errorf("modelID = %q, want %q", modelID, "gpt-5.4")
+	}
+}
+
 func TestCreateProviderFromConfig_MissingAPIKey(t *testing.T) {
 	cfg := &config.ModelConfig{
 		ModelName: "test-no-key",
@@ -619,14 +661,35 @@ func TestCreateProviderFromConfig_MissingAPIKey(t *testing.T) {
 
 func TestCreateProviderFromConfig_UnknownProtocol(t *testing.T) {
 	cfg := &config.ModelConfig{
-		ModelName: "test-unknown",
-		Model:     "unknown-protocol/model",
+		ModelName: "test-unknown-provider",
+		Provider:  "unknown-protocol",
+		Model:     "model",
 	}
 	cfg.SetAPIKey("test-key")
 
 	_, _, err := CreateProviderFromConfig(cfg)
 	if err == nil {
 		t.Fatal("CreateProviderFromConfig() expected error for unknown protocol")
+	}
+}
+
+func TestCreateProviderFromConfig_UnknownModelPrefixDefaultsToOpenAI(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-unknown-model-prefix",
+		Model:     "meta-llama/Llama-3.1-8B-Instruct",
+		APIBase:   "https://api.example.com/v1",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "meta-llama/Llama-3.1-8B-Instruct" {
+		t.Fatalf("modelID = %q, want full model ID", modelID)
 	}
 }
 
@@ -886,6 +949,71 @@ func TestGetDefaultAPIBase_QwenUSAliases(t *testing.T) {
 		if got := getDefaultAPIBase(protocol); got != expectedURL {
 			t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", protocol, got, expectedURL)
 		}
+	}
+}
+
+func TestModelProviderOptions(t *testing.T) {
+	options := ModelProviderOptions()
+	if len(options) == 0 {
+		t.Fatal("ModelProviderOptions() returned no options")
+	}
+
+	seen := make(map[string]ModelProviderOption, len(options))
+	for _, option := range options {
+		seen[option.ID] = option
+	}
+
+	if _, ok := seen["openai"]; !ok {
+		t.Fatal("openai option missing")
+	}
+	if option, ok := seen["openai"]; ok && !option.CreateAllowed {
+		t.Fatal("openai should be creatable")
+	}
+	if option, ok := seen["lmstudio"]; !ok {
+		t.Fatal("lmstudio option missing")
+	} else if !option.EmptyAPIKeyAllowed {
+		t.Fatal("lmstudio should allow empty API keys")
+	}
+	if option, ok := seen["anthropic"]; !ok {
+		t.Fatal("anthropic option missing")
+	} else if option.DefaultAPIBase != "https://api.anthropic.com/v1" {
+		t.Fatalf("anthropic default_api_base = %q, want %q", option.DefaultAPIBase, "https://api.anthropic.com/v1")
+	}
+	if _, ok := seen["azure"]; !ok {
+		t.Fatal("azure option missing")
+	}
+	if option, ok := seen["bedrock"]; !ok {
+		t.Fatal("bedrock option missing")
+	} else if !option.CreateAllowed {
+		t.Fatal("bedrock should be creatable and defer credential/build errors to runtime")
+	}
+	if option, ok := seen["elevenlabs"]; !ok {
+		t.Fatal("elevenlabs option missing")
+	} else {
+		if option.DefaultAPIBase != "https://api.elevenlabs.io" {
+			t.Fatalf("elevenlabs default_api_base = %q, want %q", option.DefaultAPIBase, "https://api.elevenlabs.io")
+		}
+		if option.DefaultModelAllowed {
+			t.Fatal("elevenlabs should be ASR-only and therefore not allowed as a default chat model")
+		}
+	}
+	if option, ok := seen["antigravity"]; !ok {
+		t.Fatal("antigravity option missing")
+	} else {
+		if !option.CreateAllowed {
+			t.Fatal("antigravity should be creatable")
+		}
+		if option.DefaultAuthMethod != "oauth" {
+			t.Fatalf("antigravity default_auth_method = %q, want %q", option.DefaultAuthMethod, "oauth")
+		}
+		if !option.AuthMethodLocked {
+			t.Fatal("antigravity auth method should be locked")
+		}
+	}
+	if option, ok := seen["github-copilot"]; !ok {
+		t.Fatal("github-copilot option missing")
+	} else if option.DefaultAPIBase != "localhost:4321" {
+		t.Fatalf("github-copilot default_api_base = %q, want %q", option.DefaultAPIBase, "localhost:4321")
 	}
 }
 
@@ -1201,4 +1329,43 @@ func TestCreateProviderFromConfig_BedrockWithEndpointURL(t *testing.T) {
 	}
 	// Unexpected error - fail the test
 	t.Errorf("unexpected error from bedrock provider: %v", err)
+}
+
+func TestCreateProviderFromConfig_ToolSchemaTransformWrapsProvider(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName:           "claude-cli-test",
+		Provider:            "claude-cli",
+		Model:               "claude-sonnet-4.6",
+		Workspace:           t.TempDir(),
+		ToolSchemaTransform: "simple",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if modelID != "claude-sonnet-4.6" {
+		t.Fatalf("modelID = %q, want %q", modelID, "claude-sonnet-4.6")
+	}
+	if _, ok := provider.(*toolSchemaTransformProvider); !ok {
+		t.Fatalf("provider = %T, want *toolSchemaTransformProvider", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_InvalidToolSchemaTransform(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName:           "claude-cli-test",
+		Provider:            "claude-cli",
+		Model:               "claude-sonnet-4.6",
+		Workspace:           t.TempDir(),
+		ToolSchemaTransform: "invalid",
+	}
+
+	_, _, err := CreateProviderFromConfig(cfg)
+	if err == nil {
+		t.Fatal("CreateProviderFromConfig() expected error for invalid tool_schema_transform")
+	}
+	if !strings.Contains(err.Error(), "tool_schema_transform") {
+		t.Fatalf("error = %v, want mention tool_schema_transform", err)
+	}
 }

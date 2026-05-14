@@ -11,7 +11,7 @@ import (
 )
 
 func TestWebhookRejectsOversizedBody(t *testing.T) {
-	ch := &LINEChannel{}
+	ch := &LINEChannel{config: &config.LINESettings{}}
 
 	oversized := bytes.Repeat([]byte("A"), maxWebhookBodySize+1)
 	req := httptest.NewRequest(http.MethodPost, "/webhook", bytes.NewReader(oversized))
@@ -25,7 +25,7 @@ func TestWebhookRejectsOversizedBody(t *testing.T) {
 }
 
 func TestWebhookAcceptsMaxBodySize(t *testing.T) {
-	ch := &LINEChannel{}
+	ch := &LINEChannel{config: &config.LINESettings{}}
 
 	body := bytes.Repeat([]byte("A"), maxWebhookBodySize)
 	req := httptest.NewRequest(http.MethodPost, "/webhook", bytes.NewReader(body))
@@ -40,7 +40,7 @@ func TestWebhookAcceptsMaxBodySize(t *testing.T) {
 }
 
 func TestWebhookRejectsOversizedBodyBeforeSignatureCheck(t *testing.T) {
-	ch := &LINEChannel{}
+	ch := &LINEChannel{config: &config.LINESettings{}}
 
 	oversized := bytes.Repeat([]byte("A"), maxWebhookBodySize+1)
 	req := httptest.NewRequest(http.MethodPost, "/webhook", bytes.NewReader(oversized))
@@ -55,7 +55,7 @@ func TestWebhookRejectsOversizedBodyBeforeSignatureCheck(t *testing.T) {
 }
 
 func TestWebhookRejectsNonPostMethod(t *testing.T) {
-	ch := &LINEChannel{}
+	ch := &LINEChannel{config: &config.LINESettings{}}
 
 	req := httptest.NewRequest(http.MethodGet, "/webhook", nil)
 	rec := httptest.NewRecorder()

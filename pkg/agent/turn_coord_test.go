@@ -10,6 +10,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/session"
 )
 
 // =============================================================================
@@ -135,6 +136,16 @@ func (p *errorProvider) Chat(
 		return nil, errors.New("context_length_exceeded")
 	case "vision":
 		return nil, errors.New("vision_unsupported")
+	case "connection_reset":
+		return nil, errors.New("connection reset by peer")
+	case "broken_pipe":
+		return nil, errors.New("broken pipe")
+	case "read_tcp":
+		return nil, errors.New("read tcp 127.0.0.1:8080: connection reset")
+	case "eof":
+		return nil, errors.New("EOF")
+	case "connection_refused":
+		return nil, errors.New("connection refused")
 	default:
 		return nil, errors.New("unknown error")
 	}
@@ -186,6 +197,15 @@ func makeTestProcessOpts(sessionKey string) processOptions {
 		SendResponse:    false,
 		NoHistory:       false,
 	}
+}
+
+type saveFailingSessionStore struct {
+	session.SessionStore
+	err error
+}
+
+func (s *saveFailingSessionStore) Save(_ string) error {
+	return s.err
 }
 
 // =============================================================================
@@ -248,6 +268,44 @@ func TestPipeline_CallLLM_SimpleResponse(t *testing.T) {
 	}
 	if exec.response.Content == "" {
 		t.Error("expected non-empty content")
+	}
+}
+
+func TestRunTurn_FinalizeSaveErrorEmitsErrorTurnEnd(t *testing.T) {
+	al, agent, cleanup := newTurnCoordTestLoop(t, &simpleConvProvider{})
+	defer cleanup()
+
+	saveErr := errors.New("session save failed")
+	agent.Sessions = &saveFailingSessionStore{
+		SessionStore: session.NewSessionManager(""),
+		err:          saveErr,
+	}
+
+	sub := al.SubscribeEvents(8)
+	defer al.UnsubscribeEvents(sub.ID)
+
+	if _, err := al.ProcessDirect(context.Background(), "hello", "session-save-fail"); err == nil {
+		t.Fatal("expected ProcessDirect to fail")
+	}
+
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case evt := <-sub.C:
+			if evt.Kind != EventKindTurnEnd {
+				continue
+			}
+			payload, ok := evt.Payload.(TurnEndPayload)
+			if !ok {
+				t.Fatalf("TurnEnd payload type = %T", evt.Payload)
+			}
+			if payload.Status != TurnEndStatusError {
+				t.Fatalf("TurnEnd status = %q, want %q", payload.Status, TurnEndStatusError)
+			}
+			return
+		case <-deadline:
+			t.Fatal("timed out waiting for turn_end event")
+		}
 	}
 }
 
@@ -364,6 +422,163 @@ func TestPipeline_CallLLM_ContextLengthError(t *testing.T) {
 	_, err = pipeline.CallLLM(context.Background(), context.Background(), ts, exec, 1)
 	// May succeed after compression or fail - either is acceptable
 	t.Logf("CallLLM result after context error: err=%v", err)
+}
+
+func TestPipeline_CallLLM_NetworkErrorRetry(t *testing.T) {
+	testCases := []struct {
+		name    string
+		errType string
+	}{
+		{"connection_reset", "connection_reset"},
+		{"broken_pipe", "broken_pipe"},
+		{"read_tcp", "read_tcp"},
+		{"eof", "eof"},
+		{"connection_refused", "connection_refused"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			errorPrv := &errorProvider{errType: tc.errType}
+			al, agent, cleanup := newTurnCoordTestLoop(t, errorPrv)
+			defer cleanup()
+
+			pipeline := NewPipeline(al)
+			ts := newTurnState(agent, makeTestProcessOpts("test-session"), turnEventScope{
+				turnID:  "turn-1",
+				context: newTurnContext(nil, nil, nil),
+			})
+
+			exec, err := pipeline.SetupTurn(context.Background(), ts)
+			if err != nil {
+				t.Fatalf("SetupTurn failed: %v", err)
+			}
+
+			_, err = pipeline.CallLLM(context.Background(), context.Background(), ts, exec, 1)
+			if err == nil {
+				t.Error("expected error after network error retries")
+			}
+		})
+	}
+}
+
+func TestPipeline_CallLLM_RetryConfigRespected(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:           tmpDir,
+				ModelName:           "test-model",
+				MaxTokens:           4096,
+				MaxToolIterations:   10,
+				MaxLLMRetries:       3,
+				LLMRetryBackoffSecs: 1,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &errorProvider{errType: "connection_reset"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	defer al.Close()
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent")
+	}
+
+	pipeline := NewPipeline(al)
+	ts := newTurnState(agent, makeTestProcessOpts("test-session"), turnEventScope{
+		turnID:  "turn-1",
+		context: newTurnContext(nil, nil, nil),
+	})
+
+	exec, err := pipeline.SetupTurn(context.Background(), ts)
+	if err != nil {
+		t.Fatalf("SetupTurn failed: %v", err)
+	}
+
+	start := time.Now()
+	_, err = pipeline.CallLLM(context.Background(), context.Background(), ts, exec, 1)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Error("expected error after retries")
+	}
+
+	expectedMinTime := 3 * time.Second
+	if elapsed < expectedMinTime {
+		t.Errorf("expected at least %v of backoff, got %v", expectedMinTime, elapsed)
+	}
+}
+
+func TestPipeline_CallLLM_RetryCountLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	counterPrv := &countingErrorProvider{errType: "connection_reset", targetCalls: 5}
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:           tmpDir,
+				ModelName:           "test-model",
+				MaxTokens:           4096,
+				MaxToolIterations:   10,
+				MaxLLMRetries:       2,
+				LLMRetryBackoffSecs: 0,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, counterPrv)
+	defer al.Close()
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent")
+	}
+
+	pipeline := NewPipeline(al)
+	ts := newTurnState(agent, makeTestProcessOpts("test-session"), turnEventScope{
+		turnID:  "turn-1",
+		context: newTurnContext(nil, nil, nil),
+	})
+
+	exec, err := pipeline.SetupTurn(context.Background(), ts)
+	if err != nil {
+		t.Fatalf("SetupTurn failed: %v", err)
+	}
+
+	_, err = pipeline.CallLLM(context.Background(), context.Background(), ts, exec, 1)
+	if err == nil {
+		t.Error("expected error after retries")
+	}
+
+	if counterPrv.callCount != 3 {
+		t.Errorf("expected exactly 3 calls (1 initial + 2 retries), got %d", counterPrv.callCount)
+	}
+}
+
+type countingErrorProvider struct {
+	errType     string
+	targetCalls int
+	callCount   int
+	mu          sync.Mutex
+}
+
+func (p *countingErrorProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	p.mu.Lock()
+	p.callCount++
+	p.mu.Unlock()
+	return nil, errors.New("connection reset by peer")
+}
+
+func (p *countingErrorProvider) GetDefaultModel() string {
+	return "counting-error-model"
 }
 
 // =============================================================================
@@ -611,5 +826,32 @@ func TestTurnState_HardAbortRequested(t *testing.T) {
 
 	if !ts.hardAbortRequested() {
 		t.Error("expected hard abort to be requested")
+	}
+}
+
+func TestTurnState_SkillContextSnapshotsTrackLatestSuccessfulPath(t *testing.T) {
+	ts := &turnState{}
+
+	ts.recordSkillContextSnapshot(skillContextTriggerInitialBuild, []string{"skill-a"})
+	ts.recordSkillContextSnapshot(skillContextTriggerContextRetryRebuild, []string{"skill-b", "skill-c"})
+
+	if got := ts.attemptedSkillsSnapshot(); len(got) != 3 || got[0] != "skill-a" || got[1] != "skill-b" ||
+		got[2] != "skill-c" {
+		t.Fatalf("attemptedSkillsSnapshot = %v, want [skill-a skill-b skill-c]", got)
+	}
+
+	if got := ts.latestSkillContextSnapshot(); len(got) != 2 || got[0] != "skill-b" || got[1] != "skill-c" {
+		t.Fatalf("latestSkillContextSnapshot = %v, want [skill-b skill-c]", got)
+	}
+
+	snapshots := ts.skillContextSnapshotsSnapshot()
+	if len(snapshots) != 2 {
+		t.Fatalf("len(skillContextSnapshotsSnapshot()) = %d, want 2", len(snapshots))
+	}
+	if snapshots[0].Sequence != 1 || snapshots[0].Trigger != skillContextTriggerInitialBuild {
+		t.Fatalf("snapshots[0] = %+v, want sequence=1 trigger=%q", snapshots[0], skillContextTriggerInitialBuild)
+	}
+	if snapshots[1].Sequence != 2 || snapshots[1].Trigger != skillContextTriggerContextRetryRebuild {
+		t.Fatalf("snapshots[1] = %+v, want sequence=2 trigger=%q", snapshots[1], skillContextTriggerContextRetryRebuild)
 	}
 }

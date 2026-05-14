@@ -282,4 +282,3 @@ New config (version 3):
 - Check that the migration doesn't overwrite values with defaults unnecessarily
 - Review the conversion logic in the loader functions
 - Check the auto-backup files (e.g., `config.json.20260330.bak`) to recover original data
-

@@ -30,9 +30,12 @@ const apiKeyProviders = new Set([
   "brave",
   "tavily",
   "perplexity",
+  "gemini",
   "glm_search",
   "baidu_search",
 ])
+
+const modelProviders = new Set(["gemini"])
 
 export function WebSearchProviderSettings({
   providerLabelMap,
@@ -84,10 +87,7 @@ function ProviderCard({
   const { t } = useTranslation()
   const apiKeyPlaceholder = maskedSecretPlaceholder(
     settings.api_key_set ? `${providerId}-configured` : "",
-    t(
-      "pages.agent.tools.web_search.api_key_placeholder",
-      "Enter API key...",
-    ),
+    t("pages.agent.tools.web_search.api_key_placeholder", "Enter API key..."),
   )
 
   const updateSettings = (
@@ -167,7 +167,10 @@ function ProviderCard({
         >
           <div className="ml-8 flex max-w-xl flex-col gap-5">
             <ProviderField
-              label={t("pages.agent.tools.web_search.max_results", "Max Results")}
+              label={t(
+                "pages.agent.tools.web_search.max_results",
+                "Max Results",
+              )}
             >
               <Input
                 type="number"
@@ -223,6 +226,27 @@ function ProviderCard({
                   }
                   placeholder={apiKeyPlaceholder}
                   className="bg-muted/40 hover:bg-muted/60 focus:bg-background focus:ring-primary/20 h-10 rounded-xl border-transparent transition-colors"
+                />
+              </ProviderField>
+            )}
+
+            {modelProviders.has(providerId) && (
+              <ProviderField
+                label={t("pages.agent.tools.web_search.model", "Model")}
+              >
+                <Input
+                  value={settings.model ?? ""}
+                  onChange={(event) =>
+                    updateSettings((current) => ({
+                      ...current,
+                      model: event.target.value,
+                    }))
+                  }
+                  placeholder={t(
+                    "pages.agent.tools.web_search.model_placeholder",
+                    "Optional model override",
+                  )}
+                  className="bg-muted/40 hover:bg-muted/60 focus:bg-background focus:ring-primary/20 h-10 rounded-xl border-transparent shadow-none transition-colors"
                 />
               </ProviderField>
             )}

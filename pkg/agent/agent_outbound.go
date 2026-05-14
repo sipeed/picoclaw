@@ -56,6 +56,16 @@ func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatI
 	}
 
 	if alreadySentToSameChat {
+		if al.channelManager != nil && channel != "" && chatID != "" {
+			dismissCtx, dismissCancel := context.WithTimeout(ctx, 5*time.Second)
+			al.channelManager.DismissToolFeedback(
+				dismissCtx,
+				channel,
+				chatID,
+				nil,
+			)
+			dismissCancel()
+		}
 		logger.DebugCF(
 			"agent",
 			"Skipped outbound (message tool already sent to same chat)",

@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/providers/messageutil"
@@ -173,7 +174,10 @@ type SubTurnConfig struct {
 	// Used by team tool to enforce token limits across all team members.
 	InitialTokenBudget *atomic.Int64
 
-	// Can be extended with temperature, topP, etc.
+	// TargetAgentID, when set, runs the sub-turn as the specified agent.
+	// The target agent's workspace, model, tools, and system prompt are used
+	// instead of the caller's. If empty, the sub-turn runs as the parent agent.
+	TargetAgentID string
 }
 
 // ====================== Context Keys ======================
@@ -231,6 +235,7 @@ func (s *AgentLoopSpawner) SpawnSubTurn(
 		Critical:           cfg.Critical,
 		Timeout:            cfg.Timeout,
 		MaxContextRunes:    cfg.MaxContextRunes,
+		TargetAgentID:      cfg.TargetAgentID,
 	}
 
 	return spawnSubTurn(ctx, s.al, parentTS, agentCfg)
@@ -313,8 +318,9 @@ func spawnSubTurn(
 		return nil, ErrDepthLimitExceeded
 	}
 
-	// 2. Config validation
-	if cfg.Model == "" {
+	// 2. Config validation: Model is required unless TargetAgentID is set
+	//    (the target agent provides its own model).
+	if cfg.Model == "" && cfg.TargetAgentID == "" {
 		return nil, ErrInvalidSubTurnConfig
 	}
 
@@ -332,12 +338,22 @@ func spawnSubTurn(
 
 	childID := al.generateSubTurnID()
 
-	// Get the agent instance from parent, falling back to the default agent.
-	// Wrap it in a shallow copy that uses an ephemeral (in-memory only) session store
-	// so that child turns never pollute or persist to the parent's session history.
-	baseAgent := parentTS.agent
-	if baseAgent == nil {
-		baseAgent = al.registry.GetDefaultAgent()
+	// Resolve the agent instance for the child turn.
+	// When TargetAgentID is set, look up that agent from the registry so the
+	// child runs with the target's workspace, model, tools, and system prompt.
+	// Otherwise fall back to the parent's agent (existing behavior).
+	var baseAgent *AgentInstance
+	if cfg.TargetAgentID != "" {
+		var ok bool
+		baseAgent, ok = al.registry.GetAgent(cfg.TargetAgentID)
+		if !ok {
+			return nil, fmt.Errorf("target agent %q not found in registry", cfg.TargetAgentID)
+		}
+	} else {
+		baseAgent = parentTS.agent
+		if baseAgent == nil {
+			baseAgent = al.registry.GetDefaultAgent()
+		}
 	}
 	if baseAgent == nil {
 		return nil, errors.New("parent turnState has no agent instance")
@@ -422,7 +438,7 @@ func spawnSubTurn(
 	parentTS.mu.Unlock()
 
 	// 6. Emit Spawn event
-	al.emitEvent(EventKindSubTurnSpawn,
+	al.emitEvent(runtimeevents.KindAgentSubTurnSpawn,
 		childTS.eventMeta("spawnSubTurn", "subturn.spawn"),
 		SubTurnSpawnPayload{
 			AgentID:      childTS.agentID,
@@ -453,7 +469,7 @@ func spawnSubTurn(
 		if err != nil {
 			status = "error"
 		}
-		al.emitEvent(EventKindSubTurnEnd,
+		al.emitEvent(runtimeevents.KindAgentSubTurnEnd,
 			childTS.eventMeta("spawnSubTurn", "subturn.end"),
 			SubTurnEndPayload{
 				AgentID: childTS.agentID,
@@ -504,16 +520,16 @@ func spawnSubTurn(
 //
 // Delivery behavior:
 //   - If parent turn is still running: attempts to deliver to pendingResults channel
-//   - If channel is full: emits SubTurnOrphanResultEvent (result is lost from channel but tracked)
-//   - If parent turn has finished: emits SubTurnOrphanResultEvent (late arrival)
+//   - If channel is full: emits agent.subturn.orphan (result is lost from channel but tracked)
+//   - If parent turn has finished: emits agent.subturn.orphan (late arrival)
 //
 // Thread safety:
 //   - Reads parent state under lock, then releases lock before channel send
 //   - Small race window exists but is acceptable (worst case: result becomes orphan)
 //
 // Event emissions:
-//   - SubTurnResultDeliveredEvent: successful delivery to channel
-//   - SubTurnOrphanResultEvent: delivery failed (parent finished or channel full)
+//   - agent.subturn.result_delivered: successful delivery to channel
+//   - agent.subturn.orphan: delivery failed (parent finished or channel full)
 func deliverSubTurnResult(al *AgentLoop, parentTS *turnState, childID string, result *tools.ToolResult) {
 	// Let GC clean up the pendingResults channel; parent Finish will no longer close it.
 	// We use defer/recover to catch any unlikely channel panics if it were ever closed.
@@ -526,7 +542,7 @@ func deliverSubTurnResult(al *AgentLoop, parentTS *turnState, childID string, re
 				"recover":   r,
 			})
 			if result != nil && al != nil {
-				al.emitEvent(EventKindSubTurnOrphan,
+				al.emitEvent(runtimeevents.KindAgentSubTurnOrphan,
 					parentTS.eventMeta("deliverSubTurnResult", "subturn.orphan"),
 					SubTurnOrphanPayload{ParentTurnID: parentTS.turnID, ChildTurnID: childID, Reason: "panic"},
 				)
@@ -541,7 +557,7 @@ func deliverSubTurnResult(al *AgentLoop, parentTS *turnState, childID string, re
 	// If parent turn has already finished, treat this as an orphan result
 	if isFinished || resultChan == nil {
 		if result != nil && al != nil {
-			al.emitEvent(EventKindSubTurnOrphan,
+			al.emitEvent(runtimeevents.KindAgentSubTurnOrphan,
 				parentTS.eventMeta("deliverSubTurnResult", "subturn.orphan"),
 				SubTurnOrphanPayload{ParentTurnID: parentTS.turnID, ChildTurnID: childID, Reason: "parent_finished"},
 			)
@@ -557,7 +573,7 @@ func deliverSubTurnResult(al *AgentLoop, parentTS *turnState, childID string, re
 	case resultChan <- result:
 		// Successfully delivered
 		if al != nil {
-			al.emitEvent(EventKindSubTurnResultDelivered,
+			al.emitEvent(runtimeevents.KindAgentSubTurnResultDelivered,
 				parentTS.eventMeta("deliverSubTurnResult", "subturn.result_delivered"),
 				SubTurnResultDeliveredPayload{ContentLen: len(result.ForLLM)},
 			)
@@ -571,7 +587,7 @@ func deliverSubTurnResult(al *AgentLoop, parentTS *turnState, childID string, re
 		})
 		if result != nil && al != nil {
 			al.emitEvent(
-				EventKindSubTurnOrphan,
+				runtimeevents.KindAgentSubTurnOrphan,
 				parentTS.eventMeta("deliverSubTurnResult", "subturn.orphan"),
 				SubTurnOrphanPayload{
 					ParentTurnID: parentTS.turnID,

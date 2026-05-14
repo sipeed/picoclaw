@@ -13,6 +13,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/commands"
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -24,6 +25,7 @@ func NewAgentLoop(
 	cfg *config.Config,
 	msgBus *bus.MessageBus,
 	provider providers.LLMProvider,
+	opts ...AgentLoopOption,
 ) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
 
@@ -47,7 +49,12 @@ func NewAgentLoop(
 		stateManager = state.NewManager(defaultAgent.Workspace)
 	}
 
-	eventBus := NewEventBus()
+	bridge, err := newEvolutionBridge(registry, cfg, provider)
+	if err != nil {
+		logger.WarnCF("agent", "Failed to initialize evolution bridge", map[string]any{
+			"error": err.Error(),
+		})
+	}
 
 	// Determine worker pool size from config (default: 1 = sequential)
 	workerPoolSize := cfg.Agents.Defaults.MaxParallelTurns
@@ -56,18 +63,37 @@ func NewAgentLoop(
 	}
 
 	al := &AgentLoop{
-		bus:         msgBus,
-		cfg:         cfg,
-		registry:    registry,
-		state:       stateManager,
-		eventBus:    eventBus,
-		fallback:    fallbackChain,
-		cmdRegistry: commands.NewRegistry(commands.BuiltinDefinitions()),
-		steering:    newSteeringQueue(parseSteeringMode(cfg.Agents.Defaults.SteeringMode)),
-		workerSem:   make(chan struct{}, workerPoolSize),
+		bus:               msgBus,
+		cfg:               cfg,
+		registry:          registry,
+		state:             stateManager,
+		fallback:          fallbackChain,
+		cmdRegistry:       commands.NewRegistry(commands.BuiltinDefinitions()),
+		evolution:         bridge,
+		steering:          newSteeringQueue(parseSteeringMode(cfg.Agents.Defaults.SteeringMode)),
+		workerSem:         make(chan struct{}, workerPoolSize),
+		ownsRuntimeEvents: true,
 	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(al)
+		}
+	}
+	if al.runtimeEvents == nil {
+		al.runtimeEvents = runtimeevents.NewBus()
+		al.ownsRuntimeEvents = true
+	}
+	if bridge != nil {
+		bridge.setCurrentCheck(al.isCurrentEvolutionBridge)
+		if err := bridge.subscribeRuntimeEvents(al.runtimeEvents.Channel()); err != nil {
+			logger.WarnCF("agent", "Failed to subscribe evolution bridge to runtime events", map[string]any{
+				"error": err.Error(),
+			})
+		}
+	}
+	al.refreshRuntimeEventLogger(cfg)
 	al.providerFactory = providers.CreateProviderFromConfig
-	al.hooks = NewHookManager(eventBus)
+	al.hooks = NewHookManager(al.runtimeEvents.Channel())
 	configureHookManagerFromConfig(al.hooks, cfg)
 	al.contextManager = al.resolveContextManager()
 
@@ -327,5 +353,22 @@ func registerSharedTools(
 		} else if (spawnEnabled || spawnStatusEnabled) && !cfg.Tools.IsToolEnabled("subagent") {
 			logger.WarnCF("agent", "spawn/spawn_status tools require subagent to be enabled", nil)
 		}
+
+		// Register delegate tool for multi-agent setups.
+		// Auto-enabled when multiple agents exist. Delegation uses the SubTurn
+		// mechanism directly (not SubagentManager) and is independent of the
+		// subagent tool.
+		if len(registry.ListAgentIDs()) > 1 {
+			delegateTool := tools.NewDelegateTool()
+			delegateTool.SetSpawner(NewSubTurnSpawner(al))
+			currentAgentID := agentID
+			delegateTool.SetSelfAgentID(currentAgentID)
+			delegateTool.SetAllowlistChecker(func(targetAgentID string) bool {
+				return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
+			})
+			agent.Tools.Register(delegateTool)
+		}
+
+		warnOnUnknownAgentToolDeclarations(agentID, agent.Workspace, agent.Definition, agent.Tools)
 	}
 }

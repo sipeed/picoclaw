@@ -56,6 +56,14 @@
 
 ## 📢 News
 
+2026-05-11 🛒 **LicheeRV-Claw on AliExpress!** You can now purchase LicheeRV-Claw from [AliExpress](https://www.aliexpress.com/item/1005006519668532.html), making it easier to try PicoClaw on compact RISC-V hardware.
+
+<p align="center">
+  <a href="https://www.aliexpress.com/item/1005006519668532.html">
+    <img src="assets/licheerv-claw.jpg" alt="LicheeRV-Claw on AliExpress" width="520">
+  </a>
+</p>
+
 2026-03-31 📱 **Android Support!** PicoClaw now runs on Android! Download the APK at [picoclaw.io](https://picoclaw.io/download)
 
 2026-03-25 🚀 **v0.2.4 Released!** Agent architecture overhaul (SubTurn, Hooks, Steering, EventBus), WeChat/WeCom integration, security hardening (.security.yml, sensitive data filtering), new providers (AWS Bedrock, Azure, Xiaomi MiMo), and 35 bug fixes. PicoClaw has reached **26K Stars**!
@@ -447,7 +455,7 @@ For full provider configuration details, see [Providers & Models](docs/guides/pr
 
 ## 💬 Channels (Chat Apps)
 
-Talk to your PicoClaw through 18+ messaging platforms:
+Talk to your PicoClaw through 19+ messaging platforms:
 
 | Channel | Setup | Protocol | Docs |
 |---------|-------|----------|------|
@@ -465,6 +473,7 @@ Talk to your PicoClaw through 18+ messaging platforms:
 | **VK** | Easy (group token) | Long Poll | [Guide](docs/channels/vk/README.md) |
 | **IRC** | Medium (server + nick) | IRC protocol | [Guide](docs/guides/chat-apps.md#irc) |
 | **OneBot** | Medium (WebSocket URL) | OneBot v11 | [Guide](docs/channels/onebot/README.md) |
+| **MQTT** | Easy (broker + agent_id) | MQTT pub/sub | [Guide](docs/channels/mqtt/README.md) |
 | **MaixCam** | Easy (enable) | TCP socket | [Guide](docs/channels/maixcam/README.md) |
 | **Pico** | Easy (enable) | Native protocol | Built-in |
 | **Pico Client** | Easy (WebSocket URL) | WebSocket | Built-in |
@@ -484,7 +493,8 @@ PicoClaw can search the web to provide up-to-date information. Configure in `too
 | Search Engine | API Key | Free Tier | Link |
 |--------------|---------|-----------|------|
 | DuckDuckGo | Not needed | Unlimited | Built-in fallback |
-| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Required | 1000 queries/day | AI-powered, China-optimized |
+| [Gemini Google Search](https://aistudio.google.com/apikey) | Required | Varies | Gemini with Google Search grounding |
+| [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Required | 1500/month (daily allocation) | AI-powered, China-optimized |
 | [Tavily](https://tavily.com) | Required | 1000 queries/month | Optimized for AI Agents |
 | [Brave Search](https://brave.com/search/api) | Required | 2000 queries/month | Fast and private |
 | [Perplexity](https://www.perplexity.ai) | Required | Paid | AI-powered search |
@@ -617,7 +627,7 @@ For detailed guides beyond this README:
 | Topic | Description |
 |-------|-------------|
 | [Docker & Quick Start](docs/guides/docker.md) | Docker Compose setup, Launcher/Agent modes |
-| [Chat Apps](docs/guides/chat-apps.md) | All 17+ channel setup guides |
+| [Chat Apps](docs/guides/chat-apps.md) | All 18+ channel setup guides |
 | [Configuration](docs/guides/configuration.md) | Environment variables, workspace layout, security sandbox |
 | [MCP Server CLI](docs/reference/mcp-cli.md) | Add, list, test, edit, and remove MCP server entries from the CLI |
 | [Scheduled Tasks and Cron Jobs](docs/reference/cron.md) | Cron schedule types, deliver modes, command gates, job storage |

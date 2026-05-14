@@ -96,17 +96,17 @@ func TestAgentConfig_FullParse(t *testing.T) {
 					"name": "Sales Bot",
 					"model": "gpt-4"
 				},
-				{
-					"id": "support",
-					"name": "Support Bot",
-					"model": {
-						"primary": "claude-opus",
-						"fallbacks": ["haiku"]
-					},
-					"subagents": {
-						"allow_agents": ["sales"]
-					}
+			{
+				"id": "support",
+				"name": "Support Bot",
+				"model": {
+					"primary": "claude-opus",
+					"fallbacks": ["haiku"]
+				},
+				"subagents": {
+					"allow_agents": ["sales"]
 				}
+			}
 			]
 		},
 		"session": {
@@ -169,6 +169,317 @@ func TestDefaultConfig_MCPMaxInlineTextChars(t *testing.T) {
 			DefaultMCPMaxInlineTextChars,
 		)
 	}
+}
+
+func TestDefaultConfig_EvolutionDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+
+	assert.False(t, cfg.Evolution.Enabled)
+	assert.Equal(t, "observe", cfg.Evolution.Mode)
+	assert.Equal(t, "", cfg.Evolution.StateDir)
+	assert.Equal(t, 2, cfg.Evolution.MinTaskCount)
+	assert.Equal(t, 0.7, cfg.Evolution.MinSuccessRatio)
+	assert.Equal(t, "after_turn", cfg.Evolution.ColdPathTrigger)
+	assert.Equal(t, 2, cfg.Evolution.EffectiveMinTaskCount())
+	assert.Equal(t, 0.7, cfg.Evolution.EffectiveMinSuccessRatio())
+	assert.False(t, cfg.Evolution.RunsColdPathAutomatically())
+	assert.False(t, cfg.Evolution.AutoAppliesDrafts())
+}
+
+func TestEvolutionConfig_EffectiveMode(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  EvolutionConfig
+		want string
+	}{
+		{
+			name: "disabled returns empty",
+			cfg: EvolutionConfig{
+				Enabled: false,
+				Mode:    "apply",
+			},
+			want: "",
+		},
+		{
+			name: "enabled empty mode defaults to observe",
+			cfg: EvolutionConfig{
+				Enabled: true,
+			},
+			want: "observe",
+		},
+		{
+			name: "enabled whitespace mode defaults to observe",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    " \t\n ",
+			},
+			want: "observe",
+		},
+		{
+			name: "enabled returns configured mode",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    "draft",
+			},
+			want: "draft",
+		},
+		{
+			name: "enabled trims and normalizes mode",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    " Draft ",
+			},
+			want: "draft",
+		},
+		{
+			name: "enabled returns apply mode",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    "apply",
+			},
+			want: "apply",
+		},
+		{
+			name: "enabled normalizes uppercase apply",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    "APPLY",
+			},
+			want: "apply",
+		},
+		{
+			name: "enabled unknown mode falls back to observe",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    "propose",
+			},
+			want: "observe",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.cfg.EffectiveMode())
+		})
+	}
+}
+
+func TestEvolutionConfig_ModeSemantics(t *testing.T) {
+	tests := []struct {
+		name          string
+		cfg           EvolutionConfig
+		wantRunsCold  bool
+		wantAutoApply bool
+	}{
+		{
+			name: "disabled does not run cold path",
+			cfg: EvolutionConfig{
+				Enabled: false,
+				Mode:    "apply",
+			},
+			wantRunsCold:  false,
+			wantAutoApply: false,
+		},
+		{
+			name: "observe only records hot path",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    "observe",
+			},
+			wantRunsCold:  false,
+			wantAutoApply: false,
+		},
+		{
+			name: "draft runs cold path without applying",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    "draft",
+			},
+			wantRunsCold:  true,
+			wantAutoApply: false,
+		},
+		{
+			name: "draft scheduled runs cold path without after turn",
+			cfg: EvolutionConfig{
+				Enabled:         true,
+				Mode:            "draft",
+				ColdPathTrigger: "scheduled",
+				ColdPathTimes:   []string{"03:00"},
+			},
+			wantRunsCold:  true,
+			wantAutoApply: false,
+		},
+		{
+			name: "apply runs cold path and auto applies",
+			cfg: EvolutionConfig{
+				Enabled: true,
+				Mode:    "apply",
+			},
+			wantRunsCold:  true,
+			wantAutoApply: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.wantRunsCold, tt.cfg.RunsColdPathAutomatically())
+			assert.Equal(t, tt.wantAutoApply, tt.cfg.AutoAppliesDrafts())
+		})
+	}
+}
+
+func TestEvolutionConfig_ColdPathTriggerMode(t *testing.T) {
+	assert.Equal(t, "after_turn", (EvolutionConfig{Enabled: true, Mode: "draft"}).ColdPathTriggerMode())
+	assert.True(t, (EvolutionConfig{Enabled: true, Mode: "draft"}).RunsColdPathAfterTurn())
+	assert.False(t, (EvolutionConfig{Enabled: true, Mode: "draft"}).RunsColdPathScheduled())
+
+	scheduled := EvolutionConfig{
+		Enabled:         true,
+		Mode:            "apply",
+		ColdPathTrigger: "scheduled",
+		ColdPathTimes:   []string{"03:00"},
+	}
+	assert.Equal(t, "scheduled", scheduled.ColdPathTriggerMode())
+	assert.False(t, scheduled.RunsColdPathAfterTurn())
+	assert.True(t, scheduled.RunsColdPathScheduled())
+
+	manual := EvolutionConfig{Enabled: true, Mode: "draft", ColdPathTrigger: "manual"}
+	assert.Equal(t, "manual", manual.ColdPathTriggerMode())
+	assert.False(t, manual.RunsColdPathAutomatically())
+}
+
+func TestEvolutionConfig_NewThresholdNamesPreferLegacyAliases(t *testing.T) {
+	cfg := EvolutionConfig{MinTaskCount: 4, MinSuccessRatio: 0.9, MinCaseCount: 1, MinSuccessRate: 0.2}
+	assert.Equal(t, 4, cfg.EffectiveMinTaskCount())
+	assert.Equal(t, 0.9, cfg.EffectiveMinSuccessRatio())
+
+	legacy := EvolutionConfig{MinCaseCount: 5, MinSuccessRate: 0.8}
+	assert.Equal(t, 5, legacy.EffectiveMinTaskCount())
+	assert.Equal(t, 0.8, legacy.EffectiveMinSuccessRatio())
+}
+
+func TestEvolutionConfig_MarshalUsesNewThresholdNames(t *testing.T) {
+	data, err := json.Marshal(EvolutionConfig{
+		Enabled:        true,
+		Mode:           "draft",
+		MinCaseCount:   5,
+		MinSuccessRate: 0.8,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if raw["min_task_count"] != float64(5) {
+		t.Fatalf("min_task_count = %#v, want 5", raw["min_task_count"])
+	}
+	if raw["min_success_ratio"] != 0.8 {
+		t.Fatalf("min_success_ratio = %#v, want 0.8", raw["min_success_ratio"])
+	}
+	if _, ok := raw["min_case_count"]; ok {
+		t.Fatalf("min_case_count should not be marshaled: %#v", raw)
+	}
+	if _, ok := raw["min_success_rate"]; ok {
+		t.Fatalf("min_success_rate should not be marshaled: %#v", raw)
+	}
+}
+
+func TestLoadConfig_EvolutionEnabledWithoutModeUsesObserveSemantics(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := `{
+		"version": 3,
+		"evolution": {
+			"enabled": true
+		}
+	}`
+	if err := os.WriteFile(configPath, []byte(raw), 0o644); err != nil {
+		t.Fatalf("WriteFile(configPath): %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+
+	assert.True(t, cfg.Evolution.Enabled)
+	assert.Equal(t, "", cfg.Evolution.Mode)
+	assert.Equal(t, "observe", cfg.Evolution.EffectiveMode())
+	assert.False(t, cfg.Evolution.RunsColdPathAutomatically())
+	assert.False(t, cfg.Evolution.AutoAppliesDrafts())
+}
+
+func TestLoadConfig_EvolutionExplicitApplyModeAutoApplies(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := `{
+		"version": 3,
+		"evolution": {
+			"enabled": true,
+			"mode": "apply"
+		}
+	}`
+	if err := os.WriteFile(configPath, []byte(raw), 0o644); err != nil {
+		t.Fatalf("WriteFile(configPath): %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+
+	assert.True(t, cfg.Evolution.Enabled)
+	assert.Equal(t, "apply", cfg.Evolution.Mode)
+	assert.Equal(t, "apply", cfg.Evolution.EffectiveMode())
+	assert.True(t, cfg.Evolution.RunsColdPathAutomatically())
+	assert.True(t, cfg.Evolution.AutoAppliesDrafts())
+}
+
+func TestSaveConfig_DisabledEvolutionOmitsApplyMode(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	cfg := DefaultConfig()
+
+	if err := SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error: %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("ReadFile(configPath): %v", err)
+	}
+
+	var raw map[string]any
+	if unmarshalErr := json.Unmarshal(data, &raw); unmarshalErr != nil {
+		t.Fatalf("Unmarshal saved config: %v", unmarshalErr)
+	}
+	evolutionRaw, ok := raw["evolution"].(map[string]any)
+	if !ok {
+		t.Fatalf("saved evolution config = %#v, want object", raw["evolution"])
+	}
+	if _, ok := evolutionRaw["mode"]; ok {
+		t.Fatalf("disabled evolution should not persist mode: %#v", evolutionRaw)
+	}
+
+	evolutionRaw["enabled"] = true
+	edited, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatalf("Marshal edited config: %v", err)
+	}
+	if writeErr := os.WriteFile(configPath, edited, 0o600); writeErr != nil {
+		t.Fatalf("WriteFile(configPath): %v", writeErr)
+	}
+
+	loaded, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	assert.True(t, loaded.Evolution.Enabled)
+	assert.Equal(t, "observe", loaded.Evolution.EffectiveMode())
+	assert.False(t, loaded.Evolution.AutoAppliesDrafts())
 }
 
 func TestLoadConfig_MCPMaxInlineTextChars(t *testing.T) {
@@ -808,7 +1119,9 @@ func TestLoadConfig_ToolFeedbackDefaultsFalseWhenUnset(t *testing.T) {
 		t.Fatalf("LoadConfig() error: %v", err)
 	}
 	if cfg.Agents.Defaults.ToolFeedback.Enabled {
-		t.Fatal("agents.defaults.tool_feedback.enabled should remain false when unset in config file")
+		t.Fatal(
+			"agents.defaults.tool_feedback.enabled should remain false when unset in config file",
+		)
 	}
 	if cfg.Agents.Defaults.ToolFeedback.SeparateMessages {
 		t.Fatal("agents.defaults.tool_feedback.separate_messages should remain false when unset in config file")
@@ -1131,7 +1444,10 @@ func TestDefaultConfig_SummarizationThresholds(t *testing.T) {
 	cfg := DefaultConfig()
 
 	if cfg.Agents.Defaults.SummarizeMessageThreshold != 20 {
-		t.Errorf("SummarizeMessageThreshold = %d, want 20", cfg.Agents.Defaults.SummarizeMessageThreshold)
+		t.Errorf(
+			"SummarizeMessageThreshold = %d, want 20",
+			cfg.Agents.Defaults.SummarizeMessageThreshold,
+		)
 	}
 	if cfg.Agents.Defaults.SummarizeTokenPercent != 75 {
 		t.Errorf("SummarizeTokenPercent = %d, want 75", cfg.Agents.Defaults.SummarizeTokenPercent)
@@ -1173,7 +1489,11 @@ func TestDefaultConfig_WorkspacePath_WithPicoclawHome(t *testing.T) {
 	want := filepath.Join("/custom/picoclaw/home", "workspace")
 
 	if cfg.Agents.Defaults.Workspace != want {
-		t.Errorf("Workspace path with PICOCLAW_HOME = %q, want %q", cfg.Agents.Defaults.Workspace, want)
+		t.Errorf(
+			"Workspace path with PICOCLAW_HOME = %q, want %q",
+			cfg.Agents.Defaults.Workspace,
+			want,
+		)
 	}
 }
 
@@ -1283,7 +1603,12 @@ func TestFlexibleStringSlice_UnmarshalText(t *testing.T) {
 			}
 
 			if len(f) != len(tt.expected) {
-				t.Errorf("UnmarshalText(%q) length = %d, want %d", tt.input, len(f), len(tt.expected))
+				t.Errorf(
+					"UnmarshalText(%q) length = %d, want %d",
+					tt.input,
+					len(f),
+					len(tt.expected),
+				)
 				return
 			}
 
@@ -1592,9 +1917,21 @@ func TestSaveConfig_MixedKeys(t *testing.T) {
 	cfg := &Config{
 		Version: CurrentVersion,
 		ModelList: []*ModelConfig{
-			{ModelName: "plain", Model: "openai/gpt-4", APIKeys: SimpleSecureStrings("sk-new-plaintext")},
-			{ModelName: "enc", Model: "openai/gpt-4", APIKeys: SimpleSecureStrings(alreadyEncrypted)},
-			{ModelName: "file", Model: "openai/gpt-4", APIKeys: SimpleSecureStrings("file://api.key")},
+			{
+				ModelName: "plain",
+				Model:     "openai/gpt-4",
+				APIKeys:   SimpleSecureStrings("sk-new-plaintext"),
+			},
+			{
+				ModelName: "enc",
+				Model:     "openai/gpt-4",
+				APIKeys:   SimpleSecureStrings(alreadyEncrypted),
+			},
+			{
+				ModelName: "file",
+				Model:     "openai/gpt-4",
+				APIKeys:   SimpleSecureStrings("file://api.key"),
+			},
 		},
 	}
 	if err := SaveConfig(cfgPath, cfg); err != nil {
@@ -1731,7 +2068,10 @@ func TestSaveConfig_UsesPassphraseProvider(t *testing.T) {
 
 	raw, _ := os.ReadFile(filepath.Join(dir, SecurityConfigFile))
 	if !strings.Contains(string(raw), "enc://") {
-		t.Errorf("SaveConfig should have encrypted plaintext key via PassphraseProvider; got:\n%s", raw)
+		t.Errorf(
+			"SaveConfig should have encrypted plaintext key via PassphraseProvider; got:\n%s",
+			raw,
+		)
 	}
 }
 
@@ -1998,6 +2338,36 @@ func TestModelConfig_CustomHeadersRoundTrip(t *testing.T) {
 	}
 }
 
+func TestModelConfig_ToolSchemaTransformRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+
+	cfg := &Config{
+		Version: CurrentVersion,
+		ModelList: []*ModelConfig{
+			{
+				ModelName:           "test-model",
+				Model:               "openai/test",
+				APIKeys:             SimpleSecureStrings("sk-test"),
+				ToolSchemaTransform: "simple",
+			},
+		},
+	}
+
+	if err := SaveConfig(cfgPath, cfg); err != nil {
+		t.Fatalf("SaveConfig error: %v", err)
+	}
+
+	loaded, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if got := loaded.ModelList[0].ToolSchemaTransform; got != "simple" {
+		t.Fatalf("ToolSchemaTransform = %q, want %q", got, "simple")
+	}
+}
+
 func TestDefaultConfig_MinimaxExtraBody(t *testing.T) {
 	cfg := DefaultConfig()
 
@@ -2110,9 +2480,13 @@ func TestFilterSensitiveData_AllTokenTypes(t *testing.T) {
 			FilterMinLength:     8,
 			// Web tool API keys
 			Web: WebToolsConfig{
-				Brave:       BraveConfig{APIKeys: SecureStrings{NewSecureString("brave-api-key")}},
-				Tavily:      TavilyConfig{APIKeys: SecureStrings{NewSecureString("tavily-api-key")}},
-				Perplexity:  PerplexityConfig{APIKeys: SecureStrings{NewSecureString("perplexity-api-key")}},
+				Brave: BraveConfig{APIKeys: SecureStrings{NewSecureString("brave-api-key")}},
+				Tavily: TavilyConfig{
+					APIKeys: SecureStrings{NewSecureString("tavily-api-key")},
+				},
+				Perplexity: PerplexityConfig{
+					APIKeys: SecureStrings{NewSecureString("perplexity-api-key")},
+				},
 				GLMSearch:   GLMSearchConfig{APIKey: *NewSecureString("glm-search-key")},
 				BaiduSearch: BaiduSearchConfig{APIKey: *NewSecureString("baidu-search-key")},
 			},

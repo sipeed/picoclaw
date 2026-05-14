@@ -67,7 +67,7 @@ def handle_hello(params: dict) -> dict:
 def handle_before_llm(params: dict) -> dict:
     """Inject weather query tool definition"""
     tools = params.get("tools", [])
-    
+
     # Add weather query tool
     tools.append({
         "type": "function",
@@ -86,7 +86,7 @@ def handle_before_llm(params: dict) -> dict:
             }
         }
     })
-    
+
     return {
         "action": "modify",
         "request": {
@@ -102,17 +102,17 @@ def handle_before_tool(params: dict) -> dict:
     """Handle tool call, return result directly"""
     tool = params.get("tool", "")
     args = params.get("arguments", {})
-    
+
     if tool == "get_weather":
         city = args.get("city", "")
         result = get_weather(city)
-        
+
         # Use respond action to return result directly, skip ToolRegistry
         return {
             "action": "respond",
             "result": result,
         }
-    
+
     # Other tools continue normal flow
     return {"action": "continue"}
 
@@ -142,7 +142,7 @@ def send_response(message_id: int, result: Any | None = None, error: str | None 
         payload["error"] = {"code": -32000, "message": error}
     else:
         payload["result"] = result if result is not None else {}
-    
+
     sys.stdout.write(json.dumps(payload, ensure_ascii=True) + "\n")
     sys.stdout.flush()
 
@@ -152,19 +152,19 @@ def main() -> int:
         line = raw_line.strip()
         if not line:
             continue
-        
+
         try:
             message = json.loads(line)
         except json.JSONDecodeError:
             continue
-        
+
         method = message.get("method")
         message_id = message.get("id", 0)
         params = message.get("params") or {}
-        
+
         if not message_id:
             continue
-        
+
         try:
             result = handle_request(str(method or ""), params)
             send_response(int(message_id), result=result)
@@ -172,7 +172,7 @@ def main() -> int:
             send_response(int(message_id), error=str(exc))
         except Exception as exc:
             send_response(int(message_id), error=f"unexpected error: {exc}")
-    
+
     return 0
 
 
@@ -375,7 +375,7 @@ Multiple tools can be injected simultaneously:
 ```python
 def handle_before_llm(params: dict) -> dict:
     tools = params.get("tools", [])
-    
+
     # Tool 1: Weather query
     tools.append({
         "type": "function",
@@ -391,7 +391,7 @@ def handle_before_llm(params: dict) -> dict:
             }
         }
     })
-    
+
     # Tool 2: Calculator
     tools.append({
         "type": "function",
@@ -407,7 +407,7 @@ def handle_before_llm(params: dict) -> dict:
             }
         }
     })
-    
+
     return {
         "action": "modify",
         "request": {
@@ -422,13 +422,13 @@ def handle_before_llm(params: dict) -> dict:
 def handle_before_tool(params: dict) -> dict:
     tool = params.get("tool", "")
     args = params.get("arguments", {})
-    
+
     if tool == "get_weather":
         return {
             "action": "respond",
             "result": get_weather(args.get("city", "")),
         }
-    
+
     if tool == "calculate":
         # Simple calculation example
         try:
@@ -451,7 +451,7 @@ def handle_before_tool(params: dict) -> dict:
                     "is_error": True,
                 },
             }
-    
+
     return {"action": "continue"}
 ```
 
@@ -504,7 +504,7 @@ func (h *WeatherPluginHook) BeforeLLM(
             },
         },
     })
-    
+
     return req, agent.HookDecision{Action: agent.HookActionContinue}, nil
 }
 
@@ -514,7 +514,7 @@ func (h *WeatherPluginHook) BeforeTool(
 ) (*agent.ToolCallHookRequest, agent.HookDecision, error) {
     if call.Tool == "get_weather" {
         city := call.Arguments["city"].(string)
-        
+
         // Set HookResult, use respond action
         next := call.Clone()
         next.HookResult = &tools.ToolResult{
@@ -522,10 +522,10 @@ func (h *WeatherPluginHook) BeforeTool(
             Silent:  false,
             IsError: false,
         }
-        
+
         return next, agent.HookDecision{Action: agent.HookActionRespond}, nil
     }
-    
+
     return call, agent.HookDecision{Action: agent.HookActionContinue}, nil
 }
 
@@ -572,14 +572,14 @@ This means:
 def handle_before_tool(params: dict) -> dict:
     tool = params.get("tool", "")
     args = params.get("arguments", {})
-    
+
     # Security check: only handle plugin tools
     if tool in ["get_weather", "calculate"]:
         return {
             "action": "respond",
             "result": execute_plugin_tool(tool, args),
         }
-    
+
     # Other tools continue normal flow (will go through approval)
     return {"action": "continue"}
 ```

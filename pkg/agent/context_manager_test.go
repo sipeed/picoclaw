@@ -12,6 +12,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -305,8 +306,13 @@ func TestLegacyCompact_Overflow(t *testing.T) {
 	}
 	defaultAgent.Sessions.SetHistory("session-overflow", history)
 
-	sub := al.SubscribeEvents(16)
-	defer al.UnsubscribeEvents(sub.ID)
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		16,
+		runtimeevents.KindAgentContextCompress,
+	)
+	defer closeRuntimeEvents()
 
 	err := al.contextManager.Compact(context.Background(), &CompactRequest{
 		SessionKey: "session-overflow",
@@ -329,8 +335,8 @@ func TestLegacyCompact_Overflow(t *testing.T) {
 	}
 
 	// Event should carry the proactive reason
-	events := collectEventStream(sub.C)
-	compressEvt, ok := findEvent(events, EventKindContextCompress)
+	events := collectRuntimeEventStream(runtimeCh)
+	compressEvt, ok := findRuntimeEvent(events, runtimeevents.KindAgentContextCompress)
 	if !ok {
 		t.Fatal("expected context compress event")
 	}
@@ -361,8 +367,13 @@ func TestLegacyCompact_Overflow_ProactiveReason(t *testing.T) {
 	}
 	defaultAgent.Sessions.SetHistory("session-proactive", history)
 
-	sub := al.SubscribeEvents(16)
-	defer al.UnsubscribeEvents(sub.ID)
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		16,
+		runtimeevents.KindAgentContextCompress,
+	)
+	defer closeRuntimeEvents()
 
 	err := al.contextManager.Compact(context.Background(), &CompactRequest{
 		SessionKey: "session-proactive",
@@ -372,8 +383,8 @@ func TestLegacyCompact_Overflow_ProactiveReason(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	events := collectEventStream(sub.C)
-	compressEvt, ok := findEvent(events, EventKindContextCompress)
+	events := collectRuntimeEventStream(runtimeCh)
+	compressEvt, ok := findRuntimeEvent(events, runtimeevents.KindAgentContextCompress)
 	if !ok {
 		t.Fatal("expected context compress event")
 	}
@@ -483,6 +494,14 @@ func TestLegacyCompact_PostTurn_ExceedsMessageThreshold(t *testing.T) {
 	}
 	defaultAgent.Sessions.SetHistory("session-threshold", history)
 
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		16,
+		runtimeevents.KindAgentSessionSummarize,
+	)
+	defer closeRuntimeEvents()
+
 	err := al.contextManager.Compact(context.Background(), &CompactRequest{
 		SessionKey: "session-threshold",
 		Reason:     ContextCompressReasonSummarize,
@@ -491,12 +510,8 @@ func TestLegacyCompact_PostTurn_ExceedsMessageThreshold(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Wait for async summarization to complete via event
-	sub := al.SubscribeEvents(16)
-	defer al.UnsubscribeEvents(sub.ID)
-
-	waitForEvent(t, sub.C, 5*time.Second, func(evt Event) bool {
-		return evt.Kind == EventKindSessionSummarize
+	waitForRuntimeEvent(t, runtimeCh, 5*time.Second, func(evt runtimeevents.Event) bool {
+		return evt.Kind == runtimeevents.KindAgentSessionSummarize
 	})
 
 	newHistory := defaultAgent.Sessions.GetHistory("session-threshold")

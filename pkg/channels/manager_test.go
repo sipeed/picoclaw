@@ -14,6 +14,8 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -148,6 +150,26 @@ func newTestManager() *Manager {
 	}
 }
 
+func TestSetMediaStorePropagatesToExistingChannels(t *testing.T) {
+	oldStore := media.NewFileMediaStore()
+	newStore := media.NewFileMediaStore()
+	ch := &mockChannel{}
+	ch.SetMediaStore(oldStore)
+
+	m := newTestManager()
+	m.mediaStore = oldStore
+	m.channels["telegram"] = ch
+
+	m.SetMediaStore(newStore)
+
+	if m.mediaStore != newStore {
+		t.Fatal("manager media store was not updated")
+	}
+	if got := ch.GetMediaStore(); got != newStore {
+		t.Fatalf("channel media store = %p, want %p", got, newStore)
+	}
+}
+
 func TestStartAll_AllChannelsFail_ReturnsJoinedError(t *testing.T) {
 	m := newTestManager()
 	errA := errors.New("channel-a start failed")
@@ -242,6 +264,57 @@ func TestStartAll_PartialFailure_StartsSuccessfulWorkers(t *testing.T) {
 	}
 }
 
+func TestStartAllPublishesLifecycleRuntimeEvents(t *testing.T) {
+	eventBus := runtimeevents.NewBus()
+	defer func() {
+		if err := eventBus.Close(); err != nil {
+			t.Errorf("event bus close failed: %v", err)
+		}
+	}()
+
+	_, eventsCh, err := eventBus.Channel().SubscribeChan(
+		t.Context(),
+		runtimeevents.SubscribeOptions{Name: "channel-lifecycle", Buffer: 4},
+	)
+	if err != nil {
+		t.Fatalf("SubscribeChan failed: %v", err)
+	}
+
+	m := newTestManager()
+	m.runtimeEvents = eventBus
+	m.config = &config.Config{Channels: config.ChannelsConfig{}}
+	m.channels["good"] = &mockChannel{}
+	m.channels["bad"] = &mockChannel{
+		startFn: func(_ context.Context) error { return errors.New("bad start") },
+	}
+
+	if err := m.StartAll(t.Context()); err != nil {
+		t.Fatalf("StartAll() error = %v", err)
+	}
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := m.StopAll(stopCtx); err != nil {
+			t.Errorf("StopAll() error = %v", err)
+		}
+	})
+
+	events := []runtimeevents.Event{
+		receiveChannelRuntimeEvent(t, eventsCh),
+		receiveChannelRuntimeEvent(t, eventsCh),
+	}
+	seen := map[runtimeevents.Kind]runtimeevents.Event{}
+	for _, evt := range events {
+		seen[evt.Kind] = evt
+	}
+	if evt, ok := seen[runtimeevents.KindChannelLifecycleStarted]; !ok || evt.Scope.Channel != "good" {
+		t.Fatalf("missing started event for good channel: %+v", events)
+	}
+	if evt, ok := seen[runtimeevents.KindChannelLifecycleStartFailed]; !ok || evt.Scope.Channel != "bad" {
+		t.Fatalf("missing failed event for bad channel: %+v", events)
+	}
+}
+
 func testOutboundMessage(msg bus.OutboundMessage) bus.OutboundMessage {
 	if msg.Context.Channel == "" && msg.Context.ChatID == "" {
 		msg.Context = bus.NewOutboundContext(msg.Channel, msg.ChatID, msg.ReplyToMessageID)
@@ -254,6 +327,21 @@ func testOutboundMediaMessage(msg bus.OutboundMediaMessage) bus.OutboundMediaMes
 		msg.Context = bus.NewOutboundContext(msg.Channel, msg.ChatID, "")
 	}
 	return bus.NormalizeOutboundMediaMessage(msg)
+}
+
+func receiveChannelRuntimeEvent(t *testing.T, ch <-chan runtimeevents.Event) runtimeevents.Event {
+	t.Helper()
+
+	select {
+	case evt, ok := <-ch:
+		if !ok {
+			t.Fatal("runtime event channel closed before expected event")
+		}
+		return evt
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for runtime event")
+		return runtimeevents.Event{}
+	}
 }
 
 func TestSendWithRetry_Success(t *testing.T) {
@@ -277,6 +365,69 @@ func TestSendWithRetry_Success(t *testing.T) {
 
 	if callCount != 1 {
 		t.Fatalf("expected 1 Send call, got %d", callCount)
+	}
+}
+
+func TestSendWithRetryPublishesOutboundRuntimeEvents(t *testing.T) {
+	eventBus := runtimeevents.NewBus()
+	defer func() {
+		if err := eventBus.Close(); err != nil {
+			t.Errorf("event bus close failed: %v", err)
+		}
+	}()
+
+	_, eventsCh, err := eventBus.Channel().OfKind(
+		runtimeevents.KindChannelMessageOutboundSent,
+		runtimeevents.KindChannelMessageOutboundFailed,
+	).SubscribeChan(t.Context(), runtimeevents.SubscribeOptions{Name: "channel-outbound", Buffer: 2})
+	if err != nil {
+		t.Fatalf("SubscribeChan failed: %v", err)
+	}
+
+	m := newTestManager()
+	m.runtimeEvents = eventBus
+
+	successWorker := &channelWorker{
+		ch:      &mockChannel{},
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+	m.sendWithRetry(
+		context.Background(),
+		"test",
+		successWorker,
+		testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "chat-1", Content: "hello"}),
+	)
+	sent := receiveChannelRuntimeEvent(t, eventsCh)
+	if sent.Kind != runtimeevents.KindChannelMessageOutboundSent || sent.Scope.ChatID != "chat-1" {
+		t.Fatalf("sent event = %+v", sent)
+	}
+	if sent.Attrs["content_len"] != 5 {
+		t.Fatalf("sent attrs = %#v, want content_len", sent.Attrs)
+	}
+
+	failWorker := &channelWorker{
+		ch: &mockChannel{
+			sendFn: func(context.Context, bus.OutboundMessage) error {
+				return fmt.Errorf("send failed: %w", ErrSendFailed)
+			},
+		},
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+	m.sendWithRetry(
+		context.Background(),
+		"test",
+		failWorker,
+		testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "chat-2", Content: "hello"}),
+	)
+	failed := receiveChannelRuntimeEvent(t, eventsCh)
+	if failed.Kind != runtimeevents.KindChannelMessageOutboundFailed || failed.Scope.ChatID != "chat-2" {
+		t.Fatalf("failed event = %+v", failed)
+	}
+	if failed.Severity != runtimeevents.SeverityError {
+		t.Fatalf("failed severity = %q", failed.Severity)
+	}
+	if failed.Attrs["error"] == "" || failed.Attrs["retries"] != maxRetries {
+		t.Fatalf("failed attrs = %#v, want error and retries", failed.Attrs)
 	}
 }
 

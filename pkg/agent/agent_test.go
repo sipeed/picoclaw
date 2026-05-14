@@ -19,6 +19,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
@@ -54,6 +55,38 @@ func (f *fakeMediaChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([
 func (f *fakeMediaChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error) {
 	f.sentMedia = append(f.sentMedia, msg)
 	return nil, nil
+}
+
+type recordingChannelManager struct {
+	dismissed []string
+}
+
+func (m *recordingChannelManager) GetChannel(name string) (channels.Channel, bool) {
+	return nil, false
+}
+
+func (m *recordingChannelManager) GetEnabledChannels() []string {
+	return nil
+}
+
+func (m *recordingChannelManager) InvokeTypingStop(channel, chatID string) {}
+
+func (m *recordingChannelManager) SendMessage(ctx context.Context, msg bus.OutboundMessage) error {
+	return nil
+}
+
+func (m *recordingChannelManager) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	return nil
+}
+
+func (m *recordingChannelManager) SendPlaceholder(ctx context.Context, channel, chatID string) bool {
+	return false
+}
+
+func (m *recordingChannelManager) DismissToolFeedback(
+	ctx context.Context, channel, chatID string, outboundCtx *bus.InboundContext,
+) {
+	m.dismissed = append(m.dismissed, fmt.Sprintf("%s:%s", channel, chatID))
 }
 
 func newStartedTestChannelManager(
@@ -210,6 +243,44 @@ func TestNewAgentLoop_DoesNotRegisterWebSearchTool_WhenNoReadyProviders(t *testi
 	}
 	if _, ok := agent.Tools.Get("web_search"); ok {
 		t.Fatal("expected web_search tool to be absent when no providers are ready")
+	}
+}
+
+func TestPublishResponseIfNeeded_DismissesToolFeedbackWhenMessageToolAlreadySent(t *testing.T) {
+	al, msgBus, provider, sessions, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+	_ = msgBus
+	_ = provider
+	_ = sessions
+
+	cm := &recordingChannelManager{}
+	al.channelManager = cm
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("expected default agent")
+	}
+	mt := tools.NewMessageTool()
+	mt.SetSendCallback(func(ctx context.Context, channel, chatID, content, replyToMessageID string) error {
+		return nil
+	})
+	defaultAgent.Tools.Register(mt)
+
+	result := mt.Execute(
+		tools.WithToolSessionContext(context.Background(), "main", "session-1", nil),
+		map[string]any{
+			"content": "ack",
+			"channel": "telegram",
+			"chat_id": "-100123",
+		},
+	)
+	if result == nil || result.IsError {
+		t.Fatalf("message tool execute failed: %+v", result)
+	}
+	al.PublishResponseIfNeeded(context.Background(), "telegram", "-100123", "session-1", "final reply")
+
+	if got := cm.dismissed; len(got) != 1 || got[0] != "telegram:-100123" {
+		t.Fatalf("dismissed = %v, want [telegram:-100123]", got)
 	}
 }
 
@@ -5456,6 +5527,7 @@ func TestParallelMessageProcessing_SameSessionProcessedSequentially(t *testing.T
 	var mu sync.Mutex
 	turnIDs := make(map[string]bool)
 	var wg sync.WaitGroup
+	var firstResponse sync.Once
 	wg.Add(1) // Only 1 turn should be created for same session
 
 	cfg := &config.Config{
@@ -5478,19 +5550,27 @@ func TestParallelMessageProcessing_SameSessionProcessedSequentially(t *testing.T
 
 	al := NewAgentLoop(cfg, msgBus, &concurrentMockProvider{
 		responseFunc: func(callID int) string {
-			wg.Done()
+			firstResponse.Do(func() {
+				wg.Done()
+			})
 			return "ok"
 		},
 	})
 	defer al.Close()
 
-	sub := al.SubscribeEvents(64)
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		64,
+		runtimeevents.KindAgentTurnStart,
+	)
+	defer closeRuntimeEvents()
 
 	go func() {
-		for evt := range sub.C {
-			if evt.Kind == EventKindTurnStart {
+		for evt := range runtimeCh {
+			if evt.Kind == runtimeevents.KindAgentTurnStart {
 				mu.Lock()
-				turnIDs[evt.Meta.TurnID] = true
+				turnIDs[evt.Scope.TurnID] = true
 				mu.Unlock()
 			}
 		}

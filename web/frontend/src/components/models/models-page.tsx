@@ -1,9 +1,19 @@
-import { IconLoader2, IconPlus, IconStar } from "@tabler/icons-react"
-import { useCallback, useEffect, useState } from "react"
+import {
+  IconDatabase,
+  IconLoader2,
+  IconPlus,
+  IconStar,
+} from "@tabler/icons-react"
+import { type ComponentType, useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
-import { type ModelInfo, getModels, setDefaultModel } from "@/api/models"
+import {
+  type ModelInfo,
+  type ModelProviderOption,
+  getModels,
+  setDefaultModel,
+} from "@/api/models"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
 import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
@@ -13,39 +23,8 @@ import { AddModelSheet } from "./add-model-sheet"
 import { DeleteModelDialog } from "./delete-model-dialog"
 import { EditModelSheet } from "./edit-model-sheet"
 import { getProviderKey, getProviderLabel } from "./provider-label"
+import { PROVIDER_PRIORITY } from "./provider-registry"
 import { ProviderSection } from "./provider-section"
-
-const PROVIDER_PRIORITY: Record<string, number> = {
-  volcengine: 0,
-  openai: 1,
-  gemini: 2,
-  anthropic: 3,
-  zhipu: 4,
-  deepseek: 5,
-  openrouter: 6,
-  "qwen-portal": 7,
-  "qwen-intl": 8,
-  moonshot: 9,
-  groq: 10,
-  "github-copilot": 11,
-  antigravity: 12,
-  nvidia: 13,
-  cerebras: 14,
-  shengsuanyun: 15,
-  venice: 16,
-  vivgrid: 17,
-  minimax: 18,
-  longcat: 19,
-  modelscope: 20,
-  mistral: 21,
-  avian: 22,
-  azure: 23,
-  ollama: 24,
-  vllm: 25,
-  lmstudio: 26,
-  zai: 27,
-  mimo: 28,
-}
 
 interface ProviderGroup {
   key: string
@@ -58,15 +37,27 @@ interface ProviderGroup {
 export function ModelsPage() {
   const { t } = useTranslation()
   const [models, setModels] = useState<ModelInfo[]>([])
+  const [providerOptions, setProviderOptions] = useState<
+    ModelProviderOption[]
+  >([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState("")
 
   const [editingModel, setEditingModel] = useState<ModelInfo | null>(null)
   const [deletingModel, setDeletingModel] = useState<ModelInfo | null>(null)
   const [addOpen, setAddOpen] = useState(false)
+  const [catalogOpen, setCatalogOpen] = useState(false)
   const [settingDefaultIndex, setSettingDefaultIndex] = useState<number | null>(
     null,
   )
+
+  // Dynamic import for CatalogDialog (added in PR2)
+  const [CatalogDialogComp, setCatalogDialogComp] = useState<ComponentType<{
+    open: boolean; onClose: () => void; onModelAdded: () => void;
+  }> | null>(null)
+  useEffect(() => {
+    import("./catalog-dialog").then((m) => setCatalogDialogComp(() => m.CatalogDialog)).catch(() => {})
+  }, [])
 
   const fetchModels = useCallback(async () => {
     try {
@@ -79,6 +70,7 @@ export function ModelsPage() {
         return a.model_name.localeCompare(b.model_name)
       })
       setModels(sorted)
+      setProviderOptions(data.provider_options || [])
       setFetchError("")
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : t("models.loadError"))
@@ -160,6 +152,15 @@ export function ModelsPage() {
     <div className="flex h-full flex-col">
       <PageHeader title={t("navigation.models")}>
         <div className="flex items-center gap-3">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setCatalogOpen(true)}
+            disabled={!CatalogDialogComp}
+          >
+            <IconDatabase className="size-4" />
+            {t("models.catalog.button")}
+          </Button>
           <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
             <IconPlus className="size-4" />
             {t("models.add.button")}
@@ -216,6 +217,7 @@ export function ModelsPage() {
         open={editingModel !== null}
         onClose={() => setEditingModel(null)}
         onSaved={fetchModels}
+        providerOptions={providerOptions}
       />
 
       <AddModelSheet
@@ -223,6 +225,7 @@ export function ModelsPage() {
         onClose={() => setAddOpen(false)}
         onSaved={fetchModels}
         existingModelNames={models.map((model) => model.model_name)}
+        providerOptions={providerOptions}
       />
 
       <DeleteModelDialog
@@ -230,6 +233,14 @@ export function ModelsPage() {
         onClose={() => setDeletingModel(null)}
         onDeleted={fetchModels}
       />
+
+      {CatalogDialogComp && (
+        <CatalogDialogComp
+          open={catalogOpen}
+          onClose={() => setCatalogOpen(false)}
+          onModelAdded={fetchModels}
+        />
+      )}
     </div>
   )
 }

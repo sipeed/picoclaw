@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mymmrac/telego"
 	ta "github.com/mymmrac/telego/telegoapi"
@@ -1098,5 +1099,192 @@ func TestHandleMessage_EmptyContent_Ignored(t *testing.T) {
 	case <-messageBus.InboundChan():
 		t.Fatal("Empty message should not be published to message bus")
 	default:
+	}
+}
+
+func TestHandleMessage_MediaGroupCombinesCaptionMessages(t *testing.T) {
+	messageBus, ch := newMediaGroupTestChannel(10 * time.Millisecond)
+	base := testMediaGroupMessage("album-1")
+	first := base
+	first.MessageID = 1
+	second := base
+	second.MessageID = 2
+	second.Caption = "meal caption"
+
+	require.NoError(t, ch.handleMessage(context.Background(), &first))
+	require.NoError(t, ch.handleMessage(context.Background(), &second))
+
+	select {
+	case inbound := <-messageBus.InboundChan():
+		assert.Equal(t, "2", inbound.Context.MessageID)
+		assert.Equal(t, "meal caption", inbound.Content)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for combined media group message")
+	}
+}
+
+func TestHandleMessage_MediaGroupWaitsForStaggeredMessages(t *testing.T) {
+	messageBus, ch := newMediaGroupTestChannel(100 * time.Millisecond)
+	base := testMediaGroupMessage("album-staggered")
+	first := base
+	first.MessageID = 1
+	first.Caption = "first caption"
+	second := base
+	second.MessageID = 2
+	second.Caption = "second caption"
+
+	require.NoError(t, ch.handleMessage(context.Background(), &first))
+	time.Sleep(50 * time.Millisecond)
+	require.NoError(t, ch.handleMessage(context.Background(), &second))
+
+	select {
+	case inbound := <-messageBus.InboundChan():
+		t.Fatalf("media group flushed before idle delay reset: %#v", inbound)
+	case <-time.After(75 * time.Millisecond):
+	}
+
+	select {
+	case inbound := <-messageBus.InboundChan():
+		assert.Equal(t, "1", inbound.Context.MessageID)
+		assert.Equal(t, "first caption\nsecond caption", inbound.Content)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for staggered media group message")
+	}
+}
+
+func TestFlushMediaGroupIgnoresStaleTimerGeneration(t *testing.T) {
+	messageBus, ch := newMediaGroupTestChannel(time.Hour)
+	base := testMediaGroupMessage("album-generation")
+	first := base
+	first.MessageID = 1
+	first.Caption = "first"
+	second := base
+	second.MessageID = 2
+	second.Caption = "second"
+	key := "456:album-generation"
+
+	ch.mediaGroupMu.Lock()
+	ch.mediaGroups[key] = &telegramMediaGroup{
+		messages:   []*telego.Message{&first, &second},
+		generation: 2,
+	}
+	ch.mediaGroupMu.Unlock()
+
+	ch.flushMediaGroup(context.Background(), key, 1)
+
+	select {
+	case inbound := <-messageBus.InboundChan():
+		t.Fatalf("stale media group generation flushed unexpectedly: %#v", inbound)
+	default:
+	}
+
+	ch.mediaGroupMu.Lock()
+	_, stillPending := ch.mediaGroups[key]
+	ch.mediaGroupMu.Unlock()
+	require.True(t, stillPending, "stale flush should leave the current batch pending")
+
+	ch.flushMediaGroup(context.Background(), key, 2)
+
+	select {
+	case inbound := <-messageBus.InboundChan():
+		assert.Equal(t, "1", inbound.Context.MessageID)
+		assert.Equal(t, "first\nsecond", inbound.Content)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for current generation media group flush")
+	}
+}
+
+func TestHandleMessage_MediaGroupAfterDelayStartsNewBatch(t *testing.T) {
+	messageBus, ch := newMediaGroupTestChannel(10 * time.Millisecond)
+	base := testMediaGroupMessage("album-split")
+	first := base
+	first.MessageID = 1
+	first.Caption = "first"
+	second := base
+	second.MessageID = 2
+	second.Caption = "second"
+
+	require.NoError(t, ch.handleMessage(context.Background(), &first))
+	select {
+	case inbound := <-messageBus.InboundChan():
+		assert.Equal(t, "1", inbound.Context.MessageID)
+		assert.Equal(t, "first", inbound.Content)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first media group batch")
+	}
+
+	require.NoError(t, ch.handleMessage(context.Background(), &second))
+	select {
+	case inbound := <-messageBus.InboundChan():
+		assert.Equal(t, "2", inbound.Context.MessageID)
+		assert.Equal(t, "second", inbound.Content)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for second media group batch")
+	}
+}
+
+func TestStopFlushesPendingMediaGroups(t *testing.T) {
+	messageBus, ch := newMediaGroupTestChannel(time.Hour)
+	base := testMediaGroupMessage("album-stop")
+	msg := base
+	msg.MessageID = 1
+	msg.Caption = "caption before stop"
+
+	require.NoError(t, ch.handleMessage(context.Background(), &msg))
+	require.NoError(t, ch.Stop(context.Background()))
+
+	select {
+	case inbound := <-messageBus.InboundChan():
+		assert.Equal(t, "1", inbound.Context.MessageID)
+		assert.Equal(t, "caption before stop", inbound.Content)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for pending media group flush on stop")
+	}
+}
+
+func TestNewTelegramChannelUsesConfiguredMediaGroupDelay(t *testing.T) {
+	ch, err := NewTelegramChannel(
+		&config.Channel{Type: config.ChannelTelegram, Enabled: true},
+		&config.TelegramSettings{
+			Token:             *config.NewSecureString(testToken),
+			MediaGroupDelayMS: 750,
+		},
+		bus.NewMessageBus(),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, 750*time.Millisecond, ch.mediaGroupDelay)
+
+	ch, err = NewTelegramChannel(
+		&config.Channel{Type: config.ChannelTelegram, Enabled: true},
+		&config.TelegramSettings{Token: *config.NewSecureString(testToken)},
+		bus.NewMessageBus(),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, defaultMediaGroupDelay, ch.mediaGroupDelay)
+}
+
+func newMediaGroupTestChannel(delay time.Duration) (*bus.MessageBus, *TelegramChannel) {
+	messageBus := bus.NewMessageBus()
+	ch := &TelegramChannel{
+		BaseChannel:     channels.NewBaseChannel("telegram", nil, messageBus, nil),
+		chatIDs:         make(map[string]int64),
+		ctx:             context.Background(),
+		mediaGroups:     make(map[string]*telegramMediaGroup),
+		mediaGroupDelay: delay,
+	}
+	return messageBus, ch
+}
+
+func testMediaGroupMessage(mediaGroupID string) telego.Message {
+	return telego.Message{
+		Chat: telego.Chat{
+			ID:   456,
+			Type: "private",
+		},
+		From: &telego.User{
+			ID:        789,
+			FirstName: "User",
+		},
+		MediaGroupID: mediaGroupID,
 	}
 }

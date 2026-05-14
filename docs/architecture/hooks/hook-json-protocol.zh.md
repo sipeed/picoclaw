@@ -437,21 +437,28 @@
 
 ---
 
-## 7. `hook.event`（notification）
+## 7. `hook.runtime_event`（notification）
 
-观察型事件，仅广播，无需响应。`id` 为 `0` 或不存在。
+runtime 观察型事件，仅广播，无需响应。`id` 为 `0` 或不存在。
 
 ```json
 {
   "jsonrpc": "2.0",
-  "method": "hook.event",
+  "method": "hook.runtime_event",
   "params": {
-    "Kind": "tool_exec_start",
-    "Meta": {
-      "AgentID": "agent-1",
-      "TurnID": "turn-1"
+    "kind": "agent.tool.exec_start",
+    "source": {
+      "component": "agent",
+      "name": "agent-1"
     },
-    "Payload": {
+    "scope": {
+      "agent_id": "agent-1",
+      "session_key": "session-1",
+      "turn_id": "turn-1",
+      "channel": "cli",
+      "chat_id": "chat-1"
+    },
+    "payload": {
       "Tool": "echo_text",
       "Arguments": {"text": "hello"}
     }
@@ -460,12 +467,14 @@
 ```
 
 常见 `Kind` 值：
-- `turn_start` / `turn_end`
-- `llm_request` / `llm_response`
-- `tool_exec_start` / `tool_exec_end` / `tool_exec_skipped`
-- `steering_injected`
-- `interrupt_received`
-- `error`
+- `agent.turn.start` / `agent.turn.end`
+- `agent.llm.request` / `agent.llm.response`
+- `agent.tool.exec_start` / `agent.tool.exec_end` / `agent.tool.exec_skipped`
+- `agent.steering.injected`
+- `agent.interrupt.received`
+- `agent.error`
+
+旧 observe 配置名如 `turn_end`、`tool_exec_start` 仍然可用，并会归一化为 runtime event 名称。新的 process hook 通知使用 `hook.runtime_event`。
 
 ---
 
@@ -513,7 +522,7 @@
 ```python
 def handle_before_llm(params: dict) -> dict:
     tools = params.get("tools", [])
-    
+
     # 添加插件工具定义
     tools.append({
         "type": "function",
@@ -529,7 +538,7 @@ def handle_before_llm(params: dict) -> dict:
             }
         }
     })
-    
+
     return {
         "action": "modify",
         "request": {
@@ -546,12 +555,12 @@ def handle_before_llm(params: dict) -> dict:
 ```python
 def handle_before_tool(params: dict) -> dict:
     tool = params.get("tool", "")
-    
+
     if tool == "my_plugin_tool":
         # 在这里实现工具逻辑
         args = params.get("arguments", {})
         input_text = args.get("input", "")
-        
+
         # 直接返回结果，无需在 ToolRegistry 注册
         return {
             "action": "respond",
@@ -561,7 +570,7 @@ def handle_before_tool(params: dict) -> dict:
                 "is_error": False
             }
         }
-    
+
     return {"action": "continue"}
 ```
 

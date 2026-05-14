@@ -14,6 +14,7 @@ export const SECRET_FIELD_MAP = {
   encrypt_key: "_encrypt_key",
   verification_token: "_verification_token",
   secret: "_secret",
+  username: "_username",
   password: "_password",
   nickserv_password: "_nickserv_password",
   sasl_password: "_sasl_password",
@@ -33,6 +34,7 @@ const CHANNEL_SECRET_FIELDS: Record<string, string[]> = {
   pico: ["token"],
   matrix: ["access_token"],
   irc: ["password", "nickserv_password", "sasl_password"],
+  mqtt: ["username", "password"],
 }
 
 const SECRET_FIELD_SET = new Set(Object.keys(SECRET_FIELD_MAP))
