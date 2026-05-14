@@ -138,7 +138,9 @@ func NewTelegramChannel(
 		mediaGroups:     make(map[string]*telegramMediaGroup),
 		mediaGroupDelay: telegramMediaGroupDelay(telegramCfg),
 	}
-	ch.progress = channels.NewToolFeedbackAnimator(ch.EditMessage)
+	ch.progress = channels.NewToolFeedbackAnimator(func(ctx context.Context, chatID, messageID, content string) error {
+		return ch.EditMessage(ctx, telegramToolFeedbackDeliveryChatKey(chatID), messageID, content)
+	})
 	return ch, nil
 }
 
@@ -242,7 +244,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 	if isToolFeedback {
 		toolFeedbackContent = fitToolFeedbackForTelegram(msg.Content, useMarkdownV2, 4096)
 	}
-	trackedChatID := telegramToolFeedbackChatKey(msg.ChatID, &msg.Context)
+	trackedChatID := telegramToolFeedbackMessageKey(msg.ChatID, &msg.Context, msg.SessionKey)
 	if isToolFeedback {
 		if msgID, handled, err := c.progress.Update(ctx, trackedChatID, toolFeedbackContent); handled {
 			if err != nil {
@@ -253,7 +255,11 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 	}
 	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(trackedChatID)
 	if !isToolFeedback {
-		if msgIDs, handled := c.finalizeToolFeedbackMessageForChat(ctx, trackedChatID, msg); handled {
+		if outboundMessageIsFinalReply(msg) {
+			// Final replies should be sent as new messages. Editing the progress
+			// message can leave the user without a final reply if Telegram edit
+			// delivery stalls or races with feedback animation.
+		} else if msgIDs, handled := c.finalizeToolFeedbackMessageForChat(ctx, trackedChatID, msg); handled {
 			return msgIDs, nil
 		}
 	}
@@ -527,6 +533,13 @@ func outboundMessageIsToolFeedback(msg bus.OutboundMessage) bool {
 	return strings.EqualFold(strings.TrimSpace(msg.Context.Raw["message_kind"]), "tool_feedback")
 }
 
+func outboundMessageIsFinalReply(msg bus.OutboundMessage) bool {
+	if len(msg.Context.Raw) == 0 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(msg.Context.Raw["message_kind"]), "final_reply")
+}
+
 func (c *TelegramChannel) currentToolFeedbackMessage(chatID string) (string, bool) {
 	if c.progress == nil {
 		return "", false
@@ -575,7 +588,7 @@ func (c *TelegramChannel) dismissTrackedToolFeedbackMessage(ctx context.Context,
 		return
 	}
 	c.ClearToolFeedbackMessage(chatID)
-	_ = c.DeleteMessage(ctx, chatID, messageID)
+	_ = c.DeleteMessage(ctx, telegramToolFeedbackDeliveryChatKey(chatID), messageID)
 }
 
 func (c *TelegramChannel) finalizeTrackedToolFeedbackMessage(
@@ -588,7 +601,7 @@ func (c *TelegramChannel) finalizeTrackedToolFeedbackMessage(
 	if !ok || editFn == nil {
 		return nil, false
 	}
-	if err := editFn(ctx, chatID, msgID, content); err != nil {
+	if err := editFn(ctx, telegramToolFeedbackDeliveryChatKey(chatID), msgID, content); err != nil {
 		c.RecordToolFeedbackMessage(chatID, msgID, baseContent)
 		return nil, false
 	}
@@ -599,7 +612,11 @@ func (c *TelegramChannel) FinalizeToolFeedbackMessage(ctx context.Context, msg b
 	if outboundMessageIsToolFeedback(msg) {
 		return nil, false
 	}
-	return c.finalizeToolFeedbackMessageForChat(ctx, telegramToolFeedbackChatKey(msg.ChatID, &msg.Context), msg)
+	return c.finalizeToolFeedbackMessageForChat(
+		ctx,
+		telegramToolFeedbackMessageKey(msg.ChatID, &msg.Context, msg.SessionKey),
+		msg,
+	)
 }
 
 func (c *TelegramChannel) finalizeToolFeedbackMessageForChat(
@@ -641,7 +658,7 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 	if !c.IsRunning() {
 		return nil, channels.ErrNotRunning
 	}
-	trackedChatID := telegramToolFeedbackChatKey(msg.ChatID, &msg.Context)
+	trackedChatID := telegramToolFeedbackMessageKey(msg.ChatID, &msg.Context, msg.SessionKey)
 	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(trackedChatID)
 
 	chatID, threadID, err := resolveTelegramOutboundTarget(msg.ChatID, &msg.Context)
@@ -1142,7 +1159,11 @@ func (c *TelegramChannel) handleMessages(ctx context.Context, messages []*telego
 		if isMentioned {
 			content = c.stripBotMention(content)
 		}
-		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
+		topicID := ""
+		if message.Chat.IsForum && message.MessageThreadID != 0 {
+			topicID = fmt.Sprintf("%d", message.MessageThreadID)
+		}
+		respond, cleaned := c.ShouldRespondInGroupForTopic(isMentioned, content, topicID)
 		if !respond {
 			return nil
 		}
@@ -1502,6 +1523,23 @@ func telegramToolFeedbackChatKey(chatID string, outboundCtx *bus.InboundContext)
 		return strings.TrimSpace(chatID)
 	}
 	return fmt.Sprintf("%d/%d", resolvedChatID, threadID)
+}
+
+func telegramToolFeedbackMessageKey(chatID string, outboundCtx *bus.InboundContext, sessionKey string) string {
+	key := telegramToolFeedbackChatKey(chatID, outboundCtx)
+	sessionKey = strings.TrimSpace(sessionKey)
+	if key == "" || sessionKey == "" {
+		return key
+	}
+	return key + "#session:" + sessionKey
+}
+
+func telegramToolFeedbackDeliveryChatKey(chatID string) string {
+	chatID = strings.TrimSpace(chatID)
+	if idx := strings.Index(chatID, "#session:"); idx >= 0 {
+		return strings.TrimSpace(chatID[:idx])
+	}
+	return chatID
 }
 
 func (c *TelegramChannel) ToolFeedbackMessageChatID(chatID string, outboundCtx *bus.InboundContext) string {

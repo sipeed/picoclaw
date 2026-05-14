@@ -641,6 +641,41 @@ func TestSend_NonToolFeedbackDeletesTrackedProgressMessage(t *testing.T) {
 	assert.False(t, ok, "tracked tool feedback should be cleared after final reply")
 }
 
+func TestSend_FinalReplyDoesNotEditTrackedProgressMessage(t *testing.T) {
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			switch {
+			case strings.Contains(url, "sendMessage"):
+				return successResponseWithMessageID(t, 2), nil
+			case strings.Contains(url, "deleteMessage"):
+				return successResponse(t), nil
+			default:
+				t.Fatalf("unexpected API call: %s", url)
+				return nil, nil
+			}
+		},
+	}
+	ch := newTestChannel(t, caller)
+	ch.RecordToolFeedbackMessage("12345", "1", "Working...\n• tool: delegate")
+
+	ids, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:  "12345",
+		Content: "final reply",
+		Context: bus.InboundContext{
+			Raw: map[string]string{"message_kind": "final_reply"},
+		},
+	})
+
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"2"}, ids)
+	require.Len(t, caller.calls, 2)
+	assert.Contains(t, caller.calls[0].URL, "sendMessage")
+	assert.NotContains(t, caller.calls[0].URL, "editMessageText")
+	assert.Contains(t, caller.calls[1].URL, "deleteMessage")
+	_, ok := ch.currentToolFeedbackMessage("12345")
+	assert.False(t, ok, "tracked tool feedback should be cleared after final reply")
+}
+
 func TestSend_ToolFeedbackTrackingIsTopicScoped(t *testing.T) {
 	nextMessageID := 0
 	caller := &stubCaller{
@@ -671,6 +706,55 @@ func TestSend_ToolFeedbackTrackingIsTopicScoped(t *testing.T) {
 	msgID, ok := ch.currentToolFeedbackMessage("-1001234567890/42")
 	require.True(t, ok, "topic chat should track tool feedback")
 	assert.Equal(t, "1", msgID)
+}
+
+func TestSend_ToolFeedbackTrackingIsSessionScoped(t *testing.T) {
+	nextMessageID := 0
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			nextMessageID++
+			return successResponseWithMessageID(t, nextMessageID), nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:     "-1001234567890",
+		SessionKey: "subturn-9",
+		Content:    "Apartment Search working...\n• tool: `read_file`",
+		Context: bus.InboundContext{
+			Channel: "telegram",
+			ChatID:  "-1001234567890",
+			TopicID: "42",
+			Raw: map[string]string{
+				"message_kind": "tool_feedback",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	_, ok := ch.currentToolFeedbackMessage("-1001234567890/42")
+	assert.False(t, ok, "session-scoped tool feedback should not be tracked on the topic key")
+
+	msgID, ok := ch.currentToolFeedbackMessage("-1001234567890/42#session:subturn-9")
+	require.True(t, ok, "subturn tool feedback should be tracked by session key")
+	assert.Equal(t, "1", msgID)
+
+	ids, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:     "-1001234567890",
+		SessionKey: "subturn-9",
+		Content:    "done",
+		Context: bus.InboundContext{
+			Channel: "telegram",
+			ChatID:  "-1001234567890",
+			TopicID: "42",
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"1"}, ids)
+
+	_, ok = ch.currentToolFeedbackMessage("-1001234567890/42#session:subturn-9")
+	assert.False(t, ok, "final reply should clear session-scoped tool feedback")
 }
 
 func TestSend_TopicReplyDoesNotFinalizeDifferentTopicToolFeedback(t *testing.T) {
@@ -1186,6 +1270,49 @@ func TestHandleMessage_ForumTopic_SetsMetadata(t *testing.T) {
 	assert.Equal(t, "-1001234567890", inbound.ChatID)
 	assert.Equal(t, "group", inbound.Context.ChatType)
 	assert.Equal(t, "42", inbound.Context.TopicID)
+}
+
+func TestHandleMessage_ForumTopic_UsesTopicGroupTriggerOverride(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	ch := &TelegramChannel{
+		BaseChannel: channels.NewBaseChannel(
+			"telegram",
+			nil,
+			messageBus,
+			nil,
+			channels.WithGroupTrigger(config.GroupTriggerConfig{
+				MentionOnly: true,
+				Topics: map[string]config.GroupTriggerConfig{
+					"1771": {MentionOnly: false},
+				},
+			}),
+		),
+		chatIDs: make(map[string]int64),
+		ctx:     context.Background(),
+	}
+
+	msg := &telego.Message{
+		Text:            "test",
+		MessageID:       10,
+		MessageThreadID: 1771,
+		Chat: telego.Chat{
+			ID:      -1002133645926,
+			Type:    "supergroup",
+			IsForum: true,
+		},
+		From: &telego.User{
+			ID:        2490846,
+			FirstName: "Anton",
+		},
+	}
+
+	err := ch.handleMessage(context.Background(), msg)
+	require.NoError(t, err)
+
+	inbound, ok := <-messageBus.InboundChan()
+	require.True(t, ok, "expected topic override to allow non-mentioned message")
+	assert.Equal(t, "test", inbound.Content)
+	assert.Equal(t, "1771", inbound.Context.TopicID)
 }
 
 func TestHandleMessage_NoForum_NoThreadMetadata(t *testing.T) {

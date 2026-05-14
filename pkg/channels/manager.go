@@ -290,6 +290,15 @@ func candidateToolFeedbackMessageChatIDs(raw, resolved string) []string {
 	return []string{resolved, raw}
 }
 
+func sessionScopedToolFeedbackMessageChatID(chatID, sessionKey string) string {
+	chatID = strings.TrimSpace(chatID)
+	sessionKey = strings.TrimSpace(sessionKey)
+	if chatID == "" || sessionKey == "" {
+		return chatID
+	}
+	return chatID + "#session:" + sessionKey
+}
+
 func dismissTrackedToolFeedbackMessage(
 	ctx context.Context,
 	ch Channel,
@@ -546,6 +555,9 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 				}
 				if err := editor.EditMessage(ctx, chatID, entry.id, content); err == nil {
 					trackedChatID := resolveOutboundChatID(ch, chatID, &msg.Context)
+					if isToolFeedback {
+						trackedChatID = sessionScopedToolFeedbackMessageChatID(trackedChatID, msg.SessionKey)
+					}
 					if tracker, ok := ch.(toolFeedbackMessageTracker); ok && isToolFeedback {
 						if editTracker, ok := ch.(toolFeedbackMessageEditTracker); ok {
 							editTracker.RecordEditedToolFeedbackMessage(trackedChatID, entry.id, trackedContent)

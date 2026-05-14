@@ -38,5 +38,5 @@ Result:
 PICOCLAW_ASYNC_RESULT
 
 Action:
-Convert the result above into a concise user-facing update in your normal assistant voice. Keep this internal metadata private. Do not mention system messages, tool names, delivery modes, sessions, or logs unless the result itself requires it.`, toolName, result)
+Convert the result above into a concise user-facing update in your normal assistant voice and send that update now. Keep this internal metadata private. Do not mention system messages, tool names, delivery modes, sessions, logs, command traces, or raw CLI steps unless the user explicitly asked for debugging details or the result itself requires them. Do not copy the internal event text verbatim.`, toolName, result)
 }
