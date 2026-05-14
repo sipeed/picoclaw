@@ -95,14 +95,25 @@ var (
 		regexp.MustCompile(`\bssh\b.*@`),
 		regexp.MustCompile(`\beval\b`),
 		regexp.MustCompile(`\bsource\s+.*\.sh\b`),
-		// PowerShell encoding bypass: [Text.Encoding] used to construct command strings.
-		regexp.MustCompile(`\[text\.encoding\]`),
-		// PowerShell -EncodedCommand flag (base64-encoded command).
-		regexp.MustCompile(`-encodedcommand`),
+	}
+
+	// windowsDenyPatterns contains PowerShell-specific deny patterns that only
+	// apply on Windows, where commands are executed via powershell -Command.
+	windowsDenyPatterns = []*regexp.Regexp{
+		// [Text.Encoding] used to construct command strings at runtime.
+		// Matches [Text.Encoding] and [System.Text.Encoding] variants.
+		regexp.MustCompile(`\[(?:\w+\.)?text\.encoding\]`),
+		// PowerShell -EncodedCommand flag (base64-encoded command) and short forms -e, -ec, -enc.
+		regexp.MustCompile(` -e[cn]\b`),
 		// .GetString called on byte array to decode commands.
-		regexp.MustCompile(`\.getstring\(\[byte\[\]`),
+		regexp.MustCompile(`\.getstring\s*\(\s*\[byte\[\]`),
 		// FromBase64String used in command construction chain.
 		regexp.MustCompile(`frombase64string\(`),
+		// PowerShell variable holding byte array used in GetString.
+		regexp.MustCompile(`\$[a-zA-Z_]\w*\s*=\s*\[byte\[\]`),
+		// Unicode escape sequences that could be used to construct commands.
+		// Matches \uXXXX format used to represent characters like i = "i"
+		regexp.MustCompile(`\\u[0-9a-fA-F]{4}`),
 	}
 
 	// absolutePathPattern matches absolute file paths in commands (Unix and Windows).
@@ -146,6 +157,9 @@ func NewExecToolWithConfig(
 		allowRemote = execConfig.AllowRemote
 		if enableDenyPatterns {
 			denyPatterns = append(denyPatterns, defaultDenyPatterns...)
+			if runtime.GOOS == "windows" {
+				denyPatterns = append(denyPatterns, windowsDenyPatterns...)
+			}
 			if len(execConfig.CustomDenyPatterns) > 0 {
 				fmt.Printf("Using custom deny patterns: %v\n", execConfig.CustomDenyPatterns)
 				for _, pattern := range execConfig.CustomDenyPatterns {
@@ -169,6 +183,9 @@ func NewExecToolWithConfig(
 		}
 	} else {
 		denyPatterns = append(denyPatterns, defaultDenyPatterns...)
+		if runtime.GOOS == "windows" {
+			denyPatterns = append(denyPatterns, windowsDenyPatterns...)
+		}
 	}
 
 	var timeout time.Duration
@@ -1027,6 +1044,30 @@ func (t *ExecTool) executeSendKeys(args map[string]any) *ToolResult {
 	}
 }
 
+// expandPowerShellEnvVars expands environment variable syntax used by both
+// PowerShell ($env:VAR) and CMD (%VAR%) to their actual values.
+func expandPowerShellEnvVars(cmd string) string {
+	// Handle PowerShell style: $env:VAR and ${env:VAR}
+	rePs := regexp.MustCompile(`\$\{?env:(\w+)\}?`)
+	cmd = rePs.ReplaceAllStringFunc(cmd, func(match string) string {
+		varName := rePs.FindStringSubmatch(match)[1]
+		if val := os.Getenv(varName); val != "" {
+			return val
+		}
+		return match
+	})
+
+	// Handle CMD style: %VAR%
+	reCmd := regexp.MustCompile(`%([^%]+)%`)
+	return reCmd.ReplaceAllStringFunc(cmd, func(match string) string {
+		varName := reCmd.FindStringSubmatch(match)[1]
+		if val := os.Getenv(varName); val != "" {
+			return val
+		}
+		return match
+	})
+}
+
 func (t *ExecTool) guardCommand(command, cwd string) string {
 	cmd := strings.TrimSpace(command)
 	lower := strings.ToLower(cmd)
@@ -1062,7 +1103,8 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	if t.restrictToWorkspace {
-		if strings.Contains(cmd, "..\\") || strings.Contains(cmd, "../") {
+		// Block path traversal patterns including .../.../ variants
+		if regexp.MustCompile(`\.\.(?:[\\/]\.\.)*[\\/]`).MatchString(cmd) {
 			return "Command blocked by safety guard (path traversal detected)"
 		}
 
@@ -1075,6 +1117,16 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		// from workspace sandbox checks. file: is intentionally excluded so that
 		// file:// URIs are still validated against the workspace boundary.
 		webSchemes := []string{"http:", "https:", "ftp:", "ftps:", "sftp:", "ssh:", "git:"}
+
+		// On Windows, expand ~ and PowerShell environment variables ($env:VAR) before path checking
+		if runtime.GOOS == "windows" {
+			// Expand PowerShell environment variables ($env:VAR and ${env:VAR})
+			cmd = expandPowerShellEnvVars(cmd)
+			// Also expand ~ for completeness
+			if home, err := os.UserHomeDir(); err == nil {
+				cmd = strings.ReplaceAll(cmd, "~", filepath.FromSlash(home))
+			}
+		}
 
 		matchIndices := absolutePathPattern.FindAllStringIndex(cmd, -1)
 
@@ -1105,6 +1157,22 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			p, err := filepath.Abs(raw)
 			if err != nil {
 				continue
+			}
+
+			// Windows-specific: normalize paths to block ADS and extended-length paths
+			if runtime.GOOS == "windows" {
+				// Strip \\?\ prefix (extended-length path)
+				p = strings.TrimPrefix(p, `\\?\`)
+				// Strip NTFS alternate data streams (only if colon is not at position 1 = drive letter)
+				if idx := strings.Index(p, ":"); idx > 1 {
+					p = p[:idx]
+				}
+			}
+
+			// Check symlinks and junctions
+			resolved, err := filepath.EvalSymlinks(p)
+			if err == nil {
+				p = resolved
 			}
 
 			if safePaths[p] {
