@@ -48,7 +48,12 @@ func generateCatalogKey(provider, apiBase, apiKey string) string {
 	return fmt.Sprintf("%s|%s|%x", provider, apiBase, hash[:6])
 }
 
-// maskAPIKeyValue masks an API key for display, keeping first 4 and last 4 chars.
+// maskAPIKeyValue masks an API key for display.
+// Keys longer than 12 chars show prefix + last 4 chars: "sk-****abcd".
+// Keys 9-12 chars show prefix + last 2 chars: "sk-****cd".
+// Shorter keys are fully masked as "****".
+// Empty keys return empty string.
+// Ensure at least 40% of the key will not be displayed.
 func maskAPIKeyValue(key string) string {
 	key = strings.TrimSpace(key)
 	if key == "" {
@@ -57,7 +62,10 @@ func maskAPIKeyValue(key string) string {
 	if len(key) <= 8 {
 		return "****"
 	}
-	return key[:4] + "****" + key[len(key)-4:]
+	if len(key) <= 12 {
+		return key[:3] + "****" + key[len(key)-2:]
+	}
+	return key[:3] + "****" + key[len(key)-4:]
 }
 
 func loadCatalogs() (*CatalogStore, error) {
