@@ -824,3 +824,84 @@ func TestAgentLoop_AsyncToolUserOnly_DoesNotEmitFollowUpQueued(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 }
+
+func TestAsyncToolResultDeliveryRouting(t *testing.T) {
+	tests := []struct {
+		name              string
+		result            *tools.ToolResult
+		wantPublishToUser bool
+		wantQueueParent   bool
+	}{
+		{
+			name:              "nil",
+			result:            nil,
+			wantPublishToUser: false,
+			wantQueueParent:   false,
+		},
+		{
+			name: "default_routes_to_user_and_parent",
+			result: &tools.ToolResult{
+				ForLLM:  "parent text",
+				ForUser: "user text",
+			},
+			wantPublishToUser: true,
+			wantQueueParent:   true,
+		},
+		{
+			name: "user_only_routes_to_user_without_parent",
+			result: (&tools.ToolResult{
+				ForLLM:  "parent text",
+				ForUser: "user text",
+			}).WithAsyncDelivery(tools.AsyncDeliveryUserOnly),
+			wantPublishToUser: true,
+			wantQueueParent:   false,
+		},
+		{
+			name: "parent_only_routes_to_parent_without_user",
+			result: (&tools.ToolResult{
+				ForLLM:  "parent text",
+				ForUser: "user text",
+			}).WithAsyncDelivery(tools.AsyncDeliveryParentOnly),
+			wantPublishToUser: false,
+			wantQueueParent:   true,
+		},
+		{
+			name: "user_and_parent_routes_to_both",
+			result: (&tools.ToolResult{
+				ForLLM:  "parent text",
+				ForUser: "user text",
+			}).WithAsyncDelivery(tools.AsyncDeliveryUserAndParent),
+			wantPublishToUser: true,
+			wantQueueParent:   true,
+		},
+		{
+			name: "silent_user_only_routes_nowhere",
+			result: (&tools.ToolResult{
+				ForLLM:  "parent text",
+				ForUser: "user text",
+				Silent:  true,
+			}).WithAsyncDelivery(tools.AsyncDeliveryUserOnly),
+			wantPublishToUser: false,
+			wantQueueParent:   false,
+		},
+		{
+			name: "empty_parent_content_does_not_queue",
+			result: (&tools.ToolResult{
+				ForUser: "user text",
+			}).WithAsyncDelivery(tools.AsyncDeliveryParentOnly),
+			wantPublishToUser: false,
+			wantQueueParent:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldPublishAsyncToolResultToUser(tt.result); got != tt.wantPublishToUser {
+				t.Fatalf("shouldPublishAsyncToolResultToUser() = %v, want %v", got, tt.wantPublishToUser)
+			}
+			if got := shouldQueueAsyncToolResultForParent(tt.result); got != tt.wantQueueParent {
+				t.Fatalf("shouldQueueAsyncToolResultForParent() = %v, want %v", got, tt.wantQueueParent)
+			}
+		})
+	}
+}
