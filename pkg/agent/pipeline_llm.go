@@ -234,22 +234,8 @@ func (p *Pipeline) CallLLM(
 		}
 
 		errMsg := strings.ToLower(err.Error())
-		isTimeoutError := errors.Is(err, context.DeadlineExceeded) ||
-			strings.Contains(errMsg, "deadline exceeded") ||
-			strings.Contains(errMsg, "client.timeout") ||
-			strings.Contains(errMsg, "timed out") ||
-			strings.Contains(errMsg, "timeout exceeded")
-
-		isNetworkError := !isTimeoutError && (strings.Contains(errMsg, "connection reset") ||
-			strings.Contains(errMsg, "connection refused") ||
-			strings.Contains(errMsg, "broken pipe") ||
-			strings.Contains(errMsg, "no such host") ||
-			strings.Contains(errMsg, "network is unreachable") ||
-			strings.Contains(errMsg, "read tcp") ||
-			strings.Contains(errMsg, "write tcp") ||
-			strings.Contains(errMsg, "eof"))
-
-		isContextError := !isTimeoutError && (strings.Contains(errMsg, "context_length_exceeded") ||
+		retryReason, isTransientError := transientLLMRetryReason(err)
+		isContextError := !isTransientError && (strings.Contains(errMsg, "context_length_exceeded") ||
 			strings.Contains(errMsg, "context window") ||
 			strings.Contains(errMsg, "context_window") ||
 			strings.Contains(errMsg, "maximum context length") ||
@@ -260,7 +246,7 @@ func (p *Pipeline) CallLLM(
 			strings.Contains(errMsg, "prompt is too long") ||
 			strings.Contains(errMsg, "request too large"))
 
-		if isTimeoutError && retry < maxRetries {
+		if isTransientError && retry < maxRetries {
 			backoff := time.Duration(retry+1) * time.Duration(backoffSecs) * time.Second
 			al.emitEvent(
 				runtimeevents.KindAgentLLMRetry,
@@ -268,42 +254,14 @@ func (p *Pipeline) CallLLM(
 				LLMRetryPayload{
 					Attempt:    retry + 1,
 					MaxRetries: maxRetries,
-					Reason:     "timeout",
+					Reason:     retryReason,
 					Error:      err.Error(),
 					Backoff:    backoff,
 				},
 			)
-			logger.WarnCF("agent", "Timeout error, retrying after backoff", map[string]any{
+			logger.WarnCF("agent", "Transient LLM error, retrying after backoff", map[string]any{
 				"error":   err.Error(),
-				"retry":   retry,
-				"backoff": backoff.String(),
-			})
-			if sleepErr := sleepWithContext(turnCtx, backoff); sleepErr != nil {
-				if ts.hardAbortRequested() {
-					_ = ts.requestHardAbort()
-					return ControlBreak, nil
-				}
-				err = sleepErr
-				break
-			}
-			continue
-		}
-
-		if isNetworkError && retry < maxRetries {
-			backoff := time.Duration(retry+1) * time.Duration(backoffSecs) * time.Second
-			al.emitEvent(
-				runtimeevents.KindAgentLLMRetry,
-				ts.eventMeta("runTurn", "turn.llm.retry"),
-				LLMRetryPayload{
-					Attempt:    retry + 1,
-					MaxRetries: maxRetries,
-					Reason:     "network",
-					Error:      err.Error(),
-					Backoff:    backoff,
-				},
-			)
-			logger.WarnCF("agent", "Network error, retrying after backoff", map[string]any{
-				"error":   err.Error(),
+				"reason":  retryReason,
 				"retry":   retry,
 				"backoff": backoff.String(),
 			})
@@ -571,4 +529,46 @@ func (p *Pipeline) CallLLM(
 	}
 
 	return ControlToolLoop, nil
+}
+
+func transientLLMRetryReason(err error) (string, bool) {
+	if err == nil {
+		return "", false
+	}
+
+	if failErr := providers.ClassifyError(err, "", ""); failErr != nil {
+		switch failErr.Reason {
+		case providers.FailoverTimeout:
+			if failErr.Status >= 500 {
+				return "server_error", true
+			}
+			return "timeout", true
+		case providers.FailoverNetwork:
+			return "network", true
+		case providers.FailoverRateLimit, providers.FailoverOverloaded:
+			return "rate_limit", true
+		}
+	}
+
+	errMsg := strings.ToLower(err.Error())
+	if errors.Is(err, context.DeadlineExceeded) ||
+		strings.Contains(errMsg, "deadline exceeded") ||
+		strings.Contains(errMsg, "client.timeout") ||
+		strings.Contains(errMsg, "timed out") ||
+		strings.Contains(errMsg, "timeout exceeded") {
+		return "timeout", true
+	}
+
+	if strings.Contains(errMsg, "connection reset") ||
+		strings.Contains(errMsg, "connection refused") ||
+		strings.Contains(errMsg, "broken pipe") ||
+		strings.Contains(errMsg, "no such host") ||
+		strings.Contains(errMsg, "network is unreachable") ||
+		strings.Contains(errMsg, "read tcp") ||
+		strings.Contains(errMsg, "write tcp") ||
+		strings.Contains(errMsg, "eof") {
+		return "network", true
+	}
+
+	return "", false
 }
