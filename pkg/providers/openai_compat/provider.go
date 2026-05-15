@@ -213,14 +213,17 @@ func (p *Provider) prepareMessagesForRequest(messages []Message) []Message {
 		return nil
 	}
 
-	if p.isDeepSeekReasoningProvider() {
-		return filterDeepSeekReasoningMessages(messages)
+	if p.requiresToolRoundReasoningReplay() {
+		return filterReasoningReplayMessages(messages)
 	}
 	return stripReasoningMessages(messages)
 }
 
-func (p *Provider) isDeepSeekReasoningProvider() bool {
-	return p.providerName == "deepseek" || isDeepSeekHost(p.apiBase)
+func (p *Provider) requiresToolRoundReasoningReplay() bool {
+	return p.providerName == "deepseek" ||
+		p.providerName == "mimo" ||
+		isDeepSeekHost(p.apiBase) ||
+		isMiMoHost(p.apiBase)
 }
 
 func isDeepSeekHost(apiBase string) bool {
@@ -232,7 +235,16 @@ func isDeepSeekHost(apiBase string) bool {
 	return host == "deepseek.com" || strings.HasSuffix(host, ".deepseek.com")
 }
 
-func filterDeepSeekReasoningMessages(messages []Message) []Message {
+func isMiMoHost(apiBase string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(apiBase))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	return host == "xiaomimimo.com" || strings.HasSuffix(host, ".xiaomimimo.com")
+}
+
+func filterReasoningReplayMessages(messages []Message) []Message {
 	out := make([]Message, 0, len(messages))
 	start := 0
 
@@ -240,7 +252,7 @@ func filterDeepSeekReasoningMessages(messages []Message) []Message {
 		if end <= start {
 			return
 		}
-		out = append(out, filterDeepSeekReasoningTurn(messages[start:end])...)
+		out = append(out, filterReasoningReplayTurn(messages[start:end])...)
 		start = end
 	}
 
@@ -254,7 +266,7 @@ func filterDeepSeekReasoningMessages(messages []Message) []Message {
 	return out
 }
 
-func filterDeepSeekReasoningTurn(messages []Message) []Message {
+func filterReasoningReplayTurn(messages []Message) []Message {
 	hasToolInteraction := false
 	for _, msg := range messages {
 		if msg.Role == "tool" || (msg.Role == "assistant" && len(msg.ToolCalls) > 0) {
@@ -270,10 +282,10 @@ func filterDeepSeekReasoningTurn(messages []Message) []Message {
 		}
 
 		cloned := msg
-		// DeepSeek thinking-mode replay only requires reasoning_content for
-		// turns that participate in a tool interaction round. For plain
-		// assistant turns between two user messages, the docs say the API will
-		// ignore reasoning_content on replay, so we strip it here.
+		// DeepSeek and MiMo only require reasoning_content replay for turns
+		// that participate in a tool interaction round. For plain assistant
+		// turns between two user messages, the reasoning trace is ignored on
+		// replay, so we strip it here.
 		if cloned.Role == "assistant" && strings.TrimSpace(cloned.ReasoningContent) != "" && !hasToolInteraction {
 			cloned.ReasoningContent = ""
 		}
