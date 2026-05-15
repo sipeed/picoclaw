@@ -4072,6 +4072,58 @@ func TestProcessHeartbeat_DoesNotPublishToolFeedback(t *testing.T) {
 	}
 }
 
+func TestProcessScheduledWithChannel_DoesNotPublishToolFeedback(t *testing.T) {
+	tmpDir := t.TempDir()
+	heartbeatFile := filepath.Join(tmpDir, "scheduled-task.txt")
+	if err := os.WriteFile(heartbeatFile, []byte("scheduled task"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				ToolFeedback: config.ToolFeedbackConfig{
+					Enabled:       true,
+					MaxArgsLength: 300,
+				},
+			},
+		},
+		Tools: config.ToolsConfig{
+			ReadFile: config.ReadFileToolConfig{
+				Enabled: true,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &toolFeedbackProvider{filePath: heartbeatFile}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.ProcessScheduledWithChannel(
+		context.Background(),
+		"run scheduled task",
+		"agent:cron-test",
+		"telegram",
+		"chat-1",
+	)
+	if err != nil {
+		t.Fatalf("ProcessScheduledWithChannel() error = %v", err)
+	}
+	if response != "HEARTBEAT_OK" {
+		t.Fatalf("ProcessScheduledWithChannel() response = %q, want %q", response, "HEARTBEAT_OK")
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		t.Fatalf("expected no outbound tool feedback during scheduled turn, got %+v", outbound)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
 func TestProcessMessage_PublishesToolFeedbackWhenEnabled(t *testing.T) {
 	tmpDir := t.TempDir()
 	heartbeatFile := filepath.Join(tmpDir, "tool-feedback.txt")
