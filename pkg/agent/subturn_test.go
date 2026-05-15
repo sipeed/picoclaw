@@ -1481,6 +1481,83 @@ func TestSpawnSubTurn_DefaultSyncDeliveryRemovesUserDeliveryTools(t *testing.T) 
 	}
 }
 
+func TestSpawnSubTurn_InheritsSuppressToolFeedback(t *testing.T) {
+	tmpDir := t.TempDir()
+	readPath := filepath.Join(tmpDir, "subturn-feedback.txt")
+	if err := os.WriteFile(readPath, []byte("subturn feedback task"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				ToolFeedback: config.ToolFeedbackConfig{
+					Enabled:       true,
+					MaxArgsLength: 300,
+				},
+			},
+		},
+		Tools: config.ToolsConfig{
+			ReadFile: config.ReadFileToolConfig{
+				Enabled: true,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, &toolFeedbackProvider{filePath: readPath})
+	parentAgent := al.registry.GetDefaultAgent()
+	if parentAgent == nil {
+		t.Fatal("expected default parent agent")
+	}
+
+	parent := &turnState{
+		ctx:            context.Background(),
+		turnID:         "parent-suppress-tool-feedback",
+		depth:          0,
+		childTurnIDs:   []string{},
+		pendingResults: make(chan *tools.ToolResult, 4),
+		concurrencySem: make(chan struct{}, testMaxConcurrentSubTurns),
+		session:        &ephemeralSessionStore{},
+		agent:          parentAgent,
+		opts: processOptions{
+			Dispatch: DispatchRequest{
+				SessionKey:  "parent-suppress-tool-feedback",
+				UserMessage: "scheduled parent",
+				InboundContext: &bus.InboundContext{
+					Channel:  "telegram",
+					ChatID:   "chat-1",
+					ChatType: "direct",
+					SenderID: "cron",
+				},
+			},
+			SuppressToolFeedback: true,
+			NoHistory:            true,
+		},
+	}
+
+	result, err := spawnSubTurn(context.Background(), al, parent, SubTurnConfig{
+		Model:        "test-model",
+		SystemPrompt: "read the file",
+	})
+	if err != nil {
+		t.Fatalf("spawnSubTurn failed: %v", err)
+	}
+	if result == nil || result.ForLLM != "HEARTBEAT_OK" {
+		t.Fatalf("spawnSubTurn result = %#v, want HEARTBEAT_OK", result)
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		t.Fatalf("expected no child tool feedback when parent suppresses it, got %+v", outbound)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
 func TestSpawnSubTurn_ReturnsStructuredCompletionWithMedia(t *testing.T) {
 	al, _, _, _, cleanup := newTestAgentLoop(t) //nolint:dogsled
 	defer cleanup()

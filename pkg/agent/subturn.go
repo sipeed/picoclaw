@@ -431,6 +431,7 @@ func spawnSubTurn(
 		EnableSummary:            false,
 		SendResponse:             !cfg.Async && (deliveryMode == tools.AsyncDeliveryUserOnly || deliveryMode == tools.AsyncDeliveryUserAndParent),
 		SuppressToolUserDelivery: !cfg.Async && deliveryMode == tools.AsyncDeliveryParentOnly,
+		SuppressToolFeedback:     parentTS.opts.SuppressToolFeedback,
 		NoHistory:                true, // SubTurns don't use session history
 		SkipInitialSteeringPoll:  true,
 	}
