@@ -78,6 +78,7 @@ func createClaudeAuthProvider() (LLMProvider, error) {
 }
 
 // createCodexAuthProvider creates a Codex provider using OAuth credentials from auth store.
+// ChatGPT subscription OAuth tokens use the Codex backend for all OpenAI models.
 func createCodexAuthProvider() (LLMProvider, error) {
 	cred, err := getCredential("openai")
 	if err != nil {
