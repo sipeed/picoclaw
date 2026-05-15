@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -45,6 +48,36 @@ func generateToken() string {
 	return hex.EncodeToString(b)
 }
 
+// isGatewayAlive performs a health check against the recorded host and port,
+// then verifies the reported PID matches expectedPID to confirm the process
+// is actually a picoclaw gateway and not a foreign service on the same port.
+func isGatewayAlive(host string, port int, expectedPID int) bool {
+	url := "http://" + net.JoinHostPort(host, strconv.Itoa(port)) + "/health"
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		// Port not responding — PID belongs to a foreign process
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+
+	var body struct {
+		PID int `json:"pid"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return false
+	}
+
+	// Only treat as alive if the reported PID matches the PID file.
+	// This prevents an unrelated service on the same port from being
+	// mistaken for a running gateway.
+	return body.PID == expectedPID
+}
+
 // WritePidFile creates (or overwrites) the PID file atomically.
 // It returns an error if another gateway instance appears to be running
 // (a valid PID file exists with a live process).
@@ -63,7 +96,7 @@ func WritePidFile(homePath, host string, port int) (*PidFileData, error) {
 			// PID file on a shared volume, the host's PID 1 (init) would
 			// pass the isProcessRunning check, blocking new gateway starts.
 			// Treat recorded PID 1 as always stale.
-			if data.PID != 1 && isProcessRunning(data.PID) {
+			if data.PID != 1 && isProcessRunning(data.PID) && isGatewayAlive(data.Host, data.Port, data.PID) {
 				return nil, fmt.Errorf("gateway is already running (PID: %d, version: %s)", data.PID, data.Version)
 			}
 			logger.Warnf("not running (PID: %d) so will remove the pid file: %s", data.PID, pidPath)
