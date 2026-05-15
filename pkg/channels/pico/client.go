@@ -255,7 +255,10 @@ func (c *PicoClientChannel) handleServerMessage(pc *picoConn, msg PicoMessage) {
 		logger.WarnCF("pico_client", "Ignoring invalid media payload", map[string]any{
 			"error": err.Error(),
 		})
-		return
+		if strings.TrimSpace(content) == "" {
+			return
+		}
+		media = nil
 	}
 	if strings.TrimSpace(content) == "" && len(media) == 0 {
 		return

@@ -1073,6 +1073,9 @@ func parseInlineImageAttachments(raw any) ([]string, error) {
 			}
 			continue
 		}
+		if !strings.HasPrefix(value, "data:") {
+			continue
+		}
 		if err := validateInlineImageDataURL(value); err != nil {
 			return nil, fmt.Errorf("attachments[%d]: %w", i, err)
 		}

@@ -384,6 +384,121 @@ func TestPicoClientChannel_HandleServerMessage_ForwardsMedia(t *testing.T) {
 	}
 }
 
+func TestPicoClientChannel_HandleInbound_ForwardsMediaCreate(t *testing.T) {
+	mb := bus.NewMessageBus()
+	bc := &config.Channel{Type: config.ChannelPicoClient, Enabled: true}
+	ch, err := NewPicoClientChannel(bc, &config.PicoClientSettings{
+		URL: "ws://localhost:8080/ws",
+	}, mb)
+	if err != nil {
+		t.Fatalf("NewPicoClientChannel() error = %v", err)
+	}
+
+	ch.ctx = context.Background()
+	pc := &picoConn{sessionID: "sess-media-create"}
+	imageURL := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2ioAAAAASUVORK5CYII="
+
+	ch.handleInbound(pc, PicoMessage{
+		Type: TypeMediaCreate,
+		Payload: map[string]any{
+			PayloadKeyContent: "describe media.create",
+			"attachments": []any{
+				map[string]any{
+					"type": "image",
+					"url":  imageURL,
+				},
+			},
+		},
+	})
+
+	select {
+	case msg := <-mb.InboundChan():
+		if msg.Content != "describe media.create" {
+			t.Fatalf("msg.Content = %q, want describe media.create", msg.Content)
+		}
+		if len(msg.Media) != 1 || msg.Media[0] != imageURL {
+			t.Fatalf("msg.Media = %#v, want forwarded media.create image payload", msg.Media)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for media.create message")
+	}
+}
+
+func TestPicoClientChannel_HandleServerMessage_ForwardsTextWithDownloadAttachment(t *testing.T) {
+	mb := bus.NewMessageBus()
+	bc := &config.Channel{Type: config.ChannelPicoClient, Enabled: true}
+	ch, err := NewPicoClientChannel(bc, &config.PicoClientSettings{
+		URL: "ws://localhost:8080/ws",
+	}, mb)
+	if err != nil {
+		t.Fatalf("NewPicoClientChannel() error = %v", err)
+	}
+
+	ch.ctx = context.Background()
+	pc := &picoConn{sessionID: "sess-download-attachment"}
+
+	ch.handleServerMessage(pc, PicoMessage{
+		Type: TypeMessageCreate,
+		Payload: map[string]any{
+			PayloadKeyContent: "see attached",
+			"attachments": []any{
+				map[string]any{
+					"type":         "image",
+					"url":          "/pico/media/abc",
+					"filename":     "image.png",
+					"content_type": "image/png",
+				},
+			},
+		},
+	})
+
+	select {
+	case msg := <-mb.InboundChan():
+		if msg.Content != "see attached" {
+			t.Fatalf("msg.Content = %q, want see attached", msg.Content)
+		}
+		if len(msg.Media) != 0 {
+			t.Fatalf("msg.Media = %#v, want no inline media", msg.Media)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for text message with download attachment")
+	}
+}
+
+func TestPicoClientChannel_HandleServerMessage_ForwardsTextWithInvalidMediaPayload(t *testing.T) {
+	mb := bus.NewMessageBus()
+	bc := &config.Channel{Type: config.ChannelPicoClient, Enabled: true}
+	ch, err := NewPicoClientChannel(bc, &config.PicoClientSettings{
+		URL: "ws://localhost:8080/ws",
+	}, mb)
+	if err != nil {
+		t.Fatalf("NewPicoClientChannel() error = %v", err)
+	}
+
+	ch.ctx = context.Background()
+	pc := &picoConn{sessionID: "sess-invalid-media"}
+
+	ch.handleServerMessage(pc, PicoMessage{
+		Type: TypeMessageCreate,
+		Payload: map[string]any{
+			PayloadKeyContent: "hello despite invalid media",
+			"attachments":     "not-an-array",
+		},
+	})
+
+	select {
+	case msg := <-mb.InboundChan():
+		if msg.Content != "hello despite invalid media" {
+			t.Fatalf("msg.Content = %q, want hello despite invalid media", msg.Content)
+		}
+		if len(msg.Media) != 0 {
+			t.Fatalf("msg.Media = %#v, want no inline media", msg.Media)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for text message with invalid media payload")
+	}
+}
+
 func TestIsThoughtPayload(t *testing.T) {
 	tests := []struct {
 		name    string
