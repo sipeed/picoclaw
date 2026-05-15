@@ -390,8 +390,8 @@ func (al *AgentLoop) Continue(ctx context.Context, sessionKey, channel, chatID s
 		return "", err
 	}
 	if err := al.ensureMCPInitialized(ctx); err != nil {
-		al.activeTurnStates.Delete(sessionKey)
-		return "", err
+		logger.WarnCF("agent", "MCP initialization failed, continuing steering without MCP tools",
+			map[string]any{"error": err.Error(), "session_key": sessionKey})
 	}
 
 	steeringMsgs := al.dequeueSteeringMessagesForScopeWithFallback(sessionKey)

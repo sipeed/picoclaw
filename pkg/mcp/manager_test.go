@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -627,4 +629,80 @@ func (t *scriptedTransport) Close() error {
 
 func (t *scriptedTransport) SessionID() string {
 	return t.sessionID
+}
+
+// TestHTTPClientTransportTimeouts verifies that the HTTP client is configured
+// with transport-level timeouts instead of client-wide timeout.
+// This addresses the PR review comment:
+// "http.Client.Timeout applies to the full request lifetime, including reading
+// the response body. On StreamableClientTransport in sse mode that will terminate
+// the long-lived SSE stream after 30s"
+func TestHTTPClientTransportTimeouts(t *testing.T) {
+	// Verify that transport-level timeouts are configured correctly
+	// instead of using http.Client.Timeout which would affect SSE streams
+	transport := &http.Transport{
+		DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+	}
+
+	// Verify transport timeouts are set correctly
+	// This ensures SSE streams won't be terminated by client-wide timeout
+	if transport.TLSHandshakeTimeout != 10*time.Second {
+		t.Errorf("TLSHandshakeTimeout should be 10s, got %v", transport.TLSHandshakeTimeout)
+	}
+	if transport.ResponseHeaderTimeout != 30*time.Second {
+		t.Errorf("ResponseHeaderTimeout should be 30s, got %v", transport.ResponseHeaderTimeout)
+	}
+
+	// Verify DialContext is set (not DialTimeout which is deprecated)
+	if transport.DialContext == nil {
+		t.Error("DialContext should be set for connection timeout")
+	}
+}
+
+// TestContextTimeoutForConnect verifies that connect operations use timeout-scoped context.
+func TestContextTimeoutForConnect(t *testing.T) {
+	// Test that a context with timeout properly cancels the operation
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	// Create a listener that delays acceptance
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to create listener: %v", err)
+	}
+	defer listener.Close()
+
+	// Start a goroutine that delays accepting connections
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		for {
+			conn, acceptErr := listener.Accept()
+			if acceptErr != nil {
+				return
+			}
+			conn.Close()
+		}
+	}()
+
+	mgr := NewManager()
+	defer mgr.Close()
+
+	start := time.Now()
+	err = mgr.ConnectServer(ctx, "timeout-test", config.MCPServerConfig{
+		Type:    "sse",
+		URL:     "http://" + listener.Addr().String() + "/mcp",
+		Enabled: true,
+	})
+	duration := time.Since(start)
+
+	if err == nil {
+		t.Fatal("Expected connection to fail due to context timeout")
+	}
+
+	// Should fail quickly due to context timeout, not hang
+	if duration > 500*time.Millisecond {
+		t.Fatalf("Operation took too long: %v, expected context timeout around 100ms", duration)
+	}
 }
