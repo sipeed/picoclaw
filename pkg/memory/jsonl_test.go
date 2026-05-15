@@ -1032,6 +1032,143 @@ func TestMultipleSessions_Isolation(t *testing.T) {
 	}
 }
 
+func TestStore_SetsCreatedAtWhenNil(t *testing.T) {
+	type writeOp struct {
+		name string
+		fn   func(store *JSONLStore, key string) (expectedCount int)
+	}
+
+	ops := []writeOp{
+		{
+			name: "AddMessage",
+			fn: func(store *JSONLStore, key string) int {
+				if err := store.AddMessage(context.Background(), key, "user", "hello"); err != nil {
+					t.Fatalf("AddMessage: %v", err)
+				}
+				return 1
+			},
+		},
+		{
+			name: "AddFullMessage",
+			fn: func(store *JSONLStore, key string) int {
+				if err := store.AddFullMessage(context.Background(), key, providers.Message{
+					Role:    "user",
+					Content: "hello from full",
+				}); err != nil {
+					t.Fatalf("AddFullMessage: %v", err)
+				}
+				return 1
+			},
+		},
+		{
+			name: "SetHistory",
+			fn: func(store *JSONLStore, key string) int {
+				if err := store.SetHistory(context.Background(), key, []providers.Message{
+					{Role: "user", Content: "msg1"},
+					{Role: "assistant", Content: "msg2"},
+				}); err != nil {
+					t.Fatalf("SetHistory: %v", err)
+				}
+				return 2
+			},
+		},
+	}
+
+	for _, op := range ops {
+		t.Run(op.name, func(t *testing.T) {
+			store := newTestStore(t)
+			key := "s1"
+
+			before := time.Now().Add(-time.Second)
+			expectedCount := op.fn(store, key)
+			after := time.Now().Add(time.Second)
+
+			history, err := store.GetHistory(context.Background(), key)
+			if err != nil {
+				t.Fatalf("GetHistory: %v", err)
+			}
+			if len(history) != expectedCount {
+				t.Fatalf("expected %d messages, got %d", expectedCount, len(history))
+			}
+			for i := range history {
+				if history[i].CreatedAt == nil || history[i].CreatedAt.IsZero() {
+					t.Errorf("message %d CreatedAt is zero — not set by %s", i, op.name)
+				}
+				if history[i].CreatedAt.Before(before) || history[i].CreatedAt.After(after) {
+					t.Errorf(
+						"message %d CreatedAt %v outside expected window [%v, %v]",
+						i, history[i].CreatedAt, before, after,
+					)
+				}
+			}
+		})
+	}
+}
+
+func TestStore_PreservesExistingCreatedAt(t *testing.T) {
+	t1 := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	t2 := time.Date(2026, 1, 1, 11, 0, 0, 0, time.UTC)
+
+	type writeOp struct {
+		name      string
+		fn        func(store *JSONLStore, key string)
+		wantTimes []time.Time
+	}
+
+	ops := []writeOp{
+		{
+			name: "AddFullMessage",
+			fn: func(store *JSONLStore, key string) {
+				if err := store.AddFullMessage(context.Background(), key, providers.Message{
+					Role:      "user",
+					Content:   "custom time",
+					CreatedAt: &t1,
+				}); err != nil {
+					t.Fatalf("AddFullMessage: %v", err)
+				}
+			},
+			wantTimes: []time.Time{t1},
+		},
+		{
+			name: "SetHistory",
+			fn: func(store *JSONLStore, key string) {
+				if err := store.SetHistory(context.Background(), key, []providers.Message{
+					{Role: "user", Content: "msg1", CreatedAt: &t1},
+					{Role: "assistant", Content: "msg2", CreatedAt: &t2},
+				}); err != nil {
+					t.Fatalf("SetHistory: %v", err)
+				}
+			},
+			wantTimes: []time.Time{t1, t2},
+		},
+	}
+
+	for _, op := range ops {
+		t.Run(op.name, func(t *testing.T) {
+			store := newTestStore(t)
+			key := "s1"
+
+			op.fn(store, key)
+
+			history, err := store.GetHistory(context.Background(), key)
+			if err != nil {
+				t.Fatalf("GetHistory: %v", err)
+			}
+			if len(history) != len(op.wantTimes) {
+				t.Fatalf("expected %d messages, got %d", len(op.wantTimes), len(history))
+			}
+			for i, want := range op.wantTimes {
+				if history[i].CreatedAt == nil || !history[i].CreatedAt.Equal(want) {
+					t.Errorf(
+						"message %d CreatedAt = %v, want %v (should preserve caller-provided time)",
+						i, history[i].CreatedAt, want,
+					)
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkAddMessage(b *testing.B) {
 	dir := b.TempDir()
 	store, err := NewJSONLStore(dir)

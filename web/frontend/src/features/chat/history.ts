@@ -43,8 +43,6 @@ export async function loadSessionMessages(
   sessionId: string,
 ): Promise<ChatMessage[]> {
   const detail = await getSessionHistory(sessionId)
-  const fallbackTime = detail.updated
-
   return detail.messages.map((message, index) => ({
     id: `hist-${index}-${Date.now()}`,
     role: message.role,
@@ -58,7 +56,7 @@ export async function loadSessionMessages(
       media: message.media,
       attachments: message.attachments,
     }),
-    timestamp: fallbackTime,
+    timestamp: message.created_at ?? detail.updated,
   }))
 }
 

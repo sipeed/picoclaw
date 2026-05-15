@@ -1,17 +1,25 @@
+import { formatMessageTime } from "@/hooks/use-pico-chat"
 import { cn } from "@/lib/utils"
 import type { ChatAttachment } from "@/store/chat"
 
 interface UserMessageProps {
   content: string
   attachments?: ChatAttachment[]
+  timestamp?: string | number
 }
 
-export function UserMessage({ content, attachments = [] }: UserMessageProps) {
+export function UserMessage({
+  content,
+  attachments = [],
+  timestamp = "",
+}: UserMessageProps) {
   const hasText = content.trim().length > 0
   const isCommand = content.trim().startsWith("/")
   const imageAttachments = attachments.filter(
     (attachment) => attachment.type === "image",
   )
+  const formattedTimestamp =
+    timestamp !== "" ? formatMessageTime(timestamp) : ""
 
   return (
     <div className="flex w-full flex-col items-end gap-1.5">
@@ -48,6 +56,10 @@ export function UserMessage({ content, attachments = [] }: UserMessageProps) {
             content
           )}
         </div>
+      )}
+
+      {formattedTimestamp && (
+        <span className="px-1 text-[12px] text-zinc-400">{formattedTimestamp}</span>
       )}
     </div>
   )

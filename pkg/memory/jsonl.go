@@ -561,6 +561,12 @@ func (s *JSONLStore) addMsg(sessionKey string, msg providers.Message) error {
 	l.Lock()
 	defer l.Unlock()
 
+	now := time.Now()
+
+	if msg.CreatedAt == nil {
+		msg.CreatedAt = &now
+	}
+
 	// Append the message as a single JSON line.
 	line, err := json.Marshal(msg)
 	if err != nil {
@@ -598,7 +604,6 @@ func (s *JSONLStore) addMsg(sessionKey string, msg providers.Message) error {
 	if err != nil {
 		return err
 	}
-	now := time.Now()
 	if meta.Count == 0 && meta.CreatedAt.IsZero() {
 		meta.CreatedAt = now
 	}
@@ -725,6 +730,12 @@ func (s *JSONLStore) SetHistory(
 	meta.Skip = 0
 	meta.Count = len(history)
 	meta.UpdatedAt = now
+
+	for i := range history {
+		if history[i].CreatedAt == nil {
+			history[i].CreatedAt = &now
+		}
+	}
 
 	// Write meta BEFORE rewriting the JSONL file. If we crash between
 	// the two writes, meta has Skip=0 and the old file is still intact,

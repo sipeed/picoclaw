@@ -87,8 +87,13 @@ func (sm *SessionManager) AddFullMessage(sessionKey string, msg providers.Messag
 		sm.sessions[sessionKey] = session
 	}
 
+	now := time.Now()
+	if msg.CreatedAt == nil {
+		msg.CreatedAt = &now
+	}
+
 	session.Messages = append(session.Messages, msg)
-	session.Updated = time.Now()
+	session.Updated = now
 }
 
 func (sm *SessionManager) GetHistory(key string) []providers.Message {
@@ -300,7 +305,13 @@ func (sm *SessionManager) SetHistory(key string, history []providers.Message) {
 		// from the caller's slice.
 		msgs := make([]providers.Message, len(history))
 		copy(msgs, history)
+		now := time.Now()
+		for i := range msgs {
+			if msgs[i].CreatedAt == nil {
+				msgs[i].CreatedAt = &now
+			}
+		}
 		session.Messages = msgs
-		session.Updated = time.Now()
+		session.Updated = now
 	}
 }
