@@ -754,6 +754,23 @@ func TestShellTool_RelativeScriptPathNotMisclassifiedAsAbsolute(t *testing.T) {
 	}
 }
 
+func TestShellTool_QuotedHeredocBodyNotTreatedAsShellPaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	require.NoError(t, err)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"action":  "run",
+		"cwd":     tmpDir,
+		"command": "python3 - <<'PY'\nfrom pathlib import Path\nPath('tmp').mkdir(exist_ok=True)\ntext = 'Среднее / день'\nprint(text)\nPY",
+	})
+	if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
+		t.Fatalf("quoted heredoc body should not be scanned as shell paths: %s", result.ForLLM)
+	}
+	require.False(t, result.IsError, "heredoc command should run: %s", result.ForLLM)
+	require.Contains(t, result.ForLLM, "Среднее / день")
+}
+
 func TestShellTool_Background_ReturnsImmediately(t *testing.T) {
 	tool, err := NewExecTool("", false)
 	require.NoError(t, err)

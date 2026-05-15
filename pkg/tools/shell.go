@@ -1098,7 +1098,8 @@ func (t *ExecTool) executeSendKeys(args map[string]any) *ToolResult {
 func (t *ExecTool) guardCommand(command, cwd string) string {
 	cmd := strings.TrimSpace(command)
 	lower := strings.ToLower(cmd)
-	lowerForDeny := strings.ToLower(stripQuotedHeredocBodies(cmd))
+	sanitizedForGuards := stripQuotedHeredocBodies(cmd)
+	lowerForDeny := strings.ToLower(sanitizedForGuards)
 
 	// Custom allow patterns exempt a command from deny checks.
 	explicitlyAllowed := false
@@ -1131,7 +1132,7 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	if t.restrictToWorkspace {
-		if strings.Contains(cmd, "..\\") || strings.Contains(cmd, "../") {
+		if strings.Contains(sanitizedForGuards, "..\\") || strings.Contains(sanitizedForGuards, "../") {
 			return "Command blocked by safety guard (path traversal detected)"
 		}
 
@@ -1145,16 +1146,16 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		// file:// URIs are still validated against the workspace boundary.
 		webSchemes := []string{"http:", "https:", "ftp:", "ftps:", "sftp:", "ssh:", "git:"}
 
-		matchIndices := absolutePathPattern.FindAllStringIndex(cmd, -1)
+		matchIndices := absolutePathPattern.FindAllStringIndex(sanitizedForGuards, -1)
 
 		for _, loc := range matchIndices {
-			raw := cmd[loc[0]:loc[1]]
+			raw := sanitizedForGuards[loc[0]:loc[1]]
 
 			// Skip slash-containing relative command segments like
 			// "scripts/foo.sh". The absolute-path regex matches the "/foo.sh"
 			// substring inside that token, but this is not an absolute path.
 			if strings.HasPrefix(raw, "/") && loc[0] > 0 {
-				prev := cmd[loc[0]-1]
+				prev := sanitizedForGuards[loc[0]-1]
 				if (prev >= 'a' && prev <= 'z') ||
 					(prev >= 'A' && prev <= 'Z') ||
 					(prev >= '0' && prev <= '9') ||
@@ -1169,7 +1170,7 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			// Use the exact match position (loc[0]) so that duplicate //path substrings
 			// in the same command are each evaluated at their own position.
 			if strings.HasPrefix(raw, "//") && loc[0] > 0 {
-				before := cmd[:loc[0]]
+				before := sanitizedForGuards[:loc[0]]
 				isWebURL := false
 
 				for _, scheme := range webSchemes {
