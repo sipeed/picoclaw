@@ -103,8 +103,9 @@ var (
 		// [Text.Encoding] used to construct command strings at runtime.
 		// Matches [Text.Encoding] and [System.Text.Encoding] variants.
 		regexp.MustCompile(`\[(?:\w+\.)?text\.encoding\]`),
-		// PowerShell -EncodedCommand flag (base64-encoded command) and short forms -e, -ec, -enc.
-		regexp.MustCompile(` -e[cn]\b`),
+		// PowerShell -EncodedCommand flag (base64-encoded command) and all short forms.
+		// Matches: -e, -ec, -enc, -en, -EncodedCommand (all with space prefix)
+		regexp.MustCompile(` -e(?:$|\s)| -ec(?:$|\s)| -enc(?:$|\s)| -en(?:$|\s)| -encodedcommand\b`),
 		// .GetString called on byte array to decode commands.
 		regexp.MustCompile(`\.getstring\s*\(\s*\[byte\[\]`),
 		// FromBase64String used in command construction chain.

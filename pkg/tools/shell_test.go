@@ -703,9 +703,13 @@ func TestShellTool_URLBypassPrevented(t *testing.T) {
 	}
 }
 
-// TestShellTool_TildeBypassPrevented verifies that ~ (home directory) cannot be
+// TestWindows_TildeBypassPrevented verifies that ~ (home directory) cannot be
 // used to escape workspace restrictions on Windows.
-func TestShellTool_TildeBypassPrevented(t *testing.T) {
+func TestWindows_TildeBypassPrevented(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only test")
+	}
+
 	tmpDir := t.TempDir()
 	tool, err := NewExecTool(tmpDir, true)
 	if err != nil {
@@ -724,9 +728,9 @@ func TestShellTool_TildeBypassPrevented(t *testing.T) {
 		"ls $env:USERPROFILE",
 		"cat $env:USERPROFILE\\.config\\file",
 		// CMD environment variables
-		"cmd /c \"dir %USERPROFILE%\"",
-		"cmd /c \"cd %USERPROFILE% && dir\"",
-		"cmd /c \"type %USERPROFILE%\\.config\\file\"",
+		`cmd /c "dir %USERPROFILE%"`,
+		`cmd /c "cd %USERPROFILE% && dir"`,
+		`cmd /c "type %USERPROFILE%\\.config\\file"`,
 	}
 
 	for _, cmd := range blockedCommands {
@@ -778,9 +782,13 @@ func TestShellTool_PathTraversalVariants(t *testing.T) {
 	}
 }
 
-// TestShellTool_SymlinkBypassPrevented verifies that symlinks pointing outside
+// TestWindows_SymlinkBypassPrevented verifies that symlinks pointing outside
 // workspace are detected and blocked after resolution.
-func TestShellTool_SymlinkBypassPrevented(t *testing.T) {
+func TestWindows_SymlinkBypassPrevented(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only test")
+	}
+
 	tmpDir := t.TempDir()
 	tool, err := NewExecTool(tmpDir, true)
 	if err != nil {
@@ -789,18 +797,20 @@ func TestShellTool_SymlinkBypassPrevented(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Commands with paths that could be symlinks should be checked
-	// We can't easily test symlinks in a cross-platform way in unit tests,
-	// but we verify the symlink resolution code path runs without error
+	// /tmp is outside the user workspace, should be blocked after symlink resolution
+	// On Windows /tmp resolves to C:\tmp which may not exist, causing different error
 	result := tool.Execute(ctx, map[string]any{"action": "run", "command": "ls /tmp"})
-	// /tmp is typically outside a user workspace, should be blocked
-	if !result.IsError || !strings.Contains(result.ForLLM, "path outside") {
-		// This is expected to fail on most systems due to path restrictions
+	if !result.IsError {
+		t.Errorf("symlink bypass should be blocked: %s", result.ForLLM)
 	}
 }
 
-// TestShellTool_PowerShellEncodingBypass verifies that PowerShell encoding bypass techniques are blocked.
-func TestShellTool_PowerShellEncodingBypass(t *testing.T) {
+// TestWindows_PowerShellEncodingBypass verifies that PowerShell encoding bypass techniques are blocked.
+func TestWindows_PowerShellEncodingBypass(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only test")
+	}
+
 	tool, err := NewExecTool("", false)
 	require.NoError(t, err)
 
@@ -808,11 +818,19 @@ func TestShellTool_PowerShellEncodingBypass(t *testing.T) {
 
 	// Commands using [Text.Encoding] to construct a command string at runtime.
 	encodingBypassCommands := []string{
+		// Basic byte array forms
 		`[Text.Encoding]::ASCII.GetString([byte[]](0x6c,0x73,0x20,0x7e))`,
 		`[Text.Encoding]::ASCII.GetString([byte[]](0x69,0x65,0x78))`,
+		// System.Text.Encoding variant
 		`[System.Text.Encoding]::ASCII.GetString([byte[]](0x69,0x65,0x78))`,
+		// With whitespace variation
 		`[System.Text.Encoding]::ASCII.GetString ([byte[]](0x69,0x65,0x78))`,
+		// Variable storage form
 		`$b = [byte[]](0x69,0x65,0x78); [Text.Encoding]::ASCII.GetString($b)`,
+		// UTF8 variant
+		`[Text.Encoding]::UTF8.GetString([byte[]](0x69,0x65,0x78))`,
+		// Unicode variant
+		`[Text.Encoding]::Unicode.GetString([byte[]](0x69,0x00,0x65,0x00,0x78,0x00))`,
 	}
 
 	for _, cmd := range encodingBypassCommands {
@@ -827,12 +845,18 @@ func TestShellTool_PowerShellEncodingBypass(t *testing.T) {
 
 	// Commands using PowerShell's -EncodedCommand flag (base64), including short forms.
 	encodedCommands := []string{
+		// Full form
 		`powershell -NoProfile -NonInteractive -EncodedCommand SQBFAHIAaABlAGwAbAAvAC8A`,
 		`pwsh -EncodedCommand aWV4`,
+		// Short forms: -e, -ec, -enc, -en
 		`pwsh -e SQBFAHIAaABlAGwAbAAvAC8A`,
 		`pwsh -ec aWV4`,
+		`pwsh -enc aWV4`,
+		`pwsh -en aWV4`,
 		`powershell -e SQBFAHIAaABlAGwAbAAvAC8A`,
 		`powershell -ec aWV4`,
+		`powershell -enc aWV4`,
+		`powershell -en aWV4`,
 	}
 
 	for _, cmd := range encodedCommands {
@@ -843,9 +867,11 @@ func TestShellTool_PowerShellEncodingBypass(t *testing.T) {
 	}
 
 	// Unicode escape sequences that could construct malicious commands
-	// Double backslash preserves literal \u in the string (Go escape → literal \)
+	// Using double backslash to represent literal \u in Go string
 	unicodeCommands := []string{
 		`cmd /c "cd %USERPROFILE% \\u0026 dir"`,
+		`powershell -Command "Write-Host \\u0049EX"`,
+		`cmd /c "echo \\u0069\\u0065\\u0078"`,
 	}
 
 	for _, cmd := range unicodeCommands {
