@@ -1233,6 +1233,118 @@ func TestDefaultConfig_ExecAllowRemoteEnabled(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_TirithDisabled(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Tools.Exec.Tirith.Enabled {
+		t.Fatal("DefaultConfig().Tools.Exec.Tirith.Enabled should be false")
+	}
+	if cfg.Tools.Exec.Tirith.Bin != "tirith" {
+		t.Fatalf("DefaultConfig().Tools.Exec.Tirith.Bin = %q, want tirith", cfg.Tools.Exec.Tirith.Bin)
+	}
+	if cfg.Tools.Exec.Tirith.TimeoutSeconds != 5 {
+		t.Fatalf("DefaultConfig().Tools.Exec.Tirith.TimeoutSeconds = %d, want 5", cfg.Tools.Exec.Tirith.TimeoutSeconds)
+	}
+	if !cfg.Tools.Exec.Tirith.FailOpen {
+		t.Fatal("DefaultConfig().Tools.Exec.Tirith.FailOpen should be true")
+	}
+}
+
+func TestLoadConfig_TirithNestedKeysAndEnv(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := `{
+  "version": 3,
+  "tools": {
+    "exec": {
+      "tirith": {
+        "enabled": true,
+        "bin": "/usr/local/bin/tirith",
+        "timeout_seconds": 7,
+        "fail_open": false
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(raw), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if !cfg.Tools.Exec.Tirith.Enabled {
+		t.Fatal("Tirith.Enabled = false, want true")
+	}
+	if cfg.Tools.Exec.Tirith.Bin != "/usr/local/bin/tirith" {
+		t.Fatalf("Tirith.Bin = %q", cfg.Tools.Exec.Tirith.Bin)
+	}
+	if cfg.Tools.Exec.Tirith.TimeoutSeconds != 7 {
+		t.Fatalf("Tirith.TimeoutSeconds = %d, want 7", cfg.Tools.Exec.Tirith.TimeoutSeconds)
+	}
+	if cfg.Tools.Exec.Tirith.FailOpen {
+		t.Fatal("Tirith.FailOpen = true, want false")
+	}
+
+	t.Setenv("PICOCLAW_TOOLS_EXEC_TIRITH_ENABLED", "false")
+	t.Setenv("PICOCLAW_TOOLS_EXEC_TIRITH_BIN", "/opt/tirith")
+	t.Setenv("PICOCLAW_TOOLS_EXEC_TIRITH_TIMEOUT_SECONDS", "11")
+	t.Setenv("PICOCLAW_TOOLS_EXEC_TIRITH_FAIL_OPEN", "true")
+
+	cfg, err = LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() with env error: %v", err)
+	}
+	if cfg.Tools.Exec.Tirith.Enabled {
+		t.Fatal("env Tirith.Enabled = true, want false")
+	}
+	if cfg.Tools.Exec.Tirith.Bin != "/opt/tirith" {
+		t.Fatalf("env Tirith.Bin = %q, want /opt/tirith", cfg.Tools.Exec.Tirith.Bin)
+	}
+	if cfg.Tools.Exec.Tirith.TimeoutSeconds != 11 {
+		t.Fatalf("env Tirith.TimeoutSeconds = %d, want 11", cfg.Tools.Exec.Tirith.TimeoutSeconds)
+	}
+	if !cfg.Tools.Exec.Tirith.FailOpen {
+		t.Fatal("env Tirith.FailOpen = false, want true")
+	}
+}
+
+func TestLoadConfig_TirithOldPRKeysAreUnknown(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := `{
+  "version": 3,
+  "tools": {
+    "exec": {
+      "tirith": {
+        "tirith_enabled": true,
+        "tirith_bin": "tirith",
+        "tirith_timeout": 5,
+        "tirith_fail_open": true
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(configPath, []byte(raw), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	_, err := LoadConfig(configPath)
+	if err == nil {
+		t.Fatal("expected old Tirith PR keys to be rejected as unknown")
+	}
+	for _, field := range []string{
+		"tools.exec.tirith.tirith_enabled",
+		"tools.exec.tirith.tirith_bin",
+		"tools.exec.tirith.tirith_timeout",
+		"tools.exec.tirith.tirith_fail_open",
+	} {
+		if !strings.Contains(err.Error(), field) {
+			t.Fatalf("expected unknown field %s in error, got %q", field, err.Error())
+		}
+	}
+}
+
 func TestDefaultConfig_FilterSensitiveDataEnabled(t *testing.T) {
 	cfg := DefaultConfig()
 	if !cfg.Tools.FilterSensitiveData {
