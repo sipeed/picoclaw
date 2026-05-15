@@ -181,6 +181,37 @@ func TestShellTool_DangerousCommand_KillBlocked(t *testing.T) {
 	}
 }
 
+func TestShellTool_BackticksInsideQuotedHeredocAreAllowed(t *testing.T) {
+	tool, err := NewExecTool("", false)
+	require.NoError(t, err)
+
+	command := "gh pr comment 2763 --body-file - <<'TXT'\n" +
+		"Fixed `pkg/tools/integration/web_test.go` and `brave` is now expected.\n" +
+		"TXT"
+
+	guardError := tool.guardCommand(command, "")
+	if guardError != "" {
+		t.Fatalf("quoted heredoc body should not be blocked, got: %s", guardError)
+	}
+}
+
+func TestShellTool_BackticksOutsideQuotedHeredocRemainBlocked(t *testing.T) {
+	tool, err := NewExecTool("", false)
+	require.NoError(t, err)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"action":  "run",
+		"command": "echo `whoami`",
+	})
+
+	if !result.IsError {
+		t.Fatal("expected raw backtick command substitution to be blocked")
+	}
+	if !strings.Contains(result.ForLLM, "blocked") {
+		t.Fatalf("expected blocked message, got: %s", result.ForLLM)
+	}
+}
+
 // TestShellTool_MissingCommand verifies error handling for missing command
 func TestShellTool_MissingCommand(t *testing.T) {
 	tool, err := NewExecTool("", false)
