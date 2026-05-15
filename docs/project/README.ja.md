@@ -56,6 +56,14 @@
 
 ## 📢 ニュース
 
+2026-05-11 🛒 **LicheeRV-Claw が AliExpress で購入可能に！** [AliExpress](https://www.aliexpress.com/item/1005006519668532.html) から LicheeRV-Claw を購入できるようになり、コンパクトな RISC-V ハードウェアで PicoClaw を試しやすくなりました。
+
+<p align="center">
+  <a href="https://www.aliexpress.com/item/1005006519668532.html">
+    <img src="../../assets/licheerv-claw.jpg" alt="LicheeRV-Claw on AliExpress" width="520">
+  </a>
+</p>
+
 2026-03-31 📱 **Android サポート！** PicoClawがAndroidで動作！APKは[picoclaw.io](https://picoclaw.io/download)からダウンロード
 
 2026-03-25 🚀 **v0.2.4 リリース！** Agent アーキテクチャ全面刷新（SubTurn、Hooks、Steering、EventBus）、WeChat/WeCom 統合、セキュリティ強化（.security.yml、機密データフィルタリング）、新プロバイダー（AWS Bedrock、Azure、Xiaomi MiMo）、35 件のバグ修正。PicoClaw **26K ⭐** 達成！

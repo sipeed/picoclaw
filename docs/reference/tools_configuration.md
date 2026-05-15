@@ -66,6 +66,32 @@ General settings for fetching and processing webpage content.
 | `enabled`     | bool | true    | Enable DuckDuckGo search  |
 | `max_results` | int  | 5       | Maximum number of results |
 
+### Gemini Google Search
+
+Gemini search uses Gemini with Google Search grounding. It returns an AI-synthesized answer with citations from Google Search.
+
+| Config        | Type   | Default              | Description                       |
+|---------------|--------|----------------------|-----------------------------------|
+| `enabled`     | bool   | false                | Enable Gemini Google Search       |
+| `api_key`     | string | -                    | Google Gemini API key             |
+| `model`       | string | `gemini-2.5-flash`   | Gemini model used for search      |
+| `max_results` | int    | 5                    | Maximum number of citations       |
+
+```json
+{
+  "tools": {
+    "web": {
+      "gemini": {
+        "enabled": true,
+        "api_key": "YOUR_GEMINI_API_KEY",
+        "model": "gemini-2.5-flash",
+        "max_results": 5
+      }
+    }
+  }
+}
+```
+
 ### Baidu Search
 
 Baidu Search uses the [Qianfan AI Search API](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5), which is AI-powered and optimized for Chinese-language queries.

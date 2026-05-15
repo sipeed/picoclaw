@@ -28,6 +28,7 @@ type (
 	TavilySearchProvider     = integrationtools.TavilySearchProvider
 	SogouSearchProvider      = integrationtools.SogouSearchProvider
 	DuckDuckGoSearchProvider = integrationtools.DuckDuckGoSearchProvider
+	GeminiSearchProvider     = integrationtools.GeminiSearchProvider
 	PerplexitySearchProvider = integrationtools.PerplexitySearchProvider
 	SearXNGSearchProvider    = integrationtools.SearXNGSearchProvider
 	GLMSearchProvider        = integrationtools.GLMSearchProvider

@@ -191,7 +191,7 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 			title = filename
 		}
 
-		_, err = c.api.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
+		_, err = c.api.UploadFileContext(ctx, slack.UploadFileParameters{
 			Channel:         channelID,
 			ThreadTimestamp: threadTS,
 			File:            localPath,
@@ -207,7 +207,7 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 		}
 	}
 
-	// UploadFileV2 does not expose the posted message timestamp in its
+	// UploadFile does not expose the posted message timestamp in its
 	// response; returning nil avoids conflating file IDs with message IDs.
 	return nil, nil
 }

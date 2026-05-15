@@ -438,7 +438,10 @@ func (p *Pipeline) CallLLM(
 		// Pico tool-call turns publish their reasoning/content/tool summary as a
 		// structured sequence after the tool-call payload is normalized below.
 	} else if ts.channel == "pico" {
-		go al.publishPicoReasoning(turnCtx, reasoningContent, ts.chatID)
+		// Publish pico thoughts before the turn context is canceled at return time.
+		// The async variant can race with turn teardown and intermittently drop the
+		// thought message in CI even though the LLM produced reasoning content.
+		al.publishPicoReasoning(turnCtx, reasoningContent, ts.chatID)
 	} else {
 		go al.handleReasoning(
 			turnCtx,

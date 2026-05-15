@@ -55,7 +55,7 @@ The current frontend exposes these major pages and flows:
 - `/agent/tools`
   - View tool availability and enable or disable tool switches through config-backed APIs.
 - `/config`
-  - Edit agent defaults, exec controls, cron controls, heartbeat, device monitoring, launcher networking, and launch-at-login settings.
+  - Edit agent defaults, self-evolution, exec controls, cron controls, heartbeat, device monitoring, launcher networking, and launch-at-login settings.
 - `/logs`
   - View the in-memory gateway log buffer and clear it.
 

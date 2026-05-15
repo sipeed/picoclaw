@@ -213,14 +213,17 @@ func (p *Provider) prepareMessagesForRequest(messages []Message) []Message {
 		return nil
 	}
 
-	if p.isDeepSeekReasoningProvider() {
-		return filterDeepSeekReasoningMessages(messages)
+	if p.requiresToolRoundReasoningReplay() {
+		return filterReasoningReplayMessages(messages)
 	}
 	return stripReasoningMessages(messages)
 }
 
-func (p *Provider) isDeepSeekReasoningProvider() bool {
-	return p.providerName == "deepseek" || isDeepSeekHost(p.apiBase)
+func (p *Provider) requiresToolRoundReasoningReplay() bool {
+	return p.providerName == "deepseek" ||
+		p.providerName == "mimo" ||
+		isDeepSeekHost(p.apiBase) ||
+		isMiMoHost(p.apiBase)
 }
 
 func isDeepSeekHost(apiBase string) bool {
@@ -232,7 +235,16 @@ func isDeepSeekHost(apiBase string) bool {
 	return host == "deepseek.com" || strings.HasSuffix(host, ".deepseek.com")
 }
 
-func filterDeepSeekReasoningMessages(messages []Message) []Message {
+func isMiMoHost(apiBase string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(apiBase))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	return host == "xiaomimimo.com" || strings.HasSuffix(host, ".xiaomimimo.com")
+}
+
+func filterReasoningReplayMessages(messages []Message) []Message {
 	out := make([]Message, 0, len(messages))
 	start := 0
 
@@ -240,7 +252,7 @@ func filterDeepSeekReasoningMessages(messages []Message) []Message {
 		if end <= start {
 			return
 		}
-		out = append(out, filterDeepSeekReasoningTurn(messages[start:end])...)
+		out = append(out, filterReasoningReplayTurn(messages[start:end])...)
 		start = end
 	}
 
@@ -254,7 +266,7 @@ func filterDeepSeekReasoningMessages(messages []Message) []Message {
 	return out
 }
 
-func filterDeepSeekReasoningTurn(messages []Message) []Message {
+func filterReasoningReplayTurn(messages []Message) []Message {
 	hasToolInteraction := false
 	for _, msg := range messages {
 		if msg.Role == "tool" || (msg.Role == "assistant" && len(msg.ToolCalls) > 0) {
@@ -270,10 +282,10 @@ func filterDeepSeekReasoningTurn(messages []Message) []Message {
 		}
 
 		cloned := msg
-		// DeepSeek thinking-mode replay only requires reasoning_content for
-		// turns that participate in a tool interaction round. For plain
-		// assistant turns between two user messages, the docs say the API will
-		// ignore reasoning_content on replay, so we strip it here.
+		// DeepSeek and MiMo only require reasoning_content replay for turns
+		// that participate in a tool interaction round. For plain assistant
+		// turns between two user messages, the reasoning trace is ignored on
+		// replay, so we strip it here.
 		if cloned.Role == "assistant" && strings.TrimSpace(cloned.ReasoningContent) != "" && !hasToolInteraction {
 			cloned.ReasoningContent = ""
 		}
@@ -419,6 +431,9 @@ func parseStreamResponse(
 	onChunk func(accumulated string),
 ) (*LLMResponse, error) {
 	var textContent strings.Builder
+	var reasoningContent strings.Builder
+	var reasoning strings.Builder
+	var reasoningDetails []ReasoningDetail
 	var finishReason string
 	var usage *UsageInfo
 
@@ -430,29 +445,22 @@ func parseStreamResponse(
 	}
 	activeTools := map[int]*toolAccum{}
 
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 1MB initial, 10MB max
-	for scanner.Scan() {
-		// Check for context cancellation between chunks
-		if err := ctx.Err(); err != nil {
-			return nil, err
+	processEvent := func(data string) error {
+		if strings.TrimSpace(data) == "" {
+			return nil
 		}
-
-		line := scanner.Text()
-
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		data := strings.TrimPrefix(line, "data: ")
-		if data == "[DONE]" {
-			break
+		if strings.TrimSpace(data) == "[DONE]" {
+			return io.EOF
 		}
 
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content   string `json:"content"`
-					ToolCalls []struct {
+					Content          string            `json:"content"`
+					ReasoningContent string            `json:"reasoning_content"`
+					Reasoning        string            `json:"reasoning"`
+					ReasoningDetails []ReasoningDetail `json:"reasoning_details"`
+					ToolCalls        []struct {
 						Index    int    `json:"index"`
 						ID       string `json:"id"`
 						Function *struct {
@@ -467,7 +475,7 @@ func parseStreamResponse(
 		}
 
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue // skip malformed chunks
+			return fmt.Errorf("failed to decode stream event: %w", err)
 		}
 
 		if chunk.Usage != nil {
@@ -475,7 +483,7 @@ func parseStreamResponse(
 		}
 
 		if len(chunk.Choices) == 0 {
-			continue
+			return nil
 		}
 
 		choice := chunk.Choices[0]
@@ -486,6 +494,15 @@ func parseStreamResponse(
 			if onChunk != nil {
 				onChunk(textContent.String())
 			}
+		}
+		if choice.Delta.ReasoningContent != "" {
+			reasoningContent.WriteString(choice.Delta.ReasoningContent)
+		}
+		if choice.Delta.Reasoning != "" {
+			reasoning.WriteString(choice.Delta.Reasoning)
+		}
+		if len(choice.Delta.ReasoningDetails) > 0 {
+			reasoningDetails = append(reasoningDetails, choice.Delta.ReasoningDetails...)
 		}
 
 		// Accumulate tool call deltas
@@ -511,10 +528,54 @@ func parseStreamResponse(
 		if choice.FinishReason != nil {
 			finishReason = *choice.FinishReason
 		}
+
+		return nil
+	}
+
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 1MB initial, 10MB max
+	var eventData strings.Builder
+	for scanner.Scan() {
+		// Check for context cancellation between chunks
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		line := scanner.Text()
+		if line == "" {
+			err := processEvent(eventData.String())
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return nil, err
+			}
+			eventData.Reset()
+			continue
+		}
+		if strings.HasPrefix(line, ":") {
+			continue
+		}
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+
+		data := strings.TrimPrefix(line, "data:")
+		data = strings.TrimPrefix(data, " ")
+		if eventData.Len() > 0 {
+			eventData.WriteByte('\n')
+		}
+		eventData.WriteString(data)
 	}
 
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("streaming read error: %w", err)
+	}
+	if eventData.Len() > 0 {
+		err := processEvent(eventData.String())
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
 	}
 
 	// Assemble tool calls from accumulated deltas
@@ -544,10 +605,13 @@ func parseStreamResponse(
 	}
 
 	return &LLMResponse{
-		Content:      textContent.String(),
-		ToolCalls:    toolCalls,
-		FinishReason: finishReason,
-		Usage:        usage,
+		Content:          textContent.String(),
+		ReasoningContent: reasoningContent.String(),
+		Reasoning:        reasoning.String(),
+		ReasoningDetails: reasoningDetails,
+		ToolCalls:        toolCalls,
+		FinishReason:     finishReason,
+		Usage:            usage,
 	}, nil
 }
 

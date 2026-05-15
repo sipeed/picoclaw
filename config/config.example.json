@@ -20,6 +20,15 @@
       }
     }
   },
+  "evolution": {
+    "enabled": false,
+    "mode": "observe",
+    "state_dir": "",
+    "min_task_count": 2,
+    "min_success_ratio": 0.7,
+    "cold_path_trigger": "after_turn",
+    "cold_path_times": []
+  },
   "model_list": [
     {
       "model_name": "gpt-5.4",
@@ -280,6 +289,12 @@
       },
       "duckduckgo": {
         "enabled": false,
+        "max_results": 5
+      },
+      "gemini": {
+        "enabled": false,
+        "api_key": "",
+        "model": "gemini-2.5-flash",
         "max_results": 5
       },
       "perplexity": {

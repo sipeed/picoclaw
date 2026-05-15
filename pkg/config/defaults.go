@@ -341,6 +341,11 @@ func DefaultConfig() *Config {
 					Enabled:    false,
 					MaxResults: 5,
 				},
+				Gemini: GeminiSearchConfig{
+					Enabled:    false,
+					Model:      "gemini-2.5-flash",
+					MaxResults: 5,
+				},
 				Perplexity: PerplexityConfig{
 					Enabled:    false,
 					MaxResults: 5,
@@ -503,8 +508,9 @@ func defaultChannels() ChannelsConfig {
 			"typing":      map[string]any{"enabled": true},
 			"placeholder": map[string]any{"enabled": true, "text": []string{"Thinking... 💭"}},
 			"settings": map[string]any{
-				"streaming":       map[string]any{"enabled": true, "throttle_seconds": 3, "min_growth_chars": 200},
-				"use_markdown_v2": false,
+				"streaming":            map[string]any{"enabled": true, "throttle_seconds": 3, "min_growth_chars": 200},
+				"use_markdown_v2":      false,
+				"media_group_delay_ms": 500,
 			},
 		},
 		"feishu":  map[string]any{},

@@ -56,6 +56,14 @@
 
 ## 📢 News
 
+2026-05-11 🛒 **LicheeRV-Claw on AliExpress!** You can now purchase LicheeRV-Claw from [AliExpress](https://www.aliexpress.com/item/1005006519668532.html), making it easier to try PicoClaw on compact RISC-V hardware.
+
+<p align="center">
+  <a href="https://www.aliexpress.com/item/1005006519668532.html">
+    <img src="assets/licheerv-claw.jpg" alt="LicheeRV-Claw on AliExpress" width="520">
+  </a>
+</p>
+
 2026-03-31 📱 **Android Support!** PicoClaw now runs on Android! Download the APK at [picoclaw.io](https://picoclaw.io/download)
 
 2026-03-25 🚀 **v0.2.4 Released!** Agent architecture overhaul (SubTurn, Hooks, Steering, EventBus), WeChat/WeCom integration, security hardening (.security.yml, sensitive data filtering), new providers (AWS Bedrock, Azure, Xiaomi MiMo), and 35 bug fixes. PicoClaw has reached **26K Stars**!
@@ -485,6 +493,7 @@ PicoClaw can search the web to provide up-to-date information. Configure in `too
 | Search Engine | API Key | Free Tier | Link |
 |--------------|---------|-----------|------|
 | DuckDuckGo | Not needed | Unlimited | Built-in fallback |
+| [Gemini Google Search](https://aistudio.google.com/apikey) | Required | Varies | Gemini with Google Search grounding |
 | [Baidu Search](https://cloud.baidu.com/doc/qianfan-api/s/Wmbq4z7e5) | Required | 1500/month (daily allocation) | AI-powered, China-optimized |
 | [Tavily](https://tavily.com) | Required | 1000 queries/month | Optimized for AI Agents |
 | [Brave Search](https://brave.com/search/api) | Required | 2000 queries/month | Fast and private |

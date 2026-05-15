@@ -30,6 +30,7 @@ export interface WebSearchProviderConfig {
   max_results: number
   base_url?: string
   api_key?: string
+  model?: string
   api_key_set?: boolean
 }
 
