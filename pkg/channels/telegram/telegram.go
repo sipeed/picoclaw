@@ -233,7 +233,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 	if isToolFeedback {
 		toolFeedbackContent = fitToolFeedbackForTelegram(msg.Content, useMarkdownV2, 4096)
 	}
-	trackedChatID := telegramToolFeedbackChatKey(msg.ChatID, &msg.Context)
+	trackedChatID := telegramResolvedChatID(msg.ChatID, &msg.Context)
 	if isToolFeedback {
 		if msgID, handled, err := c.progress.Update(ctx, trackedChatID, toolFeedbackContent); handled {
 			if err != nil {
@@ -583,7 +583,7 @@ func (c *TelegramChannel) FinalizeToolFeedbackMessage(ctx context.Context, msg b
 	if outboundMessageIsToolFeedback(msg) {
 		return nil, false
 	}
-	return c.finalizeToolFeedbackMessageForChat(ctx, telegramToolFeedbackChatKey(msg.ChatID, &msg.Context), msg)
+	return c.finalizeToolFeedbackMessageForChat(ctx, telegramResolvedChatID(msg.ChatID, &msg.Context), msg)
 }
 
 func (c *TelegramChannel) finalizeToolFeedbackMessageForChat(
@@ -625,7 +625,7 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 	if !c.IsRunning() {
 		return nil, channels.ErrNotRunning
 	}
-	trackedChatID := telegramToolFeedbackChatKey(msg.ChatID, &msg.Context)
+	trackedChatID := telegramResolvedChatID(msg.ChatID, &msg.Context)
 	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(trackedChatID)
 
 	chatID, threadID, err := resolveTelegramOutboundTarget(msg.ChatID, &msg.Context)
@@ -1304,7 +1304,7 @@ func (c *TelegramChannel) PrepareToolFeedbackMessageContent(content string) stri
 	return fitToolFeedbackForTelegram(content, c.tgCfg.UseMarkdownV2, 4096)
 }
 
-func telegramToolFeedbackChatKey(chatID string, outboundCtx *bus.InboundContext) string {
+func telegramResolvedChatID(chatID string, outboundCtx *bus.InboundContext) string {
 	resolvedChatID, threadID, err := resolveTelegramOutboundTarget(chatID, outboundCtx)
 	if err != nil || threadID == 0 {
 		return strings.TrimSpace(chatID)
@@ -1312,8 +1312,8 @@ func telegramToolFeedbackChatKey(chatID string, outboundCtx *bus.InboundContext)
 	return fmt.Sprintf("%d/%d", resolvedChatID, threadID)
 }
 
-func (c *TelegramChannel) ToolFeedbackMessageChatID(chatID string, outboundCtx *bus.InboundContext) string {
-	return telegramToolFeedbackChatKey(chatID, outboundCtx)
+func (c *TelegramChannel) ResolveOutboundChatID(chatID string, outboundCtx *bus.InboundContext) string {
+	return telegramResolvedChatID(chatID, outboundCtx)
 }
 
 // parseTelegramChatID splits "chatID/threadID" into its components.
