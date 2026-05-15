@@ -380,12 +380,41 @@ func (c *TelegramChannel) sendChunk(
 
 	pMsg, err := c.bot.SendMessage(ctx, tgMsg)
 	if err != nil {
-		logParseFailed(err, params.useMarkdownV2)
+		// Only retry in plain text when Telegram explicitly rejected the formatted payload.
+		// Network/post-connect errors can mean the first message already landed, and retrying
+		// with different content creates visible duplicates in chat.
+		if strings.Contains(err.Error(), "Bad Request") {
+			logParseFailed(err, params.useMarkdownV2)
 
-		tgMsg.Text = params.mdFallback
-		tgMsg.ParseMode = ""
-		pMsg, err = c.bot.SendMessage(ctx, tgMsg)
-		if err != nil {
+			tgMsg.Text = params.mdFallback
+			tgMsg.ParseMode = ""
+			pMsg, err = c.bot.SendMessage(ctx, tgMsg)
+			if err != nil {
+				if isPostConnectError(err) {
+					logger.WarnCF(
+						"telegram",
+						"Send fallback likely landed but result is unknown; swallowing error to prevent duplicate",
+						map[string]any{
+							"chat_id": params.chatID,
+							"error":   err.Error(),
+						},
+					)
+					return "", nil
+				}
+				return "", fmt.Errorf("telegram send: %w", channels.ErrTemporary)
+			}
+		} else {
+			if isPostConnectError(err) {
+				logger.WarnCF(
+					"telegram",
+					"Send likely landed but result is unknown; swallowing error to prevent duplicate",
+					map[string]any{
+						"chat_id": params.chatID,
+						"error":   err.Error(),
+					},
+				)
+				return "", nil
+			}
 			return "", fmt.Errorf("telegram send: %w", channels.ErrTemporary)
 		}
 	}

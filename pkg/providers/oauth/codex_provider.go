@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/openai/openai-go/v3"
@@ -104,10 +105,18 @@ func (p *CodexProvider) Chat(
 	defer stream.Close()
 
 	var resp *responses.Response
+	streamOutput := map[int64]responses.ResponseOutputItemUnion{}
 	for stream.Next() {
 		evt := stream.Current()
+		switch evt.Type {
+		case "response.output_item.done":
+			streamOutput[evt.OutputIndex] = evt.Item
+		}
 		if evt.Type == "response.completed" || evt.Type == "response.failed" || evt.Type == "response.incomplete" {
 			evtResp := evt.Response
+			if len(evtResp.Output) == 0 && len(streamOutput) > 0 {
+				evtResp.Output = orderedStreamOutput(streamOutput)
+			}
 			if evtResp.ID != "" {
 				evtRespCopy := evtResp
 				resp = &evtRespCopy
@@ -154,6 +163,20 @@ func (p *CodexProvider) Chat(
 	}
 
 	return orc.ParseResponseFromStruct(resp), nil
+}
+
+func orderedStreamOutput(items map[int64]responses.ResponseOutputItemUnion) []responses.ResponseOutputItemUnion {
+	indexes := make([]int64, 0, len(items))
+	for idx := range items {
+		indexes = append(indexes, idx)
+	}
+	sort.Slice(indexes, func(i, j int) bool { return indexes[i] < indexes[j] })
+
+	out := make([]responses.ResponseOutputItemUnion, 0, len(indexes))
+	for _, idx := range indexes {
+		out = append(out, items[idx])
+	}
+	return out
 }
 
 func (p *CodexProvider) GetDefaultModel() string {
