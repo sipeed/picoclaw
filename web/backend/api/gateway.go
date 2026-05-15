@@ -469,6 +469,9 @@ func computeConfigSignature(cfg *config.Config) string {
 	if cfg.Tools.SPI.Enabled {
 		toolSignatures = append(toolSignatures, "spi")
 	}
+	if cfg.Tools.GetCurrentTime.Enabled {
+		toolSignatures = append(toolSignatures, "get_current_time")
+	}
 	if cfg.Tools.MCP.Enabled {
 		toolSignatures = append(toolSignatures, "mcp")
 	}

@@ -702,6 +702,7 @@
           "skills": "Skills",
           "agents": "Agents",
           "hardware": "Hardware",
+          "utility": "Utility",
           "discovery": "Discovery"
         },
         "reasons": {

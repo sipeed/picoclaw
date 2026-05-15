@@ -124,6 +124,9 @@ func NewAgentInstance(
 	if cfg.Tools.IsToolEnabled("append_file") {
 		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
 	}
+	if cfg.Tools.IsToolEnabled("get_current_time") {
+		toolsRegistry.Register(tools.NewGetCurrentTimeTool(""))
+	}
 
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessions := initSessionStore(sessionsDir)

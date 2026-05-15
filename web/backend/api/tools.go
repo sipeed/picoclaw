@@ -179,6 +179,12 @@ var toolCatalog = []toolCatalogEntry{
 		ConfigKey:   "serial",
 	},
 	{
+		Name:        "get_current_time",
+		Description: "Get the current time, date, or both in various formats and timezones.",
+		Category:    "utility",
+		ConfigKey:   "get_current_time",
+	},
+	{
 		Name:        "tool_search_tool_regex",
 		Description: "Discover hidden MCP tools by regex search when tool discovery is enabled.",
 		Category:    "discovery",
@@ -385,6 +391,8 @@ func applyToolState(cfg *config.Config, toolName string, enabled bool) error {
 		cfg.Tools.SPI.Enabled = enabled
 	case "serial":
 		cfg.Tools.Serial.Enabled = enabled
+	case "get_current_time":
+		cfg.Tools.GetCurrentTime.Enabled = enabled
 	case "tool_search_tool_regex":
 		cfg.Tools.MCP.Discovery.UseRegex = enabled
 		if enabled {

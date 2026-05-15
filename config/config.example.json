@@ -514,6 +514,9 @@
     "spi": {
       "enabled": false
     },
+    "get_current_time": {
+      "enabled": true
+    },
     "subagent": {
       "enabled": true
     },
