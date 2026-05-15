@@ -345,6 +345,18 @@ func registerSharedTools(
 				// Also register the synchronous subagent tool
 				subagentTool := tools.NewSubagentTool(subagentManager)
 				subagentTool.SetSpawner(NewSubTurnSpawner(al))
+				subagentTool.SetAllowlistChecker(func(targetAgentID string) bool {
+					return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
+				})
+				subagentTool.SetTargetModelResolver(func(targetAgentID string) string {
+					if targetAgentID == "" {
+						return agent.Model
+					}
+					if targetAgent, ok := al.GetRegistry().GetAgent(targetAgentID); ok {
+						return targetAgent.Model
+					}
+					return agent.Model
+				})
 				agent.Tools.Register(subagentTool)
 			}
 			if spawnStatusEnabled {

@@ -338,10 +338,12 @@ func (sm *SubagentManager) ListTaskCopies() []SubagentTask {
 // SubagentTool executes a subagent task synchronously and returns the result.
 // It directly calls SubTurnSpawner with Async=false for synchronous execution.
 type SubagentTool struct {
-	spawner      SubTurnSpawner
-	defaultModel string
-	maxTokens    int
-	temperature  float64
+	spawner             SubTurnSpawner
+	defaultModel        string
+	maxTokens           int
+	temperature         float64
+	allowlistCheck      func(targetAgentID string) bool
+	targetModelResolver func(targetAgentID string) string
 }
 
 func NewSubagentTool(manager *SubagentManager) *SubagentTool {
@@ -358,6 +360,14 @@ func NewSubagentTool(manager *SubagentManager) *SubagentTool {
 // SetSpawner sets the SubTurnSpawner for direct sub-turn execution.
 func (t *SubagentTool) SetSpawner(spawner SubTurnSpawner) {
 	t.spawner = spawner
+}
+
+func (t *SubagentTool) SetAllowlistChecker(check func(targetAgentID string) bool) {
+	t.allowlistCheck = check
+}
+
+func (t *SubagentTool) SetTargetModelResolver(resolver func(targetAgentID string) string) {
+	t.targetModelResolver = resolver
 }
 
 func (t *SubagentTool) Name() string {
@@ -380,6 +390,10 @@ func (t *SubagentTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Optional short label for the task (for display)",
 			},
+			"agent_id": map[string]any{
+				"type":        "string",
+				"description": "Optional target agent ID to delegate the task to",
+			},
 		},
 		"required": []string{"task"},
 	}
@@ -392,6 +406,17 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	}
 
 	label, _ := args["label"].(string)
+	agentID, _ := args["agent_id"].(string)
+	if agentID != "" && t.allowlistCheck != nil && !t.allowlistCheck(agentID) {
+		return ErrorResult(fmt.Sprintf("Not allowed to target agent '%s'", agentID))
+	}
+
+	modelToUse := t.defaultModel
+	if agentID != "" && t.targetModelResolver != nil {
+		if resolved := t.targetModelResolver(agentID); resolved != "" {
+			modelToUse = resolved
+		}
+	}
 
 	// Build system prompt for subagent
 	systemPrompt := fmt.Sprintf(
@@ -414,7 +439,7 @@ Task: %s`,
 	// Use spawner if available (direct SpawnSubTurn call)
 	if t.spawner != nil {
 		result, err := t.spawner.SpawnSubTurn(ctx, SubTurnConfig{
-			Model:        t.defaultModel,
+			Model:        modelToUse,
 			Tools:        nil, // Will inherit from parent via context
 			SystemPrompt: systemPrompt,
 			MaxTokens:    t.maxTokens,
