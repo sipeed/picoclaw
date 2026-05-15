@@ -126,6 +126,41 @@ For advanced/test setups, you can override the builtin skills root with:
 export PICOCLAW_BUILTIN_SKILLS=/path/to/skills
 ```
 
+### Skill Catalog Token Optimization
+
+By default, the skill catalog (the list of available skills shown to the LLM) is included in every LLM request. On providers without prompt caching (most OpenAI-compatible APIs), this costs tokens on every call including intermediate tool round-trips within a single turn.
+
+Two opt-in flags under `agents.defaults.skill_catalog` reduce this cost:
+
+```json
+"agents": {
+  "defaults": {
+    "skill_catalog": {
+      "skip_on_tools": false,
+      "skip_on_subsequent": false
+    }
+  }
+}
+```
+
+| Field | Default | Effect when `true` |
+|---|---|---|
+| `skip_on_tools` | `false` | Omits the catalog from tool-call continuation requests (mid-turn LLM round-trips). The LLM already received the catalog on the initial turn request. |
+| `skip_on_subsequent` | `false` | Omits the catalog on turns after the first in a session. The catalog is automatically re-injected after context compaction, so the LLM always rediscovers skills when its history is summarized. |
+
+Both flags default to `false` so existing deployments are unaffected. Enable both for maximum token savings:
+
+```json
+"skill_catalog": {
+  "skip_on_tools": true,
+  "skip_on_subsequent": true
+}
+```
+
+Environment variable equivalents:
+- `PICOCLAW_AGENTS_DEFAULTS_SKILL_CATALOG_SKIP_ON_TOOLS=true`
+- `PICOCLAW_AGENTS_DEFAULTS_SKILL_CATALOG_SKIP_ON_SUBSEQUENT=true`
+
 ### Using Skills From Chat Channels
 
 Once skills are installed, and MCP servers are configured, you can inspect and force them directly from a chat channel:

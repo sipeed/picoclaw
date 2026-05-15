@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
@@ -29,6 +30,16 @@ func setupWorkspace(t *testing.T, files map[string]string) string {
 		}
 	}
 	return tmpDir
+}
+
+// systemPromptFromMessages extracts the Content of the first system message.
+func systemPromptFromMessages(msgs []providers.Message) string {
+	for _, m := range msgs {
+		if m.Role == "system" {
+			return m.Content
+		}
+	}
+	return ""
 }
 
 // TestSingleSystemMessage verifies that BuildMessages always produces exactly one
@@ -468,8 +479,9 @@ description: global-v1
 	}
 
 	cb := NewContextBuilder(tmpDir)
-	sp1 := cb.BuildSystemPromptWithCache()
-	if !strings.Contains(sp1, "global-v1") {
+	// Skill catalog is injected per-request, not in the static cache; check via BuildMessagesFromPrompt.
+	sysMsg1 := systemPromptFromMessages(cb.BuildMessagesFromPrompt(PromptBuildRequest{}))
+	if !strings.Contains(sysMsg1, "global-v1") {
 		t.Fatal("expected initial prompt to contain global skill description")
 	}
 
@@ -493,11 +505,11 @@ description: global-v2
 		t.Fatal("sourceFilesChangedLocked() should detect global skill file content change")
 	}
 
-	sp2 := cb.BuildSystemPromptWithCache()
-	if !strings.Contains(sp2, "global-v2") {
+	sysMsg2 := systemPromptFromMessages(cb.BuildMessagesFromPrompt(PromptBuildRequest{}))
+	if !strings.Contains(sysMsg2, "global-v2") {
 		t.Error("rebuilt prompt should contain updated global skill description")
 	}
-	if sp1 == sp2 {
+	if sysMsg1 == sysMsg2 {
 		t.Error("cache should be invalidated when global skill file content changes")
 	}
 }
@@ -528,8 +540,9 @@ description: builtin-v1
 	}
 
 	cb := NewContextBuilder(tmpDir)
-	sp1 := cb.BuildSystemPromptWithCache()
-	if !strings.Contains(sp1, "builtin-v1") {
+	// Skill catalog is injected per-request, not in the static cache; check via BuildMessagesFromPrompt.
+	sysMsg1 := systemPromptFromMessages(cb.BuildMessagesFromPrompt(PromptBuildRequest{}))
+	if !strings.Contains(sysMsg1, "builtin-v1") {
 		t.Fatal("expected initial prompt to contain builtin skill description")
 	}
 
@@ -553,11 +566,11 @@ description: builtin-v2
 		t.Fatal("sourceFilesChangedLocked() should detect builtin skill file content change")
 	}
 
-	sp2 := cb.BuildSystemPromptWithCache()
-	if !strings.Contains(sp2, "builtin-v2") {
+	sysMsg2 := systemPromptFromMessages(cb.BuildMessagesFromPrompt(PromptBuildRequest{}))
+	if !strings.Contains(sysMsg2, "builtin-v2") {
 		t.Error("rebuilt prompt should contain updated builtin skill description")
 	}
-	if sp1 == sp2 {
+	if sysMsg1 == sysMsg2 {
 		t.Error("cache should be invalidated when builtin skill file content changes")
 	}
 }
@@ -575,8 +588,9 @@ description: delete-me-v1
 	defer os.RemoveAll(tmpDir)
 
 	cb := NewContextBuilder(tmpDir)
-	sp1 := cb.BuildSystemPromptWithCache()
-	if !strings.Contains(sp1, "delete-me-v1") {
+	// Skill catalog is injected per-request, not in the static cache; check via BuildMessagesFromPrompt.
+	sysMsg1 := systemPromptFromMessages(cb.BuildMessagesFromPrompt(PromptBuildRequest{}))
+	if !strings.Contains(sysMsg1, "delete-me-v1") {
 		t.Fatal("expected initial prompt to contain skill description")
 	}
 
@@ -592,13 +606,115 @@ description: delete-me-v1
 		t.Fatal("sourceFilesChangedLocked() should detect deleted skill file")
 	}
 
-	sp2 := cb.BuildSystemPromptWithCache()
-	if strings.Contains(sp2, "delete-me-v1") {
+	sysMsg2 := systemPromptFromMessages(cb.BuildMessagesFromPrompt(PromptBuildRequest{}))
+	if strings.Contains(sysMsg2, "delete-me-v1") {
 		t.Error("rebuilt prompt should not contain deleted skill description")
 	}
-	if sp1 == sp2 {
+	if sysMsg1 == sysMsg2 {
 		t.Error("cache should be invalidated when skill file is deleted")
 	}
+}
+
+// TestSkillCatalogInjectionPolicy verifies catalog inclusion under various
+// config combinations.
+func TestSkillCatalogInjectionPolicy(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"skills/demo/SKILL.md": "---\nname: demo\ndescription: \"demo skill\"\n---\n# Demo",
+	})
+	defer os.RemoveAll(tmpDir)
+
+	userMsg := providers.Message{Role: "user", Content: "hello"}
+	assistantMsg := providers.Message{Role: "assistant", Content: "hi"}
+	toolMsg := providers.Message{Role: "tool", Content: "result", ToolCallID: "tc1"}
+
+	contains := func(msgs []providers.Message) bool {
+		return strings.Contains(systemPromptFromMessages(msgs), "demo skill")
+	}
+
+	newCB := func(skipOnTools, skipOnSubsequent bool) *ContextBuilder {
+		return NewContextBuilder(tmpDir).WithSkillCatalogConfig(config.SkillCatalogConfig{
+			SkipOnTools:      skipOnTools,
+			SkipOnSubsequent: skipOnSubsequent,
+		})
+	}
+
+	t.Run("default (both false): catalog always included", func(t *testing.T) {
+		cb := newCB(false, false)
+		for _, req := range []PromptBuildRequest{
+			{},
+			{History: []providers.Message{userMsg, assistantMsg}},
+			{History: []providers.Message{userMsg, assistantMsg, toolMsg}},
+			{History: []providers.Message{userMsg, assistantMsg}, Summary: "summary"},
+		} {
+			if !contains(cb.BuildMessagesFromPrompt(req)) {
+				t.Error("catalog should always be included when both flags are false")
+			}
+		}
+	})
+
+	t.Run("skip_on_tools: skips tool continuations only", func(t *testing.T) {
+		cb := newCB(true, false)
+		if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{})) {
+			t.Error("turn 1: catalog should be included")
+		}
+		if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+			History: []providers.Message{userMsg, assistantMsg},
+		})) {
+			t.Error("turn > 1 (no tool): catalog should be included")
+		}
+		if contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+			History: []providers.Message{userMsg, assistantMsg, toolMsg},
+		})) {
+			t.Error("tool continuation: catalog should be skipped")
+		}
+	})
+
+	t.Run("skip_on_subsequent: skips turns > 1, re-injects after compaction", func(t *testing.T) {
+		cb := newCB(false, true)
+		if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{})) {
+			t.Error("turn 1: catalog should be included")
+		}
+		if contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+			History: []providers.Message{userMsg, assistantMsg},
+		})) {
+			t.Error("turn > 1, no summary: catalog should be skipped")
+		}
+		if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+			History: []providers.Message{userMsg, assistantMsg},
+			Summary: "prior conversation summary",
+		})) {
+			t.Error("after compaction: catalog should be re-injected")
+		}
+		// tool continuation is NOT skipped when only skip_on_subsequent is set
+		if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+			History: []providers.Message{userMsg, assistantMsg, toolMsg},
+		})) {
+			t.Error("tool continuation (skip_on_subsequent only): catalog should be included")
+		}
+	})
+
+	t.Run("both true: skips tool turns and subsequent turns, re-injects after compaction", func(t *testing.T) {
+		cb := newCB(true, true)
+		if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{})) {
+			t.Error("turn 1: catalog should be included")
+		}
+		if contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+			History: []providers.Message{userMsg, assistantMsg, toolMsg},
+		})) {
+			t.Error("tool continuation: catalog should be skipped")
+		}
+		if contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+			History: []providers.Message{userMsg, assistantMsg},
+		})) {
+			t.Error("turn > 1, no summary: catalog should be skipped")
+		}
+		if !contains(cb.BuildMessagesFromPrompt(PromptBuildRequest{
+			History: []providers.Message{userMsg, assistantMsg},
+			Summary: "prior conversation summary",
+		})) {
+			t.Error("after compaction: catalog should be re-injected")
+		}
+	})
 }
 
 // TestConcurrentBuildSystemPromptWithCache verifies that multiple goroutines

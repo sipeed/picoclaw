@@ -22,12 +22,13 @@ import (
 )
 
 type ContextBuilder struct {
-	workspace      string
-	skillsLoader   *skills.SkillsLoader
-	memory         *MemoryStore
-	splitOnMarker  bool
-	agentDiscovery func(agentID string) []AgentDescriptor
-	promptRegistry *PromptRegistry
+	workspace       string
+	skillsLoader    *skills.SkillsLoader
+	memory          *MemoryStore
+	splitOnMarker   bool
+	skillCatalogCfg config.SkillCatalogConfig
+	agentDiscovery  func(agentID string) []AgentDescriptor
+	promptRegistry  *PromptRegistry
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -64,6 +65,11 @@ func (cb *ContextBuilder) WithToolDiscovery(useBM25, useRegex bool) *ContextBuil
 
 func (cb *ContextBuilder) WithSplitOnMarker(enabled bool) *ContextBuilder {
 	cb.splitOnMarker = enabled
+	return cb
+}
+
+func (cb *ContextBuilder) WithSkillCatalogConfig(cfg config.SkillCatalogConfig) *ContextBuilder {
+	cb.skillCatalogCfg = cfg
 	return cb
 }
 
@@ -221,25 +227,6 @@ func (cb *ContextBuilder) BuildSystemPromptParts() []PromptPart {
 		})
 	}
 
-	// Skills - show summary, AI can read full content with read_file tool
-	skillsSummary := cb.skillsLoader.BuildSkillsSummary()
-	if skillsSummary != "" {
-		add(PromptPart{
-			ID:     "capability.skill_catalog",
-			Layer:  PromptLayerCapability,
-			Slot:   PromptSlotSkillCatalog,
-			Source: PromptSource{ID: PromptSourceSkillCatalog, Name: "skill:index"},
-			Title:  "skill catalog",
-			Content: fmt.Sprintf(`# Skills
-
-The following skills extend your capabilities. To use a skill, read its SKILL.md file using the read_file tool.
-
-%s`, skillsSummary),
-			Stable: true,
-			Cache:  PromptCacheEphemeral,
-		})
-	}
-
 	// Memory context
 	memoryContext := cb.memory.GetMemoryContext()
 	if memoryContext != "" {
@@ -332,6 +319,13 @@ func (cb *ContextBuilder) EstimateSystemTokens(summary string, activeSkills []st
 	const dynamicContextChars = 300
 
 	totalChars := utf8.RuneCountInString(staticPrompt) + dynamicContextChars
+
+	// Skill catalog is no longer in the static prompt; add it to the estimate
+	// (EstimateSystemTokens assumes a non-continuation turn).
+	if skillsSummary := cb.skillsLoader.BuildSkillsSummary(); skillsSummary != "" {
+		totalChars += utf8.RuneCountInString(skillsSummary) + 80 // header overhead
+		totalChars += 7                                          // separator
+	}
 
 	if skillsText := cb.buildActiveSkillsContext(activeSkills); skillsText != "" {
 		totalChars += utf8.RuneCountInString(skillsText)
@@ -720,6 +714,37 @@ func (cb *ContextBuilder) BuildMessagesFromPrompt(req PromptBuildRequest) []prov
 			Source:  PromptSource{ID: PromptSourceKernel, Name: "static"},
 			Content: staticPrompt,
 		}, &providers.CacheControl{Type: "ephemeral"}),
+	}
+
+	// Determine whether to inject the skill catalog.
+	// Both skip behaviors are opt-in via config (default: always include).
+	isToolContinuation := len(req.History) > 0 && req.History[len(req.History)-1].Role == "tool"
+	isFirstTurn := len(req.History) == 0
+	isAfterCompaction := req.Summary != ""
+	skipForTools := cb.skillCatalogCfg.SkipOnTools && isToolContinuation
+	skipForSubsequent := cb.skillCatalogCfg.SkipOnSubsequent &&
+		!isFirstTurn && !isAfterCompaction && !isToolContinuation
+	if !skipForTools && !skipForSubsequent {
+		if skillsSummary := cb.skillsLoader.BuildSkillsSummary(); skillsSummary != "" {
+			catalogPart := PromptPart{
+				ID:     "capability.skill_catalog",
+				Layer:  PromptLayerCapability,
+				Slot:   PromptSlotSkillCatalog,
+				Source: PromptSource{ID: PromptSourceSkillCatalog, Name: "skill:index"},
+				Title:  "skill catalog",
+				Content: fmt.Sprintf(
+					"# Skills\n\nThe following skills extend your capabilities. To use a skill, read its SKILL.md file using the read_file tool.\n\n%s",
+					skillsSummary,
+				),
+				Stable: true,
+				Cache:  PromptCacheEphemeral,
+			}
+			stringParts = append(stringParts, catalogPart.Content)
+			contentBlocks = append(
+				contentBlocks,
+				promptContentBlock(catalogPart, &providers.CacheControl{Type: "ephemeral"}),
+			)
+		}
 	}
 
 	promptParts := append([]PromptPart(nil), req.Overlays...)
