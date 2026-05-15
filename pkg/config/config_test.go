@@ -1247,6 +1247,36 @@ func TestDefaultConfig_FilterMinLength(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_LoadImageEnabled(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Tools.LoadImage.Enabled {
+		t.Fatal("DefaultConfig().Tools.LoadImage.Enabled should be true")
+	}
+	if !cfg.Tools.IsToolEnabled("load_image") {
+		t.Fatal("DefaultConfig().Tools.IsToolEnabled(load_image) should be true")
+	}
+}
+
+func TestLoadConfig_LoadImageCanBeDisabled(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := "{\n  \"version\": 2,\n  \"tools\": {\n    \"load_image\": {\n      \"enabled\": false\n    }\n  }\n}\n"
+	if err := os.WriteFile(configPath, []byte(raw), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Tools.LoadImage.Enabled {
+		t.Fatal("LoadConfig().Tools.LoadImage.Enabled should be false")
+	}
+	if cfg.Tools.IsToolEnabled("load_image") {
+		t.Fatal("LoadConfig().Tools.IsToolEnabled(load_image) should be false")
+	}
+}
+
 func TestToolsConfig_GetFilterMinLength(t *testing.T) {
 	tests := []struct {
 		name     string
