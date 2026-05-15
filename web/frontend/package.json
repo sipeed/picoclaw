@@ -31,7 +31,7 @@
     "highlight.js": "^11.11.1",
     "i18next": "^26.0.10",
     "i18next-browser-languagedetector": "^8.2.1",
-    "jotai": "^2.19.1",
+    "jotai": "^2.20.0",
     "radix-ui": "^1.4.3",
     "react": "19.2.5",
     "react-dom": "19.2.5",
