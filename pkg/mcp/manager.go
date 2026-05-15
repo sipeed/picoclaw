@@ -18,12 +18,14 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	toolshared "github.com/sipeed/picoclaw/pkg/tools/shared"
 )
 
 // headerTransport is an http.RoundTripper that adds custom headers to requests
 type headerTransport struct {
-	base    http.RoundTripper
-	headers map[string]string
+	base           http.RoundTripper
+	headers        map[string]string
+	dynamicHeaders *config.DynamicHeadersConfig
 }
 
 func expandHomeCommandPath(command string) string {
@@ -45,20 +47,54 @@ func expandHomeCommandPath(command string) string {
 }
 
 func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Clone the request to avoid modifying the original
 	req = req.Clone(req.Context())
-
-	// Add custom headers
 	for key, value := range t.headers {
 		req.Header.Set(key, value)
 	}
-
-	// Use the base transport
+	if dynamic := toolshared.MCPHeaders(req.Context()); len(dynamic) > 0 {
+		filtered := t.filterDynamicHeaders(dynamic)
+		for key, value := range filtered {
+			req.Header.Set(key, value)
+		}
+	}
 	base := t.base
 	if base == nil {
 		base = http.DefaultTransport
 	}
 	return base.RoundTrip(req)
+}
+
+// filterDynamicHeaders applies the allowlist and limits from DynamicHeadersConfig.
+// Returns nil if no dynamic headers config is set (secure by default).
+func (t *headerTransport) filterDynamicHeaders(headers map[string]string) map[string]string {
+	if t.dynamicHeaders == nil || len(t.dynamicHeaders.Allowed) == 0 {
+		return nil
+	}
+
+	allowedSet := make(map[string]struct{}, len(t.dynamicHeaders.Allowed))
+	for _, h := range t.dynamicHeaders.Allowed {
+		allowedSet[strings.ToLower(h)] = struct{}{}
+	}
+
+	maxCount := t.dynamicHeaders.GetMaxCount()
+	maxValueLen := t.dynamicHeaders.GetMaxValueLen()
+
+	result := make(map[string]string)
+	count := 0
+	for key, value := range headers {
+		if count >= maxCount {
+			break
+		}
+		if _, ok := allowedSet[strings.ToLower(key)]; !ok {
+			continue
+		}
+		if len(value) > maxValueLen {
+			value = value[:maxValueLen]
+		}
+		result[key] = value
+		count++
+	}
+	return result
 }
 
 // loadEnvFile loads environment variables from a file in .env format
@@ -381,15 +417,14 @@ func connectServer(
 			DisableStandaloneSSE: disableStandaloneSSE,
 		}
 
-		// Add custom headers if provided
+		sseTransport.HTTPClient = &http.Client{
+			Transport: &headerTransport{
+				base:           http.DefaultTransport,
+				headers:        cfg.Headers,
+				dynamicHeaders: cfg.DynamicHeaders,
+			},
+		}
 		if len(cfg.Headers) > 0 {
-			// Create a custom HTTP client with header-injecting transport
-			sseTransport.HTTPClient = &http.Client{
-				Transport: &headerTransport{
-					base:    http.DefaultTransport,
-					headers: cfg.Headers,
-				},
-			}
 			logger.DebugCF("mcp", "Added custom HTTP headers",
 				map[string]any{
 					"server":       name,

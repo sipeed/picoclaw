@@ -15,6 +15,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/session"
+	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -37,6 +38,31 @@ func outboundContextFromInbound(
 		outboundCtx.ReplyToMessageID = replyToMessageID
 	}
 	return outboundCtx
+}
+
+func withMCPHeadersFromRaw(ctx context.Context, raw map[string]string) context.Context {
+	if len(raw) == 0 {
+		return ctx
+	}
+	var headers map[string]string
+	for k, v := range raw {
+		after, ok := strings.CutPrefix(k, "mcp:")
+		if !ok {
+			continue
+		}
+		after = strings.TrimSpace(after)
+		if after == "" {
+			continue
+		}
+		if headers == nil {
+			headers = make(map[string]string)
+		}
+		headers[after] = v
+	}
+	if len(headers) == 0 {
+		return ctx
+	}
+	return tools.WithMCPHeaders(ctx, headers)
 }
 
 func outboundScopeFromSessionScope(scope *session.SessionScope) *bus.OutboundScope {

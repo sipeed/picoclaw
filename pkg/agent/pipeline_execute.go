@@ -528,6 +528,9 @@ toolLoop:
 			ts.sessionKey,
 			ts.opts.Dispatch.SessionScope,
 		)
+		if inbound := ts.opts.Dispatch.InboundContext; inbound != nil {
+			execCtx = withMCPHeadersFromRaw(execCtx, inbound.Raw)
+		}
 		toolResult := ts.agent.Tools.ExecuteWithContext(
 			execCtx,
 			toolName,

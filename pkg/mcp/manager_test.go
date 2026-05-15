@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
+	toolshared "github.com/sipeed/picoclaw/pkg/tools/shared"
 )
 
 func TestLoadEnvFile(t *testing.T) {
@@ -627,4 +629,301 @@ func (t *scriptedTransport) Close() error {
 
 func (t *scriptedTransport) SessionID() string {
 	return t.sessionID
+}
+
+func TestHeaderTransport_DynamicHeaders(t *testing.T) {
+	captured := make(http.Header)
+	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		for k, v := range req.Header {
+			captured[k] = v
+		}
+		return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+	})
+
+	transport := &headerTransport{
+		base:    base,
+		headers: map[string]string{"X-Static": "from-config"},
+		dynamicHeaders: &config.DynamicHeadersConfig{
+			Allowed: []string{"Authorization", "X-Custom"},
+		},
+	}
+
+	ctx := toolshared.WithMCPHeaders(context.Background(), map[string]string{
+		"Authorization": "Bearer tok123",
+		"X-Custom":      "dynamic-val",
+	})
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://example.com", nil)
+
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	resp.Body.Close()
+
+	if got := captured.Get("X-Static"); got != "from-config" {
+		t.Errorf("X-Static = %q, want %q", got, "from-config")
+	}
+	if got := captured.Get("Authorization"); got != "Bearer tok123" {
+		t.Errorf("Authorization = %q, want %q", got, "Bearer tok123")
+	}
+	if got := captured.Get("X-Custom"); got != "dynamic-val" {
+		t.Errorf("X-Custom = %q, want %q", got, "dynamic-val")
+	}
+}
+
+func TestHeaderTransport_DynamicOverridesStatic(t *testing.T) {
+	captured := make(http.Header)
+	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		for k, v := range req.Header {
+			captured[k] = v
+		}
+		return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+	})
+
+	transport := &headerTransport{
+		base:    base,
+		headers: map[string]string{"Authorization": "Bearer static"},
+		dynamicHeaders: &config.DynamicHeadersConfig{
+			Allowed: []string{"Authorization"},
+		},
+	}
+
+	ctx := toolshared.WithMCPHeaders(context.Background(), map[string]string{
+		"Authorization": "Bearer dynamic",
+	})
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://example.com", nil)
+
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	resp.Body.Close()
+
+	if got := captured.Get("Authorization"); got != "Bearer dynamic" {
+		t.Errorf("Authorization = %q, want dynamic to override static %q", got, "Bearer dynamic")
+	}
+}
+
+func TestHeaderTransport_NoDynamicHeaders(t *testing.T) {
+	captured := make(http.Header)
+	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		for k, v := range req.Header {
+			captured[k] = v
+		}
+		return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+	})
+
+	transport := &headerTransport{
+		base:    base,
+		headers: map[string]string{"X-Static": "val"},
+	}
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://example.com", nil)
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	resp.Body.Close()
+
+	if got := captured.Get("X-Static"); got != "val" {
+		t.Errorf("X-Static = %q, want %q", got, "val")
+	}
+	if got := captured.Get("Authorization"); got != "" {
+		t.Errorf("Authorization should be empty, got %q", got)
+	}
+}
+
+func TestHeaderTransport_NoAllowlist_BlocksDynamic(t *testing.T) {
+	captured := make(http.Header)
+	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		for k, v := range req.Header {
+			captured[k] = v
+		}
+		return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+	})
+
+	// No dynamicHeaders config = secure by default, blocks all dynamic headers
+	transport := &headerTransport{
+		base:    base,
+		headers: map[string]string{"X-Static": "val"},
+	}
+
+	ctx := toolshared.WithMCPHeaders(context.Background(), map[string]string{
+		"Authorization": "Bearer should-be-blocked",
+		"X-Custom":      "also-blocked",
+	})
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://example.com", nil)
+
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	resp.Body.Close()
+
+	if got := captured.Get("X-Static"); got != "val" {
+		t.Errorf("X-Static = %q, want %q", got, "val")
+	}
+	if got := captured.Get("Authorization"); got != "" {
+		t.Errorf("Authorization should be blocked without allowlist, got %q", got)
+	}
+	if got := captured.Get("X-Custom"); got != "" {
+		t.Errorf("X-Custom should be blocked without allowlist, got %q", got)
+	}
+}
+
+func TestHeaderTransport_AllowlistFilters(t *testing.T) {
+	captured := make(http.Header)
+	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		for k, v := range req.Header {
+			captured[k] = v
+		}
+		return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+	})
+
+	transport := &headerTransport{
+		base: base,
+		dynamicHeaders: &config.DynamicHeadersConfig{
+			Allowed: []string{"X-Allowed-Header"},
+		},
+	}
+
+	ctx := toolshared.WithMCPHeaders(context.Background(), map[string]string{
+		"X-Allowed-Header": "this-passes",
+		"X-Blocked-Header": "this-is-blocked",
+		"Authorization":    "also-blocked",
+	})
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://example.com", nil)
+
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	resp.Body.Close()
+
+	if got := captured.Get("X-Allowed-Header"); got != "this-passes" {
+		t.Errorf("X-Allowed-Header = %q, want %q", got, "this-passes")
+	}
+	if got := captured.Get("X-Blocked-Header"); got != "" {
+		t.Errorf("X-Blocked-Header should be blocked, got %q", got)
+	}
+	if got := captured.Get("Authorization"); got != "" {
+		t.Errorf("Authorization should be blocked, got %q", got)
+	}
+}
+
+func TestHeaderTransport_AllowlistCaseInsensitive(t *testing.T) {
+	captured := make(http.Header)
+	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		for k, v := range req.Header {
+			captured[k] = v
+		}
+		return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+	})
+
+	transport := &headerTransport{
+		base: base,
+		dynamicHeaders: &config.DynamicHeadersConfig{
+			Allowed: []string{"X-Grafana-Token"}, // lowercase in allowlist
+		},
+	}
+
+	ctx := toolshared.WithMCPHeaders(context.Background(), map[string]string{
+		"x-grafana-token": "token-value", // different case in request
+	})
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://example.com", nil)
+
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	resp.Body.Close()
+
+	if got := captured.Get("X-Grafana-Token"); got != "token-value" {
+		t.Errorf("X-Grafana-Token = %q, want %q (case-insensitive match)", got, "token-value")
+	}
+}
+
+func TestHeaderTransport_MaxCountLimit(t *testing.T) {
+	captured := make(http.Header)
+	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		for k, v := range req.Header {
+			captured[k] = v
+		}
+		return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+	})
+
+	transport := &headerTransport{
+		base: base,
+		dynamicHeaders: &config.DynamicHeadersConfig{
+			Allowed:  []string{"X-Header-1", "X-Header-2", "X-Header-3"},
+			MaxCount: 2,
+		},
+	}
+
+	ctx := toolshared.WithMCPHeaders(context.Background(), map[string]string{
+		"X-Header-1": "val1",
+		"X-Header-2": "val2",
+		"X-Header-3": "val3",
+	})
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://example.com", nil)
+
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	resp.Body.Close()
+
+	// Only 2 headers should be set (MaxCount=2), but we can't predict which due to map iteration order
+	count := 0
+	for _, h := range []string{"X-Header-1", "X-Header-2", "X-Header-3"} {
+		if captured.Get(h) != "" {
+			count++
+		}
+	}
+	if count != 2 {
+		t.Errorf("Expected exactly 2 headers due to MaxCount=2, got %d", count)
+	}
+}
+
+func TestHeaderTransport_MaxValueLenLimit(t *testing.T) {
+	captured := make(http.Header)
+	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		for k, v := range req.Header {
+			captured[k] = v
+		}
+		return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+	})
+
+	transport := &headerTransport{
+		base: base,
+		dynamicHeaders: &config.DynamicHeadersConfig{
+			Allowed:     []string{"X-Long-Header"},
+			MaxValueLen: 10,
+		},
+	}
+
+	ctx := toolshared.WithMCPHeaders(context.Background(), map[string]string{
+		"X-Long-Header": "this-value-is-way-too-long-and-should-be-truncated",
+	})
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://example.com", nil)
+
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	resp.Body.Close()
+
+	got := captured.Get("X-Long-Header")
+	if len(got) != 10 {
+		t.Errorf("X-Long-Header length = %d, want 10 (truncated)", len(got))
+	}
+	if got != "this-value" {
+		t.Errorf("X-Long-Header = %q, want %q", got, "this-value")
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }

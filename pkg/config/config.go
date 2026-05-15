@@ -1110,6 +1110,35 @@ func (c *SkillRegistryConfig) DecodeParam(target any) error {
 	return json.Unmarshal(data, target)
 }
 
+// DynamicHeadersConfig controls which headers can be forwarded from channel context to MCP servers.
+// By default (when nil or empty), no dynamic headers are allowed - this is secure by default.
+type DynamicHeadersConfig struct {
+	// Allowed is a list of header names that may be forwarded from channel context.
+	// Only headers explicitly listed here will be passed to this MCP server.
+	// Header names are matched case-insensitively.
+	Allowed []string `json:"allowed,omitempty"`
+	// MaxCount limits the number of dynamic headers per request (default: 10).
+	MaxCount int `json:"max_count,omitempty"`
+	// MaxValueLen limits the maximum length of each header value (default: 4096).
+	MaxValueLen int `json:"max_value_len,omitempty"`
+}
+
+// GetMaxCount returns the max header count, defaulting to 10.
+func (c *DynamicHeadersConfig) GetMaxCount() int {
+	if c == nil || c.MaxCount <= 0 {
+		return 10
+	}
+	return c.MaxCount
+}
+
+// GetMaxValueLen returns the max value length, defaulting to 4096.
+func (c *DynamicHeadersConfig) GetMaxValueLen() int {
+	if c == nil || c.MaxValueLen <= 0 {
+		return 4096
+	}
+	return c.MaxValueLen
+}
+
 // MCPServerConfig defines configuration for a single MCP server
 type MCPServerConfig struct {
 	// Enabled indicates whether this MCP server is active
@@ -1132,6 +1161,9 @@ type MCPServerConfig struct {
 	URL string `json:"url,omitempty"`
 	// Headers are HTTP headers to send with requests (sse/http only)
 	Headers map[string]string `json:"headers,omitempty"`
+	// DynamicHeaders controls which headers from channel context can be forwarded to this server.
+	// When nil or empty, no dynamic headers are allowed (secure by default).
+	DynamicHeaders *DynamicHeadersConfig `json:"dynamic_headers,omitempty"`
 }
 
 // MCPConfig defines configuration for all MCP servers
