@@ -703,6 +703,26 @@ func TestShellTool_URLBypassPrevented(t *testing.T) {
 	}
 }
 
+func TestShellTool_RelativeScriptPathNotMisclassifiedAsAbsolute(t *testing.T) {
+	tmpDir := t.TempDir()
+	scriptsDir := filepath.Join(tmpDir, "scripts")
+	require.NoError(t, os.MkdirAll(scriptsDir, 0o755))
+	scriptPath := filepath.Join(scriptsDir, "echo.sh")
+	require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\necho ok\n"), 0o755))
+
+	tool, err := NewExecTool(tmpDir, true)
+	require.NoError(t, err)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"action":  "run",
+		"command": "scripts/echo.sh",
+		"cwd":     tmpDir,
+	})
+	if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
+		t.Fatalf("relative script path should not be blocked: %s", result.ForLLM)
+	}
+}
+
 func TestShellTool_Background_ReturnsImmediately(t *testing.T) {
 	tool, err := NewExecTool("", false)
 	require.NoError(t, err)
