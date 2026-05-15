@@ -344,7 +344,9 @@ func TestPicoChannel_HandleMessageSend_AllowsMediaOnly(t *testing.T) {
 	}
 }
 
-func TestPicoClientChannel_HandleServerMessage_ForwardsMedia(t *testing.T) {
+func newTestPicoClientChannel(t *testing.T) (*PicoClientChannel, *bus.MessageBus) {
+	t.Helper()
+
 	mb := bus.NewMessageBus()
 	bc := &config.Channel{Type: config.ChannelPicoClient, Enabled: true}
 	ch, err := NewPicoClientChannel(bc, &config.PicoClientSettings{
@@ -353,8 +355,40 @@ func TestPicoClientChannel_HandleServerMessage_ForwardsMedia(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPicoClientChannel() error = %v", err)
 	}
-
 	ch.ctx = context.Background()
+
+	return ch, mb
+}
+
+func assertInboundMessage(
+	t *testing.T,
+	mb *bus.MessageBus,
+	wantContent string,
+	wantMedia []string,
+	timeoutMessage string,
+) {
+	t.Helper()
+
+	select {
+	case msg := <-mb.InboundChan():
+		if msg.Content != wantContent {
+			t.Fatalf("msg.Content = %q, want %s", msg.Content, wantContent)
+		}
+		if len(msg.Media) != len(wantMedia) {
+			t.Fatalf("msg.Media = %#v, want %#v", msg.Media, wantMedia)
+		}
+		for i := range wantMedia {
+			if msg.Media[i] != wantMedia[i] {
+				t.Fatalf("msg.Media = %#v, want %#v", msg.Media, wantMedia)
+			}
+		}
+	case <-time.After(time.Second):
+		t.Fatal(timeoutMessage)
+	}
+}
+
+func TestPicoClientChannel_HandleServerMessage_ForwardsMedia(t *testing.T) {
+	ch, mb := newTestPicoClientChannel(t)
 	pc := &picoConn{sessionID: "sess-media"}
 	imageURL := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2ioAAAAASUVORK5CYII="
 
@@ -371,30 +405,17 @@ func TestPicoClientChannel_HandleServerMessage_ForwardsMedia(t *testing.T) {
 		},
 	})
 
-	select {
-	case msg := <-mb.InboundChan():
-		if msg.Content != "describe this" {
-			t.Fatalf("msg.Content = %q, want describe this", msg.Content)
-		}
-		if len(msg.Media) != 1 || msg.Media[0] != imageURL {
-			t.Fatalf("msg.Media = %#v, want forwarded image payload", msg.Media)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for forwarded media message")
-	}
+	assertInboundMessage(
+		t,
+		mb,
+		"describe this",
+		[]string{imageURL},
+		"timed out waiting for forwarded media message",
+	)
 }
 
 func TestPicoClientChannel_HandleInbound_ForwardsMediaCreate(t *testing.T) {
-	mb := bus.NewMessageBus()
-	bc := &config.Channel{Type: config.ChannelPicoClient, Enabled: true}
-	ch, err := NewPicoClientChannel(bc, &config.PicoClientSettings{
-		URL: "ws://localhost:8080/ws",
-	}, mb)
-	if err != nil {
-		t.Fatalf("NewPicoClientChannel() error = %v", err)
-	}
-
-	ch.ctx = context.Background()
+	ch, mb := newTestPicoClientChannel(t)
 	pc := &picoConn{sessionID: "sess-media-create"}
 	imageURL := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2ioAAAAASUVORK5CYII="
 
@@ -411,17 +432,13 @@ func TestPicoClientChannel_HandleInbound_ForwardsMediaCreate(t *testing.T) {
 		},
 	})
 
-	select {
-	case msg := <-mb.InboundChan():
-		if msg.Content != "describe media.create" {
-			t.Fatalf("msg.Content = %q, want describe media.create", msg.Content)
-		}
-		if len(msg.Media) != 1 || msg.Media[0] != imageURL {
-			t.Fatalf("msg.Media = %#v, want forwarded media.create image payload", msg.Media)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for media.create message")
-	}
+	assertInboundMessage(
+		t,
+		mb,
+		"describe media.create",
+		[]string{imageURL},
+		"timed out waiting for media.create message",
+	)
 }
 
 func TestPicoClientChannel_HandleServerMessage_ForwardsTextWithDownloadAttachment(t *testing.T) {
