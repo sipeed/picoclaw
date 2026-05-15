@@ -52,6 +52,8 @@ type FeishuChannel struct {
 
 	progress        *channels.ToolFeedbackAnimator
 	deleteMessageFn func(context.Context, string, string) error
+	sendMediaPartFn func(context.Context, string, bus.MediaPart, media.MediaStore) error
+	sendTextFn      func(context.Context, string, string) (string, error)
 }
 
 type cachedMessage struct {
@@ -78,6 +80,8 @@ func NewFeishuChannel(bc *config.Channel, cfg *config.FeishuSettings, bus *bus.M
 		client:      lark.NewClient(cfg.AppID, cfg.AppSecret.String(), opts...),
 	}
 	ch.deleteMessageFn = ch.deleteMessageAPI
+	ch.sendMediaPartFn = ch.sendMediaPart
+	ch.sendTextFn = ch.sendText
 	ch.progress = channels.NewToolFeedbackAnimator(ch.EditMessage)
 	ch.SetOwner(ch)
 	return ch, nil
@@ -497,8 +501,16 @@ func (c *FeishuChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 		return nil, fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
 	}
 
+	caption := firstMediaCaption(msg.Parts)
+	sentAny := false
 	for _, part := range msg.Parts {
-		if err := c.sendMediaPart(ctx, msg.ChatID, part, store); err != nil {
+		if err := c.sendMediaPartFn(ctx, msg.ChatID, part, store); err != nil {
+			return nil, err
+		}
+		sentAny = true
+	}
+	if sentAny && caption != "" {
+		if _, err := c.sendTextFn(ctx, msg.ChatID, caption); err != nil {
 			return nil, err
 		}
 	}
@@ -555,6 +567,15 @@ func (c *FeishuChannel) sendMediaPart(
 		return fmt.Errorf("feishu send media: %w", channels.ErrTemporary)
 	}
 	return nil
+}
+
+func firstMediaCaption(parts []bus.MediaPart) string {
+	for _, part := range parts {
+		if caption := strings.TrimSpace(part.Caption); caption != "" {
+			return caption
+		}
+	}
+	return ""
 }
 
 // --- Inbound message handling ---

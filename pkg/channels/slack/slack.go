@@ -29,6 +29,8 @@ type SlackChannel struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	pendingAcks  sync.Map
+	uploadFileFn func(context.Context, slack.UploadFileV2Parameters) error
+	postTextFn   func(context.Context, string, string, string) error
 }
 
 type slackMessageRef struct {
@@ -63,6 +65,18 @@ func NewSlackChannel(
 		config:       cfg,
 		api:          api,
 		socketClient: socketClient,
+		uploadFileFn: func(ctx context.Context, params slack.UploadFileV2Parameters) error {
+			_, err := api.UploadFileV2Context(ctx, params)
+			return err
+		},
+		postTextFn: func(ctx context.Context, channelID, threadTS, text string) error {
+			opts := []slack.MsgOption{slack.MsgOptionText(text, false)}
+			if threadTS != "" {
+				opts = append(opts, slack.MsgOptionTS(threadTS))
+			}
+			_, _, err := api.PostMessageContext(ctx, channelID, opts...)
+			return err
+		},
 	}, nil
 }
 
@@ -171,6 +185,8 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 		return nil, fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
 	}
 
+	caption := slackFirstMediaCaption(msg.Parts)
+	sentAny := false
 	for _, part := range msg.Parts {
 		localPath, err := store.Resolve(part.Ref)
 		if err != nil {
@@ -191,7 +207,7 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 			title = filename
 		}
 
-		_, err = c.api.UploadFileV2Context(ctx, slack.UploadFileV2Parameters{
+		err = c.uploadFileFn(ctx, slack.UploadFileV2Parameters{
 			Channel:         channelID,
 			ThreadTimestamp: threadTS,
 			File:            localPath,
@@ -205,11 +221,27 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 			})
 			return nil, fmt.Errorf("slack send media: %w", channels.ErrTemporary)
 		}
+		sentAny = true
+	}
+
+	if sentAny && caption != "" {
+		if err := c.postTextFn(ctx, channelID, threadTS, caption); err != nil {
+			return nil, fmt.Errorf("slack send media caption fallback: %w", channels.ErrTemporary)
+		}
 	}
 
 	// UploadFileV2 does not expose the posted message timestamp in its
 	// response; returning nil avoids conflating file IDs with message IDs.
 	return nil, nil
+}
+
+func slackFirstMediaCaption(parts []bus.MediaPart) string {
+	for _, part := range parts {
+		if caption := strings.TrimSpace(part.Caption); caption != "" {
+			return caption
+		}
+	}
+	return ""
 }
 
 // ReactToMessage implements channels.ReactionCapable.
