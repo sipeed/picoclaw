@@ -10,7 +10,7 @@ var internalChannels = map[string]struct{}{
 }
 
 // IsInternalChannel returns true if the channel is an internal channel.
-func IsInternalChannel(channel string) bool {
-	_, found := internalChannels[channel]
+func IsInternalChannel(channelType string) bool {
+	_, found := internalChannels[channelType]
 	return found
 }

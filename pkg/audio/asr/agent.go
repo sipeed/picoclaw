@@ -238,10 +238,11 @@ func (a *Agent) processUtterance(ctx context.Context, acc *speechAccumulator) {
 
 	if err := a.bus.PublishInbound(ctx, bus.InboundMessage{
 		Context: bus.InboundContext{
-			Channel:  channelType,
-			ChatID:   acc.chatID,
-			ChatType: "channel",
-			SenderID: acc.speakerID,
+			Channel:     channelType,
+			ChannelType: channelType,
+			ChatID:      acc.chatID,
+			ChatType:    "channel",
+			SenderID:    acc.speakerID,
 			Raw: map[string]string{
 				"is_voice": "true",
 			},

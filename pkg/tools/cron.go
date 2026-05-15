@@ -12,6 +12,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/cron"
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -25,6 +26,7 @@ type JobExecutor interface {
 
 // CronTool provides scheduling capabilities for the agent
 type CronTool struct {
+	cfg          *config.Config
 	cronService  *cron.CronService
 	executor     JobExecutor
 	msgBus       *bus.MessageBus
@@ -59,6 +61,7 @@ func NewCronTool(
 		execTool.SetTimeout(execTimeout)
 	}
 	return &CronTool{
+		cfg:          config,
 		cronService:  cronService,
 		executor:     executor,
 		msgBus:       msgBus,
@@ -201,7 +204,22 @@ func (t *CronTool) addJob(ctx context.Context, args map[string]any) *ToolResult 
 		if !t.execEnabled {
 			return ErrorResult("command execution is disabled")
 		}
-		if !constants.IsInternalChannel(channel) {
+
+		var channelType string
+		if t.cfg != nil {
+			if ch := t.cfg.Channels.Get(channel); ch != nil {
+				channelType = ch.Type
+			}
+		}
+		// Fallback: if channelType is not determined from config, use channelName
+		if channelType == "" {
+			channelType = channel
+			logger.DebugCF("cron", "Channel type not found in config, falling back to name", map[string]any{
+				"channel_name": channel,
+			})
+		}
+
+		if !constants.IsInternalChannel(channelType) {
 			return ErrorResult("scheduling command execution is restricted to internal channels")
 		}
 		if !t.allowCommand && !commandConfirm {

@@ -104,6 +104,7 @@ func NewOneBotChannel(
 	base := channels.NewBaseChannel("onebot", cfg, messageBus, bc.AllowFrom,
 		channels.WithGroupTrigger(bc.GroupTrigger),
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
+		channels.WithChannelType(bc.Type),
 	)
 
 	const dedupSize = 1024

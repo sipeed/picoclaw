@@ -122,6 +122,7 @@ func NewChannel(bc *config.Channel, cfg *config.WeComSettings, messageBus *bus.M
 		messageBus,
 		bc.AllowFrom,
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
+		channels.WithChannelType(bc.Type),
 	)
 
 	ch := &WeComChannel{

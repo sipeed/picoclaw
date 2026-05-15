@@ -45,6 +45,7 @@ func NewVKChannel(channelName string, bc *config.Channel, bus *bus.MessageBus) (
 		channels.WithMaxMessageLength(4000),
 		channels.WithGroupTrigger(bc.GroupTrigger),
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
+		channels.WithChannelType(bc.Type),
 	)
 
 	return &VKChannel{

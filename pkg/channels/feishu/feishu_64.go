@@ -63,6 +63,7 @@ func NewFeishuChannel(bc *config.Channel, cfg *config.FeishuSettings, bus *bus.M
 	base := channels.NewBaseChannel("feishu", cfg, bus, bc.AllowFrom,
 		channels.WithGroupTrigger(bc.GroupTrigger),
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
+		channels.WithChannelType(bc.Type),
 	)
 
 	tc := newTokenCache()
