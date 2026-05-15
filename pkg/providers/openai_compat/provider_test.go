@@ -1195,6 +1195,168 @@ func TestProviderChatStream_CustomHeadersInjected(t *testing.T) {
 	}
 }
 
+func TestProviderChatStream_ParsesReasoningContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"Let me \",\"content\":\"Checking \",\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\"}}]}}]}\n\n",
+		))
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"think step by step.\",\"content\":\"the weather\",\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"Hangzhou\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":6,\"total_tokens\":16}}\n\n",
+		))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "weather?"}},
+		nil,
+		"deepseek-v4-flash",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+	if out.Content != "Checking the weather" {
+		t.Fatalf("Content = %q, want %q", out.Content, "Checking the weather")
+	}
+	if out.ReasoningContent != "Let me think step by step." {
+		t.Fatalf("ReasoningContent = %q, want %q", out.ReasoningContent, "Let me think step by step.")
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].ID != "call_1" {
+		t.Fatalf("ToolCalls[0].ID = %q, want %q", out.ToolCalls[0].ID, "call_1")
+	}
+	if out.ToolCalls[0].Name != "get_weather" {
+		t.Fatalf("ToolCalls[0].Name = %q, want %q", out.ToolCalls[0].Name, "get_weather")
+	}
+	if out.ToolCalls[0].Arguments["city"] != "Hangzhou" {
+		t.Fatalf("ToolCalls[0].Arguments[city] = %v, want %q", out.ToolCalls[0].Arguments["city"], "Hangzhou")
+	}
+	if out.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want %q", out.FinishReason, "tool_calls")
+	}
+	if out.Usage == nil || out.Usage.TotalTokens != 16 {
+		t.Fatalf("Usage = %#v, want total tokens 16", out.Usage)
+	}
+}
+
+func TestProviderChatStream_ParsesMultilineSSEEvent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\n" +
+				"data: \"content\":\"Hello\",\"reasoning_content\":\"Thinking\",\n" +
+				"data: \"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"message\\\":\\\"hello\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}],\n" +
+				"data: \"usage\":{\"prompt_tokens\":3,\"completion_tokens\":4,\"total_tokens\":7}}\n\n",
+		))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "say hello"}},
+		nil,
+		"gpt-4o",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+	if out.Content != "Hello" {
+		t.Fatalf("Content = %q, want %q", out.Content, "Hello")
+	}
+	if out.ReasoningContent != "Thinking" {
+		t.Fatalf("ReasoningContent = %q, want %q", out.ReasoningContent, "Thinking")
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "echo" {
+		t.Fatalf("ToolCalls[0].Name = %q, want %q", out.ToolCalls[0].Name, "echo")
+	}
+	if out.ToolCalls[0].Arguments["message"] != "hello" {
+		t.Fatalf("ToolCalls[0].Arguments[message] = %v, want %q", out.ToolCalls[0].Arguments["message"], "hello")
+	}
+	if out.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want %q", out.FinishReason, "tool_calls")
+	}
+	if out.Usage == nil || out.Usage.TotalTokens != 7 {
+		t.Fatalf("Usage = %#v, want total tokens 7", out.Usage)
+	}
+}
+
+func TestProviderChatStream_ParsesReasoningVariants(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"reasoning\":\"step 1\",\"reasoning_details\":[{\"format\":\"text\",\"index\":0,\"type\":\"summary\",\"text\":\"first\"}]}}]}\n\n",
+		))
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"reasoning\":\" + step 2\",\"reasoning_details\":[{\"format\":\"text\",\"index\":1,\"type\":\"summary\",\"text\":\"second\"}],\"content\":\"done\"},\"finish_reason\":\"stop\"}]}\n\n",
+		))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "think"}},
+		nil,
+		"gpt-4o",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+	if out.Content != "done" {
+		t.Fatalf("Content = %q, want %q", out.Content, "done")
+	}
+	if out.Reasoning != "step 1 + step 2" {
+		t.Fatalf("Reasoning = %q, want %q", out.Reasoning, "step 1 + step 2")
+	}
+	if len(out.ReasoningDetails) != 2 {
+		t.Fatalf("len(ReasoningDetails) = %d, want 2", len(out.ReasoningDetails))
+	}
+	if out.ReasoningDetails[0].Text != "first" || out.ReasoningDetails[1].Text != "second" {
+		t.Fatalf("ReasoningDetails = %#v, want texts first/second", out.ReasoningDetails)
+	}
+}
+
+func TestProviderChatStream_InvalidEventReturnsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[\n\n"))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	_, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"gpt-4o",
+		nil,
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected error for malformed stream event")
+	}
+	if !strings.Contains(err.Error(), "failed to decode stream event") {
+		t.Fatalf("error = %v, want decode stream event error", err)
+	}
+}
+
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
