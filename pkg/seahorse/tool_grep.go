@@ -131,6 +131,21 @@ func (t *GrepTool) Execute(ctx context.Context, args map[string]any) *tools.Tool
 	if allConv, ok := args["all_conversations"].(bool); ok {
 		input.AllConversations = allConv
 	}
+	if !input.AllConversations {
+		conversationID, found, err := t.engine.ConversationIDForSession(ctx, tools.ToolSessionKey(ctx))
+		if err != nil {
+			return tools.ErrorResult("Grep failed: resolve current conversation: " + err.Error())
+		}
+		if !found {
+			return grepJSONResult(&GrepResult{
+				Success:   true,
+				Summaries: make([]GrepSummaryResult, 0),
+				Messages:  make([]GrepMessageResult, 0),
+				Hint:      "No current conversation found for this session. Use all_conversations: true to search across conversations.",
+			})
+		}
+		input.ConversationID = conversationID
+	}
 	if limit, ok := args["limit"].(float64); ok {
 		input.Limit = int(limit)
 	}
@@ -155,7 +170,10 @@ func (t *GrepTool) Execute(ctx context.Context, args map[string]any) *tools.Tool
 		return tools.ErrorResult("Grep failed: " + err.Error())
 	}
 
-	// Build response
+	return grepJSONResult(result)
+}
+
+func grepJSONResult(result *GrepResult) *tools.ToolResult {
 	output := map[string]any{
 		"success":   result.Success,
 		"summaries": result.Summaries,

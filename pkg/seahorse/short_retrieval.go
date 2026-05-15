@@ -44,6 +44,7 @@ type GrepInput struct {
 	Pattern          string     `json:"pattern"`
 	Scope            string     `json:"scope,omitempty"` // "both" (default), "summary", or "message"
 	Role             string     `json:"role,omitempty"`  // "user", "assistant", or "" (all)
+	ConversationID   int64      `json:"conversationId,omitempty"`
 	AllConversations bool       `json:"allConversations,omitempty"`
 	Since            *time.Time `json:"since,omitempty"`
 	Before           *time.Time `json:"before,omitempty"`
@@ -84,8 +85,9 @@ type GrepMessageResult struct {
 
 // ExpandMessagesResult contains expanded messages.
 type ExpandMessagesResult struct {
-	Messages   []Message `json:"messages"`
-	TokenCount int       `json:"tokenCount"`
+	Messages           []Message `json:"messages"`
+	RejectedMessageIDs []int64   `json:"rejectedMessageIds,omitempty"`
+	TokenCount         int       `json:"tokenCount"`
 }
 
 // Grep searches summaries and messages for matching content.
@@ -120,6 +122,7 @@ func (r *RetrievalEngine) Grep(ctx context.Context, input GrepInput) (*GrepResul
 		Pattern:          input.Pattern,
 		Mode:             mode,
 		Role:             input.Role,
+		ConversationID:   input.ConversationID,
 		AllConversations: input.AllConversations,
 		Since:            since,
 		Before:           input.Before,
@@ -193,8 +196,43 @@ func (r *RetrievalEngine) Grep(ctx context.Context, input GrepInput) (*GrepResul
 	return result, nil
 }
 
+// ConversationIDForSession returns the storage conversation ID for a session key.
+func (r *RetrievalEngine) ConversationIDForSession(ctx context.Context, sessionKey string) (int64, bool, error) {
+	if strings.TrimSpace(sessionKey) == "" {
+		return 0, false, nil
+	}
+	conv, err := r.store.GetConversationBySessionKey(ctx, sessionKey)
+	if err != nil {
+		return 0, false, err
+	}
+	if conv == nil {
+		return 0, false, nil
+	}
+	return conv.ConversationID, true, nil
+}
+
 // ExpandMessages retrieves full message content by IDs.
 func (r *RetrievalEngine) ExpandMessages(ctx context.Context, messageIDs []int64) (*ExpandMessagesResult, error) {
+	return r.expandMessages(ctx, messageIDs, 0, true)
+}
+
+// ExpandMessagesScoped retrieves full message content by IDs, restricted to a conversation
+// unless allConversations is true.
+func (r *RetrievalEngine) ExpandMessagesScoped(
+	ctx context.Context,
+	messageIDs []int64,
+	conversationID int64,
+	allConversations bool,
+) (*ExpandMessagesResult, error) {
+	return r.expandMessages(ctx, messageIDs, conversationID, allConversations)
+}
+
+func (r *RetrievalEngine) expandMessages(
+	ctx context.Context,
+	messageIDs []int64,
+	conversationID int64,
+	allConversations bool,
+) (*ExpandMessagesResult, error) {
 	result := &ExpandMessagesResult{
 		Messages: make([]Message, 0, len(messageIDs)),
 	}
@@ -202,6 +240,11 @@ func (r *RetrievalEngine) ExpandMessages(ctx context.Context, messageIDs []int64
 	for _, msgID := range messageIDs {
 		msg, err := r.store.GetMessageByID(ctx, msgID)
 		if err != nil {
+			result.RejectedMessageIDs = append(result.RejectedMessageIDs, msgID)
+			continue
+		}
+		if !allConversations && (conversationID <= 0 || msg.ConversationID != conversationID) {
+			result.RejectedMessageIDs = append(result.RejectedMessageIDs, msgID)
 			continue
 		}
 		result.Messages = append(result.Messages, *msg)
