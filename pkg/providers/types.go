@@ -8,18 +8,21 @@ import (
 )
 
 type (
-	ToolCall               = protocoltypes.ToolCall
-	FunctionCall           = protocoltypes.FunctionCall
-	LLMResponse            = protocoltypes.LLMResponse
-	UsageInfo              = protocoltypes.UsageInfo
-	Message                = protocoltypes.Message
-	ToolDefinition         = protocoltypes.ToolDefinition
-	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
-	ExtraContent           = protocoltypes.ExtraContent
-	GoogleExtra            = protocoltypes.GoogleExtra
-	ContentBlock           = protocoltypes.ContentBlock
-	CacheControl           = protocoltypes.CacheControl
-	Attachment             = protocoltypes.Attachment
+	ToolCall                = protocoltypes.ToolCall
+	FunctionCall            = protocoltypes.FunctionCall
+	LLMResponse             = protocoltypes.LLMResponse
+	UsageInfo               = protocoltypes.UsageInfo
+	Message                 = protocoltypes.Message
+	ToolDefinition          = protocoltypes.ToolDefinition
+	ToolFunctionDefinition  = protocoltypes.ToolFunctionDefinition
+	ExtraContent            = protocoltypes.ExtraContent
+	GoogleExtra             = protocoltypes.GoogleExtra
+	ContentBlock            = protocoltypes.ContentBlock
+	CacheControl            = protocoltypes.CacheControl
+	Attachment              = protocoltypes.Attachment
+	ImageGenerationRequest  = protocoltypes.ImageGenerationRequest
+	GeneratedImage          = protocoltypes.GeneratedImage
+	ImageGenerationResponse = protocoltypes.ImageGenerationResponse
 )
 
 type LLMProvider interface {
@@ -66,6 +69,17 @@ type ThinkingCapable interface {
 // avoid duplicate search surfaces and use the provider's native search instead.
 type NativeSearchCapable interface {
 	SupportsNativeSearch() bool
+}
+
+// ImageGenerationCapable is an optional interface for providers that can
+// generate raster images outside the normal chat inference loop. Core tools can
+// use this to reuse provider-owned auth/client behavior while keeping channel
+// media delivery in the agent runtime.
+type ImageGenerationCapable interface {
+	SupportsImageGeneration() bool
+	ImageGenerationProviderID() string
+	DefaultImageGenerationModel() string
+	GenerateImage(ctx context.Context, req ImageGenerationRequest) (*ImageGenerationResponse, error)
 }
 
 // FailoverReason classifies why an LLM request failed for fallback decisions.

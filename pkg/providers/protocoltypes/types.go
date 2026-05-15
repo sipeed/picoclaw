@@ -78,6 +78,25 @@ type Attachment struct {
 	ContentType string `json:"content_type,omitempty"`
 }
 
+type ImageGenerationRequest struct {
+	Prompt       string
+	Model        string
+	Size         string
+	Quality      string
+	OutputFormat string
+	Count        int
+}
+
+type GeneratedImage struct {
+	Data     []byte
+	MimeType string
+	Ext      string
+}
+
+type ImageGenerationResponse struct {
+	Images []GeneratedImage
+}
+
 type Message struct {
 	Role             string         `json:"role"`
 	Content          string         `json:"content"`

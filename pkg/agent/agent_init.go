@@ -231,6 +231,11 @@ func registerSharedTools(
 			agent.Tools.Register(loadImageTool)
 		}
 
+		if cfg.Tools.IsToolEnabled("image_generate") {
+			imageModel := cfg.Tools.ImageGenerate.EffectiveModel(cfg.Agents.Defaults)
+			agent.Tools.Register(tools.NewImageGenerateTool(agent.Workspace, imageModel, nil))
+		}
+
 		// Skill discovery and installation tools
 		skills_enabled := cfg.Tools.IsToolEnabled("skills")
 		find_skills_enable := cfg.Tools.IsToolEnabled("find_skills")

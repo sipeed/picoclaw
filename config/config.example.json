@@ -442,6 +442,10 @@
     "i2c": {
       "enabled": false
     },
+    "image_generate": {
+      "enabled": false,
+      "model": "openai-codex/gpt-image-2"
+    },
     "install_skill": {
       "enabled": true
     },
