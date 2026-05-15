@@ -133,7 +133,11 @@ func TestTirithGuard_DoesNotCacheFailedResolution(t *testing.T) {
 
 	require.Empty(t, tirithGuard(context.Background(), "echo first", "", cfg))
 
-	writeExecutableFile(t, bin, fakeTirithScript(`printf '{"findings":[{"severity":"HIGH","title":"later install"}]}'`+"\nexit 1\n"))
+	writeExecutableFile(
+		t,
+		bin,
+		fakeTirithScript(`printf '{"findings":[{"severity":"HIGH","title":"later install"}]}'`+"\nexit 1\n"),
+	)
 	got := tirithGuard(context.Background(), "echo second", "", cfg)
 	require.Contains(t, got, "Command blocked by Tirith")
 	require.Contains(t, got, "later install")
@@ -151,7 +155,12 @@ exit 0
 `))
 	t.Setenv("TIRITH_ARGS_FILE", argsFile)
 
-	got := tirithGuard(context.Background(), "echo hello", "", TirithConfig{Enabled: true, BinPath: bin, Timeout: 5, FailOpen: false})
+	got := tirithGuard(
+		context.Background(),
+		"echo hello",
+		"",
+		TirithConfig{Enabled: true, BinPath: bin, Timeout: 5, FailOpen: false},
+	)
 	require.Empty(t, got)
 
 	argsData, err := os.ReadFile(argsFile)
@@ -201,7 +210,12 @@ exit 0
 	t.Setenv("GOOGLE_SAFE_BROWSING_API_KEY", "gsb-secret")
 	t.Setenv("ABUSECH_AUTH_KEY", "abusech-secret")
 
-	got := tirithGuard(context.Background(), "echo hello", "", TirithConfig{Enabled: true, BinPath: bin, Timeout: 5, FailOpen: false})
+	got := tirithGuard(
+		context.Background(),
+		"echo hello",
+		"",
+		TirithConfig{Enabled: true, BinPath: bin, Timeout: 5, FailOpen: false},
+	)
 	require.Empty(t, got)
 
 	data, err := os.ReadFile(envFile)
@@ -235,10 +249,11 @@ func TestTirithGuard_UsesCommandWorkingDirectory(t *testing.T) {
 pwd > "$TIRITH_PWD_FILE"
 printf '{"findings":[]}'
 exit 0
-`))
+	`))
 	t.Setenv("TIRITH_PWD_FILE", pwdFile)
 
-	got := tirithGuard(context.Background(), "echo hello", cwd, TirithConfig{Enabled: true, BinPath: bin, Timeout: 5, FailOpen: false})
+	cfg := TirithConfig{Enabled: true, BinPath: bin, Timeout: 5, FailOpen: false}
+	got := tirithGuard(context.Background(), "echo hello", cwd, cfg)
 	require.Empty(t, got)
 
 	data, err := os.ReadFile(pwdFile)
@@ -269,8 +284,12 @@ func TestTirithGuard_ExitCodes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			bin := filepath.Join(t.TempDir(), "tirith")
-			writeExecutableFile(t, bin, fakeTirithScript(`printf '{"findings":[{"severity":"HIGH","title":"Pipe to shell"}]}'`+"\nexit "+itoa(tt.exitCode)+"\n"))
-			got := tirithGuard(context.Background(), "echo hello", "", TirithConfig{Enabled: true, BinPath: bin, Timeout: 5, FailOpen: tt.failOpen})
+			script := `printf '{"findings":[{"severity":"HIGH","title":"Pipe to shell"}]}'` +
+				"\nexit " + itoa(tt.exitCode) + "\n"
+			writeExecutableFile(t, bin, fakeTirithScript(script))
+
+			cfg := TirithConfig{Enabled: true, BinPath: bin, Timeout: 5, FailOpen: tt.failOpen}
+			got := tirithGuard(context.Background(), "echo hello", "", cfg)
 			if tt.wantBlock {
 				require.NotEmpty(t, got)
 				require.Contains(t, got, tt.wantText)
@@ -287,7 +306,8 @@ func TestTirithGuard_InvalidJSONKeepsExitVerdict(t *testing.T) {
 	bin := filepath.Join(t.TempDir(), "tirith")
 	writeExecutableFile(t, bin, fakeTirithScript("printf 'not json'\nexit 1\n"))
 
-	got := tirithGuard(context.Background(), "echo hello", "", TirithConfig{Enabled: true, BinPath: bin, Timeout: 5, FailOpen: false})
+	cfg := TirithConfig{Enabled: true, BinPath: bin, Timeout: 5, FailOpen: false}
+	got := tirithGuard(context.Background(), "echo hello", "", cfg)
 	require.Contains(t, got, "Command blocked by Tirith")
 	require.Contains(t, got, "details unavailable")
 }
@@ -298,14 +318,16 @@ func TestTirithGuard_TimeoutUsesFailOpen(t *testing.T) {
 	bin := filepath.Join(t.TempDir(), "tirith")
 	writeExecutableFile(t, bin, fakeTirithScript("sleep 2\nexit 0\n"))
 
-	require.Empty(t, tirithGuard(context.Background(), "echo hello", "", TirithConfig{Enabled: true, BinPath: bin, Timeout: 1, FailOpen: true}))
+	cfg := TirithConfig{Enabled: true, BinPath: bin, Timeout: 1, FailOpen: true}
+	require.Empty(t, tirithGuard(context.Background(), "echo hello", "", cfg))
 
-	got := tirithGuard(context.Background(), "echo hello", "", TirithConfig{Enabled: true, BinPath: bin, Timeout: 1, FailOpen: false})
+	cfg.FailOpen = false
+	got := tirithGuard(context.Background(), "echo hello", "", cfg)
 	require.Contains(t, got, "fail-closed")
 	require.Contains(t, got, "timed out")
 }
 
-func TestTirithGuard_TimeoutKillsProcessTree(t *testing.T) {
+func TestRunTirithCommand_CancelKillsProcessTree(t *testing.T) {
 	skipWindowsProcessTest(t)
 
 	childPIDFile := filepath.Join(t.TempDir(), "child.pid")
@@ -318,8 +340,34 @@ wait
 	t.Setenv("TIRITH_CHILD_PID_FILE", childPIDFile)
 
 	start := time.Now()
-	require.Empty(t, tirithGuard(context.Background(), "echo hello", "", TirithConfig{Enabled: true, BinPath: bin, Timeout: 1, FailOpen: true}))
-	require.Less(t, time.Since(start), 5*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cmd := exec.Command(bin)
+	cmd.Env = append(os.Environ(), "TIRITH_CHILD_PID_FILE="+childPIDFile)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runTirithCommand(ctx, cmd)
+	}()
+
+	require.Eventually(t, func() bool {
+		_, err := os.Stat(childPIDFile)
+		return err == nil
+	}, 5*time.Second, 100*time.Millisecond)
+
+	cancel()
+	var runErr error
+	require.Eventually(t, func() bool {
+		select {
+		case runErr = <-errCh:
+			return true
+		default:
+			return false
+		}
+	}, 5*time.Second, 100*time.Millisecond)
+	require.Error(t, runErr)
+	require.Less(t, time.Since(start), 7*time.Second)
 
 	data, err := os.ReadFile(childPIDFile)
 	require.NoError(t, err)

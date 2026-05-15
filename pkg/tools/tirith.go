@@ -1,4 +1,4 @@
-// Tirith pre-exec security scanning.
+// Package tools integrates Tirith pre-exec security scanning.
 //
 // Tirith (https://github.com/sheeki03/tirith) is a terminal security tool
 // that scans commands for content-level threats: homograph/punycode URLs,
@@ -238,23 +238,30 @@ func tirithHandleExit(exitCode int, jsonOutput []byte, cfg TirithConfig) string 
 		log.Printf("[tirith] warning: %s", tirithSummarize(jsonOutput))
 		return ""
 	case 3:
-		log.Printf("[tirith] warning acknowledgement required; allowing in non-interactive mode: %s", tirithSummarize(jsonOutput))
+		log.Printf(
+			"[tirith] warning acknowledgement required; allowing in non-interactive mode: %s",
+			tirithSummarize(jsonOutput),
+		)
 		return ""
 	default:
-		return tirithScannerFailure(normalizeTirithBin(cfg.BinPath), cfg, fmt.Errorf("unexpected exit code %d", exitCode))
+		return tirithScannerFailure(
+			normalizeTirithBin(cfg.BinPath),
+			cfg,
+			fmt.Errorf("unexpected exit code %d", exitCode),
+		)
 	}
 }
 
 func tirithScannerFailure(cacheKey string, cfg TirithConfig, err error) string {
 	message := tirithSanitizeText(err.Error())
 	if cfg.FailOpen {
-		tirithLogOnce(cacheKey, "scanner-failure", "[tirith] unavailable (fail-open): %s", message)
+		tirithLogOncef(cacheKey, "scanner-failure", "[tirith] unavailable (fail-open): %s", message)
 		return ""
 	}
 	return fmt.Sprintf("Tirith security scan failed (fail-closed): %s", message)
 }
 
-func tirithLogOnce(cacheKey, category, format string, args ...any) {
+func tirithLogOncef(cacheKey, category, format string, args ...any) {
 	cacheKey = normalizeTirithBin(cacheKey)
 	key := cacheKey + "\x00" + category + "\x00" + fmt.Sprintf(format, args...)
 
