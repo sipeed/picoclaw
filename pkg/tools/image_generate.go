@@ -24,6 +24,7 @@ const (
 type ImageGenerateTool struct {
 	workspace  string
 	model      string
+	outputDir  string
 	provider   providers.ImageGenerationCapable
 	resolver   ImageGenerationProviderResolver
 	mediaStore media.MediaStore
@@ -46,6 +47,12 @@ func WithImageGenerationProviderResolver(resolver ImageGenerationProviderResolve
 		if resolver != nil {
 			t.resolver = resolver
 		}
+	}
+}
+
+func WithImageGenerationOutputDir(outputDir string) ImageGenerateToolOption {
+	return func(t *ImageGenerateTool) {
+		t.outputDir = strings.TrimSpace(outputDir)
 	}
 }
 
@@ -158,7 +165,7 @@ func (t *ImageGenerateTool) Execute(ctx context.Context, args map[string]any) *T
 	paths := make([]string, 0, len(images))
 	scope := t.mediaScope(ctx)
 	for i, image := range images {
-		path, err := writeGeneratedImage(image, i)
+		path, err := t.writeGeneratedImage(image, i)
 		if err != nil {
 			return ErrorResult(fmt.Sprintf("failed to write generated image: %v", err)).WithError(err)
 		}
@@ -184,8 +191,8 @@ func (t *ImageGenerateTool) Execute(ctx context.Context, args map[string]any) *T
 	return result
 }
 
-func writeGeneratedImage(image providers.GeneratedImage, index int) (string, error) {
-	dir := filepath.Join(media.TempDir(), "image_generate")
+func (t *ImageGenerateTool) writeGeneratedImage(image providers.GeneratedImage, index int) (string, error) {
+	dir := t.effectiveOutputDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
@@ -195,6 +202,28 @@ func writeGeneratedImage(image providers.GeneratedImage, index int) (string, err
 		return "", err
 	}
 	return path, nil
+}
+
+func (t *ImageGenerateTool) effectiveOutputDir() string {
+	if dir := strings.TrimSpace(t.outputDir); dir != "" {
+		dir = os.ExpandEnv(dir)
+		if strings.HasPrefix(dir, "~/") || dir == "~" {
+			if home, err := os.UserHomeDir(); err == nil && home != "" {
+				if dir == "~" {
+					return home
+				}
+				return filepath.Join(home, strings.TrimPrefix(dir, "~/"))
+			}
+		}
+		if filepath.IsAbs(dir) {
+			return filepath.Clean(dir)
+		}
+		if t.workspace != "" {
+			return filepath.Join(t.workspace, dir)
+		}
+		return filepath.Clean(dir)
+	}
+	return filepath.Join(media.TempDir(), "image_generate")
 }
 
 func (t *ImageGenerateTool) mediaScope(ctx context.Context) string {

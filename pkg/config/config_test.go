@@ -531,7 +531,8 @@ func TestLoadConfig_ImageGenerateModel(t *testing.T) {
 		"tools": {
 			"image_generate": {
 				"enabled": true,
-				"model": "openai-codex/gpt-image-2"
+				"model": "openai-codex/gpt-image-2",
+				"output_dir": "tmp/generated-images"
 			}
 		}
 	}`
@@ -548,6 +549,9 @@ func TestLoadConfig_ImageGenerateModel(t *testing.T) {
 	}
 	if got := cfg.Tools.ImageGenerate.Model; got != "openai-codex/gpt-image-2" {
 		t.Fatalf("cfg.Tools.ImageGenerate.Model = %q, want openai-codex/gpt-image-2", got)
+	}
+	if got := cfg.Tools.ImageGenerate.OutputDir; got != "tmp/generated-images" {
+		t.Fatalf("cfg.Tools.ImageGenerate.OutputDir = %q, want tmp/generated-images", got)
 	}
 }
 

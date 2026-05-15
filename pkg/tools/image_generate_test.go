@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/media"
@@ -57,5 +59,33 @@ func TestImageGenerateToolCanUseInjectedProvider(t *testing.T) {
 	}
 	if len(result.Media) != 1 {
 		t.Fatalf("media refs = %d, want 1", len(result.Media))
+	}
+}
+
+func TestImageGenerateToolUsesConfiguredOutputDir(t *testing.T) {
+	store := media.NewFileMediaStore()
+	provider := &fakeImageGenerationProvider{id: "test-provider"}
+	workspace := t.TempDir()
+	tool := NewImageGenerateTool(
+		workspace,
+		"custom-image-model",
+		store,
+		WithImageGenerationProvider(provider),
+		WithImageGenerationOutputDir("tmp/generated-images"),
+	)
+
+	result := tool.Execute(
+		WithToolContext(t.Context(), "telegram", "chat-1"),
+		map[string]any{"prompt": "make a tiny icon"},
+	)
+	if result.IsError {
+		t.Fatalf("Execute returned error: %s", result.ContentForLLM())
+	}
+	if len(result.ArtifactTags) != 1 {
+		t.Fatalf("artifact tags = %d, want 1", len(result.ArtifactTags))
+	}
+	wantPrefix := "[file:" + filepath.Join(workspace, "tmp", "generated-images") + string(filepath.Separator)
+	if !strings.HasPrefix(result.ArtifactTags[0], wantPrefix) {
+		t.Fatalf("artifact path = %q, want prefix %q", result.ArtifactTags[0], wantPrefix)
 	}
 }

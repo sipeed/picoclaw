@@ -823,7 +823,8 @@ type ToolConfig struct {
 
 type ImageGenerateToolsConfig struct {
 	ToolConfig `       yaml:"-" envPrefix:"PICOCLAW_TOOLS_IMAGE_GENERATE_"`
-	Model      string `yaml:"-"                                            json:"model,omitempty" env:"PICOCLAW_TOOLS_IMAGE_GENERATE_MODEL"`
+	Model      string `yaml:"-"                                            json:"model,omitempty"      env:"PICOCLAW_TOOLS_IMAGE_GENERATE_MODEL"`
+	OutputDir  string `yaml:"-"                                            json:"output_dir,omitempty" env:"PICOCLAW_TOOLS_IMAGE_GENERATE_OUTPUT_DIR"`
 }
 
 func (c ImageGenerateToolsConfig) EffectiveModel(defaults AgentDefaults) string {
