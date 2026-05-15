@@ -1,4 +1,5 @@
 {
+  "version": 3,
   "agents": {
     "defaults": {
       "workspace": "~/.picoclaw/workspace",
@@ -33,13 +34,13 @@
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
-      "api_key": "sk-your-openai-key",
+      "api_keys": ["sk-your-openai-key"],
       "api_base": "https://api.openai.com/v1"
     },
     {
       "model_name": "claude-sonnet-4.6",
       "model": "anthropic/claude-sonnet-4.6",
-      "api_key": "sk-ant-your-key",
+      "api_keys": ["sk-ant-your-key"],
       "api_base": "https://api.anthropic.com/v1",
       "thinking_level": "high"
     },
@@ -47,7 +48,7 @@
       "_comment": "Anthropic Messages API - use native format for direct Anthropic API access",
       "model_name": "claude-opus-4-6",
       "model": "anthropic-messages/claude-opus-4-6",
-      "api_key": "sk-ant-your-key",
+      "api_keys": ["sk-ant-your-key"],
       "api_base": "https://api.anthropic.com"
     },
     {
@@ -59,12 +60,12 @@
     {
       "model_name": "deepseek",
       "model": "deepseek/deepseek-chat",
-      "api_key": "sk-your-deepseek-key"
+      "api_keys": ["sk-your-deepseek-key"]
     },
     {
       "model_name": "venice-uncensored",
       "model": "venice/venice-uncensored",
-      "api_key": "your-venice-api-key"
+      "api_keys": ["your-venice-api-key"]
     },
     {
       "model_name": "lmstudio-local",
@@ -73,114 +74,134 @@
     {
       "model_name": "longcat",
       "model": "longcat/LongCat-Flash-Thinking",
-      "api_key": "your-longcat-api-key"
+      "api_keys": ["your-longcat-api-key"]
     },
     {
       "model_name": "modelscope-qwen",
       "model": "modelscope/Qwen/Qwen3-235B-A22B-Instruct-2507",
-      "api_key": "your-modelscope-access-token",
+      "api_keys": ["your-modelscope-access-token"],
       "api_base": "https://api-inference.modelscope.cn/v1"
     },
     {
       "model_name": "azure-gpt5",
       "model": "azure/my-gpt5-deployment",
-      "api_key": "your-azure-api-key",
+      "api_keys": ["your-azure-api-key"],
       "api_base": "https://your-resource.openai.azure.com"
     },
     {
       "model_name": "loadbalanced-gpt-5.4",
       "model": "openai/gpt-5.4",
-      "api_key": "sk-key1",
+      "api_keys": ["sk-key1"],
       "api_base": "https://api1.example.com/v1"
     },
     {
       "model_name": "loadbalanced-gpt-5.4",
       "model": "openai/gpt-5.4",
-      "api_key": "sk-key2",
+      "api_keys": ["sk-key2"],
       "api_base": "https://api2.example.com/v1"
     }
   ],
-  "channels": {
+  "channel_list": {
     "telegram": {
       "enabled": false,
-      "token": "YOUR_TELEGRAM_BOT_TOKEN",
-      "base_url": "",
-      "proxy": "",
+      "type": "telegram",
       "allow_from": ["YOUR_USER_ID"],
-      "use_markdown_v2": false,
       "reasoning_channel_id": "",
-      "streaming": {
-        "enabled": true
+      "settings": {
+        "token": "YOUR_TELEGRAM_BOT_TOKEN",
+        "base_url": "",
+        "proxy": "",
+        "use_markdown_v2": false,
+        "streaming": {
+          "enabled": true
+        }
       }
     },
     "discord": {
       "enabled": false,
-      "token": "YOUR_DISCORD_BOT_TOKEN",
-      "proxy": "",
+      "type": "discord",
       "allow_from": [],
       "group_trigger": {
         "mention_only": false
       },
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "settings": {
+        "token": "YOUR_DISCORD_BOT_TOKEN",
+        "proxy": ""
+      }
     },
     "qq": {
       "enabled": false,
-      "app_id": "YOUR_QQ_APP_ID",
-      "app_secret": "YOUR_QQ_APP_SECRET",
+      "type": "qq",
       "allow_from": [],
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "settings": {
+        "app_id": "YOUR_QQ_APP_ID",
+        "app_secret": "YOUR_QQ_APP_SECRET"
+      }
     },
     "maixcam": {
       "enabled": false,
-      "host": "0.0.0.0",
-      "port": 18790,
+      "type": "maixcam",
       "allow_from": [],
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "settings": {
+        "host": "0.0.0.0",
+        "port": 18790
+      }
     },
     "whatsapp": {
       "enabled": false,
-      "bridge_url": "ws://localhost:3001",
-      "use_native": false,
-      "session_store_path": "",
+      "type": "whatsapp",
       "allow_from": [],
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "settings": {
+        "bridge_url": "ws://localhost:3001",
+        "use_native": false,
+        "session_store_path": ""
+      }
     },
     "feishu": {
       "enabled": false,
-      "app_id": "",
-      "app_secret": "",
-      "encrypt_key": "",
-      "verification_token": "",
+      "type": "feishu",
       "allow_from": [],
+      "reasoning_channel_id": "",
       "placeholder": {
         "enabled": true,
         "text": ["Thinking...", "Processing...", "Typing..."]
       },
-      "reasoning_channel_id": "",
-      "random_reaction_emoji": [],
-      "is_lark": false
+      "settings": {
+        "app_id": "",
+        "app_secret": "",
+        "encrypt_key": "",
+        "verification_token": "",
+        "random_reaction_emoji": [],
+        "is_lark": false
+      }
     },
     "dingtalk": {
       "enabled": false,
-      "client_id": "YOUR_CLIENT_ID",
-      "client_secret": "YOUR_CLIENT_SECRET",
+      "type": "dingtalk",
       "allow_from": [],
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "settings": {
+        "client_id": "YOUR_CLIENT_ID",
+        "client_secret": "YOUR_CLIENT_SECRET"
+      }
     },
     "slack": {
       "enabled": false,
-      "bot_token": "xoxb-YOUR-BOT-TOKEN",
-      "app_token": "xapp-YOUR-APP-TOKEN",
+      "type": "slack",
       "allow_from": [],
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "settings": {
+        "bot_token": "xoxb-YOUR-BOT-TOKEN",
+        "app_token": "xapp-YOUR-APP-TOKEN"
+      }
     },
     "matrix": {
       "enabled": false,
-      "homeserver": "https://matrix.org",
-      "user_id": "@your-bot:matrix.org",
-      "access_token": "YOUR_MATRIX_ACCESS_TOKEN",
-      "device_id": "",
-      "join_on_invite": true,
+      "type": "matrix",
       "allow_from": [],
       "group_trigger": {
         "mention_only": true
@@ -190,68 +211,82 @@
         "text": ["Thinking...", "Processing...", "Typing..."]
       },
       "reasoning_channel_id": "",
-      "crypto_database_path": "",
-      "crypto_passphrase": "YOUR_MATRIX_CRYPTO_PICKLE_KEY"
+      "settings": {
+        "homeserver": "https://matrix.org",
+        "user_id": "@your-bot:matrix.org",
+        "access_token": "YOUR_MATRIX_ACCESS_TOKEN",
+        "device_id": "",
+        "join_on_invite": true,
+        "crypto_database_path": "",
+        "crypto_passphrase": "YOUR_MATRIX_CRYPTO_PICKLE_KEY"
+      }
     },
     "line": {
       "enabled": false,
-      "channel_secret": "YOUR_LINE_CHANNEL_SECRET",
-      "channel_access_token": "YOUR_LINE_CHANNEL_ACCESS_TOKEN",
-      "webhook_path": "/webhook/line",
+      "type": "line",
       "allow_from": [],
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "settings": {
+        "channel_secret": "YOUR_LINE_CHANNEL_SECRET",
+        "channel_access_token": "YOUR_LINE_CHANNEL_ACCESS_TOKEN",
+        "webhook_path": "/webhook/line"
+      }
     },
     "onebot": {
       "enabled": false,
-      "ws_url": "ws://127.0.0.1:3001",
-      "access_token": "",
-      "reconnect_interval": 5,
-      "group_trigger_prefix": [],
+      "type": "onebot",
       "allow_from": [],
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "group_trigger": {
+        "prefixes": []
+      },
+      "settings": {
+        "ws_url": "ws://127.0.0.1:3001",
+        "access_token": "",
+        "reconnect_interval": 5
+      }
     },
     "wecom": {
       "_comment": "WeCom AI Bot over WebSocket.",
       "enabled": false,
-      "bot_id": "YOUR_BOT_ID",
-      "secret": "YOUR_SECRET",
-      "websocket_url": "wss://openws.work.weixin.qq.com",
-      "send_thinking_message": true,
+      "type": "wecom",
       "allow_from": [],
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "settings": {
+        "bot_id": "YOUR_BOT_ID",
+        "secret": "YOUR_SECRET",
+        "websocket_url": "wss://openws.work.weixin.qq.com",
+        "send_thinking_message": true
+      }
     },
     "pico": {
       "enabled": false,
-      "token": "YOUR_PICO_TOKEN",
-      "allow_token_query": false,
-      "allow_origins": [],
-      "ping_interval": 30,
-      "read_timeout": 60,
-      "max_connections": 100,
-      "allow_from": []
+      "type": "pico",
+      "allow_from": [],
+      "settings": {
+        "token": "YOUR_PICO_TOKEN",
+        "allow_token_query": false,
+        "allow_origins": [],
+        "ping_interval": 30,
+        "read_timeout": 60,
+        "max_connections": 100
+      }
     },
     "pico_client": {
       "enabled": false,
-      "url": "wss://remote-pico-server/pico/ws",
-      "token": "YOUR_PICO_TOKEN",
-      "session_id": "",
-      "ping_interval": 30,
-      "read_timeout": 60,
-      "allow_from": []
+      "type": "pico_client",
+      "allow_from": [],
+      "settings": {
+        "url": "wss://remote-pico-server/pico/ws",
+        "token": "YOUR_PICO_TOKEN",
+        "session_id": "",
+        "ping_interval": 30,
+        "read_timeout": 60
+      }
     },
     "irc": {
       "enabled": false,
-      "server": "irc.libera.chat:6697",
-      "tls": true,
-      "nick": "mybot",
-      "user": "",
-      "real_name": "",
-      "password": "",
-      "nickserv_password": "",
-      "sasl_user": "",
-      "sasl_password": "",
-      "channels": ["#mychannel"],
-      "request_caps": ["server-time", "message-tags"],
+      "type": "irc",
       "allow_from": [],
       "group_trigger": {
         "mention_only": true
@@ -259,7 +294,20 @@
       "typing": {
         "enabled": false
       },
-      "reasoning_channel_id": ""
+      "reasoning_channel_id": "",
+      "settings": {
+        "server": "irc.libera.chat:6697",
+        "tls": true,
+        "nick": "mybot",
+        "user": "",
+        "real_name": "",
+        "password": "",
+        "nickserv_password": "",
+        "sasl_user": "",
+        "sasl_password": "",
+        "channels": ["#mychannel"],
+        "request_caps": ["server-time", "message-tags"]
+      }
     }
   },
   "tools": {
@@ -268,7 +316,6 @@
     "web": {
       "enabled": true,
       "prefer_native": true,
-      "fetch_limit_bytes": 10485760,
       "format": "plaintext",
       "brave": {
         "enabled": false,

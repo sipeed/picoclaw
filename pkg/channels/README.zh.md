@@ -790,7 +790,7 @@ channel 特定的设置放在 `settings` 子键中：
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "matrix": {
       "enabled": true,
       "type": "matrix",

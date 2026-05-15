@@ -33,7 +33,7 @@ go run ./examples/pico-echo-server -addr :9090 -token secret
 2. Configure `pico_client` in your `config.json`:
    ```json
    {
-     "channels": {
+     "channel_list": {
        "pico_client": {
          "enabled": true,
          "url": "ws://localhost:9090/ws",

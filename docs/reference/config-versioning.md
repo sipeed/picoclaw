@@ -45,7 +45,8 @@ When you load a config file:
 The `version` field in `config.json` indicates the schema version:
 - `0` or missing: Legacy config (no version field)
 - `1`: Previous version (will be auto-migrated to V2 on load)
-- `2`: Current version
+- `2`: Previous version (will be auto-migrated to V3 on load)
+- `3`: Current version
 
 ```json
 {
@@ -64,8 +65,8 @@ When making breaking changes to the config schema:
 Create a new struct for the new version if the structure changes significantly:
 
 ```go
-// ConfigV2 represents version 2 config structure
-type ConfigV2 struct {
+// ConfigV3 represents version 3 config structure
+type ConfigV3 struct {
     Version   int             `json:"version"`
     Agents    AgentsConfig    `json:"agents"`
     // ... other fields with new structure
@@ -75,7 +76,7 @@ type ConfigV2 struct {
 ### Step 2: Update Current Config Version
 
 ```go
-const CurrentVersion = 2  // Increment this
+const CurrentVersion = 3  // Increment this
 ```
 
 ### Step 3: Add a Loader Function
@@ -141,9 +142,9 @@ Create a test in `config_migration_test.go`:
 
 ```go
 func TestMigrateV2ToV3(t *testing.T) {
-    // Create a version 2 config
-    v2Config := Config{
-        Version: 2,
+    // Create a version 3 config
+    v3Config := Config{
+        Version: 3,
         // ... set up test data
     }
 
@@ -224,7 +225,7 @@ Backups are created in the same directory as your config file:
 
 ### Scenario: Adding a new field with default value
 
-Old config (version 2):
+Old config (version 3):
 ```json
 {
   "version": 3,
