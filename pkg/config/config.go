@@ -370,9 +370,11 @@ type SubTurnConfig struct {
 }
 
 type ToolFeedbackConfig struct {
-	Enabled          bool `json:"enabled"           env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED"`
-	MaxArgsLength    int  `json:"max_args_length"   env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH"`
-	SeparateMessages bool `json:"separate_messages" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_SEPARATE_MESSAGES"`
+	Enabled          bool   `json:"enabled"           env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED"`
+	MaxArgsLength    int    `json:"max_args_length"   env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH"`
+	SeparateMessages bool   `json:"separate_messages" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_SEPARATE_MESSAGES"`
+	Subagents        *bool  `json:"subagents,omitempty"`
+	Style            string `json:"style,omitempty"  env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_STYLE"`
 }
 
 type AgentDefaults struct {
@@ -425,11 +427,22 @@ func (d *AgentDefaults) IsToolFeedbackEnabled() bool {
 	return d.ToolFeedback.Enabled
 }
 
+// IsSubagentToolFeedbackEnabled returns true when subagent turns should publish
+// visible tool feedback. It defaults to true for backward compatibility when
+// tool_feedback itself is enabled.
+func (d *AgentDefaults) IsSubagentToolFeedbackEnabled() bool {
+	return d.ToolFeedback.Subagents == nil || *d.ToolFeedback.Subagents
+}
+
 // IsToolFeedbackSeparateMessagesEnabled returns true when each tool feedback
 // update should be sent as its own chat message instead of editing a single
 // in-place progress message.
 func (d *AgentDefaults) IsToolFeedbackSeparateMessagesEnabled() bool {
 	return d.ToolFeedback.SeparateMessages
+}
+
+func (d *AgentDefaults) GetToolFeedbackStyle() string {
+	return strings.TrimSpace(d.ToolFeedback.Style)
 }
 
 // GetModelName returns the effective model name for the agent defaults.

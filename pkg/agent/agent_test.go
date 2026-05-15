@@ -194,6 +194,45 @@ func newTestAgentLoop(
 	return al, cfg, msgBus, provider, func() { os.RemoveAll(tmpDir) }
 }
 
+func TestPublishResponseWithContextIfNeeded_PreservesSessionMetadata(t *testing.T) {
+	al, _, msgBus, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	inboundCtx := &bus.InboundContext{
+		Channel:  "telegram",
+		ChatID:   "-100123",
+		ChatType: "group",
+		TopicID:  "6",
+		SenderID: "user-1",
+	}
+	al.publishResponseWithContextIfNeeded(
+		context.Background(),
+		"telegram",
+		"-100123",
+		"session-async-1",
+		"done",
+		inboundCtx,
+	)
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Channel != "telegram" || outbound.ChatID != "-100123" {
+			t.Fatalf("unexpected outbound target: channel=%q chat=%q", outbound.Channel, outbound.ChatID)
+		}
+		if outbound.Context.TopicID != "6" {
+			t.Fatalf("outbound topic_id = %q, want 6", outbound.Context.TopicID)
+		}
+		if outbound.AgentID != routing.DefaultAgentID {
+			t.Fatalf("outbound agent_id = %q, want %q", outbound.AgentID, routing.DefaultAgentID)
+		}
+		if outbound.SessionKey != "session-async-1" {
+			t.Fatalf("outbound session_key = %q, want session-async-1", outbound.SessionKey)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected outbound response")
+	}
+}
+
 func TestNewAgentLoop_RegistersWebSearchTool(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Workspace = t.TempDir()
@@ -2124,6 +2163,29 @@ func TestToolFeedbackArgsPreview_UsesJSONAndTruncates(t *testing.T) {
 	}
 }
 
+func TestShouldPublishToolFeedback_DisablesSubagentFeedback(t *testing.T) {
+	subagents := false
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.ToolFeedback = config.ToolFeedbackConfig{
+		Enabled:   true,
+		Subagents: &subagents,
+	}
+
+	if shouldPublishToolFeedback(cfg, &turnState{
+		channel:    "telegram",
+		sessionKey: "subturn-1",
+	}) {
+		t.Fatal("shouldPublishToolFeedback() = true for disabled subagent feedback, want false")
+	}
+
+	if !shouldPublishToolFeedback(cfg, &turnState{
+		channel:    "telegram",
+		sessionKey: "chat-1",
+	}) {
+		t.Fatal("shouldPublishToolFeedback() = false for main turn, want true")
+	}
+}
+
 type picoInterleavedContentProvider struct {
 	calls int
 }
@@ -4043,6 +4105,7 @@ func TestProcessHeartbeat_DoesNotPublishToolFeedback(t *testing.T) {
 				ToolFeedback: config.ToolFeedbackConfig{
 					Enabled:       true,
 					MaxArgsLength: 300,
+					Style:         utils.ToolFeedbackStyleWorkingSummary,
 				},
 			},
 		},
@@ -4089,6 +4152,7 @@ func TestProcessMessage_PublishesToolFeedbackWhenEnabled(t *testing.T) {
 				ToolFeedback: config.ToolFeedbackConfig{
 					Enabled:       true,
 					MaxArgsLength: 300,
+					Style:         utils.ToolFeedbackStyleWorkingSummary,
 				},
 			},
 		},
@@ -4118,7 +4182,6 @@ func TestProcessMessage_PublishesToolFeedbackWhenEnabled(t *testing.T) {
 
 	select {
 	case outbound := <-msgBus.OutboundChan():
-		escapedHeartbeatFile := strings.ReplaceAll(heartbeatFile, `\`, `\\`)
 		if outbound.Channel != "telegram" {
 			t.Fatalf("tool feedback channel = %q, want %q", outbound.Channel, "telegram")
 		}
@@ -4128,20 +4191,13 @@ func TestProcessMessage_PublishesToolFeedbackWhenEnabled(t *testing.T) {
 		if outbound.Context.Channel != "telegram" || outbound.Context.ChatID != "chat-1" {
 			t.Fatalf("unexpected tool feedback context: %+v", outbound.Context)
 		}
-		if !strings.Contains(outbound.Content, "`read_file`") {
+		if !strings.Contains(outbound.Content, "tool: `read_file`") {
 			t.Fatalf("tool feedback content = %q, want read_file summary", outbound.Content)
 		}
-		if !strings.Contains(outbound.Content, utils.ToolFeedbackContinuationHint) {
-			t.Fatalf("tool feedback content = %q, want continuation hint fallback", outbound.Content)
-		}
-		if !strings.Contains(outbound.Content, "check tool feedback") {
-			t.Fatalf("tool feedback content = %q, want current user intent fallback", outbound.Content)
-		}
-		if !strings.Contains(outbound.Content, "\"path\":") {
-			t.Fatalf("tool feedback content = %q, want serialized tool arguments", outbound.Content)
-		}
-		if !strings.Contains(outbound.Content, escapedHeartbeatFile) {
-			t.Fatalf("tool feedback content = %q, want tool argument value", outbound.Content)
+		if strings.Contains(outbound.Content, utils.ToolFeedbackContinuationHint) ||
+			strings.Contains(outbound.Content, "check tool feedback") ||
+			strings.Contains(outbound.Content, "\"path\":") {
+			t.Fatalf("tool feedback content = %q, should only include compact tool names", outbound.Content)
 		}
 		if strings.Contains(outbound.Content, "Previous turn explanation") {
 			t.Fatalf("tool feedback content = %q, want no previous assistant fallback", outbound.Content)
@@ -4353,6 +4409,7 @@ func TestProcessMessage_DoesNotLeakReasoningContentInToolFeedback(t *testing.T) 
 				ToolFeedback: config.ToolFeedbackConfig{
 					Enabled:       true,
 					MaxArgsLength: 300,
+					Style:         utils.ToolFeedbackStyleWorkingSummary,
 				},
 			},
 		},
@@ -4383,20 +4440,14 @@ func TestProcessMessage_DoesNotLeakReasoningContentInToolFeedback(t *testing.T) 
 	select {
 	case outbound := <-msgBus.OutboundChan():
 		escapedHeartbeatFile := strings.ReplaceAll(heartbeatFile, `\`, `\\`)
-		if !strings.Contains(outbound.Content, "`read_file`") {
+		if !strings.Contains(outbound.Content, "tool: `read_file`") {
 			t.Fatalf("tool feedback content = %q, want read_file summary", outbound.Content)
 		}
-		if !strings.Contains(outbound.Content, utils.ToolFeedbackContinuationHint) {
-			t.Fatalf("tool feedback content = %q, want continuation hint fallback", outbound.Content)
-		}
-		if !strings.Contains(outbound.Content, "check reasoning fallback") {
-			t.Fatalf("tool feedback content = %q, want current user intent fallback", outbound.Content)
-		}
-		if !strings.Contains(outbound.Content, "\"path\":") {
-			t.Fatalf("tool feedback content = %q, want serialized tool arguments", outbound.Content)
-		}
-		if !strings.Contains(outbound.Content, escapedHeartbeatFile) {
-			t.Fatalf("tool feedback content = %q, want tool argument value", outbound.Content)
+		if strings.Contains(outbound.Content, utils.ToolFeedbackContinuationHint) ||
+			strings.Contains(outbound.Content, "check reasoning fallback") ||
+			strings.Contains(outbound.Content, "\"path\":") ||
+			strings.Contains(outbound.Content, escapedHeartbeatFile) {
+			t.Fatalf("tool feedback content = %q, should only include compact tool names", outbound.Content)
 		}
 		if strings.Contains(outbound.Content, "Read README.md first") {
 			t.Fatalf("tool feedback content = %q, should not leak hidden reasoning", outbound.Content)

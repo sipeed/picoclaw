@@ -49,3 +49,12 @@ func (a *channelManagerAdapter) DismissToolFeedback(
 ) {
 	a.inner.DismissToolFeedback(ctx, channel, chatID, outboundCtx)
 }
+
+func (a *channelManagerAdapter) DismissToolFeedbackForSession(
+	ctx context.Context,
+	channel, chatID string,
+	outboundCtx *bus.InboundContext,
+	sessionKey string,
+) {
+	a.inner.DismissToolFeedbackForSession(ctx, channel, chatID, outboundCtx, sessionKey)
+}

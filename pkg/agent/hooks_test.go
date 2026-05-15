@@ -17,6 +17,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 func newHookTestLoop(
@@ -809,6 +810,7 @@ func TestAgentLoop_Hooks_ToolFeedbackUsesRewrittenToolName(t *testing.T) {
 	defer cleanup()
 
 	al.cfg.Agents.Defaults.ToolFeedback.Enabled = true
+	al.cfg.Agents.Defaults.ToolFeedback.Style = utils.ToolFeedbackStyleWorkingSummary
 	al.RegisterTool(&echoTextTool{})
 	al.RegisterTool(&echoTextRewrittenTool{})
 	if err := al.MountHook(NamedHook("tool-rename", &toolRenameHook{})); err != nil {
@@ -835,10 +837,10 @@ func TestAgentLoop_Hooks_ToolFeedbackUsesRewrittenToolName(t *testing.T) {
 
 	select {
 	case outbound := <-msgBus.OutboundChan():
-		if !strings.Contains(outbound.Content, "`echo_text_rewritten`") {
+		if !strings.Contains(outbound.Content, "tool: `echo_text_rewritten`") {
 			t.Fatalf("tool feedback content = %q, want rewritten tool name", outbound.Content)
 		}
-		if strings.Contains(outbound.Content, "`echo_text`") {
+		if strings.Contains(outbound.Content, "tool: `echo_text`\n") {
 			t.Fatalf("tool feedback content = %q, want no original tool name", outbound.Content)
 		}
 	case <-time.After(2 * time.Second):

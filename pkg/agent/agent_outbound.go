@@ -41,6 +41,14 @@ func (al *AgentLoop) publishResponseOrError(
 }
 
 func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatID, sessionKey, response string) {
+	al.publishResponseWithContextIfNeeded(ctx, channel, chatID, sessionKey, response, nil)
+}
+
+func (al *AgentLoop) publishResponseWithContextIfNeeded(
+	ctx context.Context,
+	channel, chatID, sessionKey, response string,
+	inboundCtx *bus.InboundContext,
+) {
 	if response == "" {
 		return
 	}
@@ -74,12 +82,21 @@ func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatI
 		return
 	}
 
+	agent := al.agentForSession(sessionKey)
+	agentID := ""
+	if agent != nil {
+		agentID = agent.ID
+	}
 	msg := bus.OutboundMessage{
-		Context: bus.NewOutboundContext(channel, chatID, ""),
-		Content: response,
+		Channel:    channel,
+		ChatID:     chatID,
+		Context:    outboundContextFromInbound(inboundCtx, channel, chatID, ""),
+		AgentID:    agentID,
+		SessionKey: sessionKey,
+		Content:    response,
 	}
 	if sessionKey != "" {
-		msg.ContextUsage = computeContextUsage(al.agentForSession(sessionKey), sessionKey)
+		msg.ContextUsage = computeContextUsage(agent, sessionKey)
 	}
 	al.bus.PublishOutbound(ctx, msg)
 	logger.InfoCF("agent", "Published outbound response",

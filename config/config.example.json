@@ -16,7 +16,9 @@
       "tool_feedback": {
         "enabled": false,
         "max_args_length": 300,
-        "separate_messages": false
+        "separate_messages": false,
+        "subagents": true,
+        "style": "raw"
       }
     }
   },

@@ -191,6 +191,15 @@ func trackedToolFeedbackMessageChatID(ch Channel, chatID string, outboundCtx *bu
 	return strings.TrimSpace(chatID)
 }
 
+func candidateToolFeedbackMessageChatIDs(raw, resolved string) []string {
+	raw = strings.TrimSpace(raw)
+	resolved = strings.TrimSpace(resolved)
+	if raw == "" || raw == resolved {
+		return []string{resolved}
+	}
+	return []string{resolved, raw}
+}
+
 func dismissTrackedToolFeedbackMessage(
 	ctx context.Context,
 	ch Channel,
@@ -207,6 +216,38 @@ func dismissTrackedToolFeedbackMessage(
 	}
 	if tracker, ok := ch.(toolFeedbackMessageTracker); ok {
 		tracker.ClearToolFeedbackMessage(trackedChatID)
+	}
+}
+
+func dismissTrackedToolFeedbackMessageForSession(
+	ctx context.Context,
+	ch Channel,
+	chatID string,
+	outboundCtx *bus.InboundContext,
+	sessionKey string,
+) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		dismissTrackedToolFeedbackMessage(ctx, ch, chatID, outboundCtx)
+		return
+	}
+	resolvedChatID := trackedToolFeedbackMessageChatID(ch, chatID, outboundCtx)
+	if cleaner, ok := ch.(toolFeedbackMessageCleaner); ok {
+		for _, candidate := range candidateToolFeedbackMessageChatIDs(chatID, resolvedChatID) {
+			if candidate == "" {
+				continue
+			}
+			cleaner.DismissToolFeedbackMessage(ctx, candidate+"#session:"+sessionKey)
+		}
+		return
+	}
+	if tracker, ok := ch.(toolFeedbackMessageTracker); ok {
+		for _, candidate := range candidateToolFeedbackMessageChatIDs(chatID, resolvedChatID) {
+			if candidate == "" {
+				continue
+			}
+			tracker.ClearToolFeedbackMessage(candidate + "#session:" + sessionKey)
+		}
 	}
 }
 
@@ -237,6 +278,16 @@ func (m *Manager) DismissToolFeedback(
 		return
 	}
 	dismissTrackedToolFeedbackMessage(ctx, ch, chatID, outboundCtx)
+}
+
+func (m *Manager) DismissToolFeedbackForSession(
+	ctx context.Context, channelName, chatID string, outboundCtx *bus.InboundContext, sessionKey string,
+) {
+	ch, ok := m.GetChannel(channelName)
+	if !ok {
+		return
+	}
+	dismissTrackedToolFeedbackMessageForSession(ctx, ch, chatID, outboundCtx, sessionKey)
 }
 
 func prepareToolFeedbackMessageContent(ch Channel, content string) string {

@@ -174,11 +174,21 @@ toolLoop:
 							tc,
 							messages,
 						)
-						feedbackMsg := utils.FormatToolFeedbackMessage(
+						feedbackMsg := utils.FormatToolFeedbackMessageWithStyle(
+							al.cfg.Agents.Defaults.GetToolFeedbackStyle(),
 							toolName,
 							toolFeedbackExplanation,
 							toolFeedbackArgsPreview(toolArgs, toolFeedbackMaxLen),
 						)
+						if title := toolFeedbackTitleForTurn(ts); title != "" {
+							feedbackMsg = utils.FormatToolFeedbackMessageWithStyleAndTitle(
+								al.cfg.Agents.Defaults.GetToolFeedbackStyle(),
+								title,
+								toolName,
+								toolFeedbackExplanation,
+								toolFeedbackArgsPreview(toolArgs, toolFeedbackMaxLen),
+							)
+						}
 						fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
 						_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurnWithKind(ts, feedbackMsg, messageKindToolFeedback))
 						fbCancel()
@@ -461,11 +471,21 @@ toolLoop:
 				tc,
 				messages,
 			)
-			feedbackMsg := utils.FormatToolFeedbackMessage(
+			feedbackMsg := utils.FormatToolFeedbackMessageWithStyle(
+				al.cfg.Agents.Defaults.GetToolFeedbackStyle(),
 				toolName,
 				toolFeedbackExplanation,
 				toolFeedbackArgsPreview(toolArgs, toolFeedbackMaxLen),
 			)
+			if title := toolFeedbackTitleForTurn(ts); title != "" {
+				feedbackMsg = utils.FormatToolFeedbackMessageWithStyleAndTitle(
+					al.cfg.Agents.Defaults.GetToolFeedbackStyle(),
+					title,
+					toolName,
+					toolFeedbackExplanation,
+					toolFeedbackArgsPreview(toolArgs, toolFeedbackMaxLen),
+				)
+			}
 			fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
 			_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurnWithKind(ts, feedbackMsg, messageKindToolFeedback))
 			fbCancel()
