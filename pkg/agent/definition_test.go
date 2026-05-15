@@ -79,6 +79,51 @@ Act directly and use tools first.
 	}
 }
 
+func TestLoadAgentDefinitionParsesPatternPolicies(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"AGENT.md": `---
+tools:
+  allow:
+    - mcp_*
+    - web_fetch
+  deny:
+    - mcp_gpt_researcher_*
+mcpServers:
+  allow:
+    - git*
+  deny:
+    - github-legacy
+---
+# Agent
+`,
+	})
+	defer cleanupWorkspace(t, tmpDir)
+
+	definition := NewContextBuilder(tmpDir).LoadAgentDefinition()
+	if definition.Agent == nil {
+		t.Fatal("expected AGENT.md definition to be loaded")
+	}
+	if definition.Agent.Frontmatter.ToolPolicy == nil {
+		t.Fatal("expected tool policy to be parsed")
+	}
+	if got := definition.Agent.Frontmatter.ToolPolicy.Allow; len(got) != 2 ||
+		got[0] != "mcp_*" || got[1] != "web_fetch" {
+		t.Fatalf("tool allow = %v", got)
+	}
+	if got := definition.Agent.Frontmatter.ToolPolicy.Deny; len(got) != 1 || got[0] != "mcp_gpt_researcher_*" {
+		t.Fatalf("tool deny = %v", got)
+	}
+	if definition.Agent.Frontmatter.MCPPolicy == nil {
+		t.Fatal("expected mcp policy to be parsed")
+	}
+	if got := definition.Agent.Frontmatter.MCPPolicy.Allow; len(got) != 1 || got[0] != "git*" {
+		t.Fatalf("mcp allow = %v", got)
+	}
+	if got := definition.Agent.Frontmatter.MCPPolicy.Deny; len(got) != 1 || got[0] != "github-legacy" {
+		t.Fatalf("mcp deny = %v", got)
+	}
+}
+
 func TestLoadAgentDefinitionFallsBackToLegacyAgentsMarkdown(t *testing.T) {
 	tmpDir := setupWorkspace(t, map[string]string{
 		"AGENTS.md": "# Legacy Agent\nKeep compatibility.",

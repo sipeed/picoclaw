@@ -97,16 +97,23 @@ func (r *AgentRegistry) allowedMCPServers() map[string]struct{} {
 		return nil
 	}
 
+	if r.cfg == nil {
+		return nil
+	}
+
 	union := make(map[string]struct{})
+	serverCfgs := r.cfg.Tools.MCP.Servers
 	for _, agent := range r.agents {
 		if agent == nil {
 			continue
 		}
-		if agent.MCPServerAllowlist == nil {
+		if agent.MCPServerPolicy == nil {
 			return nil
 		}
-		for serverName := range agent.MCPServerAllowlist {
-			union[serverName] = struct{}{}
+		for serverName := range serverCfgs {
+			if agent.AllowsMCPServer(serverName) {
+				union[normalizeMCPServerName(serverName)] = struct{}{}
+			}
 		}
 	}
 

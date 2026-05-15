@@ -41,7 +41,8 @@ type AgentInstance struct {
 	Definition                AgentContextDefinition
 	Subagents                 *config.SubagentsConfig
 	SkillsFilter              []string
-	MCPServerAllowlist        map[string]struct{}
+	MCPServerPolicy           *PatternPolicy
+	ToolPolicy                *PatternPolicy
 	Candidates                []providers.FallbackCandidate
 
 	// Router is non-nil when model routing is configured and the light model
@@ -87,26 +88,28 @@ func NewAgentInstance(
 	// Compile path whitelist patterns from config.
 	allowReadPaths := buildAllowReadPatterns(cfg)
 	allowWritePaths := compilePatterns(cfg.Tools.AllowWritePaths)
-	agentToolAllowlist := resolveAgentToolAllowlist(definition)
-	agentMCPServerAllowlist := resolveAgentMCPServerAllowlist(definition)
+	agentToolPolicy := resolveAgentToolPolicy(definition)
+	agentMCPServerPolicy := resolveAgentMCPServerPolicy(definition)
 
 	toolsRegistry := tools.NewToolRegistry()
-	toolsRegistry.SetAllowlist(agentToolAllowlist)
+	registerTool := func(tool tools.Tool) {
+		registerToolWithPolicies(toolsRegistry, tool, agentToolPolicy)
+	}
 
 	if cfg.Tools.IsToolEnabled("read_file") {
 		maxReadFileSize := cfg.Tools.ReadFile.MaxReadFileSize
 		switch cfg.Tools.ReadFile.EffectiveMode() {
 		case config.ReadFileModeLines:
-			toolsRegistry.Register(tools.NewReadFileLinesTool(workspace, readRestrict, maxReadFileSize, allowReadPaths))
+			registerTool(tools.NewReadFileLinesTool(workspace, readRestrict, maxReadFileSize, allowReadPaths))
 		default:
-			toolsRegistry.Register(tools.NewReadFileBytesTool(workspace, readRestrict, maxReadFileSize, allowReadPaths))
+			registerTool(tools.NewReadFileBytesTool(workspace, readRestrict, maxReadFileSize, allowReadPaths))
 		}
 	}
 	if cfg.Tools.IsToolEnabled("write_file") {
-		toolsRegistry.Register(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
+		registerTool(tools.NewWriteFileTool(workspace, restrict, allowWritePaths))
 	}
 	if cfg.Tools.IsToolEnabled("list_dir") {
-		toolsRegistry.Register(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
+		registerTool(tools.NewListDirTool(workspace, readRestrict, allowReadPaths))
 	}
 	if cfg.Tools.IsToolEnabled("exec") {
 		execTool, err := tools.NewExecToolWithConfig(workspace, restrict, cfg, allowReadPaths)
@@ -114,21 +117,21 @@ func NewAgentInstance(
 			logger.ErrorCF("agent", "Failed to initialize exec tool; continuing without exec",
 				map[string]any{"error": err.Error()})
 		} else {
-			toolsRegistry.Register(execTool)
+			registerTool(execTool)
 		}
 	}
 
 	if cfg.Tools.IsToolEnabled("edit_file") {
-		toolsRegistry.Register(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
+		registerTool(tools.NewEditFileTool(workspace, restrict, allowWritePaths))
 	}
 	if cfg.Tools.IsToolEnabled("append_file") {
-		toolsRegistry.Register(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
+		registerTool(tools.NewAppendFileTool(workspace, restrict, allowWritePaths))
 	}
 
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessions := initSessionStore(sessionsDir)
 
-	mcpDiscoveryActive := agentHasDiscoverableMCPServers(cfg, agentMCPServerAllowlist)
+	mcpDiscoveryActive := agentHasDiscoverableMCPServers(cfg, agentMCPServerPolicy)
 	contextBuilder := NewContextBuilder(workspace).
 		WithToolDiscovery(
 			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseBM25,
@@ -261,7 +264,8 @@ func NewAgentInstance(
 		Definition:                definition,
 		Subagents:                 subagents,
 		SkillsFilter:              skillsFilter,
-		MCPServerAllowlist:        agentMCPServerAllowlist,
+		MCPServerPolicy:           agentMCPServerPolicy,
+		ToolPolicy:                agentToolPolicy,
 		Candidates:                candidates,
 		Router:                    router,
 		LightCandidates:           lightCandidates,
@@ -399,11 +403,10 @@ func resolveAgentSkillsFilter(
 }
 
 func (a *AgentInstance) AllowsMCPServer(serverName string) bool {
-	if a == nil || a.MCPServerAllowlist == nil {
+	if a == nil {
 		return true
 	}
-	_, ok := a.MCPServerAllowlist[strings.ToLower(strings.TrimSpace(serverName))]
-	return ok
+	return toolAllowedByPolicy(a.MCPServerPolicy, normalizeMCPServerName(serverName))
 }
 
 func compilePatterns(patterns []string) []*regexp.Regexp {

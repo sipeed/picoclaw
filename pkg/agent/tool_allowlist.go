@@ -71,15 +71,15 @@ func unknownAgentToolNames(
 	registry *tools.ToolRegistry,
 	definition AgentContextDefinition,
 ) []string {
-	if definition.Agent == nil || definition.Agent.Frontmatter.Tools == nil {
+	if definition.Agent == nil || definition.Agent.Frontmatter.ToolPolicy == nil {
 		return nil
 	}
 
 	known := registeredRuntimeToolNames(registry)
 	unknown := make(map[string]struct{})
-	for _, raw := range definition.Agent.Frontmatter.Tools {
+	for _, raw := range definition.Agent.Frontmatter.ToolPolicy.Allow {
 		name := strings.ToLower(strings.TrimSpace(raw))
-		if name == "" || strings.HasPrefix(name, dynamicMCPToolPrefix) {
+		if name == "" || strings.HasPrefix(name, dynamicMCPToolPrefix) || containsGlobMeta(name) {
 			continue
 		}
 		if _, ok := known[name]; ok {
@@ -107,15 +107,15 @@ func registeredRuntimeToolNames(registry *tools.ToolRegistry) map[string]struct{
 }
 
 func unknownAgentMCPServerNames(cfg *config.Config, definition AgentContextDefinition) []string {
-	if cfg == nil || definition.Agent == nil || definition.Agent.Frontmatter.MCPServers == nil {
+	if cfg == nil || definition.Agent == nil || definition.Agent.Frontmatter.MCPPolicy == nil {
 		return nil
 	}
 
 	knownServers := normalizedMCPServerNameSet(cfg.Tools.MCP.Servers)
 	unknown := make(map[string]struct{})
-	for _, raw := range definition.Agent.Frontmatter.MCPServers {
+	for _, raw := range definition.Agent.Frontmatter.MCPPolicy.Allow {
 		name := normalizeMCPServerName(raw)
-		if name == "" {
+		if name == "" || containsGlobMeta(name) {
 			continue
 		}
 		if _, ok := knownServers[name]; ok {
@@ -140,48 +140,68 @@ func sortedKeys(values map[string]struct{}) []string {
 	return result
 }
 
-func resolveAgentToolAllowlist(definition AgentContextDefinition) []string {
+func resolveAgentToolPolicy(definition AgentContextDefinition) *PatternPolicy {
 	if frontmatterParseFailed(definition) {
-		return []string{}
+		return &PatternPolicy{Allow: []string{}, form: patternPolicyFormList}
 	}
 	if definition.Agent == nil || !frontmatterDeclaresField(definition, "tools") {
 		return nil
 	}
-
-	allowlist := make(map[string]struct{}, len(definition.Agent.Frontmatter.Tools))
-	for _, raw := range definition.Agent.Frontmatter.Tools {
-		trimmed := strings.ToLower(strings.TrimSpace(raw))
-		if trimmed == "" {
-			continue
-		}
-		allowlist[trimmed] = struct{}{}
-	}
-
-	if len(allowlist) == 0 {
-		return []string{}
-	}
-
-	return sortedKeys(allowlist)
+	return normalizePatternPolicy(definition.Agent.Frontmatter.ToolPolicy)
 }
 
-func resolveAgentMCPServerAllowlist(definition AgentContextDefinition) map[string]struct{} {
+func resolveAgentMCPServerPolicy(definition AgentContextDefinition) *PatternPolicy {
 	if frontmatterParseFailed(definition) {
-		return map[string]struct{}{}
+		return &PatternPolicy{Allow: []string{}, form: patternPolicyFormList}
 	}
 	if definition.Agent == nil || !frontmatterDeclaresField(definition, "mcpServers") {
 		return nil
 	}
+	return normalizePatternPolicy(definition.Agent.Frontmatter.MCPPolicy)
+}
 
-	allowlist := make(map[string]struct{}, len(definition.Agent.Frontmatter.MCPServers))
-	for _, raw := range definition.Agent.Frontmatter.MCPServers {
+func normalizePatternPolicy(policy *PatternPolicy) *PatternPolicy {
+	if policy == nil {
+		return nil
+	}
+
+	normalized := &PatternPolicy{form: policy.form}
+	normalized.Allow = normalizePatterns(policy.Allow)
+	normalized.Deny = normalizePatterns(policy.Deny)
+
+	if policy.form == patternPolicyFormList && len(normalized.Allow) == 0 {
+		normalized.Allow = []string{}
+	}
+
+	return normalized
+}
+
+func normalizePatterns(patterns []string) []string {
+	if len(patterns) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(patterns))
+	result := make([]string, 0, len(patterns))
+	for _, raw := range patterns {
 		trimmed := strings.ToLower(strings.TrimSpace(raw))
 		if trimmed == "" {
 			continue
 		}
-		allowlist[trimmed] = struct{}{}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
 	}
+	if len(result) == 0 {
+		return nil
+	}
+	sort.Strings(result)
+	return result
+}
 
-	return allowlist
+func containsGlobMeta(value string) bool {
+	return strings.ContainsAny(value, "*?[")
 }
 
 func frontmatterDeclaresField(definition AgentContextDefinition, field string) bool {

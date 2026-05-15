@@ -168,12 +168,13 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
 					mcpTool.SetMaxInlineTextRunes(al.cfg.Tools.MCP.GetMaxInlineTextChars())
 					mcpTool.SetEventPublisher(al.runtimeEvents)
 
+					var registered bool
 					if registerAsHidden {
-						agent.Tools.RegisterHidden(mcpTool)
+						registered = registerHiddenToolIfAllowed(agent, mcpTool)
 					} else {
-						agent.Tools.Register(mcpTool)
+						registered = registerToolIfAllowed(agent, mcpTool)
 					}
-					if !toolRegistryIncludes(agent.Tools, toolName) {
+					if !registered || !toolRegistryIncludes(agent.Tools, toolName) {
 						continue
 					}
 
@@ -250,7 +251,7 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
 				if !ok {
 					continue
 				}
-				if !agentHasDiscoverableMCPServers(al.cfg, agent.MCPServerAllowlist) {
+				if !agentHasDiscoverableMCPServers(al.cfg, agent.MCPServerPolicy) {
 					continue
 				}
 
@@ -337,12 +338,20 @@ func filterMCPConfigServers(
 	return filtered
 }
 
-func agentHasDiscoverableMCPServers(cfg *config.Config, allowed map[string]struct{}) bool {
+func agentHasDiscoverableMCPServers(cfg *config.Config, allowed *PatternPolicy) bool {
 	if cfg == nil || !cfg.Tools.MCP.Enabled || !cfg.Tools.MCP.Discovery.Enabled {
 		return false
 	}
 
-	filtered := filterMCPConfigServers(cfg.Tools.MCP, allowed)
+	filtered := cfg.Tools.MCP
+	if allowed != nil {
+		filtered.Servers = make(map[string]config.MCPServerConfig)
+		for serverName, serverCfg := range cfg.Tools.MCP.Servers {
+			if toolAllowedByPolicy(allowed, normalizeMCPServerName(serverName)) {
+				filtered.Servers[serverName] = serverCfg
+			}
+		}
+	}
 	for _, serverCfg := range filtered.Servers {
 		if serverCfg.Enabled && serverIsDeferred(cfg.Tools.MCP.Discovery.Enabled, serverCfg) {
 			return true
