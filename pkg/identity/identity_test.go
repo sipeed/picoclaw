@@ -223,6 +223,53 @@ func TestMatchAllowed(t *testing.T) {
 			allowed: "  123456  ",
 			want:    true,
 		},
+		// Matrix MXID matching (issue #2815)
+		// Matrix user IDs look like "@alice:matrix.org" — the colon must
+		// not be misinterpreted as a canonical "platform:id" separator.
+		{
+			name: "matrix MXID with @ prefix matches PlatformID",
+			sender: bus.SenderInfo{
+				Platform:    "matrix",
+				PlatformID:  "@alice:matrix.org",
+				CanonicalID: BuildCanonicalID("matrix", "@alice:matrix.org"),
+				Username:    "@alice:matrix.org",
+			},
+			allowed: "@alice:matrix.org",
+			want:    true,
+		},
+		{
+			name: "matrix MXID without @ prefix matches PlatformID",
+			sender: bus.SenderInfo{
+				Platform:    "matrix",
+				PlatformID:  "@alice:matrix.org",
+				CanonicalID: BuildCanonicalID("matrix", "@alice:matrix.org"),
+				Username:    "@alice:matrix.org",
+			},
+			allowed: "alice:matrix.org",
+			want:    false, // ambiguous — could be a canonical "platform:id" entry
+		},
+		{
+			name: "matrix canonical format matches",
+			sender: bus.SenderInfo{
+				Platform:    "matrix",
+				PlatformID:  "@alice:matrix.org",
+				CanonicalID: BuildCanonicalID("matrix", "@alice:matrix.org"),
+				Username:    "@alice:matrix.org",
+			},
+			allowed: "matrix:@alice:matrix.org",
+			want:    true,
+		},
+		{
+			name: "matrix MXID rejects unlisted sender",
+			sender: bus.SenderInfo{
+				Platform:    "matrix",
+				PlatformID:  "@eve:evil.org",
+				CanonicalID: BuildCanonicalID("matrix", "@eve:evil.org"),
+				Username:    "@eve:evil.org",
+			},
+			allowed: "@alice:matrix.org",
+			want:    false,
+		},
 	}
 
 	for _, tt := range tests {

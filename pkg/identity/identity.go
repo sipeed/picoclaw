@@ -44,26 +44,30 @@ func MatchAllowed(sender bus.SenderInfo, allowed string) bool {
 		return false
 	}
 
-	// Try canonical match first: "platform:id" format
-	if platform, id, ok := ParseCanonicalID(allowed); ok {
-		// Only treat as canonical if the platform portion looks like a known platform name
-		// (not a pure-numeric string, which could be a compound ID)
-		if !isNumeric(platform) {
-			candidate := BuildCanonicalID(platform, id)
-			if candidate != "" && sender.CanonicalID != "" {
-				return strings.EqualFold(sender.CanonicalID, candidate)
-			}
-			// If sender has no canonical ID, try matching platform + platformID
-			return strings.EqualFold(platform, sender.Platform) &&
-				sender.PlatformID == id
-		}
-	}
-
 	// Keep track of explicit username format
 	isAtUsername := strings.HasPrefix(allowed, "@")
 
 	// Strip leading "@" for username matching
 	trimmed := strings.TrimPrefix(allowed, "@")
+
+	// Try canonical match first: "platform:id" format.
+	// Skip when the entry starts with "@" — the "@" prefix signals a
+	// username or Matrix MXID (e.g. "@alice:matrix.org"), not a platform:id pair.
+	if !isAtUsername {
+		if platform, id, ok := ParseCanonicalID(allowed); ok {
+			// Only treat as canonical if the platform portion looks like a known platform name
+			// (not a pure-numeric string, which could be a compound ID)
+			if !isNumeric(platform) {
+				candidate := BuildCanonicalID(platform, id)
+				if candidate != "" && sender.CanonicalID != "" {
+					return strings.EqualFold(sender.CanonicalID, candidate)
+				}
+				// If sender has no canonical ID, try matching platform + platformID
+				return strings.EqualFold(platform, sender.Platform) &&
+					sender.PlatformID == id
+			}
+		}
+	}
 
 	// Split compound "id|username" format
 	allowedID := trimmed
@@ -81,6 +85,18 @@ func MatchAllowed(sender bus.SenderInfo, allowed string) bool {
 	// Match against Username only when explicitly requested via "@username"
 	if isAtUsername && sender.Username != "" && sender.Username == trimmed {
 		return true
+	}
+
+	// Match the full "@"-prefixed entry against PlatformID or Username.
+	// Needed for Matrix MXIDs where both the config entry and the
+	// sender identifiers include the "@" prefix (e.g. "@alice:matrix.org").
+	if isAtUsername {
+		if sender.PlatformID != "" && sender.PlatformID == allowed {
+			return true
+		}
+		if sender.Username != "" && sender.Username == allowed {
+			return true
+		}
 	}
 
 	// Match compound sender format against allowed parts
