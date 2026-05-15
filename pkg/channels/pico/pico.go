@@ -252,6 +252,12 @@ func (c *PicoChannel) Start(ctx context.Context) error {
 	return nil
 }
 
+func (c *PicoChannel) ConfigureToolFeedbackAnimator(cfg channels.ToolFeedbackAnimatorConfig) {
+	if c.progress != nil {
+		c.progress.Configure(cfg)
+	}
+}
+
 // Stop implements Channel.
 func (c *PicoChannel) Stop(ctx context.Context) error {
 	logger.InfoC("pico", "Stopping Pico Protocol channel")

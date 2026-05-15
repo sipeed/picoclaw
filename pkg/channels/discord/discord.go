@@ -133,6 +133,12 @@ func (c *DiscordChannel) Start(ctx context.Context) error {
 	return nil
 }
 
+func (c *DiscordChannel) ConfigureToolFeedbackAnimator(cfg channels.ToolFeedbackAnimatorConfig) {
+	if c.progress != nil {
+		c.progress.Configure(cfg)
+	}
+}
+
 func (c *DiscordChannel) Stop(ctx context.Context) error {
 	logger.InfoC("discord", "Stopping Discord bot")
 	c.SetRunning(false)

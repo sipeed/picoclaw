@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v3"
@@ -1101,6 +1102,12 @@ func TestDefaultConfig_ToolFeedbackDisabled(t *testing.T) {
 	if cfg.Agents.Defaults.ToolFeedback.SeparateMessages {
 		t.Fatal("DefaultConfig().Agents.Defaults.ToolFeedback.SeparateMessages should be false")
 	}
+	if got := cfg.Agents.Defaults.GetToolFeedbackAnimationInterval(); got != 3*time.Second {
+		t.Fatalf("DefaultConfig().Agents.Defaults.GetToolFeedbackAnimationInterval() = %v, want 3s", got)
+	}
+	if got := cfg.Agents.Defaults.GetToolFeedbackEditMinInterval(); got != 0 {
+		t.Fatalf("DefaultConfig().Agents.Defaults.GetToolFeedbackEditMinInterval() = %v, want 0", got)
+	}
 }
 
 func TestLoadConfig_ToolFeedbackDefaultsFalseWhenUnset(t *testing.T) {
@@ -1125,6 +1132,37 @@ func TestLoadConfig_ToolFeedbackDefaultsFalseWhenUnset(t *testing.T) {
 	}
 	if cfg.Agents.Defaults.ToolFeedback.SeparateMessages {
 		t.Fatal("agents.defaults.tool_feedback.separate_messages should remain false when unset in config file")
+	}
+	if got := cfg.Agents.Defaults.GetToolFeedbackAnimationInterval(); got != 3*time.Second {
+		t.Fatalf("agents.defaults.tool_feedback.animation_interval_secs = %v, want default 3s", got)
+	}
+	if got := cfg.Agents.Defaults.GetToolFeedbackEditMinInterval(); got != 0 {
+		t.Fatalf("agents.defaults.tool_feedback.edit_min_interval_seconds = %v, want default 0", got)
+	}
+}
+
+func TestLoadConfig_ToolFeedbackThrottleIntervals(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(
+		configPath,
+		[]byte(
+			`{"version":1,"agents":{"defaults":{"tool_feedback":{"enabled":true,"animation_interval_secs":5,"edit_min_interval_seconds":10}}}}`,
+		),
+		0o600,
+	); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if got := cfg.Agents.Defaults.GetToolFeedbackAnimationInterval(); got != 5*time.Second {
+		t.Fatalf("agents.defaults.tool_feedback.animation_interval_secs = %v, want 5s", got)
+	}
+	if got := cfg.Agents.Defaults.GetToolFeedbackEditMinInterval(); got != 10*time.Second {
+		t.Fatalf("agents.defaults.tool_feedback.edit_min_interval_seconds = %v, want 10s", got)
 	}
 }
 

@@ -66,7 +66,9 @@ Debug logs are server-side only. If you want the agent to send a visible notific
       "tool_feedback": {
         "enabled": true,
         "max_args_length": 300,
-        "separate_messages": true
+        "separate_messages": true,
+        "animation_interval_secs": 3,
+        "edit_min_interval_seconds": 0
       }
     }
   }
@@ -88,14 +90,19 @@ When `enabled` is `true`, every tool call sends a short message to the chat befo
 | `enabled` | bool | `false` | Send a chat notification for each tool call |
 | `separate_messages` | bool | `false` | Keep every tool feedback update as a separate chat message instead of reusing a single placeholder/progress message |
 | `max_args_length` | int | `300` | Maximum characters of the serialised arguments included in the notification |
+| `animation_interval_secs` | int | `3` | Seconds between progress animation edits for channels that support editable tool feedback |
+| `edit_min_interval_seconds` | int | `0` | Minimum seconds between edits of the same tracked progress message. `0` preserves legacy behavior with no edit throttle |
 
 ### Environment variables
 
-Both fields can also be set via environment variables:
+These fields can also be set via environment variables:
 
 ```bash
 PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED=true
 PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH=300
+PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_SEPARATE_MESSAGES=false
+PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ANIMATION_INTERVAL_SECS=3
+PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_EDIT_MIN_INTERVAL_SECONDS=10
 ```
 
 > **Note:** `tool_feedback` is independent of `--debug` mode. It works in production and does not require the gateway to be started with any special flag.

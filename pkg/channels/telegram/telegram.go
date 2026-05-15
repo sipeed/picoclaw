@@ -188,6 +188,12 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	return nil
 }
 
+func (c *TelegramChannel) ConfigureToolFeedbackAnimator(cfg channels.ToolFeedbackAnimatorConfig) {
+	if c.progress != nil {
+		c.progress.Configure(cfg)
+	}
+}
+
 func (c *TelegramChannel) Stop(ctx context.Context) error {
 	logger.InfoC("telegram", "Stopping Telegram bot...")
 	c.SetRunning(false)

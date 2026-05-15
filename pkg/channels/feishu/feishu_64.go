@@ -129,6 +129,12 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 	return nil
 }
 
+func (c *FeishuChannel) ConfigureToolFeedbackAnimator(cfg channels.ToolFeedbackAnimatorConfig) {
+	if c.progress != nil {
+		c.progress.Configure(cfg)
+	}
+}
+
 func (c *FeishuChannel) Stop(ctx context.Context) error {
 	c.mu.Lock()
 	if c.cancel != nil {
