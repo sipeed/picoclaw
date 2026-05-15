@@ -268,6 +268,40 @@ as containers, VMs, or an approval flow around build-and-run commands.
 }
 ```
 
+## Update Plan Tool
+
+The `update_plan` tool lets the agent publish structured progress for multi-step tasks. It mirrors OpenClaw's planning helper: the tool records the current ordered plan, validates step statuses, and returns the updated plan to the model without performing any external side effects.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `tools.update_plan.enabled` | bool | `false` | Register the agent-facing `update_plan` tool |
+
+When `update_plan` is enabled, the tool description tells the model to use it only for non-trivial multi-step work, keep exactly one `in_progress` step while work is active, and avoid repeating the whole plan after each update.
+
+### `update_plan` Tool Parameters
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `explanation` | string | no | Short note explaining what changed in the plan |
+| `plan` | array | yes | Ordered list of plan steps |
+| `plan[].step` | string | yes | Short plan step |
+| `plan[].status` | string | yes | One of `pending`, `in_progress`, or `completed` |
+
+At most one step may be `in_progress`. The tool is intended for visible coordination during longer tasks; it does not run steps, schedule work, or replace workflow engines such as cron, MCP servers, or external orchestration.
+
+### Example `update_plan` Call
+
+```json
+{
+  "explanation": "Implementation has started.",
+  "plan": [
+    { "step": "Inspect existing tools", "status": "completed" },
+    { "step": "Add update_plan tool", "status": "in_progress" },
+    { "step": "Run focused tests", "status": "pending" }
+  ]
+}
+```
+
 ## Cron Tool
 
 The cron tool is used for scheduling periodic tasks.

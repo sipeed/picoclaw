@@ -1274,6 +1274,16 @@ func TestDefaultConfig_CronAllowCommandEnabled(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_UpdatePlanDisabled(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Tools.UpdatePlan.Enabled {
+		t.Fatal("DefaultConfig().Tools.UpdatePlan.Enabled should be false")
+	}
+	if cfg.Tools.IsToolEnabled("update_plan") {
+		t.Fatal("DefaultConfig().Tools.IsToolEnabled(\"update_plan\") should be false")
+	}
+}
+
 func TestDefaultConfig_HooksDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if !cfg.Hooks.Enabled {
