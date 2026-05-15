@@ -509,6 +509,8 @@ toolLoop:
 					ChatID:   fmt.Sprintf("%s:%s", ts.channel, ts.chatID),
 					ChatType: "direct",
 					SenderID: fmt.Sprintf("async:%s", asyncToolName),
+					TopicID:  originTopicID(ts.opts.Dispatch.InboundContext),
+					Raw:      systemFollowUpOriginRaw(ts.opts.Dispatch.InboundContext, ts.channel, ts.chatID),
 				},
 				Content: content,
 			})

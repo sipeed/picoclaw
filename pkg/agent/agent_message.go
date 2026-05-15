@@ -15,6 +15,15 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+const (
+	systemFollowUpOriginChannelKey          = "origin_channel"
+	systemFollowUpOriginChatIDKey           = "origin_chat_id"
+	systemFollowUpOriginChatTypeKey         = "origin_chat_type"
+	systemFollowUpOriginTopicIDKey          = "origin_topic_id"
+	systemFollowUpOriginMessageIDKey        = "origin_message_id"
+	systemFollowUpOriginReplyToMessageIDKey = "origin_reply_to_message_id"
+)
+
 func (al *AgentLoop) buildContinuationTarget(msg bus.InboundMessage) (*continuationTarget, error) {
 	if msg.Channel == "system" {
 		return nil, nil
@@ -236,6 +245,42 @@ func (al *AgentLoop) allocateRouteSession(route routing.ResolvedRoute, msg bus.I
 	})
 }
 
+func originTopicID(origin *bus.InboundContext) string {
+	if origin == nil {
+		return ""
+	}
+	return strings.TrimSpace(origin.TopicID)
+}
+
+func systemFollowUpOriginRaw(origin *bus.InboundContext, channel, chatID string) map[string]string {
+	raw := map[string]string{
+		systemFollowUpOriginChannelKey: strings.TrimSpace(channel),
+		systemFollowUpOriginChatIDKey:  strings.TrimSpace(chatID),
+	}
+	if origin == nil {
+		return raw
+	}
+	if origin.Channel != "" {
+		raw[systemFollowUpOriginChannelKey] = strings.TrimSpace(origin.Channel)
+	}
+	if origin.ChatID != "" {
+		raw[systemFollowUpOriginChatIDKey] = strings.TrimSpace(origin.ChatID)
+	}
+	if origin.ChatType != "" {
+		raw[systemFollowUpOriginChatTypeKey] = strings.TrimSpace(origin.ChatType)
+	}
+	if origin.TopicID != "" {
+		raw[systemFollowUpOriginTopicIDKey] = strings.TrimSpace(origin.TopicID)
+	}
+	if origin.MessageID != "" {
+		raw[systemFollowUpOriginMessageIDKey] = strings.TrimSpace(origin.MessageID)
+	}
+	if origin.ReplyToMessageID != "" {
+		raw[systemFollowUpOriginReplyToMessageIDKey] = strings.TrimSpace(origin.ReplyToMessageID)
+	}
+	return raw
+}
+
 func (al *AgentLoop) processSystemMessage(
 	ctx context.Context,
 	msg bus.InboundMessage,
@@ -261,6 +306,30 @@ func (al *AgentLoop) processSystemMessage(
 	} else {
 		originChannel = "cli"
 		originChatID = msg.ChatID
+	}
+	originChatType := "direct"
+	originTopicID := strings.TrimSpace(msg.Context.TopicID)
+	originMessageID := strings.TrimSpace(msg.Context.MessageID)
+	originReplyToMessageID := strings.TrimSpace(msg.Context.ReplyToMessageID)
+	if raw := msg.Context.Raw; len(raw) > 0 {
+		if value := strings.TrimSpace(raw[systemFollowUpOriginChannelKey]); value != "" {
+			originChannel = value
+		}
+		if value := strings.TrimSpace(raw[systemFollowUpOriginChatIDKey]); value != "" {
+			originChatID = value
+		}
+		if value := strings.TrimSpace(raw[systemFollowUpOriginChatTypeKey]); value != "" {
+			originChatType = value
+		}
+		if value := strings.TrimSpace(raw[systemFollowUpOriginTopicIDKey]); value != "" {
+			originTopicID = value
+		}
+		if value := strings.TrimSpace(raw[systemFollowUpOriginMessageIDKey]); value != "" {
+			originMessageID = value
+		}
+		if value := strings.TrimSpace(raw[systemFollowUpOriginReplyToMessageIDKey]); value != "" {
+			originReplyToMessageID = value
+		}
 	}
 
 	// Extract subagent result from message content
@@ -295,10 +364,13 @@ func (al *AgentLoop) processSystemMessage(
 	}
 	if originChannel != "" || originChatID != "" {
 		dispatch.InboundContext = &bus.InboundContext{
-			Channel:  originChannel,
-			ChatID:   originChatID,
-			ChatType: "direct",
-			SenderID: msg.SenderID,
+			Channel:          originChannel,
+			ChatID:           originChatID,
+			ChatType:         originChatType,
+			TopicID:          originTopicID,
+			SenderID:         msg.SenderID,
+			MessageID:        originMessageID,
+			ReplyToMessageID: originReplyToMessageID,
 		}
 	}
 

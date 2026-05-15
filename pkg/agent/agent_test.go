@@ -2588,6 +2588,64 @@ func TestProcessMessage_UsesRouteSessionKey(t *testing.T) {
 	}
 }
 
+func TestProcessSystemMessage_PreservesOriginTopicOnFinalResponse(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &simpleMockProvider{response: "follow-up response"}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	msg := testInboundMessage(bus.InboundMessage{
+		Context: bus.InboundContext{
+			Channel:  "system",
+			ChatID:   "telegram:-1001234567890",
+			ChatType: "direct",
+			TopicID:  "42",
+			SenderID: "async:spawn",
+			Raw: map[string]string{
+				systemFollowUpOriginChannelKey:  "telegram",
+				systemFollowUpOriginChatIDKey:   "-1001234567890",
+				systemFollowUpOriginChatTypeKey: "group",
+				systemFollowUpOriginTopicIDKey:  "42",
+			},
+		},
+		Content: "Task 'deep-research' completed.\n\nResult:\nreport URL",
+	})
+
+	if _, err := al.processSystemMessage(context.Background(), msg); err != nil {
+		t.Fatalf("processSystemMessage() error = %v", err)
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Content != "follow-up response" {
+			t.Fatalf("outbound content = %q, want follow-up response", outbound.Content)
+		}
+		if outbound.Channel != "telegram" || outbound.ChatID != "-1001234567890" {
+			t.Fatalf("outbound route = %s/%s, want telegram/-1001234567890", outbound.Channel, outbound.ChatID)
+		}
+		if outbound.Context.ChatType != "group" {
+			t.Fatalf("outbound chat type = %q, want group; context=%+v", outbound.Context.ChatType, outbound.Context)
+		}
+		if outbound.Context.TopicID != "42" {
+			t.Fatalf("outbound topic = %q, want 42; context=%+v", outbound.Context.TopicID, outbound.Context)
+		}
+	case <-time.After(responseTimeout):
+		t.Fatal("timed out waiting for outbound response")
+	}
+}
+
 func TestProcessMessage_CommandOutcomes(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
