@@ -98,7 +98,13 @@ var (
 	}
 
 	// absolutePathPattern matches absolute file paths in commands (Unix and Windows).
-	absolutePathPattern = regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
+	// Unix: require "/" to follow start or a shell delimiter so "archive/SKILL.md" does not
+	// match "/SKILL.md" (which Abs would treat as under filesystem root).
+	absolutePathPattern = regexp.MustCompile(
+		// Include "/" as a delimiter so file:///etc/passwd matches "/etc/passwd" (third slash)
+		// while archive/SKILL.md still does not (slash is preceded by "e", not a delimiter).
+		`(?:([A-Za-z]:\\[^\\\"']+)|(?:^|[\s"'=><|;&(\[{/])(/[^\s\"']+))`,
+	)
 
 	// safePaths are kernel pseudo-devices that are always safe to reference in
 	// commands, regardless of workspace restriction. They contain no user data
@@ -1063,32 +1069,36 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 			return ""
 		}
 
-		// Web URL schemes whose path components (starting with //) should be exempt
-		// from workspace sandbox checks. file: is intentionally excluded so that
-		// file:// URIs are still validated against the workspace boundary.
+		// Web URL schemes: path segments after the scheme should be exempt from workspace
+		// sandbox checks. file: is intentionally excluded so file:// URIs are still validated.
 		webSchemes := []string{"http:", "https:", "ftp:", "ftps:", "sftp:", "ssh:", "git:"}
 
-		matchIndices := absolutePathPattern.FindAllStringIndex(cmd, -1)
+		for _, m := range absolutePathPattern.FindAllStringSubmatchIndex(cmd, -1) {
+			var raw string
+			var pathStart int
+			switch {
+			case m[2] >= 0 && m[3] >= 0:
+				raw = cmd[m[2]:m[3]]
+				pathStart = m[2]
+			case m[4] >= 0 && m[5] >= 0:
+				raw = cmd[m[4]:m[5]]
+				pathStart = m[4]
+			default:
+				continue
+			}
 
-		for _, loc := range matchIndices {
-			raw := cmd[loc[0]:loc[1]]
-
-			// Skip URL path components that look like they're from web URLs.
-			// When a URL like "https://github.com" is parsed, the regex captures
-			// "//github.com" as a match (the path portion after "https:").
-			// Use the exact match position (loc[0]) so that duplicate //path substrings
-			// in the same command are each evaluated at their own position.
-			if strings.HasPrefix(raw, "//") && loc[0] > 0 {
-				before := cmd[:loc[0]]
+			// Skip path-like substrings that belong to a web URL (e.g. "//host", "/user/repo",
+			// or "/api/..." after "https://"). Trim trailing slashes so "https://" → "https:" for
+			// HasSuffix(scheme) checks. file:/// leaves before as "file:" which is not in webSchemes.
+			if pathStart > 0 {
+				before := strings.TrimSpace(strings.TrimRight(cmd[:pathStart], "/"))
 				isWebURL := false
-
 				for _, scheme := range webSchemes {
 					if strings.HasSuffix(before, scheme) {
 						isWebURL = true
 						break
 					}
 				}
-
 				if isWebURL {
 					continue
 				}

@@ -394,6 +394,32 @@ func TestShellTool_AllowRemoteBypassesChannelCheck(t *testing.T) {
 	}
 }
 
+// TestShellTool_RelativePathWithSlashNotTreatedAsAbsolute verifies that a relative path
+// containing a slash (e.g. archive/SKILL.md) is not parsed as the absolute path /SKILL.md.
+func TestShellTool_RelativePathWithSlashNotTreatedAsAbsolute(t *testing.T) {
+	tmpDir := t.TempDir()
+	archive := filepath.Join(tmpDir, "archive")
+	if err := os.MkdirAll(archive, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(archive, "SKILL.md"), []byte("x\n"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("NewExecTool: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"action":  "run",
+		"command": "wc -l archive/SKILL.md",
+	})
+	if result.IsError && strings.Contains(result.ForLLM, "path outside working dir") {
+		t.Fatalf("relative path wrongly treated as absolute root path: %s", result.ForLLM)
+	}
+}
+
 // TestShellTool_RestrictToWorkspace verifies workspace restriction
 func TestShellTool_RestrictToWorkspace(t *testing.T) {
 	tmpDir := t.TempDir()
