@@ -63,7 +63,7 @@ func supportsWhisperTranscription(modelCfg *config.ModelConfig) bool {
 }
 
 func whisperModelID(modelCfg *config.ModelConfig) string {
-	if modelCfg == nil || modelCfg.APIKey() == "" {
+	if modelCfg == nil {
 		return ""
 	}
 
@@ -72,7 +72,11 @@ func whisperModelID(modelCfg *config.ModelConfig) string {
 	}
 
 	_, modelID := providers.ExtractProtocol(modelCfg)
-	if strings.Contains(strings.ToLower(modelID), "whisper") {
+	normalized := strings.ToLower(modelID)
+	if strings.Contains(normalized, "whisper") || strings.Contains(normalized, "transcribe") {
+		if modelCfg.APIKey() == "" && modelCfg.AuthMethod != "oauth" {
+			return ""
+		}
 		return modelID
 	}
 	return ""

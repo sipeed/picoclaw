@@ -10,6 +10,7 @@ import (
 	"github.com/openai/openai-go/v3"
 	openaiopt "github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 
 	orc "github.com/sipeed/picoclaw/pkg/providers/openai_responses_common"
 )
@@ -34,6 +35,9 @@ func TestBuildCodexParams_BasicMessage(t *testing.T) {
 	if params.MaxOutputTokens.Valid() {
 		t.Fatalf("MaxOutputTokens should not be set for Codex backend")
 	}
+	if params.Reasoning.Effort != shared.ReasoningEffortNone {
+		t.Fatalf("Reasoning.Effort = %q, want none", params.Reasoning.Effort)
+	}
 }
 
 func TestBuildCodexParams_SystemAsInstructions(t *testing.T) {
@@ -47,6 +51,44 @@ func TestBuildCodexParams_SystemAsInstructions(t *testing.T) {
 	}
 	if params.Instructions.Or("") != "You are helpful" {
 		t.Errorf("Instructions = %q, want %q", params.Instructions.Or(""), "You are helpful")
+	}
+}
+
+func TestBuildCodexParams_ThinkingLevel(t *testing.T) {
+	tests := []struct {
+		name  string
+		level any
+		want  shared.ReasoningEffort
+	}{
+		{name: "default", level: nil, want: shared.ReasoningEffortNone},
+		{name: "off", level: "off", want: shared.ReasoningEffortNone},
+		{name: "low", level: "low", want: shared.ReasoningEffortLow},
+		{name: "medium", level: "medium", want: shared.ReasoningEffortMedium},
+		{name: "adaptive", level: "adaptive", want: shared.ReasoningEffortMedium},
+		{name: "high", level: "high", want: shared.ReasoningEffortHigh},
+		{name: "xhigh", level: "xhigh", want: shared.ReasoningEffortXhigh},
+		{name: "max", level: "max", want: shared.ReasoningEffortXhigh},
+		{name: "unknown", level: "banana", want: shared.ReasoningEffortNone},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := map[string]any{}
+			if tt.level != nil {
+				opts["thinking_level"] = tt.level
+			}
+			params := buildCodexParams([]Message{{Role: "user", Content: "Hi"}}, nil, "gpt-5.4", opts, false)
+			if params.Reasoning.Effort != tt.want {
+				t.Fatalf("Reasoning.Effort = %q, want %q", params.Reasoning.Effort, tt.want)
+			}
+		})
+	}
+}
+
+func TestCodexProvider_SupportsThinking(t *testing.T) {
+	provider := NewCodexProvider("test-token", "acc-123")
+	if !provider.SupportsThinking() {
+		t.Fatal("CodexProvider should support thinking_level")
 	}
 }
 
@@ -371,6 +413,83 @@ func TestCodexProvider_ChatRoundTrip(t *testing.T) {
 	}
 	if resp.Usage.TotalTokens != 18 {
 		t.Errorf("TotalTokens = %d, want 18", resp.Usage.TotalTokens)
+	}
+}
+
+func TestCodexProvider_ChatRoundTrip_ToolCallFromStreamItem(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			http.Error(w, "not found: "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+
+		var reqBody map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if reqBody["stream"] != true {
+			http.Error(w, "stream must be true", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		itemDone := map[string]any{
+			"type":            "response.output_item.done",
+			"sequence_number": 1,
+			"output_index":    0,
+			"item": map[string]any{
+				"id":        "fc_1",
+				"type":      "function_call",
+				"call_id":   "call_abc",
+				"name":      "nutritiondb__list_weight_entries",
+				"arguments": `{"limit":5}`,
+				"status":    "completed",
+			},
+		}
+		b, _ := json.Marshal(itemDone)
+		fmt.Fprintf(w, "event: response.output_item.done\n")
+		fmt.Fprintf(w, "data: %s\n\n", string(b))
+
+		resp := map[string]any{
+			"id":     "resp_test",
+			"object": "response",
+			"status": "completed",
+			"output": []map[string]any{},
+			"usage": map[string]any{
+				"input_tokens":          10,
+				"output_tokens":         5,
+				"total_tokens":          15,
+				"input_tokens_details":  map[string]any{"cached_tokens": 0},
+				"output_tokens_details": map[string]any{"reasoning_tokens": 0},
+			},
+		}
+		writeCompletedSSE(w, resp)
+	}))
+	defer server.Close()
+
+	provider := NewCodexProvider("test-token", "acc-123")
+	provider.client = createOpenAITestClient(server.URL, "test-token", "acc-123")
+
+	resp, err := provider.Chat(t.Context(), []Message{{Role: "user", Content: "latest weights"}}, nil, "gpt-5.4", nil)
+	if err != nil {
+		t.Fatalf("Chat() error: %v", err)
+	}
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(resp.ToolCalls))
+	}
+	tc := resp.ToolCalls[0]
+	if tc.ID != "call_abc" {
+		t.Errorf("ToolCall.ID = %q, want call_abc", tc.ID)
+	}
+	if tc.Name != "nutritiondb__list_weight_entries" {
+		t.Errorf("ToolCall.Name = %q, want nutritiondb__list_weight_entries", tc.Name)
+	}
+	if tc.Arguments["limit"] != float64(5) {
+		t.Errorf("ToolCall.Arguments[limit] = %v, want 5", tc.Arguments["limit"])
+	}
+	if resp.FinishReason != "tool_calls" {
+		t.Errorf("FinishReason = %q, want tool_calls", resp.FinishReason)
 	}
 }
 

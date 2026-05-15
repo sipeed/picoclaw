@@ -2,6 +2,7 @@ package oauthprovider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
+	"github.com/openai/openai-go/v3/shared"
 
 	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -104,8 +106,23 @@ func (p *CodexProvider) Chat(
 	defer stream.Close()
 
 	var resp *responses.Response
+	var streamText strings.Builder
+	var streamToolCalls []ToolCall
 	for stream.Next() {
 		evt := stream.Current()
+		if evt.Type == "response.output_text.done" {
+			textDone := evt.AsResponseOutputTextDone()
+			if textDone.Text != "" {
+				streamText.Reset()
+				streamText.WriteString(textDone.Text)
+			}
+		}
+		if evt.Type == "response.output_item.done" {
+			done := evt.AsResponseOutputItemDone()
+			if tc, ok := codexToolCallFromOutputItem(done.Item); ok {
+				streamToolCalls = append(streamToolCalls, tc)
+			}
+		}
 		if evt.Type == "response.completed" || evt.Type == "response.failed" || evt.Type == "response.incomplete" {
 			evtResp := evt.Response
 			if evtResp.ID != "" {
@@ -153,7 +170,46 @@ func (p *CodexProvider) Chat(
 		return nil, fmt.Errorf("codex API call: stream ended without completed response")
 	}
 
-	return orc.ParseResponseFromStruct(resp), nil
+	parsed := orc.ParseResponseFromStruct(resp)
+	if parsed.Content == "" && len(parsed.ToolCalls) == 0 && streamText.Len() > 0 {
+		parsed.Content = streamText.String()
+	}
+	if len(parsed.ToolCalls) == 0 && len(streamToolCalls) > 0 {
+		parsed.ToolCalls = streamToolCalls
+		parsed.FinishReason = "tool_calls"
+	}
+	return parsed, nil
+}
+
+func codexToolCallFromOutputItem(item responses.ResponseOutputItemUnion) (ToolCall, bool) {
+	if item.Type != "function_call" {
+		return ToolCall{}, false
+	}
+
+	call := item.AsFunctionCall()
+	if call.Name == "" {
+		return ToolCall{}, false
+	}
+
+	var args map[string]any
+	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
+		args = map[string]any{"raw": call.Arguments}
+	}
+
+	id := call.CallID
+	if id == "" {
+		id = call.ID
+	}
+
+	return ToolCall{
+		ID:        id,
+		Name:      call.Name,
+		Arguments: args,
+		Function: &FunctionCall{
+			Name:      call.Name,
+			Arguments: call.Arguments,
+		},
+	}, true
 }
 
 func (p *CodexProvider) GetDefaultModel() string {
@@ -162,6 +218,10 @@ func (p *CodexProvider) GetDefaultModel() string {
 
 func (p *CodexProvider) SupportsNativeSearch() bool {
 	return p.enableWebSearch
+}
+
+func (p *CodexProvider) SupportsThinking() bool {
+	return true
 }
 
 func resolveCodexModel(model string) (string, string) {
@@ -217,6 +277,9 @@ func buildCodexParams(
 			OfInputItemList: inputItems,
 		},
 		Store: openai.Opt(false),
+		Reasoning: shared.ReasoningParam{
+			Effort: codexReasoningEffort(options["thinking_level"]),
+		},
 	}
 
 	if instructions != "" {
@@ -240,31 +303,24 @@ func buildCodexParams(
 	return params
 }
 
+func codexReasoningEffort(raw any) shared.ReasoningEffort {
+	level, _ := raw.(string)
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "low":
+		return shared.ReasoningEffortLow
+	case "medium", "adaptive":
+		return shared.ReasoningEffortMedium
+	case "high":
+		return shared.ReasoningEffortHigh
+	case "xhigh", "max":
+		return shared.ReasoningEffortXhigh
+	default:
+		return shared.ReasoningEffortNone
+	}
+}
+
 func CreateCodexTokenSource() func() (string, string, error) {
 	return func() (string, string, error) {
-		cred, err := auth.GetCredential("openai")
-		if err != nil {
-			return "", "", fmt.Errorf("loading auth credentials: %w", err)
-		}
-		if cred == nil {
-			return "", "", fmt.Errorf("no credentials for openai. Run: picoclaw auth login --provider openai")
-		}
-
-		if cred.AuthMethod == "oauth" && cred.NeedsRefresh() && cred.RefreshToken != "" {
-			oauthCfg := auth.OpenAIOAuthConfig()
-			refreshed, err := auth.RefreshAccessToken(cred, oauthCfg)
-			if err != nil {
-				return "", "", fmt.Errorf("refreshing token: %w", err)
-			}
-			if refreshed.AccountID == "" {
-				refreshed.AccountID = cred.AccountID
-			}
-			if err := auth.SetCredential("openai", refreshed); err != nil {
-				return "", "", fmt.Errorf("saving refreshed token: %w", err)
-			}
-			return refreshed.AccessToken, refreshed.AccountID, nil
-		}
-
-		return cred.AccessToken, cred.AccountID, nil
+		return auth.GetOpenAIToken()
 	}
 }

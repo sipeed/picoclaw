@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/auth"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -24,6 +25,7 @@ type WhisperTranscriber struct {
 	apiBase      string
 	modelID      string
 	providerName string
+	tokenSource  func() (string, error)
 	httpClient   *http.Client
 }
 
@@ -46,12 +48,17 @@ func NewWhisperTranscriber(modelCfg *config.ModelConfig) *WhisperTranscriber {
 	if tr == nil {
 		return nil
 	}
+	if modelCfg.AuthMethod == "oauth" && protocol == "openai" {
+		tr.tokenSource = createOpenAITranscriptionTokenSource()
+	}
 
 	logger.DebugCF("voice", "Creating whisper transcriber", map[string]any{
-		"api_base": tr.apiBase,
-		"has_key":  tr.apiKey != "",
-		"model":    tr.modelID,
-		"provider": tr.providerName,
+		"api_base":    tr.apiBase,
+		"auth_method": modelCfg.AuthMethod,
+		"has_key":     tr.apiKey != "",
+		"has_oauth":   tr.tokenSource != nil,
+		"model":       tr.modelID,
+		"provider":    tr.providerName,
 	})
 	return tr
 }
@@ -84,6 +91,13 @@ func (t *WhisperTranscriber) transcriptionURL() string {
 		return base
 	}
 	return base + "/audio/transcriptions"
+}
+
+func (t *WhisperTranscriber) authorizationToken() (string, error) {
+	if t.tokenSource != nil {
+		return t.tokenSource()
+	}
+	return t.apiKey, nil
 }
 
 func (t *WhisperTranscriber) TranscribeData(
@@ -189,8 +203,13 @@ func (t *WhisperTranscriber) doRequest(
 	}
 
 	req.Header.Set("Content-Type", contentType)
-	if t.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+t.apiKey)
+	token, err := t.authorizationToken()
+	if err != nil {
+		logger.ErrorCF("voice", "Failed to load transcription auth token", map[string]any{"error": err})
+		return nil, fmt.Errorf("failed to load transcription auth token: %w", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	logger.DebugCF("voice", "Sending whisper transcription request", map[string]any{
@@ -242,4 +261,11 @@ func (t *WhisperTranscriber) doRequest(
 
 func (t *WhisperTranscriber) Name() string {
 	return "whisper"
+}
+
+func createOpenAITranscriptionTokenSource() func() (string, error) {
+	return func() (string, error) {
+		token, _, err := auth.GetOpenAIToken()
+		return token, err
+	}
 }
