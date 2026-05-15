@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -27,6 +28,41 @@ const (
 type eventCollector struct {
 	mu     sync.Mutex
 	events []runtimeevents.Event
+}
+
+type recordingChannelManager struct {
+	dismissedSessions []string
+	dismissedChatIDs  []string
+}
+
+func (m *recordingChannelManager) GetChannel(name string) (channels.Channel, bool) { return nil, false }
+func (m *recordingChannelManager) GetEnabledChannels() []string                    { return nil }
+func (m *recordingChannelManager) InvokeTypingStop(channel, chatID string)         {}
+func (m *recordingChannelManager) SendMessage(ctx context.Context, msg bus.OutboundMessage) error {
+	return nil
+}
+
+func (m *recordingChannelManager) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	return nil
+}
+
+func (m *recordingChannelManager) SendPlaceholder(ctx context.Context, channel, chatID string) bool {
+	return false
+}
+
+func (m *recordingChannelManager) DismissToolFeedback(
+	ctx context.Context, channel, chatID string, outboundCtx *bus.InboundContext,
+) {
+	m.dismissedChatIDs = append(m.dismissedChatIDs, fmt.Sprintf("%s:%s", channel, chatID))
+}
+
+func (m *recordingChannelManager) DismissToolFeedbackForSession(
+	ctx context.Context,
+	channel, chatID string,
+	outboundCtx *bus.InboundContext,
+	sessionKey string,
+) {
+	m.dismissedSessions = append(m.dismissedSessions, fmt.Sprintf("%s:%s:%s", channel, chatID, sessionKey))
 }
 
 func newEventCollector(t *testing.T, al *AgentLoop) (*eventCollector, func()) {
@@ -1536,6 +1572,56 @@ func TestSyncSubTurn_NoChannelDelivery(t *testing.T) {
 	// Verify channel length is 0
 	if len(parentTS.pendingResults) != 0 {
 		t.Errorf("Expected channel length 0, got %d", len(parentTS.pendingResults))
+	}
+}
+
+func TestSyncSubTurn_DismissesSessionScopedToolFeedback(t *testing.T) {
+	al, _, _, provider, cleanup := newTestAgentLoop(t)
+	_ = provider
+	defer cleanup()
+
+	cm := &recordingChannelManager{}
+	al.channelManager = cm
+
+	ctx := context.Background()
+	parentTS := &turnState{
+		ctx:            ctx,
+		turnID:         "parent-sync-dismiss",
+		depth:          0,
+		session:        newEphemeralSession(nil),
+		pendingResults: make(chan *tools.ToolResult, 16),
+		concurrencySem: make(chan struct{}, testMaxConcurrentSubTurns),
+	}
+	parentTS.ctx, parentTS.cancelFunc = context.WithCancel(ctx)
+	parentTS.agent = al.registry.GetDefaultAgent()
+	parentTS.opts = processOptions{
+		Dispatch: DispatchRequest{
+			InboundContext: &bus.InboundContext{
+				Channel: "telegram",
+				ChatID:  "-100123",
+				TopicID: "6",
+			},
+		},
+	}
+	parentTS.channel = "telegram"
+	parentTS.chatID = "-100123"
+	defer parentTS.Finish(false)
+
+	result, err := spawnSubTurn(ctx, al, parentTS, SubTurnConfig{
+		Model: "gpt-4o-mini",
+		Async: false,
+	})
+	if err != nil {
+		t.Fatalf("spawnSubTurn failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if len(cm.dismissedSessions) != 1 {
+		t.Fatalf("dismissedSessions = %v, want exactly one dismissal", cm.dismissedSessions)
+	}
+	if got := cm.dismissedSessions[0]; !strings.HasPrefix(got, "telegram:-100123:subturn-") {
+		t.Fatalf("dismissed session key = %q, want telegram:-100123:subturn-*", got)
 	}
 }
 

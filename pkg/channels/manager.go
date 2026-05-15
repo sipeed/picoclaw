@@ -210,6 +210,32 @@ func dismissTrackedToolFeedbackMessage(
 	}
 }
 
+func dismissTrackedToolFeedbackMessageForSession(
+	ctx context.Context,
+	ch Channel,
+	chatID string,
+	outboundCtx *bus.InboundContext,
+	sessionKey string,
+) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		dismissTrackedToolFeedbackMessage(ctx, ch, chatID, outboundCtx)
+		return
+	}
+	trackedChatID := trackedToolFeedbackMessageChatID(ch, chatID, outboundCtx)
+	if trackedChatID == "" {
+		return
+	}
+	sessionTrackedChatID := trackedChatID + "#session:" + sessionKey
+	if cleaner, ok := ch.(toolFeedbackMessageCleaner); ok {
+		cleaner.DismissToolFeedbackMessage(ctx, sessionTrackedChatID)
+		return
+	}
+	if tracker, ok := ch.(toolFeedbackMessageTracker); ok {
+		tracker.ClearToolFeedbackMessage(sessionTrackedChatID)
+	}
+}
+
 func clearTrackedToolFeedbackMessage(
 	ch Channel,
 	chatID string,
@@ -237,6 +263,16 @@ func (m *Manager) DismissToolFeedback(
 		return
 	}
 	dismissTrackedToolFeedbackMessage(ctx, ch, chatID, outboundCtx)
+}
+
+func (m *Manager) DismissToolFeedbackForSession(
+	ctx context.Context, channelName, chatID string, outboundCtx *bus.InboundContext, sessionKey string,
+) {
+	ch, ok := m.GetChannel(channelName)
+	if !ok {
+		return
+	}
+	dismissTrackedToolFeedbackMessageForSession(ctx, ch, chatID, outboundCtx, sessionKey)
 }
 
 func prepareToolFeedbackMessageContent(ch Channel, content string) string {
