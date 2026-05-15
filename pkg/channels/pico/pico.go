@@ -990,11 +990,24 @@ func parseInlineImageMedia(payload map[string]any) ([]string, error) {
 		return nil, nil
 	}
 
-	raw, ok := payload["media"]
-	if !ok || raw == nil {
-		return nil, nil
+	media, err := parseInlineImageValues(payload["media"])
+	if err != nil {
+		return nil, err
 	}
 
+	attachments, err := parseInlineImageAttachments(payload["attachments"])
+	if err != nil {
+		return nil, err
+	}
+	media = append(media, attachments...)
+
+	return media, nil
+}
+
+func parseInlineImageValues(raw any) ([]string, error) {
+	if raw == nil {
+		return nil, nil
+	}
 	switch values := raw.(type) {
 	case []any:
 		media := make([]string, 0, len(values))
@@ -1028,6 +1041,44 @@ func parseInlineImageMedia(payload map[string]any) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("media must be a string or array of strings")
 	}
+}
+
+func parseInlineImageAttachments(raw any) ([]string, error) {
+	if raw == nil {
+		return nil, nil
+	}
+
+	values, ok := raw.([]any)
+	if !ok {
+		return nil, fmt.Errorf("attachments must be an array")
+	}
+
+	media := make([]string, 0, len(values))
+	for i, item := range values {
+		attachment, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("attachments[%d]: attachment must be an object", i)
+		}
+
+		attachmentType, _ := attachment["type"].(string)
+		attachmentType = strings.ToLower(strings.TrimSpace(attachmentType))
+		if attachmentType != "" && attachmentType != "image" {
+			continue
+		}
+
+		value, err := inlineImageValue(attachment)
+		if err != nil {
+			if attachmentType == "image" {
+				return nil, fmt.Errorf("attachments[%d]: %w", i, err)
+			}
+			continue
+		}
+		if err := validateInlineImageDataURL(value); err != nil {
+			return nil, fmt.Errorf("attachments[%d]: %w", i, err)
+		}
+		media = append(media, value)
+	}
+	return media, nil
 }
 
 func inlineImageValue(item any) (string, error) {

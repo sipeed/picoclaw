@@ -285,6 +285,24 @@ func TestParseInlineImageMedia_Valid(t *testing.T) {
 	}
 }
 
+func TestParseInlineImageMedia_Attachments(t *testing.T) {
+	imageURL := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2ioAAAAASUVORK5CYII="
+	media, err := parseInlineImageMedia(map[string]any{
+		"attachments": []any{
+			map[string]any{
+				"type": "image",
+				"url":  imageURL,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("parseInlineImageMedia() error = %v", err)
+	}
+	if len(media) != 1 || media[0] != imageURL {
+		t.Fatalf("media = %#v, want attachment image payload", media)
+	}
+}
+
 func TestPicoChannel_HandleMessageSend_AllowsMediaOnly(t *testing.T) {
 	mb := bus.NewMessageBus()
 	bc := &config.Channel{Type: "pico", Enabled: true}
@@ -323,6 +341,46 @@ func TestPicoChannel_HandleMessageSend_AllowsMediaOnly(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("timed out waiting for inbound media message")
+	}
+}
+
+func TestPicoClientChannel_HandleServerMessage_ForwardsMedia(t *testing.T) {
+	mb := bus.NewMessageBus()
+	bc := &config.Channel{Type: config.ChannelPicoClient, Enabled: true}
+	ch, err := NewPicoClientChannel(bc, &config.PicoClientSettings{
+		URL: "ws://localhost:8080/ws",
+	}, mb)
+	if err != nil {
+		t.Fatalf("NewPicoClientChannel() error = %v", err)
+	}
+
+	ch.ctx = context.Background()
+	pc := &picoConn{sessionID: "sess-media"}
+	imageURL := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2ioAAAAASUVORK5CYII="
+
+	ch.handleServerMessage(pc, PicoMessage{
+		Type: TypeMessageCreate,
+		Payload: map[string]any{
+			PayloadKeyContent: "describe this",
+			"attachments": []any{
+				map[string]any{
+					"type": "image",
+					"url":  imageURL,
+				},
+			},
+		},
+	})
+
+	select {
+	case msg := <-mb.InboundChan():
+		if msg.Content != "describe this" {
+			t.Fatalf("msg.Content = %q, want describe this", msg.Content)
+		}
+		if len(msg.Media) != 1 || msg.Media[0] != imageURL {
+			t.Fatalf("msg.Media = %#v, want forwarded image payload", msg.Media)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for forwarded media message")
 	}
 }
 

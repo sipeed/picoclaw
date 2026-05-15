@@ -235,6 +235,8 @@ func (c *PicoClientChannel) handleInbound(pc *picoConn, msg PicoMessage) {
 	case TypeMessageCreate:
 		// Server sent us a message — treat as inbound
 		c.handleServerMessage(pc, msg)
+	case TypeMediaCreate:
+		c.handleServerMessage(pc, msg)
 	default:
 		logger.DebugCF("pico_client", "Ignoring message type", map[string]any{
 			"type": msg.Type,
@@ -248,7 +250,14 @@ func (c *PicoClientChannel) handleServerMessage(pc *picoConn, msg PicoMessage) {
 	}
 
 	content, _ := msg.Payload[PayloadKeyContent].(string)
-	if strings.TrimSpace(content) == "" {
+	media, err := parseInlineImageMedia(msg.Payload)
+	if err != nil {
+		logger.WarnCF("pico_client", "Ignoring invalid media payload", map[string]any{
+			"error": err.Error(),
+		})
+		return
+	}
+	if strings.TrimSpace(content) == "" && len(media) == 0 {
 		return
 	}
 
@@ -281,7 +290,7 @@ func (c *PicoClientChannel) handleServerMessage(pc *picoConn, msg PicoMessage) {
 		},
 	}
 
-	c.HandleInboundContext(c.ctx, chatID, content, nil, inboundCtx, sender)
+	c.HandleInboundContext(c.ctx, chatID, content, media, inboundCtx, sender)
 }
 
 // Send sends a message to the remote server.
