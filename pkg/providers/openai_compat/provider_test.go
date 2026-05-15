@@ -252,9 +252,16 @@ func TestProviderChat_StripsReasoningContentForNonDeepSeekHistory(t *testing.T) 
 	}
 }
 
-func TestProviderChat_DeepSeekOmitsReasoningContentForNonToolTurnHistory(t *testing.T) {
-	var requestBody map[string]any
+func runCapturedChat(
+	t *testing.T,
+	providerName string,
+	apiBase string,
+	messages []Message,
+	model string,
+) []any {
+	t.Helper()
 
+	var requestBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -274,21 +281,20 @@ func TestProviderChat_DeepSeekOmitsReasoningContentForNonToolTurnHistory(t *test
 	defer server.Close()
 
 	p := NewProvider("key", server.URL, "")
-	p.apiBase = "https://api.deepseek.com/v1"
-	p.httpClient = &http.Client{
-		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
-			r.URL, _ = url.Parse(server.URL + r.URL.Path)
-			return http.DefaultTransport.RoundTrip(r)
-		}),
+	if providerName != "" {
+		p.SetProviderName(providerName)
+	}
+	if apiBase != "" {
+		p.apiBase = apiBase
+		p.httpClient = &http.Client{
+			Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				r.URL, _ = url.Parse(server.URL + r.URL.Path)
+				return http.DefaultTransport.RoundTrip(r)
+			}),
+		}
 	}
 
-	messages := []Message{
-		{Role: "user", Content: "What is 1+1?"},
-		{Role: "assistant", Content: "2", ReasoningContent: "Let me think... 1+1=2"},
-		{Role: "user", Content: "What about 2+2?"},
-	}
-
-	_, err := p.Chat(t.Context(), messages, nil, "deepseek-v4-flash", nil)
+	_, err := p.Chat(t.Context(), messages, nil, model, nil)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
@@ -297,16 +303,112 @@ func TestProviderChat_DeepSeekOmitsReasoningContentForNonToolTurnHistory(t *test
 	if !ok {
 		t.Fatalf("messages is not []any: %T", requestBody["messages"])
 	}
-	assistantMsg, ok := reqMessages[1].(map[string]any)
+	return reqMessages
+}
+
+func nonToolReplayMessages() []Message {
+	return []Message{
+		{Role: "user", Content: "What is 1+1?"},
+		{Role: "assistant", Content: "2", ReasoningContent: "Let me think... 1+1=2"},
+		{Role: "user", Content: "What about 2+2?"},
+	}
+}
+
+func docsReplayRequirementMessages() []Message {
+	return []Message{
+		{Role: "user", Content: "Who wrote The Hobbit?"},
+		{Role: "assistant", Content: "J.R.R. Tolkien.", ReasoningContent: "I know this from general knowledge."},
+		{Role: "user", Content: "What's the weather tomorrow?"},
+		{
+			Role:             "assistant",
+			Content:          "Let me check the date first.",
+			ReasoningContent: "I need tomorrow's date before checking the weather.",
+			ToolCalls: []ToolCall{{
+				ID:   "call_date",
+				Type: "function",
+				Function: &FunctionCall{
+					Name:      "get_date",
+					Arguments: "{}",
+				},
+			}},
+		},
+		{Role: "tool", ToolCallID: "call_date", Content: "2026-04-29"},
+		{
+			Role:             "assistant",
+			Content:          "Tomorrow is 2026-04-30.",
+			ReasoningContent: "Now I can continue with the weather request.",
+		},
+		{Role: "user", Content: "What about Guangzhou?"},
+	}
+}
+
+func assertAssistantReasoningOmitted(t *testing.T, reqMessages []any, index int, label string) {
+	t.Helper()
+
+	assistantMsg, ok := reqMessages[index].(map[string]any)
 	if !ok {
-		t.Fatalf("assistant message is not map[string]any: %T", reqMessages[1])
+		t.Fatalf("assistant message is not map[string]any: %T", reqMessages[index])
 	}
 	if _, exists := assistantMsg["reasoning_content"]; exists {
 		t.Fatalf(
-			"reasoning_content should be omitted for DeepSeek non-tool turns, got %v",
+			"reasoning_content should be omitted for %s non-tool turns, got %v",
+			label,
 			assistantMsg["reasoning_content"],
 		)
 	}
+}
+
+func assertDocsReplayRequirements(t *testing.T, reqMessages []any, messages []Message, label string) {
+	t.Helper()
+
+	if len(reqMessages) != len(messages) {
+		t.Fatalf("len(messages) = %d, want %d", len(reqMessages), len(messages))
+	}
+
+	plainAssistant, ok := reqMessages[1].(map[string]any)
+	if !ok {
+		t.Fatalf("plain assistant message is not map[string]any: %T", reqMessages[1])
+	}
+	if _, exists := plainAssistant["reasoning_content"]; exists {
+		t.Fatalf(
+			"plain %s turn should omit reasoning_content on replay, got %v",
+			label,
+			plainAssistant["reasoning_content"],
+		)
+	}
+
+	toolAssistant, ok := reqMessages[3].(map[string]any)
+	if !ok {
+		t.Fatalf("tool assistant message is not map[string]any: %T", reqMessages[3])
+	}
+	if toolAssistant["reasoning_content"] != "I need tomorrow's date before checking the weather." {
+		t.Fatalf(
+			"tool assistant reasoning_content = %v, want preserved",
+			toolAssistant["reasoning_content"],
+		)
+	}
+
+	finalAssistant, ok := reqMessages[5].(map[string]any)
+	if !ok {
+		t.Fatalf("final assistant message is not map[string]any: %T", reqMessages[5])
+	}
+	if finalAssistant["reasoning_content"] != "Now I can continue with the weather request." {
+		t.Fatalf(
+			"final assistant reasoning_content = %v, want preserved",
+			finalAssistant["reasoning_content"],
+		)
+	}
+}
+
+func TestProviderChat_DeepSeekOmitsReasoningContentForNonToolTurnHistory(t *testing.T) {
+	reqMessages := runCapturedChat(
+		t,
+		"",
+		"https://api.deepseek.com/v1",
+		nonToolReplayMessages(),
+		"deepseek-v4-flash",
+	)
+	assertAssistantReasoningOmitted(t, reqMessages, 1, "DeepSeek")
 }
 
 func TestProviderChat_DeepSeekPreservesReasoningContentForToolTurnHistory(t *testing.T) {
@@ -512,6 +614,32 @@ func TestProviderChat_HistoryCanonicalizationMatrix(t *testing.T) {
 		}
 	})
 
+	t.Run("mimo", func(t *testing.T) {
+		msgs := captureRequestMessages(t, "mimo")
+		if len(msgs) != len(baseMessages) {
+			t.Fatalf("len(messages) = %d, want %d", len(msgs), len(baseMessages))
+		}
+
+		if _, ok := msgs[1]["reasoning_content"]; ok {
+			t.Fatalf(
+				"turn1 reasoning_content should be stripped for MiMo non-tool turn, got %v",
+				msgs[1]["reasoning_content"],
+			)
+		}
+		if msgs[3]["reasoning_content"] != "tool thought" {
+			t.Fatalf("turn2 reasoning_content = %v, want preserved", msgs[3]["reasoning_content"])
+		}
+		if _, ok := msgs[6]["reasoning_content"]; ok {
+			t.Fatalf("turn3 reasoning_content should be absent, got %v", msgs[6]["reasoning_content"])
+		}
+		if msgs[9]["reasoning_content"] != "tool mixed thought" {
+			t.Fatalf("turn4 reasoning_content = %v, want preserved", msgs[9]["reasoning_content"])
+		}
+		if msgs[9]["content"] != "tool visible and thought" {
+			t.Fatalf("turn4 content = %v, want preserved", msgs[9]["content"])
+		}
+	})
+
 	t.Run("non-deepseek", func(t *testing.T) {
 		msgs := captureRequestMessages(t, "")
 		for i, msg := range msgs {
@@ -536,100 +664,29 @@ func TestProviderChat_DeepSeekDocsReplayRequirements(t *testing.T) {
 	// Keep this behavior explicit here so future changes do not "fix" the
 	// non-tool stripping based on issue reports that are broader than the
 	// vendor documentation.
-	var requestBody map[string]any
+	messages := docsReplayRequirementMessages()
+	reqMessages := runCapturedChat(t, "deepseek", "", messages, "deepseek-v4-flash")
+	assertDocsReplayRequirements(t, reqMessages, messages, "DeepSeek")
+}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		resp := map[string]any{
-			"choices": []map[string]any{
-				{
-					"message":       map[string]any{"content": "ok"},
-					"finish_reason": "stop",
-				},
-			},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
-	}))
-	defer server.Close()
+func TestProviderChat_MiMoDocsReplayRequirements(t *testing.T) {
+	// MiMo documents the same replay rule as DeepSeek for thinking-mode
+	// tool rounds: plain non-tool turns may omit reasoning_content on replay,
+	// while tool-interaction rounds must keep it in subsequent requests.
+	messages := docsReplayRequirementMessages()
+	reqMessages := runCapturedChat(t, "mimo", "", messages, "mimo-2.5")
+	assertDocsReplayRequirements(t, reqMessages, messages, "MiMo")
+}
 
-	p := NewProvider("key", server.URL, "")
-	p.SetProviderName("deepseek")
-
-	messages := []Message{
-		{Role: "user", Content: "Who wrote The Hobbit?"},
-		{Role: "assistant", Content: "J.R.R. Tolkien.", ReasoningContent: "I know this from general knowledge."},
-		{Role: "user", Content: "What's the weather tomorrow?"},
-		{
-			Role:             "assistant",
-			Content:          "Let me check the date first.",
-			ReasoningContent: "I need tomorrow's date before checking the weather.",
-			ToolCalls: []ToolCall{{
-				ID:   "call_date",
-				Type: "function",
-				Function: &FunctionCall{
-					Name:      "get_date",
-					Arguments: "{}",
-				},
-			}},
-		},
-		{Role: "tool", ToolCallID: "call_date", Content: "2026-04-29"},
-		{
-			Role:             "assistant",
-			Content:          "Tomorrow is 2026-04-30.",
-			ReasoningContent: "Now I can continue with the weather request.",
-		},
-		{Role: "user", Content: "What about Guangzhou?"},
-	}
-
-	_, err := p.Chat(t.Context(), messages, nil, "deepseek-v4-flash", nil)
-	if err != nil {
-		t.Fatalf("Chat() error = %v", err)
-	}
-
-	reqMessages, ok := requestBody["messages"].([]any)
-	if !ok {
-		t.Fatalf("messages is not []any: %T", requestBody["messages"])
-	}
-	if len(reqMessages) != len(messages) {
-		t.Fatalf("len(messages) = %d, want %d", len(reqMessages), len(messages))
-	}
-
-	plainAssistant, ok := reqMessages[1].(map[string]any)
-	if !ok {
-		t.Fatalf("plain assistant message is not map[string]any: %T", reqMessages[1])
-	}
-	if _, exists := plainAssistant["reasoning_content"]; exists {
-		t.Fatalf(
-			"plain DeepSeek turn should omit reasoning_content on replay, got %v",
-			plainAssistant["reasoning_content"],
-		)
-	}
-
-	toolAssistant, ok := reqMessages[3].(map[string]any)
-	if !ok {
-		t.Fatalf("tool assistant message is not map[string]any: %T", reqMessages[3])
-	}
-	if toolAssistant["reasoning_content"] != "I need tomorrow's date before checking the weather." {
-		t.Fatalf(
-			"tool assistant reasoning_content = %v, want preserved",
-			toolAssistant["reasoning_content"],
-		)
-	}
-
-	finalAssistant, ok := reqMessages[5].(map[string]any)
-	if !ok {
-		t.Fatalf("final assistant message is not map[string]any: %T", reqMessages[5])
-	}
-	if finalAssistant["reasoning_content"] != "Now I can continue with the weather request." {
-		t.Fatalf(
-			"final assistant reasoning_content = %v, want preserved",
-			finalAssistant["reasoning_content"],
-		)
-	}
+func TestProviderChat_MiMoHostUsesReasoningReplayRules(t *testing.T) {
+	reqMessages := runCapturedChat(
+		t,
+		"",
+		"https://api.xiaomimimo.com/v1",
+		nonToolReplayMessages(),
+		"mimo-2.5",
+	)
+	assertAssistantReasoningOmitted(t, reqMessages, 1, "MiMo")
 }
 
 func TestProviderChat_HTTPError(t *testing.T) {
@@ -1192,6 +1249,168 @@ func TestProviderChatStream_CustomHeadersInjected(t *testing.T) {
 	}
 	if gotUserAgent != "Custom-UA/Stream" {
 		t.Fatalf("User-Agent = %q, want %q", gotUserAgent, "Custom-UA/Stream")
+	}
+}
+
+func TestProviderChatStream_ParsesReasoningContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"Let me \",\"content\":\"Checking \",\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\"}}]}}]}\n\n",
+		))
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"think step by step.\",\"content\":\"the weather\",\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"Hangzhou\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":6,\"total_tokens\":16}}\n\n",
+		))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "weather?"}},
+		nil,
+		"deepseek-v4-flash",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+	if out.Content != "Checking the weather" {
+		t.Fatalf("Content = %q, want %q", out.Content, "Checking the weather")
+	}
+	if out.ReasoningContent != "Let me think step by step." {
+		t.Fatalf("ReasoningContent = %q, want %q", out.ReasoningContent, "Let me think step by step.")
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].ID != "call_1" {
+		t.Fatalf("ToolCalls[0].ID = %q, want %q", out.ToolCalls[0].ID, "call_1")
+	}
+	if out.ToolCalls[0].Name != "get_weather" {
+		t.Fatalf("ToolCalls[0].Name = %q, want %q", out.ToolCalls[0].Name, "get_weather")
+	}
+	if out.ToolCalls[0].Arguments["city"] != "Hangzhou" {
+		t.Fatalf("ToolCalls[0].Arguments[city] = %v, want %q", out.ToolCalls[0].Arguments["city"], "Hangzhou")
+	}
+	if out.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want %q", out.FinishReason, "tool_calls")
+	}
+	if out.Usage == nil || out.Usage.TotalTokens != 16 {
+		t.Fatalf("Usage = %#v, want total tokens 16", out.Usage)
+	}
+}
+
+func TestProviderChatStream_ParsesMultilineSSEEvent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\n" +
+				"data: \"content\":\"Hello\",\"reasoning_content\":\"Thinking\",\n" +
+				"data: \"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"message\\\":\\\"hello\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}],\n" +
+				"data: \"usage\":{\"prompt_tokens\":3,\"completion_tokens\":4,\"total_tokens\":7}}\n\n",
+		))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "say hello"}},
+		nil,
+		"gpt-4o",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+	if out.Content != "Hello" {
+		t.Fatalf("Content = %q, want %q", out.Content, "Hello")
+	}
+	if out.ReasoningContent != "Thinking" {
+		t.Fatalf("ReasoningContent = %q, want %q", out.ReasoningContent, "Thinking")
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "echo" {
+		t.Fatalf("ToolCalls[0].Name = %q, want %q", out.ToolCalls[0].Name, "echo")
+	}
+	if out.ToolCalls[0].Arguments["message"] != "hello" {
+		t.Fatalf("ToolCalls[0].Arguments[message] = %v, want %q", out.ToolCalls[0].Arguments["message"], "hello")
+	}
+	if out.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want %q", out.FinishReason, "tool_calls")
+	}
+	if out.Usage == nil || out.Usage.TotalTokens != 7 {
+		t.Fatalf("Usage = %#v, want total tokens 7", out.Usage)
+	}
+}
+
+func TestProviderChatStream_ParsesReasoningVariants(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"reasoning\":\"step 1\",\"reasoning_details\":[{\"format\":\"text\",\"index\":0,\"type\":\"summary\",\"text\":\"first\"}]}}]}\n\n",
+		))
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"reasoning\":\" + step 2\",\"reasoning_details\":[{\"format\":\"text\",\"index\":1,\"type\":\"summary\",\"text\":\"second\"}],\"content\":\"done\"},\"finish_reason\":\"stop\"}]}\n\n",
+		))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "think"}},
+		nil,
+		"gpt-4o",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+	if out.Content != "done" {
+		t.Fatalf("Content = %q, want %q", out.Content, "done")
+	}
+	if out.Reasoning != "step 1 + step 2" {
+		t.Fatalf("Reasoning = %q, want %q", out.Reasoning, "step 1 + step 2")
+	}
+	if len(out.ReasoningDetails) != 2 {
+		t.Fatalf("len(ReasoningDetails) = %d, want 2", len(out.ReasoningDetails))
+	}
+	if out.ReasoningDetails[0].Text != "first" || out.ReasoningDetails[1].Text != "second" {
+		t.Fatalf("ReasoningDetails = %#v, want texts first/second", out.ReasoningDetails)
+	}
+}
+
+func TestProviderChatStream_InvalidEventReturnsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[\n\n"))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	_, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"gpt-4o",
+		nil,
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected error for malformed stream event")
+	}
+	if !strings.Contains(err.Error(), "failed to decode stream event") {
+		t.Fatalf("error = %v, want decode stream event error", err)
 	}
 }
 

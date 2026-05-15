@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -406,6 +408,133 @@ func TestCallTool_ErrorsForClosedOrMissingServer(t *testing.T) {
 			t.Fatalf("expected server not found error, got: %v", err)
 		}
 	})
+}
+
+func TestConnectServer_StreamableHTTPRequestResponseMode(t *testing.T) {
+	t.Parallel()
+
+	for _, transportType := range []string{"http", "streamable-http"} {
+		t.Run(transportType, func(t *testing.T) {
+			t.Parallel()
+
+			server := sdkmcp.NewServer(&sdkmcp.Implementation{
+				Name:    "streamable-test-server",
+				Version: "1.0.0",
+			}, nil)
+			sdkmcp.AddTool(server, &sdkmcp.Tool{
+				Name:        "echo",
+				Description: "Echo test tool",
+			}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args map[string]any) (*sdkmcp.CallToolResult, any, error) {
+				return &sdkmcp.CallToolResult{
+					Content: []sdkmcp.Content{
+						&sdkmcp.TextContent{Text: "ok"},
+					},
+				}, nil, nil
+			})
+
+			type observedRequest struct {
+				Method        string
+				SessionID     string
+				Authorization string
+			}
+
+			var (
+				mu       sync.Mutex
+				observed []observedRequest
+			)
+
+			handler := sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server {
+				return server
+			}, nil)
+			httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				observed = append(observed, observedRequest{
+					Method:        r.Method,
+					SessionID:     r.Header.Get("Mcp-Session-Id"),
+					Authorization: r.Header.Get("Authorization"),
+				})
+				mu.Unlock()
+				handler.ServeHTTP(w, r)
+			}))
+			defer httpServer.Close()
+
+			conn, err := connectServer(context.Background(), "streamable", config.MCPServerConfig{
+				Enabled: true,
+				Type:    transportType,
+				URL:     httpServer.URL,
+				Headers: map[string]string{
+					"Authorization": "Bearer test-token",
+				},
+			})
+			if err != nil {
+				t.Fatalf("connectServer(%q) error = %v", transportType, err)
+			}
+			if got := len(conn.Tools); got != 1 {
+				t.Fatalf("len(conn.Tools) = %d, want 1", got)
+			}
+			if got := conn.Session.ID(); got == "" {
+				t.Fatal("expected non-empty streamable session ID")
+			}
+			if err := conn.Session.Close(); err != nil {
+				t.Fatalf("Session.Close() error = %v", err)
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			var (
+				getCount            int
+				postCount           int
+				deleteCount         int
+				postWithSession     bool
+				deleteWithSession   bool
+				requestsWithAuth    int
+				requestsWithoutAuth []string
+			)
+
+			for _, req := range observed {
+				switch req.Method {
+				case http.MethodGet:
+					getCount++
+				case http.MethodPost:
+					postCount++
+					if req.SessionID != "" {
+						postWithSession = true
+					}
+				case http.MethodDelete:
+					deleteCount++
+					if req.SessionID != "" {
+						deleteWithSession = true
+					}
+				}
+
+				if req.Authorization == "Bearer test-token" {
+					requestsWithAuth++
+				} else {
+					requestsWithoutAuth = append(requestsWithoutAuth, req.Method)
+				}
+			}
+
+			if getCount != 0 {
+				t.Fatalf("expected no standalone GET requests for %q transport, saw %d", transportType, getCount)
+			}
+			if postCount == 0 {
+				t.Fatal("expected POST requests during streamable HTTP handshake")
+			}
+			if deleteCount != 1 {
+				t.Fatalf("DELETE count = %d, want 1", deleteCount)
+			}
+			if !postWithSession {
+				t.Fatal("expected at least one POST request with Mcp-Session-Id")
+			}
+			if !deleteWithSession {
+				t.Fatal("expected DELETE request with Mcp-Session-Id")
+			}
+			if requestsWithAuth != len(observed) {
+				t.Fatalf("Authorization header missing on requests: %v", requestsWithoutAuth)
+			}
+		})
+	}
 }
 
 func TestCallTool_ReconnectsWhenHTTPServerLosesSession(t *testing.T) {

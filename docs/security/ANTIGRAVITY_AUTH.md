@@ -689,7 +689,7 @@ case "your-provider":
     {
       "model_name": "your-model",
       "model": "your-provider/model-name",
-      "api_key": "your-api-key",
+      "api_keys": ["your-api-key"],
       "api_base": "https://api.your-provider.com/v1"
     }
   ]
@@ -723,7 +723,7 @@ picoclaw agent -m "Hello" --model your-model
 export PICOCLAW_AGENTS_DEFAULTS_MODEL=your-model
 
 # Override provider settings
-export PICOCLAW_MODEL_LIST='[{"model_name":"your-model","model":"your-provider/model-name","api_key":"..."}]'
+export PICOCLAW_MODEL_LIST='[{"model_name":"your-model","model":"your-provider/model-name","api_keys":["..."]}]'
 ```
 
 ---

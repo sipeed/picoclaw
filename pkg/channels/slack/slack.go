@@ -29,7 +29,7 @@ type SlackChannel struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	pendingAcks  sync.Map
-	uploadFileFn func(context.Context, slack.UploadFileV2Parameters) error
+	uploadFileFn func(context.Context, slack.UploadFileParameters) error
 	postTextFn   func(context.Context, string, string, string) error
 }
 
@@ -65,8 +65,8 @@ func NewSlackChannel(
 		config:       cfg,
 		api:          api,
 		socketClient: socketClient,
-		uploadFileFn: func(ctx context.Context, params slack.UploadFileV2Parameters) error {
-			_, err := api.UploadFileV2Context(ctx, params)
+		uploadFileFn: func(ctx context.Context, params slack.UploadFileParameters) error {
+			_, err := api.UploadFileContext(ctx, params)
 			return err
 		},
 		postTextFn: func(ctx context.Context, channelID, threadTS, text string) error {
@@ -207,7 +207,7 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 			title = filename
 		}
 
-		err = c.uploadFileFn(ctx, slack.UploadFileV2Parameters{
+		err = c.uploadFileFn(ctx, slack.UploadFileParameters{
 			Channel:         channelID,
 			ThreadTimestamp: threadTS,
 			File:            localPath,
@@ -230,7 +230,7 @@ func (c *SlackChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessa
 		}
 	}
 
-	// UploadFileV2 does not expose the posted message timestamp in its
+	// UploadFile does not expose the posted message timestamp in its
 	// response; returning nil avoids conflating file IDs with message IDs.
 	return nil, nil
 }

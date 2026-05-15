@@ -78,17 +78,17 @@ Inspired by [LiteLLM](https://docs.litellm.ai/docs/proxy/configs) design:
       "model_name": "deepseek-chat",
       "model": "openai/deepseek-chat",
       "api_base": "https://api.deepseek.com/v1",
-      "api_key": "sk-xxx"
+      "api_keys": ["sk-xxx"]
     },
     {
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
-      "api_key": "sk-xxx"
+      "api_keys": ["sk-xxx"]
     },
     {
       "model_name": "claude-sonnet-4.6",
       "model": "anthropic/claude-sonnet-4.6",
-      "api_key": "sk-xxx"
+      "api_keys": ["sk-xxx"]
     },
     {
       "model_name": "gemini-3-flash",
@@ -99,7 +99,7 @@ Inspired by [LiteLLM](https://docs.litellm.ai/docs/proxy/configs) design:
       "model_name": "my-company-llm",
       "model": "openai/company-model-v1",
       "api_base": "https://llm.company.com/v1",
-      "api_key": "xxx"
+      "api_keys": ["xxx"]
     }
   ],
 
@@ -252,7 +252,7 @@ func (c *Config) GetModelConfig(modelName string) (*ModelConfig, error) {
 {
   "providers": {
     "deepseek": {
-      "api_key": "sk-xxx",
+      "api_keys": ["sk-xxx"],
       "api_base": "https://api.deepseek.com/v1"
     }
   },

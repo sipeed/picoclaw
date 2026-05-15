@@ -216,7 +216,7 @@ func TestSendMedia_SendsCaptionFallbackAfterUploads(t *testing.T) {
 
 	var uploaded []slackUploadRecord
 	var posted []string
-	ch.uploadFileFn = func(ctx context.Context, params slacksdk.UploadFileV2Parameters) error {
+	ch.uploadFileFn = func(ctx context.Context, params slacksdk.UploadFileParameters) error {
 		uploaded = append(uploaded, slackUploadRecord{
 			Channel: params.Channel,
 			Thread:  params.ThreadTimestamp,

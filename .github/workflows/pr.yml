@@ -64,3 +64,13 @@ jobs:
 
       - name: Run go test
         run: go test -tags goolm,stdjson ./...
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run Docker-backed integration suites
+        run: bash ./scripts/run-integration-tests.sh

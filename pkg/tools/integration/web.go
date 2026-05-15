@@ -1258,7 +1258,7 @@ var (
 		"glm_search",
 		"baidu_search",
 	}
-	autoPrimaryWebSearchProviders  = []string{"gemini", "perplexity", "brave", "searxng", "tavily"}
+	autoPrimaryWebSearchProviders  = []string{"perplexity", "brave", "searxng", "tavily", "gemini"}
 	autoFallbackWebSearchProviders = []string{"baidu_search", "glm_search"}
 )
 
@@ -1315,6 +1315,13 @@ func (opts WebSearchToolOptions) resolveProviderName(query string) (string, erro
 
 	sogouReady := opts.providerReady("sogou")
 	duckReady := opts.providerReady("duckduckgo")
+
+	for _, name := range autoPrimaryWebSearchProviders {
+		if opts.providerReady(name) {
+			return name, nil
+		}
+	}
+
 	if sogouReady && duckReady {
 		if prefersDuckDuckGoQuery(query) {
 			return "duckduckgo", nil
@@ -1326,12 +1333,6 @@ func (opts WebSearchToolOptions) resolveProviderName(query string) (string, erro
 	}
 	if duckReady {
 		return "duckduckgo", nil
-	}
-
-	for _, name := range autoPrimaryWebSearchProviders {
-		if opts.providerReady(name) {
-			return name, nil
-		}
 	}
 
 	for _, name := range autoFallbackWebSearchProviders {

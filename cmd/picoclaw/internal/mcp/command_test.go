@@ -296,6 +296,47 @@ func TestMCPAddHTTPServer(t *testing.T) {
 	assert.Empty(t, server.Command)
 }
 
+func TestMCPAddSupportsStreamableHTTPAlias(t *testing.T) {
+	configPath := setupMCPConfigEnv(t)
+
+	cmd := NewMCPCommand()
+	_, err := executeCommand(cmd, []string{
+		"add",
+		"context7",
+		"--transport",
+		"streamable-http",
+		"https://mcp.context7.com/mcp",
+	}, "")
+	require.NoError(t, err)
+
+	cfg := readMCPConfig(t, configPath)
+	server := cfg.Tools.MCP.Servers["context7"]
+	assert.Equal(t, "http", server.Type)
+	assert.Equal(t, "https://mcp.context7.com/mcp", server.URL)
+}
+
+func TestSaveValidatedConfigNormalizesStreamableHTTPAlias(t *testing.T) {
+	configPath := setupMCPConfigEnv(t)
+
+	cfg := config.DefaultConfig()
+	cfg.Tools.MCP.Enabled = true
+	cfg.Tools.MCP.Servers = map[string]config.MCPServerConfig{
+		"context7": {
+			Enabled: true,
+			Type:    "streamable-http",
+			URL:     "https://mcp.context7.com/mcp",
+		},
+	}
+
+	require.NoError(t, saveValidatedConfig(cfg))
+
+	saved := readMCPConfig(t, configPath)
+	server := saved.Tools.MCP.Servers["context7"]
+	assert.Equal(t, "http", server.Type)
+	assert.Equal(t, "https://mcp.context7.com/mcp", server.URL)
+	assert.Equal(t, "streamable-http", cfg.Tools.MCP.Servers["context7"].Type)
+}
+
 func TestMCPRemoveRemovesLastServerAndDisablesMCP(t *testing.T) {
 	configPath := setupMCPConfigEnv(t)
 	writeMCPConfig(t, configPath, &config.Config{

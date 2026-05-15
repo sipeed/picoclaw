@@ -152,7 +152,7 @@ You can now remove sensitive fields from `config.json` since they're loaded from
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api.openai.com/v1",
-      "api_key": "sk-your-actual-api-key-here"
+      "api_keys": ["sk-your-actual-api-key-here"]
     }
   ],
   "channel_list": {

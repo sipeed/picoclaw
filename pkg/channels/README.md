@@ -791,7 +791,7 @@ the top level, with channel-specific settings in the `settings` sub-key:
 
 ```json
 {
-  "channels": {
+  "channel_list": {
     "matrix": {
       "enabled": true,
       "type": "matrix",

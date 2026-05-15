@@ -1178,7 +1178,11 @@ type MCPServerConfig struct {
 	Env map[string]string `json:"env,omitempty"`
 	// EnvFile is the path to a file containing environment variables (stdio only)
 	EnvFile string `json:"env_file,omitempty"`
-	// Type is "stdio", "sse", or "http" (default: stdio if command is set, sse if url is set)
+	// Type is "stdio", "sse", "http", or "streamable-http".
+	// "http" and "streamable-http" both select streamable HTTP request-response
+	// mode, while "sse" keeps the standalone SSE listener enabled for
+	// server-initiated notifications. Defaults: stdio if command is set, sse if
+	// url is set.
 	Type string `json:"type,omitempty"`
 	// URL is used for SSE/HTTP transport
 	URL string `json:"url,omitempty"`

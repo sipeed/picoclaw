@@ -540,7 +540,7 @@ func TestHandleUpdateWebSearchConfig_PreservesAndReplacesMultiKeys(t *testing.T)
 	}
 }
 
-func TestResolveCurrentWebSearchProvider_PrefersConfiguredProvidersBeforeSogou(t *testing.T) {
+func TestResolveCurrentWebSearchProvider_PrefersConfiguredProvidersInAutoMode(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Tools.Web.Provider = "auto"
 	cfg.Tools.Web.Sogou.Enabled = true
