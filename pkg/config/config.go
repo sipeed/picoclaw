@@ -581,13 +581,14 @@ func (c *WeixinSettings) SetToken(token string) {
 }
 
 type PicoSettings struct {
-	Token           SecureString `json:"token,omitzero"              yaml:"token,omitempty" env:"PICOCLAW_CHANNELS_PICO_TOKEN"`
+	Token           SecureString `json:"token,omitzero"              yaml:"token,omitempty"     env:"PICOCLAW_CHANNELS_PICO_TOKEN"`
 	AllowTokenQuery bool         `json:"allow_token_query,omitempty" yaml:"-"`
 	AllowOrigins    []string     `json:"allow_origins,omitempty"     yaml:"-"`
 	PingInterval    int          `json:"ping_interval,omitempty"     yaml:"-"`
 	ReadTimeout     int          `json:"read_timeout,omitempty"      yaml:"-"`
 	WriteTimeout    int          `json:"write_timeout,omitempty"     yaml:"-"`
 	MaxConnections  int          `json:"max_connections,omitempty"   yaml:"-"`
+	Streaming       bool         `json:"streaming,omitempty"         yaml:"streaming,omitempty"`
 }
 
 // SetToken sets the Pico token and marks it as dirty for security saving

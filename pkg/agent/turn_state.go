@@ -237,6 +237,11 @@ type turnState struct {
 
 	// Back-reference to the owning AgentLoop (set for SubTurns only, used for hard abort cascade)
 	al *AgentLoop
+
+	// Streaming support
+	streamer          bus.Streamer
+	streamerOnce      sync.Once
+	streamerFinalized bool
 }
 
 // =============================================================================
@@ -809,4 +814,41 @@ func turnStateFromContext(ctx context.Context) *turnState {
 // TurnStateFromContext retrieves turnState from context (exported for tools)
 func TurnStateFromContext(ctx context.Context) *turnState {
 	return turnStateFromContext(ctx)
+}
+
+// Streamer management methods
+
+func (ts *turnState) setStreamer(s bus.Streamer) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.streamer = s
+}
+
+func (ts *turnState) getStreamer() bus.Streamer {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return ts.streamer
+}
+
+func (ts *turnState) finalizeStreamer(ctx context.Context, content string) {
+	ts.streamerOnce.Do(func() {
+		if ts.streamer != nil {
+			_ = ts.streamer.Finalize(ctx, content)
+			ts.streamerFinalized = true
+		}
+	})
+}
+
+func (ts *turnState) wasStreamed() bool {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return ts.streamerFinalized
+}
+
+func (ts *turnState) cancelStreamer(ctx context.Context) {
+	ts.streamerOnce.Do(func() {
+		if ts.streamer != nil {
+			ts.streamer.Cancel(ctx)
+		}
+	})
 }

@@ -223,6 +223,12 @@ func (al *AgentLoop) publishPicoToolCallInterim(
 			"chat_id": ts.chatID,
 			"error":   err.Error(),
 		})
+	} else if err == nil {
+		logger.InfoCF("agent", "Published pico tool calls", map[string]any{
+			"channel":    ts.channel,
+			"chat_id":    ts.chatID,
+			"tool_count": len(visibleToolCalls),
+		})
 	}
 }
 

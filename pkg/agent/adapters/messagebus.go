@@ -34,3 +34,7 @@ func (a *messageBusAdapter) PublishOutboundMedia(ctx context.Context, msg bus.Ou
 func (a *messageBusAdapter) InboundChan() <-chan bus.InboundMessage {
 	return a.inner.InboundChan()
 }
+
+func (a *messageBusAdapter) GetStreamer(ctx context.Context, channel, chatID string) (bus.Streamer, bool) {
+	return a.inner.GetStreamer(ctx, channel, chatID)
+}
