@@ -185,8 +185,8 @@ func (t *ImageGenerateTool) Execute(ctx context.Context, args map[string]any) *T
 }
 
 func writeGeneratedImage(image providers.GeneratedImage, index int) (string, error) {
-	dir, err := os.MkdirTemp("", "picoclaw-image-generate-*")
-	if err != nil {
+	dir := filepath.Join(media.TempDir(), "image_generate")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	name := fmt.Sprintf("image-%d-%s.%s", index+1, uuid.NewString(), image.Ext)
