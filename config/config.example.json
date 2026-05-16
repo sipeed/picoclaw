@@ -438,7 +438,13 @@
       "enabled": true,
       "enable_deny_patterns": true,
       "custom_deny_patterns": null,
-      "custom_allow_patterns": null
+      "custom_allow_patterns": null,
+      "tirith": {
+        "enabled": false,
+        "bin": "tirith",
+        "timeout_seconds": 5,
+        "fail_open": true
+      }
     },
     "skills": {
       "enabled": true,

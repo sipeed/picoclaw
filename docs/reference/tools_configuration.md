@@ -191,6 +191,7 @@ The exec tool is used to execute shell commands.
 | `enabled`              | bool  | true    | Enable the exec tool                        |
 | `enable_deny_patterns` | bool  | true    | Enable default dangerous command blocking  |
 | `custom_deny_patterns` | array | []      | Custom deny patterns (regular expressions) |
+| `tirith.enabled`       | bool  | false   | Enable optional Tirith pre-exec scanning   |
 
 ### Disabling the Exec Tool
 
@@ -218,6 +219,96 @@ PICOCLAW_TOOLS_EXEC_ENABLED=false
 
 - **`enable_deny_patterns`**: Set to `false` to completely disable the default dangerous command blocking patterns
 - **`custom_deny_patterns`**: Add custom deny regex patterns; commands matching these will be blocked
+
+### Optional Tirith Security Scan
+
+PicoClaw can run [Tirith](https://github.com/sheeki03/tirith) before executing a command. This is disabled by default
+and has no path lookup or subprocess overhead unless explicitly enabled.
+
+Tirith analyzes command text for content-level threats such as homograph and punycode URLs, pipe-to-interpreter
+chains (`curl | bash`, `wget | sh`, PowerShell `iwr | iex`, and wrapper variants with `sudo` / `env`), base64
+decode-execute chains, terminal-control injection, suspicious package or URL installs, insecure transport, shortened
+URLs, and credential or file exfiltration patterns. If the local Tirith installation has its signed threat-intelligence
+database installed, `tirith check` can also apply package, hostname, and IP reputation matches.
+
+PicoClaw does not download, install, vendor, or bundle Tirith. Install Tirith separately, then enable it in config:
+
+```json
+{
+  "tools": {
+    "exec": {
+      "tirith": {
+        "enabled": true,
+        "bin": "tirith",
+        "timeout_seconds": 5,
+        "fail_open": true
+      }
+    }
+  }
+}
+```
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `tirith.enabled` | bool | `false` | Run Tirith before command execution |
+| `tirith.bin` | string | `"tirith"` | Tirith binary name from `PATH`, or an explicit absolute/relative path. Empty values are treated as `"tirith"` |
+| `tirith.timeout_seconds` | int | `5` | Scanner timeout in seconds |
+| `tirith.fail_open` | bool | `true` | Allow commands if Tirith is missing or the scanner fails operationally |
+
+Explicit relative `tirith.bin` paths are resolved from PicoClaw's process working directory. Directories are rejected
+on all platforms, and non-executable regular files are rejected on Unix.
+
+Environment variables:
+
+```bash
+PICOCLAW_TOOLS_EXEC_TIRITH_ENABLED=true
+PICOCLAW_TOOLS_EXEC_TIRITH_BIN=tirith
+PICOCLAW_TOOLS_EXEC_TIRITH_TIMEOUT_SECONDS=5
+PICOCLAW_TOOLS_EXEC_TIRITH_FAIL_OPEN=true
+```
+
+For this integration, PicoClaw starts `tirith check` with a temporary local-only policy. The pre-exec check disables
+Tirith threat-DB auto-update, remote policy credentials inherited from the environment, live OSV/deps.dev enrichment,
+Google Safe Browsing enrichment, and supplemental phishing/abuse.ch feed downloads. Local threat-database files that
+are already installed remain available to Tirith, but PicoClaw does not install, update, or download them during
+command execution.
+
+Install methods depend on the Tirith project release you choose. Common options include:
+
+```bash
+brew install sheeki03/tap/tirith
+cargo install tirith
+tirith threat-db update  # optional, enables local threat-intelligence database matches
+```
+
+You can also download a release binary from the Tirith project. PicoClaw only needs the final `tirith` executable
+to be on `PATH` or configured with `tools.exec.tirith.bin`.
+
+Supported prebuilt platform coverage is determined by the Tirith binary you install. Common Tirith release targets
+include macOS x86_64/aarch64, Linux x86_64/aarch64, and Windows x86_64. PicoClaw passes `--shell posix` on non-Windows
+systems and `--shell powershell` on Windows to match its command execution path.
+
+PicoClaw runs:
+
+```text
+tirith check --format json --non-interactive --no-daemon --shell <mode> -- <command>
+```
+
+Tirith's exit code is the verdict source of truth:
+
+| Exit code | PicoClaw behavior |
+|-----------|-------------------|
+| `0` | Allow |
+| `1` | Block |
+| `2` | Log a warning and allow |
+| Other scanner failure | Allow when `fail_open=true`; block when `fail_open=false` |
+
+Direct non-interactive `tirith check` normally returns `0`, `1`, or `2`. PicoClaw also handles Tirith's warn-ack exit
+defensively by logging and allowing, but it is not expected in normal non-interactive use.
+
+Tirith scans the top-level `exec` command before PicoClaw starts the process. It does not inspect later `write` or
+`send-keys` input sent into an already-running background or PTY session, and it does not recursively inspect child
+processes spawned by the command after it starts.
 
 ### Default Blocked Command Patterns
 
