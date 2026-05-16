@@ -95,9 +95,9 @@ export function ProviderCombobox({
   return (
     <Popover
       open={open}
-      onOpenChange={(v) => {
-        setOpen(v)
-        if (!v) setCustomMode(false)
+      onOpenChange={(isOpen: boolean) => {
+        setOpen(isOpen)
+        if (!isOpen) setCustomMode(false)
       }}
     >
       <PopoverTrigger asChild>
