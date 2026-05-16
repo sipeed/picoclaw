@@ -15,7 +15,10 @@ import rehypeRaw from "rehype-raw"
 import rehypeSanitize from "rehype-sanitize"
 import remarkGfm from "remark-gfm"
 
-import { MessageCodeBlock, MarkdownCodeBlock } from "@/components/chat/message-code-block"
+import {
+  MessageCodeBlock,
+  MarkdownCodeBlock,
+} from "@/components/chat/message-code-block"
 import { Button } from "@/components/ui/button"
 import { formatMessageTime } from "@/hooks/use-pico-chat"
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard"

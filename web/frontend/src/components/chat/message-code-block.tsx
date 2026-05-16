@@ -3,6 +3,8 @@ import {
   IconChevronDown,
   IconCopy,
 } from "@tabler/icons-react"
+import hljs from "highlight.js/lib/core"
+import json from "highlight.js/lib/languages/json"
 import { type ComponentProps, type ReactNode, useState } from "react"
 import { useTranslation } from "react-i18next"
 
@@ -16,6 +18,11 @@ import {
 
 import { Button } from "@/components/ui/button"
 
+const CODE_LABEL_FONT_FAMILY =
+  'ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", monospace'
+
+hljs.registerLanguage("json", json)
+
 interface MessageCodeBlockProps {
   code: string
   language?: string | null
@@ -28,6 +35,18 @@ interface MessageCodeBlockProps {
 
 interface MarkdownCodeBlockProps extends ComponentProps<"pre"> {
   node?: MarkdownNode
+}
+
+function getHighlightedHtml(code: string, language?: string | null) {
+  if (!language) {
+    return null
+  }
+
+  try {
+    return hljs.highlight(code, { language }).value
+  } catch {
+    return null
+  }
 }
 
 export function MessageCodeBlock({
@@ -49,6 +68,7 @@ export function MessageCodeBlock({
       : t("chat.codeLabel").toLocaleLowerCase())
   const copyLabel = isCopied ? t("chat.copiedLabel") : t("chat.copyCode")
   const expandLabel = isExpanded ? t("chat.collapseCode") : t("chat.expandCode")
+  const highlightedHtml = !children ? getHighlightedHtml(code, language) : null
 
   return (
     <div
@@ -59,7 +79,10 @@ export function MessageCodeBlock({
       )}
     >
       <div className="flex items-center justify-between gap-2 border-b border-[#d0d7de] bg-black/[0.03] px-3 py-2 dark:border-[#30363d] dark:bg-white/[0.03]">
-        <span className="font-mono text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
+        <span
+          className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400"
+          style={{ fontFamily: CODE_LABEL_FONT_FAMILY }}
+        >
           {blockLabel}
         </span>
         <div className="flex items-center gap-1">
@@ -106,9 +129,16 @@ export function MessageCodeBlock({
           )}
         >
           {children ?? (
-            <code className={language ? `language-${language}` : undefined}>
-              {code}
-            </code>
+            highlightedHtml ? (
+              <code
+                className={cn("hljs", language && `language-${language}`)}
+                dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+              />
+            ) : (
+              <code className={language ? `language-${language}` : undefined}>
+                {code}
+              </code>
+            )
           )}
         </pre>
       )}
