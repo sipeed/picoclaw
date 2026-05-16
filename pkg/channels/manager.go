@@ -171,7 +171,9 @@ func outboundMessageBypassesPlaceholderEdit(msg bus.OutboundMessage) bool {
 		return false
 	}
 	kind := strings.TrimSpace(msg.Context.Raw["message_kind"])
-	return strings.EqualFold(kind, "thought") || strings.EqualFold(kind, "tool_calls")
+	return strings.EqualFold(kind, "thought") ||
+		strings.EqualFold(kind, "tool_calls") ||
+		strings.EqualFold(kind, "final_reply")
 }
 
 func outboundMediaChannel(msg bus.OutboundMediaMessage) string {
@@ -390,6 +392,9 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 			if outboundMessageBypassesPlaceholderEdit(msg) {
 				if deleter, ok := ch.(MessageDeleter); ok {
 					deleter.DeleteMessage(ctx, chatID, entry.id) // best effort
+				}
+				if strings.EqualFold(strings.TrimSpace(msg.Context.Raw["message_kind"]), "final_reply") {
+					dismissTrackedToolFeedbackMessage(ctx, ch, chatID, &msg.Context)
 				}
 				return nil, false
 			}

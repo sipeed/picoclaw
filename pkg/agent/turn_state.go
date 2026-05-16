@@ -82,9 +82,10 @@ const (
 // =============================================================================
 
 type turnResult struct {
-	finalContent string
-	status       TurnEndStatus
-	followUps    []bus.InboundMessage
+	finalContent           string
+	status                 TurnEndStatus
+	followUps              []bus.InboundMessage
+	preferNewOutboundReply bool
 }
 
 // =============================================================================
@@ -119,6 +120,7 @@ type turnExecution struct {
 
 	// Turn output
 	finalContent string
+	sawSteering  bool
 
 	// Iteration tracking
 	iteration int

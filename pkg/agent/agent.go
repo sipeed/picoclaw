@@ -122,6 +122,7 @@ const (
 	messageKindThought         = "thought"
 	messageKindToolFeedback    = "tool_feedback"
 	messageKindToolCalls       = "tool_calls"
+	messageKindFinalReply      = "final_reply"
 	metadataKeyAccountID       = "account_id"
 	metadataKeyGuildID         = "guild_id"
 	metadataKeyTeamID          = "team_id"
@@ -261,7 +262,21 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 						return
 					}
 					if continued != "" {
-						al.PublishResponseIfNeeded(ctx, target.Channel, target.ChatID, target.SessionKey, continued)
+						al.publishResponseWithContextIfNeeded(
+							ctx,
+							target.Channel,
+							target.ChatID,
+							target.SessionKey,
+							continued,
+							&bus.InboundContext{
+								Channel: m.Context.Channel,
+								ChatID:  m.Context.ChatID,
+								TopicID: m.Context.TopicID,
+								Raw: map[string]string{
+									metadataKeyMessageKind: messageKindFinalReply,
+								},
+							},
+						)
 					}
 					return
 				}
@@ -585,13 +600,20 @@ func (al *AgentLoop) runAgentLoop(
 			opts.Dispatch.SessionKey,
 			opts.Dispatch.SessionScope,
 		)
+		outboundCtx := outboundContextFromInbound(
+			opts.Dispatch.InboundContext,
+			opts.Dispatch.Channel(),
+			opts.Dispatch.ChatID(),
+			opts.Dispatch.ReplyToMessageID(),
+		)
+		if result.preferNewOutboundReply {
+			if outboundCtx.Raw == nil {
+				outboundCtx.Raw = make(map[string]string, 1)
+			}
+			outboundCtx.Raw[metadataKeyMessageKind] = messageKindFinalReply
+		}
 		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
-			Context: outboundContextFromInbound(
-				opts.Dispatch.InboundContext,
-				opts.Dispatch.Channel(),
-				opts.Dispatch.ChatID(),
-				opts.Dispatch.ReplyToMessageID(),
-			),
+			Context:      outboundCtx,
 			AgentID:      agentID,
 			SessionKey:   sessionKey,
 			Scope:        scope,

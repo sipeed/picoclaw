@@ -108,11 +108,13 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 			// We do NOT call dequeueSteeringMessagesForScope here because
 			// steering was already consumed from al.steering by ExecuteTools.
 			if len(exec.pendingMessages) > 0 {
+				exec.sawSteering = true
 				pendingMessages = append(pendingMessages, exec.pendingMessages...)
 				exec.pendingMessages = nil
 			}
 		} else if !ts.opts.SkipInitialSteeringPoll {
 			if steerMsgs := al.dequeueSteeringMessagesForScopeWithFallback(ts.sessionKey); len(steerMsgs) > 0 {
+				exec.sawSteering = true
 				pendingMessages = append(pendingMessages, steerMsgs...)
 			}
 		}

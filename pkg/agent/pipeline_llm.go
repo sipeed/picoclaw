@@ -483,6 +483,7 @@ func (p *Pipeline) CallLLM(
 			responseContent = exec.response.ReasoningContent
 		}
 		if steerMsgs := al.dequeueSteeringMessagesForScope(ts.sessionKey); len(steerMsgs) > 0 {
+			exec.sawSteering = true
 			logger.InfoCF("agent", "Steering arrived after direct LLM response; continuing turn",
 				map[string]any{
 					"agent_id":       ts.agent.ID,
