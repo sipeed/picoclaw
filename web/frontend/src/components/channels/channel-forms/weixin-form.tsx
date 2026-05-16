@@ -42,6 +42,7 @@ interface WeixinFormProps {
   config: ChannelConfig
   onChange: (key: string, value: unknown) => void
   isEdit: boolean
+  channelName?: string
   onBindSuccess?: () => void
   registerArrayFieldFlusher?: (
     fieldPath: string,
@@ -58,6 +59,7 @@ export function WeixinForm({
   config,
   onChange,
   isEdit,
+  channelName,
   onBindSuccess,
   registerArrayFieldFlusher,
   arrayFieldResetVersion,
@@ -136,7 +138,7 @@ export function WeixinForm({
     setQrDataURI(null)
     stopPolling()
     try {
-      const resp = await startWeixinFlow()
+      const resp = await startWeixinFlow(channelName)
       setQrDataURI(resp.qr_data_uri ?? null)
       setBindState("waiting")
       startPolling(resp.flow_id)

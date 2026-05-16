@@ -1,4 +1,5 @@
-import { IconLoader2 } from "@tabler/icons-react"
+import { IconLoader2, IconPlus } from "@tabler/icons-react"
+import { useNavigate } from "@tanstack/react-router"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
@@ -219,6 +220,8 @@ function isConfigured(
     case "mqtt":
       return hasValue("broker") && hasValue("agent_id")
     default:
+      // Dynamic weixin channels (e.g. weixin_2, weixin_account1)
+      if (channel.name.startsWith("weixin_")) return hasValue("account_id")
       return false
   }
 }
@@ -290,6 +293,7 @@ const CHANNELS_WITHOUT_DOCS = new Set([
 export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
   const { t, i18n } = useTranslation()
   const { state: gatewayState } = useGateway()
+  const navigate = useNavigate()
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -298,6 +302,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const [channel, setChannel] = useState<SupportedChannel | null>(null)
+  const [catalogChannels, setCatalogChannels] = useState<SupportedChannel[]>([])
   const [baseConfig, setBaseConfig] = useState<ChannelConfig>({})
   const [editConfig, setEditConfig] = useState<ChannelConfig>({})
   const [configuredSecrets, setConfiguredSecrets] = useState<string[]>([])
@@ -309,6 +314,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
   const resetPageState = useCallback(() => {
     arrayFieldFlushersRef.current.clear()
     setChannel(null)
+    setCatalogChannels([])
     setBaseConfig({})
     setEditConfig({})
     setConfiguredSecrets([])
@@ -327,8 +333,17 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
       try {
         const catalog = await getChannelsCatalog()
         if (loadRequestIdRef.current !== requestId) return
-        const matched =
+        setCatalogChannels(catalog.channels)
+        let matched =
           catalog.channels.find((item) => item.name === channelName) ?? null
+
+        // For dynamic weixin channels (e.g. weixin_2), create a synthetic catalog entry
+        if (!matched && channelName.startsWith("weixin_")) {
+          matched = {
+            name: channelName,
+            config_key: channelName,
+          }
+        }
 
         if (!matched) {
           resetPageState()
@@ -578,6 +593,21 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
   const renderForm = () => {
     if (!channel) return null
     const isEdit = configured
+    const isWeixin = channel.name === "weixin" || channel.name.startsWith("weixin_")
+
+    if (isWeixin) {
+      return (
+        <WeixinForm
+          config={editConfig}
+          onChange={handleChange}
+          isEdit={isEdit}
+          channelName={channelName}
+          onBindSuccess={() => void handleWeixinBindSuccess()}
+          registerArrayFieldFlusher={registerArrayFieldFlusher}
+          arrayFieldResetVersion={arrayFieldResetVersion}
+        />
+      )
+    }
 
     switch (channel.name) {
       case "telegram":
@@ -633,17 +663,6 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
             fieldErrors={fieldErrors}
           />
         )
-      case "weixin":
-        return (
-          <WeixinForm
-            config={editConfig}
-            onChange={handleChange}
-            isEdit={isEdit}
-            onBindSuccess={() => void handleWeixinBindSuccess()}
-            registerArrayFieldFlusher={registerArrayFieldFlusher}
-            arrayFieldResetVersion={arrayFieldResetVersion}
-          />
-        )
       case "wecom":
         return (
           <>
@@ -683,22 +702,57 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
     }
   }
 
+  const isWeixinChannel =
+    channel?.name === "weixin" || channel?.name.startsWith("weixin_")
+
   return (
     <div className="flex h-full flex-col">
       <PageHeader
         title={channelDisplayName}
         titleExtra={
-          channel &&
-          docsUrl && (
-            <a
-              href={docsUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-muted-foreground hover:text-foreground text-xs underline underline-offset-2"
-            >
-              {t("channels.page.docLink")}
-            </a>
-          )
+          <div className="flex items-center gap-3">
+            {channel && isWeixinChannel && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  // Find the next available weixin channel name
+                  const existingNames = catalogChannels
+                    .filter(
+                      (c) =>
+                        c.name === "weixin" || c.name.startsWith("weixin_"),
+                    )
+                    .map((c) => c.name)
+                  // Include current channel name to avoid duplicates
+                  if (!existingNames.includes(channelName)) {
+                    existingNames.push(channelName)
+                  }
+                  let nextName = "weixin_2"
+                  let counter = 2
+                  while (existingNames.includes(nextName)) {
+                    counter++
+                    nextName = `weixin_${counter}`
+                  }
+                  navigate({ to: `/channels/${nextName}` })
+                }}
+                className="gap-1"
+              >
+                <IconPlus size={14} />
+                {t("channels.weixin.addAccount", "Add Account")}
+              </Button>
+            )}
+            {channel &&
+              docsUrl && (
+                <a
+                  href={docsUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-muted-foreground hover:text-foreground text-xs underline underline-offset-2"
+                >
+                  {t("channels.page.docLink")}
+                </a>
+              )}
+          </div>
         }
       />
 

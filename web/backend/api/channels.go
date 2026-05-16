@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 )
@@ -47,13 +48,53 @@ func (h *Handler) registerChannelRoutes(mux *http.ServeMux) {
 }
 
 // handleListChannelCatalog returns the channels supported by backend.
+// It dynamically discovers weixin channels from the config to support multiple accounts.
 //
 //	GET /api/channels/catalog
 func (h *Handler) handleListChannelCatalog(w http.ResponseWriter, r *http.Request) {
+	catalog := h.buildDynamicCatalog()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"channels": channelCatalog,
+		"channels": catalog,
 	})
+}
+
+// buildDynamicCatalog returns the static catalog plus any dynamically discovered
+// weixin channels from the config (e.g. weixin_account1, weixin_account2).
+func (h *Handler) buildDynamicCatalog() []channelCatalogItem {
+	result := make([]channelCatalogItem, 0, len(channelCatalog)+4)
+	seenNames := make(map[string]bool)
+
+	// Add static catalog entries
+	for _, item := range channelCatalog {
+		result = append(result, item)
+		seenNames[item.Name] = true
+	}
+
+	// Load config and discover additional weixin channels
+	cfg, err := config.LoadConfig(h.configPath)
+	if err != nil {
+		return result
+	}
+
+	for name, bc := range cfg.Channels {
+		if bc == nil || !bc.Enabled {
+			continue
+		}
+		channelType := bc.Type
+		if channelType == "" {
+			channelType = name
+		}
+		if channelType == config.ChannelWeixin && !seenNames[name] {
+			result = append(result, channelCatalogItem{
+				Name:      name,
+				ConfigKey: name,
+			})
+			seenNames[name] = true
+		}
+	}
+
+	return result
 }
 
 // handleGetChannelConfig returns safe channel config plus secret presence metadata.
@@ -62,6 +103,34 @@ func (h *Handler) handleListChannelCatalog(w http.ResponseWriter, r *http.Reques
 func (h *Handler) handleGetChannelConfig(w http.ResponseWriter, r *http.Request) {
 	channelName := r.PathValue("name")
 	item, ok := findChannelCatalogItem(channelName)
+	if !ok {
+		// Check if this is a dynamic weixin channel in config or follows weixin_* pattern
+		if strings.HasPrefix(channelName, "weixin_") {
+			item = channelCatalogItem{
+				Name:      channelName,
+				ConfigKey: channelName,
+			}
+			ok = true
+		} else {
+			cfg, cfgErr := config.LoadConfig(h.configPath)
+			if cfgErr == nil {
+				bc := cfg.Channels.Get(channelName)
+				if bc != nil {
+					channelType := bc.Type
+					if channelType == "" {
+						channelType = channelName
+					}
+					if channelType == config.ChannelWeixin {
+						item = channelCatalogItem{
+							Name:      channelName,
+							ConfigKey: channelName,
+						}
+						ok = true
+					}
+				}
+			}
+		}
+	}
 	if !ok {
 		http.Error(w, "Channel not found", http.StatusNotFound)
 		return
@@ -180,6 +249,12 @@ func detectConfiguredSecrets(settings config.RawNode, channelName string) []stri
 
 	fields, ok := channelSecretFieldMap[channelName]
 	if !ok {
+		// For dynamic weixin channels (e.g. weixin_account1), use weixin secret fields
+		if strings.HasPrefix(channelName, "weixin_") {
+			fields = channelSecretFieldMap["weixin"]
+		}
+	}
+	if fields == nil {
 		return nil
 	}
 
