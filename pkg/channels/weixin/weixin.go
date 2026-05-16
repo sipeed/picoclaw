@@ -343,9 +343,9 @@ func (c *WeixinChannel) handleInboundMessage(ctx context.Context, msg WeixinMess
 	}
 
 	sender := bus.SenderInfo{
-		Platform:    "weixin",
+		Platform:    c.Name(),
 		PlatformID:  fromUserID,
-		CanonicalID: identity.BuildCanonicalID("weixin", fromUserID),
+		CanonicalID: identity.BuildCanonicalID(c.Name(), fromUserID),
 		Username:    fromUserID,
 		DisplayName: fromUserID,
 	}
@@ -376,7 +376,7 @@ func (c *WeixinChannel) handleInboundMessage(ctx context.Context, msg WeixinMess
 	}
 
 	inboundCtx := bus.InboundContext{
-		Channel:   "weixin",
+		Channel:   c.Name(),
 		ChatID:    fromUserID,
 		ChatType:  "direct",
 		SenderID:  fromUserID,

@@ -419,7 +419,8 @@
       "expired": "QR code expired",
       "retry": "Try Again",
       "refresh": "Refresh QR",
-      "errorGeneric": "An error occurred. Please try again."
+      "errorGeneric": "An error occurred. Please try again.",
+      "addAccount": "Add Account"
     },
     "wecom": {
       "bindTitle": "WeCom Binding",

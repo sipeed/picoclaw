@@ -420,7 +420,8 @@
       "expired": "二维码已过期",
       "retry": "重试",
       "refresh": "刷新二维码",
-      "errorGeneric": "发生错误，请重试。"
+      "errorGeneric": "发生错误，请重试。",
+      "addAccount": "添加账号"
     },
     "wecom": {
       "bindTitle": "企业微信绑定",

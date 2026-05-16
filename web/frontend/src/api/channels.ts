@@ -81,6 +81,7 @@ export async function patchAppConfig(
 
 export interface WeixinFlowResponse {
   flow_id: string
+  channel_name?: string
   status: "wait" | "scaned" | "confirmed" | "expired" | "error"
   qr_data_uri?: string
   account_id?: string
@@ -95,8 +96,15 @@ export interface WecomFlowResponse {
   error?: string
 }
 
-export async function startWeixinFlow(): Promise<WeixinFlowResponse> {
-  return request<WeixinFlowResponse>("/api/weixin/flows", { method: "POST" })
+export async function startWeixinFlow(
+  channelName?: string,
+): Promise<WeixinFlowResponse> {
+  const hasBody = channelName != null
+  return request<WeixinFlowResponse>("/api/weixin/flows", {
+    method: "POST",
+    headers: hasBody ? { "Content-Type": "application/json" } : undefined,
+    body: hasBody ? JSON.stringify({ channel_name: channelName }) : undefined,
+  })
 }
 
 export async function pollWeixinFlow(

@@ -85,6 +85,15 @@ const CHANNEL_ICON_MAP: Record<
   irc: IconMessages,
 }
 
+function getChannelIcon(
+  name: string,
+): React.ComponentType<{ className?: string }> {
+  if (CHANNEL_ICON_MAP[name]) return CHANNEL_ICON_MAP[name]
+  // Dynamic weixin channels (e.g. weixin_account1) use the weixin icon
+  if (name === "weixin" || name.startsWith("weixin_")) return IconBrandWechat
+  return IconPlug
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, unknown>
@@ -183,10 +192,19 @@ export function useSidebarChannels({ language, t }: UseSidebarChannelsOptions) {
   }, [gateway.status, reloadChannels])
 
   const channelImportanceIndex = React.useMemo(() => {
-    return new Map(
-      getChannelImportanceOrder(language).map((name, index) => [name, index]),
-    )
-  }, [language])
+    const order = getChannelImportanceOrder(language)
+    const indexMap = new Map(order.map((name, index) => [name, index]))
+    // Dynamic weixin channels inherit the importance of "weixin"
+    const weixinIndex = indexMap.get("weixin")
+    if (weixinIndex !== undefined) {
+      for (const ch of channels) {
+        if (ch.name !== "weixin" && ch.name.startsWith("weixin")) {
+          indexMap.set(ch.name, weixinIndex + 0.1)
+        }
+      }
+    }
+    return indexMap
+  }, [language, channels])
 
   const sortedChannels = React.useMemo(() => {
     const list = [...channels]
@@ -223,7 +241,7 @@ export function useSidebarChannels({ language, t }: UseSidebarChannelsOptions) {
         key: channel.name,
         title: getChannelDisplayName(channel, t),
         url: `/channels/${channel.name}`,
-        icon: CHANNEL_ICON_MAP[channel.name] ?? IconPlug,
+        icon: getChannelIcon(channel.name),
       })),
     [t, visibleChannels],
   )
