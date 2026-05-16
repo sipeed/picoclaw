@@ -48,12 +48,13 @@ export function MessageCodeBlock({
 
   return (
     <div
+      data-picoclaw-code-block=""
       className={cn(
-        "not-prose my-4 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 text-zinc-900 shadow-xs dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100",
+        "not-prose my-4 overflow-hidden rounded-lg border border-[#d0d7de] bg-[#f6f8fa] text-[#24292f] shadow-xs dark:border-[#30363d] dark:bg-[#0d1117] dark:text-[#c9d1d9]",
         className,
       )}
     >
-      <div className="flex items-center justify-between gap-2 border-b border-zinc-200/80 bg-zinc-200/55 px-3 py-2 dark:border-zinc-800/80 dark:bg-zinc-900/75">
+      <div className="flex items-center justify-between gap-2 border-b border-[#d0d7de] bg-black/[0.03] px-3 py-2 dark:border-[#30363d] dark:bg-white/[0.03]">
         <span className="text-[11px] font-medium tracking-[0.16em] text-zinc-600 uppercase dark:text-zinc-400">
           {blockLabel}
         </span>
@@ -95,7 +96,7 @@ export function MessageCodeBlock({
       {isExpanded && (
         <pre
           className={cn(
-            "m-0 overflow-x-auto px-4 py-3 font-mono text-[13px] leading-6",
+            "m-0 overflow-x-auto bg-transparent px-4 py-3 font-mono text-[13px] leading-6 [&_code]:block [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit",
             wrapLongLines ? "break-words whitespace-pre-wrap" : "whitespace-pre",
             bodyClassName,
           )}

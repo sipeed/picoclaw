@@ -144,6 +144,9 @@ export function AssistantMessage({
                               rehypeSanitize,
                               rehypeHighlight,
                             ]}
+                            components={{
+                              pre: MarkdownCodeBlock,
+                            }}
                           >
                             {explanation}
                           </ReactMarkdown>
@@ -171,8 +174,8 @@ export function AssistantMessage({
                             <MessageCodeBlock
                               code={toolArguments}
                               label={t("chat.toolCallArgumentsLabel")}
-                              className="my-0 border-border/35 bg-background/80 text-foreground/80 shadow-none"
-                              bodyClassName="px-3 py-2 text-[12px] leading-relaxed text-inherit"
+                              className="my-0 shadow-none"
+                              bodyClassName="px-3 py-2 text-[12px] leading-relaxed"
                               wrapLongLines
                             />
                           )}
