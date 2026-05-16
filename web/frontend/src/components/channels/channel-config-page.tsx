@@ -121,7 +121,11 @@ function buildSavePayload(
   editConfig: ChannelConfig,
   enabled: boolean,
 ): ChannelConfig {
-  const payload: ChannelConfig = { enabled, type: channel.config_key }
+  // Dynamic weixin channels (e.g. weixin_2) share the same "weixin" type.
+  const channelType = channel.config_key.startsWith("weixin_")
+    ? "weixin"
+    : channel.config_key
+  const payload: ChannelConfig = { enabled, type: channelType }
   const settings: ChannelConfig = {}
 
   for (const [key, value] of Object.entries(editConfig)) {
