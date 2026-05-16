@@ -42,7 +42,11 @@ export function MessageCodeBlock({
   const { t } = useTranslation()
   const { copy, isCopied } = useCopyToClipboard()
   const [isExpanded, setIsExpanded] = useState(true)
-  const blockLabel = label ?? (language ? language.toUpperCase() : t("chat.codeLabel"))
+  const blockLabel =
+    label ??
+    (language
+      ? language.toLocaleLowerCase()
+      : t("chat.codeLabel").toLocaleLowerCase())
   const copyLabel = isCopied ? t("chat.copiedLabel") : t("chat.copyCode")
   const expandLabel = isExpanded ? t("chat.collapseCode") : t("chat.expandCode")
 
@@ -55,7 +59,7 @@ export function MessageCodeBlock({
       )}
     >
       <div className="flex items-center justify-between gap-2 border-b border-[#d0d7de] bg-black/[0.03] px-3 py-2 dark:border-[#30363d] dark:bg-white/[0.03]">
-        <span className="text-[11px] font-medium tracking-[0.16em] text-zinc-600 uppercase dark:text-zinc-400">
+        <span className="font-mono text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
           {blockLabel}
         </span>
         <div className="flex items-center gap-1">

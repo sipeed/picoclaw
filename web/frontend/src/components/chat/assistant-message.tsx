@@ -165,7 +165,7 @@ export function AssistantMessage({
                           {t("chat.toolCallFunctionLabel")}
                         </div>
                         <div className="bg-background/55 border-border/25 space-y-2 rounded-lg border px-3 py-2.5">
-                          {toolName && (
+                          {toolName && !toolArguments && (
                             <div className="text-foreground/75 font-mono text-[12px] font-semibold">
                               {toolName}
                             </div>
@@ -173,7 +173,8 @@ export function AssistantMessage({
                           {toolArguments && (
                             <MessageCodeBlock
                               code={toolArguments}
-                              label={t("chat.toolCallArgumentsLabel")}
+                              language="json"
+                              label={toolName || t("chat.toolCallArgumentsLabel")}
                               className="my-0 shadow-none"
                               bodyClassName="px-3 py-2 text-[12px] leading-relaxed"
                               wrapLongLines
