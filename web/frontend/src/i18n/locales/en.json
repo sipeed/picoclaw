@@ -63,7 +63,13 @@
     "toolCallsLabel": "Tool calls",
     "toolCallExplanationLabel": "Call note",
     "toolCallFunctionLabel": "Call summary",
-    "showAssistantDetails": "Show reasoning and tool calls",
+    "showAssistantDetails": "Reasoning and tool calls",
+    "assistantDetailVisibility": {
+      "none": "Show neither",
+      "thought": "Show reasoning only",
+      "toolCalls": "Show tool calls only",
+      "all": "Show both"
+    },
     "toolLabel": "Tool",
     "history": "History",
     "noHistory": "No chat history yet",

@@ -63,7 +63,13 @@
     "toolCallsLabel": "Chamadas de ferramentas",
     "toolCallExplanationLabel": "Nota da chamada",
     "toolCallFunctionLabel": "Resumo da chamada",
-    "showAssistantDetails": "Mostrar raciocínio e chamadas de ferramentas",
+    "showAssistantDetails": "Raciocínio e chamadas de ferramentas",
+    "assistantDetailVisibility": {
+      "none": "Não mostrar nenhum",
+      "thought": "Mostrar apenas raciocínio",
+      "toolCalls": "Mostrar apenas chamadas de ferramentas",
+      "all": "Mostrar ambos"
+    },
     "toolLabel": "Ferramenta",
     "history": "Histórico",
     "noHistory": "Nenhum histórico de chat ainda",
