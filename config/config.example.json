@@ -522,6 +522,12 @@
     },
     "write_file": {
       "enabled": true
+    },
+    "load_image": {
+      "enabled": true
+    },
+    "reaction": {
+      "enabled": true
     }
   },
   "heartbeat": {
