@@ -909,7 +909,7 @@ type WebToolsConfig struct {
 	BaiduSearch BaiduSearchConfig  `yaml:"baidu_search,omitempty"                                 json:"baidu_search"`
 	Provider    string             `yaml:"-"                                                      json:"provider,omitempty" env:"PICOCLAW_TOOLS_WEB_PROVIDER"`
 	// PreferNative controls whether to use provider-native web search when
-	// the active LLM supports it (e.g. OpenAI web_search_preview). When true,
+	// the active LLM supports it (e.g. OpenAI web_search). When true,
 	// the client-side web_search tool is hidden to avoid duplicate search surfaces,
 	// and the provider's built-in search is used instead. Falls back to client-side
 	// search when the provider does not support native search.
