@@ -64,7 +64,13 @@
     "toolCallExplanationLabel": "Call note",
     "toolCallFunctionLabel": "Call summary",
     "toolCallArgumentsLabel": "Arguments",
-    "showAssistantDetails": "Show reasoning and tool calls",
+    "showAssistantDetails": "Reasoning and tool calls",
+    "assistantDetailVisibility": {
+      "none": "Show neither",
+      "thought": "Show reasoning only",
+      "toolCalls": "Show tool calls only",
+      "all": "Show both"
+    },
     "toolLabel": "Tool",
     "codeLabel": "Code",
     "copyMessage": "Copy message",
