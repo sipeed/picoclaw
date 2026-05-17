@@ -1094,9 +1094,15 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 				}
 			}
 
-			p, err := filepath.Abs(raw)
-			if err != nil {
-				continue
+			// Resolve the path correctly based on cwd:
+			// - Absolute paths: use as-is (cleaned)
+			// - Relative paths: join with cwd to resolve correctly
+			var p string
+			if filepath.IsAbs(raw) {
+				p = filepath.Clean(raw)
+			} else {
+				p = filepath.Join(cwdPath, raw)
+				p = filepath.Clean(p)
 			}
 
 			if safePaths[p] {
