@@ -2,6 +2,13 @@ import { atom, getDefaultStore } from "jotai"
 import { atomWithStorage } from "jotai/utils"
 
 import {
+  ASSISTANT_DETAIL_VISIBILITY_STORAGE_KEY,
+  type AssistantDetailVisibility,
+  DEFAULT_ASSISTANT_DETAIL_VISIBILITY,
+  assistantDetailVisibilityStorage,
+  shouldShowAssistantMessage,
+} from "@/features/chat/detail-visibility"
+import {
   getInitialActiveSessionId,
   writeStoredSessionId,
 } from "@/features/chat/state"
@@ -65,9 +72,6 @@ export interface ChatStoreState {
 
 type ChatStorePatch = Partial<ChatStoreState>
 
-// Keep the legacy storage value so existing user preferences survive the rename.
-const SHOW_ASSISTANT_DETAILS_STORAGE_KEY = "picoclaw:chat-show-thoughts"
-
 const DEFAULT_CHAT_STATE: ChatStoreState = {
   messages: [],
   connectionState: "disconnected",
@@ -77,9 +81,15 @@ const DEFAULT_CHAT_STATE: ChatStoreState = {
 }
 
 export const chatAtom = atom<ChatStoreState>(DEFAULT_CHAT_STATE)
-export const showAssistantDetailsAtom = atomWithStorage<boolean>(
-  SHOW_ASSISTANT_DETAILS_STORAGE_KEY,
-  true,
+export const assistantDetailVisibilityAtom =
+  atomWithStorage<AssistantDetailVisibility>(
+    ASSISTANT_DETAIL_VISIBILITY_STORAGE_KEY,
+    DEFAULT_ASSISTANT_DETAIL_VISIBILITY,
+    assistantDetailVisibilityStorage,
+    { getOnInit: true },
+  )
+export const showAssistantDetailsAtom = atom(
+  (get) => get(assistantDetailVisibilityAtom) !== "none",
 )
 
 const store = getDefaultStore()
@@ -104,3 +114,6 @@ export function updateChatStore(
     return next
   })
 }
+
+export { shouldShowAssistantMessage, DEFAULT_ASSISTANT_DETAIL_VISIBILITY }
+export type { AssistantDetailVisibility }

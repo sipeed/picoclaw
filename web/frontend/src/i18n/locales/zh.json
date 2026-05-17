@@ -63,7 +63,13 @@
     "toolCallsLabel": "工具调用",
     "toolCallExplanationLabel": "调用提示",
     "toolCallFunctionLabel": "调用摘要",
-    "showAssistantDetails": "展示思考过程与工具调用",
+    "showAssistantDetails": "思考与工具调用",
+    "assistantDetailVisibility": {
+      "none": "均不展示",
+      "thought": "仅展示思考消息",
+      "toolCalls": "仅展示工具调用",
+      "all": "均展示"
+    },
     "toolLabel": "工具",
     "history": "历史记录",
     "noHistory": "暂无对话历史",

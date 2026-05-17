@@ -16,14 +16,24 @@ import { TypingIndicator } from "@/components/chat/typing-indicator"
 import { UserMessage } from "@/components/chat/user-message"
 import { PageHeader } from "@/components/page-header"
 import { Button } from "@/components/ui/button"
-import { Switch } from "@/components/ui/switch"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { useChatModels } from "@/hooks/use-chat-models"
 import { useGateway } from "@/hooks/use-gateway"
 import { usePicoChat } from "@/hooks/use-pico-chat"
 import { useSessionHistory } from "@/hooks/use-session-history"
+import type { AssistantDetailVisibility } from "@/store/chat"
 import type { ConnectionState } from "@/store/chat"
 import type { ChatAttachment } from "@/store/chat"
-import { showAssistantDetailsAtom } from "@/store/chat"
+import {
+  assistantDetailVisibilityAtom,
+  shouldShowAssistantMessage,
+} from "@/store/chat"
 import type { GatewayState } from "@/store/gateway"
 
 const MAX_IMAGE_SIZE_BYTES = 7 * 1024 * 1024
@@ -112,9 +122,22 @@ export function ChatPage() {
   const [hasScrolled, setHasScrolled] = useState(false)
   const [input, setInput] = useState("")
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
-  const [showAssistantDetails, setShowAssistantDetails] = useAtom(
-    showAssistantDetailsAtom,
+  const [assistantDetailVisibility, setAssistantDetailVisibility] = useAtom(
+    assistantDetailVisibilityAtom,
   )
+
+  const assistantDetailVisibilityOptions: Array<{
+    value: AssistantDetailVisibility
+    label: string
+  }> = [
+    { value: "none", label: t("chat.assistantDetailVisibility.none") },
+    { value: "thought", label: t("chat.assistantDetailVisibility.thought") },
+    {
+      value: "tool_calls",
+      label: t("chat.assistantDetailVisibility.toolCalls"),
+    },
+    { value: "all", label: t("chat.assistantDetailVisibility.all") },
+  ]
 
   const {
     messages,
@@ -275,12 +298,27 @@ export function ChatPage() {
           <span className="text-muted-foreground text-sm">
             {t("chat.showAssistantDetails")}
           </span>
-          <Switch
-            checked={showAssistantDetails}
-            onCheckedChange={setShowAssistantDetails}
-            aria-label={t("chat.showAssistantDetails")}
-            size="sm"
-          />
+          <Select
+            value={assistantDetailVisibility}
+            onValueChange={(value) =>
+              setAssistantDetailVisibility(value as AssistantDetailVisibility)
+            }
+          >
+            <SelectTrigger
+              size="sm"
+              aria-label={t("chat.showAssistantDetails")}
+              className="text-muted-foreground hover:text-foreground focus-visible:border-input h-8 min-w-[104px] bg-transparent shadow-none focus-visible:ring-0"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              {assistantDetailVisibilityOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <Button
@@ -326,8 +364,7 @@ export function ChatPage() {
 
           {messages.map((msg) => {
             if (
-              !showAssistantDetails &&
-              (msg.kind === "thought" || msg.kind === "tool_calls")
+              !shouldShowAssistantMessage(assistantDetailVisibility, msg.kind)
             ) {
               return null
             }
