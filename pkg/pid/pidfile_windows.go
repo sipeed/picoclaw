@@ -18,6 +18,8 @@ var (
 
 // isProcessRunning checks whether a process with the given PID is alive
 // on Windows using OpenProcess + GetExitCodeProcess.
+// TODO: Verify process identity to prevent stale PID false positives when
+// PIDs are reused by unrelated processes (same as pidfile_unix.go).
 func isProcessRunning(pid int) bool {
 	if pid <= 0 {
 		return false
