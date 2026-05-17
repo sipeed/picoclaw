@@ -24,7 +24,8 @@ var fetchableProviders = map[string]bool{
 	"volcengine": true, "zhipu": true, "groq": true,
 	"mistral": true, "nvidia": true, "cerebras": true,
 	"venice": true, "shengsuanyun": true, "vivgrid": true,
-	"minimax": true, "longcat": true, "modelscope": true,
+	"siliconflow": true,
+	"minimax":     true, "longcat": true, "modelscope": true,
 	"mimo": true, "avian": true, "zai": true, "novita": true,
 	"litellm": true, "vllm": true, "lmstudio": true, "ollama": true,
 }
