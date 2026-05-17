@@ -575,6 +575,136 @@ The skills tool configures skill discovery and installation via registries like 
 }
 ```
 
+## File Tools
+
+PicoClaw provides several file operation tools for reading, writing, and managing files within the agent workspace.
+
+### `read_file`
+
+Read file contents into the agent context.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | true | Enable the read_file tool |
+| `mode` | string | `"bytes"` | Read mode (`"bytes"` or `"lines"`) |
+| `max_read_file_size` | int | 65536 | Maximum file size to read, in bytes |
+
+### `write_file`
+
+Write content to a file in the workspace.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | true | Enable the write_file tool |
+
+### `edit_file`
+
+Edit an existing file by replacing old text with new text.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | true | Enable the edit_file tool |
+
+### `append_file`
+
+Append content to the end of a file.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | true | Enable the append_file tool |
+
+### `list_dir`
+
+List files and directories in a path.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | true | Enable the list_dir tool |
+
+### `load_image`
+
+Load a local image file into the agent context. The image is stored in the media store and a `media://` reference is returned to the LLM.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | true | Enable the load_image tool |
+
+### `send_file`
+
+Send a local file to the user on the current chat channel.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | true | Enable the send_file tool |
+
+### `message`
+
+Send a message to the user on a chat channel.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | true | Enable the message tool |
+
+### `reaction`
+
+Add a reaction (emoji) to a message. Defaults to the current inbound message when `message_id` is omitted.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | true | Enable the reaction tool |
+
+## Agent Tools
+
+### `spawn`
+
+Spawn a subagent to handle a task.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | true | Enable the spawn tool |
+
+### `spawn_status`
+
+Check the status of a spawned subagent.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | false | Enable the spawn_status tool |
+
+### `subagent`
+
+Execute a subagent task synchronously.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | true | Enable the subagent tool |
+
+## Hardware Tools
+
+### `i2c`
+
+Interact with I²C devices (Linux only).
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | false | Enable the I²C tool |
+
+### `spi`
+
+Interact with SPI devices (Linux only).
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | false | Enable the SPI tool |
+
+### `serial`
+
+Interact with serial ports.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | false | Enable the serial tool |
+
 ## Environment Variables
 
 All configuration options can be overridden via environment variables with the format `PICOCLAW_TOOLS_<SECTION>_<KEY>`:
@@ -587,6 +717,8 @@ For example:
 - `PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES=10`
 - `PICOCLAW_TOOLS_MCP_ENABLED=true`
 - `PICOCLAW_TOOLS_MCP_MAX_INLINE_TEXT_CHARS=16384`
+- `PICOCLAW_TOOLS_LOAD_IMAGE_ENABLED=false`
+- `PICOCLAW_TOOLS_REACTION_ENABLED=false`
 
 Note: Nested map-style config (for example `tools.mcp.servers.<name>.*`) is configured in `config.json` rather than
 environment variables.
