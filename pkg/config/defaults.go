@@ -473,6 +473,12 @@ func DefaultConfig() *Config {
 			WriteFile: ToolConfig{
 				Enabled: true,
 			},
+			LoadImage: ToolConfig{
+				Enabled: true,
+			},
+			Reaction: ToolConfig{
+				Enabled: true,
+			},
 		},
 		Heartbeat: HeartbeatConfig{
 			Enabled:  true,
