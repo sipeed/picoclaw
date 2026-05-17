@@ -147,7 +147,7 @@ func (p *Provider) buildRequestBody(
 		"messages": common.SerializeMessages(p.prepareMessagesForRequest(messages)),
 	}
 
-	// When fallback uses a different provider (e.g. DeepSeek), that provider must not inject web_search_preview.
+	// When fallback uses a different provider (e.g. DeepSeek), that provider must not inject web_search.
 	nativeSearch, _ := options["native_search"].(bool)
 	nativeSearch = nativeSearch && isNativeSearchHost(p.apiBase)
 	if len(tools) > 0 || nativeSearch {
@@ -642,7 +642,10 @@ func buildToolsList(tools []ToolDefinition, nativeSearch bool) []any {
 		result = append(result, t)
 	}
 	if nativeSearch {
-		result = append(result, map[string]any{"type": "web_search_preview"})
+		// OpenAI renamed web_search_preview to web_search in the Chat Completions API.
+		// Using the legacy name causes a 400 error: "Invalid value: 'web_search_preview'.
+		// Supported values are: 'function' and 'custom'."
+		result = append(result, map[string]any{"type": "web_search"})
 	}
 	return result
 }
