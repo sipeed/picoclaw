@@ -426,6 +426,60 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 	}
 }
 
+// TestShellTool_RelativePathsNotBlocked verifies that relative paths with slashes
+// are not incorrectly treated as absolute paths by the safety guard (issue #2749).
+// The absolutePathPattern regex used to match "/whoami/SKILL.md" inside
+// "skills/whoami/SKILL.md", causing false path-outside-workspace blocks.
+func TestShellTool_RelativePathsNotBlocked(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	// These commands use relative paths that should NOT be blocked.
+	// Each path component after / should be treated as part of a relative path,
+	// not as an absolute path starting from /.
+	relativePathCommands := []string{
+		"cat skills/whoami/SKILL.md",
+		"python3 scripts/engine.py",
+		"ls data/output",
+		"grep pattern src/main.go",
+		"cat SKILL.md",
+		"wc -l README.md",
+	}
+
+	for _, cmd := range relativePathCommands {
+		result := tool.Execute(context.Background(), map[string]any{"action": "run", "command": cmd})
+		if result.IsError && strings.Contains(result.ForLLM, "blocked") {
+			t.Errorf("relative path command should not be blocked: %s\n  error: %s", cmd, result.ForLLM)
+		}
+	}
+}
+
+// TestShellTool_AbsolutePathsStillBlocked verifies that absolute paths outside
+// the workspace are still properly blocked after the relative path fix (issue #2749).
+func TestShellTool_AbsolutePathsStillBlocked(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	blockedCommands := []string{
+		"cat /etc/passwd",
+		"ls -la /tmp",
+		"cat /var/log/syslog",
+	}
+
+	for _, cmd := range blockedCommands {
+		result := tool.Execute(context.Background(), map[string]any{"action": "run", "command": cmd})
+		if !result.IsError || !strings.Contains(result.ForLLM, "blocked") {
+			t.Errorf("absolute path command should be blocked: %s", cmd)
+		}
+	}
+}
+
 // TestShellTool_DevNullAllowed verifies that /dev/null redirections are not blocked (issue #964).
 func TestShellTool_DevNullAllowed(t *testing.T) {
 	tmpDir := t.TempDir()

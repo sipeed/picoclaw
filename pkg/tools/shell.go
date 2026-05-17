@@ -1073,6 +1073,21 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		for _, loc := range matchIndices {
 			raw := cmd[loc[0]:loc[1]]
 
+			// Skip matches where / is preceded by a path component character.
+			// The regex absolutePathPattern matches any /... sequence, which incorrectly
+			// captures path separators inside relative paths (e.g. "skills/whoami/SKILL.md"
+			// matches "/whoami/SKILL.md" starting at the internal slash). If the character
+			// before the match is alphanumeric, underscore, dash, dot, or slash, then this
+			// / is part of a relative path, not the start of an absolute path.
+			if loc[0] > 0 {
+				prev := cmd[loc[0]-1]
+				if (prev >= 'a' && prev <= 'z') || (prev >= 'A' && prev <= 'Z') ||
+					(prev >= '0' && prev <= '9') || prev == '_' || prev == '-' ||
+					prev == '.' || prev == '/' {
+					continue
+				}
+			}
+
 			// Skip URL path components that look like they're from web URLs.
 			// When a URL like "https://github.com" is parsed, the regex captures
 			// "//github.com" as a match (the path portion after "https:").
