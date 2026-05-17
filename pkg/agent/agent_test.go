@@ -1791,6 +1791,40 @@ func (m *messageToolProvider) GetDefaultModel() string {
 	return "message-tool-model"
 }
 
+type explicitChatMessageToolProvider struct {
+	calls int
+}
+
+func (m *explicitChatMessageToolProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			Content: "",
+			ToolCalls: []providers.ToolCall{{
+				ID:   "call_message",
+				Type: "function",
+				Name: "message",
+				Arguments: map[string]any{
+					"channel": "telegram",
+					"chat_id": "-1001234567890",
+					"content": "topic tool message",
+				},
+			}},
+		}, nil
+	}
+	return &providers.LLMResponse{}, nil
+}
+
+func (m *explicitChatMessageToolProvider) GetDefaultModel() string {
+	return "message-tool-model"
+}
+
 type reasoningVisibleToolProvider struct {
 	filePath string
 	calls    int
@@ -4508,6 +4542,52 @@ func TestProcessMessage_MessageToolPublishesOutboundWithTurnMetadata(t *testing.
 		}
 		if outbound.Context.Channel != "telegram" || outbound.Context.ChatID != "chat-1" {
 			t.Fatalf("unexpected message tool outbound context: %+v", outbound.Context)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected message tool outbound")
+	}
+}
+
+func TestProcessMessage_MessageToolInheritsTelegramTopicWithExplicitChatID(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Agents.Defaults.ModelName = "test-model"
+	cfg.Agents.Defaults.MaxTokens = 4096
+	cfg.Agents.Defaults.MaxToolIterations = 10
+	cfg.Session.Dimensions = []string{"chat"}
+
+	msgBus := bus.NewMessageBus()
+	provider := &explicitChatMessageToolProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	response, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
+		Context: bus.InboundContext{
+			Channel:   "telegram",
+			ChatID:    "-1001234567890",
+			ChatType:  "group",
+			TopicID:   "6",
+			SenderID:  "user-1",
+			MessageID: "475",
+		},
+		Content: "send an interim message",
+	}))
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response == "" {
+		t.Fatal("expected processMessage() to return a final loop response")
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Content != "topic tool message" {
+			t.Fatalf("outbound content = %q, want topic tool message", outbound.Content)
+		}
+		if outbound.Context.Channel != "telegram" || outbound.Context.ChatID != "-1001234567890" {
+			t.Fatalf("unexpected message tool outbound context: %+v", outbound.Context)
+		}
+		if outbound.Context.TopicID != "6" {
+			t.Fatalf("outbound topic = %q, want 6; context=%+v scope=%+v", outbound.Context.TopicID, outbound.Context, outbound.Scope)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("expected message tool outbound")
