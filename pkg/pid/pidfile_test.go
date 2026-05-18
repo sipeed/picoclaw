@@ -341,6 +341,7 @@ func TestReadPidFileUnlockedInvalidPID(t *testing.T) {
 		t.Error("expected error for invalid PID")
 	}
 }
+
 // TestIsPicoclawProcess_OwnProcess returns true for the current picoclaw process.
 func TestIsPicoclawProcess_OwnProcess(t *testing.T) {
 	// Our own process should be identified as picoclaw if /proc is available.
