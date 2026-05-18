@@ -1113,6 +1113,14 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		if err != nil {
 			return ""
 		}
+		// On macOS, resolve symlinks in cwdPath to handle /var -> /private/var.
+		// This ensures consistent path comparison when commands reference paths
+		// through symlinks (e.g., temp directories on macOS).
+		if runtime.GOOS == "darwin" {
+			if resolved, err := filepath.EvalSymlinks(cwdPath); err == nil {
+				cwdPath = resolved
+			}
+		}
 
 		// Web URL schemes whose path components (starting with //) should be exempt
 		// from workspace sandbox checks. file: is intentionally excluded so that
