@@ -268,7 +268,7 @@ func (c *SC3BotChannel) webhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Verify webhook secret if configured
 	if c.config.Secret != "" {
-		secret := r.Header.Get(webhookSecretHeader) //nolint
+		secret := r.Header.Get(webhookSecretHeader) //nolint:all
 		if secret != c.config.Secret {
 			logger.WarnC("sc3bot", "Webhook secret mismatch")
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)

@@ -174,7 +174,7 @@ func TestWebhookRejectsInvalidSecret(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/webhook", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(webhookSecretHeader, "wrong_secret") //nolint
+	req.Header.Set(webhookSecretHeader, "wrong_secret") //nolint:all
 	rec := httptest.NewRecorder()
 
 	ch.ServeHTTP(rec, req)
@@ -200,7 +200,7 @@ func TestWebhookAcceptsValidSecret(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/webhook", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(webhookSecretHeader, "correct_secret") //nolint
+	req.Header.Set(webhookSecretHeader, "correct_secret") //nolint:all
 	rec := httptest.NewRecorder()
 
 	ch.ServeHTTP(rec, req)
