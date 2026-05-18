@@ -10,12 +10,14 @@ func TestIsToolEnabled_LoadImage(t *testing.T) {
 	t.Parallel()
 
 	t.Run("default enables load_image", func(t *testing.T) {
+		t.Parallel()
 		cfg := DefaultConfig()
 		assert.True(t, cfg.Tools.IsToolEnabled("load_image"),
 			"load_image should be enabled by default")
 	})
 
 	t.Run("explicitly disabling load_image works", func(t *testing.T) {
+		t.Parallel()
 		cfg := DefaultConfig()
 		cfg.Tools.LoadImage.Enabled = false
 		assert.False(t, cfg.Tools.IsToolEnabled("load_image"),
@@ -23,6 +25,7 @@ func TestIsToolEnabled_LoadImage(t *testing.T) {
 	})
 
 	t.Run("explicitly enabling load_image works", func(t *testing.T) {
+		t.Parallel()
 		cfg := DefaultConfig()
 		cfg.Tools.LoadImage.Enabled = true
 		assert.True(t, cfg.Tools.IsToolEnabled("load_image"),
@@ -34,12 +37,14 @@ func TestIsToolEnabled_Reaction(t *testing.T) {
 	t.Parallel()
 
 	t.Run("default enables reaction", func(t *testing.T) {
+		t.Parallel()
 		cfg := DefaultConfig()
 		assert.True(t, cfg.Tools.IsToolEnabled("reaction"),
 			"reaction should be enabled by default")
 	})
 
 	t.Run("explicitly disabling reaction works", func(t *testing.T) {
+		t.Parallel()
 		cfg := DefaultConfig()
 		cfg.Tools.Reaction.Enabled = false
 		assert.False(t, cfg.Tools.IsToolEnabled("reaction"),
@@ -47,6 +52,7 @@ func TestIsToolEnabled_Reaction(t *testing.T) {
 	})
 
 	t.Run("explicitly enabling reaction works", func(t *testing.T) {
+		t.Parallel()
 		cfg := DefaultConfig()
 		cfg.Tools.Reaction.Enabled = true
 		assert.True(t, cfg.Tools.IsToolEnabled("reaction"),
@@ -70,6 +76,7 @@ func TestIsToolEnabled_EnabledByDefault(t *testing.T) {
 	cfg := DefaultConfig()
 	for _, tool := range enabledByDefault {
 		t.Run(tool+" enabled by default", func(t *testing.T) {
+			t.Parallel()
 			assert.True(t, cfg.Tools.IsToolEnabled(tool),
 				"%s should be enabled by default", tool)
 		})
@@ -87,6 +94,7 @@ func TestIsToolEnabled_DisabledByDefault(t *testing.T) {
 	cfg := DefaultConfig()
 	for _, tool := range disabledByDefault {
 		t.Run(tool+" disabled by default", func(t *testing.T) {
+			t.Parallel()
 			assert.False(t, cfg.Tools.IsToolEnabled(tool),
 				"%s should be disabled by default", tool)
 		})
