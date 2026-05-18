@@ -35,6 +35,7 @@ const CHANNEL_SECRET_FIELDS: Record<string, string[]> = {
   matrix: ["access_token"],
   irc: ["password", "nickserv_password", "sasl_password"],
   mqtt: ["username", "password"],
+  sc3bot: ["token"],
 }
 
 const SECRET_FIELD_SET = new Set(Object.keys(SECRET_FIELD_MAP))

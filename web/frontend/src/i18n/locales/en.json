@@ -417,7 +417,8 @@
       "matrix": "Matrix",
       "irc": "IRC",
       "weixin": "WeChat",
-      "mqtt": "MQTT"
+      "mqtt": "MQTT",
+      "sc3bot": "Server酱³ Bot"
     },
     "weixin": {
       "bindTitle": "WeChat Account Binding",

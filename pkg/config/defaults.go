@@ -576,6 +576,11 @@ func defaultChannels() ChannelsConfig {
 				"channels": []string{},
 			},
 		},
+		"sc3bot": map[string]any{
+			"settings": map[string]any{
+				"token": "",
+			},
+		},
 	}
 
 	channels := make(ChannelsConfig, len(defs))

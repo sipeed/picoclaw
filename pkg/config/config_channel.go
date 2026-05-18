@@ -35,6 +35,7 @@ const (
 	ChannelTeamsWebHook   = "teams_webhook"
 	ChannelMQTT           = "mqtt"
 	ChannelSlackWebHook   = "slack_webhook"
+	ChannelSC3Bot         = "sc3bot"
 )
 
 func initChannel() {
@@ -644,6 +645,7 @@ var channelSettingsFactory = map[string]any{
 	ChannelTeamsWebHook:   (TeamsWebhookSettings{}),
 	ChannelMQTT:           (MQTTSettings{}),
 	ChannelSlackWebHook:   (SlackWebhookSettings{}),
+	ChannelSC3Bot:         (SC3BotSettings{}),
 }
 
 // newChannelSettings creates a fresh zero-value pointer for the given channel type.

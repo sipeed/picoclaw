@@ -661,6 +661,13 @@ type SlackWebhookTarget struct {
 	IconEmoji  string       `json:"icon_emoji,omitempty" yaml:"-"`
 }
 
+// SC3BotSettings configures the Server酱³ Bot channel.
+type SC3BotSettings struct {
+	Token  SecureString `json:"token,omitzero" yaml:"token,omitempty" env:"PICOCLAW_CHANNELS_SC3BOT_TOKEN"`
+	Proxy  string       `json:"proxy"          yaml:"-"               env:"PICOCLAW_CHANNELS_SC3BOT_PROXY"`
+	Secret string       `json:"secret"         yaml:"-"               env:"PICOCLAW_CHANNELS_SC3BOT_SECRET"`
+}
+
 type HeartbeatConfig struct {
 	Enabled  bool `json:"enabled"  env:"PICOCLAW_HEARTBEAT_ENABLED"`
 	Interval int  `json:"interval" env:"PICOCLAW_HEARTBEAT_INTERVAL"` // minutes, min 5
