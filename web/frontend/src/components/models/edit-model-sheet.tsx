@@ -41,6 +41,7 @@ import { type FieldValidation, validateModelField } from "./model-validation"
 import { ProviderCombobox } from "./provider-combobox"
 import { getProviderKey } from "./provider-label"
 import { FETCHABLE_PROVIDER_KEYS, PROVIDER_API_BASES, PROVIDER_MAP } from "./provider-registry"
+import { TestModelDialog } from "./test-model-dialog"
 
 interface EditForm {
   provider: string
@@ -158,15 +159,6 @@ export function EditModelSheet({
   const [catalogModels, setCatalogModels] = useState<string[]>([])
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-
-  // Dynamic import for TestModelDialog (added in PR3)
-  const [TestModelDialogComp, setTestModelDialogComp] = useState<React.ComponentType<{
-    model: unknown; open: boolean; onClose: () => void;
-    inlineParams: { provider: string; model: string; apiBase: string; apiKey: string; authMethod: string; modelIndex?: number };
-  }> | null>(null)
-  useEffect(() => {
-    import("./test-model-dialog").then((m) => setTestModelDialogComp(() => m.TestModelDialog)).catch(() => {})
-  }, [])
 
   const initialForm = model ? buildInitialEditForm(model) : null
   const isDirty =
@@ -513,7 +505,7 @@ export function EditModelSheet({
                   variant="outline"
                   size="sm"
                   onClick={() => setTestOpen(true)}
-                  disabled={!model || !TestModelDialogComp}
+                  disabled={!model}
                 >
                   <IconPlugConnected className="size-4" />
                   {t("models.test.testConnection")}
@@ -693,21 +685,19 @@ export function EditModelSheet({
         </SheetContent>
       </Sheet>
 
-      {TestModelDialogComp && (
-        <TestModelDialogComp
-          model={model}
-          open={testOpen}
-          onClose={() => setTestOpen(false)}
-          inlineParams={{
-            provider: form.provider,
-            model: form.modelId,
-            apiBase: form.apiBase,
-            apiKey: form.apiKey,
-            authMethod: form.authMethod,
-            modelIndex: model?.index,
-          }}
-        />
-      )}
+      <TestModelDialog
+        model={model}
+        open={testOpen}
+        onClose={() => setTestOpen(false)}
+        inlineParams={{
+          provider: form.provider,
+          model: form.modelId,
+          apiBase: form.apiBase,
+          apiKey: form.apiKey,
+          authMethod: form.authMethod,
+          modelIndex: model?.index,
+        }}
+      />
 
       <FetchModelsDialog
         open={fetchOpen}

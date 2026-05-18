@@ -1819,6 +1819,15 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 	} else if !option.EmptyAPIKeyAllowed {
 		t.Fatal("lmstudio should allow empty api keys")
 	}
+	if option, ok := optionsByID["siliconflow"]; !ok {
+		t.Fatal("siliconflow provider option missing")
+	} else if option.DefaultAPIBase != "https://api.siliconflow.cn/v1" {
+		t.Fatalf(
+			"siliconflow default_api_base = %q, want %q",
+			option.DefaultAPIBase,
+			"https://api.siliconflow.cn/v1",
+		)
+	}
 	if option, ok := optionsByID["bedrock"]; !ok {
 		t.Fatal("bedrock provider option missing")
 	} else if !option.CreateAllowed {
@@ -2389,5 +2398,58 @@ func TestFetchOpenAICompatibleModels_NoAuthHeaderWhenKeyEmpty(t *testing.T) {
 	}
 	if gotAuth != "" {
 		t.Fatalf("Authorization = %q, want empty", gotAuth)
+	}
+}
+
+func TestHandleFetchModels_SiliconFlowUsesOpenAICompatibleEndpoint(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	var gotPath string
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[{"id":"deepseek-ai/DeepSeek-V3","owned_by":"siliconflow"}]}`)
+	}))
+	defer srv.Close()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models/fetch", bytes.NewBufferString(fmt.Sprintf(`{
+		"provider":"siliconflow",
+		"api_key":"sk-siliconflow",
+		"api_base":"%s"
+	}`, srv.URL)))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	if gotPath != "/models" {
+		t.Fatalf("path = %q, want %q", gotPath, "/models")
+	}
+	if gotAuth != "Bearer sk-siliconflow" {
+		t.Fatalf("Authorization = %q, want %q", gotAuth, "Bearer sk-siliconflow")
+	}
+
+	var resp struct {
+		Models []upstreamModel `json:"models"`
+		Total  int             `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if resp.Total != 1 || len(resp.Models) != 1 {
+		t.Fatalf("response = %+v, want one fetched model", resp)
+	}
+	if resp.Models[0].ID != "deepseek-ai/DeepSeek-V3" {
+		t.Fatalf("model id = %q, want %q", resp.Models[0].ID, "deepseek-ai/DeepSeek-V3")
 	}
 }

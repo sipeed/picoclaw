@@ -48,21 +48,22 @@ type Option func(*Provider)
 const defaultRequestTimeout = common.DefaultRequestTimeout
 
 var stripModelPrefixProviders = map[string]struct{}{
-	"litellm":    {},
-	"venice":     {},
-	"moonshot":   {},
-	"nvidia":     {},
-	"groq":       {},
-	"ollama":     {},
-	"deepseek":   {},
-	"google":     {},
-	"openrouter": {},
-	"zhipu":      {},
-	"mistral":    {},
-	"vivgrid":    {},
-	"minimax":    {},
-	"novita":     {},
-	"lmstudio":   {},
+	"litellm":     {},
+	"venice":      {},
+	"moonshot":    {},
+	"nvidia":      {},
+	"groq":        {},
+	"ollama":      {},
+	"deepseek":    {},
+	"google":      {},
+	"openrouter":  {},
+	"siliconflow": {},
+	"zhipu":       {},
+	"mistral":     {},
+	"vivgrid":     {},
+	"minimax":     {},
+	"novita":      {},
+	"lmstudio":    {},
 }
 
 func WithMaxTokensField(maxTokensField string) Option {

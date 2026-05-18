@@ -932,6 +932,11 @@ func TestProviderChat_StripsKnownProviderPrefixes(t *testing.T) {
 			wantModel: "auto",
 		},
 		{
+			name:      "strips siliconflow prefix and keeps nested model",
+			input:     "siliconflow/deepseek-ai/DeepSeek-V3",
+			wantModel: "deepseek-ai/DeepSeek-V3",
+		},
+		{
 			name:      "strips novita prefix deepseek model",
 			input:     "novita/deepseek/deepseek-v3.2",
 			wantModel: "deepseek/deepseek-v3.2",
@@ -1040,6 +1045,16 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	}
 	if got := normalizeModel("vivgrid/auto", "https://api.vivgrid.com/v1"); got != "auto" {
 		t.Fatalf("normalizeModel(vivgrid auto) = %q, want %q", got, "auto")
+	}
+	if got := normalizeModel(
+		"siliconflow/deepseek-ai/DeepSeek-V3",
+		"https://api.siliconflow.cn/v1",
+	); got != "deepseek-ai/DeepSeek-V3" {
+		t.Fatalf(
+			"normalizeModel(siliconflow) = %q, want %q",
+			got,
+			"deepseek-ai/DeepSeek-V3",
+		)
 	}
 	if got := normalizeModel(
 		"novita/deepseek/deepseek-v3.2",
@@ -1606,6 +1621,7 @@ func TestProviderChat_PromptCacheKeyOmittedForNonOpenAI(t *testing.T) {
 		{"gemini", "https://generativelanguage.googleapis.com/v1beta"},
 		{"deepseek", "https://api.deepseek.com/v1"},
 		{"groq", "https://api.groq.com/openai/v1"},
+		{"siliconflow", "https://api.siliconflow.cn/v1"},
 		{"minimax", "https://api.minimaxi.com/v1"},
 		{"ollama_local", "http://localhost:11434/v1"},
 	}

@@ -290,6 +290,17 @@ export const PROVIDERS: ProviderDefinition[] = [
     supportsFetch: true,
   },
   {
+    key: "siliconflow",
+    label: "SiliconFlow",
+    labelZh: "硅基流动",
+    domain: "siliconflow.cn",
+    defaultApiBase: "https://api.siliconflow.cn/v1",
+    requiresApiKey: true,
+    isLocal: false,
+    priority: 43.5,
+    supportsFetch: true,
+  },
+  {
     key: "vivgrid",
     label: "Vivgrid",
     domain: "vivgrid.com",

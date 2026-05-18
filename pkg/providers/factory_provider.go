@@ -37,6 +37,7 @@ var protocolMetaByName = map[string]protocolMeta{
 	"ollama":                   {defaultAPIBase: "http://localhost:11434/v1", emptyAPIKeyAllowed: true},
 	"moonshot":                 {defaultAPIBase: "https://api.moonshot.cn/v1"},
 	"shengsuanyun":             {defaultAPIBase: "https://router.shengsuanyun.com/api/v1"},
+	"siliconflow":              {defaultAPIBase: "https://api.siliconflow.cn/v1"},
 	"deepseek":                 {defaultAPIBase: "https://api.deepseek.com/v1"},
 	"cerebras":                 {defaultAPIBase: "https://api.cerebras.ai/v1"},
 	"vivgrid":                  {defaultAPIBase: "https://api.vivgrid.com/v1"},
@@ -239,7 +240,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return finalizeProviderFromConfig(provider, modelID, cfg)
 
 	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "nvidia", "venice",
-		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
+		"ollama", "moonshot", "shengsuanyun", "siliconflow", "deepseek", "cerebras",
 		"vivgrid", "volcengine", "vllm", "qwen", "qwen-portal", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",
 		"coding-plan", "alibaba-coding", "qwen-coding", "zai", "mimo":
