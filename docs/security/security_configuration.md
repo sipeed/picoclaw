@@ -89,6 +89,13 @@ channels:
     nickserv_password: "your-irc-nickserv-password"
     sasl_password: "your-irc-sasl-password"
 
+# Channel Settings (nested format for channels that use settings block)
+channel_list:
+  mqtt:
+    settings:
+      username: "your-mqtt-username"
+      password: "your-mqtt-password"
+
 # Web Tool API Keys
 web:
   brave:
@@ -145,7 +152,7 @@ You can now remove sensitive fields from `config.json` since they're loaded from
       "model_name": "gpt-5.4",
       "model": "openai/gpt-5.4",
       "api_base": "https://api.openai.com/v1",
-      "api_key": "sk-your-actual-api-key-here"
+      "api_keys": ["sk-your-actual-api-key-here"]
     }
   ],
   "channel_list": {
@@ -225,6 +232,19 @@ channels:
 - `channels.telegram.token` → `config.channels.telegram.token`
 - `channels.feishu.app_secret` → `config.channels.feishu.app_secret`
 - etc.
+
+Channels that use a `settings` block (e.g. MQTT) use the `channel_list` key instead:
+
+```yaml
+channel_list:
+  mqtt:
+    settings:
+      username: "value"
+      password: "value"
+```
+
+- `channel_list.mqtt.settings.username` → `config.channel_list.mqtt.settings.username`
+- `channel_list.mqtt.settings.password` → `config.channel_list.mqtt.settings.password`
 
 ### Web Tools
 

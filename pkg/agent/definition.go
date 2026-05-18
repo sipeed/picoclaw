@@ -35,7 +35,7 @@ type AgentFrontmatter struct {
 	MaxTurns    *int           `json:"maxTurns,omitempty"`
 	Skills      []string       `json:"skills,omitempty"`
 	MCPServers  []string       `json:"mcpServers,omitempty"`
-	Fields      map[string]any `json:"fields,omitempty"`
+	Fields      map[string]any `json:"-"`
 }
 
 // AgentPromptDefinition represents the parsed AGENT.md or AGENTS.md prompt file.
@@ -45,6 +45,7 @@ type AgentPromptDefinition struct {
 	Body           string           `json:"body"`
 	RawFrontmatter string           `json:"raw_frontmatter,omitempty"`
 	Frontmatter    AgentFrontmatter `json:"frontmatter"`
+	FrontmatterErr string           `json:"frontmatter_error,omitempty"`
 }
 
 // SoulDefinition represents the resolved SOUL.md file linked to the agent.
@@ -146,19 +147,21 @@ func loadUserDefinition(workspace string) *UserDefinition {
 
 func parseAgentPromptDefinition(path, content string) AgentPromptDefinition {
 	frontmatter, body := splitAgentFrontmatter(content)
+	parsedFrontmatter, err := parseAgentFrontmatter(path, frontmatter)
 	return AgentPromptDefinition{
 		Path:           path,
 		Raw:            content,
 		Body:           body,
 		RawFrontmatter: frontmatter,
-		Frontmatter:    parseAgentFrontmatter(path, frontmatter),
+		Frontmatter:    parsedFrontmatter,
+		FrontmatterErr: errorString(err),
 	}
 }
 
-func parseAgentFrontmatter(path, frontmatter string) AgentFrontmatter {
+func parseAgentFrontmatter(path, frontmatter string) (AgentFrontmatter, error) {
 	frontmatter = strings.TrimSpace(frontmatter)
 	if frontmatter == "" {
-		return AgentFrontmatter{}
+		return AgentFrontmatter{}, nil
 	}
 
 	rawFields := make(map[string]any)
@@ -167,7 +170,7 @@ func parseAgentFrontmatter(path, frontmatter string) AgentFrontmatter {
 			"path":  path,
 			"error": err.Error(),
 		})
-		return AgentFrontmatter{}
+		return AgentFrontmatter{}, err
 	}
 
 	var typed struct {
@@ -184,7 +187,7 @@ func parseAgentFrontmatter(path, frontmatter string) AgentFrontmatter {
 			"path":  path,
 			"error": err.Error(),
 		})
-		return AgentFrontmatter{}
+		return AgentFrontmatter{}, err
 	}
 
 	return AgentFrontmatter{
@@ -196,7 +199,7 @@ func parseAgentFrontmatter(path, frontmatter string) AgentFrontmatter {
 		Skills:      append([]string(nil), typed.Skills...),
 		MCPServers:  append([]string(nil), typed.MCPServers...),
 		Fields:      rawFields,
-	}
+	}, nil
 }
 
 func splitAgentFrontmatter(content string) (frontmatter, body string) {
@@ -252,4 +255,11 @@ func uniquePaths(paths []string) []string {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

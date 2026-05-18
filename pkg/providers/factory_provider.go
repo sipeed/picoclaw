@@ -15,6 +15,7 @@ import (
 	anthropicmessages "github.com/sipeed/picoclaw/pkg/providers/anthropic_messages"
 	"github.com/sipeed/picoclaw/pkg/providers/azure"
 	"github.com/sipeed/picoclaw/pkg/providers/bedrock"
+	"github.com/sipeed/picoclaw/pkg/providers/common"
 )
 
 type protocolMeta struct {
@@ -36,6 +37,7 @@ var protocolMetaByName = map[string]protocolMeta{
 	"ollama":                   {defaultAPIBase: "http://localhost:11434/v1", emptyAPIKeyAllowed: true},
 	"moonshot":                 {defaultAPIBase: "https://api.moonshot.cn/v1"},
 	"shengsuanyun":             {defaultAPIBase: "https://router.shengsuanyun.com/api/v1"},
+	"siliconflow":              {defaultAPIBase: "https://api.siliconflow.cn/v1"},
 	"deepseek":                 {defaultAPIBase: "https://api.deepseek.com/v1"},
 	"cerebras":                 {defaultAPIBase: "https://api.cerebras.ai/v1"},
 	"vivgrid":                  {defaultAPIBase: "https://api.vivgrid.com/v1"},
@@ -60,6 +62,8 @@ var protocolMetaByName = map[string]protocolMeta{
 	"longcat":                  {defaultAPIBase: "https://api.longcat.chat/openai"},
 	"modelscope":               {defaultAPIBase: "https://api-inference.modelscope.cn/v1"},
 	"mimo":                     {defaultAPIBase: "https://api.xiaomimimo.com/v1"},
+	"anthropic":                {defaultAPIBase: "https://api.anthropic.com/v1"},
+	"anthropic-messages":       {defaultAPIBase: "https://api.anthropic.com/v1"},
 }
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
@@ -236,7 +240,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return finalizeProviderFromConfig(provider, modelID, cfg)
 
 	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "nvidia", "venice",
-		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
+		"ollama", "moonshot", "shengsuanyun", "siliconflow", "deepseek", "cerebras",
 		"vivgrid", "volcengine", "vllm", "qwen", "qwen-portal", "qwen-intl", "qwen-international", "dashscope-intl",
 		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",
 		"coding-plan", "alibaba-coding", "qwen-coding", "zai", "mimo":
@@ -318,10 +322,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			return finalizeProviderFromConfig(provider, modelID, cfg)
 		}
 		// Use API key with HTTP API
-		apiBase := cfg.APIBase
-		if apiBase == "" {
-			apiBase = "https://api.anthropic.com/v1"
-		}
+		apiBase := common.NormalizeBaseURL(cfg.APIBase, "https://api.anthropic.com/v1", true)
 		if cfg.APIKey() == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}

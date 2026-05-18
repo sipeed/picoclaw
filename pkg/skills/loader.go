@@ -42,11 +42,8 @@ func (info SkillInfo) validate() error {
 	if info.Name == "" {
 		errs = errors.Join(errs, errors.New("name is required"))
 	} else {
-		if len(info.Name) > MaxNameLength {
-			errs = errors.Join(errs, fmt.Errorf("name exceeds %d characters", MaxNameLength))
-		}
-		if !namePattern.MatchString(info.Name) {
-			errs = errors.Join(errs, errors.New("name must be alphanumeric with hyphens"))
+		if err := ValidateSkillName(info.Name); err != nil {
+			errs = errors.Join(errs, err)
 		}
 	}
 
@@ -148,6 +145,10 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 }
 
 func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
+	if err := ValidateSkillName(name); err != nil {
+		return "", false
+	}
+
 	// 1. load from workspace skills first (project-level)
 	if sl.workspaceSkills != "" {
 		skillFile := filepath.Join(sl.workspaceSkills, name, "SKILL.md")

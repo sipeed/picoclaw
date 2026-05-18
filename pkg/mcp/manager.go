@@ -342,17 +342,9 @@ func connectServer(
 	// Create transport based on configuration
 	// Auto-detect transport type if not explicitly specified
 	var transport mcp.Transport
-	transportType := cfg.Type
-
-	// Auto-detect: if URL is provided, use SSE; if command is provided, use stdio
+	transportType := config.EffectiveMCPTransportType(cfg)
 	if transportType == "" {
-		if cfg.URL != "" {
-			transportType = "sse"
-		} else if cfg.Command != "" {
-			transportType = "stdio"
-		} else {
-			return nil, fmt.Errorf("either URL or command must be provided")
-		}
+		return nil, fmt.Errorf("either URL or command must be provided")
 	}
 
 	switch transportType {
@@ -362,12 +354,13 @@ func connectServer(
 		}
 
 		// Configure DisableStandaloneSSE based on transport type.
-		// - "http": Request-response only mode. Disable the standalone SSE stream
-		//   to avoid compatibility issues with servers that don't support GET /mcp.
+		// - "http": Streamable HTTP request-response mode. Disable the standalone
+		//   SSE stream to avoid compatibility issues with servers that don't
+		//   support the optional GET listener.
 		// - "sse": Bidirectional mode. Enable the standalone SSE stream to receive
 		//   server-initiated notifications (e.g., ToolListChangedNotification).
 		// - Empty or auto-detected: Defaults to "sse" behavior (standalone SSE enabled).
-		disableStandaloneSSE := (cfg.Type == "http")
+		disableStandaloneSSE := transportType == "http"
 
 		logger.DebugCF("mcp", "Using SSE/HTTP transport",
 			map[string]any{
@@ -452,7 +445,7 @@ func connectServer(
 		transport = &isolatedCommandTransport{Command: cmd}
 	default:
 		return nil, fmt.Errorf(
-			"unsupported transport type: %s (supported: stdio, sse, http)",
+			"unsupported transport type: %s (supported: stdio, sse, http, streamable-http)",
 			transportType,
 		)
 	}

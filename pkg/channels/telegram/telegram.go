@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,20 +44,38 @@ var (
 	reInlineCode = regexp.MustCompile("`([^`]+)`")
 )
 
+const defaultMediaGroupDelay = 500 * time.Millisecond
+
 type TelegramChannel struct {
 	*channels.BaseChannel
-	bot      *telego.Bot
-	bh       *th.BotHandler
-	bc       *config.Channel
-	chatIDs  map[string]int64
-	ctx      context.Context
-	cancel   context.CancelFunc
-	tgCfg    *config.TelegramSettings
-	progress *channels.ToolFeedbackAnimator
+	bot       *telego.Bot
+	bh        *th.BotHandler
+	bc        *config.Channel
+	chatIDsMu sync.Mutex
+	chatIDs   map[string]int64
+	ctx       context.Context
+	cancel    context.CancelFunc
+	tgCfg     *config.TelegramSettings
+	progress  *channels.ToolFeedbackAnimator
 
 	registerFunc      func(context.Context, []commands.Definition) error
 	commandRegDelayFn func(int) time.Duration
 	commandRegCancel  context.CancelFunc
+
+	mediaGroupMu    sync.Mutex
+	mediaGroups     map[string]*telegramMediaGroup
+	mediaGroupDelay time.Duration
+}
+
+type telegramMediaGroup struct {
+	messages   []*telego.Message
+	timer      *time.Timer
+	generation uint64
+}
+
+type telegramMessageParts struct {
+	content    []string
+	mediaPaths []string
 }
 
 func NewTelegramChannel(
@@ -112,9 +131,19 @@ func NewTelegramChannel(
 		bc:          bc,
 		chatIDs:     make(map[string]int64),
 		tgCfg:       telegramCfg,
+
+		mediaGroups:     make(map[string]*telegramMediaGroup),
+		mediaGroupDelay: telegramMediaGroupDelay(telegramCfg),
 	}
 	ch.progress = channels.NewToolFeedbackAnimator(ch.EditMessage)
 	return ch, nil
+}
+
+func telegramMediaGroupDelay(telegramCfg *config.TelegramSettings) time.Duration {
+	if telegramCfg != nil && telegramCfg.MediaGroupDelayMS > 0 {
+		return time.Duration(telegramCfg.MediaGroupDelayMS) * time.Millisecond
+	}
+	return defaultMediaGroupDelay
 }
 
 func (c *TelegramChannel) Start(ctx context.Context) error {
@@ -167,6 +196,7 @@ func (c *TelegramChannel) Stop(ctx context.Context) error {
 	if c.bh != nil {
 		_ = c.bh.StopWithContext(ctx)
 	}
+	c.flushPendingMediaGroups(ctx)
 
 	// Cancel our context (stops long polling)
 	if c.cancel != nil {
@@ -713,6 +743,131 @@ func (c *TelegramChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMe
 }
 
 func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Message) error {
+	if message != nil && strings.TrimSpace(message.MediaGroupID) != "" {
+		return c.bufferMediaGroupMessage(ctx, message)
+	}
+	return c.handleMessages(ctx, []*telego.Message{message})
+}
+
+func (c *TelegramChannel) bufferMediaGroupMessage(ctx context.Context, message *telego.Message) error {
+	if message == nil {
+		return fmt.Errorf("message is nil")
+	}
+	groupID := strings.TrimSpace(message.MediaGroupID)
+	if groupID == "" {
+		return c.handleMessages(ctx, []*telego.Message{message})
+	}
+
+	msgCopy := *message
+	msgCopy.Photo = append([]telego.PhotoSize(nil), message.Photo...)
+	key := fmt.Sprintf("%d:%s", message.Chat.ID, groupID)
+
+	c.mediaGroupMu.Lock()
+	if c.mediaGroups == nil {
+		c.mediaGroups = make(map[string]*telegramMediaGroup)
+	}
+	group := c.mediaGroups[key]
+	if group == nil {
+		group = &telegramMediaGroup{}
+		c.mediaGroups[key] = group
+	}
+	group.messages = append(group.messages, &msgCopy)
+	group.generation++
+	generation := group.generation
+	if group.timer != nil {
+		group.timer.Stop()
+	}
+	delay := c.mediaGroupDelay
+	if delay <= 0 {
+		delay = defaultMediaGroupDelay
+	}
+	group.timer = time.AfterFunc(delay, func() {
+		c.flushMediaGroup(c.ctx, key, generation)
+	})
+	c.mediaGroupMu.Unlock()
+
+	logger.DebugCF("telegram", "Buffered media group message", map[string]any{
+		"chat_id":        message.Chat.ID,
+		"media_group_id": groupID,
+		"message_id":     message.MessageID,
+	})
+	return nil
+}
+
+func (c *TelegramChannel) flushPendingMediaGroups(ctx context.Context) {
+	c.mediaGroupMu.Lock()
+	keys := make([]string, 0, len(c.mediaGroups))
+	for key, group := range c.mediaGroups {
+		if group.timer != nil {
+			group.timer.Stop()
+		}
+		keys = append(keys, key)
+	}
+	c.mediaGroupMu.Unlock()
+
+	for _, key := range keys {
+		c.flushMediaGroup(ctx, key, 0)
+	}
+}
+
+func (c *TelegramChannel) flushMediaGroup(ctx context.Context, key string, generation uint64) {
+	c.mediaGroupMu.Lock()
+	group := c.mediaGroups[key]
+	if group == nil {
+		c.mediaGroupMu.Unlock()
+		return
+	}
+	if generation != 0 && group.generation != generation {
+		c.mediaGroupMu.Unlock()
+		return
+	}
+	delete(c.mediaGroups, key)
+	if group.timer != nil {
+		group.timer.Stop()
+	}
+	messages := append([]*telego.Message(nil), group.messages...)
+	c.mediaGroupMu.Unlock()
+
+	if len(messages) == 0 {
+		return
+	}
+	slices.SortFunc(messages, func(a, b *telego.Message) int {
+		switch {
+		case a == nil && b == nil:
+			return 0
+		case a == nil:
+			return -1
+		case b == nil:
+			return 1
+		default:
+			return a.MessageID - b.MessageID
+		}
+	})
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := c.handleMessages(ctx, messages); err != nil {
+		logger.ErrorCF("telegram", "Failed to handle media group", map[string]any{
+			"key":   key,
+			"error": err.Error(),
+		})
+	}
+}
+
+func (c *TelegramChannel) handleMessages(ctx context.Context, messages []*telego.Message) error {
+	if len(messages) == 0 {
+		return nil
+	}
+	message := messages[0]
+	for _, candidate := range messages {
+		if candidate == nil {
+			continue
+		}
+		if strings.TrimSpace(candidate.Text) != "" || strings.TrimSpace(candidate.Caption) != "" {
+			message = candidate
+			break
+		}
+	}
 	if message == nil {
 		return fmt.Errorf("message is nil")
 	}
@@ -740,7 +895,9 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 	}
 
 	chatID := message.Chat.ID
+	c.chatIDsMu.Lock()
 	c.chatIDs[platformID] = chatID
+	c.chatIDsMu.Unlock()
 
 	content := ""
 	mediaPaths := []string{}
@@ -764,61 +921,18 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		return localPath // fallback: use raw path
 	}
 
-	if message.Text != "" {
-		content += message.Text
-	}
-
-	if message.Caption != "" {
-		if content != "" {
-			content += "\n"
+	for i, msg := range messages {
+		if msg == nil {
+			continue
 		}
-		content += message.Caption
-	}
-
-	if len(message.Photo) > 0 {
-		photo := message.Photo[len(message.Photo)-1]
-		photoPath := c.downloadPhoto(ctx, photo.FileID)
-		if photoPath != "" {
-			mediaPaths = append(mediaPaths, storeMedia(photoPath, "photo.jpg"))
+		parts := c.collectTelegramMessageParts(ctx, msg, i, len(messages), storeMedia)
+		for _, part := range parts.content {
 			if content != "" {
 				content += "\n"
 			}
-			content += "[image: photo]"
+			content += part
 		}
-	}
-
-	if message.Voice != nil {
-		voicePath := c.downloadFile(ctx, message.Voice.FileID, ".ogg")
-		if voicePath != "" {
-			mediaPaths = append(mediaPaths, storeMedia(voicePath, "voice.ogg"))
-
-			if content != "" {
-				content += "\n"
-			}
-			content += "[voice]"
-		}
-	}
-
-	if message.Audio != nil {
-		audioPath := c.downloadFile(ctx, message.Audio.FileID, ".mp3")
-		if audioPath != "" {
-			mediaPaths = append(mediaPaths, storeMedia(audioPath, "audio.mp3"))
-			if content != "" {
-				content += "\n"
-			}
-			content += "[audio]"
-		}
-	}
-
-	if message.Document != nil {
-		docPath := c.downloadFile(ctx, message.Document.FileID, "")
-		if docPath != "" {
-			mediaPaths = append(mediaPaths, storeMedia(docPath, "document"))
-			if content != "" {
-				content += "\n"
-			}
-			content += "[file]"
-		}
+		mediaPaths = append(mediaPaths, parts.mediaPaths...)
 	}
 
 	if content == "" && len(mediaPaths) == 0 {
@@ -915,6 +1029,74 @@ func (c *TelegramChannel) handleMessage(ctx context.Context, message *telego.Mes
 		sender,
 	)
 	return nil
+}
+
+func (c *TelegramChannel) collectTelegramMessageParts(
+	ctx context.Context,
+	msg *telego.Message,
+	index int,
+	total int,
+	storeMedia func(localPath, filename string) string,
+) telegramMessageParts {
+	parts := telegramMessageParts{}
+	if msg == nil {
+		return parts
+	}
+	if text := strings.TrimSpace(msg.Text); text != "" {
+		parts.content = append(parts.content, text)
+	}
+	if caption := strings.TrimSpace(msg.Caption); caption != "" {
+		parts.content = append(parts.content, caption)
+	}
+	if len(msg.Photo) > 0 {
+		photo := msg.Photo[len(msg.Photo)-1]
+		photoPath := c.downloadPhoto(ctx, photo.FileID)
+		if photoPath != "" {
+			photoNumber := index + 1
+			parts.mediaPaths = append(parts.mediaPaths, storeMedia(photoPath, fmt.Sprintf("photo-%d.jpg", photoNumber)))
+			parts.content = append(parts.content, fmt.Sprintf("[image: photo %d]", photoNumber))
+		}
+	}
+	if msg.Voice != nil {
+		voicePath := c.downloadFile(ctx, msg.Voice.FileID, ".ogg")
+		if voicePath != "" {
+			parts.mediaPaths = append(
+				parts.mediaPaths,
+				storeMedia(voicePath, indexedMediaFilename("voice", ".ogg", index, total)),
+			)
+			parts.content = append(parts.content, "[voice]")
+		}
+	}
+	if msg.Audio != nil {
+		audioPath := c.downloadFile(ctx, msg.Audio.FileID, ".mp3")
+		if audioPath != "" {
+			filename := msg.Audio.FileName
+			if strings.TrimSpace(filename) == "" {
+				filename = indexedMediaFilename("audio", ".mp3", index, total)
+			}
+			parts.mediaPaths = append(parts.mediaPaths, storeMedia(audioPath, filename))
+			parts.content = append(parts.content, "[audio]")
+		}
+	}
+	if msg.Document != nil {
+		docPath := c.downloadFile(ctx, msg.Document.FileID, "")
+		if docPath != "" {
+			filename := msg.Document.FileName
+			if strings.TrimSpace(filename) == "" {
+				filename = indexedMediaFilename("document", "", index, total)
+			}
+			parts.mediaPaths = append(parts.mediaPaths, storeMedia(docPath, filename))
+			parts.content = append(parts.content, "[file]")
+		}
+	}
+	return parts
+}
+
+func indexedMediaFilename(prefix, ext string, index int, total int) string {
+	if total <= 1 {
+		return prefix + ext
+	}
+	return fmt.Sprintf("%s-%d%s", prefix, index+1, ext)
 }
 
 func (c *TelegramChannel) prependTelegramQuotedReply(content string, reply *telego.Message) string {

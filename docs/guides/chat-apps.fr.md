@@ -4,7 +4,7 @@
 
 ## 💬 Applications de Chat
 
-Communiquez avec votre PicoClaw via Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk, LINE, WeCom, Feishu, Slack, IRC, OneBot ou MaixCam.
+Communiquez avec votre PicoClaw via Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk, LINE, WeCom, Feishu, Slack, IRC, OneBot, MQTT ou MaixCam.
 
 > **Note** : Tous les canaux basés sur les webhooks (LINE, WeCom, etc.) sont servis sur un seul serveur HTTP Gateway partagé (`gateway.host`:`gateway.port`, par défaut `127.0.0.1:18790`). Il n'y a pas de ports par canal à configurer. Note : Feishu utilise le mode WebSocket/SDK et n'utilise pas le serveur HTTP webhook partagé.
 
@@ -23,6 +23,7 @@ Communiquez avec votre PicoClaw via Telegram, Discord, WhatsApp, Matrix, QQ, Din
 | **Feishu (飞书)**    | ⭐⭐⭐ Avancé      | Collaboration entreprise, fonctionnalités riches      | [Documentation](../channels/feishu/README.fr.md)                                                                |
 | **IRC**              | ⭐⭐ Moyen         | Serveur + configuration TLS                           | [Documentation](#irc) |
 | **OneBot**           | ⭐⭐ Moyen         | Compatible NapCat/Go-CQHTTP, écosystème communautaire | [Documentation](../channels/onebot/README.fr.md)                                                                |
+| **MQTT**             | ⭐ Facile          | N'importe quel client MQTT via broker pub/sub         | [Documentation](../channels/mqtt/README.fr.md)                                                                  |
 | **MaixCam**          | ⭐ Facile          | Canal d'intégration matérielle pour caméras AI Sipeed | [Documentation](../channels/maixcam/README.fr.md)                                                               |
 | **Pico**             | ⭐ Facile          | Canal protocole natif PicoClaw                        |                                                                                                                  |
 
@@ -679,5 +680,69 @@ picoclaw gateway
 ```bash
 picoclaw gateway
 ```
+
+</details>
+
+<a id="mqtt"></a>
+<details>
+<summary><b>MQTT</b></summary>
+
+N'importe quel client MQTT peut communiquer avec PicoClaw via un broker. Les appareils ou services publient des requêtes vers le broker ; PicoClaw s'abonne, les traite et publie les réponses en retour.
+
+**1. Configurer**
+
+```json
+{
+  "channel_list": {
+    "mqtt": {
+      "enabled": true,
+      "type": "mqtt",
+      "settings": {
+        "broker": "ssl://votre-broker:8883",
+        "agent_id": "assistant",
+        "topic_prefix": "/picoclaw",
+        "keep_alive": 60,
+        "qos": 0
+      }
+    }
+  }
+}
+```
+
+Nom d'utilisateur et mot de passe dans `~/.picoclaw/.security.yml` :
+
+```yaml
+channel_list:
+  mqtt:
+    settings:
+      username: votre_utilisateur
+      password: votre_mot_de_passe
+```
+
+**Format des topics**
+
+```
+{prefix}/{agent_id}/{client_id}/request    # Client → PicoClaw
+{prefix}/{agent_id}/{client_id}/response   # PicoClaw → Client
+```
+
+Le `client_id` est défini par votre application cliente pour identifier les appareils ou sessions.
+
+**2. Lancer**
+
+```bash
+picoclaw gateway
+```
+
+**3. Tester**
+
+```bash
+mosquitto_pub -t "/picoclaw/assistant/device1/request" \
+  -m '{"text": "Bonjour"}'
+
+mosquitto_sub -t "/picoclaw/assistant/device1/response"
+```
+
+Pour les options complètes, voir [Documentation du canal MQTT](../channels/mqtt/README.fr.md).
 
 </details>

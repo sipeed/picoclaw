@@ -73,9 +73,12 @@ make check       # Full pre-commit check: deps + fmt + vet + test + docs consist
 
 ```bash
 make test                                    # Run all tests
+make integration-test                        # Run Docker-backed integration suites
 go test -run TestName -v ./pkg/session/      # Run a single test
 go test -bench=. -benchmem -run='^$' ./...  # Run benchmarks
 ```
+
+Docker-backed integration suites are auto-discovered from [`integration/suites/`](integration/suites/). See [`integration/README.md`](integration/README.md) for the suite layout and the conventions used by CI.
 
 ### Code Style
 

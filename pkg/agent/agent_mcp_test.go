@@ -14,6 +14,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/mcp"
+	agenttools "github.com/sipeed/picoclaw/pkg/tools"
 )
 
 func boolPtr(b bool) *bool { return &b }
@@ -130,6 +131,139 @@ func TestServerIsDeferred(t *testing.T) {
 			if got != tt.want {
 				t.Errorf("serverIsDeferred(discoveryEnabled=%v, deferred=%v) = %v, want %v",
 					tt.discoveryEnabled, tt.serverDeferred, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRegisterMCPServerPromptContributorUsesActualRegisteredToolCount(t *testing.T) {
+	cb := NewContextBuilder(t.TempDir())
+	agent := &AgentInstance{ContextBuilder: cb}
+
+	registerMCPServerPromptContributor("research", agent, "github", 0, false)
+	messages := cb.BuildMessagesFromPrompt(PromptBuildRequest{CurrentMessage: "hello"})
+	if prompt := messages[0].Content; strings.Contains(prompt, "MCP server `github`") {
+		t.Fatalf("expected no MCP prompt when no tools were registered, got %q", prompt)
+	}
+
+	registerMCPServerPromptContributor("research", agent, "github", 2, false)
+	messages = cb.BuildMessagesFromPrompt(PromptBuildRequest{CurrentMessage: "hello"})
+	prompt := messages[0].Content
+	if !strings.Contains(prompt, "MCP server `github` is connected") {
+		t.Fatalf("expected MCP prompt for registered tools, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "It contributes 2 tool(s)") {
+		t.Fatalf("expected actual registered tool count in prompt, got %q", prompt)
+	}
+}
+
+func TestToolRegistryIncludesReportsOnlyRegisteredTools(t *testing.T) {
+	registry := agenttools.NewToolRegistry()
+	registry.SetAllowlist([]string{"mcp_github_search"})
+
+	registry.RegisterHidden(&allowlistTestTool{name: "mcp_github_search"})
+	registry.RegisterHidden(&allowlistTestTool{name: "mcp_github_create_issue"})
+
+	if !toolRegistryIncludes(registry, "mcp_github_search") {
+		t.Fatal("expected hidden registered MCP tool to be included")
+	}
+	if toolRegistryIncludes(registry, "mcp_github_create_issue") {
+		t.Fatal("blocked MCP tool should not be included")
+	}
+}
+
+func TestFilterMCPConfigServersCaseInsensitivePreservesOriginalKeys(t *testing.T) {
+	mcpCfg := config.MCPConfig{
+		Servers: map[string]config.MCPServerConfig{
+			"GitHub":     {Enabled: true},
+			"filesystem": {Enabled: true},
+			"Slack":      {Enabled: true},
+		},
+	}
+	allowed := map[string]struct{}{
+		"github":     {},
+		"FILESYSTEM": {},
+	}
+
+	filtered := filterMCPConfigServers(mcpCfg, allowed)
+
+	if len(filtered.Servers) != 2 {
+		t.Fatalf("filtered.Servers = %v, want 2 entries", filtered.Servers)
+	}
+	if _, ok := filtered.Servers["GitHub"]; !ok {
+		t.Fatal("expected original GitHub config key to be preserved")
+	}
+	if _, ok := filtered.Servers["filesystem"]; !ok {
+		t.Fatal("expected filesystem config key to be preserved")
+	}
+	if _, ok := filtered.Servers["github"]; ok {
+		t.Fatal("did not expect normalized github key to replace original config key")
+	}
+	if _, ok := filtered.Servers["Slack"]; ok {
+		t.Fatal("did not expect unallowed Slack server")
+	}
+}
+
+func TestAgentHasDiscoverableMCPServers(t *testing.T) {
+	deferredFalse := false
+	cfg := &config.Config{
+		Tools: config.ToolsConfig{
+			MCP: config.MCPConfig{
+				ToolConfig: config.ToolConfig{Enabled: true},
+				Discovery: config.ToolDiscoveryConfig{
+					Enabled:  true,
+					UseBM25:  true,
+					UseRegex: false,
+				},
+				Servers: map[string]config.MCPServerConfig{
+					"github":     {Enabled: true},
+					"filesystem": {Enabled: true, Deferred: &deferredFalse},
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name    string
+		allowed map[string]struct{}
+		want    bool
+	}{
+		{
+			name: "nil allowlist includes discoverable enabled server",
+			want: true,
+		},
+		{
+			name:    "empty allowlist denies all servers",
+			allowed: map[string]struct{}{},
+			want:    false,
+		},
+		{
+			name: "selected server discoverable",
+			allowed: map[string]struct{}{
+				"github": {},
+			},
+			want: true,
+		},
+		{
+			name: "selected server opted out of discovery",
+			allowed: map[string]struct{}{
+				"filesystem": {},
+			},
+			want: false,
+		},
+		{
+			name: "unknown allowlist server matches nothing",
+			allowed: map[string]struct{}{
+				"slack": {},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := agentHasDiscoverableMCPServers(cfg, tt.allowed); got != tt.want {
+				t.Fatalf("agentHasDiscoverableMCPServers() = %v, want %v", got, tt.want)
 			}
 		})
 	}

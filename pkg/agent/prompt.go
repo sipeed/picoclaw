@@ -52,6 +52,7 @@ const (
 	PromptSourceMemory         PromptSourceID = "memory:workspace"
 	PromptSourceSkillCatalog   PromptSourceID = "skill:index"
 	PromptSourceActiveSkills   PromptSourceID = "skill:active"
+	PromptSourceAgentDiscovery PromptSourceID = "agent:discovery"
 	PromptSourceToolRegistry   PromptSourceID = "tool_registry:native"
 	PromptSourceToolDiscovery  PromptSourceID = "tool_registry:discovery"
 	PromptSourceOutputPolicy   PromptSourceID = "runtime.output"
@@ -193,6 +194,13 @@ func builtinPromptSources() []PromptSourceDescriptor {
 			Owner:           "skills",
 			Description:     "Active skill instructions for the current request",
 			Allowed:         []PromptPlacement{{Layer: PromptLayerCapability, Slot: PromptSlotActiveSkill}},
+			StableByDefault: false,
+		},
+		{
+			ID:              PromptSourceAgentDiscovery,
+			Owner:           "agent",
+			Description:     "Structured multi-agent discovery registry",
+			Allowed:         []PromptPlacement{{Layer: PromptLayerCapability, Slot: PromptSlotTooling}},
 			StableByDefault: false,
 		},
 		{

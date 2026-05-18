@@ -204,6 +204,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"openrouter", "openrouter"},
 		{"cerebras", "cerebras"},
 		{"vivgrid", "vivgrid"},
+		{"siliconflow", "siliconflow"},
 		{"qwen", "qwen"},
 		{"vllm", "vllm"},
 		{"deepseek", "deepseek"},
@@ -250,6 +251,12 @@ func TestGetDefaultAPIBase_LMStudio(t *testing.T) {
 func TestGetDefaultAPIBase_Venice(t *testing.T) {
 	if got := getDefaultAPIBase("venice"); got != "https://api.venice.ai/api/v1" {
 		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "venice", got, "https://api.venice.ai/api/v1")
+	}
+}
+
+func TestGetDefaultAPIBase_SiliconFlow(t *testing.T) {
+	if got := getDefaultAPIBase("siliconflow"); got != "https://api.siliconflow.cn/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "siliconflow", got, "https://api.siliconflow.cn/v1")
 	}
 }
 
@@ -471,6 +478,28 @@ func TestCreateProviderFromConfig_Venice(t *testing.T) {
 	}
 	if modelID != "venice-uncensored" {
 		t.Errorf("modelID = %q, want %q", modelID, "venice-uncensored")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_SiliconFlow(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-siliconflow",
+		Model:     "siliconflow/deepseek-ai/DeepSeek-V3",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "deepseek-ai/DeepSeek-V3" {
+		t.Errorf("modelID = %q, want %q", modelID, "deepseek-ai/DeepSeek-V3")
 	}
 	if _, ok := provider.(*HTTPProvider); !ok {
 		t.Fatalf("expected *HTTPProvider, got %T", provider)
@@ -973,6 +1002,15 @@ func TestModelProviderOptions(t *testing.T) {
 		t.Fatal("lmstudio option missing")
 	} else if !option.EmptyAPIKeyAllowed {
 		t.Fatal("lmstudio should allow empty API keys")
+	}
+	if option, ok := seen["siliconflow"]; !ok {
+		t.Fatal("siliconflow option missing")
+	} else if option.DefaultAPIBase != "https://api.siliconflow.cn/v1" {
+		t.Fatalf(
+			"siliconflow default_api_base = %q, want %q",
+			option.DefaultAPIBase,
+			"https://api.siliconflow.cn/v1",
+		)
 	}
 	if option, ok := seen["anthropic"]; !ok {
 		t.Fatal("anthropic option missing")

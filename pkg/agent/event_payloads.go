@@ -20,12 +20,39 @@ type TurnStartPayload struct {
 	MediaCount  int
 }
 
+const (
+	skillContextTriggerInitialBuild        = "initial_build"
+	skillContextTriggerContextRetryRebuild = "context_retry_rebuild"
+)
+
+type SkillContextSnapshot struct {
+	Sequence   int      `json:"sequence"`
+	Trigger    string   `json:"trigger"`
+	SkillNames []string `json:"skill_names,omitempty"`
+}
+
+type ToolExecutionRecord struct {
+	Name         string   `json:"name"`
+	Success      bool     `json:"success"`
+	ErrorSummary string   `json:"error_summary,omitempty"`
+	SkillNames   []string `json:"skill_names,omitempty"`
+}
+
 // TurnEndPayload describes the completion of a turn.
 type TurnEndPayload struct {
-	Status          TurnEndStatus
-	Iterations      int
-	Duration        time.Duration
-	FinalContentLen int
+	Status                TurnEndStatus
+	Workspace             string
+	Iterations            int
+	Duration              time.Duration
+	FinalContentLen       int
+	UserMessage           string
+	FinalContent          string
+	ActiveSkills          []string
+	AttemptedSkills       []string
+	FinalSuccessfulPath   []string
+	SkillContextSnapshots []SkillContextSnapshot
+	ToolKinds             []string
+	ToolExecutions        []ToolExecutionRecord
 }
 
 // LLMRequestPayload describes an outbound LLM request.

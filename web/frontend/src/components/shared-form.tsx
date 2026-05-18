@@ -93,7 +93,12 @@ interface KeyInputProps {
   className?: string
 }
 
-export function KeyInput({ value, onChange, placeholder, className }: KeyInputProps) {
+export function KeyInput({
+  value,
+  onChange,
+  placeholder,
+  className,
+}: KeyInputProps) {
   const [show, setShow] = useState(false)
 
   return (

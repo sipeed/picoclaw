@@ -127,7 +127,7 @@ export function ContextUsageRing({
               : "pointer-events-none scale-95 opacity-0"
           }`}
         >
-          <div className="bg-popover absolute -bottom-1.5 right-3 h-3 w-3 rotate-45 border-r border-b" />
+          <div className="bg-popover absolute right-3 -bottom-1.5 h-3 w-3 rotate-45 border-r border-b" />
 
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground text-xs">

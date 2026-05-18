@@ -15,6 +15,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
+	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -146,6 +147,26 @@ func newTestManager() *Manager {
 		channels: make(map[string]Channel),
 		workers:  make(map[string]*channelWorker),
 		bus:      bus.NewMessageBus(),
+	}
+}
+
+func TestSetMediaStorePropagatesToExistingChannels(t *testing.T) {
+	oldStore := media.NewFileMediaStore()
+	newStore := media.NewFileMediaStore()
+	ch := &mockChannel{}
+	ch.SetMediaStore(oldStore)
+
+	m := newTestManager()
+	m.mediaStore = oldStore
+	m.channels["telegram"] = ch
+
+	m.SetMediaStore(newStore)
+
+	if m.mediaStore != newStore {
+		t.Fatal("manager media store was not updated")
+	}
+	if got := ch.GetMediaStore(); got != newStore {
+		t.Fatalf("channel media store = %p, want %p", got, newStore)
 	}
 }
 

@@ -15,7 +15,8 @@ The Telegram channel uses long polling via the Telegram Bot API for bot-based co
       "token": "123456789:ABCdefGHIjklMNOpqrsTUVwxyz",
       "allow_from": ["123456789"],
       "proxy": "",
-      "use_markdown_v2": false
+      "use_markdown_v2": false,
+      "media_group_delay_ms": 500
     }
   }
 }
@@ -28,6 +29,7 @@ The Telegram channel uses long polling via the Telegram Bot API for bot-based co
 | allow_from       | array  | No       | Allowlist of user IDs; empty means all users are allowed           |
 | proxy            | string | No       | Proxy URL for connecting to the Telegram API (e.g. http://127.0.0.1:7890) |
 | use_markdown_v2 | bool   | No       | Enable Telegram MarkdownV2 formatting                              |
+| media_group_delay_ms | int | No       | Idle delay before processing Telegram media groups/albums. Defaults to 500 ms |
 
 ## Setup
 

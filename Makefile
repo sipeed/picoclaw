@@ -1,4 +1,4 @@
-.PHONY: all build install uninstall clean help test build-all lint-docs
+.PHONY: all build install uninstall clean help test integration-test build-all lint-docs
 
 # Build variables
 BINARY_NAME=picoclaw
@@ -378,6 +378,10 @@ vet: generate
 test: generate
 	@$(GO) test $(GOFLAGS) $$($(GO) list $(GOFLAGS) ./... | grep -v github.com/sipeed/picoclaw/web/)
 	@cd web && make test
+
+## integration-test: Run Docker-backed integration test suites
+integration-test:
+	@bash ./scripts/run-integration-tests.sh
 
 ## fmt: Format Go code
 fmt:

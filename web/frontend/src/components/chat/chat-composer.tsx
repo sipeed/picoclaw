@@ -128,7 +128,10 @@ export function ChatComposer({
 
           <div className="flex items-center gap-1.5">
             {contextUsage && (
-              <ContextUsageRing usage={contextUsage} onDetailClick={onContextDetail} />
+              <ContextUsageRing
+                usage={contextUsage}
+                onDetailClick={onContextDetail}
+              />
             )}
             {canInput ? (
               <Tooltip delayDuration={700}>

@@ -4,7 +4,7 @@
 
 ## 💬 Chat Apps
 
-Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk, LINE, WeCom, Feishu, Slack, IRC, OneBot, MaixCam, or Pico (native protocol)
+Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk, LINE, WeCom, Feishu, Slack, IRC, OneBot, MQTT, MaixCam, or Pico (native protocol)
 
 > **Note**: Channels that rely on HTTP callbacks share a single Gateway HTTP server (`gateway.host`:`gateway.port`, default `127.0.0.1:18790`). Socket/stream-based channels such as Feishu, DingTalk, and WeCom do not rely on the shared webhook server for inbound delivery.
 
@@ -23,6 +23,7 @@ Talk to your picoclaw through Telegram, Discord, WhatsApp, Matrix, QQ, DingTalk,
 | **Feishu (飞书)**    | ⭐⭐⭐ Advanced    | Enterprise collaboration, feature-rich                | [Docs](../channels/feishu/README.md)                                                                            |
 | **IRC**              | ⭐⭐ Medium        | Server + TLS configuration                            | [Docs](#irc)                                                                                                     |
 | **OneBot**           | ⭐⭐ Medium        | NapCat/Go-CQHTTP compatible, community ecosystem      | [Docs](../channels/onebot/README.md)                                                                            |
+| **MQTT**             | ⭐ Easy            | Any MQTT client via broker pub/sub                    | [Docs](../channels/mqtt/README.md)                                                                              |
 | **MaixCam**          | ⭐ Easy            | Hardware integration channel for Sipeed AI cameras    | [Docs](../channels/maixcam/README.md)                                                                           |
 | **Pico**             | ⭐ Easy            | Native PicoClaw protocol channel                      |                                                                                                                  |
 
@@ -585,5 +586,71 @@ Install and run a OneBot v11 compatible QQ bot framework. Enable its WebSocket s
 ```bash
 picoclaw gateway
 ```
+
+</details>
+
+<a id="mqtt"></a>
+<details>
+<summary><b>MQTT</b></summary>
+
+Any MQTT client can communicate with PicoClaw via a broker. Devices or services publish requests to the broker; PicoClaw subscribes, processes them, and publishes responses back.
+
+**1. Configure**
+
+```json
+{
+  "channel_list": {
+    "mqtt": {
+      "enabled": true,
+      "type": "mqtt",
+      "settings": {
+        "broker": "ssl://your-broker:8883",
+        "agent_id": "assistant",
+        "topic_prefix": "/picoclaw",
+        "keep_alive": 60,
+        "qos": 0
+      }
+    }
+  }
+}
+```
+
+Username and password go in `~/.picoclaw/.security.yml`:
+
+```yaml
+channel_list:
+  mqtt:
+    settings:
+      username: your_username
+      password: your_password
+```
+
+**Topic format**
+
+```
+{prefix}/{agent_id}/{client_id}/request    # Client → PicoClaw
+{prefix}/{agent_id}/{client_id}/response   # PicoClaw → Client
+```
+
+`client_id` is set by your client application to identify different devices or sessions.
+
+**2. Run**
+
+```bash
+picoclaw gateway
+```
+
+**3. Test**
+
+```bash
+# Send a message
+mosquitto_pub -t "/picoclaw/assistant/device1/request" \
+  -m '{"text": "Hello"}'
+
+# Subscribe to responses
+mosquitto_sub -t "/picoclaw/assistant/device1/response"
+```
+
+For full configuration options see [MQTT Channel Docs](../channels/mqtt/README.md).
 
 </details>

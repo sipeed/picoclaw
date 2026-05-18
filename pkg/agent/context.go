@@ -26,6 +26,7 @@ type ContextBuilder struct {
 	skillsLoader   *skills.SkillsLoader
 	memory         *MemoryStore
 	splitOnMarker  bool
+	agentDiscovery func(agentID string) []AgentDescriptor
 	promptRegistry *PromptRegistry
 
 	// Cache for system prompt to avoid rebuilding on every call.
@@ -63,6 +64,24 @@ func (cb *ContextBuilder) WithToolDiscovery(useBM25, useRegex bool) *ContextBuil
 
 func (cb *ContextBuilder) WithSplitOnMarker(enabled bool) *ContextBuilder {
 	cb.splitOnMarker = enabled
+	return cb
+}
+
+func (cb *ContextBuilder) WithAgentDiscovery(
+	agentID string,
+	discover func(agentID string) []AgentDescriptor,
+) *ContextBuilder {
+	cb.agentDiscovery = discover
+	if discover != nil {
+		if err := cb.RegisterPromptContributor(agentDiscoveryPromptContributor{
+			agentID:  agentID,
+			discover: discover,
+		}); err != nil {
+			logger.WarnCF("agent", "Failed to register agent discovery prompt contributor", map[string]any{
+				"error": err.Error(),
+			})
+		}
+	}
 	return cb
 }
 
@@ -625,7 +644,9 @@ func formatCurrentSenderLine(senderID, senderDisplayName string) string {
 	}
 }
 
-func (cb *ContextBuilder) buildDynamicContext(channel, chatID, senderID, senderDisplayName string) string {
+func (cb *ContextBuilder) buildDynamicContext(
+	channel, chatID, senderID, senderDisplayName string,
+) string {
 	now := time.Now().Format("2006-01-02 15:04 (Monday)")
 	rt := fmt.Sprintf("%s %s, Go %s", runtime.GOOS, runtime.GOARCH, runtime.Version())
 
@@ -854,7 +875,11 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 		case "assistant":
 			if len(msg.ToolCalls) > 0 {
 				if len(sanitized) == 0 {
-					logger.DebugCF("agent", "Dropping assistant tool-call turn at history start", map[string]any{})
+					logger.DebugCF(
+						"agent",
+						"Dropping assistant tool-call turn at history start",
+						map[string]any{},
+					)
 					continue
 				}
 				prev := sanitized[len(sanitized)-1]
@@ -999,8 +1024,26 @@ func (cb *ContextBuilder) AddAssistantMessage(
 }
 
 func (cb *ContextBuilder) buildActiveSkillsContext(skillNames []string) string {
-	if cb.skillsLoader == nil || len(skillNames) == 0 {
+	ordered := cb.ResolveActiveSkillsForContext(skillNames)
+	if len(ordered) == 0 {
 		return ""
+	}
+
+	content := cb.skillsLoader.LoadSkillsForContext(ordered)
+	if strings.TrimSpace(content) == "" {
+		return ""
+	}
+
+	return fmt.Sprintf(`# Active Skills
+
+The following skills are active for this request. Follow them when relevant.
+
+%s`, content)
+}
+
+func (cb *ContextBuilder) ResolveActiveSkillsForContext(skillNames []string) []string {
+	if cb.skillsLoader == nil || len(skillNames) == 0 {
+		return nil
 	}
 
 	var ordered []string
@@ -1017,19 +1060,9 @@ func (cb *ContextBuilder) buildActiveSkillsContext(skillNames []string) string {
 		ordered = append(ordered, canonical)
 	}
 	if len(ordered) == 0 {
-		return ""
+		return nil
 	}
-
-	content := cb.skillsLoader.LoadSkillsForContext(ordered)
-	if strings.TrimSpace(content) == "" {
-		return ""
-	}
-
-	return fmt.Sprintf(`# Active Skills
-
-The following skills are active for this request. Follow them when relevant.
-
-%s`, content)
+	return ordered
 }
 
 func (cb *ContextBuilder) buildActiveSkillsPromptParts(skillNames []string) []PromptPart {

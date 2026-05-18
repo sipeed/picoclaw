@@ -79,14 +79,5 @@ func setMCPAttrString(attrs map[string]any, key, value string) {
 }
 
 func mcpTransportType(cfg config.MCPServerConfig) string {
-	if cfg.Type != "" {
-		return cfg.Type
-	}
-	if cfg.URL != "" {
-		return "sse"
-	}
-	if cfg.Command != "" {
-		return "stdio"
-	}
-	return ""
+	return config.EffectiveMCPTransportType(cfg)
 }

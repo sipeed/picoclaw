@@ -57,6 +57,38 @@ func (f *fakeMediaChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaM
 	return nil, nil
 }
 
+type recordingChannelManager struct {
+	dismissed []string
+}
+
+func (m *recordingChannelManager) GetChannel(name string) (channels.Channel, bool) {
+	return nil, false
+}
+
+func (m *recordingChannelManager) GetEnabledChannels() []string {
+	return nil
+}
+
+func (m *recordingChannelManager) InvokeTypingStop(channel, chatID string) {}
+
+func (m *recordingChannelManager) SendMessage(ctx context.Context, msg bus.OutboundMessage) error {
+	return nil
+}
+
+func (m *recordingChannelManager) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	return nil
+}
+
+func (m *recordingChannelManager) SendPlaceholder(ctx context.Context, channel, chatID string) bool {
+	return false
+}
+
+func (m *recordingChannelManager) DismissToolFeedback(
+	ctx context.Context, channel, chatID string, outboundCtx *bus.InboundContext,
+) {
+	m.dismissed = append(m.dismissed, fmt.Sprintf("%s:%s", channel, chatID))
+}
+
 func newStartedTestChannelManager(
 	t *testing.T,
 	msgBus *bus.MessageBus,
@@ -211,6 +243,44 @@ func TestNewAgentLoop_DoesNotRegisterWebSearchTool_WhenNoReadyProviders(t *testi
 	}
 	if _, ok := agent.Tools.Get("web_search"); ok {
 		t.Fatal("expected web_search tool to be absent when no providers are ready")
+	}
+}
+
+func TestPublishResponseIfNeeded_DismissesToolFeedbackWhenMessageToolAlreadySent(t *testing.T) {
+	al, msgBus, provider, sessions, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+	_ = msgBus
+	_ = provider
+	_ = sessions
+
+	cm := &recordingChannelManager{}
+	al.channelManager = cm
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("expected default agent")
+	}
+	mt := tools.NewMessageTool()
+	mt.SetSendCallback(func(ctx context.Context, channel, chatID, content, replyToMessageID string) error {
+		return nil
+	})
+	defaultAgent.Tools.Register(mt)
+
+	result := mt.Execute(
+		tools.WithToolSessionContext(context.Background(), "main", "session-1", nil),
+		map[string]any{
+			"content": "ack",
+			"channel": "telegram",
+			"chat_id": "-100123",
+		},
+	)
+	if result == nil || result.IsError {
+		t.Fatalf("message tool execute failed: %+v", result)
+	}
+	al.PublishResponseIfNeeded(context.Background(), "telegram", "-100123", "session-1", "final reply")
+
+	if got := cm.dismissed; len(got) != 1 || got[0] != "telegram:-100123" {
+		t.Fatalf("dismissed = %v, want [telegram:-100123]", got)
 	}
 }
 

@@ -93,6 +93,47 @@ func (c mcpServerPromptContributor) ContributePrompt(
 	}, nil
 }
 
+type agentDiscoveryPromptContributor struct {
+	agentID  string
+	discover func(agentID string) []AgentDescriptor
+}
+
+func (c agentDiscoveryPromptContributor) PromptSource() PromptSourceDescriptor {
+	return PromptSourceDescriptor{
+		ID:              PromptSourceAgentDiscovery,
+		Owner:           "agent",
+		Description:     "Structured multi-agent discovery registry",
+		Allowed:         []PromptPlacement{{Layer: PromptLayerCapability, Slot: PromptSlotTooling}},
+		StableByDefault: false,
+	}
+}
+
+func (c agentDiscoveryPromptContributor) ContributePrompt(
+	_ context.Context,
+	_ PromptBuildRequest,
+) ([]PromptPart, error) {
+	if c.discover == nil {
+		return nil, nil
+	}
+	content := formatAgentDiscoverySection(c.discover(c.agentID))
+	if strings.TrimSpace(content) == "" {
+		return nil, nil
+	}
+
+	return []PromptPart{
+		{
+			ID:      "capability.agent_discovery",
+			Layer:   PromptLayerCapability,
+			Slot:    PromptSlotTooling,
+			Source:  PromptSource{ID: PromptSourceAgentDiscovery, Name: "agent:discovery"},
+			Title:   "agent discovery",
+			Content: content,
+			Stable:  false,
+			Cache:   PromptCacheNone,
+		},
+	}, nil
+}
+
 func mcpPromptSourceID(serverName string) PromptSourceID {
 	return PromptSourceID("mcp:" + promptSourceComponent(serverName))
 }
