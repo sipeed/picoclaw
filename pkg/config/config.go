@@ -909,7 +909,7 @@ type WebToolsConfig struct {
 	BaiduSearch BaiduSearchConfig  `yaml:"baidu_search,omitempty"                                 json:"baidu_search"`
 	Provider    string             `yaml:"-"                                                      json:"provider,omitempty" env:"PICOCLAW_TOOLS_WEB_PROVIDER"`
 	// PreferNative controls whether to use provider-native web search when
-	// the active LLM supports it (e.g. OpenAI web_search_preview). When true,
+	// the active LLM supports it (e.g. OpenAI web_search). When true,
 	// the client-side web_search tool is hidden to avoid duplicate search surfaces,
 	// and the provider's built-in search is used instead. Falls back to client-side
 	// search when the provider does not support native search.
@@ -1006,6 +1006,8 @@ type ToolsConfig struct {
 	Spawn           ToolConfig         `json:"spawn"             yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPAWN_"`
 	SpawnStatus     ToolConfig         `json:"spawn_status"      yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPAWN_STATUS_"`
 	SPI             ToolConfig         `json:"spi"               yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SPI_"`
+	LoadImage       ToolConfig         `json:"load_image"        yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_LOAD_IMAGE_"`
+	Reaction        ToolConfig         `json:"reaction"          yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_REACTION_"`
 	Subagent        ToolConfig         `json:"subagent"          yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_SUBAGENT_"`
 	WebFetch        ToolConfig         `json:"web_fetch"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
 	WriteFile       ToolConfig         `json:"write_file"        yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
@@ -1750,6 +1752,10 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.SendFile.Enabled
 	case "send_tts":
 		return t.SendTTS.Enabled
+	case "load_image":
+		return t.LoadImage.Enabled
+	case "reaction":
+		return t.Reaction.Enabled
 	case "write_file":
 		return t.WriteFile.Enabled
 	case "mcp":
