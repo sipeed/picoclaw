@@ -104,7 +104,8 @@ func (m *mockDeletingMediaChannel) DismissToolFeedbackMessage(_ context.Context,
 }
 
 type mockStreamer struct {
-	finalizeFn func(context.Context, string) error
+	finalizeFn            func(context.Context, string) error
+	finalizeWithContextFn func(context.Context, string, *bus.ContextUsage) error
 }
 
 func (m *mockStreamer) Update(context.Context, string) error { return nil }
@@ -114,6 +115,13 @@ func (m *mockStreamer) Finalize(ctx context.Context, content string) error {
 		return m.finalizeFn(ctx, content)
 	}
 	return nil
+}
+
+func (m *mockStreamer) FinalizeWithContext(ctx context.Context, content string, usage *bus.ContextUsage) error {
+	if m.finalizeWithContextFn != nil {
+		return m.finalizeWithContextFn(ctx, content, usage)
+	}
+	return m.Finalize(ctx, content)
 }
 
 func (m *mockStreamer) Cancel(context.Context) {}
@@ -1476,6 +1484,9 @@ func TestPreSend_StaleToolFeedbackDoesNotConsumeStreamActiveMarker(t *testing.T)
 		Context: bus.InboundContext{
 			Channel: "test",
 			ChatID:  "123",
+			Raw: map[string]string{
+				"outbound_kind": "final",
+			},
 		},
 	})
 
@@ -1491,6 +1502,168 @@ func TestPreSend_StaleToolFeedbackDoesNotConsumeStreamActiveMarker(t *testing.T)
 	}
 	if editedContent != "final streamed reply" {
 		t.Fatalf("editedContent = %q, want final streamed reply", editedContent)
+	}
+}
+
+func TestPreSend_StaleThoughtDoesNotConsumeStreamActiveMarker(t *testing.T) {
+	m := newTestManager()
+	m.streamActive.Store("test:123", true)
+	m.streamAuxiliaryTombstones.Store("test:123", time.Now())
+	m.RecordPlaceholder("test", "123", "placeholder-1")
+
+	var editedContent string
+	ch := &mockMessageEditor{
+		editFn: func(_ context.Context, chatID, messageID, content string) error {
+			if chatID != "123" || messageID != "placeholder-1" {
+				t.Fatalf("unexpected edit target: %s/%s", chatID, messageID)
+			}
+			editedContent = content
+			return nil
+		},
+	}
+
+	thought := testOutboundMessage(bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "123",
+		Content: "late reasoning",
+		Context: bus.InboundContext{
+			Channel: "test",
+			ChatID:  "123",
+			Raw: map[string]string{
+				"message_kind": "thought",
+			},
+		},
+	})
+
+	msgIDs, handled := m.preSend(context.Background(), "test", thought, ch)
+	if !handled {
+		t.Fatal("expected stale thought to be dropped after stream finalize")
+	}
+	if len(msgIDs) != 0 {
+		t.Fatalf("expected no delivered message IDs for stale thought, got %v", msgIDs)
+	}
+	if _, ok := m.streamActive.Load("test:123"); !ok {
+		t.Fatal("expected streamActive marker to remain for the final outbound message")
+	}
+	if _, ok := m.placeholders.Load("test:123"); !ok {
+		t.Fatal("expected placeholder cleanup to remain deferred to the final outbound message")
+	}
+	if ch.editedMessages != 0 {
+		t.Fatalf("expected no placeholder edit for stale thought, got %d edits", ch.editedMessages)
+	}
+
+	finalMsg := testOutboundMessage(bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "123",
+		Content: "final streamed reply",
+		Context: bus.InboundContext{
+			Channel: "test",
+			ChatID:  "123",
+			Raw: map[string]string{
+				"outbound_kind": "final",
+			},
+		},
+	})
+
+	_, handled = m.preSend(context.Background(), "test", finalMsg, ch)
+	if !handled {
+		t.Fatal("expected final outbound message to consume streamActive marker")
+	}
+	if _, ok := m.streamActive.Load("test:123"); ok {
+		t.Fatal("expected streamActive marker to be cleared by final outbound message")
+	}
+	if _, ok := m.placeholders.Load("test:123"); ok {
+		t.Fatal("expected placeholder to be cleaned up by final outbound message")
+	}
+	if editedContent != "final streamed reply" {
+		t.Fatalf("editedContent = %q, want final streamed reply", editedContent)
+	}
+
+	lateThought := testOutboundMessage(bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "123",
+		Content: "later reasoning",
+		Context: bus.InboundContext{
+			Channel: "test",
+			ChatID:  "123",
+			Raw: map[string]string{
+				"message_kind": "thought",
+			},
+		},
+	})
+	msgIDs, handled = m.preSend(context.Background(), "test", lateThought, ch)
+	if !handled {
+		t.Fatal("expected tombstone to drop late thought after final outbound was suppressed")
+	}
+	if len(msgIDs) != 0 {
+		t.Fatalf("expected no delivered message IDs for late thought, got %v", msgIDs)
+	}
+}
+
+func TestPreSend_StreamActiveDoesNotConsumeEarlierVisibleMessage(t *testing.T) {
+	m := newTestManager()
+	m.streamActive.Store("test:123", true)
+	m.streamAuxiliaryTombstones.Store("test:123", time.Now())
+	m.RecordPlaceholder("test", "123", "placeholder-1")
+
+	editCalls := 0
+	ch := &mockMessageEditor{
+		editFn: func(_ context.Context, chatID, messageID, content string) error {
+			editCalls++
+			if chatID != "123" || messageID != "placeholder-1" || content != "final streamed reply" {
+				t.Fatalf("unexpected placeholder edit for %s/%s: %q", chatID, messageID, content)
+			}
+			return nil
+		},
+	}
+
+	earlierVisible := testOutboundMessage(bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "123",
+		Content: "earlier visible message",
+		Context: bus.InboundContext{
+			Channel: "test",
+			ChatID:  "123",
+		},
+	})
+	_, handled := m.preSend(context.Background(), "test", earlierVisible, ch)
+	if handled {
+		t.Fatal("expected earlier visible message to be delivered normally")
+	}
+	if editCalls != 0 {
+		t.Fatalf("placeholder edits after earlier visible message = %d, want 0", editCalls)
+	}
+	if _, ok := m.streamActive.Load("test:123"); !ok {
+		t.Fatal("expected streamActive marker to remain for final outbound")
+	}
+	if _, ok := m.streamAuxiliaryTombstones.Load("test:123"); !ok {
+		t.Fatal("expected auxiliary tombstone to remain")
+	}
+	if _, ok := m.placeholders.Load("test:123"); !ok {
+		t.Fatal("expected placeholder cleanup to remain deferred to final outbound")
+	}
+
+	finalMsg := testOutboundMessage(bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "123",
+		Content: "final streamed reply",
+		Context: bus.InboundContext{
+			Channel: "test",
+			ChatID:  "123",
+			Raw: map[string]string{
+				"outbound_kind": "final",
+			},
+		},
+	})
+	_, handled = m.preSend(context.Background(), "test", finalMsg, ch)
+	if !handled {
+		t.Fatal("expected final outbound message to consume streamActive marker")
+	}
+	if _, ok := m.streamActive.Load("test:123"); ok {
+		t.Fatal("expected streamActive marker to be cleared by final outbound message")
+	}
+	if editCalls != 1 {
+		t.Fatalf("placeholder edits after final outbound = %d, want 1", editCalls)
 	}
 }
 
@@ -1622,6 +1795,131 @@ func TestGetStreamer_FinalizeDismissesTrackedToolFeedback(t *testing.T) {
 	}
 	if _, ok := m.streamActive.Load("test:123"); !ok {
 		t.Fatal("expected streamActive marker to be recorded after finalize")
+	}
+}
+
+func TestGetStreamer_FinalizeCleansPlaceholderImmediately(t *testing.T) {
+	m := newTestManager()
+	m.RecordPlaceholder("test", "123", "placeholder-1")
+	var editedContent string
+	editCalls := 0
+	ch := &mockStreamingChannel{
+		mockMessageEditor: mockMessageEditor{
+			editFn: func(_ context.Context, chatID, messageID, content string) error {
+				if chatID != "123" || messageID != "placeholder-1" {
+					t.Fatalf("unexpected edit target: %s/%s", chatID, messageID)
+				}
+				editCalls++
+				editedContent = content
+				return nil
+			},
+		},
+		streamer: &mockStreamer{},
+	}
+	m.channels["test"] = ch
+
+	streamer, ok := m.GetStreamer(context.Background(), "test", "123")
+	if !ok {
+		t.Fatal("expected streamer to be available")
+	}
+	if err := streamer.Finalize(context.Background(), "final reply"); err != nil {
+		t.Fatalf("Finalize() error = %v", err)
+	}
+	if editedContent != "final reply" {
+		t.Fatalf("edited placeholder content = %q, want final reply", editedContent)
+	}
+	if _, placeholderExists := m.placeholders.Load("test:123"); placeholderExists {
+		t.Fatal("expected placeholder to be cleaned up during finalize")
+	}
+	if _, streamActiveExists := m.streamActive.Load("test:123"); !streamActiveExists {
+		t.Fatal("expected streamActive marker to be recorded after finalize")
+	}
+	cleaner, ok := streamer.(interface{ ClearFinalizedStreamMarker() })
+	if !ok {
+		t.Fatal("expected streamer to expose marker cleanup")
+	}
+	cleaner.ClearFinalizedStreamMarker()
+	if _, streamActiveExists := m.streamActive.Load("test:123"); streamActiveExists {
+		t.Fatal("expected streamActive marker to be cleared")
+	}
+	if _, ok := m.streamAuxiliaryTombstones.Load("test:123"); !ok {
+		t.Fatal("expected auxiliary tombstone to remain after final marker cleanup")
+	}
+
+	lateThought := testOutboundMessage(bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "123",
+		Content: "late reasoning",
+		Context: bus.InboundContext{
+			Channel: "test",
+			ChatID:  "123",
+			Raw: map[string]string{
+				"message_kind": "thought",
+			},
+		},
+	})
+	msgIDs, handled := m.preSend(context.Background(), "test", lateThought, ch)
+	if !handled {
+		t.Fatal("expected auxiliary tombstone to drop late thought")
+	}
+	if len(msgIDs) != 0 {
+		t.Fatalf("expected no delivered message IDs for late thought, got %v", msgIDs)
+	}
+	if editCalls != 1 {
+		t.Fatalf("expected late thought not to edit placeholder, got %d edits", editCalls)
+	}
+
+	finalOutbound := testOutboundMessage(bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "123",
+		Content: "visible final reply",
+		Context: bus.InboundContext{
+			Channel: "test",
+			ChatID:  "123",
+		},
+	})
+	_, handled = m.preSend(context.Background(), "test", finalOutbound, ch)
+	if handled {
+		t.Fatal("expected cleared final marker to let normal outbound send")
+	}
+	if _, ok := m.streamAuxiliaryTombstones.Load("test:123"); ok {
+		t.Fatal("expected normal outbound to clear auxiliary tombstone")
+	}
+}
+
+func TestGetStreamer_PreservesContextUsageStreamer(t *testing.T) {
+	m := newTestManager()
+	var gotUsage *bus.ContextUsage
+	ch := &mockStreamingChannel{
+		streamer: &mockStreamer{
+			finalizeWithContextFn: func(_ context.Context, content string, usage *bus.ContextUsage) error {
+				if content != "final reply" {
+					t.Fatalf("unexpected finalize content: %q", content)
+				}
+				gotUsage = usage
+				return nil
+			},
+		},
+	}
+	m.channels["test"] = ch
+
+	streamer, ok := m.GetStreamer(context.Background(), "test", "123")
+	if !ok {
+		t.Fatal("expected streamer to be available")
+	}
+	contextStreamer, ok := streamer.(bus.ContextUsageStreamer)
+	if !ok {
+		t.Fatal("manager-wrapped streamer should preserve ContextUsageStreamer")
+	}
+	usage := &bus.ContextUsage{UsedTokens: 10, TotalTokens: 100, CompressAtTokens: 80, UsedPercent: 10}
+	if err := contextStreamer.FinalizeWithContext(context.Background(), "final reply", usage); err != nil {
+		t.Fatalf("FinalizeWithContext() error = %v", err)
+	}
+	if gotUsage != usage {
+		t.Fatalf("context usage = %#v, want original usage", gotUsage)
+	}
+	if _, ok := m.streamActive.Load("test:123"); !ok {
+		t.Fatal("expected streamActive marker to be recorded after finalize with context")
 	}
 }
 

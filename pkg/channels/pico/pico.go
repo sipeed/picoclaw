@@ -464,8 +464,9 @@ func (c *PicoChannel) SendPlaceholder(ctx context.Context, chatID string) (strin
 
 	msgID := uuid.New().String()
 	outMsg := newMessage(TypeMessageCreate, map[string]any{
-		PayloadKeyContent: text,
-		"message_id":      msgID,
+		PayloadKeyContent:     text,
+		PayloadKeyPlaceholder: true,
+		"message_id":          msgID,
 	})
 
 	if err := c.broadcastToSession(chatID, outMsg); err != nil {
@@ -473,6 +474,116 @@ func (c *PicoChannel) SendPlaceholder(ctx context.Context, chatID string) (strin
 	}
 
 	return msgID, nil
+}
+
+// BeginStream implements channels.StreamingCapable for Pico WebUI.
+func (c *PicoChannel) BeginStream(ctx context.Context, chatID string) (channels.Streamer, error) {
+	if c == nil || c.config == nil || !c.config.Streaming.Enabled {
+		return nil, fmt.Errorf("streaming disabled in config")
+	}
+	if !c.IsRunning() {
+		return nil, channels.ErrNotRunning
+	}
+	streamCfg := c.config.Streaming.WithDefaults(0, 1)
+	return &picoStreamer{
+		channel:          c,
+		chatID:           chatID,
+		throttleInterval: time.Duration(streamCfg.ThrottleSeconds) * time.Second,
+		minGrowth:        streamCfg.MinGrowthChars,
+	}, nil
+}
+
+type picoStreamer struct {
+	channel          *PicoChannel
+	chatID           string
+	messageID        string
+	throttleInterval time.Duration
+	minGrowth        int
+	lastLen          int
+	lastAt           time.Time
+	lastContent      string
+	mu               sync.Mutex
+}
+
+func (s *picoStreamer) Update(ctx context.Context, content string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.updateLocked(ctx, content, false, nil)
+}
+
+func (s *picoStreamer) Finalize(ctx context.Context, content string) error {
+	return s.FinalizeWithContext(ctx, content, nil)
+}
+
+func (s *picoStreamer) FinalizeWithContext(ctx context.Context, content string, contextUsage *bus.ContextUsage) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.updateLocked(ctx, content, true, contextUsage)
+}
+
+func (s *picoStreamer) Cancel(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.channel == nil || s.messageID == "" {
+		return
+	}
+	_ = s.channel.DeleteMessage(ctx, s.chatID, s.messageID)
+	s.messageID = ""
+}
+
+func (s *picoStreamer) updateLocked(
+	ctx context.Context,
+	content string,
+	force bool,
+	contextUsage *bus.ContextUsage,
+) error {
+	if s == nil || s.channel == nil {
+		return fmt.Errorf("streamer is not initialized")
+	}
+	if strings.TrimSpace(content) == "" && s.messageID == "" {
+		return nil
+	}
+
+	now := time.Now()
+	contentLen := len([]rune(content))
+	if s.messageID != "" && !force {
+		growth := contentLen - s.lastLen
+		if now.Sub(s.lastAt) < s.throttleInterval || growth < s.minGrowth {
+			return nil
+		}
+	}
+
+	return s.sendLocked(ctx, content, contextUsage)
+}
+
+func (s *picoStreamer) sendLocked(ctx context.Context, content string, contextUsage *bus.ContextUsage) error {
+	now := time.Now()
+	contentLen := len([]rune(content))
+
+	if s.messageID == "" {
+		s.messageID = uuid.New().String()
+		payload := map[string]any{
+			PayloadKeyContent: content,
+			"message_id":      s.messageID,
+		}
+		setContextUsagePayload(payload, contextUsage)
+		outMsg := newMessage(TypeMessageCreate, payload)
+		if err := s.channel.broadcastToSession(s.chatID, outMsg); err != nil {
+			return err
+		}
+	} else if content != s.lastContent || contextUsage != nil {
+		if err := s.channel.editMessage(ctx, s.chatID, s.messageID, content, contextUsage); err != nil {
+			return err
+		}
+	}
+
+	s.lastContent = content
+	s.lastLen = contentLen
+	s.lastAt = now
+	return nil
 }
 
 // SendMedia implements channels.MediaSender for the Pico web UI.

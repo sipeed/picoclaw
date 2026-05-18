@@ -31,6 +31,55 @@ PICOCLAW_HOME=/opt/picoclaw picoclaw agent
 PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
 ```
 
+### Configurazione Streaming
+
+Lo streaming del provider usa un double opt-in ed è disattivato per impostazione predefinita. L'agent prova lo streaming solo quando il canale corrente ha `settings.streaming.enabled: true`, l'entry del modello attivo ha `streaming.enabled: true`, e sia il provider sia il canale supportano lo streaming. Se manca una qualsiasi condizione, PicoClaw usa il normale percorso di richiesta non streaming.
+
+Pico WebUI è il primo canale completamente collegato. Pico crea il primo messaggio assistant con il wire message esistente `message.create`, poi aggiorna lo stesso messaggio con `message.update`; non viene introdotto alcun nuovo tipo di wire message Pico.
+
+Lascia `streaming` assente quando non vuoi usare lo streaming. Un blocco `streaming` omesso significa disattivato; non è necessario scrivere `"streaming": {"enabled": false}`.
+
+Esempio di attivazione:
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
+      "api_keys": ["sk-your-openai-key"],
+      "streaming": {
+        "enabled": true
+      }
+    }
+  ],
+  "channel_list": {
+    "pico": {
+      "enabled": true,
+      "type": "pico",
+      "settings": {
+        "token": "YOUR_PICO_TOKEN",
+        "streaming": {
+          "enabled": true
+        }
+      }
+    }
+  }
+}
+```
+
+| Campo | Tipo | Predefinito | Descrizione |
+| ----- | ---- | ----------- | ----------- |
+| `channel_list.<name>.settings.streaming.enabled` | bool | `false` | Permette a questo canale di mostrare l'output streaming del provider |
+| `channel_list.<name>.settings.streaming.throttle_seconds` | int | Predefinito Pico dopo l'attivazione: `0` | Intervallo minimo tra aggiornamenti intermedi; il contenuto finale viene sempre inviato |
+| `channel_list.<name>.settings.streaming.min_growth_chars` | int | Predefinito Pico dopo l'attivazione: `1` | Crescita minima del testo prima di inviare un aggiornamento intermedio; il contenuto finale viene sempre inviato |
+| `model_list[].streaming.enabled` | bool | `false` | Permette a questa entry di modello di provare richieste provider streaming |
+
+Le variabili d'ambiente legacy di Telegram restano compatibili: `PICOCLAW_CHANNELS_TELEGRAM_STREAMING_ENABLED`, `PICOCLAW_CHANNELS_TELEGRAM_STREAMING_THROTTLE_SECONDS` e `PICOCLAW_CHANNELS_TELEGRAM_STREAMING_MIN_GROWTH_CHARS`. Si applicano solo alle settings Telegram e non attivano né modificano `settings.streaming` di Pico.
+
+Il comportamento in caso di errore è intenzionalmente conservativo: se lo streaming fallisce prima che venga inviato un chunk visibile, PicoClaw riprova una volta tramite il normale percorso `Chat()`. Se un chunk è già stato mostrato all'utente, PicoClaw non invia una seconda risposta non streaming, evitando output duplicato.
+
 ### Struttura del Workspace
 
 PicoClaw salva i dati nel workspace configurato (predefinito: `~/.picoclaw/workspace`):

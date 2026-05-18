@@ -119,9 +119,11 @@ const (
 	pendingTurnPrefix          = "pending-"
 	metadataKeyMessageKind     = "message_kind"
 	metadataKeyToolCalls       = "tool_calls"
+	metadataKeyOutboundKind    = "outbound_kind"
 	messageKindThought         = "thought"
 	messageKindToolFeedback    = "tool_feedback"
 	messageKindToolCalls       = "tool_calls"
+	outboundKindFinal          = "final"
 	metadataKeyAccountID       = "account_id"
 	metadataKeyGuildID         = "guild_id"
 	metadataKeyTeamID          = "team_id"
@@ -585,7 +587,7 @@ func (al *AgentLoop) runAgentLoop(
 			opts.Dispatch.SessionKey,
 			opts.Dispatch.SessionScope,
 		)
-		al.bus.PublishOutbound(ctx, bus.OutboundMessage{
+		msg := bus.OutboundMessage{
 			Context: outboundContextFromInbound(
 				opts.Dispatch.InboundContext,
 				opts.Dispatch.Channel(),
@@ -597,7 +599,9 @@ func (al *AgentLoop) runAgentLoop(
 			Scope:        scope,
 			Content:      result.finalContent,
 			ContextUsage: computeContextUsage(agent, opts.Dispatch.SessionKey),
-		})
+		}
+		markFinalOutbound(&msg)
+		al.bus.PublishOutbound(ctx, msg)
 	}
 
 	if result.finalContent != "" {

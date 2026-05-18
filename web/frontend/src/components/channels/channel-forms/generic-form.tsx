@@ -17,12 +17,15 @@ import { Field, KeyInput, SwitchCardField } from "@/components/shared-form"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 
+import { StreamingConfigField } from "./streaming-config-field"
+
 interface GenericFormProps {
   config: ChannelConfig
   onChange: (key: string, value: unknown) => void
   configuredSecrets?: string[]
   hiddenKeys?: string[]
   requiredKeys?: string[]
+  supportsStreaming?: boolean
   fieldErrors?: Record<string, string>
   registerArrayFieldFlusher?: (
     fieldPath: string,
@@ -43,6 +46,7 @@ const OBJECT_FIELDS = new Set([
   "allow_from",
   "allow_origins",
   "groups",
+  "streaming",
 ])
 
 function formatLabel(key: string): string {
@@ -78,6 +82,7 @@ export function GenericForm({
   configuredSecrets = [],
   hiddenKeys = [],
   requiredKeys = [],
+  supportsStreaming = false,
   fieldErrors = {},
   registerArrayFieldFlusher,
   arrayFieldResetVersion,
@@ -89,6 +94,9 @@ export function GenericForm({
   const typingConfig = asRecord(config.typing)
   const placeholderConfig = asRecord(config.placeholder)
   const placeholderEnabled = asBool(placeholderConfig.enabled)
+  const showStreamingConfig =
+    (config.streaming !== undefined || supportsStreaming) &&
+    !hiddenFieldSet.has("streaming")
 
   const rawFields = Object.keys(config).filter(
     (k) =>
@@ -264,7 +272,8 @@ export function GenericForm({
     (config.group_trigger !== undefined &&
       !hiddenFieldSet.has("group_trigger")) ||
     (config.typing !== undefined && !hiddenFieldSet.has("typing")) ||
-    (config.placeholder !== undefined && !hiddenFieldSet.has("placeholder"))
+    (config.placeholder !== undefined && !hiddenFieldSet.has("placeholder")) ||
+    (config.streaming !== undefined && !hiddenFieldSet.has("streaming"))
 
   return (
     <div className="space-y-6">
@@ -371,6 +380,15 @@ export function GenericForm({
                     onChange("typing", { ...typingConfig, enabled: checked })
                   }
                   ariaLabel={t("channels.field.typingEnabled")}
+                />
+              </div>
+            )}
+
+            {showStreamingConfig && (
+              <div>
+                <StreamingConfigField
+                  value={config.streaming}
+                  onChange={(value) => onChange("streaming", value)}
                 />
               </div>
             )}

@@ -113,9 +113,12 @@ Este design também permite **suporte multi-agente** com seleção flexível de 
 | `max_tokens_field` | string | Não | Substitui o nome do campo max tokens no corpo da requisição (ex: `max_completion_tokens` para modelos o1) |
 | `thinking_level` | string | Não | Nível de pensamento estendido: `off`, `low`, `medium`, `high`, `xhigh` ou `adaptive` |
 | `extra_body` | object | Não | Campos adicionais para injetar em cada corpo de requisição |
+| `streaming.enabled` | bool | Não | Opt-in para provider streaming nesta entrada de modelo. O padrão é `false` e o canal ativo também precisa de `settings.streaming.enabled` como `true` |
 | `rpm` | int | Não | Limite de requisições por minuto |
 | `fallbacks` | string[] | Não | Nomes dos modelos de fallback para failover automático |
 | `enabled` | bool | Não | Ativar ou desativar esta entrada de modelo (padrão: `true`) |
+
+Quando streaming estiver desativado, omita o bloco `streaming`. Escrever `"streaming": {"enabled": false}` é opcional e não é necessário.
 
 #### Exemplos por Vendor
 

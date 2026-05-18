@@ -31,6 +31,55 @@ PICOCLAW_HOME=/opt/picoclaw picoclaw agent
 PICOCLAW_HOME=/srv/picoclaw PICOCLAW_CONFIG=/srv/picoclaw/main.json picoclaw gateway
 ```
 
+### Konfigurasi Streaming
+
+Provider streaming menggunakan double opt-in dan dimatikan secara lalai. Agent hanya mencuba streaming apabila saluran semasa mempunyai `settings.streaming.enabled: true`, entry model aktif mempunyai `streaming.enabled: true`, dan kedua-dua provider serta saluran menyokong streaming. Jika mana-mana syarat tiada, PicoClaw menggunakan laluan permintaan bukan streaming biasa.
+
+Pico WebUI ialah saluran pertama yang disambungkan sepenuhnya. Pico mencipta mesej assistant pertama dengan wire message sedia ada `message.create`, kemudian mengemas kini mesej yang sama dengan `message.update`; tiada jenis wire message Pico baharu ditambah.
+
+Biarkan `streaming` tidak ditetapkan jika anda tidak mahu streaming. Blok `streaming` yang tiada bermaksud dimatikan; anda tidak perlu menulis `"streaming": {"enabled": false}`.
+
+Contoh mengaktifkan streaming:
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
+      "api_keys": ["sk-your-openai-key"],
+      "streaming": {
+        "enabled": true
+      }
+    }
+  ],
+  "channel_list": {
+    "pico": {
+      "enabled": true,
+      "type": "pico",
+      "settings": {
+        "token": "YOUR_PICO_TOKEN",
+        "streaming": {
+          "enabled": true
+        }
+      }
+    }
+  }
+}
+```
+
+| Kunci | Jenis | Lalai | Penerangan |
+| ----- | ----- | ----- | ---------- |
+| `channel_list.<name>.settings.streaming.enabled` | bool | `false` | Membenarkan saluran ini memaparkan output streaming provider |
+| `channel_list.<name>.settings.streaming.throttle_seconds` | int | Lalai Pico selepas diaktifkan: `0` | Jarak masa minimum antara kemas kini pertengahan; kandungan akhir sentiasa dihantar |
+| `channel_list.<name>.settings.streaming.min_growth_chars` | int | Lalai Pico selepas diaktifkan: `1` | Pertambahan aksara minimum sebelum menghantar kemas kini pertengahan; kandungan akhir sentiasa dihantar |
+| `model_list[].streaming.enabled` | bool | `false` | Membenarkan entry model ini mencuba permintaan provider streaming |
+
+Pemboleh ubah persekitaran Telegram lama masih serasi: `PICOCLAW_CHANNELS_TELEGRAM_STREAMING_ENABLED`, `PICOCLAW_CHANNELS_TELEGRAM_STREAMING_THROTTLE_SECONDS`, dan `PICOCLAW_CHANNELS_TELEGRAM_STREAMING_MIN_GROWTH_CHARS`. Ia hanya digunakan untuk settings Telegram dan tidak mengaktifkan atau mengubah `settings.streaming` Pico.
+
+Tingkah laku kegagalan adalah konservatif: jika streaming gagal sebelum mana-mana chunk kelihatan dihantar, PicoClaw mencuba semula sekali melalui laluan `Chat()` biasa. Jika chunk sudah dipaparkan kepada pengguna, PicoClaw tidak menghantar jawapan bukan streaming kedua untuk mengelakkan output berganda.
+
 ### Susun Atur Workspace
 
 PicoClaw menyimpan data dalam workspace yang dikonfigurasikan (lalai: `~/.picoclaw/workspace`):

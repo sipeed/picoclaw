@@ -101,6 +101,7 @@ export function handlePicoMessage(
         parseAssistantMessageCreateState(payload)
       const attachments = parseAttachments(payload)
       const contextUsage = parseContextUsage(payload)
+      const isPlaceholder = payload.placeholder === true
       const timestamp =
         message.timestamp !== undefined &&
         Number.isFinite(Number(message.timestamp))
@@ -120,7 +121,11 @@ export function handlePicoMessage(
             timestamp,
           },
         ],
-        isTyping: false,
+        isTyping:
+          !isPlaceholder &&
+          (kind === "normal" || message.type === "media.create")
+            ? false
+            : prev.isTyping,
         ...(contextUsage ? { contextUsage } : {}),
       }))
       break

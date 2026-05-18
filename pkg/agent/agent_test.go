@@ -284,6 +284,26 @@ func TestPublishResponseIfNeeded_DismissesToolFeedbackWhenMessageToolAlreadySent
 	}
 }
 
+func TestPublishResponseIfNeeded_MarksFinalOutbound(t *testing.T) {
+	al, _, msgBus, provider, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+	_ = provider
+
+	al.PublishResponseIfNeeded(context.Background(), "pico", "pico:session-1", "session-1", "final reply")
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Content != "final reply" {
+			t.Fatalf("outbound content = %q, want final reply", outbound.Content)
+		}
+		if outbound.Context.Raw[metadataKeyOutboundKind] != outboundKindFinal {
+			t.Fatalf("outbound kind = %q, want %q", outbound.Context.Raw[metadataKeyOutboundKind], outboundKindFinal)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected final outbound")
+	}
+}
+
 func TestProcessMessage_IncludesCurrentSenderInDynamicContext(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {

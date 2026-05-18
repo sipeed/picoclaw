@@ -99,6 +99,13 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 	)
 	exec.activeCandidates = activeCandidates
 	exec.activeModel = activeModel
+	exec.activeModelConfig = resolveActiveModelConfig(
+		p.Cfg,
+		ts.agent.Workspace,
+		activeCandidates,
+		activeModel,
+		p.Cfg.Agents.Defaults.Provider,
+	)
 	exec.activeProvider = activeProvider
 	exec.usedLight = usedLight
 

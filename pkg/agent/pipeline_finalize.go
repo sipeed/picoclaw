@@ -58,6 +58,7 @@ func (p *Pipeline) Finalize(
 					Message: err.Error(),
 				},
 			)
+			cancelConfiguredStreamingLLM(turnCtx, exec)
 			return turnResult{status: TurnEndStatusError}, err
 		}
 	}
@@ -73,6 +74,39 @@ func (p *Pipeline) Finalize(
 		)
 	}
 
+	contextUsage := computeContextUsage(ts.agent, ts.sessionKey)
+	streamErr := finalizeConfiguredStreamingLLM(turnCtx, ts, exec, finalContent, contextUsage)
+	if ((streamErr != nil && !isConfiguredStreamingVisibleError(streamErr)) || exec.streamingFallback) &&
+		!ts.opts.SendResponse && ts.opts.AllowInterimPicoPublish && finalContent != "" {
+		agentID, sessionKey, scope := outboundTurnMetadata(
+			ts.agent.ID,
+			ts.opts.Dispatch.SessionKey,
+			ts.opts.Dispatch.SessionScope,
+		)
+		msg := bus.OutboundMessage{
+			Context: outboundContextFromInbound(
+				ts.opts.Dispatch.InboundContext,
+				ts.opts.Dispatch.Channel(),
+				ts.opts.Dispatch.ChatID(),
+				ts.opts.Dispatch.ReplyToMessageID(),
+			),
+			AgentID:      agentID,
+			SessionKey:   sessionKey,
+			Scope:        scope,
+			Content:      finalContent,
+			ContextUsage: contextUsage,
+		}
+		markFinalOutbound(&msg)
+		_ = al.bus.PublishOutbound(turnCtx, msg)
+	}
+	if streamErr != nil && isConfiguredStreamingVisibleError(streamErr) {
+		ts.setPhase(TurnPhaseCompleted)
+		return turnResult{
+			finalContent: finalContent,
+			status:       TurnEndStatusError,
+			followUps:    append([]bus.InboundMessage(nil), ts.followUps...),
+		}, streamErr
+	}
 	ts.setPhase(TurnPhaseCompleted)
 	return turnResult{
 		finalContent: finalContent,

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/session"
@@ -124,15 +125,18 @@ type turnExecution struct {
 	iteration int
 
 	// Per-iteration state set by Pipeline.PreLLM
-	activeCandidates []providers.FallbackCandidate
-	activeModel      string
-	activeProvider   providers.LLMProvider
-	usedLight        bool
+	activeCandidates  []providers.FallbackCandidate
+	activeModel       string
+	activeModelConfig *config.ModelConfig
+	activeProvider    providers.LLMProvider
+	usedLight         bool
 
 	// LLM call per-iteration state
 	response            *providers.LLMResponse
 	normalizedToolCalls []providers.ToolCall
 	allResponsesHandled bool
+	streamingPublisher  *streamingChunkPublisher
+	streamingFallback   bool
 	callMessages        []providers.Message
 	providerToolDefs    []providers.ToolDefinition
 	llmModel            string

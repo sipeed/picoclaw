@@ -37,6 +37,13 @@ type Streamer interface {
 	Cancel(ctx context.Context)
 }
 
+// ContextUsageStreamer can attach final context-window usage metadata when a
+// streaming channel's final message replaces the normal outbound response.
+type ContextUsageStreamer interface {
+	Streamer
+	FinalizeWithContext(ctx context.Context, content string, usage *ContextUsage) error
+}
+
 type MessageBus struct {
 	inbound       chan InboundMessage
 	outbound      chan OutboundMessage

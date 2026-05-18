@@ -364,6 +364,55 @@ Configurez plusieurs endpoints pour le même nom de modèle — PicoClaw effectu
 
 L'ancienne configuration `providers` est **dépréciée** et a été supprimée dans V2. Les configs V0/V1 existantes sont auto-migrées. Voir [docs/migration/model-list-migration.md](../migration/model-list-migration.md).
 
+#### Configuration du Streaming
+
+Le streaming provider utilise un double opt-in et est désactivé par défaut. L'agent ne tente le streaming que lorsque le channel courant a `settings.streaming.enabled: true`, que l'entrée de modèle active a `streaming.enabled: true`, et que le provider comme le channel prennent en charge le streaming. Si une condition manque, PicoClaw utilise le chemin de requête non-streaming normal.
+
+Pico WebUI est le premier channel entièrement câblé. Pico crée le premier message assistant avec le message wire existant `message.create`, puis met à jour ce même message avec `message.update`; aucun nouveau type de message Pico n'est introduit.
+
+Laissez `streaming` absent si vous ne voulez pas de streaming. Un bloc `streaming` omis signifie désactivé; il n'est pas nécessaire d'écrire `"streaming": {"enabled": false}`.
+
+Exemple d'activation :
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
+      "api_keys": ["sk-your-openai-key"],
+      "streaming": {
+        "enabled": true
+      }
+    }
+  ],
+  "channel_list": {
+    "pico": {
+      "enabled": true,
+      "type": "pico",
+      "settings": {
+        "token": "YOUR_PICO_TOKEN",
+        "streaming": {
+          "enabled": true
+        }
+      }
+    }
+  }
+}
+```
+
+| Champ | Type | Défaut | Description |
+| ----- | ---- | ------ | ----------- |
+| `channel_list.<name>.settings.streaming.enabled` | bool | `false` | Autorise ce channel à afficher la sortie streaming du provider |
+| `channel_list.<name>.settings.streaming.throttle_seconds` | int | Défaut Pico après activation : `0` | Intervalle minimal entre les mises à jour intermédiaires; le contenu final est toujours envoyé |
+| `channel_list.<name>.settings.streaming.min_growth_chars` | int | Défaut Pico après activation : `1` | Croissance minimale du texte avant une mise à jour intermédiaire; le contenu final est toujours envoyé |
+| `model_list[].streaming.enabled` | bool | `false` | Autorise cette entrée de modèle à tenter des requêtes provider en streaming |
+
+Les anciennes variables d'environnement Telegram restent compatibles : `PICOCLAW_CHANNELS_TELEGRAM_STREAMING_ENABLED`, `PICOCLAW_CHANNELS_TELEGRAM_STREAMING_THROTTLE_SECONDS` et `PICOCLAW_CHANNELS_TELEGRAM_STREAMING_MIN_GROWTH_CHARS`. Elles s'appliquent uniquement aux settings Telegram et n'activent ni ne modifient `settings.streaming` de Pico.
+
+Le comportement d'échec est volontairement conservateur : si le streaming échoue avant l'envoi d'un chunk visible, PicoClaw réessaie une fois via le chemin `Chat()` normal. Si un chunk a déjà été affiché à l'utilisateur, PicoClaw n'envoie pas une deuxième réponse non-streaming, afin d'éviter une sortie dupliquée.
+
 ### Architecture des Providers
 
 PicoClaw route les providers par famille de protocole :

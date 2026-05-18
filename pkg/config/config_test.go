@@ -836,6 +836,26 @@ func TestDefaultConfig_Channels(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_ChannelStreamingDisabled(t *testing.T) {
+	cfg := DefaultConfig()
+
+	telegram := cfg.Channels.Get(ChannelTelegram)
+	if telegram == nil {
+		t.Fatal("DefaultConfig() missing telegram channel")
+	}
+	decoded, err := telegram.GetDecoded()
+	if err != nil {
+		t.Fatalf("telegram GetDecoded() error = %v", err)
+	}
+	settings, ok := decoded.(*TelegramSettings)
+	if !ok {
+		t.Fatalf("telegram settings type = %T, want *TelegramSettings", decoded)
+	}
+	if settings.Streaming.Enabled {
+		t.Fatal("DefaultConfig().telegram.settings.streaming.enabled should be false")
+	}
+}
+
 func TestValidateSingletonChannels_RejectsMultipleInstances(t *testing.T) {
 	channels := ChannelsConfig{
 		"pico1": &Channel{Enabled: true, Type: ChannelPico},

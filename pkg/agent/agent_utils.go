@@ -86,6 +86,16 @@ func outboundMessageForTurn(ts *turnState, content string) bus.OutboundMessage {
 	}
 }
 
+func markFinalOutbound(msg *bus.OutboundMessage) {
+	if msg == nil {
+		return
+	}
+	if msg.Context.Raw == nil {
+		msg.Context.Raw = make(map[string]string, 1)
+	}
+	msg.Context.Raw[metadataKeyOutboundKind] = outboundKindFinal
+}
+
 func outboundMessageForTurnWithKind(ts *turnState, content, kind string) bus.OutboundMessage {
 	msg := outboundMessageForTurn(ts, content)
 	if strings.TrimSpace(kind) == "" {

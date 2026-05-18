@@ -81,6 +81,7 @@ func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatI
 	if sessionKey != "" {
 		msg.ContextUsage = computeContextUsage(al.agentForSession(sessionKey), sessionKey)
 	}
+	markFinalOutbound(&msg)
 	al.bus.PublishOutbound(ctx, msg)
 	logger.InfoCF("agent", "Published outbound response",
 		map[string]any{

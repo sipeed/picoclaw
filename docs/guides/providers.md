@@ -131,9 +131,12 @@ This design also enables **multi-agent support** with flexible provider selectio
 | `tool_schema_transform` | string | No | Optional compatibility transform for tool parameter schemas. Default: disabled. Supported values: `simple`.                                                                                             |
 | `extra_body` | object | No | Additional fields to inject into every request body                                                                                                                                                                                         |
 | `custom_headers` | object | No | Additional HTTP headers to inject into every request (e.g., `{"X-Source":"coding-plan"}`). If a key matches a built-in header, the custom value overrides the built-in one (e.g., `Authorization`, `User-Agent`, `Content-Type`, `Accept`). |
+| `streaming.enabled` | bool | No | Opt-in for provider streaming on this model entry. Defaults to `false` and also requires the active channel's `settings.streaming.enabled` to be `true`. |
 | `rpm` | int | No | Per-minute request rate limit                                                                                                                                                                                                               |
 | `fallbacks` | string[] | No | Fallback model names for automatic failover                                                                                                                                                                                                 |
 | `enabled` | bool | No | Whether this model entry is active (default: `true`)                                                                                                                                                                                        |
+
+When streaming is disabled, omit the `streaming` block. Writing `"streaming": {"enabled": false}` is optional and not needed in generated or hand-written config.
 
 #### Tool Schema Compatibility
 

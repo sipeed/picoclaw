@@ -290,6 +290,19 @@ func validateConfig(cfg *config.Config) []string {
 		errs = append(errs, fmt.Sprintf("gateway.port %d is out of valid range (1-65535)", cfg.Gateway.Port))
 	}
 
+	for name, bc := range cfg.Channels {
+		streaming, ok := channelStreamingConfig(bc)
+		if !ok {
+			continue
+		}
+		if streaming.ThrottleSeconds < 0 {
+			errs = append(errs, fmt.Sprintf("channel %q streaming.throttle_seconds must be >= 0", name))
+		}
+		if streaming.MinGrowthChars < 0 {
+			errs = append(errs, fmt.Sprintf("channel %q streaming.min_growth_chars must be >= 0", name))
+		}
+	}
+
 	// Pico channel: token required when enabled
 	{
 		bc := cfg.Channels.GetByType(config.ChannelPico)

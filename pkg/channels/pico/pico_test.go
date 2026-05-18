@@ -226,11 +226,231 @@ func TestSendPlaceholder_EmitsNormalMessageWithoutKind(t *testing.T) {
 		if got := payload[PayloadKeyContent]; got != "Thinking..." {
 			t.Fatalf("placeholder content = %#v, want %q", got, "Thinking...")
 		}
+		if got := payload[PayloadKeyPlaceholder]; got != true {
+			t.Fatalf("placeholder marker = %#v, want true", got)
+		}
 		if got, ok := payload[PayloadKeyKind]; ok {
 			t.Fatalf("placeholder kind = %#v, want absent", got)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("expected placeholder message to be delivered")
+	}
+}
+
+func TestBeginStream_CreatesAndUpdatesSameMessage(t *testing.T) {
+	ch := newTestPicoChannel(t)
+	ch.config.Streaming = config.StreamingConfig{
+		Enabled:         true,
+		ThrottleSeconds: 1,
+		MinGrowthChars:  1,
+	}
+	if err := ch.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer ch.Stop(context.Background())
+
+	clientConn, received, cleanup := newTestPicoWebSocket(t)
+	defer cleanup()
+	ch.addConnForTest(&picoConn{id: "conn-1", conn: clientConn, sessionID: "sess-1"})
+
+	streamer, err := ch.BeginStream(context.Background(), "pico:sess-1")
+	if err != nil {
+		t.Fatalf("BeginStream() error = %v", err)
+	}
+	if err := streamer.Update(context.Background(), "hello"); err != nil {
+		t.Fatalf("Update(first) error = %v", err)
+	}
+	first := mustReceivePicoMessage(t, received)
+	if first.Type != TypeMessageCreate {
+		t.Fatalf("first type = %q, want %q", first.Type, TypeMessageCreate)
+	}
+	msgID, _ := first.Payload["message_id"].(string)
+	if msgID == "" {
+		t.Fatalf("first message_id = %#v, want non-empty", first.Payload["message_id"])
+	}
+	if got := first.Payload[PayloadKeyContent]; got != "hello" {
+		t.Fatalf("first content = %#v, want hello", got)
+	}
+
+	rawStreamer := streamer.(*picoStreamer)
+	rawStreamer.mu.Lock()
+	rawStreamer.lastAt = time.Now().Add(-2 * time.Second)
+	rawStreamer.mu.Unlock()
+	secondContent := "hello world with enough growth to pass the default streaming threshold"
+	if err := streamer.Update(context.Background(), secondContent); err != nil {
+		t.Fatalf("Update(second) error = %v", err)
+	}
+	second := mustReceivePicoMessage(t, received)
+	if second.Type != TypeMessageUpdate {
+		t.Fatalf("second type = %q, want %q", second.Type, TypeMessageUpdate)
+	}
+	if got := second.Payload["message_id"]; got != msgID {
+		t.Fatalf("second message_id = %#v, want %q", got, msgID)
+	}
+	if got := second.Payload[PayloadKeyContent]; got != secondContent {
+		t.Fatalf("second content = %#v, want %q", got, secondContent)
+	}
+}
+
+func TestBeginStream_DefaultStreamingShowsSmallIncrements(t *testing.T) {
+	ch := newTestPicoChannel(t)
+	ch.config.Streaming = config.StreamingConfig{Enabled: true}
+	if err := ch.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer ch.Stop(context.Background())
+
+	clientConn, received, cleanup := newTestPicoWebSocket(t)
+	defer cleanup()
+	ch.addConnForTest(&picoConn{id: "conn-1", conn: clientConn, sessionID: "sess-1"})
+
+	streamer, err := ch.BeginStream(context.Background(), "pico:sess-1")
+	if err != nil {
+		t.Fatalf("BeginStream() error = %v", err)
+	}
+	if err := streamer.Update(context.Background(), "h"); err != nil {
+		t.Fatalf("Update(first) error = %v", err)
+	}
+	first := mustReceivePicoMessage(t, received)
+	if first.Type != TypeMessageCreate {
+		t.Fatalf("first type = %q, want %q", first.Type, TypeMessageCreate)
+	}
+	msgID, _ := first.Payload["message_id"].(string)
+	if msgID == "" {
+		t.Fatalf("first message_id = %#v, want non-empty", first.Payload["message_id"])
+	}
+
+	if err := streamer.Update(context.Background(), "he"); err != nil {
+		t.Fatalf("Update(second) error = %v", err)
+	}
+	second := mustReceivePicoMessage(t, received)
+	if second.Type != TypeMessageUpdate {
+		t.Fatalf("second type = %q, want %q", second.Type, TypeMessageUpdate)
+	}
+	if got := second.Payload["message_id"]; got != msgID {
+		t.Fatalf("second message_id = %#v, want %q", got, msgID)
+	}
+	if got := second.Payload[PayloadKeyContent]; got != "he" {
+		t.Fatalf("second content = %#v, want he", got)
+	}
+}
+
+func TestBeginStream_ThrottlesIntermediateUpdatesAndFinalFlushes(t *testing.T) {
+	ch := newTestPicoChannel(t)
+	ch.config.Streaming = config.StreamingConfig{
+		Enabled:         true,
+		ThrottleSeconds: 60,
+		MinGrowthChars:  100,
+	}
+	if err := ch.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer ch.Stop(context.Background())
+
+	clientConn, received, cleanup := newTestPicoWebSocket(t)
+	defer cleanup()
+	ch.addConnForTest(&picoConn{id: "conn-1", conn: clientConn, sessionID: "sess-1"})
+
+	streamer, err := ch.BeginStream(context.Background(), "pico:sess-1")
+	if err != nil {
+		t.Fatalf("BeginStream() error = %v", err)
+	}
+	if err := streamer.Update(context.Background(), "first"); err != nil {
+		t.Fatalf("Update(first) error = %v", err)
+	}
+	if err := streamer.Update(context.Background(), "first plus short growth"); err != nil {
+		t.Fatalf("Update(throttled) error = %v", err)
+	}
+	if err := streamer.Update(context.Background(), "first"+strings.Repeat("x", 120)); err != nil {
+		t.Fatalf("Update(enough growth too soon) error = %v", err)
+	}
+
+	first := mustReceivePicoMessage(t, received)
+	if first.Type != TypeMessageCreate {
+		t.Fatalf("first type = %q, want %q", first.Type, TypeMessageCreate)
+	}
+	msgID, _ := first.Payload["message_id"].(string)
+	assertNoPicoMessage(t, received)
+
+	rawStreamer := streamer.(*picoStreamer)
+	rawStreamer.mu.Lock()
+	rawStreamer.lastAt = time.Now().Add(-61 * time.Second)
+	rawStreamer.mu.Unlock()
+	if err := streamer.Update(context.Background(), "first plus small growth"); err != nil {
+		t.Fatalf("Update(enough time too little growth) error = %v", err)
+	}
+	assertNoPicoMessage(t, received)
+
+	if err := streamer.Finalize(context.Background(), "first plus final text"); err != nil {
+		t.Fatalf("Finalize() error = %v", err)
+	}
+	final := mustReceivePicoMessage(t, received)
+	if final.Type != TypeMessageUpdate {
+		t.Fatalf("final type = %q, want %q", final.Type, TypeMessageUpdate)
+	}
+	if got := final.Payload["message_id"]; got != msgID {
+		t.Fatalf("final message_id = %#v, want %q", got, msgID)
+	}
+	if got := final.Payload[PayloadKeyContent]; got != "first plus final text" {
+		t.Fatalf("final content = %#v, want final text", got)
+	}
+	assertNoPicoMessage(t, received)
+}
+
+func TestBeginStream_FinalizeIncludesContextUsage(t *testing.T) {
+	ch := newTestPicoChannel(t)
+	ch.config.Streaming = config.StreamingConfig{
+		Enabled:         true,
+		ThrottleSeconds: 0,
+		MinGrowthChars:  0,
+	}
+	if err := ch.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer ch.Stop(context.Background())
+
+	clientConn, received, cleanup := newTestPicoWebSocket(t)
+	defer cleanup()
+	ch.addConnForTest(&picoConn{id: "conn-1", conn: clientConn, sessionID: "sess-1"})
+
+	streamer, err := ch.BeginStream(context.Background(), "pico:sess-1")
+	if err != nil {
+		t.Fatalf("BeginStream() error = %v", err)
+	}
+	if err := streamer.Update(context.Background(), "partial"); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	first := mustReceivePicoMessage(t, received)
+	msgID, _ := first.Payload["message_id"].(string)
+
+	contextStreamer, ok := streamer.(interface {
+		FinalizeWithContext(ctx context.Context, content string, usage *bus.ContextUsage) error
+	})
+	if !ok {
+		t.Fatal("streamer should support FinalizeWithContext")
+	}
+	if err := contextStreamer.FinalizeWithContext(context.Background(), "final", &bus.ContextUsage{
+		UsedTokens:       10,
+		TotalTokens:      100,
+		CompressAtTokens: 80,
+		UsedPercent:      10,
+	}); err != nil {
+		t.Fatalf("FinalizeWithContext() error = %v", err)
+	}
+
+	final := mustReceivePicoMessage(t, received)
+	if final.Type != TypeMessageUpdate {
+		t.Fatalf("final type = %q, want %q", final.Type, TypeMessageUpdate)
+	}
+	if got := final.Payload["message_id"]; got != msgID {
+		t.Fatalf("final message_id = %#v, want %q", got, msgID)
+	}
+	rawUsage, ok := final.Payload["context_usage"].(map[string]any)
+	if !ok {
+		t.Fatalf("final context_usage = %#v, want map", final.Payload["context_usage"])
+	}
+	if got := rawUsage["used_tokens"]; got != float64(10) {
+		t.Fatalf("used_tokens = %#v, want 10", got)
 	}
 }
 
@@ -488,6 +708,26 @@ func TestHandleMediaDownload_ServesStoredFile(t *testing.T) {
 	}
 	if got := rec.Header().Get("Content-Type"); got != "text/plain" {
 		t.Fatalf("Content-Type = %q, want %q", got, "text/plain")
+	}
+}
+
+func mustReceivePicoMessage(t *testing.T, received <-chan PicoMessage) PicoMessage {
+	t.Helper()
+	select {
+	case msg := <-received:
+		return msg
+	case <-time.After(time.Second):
+		t.Fatal("expected pico message")
+	}
+	return PicoMessage{}
+}
+
+func assertNoPicoMessage(t *testing.T, received <-chan PicoMessage) {
+	t.Helper()
+	select {
+	case msg := <-received:
+		t.Fatalf("unexpected pico message: %+v", msg)
+	case <-time.After(150 * time.Millisecond):
 	}
 }
 
