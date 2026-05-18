@@ -6,58 +6,32 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestIsToolEnabled_LoadImage(t *testing.T) {
+func TestIsToolEnabled_ImageAndReaction(t *testing.T) {
 	t.Parallel()
 
-	t.Run("default enables load_image", func(t *testing.T) {
-		t.Parallel()
-		cfg := DefaultConfig()
-		assert.True(t, cfg.Tools.IsToolEnabled("load_image"),
-			"load_image should be enabled by default")
-	})
-
-	t.Run("explicitly disabling load_image works", func(t *testing.T) {
-		t.Parallel()
-		cfg := DefaultConfig()
-		cfg.Tools.LoadImage.Enabled = false
-		assert.False(t, cfg.Tools.IsToolEnabled("load_image"),
-			"load_image should be disabled when explicitly set to false")
-	})
-
-	t.Run("explicitly enabling load_image works", func(t *testing.T) {
-		t.Parallel()
-		cfg := DefaultConfig()
-		cfg.Tools.LoadImage.Enabled = true
-		assert.True(t, cfg.Tools.IsToolEnabled("load_image"),
-			"load_image should be enabled when explicitly set to true")
-	})
-}
-
-func TestIsToolEnabled_Reaction(t *testing.T) {
-	t.Parallel()
-
-	t.Run("default enables reaction", func(t *testing.T) {
-		t.Parallel()
-		cfg := DefaultConfig()
-		assert.True(t, cfg.Tools.IsToolEnabled("reaction"),
-			"reaction should be enabled by default")
-	})
-
-	t.Run("explicitly disabling reaction works", func(t *testing.T) {
-		t.Parallel()
-		cfg := DefaultConfig()
-		cfg.Tools.Reaction.Enabled = false
-		assert.False(t, cfg.Tools.IsToolEnabled("reaction"),
-			"reaction should be disabled when explicitly set to false")
-	})
-
-	t.Run("explicitly enabling reaction works", func(t *testing.T) {
-		t.Parallel()
-		cfg := DefaultConfig()
-		cfg.Tools.Reaction.Enabled = true
-		assert.True(t, cfg.Tools.IsToolEnabled("reaction"),
-			"reaction should be enabled when explicitly set to true")
-	})
+	tests := []struct {
+		name    string
+		tool    string
+		enabled bool
+	}{
+		{"load_image enabled by default", "load_image", true},
+		{"load_image disabled", "load_image", false},
+		{"load_image re-enabled", "load_image", true},
+		{"reaction enabled by default", "reaction", true},
+		{"reaction disabled", "reaction", false},
+		{"reaction re-enabled", "reaction", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := DefaultConfig()
+			if tt.enabled {
+				assert.True(t, cfg.Tools.IsToolEnabled(tt.tool), "%s should be enabled", tt.tool)
+			} else {
+				assert.False(t, cfg.Tools.IsToolEnabled(tt.tool), "%s should be disabled", tt.tool)
+			}
+		})
+	}
 }
 
 func TestIsToolEnabled_EnabledByDefault(t *testing.T) {
