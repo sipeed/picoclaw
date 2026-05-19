@@ -25,6 +25,43 @@ func newTestEngine(t *testing.T) *Engine {
 	}
 }
 
+func prepareBootstrapRepairConversation(
+	t *testing.T,
+	eng *Engine,
+	ctx context.Context,
+	sessionKey string,
+) (*Conversation, []Message) {
+	t.Helper()
+
+	conv, err := eng.store.GetOrCreateConversation(ctx, sessionKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateConversation: %v", err)
+	}
+
+	userMsg, err := eng.store.AddMessage(ctx, conv.ConversationID, "user", "hello", 3)
+	if err != nil {
+		t.Fatalf("AddMessage user: %v", err)
+	}
+
+	assistantMsg, err := eng.store.AddMessage(ctx, conv.ConversationID, "assistant", "world", 3)
+	if err != nil {
+		t.Fatalf("AddMessage assistant: %v", err)
+	}
+
+	if err := eng.store.AppendContextMessages(
+		ctx,
+		conv.ConversationID,
+		[]int64{userMsg.ID, assistantMsg.ID},
+	); err != nil {
+		t.Fatalf("AppendContextMessages: %v", err)
+	}
+
+	return conv, []Message{
+		{Role: "user", Content: "hello", TokenCount: 3},
+		{Role: "assistant", Content: "world", TokenCount: 3},
+	}
+}
+
 // --- compileSessionPattern ---
 
 func TestCompileSessionPattern(t *testing.T) {
@@ -381,35 +418,10 @@ func TestBootstrapRepairsMissingModelName(t *testing.T) {
 	eng := newTestEngine(t)
 	ctx := context.Background()
 	sessionKey := "agent:repair-model-name"
+	conv, msgs := prepareBootstrapRepairConversation(t, eng, ctx, sessionKey)
+	msgs[1].ModelName = "gpt-5.4"
 
-	conv, err := eng.store.GetOrCreateConversation(ctx, sessionKey)
-	if err != nil {
-		t.Fatalf("GetOrCreateConversation: %v", err)
-	}
-
-	userMsg, err := eng.store.AddMessage(ctx, conv.ConversationID, "user", "hello", 3)
-	if err != nil {
-		t.Fatalf("AddMessage user: %v", err)
-	}
-
-	assistantMsg, err := eng.store.AddMessage(ctx, conv.ConversationID, "assistant", "world", 3)
-	if err != nil {
-		t.Fatalf("AddMessage assistant: %v", err)
-	}
-
-	err = eng.store.AppendContextMessages(
-		ctx,
-		conv.ConversationID,
-		[]int64{userMsg.ID, assistantMsg.ID},
-	)
-	if err != nil {
-		t.Fatalf("AppendContextMessages: %v", err)
-	}
-
-	err = eng.Bootstrap(ctx, sessionKey, []Message{
-		{Role: "user", Content: "hello", TokenCount: 3},
-		{Role: "assistant", Content: "world", ModelName: "gpt-5.4", TokenCount: 3},
-	})
+	err := eng.Bootstrap(ctx, sessionKey, msgs)
 	if err != nil {
 		t.Fatalf("Bootstrap: %v", err)
 	}
@@ -783,35 +795,10 @@ func TestBootstrapRepairsMissingReasoningContent(t *testing.T) {
 	eng := newTestEngine(t)
 	ctx := context.Background()
 	sessionKey := "agent:repair-reasoning"
+	conv, msgs := prepareBootstrapRepairConversation(t, eng, ctx, sessionKey)
+	msgs[1].ReasoningContent = "let me think this through"
 
-	conv, err := eng.store.GetOrCreateConversation(ctx, sessionKey)
-	if err != nil {
-		t.Fatalf("GetOrCreateConversation: %v", err)
-	}
-
-	userMsg, err := eng.store.AddMessage(ctx, conv.ConversationID, "user", "hello", 3)
-	if err != nil {
-		t.Fatalf("AddMessage user: %v", err)
-	}
-
-	assistantMsg, err := eng.store.AddMessage(ctx, conv.ConversationID, "assistant", "world", 3)
-	if err != nil {
-		t.Fatalf("AddMessage assistant: %v", err)
-	}
-
-	err = eng.store.AppendContextMessages(
-		ctx,
-		conv.ConversationID,
-		[]int64{userMsg.ID, assistantMsg.ID},
-	)
-	if err != nil {
-		t.Fatalf("AppendContextMessages: %v", err)
-	}
-
-	err = eng.Bootstrap(ctx, sessionKey, []Message{
-		{Role: "user", Content: "hello", TokenCount: 3},
-		{Role: "assistant", Content: "world", ReasoningContent: "let me think this through", TokenCount: 3},
-	})
+	err := eng.Bootstrap(ctx, sessionKey, msgs)
 	if err != nil {
 		t.Fatalf("Bootstrap: %v", err)
 	}

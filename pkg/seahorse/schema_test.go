@@ -154,7 +154,8 @@ func TestRunSchemaAddsMessagesModelNameColumn(t *testing.T) {
 		t.Fatalf("create legacy messages table: %v", err)
 	}
 
-	if err := runSchema(db); err != nil {
+	err = runSchema(db)
+	if err != nil {
 		t.Fatalf("runSchema: %v", err)
 	}
 
