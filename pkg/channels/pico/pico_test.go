@@ -271,6 +271,9 @@ func TestBeginStream_CreatesAndUpdatesSameMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeginStream() error = %v", err)
 	}
+	if setter, ok := streamer.(interface{ SetModelName(modelName string) }); ok {
+		setter.SetModelName("gpt-5.4")
+	}
 	if err := streamer.Update(context.Background(), "hello"); err != nil {
 		t.Fatalf("Update(first) error = %v", err)
 	}
@@ -284,6 +287,9 @@ func TestBeginStream_CreatesAndUpdatesSameMessage(t *testing.T) {
 	}
 	if got := first.Payload[PayloadKeyContent]; got != "hello" {
 		t.Fatalf("first content = %#v, want hello", got)
+	}
+	if got := first.Payload[PayloadKeyModelName]; got != "gpt-5.4" {
+		t.Fatalf("first model_name = %#v, want %q", got, "gpt-5.4")
 	}
 
 	rawStreamer := streamer.(*picoStreamer)
@@ -303,6 +309,9 @@ func TestBeginStream_CreatesAndUpdatesSameMessage(t *testing.T) {
 	}
 	if got := second.Payload[PayloadKeyContent]; got != secondContent {
 		t.Fatalf("second content = %#v, want %q", got, secondContent)
+	}
+	if got := second.Payload[PayloadKeyModelName]; got != "gpt-5.4" {
+		t.Fatalf("second model_name = %#v, want %q", got, "gpt-5.4")
 	}
 }
 
@@ -369,6 +378,9 @@ func TestBeginStream_StreamsReasoningAsThoughtUpdates(t *testing.T) {
 	if !ok {
 		t.Fatal("pico stream should support reasoning updates")
 	}
+	if setter, ok := streamer.(interface{ SetModelName(modelName string) }); ok {
+		setter.SetModelName("gpt-5.4-mini")
+	}
 	if err := reasoningStreamer.UpdateReasoning(context.Background(), "thinking"); err != nil {
 		t.Fatalf("UpdateReasoning(first) error = %v", err)
 	}
@@ -386,6 +398,9 @@ func TestBeginStream_StreamsReasoningAsThoughtUpdates(t *testing.T) {
 	if got := first.Payload[PayloadKeyContent]; got != "thinking" {
 		t.Fatalf("first content = %#v, want thinking", got)
 	}
+	if got := first.Payload[PayloadKeyModelName]; got != "gpt-5.4-mini" {
+		t.Fatalf("first model_name = %#v, want %q", got, "gpt-5.4-mini")
+	}
 
 	if err := reasoningStreamer.UpdateReasoning(context.Background(), "thinking more"); err != nil {
 		t.Fatalf("UpdateReasoning(second) error = %v", err)
@@ -402,6 +417,9 @@ func TestBeginStream_StreamsReasoningAsThoughtUpdates(t *testing.T) {
 	}
 	if got := second.Payload[PayloadKeyContent]; got != "thinking more" {
 		t.Fatalf("second content = %#v, want thinking more", got)
+	}
+	if got := second.Payload[PayloadKeyModelName]; got != "gpt-5.4-mini" {
+		t.Fatalf("second model_name = %#v, want %q", got, "gpt-5.4-mini")
 	}
 }
 
@@ -487,6 +505,9 @@ func TestBeginStream_FinalizeIncludesContextUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BeginStream() error = %v", err)
 	}
+	if setter, ok := streamer.(interface{ SetModelName(modelName string) }); ok {
+		setter.SetModelName("gpt-5.4")
+	}
 	if err := streamer.Update(context.Background(), "partial"); err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
@@ -514,6 +535,9 @@ func TestBeginStream_FinalizeIncludesContextUsage(t *testing.T) {
 	}
 	if got := final.Payload["message_id"]; got != msgID {
 		t.Fatalf("final message_id = %#v, want %q", got, msgID)
+	}
+	if got := final.Payload[PayloadKeyModelName]; got != "gpt-5.4" {
+		t.Fatalf("final model_name = %#v, want %q", got, "gpt-5.4")
 	}
 	rawUsage, ok := final.Payload["context_usage"].(map[string]any)
 	if !ok {

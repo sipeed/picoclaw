@@ -530,6 +530,7 @@ func (c *PicoChannel) BeginStream(ctx context.Context, chatID string) (channels.
 type picoStreamer struct {
 	channel          *PicoChannel
 	chatID           string
+	modelName        string
 	messageID        string
 	reasoningID      string
 	throttleInterval time.Duration
@@ -541,6 +542,15 @@ type picoStreamer struct {
 	reasoningLastAt  time.Time
 	reasoningContent string
 	mu               sync.Mutex
+}
+
+func (s *picoStreamer) SetModelName(modelName string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.modelName = strings.TrimSpace(modelName)
 }
 
 func (s *picoStreamer) Update(ctx context.Context, content string) error {
@@ -647,13 +657,23 @@ func (s *picoStreamer) sendLocked(ctx context.Context, content string, contextUs
 			PayloadKeyContent: content,
 			"message_id":      s.messageID,
 		}
+		if s.modelName != "" {
+			payload[PayloadKeyModelName] = s.modelName
+		}
 		setContextUsagePayload(payload, contextUsage)
 		outMsg := newMessage(TypeMessageCreate, payload)
 		if err := s.channel.broadcastToSession(s.chatID, outMsg); err != nil {
 			return err
 		}
 	} else if content != s.lastContent || contextUsage != nil {
-		if err := s.channel.editMessage(ctx, s.chatID, s.messageID, content, contextUsage); err != nil {
+		payload := map[string]any{
+			PayloadKeyContent: content,
+			"message_id":      s.messageID,
+		}
+		if s.modelName != "" {
+			payload[PayloadKeyModelName] = s.modelName
+		}
+		if err := s.channel.editMessagePayload(ctx, s.chatID, s.messageID, payload, contextUsage); err != nil {
 			return err
 		}
 	}
@@ -676,6 +696,9 @@ func (s *picoStreamer) sendReasoningLocked(ctx context.Context, content string) 
 			PayloadKeyKind:    MessageKindThought,
 			PayloadKeyThought: true,
 		}
+		if s.modelName != "" {
+			payload[PayloadKeyModelName] = s.modelName
+		}
 		outMsg := newMessage(TypeMessageCreate, payload)
 		if err := s.channel.broadcastToSession(s.chatID, outMsg); err != nil {
 			return err
@@ -686,6 +709,9 @@ func (s *picoStreamer) sendReasoningLocked(ctx context.Context, content string) 
 			"message_id":      s.reasoningID,
 			PayloadKeyKind:    MessageKindThought,
 			PayloadKeyThought: true,
+		}
+		if s.modelName != "" {
+			payload[PayloadKeyModelName] = s.modelName
 		}
 		outMsg := newMessage(TypeMessageUpdate, payload)
 		if err := s.channel.broadcastToSession(s.chatID, outMsg); err != nil {
