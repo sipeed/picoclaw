@@ -207,6 +207,54 @@ func TestSend_ThoughtMessageDoesNotFinalizeTrackedToolFeedback(t *testing.T) {
 	}
 }
 
+func TestSend_ToolCallsMessageIncludesModelName(t *testing.T) {
+	ch := newTestPicoChannel(t)
+
+	if err := ch.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer ch.Stop(context.Background())
+
+	clientConn, received, cleanup := newTestPicoWebSocket(t)
+	defer cleanup()
+	ch.addConnForTest(&picoConn{id: "conn-1", conn: clientConn, sessionID: "sess-1"})
+
+	if _, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:  "pico:sess-1",
+		Content: "",
+		Context: bus.InboundContext{
+			Channel: "pico",
+			ChatID:  "pico:sess-1",
+			Raw: map[string]string{
+				"message_kind":      MessageKindToolCalls,
+				PayloadKeyModelName: "gpt-5.4",
+				PayloadKeyToolCalls: `[{"id":"call_1","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"README.md\"}"}}]`,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("Send(tool_calls) error = %v", err)
+	}
+
+	select {
+	case msg := <-received:
+		if msg.Type != TypeMessageCreate {
+			t.Fatalf("tool_calls message type = %q, want %q", msg.Type, TypeMessageCreate)
+		}
+		payload := msg.Payload
+		if got := payload[PayloadKeyKind]; got != MessageKindToolCalls {
+			t.Fatalf("tool_calls kind = %#v, want %q", got, MessageKindToolCalls)
+		}
+		if got := payload[PayloadKeyModelName]; got != "gpt-5.4" {
+			t.Fatalf("tool_calls model_name = %#v, want %q", got, "gpt-5.4")
+		}
+		if _, ok := payload[PayloadKeyToolCalls].([]any); !ok {
+			t.Fatalf("tool_calls payload = %#v, want parsed array", payload[PayloadKeyToolCalls])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected tool_calls message to be delivered")
+	}
+}
+
 func TestSendPlaceholder_EmitsNormalMessageWithoutKind(t *testing.T) {
 	ch := newTestPicoChannel(t)
 	ch.bc.Placeholder.Enabled = true

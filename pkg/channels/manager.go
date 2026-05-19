@@ -676,6 +676,18 @@ func reasoningStreamerFrom(streamer bus.Streamer) bus.ReasoningStreamer {
 	return nil
 }
 
+type modelNameStreamer interface {
+	SetModelName(modelName string)
+}
+
+func setStreamerModelName(streamer any, modelName string) {
+	setter, ok := streamer.(modelNameStreamer)
+	if !ok {
+		return
+	}
+	setter.SetModelName(modelName)
+}
+
 // splitMarkerStreamer turns accumulated streaming text containing
 // MessageSplitMarker into separate channel stream messages.
 type splitMarkerStreamer struct {
@@ -687,6 +699,7 @@ type splitMarkerStreamer struct {
 	finalized      bool
 	onFinalize     func(context.Context, string)
 	clearMarker    func()
+	modelName      string
 }
 
 func (s *splitMarkerStreamer) Update(ctx context.Context, content string) error {
@@ -715,6 +728,7 @@ func (s *splitMarkerStreamer) UpdateReasoning(ctx context.Context, content strin
 	if s.reasoning == nil {
 		return nil
 	}
+	setStreamerModelName(s.reasoning, s.modelName)
 	return s.reasoning.UpdateReasoning(ctx, content)
 }
 
@@ -724,7 +738,16 @@ func (s *splitMarkerStreamer) FinalizeReasoning(ctx context.Context, content str
 	if s.reasoning == nil {
 		return nil
 	}
+	setStreamerModelName(s.reasoning, s.modelName)
 	return s.reasoning.FinalizeReasoning(ctx, content)
+}
+
+func (s *splitMarkerStreamer) SetModelName(modelName string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.modelName = strings.TrimSpace(modelName)
+	setStreamerModelName(s.current, s.modelName)
+	setStreamerModelName(s.reasoning, s.modelName)
 }
 
 func (s *splitMarkerStreamer) Cancel(ctx context.Context) {
@@ -805,6 +828,7 @@ func (s *splitMarkerStreamer) ensureCurrentLocked(ctx context.Context) error {
 		return err
 	}
 	s.current = streamer
+	setStreamerModelName(s.current, s.modelName)
 	return nil
 }
 
@@ -887,6 +911,10 @@ func (s *finalizeHookStreamer) FinalizeReasoning(ctx context.Context, content st
 		return streamer.FinalizeReasoning(ctx, content)
 	}
 	return nil
+}
+
+func (s *finalizeHookStreamer) SetModelName(modelName string) {
+	setStreamerModelName(s.Streamer, strings.TrimSpace(modelName))
 }
 
 func (s *finalizeHookStreamer) runFinalizeHook(ctx context.Context, content string) {
