@@ -232,6 +232,8 @@
     "unsavedPrompt": "当前修改尚未保存，保存后才会写入模型配置。",
     "restartHint": "模型配置保存后需要重启服务才能生效。",
     "loadError": "加载模型列表失败",
+    "retry": "重试",
+    "providerCatalogUnavailable": "后端 Provider catalog 暂不可用，待模型 API 成功加载后才能选择新的 Provider。",
     "noDefaultHintPrefix": "尚未设置默认模型，点击",
     "noDefaultHintSuffix": "设为默认。",
     "status": {
@@ -396,6 +398,7 @@
       "selectProvider": "选择服务商...",
       "searchProvider": "搜索服务商...",
       "noProvider": "未找到服务商。",
+      "noCatalog": "Provider catalog 暂不可用。",
       "local": "本地",
       "custom": "自定义服务商...",
       "customPlaceholder": "输入服务商名称..."

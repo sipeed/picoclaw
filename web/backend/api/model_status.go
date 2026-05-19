@@ -172,7 +172,7 @@ func requiresRuntimeProbe(m *config.ModelConfig) bool {
 		return true
 	}
 
-	if providers.IsEmptyAPIKeyAllowedForProtocol(protocol) {
+	if providers.IsHTTPAPIProtocol(protocol) && providers.IsEmptyAPIKeyAllowedForProtocol(protocol) {
 		apiBase := strings.TrimSpace(m.APIBase)
 		return apiBase == "" || hasLocalAPIBase(apiBase)
 	}

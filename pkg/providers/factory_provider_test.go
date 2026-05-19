@@ -998,6 +998,13 @@ func TestModelProviderOptions(t *testing.T) {
 	if option, ok := seen["openai"]; ok && !option.CreateAllowed {
 		t.Fatal("openai should be creatable")
 	}
+	if option, ok := seen["openai"]; ok && !option.SupportsFetch {
+		t.Fatal("openai should support upstream model listing")
+	} else if option.DisplayName != "OpenAI" {
+		t.Fatalf("openai display_name = %q, want %q", option.DisplayName, "OpenAI")
+	} else if len(option.CommonModels) == 0 {
+		t.Fatal("openai common_models should not be empty")
+	}
 	if option, ok := seen["lmstudio"]; !ok {
 		t.Fatal("lmstudio option missing")
 	} else if !option.EmptyAPIKeyAllowed {
@@ -1052,6 +1059,13 @@ func TestModelProviderOptions(t *testing.T) {
 		t.Fatal("github-copilot option missing")
 	} else if option.DefaultAPIBase != "localhost:4321" {
 		t.Fatalf("github-copilot default_api_base = %q, want %q", option.DefaultAPIBase, "localhost:4321")
+	} else if !option.Local {
+		t.Fatal("github-copilot should be marked local")
+	}
+	if option, ok := seen["qwen-portal"]; !ok {
+		t.Fatal("qwen-portal option missing")
+	} else if len(option.Aliases) == 0 || option.Aliases[0] != "qwen" {
+		t.Fatalf("qwen-portal aliases = %#v, want to include qwen", option.Aliases)
 	}
 }
 

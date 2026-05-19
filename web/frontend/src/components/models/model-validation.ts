@@ -5,10 +5,12 @@
  * Messages use i18n keys with interpolation params — callers must
  * translate them via t(key, params).
  */
+import type { ModelProviderOption } from "@/api/models"
+
 import {
-  KNOWN_PROVIDER_KEYS,
-  PROVIDER_ALIASES,
   findClosestProvider,
+  getCanonicalProviderKey,
+  getKnownProviderKeys,
 } from "./provider-registry"
 
 export type ValidationLevel = "error" | "warning" | "success"
@@ -27,9 +29,11 @@ export interface FieldValidation {
 export function validateModelField(
   input: string,
   selectedProvider?: string,
+  backendOptions?: ModelProviderOption[],
 ): FieldValidation {
   const trimmed = input.trim()
   if (!trimmed) return { level: "success", messageKey: "" }
+  const knownProviderKeys = getKnownProviderKeys(backendOptions)
 
   // Hard errors
   if (/\s/.test(trimmed)) {
@@ -78,10 +82,10 @@ export function validateModelField(
     return { level: "error", messageKey: "models.validation.emptyModel" }
   }
 
-  if (!KNOWN_PROVIDER_KEYS.has(provider)) {
+  if (!knownProviderKeys.has(provider)) {
     // Check aliases
-    const alias = PROVIDER_ALIASES[provider]
-    if (alias) {
+    const alias = getCanonicalProviderKey(provider, backendOptions)
+    if (alias && alias !== provider) {
       return {
         level: "warning",
         messageKey: "models.validation.shouldUse",
@@ -90,7 +94,7 @@ export function validateModelField(
       }
     }
     // Typo check
-    const closest = findClosestProvider(provider)
+    const closest = findClosestProvider(provider, backendOptions)
     if (closest) {
       return {
         level: "warning",

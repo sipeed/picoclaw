@@ -232,6 +232,8 @@
     "unsavedPrompt": "This change has not been saved yet. Save to write it into the model configuration.",
     "restartHint": "Model configuration changes take effect after the gateway restarts.",
     "loadError": "Failed to load models",
+    "retry": "Retry",
+    "providerCatalogUnavailable": "The backend provider catalog is unavailable. New provider selections are disabled until the Models API loads successfully.",
     "noDefaultHintPrefix": "No default model set yet. Click",
     "noDefaultHintSuffix": "to set one.",
     "status": {
@@ -251,7 +253,8 @@
         "setting": "Setting as default...",
         "unavailable": "Cannot set unavailable model as default",
         "isDefault": "Already the default model",
-        "isVirtual": "Cannot set virtual model as default"
+        "isVirtual": "Cannot set virtual model as default",
+        "unsupportedProvider": "This provider cannot be used as the default chat model."
       },
       "deleteDisabled": {
         "isDefault": "Cannot delete the default model"
@@ -288,8 +291,9 @@
     },
     "field": {
       "provider": "Provider",
-      "providerPlaceholder": "e.g. openai",
-      "providerHint": "Optional. If specified, this value is used as the effective provider, and Model Identifier is interpreted as the canonical model ID.",
+      "providerPlaceholder": "Select a provider",
+      "providerHint": "Choose a provider from the backend catalog; Model Identifier will be interpreted as that provider's canonical model ID.",
+      "providerInvalid": "The current provider is invalid. Please choose a supported provider.",
       "selectProviderFirst": "Select a provider first",
       "apiBase": "API Base URL",
       "apiKey": "API Key",
@@ -299,6 +303,7 @@
       "proxyHint": "Optional. e.g. http://127.0.0.1:7890",
       "authMethod": "Auth Method",
       "authMethodHint": "Authentication method: oauth, token. Leave blank for API key auth.",
+      "authMethodManagedHint": "This provider's auth method is managed by the system.",
       "connectMode": "Connect Mode",
       "connectModeHint": "Connection mode for CLI-based providers: stdio or grpc.",
       "workspace": "Workspace Path",
@@ -395,9 +400,8 @@
       "selectProvider": "Select provider...",
       "searchProvider": "Search provider...",
       "noProvider": "No provider found.",
-      "local": "local",
-      "custom": "Custom provider...",
-      "customPlaceholder": "Enter provider name..."
+      "noCatalog": "Provider catalog unavailable.",
+      "local": "local"
     }
   },
   "channels": {

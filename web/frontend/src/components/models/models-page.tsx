@@ -23,13 +23,16 @@ import { AddModelSheet } from "./add-model-sheet"
 import { CatalogDialog } from "./catalog-dialog"
 import { DeleteModelDialog } from "./delete-model-dialog"
 import { EditModelSheet } from "./edit-model-sheet"
-import { getProviderKey, getProviderLabel } from "./provider-label"
-import { PROVIDER_PRIORITY } from "./provider-registry"
+import {
+  getCanonicalProviderKey,
+  getProviderCatalogMap,
+} from "./provider-registry"
 import { ProviderSection } from "./provider-section"
+import type { ProviderCatalogEntry } from "./provider-registry"
 
 interface ProviderGroup {
   key: string
-  label: string
+  provider: Pick<ProviderCatalogEntry, "key" | "label" | "iconSlug" | "domain">
   models: ModelInfo[]
   hasDefault: boolean
   availableCount: number
@@ -51,8 +54,10 @@ export function ModelsPage() {
   const [settingDefaultIndex, setSettingDefaultIndex] = useState<number | null>(
     null,
   )
+  const providerMap = getProviderCatalogMap(providerOptions)
 
   const fetchModels = useCallback(async () => {
+    setLoading(true)
     try {
       const data = await getModels()
       const sorted = [...data.models].sort((a, b) => {
@@ -97,12 +102,21 @@ export function ModelsPage() {
     }
   }
 
-  const grouped: Record<string, { label: string; models: ModelInfo[] }> = {}
+  const grouped: Record<
+    string,
+    { provider: Pick<ProviderCatalogEntry, "key" | "label" | "iconSlug" | "domain">; models: ModelInfo[] }
+  > = {}
   for (const model of models) {
-    const providerKey = getProviderKey(model.provider)
+    const providerKey = getCanonicalProviderKey(model.provider, providerOptions)
+    const providerDef = providerKey ? providerMap.get(providerKey) : undefined
     if (!grouped[providerKey]) {
       grouped[providerKey] = {
-        label: getProviderLabel(model.provider),
+        provider: {
+          key: providerKey,
+          label: providerDef?.label || providerKey,
+          iconSlug: providerDef?.iconSlug,
+          domain: providerDef?.domain,
+        },
         models: [],
       }
     }
@@ -116,7 +130,7 @@ export function ModelsPage() {
       ).length
       return {
         key,
-        label: group.label,
+        provider: group.provider,
         models: group.models,
         hasDefault: group.models.some((model) => model.is_default),
         availableCount,
@@ -130,13 +144,13 @@ export function ModelsPage() {
         return b.availableCount - a.availableCount
       }
 
-      const aPriority = PROVIDER_PRIORITY[a.key] ?? Number.MAX_SAFE_INTEGER
-      const bPriority = PROVIDER_PRIORITY[b.key] ?? Number.MAX_SAFE_INTEGER
+      const aPriority = -(providerMap.get(a.key)?.priority ?? 0)
+      const bPriority = -(providerMap.get(b.key)?.priority ?? 0)
       if (aPriority !== bPriority) {
         return aPriority - bPriority
       }
 
-      return a.label.localeCompare(b.label)
+      return a.provider.label.localeCompare(b.provider.label)
     })
 
   const defaultModel = models.find((model) => model.is_default)
@@ -149,11 +163,17 @@ export function ModelsPage() {
             size="sm"
             variant="outline"
             onClick={() => setCatalogOpen(true)}
+            disabled={providerOptions.length === 0}
           >
             <IconDatabase className="size-4" />
             {t("models.catalog.button")}
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setAddOpen(true)}
+            disabled={providerOptions.length === 0}
+          >
             <IconPlus className="size-4" />
             {t("models.add.button")}
           </Button>
@@ -172,6 +192,11 @@ export function ModelsPage() {
           <p className="text-muted-foreground mt-1 text-sm">
             {t("models.description")}
           </p>
+          {!loading && providerOptions.length === 0 && (
+            <p className="text-muted-foreground mt-1 text-sm">
+              {t("models.providerCatalogUnavailable")}
+            </p>
+          )}
         </div>
 
         {loading && (
@@ -181,8 +206,19 @@ export function ModelsPage() {
         )}
 
         {fetchError && (
-          <div className="text-destructive bg-destructive/10 rounded-lg px-4 py-3 text-sm">
-            {fetchError}
+          <div className="bg-destructive/10 rounded-lg px-4 py-3 text-sm">
+            <p className="text-destructive">{fetchError}</p>
+            <div className="mt-3 flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void fetchModels()
+                }}
+              >
+                {t("models.retry")}
+              </Button>
+            </div>
           </div>
         )}
 
@@ -191,8 +227,7 @@ export function ModelsPage() {
             {providerGroups.map((providerGroup) => (
               <ProviderSection
                 key={providerGroup.key}
-                provider={providerGroup.label}
-                providerKey={providerGroup.key}
+                provider={providerGroup.provider}
                 models={providerGroup.models}
                 onEdit={setEditingModel}
                 onSetDefault={handleSetDefault}
@@ -230,6 +265,7 @@ export function ModelsPage() {
         open={catalogOpen}
         onClose={() => setCatalogOpen(false)}
         onModelAdded={fetchModels}
+        providerOptions={providerOptions}
       />
     </div>
   )
