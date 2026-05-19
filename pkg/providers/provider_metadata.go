@@ -87,7 +87,7 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		DefaultModelAllowed: true,
 		SupportsFetch:       true,
 		Priority:            85,
-		CommonModels:        []string{"deepseek-chat", "deepseek-reasoner"},
+		CommonModels:        []string{"deepseek-v4-flash", "deepseek-v4-pro"},
 		httpAPI:             true,
 	},
 	"openrouter": {
