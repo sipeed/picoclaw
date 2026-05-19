@@ -155,6 +155,10 @@ func outboundMessageChannel(msg bus.OutboundMessage) string {
 	return msg.Context.Channel
 }
 
+func outboundMessageChannelType(msg bus.OutboundMessage) string {
+	return msg.Context.ChannelType
+}
+
 func outboundMessageChatID(msg bus.OutboundMessage) string {
 	return msg.ChatID
 }
@@ -176,6 +180,10 @@ func outboundMessageBypassesPlaceholderEdit(msg bus.OutboundMessage) bool {
 
 func outboundMediaChannel(msg bus.OutboundMediaMessage) string {
 	return msg.Context.Channel
+}
+
+func outboundMediaChannelType(msg bus.OutboundMediaMessage) string {
+	return msg.Context.ChannelType
 }
 
 func outboundMediaChatID(msg bus.OutboundMediaMessage) string {
@@ -1200,6 +1208,7 @@ func dispatchLoop[M any](
 	m *Manager,
 	ch <-chan M,
 	getChannel func(M) string,
+	getChannelType func(M) string,
 	enqueue func(context.Context, *channelWorker, M) bool,
 	startMsg, stopMsg, unknownMsg, noWorkerMsg string,
 ) {
@@ -1218,9 +1227,10 @@ func dispatchLoop[M any](
 			}
 
 			channel := getChannel(msg)
+			channelType := getChannelType(msg)
 
 			// Silently skip internal channels
-			if constants.IsInternalChannel(channel) {
+			if constants.IsInternalChannel(channelType) {
 				continue
 			}
 
@@ -1250,6 +1260,7 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
 		ctx, m,
 		m.bus.OutboundChan(),
 		func(msg bus.OutboundMessage) string { return outboundMessageChannel(msg) },
+		func(msg bus.OutboundMessage) string { return outboundMessageChannelType(msg) },
 		func(ctx context.Context, w *channelWorker, msg bus.OutboundMessage) bool {
 			select {
 			case w.queue <- msg:
@@ -1271,6 +1282,7 @@ func (m *Manager) dispatchOutboundMedia(ctx context.Context) {
 		ctx, m,
 		m.bus.OutboundMediaChan(),
 		func(msg bus.OutboundMediaMessage) string { return outboundMediaChannel(msg) },
+		func(msg bus.OutboundMediaMessage) string { return outboundMediaChannelType(msg) },
 		func(ctx context.Context, w *channelWorker, msg bus.OutboundMediaMessage) bool {
 			select {
 			case w.mediaQueue <- msg:

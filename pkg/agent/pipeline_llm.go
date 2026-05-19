@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -338,7 +339,7 @@ func (p *Pipeline) CallLLM(
 				},
 			)
 
-			if retry == 0 && !constants.IsInternalChannel(ts.channel) {
+			if retry == 0 && !constants.IsInternalChannel(ts.opts.Dispatch.ChannelType()) {
 				al.bus.PublishOutbound(ctx, outboundMessageForTurn(
 					ts,
 					"Context window exceeded. Compressing history and retrying...",
@@ -433,15 +434,16 @@ func (p *Pipeline) CallLLM(
 	}
 
 	reasoningContent := responseReasoningContent(exec.response)
-	shouldPublishPicoToolCallInterim := ts.channel == "pico" && len(exec.response.ToolCalls) > 0
+	shouldPublishPicoToolCallInterim := ts.opts.Dispatch.ChannelType() == config.ChannelPico &&
+		len(exec.response.ToolCalls) > 0
 	if shouldPublishPicoToolCallInterim {
 		// Pico tool-call turns publish their reasoning/content/tool summary as a
 		// structured sequence after the tool-call payload is normalized below.
-	} else if ts.channel == "pico" {
+	} else if ts.opts.Dispatch.ChannelType() == config.ChannelPico {
 		// Publish pico thoughts before the turn context is canceled at return time.
 		// The async variant can race with turn teardown and intermittently drop the
 		// thought message in CI even though the LLM produced reasoning content.
-		al.publishPicoReasoning(turnCtx, reasoningContent, ts.chatID)
+		go al.publishPicoReasoning(turnCtx, reasoningContent, ts.chatID)
 	} else {
 		go al.handleReasoning(
 			turnCtx,
@@ -479,7 +481,8 @@ func (p *Pipeline) CallLLM(
 	// No-tool-call path: steering check and direct response
 	if len(exec.response.ToolCalls) == 0 || exec.gracefulTerminal {
 		responseContent := exec.response.Content
-		if responseContent == "" && exec.response.ReasoningContent != "" && ts.channel != "pico" {
+		if responseContent == "" && exec.response.ReasoningContent != "" &&
+			ts.opts.Dispatch.ChannelType() != config.ChannelPico {
 			responseContent = exec.response.ReasoningContent
 		}
 		if steerMsgs := al.dequeueSteeringMessagesForScope(ts.sessionKey); len(steerMsgs) > 0 {

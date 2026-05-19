@@ -13,8 +13,9 @@ type SenderInfo struct {
 // inbound message. This is the source of truth for routing and session
 // allocation.
 type InboundContext struct {
-	Channel string `json:"channel"`
-	Account string `json:"account,omitempty"`
+	Channel     string `json:"channel"`
+	ChannelType string `json:"channel_type,omitempty"` // telegram, discord, slack, etc.
+	Account     string `json:"account,omitempty"`
 
 	ChatID   string `json:"chat_id"`
 	ChatType string `json:"chat_type,omitempty"` // direct / group / channel

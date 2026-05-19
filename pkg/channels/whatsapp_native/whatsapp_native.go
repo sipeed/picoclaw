@@ -70,7 +70,10 @@ func NewWhatsAppNativeChannel(
 	bus *bus.MessageBus,
 	storePath string,
 ) (channels.Channel, error) {
-	base := channels.NewBaseChannel(name, cfg, bus, bc.AllowFrom, channels.WithMaxMessageLength(65536))
+	base := channels.NewBaseChannel(name, cfg, bus, bc.AllowFrom,
+		channels.WithMaxMessageLength(65536),
+		channels.WithChannelType(bc.Type),
+	)
 	if storePath == "" {
 		storePath = "whatsapp"
 	}

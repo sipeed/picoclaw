@@ -85,6 +85,7 @@ func NewDiscordChannel(
 		channels.WithMaxMessageLength(2000),
 		channels.WithGroupTrigger(bc.GroupTrigger),
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
+		channels.WithChannelType(bc.Type),
 	)
 
 	ch := &DiscordChannel{
@@ -669,7 +670,6 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 		"is_dm":        fmt.Sprintf("%t", m.GuildID == ""),
 	}
 	inboundCtx := bus.InboundContext{
-		Channel:   c.Name(),
 		ChatID:    m.ChannelID,
 		ChatType:  peerKind,
 		SenderID:  senderID,

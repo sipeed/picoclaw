@@ -40,6 +40,7 @@ func NewWhatsAppChannel(
 		bc.AllowFrom,
 		channels.WithMaxMessageLength(65536),
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
+		channels.WithChannelType(bc.Type),
 	)
 
 	return &WhatsAppChannel{

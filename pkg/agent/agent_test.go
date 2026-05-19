@@ -3987,7 +3987,8 @@ func TestProcessMessage_PicoPublishesReasoningAsThoughtMessage(t *testing.T) {
 	al := NewAgentLoop(cfg, msgBus, provider)
 
 	response, err := al.processMessage(context.Background(), bus.InboundMessage{
-		Channel:  "pico",
+		Context:  bus.InboundContext{Channel: "pico1", ChannelType: "pico"},
+		Channel:  "pico1",
 		SenderID: "user1",
 		ChatID:   "pico:test-session",
 		Content:  "hello",
@@ -4547,7 +4548,8 @@ func TestRun_PicoPublishesAssistantContentDuringToolCallsWithoutFinalDuplicate(t
 	}()
 
 	if err := msgBus.PublishInbound(context.Background(), bus.InboundMessage{
-		Channel:  "pico",
+		Context:  bus.InboundContext{Channel: "pico1", ChannelType: "pico"},
+		Channel:  "pico1",
 		SenderID: "user-1",
 		ChatID:   "session-1",
 		Content:  "run with tools",

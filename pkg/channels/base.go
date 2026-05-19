@@ -75,6 +75,11 @@ func WithReasoningChannelID(id string) BaseChannelOption {
 	return func(c *BaseChannel) { c.reasoningChannelID = id }
 }
 
+// WithChannelType sets the channel type (from config.Channel.Type).
+func WithChannelType(channelType string) BaseChannelOption {
+	return func(c *BaseChannel) { c.channelType = channelType }
+}
+
 // MessageLengthProvider is an opt-in interface that channels implement
 // to advertise their maximum message length. The Manager uses this via
 // type assertion to decide whether to split outbound messages.
@@ -87,6 +92,7 @@ type BaseChannel struct {
 	bus                 *bus.MessageBus
 	running             atomic.Bool
 	name                string
+	channelType         string
 	allowList           []string
 	maxMessageLength    int
 	groupTrigger        config.GroupTriggerConfig
@@ -185,6 +191,11 @@ func (c *BaseChannel) ShouldRespondInGroup(isMentioned bool, content string) (bo
 
 func (c *BaseChannel) Name() string {
 	return c.name
+}
+
+// ChannelType returns the channel type (from config.Channel.Type).
+func (c *BaseChannel) ChannelType() string {
+	return c.channelType
 }
 
 // SetName updates the channel name. Used by the manager after channel creation
@@ -294,6 +305,7 @@ func (c *BaseChannel) HandleMessageWithContext(
 	}
 
 	inboundCtx.Channel = c.name
+	inboundCtx.ChannelType = c.channelType
 	if inboundCtx.ChatID == "" {
 		inboundCtx.ChatID = deliveryChatID
 	}

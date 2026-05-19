@@ -242,6 +242,7 @@ func NewMatrixChannel(
 		channels.WithMaxMessageLength(65536),
 		channels.WithGroupTrigger(bc.GroupTrigger),
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
+		channels.WithChannelType(bc.Type),
 	)
 
 	ch := &MatrixChannel{

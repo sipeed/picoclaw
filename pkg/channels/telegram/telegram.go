@@ -123,6 +123,7 @@ func NewTelegramChannel(
 		channels.WithMaxMessageLength(4000),
 		channels.WithGroupTrigger(bc.GroupTrigger),
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
+		channels.WithChannelType(bc.Type),
 	)
 
 	ch := &TelegramChannel{
@@ -1005,7 +1006,6 @@ func (c *TelegramChannel) handleMessages(ctx context.Context, messages []*telego
 	}
 
 	inboundCtx := bus.InboundContext{
-		Channel:   c.Name(),
 		ChatID:    fmt.Sprintf("%d", chatID),
 		ChatType:  peerKind,
 		SenderID:  platformID,

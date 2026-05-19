@@ -32,6 +32,7 @@ func NormalizeInboundMessage(msg InboundMessage) InboundMessage {
 
 func (ctx InboundContext) isZero() bool {
 	return ctx.Channel == "" &&
+		ctx.ChannelType == "" &&
 		ctx.Account == "" &&
 		ctx.ChatID == "" &&
 		ctx.ChatType == "" &&
@@ -49,6 +50,11 @@ func (ctx InboundContext) isZero() bool {
 
 func normalizeInboundContext(ctx InboundContext) InboundContext {
 	ctx.Channel = strings.TrimSpace(ctx.Channel)
+	ctx.ChannelType = strings.TrimSpace(ctx.ChannelType)
+	// Set ChannelType from Channel if not already set
+	if ctx.ChannelType == "" && ctx.Channel != "" {
+		ctx.ChannelType = ctx.Channel
+	}
 	ctx.Account = strings.TrimSpace(ctx.Account)
 	ctx.ChatID = strings.TrimSpace(ctx.ChatID)
 	ctx.ChatType = normalizeKind(ctx.ChatType)

@@ -78,6 +78,7 @@ func NewWeixinChannel(
 		bc.AllowFrom,
 		channels.WithMaxMessageLength(4000),
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
+		channels.WithChannelType(bc.Type),
 	)
 
 	return &WeixinChannel{

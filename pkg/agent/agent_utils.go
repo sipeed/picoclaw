@@ -209,6 +209,9 @@ func appendEventContextFields(fields map[string]any, turnCtx *TurnContext) {
 		if inbound.Channel != "" {
 			fields["inbound_channel"] = inbound.Channel
 		}
+		if inbound.ChannelType != "" {
+			fields["inbound_channel_type"] = inbound.ChannelType
+		}
 		if inbound.Account != "" {
 			fields["inbound_account"] = inbound.Account
 		}

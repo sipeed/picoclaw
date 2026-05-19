@@ -95,6 +95,7 @@ func NewTeamsWebhookChannel(
 			"*",
 		}, // Output-only channel; "*" suppresses misleading "allows EVERYONE" audit warning
 		channels.WithMaxMessageLength(24000), // Power Automate webhook payload limit is 28KB
+		channels.WithChannelType(bc.Type),
 	)
 
 	client := goteamsnotify.NewTeamsClient()

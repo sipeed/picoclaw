@@ -117,7 +117,9 @@ func NewPicoChannel(
 		return nil, fmt.Errorf("pico token is required")
 	}
 
-	base := channels.NewBaseChannel("pico", cfg, messageBus, bc.AllowFrom)
+	base := channels.NewBaseChannel("pico", cfg, messageBus, bc.AllowFrom,
+		channels.WithChannelType(bc.Type),
+	)
 
 	allowOrigins := cfg.AllowOrigins
 	checkOrigin := func(r *http.Request) bool {
@@ -965,12 +967,13 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 	}
 
 	inboundCtx := bus.InboundContext{
-		Channel:   "pico",
-		ChatID:    chatID,
-		ChatType:  "direct",
-		SenderID:  senderID,
-		MessageID: msg.ID,
-		Raw:       metadata,
+		Channel:     c.bc.Name(),
+		ChannelType: config.ChannelPico,
+		ChatID:      chatID,
+		ChatType:    "direct",
+		SenderID:    senderID,
+		MessageID:   msg.ID,
+		Raw:         metadata,
 	}
 
 	c.HandleInboundContext(c.ctx, chatID, content, media, inboundCtx, sender)

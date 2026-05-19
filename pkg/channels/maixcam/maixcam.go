@@ -43,6 +43,7 @@ func NewMaixCamChannel(
 		bus,
 		bc.AllowFrom,
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
+		channels.WithChannelType(bc.Type),
 	)
 
 	return &MaixCamChannel{
