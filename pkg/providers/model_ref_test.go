@@ -77,9 +77,11 @@ func TestNormalizeProvider(t *testing.T) {
 		{"codexcli", "codex-cli"},
 		{"copilot", "github-copilot"},
 		// Alibaba Coding Plan aliases
-		{"alibaba-coding", "coding-plan"},
-		{"qwen-coding", "coding-plan"},
-		{"alibaba-coding-anthropic", "coding-plan-anthropic"},
+		{"alibaba-coding", "alibaba-coding"},
+		{"coding-plan", "alibaba-coding"},
+		{"qwen-coding", "alibaba-coding"},
+		{"alibaba-coding-anthropic", "alibaba-coding-anthropic"},
+		{"coding-plan-anthropic", "alibaba-coding-anthropic"},
 		// Qwen international aliases
 		{"qwen-international", "qwen-intl"},
 		{"dashscope-intl", "qwen-intl"},

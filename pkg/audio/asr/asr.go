@@ -29,12 +29,12 @@ func supportsAudioTranscription(modelCfg *config.ModelConfig) bool {
 	protocol, _ := providers.ExtractProtocol(modelCfg)
 
 	switch protocol {
-	case "openai", "azure", "azure-openai",
+	case "openai", "azure",
 		"litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
-		"vivgrid", "volcengine", "vllm", "qwen", "qwen-portal", "qwen-intl", "qwen-international", "dashscope-intl",
-		"qwen-us", "dashscope-us", "mistral", "avian", "minimax", "longcat", "modelscope", "novita",
-		"coding-plan", "alibaba-coding", "qwen-coding", "zai":
+		"vivgrid", "volcengine", "vllm", "qwen-portal", "qwen-intl", "qwen-us",
+		"mistral", "avian", "minimax", "longcat", "modelscope", "novita",
+		"alibaba-coding", "zai":
 		// These protocols all go through the OpenAI-compatible or Azure provider path in
 		// providers.CreateProviderFromConfig, so they are the only ones that can supply
 		// the audio media payload shape expected by NewAudioModelTranscriber.
@@ -53,9 +53,9 @@ func supportsWhisperTranscription(modelCfg *config.ModelConfig) bool {
 	switch protocol {
 	case "openai", "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
 		"ollama", "moonshot", "shengsuanyun", "deepseek", "cerebras",
-		"vivgrid", "volcengine", "vllm", "qwen", "qwen-portal", "qwen-intl", "qwen-international", "dashscope-intl",
-		"qwen-us", "dashscope-us", "mistral", "avian", "minimax", "longcat", "modelscope", "novita",
-		"coding-plan", "alibaba-coding", "qwen-coding", "zai", "mimo":
+		"vivgrid", "volcengine", "vllm", "qwen-portal", "qwen-intl", "qwen-us",
+		"mistral", "avian", "minimax", "longcat", "modelscope", "novita",
+		"alibaba-coding", "zai", "mimo":
 		return true
 	default:
 		return false

@@ -999,11 +999,11 @@ func probeModelConnectivity(m *config.ModelConfig) bool {
 		return probeOllamaModel(apiBase, modelID)
 	case "vllm", "lmstudio":
 		return probeOpenAICompatibleModel(apiBase, modelID, m.APIKey())
-	case "github-copilot", "copilot":
+	case "github-copilot":
 		return probeTCPService(apiBase)
-	case "claude-cli", "claudecli":
+	case "claude-cli":
 		return probeCommandAvailable("claude")
-	case "codex-cli", "codexcli":
+	case "codex-cli":
 		return probeCommandAvailable("codex")
 	default:
 		// For remote providers (OpenAI, Anthropic, Gemini, DeepSeek, etc.),

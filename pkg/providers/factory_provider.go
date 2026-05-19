@@ -136,7 +136,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		provider.SetProviderName(protocol)
 		return finalizeProviderFromConfig(provider, modelID, cfg)
 
-	case "azure", "azure-openai":
+	case "azure":
 		// Azure OpenAI uses deployment-based URLs, api-key header auth,
 		// and always sends max_completion_tokens.
 		if cfg.APIKey() == "" {
@@ -193,9 +193,8 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 
 	case "litellm", "lmstudio", "openrouter", "groq", "zhipu", "nvidia", "venice",
 		"ollama", "moonshot", "shengsuanyun", "siliconflow", "deepseek", "cerebras",
-		"vivgrid", "volcengine", "vllm", "qwen", "qwen-portal", "qwen-intl", "qwen-international", "dashscope-intl",
-		"qwen-us", "dashscope-us", "mistral", "avian", "longcat", "modelscope", "novita",
-		"coding-plan", "alibaba-coding", "qwen-coding", "zai", "mimo":
+		"vivgrid", "volcengine", "vllm", "qwen-portal", "qwen-intl", "qwen-us", "mistral",
+		"avian", "longcat", "modelscope", "novita", "alibaba-coding", "zai", "mimo":
 		// All other OpenAI-compatible HTTP providers
 		if cfg.APIKey() == "" && cfg.APIBase == "" && !isEmptyAPIKeyAllowed(protocol) {
 			return nil, "", fmt.Errorf("api_key or api_base is required for HTTP-based protocol %q", protocol)
@@ -307,7 +306,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.RequestTimeout,
 		), modelID, cfg)
 
-	case "coding-plan-anthropic", "alibaba-coding-anthropic":
+	case "alibaba-coding-anthropic":
 		// Alibaba Coding Plan with Anthropic-compatible API
 		apiBase := cfg.APIBase
 		if apiBase == "" {
@@ -326,21 +325,21 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	case "antigravity":
 		return finalizeProviderFromConfig(NewAntigravityProvider(), modelID, cfg)
 
-	case "claude-cli", "claudecli":
+	case "claude-cli":
 		workspace := cfg.Workspace
 		if workspace == "" {
 			workspace = "."
 		}
 		return finalizeProviderFromConfig(NewClaudeCliProvider(workspace), modelID, cfg)
 
-	case "codex-cli", "codexcli":
+	case "codex-cli":
 		workspace := cfg.Workspace
 		if workspace == "" {
 			workspace = "."
 		}
 		return finalizeProviderFromConfig(NewCodexCliProvider(workspace), modelID, cfg)
 
-	case "github-copilot", "copilot":
+	case "github-copilot":
 		apiBase := cfg.APIBase
 		if apiBase == "" {
 			apiBase = "localhost:4321"

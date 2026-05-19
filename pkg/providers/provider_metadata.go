@@ -35,7 +35,7 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		DefaultModelAllowed: true,
 		SupportsFetch:       true,
 		Priority:            100,
-		CommonModels:        []string{"gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1", "o3-mini"},
+		CommonModels:        []string{"gpt-5.4", "gpt-5.4-mini", "gpt-5.5"},
 		Aliases:             []string{"gpt"},
 		httpAPI:             true,
 	},
@@ -48,13 +48,9 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		CreateAllowed:       true,
 		DefaultModelAllowed: true,
 		Priority:            95,
-		CommonModels: []string{
-			"claude-sonnet-4-20250514",
-			"claude-haiku-4-20250414",
-			"claude-3-5-sonnet-20241022",
-		},
-		Aliases: []string{"claude"},
-		httpAPI: true,
+		CommonModels:        []string{"claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5"},
+		Aliases:             []string{"claude"},
+		httpAPI:             true,
 	},
 	"anthropic-messages": {
 		ID:                  "anthropic-messages",
@@ -65,6 +61,7 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		CreateAllowed:       true,
 		DefaultModelAllowed: true,
 		Priority:            94,
+		CommonModels:        []string{"claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5"},
 		httpAPI:             true,
 	},
 	"gemini": {
@@ -76,7 +73,7 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		CreateAllowed:       true,
 		DefaultModelAllowed: true,
 		Priority:            90,
-		CommonModels:        []string{"gemini-2.0-flash", "gemini-2.5-pro", "gemini-1.5-flash"},
+		CommonModels:        []string{"gemini-3.1-pro-preview", "gemini-3-flash-preview", "gemini-3.1-flash-lite"},
 		Aliases:             []string{"google"},
 		httpAPI:             true,
 	},
@@ -104,9 +101,10 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		SupportsFetch:       true,
 		Priority:            80,
 		CommonModels: []string{
-			"openai/gpt-4o",
-			"anthropic/claude-sonnet-4",
-			"google/gemini-2.0-flash",
+			"openai/gpt-5.4",
+			"anthropic/claude-opus-4.7",
+			"google/gemini-3.1-pro-preview",
+			"qwen/qwen3-coder-next",
 		},
 		httpAPI: true,
 	},
@@ -120,7 +118,7 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		DefaultModelAllowed: true,
 		SupportsFetch:       true,
 		Priority:            75,
-		CommonModels:        []string{"qwen-max", "qwen-plus", "qwen-turbo"},
+		CommonModels:        []string{"qwen3.6-max-preview", "qwen3.6-plus", "qwen3.6-flash", "qwen3-coder-next"},
 		Aliases:             []string{"qwen"},
 		httpAPI:             true,
 	},
@@ -134,7 +132,7 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		DefaultModelAllowed: true,
 		SupportsFetch:       true,
 		Priority:            74,
-		CommonModels:        []string{"qwen-max", "qwen-plus", "qwen-turbo"},
+		CommonModels:        []string{"qwen3.6-max-preview", "qwen3.6-plus", "qwen3.6-flash", "qwen3-coder-next"},
 		Aliases:             []string{"qwen-international", "dashscope-intl"},
 		httpAPI:             true,
 	},
@@ -147,8 +145,13 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		DefaultModelAllowed: true,
 		SupportsFetch:       true,
 		Priority:            70,
-		CommonModels:        []string{"moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"},
-		httpAPI:             true,
+		CommonModels: []string{
+			"kimi-k2.5",
+			"kimi-k2-thinking",
+			"kimi-k2-thinking-turbo",
+			"kimi-k2-turbo-preview",
+		},
+		httpAPI: true,
 	},
 	"volcengine": {
 		ID:                  "volcengine",
@@ -160,8 +163,12 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		DefaultModelAllowed: true,
 		SupportsFetch:       true,
 		Priority:            69,
-		CommonModels:        []string{"doubao-1.5-pro", "doubao-1.5-lite"},
-		httpAPI:             true,
+		CommonModels: []string{
+			"doubao-seed-1-6-251015",
+			"doubao-seed-1-6-flash-250828",
+			"doubao-seed-1-6-thinking",
+		},
+		httpAPI: true,
 	},
 	"zhipu": {
 		ID:                  "zhipu",
@@ -173,7 +180,7 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		DefaultModelAllowed: true,
 		SupportsFetch:       true,
 		Priority:            68,
-		CommonModels:        []string{"glm-4-plus", "glm-4-flash"},
+		CommonModels:        []string{"glm-5", "glm-4.7", "glm-4.5-air", "glm-4-flash-250414"},
 		Aliases:             []string{"glm"},
 		httpAPI:             true,
 	},
@@ -187,8 +194,13 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		DefaultModelAllowed: true,
 		SupportsFetch:       true,
 		Priority:            65,
-		CommonModels:        []string{"llama-3.3-70b-versatile", "mixtral-8x7b-32768"},
-		httpAPI:             true,
+		CommonModels: []string{
+			"openai/gpt-oss-120b",
+			"openai/gpt-oss-20b",
+			"llama-3.3-70b-versatile",
+			"qwen/qwen3-32b",
+		},
+		httpAPI: true,
 	},
 	"mistral": {
 		ID:                  "mistral",
@@ -200,8 +212,13 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		DefaultModelAllowed: true,
 		SupportsFetch:       true,
 		Priority:            64,
-		CommonModels:        []string{"mistral-large-latest", "mistral-small-latest"},
-		httpAPI:             true,
+		CommonModels: []string{
+			"mistral-large-latest",
+			"mistral-medium-3-5",
+			"mistral-small-latest",
+			"devstral-latest",
+		},
+		httpAPI: true,
 	},
 	"nvidia": {
 		ID:                  "nvidia",
@@ -213,8 +230,13 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		DefaultModelAllowed: true,
 		SupportsFetch:       true,
 		Priority:            63,
-		CommonModels:        []string{"meta/llama-3.1-405b-instruct"},
-		httpAPI:             true,
+		CommonModels: []string{
+			"openai/gpt-oss-120b",
+			"openai/gpt-oss-20b",
+			"qwen/qwen3-coder-480b-a35b-instruct",
+			"qwen/qwen3-next-80b-a3b-thinking",
+		},
+		httpAPI: true,
 	},
 	"cerebras": {
 		ID:                  "cerebras",
@@ -226,7 +248,7 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		DefaultModelAllowed: true,
 		SupportsFetch:       true,
 		Priority:            62,
-		CommonModels:        []string{"llama3.1-8b", "llama3.1-70b"},
+		CommonModels:        []string{"gpt-oss-120b", "zai-glm-4.7"},
 		httpAPI:             true,
 	},
 	"azure": {
@@ -237,7 +259,6 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		CreateAllowed:       true,
 		DefaultModelAllowed: true,
 		Priority:            61,
-		CommonModels:        []string{"gpt-4o", "gpt-4o-mini"},
 		Aliases:             []string{"azure-openai"},
 		httpAPI:             true,
 	},
@@ -312,7 +333,6 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		SupportsFetch:       true,
 		Local:               true,
 		Priority:            50,
-		CommonModels:        []string{"llama3", "mistral", "codellama", "qwen2.5"},
 		httpAPI:             true,
 	},
 	"vllm": {
@@ -462,11 +482,12 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		DefaultModelAllowed: true,
 		SupportsFetch:       true,
 		Priority:            37,
+		CommonModels:        []string{"glm-5", "glm-4.7", "glm-4.5-air", "glm-4-flash-250414"},
 		Aliases:             []string{"z.ai", "z-ai"},
 		httpAPI:             true,
 	},
-	"coding-plan": {
-		ID:                  "coding-plan",
+	"alibaba-coding": {
+		ID:                  "alibaba-coding",
 		DisplayName:         "Alibaba Coding Plan",
 		IconSlug:            "alibabacloud",
 		Domain:              "alibabacloud.com",
@@ -474,11 +495,12 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		CreateAllowed:       true,
 		DefaultModelAllowed: true,
 		Priority:            36.5,
-		Aliases:             []string{"alibaba-coding", "qwen-coding"},
+		CommonModels:        []string{"qwen3.6-plus", "kimi-k2.5", "glm-5", "MiniMax-M2.5"},
+		Aliases:             []string{"coding-plan", "qwen-coding"},
 		httpAPI:             true,
 	},
-	"coding-plan-anthropic": {
-		ID:                  "coding-plan-anthropic",
+	"alibaba-coding-anthropic": {
+		ID:                  "alibaba-coding-anthropic",
 		DisplayName:         "Alibaba Coding Plan (Anthropic)",
 		IconSlug:            "alibabacloud",
 		Domain:              "alibabacloud.com",
@@ -486,7 +508,8 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		CreateAllowed:       true,
 		DefaultModelAllowed: true,
 		Priority:            36.25,
-		Aliases:             []string{"alibaba-coding-anthropic"},
+		CommonModels:        []string{"qwen3.6-plus", "kimi-k2.5", "glm-5", "MiniMax-M2.5"},
+		Aliases:             []string{"coding-plan-anthropic"},
 		httpAPI:             true,
 	},
 	"novita": {
@@ -520,6 +543,7 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		CreateAllowed:       true,
 		DefaultModelAllowed: true,
 		Priority:            34,
+		CommonModels:        []string{"qwen3.6-max-preview", "qwen3.6-plus", "qwen3.6-flash", "qwen3-coder-next"},
 		Aliases:             []string{"dashscope-us"},
 		httpAPI:             true,
 	},
@@ -528,7 +552,12 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 var normalizedModelProviderAliasesByName = buildModelProviderAliasMap()
 
 func buildModelProviderAliasMap() map[string]string {
-	aliases := make(map[string]string, len(modelProviderOptionsByName)*2)
+	totalAliases := 0
+	for _, option := range modelProviderOptionsByName {
+		totalAliases += len(option.Aliases)
+	}
+
+	aliases := make(map[string]string, len(modelProviderOptionsByName)+totalAliases)
 	for provider, option := range modelProviderOptionsByName {
 		aliases[provider] = provider
 		for _, alias := range option.Aliases {
