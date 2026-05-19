@@ -142,13 +142,43 @@ func (m *mockReasoningStreamer) FinalizeReasoning(_ context.Context, content str
 	return nil
 }
 
+type recordingStreamSegment struct {
+	updates       []string
+	finals        []string
+	finalUsage    *bus.ContextUsage
+	canceledCount int
+}
+
+func (s *recordingStreamSegment) Update(_ context.Context, content string) error {
+	s.updates = append(s.updates, content)
+	return nil
+}
+
+func (s *recordingStreamSegment) Finalize(ctx context.Context, content string) error {
+	return s.FinalizeWithContext(ctx, content, nil)
+}
+
+func (s *recordingStreamSegment) FinalizeWithContext(_ context.Context, content string, usage *bus.ContextUsage) error {
+	s.finals = append(s.finals, content)
+	s.finalUsage = usage
+	return nil
+}
+
+func (s *recordingStreamSegment) Cancel(context.Context) {
+	s.canceledCount++
+}
+
 type mockStreamingChannel struct {
 	mockMessageEditor
 	streamer        Streamer
+	beginStreamFn   func(context.Context, string) (Streamer, error)
 	resolveChatIDFn func(chatID string, outboundCtx *bus.InboundContext) string
 }
 
-func (m *mockStreamingChannel) BeginStream(context.Context, string) (Streamer, error) {
+func (m *mockStreamingChannel) BeginStream(ctx context.Context, chatID string) (Streamer, error) {
+	if m.beginStreamFn != nil {
+		return m.beginStreamFn(ctx, chatID)
+	}
 	if m.streamer == nil {
 		return nil, errors.New("missing streamer")
 	}
@@ -2038,6 +2068,126 @@ func TestGetStreamer_PreservesReasoningStreamer(t *testing.T) {
 	}
 }
 
+func TestGetStreamer_SplitOnMarkerStreamsSeparateSegments(t *testing.T) {
+	m := newTestManager()
+	m.config = &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				SplitOnMarker: true,
+			},
+		},
+	}
+
+	var segments []*recordingStreamSegment
+	ch := &mockStreamingChannel{
+		beginStreamFn: func(context.Context, string) (Streamer, error) {
+			segment := &recordingStreamSegment{}
+			segments = append(segments, segment)
+			return segment, nil
+		},
+	}
+	m.channels["test"] = ch
+
+	streamer, ok := m.GetStreamer(context.Background(), "test", "123", "session-1")
+	if !ok {
+		t.Fatal("expected streamer to be available")
+	}
+	contextStreamer, ok := streamer.(bus.ContextUsageStreamer)
+	if !ok {
+		t.Fatal("split streamer should preserve ContextUsageStreamer")
+	}
+
+	if err := streamer.Update(context.Background(), "hello"); err != nil {
+		t.Fatalf("Update(first) error = %v", err)
+	}
+	if err := streamer.Update(context.Background(), "hello<|[SPLIT]|>world"); err != nil {
+		t.Fatalf("Update(split) error = %v", err)
+	}
+	if err := streamer.Update(context.Background(), "hello<|[SPLIT]|>world!"); err != nil {
+		t.Fatalf("Update(second segment) error = %v", err)
+	}
+	usage := &bus.ContextUsage{UsedTokens: 10, TotalTokens: 100}
+	if err := contextStreamer.FinalizeWithContext(
+		context.Background(),
+		"hello<|[SPLIT]|>world!",
+		usage,
+	); err != nil {
+		t.Fatalf("FinalizeWithContext() error = %v", err)
+	}
+
+	if len(segments) != 2 {
+		t.Fatalf("segments = %d, want 2", len(segments))
+	}
+	if got := segments[0].updates; len(got) != 1 || got[0] != "hello" {
+		t.Fatalf("segment 0 updates = %v, want [hello]", got)
+	}
+	if got := segments[0].finals; len(got) != 1 || got[0] != "hello" {
+		t.Fatalf("segment 0 finals = %v, want [hello]", got)
+	}
+	if got := segments[1].updates; len(got) != 2 || got[0] != "world" || got[1] != "world!" {
+		t.Fatalf("segment 1 updates = %v, want [world world!]", got)
+	}
+	if got := segments[1].finals; len(got) != 1 || got[0] != "world!" {
+		t.Fatalf("segment 1 finals = %v, want [world!]", got)
+	}
+	if segments[1].finalUsage != usage {
+		t.Fatalf("final usage = %#v, want original usage", segments[1].finalUsage)
+	}
+	if _, ok := m.streamActive.Load("test:123:session-1"); !ok {
+		t.Fatal("expected streamActive marker to be recorded after split stream finalize")
+	}
+}
+
+func TestGetStreamer_SplitOnMarkerKeepsReasoningOnInitialStreamer(t *testing.T) {
+	m := newTestManager()
+	m.config = &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				SplitOnMarker: true,
+			},
+		},
+	}
+
+	initial := &mockReasoningStreamer{}
+	next := &recordingStreamSegment{}
+	callCount := 0
+	ch := &mockStreamingChannel{
+		beginStreamFn: func(context.Context, string) (Streamer, error) {
+			callCount++
+			if callCount == 1 {
+				return initial, nil
+			}
+			return next, nil
+		},
+	}
+	m.channels["test"] = ch
+
+	streamer, ok := m.GetStreamer(context.Background(), "test", "123", "")
+	if !ok {
+		t.Fatal("expected streamer to be available")
+	}
+	if err := streamer.Update(context.Background(), "hello<|[SPLIT]|>world"); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	reasoningStreamer, ok := streamer.(bus.ReasoningStreamer)
+	if !ok {
+		t.Fatal("split streamer should preserve ReasoningStreamer")
+	}
+	if err := reasoningStreamer.UpdateReasoning(context.Background(), "thinking"); err != nil {
+		t.Fatalf("UpdateReasoning() error = %v", err)
+	}
+	if err := reasoningStreamer.FinalizeReasoning(context.Background(), "final thought"); err != nil {
+		t.Fatalf("FinalizeReasoning() error = %v", err)
+	}
+
+	if got := initial.reasoningUpdates; len(got) != 1 || got[0] != "thinking" {
+		t.Fatalf("initial reasoning updates = %v, want [thinking]", got)
+	}
+	if initial.reasoningFinal != "final thought" {
+		t.Fatalf("initial reasoning final = %q, want final thought", initial.reasoningFinal)
+	}
+}
+
 func TestGetStreamer_FinalizeSeparateMessagesClearsTrackedToolFeedback(t *testing.T) {
 	m := newTestManager()
 	m.config = &config.Config{
@@ -2249,6 +2399,68 @@ func TestRunWorker_ToolFeedbackSkipsMarkerSplitting(t *testing.T) {
 	}
 	if received[0] != content {
 		t.Fatalf("received[0] = %q, want %q", received[0], content)
+	}
+}
+
+func TestRunWorker_FinalizedStreamSuppressesMarkerSplitBeforeSending(t *testing.T) {
+	m := newTestManager()
+	m.config = &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				SplitOnMarker: true,
+			},
+		},
+	}
+
+	var (
+		mu       sync.Mutex
+		received []string
+	)
+	ch := &mockChannel{
+		sendFn: func(_ context.Context, msg bus.OutboundMessage) error {
+			mu.Lock()
+			received = append(received, msg.Content)
+			mu.Unlock()
+			return nil
+		},
+	}
+
+	w := &channelWorker{
+		ch:      ch,
+		queue:   make(chan bus.OutboundMessage, 1),
+		done:    make(chan struct{}),
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go m.runWorker(ctx, "test", w)
+
+	streamKey := streamSuppressionKey("test", "123", "session-1")
+	m.streamActive.Store(streamKey, true)
+	w.queue <- testOutboundMessage(bus.OutboundMessage{
+		Channel:    "test",
+		ChatID:     "123",
+		SessionKey: "session-1",
+		Content:    "streamed full reply<|[SPLIT]|>duplicate chunk",
+		Context: bus.InboundContext{
+			Channel: "test",
+			ChatID:  "123",
+			Raw: map[string]string{
+				"outbound_kind": "final",
+			},
+		},
+	})
+
+	time.Sleep(100 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(received) != 0 {
+		t.Fatalf("received split duplicate messages = %v, want none", received)
+	}
+	if _, ok := m.streamActive.Load(streamKey); ok {
+		t.Fatal("expected finalized stream marker to be consumed")
 	}
 }
 
