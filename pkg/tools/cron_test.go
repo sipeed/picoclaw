@@ -345,6 +345,24 @@ func TestCronTool_ExecuteJobSkipsNoReplySentinel(t *testing.T) {
 	}
 }
 
+func TestCronTool_ExecuteJobSkipsHeartbeatOKSentinel(t *testing.T) {
+	executor := &stubJobExecutor{response: " HEARTBEAT_OK \n"}
+	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())
+
+	job := &cron.CronJob{ID: "job-heartbeat-ok"}
+	job.Payload.Channel = "telegram"
+	job.Payload.To = "chat-1"
+	job.Payload.Message = "heartbeat"
+
+	if got := tool.ExecuteJob(context.Background(), job); got != "ok" {
+		t.Fatalf("ExecuteJob() = %q, want ok", got)
+	}
+
+	if executor.publishedResp != "" {
+		t.Fatalf("unexpected published response: %q", executor.publishedResp)
+	}
+}
+
 func TestCronTool_ExecuteJobSkipsWhenMessageToolAlreadySent(t *testing.T) {
 	executor := &stubJobExecutor{response: "Sent.", alreadySent: true}
 	tool := newTestCronToolWithExecutorAndConfig(t, executor, config.DefaultConfig())

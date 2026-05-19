@@ -375,7 +375,8 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 	}
 
 	if response != "" {
-		if strings.EqualFold(strings.TrimSpace(response), "NO_REPLY") {
+		trimmed := strings.TrimSpace(response)
+		if strings.EqualFold(trimmed, "NO_REPLY") || strings.EqualFold(trimmed, "HEARTBEAT_OK") {
 			return "ok"
 		}
 		t.executor.PublishResponseIfNeeded(ctx, channel, chatID, sessionKey, response)
