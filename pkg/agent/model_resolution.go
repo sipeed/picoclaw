@@ -75,6 +75,7 @@ func candidateFromModelConfig(
 	return providers.FallbackCandidate{
 		Provider:    protocol,
 		Model:       modelID,
+		DisplayName: strings.TrimSpace(mc.ModelName),
 		RPM:         mc.RPM,
 		IdentityKey: modelConfigIdentityKey(mc),
 	}, true
@@ -147,8 +148,9 @@ func resolveModelCandidate(
 	}
 
 	return providers.FallbackCandidate{
-		Provider: ref.Provider,
-		Model:    ref.Model,
+		Provider:    ref.Provider,
+		Model:       ref.Model,
+		DisplayName: raw,
 	}, true
 }
 
@@ -195,6 +197,18 @@ func resolvedCandidateProvider(candidates []providers.FallbackCandidate, fallbac
 		return candidates[0].Provider
 	}
 	return fallback
+}
+
+func resolvedCandidateModelName(candidates []providers.FallbackCandidate, fallback string) string {
+	if len(candidates) > 0 {
+		if name := modelAliasFromCandidateIdentityKey(candidates[0].IdentityKey); strings.TrimSpace(name) != "" {
+			return name
+		}
+		if displayName := strings.TrimSpace(candidates[0].DisplayName); displayName != "" {
+			return displayName
+		}
+	}
+	return strings.TrimSpace(fallback)
 }
 
 func resolvedModelConfig(cfg *config.Config, modelName, workspace string) (*config.ModelConfig, error) {

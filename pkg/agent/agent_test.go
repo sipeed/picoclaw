@@ -312,7 +312,7 @@ func TestPublishPicoReasoningIncludesSessionKey(t *testing.T) {
 	defer cleanup()
 	_ = provider
 
-	al.publishPicoReasoning(context.Background(), "reasoning", "pico-chat", "session-1")
+	al.publishPicoReasoning(context.Background(), "reasoning", "pico-chat", "session-1", "")
 
 	select {
 	case outbound := <-msgBus.OutboundChan():

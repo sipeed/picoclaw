@@ -328,6 +328,7 @@ func TestEngineIngestPreservesReasoningContent(t *testing.T) {
 		{
 			Role:             "assistant",
 			Content:          "world",
+			ModelName:        "gpt-5.4-mini",
 			ReasoningContent: "let me think this through",
 			TokenCount:       4,
 		},
@@ -353,6 +354,9 @@ func TestEngineIngestPreservesReasoningContent(t *testing.T) {
 			"let me think this through",
 		)
 	}
+	if stored[0].ModelName != "gpt-5.4-mini" {
+		t.Errorf("stored[0].ModelName = %q, want %q", stored[0].ModelName, "gpt-5.4-mini")
+	}
 
 	result, err := eng.Assemble(ctx, "agent:reasoning", AssembleInput{Budget: 1000})
 	if err != nil {
@@ -367,6 +371,165 @@ func TestEngineIngestPreservesReasoningContent(t *testing.T) {
 			result.Messages[0].ReasoningContent,
 			"let me think this through",
 		)
+	}
+	if result.Messages[0].ModelName != "gpt-5.4-mini" {
+		t.Errorf("assembled model_name = %q, want %q", result.Messages[0].ModelName, "gpt-5.4-mini")
+	}
+}
+
+func TestBootstrapRepairsMissingModelName(t *testing.T) {
+	eng := newTestEngine(t)
+	ctx := context.Background()
+	sessionKey := "agent:repair-model-name"
+
+	conv, err := eng.store.GetOrCreateConversation(ctx, sessionKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateConversation: %v", err)
+	}
+
+	userMsg, err := eng.store.AddMessage(ctx, conv.ConversationID, "user", "hello", 3)
+	if err != nil {
+		t.Fatalf("AddMessage user: %v", err)
+	}
+
+	assistantMsg, err := eng.store.AddMessage(ctx, conv.ConversationID, "assistant", "world", 3)
+	if err != nil {
+		t.Fatalf("AddMessage assistant: %v", err)
+	}
+
+	err = eng.store.AppendContextMessages(
+		ctx,
+		conv.ConversationID,
+		[]int64{userMsg.ID, assistantMsg.ID},
+	)
+	if err != nil {
+		t.Fatalf("AppendContextMessages: %v", err)
+	}
+
+	err = eng.Bootstrap(ctx, sessionKey, []Message{
+		{Role: "user", Content: "hello", TokenCount: 3},
+		{Role: "assistant", Content: "world", ModelName: "gpt-5.4", TokenCount: 3},
+	})
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+
+	stored, err := eng.store.GetMessages(ctx, conv.ConversationID, 10, 0)
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if len(stored) != 2 {
+		t.Fatalf("stored messages = %d, want 2", len(stored))
+	}
+	if stored[1].ModelName != "gpt-5.4" {
+		t.Fatalf("stored[1].ModelName = %q, want %q", stored[1].ModelName, "gpt-5.4")
+	}
+}
+
+func TestBootstrapRepairsReasoningContentAndModelNameTogether(t *testing.T) {
+	eng := newTestEngine(t)
+	ctx := context.Background()
+	sessionKey := "agent:repair-both-fields"
+
+	conv, err := eng.store.GetOrCreateConversation(ctx, sessionKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateConversation: %v", err)
+	}
+
+	userMsg, err := eng.store.AddMessage(ctx, conv.ConversationID, "user", "hello", 3)
+	if err != nil {
+		t.Fatalf("AddMessage user: %v", err)
+	}
+
+	assistantMsg, err := eng.store.AddMessage(ctx, conv.ConversationID, "assistant", "world", 3)
+	if err != nil {
+		t.Fatalf("AddMessage assistant: %v", err)
+	}
+
+	err = eng.store.AppendContextMessages(ctx, conv.ConversationID, []int64{userMsg.ID, assistantMsg.ID})
+	if err != nil {
+		t.Fatalf("AppendContextMessages: %v", err)
+	}
+
+	err = eng.Bootstrap(ctx, sessionKey, []Message{
+		{Role: "user", Content: "hello", TokenCount: 3},
+		{
+			Role:             "assistant",
+			Content:          "world",
+			ModelName:        "gpt-5.4",
+			ReasoningContent: "let me think this through",
+			TokenCount:       3,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+
+	stored, err := eng.store.GetMessages(ctx, conv.ConversationID, 10, 0)
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if len(stored) != 2 {
+		t.Fatalf("stored messages = %d, want 2", len(stored))
+	}
+	if stored[1].ReasoningContent != "let me think this through" {
+		t.Fatalf("stored[1].ReasoningContent = %q, want %q", stored[1].ReasoningContent, "let me think this through")
+	}
+	if stored[1].ModelName != "gpt-5.4" {
+		t.Fatalf("stored[1].ModelName = %q, want %q", stored[1].ModelName, "gpt-5.4")
+	}
+}
+
+func TestBootstrapRepairsIncorrectNonEmptyModelName(t *testing.T) {
+	eng := newTestEngine(t)
+	ctx := context.Background()
+	sessionKey := "agent:repair-wrong-model-name"
+
+	conv, err := eng.store.GetOrCreateConversation(ctx, sessionKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateConversation: %v", err)
+	}
+
+	userMsg, err := eng.store.AddMessage(ctx, conv.ConversationID, "user", "hello", 3)
+	if err != nil {
+		t.Fatalf("AddMessage user: %v", err)
+	}
+
+	assistantMsg, err := eng.store.AddMessageWithReasoning(
+		ctx,
+		conv.ConversationID,
+		"assistant",
+		"world",
+		"wrong-model",
+		"",
+		3,
+	)
+	if err != nil {
+		t.Fatalf("AddMessageWithReasoning assistant: %v", err)
+	}
+
+	err = eng.store.AppendContextMessages(ctx, conv.ConversationID, []int64{userMsg.ID, assistantMsg.ID})
+	if err != nil {
+		t.Fatalf("AppendContextMessages: %v", err)
+	}
+
+	err = eng.Bootstrap(ctx, sessionKey, []Message{
+		{Role: "user", Content: "hello", TokenCount: 3},
+		{Role: "assistant", Content: "world", ModelName: "gpt-5.4", TokenCount: 3},
+	})
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+
+	stored, err := eng.store.GetMessages(ctx, conv.ConversationID, 10, 0)
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if len(stored) != 2 {
+		t.Fatalf("stored messages = %d, want 2", len(stored))
+	}
+	if stored[1].ModelName != "gpt-5.4" {
+		t.Fatalf("stored[1].ModelName = %q, want %q", stored[1].ModelName, "gpt-5.4")
 	}
 }
 

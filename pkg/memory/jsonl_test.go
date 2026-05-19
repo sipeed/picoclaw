@@ -130,6 +130,32 @@ func TestAddFullMessage_WithToolCalls(t *testing.T) {
 	}
 }
 
+func TestAddFullMessage_PreservesModelName(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	msg := providers.Message{
+		Role:      "assistant",
+		Content:   "done",
+		ModelName: "gpt-5.4-mini",
+	}
+
+	if err := store.AddFullMessage(ctx, "model-name", msg); err != nil {
+		t.Fatalf("AddFullMessage: %v", err)
+	}
+
+	history, err := store.GetHistory(ctx, "model-name")
+	if err != nil {
+		t.Fatalf("GetHistory: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected 1, got %d", len(history))
+	}
+	if history[0].ModelName != "gpt-5.4-mini" {
+		t.Fatalf("ModelName = %q, want %q", history[0].ModelName, "gpt-5.4-mini")
+	}
+}
+
 func TestAddFullMessage_ToolCallID(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()

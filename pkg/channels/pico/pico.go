@@ -325,6 +325,9 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 		PayloadKeyContent: content,
 		"message_id":      msgID,
 	}
+	if modelName := strings.TrimSpace(msg.Context.Raw[PayloadKeyModelName]); modelName != "" {
+		payload[PayloadKeyModelName] = modelName
+	}
 	switch {
 	case isThought:
 		payload[PayloadKeyKind] = MessageKindThought
@@ -357,6 +360,15 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 // EditMessage implements channels.MessageEditor.
 func (c *PicoChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
 	return c.editMessage(ctx, chatID, messageID, content, nil)
+}
+
+func (c *PicoChannel) EditMessageWithPayload(
+	ctx context.Context,
+	chatID string,
+	messageID string,
+	payload map[string]any,
+) error {
+	return c.editMessagePayload(ctx, chatID, messageID, payload, nil)
 }
 
 // DeleteMessage implements channels.MessageDeleter.
@@ -419,14 +431,23 @@ func (c *PicoChannel) finalizeTrackedToolFeedbackMessage(
 	ctx context.Context,
 	chatID string,
 	content string,
-	editFn func(context.Context, string, string, string, *bus.ContextUsage) error,
+	editFn func(context.Context, string, string, map[string]any, *bus.ContextUsage) error,
+	payload map[string]any,
 	contextUsage *bus.ContextUsage,
 ) ([]string, bool) {
 	msgID, baseContent, ok := c.takeToolFeedbackMessage(chatID)
 	if !ok || editFn == nil {
 		return nil, false
 	}
-	if err := editFn(ctx, chatID, msgID, content, contextUsage); err != nil {
+	if payload == nil {
+		payload = map[string]any{
+			PayloadKeyContent: content,
+		}
+	}
+	if _, ok := payload[PayloadKeyContent]; !ok {
+		payload[PayloadKeyContent] = content
+	}
+	if err := editFn(ctx, chatID, msgID, payload, contextUsage); err != nil {
 		c.RecordToolFeedbackMessage(chatID, msgID, baseContent)
 		return nil, false
 	}
@@ -437,7 +458,20 @@ func (c *PicoChannel) FinalizeToolFeedbackMessage(ctx context.Context, msg bus.O
 	if !outboundMessageFinalizesTrackedToolFeedback(msg) {
 		return nil, false
 	}
-	return c.finalizeTrackedToolFeedbackMessage(ctx, msg.ChatID, msg.Content, c.editMessage, msg.ContextUsage)
+	payload := map[string]any{
+		PayloadKeyContent: msg.Content,
+	}
+	if modelName := strings.TrimSpace(msg.Context.Raw[PayloadKeyModelName]); modelName != "" {
+		payload[PayloadKeyModelName] = modelName
+	}
+	return c.finalizeTrackedToolFeedbackMessage(
+		ctx,
+		msg.ChatID,
+		msg.Content,
+		c.editMessagePayload,
+		payload,
+		msg.ContextUsage,
+	)
 }
 
 // StartTyping implements channels.TypingCapable.
@@ -744,6 +778,9 @@ func (c *PicoChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessag
 		"attachments":     attachments,
 		"message_id":      msgID,
 	})
+	if modelName := strings.TrimSpace(msg.Context.Raw[PayloadKeyModelName]); modelName != "" {
+		outMsg.Payload[PayloadKeyModelName] = modelName
+	}
 
 	if err := c.broadcastToSession(msg.ChatID, outMsg); err != nil {
 		return nil, err
@@ -1358,11 +1395,30 @@ func (c *PicoChannel) editMessage(
 	content string,
 	contextUsage *bus.ContextUsage,
 ) error {
-	payload := map[string]any{
-		"message_id": messageID,
-		"content":    content,
+	return c.editMessagePayload(ctx, chatID, messageID, map[string]any{
+		PayloadKeyContent: content,
+	}, contextUsage)
+}
+
+func (c *PicoChannel) editMessagePayload(
+	ctx context.Context,
+	chatID string,
+	messageID string,
+	payload map[string]any,
+	contextUsage *bus.ContextUsage,
+) error {
+	if payload == nil {
+		payload = map[string]any{}
 	}
-	setContextUsagePayload(payload, contextUsage)
-	outMsg := newMessage(TypeMessageUpdate, payload)
+	normalized := make(map[string]any, len(payload)+1)
+	for key, value := range payload {
+		normalized[key] = value
+	}
+	if _, ok := normalized[PayloadKeyContent]; !ok {
+		normalized[PayloadKeyContent] = ""
+	}
+	normalized["message_id"] = messageID
+	setContextUsagePayload(normalized, contextUsage)
+	outMsg := newMessage(TypeMessageUpdate, normalized)
 	return c.broadcastToSession(chatID, outMsg)
 }

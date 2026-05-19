@@ -174,12 +174,16 @@ func TestProviderToSeahorseMessageWithReasoning(t *testing.T) {
 	msg := protocoltypes.Message{
 		Role:             "assistant",
 		Content:          "response text",
+		ModelName:        "gpt-5.4-mini",
 		ReasoningContent: "I thought about this carefully",
 	}
 
 	result := providerToSeahorseMessage(msg)
 	if result.ReasoningContent != "I thought about this carefully" {
 		t.Errorf("ReasoningContent = %q, want 'I thought about this carefully'", result.ReasoningContent)
+	}
+	if result.ModelName != "gpt-5.4-mini" {
+		t.Errorf("ModelName = %q, want %q", result.ModelName, "gpt-5.4-mini")
 	}
 }
 
@@ -189,6 +193,7 @@ func TestSeahorseToProviderMessagesWithReasoning(t *testing.T) {
 			{
 				Role:             "assistant",
 				Content:          "response",
+				ModelName:        "gpt-5.4",
 				ReasoningContent: "thinking process",
 			},
 		},
@@ -200,6 +205,9 @@ func TestSeahorseToProviderMessagesWithReasoning(t *testing.T) {
 	}
 	if messages[0].ReasoningContent != "thinking process" {
 		t.Errorf("ReasoningContent = %q, want 'thinking process'", messages[0].ReasoningContent)
+	}
+	if messages[0].ModelName != "gpt-5.4" {
+		t.Errorf("ModelName = %q, want %q", messages[0].ModelName, "gpt-5.4")
 	}
 }
 

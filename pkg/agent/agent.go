@@ -600,6 +600,12 @@ func (al *AgentLoop) runAgentLoop(
 			Content:      result.finalContent,
 			ContextUsage: computeContextUsage(agent, opts.Dispatch.SessionKey),
 		}
+		if modelName := strings.TrimSpace(result.modelName); modelName != "" {
+			if msg.Context.Raw == nil {
+				msg.Context.Raw = make(map[string]string, 1)
+			}
+			msg.Context.Raw["model_name"] = modelName
+		}
 		markFinalOutbound(&msg)
 		al.bus.PublishOutbound(ctx, msg)
 	}

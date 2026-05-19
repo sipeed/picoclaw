@@ -191,6 +191,19 @@ func outboundMessageBypassesPlaceholderEdit(msg bus.OutboundMessage) bool {
 	return strings.EqualFold(kind, "thought") || strings.EqualFold(kind, "tool_calls")
 }
 
+func outboundMessageEditPayload(msg bus.OutboundMessage, content string) map[string]any {
+	payload := map[string]any{
+		"content": content,
+	}
+	if len(msg.Context.Raw) == 0 {
+		return payload
+	}
+	if modelName := strings.TrimSpace(msg.Context.Raw["model_name"]); modelName != "" {
+		payload["model_name"] = modelName
+	}
+	return payload
+}
+
 func outboundMediaChannel(msg bus.OutboundMediaMessage) string {
 	return msg.Context.Channel
 }
@@ -394,7 +407,16 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 					if deleter, ok := ch.(MessageDeleter); ok {
 						deleter.DeleteMessage(ctx, chatID, entry.id) // best effort
 					} else if editor, ok := ch.(MessageEditor); ok {
-						editor.EditMessage(ctx, chatID, entry.id, msg.Content) // fallback
+						if payloadEditor, ok := ch.(MessageEditorWithPayload); ok {
+							_ = payloadEditor.EditMessageWithPayload(
+								ctx,
+								chatID,
+								entry.id,
+								outboundMessageEditPayload(msg, msg.Content),
+							)
+						} else {
+							editor.EditMessage(ctx, chatID, entry.id, msg.Content) // fallback
+						}
 					}
 				}
 			}
@@ -446,7 +468,18 @@ func (m *Manager) preSend(ctx context.Context, name string, msg bus.OutboundMess
 					trackedContent = prepareToolFeedbackMessageContent(ch, msg.Content)
 					content = InitialAnimatedToolFeedbackContent(trackedContent)
 				}
-				if err := editor.EditMessage(ctx, chatID, entry.id, content); err == nil {
+				err := func() error {
+					if payloadEditor, ok := ch.(MessageEditorWithPayload); ok {
+						return payloadEditor.EditMessageWithPayload(
+							ctx,
+							chatID,
+							entry.id,
+							outboundMessageEditPayload(msg, content),
+						)
+					}
+					return editor.EditMessage(ctx, chatID, entry.id, content)
+				}()
+				if err == nil {
 					trackedChatID := trackedToolFeedbackMessageChatID(ch, chatID, &msg.Context)
 					if tracker, ok := ch.(toolFeedbackMessageTracker); ok && isToolFeedback {
 						tracker.RecordToolFeedbackMessage(trackedChatID, entry.id, trackedContent)

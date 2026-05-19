@@ -180,7 +180,11 @@ toolLoop:
 							toolFeedbackArgsPreview(toolArgs, toolFeedbackMaxLen),
 						)
 						fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
-						_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurnWithKind(ts, feedbackMsg, messageKindToolFeedback))
+						_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurnWithOptions(
+							ts,
+							feedbackMsg,
+							outboundTurnMessageOptions{kind: messageKindToolFeedback},
+						))
 						fbCancel()
 					}
 
@@ -467,7 +471,11 @@ toolLoop:
 				toolFeedbackArgsPreview(toolArgs, toolFeedbackMaxLen),
 			)
 			fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
-			_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurnWithKind(ts, feedbackMsg, messageKindToolFeedback))
+			_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurnWithOptions(
+				ts,
+				feedbackMsg,
+				outboundTurnMessageOptions{kind: messageKindToolFeedback},
+			))
 			fbCancel()
 		}
 

@@ -258,6 +258,7 @@ func (e *Engine) Ingest(ctx context.Context, sessionKey string, messages []Messa
 				conv.ConversationID,
 				msg.Role,
 				msg.Parts,
+				msg.ModelName,
 				msg.ReasoningContent,
 				msg.TokenCount,
 			)
@@ -267,6 +268,7 @@ func (e *Engine) Ingest(ctx context.Context, sessionKey string, messages []Messa
 				conv.ConversationID,
 				msg.Role,
 				msg.Content,
+				msg.ModelName,
 				msg.ReasoningContent,
 				msg.TokenCount,
 			)
@@ -431,6 +433,31 @@ func (e *Engine) Bootstrap(ctx context.Context, sessionKey string, messages []Me
 		return fmt.Errorf("bootstrap: get messages: %w", err)
 	}
 
+	// Migration repair path: old SeaHorse rows may be missing reasoning_content
+	// even though the canonical JSONL history already has it. Backfill those
+	// rows in place so we do not treat this as edited history and leave stale
+	// summaries/context behind after a partial raw-message rebuild.
+	repairedReasoning, err := e.repairBootstrapReasoningContent(ctx, dbMsgs, messages)
+	if err != nil {
+		return fmt.Errorf("bootstrap: repair reasoning_content: %w", err)
+	}
+	repairedModelName, err := e.repairBootstrapModelName(ctx, dbMsgs, messages)
+	if err != nil {
+		return fmt.Errorf("bootstrap: repair model_name: %w", err)
+	}
+	if (repairedReasoning || repairedModelName) && len(dbMsgs) == len(messages) {
+		matched := true
+		for i := range messages {
+			if !messageMatches(dbMsgs[i], messages[i]) {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return nil
+		}
+	}
+
 	// Fast path: DB has same count and exact match → no-op
 	if len(dbMsgs) == len(messages) {
 		matched := true
@@ -445,16 +472,6 @@ func (e *Engine) Bootstrap(ctx context.Context, sessionKey string, messages []Me
 		}
 	}
 
-	// Migration repair path: old SeaHorse rows may be missing reasoning_content
-	// even though the canonical JSONL history already has it. Backfill those
-	// rows in place so we do not treat this as edited history and leave stale
-	// summaries/context behind after a partial raw-message rebuild.
-	if repaired, err := e.repairBootstrapReasoningContent(ctx, dbMsgs, messages); err != nil {
-		return fmt.Errorf("bootstrap: repair reasoning_content: %w", err)
-	} else if repaired && len(dbMsgs) == len(messages) {
-		return nil
-	}
-
 	// Find longest matching prefix from the start
 	anchor := -1
 	compareLen := min(len(dbMsgs), len(messages))
@@ -465,14 +482,16 @@ func (e *Engine) Bootstrap(ctx context.Context, sessionKey string, messages []Me
 		} else {
 			// Mismatch detected - log details and rebuild
 			logger.InfoCF("seahorse", "bootstrap: mismatch detected", map[string]any{
-				"conv_id":     conv.ConversationID,
-				"index":       i,
-				"db_role":     dbMsgs[i].Role,
-				"db_content":  truncate(dbMsgs[i].Content, 50),
-				"db_parts":    len(dbMsgs[i].Parts),
-				"msg_role":    messages[i].Role,
-				"msg_content": truncate(messages[i].Content, 50),
-				"msg_parts":   len(messages[i].Parts),
+				"conv_id":        conv.ConversationID,
+				"index":          i,
+				"db_role":        dbMsgs[i].Role,
+				"db_content":     truncate(dbMsgs[i].Content, 50),
+				"db_parts":       len(dbMsgs[i].Parts),
+				"db_model_name":  dbMsgs[i].ModelName,
+				"msg_role":       messages[i].Role,
+				"msg_content":    truncate(messages[i].Content, 50),
+				"msg_parts":      len(messages[i].Parts),
+				"msg_model_name": messages[i].ModelName,
 			})
 			break
 		}
@@ -559,7 +578,7 @@ func (e *Engine) repairBootstrapReasoningContent(ctx context.Context, dbMsgs, me
 	}
 
 	for i := range overlap {
-		if !messageMatchesIgnoringReasoning(dbMsgs[i], messages[i]) {
+		if !messageMatchesIgnoringReasoningAndModelName(dbMsgs[i], messages[i]) {
 			return false, nil
 		}
 		if dbMsgs[i].ReasoningContent == messages[i].ReasoningContent {
@@ -596,6 +615,57 @@ func (e *Engine) repairBootstrapReasoningContent(ctx context.Context, dbMsgs, me
 	return true, nil
 }
 
+func (e *Engine) repairBootstrapModelName(ctx context.Context, dbMsgs, messages []Message) (bool, error) {
+	if len(dbMsgs) == 0 || len(messages) == 0 {
+		return false, nil
+	}
+
+	overlap := min(len(messages), len(dbMsgs))
+
+	var updates []struct {
+		index     int
+		messageID int64
+		modelName string
+	}
+
+	for i := range overlap {
+		if !messageMatchesIgnoringReasoningAndModelName(dbMsgs[i], messages[i]) {
+			return false, nil
+		}
+		if dbMsgs[i].ModelName == messages[i].ModelName {
+			continue
+		}
+		if messages[i].ModelName == "" {
+			return false, nil
+		}
+		updates = append(updates, struct {
+			index     int
+			messageID int64
+			modelName string
+		}{
+			index:     i,
+			messageID: dbMsgs[i].ID,
+			modelName: messages[i].ModelName,
+		})
+	}
+
+	if len(updates) == 0 {
+		return false, nil
+	}
+
+	for _, update := range updates {
+		if err := e.store.UpdateMessageModelName(ctx, update.messageID, update.modelName); err != nil {
+			return false, err
+		}
+		dbMsgs[update.index].ModelName = update.modelName
+	}
+
+	logger.InfoCF("seahorse", "bootstrap: repaired missing model_name", map[string]any{
+		"messages": len(updates),
+	})
+	return true, nil
+}
+
 // truncate shortens a string for logging.
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
@@ -610,13 +680,20 @@ func truncate(s string, maxLen int) string {
 // For messages with Parts (tool_use, tool_result), compare Parts instead of Content
 // because structured messages are matched by their parts payload.
 func messageMatches(a, b Message) bool {
-	if a.Role != b.Role || a.ReasoningContent != b.ReasoningContent {
+	if a.Role != b.Role || a.ReasoningContent != b.ReasoningContent || a.ModelName != b.ModelName {
 		return false
 	}
 	return messageMatchesIgnoringReasoning(a, b)
 }
 
 func messageMatchesIgnoringReasoning(a, b Message) bool {
+	if a.ModelName != b.ModelName {
+		return false
+	}
+	return messageMatchesIgnoringReasoningAndModelName(a, b)
+}
+
+func messageMatchesIgnoringReasoningAndModelName(a, b Message) bool {
 	if a.Role != b.Role {
 		return false
 	}

@@ -33,6 +33,7 @@ func (p *Pipeline) Finalize(
 		ts.setPhase(TurnPhaseCompleted)
 		return turnResult{
 			finalContent: finalContent,
+			modelName:    exec.llmModelName,
 			status:       turnStatus,
 			followUps:    append([]bus.InboundMessage(nil), ts.followUps...),
 		}, nil
@@ -44,6 +45,7 @@ func (p *Pipeline) Finalize(
 		finalMsg := providers.Message{
 			Role:             "assistant",
 			Content:          finalContent,
+			ModelName:        exec.llmModelName,
 			ReasoningContent: responseReasoningContent(exec.response),
 		}
 		ts.agent.Sessions.AddFullMessage(ts.sessionKey, finalMsg)
@@ -112,6 +114,7 @@ func (p *Pipeline) Finalize(
 	ts.setPhase(TurnPhaseCompleted)
 	return turnResult{
 		finalContent: finalContent,
+		modelName:    exec.llmModelName,
 		status:       turnStatus,
 		followUps:    append([]bus.InboundMessage(nil), ts.followUps...),
 	}, nil

@@ -89,6 +89,11 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 	if usedLight && ts.agent.LightProvider != nil {
 		activeProvider = ts.agent.LightProvider
 	}
+	activeModelName := strings.TrimSpace(ts.agent.Model)
+	if usedLight {
+		activeModelName = strings.TrimSpace(sideQuestionModelName(ts.agent, true))
+	}
+	activeModelName = resolvedCandidateModelName(activeCandidates, activeModelName)
 
 	exec := newTurnExecution(
 		ts.agent,
@@ -106,6 +111,7 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 		activeModel,
 		p.Cfg.Agents.Defaults.Provider,
 	)
+	exec.llmModelName = activeModelName
 	exec.activeProvider = activeProvider
 	exec.usedLight = usedLight
 

@@ -46,18 +46,22 @@ func TestFinalizeTrackedToolFeedbackMessage_StopsTrackingBeforeEdit(t *testing.T
 		context.Background(),
 		"pico:chat-1",
 		"final reply",
-		func(_ context.Context, chatID, messageID, content string, contextUsage *bus.ContextUsage) error {
+		func(_ context.Context, chatID, messageID string, payload map[string]any, contextUsage *bus.ContextUsage) error {
 			if _, ok := ch.currentToolFeedbackMessage(chatID); ok {
 				t.Fatal("expected tracked tool feedback to be stopped before edit")
 			}
-			if chatID != "pico:chat-1" || messageID != "msg-1" || content != "final reply" {
-				t.Fatalf("unexpected edit args: %s %s %s", chatID, messageID, content)
+			if chatID != "pico:chat-1" || messageID != "msg-1" {
+				t.Fatalf("unexpected edit args: %s %s", chatID, messageID)
+			}
+			if got := payload[PayloadKeyContent]; got != "final reply" {
+				t.Fatalf("unexpected content payload: %#v", got)
 			}
 			if contextUsage != nil {
 				t.Fatalf("unexpected context usage: %+v", contextUsage)
 			}
 			return nil
 		},
+		nil,
 		nil,
 	)
 	if !handled {
@@ -115,7 +119,8 @@ func TestSend_ThoughtMessageDoesNotFinalizeTrackedToolFeedback(t *testing.T) {
 			Channel: "pico",
 			ChatID:  "pico:sess-1",
 			Raw: map[string]string{
-				"message_kind": MessageKindThought,
+				"message_kind":      MessageKindThought,
+				PayloadKeyModelName: "gpt-5.4-mini",
 			},
 		},
 	}); err != nil {
@@ -134,6 +139,9 @@ func TestSend_ThoughtMessageDoesNotFinalizeTrackedToolFeedback(t *testing.T) {
 		if got := payload[PayloadKeyKind]; got != MessageKindThought {
 			t.Fatalf("thought kind = %#v, want %q", got, MessageKindThought)
 		}
+		if got := payload[PayloadKeyModelName]; got != "gpt-5.4-mini" {
+			t.Fatalf("thought model_name = %#v, want %q", got, "gpt-5.4-mini")
+		}
 		if got := payload["message_id"]; got == "msg-progress" || got == nil || got == "" {
 			t.Fatalf("thought message_id = %#v, want new non-progress id", got)
 		}
@@ -151,6 +159,9 @@ func TestSend_ThoughtMessageDoesNotFinalizeTrackedToolFeedback(t *testing.T) {
 		Context: bus.InboundContext{
 			Channel: "pico",
 			ChatID:  "pico:sess-1",
+			Raw: map[string]string{
+				PayloadKeyModelName: "gpt-5.4",
+			},
 		},
 		ContextUsage: &bus.ContextUsage{
 			UsedTokens:       321,
@@ -173,6 +184,9 @@ func TestSend_ThoughtMessageDoesNotFinalizeTrackedToolFeedback(t *testing.T) {
 		}
 		if got := payload[PayloadKeyContent]; got != "final reply" {
 			t.Fatalf("final content = %#v, want %q", got, "final reply")
+		}
+		if got := payload[PayloadKeyModelName]; got != "gpt-5.4" {
+			t.Fatalf("final model_name = %#v, want %q", got, "gpt-5.4")
 		}
 		rawUsage, ok := payload["context_usage"].(map[string]any)
 		if !ok {
