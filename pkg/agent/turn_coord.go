@@ -435,7 +435,11 @@ func (al *AgentLoop) askSideQuestion(
 		if forceModel && strings.TrimSpace(model) != "" {
 			baseModelName = model
 		}
-		provider, providerModel, modelCfg, cleanup, err := al.isolatedSideQuestionProvider(agent, baseModelName, candidate)
+		provider, providerModel, modelCfg, cleanup, err := al.isolatedSideQuestionProvider(
+			agent,
+			baseModelName,
+			candidate,
+		)
 		if err != nil {
 			return nil, err
 		}

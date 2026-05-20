@@ -116,9 +116,13 @@ func (fc *FallbackChain) Execute(
 	candidates []FallbackCandidate,
 	run func(ctx context.Context, provider, model string) (*LLMResponse, error),
 ) (*FallbackResult, error) {
-	return fc.ExecuteCandidate(ctx, candidates, func(ctx context.Context, candidate FallbackCandidate) (*LLMResponse, error) {
-		return run(ctx, candidate.Provider, candidate.Model)
-	})
+	return fc.ExecuteCandidate(
+		ctx,
+		candidates,
+		func(ctx context.Context, candidate FallbackCandidate) (*LLMResponse, error) {
+			return run(ctx, candidate.Provider, candidate.Model)
+		},
+	)
 }
 
 // ExecuteCandidate runs the fallback chain and passes the complete candidate

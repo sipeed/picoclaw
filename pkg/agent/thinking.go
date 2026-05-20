@@ -105,7 +105,12 @@ func applyThinkingOption(
 	}
 }
 
-func applyTurnThinkingOptions(exec *turnExecution, agent *AgentInstance, provider providers.LLMProvider, warnUnsupported bool) {
+func applyTurnThinkingOptions(
+	exec *turnExecution,
+	agent *AgentInstance,
+	provider providers.LLMProvider,
+	warnUnsupported bool,
+) {
 	if exec == nil || exec.llmOpts == nil {
 		return
 	}
@@ -121,8 +126,4 @@ func applyTurnThinkingOptions(exec *turnExecution, agent *AgentInstance, provide
 
 func shouldSuppressReasoningFor(settings thinkingSettings) bool {
 	return settings.configured && settings.level == ThinkingOff
-}
-
-func shouldSuppressReasoning(agent *AgentInstance) bool {
-	return agent != nil && agent.ThinkingLevel == ThinkingOff && agent.ThinkingLevelConfigured
 }

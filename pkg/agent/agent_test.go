@@ -230,25 +230,6 @@ func (p *reasoningResponseProvider) GetDefaultModel() string {
 	return "mock-model"
 }
 
-type reasoningOnlyResponseProvider struct{}
-
-func (p *reasoningOnlyResponseProvider) Chat(
-	ctx context.Context,
-	messages []providers.Message,
-	tools []providers.ToolDefinition,
-	model string,
-	opts map[string]any,
-) (*providers.LLMResponse, error) {
-	return &providers.LLMResponse{
-		ReasoningContent: "thinking trace",
-		ToolCalls:        []providers.ToolCall{},
-	}, nil
-}
-
-func (p *reasoningOnlyResponseProvider) GetDefaultModel() string {
-	return "mock-model"
-}
-
 type sideQuestionFallbackTestProvider struct {
 	model string
 }
@@ -765,7 +746,10 @@ func TestProcessMessage_BeforeLLMModelRewriteDoesNotLeakThinkingOff(t *testing.T
 		t.Fatalf("processMessage() response = %q, want final answer", response)
 	}
 	if _, ok := provider.lastOptions["thinking_level"]; ok {
-		t.Fatalf("thinking_level option should be cleared after hook rewrote away from off model, got %#v", provider.lastOptions["thinking_level"])
+		t.Fatalf(
+			"thinking_level option should be cleared after hook rewrote away from off model, got %#v",
+			provider.lastOptions["thinking_level"],
+		)
 	}
 	select {
 	case outbound := <-msgBus.OutboundChan():
@@ -870,7 +854,10 @@ func TestProcessMessage_BtwHookModelRewriteReevaluatesThinkingOff(t *testing.T) 
 		t.Fatalf("processMessage() error = %v", err)
 	}
 	if strings.Contains(response, "thinking trace") {
-		t.Fatalf("processMessage() response = %q, should not expose reasoning after hook rewrote to off model", response)
+		t.Fatalf(
+			"processMessage() response = %q, should not expose reasoning after hook rewrote to off model",
+			response,
+		)
 	}
 }
 

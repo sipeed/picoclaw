@@ -112,7 +112,11 @@ func TestBuildRequestBody_PreservesDoubaoRequestWhenThinkingLevelIsNotOff(t *tes
 			)
 
 			if _, ok := body["thinking"]; ok {
-				t.Fatalf("thinking should be omitted for %q to preserve existing behavior, got %#v", level, body["thinking"])
+				t.Fatalf(
+					"thinking should be omitted for %q to preserve existing behavior, got %#v",
+					level,
+					body["thinking"],
+				)
 			}
 			if _, ok := body["enable_thinking"]; ok {
 				t.Fatalf("enable_thinking should be omitted for %q, got %#v", level, body["enable_thinking"])
