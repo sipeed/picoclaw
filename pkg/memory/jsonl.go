@@ -71,7 +71,11 @@ func NewJSONLStore(dir string) (*JSONLStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("memory: create directory: %w", err)
 	}
-	return &JSONLStore{dir: dir}, nil
+	store := &JSONLStore{dir: dir}
+	if err := store.repairSessionMetadata(); err != nil {
+		return nil, err
+	}
+	return store, nil
 }
 
 // sessionLock returns a mutex for the given session key.
@@ -137,6 +141,34 @@ func (s *JSONLStore) writeMeta(key string, meta SessionMeta) error {
 	return fileutil.WriteFileAtomic(s.metaPath(key), data, 0o644)
 }
 
+func (s *JSONLStore) repairSessionMetadata() error {
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return fmt.Errorf("memory: read session directory: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".meta.json") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(s.dir, entry.Name()))
+		if err != nil {
+			return fmt.Errorf("memory: read meta during repair: %w", err)
+		}
+		var meta SessionMeta
+		if err := json.Unmarshal(data, &meta); err != nil {
+			return fmt.Errorf("memory: decode meta during repair: %w", err)
+		}
+		sessionKey := strings.TrimSpace(meta.Key)
+		if sessionKey == "" {
+			sessionKey = strings.TrimSuffix(entry.Name(), ".meta.json")
+		}
+		if _, err := s.repairSessionMetaLocked(sessionKey, &meta); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func cloneRawJSON(data json.RawMessage) json.RawMessage {
 	if len(data) == 0 {
 		return nil
@@ -189,6 +221,9 @@ func (s *JSONLStore) GetSessionMeta(_ context.Context, sessionKey string) (Sessi
 
 	meta, err := s.readMeta(sessionKey)
 	if err != nil {
+		return SessionMeta{}, err
+	}
+	if _, err := s.repairSessionMetaLocked(sessionKey, &meta); err != nil {
 		return SessionMeta{}, err
 	}
 	meta.Scope = cloneRawJSON(meta.Scope)
@@ -536,6 +571,46 @@ func scanRetainedMessageLines(path string) (int, []int, error) {
 	return rawCount, retained, nil
 }
 
+func (s *JSONLStore) repairSessionMetaLocked(sessionKey string, meta *SessionMeta) (bool, error) {
+	rawCount, _, err := scanRetainedMessageLines(s.jsonlPath(sessionKey))
+	if err != nil {
+		return false, err
+	}
+
+	changed := false
+	if strings.TrimSpace(meta.Key) == "" {
+		meta.Key = sessionKey
+		changed = true
+	}
+	if meta.Count != rawCount {
+		meta.Count = rawCount
+		changed = true
+	}
+	if meta.Skip > rawCount {
+		meta.Skip = rawCount
+		changed = true
+	}
+	if meta.Skip < 0 {
+		meta.Skip = 0
+		changed = true
+	}
+	if rawCount > 0 && meta.CreatedAt.IsZero() {
+		now := time.Now()
+		meta.CreatedAt = now
+		meta.UpdatedAt = now
+		changed = true
+	}
+	if changed {
+		if meta.UpdatedAt.IsZero() {
+			meta.UpdatedAt = time.Now()
+		}
+		if err := s.writeMeta(sessionKey, *meta); err != nil {
+			return false, err
+		}
+	}
+	return changed, nil
+}
+
 func (s *JSONLStore) AddMessage(
 	_ context.Context, sessionKey, role, content string,
 ) error {
@@ -619,6 +694,9 @@ func (s *JSONLStore) GetHistory(
 	if err != nil {
 		return nil, err
 	}
+	if _, err := s.repairSessionMetaLocked(sessionKey, &meta); err != nil {
+		return nil, err
+	}
 
 	// Pass meta.Skip so readMessages skips those lines without
 	// unmarshaling them — avoids wasted CPU on truncated messages.
@@ -674,6 +752,9 @@ func (s *JSONLStore) TruncateHistory(
 
 	meta, err := s.readMeta(sessionKey)
 	if err != nil {
+		return err
+	}
+	if _, err := s.repairSessionMetaLocked(sessionKey, &meta); err != nil {
 		return err
 	}
 
@@ -753,6 +834,9 @@ func (s *JSONLStore) Compact(
 
 	meta, err := s.readMeta(sessionKey)
 	if err != nil {
+		return err
+	}
+	if _, err := s.repairSessionMetaLocked(sessionKey, &meta); err != nil {
 		return err
 	}
 	if meta.Skip == 0 {

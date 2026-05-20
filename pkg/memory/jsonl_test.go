@@ -822,6 +822,47 @@ func TestTruncateHistory_StaleMetaCount(t *testing.T) {
 	}
 }
 
+func TestGetHistory_RepairsStaleMetaCount(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	for i := 0; i < 3; i++ {
+		if err := store.AddMessage(ctx, "repair-count", "user", string(rune('a'+i))); err != nil {
+			t.Fatalf("AddMessage: %v", err)
+		}
+	}
+
+	f, err := os.OpenFile(store.jsonlPath("repair-count"), os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		t.Fatalf("open for append: %v", err)
+	}
+	if _, err := f.WriteString(`{"role":"assistant","content":"tail"}` + "\n"); err != nil {
+		t.Fatalf("write orphan: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close append file: %v", err)
+	}
+
+	history, err := store.GetHistory(ctx, "repair-count")
+	if err != nil {
+		t.Fatalf("GetHistory: %v", err)
+	}
+	if len(history) != 4 {
+		t.Fatalf("expected 4 messages, got %d", len(history))
+	}
+	if history[3].Content != "tail" {
+		t.Fatalf("last content = %q, want tail", history[3].Content)
+	}
+
+	meta, err := store.readMeta("repair-count")
+	if err != nil {
+		t.Fatalf("readMeta: %v", err)
+	}
+	if meta.Count != 4 {
+		t.Fatalf("meta.Count = %d, want 4", meta.Count)
+	}
+}
+
 func TestTruncateHistory_IgnoresTransientThoughtForKeepLast(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
@@ -907,6 +948,49 @@ func TestCrashRecovery_PartialLine(t *testing.T) {
 	}
 }
 
+func TestGetHistory_RepairsSkipPastEOF(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	sessionKey := "skip-past-eof"
+	now := time.Now()
+
+	rawJSONL := strings.Join([]string{
+		`{"role":"user","content":"a"}`,
+		`{"role":"assistant","content":"b"}`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(store.jsonlPath(sessionKey), []byte(rawJSONL), 0o644); err != nil {
+		t.Fatalf("WriteFile(jsonl): %v", err)
+	}
+	if err := store.writeMeta(sessionKey, SessionMeta{
+		Key:       sessionKey,
+		Count:     10,
+		Skip:      10,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("writeMeta: %v", err)
+	}
+
+	history, err := store.GetHistory(ctx, sessionKey)
+	if err != nil {
+		t.Fatalf("GetHistory: %v", err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("expected no active messages after repaired skip, got %d", len(history))
+	}
+
+	meta, err := store.readMeta(sessionKey)
+	if err != nil {
+		t.Fatalf("readMeta: %v", err)
+	}
+	if meta.Count != 2 {
+		t.Fatalf("meta.Count = %d, want 2", meta.Count)
+	}
+	if meta.Skip != 2 {
+		t.Fatalf("meta.Skip = %d, want 2", meta.Skip)
+	}
+}
+
 func TestPersistence_AcrossInstances(t *testing.T) {
 	dir := t.TempDir()
 	ctx := context.Background()
@@ -947,6 +1031,62 @@ func TestPersistence_AcrossInstances(t *testing.T) {
 	}
 	if summary != "a test session" {
 		t.Errorf("summary = %q", summary)
+	}
+}
+
+func TestNewJSONLStore_RepairsExistingMetaOnStartup(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	store1, err := NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore: %v", err)
+	}
+	if err := store1.AddMessage(ctx, "startup-repair", "user", "one"); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	if err := store1.AddMessage(ctx, "startup-repair", "assistant", "two"); err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	if err := store1.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	jsonlPath := filepath.Join(dir, "startup-repair.jsonl")
+	f, err := os.OpenFile(jsonlPath, os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		t.Fatalf("open for append: %v", err)
+	}
+	if _, err := f.WriteString(`{"role":"user","content":"three"}` + "\n"); err != nil {
+		t.Fatalf("write orphan: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close append file: %v", err)
+	}
+
+	store2, err := NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore second: %v", err)
+	}
+	defer store2.Close()
+
+	meta, err := store2.GetSessionMeta(ctx, "startup-repair")
+	if err != nil {
+		t.Fatalf("GetSessionMeta: %v", err)
+	}
+	if meta.Count != 3 {
+		t.Fatalf("meta.Count = %d, want 3", meta.Count)
+	}
+
+	history, err := store2.GetHistory(ctx, "startup-repair")
+	if err != nil {
+		t.Fatalf("GetHistory: %v", err)
+	}
+	if len(history) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(history))
+	}
+	if history[2].Content != "three" {
+		t.Fatalf("last content = %q, want three", history[2].Content)
 	}
 }
 
