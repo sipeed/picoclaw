@@ -11,7 +11,10 @@ export async function postLauncherDashboardLogin(
 ): Promise<LoginResult> {
   const res = await fetch("/api/auth/login", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Requested-With": "XMLHttpRequest",
+    },
     credentials: "same-origin",
     body: JSON.stringify({ password: password.trim() }),
   })
@@ -44,7 +47,10 @@ export async function getLauncherAuthStatus(): Promise<LauncherAuthStatus> {
 export async function postLauncherDashboardLogout(): Promise<boolean> {
   const res = await fetch("/api/auth/logout", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Requested-With": "XMLHttpRequest",
+    },
     credentials: "same-origin",
     body: "{}",
   })
@@ -59,7 +65,10 @@ export async function postLauncherDashboardSetup(
 ): Promise<SetupResult> {
   const res = await fetch("/api/auth/setup", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Requested-With": "XMLHttpRequest",
+    },
     credentials: "same-origin",
     body: JSON.stringify({
       password: password.trim(),

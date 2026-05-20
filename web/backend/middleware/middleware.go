@@ -79,3 +79,28 @@ func Recoverer(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// CSRF checks for the X-Requested-With header on mutating requests (POST, PUT,
+// DELETE). Browsers block cross-origin requests that include custom headers,
+// so this simple check mitigates CSRF attacks. AJAX calls from the frontend
+// must include the header explicitly.
+func CSRF(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodDelete {
+			if r.Header.Get("X-Requested-With") == "" {
+				http.Error(w, "CSRF check failed: missing X-Requested-With header", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// SecurityHeaders sets browser-hardening response headers on every response.
+func SecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		next.ServeHTTP(w, r)
+	})
+}

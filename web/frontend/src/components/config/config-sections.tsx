@@ -739,7 +739,10 @@ export function ExecSection({ form, onFieldChange }: ExecSectionProps) {
     try {
       const res = await fetch("/api/config/test-command-patterns", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
         body: JSON.stringify({
           allow_patterns: allowPatterns,
           deny_patterns: denyPatterns,

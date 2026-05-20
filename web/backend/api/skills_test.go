@@ -1861,3 +1861,73 @@ func buildSkillZip(t *testing.T, files map[string]string) []byte {
 	}
 	return buf.Bytes()
 }
+
+func TestHandleDeleteSkillRejectsPathTraversal(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	workspace := filepath.Join(t.TempDir(), "workspace")
+	cfg.Agents.Defaults.Workspace = workspace
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	// Create a skill directory outside the workspace to simulate path traversal.
+	outsideDir := filepath.Join(t.TempDir(), "outside-skill")
+	if err := os.MkdirAll(outsideDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(outside) error = %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(outsideDir, "SKILL.md"),
+		[]byte("---\nname: traversal-skill\ndescription: outside workspace\n---\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile(outside) error = %v", err)
+	}
+
+	// Verify the skill would be loaded with a path outside workspace.
+	// The isWithinDir check should reject it even if it appears as workspace source.
+	// We test isWithinDir directly since the skill loader won't naturally produce
+	// a workspace skill outside the workspace directory.
+	dirPath := filepath.Clean(outsideDir)
+	workspaceDir := filepath.Clean(workspace)
+	if isWithinDir(dirPath, workspaceDir) {
+		t.Fatalf("isWithinDir(%q, %q) = true, want false for path outside workspace", dirPath, workspaceDir)
+	}
+
+	// Also verify that a legitimate workspace skill passes the check.
+	skillDir := filepath.Join(workspace, "skills", "legit-skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(legit) error = %v", err)
+	}
+	legitDirPath := filepath.Clean(skillDir)
+	if !isWithinDir(legitDirPath, workspaceDir) {
+		t.Fatalf("isWithinDir(%q, %q) = false, want true for path inside workspace", legitDirPath, workspaceDir)
+	}
+}
+
+func TestIsWithinDir(t *testing.T) {
+	tmp := t.TempDir()
+	parent := filepath.Join(tmp, "workspace")
+	child := filepath.Join(parent, "skills", "my-skill")
+
+	if !isWithinDir(child, parent) {
+		t.Fatalf("isWithinDir(%q, %q) = false, want true", child, parent)
+	}
+	if !isWithinDir(parent, parent) {
+		t.Fatalf("isWithinDir(%q, %q) = false, want true for exact match", parent, parent)
+	}
+	outside := filepath.Join(tmp, "other")
+	if isWithinDir(outside, parent) {
+		t.Fatalf("isWithinDir(%q, %q) = true, want false for path outside", outside, parent)
+	}
+	// Path that shares a prefix but is not a subdirectory (e.g. /workspace-other).
+	sibling := tmp + "-other"
+	if isWithinDir(sibling, parent) {
+		t.Fatalf("isWithinDir(%q, %q) = true, want false for sibling prefix", sibling, parent)
+	}
+}
