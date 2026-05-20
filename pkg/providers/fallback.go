@@ -116,6 +116,18 @@ func (fc *FallbackChain) Execute(
 	candidates []FallbackCandidate,
 	run func(ctx context.Context, provider, model string) (*LLMResponse, error),
 ) (*FallbackResult, error) {
+	return fc.ExecuteCandidate(ctx, candidates, func(ctx context.Context, candidate FallbackCandidate) (*LLMResponse, error) {
+		return run(ctx, candidate.Provider, candidate.Model)
+	})
+}
+
+// ExecuteCandidate runs the fallback chain and passes the complete candidate
+// to the caller so model-list identity metadata remains available.
+func (fc *FallbackChain) ExecuteCandidate(
+	ctx context.Context,
+	candidates []FallbackCandidate,
+	run func(ctx context.Context, candidate FallbackCandidate) (*LLMResponse, error),
+) (*FallbackResult, error) {
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("fallback: no candidates configured")
 	}
@@ -178,7 +190,7 @@ func (fc *FallbackChain) Execute(
 
 		// Execute the run function.
 		start := time.Now()
-		resp, err := run(ctx, candidate.Provider, candidate.Model)
+		resp, err := run(ctx, candidate)
 		elapsed := time.Since(start)
 
 		if err == nil {

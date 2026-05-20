@@ -193,11 +193,88 @@ func (p *Provider) buildRequestBody(
 		}
 	}
 
+	p.applyThinkingControl(requestBody, model, options)
+
 	// Merge extra body fields configured per-provider/model.
 	// These are injected last so they take precedence over defaults.
 	maps.Copy(requestBody, p.extraBody)
 
 	return requestBody
+}
+
+func (p *Provider) applyThinkingControl(requestBody map[string]any, model string, options map[string]any) {
+	level, ok := normalizedThinkingLevel(options)
+	if !ok || level != "off" {
+		return
+	}
+
+	switch p.thinkingControlKind(model) {
+	case "thinking_type":
+		requestBody["thinking"] = map[string]any{"type": "disabled"}
+	case "enable_thinking":
+		requestBody["enable_thinking"] = false
+	}
+}
+
+func normalizedThinkingLevel(options map[string]any) (string, bool) {
+	raw, ok := options["thinking_level"].(string)
+	if !ok {
+		return "", false
+	}
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "off", "low", "medium", "high", "xhigh", "adaptive":
+		return strings.ToLower(strings.TrimSpace(raw)), true
+	default:
+		return "", false
+	}
+}
+
+func (p *Provider) thinkingControlKind(model string) string {
+	providerName := strings.ToLower(strings.TrimSpace(p.providerName))
+	lowerModel := strings.ToLower(strings.TrimSpace(model))
+
+	switch providerName {
+	case "volcengine":
+		return "thinking_type"
+	case "zhipu", "zai":
+		return "thinking_type"
+	case "qwen", "qwen-portal", "qwen-intl", "qwen-international", "dashscope-intl", "qwen-us", "dashscope-us":
+		return "enable_thinking"
+	case "modelscope":
+		if strings.Contains(lowerModel, "qwen") {
+			return "enable_thinking"
+		}
+	}
+
+	if providerName == "openai" || providerName == "" {
+		if isVolcengineHost(p.apiBase) || strings.Contains(lowerModel, "doubao") {
+			return "thinking_type"
+		}
+		if isDashScopeHost(p.apiBase) || strings.Contains(lowerModel, "qwen") {
+			return "enable_thinking"
+		}
+	}
+
+	return ""
+}
+
+func isVolcengineHost(apiBase string) bool {
+	host := normalizedHostname(apiBase)
+	return host == "volcengine.com" || strings.HasSuffix(host, ".volcengine.com") ||
+		host == "volces.com" || strings.HasSuffix(host, ".volces.com")
+}
+
+func isDashScopeHost(apiBase string) bool {
+	host := normalizedHostname(apiBase)
+	return host == "dashscope.aliyuncs.com" || strings.HasSuffix(host, ".dashscope.aliyuncs.com")
+}
+
+func normalizedHostname(rawURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(parsed.Hostname()))
 }
 
 func (p *Provider) applyCustomHeaders(req *http.Request) {

@@ -528,8 +528,12 @@ func sideQuestionModelName(agent *AgentInstance, usedLight bool) string {
 }
 
 func modelNameFromIdentityKey(identityKey string) string {
+	identityKey = strings.TrimSpace(identityKey)
 	if identityKey == "" {
 		return ""
+	}
+	if name, ok := strings.CutPrefix(identityKey, "model_name:"); ok {
+		return strings.TrimSpace(name)
 	}
 	parts := strings.SplitN(identityKey, "/", 2)
 	if len(parts) == 2 {

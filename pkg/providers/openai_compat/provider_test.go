@@ -62,6 +62,65 @@ func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
 	}
 }
 
+func TestBuildRequestBody_DisablesDoubaoThinkingWhenThinkingLevelOff(t *testing.T) {
+	p := NewProvider("key", "https://ark.cn-beijing.volces.com/api/v3", "")
+	p.SetProviderName("openai")
+
+	body := p.buildRequestBody(
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"doubao-seed-1-6-flash-250828",
+		map[string]any{"thinking_level": "off"},
+	)
+
+	thinking, ok := body["thinking"].(map[string]any)
+	if !ok {
+		t.Fatalf("thinking = %#v, want map", body["thinking"])
+	}
+	if got := thinking["type"]; got != "disabled" {
+		t.Fatalf("thinking.type = %#v, want %q", got, "disabled")
+	}
+}
+
+func TestBuildRequestBody_DisablesModelDependentQwenThinkingWhenThinkingLevelOff(t *testing.T) {
+	p := NewProvider("key", "https://api-inference.modelscope.cn/v1", "")
+	p.SetProviderName("modelscope")
+
+	body := p.buildRequestBody(
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"qwen3-coder-plus",
+		map[string]any{"thinking_level": "off"},
+	)
+
+	if got := body["enable_thinking"]; got != false {
+		t.Fatalf("enable_thinking = %#v, want false", got)
+	}
+}
+
+func TestBuildRequestBody_PreservesDoubaoRequestWhenThinkingLevelIsNotOff(t *testing.T) {
+	p := NewProvider("key", "https://ark.cn-beijing.volces.com/api/v3", "")
+	p.SetProviderName("openai")
+
+	for _, level := range []string{"low", "adaptive", "unexpected"} {
+		t.Run(level, func(t *testing.T) {
+			body := p.buildRequestBody(
+				[]Message{{Role: "user", Content: "hi"}},
+				nil,
+				"doubao-seed-1-6-flash-250828",
+				map[string]any{"thinking_level": level},
+			)
+
+			if _, ok := body["thinking"]; ok {
+				t.Fatalf("thinking should be omitted for %q to preserve existing behavior, got %#v", level, body["thinking"])
+			}
+			if _, ok := body["enable_thinking"]; ok {
+				t.Fatalf("enable_thinking should be omitted for %q, got %#v", level, body["enable_thinking"])
+			}
+		})
+	}
+}
+
 func TestProviderChat_ParsesToolCalls(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]any{

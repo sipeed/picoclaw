@@ -137,6 +137,7 @@ type turnExecution struct {
 	allResponsesHandled bool
 	streamingPublisher  *streamingChunkPublisher
 	streamingFallback   bool
+	suppressReasoning   bool
 	callMessages        []providers.Message
 	providerToolDefs    []providers.ToolDefinition
 	llmModel            string
