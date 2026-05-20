@@ -836,11 +836,13 @@ func TestGetHistory_RepairsStaleMetaCount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open for append: %v", err)
 	}
-	if _, err := f.WriteString(`{"role":"assistant","content":"tail"}` + "\n"); err != nil {
-		t.Fatalf("write orphan: %v", err)
+	_, writeErr := f.WriteString(`{"role":"assistant","content":"tail"}` + "\n")
+	if writeErr != nil {
+		t.Fatalf("write orphan: %v", writeErr)
 	}
-	if err := f.Close(); err != nil {
-		t.Fatalf("close append file: %v", err)
+	closeErr := f.Close()
+	if closeErr != nil {
+		t.Fatalf("close append file: %v", closeErr)
 	}
 
 	history, err := store.GetHistory(ctx, "repair-count")
@@ -1042,14 +1044,17 @@ func TestNewJSONLStore_RepairsExistingMetaOnStartup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewJSONLStore: %v", err)
 	}
-	if err := store1.AddMessage(ctx, "startup-repair", "user", "one"); err != nil {
-		t.Fatalf("AddMessage: %v", err)
+	addErr := store1.AddMessage(ctx, "startup-repair", "user", "one")
+	if addErr != nil {
+		t.Fatalf("AddMessage: %v", addErr)
 	}
-	if err := store1.AddMessage(ctx, "startup-repair", "assistant", "two"); err != nil {
-		t.Fatalf("AddMessage: %v", err)
+	addErr = store1.AddMessage(ctx, "startup-repair", "assistant", "two")
+	if addErr != nil {
+		t.Fatalf("AddMessage: %v", addErr)
 	}
-	if err := store1.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
+	closeErr := store1.Close()
+	if closeErr != nil {
+		t.Fatalf("Close: %v", closeErr)
 	}
 
 	jsonlPath := filepath.Join(dir, "startup-repair.jsonl")
@@ -1057,11 +1062,13 @@ func TestNewJSONLStore_RepairsExistingMetaOnStartup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open for append: %v", err)
 	}
-	if _, err := f.WriteString(`{"role":"user","content":"three"}` + "\n"); err != nil {
-		t.Fatalf("write orphan: %v", err)
+	_, writeErr := f.WriteString(`{"role":"user","content":"three"}` + "\n")
+	if writeErr != nil {
+		t.Fatalf("write orphan: %v", writeErr)
 	}
-	if err := f.Close(); err != nil {
-		t.Fatalf("close append file: %v", err)
+	closeErr = f.Close()
+	if closeErr != nil {
+		t.Fatalf("close append file: %v", closeErr)
 	}
 
 	store2, err := NewJSONLStore(dir)

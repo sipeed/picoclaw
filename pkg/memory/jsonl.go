@@ -694,8 +694,8 @@ func (s *JSONLStore) GetHistory(
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.repairSessionMetaLocked(sessionKey, &meta); err != nil {
-		return nil, err
+	if _, repairErr := s.repairSessionMetaLocked(sessionKey, &meta); repairErr != nil {
+		return nil, repairErr
 	}
 
 	// Pass meta.Skip so readMessages skips those lines without
@@ -754,8 +754,8 @@ func (s *JSONLStore) TruncateHistory(
 	if err != nil {
 		return err
 	}
-	if _, err := s.repairSessionMetaLocked(sessionKey, &meta); err != nil {
-		return err
+	if _, repairErr := s.repairSessionMetaLocked(sessionKey, &meta); repairErr != nil {
+		return repairErr
 	}
 
 	rawCount, retainedRawLines, scanErr := scanRetainedMessageLines(s.jsonlPath(sessionKey))
@@ -836,8 +836,8 @@ func (s *JSONLStore) Compact(
 	if err != nil {
 		return err
 	}
-	if _, err := s.repairSessionMetaLocked(sessionKey, &meta); err != nil {
-		return err
+	if _, repairErr := s.repairSessionMetaLocked(sessionKey, &meta); repairErr != nil {
+		return repairErr
 	}
 	if meta.Skip == 0 {
 		return nil
