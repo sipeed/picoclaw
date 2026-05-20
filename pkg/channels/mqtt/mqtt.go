@@ -80,7 +80,10 @@ func (c *MQTTChannel) Start(ctx context.Context) error {
 	opts.SetAutoReconnect(true)
 	opts.SetConnectRetry(true)
 	opts.SetConnectRetryInterval(5 * time.Second)
-	opts.SetTLSConfig(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec
+	if c.cfg.TLSSkipVerify {
+		logger.WarnCF("mqtt", "TLS certificate verification is disabled, connections are vulnerable to MITM attacks", nil)
+	}
+	opts.SetTLSConfig(&tls.Config{InsecureSkipVerify: c.cfg.TLSSkipVerify})
 
 	if c.cfg.Username.String() != "" {
 		opts.SetUsername(c.cfg.Username.String())
