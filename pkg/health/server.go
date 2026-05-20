@@ -17,7 +17,7 @@ type Server struct {
 	server     *http.Server
 	mu         sync.RWMutex
 	ready      bool
-	checks     map[string]Check
+	checks     map[string]func() (bool, string)
 	startTime  time.Time
 	reloadFunc func() error
 	authToken  string // optional bearer token for protected endpoints
@@ -41,7 +41,7 @@ func NewServer(host string, port int, token string) *Server {
 	mux := http.NewServeMux()
 	s := &Server{
 		ready:     false,
-		checks:    make(map[string]Check),
+		checks:    make(map[string]func() (bool, string)),
 		startTime: time.Now(),
 		authToken: token,
 	}
@@ -102,14 +102,7 @@ func (s *Server) SetReady(ready bool) {
 func (s *Server) RegisterCheck(name string, checkFn func() (bool, string)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	status, msg := checkFn()
-	s.checks[name] = Check{
-		Name:      name,
-		Status:    statusString(status),
-		Message:   msg,
-		Timestamp: time.Now(),
-	}
+	s.checks[name] = checkFn
 }
 
 // SetReloadFunc sets the callback function for config reload.
@@ -170,10 +163,12 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	uptime := time.Since(s.startTime)
+	checks := s.snapshotChecks()
 	resp := StatusResponse{
 		Status: "ok",
 		Uptime: uptime.String(),
 		PID:    os.Getpid(),
+		Checks: checks,
 	}
 
 	json.NewEncoder(w).Encode(resp)
@@ -184,9 +179,8 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.RLock()
 	ready := s.ready
-	checks := make(map[string]Check)
-	maps.Copy(checks, s.checks)
 	s.mu.RUnlock()
+	checks := s.snapshotChecks()
 
 	if !ready {
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -215,6 +209,26 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 		Uptime: uptime.String(),
 		Checks: checks,
 	})
+}
+
+func (s *Server) snapshotChecks() map[string]Check {
+	s.mu.RLock()
+	checkFns := make(map[string]func() (bool, string), len(s.checks))
+	maps.Copy(checkFns, s.checks)
+	s.mu.RUnlock()
+
+	checks := make(map[string]Check, len(checkFns))
+	now := time.Now()
+	for name, checkFn := range checkFns {
+		status, msg := checkFn()
+		checks[name] = Check{
+			Name:      name,
+			Status:    statusString(status),
+			Message:   msg,
+			Timestamp: now,
+		}
+	}
+	return checks
 }
 
 // HandlerMux is the interface for registering HTTP handlers, used by

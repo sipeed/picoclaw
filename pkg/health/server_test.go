@@ -13,7 +13,7 @@ import (
 func newTestServer() *Server {
 	s := &Server{
 		ready:     false,
-		checks:    make(map[string]Check),
+		checks:    make(map[string]func() (bool, string)),
 		startTime: time.Now(),
 		authToken: "test",
 	}
@@ -263,6 +263,40 @@ func TestRegisterCheck_MultipleChecks(t *testing.T) {
 	}
 	if len(resp.Checks) != 3 {
 		t.Errorf("checks count = %d, want 3", len(resp.Checks))
+	}
+}
+
+func TestHealthHandler_EvaluatesChecksDynamically(t *testing.T) {
+	s := newTestServer()
+	s.SetReady(true)
+
+	state := "cold"
+	s.RegisterCheck("runtime", func() (bool, string) {
+		return true, state
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	w := httptest.NewRecorder()
+	s.healthHandler(w, req)
+
+	var first StatusResponse
+	if err := json.NewDecoder(w.Body).Decode(&first); err != nil {
+		t.Fatalf("failed to decode first response: %v", err)
+	}
+	if first.Checks["runtime"].Message != "cold" {
+		t.Fatalf("first runtime message = %q, want cold", first.Checks["runtime"].Message)
+	}
+
+	state = "warm"
+	w = httptest.NewRecorder()
+	s.healthHandler(w, httptest.NewRequest(http.MethodGet, "/health", nil))
+
+	var second StatusResponse
+	if err := json.NewDecoder(w.Body).Decode(&second); err != nil {
+		t.Fatalf("failed to decode second response: %v", err)
+	}
+	if second.Checks["runtime"].Message != "warm" {
+		t.Fatalf("second runtime message = %q, want warm", second.Checks["runtime"].Message)
 	}
 }
 

@@ -1,12 +1,23 @@
 package bus
 
 import (
+	"time"
+
 	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 )
 
 type busPublishFailedPayload struct {
 	Stream string `json:"stream"`
 	Error  string `json:"error"`
+}
+
+type busMessageDroppedPayload struct {
+	Stream       string `json:"stream"`
+	Reason       string `json:"reason"`
+	WaitMS       int64  `json:"wait_ms"`
+	QueueDepth   int    `json:"queue_depth"`
+	QueueCap     int    `json:"queue_capacity"`
+	DroppedTotal uint64 `json:"dropped_total"`
 }
 
 type busClosePayload struct {
@@ -57,6 +68,46 @@ func (mb *MessageBus) publishCloseEvent(kind runtimeevents.Kind, drained int) {
 		Severity: runtimeevents.SeverityInfo,
 		Payload:  busClosePayload{Drained: drained},
 		Attrs:    attrs,
+	})
+}
+
+func (mb *MessageBus) publishDrop(
+	stream string,
+	scope runtimeevents.Scope,
+	reason string,
+	wait time.Duration,
+	queueDepth, queueCap int,
+	droppedTotal uint64,
+) {
+	if mb == nil {
+		return
+	}
+	publisher, ok := mb.eventPublisher.Load().(EventPublisher)
+	if !ok || publisher == nil {
+		return
+	}
+
+	publisher.PublishNonBlocking(runtimeevents.Event{
+		Kind:     runtimeevents.KindBusMessageDropped,
+		Source:   runtimeevents.Source{Component: "bus", Name: stream},
+		Scope:    scope,
+		Severity: runtimeevents.SeverityWarn,
+		Payload: busMessageDroppedPayload{
+			Stream:       stream,
+			Reason:       reason,
+			WaitMS:       wait.Milliseconds(),
+			QueueDepth:   queueDepth,
+			QueueCap:     queueCap,
+			DroppedTotal: droppedTotal,
+		},
+		Attrs: map[string]any{
+			"stream":         stream,
+			"reason":         reason,
+			"wait_ms":        wait.Milliseconds(),
+			"queue_depth":    queueDepth,
+			"queue_capacity": queueCap,
+			"dropped_total":  droppedTotal,
+		},
 	})
 }
 

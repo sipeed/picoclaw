@@ -3,8 +3,10 @@ package bus
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -13,6 +15,10 @@ import (
 // ErrBusClosed is returned when publishing to a closed MessageBus.
 var ErrBusClosed = errors.New("message bus closed")
 
+// ErrBusBackpressure is returned when a publish attempt exceeds the configured
+// backpressure wait budget and the message is dropped.
+var ErrBusBackpressure = errors.New("message bus backpressure")
+
 var (
 	ErrMissingInboundContext       = errors.New("inbound message context is required")
 	ErrMissingOutboundContext      = errors.New("outbound message context is required")
@@ -20,6 +26,40 @@ var (
 )
 
 const defaultBusBufferSize = 64
+
+const (
+	defaultCriticalPublishTimeout = 5 * time.Second
+	defaultAudioPublishTimeout    = 150 * time.Millisecond
+)
+
+type publishPolicy struct {
+	stream     string
+	timeout    time.Duration
+	dropOnFull bool
+}
+
+type streamStats struct {
+	dropped       atomic.Uint64
+	lastDropped   atomic.Int64
+	lastWaitNanos atomic.Int64
+}
+
+type MessageBusStats struct {
+	Inbound       StreamStats `json:"inbound"`
+	Outbound      StreamStats `json:"outbound"`
+	OutboundMedia StreamStats `json:"outbound_media"`
+	AudioChunks   StreamStats `json:"audio_chunks"`
+	VoiceControls StreamStats `json:"voice_controls"`
+}
+
+type StreamStats struct {
+	Depth              int       `json:"depth"`
+	Capacity           int       `json:"capacity"`
+	DroppedTotal       uint64    `json:"dropped_total"`
+	LastDroppedAt      time.Time `json:"last_dropped_at,omitempty"`
+	LastDropWait       string    `json:"last_drop_wait,omitempty"`
+	LastDropWaitMillis int64     `json:"last_drop_wait_ms,omitempty"`
+}
 
 // StreamDelegate is implemented by the channel Manager to provide streaming
 // capabilities to the agent loop without tight coupling.
@@ -64,6 +104,11 @@ type MessageBus struct {
 	wg             sync.WaitGroup
 	streamDelegate atomic.Value // stores StreamDelegate
 	eventPublisher atomic.Value // stores EventPublisher
+	inboundStats   streamStats
+	outboundStats  streamStats
+	mediaStats     streamStats
+	audioStats     streamStats
+	voiceStats     streamStats
 }
 
 // EventPublisher is the minimal runtime event publisher used by MessageBus.
@@ -83,7 +128,15 @@ func NewMessageBus() *MessageBus {
 	}
 }
 
-func publish[T any](ctx context.Context, mb *MessageBus, ch chan T, msg T) error {
+func publish[T any](
+	ctx context.Context,
+	mb *MessageBus,
+	ch chan T,
+	msg T,
+	policy publishPolicy,
+	stats *streamStats,
+	scope runtimeevents.Scope,
+) error {
 	// check bus closed before acquiring wg, to avoid unnecessary wg.Add and potential deadlock
 	if mb.closed.Load() {
 		return ErrBusClosed
@@ -101,9 +154,31 @@ func publish[T any](ctx context.Context, mb *MessageBus, ch chan T, msg T) error
 	mb.wg.Add(1)
 	defer mb.wg.Done()
 
+	timer := time.NewTimer(policy.timeout)
+	defer timer.Stop()
+
 	select {
 	case ch <- msg:
 		return nil
+	case <-timer.C:
+		if !policy.dropOnFull {
+			return fmt.Errorf("%w: %s publish timed out after %s", ErrBusBackpressure, policy.stream, policy.timeout)
+		}
+		droppedTotal := stats.dropped.Add(1)
+		now := time.Now()
+		stats.lastDropped.Store(now.UnixNano())
+		stats.lastWaitNanos.Store(policy.timeout.Nanoseconds())
+		queueDepth := len(ch)
+		queueCap := cap(ch)
+		mb.publishDrop(policy.stream, scope, "queue_full_timeout", policy.timeout, queueDepth, queueCap, droppedTotal)
+		logger.WarnCF("bus", "Dropped bus message due to backpressure", map[string]any{
+			"stream":         policy.stream,
+			"wait_ms":        policy.timeout.Milliseconds(),
+			"queue_depth":    queueDepth,
+			"queue_capacity": queueCap,
+			"dropped_total":  droppedTotal,
+		})
+		return fmt.Errorf("%w: %s queue full after %s", ErrBusBackpressure, policy.stream, policy.timeout)
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-mb.done:
@@ -117,7 +192,11 @@ func (mb *MessageBus) PublishInbound(ctx context.Context, msg InboundMessage) er
 		mb.publishFailure("inbound", runtimeScopeFromInboundContext(msg.Context), ErrMissingInboundContext)
 		return ErrMissingInboundContext
 	}
-	if err := publish(ctx, mb, mb.inbound, msg); err != nil {
+	if err := publish(ctx, mb, mb.inbound, msg, publishPolicy{
+		stream:     "inbound",
+		timeout:    defaultCriticalPublishTimeout,
+		dropOnFull: true,
+	}, &mb.inboundStats, runtimeScopeFromInboundContext(msg.Context)); err != nil {
 		mb.publishFailure("inbound", runtimeScopeFromInboundContext(msg.Context), err)
 		return err
 	}
@@ -134,7 +213,11 @@ func (mb *MessageBus) PublishOutbound(ctx context.Context, msg OutboundMessage) 
 		mb.publishFailure("outbound", runtimeScopeFromInboundContext(msg.Context), ErrMissingOutboundContext)
 		return ErrMissingOutboundContext
 	}
-	if err := publish(ctx, mb, mb.outbound, msg); err != nil {
+	if err := publish(ctx, mb, mb.outbound, msg, publishPolicy{
+		stream:     "outbound",
+		timeout:    defaultCriticalPublishTimeout,
+		dropOnFull: true,
+	}, &mb.outboundStats, runtimeScopeFromInboundContext(msg.Context)); err != nil {
 		mb.publishFailure("outbound", runtimeScopeFromInboundContext(msg.Context), err)
 		return err
 	}
@@ -151,7 +234,11 @@ func (mb *MessageBus) PublishOutboundMedia(ctx context.Context, msg OutboundMedi
 		mb.publishFailure("outbound_media", runtimeScopeFromInboundContext(msg.Context), ErrMissingOutboundMediaContext)
 		return ErrMissingOutboundMediaContext
 	}
-	if err := publish(ctx, mb, mb.outboundMedia, msg); err != nil {
+	if err := publish(ctx, mb, mb.outboundMedia, msg, publishPolicy{
+		stream:     "outbound_media",
+		timeout:    defaultCriticalPublishTimeout,
+		dropOnFull: true,
+	}, &mb.mediaStats, runtimeScopeFromInboundContext(msg.Context)); err != nil {
 		mb.publishFailure("outbound_media", runtimeScopeFromInboundContext(msg.Context), err)
 		return err
 	}
@@ -163,7 +250,11 @@ func (mb *MessageBus) OutboundMediaChan() <-chan OutboundMediaMessage {
 }
 
 func (mb *MessageBus) PublishAudioChunk(ctx context.Context, chunk AudioChunk) error {
-	if err := publish(ctx, mb, mb.audioChunks, chunk); err != nil {
+	if err := publish(ctx, mb, mb.audioChunks, chunk, publishPolicy{
+		stream:     "audio_chunk",
+		timeout:    defaultAudioPublishTimeout,
+		dropOnFull: true,
+	}, &mb.audioStats, runtimeScopeFromAudioChunk(chunk)); err != nil {
 		mb.publishFailure("audio_chunk", runtimeScopeFromAudioChunk(chunk), err)
 		return err
 	}
@@ -175,7 +266,11 @@ func (mb *MessageBus) AudioChunksChan() <-chan AudioChunk {
 }
 
 func (mb *MessageBus) PublishVoiceControl(ctx context.Context, ctrl VoiceControl) error {
-	if err := publish(ctx, mb, mb.voiceControls, ctrl); err != nil {
+	if err := publish(ctx, mb, mb.voiceControls, ctrl, publishPolicy{
+		stream:     "voice_control",
+		timeout:    defaultCriticalPublishTimeout,
+		dropOnFull: true,
+	}, &mb.voiceStats, runtimeScopeFromVoiceControl(ctrl)); err != nil {
 		mb.publishFailure("voice_control", runtimeScopeFromVoiceControl(ctrl), err)
 		return err
 	}
@@ -202,6 +297,51 @@ func (mb *MessageBus) GetStreamer(ctx context.Context, channel, chatID, sessionK
 		return d.GetStreamer(ctx, channel, chatID, sessionKey)
 	}
 	return nil, false
+}
+
+func (mb *MessageBus) Stats() MessageBusStats {
+	if mb == nil {
+		return MessageBusStats{}
+	}
+	return MessageBusStats{
+		Inbound:       snapshotStreamStats(mb.inbound, &mb.inboundStats),
+		Outbound:      snapshotStreamStats(mb.outbound, &mb.outboundStats),
+		OutboundMedia: snapshotStreamStats(mb.outboundMedia, &mb.mediaStats),
+		AudioChunks:   snapshotStreamStats(mb.audioChunks, &mb.audioStats),
+		VoiceControls: snapshotStreamStats(mb.voiceControls, &mb.voiceStats),
+	}
+}
+
+func (mb *MessageBus) HealthCheck() (bool, string) {
+	stats := mb.Stats()
+	return true, fmt.Sprintf(
+		"in=%d/%d out=%d/%d media=%d/%d audio=%d/%d voice=%d/%d dropped=%d",
+		stats.Inbound.Depth, stats.Inbound.Capacity,
+		stats.Outbound.Depth, stats.Outbound.Capacity,
+		stats.OutboundMedia.Depth, stats.OutboundMedia.Capacity,
+		stats.AudioChunks.Depth, stats.AudioChunks.Capacity,
+		stats.VoiceControls.Depth, stats.VoiceControls.Capacity,
+		stats.Inbound.DroppedTotal+stats.Outbound.DroppedTotal+stats.OutboundMedia.DroppedTotal+stats.AudioChunks.DroppedTotal+stats.VoiceControls.DroppedTotal,
+	)
+}
+
+func snapshotStreamStats[T any](ch chan T, stats *streamStats) StreamStats {
+	snapshot := StreamStats{
+		DroppedTotal: stats.dropped.Load(),
+	}
+	if ch != nil {
+		snapshot.Depth = len(ch)
+		snapshot.Capacity = cap(ch)
+	}
+	if unixNano := stats.lastDropped.Load(); unixNano > 0 {
+		snapshot.LastDroppedAt = time.Unix(0, unixNano)
+	}
+	if waitNanos := stats.lastWaitNanos.Load(); waitNanos > 0 {
+		wait := time.Duration(waitNanos)
+		snapshot.LastDropWait = wait.String()
+		snapshot.LastDropWaitMillis = wait.Milliseconds()
+	}
+	return snapshot
 }
 
 func (mb *MessageBus) Close() {
