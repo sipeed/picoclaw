@@ -319,16 +319,22 @@ func (mb *MessageBus) HealthCheck() (bool, string) {
 		stats.OutboundMedia.DroppedTotal +
 		stats.AudioChunks.DroppedTotal +
 		stats.VoiceControls.DroppedTotal
-
-	return true, fmt.Sprintf(
+	message := fmt.Sprintf(
 		"in=%d/%d out=%d/%d media=%d/%d audio=%d/%d voice=%d/%d dropped=%d",
-		stats.Inbound.Depth, stats.Inbound.Capacity,
-		stats.Outbound.Depth, stats.Outbound.Capacity,
-		stats.OutboundMedia.Depth, stats.OutboundMedia.Capacity,
-		stats.AudioChunks.Depth, stats.AudioChunks.Capacity,
-		stats.VoiceControls.Depth, stats.VoiceControls.Capacity,
+		stats.Inbound.Depth,
+		stats.Inbound.Capacity,
+		stats.Outbound.Depth,
+		stats.Outbound.Capacity,
+		stats.OutboundMedia.Depth,
+		stats.OutboundMedia.Capacity,
+		stats.AudioChunks.Depth,
+		stats.AudioChunks.Capacity,
+		stats.VoiceControls.Depth,
+		stats.VoiceControls.Capacity,
 		totalDropped,
 	)
+
+	return true, message
 }
 
 func snapshotStreamStats[T any](ch chan T, stats *streamStats) StreamStats {
