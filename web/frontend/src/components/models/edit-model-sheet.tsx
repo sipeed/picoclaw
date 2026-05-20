@@ -621,7 +621,7 @@ export function EditModelSheet({
                   <Input
                     value={form.thinkingLevel}
                     onChange={setField("thinkingLevel")}
-                    placeholder="off"
+                    placeholder={t("models.field.providerDefault")}
                   />
                 </Field>
 

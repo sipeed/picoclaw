@@ -655,7 +655,7 @@ export function AddModelSheet({
                   <Input
                     value={form.thinkingLevel}
                     onChange={setField("thinkingLevel")}
-                    placeholder="off"
+                    placeholder={t("models.field.providerDefault")}
                   />
                 </Field>
 
