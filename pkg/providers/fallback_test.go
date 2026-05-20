@@ -116,8 +116,61 @@ func TestFallback_ContextCanceled(t *testing.T) {
 	}
 
 	_, err := fc.Execute(ctx, candidates, run)
-	if err != context.Canceled {
+	if err == nil || !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestFallback_ContextDeadlineExceededBeforeAttempt(t *testing.T) {
+	ct := NewCooldownTracker()
+	fc := NewFallbackChain(ct, nil)
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	candidates := []FallbackCandidate{
+		makeCandidate("openai", "gpt-4"),
+		makeCandidate("anthropic", "claude"),
+	}
+
+	_, err := fc.Execute(ctx, candidates, func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+		t.Fatal("run should not be called when context has already expired")
+		return nil, nil
+	})
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline exceeded error, got %v", err)
+	}
+}
+
+func TestFallback_ContextDeadlineExceededDoesNotTryNextCandidate(t *testing.T) {
+	ct := NewCooldownTracker()
+	fc := NewFallbackChain(ct, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	candidates := []FallbackCandidate{
+		makeCandidate("openai", "gpt-4"),
+		makeCandidate("anthropic", "claude"),
+	}
+
+	attempt := 0
+	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+		attempt++
+		if attempt == 1 {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		t.Fatal("should not reach second candidate after deadline exceeded")
+		return nil, nil
+	}
+
+	_, err := fc.Execute(ctx, candidates, run)
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline exceeded error, got %v", err)
+	}
+	if attempt != 1 {
+		t.Fatalf("attempt = %d, want 1", attempt)
 	}
 }
 
@@ -517,6 +570,55 @@ func TestImageFallback_RetryOnOtherErrors(t *testing.T) {
 	}
 	if result.Provider != "anthropic" {
 		t.Errorf("provider = %q, want anthropic", result.Provider)
+	}
+}
+
+func TestImageFallback_ContextDeadlineExceededBeforeAttempt(t *testing.T) {
+	ct := NewCooldownTracker()
+	fc := NewFallbackChain(ct, nil)
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	candidates := []FallbackCandidate{makeCandidate("openai", "gpt-4o")}
+	_, err := fc.ExecuteImage(ctx, candidates, func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+		t.Fatal("run should not be called when image context has already expired")
+		return nil, nil
+	})
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline exceeded error, got %v", err)
+	}
+}
+
+func TestImageFallback_ContextDeadlineExceededDoesNotTryNextCandidate(t *testing.T) {
+	ct := NewCooldownTracker()
+	fc := NewFallbackChain(ct, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	candidates := []FallbackCandidate{
+		makeCandidate("openai", "gpt-4o"),
+		makeCandidate("anthropic", "claude-sonnet"),
+	}
+
+	attempt := 0
+	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+		attempt++
+		if attempt == 1 {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		t.Fatal("should not reach second image candidate after deadline exceeded")
+		return nil, nil
+	}
+
+	_, err := fc.ExecuteImage(ctx, candidates, run)
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline exceeded error, got %v", err)
+	}
+	if attempt != 1 {
+		t.Fatalf("attempt = %d, want 1", attempt)
 	}
 }
 
