@@ -5,12 +5,13 @@
 >
 > * **Image generation support:** provider-backed image generation tool and pluggable image generation provider wiring.
 > * **Planning and search providers:** `update_plan` tool, Gemini web search provider, and related web-search UI/config support.
-> * **Agent / subagent runtime fixes:** async follow-up origin preservation, direct async error surfacing, final-reply delivery after interim progress messages, improved `spawn` delivery semantics, and durable `task_status` behavior.
-> * **Runtime delivery coordination:** effective sub-turn delivery mode handling so `spawn` / delegate-style workflows can keep parent-only, user-facing, and tool-result delivery decisions in the runtime rather than relying on ad hoc model behavior.
+> * **Agent / subagent runtime fixes:** async follow-up origin preservation, direct async error surfacing, final-reply delivery after interim progress messages, improved `spawn` / `delegate` delivery semantics, and durable task status behavior.
+> * **Runtime delivery coordination:** typed async completion handling, legacy synthetic system-message adapter isolation, delivery-mode routing (`user_only`, `parent_only`, `user_and_parent`), duplicate/restart idempotency, and task-registry-backed `spawn_status` / `task_status`.
+> * **Durable background task registry:** bounded persistent records for spawn, delegate, and cron executions, including delivery status, completion IDs, restart reconciliation, and user-visible `task_status` diagnostics.
 > * **Agent capability policy:** frontmatter-based per-agent `tools` / `mcpServers` filtering, replacing the older config-level per-agent tool filter layer.
 > * **MCP transport safety:** fatal MCP transport / JSON-RPC framing errors fail fast instead of triggering speculative fallback tool calls after a broken MCP response.
 > * **Telegram / channel fixes:** forum topic preservation for final replies and message-tool sends, media-group album handling, topic-aware trigger overrides, typing / feedback cleanup, and real `MinEditInterval` throttling for tool-feedback edits.
-> * **Tooling and workflow fixes:** relative script paths allowed in the exec guard, session-scoped Seahorse retrieval tools, cron feedback suppression for scheduled turns, session reset command, and tool-feedback controls.
+> * **Tooling and workflow fixes:** relative script paths allowed in the exec guard, session-scoped Seahorse retrieval tools, cron feedback suppression plus cron execution records, session reset command, and tool-feedback controls.
 > * **Provider auth support:** OpenAI OAuth support for Codex and transcription flows.
 >
 > Treat this branch as deployment-specific until the corresponding changes are merged upstream.
