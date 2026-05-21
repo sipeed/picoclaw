@@ -33,6 +33,7 @@ func (p *Pipeline) Finalize(
 		ts.setPhase(TurnPhaseCompleted)
 		return turnResult{
 			finalContent: finalContent,
+			modelName:    exec.llmModelName,
 			status:       turnStatus,
 			followUps:    append([]bus.InboundMessage(nil), ts.followUps...),
 		}, nil
@@ -44,6 +45,7 @@ func (p *Pipeline) Finalize(
 		finalMsg := providers.Message{
 			Role:             "assistant",
 			Content:          finalContent,
+			ModelName:        exec.llmModelName,
 			ReasoningContent: responseReasoningContent(exec.response),
 		}
 		ts.agent.Sessions.AddFullMessage(ts.sessionKey, finalMsg)
@@ -80,24 +82,10 @@ func (p *Pipeline) Finalize(
 	// so the final answer is still delivered outside normal SendResponse.
 	if ((streamErr != nil && !isConfiguredStreamingVisibleError(streamErr)) || exec.streamingFallback) &&
 		!ts.opts.SendResponse && ts.opts.AllowInterimPicoPublish && finalContent != "" {
-		agentID, sessionKey, scope := outboundTurnMetadata(
-			ts.agent.ID,
-			ts.opts.Dispatch.SessionKey,
-			ts.opts.Dispatch.SessionScope,
-		)
-		msg := bus.OutboundMessage{
-			Context: outboundContextFromInbound(
-				ts.opts.Dispatch.InboundContext,
-				ts.opts.Dispatch.Channel(),
-				ts.opts.Dispatch.ChatID(),
-				ts.opts.Dispatch.ReplyToMessageID(),
-			),
-			AgentID:      agentID,
-			SessionKey:   sessionKey,
-			Scope:        scope,
-			Content:      finalContent,
-			ContextUsage: contextUsage,
-		}
+		msg := outboundMessageForTurnWithOptions(ts, finalContent, outboundTurnMessageOptions{
+			modelName: exec.llmModelName,
+		})
+		msg.ContextUsage = contextUsage
 		markFinalOutbound(&msg)
 		_ = al.bus.PublishOutbound(turnCtx, msg)
 	}
@@ -112,6 +100,7 @@ func (p *Pipeline) Finalize(
 	ts.setPhase(TurnPhaseCompleted)
 	return turnResult{
 		finalContent: finalContent,
+		modelName:    exec.llmModelName,
 		status:       turnStatus,
 		followUps:    append([]bus.InboundMessage(nil), ts.followUps...),
 	}, nil

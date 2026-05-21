@@ -610,6 +610,9 @@ func TestConfiguredStreamingFinalFlushFailureBeforeVisibleOutputPublishesFallbac
 		if outbound.Content != "stream response" {
 			t.Fatalf("fallback outbound content = %q, want stream response", outbound.Content)
 		}
+		if got := outbound.Context.Raw["model_name"]; got != "test-model" {
+			t.Fatalf("fallback outbound model_name = %q, want %q", got, "test-model")
+		}
 	case <-time.After(time.Second):
 		t.Fatal("expected fallback outbound after invisible final stream flush failure")
 	}

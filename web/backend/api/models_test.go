@@ -1900,6 +1900,12 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 		t.Fatal("openai provider option missing")
 	} else if option.DefaultAPIBase != "https://api.openai.com/v1" {
 		t.Fatalf("openai default_api_base = %q, want %q", option.DefaultAPIBase, "https://api.openai.com/v1")
+	} else if !option.SupportsFetch {
+		t.Fatal("openai provider option should report supports_fetch")
+	} else if option.DisplayName != "OpenAI" {
+		t.Fatalf("openai display_name = %q, want %q", option.DisplayName, "OpenAI")
+	} else if len(option.CommonModels) == 0 {
+		t.Fatal("openai common_models should not be empty")
 	}
 	if option, ok := optionsByID["anthropic"]; !ok {
 		t.Fatal("anthropic provider option missing")
@@ -1913,6 +1919,8 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 		t.Fatal("github-copilot provider option missing")
 	} else if option.DefaultAPIBase != "localhost:4321" {
 		t.Fatalf("github-copilot default_api_base = %q, want %q", option.DefaultAPIBase, "localhost:4321")
+	} else if !option.Local {
+		t.Fatal("github-copilot should be marked local")
 	}
 	if option, ok := optionsByID["elevenlabs"]; !ok {
 		t.Fatal("elevenlabs provider option missing")
@@ -1952,6 +1960,11 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 		if !option.AuthMethodLocked {
 			t.Fatal("antigravity auth method should be locked")
 		}
+	}
+	if option, ok := optionsByID["qwen-portal"]; !ok {
+		t.Fatal("qwen-portal provider option missing")
+	} else if len(option.Aliases) == 0 || option.Aliases[0] != "qwen" {
+		t.Fatalf("qwen-portal aliases = %#v, want to include qwen", option.Aliases)
 	}
 
 	updated, err := config.LoadConfig(configPath)

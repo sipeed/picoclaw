@@ -36,12 +36,20 @@ export interface ModelInfo {
 
 export interface ModelProviderOption {
   id: string
+  display_name?: string
+  icon_slug?: string
+  domain?: string
   default_api_base: string
   empty_api_key_allowed: boolean
   create_allowed: boolean
   default_model_allowed: boolean
+  supports_fetch?: boolean
   default_auth_method?: string
   auth_method_locked?: boolean
+  local?: boolean
+  priority?: number
+  common_models?: string[]
+  aliases?: string[]
 }
 
 interface ModelsListResponse {

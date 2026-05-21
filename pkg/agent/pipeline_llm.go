@@ -206,6 +206,16 @@ func (p *Pipeline) CallLLM(
 					map[string]any{"agent_id": ts.agent.ID, "iteration": iteration},
 				)
 			}
+			for _, candidate := range exec.activeCandidates {
+				if candidate.StableKey() != fbResult.IdentityKey {
+					continue
+				}
+				exec.llmModelName = resolvedCandidateModelName(
+					[]providers.FallbackCandidate{candidate},
+					exec.llmModelName,
+				)
+				break
+			}
 			return fbResult.Response, nil
 		}
 		return exec.activeProvider.Chat(providerCtx, messagesForCall, toolDefsForCall, exec.llmModel, exec.llmOpts)
@@ -488,7 +498,7 @@ func (p *Pipeline) CallLLM(
 			// Publish pico thoughts before the turn context is canceled at return time.
 			// The async variant can race with turn teardown and intermittently drop the
 			// thought message in CI even though the LLM produced reasoning content.
-			al.publishPicoReasoning(turnCtx, reasoningContent, ts.chatID, ts.sessionKey)
+			al.publishPicoReasoning(turnCtx, reasoningContent, ts.chatID, ts.sessionKey, exec.llmModelName)
 		}
 	} else {
 		go al.handleReasoning(
@@ -575,6 +585,7 @@ func (p *Pipeline) CallLLM(
 	assistantMsg := providers.Message{
 		Role:             "assistant",
 		Content:          exec.response.Content,
+		ModelName:        exec.llmModelName,
 		ReasoningContent: reasoningContent,
 	}
 	for _, tc := range exec.normalizedToolCalls {
@@ -618,6 +629,7 @@ func (p *Pipeline) CallLLM(
 		al.publishPicoToolCallInterim(
 			turnCtx,
 			ts,
+			exec.llmModelName,
 			reasoningContent,
 			exec.response.Content,
 			assistantMsg.ToolCalls,

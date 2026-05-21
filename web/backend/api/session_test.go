@@ -564,7 +564,7 @@ func TestHandleGetSession_ReconstructsThoughtFromAssistantReasoningContent(t *te
 	sessionKey := picoSessionPrefix + "detail-reasoning-content"
 	for _, msg := range []providers.Message{
 		{Role: "user", Content: "hello"},
-		{Role: "assistant", Content: "final visible answer", ReasoningContent: "internal chain of thought"},
+		{Role: "assistant", Content: "final visible answer", ModelName: "gpt-5.4", ReasoningContent: "internal chain of thought"},
 	} {
 		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
 			t.Fatalf("AddFullMessage() error = %v", err)
@@ -597,8 +597,14 @@ func TestHandleGetSession_ReconstructsThoughtFromAssistantReasoningContent(t *te
 		resp.Messages[1].Kind != "thought" {
 		t.Fatalf("thought message = %#v, want assistant thought/internal chain of thought", resp.Messages[1])
 	}
+	if resp.Messages[1].ModelName != "gpt-5.4" {
+		t.Fatalf("thought model_name = %q, want %q", resp.Messages[1].ModelName, "gpt-5.4")
+	}
 	if resp.Messages[2].Role != "assistant" || resp.Messages[2].Content != "final visible answer" {
 		t.Fatalf("final message = %#v, want assistant/final visible answer", resp.Messages[2])
+	}
+	if resp.Messages[2].ModelName != "gpt-5.4" {
+		t.Fatalf("final model_name = %q, want %q", resp.Messages[2].ModelName, "gpt-5.4")
 	}
 }
 
@@ -725,8 +731,9 @@ func TestHandleGetSession_ReconstructsVisibleMessageToolOutputWithoutDuplicateSu
 	for _, msg := range []providers.Message{
 		{Role: "user", Content: "test"},
 		{
-			Role:    "assistant",
-			Content: "",
+			Role:      "assistant",
+			Content:   "",
+			ModelName: "gpt-5.4-mini",
 			ToolCalls: []providers.ToolCall{
 				{
 					ID:   "call_1",
@@ -771,8 +778,14 @@ func TestHandleGetSession_ReconstructsVisibleMessageToolOutputWithoutDuplicateSu
 		t.Fatalf("first message = %#v, want user/test", resp.Messages[0])
 	}
 	assertVisibleToolCallMessage(t, resp.Messages[1], "message")
+	if resp.Messages[1].ModelName != "gpt-5.4-mini" {
+		t.Fatalf("tool_calls model_name = %q, want %q", resp.Messages[1].ModelName, "gpt-5.4-mini")
+	}
 	if resp.Messages[2].Role != "assistant" || resp.Messages[2].Content != "visible tool output" {
 		t.Fatalf("assistant message = %#v, want visible tool output", resp.Messages[2])
+	}
+	if resp.Messages[2].ModelName != "gpt-5.4-mini" {
+		t.Fatalf("visible tool output model_name = %q, want %q", resp.Messages[2].ModelName, "gpt-5.4-mini")
 	}
 }
 

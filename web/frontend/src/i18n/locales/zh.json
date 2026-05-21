@@ -232,6 +232,8 @@
     "unsavedPrompt": "当前修改尚未保存，保存后才会写入模型配置。",
     "restartHint": "模型配置保存后需要重启服务才能生效。",
     "loadError": "加载模型列表失败",
+    "retry": "重试",
+    "providerCatalogUnavailable": "后端 Provider catalog 暂不可用，待模型 API 成功加载后才能选择新的 Provider。",
     "noDefaultHintPrefix": "尚未设置默认模型，点击",
     "noDefaultHintSuffix": "设为默认。",
     "status": {
@@ -397,6 +399,7 @@
       "selectProvider": "选择服务商...",
       "searchProvider": "搜索服务商...",
       "noProvider": "未找到服务商。",
+      "noCatalog": "Provider catalog 暂不可用。",
       "local": "本地",
       "custom": "自定义服务商...",
       "customPlaceholder": "输入服务商名称..."
@@ -899,7 +902,13 @@
       "format_success": "JSON 格式化成功",
       "format_error": "JSON 格式无效",
       "format": "格式化",
-      "unsaved_changes": "您有未保存的更改"
+      "unsaved_changes": "您有未保存的更改",
+      "factory_reset": "恢复出厂设置",
+      "factory_reset_confirm_title": "恢复出厂设置",
+      "factory_reset_confirm_desc": "这将把所有配置重置为出厂默认值。API 密钥和安全凭证将被保留。当前配置将被备份。",
+      "factory_reset_confirm": "确认重置",
+      "factory_reset_success": "配置已重置为出厂默认值。",
+      "factory_reset_error": "重置配置失败。"
     },
     "logs": {
       "log_level_error": "更新日志等级失败。",

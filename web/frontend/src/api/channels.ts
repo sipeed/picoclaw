@@ -77,6 +77,12 @@ export async function patchAppConfig(
   })
 }
 
+export async function resetAppConfig(): Promise<ConfigActionResponse> {
+  return request<ConfigActionResponse>("/api/config/reset", {
+    method: "POST",
+  })
+}
+
 // WeChat QR login flow API
 
 export interface WeixinFlowResponse {

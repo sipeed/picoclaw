@@ -18,19 +18,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-// fetchableProviders lists providers that support OpenAI-compatible /models listing.
-var fetchableProviders = map[string]bool{
-	"openai": true, "deepseek": true, "openrouter": true,
-	"qwen-portal": true, "qwen-intl": true, "moonshot": true,
-	"volcengine": true, "zhipu": true, "groq": true,
-	"mistral": true, "nvidia": true, "cerebras": true,
-	"venice": true, "shengsuanyun": true, "vivgrid": true,
-	"siliconflow": true,
-	"minimax":     true, "longcat": true, "modelscope": true,
-	"mimo": true, "avian": true, "zai": true, "novita": true,
-	"litellm": true, "vllm": true, "lmstudio": true, "ollama": true,
-}
-
 // registerModelRoutes binds model list management endpoints to the ServeMux.
 func (h *Handler) registerModelRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/models", h.handleListModels)
@@ -667,7 +654,7 @@ func (h *Handler) handleFetchModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !fetchableProviders[strings.ToLower(req.Provider)] {
+	if !providers.IsModelProviderFetchable(req.Provider) {
 		http.Error(w, fmt.Sprintf("provider %q does not support model listing", req.Provider), http.StatusBadRequest)
 		return
 	}
@@ -1012,11 +999,11 @@ func probeModelConnectivity(m *config.ModelConfig) bool {
 		return probeOllamaModel(apiBase, modelID)
 	case "vllm", "lmstudio":
 		return probeOpenAICompatibleModel(apiBase, modelID, m.APIKey())
-	case "github-copilot", "copilot":
+	case "github-copilot":
 		return probeTCPService(apiBase)
-	case "claude-cli", "claudecli":
+	case "claude-cli":
 		return probeCommandAvailable("claude")
-	case "codex-cli", "codexcli":
+	case "codex-cli":
 		return probeCommandAvailable("codex")
 	default:
 		// For remote providers (OpenAI, Anthropic, Gemini, DeepSeek, etc.),

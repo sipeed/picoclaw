@@ -946,7 +946,7 @@ func TestCreateProviderFromConfig_CodingPlanAnthropic(t *testing.T) {
 			if modelID != wantModelID {
 				t.Errorf("modelID = %q, want %q", modelID, wantModelID)
 			}
-			// coding-plan-anthropic uses Anthropic Messages provider
+			// alibaba-coding-anthropic uses Anthropic Messages provider
 			// Verify it's the anthropic messages provider by checking interface
 			var _ LLMProvider = provider
 		})
@@ -997,6 +997,13 @@ func TestModelProviderOptions(t *testing.T) {
 	}
 	if option, ok := seen["openai"]; ok && !option.CreateAllowed {
 		t.Fatal("openai should be creatable")
+	}
+	if option, ok := seen["openai"]; ok && !option.SupportsFetch {
+		t.Fatal("openai should support upstream model listing")
+	} else if option.DisplayName != "OpenAI" {
+		t.Fatalf("openai display_name = %q, want %q", option.DisplayName, "OpenAI")
+	} else if len(option.CommonModels) == 0 {
+		t.Fatal("openai common_models should not be empty")
 	}
 	if option, ok := seen["lmstudio"]; !ok {
 		t.Fatal("lmstudio option missing")
@@ -1052,6 +1059,71 @@ func TestModelProviderOptions(t *testing.T) {
 		t.Fatal("github-copilot option missing")
 	} else if option.DefaultAPIBase != "localhost:4321" {
 		t.Fatalf("github-copilot default_api_base = %q, want %q", option.DefaultAPIBase, "localhost:4321")
+	} else if !option.Local {
+		t.Fatal("github-copilot should be marked local")
+	}
+	if option, ok := seen["qwen-portal"]; !ok {
+		t.Fatal("qwen-portal option missing")
+	} else if len(option.Aliases) == 0 || option.Aliases[0] != "qwen" {
+		t.Fatalf("qwen-portal aliases = %#v, want to include qwen", option.Aliases)
+	}
+
+	for _, option := range options {
+		if len(option.CommonModels) > 6 {
+			t.Fatalf("provider %q exposes %d common_models, want at most 6", option.ID, len(option.CommonModels))
+		}
+		if option.Local && len(option.CommonModels) > 0 {
+			t.Fatalf("local provider %q should not expose common_models", option.ID)
+		}
+		seenModels := make(map[string]struct{}, len(option.CommonModels))
+		for _, model := range option.CommonModels {
+			if strings.TrimSpace(model) == "" {
+				t.Fatalf("provider %q includes an empty common_model entry", option.ID)
+			}
+			if _, exists := seenModels[model]; exists {
+				t.Fatalf("provider %q includes duplicate common_model %q", option.ID, model)
+			}
+			seenModels[model] = struct{}{}
+		}
+	}
+}
+
+func TestBuildModelProviderAliasMap(t *testing.T) {
+	aliases := buildModelProviderAliasMap()
+	if len(aliases) == 0 {
+		t.Fatal("buildModelProviderAliasMap() returned empty map")
+	}
+
+	seenAliases := make(map[string]string, len(aliases))
+	for provider, option := range modelProviderOptionsByName {
+		got, ok := aliases[provider]
+		if !ok {
+			t.Fatalf("canonical provider %q missing from alias map", provider)
+		}
+		if got != provider {
+			t.Fatalf("canonical provider %q mapped to %q", provider, got)
+		}
+		if existing, ok := seenAliases[provider]; ok {
+			t.Fatalf("canonical provider key %q collides with provider %q", provider, existing)
+		}
+		seenAliases[provider] = provider
+		for _, alias := range option.Aliases {
+			normalized := strings.ToLower(strings.TrimSpace(alias))
+			if normalized == "" {
+				t.Fatalf("provider %q includes empty alias", provider)
+			}
+			if existing, ok := seenAliases[normalized]; ok && existing != provider {
+				t.Fatalf("alias %q for provider %q collides with provider %q", alias, provider, existing)
+			}
+			seenAliases[normalized] = provider
+			got, ok := aliases[normalized]
+			if !ok {
+				t.Fatalf("alias %q for provider %q missing from alias map", alias, provider)
+			}
+			if got != provider {
+				t.Fatalf("alias %q normalized to %q, want %q", alias, got, provider)
+			}
+		}
 	}
 }
 

@@ -126,7 +126,7 @@ func hasStoredOAuthCredential(m *config.ModelConfig) (bool, bool) {
 
 func providerUsesImplicitOAuth(protocol string) bool {
 	switch protocol {
-	case "antigravity", "google-antigravity":
+	case "antigravity":
 		return true
 	default:
 		return false
@@ -168,11 +168,11 @@ func requiresRuntimeProbe(m *config.ModelConfig) bool {
 	protocol := modelProtocol(m)
 
 	switch protocol {
-	case "claude-cli", "claudecli", "codex-cli", "codexcli", "github-copilot", "copilot":
+	case "claude-cli", "codex-cli", "github-copilot":
 		return true
 	}
 
-	if providers.IsEmptyAPIKeyAllowedForProtocol(protocol) {
+	if providers.IsHTTPAPIProtocol(protocol) && providers.IsEmptyAPIKeyAllowedForProtocol(protocol) {
 		apiBase := strings.TrimSpace(m.APIBase)
 		return apiBase == "" || hasLocalAPIBase(apiBase)
 	}
@@ -220,11 +220,11 @@ func runLocalModelProbe(m *config.ModelConfig) bool {
 		return probeOllamaModelFunc(apiBase, modelID)
 	case "vllm", "lmstudio":
 		return probeOpenAICompatibleModelFunc(apiBase, modelID, m.APIKey())
-	case "github-copilot", "copilot":
+	case "github-copilot":
 		return probeTCPServiceFunc(apiBase)
-	case "claude-cli", "claudecli":
+	case "claude-cli":
 		return probeCommandAvailableFunc("claude")
-	case "codex-cli", "codexcli":
+	case "codex-cli":
 		return probeCommandAvailableFunc("codex")
 	default:
 		if hasLocalAPIBase(apiBase) {
@@ -442,7 +442,7 @@ func modelProbeAPIBase(m *config.ModelConfig) string {
 	}
 
 	switch protocol {
-	case "github-copilot", "copilot":
+	case "github-copilot":
 		return "localhost:4321"
 	default:
 		return ""
@@ -477,7 +477,7 @@ func oauthProviderForModel(m *config.ModelConfig) (string, bool) {
 		return oauthProviderOpenAI, true
 	case "anthropic":
 		return oauthProviderAnthropic, true
-	case "antigravity", "google-antigravity":
+	case "antigravity":
 		return oauthProviderGoogleAntigravity, true
 	default:
 		return "", false

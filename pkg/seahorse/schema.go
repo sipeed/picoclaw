@@ -46,6 +46,7 @@ func runSchema(db *sql.DB) error {
 			conversation_id INTEGER NOT NULL REFERENCES conversations(conversation_id),
 			role            TEXT NOT NULL,
 			content         TEXT NOT NULL DEFAULT '',
+			model_name      TEXT NOT NULL DEFAULT '',
 			reasoning_content TEXT NOT NULL DEFAULT '',
 			token_count     INTEGER NOT NULL DEFAULT 0,
 			created_at      TEXT NOT NULL DEFAULT (datetime('now'))
@@ -162,6 +163,9 @@ func runSchema(db *sql.DB) error {
 	if err := ensureMessagesReasoningContentColumn(db); err != nil {
 		return err
 	}
+	if err := ensureMessagesModelNameColumn(db); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -176,6 +180,21 @@ func ensureMessagesReasoningContentColumn(db *sql.DB) error {
 
 	if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN reasoning_content TEXT NOT NULL DEFAULT ''`); err != nil {
 		return fmt.Errorf("add messages.reasoning_content: %w", err)
+	}
+	return nil
+}
+
+func ensureMessagesModelNameColumn(db *sql.DB) error {
+	hasColumn, err := tableHasColumn(db, "messages", "model_name")
+	if err != nil {
+		return fmt.Errorf("check messages.model_name: %w", err)
+	}
+	if hasColumn {
+		return nil
+	}
+
+	if _, err := db.Exec(`ALTER TABLE messages ADD COLUMN model_name TEXT NOT NULL DEFAULT ''`); err != nil {
+		return fmt.Errorf("add messages.model_name: %w", err)
 	}
 	return nil
 }

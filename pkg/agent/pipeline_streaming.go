@@ -50,9 +50,10 @@ func (p *Pipeline) tryConfiguredStreamingLLM(
 	}
 
 	publisher := &streamingChunkPublisher{
-		streamer: streamer,
-		channel:  ts.channel,
-		chatID:   ts.chatID,
+		streamer:  streamer,
+		channel:   ts.channel,
+		chatID:    ts.chatID,
+		modelName: exec.llmModelName,
 	}
 
 	logger.DebugCF("agent", "configured streaming enabled", map[string]any{
@@ -371,6 +372,7 @@ type streamingChunkPublisher struct {
 	streamer           bus.Streamer
 	channel            string
 	chatID             string
+	modelName          string
 	published          bool
 	reasoningPublished bool
 	err                error
@@ -379,6 +381,9 @@ type streamingChunkPublisher struct {
 func (p *streamingChunkPublisher) Update(ctx context.Context, accumulated string) {
 	if p == nil || p.streamer == nil || strings.TrimSpace(accumulated) == "" {
 		return
+	}
+	if setter, ok := p.streamer.(interface{ SetModelName(modelName string) }); ok {
+		setter.SetModelName(p.modelName)
 	}
 	if err := p.streamer.Update(ctx, accumulated); err != nil {
 		p.err = err
@@ -395,6 +400,9 @@ func (p *streamingChunkPublisher) Update(ctx context.Context, accumulated string
 func (p *streamingChunkPublisher) UpdateReasoning(ctx context.Context, accumulated string) {
 	if p == nil || p.streamer == nil || strings.TrimSpace(accumulated) == "" {
 		return
+	}
+	if setter, ok := p.streamer.(interface{ SetModelName(modelName string) }); ok {
+		setter.SetModelName(p.modelName)
 	}
 	reasoningStreamer, ok := p.streamer.(bus.ReasoningStreamer)
 	if !ok {
@@ -433,6 +441,9 @@ func (p *streamingChunkPublisher) Finalize(ctx context.Context, content string, 
 	}
 	if strings.TrimSpace(content) == "" && !p.published {
 		return nil
+	}
+	if setter, ok := p.streamer.(interface{ SetModelName(modelName string) }); ok {
+		setter.SetModelName(p.modelName)
 	}
 	var err error
 	if streamer, ok := p.streamer.(bus.ContextUsageStreamer); ok {

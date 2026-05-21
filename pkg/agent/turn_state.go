@@ -84,6 +84,7 @@ const (
 
 type turnResult struct {
 	finalContent string
+	modelName    string
 	status       TurnEndStatus
 	followUps    []bus.InboundMessage
 }
@@ -141,6 +142,7 @@ type turnExecution struct {
 	callMessages        []providers.Message
 	providerToolDefs    []providers.ToolDefinition
 	llmModel            string
+	llmModelName        string
 	llmOpts             map[string]any
 	gracefulTerminal    bool
 	useNativeSearch     bool

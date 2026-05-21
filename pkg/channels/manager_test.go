@@ -142,11 +142,21 @@ func (m *mockReasoningStreamer) FinalizeReasoning(_ context.Context, content str
 	return nil
 }
 
+type modelTrackingReasoningStreamer struct {
+	mockReasoningStreamer
+	modelNames []string
+}
+
+func (m *modelTrackingReasoningStreamer) SetModelName(modelName string) {
+	m.modelNames = append(m.modelNames, strings.TrimSpace(modelName))
+}
+
 type recordingStreamSegment struct {
 	updates       []string
 	finals        []string
 	finalUsage    *bus.ContextUsage
 	canceledCount int
+	modelNames    []string
 }
 
 func (s *recordingStreamSegment) Update(_ context.Context, content string) error {
@@ -166,6 +176,10 @@ func (s *recordingStreamSegment) FinalizeWithContext(_ context.Context, content 
 
 func (s *recordingStreamSegment) Cancel(context.Context) {
 	s.canceledCount++
+}
+
+func (s *recordingStreamSegment) SetModelName(modelName string) {
+	s.modelNames = append(s.modelNames, strings.TrimSpace(modelName))
 }
 
 type mockStreamingChannel struct {
@@ -2068,6 +2082,42 @@ func TestGetStreamer_PreservesReasoningStreamer(t *testing.T) {
 	}
 }
 
+func TestGetStreamer_PreservesModelNameSetter(t *testing.T) {
+	m := newTestManager()
+	inner := &modelTrackingReasoningStreamer{}
+	ch := &mockStreamingChannel{
+		streamer: inner,
+	}
+	m.channels["test"] = ch
+
+	streamer, ok := m.GetStreamer(context.Background(), "test", "123", "")
+	if !ok {
+		t.Fatal("expected streamer to be available")
+	}
+	setter, ok := streamer.(interface{ SetModelName(modelName string) })
+	if !ok {
+		t.Fatal("manager-wrapped streamer should preserve SetModelName")
+	}
+	setter.SetModelName("gpt-5.4")
+	if err := streamer.Update(context.Background(), "hello"); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	reasoningStreamer, ok := streamer.(bus.ReasoningStreamer)
+	if !ok {
+		t.Fatal("manager-wrapped streamer should preserve ReasoningStreamer")
+	}
+	setter.SetModelName("gpt-5.4")
+	if err := reasoningStreamer.UpdateReasoning(context.Background(), "thinking"); err != nil {
+		t.Fatalf("UpdateReasoning() error = %v", err)
+	}
+	if len(inner.modelNames) != 2 {
+		t.Fatalf("model name calls = %v, want 2 forwarded calls", inner.modelNames)
+	}
+	if inner.modelNames[0] != "gpt-5.4" || inner.modelNames[1] != "gpt-5.4" {
+		t.Fatalf("model name calls = %v, want both forwarded as gpt-5.4", inner.modelNames)
+	}
+}
+
 func TestGetStreamer_SplitOnMarkerStreamsSeparateSegments(t *testing.T) {
 	m := newTestManager()
 	m.config = &config.Config{
@@ -2185,6 +2235,58 @@ func TestGetStreamer_SplitOnMarkerKeepsReasoningOnInitialStreamer(t *testing.T) 
 	}
 	if initial.reasoningFinal != "final thought" {
 		t.Fatalf("initial reasoning final = %q, want final thought", initial.reasoningFinal)
+	}
+}
+
+func TestGetStreamer_SplitOnMarkerPreservesModelNameSetter(t *testing.T) {
+	m := newTestManager()
+	m.config = &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				SplitOnMarker: true,
+			},
+		},
+	}
+
+	initial := &modelTrackingReasoningStreamer{}
+	next := &recordingStreamSegment{}
+	callCount := 0
+	ch := &mockStreamingChannel{
+		beginStreamFn: func(context.Context, string) (Streamer, error) {
+			callCount++
+			if callCount == 1 {
+				return initial, nil
+			}
+			return next, nil
+		},
+	}
+	m.channels["test"] = ch
+
+	streamer, ok := m.GetStreamer(context.Background(), "test", "123", "")
+	if !ok {
+		t.Fatal("expected streamer to be available")
+	}
+	setter, ok := streamer.(interface{ SetModelName(modelName string) })
+	if !ok {
+		t.Fatal("split streamer should preserve SetModelName")
+	}
+	setter.SetModelName("gpt-5.4-mini")
+	if err := streamer.Update(context.Background(), "hello<|[SPLIT]|>world"); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	reasoningStreamer, ok := streamer.(bus.ReasoningStreamer)
+	if !ok {
+		t.Fatal("split streamer should preserve ReasoningStreamer")
+	}
+	if err := reasoningStreamer.UpdateReasoning(context.Background(), "thinking"); err != nil {
+		t.Fatalf("UpdateReasoning() error = %v", err)
+	}
+
+	if len(initial.modelNames) == 0 || initial.modelNames[0] != "gpt-5.4-mini" {
+		t.Fatalf("initial model names = %v, want forwarded gpt-5.4-mini", initial.modelNames)
+	}
+	if len(next.modelNames) == 0 || next.modelNames[0] != "gpt-5.4-mini" {
+		t.Fatalf("next model names = %v, want forwarded gpt-5.4-mini", next.modelNames)
 	}
 }
 

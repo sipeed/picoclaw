@@ -5,7 +5,7 @@ import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
-import { patchAppConfig } from "@/api/channels"
+import { patchAppConfig, resetAppConfig } from "@/api/channels"
 import { launcherFetch } from "@/api/http"
 import { postLauncherDashboardSetup } from "@/api/launcher-auth"
 import {
@@ -41,6 +41,17 @@ import {
 } from "@/components/config/form-model"
 import { PageHeader } from "@/components/page-header"
 import { Badge } from "@/components/ui/badge"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
@@ -72,15 +83,24 @@ export function ConfigPage() {
   const [autoStartEnabled, setAutoStartEnabled] = useState(false)
   const [autoStartBaseline, setAutoStartBaseline] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [showFactoryResetDialog, setShowFactoryResetDialog] = useState(false)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["config"],
     queryFn: async () => {
-      const res = await launcherFetch("/api/config")
-      if (!res.ok) {
-        throw new Error("Failed to load config")
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 5000)
+      try {
+        const res = await launcherFetch("/api/config", {
+          signal: controller.signal,
+        })
+        if (!res.ok) {
+          throw new Error("Failed to load config")
+        }
+        return res.json()
+      } finally {
+        clearTimeout(timer)
       }
-      return res.json()
     },
   })
 
@@ -206,6 +226,27 @@ export function ConfigPage() {
     setLauncherForm(launcherBaseline)
     setAutoStartEnabled(autoStartBaseline)
     toast.info(t("pages.config.reset_success"))
+  }
+
+  const handleFactoryReset = async () => {
+    try {
+      await resetAppConfig()
+      const fresh = await launcherFetch("/api/config").then((r) => r.json())
+      const parsed = buildFormFromConfig(fresh)
+      setForm(parsed)
+      setBaseline(parsed)
+      await queryClient.invalidateQueries({ queryKey: ["config"] })
+      await refreshGatewayState()
+      toast.success(t("pages.config.factory_reset_success"))
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : t("pages.config.factory_reset_error"),
+      )
+    } finally {
+      setShowFactoryResetDialog(false)
+    }
   }
 
   const handleSave = async () => {
@@ -625,8 +666,38 @@ export function ConfigPage() {
     }
   }
 
+  const factoryResetButton = (
+    <AlertDialog
+      open={showFactoryResetDialog}
+      onOpenChange={setShowFactoryResetDialog}
+    >
+      <AlertDialogTrigger asChild>
+        <Button variant="destructive" disabled={saving}>
+          {t("pages.config.factory_reset")}
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {t("pages.config.factory_reset_confirm_title")}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {t("pages.config.factory_reset_confirm_desc")}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+          <AlertDialogAction onClick={handleFactoryReset}>
+            {t("pages.config.factory_reset_confirm")}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+
   const actionButtons = (
     <div className="flex justify-end gap-2">
+      {factoryResetButton}
       <Button
         variant="outline"
         onClick={handleReset}
@@ -672,8 +743,11 @@ export function ConfigPage() {
               {t("labels.loading")}
             </div>
           ) : error ? (
-            <div className="text-destructive py-6 text-sm">
-              {t("pages.config.load_error")}
+            <div className="space-y-4">
+              <div className="text-destructive py-6 text-sm">
+                {t("pages.config.load_error")}
+              </div>
+              <div className="flex justify-end">{factoryResetButton}</div>
             </div>
           ) : (
             <div className="space-y-6">

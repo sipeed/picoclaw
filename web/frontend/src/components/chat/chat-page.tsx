@@ -376,6 +376,7 @@ export function ChatPage() {
                     content={msg.content}
                     attachments={msg.attachments}
                     kind={msg.kind}
+                    modelName={msg.modelName}
                     toolCalls={msg.toolCalls}
                     timestamp={msg.timestamp}
                   />

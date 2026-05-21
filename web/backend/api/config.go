@@ -18,6 +18,7 @@ func (h *Handler) registerConfigRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/config", h.handleGetConfig)
 	mux.HandleFunc("PUT /api/config", h.handleUpdateConfig)
 	mux.HandleFunc("PATCH /api/config", h.handlePatchConfig)
+	mux.HandleFunc("POST /api/config/reset", h.handleResetConfig)
 	mux.HandleFunc("POST /api/config/test-command-patterns", h.handleTestCommandPatterns)
 }
 
@@ -206,6 +207,32 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 
 	h.applyRuntimeLogLevel()
 	logger.Infof("configuration updated successfully")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// handleResetConfig resets the configuration to factory defaults.
+// API keys and security credentials are preserved.
+//
+//	POST /api/config/reset
+func (h *Handler) handleResetConfig(w http.ResponseWriter, r *http.Request) {
+	if err := config.ResetToDefaults(h.configPath); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to reset config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	h.applyRuntimeLogLevel()
+	logger.Infof("configuration reset to factory defaults")
+
+	// Restart gateway if running
+	status := h.gatewayStatusData()
+	gatewayStatus, _ := status["gateway_status"].(string)
+	if gatewayStatus == "running" {
+		if _, err := h.RestartGateway(); err != nil {
+			logger.ErrorF("failed to restart gateway after config reset", map[string]any{"error": err.Error()})
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})

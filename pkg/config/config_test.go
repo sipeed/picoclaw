@@ -2681,7 +2681,7 @@ func TestFilterSensitiveData_AllTokenTypes(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// makeBackup tests
+// MakeBackup tests
 // ---------------------------------------------------------------------------
 
 // TestMakeBackup_WithDateSuffix verifies backup files include a date suffix.
@@ -2692,8 +2692,8 @@ func TestMakeBackup_WithDateSuffix(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	if err := makeBackup(configPath); err != nil {
-		t.Fatalf("makeBackup: %v", err)
+	if err := MakeBackup(configPath); err != nil {
+		t.Fatalf("MakeBackup: %v", err)
 	}
 
 	entries, err := os.ReadDir(dir)
@@ -2732,8 +2732,8 @@ func TestMakeBackup_AlsoBacksSecurityFile(t *testing.T) {
 	os.WriteFile(configPath, []byte(`{"version":2}`), 0o600)
 	os.WriteFile(secPath, []byte(`model_list:\n  test:0:\n    api_keys:\n      - "sk-test"\n`), 0o600)
 
-	if err := makeBackup(configPath); err != nil {
-		t.Fatalf("makeBackup: %v", err)
+	if err := MakeBackup(configPath); err != nil {
+		t.Fatalf("MakeBackup: %v", err)
 	}
 
 	entries, err := os.ReadDir(dir)
@@ -2759,14 +2759,14 @@ func TestMakeBackup_AlsoBacksSecurityFile(t *testing.T) {
 	}
 }
 
-// TestMakeBackup_NonexistentFileSkipsBackup verifies that makeBackup returns nil
+// TestMakeBackup_NonexistentFileSkipsBackup verifies that MakeBackup returns nil
 // when the config file does not exist (no error, no panic).
 func TestMakeBackup_NonexistentFileSkipsBackup(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "nonexistent.json")
 
-	if err := makeBackup(configPath); err != nil {
-		t.Fatalf("makeBackup on nonexistent file should return nil, got: %v", err)
+	if err := MakeBackup(configPath); err != nil {
+		t.Fatalf("MakeBackup on nonexistent file should return nil, got: %v", err)
 	}
 }
 
@@ -2777,8 +2777,8 @@ func TestMakeBackup_OnlyConfigNoSecurity(t *testing.T) {
 	configPath := filepath.Join(dir, "config.json")
 	os.WriteFile(configPath, []byte(`{"version":2}`), 0o600)
 
-	if err := makeBackup(configPath); err != nil {
-		t.Fatalf("makeBackup: %v", err)
+	if err := MakeBackup(configPath); err != nil {
+		t.Fatalf("MakeBackup: %v", err)
 	}
 
 	entries, _ := os.ReadDir(dir)
@@ -2801,7 +2801,7 @@ func TestMakeBackup_OnlyConfigNoSecurity(t *testing.T) {
 }
 
 // TestMakeBackup_SameDateSuffix verifies that config and security backups
-// share the same date suffix (they are created in the same makeBackup call).
+// share the same date suffix (they are created in the same MakeBackup call).
 func TestMakeBackup_SameDateSuffix(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
@@ -2810,8 +2810,8 @@ func TestMakeBackup_SameDateSuffix(t *testing.T) {
 	os.WriteFile(configPath, []byte(`{"version":2}`), 0o600)
 	os.WriteFile(secPath, []byte(`key: value`), 0o600)
 
-	if err := makeBackup(configPath); err != nil {
-		t.Fatalf("makeBackup: %v", err)
+	if err := MakeBackup(configPath); err != nil {
+		t.Fatalf("MakeBackup: %v", err)
 	}
 
 	entries, _ := os.ReadDir(dir)

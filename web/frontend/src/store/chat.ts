@@ -44,6 +44,7 @@ export interface ChatMessage {
   content: string
   timestamp: number | string
   kind?: AssistantMessageKind
+  modelName?: string
   attachments?: ChatAttachment[]
   toolCalls?: ChatToolCall[]
 }

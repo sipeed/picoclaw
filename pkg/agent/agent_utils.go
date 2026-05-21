@@ -96,15 +96,46 @@ func markFinalOutbound(msg *bus.OutboundMessage) {
 	msg.Context.Raw[metadataKeyOutboundKind] = outboundKindFinal
 }
 
-func outboundMessageForTurnWithKind(ts *turnState, content, kind string) bus.OutboundMessage {
+type outboundTurnMessageOptions struct {
+	kind      string
+	modelName string
+	raw       map[string]string
+}
+
+func outboundMessageForTurnWithOptions(
+	ts *turnState,
+	content string,
+	opts outboundTurnMessageOptions,
+) bus.OutboundMessage {
 	msg := outboundMessageForTurn(ts, content)
-	if strings.TrimSpace(kind) == "" {
+	trimmedKind := strings.TrimSpace(opts.kind)
+	trimmedModelName := strings.TrimSpace(opts.modelName)
+	rawCount := len(opts.raw)
+	if trimmedKind != "" {
+		rawCount++
+	}
+	if trimmedModelName != "" {
+		rawCount++
+	}
+	if rawCount == 0 {
 		return msg
 	}
+
 	if msg.Context.Raw == nil {
-		msg.Context.Raw = make(map[string]string, 1)
+		msg.Context.Raw = make(map[string]string, rawCount)
 	}
-	msg.Context.Raw[metadataKeyMessageKind] = kind
+	if trimmedKind != "" {
+		msg.Context.Raw[metadataKeyMessageKind] = trimmedKind
+	}
+	if trimmedModelName != "" {
+		msg.Context.Raw["model_name"] = trimmedModelName
+	}
+	for key, value := range opts.raw {
+		if strings.TrimSpace(key) == "" {
+			continue
+		}
+		msg.Context.Raw[key] = value
+	}
 	return msg
 }
 
@@ -521,8 +552,9 @@ func hasMediaRefs(messages []providers.Message) bool {
 
 func sideQuestionModelName(agent *AgentInstance, usedLight bool) string {
 	if usedLight && len(agent.LightCandidates) > 0 {
-		// Use the first light candidate's model
-		return agent.LightCandidates[0].Model
+		if name := resolvedCandidateModelName(agent.LightCandidates, ""); name != "" {
+			return name
+		}
 	}
 	return agent.Model
 }
@@ -540,6 +572,14 @@ func modelNameFromIdentityKey(identityKey string) string {
 		return parts[1]
 	}
 	return identityKey
+}
+
+func modelAliasFromCandidateIdentityKey(identityKey string) string {
+	const prefix = "model_name:"
+	if !strings.HasPrefix(identityKey, prefix) {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimPrefix(identityKey, prefix))
 }
 
 func closeProviderIfStateful(provider providers.LLMProvider) {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/fileutil"
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 // CatalogModel represents a single model entry in a saved catalog.
@@ -42,7 +43,7 @@ func catalogFilePath() string {
 
 // generateCatalogKey creates a deterministic key for a provider+base+key combination.
 func generateCatalogKey(provider, apiBase, apiKey string) string {
-	provider = strings.ToLower(strings.TrimSpace(provider))
+	provider = providers.NormalizeProvider(provider)
 	apiBase = strings.TrimRight(strings.TrimSpace(apiBase), "/")
 	hash := sha256.Sum256([]byte(apiKey))
 	return fmt.Sprintf("%s|%s|%x", provider, apiBase, hash[:6])
@@ -104,9 +105,10 @@ func SaveCatalog(provider, apiBase, apiKey string, models []CatalogModel) error 
 		return err
 	}
 	key := generateCatalogKey(provider, apiBase, apiKey)
+	provider = providers.NormalizeProvider(provider)
 	store.Entries[key] = &CatalogEntry{
 		ID:         key,
-		Provider:   strings.ToLower(strings.TrimSpace(provider)),
+		Provider:   provider,
 		APIBase:    strings.TrimRight(strings.TrimSpace(apiBase), "/"),
 		APIKeyMask: maskAPIKeyValue(apiKey),
 		Models:     models,
