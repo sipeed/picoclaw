@@ -804,6 +804,7 @@ export function EditModelSheet({
         provider={canonicalProvider}
         apiKey={form.apiKey}
         apiBase={effectiveApiBase}
+        modelIndex={model?.index}
         backendOptions={providerOptions}
       />
     </>

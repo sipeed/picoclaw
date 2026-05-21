@@ -167,6 +167,7 @@ export interface FetchModelsRequest {
   provider: string
   api_key?: string
   api_base?: string
+  model_index?: number
 }
 
 export interface FetchModelsResponse {
