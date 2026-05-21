@@ -573,6 +573,16 @@ toolLoop:
 		toolCallID := tc.ID
 		asyncToolName := toolName
 		mcpServerName := mcpServerNameForTool(ts, toolName)
+		var asyncAckDelivery AsyncDeliveryDecision
+		if tool, ok := ts.agent.Tools.Get(toolName); ok {
+			if _, isAsync := tool.(tools.AsyncExecutor); isAsync {
+				if deliveryMode, err := asyncDeliveryModeFromToolArgs(toolName, toolArgs); err == nil {
+					asyncAckDelivery = decideAsyncToolResultDelivery(
+						tools.AsyncResult("").WithAsyncDelivery(deliveryMode),
+					)
+				}
+			}
+		}
 		asyncCallback := func(_ context.Context, result *tools.ToolResult) {
 			completionID := asyncCompletionID(ts.turnID, toolCallID, asyncToolName)
 			delivery := decideAsyncToolResultDelivery(result)
@@ -679,6 +689,9 @@ toolLoop:
 			ts.chatID,
 			asyncCallback,
 		)
+		if toolResult != nil && toolResult.Async && asyncAckDelivery.ParentHandled {
+			toolResult.ResponseHandled = true
+		}
 		toolDuration := time.Since(toolStart)
 
 		if ts.hardAbortRequested() {

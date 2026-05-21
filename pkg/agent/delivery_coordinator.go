@@ -1,6 +1,10 @@
 package agent
 
-import "github.com/sipeed/picoclaw/pkg/tools"
+import (
+	"strings"
+
+	"github.com/sipeed/picoclaw/pkg/tools"
+)
 
 // AsyncDeliveryDecision is the routing plan for a completed async tool result.
 //
@@ -13,6 +17,7 @@ type AsyncDeliveryDecision struct {
 	DeliveryMode  tools.AsyncDeliveryMode
 	PublishToUser bool
 	QueueParent   bool
+	ParentHandled bool
 	ContentLen    int
 	ForUserLen    int
 	MediaCount    int
@@ -43,6 +48,7 @@ func decideAsyncToolResultDelivery(result *tools.ToolResult) AsyncDeliveryDecisi
 	if decision.DeliveryMode != tools.AsyncDeliveryUserOnly {
 		decision.QueueParent = content != ""
 	}
+	decision.ParentHandled = !decision.QueueParent && !result.IsError && decision.DeliveryMode == tools.AsyncDeliveryUserOnly
 	return decision
 }
 
@@ -51,4 +57,27 @@ func effectiveAsyncToolResultDelivery(result *tools.ToolResult) tools.AsyncDeliv
 		return tools.AsyncDeliveryUserAndParent
 	}
 	return result.AsyncDelivery
+}
+
+func asyncDeliveryModeFromToolArgs(toolName string, args map[string]any) (tools.AsyncDeliveryMode, error) {
+	if toolName != "spawn" && toolName != "delegate" {
+		return tools.AsyncDeliveryUserAndParent, nil
+	}
+	raw, ok := args["delivery_mode"]
+	if !ok || raw == nil {
+		if toolName == "spawn" {
+			return tools.AsyncDeliveryUserOnly, nil
+		}
+		return tools.AsyncDeliveryParentOnly, nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", nil
+	}
+	switch mode := tools.AsyncDeliveryMode(strings.TrimSpace(value)); mode {
+	case tools.AsyncDeliveryUserOnly, tools.AsyncDeliveryParentOnly, tools.AsyncDeliveryUserAndParent:
+		return mode, nil
+	default:
+		return "", nil
+	}
 }

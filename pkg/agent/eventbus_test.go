@@ -714,8 +714,9 @@ func (t *asyncFollowUpTool) Description() string {
 
 func (t *asyncFollowUpTool) Parameters() map[string]any {
 	return map[string]any{
-		"type":       "object",
-		"properties": map[string]any{},
+		"type":                 "object",
+		"properties":           map[string]any{},
+		"additionalProperties": true,
 	}
 }
 
@@ -1013,6 +1014,77 @@ func TestAsyncToolResultDeliveryRouting(t *testing.T) {
 				t.Fatalf("shouldQueueAsyncToolResultForParent() = %v, want %v", got, tt.wantQueueParent)
 			}
 		})
+	}
+}
+
+func TestAgentLoop_AsyncUserOnlyAckSuppressesDefaultFinalResponse(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	provider := &toolCallProvider{
+		toolCalls: []providers.ToolCall{
+			{
+				ID:        "call_spawn_1",
+				Type:      "function",
+				Name:      "spawn",
+				Arguments: map[string]any{"task": "send video to user"},
+			},
+		},
+		finalResp: "",
+	}
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, provider)
+	doneCh := make(chan struct{})
+	al.RegisterTool(&asyncFollowUpTool{
+		name:          "spawn",
+		followUpText:  "background result",
+		completionSig: doneCh,
+		deliveryMode:  tools.AsyncDeliveryUserOnly,
+	})
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("expected default agent")
+	}
+	resp, err := al.runAgentLoop(context.Background(), defaultAgent, processOptions{
+		Dispatch: DispatchRequest{
+			SessionKey:  "session-1",
+			UserMessage: "send video",
+			InboundContext: &bus.InboundContext{
+				Channel:  "telegram",
+				ChatID:   "chat-1",
+				SenderID: "user-1",
+			},
+		},
+		DefaultResponse: defaultResponse,
+		SendResponse:    true,
+	})
+	if err != nil {
+		t.Fatalf("runAgentLoop failed: %v", err)
+	}
+	if resp != "" {
+		t.Fatalf("response = %q, want empty", resp)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("provider calls = %d, want 1", provider.calls)
+	}
+	select {
+	case <-doneCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for async completion")
+	}
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		t.Fatalf("unexpected outbound final response: %#v", outbound)
+	default:
 	}
 }
 

@@ -44,6 +44,7 @@ func TestDecideAsyncToolResultDelivery(t *testing.T) {
 				DeliveryMode:  tools.AsyncDeliveryUserOnly,
 				PublishToUser: true,
 				QueueParent:   false,
+				ParentHandled: true,
 				ContentLen:    len("parent text"),
 				ForUserLen:    len("user text"),
 			},
