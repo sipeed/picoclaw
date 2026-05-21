@@ -635,7 +635,15 @@ func (al *AgentLoop) sideQuestionModelConfig(
 		return nil, fmt.Errorf("sideQuestionModelConfig: no agent available for /btw")
 	}
 
-	// If candidate has an identity key, use that
+	if name := modelAliasFromCandidateIdentityKey(candidate.IdentityKey); name != "" {
+		modelCfg, err := resolvedModelConfig(al.GetConfig(), name, agent.Workspace)
+		if err == nil {
+			return modelCfg, nil
+		}
+		// Fallback: create a minimal config if lookup fails
+	}
+
+	// Older identity keys used provider/model; keep resolving those by model.
 	if name := modelNameFromIdentityKey(candidate.IdentityKey); name != "" {
 		modelCfg, err := resolvedModelConfig(al.GetConfig(), name, agent.Workspace)
 		if err == nil {

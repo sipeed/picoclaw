@@ -564,9 +564,6 @@ func modelNameFromIdentityKey(identityKey string) string {
 	if identityKey == "" {
 		return ""
 	}
-	if name, ok := strings.CutPrefix(identityKey, "model_name:"); ok {
-		return strings.TrimSpace(name)
-	}
 	parts := strings.SplitN(identityKey, "/", 2)
 	if len(parts) == 2 {
 		return parts[1]
