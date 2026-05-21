@@ -2,7 +2,11 @@ import { IconDownload, IconLoader2 } from "@tabler/icons-react"
 import { useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 
-import { type UpstreamModel, fetchUpstreamModels } from "@/api/models"
+import {
+  type ModelProviderOption,
+  type UpstreamModel,
+  fetchUpstreamModels,
+} from "@/api/models"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -14,7 +18,10 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 
-import { PROVIDER_MAP } from "./provider-registry"
+import {
+  getCanonicalProviderKey,
+  getProviderCatalogMap,
+} from "./provider-registry"
 
 interface FetchModelsDialogProps {
   open: boolean
@@ -23,6 +30,7 @@ interface FetchModelsDialogProps {
   provider: string
   apiKey: string
   apiBase: string
+  backendOptions?: ModelProviderOption[]
 }
 
 export function FetchModelsDialog({
@@ -32,6 +40,7 @@ export function FetchModelsDialog({
   provider,
   apiKey,
   apiBase,
+  backendOptions,
 }: FetchModelsDialogProps) {
   const { t } = useTranslation()
   const [fetching, setFetching] = useState(false)
@@ -40,7 +49,8 @@ export function FetchModelsDialog({
   const [error, setError] = useState("")
   const [filter, setFilter] = useState("")
 
-  const providerDef = PROVIDER_MAP.get(provider)
+  const canonicalProvider = getCanonicalProviderKey(provider, backendOptions)
+  const providerDef = getProviderCatalogMap(backendOptions).get(canonicalProvider)
   const needsKey = providerDef?.requiresApiKey !== false
 
   const handleFetch = useCallback(async () => {
@@ -50,7 +60,7 @@ export function FetchModelsDialog({
     setSelected(new Set())
     try {
       const res = await fetchUpstreamModels({
-        provider,
+        provider: canonicalProvider,
         api_key: apiKey,
         api_base: apiBase,
       })
@@ -62,7 +72,7 @@ export function FetchModelsDialog({
     } finally {
       setFetching(false)
     }
-  }, [provider, apiKey, apiBase, t])
+  }, [canonicalProvider, apiKey, apiBase, t])
 
   // Auto-fetch when dialog opens (skip if provider requires API key but none is set)
   useEffect(() => {
@@ -122,7 +132,7 @@ export function FetchModelsDialog({
             {t("models.fetch.description")}
             {provider && (
               <span className="mt-1 block font-mono text-xs">
-                {t("models.fetch.providerLabel")} {provider}
+                 {t("models.fetch.providerLabel")} {canonicalProvider}
                 {apiBase && ` | ${apiBase}`}
               </span>
             )}

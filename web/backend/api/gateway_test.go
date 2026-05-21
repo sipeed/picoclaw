@@ -1267,6 +1267,528 @@ func TestGatewayStatusRequiresRestartAfterChannelChange(t *testing.T) {
 	}
 }
 
+func TestGatewayStatusRequiresRestartAfterDefaultModelStreamingChange(t *testing.T) {
+	resetGatewayTestState(t)
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.ModelName = cfg.ModelList[0].ModelName
+	cfg.ModelList[0].SetAPIKey("test-key")
+	cfg.ModelList[0].Streaming = config.ModelStreamingConfig{Enabled: false}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	process, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatalf("FindProcess() error = %v", err)
+	}
+
+	bootSignature := computeConfigSignature(cfg)
+	gateway.mu.Lock()
+	gateway.cmd = &exec.Cmd{Process: process}
+	gateway.bootDefaultModel = cfg.ModelList[0].ModelName
+	gateway.bootConfigSignature = bootSignature
+	setGatewayRuntimeStatusLocked("running")
+	gateway.mu.Unlock()
+
+	updatedCfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	updatedCfg.ModelList[0].Streaming = config.ModelStreamingConfig{Enabled: true}
+	if err := config.SaveConfig(configPath, updatedCfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	gatewayHealthGet = func(string, time.Duration) (*http.Response, error) {
+		return mockGatewayHealthResponse(http.StatusOK, os.Getpid()), nil
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/gateway/status", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if got := body["gateway_status"]; got != "running" {
+		t.Fatalf("gateway_status = %#v, want %q", got, "running")
+	}
+	if got := body["gateway_restart_required"]; got != true {
+		t.Fatalf("gateway_restart_required = %#v, want true", got)
+	}
+}
+
+func TestConfigSignatureIncludesModelStreamingForDefaultModelRef(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ModelList[0].ModelName = "friendly-alias"
+	cfg.ModelList[0].Provider = ""
+	cfg.ModelList[0].Model = "openai/gpt-4o-ref"
+	cfg.Agents.Defaults.ModelName = "openai/gpt-4o-ref"
+	cfg.ModelList[0].Streaming = config.ModelStreamingConfig{Enabled: false}
+
+	before := computeConfigSignature(cfg)
+
+	cfg.ModelList[0].Streaming = config.ModelStreamingConfig{Enabled: true}
+	after := computeConfigSignature(cfg)
+
+	if before == after {
+		t.Fatal("config signature should change when streaming changes for a default model referenced by model ref")
+	}
+}
+
+func TestConfigSignatureIncludesModelStreamingForLoadBalancedAliasEntries(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "lb-alias",
+			Model:     "openai/gpt-4o-primary",
+			Streaming: config.ModelStreamingConfig{Enabled: false},
+		},
+		{
+			ModelName: "lb-alias",
+			Model:     "openai/gpt-4o-secondary",
+			Streaming: config.ModelStreamingConfig{Enabled: false},
+		},
+	}
+	cfg.Agents.Defaults.ModelName = "lb-alias"
+
+	before := computeConfigSignature(cfg)
+
+	cfg.ModelList[1].Streaming = config.ModelStreamingConfig{Enabled: true}
+	after := computeConfigSignature(cfg)
+
+	if before == after {
+		t.Fatal("config signature should change when streaming changes for a load-balanced alias entry")
+	}
+}
+
+func TestConfigSignatureIncludesSlashModelIDForDefaultProvider(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "nvidia-model",
+			Provider:  "nvidia",
+			Model:     "z-ai/glm-5.1",
+			Streaming: config.ModelStreamingConfig{Enabled: false},
+		},
+	}
+	cfg.Agents.Defaults.Provider = "nvidia"
+	cfg.Agents.Defaults.ModelName = "z-ai/glm-5.1"
+
+	before := computeConfigSignature(cfg)
+
+	cfg.ModelList[0].Streaming = config.ModelStreamingConfig{Enabled: true}
+	after := computeConfigSignature(cfg)
+
+	if before == after {
+		t.Fatal(
+			"config signature should change when streaming changes for a slash-containing model id on the default provider",
+		)
+	}
+}
+
+func TestConfigSignatureIncludesSupportedPrefixSlashModelIDForDefaultProvider(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "openrouter-openai",
+			Provider:  "openrouter",
+			Model:     "openai/gpt-4o",
+			Streaming: config.ModelStreamingConfig{Enabled: false},
+		},
+	}
+	cfg.Agents.Defaults.Provider = "openrouter"
+	cfg.Agents.Defaults.ModelName = "openai/gpt-4o"
+
+	before := computeConfigSignature(cfg)
+
+	cfg.ModelList[0].Streaming = config.ModelStreamingConfig{Enabled: true}
+	after := computeConfigSignature(cfg)
+
+	if before == after {
+		t.Fatal(
+			"config signature should change when streaming changes for a supported-prefix slash model id on the default provider",
+		)
+	}
+}
+
+func TestConfigSignatureIncludesLegacyDefaultProviderPrefixedSlashModelID(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "legacy-openrouter-openai",
+			Model:     "openrouter/openai/gpt-4o",
+			Streaming: config.ModelStreamingConfig{Enabled: false},
+		},
+	}
+	cfg.Agents.Defaults.Provider = "openrouter"
+	cfg.Agents.Defaults.ModelName = "openai/gpt-4o"
+
+	before := computeConfigSignature(cfg)
+
+	cfg.ModelList[0].Streaming = config.ModelStreamingConfig{Enabled: true}
+	after := computeConfigSignature(cfg)
+
+	if before == after {
+		t.Fatal(
+			"config signature should change when streaming changes for a legacy default-provider prefixed slash model id",
+		)
+	}
+}
+
+func TestConfigSignatureIncludesSlashModelIDWithoutProviderFieldForDefaultProvider(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "nvidia-model",
+			Model:     "z-ai/glm-5.1",
+			Streaming: config.ModelStreamingConfig{Enabled: false},
+		},
+	}
+	cfg.Agents.Defaults.Provider = "nvidia"
+	cfg.Agents.Defaults.ModelName = "z-ai/glm-5.1"
+
+	before := computeConfigSignature(cfg)
+
+	cfg.ModelList[0].Streaming = config.ModelStreamingConfig{Enabled: true}
+	after := computeConfigSignature(cfg)
+
+	if before == after {
+		t.Fatal(
+			"config signature should change when streaming changes for a default-provider slash model id without provider field",
+		)
+	}
+}
+
+func TestConfigSignatureIncludesUnknownSlashPrefixModelIDWithoutProviderFieldForDefaultProvider(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "nvidia-meta",
+			Model:     "meta/llama-3.1-8b",
+			Streaming: config.ModelStreamingConfig{Enabled: false},
+		},
+	}
+	cfg.Agents.Defaults.Provider = "nvidia"
+	cfg.Agents.Defaults.ModelName = "meta/llama-3.1-8b"
+
+	before := computeConfigSignature(cfg)
+
+	cfg.ModelList[0].Streaming = config.ModelStreamingConfig{Enabled: true}
+	after := computeConfigSignature(cfg)
+
+	if before == after {
+		t.Fatal(
+			"config signature should change when streaming changes for unknown-prefix default-provider slash model id",
+		)
+	}
+}
+
+func TestConfigSignatureDashAliasSlashModelIDMatchesProviderAlias(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "zai-model",
+			Provider:  "zai",
+			Model:     "glm-5.1",
+			Streaming: config.ModelStreamingConfig{Enabled: false},
+		},
+	}
+	cfg.Agents.Defaults.Provider = "nvidia"
+	cfg.Agents.Defaults.ModelName = "z-ai/glm-5.1"
+
+	before := computeConfigSignature(cfg)
+
+	cfg.ModelList[0].Streaming = config.ModelStreamingConfig{Enabled: true}
+	after := computeConfigSignature(cfg)
+
+	if before == after {
+		t.Fatal("config signature should change when a dash-alias slash ref matches a provider alias")
+	}
+}
+
+func TestConfigSignatureDashAliasSlashModelIDMatchesProviderAliasWithOpenAIDefault(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "zai-model",
+			Provider:  "zai",
+			Model:     "glm-5.1",
+			Streaming: config.ModelStreamingConfig{Enabled: false},
+		},
+	}
+	cfg.Agents.Defaults.Provider = "openai"
+	cfg.Agents.Defaults.ModelName = "z-ai/glm-5.1"
+
+	before := computeConfigSignature(cfg)
+
+	cfg.ModelList[0].Streaming = config.ModelStreamingConfig{Enabled: true}
+	after := computeConfigSignature(cfg)
+
+	if before == after {
+		t.Fatal(
+			"config signature should change when a dash-alias slash ref matches a provider alias with OpenAI default",
+		)
+	}
+}
+
+func TestConfigSignatureProviderAliasRefIgnoresDefaultProvider(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "openai-gpt",
+			Provider:  "openai",
+			Model:     "gpt-4o",
+			Streaming: config.ModelStreamingConfig{Enabled: false},
+		},
+	}
+	cfg.Agents.Defaults.Provider = "nvidia"
+	cfg.Agents.Defaults.ModelName = "gpt/gpt-4o"
+
+	before := computeConfigSignature(cfg)
+
+	cfg.ModelList[0].Streaming = config.ModelStreamingConfig{Enabled: true}
+	after := computeConfigSignature(cfg)
+
+	if before == after {
+		t.Fatal("config signature should change for a provider alias ref even when default provider differs")
+	}
+}
+
+func TestConfigSignatureExplicitProviderRefIgnoresDefaultProvider(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "openai-gpt",
+			Provider:  "openai",
+			Model:     "gpt-4o",
+			Streaming: config.ModelStreamingConfig{Enabled: false},
+		},
+	}
+	cfg.Agents.Defaults.Provider = "nvidia"
+	cfg.Agents.Defaults.ModelName = "openai/gpt-4o"
+
+	before := computeConfigSignature(cfg)
+
+	cfg.ModelList[0].Streaming = config.ModelStreamingConfig{Enabled: true}
+	after := computeConfigSignature(cfg)
+
+	if before == after {
+		t.Fatal("config signature should change for an explicit provider ref even when default provider differs")
+	}
+}
+
+func TestConfigSignatureExactModelNameTakesPrecedenceOverResolvedRefs(t *testing.T) {
+	tests := []struct {
+		name                  string
+		defaultProvider       string
+		defaultModelName      string
+		models                []*config.ModelConfig
+		shadowedEntryIndex    int
+		exactModelNameIndex   int
+		shadowedChangeMessage string
+		exactChangeMessage    string
+	}{
+		{
+			name:             "slash model name shadows explicit provider ref",
+			defaultProvider:  "nvidia",
+			defaultModelName: "openai/gpt-4o",
+			models: []*config.ModelConfig{
+				{
+					ModelName: "openai/gpt-4o",
+					Provider:  "nvidia",
+					Model:     "openai/gpt-4o",
+					Streaming: config.ModelStreamingConfig{Enabled: false},
+				},
+				{
+					ModelName: "openai-gpt",
+					Provider:  "openai",
+					Model:     "gpt-4o",
+					Streaming: config.ModelStreamingConfig{Enabled: false},
+				},
+			},
+			shadowedEntryIndex:    1,
+			exactModelNameIndex:   0,
+			shadowedChangeMessage: "config signature should not change when an exact slash model_name shadows an explicit provider ref",
+			exactChangeMessage:    "config signature should change when the exact slash model_name entry changes",
+		},
+		{
+			name:             "bare model name shadows default provider model id",
+			defaultProvider:  "openai",
+			defaultModelName: "gpt-4o",
+			models: []*config.ModelConfig{
+				{
+					ModelName: "gpt-4o",
+					Provider:  "anthropic",
+					Model:     "claude-sonnet",
+					Streaming: config.ModelStreamingConfig{Enabled: false},
+				},
+				{
+					ModelName: "openai-gpt",
+					Provider:  "openai",
+					Model:     "gpt-4o",
+					Streaming: config.ModelStreamingConfig{Enabled: false},
+				},
+			},
+			shadowedEntryIndex:    1,
+			exactModelNameIndex:   0,
+			shadowedChangeMessage: "config signature should not change when an exact bare model_name shadows a default-provider model id",
+			exactChangeMessage:    "config signature should change when the exact bare model_name entry changes",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.DefaultConfig()
+			cfg.ModelList = tt.models
+			cfg.Agents.Defaults.Provider = tt.defaultProvider
+			cfg.Agents.Defaults.ModelName = tt.defaultModelName
+
+			before := computeConfigSignature(cfg)
+
+			cfg.ModelList[tt.shadowedEntryIndex].Streaming = config.ModelStreamingConfig{Enabled: true}
+			afterShadowedChange := computeConfigSignature(cfg)
+
+			if before != afterShadowedChange {
+				t.Fatal(tt.shadowedChangeMessage)
+			}
+
+			cfg.ModelList[tt.exactModelNameIndex].Streaming = config.ModelStreamingConfig{Enabled: true}
+			afterExactModelNameChange := computeConfigSignature(cfg)
+
+			if before == afterExactModelNameChange {
+				t.Fatal(tt.exactChangeMessage)
+			}
+		})
+	}
+}
+
+func TestConfigSignatureIncludesLoadBalancedDuplicateEntryIndex(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "lb-alias",
+			Provider:  "openai",
+			Model:     "gpt-4o",
+			Streaming: config.ModelStreamingConfig{Enabled: false},
+		},
+		{
+			ModelName: "lb-alias",
+			Provider:  "openai",
+			Model:     "gpt-4o",
+			Streaming: config.ModelStreamingConfig{Enabled: true},
+		},
+	}
+	cfg.Agents.Defaults.ModelName = "lb-alias"
+
+	before := computeConfigSignature(cfg)
+
+	cfg.ModelList[0].Streaming.Enabled = true
+	cfg.ModelList[1].Streaming.Enabled = false
+	after := computeConfigSignature(cfg)
+
+	if before == after {
+		t.Fatal("config signature should change when duplicate load-balanced entries swap streaming state")
+	}
+}
+
+func TestConfigSignatureProviderDotAliasRefIgnoresDefaultProvider(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "zai-model",
+			Provider:  "zai",
+			Model:     "glm-5.1",
+			Streaming: config.ModelStreamingConfig{Enabled: false},
+		},
+	}
+	cfg.Agents.Defaults.Provider = "nvidia"
+	cfg.Agents.Defaults.ModelName = "z.ai/glm-5.1"
+
+	before := computeConfigSignature(cfg)
+
+	cfg.ModelList[0].Streaming = config.ModelStreamingConfig{Enabled: true}
+	after := computeConfigSignature(cfg)
+
+	if before == after {
+		t.Fatal(
+			"config signature should change for an explicit dot-alias provider ref even when default provider differs",
+		)
+	}
+}
+
+func TestConfigSignatureIncludesDefaultProviderPrefixedRefWithSplitConfig(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "openai-split",
+			Provider:  "openai",
+			Model:     "gpt-4o",
+			Streaming: config.ModelStreamingConfig{Enabled: false},
+		},
+	}
+	cfg.Agents.Defaults.Provider = "openai"
+	cfg.Agents.Defaults.ModelName = "openai/gpt-4o"
+
+	before := computeConfigSignature(cfg)
+
+	cfg.ModelList[0].Streaming = config.ModelStreamingConfig{Enabled: true}
+	after := computeConfigSignature(cfg)
+
+	if before == after {
+		t.Fatal(
+			"config signature should change when streaming changes for default-provider prefixed ref with split config",
+		)
+	}
+}
+
+func TestConfigSignatureBareModelRefUsesExactModelBeforeDefaultProviderModelID(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "azure-alias",
+			Provider:  "azure",
+			Model:     "gpt-4o",
+			Streaming: config.ModelStreamingConfig{Enabled: false},
+		},
+		{
+			ModelName: "openai-alias",
+			Model:     "openai/gpt-4o",
+			Streaming: config.ModelStreamingConfig{Enabled: false},
+		},
+	}
+	cfg.Agents.Defaults.Provider = "openai"
+	cfg.Agents.Defaults.ModelName = "gpt-4o"
+
+	before := computeConfigSignature(cfg)
+
+	cfg.ModelList[0].Streaming = config.ModelStreamingConfig{Enabled: true}
+	afterExactModelChange := computeConfigSignature(cfg)
+
+	if before == afterExactModelChange {
+		t.Fatal("config signature should change when the exact bare model entry changes streaming")
+	}
+
+	cfg.ModelList[1].Streaming = config.ModelStreamingConfig{Enabled: true}
+	afterDefaultProviderModelChange := computeConfigSignature(cfg)
+
+	if afterExactModelChange != afterDefaultProviderModelChange {
+		t.Fatal("config signature should not change when a shadowed default-provider model id changes streaming")
+	}
+}
+
 func TestGatewayStatusRequiresRestartAfterWebSearchConfigChange(t *testing.T) {
 	resetGatewayTestState(t)
 

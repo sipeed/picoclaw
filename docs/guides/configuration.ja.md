@@ -365,6 +365,55 @@ HEARTBEAT_OK を返信        ユーザーが直接結果を受信
 
 旧 `providers` 設定は**非推奨**となり、V2 で削除されました。既存の V0/V1 設定は自動的に移行されます。[docs/migration/model-list-migration.md](../migration/model-list-migration.md) を参照してください。
 
+#### ストリーミング設定
+
+Provider ストリーミングは二重の opt-in 方式で、デフォルトでは無効です。現在の channel に `settings.streaming.enabled: true` があり、アクティブなモデルエントリに `streaming.enabled: true` があり、さらに provider と channel の両方がストリーミングをサポートしている場合にのみ、agent はストリーミングリクエストを試行します。いずれかの条件が欠ける場合、PicoClaw は通常の非ストリーミングリクエスト経路を使います。
+
+Pico WebUI が最初に完全対応した channel です。Pico は既存の `message.create` wire message で最初の assistant メッセージを作成し、その後 `message.update` で同じメッセージを更新します。新しい Pico wire message type は追加されません。
+
+ストリーミングを使わない場合は `streaming` を省略してください。`streaming` ブロックの省略は無効を意味するため、`"streaming": {"enabled": false}` を書く必要はありません。
+
+有効化例：
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
+      "api_keys": ["sk-your-openai-key"],
+      "streaming": {
+        "enabled": true
+      }
+    }
+  ],
+  "channel_list": {
+    "pico": {
+      "enabled": true,
+      "type": "pico",
+      "settings": {
+        "token": "YOUR_PICO_TOKEN",
+        "streaming": {
+          "enabled": true
+        }
+      }
+    }
+  }
+}
+```
+
+| フィールド | 型 | デフォルト | 説明 |
+| ---------- | -- | ---------- | ---- |
+| `channel_list.<name>.settings.streaming.enabled` | bool | `false` | この channel で provider のストリーミング出力を表示できるようにします |
+| `channel_list.<name>.settings.streaming.throttle_seconds` | int | Pico で有効化後のデフォルト：`0` | 中間更新の最小間隔。最終内容は常に flush されます |
+| `channel_list.<name>.settings.streaming.min_growth_chars` | int | Pico で有効化後のデフォルト：`1` | 次の中間更新を送るために必要な最小文字増加数。最終内容は常に flush されます |
+| `model_list[].streaming.enabled` | bool | `false` | このモデルエントリで provider ストリーミングリクエストを試行できるようにします |
+
+既存の Telegram 環境変数 `PICOCLAW_CHANNELS_TELEGRAM_STREAMING_ENABLED`、`PICOCLAW_CHANNELS_TELEGRAM_STREAMING_THROTTLE_SECONDS`、`PICOCLAW_CHANNELS_TELEGRAM_STREAMING_MIN_GROWTH_CHARS` は互換性のため引き続き使えます。これらは Telegram settings にのみ適用され、Pico の `settings.streaming` を有効化または変更しません。
+
+失敗時の動作は保守的です。可視 chunk が送信される前にストリーミングが失敗した場合、PicoClaw は通常の `Chat()` 経路で一度だけ再試行します。すでに chunk がユーザーに表示されている場合は、表示済み出力の重複を避けるため、二つ目の非ストリーミング回答は送信しません。
+
 ### Provider アーキテクチャ
 
 PicoClaw はプロトコルファミリーで Provider をルーティングします：

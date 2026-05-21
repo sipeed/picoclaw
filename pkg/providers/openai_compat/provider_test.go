@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1318,6 +1319,53 @@ func TestProviderChatStream_ParsesReasoningContent(t *testing.T) {
 	}
 }
 
+func TestProviderChatStreamEvents_EmitsReasoningBeforeContentFromSameEvent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"think\",\"content\":\"answer\"},\"finish_reason\":\"stop\"}]}\n\n",
+		))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	events := make([]string, 0)
+	out, err := p.ChatStreamEvents(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"deepseek-v4-flash",
+		nil,
+		func(chunk StreamChunk) {
+			if chunk.ReasoningContent != "" {
+				events = append(events, "reasoning:"+chunk.ReasoningContent)
+			}
+			if chunk.Content != "" {
+				events = append(events, "content:"+chunk.Content)
+			}
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatStreamEvents() error = %v", err)
+	}
+	if out.Content != "answer" {
+		t.Fatalf("Content = %q, want %q", out.Content, "answer")
+	}
+	if out.ReasoningContent != "think" {
+		t.Fatalf("ReasoningContent = %q, want %q", out.ReasoningContent, "think")
+	}
+	want := []string{"reasoning:think", "content:answer"}
+	if len(events) != len(want) {
+		t.Fatalf("events = %#v, want %#v", events, want)
+	}
+	for i := range want {
+		if events[i] != want[i] {
+			t.Fatalf("events = %#v, want %#v", events, want)
+		}
+	}
+}
+
 func TestProviderChatStream_ParsesMultilineSSEEvent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -1461,6 +1509,40 @@ func (r *errAfterDataReadCloser) Read(p []byte) (int, error) {
 
 func (r *errAfterDataReadCloser) Close() error {
 	return nil
+}
+
+type blockingReadCloser struct {
+	closeOnce sync.Once
+	closed    chan struct{}
+}
+
+func newBlockingReadCloser() *blockingReadCloser {
+	return &blockingReadCloser{closed: make(chan struct{})}
+}
+
+func (r *blockingReadCloser) Read([]byte) (int, error) {
+	<-r.closed
+	return 0, io.ErrClosedPipe
+}
+
+func (r *blockingReadCloser) Close() error {
+	r.closeOnce.Do(func() {
+		close(r.closed)
+	})
+	return nil
+}
+
+func TestStreamingReadIdleTimeoutClosesStalledBody(t *testing.T) {
+	body := newBlockingReadCloser()
+	wrapped := withStreamingReadIdleTimeout(body, 10*time.Millisecond)
+
+	_, err := wrapped.Read(make([]byte, 1))
+	if err == nil {
+		t.Fatal("expected stalled stream read to return an error")
+	}
+	if !strings.Contains(err.Error(), "stream idle timeout") {
+		t.Fatalf("error = %v, want stream idle timeout", err)
+	}
 }
 
 func TestProvider_FunctionalOptionMaxTokensField(t *testing.T) {

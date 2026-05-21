@@ -100,6 +100,7 @@ func TestBeginStream_UpdateAndFinalize(t *testing.T) {
 	t.Parallel()
 
 	ch := newTestWeComChannel(t, bus.NewMessageBus())
+	ch.config.Streaming.Enabled = true
 	ch.SetRunning(true)
 	ch.queueTurn("chat-1", wecomTurn{
 		ReqID:     "req-1",
@@ -155,6 +156,24 @@ func TestBeginStream_UpdateAndFinalize(t *testing.T) {
 	}
 	if _, ok := ch.getTurn("chat-1"); ok {
 		t.Fatal("expected turn to be consumed after Finalize")
+	}
+}
+
+func TestBeginStream_RequiresStreamingEnabled(t *testing.T) {
+	t.Parallel()
+
+	ch := newTestWeComChannel(t, bus.NewMessageBus())
+	ch.SetRunning(true)
+	ch.queueTurn("chat-1", wecomTurn{
+		ReqID:     "req-1",
+		ChatID:    "chat-1",
+		ChatType:  1,
+		StreamID:  "stream-1",
+		CreatedAt: time.Now(),
+	})
+
+	if _, err := ch.BeginStream(context.Background(), "chat-1"); err == nil {
+		t.Fatal("BeginStream() error = nil, want disabled streaming error")
 	}
 }
 

@@ -138,6 +138,37 @@ func TestRunSchemaAddsMessagesReasoningContentColumn(t *testing.T) {
 	}
 }
 
+func TestRunSchemaAddsMessagesModelNameColumn(t *testing.T) {
+	db := openTestDB(t)
+
+	_, err := db.Exec(`CREATE TABLE messages (
+		message_id INTEGER PRIMARY KEY AUTOINCREMENT,
+		conversation_id INTEGER NOT NULL,
+		role TEXT NOT NULL,
+		content TEXT NOT NULL DEFAULT '',
+		reasoning_content TEXT NOT NULL DEFAULT '',
+		token_count INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	)`)
+	if err != nil {
+		t.Fatalf("create legacy messages table: %v", err)
+	}
+
+	err = runSchema(db)
+	if err != nil {
+		t.Fatalf("runSchema: %v", err)
+	}
+
+	var count int
+	err = db.QueryRow(`SELECT count(*) FROM pragma_table_info('messages') WHERE name = 'model_name'`).Scan(&count)
+	if err != nil {
+		t.Fatalf("query pragma_table_info: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("model_name column count = %d, want 1", count)
+	}
+}
+
 func TestMigrationConversationUnique(t *testing.T) {
 	db := openTestDB(t)
 	if err := runSchema(db); err != nil {

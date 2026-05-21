@@ -446,6 +446,38 @@ func TestHandlePatchConfig_RejectsInvalidChannelArrayFields(t *testing.T) {
 	}
 }
 
+func TestHandlePatchConfig_RejectsNegativeStreamingDeliveryValues(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"channel_list": {
+			"pico": {
+				"settings": {
+					"streaming": {
+						"enabled": true,
+						"throttle_seconds": -1
+					}
+				}
+			}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "streaming.throttle_seconds") {
+		t.Fatalf("response body = %q, want streaming.throttle_seconds validation error", rec.Body.String())
+	}
+}
+
 func TestHandlePatchConfig_ClearingAllowFromDoesNotLeaveEmptyStringItem(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()

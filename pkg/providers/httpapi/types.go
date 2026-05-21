@@ -10,6 +10,7 @@ type (
 	ToolCall               = protocoltypes.ToolCall
 	FunctionCall           = protocoltypes.FunctionCall
 	LLMResponse            = protocoltypes.LLMResponse
+	StreamChunk            = protocoltypes.StreamChunk
 	UsageInfo              = protocoltypes.UsageInfo
 	Message                = protocoltypes.Message
 	ToolDefinition         = protocoltypes.ToolDefinition
@@ -39,5 +40,16 @@ type StreamingProvider interface {
 		model string,
 		options map[string]any,
 		onChunk func(accumulated string),
+	) (*LLMResponse, error)
+}
+
+type StreamingEventProvider interface {
+	ChatStreamEvents(
+		ctx context.Context,
+		messages []Message,
+		tools []ToolDefinition,
+		model string,
+		options map[string]any,
+		onChunk func(StreamChunk),
 	) (*LLMResponse, error)
 }

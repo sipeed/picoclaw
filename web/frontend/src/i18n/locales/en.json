@@ -65,7 +65,13 @@
     "toolCallExplanationLabel": "Call note",
     "toolCallFunctionLabel": "Call summary",
     "toolCallArgumentsLabel": "Arguments",
-    "showAssistantDetails": "Show reasoning and tool calls",
+    "showAssistantDetails": "Reasoning and tool calls",
+    "assistantDetailVisibility": {
+      "none": "Show neither",
+      "thought": "Show reasoning only",
+      "toolCalls": "Show tool calls only",
+      "all": "Show both"
+    },
     "toolLabel": "Tool",
     "codeLabel": "Code",
     "copyMessage": "Copy message",
@@ -227,6 +233,8 @@
     "unsavedPrompt": "This change has not been saved yet. Save to write it into the model configuration.",
     "restartHint": "Model configuration changes take effect after the gateway restarts.",
     "loadError": "Failed to load models",
+    "retry": "Retry",
+    "providerCatalogUnavailable": "The backend provider catalog is unavailable. New provider selections are disabled until the Models API loads successfully.",
     "noDefaultHintPrefix": "No default model set yet. Click",
     "noDefaultHintSuffix": "to set one.",
     "status": {
@@ -246,7 +254,8 @@
         "setting": "Setting as default...",
         "unavailable": "Cannot set unavailable model as default",
         "isDefault": "Already the default model",
-        "isVirtual": "Cannot set virtual model as default"
+        "isVirtual": "Cannot set virtual model as default",
+        "unsupportedProvider": "This provider cannot be used as the default chat model."
       },
       "deleteDisabled": {
         "isDefault": "Cannot delete the default model"
@@ -283,8 +292,9 @@
     },
     "field": {
       "provider": "Provider",
-      "providerPlaceholder": "e.g. openai",
-      "providerHint": "Optional. If specified, this value is used as the effective provider, and Model Identifier is interpreted as the canonical model ID.",
+      "providerPlaceholder": "Select a provider",
+      "providerHint": "Choose a provider from the backend catalog; Model Identifier will be interpreted as that provider's canonical model ID.",
+      "providerInvalid": "The current provider is invalid. Please choose a supported provider.",
       "selectProviderFirst": "Select a provider first",
       "apiBase": "API Base URL",
       "apiKey": "API Key",
@@ -294,6 +304,7 @@
       "proxyHint": "Optional. e.g. http://127.0.0.1:7890",
       "authMethod": "Auth Method",
       "authMethodHint": "Authentication method: oauth, token. Leave blank for API key auth.",
+      "authMethodManagedHint": "This provider's auth method is managed by the system.",
       "connectMode": "Connect Mode",
       "connectModeHint": "Connection mode for CLI-based providers: stdio or grpc.",
       "workspace": "Workspace Path",
@@ -308,6 +319,8 @@
       "maxTokensFieldHint": "Override the request field name for max tokens, e.g. max_completion_tokens.",
       "toolSchemaTransform": "Tool Schema Transform",
       "toolSchemaTransformHint": "Optional compatibility transform for tool JSON schemas. Leave blank for native behavior. Supported values: simple.",
+      "streamingEnabled": "Streaming Output",
+      "streamingEnabledHint": "Allow this model entry to try provider streaming requests. The current channel streaming switch must also be enabled.",
       "extraBody": "Extra Body",
       "extraBodyHint": "Additional JSON fields to inject into the request body, e.g. {\"reasoning_split\": true}.",
       "customHeaders": "Custom Headers",
@@ -388,9 +401,8 @@
       "selectProvider": "Select provider...",
       "searchProvider": "Search provider...",
       "noProvider": "No provider found.",
-      "local": "local",
-      "custom": "Custom provider...",
-      "customPlaceholder": "Enter provider name..."
+      "noCatalog": "Provider catalog unavailable.",
+      "local": "local"
     }
   },
   "channels": {
@@ -459,6 +471,9 @@
       "typingEnabled": "Typing Indicator",
       "placeholderEnabled": "Placeholder Message",
       "placeholderText": "Placeholder Text",
+      "streamingEnabled": "Streaming Output",
+      "streamingThrottleSeconds": "Update Interval (s)",
+      "streamingMinGrowthChars": "Minimum Growth Characters",
       "groupTriggerMentionOnly": "Group Mention Only",
       "groupTriggerPrefixes": "Group Trigger Prefixes",
       "groupTriggerPrefixesPlaceholder": "e.g. /, !, ?",
@@ -497,6 +512,9 @@
         "mentionOnly": "Only respond when the bot is explicitly mentioned in group chats.",
         "typingEnabled": "Display typing status while the assistant is generating a response.",
         "placeholderEnabled": "Enable temporary placeholder messages before the final reply is sent.",
+        "streamingEnabled": "Allow this channel to display provider streaming output. The current model entry streaming switch must also be enabled.",
+        "streamingThrottleSeconds": "Minimum interval between intermediate streaming updates. 0 means use the default. Final replies are not throttled.",
+        "streamingMinGrowthChars": "Minimum text growth before sending another intermediate streaming update. 0 means use the default. Final replies are not throttled.",
         "groupTriggerMentionOnly": "In group chats, respond only when the bot is mentioned.",
         "groupTriggerPrefixes": "Custom group-chat trigger prefixes. Add items one by one, or paste multiple values at once.",
         "randomReactionEmoji": "PicoClaw adds emoji reactions to user messages to confirm receipt. Example: \"THUMBSUP\", \"HEART\", \"SMILE\". Leave empty to use the default \"Pin\" emoji.",
@@ -884,7 +902,13 @@
       "format_success": "JSON formatted successfully.",
       "format_error": "Invalid JSON format.",
       "format": "Format",
-      "unsaved_changes": "You have unsaved changes."
+      "unsaved_changes": "You have unsaved changes.",
+      "factory_reset": "Factory Reset",
+      "factory_reset_confirm_title": "Reset to Factory Defaults",
+      "factory_reset_confirm_desc": "This will reset all configuration to factory defaults. API keys and security credentials will be preserved. A backup of the current config will be created.",
+      "factory_reset_confirm": "Reset to Defaults",
+      "factory_reset_success": "Configuration has been reset to factory defaults.",
+      "factory_reset_error": "Failed to reset configuration."
     },
     "logs": {
       "log_level_error": "Failed to update log level.",

@@ -66,6 +66,25 @@ func TestJSONLBackend_AddFullMessage(t *testing.T) {
 	}
 }
 
+func TestJSONLBackend_AddFullMessage_PreservesModelName(t *testing.T) {
+	b := newBackend(t)
+
+	msg := providers.Message{
+		Role:      "assistant",
+		Content:   "done",
+		ModelName: "gpt-5.4-mini",
+	}
+	b.AddFullMessage("s1", msg)
+
+	history := b.GetHistory("s1")
+	if len(history) != 1 {
+		t.Fatalf("got %d, want 1", len(history))
+	}
+	if history[0].ModelName != "gpt-5.4-mini" {
+		t.Fatalf("ModelName = %q, want %q", history[0].ModelName, "gpt-5.4-mini")
+	}
+}
+
 func TestJSONLBackend_Summary(t *testing.T) {
 	b := newBackend(t)
 

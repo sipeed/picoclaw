@@ -23,6 +23,7 @@ type (
 	ToolCall               = protocoltypes.ToolCall
 	FunctionCall           = protocoltypes.FunctionCall
 	LLMResponse            = protocoltypes.LLMResponse
+	StreamChunk            = protocoltypes.StreamChunk
 	UsageInfo              = protocoltypes.UsageInfo
 	Message                = protocoltypes.Message
 	ToolDefinition         = protocoltypes.ToolDefinition
@@ -45,7 +46,10 @@ type Provider struct {
 
 type Option func(*Provider)
 
-const defaultRequestTimeout = common.DefaultRequestTimeout
+const (
+	defaultRequestTimeout           = common.DefaultRequestTimeout
+	defaultStreamingReadIdleTimeout = 5 * time.Minute
+)
 
 var stripModelPrefixProviders = map[string]struct{}{
 	"litellm":     {},
@@ -381,6 +385,28 @@ func (p *Provider) ChatStream(
 	options map[string]any,
 	onChunk func(accumulated string),
 ) (*LLMResponse, error) {
+	return p.ChatStreamEvents(
+		ctx,
+		messages,
+		tools,
+		model,
+		options,
+		func(chunk StreamChunk) {
+			if onChunk != nil && strings.TrimSpace(chunk.Content) != "" {
+				onChunk(chunk.Content)
+			}
+		},
+	)
+}
+
+func (p *Provider) ChatStreamEvents(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+	onChunk func(StreamChunk),
+) (*LLMResponse, error) {
 	if p.apiBase == "" {
 		return nil, fmt.Errorf("API base not configured")
 	}
@@ -422,14 +448,47 @@ func (p *Provider) ChatStream(
 		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
 
-	return parseStreamResponse(ctx, resp.Body, onChunk)
+	return parseStreamResponse(ctx, withStreamingReadIdleTimeout(resp.Body, defaultStreamingReadIdleTimeout), onChunk)
+}
+
+func withStreamingReadIdleTimeout(body io.ReadCloser, timeout time.Duration) io.ReadCloser {
+	if body == nil || timeout <= 0 {
+		return body
+	}
+	return &streamingReadIdleTimeoutBody{
+		body:    body,
+		timeout: timeout,
+	}
+}
+
+type streamingReadIdleTimeoutBody struct {
+	body    io.ReadCloser
+	timeout time.Duration
+}
+
+func (b *streamingReadIdleTimeoutBody) Read(p []byte) (int, error) {
+	timedOut := make(chan struct{})
+	timer := time.AfterFunc(b.timeout, func() {
+		close(timedOut)
+		_ = b.body.Close()
+	})
+	n, err := b.body.Read(p)
+	if !timer.Stop() {
+		<-timedOut
+		return n, fmt.Errorf("stream idle timeout after %s", b.timeout)
+	}
+	return n, err
+}
+
+func (b *streamingReadIdleTimeoutBody) Close() error {
+	return b.body.Close()
 }
 
 // parseStreamResponse parses an OpenAI-compatible SSE stream.
 func parseStreamResponse(
 	ctx context.Context,
 	reader io.Reader,
-	onChunk func(accumulated string),
+	onChunk func(StreamChunk),
 ) (*LLMResponse, error) {
 	var textContent strings.Builder
 	var reasoningContent strings.Builder
@@ -489,21 +548,28 @@ func parseStreamResponse(
 
 		choice := chunk.Choices[0]
 
-		// Accumulate text content
-		if choice.Delta.Content != "" {
-			textContent.WriteString(choice.Delta.Content)
-			if onChunk != nil {
-				onChunk(textContent.String())
-			}
-		}
 		if choice.Delta.ReasoningContent != "" {
 			reasoningContent.WriteString(choice.Delta.ReasoningContent)
+			if onChunk != nil {
+				onChunk(StreamChunk{ReasoningContent: reasoningContent.String()})
+			}
 		}
 		if choice.Delta.Reasoning != "" {
 			reasoning.WriteString(choice.Delta.Reasoning)
+			if onChunk != nil {
+				onChunk(StreamChunk{ReasoningContent: reasoning.String()})
+			}
 		}
 		if len(choice.Delta.ReasoningDetails) > 0 {
 			reasoningDetails = append(reasoningDetails, choice.Delta.ReasoningDetails...)
+		}
+		// Accumulate text content after reasoning so UIs can show thought first
+		// when a provider sends both fields in the same event.
+		if choice.Delta.Content != "" {
+			textContent.WriteString(choice.Delta.Content)
+			if onChunk != nil {
+				onChunk(StreamChunk{Content: textContent.String()})
+			}
 		}
 
 		// Accumulate tool call deltas

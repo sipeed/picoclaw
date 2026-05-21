@@ -50,6 +50,7 @@ export async function loadSessionMessages(
     role: message.role,
     content: message.content,
     kind: message.role === "assistant" ? (message.kind ?? "normal") : undefined,
+    modelName: message.model_name,
     toolCalls:
       message.role === "assistant"
         ? parseToolCallsValue(message.tool_calls)
@@ -86,7 +87,7 @@ function messageSignature(message: ChatMessage): string {
 
   return `${message.role}\u0000${message.content}\u0000${normalizeMessageTimestamp(
     message.timestamp,
-  )}\u0000${message.kind ?? ""}\u0000${attachmentSignature}\u0000${toolCallsSignature(
+  )}\u0000${message.kind ?? ""}\u0000${message.modelName ?? ""}\u0000${attachmentSignature}\u0000${toolCallsSignature(
     message.toolCalls,
   )}`
 }

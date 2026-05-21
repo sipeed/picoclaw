@@ -17,6 +17,7 @@ type FallbackChain struct {
 type FallbackCandidate struct {
 	Provider    string
 	Model       string
+	DisplayName string // optional configured alias/raw model label for persistence/UI
 	RPM         int    // requests per minute; 0 means unrestricted
 	IdentityKey string // optional stable config identity for cooldown/rate limiting
 }
@@ -32,10 +33,11 @@ func (c FallbackCandidate) StableKey() string {
 
 // FallbackResult contains the successful response and metadata about all attempts.
 type FallbackResult struct {
-	Response *LLMResponse
-	Provider string
-	Model    string
-	Attempts []FallbackAttempt
+	Response    *LLMResponse
+	Provider    string
+	Model       string
+	IdentityKey string
+	Attempts    []FallbackAttempt
 }
 
 // FallbackAttempt records one attempt in the fallback chain.
@@ -85,8 +87,9 @@ func ResolveCandidatesWithLookup(
 		}
 		seen[key] = true
 		candidates = append(candidates, FallbackCandidate{
-			Provider: ref.Provider,
-			Model:    ref.Model,
+			Provider:    ref.Provider,
+			Model:       ref.Model,
+			DisplayName: candidateRaw,
 		})
 	}
 
@@ -187,6 +190,7 @@ func (fc *FallbackChain) Execute(
 			result.Response = resp
 			result.Provider = candidate.Provider
 			result.Model = candidate.Model
+			result.IdentityKey = candidate.StableKey()
 			return result, nil
 		}
 
@@ -305,6 +309,7 @@ func (fc *FallbackChain) ExecuteImage(
 			result.Response = resp
 			result.Provider = candidate.Provider
 			result.Model = candidate.Model
+			result.IdentityKey = candidate.StableKey()
 			return result, nil
 		}
 

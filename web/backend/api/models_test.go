@@ -762,6 +762,51 @@ func TestHandleAddModel_PersistsProvider(t *testing.T) {
 	}
 }
 
+func TestHandleListModels_ReturnsStreamingConfig(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "streaming-model",
+		Provider:  "openai",
+		Model:     "gpt-4o-mini",
+		APIKeys:   config.SimpleSecureStrings("sk-existing"),
+		Streaming: config.ModelStreamingConfig{Enabled: true},
+	}}
+	if err = config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Models []modelResponse `json:"models"`
+	}
+	if err = json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
+	}
+	if !resp.Models[0].Streaming.Enabled {
+		t.Fatal("streaming.enabled = false, want true")
+	}
+}
+
 func TestHandleAddModel_RejectsUnsupportedProvider(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
@@ -1211,6 +1256,71 @@ func TestHandleUpdateModel_ToolSchemaTransformPreserveAndClear(t *testing.T) {
 	}
 	if afterClear.ModelList[0].ToolSchemaTransform != "" {
 		t.Fatalf("tool_schema_transform = %q, want empty", afterClear.ModelList[0].ToolSchemaTransform)
+	}
+}
+
+func TestHandleUpdateModel_StreamingPreserveAndChange(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "editable",
+		Provider:  "openai",
+		Model:     "gpt-4o-mini",
+		APIKeys:   config.SimpleSecureStrings("sk-existing"),
+		Streaming: config.ModelStreamingConfig{Enabled: true},
+	}}
+	if err = config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	recPreserve := httptest.NewRecorder()
+	reqPreserve := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"editable",
+		"provider":"openai",
+		"model":"gpt-4o-mini"
+	}`))
+	reqPreserve.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recPreserve, reqPreserve)
+	if recPreserve.Code != http.StatusOK {
+		t.Fatalf("preserve status = %d, want %d, body=%s", recPreserve.Code, http.StatusOK, recPreserve.Body.String())
+	}
+
+	afterPreserve, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() after preserve error = %v", err)
+	}
+	if !afterPreserve.ModelList[0].Streaming.Enabled {
+		t.Fatal("preserved streaming.enabled = false, want true")
+	}
+
+	recChange := httptest.NewRecorder()
+	reqChange := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"editable",
+		"provider":"openai",
+		"model":"gpt-4o-mini",
+		"streaming":{"enabled":false}
+	}`))
+	reqChange.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recChange, reqChange)
+	if recChange.Code != http.StatusOK {
+		t.Fatalf("change status = %d, want %d, body=%s", recChange.Code, http.StatusOK, recChange.Body.String())
+	}
+
+	afterChange, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() after change error = %v", err)
+	}
+	if afterChange.ModelList[0].Streaming.Enabled {
+		t.Fatal("streaming.enabled = true, want false after explicit update")
 	}
 }
 
@@ -1790,6 +1900,12 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 		t.Fatal("openai provider option missing")
 	} else if option.DefaultAPIBase != "https://api.openai.com/v1" {
 		t.Fatalf("openai default_api_base = %q, want %q", option.DefaultAPIBase, "https://api.openai.com/v1")
+	} else if !option.SupportsFetch {
+		t.Fatal("openai provider option should report supports_fetch")
+	} else if option.DisplayName != "OpenAI" {
+		t.Fatalf("openai display_name = %q, want %q", option.DisplayName, "OpenAI")
+	} else if len(option.CommonModels) == 0 {
+		t.Fatal("openai common_models should not be empty")
 	}
 	if option, ok := optionsByID["anthropic"]; !ok {
 		t.Fatal("anthropic provider option missing")
@@ -1803,6 +1919,8 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 		t.Fatal("github-copilot provider option missing")
 	} else if option.DefaultAPIBase != "localhost:4321" {
 		t.Fatalf("github-copilot default_api_base = %q, want %q", option.DefaultAPIBase, "localhost:4321")
+	} else if !option.Local {
+		t.Fatal("github-copilot should be marked local")
 	}
 	if option, ok := optionsByID["elevenlabs"]; !ok {
 		t.Fatal("elevenlabs provider option missing")
@@ -1842,6 +1960,11 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 		if !option.AuthMethodLocked {
 			t.Fatal("antigravity auth method should be locked")
 		}
+	}
+	if option, ok := optionsByID["qwen-portal"]; !ok {
+		t.Fatal("qwen-portal provider option missing")
+	} else if len(option.Aliases) == 0 || option.Aliases[0] != "qwen" {
+		t.Fatalf("qwen-portal aliases = %#v, want to include qwen", option.Aliases)
 	}
 
 	updated, err := config.LoadConfig(configPath)

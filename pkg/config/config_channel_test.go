@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -133,6 +134,179 @@ func TestChannel_JSON_Unmarshal(t *testing.T) {
 	assert.Equal(t, "", cfg.Token.String())
 }
 
+func TestStreamingConfig_IsChannelGeneric(t *testing.T) {
+	typ := reflect.TypeOf(StreamingConfig{})
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if got := field.Tag.Get("env"); got != "" {
+			t.Fatalf("StreamingConfig.%s env tag = %q, want no channel-specific env tag", field.Name, got)
+		}
+	}
+}
+
+func TestPicoSettings_StreamingConfig(t *testing.T) {
+	raw := RawNode(`{
+		"token": "test-token",
+		"streaming": {
+			"enabled": true,
+			"throttle_seconds": 2,
+			"min_growth_chars": 80
+		}
+	}`)
+	ch := &Channel{
+		Type:     ChannelPico,
+		Enabled:  true,
+		Settings: raw,
+	}
+	ch.SetName("pico")
+	var picoCfg PicoSettings
+	if err := ch.Decode(&picoCfg); err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	assert.True(t, picoCfg.Streaming.Enabled)
+	assert.Equal(t, 2, picoCfg.Streaming.ThrottleSeconds)
+	assert.Equal(t, 80, picoCfg.Streaming.MinGrowthChars)
+}
+
+func TestWeComSettings_StreamingConfig(t *testing.T) {
+	raw := RawNode(`{
+		"bot_id": "bot-1",
+		"streaming": {
+			"enabled": true,
+			"throttle_seconds": 4,
+			"min_growth_chars": 160
+		}
+	}`)
+	ch := &Channel{
+		Type:     ChannelWeCom,
+		Enabled:  true,
+		Settings: raw,
+	}
+	ch.SetName("wecom")
+	var wecomCfg WeComSettings
+	if err := ch.Decode(&wecomCfg); err != nil {
+		t.Fatalf("Decode() error = %v", err)
+	}
+	assert.True(t, wecomCfg.Streaming.Enabled)
+	assert.Equal(t, 4, wecomCfg.Streaming.ThrottleSeconds)
+	assert.Equal(t, 160, wecomCfg.Streaming.MinGrowthChars)
+}
+
+func TestPicoStreamingConfig_Defaults(t *testing.T) {
+	cfg := StreamingConfig{Enabled: true}
+	got := cfg.WithDefaults(1, 40)
+	assert.Equal(t, 1, got.ThrottleSeconds)
+	assert.Equal(t, 40, got.MinGrowthChars)
+
+	cfg = StreamingConfig{Enabled: true, ThrottleSeconds: 5, MinGrowthChars: 200}
+	got = cfg.WithDefaults(1, 40)
+	assert.Equal(t, 5, got.ThrottleSeconds)
+	assert.Equal(t, 200, got.MinGrowthChars)
+
+	cfg = StreamingConfig{}
+	got = cfg.WithDefaults(1, 40)
+	assert.Equal(t, 0, got.ThrottleSeconds)
+	assert.Equal(t, 0, got.MinGrowthChars)
+}
+
+func TestInitChannelList_TelegramStreamingEnvCompatibility(t *testing.T) {
+	t.Setenv("PICOCLAW_CHANNELS_TELEGRAM_STREAMING_ENABLED", "true")
+	t.Setenv("PICOCLAW_CHANNELS_TELEGRAM_STREAMING_THROTTLE_SECONDS", "3")
+	t.Setenv("PICOCLAW_CHANNELS_TELEGRAM_STREAMING_MIN_GROWTH_CHARS", "120")
+
+	channels := ChannelsConfig{
+		"telegram": {
+			Type:     ChannelTelegram,
+			Enabled:  true,
+			Settings: RawNode(`{"token":"telegram-token"}`),
+		},
+		"pico": {
+			Type:     ChannelPico,
+			Enabled:  true,
+			Settings: RawNode(`{"token":"pico-token"}`),
+		},
+	}
+	if err := InitChannelList(channels); err != nil {
+		t.Fatalf("InitChannelList() error = %v", err)
+	}
+
+	tgDecoded, err := channels["telegram"].GetDecoded()
+	if err != nil {
+		t.Fatalf("telegram GetDecoded() error = %v", err)
+	}
+	tgCfg := tgDecoded.(*TelegramSettings)
+	assert.True(t, tgCfg.Streaming.Enabled)
+	assert.Equal(t, 3, tgCfg.Streaming.ThrottleSeconds)
+	assert.Equal(t, 120, tgCfg.Streaming.MinGrowthChars)
+
+	picoDecoded, err := channels["pico"].GetDecoded()
+	if err != nil {
+		t.Fatalf("pico GetDecoded() error = %v", err)
+	}
+	picoCfg := picoDecoded.(*PicoSettings)
+	assert.False(t, picoCfg.Streaming.Enabled)
+	assert.Equal(t, 0, picoCfg.Streaming.ThrottleSeconds)
+	assert.Equal(t, 0, picoCfg.Streaming.MinGrowthChars)
+}
+
+func TestInitChannelList_RejectsNegativeStreamingDeliveryValues(t *testing.T) {
+	tests := []struct {
+		name        string
+		channelType string
+		settings    string
+	}{
+		{
+			name:        "pico throttle",
+			channelType: ChannelPico,
+			settings:    `{"token":"pico-token","streaming":{"enabled":true,"throttle_seconds":-1}}`,
+		},
+		{
+			name:        "pico growth",
+			channelType: ChannelPico,
+			settings:    `{"token":"pico-token","streaming":{"enabled":true,"min_growth_chars":-1}}`,
+		},
+		{
+			name:        "telegram throttle",
+			channelType: ChannelTelegram,
+			settings:    `{"token":"telegram-token","streaming":{"enabled":true,"throttle_seconds":-1}}`,
+		},
+		{
+			name:        "telegram growth",
+			channelType: ChannelTelegram,
+			settings:    `{"token":"telegram-token","streaming":{"enabled":true,"min_growth_chars":-1}}`,
+		},
+		{
+			name:        "wecom throttle",
+			channelType: ChannelWeCom,
+			settings:    `{"bot_id":"bot-1","streaming":{"enabled":true,"throttle_seconds":-1}}`,
+		},
+		{
+			name:        "wecom growth",
+			channelType: ChannelWeCom,
+			settings:    `{"bot_id":"bot-1","streaming":{"enabled":true,"min_growth_chars":-1}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			channels := ChannelsConfig{
+				tt.channelType: {
+					Type:     tt.channelType,
+					Enabled:  true,
+					Settings: RawNode(tt.settings),
+				},
+			}
+			err := InitChannelList(channels)
+			if err == nil {
+				t.Fatal("InitChannelList() error = nil, want validation error")
+			}
+			if !strings.Contains(err.Error(), "streaming.") {
+				t.Fatalf("InitChannelList() error = %v, want streaming field error", err)
+			}
+		})
+	}
+}
+
 // ═══════════════════════════════════════════════════
 //  JSON marshal: secure fields masked as [NOT_HERE]
 // ═══════════════════════════════════════════════════
@@ -159,6 +333,22 @@ func TestChannel_JSON_Marshal_SecureMasked(t *testing.T) {
 	assert.NotContains(t, string(data), "SECRET")
 	assert.Contains(t, string(data), "base_url")
 	assert.Contains(t, string(data), "proxy")
+}
+
+func TestChannel_JSON_Marshal_OmitsUnconfiguredStreaming(t *testing.T) {
+	ch := Channel{
+		Enabled:  true,
+		Type:     ChannelPico,
+		name:     "pico",
+		Settings: mustParseRawNode(`{"ping_interval":30}`),
+	}
+	var cfg PicoSettings
+	require.NoError(t, ch.Decode(&cfg))
+
+	data, err := json.MarshalIndent(ch, "", "  ")
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(data), `"streaming"`)
 }
 
 // ═══════════════════════════════════════════════════

@@ -22,6 +22,7 @@ type Message struct {
 	ConversationID   int64         `json:"conversationId"`
 	Role             string        `json:"role"`
 	Content          string        `json:"content"`
+	ModelName        string        `json:"modelName,omitempty"`
 	ReasoningContent string        `json:"reasoningContent,omitempty"`
 	TokenCount       int           `json:"tokenCount"`
 	CreatedAt        time.Time     `json:"createdAt"`
@@ -135,6 +136,7 @@ func EstimateMessageTokens(msg Message) int {
 	pm := providers.Message{
 		Role:             msg.Role,
 		Content:          msg.Content,
+		ModelName:        msg.ModelName,
 		ReasoningContent: msg.ReasoningContent,
 	}
 

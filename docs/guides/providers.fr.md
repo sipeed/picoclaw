@@ -113,9 +113,12 @@ Cette conception permet également le **support multi-agents** avec une sélecti
 | `max_tokens_field` | string | Non | Remplace le nom du champ max tokens dans le corps de la requête (ex : `max_completion_tokens` pour les modèles o1) |
 | `thinking_level` | string | Non | Niveau de pensée étendue : `off`, `low`, `medium`, `high`, `xhigh` ou `adaptive` |
 | `extra_body` | object | Non | Champs supplémentaires à injecter dans chaque corps de requête |
+| `streaming.enabled` | bool | Non | Opt-in pour le streaming provider sur cette entrée de modèle. Par défaut `false`, et le channel actif doit aussi avoir `settings.streaming.enabled` à `true` |
 | `rpm` | int | Non | Limite de requêtes par minute |
 | `fallbacks` | string[] | Non | Noms des modèles de secours pour le basculement automatique |
 | `enabled` | bool | Non | Activer ou désactiver cette entrée de modèle (par défaut : `true`) |
+
+Lorsque le streaming est désactivé, omettez le bloc `streaming`. Écrire `"streaming": {"enabled": false}` est optionnel et n'est pas nécessaire.
 
 #### Exemples par Vendor
 

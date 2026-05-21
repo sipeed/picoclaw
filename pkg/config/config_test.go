@@ -885,6 +885,42 @@ func TestDefaultConfig_Channels(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_ChannelStreamingDisabled(t *testing.T) {
+	cfg := DefaultConfig()
+
+	telegram := cfg.Channels.Get(ChannelTelegram)
+	if telegram == nil {
+		t.Fatal("DefaultConfig() missing telegram channel")
+	}
+	decoded, err := telegram.GetDecoded()
+	if err != nil {
+		t.Fatalf("telegram GetDecoded() error = %v", err)
+	}
+	settings, ok := decoded.(*TelegramSettings)
+	if !ok {
+		t.Fatalf("telegram settings type = %T, want *TelegramSettings", decoded)
+	}
+	if settings.Streaming.Enabled {
+		t.Fatal("DefaultConfig().telegram.settings.streaming.enabled should be false")
+	}
+
+	pico := cfg.Channels.Get(ChannelPico)
+	if pico == nil {
+		t.Fatal("DefaultConfig() missing pico channel")
+	}
+	decoded, err = pico.GetDecoded()
+	if err != nil {
+		t.Fatalf("pico GetDecoded() error = %v", err)
+	}
+	picoSettings, ok := decoded.(*PicoSettings)
+	if !ok {
+		t.Fatalf("pico settings type = %T, want *PicoSettings", decoded)
+	}
+	if !picoSettings.Streaming.Enabled {
+		t.Fatal("DefaultConfig().pico.settings.streaming.enabled should be true")
+	}
+}
+
 func TestValidateSingletonChannels_RejectsMultipleInstances(t *testing.T) {
 	channels := ChannelsConfig{
 		"pico1": &Channel{Enabled: true, Type: ChannelPico},
@@ -1021,6 +1057,49 @@ func TestSaveConfig_PreservesDisabledTelegramPlaceholder(t *testing.T) {
 	bc := loaded.Channels.Get("telegram")
 	if bc != nil && bc.Placeholder.Enabled {
 		t.Fatal("telegram placeholder should remain disabled after SaveConfig/LoadConfig round-trip")
+	}
+}
+
+func TestSaveConfig_PreservesExplicitDisabledPicoStreaming(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "config.json")
+
+	cfg := DefaultConfig()
+	pico := cfg.Channels.Get(ChannelPico)
+	if pico == nil {
+		t.Fatal("DefaultConfig() missing pico channel")
+	}
+	pico.Settings = RawNode(`{"streaming":{"enabled":false}}`)
+
+	if err := SaveConfig(path, cfg); err != nil {
+		t.Fatalf("SaveConfig failed: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile failed: %v", err)
+	}
+	if !strings.Contains(string(data), `"streaming"`) || !strings.Contains(string(data), `"enabled": false`) {
+		t.Fatalf("saved config should preserve explicit disabled pico streaming, got:\n%s", string(data))
+	}
+
+	loaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	loadedPico := loaded.Channels.Get(ChannelPico)
+	if loadedPico == nil {
+		t.Fatal("loaded config missing pico channel")
+	}
+	decoded, err := loadedPico.GetDecoded()
+	if err != nil {
+		t.Fatalf("pico GetDecoded() error = %v", err)
+	}
+	settings, ok := decoded.(*PicoSettings)
+	if !ok {
+		t.Fatalf("pico settings type = %T, want *PicoSettings", decoded)
+	}
+	if settings.Streaming.Enabled {
+		t.Fatal("explicit disabled pico streaming should remain disabled after SaveConfig/LoadConfig round-trip")
 	}
 }
 
@@ -2750,7 +2829,7 @@ func TestFilterSensitiveData_AllTokenTypes(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// makeBackup tests
+// MakeBackup tests
 // ---------------------------------------------------------------------------
 
 // TestMakeBackup_WithDateSuffix verifies backup files include a date suffix.
@@ -2761,8 +2840,8 @@ func TestMakeBackup_WithDateSuffix(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	if err := makeBackup(configPath); err != nil {
-		t.Fatalf("makeBackup: %v", err)
+	if err := MakeBackup(configPath); err != nil {
+		t.Fatalf("MakeBackup: %v", err)
 	}
 
 	entries, err := os.ReadDir(dir)
@@ -2801,8 +2880,8 @@ func TestMakeBackup_AlsoBacksSecurityFile(t *testing.T) {
 	os.WriteFile(configPath, []byte(`{"version":2}`), 0o600)
 	os.WriteFile(secPath, []byte(`model_list:\n  test:0:\n    api_keys:\n      - "sk-test"\n`), 0o600)
 
-	if err := makeBackup(configPath); err != nil {
-		t.Fatalf("makeBackup: %v", err)
+	if err := MakeBackup(configPath); err != nil {
+		t.Fatalf("MakeBackup: %v", err)
 	}
 
 	entries, err := os.ReadDir(dir)
@@ -2828,14 +2907,14 @@ func TestMakeBackup_AlsoBacksSecurityFile(t *testing.T) {
 	}
 }
 
-// TestMakeBackup_NonexistentFileSkipsBackup verifies that makeBackup returns nil
+// TestMakeBackup_NonexistentFileSkipsBackup verifies that MakeBackup returns nil
 // when the config file does not exist (no error, no panic).
 func TestMakeBackup_NonexistentFileSkipsBackup(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "nonexistent.json")
 
-	if err := makeBackup(configPath); err != nil {
-		t.Fatalf("makeBackup on nonexistent file should return nil, got: %v", err)
+	if err := MakeBackup(configPath); err != nil {
+		t.Fatalf("MakeBackup on nonexistent file should return nil, got: %v", err)
 	}
 }
 
@@ -2846,8 +2925,8 @@ func TestMakeBackup_OnlyConfigNoSecurity(t *testing.T) {
 	configPath := filepath.Join(dir, "config.json")
 	os.WriteFile(configPath, []byte(`{"version":2}`), 0o600)
 
-	if err := makeBackup(configPath); err != nil {
-		t.Fatalf("makeBackup: %v", err)
+	if err := MakeBackup(configPath); err != nil {
+		t.Fatalf("MakeBackup: %v", err)
 	}
 
 	entries, _ := os.ReadDir(dir)
@@ -2870,7 +2949,7 @@ func TestMakeBackup_OnlyConfigNoSecurity(t *testing.T) {
 }
 
 // TestMakeBackup_SameDateSuffix verifies that config and security backups
-// share the same date suffix (they are created in the same makeBackup call).
+// share the same date suffix (they are created in the same MakeBackup call).
 func TestMakeBackup_SameDateSuffix(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
@@ -2879,8 +2958,8 @@ func TestMakeBackup_SameDateSuffix(t *testing.T) {
 	os.WriteFile(configPath, []byte(`{"version":2}`), 0o600)
 	os.WriteFile(secPath, []byte(`key: value`), 0o600)
 
-	if err := makeBackup(configPath); err != nil {
-		t.Fatalf("makeBackup: %v", err)
+	if err := MakeBackup(configPath); err != nil {
+		t.Fatalf("MakeBackup: %v", err)
 	}
 
 	entries, _ := os.ReadDir(dir)

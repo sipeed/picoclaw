@@ -114,9 +114,12 @@
 | `max_tokens_field` | string | いいえ | リクエストボディの max tokens フィールド名を上書き（例：o1 モデルでは `max_completion_tokens`） |
 | `thinking_level` | string | いいえ | 拡張思考レベル：`off`、`low`、`medium`、`high`、`xhigh`、`adaptive` |
 | `extra_body` | object | いいえ | 各リクエストボディに注入する追加フィールド |
+| `streaming.enabled` | bool | いいえ | このモデルエントリで provider ストリーミングを試行するための opt-in。デフォルトは `false` で、アクティブな channel の `settings.streaming.enabled` も `true` である必要があります |
 | `rpm` | int | いいえ | 1 分あたりのリクエストレート制限 |
 | `fallbacks` | string[] | いいえ | 自動フェイルオーバーのフォールバックモデル名 |
 | `enabled` | bool | いいえ | このモデルエントリを有効にするかどうか（デフォルト：`true`） |
+
+ストリーミングを無効にする場合は `streaming` ブロックを省略してください。`"streaming": {"enabled": false}` を書くことは任意であり、必須ではありません。
 
 #### ベンダー別設定例
 

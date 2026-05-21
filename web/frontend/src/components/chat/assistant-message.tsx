@@ -33,6 +33,7 @@ interface AssistantMessageProps {
   content: string
   attachments?: ChatAttachment[]
   kind?: AssistantMessageKind
+  modelName?: string
   toolCalls?: ChatToolCall[]
   timestamp?: string | number
 }
@@ -41,6 +42,7 @@ export function AssistantMessage({
   content,
   attachments = [],
   kind = "normal",
+  modelName,
   toolCalls = [],
   timestamp = "",
 }: AssistantMessageProps) {
@@ -66,13 +68,20 @@ export function AssistantMessage({
   const copyMessageLabel = isCopied
     ? t("chat.copiedLabel")
     : t("chat.copyMessage")
+  const trimmedModelName = modelName?.trim() ?? ""
 
   return (
     <div className="group flex w-full flex-col gap-1.5">
       {!isCollapsedBlock && (
-        <div className="text-muted-foreground/60 flex items-center justify-between gap-2 px-1 text-xs opacity-70">
+          <div className="text-muted-foreground/60 flex items-center justify-between gap-2 px-1 text-xs opacity-70">
           <div className="flex items-center gap-2">
             <span>PicoClaw</span>
+            {trimmedModelName && (
+              <>
+                <span className="opacity-50">•</span>
+                <span>{trimmedModelName}</span>
+              </>
+            )}
             {formattedTimestamp && (
               <>
                 <span className="opacity-50">•</span>
@@ -104,6 +113,9 @@ export function AssistantMessage({
                   <IconTool className="size-3.5" />
                 )}
                 <span>{collapsedLabel}</span>
+                {trimmedModelName && (
+                  <span className="text-muted-foreground/45">{trimmedModelName}</span>
+                )}
               </div>
               <IconChevronDown
                 className={cn(

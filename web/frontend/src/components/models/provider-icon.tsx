@@ -1,22 +1,18 @@
 import { useMemo, useState } from "react"
 
-import { PROVIDER_DOMAINS, PROVIDER_ICON_SLUGS } from "./provider-registry"
+import type { ProviderCatalogEntry } from "./provider-registry"
 
 interface ProviderIconProps {
-  providerKey: string
-  providerLabel: string
+  provider: Pick<ProviderCatalogEntry, "key" | "label" | "iconSlug" | "domain">
 }
 
-export function ProviderIcon({
-  providerKey,
-  providerLabel,
-}: ProviderIconProps) {
+export function ProviderIcon({ provider }: ProviderIconProps) {
   const [sourceIndex, setSourceIndex] = useState(0)
   const [loadFailed, setLoadFailed] = useState(false)
-  const initial = providerLabel.trim().charAt(0).toUpperCase() || "?"
+  const initial = provider.label.trim().charAt(0).toUpperCase() || "?"
   const iconUrls = useMemo(() => {
-    const slug = PROVIDER_ICON_SLUGS[providerKey]
-    const domain = PROVIDER_DOMAINS[providerKey]
+    const slug = provider.iconSlug
+    const domain = provider.domain
     const urls: string[] = []
     if (slug) {
       urls.push(`https://cdn.simpleicons.org/${slug}`)
@@ -25,7 +21,7 @@ export function ProviderIcon({
       urls.push(`https://www.google.com/s2/favicons?domain=${domain}&sz=64`)
     }
     return urls
-  }, [providerKey])
+  }, [provider.domain, provider.iconSlug])
 
   const iconUrl = iconUrls[sourceIndex]
 
@@ -41,7 +37,7 @@ export function ProviderIcon({
     <span className="inline-flex size-4 shrink-0 items-center justify-center overflow-hidden rounded-sm border border-black/10 bg-white p-0.5 dark:border-white/20">
       <img
         src={iconUrl}
-        alt={`${providerLabel} logo`}
+        alt={`${provider.label} logo`}
         className="size-full object-contain"
         loading="lazy"
         referrerPolicy="no-referrer"

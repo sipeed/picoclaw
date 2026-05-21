@@ -70,6 +70,17 @@ func (p *HTTPProvider) ChatStream(
 	return p.delegate.ChatStream(ctx, messages, tools, model, options, onChunk)
 }
 
+func (p *HTTPProvider) ChatStreamEvents(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+	onChunk func(StreamChunk),
+) (*LLMResponse, error) {
+	return p.delegate.ChatStreamEvents(ctx, messages, tools, model, options, onChunk)
+}
+
 func (p *HTTPProvider) GetDefaultModel() string {
 	return ""
 }
