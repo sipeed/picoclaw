@@ -205,14 +205,14 @@ func (fc *FallbackChain) Execute(
 		}
 
 		// Context termination: abort immediately, no fallback.
-		if err := fallbackContextErr(ctx); err != nil {
+		if ctxErr := fallbackContextErr(ctx); ctxErr != nil {
 			result.Attempts = append(result.Attempts, FallbackAttempt{
 				Provider: candidate.Provider,
 				Model:    candidate.Model,
-				Error:    err,
+				Error:    ctxErr,
 				Duration: elapsed,
 			})
-			return nil, err
+			return nil, ctxErr
 		}
 
 		// Classify the error.
@@ -323,14 +323,14 @@ func (fc *FallbackChain) ExecuteImage(
 			return result, nil
 		}
 
-		if err := fallbackContextErr(ctx); err != nil {
+		if ctxErr := fallbackContextErr(ctx); ctxErr != nil {
 			result.Attempts = append(result.Attempts, FallbackAttempt{
 				Provider: candidate.Provider,
 				Model:    candidate.Model,
-				Error:    err,
+				Error:    ctxErr,
 				Duration: elapsed,
 			})
-			return nil, err
+			return nil, ctxErr
 		}
 
 		// Image dimension/size errors are non-retriable.
