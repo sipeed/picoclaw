@@ -2,7 +2,11 @@ package agent
 
 import (
 	"testing"
+	"time"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/config"
+	taskregistry "github.com/sipeed/picoclaw/pkg/tasks"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -125,4 +129,102 @@ func TestDecideAsyncToolResultDelivery(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeliverAsyncToolCompletion_UserOnlyUpdatesDelivered(t *testing.T) {
+	al, msgBus, ts, workspace := newDeliveryCoordinatorTestRuntime(t, "ok")
+	taskID := "coordinator-user-only"
+	upsertAsyncTaskForTest(t, al, workspace, taskID)
+	result := (&tools.ToolResult{
+		ForLLM:      "internal",
+		ForUser:     "user done",
+		AsyncTaskID: taskID,
+	}).WithAsyncDelivery(tools.AsyncDeliveryUserOnly)
+
+	al.deliverAsyncToolCompletion(AsyncDeliveryRequest{
+		TurnState:    ts,
+		ToolName:     "spawn",
+		CompletionID: "completion-user-only",
+		Result:       result,
+		Decision:     decideAsyncToolResultDelivery(result),
+	})
+
+	outbound := waitForOutboundMessage(t, msgBus.OutboundChan(), 2*time.Second, func(msg bus.OutboundMessage) bool {
+		return msg.Content == "user done"
+	})
+	if outbound.Context.TopicID != "topic-1" {
+		t.Fatalf("TopicID = %q, want topic-1", outbound.Context.TopicID)
+	}
+	assertTaskDeliveryStatusForTest(t, al, workspace, taskID, taskregistry.DeliveryDelivered)
+}
+
+func TestDeliverAsyncToolCompletion_ParentOnlyUpdatesSessionQueued(t *testing.T) {
+	al, msgBus, ts, workspace := newDeliveryCoordinatorTestRuntime(t, "parent synthesized")
+	taskID := "coordinator-parent-only"
+	upsertAsyncTaskForTest(t, al, workspace, taskID)
+	result := (&tools.ToolResult{
+		ForLLM:      "parent data",
+		ForUser:     "do not send",
+		AsyncTaskID: taskID,
+	}).WithAsyncDelivery(tools.AsyncDeliveryParentOnly)
+
+	al.deliverAsyncToolCompletion(AsyncDeliveryRequest{
+		TurnState:    ts,
+		ToolName:     "delegate",
+		CompletionID: "completion-parent-only",
+		Result:       result,
+		Decision:     decideAsyncToolResultDelivery(result),
+	})
+
+	waitForOutboundMessage(t, msgBus.OutboundChan(), 2*time.Second, func(msg bus.OutboundMessage) bool {
+		return msg.Content == "parent synthesized"
+	})
+	assertTaskDeliveryStatusForTest(t, al, workspace, taskID, taskregistry.DeliverySessionQueued)
+	assertNoSyntheticAsyncCompletionInbound(t, msgBus)
+}
+
+func newDeliveryCoordinatorTestRuntime(
+	t *testing.T,
+	response string,
+) (*AgentLoop, *bus.MessageBus, *turnState, string) {
+	t.Helper()
+	workspace := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				ModelName: "test-model",
+				MaxTokens: 4096,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, &simpleMockProvider{response: response})
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent")
+	}
+	inbound := &bus.InboundContext{
+		Channel:  "telegram",
+		ChatID:   "chat-1",
+		ChatType: "direct",
+		TopicID:  "topic-1",
+		SenderID: "user-1",
+	}
+	ts := &turnState{
+		agent:      agent,
+		agentID:    agent.ID,
+		workspace:  workspace,
+		channel:    "telegram",
+		chatID:     "chat-1",
+		sessionKey: "session-1",
+		opts: processOptions{
+			Dispatch: DispatchRequest{
+				SessionKey:     "session-1",
+				InboundContext: inbound,
+			},
+		},
+		scope: al.newTurnEventScope(agent.ID, "session-1", &TurnContext{Inbound: inbound}),
+	}
+	return al, msgBus, ts, workspace
 }

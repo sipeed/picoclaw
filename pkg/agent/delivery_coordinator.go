@@ -1,8 +1,15 @@
 package agent
 
 import (
+	"context"
+	"fmt"
 	"strings"
+	"time"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
+	"github.com/sipeed/picoclaw/pkg/logger"
+	taskregistry "github.com/sipeed/picoclaw/pkg/tasks"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -22,6 +29,142 @@ type AsyncDeliveryDecision struct {
 	ForUserLen    int
 	MediaCount    int
 	IsError       bool
+}
+
+type AsyncDeliveryRequest struct {
+	TurnState    *turnState
+	ToolName     string
+	CompletionID string
+	Result       *tools.ToolResult
+	Decision     AsyncDeliveryDecision
+}
+
+func (al *AgentLoop) deliverAsyncToolCompletion(req AsyncDeliveryRequest) {
+	ts := req.TurnState
+	result := req.Result
+	asyncToolName := strings.TrimSpace(req.ToolName)
+	if ts == nil || result == nil {
+		return
+	}
+	if asyncToolName == "" {
+		asyncToolName = "async_tool"
+	}
+	delivery := req.Decision
+	if delivery.DeliveryMode == "" {
+		delivery = decideAsyncToolResultDelivery(result)
+	}
+	if result.IsError {
+		content := strings.TrimSpace(result.ForUser)
+		if content == "" {
+			content = strings.TrimSpace(result.ContentForLLM())
+		}
+		if content != "" && !result.Silent {
+			outCtx, outCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer outCancel()
+			_ = al.bus.PublishOutbound(outCtx, outboundMessageForTurn(ts, content))
+		}
+		return
+	}
+	if delivery.PublishToUser {
+		outCtx, outCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer outCancel()
+		userDelivered := false
+		userDeliveryErr := ""
+		if _, delivered, err := al.deliverToolResultToUser(outCtx, ts, result, asyncToolName); err != nil {
+			userDeliveryErr = err.Error()
+			logger.WarnCF("agent", "Failed to deliver async tool result to user",
+				map[string]any{
+					"tool":    asyncToolName,
+					"channel": ts.channel,
+					"chat_id": ts.chatID,
+					"error":   err.Error(),
+				})
+		} else if !delivered && strings.TrimSpace(result.ForUser) != "" && !result.Silent {
+			if err := al.bus.PublishOutbound(outCtx, outboundMessageForTurn(ts, result.ForUser)); err != nil {
+				userDeliveryErr = err.Error()
+			} else {
+				userDelivered = true
+			}
+		} else if delivered {
+			userDelivered = true
+		}
+		if !delivery.QueueParent {
+			if userDelivered {
+				al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryDelivered, "")
+			} else if userDeliveryErr != "" {
+				al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryFailed, userDeliveryErr)
+			} else {
+				al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryNotApplicable, "")
+			}
+			return
+		}
+	}
+
+	if !delivery.QueueParent {
+		al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryNotApplicable, "")
+		return
+	}
+
+	content := result.ContentForLLM()
+	content = al.cfg.FilterSensitiveData(content)
+
+	logger.InfoCF("agent", "Async tool completed, publishing result",
+		map[string]any{
+			"tool":        asyncToolName,
+			"content_len": len(content),
+			"channel":     ts.channel,
+		})
+	al.emitEvent(
+		runtimeevents.KindAgentFollowUpQueued,
+		ts.scope.meta(0, "delivery_coordinator", "turn.follow_up.queued"),
+		FollowUpQueuedPayload{
+			SourceTool: asyncToolName,
+			ContentLen: len(content),
+		},
+	)
+	origin := bus.InboundContext{
+		Channel:  ts.channel,
+		ChatID:   ts.chatID,
+		ChatType: "direct",
+		SenderID: fmt.Sprintf("async:%s", asyncToolName),
+		TopicID:  originTopicID(ts.opts.Dispatch.InboundContext),
+	}
+	if ts.opts.Dispatch.InboundContext != nil {
+		origin = *cloneInboundContext(ts.opts.Dispatch.InboundContext)
+		if strings.TrimSpace(origin.Channel) == "" {
+			origin.Channel = ts.channel
+		}
+		if strings.TrimSpace(origin.ChatID) == "" {
+			origin.ChatID = ts.chatID
+		}
+		if strings.TrimSpace(origin.ChatType) == "" {
+			origin.ChatType = "direct"
+		}
+		origin.SenderID = fmt.Sprintf("async:%s", asyncToolName)
+	}
+	completionCtx, completionCancel := context.WithTimeout(context.Background(), asyncCompletionSynthesisTimeout)
+	defer completionCancel()
+	if _, err := al.processAsyncCompletion(completionCtx, AsyncCompletionInput{
+		SourceTool:   asyncToolName,
+		CompletionID: strings.TrimSpace(req.CompletionID),
+		Content:      asyncCompletionPrompt(asyncToolName, content),
+		Origin:       origin,
+		SenderID:     fmt.Sprintf("async:%s", asyncToolName),
+	}); err != nil {
+		al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryFailed, err.Error())
+		logger.WarnCF("agent", "Failed to process async completion",
+			map[string]any{
+				"tool":          asyncToolName,
+				"completion_id": strings.TrimSpace(req.CompletionID),
+				"channel":       ts.channel,
+				"chat_id":       ts.chatID,
+				"error":         err.Error(),
+			})
+	} else if delivery.DeliveryMode == tools.AsyncDeliveryParentOnly {
+		al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliverySessionQueued, "")
+	} else {
+		al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryDelivered, "")
+	}
 }
 
 func decideAsyncToolResultDelivery(result *tools.ToolResult) AsyncDeliveryDecision {
