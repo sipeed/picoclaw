@@ -68,10 +68,24 @@ func (al *AgentLoop) deliverAsyncToolCompletion(req AsyncDeliveryRequest) {
 		if content == "" {
 			content = strings.TrimSpace(result.ContentForLLM())
 		}
+		delivered := false
+		deliveryErr := ""
 		if content != "" && !result.Silent {
 			outCtx, outCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer outCancel()
-			_ = al.bus.PublishOutbound(outCtx, outboundMessageForTurn(ts, content))
+			if err := al.bus.PublishOutbound(outCtx, outboundMessageForTurn(ts, content)); err != nil {
+				deliveryErr = err.Error()
+			} else {
+				delivered = true
+			}
+		}
+		switch {
+		case delivered:
+			al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryDelivered, completionID, "")
+		case deliveryErr != "":
+			al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryFailed, completionID, deliveryErr)
+		default:
+			al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryNotApplicable, completionID, "")
 		}
 		return
 	}

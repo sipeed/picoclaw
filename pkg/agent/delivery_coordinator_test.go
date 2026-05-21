@@ -193,6 +193,40 @@ func TestDeliverAsyncToolCompletion_ParentOnlyUpdatesSessionQueued(t *testing.T)
 	assertNoSyntheticAsyncCompletionInbound(t, msgBus)
 }
 
+func TestDeliverAsyncToolCompletion_UserAndParentDeliversBothOnce(t *testing.T) {
+	al, msgBus, ts, workspace := newDeliveryCoordinatorTestRuntime(t, "parent synthesized")
+	taskID := "coordinator-user-and-parent"
+	upsertAsyncTaskForTest(t, al, workspace, taskID)
+	result := (&tools.ToolResult{
+		ForLLM:      "parent data",
+		ForUser:     "user visible",
+		AsyncTaskID: taskID,
+	}).WithAsyncDelivery(tools.AsyncDeliveryUserAndParent)
+	req := AsyncDeliveryRequest{
+		TurnState:    ts,
+		ToolName:     "spawn",
+		CompletionID: "same-user-and-parent-completion",
+		Result:       result,
+		Decision:     decideAsyncToolResultDelivery(result),
+	}
+
+	al.deliverAsyncToolCompletion(req)
+	waitForOutboundMessage(t, msgBus.OutboundChan(), 2*time.Second, func(msg bus.OutboundMessage) bool {
+		return msg.Content == "user visible"
+	})
+	waitForOutboundMessage(t, msgBus.OutboundChan(), 2*time.Second, func(msg bus.OutboundMessage) bool {
+		return msg.Content == "parent synthesized"
+	})
+	assertTaskDeliveryStatusForTest(t, al, workspace, taskID, taskregistry.DeliveryDelivered)
+	assertNoSyntheticAsyncCompletionInbound(t, msgBus)
+
+	reloaded, reloadedBus, reloadedTS, _ := newDeliveryCoordinatorTestRuntimeWithWorkspace(t, workspace, "parent duplicate")
+	req.TurnState = reloadedTS
+	reloaded.deliverAsyncToolCompletion(req)
+	assertNoOutboundMessage(t, reloadedBus, "duplicate user_and_parent delivery")
+	assertTaskDeliveryStatusForTest(t, reloaded, workspace, taskID, taskregistry.DeliveryDelivered)
+}
+
 func TestDeliverAsyncToolCompletion_SkipsDuplicateUserDelivery(t *testing.T) {
 	al, msgBus, ts, workspace := newDeliveryCoordinatorTestRuntime(t, "ok")
 	taskID := "coordinator-duplicate-user"
@@ -364,5 +398,34 @@ func TestDeliverAsyncToolCompletion_FailedDeliveryRecordsCompletionError(t *test
 	}
 	if !strings.Contains(rec.DeliveryError, "publish failed") {
 		t.Fatalf("DeliveryError = %q, want publish failed", rec.DeliveryError)
+	}
+}
+
+func TestDeliverAsyncToolCompletion_ErrorDeliveryUpdatesTaskStatus(t *testing.T) {
+	al, msgBus, ts, workspace := newDeliveryCoordinatorTestRuntime(t, "ok")
+	taskID := "coordinator-error-delivered"
+	upsertAsyncTaskForTest(t, al, workspace, taskID)
+	result := (&tools.ToolResult{
+		ForLLM:      "internal error",
+		ForUser:     "user error",
+		AsyncTaskID: taskID,
+		IsError:     true,
+	}).WithAsyncDelivery(tools.AsyncDeliveryUserOnly)
+
+	al.deliverAsyncToolCompletion(AsyncDeliveryRequest{
+		TurnState:    ts,
+		ToolName:     "spawn",
+		CompletionID: "error-completion",
+		Result:       result,
+		Decision:     decideAsyncToolResultDelivery(result),
+	})
+
+	waitForOutboundMessage(t, msgBus.OutboundChan(), 2*time.Second, func(msg bus.OutboundMessage) bool {
+		return msg.Content == "user error"
+	})
+	assertTaskDeliveryStatusForTest(t, al, workspace, taskID, taskregistry.DeliveryDelivered)
+	rec, _ := al.taskRegistryForWorkspace(workspace).Get(taskID)
+	if rec.LastCompletionID != "error-completion" {
+		t.Fatalf("LastCompletionID = %q, want error-completion", rec.LastCompletionID)
 	}
 }
