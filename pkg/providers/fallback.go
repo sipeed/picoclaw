@@ -7,16 +7,6 @@ import (
 	"time"
 )
 
-func fallbackContextErr(ctx context.Context) error {
-	if ctx == nil {
-		return nil
-	}
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("fallback: context ended: %w", err)
-	}
-	return nil
-}
-
 // FallbackChain orchestrates model fallback across multiple candidates.
 type FallbackChain struct {
 	cooldown *CooldownTracker
@@ -119,7 +109,7 @@ func ResolveCandidatesWithLookup(
 //
 // Behavior:
 //   - Candidates in cooldown are skipped (logged as skipped attempt).
-//   - Any context termination aborts immediately (cancel or deadline, no fallback).
+//   - context.Canceled aborts immediately (user abort, no fallback).
 //   - Non-retriable errors (format) abort immediately.
 //   - Retriable errors trigger fallback to next candidate.
 //   - Success marks provider as good (resets cooldown).
@@ -139,8 +129,8 @@ func (fc *FallbackChain) Execute(
 
 	for i, candidate := range candidates {
 		// Check context before each attempt.
-		if err := fallbackContextErr(ctx); err != nil {
-			return nil, err
+		if ctx.Err() == context.Canceled {
+			return nil, context.Canceled
 		}
 
 		// Check cooldown per stable candidate identity, not just provider/model.
@@ -204,15 +194,15 @@ func (fc *FallbackChain) Execute(
 			return result, nil
 		}
 
-		// Context termination: abort immediately, no fallback.
-		if ctxErr := fallbackContextErr(ctx); ctxErr != nil {
+		// Context cancellation: abort immediately, no fallback.
+		if ctx.Err() == context.Canceled {
 			result.Attempts = append(result.Attempts, FallbackAttempt{
 				Provider: candidate.Provider,
 				Model:    candidate.Model,
-				Error:    ctxErr,
+				Error:    err,
 				Duration: elapsed,
 			})
-			return nil, ctxErr
+			return nil, context.Canceled
 		}
 
 		// Classify the error.
@@ -279,8 +269,8 @@ func (fc *FallbackChain) ExecuteImage(
 	}
 
 	for i, candidate := range candidates {
-		if err := fallbackContextErr(ctx); err != nil {
-			return nil, err
+		if ctx.Err() == context.Canceled {
+			return nil, context.Canceled
 		}
 
 		// Enforce per-candidate rate limit before calling the provider.
@@ -323,14 +313,14 @@ func (fc *FallbackChain) ExecuteImage(
 			return result, nil
 		}
 
-		if ctxErr := fallbackContextErr(ctx); ctxErr != nil {
+		if ctx.Err() == context.Canceled {
 			result.Attempts = append(result.Attempts, FallbackAttempt{
 				Provider: candidate.Provider,
 				Model:    candidate.Model,
-				Error:    ctxErr,
+				Error:    err,
 				Duration: elapsed,
 			})
-			return nil, ctxErr
+			return nil, context.Canceled
 		}
 
 		// Image dimension/size errors are non-retriable.
