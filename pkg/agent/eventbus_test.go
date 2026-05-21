@@ -699,6 +699,7 @@ func (e stringError) Error() string {
 type asyncFollowUpTool struct {
 	name          string
 	followUpText  string
+	forUserText   string
 	completionSig chan struct{}
 	deliveryMode  tools.AsyncDeliveryMode
 	taskID        string
@@ -730,7 +731,7 @@ func (t *asyncFollowUpTool) ExecuteAsync(
 	cb tools.AsyncCallback,
 ) *tools.ToolResult {
 	go func() {
-		res := &tools.ToolResult{ForLLM: t.followUpText}
+		res := &tools.ToolResult{ForLLM: t.followUpText, ForUser: t.forUserText}
 		if t.deliveryMode != "" {
 			res.WithAsyncDelivery(t.deliveryMode)
 		}
@@ -743,6 +744,36 @@ func (t *asyncFollowUpTool) ExecuteAsync(
 		}
 	}()
 	return tools.AsyncResult("async follow-up scheduled")
+}
+
+func waitForInboundMessage(t *testing.T, ch <-chan bus.InboundMessage, timeout time.Duration, match func(bus.InboundMessage) bool) bus.InboundMessage {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		select {
+		case msg := <-ch:
+			if match == nil || match(msg) {
+				return msg
+			}
+		case <-deadline:
+			t.Fatal("timeout waiting for inbound message")
+		}
+	}
+}
+
+func waitForOutboundMessage(t *testing.T, ch <-chan bus.OutboundMessage, timeout time.Duration, match func(bus.OutboundMessage) bool) bus.OutboundMessage {
+	t.Helper()
+	deadline := time.After(timeout)
+	for {
+		select {
+		case msg := <-ch:
+			if match == nil || match(msg) {
+				return msg
+			}
+		case <-deadline:
+			t.Fatal("timeout waiting for outbound message")
+		}
+	}
 }
 
 var (
@@ -1085,6 +1116,164 @@ func TestAgentLoop_AsyncUserOnlyAckSuppressesDefaultFinalResponse(t *testing.T) 
 	case outbound := <-msgBus.OutboundChan():
 		t.Fatalf("unexpected outbound final response: %#v", outbound)
 	default:
+	}
+}
+
+func TestAgentLoop_AsyncParentOnlyQueuesFollowUpWithoutUserDelivery(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	provider := &toolCallProvider{
+		toolCalls: []providers.ToolCall{
+			{
+				ID:        "call_delegate_1",
+				Type:      "function",
+				Name:      "delegate",
+				Arguments: map[string]any{"agent_id": "media", "task": "download and summarize"},
+			},
+		},
+		finalResp: "parent final response",
+	}
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, provider)
+	doneCh := make(chan struct{})
+	al.RegisterTool(&asyncFollowUpTool{
+		name:          "delegate",
+		followUpText:  "parent-only completion",
+		forUserText:   "do not send this directly",
+		completionSig: doneCh,
+		deliveryMode:  tools.AsyncDeliveryParentOnly,
+	})
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("expected default agent")
+	}
+	resp, err := al.runAgentLoop(context.Background(), defaultAgent, processOptions{
+		Dispatch: DispatchRequest{
+			SessionKey:  "session-1",
+			UserMessage: "run delegate",
+			InboundContext: &bus.InboundContext{
+				Channel:  "telegram",
+				ChatID:   "chat-1",
+				TopicID:  "topic-1",
+				SenderID: "user-1",
+			},
+		},
+		DefaultResponse: defaultResponse,
+		SendResponse:    true,
+	})
+	if err != nil {
+		t.Fatalf("runAgentLoop failed: %v", err)
+	}
+	if resp != "parent final response" {
+		t.Fatalf("response = %q, want parent final response", resp)
+	}
+	select {
+	case <-doneCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for async completion")
+	}
+	inbound := waitForInboundMessage(t, msgBus.InboundChan(), 2*time.Second, func(msg bus.InboundMessage) bool {
+		return msg.Context.Channel == "system" && strings.Contains(msg.Content, "parent-only completion")
+	})
+	if inbound.Context.TopicID != "topic-1" {
+		t.Fatalf("inbound topic_id = %q, want topic-1", inbound.Context.TopicID)
+	}
+	if !isAsyncCompletionSystemMessage(inbound) {
+		t.Fatalf("expected async completion system message, got %+v", inbound.Context.Raw)
+	}
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if strings.Contains(outbound.Content, "do not send this directly") {
+			t.Fatalf("unexpected direct user delivery: %#v", outbound)
+		}
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestAgentLoop_AsyncUserAndParentPublishesUserAndQueuesFollowUp(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	provider := &toolCallProvider{
+		toolCalls: []providers.ToolCall{
+			{
+				ID:        "call_spawn_1",
+				Type:      "function",
+				Name:      "spawn",
+				Arguments: map[string]any{"task": "download media", "delivery_mode": string(tools.AsyncDeliveryUserAndParent)},
+			},
+		},
+		finalResp: "parent final response",
+	}
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, provider)
+	doneCh := make(chan struct{})
+	al.RegisterTool(&asyncFollowUpTool{
+		name:          "spawn",
+		followUpText:  "parent completion",
+		forUserText:   "user completion",
+		completionSig: doneCh,
+		deliveryMode:  tools.AsyncDeliveryUserAndParent,
+	})
+
+	defaultAgent := al.registry.GetDefaultAgent()
+	if defaultAgent == nil {
+		t.Fatal("expected default agent")
+	}
+	resp, err := al.runAgentLoop(context.Background(), defaultAgent, processOptions{
+		Dispatch: DispatchRequest{
+			SessionKey:  "session-1",
+			UserMessage: "run spawn",
+			InboundContext: &bus.InboundContext{
+				Channel:  "telegram",
+				ChatID:   "chat-1",
+				TopicID:  "topic-1",
+				SenderID: "user-1",
+			},
+		},
+		DefaultResponse: defaultResponse,
+		SendResponse:    true,
+	})
+	if err != nil {
+		t.Fatalf("runAgentLoop failed: %v", err)
+	}
+	if resp != "parent final response" {
+		t.Fatalf("response = %q, want parent final response", resp)
+	}
+	select {
+	case <-doneCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for async completion")
+	}
+	outbound := waitForOutboundMessage(t, msgBus.OutboundChan(), 2*time.Second, func(msg bus.OutboundMessage) bool {
+		return msg.Content == "user completion"
+	})
+	if outbound.Context.TopicID != "topic-1" {
+		t.Fatalf("outbound topic_id = %q, want topic-1", outbound.Context.TopicID)
+	}
+	inbound := waitForInboundMessage(t, msgBus.InboundChan(), 2*time.Second, func(msg bus.InboundMessage) bool {
+		return msg.Context.Channel == "system" && strings.Contains(msg.Content, "parent completion")
+	})
+	if inbound.Context.TopicID != "topic-1" {
+		t.Fatalf("inbound topic_id = %q, want topic-1", inbound.Context.TopicID)
 	}
 }
 
