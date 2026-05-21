@@ -137,8 +137,8 @@ func (t *SpawnTool) execute(
 		}
 	}
 
-	// Preferred path: route through SubagentManager so spawn_status and
-	// background execution share the same task registry.
+	// Preferred path: route through SubagentManager so spawned tasks are visible
+	// in both the spawn-specific status view and the generic task registry.
 	if t.manager != nil {
 		wrappedCallback := cb
 		if cb != nil {

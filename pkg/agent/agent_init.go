@@ -302,8 +302,9 @@ func registerSharedTools(
 			}
 		}
 
-		// Spawn and spawn_status tools share a SubagentManager.
-		// Construct it when either tool is enabled (both require subagent).
+		// Spawn and spawn_status tools share a SubagentManager. task_status uses
+		// the same durable registry, but does not require the SubagentManager.
+		// Construct the manager when either spawn-specific tool is enabled.
 		spawnEnabled := cfg.Tools.IsToolEnabled("spawn")
 		spawnStatusEnabled := cfg.Tools.IsToolEnabled("spawn_status")
 		if (spawnEnabled || spawnStatusEnabled) && cfg.Tools.IsToolEnabled("subagent") {
@@ -378,10 +379,9 @@ func registerSharedTools(
 				return spawnSubTurn(ctx, al, parentTS, cfg)
 			})
 
-			// Clone the parent's tool registry so subagents can use all
-			// tools registered so far (file, web, etc.) but NOT spawn/
-			// spawn_status which are added below — preventing recursive
-			// subagent spawning.
+			// Clone the parent's tool registry so subagents can use all tools
+			// registered so far (file, web, etc.) but NOT spawn/spawn_status/task_status
+			// which are added below — preventing recursive subagent spawning.
 			subagentManager.SetTools(agent.Tools.Clone())
 			if spawnEnabled {
 				spawnTool := tools.NewSpawnTool(subagentManager)
