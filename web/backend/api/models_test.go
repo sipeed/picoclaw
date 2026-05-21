@@ -1937,6 +1937,19 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 	} else if !option.EmptyAPIKeyAllowed {
 		t.Fatal("lmstudio should allow empty api keys")
 	}
+	if option, ok := optionsByID["gpt4free"]; !ok {
+		t.Fatal("gpt4free provider option missing")
+	} else {
+		if option.DefaultAPIBase != "http://localhost:1337/v1" {
+			t.Fatalf("gpt4free default_api_base = %q, want %q", option.DefaultAPIBase, "http://localhost:1337/v1")
+		}
+		if !option.EmptyAPIKeyAllowed {
+			t.Fatal("gpt4free should allow empty api keys")
+		}
+		if !option.SupportsFetch {
+			t.Fatal("gpt4free provider option should report supports_fetch")
+		}
+	}
 	if option, ok := optionsByID["siliconflow"]; !ok {
 		t.Fatal("siliconflow provider option missing")
 	} else if option.DefaultAPIBase != "https://api.siliconflow.cn/v1" {

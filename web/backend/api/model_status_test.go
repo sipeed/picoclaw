@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -39,6 +40,21 @@ func TestProbeLocalModelAvailability_OpenAICompatibleIncludesAPIKey(t *testing.T
 	}
 }
 
+func TestProbeOpenAICompatibleModel_SupportsBareArrayModels(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Fatalf("path = %q, want %q", r.URL.Path, "/v1/models")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `[{"id":"gpt-4o-mini"},{"id":"deepseek-r1"}]`)
+	}))
+	defer srv.Close()
+
+	if !probeOpenAICompatibleModel(srv.URL+"/v1", "gpt-4o-mini", "") {
+		t.Fatal("probeOpenAICompatibleModel() = false, want true for bare array /models response")
+	}
+}
+
 func TestRequiresRuntimeProbe_LMStudio(t *testing.T) {
 	if !requiresRuntimeProbe(&config.ModelConfig{
 		Model: "lmstudio/openai/gpt-oss-20b",
@@ -54,10 +70,32 @@ func TestRequiresRuntimeProbe_LMStudio(t *testing.T) {
 	}
 }
 
+func TestRequiresRuntimeProbe_GPT4Free(t *testing.T) {
+	if !requiresRuntimeProbe(&config.ModelConfig{
+		Model: "gpt4free/gpt-4o-mini",
+	}) {
+		t.Fatal("requiresRuntimeProbe(gpt4free with default base) = false, want true")
+	}
+
+	if requiresRuntimeProbe(&config.ModelConfig{
+		Model:   "gpt4free/gpt-4o-mini",
+		APIBase: "https://g4f.space/v1",
+	}) {
+		t.Fatal("requiresRuntimeProbe(gpt4free with remote base) = true, want false")
+	}
+}
+
 func TestModelProbeAPIBase_LMStudioDefault(t *testing.T) {
 	got := modelProbeAPIBase(&config.ModelConfig{Model: "lmstudio/openai/gpt-oss-20b"})
 	if got != "http://localhost:1234/v1" {
 		t.Fatalf("modelProbeAPIBase(lmstudio) = %q, want %q", got, "http://localhost:1234/v1")
+	}
+}
+
+func TestModelProbeAPIBase_GPT4FreeDefault(t *testing.T) {
+	got := modelProbeAPIBase(&config.ModelConfig{Model: "gpt4free/gpt-4o-mini"})
+	if got != "http://localhost:1337/v1" {
+		t.Fatalf("modelProbeAPIBase(gpt4free) = %q, want %q", got, "http://localhost:1337/v1")
 	}
 }
 
@@ -86,6 +124,34 @@ func TestProbeLocalModelAvailability_LMStudioUsesOpenAICompatibleProbe(t *testin
 	}
 	if !called {
 		t.Fatal("probeOpenAICompatibleModelFunc was not called for lmstudio")
+	}
+}
+
+func TestProbeLocalModelAvailability_GPT4FreeUsesOpenAICompatibleProbe(t *testing.T) {
+	originalProbe := probeOpenAICompatibleModelFunc
+	defer func() { probeOpenAICompatibleModelFunc = originalProbe }()
+
+	called := false
+	probeOpenAICompatibleModelFunc = func(apiBase, modelID, apiKey string) bool {
+		called = true
+		if apiBase != "http://localhost:1337/v1" {
+			t.Fatalf("apiBase = %q, want %q", apiBase, "http://localhost:1337/v1")
+		}
+		if modelID != "gpt-4o-mini" {
+			t.Fatalf("modelID = %q, want %q", modelID, "gpt-4o-mini")
+		}
+		if apiKey != "" {
+			t.Fatalf("apiKey = %q, want empty", apiKey)
+		}
+		return true
+	}
+
+	model := &config.ModelConfig{Model: "gpt4free/gpt-4o-mini"}
+	if !probeLocalModelAvailability(model) {
+		t.Fatal("probeLocalModelAvailability(gpt4free) = false, want true")
+	}
+	if !called {
+		t.Fatal("probeOpenAICompatibleModelFunc was not called for gpt4free")
 	}
 }
 

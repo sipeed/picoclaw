@@ -997,7 +997,7 @@ func probeModelConnectivity(m *config.ModelConfig) bool {
 	switch protocol {
 	case "ollama":
 		return probeOllamaModel(apiBase, modelID)
-	case "vllm", "lmstudio":
+	case "vllm", "lmstudio", "gpt4free":
 		return probeOpenAICompatibleModel(apiBase, modelID, m.APIKey())
 	case "github-copilot":
 		return probeTCPService(apiBase)

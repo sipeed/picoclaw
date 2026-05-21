@@ -218,7 +218,7 @@ func runLocalModelProbe(m *config.ModelConfig) bool {
 	switch protocol {
 	case "ollama":
 		return probeOllamaModelFunc(apiBase, modelID)
-	case "vllm", "lmstudio":
+	case "vllm", "lmstudio", "gpt4free":
 		return probeOpenAICompatibleModelFunc(apiBase, modelID, m.APIKey())
 	case "github-copilot":
 		return probeTCPServiceFunc(apiBase)
@@ -563,16 +563,29 @@ func probeOpenAICompatibleModel(apiBase, modelID, apiKey string) bool {
 		return false
 	}
 
-	var resp struct {
+	var respEnvelope struct {
 		Data []struct {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	if err := getJSON(strings.TrimRight(strings.TrimSpace(apiBase), "/")+"/models", &resp, apiKey); err != nil {
+	fetchURL := strings.TrimRight(strings.TrimSpace(apiBase), "/") + "/models"
+	if err := getJSON(fetchURL, &respEnvelope, apiKey); err == nil {
+		for _, model := range respEnvelope.Data {
+			if strings.EqualFold(strings.TrimSpace(model.ID), modelID) {
+				return true
+			}
+		}
 		return false
 	}
 
-	for _, model := range resp.Data {
+	var respArray []struct {
+		ID string `json:"id"`
+	}
+	if err := getJSON(fetchURL, &respArray, apiKey); err != nil {
+		return false
+	}
+
+	for _, model := range respArray {
 		if strings.EqualFold(strings.TrimSpace(model.ID), modelID) {
 			return true
 		}
