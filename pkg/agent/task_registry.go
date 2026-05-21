@@ -37,6 +37,7 @@ func (al *AgentLoop) updateAsyncTaskDeliveryStatus(
 	workspace string,
 	taskID string,
 	status taskregistry.DeliveryStatus,
+	completionID string,
 	errorSummary string,
 ) {
 	taskID = strings.TrimSpace(taskID)
@@ -49,10 +50,46 @@ func (al *AgentLoop) updateAsyncTaskDeliveryStatus(
 	}
 	_ = registry.Update(taskID, func(rec *taskregistry.Record) {
 		rec.DeliveryStatus = status
+		if strings.TrimSpace(completionID) != "" {
+			rec.LastCompletionID = strings.TrimSpace(completionID)
+		}
+		if status == taskregistry.DeliveryDelivered || status == taskregistry.DeliverySessionQueued || status == taskregistry.DeliveryNotApplicable {
+			rec.DeliveredAt = time.Now().UnixMilli()
+			rec.DeliveryError = ""
+		}
 		if strings.TrimSpace(errorSummary) != "" {
-			rec.Error = strings.TrimSpace(errorSummary)
+			rec.DeliveryError = strings.TrimSpace(errorSummary)
+			if strings.TrimSpace(rec.Error) == "" {
+				rec.Error = strings.TrimSpace(errorSummary)
+			}
 		}
 	})
+}
+
+func (al *AgentLoop) asyncTaskDeliveryAlreadyHandled(
+	workspace string,
+	taskID string,
+	completionID string,
+) bool {
+	taskID = strings.TrimSpace(taskID)
+	completionID = strings.TrimSpace(completionID)
+	if taskID == "" || completionID == "" {
+		return false
+	}
+	registry := al.taskRegistryForWorkspace(workspace)
+	if registry == nil {
+		return false
+	}
+	rec, ok := registry.Get(taskID)
+	if !ok || strings.TrimSpace(rec.LastCompletionID) != completionID {
+		return false
+	}
+	switch rec.DeliveryStatus {
+	case taskregistry.DeliveryDelivered, taskregistry.DeliverySessionQueued, taskregistry.DeliveryNotApplicable:
+		return true
+	default:
+		return false
+	}
 }
 
 func (al *AgentLoop) reconcilePendingTerminalTaskDelivery(workspace string, registry *taskregistry.Registry) {

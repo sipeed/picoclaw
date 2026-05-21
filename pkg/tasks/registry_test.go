@@ -22,6 +22,8 @@ func TestRegistryPersistsAndReloadsRecords(t *testing.T) {
 	if err := registry.Update("subagent-7", func(rec *Record) {
 		rec.Status = StatusSucceeded
 		rec.DeliveryStatus = DeliveryDelivered
+		rec.LastCompletionID = "completion-7"
+		rec.DeliveredAt = 123
 		rec.TerminalSummary = "done"
 	}); err != nil {
 		t.Fatalf("Update() error = %v", err)
@@ -40,6 +42,12 @@ func TestRegistryPersistsAndReloadsRecords(t *testing.T) {
 	}
 	if rec.TerminalSummary != "done" {
 		t.Fatalf("TerminalSummary = %q, want done", rec.TerminalSummary)
+	}
+	if rec.LastCompletionID != "completion-7" {
+		t.Fatalf("LastCompletionID = %q, want completion-7", rec.LastCompletionID)
+	}
+	if rec.DeliveredAt != 123 {
+		t.Fatalf("DeliveredAt = %d, want 123", rec.DeliveredAt)
 	}
 }
 

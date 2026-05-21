@@ -1,6 +1,9 @@
 package agent
 
 import (
+	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -156,6 +159,13 @@ func TestDeliverAsyncToolCompletion_UserOnlyUpdatesDelivered(t *testing.T) {
 		t.Fatalf("TopicID = %q, want topic-1", outbound.Context.TopicID)
 	}
 	assertTaskDeliveryStatusForTest(t, al, workspace, taskID, taskregistry.DeliveryDelivered)
+	rec, _ := al.taskRegistryForWorkspace(workspace).Get(taskID)
+	if rec.LastCompletionID != "completion-user-only" {
+		t.Fatalf("LastCompletionID = %q, want completion-user-only", rec.LastCompletionID)
+	}
+	if rec.DeliveredAt == 0 {
+		t.Fatal("DeliveredAt was not set")
+	}
 }
 
 func TestDeliverAsyncToolCompletion_ParentOnlyUpdatesSessionQueued(t *testing.T) {
@@ -183,12 +193,75 @@ func TestDeliverAsyncToolCompletion_ParentOnlyUpdatesSessionQueued(t *testing.T)
 	assertNoSyntheticAsyncCompletionInbound(t, msgBus)
 }
 
+func TestDeliverAsyncToolCompletion_SkipsDuplicateUserDelivery(t *testing.T) {
+	al, msgBus, ts, workspace := newDeliveryCoordinatorTestRuntime(t, "ok")
+	taskID := "coordinator-duplicate-user"
+	upsertAsyncTaskForTest(t, al, workspace, taskID)
+	result := (&tools.ToolResult{
+		ForLLM:      "internal",
+		ForUser:     "user once",
+		AsyncTaskID: taskID,
+	}).WithAsyncDelivery(tools.AsyncDeliveryUserOnly)
+	req := AsyncDeliveryRequest{
+		TurnState:    ts,
+		ToolName:     "spawn",
+		CompletionID: "same-completion",
+		Result:       result,
+		Decision:     decideAsyncToolResultDelivery(result),
+	}
+
+	al.deliverAsyncToolCompletion(req)
+	waitForOutboundMessage(t, msgBus.OutboundChan(), 2*time.Second, func(msg bus.OutboundMessage) bool {
+		return msg.Content == "user once"
+	})
+	al.deliverAsyncToolCompletion(req)
+	assertNoOutboundMessage(t, msgBus, "duplicate user delivery")
+}
+
+func TestDeliverAsyncToolCompletion_SkipsDuplicateParentDeliveryAfterReload(t *testing.T) {
+	al, msgBus, ts, workspace := newDeliveryCoordinatorTestRuntime(t, "parent once")
+	taskID := "coordinator-duplicate-parent"
+	upsertAsyncTaskForTest(t, al, workspace, taskID)
+	result := (&tools.ToolResult{
+		ForLLM:      "parent data",
+		ForUser:     "do not send",
+		AsyncTaskID: taskID,
+	}).WithAsyncDelivery(tools.AsyncDeliveryParentOnly)
+	req := AsyncDeliveryRequest{
+		TurnState:    ts,
+		ToolName:     "delegate",
+		CompletionID: "same-parent-completion",
+		Result:       result,
+		Decision:     decideAsyncToolResultDelivery(result),
+	}
+
+	al.deliverAsyncToolCompletion(req)
+	waitForOutboundMessage(t, msgBus.OutboundChan(), 2*time.Second, func(msg bus.OutboundMessage) bool {
+		return msg.Content == "parent once"
+	})
+
+	reloaded, reloadedBus, reloadedTS, _ := newDeliveryCoordinatorTestRuntimeWithWorkspace(t, workspace, "parent duplicate")
+	req.TurnState = reloadedTS
+	reloaded.deliverAsyncToolCompletion(req)
+	assertNoOutboundMessage(t, reloadedBus, "duplicate parent delivery")
+	assertTaskDeliveryStatusForTest(t, reloaded, workspace, taskID, taskregistry.DeliverySessionQueued)
+}
+
 func newDeliveryCoordinatorTestRuntime(
 	t *testing.T,
 	response string,
 ) (*AgentLoop, *bus.MessageBus, *turnState, string) {
 	t.Helper()
 	workspace := t.TempDir()
+	return newDeliveryCoordinatorTestRuntimeWithWorkspace(t, workspace, response)
+}
+
+func newDeliveryCoordinatorTestRuntimeWithWorkspace(
+	t *testing.T,
+	workspace string,
+	response string,
+) (*AgentLoop, *bus.MessageBus, *turnState, string) {
+	t.Helper()
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
@@ -227,4 +300,69 @@ func newDeliveryCoordinatorTestRuntime(
 		scope: al.newTurnEventScope(agent.ID, "session-1", &TurnContext{Inbound: inbound}),
 	}
 	return al, msgBus, ts, workspace
+}
+
+func assertNoOutboundMessage(t *testing.T, msgBus *bus.MessageBus, context string) {
+	t.Helper()
+	select {
+	case msg := <-msgBus.OutboundChan():
+		t.Fatalf("unexpected outbound during %s: %+v", context, msg)
+	case <-time.After(150 * time.Millisecond):
+	}
+}
+
+type failingMessageBus struct{}
+
+func (failingMessageBus) PublishInbound(context.Context, bus.InboundMessage) error {
+	return errors.New("publish failed")
+}
+
+func (failingMessageBus) PublishOutbound(context.Context, bus.OutboundMessage) error {
+	return errors.New("publish failed")
+}
+
+func (failingMessageBus) PublishOutboundMedia(context.Context, bus.OutboundMediaMessage) error {
+	return errors.New("publish failed")
+}
+
+func (failingMessageBus) GetStreamer(context.Context, string, string, string) (bus.Streamer, bool) {
+	return nil, false
+}
+
+func (failingMessageBus) InboundChan() <-chan bus.InboundMessage {
+	return nil
+}
+
+func TestDeliverAsyncToolCompletion_FailedDeliveryRecordsCompletionError(t *testing.T) {
+	al, _, ts, workspace := newDeliveryCoordinatorTestRuntime(t, "ok")
+	taskID := "coordinator-failed"
+	upsertAsyncTaskForTest(t, al, workspace, taskID)
+	result := (&tools.ToolResult{
+		ForLLM:      "internal",
+		ForUser:     "user fail",
+		AsyncTaskID: taskID,
+	}).WithAsyncDelivery(tools.AsyncDeliveryUserOnly)
+
+	al.bus = failingMessageBus{}
+	al.deliverAsyncToolCompletion(AsyncDeliveryRequest{
+		TurnState:    ts,
+		ToolName:     "spawn",
+		CompletionID: "failed-completion",
+		Result:       result,
+		Decision:     decideAsyncToolResultDelivery(result),
+	})
+
+	rec, ok := al.taskRegistryForWorkspace(workspace).Get(taskID)
+	if !ok {
+		t.Fatal("expected task")
+	}
+	if rec.DeliveryStatus != taskregistry.DeliveryFailed {
+		t.Fatalf("DeliveryStatus = %q, want failed", rec.DeliveryStatus)
+	}
+	if rec.LastCompletionID != "failed-completion" {
+		t.Fatalf("LastCompletionID = %q, want failed-completion", rec.LastCompletionID)
+	}
+	if !strings.Contains(rec.DeliveryError, "publish failed") {
+		t.Fatalf("DeliveryError = %q, want publish failed", rec.DeliveryError)
+	}
 }

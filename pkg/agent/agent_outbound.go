@@ -303,7 +303,9 @@ func (al *AgentLoop) deliverToolResultToUser(
 			return buildProviderAttachments(al.mediaStore, mediaRefs), true, nil
 		}
 		if al.bus != nil {
-			al.bus.PublishOutboundMedia(ctx, outboundMedia)
+			if err := al.bus.PublishOutboundMedia(ctx, outboundMedia); err != nil {
+				return nil, false, err
+			}
 		}
 		return nil, false, nil
 	}
@@ -317,7 +319,9 @@ func (al *AgentLoop) deliverToolResultToUser(
 	if al.bus == nil {
 		return nil, false, nil
 	}
-	al.bus.PublishOutbound(ctx, outboundMessageForTurn(ts, text))
+	if err := al.bus.PublishOutbound(ctx, outboundMessageForTurn(ts, text)); err != nil {
+		return nil, false, err
+	}
 	logger.DebugCF("agent", "Sent tool result to user",
 		map[string]any{
 			"tool":        toolName,

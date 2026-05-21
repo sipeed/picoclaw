@@ -53,6 +53,16 @@ func (al *AgentLoop) deliverAsyncToolCompletion(req AsyncDeliveryRequest) {
 	if delivery.DeliveryMode == "" {
 		delivery = decideAsyncToolResultDelivery(result)
 	}
+	completionID := strings.TrimSpace(req.CompletionID)
+	if al.asyncTaskDeliveryAlreadyHandled(ts.workspace, delivery.TaskID, completionID) {
+		logger.InfoCF("agent", "Skipping duplicate async delivery",
+			map[string]any{
+				"tool":          asyncToolName,
+				"completion_id": completionID,
+				"task_id":       delivery.TaskID,
+			})
+		return
+	}
 	if result.IsError {
 		content := strings.TrimSpace(result.ForUser)
 		if content == "" {
@@ -90,18 +100,18 @@ func (al *AgentLoop) deliverAsyncToolCompletion(req AsyncDeliveryRequest) {
 		}
 		if !delivery.QueueParent {
 			if userDelivered {
-				al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryDelivered, "")
+				al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryDelivered, completionID, "")
 			} else if userDeliveryErr != "" {
-				al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryFailed, userDeliveryErr)
+				al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryFailed, completionID, userDeliveryErr)
 			} else {
-				al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryNotApplicable, "")
+				al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryNotApplicable, completionID, "")
 			}
 			return
 		}
 	}
 
 	if !delivery.QueueParent {
-		al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryNotApplicable, "")
+		al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryNotApplicable, completionID, "")
 		return
 	}
 
@@ -146,24 +156,24 @@ func (al *AgentLoop) deliverAsyncToolCompletion(req AsyncDeliveryRequest) {
 	defer completionCancel()
 	if _, err := al.processAsyncCompletion(completionCtx, AsyncCompletionInput{
 		SourceTool:   asyncToolName,
-		CompletionID: strings.TrimSpace(req.CompletionID),
+		CompletionID: completionID,
 		Content:      asyncCompletionPrompt(asyncToolName, content),
 		Origin:       origin,
 		SenderID:     fmt.Sprintf("async:%s", asyncToolName),
 	}); err != nil {
-		al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryFailed, err.Error())
+		al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryFailed, completionID, err.Error())
 		logger.WarnCF("agent", "Failed to process async completion",
 			map[string]any{
 				"tool":          asyncToolName,
-				"completion_id": strings.TrimSpace(req.CompletionID),
+				"completion_id": completionID,
 				"channel":       ts.channel,
 				"chat_id":       ts.chatID,
 				"error":         err.Error(),
 			})
 	} else if delivery.DeliveryMode == tools.AsyncDeliveryParentOnly {
-		al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliverySessionQueued, "")
+		al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliverySessionQueued, completionID, "")
 	} else {
-		al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryDelivered, "")
+		al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryDelivered, completionID, "")
 	}
 }
 
