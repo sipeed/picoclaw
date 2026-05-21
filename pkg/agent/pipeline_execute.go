@@ -284,36 +284,7 @@ toolLoop:
 						},
 					)
 
-					if shouldPublishToolFeedback(al, ts) && ts.channel != "pico" {
-						toolFeedbackMaxLen := al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength()
-						toolFeedbackExplanation := toolFeedbackExplanationForToolCall(
-							exec.response,
-							tc,
-							messages,
-						)
-						feedbackMsg := utils.FormatToolFeedbackMessageWithStyle(
-							al.cfg.Agents.Defaults.GetToolFeedbackStyle(),
-							toolName,
-							toolFeedbackExplanation,
-							toolFeedbackArgsPreview(toolArgs, toolFeedbackMaxLen),
-						)
-						if title := toolFeedbackTitleForTurn(ts); title != "" {
-							feedbackMsg = utils.FormatToolFeedbackMessageWithStyleAndTitle(
-								al.cfg.Agents.Defaults.GetToolFeedbackStyle(),
-								title,
-								toolName,
-								toolFeedbackExplanation,
-								toolFeedbackArgsPreview(toolArgs, toolFeedbackMaxLen),
-							)
-						}
-						fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
-						_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurnWithOptions(
-							ts,
-							feedbackMsg,
-							outboundTurnMessageOptions{kind: messageKindToolFeedback},
-						))
-						fbCancel()
-					}
+					al.publishToolFeedbackForCall(turnCtx, ts, exec.response, tc, toolName, toolArgs, messages)
 
 					toolDuration := time.Duration(0)
 
@@ -546,36 +517,7 @@ toolLoop:
 			},
 		)
 
-		if shouldPublishToolFeedback(al, ts) && ts.channel != "pico" {
-			toolFeedbackMaxLen := al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength()
-			toolFeedbackExplanation := toolFeedbackExplanationForToolCall(
-				exec.response,
-				tc,
-				messages,
-			)
-			feedbackMsg := utils.FormatToolFeedbackMessageWithStyle(
-				al.cfg.Agents.Defaults.GetToolFeedbackStyle(),
-				toolName,
-				toolFeedbackExplanation,
-				toolFeedbackArgsPreview(toolArgs, toolFeedbackMaxLen),
-			)
-			if title := toolFeedbackTitleForTurn(ts); title != "" {
-				feedbackMsg = utils.FormatToolFeedbackMessageWithStyleAndTitle(
-					al.cfg.Agents.Defaults.GetToolFeedbackStyle(),
-					title,
-					toolName,
-					toolFeedbackExplanation,
-					toolFeedbackArgsPreview(toolArgs, toolFeedbackMaxLen),
-				)
-			}
-			fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
-			_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurnWithOptions(
-				ts,
-				feedbackMsg,
-				outboundTurnMessageOptions{kind: messageKindToolFeedback},
-			))
-			fbCancel()
-		}
+		al.publishToolFeedbackForCall(turnCtx, ts, exec.response, tc, toolName, toolArgs, messages)
 
 		toolCallID := tc.ID
 		asyncToolName := toolName
@@ -958,9 +900,7 @@ toolLoop:
 		}
 		ts.setPhase(TurnPhaseCompleted)
 		ts.setFinalContent("")
-		if al.channelManager != nil && ts.channel != "" {
-			al.channelManager.DismissToolFeedback(ctx, ts.channel, ts.chatID, ts.opts.InboundContext)
-		}
+		al.dismissToolFeedbackForTurn(ctx, ts)
 		logger.InfoCF("agent", "Tool output satisfied delivery; ending turn without follow-up LLM",
 			map[string]any{
 				"agent_id":   ts.agent.ID,

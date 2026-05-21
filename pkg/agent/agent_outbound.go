@@ -115,17 +115,7 @@ func (al *AgentLoop) publishResponseWithContextIfNeeded(
 	messageToolSentToSameChat := al.messageToolSentToSameChat(sessionKey, channel, chatID)
 
 	if policy == finalResponseSuppressIfMessageToolSent && messageToolSentToSameChat {
-		if al.channelManager != nil && channel != "" && chatID != "" {
-			dismissCtx, dismissCancel := context.WithTimeout(ctx, 5*time.Second)
-			al.channelManager.DismissToolFeedbackForSession(
-				dismissCtx,
-				channel,
-				chatID,
-				inboundCtx,
-				sessionKey,
-			)
-			dismissCancel()
-		}
+		al.dismissToolFeedbackForSession(ctx, channel, chatID, inboundCtx, sessionKey)
 		logger.DebugCF(
 			"agent",
 			"Skipped outbound (message tool already sent to same chat)",
