@@ -138,9 +138,25 @@ func (cb *ContextBuilder) promptRegistryOrDefault() *PromptRegistry {
 	return cb.promptRegistry
 }
 
-func (cb *ContextBuilder) getIdentity() string {
+func (cb *ContextBuilder) getIdentity(includeToolUseRule bool) string {
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
 	version := config.FormatVersion()
+	rules := []string{}
+	if includeToolUseRule {
+		rules = append(rules, toolUseSystemPromptRule())
+	}
+	rules = append(
+		rules,
+		"**Be helpful and accurate** - When using tools, briefly explain what you're doing.",
+		fmt.Sprintf(
+			"**Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md",
+			workspacePath,
+		),
+		"**Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.",
+	)
+	for i, rule := range rules {
+		rules[i] = fmt.Sprintf("%d. %s", i+1, rule)
+	}
 
 	return fmt.Sprintf(
 		`# picoclaw 🦞 (%s)
@@ -156,19 +172,13 @@ Your workspace is at: %s
 ## Important Rules
 
 %s
-
-2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
-
-3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md
-
-4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`,
+`,
 		version,
 		workspacePath,
 		workspacePath,
 		workspacePath,
 		workspacePath,
-		numberedToolUseSystemPromptRule(),
-		workspacePath,
+		strings.Join(rules, "\n\n"),
 	)
 }
 
@@ -198,11 +208,13 @@ func (cb *ContextBuilder) BuildSystemPrompt() string {
 func (cb *ContextBuilder) BuildSystemPromptParts() []PromptPart {
 	return cb.buildSystemPromptParts(systemPromptBuildOptions{
 		IncludeSkillCatalog: true,
+		IncludeToolUseRule:  true,
 	})
 }
 
 type systemPromptBuildOptions struct {
 	IncludeSkillCatalog bool
+	IncludeToolUseRule  bool
 	AllowedSkills       []string
 }
 
@@ -227,7 +239,7 @@ func (cb *ContextBuilder) buildSystemPromptParts(opts systemPromptBuildOptions) 
 		Slot:    PromptSlotIdentity,
 		Source:  PromptSource{ID: PromptSourceKernel, Name: "identity"},
 		Title:   "picoclaw identity",
-		Content: cb.getIdentity(),
+		Content: cb.getIdentity(opts.IncludeToolUseRule),
 		Stable:  true,
 		Cache:   PromptCacheEphemeral,
 	})
@@ -355,7 +367,9 @@ func (cb *ContextBuilder) buildSystemPromptForRequest(
 		return "", nil
 	}
 
-	useDefaultCache := !req.SuppressSkillContext && len(req.AllowedSkills) == 0
+	useDefaultCache := !req.SuppressSkillContext &&
+		!req.SuppressToolUseRule &&
+		len(req.AllowedSkills) == 0
 	if useDefaultCache {
 		staticPrompt := cb.BuildSystemPromptWithCache()
 		return staticPrompt, []providers.ContentBlock{
@@ -371,6 +385,7 @@ func (cb *ContextBuilder) buildSystemPromptForRequest(
 
 	parts := cb.buildSystemPromptParts(systemPromptBuildOptions{
 		IncludeSkillCatalog: !req.SuppressSkillContext,
+		IncludeToolUseRule:  !req.SuppressToolUseRule,
 		AllowedSkills:       req.AllowedSkills,
 	})
 	staticPrompt := renderPromptPartsLegacy(parts)

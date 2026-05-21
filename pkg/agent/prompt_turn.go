@@ -31,6 +31,9 @@ func promptBuildRequestForTurn(
 		req.SuppressSkillContext = true
 		req.ToolUseFallback = turnProfileAllowsTools(ts.profile)
 	}
+	if !turnProfileAllowsTools(ts.profile) {
+		req.SuppressToolUseRule = true
+	}
 	if turnProfileSkillsOff(ts.profile) {
 		req.SuppressSkillContext = true
 	}

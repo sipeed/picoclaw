@@ -480,6 +480,46 @@ func TestTurnProfile_ToolsOffDisablesProviderAndNativeSearchTools(t *testing.T) 
 	}
 }
 
+func TestTurnProfile_ToolsOffSuppressesToolUsePromptRule(t *testing.T) {
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				TurnProfile: config.TurnProfileConfig{
+					Enabled: true,
+					History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Tools:   config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+				},
+			},
+		},
+	}
+	provider := &turnProfileCaptureProvider{}
+	al := newTurnProfileAgentLoop(t, cfg, provider)
+	al.RegisterTool(&echoTextTool{})
+
+	_, err := al.runAgentLoop(
+		context.Background(),
+		al.GetRegistry().GetDefaultAgent(),
+		processOptions{
+			SessionKey:      "agent:default:test-tools-off-prompt",
+			UserMessage:     "hello",
+			DefaultResponse: defaultResponse,
+		},
+	)
+	if err != nil {
+		t.Fatalf("runAgentLoop() error = %v", err)
+	}
+	if len(provider.tools) != 0 {
+		t.Fatalf("provider tools len = %d, want 0", len(provider.tools))
+	}
+	if len(provider.messages) == 0 || provider.messages[0].Role != "system" {
+		t.Fatalf("first provider message = %#v, want system prompt", provider.messages)
+	}
+	if strings.Contains(provider.messages[0].Content, toolUseSystemPromptRule()) ||
+		strings.Contains(provider.messages[0].Content, "**ALWAYS use tools**") {
+		t.Fatalf("tools-off system prompt still asks the model to use tools:\n%s", provider.messages[0].Content)
+	}
+}
+
 func TestTurnProfile_ToolsCustomAllowsNativeWebSearch(t *testing.T) {
 	cfg := &config.Config{
 		Tools: config.ToolsConfig{
