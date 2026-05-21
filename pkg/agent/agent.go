@@ -62,6 +62,7 @@ type AgentLoop struct {
 	pendingStops     sync.Map
 	compactions      sync.Map
 	asyncCompletions sync.Map
+	taskRegistries   sync.Map
 	mu               sync.RWMutex
 
 	// workerSem limits concurrent turn processing workers.

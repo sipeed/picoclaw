@@ -19,7 +19,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
-	taskregistry "github.com/sipeed/picoclaw/pkg/tasks"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -120,18 +119,12 @@ func registerSharedTools(
 			logger.WarnCF("voice-tts", "send_tts enabled but no TTS provider configured", nil)
 		}
 	}
-	taskRegistries := make(map[string]*taskregistry.Registry)
-
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
 		if !ok {
 			continue
 		}
-		taskRegistry := taskRegistries[agent.Workspace]
-		if taskRegistry == nil {
-			taskRegistry = taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(agent.Workspace))
-			taskRegistries[agent.Workspace] = taskRegistry
-		}
+		taskRegistry := al.taskRegistryForWorkspace(agent.Workspace)
 
 		if cfg.Tools.IsToolEnabled("web") {
 			searchTool, err := tools.NewWebSearchTool(tools.WebSearchToolOptionsFromConfig(cfg))

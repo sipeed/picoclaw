@@ -16,6 +16,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	taskregistry "github.com/sipeed/picoclaw/pkg/tasks"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -625,7 +626,10 @@ toolLoop:
 			if delivery.PublishToUser {
 				outCtx, outCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer outCancel()
+				userDelivered := false
+				userDeliveryErr := ""
 				if _, delivered, err := al.deliverToolResultToUser(outCtx, ts, result, asyncToolName); err != nil {
+					userDeliveryErr = err.Error()
 					logger.WarnCF("agent", "Failed to deliver async tool result to user",
 						map[string]any{
 							"tool":    asyncToolName,
@@ -634,11 +638,28 @@ toolLoop:
 							"error":   err.Error(),
 						})
 				} else if !delivered && strings.TrimSpace(result.ForUser) != "" && !result.Silent {
-					_ = al.bus.PublishOutbound(outCtx, outboundMessageForTurn(ts, result.ForUser))
+					if err := al.bus.PublishOutbound(outCtx, outboundMessageForTurn(ts, result.ForUser)); err != nil {
+						userDeliveryErr = err.Error()
+					} else {
+						userDelivered = true
+					}
+				} else if delivered {
+					userDelivered = true
+				}
+				if !delivery.QueueParent {
+					if userDelivered {
+						al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryDelivered, "")
+					} else if userDeliveryErr != "" {
+						al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryFailed, userDeliveryErr)
+					} else {
+						al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryNotApplicable, "")
+					}
+					return
 				}
 			}
 
 			if !delivery.QueueParent {
+				al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryNotApplicable, "")
 				return
 			}
 
@@ -688,6 +709,7 @@ toolLoop:
 				Origin:       origin,
 				SenderID:     fmt.Sprintf("async:%s", asyncToolName),
 			}); err != nil {
+				al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryFailed, err.Error())
 				logger.WarnCF("agent", "Failed to process async completion",
 					map[string]any{
 						"tool":          asyncToolName,
@@ -696,6 +718,10 @@ toolLoop:
 						"chat_id":       ts.chatID,
 						"error":         err.Error(),
 					})
+			} else if delivery.DeliveryMode == tools.AsyncDeliveryParentOnly {
+				al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliverySessionQueued, "")
+			} else {
+				al.updateAsyncTaskDeliveryStatus(ts.workspace, delivery.TaskID, taskregistry.DeliveryDelivered, "")
 			}
 		}
 

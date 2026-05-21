@@ -14,6 +14,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
+	taskregistry "github.com/sipeed/picoclaw/pkg/tasks"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -807,6 +808,45 @@ func assertNoSyntheticAsyncCompletionInbound(t *testing.T, msgBus *bus.MessageBu
 	}
 }
 
+func upsertAsyncTaskForTest(t *testing.T, al *AgentLoop, workspace, taskID string) {
+	t.Helper()
+	registry := al.taskRegistryForWorkspace(workspace)
+	if registry == nil {
+		t.Fatal("expected task registry")
+	}
+	if err := registry.Upsert(taskregistry.Record{
+		TaskID:         taskID,
+		Runtime:        taskregistry.RuntimeSubagent,
+		TaskKind:       "spawn",
+		Task:           "async test task",
+		Status:         taskregistry.StatusRunning,
+		DeliveryStatus: taskregistry.DeliveryPending,
+	}); err != nil {
+		t.Fatalf("upsert task: %v", err)
+	}
+}
+
+func assertTaskDeliveryStatusForTest(
+	t *testing.T,
+	al *AgentLoop,
+	workspace string,
+	taskID string,
+	want taskregistry.DeliveryStatus,
+) {
+	t.Helper()
+	registry := al.taskRegistryForWorkspace(workspace)
+	if registry == nil {
+		t.Fatal("expected task registry")
+	}
+	rec, ok := registry.Get(taskID)
+	if !ok {
+		t.Fatalf("task %q not found", taskID)
+	}
+	if rec.DeliveryStatus != want {
+		t.Fatalf("DeliveryStatus = %q, want %q", rec.DeliveryStatus, want)
+	}
+}
+
 var (
 	_ tools.Tool          = (*mockCustomTool)(nil)
 	_ tools.AsyncExecutor = (*asyncFollowUpTool)(nil)
@@ -1175,6 +1215,8 @@ func TestAgentLoop_AsyncParentOnlyQueuesFollowUpWithoutUserDelivery(t *testing.T
 	}
 	msgBus := bus.NewMessageBus()
 	al := NewAgentLoop(cfg, msgBus, provider)
+	parentTaskID := "async-parent-task"
+	upsertAsyncTaskForTest(t, al, tmpDir, parentTaskID)
 	doneCh := make(chan struct{})
 	al.RegisterTool(&asyncFollowUpTool{
 		name:          "delegate",
@@ -1182,6 +1224,7 @@ func TestAgentLoop_AsyncParentOnlyQueuesFollowUpWithoutUserDelivery(t *testing.T
 		forUserText:   "do not send this directly",
 		completionSig: doneCh,
 		deliveryMode:  tools.AsyncDeliveryParentOnly,
+		taskID:        parentTaskID,
 	})
 
 	defaultAgent := al.registry.GetDefaultAgent()
@@ -1215,6 +1258,7 @@ func TestAgentLoop_AsyncParentOnlyQueuesFollowUpWithoutUserDelivery(t *testing.T
 	}
 	waitForToolCallProviderCalls(t, provider, 2*time.Second, 3)
 	assertNoSyntheticAsyncCompletionInbound(t, msgBus)
+	assertTaskDeliveryStatusForTest(t, al, tmpDir, parentTaskID, taskregistry.DeliverySessionQueued)
 	select {
 	case outbound := <-msgBus.OutboundChan():
 		if strings.Contains(outbound.Content, "do not send this directly") {
@@ -1249,6 +1293,8 @@ func TestAgentLoop_AsyncUserAndParentPublishesUserAndQueuesFollowUp(t *testing.T
 	}
 	msgBus := bus.NewMessageBus()
 	al := NewAgentLoop(cfg, msgBus, provider)
+	userAndParentTaskID := "async-user-parent-task"
+	upsertAsyncTaskForTest(t, al, tmpDir, userAndParentTaskID)
 	doneCh := make(chan struct{})
 	al.RegisterTool(&asyncFollowUpTool{
 		name:          "spawn",
@@ -1256,6 +1302,7 @@ func TestAgentLoop_AsyncUserAndParentPublishesUserAndQueuesFollowUp(t *testing.T
 		forUserText:   "user completion",
 		completionSig: doneCh,
 		deliveryMode:  tools.AsyncDeliveryUserAndParent,
+		taskID:        userAndParentTaskID,
 	})
 
 	defaultAgent := al.registry.GetDefaultAgent()
@@ -1295,6 +1342,7 @@ func TestAgentLoop_AsyncUserAndParentPublishesUserAndQueuesFollowUp(t *testing.T
 	}
 	waitForToolCallProviderCalls(t, provider, 2*time.Second, 3)
 	assertNoSyntheticAsyncCompletionInbound(t, msgBus)
+	assertTaskDeliveryStatusForTest(t, al, tmpDir, userAndParentTaskID, taskregistry.DeliveryDelivered)
 }
 
 type captureMessagesProvider struct {
