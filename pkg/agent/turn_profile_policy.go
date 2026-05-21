@@ -38,18 +38,14 @@ func turnProfileCustomSkills(profile config.EffectiveTurnProfile) bool {
 	return profile.Enabled && profile.SkillsMode == config.TurnProfileModeCustom
 }
 
-func turnProfileAllowsTools(profile config.EffectiveTurnProfile) bool {
+func turnProfileHasCallableTools(
+	profile config.EffectiveTurnProfile,
+	defs []providers.ToolDefinition,
+) bool {
 	if !profile.Enabled {
 		return true
 	}
-	switch profile.ToolsMode {
-	case config.TurnProfileModeOff:
-		return false
-	case config.TurnProfileModeCustom:
-		return len(profile.AllowedTools) > 0
-	default:
-		return true
-	}
+	return len(filterToolsByTurnProfile(defs, profile)) > 0
 }
 
 func turnProfileToolAllowed(profile config.EffectiveTurnProfile, name string) bool {
@@ -73,10 +69,6 @@ func turnProfileToolAllowed(profile config.EffectiveTurnProfile, name string) bo
 
 func toolUseSystemPromptRule() string {
 	return "**ALWAYS use tools** - When you need to perform an action (schedule reminders, send messages, execute commands, etc.), you MUST call the appropriate tool. Do NOT just say you'll do it or pretend to do it."
-}
-
-func numberedToolUseSystemPromptRule() string {
-	return "1. " + toolUseSystemPromptRule()
 }
 
 func filterNamesByTurnProfile(names []string, allowed []string) []string {

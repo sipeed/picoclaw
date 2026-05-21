@@ -36,7 +36,7 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 		contextualSkills = ts.agent.ContextBuilder.ResolveActiveSkillsForContext(ts.activeSkills)
 	}
 	ts.recordSkillContextSnapshot(skillContextTriggerInitialBuild, contextualSkills)
-	initialPromptReq := promptBuildRequestForTurn(ts, history, summary, ts.userMessage, ts.media)
+	initialPromptReq := promptBuildRequestForTurn(ts, history, summary, ts.userMessage, ts.media, cfg)
 	initialPromptReq.ActiveSkills = append([]string(nil), contextualSkills...)
 	messages := ts.agent.ContextBuilder.BuildMessagesFromPrompt(initialPromptReq)
 
@@ -66,7 +66,7 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 				history = resp.History
 				summary = resp.Summary
 			}
-			rebuildPromptReq := promptBuildRequestForTurn(ts, history, summary, ts.userMessage, ts.media)
+			rebuildPromptReq := promptBuildRequestForTurn(ts, history, summary, ts.userMessage, ts.media, cfg)
 			rebuildPromptReq.ActiveSkills = append([]string(nil), contextualSkills...)
 			messages = ts.agent.ContextBuilder.BuildMessagesFromPrompt(rebuildPromptReq)
 			messages = resolveMediaRefs(messages, p.MediaStore, maxMediaSize)

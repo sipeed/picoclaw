@@ -145,15 +145,24 @@ func (cb *ContextBuilder) getIdentity(includeToolUseRule bool) string {
 	if includeToolUseRule {
 		rules = append(rules, toolUseSystemPromptRule())
 	}
+	accuracyRule := "**Be helpful and accurate** - Briefly explain what you're doing."
+	if includeToolUseRule {
+		accuracyRule = "**Be helpful and accurate** - When using tools, briefly explain what you're doing."
+	}
 	rules = append(
 		rules,
-		"**Be helpful and accurate** - When using tools, briefly explain what you're doing.",
-		fmt.Sprintf(
-			"**Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md",
-			workspacePath,
-		),
+		accuracyRule,
 		"**Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.",
 	)
+	if includeToolUseRule {
+		rules = append(
+			rules,
+			fmt.Sprintf(
+				"**Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md",
+				workspacePath,
+			),
+		)
+	}
 	for i, rule := range rules {
 		rules[i] = fmt.Sprintf("%d. %s", i+1, rule)
 	}
@@ -216,6 +225,7 @@ type systemPromptBuildOptions struct {
 	IncludeSkillCatalog bool
 	IncludeToolUseRule  bool
 	AllowedSkills       []string
+	AllowedTools        []string
 }
 
 func (cb *ContextBuilder) buildSystemPromptParts(opts systemPromptBuildOptions) []PromptPart {
@@ -265,6 +275,14 @@ func (cb *ContextBuilder) buildSystemPromptParts(opts systemPromptBuildOptions) 
 		skillsSummary = cb.buildSkillsSummary(opts.AllowedSkills)
 	}
 	if skillsSummary != "" {
+		skillIntro := "The following skills extend your capabilities."
+		readFileAllowed := promptAllowsTool(
+			PromptBuildRequest{AllowedTools: opts.AllowedTools},
+			"read_file",
+		)
+		if opts.IncludeToolUseRule && readFileAllowed {
+			skillIntro += " To use a skill, read its SKILL.md file using the read_file tool."
+		}
 		add(PromptPart{
 			ID:     "capability.skill_catalog",
 			Layer:  PromptLayerCapability,
@@ -273,9 +291,9 @@ func (cb *ContextBuilder) buildSystemPromptParts(opts systemPromptBuildOptions) 
 			Title:  "skill catalog",
 			Content: fmt.Sprintf(`# Skills
 
-The following skills extend your capabilities. To use a skill, read its SKILL.md file using the read_file tool.
+%s
 
-%s`, skillsSummary),
+%s`, skillIntro, skillsSummary),
 			Stable: true,
 			Cache:  PromptCacheEphemeral,
 		})
@@ -369,7 +387,8 @@ func (cb *ContextBuilder) buildSystemPromptForRequest(
 
 	useDefaultCache := !req.SuppressSkillContext &&
 		!req.SuppressToolUseRule &&
-		len(req.AllowedSkills) == 0
+		len(req.AllowedSkills) == 0 &&
+		len(req.AllowedTools) == 0
 	if useDefaultCache {
 		staticPrompt := cb.BuildSystemPromptWithCache()
 		return staticPrompt, []providers.ContentBlock{
@@ -387,6 +406,7 @@ func (cb *ContextBuilder) buildSystemPromptForRequest(
 		IncludeSkillCatalog: !req.SuppressSkillContext,
 		IncludeToolUseRule:  !req.SuppressToolUseRule,
 		AllowedSkills:       req.AllowedSkills,
+		AllowedTools:        req.AllowedTools,
 	})
 	staticPrompt := renderPromptPartsLegacy(parts)
 	blocks := make([]providers.ContentBlock, 0, len(parts))
@@ -986,6 +1006,9 @@ func (cb *ContextBuilder) BuildMessagesFromPrompt(req PromptBuildRequest) []prov
 	// no accompanying text.
 	if strings.TrimSpace(req.CurrentMessage) != "" || len(req.Media) > 0 {
 		messages = append(messages, userPromptMessage(req.CurrentMessage, req.Media))
+	}
+	if len(messages) == 0 {
+		messages = append(messages, userPromptMessage("", nil))
 	}
 
 	return messages

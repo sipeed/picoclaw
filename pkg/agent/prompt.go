@@ -120,6 +120,7 @@ type PromptBuildRequest struct {
 	SuppressSkillContext        bool
 	SuppressToolUseRule         bool
 	AllowedSkills               []string
+	AllowedTools                []string
 	ToolUseFallback             bool
 }
 

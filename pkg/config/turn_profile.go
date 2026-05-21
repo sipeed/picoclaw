@@ -79,6 +79,9 @@ func (c *Config) ValidateTurnProfile() error {
 }
 
 func validateTurnProfile(profile TurnProfileConfig) error {
+	if !profile.Enabled {
+		return nil
+	}
 	if err := validateTurnProfileBlock("history", profile.History, false); err != nil {
 		return err
 	}

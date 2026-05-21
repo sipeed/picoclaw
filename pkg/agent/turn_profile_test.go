@@ -7,10 +7,12 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 type turnProfileCaptureProvider struct {
@@ -31,6 +33,25 @@ func (p *turnProfileCaptureProvider) Chat(
 }
 
 func (p *turnProfileCaptureProvider) GetDefaultModel() string {
+	return "test-model"
+}
+
+type turnProfileSideQuestionCaptureProvider struct {
+	messages []providers.Message
+}
+
+func (p *turnProfileSideQuestionCaptureProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	p.messages = append([]providers.Message(nil), messages...)
+	return &providers.LLMResponse{Content: "side answer"}, nil
+}
+
+func (p *turnProfileSideQuestionCaptureProvider) GetDefaultModel() string {
 	return "test-model"
 }
 
@@ -198,6 +219,222 @@ func TestTurnProfile_ProcessMessageUsesEnabledTurnProfile(t *testing.T) {
 	}
 }
 
+func TestTurnProfile_BtwCommandUsesEnabledTurnProfile(t *testing.T) {
+	workspace := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         workspace,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				TurnProfile: config.TurnProfileConfig{
+					Enabled: true,
+					History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Tools:   config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+				},
+			},
+		},
+		ModelList: []*config.ModelConfig{{
+			ModelName: "test-model",
+			Model:     "openai/test-model",
+		}},
+	}
+	t.Setenv("PICOCLAW_BUILTIN_SKILLS", t.TempDir())
+	sideProvider := &turnProfileSideQuestionCaptureProvider{}
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), &turnProfileCaptureProvider{})
+	al.providerFactory = func(mc *config.ModelConfig) (providers.LLMProvider, string, error) {
+		return sideProvider, "test-model", nil
+	}
+
+	_, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Context: bus.InboundContext{
+			Channel:  "pico",
+			ChatID:   "pico:btw",
+			ChatType: "direct",
+			SenderID: "pico-user",
+		},
+		Content: "/btw explain privately",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if len(sideProvider.messages) < 2 {
+		t.Fatalf("side question messages len = %d, want system + user", len(sideProvider.messages))
+	}
+	systemPrompt := sideProvider.messages[0].Content
+	blockedSnippets := []string{
+		"ALWAYS use tools",
+		"When using tools",
+		"read_file tool",
+		"update " + workspace + "/memory/MEMORY.md",
+	}
+	for _, snippet := range blockedSnippets {
+		if strings.Contains(systemPrompt, snippet) {
+			t.Fatalf("side question system prompt includes %q despite tools.mode=off:\n%s", snippet, systemPrompt)
+		}
+	}
+}
+
+func TestTurnProfile_BtwCommandDoesNotAddToolFallbackWhenSystemPromptOff(t *testing.T) {
+	workspace := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         workspace,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				TurnProfile: config.TurnProfileConfig{
+					Enabled:      true,
+					History:      config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					SystemPrompt: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Tools: config.TurnProfileBlock{
+						Mode:  config.TurnProfileModeCustom,
+						Allow: []string{"echo_text"},
+					},
+				},
+			},
+		},
+		ModelList: []*config.ModelConfig{{
+			ModelName: "test-model",
+			Model:     "openai/test-model",
+		}},
+	}
+	t.Setenv("PICOCLAW_BUILTIN_SKILLS", t.TempDir())
+	sideProvider := &turnProfileSideQuestionCaptureProvider{}
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), &turnProfileCaptureProvider{})
+	al.RegisterTool(&echoTextTool{})
+	al.providerFactory = func(mc *config.ModelConfig) (providers.LLMProvider, string, error) {
+		return sideProvider, "test-model", nil
+	}
+
+	_, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Context: bus.InboundContext{
+			Channel:  "pico",
+			ChatID:   "pico:btw-system-off",
+			ChatType: "direct",
+			SenderID: "pico-user",
+		},
+		Content: "/btw explain privately",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	for _, msg := range sideProvider.messages {
+		if msg.Role == "system" && strings.Contains(msg.Content, toolUseSystemPromptRule()) {
+			t.Fatalf("side question system prompt includes tool fallback despite no tools:\n%s", msg.Content)
+		}
+	}
+}
+
+func TestTurnProfile_BtwHookCannotReenableNativeSearchWhenToolsOff(t *testing.T) {
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         t.TempDir(),
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				TurnProfile: config.TurnProfileConfig{
+					Enabled: true,
+					History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Tools:   config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+				},
+			},
+		},
+		ModelList: []*config.ModelConfig{{
+			ModelName: "test-model",
+			Model:     "openai/test-model",
+		}},
+	}
+	provider := &nativeSearchCaptureProvider{}
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
+	al.providerFactory = func(mc *config.ModelConfig) (providers.LLMProvider, string, error) {
+		return provider, "test-model", nil
+	}
+	if err := al.MountHook(NamedHook("enable-native-search", turnProfileEnableNativeSearchHook{})); err != nil {
+		t.Fatalf("MountHook() error = %v", err)
+	}
+
+	_, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Context: bus.InboundContext{
+			Channel:  "pico",
+			ChatID:   "pico:btw-native-search",
+			ChatType: "direct",
+			SenderID: "pico-user",
+		},
+		Content: "/btw search privately",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if provider.lastOpts["turn_profile_test_hook"] != true {
+		t.Fatalf("BeforeLLM hook did not run for /btw: %#v", provider.lastOpts)
+	}
+	if provider.lastOpts["native_search"] == true {
+		t.Fatalf("native_search option enabled by /btw hook despite tools.mode=off: %#v", provider.lastOpts)
+	}
+}
+
+func TestTurnProfile_SubTurnInheritsParentToolProfile(t *testing.T) {
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         t.TempDir(),
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				TurnProfile: config.TurnProfileConfig{
+					Enabled: true,
+					History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Tools: config.TurnProfileBlock{
+						Mode:  config.TurnProfileModeCustom,
+						Allow: []string{"echo_text"},
+					},
+				},
+			},
+		},
+	}
+	provider := &turnProfileCaptureProvider{}
+	al := newTurnProfileAgentLoop(t, cfg, provider)
+	al.RegisterTool(&echoTextTool{})
+	al.RegisterTool(&echoTextRewrittenTool{})
+	agent := al.GetRegistry().GetDefaultAgent()
+	profile, ok, err := cfg.Agents.Defaults.ResolveTurnProfile()
+	if err != nil {
+		t.Fatalf("ResolveTurnProfile() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("ResolveTurnProfile() did not return enabled profile")
+	}
+	parentOpts := processOptions{
+		Dispatch: DispatchRequest{
+			SessionKey:  "agent:default:test-parent",
+			UserMessage: "parent",
+		},
+		TurnProfile: profile,
+	}
+	parentTS := newTurnState(agent, parentOpts, turnEventScope{
+		turnID: "parent-turn-profile",
+	})
+
+	_, err = spawnSubTurn(context.Background(), al, parentTS, SubTurnConfig{
+		Model:        "test-model",
+		SystemPrompt: "child task",
+		Timeout:      time.Second,
+	})
+	if err != nil {
+		t.Fatalf("spawnSubTurn() error = %v", err)
+	}
+	if len(provider.tools) != 1 {
+		t.Fatalf("child provider tools len = %d, want 1: %#v", len(provider.tools), provider.tools)
+	}
+	if provider.tools[0].Function.Name != "echo_text" {
+		t.Fatalf("child provider tool = %q, want echo_text", provider.tools[0].Function.Name)
+	}
+}
+
 func TestTurnProfile_SystemPromptOffUsesExternalPromptOnly(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
@@ -233,6 +470,43 @@ func TestTurnProfile_SystemPromptOffUsesExternalPromptOnly(t *testing.T) {
 	}
 }
 
+func TestTurnProfile_SystemPromptOffBlankTurnStillSendsMessage(t *testing.T) {
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				TurnProfile: config.TurnProfileConfig{
+					Enabled:      true,
+					History:      config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					SystemPrompt: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Skills:       config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Tools:        config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+				},
+			},
+		},
+	}
+	provider := &turnProfileCaptureProvider{}
+	al := newTurnProfileAgentLoop(t, cfg, provider)
+
+	_, err := al.runAgentLoop(context.Background(), al.GetRegistry().GetDefaultAgent(), processOptions{
+		SessionKey:      "agent:default:test-blank-system-off",
+		UserMessage:     "",
+		DefaultResponse: defaultResponse,
+	})
+	if err != nil {
+		t.Fatalf("runAgentLoop() error = %v", err)
+	}
+	if len(provider.messages) != 1 {
+		t.Fatalf(
+			"provider messages len = %d, want one blank user message: %#v",
+			len(provider.messages),
+			provider.messages,
+		)
+	}
+	if provider.messages[0].Role != "user" || provider.messages[0].Content != "" {
+		t.Fatalf("provider message = %#v, want blank user message", provider.messages[0])
+	}
+}
+
 func TestTurnProfile_SystemPromptOffAddsToolFallbackWhenToolsVisible(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
@@ -244,7 +518,7 @@ func TestTurnProfile_SystemPromptOffAddsToolFallbackWhenToolsVisible(t *testing.
 					Skills:       config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
 					Tools: config.TurnProfileBlock{
 						Mode:  config.TurnProfileModeCustom,
-						Allow: []string{"web_search"},
+						Allow: []string{"echo_text"},
 					},
 				},
 			},
@@ -252,6 +526,7 @@ func TestTurnProfile_SystemPromptOffAddsToolFallbackWhenToolsVisible(t *testing.
 	}
 	provider := &turnProfileCaptureProvider{}
 	al := newTurnProfileAgentLoop(t, cfg, provider)
+	al.RegisterTool(&echoTextTool{})
 	agent := al.GetRegistry().GetDefaultAgent()
 
 	_, err := al.runAgentLoop(context.Background(), agent, processOptions{
@@ -361,6 +636,46 @@ func (h turnProfileAddToolHook) BeforeLLM(
 		},
 	})
 	return next, HookDecision{Action: HookActionModify}, nil
+}
+
+type turnProfileEnableNativeSearchHook struct{}
+
+func (h turnProfileEnableNativeSearchHook) BeforeLLM(
+	ctx context.Context,
+	req *LLMHookRequest,
+) (*LLMHookRequest, HookDecision, error) {
+	next := req.Clone()
+	if next.Options == nil {
+		next.Options = map[string]any{}
+	}
+	next.Options["turn_profile_test_hook"] = true
+	next.Options["native_search"] = true
+	return next, HookDecision{Action: HookActionModify}, nil
+}
+
+func (h turnProfileEnableNativeSearchHook) AfterLLM(
+	ctx context.Context,
+	resp *LLMHookResponse,
+) (*LLMHookResponse, HookDecision, error) {
+	return resp, HookDecision{Action: HookActionContinue}, nil
+}
+
+type turnProfileRespondToolHook struct{}
+
+func (h turnProfileRespondToolHook) BeforeTool(
+	ctx context.Context,
+	req *ToolCallHookRequest,
+) (*ToolCallHookRequest, HookDecision, error) {
+	next := req.Clone()
+	next.HookResult = &tools.ToolResult{ForLLM: "hook bypassed profile"}
+	return next, HookDecision{Action: HookActionRespond}, nil
+}
+
+func (h turnProfileRespondToolHook) AfterTool(
+	ctx context.Context,
+	result *ToolResultHookResponse,
+) (*ToolResultHookResponse, HookDecision, error) {
+	return result, HookDecision{Action: HookActionContinue}, nil
 }
 
 type turnProfileToolCallProvider struct {
@@ -520,6 +835,49 @@ func TestTurnProfile_ToolsOffSuppressesToolUsePromptRule(t *testing.T) {
 	}
 }
 
+func TestTurnProfile_ToolsCustomMissingToolSuppressesToolUsePromptRule(t *testing.T) {
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				TurnProfile: config.TurnProfileConfig{
+					Enabled: true,
+					History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Tools: config.TurnProfileBlock{
+						Mode:  config.TurnProfileModeCustom,
+						Allow: []string{"web_search"},
+					},
+				},
+			},
+		},
+	}
+	provider := &turnProfileCaptureProvider{}
+	al := newTurnProfileAgentLoop(t, cfg, provider)
+	al.RegisterTool(&echoTextTool{})
+
+	_, err := al.runAgentLoop(
+		context.Background(),
+		al.GetRegistry().GetDefaultAgent(),
+		processOptions{
+			SessionKey:      "agent:default:test-tools-custom-missing-prompt",
+			UserMessage:     "hello",
+			DefaultResponse: defaultResponse,
+		},
+	)
+	if err != nil {
+		t.Fatalf("runAgentLoop() error = %v", err)
+	}
+	if len(provider.tools) != 0 {
+		t.Fatalf("provider tools len = %d, want 0", len(provider.tools))
+	}
+	if strings.Contains(provider.messages[0].Content, toolUseSystemPromptRule()) ||
+		strings.Contains(provider.messages[0].Content, "**ALWAYS use tools**") {
+		t.Fatalf(
+			"custom profile with no resolved tools still asks the model to use tools:\n%s",
+			provider.messages[0].Content,
+		)
+	}
+}
+
 func TestTurnProfile_ToolsCustomAllowsNativeWebSearch(t *testing.T) {
 	cfg := &config.Config{
 		Tools: config.ToolsConfig{
@@ -562,6 +920,154 @@ func TestTurnProfile_ToolsCustomAllowsNativeWebSearch(t *testing.T) {
 	}
 	if got, _ := provider.lastOpts["native_search"].(bool); !got {
 		t.Fatalf("native_search = %#v, want true", provider.lastOpts["native_search"])
+	}
+}
+
+func TestTurnProfile_SystemPromptOffAddsToolFallbackForNativeWebSearch(t *testing.T) {
+	cfg := &config.Config{
+		Tools: config.ToolsConfig{
+			Web: config.WebToolsConfig{
+				ToolConfig:   config.ToolConfig{Enabled: true},
+				PreferNative: true,
+			},
+		},
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         t.TempDir(),
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				TurnProfile: config.TurnProfileConfig{
+					Enabled:      true,
+					History:      config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					SystemPrompt: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Skills:       config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Tools: config.TurnProfileBlock{
+						Mode:  config.TurnProfileModeCustom,
+						Allow: []string{"web_search"},
+					},
+				},
+			},
+		},
+	}
+	provider := &nativeSearchCaptureProvider{}
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
+
+	_, err := al.runAgentLoop(
+		context.Background(),
+		al.GetRegistry().GetDefaultAgent(),
+		processOptions{
+			SessionKey:      "agent:default:test-native-web-fallback",
+			UserMessage:     "search",
+			DefaultResponse: defaultResponse,
+		},
+	)
+	if err != nil {
+		t.Fatalf("runAgentLoop() error = %v", err)
+	}
+	if got, _ := provider.lastOpts["native_search"].(bool); !got {
+		t.Fatalf("native_search = %#v, want true", provider.lastOpts["native_search"])
+	}
+	if len(provider.messages) == 0 || provider.messages[0].Content != toolUseSystemPromptRule() {
+		t.Fatalf("native-search-only prompt = %#v, want tool fallback", provider.messages)
+	}
+}
+
+func TestTurnProfile_BeforeLLMHookCannotReenableNativeSearchWhenToolsOff(t *testing.T) {
+	cfg := &config.Config{
+		Tools: config.ToolsConfig{
+			Web: config.WebToolsConfig{
+				ToolConfig:   config.ToolConfig{Enabled: true},
+				PreferNative: true,
+			},
+		},
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         t.TempDir(),
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				TurnProfile: config.TurnProfileConfig{
+					Enabled: true,
+					History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Tools:   config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+				},
+			},
+		},
+	}
+	provider := &nativeSearchCaptureProvider{}
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
+	if err := al.MountHook(NamedHook("enable-native-search", turnProfileEnableNativeSearchHook{})); err != nil {
+		t.Fatalf("MountHook() error = %v", err)
+	}
+
+	_, err := al.runAgentLoop(
+		context.Background(),
+		al.GetRegistry().GetDefaultAgent(),
+		processOptions{
+			SessionKey:      "agent:default:test-native-web-hook-denied",
+			UserMessage:     "search",
+			DefaultResponse: defaultResponse,
+		},
+	)
+	if err != nil {
+		t.Fatalf("runAgentLoop() error = %v", err)
+	}
+	if provider.lastOpts["native_search"] == true {
+		t.Fatalf("native_search option enabled by hook despite tools.mode=off: %#v", provider.lastOpts)
+	}
+}
+
+func TestTurnProfile_BeforeLLMHookCannotReenableNativeSearchWhenCustomToolsResolveEmpty(
+	t *testing.T,
+) {
+	cfg := &config.Config{
+		Tools: config.ToolsConfig{
+			Web: config.WebToolsConfig{
+				ToolConfig:   config.ToolConfig{Enabled: true},
+				PreferNative: true,
+			},
+		},
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         t.TempDir(),
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				TurnProfile: config.TurnProfileConfig{
+					Enabled: true,
+					History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Tools: config.TurnProfileBlock{
+						Mode:  config.TurnProfileModeCustom,
+						Allow: []string{"missing_tool"},
+					},
+				},
+			},
+		},
+	}
+	provider := &nativeSearchCaptureProvider{}
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
+	if err := al.MountHook(NamedHook("enable-native-search", turnProfileEnableNativeSearchHook{})); err != nil {
+		t.Fatalf("MountHook() error = %v", err)
+	}
+
+	_, err := al.runAgentLoop(
+		context.Background(),
+		al.GetRegistry().GetDefaultAgent(),
+		processOptions{
+			SessionKey:      "agent:default:test-native-web-hook-custom-empty",
+			UserMessage:     "search",
+			DefaultResponse: defaultResponse,
+		},
+	)
+	if err != nil {
+		t.Fatalf("runAgentLoop() error = %v", err)
+	}
+	if provider.lastOpts["native_search"] == true {
+		t.Fatalf(
+			"native_search option enabled by hook despite no resolved tools: %#v",
+			provider.lastOpts,
+		)
 	}
 }
 
@@ -609,6 +1115,58 @@ func TestTurnProfile_ToolExecutionRejectsDisallowedToolCalls(t *testing.T) {
 			strings.Contains(msg.Content, "not allowed by the active turn profile") {
 			foundDeniedResult = true
 			break
+		}
+	}
+	if !foundDeniedResult {
+		t.Fatalf("second provider call did not include denied tool result: %#v", provider.messages)
+	}
+}
+
+func TestTurnProfile_BeforeToolRespondCannotBypassDisallowedTool(t *testing.T) {
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				TurnProfile: config.TurnProfileConfig{
+					Enabled: true,
+					History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Tools: config.TurnProfileBlock{
+						Mode:  config.TurnProfileModeCustom,
+						Allow: []string{"echo_text"},
+					},
+				},
+			},
+		},
+	}
+	provider := &turnProfileToolCallProvider{}
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
+	al.RegisterTool(&echoTextTool{})
+	al.RegisterTool(&echoTextRewrittenTool{})
+	if err := al.MountHook(NamedHook("respond-tool", turnProfileRespondToolHook{})); err != nil {
+		t.Fatalf("MountHook() error = %v", err)
+	}
+
+	_, err := al.runAgentLoop(
+		context.Background(),
+		al.GetRegistry().GetDefaultAgent(),
+		processOptions{
+			SessionKey:      "agent:default:test-tool-hook-respond-denied",
+			UserMessage:     "run tool",
+			DefaultResponse: defaultResponse,
+		},
+	)
+	if err != nil {
+		t.Fatalf("runAgentLoop() error = %v", err)
+	}
+	var foundDeniedResult bool
+	for _, msg := range provider.messages {
+		if msg.Role != "tool" {
+			continue
+		}
+		if strings.Contains(msg.Content, "hook bypassed profile") {
+			t.Fatalf("hook respond result bypassed turn profile: %#v", provider.messages)
+		}
+		if strings.Contains(msg.Content, "not allowed by the active turn profile") {
+			foundDeniedResult = true
 		}
 	}
 	if !foundDeniedResult {

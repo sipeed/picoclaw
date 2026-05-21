@@ -229,6 +229,19 @@ func TestTurnProfileConfig_DisabledOrMissingIsNoop(t *testing.T) {
 	if ok || profile.Enabled {
 		t.Fatalf("disabled profile = (%+v, %v), want no-op", profile, ok)
 	}
+
+	cfg.Agents.Defaults.TurnProfile = TurnProfileConfig{
+		Enabled: false,
+		History: TurnProfileBlock{
+			Mode: TurnProfileModeCustom,
+		},
+		Tools: TurnProfileBlock{
+			Mode: TurnProfileMode("sometimes"),
+		},
+	}
+	if err := cfg.ValidateTurnProfile(); err != nil {
+		t.Fatalf("ValidateTurnProfile(disabled unsupported modes) error = %v, want nil", err)
+	}
 }
 
 func TestTurnProfileConfig_ValidationRejectsUnsupportedModes(t *testing.T) {

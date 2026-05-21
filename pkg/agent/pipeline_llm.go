@@ -48,7 +48,6 @@ func (p *Pipeline) CallLLM(
 			}
 			return false
 		}()
-
 	if exec.useNativeSearch {
 		filtered := make([]providers.ToolDefinition, 0, len(exec.providerToolDefs))
 		for _, td := range exec.providerToolDefs {
@@ -97,6 +96,11 @@ func (p *Pipeline) CallLLM(
 				exec.callMessages = llmReq.Messages
 				exec.providerToolDefs = filterToolsByTurnProfile(llmReq.Tools, ts.profile)
 				exec.llmOpts = llmReq.Options
+				nativeSearchAllowed := exec.useNativeSearch &&
+					turnProfileToolAllowed(ts.profile, "web_search")
+				if !nativeSearchAllowed {
+					delete(exec.llmOpts, "native_search")
+				}
 				if strings.TrimSpace(exec.llmModel) != "" && exec.llmModel != prevModel {
 					p.applyBeforeLLMModelRewrite(ts, exec)
 					applyTurnThinkingOptions(exec, ts.agent, exec.activeProvider, true)
@@ -411,7 +415,7 @@ func (p *Pipeline) CallLLM(
 				contextualSkills = ts.agent.ContextBuilder.ResolveActiveSkillsForContext(ts.activeSkills)
 			}
 			ts.recordSkillContextSnapshot(skillContextTriggerContextRetryRebuild, contextualSkills)
-			rebuildPromptReq := promptBuildRequestForTurn(ts, exec.history, exec.summary, "", nil)
+			rebuildPromptReq := promptBuildRequestForTurn(ts, exec.history, exec.summary, "", nil, p.Cfg)
 			rebuildPromptReq.ActiveSkills = append([]string(nil), contextualSkills...)
 			exec.messages = ts.agent.ContextBuilder.BuildMessagesFromPrompt(rebuildPromptReq)
 			exec.callMessages = exec.messages

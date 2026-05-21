@@ -373,6 +373,11 @@ func (al *AgentLoop) askSideQuestion(
 
 	if opts != nil {
 		normalizeProcessOptionsInPlace(opts)
+		resolved, err := resolveTurnProfileOptions(al.GetConfig(), *opts)
+		if err != nil {
+			return "", err
+		}
+		*opts = resolved
 	}
 
 	var media []string
@@ -399,16 +404,31 @@ func (al *AgentLoop) askSideQuestion(
 		}
 	}
 
-	messages := agent.ContextBuilder.BuildMessages(
-		history,
-		summary,
-		question,
-		media,
-		channel,
-		chatID,
-		senderID,
-		senderDisplayName,
-	)
+	var promptReq PromptBuildRequest
+	if opts == nil {
+		promptReq = PromptBuildRequest{
+			History:           history,
+			Summary:           summary,
+			CurrentMessage:    question,
+			Media:             append([]string(nil), media...),
+			Channel:           channel,
+			ChatID:            chatID,
+			SenderID:          senderID,
+			SenderDisplayName: senderDisplayName,
+		}
+	} else {
+		promptReq = promptBuildRequestForProcessOptions(
+			agent,
+			*opts,
+			history,
+			summary,
+			question,
+			media,
+		)
+	}
+	promptReq.SuppressToolUseRule = true
+	promptReq.ToolUseFallback = false
+	messages := agent.ContextBuilder.BuildMessagesFromPrompt(promptReq)
 
 	maxMediaSize := al.GetConfig().Agents.Defaults.GetMaxMediaSize()
 	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
@@ -487,6 +507,7 @@ func (al *AgentLoop) askSideQuestion(
 				llmModel = llmReq.Model
 				messages = llmReq.Messages
 				llmOpts = llmReq.Options
+				delete(llmOpts, "native_search")
 			}
 		case HookActionAbortTurn:
 			reason := decision.Reason
