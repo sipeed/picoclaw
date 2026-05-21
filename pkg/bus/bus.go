@@ -314,6 +314,12 @@ func (mb *MessageBus) Stats() MessageBusStats {
 
 func (mb *MessageBus) HealthCheck() (bool, string) {
 	stats := mb.Stats()
+	totalDropped := stats.Inbound.DroppedTotal +
+		stats.Outbound.DroppedTotal +
+		stats.OutboundMedia.DroppedTotal +
+		stats.AudioChunks.DroppedTotal +
+		stats.VoiceControls.DroppedTotal
+
 	return true, fmt.Sprintf(
 		"in=%d/%d out=%d/%d media=%d/%d audio=%d/%d voice=%d/%d dropped=%d",
 		stats.Inbound.Depth, stats.Inbound.Capacity,
@@ -321,7 +327,7 @@ func (mb *MessageBus) HealthCheck() (bool, string) {
 		stats.OutboundMedia.Depth, stats.OutboundMedia.Capacity,
 		stats.AudioChunks.Depth, stats.AudioChunks.Capacity,
 		stats.VoiceControls.Depth, stats.VoiceControls.Capacity,
-		stats.Inbound.DroppedTotal+stats.Outbound.DroppedTotal+stats.OutboundMedia.DroppedTotal+stats.AudioChunks.DroppedTotal+stats.VoiceControls.DroppedTotal,
+		totalDropped,
 	)
 }
 

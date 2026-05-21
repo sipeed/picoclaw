@@ -261,13 +261,14 @@ func TestPublishAudioChunk_DropsWhenBackpressured(t *testing.T) {
 	defer mb.Close()
 
 	for i := range cap(mb.audioChunks) {
-		if err := mb.PublishAudioChunk(context.Background(), AudioChunk{
+		publishErr := mb.PublishAudioChunk(context.Background(), AudioChunk{
 			Channel:  "discord",
 			ChatID:   "voice-room",
 			Sequence: uint64(i),
 			Data:     []byte("fill"),
-		}); err != nil {
-			t.Fatalf("fill audio buffer at %d: %v", i, err)
+		})
+		if publishErr != nil {
+			t.Fatalf("fill audio buffer at %d: %v", i, publishErr)
 		}
 	}
 
