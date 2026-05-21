@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/routing"
+	taskregistry "github.com/sipeed/picoclaw/pkg/tasks"
 )
 
 // DelegateTool delegates a task to a specific named agent and waits for
@@ -16,6 +19,8 @@ type DelegateTool struct {
 	spawner        SubTurnSpawner
 	allowlistCheck func(targetAgentID string) bool
 	selfAgentID    string
+	taskRegistry   *taskregistry.Registry
+	taskSeq        atomic.Int64
 }
 
 func NewDelegateTool() *DelegateTool {
@@ -32,6 +37,10 @@ func (t *DelegateTool) SetAllowlistChecker(check func(targetAgentID string) bool
 
 func (t *DelegateTool) SetSelfAgentID(id string) {
 	t.selfAgentID = id
+}
+
+func (t *DelegateTool) SetTaskRegistry(registry *taskregistry.Registry) {
+	t.taskRegistry = registry
 }
 
 func (t *DelegateTool) Name() string {
@@ -99,6 +108,14 @@ func (t *DelegateTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("delegate tool not configured")
 	}
 
+	taskID := t.nextTaskID()
+	t.recordDelegateTask(
+		ctx, taskID, agentID, task, deliveryMode,
+		taskregistry.StatusRunning,
+		taskregistry.DeliveryPending,
+		"",
+		nil,
+	)
 	result, err := t.spawner.SpawnSubTurn(ctx, SubTurnConfig{
 		TargetAgentID: agentID,
 		SystemPrompt:  task,
@@ -106,9 +123,25 @@ func (t *DelegateTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		DeliveryMode:  deliveryMode,
 	})
 	if err != nil {
+		msg := fmt.Sprintf("delegation to agent %q failed: %v", agentID, err)
+		t.recordDelegateTask(
+			ctx, taskID, agentID, task, deliveryMode,
+			taskregistry.StatusFailed,
+			taskregistry.DeliveryPending,
+			msg,
+			nil,
+		)
 		return ErrorResult(fmt.Sprintf("delegation to agent %q failed: %v", agentID, err)).WithError(err)
 	}
 	if result == nil {
+		msg := fmt.Sprintf("delegation to agent %q returned no result", agentID)
+		t.recordDelegateTask(
+			ctx, taskID, agentID, task, deliveryMode,
+			taskregistry.StatusFailed,
+			taskregistry.DeliveryPending,
+			msg,
+			nil,
+		)
 		return ErrorResult(fmt.Sprintf("delegation to agent %q returned no result", agentID))
 	}
 
@@ -117,8 +150,85 @@ func (t *DelegateTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		result.Silent = true
 		result.ResponseHandled = true
 	}
+	t.recordDelegateTask(
+		ctx, taskID, agentID, task, deliveryMode,
+		taskregistry.StatusSucceeded,
+		delegateDeliveryStatus(result, deliveryMode),
+		result.ContentForLLM(),
+		completionPayloadForTaskRegistry(result),
+	)
 
 	return result
+}
+
+func (t *DelegateTool) nextTaskID() string {
+	seq := t.taskSeq.Add(1)
+	return fmt.Sprintf("delegate-%d-%d", time.Now().UnixMilli(), seq)
+}
+
+func (t *DelegateTool) recordDelegateTask(
+	ctx context.Context,
+	taskID, agentID, task string,
+	deliveryMode AsyncDeliveryMode,
+	status taskregistry.Status,
+	delivery taskregistry.DeliveryStatus,
+	summary string,
+	completion *taskregistry.CompletionPayload,
+) {
+	if t == nil || t.taskRegistry == nil || taskID == "" {
+		return
+	}
+	now := time.Now().UnixMilli()
+	rec := taskregistry.Record{
+		TaskID:              taskID,
+		Runtime:             taskregistry.RuntimeDelegate,
+		TaskKind:            "delegate",
+		RequesterSessionKey: ToolSessionKey(ctx),
+		OwnerKey:            ToolAgentID(ctx),
+		Channel:             ToolChannel(ctx),
+		ChatID:              ToolChatID(ctx),
+		TopicID:             ToolTopicID(ctx),
+		AgentID:             agentID,
+		Label:               "delegate:" + agentID,
+		Task:                task,
+		Status:              status,
+		DeliveryStatus:      delivery,
+		NotifyPolicy:        taskregistry.NotifyDoneOnly,
+		DeliveryMode:        string(deliveryMode),
+		LastEventAt:         now,
+		TerminalSummary:     summary,
+		Completion:          completion,
+	}
+	if status == taskregistry.StatusRunning {
+		rec.CreatedAt = now
+		rec.StartedAt = now
+	} else if existing, ok := t.taskRegistry.Get(taskID); ok {
+		rec.CreatedAt = existing.CreatedAt
+		rec.StartedAt = existing.StartedAt
+	}
+	if status == taskregistry.StatusFailed {
+		rec.Error = summary
+	}
+	_ = t.taskRegistry.Upsert(rec)
+}
+
+func delegateDeliveryStatus(result *ToolResult, mode AsyncDeliveryMode) taskregistry.DeliveryStatus {
+	if result == nil {
+		return taskregistry.DeliveryFailed
+	}
+	switch mode {
+	case AsyncDeliveryParentOnly:
+		return taskregistry.DeliverySessionQueued
+	case AsyncDeliveryUserOnly:
+		if result.ResponseHandled || result.Silent {
+			return taskregistry.DeliveryDelivered
+		}
+		return taskregistry.DeliveryPending
+	case AsyncDeliveryUserAndParent:
+		return taskregistry.DeliveryPending
+	default:
+		return taskregistry.DeliveryPending
+	}
 }
 
 func parseDelegateDeliveryMode(raw any) (AsyncDeliveryMode, error) {

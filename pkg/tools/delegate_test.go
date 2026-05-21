@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	taskregistry "github.com/sipeed/picoclaw/pkg/tasks"
 )
 
 // delegateMockSpawner records the config and returns a canned result.
@@ -93,6 +95,52 @@ func TestDelegateTool_Execute_Success(t *testing.T) {
 	}
 	if spawner.lastCfg.DeliveryMode != AsyncDeliveryParentOnly {
 		t.Errorf("DeliveryMode = %q, want %q", spawner.lastCfg.DeliveryMode, AsyncDeliveryParentOnly)
+	}
+}
+
+func TestDelegateTool_Execute_RecordsTaskRegistry(t *testing.T) {
+	registry := taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(t.TempDir()))
+	spawner := &delegateMockSpawner{}
+	tool := NewDelegateTool()
+	tool.SetSpawner(spawner)
+	tool.SetTaskRegistry(registry)
+
+	ctx := WithToolContext(context.Background(), "telegram", "chat-1")
+	ctx = WithToolTopicID(ctx, "topic-1")
+	ctx = WithToolSessionContext(ctx, "main", "session-1", nil)
+	result := tool.Execute(ctx, map[string]any{
+		"agent_id": "media",
+		"task":     "download reel",
+	})
+
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	records := registry.List()
+	if len(records) != 1 {
+		t.Fatalf("registry records = %d, want 1: %#v", len(records), records)
+	}
+	rec := records[0]
+	if !strings.HasPrefix(rec.TaskID, "delegate-") {
+		t.Fatalf("TaskID = %q, want delegate-*", rec.TaskID)
+	}
+	if rec.Runtime != taskregistry.RuntimeDelegate {
+		t.Fatalf("Runtime = %q, want %q", rec.Runtime, taskregistry.RuntimeDelegate)
+	}
+	if rec.TaskKind != "delegate" {
+		t.Fatalf("TaskKind = %q, want delegate", rec.TaskKind)
+	}
+	if rec.Status != taskregistry.StatusSucceeded {
+		t.Fatalf("Status = %q, want succeeded", rec.Status)
+	}
+	if rec.DeliveryStatus != taskregistry.DeliverySessionQueued {
+		t.Fatalf("DeliveryStatus = %q, want session_queued", rec.DeliveryStatus)
+	}
+	if rec.AgentID != "media" || rec.Channel != "telegram" || rec.ChatID != "chat-1" || rec.TopicID != "topic-1" {
+		t.Fatalf("unexpected routing fields: %+v", rec)
+	}
+	if rec.RequesterSessionKey != "session-1" || rec.OwnerKey != "main" {
+		t.Fatalf("unexpected owner fields: %+v", rec)
 	}
 }
 

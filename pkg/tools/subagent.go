@@ -85,6 +85,17 @@ func NewSubagentManager(
 	defaultModel, workspace string,
 ) *SubagentManager {
 	registry := taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(workspace))
+	return NewSubagentManagerWithRegistry(provider, defaultModel, workspace, registry)
+}
+
+func NewSubagentManagerWithRegistry(
+	provider providers.LLMProvider,
+	defaultModel, workspace string,
+	registry *taskregistry.Registry,
+) *SubagentManager {
+	if registry == nil {
+		registry = taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(workspace))
+	}
 	manager := &SubagentManager{
 		tasks:         make(map[string]*SubagentTask),
 		provider:      provider,

@@ -19,6 +19,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
+	taskregistry "github.com/sipeed/picoclaw/pkg/tasks"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
@@ -119,11 +120,17 @@ func registerSharedTools(
 			logger.WarnCF("voice-tts", "send_tts enabled but no TTS provider configured", nil)
 		}
 	}
+	taskRegistries := make(map[string]*taskregistry.Registry)
 
 	for _, agentID := range registry.ListAgentIDs() {
 		agent, ok := registry.GetAgent(agentID)
 		if !ok {
 			continue
+		}
+		taskRegistry := taskRegistries[agent.Workspace]
+		if taskRegistry == nil {
+			taskRegistry = taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(agent.Workspace))
+			taskRegistries[agent.Workspace] = taskRegistry
 		}
 
 		if cfg.Tools.IsToolEnabled("web") {
@@ -300,7 +307,7 @@ func registerSharedTools(
 		spawnEnabled := cfg.Tools.IsToolEnabled("spawn")
 		spawnStatusEnabled := cfg.Tools.IsToolEnabled("spawn_status")
 		if (spawnEnabled || spawnStatusEnabled) && cfg.Tools.IsToolEnabled("subagent") {
-			subagentManager := tools.NewSubagentManager(provider, agent.Model, agent.Workspace)
+			subagentManager := tools.NewSubagentManagerWithRegistry(provider, agent.Model, agent.Workspace, taskRegistry)
 			subagentManager.SetLLMOptions(agent.MaxTokens, agent.Temperature)
 
 			// Inject a media resolver so the legacy RunToolLoop fallback path can
@@ -398,6 +405,10 @@ func registerSharedTools(
 			logger.WarnCF("agent", "spawn/spawn_status tools require subagent to be enabled", nil)
 		}
 
+		if cfg.Tools.IsToolEnabled("task_status") {
+			registerToolIfAllowed(agent, tools.NewTaskStatusTool(taskRegistry))
+		}
+
 		// Register delegate tool for multi-agent setups.
 		// Auto-enabled when multiple agents exist. Delegation uses the SubTurn
 		// mechanism directly (not SubagentManager) and is independent of the
@@ -405,6 +416,7 @@ func registerSharedTools(
 		if len(registry.ListAgentIDs()) > 1 {
 			delegateTool := tools.NewDelegateTool()
 			delegateTool.SetSpawner(NewSubTurnSpawner(al))
+			delegateTool.SetTaskRegistry(taskRegistry)
 			currentAgentID := agentID
 			delegateTool.SetSelfAgentID(currentAgentID)
 			delegateTool.SetAllowlistChecker(func(targetAgentID string) bool {
