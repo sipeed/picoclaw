@@ -32,6 +32,8 @@ const (
 	// we set a generous limit. The scanner starts at 64 KB and grows
 	// only as needed up to this cap.
 	maxLineSize = 10 * 1024 * 1024 // 10 MB
+
+	sessionIndexRefreshInterval = 30 * time.Second
 )
 
 // SessionMeta holds per-session metadata stored in a .meta.json file.
@@ -63,6 +65,17 @@ type SessionMeta struct {
 type JSONLStore struct {
 	dir   string
 	locks [numLockShards]sync.Mutex
+
+	indexMu sync.RWMutex
+	index   sessionIndex
+	now     func() time.Time
+}
+
+type sessionIndex struct {
+	scannedAt      time.Time
+	keys           map[string]struct{}
+	aliasToKey     map[string]string
+	canonicalToKey map[string]string
 }
 
 // NewJSONLStore creates a new JSONL-backed store rooted at dir.
@@ -71,7 +84,10 @@ func NewJSONLStore(dir string) (*JSONLStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("memory: create directory: %w", err)
 	}
-	return &JSONLStore{dir: dir}, nil
+	return &JSONLStore{
+		dir: dir,
+		now: time.Now,
+	}, nil
 }
 
 // sessionLock returns a mutex for the given session key.
@@ -142,6 +158,14 @@ func cloneRawJSON(data json.RawMessage) json.RawMessage {
 		return nil
 	}
 	return append(json.RawMessage(nil), data...)
+}
+
+func newSessionIndex() sessionIndex {
+	return sessionIndex{
+		keys:           make(map[string]struct{}),
+		aliasToKey:     make(map[string]string),
+		canonicalToKey: make(map[string]string),
+	}
 }
 
 func normalizeAliases(canonicalKey string, aliases []string) []string {
@@ -222,7 +246,11 @@ func (s *JSONLStore) UpsertSessionMeta(
 	}
 	meta.UpdatedAt = now
 
-	return s.writeMeta(sessionKey, meta)
+	if err := s.writeMeta(sessionKey, meta); err != nil {
+		return err
+	}
+	s.updateSessionIndex(meta)
+	return nil
 }
 
 // PromoteAliasHistory atomically promotes the first non-empty alias session
@@ -265,46 +293,18 @@ func (s *JSONLStore) ResolveSessionKey(_ context.Context, sessionKey string) (st
 		return sessionKey, true, nil
 	}
 
-	entries, err := os.ReadDir(s.dir)
-	if err != nil {
-		return "", false, fmt.Errorf("memory: read sessions dir: %w", err)
+	if err := s.ensureFreshSessionIndex(); err != nil {
+		return "", false, err
 	}
 
-	var directMetaMatch string
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".meta.json") {
-			continue
-		}
+	s.indexMu.RLock()
+	defer s.indexMu.RUnlock()
 
-		data, readErr := os.ReadFile(filepath.Join(s.dir, entry.Name()))
-		if readErr != nil {
-			log.Printf("memory: skipping unreadable meta %s: %v", entry.Name(), readErr)
-			continue
-		}
-
-		var meta SessionMeta
-		if err := json.Unmarshal(data, &meta); err != nil {
-			log.Printf("memory: skipping corrupt meta %s: %v", entry.Name(), err)
-			continue
-		}
-
-		if meta.Key == "" {
-			continue
-		}
-
-		if meta.Key == sessionKey {
-			directMetaMatch = meta.Key
-		}
-
-		for _, alias := range meta.Aliases {
-			if alias == sessionKey && meta.Key != sessionKey {
-				return meta.Key, true, nil
-			}
-		}
+	if resolved := s.index.aliasToKey[sessionKey]; resolved != "" && resolved != sessionKey {
+		return resolved, true, nil
 	}
-
-	if directMetaMatch != "" {
-		return directMetaMatch, true, nil
+	if resolved := s.index.canonicalToKey[sessionKey]; resolved != "" {
+		return resolved, true, nil
 	}
 
 	if hasDirectSession {
@@ -403,6 +403,7 @@ func (s *JSONLStore) promoteAliasHistoryLocked(
 		}
 		return false, err
 	}
+	s.updateSessionIndex(canonicalMeta)
 	return true, nil
 }
 
@@ -605,7 +606,11 @@ func (s *JSONLStore) addMsg(sessionKey string, msg providers.Message) error {
 	meta.Count++
 	meta.UpdatedAt = now
 
-	return s.writeMeta(sessionKey, meta)
+	if err := s.writeMeta(sessionKey, meta); err != nil {
+		return err
+	}
+	s.updateSessionIndex(meta)
+	return nil
 }
 
 func (s *JSONLStore) GetHistory(
@@ -662,7 +667,11 @@ func (s *JSONLStore) SetSummary(
 	meta.Summary = summary
 	meta.UpdatedAt = now
 
-	return s.writeMeta(sessionKey, meta)
+	if err := s.writeMeta(sessionKey, meta); err != nil {
+		return err
+	}
+	s.updateSessionIndex(meta)
+	return nil
 }
 
 func (s *JSONLStore) TruncateHistory(
@@ -700,7 +709,11 @@ func (s *JSONLStore) TruncateHistory(
 	}
 	meta.UpdatedAt = time.Now()
 
-	return s.writeMeta(sessionKey, meta)
+	if err := s.writeMeta(sessionKey, meta); err != nil {
+		return err
+	}
+	s.updateSessionIndex(meta)
+	return nil
 }
 
 func (s *JSONLStore) SetHistory(
@@ -734,6 +747,7 @@ func (s *JSONLStore) SetHistory(
 	if err != nil {
 		return err
 	}
+	s.updateSessionIndex(meta)
 
 	return s.rewriteJSONL(sessionKey, history)
 }
@@ -779,6 +793,7 @@ func (s *JSONLStore) Compact(
 	if err != nil {
 		return err
 	}
+	s.updateSessionIndex(meta)
 
 	return s.rewriteJSONL(sessionKey, active)
 }
@@ -802,31 +817,107 @@ func (s *JSONLStore) rewriteJSONL(
 	return fileutil.WriteFileAtomic(s.jsonlPath(sessionKey), buf.Bytes(), 0o644)
 }
 
-// ListSessions returns all known session keys by reading .meta.json files.
+// ListSessions returns all known session keys from the cached session index,
+// rebuilding that index from .meta.json files when the refresh TTL expires.
 func (s *JSONLStore) ListSessions() []string {
-	entries, err := os.ReadDir(s.dir)
-	if err != nil {
+	if err := s.ensureFreshSessionIndex(); err != nil {
 		return nil
 	}
-	var keys []string
+
+	s.indexMu.RLock()
+	keys := make([]string, 0, len(s.index.keys))
+	for key := range s.index.keys {
+		keys = append(keys, key)
+	}
+	s.indexMu.RUnlock()
+	sort.Strings(keys)
+	return keys
+}
+
+func (s *JSONLStore) ensureFreshSessionIndex() error {
+	s.indexMu.RLock()
+	if s.indexIsFreshLocked() {
+		s.indexMu.RUnlock()
+		return nil
+	}
+	s.indexMu.RUnlock()
+
+	s.indexMu.Lock()
+	defer s.indexMu.Unlock()
+	if s.indexIsFreshLocked() {
+		return nil
+	}
+	idx, err := s.rebuildSessionIndex()
+	if err != nil {
+		return err
+	}
+	s.index = idx
+	return nil
+}
+
+func (s *JSONLStore) indexIsFreshLocked() bool {
+	return !s.index.scannedAt.IsZero() && s.now().Sub(s.index.scannedAt) < sessionIndexRefreshInterval
+}
+
+func (s *JSONLStore) rebuildSessionIndex() (sessionIndex, error) {
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return sessionIndex{}, fmt.Errorf("memory: read sessions dir: %w", err)
+	}
+
+	idx := newSessionIndex()
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".meta.json") {
 			continue
 		}
-		// Read the meta file to get the original key
-		data, err := os.ReadFile(filepath.Join(s.dir, entry.Name()))
-		if err != nil {
+
+		data, readErr := os.ReadFile(filepath.Join(s.dir, entry.Name()))
+		if readErr != nil {
+			log.Printf("memory: skipping unreadable meta %s: %v", entry.Name(), readErr)
 			continue
 		}
+
 		var meta SessionMeta
 		if err := json.Unmarshal(data, &meta); err != nil {
+			log.Printf("memory: skipping corrupt meta %s: %v", entry.Name(), err)
 			continue
 		}
-		if meta.Key != "" {
-			keys = append(keys, meta.Key)
+		if strings.TrimSpace(meta.Key) == "" {
+			continue
+		}
+		idx.keys[meta.Key] = struct{}{}
+		idx.canonicalToKey[meta.Key] = meta.Key
+		for _, alias := range meta.Aliases {
+			if alias == "" || alias == meta.Key {
+				continue
+			}
+			idx.aliasToKey[alias] = meta.Key
 		}
 	}
-	return keys
+	idx.scannedAt = s.now()
+	return idx, nil
+}
+
+func (s *JSONLStore) updateSessionIndex(meta SessionMeta) {
+	key := strings.TrimSpace(meta.Key)
+	if key == "" {
+		return
+	}
+	s.indexMu.Lock()
+	defer s.indexMu.Unlock()
+	if s.index.keys == nil {
+		s.index = newSessionIndex()
+	}
+	s.index.keys[key] = struct{}{}
+	s.index.canonicalToKey[key] = key
+	for alias, canonical := range s.index.aliasToKey {
+		if canonical == key {
+			delete(s.index.aliasToKey, alias)
+		}
+	}
+	for _, alias := range normalizeAliases(key, meta.Aliases) {
+		s.index.aliasToKey[alias] = key
+	}
 }
 
 func (s *JSONLStore) Close() error {

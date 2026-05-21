@@ -468,6 +468,128 @@ func TestResolveSessionKey_SkipsCorruptMetadataDuringAliasScan(t *testing.T) {
 	}
 }
 
+func TestListSessions_ReturnsCachedKeysInSortedOrder(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.UpsertSessionMeta(ctx, "z-last", nil, nil); err != nil {
+		t.Fatalf("UpsertSessionMeta(z-last) error = %v", err)
+	}
+	if err := store.UpsertSessionMeta(ctx, "a-first", nil, nil); err != nil {
+		t.Fatalf("UpsertSessionMeta(a-first) error = %v", err)
+	}
+
+	got := store.ListSessions()
+	want := []string{"a-first", "z-last"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListSessions() = %#v, want %#v", got, want)
+	}
+}
+
+func TestResolveSessionKey_RefreshesIndexAfterTTLForExternalMetaChange(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	baseTime := time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC)
+	now := baseTime
+	store.now = func() time.Time { return now }
+
+	if err := store.UpsertSessionMeta(ctx, "canonical-one", nil, []string{"legacy:key"}); err != nil {
+		t.Fatalf("UpsertSessionMeta() error = %v", err)
+	}
+
+	resolved, found, err := store.ResolveSessionKey(ctx, "legacy:key")
+	if err != nil {
+		t.Fatalf("ResolveSessionKey() error = %v", err)
+	}
+	if !found || resolved != "canonical-one" {
+		t.Fatalf("initial resolve = (%q, %v), want (%q, true)", resolved, found, "canonical-one")
+	}
+
+	externalMeta := SessionMeta{
+		Key:       "canonical-two",
+		Aliases:   []string{"legacy:key"},
+		CreatedAt: baseTime,
+		UpdatedAt: baseTime,
+	}
+	data, err := json.MarshalIndent(externalMeta, "", "  ")
+	if err != nil {
+		t.Fatalf("MarshalIndent(externalMeta) error = %v", err)
+	}
+	if err := os.WriteFile(store.metaPath("canonical-two"), data, 0o644); err != nil {
+		t.Fatalf("WriteFile(canonical-two.meta.json) error = %v", err)
+	}
+
+	resolved, found, err = store.ResolveSessionKey(ctx, "legacy:key")
+	if err != nil {
+		t.Fatalf("ResolveSessionKey() before TTL error = %v", err)
+	}
+	if !found || resolved != "canonical-one" {
+		t.Fatalf("resolve before TTL = (%q, %v), want (%q, true)", resolved, found, "canonical-one")
+	}
+
+	now = now.Add(sessionIndexRefreshInterval + time.Second)
+	resolved, found, err = store.ResolveSessionKey(ctx, "legacy:key")
+	if err != nil {
+		t.Fatalf("ResolveSessionKey() after TTL error = %v", err)
+	}
+	if !found || resolved != "canonical-two" {
+		t.Fatalf("resolve after TTL = (%q, %v), want (%q, true)", resolved, found, "canonical-two")
+	}
+}
+
+func TestResolveSessionKey_RefreshesExternalMetaAfterTTLDespiteLocalWrites(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	baseTime := time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC)
+	now := baseTime
+	store.now = func() time.Time { return now }
+
+	if err := store.UpsertSessionMeta(ctx, "canonical-one", nil, []string{"legacy:key"}); err != nil {
+		t.Fatalf("UpsertSessionMeta(canonical-one) error = %v", err)
+	}
+	if _, _, err := store.ResolveSessionKey(ctx, "legacy:key"); err != nil {
+		t.Fatalf("ResolveSessionKey() warm index error = %v", err)
+	}
+
+	externalMeta := SessionMeta{
+		Key:       "canonical-two",
+		Aliases:   []string{"legacy:key"},
+		CreatedAt: baseTime,
+		UpdatedAt: baseTime,
+	}
+	data, err := json.MarshalIndent(externalMeta, "", "  ")
+	if err != nil {
+		t.Fatalf("MarshalIndent(externalMeta) error = %v", err)
+	}
+	if err := os.WriteFile(store.metaPath("canonical-two"), data, 0o644); err != nil {
+		t.Fatalf("WriteFile(canonical-two.meta.json) error = %v", err)
+	}
+
+	now = now.Add(sessionIndexRefreshInterval - time.Second)
+	if err := store.UpsertSessionMeta(ctx, "local-only", nil, nil); err != nil {
+		t.Fatalf("UpsertSessionMeta(local-only) error = %v", err)
+	}
+
+	resolved, found, err := store.ResolveSessionKey(ctx, "legacy:key")
+	if err != nil {
+		t.Fatalf("ResolveSessionKey() before TTL error = %v", err)
+	}
+	if !found || resolved != "canonical-one" {
+		t.Fatalf("resolve before TTL = (%q, %v), want (%q, true)", resolved, found, "canonical-one")
+	}
+
+	now = baseTime.Add(sessionIndexRefreshInterval + time.Second)
+	resolved, found, err = store.ResolveSessionKey(ctx, "legacy:key")
+	if err != nil {
+		t.Fatalf("ResolveSessionKey() after TTL error = %v", err)
+	}
+	if !found || resolved != "canonical-two" {
+		t.Fatalf("resolve after TTL = (%q, %v), want (%q, true)", resolved, found, "canonical-two")
+	}
+}
+
 func TestTruncateHistory_KeepLast(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
