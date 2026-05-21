@@ -516,7 +516,8 @@ func TestResolveSessionKey_RefreshesIndexAfterTTLForExternalMetaChange(t *testin
 	if err != nil {
 		t.Fatalf("MarshalIndent(externalMeta) error = %v", err)
 	}
-	if err := os.WriteFile(store.metaPath("canonical-two"), data, 0o644); err != nil {
+	err = os.WriteFile(store.metaPath("canonical-two"), data, 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile(canonical-two.meta.json) error = %v", err)
 	}
 
@@ -563,12 +564,14 @@ func TestResolveSessionKey_RefreshesExternalMetaAfterTTLDespiteLocalWrites(t *te
 	if err != nil {
 		t.Fatalf("MarshalIndent(externalMeta) error = %v", err)
 	}
-	if err := os.WriteFile(store.metaPath("canonical-two"), data, 0o644); err != nil {
+	err = os.WriteFile(store.metaPath("canonical-two"), data, 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile(canonical-two.meta.json) error = %v", err)
 	}
 
 	now = now.Add(sessionIndexRefreshInterval - time.Second)
-	if err := store.UpsertSessionMeta(ctx, "local-only", nil, nil); err != nil {
+	err = store.UpsertSessionMeta(ctx, "local-only", nil, nil)
+	if err != nil {
 		t.Fatalf("UpsertSessionMeta(local-only) error = %v", err)
 	}
 
