@@ -25,7 +25,9 @@ func (t *SpawnStatusTool) Name() string {
 }
 
 func (t *SpawnStatusTool) Description() string {
-	return "Get the status of spawned subagents. " +
+	return "Get the status of subagents started specifically with the spawn tool. " +
+		"This is a spawn-only compatibility/debug view; use task_status for general task history, " +
+		"delegate runs, or restart-persistent completed task checks. " +
 		"Returns a list of all subagents and their current state " +
 		"(running, completed, failed, or canceled), or retrieves details " +
 		"for a specific subagent task when task_id is provided. " +
@@ -90,7 +92,7 @@ func (t *SpawnStatusTool) Execute(ctx context.Context, args map[string]any) *Too
 	// ListTaskCopies returns consistent snapshots under the manager lock.
 	origTasks := t.manager.ListTaskCopies()
 	if len(origTasks) == 0 {
-		return NewToolResult("No visible spawned subagents are registered in the current process. This does not prove that no subagent was ever started for this conversation: the task may have completed earlier, the registry may have been cleared, or the service may have restarted.")
+		return NewToolResult("No visible spawned subagents are registered in the current process. This tool only reports tasks started with the spawn tool. For delegate runs, other child-run mechanisms, or restart-persistent completed task checks, use task_status.")
 	}
 
 	tasks := make([]*SubagentTask, 0, len(origTasks))
@@ -109,7 +111,7 @@ func (t *SpawnStatusTool) Execute(ctx context.Context, args map[string]any) *Too
 	}
 
 	if len(tasks) == 0 {
-		return NewToolResult("No subagents found for this conversation.")
+		return NewToolResult("No spawned subagents found for this conversation. This tool only reports tasks started with the spawn tool. For delegate runs or other child-run mechanisms, use task_status.")
 	}
 
 	// Order by creation time (ascending) so spawning order is preserved.

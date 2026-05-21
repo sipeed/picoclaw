@@ -34,6 +34,9 @@ func TestSpawnStatusTool_Description(t *testing.T) {
 	if !strings.Contains(strings.ToLower(desc), "subagent") {
 		t.Errorf("Description should mention 'subagent', got: %s", desc)
 	}
+	if !strings.Contains(desc, "task_status") {
+		t.Errorf("Description should direct generic task checks to task_status, got: %s", desc)
+	}
 }
 
 func TestSpawnStatusTool_Parameters(t *testing.T) {
@@ -76,8 +79,11 @@ func TestSpawnStatusTool_Empty(t *testing.T) {
 	if !strings.Contains(result.ForLLM, "No visible spawned subagents are registered in the current process") {
 		t.Errorf("Expected current-process empty-registry message, got: %s", result.ForLLM)
 	}
-	if !strings.Contains(result.ForLLM, "does not prove that no subagent was ever started") {
-		t.Errorf("Expected cautionary wording about past tasks/restarts, got: %s", result.ForLLM)
+	if !strings.Contains(result.ForLLM, "task_status") {
+		t.Errorf("Expected guidance to use task_status for generic task checks, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "delegate runs") {
+		t.Errorf("Expected wording about delegate runs, got: %s", result.ForLLM)
 	}
 }
 

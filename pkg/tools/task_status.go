@@ -26,6 +26,7 @@ func (t *TaskStatusTool) Name() string {
 
 func (t *TaskStatusTool) Description() string {
 	return "Get durable runtime task status for spawn/delegate/subtask runs. " +
+		"Prefer this for general task history, completed task checks, and after service restarts. " +
 		"Use this instead of spawn_status when the task may have used delegate or another child-run mechanism. " +
 		"Results are scoped to the current conversation's channel/chat when available."
 }
