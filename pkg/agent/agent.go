@@ -547,11 +547,11 @@ func (al *AgentLoop) runAgentLoop(
 		opts.Dispatch.ChatID() != "" &&
 		!constants.IsInternalChannel(opts.Dispatch.Channel()) {
 		channelKey := fmt.Sprintf("%s:%s", opts.Dispatch.Channel(), opts.Dispatch.ChatID())
-		if err := al.RecordLastChannel(channelKey); err != nil {
+		if recordErr := al.RecordLastChannel(channelKey); recordErr != nil {
 			logger.WarnCF(
 				"agent",
 				"Failed to record last channel",
-				map[string]any{"error": err.Error()},
+				map[string]any{"error": recordErr.Error()},
 			)
 		}
 	}

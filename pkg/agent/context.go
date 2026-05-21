@@ -54,9 +54,13 @@ func (cb *ContextBuilder) WithToolDiscovery(useBM25, useRegex bool) *ContextBuil
 			useBM25:  useBM25,
 			useRegex: useRegex,
 		}); err != nil {
-			logger.WarnCF("agent", "Failed to register tool discovery prompt contributor", map[string]any{
-				"error": err.Error(),
-			})
+			logger.WarnCF(
+				"agent",
+				"Failed to register tool discovery prompt contributor",
+				map[string]any{
+					"error": err.Error(),
+				},
+			)
 		}
 	}
 	return cb
@@ -77,9 +81,13 @@ func (cb *ContextBuilder) WithAgentDiscovery(
 			agentID:  agentID,
 			discover: discover,
 		}); err != nil {
-			logger.WarnCF("agent", "Failed to register agent discovery prompt contributor", map[string]any{
-				"error": err.Error(),
-			})
+			logger.WarnCF(
+				"agent",
+				"Failed to register agent discovery prompt contributor",
+				map[string]any{
+					"error": err.Error(),
+				},
+			)
 		}
 	}
 	return cb
@@ -154,7 +162,14 @@ Your workspace is at: %s
 3. **Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md
 
 4. **Context summaries** - Conversation summaries provided as context are approximate references only. They may be incomplete or outdated. Always defer to explicit user instructions over summary content.`,
-		version, workspacePath, workspacePath, workspacePath, workspacePath, numberedToolUseSystemPromptRule(), workspacePath)
+		version,
+		workspacePath,
+		workspacePath,
+		workspacePath,
+		workspacePath,
+		numberedToolUseSystemPromptRule(),
+		workspacePath,
+	)
 }
 
 func formatToolDiscoveryRule(useBM25, useRegex bool) string {
@@ -333,7 +348,9 @@ func (cb *ContextBuilder) BuildSystemPromptWithCache() string {
 	return prompt
 }
 
-func (cb *ContextBuilder) buildSystemPromptForRequest(req PromptBuildRequest) (string, []providers.ContentBlock) {
+func (cb *ContextBuilder) buildSystemPromptForRequest(
+	req PromptBuildRequest,
+) (string, []providers.ContentBlock) {
 	if req.SuppressDefaultSystemPrompt {
 		return "", nil
 	}
@@ -387,8 +404,14 @@ func (cb *ContextBuilder) buildSkillsSummary(allowed []string) string {
 		}
 		lines = append(lines, "  <skill>")
 		lines = append(lines, fmt.Sprintf("    <name>%s</name>", xmlEscapeForPrompt(s.Name)))
-		lines = append(lines, fmt.Sprintf("    <description>%s</description>", xmlEscapeForPrompt(s.Description)))
-		lines = append(lines, fmt.Sprintf("    <location>%s</location>", xmlEscapeForPrompt(s.Path)))
+		lines = append(
+			lines,
+			fmt.Sprintf("    <description>%s</description>", xmlEscapeForPrompt(s.Description)),
+		)
+		lines = append(
+			lines,
+			fmt.Sprintf("    <location>%s</location>", xmlEscapeForPrompt(s.Path)),
+		)
 		lines = append(lines, fmt.Sprintf("    <source>%s</source>", xmlEscapeForPrompt(s.Source)))
 		lines = append(lines, "  </skill>")
 	}
@@ -846,7 +869,12 @@ func (cb *ContextBuilder) BuildMessagesFromPrompt(req PromptBuildRequest) []prov
 	dynamicChars := 0
 	if !req.SuppressDefaultSystemPrompt {
 		// Build short dynamic context (time, runtime, session) — changes per request
-		dynamicCtx := cb.buildDynamicContext(req.Channel, req.ChatID, req.SenderID, req.SenderDisplayName)
+		dynamicCtx := cb.buildDynamicContext(
+			req.Channel,
+			req.ChatID,
+			req.SenderID,
+			req.SenderDisplayName,
+		)
 		dynamicChars = len(dynamicCtx)
 		runtimePart := PromptPart{
 			ID:      "context.runtime",
@@ -871,7 +899,8 @@ func (cb *ContextBuilder) BuildMessagesFromPrompt(req PromptBuildRequest) []prov
 				Content: fmt.Sprintf(
 					"CONTEXT_SUMMARY: The following is an approximate summary of prior conversation "+
 						"for reference only. It may be incomplete or outdated — always defer to explicit instructions.\n\n%s",
-					req.Summary),
+					req.Summary,
+				),
 				Stable: false,
 				Cache:  PromptCacheNone,
 			}
@@ -1047,7 +1076,11 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 					break
 				}
 				if next.ToolCallID == "" {
-					logger.DebugCF("agent", "Dropping tool result without tool_call_id", map[string]any{})
+					logger.DebugCF(
+						"agent",
+						"Dropping tool result without tool_call_id",
+						map[string]any{},
+					)
 					continue
 				}
 				if _, ok := expected[next.ToolCallID]; !ok {
@@ -1057,9 +1090,13 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 					continue
 				}
 				if seenInBlock[next.ToolCallID] {
-					logger.DebugCF("agent", "Dropping duplicate tool result in tool block", map[string]any{
-						"tool_call_id": next.ToolCallID,
-					})
+					logger.DebugCF(
+						"agent",
+						"Dropping duplicate tool result in tool block",
+						map[string]any{
+							"tool_call_id": next.ToolCallID,
+						},
+					)
 					continue
 				}
 				seenInBlock[next.ToolCallID] = true
@@ -1069,7 +1106,11 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 
 			allFound := !invalidToolCallID
 			if invalidToolCallID {
-				logger.DebugCF("agent", "Dropping assistant message with empty tool_call_id", map[string]any{})
+				logger.DebugCF(
+					"agent",
+					"Dropping assistant message with empty tool_call_id",
+					map[string]any{},
+				)
 			}
 			for toolCallID, found := range expected {
 				if !found {
@@ -1099,9 +1140,13 @@ func sanitizeHistoryForProvider(history []providers.Message) []providers.Message
 		}
 
 		if msg.Role == "tool" {
-			logger.DebugCF("agent", "Dropping orphaned tool message after validation", map[string]any{
-				"tool_call_id": msg.ToolCallID,
-			})
+			logger.DebugCF(
+				"agent",
+				"Dropping orphaned tool message after validation",
+				map[string]any{
+					"tool_call_id": msg.ToolCallID,
+				},
+			)
 			continue
 		}
 

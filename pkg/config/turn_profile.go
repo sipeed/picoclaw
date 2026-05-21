@@ -51,10 +51,13 @@ func (m TurnProfileMode) Effective() TurnProfileMode {
 	}
 }
 
-func (d AgentDefaults) ResolveTurnProfile(name string) (EffectiveTurnProfile, bool, error) {
+func (d *AgentDefaults) ResolveTurnProfile(name string) (EffectiveTurnProfile, bool, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return EffectiveTurnProfile{}, false, nil
+	}
+	if d == nil {
+		return EffectiveTurnProfile{}, false, fmt.Errorf("unknown turn profile %q", name)
 	}
 	if d.TurnProfiles == nil {
 		return EffectiveTurnProfile{}, false, fmt.Errorf("unknown turn profile %q", name)

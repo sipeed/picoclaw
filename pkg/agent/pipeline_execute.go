@@ -363,7 +363,9 @@ toolLoop:
 								content := al.cfg.FilterSensitiveData(result.ForLLM)
 								msg := subTurnResultPromptMessage(content)
 								messages = append(messages, msg)
-								ts.agent.Sessions.AddFullMessage(ts.sessionKey, msg)
+								if !ts.opts.NoHistory {
+									ts.agent.Sessions.AddFullMessage(ts.sessionKey, msg)
+								}
 							}
 						default:
 						}
@@ -772,7 +774,9 @@ toolLoop:
 					content := al.cfg.FilterSensitiveData(result.ForLLM)
 					msg := subTurnResultPromptMessage(content)
 					messages = append(messages, msg)
-					ts.agent.Sessions.AddFullMessage(ts.sessionKey, msg)
+					if !ts.opts.NoHistory {
+						ts.agent.Sessions.AddFullMessage(ts.sessionKey, msg)
+					}
 				}
 			default:
 			}

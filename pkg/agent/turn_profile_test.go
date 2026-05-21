@@ -270,7 +270,10 @@ func TestTurnProfile_SystemPromptOffAddsToolFallbackWhenToolsVisible(t *testing.
 						History:      config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
 						SystemPrompt: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
 						Skills:       config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-						Tools:        config.TurnProfileBlock{Mode: config.TurnProfileModeCustom, Allow: []string{"web_search"}},
+						Tools: config.TurnProfileBlock{
+							Mode:  config.TurnProfileModeCustom,
+							Allow: []string{"web_search"},
+						},
 					},
 				},
 			},
@@ -296,8 +299,18 @@ func TestTurnProfile_SystemPromptOffAddsToolFallbackWhenToolsVisible(t *testing.
 
 func TestTurnProfile_SkillsOffAndCustomControlCatalogAndActiveSkills(t *testing.T) {
 	workspace := t.TempDir()
-	writeTurnProfileSkill(t, workspace, "shell", "---\ndescription: shell skill\n---\n# shell\n\nUse shell carefully.")
-	writeTurnProfileSkill(t, workspace, "paint", "---\ndescription: paint skill\n---\n# paint\n\nUse paint vividly.")
+	writeTurnProfileSkill(
+		t,
+		workspace,
+		"shell",
+		"---\ndescription: shell skill\n---\n# shell\n\nUse shell carefully.",
+	)
+	writeTurnProfileSkill(
+		t,
+		workspace,
+		"paint",
+		"---\ndescription: paint skill\n---\n# paint\n\nUse paint vividly.",
+	)
 
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
@@ -310,7 +323,10 @@ func TestTurnProfile_SkillsOffAndCustomControlCatalogAndActiveSkills(t *testing.
 					},
 					"shell-only": {
 						History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-						Skills:  config.TurnProfileBlock{Mode: config.TurnProfileModeCustom, Allow: []string{"shell"}},
+						Skills: config.TurnProfileBlock{
+							Mode:  config.TurnProfileModeCustom,
+							Allow: []string{"shell"},
+						},
 					},
 				},
 			},
@@ -331,7 +347,8 @@ func TestTurnProfile_SkillsOffAndCustomControlCatalogAndActiveSkills(t *testing.
 		t.Fatalf("runAgentLoop(no-skills) error = %v", err)
 	}
 	noSkillsPrompt := provider.messages[0].Content
-	if strings.Contains(noSkillsPrompt, "# Skills") || strings.Contains(noSkillsPrompt, "# Active Skills") {
+	if strings.Contains(noSkillsPrompt, "# Skills") ||
+		strings.Contains(noSkillsPrompt, "# Active Skills") {
 		t.Fatalf("skills-off prompt includes skill context:\n%s", noSkillsPrompt)
 	}
 
@@ -346,10 +363,12 @@ func TestTurnProfile_SkillsOffAndCustomControlCatalogAndActiveSkills(t *testing.
 		t.Fatalf("runAgentLoop(shell-only) error = %v", err)
 	}
 	customPrompt := provider.messages[0].Content
-	if !strings.Contains(customPrompt, "<name>shell</name>") || !strings.Contains(customPrompt, "### Skill: shell") {
+	if !strings.Contains(customPrompt, "<name>shell</name>") ||
+		!strings.Contains(customPrompt, "### Skill: shell") {
 		t.Fatalf("custom skills prompt missing allowed shell context:\n%s", customPrompt)
 	}
-	if strings.Contains(customPrompt, "<name>paint</name>") || strings.Contains(customPrompt, "### Skill: paint") {
+	if strings.Contains(customPrompt, "<name>paint</name>") ||
+		strings.Contains(customPrompt, "### Skill: paint") {
 		t.Fatalf("custom skills prompt includes disallowed paint context:\n%s", customPrompt)
 	}
 }
@@ -411,7 +430,10 @@ func TestTurnProfile_ToolsCustomFiltersProviderToolsAndHookAdditions(t *testing.
 				TurnProfiles: config.TurnProfilesConfig{
 					"echo-only": {
 						History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-						Tools:   config.TurnProfileBlock{Mode: config.TurnProfileModeCustom, Allow: []string{"echo_text"}},
+						Tools: config.TurnProfileBlock{
+							Mode:  config.TurnProfileModeCustom,
+							Allow: []string{"echo_text"},
+						},
 					},
 				},
 			},
@@ -425,12 +447,16 @@ func TestTurnProfile_ToolsCustomFiltersProviderToolsAndHookAdditions(t *testing.
 		t.Fatalf("MountHook() error = %v", err)
 	}
 
-	_, err := al.runAgentLoop(context.Background(), al.GetRegistry().GetDefaultAgent(), processOptions{
-		SessionKey:      "agent:default:test-tools-filter",
-		UserMessage:     "hello",
-		DefaultResponse: defaultResponse,
-		TurnProfileName: "echo-only",
-	})
+	_, err := al.runAgentLoop(
+		context.Background(),
+		al.GetRegistry().GetDefaultAgent(),
+		processOptions{
+			SessionKey:      "agent:default:test-tools-filter",
+			UserMessage:     "hello",
+			DefaultResponse: defaultResponse,
+			TurnProfileName: "echo-only",
+		},
+	)
 	if err != nil {
 		t.Fatalf("runAgentLoop() error = %v", err)
 	}
@@ -468,12 +494,16 @@ func TestTurnProfile_ToolsOffDisablesProviderAndNativeSearchTools(t *testing.T) 
 	provider := &nativeSearchCaptureProvider{}
 	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
 
-	_, err := al.runAgentLoop(context.Background(), al.GetRegistry().GetDefaultAgent(), processOptions{
-		SessionKey:      "agent:default:test-tools-off",
-		UserMessage:     "hello",
-		DefaultResponse: defaultResponse,
-		TurnProfileName: "no-tools",
-	})
+	_, err := al.runAgentLoop(
+		context.Background(),
+		al.GetRegistry().GetDefaultAgent(),
+		processOptions{
+			SessionKey:      "agent:default:test-tools-off",
+			UserMessage:     "hello",
+			DefaultResponse: defaultResponse,
+			TurnProfileName: "no-tools",
+		},
+	)
 	if err != nil {
 		t.Fatalf("runAgentLoop() error = %v", err)
 	}
@@ -499,7 +529,10 @@ func TestTurnProfile_ToolsCustomAllowsNativeWebSearch(t *testing.T) {
 				TurnProfiles: config.TurnProfilesConfig{
 					"web-only": {
 						History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-						Tools:   config.TurnProfileBlock{Mode: config.TurnProfileModeCustom, Allow: []string{"web_search"}},
+						Tools: config.TurnProfileBlock{
+							Mode:  config.TurnProfileModeCustom,
+							Allow: []string{"web_search"},
+						},
 					},
 				},
 			},
@@ -508,12 +541,16 @@ func TestTurnProfile_ToolsCustomAllowsNativeWebSearch(t *testing.T) {
 	provider := &nativeSearchCaptureProvider{}
 	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
 
-	_, err := al.runAgentLoop(context.Background(), al.GetRegistry().GetDefaultAgent(), processOptions{
-		SessionKey:      "agent:default:test-native-web-allowed",
-		UserMessage:     "search",
-		DefaultResponse: defaultResponse,
-		TurnProfileName: "web-only",
-	})
+	_, err := al.runAgentLoop(
+		context.Background(),
+		al.GetRegistry().GetDefaultAgent(),
+		processOptions{
+			SessionKey:      "agent:default:test-native-web-allowed",
+			UserMessage:     "search",
+			DefaultResponse: defaultResponse,
+			TurnProfileName: "web-only",
+		},
+	)
 	if err != nil {
 		t.Fatalf("runAgentLoop() error = %v", err)
 	}
@@ -529,7 +566,10 @@ func TestTurnProfile_ToolExecutionRejectsDisallowedToolCalls(t *testing.T) {
 				TurnProfiles: config.TurnProfilesConfig{
 					"echo-only": {
 						History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-						Tools:   config.TurnProfileBlock{Mode: config.TurnProfileModeCustom, Allow: []string{"echo_text"}},
+						Tools: config.TurnProfileBlock{
+							Mode:  config.TurnProfileModeCustom,
+							Allow: []string{"echo_text"},
+						},
 					},
 				},
 			},
@@ -540,12 +580,16 @@ func TestTurnProfile_ToolExecutionRejectsDisallowedToolCalls(t *testing.T) {
 	al.RegisterTool(&echoTextTool{})
 	al.RegisterTool(&echoTextRewrittenTool{})
 
-	response, err := al.runAgentLoop(context.Background(), al.GetRegistry().GetDefaultAgent(), processOptions{
-		SessionKey:      "agent:default:test-tool-exec-deny",
-		UserMessage:     "run tool",
-		DefaultResponse: defaultResponse,
-		TurnProfileName: "echo-only",
-	})
+	response, err := al.runAgentLoop(
+		context.Background(),
+		al.GetRegistry().GetDefaultAgent(),
+		processOptions{
+			SessionKey:      "agent:default:test-tool-exec-deny",
+			UserMessage:     "run tool",
+			DefaultResponse: defaultResponse,
+			TurnProfileName: "echo-only",
+		},
+	)
 	if err != nil {
 		t.Fatalf("runAgentLoop() error = %v", err)
 	}
@@ -557,7 +601,8 @@ func TestTurnProfile_ToolExecutionRejectsDisallowedToolCalls(t *testing.T) {
 	}
 	var foundDeniedResult bool
 	for _, msg := range provider.messages {
-		if msg.Role == "tool" && strings.Contains(msg.Content, "not allowed by the active turn profile") {
+		if msg.Role == "tool" &&
+			strings.Contains(msg.Content, "not allowed by the active turn profile") {
 			foundDeniedResult = true
 			break
 		}

@@ -27,7 +27,10 @@ func TestHandleGetTurnProfiles_ReturnsConfiguredNames(t *testing.T) {
 			History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
 		},
 		"tools_only": {
-			Tools: config.TurnProfileBlock{Mode: config.TurnProfileModeCustom, Allow: []string{"web_search"}},
+			Tools: config.TurnProfileBlock{
+				Mode:  config.TurnProfileModeCustom,
+				Allow: []string{"web_search"},
+			},
 		},
 	}
 	if err := config.SaveConfig(configPath, cfg); err != nil {
@@ -70,11 +73,14 @@ func TestHandlePatchConfig_PreservesTurnProfiles(t *testing.T) {
 			History:      config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
 			SystemPrompt: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
 			Skills:       config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-			Tools:        config.TurnProfileBlock{Mode: config.TurnProfileModeCustom, Allow: []string{"web_search", "web_fetch"}},
+			Tools: config.TurnProfileBlock{
+				Mode:  config.TurnProfileModeCustom,
+				Allow: []string{"web_search", "web_fetch"},
+			},
 		},
 	}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
-		t.Fatalf("SaveConfig() error = %v", err)
+	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
+		t.Fatalf("SaveConfig() error = %v", saveErr)
 	}
 
 	h := NewHandler(configPath)
@@ -103,7 +109,8 @@ func TestHandlePatchConfig_PreservesTurnProfiles(t *testing.T) {
 	if !ok {
 		t.Fatal("turn profile clean_web was not preserved")
 	}
-	if profile.Tools.Mode != config.TurnProfileModeCustom || strings.Join(profile.Tools.Allow, ",") != "web_search,web_fetch" {
+	if profile.Tools.Mode != config.TurnProfileModeCustom ||
+		strings.Join(profile.Tools.Allow, ",") != "web_search,web_fetch" {
 		t.Fatalf("profile tools = %#v, want custom web_search/web_fetch", profile.Tools)
 	}
 }
@@ -131,7 +138,12 @@ func TestHandlePatchConfig_RejectsInvalidTurnProfile(t *testing.T) {
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+		t.Fatalf(
+			"status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusBadRequest,
+			rec.Body.String(),
+		)
 	}
 	if !strings.Contains(rec.Body.String(), "history.mode custom is not supported") {
 		t.Fatalf("body=%s, want turn profile validation error", rec.Body.String())
@@ -164,7 +176,13 @@ func assertGatewayLogLevelApplied(t *testing.T, method, body string, want logger
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("%s /api/config status = %d, want %d, body=%s", method, rec.Code, http.StatusOK, rec.Body.String())
+		t.Fatalf(
+			"%s /api/config status = %d, want %d, body=%s",
+			method,
+			rec.Code,
+			http.StatusOK,
+			rec.Body.String(),
+		)
 	}
 	if got := logger.GetLevel(); got != want {
 		t.Fatalf("logger.GetLevel() = %v, want %v", got, want)
@@ -270,10 +288,18 @@ func TestHandlePatchConfig_RejectsInvalidExecRegexPatterns(t *testing.T) {
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+		t.Fatalf(
+			"status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusBadRequest,
+			rec.Body.String(),
+		)
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte("custom_deny_patterns")) {
-		t.Fatalf("expected validation error mentioning custom_deny_patterns, body=%s", rec.Body.String())
+		t.Fatalf(
+			"expected validation error mentioning custom_deny_patterns, body=%s",
+			rec.Body.String(),
+		)
 	}
 }
 
@@ -329,7 +355,12 @@ func TestHandlePatchConfig_SavesChannelListSettingsPatch(t *testing.T) {
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+		t.Fatalf(
+			"PATCH /api/config status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusOK,
+			rec.Body.String(),
+		)
 	}
 
 	cfg, err := config.LoadConfig(configPath)
@@ -393,7 +424,12 @@ func TestHandlePatchConfig_NormalizesStringChannelArrayFields(t *testing.T) {
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+		t.Fatalf(
+			"PATCH /api/config status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusOK,
+			rec.Body.String(),
+		)
 	}
 
 	cfg, err := config.LoadConfig(configPath)
@@ -406,7 +442,10 @@ func TestHandlePatchConfig_NormalizesStringChannelArrayFields(t *testing.T) {
 		picoChannel.AllowFrom[0] != "ou_a" ||
 		picoChannel.AllowFrom[1] != "ou_b" ||
 		picoChannel.AllowFrom[2] != "ou_c" {
-		t.Fatalf("pico allow_from = %#v, want [\"ou_a\", \"ou_b\", \"ou_c\"]", picoChannel.AllowFrom)
+		t.Fatalf(
+			"pico allow_from = %#v, want [\"ou_a\", \"ou_b\", \"ou_c\"]",
+			picoChannel.AllowFrom,
+		)
 	}
 	if len(picoChannel.GroupTrigger.Prefixes) != 3 ||
 		picoChannel.GroupTrigger.Prefixes[0] != "/" ||
@@ -475,7 +514,12 @@ func TestHandlePatchConfig_NormalizesSingleNumericAllowFrom(t *testing.T) {
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+		t.Fatalf(
+			"PATCH /api/config status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusOK,
+			rec.Body.String(),
+		)
 	}
 
 	cfg, err := config.LoadConfig(configPath)
@@ -549,7 +593,11 @@ func TestHandlePatchConfig_RejectsInvalidChannelArrayFields(t *testing.T) {
 			mux := http.NewServeMux()
 			h.RegisterRoutes(mux)
 
-			req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(tt.body))
+			req := httptest.NewRequest(
+				http.MethodPatch,
+				"/api/config",
+				bytes.NewBufferString(tt.body),
+			)
 			req.Header.Set("Content-Type", "application/json")
 
 			rec := httptest.NewRecorder()
@@ -568,8 +616,12 @@ func TestHandlePatchConfig_RejectsInvalidChannelArrayFields(t *testing.T) {
 				t.Fatalf("LoadConfig() error = %v", err)
 			}
 			telegramChannel := cfg.Channels[config.ChannelTelegram]
-			if len(telegramChannel.AllowFrom) != 1 || telegramChannel.AllowFrom[0] != "existing-user" {
-				t.Fatalf("telegram allow_from = %#v, want unchanged [\"existing-user\"]", telegramChannel.AllowFrom)
+			if len(telegramChannel.AllowFrom) != 1 ||
+				telegramChannel.AllowFrom[0] != "existing-user" {
+				t.Fatalf(
+					"telegram allow_from = %#v, want unchanged [\"existing-user\"]",
+					telegramChannel.AllowFrom,
+				)
 			}
 		})
 	}
@@ -600,10 +652,18 @@ func TestHandlePatchConfig_RejectsNegativeStreamingDeliveryValues(t *testing.T) 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+		t.Fatalf(
+			"PATCH /api/config status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusBadRequest,
+			rec.Body.String(),
+		)
 	}
 	if !strings.Contains(rec.Body.String(), "streaming.throttle_seconds") {
-		t.Fatalf("response body = %q, want streaming.throttle_seconds validation error", rec.Body.String())
+		t.Fatalf(
+			"response body = %q, want streaming.throttle_seconds validation error",
+			rec.Body.String(),
+		)
 	}
 }
 
@@ -649,7 +709,12 @@ func TestHandlePatchConfig_ClearingAllowFromDoesNotLeaveEmptyStringItem(t *testi
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+		t.Fatalf(
+			"PATCH /api/config status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusOK,
+			rec.Body.String(),
+		)
 	}
 
 	cfg, err = config.LoadConfig(configPath)
@@ -666,7 +731,10 @@ func TestHandlePatchConfig_ClearingAllowFromDoesNotLeaveEmptyStringItem(t *testi
 		t.Fatalf("ReadFile(configPath) error = %v", err)
 	}
 	if strings.Contains(string(configData), `"allow_from": [""]`) {
-		t.Fatalf("config file should not contain empty-string allow_from item: %s", string(configData))
+		t.Fatalf(
+			"config file should not contain empty-string allow_from item: %s",
+			string(configData),
+		)
 	}
 }
 
@@ -704,7 +772,12 @@ func TestHandlePatchConfig_CreatesMissingChannelWithTypeAndSecret(t *testing.T) 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+		t.Fatalf(
+			"PATCH /api/config status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusOK,
+			rec.Body.String(),
+		)
 	}
 
 	cfg, err = config.LoadConfig(configPath)
@@ -825,7 +898,12 @@ func TestHandleUpdateConfig_SucceedsWhenPicoTokenInSecurityOnly(t *testing.T) {
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("PUT /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+		t.Fatalf(
+			"PUT /api/config status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusOK,
+			rec.Body.String(),
+		)
 	}
 }
 
@@ -848,7 +926,12 @@ func TestHandlePatchConfig_SucceedsWhenPicoTokenInSecurityOnly(t *testing.T) {
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+		t.Fatalf(
+			"PATCH /api/config status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusOK,
+			rec.Body.String(),
+		)
 	}
 }
 
@@ -907,7 +990,12 @@ func TestHandlePatchConfig_PreservesDebugFlagOverride(t *testing.T) {
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+		t.Fatalf(
+			"PATCH /api/config status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusOK,
+			rec.Body.String(),
+		)
 	}
 	if got := logger.GetLevel(); got != logger.DEBUG {
 		t.Fatalf("logger.GetLevel() = %v, want %v", got, logger.DEBUG)
@@ -937,7 +1025,12 @@ func TestHandlePatchConfig_SavesDiscordTokenFromPayload(t *testing.T) {
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+		t.Fatalf(
+			"PATCH /api/config status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusOK,
+			rec.Body.String(),
+		)
 	}
 
 	cfg, err := config.LoadConfig(configPath)
@@ -981,7 +1074,12 @@ func TestHandlePatchConfig_DoesNotPersistShadowRegistryAuthTokenField(t *testing
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("PATCH /api/config status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+		t.Fatalf(
+			"PATCH /api/config status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusOK,
+			rec.Body.String(),
+		)
 	}
 
 	cfg, err := config.LoadConfig(configPath)
@@ -1004,7 +1102,10 @@ func TestHandlePatchConfig_DoesNotPersistShadowRegistryAuthTokenField(t *testing
 		t.Fatalf("ReadFile(configPath) error = %v", err)
 	}
 	if strings.Contains(string(rawConfig), "_auth_token") {
-		t.Fatalf("config.json should not persist _auth_token shadow field, got:\n%s", string(rawConfig))
+		t.Fatalf(
+			"config.json should not persist _auth_token shadow field, got:\n%s",
+			string(rawConfig),
+		)
 	}
 }
 
@@ -1040,7 +1141,11 @@ func testCommandPatterns(t *testing.T, configPath string, body string) *httptest
 	h := NewHandler(configPath)
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
-	req := httptest.NewRequest(http.MethodPost, "/api/config/test-command-patterns", bytes.NewBufferString(body))
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/config/test-command-patterns",
+		bytes.NewBufferString(body),
+	)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -1083,7 +1188,10 @@ func TestHandleTestCommandPatterns_MatchesBlacklistNotWhitelist(t *testing.T) {
 		t.Fatalf("expected blocked=true, body=%s", rec.Body.String())
 	}
 	if bytes.Contains(rec.Body.Bytes(), []byte(`"allowed":true`)) {
-		t.Fatalf("expected allowed=false when blacklist matches but not whitelist, body=%s", rec.Body.String())
+		t.Fatalf(
+			"expected allowed=false when blacklist matches but not whitelist, body=%s",
+			rec.Body.String(),
+		)
 	}
 }
 
@@ -1157,7 +1265,10 @@ func TestHandleTestCommandPatterns_InvalidRegexSkipped(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 	if !bytes.Contains(rec.Body.Bytes(), []byte(`"allowed":true`)) {
-		t.Fatalf("expected allowed=true, invalid pattern skipped and valid one matched, body=%s", rec.Body.String())
+		t.Fatalf(
+			"expected allowed=true, invalid pattern skipped and valid one matched, body=%s",
+			rec.Body.String(),
+		)
 	}
 }
 
@@ -1197,7 +1308,12 @@ func TestHandleTestCommandPatterns_InvalidJSON(t *testing.T) {
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+		t.Fatalf(
+			"status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusBadRequest,
+			rec.Body.String(),
+		)
 	}
 }
 

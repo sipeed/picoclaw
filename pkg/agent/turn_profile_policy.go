@@ -38,16 +38,8 @@ func turnProfileSkillsOff(profile config.EffectiveTurnProfile) bool {
 	return profile.Enabled && profile.SkillsMode == config.TurnProfileModeOff
 }
 
-func turnProfileToolsOff(profile config.EffectiveTurnProfile) bool {
-	return profile.Enabled && profile.ToolsMode == config.TurnProfileModeOff
-}
-
 func turnProfileCustomSkills(profile config.EffectiveTurnProfile) bool {
 	return profile.Enabled && profile.SkillsMode == config.TurnProfileModeCustom
-}
-
-func turnProfileCustomTools(profile config.EffectiveTurnProfile) bool {
-	return profile.Enabled && profile.ToolsMode == config.TurnProfileModeCustom
 }
 
 func turnProfileAllowsTools(profile config.EffectiveTurnProfile) bool {
