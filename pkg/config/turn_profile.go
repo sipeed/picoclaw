@@ -13,9 +13,8 @@ const (
 	TurnProfileModeCustom  TurnProfileMode = "custom"
 )
 
-type TurnProfilesConfig map[string]TurnProfileConfig
-
 type TurnProfileConfig struct {
+	Enabled      bool             `json:"enabled"`
 	History      TurnProfileBlock `json:"history,omitempty"`
 	SystemPrompt TurnProfileBlock `json:"system_prompt,omitempty"`
 	Skills       TurnProfileBlock `json:"skills,omitempty"`
@@ -29,7 +28,6 @@ type TurnProfileBlock struct {
 
 type EffectiveTurnProfile struct {
 	Enabled          bool
-	Name             string
 	HistoryMode      TurnProfileMode
 	SystemPromptMode TurnProfileMode
 	SkillsMode       TurnProfileMode
@@ -51,27 +49,19 @@ func (m TurnProfileMode) Effective() TurnProfileMode {
 	}
 }
 
-func (d *AgentDefaults) ResolveTurnProfile(name string) (EffectiveTurnProfile, bool, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
+func (d *AgentDefaults) ResolveTurnProfile() (EffectiveTurnProfile, bool, error) {
+	if d == nil {
 		return EffectiveTurnProfile{}, false, nil
 	}
-	if d == nil {
-		return EffectiveTurnProfile{}, false, fmt.Errorf("unknown turn profile %q", name)
+	profile := d.TurnProfile
+	if !profile.Enabled {
+		return EffectiveTurnProfile{}, false, nil
 	}
-	if d.TurnProfiles == nil {
-		return EffectiveTurnProfile{}, false, fmt.Errorf("unknown turn profile %q", name)
-	}
-	profile, ok := d.TurnProfiles[name]
-	if !ok {
-		return EffectiveTurnProfile{}, false, fmt.Errorf("unknown turn profile %q", name)
-	}
-	if err := validateTurnProfile(name, profile); err != nil {
+	if err := validateTurnProfile(profile); err != nil {
 		return EffectiveTurnProfile{}, false, err
 	}
 	return EffectiveTurnProfile{
 		Enabled:          true,
-		Name:             name,
 		HistoryMode:      profile.History.Mode.Effective(),
 		SystemPromptMode: profile.SystemPrompt.Mode.Effective(),
 		SkillsMode:       profile.Skills.Mode.Effective(),
@@ -81,40 +71,30 @@ func (d *AgentDefaults) ResolveTurnProfile(name string) (EffectiveTurnProfile, b
 	}, true, nil
 }
 
-func (c *Config) ValidateTurnProfiles() error {
+func (c *Config) ValidateTurnProfile() error {
 	if c == nil {
 		return nil
 	}
-	for name, profile := range c.Agents.Defaults.TurnProfiles {
-		if err := validateTurnProfile(name, profile); err != nil {
-			return err
-		}
-	}
-	return nil
+	return validateTurnProfile(c.Agents.Defaults.TurnProfile)
 }
 
-func validateTurnProfile(name string, profile TurnProfileConfig) error {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return fmt.Errorf("turn profile name is required")
-	}
-
-	if err := validateTurnProfileBlock(name, "history", profile.History, false); err != nil {
+func validateTurnProfile(profile TurnProfileConfig) error {
+	if err := validateTurnProfileBlock("history", profile.History, false); err != nil {
 		return err
 	}
-	if err := validateTurnProfileBlock(name, "system_prompt", profile.SystemPrompt, false); err != nil {
+	if err := validateTurnProfileBlock("system_prompt", profile.SystemPrompt, false); err != nil {
 		return err
 	}
-	if err := validateTurnProfileBlock(name, "skills", profile.Skills, true); err != nil {
+	if err := validateTurnProfileBlock("skills", profile.Skills, true); err != nil {
 		return err
 	}
-	if err := validateTurnProfileBlock(name, "tools", profile.Tools, true); err != nil {
+	if err := validateTurnProfileBlock("tools", profile.Tools, true); err != nil {
 		return err
 	}
 	return nil
 }
 
-func validateTurnProfileBlock(name, field string, block TurnProfileBlock, allowCustom bool) error {
+func validateTurnProfileBlock(field string, block TurnProfileBlock, allowCustom bool) error {
 	mode := block.Mode.Effective()
 	switch mode {
 	case TurnProfileModeDefault, TurnProfileModeOff:
@@ -123,9 +103,9 @@ func validateTurnProfileBlock(name, field string, block TurnProfileBlock, allowC
 		if allowCustom {
 			return nil
 		}
-		return fmt.Errorf("turn profile %q %s.mode custom is not supported in this version", name, field)
+		return fmt.Errorf("turn_profile.%s.mode custom is not supported in this version", field)
 	default:
-		return fmt.Errorf("turn profile %q %s.mode has unsupported mode %q", name, field, block.Mode)
+		return fmt.Errorf("turn_profile.%s.mode has unsupported mode %q", field, block.Mode)
 	}
 }
 

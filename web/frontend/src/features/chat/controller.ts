@@ -318,13 +318,11 @@ export async function hydrateActiveSession() {
 interface SendChatMessageInput {
   content: string
   attachments?: ChatAttachment[]
-  turnProfile?: string
 }
 
 export function sendChatMessage({
   content,
   attachments = [],
-  turnProfile,
 }: SendChatMessageInput) {
   if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
     console.warn("WebSocket not connected")
@@ -362,10 +360,6 @@ export function sendChatMessage({
     const payload: Record<string, unknown> = {
       content: normalizedContent,
       media: normalizedAttachments.map((attachment) => attachment.url),
-    }
-    const normalizedTurnProfile = turnProfile?.trim()
-    if (normalizedTurnProfile) {
-      payload.turn_profile = normalizedTurnProfile
     }
 
     socket.send(

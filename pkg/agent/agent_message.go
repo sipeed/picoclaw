@@ -192,7 +192,6 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		EnableSummary:           true,
 		SendResponse:            false,
 		AllowInterimPicoPublish: true,
-		TurnProfileName:         turnProfileNameFromInbound(&msg.Context),
 	}
 
 	// context-dependent commands check their own Runtime fields and report

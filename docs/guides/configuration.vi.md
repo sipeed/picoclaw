@@ -67,16 +67,16 @@ PicoClaw lưu trữ dữ liệu trong workspace đã cấu hình (mặc định:
 
 > **Lưu ý:** Các thay đổi đối với `AGENT.md`, `SOUL.md`, `USER.md` và `memory/MEMORY.md` được tự động phát hiện trong thời gian chạy thông qua theo dõi thời gian sửa đổi file (mtime). **Không cần khởi động lại gateway** sau khi chỉnh sửa các file này — agent sẽ tải nội dung mới vào yêu cầu tiếp theo.
 
-### Turn Profiles
+### Chính sách ngữ cảnh request
 
-`turn_profiles` là các chính sách đặt tên, tùy chọn trong `agents.defaults.turn_profiles`. Việc khai báo profile không đổi hành vi chat mặc định. Profile chỉ được áp dụng khi request gửi rõ `turn_profile`, ví dụ payload Pico `message.send` có `"turn_profile": "clean_web"`.
+`turn_profile` là chính sách tùy chọn trong `agents.defaults.turn_profile` để kiểm soát ngữ cảnh mỗi turn mới mang theo: lịch sử, system prompt, prompt skills và các tool được phép gọi. Nếu không cấu hình, hoặc đặt `"enabled": false`, PicoClaw giữ nguyên hành vi mặc định. Khi đặt `"enabled": true`, chính sách bên dưới áp dụng cho mỗi turn mới.
 
 Mỗi block dùng chung các giá trị `mode`:
 
 | Mode | Ý nghĩa |
 | --- | --- |
 | `default` | Giữ hành vi bình thường của PicoClaw. Block bị thiếu hoặc thiếu `mode` đều được xem là `default`. |
-| `off` | Tắt block đó cho turn được chọn. |
+| `off` | Tắt block đó cho turn. |
 | `custom` | Dùng danh sách cho phép. Phiên bản này chỉ hỗ trợ `custom` cho `skills` và `tools`; dùng cho `history` hoặc `system_prompt` sẽ lỗi validate. |
 
 Các block:
@@ -90,21 +90,20 @@ Các block:
 
 Khi `system_prompt.mode` là `off`, tools vẫn hiển thị và không có system prompt bên ngoài, PicoClaw dùng lại quy tắc dùng tool hiện có làm prompt fallback tối thiểu. Nếu `tools.mode` là `off`, fallback này không được thêm.
 
-Ví dụ `clean_web`:
+Ví dụ ngữ cảnh sạch chỉ giữ tool web:
 
 ```json
 {
   "agents": {
     "defaults": {
-      "turn_profiles": {
-        "clean_web": {
-          "history": { "mode": "off" },
-          "system_prompt": { "mode": "off" },
-          "skills": { "mode": "off" },
-          "tools": {
-            "mode": "custom",
-            "allow": ["web_search", "web_fetch"]
-          }
+      "turn_profile": {
+        "enabled": true,
+        "history": { "mode": "off" },
+        "system_prompt": { "mode": "off" },
+        "skills": { "mode": "off" },
+        "tools": {
+          "mode": "custom",
+          "allow": ["web_search", "web_fetch"]
         }
       }
     }

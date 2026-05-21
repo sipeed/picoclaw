@@ -1200,9 +1200,6 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 		"session_id": sessionID,
 		"conn_id":    pc.id,
 	}
-	if turnProfile, _ := msg.Payload[PayloadKeyTurnProfile].(string); strings.TrimSpace(turnProfile) != "" {
-		metadata[PayloadKeyTurnProfile] = strings.TrimSpace(turnProfile)
-	}
 
 	logger.DebugCF("pico", "Received message", map[string]any{
 		"session_id": sessionID,

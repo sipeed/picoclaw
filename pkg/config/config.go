@@ -399,7 +399,7 @@ type AgentDefaults struct {
 	SplitOnMarker             bool               `json:"split_on_marker"                  env:"PICOCLAW_AGENTS_DEFAULTS_SPLIT_ON_MARKER"` // split messages on <|[SPLIT]|> marker
 	ContextManager            string             `json:"context_manager,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_MANAGER"`
 	ContextManagerConfig      json.RawMessage    `json:"context_manager_config,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_MANAGER_CONFIG"`
-	TurnProfiles              TurnProfilesConfig `json:"turn_profiles,omitempty"`
+	TurnProfile               TurnProfileConfig  `json:"turn_profile,omitempty"`
 	MaxLLMRetries             int                `json:"max_llm_retries,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_MAX_LLM_RETRIES"`
 	LLMRetryBackoffSecs       int                `json:"llm_retry_backoff_secs,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_LLM_RETRY_BACKOFF_SECS"`
 }
@@ -1419,7 +1419,7 @@ func LoadConfig(path string) (*Config, error) {
 	if err = InitChannelList(cfg.Channels); err != nil {
 		return nil, err
 	}
-	if err = cfg.ValidateTurnProfiles(); err != nil {
+	if err = cfg.ValidateTurnProfile(); err != nil {
 		return nil, err
 	}
 	cfg.Gateway.Host, err = resolveGatewayHostFromEnv(gatewayHostBeforeEnv)

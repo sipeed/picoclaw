@@ -20,7 +20,7 @@ export interface CoreConfigForm {
   maxToolIterations: string
   summarizeMessageThreshold: string
   summarizeTokenPercent: string
-  turnProfiles: TurnProfileForm[]
+  turnProfile: TurnProfileForm
   dmScope: string
   heartbeatEnabled: boolean
   heartbeatInterval: string
@@ -47,8 +47,7 @@ export type MCPServerType = "http" | "sse" | "stdio"
 export type TurnProfileMode = "default" | "off" | "custom"
 
 export interface TurnProfileForm {
-  id: string
-  name: string
+  enabled: boolean
   historyMode: Exclude<TurnProfileMode, "custom">
   systemPromptMode: Exclude<TurnProfileMode, "custom">
   skillsMode: TurnProfileMode
@@ -130,7 +129,15 @@ export const EMPTY_FORM: CoreConfigForm = {
   maxToolIterations: "50",
   summarizeMessageThreshold: "20",
   summarizeTokenPercent: "75",
-  turnProfiles: [],
+  turnProfile: {
+    enabled: false,
+    historyMode: "default",
+    systemPromptMode: "default",
+    skillsMode: "default",
+    skillsAllowText: "",
+    toolsMode: "default",
+    toolsAllowText: "",
+  },
   dmScope: "per-channel-peer",
   heartbeatEnabled: true,
   heartbeatInterval: "30",
@@ -237,14 +244,6 @@ function mapMCPServers(value: unknown): MCPServerForm[] {
   })
 }
 
-function makeTurnProfileID(name: string): string {
-  const encoded = encodeURIComponent(name)
-  if (encoded.length > 0) {
-    return `turn-profile-${encoded}`
-  }
-  return `turn-profile-${Math.random().toString(36).slice(2, 10)}`
-}
-
 function toTurnProfileMode(value: unknown): TurnProfileMode {
   if (value === "off" || value === "custom") {
     return value
@@ -267,26 +266,22 @@ function allowListText(value: unknown): string {
     .join("\n")
 }
 
-function mapTurnProfiles(value: unknown): TurnProfileForm[] {
-  const profiles = asRecord(value)
-  return Object.entries(profiles).map(([name, rawProfile]) => {
-    const profile = asRecord(rawProfile)
-    const history = asRecord(profile.history)
-    const systemPrompt = asRecord(profile.system_prompt)
-    const skills = asRecord(profile.skills)
-    const tools = asRecord(profile.tools)
+function mapTurnProfile(value: unknown): TurnProfileForm {
+  const profile = asRecord(value)
+  const history = asRecord(profile.history)
+  const systemPrompt = asRecord(profile.system_prompt)
+  const skills = asRecord(profile.skills)
+  const tools = asRecord(profile.tools)
 
-    return {
-      id: makeTurnProfileID(name),
-      name,
-      historyMode: toBasicTurnProfileMode(history.mode),
-      systemPromptMode: toBasicTurnProfileMode(systemPrompt.mode),
-      skillsMode: toTurnProfileMode(skills.mode),
-      skillsAllowText: allowListText(skills.allow),
-      toolsMode: toTurnProfileMode(tools.mode),
-      toolsAllowText: allowListText(tools.allow),
-    }
-  })
+  return {
+    enabled: asBool(profile.enabled),
+    historyMode: toBasicTurnProfileMode(history.mode),
+    systemPromptMode: toBasicTurnProfileMode(systemPrompt.mode),
+    skillsMode: toTurnProfileMode(skills.mode),
+    skillsAllowText: allowListText(skills.allow),
+    toolsMode: toTurnProfileMode(tools.mode),
+    toolsAllowText: allowListText(tools.allow),
+  }
 }
 
 export function buildFormFromConfig(config: unknown): CoreConfigForm {
@@ -377,7 +372,7 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
       defaults.summarize_token_percent,
       EMPTY_FORM.summarizeTokenPercent,
     ),
-    turnProfiles: mapTurnProfiles(defaults.turn_profiles),
+    turnProfile: mapTurnProfile(defaults.turn_profile),
     dmScope: asString(session.dm_scope) || EMPTY_FORM.dmScope,
     heartbeatEnabled:
       heartbeat.enabled === undefined

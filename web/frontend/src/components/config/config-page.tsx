@@ -41,7 +41,6 @@ import {
   parseMultilineList,
 } from "@/components/config/form-model"
 import { PageHeader } from "@/components/page-header"
-import { Badge } from "@/components/ui/badge"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,6 +52,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
@@ -72,60 +72,31 @@ function buildStringMapMergePatch(
   return patch
 }
 
-function buildTurnProfilesPatch(
-  profiles: TurnProfileForm[],
-): Record<string, unknown> | null {
-  const normalizedProfiles = profiles
-    .map((profile) => ({
-      ...profile,
-      name: profile.name.trim(),
-    }))
-    .filter((profile) => profile.name !== "")
-
-  if (normalizedProfiles.length === 0) {
-    return null
+function buildTurnProfilePatch(
+  profile: TurnProfileForm,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    enabled: profile.enabled,
+    history: { mode: profile.historyMode },
+    system_prompt: { mode: profile.systemPromptMode },
+    skills: { mode: profile.skillsMode },
+    tools: { mode: profile.toolsMode },
   }
 
-  const counts = new Map<string, number>()
-  for (const profile of normalizedProfiles) {
-    counts.set(profile.name, (counts.get(profile.name) ?? 0) + 1)
+  if (profile.skillsMode === "custom") {
+    result.skills = {
+      mode: "custom",
+      allow: parseMultilineList(profile.skillsAllowText),
+    }
   }
-  const duplicateNames = Array.from(counts.entries())
-    .filter(([, count]) => count > 1)
-    .map(([name]) => name)
-    .sort((a, b) => a.localeCompare(b))
-
-  if (duplicateNames.length > 0) {
-    throw new Error(
-      `Turn profile names must be unique. Duplicates: ${duplicateNames.join(", ")}.`,
-    )
+  if (profile.toolsMode === "custom") {
+    result.tools = {
+      mode: "custom",
+      allow: parseMultilineList(profile.toolsAllowText),
+    }
   }
 
-  const entries = normalizedProfiles.map((profile) => {
-    const result: Record<string, unknown> = {
-      history: { mode: profile.historyMode },
-      system_prompt: { mode: profile.systemPromptMode },
-      skills: { mode: profile.skillsMode },
-      tools: { mode: profile.toolsMode },
-    }
-
-    if (profile.skillsMode === "custom") {
-      result.skills = {
-        mode: "custom",
-        allow: parseMultilineList(profile.skillsAllowText),
-      }
-    }
-    if (profile.toolsMode === "custom") {
-      result.tools = {
-        mode: "custom",
-        allow: parseMultilineList(profile.toolsAllowText),
-      }
-    }
-
-    return [profile.name, result] as const
-  })
-
-  return Object.fromEntries(entries)
+  return result
 }
 
 export function ConfigPage() {
@@ -278,39 +249,11 @@ export function ConfigPage() {
     )
   }
 
-  const handleTurnProfileAdd = () => {
-    const nextIndex = form.turnProfiles.length + 1
-    const profile: TurnProfileForm = {
-      id: `turn-profile-${Date.now()}-${nextIndex}`,
-      name: "",
-      historyMode: "default",
-      systemPromptMode: "default",
-      skillsMode: "default",
-      skillsAllowText: "",
-      toolsMode: "default",
-      toolsAllowText: "",
-    }
-    updateField("turnProfiles", [...form.turnProfiles, profile])
-  }
-
-  const handleTurnProfileRemove = (id: string) => {
-    updateField(
-      "turnProfiles",
-      form.turnProfiles.filter((profile) => profile.id !== id),
-    )
-  }
-
   const handleTurnProfileFieldChange = <K extends keyof TurnProfileForm>(
-    id: string,
     key: K,
     value: TurnProfileForm[K],
   ) => {
-    updateField(
-      "turnProfiles",
-      form.turnProfiles.map((profile) =>
-        profile.id === id ? { ...profile, [key]: value } : profile,
-      ),
-    )
+    updateField("turnProfile", { ...form.turnProfile, [key]: value })
   }
 
   const handleReset = () => {
@@ -406,7 +349,7 @@ export function ConfigPage() {
           "Summarize token percent",
           { min: 1, max: 100 },
         )
-        const turnProfiles = buildTurnProfilesPatch(form.turnProfiles)
+        const turnProfile = buildTurnProfilePatch(form.turnProfile)
         const heartbeatInterval = parseIntField(
           form.heartbeatInterval,
           "Heartbeat interval",
@@ -641,7 +584,7 @@ export function ConfigPage() {
               max_tool_iterations: maxToolIterations,
               summarize_message_threshold: summarizeMessageThreshold,
               summarize_token_percent: summarizeTokenPercent,
-              turn_profiles: turnProfiles,
+              turn_profile: turnProfile,
             },
           },
           session: {
@@ -854,8 +797,6 @@ export function ConfigPage() {
               <AgentDefaultsSection
                 form={form}
                 onFieldChange={updateField}
-                onTurnProfileAdd={handleTurnProfileAdd}
-                onTurnProfileRemove={handleTurnProfileRemove}
                 onTurnProfileFieldChange={handleTurnProfileFieldChange}
               />
 

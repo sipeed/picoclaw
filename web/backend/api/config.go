@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"reflect"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -17,7 +16,6 @@ import (
 // registerConfigRoutes binds configuration management endpoints to the ServeMux.
 func (h *Handler) registerConfigRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/config", h.handleGetConfig)
-	mux.HandleFunc("GET /api/config/turn-profiles", h.handleGetTurnProfiles)
 	mux.HandleFunc("PUT /api/config", h.handleUpdateConfig)
 	mux.HandleFunc("PATCH /api/config", h.handlePatchConfig)
 	mux.HandleFunc("POST /api/config/reset", h.handleResetConfig)
@@ -44,28 +42,6 @@ func (h *Handler) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(cfg); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-	}
-}
-
-func (h *Handler) handleGetTurnProfiles(w http.ResponseWriter, r *http.Request) {
-	cfg, err := config.LoadConfig(h.configPath)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	names := make([]string, 0, len(cfg.Agents.Defaults.TurnProfiles))
-	for name := range cfg.Agents.Defaults.TurnProfiles {
-		name = strings.TrimSpace(name)
-		if name != "" {
-			names = append(names, name)
-		}
-	}
-	sort.Strings(names)
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]any{"profiles": names}); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
@@ -336,7 +312,7 @@ func validateConfig(cfg *config.Config) []string {
 		errs = append(errs, err.Error())
 	}
 
-	if err := cfg.ValidateTurnProfiles(); err != nil {
+	if err := cfg.ValidateTurnProfile(); err != nil {
 		errs = append(errs, err.Error())
 	}
 

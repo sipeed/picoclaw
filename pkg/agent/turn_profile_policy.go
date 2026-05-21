@@ -1,27 +1,23 @@
 package agent
 
 import (
-	"fmt"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 func resolveTurnProfileOptions(cfg *config.Config, opts processOptions) (processOptions, error) {
-	name := strings.TrimSpace(opts.TurnProfileName)
-	if name == "" {
+	if cfg == nil {
 		return opts, nil
 	}
-	if cfg == nil {
-		return opts, fmt.Errorf("unknown turn profile %q", name)
-	}
-	profile, _, err := cfg.Agents.Defaults.ResolveTurnProfile(name)
+	profile, ok, err := cfg.Agents.Defaults.ResolveTurnProfile()
 	if err != nil {
 		return opts, err
 	}
-	opts.TurnProfileName = profile.Name
+	if !ok {
+		return opts, nil
+	}
 	opts.TurnProfile = profile
 	if profile.HistoryMode == config.TurnProfileModeOff {
 		opts.NoHistory = true
@@ -140,11 +136,4 @@ func cleanAllowedSet(values []string) map[string]struct{} {
 		out[value] = struct{}{}
 	}
 	return out
-}
-
-func turnProfileNameFromInbound(ctx *bus.InboundContext) string {
-	if ctx == nil || ctx.Raw == nil {
-		return ""
-	}
-	return strings.TrimSpace(ctx.Raw["turn_profile"])
 }

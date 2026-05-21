@@ -36,7 +36,7 @@ func newTestPicoChannel(t *testing.T) *PicoChannel {
 	return ch
 }
 
-func TestHandleMessageSend_ForwardsTurnProfile(t *testing.T) {
+func TestHandleMessageSend_ForwardsMessageMetadata(t *testing.T) {
 	msgBus := bus.NewMessageBus()
 	bc := &config.Channel{Type: config.ChannelPico, Enabled: true}
 	cfg := &config.PicoSettings{}
@@ -52,8 +52,7 @@ func TestHandleMessageSend_ForwardsTurnProfile(t *testing.T) {
 		ID:        "msg-1",
 		SessionID: "sess-1",
 		Payload: map[string]any{
-			PayloadKeyContent:     "hello",
-			PayloadKeyTurnProfile: "clean_web",
+			PayloadKeyContent: "hello",
 		},
 	})
 
@@ -62,8 +61,8 @@ func TestHandleMessageSend_ForwardsTurnProfile(t *testing.T) {
 		if inbound.Content != "hello" {
 			t.Fatalf("content = %q, want hello", inbound.Content)
 		}
-		if got := inbound.Context.Raw[PayloadKeyTurnProfile]; got != "clean_web" {
-			t.Fatalf("turn_profile raw = %q, want clean_web", got)
+		if got := inbound.Context.Raw["session_id"]; got != "sess-1" {
+			t.Fatalf("session_id raw = %q, want sess-1", got)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("expected inbound pico message")

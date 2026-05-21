@@ -28,7 +28,6 @@ const (
 	PayloadKeyPlaceholder = "placeholder"
 	PayloadKeyToolCalls   = "tool_calls"
 	PayloadKeyModelName   = "model_name"
-	PayloadKeyTurnProfile = "turn_profile"
 
 	MessageKindThought   = "thought"
 	MessageKindToolCalls = "tool_calls"

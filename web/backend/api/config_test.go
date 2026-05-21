@@ -2,7 +2,6 @@ package api
 
 import (
 	"bytes"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,7 +13,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
-func TestHandleGetTurnProfiles_ReturnsConfiguredNames(t *testing.T) {
+func TestHandlePatchConfig_PreservesTurnProfile(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
 
@@ -22,61 +21,14 @@ func TestHandleGetTurnProfiles_ReturnsConfiguredNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig() error = %v", err)
 	}
-	cfg.Agents.Defaults.TurnProfiles = config.TurnProfilesConfig{
-		"clean_web": {
-			History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-		},
-		"tools_only": {
-			Tools: config.TurnProfileBlock{
-				Mode:  config.TurnProfileModeCustom,
-				Allow: []string{"web_search"},
-			},
-		},
-	}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
-		t.Fatalf("SaveConfig() error = %v", err)
-	}
-
-	h := NewHandler(configPath)
-	mux := http.NewServeMux()
-	h.RegisterRoutes(mux)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/config/turn-profiles", nil)
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
-	}
-
-	var body struct {
-		Profiles []string `json:"profiles"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("json.Unmarshal() error = %v", err)
-	}
-	want := []string{"clean_web", "tools_only"}
-	if strings.Join(body.Profiles, ",") != strings.Join(want, ",") {
-		t.Fatalf("profiles = %v, want %v", body.Profiles, want)
-	}
-}
-
-func TestHandlePatchConfig_PreservesTurnProfiles(t *testing.T) {
-	configPath, cleanup := setupOAuthTestEnv(t)
-	defer cleanup()
-
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	cfg.Agents.Defaults.TurnProfiles = config.TurnProfilesConfig{
-		"clean_web": {
-			History:      config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-			SystemPrompt: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-			Skills:       config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-			Tools: config.TurnProfileBlock{
-				Mode:  config.TurnProfileModeCustom,
-				Allow: []string{"web_search", "web_fetch"},
-			},
+	cfg.Agents.Defaults.TurnProfile = config.TurnProfileConfig{
+		Enabled:      true,
+		History:      config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+		SystemPrompt: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+		Skills:       config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+		Tools: config.TurnProfileBlock{
+			Mode:  config.TurnProfileModeCustom,
+			Allow: []string{"web_search", "web_fetch"},
 		},
 	}
 	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
@@ -105,10 +57,7 @@ func TestHandlePatchConfig_PreservesTurnProfiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig(updated) error = %v", err)
 	}
-	profile, ok := updated.Agents.Defaults.TurnProfiles["clean_web"]
-	if !ok {
-		t.Fatal("turn profile clean_web was not preserved")
-	}
+	profile := updated.Agents.Defaults.TurnProfile
 	if profile.Tools.Mode != config.TurnProfileModeCustom ||
 		strings.Join(profile.Tools.Allow, ",") != "web_search,web_fetch" {
 		t.Fatalf("profile tools = %#v, want custom web_search/web_fetch", profile.Tools)
@@ -126,10 +75,9 @@ func TestHandlePatchConfig_RejectsInvalidTurnProfile(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
 		"agents": {
 			"defaults": {
-				"turn_profiles": {
-					"bad": {
-						"history": { "mode": "custom" }
-					}
+				"turn_profile": {
+					"enabled": true,
+					"history": { "mode": "custom" }
 				}
 			}
 		}

@@ -67,12 +67,15 @@ func writeTurnProfileSkill(t *testing.T, workspace, name, body string) {
 	}
 }
 
-func TestTurnProfile_NoProfilePreservesDefaultHistoryAndPrompt(t *testing.T) {
+func TestTurnProfile_DisabledPreservesDefaultHistoryAndPrompt(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				TurnProfiles: config.TurnProfilesConfig{
-					"clean": {History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff}},
+				TurnProfile: config.TurnProfileConfig{
+					Enabled: false,
+					History: config.TurnProfileBlock{
+						Mode: config.TurnProfileModeOff,
+					},
 				},
 			},
 		},
@@ -119,10 +122,9 @@ func TestTurnProfile_HistoryOffSuppressesHistoryAndPersistence(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				TurnProfiles: config.TurnProfilesConfig{
-					"clean": {
-						History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-					},
+				TurnProfile: config.TurnProfileConfig{
+					Enabled: true,
+					History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
 				},
 			},
 		},
@@ -143,7 +145,6 @@ func TestTurnProfile_HistoryOffSuppressesHistoryAndPersistence(t *testing.T) {
 		UserMessage:     "new user",
 		DefaultResponse: defaultResponse,
 		EnableSummary:   true,
-		TurnProfileName: "clean",
 	})
 	if err != nil {
 		t.Fatalf("runAgentLoop() error = %v", err)
@@ -163,14 +164,13 @@ func TestTurnProfile_HistoryOffSuppressesHistoryAndPersistence(t *testing.T) {
 	}
 }
 
-func TestTurnProfile_ProcessMessageUsesInboundTurnProfile(t *testing.T) {
+func TestTurnProfile_ProcessMessageUsesEnabledTurnProfile(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				TurnProfiles: config.TurnProfilesConfig{
-					"clean": {
-						History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-					},
+				TurnProfile: config.TurnProfileConfig{
+					Enabled: true,
+					History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
 				},
 			},
 		},
@@ -184,9 +184,6 @@ func TestTurnProfile_ProcessMessageUsesInboundTurnProfile(t *testing.T) {
 			ChatID:   "pico:sess-1",
 			ChatType: "direct",
 			SenderID: "pico-user",
-			Raw: map[string]string{
-				"turn_profile": "clean",
-			},
 		},
 		Content: "hello from pico",
 	})
@@ -201,40 +198,16 @@ func TestTurnProfile_ProcessMessageUsesInboundTurnProfile(t *testing.T) {
 	}
 }
 
-func TestTurnProfile_UnknownProfileReturnsError(t *testing.T) {
-	cfg := &config.Config{}
-	provider := &turnProfileCaptureProvider{}
-	al := newTurnProfileAgentLoop(t, cfg, provider)
-	agent := al.GetRegistry().GetDefaultAgent()
-
-	_, err := al.runAgentLoop(context.Background(), agent, processOptions{
-		SessionKey:      "agent:default:test-unknown-profile",
-		UserMessage:     "hello",
-		DefaultResponse: defaultResponse,
-		TurnProfileName: "missing",
-	})
-	if err == nil {
-		t.Fatal("runAgentLoop() error = nil, want unknown profile error")
-	}
-	if !strings.Contains(err.Error(), "unknown turn profile") {
-		t.Fatalf("runAgentLoop() error = %v, want unknown turn profile", err)
-	}
-	if len(provider.messages) != 0 {
-		t.Fatalf("provider received %d calls, want none", len(provider.messages))
-	}
-}
-
 func TestTurnProfile_SystemPromptOffUsesExternalPromptOnly(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				TurnProfiles: config.TurnProfilesConfig{
-					"external": {
-						History:      config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-						SystemPrompt: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-						Skills:       config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-						Tools:        config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-					},
+				TurnProfile: config.TurnProfileConfig{
+					Enabled:      true,
+					History:      config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					SystemPrompt: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Skills:       config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Tools:        config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
 				},
 			},
 		},
@@ -248,7 +221,6 @@ func TestTurnProfile_SystemPromptOffUsesExternalPromptOnly(t *testing.T) {
 		UserMessage:          "hello",
 		DefaultResponse:      defaultResponse,
 		SystemPromptOverride: "External prompt only.",
-		TurnProfileName:      "external",
 	})
 	if err != nil {
 		t.Fatalf("runAgentLoop() error = %v", err)
@@ -265,15 +237,14 @@ func TestTurnProfile_SystemPromptOffAddsToolFallbackWhenToolsVisible(t *testing.
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				TurnProfiles: config.TurnProfilesConfig{
-					"minimal-tools": {
-						History:      config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-						SystemPrompt: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-						Skills:       config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-						Tools: config.TurnProfileBlock{
-							Mode:  config.TurnProfileModeCustom,
-							Allow: []string{"web_search"},
-						},
+				TurnProfile: config.TurnProfileConfig{
+					Enabled:      true,
+					History:      config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					SystemPrompt: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Skills:       config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Tools: config.TurnProfileBlock{
+						Mode:  config.TurnProfileModeCustom,
+						Allow: []string{"web_search"},
 					},
 				},
 			},
@@ -287,7 +258,6 @@ func TestTurnProfile_SystemPromptOffAddsToolFallbackWhenToolsVisible(t *testing.
 		SessionKey:      "agent:default:test-tool-fallback",
 		UserMessage:     "hello",
 		DefaultResponse: defaultResponse,
-		TurnProfileName: "minimal-tools",
 	})
 	if err != nil {
 		t.Fatalf("runAgentLoop() error = %v", err)
@@ -316,17 +286,13 @@ func TestTurnProfile_SkillsOffAndCustomControlCatalogAndActiveSkills(t *testing.
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace: workspace,
-				TurnProfiles: config.TurnProfilesConfig{
-					"no-skills": {
-						History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-						Skills:  config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+				TurnProfile: config.TurnProfileConfig{
+					Enabled: true,
+					History: config.TurnProfileBlock{
+						Mode: config.TurnProfileModeOff,
 					},
-					"shell-only": {
-						History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-						Skills: config.TurnProfileBlock{
-							Mode:  config.TurnProfileModeCustom,
-							Allow: []string{"shell"},
-						},
+					Skills: config.TurnProfileBlock{
+						Mode: config.TurnProfileModeOff,
 					},
 				},
 			},
@@ -341,7 +307,6 @@ func TestTurnProfile_SkillsOffAndCustomControlCatalogAndActiveSkills(t *testing.
 		UserMessage:     "hello",
 		DefaultResponse: defaultResponse,
 		ForcedSkills:    []string{"shell"},
-		TurnProfileName: "no-skills",
 	})
 	if err != nil {
 		t.Fatalf("runAgentLoop(no-skills) error = %v", err)
@@ -352,12 +317,19 @@ func TestTurnProfile_SkillsOffAndCustomControlCatalogAndActiveSkills(t *testing.
 		t.Fatalf("skills-off prompt includes skill context:\n%s", noSkillsPrompt)
 	}
 
+	cfg.Agents.Defaults.TurnProfile.Skills = config.TurnProfileBlock{
+		Mode:  config.TurnProfileModeCustom,
+		Allow: []string{"shell"},
+	}
+	provider = &turnProfileCaptureProvider{}
+	al = newTurnProfileAgentLoop(t, cfg, provider)
+	agent = al.GetRegistry().GetDefaultAgent()
+
 	_, err = al.runAgentLoop(context.Background(), agent, processOptions{
 		SessionKey:      "agent:default:test-skills-custom",
 		UserMessage:     "hello",
 		DefaultResponse: defaultResponse,
 		ForcedSkills:    []string{"shell", "paint"},
-		TurnProfileName: "shell-only",
 	})
 	if err != nil {
 		t.Fatalf("runAgentLoop(shell-only) error = %v", err)
@@ -427,13 +399,12 @@ func TestTurnProfile_ToolsCustomFiltersProviderToolsAndHookAdditions(t *testing.
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				TurnProfiles: config.TurnProfilesConfig{
-					"echo-only": {
-						History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-						Tools: config.TurnProfileBlock{
-							Mode:  config.TurnProfileModeCustom,
-							Allow: []string{"echo_text"},
-						},
+				TurnProfile: config.TurnProfileConfig{
+					Enabled: true,
+					History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Tools: config.TurnProfileBlock{
+						Mode:  config.TurnProfileModeCustom,
+						Allow: []string{"echo_text"},
 					},
 				},
 			},
@@ -454,7 +425,6 @@ func TestTurnProfile_ToolsCustomFiltersProviderToolsAndHookAdditions(t *testing.
 			SessionKey:      "agent:default:test-tools-filter",
 			UserMessage:     "hello",
 			DefaultResponse: defaultResponse,
-			TurnProfileName: "echo-only",
 		},
 	)
 	if err != nil {
@@ -478,11 +448,10 @@ func TestTurnProfile_ToolsOffDisablesProviderAndNativeSearchTools(t *testing.T) 
 		},
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				TurnProfiles: config.TurnProfilesConfig{
-					"no-tools": {
-						History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-						Tools:   config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-					},
+				TurnProfile: config.TurnProfileConfig{
+					Enabled: true,
+					History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Tools:   config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
 				},
 			},
 		},
@@ -501,7 +470,6 @@ func TestTurnProfile_ToolsOffDisablesProviderAndNativeSearchTools(t *testing.T) 
 			SessionKey:      "agent:default:test-tools-off",
 			UserMessage:     "hello",
 			DefaultResponse: defaultResponse,
-			TurnProfileName: "no-tools",
 		},
 	)
 	if err != nil {
@@ -526,13 +494,12 @@ func TestTurnProfile_ToolsCustomAllowsNativeWebSearch(t *testing.T) {
 				ModelName:         "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
-				TurnProfiles: config.TurnProfilesConfig{
-					"web-only": {
-						History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-						Tools: config.TurnProfileBlock{
-							Mode:  config.TurnProfileModeCustom,
-							Allow: []string{"web_search"},
-						},
+				TurnProfile: config.TurnProfileConfig{
+					Enabled: true,
+					History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Tools: config.TurnProfileBlock{
+						Mode:  config.TurnProfileModeCustom,
+						Allow: []string{"web_search"},
 					},
 				},
 			},
@@ -548,7 +515,6 @@ func TestTurnProfile_ToolsCustomAllowsNativeWebSearch(t *testing.T) {
 			SessionKey:      "agent:default:test-native-web-allowed",
 			UserMessage:     "search",
 			DefaultResponse: defaultResponse,
-			TurnProfileName: "web-only",
 		},
 	)
 	if err != nil {
@@ -563,13 +529,12 @@ func TestTurnProfile_ToolExecutionRejectsDisallowedToolCalls(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				TurnProfiles: config.TurnProfilesConfig{
-					"echo-only": {
-						History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
-						Tools: config.TurnProfileBlock{
-							Mode:  config.TurnProfileModeCustom,
-							Allow: []string{"echo_text"},
-						},
+				TurnProfile: config.TurnProfileConfig{
+					Enabled: true,
+					History: config.TurnProfileBlock{Mode: config.TurnProfileModeOff},
+					Tools: config.TurnProfileBlock{
+						Mode:  config.TurnProfileModeCustom,
+						Allow: []string{"echo_text"},
 					},
 				},
 			},
@@ -587,7 +552,6 @@ func TestTurnProfile_ToolExecutionRejectsDisallowedToolCalls(t *testing.T) {
 			SessionKey:      "agent:default:test-tool-exec-deny",
 			UserMessage:     "run tool",
 			DefaultResponse: defaultResponse,
-			TurnProfileName: "echo-only",
 		},
 	)
 	if err != nil {

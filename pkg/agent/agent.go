@@ -90,7 +90,6 @@ type processOptions struct {
 	SenderDisplayName       string          // Current sender display name for dynamic context
 	UserMessage             string          // User message content (may include prefix)
 	ForcedSkills            []string        // Skills explicitly requested for this message
-	TurnProfileName         string          // Optional named per-turn context/tool policy
 	TurnProfile             config.EffectiveTurnProfile
 	SystemPromptOverride    string                 // Override the default system prompt (Used by SubTurns)
 	Media                   []string               // media:// refs from inbound message

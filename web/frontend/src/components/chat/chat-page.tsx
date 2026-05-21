@@ -4,7 +4,6 @@ import { type ChangeEvent, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
-import { getTurnProfiles } from "@/api/config"
 import { AssistantMessage } from "@/components/chat/assistant-message"
 import {
   ChatComposer,
@@ -46,7 +45,6 @@ const ALLOWED_IMAGE_TYPES = new Set([
   "image/webp",
   "image/bmp",
 ])
-const NO_TURN_PROFILE = "__picoclaw_no_turn_profile__"
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -124,9 +122,6 @@ export function ChatPage() {
   const [hasScrolled, setHasScrolled] = useState(false)
   const [input, setInput] = useState("")
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
-  const [turnProfiles, setTurnProfiles] = useState<string[]>([])
-  const [selectedTurnProfile, setSelectedTurnProfile] =
-    useState(NO_TURN_PROFILE)
   const [assistantDetailVisibility, setAssistantDetailVisibility] = useAtom(
     assistantDetailVisibilityAtom,
   )
@@ -206,34 +201,12 @@ export function ChatPage() {
     }
   }, [messages, isTyping, isAtBottom])
 
-  useEffect(() => {
-    let cancelled = false
-    getTurnProfiles()
-      .then((data) => {
-        if (!cancelled) {
-          setTurnProfiles(data.profiles ?? [])
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setTurnProfiles([])
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
   const handleSend = () => {
     if ((!input.trim() && attachments.length === 0) || !canInput) return
     if (
       sendMessage({
         content: input,
         attachments,
-        turnProfile:
-          selectedTurnProfile === NO_TURN_PROFILE
-            ? undefined
-            : selectedTurnProfile,
       })
     ) {
       setInput("")
@@ -322,30 +295,6 @@ export function ChatPage() {
         }
       >
         <div className="border-border/60 hidden items-center gap-2 rounded-lg border px-3 py-1.5 sm:flex">
-          {turnProfiles.length > 0 && (
-            <Select
-              value={selectedTurnProfile}
-              onValueChange={setSelectedTurnProfile}
-            >
-              <SelectTrigger
-                size="sm"
-                aria-label={t("chat.turnProfile")}
-                className="text-muted-foreground hover:text-foreground focus-visible:border-input h-8 max-w-[150px] min-w-[108px] bg-transparent shadow-none focus-visible:ring-0"
-              >
-                <SelectValue placeholder={t("chat.turnProfileDefault")} />
-              </SelectTrigger>
-              <SelectContent align="end">
-                <SelectItem value={NO_TURN_PROFILE}>
-                  {t("chat.turnProfileDefault")}
-                </SelectItem>
-                {turnProfiles.map((profile) => (
-                  <SelectItem key={profile} value={profile}>
-                    {profile}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
           <span className="text-muted-foreground text-sm">
             {t("chat.showAssistantDetails")}
           </span>
@@ -402,7 +351,7 @@ export function ChatPage() {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-6 [scrollbar-gutter:stable] md:px-8 lg:px-24 xl:px-48"
+        className="min-h-0 flex-1 [scrollbar-gutter:stable] overflow-y-auto px-4 py-6 md:px-8 lg:px-24 xl:px-48"
       >
         <div className="mx-auto flex w-full max-w-250 flex-col gap-8 pb-8">
           {messages.length === 0 && !isTyping && (
