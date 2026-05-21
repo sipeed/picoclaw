@@ -274,7 +274,7 @@
       "modelNameHint": "A short name used to identify this model in conversations.",
       "modelId": "Model Identifier",
       "modelIdPlaceholder": "e.g. gpt-4o or openai/gpt-4o",
-      "modelIdHint": "If Provider is not specified, values such as openai/gpt-4o are interpreted using the provider/model format. If Provider is specified, this field is treated as the canonical model ID and is not parsed for a provider prefix.",
+      "modelIdHint": "This field is treated as the canonical model ID for the selected provider. If the identifier itself contains a slash (for example openai/gpt-5.4), it is preserved as-is and not split again.",
       "errorRequired": "This field is required.",
       "errorDuplicateModelName": "Model alias already exists. Please use a different name.",
       "saveError": "Failed to add model",
