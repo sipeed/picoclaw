@@ -3,9 +3,12 @@ package agent
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 )
+
+const asyncCompletionSynthesisTimeout = 120 * time.Second
 
 // AsyncCompletionInput is the typed internal form of an async tool completion
 // that needs parent-agent synthesis. Legacy system inbound messages are still
@@ -32,6 +35,13 @@ func asyncCompletionID(turnID, toolCallID, toolName string) string {
 		}
 	}
 	return strings.Join(parts, ":")
+}
+
+func originTopicID(origin *bus.InboundContext) string {
+	if origin == nil {
+		return ""
+	}
+	return strings.TrimSpace(origin.TopicID)
 }
 
 func asyncCompletionPrompt(toolName, result string) string {

@@ -1515,6 +1515,45 @@ func TestProcessAsyncCompletionMessageSkipsDuplicateCompletionID(t *testing.T) {
 	}
 }
 
+func TestProcessAsyncCompletionTypedPathDoesNotPublishSystemInbound(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: tmpDir,
+				ModelName: "test-model",
+				MaxTokens: 4096,
+			},
+		},
+	}
+	provider := &captureMessagesProvider{response: "typed completion summary"}
+	msgBus := bus.NewMessageBus()
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	got, err := al.processAsyncCompletion(context.Background(), AsyncCompletionInput{
+		SourceTool:   "spawn",
+		CompletionID: "typed-completion-1",
+		Content:      asyncCompletionPrompt("spawn", "typed background result"),
+		Origin: bus.InboundContext{
+			Channel:  "telegram",
+			ChatID:   "chat-1",
+			ChatType: "direct",
+			SenderID: "async:spawn",
+		},
+		SenderID: "async:spawn",
+	})
+	if err != nil {
+		t.Fatalf("processAsyncCompletion failed: %v", err)
+	}
+	if got != "typed completion summary" {
+		t.Fatalf("response = %q, want typed completion summary", got)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("provider calls = %d, want 1", provider.calls)
+	}
+	assertNoSyntheticAsyncCompletionInbound(t, msgBus)
+}
+
 func TestProcessAsyncCompletionMessageDoesNotSendDefaultFallback(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := &config.Config{
