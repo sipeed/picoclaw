@@ -99,6 +99,51 @@ The `evolution` block controls PicoClaw's self-evolution runtime. When enabled, 
 
 Use `observe` first if you want to inspect learning records without generating skill changes. Use `draft` when you want PicoClaw to prepare reviewable improvements. Use `apply` only when you are comfortable letting accepted drafts update workspace skills.
 
+### Turn Profiles
+
+Turn profiles are optional, named per-request policies under `agents.defaults.turn_profiles`. Defining a profile does not change normal chat behavior. A profile is applied only when a request explicitly sends `turn_profile`, for example a Pico `message.send` payload with `"turn_profile": "clean_web"`.
+
+Each block uses the same `mode` values:
+
+| Mode | Meaning |
+| --- | --- |
+| `default` | Keep PicoClaw's normal behavior for that block. Missing blocks and missing `mode` fields are treated as `default`. |
+| `off` | Disable that block for the selected turn. |
+| `custom` | Use an allow list. In this version, `custom` is supported only for `skills` and `tools`; using it for `history` or `system_prompt` is a validation error. |
+
+Profile blocks:
+
+| Block | What it controls |
+| --- | --- |
+| `history` | Whether the turn reads prior session history and summary, writes user/assistant/tool messages, ingests context, and runs compaction or summarization. |
+| `system_prompt` | Whether PicoClaw injects its default identity, workspace instructions, memory, runtime context, and summary. External request system prompts are still allowed when this is `off`. |
+| `skills` | Whether the skill catalog and active skill prompt content are loaded. `custom.allow` keeps only the listed skill names in prompt context. |
+| `tools` | Which callable tools are exposed to the model and allowed at execution time. `custom.allow` keeps only listed registered tool names. |
+
+When `system_prompt.mode` is `off`, tools are still visible, and no external system prompt is supplied, PicoClaw uses its existing tool-use rule as the minimal fallback prompt. If `tools.mode` is `off`, no fallback prompt is added.
+
+Example `clean_web` profile:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "turn_profiles": {
+        "clean_web": {
+          "history": { "mode": "off" },
+          "system_prompt": { "mode": "off" },
+          "skills": { "mode": "off" },
+          "tools": {
+            "mode": "custom",
+            "allow": ["web_search", "web_fetch"]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
 ### Web launcher dashboard
 
 **picoclaw-launcher** serves a browser UI that requires password sign-in first. On first run, open `/launcher-setup` to create the dashboard password. Later manual sign-ins use `/launcher-login`.

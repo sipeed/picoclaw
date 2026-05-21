@@ -14,7 +14,7 @@ func promptBuildRequestForTurn(
 	currentMessage string,
 	media []string,
 ) PromptBuildRequest {
-	return PromptBuildRequest{
+	req := PromptBuildRequest{
 		History:           history,
 		Summary:           summary,
 		CurrentMessage:    currentMessage,
@@ -26,6 +26,18 @@ func promptBuildRequestForTurn(
 		ActiveSkills:      activeSkillNames(ts.agent, ts.opts),
 		Overlays:          promptOverlaysForOptions(ts.opts),
 	}
+	if turnProfileSystemPromptOff(ts.profile) {
+		req.SuppressDefaultSystemPrompt = true
+		req.SuppressSkillContext = true
+		req.ToolUseFallback = turnProfileAllowsTools(ts.profile)
+	}
+	if turnProfileSkillsOff(ts.profile) {
+		req.SuppressSkillContext = true
+	}
+	if turnProfileCustomSkills(ts.profile) {
+		req.AllowedSkills = append([]string(nil), ts.profile.AllowedSkills...)
+	}
+	return req
 }
 
 func promptOverlaysForOptions(opts processOptions) []PromptPart {

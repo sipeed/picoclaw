@@ -115,6 +115,11 @@ type PromptBuildRequest struct {
 
 	ActiveSkills []string
 	Overlays     []PromptPart
+
+	SuppressDefaultSystemPrompt bool
+	SuppressSkillContext        bool
+	AllowedSkills               []string
+	ToolUseFallback             bool
 }
 
 type PromptContributor interface {

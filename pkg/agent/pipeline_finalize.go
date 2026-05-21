@@ -65,7 +65,7 @@ func (p *Pipeline) Finalize(
 		}
 	}
 
-	if ts.opts.EnableSummary {
+	if !ts.opts.NoHistory && ts.opts.EnableSummary {
 		al.contextManager.Compact(
 			turnCtx,
 			&CompactRequest{

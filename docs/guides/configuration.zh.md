@@ -97,6 +97,51 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 
 如果你只想先检查学习记录，建议从 `observe` 开始。需要生成可审查改进时使用 `draft`。只有在你接受让已通过的草稿更新工作区技能时，才使用 `apply`。
 
+### 请求上下文策略（Turn Profiles）
+
+`turn_profiles` 是 `agents.defaults.turn_profiles` 下的可选命名策略，用来按请求临时控制本轮是否带入历史、系统提示、技能提示，以及允许调用哪些工具。只写配置不会改变普通对话；只有请求显式传入 `turn_profile` 时才会生效，例如 Pico `message.send` 的 payload 中带上 `"turn_profile": "clean_web"`。
+
+所有块都使用同一组 `mode`：
+
+| Mode | 含义 |
+| --- | --- |
+| `default` | 保持 PicoClaw 原逻辑。块缺失或 `mode` 缺失都按 `default` 处理。 |
+| `off` | 本轮关闭该块。 |
+| `custom` | 使用允许列表。本版本仅支持 `skills` 和 `tools`，在 `history` 或 `system_prompt` 中使用会触发配置校验错误。 |
+
+各块含义：
+
+| 块 | 控制内容 |
+| --- | --- |
+| `history` | 是否读取历史和摘要、写入用户/助手/工具消息、写入 context manager，以及是否压缩或总结本轮会话。 |
+| `system_prompt` | 是否注入 PicoClaw 默认身份、工作区指令、记忆、运行时上下文和摘要。关闭后仍可使用外部传入的 system prompt。 |
+| `skills` | 是否加载技能目录和 active skill 提示。`custom.allow` 只保留列出的技能名。 |
+| `tools` | 暴露给模型并允许执行的工具。`custom.allow` 只保留已注册且列出的工具名。 |
+
+当 `system_prompt.mode` 为 `off`、工具仍可见且没有外部 system prompt 时，PicoClaw 会复用现有的工具使用规则作为最小兜底提示。如果 `tools.mode` 为 `off`，则不会添加兜底提示。
+
+`clean_web` 示例：
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "turn_profiles": {
+        "clean_web": {
+          "history": { "mode": "off" },
+          "system_prompt": { "mode": "off" },
+          "skills": { "mode": "off" },
+          "tools": {
+            "mode": "custom",
+            "allow": ["web_search", "web_fetch"]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
 ### Web 启动器控制台
 
 用 **picoclaw-launcher** 打开浏览器控制台前需要先使用密码登录。首次启动时打开 `/launcher-setup` 创建 dashboard 登录密码；后续手动登录使用 `/launcher-login`。

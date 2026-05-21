@@ -67,6 +67,51 @@ PicoClaw lưu trữ dữ liệu trong workspace đã cấu hình (mặc định:
 
 > **Lưu ý:** Các thay đổi đối với `AGENT.md`, `SOUL.md`, `USER.md` và `memory/MEMORY.md` được tự động phát hiện trong thời gian chạy thông qua theo dõi thời gian sửa đổi file (mtime). **Không cần khởi động lại gateway** sau khi chỉnh sửa các file này — agent sẽ tải nội dung mới vào yêu cầu tiếp theo.
 
+### Turn Profiles
+
+`turn_profiles` là các chính sách đặt tên, tùy chọn trong `agents.defaults.turn_profiles`. Việc khai báo profile không đổi hành vi chat mặc định. Profile chỉ được áp dụng khi request gửi rõ `turn_profile`, ví dụ payload Pico `message.send` có `"turn_profile": "clean_web"`.
+
+Mỗi block dùng chung các giá trị `mode`:
+
+| Mode | Ý nghĩa |
+| --- | --- |
+| `default` | Giữ hành vi bình thường của PicoClaw. Block bị thiếu hoặc thiếu `mode` đều được xem là `default`. |
+| `off` | Tắt block đó cho turn được chọn. |
+| `custom` | Dùng danh sách cho phép. Phiên bản này chỉ hỗ trợ `custom` cho `skills` và `tools`; dùng cho `history` hoặc `system_prompt` sẽ lỗi validate. |
+
+Các block:
+
+| Block | Nội dung kiểm soát |
+| --- | --- |
+| `history` | Đọc lịch sử và tóm tắt, ghi tin nhắn user/assistant/tool, nạp context, compact và summarize. |
+| `system_prompt` | Chèn identity mặc định của PicoClaw, chỉ dẫn workspace, memory, runtime context và summary. System prompt từ request bên ngoài vẫn được dùng khi block này `off`. |
+| `skills` | Catalog skills và nội dung active skill trong prompt. `custom.allow` chỉ giữ các tên skill được liệt kê. |
+| `tools` | Công cụ hiển thị cho model và được phép thực thi. `custom.allow` chỉ giữ các tool đã đăng ký và được liệt kê. |
+
+Khi `system_prompt.mode` là `off`, tools vẫn hiển thị và không có system prompt bên ngoài, PicoClaw dùng lại quy tắc dùng tool hiện có làm prompt fallback tối thiểu. Nếu `tools.mode` là `off`, fallback này không được thêm.
+
+Ví dụ `clean_web`:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "turn_profiles": {
+        "clean_web": {
+          "history": { "mode": "off" },
+          "system_prompt": { "mode": "off" },
+          "skills": { "mode": "off" },
+          "tools": {
+            "mode": "custom",
+            "allow": ["web_search", "web_fetch"]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
 ### Nguồn Skill
 
 Mặc định, skill được tải từ:

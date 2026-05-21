@@ -9,6 +9,8 @@ import {
   type LauncherForm,
   type MCPServerForm,
   type MCPServerType,
+  type TurnProfileForm,
+  type TurnProfileMode,
 } from "@/components/config/form-model"
 import { Field, SwitchCardField } from "@/components/shared-form"
 import { Button } from "@/components/ui/button"
@@ -66,13 +68,54 @@ function ConfigSectionCard({
 interface AgentDefaultsSectionProps {
   form: CoreConfigForm
   onFieldChange: UpdateCoreField
+  onTurnProfileAdd: () => void
+  onTurnProfileRemove: (id: string) => void
+  onTurnProfileFieldChange: <K extends keyof TurnProfileForm>(
+    id: string,
+    key: K,
+    value: TurnProfileForm[K],
+  ) => void
 }
 
 export function AgentDefaultsSection({
   form,
   onFieldChange,
+  onTurnProfileAdd,
+  onTurnProfileRemove,
+  onTurnProfileFieldChange,
 }: AgentDefaultsSectionProps) {
   const { t } = useTranslation()
+  const renderModeSelect = ({
+    value,
+    onValueChange,
+    allowCustom,
+  }: {
+    value: TurnProfileMode
+    onValueChange: (mode: TurnProfileMode) => void
+    allowCustom: boolean
+  }) => (
+    <Select
+      value={value}
+      onValueChange={(next) => onValueChange(next as TurnProfileMode)}
+    >
+      <SelectTrigger className="h-9">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="default">
+          {t("pages.config.turn_profile_mode_default")}
+        </SelectItem>
+        <SelectItem value="off">
+          {t("pages.config.turn_profile_mode_off")}
+        </SelectItem>
+        {allowCustom && (
+          <SelectItem value="custom">
+            {t("pages.config.turn_profile_mode_custom")}
+          </SelectItem>
+        )}
+      </SelectContent>
+    </Select>
+  )
 
   return (
     <ConfigSectionCard title={t("pages.config.sections.agent")}>
@@ -214,6 +257,173 @@ export function AgentDefaultsSection({
             onFieldChange("summarizeTokenPercent", e.target.value)
           }
         />
+      </Field>
+
+      <Field
+        label={t("pages.config.turn_profiles")}
+        hint={t("pages.config.turn_profiles_hint")}
+        layout="setting-row"
+        controlClassName="md:max-w-[42rem]"
+      >
+        <div className="space-y-3">
+          {form.turnProfiles.length === 0 && (
+            <div className="border-border/60 bg-muted/30 text-muted-foreground rounded-lg border px-4 py-3 text-sm leading-relaxed">
+              {t("pages.config.turn_profiles_empty")}
+            </div>
+          )}
+
+          {form.turnProfiles.map((profile, index) => (
+            <div
+              key={profile.id}
+              className="border-border/60 bg-background rounded-lg border p-4"
+            >
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <label className="text-sm font-medium">
+                    {t("pages.config.turn_profile_name")}
+                  </label>
+                  <Input
+                    value={profile.name}
+                    onChange={(e) =>
+                      onTurnProfileFieldChange(
+                        profile.id,
+                        "name",
+                        e.target.value,
+                      )
+                    }
+                    placeholder={t(
+                      "pages.config.turn_profile_name_placeholder",
+                      {
+                        index: index + 1,
+                      },
+                    )}
+                  />
+                  <p className="text-muted-foreground text-xs leading-relaxed">
+                    {t("pages.config.turn_profile_name_hint")}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onTurnProfileRemove(profile.id)}
+                  aria-label={t("pages.config.turn_profile_remove")}
+                  title={t("pages.config.turn_profile_remove")}
+                  className="text-muted-foreground hover:text-destructive self-end sm:self-start"
+                >
+                  <IconTrash className="size-4" />
+                </Button>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    {t("pages.config.turn_profile_history")}
+                  </label>
+                  {renderModeSelect({
+                    value: profile.historyMode,
+                    onValueChange: (mode) =>
+                      onTurnProfileFieldChange(
+                        profile.id,
+                        "historyMode",
+                        mode === "off" ? "off" : "default",
+                      ),
+                    allowCustom: false,
+                  })}
+                  <p className="text-muted-foreground text-xs leading-relaxed">
+                    {t("pages.config.turn_profile_history_hint")}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    {t("pages.config.turn_profile_system_prompt")}
+                  </label>
+                  {renderModeSelect({
+                    value: profile.systemPromptMode,
+                    onValueChange: (mode) =>
+                      onTurnProfileFieldChange(
+                        profile.id,
+                        "systemPromptMode",
+                        mode === "off" ? "off" : "default",
+                      ),
+                    allowCustom: false,
+                  })}
+                  <p className="text-muted-foreground text-xs leading-relaxed">
+                    {t("pages.config.turn_profile_system_prompt_hint")}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    {t("pages.config.turn_profile_skills")}
+                  </label>
+                  {renderModeSelect({
+                    value: profile.skillsMode,
+                    onValueChange: (mode) =>
+                      onTurnProfileFieldChange(profile.id, "skillsMode", mode),
+                    allowCustom: true,
+                  })}
+                  <p className="text-muted-foreground text-xs leading-relaxed">
+                    {t("pages.config.turn_profile_skills_hint")}
+                  </p>
+                  {profile.skillsMode === "custom" && (
+                    <Textarea
+                      value={profile.skillsAllowText}
+                      onChange={(e) =>
+                        onTurnProfileFieldChange(
+                          profile.id,
+                          "skillsAllowText",
+                          e.target.value,
+                        )
+                      }
+                      placeholder={t(
+                        "pages.config.turn_profile_skills_allow_placeholder",
+                      )}
+                      className="min-h-20 font-mono text-xs"
+                    />
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">
+                    {t("pages.config.turn_profile_tools")}
+                  </label>
+                  {renderModeSelect({
+                    value: profile.toolsMode,
+                    onValueChange: (mode) =>
+                      onTurnProfileFieldChange(profile.id, "toolsMode", mode),
+                    allowCustom: true,
+                  })}
+                  <p className="text-muted-foreground text-xs leading-relaxed">
+                    {t("pages.config.turn_profile_tools_hint")}
+                  </p>
+                  {profile.toolsMode === "custom" && (
+                    <Textarea
+                      value={profile.toolsAllowText}
+                      onChange={(e) =>
+                        onTurnProfileFieldChange(
+                          profile.id,
+                          "toolsAllowText",
+                          e.target.value,
+                        )
+                      }
+                      placeholder={t(
+                        "pages.config.turn_profile_tools_allow_placeholder",
+                      )}
+                      className="min-h-20 font-mono text-xs"
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <Button type="button" variant="outline" onClick={onTurnProfileAdd}>
+            <IconPlus className="size-4" />
+            {t("pages.config.turn_profile_add")}
+          </Button>
+        </div>
       </Field>
     </ConfigSectionCard>
   )

@@ -160,6 +160,132 @@ func TestAgentConfig_FullParse(t *testing.T) {
 	}
 }
 
+func TestTurnProfilesConfig_ParseAndResolve(t *testing.T) {
+	jsonData := `{
+		"agents": {
+			"defaults": {
+				"turn_profiles": {
+					"clean_web": {
+						"history": {"mode": "off"},
+						"system_prompt": {"mode": "off"},
+						"skills": {"mode": "off"},
+						"tools": {
+							"mode": "custom",
+							"allow": ["web_search", "web_fetch"]
+						}
+					},
+					"implicit_defaults": {}
+				}
+			}
+		}
+	}`
+
+	cfg := DefaultConfig()
+	if err := json.Unmarshal([]byte(jsonData), cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if err := cfg.ValidateTurnProfiles(); err != nil {
+		t.Fatalf("ValidateTurnProfiles() error = %v", err)
+	}
+
+	profile, ok, err := cfg.Agents.Defaults.ResolveTurnProfile("clean_web")
+	if err != nil {
+		t.Fatalf("ResolveTurnProfile(clean_web) error = %v", err)
+	}
+	if !ok {
+		t.Fatal("ResolveTurnProfile(clean_web) ok = false, want true")
+	}
+	if profile.HistoryMode != TurnProfileModeOff ||
+		profile.SystemPromptMode != TurnProfileModeOff ||
+		profile.SkillsMode != TurnProfileModeOff ||
+		profile.ToolsMode != TurnProfileModeCustom {
+		t.Fatalf("resolved clean_web modes = %+v", profile)
+	}
+	assert.Equal(t, []string{"web_search", "web_fetch"}, profile.AllowedTools)
+
+	defaults, ok, err := cfg.Agents.Defaults.ResolveTurnProfile("implicit_defaults")
+	if err != nil {
+		t.Fatalf("ResolveTurnProfile(implicit_defaults) error = %v", err)
+	}
+	if !ok {
+		t.Fatal("ResolveTurnProfile(implicit_defaults) ok = false, want true")
+	}
+	if defaults.HistoryMode != TurnProfileModeDefault ||
+		defaults.SystemPromptMode != TurnProfileModeDefault ||
+		defaults.SkillsMode != TurnProfileModeDefault ||
+		defaults.ToolsMode != TurnProfileModeDefault {
+		t.Fatalf("resolved implicit default modes = %+v", defaults)
+	}
+}
+
+func TestTurnProfilesConfig_NoProfileIsNoopAndUnknownErrors(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.TurnProfiles = TurnProfilesConfig{
+		"clean_web": {
+			History: TurnProfileBlock{Mode: TurnProfileModeOff},
+		},
+	}
+
+	profile, ok, err := cfg.Agents.Defaults.ResolveTurnProfile("")
+	if err != nil {
+		t.Fatalf("ResolveTurnProfile(empty) error = %v", err)
+	}
+	if ok {
+		t.Fatal("ResolveTurnProfile(empty) ok = true, want false")
+	}
+	if profile.Enabled {
+		t.Fatalf("ResolveTurnProfile(empty) profile.Enabled = true, want false")
+	}
+
+	_, _, err = cfg.Agents.Defaults.ResolveTurnProfile("missing")
+	if err == nil {
+		t.Fatal("ResolveTurnProfile(missing) error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "unknown turn profile") {
+		t.Fatalf("ResolveTurnProfile(missing) error = %v, want unknown profile message", err)
+	}
+}
+
+func TestTurnProfilesConfig_ValidationRejectsUnsupportedModes(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "history custom unsupported",
+			raw:  `{"agents":{"defaults":{"turn_profiles":{"p":{"history":{"mode":"custom"}}}}}}`,
+			want: "history.mode",
+		},
+		{
+			name: "system prompt custom unsupported",
+			raw:  `{"agents":{"defaults":{"turn_profiles":{"p":{"system_prompt":{"mode":"custom"}}}}}}`,
+			want: "system_prompt.mode",
+		},
+		{
+			name: "unknown mode",
+			raw:  `{"agents":{"defaults":{"turn_profiles":{"p":{"tools":{"mode":"sometimes"}}}}}}`,
+			want: "unsupported mode",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := DefaultConfig()
+			if err := json.Unmarshal([]byte(tt.raw), cfg); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			err := cfg.ValidateTurnProfiles()
+			if err == nil {
+				t.Fatal("ValidateTurnProfiles() error = nil, want error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("ValidateTurnProfiles() error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestDefaultConfig_MCPMaxInlineTextChars(t *testing.T) {
 	cfg := DefaultConfig()
 	if cfg.Tools.MCP.GetMaxInlineTextChars() != DefaultMCPMaxInlineTextChars {

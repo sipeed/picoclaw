@@ -66,6 +66,51 @@ PicoClaw stocke les données dans votre workspace configuré (par défaut : `~/.
 
 > **Remarque :** Les modifications apportées à `AGENT.md`, `SOUL.md`, `USER.md` et `memory/MEMORY.md` sont détectées automatiquement au moment de l'exécution via le suivi de la date de modification (mtime). Il n'est **pas nécessaire de redémarrer le gateway** après avoir modifié ces fichiers — l'agent charge le nouveau contenu à la prochaine requête.
 
+### Profils de tour
+
+Les `turn_profiles` sont des politiques nommées et facultatives sous `agents.defaults.turn_profiles`. Définir un profil ne change pas les conversations normales. Il s'applique seulement quand la requête envoie explicitement `turn_profile`, par exemple dans un payload Pico `message.send` avec `"turn_profile": "clean_web"`.
+
+Tous les blocs utilisent les mêmes valeurs de `mode` :
+
+| Mode | Signification |
+| --- | --- |
+| `default` | Garde le comportement normal de PicoClaw. Un bloc absent ou sans `mode` vaut `default`. |
+| `off` | Désactive ce bloc pour le tour sélectionné. |
+| `custom` | Utilise une liste d'autorisation. Dans cette version, `custom` est pris en charge seulement pour `skills` et `tools`; l'utiliser pour `history` ou `system_prompt` produit une erreur de validation. |
+
+Blocs disponibles :
+
+| Bloc | Ce qu'il contrôle |
+| --- | --- |
+| `history` | Lecture de l'historique et du résumé, écriture des messages utilisateur/assistant/outil, ingestion de contexte, compression et résumé. |
+| `system_prompt` | Injection de l'identité PicoClaw, des instructions de l'espace de travail, de la mémoire, du contexte d'exécution et du résumé. Les prompts système externes restent autorisés quand ce bloc est `off`. |
+| `skills` | Chargement du catalogue de skills et du contenu des skills actifs. `custom.allow` ne garde que les noms listés. |
+| `tools` | Outils exposés au modèle et autorisés à l'exécution. `custom.allow` ne garde que les outils enregistrés et listés. |
+
+Quand `system_prompt.mode` vaut `off`, que des outils restent visibles et qu'aucun prompt système externe n'est fourni, PicoClaw réutilise sa règle existante d'utilisation des outils comme prompt minimal de secours. Si `tools.mode` vaut `off`, ce prompt de secours n'est pas ajouté.
+
+Exemple `clean_web` :
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "turn_profiles": {
+        "clean_web": {
+          "history": { "mode": "off" },
+          "system_prompt": { "mode": "off" },
+          "skills": { "mode": "off" },
+          "tools": {
+            "mode": "custom",
+            "allow": ["web_search", "web_fetch"]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
 ### Sources de Compétences
 
 Par défaut, les compétences sont chargées depuis :

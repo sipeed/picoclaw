@@ -32,6 +32,7 @@ import {
   EMPTY_LAUNCHER_FORM,
   type LauncherForm,
   type MCPServerForm,
+  type TurnProfileForm,
   buildFormFromConfig,
   parseCIDRText,
   parseFloatField,
@@ -69,6 +70,62 @@ function buildStringMapMergePatch(
   }
 
   return patch
+}
+
+function buildTurnProfilesPatch(
+  profiles: TurnProfileForm[],
+): Record<string, unknown> | null {
+  const normalizedProfiles = profiles
+    .map((profile) => ({
+      ...profile,
+      name: profile.name.trim(),
+    }))
+    .filter((profile) => profile.name !== "")
+
+  if (normalizedProfiles.length === 0) {
+    return null
+  }
+
+  const counts = new Map<string, number>()
+  for (const profile of normalizedProfiles) {
+    counts.set(profile.name, (counts.get(profile.name) ?? 0) + 1)
+  }
+  const duplicateNames = Array.from(counts.entries())
+    .filter(([, count]) => count > 1)
+    .map(([name]) => name)
+    .sort((a, b) => a.localeCompare(b))
+
+  if (duplicateNames.length > 0) {
+    throw new Error(
+      `Turn profile names must be unique. Duplicates: ${duplicateNames.join(", ")}.`,
+    )
+  }
+
+  const entries = normalizedProfiles.map((profile) => {
+    const result: Record<string, unknown> = {
+      history: { mode: profile.historyMode },
+      system_prompt: { mode: profile.systemPromptMode },
+      skills: { mode: profile.skillsMode },
+      tools: { mode: profile.toolsMode },
+    }
+
+    if (profile.skillsMode === "custom") {
+      result.skills = {
+        mode: "custom",
+        allow: parseMultilineList(profile.skillsAllowText),
+      }
+    }
+    if (profile.toolsMode === "custom") {
+      result.tools = {
+        mode: "custom",
+        allow: parseMultilineList(profile.toolsAllowText),
+      }
+    }
+
+    return [profile.name, result] as const
+  })
+
+  return Object.fromEntries(entries)
 }
 
 export function ConfigPage() {
@@ -221,6 +278,41 @@ export function ConfigPage() {
     )
   }
 
+  const handleTurnProfileAdd = () => {
+    const nextIndex = form.turnProfiles.length + 1
+    const profile: TurnProfileForm = {
+      id: `turn-profile-${Date.now()}-${nextIndex}`,
+      name: "",
+      historyMode: "default",
+      systemPromptMode: "default",
+      skillsMode: "default",
+      skillsAllowText: "",
+      toolsMode: "default",
+      toolsAllowText: "",
+    }
+    updateField("turnProfiles", [...form.turnProfiles, profile])
+  }
+
+  const handleTurnProfileRemove = (id: string) => {
+    updateField(
+      "turnProfiles",
+      form.turnProfiles.filter((profile) => profile.id !== id),
+    )
+  }
+
+  const handleTurnProfileFieldChange = <K extends keyof TurnProfileForm>(
+    id: string,
+    key: K,
+    value: TurnProfileForm[K],
+  ) => {
+    updateField(
+      "turnProfiles",
+      form.turnProfiles.map((profile) =>
+        profile.id === id ? { ...profile, [key]: value } : profile,
+      ),
+    )
+  }
+
   const handleReset = () => {
     setForm(baseline)
     setLauncherForm(launcherBaseline)
@@ -314,6 +406,7 @@ export function ConfigPage() {
           "Summarize token percent",
           { min: 1, max: 100 },
         )
+        const turnProfiles = buildTurnProfilesPatch(form.turnProfiles)
         const heartbeatInterval = parseIntField(
           form.heartbeatInterval,
           "Heartbeat interval",
@@ -548,6 +641,7 @@ export function ConfigPage() {
               max_tool_iterations: maxToolIterations,
               summarize_message_threshold: summarizeMessageThreshold,
               summarize_token_percent: summarizeTokenPercent,
+              turn_profiles: turnProfiles,
             },
           },
           session: {
@@ -757,7 +851,13 @@ export function ConfigPage() {
                 disabled={saving || isLauncherLoading}
               />
 
-              <AgentDefaultsSection form={form} onFieldChange={updateField} />
+              <AgentDefaultsSection
+                form={form}
+                onFieldChange={updateField}
+                onTurnProfileAdd={handleTurnProfileAdd}
+                onTurnProfileRemove={handleTurnProfileRemove}
+                onTurnProfileFieldChange={handleTurnProfileFieldChange}
+              />
 
               <RuntimeSection form={form} onFieldChange={updateField} />
 

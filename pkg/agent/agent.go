@@ -79,17 +79,19 @@ type AgentLoop struct {
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	Dispatch                DispatchRequest        // Normalized routed request boundary for this turn
-	SessionKey              string                 // Session identifier for history/context
-	SessionAliases          []string               // Compatibility aliases for the session key
-	Channel                 string                 // Target channel for tool execution
-	ChatID                  string                 // Target chat ID for tool execution
-	MessageID               string                 // Current inbound platform message ID
-	ReplyToMessageID        string                 // Current inbound reply target message ID
-	SenderID                string                 // Current sender ID for dynamic context
-	SenderDisplayName       string                 // Current sender display name for dynamic context
-	UserMessage             string                 // User message content (may include prefix)
-	ForcedSkills            []string               // Skills explicitly requested for this message
+	Dispatch                DispatchRequest // Normalized routed request boundary for this turn
+	SessionKey              string          // Session identifier for history/context
+	SessionAliases          []string        // Compatibility aliases for the session key
+	Channel                 string          // Target channel for tool execution
+	ChatID                  string          // Target chat ID for tool execution
+	MessageID               string          // Current inbound platform message ID
+	ReplyToMessageID        string          // Current inbound reply target message ID
+	SenderID                string          // Current sender ID for dynamic context
+	SenderDisplayName       string          // Current sender display name for dynamic context
+	UserMessage             string          // User message content (may include prefix)
+	ForcedSkills            []string        // Skills explicitly requested for this message
+	TurnProfileName         string          // Optional named per-turn context/tool policy
+	TurnProfile             config.EffectiveTurnProfile
 	SystemPromptOverride    string                 // Override the default system prompt (Used by SubTurns)
 	Media                   []string               // media:// refs from inbound message
 	InitialSteeringMessages []providers.Message    // Steering messages from refactor/agent
@@ -534,6 +536,11 @@ func (al *AgentLoop) runAgentLoop(
 	opts processOptions,
 ) (string, error) {
 	opts = normalizeProcessOptions(opts)
+	var err error
+	opts, err = resolveTurnProfileOptions(al.GetConfig(), opts)
+	if err != nil {
+		return "", err
+	}
 
 	// Record last channel for heartbeat notifications (skip internal channels and cli)
 	if opts.Dispatch.Channel() != "" &&

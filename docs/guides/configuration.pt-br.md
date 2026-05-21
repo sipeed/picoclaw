@@ -67,6 +67,51 @@ O PicoClaw armazena dados no seu workspace configurado (padrão: `~/.picoclaw/wo
 
 > **Nota:** Alterações em `AGENT.md`, `SOUL.md`, `USER.md` e `memory/MEMORY.md` são detectadas automaticamente em tempo de execução via rastreamento de data de modificação (mtime). **Não é necessário reiniciar o gateway** após editar esses arquivos — o agente carrega o novo conteúdo na próxima requisição.
 
+### Perfis de turno
+
+`turn_profiles` são políticas nomeadas e opcionais em `agents.defaults.turn_profiles`. Definir um perfil não altera conversas normais. Ele só é aplicado quando a requisição envia `turn_profile` explicitamente, por exemplo em um payload Pico `message.send` com `"turn_profile": "clean_web"`.
+
+Todos os blocos usam os mesmos valores de `mode`:
+
+| Mode | Significado |
+| --- | --- |
+| `default` | Mantém o comportamento normal do PicoClaw. Blocos ausentes ou sem `mode` são tratados como `default`. |
+| `off` | Desativa esse bloco para o turno selecionado. |
+| `custom` | Usa uma lista de permissão. Nesta versão, `custom` só é suportado para `skills` e `tools`; usá-lo em `history` ou `system_prompt` gera erro de validação. |
+
+Blocos disponíveis:
+
+| Bloco | O que controla |
+| --- | --- |
+| `history` | Leitura de histórico e resumo, gravação de mensagens de usuário/assistente/ferramenta, ingestão de contexto, compactação e resumo. |
+| `system_prompt` | Injeção da identidade padrão do PicoClaw, instruções do workspace, memória, contexto de execução e resumo. Prompts de sistema externos ainda são permitidos quando este bloco está `off`. |
+| `skills` | Catálogo de skills e conteúdo de skills ativas no prompt. `custom.allow` mantém apenas os nomes listados. |
+| `tools` | Ferramentas visíveis ao modelo e permitidas na execução. `custom.allow` mantém apenas ferramentas registradas e listadas. |
+
+Quando `system_prompt.mode` é `off`, ferramentas continuam visíveis e nenhum prompt de sistema externo é fornecido, o PicoClaw reutiliza sua regra existente de uso de ferramentas como prompt mínimo de fallback. Se `tools.mode` é `off`, esse fallback não é adicionado.
+
+Exemplo `clean_web`:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "turn_profiles": {
+        "clean_web": {
+          "history": { "mode": "off" },
+          "system_prompt": { "mode": "off" },
+          "skills": { "mode": "off" },
+          "tools": {
+            "mode": "custom",
+            "allow": ["web_search", "web_fetch"]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
 ### Fontes de Skills
 
 Por padrão, as skills são carregadas de:

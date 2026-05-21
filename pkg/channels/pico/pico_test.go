@@ -36,6 +36,40 @@ func newTestPicoChannel(t *testing.T) *PicoChannel {
 	return ch
 }
 
+func TestHandleMessageSend_ForwardsTurnProfile(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	bc := &config.Channel{Type: config.ChannelPico, Enabled: true}
+	cfg := &config.PicoSettings{}
+	cfg.SetToken("test-token")
+	ch, err := NewPicoChannel(bc, cfg, msgBus)
+	if err != nil {
+		t.Fatalf("NewPicoChannel: %v", err)
+	}
+	ch.ctx = context.Background()
+
+	ch.handleMessageSend(&picoConn{id: "conn-1", sessionID: "sess-1"}, PicoMessage{
+		Type:      TypeMessageSend,
+		ID:        "msg-1",
+		SessionID: "sess-1",
+		Payload: map[string]any{
+			PayloadKeyContent:     "hello",
+			PayloadKeyTurnProfile: "clean_web",
+		},
+	})
+
+	select {
+	case inbound := <-msgBus.InboundChan():
+		if inbound.Content != "hello" {
+			t.Fatalf("content = %q, want hello", inbound.Content)
+		}
+		if got := inbound.Context.Raw[PayloadKeyTurnProfile]; got != "clean_web" {
+			t.Fatalf("turn_profile raw = %q, want clean_web", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected inbound pico message")
+	}
+}
+
 func TestFinalizeTrackedToolFeedbackMessage_StopsTrackingBeforeEdit(t *testing.T) {
 	ch := &PicoChannel{
 		progress: channels.NewToolFeedbackAnimator(nil),

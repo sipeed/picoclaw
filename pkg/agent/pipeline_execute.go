@@ -441,6 +441,30 @@ toolLoop:
 			}
 		}
 
+		if !turnProfileToolAllowed(ts.profile, toolName) {
+			exec.allResponsesHandled = false
+			denyContent := fmt.Sprintf("Tool %q is not allowed by the active turn profile.", toolName)
+			al.emitEvent(
+				runtimeevents.KindAgentToolExecSkipped,
+				ts.eventMeta("runTurn", "turn.tool.skipped"),
+				ToolExecSkippedPayload{
+					Tool:   toolName,
+					Reason: denyContent,
+				},
+			)
+			deniedMsg := providers.Message{
+				Role:       "tool",
+				Content:    denyContent,
+				ToolCallID: tc.ID,
+			}
+			messages = append(messages, deniedMsg)
+			if !ts.opts.NoHistory {
+				ts.agent.Sessions.AddFullMessage(ts.sessionKey, deniedMsg)
+				ts.recordPersistedMessage(deniedMsg)
+			}
+			continue
+		}
+
 		argsJSON, _ := json.Marshal(toolArgs)
 		argsPreview := utils.Truncate(string(argsJSON), 200)
 		logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", toolName, argsPreview),
@@ -802,7 +826,7 @@ toolLoop:
 					})
 			}
 		}
-		if ts.opts.EnableSummary {
+		if !ts.opts.NoHistory && ts.opts.EnableSummary {
 			al.contextManager.Compact(turnCtx, &CompactRequest{
 				SessionKey: ts.sessionKey,
 				Reason:     ContextCompressReasonSummarize,
