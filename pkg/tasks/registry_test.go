@@ -142,3 +142,28 @@ func TestRegistryPrunesOldestTerminalTasksAboveMaxRecords(t *testing.T) {
 		}
 	}
 }
+
+func TestRegistryListPendingTerminalDelivery(t *testing.T) {
+	registry := NewRegistry("")
+	records := []Record{
+		{TaskID: "pending-done", Status: StatusSucceeded, DeliveryStatus: DeliveryPending},
+		{TaskID: "pending-failed", Status: StatusFailed, DeliveryStatus: DeliveryPending},
+		{TaskID: "pending-running", Status: StatusRunning, DeliveryStatus: DeliveryPending},
+		{TaskID: "delivered-done", Status: StatusSucceeded, DeliveryStatus: DeliveryDelivered},
+	}
+	for _, rec := range records {
+		rec.Runtime = RuntimeSubagent
+		rec.Task = rec.TaskID
+		if err := registry.Upsert(rec); err != nil {
+			t.Fatalf("Upsert(%s) error = %v", rec.TaskID, err)
+		}
+	}
+
+	got := registry.ListPendingTerminalDelivery()
+	if len(got) != 2 {
+		t.Fatalf("pending terminal count = %d, want 2: %+v", len(got), got)
+	}
+	if got[0].TaskID != "pending-done" || got[1].TaskID != "pending-failed" {
+		t.Fatalf("pending terminal tasks = %v, want pending-done,pending-failed", []string{got[0].TaskID, got[1].TaskID})
+	}
+}

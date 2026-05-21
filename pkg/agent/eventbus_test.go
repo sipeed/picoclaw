@@ -847,6 +847,42 @@ func assertTaskDeliveryStatusForTest(
 	}
 }
 
+func TestAgentLoop_TaskRegistryReconcilesPendingTerminalDelivery(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: tmpDir,
+				ModelName: "test-model",
+				MaxTokens: 4096,
+			},
+		},
+	}
+	registry := taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(tmpDir))
+	if err := registry.Upsert(taskregistry.Record{
+		TaskID:         "stale-completion",
+		Runtime:        taskregistry.RuntimeSubagent,
+		TaskKind:       "spawn",
+		Task:           "stale task",
+		Status:         taskregistry.StatusSucceeded,
+		DeliveryStatus: taskregistry.DeliveryPending,
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), &simpleMockProvider{response: "ok"})
+	rec, ok := al.taskRegistryForWorkspace(tmpDir).Get("stale-completion")
+	if !ok {
+		t.Fatal("expected stale task")
+	}
+	if rec.DeliveryStatus != taskregistry.DeliveryParentMissing {
+		t.Fatalf("DeliveryStatus = %q, want %q", rec.DeliveryStatus, taskregistry.DeliveryParentMissing)
+	}
+	if !strings.Contains(rec.Error, "restart/reload") {
+		t.Fatalf("Error = %q, want restart/reload marker", rec.Error)
+	}
+}
+
 var (
 	_ tools.Tool          = (*mockCustomTool)(nil)
 	_ tools.AsyncExecutor = (*asyncFollowUpTool)(nil)

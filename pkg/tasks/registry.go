@@ -242,6 +242,20 @@ func (r *Registry) List() []Record {
 	return out
 }
 
+func (r *Registry) ListPendingTerminalDelivery() []Record {
+	if r == nil {
+		return nil
+	}
+	records := r.List()
+	out := make([]Record, 0)
+	for _, rec := range records {
+		if rec.DeliveryStatus == DeliveryPending && isTerminalStatus(rec.Status) {
+			out = append(out, rec)
+		}
+	}
+	return out
+}
+
 func (r *Registry) MaxNumericSuffix(prefix string) int {
 	maxSeq := 0
 	for _, rec := range r.List() {
