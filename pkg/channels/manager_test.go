@@ -1514,6 +1514,71 @@ func TestPreSend_FinalReplyPlaceholderDeleteAndDismissesTrackedFeedback(t *testi
 	}
 }
 
+func TestSendWithRetry_FinalReplyBypassesToolFeedbackFinalization(t *testing.T) {
+	m := newTestManager()
+
+	ch := &mockDeletingMessageEditor{
+		mockMessageEditor: mockMessageEditor{
+			mockChannel: mockChannel{
+				sendFn: func(_ context.Context, msg bus.OutboundMessage) error {
+					if msg.Content != "final aggregated reply" {
+						t.Fatalf("sent content = %q, want final aggregated reply", msg.Content)
+					}
+					if got := msg.Context.Raw["message_kind"]; got != "final_reply" {
+						t.Fatalf("message_kind = %q, want final_reply", got)
+					}
+					return nil
+				},
+			},
+			editFn: func(_ context.Context, _, _, _ string) error {
+				t.Fatal("expected final reply to bypass placeholder/tool-feedback edit")
+				return nil
+			},
+			finalizeFn: func(_ context.Context, _ bus.OutboundMessage) ([]string, bool) {
+				t.Fatal("expected final reply to bypass channel tool-feedback finalization")
+				return nil, false
+			},
+		},
+	}
+
+	m.RecordPlaceholder("test", "123", "456")
+
+	w := &channelWorker{
+		ch:      ch,
+		limiter: rate.NewLimiter(rate.Inf, 1),
+	}
+
+	msg := testOutboundMessage(bus.OutboundMessage{
+		Channel: "test",
+		ChatID:  "123",
+		Content: "final aggregated reply",
+		Context: bus.InboundContext{
+			Channel: "test",
+			ChatID:  "123",
+			Raw: map[string]string{
+				"message_kind": "final_reply",
+			},
+		},
+	})
+
+	_, sent := m.sendWithRetry(context.Background(), "test", w, msg)
+	if !sent {
+		t.Fatal("expected final reply to be sent as a new message")
+	}
+	if ch.finalizeCalled {
+		t.Fatal("expected final reply not to call FinalizeToolFeedbackMessage")
+	}
+	if ch.deleteCalls != 1 {
+		t.Fatalf("expected placeholder deletion, got %d", ch.deleteCalls)
+	}
+	if ch.dismissedChatID != "123" {
+		t.Fatalf("expected tracked tool feedback dismissal, got %q", ch.dismissedChatID)
+	}
+	if len(ch.sentMessages) != 1 {
+		t.Fatalf("expected one sent final reply, got %d", len(ch.sentMessages))
+	}
+}
+
 func TestSendWithRetry_ToolCallsPlaceholderDeleteAndFallsThroughToSend(t *testing.T) {
 	m := newTestManager()
 
