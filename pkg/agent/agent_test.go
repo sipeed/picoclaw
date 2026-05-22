@@ -605,6 +605,43 @@ func TestProcessMessage_PassesExplicitThinkingOffToProviderWithoutThinkingCapabi
 	}
 }
 
+func TestProcessMessage_PassesDeepSeekThinkingLevelToThinkingCapableProvider(t *testing.T) {
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         t.TempDir(),
+				ModelName:         "deepseek-v4-flash",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		ModelList: []*config.ModelConfig{{
+			ModelName:     "deepseek-v4-flash",
+			Provider:      "deepseek",
+			Model:         "deepseek-v4-flash",
+			ThinkingLevel: "xhigh",
+		}},
+	}
+
+	provider := &thinkingRecordingProvider{}
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
+
+	response, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
+		Channel: "pico",
+		ChatID:  "chat-1",
+		Content: "hello",
+	}))
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "Mock response" {
+		t.Fatalf("processMessage() response = %q, want %q", response, "Mock response")
+	}
+	if got := provider.lastOptions["thinking_level"]; got != "xhigh" {
+		t.Fatalf("thinking_level option = %#v, want %q", got, "xhigh")
+	}
+}
+
 func TestProcessMessage_SuppressesReasoningWhenThinkingOff(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{

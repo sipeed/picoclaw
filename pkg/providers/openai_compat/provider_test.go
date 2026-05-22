@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
@@ -122,6 +124,146 @@ func TestBuildRequestBody_PreservesDoubaoRequestWhenThinkingLevelIsNotOff(t *tes
 				t.Fatalf("enable_thinking should be omitted for %q, got %#v", level, body["enable_thinking"])
 			}
 		})
+	}
+}
+
+func TestBuildRequestBody_MapsDeepSeekThinkingLevels(t *testing.T) {
+	p := NewProvider("key", "https://api.deepseek.com/v1", "")
+	p.SetProviderName("deepseek")
+
+	tests := []struct {
+		name             string
+		level            string
+		wantThinkingType string
+		wantEffort       any
+	}{
+		{name: "off", level: "off", wantThinkingType: "disabled"},
+		{name: "low", level: "low", wantThinkingType: "enabled", wantEffort: "high"},
+		{name: "medium", level: "medium", wantThinkingType: "enabled", wantEffort: "high"},
+		{name: "high", level: "high", wantThinkingType: "enabled", wantEffort: "high"},
+		{name: "xhigh", level: "xhigh", wantThinkingType: "enabled", wantEffort: "max"},
+		{name: "adaptive", level: "adaptive"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := p.buildRequestBody(
+				[]Message{{Role: "user", Content: "hi"}},
+				nil,
+				"deepseek-v4-pro",
+				map[string]any{"thinking_level": tt.level},
+			)
+
+			if tt.wantThinkingType == "" {
+				if _, ok := body["thinking"]; ok {
+					t.Fatalf("thinking should be omitted for %q, got %#v", tt.level, body["thinking"])
+				}
+			} else {
+				thinking, ok := body["thinking"].(map[string]any)
+				if !ok {
+					t.Fatalf("thinking = %#v, want map", body["thinking"])
+				}
+				if got := thinking["type"]; got != tt.wantThinkingType {
+					t.Fatalf("thinking.type = %#v, want %q", got, tt.wantThinkingType)
+				}
+			}
+
+			if tt.wantEffort == nil {
+				if _, ok := body["reasoning_effort"]; ok {
+					t.Fatalf("reasoning_effort should be omitted for %q, got %#v", tt.level, body["reasoning_effort"])
+				}
+			} else if got := body["reasoning_effort"]; got != tt.wantEffort {
+				t.Fatalf("reasoning_effort = %#v, want %#v", got, tt.wantEffort)
+			}
+		})
+	}
+}
+
+func TestBuildRequestBody_MapsDeepSeekThinkingLevelsByHost(t *testing.T) {
+	p := NewProvider("key", "https://api.deepseek.com/v1", "")
+
+	body := p.buildRequestBody(
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"deepseek-v4-flash",
+		map[string]any{"thinking_level": "xhigh"},
+	)
+
+	thinking, ok := body["thinking"].(map[string]any)
+	if !ok {
+		t.Fatalf("thinking = %#v, want map", body["thinking"])
+	}
+	if got := thinking["type"]; got != "enabled" {
+		t.Fatalf("thinking.type = %#v, want enabled", got)
+	}
+	if got := body["reasoning_effort"]; got != "max" {
+		t.Fatalf("reasoning_effort = %#v, want max", got)
+	}
+}
+
+func TestBuildRequestBody_DeepSeekExtraBodyStillOverridesThinkingFields(t *testing.T) {
+	extraBody := map[string]any{
+		"thinking":         map[string]any{"type": "disabled"},
+		"reasoning_effort": "max",
+	}
+	p := NewProvider("key", "https://api.deepseek.com/v1", "", WithExtraBody(extraBody))
+	p.SetProviderName("deepseek")
+
+	body := p.buildRequestBody(
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"deepseek-v4-pro",
+		map[string]any{"thinking_level": "high"},
+	)
+
+	thinking, ok := body["thinking"].(map[string]any)
+	if !ok {
+		t.Fatalf("thinking = %#v, want map", body["thinking"])
+	}
+	if got := thinking["type"]; got != "disabled" {
+		t.Fatalf("thinking.type = %#v, want disabled from extra_body override", got)
+	}
+	if got := body["reasoning_effort"]; got != "max" {
+		t.Fatalf("reasoning_effort = %#v, want max from extra_body override", got)
+	}
+}
+
+func TestBuildRequestBody_WarnsForUnsupportedDeepSeekAdaptiveThinkingLevel(t *testing.T) {
+	logFile := t.TempDir() + "/deepseek-adaptive-warning.log"
+	prevLevel := logger.GetLevel()
+	logger.SetLevel(logger.WARN)
+	if err := logger.EnableFileLogging(logFile); err != nil {
+		t.Fatalf("EnableFileLogging() error = %v", err)
+	}
+	defer func() {
+		logger.DisableFileLogging()
+		logger.SetLevel(prevLevel)
+	}()
+
+	p := NewProvider("key", "https://api.deepseek.com/v1", "")
+	p.SetProviderName("deepseek")
+
+	body := p.buildRequestBody(
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"deepseek-v4-pro",
+		map[string]any{"thinking_level": "adaptive"},
+	)
+
+	if _, ok := body["thinking"]; ok {
+		t.Fatalf("thinking should be omitted for adaptive, got %#v", body["thinking"])
+	}
+	if _, ok := body["reasoning_effort"]; ok {
+		t.Fatalf("reasoning_effort should be omitted for adaptive, got %#v", body["reasoning_effort"])
+	}
+
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) error = %v", logFile, err)
+	}
+	logs := string(data)
+	if !strings.Contains(logs, `thinking_level=\"adaptive\"`) {
+		t.Fatalf("warning log = %q, want adaptive warning message", logs)
 	}
 }
 
