@@ -14,7 +14,7 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 	registry := al.GetRegistry()
 	for _, agentID := range registry.ListAgentIDs() {
 		if agent, ok := registry.GetAgent(agentID); ok {
-			agent.Tools.Register(tool)
+			registerToolIfAllowed(agent, tool)
 		}
 	}
 }

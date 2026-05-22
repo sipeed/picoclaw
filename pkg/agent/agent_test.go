@@ -1635,6 +1635,66 @@ func TestToolRegistry_ToolRegistration(t *testing.T) {
 	}
 }
 
+func TestAgentLoopRegisterToolRespectsExplicitEmptyFrontmatterTools(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "AGENT.md"), []byte(`---
+tools: []
+---
+# Agent
+`), 0o600); err != nil {
+		t.Fatalf("write AGENT.md: %v", err)
+	}
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), &mockProvider{})
+	al.RegisterTool(&mockCustomTool{})
+
+	if _, ok := al.GetRegistry().GetDefaultAgent().Tools.Get("mock_custom"); ok {
+		t.Fatal("expected runtime RegisterTool to respect tools: [] and skip mock_custom")
+	}
+}
+
+func TestAgentLoopRegisterToolRespectsFrontmatterDenyPolicy(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "AGENT.md"), []byte(`---
+tools:
+  deny:
+    - mock_custom
+---
+# Agent
+`), 0o600); err != nil {
+		t.Fatalf("write AGENT.md: %v", err)
+	}
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), &mockProvider{})
+	al.RegisterTool(&mockCustomTool{})
+
+	if _, ok := al.GetRegistry().GetDefaultAgent().Tools.Get("mock_custom"); ok {
+		t.Fatal("expected runtime RegisterTool to respect deny policy and skip mock_custom")
+	}
+}
+
 // TestToolContext_Updates verifies tool context helpers work correctly
 func TestToolContext_Updates(t *testing.T) {
 	ctx := tools.WithToolContext(context.Background(), "telegram", "chat-42")
