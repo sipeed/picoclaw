@@ -25,6 +25,8 @@ import {
   splitCodeIntoLines,
   splitHighlightedHtmlIntoLines,
   splitRenderedCodeContentIntoLines,
+  trimTrailingEmptyRenderedCodeLine,
+  trimTrailingEmptyStringLine,
 } from "./message-code-block.utils"
 
 import { Button } from "@/components/ui/button"
@@ -41,6 +43,7 @@ interface MessageCodeBlockProps {
   className?: string
   bodyClassName?: string
   children?: ReactNode
+  trimTrailingEmptyLine?: boolean
 }
 
 interface MarkdownCodeBlockProps extends ComponentProps<"pre"> {
@@ -66,6 +69,7 @@ export function MessageCodeBlock({
   className,
   bodyClassName,
   children,
+  trimTrailingEmptyLine = false,
 }: MessageCodeBlockProps) {
   const { t } = useTranslation()
   const { copy, isCopied } = useCopyToClipboard()
@@ -92,8 +96,16 @@ export function MessageCodeBlock({
     ? splitHighlightedHtmlIntoLines(highlightedHtml)
     : null
   const codeLines = children
-    ? splitRenderedCodeContentIntoLines(renderedCodeState.renderedContent)
-    : (highlightedLines ?? splitCodeIntoLines(code))
+    ? (trimTrailingEmptyLine
+        ? trimTrailingEmptyRenderedCodeLine(
+            splitRenderedCodeContentIntoLines(renderedCodeState.renderedContent),
+          )
+        : splitRenderedCodeContentIntoLines(renderedCodeState.renderedContent))
+    : (trimTrailingEmptyLine
+        ? trimTrailingEmptyStringLine(
+            highlightedLines ?? splitCodeIntoLines(code),
+          )
+        : (highlightedLines ?? splitCodeIntoLines(code)))
   const lineNumberWidth = `${String(codeLines.length).length + 1}ch`
 
   return (
@@ -176,14 +188,14 @@ export function MessageCodeBlock({
             {codeLines.map((line, index) => (
               <span
                 key={`${index}-${line.length}`}
-                className="grid grid-cols-[var(--code-line-number-width)_minmax(0,1fr)]"
+                className="grid grid-cols-[var(--code-line-number-width)_minmax(0,1fr)] items-start gap-x-3"
                 style={
                   {
                     "--code-line-number-width": lineNumberWidth,
                   } as CSSProperties
                 }
               >
-                <span className="sticky left-0 z-1 select-none bg-[#f6f8fa] pr-4 text-right text-zinc-500/80 dark:bg-[#0d1117] dark:text-zinc-500">
+                <span className="sticky left-0 z-1 select-none bg-[#f6f8fa] text-right text-zinc-500/80 dark:bg-[#0d1117] dark:text-zinc-500">
                   {index + 1}
                 </span>
                 {!children && highlightedLines ? (
@@ -229,6 +241,7 @@ export function MarkdownCodeBlock({
       code={code}
       language={language}
       bodyClassName={className}
+      trimTrailingEmptyLine
     >
       {children}
     </MessageCodeBlock>

@@ -80,6 +80,10 @@ export function extractCodeBlockLanguage(className: unknown): string | null {
   return languageToken ? languageToken.slice("language-".length) : null
 }
 
+export function stripSingleTrailingLineBreak(value: string): string {
+  return value.replace(/\r?\n$/, "")
+}
+
 export function extractCodeBlockFromPreNode(node: MarkdownNode | undefined): {
   code: string
   language: string | null
@@ -87,7 +91,7 @@ export function extractCodeBlockFromPreNode(node: MarkdownNode | undefined): {
   const codeNode = findFirstDescendantByTagName(node, "code")
 
   return {
-    code: extractTextFromMarkdownNode(codeNode ?? node),
+    code: stripSingleTrailingLineBreak(extractTextFromMarkdownNode(codeNode ?? node)),
     language: extractCodeBlockLanguage(codeNode?.properties?.className),
   }
 }
@@ -212,6 +216,47 @@ export function splitHighlightedHtmlIntoLines(highlightedHtml: string): string[]
 
     return lineContainer.innerHTML
   })
+}
+
+export function trimTrailingEmptyStringLine(lines: string[]): string[] {
+  if (lines.length > 1 && lines[lines.length - 1] === "") {
+    return lines.slice(0, -1)
+  }
+
+  return lines
+}
+
+function isEmptyRenderedCodeNode(node: ReactNode): boolean {
+  if (node === null || node === undefined || typeof node === "boolean") {
+    return true
+  }
+
+  if (typeof node === "string" || typeof node === "number") {
+    return String(node).length === 0
+  }
+
+  if (Array.isArray(node)) {
+    return node.every(isEmptyRenderedCodeNode)
+  }
+
+  if (!isValidElement<{ children?: ReactNode }>(node)) {
+    return false
+  }
+
+  return Children.toArray(node.props.children).every(isEmptyRenderedCodeNode)
+}
+
+export function trimTrailingEmptyRenderedCodeLine(
+  lines: ReactNode[][],
+): ReactNode[][] {
+  if (
+    lines.length > 1 &&
+    lines[lines.length - 1].every(isEmptyRenderedCodeNode)
+  ) {
+    return lines.slice(0, -1)
+  }
+
+  return lines
 }
 
 function mergeReactLineGroups(
