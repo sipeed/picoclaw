@@ -690,7 +690,7 @@ export function EditModelSheet({
                   <Input
                     value={form.thinkingLevel}
                     onChange={setField("thinkingLevel")}
-                    placeholder="off"
+                    placeholder={t("models.field.providerDefault")}
                   />
                 </Field>
 
@@ -804,6 +804,7 @@ export function EditModelSheet({
         provider={canonicalProvider}
         apiKey={form.apiKey}
         apiBase={effectiveApiBase}
+        modelIndex={model?.index}
         backendOptions={providerOptions}
       />
     </>

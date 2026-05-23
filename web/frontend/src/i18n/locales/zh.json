@@ -255,7 +255,7 @@
         "unavailable": "无法将不可用的模型设为默认",
         "isDefault": "该模型已是默认模型",
         "isVirtual": "无法将虚拟模型设为默认",
-        "unsupportedProvider": "该 Provider 仅用于 ASR，不能设为默认聊天模型"
+        "unsupportedProvider": "该服务商不能设为默认聊天模型。"
       },
       "deleteDisabled": {
         "isDefault": "无法删除默认模型"
@@ -264,8 +264,7 @@
     "defaultOnSave": {
       "label": "默认模型",
       "description": "保存后自动将该模型设置为默认模型。",
-      "unsupportedProvider": "该 Provider 可以保存在 model_list 中，但不能作为默认聊天模型使用。",
-      "clearOnSave": "保存这个仅用于 ASR 的模型后，会清除当前的默认聊天模型设置。"
+      "unsupportedProvider": "该服务商可以保存在模型列表中，但不能作为默认聊天模型使用。"
     },
     "add": {
       "button": "添加模型",
@@ -314,7 +313,8 @@
       "rpm": "速率限制（RPM）",
       "rpmHint": "每分钟最大请求数，0 表示不限制。",
       "thinkingLevel": "思考级别",
-      "thinkingLevelHint": "扩展思考预算：off、low、medium、high、xhigh、adaptive。",
+      "thinkingLevelHint": "留空则不传 thinking_level，使用 Provider 默认值。可选值：off、low、medium、high、xhigh、adaptive。",
+      "providerDefault": "Provider 默认",
       "maxTokensField": "Max Tokens 字段名",
       "maxTokensFieldHint": "覆盖请求中 max_tokens 的字段名，例如 max_completion_tokens。",
       "toolSchemaTransform": "工具 Schema 转换",
@@ -344,10 +344,12 @@
       "retry": "重试",
       "filterPlaceholder": "筛选模型...",
       "found": "已找到 {{count}} 个模型",
+      "found_plural": "已找到 {{count}} 个模型",
       "shown": "（显示 {{count}} 个）",
       "selectAll": "全选",
       "deselectAll": "取消全选",
       "fill": "填充 {{count}} 个选中的模型",
+      "fill_plural": "填充 {{count}} 个选中的模型",
       "failed": "获取模型失败"
     },
     "catalog": {
@@ -362,6 +364,7 @@
       "delete": "删除目录",
       "refresh": "从上游刷新",
       "found": "共 {{count}} 个模型",
+      "found_plural": "共 {{count}} 个模型",
       "selectAll": "全选",
       "deselectAll": "取消全选",
       "addSelected": "添加 {{count}} 个选中模型",
@@ -400,9 +403,7 @@
       "searchProvider": "搜索服务商...",
       "noProvider": "未找到服务商。",
       "noCatalog": "Provider catalog 暂不可用。",
-      "local": "本地",
-      "custom": "自定义服务商...",
-      "customPlaceholder": "输入服务商名称..."
+      "local": "本地"
     }
   },
   "channels": {
@@ -788,6 +789,23 @@
       "summarize_threshold_hint": "消息数量达到该值后开始触发摘要",
       "summarize_token_percent": "摘要目标 Token 百分比",
       "summarize_token_percent_hint": "在触发会话摘要时使用",
+      "turn_profile": "请求上下文策略",
+      "turn_profile_hint": "控制每次请求会带入哪些上下文。保持关闭时，普通对话完全沿用原逻辑。",
+      "turn_profile_enabled": "启用策略",
+      "turn_profile_enabled_hint": "启用后，每个新回合都会应用下面的设置；关闭时，PicoClaw 使用原来的上下文行为。",
+      "turn_profile_mode_default": "默认",
+      "turn_profile_mode_off": "关闭",
+      "turn_profile_mode_custom": "只允许列表",
+      "turn_profile_history": "历史上下文",
+      "turn_profile_history_hint": "默认会带上这段会话之前的消息；关闭后，本轮像一次新对话，也不会把结果写回历史。",
+      "turn_profile_system_prompt": "系统上下文",
+      "turn_profile_system_prompt_hint": "默认会带上 PicoClaw 的身份、工作区、记忆和运行时说明；关闭后只保留外部明确传入的 system prompt。",
+      "turn_profile_skills": "技能提示",
+      "turn_profile_skills_hint": "默认会把可用技能和已激活技能写入提示；关闭后不写入；只允许列表时每行填写一个技能名。",
+      "turn_profile_skills_allow_placeholder": "skill-name\nanother-skill",
+      "turn_profile_tools": "可调用工具",
+      "turn_profile_tools_hint": "默认暴露正常工具；关闭后模型不能调用工具；只允许列表时每行填写一个工具名，例如 web_search。",
+      "turn_profile_tools_allow_placeholder": "web_search\nweb_fetch",
       "session_scope": "会话隔离范围",
       "session_scope_hint": "定义不同用户/频道之间如何隔离会话上下文",
       "session_scope_per_channel_peer": "按频道+用户隔离",

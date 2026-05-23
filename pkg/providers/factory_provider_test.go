@@ -210,6 +210,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"deepseek", "deepseek"},
 		{"ollama", "ollama"},
 		{"lmstudio", "lmstudio"},
+		{"gpt4free", "gpt4free"},
 		{"longcat", "longcat"},
 		{"modelscope", "modelscope"},
 		{"mimo", "mimo"},
@@ -245,6 +246,15 @@ func TestGetDefaultAPIBase_LiteLLM(t *testing.T) {
 func TestGetDefaultAPIBase_LMStudio(t *testing.T) {
 	if got := getDefaultAPIBase("lmstudio"); got != "http://localhost:1234/v1" {
 		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "lmstudio", got, "http://localhost:1234/v1")
+	}
+}
+
+func TestGetDefaultAPIBase_GPT4Free(t *testing.T) {
+	if got := getDefaultAPIBase("gpt4free"); got != "http://localhost:1337/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "gpt4free", got, "http://localhost:1337/v1")
+	}
+	if got := getDefaultAPIBase("g4f"); got != "http://localhost:1337/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "g4f", got, "http://localhost:1337/v1")
 	}
 }
 
@@ -329,6 +339,13 @@ func TestCreateProviderFromConfig_LocalProviders(t *testing.T) {
 			model:       "vllm/Qwen/Qwen3-8B",
 			apiKey:      "",
 			wantModelID: "Qwen/Qwen3-8B",
+		},
+		{
+			name:        "GPT4Free without API key",
+			modelName:   "test-gpt4free",
+			model:       "gpt4free/gpt-4o-mini",
+			apiKey:      "",
+			wantModelID: "gpt-4o-mini",
 		},
 	}
 
@@ -1009,6 +1026,19 @@ func TestModelProviderOptions(t *testing.T) {
 		t.Fatal("lmstudio option missing")
 	} else if !option.EmptyAPIKeyAllowed {
 		t.Fatal("lmstudio should allow empty API keys")
+	}
+	if option, ok := seen["gpt4free"]; !ok {
+		t.Fatal("gpt4free option missing")
+	} else {
+		if option.DefaultAPIBase != "http://localhost:1337/v1" {
+			t.Fatalf("gpt4free default_api_base = %q, want %q", option.DefaultAPIBase, "http://localhost:1337/v1")
+		}
+		if !option.EmptyAPIKeyAllowed {
+			t.Fatal("gpt4free should allow empty API keys")
+		}
+		if !option.SupportsFetch {
+			t.Fatal("gpt4free should support upstream model listing")
+		}
 	}
 	if option, ok := seen["siliconflow"]; !ok {
 		t.Fatal("siliconflow option missing")

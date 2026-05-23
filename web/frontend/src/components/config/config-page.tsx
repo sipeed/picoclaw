@@ -32,6 +32,7 @@ import {
   EMPTY_LAUNCHER_FORM,
   type LauncherForm,
   type MCPServerForm,
+  type TurnProfileForm,
   buildFormFromConfig,
   parseCIDRText,
   parseFloatField,
@@ -40,7 +41,6 @@ import {
   parseMultilineList,
 } from "@/components/config/form-model"
 import { PageHeader } from "@/components/page-header"
-import { Badge } from "@/components/ui/badge"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,6 +52,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
@@ -69,6 +70,33 @@ function buildStringMapMergePatch(
   }
 
   return patch
+}
+
+function buildTurnProfilePatch(
+  profile: TurnProfileForm,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {
+    enabled: profile.enabled,
+    history: { mode: profile.historyMode },
+    system_prompt: { mode: profile.systemPromptMode },
+    skills: { mode: profile.skillsMode },
+    tools: { mode: profile.toolsMode },
+  }
+
+  if (profile.skillsMode === "custom") {
+    result.skills = {
+      mode: "custom",
+      allow: parseMultilineList(profile.skillsAllowText),
+    }
+  }
+  if (profile.toolsMode === "custom") {
+    result.tools = {
+      mode: "custom",
+      allow: parseMultilineList(profile.toolsAllowText),
+    }
+  }
+
+  return result
 }
 
 export function ConfigPage() {
@@ -221,6 +249,13 @@ export function ConfigPage() {
     )
   }
 
+  const handleTurnProfileFieldChange = <K extends keyof TurnProfileForm>(
+    key: K,
+    value: TurnProfileForm[K],
+  ) => {
+    updateField("turnProfile", { ...form.turnProfile, [key]: value })
+  }
+
   const handleReset = () => {
     setForm(baseline)
     setLauncherForm(launcherBaseline)
@@ -314,6 +349,7 @@ export function ConfigPage() {
           "Summarize token percent",
           { min: 1, max: 100 },
         )
+        const turnProfile = buildTurnProfilePatch(form.turnProfile)
         const heartbeatInterval = parseIntField(
           form.heartbeatInterval,
           "Heartbeat interval",
@@ -548,6 +584,7 @@ export function ConfigPage() {
               max_tool_iterations: maxToolIterations,
               summarize_message_threshold: summarizeMessageThreshold,
               summarize_token_percent: summarizeTokenPercent,
+              turn_profile: turnProfile,
             },
           },
           session: {
@@ -757,7 +794,11 @@ export function ConfigPage() {
                 disabled={saving || isLauncherLoading}
               />
 
-              <AgentDefaultsSection form={form} onFieldChange={updateField} />
+              <AgentDefaultsSection
+                form={form}
+                onFieldChange={updateField}
+                onTurnProfileFieldChange={handleTurnProfileFieldChange}
+              />
 
               <RuntimeSection form={form} onFieldChange={updateField} />
 

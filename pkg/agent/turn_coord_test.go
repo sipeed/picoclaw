@@ -73,6 +73,8 @@ func (p *sequenceProvider) GetDefaultModel() string {
 
 type nativeSearchCaptureProvider struct {
 	lastOpts map[string]any
+	messages []providers.Message
+	tools    []providers.ToolDefinition
 }
 
 func (p *nativeSearchCaptureProvider) Chat(
@@ -82,6 +84,8 @@ func (p *nativeSearchCaptureProvider) Chat(
 	model string,
 	opts map[string]any,
 ) (*providers.LLMResponse, error) {
+	p.messages = append([]providers.Message(nil), messages...)
+	p.tools = append([]providers.ToolDefinition(nil), tools...)
 	p.lastOpts = make(map[string]any, len(opts))
 	for k, v := range opts {
 		p.lastOpts[k] = v

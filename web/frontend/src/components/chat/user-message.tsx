@@ -1,17 +1,23 @@
 import { IconCheck, IconCopy } from "@tabler/icons-react"
+import { useTranslation } from "react-i18next"
 
 import { Button } from "@/components/ui/button"
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard"
+import { formatMessageTime } from "@/hooks/use-pico-chat"
 import { cn } from "@/lib/utils"
 import type { ChatAttachment } from "@/store/chat"
-import { useTranslation } from "react-i18next"
 
 interface UserMessageProps {
   content: string
   attachments?: ChatAttachment[]
+  timestamp?: string | number
 }
 
-export function UserMessage({ content, attachments = [] }: UserMessageProps) {
+export function UserMessage({
+  content,
+  attachments = [],
+  timestamp = "",
+}: UserMessageProps) {
   const { t } = useTranslation()
   const { copy, isCopied } = useCopyToClipboard()
   const hasText = content.trim().length > 0
@@ -22,6 +28,8 @@ export function UserMessage({ content, attachments = [] }: UserMessageProps) {
   const copyMessageLabel = isCopied
     ? t("chat.copiedLabel")
     : t("chat.copyMessage")
+  const formattedTimestamp =
+    timestamp !== "" ? formatMessageTime(timestamp) : ""
 
   return (
     <div className="group flex w-full flex-col items-end gap-1.5">
@@ -80,6 +88,12 @@ export function UserMessage({ content, attachments = [] }: UserMessageProps) {
             )}
           </Button>
         </div>
+      )}
+
+      {formattedTimestamp && (
+        <span className="px-1 text-[12px] text-zinc-400">
+          {formattedTimestamp}
+        </span>
       )}
     </div>
   )

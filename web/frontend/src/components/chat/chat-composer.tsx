@@ -1,5 +1,5 @@
 import { IconArrowUp, IconPhotoPlus, IconX } from "@tabler/icons-react"
-import type { KeyboardEvent } from "react"
+import { useRef, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import { useTranslation } from "react-i18next"
 import TextareaAutosize from "react-textarea-autosize"
 
@@ -52,14 +52,25 @@ export function ChatComposer({
 }: ChatComposerProps) {
   const { t } = useTranslation()
   const canInput = inputDisabledReason === null
+  const composingRef = useRef(false)
   const disabledMessage =
     inputDisabledReason === null
       ? null
       : t(`chat.disabledPlaceholder.${inputDisabledReason}`)
   const placeholder = disabledMessage ?? t("chat.placeholder")
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.nativeEvent.isComposing) return
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    const nativeEvent = e.nativeEvent as Event & {
+      isComposing?: boolean
+      keyCode?: number
+    }
+    if (
+      composingRef.current ||
+      nativeEvent.isComposing ||
+      nativeEvent.keyCode === 229
+    ) {
+      return
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       onSend()
@@ -98,6 +109,12 @@ export function ChatComposer({
         <TextareaAutosize
           value={input}
           onChange={(e) => onInputChange(e.target.value)}
+          onCompositionStart={() => {
+            composingRef.current = true
+          }}
+          onCompositionEnd={() => {
+            composingRef.current = false
+          }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={!canInput}

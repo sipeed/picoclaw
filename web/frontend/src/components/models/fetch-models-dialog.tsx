@@ -30,6 +30,7 @@ interface FetchModelsDialogProps {
   provider: string
   apiKey: string
   apiBase: string
+  modelIndex?: number
   backendOptions?: ModelProviderOption[]
 }
 
@@ -40,6 +41,7 @@ export function FetchModelsDialog({
   provider,
   apiKey,
   apiBase,
+  modelIndex,
   backendOptions,
 }: FetchModelsDialogProps) {
   const { t } = useTranslation()
@@ -52,6 +54,7 @@ export function FetchModelsDialog({
   const canonicalProvider = getCanonicalProviderKey(provider, backendOptions)
   const providerDef = getProviderCatalogMap(backendOptions).get(canonicalProvider)
   const needsKey = providerDef?.requiresApiKey !== false
+  const hasKey = !!apiKey || modelIndex !== undefined
 
   const handleFetch = useCallback(async () => {
     setFetching(true)
@@ -63,6 +66,7 @@ export function FetchModelsDialog({
         provider: canonicalProvider,
         api_key: apiKey,
         api_base: apiBase,
+        model_index: modelIndex,
       })
       setModels(res.models)
       // Auto-select all by default
@@ -72,14 +76,14 @@ export function FetchModelsDialog({
     } finally {
       setFetching(false)
     }
-  }, [canonicalProvider, apiKey, apiBase, t])
+  }, [canonicalProvider, apiKey, apiBase, modelIndex, t])
 
   // Auto-fetch when dialog opens (skip if provider requires API key but none is set)
   useEffect(() => {
-    if (open && provider && !(needsKey && !apiKey)) {
+    if (open && provider && !(needsKey && !hasKey)) {
       handleFetch()
     }
-  }, [open, provider, apiKey, needsKey, handleFetch])
+  }, [open, provider, hasKey, needsKey, handleFetch])
 
   const handleFill = () => {
     onFill(Array.from(selected))
@@ -140,7 +144,7 @@ export function FetchModelsDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          {needsKey && !apiKey && (
+          {needsKey && !hasKey && (
             <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-700 dark:text-yellow-400">
               {t("models.fetch.needApiKey")}
             </div>

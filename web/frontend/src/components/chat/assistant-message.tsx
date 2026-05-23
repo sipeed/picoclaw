@@ -117,12 +117,17 @@ export function AssistantMessage({
                   <span className="text-muted-foreground/45">{trimmedModelName}</span>
                 )}
               </div>
-              <IconChevronDown
-                className={cn(
-                  "size-3.5 opacity-0 transition-all duration-200 group-hover:opacity-100",
-                  isExpanded ? "rotate-180" : "",
+              <div className="flex items-center gap-2">
+                {formattedTimestamp && (
+                  <span className="opacity-50">{formattedTimestamp}</span>
                 )}
-              />
+                <IconChevronDown
+                  className={cn(
+                    "size-3.5 opacity-0 transition-all duration-200 group-hover:opacity-100",
+                    isExpanded ? "rotate-180" : "",
+                  )}
+                />
+              </div>
             </div>
           )}
           {(!isCollapsedBlock || isExpanded) && isToolCalls && hasToolCalls && (

@@ -640,9 +640,10 @@ func (h *Handler) handleFetchModels(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	var req struct {
-		Provider string `json:"provider"`
-		APIKey   string `json:"api_key"`
-		APIBase  string `json:"api_base"`
+		Provider   string `json:"provider"`
+		APIKey     string `json:"api_key"`
+		APIBase    string `json:"api_base"`
+		ModelIndex *int   `json:"model_index,omitempty"`
 	}
 	if err = json.Unmarshal(body, &req); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
@@ -659,7 +660,15 @@ func (h *Handler) handleFetchModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	apiKey := strings.TrimSpace(req.APIKey)
 	apiBase := strings.TrimSpace(req.APIBase)
+
+	if apiKey == "" && req.ModelIndex != nil {
+		if stored := h.lookupStoredAPIKey(*req.ModelIndex, req.Provider, apiBase); stored != "" {
+			apiKey = stored
+		}
+	}
+
 	if apiBase == "" {
 		apiBase = providers.DefaultAPIBaseForProtocol(req.Provider)
 	}
@@ -671,7 +680,7 @@ func (h *Handler) handleFetchModels(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	models, err := fetchUpstreamModels(ctx, req.Provider, apiBase, req.APIKey)
+	models, err := fetchUpstreamModels(ctx, req.Provider, apiBase, apiKey)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to fetch models: %v", err), http.StatusBadGateway)
 		return
@@ -682,7 +691,7 @@ func (h *Handler) handleFetchModels(w http.ResponseWriter, r *http.Request) {
 	for i, m := range models {
 		catalogModels[i] = CatalogModel{ID: m.ID, OwnedBy: m.OwnedBy}
 	}
-	if saveErr := SaveCatalog(req.Provider, apiBase, req.APIKey, catalogModels); saveErr != nil {
+	if saveErr := SaveCatalog(req.Provider, apiBase, apiKey, catalogModels); saveErr != nil {
 		// Log but don't fail the request — saving catalog is non-critical
 		logger.Warnf("Failed to save model catalog: %v", saveErr)
 	}
@@ -692,6 +701,30 @@ func (h *Handler) handleFetchModels(w http.ResponseWriter, r *http.Request) {
 		"models": models,
 		"total":  len(models),
 	})
+}
+
+func (h *Handler) lookupStoredAPIKey(index int, reqProvider, reqAPIBase string) string {
+	cfg, err := config.LoadConfig(h.configPath)
+	if err != nil || index < 0 || index >= len(cfg.ModelList) {
+		return ""
+	}
+	stored := cfg.ModelList[index]
+	storedProvider, _ := providers.ExtractProtocol(stored)
+	if providers.NormalizeProvider(reqProvider) != providers.NormalizeProvider(storedProvider) {
+		return ""
+	}
+	effectiveReqBase := strings.TrimSpace(reqAPIBase)
+	if effectiveReqBase == "" {
+		effectiveReqBase = providers.DefaultAPIBaseForProtocol(reqProvider)
+	}
+	effectiveStoredBase := strings.TrimSpace(stored.APIBase)
+	if effectiveStoredBase == "" {
+		effectiveStoredBase = providers.DefaultAPIBaseForProtocol(storedProvider)
+	}
+	if normalizeAPIBaseForCompare(effectiveReqBase) != normalizeAPIBaseForCompare(effectiveStoredBase) {
+		return ""
+	}
+	return stored.APIKey()
 }
 
 type upstreamModel struct {
@@ -997,7 +1030,7 @@ func probeModelConnectivity(m *config.ModelConfig) bool {
 	switch protocol {
 	case "ollama":
 		return probeOllamaModel(apiBase, modelID)
-	case "vllm", "lmstudio":
+	case "vllm", "lmstudio", "gpt4free":
 		return probeOpenAICompatibleModel(apiBase, modelID, m.APIKey())
 	case "github-copilot":
 		return probeTCPService(apiBase)

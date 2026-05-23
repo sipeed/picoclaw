@@ -67,6 +67,50 @@ PicoClaw は設定されたワークスペース（デフォルト: `~/.picoclaw
 
 > **注意：** `AGENT.md`、`SOUL.md`、`USER.md` および `memory/MEMORY.md` への変更は、ファイル更新時刻（mtime）の追跡により実行時に自動検出されます。これらのファイルを編集した後に **gateway を再起動する必要はありません** — Agent は次のリクエスト時に最新の内容を自動的に読み込みます。
 
+### リクエストコンテキストポリシー
+
+`turn_profile` は `agents.defaults.turn_profile` に置く任意のリクエストコンテキストポリシーです。各ターンに履歴、system prompt、skill prompt、許可ツールを含めるかどうかを制御します。未設定、または `"enabled": false` の場合、PicoClaw は通常動作のままです。`"enabled": true` にすると、このポリシーが各新規ターンに適用されます。
+
+各ブロックは同じ `mode` を使います。
+
+| Mode | 意味 |
+| --- | --- |
+| `default` | PicoClaw の通常動作を維持します。ブロックまたは `mode` が省略された場合も `default` です。 |
+| `off` | そのブロックを無効にします。 |
+| `custom` | 許可リストを使います。このバージョンでは `skills` と `tools` のみ対応し、`history` や `system_prompt` で使うと検証エラーになります。 |
+
+ブロックの意味：
+
+| ブロック | 制御する内容 |
+| --- | --- |
+| `history` | 履歴と要約の読み込み、ユーザー/アシスタント/ツールメッセージの保存、コンテキスト取り込み、圧縮と要約。 |
+| `system_prompt` | PicoClaw の既定の identity、ワークスペース指示、メモリ、実行時コンテキスト、要約の注入。`off` でも外部 system prompt は利用できます。 |
+| `skills` | Skill カタログと active skill のプロンプト内容。`custom.allow` は列挙した skill 名だけを残します。 |
+| `tools` | モデルに見せ、実行を許可するツール。`custom.allow` は登録済みで列挙されたツール名だけを残します。 |
+
+`system_prompt.mode` が `off` で、ツールが表示され、外部 system prompt がない場合、PicoClaw は既存のツール使用ルールを最小のフォールバックプロンプトとして再利用します。`tools.mode` が `off` の場合、このフォールバックは追加されません。
+
+Web ツールだけを残すクリーンなコンテキスト例：
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "turn_profile": {
+        "enabled": true,
+        "history": { "mode": "off" },
+        "system_prompt": { "mode": "off" },
+        "skills": { "mode": "off" },
+        "tools": {
+          "mode": "custom",
+          "allow": ["web_search", "web_fetch"]
+        }
+      }
+    }
+  }
+}
+```
+
 ### スキルソース
 
 デフォルトでは、スキルは以下の順序で読み込まれます：

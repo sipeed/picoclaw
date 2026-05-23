@@ -36,6 +36,39 @@ func newTestPicoChannel(t *testing.T) *PicoChannel {
 	return ch
 }
 
+func TestHandleMessageSend_ForwardsMessageMetadata(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	bc := &config.Channel{Type: config.ChannelPico, Enabled: true}
+	cfg := &config.PicoSettings{}
+	cfg.SetToken("test-token")
+	ch, err := NewPicoChannel(bc, cfg, msgBus)
+	if err != nil {
+		t.Fatalf("NewPicoChannel: %v", err)
+	}
+	ch.ctx = context.Background()
+
+	ch.handleMessageSend(&picoConn{id: "conn-1", sessionID: "sess-1"}, PicoMessage{
+		Type:      TypeMessageSend,
+		ID:        "msg-1",
+		SessionID: "sess-1",
+		Payload: map[string]any{
+			PayloadKeyContent: "hello",
+		},
+	})
+
+	select {
+	case inbound := <-msgBus.InboundChan():
+		if inbound.Content != "hello" {
+			t.Fatalf("content = %q, want hello", inbound.Content)
+		}
+		if got := inbound.Context.Raw["session_id"]; got != "sess-1" {
+			t.Fatalf("session_id raw = %q, want sess-1", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected inbound pico message")
+	}
+}
+
 func TestFinalizeTrackedToolFeedbackMessage_StopsTrackingBeforeEdit(t *testing.T) {
 	ch := &PicoChannel{
 		progress: channels.NewToolFeedbackAnimator(nil),

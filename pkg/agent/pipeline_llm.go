@@ -37,9 +37,10 @@ func (p *Pipeline) CallLLM(
 	// PreLLM: graceful terminal handling
 	exec.gracefulTerminal, _ = ts.gracefulInterruptRequested()
 	exec.providerToolDefs = ts.agent.Tools.ToProviderDefs()
+	exec.providerToolDefs = filterToolsByTurnProfile(exec.providerToolDefs, ts.profile)
 
 	// Native web search support
-	webSearchEnabled := al.cfg.Tools.IsToolEnabled("web")
+	webSearchEnabled := al.cfg.Tools.IsToolEnabled("web") && turnProfileToolAllowed(ts.profile, "web_search")
 	exec.useNativeSearch = webSearchEnabled && al.cfg.Tools.Web.PreferNative &&
 		func() bool {
 			if ns, ok := ts.agent.Provider.(providers.NativeSearchCapable); ok {
@@ -47,7 +48,6 @@ func (p *Pipeline) CallLLM(
 			}
 			return false
 		}()
-
 	if exec.useNativeSearch {
 		filtered := make([]providers.ToolDefinition, 0, len(exec.providerToolDefs))
 		for _, td := range exec.providerToolDefs {
@@ -73,14 +73,7 @@ func (p *Pipeline) CallLLM(
 	if exec.useNativeSearch {
 		exec.llmOpts["native_search"] = true
 	}
-	if ts.agent.ThinkingLevel != ThinkingOff {
-		if tc, ok := ts.agent.Provider.(providers.ThinkingCapable); ok && tc.SupportsThinking() {
-			exec.llmOpts["thinking_level"] = string(ts.agent.ThinkingLevel)
-		} else {
-			logger.WarnCF("agent", "thinking_level is set but current provider does not support it, ignoring",
-				map[string]any{"agent_id": ts.agent.ID, "thinking_level": string(ts.agent.ThinkingLevel)})
-		}
-	}
+	applyTurnThinkingOptions(exec, ts.agent, exec.activeProvider, true)
 
 	exec.llmModel = exec.activeModel
 
@@ -101,10 +94,16 @@ func (p *Pipeline) CallLLM(
 				prevModel := exec.llmModel
 				exec.llmModel = llmReq.Model
 				exec.callMessages = llmReq.Messages
-				exec.providerToolDefs = llmReq.Tools
+				exec.providerToolDefs = filterToolsByTurnProfile(llmReq.Tools, ts.profile)
 				exec.llmOpts = llmReq.Options
+				nativeSearchAllowed := exec.useNativeSearch &&
+					turnProfileToolAllowed(ts.profile, "web_search")
+				if !nativeSearchAllowed {
+					delete(exec.llmOpts, "native_search")
+				}
 				if strings.TrimSpace(exec.llmModel) != "" && exec.llmModel != prevModel {
 					p.applyBeforeLLMModelRewrite(ts, exec)
+					applyTurnThinkingOptions(exec, ts.agent, exec.activeProvider, true)
 				}
 			}
 		case HookActionAbortTurn:
@@ -172,21 +171,33 @@ func (p *Pipeline) CallLLM(
 		}
 
 		if len(exec.activeCandidates) > 1 && p.Fallback != nil {
-			fbResult, fbErr := p.Fallback.Execute(
+			fbResult, fbErr := p.Fallback.ExecuteCandidate(
 				providerCtx,
 				exec.activeCandidates,
-				func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
+				func(ctx context.Context, candidate providers.FallbackCandidate) (*providers.LLMResponse, error) {
 					candidateProvider, err := providerForFallbackCandidate(
 						ts.agent,
 						exec.activeProvider,
 						exec.activeCandidates,
-						provider,
-						model,
+						candidate.Provider,
+						candidate.Model,
 					)
 					if err != nil {
 						return nil, err
 					}
-					return candidateProvider.Chat(ctx, messagesForCall, toolDefsForCall, model, exec.llmOpts)
+					callOpts := shallowCloneLLMOptions(exec.llmOpts)
+					delete(callOpts, "thinking_level")
+					candidateCfg := resolveActiveModelConfig(
+						p.Cfg,
+						ts.agent.Workspace,
+						[]providers.FallbackCandidate{candidate},
+						candidate.Model,
+						p.Cfg.Agents.Defaults.Provider,
+					)
+					candidateThinking := thinkingSettingsFromModelConfig(candidateCfg)
+					applyThinkingOption(callOpts, candidateProvider, candidateThinking, true, ts.agent.ID)
+					exec.suppressReasoning = shouldSuppressReasoningFor(candidateThinking)
+					return candidateProvider.Chat(ctx, messagesForCall, toolDefsForCall, candidate.Model, callOpts)
 				},
 			)
 			if fbErr != nil {
@@ -404,7 +415,7 @@ func (p *Pipeline) CallLLM(
 				contextualSkills = ts.agent.ContextBuilder.ResolveActiveSkillsForContext(ts.activeSkills)
 			}
 			ts.recordSkillContextSnapshot(skillContextTriggerContextRetryRebuild, contextualSkills)
-			rebuildPromptReq := promptBuildRequestForTurn(ts, exec.history, exec.summary, "", nil)
+			rebuildPromptReq := promptBuildRequestForTurn(ts, exec.history, exec.summary, "", nil, p.Cfg)
 			rebuildPromptReq.ActiveSkills = append([]string(nil), contextualSkills...)
 			exec.messages = ts.agent.ContextBuilder.BuildMessagesFromPrompt(rebuildPromptReq)
 			exec.callMessages = exec.messages
@@ -469,6 +480,11 @@ func (p *Pipeline) CallLLM(
 		}
 	}
 
+	if exec.suppressReasoning {
+		exec.response.Reasoning = ""
+		exec.response.ReasoningContent = ""
+		exec.response.ReasoningDetails = nil
+	}
 	reasoningContent := responseReasoningContent(exec.response)
 	shouldPublishPicoToolCallInterim := ts.channel == "pico" && len(exec.response.ToolCalls) > 0
 	if shouldPublishPicoToolCallInterim {

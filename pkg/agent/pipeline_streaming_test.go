@@ -517,6 +517,46 @@ func TestConfiguredStreamingStreamsPicoReasoningBeforeAnswerContent(t *testing.T
 	}
 }
 
+func TestConfiguredStreamingSuppressesPicoReasoningWhenThinkingOff(t *testing.T) {
+	cfg := newConfiguredStreamingTestConfig(t, true, true, nil)
+	cfg.ModelList[0].ThinkingLevel = "off"
+	streamer := &recordingStreamer{}
+	msgBus := bus.NewMessageBus()
+	msgBus.SetStreamDelegate(configuredStreamingDelegate{streamer: streamer})
+	provider := &configuredStreamingProvider{
+		eventPlan: []configuredStreamingEventCall{{
+			chunks: []providers.StreamChunk{
+				{ReasoningContent: "thinking"},
+				{Content: "answer"},
+			},
+			response: &providers.LLMResponse{
+				Content:          "answer",
+				ReasoningContent: "thinking",
+			},
+		}},
+	}
+	al := NewAgentLoop(cfg, msgBus, provider)
+
+	got := runConfiguredStreamingTurn(t, al, "pico")
+	if got != "answer" {
+		t.Fatalf("response = %q, want answer", got)
+	}
+	if len(streamer.reasoningUpdates) != 0 {
+		t.Fatalf("reasoning updates = %v, want none when thinking is off", streamer.reasoningUpdates)
+	}
+	if len(streamer.reasoningFinalized) != 0 {
+		t.Fatalf("reasoning finalized = %v, want none when thinking is off", streamer.reasoningFinalized)
+	}
+	if len(streamer.updates) != 1 || streamer.updates[0] != "answer" {
+		t.Fatalf("content updates = %v, want [answer]", streamer.updates)
+	}
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		t.Fatalf("expected no reasoning outbound when thinking is off, got %+v", outbound)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 func TestConfiguredStreamingFinalFlushFailureAfterVisibleOutputReturnsErrorWithoutFallbackOrCancel(t *testing.T) {
 	cfg := newConfiguredStreamingTestConfig(t, true, true, nil)
 	streamer := &failingFinalizeStreamer{err: errors.New("final failed")}
