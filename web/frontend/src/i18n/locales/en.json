@@ -76,6 +76,8 @@
     "copyMessage": "Copy message",
     "copyCode": "Copy code",
     "copiedLabel": "Copied",
+    "enableCodeWrap": "Wrap lines",
+    "disableCodeWrap": "Disable wrap",
     "expandCode": "Expand code",
     "collapseCode": "Collapse code",
     "history": "History",

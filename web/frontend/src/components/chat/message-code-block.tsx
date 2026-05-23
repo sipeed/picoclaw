@@ -3,17 +3,28 @@ import {
   IconChevronDown,
   IconCopy,
 } from "@tabler/icons-react"
+import { useAtom } from "jotai"
 import hljs from "highlight.js/lib/core"
 import json from "highlight.js/lib/languages/json"
-import { type ComponentProps, type ReactNode, useState } from "react"
+import {
+  type ComponentProps,
+  type CSSProperties,
+  type ReactNode,
+  useState,
+} from "react"
 import { useTranslation } from "react-i18next"
 
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard"
 import { cn } from "@/lib/utils"
+import { codeBlockWrapAtom } from "@/store/code-block"
 
 import {
   extractCodeBlockFromPreNode,
+  extractCodeBlockRenderState,
   type MarkdownNode,
+  splitCodeIntoLines,
+  splitHighlightedHtmlIntoLines,
+  splitRenderedCodeContentIntoLines,
 } from "./message-code-block.utils"
 
 import { Button } from "@/components/ui/button"
@@ -27,10 +38,9 @@ interface MessageCodeBlockProps {
   code: string
   language?: string | null
   label?: string
-  children?: ReactNode
   className?: string
   bodyClassName?: string
-  wrapLongLines?: boolean
+  children?: ReactNode
 }
 
 interface MarkdownCodeBlockProps extends ComponentProps<"pre"> {
@@ -53,13 +63,13 @@ export function MessageCodeBlock({
   code,
   language = null,
   label,
-  children,
   className,
   bodyClassName,
-  wrapLongLines = false,
+  children,
 }: MessageCodeBlockProps) {
   const { t } = useTranslation()
   const { copy, isCopied } = useCopyToClipboard()
+  const [wrapLongLines, setWrapLongLines] = useAtom(codeBlockWrapAtom)
   const [isExpanded, setIsExpanded] = useState(true)
   const blockLabel =
     label ??
@@ -68,7 +78,23 @@ export function MessageCodeBlock({
       : t("chat.codeLabel").toLocaleLowerCase())
   const copyLabel = isCopied ? t("chat.copiedLabel") : t("chat.copyCode")
   const expandLabel = isExpanded ? t("chat.collapseCode") : t("chat.expandCode")
+  const wrapLabel = wrapLongLines
+    ? t("chat.disableCodeWrap")
+    : t("chat.enableCodeWrap")
+  const renderedCodeState = children
+    ? extractCodeBlockRenderState(children)
+    : {
+        renderedContent: null,
+        className: undefined,
+      }
   const highlightedHtml = !children ? getHighlightedHtml(code, language) : null
+  const highlightedLines = highlightedHtml
+    ? splitHighlightedHtmlIntoLines(highlightedHtml)
+    : null
+  const codeLines = children
+    ? splitRenderedCodeContentIntoLines(renderedCodeState.renderedContent)
+    : (highlightedLines ?? splitCodeIntoLines(code))
+  const lineNumberWidth = `${String(codeLines.length).length + 1}ch`
 
   return (
     <div
@@ -106,6 +132,18 @@ export function MessageCodeBlock({
             type="button"
             variant="ghost"
             size="xs"
+            className="h-7 px-2 text-[11px] text-zinc-600 hover:bg-zinc-300/70 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            onClick={() => setWrapLongLines((current) => !current)}
+            aria-pressed={wrapLongLines}
+            aria-label={wrapLabel}
+            title={wrapLabel}
+          >
+            {wrapLabel}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
             className="h-7 text-zinc-600 hover:bg-zinc-300/70 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
             onClick={() => setIsExpanded((expanded) => !expanded)}
             aria-expanded={isExpanded}
@@ -123,23 +161,56 @@ export function MessageCodeBlock({
       {isExpanded && (
         <pre
           className={cn(
-            "m-0 overflow-x-auto bg-transparent px-4 py-3 font-mono text-[13px] leading-6 [&_code]:block [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit",
-            wrapLongLines ? "break-words whitespace-pre-wrap" : "whitespace-pre",
+            "m-0 overflow-x-auto bg-transparent px-4 py-3 font-mono text-[13px] leading-6",
             bodyClassName,
           )}
         >
-          {children ?? (
-            highlightedHtml ? (
-              <code
-                className={cn("hljs", language && `language-${language}`)}
-                dangerouslySetInnerHTML={{ __html: highlightedHtml }}
-              />
-            ) : (
-              <code className={language ? `language-${language}` : undefined}>
-                {code}
-              </code>
-            )
-          )}
+          <code
+            className={cn(
+              "block bg-transparent p-0 text-inherit",
+              children
+                ? renderedCodeState.className
+                : cn(highlightedHtml && "hljs", language && `language-${language}`),
+            )}
+          >
+            {codeLines.map((line, index) => (
+              <span
+                key={`${index}-${line.length}`}
+                className="grid grid-cols-[var(--code-line-number-width)_minmax(0,1fr)]"
+                style={
+                  {
+                    "--code-line-number-width": lineNumberWidth,
+                  } as CSSProperties
+                }
+              >
+                <span className="sticky left-0 z-1 select-none bg-[#f6f8fa] pr-4 text-right text-zinc-500/80 dark:bg-[#0d1117] dark:text-zinc-500">
+                  {index + 1}
+                </span>
+                {!children && highlightedLines ? (
+                  <span
+                    className={cn(
+                      "min-w-0",
+                      wrapLongLines
+                        ? "break-words whitespace-pre-wrap"
+                        : "whitespace-pre",
+                    )}
+                    dangerouslySetInnerHTML={{ __html: line }}
+                  />
+                ) : (
+                  <span
+                    className={cn(
+                      "min-w-0",
+                      wrapLongLines
+                        ? "break-words whitespace-pre-wrap"
+                        : "whitespace-pre",
+                    )}
+                  >
+                    {line}
+                  </span>
+                )}
+              </span>
+            ))}
+          </code>
         </pre>
       )}
     </div>

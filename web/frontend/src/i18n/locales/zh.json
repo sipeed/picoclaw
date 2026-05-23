@@ -76,6 +76,8 @@
     "copyMessage": "复制消息",
     "copyCode": "复制代码",
     "copiedLabel": "已复制",
+    "enableCodeWrap": "开启换行",
+    "disableCodeWrap": "关闭换行",
     "expandCode": "展开代码",
     "collapseCode": "折叠代码",
     "history": "历史记录",

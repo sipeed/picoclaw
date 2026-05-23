@@ -1,4 +1,5 @@
 import type { ChannelConfig } from "@/api/channels"
+import { MessageCodeBlock } from "@/components/chat/message-code-block"
 import { getSecretInputPlaceholder } from "@/components/channels/channel-config-fields"
 import { Field, KeyInput } from "@/components/shared-form"
 import {
@@ -180,9 +181,12 @@ export function MqttForm({
               {t("channels.mqtt.uplink")}
             </p>
             <CodeLine>{`${topicBase}/request`}</CodeLine>
-            <pre className="bg-muted text-foreground rounded px-3 py-2 font-mono text-xs leading-relaxed">
-              {`{\n  "text": "your message"\n}`}
-            </pre>
+            <MessageCodeBlock
+              code={`{\n  "text": "your message"\n}`}
+              language="json"
+              className="my-0"
+              bodyClassName="px-3 py-2 text-xs leading-relaxed"
+            />
             <div className="text-muted-foreground space-y-1 text-xs">
               <p>
                 <span className="text-foreground font-medium">
@@ -199,9 +203,12 @@ export function MqttForm({
               {t("channels.mqtt.downlink")}
             </p>
             <CodeLine>{`${topicBase}/response`}</CodeLine>
-            <pre className="bg-muted text-foreground rounded px-3 py-2 font-mono text-xs leading-relaxed">
-              {`{\n  "text": "agent response"\n}`}
-            </pre>
+            <MessageCodeBlock
+              code={`{\n  "text": "agent response"\n}`}
+              language="json"
+              className="my-0"
+              bodyClassName="px-3 py-2 text-xs leading-relaxed"
+            />
             <div className="text-muted-foreground space-y-1 text-xs">
               <p>
                 <span className="text-foreground font-medium">

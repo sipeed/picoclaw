@@ -14,6 +14,10 @@ import remarkGfm from "remark-gfm"
 
 import type { SkillDetailResponse, SkillSupportItem } from "@/api/skills"
 import {
+  MarkdownCodeBlock,
+  MessageCodeBlock,
+} from "@/components/chat/message-code-block"
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -176,6 +180,9 @@ export function DetailSheet({
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     rehypePlugins={[rehypeRaw, rehypeSanitize, rehypeHighlight]}
+                    components={{
+                      pre: MarkdownCodeBlock,
+                    }}
                   >
                     {selectedSkillDetail.content}
                   </ReactMarkdown>
@@ -183,11 +190,12 @@ export function DetailSheet({
               ) : null}
 
               {detailView === "raw" ? (
-                <div className="border-border/50 overflow-x-auto rounded-xl border bg-zinc-950 p-5 shadow-sm">
-                  <pre className="font-mono text-[13px] leading-relaxed break-words whitespace-pre-wrap text-zinc-100/90">
-                    <code>{selectedSkillDetail.content}</code>
-                  </pre>
-                </div>
+                <MessageCodeBlock
+                  code={selectedSkillDetail.content}
+                  label={t("pages.agent.skills.detail_tabs.raw")}
+                  className="my-0"
+                  bodyClassName="text-[13px] leading-relaxed"
+                />
               ) : null}
 
               {detailView === "meta" ? (

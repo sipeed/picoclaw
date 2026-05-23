@@ -197,7 +197,6 @@ export function AssistantMessage({
                               label={toolName || t("chat.toolCallArgumentsLabel")}
                               className="my-0 shadow-none"
                               bodyClassName="px-3 py-2 text-[12px] leading-relaxed"
-                              wrapLongLines
                             />
                           )}
                         </div>
