@@ -1008,7 +1008,8 @@ func (m *Manager) getChannelConfigAndEnabled(channelName string) (*config.Channe
 	switch settings := decoded.(type) {
 	case *config.WhatsAppSettings:
 		if channelType == config.ChannelWhatsApp {
-			return bc, settings.BridgeURL != ""
+			// Bridge mode requires bridge_url, native mode requires use_native
+			return bc, settings.BridgeURL != "" || settings.UseNative
 		}
 		return bc, channelType == config.ChannelWhatsAppNative && settings.UseNative
 	case *config.MatrixSettings:
