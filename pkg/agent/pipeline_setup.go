@@ -66,10 +66,45 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 				history = resp.History
 				summary = resp.Summary
 			}
-			rebuildPromptReq := promptBuildRequestForTurn(ts, history, summary, ts.userMessage, ts.media, cfg)
-			rebuildPromptReq.ActiveSkills = append([]string(nil), contextualSkills...)
-			messages = ts.agent.ContextBuilder.BuildMessagesFromPrompt(rebuildPromptReq)
-			messages = resolveMediaRefs(messages, p.MediaStore, maxMediaSize)
+			originalHistoryCount := len(history)
+			var fit bool
+			history, messages, fit = trimHistoryToFitContextWindow(
+				history,
+				func(trimmedHistory []providers.Message) []providers.Message {
+					rebuildPromptReq := promptBuildRequestForTurn(
+						ts,
+						trimmedHistory,
+						summary,
+						ts.userMessage,
+						ts.media,
+						cfg,
+					)
+					rebuildPromptReq.ActiveSkills = append([]string(nil), contextualSkills...)
+					rebuilt := ts.agent.ContextBuilder.BuildMessagesFromPrompt(rebuildPromptReq)
+					return resolveMediaRefs(rebuilt, p.MediaStore, maxMediaSize)
+				},
+				ts.agent.ContextWindow,
+				toolDefs,
+				ts.agent.MaxTokens,
+			)
+			if dropped := originalHistoryCount - len(history); dropped > 0 {
+				logger.WarnCF("agent", "Trimmed rebuilt history after proactive compaction", map[string]any{
+					"session_key":     ts.sessionKey,
+					"dropped_msgs":    dropped,
+					"remaining_msgs":  len(history),
+					"context_window":  ts.agent.ContextWindow,
+					"max_tokens":      ts.agent.MaxTokens,
+					"still_overlimit": !fit,
+				})
+			} else if !fit {
+				logger.WarnCF("agent", "Context still exceeds budget "+
+					"after proactive compaction rebuild", map[string]any{
+					"session_key":    ts.sessionKey,
+					"history_msgs":   len(history),
+					"context_window": ts.agent.ContextWindow,
+					"max_tokens":     ts.agent.MaxTokens,
+				})
+			}
 		}
 	}
 

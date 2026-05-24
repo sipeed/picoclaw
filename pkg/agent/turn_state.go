@@ -692,13 +692,17 @@ func (ts *turnState) recordPersistedMessage(msg providers.Message) {
 	ts.persistedMessages = append(ts.persistedMessages, msg)
 }
 
+func (ts *turnState) persistedMessagesSnapshot() []providers.Message {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return append([]providers.Message(nil), ts.persistedMessages...)
+}
+
 func (ts *turnState) refreshRestorePointFromSession(agent *AgentInstance) {
 	history := agent.Sessions.GetHistory(ts.sessionKey)
 	summary := agent.Sessions.GetSummary(ts.sessionKey)
 
-	ts.mu.RLock()
-	persisted := append([]providers.Message(nil), ts.persistedMessages...)
-	ts.mu.RUnlock()
+	persisted := ts.persistedMessagesSnapshot()
 
 	if matched := matchingTurnMessageTail(history, persisted); matched > 0 {
 		history = append([]providers.Message(nil), history[:len(history)-matched]...)
@@ -735,29 +739,84 @@ func (ts *turnState) restoreSession(agent *AgentInstance) error {
 	return agent.Sessions.Save(ts.sessionKey)
 }
 
-// messagesContentEqual compares two message slices by content only, ignoring CreatedAt.
-// JSON roundtrip loses the monotonic clock portion of time.Time, so direct
-// reflect.DeepEqual would always differ on messages that roundtripped through
-// the JSONL store.
-func messagesContentEqual(a, b []providers.Message) bool {
+func matchingTurnMessageTail(history, persisted []providers.Message) int {
+	maxMatch := min(len(history), len(persisted))
+	for size := maxMatch; size > 0; size-- {
+		if messageSlicesEquivalent(history[len(history)-size:], persisted[len(persisted)-size:]) {
+			return size
+		}
+	}
+	return 0
+}
+
+func splitHistoryForActiveTurn(
+	history []providers.Message,
+	persisted []providers.Message,
+) ([]providers.Message, []providers.Message) {
+	matched := matchingTurnMessageTail(history, persisted)
+	if matched <= 0 {
+		return append([]providers.Message(nil), history...), nil
+	}
+
+	stable := append([]providers.Message(nil), history[:len(history)-matched]...)
+	protected := append([]providers.Message(nil), history[len(history)-matched:]...)
+	return stable, protected
+}
+
+func messageSlicesEquivalent(a, b []providers.Message) bool {
+	if len(a) != len(b) {
+		return false
+	}
 	for i := range a {
-		aCopy, bCopy := a[i], b[i]
-		aCopy.CreatedAt, bCopy.CreatedAt = nil, nil
-		if !reflect.DeepEqual(aCopy, bCopy) {
+		if !messagesEquivalent(a[i], b[i]) {
 			return false
 		}
 	}
 	return true
 }
 
-func matchingTurnMessageTail(history, persisted []providers.Message) int {
-	maxMatch := min(len(history), len(persisted))
-	for size := maxMatch; size > 0; size-- {
-		if messagesContentEqual(history[len(history)-size:], persisted[len(persisted)-size:]) {
-			return size
+func messagesEquivalent(a, b providers.Message) bool {
+	return reflect.DeepEqual(normalizeMessageForComparison(a), normalizeMessageForComparison(b))
+}
+
+func normalizeMessageForComparison(msg providers.Message) providers.Message {
+	msg.PromptLayer = ""
+	msg.PromptSlot = ""
+	msg.PromptSource = ""
+
+	if len(msg.Media) == 0 {
+		msg.Media = nil
+	}
+	if len(msg.Attachments) == 0 {
+		msg.Attachments = nil
+	}
+	if len(msg.SystemParts) == 0 {
+		msg.SystemParts = nil
+	} else {
+		msg.SystemParts = append([]providers.ContentBlock(nil), msg.SystemParts...)
+		for i := range msg.SystemParts {
+			msg.SystemParts[i].PromptLayer = ""
+			msg.SystemParts[i].PromptSlot = ""
+			msg.SystemParts[i].PromptSource = ""
 		}
 	}
-	return 0
+	if len(msg.ToolCalls) == 0 {
+		msg.ToolCalls = nil
+	} else {
+		msg.ToolCalls = append([]providers.ToolCall(nil), msg.ToolCalls...)
+		for i := range msg.ToolCalls {
+			msg.ToolCalls[i].Name = ""
+			msg.ToolCalls[i].Arguments = nil
+			msg.ToolCalls[i].ThoughtSignature = ""
+			if msg.ToolCalls[i].Function != nil {
+				fn := *msg.ToolCalls[i].Function
+				fn.ThoughtSignature = ""
+				msg.ToolCalls[i].Function = &fn
+			}
+		}
+	}
+
+	return msg
 }
 
 func (ts *turnState) interruptHintMessage() providers.Message {

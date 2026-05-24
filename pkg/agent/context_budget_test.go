@@ -844,3 +844,64 @@ func TestIsOverContextBudget_RealisticSession(t *testing.T) {
 		t.Error("realistic session should exceed 500 context window")
 	}
 }
+
+func TestTrimHistoryToFitContextWindow_DropsOldestTurns(t *testing.T) {
+	history := []providers.Message{
+		msgUser(strings.Repeat("u1 ", 120)),
+		msgAssistant(strings.Repeat("a1 ", 120)),
+		msgUser(strings.Repeat("u2 ", 120)),
+		msgAssistant(strings.Repeat("a2 ", 120)),
+		msgUser(strings.Repeat("u3 ", 120)),
+		msgAssistant(strings.Repeat("a3 ", 120)),
+	}
+
+	build := func(history []providers.Message) []providers.Message {
+		return append([]providers.Message(nil), history...)
+	}
+
+	trimmedHistory, messages, fit := trimHistoryToFitContextWindow(
+		history,
+		build,
+		700,
+		nil,
+		0,
+	)
+	if !fit {
+		t.Fatal("expected trimmed history to fit context window")
+	}
+	if len(trimmedHistory) != 4 {
+		t.Fatalf("trimmed history len = %d, want 4", len(trimmedHistory))
+	}
+	if trimmedHistory[0].Content != history[2].Content {
+		t.Fatalf("first kept message = %q, want second turn start", trimmedHistory[0].Content)
+	}
+	if isOverContextBudget(700, messages, nil, 0) {
+		t.Fatal("trimmed messages should be within budget")
+	}
+}
+
+func TestTrimHistoryToFitContextWindow_ClearsSingleOversizedTurn(t *testing.T) {
+	history := []providers.Message{
+		msgUser(strings.Repeat("oversized ", 200)),
+		msgAssistant(strings.Repeat("oversized ", 200)),
+	}
+
+	trimmedHistory, messages, fit := trimHistoryToFitContextWindow(
+		history,
+		func(history []providers.Message) []providers.Message {
+			return append([]providers.Message(nil), history...)
+		},
+		200,
+		nil,
+		0,
+	)
+	if !fit {
+		t.Fatal("expected empty history rebuild to fit context window")
+	}
+	if len(trimmedHistory) != 0 {
+		t.Fatalf("trimmed history len = %d, want 0", len(trimmedHistory))
+	}
+	if len(messages) != 0 {
+		t.Fatalf("messages len = %d, want 0", len(messages))
+	}
+}

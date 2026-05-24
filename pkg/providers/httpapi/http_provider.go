@@ -89,6 +89,13 @@ func (p *HTTPProvider) SupportsNativeSearch() bool {
 	return p.delegate.SupportsNativeSearch()
 }
 
+func (p *HTTPProvider) SupportsThinking() bool {
+	if p == nil || p.delegate == nil {
+		return false
+	}
+	return p.delegate.SupportsThinking()
+}
+
 func (p *HTTPProvider) SetProviderName(providerName string) {
 	if p == nil || p.delegate == nil {
 		return

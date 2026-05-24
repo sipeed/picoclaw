@@ -415,13 +415,64 @@ func (p *Pipeline) CallLLM(
 				contextualSkills = ts.agent.ContextBuilder.ResolveActiveSkillsForContext(ts.activeSkills)
 			}
 			ts.recordSkillContextSnapshot(skillContextTriggerContextRetryRebuild, contextualSkills)
-			rebuildPromptReq := promptBuildRequestForTurn(ts, exec.history, exec.summary, "", nil, p.Cfg)
-			rebuildPromptReq.ActiveSkills = append([]string(nil), contextualSkills...)
-			exec.messages = ts.agent.ContextBuilder.BuildMessagesFromPrompt(rebuildPromptReq)
-			exec.callMessages = exec.messages
+			stableHistory, protectedTurnTail := splitHistoryForActiveTurn(
+				exec.history,
+				ts.persistedMessagesSnapshot(),
+			)
+			buildMessages := func(trimmedHistory []providers.Message) []providers.Message {
+				fullHistory := append(append([]providers.Message(nil), trimmedHistory...), protectedTurnTail...)
+				rebuildPromptReq := promptBuildRequestForTurn(ts, fullHistory, exec.summary, "", nil, p.Cfg)
+				rebuildPromptReq.ActiveSkills = append([]string(nil), contextualSkills...)
+				return ts.agent.ContextBuilder.BuildMessagesFromPrompt(rebuildPromptReq)
+			}
+			originalHistoryCount := len(exec.history)
+			var fit bool
+			var trimmedStableHistory []providers.Message
+			trimmedStableHistory, exec.callMessages, fit = trimHistoryToFitContextWindow(
+				stableHistory,
+				func(trimmedHistory []providers.Message) []providers.Message {
+					rebuilt := buildMessages(trimmedHistory)
+					if exec.gracefulTerminal {
+						return append(append([]providers.Message(nil), rebuilt...), ts.interruptHintMessage())
+					}
+					return rebuilt
+				},
+				ts.agent.ContextWindow,
+				exec.providerToolDefs,
+				ts.agent.MaxTokens,
+			)
+			exec.history = append(trimmedStableHistory, protectedTurnTail...)
+			exec.messages = buildMessages(trimmedStableHistory)
 			if exec.gracefulTerminal {
 				msgs := append([]providers.Message(nil), exec.messages...)
 				exec.callMessages = append(msgs, ts.interruptHintMessage())
+			}
+			if dropped := originalHistoryCount - len(exec.history); dropped > 0 {
+				logger.WarnCF("agent", "Trimmed rebuilt history after context retry compaction", map[string]any{
+					"session_key":     ts.sessionKey,
+					"retry":           retry,
+					"dropped_msgs":    dropped,
+					"remaining_msgs":  len(exec.history),
+					"context_window":  ts.agent.ContextWindow,
+					"max_tokens":      ts.agent.MaxTokens,
+					"still_overlimit": !fit,
+				})
+			} else if !fit {
+				logger.WarnCF("agent", "Context still exceeds budget after retry compaction rebuild", map[string]any{
+					"session_key":         ts.sessionKey,
+					"retry":               retry,
+					"history_msgs":        len(exec.history),
+					"protected_turn_msgs": len(protectedTurnTail),
+					"context_window":      ts.agent.ContextWindow,
+					"max_tokens":          ts.agent.MaxTokens,
+				})
+			}
+			if !fit {
+				err = fmt.Errorf(
+					"context window still exceeded after retry compaction; refusing to drop active turn messages: %w",
+					err,
+				)
+				break
 			}
 			continue
 		}
