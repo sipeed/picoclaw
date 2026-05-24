@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 
@@ -262,17 +263,38 @@ func TestShellTool_OutputTruncation(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	// Generate long output (>10000 chars)
 	args := map[string]any{
 		"action":  "run",
-		"command": "python3 -c \"print('x' * 20000)\" || echo " + strings.Repeat("x", 20000),
+		"command": "python3 -c \"print('START-' + 'a' * 12000 + '-MIDDLE-' + 'z' * 12000 + '-END')\"",
 	}
 
 	result := tool.Execute(ctx, args)
 
-	// Should have truncation message or be truncated
 	if len(result.ForLLM) > 15000 {
 		t.Errorf("Expected output to be truncated, got length: %d", len(result.ForLLM))
+	}
+	if !strings.Contains(result.ForLLM, "START-") {
+		t.Fatalf("expected truncated output to preserve head, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "-END") {
+		t.Fatalf("expected truncated output to preserve tail, got: %s", result.ForLLM)
+	}
+	if strings.Contains(result.ForLLM, "-MIDDLE-") {
+		t.Fatalf("expected truncated output to omit middle, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "truncated") {
+		t.Fatalf("expected truncation marker, got: %s", result.ForLLM)
+	}
+}
+
+func TestShellTool_OutputTruncationPreservesUTF8(t *testing.T) {
+	output := truncateCommandOutput(strings.Repeat("начало", 1000) + strings.Repeat("中", 1000) + strings.Repeat("конец", 1000))
+
+	if !utf8.ValidString(output) {
+		t.Fatalf("truncated output should remain valid UTF-8")
+	}
+	if !strings.Contains(output, "truncated") {
+		t.Fatalf("expected truncation marker, got: %s", output)
 	}
 }
 

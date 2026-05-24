@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/creack/pty"
 
@@ -557,11 +558,49 @@ func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult
 }
 
 func truncateCommandOutput(output string) string {
-	maxLen := 10000
-	if len(output) > maxLen {
-		output = output[:maxLen] + fmt.Sprintf("\n... (truncated, %d more chars)", len(output)-maxLen)
+	const (
+		maxCommandOutputBytes  = 10000
+		commandOutputHeadBytes = 4000
+		commandOutputTailBytes = 6000
+	)
+	if len(output) <= maxCommandOutputBytes {
+		return output
 	}
-	return output
+
+	head := validUTF8Prefix(output, commandOutputHeadBytes)
+	tail := validUTF8Suffix(output, commandOutputTailBytes)
+	omitted := len(output) - len(head) - len(tail)
+	if omitted < 0 {
+		omitted = 0
+	}
+	return fmt.Sprintf(
+		"%s\n... (truncated, omitted %d chars) ...\n%s",
+		head,
+		omitted,
+		tail,
+	)
+}
+
+func validUTF8Prefix(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	prefix := s[:maxBytes]
+	for len(prefix) > 0 && !utf8.ValidString(prefix) {
+		prefix = prefix[:len(prefix)-1]
+	}
+	return prefix
+}
+
+func validUTF8Suffix(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	start := len(s) - maxBytes
+	for start < len(s) && !utf8.RuneStart(s[start]) {
+		start++
+	}
+	return s[start:]
 }
 
 func (t *ExecTool) runBackground(ctx context.Context, command, cwd string, ptyEnabled bool) *ToolResult {
