@@ -320,6 +320,7 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		}
 
 		args := map[string]any{
+			"action":    "run",
 			"command":   job.Payload.Command,
 			"__channel": channel,
 			"__chat_id": chatID,
