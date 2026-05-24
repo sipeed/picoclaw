@@ -154,6 +154,17 @@ func publish[T any](
 	mb.wg.Add(1)
 	defer mb.wg.Done()
 
+	if !policy.dropOnFull {
+		select {
+		case ch <- msg:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-mb.done:
+			return ErrBusClosed
+		}
+	}
+
 	timer := time.NewTimer(policy.timeout)
 	defer timer.Stop()
 
@@ -161,9 +172,6 @@ func publish[T any](
 	case ch <- msg:
 		return nil
 	case <-timer.C:
-		if !policy.dropOnFull {
-			return fmt.Errorf("%w: %s publish timed out after %s", ErrBusBackpressure, policy.stream, policy.timeout)
-		}
 		droppedTotal := stats.dropped.Add(1)
 		now := time.Now()
 		stats.lastDropped.Store(now.UnixNano())
@@ -195,7 +203,7 @@ func (mb *MessageBus) PublishInbound(ctx context.Context, msg InboundMessage) er
 	if err := publish(ctx, mb, mb.inbound, msg, publishPolicy{
 		stream:     "inbound",
 		timeout:    defaultCriticalPublishTimeout,
-		dropOnFull: true,
+		dropOnFull: false,
 	}, &mb.inboundStats, runtimeScopeFromInboundContext(msg.Context)); err != nil {
 		mb.publishFailure("inbound", runtimeScopeFromInboundContext(msg.Context), err)
 		return err
@@ -216,7 +224,7 @@ func (mb *MessageBus) PublishOutbound(ctx context.Context, msg OutboundMessage) 
 	if err := publish(ctx, mb, mb.outbound, msg, publishPolicy{
 		stream:     "outbound",
 		timeout:    defaultCriticalPublishTimeout,
-		dropOnFull: true,
+		dropOnFull: false,
 	}, &mb.outboundStats, runtimeScopeFromInboundContext(msg.Context)); err != nil {
 		mb.publishFailure("outbound", runtimeScopeFromInboundContext(msg.Context), err)
 		return err
@@ -237,7 +245,7 @@ func (mb *MessageBus) PublishOutboundMedia(ctx context.Context, msg OutboundMedi
 	if err := publish(ctx, mb, mb.outboundMedia, msg, publishPolicy{
 		stream:     "outbound_media",
 		timeout:    defaultCriticalPublishTimeout,
-		dropOnFull: true,
+		dropOnFull: false,
 	}, &mb.mediaStats, runtimeScopeFromInboundContext(msg.Context)); err != nil {
 		mb.publishFailure("outbound_media", runtimeScopeFromInboundContext(msg.Context), err)
 		return err
@@ -269,7 +277,7 @@ func (mb *MessageBus) PublishVoiceControl(ctx context.Context, ctrl VoiceControl
 	if err := publish(ctx, mb, mb.voiceControls, ctrl, publishPolicy{
 		stream:     "voice_control",
 		timeout:    defaultCriticalPublishTimeout,
-		dropOnFull: true,
+		dropOnFull: false,
 	}, &mb.voiceStats, runtimeScopeFromVoiceControl(ctrl)); err != nil {
 		mb.publishFailure("voice_control", runtimeScopeFromVoiceControl(ctrl), err)
 		return err

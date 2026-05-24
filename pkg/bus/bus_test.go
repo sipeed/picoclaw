@@ -313,6 +313,152 @@ func TestPublishAudioChunk_DropsWhenBackpressured(t *testing.T) {
 	}
 }
 
+func TestPublishInbound_BlocksUntilCapacityAvailable(t *testing.T) {
+	mb := NewMessageBus()
+	defer mb.Close()
+
+	for i := range cap(mb.inbound) {
+		if err := mb.PublishInbound(context.Background(), InboundMessage{
+			Context: InboundContext{
+				Channel:  "test",
+				ChatID:   "chat-fill",
+				ChatType: "direct",
+				SenderID: "user-fill",
+			},
+			Content: "fill",
+		}); err != nil {
+			t.Fatalf("fill inbound buffer at %d: %v", i, err)
+		}
+	}
+
+	publishDone := make(chan error, 1)
+	go func() {
+		publishDone <- mb.PublishInbound(context.Background(), InboundMessage{
+			Context: InboundContext{
+				Channel:  "test",
+				ChatID:   "chat-overflow",
+				ChatType: "direct",
+				SenderID: "user-overflow",
+			},
+			Content: "overflow",
+		})
+	}()
+
+	select {
+	case err := <-publishDone:
+		t.Fatalf("PublishInbound returned before capacity was available: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	select {
+	case <-mb.InboundChan():
+	case <-time.After(time.Second):
+		t.Fatal("timed out draining inbound queue")
+	}
+
+	select {
+	case err := <-publishDone:
+		if err != nil {
+			t.Fatalf("PublishInbound after capacity available: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for blocked PublishInbound to complete")
+	}
+
+	foundOverflow := false
+	for range cap(mb.inbound) {
+		got, ok := <-mb.InboundChan()
+		if !ok {
+			t.Fatal("InboundChan closed unexpectedly")
+		}
+		if got.Content == "overflow" {
+			foundOverflow = true
+			break
+		}
+	}
+	if !foundOverflow {
+		t.Fatal("expected overflow message to be delivered after unblock")
+	}
+
+	stats := mb.Stats()
+	if stats.Inbound.DroppedTotal != 0 {
+		t.Fatalf("Inbound dropped = %d, want 0", stats.Inbound.DroppedTotal)
+	}
+}
+
+func TestPublishInbound_FullBufferReturnsContextDeadlineWithoutDrop(t *testing.T) {
+	eventBus := runtimeevents.NewBus()
+	defer func() {
+		if err := eventBus.Close(); err != nil {
+			t.Fatalf("Close runtime event bus: %v", err)
+		}
+	}()
+
+	_, eventsCh, subscribeErr := eventBus.Channel().OfKind(
+		runtimeevents.KindBusPublishFailed,
+		runtimeevents.KindBusMessageDropped,
+	).SubscribeChan(t.Context(), runtimeevents.SubscribeOptions{Name: "bus-inbound-timeout-events", Buffer: 4})
+	if subscribeErr != nil {
+		t.Fatalf("SubscribeChan failed: %v", subscribeErr)
+	}
+
+	mb := NewMessageBus()
+	mb.SetEventPublisher(eventBus)
+	defer mb.Close()
+
+	for i := range cap(mb.inbound) {
+		if err := mb.PublishInbound(context.Background(), InboundMessage{
+			Context: InboundContext{
+				Channel:  "test",
+				ChatID:   "chat-fill",
+				ChatType: "direct",
+				SenderID: "user-fill",
+			},
+			Content: "fill",
+		}); err != nil {
+			t.Fatalf("fill inbound buffer at %d: %v", i, err)
+		}
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	err := mb.PublishInbound(timeoutCtx, InboundMessage{
+		Context: InboundContext{
+			Channel:  "test",
+			ChatID:   "chat-overflow",
+			ChatType: "direct",
+			SenderID: "user-overflow",
+		},
+		Content: "overflow",
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("PublishInbound error = %v, want context.DeadlineExceeded", err)
+	}
+
+	failEvt := receiveBusRuntimeEvent(t, eventsCh)
+	if failEvt.Kind != runtimeevents.KindBusPublishFailed {
+		t.Fatalf("expected publish failed event, got %q", failEvt.Kind)
+	}
+	if failEvt.Source.Name != "inbound" {
+		t.Fatalf("publish failed source = %q, want inbound", failEvt.Source.Name)
+	}
+
+	select {
+	case evt := <-eventsCh:
+		t.Fatalf("unexpected extra runtime event: %q", evt.Kind)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	stats := mb.Stats()
+	if stats.Inbound.DroppedTotal != 0 {
+		t.Fatalf("Inbound dropped = %d, want 0", stats.Inbound.DroppedTotal)
+	}
+	if stats.Inbound.Depth != cap(mb.inbound) {
+		t.Fatalf("Inbound depth = %d, want %d", stats.Inbound.Depth, cap(mb.inbound))
+	}
+}
+
 func receiveBusRuntimeEvent(t *testing.T, ch <-chan runtimeevents.Event) runtimeevents.Event {
 	t.Helper()
 
