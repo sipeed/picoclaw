@@ -933,6 +933,18 @@ func (s *finalizeHookStreamer) ClearFinalizedStreamMarker() {
 // typeName is the channel type used for factory lookup (e.g., "telegram").
 // channelName is the config map key used as the channel's runtime name (e.g., "my_telegram").
 func (m *Manager) initChannel(typeName, channelName string) {
+	// Handle WhatsApp native mode: if type is "whatsapp" and use_native is true,
+	// use the "whatsapp_native" factory instead
+	if typeName == config.ChannelWhatsApp {
+		if bc := m.config.Channels[channelName]; bc != nil {
+			if decoded, err := bc.GetDecoded(); err == nil {
+				if settings, ok := decoded.(*config.WhatsAppSettings); ok && settings.UseNative {
+					typeName = config.ChannelWhatsAppNative
+				}
+			}
+		}
+	}
+
 	f, ok := getFactory(typeName)
 	if !ok {
 		logger.WarnCF("channels", "Factory not registered", map[string]any{
