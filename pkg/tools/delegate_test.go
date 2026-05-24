@@ -14,15 +14,18 @@ type delegateMockSpawner struct {
 	lastCfg SubTurnConfig
 	result  *ToolResult
 	err     error
+	calls   int
 }
 
 type delegateMockCollaborationRuntime struct {
 	lastParams AgentRequestParams
 	response   *AgentRequestResponse
 	err        error
+	calls      int
 }
 
 func (m *delegateMockSpawner) SpawnSubTurn(_ context.Context, cfg SubTurnConfig) (*ToolResult, error) {
+	m.calls++
 	m.lastCfg = cfg
 	if m.err != nil {
 		return nil, m.err
@@ -40,6 +43,7 @@ func (m *delegateMockCollaborationRuntime) Request(
 	_ context.Context,
 	params AgentRequestParams,
 ) (*AgentRequestResponse, error) {
+	m.calls++
 	m.lastParams = params
 	if m.err != nil {
 		return nil, m.err
@@ -159,6 +163,67 @@ func TestDelegateTool_Execute_UsesCollaborationRuntimeWhenConfigured(t *testing.
 	}
 	if !strings.Contains(result.ForLLM, `[Response from agent "researcher"]`) {
 		t.Fatalf("result.ForLLM = %q", result.ForLLM)
+	}
+}
+
+func TestDelegateTool_Execute_PrefersSpawnerWhenBothPathsAreAllowed(t *testing.T) {
+	spawner := &delegateMockSpawner{}
+	runtime := &delegateMockCollaborationRuntime{}
+	tool := NewDelegateTool()
+	tool.SetSpawner(spawner)
+	tool.SetRuntime(runtime)
+	tool.SetAllowlistChecker(func(targetAgentID string) bool {
+		return targetAgentID == "researcher"
+	})
+	tool.SetCollaborationAllowlistChecker(func(targetAgentID string) bool {
+		return targetAgentID == "researcher"
+	})
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"agent_id": "researcher",
+		"task":     "summarize the logs",
+	})
+
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	if spawner.calls != 1 {
+		t.Fatalf("spawner.calls = %d, want 1", spawner.calls)
+	}
+	if runtime.calls != 0 {
+		t.Fatalf("runtime.calls = %d, want 0", runtime.calls)
+	}
+}
+
+func TestDelegateTool_Execute_FallsBackToCollaborationWhenSpawnNotAllowed(t *testing.T) {
+	spawner := &delegateMockSpawner{}
+	runtime := &delegateMockCollaborationRuntime{}
+	tool := NewDelegateTool()
+	tool.SetSpawner(spawner)
+	tool.SetRuntime(runtime)
+	tool.SetAllowlistChecker(func(targetAgentID string) bool {
+		return false
+	})
+	tool.SetCollaborationAllowlistChecker(func(targetAgentID string) bool {
+		return targetAgentID == "researcher"
+	})
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"agent_id": "researcher",
+		"task":     "summarize the logs",
+	})
+
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	if spawner.calls != 0 {
+		t.Fatalf("spawner.calls = %d, want 0", spawner.calls)
+	}
+	if runtime.calls != 1 {
+		t.Fatalf("runtime.calls = %d, want 1", runtime.calls)
+	}
+	if runtime.lastParams.ToAgentID != "researcher" {
+		t.Fatalf("ToAgentID = %q, want researcher", runtime.lastParams.ToAgentID)
 	}
 }
 
