@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/messageutil"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
@@ -23,6 +24,7 @@ type (
 	ToolCall               = protocoltypes.ToolCall
 	FunctionCall           = protocoltypes.FunctionCall
 	LLMResponse            = protocoltypes.LLMResponse
+	StreamChunk            = protocoltypes.StreamChunk
 	UsageInfo              = protocoltypes.UsageInfo
 	Message                = protocoltypes.Message
 	ToolDefinition         = protocoltypes.ToolDefinition
@@ -45,24 +47,28 @@ type Provider struct {
 
 type Option func(*Provider)
 
-const defaultRequestTimeout = common.DefaultRequestTimeout
+const (
+	defaultRequestTimeout           = common.DefaultRequestTimeout
+	defaultStreamingReadIdleTimeout = 5 * time.Minute
+)
 
 var stripModelPrefixProviders = map[string]struct{}{
-	"litellm":    {},
-	"venice":     {},
-	"moonshot":   {},
-	"nvidia":     {},
-	"groq":       {},
-	"ollama":     {},
-	"deepseek":   {},
-	"google":     {},
-	"openrouter": {},
-	"zhipu":      {},
-	"mistral":    {},
-	"vivgrid":    {},
-	"minimax":    {},
-	"novita":     {},
-	"lmstudio":   {},
+	"litellm":     {},
+	"venice":      {},
+	"moonshot":    {},
+	"nvidia":      {},
+	"groq":        {},
+	"ollama":      {},
+	"deepseek":    {},
+	"google":      {},
+	"openrouter":  {},
+	"siliconflow": {},
+	"zhipu":       {},
+	"mistral":     {},
+	"vivgrid":     {},
+	"minimax":     {},
+	"novita":      {},
+	"lmstudio":    {},
 }
 
 func WithMaxTokensField(maxTokensField string) Option {
@@ -188,11 +194,119 @@ func (p *Provider) buildRequestBody(
 		}
 	}
 
+	p.applyThinkingControl(requestBody, model, options)
+
 	// Merge extra body fields configured per-provider/model.
 	// These are injected last so they take precedence over defaults.
 	maps.Copy(requestBody, p.extraBody)
 
 	return requestBody
+}
+
+func (p *Provider) applyThinkingControl(requestBody map[string]any, model string, options map[string]any) {
+	level, ok := normalizedThinkingLevel(options)
+	if !ok {
+		return
+	}
+
+	if p.SupportsThinking() {
+		p.applyDeepSeekThinkingControl(requestBody, level)
+		return
+	}
+
+	if level != "off" {
+		return
+	}
+
+	switch p.thinkingControlKind(model) {
+	case "thinking_type":
+		requestBody["thinking"] = map[string]any{"type": "disabled"}
+	case "enable_thinking":
+		requestBody["enable_thinking"] = false
+	}
+}
+
+func (p *Provider) applyDeepSeekThinkingControl(requestBody map[string]any, level string) {
+	switch level {
+	case "off":
+		requestBody["thinking"] = map[string]any{"type": "disabled"}
+	case "low", "medium", "high":
+		requestBody["thinking"] = map[string]any{"type": "enabled"}
+		requestBody["reasoning_effort"] = "high"
+	case "xhigh":
+		requestBody["thinking"] = map[string]any{"type": "enabled"}
+		requestBody["reasoning_effort"] = "max"
+	case "adaptive":
+		logger.WarnCF("provider.openai_compat",
+			`DeepSeek does not support thinking_level="adaptive"; using provider default thinking behavior`,
+			map[string]any{
+				"provider":       p.providerName,
+				"api_base":       p.apiBase,
+				"thinking_level": level,
+			},
+		)
+	}
+}
+
+func normalizedThinkingLevel(options map[string]any) (string, bool) {
+	raw, ok := options["thinking_level"].(string)
+	if !ok {
+		return "", false
+	}
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "off", "low", "medium", "high", "xhigh", "adaptive":
+		return strings.ToLower(strings.TrimSpace(raw)), true
+	default:
+		return "", false
+	}
+}
+
+func (p *Provider) thinkingControlKind(model string) string {
+	providerName := strings.ToLower(strings.TrimSpace(p.providerName))
+	lowerModel := strings.ToLower(strings.TrimSpace(model))
+
+	switch providerName {
+	case "volcengine":
+		return "thinking_type"
+	case "zhipu", "zai":
+		return "thinking_type"
+	case "qwen", "qwen-portal", "qwen-intl", "qwen-international", "dashscope-intl", "qwen-us", "dashscope-us":
+		return "enable_thinking"
+	case "modelscope":
+		if strings.Contains(lowerModel, "qwen") {
+			return "enable_thinking"
+		}
+	}
+
+	if providerName == "openai" || providerName == "" {
+		if isVolcengineHost(p.apiBase) || strings.Contains(lowerModel, "doubao") {
+			return "thinking_type"
+		}
+		if isDashScopeHost(p.apiBase) || strings.Contains(lowerModel, "qwen") {
+			return "enable_thinking"
+		}
+	}
+
+	return ""
+}
+
+func isVolcengineHost(apiBase string) bool {
+	host := normalizedHostname(apiBase)
+	return host == "volcengine.com" || strings.HasSuffix(host, ".volcengine.com") ||
+		host == "volces.com" || strings.HasSuffix(host, ".volces.com")
+}
+
+func isDashScopeHost(apiBase string) bool {
+	host := normalizedHostname(apiBase)
+	return host == "dashscope.aliyuncs.com" || strings.HasSuffix(host, ".dashscope.aliyuncs.com")
+}
+
+func normalizedHostname(rawURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(parsed.Hostname()))
 }
 
 func (p *Provider) applyCustomHeaders(req *http.Request) {
@@ -206,6 +320,10 @@ func (p *Provider) applyCustomHeaders(req *http.Request) {
 
 func (p *Provider) SetProviderName(providerName string) {
 	p.providerName = strings.ToLower(strings.TrimSpace(providerName))
+}
+
+func (p *Provider) SupportsThinking() bool {
+	return strings.EqualFold(strings.TrimSpace(p.providerName), "deepseek") || isDeepSeekHost(p.apiBase)
 }
 
 func (p *Provider) prepareMessagesForRequest(messages []Message) []Message {
@@ -380,6 +498,28 @@ func (p *Provider) ChatStream(
 	options map[string]any,
 	onChunk func(accumulated string),
 ) (*LLMResponse, error) {
+	return p.ChatStreamEvents(
+		ctx,
+		messages,
+		tools,
+		model,
+		options,
+		func(chunk StreamChunk) {
+			if onChunk != nil && strings.TrimSpace(chunk.Content) != "" {
+				onChunk(chunk.Content)
+			}
+		},
+	)
+}
+
+func (p *Provider) ChatStreamEvents(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+	onChunk func(StreamChunk),
+) (*LLMResponse, error) {
 	if p.apiBase == "" {
 		return nil, fmt.Errorf("API base not configured")
 	}
@@ -421,14 +561,47 @@ func (p *Provider) ChatStream(
 		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
 
-	return parseStreamResponse(ctx, resp.Body, onChunk)
+	return parseStreamResponse(ctx, withStreamingReadIdleTimeout(resp.Body, defaultStreamingReadIdleTimeout), onChunk)
+}
+
+func withStreamingReadIdleTimeout(body io.ReadCloser, timeout time.Duration) io.ReadCloser {
+	if body == nil || timeout <= 0 {
+		return body
+	}
+	return &streamingReadIdleTimeoutBody{
+		body:    body,
+		timeout: timeout,
+	}
+}
+
+type streamingReadIdleTimeoutBody struct {
+	body    io.ReadCloser
+	timeout time.Duration
+}
+
+func (b *streamingReadIdleTimeoutBody) Read(p []byte) (int, error) {
+	timedOut := make(chan struct{})
+	timer := time.AfterFunc(b.timeout, func() {
+		close(timedOut)
+		_ = b.body.Close()
+	})
+	n, err := b.body.Read(p)
+	if !timer.Stop() {
+		<-timedOut
+		return n, fmt.Errorf("stream idle timeout after %s", b.timeout)
+	}
+	return n, err
+}
+
+func (b *streamingReadIdleTimeoutBody) Close() error {
+	return b.body.Close()
 }
 
 // parseStreamResponse parses an OpenAI-compatible SSE stream.
 func parseStreamResponse(
 	ctx context.Context,
 	reader io.Reader,
-	onChunk func(accumulated string),
+	onChunk func(StreamChunk),
 ) (*LLMResponse, error) {
 	var textContent strings.Builder
 	var reasoningContent strings.Builder
@@ -488,21 +661,28 @@ func parseStreamResponse(
 
 		choice := chunk.Choices[0]
 
-		// Accumulate text content
-		if choice.Delta.Content != "" {
-			textContent.WriteString(choice.Delta.Content)
-			if onChunk != nil {
-				onChunk(textContent.String())
-			}
-		}
 		if choice.Delta.ReasoningContent != "" {
 			reasoningContent.WriteString(choice.Delta.ReasoningContent)
+			if onChunk != nil {
+				onChunk(StreamChunk{ReasoningContent: reasoningContent.String()})
+			}
 		}
 		if choice.Delta.Reasoning != "" {
 			reasoning.WriteString(choice.Delta.Reasoning)
+			if onChunk != nil {
+				onChunk(StreamChunk{ReasoningContent: reasoning.String()})
+			}
 		}
 		if len(choice.Delta.ReasoningDetails) > 0 {
 			reasoningDetails = append(reasoningDetails, choice.Delta.ReasoningDetails...)
+		}
+		// Accumulate text content after reasoning so UIs can show thought first
+		// when a provider sends both fields in the same event.
+		if choice.Delta.Content != "" {
+			textContent.WriteString(choice.Delta.Content)
+			if onChunk != nil {
+				onChunk(StreamChunk{Content: textContent.String()})
+			}
 		}
 
 		// Accumulate tool call deltas

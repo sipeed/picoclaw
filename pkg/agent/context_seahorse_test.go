@@ -174,12 +174,16 @@ func TestProviderToSeahorseMessageWithReasoning(t *testing.T) {
 	msg := protocoltypes.Message{
 		Role:             "assistant",
 		Content:          "response text",
+		ModelName:        "gpt-5.4-mini",
 		ReasoningContent: "I thought about this carefully",
 	}
 
 	result := providerToSeahorseMessage(msg)
 	if result.ReasoningContent != "I thought about this carefully" {
 		t.Errorf("ReasoningContent = %q, want 'I thought about this carefully'", result.ReasoningContent)
+	}
+	if result.ModelName != "gpt-5.4-mini" {
+		t.Errorf("ModelName = %q, want %q", result.ModelName, "gpt-5.4-mini")
 	}
 }
 
@@ -189,6 +193,7 @@ func TestSeahorseToProviderMessagesWithReasoning(t *testing.T) {
 			{
 				Role:             "assistant",
 				Content:          "response",
+				ModelName:        "gpt-5.4",
 				ReasoningContent: "thinking process",
 			},
 		},
@@ -200,6 +205,9 @@ func TestSeahorseToProviderMessagesWithReasoning(t *testing.T) {
 	}
 	if messages[0].ReasoningContent != "thinking process" {
 		t.Errorf("ReasoningContent = %q, want 'thinking process'", messages[0].ReasoningContent)
+	}
+	if messages[0].ModelName != "gpt-5.4" {
+		t.Errorf("ModelName = %q, want %q", messages[0].ModelName, "gpt-5.4")
 	}
 }
 
@@ -277,6 +285,74 @@ func TestSeahorseToProviderMessagesWithToolCalls(t *testing.T) {
 	if result[0].ToolCalls[0].Type != "function" {
 		t.Errorf("ToolCall Type = %q, want 'function' (required by GLM/OpenAI APIs)",
 			result[0].ToolCalls[0].Type)
+	}
+}
+
+func TestSeahorseAssemblePreservesActiveToolTurnAcrossSanitization(t *testing.T) {
+	engine, err := seahorse.NewEngine(seahorse.Config{
+		DBPath: t.TempDir() + "/seahorse.db",
+	}, nil)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	ctx := context.Background()
+	sessionKey := "test:active-tool-turn"
+	_, err = engine.Ingest(ctx, sessionKey, []seahorse.Message{
+		{
+			Role:       "assistant",
+			Content:    "older context",
+			TokenCount: 20,
+		},
+		{
+			Role:       "user",
+			Content:    "inspect the file",
+			TokenCount: 5,
+		},
+		{
+			Role:       "assistant",
+			TokenCount: 5,
+			Parts: []seahorse.MessagePart{{
+				Type:       "tool_use",
+				Name:       "read_file",
+				Arguments:  `{"path":"/tmp/test.txt"}`,
+				ToolCallID: "tc_1",
+			}},
+		},
+		{
+			Role:       "tool",
+			TokenCount: 200,
+			Parts: []seahorse.MessagePart{{
+				Type:       "tool_result",
+				ToolCallID: "tc_1",
+				Text:       "very large tool output",
+			}},
+		},
+		{
+			Role:       "assistant",
+			Content:    "done",
+			TokenCount: 5,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+
+	result, err := engine.Assemble(ctx, sessionKey, seahorse.AssembleInput{Budget: 210})
+	if err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+
+	sanitized := sanitizeHistoryForProvider(seahorseToProviderMessages(result))
+	if len(sanitized) != 4 {
+		t.Fatalf("sanitized history len = %d, want 4 protected-turn messages", len(sanitized))
+	}
+	assertRoles(t, sanitized, "user", "assistant", "tool", "assistant")
+	if len(sanitized[1].ToolCalls) != 1 || sanitized[1].ToolCalls[0].ID != "tc_1" {
+		t.Fatalf("assistant tool calls = %+v, want preserved tool call tc_1", sanitized[1].ToolCalls)
+	}
+	if sanitized[2].ToolCallID != "tc_1" {
+		t.Fatalf("tool result id = %q, want tc_1", sanitized[2].ToolCallID)
 	}
 }
 

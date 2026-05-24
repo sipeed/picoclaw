@@ -767,7 +767,7 @@ func modelBelongsToProvider(provider string, modelCfg *config.ModelConfig) bool 
 	case oauthProviderAnthropic:
 		return protocol == "anthropic"
 	case oauthProviderGoogleAntigravity:
-		return protocol == "antigravity" || protocol == "google-antigravity"
+		return protocol == "antigravity"
 	default:
 		return false
 	}

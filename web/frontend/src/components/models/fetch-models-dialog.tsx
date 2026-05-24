@@ -2,7 +2,11 @@ import { IconDownload, IconLoader2 } from "@tabler/icons-react"
 import { useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 
-import { type UpstreamModel, fetchUpstreamModels } from "@/api/models"
+import {
+  type ModelProviderOption,
+  type UpstreamModel,
+  fetchUpstreamModels,
+} from "@/api/models"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -14,7 +18,10 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 
-import { PROVIDER_MAP } from "./provider-registry"
+import {
+  getCanonicalProviderKey,
+  getProviderCatalogMap,
+} from "./provider-registry"
 
 interface FetchModelsDialogProps {
   open: boolean
@@ -23,6 +30,8 @@ interface FetchModelsDialogProps {
   provider: string
   apiKey: string
   apiBase: string
+  modelIndex?: number
+  backendOptions?: ModelProviderOption[]
 }
 
 export function FetchModelsDialog({
@@ -32,6 +41,8 @@ export function FetchModelsDialog({
   provider,
   apiKey,
   apiBase,
+  modelIndex,
+  backendOptions,
 }: FetchModelsDialogProps) {
   const { t } = useTranslation()
   const [fetching, setFetching] = useState(false)
@@ -40,8 +51,10 @@ export function FetchModelsDialog({
   const [error, setError] = useState("")
   const [filter, setFilter] = useState("")
 
-  const providerDef = PROVIDER_MAP.get(provider)
+  const canonicalProvider = getCanonicalProviderKey(provider, backendOptions)
+  const providerDef = getProviderCatalogMap(backendOptions).get(canonicalProvider)
   const needsKey = providerDef?.requiresApiKey !== false
+  const hasKey = !!apiKey || modelIndex !== undefined
 
   const handleFetch = useCallback(async () => {
     setFetching(true)
@@ -50,9 +63,10 @@ export function FetchModelsDialog({
     setSelected(new Set())
     try {
       const res = await fetchUpstreamModels({
-        provider,
+        provider: canonicalProvider,
         api_key: apiKey,
         api_base: apiBase,
+        model_index: modelIndex,
       })
       setModels(res.models)
       // Auto-select all by default
@@ -62,14 +76,14 @@ export function FetchModelsDialog({
     } finally {
       setFetching(false)
     }
-  }, [provider, apiKey, apiBase, t])
+  }, [canonicalProvider, apiKey, apiBase, modelIndex, t])
 
   // Auto-fetch when dialog opens (skip if provider requires API key but none is set)
   useEffect(() => {
-    if (open && provider && !(needsKey && !apiKey)) {
+    if (open && provider && !(needsKey && !hasKey)) {
       handleFetch()
     }
-  }, [open, provider, apiKey, needsKey, handleFetch])
+  }, [open, provider, hasKey, needsKey, handleFetch])
 
   const handleFill = () => {
     onFill(Array.from(selected))
@@ -122,7 +136,7 @@ export function FetchModelsDialog({
             {t("models.fetch.description")}
             {provider && (
               <span className="mt-1 block font-mono text-xs">
-                {t("models.fetch.providerLabel")} {provider}
+                 {t("models.fetch.providerLabel")} {canonicalProvider}
                 {apiBase && ` | ${apiBase}`}
               </span>
             )}
@@ -130,7 +144,7 @@ export function FetchModelsDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          {needsKey && !apiKey && (
+          {needsKey && !hasKey && (
             <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-700 dark:text-yellow-400">
               {t("models.fetch.needApiKey")}
             </div>

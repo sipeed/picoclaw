@@ -75,12 +75,14 @@ func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatI
 	}
 
 	msg := bus.OutboundMessage{
-		Context: bus.NewOutboundContext(channel, chatID, ""),
-		Content: response,
+		Context:    bus.NewOutboundContext(channel, chatID, ""),
+		SessionKey: sessionKey,
+		Content:    response,
 	}
 	if sessionKey != "" {
 		msg.ContextUsage = computeContextUsage(al.agentForSession(sessionKey), sessionKey)
 	}
+	markFinalOutbound(&msg)
 	al.bus.PublishOutbound(ctx, msg)
 	logger.InfoCF("agent", "Published outbound response",
 		map[string]any{
@@ -100,7 +102,10 @@ func (al *AgentLoop) targetReasoningChannelID(channelName string) (chatID string
 	return ""
 }
 
-func (al *AgentLoop) publishPicoReasoning(ctx context.Context, reasoningContent, chatID string) {
+func (al *AgentLoop) publishPicoReasoning(
+	ctx context.Context,
+	reasoningContent, chatID, sessionKey, modelName string,
+) {
 	if reasoningContent == "" || chatID == "" {
 		return
 	}
@@ -112,15 +117,19 @@ func (al *AgentLoop) publishPicoReasoning(ctx context.Context, reasoningContent,
 	pubCtx, pubCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer pubCancel()
 
+	raw := map[string]string{metadataKeyMessageKind: messageKindThought}
+	if trimmedModelName := strings.TrimSpace(modelName); trimmedModelName != "" {
+		raw["model_name"] = trimmedModelName
+	}
+
 	if err := al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
 		Context: bus.InboundContext{
 			Channel: "pico",
 			ChatID:  chatID,
-			Raw: map[string]string{
-				metadataKeyMessageKind: messageKindThought,
-			},
+			Raw:     raw,
 		},
-		Content: reasoningContent,
+		SessionKey: sessionKey,
+		Content:    reasoningContent,
 	}); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
 			errors.Is(err, bus.ErrBusClosed) {
@@ -140,6 +149,7 @@ func (al *AgentLoop) publishPicoReasoning(ctx context.Context, reasoningContent,
 func (al *AgentLoop) publishPicoToolCallInterim(
 	ctx context.Context,
 	ts *turnState,
+	modelName string,
 	reasoningContent string,
 	content string,
 	toolCalls []providers.ToolCall,
@@ -152,7 +162,14 @@ func (al *AgentLoop) publishPicoToolCallInterim(
 		pubCtx, pubCancel := context.WithTimeout(ctx, 3*time.Second)
 		err := al.bus.PublishOutbound(
 			pubCtx,
-			outboundMessageForTurnWithKind(ts, reasoningContent, messageKindThought),
+			outboundMessageForTurnWithOptions(
+				ts,
+				reasoningContent,
+				outboundTurnMessageOptions{
+					kind:      messageKindThought,
+					modelName: modelName,
+				},
+			),
 		)
 		pubCancel()
 		if err != nil && !errors.Is(err, context.DeadlineExceeded) &&
@@ -179,7 +196,12 @@ func (al *AgentLoop) publishPicoToolCallInterim(
 
 	if strings.TrimSpace(content) != "" && !duplicateToolCallContent {
 		pubCtx, pubCancel := context.WithTimeout(ctx, 3*time.Second)
-		err := al.bus.PublishOutbound(pubCtx, outboundMessageForTurn(ts, content))
+		err := al.bus.PublishOutbound(
+			pubCtx,
+			outboundMessageForTurnWithOptions(ts, content, outboundTurnMessageOptions{
+				modelName: modelName,
+			}),
+		)
 		pubCancel()
 		if err != nil && !errors.Is(err, context.DeadlineExceeded) &&
 			!errors.Is(err, context.Canceled) &&
@@ -206,11 +228,13 @@ func (al *AgentLoop) publishPicoToolCallInterim(
 		return
 	}
 
-	msg := outboundMessageForTurnWithKind(ts, "", messageKindToolCalls)
-	if msg.Context.Raw == nil {
-		msg.Context.Raw = map[string]string{}
-	}
-	msg.Context.Raw[metadataKeyToolCalls] = string(rawToolCalls)
+	msg := outboundMessageForTurnWithOptions(ts, "", outboundTurnMessageOptions{
+		kind:      messageKindToolCalls,
+		modelName: modelName,
+		raw: map[string]string{
+			metadataKeyToolCalls: string(rawToolCalls),
+		},
+	})
 
 	pubCtx, pubCancel := context.WithTimeout(ctx, 3*time.Second)
 	err = al.bus.PublishOutbound(pubCtx, msg)

@@ -147,6 +147,96 @@ func TestHandleGetChannelConfig_ReturnsCommonFieldsWhenSettingsEmpty(t *testing.
 	}
 }
 
+func TestHandleGetChannelConfig_OmitsUnconfiguredStreaming(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/channels/telegram/config", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf(
+			"GET /api/channels/telegram/config status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusOK,
+			rec.Body.String(),
+		)
+	}
+
+	var resp struct {
+		Config map[string]any `json:"config"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if _, ok := resp.Config["streaming"]; ok {
+		t.Fatalf("config.streaming = %#v, want omitted when not configured", resp.Config["streaming"])
+	}
+}
+
+func TestHandleGetChannelConfig_ReturnsConfiguredStreaming(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	pico := cfg.Channels.Get(config.ChannelPico)
+	if pico == nil {
+		t.Fatal("missing pico channel")
+	}
+	pico.Settings = config.RawNode(`{"streaming":{"enabled":true,"throttle_seconds":2,"min_growth_chars":80}}`)
+	if err := config.InitChannelList(cfg.Channels); err != nil {
+		t.Fatalf("InitChannelList() error = %v", err)
+	}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/channels/pico/config", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf(
+			"GET /api/channels/pico/config status = %d, want %d, body=%s",
+			rec.Code,
+			http.StatusOK,
+			rec.Body.String(),
+		)
+	}
+
+	var resp struct {
+		Config map[string]any `json:"config"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	streaming, ok := resp.Config["streaming"].(map[string]any)
+	if !ok {
+		t.Fatalf("config.streaming = %#v, want object", resp.Config["streaming"])
+	}
+	if got := streaming["enabled"]; got != true {
+		t.Fatalf("config.streaming.enabled = %#v, want true", got)
+	}
+	if got := streaming["throttle_seconds"]; got != float64(2) {
+		t.Fatalf("config.streaming.throttle_seconds = %#v, want 2", got)
+	}
+	if got := streaming["min_growth_chars"]; got != float64(80) {
+		t.Fatalf("config.streaming.min_growth_chars = %#v, want 80", got)
+	}
+}
+
 func TestHandleGetChannelConfig_ReturnsDefaultShapeForMissingChannel(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()

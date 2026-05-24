@@ -373,6 +373,11 @@ func (al *AgentLoop) askSideQuestion(
 
 	if opts != nil {
 		normalizeProcessOptionsInPlace(opts)
+		resolved, err := resolveTurnProfileOptions(al.GetConfig(), *opts)
+		if err != nil {
+			return "", err
+		}
+		*opts = resolved
 	}
 
 	var media []string
@@ -399,16 +404,31 @@ func (al *AgentLoop) askSideQuestion(
 		}
 	}
 
-	messages := agent.ContextBuilder.BuildMessages(
-		history,
-		summary,
-		question,
-		media,
-		channel,
-		chatID,
-		senderID,
-		senderDisplayName,
-	)
+	var promptReq PromptBuildRequest
+	if opts == nil {
+		promptReq = PromptBuildRequest{
+			History:           history,
+			Summary:           summary,
+			CurrentMessage:    question,
+			Media:             append([]string(nil), media...),
+			Channel:           channel,
+			ChatID:            chatID,
+			SenderID:          senderID,
+			SenderDisplayName: senderDisplayName,
+		}
+	} else {
+		promptReq = promptBuildRequestForProcessOptions(
+			agent,
+			*opts,
+			history,
+			summary,
+			question,
+			media,
+		)
+	}
+	promptReq.SuppressToolUseRule = true
+	promptReq.ToolUseFallback = false
+	messages := agent.ContextBuilder.BuildMessagesFromPrompt(promptReq)
 
 	maxMediaSize := al.GetConfig().Agents.Defaults.GetMaxMediaSize()
 	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
@@ -423,6 +443,7 @@ func (al *AgentLoop) askSideQuestion(
 	}
 
 	hookModelChanged := false
+	sideSuppressReasoning := false
 	callProvider := func(
 		ctx context.Context,
 		candidate providers.FallbackCandidate,
@@ -430,7 +451,15 @@ func (al *AgentLoop) askSideQuestion(
 		forceModel bool,
 		callMessages []providers.Message,
 	) (*providers.LLMResponse, error) {
-		provider, providerModel, cleanup, err := al.isolatedSideQuestionProvider(agent, selectedModelName, candidate)
+		baseModelName := selectedModelName
+		if forceModel && strings.TrimSpace(model) != "" {
+			baseModelName = model
+		}
+		provider, providerModel, modelCfg, cleanup, err := al.isolatedSideQuestionProvider(
+			agent,
+			baseModelName,
+			candidate,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -439,10 +468,12 @@ func (al *AgentLoop) askSideQuestion(
 			model = providerModel
 		}
 		callOpts := llmOpts
-		if _, exists := callOpts["thinking_level"]; !exists && agent.ThinkingLevel != ThinkingOff {
-			if tc, ok := provider.(providers.ThinkingCapable); ok && tc.SupportsThinking() {
+		settings := thinkingSettingsFromModelConfig(modelCfg)
+		sideSuppressReasoning = shouldSuppressReasoningFor(settings)
+		if _, exists := callOpts["thinking_level"]; !exists {
+			if settings.configured {
 				callOpts = shallowCloneLLMOptions(llmOpts)
-				callOpts["thinking_level"] = string(agent.ThinkingLevel)
+				applyThinkingOption(callOpts, provider, settings, false, agent.ID)
 			}
 		}
 		return provider.Chat(ctx, callMessages, nil, model, callOpts)
@@ -476,6 +507,7 @@ func (al *AgentLoop) askSideQuestion(
 				llmModel = llmReq.Model
 				messages = llmReq.Messages
 				llmOpts = llmReq.Options
+				delete(llmOpts, "native_search")
 			}
 		case HookActionAbortTurn:
 			reason := decision.Reason
@@ -500,18 +532,11 @@ func (al *AgentLoop) askSideQuestion(
 
 	callSideLLM := func(callMessages []providers.Message) (*providers.LLMResponse, error) {
 		if len(activeCandidates) > 1 && al.fallback != nil {
-			fbResult, err := al.fallback.Execute(
+			fbResult, err := al.fallback.ExecuteCandidate(
 				ctx,
 				activeCandidates,
-				func(ctx context.Context, providerName, model string) (*providers.LLMResponse, error) {
-					candidate := providers.FallbackCandidate{Provider: providerName, Model: model}
-					for _, activeCandidate := range activeCandidates {
-						if activeCandidate.Provider == providerName && activeCandidate.Model == model {
-							candidate = activeCandidate
-							break
-						}
-					}
-					return callProvider(ctx, candidate, model, false, callMessages)
+				func(ctx context.Context, candidate providers.FallbackCandidate) (*providers.LLMResponse, error) {
+					return callProvider(ctx, candidate, candidate.Model, false, callMessages)
 				},
 			)
 			if err != nil {
@@ -584,6 +609,11 @@ func (al *AgentLoop) askSideQuestion(
 			return "", fmt.Errorf("hook aborted turn during after_llm: %s", reason)
 		}
 	}
+	if sideSuppressReasoning {
+		resp.Reasoning = ""
+		resp.ReasoningContent = ""
+		resp.ReasoningDetails = nil
+	}
 
 	return sideQuestionResponseContent(resp), nil
 }
@@ -592,14 +622,14 @@ func (al *AgentLoop) isolatedSideQuestionProvider(
 	agent *AgentInstance,
 	baseModelName string,
 	candidate providers.FallbackCandidate,
-) (providers.LLMProvider, string, func(), error) {
+) (providers.LLMProvider, string, *config.ModelConfig, func(), error) {
 	if agent == nil {
-		return nil, "", func() {}, fmt.Errorf("isolatedSideQuestionProvider: no agent available for /btw")
+		return nil, "", nil, func() {}, fmt.Errorf("isolatedSideQuestionProvider: no agent available for /btw")
 	}
 
 	modelCfg, err := al.sideQuestionModelConfig(agent, baseModelName, candidate)
 	if err != nil {
-		return nil, "", func() {}, fmt.Errorf("isolatedSideQuestionProvider: %w", err)
+		return nil, "", nil, func() {}, fmt.Errorf("isolatedSideQuestionProvider: %w", err)
 	}
 
 	factory := al.providerFactory
@@ -608,13 +638,13 @@ func (al *AgentLoop) isolatedSideQuestionProvider(
 	}
 	provider, modelID, err := factory(modelCfg)
 	if err != nil {
-		return nil, "", func() {}, fmt.Errorf("isolatedSideQuestionProvider: %w", err)
+		return nil, "", nil, func() {}, fmt.Errorf("isolatedSideQuestionProvider: %w", err)
 	}
 
 	cleanup := func() {
 		closeProviderIfStateful(provider)
 	}
-	return provider, modelID, cleanup, nil
+	return provider, modelID, modelCfg, cleanup, nil
 }
 
 func (al *AgentLoop) sideQuestionModelConfig(
@@ -626,13 +656,33 @@ func (al *AgentLoop) sideQuestionModelConfig(
 		return nil, fmt.Errorf("sideQuestionModelConfig: no agent available for /btw")
 	}
 
-	// If candidate has an identity key, use that
+	if name := modelAliasFromCandidateIdentityKey(candidate.IdentityKey); name != "" {
+		modelCfg, err := resolvedModelConfig(al.GetConfig(), name, agent.Workspace)
+		if err == nil {
+			return modelCfg, nil
+		}
+		// Fallback: create a minimal config if lookup fails
+	}
+
+	// Older identity keys used provider/model; keep resolving those by model.
 	if name := modelNameFromIdentityKey(candidate.IdentityKey); name != "" {
 		modelCfg, err := resolvedModelConfig(al.GetConfig(), name, agent.Workspace)
 		if err == nil {
 			return modelCfg, nil
 		}
 		// Fallback: create a minimal config if lookup fails
+	}
+
+	if candidate.Provider != "" && candidate.Model != "" {
+		candidateRef := providers.NormalizeProvider(candidate.Provider) + "/" + candidate.Model
+		if modelCfg, err := resolvedModelConfig(al.GetConfig(), candidateRef, agent.Workspace); err == nil {
+			return modelCfg, nil
+		}
+		return &config.ModelConfig{
+			ModelName: candidateRef,
+			Model:     candidateRef,
+			Workspace: agent.Workspace,
+		}, nil
 	}
 
 	// Otherwise, clean up the base model name and use it
@@ -658,8 +708,5 @@ func (al *AgentLoop) sideQuestionModelConfig(
 
 	// If candidate specifies a different provider/model, override
 	clone := *modelCfg
-	if candidate.Provider != "" && candidate.Model != "" {
-		clone.Model = providers.NormalizeProvider(candidate.Provider) + "/" + candidate.Model
-	}
 	return &clone, nil
 }

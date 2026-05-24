@@ -14,6 +14,8 @@ import { Field, KeyInput, SwitchCardField } from "@/components/shared-form"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 
+import { StreamingConfigField } from "./streaming-config-field"
+
 interface TelegramFormProps {
   config: ChannelConfig
   onChange: (key: string, value: unknown) => void
@@ -122,6 +124,13 @@ export function TelegramForm({
                 onChange("typing", { ...typingConfig, enabled: checked })
               }
               ariaLabel={t("channels.field.typingEnabled")}
+            />
+          </div>
+
+          <div>
+            <StreamingConfigField
+              value={config.streaming}
+              onChange={(value) => onChange("streaming", value)}
             />
           </div>
 

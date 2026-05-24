@@ -69,7 +69,11 @@ func TestIntegration_RealConfiguredServer(t *testing.T) {
 		t.Fatal("expected at least one discovered tool from real MCP server")
 	}
 
-	t.Logf("connected to real MCP server via %s with %d tool(s)", config.EffectiveMCPTransportType(serverCfg), len(tools))
+	t.Logf(
+		"connected to real MCP server via %s with %d tool(s)",
+		config.EffectiveMCPTransportType(serverCfg),
+		len(tools),
+	)
 	for _, tool := range tools {
 		if tool != nil {
 			t.Logf("discovered tool: %s", tool.Name)

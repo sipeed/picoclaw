@@ -113,9 +113,12 @@ Thiết kế này cũng cho phép **hỗ trợ đa agent** với lựa chọn pr
 | `max_tokens_field` | string | Không | Ghi đè tên trường max tokens trong request body (ví dụ: `max_completion_tokens` cho model o1) |
 | `thinking_level` | string | Không | Mức độ tư duy mở rộng: `off`, `low`, `medium`, `high`, `xhigh` hoặc `adaptive` |
 | `extra_body` | object | Không | Các trường bổ sung để chèn vào mỗi request body |
+| `streaming.enabled` | bool | Không | Opt-in cho provider streaming trên entry model này. Mặc định là `false` và channel đang hoạt động cũng cần `settings.streaming.enabled` là `true` |
 | `rpm` | int | Không | Giới hạn tốc độ yêu cầu mỗi phút |
 | `fallbacks` | string[] | Không | Tên model dự phòng cho failover tự động |
 | `enabled` | bool | Không | Kích hoạt hay vô hiệu hóa entry model này (mặc định: `true`) |
+
+Khi không dùng streaming, hãy bỏ qua block `streaming`. Viết `"streaming": {"enabled": false}` là tùy chọn và không cần thiết.
 
 #### Ví Dụ Theo Vendor
 

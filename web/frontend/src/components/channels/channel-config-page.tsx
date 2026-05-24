@@ -684,6 +684,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
               configuredSecrets={configuredSecrets}
               hiddenKeys={[...hiddenKeys, "bot_id"]}
               requiredKeys={requiredKeys}
+              supportsStreaming
               fieldErrors={fieldErrors}
               registerArrayFieldFlusher={registerArrayFieldFlusher}
               arrayFieldResetVersion={arrayFieldResetVersion}
@@ -698,6 +699,7 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
             configuredSecrets={configuredSecrets}
             hiddenKeys={hiddenKeys}
             requiredKeys={requiredKeys}
+            supportsStreaming={channel?.name === "pico"}
             fieldErrors={fieldErrors}
             registerArrayFieldFlusher={registerArrayFieldFlusher}
             arrayFieldResetVersion={arrayFieldResetVersion}

@@ -68,17 +68,31 @@ func (a *Assembler) Assemble(ctx context.Context, convID int64, input AssembleIn
 		freshTailTokens += r.tokenCount
 	}
 
-	// Budget-aware selection of evictable items
+	// If the protected tail alone exceeds budget, trim from the oldest end at
+	// provider-safe boundaries. The rebuild path later sanitizes leading
+	// assistant(tool_calls)/tool messages, so splitting the active turn here can
+	// silently discard the very context we are trying to protect.
+	if freshTailTokens > input.Budget {
+		originalTailCount := len(freshTail)
+		originalFreshTailTokens := freshTailTokens
+		var preservedActiveTurn bool
+		freshTail, freshTailTokens, preservedActiveTurn = trimFreshTailToSafeBudget(freshTail, input.Budget)
+		logFields := map[string]any{
+			"budget":                input.Budget,
+			"fresh_tail_tokens":     freshTailTokens,
+			"fresh_tail_count":      len(freshTail),
+			"trimmed_fresh_items":   originalTailCount - len(freshTail),
+			"original_fresh_tokens": originalFreshTailTokens,
+			"preserved_active_turn": preservedActiveTurn,
+		}
+		if preservedActiveTurn {
+			logger.WarnCF("seahorse", "assemble: preserving active turn over budget", logFields)
+		} else {
+			logger.InfoCF("seahorse", "assemble: trimmed fresh tail to safe boundary", logFields)
+		}
+	}
 	remainingBudget := input.Budget - freshTailTokens
 	if remainingBudget < 0 {
-		// Fresh tail alone exceeds budget - we keep it anyway (design decision)
-		// Log for debugging retry/overflow issues
-		logger.InfoCF("seahorse", "assemble: fresh tail exceeds budget", map[string]any{
-			"budget":            input.Budget,
-			"fresh_tail_tokens": freshTailTokens,
-			"fresh_tail_count":  len(freshTail),
-			"over_budget_by":    freshTailTokens - input.Budget,
-		})
 		remainingBudget = 0
 	}
 
@@ -182,6 +196,81 @@ func (a *Assembler) Assemble(ctx context.Context, convID int64, input AssembleIn
 		Messages: messages,
 		Summary:  summary,
 	}, nil
+}
+
+func trimFreshTailToSafeBudget(tail []resolvedItem, budget int) ([]resolvedItem, int, bool) {
+	tailTokens := resolvedItemsTokenCount(tail)
+	if tailTokens <= budget {
+		return tail, tailTokens, false
+	}
+
+	latestTurnStart := lastUserMessageIndex(tail)
+	if latestTurnStart >= 0 {
+		latestTurnTokens := resolvedItemsTokenCount(tail[latestTurnStart:])
+		if latestTurnTokens > budget {
+			return tail[latestTurnStart:], latestTurnTokens, true
+		}
+	}
+
+	start := 0
+	for tailTokens > budget && start < len(tail) {
+		tailTokens -= tail[start].tokenCount
+		start++
+	}
+	for start < len(tail) && !isProviderSafeHistoryStart(tail[start:]) {
+		tailTokens -= tail[start].tokenCount
+		start++
+	}
+
+	return tail[start:], tailTokens, false
+}
+
+func resolvedItemsTokenCount(items []resolvedItem) int {
+	total := 0
+	for _, item := range items {
+		total += item.tokenCount
+	}
+	return total
+}
+
+func lastUserMessageIndex(items []resolvedItem) int {
+	for i := len(items) - 1; i >= 0; i-- {
+		if items[i].itemType != "message" || items[i].message == nil {
+			continue
+		}
+		if items[i].message.Role == "user" {
+			return i
+		}
+	}
+	return -1
+}
+
+func isProviderSafeHistoryStart(items []resolvedItem) bool {
+	for _, item := range items {
+		if item.itemType != "message" || item.message == nil {
+			continue
+		}
+		if item.message.Role == "tool" {
+			return false
+		}
+		if item.message.Role == "assistant" && messageHasToolUse(item.message) {
+			return false
+		}
+		return true
+	}
+	return true
+}
+
+func messageHasToolUse(msg *Message) bool {
+	if msg == nil {
+		return false
+	}
+	for _, part := range msg.Parts {
+		if part.Type == "tool_use" {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveItem loads the full message or summary for a context item.

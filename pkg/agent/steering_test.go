@@ -1618,6 +1618,8 @@ func TestAgentLoop_InterruptHard_RestoresSession(t *testing.T) {
 	}
 	defaultAgent.Sessions.SetHistory(sessionKey, originalHistory)
 
+	originalHistory = defaultAgent.Sessions.GetHistory(sessionKey)
+
 	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
 		t,
 		al,

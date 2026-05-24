@@ -703,6 +703,185 @@ func TestShellTool_URLBypassPrevented(t *testing.T) {
 	}
 }
 
+// TestWindows_TildeBypassPrevented verifies that ~ (home directory) cannot be
+// used to escape workspace restrictions on Windows.
+func TestWindows_TildeBypassPrevented(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only test")
+	}
+
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	ctx := context.Background()
+
+	// Tilde should be blocked when it expands outside workspace
+	blockedCommands := []string{
+		"ls ~",
+		"ls ~/some/path",
+		"cat ~/.config/file",
+		// PowerShell environment variables also expand to home directory
+		"dir $env:USERPROFILE",
+		"ls $env:USERPROFILE",
+		"cat $env:USERPROFILE\\.config\\file",
+		// CMD environment variables
+		`cmd /c "dir %USERPROFILE%"`,
+		`cmd /c "cd %USERPROFILE% && dir"`,
+		`cmd /c "type %USERPROFILE%\\.config\\file"`,
+	}
+
+	for _, cmd := range blockedCommands {
+		result := tool.Execute(ctx, map[string]any{"action": "run", "command": cmd})
+		if !result.IsError || !strings.Contains(result.ForLLM, "path outside working dir") {
+			t.Errorf("tilde bypass should be blocked: %q\n  got: %s", cmd, result.ForLLM)
+		}
+	}
+}
+
+// TestShellTool_PathTraversalVariants verifies that .../.../ and similar
+// path traversal variants are blocked.
+func TestShellTool_PathTraversalVariants(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	ctx := context.Background()
+
+	// Path traversal variants should be blocked
+	blockedCommands := []string{
+		"ls .../.../",
+		"ls ..../..../",
+		"cat .../.../../../etc/passwd",
+	}
+
+	for _, cmd := range blockedCommands {
+		result := tool.Execute(ctx, map[string]any{"action": "run", "command": cmd})
+		if !result.IsError || !strings.Contains(result.ForLLM, "path traversal") {
+			t.Errorf("path traversal variant should be blocked: %q\n  got: %s", cmd, result.ForLLM)
+		}
+	}
+
+	// Legitimate commands with ... should not be blocked (if such commands exist)
+	// Note: these will fail for other reasons but should not be blocked by path traversal
+	allowedCommands := []string{
+		"echo ...",
+		"ls ...",
+	}
+
+	for _, cmd := range allowedCommands {
+		result := tool.Execute(ctx, map[string]any{"action": "run", "command": cmd})
+		// These should not be blocked by path traversal check specifically
+		if strings.Contains(result.ForLLM, "path traversal") {
+			t.Errorf("legitimate command with ... should not be blocked: %q", cmd)
+		}
+	}
+}
+
+// TestWindows_SymlinkBypassPrevented verifies that symlinks pointing outside
+// workspace are detected and blocked after resolution.
+func TestWindows_SymlinkBypassPrevented(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only test")
+	}
+
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	ctx := context.Background()
+
+	// /tmp is outside the user workspace, should be blocked after symlink resolution
+	// On Windows /tmp resolves to C:\tmp which may not exist, causing different error
+	result := tool.Execute(ctx, map[string]any{"action": "run", "command": "ls /tmp"})
+	if !result.IsError {
+		t.Errorf("symlink bypass should be blocked: %s", result.ForLLM)
+	}
+}
+
+// TestWindows_PowerShellEncodingBypass verifies that PowerShell encoding bypass techniques are blocked.
+func TestWindows_PowerShellEncodingBypass(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only test")
+	}
+
+	tool, err := NewExecTool("", false)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Commands using [Text.Encoding] to construct a command string at runtime.
+	encodingBypassCommands := []string{
+		// Basic byte array forms
+		`[Text.Encoding]::ASCII.GetString([byte[]](0x6c,0x73,0x20,0x7e))`,
+		`[Text.Encoding]::ASCII.GetString([byte[]](0x69,0x65,0x78))`,
+		// System.Text.Encoding variant
+		`[System.Text.Encoding]::ASCII.GetString([byte[]](0x69,0x65,0x78))`,
+		// With whitespace variation
+		`[System.Text.Encoding]::ASCII.GetString ([byte[]](0x69,0x65,0x78))`,
+		// Variable storage form
+		`$b = [byte[]](0x69,0x65,0x78); [Text.Encoding]::ASCII.GetString($b)`,
+		// UTF8 variant
+		`[Text.Encoding]::UTF8.GetString([byte[]](0x69,0x65,0x78))`,
+		// Unicode variant
+		`[Text.Encoding]::Unicode.GetString([byte[]](0x69,0x00,0x65,0x00,0x78,0x00))`,
+	}
+
+	for _, cmd := range encodingBypassCommands {
+		result := tool.Execute(ctx, map[string]any{"action": "run", "command": cmd})
+		if !result.IsError {
+			t.Errorf("expected [Text.Encoding] bypass to be blocked: %s", cmd)
+		}
+		if !strings.Contains(result.ForLLM, "blocked") && !strings.Contains(result.ForUser, "blocked") {
+			t.Errorf("expected 'blocked' message for %s, got: %s", cmd, result.ForLLM)
+		}
+	}
+
+	// Commands using PowerShell's -EncodedCommand flag (base64), including short forms.
+	encodedCommands := []string{
+		// Full form
+		`powershell -NoProfile -NonInteractive -EncodedCommand SQBFAHIAaABlAGwAbAAvAC8A`,
+		`pwsh -EncodedCommand aWV4`,
+		// Short forms: -e, -ec, -enc, -en
+		`pwsh -e SQBFAHIAaABlAGwAbAAvAC8A`,
+		`pwsh -ec aWV4`,
+		`pwsh -enc aWV4`,
+		`pwsh -en aWV4`,
+		`powershell -e SQBFAHIAaABlAGwAbAAvAC8A`,
+		`powershell -ec aWV4`,
+		`powershell -enc aWV4`,
+		`powershell -en aWV4`,
+	}
+
+	for _, cmd := range encodedCommands {
+		result := tool.Execute(ctx, map[string]any{"action": "run", "command": cmd})
+		if !result.IsError {
+			t.Errorf("expected -EncodedCommand to be blocked: %s", cmd)
+		}
+	}
+
+	// Unicode escape sequences that could construct malicious commands
+	// Using double backslash to represent literal \u in Go string
+	unicodeCommands := []string{
+		`cmd /c "cd %USERPROFILE% \\u0026 dir"`,
+		`powershell -Command "Write-Host \\u0049EX"`,
+		`cmd /c "echo \\u0069\\u0065\\u0078"`,
+	}
+
+	for _, cmd := range unicodeCommands {
+		result := tool.Execute(ctx, map[string]any{"action": "run", "command": cmd})
+		if !result.IsError {
+			t.Errorf("expected Unicode escape to be blocked: %s", cmd)
+		}
+	}
+}
+
 func TestShellTool_Background_ReturnsImmediately(t *testing.T) {
 	tool, err := NewExecTool("", false)
 	require.NoError(t, err)

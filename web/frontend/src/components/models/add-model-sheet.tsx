@@ -36,10 +36,23 @@ import { showSaveSuccessOrRestartToast } from "@/lib/restart-required"
 import { refreshGatewayState } from "@/store/gateway"
 
 import { FetchModelsDialog } from "./fetch-models-dialog"
+import {
+  getEffectiveAPIBase,
+  getSubmittedAPIBase,
+  normalizeApiBase,
+} from "./model-provider-form-shared"
 import { type FieldValidation, validateModelField } from "./model-validation"
 import { ProviderCombobox } from "./provider-combobox"
-import { getProviderKey } from "./provider-label"
-import { FETCHABLE_PROVIDER_KEYS, PROVIDER_MAP } from "./provider-registry"
+import {
+  getCanonicalProviderKey,
+  getProviderCatalogEntry,
+  getProviderCatalogMap,
+  getProviderDefaultAPIBase,
+  getProviderDefaultAuthMethod,
+  isProviderAuthMethodLocked,
+  providerSupportsFetch,
+} from "./provider-registry"
+import { TestModelDialog } from "./test-model-dialog"
 
 interface AddForm {
   modelName: string
@@ -56,6 +69,7 @@ interface AddForm {
   requestTimeout: string
   thinkingLevel: string
   toolSchemaTransform: string
+  streamingEnabled: boolean
   extraBody: string
   customHeaders: string
 }
@@ -75,39 +89,9 @@ const EMPTY_ADD_FORM: AddForm = {
   requestTimeout: "",
   thinkingLevel: "",
   toolSchemaTransform: "",
+  streamingEnabled: false,
   extraBody: "",
   customHeaders: "",
-}
-
-function normalizeApiBase(value: string): string {
-  return value.trim().replace(/\/+$/, "")
-}
-
-function getNextApiBaseForProviderChange(
-  currentApiBase: string,
-  currentProvider: string,
-  nextProvider: string,
-): string {
-  const normalizedCurrentApiBase = normalizeApiBase(currentApiBase)
-  const currentDefaultApiBase = normalizeApiBase(
-    PROVIDER_MAP.get(currentProvider)?.defaultApiBase ?? "",
-  )
-  const nextDefaultApiBase =
-    PROVIDER_MAP.get(nextProvider)?.defaultApiBase ?? ""
-
-  if (!normalizedCurrentApiBase) {
-    return nextDefaultApiBase
-  }
-
-  if (
-    normalizedCurrentApiBase &&
-    currentDefaultApiBase &&
-    normalizedCurrentApiBase === currentDefaultApiBase
-  ) {
-    return nextDefaultApiBase
-  }
-
-  return currentApiBase
 }
 
 interface AddModelSheetProps {
@@ -141,15 +125,7 @@ export function AddModelSheet({
   const [catalogModels, setCatalogModels] = useState<string[]>([])
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-
-  // Dynamic import for TestModelDialog (added in PR3)
-  const [TestModelDialogComp, setTestModelDialogComp] = useState<React.ComponentType<{
-    model: unknown; open: boolean; onClose: () => void;
-    inlineParams: { provider: string; model: string; apiBase: string; apiKey: string; authMethod: string };
-  }> | null>(null)
-  useEffect(() => {
-    import("./test-model-dialog").then((m) => setTestModelDialogComp(() => m.TestModelDialog)).catch(() => {})
-  }, [])
+  const providerMap = getProviderCatalogMap(providerOptions)
 
   const apiKeyPlaceholder = maskedSecretPlaceholder(
     form.apiKey,
@@ -172,8 +148,12 @@ export function AddModelSheet({
 
   // Load catalog models when provider or apiBase changes
   useEffect(() => {
-    const providerKey = getProviderKey(form.provider || undefined)
-    const apiBase = form.apiBase.trim().replace(/\/+$/, "")
+    const providerKey = getCanonicalProviderKey(form.provider, providerOptions)
+    const apiBase = getEffectiveAPIBase(
+      form.provider,
+      form.apiBase,
+      providerOptions,
+    )
     if (!form.provider.trim()) {
       setCatalogModels([])
       return
@@ -183,7 +163,7 @@ export function AddModelSheet({
       .then((res) => {
         if (cancelled) return
         const matched = (res.entries || []).filter((e) => {
-          const ep = getProviderKey(e.provider || undefined)
+          const ep = getCanonicalProviderKey(e.provider, providerOptions)
           const eb = (e.api_base ?? "").trim().replace(/\/+$/, "")
           return ep === providerKey && eb === apiBase
         })
@@ -195,7 +175,7 @@ export function AddModelSheet({
     return () => {
       cancelled = true
     }
-  }, [form.provider, form.apiBase])
+  }, [form.provider, form.apiBase, providerOptions])
 
   const validate = (): boolean => {
     const errors: Partial<Record<keyof AddForm, string>> = {}
@@ -204,6 +184,9 @@ export function AddModelSheet({
       errors.modelName = t("models.add.errorRequired")
     } else if (existingModelNames.some((name) => name.trim() === modelName)) {
       errors.modelName = t("models.add.errorDuplicateModelName")
+    }
+    if (!providerDef) {
+      errors.provider = t("models.field.providerInvalid")
     }
     if (!form.model.trim()) errors.model = t("models.add.errorRequired")
     if (modelValidation?.level === "error") {
@@ -229,11 +212,15 @@ export function AddModelSheet({
     (value: string, provider: string) => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(() => {
-        const result = validateModelField(value, provider || undefined)
+        const result = validateModelField(
+          value,
+          provider || undefined,
+          providerOptions,
+        )
         setModelValidation(result)
       }, 300)
     },
-    [],
+    [providerOptions],
   )
 
   const handleModelChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -247,14 +234,41 @@ export function AddModelSheet({
 
   const handleProviderChange = (provider: string) => {
     setForm((f) => {
+      const previousOption = getProviderCatalogEntry(
+        f.provider,
+        providerOptions,
+      )
+      const nextOption = getProviderCatalogEntry(provider, providerOptions)
+      const previousDefaultBase = normalizeApiBase(
+        getProviderDefaultAPIBase(f.provider, providerOptions),
+      )
+      const nextDefaultBase = normalizeApiBase(
+        getProviderDefaultAPIBase(provider, providerOptions),
+      )
+      const currentApiBase = normalizeApiBase(f.apiBase)
+      let authMethod = f.authMethod
+      let apiBase = f.apiBase
+      if (nextOption?.authMethodLocked) {
+        authMethod = nextOption.defaultAuthMethod ?? ""
+      } else if (
+        previousOption?.authMethodLocked &&
+        f.authMethod === (previousOption.defaultAuthMethod ?? "")
+      ) {
+        authMethod = ""
+      }
+      if (
+        currentApiBase &&
+        previousDefaultBase &&
+        currentApiBase === previousDefaultBase &&
+        currentApiBase !== nextDefaultBase
+      ) {
+        apiBase = ""
+      }
       return {
         ...f,
-        provider,
-        apiBase: getNextApiBaseForProviderChange(
-          f.apiBase,
-          f.provider,
-          provider,
-        ),
+        provider: getCanonicalProviderKey(provider, providerOptions),
+        apiBase,
+        authMethod,
       }
     })
     // Re-validate model with new provider context
@@ -262,9 +276,14 @@ export function AddModelSheet({
       debouncedValidateModel(form.model, provider)
     }
     // Clear setAsDefault if the new provider doesn't support being default
-    const allowed = providerOptions?.find((o) => o.id === provider)?.default_model_allowed ?? false
+    const allowed =
+      getProviderCatalogEntry(provider, providerOptions)?.defaultModelAllowed ??
+      false
     if (!allowed) {
       setSetAsDefault(false)
+    }
+    if (fieldErrors.provider) {
+      setFieldErrors((prev) => ({ ...prev, provider: undefined }))
     }
   }
 
@@ -294,11 +313,38 @@ export function AddModelSheet({
     }
   }
 
-  const providerDef = PROVIDER_MAP.get(form.provider)
+  const canonicalProvider = getCanonicalProviderKey(
+    form.provider,
+    providerOptions,
+  )
+  const providerDef = canonicalProvider
+    ? providerMap.get(canonicalProvider)
+    : undefined
   const commonModels = providerDef?.commonModels || []
-  const defaultModelAllowed = form.provider
-    ? (providerOptions?.find((o) => o.id === form.provider)?.default_model_allowed ?? false)
-    : false
+  const authMethodLocked = isProviderAuthMethodLocked(
+    form.provider,
+    providerOptions,
+  )
+  const defaultAuthMethod = getProviderDefaultAuthMethod(
+    form.provider,
+    providerOptions,
+  )
+  const effectiveAuthMethod = (
+    authMethodLocked ? defaultAuthMethod : form.authMethod
+  )
+    .trim()
+    .toLowerCase()
+  const isOAuth = effectiveAuthMethod === "oauth"
+  const defaultModelAllowed = providerDef?.defaultModelAllowed === true
+  const apiBasePlaceholder =
+    getProviderDefaultAPIBase(form.provider, providerOptions) ||
+    "https://api.example.com/v1"
+  const effectiveApiBase = getEffectiveAPIBase(
+    form.provider,
+    form.apiBase,
+    providerOptions,
+  )
+  const submittedApiBase = getSubmittedAPIBase(form.apiBase)
 
   const handleSave = async () => {
     if (!validate()) return
@@ -334,16 +380,18 @@ export function AddModelSheet({
     setServerError("")
     try {
       const modelName = form.modelName.trim()
-      const provider = form.provider.trim()
+      const provider = canonicalProvider
       const modelId = form.model.trim()
       await addModel({
         model_name: modelName,
         provider: provider || undefined,
         model: modelId,
-        api_base: form.apiBase.trim() || undefined,
+        api_base: submittedApiBase,
         api_key: form.apiKey.trim() || undefined,
         proxy: form.proxy.trim() || undefined,
-        auth_method: form.authMethod.trim() || undefined,
+        auth_method: authMethodLocked
+          ? defaultAuthMethod || undefined
+          : form.authMethod.trim() || undefined,
         connect_mode: form.connectMode.trim() || undefined,
         workspace: form.workspace.trim() || undefined,
         rpm: form.rpm ? Number(form.rpm) : undefined,
@@ -353,6 +401,7 @@ export function AddModelSheet({
           : undefined,
         thinking_level: form.thinkingLevel.trim() || undefined,
         tool_schema_transform: form.toolSchemaTransform.trim() || undefined,
+        streaming: form.streamingEnabled ? { enabled: true } : undefined,
         extra_body: extraBody,
         custom_headers: customHeaders,
       })
@@ -391,7 +440,10 @@ export function AddModelSheet({
             </SheetDescription>
           </SheetHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto" ref={scrollContainerRef}>
+          <div
+            className="min-h-0 flex-1 overflow-y-auto"
+            ref={scrollContainerRef}
+          >
             <div className="space-y-5 px-6 py-5">
               <Field
                 label={t("models.add.modelName")}
@@ -413,6 +465,8 @@ export function AddModelSheet({
               <Field
                 label={t("models.field.provider")}
                 hint={t("models.field.providerHint")}
+                error={fieldErrors.provider}
+                required
               >
                 <ProviderCombobox
                   value={form.provider}
@@ -516,7 +570,7 @@ export function AddModelSheet({
                   </div>
                 )}
                 <div className="flex items-center gap-2">
-                  {form.provider && FETCHABLE_PROVIDER_KEYS.has(form.provider) && (
+                  {providerSupportsFetch(form.provider, providerOptions) && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -535,19 +589,25 @@ export function AddModelSheet({
                 </div>
               </Field>
 
-              <Field label={t("models.field.apiKey")}>
-                <KeyInput
-                  value={form.apiKey}
-                  onChange={(v) => setForm((f) => ({ ...f, apiKey: v }))}
-                  placeholder={apiKeyPlaceholder}
-                />
-              </Field>
+              {!isOAuth && (
+                <Field label={t("models.field.apiKey")}>
+                  <KeyInput
+                    value={form.apiKey}
+                    onChange={(v) => setForm((f) => ({ ...f, apiKey: v }))}
+                    placeholder={apiKeyPlaceholder}
+                  />
+                </Field>
+              )}
 
-              <Field label={t("models.field.apiBase")}>
+              <Field
+                label={t("models.field.apiBase")}
+                hint={isOAuth ? t("models.edit.oauthNote") : undefined}
+              >
                 <Input
                   value={form.apiBase}
                   onChange={setField("apiBase")}
-                  placeholder="https://api.example.com/v1"
+                  placeholder={apiBasePlaceholder}
+                  disabled={isOAuth}
                 />
               </Field>
 
@@ -556,7 +616,7 @@ export function AddModelSheet({
                   variant="outline"
                   size="sm"
                   onClick={() => setTestOpen(true)}
-                  disabled={!form.provider || !form.model || !TestModelDialogComp}
+                  disabled={!form.provider || !form.model}
                 >
                   <IconPlugConnected className="size-4" />
                   {t("models.test.testConnection")}
@@ -589,12 +649,19 @@ export function AddModelSheet({
 
                 <Field
                   label={t("models.field.authMethod")}
-                  hint={t("models.field.authMethodHint")}
+                  hint={
+                    authMethodLocked
+                      ? t("models.field.authMethodManagedHint")
+                      : t("models.field.authMethodHint")
+                  }
                 >
                   <Input
-                    value={form.authMethod}
+                    value={
+                      authMethodLocked ? defaultAuthMethod : form.authMethod
+                    }
                     onChange={setField("authMethod")}
                     placeholder="oauth"
+                    disabled={authMethodLocked}
                   />
                 </Field>
 
@@ -653,7 +720,7 @@ export function AddModelSheet({
                   <Input
                     value={form.thinkingLevel}
                     onChange={setField("thinkingLevel")}
-                    placeholder="off"
+                    placeholder={t("models.field.providerDefault")}
                   />
                 </Field>
 
@@ -678,6 +745,16 @@ export function AddModelSheet({
                     placeholder="google"
                   />
                 </Field>
+
+                <SwitchCardField
+                  label={t("models.field.streamingEnabled")}
+                  hint={t("models.field.streamingEnabledHint")}
+                  checked={form.streamingEnabled}
+                  onCheckedChange={(checked) =>
+                    setForm((f) => ({ ...f, streamingEnabled: checked }))
+                  }
+                  ariaLabel={t("models.field.streamingEnabled")}
+                />
 
                 <Field
                   label={t("models.field.extraBody")}
@@ -739,25 +816,24 @@ export function AddModelSheet({
           open={fetchOpen}
           onClose={() => setFetchOpen(false)}
           onFill={handleFetchFill}
-          provider={form.provider}
+          provider={canonicalProvider}
           apiKey={form.apiKey}
-          apiBase={form.apiBase}
+          apiBase={effectiveApiBase}
+          backendOptions={providerOptions}
         />
 
-        {TestModelDialogComp && (
-          <TestModelDialogComp
-            model={null}
-            open={testOpen}
-            onClose={() => setTestOpen(false)}
-            inlineParams={{
-              provider: form.provider,
-              model: form.model,
-              apiBase: form.apiBase,
-              apiKey: form.apiKey,
-              authMethod: form.authMethod,
-            }}
-          />
-        )}
+        <TestModelDialog
+          model={null}
+          open={testOpen}
+          onClose={() => setTestOpen(false)}
+          inlineParams={{
+            provider: canonicalProvider,
+            model: form.model,
+            apiBase: effectiveApiBase,
+            apiKey: form.apiKey,
+            authMethod: effectiveAuthMethod,
+          }}
+        />
       </Sheet>
     </>
   )

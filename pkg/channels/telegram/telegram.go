@@ -1471,7 +1471,7 @@ func (c *TelegramChannel) BeginStream(ctx context.Context, chatID string) (chann
 		return nil, err
 	}
 
-	streamCfg := c.tgCfg.Streaming
+	streamCfg := c.tgCfg.Streaming.WithDefaults(3, 200)
 	return &telegramStreamer{
 		bot:              c.bot,
 		chatID:           cid,
@@ -1483,8 +1483,8 @@ func (c *TelegramChannel) BeginStream(ctx context.Context, chatID string) (chann
 }
 
 // telegramStreamer streams partial LLM output via Telegram's sendMessageDraft API.
-// On first API error (e.g. bot lacks forum mode), it silently degrades: Update
-// becomes a no-op, while Finalize still delivers the final message.
+// Draft update failures are returned to the agent, which decides whether the
+// stream was already visible enough to keep or should fall back to Chat().
 type telegramStreamer struct {
 	bot              *telego.Bot
 	chatID           int64
@@ -1495,6 +1495,7 @@ type telegramStreamer struct {
 	lastLen          int
 	lastAt           time.Time
 	failed           bool
+	draftTouched     bool
 	mu               sync.Mutex
 }
 
@@ -1503,7 +1504,7 @@ func (s *telegramStreamer) Update(ctx context.Context, content string) error {
 	defer s.mu.Unlock()
 
 	if s.failed {
-		return nil
+		return fmt.Errorf("telegram streaming disabled after previous draft failure")
 	}
 
 	// Throttle: skip if not enough time or content has passed
@@ -1514,6 +1515,7 @@ func (s *telegramStreamer) Update(ctx context.Context, content string) error {
 	}
 
 	htmlContent := markdownToTelegramHTML(content)
+	s.draftTouched = true
 
 	err := s.bot.SendMessageDraft(ctx, &telego.SendMessageDraftParams{
 		ChatID:          s.chatID,
@@ -1523,12 +1525,11 @@ func (s *telegramStreamer) Update(ctx context.Context, content string) error {
 		ParseMode:       telego.ModeHTML,
 	})
 	if err != nil {
-		// First error → degrade silently (e.g. no forum mode)
 		logger.WarnCF("telegram", "sendMessageDraft failed, disabling streaming", map[string]any{
 			"error": err.Error(),
 		})
 		s.failed = true
-		return nil // don't propagate — Finalize will still deliver
+		return fmt.Errorf("telegram draft update: %w", err)
 	}
 
 	s.lastLen = len(content)
@@ -1554,11 +1555,33 @@ func (s *telegramStreamer) Finalize(ctx context.Context, content string) error {
 			return fmt.Errorf("telegram finalize: %w", err)
 		}
 	}
+	s.Cancel(ctx)
 	return nil
 }
 
 func (s *telegramStreamer) Cancel(ctx context.Context) {
-	// Draft auto-expires on Telegram's side; nothing to clean up.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clearDraft(ctx)
+}
+
+func (s *telegramStreamer) clearDraft(ctx context.Context) {
+	if !s.draftTouched {
+		return
+	}
+	if err := s.bot.SendMessageDraft(ctx, &telego.SendMessageDraftParams{
+		ChatID:          s.chatID,
+		MessageThreadID: s.threadID,
+		DraftID:         s.draftID,
+		Text:            " ",
+	}); err != nil {
+		logger.DebugCF("telegram", "failed to clear streaming draft", map[string]any{
+			"chat_id": s.chatID,
+			"error":   err.Error(),
+		})
+	}
+	s.lastLen = 0
+	s.draftTouched = false
 }
 
 // cryptoRandInt returns a non-zero random int using crypto/rand.

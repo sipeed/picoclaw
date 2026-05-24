@@ -444,6 +444,9 @@ func DefaultConfig() *Config {
 			ListDir: ToolConfig{
 				Enabled: true,
 			},
+			LoadImage: ToolConfig{
+				Enabled: true,
+			},
 			Message: ToolConfig{
 				Enabled: true,
 			},
@@ -508,7 +511,6 @@ func defaultChannels() ChannelsConfig {
 			"typing":      map[string]any{"enabled": true},
 			"placeholder": map[string]any{"enabled": true, "text": []string{"Thinking... 💭"}},
 			"settings": map[string]any{
-				"streaming":            map[string]any{"enabled": true, "throttle_seconds": 3, "min_growth_chars": 200},
 				"use_markdown_v2":      false,
 				"media_group_delay_ms": 500,
 			},
@@ -563,6 +565,7 @@ func defaultChannels() ChannelsConfig {
 				"read_timeout":    60,
 				"write_timeout":   10,
 				"max_connections": 100,
+				"streaming":       map[string]any{"enabled": true},
 			},
 		},
 		"irc": map[string]any{

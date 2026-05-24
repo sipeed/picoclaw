@@ -26,7 +26,7 @@ const defaultBusBufferSize = 64
 type StreamDelegate interface {
 	// GetStreamer returns a Streamer for the given channel+chatID if the channel
 	// supports streaming. Returns nil, false if streaming is unavailable.
-	GetStreamer(ctx context.Context, channel, chatID string) (Streamer, bool)
+	GetStreamer(ctx context.Context, channel, chatID, sessionKey string) (Streamer, bool)
 }
 
 // Streamer pushes incremental content to a streaming-capable channel.
@@ -35,6 +35,20 @@ type Streamer interface {
 	Update(ctx context.Context, content string) error
 	Finalize(ctx context.Context, content string) error
 	Cancel(ctx context.Context)
+}
+
+// ContextUsageStreamer can attach final context-window usage metadata when a
+// streaming channel's final message replaces the normal outbound response.
+type ContextUsageStreamer interface {
+	Streamer
+	FinalizeWithContext(ctx context.Context, content string, usage *ContextUsage) error
+}
+
+// ReasoningStreamer can show incremental model reasoning/thought content
+// separately from the final user-visible answer stream.
+type ReasoningStreamer interface {
+	UpdateReasoning(ctx context.Context, content string) error
+	FinalizeReasoning(ctx context.Context, content string) error
 }
 
 type MessageBus struct {
@@ -182,10 +196,10 @@ func (mb *MessageBus) SetEventPublisher(p EventPublisher) {
 	mb.eventPublisher.Store(p)
 }
 
-// GetStreamer returns a Streamer for the given channel+chatID via the delegate.
-func (mb *MessageBus) GetStreamer(ctx context.Context, channel, chatID string) (Streamer, bool) {
+// GetStreamer returns a Streamer for the given channel+chatID+session via the delegate.
+func (mb *MessageBus) GetStreamer(ctx context.Context, channel, chatID, sessionKey string) (Streamer, bool) {
 	if d, ok := mb.streamDelegate.Load().(StreamDelegate); ok && d != nil {
-		return d.GetStreamer(ctx, channel, chatID)
+		return d.GetStreamer(ctx, channel, chatID, sessionKey)
 	}
 	return nil, false
 }

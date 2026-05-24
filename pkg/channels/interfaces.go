@@ -20,6 +20,17 @@ type MessageEditor interface {
 	EditMessage(ctx context.Context, chatID string, messageID string, content string) error
 }
 
+// MessageEditorWithPayload extends MessageEditor for channels that can update
+// structured message metadata in addition to plain text content.
+type MessageEditorWithPayload interface {
+	EditMessageWithPayload(
+		ctx context.Context,
+		chatID string,
+		messageID string,
+		payload map[string]any,
+	) error
+}
+
 // MessageDeleter — channels that can delete a message by ID.
 type MessageDeleter interface {
 	DeleteMessage(ctx context.Context, chatID string, messageID string) error

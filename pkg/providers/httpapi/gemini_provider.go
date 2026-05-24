@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	geminiDefaultAPIBase = "https://generativelanguage.googleapis.com/v1beta"
-	geminiDefaultModel   = "gemini-2.0-flash"
+	geminiDefaultAPIBase                = "https://generativelanguage.googleapis.com/v1beta"
+	geminiDefaultModel                  = "gemini-2.0-flash"
+	geminiDefaultStreamingReadIdleLimit = 5 * time.Minute
 )
 
 type GeminiProvider struct {
@@ -115,6 +116,28 @@ func (p *GeminiProvider) ChatStream(
 	options map[string]any,
 	onChunk func(accumulated string),
 ) (*LLMResponse, error) {
+	return p.ChatStreamEvents(
+		ctx,
+		messages,
+		tools,
+		model,
+		options,
+		func(chunk StreamChunk) {
+			if onChunk != nil && strings.TrimSpace(chunk.Content) != "" {
+				onChunk(chunk.Content)
+			}
+		},
+	)
+}
+
+func (p *GeminiProvider) ChatStreamEvents(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+	onChunk func(StreamChunk),
+) (*LLMResponse, error) {
 	if p.apiBase == "" {
 		return nil, fmt.Errorf("API base not configured")
 	}
@@ -147,7 +170,43 @@ func (p *GeminiProvider) ChatStream(
 		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
 
-	return parseGeminiStreamResponse(ctx, resp.Body, onChunk)
+	return parseGeminiStreamResponse(ctx,
+		withGeminiStreamingReadIdleTimeout(resp.Body,
+			geminiDefaultStreamingReadIdleLimit),
+		onChunk)
+}
+
+func withGeminiStreamingReadIdleTimeout(body io.ReadCloser, timeout time.Duration) io.ReadCloser {
+	if body == nil || timeout <= 0 {
+		return body
+	}
+	return &geminiStreamingReadIdleTimeoutBody{
+		body:    body,
+		timeout: timeout,
+	}
+}
+
+type geminiStreamingReadIdleTimeoutBody struct {
+	body    io.ReadCloser
+	timeout time.Duration
+}
+
+func (b *geminiStreamingReadIdleTimeoutBody) Read(p []byte) (int, error) {
+	timedOut := make(chan struct{})
+	timer := time.AfterFunc(b.timeout, func() {
+		close(timedOut)
+		_ = b.body.Close()
+	})
+	n, err := b.body.Read(p)
+	if !timer.Stop() {
+		<-timedOut
+		return n, fmt.Errorf("gemini stream idle timeout after %s", b.timeout)
+	}
+	return n, err
+}
+
+func (b *geminiStreamingReadIdleTimeoutBody) Close() error {
+	return b.body.Close()
 }
 
 func (p *GeminiProvider) applyHeaders(req *http.Request) {
@@ -458,7 +517,7 @@ func parseGeminiResponse(resp *geminiGenerateContentResponse) *LLMResponse {
 func parseGeminiStreamResponse(
 	ctx context.Context,
 	reader io.Reader,
-	onChunk func(accumulated string),
+	onChunk func(StreamChunk),
 ) (*LLMResponse, error) {
 	var contentBuilder strings.Builder
 	var reasoningBuilder strings.Builder
@@ -498,10 +557,13 @@ func parseGeminiStreamResponse(
 				if part.Text != "" {
 					if part.Thought {
 						reasoningBuilder.WriteString(part.Text)
+						if onChunk != nil {
+							onChunk(StreamChunk{ReasoningContent: reasoningBuilder.String()})
+						}
 					} else {
 						contentBuilder.WriteString(part.Text)
 						if onChunk != nil {
-							onChunk(contentBuilder.String())
+							onChunk(StreamChunk{Content: contentBuilder.String()})
 						}
 					}
 				}
