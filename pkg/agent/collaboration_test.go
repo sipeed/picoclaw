@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,12 @@ import (
 )
 
 type collaborationReplyProvider struct{}
+
+type collaborationDeadlineProvider struct {
+	mu        sync.Mutex
+	sawCtxTTL bool
+	remaining time.Duration
+}
 
 var (
 	threadIDPattern  = regexp.MustCompile(`Thread ID:\s*([^\n]+)`)
@@ -67,6 +74,32 @@ func (p *collaborationReplyProvider) Chat(
 
 func (p *collaborationReplyProvider) GetDefaultModel() string {
 	return "collaboration-reply-model"
+}
+
+func (p *collaborationDeadlineProvider) Chat(
+	ctx context.Context,
+	_ []providers.Message,
+	_ []providers.ToolDefinition,
+	_ string,
+	_ map[string]any,
+) (*providers.LLMResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if deadline, ok := ctx.Deadline(); ok {
+		p.sawCtxTTL = true
+		p.remaining = time.Until(deadline)
+	}
+	return &providers.LLMResponse{Content: "Timeout observed."}, nil
+}
+
+func (p *collaborationDeadlineProvider) GetDefaultModel() string {
+	return "collaboration-deadline-model"
+}
+
+func (p *collaborationDeadlineProvider) snapshot() (bool, time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.sawCtxTTL, p.remaining
 }
 
 func TestCollaborationBus_RequestWaitTrue_ExplicitReplyAndHistory(t *testing.T) {
@@ -196,6 +229,48 @@ func TestCollaborationBus_RequestWaitFalse_ReplyDurableInInbox(t *testing.T) {
 	}
 	if !strings.Contains(inbox.Messages[0].ContentPreview, "Tradeoffs: faster indexing") {
 		t.Fatalf("inbox.Messages[0].ContentPreview = %q", inbox.Messages[0].ContentPreview)
+	}
+	waitForCollaborationIdle(t, al, reply.ThreadID, "research")
+}
+
+func TestCollaborationBus_RequestWithoutDeadline_UsesSubTurnDefaultTimeout(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := collaborationTestConfig(tmpDir)
+	cfg.Agents.Defaults.SubTurn.DefaultTimeoutMinutes = 1
+	provider := &collaborationDeadlineProvider{}
+	al := NewAgentLoop(cfg, nil, provider)
+	defer al.Close()
+
+	plannerScope := &session.SessionScope{
+		Version:    session.ScopeVersionV1,
+		AgentID:    "planner",
+		Channel:    "cli",
+		Account:    "default",
+		Dimensions: []string{"chat"},
+		Values:     map[string]string{"chat": "direct:tester"},
+	}
+	plannerSessionKey := session.BuildSessionKey(*plannerScope)
+	ctx := tools.WithToolSessionContext(context.Background(), "planner", plannerSessionKey, plannerScope)
+
+	reply, err := al.collaboration.Request(ctx, tools.AgentRequestParams{
+		ToAgentID:     "research",
+		Content:       "Verify default timeout handling.",
+		ContextPolicy: collab.ContextPolicyTaskOnly,
+		Wait:          true,
+	})
+	if err != nil {
+		t.Fatalf("Request() error = %v", err)
+	}
+	if reply.Content != "Timeout observed." {
+		t.Fatalf("reply.Content = %q", reply.Content)
+	}
+
+	sawDeadline, remaining := provider.snapshot()
+	if !sawDeadline {
+		t.Fatal("expected collaboration worker context to have a deadline")
+	}
+	if remaining <= 30*time.Second || remaining > time.Minute {
+		t.Fatalf("remaining timeout = %v, want between 30s and 1m", remaining)
 	}
 	waitForCollaborationIdle(t, al, reply.ThreadID, "research")
 }

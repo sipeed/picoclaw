@@ -462,11 +462,7 @@ func (b *AgentCollaborationBus) processQueuedRequest(
 	scope := collaborationSessionScope(targetAgentID, threadID)
 	requestMsg := interAgentPromptMessage(b.renderRequestMessage(requestEnv), requestEnv.Artifacts)
 
-	runCtx := context.Background()
-	cancel := func() {}
-	if requestEnv.Deadline != nil && !requestEnv.Deadline.IsZero() {
-		runCtx, cancel = context.WithDeadline(context.Background(), *requestEnv.Deadline)
-	}
+	runCtx, cancel := b.collaborationRunContext(requestEnv.Deadline)
 	defer cancel()
 
 	if err := b.al.ensureHooksInitialized(runCtx); err != nil {
@@ -632,12 +628,9 @@ func (b *AgentCollaborationBus) waitForResponse(
 		return response, nil
 	}
 
-	timeout := defaultCollaborationTimeout
-	if deadline != nil {
-		timeout = time.Until(*deadline)
-		if timeout <= 0 {
-			return collab.Envelope{}, fmt.Errorf("collaboration reply deadline expired before a response was received")
-		}
+	timeout, err := b.collaborationWaitTimeout(deadline)
+	if err != nil {
+		return collab.Envelope{}, err
 	}
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
@@ -654,6 +647,34 @@ func (b *AgentCollaborationBus) waitForResponse(
 			messageID,
 		)
 	}
+}
+
+func (b *AgentCollaborationBus) collaborationRunContext(deadline *time.Time) (context.Context, context.CancelFunc) {
+	if deadline != nil && !deadline.IsZero() {
+		return context.WithDeadline(context.Background(), *deadline)
+	}
+	return context.WithTimeout(context.Background(), b.defaultCollaborationTimeout())
+}
+
+func (b *AgentCollaborationBus) collaborationWaitTimeout(deadline *time.Time) (time.Duration, error) {
+	if deadline != nil {
+		timeout := time.Until(*deadline)
+		if timeout <= 0 {
+			return 0, fmt.Errorf("collaboration reply deadline expired before a response was received")
+		}
+		return timeout, nil
+	}
+	return b.defaultCollaborationTimeout(), nil
+}
+
+func (b *AgentCollaborationBus) defaultCollaborationTimeout() time.Duration {
+	if b != nil && b.al != nil {
+		timeout := b.al.getSubTurnConfig().defaultTimeout
+		if timeout > 0 {
+			return timeout
+		}
+	}
+	return defaultCollaborationTimeout
 }
 
 func (b *AgentCollaborationBus) addWaiter(messageID string, waiter chan collab.Envelope) {
