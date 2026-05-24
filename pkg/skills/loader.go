@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -28,6 +29,11 @@ const (
 type SkillMetadata struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	// RequiresBins are the executables a skill declares it needs at runtime,
+	// parsed from `metadata.nanobot.requires.bins` in the SKILL.md frontmatter.
+	// ListSkills uses this to filter out skills whose required binaries are
+	// not on PATH (so the LLM doesn't get told it can use tools it can't run).
+	RequiresBins []string `json:"-"`
 }
 
 type SkillInfo struct {
@@ -127,6 +133,16 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 			if err := info.validate(); err != nil {
 				slog.Warn("invalid skill from "+source, "name", info.Name, "error", err)
 				continue
+			}
+			if metadata != nil {
+				if missing := missingBinaries(metadata.RequiresBins); len(missing) > 0 {
+					slog.Info("skipping skill: required binary not found on PATH",
+						"name", info.Name,
+						"source", source,
+						"missing", missing,
+					)
+					continue
+				}
 			}
 			if seen[info.Name] {
 				continue
@@ -246,8 +262,9 @@ func (sl *SkillsLoader) getSkillMetadata(skillPath string) *SkillMetadata {
 
 	// Try JSON first (for backward compatibility)
 	var jsonMeta struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
+		Name        string                 `json:"name"`
+		Description string                 `json:"description"`
+		Metadata    *skillExtendedMetadata `json:"metadata"`
 	}
 	if err := json.Unmarshal([]byte(frontmatter), &jsonMeta); err == nil {
 		if jsonMeta.Name != "" {
@@ -256,6 +273,7 @@ func (sl *SkillsLoader) getSkillMetadata(skillPath string) *SkillMetadata {
 		if jsonMeta.Description != "" {
 			metadata.Description = jsonMeta.Description
 		}
+		metadata.RequiresBins = jsonMeta.Metadata.requiresBins()
 		return metadata
 	}
 
@@ -267,7 +285,49 @@ func (sl *SkillsLoader) getSkillMetadata(skillPath string) *SkillMetadata {
 	if description := yamlMeta["description"]; description != "" {
 		metadata.Description = description
 	}
+	metadata.RequiresBins = sl.parseRequiresBins(frontmatter)
 	return metadata
+}
+
+// skillExtendedMetadata models the optional `metadata.nanobot.*` block in
+// SKILL.md frontmatter. Today we only consume `requires.bins`; other nanobot
+// fields (emoji, os, install) are intentionally ignored.
+type skillExtendedMetadata struct {
+	Nanobot *struct {
+		Requires *struct {
+			Bins []string `json:"bins" yaml:"bins"`
+		} `json:"requires" yaml:"requires"`
+	} `json:"nanobot" yaml:"nanobot"`
+}
+
+func (m *skillExtendedMetadata) requiresBins() []string {
+	if m == nil || m.Nanobot == nil || m.Nanobot.Requires == nil {
+		return nil
+	}
+	return m.Nanobot.Requires.Bins
+}
+
+// parseRequiresBins extracts metadata.nanobot.requires.bins from YAML
+// frontmatter. The metadata value itself is typically written as inline
+// (flow-style) JSON in real skills, e.g.:
+//
+//	metadata: {"nanobot":{"requires":{"bins":["agent-browser"]}}}
+//
+// yaml.v3 parses both block-style and flow-style, so a single Unmarshal
+// covers both forms.
+func (sl *SkillsLoader) parseRequiresBins(frontmatter string) []string {
+	var meta struct {
+		Metadata *skillExtendedMetadata `yaml:"metadata"`
+	}
+	if err := yaml.Unmarshal([]byte(frontmatter), &meta); err != nil {
+		// Malformed frontmatter would otherwise silently disable the
+		// requires.bins guard for this skill. Surface it at debug level
+		// so operators investigating "why is this skill loading despite
+		// missing $TOOL?" have a breadcrumb.
+		slog.Debug("skills: failed to parse frontmatter for requires.bins", "error", err)
+		return nil
+	}
+	return meta.Metadata.requiresBins()
 }
 
 func extractMarkdownMetadata(content string) (title, description string) {
@@ -377,6 +437,29 @@ func splitFrontmatter(content string) (frontmatter, body string) {
 	body = strings.Join(lines[end+1:], "\n")
 	body = strings.TrimLeft(body, "\n")
 	return frontmatter, body
+}
+
+// missingBinaries returns the subset of bins that cannot be resolved via
+// exec.LookPath. Empty/whitespace-only entries are ignored. Entries that
+// contain a path separator are treated as missing: exec.LookPath would
+// otherwise resolve them relative to cwd, letting a SKILL.md "validate"
+// itself against an unrelated file the operator never installed.
+func missingBinaries(bins []string) []string {
+	var missing []string
+	for _, bin := range bins {
+		bin = strings.TrimSpace(bin)
+		if bin == "" {
+			continue
+		}
+		if strings.ContainsAny(bin, `/\`) {
+			missing = append(missing, bin)
+			continue
+		}
+		if _, err := exec.LookPath(bin); err != nil {
+			missing = append(missing, bin)
+		}
+	}
+	return missing
 }
 
 func escapeXML(s string) string {
