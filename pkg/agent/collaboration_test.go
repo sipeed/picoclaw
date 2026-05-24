@@ -275,6 +275,79 @@ func TestCollaborationBus_RequestWithoutDeadline_UsesSubTurnDefaultTimeout(t *te
 	waitForCollaborationIdle(t, al, reply.ThreadID, "research")
 }
 
+func TestCollaborationBus_RequestRejectsOversizedSelectedContext(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := collaborationTestConfig(tmpDir)
+	cfg.Agents.List[0].Communication.MaxMessageChars = 20
+	cfg.Agents.List[1].Communication.MaxMessageChars = 20
+	al := NewAgentLoop(cfg, nil, &collaborationReplyProvider{})
+	defer al.Close()
+
+	plannerScope := &session.SessionScope{
+		Version:    session.ScopeVersionV1,
+		AgentID:    "planner",
+		Channel:    "cli",
+		Account:    "default",
+		Dimensions: []string{"chat"},
+		Values:     map[string]string{"chat": "direct:tester"},
+	}
+	plannerSessionKey := session.BuildSessionKey(*plannerScope)
+	ctx := tools.WithToolSessionContext(context.Background(), "planner", plannerSessionKey, plannerScope)
+
+	_, err := al.collaboration.Request(ctx, tools.AgentRequestParams{
+		ToAgentID:       "research",
+		Content:         "ok",
+		ContextPolicy:   collab.ContextPolicySelectedContext,
+		SelectedContext: "this shared context is way too large",
+		Wait:            false,
+	})
+	if err == nil {
+		t.Fatal("expected oversized selected_context to be rejected")
+	}
+	if !strings.Contains(err.Error(), "max_message_chars=20") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestCollaborationBus_RequestRejectsOversizedSummaryContext(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := collaborationTestConfig(tmpDir)
+	cfg.Agents.List[0].Communication.MaxMessageChars = 20
+	cfg.Agents.List[1].Communication.MaxMessageChars = 20
+	al := NewAgentLoop(cfg, nil, &collaborationReplyProvider{})
+	defer al.Close()
+
+	planner, ok := al.GetRegistry().GetAgent("planner")
+	if !ok || planner == nil {
+		t.Fatal("expected planner agent")
+	}
+
+	plannerScope := &session.SessionScope{
+		Version:    session.ScopeVersionV1,
+		AgentID:    "planner",
+		Channel:    "cli",
+		Account:    "default",
+		Dimensions: []string{"chat"},
+		Values:     map[string]string{"chat": "direct:tester"},
+	}
+	plannerSessionKey := session.BuildSessionKey(*plannerScope)
+	planner.Sessions.SetSummary(plannerSessionKey, "this summary is definitely too long")
+
+	ctx := tools.WithToolSessionContext(context.Background(), "planner", plannerSessionKey, plannerScope)
+	_, err := al.collaboration.Request(ctx, tools.AgentRequestParams{
+		ToAgentID:     "research",
+		Content:       "ok",
+		ContextPolicy: collab.ContextPolicySummary,
+		Wait:          false,
+	})
+	if err == nil {
+		t.Fatal("expected oversized summary context to be rejected")
+	}
+	if !strings.Contains(err.Error(), "max_message_chars=20") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestCollaborationBus_RequestBlockedByCommunicationPolicy(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := collaborationTestConfig(tmpDir)

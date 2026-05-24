@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -146,7 +147,7 @@ func (b *AgentCollaborationBus) Request(
 		fromAgentID,
 		[]string{toAgentID},
 		threadID,
-		len(params.Content),
+		collaborationPayloadCharCount(strings.TrimSpace(params.Content), sharedContext),
 		0,
 	); policyErr != nil {
 		return nil, policyErr
@@ -285,7 +286,7 @@ func (b *AgentCollaborationBus) Reply(
 		fromAgentID,
 		recipients,
 		threadID,
-		len(params.Content),
+		collaborationPayloadCharCount(strings.TrimSpace(params.Content), ""),
 		len(params.Artifacts),
 	); policyErr != nil {
 		return nil, policyErr
@@ -949,6 +950,11 @@ func truncateForCollaboration(content string, limit int) string {
 		return content[:limit]
 	}
 	return content[:limit-3] + "..."
+}
+
+func collaborationPayloadCharCount(content, sharedContext string) int {
+	return utf8.RuneCountInString(strings.TrimSpace(content)) +
+		utf8.RuneCountInString(strings.TrimSpace(sharedContext))
 }
 
 func (b *AgentCollaborationBus) isQueueActive(sessionKey string) bool {
