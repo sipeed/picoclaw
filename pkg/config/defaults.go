@@ -88,7 +88,7 @@ func DefaultConfig() *Config {
 			{
 				ModelName: "claude-sonnet-4.6",
 				Provider:  "anthropic",
-				Model:     "claude-sonnet-4.6",
+				Model:     "claude-sonnet-4-6",
 				APIBase:   "https://api.anthropic.com/v1",
 			},
 
