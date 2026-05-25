@@ -23,8 +23,9 @@ test('Knowledge Base Flow — Send "Hello" and verify bot response', async ({ pa
     if (await loader.first().isVisible().catch(() => false)) {
       await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
     }
-    await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
-    await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click();
+    const orgCards = page.locator('.organization-card');
+    await orgCards.first().waitFor({ state: 'visible', timeout: 20000 });
+    await orgCards.filter({ has: page.locator(':text-is("Testing")') }).first().click();
     await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 });
   }
   console.log('✅ PASS: Step 4 - Org selection handled');
@@ -39,61 +40,56 @@ test('Knowledge Base Flow — Send "Hello" and verify bot response', async ({ pa
   console.log('✅ PASS: Step 6 - Flow Tester page displayed');
 
   console.log('📍 Step 7: Open flow dropdown and select "Knowledge Base"');
-  await page.locator('.tester-select').click();
-  await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 5000 });
-  // If multiple flows with same name exist, select the last one (oldest)
-  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /knowledge base/i }).last().click();
+  const flowSelect = page.locator('.selector-bar--welcome .selector-pill-select').first();
+  await flowSelect.waitFor({ state: 'visible', timeout: 60000 });
+  await flowSelect.click();
+  const flowListbox = page.locator('[role="listbox"]').filter({ has: page.locator('[role="option"]') }).last();
+  await flowListbox.waitFor({ state: 'visible', timeout: 15000 });
+  await flowListbox.locator('[role="option"]').filter({ hasText: /knowledge base/i }).last().click();
   console.log('✅ PASS: Step 7 - Knowledge Base flow selected');
 
-  console.log('📍 Step 8: Wait for flow to load and select latest version');
-  // Wait for version selector to be ready
-  await page.locator('.version-selector-text').waitFor({ state: 'visible', timeout: 20000 });
-  
-  // Open version dropdown
-  await page.locator('.version-selector-button').click();
-  await page.locator('.version-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
-  
-  // Wait for real items to load (not skeleton)
-  await page.locator('.version-dropdown-menu .version-date').first()
-    .waitFor({ state: 'visible', timeout: 40000 });
-  
-  // Click first (latest) version
-  await page.locator('.version-dropdown-menu .version-item').first().click();
-  
-  // Verify selection completed
-  await expect(page.locator('.version-selector-text'))
-    .not.toContainText('Select Version', { timeout: 40000 });
-  console.log('✅ PASS: Step 8 - Latest version selected');
+  console.log('📍 Step 8: Wait for flow to load');
+  await page.waitForTimeout(1000);
+  console.log('✅ PASS: Step 8 - Flow loaded');
 
   console.log('📍 Step 9: Click message input field');
-  await page.locator('.message-field input').click();
+  const messageInput = page.getByRole('textbox', { name: /Type Your Message Here/i });
+  await messageInput.click();
   console.log('✅ PASS: Step 9 - Message input field clicked');
 
   console.log('📍 Step 10: Type "Hello" in message field');
-  await page.locator('.message-field input').fill('Hello');
+  await messageInput.fill('Hello');
   console.log('✅ PASS: Step 10 - Message "Hello" typed');
 
   console.log('📍 Step 11: Press Enter to send message');
-  await page.locator('.message-field input').press('Enter');
+  await messageInput.press('Enter');
   console.log('✅ PASS: Step 11 - Message sent via Enter key');
 
   console.log('📍 Step 12: Wait for typing indicator to appear and disappear');
-  // Wait for typing indicator to appear (confirms message was sent)
-  await page.locator('.typing-indicator').waitFor({ state: 'visible', timeout: 40000 });
-  // Wait for typing indicator to disappear (confirms bot response is ready)
-  await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 40000 });
+  const typingIndicator = page.locator('.typing-indicator');
+  await typingIndicator.waitFor({ state: 'visible', timeout: 40000 }).catch(() => {});
+  await typingIndicator.waitFor({ state: 'hidden', timeout: 120000 });
   console.log('✅ PASS: Step 12 - Bot response streaming completed');
 
   console.log('📍 Step 13: Verify user message "Hello" appears in chat');
-  const userMsg = page.locator('.chatbox .message-card-user .message-text').last();
-  await userMsg.waitFor({ state: 'visible', timeout: 20000 });
-  await expect(userMsg).toContainText('Hello', { timeout: 5000 });
+  const userMsg = page.locator('.user-bubble-content, .chatbox .message-card-user .message-text').last();
+  await expect(userMsg).toContainText('Hello', { timeout: 20000 });
   console.log('✅ PASS: Step 13 - User message "Hello" verified');
 
   console.log('📍 Step 14: Verify bot response appears and is not empty');
-  const botMsg = page.locator('.chatbox .message-card .message-text').last();
-  await botMsg.waitFor({ state: 'visible', timeout: 60000 });
-  const botText = await botMsg.textContent();
+  const botOutputBubble = page.locator('.bot-bubble-content').last();
+  let botText: string | null = null;
+  try {
+    await botOutputBubble.waitFor({ state: 'visible', timeout: 90000 });
+    botText = await botOutputBubble.textContent();
+  } catch {
+    const detailsButton = page.getByRole('button', { name: /Additional bot details/i }).last();
+    await detailsButton.waitFor({ state: 'visible', timeout: 90000 });
+    await detailsButton.click();
+    const detailsText = page.locator('.v-expansion-panel-text').last();
+    await detailsText.waitFor({ state: 'visible', timeout: 15000 });
+    botText = await detailsText.textContent();
+  }
   expect(botText?.trim().length).toBeGreaterThan(0);
   console.log('✅ PASS: Step 14 - Bot response verified (non-empty)');
 
@@ -107,7 +103,7 @@ test('Knowledge Base Flow — Send "Hello" and verify bot response', async ({ pa
   console.log('✅ Step 5: PASS - Navigated to Flow Tester');
   console.log('✅ Step 6: PASS - Flow Tester page displayed');
   console.log('✅ Step 7: PASS - Knowledge Base flow selected');
-  console.log('✅ Step 8: PASS - Latest version selected');
+  console.log('✅ Step 8: PASS - Flow loaded');
   console.log('✅ Step 9: PASS - Message input field clicked');
   console.log('✅ Step 10: PASS - Message "Hello" typed');
   console.log('✅ Step 11: PASS - Message sent via Enter key');

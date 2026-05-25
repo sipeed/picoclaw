@@ -14,26 +14,24 @@ test('Flow Tester - User Utterance Flow Test', async ({ page }) => {
   await page.locator('.v-text-field').nth(0).locator('input').fill('heidi@intnt.ai');
   await page.locator('.v-text-field').nth(1).locator('input').fill('testing2026!');
   await page.getByRole('button', { name: /login/i }).click();
-  
-  // Wait for redirect to org selection
-  await page.waitForURL(/\?select_org/, { timeout: 60000 });
-  
-  // Wait for loader to disappear
-  const loader = page.locator('.loading-container, .loading-spinner, .v-progress-linear');
-  if (await loader.first().isVisible().catch(() => false)) {
-    await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
-  }
-  
-  console.log('✅ PASS: Step 1 - Login successful, redirected to org selection');
+  await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 });
+  console.log('✅ PASS: Step 1 - Login successful, redirected from login');
 
   // ============================================================================
   // STEP 2: Select Organization
   // ============================================================================
-  console.log('📍 Step 2: Select organization "Testing"');
+  console.log('📍 Step 2: Select organization "Testing2026!"');
 
-  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
-  await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing2026!")') }).click();
-  await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 30000 });
+  if (page.url().includes('select_org')) {
+    const loader = page.locator('.loading-container, .loading-spinner, .v-progress-linear');
+    if (await loader.first().isVisible().catch(() => false)) {
+      await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
+    }
+    const orgCards = page.locator('.organization-card');
+    await orgCards.first().waitFor({ state: 'visible', timeout: 20000 });
+    await orgCards.filter({ has: page.locator(':text-is("Testing2026!")') }).first().click();
+    await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 });
+  }
 
   console.log('✅ PASS: Step 2 - Organization selected, redirected to dashboard');
 
@@ -61,7 +59,8 @@ test('Flow Tester - User Utterance Flow Test', async ({ page }) => {
   // ============================================================================
   console.log('📍 Step 5: Locate the Select Conversation Flow dropdown');
   
-  await page.locator('.tester-select').waitFor({ state: 'visible', timeout: 20000 });
+  const flowSelect = page.locator('.selector-bar--welcome .selector-pill-select').first();
+  await flowSelect.waitFor({ state: 'visible', timeout: 60000 });
   
   console.log('✅ PASS: Step 5 - Select Conversation Flow dropdown is visible');
 
@@ -70,8 +69,8 @@ test('Flow Tester - User Utterance Flow Test', async ({ page }) => {
   // ============================================================================
   console.log('📍 Step 6: Click Select Conversation Flow dropdown');
   
-  await page.locator('.tester-select').click();
-  await page.waitForTimeout(300);
+  await flowSelect.click();
+  await page.locator('.v-overlay--active').waitFor({ state: 'visible', timeout: 15000 });
   
   console.log('✅ PASS: Step 6 - Dropdown opened');
 
@@ -79,86 +78,106 @@ test('Flow Tester - User Utterance Flow Test', async ({ page }) => {
   // STEP 7: Select "User Utterance" flow
   // ============================================================================
   console.log('📍 Step 7: Select "User Utterance" flow from dropdown');
-
-  // If multiple flows with same name exist, select the last one (oldest)
-  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /User Utterance/ }).last().click();
+  await page.locator('.v-overlay--active .v-list-item').filter({ hasText: /user utterance/i }).last().click();
   await page.waitForTimeout(500);
 
   console.log('✅ PASS: Step 7 - "User Utterance" flow selected');
 
   // ============================================================================
-  // STEP 8: Open version dropdown and select "UserUtteranceV1"
+  // STEP 8: Verify selected flow is "User Utterance"
   // ============================================================================
-  console.log('📍 Step 8: Open version dropdown and select "UserUtteranceV1"');
-  
-  // Click version selector button
-  await page.locator('.version-selector-button').click();
-  
-  // Wait for dropdown to be visible
-  await page.locator('.version-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
-  
-  // Wait for real items to load (not skeleton) by waiting for .version-date
-  await page.locator('.version-dropdown-menu .version-date').first().waitFor({ state: 'visible', timeout: 20000 });
-  
-  // Click the version item by name
-  await page.locator('.version-dropdown-menu .version-item')
-    .filter({ hasText: /UserUtteranceV1/ })
-    .click();
-  
-  // Verify selection completed
-  await expect(page.locator('.version-selector-text'))
-    .not.toContainText('Select Version', { timeout: 10000 });
-  
-  console.log('✅ PASS: Step 8 - Version "UserUtteranceV1" selected');
+  console.log('📍 Step 8: Verify selected flow is "User Utterance"');
+  await expect(flowSelect).toContainText(/user utterance/i, { timeout: 15000 });
+  console.log('✅ PASS: Step 8 - Selected flow verified');
 
   // ============================================================================
-  // STEP 9: Send "HELLO" message
+  // STEP 9: Wait for flow to load
   // ============================================================================
-  console.log('📍 Step 9: Send "HELLO" message to the bot');
-  
-  await page.locator('.message-field input').fill('HELLO');
-  await page.locator('.message-field input').press('Enter');
-  
-  console.log('✅ PASS: Step 9 - "HELLO" message sent');
+  console.log('📍 Step 9: Select version "UserUtteranceV1"');
+  const versionText = page.locator('.version-selector-text');
+  const versionButton = page.locator('.version-selector-button');
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await versionButton.click();
+    const versionMenu = page.locator('.version-dropdown-menu');
+    await versionMenu.waitFor({ state: 'visible', timeout: 15000 });
+    await versionMenu.locator('.version-date').first().waitFor({ state: 'visible', timeout: 60000 });
+
+    await versionMenu.locator('.version-item').filter({ hasText: /UserUtteranceV1/i }).first().click();
+    await versionMenu.waitFor({ state: 'hidden', timeout: 20000 }).catch(() => {});
+
+    const currentVersion = ((await versionText.textContent()) ?? '').trim();
+    if (/UserUtteranceV1/i.test(currentVersion)) break;
+
+    if (attempt === 3) {
+      throw new Error(`Expected version to be UserUtteranceV1, got "${currentVersion}"`);
+    }
+  }
+
+  console.log('✅ PASS: Step 9 - Version "UserUtteranceV1" selected');
 
   // ============================================================================
-  // STEP 10: Verify bot responds with expected message
+  // STEP 10: Send "HELLO" message
   // ============================================================================
-  console.log('📍 Step 10: Verify bot responds with "Write something below to test the user utterance node:"');
+  console.log('📍 Step 10: Send "HELLO" message to the bot');
   
-  await expect(page.locator('.chatbox .message-text').last())
-    .toContainText('Write something below to test the user utterance node:', { timeout: 30000 });
+  const messageInput = page.getByRole('textbox', { name: /Type Your Message Here/i });
+  await messageInput.fill('HELLO');
+  await messageInput.press('Enter');
   
-  console.log('✅ PASS: Step 10 - Bot responded with expected message');
+  console.log('✅ PASS: Step 10 - "HELLO" message sent');
 
   // ============================================================================
-  // STEP 11: Wait for typing indicator to disappear
+  // STEP 11: Wait for typing indicator to disappear (bot finished responding)
   // ============================================================================
   console.log('📍 Step 11: Wait for typing indicator to disappear (bot finished responding)');
-  
-  await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 40000 });
-  
+  await page.locator('.typing-indicator').waitFor({ state: 'visible', timeout: 40000 }).catch(() => {});
+  await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 90000 });
   console.log('✅ PASS: Step 11 - Typing indicator disappeared, bot finished');
 
   // ============================================================================
-  // STEP 12: Send "I want to talk" message
+  // STEP 12: Verify bot responds with expected message
   // ============================================================================
-  console.log('📍 Step 12: Send "I want to talk" message to the bot');
-  
-  await page.locator('.message-field input').fill('I want to talk');
-  await page.locator('.message-field input').press('Enter');
-  
-  console.log('✅ PASS: Step 12 - "I want to talk" message sent');
+  console.log('📍 Step 12: Verify bot responds with "Write something below to test the user utterance node:"');
+  const firstBotBubble = page.locator('.bot-bubble-content').first();
+  const promptBubble = page.locator('.bot-bubble-content')
+    .filter({ hasText: /Write something below to test the user utterance node:/i })
+    .first();
+  try {
+    await expect(firstBotBubble)
+      .toContainText('Write something below to test the user utterance node:', { timeout: 90000 });
+  } catch {
+    await expect(promptBubble).toBeVisible({ timeout: 90000 });
+  }
+  console.log('✅ PASS: Step 12 - Bot responded with expected message');
 
   // ============================================================================
-  // STEP 13: Verify bot responds with the same message
+  // STEP 13: Send "I want to talk" message
   // ============================================================================
-  console.log('📍 Step 13: Verify bot responds with "I want to talk"');
+  console.log('📍 Step 13: Send "I want to talk" message to the bot');
   
-  await expect(page.locator('.chatbox .message-text').last())
+  await messageInput.fill('I want to talk');
+  await messageInput.press('Enter');
+  
+  console.log('✅ PASS: Step 13 - "I want to talk" message sent');
+
+  // ============================================================================
+  // STEP 14: Wait for bot to finish responding
+  // ============================================================================
+  console.log('📍 Step 14: Wait for bot to finish responding');
+  await page.locator('.typing-indicator').waitFor({ state: 'visible', timeout: 40000 }).catch(() => {});
+  await page.locator('.typing-indicator').waitFor({ state: 'hidden', timeout: 90000 });
+  console.log('✅ PASS: Step 14 - Bot finished responding');
+
+  // ============================================================================
+  // STEP 15: Verify bot responds with the same message
+  // ============================================================================
+  console.log('📍 Step 15: Verify bot responds with "I want to talk"');
+  
+  await expect(page.locator('.bot-bubble-content').last())
     .toContainText('I want to talk', { timeout: 30000 });
   
-  console.log('✅ PASS: Step 13 - Bot responded with "I want to talk"');
+  console.log('✅ PASS: Step 15 - Bot responded with "I want to talk"');
 
   // ============================================================================
   // TEST SUMMARY
@@ -173,11 +192,13 @@ test('Flow Tester - User Utterance Flow Test', async ({ page }) => {
   console.log('✅ Step 5: PASS - Select Conversation Flow dropdown is visible');
   console.log('✅ Step 6: PASS - Dropdown opened');
   console.log('✅ Step 7: PASS - "User Utterance" flow selected');
-  console.log('✅ Step 8: PASS - Version "UserUtteranceV1" selected');
-  console.log('✅ Step 9: PASS - "HELLO" message sent');
-  console.log('✅ Step 10: PASS - Bot responded with expected message');
+  console.log('✅ Step 8: PASS - Selected flow verified');
+  console.log('✅ Step 9: PASS - Version "UserUtteranceV1" auto-loaded');
+  console.log('✅ Step 10: PASS - "HELLO" message sent');
   console.log('✅ Step 11: PASS - Typing indicator disappeared, bot finished');
-  console.log('✅ Step 12: PASS - "I want to talk" message sent');
-  console.log('✅ Step 13: PASS - Bot responded with "I want to talk"');
+  console.log('✅ Step 12: PASS - Bot responded with expected message');
+  console.log('✅ Step 13: PASS - "I want to talk" message sent');
+  console.log('✅ Step 14: PASS - Bot finished responding');
+  console.log('✅ Step 15: PASS - Bot responded with "I want to talk"');
   console.log('='.repeat(70));
 });

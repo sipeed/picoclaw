@@ -108,7 +108,7 @@ test('Activate organization member flow and restored organization access', async
   await activeOrgCard.click();
 
   // Wait for dashboard to load (no select_org query)
-  await page.waitForURL(url => url.pathname === '/' && !url.searchParams.has('select_org'), { timeout: 30000 });
+  await page.waitForURL(url => url.pathname === '/console' && !url.searchParams.has('select_org'), { timeout: 30000 });
 
   const dashboardContent = page.locator('main, [role="main"]').first();
   await expect(dashboardContent).toBeVisible({ timeout: 20000 });

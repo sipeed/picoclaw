@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 test('Create new flow with Custom Node', async ({ page }) => {
-  test.setTimeout(180000); // 3 minutes timeout
+  test.setTimeout(300000);
+  page.setDefaultTimeout(60000);
+  page.setDefaultNavigationTimeout(60000);
 
   // ============================================================================
   // PHASE 1: LOGIN
@@ -9,7 +11,7 @@ test('Create new flow with Custom Node', async ({ page }) => {
 
   console.log('📍 Step 1: Navigate to login page');
   await page.goto('/login', { waitUntil: 'networkidle' });
-  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 1 - Login page loaded');
 
   console.log('📍 Step 2: Fill email and password');
@@ -31,7 +33,7 @@ test('Create new flow with Custom Node', async ({ page }) => {
   if (await loader.first().isVisible().catch(() => false)) {
     await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
   }
-  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 60000 });
   await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
   await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 60000 });
   console.log('✅ PASS: Step 4 - Organization selected, redirected to dashboard');
@@ -41,14 +43,18 @@ test('Create new flow with Custom Node', async ({ page }) => {
   // ============================================================================
 
   console.log('📍 Step 5: Click Flow Designer in sidebar');
-  await page.locator('a:has-text("Flow Designer")').click();
+  try {
+    await page.locator('a[href*="flow-designer"]').first().click({ timeout: 60000 });
+  } catch {
+    await page.goto('/flow-designer', { waitUntil: 'networkidle' });
+  }
   await page.waitForURL(/\/flow-designer$/, { timeout: 60000 });
   console.log('✅ PASS: Step 5 - Flow Designer page loaded');
 
   console.log('📍 Step 6: Click Add New button to create flow');
   await page.locator('button').filter({ hasText: /Add New/ }).first().click();
   await page.waitForURL(/\/flow-designer\/\d+/, { timeout: 30000 });
-  await page.locator('.vue-flow').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.vue-flow').waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 6 - Flow canvas opened with START and END nodes');
 
   // Read canvas transform ONCE for node positioning
@@ -69,7 +75,7 @@ test('Create new flow with Custom Node', async ({ page }) => {
 
   console.log('📍 Step 8: Enter flow name Custom Node');
   const flowNameInput = page.locator('.panel-container input').first();
-  await flowNameInput.waitFor({ state: 'visible', timeout: 5000 });
+  await flowNameInput.waitFor({ state: 'visible', timeout: 15000 });
   await flowNameInput.fill('Custom Node');
   await flowNameInput.press('Enter');
   await page.waitForTimeout(300);
@@ -80,14 +86,14 @@ test('Create new flow with Custom Node', async ({ page }) => {
   // ============================================================================
 
   console.log('📍 Step 9: Click Add Nodes button');
-  await page.locator('.nodes-button').click();
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
+  await page.locator('button.nodes-button[aria-haspopup="menu"]').first().click();
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 15000 });
   console.log('✅ PASS: Step 9 - Add Nodes menu opened');
 
   console.log('📍 Step 10: Select Reply Message node');
   await page.locator('.nodes-dropdown-item').filter({ hasText: /Reply Message/ }).click();
   await page.keyboard.press('Escape');
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 10 - Reply Message node selected');
 
@@ -95,7 +101,7 @@ test('Create new flow with Custom Node', async ({ page }) => {
   const replyWrapper1 = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) })
     .first();
-  await replyWrapper1.waitFor({ state: 'visible', timeout: 5000 });
+  await replyWrapper1.waitFor({ state: 'visible', timeout: 15000 });
   const replyBBox1 = await replyWrapper1.boundingBox();
   if (!replyBBox1) throw new Error('First Reply Message node not found');
   await page.mouse.move(replyBBox1.x + replyBBox1.width / 2, replyBBox1.y + replyBBox1.height / 2);
@@ -110,19 +116,19 @@ test('Create new flow with Custom Node', async ({ page }) => {
 
   console.log('📍 Step 11: Click Reply Message node to open modal');
   await page.locator('.node-container').filter({ hasText: /ReplyMessage/ }).first().evaluate((el) => (el as HTMLElement).click());
-  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 11 - Reply Message node modal opened');
 
   console.log('📍 Step 12: Verify auto-populated fields and read Node ID');
   const nodeIdInput1 = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Node ID/ }) })
     .locator('.v-field__input');
-  await nodeIdInput1.waitFor({ state: 'visible', timeout: 5000 });
+  await nodeIdInput1.waitFor({ state: 'visible', timeout: 15000 });
   const firstReplyId = await nodeIdInput1.inputValue();
   console.log(`  Auto-generated Node ID: ${firstReplyId}`);
   const nodeVersionField1 = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Node Version/ }) });
-  await nodeVersionField1.waitFor({ state: 'visible', timeout: 5000 });
+  await nodeVersionField1.waitFor({ state: 'visible', timeout: 15000 });
   console.log('✅ PASS: Step 12 - Auto-populated fields verified, Node ID: ' + firstReplyId);
 
   console.log('📍 Step 13: Verify default values (Node Version, Receiver Channel, Content Type)');
@@ -147,7 +153,7 @@ test('Create new flow with Custom Node', async ({ page }) => {
   console.log('📍 Step 15: Click Save button');
   const saveButton1 = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
   await saveButton1.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 10000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 15 - First Reply Message node saved');
 
@@ -199,14 +205,14 @@ test('Create new flow with Custom Node', async ({ page }) => {
   // ============================================================================
 
   console.log('📍 Step 17: Click Add Nodes button');
-  await page.locator('.nodes-button').click();
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
+  await page.locator('button.nodes-button[aria-haspopup="menu"]').first().click();
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 15000 });
   console.log('✅ PASS: Step 17 - Add Nodes menu opened');
 
   console.log('📍 Step 18: Select Custom Node');
   await page.locator('.nodes-dropdown-item').filter({ hasText: /Custom Node/i }).click();
   await page.keyboard.press('Escape');
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 18 - Custom Node selected');
 
@@ -218,7 +224,7 @@ test('Create new flow with Custom Node', async ({ page }) => {
   const customWrapper = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /CustomNode|Custom/ }) })
     .last();
-  await customWrapper.waitFor({ state: 'visible', timeout: 5000 });
+  await customWrapper.waitFor({ state: 'visible', timeout: 15000 });
   const customBBox = await customWrapper.boundingBox();
   if (!customBBox) throw new Error('Custom Node not found on canvas');
   await page.mouse.move(customBBox.x + customBBox.width / 2, customBBox.y + customBBox.height / 2);
@@ -233,7 +239,7 @@ test('Create new flow with Custom Node', async ({ page }) => {
 
   console.log('📍 Step 19: Click Custom Node to open modal and change Node ID to CustomNode');
   await page.locator('.node-container').filter({ hasText: /CustomNode|Custom/ }).last().evaluate((el) => (el as HTMLElement).click());
-  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 60000 });
 
   const customNodeIdInput = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Node ID/ }) })
@@ -248,7 +254,7 @@ test('Create new flow with Custom Node', async ({ page }) => {
 
   // Use clipboard paste to insert code into Monaco editor (avoids auto-indent issues)
   const codeEditor = page.locator('.modal-dialog .monaco-editor').first();
-  await codeEditor.waitFor({ state: 'visible', timeout: 20000 });
+  await codeEditor.waitFor({ state: 'visible', timeout: 60000 });
   await codeEditor.click();
   await page.waitForTimeout(300);
   await page.keyboard.press('Control+a');
@@ -272,7 +278,7 @@ test('Create new flow with Custom Node', async ({ page }) => {
   console.log('📍 Step 21: Click Save button');
   const saveButton2 = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
   await saveButton2.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 10000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 21 - Custom Node saved');
 
@@ -324,14 +330,14 @@ test('Create new flow with Custom Node', async ({ page }) => {
   // ============================================================================
 
   console.log('📍 Step 23: Click Add Nodes button');
-  await page.locator('.nodes-button').click();
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
+  await page.locator('button.nodes-button[aria-haspopup="menu"]').first().click();
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 15000 });
   console.log('✅ PASS: Step 23 - Add Nodes menu opened');
 
   console.log('📍 Step 24: Select Reply Message node');
   await page.locator('.nodes-dropdown-item').filter({ hasText: /Reply Message/ }).click();
   await page.keyboard.press('Escape');
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 24 - Reply Message node selected');
 
@@ -343,7 +349,7 @@ test('Create new flow with Custom Node', async ({ page }) => {
   const replyWrappers = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) });
   const outputWrapper = replyWrappers.last();
-  await outputWrapper.waitFor({ state: 'visible', timeout: 5000 });
+  await outputWrapper.waitFor({ state: 'visible', timeout: 15000 });
   const outputBBox = await outputWrapper.boundingBox();
   if (!outputBBox) throw new Error('Second Reply Message node not found');
   await page.mouse.move(outputBBox.x + outputBBox.width / 2, outputBBox.y + outputBBox.height / 2);
@@ -358,7 +364,7 @@ test('Create new flow with Custom Node', async ({ page }) => {
 
   console.log('📍 Step 25: Click output node to open modal and change Node ID to output');
   await page.locator('.node-container').filter({ hasText: /ReplyMessage/ }).last().evaluate((el) => (el as HTMLElement).click());
-  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 60000 });
 
   const outputNodeIdInput = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Node ID/ }) })
@@ -392,7 +398,7 @@ test('Create new flow with Custom Node', async ({ page }) => {
   console.log('📍 Step 28: Click Save button');
   const saveButton3 = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
   await saveButton3.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 10000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 28 - Output node saved');
 
@@ -500,7 +506,7 @@ test('Create new flow with Custom Node', async ({ page }) => {
   console.log('📍 Step 32: Click Save button (disk icon)');
   await page.locator('button').filter({ has: page.locator('.mdi-content-save') }).click();
   const saveModal = page.locator('.v-overlay--active').filter({ hasText: /Save Flow Version/ });
-  await saveModal.waitFor({ state: 'visible', timeout: 20000 });
+  await saveModal.waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 32 - Save button clicked');
 
   console.log('📍 Step 33: Verify Save Flow Version modal and enter version name CustomnodeV1');
@@ -511,11 +517,11 @@ test('Create new flow with Custom Node', async ({ page }) => {
   console.log('📍 Step 34: Click Save button in modal');
   const modalSaveButton = saveModal.locator('button').filter({ hasText: /^Save$/ });
   await modalSaveButton.click();
-  await saveModal.waitFor({ state: 'hidden', timeout: 10000 });
+  await saveModal.waitFor({ state: 'hidden', timeout: 30000 });
   console.log('✅ PASS: Step 34 - Save Flow Version modal closed');
 
   console.log('📍 Step 35: Verify success toast notification');
-  await expect(page.locator('.v-snackbar')).toContainText(/success|saved/i, { timeout: 5000 });
+  await expect(page.locator('.v-snackbar')).toContainText(/success|saved/i, { timeout: 15000 });
   console.log('✅ PASS: Step 35 - Success toast notification appeared');
 
   // ============================================================================

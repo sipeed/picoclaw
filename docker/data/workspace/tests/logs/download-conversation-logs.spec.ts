@@ -61,7 +61,18 @@ test('Download conversation logs flow', async ({ page }) => {
   const dateButtons = page.locator('.dropdown-button');
   await expect(dateButtons.first()).toBeVisible();
 
-  // We'll rely on the default "Last 1 month" range or adjust if necessary
+  console.log('📍 Step 6.1: Set Datetime Start to Apr 1, 2026');
+  const datetimeStartButton = dateButtons.first();
+  await datetimeStartButton.click();
+  const dateMenu = page
+    .locator('.v-overlay--active')
+    .filter({ has: page.locator('.v-date-picker') })
+    .last();
+  const datePicker = dateMenu.locator('.v-date-picker');
+  await expect(datePicker).toBeVisible({ timeout: 10000 });
+  await datePicker.locator('button').filter({ hasText: /^1$/ }).first().click();
+  await expect(datetimeStartButton).toContainText('Apr 1, 2026', { timeout: 10000 });
+
   console.log('✅ PASS: Step 6 - Date range filter present');
 
   // Step 7: Click "Load Data" to ensure results exist

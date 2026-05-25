@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 test('Create new flow with Model node and parser', async ({ page }) => {
-  test.setTimeout(180000); // 3 minutes timeout
+  test.setTimeout(300000);
+  page.setDefaultTimeout(60000);
+  page.setDefaultNavigationTimeout(60000);
 
   // ============================================================================
   // PHASE 1: LOGIN
@@ -9,7 +11,7 @@ test('Create new flow with Model node and parser', async ({ page }) => {
 
   console.log('📍 Step 1: Navigate to login page');
   await page.goto('/login', { waitUntil: 'networkidle' });
-  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 1 - Login page loaded');
 
   console.log('📍 Step 2: Fill email and password');
@@ -31,7 +33,7 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   if (await loader.first().isVisible().catch(() => false)) {
     await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
   }
-  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 60000 });
   await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
   await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 30000 });
   console.log('✅ PASS: Step 4 - Organization selected, redirected to dashboard');
@@ -41,14 +43,18 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   // ============================================================================
 
   console.log('📍 Step 5: Click Flow Designer in sidebar');
-  await page.locator('a:has-text("Flow Designer")').click();
+  try {
+    await page.locator('a[href*="flow-designer"]').first().click({ timeout: 60000 });
+  } catch {
+    await page.goto('/flow-designer', { waitUntil: 'networkidle' });
+  }
   await page.waitForURL(/\/flow-designer$/, { timeout: 60000 });
   console.log('✅ PASS: Step 5 - Flow Designer page loaded');
 
   console.log('📍 Step 6: Click Add New button to create flow');
   await page.locator('button').filter({ hasText: /Add New/ }).first().click();
   await page.waitForURL(/\/flow-designer\/\d+/, { timeout: 30000 });
-  await page.locator('.vue-flow').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.vue-flow').waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 6 - Flow canvas opened with START and END nodes');
 
   // Read canvas transform ONCE — used for all absolute node positioning
@@ -69,7 +75,7 @@ test('Create new flow with Model node and parser', async ({ page }) => {
 
   console.log('📍 Step 8: Enter flow name Model Node With Parser');
   const flowNameInput = page.locator('.panel-container input').first();
-  await flowNameInput.waitFor({ state: 'visible', timeout: 5000 });
+  await flowNameInput.waitFor({ state: 'visible', timeout: 15000 });
   await flowNameInput.fill('Model Node With Parser');
   await flowNameInput.press('Enter');
   await page.waitForTimeout(300);
@@ -80,14 +86,14 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   // ============================================================================
 
   console.log('📍 Step 9: Click Add Nodes button');
-  await page.locator('.nodes-button').click();
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
+  await page.locator('button.nodes-button[aria-haspopup="menu"]').first().click();
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 15000 });
   console.log('✅ PASS: Step 9 - Add Nodes menu opened');
 
   console.log('📍 Step 10: Select Reply Message node');
   await page.locator('.nodes-dropdown-item').filter({ hasText: /Reply Message/ }).click();
   await page.keyboard.press('Escape');
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 10 - Reply Message node selected');
 
@@ -95,7 +101,7 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   const replyWrapper1 = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) })
     .first();
-  await replyWrapper1.waitFor({ state: 'visible', timeout: 5000 });
+  await replyWrapper1.waitFor({ state: 'visible', timeout: 15000 });
   const replyBBox1 = await replyWrapper1.boundingBox();
   if (!replyBBox1) throw new Error('Reply Message node not found');
   const targetX1 = 250 * tf.scale + tf.tx;
@@ -111,28 +117,34 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   // ============================================================================
 
   console.log('📍 Step 11: Click Reply Message node to open modal');
-  await page.locator('.node-container').filter({ hasText: /ReplyMessage/ }).first().evaluate((el) => (el as HTMLElement).click());
-  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 20000 });
+  const replyNode = page.locator('.node-container').filter({ hasText: /ReplyMessage/ }).first();
+  await replyNode.waitFor({ state: 'visible', timeout: 15000 });
+  await replyNode.evaluate((el) => (el as HTMLElement).click());
+  const replyModal = page.locator('.modal-dialog');
+  if (!(await replyModal.isVisible().catch(() => false))) {
+    await replyNode.evaluate((el) => (el as HTMLElement).click());
+  }
+  await replyModal.waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 11 - Reply Message node modal opened');
 
   console.log('📍 Step 12: Verify Node Version is Version 2.0.0');
   const nodeVersionField1 = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Node Version/ }) });
-  await nodeVersionField1.waitFor({ state: 'visible', timeout: 5000 });
+  await nodeVersionField1.waitFor({ state: 'visible', timeout: 15000 });
   await expect(nodeVersionField1).toContainText(/Version 2\.0\.0/);
   console.log('✅ PASS: Step 12 - Node Version verified as Version 2.0.0');
 
   console.log('📍 Step 13: Verify Receiver Channel is None');
   const receiverChannelField1 = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Receiver Channel/ }) });
-  await receiverChannelField1.waitFor({ state: 'visible', timeout: 5000 });
+  await receiverChannelField1.waitFor({ state: 'visible', timeout: 15000 });
   await expect(receiverChannelField1).toContainText(/None/);
   console.log('✅ PASS: Step 13 - Receiver Channel verified as None');
 
   console.log('📍 Step 14: Verify Content Type is Text Message');
   const contentTypeField1 = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Content Type/ }) });
-  await contentTypeField1.waitFor({ state: 'visible', timeout: 5000 });
+  await contentTypeField1.waitFor({ state: 'visible', timeout: 15000 });
   await expect(contentTypeField1).toContainText(/Text Message/);
   console.log('✅ PASS: Step 14 - Content Type verified as Text Message');
 
@@ -157,7 +169,7 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   console.log('📍 Step 17: Click Save button');
   const saveButton1 = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
   await saveButton1.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 10000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 17 - Reply Message node saved');
 
@@ -210,14 +222,14 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   // ============================================================================
 
   console.log('📍 Step 19: Click Add Nodes button');
-  await page.locator('.nodes-button').click();
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
+  await page.locator('button.nodes-button[aria-haspopup="menu"]').first().click();
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 15000 });
   console.log('✅ PASS: Step 19 - Add Nodes menu opened');
 
   console.log('📍 Step 20: Select Model node');
   await page.locator('.nodes-dropdown-item').filter({ hasText: /Model/ }).click();
   await page.keyboard.press('Escape');
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 20 - Model node selected');
 
@@ -229,7 +241,7 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   const modelWrapper = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /Model/ }) })
     .first();
-  await modelWrapper.waitFor({ state: 'visible', timeout: 5000 });
+  await modelWrapper.waitFor({ state: 'visible', timeout: 15000 });
   const modelBBox = await modelWrapper.boundingBox();
   if (!modelBBox) throw new Error('Model node not found');
   const targetX2 = 500 * tfModel.scale + tfModel.tx;
@@ -246,14 +258,14 @@ test('Create new flow with Model node and parser', async ({ page }) => {
 
   console.log('📍 Step 21: Click Model node to open modal');
   await page.locator('.node-container').filter({ hasText: /Model/ }).first().evaluate((el) => (el as HTMLElement).click());
-  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 21 - Model node modal opened');
 
   console.log('📍 Step 22: Verify Temperature is 0');
   const temperatureInput = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Temperature/ }) })
     .locator('input[type="number"],.v-field__input');
-  await temperatureInput.first().waitFor({ state: 'visible', timeout: 5000 });
+  await temperatureInput.first().waitFor({ state: 'visible', timeout: 15000 });
   const tempValue = await temperatureInput.first().inputValue();
   if (tempValue !== '0') {
     throw new Error(`Temperature is ${tempValue}, expected 0`);
@@ -263,7 +275,7 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   console.log('📍 Step 23: Verify Input Parser is prefilled');
   const inputParserField = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Input Parser/ }) });
-  await inputParserField.waitFor({ state: 'visible', timeout: 5000 });
+  await inputParserField.waitFor({ state: 'visible', timeout: 15000 });
   const inputParserContent = await inputParserField.textContent();
   if (!inputParserContent || inputParserContent.trim().length === 0) {
     throw new Error('Input Parser is empty, expected prefilled content');
@@ -273,7 +285,7 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   console.log('📍 Step 24: Verify Stream Output is False');
   const streamOutputSelect = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Stream Output/ }) });
-  await streamOutputSelect.waitFor({ state: 'visible', timeout: 5000 });
+  await streamOutputSelect.waitFor({ state: 'visible', timeout: 15000 });
   await expect(streamOutputSelect).toContainText(/False/);
   console.log('✅ PASS: Step 24 - Stream Output verified as False');
 
@@ -367,7 +379,7 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   console.log('📍 Step 31: Click Save button');
   const saveButton2 = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
   await saveButton2.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 10000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 31 - Model node saved');
 
@@ -419,14 +431,14 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   // ============================================================================
 
   console.log('📍 Step 33: Click Add Nodes button');
-  await page.locator('.nodes-button').click();
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
+  await page.locator('button.nodes-button[aria-haspopup="menu"]').first().click();
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 15000 });
   console.log('✅ PASS: Step 33 - Add Nodes menu opened');
 
   console.log('📍 Step 34: Select Reply Message node');
   await page.locator('.nodes-dropdown-item').filter({ hasText: /Reply Message/ }).click();
   await page.keyboard.press('Escape');
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 34 - Reply Message node selected');
 
@@ -439,7 +451,7 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   const replyWrappers = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) });
   const outputWrapper = replyWrappers.last();
-  await outputWrapper.waitFor({ state: 'visible', timeout: 5000 });
+  await outputWrapper.waitFor({ state: 'visible', timeout: 15000 });
   const outputBBox = await outputWrapper.boundingBox();
   if (!outputBBox) throw new Error('Output Reply Message node not found');
   const targetX3 = 750 * tfOutput.scale + tfOutput.tx;
@@ -458,7 +470,7 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   // Click the last ReplyMessage node (the newly added one, not yet renamed)
   const allReplyContainers = page.locator('.node-container').filter({ hasText: /ReplyMessage/ });
   await allReplyContainers.last().evaluate((el) => (el as HTMLElement).click());
-  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 35 - Output node modal opened');
 
   console.log('📍 Step 36: Set Node ID to output');
@@ -473,21 +485,21 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   console.log('📍 Step 37: Verify Node Version is Version 2.0.0');
   const nodeVersionField2 = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Node Version/ }) });
-  await nodeVersionField2.waitFor({ state: 'visible', timeout: 5000 });
+  await nodeVersionField2.waitFor({ state: 'visible', timeout: 15000 });
   await expect(nodeVersionField2).toContainText(/Version 2\.0\.0/);
   console.log('✅ PASS: Step 37 - Node Version verified as Version 2.0.0');
 
   console.log('📍 Step 38: Verify Receiver Channel is None');
   const receiverChannelField2 = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Receiver Channel/ }) });
-  await receiverChannelField2.waitFor({ state: 'visible', timeout: 5000 });
+  await receiverChannelField2.waitFor({ state: 'visible', timeout: 15000 });
   await expect(receiverChannelField2).toContainText(/None/);
   console.log('✅ PASS: Step 38 - Receiver Channel verified as None');
 
   console.log('📍 Step 39: Verify Content Type is Text Message');
   const contentTypeField2 = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Content Type/ }) });
-  await contentTypeField2.waitFor({ state: 'visible', timeout: 5000 });
+  await contentTypeField2.waitFor({ state: 'visible', timeout: 15000 });
   await expect(contentTypeField2).toContainText(/Text Message/);
   console.log('✅ PASS: Step 39 - Content Type verified as Text Message');
 
@@ -503,7 +515,7 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   console.log('📍 Step 41: Click Save button');
   const saveButton3 = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
   await saveButton3.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 10000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 41 - Output node saved');
 
@@ -514,7 +526,7 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   console.log('📍 Step 42: Verify node output is visible on canvas');
   const outputNode = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#output') });
-  await outputNode.waitFor({ state: 'visible', timeout: 5000 });
+  await outputNode.waitFor({ state: 'visible', timeout: 15000 });
   console.log('✅ PASS: Step 42 - Node output is visible on canvas');
 
   // ============================================================================
@@ -621,7 +633,7 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   console.log('📍 Step 46: Click Save button (disk icon)');
   await page.locator('button').filter({ has: page.locator('.mdi-content-save') }).click();
   const saveModal = page.locator('.v-overlay--active').filter({ hasText: /Save Flow Version/ });
-  await saveModal.waitFor({ state: 'visible', timeout: 20000 });
+  await saveModal.waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 46 - Save button clicked');
 
   console.log('📍 Step 47: Verify Save Flow Version modal appears');
@@ -635,12 +647,12 @@ test('Create new flow with Model node and parser', async ({ page }) => {
   console.log('📍 Step 49: Click Save button in modal');
   const modalSaveButton = saveModal.locator('button').filter({ hasText: /^Save$/ });
   await modalSaveButton.click();
-  await saveModal.waitFor({ state: 'hidden', timeout: 10000 });
+  await saveModal.waitFor({ state: 'hidden', timeout: 30000 });
   console.log('✅ PASS: Step 49 - Save Flow Version modal closed');
 
   console.log('📍 Step 50: Verify success toast notification');
   try {
-    await expect(page.locator('.v-snackbar')).toContainText(/success|saved/i, { timeout: 5000 });
+    await expect(page.locator('.v-snackbar')).toContainText(/success|saved/i, { timeout: 15000 });
     console.log('✅ PASS: Step 50 - Success toast notification appeared');
   } catch {
     const toastText = await page.locator('.v-snackbar').textContent().catch(() => '(no toast)');

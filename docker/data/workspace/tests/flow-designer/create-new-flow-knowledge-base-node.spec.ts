@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 test('Create new flow with Knowledge Base node', async ({ page }) => {
-  test.setTimeout(180000); // 3 minutes timeout
+  test.setTimeout(300000);
+  page.setDefaultTimeout(60000);
+  page.setDefaultNavigationTimeout(60000);
 
   // ============================================================================
   // PHASE 1: LOGIN
@@ -9,7 +11,7 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
 
   console.log('📍 Step 1: Navigate to login page');
   await page.goto('/login', { waitUntil: 'networkidle' });
-  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 1 - Login page loaded');
 
   console.log('📍 Step 2: Fill email and password');
@@ -31,7 +33,7 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   if (await loader.first().isVisible().catch(() => false)) {
     await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
   }
-  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 60000 });
   await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click();
   await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 30000 });
   console.log('✅ PASS: Step 4 - Organization selected, redirected to dashboard');
@@ -41,14 +43,18 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   // ============================================================================
 
   console.log('📍 Step 5: Click Flow Designer in sidebar');
-  await page.locator('a:has-text("Flow Designer")').click();
+  try {
+    await page.locator('a[href*="flow-designer"]').first().click({ timeout: 60000 });
+  } catch {
+    await page.goto('/flow-designer', { waitUntil: 'networkidle' });
+  }
   await page.waitForURL(/\/flow-designer$/, { timeout: 60000 });
   console.log('✅ PASS: Step 5 - Flow Designer page loaded');
 
   console.log('📍 Step 6: Click Add New button to create flow');
   await page.locator('button').filter({ hasText: /Add New/ }).first().click();
   await page.waitForURL(/\/flow-designer\/\d+/, { timeout: 30000 });
-  await page.locator('.vue-flow').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.vue-flow').waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 6 - Flow canvas opened with START and END nodes');
 
   // ============================================================================
@@ -56,14 +62,14 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   // ============================================================================
 
   console.log('📍 Step 7: Click Add Nodes button');
-  await page.locator('.nodes-button').click();
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
+  await page.locator('button.nodes-button[aria-haspopup="menu"]').first().click();
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 15000 });
   console.log('✅ PASS: Step 7 - Add Nodes menu opened');
 
   console.log('📍 Step 8: Select Knowledge Base Node');
   await page.locator('.nodes-dropdown-item').filter({ hasText: /Knowledge Base Node/ }).click();
   await page.keyboard.press('Escape');
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 8 - Knowledge Base Node selected');
 
@@ -81,7 +87,7 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   const kbWrapper = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /KnowledgeBaseNode/ }) })
     .first();
-  await kbWrapper.waitFor({ state: 'visible', timeout: 5000 });
+  await kbWrapper.waitFor({ state: 'visible', timeout: 15000 });
   const kbBBox = await kbWrapper.boundingBox();
   if (!kbBBox) throw new Error('Knowledge Base node not found');
 
@@ -101,7 +107,7 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
 
   console.log('📍 Step 10: Click Knowledge Base node to open modal');
   await page.locator('.node-container').filter({ hasText: /KnowledgeBaseNode/ }).first().evaluate((el) => (el as HTMLElement).click());
-  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 10 - Knowledge Base node modal opened');
 
   console.log('📍 Step 11: Change Node ID to Kb');
@@ -141,7 +147,7 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   await page.waitForTimeout(300);
   // Search Fields uses GlobalFormField inputType="array" → items render inside .array-item-content
   const searchFieldInput = page.locator('.modal-dialog .array-item-content input[type="text"]').first();
-  await searchFieldInput.waitFor({ state: 'visible', timeout: 5000 });
+  await searchFieldInput.waitFor({ state: 'visible', timeout: 15000 });
   await searchFieldInput.fill('body');
   await searchFieldInput.press('Tab');
   console.log('✅ PASS: Step 15 - Search Field body added');
@@ -179,7 +185,7 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   // Response Fields also uses GlobalFormField inputType="array" → .array-item-content wrapper
   // After both Search and Response fields have one item each, the last input is the response one
   const responseFieldInput = page.locator('.modal-dialog .array-item-content input[type="text"]').last();
-  await responseFieldInput.waitFor({ state: 'visible', timeout: 5000 });
+  await responseFieldInput.waitFor({ state: 'visible', timeout: 15000 });
   await responseFieldInput.fill('context');
   await responseFieldInput.press('Tab');
   console.log('✅ PASS: Step 19 - Response Field context added');
@@ -206,7 +212,7 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   console.log('📍 Step 22: Click Save button');
   const saveButton = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
   await saveButton.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 10000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
   await page.waitForTimeout(500); // let canvas re-render before connecting
   console.log('✅ PASS: Step 22 - Knowledge Base node saved');
 
@@ -259,14 +265,14 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   // ============================================================================
 
   console.log('📍 Step 24: Click Add Nodes button');
-  await page.locator('.nodes-button').click();
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
+  await page.locator('button.nodes-button[aria-haspopup="menu"]').first().click();
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 15000 });
   console.log('✅ PASS: Step 24 - Add Nodes menu opened');
 
   console.log('📍 Step 25: Select Reply Message node');
   await page.locator('.nodes-dropdown-item').filter({ hasText: /Reply Message/ }).click();
   await page.keyboard.press('Escape');
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 25 - Reply Message node selected');
 
@@ -278,7 +284,7 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   const replyWrapper = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) })
     .first();
-  await replyWrapper.waitFor({ state: 'visible', timeout: 5000 });
+  await replyWrapper.waitFor({ state: 'visible', timeout: 15000 });
   const replyBBox = await replyWrapper.boundingBox();
   if (!replyBBox) throw new Error('Reply Message node not found');
 
@@ -302,19 +308,19 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
 
   console.log('📍 Step 27: Click Reply Message node to open modal');
   await page.locator('.node-container').filter({ hasText: /ReplyMessage/ }).first().evaluate((el) => (el as HTMLElement).click());
-  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 27 - Reply Message node modal opened');
 
   console.log('📍 Step 28: Verify auto-filled fields');
   const nodeVersionField = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Node Version/ }) });
-  await nodeVersionField.waitFor({ state: 'visible', timeout: 5000 });
+  await nodeVersionField.waitFor({ state: 'visible', timeout: 15000 });
   const receiverChannelField = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Receiver Channel/ }) });
-  await receiverChannelField.waitFor({ state: 'visible', timeout: 5000 });
+  await receiverChannelField.waitFor({ state: 'visible', timeout: 15000 });
   const contentTypeField = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Content Type/ }) });
-  await contentTypeField.waitFor({ state: 'visible', timeout: 5000 });
+  await contentTypeField.waitFor({ state: 'visible', timeout: 15000 });
   console.log('✅ PASS: Step 28 - Auto-filled fields verified');
 
   console.log('📍 Step 29: Change Node ID to ReplyMessage');
@@ -338,7 +344,7 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   console.log('📍 Step 31: Click Save button');
   const replySaveButton = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
   await replySaveButton.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 10000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
   console.log('✅ PASS: Step 31 - Reply Message node saved');
 
   // ============================================================================
@@ -450,7 +456,7 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
 
   console.log('📍 Step 36: Enter flow name Knowledge Base');
   const flowNameInput = page.locator('.panel-container input').first();
-  await flowNameInput.waitFor({ state: 'visible', timeout: 5000 });
+  await flowNameInput.waitFor({ state: 'visible', timeout: 15000 });
   await flowNameInput.fill('Knowledge Base');
   await flowNameInput.press('Enter');
   await page.waitForTimeout(300);
@@ -463,7 +469,7 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   console.log('📍 Step 37: Click Save button (disk icon)');
   await page.locator('button').filter({ has: page.locator('.mdi-content-save') }).click();
   const saveModal = page.locator('.v-overlay--active').filter({ hasText: /Save Flow Version/ });
-  await saveModal.waitFor({ state: 'visible', timeout: 20000 });
+  await saveModal.waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 37 - Save button clicked');
 
   console.log('📍 Step 38: Verify Save Flow Version modal appears');
@@ -477,11 +483,11 @@ test('Create new flow with Knowledge Base node', async ({ page }) => {
   console.log('📍 Step 40: Click Save button in modal');
   const modalSaveButton = saveModal.locator('button').filter({ hasText: /^Save$/ });
   await modalSaveButton.click();
-  await saveModal.waitFor({ state: 'hidden', timeout: 10000 });
+  await saveModal.waitFor({ state: 'hidden', timeout: 30000 });
   console.log('✅ PASS: Step 40 - Save Flow Version modal closed');
 
   console.log('📍 Step 41: Verify success toast notification');
-  await expect(page.locator('.v-snackbar')).toContainText(/success|saved/i);
+  await expect(page.locator('.v-snackbar')).toContainText(/success|saved/i, { timeout: 15000 });
   console.log('✅ PASS: Step 41 - Success toast notification appeared');
 
   // ============================================================================

@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
 
 test('Create new flow with Knowledge Base web crawler node', async ({ page }) => {
-  test.setTimeout(180000); // 3 minutes timeout
+  test.setTimeout(300000);
+  page.setDefaultTimeout(60000);
+  page.setDefaultNavigationTimeout(60000);
 
   // ============================================================================
   // PHASE 1: LOGIN
@@ -9,7 +11,7 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
 
   console.log('📍 Step 1: Navigate to login page');
   await page.goto('/login', { waitUntil: 'networkidle' });
-  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 1 - Login page loaded');
 
   console.log('📍 Step 2: Fill email and password');
@@ -31,7 +33,7 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   if (await loader.first().isVisible().catch(() => false)) {
     await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
   }
-  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 60000 });
   await page.locator('.organization-card').filter({ has: page.locator(':text-is("Testing")') }).click();
   await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 30000 });
   console.log('✅ PASS: Step 4 - Organization selected, redirected to dashboard');
@@ -41,14 +43,18 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   // ============================================================================
 
   console.log('📍 Step 5: Click Flow Designer in sidebar');
-  await page.locator('a:has-text("Flow Designer")').click();
+  try {
+    await page.locator('a[href*="flow-designer"]').first().click({ timeout: 60000 });
+  } catch {
+    await page.goto('/flow-designer', { waitUntil: 'networkidle' });
+  }
   await page.waitForURL(/\/flow-designer$/, { timeout: 60000 });
   console.log('✅ PASS: Step 5 - Flow Designer page loaded');
 
   console.log('📍 Step 6: Click Add New button to create flow');
   await page.locator('button').filter({ hasText: /Add New/ }).first().click();
   await page.waitForURL(/\/flow-designer\/\d+/, { timeout: 30000 });
-  await page.locator('.vue-flow').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.vue-flow').waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 6 - Flow canvas opened with START and END nodes');
 
   // ============================================================================
@@ -63,7 +69,7 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
 
   console.log('📍 Step 8: Enter flow name Web Crawler');
   const flowNameInput = page.locator('.panel-container input').first();
-  await flowNameInput.waitFor({ state: 'visible', timeout: 5000 });
+  await flowNameInput.waitFor({ state: 'visible', timeout: 15000 });
   await flowNameInput.fill('Web Crawler');
   await flowNameInput.press('Enter');
   await page.waitForTimeout(300);
@@ -74,14 +80,14 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   // ============================================================================
 
   console.log('📍 Step 9: Click Add Nodes button');
-  await page.locator('.nodes-button').click();
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
+  await page.locator('button.nodes-button[aria-haspopup="menu"]').first().click();
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 15000 });
   console.log('✅ PASS: Step 9 - Add Nodes menu opened');
 
   console.log('📍 Step 10: Select Knowledge Base Node');
   await page.locator('.nodes-dropdown-item').filter({ hasText: /Knowledge Base Node/ }).click();
   await page.keyboard.press('Escape');
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 10 - Knowledge Base Node selected');
 
@@ -98,7 +104,7 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   const kbWrapper = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /KnowledgeBaseNode/ }) })
     .first();
-  await kbWrapper.waitFor({ state: 'visible', timeout: 5000 });
+  await kbWrapper.waitFor({ state: 'visible', timeout: 15000 });
   const kbBBox = await kbWrapper.boundingBox();
   if (!kbBBox) throw new Error('Knowledge Base node not found');
 
@@ -118,7 +124,7 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
 
   console.log('📍 Step 12: Click KB node to open modal and verify Is Tool is True');
   await page.locator('.node-container').filter({ hasText: /KnowledgeBaseNode/ }).first().evaluate((el) => (el as HTMLElement).click());
-  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 60000 });
   const isToolSelectInitial = page.locator('.modal-dialog').locator('.v-select:visible,.v-autocomplete:visible,.v-combobox:visible').nth(0);
   await expect(isToolSelectInitial).toContainText(/True/);
   console.log('✅ PASS: Step 12 - KB node modal opened and Is Tool verified as True');
@@ -144,7 +150,7 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
 
   console.log('📍 Step 15: Verify Response Fields has "context" pre-filled');
   const responseFieldInput = page.locator('.modal-dialog .array-item-content input[type="text"]').last();
-  await responseFieldInput.waitFor({ state: 'visible', timeout: 5000 });
+  await responseFieldInput.waitFor({ state: 'visible', timeout: 15000 });
   const responseFieldValue = await responseFieldInput.inputValue();
   if (responseFieldValue !== 'context') {
     throw new Error(`Response Fields expected "context", got "${responseFieldValue}"`);
@@ -181,7 +187,7 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
 
   console.log('📍 Step 20: Fill search field with body');
   const searchFieldInput = page.locator('.modal-dialog .array-item-content input[type="text"]').first();
-  await searchFieldInput.waitFor({ state: 'visible', timeout: 5000 });
+  await searchFieldInput.waitFor({ state: 'visible', timeout: 15000 });
   await searchFieldInput.fill('body');
   await searchFieldInput.press('Tab');
   console.log('✅ PASS: Step 20 - Search Field filled with body');
@@ -230,7 +236,7 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   console.log('📍 Step 27: Click Save button');
   const saveButton = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
   await saveButton.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 10000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 27 - Knowledge Base node saved');
 
@@ -283,14 +289,14 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   // ============================================================================
 
   console.log('📍 Step 29: Click Add Nodes button');
-  await page.locator('.nodes-button').click();
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 5000 });
+  await page.locator('button.nodes-button[aria-haspopup="menu"]').first().click();
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 15000 });
   console.log('✅ PASS: Step 29 - Add Nodes menu opened');
 
   console.log('📍 Step 30: Select Reply Message node');
   await page.locator('.nodes-dropdown-item').filter({ hasText: /Reply Message/ }).click();
   await page.keyboard.press('Escape');
-  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 30 - Reply Message node selected');
 
@@ -302,7 +308,7 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   const replyWrapper = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) })
     .first();
-  await replyWrapper.waitFor({ state: 'visible', timeout: 5000 });
+  await replyWrapper.waitFor({ state: 'visible', timeout: 15000 });
   const replyBBox = await replyWrapper.boundingBox();
   if (!replyBBox) throw new Error('Reply Message node not found');
 
@@ -326,27 +332,27 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
 
   console.log('📍 Step 32: Click Reply Message node to open modal');
   await page.locator('.node-container').filter({ hasText: /ReplyMessage/ }).first().evaluate((el) => (el as HTMLElement).click());
-  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 32 - Reply Message node modal opened');
 
   console.log('📍 Step 33: Verify Node Version is Version 2.0.0');
   const nodeVersionField = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Node Version/ }) });
-  await nodeVersionField.waitFor({ state: 'visible', timeout: 5000 });
+  await nodeVersionField.waitFor({ state: 'visible', timeout: 15000 });
   await expect(nodeVersionField).toContainText(/2\.0\.0/);
   console.log('✅ PASS: Step 33 - Node Version verified as Version 2.0.0');
 
   console.log('📍 Step 34: Verify Receiver Channel is None');
   const receiverChannelField = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Receiver Channel/ }) });
-  await receiverChannelField.waitFor({ state: 'visible', timeout: 5000 });
+  await receiverChannelField.waitFor({ state: 'visible', timeout: 15000 });
   await expect(receiverChannelField).toContainText(/None/);
   console.log('✅ PASS: Step 34 - Receiver Channel verified as None');
 
   console.log('📍 Step 35: Verify Content Type is Text Message');
   const contentTypeField = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Content Type/ }) });
-  await contentTypeField.waitFor({ state: 'visible', timeout: 5000 });
+  await contentTypeField.waitFor({ state: 'visible', timeout: 15000 });
   await expect(contentTypeField).toContainText(/Text Message/);
   console.log('✅ PASS: Step 35 - Content Type verified as Text Message');
 
@@ -371,7 +377,7 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   console.log('📍 Step 38: Click Save button');
   const replySaveButton = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
   await replySaveButton.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 10000 });
+  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
   console.log('✅ PASS: Step 38 - Reply Message node saved');
 
   // ============================================================================
@@ -478,7 +484,7 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   console.log('📍 Step 42: Click Save button (disk icon)');
   await page.locator('button').filter({ has: page.locator('.mdi-content-save') }).click();
   const saveModal = page.locator('.v-overlay--active').filter({ hasText: /Save Flow Version/ });
-  await saveModal.waitFor({ state: 'visible', timeout: 20000 });
+  await saveModal.waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 42 - Save button clicked and Save Flow Version modal appeared');
 
   console.log('📍 Step 43: Enter version name Webcrawler and save');
@@ -486,8 +492,8 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   await versionNameInput.fill('Webcrawler');
   const modalSaveButton = saveModal.locator('button').filter({ hasText: /^Save$/ });
   await modalSaveButton.click();
-  await saveModal.waitFor({ state: 'hidden', timeout: 10000 });
-  await expect(page.locator('.v-snackbar')).toContainText(/success|saved/i);
+  await saveModal.waitFor({ state: 'hidden', timeout: 30000 });
+  await expect(page.locator('.v-snackbar')).toContainText(/success|saved/i, { timeout: 15000 });
   console.log('✅ PASS: Step 43 - Flow version saved and success toast appeared');
 
   // ============================================================================

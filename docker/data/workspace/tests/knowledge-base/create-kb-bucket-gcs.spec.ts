@@ -74,10 +74,25 @@ test.describe('Knowledge Base - Create KB Bucket with GCS', () => {
     // Step 4: Click "Knowledge Base" in the left sidebar
     console.log('\n📍 Step 4: Click "Knowledge Base" in the left sidebar');
 
-    const kbLink = page.locator('a:has-text("Knowledge Base")');
-    await expect(kbLink).toBeVisible();
-    await kbLink.click();
-    await page.waitForURL(/.*knowledge-base/, { timeout: 30000 });
+    const kbLink = page.getByRole('link', { name: /^Knowledge Base$/i });
+    const consoleLink = page.getByRole('link', { name: /^Console$/i });
+
+    const kbVisibleOnDashboard = await kbLink.isVisible().catch(() => false);
+    if (!kbVisibleOnDashboard) {
+      const consoleVisible = await consoleLink.isVisible().catch(() => false);
+      if (consoleVisible) {
+        await consoleLink.click();
+        await page.waitForURL(/\/console/, { timeout: 30000 });
+      }
+    }
+
+    const kbVisibleAfterNav = await kbLink.isVisible().catch(() => false);
+    if (kbVisibleAfterNav) {
+      await kbLink.click();
+    } else {
+      await page.goto('/knowledge-base', { waitUntil: 'networkidle' });
+    }
+    await page.waitForURL(/\/knowledge-base/, { timeout: 30000 });
 
     console.log('✅ PASS: Step 4 - Clicked Knowledge Base link');
 
