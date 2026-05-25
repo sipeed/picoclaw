@@ -357,14 +357,16 @@ export function sendChatMessage({
   }))
 
   try {
+    const payload: Record<string, unknown> = {
+      content: normalizedContent,
+      media: normalizedAttachments.map((attachment) => attachment.url),
+    }
+
     socket.send(
       JSON.stringify({
         type: "message.send",
         id,
-        payload: {
-          content: normalizedContent,
-          media: normalizedAttachments.map((attachment) => attachment.url),
-        },
+        payload,
       }),
     )
     return true

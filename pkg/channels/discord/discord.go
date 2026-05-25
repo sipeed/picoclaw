@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -605,10 +606,11 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	scope := channels.BuildMediaScope("discord", m.ChannelID, m.ID)
 
 	// Helper to register a local file with the media store
-	storeMedia := func(localPath, filename string) string {
+	storeMedia := func(localPath string, attachment *discordgo.MessageAttachment) string {
 		if store := c.GetMediaStore(); store != nil {
 			ref, err := store.Store(localPath, media.MediaMeta{
-				Filename:      filename,
+				Filename:      attachment.Filename,
+				ContentType:   attachment.ContentType,
 				Source:        "discord",
 				CleanupPolicy: media.CleanupPolicyDeleteOnCleanup,
 			}, scope)
@@ -620,22 +622,16 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	}
 
 	for _, attachment := range m.Attachments {
-		isAudio := utils.IsAudioFile(attachment.Filename, attachment.ContentType)
-
-		if isAudio {
-			localPath := c.downloadAttachment(attachment.URL, attachment.Filename)
-			if localPath != "" {
-				mediaPaths = append(mediaPaths, storeMedia(localPath, attachment.Filename))
-				content = appendContent(content, fmt.Sprintf("[audio: %s]", attachment.Filename))
-			} else {
-				logger.WarnCF("discord", "Failed to download audio attachment", map[string]any{
-					"url":      attachment.URL,
-					"filename": attachment.Filename,
-				})
-				mediaPaths = append(mediaPaths, attachment.URL)
-				content = appendContent(content, fmt.Sprintf("[attachment: %s]", attachment.URL))
-			}
+		localPath := c.downloadAttachment(attachment.URL, attachment.Filename)
+		if localPath != "" {
+			mediaPaths = append(mediaPaths, storeMedia(localPath, attachment))
+			tag := attachmentMediaTag(attachment.Filename, attachment.ContentType)
+			content = appendContent(content, fmt.Sprintf("[%s: %s]", tag, attachment.Filename))
 		} else {
+			logger.WarnCF("discord", "Failed to download attachment", map[string]any{
+				"url":      attachment.URL,
+				"filename": attachment.Filename,
+			})
 			mediaPaths = append(mediaPaths, attachment.URL)
 			content = appendContent(content, fmt.Sprintf("[attachment: %s]", attachment.URL))
 		}
@@ -746,6 +742,30 @@ func (c *DiscordChannel) downloadAttachment(url, filename string) string {
 		LoggerPrefix: "discord",
 		ProxyURL:     c.config.Proxy,
 	})
+}
+
+func attachmentMediaTag(filename, contentType string) string {
+	ct := strings.ToLower(contentType)
+	switch {
+	case strings.HasPrefix(ct, "image/"):
+		return "image"
+	case strings.HasPrefix(ct, "audio/"), ct == "application/ogg", ct == "application/x-ogg":
+		return "audio"
+	case strings.HasPrefix(ct, "video/"):
+		return "video"
+	}
+
+	ext := strings.ToLower(filepath.Ext(filename))
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp":
+		return "image"
+	case ".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma":
+		return "audio"
+	case ".mp4", ".avi", ".mov", ".webm", ".mkv":
+		return "video"
+	}
+
+	return "file"
 }
 
 func applyDiscordProxy(session *discordgo.Session, proxyAddr string) error {

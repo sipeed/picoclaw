@@ -22,10 +22,12 @@ const (
 	TypeError         = "error"
 	TypePong          = "pong"
 
-	PayloadKeyContent   = "content"
-	PayloadKeyThought   = "thought"
-	PayloadKeyKind      = "kind"
-	PayloadKeyToolCalls = "tool_calls"
+	PayloadKeyContent     = "content"
+	PayloadKeyThought     = "thought"
+	PayloadKeyKind        = "kind"
+	PayloadKeyPlaceholder = "placeholder"
+	PayloadKeyToolCalls   = "tool_calls"
+	PayloadKeyModelName   = "model_name"
 
 	MessageKindThought   = "thought"
 	MessageKindToolCalls = "tool_calls"

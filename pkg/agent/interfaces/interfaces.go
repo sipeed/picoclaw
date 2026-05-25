@@ -21,6 +21,9 @@ type MessageBus interface {
 	// PublishOutboundMedia sends an outbound media message.
 	PublishOutboundMedia(ctx context.Context, msg bus.OutboundMediaMessage) error
 
+	// GetStreamer returns a channel streamer when the active channel supports streaming.
+	GetStreamer(ctx context.Context, channel, chatID, sessionKey string) (bus.Streamer, bool)
+
 	// InboundChan returns the channel for receiving inbound messages.
 	InboundChan() <-chan bus.InboundMessage
 }

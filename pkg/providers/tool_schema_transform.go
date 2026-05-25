@@ -67,6 +67,29 @@ func (p *toolSchemaStreamingProvider) ChatStream(
 	return streaming.ChatStream(ctx, messages, transformed, model, options, onChunk)
 }
 
+func (p *toolSchemaStreamingProvider) ChatStreamEvents(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+	onChunk func(StreamChunk),
+) (*LLMResponse, error) {
+	streaming, ok := p.delegate.(StreamingEventProvider)
+	if !ok {
+		return p.ChatStream(ctx, messages, tools, model, options, func(accumulated string) {
+			if onChunk != nil {
+				onChunk(StreamChunk{Content: accumulated})
+			}
+		})
+	}
+	transformed, err := common.TransformToolDefinitions(tools, p.transform)
+	if err != nil {
+		return nil, err
+	}
+	return streaming.ChatStreamEvents(ctx, messages, transformed, model, options, onChunk)
+}
+
 func (p *toolSchemaTransformProvider) SupportsThinking() bool {
 	tc, ok := p.delegate.(ThinkingCapable)
 	return ok && tc.SupportsThinking()

@@ -8,10 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
@@ -58,6 +61,209 @@ func TestProviderChat_UsesMaxCompletionTokensForGLM(t *testing.T) {
 	}
 	if _, ok := requestBody["max_tokens"]; ok {
 		t.Fatalf("did not expect max_tokens key for glm model")
+	}
+}
+
+func TestBuildRequestBody_DisablesDoubaoThinkingWhenThinkingLevelOff(t *testing.T) {
+	p := NewProvider("key", "https://ark.cn-beijing.volces.com/api/v3", "")
+	p.SetProviderName("openai")
+
+	body := p.buildRequestBody(
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"doubao-seed-1-6-flash-250828",
+		map[string]any{"thinking_level": "off"},
+	)
+
+	thinking, ok := body["thinking"].(map[string]any)
+	if !ok {
+		t.Fatalf("thinking = %#v, want map", body["thinking"])
+	}
+	if got := thinking["type"]; got != "disabled" {
+		t.Fatalf("thinking.type = %#v, want %q", got, "disabled")
+	}
+}
+
+func TestBuildRequestBody_DisablesModelDependentQwenThinkingWhenThinkingLevelOff(t *testing.T) {
+	p := NewProvider("key", "https://api-inference.modelscope.cn/v1", "")
+	p.SetProviderName("modelscope")
+
+	body := p.buildRequestBody(
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"qwen3-coder-plus",
+		map[string]any{"thinking_level": "off"},
+	)
+
+	if got := body["enable_thinking"]; got != false {
+		t.Fatalf("enable_thinking = %#v, want false", got)
+	}
+}
+
+func TestBuildRequestBody_PreservesDoubaoRequestWhenThinkingLevelIsNotOff(t *testing.T) {
+	p := NewProvider("key", "https://ark.cn-beijing.volces.com/api/v3", "")
+	p.SetProviderName("openai")
+
+	for _, level := range []string{"low", "adaptive", "unexpected"} {
+		t.Run(level, func(t *testing.T) {
+			body := p.buildRequestBody(
+				[]Message{{Role: "user", Content: "hi"}},
+				nil,
+				"doubao-seed-1-6-flash-250828",
+				map[string]any{"thinking_level": level},
+			)
+
+			if _, ok := body["thinking"]; ok {
+				t.Fatalf(
+					"thinking should be omitted for %q to preserve existing behavior, got %#v",
+					level,
+					body["thinking"],
+				)
+			}
+			if _, ok := body["enable_thinking"]; ok {
+				t.Fatalf("enable_thinking should be omitted for %q, got %#v", level, body["enable_thinking"])
+			}
+		})
+	}
+}
+
+func TestBuildRequestBody_MapsDeepSeekThinkingLevels(t *testing.T) {
+	p := NewProvider("key", "https://api.deepseek.com/v1", "")
+	p.SetProviderName("deepseek")
+
+	tests := []struct {
+		name             string
+		level            string
+		wantThinkingType string
+		wantEffort       any
+	}{
+		{name: "off", level: "off", wantThinkingType: "disabled"},
+		{name: "low", level: "low", wantThinkingType: "enabled", wantEffort: "high"},
+		{name: "medium", level: "medium", wantThinkingType: "enabled", wantEffort: "high"},
+		{name: "high", level: "high", wantThinkingType: "enabled", wantEffort: "high"},
+		{name: "xhigh", level: "xhigh", wantThinkingType: "enabled", wantEffort: "max"},
+		{name: "adaptive", level: "adaptive"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := p.buildRequestBody(
+				[]Message{{Role: "user", Content: "hi"}},
+				nil,
+				"deepseek-v4-pro",
+				map[string]any{"thinking_level": tt.level},
+			)
+
+			if tt.wantThinkingType == "" {
+				if _, ok := body["thinking"]; ok {
+					t.Fatalf("thinking should be omitted for %q, got %#v", tt.level, body["thinking"])
+				}
+			} else {
+				thinking, ok := body["thinking"].(map[string]any)
+				if !ok {
+					t.Fatalf("thinking = %#v, want map", body["thinking"])
+				}
+				if got := thinking["type"]; got != tt.wantThinkingType {
+					t.Fatalf("thinking.type = %#v, want %q", got, tt.wantThinkingType)
+				}
+			}
+
+			if tt.wantEffort == nil {
+				if _, ok := body["reasoning_effort"]; ok {
+					t.Fatalf("reasoning_effort should be omitted for %q, got %#v", tt.level, body["reasoning_effort"])
+				}
+			} else if got := body["reasoning_effort"]; got != tt.wantEffort {
+				t.Fatalf("reasoning_effort = %#v, want %#v", got, tt.wantEffort)
+			}
+		})
+	}
+}
+
+func TestBuildRequestBody_MapsDeepSeekThinkingLevelsByHost(t *testing.T) {
+	p := NewProvider("key", "https://api.deepseek.com/v1", "")
+
+	body := p.buildRequestBody(
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"deepseek-v4-flash",
+		map[string]any{"thinking_level": "xhigh"},
+	)
+
+	thinking, ok := body["thinking"].(map[string]any)
+	if !ok {
+		t.Fatalf("thinking = %#v, want map", body["thinking"])
+	}
+	if got := thinking["type"]; got != "enabled" {
+		t.Fatalf("thinking.type = %#v, want enabled", got)
+	}
+	if got := body["reasoning_effort"]; got != "max" {
+		t.Fatalf("reasoning_effort = %#v, want max", got)
+	}
+}
+
+func TestBuildRequestBody_DeepSeekExtraBodyStillOverridesThinkingFields(t *testing.T) {
+	extraBody := map[string]any{
+		"thinking":         map[string]any{"type": "disabled"},
+		"reasoning_effort": "max",
+	}
+	p := NewProvider("key", "https://api.deepseek.com/v1", "", WithExtraBody(extraBody))
+	p.SetProviderName("deepseek")
+
+	body := p.buildRequestBody(
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"deepseek-v4-pro",
+		map[string]any{"thinking_level": "high"},
+	)
+
+	thinking, ok := body["thinking"].(map[string]any)
+	if !ok {
+		t.Fatalf("thinking = %#v, want map", body["thinking"])
+	}
+	if got := thinking["type"]; got != "disabled" {
+		t.Fatalf("thinking.type = %#v, want disabled from extra_body override", got)
+	}
+	if got := body["reasoning_effort"]; got != "max" {
+		t.Fatalf("reasoning_effort = %#v, want max from extra_body override", got)
+	}
+}
+
+func TestBuildRequestBody_WarnsForUnsupportedDeepSeekAdaptiveThinkingLevel(t *testing.T) {
+	logFile := t.TempDir() + "/deepseek-adaptive-warning.log"
+	prevLevel := logger.GetLevel()
+	logger.SetLevel(logger.WARN)
+	if err := logger.EnableFileLogging(logFile); err != nil {
+		t.Fatalf("EnableFileLogging() error = %v", err)
+	}
+	defer func() {
+		logger.DisableFileLogging()
+		logger.SetLevel(prevLevel)
+	}()
+
+	p := NewProvider("key", "https://api.deepseek.com/v1", "")
+	p.SetProviderName("deepseek")
+
+	body := p.buildRequestBody(
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"deepseek-v4-pro",
+		map[string]any{"thinking_level": "adaptive"},
+	)
+
+	if _, ok := body["thinking"]; ok {
+		t.Fatalf("thinking should be omitted for adaptive, got %#v", body["thinking"])
+	}
+	if _, ok := body["reasoning_effort"]; ok {
+		t.Fatalf("reasoning_effort should be omitted for adaptive, got %#v", body["reasoning_effort"])
+	}
+
+	data, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) error = %v", logFile, err)
+	}
+	logs := string(data)
+	if !strings.Contains(logs, `thinking_level=\"adaptive\"`) {
+		t.Fatalf("warning log = %q, want adaptive warning message", logs)
 	}
 }
 
@@ -252,9 +458,16 @@ func TestProviderChat_StripsReasoningContentForNonDeepSeekHistory(t *testing.T) 
 	}
 }
 
-func TestProviderChat_DeepSeekOmitsReasoningContentForNonToolTurnHistory(t *testing.T) {
-	var requestBody map[string]any
+func runCapturedChat(
+	t *testing.T,
+	providerName string,
+	apiBase string,
+	messages []Message,
+	model string,
+) []any {
+	t.Helper()
 
+	var requestBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -274,21 +487,20 @@ func TestProviderChat_DeepSeekOmitsReasoningContentForNonToolTurnHistory(t *test
 	defer server.Close()
 
 	p := NewProvider("key", server.URL, "")
-	p.apiBase = "https://api.deepseek.com/v1"
-	p.httpClient = &http.Client{
-		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
-			r.URL, _ = url.Parse(server.URL + r.URL.Path)
-			return http.DefaultTransport.RoundTrip(r)
-		}),
+	if providerName != "" {
+		p.SetProviderName(providerName)
+	}
+	if apiBase != "" {
+		p.apiBase = apiBase
+		p.httpClient = &http.Client{
+			Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				r.URL, _ = url.Parse(server.URL + r.URL.Path)
+				return http.DefaultTransport.RoundTrip(r)
+			}),
+		}
 	}
 
-	messages := []Message{
-		{Role: "user", Content: "What is 1+1?"},
-		{Role: "assistant", Content: "2", ReasoningContent: "Let me think... 1+1=2"},
-		{Role: "user", Content: "What about 2+2?"},
-	}
-
-	_, err := p.Chat(t.Context(), messages, nil, "deepseek-v4-flash", nil)
+	_, err := p.Chat(t.Context(), messages, nil, model, nil)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
@@ -297,16 +509,112 @@ func TestProviderChat_DeepSeekOmitsReasoningContentForNonToolTurnHistory(t *test
 	if !ok {
 		t.Fatalf("messages is not []any: %T", requestBody["messages"])
 	}
-	assistantMsg, ok := reqMessages[1].(map[string]any)
+	return reqMessages
+}
+
+func nonToolReplayMessages() []Message {
+	return []Message{
+		{Role: "user", Content: "What is 1+1?"},
+		{Role: "assistant", Content: "2", ReasoningContent: "Let me think... 1+1=2"},
+		{Role: "user", Content: "What about 2+2?"},
+	}
+}
+
+func docsReplayRequirementMessages() []Message {
+	return []Message{
+		{Role: "user", Content: "Who wrote The Hobbit?"},
+		{Role: "assistant", Content: "J.R.R. Tolkien.", ReasoningContent: "I know this from general knowledge."},
+		{Role: "user", Content: "What's the weather tomorrow?"},
+		{
+			Role:             "assistant",
+			Content:          "Let me check the date first.",
+			ReasoningContent: "I need tomorrow's date before checking the weather.",
+			ToolCalls: []ToolCall{{
+				ID:   "call_date",
+				Type: "function",
+				Function: &FunctionCall{
+					Name:      "get_date",
+					Arguments: "{}",
+				},
+			}},
+		},
+		{Role: "tool", ToolCallID: "call_date", Content: "2026-04-29"},
+		{
+			Role:             "assistant",
+			Content:          "Tomorrow is 2026-04-30.",
+			ReasoningContent: "Now I can continue with the weather request.",
+		},
+		{Role: "user", Content: "What about Guangzhou?"},
+	}
+}
+
+func assertAssistantReasoningOmitted(t *testing.T, reqMessages []any, index int, label string) {
+	t.Helper()
+
+	assistantMsg, ok := reqMessages[index].(map[string]any)
 	if !ok {
-		t.Fatalf("assistant message is not map[string]any: %T", reqMessages[1])
+		t.Fatalf("assistant message is not map[string]any: %T", reqMessages[index])
 	}
 	if _, exists := assistantMsg["reasoning_content"]; exists {
 		t.Fatalf(
-			"reasoning_content should be omitted for DeepSeek non-tool turns, got %v",
+			"reasoning_content should be omitted for %s non-tool turns, got %v",
+			label,
 			assistantMsg["reasoning_content"],
 		)
 	}
+}
+
+func assertDocsReplayRequirements(t *testing.T, reqMessages []any, messages []Message, label string) {
+	t.Helper()
+
+	if len(reqMessages) != len(messages) {
+		t.Fatalf("len(messages) = %d, want %d", len(reqMessages), len(messages))
+	}
+
+	plainAssistant, ok := reqMessages[1].(map[string]any)
+	if !ok {
+		t.Fatalf("plain assistant message is not map[string]any: %T", reqMessages[1])
+	}
+	if _, exists := plainAssistant["reasoning_content"]; exists {
+		t.Fatalf(
+			"plain %s turn should omit reasoning_content on replay, got %v",
+			label,
+			plainAssistant["reasoning_content"],
+		)
+	}
+
+	toolAssistant, ok := reqMessages[3].(map[string]any)
+	if !ok {
+		t.Fatalf("tool assistant message is not map[string]any: %T", reqMessages[3])
+	}
+	if toolAssistant["reasoning_content"] != "I need tomorrow's date before checking the weather." {
+		t.Fatalf(
+			"tool assistant reasoning_content = %v, want preserved",
+			toolAssistant["reasoning_content"],
+		)
+	}
+
+	finalAssistant, ok := reqMessages[5].(map[string]any)
+	if !ok {
+		t.Fatalf("final assistant message is not map[string]any: %T", reqMessages[5])
+	}
+	if finalAssistant["reasoning_content"] != "Now I can continue with the weather request." {
+		t.Fatalf(
+			"final assistant reasoning_content = %v, want preserved",
+			finalAssistant["reasoning_content"],
+		)
+	}
+}
+
+func TestProviderChat_DeepSeekOmitsReasoningContentForNonToolTurnHistory(t *testing.T) {
+	reqMessages := runCapturedChat(
+		t,
+		"",
+		"https://api.deepseek.com/v1",
+		nonToolReplayMessages(),
+		"deepseek-v4-flash",
+	)
+	assertAssistantReasoningOmitted(t, reqMessages, 1, "DeepSeek")
 }
 
 func TestProviderChat_DeepSeekPreservesReasoningContentForToolTurnHistory(t *testing.T) {
@@ -512,6 +820,32 @@ func TestProviderChat_HistoryCanonicalizationMatrix(t *testing.T) {
 		}
 	})
 
+	t.Run("mimo", func(t *testing.T) {
+		msgs := captureRequestMessages(t, "mimo")
+		if len(msgs) != len(baseMessages) {
+			t.Fatalf("len(messages) = %d, want %d", len(msgs), len(baseMessages))
+		}
+
+		if _, ok := msgs[1]["reasoning_content"]; ok {
+			t.Fatalf(
+				"turn1 reasoning_content should be stripped for MiMo non-tool turn, got %v",
+				msgs[1]["reasoning_content"],
+			)
+		}
+		if msgs[3]["reasoning_content"] != "tool thought" {
+			t.Fatalf("turn2 reasoning_content = %v, want preserved", msgs[3]["reasoning_content"])
+		}
+		if _, ok := msgs[6]["reasoning_content"]; ok {
+			t.Fatalf("turn3 reasoning_content should be absent, got %v", msgs[6]["reasoning_content"])
+		}
+		if msgs[9]["reasoning_content"] != "tool mixed thought" {
+			t.Fatalf("turn4 reasoning_content = %v, want preserved", msgs[9]["reasoning_content"])
+		}
+		if msgs[9]["content"] != "tool visible and thought" {
+			t.Fatalf("turn4 content = %v, want preserved", msgs[9]["content"])
+		}
+	})
+
 	t.Run("non-deepseek", func(t *testing.T) {
 		msgs := captureRequestMessages(t, "")
 		for i, msg := range msgs {
@@ -536,100 +870,29 @@ func TestProviderChat_DeepSeekDocsReplayRequirements(t *testing.T) {
 	// Keep this behavior explicit here so future changes do not "fix" the
 	// non-tool stripping based on issue reports that are broader than the
 	// vendor documentation.
-	var requestBody map[string]any
+	messages := docsReplayRequirementMessages()
+	reqMessages := runCapturedChat(t, "deepseek", "", messages, "deepseek-v4-flash")
+	assertDocsReplayRequirements(t, reqMessages, messages, "DeepSeek")
+}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		resp := map[string]any{
-			"choices": []map[string]any{
-				{
-					"message":       map[string]any{"content": "ok"},
-					"finish_reason": "stop",
-				},
-			},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
-	}))
-	defer server.Close()
+func TestProviderChat_MiMoDocsReplayRequirements(t *testing.T) {
+	// MiMo documents the same replay rule as DeepSeek for thinking-mode
+	// tool rounds: plain non-tool turns may omit reasoning_content on replay,
+	// while tool-interaction rounds must keep it in subsequent requests.
+	messages := docsReplayRequirementMessages()
+	reqMessages := runCapturedChat(t, "mimo", "", messages, "mimo-2.5")
+	assertDocsReplayRequirements(t, reqMessages, messages, "MiMo")
+}
 
-	p := NewProvider("key", server.URL, "")
-	p.SetProviderName("deepseek")
-
-	messages := []Message{
-		{Role: "user", Content: "Who wrote The Hobbit?"},
-		{Role: "assistant", Content: "J.R.R. Tolkien.", ReasoningContent: "I know this from general knowledge."},
-		{Role: "user", Content: "What's the weather tomorrow?"},
-		{
-			Role:             "assistant",
-			Content:          "Let me check the date first.",
-			ReasoningContent: "I need tomorrow's date before checking the weather.",
-			ToolCalls: []ToolCall{{
-				ID:   "call_date",
-				Type: "function",
-				Function: &FunctionCall{
-					Name:      "get_date",
-					Arguments: "{}",
-				},
-			}},
-		},
-		{Role: "tool", ToolCallID: "call_date", Content: "2026-04-29"},
-		{
-			Role:             "assistant",
-			Content:          "Tomorrow is 2026-04-30.",
-			ReasoningContent: "Now I can continue with the weather request.",
-		},
-		{Role: "user", Content: "What about Guangzhou?"},
-	}
-
-	_, err := p.Chat(t.Context(), messages, nil, "deepseek-v4-flash", nil)
-	if err != nil {
-		t.Fatalf("Chat() error = %v", err)
-	}
-
-	reqMessages, ok := requestBody["messages"].([]any)
-	if !ok {
-		t.Fatalf("messages is not []any: %T", requestBody["messages"])
-	}
-	if len(reqMessages) != len(messages) {
-		t.Fatalf("len(messages) = %d, want %d", len(reqMessages), len(messages))
-	}
-
-	plainAssistant, ok := reqMessages[1].(map[string]any)
-	if !ok {
-		t.Fatalf("plain assistant message is not map[string]any: %T", reqMessages[1])
-	}
-	if _, exists := plainAssistant["reasoning_content"]; exists {
-		t.Fatalf(
-			"plain DeepSeek turn should omit reasoning_content on replay, got %v",
-			plainAssistant["reasoning_content"],
-		)
-	}
-
-	toolAssistant, ok := reqMessages[3].(map[string]any)
-	if !ok {
-		t.Fatalf("tool assistant message is not map[string]any: %T", reqMessages[3])
-	}
-	if toolAssistant["reasoning_content"] != "I need tomorrow's date before checking the weather." {
-		t.Fatalf(
-			"tool assistant reasoning_content = %v, want preserved",
-			toolAssistant["reasoning_content"],
-		)
-	}
-
-	finalAssistant, ok := reqMessages[5].(map[string]any)
-	if !ok {
-		t.Fatalf("final assistant message is not map[string]any: %T", reqMessages[5])
-	}
-	if finalAssistant["reasoning_content"] != "Now I can continue with the weather request." {
-		t.Fatalf(
-			"final assistant reasoning_content = %v, want preserved",
-			finalAssistant["reasoning_content"],
-		)
-	}
+func TestProviderChat_MiMoHostUsesReasoningReplayRules(t *testing.T) {
+	reqMessages := runCapturedChat(
+		t,
+		"",
+		"https://api.xiaomimimo.com/v1",
+		nonToolReplayMessages(),
+		"mimo-2.5",
+	)
+	assertAssistantReasoningOmitted(t, reqMessages, 1, "MiMo")
 }
 
 func TestProviderChat_HTTPError(t *testing.T) {
@@ -875,6 +1138,11 @@ func TestProviderChat_StripsKnownProviderPrefixes(t *testing.T) {
 			wantModel: "auto",
 		},
 		{
+			name:      "strips siliconflow prefix and keeps nested model",
+			input:     "siliconflow/deepseek-ai/DeepSeek-V3",
+			wantModel: "deepseek-ai/DeepSeek-V3",
+		},
+		{
 			name:      "strips novita prefix deepseek model",
 			input:     "novita/deepseek/deepseek-v3.2",
 			wantModel: "deepseek/deepseek-v3.2",
@@ -983,6 +1251,16 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	}
 	if got := normalizeModel("vivgrid/auto", "https://api.vivgrid.com/v1"); got != "auto" {
 		t.Fatalf("normalizeModel(vivgrid auto) = %q, want %q", got, "auto")
+	}
+	if got := normalizeModel(
+		"siliconflow/deepseek-ai/DeepSeek-V3",
+		"https://api.siliconflow.cn/v1",
+	); got != "deepseek-ai/DeepSeek-V3" {
+		t.Fatalf(
+			"normalizeModel(siliconflow) = %q, want %q",
+			got,
+			"deepseek-ai/DeepSeek-V3",
+		)
 	}
 	if got := normalizeModel(
 		"novita/deepseek/deepseek-v3.2",
@@ -1195,6 +1473,215 @@ func TestProviderChatStream_CustomHeadersInjected(t *testing.T) {
 	}
 }
 
+func TestProviderChatStream_ParsesReasoningContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"Let me \",\"content\":\"Checking \",\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\"}}]}}]}\n\n",
+		))
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"think step by step.\",\"content\":\"the weather\",\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"Hangzhou\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":6,\"total_tokens\":16}}\n\n",
+		))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "weather?"}},
+		nil,
+		"deepseek-v4-flash",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+	if out.Content != "Checking the weather" {
+		t.Fatalf("Content = %q, want %q", out.Content, "Checking the weather")
+	}
+	if out.ReasoningContent != "Let me think step by step." {
+		t.Fatalf("ReasoningContent = %q, want %q", out.ReasoningContent, "Let me think step by step.")
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].ID != "call_1" {
+		t.Fatalf("ToolCalls[0].ID = %q, want %q", out.ToolCalls[0].ID, "call_1")
+	}
+	if out.ToolCalls[0].Name != "get_weather" {
+		t.Fatalf("ToolCalls[0].Name = %q, want %q", out.ToolCalls[0].Name, "get_weather")
+	}
+	if out.ToolCalls[0].Arguments["city"] != "Hangzhou" {
+		t.Fatalf("ToolCalls[0].Arguments[city] = %v, want %q", out.ToolCalls[0].Arguments["city"], "Hangzhou")
+	}
+	if out.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want %q", out.FinishReason, "tool_calls")
+	}
+	if out.Usage == nil || out.Usage.TotalTokens != 16 {
+		t.Fatalf("Usage = %#v, want total tokens 16", out.Usage)
+	}
+}
+
+func TestProviderChatStreamEvents_EmitsReasoningBeforeContentFromSameEvent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"think\",\"content\":\"answer\"},\"finish_reason\":\"stop\"}]}\n\n",
+		))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	events := make([]string, 0)
+	out, err := p.ChatStreamEvents(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"deepseek-v4-flash",
+		nil,
+		func(chunk StreamChunk) {
+			if chunk.ReasoningContent != "" {
+				events = append(events, "reasoning:"+chunk.ReasoningContent)
+			}
+			if chunk.Content != "" {
+				events = append(events, "content:"+chunk.Content)
+			}
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatStreamEvents() error = %v", err)
+	}
+	if out.Content != "answer" {
+		t.Fatalf("Content = %q, want %q", out.Content, "answer")
+	}
+	if out.ReasoningContent != "think" {
+		t.Fatalf("ReasoningContent = %q, want %q", out.ReasoningContent, "think")
+	}
+	want := []string{"reasoning:think", "content:answer"}
+	if len(events) != len(want) {
+		t.Fatalf("events = %#v, want %#v", events, want)
+	}
+	for i := range want {
+		if events[i] != want[i] {
+			t.Fatalf("events = %#v, want %#v", events, want)
+		}
+	}
+}
+
+func TestProviderChatStream_ParsesMultilineSSEEvent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\n" +
+				"data: \"content\":\"Hello\",\"reasoning_content\":\"Thinking\",\n" +
+				"data: \"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"echo\",\"arguments\":\"{\\\"message\\\":\\\"hello\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}],\n" +
+				"data: \"usage\":{\"prompt_tokens\":3,\"completion_tokens\":4,\"total_tokens\":7}}\n\n",
+		))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "say hello"}},
+		nil,
+		"gpt-4o",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+	if out.Content != "Hello" {
+		t.Fatalf("Content = %q, want %q", out.Content, "Hello")
+	}
+	if out.ReasoningContent != "Thinking" {
+		t.Fatalf("ReasoningContent = %q, want %q", out.ReasoningContent, "Thinking")
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "echo" {
+		t.Fatalf("ToolCalls[0].Name = %q, want %q", out.ToolCalls[0].Name, "echo")
+	}
+	if out.ToolCalls[0].Arguments["message"] != "hello" {
+		t.Fatalf("ToolCalls[0].Arguments[message] = %v, want %q", out.ToolCalls[0].Arguments["message"], "hello")
+	}
+	if out.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want %q", out.FinishReason, "tool_calls")
+	}
+	if out.Usage == nil || out.Usage.TotalTokens != 7 {
+		t.Fatalf("Usage = %#v, want total tokens 7", out.Usage)
+	}
+}
+
+func TestProviderChatStream_ParsesReasoningVariants(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"reasoning\":\"step 1\",\"reasoning_details\":[{\"format\":\"text\",\"index\":0,\"type\":\"summary\",\"text\":\"first\"}]}}]}\n\n",
+		))
+		_, _ = w.Write([]byte(
+			"data: {\"choices\":[{\"delta\":{\"reasoning\":\" + step 2\",\"reasoning_details\":[{\"format\":\"text\",\"index\":1,\"type\":\"summary\",\"text\":\"second\"}],\"content\":\"done\"},\"finish_reason\":\"stop\"}]}\n\n",
+		))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "think"}},
+		nil,
+		"gpt-4o",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+	if out.Content != "done" {
+		t.Fatalf("Content = %q, want %q", out.Content, "done")
+	}
+	if out.Reasoning != "step 1 + step 2" {
+		t.Fatalf("Reasoning = %q, want %q", out.Reasoning, "step 1 + step 2")
+	}
+	if len(out.ReasoningDetails) != 2 {
+		t.Fatalf("len(ReasoningDetails) = %d, want 2", len(out.ReasoningDetails))
+	}
+	if out.ReasoningDetails[0].Text != "first" || out.ReasoningDetails[1].Text != "second" {
+		t.Fatalf("ReasoningDetails = %#v, want texts first/second", out.ReasoningDetails)
+	}
+}
+
+func TestProviderChatStream_InvalidEventReturnsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[\n\n"))
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	_, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		"gpt-4o",
+		nil,
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected error for malformed stream event")
+	}
+	if !strings.Contains(err.Error(), "failed to decode stream event") {
+		t.Fatalf("error = %v, want decode stream event error", err)
+	}
+}
+
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -1227,6 +1714,40 @@ func (r *errAfterDataReadCloser) Read(p []byte) (int, error) {
 
 func (r *errAfterDataReadCloser) Close() error {
 	return nil
+}
+
+type blockingReadCloser struct {
+	closeOnce sync.Once
+	closed    chan struct{}
+}
+
+func newBlockingReadCloser() *blockingReadCloser {
+	return &blockingReadCloser{closed: make(chan struct{})}
+}
+
+func (r *blockingReadCloser) Read([]byte) (int, error) {
+	<-r.closed
+	return 0, io.ErrClosedPipe
+}
+
+func (r *blockingReadCloser) Close() error {
+	r.closeOnce.Do(func() {
+		close(r.closed)
+	})
+	return nil
+}
+
+func TestStreamingReadIdleTimeoutClosesStalledBody(t *testing.T) {
+	body := newBlockingReadCloser()
+	wrapped := withStreamingReadIdleTimeout(body, 10*time.Millisecond)
+
+	_, err := wrapped.Read(make([]byte, 1))
+	if err == nil {
+		t.Fatal("expected stalled stream read to return an error")
+	}
+	if !strings.Contains(err.Error(), "stream idle timeout") {
+		t.Fatalf("error = %v, want stream idle timeout", err)
+	}
 }
 
 func TestProvider_FunctionalOptionMaxTokensField(t *testing.T) {
@@ -1387,6 +1908,7 @@ func TestProviderChat_PromptCacheKeyOmittedForNonOpenAI(t *testing.T) {
 		{"gemini", "https://generativelanguage.googleapis.com/v1beta"},
 		{"deepseek", "https://api.deepseek.com/v1"},
 		{"groq", "https://api.groq.com/openai/v1"},
+		{"siliconflow", "https://api.siliconflow.cn/v1"},
 		{"minimax", "https://api.minimaxi.com/v1"},
 		{"ollama_local", "http://localhost:11434/v1"},
 	}

@@ -329,6 +329,31 @@ func TestCronTool_ExecuteJobSkipsWhenMessageToolAlreadySent(t *testing.T) {
 	}
 }
 
+func TestCronTool_ExecuteJobRunsCommand(t *testing.T) {
+	tool := newTestCronToolWithConfig(t, config.DefaultConfig())
+	job := &cron.CronJob{}
+	job.Payload.Channel = "cli"
+	job.Payload.To = "direct"
+	job.Payload.Command = "echo cron-test-ok"
+
+	if got := tool.ExecuteJob(context.Background(), job); got != "ok" {
+		t.Fatalf("ExecuteJob() = %q, want ok", got)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	var msg bus.OutboundMessage
+	select {
+	case msg = <-tool.msgBus.OutboundChan():
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for outbound message")
+	}
+	if !strings.Contains(msg.Content, "cron-test-ok") {
+		t.Fatalf("expected command output containing 'cron-test-ok', got: %s", msg.Content)
+	}
+}
+
 func TestCronTool_ExecuteJobReturnsErrorWithoutPublish(t *testing.T) {
 	executor := &stubJobExecutor{
 		response: "this response must not be published",

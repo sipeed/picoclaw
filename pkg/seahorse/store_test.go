@@ -210,6 +210,7 @@ func TestStoreAddAndGetMessagesWithReasoningContent(t *testing.T) {
 		conv.ConversationID,
 		"assistant",
 		"hello world",
+		"gpt-5.4-mini",
 		"let me think",
 		5,
 	)
@@ -218,6 +219,9 @@ func TestStoreAddAndGetMessagesWithReasoningContent(t *testing.T) {
 	}
 	if msg.ReasoningContent != "let me think" {
 		t.Fatalf("ReasoningContent = %q, want %q", msg.ReasoningContent, "let me think")
+	}
+	if msg.ModelName != "gpt-5.4-mini" {
+		t.Fatalf("ModelName = %q, want %q", msg.ModelName, "gpt-5.4-mini")
 	}
 
 	msgs, err := s.GetMessages(ctx, conv.ConversationID, 10, 0)
@@ -230,6 +234,9 @@ func TestStoreAddAndGetMessagesWithReasoningContent(t *testing.T) {
 	if msgs[0].ReasoningContent != "let me think" {
 		t.Errorf("ReasoningContent = %q, want %q", msgs[0].ReasoningContent, "let me think")
 	}
+	if msgs[0].ModelName != "gpt-5.4-mini" {
+		t.Errorf("ModelName = %q, want %q", msgs[0].ModelName, "gpt-5.4-mini")
+	}
 
 	found, err := s.GetMessageByID(ctx, msg.ID)
 	if err != nil {
@@ -237,6 +244,9 @@ func TestStoreAddAndGetMessagesWithReasoningContent(t *testing.T) {
 	}
 	if found.ReasoningContent != "let me think" {
 		t.Errorf("GetMessageByID ReasoningContent = %q, want %q", found.ReasoningContent, "let me think")
+	}
+	if found.ModelName != "gpt-5.4-mini" {
+		t.Errorf("GetMessageByID ModelName = %q, want %q", found.ModelName, "gpt-5.4-mini")
 	}
 }
 
@@ -288,6 +298,7 @@ func TestStoreAddMessageWithPartsAndReasoningContent(t *testing.T) {
 		conv.ConversationID,
 		"assistant",
 		parts,
+		"gpt-5.4",
 		"need to inspect the file first",
 		10,
 	)
@@ -308,6 +319,9 @@ func TestStoreAddMessageWithPartsAndReasoningContent(t *testing.T) {
 			msgs[0].ReasoningContent,
 			"need to inspect the file first",
 		)
+	}
+	if msgs[0].ModelName != "gpt-5.4" {
+		t.Errorf("ModelName = %q, want %q", msgs[0].ModelName, "gpt-5.4")
 	}
 }
 

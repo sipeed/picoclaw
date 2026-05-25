@@ -66,6 +66,50 @@ PicoClaw stocke les données dans votre workspace configuré (par défaut : `~/.
 
 > **Remarque :** Les modifications apportées à `AGENT.md`, `SOUL.md`, `USER.md` et `memory/MEMORY.md` sont détectées automatiquement au moment de l'exécution via le suivi de la date de modification (mtime). Il n'est **pas nécessaire de redémarrer le gateway** après avoir modifié ces fichiers — l'agent charge le nouveau contenu à la prochaine requête.
 
+### Politique de contexte de requête
+
+`turn_profile` est une politique facultative sous `agents.defaults.turn_profile` pour contrôler le contexte chargé par chaque nouveau tour : historique, prompt système, prompts de skills et outils autorisés. Sans cette configuration, ou avec `"enabled": false`, PicoClaw garde son comportement normal. Avec `"enabled": true`, la politique ci-dessous s'applique à chaque nouveau tour.
+
+Tous les blocs utilisent les mêmes valeurs de `mode` :
+
+| Mode | Signification |
+| --- | --- |
+| `default` | Garde le comportement normal de PicoClaw. Un bloc absent ou sans `mode` vaut `default`. |
+| `off` | Désactive ce bloc pour le tour. |
+| `custom` | Utilise une liste d'autorisation. Dans cette version, `custom` est pris en charge seulement pour `skills` et `tools`; l'utiliser pour `history` ou `system_prompt` produit une erreur de validation. |
+
+Blocs disponibles :
+
+| Bloc | Ce qu'il contrôle |
+| --- | --- |
+| `history` | Lecture de l'historique et du résumé, écriture des messages utilisateur/assistant/outil, ingestion de contexte, compression et résumé. |
+| `system_prompt` | Injection de l'identité PicoClaw, des instructions de l'espace de travail, de la mémoire, du contexte d'exécution et du résumé. Les prompts système externes restent autorisés quand ce bloc est `off`. |
+| `skills` | Chargement du catalogue de skills et du contenu des skills actifs. `custom.allow` ne garde que les noms listés. |
+| `tools` | Outils exposés au modèle et autorisés à l'exécution. `custom.allow` ne garde que les outils enregistrés et listés. |
+
+Quand `system_prompt.mode` vaut `off`, que des outils restent visibles et qu'aucun prompt système externe n'est fourni, PicoClaw réutilise sa règle existante d'utilisation des outils comme prompt minimal de secours. Si `tools.mode` vaut `off`, ce prompt de secours n'est pas ajouté.
+
+Exemple de contexte propre avec outils web :
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "turn_profile": {
+        "enabled": true,
+        "history": { "mode": "off" },
+        "system_prompt": { "mode": "off" },
+        "skills": { "mode": "off" },
+        "tools": {
+          "mode": "custom",
+          "allow": ["web_search", "web_fetch"]
+        }
+      }
+    }
+  }
+}
+```
+
 ### Sources de Compétences
 
 Par défaut, les compétences sont chargées depuis :
@@ -363,6 +407,55 @@ Configurez plusieurs endpoints pour le même nom de modèle — PicoClaw effectu
 #### Migration depuis l'ancienne config `providers`
 
 L'ancienne configuration `providers` est **dépréciée** et a été supprimée dans V2. Les configs V0/V1 existantes sont auto-migrées. Voir [docs/migration/model-list-migration.md](../migration/model-list-migration.md).
+
+#### Configuration du Streaming
+
+Le streaming provider utilise un double opt-in et est désactivé par défaut. L'agent ne tente le streaming que lorsque le channel courant a `settings.streaming.enabled: true`, que l'entrée de modèle active a `streaming.enabled: true`, et que le provider comme le channel prennent en charge le streaming. Si une condition manque, PicoClaw utilise le chemin de requête non-streaming normal.
+
+Pico WebUI est le premier channel entièrement câblé. Pico crée le premier message assistant avec le message wire existant `message.create`, puis met à jour ce même message avec `message.update`; aucun nouveau type de message Pico n'est introduit.
+
+Laissez `streaming` absent si vous ne voulez pas de streaming. Un bloc `streaming` omis signifie désactivé; il n'est pas nécessaire d'écrire `"streaming": {"enabled": false}`.
+
+Exemple d'activation :
+
+```json
+{
+  "model_list": [
+    {
+      "model_name": "gpt-5.4",
+      "provider": "openai",
+      "model": "gpt-5.4",
+      "api_keys": ["sk-your-openai-key"],
+      "streaming": {
+        "enabled": true
+      }
+    }
+  ],
+  "channel_list": {
+    "pico": {
+      "enabled": true,
+      "type": "pico",
+      "settings": {
+        "token": "YOUR_PICO_TOKEN",
+        "streaming": {
+          "enabled": true
+        }
+      }
+    }
+  }
+}
+```
+
+| Champ | Type | Défaut | Description |
+| ----- | ---- | ------ | ----------- |
+| `channel_list.<name>.settings.streaming.enabled` | bool | `false` | Autorise ce channel à afficher la sortie streaming du provider |
+| `channel_list.<name>.settings.streaming.throttle_seconds` | int | Défaut Pico après activation : `0` | Intervalle minimal entre les mises à jour intermédiaires; le contenu final est toujours envoyé |
+| `channel_list.<name>.settings.streaming.min_growth_chars` | int | Défaut Pico après activation : `1` | Croissance minimale du texte avant une mise à jour intermédiaire; le contenu final est toujours envoyé |
+| `model_list[].streaming.enabled` | bool | `false` | Autorise cette entrée de modèle à tenter des requêtes provider en streaming |
+
+Les anciennes variables d'environnement Telegram restent compatibles : `PICOCLAW_CHANNELS_TELEGRAM_STREAMING_ENABLED`, `PICOCLAW_CHANNELS_TELEGRAM_STREAMING_THROTTLE_SECONDS` et `PICOCLAW_CHANNELS_TELEGRAM_STREAMING_MIN_GROWTH_CHARS`. Elles s'appliquent uniquement aux settings Telegram et n'activent ni ne modifient `settings.streaming` de Pico.
+
+Le comportement d'échec est volontairement conservateur : si le streaming échoue avant l'envoi d'un chunk visible, PicoClaw réessaie une fois via le chemin `Chat()` normal. Si un chunk a déjà été affiché à l'utilisateur, PicoClaw n'envoie pas une deuxième réponse non-streaming, afin d'éviter une sortie dupliquée.
 
 ### Architecture des Providers
 

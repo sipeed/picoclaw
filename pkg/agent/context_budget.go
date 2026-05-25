@@ -115,3 +115,55 @@ func isOverContextBudget(
 
 	return total > contextWindow
 }
+
+// trimHistoryToFitContextWindow rebuilds the prompt from progressively newer
+// history slices until it fits within the context window. Oldest complete turns
+// are dropped first so tool-call sequences remain intact.
+func trimHistoryToFitContextWindow(
+	history []providers.Message,
+	build func([]providers.Message) []providers.Message,
+	contextWindow int,
+	toolDefs []providers.ToolDefinition,
+	maxTokens int,
+) ([]providers.Message, []providers.Message, bool) {
+	messages := build(history)
+	if !isOverContextBudget(contextWindow, messages, toolDefs, maxTokens) {
+		return history, messages, true
+	}
+
+	trimmedHistory := append([]providers.Message(nil), history...)
+	for len(trimmedHistory) > 0 {
+		dropUntil := nextHistoryTrimStart(trimmedHistory)
+		if dropUntil <= 0 || dropUntil >= len(trimmedHistory) {
+			trimmedHistory = nil
+		} else {
+			trimmedHistory = append([]providers.Message(nil), trimmedHistory[dropUntil:]...)
+		}
+
+		messages = build(trimmedHistory)
+		if !isOverContextBudget(contextWindow, messages, toolDefs, maxTokens) {
+			return trimmedHistory, messages, true
+		}
+	}
+
+	return nil, messages, false
+}
+
+func nextHistoryTrimStart(history []providers.Message) int {
+	if len(history) == 0 {
+		return 0
+	}
+
+	turns := parseTurnBoundaries(history)
+	if len(turns) >= 2 {
+		return turns[1]
+	}
+	if len(turns) == 1 {
+		if turns[0] > 0 {
+			return turns[0]
+		}
+		return len(history)
+	}
+
+	return len(history)
+}

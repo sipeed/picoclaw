@@ -20,6 +20,9 @@ export interface ModelInfo {
   request_timeout?: number
   thinking_level?: string
   tool_schema_transform?: string
+  streaming?: {
+    enabled?: boolean
+  }
   extra_body?: Record<string, unknown>
   custom_headers?: Record<string, string>
   // Meta
@@ -33,12 +36,20 @@ export interface ModelInfo {
 
 export interface ModelProviderOption {
   id: string
+  display_name?: string
+  icon_slug?: string
+  domain?: string
   default_api_base: string
   empty_api_key_allowed: boolean
   create_allowed: boolean
   default_model_allowed: boolean
+  supports_fetch?: boolean
   default_auth_method?: string
   auth_method_locked?: boolean
+  local?: boolean
+  priority?: number
+  common_models?: string[]
+  aliases?: string[]
 }
 
 interface ModelsListResponse {
@@ -149,12 +160,14 @@ export async function testModelInline(
 export interface UpstreamModel {
   id: string
   owned_by?: string
+  extra?: Record<string, unknown>
 }
 
 export interface FetchModelsRequest {
   provider: string
   api_key?: string
   api_base?: string
+  model_index?: number
 }
 
 export interface FetchModelsResponse {

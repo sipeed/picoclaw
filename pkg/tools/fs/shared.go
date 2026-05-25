@@ -32,6 +32,10 @@ func SilentResult(forLLM string) *ToolResult {
 	return toolshared.SilentResult(forLLM)
 }
 
+func DiffResult(path string, before, after []byte) *ToolResult {
+	return toolshared.DiffResult(path, before, after)
+}
+
 func MediaResult(forLLM string, mediaRefs []string) *ToolResult {
 	return toolshared.MediaResult(forLLM, mediaRefs)
 }

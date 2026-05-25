@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 )
@@ -170,6 +171,42 @@ func addChannelCommonConfig(settings map[string]any, bc *config.Channel) {
 	if bc.Placeholder.Enabled || len(bc.Placeholder.Text) > 0 {
 		settings["placeholder"] = bc.Placeholder
 	}
+	if _, exists := settings["streaming"]; !exists {
+		if streaming, ok := channelStreamingConfig(bc); ok {
+			if !streaming.IsZero() {
+				settings["streaming"] = streaming
+			}
+		}
+	}
+}
+
+func channelStreamingConfig(bc *config.Channel) (config.StreamingConfig, bool) {
+	if bc == nil {
+		return config.StreamingConfig{}, false
+	}
+
+	decoded, err := bc.GetDecoded()
+	if err != nil || decoded == nil {
+		return config.StreamingConfig{}, false
+	}
+
+	value := reflect.ValueOf(decoded)
+	if value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return config.StreamingConfig{}, false
+		}
+		value = value.Elem()
+	}
+	if value.Kind() != reflect.Struct {
+		return config.StreamingConfig{}, false
+	}
+
+	field := value.FieldByName("Streaming")
+	if !field.IsValid() || !field.CanInterface() {
+		return config.StreamingConfig{}, false
+	}
+	streaming, ok := field.Interface().(config.StreamingConfig)
+	return streaming, ok
 }
 
 func detectConfiguredSecrets(settings config.RawNode, channelName string) []string {

@@ -41,6 +41,53 @@ func TestSilentResult(t *testing.T) {
 	}
 }
 
+func TestDiffResult(t *testing.T) {
+	result := DiffResult("pkg/tools/fs/edit.go", []byte("hello world\n"), []byte("hello universe\n"))
+
+	if result.Silent {
+		t.Error("Expected Silent to be false")
+	}
+	if result.IsError {
+		t.Error("Expected IsError to be false")
+	}
+	if result.Async {
+		t.Error("Expected Async to be false")
+	}
+	if result.ForLLM == result.ForUser {
+		t.Fatalf("Expected ForLLM to omit the full diff, got %q", result.ForLLM)
+	}
+	if len(result.ForLLM) >= len(result.ForUser) {
+		t.Fatalf("Expected ForLLM to stay smaller than ForUser, got %d vs %d", len(result.ForLLM), len(result.ForUser))
+	}
+
+	for _, want := range []string{
+		"File edited: pkg/tools/fs/edit.go",
+		"```diff",
+		"--- a/pkg/tools/fs/edit.go",
+		"+++ b/pkg/tools/fs/edit.go",
+		"-hello world",
+		"+hello universe",
+	} {
+		if !strings.Contains(result.ForUser, want) {
+			t.Fatalf("DiffResult output missing %q:\n%s", want, result.ForUser)
+		}
+	}
+}
+
+func TestDiffResult_NormalizesAbsolutePathsAndHandlesNoOpChanges(t *testing.T) {
+	result := DiffResult("/tmp/test.txt", []byte("same\n"), []byte("same\n"))
+
+	if !strings.Contains(result.ForUser, "File edited: /tmp/test.txt") {
+		t.Fatalf("Expected original path in output, got %q", result.ForUser)
+	}
+	if !strings.Contains(result.ForUser, "(no content change)") {
+		t.Fatalf("Expected no-content-change marker, got %q", result.ForUser)
+	}
+	if !strings.Contains(result.ForLLM, "(no content change)") {
+		t.Fatalf("Expected compact no-op summary in ForLLM, got %q", result.ForLLM)
+	}
+}
+
 func TestAsyncResult(t *testing.T) {
 	result := AsyncResult("async task started")
 

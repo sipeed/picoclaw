@@ -9,6 +9,8 @@ import {
   type LauncherForm,
   type MCPServerForm,
   type MCPServerType,
+  type TurnProfileForm,
+  type TurnProfileMode,
 } from "@/components/config/form-model"
 import { Field, SwitchCardField } from "@/components/shared-form"
 import { Button } from "@/components/ui/button"
@@ -66,13 +68,49 @@ function ConfigSectionCard({
 interface AgentDefaultsSectionProps {
   form: CoreConfigForm
   onFieldChange: UpdateCoreField
+  onTurnProfileFieldChange: <K extends keyof TurnProfileForm>(
+    key: K,
+    value: TurnProfileForm[K],
+  ) => void
 }
 
 export function AgentDefaultsSection({
   form,
   onFieldChange,
+  onTurnProfileFieldChange,
 }: AgentDefaultsSectionProps) {
   const { t } = useTranslation()
+  const renderModeSelect = ({
+    value,
+    onValueChange,
+    allowCustom,
+  }: {
+    value: TurnProfileMode
+    onValueChange: (mode: TurnProfileMode) => void
+    allowCustom: boolean
+  }) => (
+    <Select
+      value={value}
+      onValueChange={(next) => onValueChange(next as TurnProfileMode)}
+    >
+      <SelectTrigger className="h-9">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="default">
+          {t("pages.config.turn_profile_mode_default")}
+        </SelectItem>
+        <SelectItem value="off">
+          {t("pages.config.turn_profile_mode_off")}
+        </SelectItem>
+        {allowCustom && (
+          <SelectItem value="custom">
+            {t("pages.config.turn_profile_mode_custom")}
+          </SelectItem>
+        )}
+      </SelectContent>
+    </Select>
+  )
 
   return (
     <ConfigSectionCard title={t("pages.config.sections.agent")}>
@@ -214,6 +252,116 @@ export function AgentDefaultsSection({
             onFieldChange("summarizeTokenPercent", e.target.value)
           }
         />
+      </Field>
+
+      <Field
+        label={t("pages.config.turn_profile")}
+        hint={t("pages.config.turn_profile_hint")}
+        layout="setting-row"
+        controlClassName="md:max-w-[42rem]"
+      >
+        <div className="space-y-3">
+          <SwitchCardField
+            label={t("pages.config.turn_profile_enabled")}
+            hint={t("pages.config.turn_profile_enabled_hint")}
+            checked={form.turnProfile.enabled}
+            onCheckedChange={(checked) =>
+              onTurnProfileFieldChange("enabled", checked)
+            }
+          />
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                {t("pages.config.turn_profile_history")}
+              </label>
+              {renderModeSelect({
+                value: form.turnProfile.historyMode,
+                onValueChange: (mode) =>
+                  onTurnProfileFieldChange(
+                    "historyMode",
+                    mode === "off" ? "off" : "default",
+                  ),
+                allowCustom: false,
+              })}
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                {t("pages.config.turn_profile_history_hint")}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                {t("pages.config.turn_profile_system_prompt")}
+              </label>
+              {renderModeSelect({
+                value: form.turnProfile.systemPromptMode,
+                onValueChange: (mode) =>
+                  onTurnProfileFieldChange(
+                    "systemPromptMode",
+                    mode === "off" ? "off" : "default",
+                  ),
+                allowCustom: false,
+              })}
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                {t("pages.config.turn_profile_system_prompt_hint")}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                {t("pages.config.turn_profile_skills")}
+              </label>
+              {renderModeSelect({
+                value: form.turnProfile.skillsMode,
+                onValueChange: (mode) =>
+                  onTurnProfileFieldChange("skillsMode", mode),
+                allowCustom: true,
+              })}
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                {t("pages.config.turn_profile_skills_hint")}
+              </p>
+              {form.turnProfile.skillsMode === "custom" && (
+                <Textarea
+                  value={form.turnProfile.skillsAllowText}
+                  onChange={(e) =>
+                    onTurnProfileFieldChange("skillsAllowText", e.target.value)
+                  }
+                  placeholder={t(
+                    "pages.config.turn_profile_skills_allow_placeholder",
+                  )}
+                  className="min-h-20 font-mono text-xs"
+                />
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                {t("pages.config.turn_profile_tools")}
+              </label>
+              {renderModeSelect({
+                value: form.turnProfile.toolsMode,
+                onValueChange: (mode) =>
+                  onTurnProfileFieldChange("toolsMode", mode),
+                allowCustom: true,
+              })}
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                {t("pages.config.turn_profile_tools_hint")}
+              </p>
+              {form.turnProfile.toolsMode === "custom" && (
+                <Textarea
+                  value={form.turnProfile.toolsAllowText}
+                  onChange={(e) =>
+                    onTurnProfileFieldChange("toolsAllowText", e.target.value)
+                  }
+                  placeholder={t(
+                    "pages.config.turn_profile_tools_allow_placeholder",
+                  )}
+                  className="min-h-20 font-mono text-xs"
+                />
+              )}
+            </div>
+          </div>
+        </div>
       </Field>
     </ConfigSectionCard>
   )

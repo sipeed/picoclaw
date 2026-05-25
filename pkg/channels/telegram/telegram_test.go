@@ -762,6 +762,120 @@ func TestBeginStream_UpdateUsesForumThreadID(t *testing.T) {
 	assert.Equal(t, "partial", params.Text)
 }
 
+func TestBeginStream_UsesDefaultThrottleWhenOnlyEnabled(t *testing.T) {
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			return &ta.Response{Ok: true, Result: []byte("true")}, nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+	ch.tgCfg.Streaming = config.StreamingConfig{Enabled: true}
+
+	streamer, err := ch.BeginStream(context.Background(), "12345")
+	require.NoError(t, err)
+	require.NoError(t, streamer.Update(context.Background(), "partial"))
+	require.NoError(t, streamer.Update(context.Background(), "partial plus one"))
+
+	require.Len(t, caller.calls, 1, "second small update should be throttled by defaults")
+}
+
+func TestBeginStream_UpdateReturnsErrorWhenDraftFails(t *testing.T) {
+	callCount := 0
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			callCount++
+			if callCount == 1 {
+				return nil, errors.New("draft unsupported")
+			}
+			return &ta.Response{Ok: true, Result: []byte("true")}, nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+	ch.tgCfg.Streaming = config.StreamingConfig{Enabled: true}
+
+	streamer, err := ch.BeginStream(context.Background(), "12345")
+	require.NoError(t, err)
+
+	err = streamer.Update(context.Background(), "partial")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "draft unsupported")
+
+	streamer.Cancel(context.Background())
+	require.Len(t, caller.calls, 2)
+	assert.Contains(t, caller.calls[1].URL, "sendMessageDraft")
+
+	var params struct {
+		ChatID  int64  `json:"chat_id"`
+		DraftID int    `json:"draft_id"`
+		Text    string `json:"text"`
+	}
+	require.NoError(t, json.Unmarshal(caller.calls[1].Data.BodyRaw, &params))
+	assert.Equal(t, int64(12345), params.ChatID)
+	assert.NotZero(t, params.DraftID)
+	assert.Equal(t, " ", params.Text)
+}
+
+func TestBeginStream_CancelClearsExistingDraft(t *testing.T) {
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			return &ta.Response{Ok: true, Result: []byte("true")}, nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+	ch.tgCfg.Streaming = config.StreamingConfig{Enabled: true}
+
+	streamer, err := ch.BeginStream(context.Background(), "12345")
+	require.NoError(t, err)
+	require.NoError(t, streamer.Update(context.Background(), "partial"))
+	streamer.Cancel(context.Background())
+
+	require.Len(t, caller.calls, 2)
+	assert.Contains(t, caller.calls[1].URL, "sendMessageDraft")
+
+	var params struct {
+		ChatID  int64  `json:"chat_id"`
+		DraftID int    `json:"draft_id"`
+		Text    string `json:"text"`
+	}
+	require.NoError(t, json.Unmarshal(caller.calls[1].Data.BodyRaw, &params))
+	assert.Equal(t, int64(12345), params.ChatID)
+	assert.NotZero(t, params.DraftID)
+	assert.Equal(t, " ", params.Text)
+}
+
+func TestBeginStream_FinalizeClearsExistingDraft(t *testing.T) {
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			if strings.Contains(url, "sendMessage") && !strings.Contains(url, "sendMessageDraft") {
+				return successResponse(t), nil
+			}
+			return &ta.Response{Ok: true, Result: []byte("true")}, nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+	ch.tgCfg.Streaming = config.StreamingConfig{Enabled: true}
+
+	streamer, err := ch.BeginStream(context.Background(), "12345")
+	require.NoError(t, err)
+	require.NoError(t, streamer.Update(context.Background(), "partial"))
+	require.NoError(t, streamer.Finalize(context.Background(), "final"))
+
+	require.Len(t, caller.calls, 3)
+	assert.Contains(t, caller.calls[0].URL, "sendMessageDraft")
+	assert.Contains(t, caller.calls[1].URL, "sendMessage")
+	assert.Contains(t, caller.calls[2].URL, "sendMessageDraft")
+
+	var params struct {
+		ChatID  int64  `json:"chat_id"`
+		DraftID int    `json:"draft_id"`
+		Text    string `json:"text"`
+	}
+	require.NoError(t, json.Unmarshal(caller.calls[2].Data.BodyRaw, &params))
+	assert.Equal(t, int64(12345), params.ChatID)
+	assert.NotZero(t, params.DraftID)
+	assert.Equal(t, " ", params.Text)
+}
+
 func TestBeginStream_FinalizeUsesForumThreadID(t *testing.T) {
 	caller := &stubCaller{
 		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {

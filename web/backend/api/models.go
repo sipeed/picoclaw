@@ -1,13 +1,16 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/audio/asr"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -18,10 +21,15 @@ import (
 // registerModelRoutes binds model list management endpoints to the ServeMux.
 func (h *Handler) registerModelRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/models", h.handleListModels)
+	mux.HandleFunc("POST /api/models/fetch", h.handleFetchModels)
+	mux.HandleFunc("GET /api/models/catalog", h.handleListCatalogs)
+	mux.HandleFunc("DELETE /api/models/catalog/{id}", h.handleDeleteCatalog)
 	mux.HandleFunc("POST /api/models", h.handleAddModel)
 	mux.HandleFunc("POST /api/models/default", h.handleSetDefaultModel)
 	mux.HandleFunc("PUT /api/models/{index}", h.handleUpdateModel)
 	mux.HandleFunc("DELETE /api/models/{index}", h.handleDeleteModel)
+	mux.HandleFunc("POST /api/models/{index}/test", h.handleTestModel)
+	mux.HandleFunc("POST /api/models/test-inline", h.handleTestInlineModel)
 }
 
 // modelResponse is the JSON structure returned for each model in the list.
@@ -36,15 +44,16 @@ type modelResponse struct {
 	Proxy      string `json:"proxy,omitempty"`
 	AuthMethod string `json:"auth_method,omitempty"`
 	// Advanced fields
-	ConnectMode         string            `json:"connect_mode,omitempty"`
-	Workspace           string            `json:"workspace,omitempty"`
-	RPM                 int               `json:"rpm,omitempty"`
-	MaxTokensField      string            `json:"max_tokens_field,omitempty"`
-	RequestTimeout      int               `json:"request_timeout,omitempty"`
-	ThinkingLevel       string            `json:"thinking_level,omitempty"`
-	ToolSchemaTransform string            `json:"tool_schema_transform,omitempty"`
-	ExtraBody           map[string]any    `json:"extra_body,omitempty"`
-	CustomHeaders       map[string]string `json:"custom_headers,omitempty"`
+	ConnectMode         string                      `json:"connect_mode,omitempty"`
+	Workspace           string                      `json:"workspace,omitempty"`
+	RPM                 int                         `json:"rpm,omitempty"`
+	MaxTokensField      string                      `json:"max_tokens_field,omitempty"`
+	RequestTimeout      int                         `json:"request_timeout,omitempty"`
+	ThinkingLevel       string                      `json:"thinking_level,omitempty"`
+	ToolSchemaTransform string                      `json:"tool_schema_transform,omitempty"`
+	Streaming           config.ModelStreamingConfig `json:"streaming,omitempty"`
+	ExtraBody           map[string]any              `json:"extra_body,omitempty"`
+	CustomHeaders       map[string]string           `json:"custom_headers,omitempty"`
 	// Meta
 	Enabled             bool   `json:"enabled"`
 	Available           bool   `json:"available"`
@@ -272,6 +281,7 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 			RequestTimeout:      m.RequestTimeout,
 			ThinkingLevel:       m.ThinkingLevel,
 			ToolSchemaTransform: m.ToolSchemaTransform,
+			Streaming:           m.Streaming,
 			ExtraBody:           m.ExtraBody,
 			CustomHeaders:       m.CustomHeaders,
 			Enabled:             m.Enabled,
@@ -419,6 +429,9 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, ok := rawFields["tool_schema_transform"]; !ok {
 		mc.ToolSchemaTransform = cfg.ModelList[idx].ToolSchemaTransform
+	}
+	if _, ok := rawFields["streaming"]; !ok {
+		mc.Streaming = cfg.ModelList[idx].Streaming
 	}
 	// Preserve the existing Provider when the caller omits it. This keeps the
 	// update API backward-compatible for clients that haven't started sending
@@ -613,4 +626,424 @@ func maskAPIKey(key string) string {
 
 	// Show first 3 chars and last 4 chars
 	return key[:3] + "****" + key[len(key)-4:]
+}
+
+// handleFetchModels fetches available models from an upstream provider.
+//
+//	POST /api/models/fetch
+func (h *Handler) handleFetchModels(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		Provider   string `json:"provider"`
+		APIKey     string `json:"api_key"`
+		APIBase    string `json:"api_base"`
+		ModelIndex *int   `json:"model_index,omitempty"`
+	}
+	if err = json.Unmarshal(body, &req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if req.Provider == "" {
+		http.Error(w, "provider is required", http.StatusBadRequest)
+		return
+	}
+
+	if !providers.IsModelProviderFetchable(req.Provider) {
+		http.Error(w, fmt.Sprintf("provider %q does not support model listing", req.Provider), http.StatusBadRequest)
+		return
+	}
+
+	apiKey := strings.TrimSpace(req.APIKey)
+	apiBase := strings.TrimSpace(req.APIBase)
+
+	if apiKey == "" && req.ModelIndex != nil {
+		if stored := h.lookupStoredAPIKey(*req.ModelIndex, req.Provider, apiBase); stored != "" {
+			apiKey = stored
+		}
+	}
+
+	if apiBase == "" {
+		apiBase = providers.DefaultAPIBaseForProtocol(req.Provider)
+	}
+	if apiBase == "" {
+		http.Error(w, fmt.Sprintf("No default API base for provider %q", req.Provider), http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	models, err := fetchUpstreamModels(ctx, req.Provider, apiBase, apiKey)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to fetch models: %v", err), http.StatusBadGateway)
+		return
+	}
+
+	// Auto-save fetched models to catalog
+	catalogModels := make([]CatalogModel, len(models))
+	for i, m := range models {
+		catalogModels[i] = CatalogModel{ID: m.ID, OwnedBy: m.OwnedBy}
+	}
+	if saveErr := SaveCatalog(req.Provider, apiBase, apiKey, catalogModels); saveErr != nil {
+		// Log but don't fail the request — saving catalog is non-critical
+		logger.Warnf("Failed to save model catalog: %v", saveErr)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"models": models,
+		"total":  len(models),
+	})
+}
+
+func (h *Handler) lookupStoredAPIKey(index int, reqProvider, reqAPIBase string) string {
+	cfg, err := config.LoadConfig(h.configPath)
+	if err != nil || index < 0 || index >= len(cfg.ModelList) {
+		return ""
+	}
+	stored := cfg.ModelList[index]
+	storedProvider, _ := providers.ExtractProtocol(stored)
+	if providers.NormalizeProvider(reqProvider) != providers.NormalizeProvider(storedProvider) {
+		return ""
+	}
+	effectiveReqBase := strings.TrimSpace(reqAPIBase)
+	if effectiveReqBase == "" {
+		effectiveReqBase = providers.DefaultAPIBaseForProtocol(reqProvider)
+	}
+	effectiveStoredBase := strings.TrimSpace(stored.APIBase)
+	if effectiveStoredBase == "" {
+		effectiveStoredBase = providers.DefaultAPIBaseForProtocol(storedProvider)
+	}
+	if normalizeAPIBaseForCompare(effectiveReqBase) != normalizeAPIBaseForCompare(effectiveStoredBase) {
+		return ""
+	}
+	return stored.APIKey()
+}
+
+type upstreamModel struct {
+	ID      string `json:"id"`
+	OwnedBy string `json:"owned_by,omitempty"`
+}
+
+func fetchUpstreamModels(ctx context.Context, provider, apiBase, apiKey string) ([]upstreamModel, error) {
+	apiBase = strings.TrimRight(strings.TrimSpace(apiBase), "/")
+
+	var fetchURL string
+	switch strings.ToLower(provider) {
+	case "ollama":
+		// Strip /v1 suffix if present to get the Ollama root
+		root := apiBase
+		if strings.HasSuffix(root, "/v1") {
+			root = root[:len(root)-3]
+		}
+		root = strings.TrimRight(root, "/")
+		fetchURL = root + "/api/tags"
+		return fetchOllamaModels(ctx, fetchURL)
+	default:
+		// OpenAI-compatible: /v1/models
+		fetchURL = apiBase + "/models"
+		return fetchOpenAICompatibleModels(ctx, fetchURL, apiKey)
+	}
+}
+
+func fetchOpenAICompatibleModels(ctx context.Context, fetchURL, apiKey string) ([]upstreamModel, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	if apiKey = strings.TrimSpace(apiKey); apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("upstream returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	type modelItem struct {
+		ID      string `json:"id"`
+		OwnedBy string `json:"owned_by"`
+	}
+
+	// {"data": [...]} envelope. Distinguish "envelope shape with empty list"
+	// from "object without a data key" via Data being non-nil after unmarshal:
+	// json.Unmarshal sets Data to []modelItem{} for `{"data":[]}` but leaves
+	// it as nil when "data" is absent or null.
+	var envelope struct {
+		Data []modelItem `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err == nil && envelope.Data != nil {
+		models := make([]upstreamModel, 0, len(envelope.Data))
+		for _, m := range envelope.Data {
+			if m.ID != "" {
+				models = append(models, upstreamModel{ID: m.ID, OwnedBy: m.OwnedBy})
+			}
+		}
+		return models, nil
+	}
+
+	// Bare-array shape, including `[]`.
+	var arr []modelItem
+	if err := json.Unmarshal(body, &arr); err == nil {
+		models := make([]upstreamModel, 0, len(arr))
+		for _, m := range arr {
+			if m.ID != "" {
+				models = append(models, upstreamModel{ID: m.ID, OwnedBy: m.OwnedBy})
+			}
+		}
+		return models, nil
+	}
+
+	preview := body
+	if len(preview) > 256 {
+		preview = preview[:256]
+	}
+	return nil, fmt.Errorf("decode response: unrecognized shape: %s", strings.TrimSpace(string(preview)))
+}
+
+func fetchOllamaModels(ctx context.Context, fetchURL string) ([]upstreamModel, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ollama returned status %d", resp.StatusCode)
+	}
+
+	var parsed struct {
+		Models []struct {
+			Name  string `json:"name"`
+			Model string `json:"model"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return nil, err
+	}
+
+	models := make([]upstreamModel, 0, len(parsed.Models))
+	for _, m := range parsed.Models {
+		id := m.Name
+		if id == "" {
+			id = m.Model
+		}
+		if id != "" {
+			models = append(models, upstreamModel{ID: id})
+		}
+	}
+	return models, nil
+}
+
+// normalizeAPIBaseForCompare normalizes an API base URL for equality comparison
+// by trimming trailing slashes and lowering the scheme/host.
+func normalizeAPIBaseForCompare(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	raw = strings.TrimRight(raw, "/")
+	u, err := url.Parse(raw)
+	if err != nil {
+		return strings.ToLower(raw)
+	}
+	if u.Host == "" {
+		u, err = url.Parse("//" + raw)
+		if err != nil {
+			return strings.ToLower(raw)
+		}
+	}
+	return strings.ToLower(u.Scheme) + "://" + strings.ToLower(u.Host) + strings.TrimRight(u.Path, "/")
+}
+
+// handleTestModel tests connectivity to a model endpoint.
+//
+//	POST /api/models/{index}/test
+func (h *Handler) handleTestModel(w http.ResponseWriter, r *http.Request) {
+	idx, err := strconv.Atoi(r.PathValue("index"))
+	if err != nil {
+		http.Error(w, "Invalid index", http.StatusBadRequest)
+		return
+	}
+
+	cfg, err := config.LoadConfig(h.configPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if idx < 0 || idx >= len(cfg.ModelList) {
+		http.Error(w, fmt.Sprintf("Index %d out of range (0-%d)", idx, len(cfg.ModelList)-1), http.StatusNotFound)
+		return
+	}
+
+	m := cfg.ModelList[idx]
+	start := time.Now()
+	summary := modelConfigurationStatus(m)
+	latency := time.Since(start).Milliseconds()
+
+	result := map[string]any{
+		"success":    summary.Available,
+		"latency_ms": latency,
+		"status":     summary.Status,
+	}
+
+	if !summary.Available {
+		if summary.Status == modelStatusUnconfigured {
+			result["error"] = "API key not configured"
+		} else {
+			result["error"] = "Endpoint unreachable"
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// handleTestInlineModel tests connectivity using inline (unsaved) parameters.
+// Unlike handleTestModel which only checks saved config, this endpoint performs
+// a real network probe (e.g. GET /models) to verify the endpoint is reachable.
+//
+//	POST /api/models/test-inline
+func (h *Handler) handleTestInlineModel(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Provider   string `json:"provider"`
+		Model      string `json:"model"`
+		APIBase    string `json:"api_base"`
+		APIKey     string `json:"api_key"`
+		AuthMethod string `json:"auth_method"`
+		ModelIndex *int   `json:"model_index"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	m := &config.ModelConfig{
+		Provider:   strings.TrimSpace(req.Provider),
+		Model:      strings.TrimSpace(req.Model),
+		APIBase:    strings.TrimSpace(req.APIBase),
+		AuthMethod: strings.TrimSpace(req.AuthMethod),
+	}
+	if req.APIKey != "" {
+		m.SetAPIKey(req.APIKey)
+	}
+
+	// When api_key is empty and model_index is provided, fall back to stored credentials.
+	// This lets the edit form test unsaved field changes while using the saved key.
+	// Only reuse the stored key when the provider and effective API base match
+	// the saved model, to prevent attaching a credential to a different endpoint.
+	if req.APIKey == "" && req.ModelIndex != nil {
+		cfg, err := config.LoadConfig(h.configPath)
+		if err == nil && *req.ModelIndex >= 0 && *req.ModelIndex < len(cfg.ModelList) {
+			stored := cfg.ModelList[*req.ModelIndex]
+			storedProvider, _ := providers.ExtractProtocol(stored)
+			reqProvider := providers.NormalizeProvider(m.Provider)
+			providerMatch := reqProvider == "" || reqProvider == providers.NormalizeProvider(storedProvider)
+
+			effectiveReqBase := strings.TrimSpace(m.APIBase)
+			if effectiveReqBase == "" {
+				effectiveReqBase = providers.DefaultAPIBaseForProtocol(reqProvider)
+			}
+			effectiveStoredBase := strings.TrimSpace(stored.APIBase)
+			if effectiveStoredBase == "" {
+				effectiveStoredBase = providers.DefaultAPIBaseForProtocol(storedProvider)
+			}
+			baseMatch := normalizeAPIBaseForCompare(effectiveReqBase) == normalizeAPIBaseForCompare(effectiveStoredBase)
+
+			if providerMatch && baseMatch {
+				if stored.APIKey() != "" {
+					m.SetAPIKey(stored.APIKey())
+				}
+				if m.APIBase == "" && stored.APIBase != "" {
+					m.APIBase = stored.APIBase
+				}
+			}
+		}
+	}
+
+	// Check if configuration exists
+	if !hasModelConfiguration(m) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"success":    false,
+			"latency_ms": 0,
+			"status":     modelStatusUnconfigured,
+			"error":      "API key not configured",
+		})
+		return
+	}
+
+	// Perform a real network probe
+	start := time.Now()
+	available := probeModelConnectivity(m)
+	latency := time.Since(start).Milliseconds()
+
+	result := map[string]any{
+		"success":    available,
+		"latency_ms": latency,
+	}
+	if available {
+		result["status"] = modelStatusAvailable
+	} else {
+		result["status"] = modelStatusUnreachable
+		result["error"] = "Endpoint unreachable"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// probeModelConnectivity performs a real network probe to verify model endpoint reachability.
+func probeModelConnectivity(m *config.ModelConfig) bool {
+	apiBase := modelProbeAPIBase(m)
+	protocol, modelID := splitModel(m)
+
+	switch protocol {
+	case "ollama":
+		return probeOllamaModel(apiBase, modelID)
+	case "vllm", "lmstudio", "gpt4free":
+		return probeOpenAICompatibleModel(apiBase, modelID, m.APIKey())
+	case "github-copilot":
+		return probeTCPService(apiBase)
+	case "claude-cli":
+		return probeCommandAvailable("claude")
+	case "codex-cli":
+		return probeCommandAvailable("codex")
+	default:
+		// For remote providers (OpenAI, Anthropic, Gemini, DeepSeek, etc.),
+		// make a real GET /models request to verify connectivity and credentials.
+		if apiBase != "" {
+			return probeOpenAICompatibleModel(apiBase, modelID, m.APIKey())
+		}
+		return false
+	}
 }

@@ -43,13 +43,12 @@ export async function loadSessionMessages(
   sessionId: string,
 ): Promise<ChatMessage[]> {
   const detail = await getSessionHistory(sessionId)
-  const fallbackTime = detail.updated
-
   return detail.messages.map((message, index) => ({
     id: `hist-${index}-${Date.now()}`,
     role: message.role,
     content: message.content,
     kind: message.role === "assistant" ? (message.kind ?? "normal") : undefined,
+    modelName: message.model_name,
     toolCalls:
       message.role === "assistant"
         ? parseToolCallsValue(message.tool_calls)
@@ -58,7 +57,7 @@ export async function loadSessionMessages(
       media: message.media,
       attachments: message.attachments,
     }),
-    timestamp: fallbackTime,
+    timestamp: message.created_at ?? detail.updated,
   }))
 }
 
@@ -86,7 +85,7 @@ function messageSignature(message: ChatMessage): string {
 
   return `${message.role}\u0000${message.content}\u0000${normalizeMessageTimestamp(
     message.timestamp,
-  )}\u0000${message.kind ?? ""}\u0000${attachmentSignature}\u0000${toolCallsSignature(
+  )}\u0000${message.kind ?? ""}\u0000${message.modelName ?? ""}\u0000${attachmentSignature}\u0000${toolCallsSignature(
     message.toolCalls,
   )}`
 }

@@ -74,7 +74,7 @@ func newAddCommand() *cobra.Command {
 	flags.StringArrayP("env", "e", nil, "Environment variable in KEY=value format (repeatable, saved to config)")
 	flags.String("env-file", "", "Path to an env file for stdio servers (recommended for secrets)")
 	flags.StringArrayP("header", "H", nil, "HTTP header in 'Name: Value' or 'Name=Value' format (repeatable)")
-	flags.StringP("transport", "t", "stdio", "Transport type: stdio, http, or sse")
+	flags.StringP("transport", "t", "stdio", "Transport type: stdio, http / streamable-http, or sse")
 	flags.BoolP("force", "f", false, "Overwrite an existing server without prompting")
 	flags.Bool("deferred", false, "Mark server as deferred (tools hidden until explicitly activated)")
 	flags.Bool("no-deferred", false, "Mark server as non-deferred (tools always active)")
@@ -173,7 +173,7 @@ func parseAddArgs(args []string) (addOptions, string, string, []string, bool, er
 }
 
 func buildServerConfig(target string, args []string, opts addOptions) (config.MCPServerConfig, error) {
-	transport := strings.ToLower(strings.TrimSpace(opts.Transport))
+	transport := config.NormalizeMCPTransportType(opts.Transport)
 	if transport == "" {
 		transport = "stdio"
 	}

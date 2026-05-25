@@ -164,6 +164,9 @@ func (c *WeComChannel) Stop(_ context.Context) error {
 }
 
 func (c *WeComChannel) BeginStream(_ context.Context, chatID string) (channels.Streamer, error) {
+	if c == nil || c.config == nil || !c.config.Streaming.Enabled {
+		return nil, fmt.Errorf("streaming disabled in config")
+	}
 	if !c.IsRunning() {
 		return nil, channels.ErrNotRunning
 	}

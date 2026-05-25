@@ -1,5 +1,7 @@
 package protocoltypes
 
+import "time"
+
 type ToolCall struct {
 	ID               string         `json:"id"`
 	Type             string         `json:"type,omitempty"`
@@ -33,6 +35,11 @@ type LLMResponse struct {
 	Usage            *UsageInfo        `json:"usage,omitempty"`
 	Reasoning        string            `json:"reasoning"`
 	ReasoningDetails []ReasoningDetail `json:"reasoning_details"`
+}
+
+type StreamChunk struct {
+	Content          string
+	ReasoningContent string
 }
 
 type ReasoningDetail struct {
@@ -81,6 +88,8 @@ type Attachment struct {
 type Message struct {
 	Role             string         `json:"role"`
 	Content          string         `json:"content"`
+	ModelName        string         `json:"model_name,omitempty"`
+	CreatedAt        *time.Time     `json:"created_at,omitempty"`
 	Media            []string       `json:"media,omitempty"`
 	Attachments      []Attachment   `json:"attachments,omitempty"`
 	ReasoningContent string         `json:"reasoning_content,omitempty"`

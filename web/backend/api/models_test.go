@@ -3,8 +3,11 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -761,6 +764,51 @@ func TestHandleAddModel_PersistsProvider(t *testing.T) {
 	}
 }
 
+func TestHandleListModels_ReturnsStreamingConfig(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "streaming-model",
+		Provider:  "openai",
+		Model:     "gpt-4o-mini",
+		APIKeys:   config.SimpleSecureStrings("sk-existing"),
+		Streaming: config.ModelStreamingConfig{Enabled: true},
+	}}
+	if err = config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/models", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Models []modelResponse `json:"models"`
+	}
+	if err = json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
+	}
+	if !resp.Models[0].Streaming.Enabled {
+		t.Fatal("streaming.enabled = false, want true")
+	}
+}
+
 func TestHandleAddModel_RejectsUnsupportedProvider(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
@@ -1210,6 +1258,71 @@ func TestHandleUpdateModel_ToolSchemaTransformPreserveAndClear(t *testing.T) {
 	}
 	if afterClear.ModelList[0].ToolSchemaTransform != "" {
 		t.Fatalf("tool_schema_transform = %q, want empty", afterClear.ModelList[0].ToolSchemaTransform)
+	}
+}
+
+func TestHandleUpdateModel_StreamingPreserveAndChange(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "editable",
+		Provider:  "openai",
+		Model:     "gpt-4o-mini",
+		APIKeys:   config.SimpleSecureStrings("sk-existing"),
+		Streaming: config.ModelStreamingConfig{Enabled: true},
+	}}
+	if err = config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	recPreserve := httptest.NewRecorder()
+	reqPreserve := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"editable",
+		"provider":"openai",
+		"model":"gpt-4o-mini"
+	}`))
+	reqPreserve.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recPreserve, reqPreserve)
+	if recPreserve.Code != http.StatusOK {
+		t.Fatalf("preserve status = %d, want %d, body=%s", recPreserve.Code, http.StatusOK, recPreserve.Body.String())
+	}
+
+	afterPreserve, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() after preserve error = %v", err)
+	}
+	if !afterPreserve.ModelList[0].Streaming.Enabled {
+		t.Fatal("preserved streaming.enabled = false, want true")
+	}
+
+	recChange := httptest.NewRecorder()
+	reqChange := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"editable",
+		"provider":"openai",
+		"model":"gpt-4o-mini",
+		"streaming":{"enabled":false}
+	}`))
+	reqChange.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recChange, reqChange)
+	if recChange.Code != http.StatusOK {
+		t.Fatalf("change status = %d, want %d, body=%s", recChange.Code, http.StatusOK, recChange.Body.String())
+	}
+
+	afterChange, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() after change error = %v", err)
+	}
+	if afterChange.ModelList[0].Streaming.Enabled {
+		t.Fatal("streaming.enabled = true, want false after explicit update")
 	}
 }
 
@@ -1789,6 +1902,12 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 		t.Fatal("openai provider option missing")
 	} else if option.DefaultAPIBase != "https://api.openai.com/v1" {
 		t.Fatalf("openai default_api_base = %q, want %q", option.DefaultAPIBase, "https://api.openai.com/v1")
+	} else if !option.SupportsFetch {
+		t.Fatal("openai provider option should report supports_fetch")
+	} else if option.DisplayName != "OpenAI" {
+		t.Fatalf("openai display_name = %q, want %q", option.DisplayName, "OpenAI")
+	} else if len(option.CommonModels) == 0 {
+		t.Fatal("openai common_models should not be empty")
 	}
 	if option, ok := optionsByID["anthropic"]; !ok {
 		t.Fatal("anthropic provider option missing")
@@ -1802,6 +1921,8 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 		t.Fatal("github-copilot provider option missing")
 	} else if option.DefaultAPIBase != "localhost:4321" {
 		t.Fatalf("github-copilot default_api_base = %q, want %q", option.DefaultAPIBase, "localhost:4321")
+	} else if !option.Local {
+		t.Fatal("github-copilot should be marked local")
 	}
 	if option, ok := optionsByID["elevenlabs"]; !ok {
 		t.Fatal("elevenlabs provider option missing")
@@ -1818,6 +1939,28 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 	} else if !option.EmptyAPIKeyAllowed {
 		t.Fatal("lmstudio should allow empty api keys")
 	}
+	if option, ok := optionsByID["gpt4free"]; !ok {
+		t.Fatal("gpt4free provider option missing")
+	} else {
+		if option.DefaultAPIBase != "http://localhost:1337/v1" {
+			t.Fatalf("gpt4free default_api_base = %q, want %q", option.DefaultAPIBase, "http://localhost:1337/v1")
+		}
+		if !option.EmptyAPIKeyAllowed {
+			t.Fatal("gpt4free should allow empty api keys")
+		}
+		if !option.SupportsFetch {
+			t.Fatal("gpt4free provider option should report supports_fetch")
+		}
+	}
+	if option, ok := optionsByID["siliconflow"]; !ok {
+		t.Fatal("siliconflow provider option missing")
+	} else if option.DefaultAPIBase != "https://api.siliconflow.cn/v1" {
+		t.Fatalf(
+			"siliconflow default_api_base = %q, want %q",
+			option.DefaultAPIBase,
+			"https://api.siliconflow.cn/v1",
+		)
+	}
 	if option, ok := optionsByID["bedrock"]; !ok {
 		t.Fatal("bedrock provider option missing")
 	} else if !option.CreateAllowed {
@@ -1832,6 +1975,11 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 		if !option.AuthMethodLocked {
 			t.Fatal("antigravity auth method should be locked")
 		}
+	}
+	if option, ok := optionsByID["qwen-portal"]; !ok {
+		t.Fatal("qwen-portal provider option missing")
+	} else if len(option.Aliases) == 0 || option.Aliases[0] != "qwen" {
+		t.Fatalf("qwen-portal aliases = %#v, want to include qwen", option.Aliases)
 	}
 
 	updated, err := config.LoadConfig(configPath)
@@ -2218,4 +2366,331 @@ func TestMaskAPIKey(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFetchOpenAICompatibleModels_ResponseShapes(t *testing.T) {
+	tests := []struct {
+		name      string
+		response  string
+		apiKey    string
+		wantLen   int
+		wantFirst struct {
+			id, ownedBy string
+		}
+		wantSecond struct {
+			id, ownedBy string
+		}
+	}{
+		{
+			name:     "envelope shape",
+			response: `{"data":[{"id":"gpt-4o","owned_by":"openai"},{"id":"gpt-4o-mini","owned_by":"openai"}]}`,
+			apiKey:   "test-key",
+			wantLen:  2,
+			wantFirst: struct {
+				id, ownedBy string
+			}{id: "gpt-4o", ownedBy: "openai"},
+			wantSecond: struct {
+				id, ownedBy string
+			}{id: "gpt-4o-mini", ownedBy: "openai"},
+		},
+		{
+			name:     "bare array shape",
+			response: `[{"id":"qwen-max","owned_by":"qwen"},{"id":"qwen-plus","owned_by":"qwen"}]`,
+			apiKey:   "",
+			wantLen:  2,
+			wantFirst: struct {
+				id, ownedBy string
+			}{id: "qwen-max", ownedBy: "qwen"},
+			wantSecond: struct {
+				id, ownedBy string
+			}{id: "qwen-plus", ownedBy: "qwen"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, tt.response)
+			}))
+			defer srv.Close()
+
+			models, err := fetchOpenAICompatibleModels(t.Context(), srv.URL+"/models", tt.apiKey)
+			if err != nil {
+				t.Fatalf("error = %v", err)
+			}
+			if len(models) != tt.wantLen {
+				t.Fatalf("len(models) = %d, want %d", len(models), tt.wantLen)
+			}
+			if models[0].ID != tt.wantFirst.id || models[0].OwnedBy != tt.wantFirst.ownedBy {
+				t.Fatalf("models[0] = %+v, want {ID:%s OwnedBy:%s}", models[0], tt.wantFirst.id, tt.wantFirst.ownedBy)
+			}
+			if models[1].ID != tt.wantSecond.id || models[1].OwnedBy != tt.wantSecond.ownedBy {
+				t.Fatalf("models[1] = %+v, want {ID:%s OwnedBy:%s}", models[1], tt.wantSecond.id, tt.wantSecond.ownedBy)
+			}
+		})
+	}
+}
+
+func TestFetchOpenAICompatibleModels_EmptyEnvelopeReturnsEmptySlice(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[]}`)
+	}))
+	defer srv.Close()
+
+	models, err := fetchOpenAICompatibleModels(t.Context(), srv.URL+"/models", "k")
+	if err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	if len(models) != 0 {
+		t.Fatalf("len(models) = %d, want 0", len(models))
+	}
+}
+
+func TestFetchOpenAICompatibleModels_EmptyBareArrayReturnsEmptySlice(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `[]`)
+	}))
+	defer srv.Close()
+
+	models, err := fetchOpenAICompatibleModels(t.Context(), srv.URL+"/models", "k")
+	if err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	if len(models) != 0 {
+		t.Fatalf("len(models) = %d, want 0", len(models))
+	}
+}
+
+func TestFetchOpenAICompatibleModels_UnrecognizedShape(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"models":[],"error":"unsupported"}`)
+	}))
+	defer srv.Close()
+
+	_, err := fetchOpenAICompatibleModels(t.Context(), srv.URL+"/models", "k")
+	if err == nil {
+		t.Fatal("error = nil, want unrecognized shape error")
+	}
+	if !strings.Contains(err.Error(), "unrecognized shape") {
+		t.Fatalf("error = %q, want it to contain 'unrecognized shape'", err.Error())
+	}
+}
+
+func TestFetchOpenAICompatibleModels_FiltersEmptyIDs(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[`+
+			`{"id":"gpt-4o","owned_by":"openai"},`+
+			`{"id":"","owned_by":"openai"},`+
+			`{"id":"gpt-4o-mini"}]}`)
+	}))
+	defer srv.Close()
+
+	models, err := fetchOpenAICompatibleModels(t.Context(), srv.URL+"/models", "k")
+	if err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("len(models) = %d, want 2 (empty IDs should be filtered)", len(models))
+	}
+	if models[0].ID != "gpt-4o" {
+		t.Fatalf("models[0].ID = %q, want %q", models[0].ID, "gpt-4o")
+	}
+	if models[1].ID != "gpt-4o-mini" {
+		t.Fatalf("models[1].ID = %q, want %q", models[1].ID, "gpt-4o-mini")
+	}
+}
+
+func TestFetchOpenAICompatibleModels_SetsAuthorizationHeader(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[{"id":"m1"}]}`)
+	}))
+	defer srv.Close()
+
+	if _, err := fetchOpenAICompatibleModels(t.Context(), srv.URL+"/models", "my-secret-key"); err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	if gotAuth != "Bearer my-secret-key" {
+		t.Fatalf("Authorization = %q, want %q", gotAuth, "Bearer my-secret-key")
+	}
+}
+
+func TestFetchOpenAICompatibleModels_NoAuthHeaderWhenKeyEmpty(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `[{"id":"m1"}]`)
+	}))
+	defer srv.Close()
+
+	if _, err := fetchOpenAICompatibleModels(t.Context(), srv.URL+"/models", ""); err != nil {
+		t.Fatalf("error = %v", err)
+	}
+	if gotAuth != "" {
+		t.Fatalf("Authorization = %q, want empty", gotAuth)
+	}
+}
+
+func TestHandleFetchModels_SiliconFlowUsesOpenAICompatibleEndpoint(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	var gotPath string
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[{"id":"deepseek-ai/DeepSeek-V3","owned_by":"siliconflow"}]}`)
+	}))
+	defer srv.Close()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models/fetch", bytes.NewBufferString(fmt.Sprintf(`{
+		"provider":"siliconflow",
+		"api_key":"sk-siliconflow",
+		"api_base":"%s"
+	}`, srv.URL)))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	if gotPath != "/models" {
+		t.Fatalf("path = %q, want %q", gotPath, "/models")
+	}
+	if gotAuth != "Bearer sk-siliconflow" {
+		t.Fatalf("Authorization = %q, want %q", gotAuth, "Bearer sk-siliconflow")
+	}
+
+	var resp struct {
+		Models []upstreamModel `json:"models"`
+		Total  int             `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if resp.Total != 1 || len(resp.Models) != 1 {
+		t.Fatalf("response = %+v, want one fetched model", resp)
+	}
+	if resp.Models[0].ID != "deepseek-ai/DeepSeek-V3" {
+		t.Fatalf("model id = %q, want %q", resp.Models[0].ID, "deepseek-ai/DeepSeek-V3")
+	}
+}
+
+func TestHandleFetchModels_ModelIndexUsesStoredKey(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[{"id":"gpt-4o","owned_by":"openai"}]}`)
+	}))
+	defer srv.Close()
+
+	tmp := t.TempDir()
+	oldHome := os.Getenv("PICOCLAW_HOME")
+	t.Setenv("PICOCLAW_HOME", filepath.Join(tmp, ".picoclaw"))
+	defer func() {
+		if oldHome != "" {
+			os.Setenv("PICOCLAW_HOME", oldHome)
+		} else {
+			os.Unsetenv("PICOCLAW_HOME")
+		}
+	}()
+
+	cfg := config.DefaultConfig()
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "my-openai",
+			Provider:  "openai",
+			Model:     "gpt-4o",
+			APIKeys:   config.SimpleSecureStrings("sk-stored-secret"),
+			APIBase:   srv.URL,
+		},
+	}
+	configPath := filepath.Join(tmp, "config.json")
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig error: %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	idx := 0
+	body := fmt.Sprintf(`{"provider":"openai","api_base":"%s","model_index":%d}`, srv.URL, idx)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models/fetch", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if gotAuth != "Bearer sk-stored-secret" {
+		t.Fatalf("Authorization = %q, want stored key to be used", gotAuth)
+	}
+
+	var resp struct {
+		Models []upstreamModel `json:"models"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+	if len(resp.Models) != 1 || resp.Models[0].ID != "gpt-4o" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
+func TestHandleFetchModels_ModelIndexProviderMismatchRejectsKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" {
+			t.Error("stored key should NOT be sent to mismatched provider")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[]}`)
+	}))
+	defer srv.Close()
+
+	tmp := t.TempDir()
+	t.Setenv("PICOCLAW_HOME", filepath.Join(tmp, ".picoclaw"))
+
+	cfg := config.DefaultConfig()
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "my-openai",
+			Provider:  "openai",
+			Model:     "gpt-4o",
+			APIKeys:   config.SimpleSecureStrings("sk-openai-secret"),
+			APIBase:   "https://api.openai.com/v1",
+		},
+	}
+	configPath := filepath.Join(tmp, "config.json")
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig error: %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	body := fmt.Sprintf(`{"provider":"siliconflow","api_base":"%s","model_index":0}`, srv.URL)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models/fetch", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
 }
