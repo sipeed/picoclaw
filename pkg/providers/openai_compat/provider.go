@@ -177,9 +177,12 @@ func (p *Provider) buildRequestBody(
 
 	if temperature, ok := common.AsFloat(options["temperature"]); ok {
 		lowerModel := strings.ToLower(model)
-		if strings.Contains(lowerModel, "kimi") && strings.Contains(lowerModel, "k2") {
+		switch {
+		case strings.Contains(lowerModel, "kimi") && strings.Contains(lowerModel, "k2"):
 			requestBody["temperature"] = 1.0
-		} else {
+		case common.ModelOmitsTemperature(lowerModel):
+			// Field deprecated/restricted by the upstream model — sending it returns 400.
+		default:
 			requestBody["temperature"] = temperature
 		}
 	}

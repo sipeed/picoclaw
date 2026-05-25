@@ -173,8 +173,9 @@ func buildRequestBody(
 		"messages":   []any{},
 	}
 
-	// Set temperature from options
-	if temp, ok := common.AsFloat(options["temperature"]); ok {
+	// Set temperature from options, unless the target model deprecates it.
+	if temp, ok := common.AsFloat(options["temperature"]); ok &&
+		!common.ModelOmitsTemperature(model) {
 		result["temperature"] = temp
 	}
 
