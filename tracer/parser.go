@@ -310,7 +310,7 @@ func ParseLog(path string) ([]*Turn, error) {
 
 	result := make([]*Turn, len(order))
 	for i, id := range order {
-		result[len(order)-1-i] = turns[id]
+		result[i] = turns[id]
 	}
 	return result, nil
 }
