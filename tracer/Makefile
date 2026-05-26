@@ -1,16 +1,16 @@
 .PHONY: dev build build-frontend clean
 
-# Run in dev mode — serves frontend/dist from disk (build-frontend first)
-dev:
-	go run . --port 7331
-
-# Build frontend assets into frontend/dist
+# Build frontend assets into frontend/dist (required before running)
 build-frontend:
 	cd frontend && npm install && npm run build
 
-# Build a single self-contained binary with embedded frontend
+# Run in dev mode (from repo root, after build-frontend)
+dev: build-frontend
+	go run ./cmd/picoclaw tracer
+
+# Build a self-contained binary with embedded frontend
 build: build-frontend
-	go build -tags embed -o tracer .
+	go build -tags embed -o picoclaw ./cmd/picoclaw
 
 clean:
-	rm -rf frontend/dist frontend/node_modules tracer
+	rm -rf frontend/dist frontend/node_modules picoclaw

@@ -1,6 +1,6 @@
 //go:build embed
 
-package main
+package tracer
 
 import (
 	"embed"
@@ -12,11 +12,11 @@ import (
 var _embeddedFrontend embed.FS
 
 // frontendFS returns the embedded frontend dist.
-// Built with: go build -tags embed ./tracer
-func frontendFS() fs.FS {
+// dir is ignored when built with -tags embed.
+func frontendFS(_ string) fs.FS {
 	sub, err := fs.Sub(_embeddedFrontend, "frontend/dist")
 	if err != nil {
-		log.Fatalf("embed: %v", err)
+		log.Fatalf("tracer: embed error: %v", err)
 	}
 	return sub
 }

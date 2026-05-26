@@ -26,6 +26,7 @@ import (
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/onboard"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/skills"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/status"
+	tracercmd "github.com/sipeed/picoclaw/cmd/picoclaw/internal/tracer"
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/version"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/updater"
@@ -94,6 +95,7 @@ picoclaw --no-color status`,
 		migrate.NewMigrateCommand(),
 		skills.NewSkillsCommand(),
 		model.NewModelCommand(),
+		tracercmd.NewTracerCommand(),
 		updater.NewUpdateCommand("picoclaw"),
 		version.NewVersionCommand(),
 	)

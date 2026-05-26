@@ -1,4 +1,4 @@
-package main
+package tracer
 
 // Message is a single role/content pair in an LLM conversation.
 type Message struct {

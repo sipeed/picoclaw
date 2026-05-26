@@ -1,14 +1,17 @@
 //go:build !embed
 
-package main
+package tracer
 
 import (
 	"io/fs"
 	"os"
 )
 
-// frontendFS returns the frontend dist directory from disk.
-// Used in development — run `make build-frontend` once to populate frontend/dist.
-func frontendFS() fs.FS {
-	return os.DirFS("frontend/dist")
+// frontendFS returns the frontend dist from disk.
+// dir defaults to "tracer/frontend/dist" relative to the repo root.
+func frontendFS(dir string) fs.FS {
+	if dir == "" {
+		dir = "tracer/frontend/dist"
+	}
+	return os.DirFS(dir)
 }
