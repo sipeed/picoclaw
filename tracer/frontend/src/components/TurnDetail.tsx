@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Turn, Message, Tool } from "../types";
+import type { Turn, Message, Tool, LLMCall } from "../types";
 
 interface Props {
   turn: Turn | null;
@@ -27,39 +27,8 @@ export default function TurnDetail({ turn }: Props) {
     : turn.status === "running" ? "var(--yellow)"
     : "var(--red)";
 
-  // Stitch together all NEW messages added across iterations into one flat list.
-  const conversation: Message[] = [];
-  let prevLen = 0;
-  for (let i = 0; i < turn.llm_calls.length; i++) {
-    const call = turn.llm_calls[i];
-    if (i === 0) {
-      // Take everything from the last user message onwards (the "new" part of this turn)
-      const nonSys = call.messages.filter((m) => m.role !== "system");
-      let lastUserIdx = -1;
-      for (let j = nonSys.length - 1; j >= 0; j--) {
-        if (nonSys[j].role === "user") {
-          lastUserIdx = j;
-          break;
-        }
-      }
-      const slice = lastUserIdx >= 0 ? nonSys.slice(lastUserIdx) : nonSys;
-      conversation.push(...slice);
-      prevLen = call.messages.length;
-    } else {
-      // Add only the messages beyond what the previous call had
-      conversation.push(...call.messages.slice(prevLen));
-      prevLen = call.messages.length;
-    }
-  }
-
-  // First call's system prompt and tools (these are stable across iterations)
-  const firstCall = turn.llm_calls[0];
-  const systemMsg = firstCall?.messages.find((m) => m.role === "system");
-  const tools = firstCall?.tools ?? [];
-  const model = firstCall?.model ?? "";
-
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
       <div
         style={{
           background: "var(--surface)",
@@ -75,7 +44,6 @@ export default function TurnDetail({ turn }: Props) {
         <Meta label="Channel" value={turn.channel} />
         <Meta label="Sender" value={turn.sender_id} />
         <Meta label="Status" value={turn.status} color={statusColor} />
-        {model && <Meta label="Model" value={model} color="var(--accent)" />}
         {turn.duration_ms !== null && (
           <Meta label="Duration" value={`${(turn.duration_ms / 1000).toFixed(2)}s`} />
         )}
@@ -127,30 +95,85 @@ export default function TurnDetail({ turn }: Props) {
         </Section>
       )}
 
-      {systemMsg && (
-        <CollapsibleSection title="System Prompt" badge={`${systemMsg.content.length} chars`}>
-          <MessageBlock msg={systemMsg} />
-        </CollapsibleSection>
-      )}
+      {turn.llm_calls.map((call, i) => (
+        <LLMCallSection key={i} call={call} index={i} />
+      ))}
+    </div>
+  );
+}
 
-      {conversation.length > 0 && (
-        <Section title="Conversation">
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {conversation.map((m, i) => (
-              <MessageBlock key={i} msg={m} />
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {tools.length > 0 && (
-        <CollapsibleSection title="Available Tools" badge={String(tools.length)}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {tools.map((t, i) => (
-              <ToolItem key={i} tool={t} />
-            ))}
-          </div>
-        </CollapsibleSection>
+function LLMCallSection({ call, index }: { call: LLMCall; index: number }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div
+      style={{
+        flexShrink: 0,
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        background: "var(--surface)",
+      }}
+    >
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "baseline",
+          gap: 10,
+          padding: "10px 14px",
+          background: open ? "var(--surface2)" : "transparent",
+          borderBottom: open ? "1px solid var(--border)" : "none",
+          textAlign: "left",
+          transition: "background 0.1s",
+        }}
+      >
+        <span style={{ fontSize: 10, color: "var(--muted)" }}>{open ? "▼" : "▶"}</span>
+        <span style={{ fontSize: 12, fontWeight: 600 }}>LLM Call #{index + 1}</span>
+        <span style={{ fontSize: 12, color: "var(--accent)" }}>{call.model}</span>
+        <span style={{ fontSize: 11, color: "var(--muted)" }}>
+          {call.messages_count} messages
+        </span>
+        {call.tools_count > 0 && (
+          <span style={{ fontSize: 11, color: "var(--muted)" }}>
+            {call.tools_count} tools
+          </span>
+        )}
+        {call.content_len !== null && (
+          <span style={{ fontSize: 11, color: "var(--green)" }}>
+            → {call.content_len} chars
+          </span>
+        )}
+        {call.tool_calls_count !== null && call.tool_calls_count > 0 && (
+          <span style={{ fontSize: 11, color: "var(--purple)" }}>
+            {call.tool_calls_count} tool call{call.tool_calls_count > 1 ? "s" : ""}
+          </span>
+        )}
+        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--muted)" }}>
+          {call.timestamp}
+        </span>
+      </button>
+      {open && (
+        <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+          {call.messages.length === 0 ? (
+            <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic", padding: "8px 12px", border: "1px solid var(--border)", borderRadius: 6 }}>
+              (messages not captured — gateway log_level must be "debug")
+            </div>
+          ) : (
+            call.messages.map((m, i) => <MessageBlock key={i} msg={m} index={i} />)
+          )}
+          {call.tools.length > 0 && (
+            <CollapsibleSection
+              title="Available Tools"
+              badge={String(call.tools.length)}
+            >
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {call.tools.map((t, i) => (
+                  <ToolItem key={i} tool={t} />
+                ))}
+              </div>
+            </CollapsibleSection>
+          )}
+        </div>
       )}
     </div>
   );
@@ -207,7 +230,7 @@ function CollapsibleSection({
   );
 }
 
-function MessageBlock({ msg }: { msg: Message }) {
+function MessageBlock({ msg, index }: { msg: Message; index?: number }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = msg.content.length > 600;
   const display = isLong && !expanded ? msg.content.slice(0, 600) + "…" : msg.content;
@@ -226,8 +249,18 @@ function MessageBlock({ msg }: { msg: Message }) {
         border: "1px solid var(--border)",
       }}
     >
-      <div style={{ fontSize: 10, fontWeight: 600, color: roleColor, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.6 }}>
-        {msg.role}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
+        {index !== undefined && (
+          <span style={{ fontSize: 10, color: "var(--muted)", fontFamily: "monospace" }}>
+            [{index}]
+          </span>
+        )}
+        <span style={{ fontSize: 10, fontWeight: 600, color: roleColor, textTransform: "uppercase", letterSpacing: 0.6 }}>
+          {msg.role}
+        </span>
+        <span style={{ fontSize: 10, color: "var(--muted)", marginLeft: "auto" }}>
+          {msg.content.length} chars
+        </span>
       </div>
       <pre
         style={{

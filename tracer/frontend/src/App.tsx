@@ -60,7 +60,7 @@ export default function App() {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
       <Header lastUpdated={lastUpdated} threadCount={threads.length} />
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+      <div style={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
         <ThreadList
           threads={threads}
           selectedKey={selectedThreadKey}
