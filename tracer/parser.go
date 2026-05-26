@@ -171,7 +171,8 @@ func ParseLog(path string) ([]*Turn, error) {
 				activeTurn[e.AgentID] = e.TurnID
 				// If this turn_id is being reused (e.g. gateway restarted),
 				// purge stale llmIdx entries for it.
-				if _, exists := turns[e.TurnID]; exists {
+				_, reused := turns[e.TurnID]
+				if reused {
 					for k := range llmIdx {
 						if k.turnID == e.TurnID {
 							delete(llmIdx, k)
@@ -190,7 +191,9 @@ func ParseLog(path string) ([]*Turn, error) {
 					LLMCalls:   []LLMCall{},
 					ToolExecs:  []ToolExec{},
 				}
-				order = append(order, e.TurnID)
+				if !reused {
+					order = append(order, e.TurnID)
+				}
 
 			case "agent.llm.request":
 				turn, ok := turns[e.TurnID]

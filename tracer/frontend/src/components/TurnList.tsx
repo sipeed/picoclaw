@@ -66,6 +66,17 @@ export default function TurnList({ turns, selectedId, onSelect, loading }: Props
         )}
         {turns.map((turn) => {
           const selected = turn.turn_id === selectedId;
+          // Use the LATEST user message in the first LLM call as a readable label
+          let userMsg = "";
+          const firstCall = turn.llm_calls[0];
+          if (firstCall) {
+            for (let i = firstCall.messages.length - 1; i >= 0; i--) {
+              if (firstCall.messages[i].role === "user") {
+                userMsg = firstCall.messages[i].content;
+                break;
+              }
+            }
+          }
           return (
             <button
               key={turn.turn_id}
@@ -86,8 +97,7 @@ export default function TurnList({ turns, selectedId, onSelect, loading }: Props
                 <StatusDot status={turn.status} />
                 <span
                   style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
+                    fontSize: 12,
                     color: selected ? "var(--accent)" : "var(--text)",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -95,10 +105,13 @@ export default function TurnList({ turns, selectedId, onSelect, loading }: Props
                     flex: 1,
                   }}
                 >
-                  {turn.turn_id}
+                  {userMsg || turn.turn_id}
                 </span>
               </div>
-              <div style={{ display: "flex", gap: 8, paddingLeft: 13 }}>
+              <div style={{ display: "flex", gap: 8, paddingLeft: 13, alignItems: "baseline" }}>
+                <span style={{ color: "var(--muted)", fontSize: 10, fontFamily: "var(--font-mono)" }}>
+                  {turn.turn_id}
+                </span>
                 <span style={{ color: "var(--muted)", fontSize: 11 }}>
                   {turn.timestamp}
                 </span>
@@ -107,9 +120,6 @@ export default function TurnList({ turns, selectedId, onSelect, loading }: Props
                     {(turn.duration_ms / 1000).toFixed(1)}s
                   </span>
                 )}
-                <span style={{ color: "var(--muted)", fontSize: 11 }}>
-                  {turn.channel}
-                </span>
               </div>
               {turn.llm_calls.length > 0 && (
                 <div style={{ paddingLeft: 13, color: "var(--muted)", fontSize: 11 }}>
