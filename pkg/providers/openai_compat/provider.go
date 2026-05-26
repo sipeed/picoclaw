@@ -14,7 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers/common"
+	"github.com/sipeed/picoclaw/pkg/providers/messageutil"
 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
 )
 
@@ -22,6 +24,7 @@ type (
 	ToolCall               = protocoltypes.ToolCall
 	FunctionCall           = protocoltypes.FunctionCall
 	LLMResponse            = protocoltypes.LLMResponse
+	StreamChunk            = protocoltypes.StreamChunk
 	UsageInfo              = protocoltypes.UsageInfo
 	Message                = protocoltypes.Message
 	ToolDefinition         = protocoltypes.ToolDefinition
@@ -34,6 +37,7 @@ type (
 type Provider struct {
 	apiKey         string
 	apiBase        string
+	providerName   string
 	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
 	httpClient     *http.Client
 	extraBody      map[string]any // Additional fields to inject into request body
@@ -43,24 +47,28 @@ type Provider struct {
 
 type Option func(*Provider)
 
-const defaultRequestTimeout = common.DefaultRequestTimeout
+const (
+	defaultRequestTimeout           = common.DefaultRequestTimeout
+	defaultStreamingReadIdleTimeout = 5 * time.Minute
+)
 
 var stripModelPrefixProviders = map[string]struct{}{
-	"litellm":    {},
-	"venice":     {},
-	"moonshot":   {},
-	"nvidia":     {},
-	"groq":       {},
-	"ollama":     {},
-	"deepseek":   {},
-	"google":     {},
-	"openrouter": {},
-	"zhipu":      {},
-	"mistral":    {},
-	"vivgrid":    {},
-	"minimax":    {},
-	"novita":     {},
-	"lmstudio":   {},
+	"litellm":     {},
+	"venice":      {},
+	"moonshot":    {},
+	"nvidia":      {},
+	"groq":        {},
+	"ollama":      {},
+	"deepseek":    {},
+	"google":      {},
+	"openrouter":  {},
+	"siliconflow": {},
+	"zhipu":       {},
+	"mistral":     {},
+	"vivgrid":     {},
+	"minimax":     {},
+	"novita":      {},
+	"lmstudio":    {},
 }
 
 func WithMaxTokensField(maxTokensField string) Option {
@@ -92,6 +100,12 @@ func WithExtraBody(extraBody map[string]any) Option {
 func WithCustomHeaders(customHeaders map[string]string) Option {
 	return func(p *Provider) {
 		p.customHeaders = customHeaders
+	}
+}
+
+func WithProviderName(providerName string) Option {
+	return func(p *Provider) {
+		p.providerName = strings.ToLower(strings.TrimSpace(providerName))
 	}
 }
 
@@ -136,7 +150,7 @@ func (p *Provider) buildRequestBody(
 
 	requestBody := map[string]any{
 		"model":    model,
-		"messages": common.SerializeMessages(messages),
+		"messages": common.SerializeMessages(p.prepareMessagesForRequest(messages)),
 	}
 
 	// When fallback uses a different provider (e.g. DeepSeek), that provider must not inject web_search_preview.
@@ -165,6 +179,9 @@ func (p *Provider) buildRequestBody(
 		lowerModel := strings.ToLower(model)
 		if strings.Contains(lowerModel, "kimi") && strings.Contains(lowerModel, "k2") {
 			requestBody["temperature"] = 1.0
+		} else if strings.Contains(lowerModel, "claude-opus-4-7") {
+			// claude-opus-4-7 does not accept temperature parameter
+			// Skip sending it to avoid HTTP 400 errors
 		} else {
 			requestBody["temperature"] = temperature
 		}
@@ -180,11 +197,119 @@ func (p *Provider) buildRequestBody(
 		}
 	}
 
+	p.applyThinkingControl(requestBody, model, options)
+
 	// Merge extra body fields configured per-provider/model.
 	// These are injected last so they take precedence over defaults.
 	maps.Copy(requestBody, p.extraBody)
 
 	return requestBody
+}
+
+func (p *Provider) applyThinkingControl(requestBody map[string]any, model string, options map[string]any) {
+	level, ok := normalizedThinkingLevel(options)
+	if !ok {
+		return
+	}
+
+	if p.SupportsThinking() {
+		p.applyDeepSeekThinkingControl(requestBody, level)
+		return
+	}
+
+	if level != "off" {
+		return
+	}
+
+	switch p.thinkingControlKind(model) {
+	case "thinking_type":
+		requestBody["thinking"] = map[string]any{"type": "disabled"}
+	case "enable_thinking":
+		requestBody["enable_thinking"] = false
+	}
+}
+
+func (p *Provider) applyDeepSeekThinkingControl(requestBody map[string]any, level string) {
+	switch level {
+	case "off":
+		requestBody["thinking"] = map[string]any{"type": "disabled"}
+	case "low", "medium", "high":
+		requestBody["thinking"] = map[string]any{"type": "enabled"}
+		requestBody["reasoning_effort"] = "high"
+	case "xhigh":
+		requestBody["thinking"] = map[string]any{"type": "enabled"}
+		requestBody["reasoning_effort"] = "max"
+	case "adaptive":
+		logger.WarnCF("provider.openai_compat",
+			`DeepSeek does not support thinking_level="adaptive"; using provider default thinking behavior`,
+			map[string]any{
+				"provider":       p.providerName,
+				"api_base":       p.apiBase,
+				"thinking_level": level,
+			},
+		)
+	}
+}
+
+func normalizedThinkingLevel(options map[string]any) (string, bool) {
+	raw, ok := options["thinking_level"].(string)
+	if !ok {
+		return "", false
+	}
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "off", "low", "medium", "high", "xhigh", "adaptive":
+		return strings.ToLower(strings.TrimSpace(raw)), true
+	default:
+		return "", false
+	}
+}
+
+func (p *Provider) thinkingControlKind(model string) string {
+	providerName := strings.ToLower(strings.TrimSpace(p.providerName))
+	lowerModel := strings.ToLower(strings.TrimSpace(model))
+
+	switch providerName {
+	case "volcengine":
+		return "thinking_type"
+	case "zhipu", "zai":
+		return "thinking_type"
+	case "qwen", "qwen-portal", "qwen-intl", "qwen-international", "dashscope-intl", "qwen-us", "dashscope-us":
+		return "enable_thinking"
+	case "modelscope":
+		if strings.Contains(lowerModel, "qwen") {
+			return "enable_thinking"
+		}
+	}
+
+	if providerName == "openai" || providerName == "" {
+		if isVolcengineHost(p.apiBase) || strings.Contains(lowerModel, "doubao") {
+			return "thinking_type"
+		}
+		if isDashScopeHost(p.apiBase) || strings.Contains(lowerModel, "qwen") {
+			return "enable_thinking"
+		}
+	}
+
+	return ""
+}
+
+func isVolcengineHost(apiBase string) bool {
+	host := normalizedHostname(apiBase)
+	return host == "volcengine.com" || strings.HasSuffix(host, ".volcengine.com") ||
+		host == "volces.com" || strings.HasSuffix(host, ".volces.com")
+}
+
+func isDashScopeHost(apiBase string) bool {
+	host := normalizedHostname(apiBase)
+	return host == "dashscope.aliyuncs.com" || strings.HasSuffix(host, ".dashscope.aliyuncs.com")
+}
+
+func normalizedHostname(rawURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(parsed.Hostname()))
 }
 
 func (p *Provider) applyCustomHeaders(req *http.Request) {
@@ -194,6 +319,131 @@ func (p *Provider) applyCustomHeaders(req *http.Request) {
 		}
 		req.Header.Set(k, v)
 	}
+}
+
+func (p *Provider) SetProviderName(providerName string) {
+	p.providerName = strings.ToLower(strings.TrimSpace(providerName))
+}
+
+func (p *Provider) SupportsThinking() bool {
+	return strings.EqualFold(strings.TrimSpace(p.providerName), "deepseek") || isDeepSeekHost(p.apiBase)
+}
+
+func (p *Provider) prepareMessagesForRequest(messages []Message) []Message {
+	if len(messages) == 0 {
+		return nil
+	}
+
+	if p.requiresToolRoundReasoningReplay() {
+		return filterReasoningReplayMessages(messages)
+	}
+	return stripReasoningMessages(messages)
+}
+
+func (p *Provider) requiresToolRoundReasoningReplay() bool {
+	return p.providerName == "deepseek" ||
+		p.providerName == "mimo" ||
+		isDeepSeekHost(p.apiBase) ||
+		isMiMoHost(p.apiBase)
+}
+
+func isDeepSeekHost(apiBase string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(apiBase))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	return host == "deepseek.com" || strings.HasSuffix(host, ".deepseek.com")
+}
+
+func isMiMoHost(apiBase string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(apiBase))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	return host == "xiaomimimo.com" || strings.HasSuffix(host, ".xiaomimimo.com")
+}
+
+func filterReasoningReplayMessages(messages []Message) []Message {
+	out := make([]Message, 0, len(messages))
+	start := 0
+
+	flush := func(end int) {
+		if end <= start {
+			return
+		}
+		out = append(out, filterReasoningReplayTurn(messages[start:end])...)
+		start = end
+	}
+
+	for i := 1; i < len(messages); i++ {
+		if messages[i].Role == "user" {
+			flush(i)
+		}
+	}
+	flush(len(messages))
+
+	return out
+}
+
+func filterReasoningReplayTurn(messages []Message) []Message {
+	hasToolInteraction := false
+	for _, msg := range messages {
+		if msg.Role == "tool" || (msg.Role == "assistant" && len(msg.ToolCalls) > 0) {
+			hasToolInteraction = true
+			break
+		}
+	}
+
+	out := make([]Message, 0, len(messages))
+	for _, msg := range messages {
+		if messageutil.IsTransientAssistantThoughtMessage(msg) {
+			continue
+		}
+
+		cloned := msg
+		// DeepSeek and MiMo only require reasoning_content replay for turns
+		// that participate in a tool interaction round. For plain assistant
+		// turns between two user messages, the reasoning trace is ignored on
+		// replay, so we strip it here.
+		if cloned.Role == "assistant" && strings.TrimSpace(cloned.ReasoningContent) != "" && !hasToolInteraction {
+			cloned.ReasoningContent = ""
+		}
+		if assistantMessageEmpty(cloned) {
+			continue
+		}
+		out = append(out, cloned)
+	}
+
+	return out
+}
+
+func stripReasoningMessages(messages []Message) []Message {
+	out := make([]Message, 0, len(messages))
+	for _, msg := range messages {
+		if messageutil.IsTransientAssistantThoughtMessage(msg) {
+			continue
+		}
+
+		cloned := msg
+		cloned.ReasoningContent = ""
+		if assistantMessageEmpty(cloned) {
+			continue
+		}
+		out = append(out, cloned)
+	}
+	return out
+}
+
+func assistantMessageEmpty(msg Message) bool {
+	return msg.Role == "assistant" &&
+		strings.TrimSpace(msg.Content) == "" &&
+		strings.TrimSpace(msg.ReasoningContent) == "" &&
+		len(msg.ToolCalls) == 0 &&
+		len(msg.Media) == 0 &&
+		len(msg.Attachments) == 0 &&
+		strings.TrimSpace(msg.ToolCallID) == ""
 }
 
 func (p *Provider) Chat(
@@ -251,6 +501,28 @@ func (p *Provider) ChatStream(
 	options map[string]any,
 	onChunk func(accumulated string),
 ) (*LLMResponse, error) {
+	return p.ChatStreamEvents(
+		ctx,
+		messages,
+		tools,
+		model,
+		options,
+		func(chunk StreamChunk) {
+			if onChunk != nil && strings.TrimSpace(chunk.Content) != "" {
+				onChunk(chunk.Content)
+			}
+		},
+	)
+}
+
+func (p *Provider) ChatStreamEvents(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+	onChunk func(StreamChunk),
+) (*LLMResponse, error) {
 	if p.apiBase == "" {
 		return nil, fmt.Errorf("API base not configured")
 	}
@@ -292,16 +564,52 @@ func (p *Provider) ChatStream(
 		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
 
-	return parseStreamResponse(ctx, resp.Body, onChunk)
+	return parseStreamResponse(ctx, withStreamingReadIdleTimeout(resp.Body, defaultStreamingReadIdleTimeout), onChunk)
+}
+
+func withStreamingReadIdleTimeout(body io.ReadCloser, timeout time.Duration) io.ReadCloser {
+	if body == nil || timeout <= 0 {
+		return body
+	}
+	return &streamingReadIdleTimeoutBody{
+		body:    body,
+		timeout: timeout,
+	}
+}
+
+type streamingReadIdleTimeoutBody struct {
+	body    io.ReadCloser
+	timeout time.Duration
+}
+
+func (b *streamingReadIdleTimeoutBody) Read(p []byte) (int, error) {
+	timedOut := make(chan struct{})
+	timer := time.AfterFunc(b.timeout, func() {
+		close(timedOut)
+		_ = b.body.Close()
+	})
+	n, err := b.body.Read(p)
+	if !timer.Stop() {
+		<-timedOut
+		return n, fmt.Errorf("stream idle timeout after %s", b.timeout)
+	}
+	return n, err
+}
+
+func (b *streamingReadIdleTimeoutBody) Close() error {
+	return b.body.Close()
 }
 
 // parseStreamResponse parses an OpenAI-compatible SSE stream.
 func parseStreamResponse(
 	ctx context.Context,
 	reader io.Reader,
-	onChunk func(accumulated string),
+	onChunk func(StreamChunk),
 ) (*LLMResponse, error) {
 	var textContent strings.Builder
+	var reasoningContent strings.Builder
+	var reasoning strings.Builder
+	var reasoningDetails []ReasoningDetail
 	var finishReason string
 	var usage *UsageInfo
 
@@ -313,29 +621,22 @@ func parseStreamResponse(
 	}
 	activeTools := map[int]*toolAccum{}
 
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 1MB initial, 10MB max
-	for scanner.Scan() {
-		// Check for context cancellation between chunks
-		if err := ctx.Err(); err != nil {
-			return nil, err
+	processEvent := func(data string) error {
+		if strings.TrimSpace(data) == "" {
+			return nil
 		}
-
-		line := scanner.Text()
-
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		data := strings.TrimPrefix(line, "data: ")
-		if data == "[DONE]" {
-			break
+		if strings.TrimSpace(data) == "[DONE]" {
+			return io.EOF
 		}
 
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content   string `json:"content"`
-					ToolCalls []struct {
+					Content          string            `json:"content"`
+					ReasoningContent string            `json:"reasoning_content"`
+					Reasoning        string            `json:"reasoning"`
+					ReasoningDetails []ReasoningDetail `json:"reasoning_details"`
+					ToolCalls        []struct {
 						Index    int    `json:"index"`
 						ID       string `json:"id"`
 						Function *struct {
@@ -350,7 +651,7 @@ func parseStreamResponse(
 		}
 
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue // skip malformed chunks
+			return fmt.Errorf("failed to decode stream event: %w", err)
 		}
 
 		if chunk.Usage != nil {
@@ -358,16 +659,32 @@ func parseStreamResponse(
 		}
 
 		if len(chunk.Choices) == 0 {
-			continue
+			return nil
 		}
 
 		choice := chunk.Choices[0]
 
-		// Accumulate text content
+		if choice.Delta.ReasoningContent != "" {
+			reasoningContent.WriteString(choice.Delta.ReasoningContent)
+			if onChunk != nil {
+				onChunk(StreamChunk{ReasoningContent: reasoningContent.String()})
+			}
+		}
+		if choice.Delta.Reasoning != "" {
+			reasoning.WriteString(choice.Delta.Reasoning)
+			if onChunk != nil {
+				onChunk(StreamChunk{ReasoningContent: reasoning.String()})
+			}
+		}
+		if len(choice.Delta.ReasoningDetails) > 0 {
+			reasoningDetails = append(reasoningDetails, choice.Delta.ReasoningDetails...)
+		}
+		// Accumulate text content after reasoning so UIs can show thought first
+		// when a provider sends both fields in the same event.
 		if choice.Delta.Content != "" {
 			textContent.WriteString(choice.Delta.Content)
 			if onChunk != nil {
-				onChunk(textContent.String())
+				onChunk(StreamChunk{Content: textContent.String()})
 			}
 		}
 
@@ -394,10 +711,54 @@ func parseStreamResponse(
 		if choice.FinishReason != nil {
 			finishReason = *choice.FinishReason
 		}
+
+		return nil
+	}
+
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 1MB initial, 10MB max
+	var eventData strings.Builder
+	for scanner.Scan() {
+		// Check for context cancellation between chunks
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		line := scanner.Text()
+		if line == "" {
+			err := processEvent(eventData.String())
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return nil, err
+			}
+			eventData.Reset()
+			continue
+		}
+		if strings.HasPrefix(line, ":") {
+			continue
+		}
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+
+		data := strings.TrimPrefix(line, "data:")
+		data = strings.TrimPrefix(data, " ")
+		if eventData.Len() > 0 {
+			eventData.WriteByte('\n')
+		}
+		eventData.WriteString(data)
 	}
 
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("streaming read error: %w", err)
+	}
+	if eventData.Len() > 0 {
+		err := processEvent(eventData.String())
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
 	}
 
 	// Assemble tool calls from accumulated deltas
@@ -427,10 +788,13 @@ func parseStreamResponse(
 	}
 
 	return &LLMResponse{
-		Content:      textContent.String(),
-		ToolCalls:    toolCalls,
-		FinishReason: finishReason,
-		Usage:        usage,
+		Content:          textContent.String(),
+		ReasoningContent: reasoningContent.String(),
+		Reasoning:        reasoning.String(),
+		ReasoningDetails: reasoningDetails,
+		ToolCalls:        toolCalls,
+		FinishReason:     finishReason,
+		Usage:            usage,
 	}, nil
 }
 
@@ -461,7 +825,25 @@ func buildToolsList(tools []ToolDefinition, nativeSearch bool) []any {
 		result = append(result, t)
 	}
 	if nativeSearch {
-		result = append(result, map[string]any{"type": "web_search_preview"})
+		// Use web_search function type for better compatibility
+		// web_search_preview is not supported on all OpenAI API endpoints
+		result = append(result, map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "web_search",
+				"description": "Search the web for current information",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"query": map[string]any{
+							"type":        "string",
+							"description": "Search query",
+						},
+					},
+					"required": []string{"query"},
+				},
+			},
+		})
 	}
 	return result
 }
