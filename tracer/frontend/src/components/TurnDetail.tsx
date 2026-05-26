@@ -41,7 +41,6 @@ export default function TurnDetail({ turn }: Props) {
           gap: "12px 24px",
         }}
       >
-        <Meta label="Turn" value={turn.turn_id} mono />
         <Meta label="Time" value={turn.timestamp} />
         <Meta label="Channel" value={turn.channel} />
         <Meta label="Sender" value={turn.sender_id} />

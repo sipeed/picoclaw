@@ -109,9 +109,6 @@ export default function TurnList({ turns, selectedId, onSelect, loading }: Props
                 </span>
               </div>
               <div style={{ display: "flex", gap: 8, paddingLeft: 13, alignItems: "baseline" }}>
-                <span style={{ color: "var(--muted)", fontSize: 10, fontFamily: "var(--font-mono)" }}>
-                  {turn.turn_id}
-                </span>
                 <span style={{ color: "var(--muted)", fontSize: 11 }}>
                   {turn.timestamp}
                 </span>
