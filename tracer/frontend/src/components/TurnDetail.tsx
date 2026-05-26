@@ -103,8 +103,12 @@ export default function TurnDetail({ turn }: Props) {
       {turn.llm_calls.length > 0 && (
         <Section title={`LLM Calls (${turn.llm_calls.length})`}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {turn.llm_calls.map((call) => (
-              <LLMCallCard key={call.iteration} call={call} />
+            {turn.llm_calls.map((call, i) => (
+              <LLMCallCard
+                key={call.iteration}
+                call={call}
+                previousMessages={i > 0 ? turn.llm_calls[i - 1].messages : null}
+              />
             ))}
           </div>
         </Section>

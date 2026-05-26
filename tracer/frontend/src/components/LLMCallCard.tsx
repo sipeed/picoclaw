@@ -3,15 +3,33 @@ import type { LLMCall, Message, Tool } from "../types";
 
 interface Props {
   call: LLMCall;
+  previousMessages?: Message[] | null;
 }
 
-export default function LLMCallCard({ call }: Props) {
+export default function LLMCallCard({ call, previousMessages }: Props) {
   const [openSection, setOpenSection] = useState<string | null>("messages");
 
   const toggle = (id: string) => setOpenSection((s) => (s === id ? null : id));
 
   const systemMsg = call.messages.find((m) => m.role === "system");
-  const userMsgs = call.messages.filter((m) => m.role !== "system");
+  const nonSystem = call.messages.filter((m) => m.role !== "system");
+
+  // Show only the NEW messages added in this LLM call (not the full history).
+  let userMsgs: Message[];
+  if (previousMessages && previousMessages.length > 0) {
+    // Subsequent call — diff against the previous call's messages
+    userMsgs = call.messages.slice(previousMessages.length);
+  } else {
+    // First call of the turn — show only from the latest user message onwards
+    let lastUserIdx = -1;
+    for (let i = nonSystem.length - 1; i >= 0; i--) {
+      if (nonSystem[i].role === "user") {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    userMsgs = lastUserIdx >= 0 ? nonSystem.slice(lastUserIdx) : nonSystem;
+  }
 
   return (
     <div
