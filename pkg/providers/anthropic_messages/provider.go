@@ -174,8 +174,12 @@ func buildRequestBody(
 	}
 
 	// Set temperature from options
+	// Note: claude-opus-4-7 and some newer Claude models do not accept temperature
 	if temp, ok := common.AsFloat(options["temperature"]); ok {
-		result["temperature"] = temp
+		lowerModel := strings.ToLower(model)
+		if !strings.Contains(lowerModel, "claude-opus-4-7") {
+			result["temperature"] = temp
+		}
 	}
 
 	// Process messages
