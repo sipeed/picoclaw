@@ -118,11 +118,9 @@ export default function TurnList({ turns, selectedId, onSelect, loading }: Props
                   </span>
                 )}
               </div>
-              {turn.llm_calls.length > 0 && (
+              {turn.tool_execs.length > 0 && (
                 <div style={{ paddingLeft: 13, color: "var(--muted)", fontSize: 11 }}>
-                  {turn.llm_calls.length} LLM call{turn.llm_calls.length > 1 ? "s" : ""}
-                  {turn.tool_execs.length > 0 &&
-                    ` · ${turn.tool_execs.length} tool${turn.tool_execs.length > 1 ? "s" : ""}`}
+                  {turn.tool_execs.length} tool call{turn.tool_execs.length > 1 ? "s" : ""}
                 </div>
               )}
             </button>
