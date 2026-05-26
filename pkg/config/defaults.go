@@ -35,14 +35,24 @@ func DefaultConfig() *Config {
 				SummarizeTokenPercent:     75,
 				SteeringMode:              "one-at-a-time",
 				ToolFeedback: ToolFeedbackConfig{
-					Enabled:       false,
-					MaxArgsLength: 300,
+					Enabled:          false,
+					MaxArgsLength:    300,
+					SeparateMessages: false,
 				},
-				SplitOnMarker: false,
+				SplitOnMarker:       false,
+				MaxLLMRetries:       2,
+				LLMRetryBackoffSecs: 2,
 			},
 		},
 		Session: SessionConfig{
 			Dimensions: []string{"chat"},
+		},
+		Evolution: EvolutionConfig{
+			Enabled:         false,
+			Mode:            "observe",
+			MinTaskCount:    2,
+			MinSuccessRatio: 0.7,
+			ColdPathTrigger: "after_turn",
 		},
 		Channels: defaultChannels(),
 		Hooks: HooksConfig{
@@ -78,7 +88,7 @@ func DefaultConfig() *Config {
 			{
 				ModelName: "claude-sonnet-4.6",
 				Provider:  "anthropic",
-				Model:     "claude-sonnet-4.6",
+				Model:     "claude-sonnet-4-6",
 				APIBase:   "https://api.anthropic.com/v1",
 			},
 
@@ -293,6 +303,9 @@ func DefaultConfig() *Config {
 			HotReload: false,
 			LogLevel:  DefaultGatewayLogLevel,
 		},
+		Events: EventsConfig{
+			Logging: defaultEventLoggingConfig(),
+		},
 		Tools: ToolsConfig{
 			FilterSensitiveData: true,
 			FilterMinLength:     8,
@@ -326,6 +339,11 @@ func DefaultConfig() *Config {
 				},
 				DuckDuckGo: DuckDuckGoConfig{
 					Enabled:    false,
+					MaxResults: 5,
+				},
+				Gemini: GeminiSearchConfig{
+					Enabled:    false,
+					Model:      "gemini-2.5-flash",
 					MaxResults: 5,
 				},
 				Perplexity: PerplexityConfig{
@@ -426,6 +444,9 @@ func DefaultConfig() *Config {
 			ListDir: ToolConfig{
 				Enabled: true,
 			},
+			LoadImage: ToolConfig{
+				Enabled: true,
+			},
 			Message: ToolConfig{
 				Enabled: true,
 			},
@@ -433,6 +454,9 @@ func DefaultConfig() *Config {
 				Enabled:         true,
 				Mode:            ReadFileModeBytes,
 				MaxReadFileSize: 64 * 1024, // 64KB
+			},
+			Serial: ToolConfig{
+				Enabled: false, // Hardware tool - requires host serial ports
 			},
 			Spawn: ToolConfig{
 				Enabled: true,
@@ -487,8 +511,8 @@ func defaultChannels() ChannelsConfig {
 			"typing":      map[string]any{"enabled": true},
 			"placeholder": map[string]any{"enabled": true, "text": []string{"Thinking... 💭"}},
 			"settings": map[string]any{
-				"streaming":       map[string]any{"enabled": true, "throttle_seconds": 3, "min_growth_chars": 200},
-				"use_markdown_v2": false,
+				"use_markdown_v2":      false,
+				"media_group_delay_ms": 500,
 			},
 		},
 		"feishu":  map[string]any{},
@@ -541,6 +565,7 @@ func defaultChannels() ChannelsConfig {
 				"read_timeout":    60,
 				"write_timeout":   10,
 				"max_connections": 100,
+				"streaming":       map[string]any{"enabled": true},
 			},
 		},
 		"irc": map[string]any{
