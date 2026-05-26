@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { LLMCall, Message } from "../types";
+import type { LLMCall, Message, Tool } from "../types";
 
 interface Props {
   call: LLMCall;
@@ -93,26 +93,7 @@ export default function LLMCallCard({ call }: Props) {
           >
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {call.tools.map((t, i) => (
-                <div
-                  key={i}
-                  style={{
-                    padding: "8px 10px",
-                    background: "var(--bg)",
-                    borderRadius: 5,
-                    border: "1px solid var(--border)",
-                  }}
-                >
-                  <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-                    <code style={{ color: "var(--accent)", fontSize: 12 }}>{t.name}</code>
-                    {t.description && (
-                      <span style={{ color: "var(--muted)", fontSize: 11, flex: 1 }}>
-                        {t.description.length > 120
-                          ? t.description.slice(0, 120) + "…"
-                          : t.description}
-                      </span>
-                    )}
-                  </div>
-                </div>
+                <ToolItem key={i} tool={t} />
               ))}
             </div>
           </Collapsible>
@@ -235,6 +216,59 @@ function MessageBlock({ msg }: { msg: Message }) {
         >
           {expanded ? "Show less" : `Show ${msg.content.length - 600} more chars`}
         </button>
+      )}
+    </div>
+  );
+}
+
+function ToolItem({ tool }: { tool: Tool }) {
+  const [open, setOpen] = useState(false);
+  const truncatedDesc =
+    tool.description.length > 120 && !open
+      ? tool.description.slice(0, 120) + "…"
+      : tool.description;
+
+  return (
+    <div
+      onClick={() => setOpen((o) => !o)}
+      style={{
+        padding: "8px 10px",
+        background: "var(--bg)",
+        borderRadius: 5,
+        border: "1px solid var(--border)",
+        cursor: "pointer",
+      }}
+    >
+      <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+        <span style={{ fontSize: 10, color: "var(--muted)", flexShrink: 0 }}>
+          {open ? "▼" : "▶"}
+        </span>
+        <code style={{ color: "var(--accent)", fontSize: 12 }}>{tool.name}</code>
+        {tool.description && (
+          <span style={{ color: "var(--muted)", fontSize: 11, flex: 1, whiteSpace: open ? "pre-wrap" : "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {truncatedDesc}
+          </span>
+        )}
+      </div>
+      {open && tool.parameters && (
+        <pre
+          style={{
+            marginTop: 8,
+            padding: "8px 10px",
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: 4,
+            fontSize: 11,
+            color: "var(--text)",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            lineHeight: 1.5,
+            overflow: "auto",
+            maxHeight: 400,
+          }}
+        >
+          {tool.parameters}
+        </pre>
       )}
     </div>
   );
