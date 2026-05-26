@@ -1,9 +1,12 @@
 import { test, expect } from '@playwright/test';
+import { createFlowDesignerCanvasHelpers } from './helpers/flow-designer-canvas';
 
 test('Create new flow with Knowledge Base web crawler node', async ({ page }) => {
   test.setTimeout(300000);
   page.setDefaultTimeout(60000);
   page.setDefaultNavigationTimeout(60000);
+
+  const { dismissVisibleModals, connectEdge, dragNodeToScreenPosition } = createFlowDesignerCanvasHelpers(page);
 
   // ============================================================================
   // PHASE 1: LOGIN
@@ -95,27 +98,23 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   // PHASE 6: POSITION KNOWLEDGE BASE NODE
   // ============================================================================
 
-  console.log('📍 Step 11: Position Knowledge Base node using absolute canvas coordinates');
-  const tf = await page.locator('.vue-flow__transformationpane').evaluate(el => {
-    const m = new DOMMatrix((el as HTMLElement).style.transform);
-    return { scale: m.a, tx: m.e, ty: m.f };
-  });
-
+  console.log('📍 Step 11: Position Knowledge Base node below START');
   const kbWrapper = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /KnowledgeBaseNode/ }) })
     .first();
   await kbWrapper.waitFor({ state: 'visible', timeout: 15000 });
   const kbBBox = await kbWrapper.boundingBox();
   if (!kbBBox) throw new Error('Knowledge Base node not found');
-
-  // Position at canvas (250, 100)
-  const targetX1 = 250 * tf.scale + tf.tx;
-  const targetY1 = 100 * tf.scale + tf.ty;
-  await page.mouse.move(kbBBox.x + kbBBox.width / 2, kbBBox.y + kbBBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(targetX1, targetY1, { steps: 50 });
-  await page.mouse.up();
-  await page.waitForTimeout(500);
+  const startNodeWrapper = page.locator('.vue-flow__node')
+    .filter({ has: page.locator('.node-container#START') });
+  const startNodeBox = await startNodeWrapper.boundingBox();
+  if (!startNodeBox) throw new Error('START node not found on canvas');
+  await dragNodeToScreenPosition(
+    'KnowledgeBaseNode',
+    kbWrapper,
+    startNodeBox.x + startNodeBox.width / 2,
+    startNodeBox.y + startNodeBox.height / 2 + 120,
+  );
   console.log('✅ PASS: Step 11 - Knowledge Base node positioned');
 
   // ============================================================================
@@ -236,7 +235,8 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   console.log('📍 Step 27: Click Save button');
   const saveButton = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
   await saveButton.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
+  await page.waitForTimeout(500);
+  await dismissVisibleModals();
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 27 - Knowledge Base node saved');
 
@@ -246,42 +246,13 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
 
   console.log('📍 Step 28: Connect START → wc');
 
-  // Zoom in to max first, then zoom out to ~100% — zoom-out-only silently fails at min zoom
-  await page.mouse.move(640, 360);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); } // zoom in to max (400%)
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(200);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); } // zoom out to ~100%
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(500);
-
-  const edgesBefore1 = await page.locator('.vue-flow__edge[data-id]').count();
-
   const startHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#START') })
     .locator('.vue-flow__handle-bottom');
   const wcHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#wc') })
     .locator('.vue-flow__handle-top');
-
-  const startBox = await startHandle.boundingBox();
-  const wcBox = await wcHandle.boundingBox();
-  if (!startBox || !wcBox) throw new Error('Handles not found for START → wc');
-
-  await page.mouse.move(startBox.x + startBox.width / 2, startBox.y + startBox.height / 2);
-  await page.waitForTimeout(200);
-  await page.mouse.down();
-  await page.mouse.move(wcBox.x + wcBox.width / 2, wcBox.y + wcBox.height / 2, { steps: 50 });
-  await page.waitForTimeout(500);
-  await page.mouse.up();
-  await page.waitForTimeout(1000);
-
-  const edgesAfter1 = await page.locator('.vue-flow__edge[data-id]').count();
-  if (edgesAfter1 <= edgesBefore1) {
-    throw new Error(`Edge START → wc NOT created — before: ${edgesBefore1}, after: ${edgesAfter1}`);
-  }
+  await connectEdge('START → wc', startHandle, wcHandle, { normalizeZoom: true });
   console.log('✅ PASS: Step 28 - Edge START → wc created');
 
   // ============================================================================
@@ -304,26 +275,23 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   // PHASE 10: POSITION REPLY MESSAGE NODE
   // ============================================================================
 
-  console.log('📍 Step 31: Position Reply Message node at canvas (250, 200)');
+  console.log('📍 Step 31: Position Reply Message node below wc');
   const replyWrapper = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) })
     .first();
   await replyWrapper.waitFor({ state: 'visible', timeout: 15000 });
   const replyBBox = await replyWrapper.boundingBox();
   if (!replyBBox) throw new Error('Reply Message node not found');
-
-  // Re-read transform — tf is stale after zoom normalization during KB node config
-  const tfReply = await page.locator('.vue-flow__transformationpane').evaluate(el => {
-    const m = new DOMMatrix((el as HTMLElement).style.transform);
-    return { scale: m.a, tx: m.e, ty: m.f };
-  });
-  const targetX2 = 250 * tfReply.scale + tfReply.tx;
-  const targetY2 = 200 * tfReply.scale + tfReply.ty;
-  await page.mouse.move(replyBBox.x + replyBBox.width / 2, replyBBox.y + replyBBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(targetX2, targetY2, { steps: 50 });
-  await page.mouse.up();
-  await page.waitForTimeout(500);
+  const wcNodeWrapper = page.locator('.vue-flow__node')
+    .filter({ has: page.locator('.node-container#wc') });
+  const wcNodeBox = await wcNodeWrapper.boundingBox();
+  if (!wcNodeBox) throw new Error('wc node not found on canvas');
+  await dragNodeToScreenPosition(
+    'ReplyMessage',
+    replyWrapper,
+    wcNodeBox.x + wcNodeBox.width / 2,
+    wcNodeBox.y + wcNodeBox.height / 2 + 120,
+  );
   console.log('✅ PASS: Step 31 - Reply Message node positioned');
 
   // ============================================================================
@@ -377,93 +345,36 @@ test('Create new flow with Knowledge Base web crawler node', async ({ page }) =>
   console.log('📍 Step 38: Click Save button');
   const replySaveButton = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
   await replySaveButton.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
+  await page.waitForTimeout(500);
+  await dismissVisibleModals();
   console.log('✅ PASS: Step 38 - Reply Message node saved');
 
   // ============================================================================
   // PHASE 12: CONNECT wc → REPLY MESSAGE
   // ============================================================================
 
-  // Zoom in to max first, then zoom out to ~100% (canvas may already be at min zoom)
-  await page.mouse.move(640, 360);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); }
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(300);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); }
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(500);
-
   console.log('📍 Step 39: Connect wc → ReplyMessage');
-  const edgesBefore2 = await page.locator('.vue-flow__edge[data-id]').count();
-
   const wcSourceHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#wc') })
     .locator('.vue-flow__handle-bottom');
   const replyTargetHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#ReplyMessage') })
     .locator('.vue-flow__handle-top');
-
-  const wcSourceBox = await wcSourceHandle.boundingBox();
-  const replyTargetBox = await replyTargetHandle.boundingBox();
-  if (!wcSourceBox || !replyTargetBox) throw new Error('Handles not found for wc → ReplyMessage');
-
-  await page.mouse.move(wcSourceBox.x + wcSourceBox.width / 2, wcSourceBox.y + wcSourceBox.height / 2);
-  await page.waitForTimeout(200);
-  await page.mouse.down();
-  await page.mouse.move(replyTargetBox.x + replyTargetBox.width / 2, replyTargetBox.y + replyTargetBox.height / 2, { steps: 50 });
-  await page.waitForTimeout(500);
-  await page.mouse.up();
-  await page.waitForTimeout(1000);
-
-  const edgesAfter2 = await page.locator('.vue-flow__edge[data-id]').count();
-  if (edgesAfter2 <= edgesBefore2) {
-    throw new Error(`Edge wc → ReplyMessage NOT created — before: ${edgesBefore2}, after: ${edgesAfter2}`);
-  }
+  await connectEdge('wc → ReplyMessage', wcSourceHandle, replyTargetHandle, { normalizeZoom: true });
   console.log('✅ PASS: Step 39 - Edge wc → ReplyMessage created');
 
   // ============================================================================
   // PHASE 13: CONNECT REPLY MESSAGE → END
   // ============================================================================
 
-  // Zoom in to max first, then zoom out to ~100% (canvas may already be at min zoom)
-  await page.mouse.move(640, 360);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); }
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(300);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); }
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(500);
-
   console.log('📍 Step 40: Connect ReplyMessage → END');
-  const edgesBefore3 = await page.locator('.vue-flow__edge[data-id]').count();
-
   const replySourceHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#ReplyMessage') })
     .locator('.vue-flow__handle-bottom');
   const endTargetHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#END') })
     .locator('.vue-flow__handle-top');
-
-  const replySourceBox = await replySourceHandle.boundingBox();
-  const endTargetBox = await endTargetHandle.boundingBox();
-  if (!replySourceBox || !endTargetBox) throw new Error('Handles not found for ReplyMessage → END');
-
-  await page.mouse.move(replySourceBox.x + replySourceBox.width / 2, replySourceBox.y + replySourceBox.height / 2);
-  await page.waitForTimeout(200);
-  await page.mouse.down();
-  await page.mouse.move(endTargetBox.x + endTargetBox.width / 2, endTargetBox.y + endTargetBox.height / 2, { steps: 50 });
-  await page.waitForTimeout(500);
-  await page.mouse.up();
-  await page.waitForTimeout(1000);
-
-  const edgesAfter3 = await page.locator('.vue-flow__edge[data-id]').count();
-  if (edgesAfter3 <= edgesBefore3) {
-    throw new Error(`Edge ReplyMessage → END NOT created — before: ${edgesBefore3}, after: ${edgesAfter3}`);
-  }
+  await connectEdge('ReplyMessage → END', replySourceHandle, endTargetHandle, { normalizeZoom: true });
   console.log('✅ PASS: Step 40 - Edge ReplyMessage → END created');
 
   // ============================================================================

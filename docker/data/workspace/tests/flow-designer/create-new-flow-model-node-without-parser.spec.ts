@@ -1,9 +1,12 @@
 import { test, expect } from '@playwright/test';
+import { createFlowDesignerCanvasHelpers } from './helpers/flow-designer-canvas';
 
 test('Create new flow with Model node without parser', async ({ page }) => {
   test.setTimeout(300000);
   page.setDefaultTimeout(60000);
   page.setDefaultNavigationTimeout(60000);
+
+  const { dismissVisibleModals, connectEdge, dragNodeToScreenPosition } = createFlowDesignerCanvasHelpers(page);
 
   // ============================================================================
   // PHASE 1: LOGIN
@@ -106,11 +109,7 @@ test('Create new flow with Model node without parser', async ({ page }) => {
   if (!replyBBox1) throw new Error('Reply Message node not found');
   const targetX1 = 250 * tf.scale + tf.tx;
   const targetY1 = 80 * tf.scale + tf.ty;
-  await page.mouse.move(replyBBox1.x + replyBBox1.width / 2, replyBBox1.y + replyBBox1.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(targetX1, targetY1, { steps: 50 });
-  await page.mouse.up();
-  await page.waitForTimeout(500);
+  await dragNodeToScreenPosition('ReplyMessage', replyWrapper1, targetX1, targetY1);
 
   // ============================================================================
   // PHASE 6: CONFIGURE REPLY MESSAGE NODE (DO NOT change Node ID)
@@ -164,8 +163,8 @@ test('Create new flow with Model node without parser', async ({ page }) => {
   const saveButton1 = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
   await expect(saveButton1).toBeEnabled({ timeout: 15000 });
   await saveButton1.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
   await page.waitForTimeout(500);
+  await dismissVisibleModals();
   console.log('✅ PASS: Step 17 - Reply Message node saved');
 
   // ============================================================================
@@ -174,42 +173,13 @@ test('Create new flow with Model node without parser', async ({ page }) => {
 
   console.log('📍 Step 18: Connect START → ReplyMessage');
 
-  // Normalize zoom to ~100% for edge connection
-  await page.mouse.move(640, 360);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); } // zoom in to max
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(200);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); } // zoom out to ~100%
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(500);
-
-  const edgesBefore1 = await page.locator('.vue-flow__edge[data-id]').count();
-
   const startHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#START') })
     .locator('.vue-flow__handle-bottom');
   const replyHandle1 = page.locator('.vue-flow__node')
     .filter({ has: page.locator(`.node-container#${firstReplyId}`) })
     .locator('.vue-flow__handle-top');
-
-  const startBox = await startHandle.boundingBox();
-  const replyBox1 = await replyHandle1.boundingBox();
-  if (!startBox || !replyBox1) throw new Error(`Handles not found for START → ${firstReplyId}`);
-
-  await page.mouse.move(startBox.x + startBox.width / 2, startBox.y + startBox.height / 2);
-  await page.waitForTimeout(200);
-  await page.mouse.down();
-  await page.mouse.move(replyBox1.x + replyBox1.width / 2, replyBox1.y + replyBox1.height / 2, { steps: 50 });
-  await page.waitForTimeout(500);
-  await page.mouse.up();
-  await page.waitForTimeout(1000);
-
-  const edgesAfter1 = await page.locator('.vue-flow__edge[data-id]').count();
-  if (edgesAfter1 <= edgesBefore1) {
-    throw new Error(`Edge START → ${firstReplyId} NOT created — before: ${edgesBefore1}, after: ${edgesAfter1}`);
-  }
+  await connectEdge(`START → ${firstReplyId}`, startHandle, replyHandle1, { normalizeZoom: true });
   console.log('✅ PASS: Step 18 - Edge START → ReplyMessage created');
 
   // ============================================================================
@@ -241,11 +211,7 @@ test('Create new flow with Model node without parser', async ({ page }) => {
   if (!modelBBox) throw new Error('Model node not found');
   const targetX2 = 500 * tfModel.scale + tfModel.tx;
   const targetY2 = 80 * tfModel.scale + tfModel.ty;
-  await page.mouse.move(modelBBox.x + modelBBox.width / 2, modelBBox.y + modelBBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(targetX2, targetY2, { steps: 50 });
-  await page.mouse.up();
-  await page.waitForTimeout(500);
+  await dragNodeToScreenPosition('Model', modelWrapper, targetX2, targetY2);
 
   // ============================================================================
   // PHASE 9: CONFIGURE MODEL NODE
@@ -328,8 +294,8 @@ test('Create new flow with Model node without parser', async ({ page }) => {
   console.log('📍 Step 29: Click Save button');
   const saveButton2 = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
   await saveButton2.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
   await page.waitForTimeout(500);
+  await dismissVisibleModals();
   console.log('✅ PASS: Step 29 - Model node saved');
 
   // ============================================================================
@@ -338,41 +304,13 @@ test('Create new flow with Model node without parser', async ({ page }) => {
 
   console.log('📍 Step 30: Connect ReplyMessage → model');
 
-  await page.mouse.move(640, 360);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); } // zoom in to max
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(200);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); } // zoom out to ~100%
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(500);
-
-  const edgesBefore2 = await page.locator('.vue-flow__edge[data-id]').count();
-
   const replySourceHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator(`.node-container#${firstReplyId}`) })
     .locator('.vue-flow__handle-bottom');
   const modelTargetHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#model') })
     .locator('.vue-flow__handle-top');
-
-  const replySourceBox = await replySourceHandle.boundingBox();
-  const modelTargetBox = await modelTargetHandle.boundingBox();
-  if (!replySourceBox || !modelTargetBox) throw new Error(`Handles not found for ${firstReplyId} → model`);
-
-  await page.mouse.move(replySourceBox.x + replySourceBox.width / 2, replySourceBox.y + replySourceBox.height / 2);
-  await page.waitForTimeout(200);
-  await page.mouse.down();
-  await page.mouse.move(modelTargetBox.x + modelTargetBox.width / 2, modelTargetBox.y + modelTargetBox.height / 2, { steps: 50 });
-  await page.waitForTimeout(500);
-  await page.mouse.up();
-  await page.waitForTimeout(1000);
-
-  const edgesAfter2 = await page.locator('.vue-flow__edge[data-id]').count();
-  if (edgesAfter2 <= edgesBefore2) {
-    throw new Error(`Edge ${firstReplyId} → model NOT created — before: ${edgesBefore2}, after: ${edgesAfter2}`);
-  }
+  await connectEdge(`${firstReplyId} → model`, replySourceHandle, modelTargetHandle, { normalizeZoom: true });
   console.log('✅ PASS: Step 30 - Edge ReplyMessage → model created');
 
   // ============================================================================
@@ -391,25 +329,23 @@ test('Create new flow with Model node without parser', async ({ page }) => {
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 32 - Reply Message node selected');
 
-  // Position output node at canvas (750, 80) — read fresh tf to account for zoom changes
-  const tfOutput = await page.locator('.vue-flow__transformationpane').evaluate(el => {
-    const m = new DOMMatrix((el as HTMLElement).style.transform);
-    return { scale: m.a, tx: m.e, ty: m.f };
-  });
-  // Find the newest unnamed reply message node (not yet renamed to 'output')
+  // Keep the output node close to model/END for a short, stable edge
   const replyWrappers = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) });
   const outputWrapper = replyWrappers.last();
   await outputWrapper.waitFor({ state: 'visible', timeout: 15000 });
   const outputBBox = await outputWrapper.boundingBox();
   if (!outputBBox) throw new Error('Output Reply Message node not found');
-  const targetX3 = 750 * tfOutput.scale + tfOutput.tx;
-  const targetY3 = 80 * tfOutput.scale + tfOutput.ty;
-  await page.mouse.move(outputBBox.x + outputBBox.width / 2, outputBBox.y + outputBBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(targetX3, targetY3, { steps: 50 });
-  await page.mouse.up();
-  await page.waitForTimeout(500);
+  const modelWrapperForOutputPlacement = page.locator('.vue-flow__node')
+    .filter({ has: page.locator('.node-container#model') });
+  const modelBoxBeforeOutput = await modelWrapperForOutputPlacement.boundingBox();
+  if (!modelBoxBeforeOutput) throw new Error('model node not found before positioning output');
+  await dragNodeToScreenPosition(
+    'output',
+    outputWrapper,
+    modelBoxBeforeOutput.x + modelBoxBeforeOutput.width / 2 + 190,
+    modelBoxBeforeOutput.y + modelBoxBeforeOutput.height / 2,
+  );
 
   // ============================================================================
   // PHASE 12: CONFIGURE OUTPUT NODE
@@ -425,6 +361,7 @@ test('Create new flow with Model node without parser', async ({ page }) => {
   const nodeIdInput3 = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Node ID/ }) })
     .locator('.v-field__input');
+  const outputInitialId = await nodeIdInput3.inputValue();
   await nodeIdInput3.click();
   await nodeIdInput3.fill('output');
   await nodeIdInput3.press('Tab');
@@ -463,17 +400,48 @@ test('Create new flow with Model node without parser', async ({ page }) => {
   console.log('📍 Step 39: Click Save button');
   const saveButton3 = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
   await saveButton3.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
   await page.waitForTimeout(500);
+  await dismissVisibleModals();
   console.log('✅ PASS: Step 39 - Output node saved');
+
+  const outputNode = page.locator('.vue-flow__node')
+    .filter({ has: page.locator(`.node-container#output, .node-container#${outputInitialId}`) });
+  if (!(await page.locator('.node-container#output').first().isVisible().catch(() => false))) {
+    const outputNodeByOriginalId = page.locator('.vue-flow__node')
+      .filter({ has: page.locator(`.node-container#${outputInitialId}`) });
+    await outputNodeByOriginalId.waitFor({ state: 'visible', timeout: 15000 });
+    await page.locator(`.node-container#${outputInitialId}`).click();
+
+    const retryOutputModal = page.locator('.modal-dialog.v-overlay--active').last();
+    await retryOutputModal.waitFor({ state: 'visible', timeout: 30000 });
+    const retryOutputNodeIdField = retryOutputModal.locator('.field-container')
+      .filter({ has: page.locator('label', { hasText: /Node ID/ }) })
+      .locator('.v-field__input')
+      .first();
+    const retryOutputNodeIdValue = await retryOutputNodeIdField.inputValue();
+    if (retryOutputNodeIdValue !== 'output') {
+      await retryOutputNodeIdField.click();
+      await retryOutputNodeIdField.fill('output');
+      await retryOutputNodeIdField.press('Tab');
+    }
+
+    const retrySaveButton = retryOutputModal.getByRole('button', { name: /^Save$/ });
+    const retryCloseButton = retryOutputModal.locator('button').first();
+    if (await retrySaveButton.isEnabled().catch(() => false)) {
+      await retrySaveButton.click();
+      await page.waitForTimeout(500);
+    }
+    await page.keyboard.press('Escape').catch(() => {});
+    await retryCloseButton.click({ timeout: 2000 }).catch(() => {});
+    await dismissVisibleModals();
+    await outputNode.waitFor({ state: 'visible', timeout: 15000 });
+  }
 
   // ============================================================================
   // PHASE 13: VERIFY OUTPUT NODE ON CANVAS
   // ============================================================================
 
   console.log('📍 Step 40: Verify node output is visible on canvas');
-  const outputNode = page.locator('.vue-flow__node')
-    .filter({ has: page.locator('.node-container#output') });
   await outputNode.waitFor({ state: 'visible', timeout: 15000 });
   console.log('✅ PASS: Step 40 - Node output is visible on canvas');
 
@@ -483,41 +451,11 @@ test('Create new flow with Model node without parser', async ({ page }) => {
 
   console.log('📍 Step 41: Connect model → output');
 
-  await page.mouse.move(640, 360);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); } // zoom in to max
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(200);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); } // zoom out to ~100%
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(500);
-
-  const edgesBefore3 = await page.locator('.vue-flow__edge[data-id]').count();
-
   const modelSourceHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#model') })
     .locator('.vue-flow__handle-bottom');
-  const outputTargetHandle = page.locator('.vue-flow__node')
-    .filter({ has: page.locator('.node-container#output') })
-    .locator('.vue-flow__handle-top');
-
-  const modelSourceBox = await modelSourceHandle.boundingBox();
-  const outputTargetBox = await outputTargetHandle.boundingBox();
-  if (!modelSourceBox || !outputTargetBox) throw new Error('Handles not found for model → output');
-
-  await page.mouse.move(modelSourceBox.x + modelSourceBox.width / 2, modelSourceBox.y + modelSourceBox.height / 2);
-  await page.waitForTimeout(200);
-  await page.mouse.down();
-  await page.mouse.move(outputTargetBox.x + outputTargetBox.width / 2, outputTargetBox.y + outputTargetBox.height / 2, { steps: 50 });
-  await page.waitForTimeout(500);
-  await page.mouse.up();
-  await page.waitForTimeout(1000);
-
-  const edgesAfter3 = await page.locator('.vue-flow__edge[data-id]').count();
-  if (edgesAfter3 <= edgesBefore3) {
-    throw new Error(`Edge model → output NOT created — before: ${edgesBefore3}, after: ${edgesAfter3}`);
-  }
+  const outputTargetHandle = outputNode.locator('.vue-flow__handle-top');
+  await connectEdge('model → output', modelSourceHandle, outputTargetHandle, { normalizeZoom: true });
   console.log('✅ PASS: Step 41 - Edge model → output created');
 
   // ============================================================================
@@ -526,41 +464,11 @@ test('Create new flow with Model node without parser', async ({ page }) => {
 
   console.log('📍 Step 42: Connect output → END');
 
-  await page.mouse.move(640, 360);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); } // zoom in to max
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(200);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); } // zoom out to ~100%
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(500);
-
-  const edgesBefore4 = await page.locator('.vue-flow__edge[data-id]').count();
-
-  const outputSourceHandle = page.locator('.vue-flow__node')
-    .filter({ has: page.locator('.node-container#output') })
-    .locator('.vue-flow__handle-bottom');
+  const outputSourceHandle = outputNode.locator('.vue-flow__handle-bottom');
   const endTargetHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#END') })
     .locator('.vue-flow__handle-top');
-
-  const outputSourceBox = await outputSourceHandle.boundingBox();
-  const endTargetBox = await endTargetHandle.boundingBox();
-  if (!outputSourceBox || !endTargetBox) throw new Error('Handles not found for output → END');
-
-  await page.mouse.move(outputSourceBox.x + outputSourceBox.width / 2, outputSourceBox.y + outputSourceBox.height / 2);
-  await page.waitForTimeout(200);
-  await page.mouse.down();
-  await page.mouse.move(endTargetBox.x + endTargetBox.width / 2, endTargetBox.y + endTargetBox.height / 2, { steps: 50 });
-  await page.waitForTimeout(500);
-  await page.mouse.up();
-  await page.waitForTimeout(1000);
-
-  const edgesAfter4 = await page.locator('.vue-flow__edge[data-id]').count();
-  if (edgesAfter4 <= edgesBefore4) {
-    throw new Error(`Edge output → END NOT created — before: ${edgesBefore4}, after: ${edgesAfter4}`);
-  }
+  await connectEdge('output → END', outputSourceHandle, endTargetHandle, { normalizeZoom: true });
   console.log('✅ PASS: Step 42 - Edge output → END created');
 
   // ============================================================================

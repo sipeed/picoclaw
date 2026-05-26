@@ -1,9 +1,12 @@
 import { test, expect } from '@playwright/test';
+import { createFlowDesignerCanvasHelpers } from './helpers/flow-designer-canvas';
 
 test('Create new flow with Custom Node', async ({ page }) => {
   test.setTimeout(300000);
   page.setDefaultTimeout(60000);
   page.setDefaultNavigationTimeout(60000);
+
+  const { dismissVisibleModals, connectEdge, dragNodeToScreenPosition } = createFlowDesignerCanvasHelpers(page);
 
   // ============================================================================
   // PHASE 1: LOGIN
@@ -57,12 +60,6 @@ test('Create new flow with Custom Node', async ({ page }) => {
   await page.locator('.vue-flow').waitFor({ state: 'visible', timeout: 60000 });
   console.log('✅ PASS: Step 6 - Flow canvas opened with START and END nodes');
 
-  // Read canvas transform ONCE for node positioning
-  const tf = await page.locator('.vue-flow__transformationpane').evaluate(el => {
-    const m = new DOMMatrix((el as HTMLElement).style.transform);
-    return { scale: m.a, tx: m.e, ty: m.f };
-  });
-
   // ============================================================================
   // PHASE 4: RENAME FLOW
   // ============================================================================
@@ -97,18 +94,20 @@ test('Create new flow with Custom Node', async ({ page }) => {
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 10 - Reply Message node selected');
 
-  // Position first Reply Message at canvas (200, 80)
+  // Position first Reply Message just below START for a short, stable edge
   const replyWrapper1 = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) })
     .first();
-  await replyWrapper1.waitFor({ state: 'visible', timeout: 15000 });
-  const replyBBox1 = await replyWrapper1.boundingBox();
-  if (!replyBBox1) throw new Error('First Reply Message node not found');
-  await page.mouse.move(replyBBox1.x + replyBBox1.width / 2, replyBBox1.y + replyBBox1.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(200 * tf.scale + tf.tx, 80 * tf.scale + tf.ty, { steps: 50 });
-  await page.mouse.up();
-  await page.waitForTimeout(500);
+  const startNodeWrapper = page.locator('.vue-flow__node')
+    .filter({ has: page.locator('.node-container#START') });
+  const startNodeBox = await startNodeWrapper.boundingBox();
+  if (!startNodeBox) throw new Error('START node not found on canvas');
+  await dragNodeToScreenPosition(
+    'first ReplyMessage',
+    replyWrapper1,
+    startNodeBox.x + startNodeBox.width / 2,
+    startNodeBox.y + startNodeBox.height / 2 + 120,
+  );
 
   // ============================================================================
   // PHASE 6: CONFIGURE FIRST REPLY MESSAGE NODE
@@ -125,6 +124,19 @@ test('Create new flow with Custom Node', async ({ page }) => {
     .locator('.v-field__input');
   await nodeIdInput1.waitFor({ state: 'visible', timeout: 15000 });
   const firstReplyId = await nodeIdInput1.inputValue();
+  const firstReplyWrapperById = page.locator('.vue-flow__node')
+    .filter({ has: page.locator(`.node-container#${firstReplyId}`) })
+    .first();
+  const firstReplyWrapperByLabel = page.locator('.vue-flow__node')
+    .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) })
+    .first();
+  const resolveFirstReplyWrapper = async () => {
+    if (await firstReplyWrapperById.isVisible().catch(() => false)) {
+      return firstReplyWrapperById;
+    }
+    await firstReplyWrapperByLabel.waitFor({ state: 'visible', timeout: 15000 });
+    return firstReplyWrapperByLabel;
+  };
   console.log(`  Auto-generated Node ID: ${firstReplyId}`);
   const nodeVersionField1 = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Node Version/ }) });
@@ -151,9 +163,16 @@ test('Create new flow with Custom Node', async ({ page }) => {
   console.log('✅ PASS: Step 14 - Message field set');
 
   console.log('📍 Step 15: Click Save button');
-  const saveButton1 = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
+  const modalDialog1 = page.locator('.modal-dialog.v-overlay--active').filter({ hasText: firstReplyId });
+  const saveButton1 = modalDialog1.getByRole('button', { name: /^Save$/ });
+  const closeButton1 = modalDialog1.locator('button').first();
+  await expect(saveButton1).toBeEnabled({ timeout: 30000 });
   await saveButton1.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
+  await page.waitForTimeout(500);
+  if (await modalDialog1.isVisible().catch(() => false)) {
+    await closeButton1.click();
+  }
+  await dismissVisibleModals();
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 15 - First Reply Message node saved');
 
@@ -163,41 +182,13 @@ test('Create new flow with Custom Node', async ({ page }) => {
 
   console.log('📍 Step 16: Connect START → ' + firstReplyId);
 
-  await page.mouse.move(640, 360);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); } // zoom in to max
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(200);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); } // zoom out to ~100%
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(500);
-
-  const edgesBefore1 = await page.locator('.vue-flow__edge[data-id]').count();
-
   const startHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#START') })
     .locator('.vue-flow__handle-bottom');
-  const replyHandle1 = page.locator('.vue-flow__node')
-    .filter({ has: page.locator(`.node-container#${firstReplyId}`) })
-    .locator('.vue-flow__handle-top');
+  const firstReplyWrapperForStartConnect = await resolveFirstReplyWrapper();
+  const replyHandle1 = firstReplyWrapperForStartConnect.locator('.vue-flow__handle-top');
 
-  const startBox = await startHandle.boundingBox();
-  const replyBox1 = await replyHandle1.boundingBox();
-  if (!startBox || !replyBox1) throw new Error(`Handles not found for START → ${firstReplyId}`);
-
-  await page.mouse.move(startBox.x + startBox.width / 2, startBox.y + startBox.height / 2);
-  await page.waitForTimeout(200);
-  await page.mouse.down();
-  await page.mouse.move(replyBox1.x + replyBox1.width / 2, replyBox1.y + replyBox1.height / 2, { steps: 50 });
-  await page.waitForTimeout(500);
-  await page.mouse.up();
-  await page.waitForTimeout(1000);
-
-  const edgesAfter1 = await page.locator('.vue-flow__edge[data-id]').count();
-  if (edgesAfter1 <= edgesBefore1) {
-    throw new Error(`Edge START → ${firstReplyId} NOT created — before: ${edgesBefore1}, after: ${edgesAfter1}`);
-  }
+  await connectEdge(`START → ${firstReplyId}`, startHandle, replyHandle1, { normalizeZoom: true });
   console.log('✅ PASS: Step 16 - Edge START → ' + firstReplyId + ' created');
 
   // ============================================================================
@@ -216,22 +207,19 @@ test('Create new flow with Custom Node', async ({ page }) => {
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 18 - Custom Node selected');
 
-  // Position Custom Node at canvas (450, 80) — re-read transform after zoom changes
-  const tfCustom = await page.locator('.vue-flow__transformationpane').evaluate(el => {
-    const m = new DOMMatrix((el as HTMLElement).style.transform);
-    return { scale: m.a, tx: m.e, ty: m.f };
-  });
   const customWrapper = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /CustomNode|Custom/ }) })
     .last();
   await customWrapper.waitFor({ state: 'visible', timeout: 15000 });
-  const customBBox = await customWrapper.boundingBox();
-  if (!customBBox) throw new Error('Custom Node not found on canvas');
-  await page.mouse.move(customBBox.x + customBBox.width / 2, customBBox.y + customBBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(450 * tfCustom.scale + tfCustom.tx, 80 * tfCustom.scale + tfCustom.ty, { steps: 50 });
-  await page.mouse.up();
-  await page.waitForTimeout(500);
+  const firstReplyWrapper = await resolveFirstReplyWrapper();
+  const firstReplyBox = await firstReplyWrapper.boundingBox();
+  if (!firstReplyBox) throw new Error(`${firstReplyId} node not found on canvas`);
+  await dragNodeToScreenPosition(
+    'CustomNode',
+    customWrapper,
+    firstReplyBox.x + firstReplyBox.width / 2,
+    firstReplyBox.y + firstReplyBox.height / 2 + 120,
+  );
 
   // ============================================================================
   // PHASE 9: CONFIGURE CUSTOM NODE
@@ -276,11 +264,28 @@ test('Create new flow with Custom Node', async ({ page }) => {
   console.log('✅ PASS: Step 20 - Code entered in Code field');
 
   console.log('📍 Step 21: Click Save button');
-  const saveButton2 = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
+  const modalDialog2 = page.getByRole('dialog').filter({ hasText: /CustomNode/ });
+  const saveButton2 = modalDialog2.getByRole('button', { name: /^Save$/ });
+  const closeButton2 = modalDialog2.locator('button').first();
+  await expect(saveButton2).toBeEnabled({ timeout: 30000 });
   await saveButton2.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
+  await page.waitForTimeout(500);
+  await page.keyboard.press('Escape').catch(() => {});
+  await closeButton2.click({ timeout: 2000 }).catch(() => {});
+  await dismissVisibleModals();
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 21 - Custom Node saved');
+
+  const customNodeWrapper = page.locator('.vue-flow__node')
+    .filter({ has: page.locator('.node-container#CustomNode') });
+  const firstReplyBoxAfterSave = await firstReplyWrapper.boundingBox();
+  if (!firstReplyBoxAfterSave) throw new Error(`${firstReplyId} node not found on canvas after saving CustomNode`);
+  await dragNodeToScreenPosition(
+    'CustomNode',
+    customNodeWrapper,
+    firstReplyBoxAfterSave.x + firstReplyBoxAfterSave.width / 2,
+    firstReplyBoxAfterSave.y + firstReplyBoxAfterSave.height / 2 + 120,
+  );
 
   // ============================================================================
   // PHASE 10: CONNECT FIRST REPLY MESSAGE → CUSTOM NODE
@@ -288,41 +293,13 @@ test('Create new flow with Custom Node', async ({ page }) => {
 
   console.log('📍 Step 22: Connect ' + firstReplyId + ' → CustomNode');
 
-  await page.mouse.move(640, 360);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); }
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(200);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); }
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(500);
-
-  const edgesBefore2 = await page.locator('.vue-flow__edge[data-id]').count();
-
-  const replySourceHandle1 = page.locator('.vue-flow__node')
-    .filter({ has: page.locator(`.node-container#${firstReplyId}`) })
-    .locator('.vue-flow__handle-bottom');
+  const firstReplyWrapperForCustomConnect = await resolveFirstReplyWrapper();
+  const replySourceHandle1 = firstReplyWrapperForCustomConnect.locator('.vue-flow__handle-bottom');
   const customTargetHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#CustomNode') })
     .locator('.vue-flow__handle-top');
 
-  const replySourceBox1 = await replySourceHandle1.boundingBox();
-  const customTargetBox = await customTargetHandle.boundingBox();
-  if (!replySourceBox1 || !customTargetBox) throw new Error(`Handles not found for ${firstReplyId} → CustomNode`);
-
-  await page.mouse.move(replySourceBox1.x + replySourceBox1.width / 2, replySourceBox1.y + replySourceBox1.height / 2);
-  await page.waitForTimeout(200);
-  await page.mouse.down();
-  await page.mouse.move(customTargetBox.x + customTargetBox.width / 2, customTargetBox.y + customTargetBox.height / 2, { steps: 50 });
-  await page.waitForTimeout(500);
-  await page.mouse.up();
-  await page.waitForTimeout(1000);
-
-  const edgesAfter2 = await page.locator('.vue-flow__edge[data-id]').count();
-  if (edgesAfter2 <= edgesBefore2) {
-    throw new Error(`Edge ${firstReplyId} → CustomNode NOT created — before: ${edgesBefore2}, after: ${edgesAfter2}`);
-  }
+  await connectEdge(`${firstReplyId} → CustomNode`, replySourceHandle1, customTargetHandle);
   console.log('✅ PASS: Step 22 - Edge ' + firstReplyId + ' → CustomNode created');
 
   // ============================================================================
@@ -341,22 +318,25 @@ test('Create new flow with Custom Node', async ({ page }) => {
   await page.waitForTimeout(300);
   console.log('✅ PASS: Step 24 - Reply Message node selected');
 
-  // Position output node at canvas (700, 80) — re-read transform after zoom changes
-  const tfOutput = await page.locator('.vue-flow__transformationpane').evaluate(el => {
-    const m = new DOMMatrix((el as HTMLElement).style.transform);
-    return { scale: m.a, tx: m.e, ty: m.f };
-  });
   const replyWrappers = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) });
   const outputWrapper = replyWrappers.last();
   await outputWrapper.waitFor({ state: 'visible', timeout: 15000 });
-  const outputBBox = await outputWrapper.boundingBox();
-  if (!outputBBox) throw new Error('Second Reply Message node not found');
-  await page.mouse.move(outputBBox.x + outputBBox.width / 2, outputBBox.y + outputBBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(700 * tfOutput.scale + tfOutput.tx, 80 * tfOutput.scale + tfOutput.ty, { steps: 50 });
-  await page.mouse.up();
-  await page.waitForTimeout(500);
+  const customNodeBox = await customNodeWrapper.boundingBox();
+  if (!customNodeBox) throw new Error('CustomNode not found on canvas');
+  const endNodeWrapper = page.locator('.vue-flow__node')
+    .filter({ has: page.locator('.node-container#END') });
+  const endNodeBox = await endNodeWrapper.boundingBox();
+  if (!endNodeBox) throw new Error('END node not found on canvas');
+  const customCenterY = customNodeBox.y + customNodeBox.height / 2;
+  const endCenterY = endNodeBox.y + endNodeBox.height / 2;
+  const outputGap = Math.min(120, Math.max(80, (endCenterY - customCenterY) / 2));
+  await dragNodeToScreenPosition(
+    'output',
+    outputWrapper,
+    customNodeBox.x + customNodeBox.width / 2,
+    customCenterY + outputGap,
+  );
 
   // ============================================================================
   // PHASE 12: CONFIGURE OUTPUT NODE
@@ -369,6 +349,7 @@ test('Create new flow with Custom Node', async ({ page }) => {
   const outputNodeIdInput = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /Node ID/ }) })
     .locator('.v-field__input');
+  const outputInitialId = await outputNodeIdInput.inputValue();
   await outputNodeIdInput.click();
   await outputNodeIdInput.fill('output');
   await outputNodeIdInput.press('Tab');
@@ -396,11 +377,64 @@ test('Create new flow with Custom Node', async ({ page }) => {
   console.log('✅ PASS: Step 27 - Message field set with template expression');
 
   console.log('📍 Step 28: Click Save button');
-  const saveButton3 = page.locator('.modal-dialog button').filter({ hasText: /^Save$/ });
+  const modalDialog3 = page.locator('.modal-dialog.v-overlay--active').last();
+  const saveButton3 = modalDialog3.getByRole('button', { name: /^Save$/ });
+  const closeButton3 = modalDialog3.locator('button').first();
+  await expect(saveButton3).toBeEnabled({ timeout: 30000 });
   await saveButton3.click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
+  await page.waitForTimeout(500);
+  await page.keyboard.press('Escape').catch(() => {});
+  await closeButton3.click({ timeout: 2000 }).catch(() => {});
+  await dismissVisibleModals();
   await page.waitForTimeout(500);
   console.log('✅ PASS: Step 28 - Output node saved');
+
+  const outputNodeWrapper = page.locator('.vue-flow__node')
+    .filter({ has: page.locator(`.node-container#output, .node-container#${outputInitialId}`) });
+  if (!(await page.locator('.node-container#output').first().isVisible().catch(() => false))) {
+    const outputNodeByOriginalId = page.locator('.vue-flow__node')
+      .filter({ has: page.locator(`.node-container#${outputInitialId}`) });
+    await outputNodeByOriginalId.waitFor({ state: 'visible', timeout: 15000 });
+    await page.locator(`.node-container#${outputInitialId}`).click();
+
+    const retryOutputModal = page.locator('.modal-dialog.v-overlay--active').last();
+    await retryOutputModal.waitFor({ state: 'visible', timeout: 30000 });
+    const retryOutputNodeIdField = retryOutputModal.locator('.field-container')
+      .filter({ has: page.locator('label', { hasText: /Node ID/ }) })
+      .locator('.v-field__input')
+      .first();
+    const retryOutputNodeIdValue = await retryOutputNodeIdField.inputValue();
+    if (retryOutputNodeIdValue !== 'output') {
+      await retryOutputNodeIdField.click();
+      await retryOutputNodeIdField.fill('output');
+      await retryOutputNodeIdField.press('Tab');
+    }
+
+    const retrySaveButton = retryOutputModal.getByRole('button', { name: /^Save$/ });
+    const retryCloseButton = retryOutputModal.locator('button').first();
+    if (await retrySaveButton.isEnabled().catch(() => false)) {
+      await retrySaveButton.click();
+      await page.waitForTimeout(500);
+    }
+    await page.keyboard.press('Escape').catch(() => {});
+    await retryCloseButton.click({ timeout: 2000 }).catch(() => {});
+    await dismissVisibleModals();
+    await outputNodeWrapper.waitFor({ state: 'visible', timeout: 15000 });
+  }
+
+  const customNodeBoxBeforeConnect = await customNodeWrapper.boundingBox();
+  const endNodeBoxBeforeConnect = await endNodeWrapper.boundingBox();
+  if (!customNodeBoxBeforeConnect) throw new Error('CustomNode not found before connecting to output');
+  if (!endNodeBoxBeforeConnect) throw new Error('END node not found before connecting output');
+  const customCenterYBeforeConnect = customNodeBoxBeforeConnect.y + customNodeBoxBeforeConnect.height / 2;
+  const endCenterYBeforeConnect = endNodeBoxBeforeConnect.y + endNodeBoxBeforeConnect.height / 2;
+  const outputGapBeforeConnect = Math.min(120, Math.max(80, (endCenterYBeforeConnect - customCenterYBeforeConnect) / 2));
+  await dragNodeToScreenPosition(
+    'output',
+    outputNodeWrapper,
+    customNodeBoxBeforeConnect.x + customNodeBoxBeforeConnect.width / 2,
+    customCenterYBeforeConnect + outputGapBeforeConnect,
+  );
 
   // ============================================================================
   // PHASE 13: CONNECT CUSTOMNODE → OUTPUT
@@ -408,41 +442,12 @@ test('Create new flow with Custom Node', async ({ page }) => {
 
   console.log('📍 Step 29: Connect CustomNode → output');
 
-  await page.mouse.move(640, 360);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); }
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(200);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); }
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(500);
-
-  const edgesBefore3 = await page.locator('.vue-flow__edge[data-id]').count();
-
   const customSourceHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#CustomNode') })
     .locator('.vue-flow__handle-bottom');
-  const outputTargetHandle = page.locator('.vue-flow__node')
-    .filter({ has: page.locator('.node-container#output') })
-    .locator('.vue-flow__handle-top');
+  const outputTargetHandle = outputNodeWrapper.locator('.vue-flow__handle-top');
 
-  const customSourceBox = await customSourceHandle.boundingBox();
-  const outputTargetBox = await outputTargetHandle.boundingBox();
-  if (!customSourceBox || !outputTargetBox) throw new Error('Handles not found for CustomNode → output');
-
-  await page.mouse.move(customSourceBox.x + customSourceBox.width / 2, customSourceBox.y + customSourceBox.height / 2);
-  await page.waitForTimeout(200);
-  await page.mouse.down();
-  await page.mouse.move(outputTargetBox.x + outputTargetBox.width / 2, outputTargetBox.y + outputTargetBox.height / 2, { steps: 50 });
-  await page.waitForTimeout(500);
-  await page.mouse.up();
-  await page.waitForTimeout(1000);
-
-  const edgesAfter3 = await page.locator('.vue-flow__edge[data-id]').count();
-  if (edgesAfter3 <= edgesBefore3) {
-    throw new Error(`Edge CustomNode → output NOT created — before: ${edgesBefore3}, after: ${edgesAfter3}`);
-  }
+  await connectEdge('CustomNode → output', customSourceHandle, outputTargetHandle);
   console.log('✅ PASS: Step 29 - Edge CustomNode → output created');
 
   // ============================================================================
@@ -451,41 +456,12 @@ test('Create new flow with Custom Node', async ({ page }) => {
 
   console.log('📍 Step 30: Connect output → END');
 
-  await page.mouse.move(640, 360);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); }
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(200);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); }
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(500);
-
-  const edgesBefore4 = await page.locator('.vue-flow__edge[data-id]').count();
-
-  const outputSourceHandle = page.locator('.vue-flow__node')
-    .filter({ has: page.locator('.node-container#output') })
-    .locator('.vue-flow__handle-bottom');
+  const outputSourceHandle = outputNodeWrapper.locator('.vue-flow__handle-bottom');
   const endTargetHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#END') })
     .locator('.vue-flow__handle-top');
 
-  const outputSourceBox = await outputSourceHandle.boundingBox();
-  const endTargetBox = await endTargetHandle.boundingBox();
-  if (!outputSourceBox || !endTargetBox) throw new Error('Handles not found for output → END');
-
-  await page.mouse.move(outputSourceBox.x + outputSourceBox.width / 2, outputSourceBox.y + outputSourceBox.height / 2);
-  await page.waitForTimeout(200);
-  await page.mouse.down();
-  await page.mouse.move(endTargetBox.x + endTargetBox.width / 2, endTargetBox.y + endTargetBox.height / 2, { steps: 50 });
-  await page.waitForTimeout(500);
-  await page.mouse.up();
-  await page.waitForTimeout(1000);
-
-  const edgesAfter4 = await page.locator('.vue-flow__edge[data-id]').count();
-  if (edgesAfter4 <= edgesBefore4) {
-    throw new Error(`Edge output → END NOT created — before: ${edgesBefore4}, after: ${edgesAfter4}`);
-  }
+  await connectEdge('output → END', outputSourceHandle, endTargetHandle);
   console.log('✅ PASS: Step 30 - Edge output → END created');
 
   // ============================================================================

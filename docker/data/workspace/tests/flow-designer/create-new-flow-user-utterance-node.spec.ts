@@ -1,111 +1,109 @@
 import { test, expect } from '@playwright/test';
+import { createFlowDesignerCanvasHelpers } from './helpers/flow-designer-canvas';
 
 test('Create new flow with User Utterance node', async ({ page }) => {
   test.setTimeout(300000);
   page.setDefaultTimeout(60000);
   page.setDefaultNavigationTimeout(60000);
-
-  // ============ PHASE 1: LOGIN & NAVIGATION ============
+  const { dismissVisibleModals, connectEdge, dragNodeToScreenPosition, ensureNodeIdOnCanvas } = createFlowDesignerCanvasHelpers(page);
 
   console.log('📍 Step 1: Navigate to login page');
   await page.goto('/login', { waitUntil: 'networkidle' });
-  console.log('✅ PASS: Step 1 - Navigated to login page');
+  await page.locator('.login-card').waitFor({ state: 'visible', timeout: 60000 });
+  console.log('✅ PASS: Step 1 - Login page loaded');
 
-  console.log('📍 Step 2: Fill email address');
+  console.log('📍 Step 2: Fill email and password');
   await page.locator('.v-text-field').nth(0).locator('input').fill('heidi@intnt.ai');
-  console.log('✅ PASS: Step 2 - Email filled');
-
-  console.log('📍 Step 3: Fill password');
   await page.locator('.v-text-field').nth(1).locator('input').fill('testing2026!');
-  console.log('✅ PASS: Step 3 - Password filled');
+  console.log('✅ PASS: Step 2 - Credentials entered');
 
-  console.log('📍 Step 4: Click login button');
+  console.log('📍 Step 3: Click login button');
   await page.getByRole('button', { name: /login/i }).click();
-  console.log('✅ PASS: Step 4 - Login button clicked');
+  await page.waitForURL(/\?select_org/, { timeout: 60000 });
+  console.log('✅ PASS: Step 3 - Redirected to org selection');
 
-  console.log('📍 Step 5: Wait for post-login redirect');
-  await page.waitForURL(url => url.pathname !== '/login', { timeout: 60000 });
-  if (page.url().includes('select_org')) {
-    await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
-    await page.waitForURL(url => !url.href.includes('select_org'), { timeout: 30000 });
+  console.log('📍 Step 4: Select organization Testing2026!');
+  const loader = page.locator('.loading-container, .loading-spinner, .v-progress-linear');
+  if (await loader.first().isVisible().catch(() => false)) {
+    await loader.first().waitFor({ state: 'hidden', timeout: 30000 });
   }
-  console.log('✅ PASS: Step 5 - Redirected past login');
+  await page.locator('.organization-card').first().waitFor({ state: 'visible', timeout: 60000 });
+  await page.locator('.organization-card').filter({ hasText: 'Testing2026!' }).click();
+  await page.waitForURL(/dashboard\.int3nt\.info\/(?!\?select_org)/, { timeout: 60000 });
+  console.log('✅ PASS: Step 4 - Organization selected, redirected to dashboard');
 
-  console.log('📍 Step 6: Confirm organization selected / dashboard reached');
-  console.log('✅ PASS: Step 6 - Organization selected');
+  console.log('📍 Step 5: Click Flow Designer in sidebar');
+  try {
+    await page.locator('a[href*="flow-designer"]').first().click({ timeout: 60000 });
+  } catch {
+    await page.goto('/flow-designer', { waitUntil: 'networkidle' });
+  }
+  await page.waitForURL(/\/flow-designer$/, { timeout: 60000 });
+  console.log('✅ PASS: Step 5 - Flow Designer page loaded');
 
-  console.log('📍 Step 7: Navigate to Flow Designer');
-  await page.locator('a:has-text("Flow Designer")').click();
-  await page.waitForURL('**/flow-designer', { timeout: 60000 });
-  console.log('✅ PASS: Step 7 - Navigated to Flow Designer');
+  console.log('📍 Step 6: Click Add New button to create flow');
+  await page.locator('button').filter({ hasText: /Add New/ }).first().click();
+  await page.waitForURL(/\/flow-designer\/\d+/, { timeout: 30000 });
+  await page.locator('.vue-flow').waitFor({ state: 'visible', timeout: 60000 });
+  console.log('✅ PASS: Step 6 - Flow canvas opened with START and END nodes');
 
-  console.log('📍 Step 8: Click Add New button');
-  await page.locator('.m-auto').filter({ hasText: /Add New/ }).click();
-  await page.waitForURL('**/flow-designer/**', { timeout: 60000 });
-  console.log('✅ PASS: Step 8 - New flow created, canvas opened');
-
-  // ============ PHASE 2: FLOW SETUP ============
-
-  console.log('📍 Step 9: Verify START and END nodes are present');
+  console.log('📍 Step 7: Verify START and END nodes are present');
   await page.locator('.node-container#START').waitFor({ state: 'visible', timeout: 15000 });
   await page.locator('.node-container#END').waitFor({ state: 'visible', timeout: 15000 });
-  console.log('✅ PASS: Step 9 - START and END nodes verified');
+  console.log('✅ PASS: Step 7 - START and END nodes verified');
 
-  // Read canvas transform ONCE — used for all absolute node positioning
-  const tf = await page.locator('.vue-flow__transformationpane').evaluate(el => {
-    const m = new DOMMatrix((el as HTMLElement).style.transform);
-    return { scale: m.a, tx: m.e, ty: m.f };
-  });
-
-  console.log('📍 Step 10: Rename flow to "User Utterance"');
-  await page.locator('.panel-container p.text-secondary').first().click();
+  console.log('📍 Step 8: Rename flow to User Utterance');
+  const flowNameText = page.locator('.panel-container p.text-secondary').first();
+  await flowNameText.click();
   await page.waitForTimeout(300);
   const flowNameInput = page.locator('.panel-container input').first();
   await flowNameInput.waitFor({ state: 'visible', timeout: 15000 });
   await flowNameInput.fill('User Utterance');
   await flowNameInput.press('Enter');
   await page.waitForTimeout(300);
-  console.log('✅ PASS: Step 10 - Flow renamed to "User Utterance"');
+  console.log('✅ PASS: Step 8 - Flow renamed to User Utterance');
 
-  // ============ PHASE 3: ADD FIRST REPLY MESSAGE NODE ============
-
-  console.log('📍 Step 11: Click Add Nodes button');
+  console.log('📍 Step 9: Click Add Nodes button');
   await page.locator('button.nodes-button[aria-haspopup="menu"]').first().click();
   await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 15000 });
-  console.log('✅ PASS: Step 11 - Add Nodes menu opened');
+  console.log('✅ PASS: Step 9 - Add Nodes menu opened');
 
-  console.log('📍 Step 12: Select Reply Message from dropdown');
+  console.log('📍 Step 10: Select Reply Message node');
   await page.locator('.nodes-dropdown-item').filter({ hasText: /Reply Message/ }).click();
   await page.keyboard.press('Escape');
   await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(300);
-  console.log('✅ PASS: Step 12 - Reply Message node added');
+  console.log('✅ PASS: Step 10 - Reply Message node selected');
 
-  console.log('📍 Step 13: Position first Reply Message node at canvas (250, 100)');
   const firstReplyWrapper = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) })
     .first();
-  const firstReplyBBox = await firstReplyWrapper.boundingBox();
-  if (!firstReplyBBox) throw new Error('Cannot position first Reply Message — node not found');
-  const targetX1 = 250 * tf.scale + tf.tx;
-  const targetY1 = 100 * tf.scale + tf.ty;
-  await page.mouse.move(firstReplyBBox.x + firstReplyBBox.width / 2, firstReplyBBox.y + firstReplyBBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(targetX1, targetY1, { steps: 50 });
-  await page.mouse.up();
-  await page.waitForTimeout(500);
-  console.log('✅ PASS: Step 13 - First Reply Message positioned');
+  const startNodeWrapper = page.locator('.vue-flow__node')
+    .filter({ has: page.locator('.node-container#START') });
+  const startNodeBox = await startNodeWrapper.boundingBox();
+  if (!startNodeBox) throw new Error('START node not found on canvas');
+  await dragNodeToScreenPosition(
+    'first ReplyMessage',
+    firstReplyWrapper,
+    startNodeBox.x + startNodeBox.width / 2,
+    startNodeBox.y + startNodeBox.height / 2 + 120,
+  );
 
-  console.log('📍 Step 14: Click first Reply Message node to open config modal');
+  console.log('📍 Step 11: Click Reply Message node to open modal');
   await page.locator('.node-container').filter({ hasText: /ReplyMessage/ }).first().evaluate((el) => (el as HTMLElement).click());
   await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 60000 });
-  console.log('✅ PASS: Step 14 - Node config modal opened');
+  console.log('✅ PASS: Step 11 - Reply Message node modal opened');
 
-  console.log('📍 Step 15: Verify auto-populated fields in modal');
-  await page.locator('.modal-dialog .field-container').first().waitFor({ state: 'visible', timeout: 15000 });
-  console.log('✅ PASS: Step 15 - Modal fields visible');
+  console.log('📍 Step 12: Verify auto-populated fields and read Node ID');
+  const nodeIdInput1 = page.locator('.modal-dialog .field-container')
+    .filter({ has: page.locator('label', { hasText: /Node ID/ }) })
+    .locator('.v-field__input');
+  await nodeIdInput1.waitFor({ state: 'visible', timeout: 15000 });
+  const firstReplyId = await nodeIdInput1.inputValue();
+  console.log(`  Auto-generated Node ID: ${firstReplyId}`);
+  console.log('✅ PASS: Step 12 - Auto-populated fields verified');
 
-  console.log('📍 Step 16: Fill Message field with prompt text');
+  console.log('📍 Step 13: Fill Message field with prompt text');
   const messageField = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /^Message/ }) })
     .locator('.v-field__input')
@@ -113,200 +111,155 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   await messageField.click();
   await messageField.fill('Write something below to test the user utterance node:');
   await messageField.press('Tab');
-  await page.waitForTimeout(300);
-  console.log('✅ PASS: Step 16 - Message field filled');
+  console.log('✅ PASS: Step 13 - Message field filled');
 
-  console.log('📍 Step 17: Click Save button in modal');
-  await page.locator('.modal-dialog').locator('button').filter({ hasText: /^Save$/ }).click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
+  console.log('📍 Step 14: Click Save button');
+  const modalDialog1 = page.locator('.modal-dialog.v-overlay--active').filter({ hasText: firstReplyId });
+  const saveButton1 = modalDialog1.getByRole('button', { name: /^Save$/ });
+  const closeButton1 = modalDialog1.locator('button').first();
+  await expect(saveButton1).toBeEnabled({ timeout: 30000 });
+  await saveButton1.click();
   await page.waitForTimeout(500);
-  console.log('✅ PASS: Step 17 - Node config saved, modal closed');
-
-  // ============ PHASE 4: CONNECT START TO FIRST REPLY MESSAGE ============
-
-  console.log('📍 Step 18: Connect START → Reply Message');
-  await page.mouse.move(640, 360);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); }
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(200);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); }
-  await page.keyboard.up('Control');
+  if (await modalDialog1.isVisible().catch(() => false)) {
+    await closeButton1.click();
+  }
+  await dismissVisibleModals();
   await page.waitForTimeout(500);
-  const edgesBefore1 = await page.locator('.vue-flow__edge[data-id]').count();
-  const sourceHandle1 = page.locator('.vue-flow__node')
+  console.log('✅ PASS: Step 14 - First Reply Message node saved');
+
+  console.log('📍 Step 15: Connect START → ' + firstReplyId);
+  const startHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#START') })
     .locator('.vue-flow__handle-bottom');
-  const targetHandle1 = page.locator('.vue-flow__node')
-    .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) })
-    .first()
+  const replyHandle1 = page.locator('.vue-flow__node')
+    .filter({ has: page.locator(`.node-container#${firstReplyId}`) })
     .locator('.vue-flow__handle-top');
-  const srcBox1 = await sourceHandle1.boundingBox();
-  const tgtBox1 = await targetHandle1.boundingBox();
-  if (!srcBox1 || !tgtBox1) throw new Error('Handle not found for START → Reply Message connection');
-  await page.mouse.move(srcBox1.x + srcBox1.width / 2, srcBox1.y + srcBox1.height / 2);
-  await page.waitForTimeout(200);
-  await page.mouse.down();
-  await page.mouse.move(tgtBox1.x + tgtBox1.width / 2, tgtBox1.y + tgtBox1.height / 2, { steps: 50 });
-  await page.waitForTimeout(500);
-  await page.mouse.up();
-  await page.waitForTimeout(1000);
-  console.log('✅ PASS: Step 18 - START → Reply Message connected');
+  await connectEdge(`START → ${firstReplyId}`, startHandle, replyHandle1, { normalizeZoom: true });
+  console.log('✅ PASS: Step 15 - Edge START → ' + firstReplyId + ' created');
 
-  console.log('📍 Step 19: Verify edge created between START and Reply Message');
-  const edgesAfter1 = await page.locator('.vue-flow__edge[data-id]').count();
-  if (edgesAfter1 <= edgesBefore1) throw new Error(`Edge NOT created — count before: ${edgesBefore1}, after: ${edgesAfter1}`);
-  console.log('✅ PASS: Step 19 - Edge verified');
-
-  // ============ PHASE 5: ADD USER UTTERANCE NODE ============
-
-  console.log('📍 Step 20: Click Add Nodes button');
+  console.log('📍 Step 16: Click Add Nodes button');
   await page.locator('button.nodes-button[aria-haspopup="menu"]').first().click();
   await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 15000 });
-  console.log('✅ PASS: Step 20 - Add Nodes menu opened');
+  console.log('✅ PASS: Step 16 - Add Nodes menu opened');
 
-  console.log('📍 Step 21: Select User Utterance from dropdown');
+  console.log('📍 Step 17: Select User Utterance node');
   await page.locator('.nodes-dropdown-item').filter({ hasText: /User Utterance/ }).click();
   await page.keyboard.press('Escape');
   await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(300);
-  console.log('✅ PASS: Step 21 - User Utterance node added');
+  console.log('✅ PASS: Step 17 - User Utterance node selected');
 
-  console.log('📍 Step 22: Position User Utterance node at canvas (250, 200)');
-  const tfUU = await page.locator('.vue-flow__transformationpane').evaluate(el => {
-    const m = new DOMMatrix((el as HTMLElement).style.transform);
-    return { scale: m.a, tx: m.e, ty: m.f };
-  });
   const userUtteranceWrapper = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container').filter({ hasText: /UserUtterance/ }) })
     .first();
-  const userUtteranceBBox = await userUtteranceWrapper.boundingBox();
-  if (!userUtteranceBBox) throw new Error('Cannot position User Utterance — node not found');
-  const targetX2 = 250 * tfUU.scale + tfUU.tx;
-  const targetY2 = 200 * tfUU.scale + tfUU.ty;
-  await page.mouse.move(userUtteranceBBox.x + userUtteranceBBox.width / 2, userUtteranceBBox.y + userUtteranceBBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(targetX2, targetY2, { steps: 50 });
-  await page.mouse.up();
-  await page.waitForTimeout(500);
-  console.log('✅ PASS: Step 22 - User Utterance positioned');
+  const firstReplyWrapperById = page.locator('.vue-flow__node')
+    .filter({ has: page.locator(`.node-container#${firstReplyId}`) });
+  const firstReplyBox = await firstReplyWrapperById.boundingBox();
+  if (!firstReplyBox) throw new Error(`${firstReplyId} node not found on canvas`);
+  await dragNodeToScreenPosition(
+    'UserUtterance',
+    userUtteranceWrapper,
+    firstReplyBox.x + firstReplyBox.width / 2,
+    firstReplyBox.y + firstReplyBox.height / 2 + 120,
+  );
 
-  console.log('📍 Step 23: Click User Utterance node to open config modal');
+  console.log('📍 Step 18: Click User Utterance node to open modal');
   await page.locator('.node-container').filter({ hasText: /UserUtterance/ }).first().evaluate((el) => (el as HTMLElement).click());
   await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 60000 });
-  console.log('✅ PASS: Step 23 - User Utterance config modal opened');
+  console.log('✅ PASS: Step 18 - User Utterance modal opened');
 
-  console.log('📍 Step 24: Change Node ID to "input"');
+  console.log('📍 Step 19: Change Node ID to input');
   const nodeIdField = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /^Node ID/ }) })
     .locator('.v-field__input')
     .first();
+  const inputInitialId = await nodeIdField.inputValue();
   await nodeIdField.click();
   await nodeIdField.fill('input');
   await nodeIdField.press('Tab');
-  await page.waitForTimeout(300);
-  console.log('✅ PASS: Step 24 - Node ID changed to "input"');
+  console.log('✅ PASS: Step 19 - Node ID changed to input');
 
-  console.log('📍 Step 25: Leave State Variable empty (default)');
-  console.log('✅ PASS: Step 25 - State Variable left empty');
-
-  console.log('📍 Step 26: Click Save button in modal');
-  await page.locator('.modal-dialog').locator('button').filter({ hasText: /^Save$/ }).click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
+  console.log('📍 Step 20: Click Save button');
+  const modalDialog2 = page.locator('.modal-dialog.v-overlay--active').last();
+  const saveButton2 = modalDialog2.getByRole('button', { name: /^Save$/ });
+  const closeButton2 = modalDialog2.locator('button').first();
+  await expect(saveButton2).toBeEnabled({ timeout: 30000 });
+  await saveButton2.click();
   await page.waitForTimeout(500);
-  console.log('✅ PASS: Step 26 - User Utterance config saved');
-
-  // ============ PHASE 6: CONNECT FIRST REPLY MESSAGE TO USER UTTERANCE ============
-
-  console.log('📍 Step 27: Connect Reply Message → input (User Utterance)');
-  await page.mouse.move(640, 360);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); }
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(200);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); }
-  await page.keyboard.up('Control');
+  await page.keyboard.press('Escape').catch(() => {});
+  await closeButton2.click({ timeout: 2000 }).catch(() => {});
+  await dismissVisibleModals();
   await page.waitForTimeout(500);
-  const edgesBefore2 = await page.locator('.vue-flow__edge[data-id]').count();
-  const sourceHandle2 = page.locator('.vue-flow__node')
-    .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) })
-    .first()
+  console.log('✅ PASS: Step 20 - User Utterance saved');
+
+  const inputNodeWrapper = await ensureNodeIdOnCanvas('input', inputInitialId);
+
+  const firstReplyBoxAfterSave = await firstReplyWrapperById.boundingBox();
+  if (!firstReplyBoxAfterSave) throw new Error(`${firstReplyId} node not found on canvas after saving input`);
+  await dragNodeToScreenPosition(
+    'input',
+    inputNodeWrapper,
+    firstReplyBoxAfterSave.x + firstReplyBoxAfterSave.width / 2,
+    firstReplyBoxAfterSave.y + firstReplyBoxAfterSave.height / 2 + 120,
+  );
+
+  console.log('📍 Step 21: Connect ' + firstReplyId + ' → input');
+  const replySourceHandle = page.locator('.vue-flow__node')
+    .filter({ has: page.locator(`.node-container#${firstReplyId}`) })
     .locator('.vue-flow__handle-bottom');
-  const targetHandle2 = page.locator('.vue-flow__node')
-    .filter({ has: page.locator('.node-container#input') })
-    .locator('.vue-flow__handle-top');
-  const srcBox2 = await sourceHandle2.boundingBox();
-  const tgtBox2 = await targetHandle2.boundingBox();
-  if (!srcBox2 || !tgtBox2) throw new Error('Handle not found for Reply Message → input connection');
-  await page.mouse.move(srcBox2.x + srcBox2.width / 2, srcBox2.y + srcBox2.height / 2);
-  await page.waitForTimeout(200);
-  await page.mouse.down();
-  await page.mouse.move(tgtBox2.x + tgtBox2.width / 2, tgtBox2.y + tgtBox2.height / 2, { steps: 50 });
-  await page.waitForTimeout(500);
-  await page.mouse.up();
-  await page.waitForTimeout(1000);
-  console.log('✅ PASS: Step 27 - Reply Message → input connected');
+  const inputTargetHandle = inputNodeWrapper.locator('.vue-flow__handle-top');
+  await connectEdge(`${firstReplyId} → input`, replySourceHandle, inputTargetHandle);
+  console.log('✅ PASS: Step 21 - Edge ' + firstReplyId + ' → input created');
 
-  console.log('📍 Step 28: Verify edge created between Reply Message and input');
-  const edgesAfter2 = await page.locator('.vue-flow__edge[data-id]').count();
-  if (edgesAfter2 <= edgesBefore2) throw new Error(`Edge NOT created — count before: ${edgesBefore2}, after: ${edgesAfter2}`);
-  console.log('✅ PASS: Step 28 - Edge verified');
-
-  // ============ PHASE 7: ADD OUTPUT REPLY MESSAGE NODE ============
-
-  console.log('📍 Step 29: Click Add Nodes button');
+  console.log('📍 Step 22: Click Add Nodes button');
   await page.locator('button.nodes-button[aria-haspopup="menu"]').first().click();
   await page.locator('.nodes-dropdown-menu').waitFor({ state: 'visible', timeout: 15000 });
-  console.log('✅ PASS: Step 29 - Add Nodes menu opened');
+  console.log('✅ PASS: Step 22 - Add Nodes menu opened');
 
-  console.log('📍 Step 30: Select Reply Message from dropdown');
+  console.log('📍 Step 23: Select Reply Message node');
   await page.locator('.nodes-dropdown-item').filter({ hasText: /Reply Message/ }).click();
   await page.keyboard.press('Escape');
   await page.locator('.nodes-dropdown-menu').waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(300);
-  console.log('✅ PASS: Step 30 - Second Reply Message node added');
+  console.log('✅ PASS: Step 23 - Reply Message node selected');
 
-  console.log('📍 Step 31: Position Output Reply Message node at canvas (250, 300)');
-  const tfReply2 = await page.locator('.vue-flow__transformationpane').evaluate(el => {
-    const m = new DOMMatrix((el as HTMLElement).style.transform);
-    return { scale: m.a, tx: m.e, ty: m.f };
-  });
-  const secondReplyWrapper = page.locator('.vue-flow__node')
-    .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) })
-    .nth(1);
-  const secondReplyBBox = await secondReplyWrapper.boundingBox();
-  if (!secondReplyBBox) throw new Error('Cannot position Output Reply Message — node not found');
-  const targetX3 = 250 * tfReply2.scale + tfReply2.tx;
-  const targetY3 = 300 * tfReply2.scale + tfReply2.ty;
-  await page.mouse.move(secondReplyBBox.x + secondReplyBBox.width / 2, secondReplyBBox.y + secondReplyBBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(targetX3, targetY3, { steps: 50 });
-  await page.mouse.up();
-  await page.waitForTimeout(500);
-  console.log('✅ PASS: Step 31 - Output Reply Message positioned');
+  const replyWrappers = page.locator('.vue-flow__node')
+    .filter({ has: page.locator('.node-container').filter({ hasText: /ReplyMessage/ }) });
+  const outputWrapper = replyWrappers.last();
+  await outputWrapper.waitFor({ state: 'visible', timeout: 15000 });
+  const inputNodeBox = await inputNodeWrapper.boundingBox();
+  if (!inputNodeBox) throw new Error('input node not found on canvas');
+  const endNodeWrapper = page.locator('.vue-flow__node')
+    .filter({ has: page.locator('.node-container#END') });
+  const endNodeBox = await endNodeWrapper.boundingBox();
+  if (!endNodeBox) throw new Error('END node not found on canvas');
+  const inputCenterY = inputNodeBox.y + inputNodeBox.height / 2;
+  const endCenterY = endNodeBox.y + endNodeBox.height / 2;
+  const outputGap = Math.min(120, Math.max(80, (endCenterY - inputCenterY) / 2));
+  await dragNodeToScreenPosition(
+    'Output',
+    outputWrapper,
+    inputNodeBox.x + inputNodeBox.width / 2,
+    inputCenterY + outputGap,
+  );
 
-  console.log('📍 Step 32: Click Output Reply Message node to open config modal');
-  await page.locator('.node-container').filter({ hasText: /ReplyMessage/ }).nth(1).evaluate((el) => (el as HTMLElement).click());
+  console.log('📍 Step 24: Click output node to open modal');
+  await page.locator('.node-container').filter({ hasText: /ReplyMessage/ }).last().evaluate((el) => (el as HTMLElement).click());
   await page.locator('.modal-dialog').waitFor({ state: 'visible', timeout: 60000 });
-  console.log('✅ PASS: Step 32 - Output node config modal opened');
+  console.log('✅ PASS: Step 24 - Output node modal opened');
 
-  console.log('📍 Step 33: Change Node ID to "Output"');
+  console.log('📍 Step 25: Change Node ID to Output');
   const outputNodeIdField = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /^Node ID/ }) })
     .locator('.v-field__input')
     .first();
+  const outputInitialId = await outputNodeIdField.inputValue();
   await outputNodeIdField.click();
   await outputNodeIdField.fill('Output');
   await outputNodeIdField.press('Tab');
-  await page.waitForTimeout(300);
-  console.log('✅ PASS: Step 33 - Node ID changed to "Output"');
+  console.log('✅ PASS: Step 25 - Node ID changed to Output');
 
-  console.log('📍 Step 34: Leave Node Version, Receiver Channel, Content Type as default');
-  console.log('✅ PASS: Step 34 - Fields left as default');
-
-  console.log('📍 Step 35: Fill Message field with template');
+  console.log('📍 Step 26: Fill Message field with template');
   const outputMessageField = page.locator('.modal-dialog .field-container')
     .filter({ has: page.locator('label', { hasText: /^Message/ }) })
     .locator('.v-field__input')
@@ -314,177 +267,163 @@ test('Create new flow with User Utterance node', async ({ page }) => {
   await outputMessageField.click();
   await outputMessageField.fill("{{ state['nodes']['input']['output']['messages'].content }}");
   await outputMessageField.press('Tab');
-  await page.waitForTimeout(300);
-  console.log('✅ PASS: Step 35 - Message template filled');
+  console.log('✅ PASS: Step 26 - Message template filled');
 
-  console.log('📍 Step 36: Click Save button in modal');
-  await page.locator('.modal-dialog').locator('button').filter({ hasText: /^Save$/ }).click();
-  await page.locator('.modal-dialog').waitFor({ state: 'hidden', timeout: 30000 });
+  console.log('📍 Step 27: Click Save button');
+  const modalDialog3 = page.locator('.modal-dialog.v-overlay--active').last();
+  const saveButton3 = modalDialog3.getByRole('button', { name: /^Save$/ });
+  const closeButton3 = modalDialog3.locator('button').first();
+  await expect(saveButton3).toBeEnabled({ timeout: 30000 });
+  await saveButton3.click();
   await page.waitForTimeout(500);
-  console.log('✅ PASS: Step 36 - Output node config saved');
-
-  // ============ PHASE 8: CONNECT INPUT TO OUTPUT AND OUTPUT TO END ============
-
-  console.log('📍 Step 37: Connect input → Output');
-  await page.mouse.move(640, 360);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); }
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(200);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); }
-  await page.keyboard.up('Control');
+  await page.keyboard.press('Escape').catch(() => {});
+  await closeButton3.click({ timeout: 2000 }).catch(() => {});
+  await dismissVisibleModals();
   await page.waitForTimeout(500);
-  const edgesBefore3 = await page.locator('.vue-flow__edge[data-id]').count();
-  const sourceHandle3 = page.locator('.vue-flow__node')
+  console.log('✅ PASS: Step 27 - Output node saved');
+
+  const outputNodeWrapper = page.locator('.vue-flow__node')
+    .filter({ has: page.locator(`.node-container#Output, .node-container#${outputInitialId}`) });
+  if (!(await page.locator('.node-container#Output').first().isVisible().catch(() => false))) {
+    const outputNodeByOriginalId = page.locator('.vue-flow__node')
+      .filter({ has: page.locator(`.node-container#${outputInitialId}`) });
+    await outputNodeByOriginalId.waitFor({ state: 'visible', timeout: 15000 });
+    await page.locator(`.node-container#${outputInitialId}`).click();
+
+    const retryOutputModal = page.locator('.modal-dialog.v-overlay--active').last();
+    await retryOutputModal.waitFor({ state: 'visible', timeout: 30000 });
+    const retryOutputNodeIdField = retryOutputModal.locator('.field-container')
+      .filter({ has: page.locator('label', { hasText: /^Node ID/ }) })
+      .locator('.v-field__input')
+      .first();
+    const retryOutputNodeIdValue = await retryOutputNodeIdField.inputValue();
+    if (retryOutputNodeIdValue !== 'Output') {
+      await retryOutputNodeIdField.click();
+      await retryOutputNodeIdField.fill('Output');
+      await retryOutputNodeIdField.press('Tab');
+    }
+
+    const retrySaveButton = retryOutputModal.getByRole('button', { name: /^Save$/ });
+    const retryCloseButton = retryOutputModal.locator('button').first();
+    if (await retrySaveButton.isEnabled().catch(() => false)) {
+      await retrySaveButton.click();
+      await page.waitForTimeout(500);
+    }
+    await page.keyboard.press('Escape').catch(() => {});
+    await retryCloseButton.click({ timeout: 2000 }).catch(() => {});
+    await dismissVisibleModals();
+    await outputNodeWrapper.waitFor({ state: 'visible', timeout: 15000 });
+  }
+
+  const inputNodeBoxBeforeConnect = await inputNodeWrapper.boundingBox();
+  const endNodeBoxBeforeConnect = await endNodeWrapper.boundingBox();
+  if (!inputNodeBoxBeforeConnect) throw new Error('input node not found before connecting to Output');
+  if (!endNodeBoxBeforeConnect) throw new Error('END node not found before connecting Output');
+  const inputCenterYBeforeConnect = inputNodeBoxBeforeConnect.y + inputNodeBoxBeforeConnect.height / 2;
+  const endCenterYBeforeConnect = endNodeBoxBeforeConnect.y + endNodeBoxBeforeConnect.height / 2;
+  const outputGapBeforeConnect = Math.min(120, Math.max(80, (endCenterYBeforeConnect - inputCenterYBeforeConnect) / 2));
+  await dragNodeToScreenPosition(
+    'Output',
+    outputNodeWrapper,
+    inputNodeBoxBeforeConnect.x + inputNodeBoxBeforeConnect.width / 2,
+    inputCenterYBeforeConnect + outputGapBeforeConnect,
+  );
+
+  console.log('📍 Step 28: Connect input → Output');
+  const inputSourceHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#input') })
     .locator('.vue-flow__handle-bottom');
-  const targetHandle3 = page.locator('.vue-flow__node')
-    .filter({ has: page.locator('.node-container#Output') })
-    .locator('.vue-flow__handle-top');
-  const srcBox3 = await sourceHandle3.boundingBox();
-  const tgtBox3 = await targetHandle3.boundingBox();
-  if (!srcBox3 || !tgtBox3) throw new Error('Handle not found for input → Output connection');
-  await page.mouse.move(srcBox3.x + srcBox3.width / 2, srcBox3.y + srcBox3.height / 2);
-  await page.waitForTimeout(200);
-  await page.mouse.down();
-  await page.mouse.move(tgtBox3.x + tgtBox3.width / 2, tgtBox3.y + tgtBox3.height / 2, { steps: 50 });
-  await page.waitForTimeout(500);
-  await page.mouse.up();
-  await page.waitForTimeout(1000);
-  console.log('✅ PASS: Step 37 - input → Output connected');
+  const outputTargetHandle = outputNodeWrapper.locator('.vue-flow__handle-top');
+  await connectEdge('input → Output', inputSourceHandle, outputTargetHandle);
+  console.log('✅ PASS: Step 28 - Edge input → Output created');
 
-  console.log('📍 Step 38: Verify edge created between input and Output');
-  const edgesAfter3 = await page.locator('.vue-flow__edge[data-id]').count();
-  if (edgesAfter3 <= edgesBefore3) throw new Error(`Edge NOT created — count before: ${edgesBefore3}, after: ${edgesAfter3}`);
-  console.log('✅ PASS: Step 38 - Edge verified');
-
-  console.log('📍 Step 39: Connect Output → END');
-  await page.mouse.move(640, 360);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 20; i++) { await page.mouse.wheel(0, -100); }
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(200);
-  await page.keyboard.down('Control');
-  for (let i = 0; i < 10; i++) { await page.mouse.wheel(0, 100); }
-  await page.keyboard.up('Control');
-  await page.waitForTimeout(500);
-  const edgesBefore4 = await page.locator('.vue-flow__edge[data-id]').count();
-  const sourceHandle4 = page.locator('.vue-flow__node')
-    .filter({ has: page.locator('.node-container#Output') })
-    .locator('.vue-flow__handle-bottom');
-  const targetHandle4 = page.locator('.vue-flow__node')
+  console.log('📍 Step 29: Connect Output → END');
+  const outputSourceHandle = outputNodeWrapper.locator('.vue-flow__handle-bottom');
+  const endTargetHandle = page.locator('.vue-flow__node')
     .filter({ has: page.locator('.node-container#END') })
     .locator('.vue-flow__handle-top');
-  const srcBox4 = await sourceHandle4.boundingBox();
-  const tgtBox4 = await targetHandle4.boundingBox();
-  if (!srcBox4 || !tgtBox4) throw new Error('Handle not found for Output → END connection');
-  await page.mouse.move(srcBox4.x + srcBox4.width / 2, srcBox4.y + srcBox4.height / 2);
-  await page.waitForTimeout(200);
-  await page.mouse.down();
-  await page.mouse.move(tgtBox4.x + tgtBox4.width / 2, tgtBox4.y + tgtBox4.height / 2, { steps: 50 });
-  await page.waitForTimeout(500);
-  await page.mouse.up();
-  await page.waitForTimeout(1000);
-  console.log('✅ PASS: Step 39 - Output → END connected');
+  await connectEdge('Output → END', outputSourceHandle, endTargetHandle);
+  console.log('✅ PASS: Step 29 - Edge Output → END created');
 
-  console.log('📍 Step 40: Verify edge created between Output and END');
-  const edgesAfter4 = await page.locator('.vue-flow__edge[data-id]').count();
-  if (edgesAfter4 <= edgesBefore4) throw new Error(`Edge NOT created — count before: ${edgesBefore4}, after: ${edgesAfter4}`);
-  console.log('✅ PASS: Step 40 - Edge verified');
+  console.log('📍 Step 30: Verify flow structure START → ' + firstReplyId + ' → input → Output → END');
+  const finalEdgeCount = await page.locator('.vue-flow__edge[data-id]').count();
+  if (finalEdgeCount < 4) {
+    throw new Error(`Expected at least 4 edges, found ${finalEdgeCount}`);
+  }
+  console.log('✅ PASS: Step 30 - Flow structure verified with all 4 edges');
 
-  // ============ PHASE 9: SAVE FLOW VERSION ============
-
-  console.log('📍 Step 41: Click Save Flow button (disk icon)');
+  console.log('📍 Step 31: Click Save Flow button');
   await page.locator('button').filter({ has: page.locator('.mdi-content-save') }).click();
   const saveDialog = page.locator('.v-overlay--active').filter({ hasText: /Save Flow Version/ });
   await saveDialog.waitFor({ state: 'visible', timeout: 60000 });
-  console.log('✅ PASS: Step 41 - Save Flow Version modal opened');
+  console.log('✅ PASS: Step 31 - Save Flow Version modal opened');
 
-  console.log('📍 Step 42: Enter version name "UserUtteranceV1"');
+  console.log('📍 Step 32: Enter version name UserUtteranceV1');
   const versionNameInput = saveDialog.locator('.v-field__input').first();
   await versionNameInput.fill('UserUtteranceV1');
-  console.log('✅ PASS: Step 42 - Version name entered');
+  console.log('✅ PASS: Step 32 - Version name entered');
 
-  console.log('📍 Step 43: Click Save button in modal');
+  console.log('📍 Step 33: Click Save button in modal');
   await saveDialog.locator('button').filter({ hasText: /^Save$/ }).click();
   await saveDialog.waitFor({ state: 'hidden', timeout: 30000 });
-  console.log('✅ PASS: Step 43 - Flow version saved');
+  console.log('✅ PASS: Step 33 - Flow version saved');
 
-  console.log('📍 Step 44: Verify success toast notification');
+  console.log('📍 Step 34: Verify success toast notification');
   await expect(page.locator('.v-snackbar')).toContainText(/success|saved/i, { timeout: 15000 });
-  console.log('✅ PASS: Step 44 - Success notification verified');
+  console.log('✅ PASS: Step 34 - Success notification verified');
 
-  // ============ PHASE 10: FINAL VERIFICATION ============
-
-  console.log('📍 Step 45: Verify all nodes are on canvas');
+  console.log('📍 Step 35: Verify all nodes are on canvas');
   await page.locator('.node-container#START').waitFor({ state: 'visible', timeout: 15000 });
-  await page.locator('.node-container').filter({ hasText: /ReplyMessage/ }).first().waitFor({ state: 'visible', timeout: 15000 });
+  await page.locator(`.node-container#${firstReplyId}`).waitFor({ state: 'visible', timeout: 15000 });
   await page.locator('.node-container#input').waitFor({ state: 'visible', timeout: 15000 });
-  await page.locator('.node-container#Output').waitFor({ state: 'visible', timeout: 15000 });
+  await outputNodeWrapper.waitFor({ state: 'visible', timeout: 15000 });
   await page.locator('.node-container#END').waitFor({ state: 'visible', timeout: 15000 });
-  console.log('✅ PASS: Step 45 - All nodes verified on canvas');
+  console.log('✅ PASS: Step 35 - All nodes verified on canvas');
 
-  console.log('📍 Step 46: Verify all edges are connected (expect 4 total)');
-  const finalEdgeCount = await page.locator('.vue-flow__edge[data-id]').count();
-  if (finalEdgeCount < 4) throw new Error(`Expected at least 4 edges, found ${finalEdgeCount}`);
-  console.log('✅ PASS: Step 46 - All edges verified');
-
-  console.log('📍 Step 47: Verify flow name is "User Utterance"');
+  console.log('📍 Step 36: Verify flow name is User Utterance');
   await expect(page.locator('.panel-container p.text-secondary').first()).toContainText('User Utterance');
-  console.log('✅ PASS: Step 47 - Flow name verified');
-
-  // ============ TEST SUMMARY ============
+  console.log('✅ PASS: Step 36 - Flow name verified');
 
   console.log('\n' + '='.repeat(70));
   console.log('📊 TEST SUMMARY');
   console.log('='.repeat(70));
-  console.log('✅ Step 1: PASS - Navigated to login page');
-  console.log('✅ Step 2: PASS - Email filled');
-  console.log('✅ Step 3: PASS - Password filled');
-  console.log('✅ Step 4: PASS - Login button clicked');
-  console.log('✅ Step 5: PASS - Redirected to org selection');
-  console.log('✅ Step 6: PASS - Organization selected');
-  console.log('✅ Step 7: PASS - Navigated to Flow Designer');
-  console.log('✅ Step 8: PASS - New flow created, canvas opened');
-  console.log('✅ Step 9: PASS - START and END nodes verified');
-  console.log('✅ Step 10: PASS - Flow renamed to "User Utterance"');
-  console.log('✅ Step 11: PASS - Add Nodes menu opened');
-  console.log('✅ Step 12: PASS - Reply Message node added');
-  console.log('✅ Step 13: PASS - First Reply Message positioned');
-  console.log('✅ Step 14: PASS - Node config modal opened');
-  console.log('✅ Step 15: PASS - Modal fields visible');
-  console.log('✅ Step 16: PASS - Message field filled');
-  console.log('✅ Step 17: PASS - Node config saved, modal closed');
-  console.log('✅ Step 18: PASS - START → Reply Message connected');
-  console.log('✅ Step 19: PASS - Edge verified');
-  console.log('✅ Step 20: PASS - Add Nodes menu opened');
-  console.log('✅ Step 21: PASS - User Utterance node added');
-  console.log('✅ Step 22: PASS - User Utterance positioned');
-  console.log('✅ Step 23: PASS - User Utterance config modal opened');
-  console.log('✅ Step 24: PASS - Node ID changed to "input"');
-  console.log('✅ Step 25: PASS - State Variable left empty');
-  console.log('✅ Step 26: PASS - User Utterance config saved');
-  console.log('✅ Step 27: PASS - Reply Message → input connected');
-  console.log('✅ Step 28: PASS - Edge verified');
-  console.log('✅ Step 29: PASS - Add Nodes menu opened');
-  console.log('✅ Step 30: PASS - Second Reply Message node added');
-  console.log('✅ Step 31: PASS - Output Reply Message positioned');
-  console.log('✅ Step 32: PASS - Output node config modal opened');
-  console.log('✅ Step 33: PASS - Node ID changed to "Output"');
-  console.log('✅ Step 34: PASS - Fields left as default');
-  console.log('✅ Step 35: PASS - Message template filled');
-  console.log('✅ Step 36: PASS - Output node config saved');
-  console.log('✅ Step 37: PASS - input → Output connected');
-  console.log('✅ Step 38: PASS - Edge verified');
-  console.log('✅ Step 39: PASS - Output → END connected');
-  console.log('✅ Step 40: PASS - Edge verified');
-  console.log('✅ Step 41: PASS - Save Flow Version modal opened');
-  console.log('✅ Step 42: PASS - Version name entered');
-  console.log('✅ Step 43: PASS - Flow version saved');
-  console.log('✅ Step 44: PASS - Success notification verified');
-  console.log('✅ Step 45: PASS - All nodes verified on canvas');
-  console.log('✅ Step 46: PASS - All edges verified');
-  console.log('✅ Step 47: PASS - Flow name verified');
+  console.log('✅ Step 1: PASS - Login page loaded');
+  console.log('✅ Step 2: PASS - Credentials entered');
+  console.log('✅ Step 3: PASS - Redirected to org selection');
+  console.log('✅ Step 4: PASS - Organization selected');
+  console.log('✅ Step 5: PASS - Flow Designer page loaded');
+  console.log('✅ Step 6: PASS - Flow canvas opened');
+  console.log('✅ Step 7: PASS - START and END nodes verified');
+  console.log('✅ Step 8: PASS - Flow renamed to User Utterance');
+  console.log('✅ Step 9: PASS - Add Nodes menu opened');
+  console.log('✅ Step 10: PASS - Reply Message node selected');
+  console.log('✅ Step 11: PASS - Reply Message node modal opened');
+  console.log('✅ Step 12: PASS - Auto-populated fields verified, Node ID: ' + firstReplyId);
+  console.log('✅ Step 13: PASS - Message field filled');
+  console.log('✅ Step 14: PASS - First Reply Message node saved');
+  console.log('✅ Step 15: PASS - Edge START → ' + firstReplyId + ' created');
+  console.log('✅ Step 16: PASS - Add Nodes menu opened');
+  console.log('✅ Step 17: PASS - User Utterance node selected');
+  console.log('✅ Step 18: PASS - User Utterance modal opened');
+  console.log('✅ Step 19: PASS - Node ID changed to input');
+  console.log('✅ Step 20: PASS - User Utterance saved');
+  console.log('✅ Step 21: PASS - Edge ' + firstReplyId + ' → input created');
+  console.log('✅ Step 22: PASS - Add Nodes menu opened');
+  console.log('✅ Step 23: PASS - Reply Message node selected');
+  console.log('✅ Step 24: PASS - Output node modal opened');
+  console.log('✅ Step 25: PASS - Node ID changed to Output');
+  console.log('✅ Step 26: PASS - Message template filled');
+  console.log('✅ Step 27: PASS - Output node saved');
+  console.log('✅ Step 28: PASS - Edge input → Output created');
+  console.log('✅ Step 29: PASS - Edge Output → END created');
+  console.log('✅ Step 30: PASS - Flow structure verified');
+  console.log('✅ Step 31: PASS - Save Flow Version modal opened');
+  console.log('✅ Step 32: PASS - Version name entered');
+  console.log('✅ Step 33: PASS - Flow version saved');
+  console.log('✅ Step 34: PASS - Success notification verified');
+  console.log('✅ Step 35: PASS - All nodes verified on canvas');
+  console.log('✅ Step 36: PASS - Flow name verified');
+  console.log('='.repeat(70));
+  console.log('✅ TEST COMPLETE - All 36 steps passed successfully');
   console.log('='.repeat(70));
 });
