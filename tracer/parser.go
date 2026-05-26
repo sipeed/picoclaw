@@ -169,6 +169,15 @@ func ParseLog(path string) ([]*Turn, error) {
 					continue
 				}
 				activeTurn[e.AgentID] = e.TurnID
+				// If this turn_id is being reused (e.g. gateway restarted),
+				// purge stale llmIdx entries for it.
+				if _, exists := turns[e.TurnID]; exists {
+					for k := range llmIdx {
+						if k.turnID == e.TurnID {
+							delete(llmIdx, k)
+						}
+					}
+				}
 				turns[e.TurnID] = &Turn{
 					TurnID:     e.TurnID,
 					Timestamp:  t,
@@ -266,9 +275,11 @@ func ParseLog(path string) ([]*Turn, error) {
 			}
 			if idx, ok := llmIdx[llmKey{turnID, e.Iteration}]; ok {
 				turn := turns[turnID]
-				turn.LLMCalls[idx].SystemPromptLen = e.SystemPromptLen
-				if e.Temperature != 0 {
-					turn.LLMCalls[idx].Temperature = strconv.FormatFloat(e.Temperature, 'f', -1, 64)
+				if turn != nil && idx < len(turn.LLMCalls) {
+					turn.LLMCalls[idx].SystemPromptLen = e.SystemPromptLen
+					if e.Temperature != 0 {
+						turn.LLMCalls[idx].Temperature = strconv.FormatFloat(e.Temperature, 'f', -1, 64)
+					}
 				}
 			}
 			continue
@@ -279,7 +290,7 @@ func ParseLog(path string) ([]*Turn, error) {
 			for _, turnID := range activeTurn {
 				if idx, ok := llmIdx[llmKey{turnID, e.Iteration}]; ok {
 					turn := turns[turnID]
-					if len(turn.LLMCalls[idx].Messages) == 0 {
+					if turn != nil && idx < len(turn.LLMCalls) && len(turn.LLMCalls[idx].Messages) == 0 {
 						turn.LLMCalls[idx].Messages = parseMessages(e.MessagesJSON)
 						turn.LLMCalls[idx].Tools = parseTools(e.ToolsJSON)
 					}
