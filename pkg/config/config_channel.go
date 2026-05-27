@@ -3,7 +3,9 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/caarlos0/env/v11"
@@ -33,6 +35,8 @@ const (
 	ChannelWhatsApp       = "whatsapp"
 	ChannelWhatsAppNative = "whatsapp_native"
 	ChannelTeamsWebHook   = "teams_webhook"
+	ChannelMQTT           = "mqtt"
+	ChannelSlackWebHook   = "slack_webhook"
 )
 
 func initChannel() {
@@ -237,6 +241,7 @@ func (b Channel) MarshalJSON() ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		raw = preserveExplicitDisabledStreaming(raw, b.Settings)
 		settings = raw
 	} else {
 		settings = b.Settings
@@ -248,6 +253,36 @@ func (b Channel) MarshalJSON() ([]byte, error) {
 	// Use type alias to bypass our custom MarshalJSON (infinite recursion)
 	type Alias Channel
 	return json.Marshal((*Alias)(&out))
+}
+
+func preserveExplicitDisabledStreaming(settings, original RawNode) RawNode {
+	if len(original) == 0 || len(settings) == 0 {
+		return settings
+	}
+
+	var originalMap map[string]any
+	if err := json.Unmarshal(original, &originalMap); err != nil {
+		return settings
+	}
+	originalStreaming, ok := originalMap["streaming"].(map[string]any)
+	if !ok || originalStreaming["enabled"] != false {
+		return settings
+	}
+
+	var settingsMap map[string]any
+	if err := json.Unmarshal(settings, &settingsMap); err != nil {
+		return settings
+	}
+	if _, exists := settingsMap["streaming"]; exists {
+		return settings
+	}
+	settingsMap["streaming"] = map[string]any{"enabled": false}
+
+	data, err := json.Marshal(settingsMap)
+	if err != nil {
+		return settings
+	}
+	return data
 }
 
 // MarshalYAML implements yaml.ValueMarshaler for Channel.
@@ -328,6 +363,10 @@ func (b *Channel) UnmarshalYAML(value *yaml.Node) error {
 		return nil
 	}
 
+	// Save the original Enabled state to preserve it if not explicitly set in YAML
+	originalEnabled := b.Enabled
+	hasOriginalValue := b != nil
+
 	type alias Channel
 	a := alias(*b)
 	err := value.Decode(&a)
@@ -338,11 +377,30 @@ func (b *Channel) UnmarshalYAML(value *yaml.Node) error {
 
 	*b = *(*Channel)(&a)
 
+	// Preserve the original Enabled state if YAML didn't explicitly set it
+	// This prevents security.yml from accidentally disabling channels configured in config.json
+	if hasOriginalValue && !isYAMLFieldPresent(value, "enabled") {
+		b.Enabled = originalEnabled
+	}
+
 	if len(b.Settings) > 0 {
 		b.extend = nil
 	}
 
 	return nil
+}
+
+// isYAMLFieldPresent checks if a specific field is present in the YAML node.
+func isYAMLFieldPresent(node *yaml.Node, fieldName string) bool {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return false
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		if i+1 < len(node.Content) && node.Content[i].Value == fieldName {
+			return true
+		}
+	}
+	return false
 }
 
 // SettingsIsEmpty returns true if Settings has not been populated.
@@ -640,6 +698,8 @@ var channelSettingsFactory = map[string]any{
 	ChannelWhatsApp:       (WhatsAppSettings{}),
 	ChannelWhatsAppNative: (WhatsAppSettings{}),
 	ChannelTeamsWebHook:   (TeamsWebhookSettings{}),
+	ChannelMQTT:           (MQTTSettings{}),
+	ChannelSlackWebHook:   (SlackWebhookSettings{}),
 }
 
 // newChannelSettings creates a fresh zero-value pointer for the given channel type.
@@ -692,6 +752,10 @@ func InitChannelList(channels ChannelsConfig) error {
 			if err := env.Parse(target); err != nil {
 				// Non-fatal: some env vars may not apply
 			}
+			applyTelegramStreamingEnvCompat(target)
+			if err := validateChannelStreamingConfig(name, target); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -700,5 +764,50 @@ func InitChannelList(channels ChannelsConfig) error {
 		return err
 	}
 
+	return nil
+}
+
+func applyTelegramStreamingEnvCompat(target any) {
+	settings, ok := target.(*TelegramSettings)
+	if !ok || settings == nil {
+		return
+	}
+
+	if raw, ok := os.LookupEnv("PICOCLAW_CHANNELS_TELEGRAM_STREAMING_ENABLED"); ok {
+		if value, err := strconv.ParseBool(raw); err == nil {
+			settings.Streaming.Enabled = value
+		}
+	}
+	if raw, ok := os.LookupEnv("PICOCLAW_CHANNELS_TELEGRAM_STREAMING_THROTTLE_SECONDS"); ok {
+		if value, err := strconv.Atoi(raw); err == nil {
+			settings.Streaming.ThrottleSeconds = value
+		}
+	}
+	if raw, ok := os.LookupEnv("PICOCLAW_CHANNELS_TELEGRAM_STREAMING_MIN_GROWTH_CHARS"); ok {
+		if value, err := strconv.Atoi(raw); err == nil {
+			settings.Streaming.MinGrowthChars = value
+		}
+	}
+}
+
+func validateChannelStreamingConfig(channelName string, target any) error {
+	var streaming StreamingConfig
+	switch settings := target.(type) {
+	case *PicoSettings:
+		streaming = settings.Streaming
+	case *TelegramSettings:
+		streaming = settings.Streaming
+	case *WeComSettings:
+		streaming = settings.Streaming
+	default:
+		return nil
+	}
+
+	if streaming.ThrottleSeconds < 0 {
+		return fmt.Errorf("channel %q streaming.throttle_seconds must be >= 0", channelName)
+	}
+	if streaming.MinGrowthChars < 0 {
+		return fmt.Errorf("channel %q streaming.min_growth_chars must be >= 0", channelName)
+	}
 	return nil
 }
