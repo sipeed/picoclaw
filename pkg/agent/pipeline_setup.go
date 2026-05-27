@@ -4,6 +4,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -108,6 +109,11 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 					"context_window": ts.agent.ContextWindow,
 					"max_tokens":     ts.agent.MaxTokens,
 				})
+			}
+			if !fit {
+				return nil, fmt.Errorf(
+					"context window still exceeded after proactive compaction; refusing oversized LLM request",
+				)
 			}
 		}
 	}
