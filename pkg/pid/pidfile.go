@@ -58,7 +58,12 @@ func WritePidFile(homePath, host string, port int) (*PidFileData, error) {
 	if data, err := readPidFileUnlocked(pidPath); err == nil {
 		if os.Getpid() != data.PID {
 			logger.Infof("found pid file (PID: %d, version: %s)", data.PID, data.Version)
-			if isProcessRunning(data.PID) {
+			// PID 1 is typically init/systemd on the host or the entrypoint
+			// inside a container. When a container stops and leaves behind a
+			// PID file on a shared volume, the host's PID 1 (init) would
+			// pass the isProcessRunning check, blocking new gateway starts.
+			// Treat recorded PID 1 as always stale.
+			if data.PID != 1 && isProcessRunning(data.PID) && isPicoclawProcess(data.PID) {
 				return nil, fmt.Errorf("gateway is already running (PID: %d, version: %s)", data.PID, data.Version)
 			}
 			logger.Warnf("not running (PID: %d) so will remove the pid file: %s", data.PID, pidPath)
@@ -124,11 +129,24 @@ func ReadPidFileWithCheck(homePath string) *PidFileData {
 		return nil
 	}
 
-	if !isProcessRunning(data.PID) {
-		logger.Debugf("process not running, remove pid file: %s", pidPath)
+	// Treat PID 1 as stale when we are not PID 1 ourselves (container
+	// leftover on a shared volume — host PID 1 is init, not gateway).
+	if data.PID == 1 && os.Getpid() != 1 {
+		logger.Debugf("stale container PID 1, remove pid file: %s", pidPath)
 		os.Remove(pidPath)
 		return nil
 	}
+
+	// Check if process is running AND is actually a picoclaw process.
+	// This prevents stale PID files from blocking gateway startup when
+	// the PID has been reused by an unrelated process (e.g. systemd-resolved).
+	if isProcessRunning(data.PID) && isPicoclawProcess(data.PID) {
+		return data
+	}
+
+	logger.Debugf("process not running or not a picoclaw process, remove pid file: %s", pidPath)
+	os.Remove(pidPath)
+	return nil
 
 	return data
 }
