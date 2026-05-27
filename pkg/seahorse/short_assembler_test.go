@@ -416,7 +416,8 @@ func TestAssemblerSummaryXMLEscaping(t *testing.T) {
 		t.Fatalf("Assemble: %v", err)
 	}
 
-	// Summary field should contain XML with escaped special characters
+	// Summary field should contain XML with escaped delimiters while keeping
+	// text quotes readable. Quotes only need escaping in attributes.
 	if result.Summary == "" {
 		t.Fatal("Summary should not be empty")
 	}
@@ -425,8 +426,8 @@ func TestAssemblerSummaryXMLEscaping(t *testing.T) {
 	if strings.Contains(result.Summary, "<tags>") {
 		t.Errorf("BUG: unescaped < in summary content: %q", result.Summary)
 	}
-	if strings.Contains(result.Summary, `"hello"`) {
-		t.Errorf("BUG: unescaped \" in summary content: %q", result.Summary)
+	if !strings.Contains(result.Summary, `"hello"`) {
+		t.Errorf("summary content quotes should remain readable: %q", result.Summary)
 	}
 	// & should be escaped as &amp;
 	if strings.Contains(result.Summary, " & ") {
