@@ -1053,13 +1053,13 @@ func TestSeahorseSteeringMessageIngested(t *testing.T) {
 // Summarize is triggered but tokens are below ContextWindow threshold,
 // condensed compaction should NOT run.
 func TestSeahorseSummarizeSkipsCondensedWhenBelowThreshold(t *testing.T) {
-	contextWindow := 1000
+	contextWindow := 10000
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
 				Workspace:         t.TempDir(),
 				ModelName:         "test-model",
-				MaxTokens:         4096,
+				MaxTokens:         128,
 				MaxToolIterations: 10,
 				ContextManager:    "seahorse",
 				ContextWindow:     contextWindow,
