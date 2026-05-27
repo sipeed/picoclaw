@@ -96,13 +96,17 @@ func (m *seahorseContextManager) Assemble(ctx context.Context, req *AssembleRequ
 		budget = 100000
 	}
 
-	// Reserve space for model response (spec lines 1400-1410)
-	effectiveBudget := budget - req.MaxTokens
+	// Reserve space for model response and non-history prompt/tool material.
+	effectiveBudget := budget - req.MaxTokens - req.ReserveTokens
 	if effectiveBudget <= 0 {
-		// MaxTokens >= budget is a configuration problem
-		// Use 50% as minimum to avoid guaranteed overflow
-		logger.WarnCF("agent", "MaxTokens >= budget, using 50% fallback",
-			map[string]any{"budget": budget, "max_tokens": req.MaxTokens})
+		// Reserve >= budget is a configuration/problem-size issue. Use 50% as
+		// a defensive minimum so assembly still returns some bounded context.
+		logger.WarnCF("agent", "context reserve exceeds budget, using 50% fallback",
+			map[string]any{
+				"budget":         budget,
+				"max_tokens":     req.MaxTokens,
+				"reserve_tokens": req.ReserveTokens,
+			})
 		effectiveBudget = budget / 2
 	}
 

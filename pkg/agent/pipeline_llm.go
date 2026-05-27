@@ -402,17 +402,24 @@ func (p *Pipeline) CallLLM(
 				})
 			}
 			ts.refreshRestorePointFromSession(ts.agent)
-			if asmResp, asmErr := p.ContextManager.Assemble(ctx, &AssembleRequest{
-				SessionKey: ts.sessionKey,
-				Budget:     ts.agent.ContextWindow,
-				MaxTokens:  ts.agent.MaxTokens,
-			}); asmErr == nil && asmResp != nil {
-				exec.history = asmResp.History
-				exec.summary = asmResp.Summary
-			}
 			contextualSkills := ts.activeSkills
 			if ts.agent.ContextBuilder != nil {
 				contextualSkills = ts.agent.ContextBuilder.ResolveActiveSkillsForContext(ts.activeSkills)
+			}
+			reserveTokens := p.estimateNonHistoryPromptReserve(
+				ts,
+				contextualSkills,
+				exec.providerToolDefs,
+				p.Cfg.Agents.Defaults.GetMaxMediaSize(),
+			)
+			if asmResp, asmErr := p.ContextManager.Assemble(ctx, &AssembleRequest{
+				SessionKey:    ts.sessionKey,
+				Budget:        ts.agent.ContextWindow,
+				MaxTokens:     ts.agent.MaxTokens,
+				ReserveTokens: reserveTokens,
+			}); asmErr == nil && asmResp != nil {
+				exec.history = asmResp.History
+				exec.summary = asmResp.Summary
 			}
 			ts.recordSkillContextSnapshot(skillContextTriggerContextRetryRebuild, contextualSkills)
 			stableHistory, protectedTurnTail := splitHistoryForActiveTurn(

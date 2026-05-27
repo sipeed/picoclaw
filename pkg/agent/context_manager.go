@@ -32,9 +32,10 @@ type ContextManager interface {
 
 // AssembleRequest is the input to Assemble.
 type AssembleRequest struct {
-	SessionKey string // session identifier
-	Budget     int    // context window in tokens
-	MaxTokens  int    // max response tokens
+	SessionKey    string // session identifier
+	Budget        int    // context window in tokens
+	MaxTokens     int    // max response tokens
+	ReserveTokens int    // non-history prompt/tool tokens reserved outside context manager
 }
 
 // AssembleResponse is the output of Assemble.

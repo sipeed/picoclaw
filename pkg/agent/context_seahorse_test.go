@@ -505,12 +505,13 @@ func TestSeahorseAdapterAssembleSubtractsMaxTokens(t *testing.T) {
 		})
 	}
 
-	// Call adapter Assemble with Budget=5000, MaxTokens=2000
-	// Should use effective budget = 5000 - 2000 = 3000
+	// Call adapter Assemble with Budget=5000, MaxTokens=2000, ReserveTokens=500.
+	// Should use effective budget = 5000 - 2000 - 500 = 2500.
 	resp, err := mgr.Assemble(ctx, &AssembleRequest{
-		SessionKey: "budget-sub",
-		Budget:     5000,
-		MaxTokens:  2000,
+		SessionKey:    "budget-sub",
+		Budget:        5000,
+		MaxTokens:     2000,
+		ReserveTokens: 500,
 	})
 	if err != nil {
 		t.Fatalf("Assemble: %v", err)
@@ -519,15 +520,15 @@ func TestSeahorseAdapterAssembleSubtractsMaxTokens(t *testing.T) {
 		t.Fatal("expected non-nil response")
 	}
 
-	// Directly call engine with budget=3000 to get baseline
-	baseline, err := engine.Assemble(ctx, "budget-sub", seahorse.AssembleInput{Budget: 3000})
+	// Directly call engine with budget=2500 to get baseline
+	baseline, err := engine.Assemble(ctx, "budget-sub", seahorse.AssembleInput{Budget: 2500})
 	if err != nil {
 		t.Fatalf("engine.Assemble baseline: %v", err)
 	}
 
-	// The adapter result should have same message count as engine with budget 3000
+	// The adapter result should have same message count as engine with budget 2500.
 	if len(resp.History) != len(baseline.Messages) {
-		t.Errorf("adapter Budget=5000 MaxTokens=2000 gave %d messages, engine Budget=3000 gave %d",
+		t.Errorf("adapter Budget=5000 MaxTokens=2000 ReserveTokens=500 gave %d messages, engine Budget=2500 gave %d",
 			len(resp.History), len(baseline.Messages))
 	}
 }
