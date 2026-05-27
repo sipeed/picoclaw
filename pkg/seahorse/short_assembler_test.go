@@ -121,6 +121,40 @@ func TestAssemblerAssembleWithSummary(t *testing.T) {
 	}
 }
 
+func TestAssemblerSummaryBudgetUsesFormattedXML(t *testing.T) {
+	s, convID := setupAssemblerStore(t)
+	ctx := context.Background()
+
+	summary, err := s.CreateSummary(ctx, CreateSummaryInput{
+		ConversationID: convID,
+		Kind:           SummaryKindLeaf,
+		Depth:          0,
+		Content:        strings.Repeat(`quoted "summary" <with> xml overhead `, 20),
+		TokenCount:     1, // Deliberately stale/under-counted stored value.
+	})
+	if err != nil {
+		t.Fatalf("CreateSummary: %v", err)
+	}
+
+	a := &Assembler{store: s, config: Config{}}
+	resolved, err := a.resolveItem(ctx, ContextItem{
+		Ordinal:    100,
+		ItemType:   "summary",
+		SummaryID:  summary.SummaryID,
+		TokenCount: 1,
+	})
+	if err != nil {
+		t.Fatalf("resolveItem: %v", err)
+	}
+
+	if resolved.summaryXML == "" {
+		t.Fatal("expected formatted summary XML")
+	}
+	if resolved.tokenCount <= 1 {
+		t.Fatalf("formatted summary token count = %d, want greater than stored count", resolved.tokenCount)
+	}
+}
+
 func TestAssemblerBudgetEvictsOldest(t *testing.T) {
 	s, convID := setupAssemblerStore(t)
 	ctx := context.Background()

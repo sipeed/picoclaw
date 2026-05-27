@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/tokenizer"
 )
 
 // escapeXML escapes special characters for safe inclusion in XML content.
@@ -25,6 +27,7 @@ type resolvedItem struct {
 	itemType   string // "message" or "summary"
 	message    *Message
 	summary    *Summary
+	summaryXML string
 	tokenCount int
 }
 
@@ -166,23 +169,15 @@ func (a *Assembler) Assemble(ctx context.Context, convID int64, input AssembleIn
 
 	// Build Summary field: all XML summaries + system prompt addition
 	var summaryParts []string
-	for _, sum := range summaries {
-		if sum.Content == "" {
+	for _, r := range final {
+		if r.itemType != "summary" || r.summary == nil || r.summary.Content == "" {
 			continue
 		}
-		// Load parent IDs for XML formatting
-		parentSummaries, err := a.store.GetSummaryParents(ctx, sum.SummaryID)
-		if err != nil {
-			logger.WarnCF("seahorse", "assemble: get summary parents", map[string]any{
-				"summary_id": sum.SummaryID,
-				"error":      err.Error(),
-			})
+		summaryXML := r.summaryXML
+		if summaryXML == "" {
+			summaryXML = FormatSummaryXML(r.summary, nil)
 		}
-		var parentIDs []string
-		for _, ps := range parentSummaries {
-			parentIDs = append(parentIDs, ps.SummaryID)
-		}
-		summaryParts = append(summaryParts, FormatSummaryXML(&sum, parentIDs))
+		summaryParts = append(summaryParts, summaryXML)
 	}
 	summary := strings.Join(summaryParts, "\n\n")
 	if systemPromptAddition != "" {
@@ -297,14 +292,31 @@ func (a *Assembler) resolveItem(ctx context.Context, item ContextItem) (resolved
 		if err != nil {
 			return resolvedItem{}, err
 		}
+		parentSummaries, err := a.store.GetSummaryParents(ctx, sum.SummaryID)
+		if err != nil {
+			logger.WarnCF("seahorse", "assemble: get summary parents", map[string]any{
+				"summary_id": sum.SummaryID,
+				"error":      err.Error(),
+			})
+		}
+		parentIDs := make([]string, 0, len(parentSummaries))
+		for _, ps := range parentSummaries {
+			parentIDs = append(parentIDs, ps.SummaryID)
+		}
+		summaryXML := FormatSummaryXML(sum, parentIDs)
 		tokens := item.TokenCount
 		if tokens == 0 {
 			tokens = sum.TokenCount
+		}
+		formattedTokens := tokenizer.EstimateMessageTokens(providers.Message{Content: summaryXML})
+		if formattedTokens > tokens {
+			tokens = formattedTokens
 		}
 		return resolvedItem{
 			ordinal:    item.Ordinal,
 			itemType:   "summary",
 			summary:    sum,
+			summaryXML: summaryXML,
 			tokenCount: tokens,
 		}, nil
 	}
