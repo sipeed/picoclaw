@@ -504,6 +504,9 @@
     "append_file": {
       "enabled": true
     },
+    "apply_patch": {
+      "enabled": true
+    },
     "edit_file": {
       "enabled": true
     },

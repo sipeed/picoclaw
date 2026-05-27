@@ -998,6 +998,7 @@ func formatDirEntries(entries []os.DirEntry) *ToolResult {
 type fileSystem interface {
 	ReadFile(path string) ([]byte, error)
 	WriteFile(path string, data []byte) error
+	RemoveFile(path string) error
 	ReadDir(path string) ([]os.DirEntry, error)
 	Open(path string) (fs.File, error)
 }
@@ -1027,6 +1028,19 @@ func (h *hostFs) WriteFile(path string, data []byte) error {
 	// Use unified atomic write utility with explicit sync for flash storage reliability.
 	// Using 0o600 (owner read/write only) for secure default permissions.
 	return fileutil.WriteFileAtomic(path, data, 0o600)
+}
+
+func (h *hostFs) RemoveFile(path string) error {
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("failed to delete file: file not found: %w", err)
+		}
+		if os.IsPermission(err) {
+			return fmt.Errorf("failed to delete file: access denied: %w", err)
+		}
+		return fmt.Errorf("failed to delete file: %w", err)
+	}
+	return nil
 }
 
 func (h *hostFs) Open(path string) (fs.File, error) {
@@ -1141,6 +1155,22 @@ func (r *sandboxFs) WriteFile(path string, data []byte) error {
 	})
 }
 
+func (r *sandboxFs) RemoveFile(path string) error {
+	return r.execute(path, func(root *os.Root, relPath string) error {
+		if err := root.Remove(relPath); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("failed to delete file: file not found: %w", err)
+			}
+			if os.IsPermission(err) || strings.Contains(err.Error(), "escapes from parent") ||
+				strings.Contains(err.Error(), "permission denied") {
+				return fmt.Errorf("failed to delete file: access denied: %w", err)
+			}
+			return fmt.Errorf("failed to delete file: %w", err)
+		}
+		return nil
+	})
+}
+
 func (r *sandboxFs) ReadDir(path string) ([]os.DirEntry, error) {
 	var entries []os.DirEntry
 	err := r.execute(path, func(root *os.Root, relPath string) error {
@@ -1198,6 +1228,13 @@ func (w *whitelistFs) WriteFile(path string, data []byte) error {
 		return w.host.WriteFile(path, data)
 	}
 	return w.sandbox.WriteFile(path, data)
+}
+
+func (w *whitelistFs) RemoveFile(path string) error {
+	if w.matches(path) {
+		return w.host.RemoveFile(path)
+	}
+	return w.sandbox.RemoveFile(path)
 }
 
 func (w *whitelistFs) ReadDir(path string) ([]os.DirEntry, error) {

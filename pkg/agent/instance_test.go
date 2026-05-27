@@ -584,6 +584,38 @@ func TestNewAgentInstance_ReadFileModeSelectsSchema(t *testing.T) {
 	}
 }
 
+func TestNewAgentInstance_RegistersApplyPatchTool(t *testing.T) {
+	workspace := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = workspace
+	cfg.Agents.Defaults.ModelName = "test-model"
+
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	tool, ok := agent.Tools.Get("apply_patch")
+	if !ok {
+		t.Fatal("apply_patch tool not registered")
+	}
+
+	params := tool.Parameters()
+	props, _ := params["properties"].(map[string]any)
+	if _, ok := props["input"]; !ok {
+		t.Fatalf("expected apply_patch schema to expose input, got %#v", props)
+	}
+}
+
+func TestNewAgentInstance_CanDisableApplyPatchTool(t *testing.T) {
+	workspace := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = workspace
+	cfg.Agents.Defaults.ModelName = "test-model"
+	cfg.Tools.ApplyPatch.Enabled = false
+
+	agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+	if _, ok := agent.Tools.Get("apply_patch"); ok {
+		t.Fatal("apply_patch tool should not be registered when disabled")
+	}
+}
+
 func TestNewAgentInstance_InvalidExecConfigDoesNotExit(t *testing.T) {
 	workspace := t.TempDir()
 

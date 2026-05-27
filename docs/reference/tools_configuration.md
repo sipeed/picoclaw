@@ -208,6 +208,42 @@ If `tools.image_generate.model` is not set, PicoClaw falls back to the legacy
 }
 ```
 
+## Apply Patch Tool
+
+The `apply_patch` tool applies structured multi-file edits using the Codex patch
+format. It is intended for coding tasks where `edit_file` exact-match
+replacement is too fragile or multiple files should be changed together.
+
+| Config | Type | Default | Description |
+|--------|------|---------|-------------|
+| `tools.apply_patch.enabled` | bool | `true` | Enable the `apply_patch` file-editing tool |
+
+`apply_patch` uses the same workspace restriction and `tools.allow_write_paths`
+rules as `write_file`, `edit_file`, and `append_file`.
+
+### `apply_patch` Tool Parameters
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `input` | string | yes | Full patch text including `*** Begin Patch` and `*** End Patch` |
+
+Supported operations:
+
+- `*** Add File: path`
+- `*** Update File: path`
+- `*** Delete File: path`
+
+Example:
+
+```text
+*** Begin Patch
+*** Update File: app.go
+@@
+-fmt.Println("old")
++fmt.Println("new")
+*** End Patch
+```
+
 ## Exec Tool
 
 The exec tool is used to execute shell commands.

@@ -437,6 +437,9 @@ func DefaultConfig() *Config {
 			AppendFile: ToolConfig{
 				Enabled: true,
 			},
+			ApplyPatch: ToolConfig{
+				Enabled: true,
+			},
 			EditFile: ToolConfig{
 				Enabled: true,
 			},

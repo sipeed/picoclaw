@@ -14,6 +14,7 @@ type (
 	ListDirTool       = fstools.ListDirTool
 	EditFileTool      = fstools.EditFileTool
 	AppendFileTool    = fstools.AppendFileTool
+	ApplyPatchTool    = fstools.ApplyPatchTool
 	LoadImageTool     = fstools.LoadImageTool
 	SendFileTool      = fstools.SendFileTool
 )
@@ -77,6 +78,14 @@ func NewAppendFileTool(
 	allowPaths ...[]*regexp.Regexp,
 ) *AppendFileTool {
 	return fstools.NewAppendFileTool(workspace, restrict, allowPaths...)
+}
+
+func NewApplyPatchTool(
+	workspace string,
+	restrict bool,
+	allowPaths ...[]*regexp.Regexp,
+) *ApplyPatchTool {
+	return fstools.NewApplyPatchTool(workspace, restrict, allowPaths...)
 }
 
 func NewLoadImageTool(

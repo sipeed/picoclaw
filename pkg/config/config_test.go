@@ -1598,6 +1598,16 @@ func TestDefaultConfig_LoadImageEnabled(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_ApplyPatchEnabled(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Tools.ApplyPatch.Enabled {
+		t.Fatal("DefaultConfig().Tools.ApplyPatch.Enabled should be true")
+	}
+	if !cfg.Tools.IsToolEnabled("apply_patch") {
+		t.Fatal("DefaultConfig().Tools.IsToolEnabled(apply_patch) should be true")
+	}
+}
+
 func TestDefaultConfig_MessageMediaDisabled(t *testing.T) {
 	cfg := DefaultConfig()
 	if !cfg.Tools.Message.Enabled {
@@ -1625,6 +1635,26 @@ func TestLoadConfig_LoadImageCanBeDisabled(t *testing.T) {
 	}
 	if cfg.Tools.IsToolEnabled("load_image") {
 		t.Fatal("LoadConfig().Tools.IsToolEnabled(load_image) should be false")
+	}
+}
+
+func TestLoadConfig_ApplyPatchCanBeDisabled(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := "{\n  \"version\": 2,\n  \"tools\": {\n    \"apply_patch\": {\n      \"enabled\": false\n    }\n  }\n}\n"
+	if err := os.WriteFile(configPath, []byte(raw), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Tools.ApplyPatch.Enabled {
+		t.Fatal("LoadConfig().Tools.ApplyPatch.Enabled should be false")
+	}
+	if cfg.Tools.IsToolEnabled("apply_patch") {
+		t.Fatal("LoadConfig().Tools.IsToolEnabled(apply_patch) should be false")
 	}
 }
 
