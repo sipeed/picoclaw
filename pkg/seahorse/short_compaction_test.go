@@ -619,6 +619,63 @@ func TestSelectOldestChunkAtDepthBreaksOnMessage(t *testing.T) {
 	}
 }
 
+func TestSelectOldestChunkAtDepthSkipsOlderDifferentDepth(t *testing.T) {
+	ce, s, convID := newTestCompactionEngine(t)
+	ctx := context.Background()
+
+	olderCondensed, err := s.CreateSummary(ctx, CreateSummaryInput{
+		ConversationID: convID,
+		Kind:           SummaryKindCondensed,
+		Depth:          2,
+		Content:        "older condensed",
+		TokenCount:     500,
+	})
+	if err != nil {
+		t.Fatalf("CreateSummary condensed: %v", err)
+	}
+	if err := s.AppendContextSummary(ctx, convID, olderCondensed.SummaryID); err != nil {
+		t.Fatalf("AppendContextSummary condensed: %v", err)
+	}
+
+	for i := 0; i < 5; i++ {
+		summary, err := s.CreateSummary(ctx, CreateSummaryInput{
+			ConversationID: convID,
+			Kind:           SummaryKindLeaf,
+			Depth:          0,
+			Content:        fmt.Sprintf("leaf %d", i),
+			TokenCount:     500,
+		})
+		if err != nil {
+			t.Fatalf("CreateSummary leaf %d: %v", i, err)
+		}
+		if err := s.AppendContextSummary(ctx, convID, summary.SummaryID); err != nil {
+			t.Fatalf("AppendContextSummary leaf %d: %v", i, err)
+		}
+	}
+	for i := 0; i < FreshTailCount+1; i++ {
+		m, err := s.AddMessage(ctx, convID, "user", fmt.Sprintf("tail %d", i), 10)
+		if err != nil {
+			t.Fatalf("AddMessage: %v", err)
+		}
+		if err := s.AppendContextMessage(ctx, convID, m.ID); err != nil {
+			t.Fatalf("AppendContextMessage: %v", err)
+		}
+	}
+
+	chunk, err := ce.selectOldestChunkAtDepth(ctx, convID, 0)
+	if err != nil {
+		t.Fatalf("selectOldestChunkAtDepth: %v", err)
+	}
+	if len(chunk) != 5 {
+		t.Fatalf("chunk length = %d, want 5", len(chunk))
+	}
+	for _, sum := range chunk {
+		if sum.Depth != 0 {
+			t.Fatalf("selected depth = %d, want 0", sum.Depth)
+		}
+	}
+}
+
 func TestSelectOldestChunkAtDepthMinTokens(t *testing.T) {
 	ce, s, convID := newTestCompactionEngine(t)
 	ctx := context.Background()

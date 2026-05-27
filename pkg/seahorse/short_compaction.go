@@ -595,25 +595,34 @@ func (e *CompactionEngine) selectOldestChunkAtDepth(
 
 	var chunk []Summary
 	accumTokens := 0
+	started := false
 
 	for i := 0; i < tailStartIdx; i++ {
 		item := items[i]
 		if item.ItemType != "summary" {
-			// Non-summary breaks the chunk
-			break
+			if started {
+				break
+			}
+			continue
 		}
 		sum, err := e.store.GetSummary(ctx, item.SummaryID)
 		if err != nil {
-			break
+			if started {
+				break
+			}
+			continue
 		}
 		if sum.Depth != targetDepth {
-			// Different depth breaks the chunk
-			break
+			if started {
+				break
+			}
+			continue
 		}
 		if accumTokens+sum.TokenCount > LeafChunkTokens {
 			// Token overflow stops collection
 			break
 		}
+		started = true
 		chunk = append(chunk, *sum)
 		accumTokens += sum.TokenCount
 	}
