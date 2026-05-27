@@ -83,6 +83,19 @@ func (e *CompactionEngine) Compact(ctx context.Context, convID int64, input Comp
 			}()
 		}
 	}
+	if summaryPrefixTokens, err := e.summaryPrefixTokens(ctx, convID); err == nil && summaryPrefixTokens > SummaryPrefixTokens {
+		if _, loaded := e.condensing.LoadOrStore(convID, struct{}{}); !loaded {
+			go func() {
+				defer e.condensing.Delete(convID)
+				e.runCondensedLoop(e.shutdownCtx, convID)
+			}()
+		}
+	} else if err != nil {
+		logger.WarnCF("seahorse", "compact: summary prefix token count failed", map[string]any{
+			"conv_id": convID,
+			"error":   err.Error(),
+		})
+	}
 
 	tokensAfter, _ := e.store.GetContextTokenCount(ctx, convID)
 	if tokensAfter < tokensBefore {
@@ -104,14 +117,44 @@ func (e *CompactionEngine) CompactUntilUnder(ctx context.Context, convID int64, 
 			return result, fmt.Errorf("get tokens: %w", err)
 		}
 		if tokens <= budget {
-			logger.InfoCF("seahorse", "compact_until_under: done", map[string]any{
-				"conv_id":   convID,
-				"budget":    budget,
-				"tokens":    tokens,
-				"leaf":      result.LeafSummaries,
-				"condensed": result.CondensedSummaries,
-			})
-			return result, nil
+			summaryPrefixTokens, err := e.summaryPrefixTokens(ctx, convID)
+			if err != nil {
+				return result, fmt.Errorf("summary prefix tokens: %w", err)
+			}
+			if summaryPrefixTokens <= SummaryPrefixTokens {
+				logger.InfoCF("seahorse", "compact_until_under: done", map[string]any{
+					"conv_id":               convID,
+					"budget":                budget,
+					"tokens":                tokens,
+					"summary_prefix_tokens": summaryPrefixTokens,
+					"leaf":                  result.LeafSummaries,
+					"condensed":             result.CondensedSummaries,
+				})
+				return result, nil
+			}
+		}
+
+		summaryPrefixTokens, err := e.summaryPrefixTokens(ctx, convID)
+		if err != nil {
+			return result, fmt.Errorf("summary prefix tokens: %w", err)
+		}
+		if summaryPrefixTokens > SummaryPrefixTokens {
+			condensedID, err := e.compactCondensed(ctx, convID)
+			if err != nil {
+				return result, err
+			}
+			if condensedID != nil {
+				result.SummariesCreated = append(result.SummariesCreated, *condensedID)
+				result.CondensedSummaries++
+				logger.InfoCF("seahorse", "compact_until_under: summary prefix condensed", map[string]any{
+					"conv_id":                 convID,
+					"summary_id":              *condensedID,
+					"summary_prefix_tokens":   summaryPrefixTokens,
+					"summary_prefix_target":   SummaryPrefixTokens,
+					"summary_prefix_pressure": true,
+				})
+				continue
+			}
 		}
 
 		// Try leaf first
@@ -164,6 +207,24 @@ func (e *CompactionEngine) CompactUntilUnder(ctx context.Context, convID int64, 
 		"tokens":     prevTokens,
 	})
 	return result, nil
+}
+
+func (e *CompactionEngine) summaryPrefixTokens(ctx context.Context, convID int64) (int, error) {
+	items, err := e.store.GetContextItems(ctx, convID)
+	if err != nil {
+		return 0, err
+	}
+	tailStartIdx := len(items) - FreshTailCount
+	if tailStartIdx < 0 {
+		tailStartIdx = 0
+	}
+	tokens := 0
+	for i := 0; i < tailStartIdx; i++ {
+		if items[i].ItemType == "summary" {
+			tokens += items[i].TokenCount
+		}
+	}
+	return tokens, nil
 }
 
 // compactLeaf compresses the oldest contiguous message chunk into a leaf summary.

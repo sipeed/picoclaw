@@ -386,6 +386,60 @@ func TestCompactUntilUnder(t *testing.T) {
 	}
 }
 
+func TestCompactUntilUnderCondensesSummaryPrefixPressure(t *testing.T) {
+	ce, s, convID := newTestCompactionEngine(t)
+	ctx := context.Background()
+
+	for i := 0; i < 40; i++ {
+		summary, err := s.CreateSummary(ctx, CreateSummaryInput{
+			ConversationID: convID,
+			Kind:           SummaryKindLeaf,
+			Depth:          0,
+			Content:        fmt.Sprintf("leaf summary %d", i),
+			TokenCount:     1000,
+		})
+		if err != nil {
+			t.Fatalf("CreateSummary: %v", err)
+		}
+		if err := s.AppendContextSummary(ctx, convID, summary.SummaryID); err != nil {
+			t.Fatalf("AppendContextSummary: %v", err)
+		}
+	}
+	for i := 0; i < FreshTailCount+1; i++ {
+		msg, err := s.AddMessage(ctx, convID, "user", fmt.Sprintf("fresh %d", i), 1)
+		if err != nil {
+			t.Fatalf("AddMessage: %v", err)
+		}
+		if err := s.AppendContextMessage(ctx, convID, msg.ID); err != nil {
+			t.Fatalf("AppendContextMessage: %v", err)
+		}
+	}
+
+	before, err := ce.summaryPrefixTokens(ctx, convID)
+	if err != nil {
+		t.Fatalf("summaryPrefixTokens before: %v", err)
+	}
+	if before <= SummaryPrefixTokens {
+		t.Fatalf("test setup prefix tokens = %d, want > %d", before, SummaryPrefixTokens)
+	}
+
+	result, err := ce.CompactUntilUnder(ctx, convID, 100000)
+	if err != nil {
+		t.Fatalf("CompactUntilUnder: %v", err)
+	}
+	if result.CondensedSummaries == 0 {
+		t.Fatal("expected condensed summaries from summary-prefix pressure")
+	}
+
+	after, err := ce.summaryPrefixTokens(ctx, convID)
+	if err != nil {
+		t.Fatalf("summaryPrefixTokens after: %v", err)
+	}
+	if after > SummaryPrefixTokens {
+		t.Fatalf("prefix tokens after compaction = %d, want <= %d", after, SummaryPrefixTokens)
+	}
+}
+
 func TestSelectShallowestCondensationCandidate(t *testing.T) {
 	ce, s, convID := newTestCompactionEngine(t)
 	ctx := context.Background()
