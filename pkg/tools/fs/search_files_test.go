@@ -76,6 +76,112 @@ func TestSearchFilesTool_CountMode(t *testing.T) {
 	}
 }
 
+func TestSearchFilesTool_RespectsGitignoreByDefault(t *testing.T) {
+	tmpDir := t.TempDir()
+	mustWriteSearchFile(t, tmpDir, ".gitignore", ".env\nignored/\n*.log\n")
+	mustWriteSearchFile(t, tmpDir, ".env", "secret needle\n")
+	mustWriteSearchFile(t, tmpDir, "ignored/file.txt", "ignored needle\n")
+	mustWriteSearchFile(t, tmpDir, "debug.log", "logged needle\n")
+	mustWriteSearchFile(t, tmpDir, "visible.txt", "visible needle\n")
+
+	tool := NewSearchFilesTool(tmpDir, true, 0)
+	result := tool.Execute(context.Background(), map[string]any{
+		"pattern": "needle",
+		"path":    ".",
+	})
+
+	if result.IsError {
+		t.Fatalf("search_files failed: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "visible.txt") {
+		t.Fatalf("expected visible match, got:\n%s", result.ForLLM)
+	}
+	for _, ignored := range []string{".env", "ignored/file.txt", "debug.log"} {
+		if strings.Contains(result.ForLLM, ignored) {
+			t.Fatalf("expected %s to be ignored, got:\n%s", ignored, result.ForLLM)
+		}
+	}
+}
+
+func TestSearchFilesTool_IncludeIgnoredFindsGitignoredFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	mustWriteSearchFile(t, tmpDir, ".gitignore", ".env\nignored/\n*.log\n")
+	mustWriteSearchFile(t, tmpDir, ".env", "secret needle\n")
+	mustWriteSearchFile(t, tmpDir, "ignored/file.txt", "ignored needle\n")
+	mustWriteSearchFile(t, tmpDir, "debug.log", "logged needle\n")
+	mustWriteSearchFile(t, tmpDir, "visible.txt", "visible needle\n")
+
+	tool := NewSearchFilesTool(tmpDir, true, 0)
+	result := tool.Execute(context.Background(), map[string]any{
+		"pattern":         "needle",
+		"path":            ".",
+		"include_ignored": true,
+	})
+
+	if result.IsError {
+		t.Fatalf("search_files failed: %s", result.ForLLM)
+	}
+	for _, expected := range []string{".env", "ignored/file.txt", "debug.log", "visible.txt"} {
+		if !strings.Contains(result.ForLLM, expected) {
+			t.Fatalf("expected %s with include_ignored, got:\n%s", expected, result.ForLLM)
+		}
+	}
+}
+
+func TestSearchFilesTool_ExplicitIgnoredFilePathStillRespectsGitignore(t *testing.T) {
+	tmpDir := t.TempDir()
+	mustWriteSearchFile(t, tmpDir, ".gitignore", ".env\n")
+	mustWriteSearchFile(t, tmpDir, ".env", "secret needle\n")
+
+	tool := NewSearchFilesTool(tmpDir, true, 0)
+	result := tool.Execute(context.Background(), map[string]any{
+		"pattern": "needle",
+		"path":    ".env",
+	})
+
+	if result.IsError {
+		t.Fatalf("search_files failed: %s", result.ForLLM)
+	}
+	if strings.Contains(result.ForLLM, ".env") {
+		t.Fatalf("expected explicit ignored file to be skipped without include_ignored, got:\n%s", result.ForLLM)
+	}
+
+	result = tool.Execute(context.Background(), map[string]any{
+		"pattern":         "needle",
+		"path":            ".env",
+		"include_ignored": true,
+	})
+	if result.IsError {
+		t.Fatalf("search_files with include_ignored failed: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, ".env") {
+		t.Fatalf("expected explicit ignored file with include_ignored, got:\n%s", result.ForLLM)
+	}
+}
+
+func TestSearchFilesTool_RespectsNestedGitignore(t *testing.T) {
+	tmpDir := t.TempDir()
+	mustWriteSearchFile(t, tmpDir, "sub/.gitignore", "secret.txt\n")
+	mustWriteSearchFile(t, tmpDir, "sub/secret.txt", "hidden needle\n")
+	mustWriteSearchFile(t, tmpDir, "sub/public.txt", "visible needle\n")
+
+	tool := NewSearchFilesTool(tmpDir, true, 0)
+	result := tool.Execute(context.Background(), map[string]any{
+		"pattern": "needle",
+		"path":    ".",
+	})
+
+	if result.IsError {
+		t.Fatalf("search_files failed: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "sub/public.txt") {
+		t.Fatalf("expected public match, got:\n%s", result.ForLLM)
+	}
+	if strings.Contains(result.ForLLM, "sub/secret.txt") {
+		t.Fatalf("expected nested ignored file to be skipped, got:\n%s", result.ForLLM)
+	}
+}
+
 func TestSearchFilesTool_RestrictsOutsideWorkspace(t *testing.T) {
 	tmpDir := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "outside.txt")

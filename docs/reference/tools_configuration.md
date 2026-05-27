@@ -249,7 +249,10 @@ Example:
 The `search_files` tool searches workspace files without shelling out to
 `grep`, `rg`, `find`, or `ls`. It is intended for routine repository and
 workspace discovery while preserving PicoClaw's read workspace restrictions and
-`tools.allow_read_paths`.
+`tools.allow_read_paths`. It respects `.gitignore` by default so normal search
+does not drown in generated/cache/runtime files. This is a noise filter, not a
+security boundary; use `include_ignored: true` only when explicitly inspecting
+ignored env/config/runtime/self-evolution files.
 
 | Config | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -266,6 +269,7 @@ workspace discovery while preserving PicoClaw's read workspace restrictions and
 | `output_mode` | string | no | `content`, `files_only`, or `count`; default `content` |
 | `context` | int | no | Context lines around content matches; default `0`, max `10` |
 | `limit` | int | no | Maximum returned matches/files; default `100`, max `500` |
+| `include_ignored` | bool | no | Include `.gitignore`d files and default noisy dirs such as `node_modules`; default `false` |
 
 Examples:
 
@@ -275,6 +279,10 @@ Examples:
 
 ```json
 {"target": "files", "pattern": "*.md", "path": "docs"}
+```
+
+```json
+{"pattern": "OPENAI_API_KEY", "path": ".", "file_glob": ".env*", "include_ignored": true}
 ```
 
 ## Exec Tool

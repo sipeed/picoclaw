@@ -48,7 +48,7 @@ func (t *SearchFilesTool) Name() string {
 }
 
 func (t *SearchFilesTool) Description() string {
-	return "Search file contents or find files by name within the configured workspace. Use this instead of shell grep/rg/find/ls for routine file discovery."
+	return "Search file contents or find files by name within the configured workspace. Respects .gitignore by default; set include_ignored for explicit ignored-file searches. Use this instead of shell grep/rg/find/ls for routine file discovery."
 }
 
 func (t *SearchFilesTool) Parameters() map[string]any {
@@ -85,6 +85,10 @@ func (t *SearchFilesTool) Parameters() map[string]any {
 				"type":        "integer",
 				"description": "Maximum number of returned matches/files. Default 100, max 500.",
 			},
+			"include_ignored": map[string]any{
+				"type":        "boolean",
+				"description": "Include files ignored by .gitignore and default noisy directories. Default false. Use only when explicitly inspecting ignored env/config/runtime files.",
+			},
 		},
 		"required": []string{"pattern"},
 	}
@@ -105,13 +109,14 @@ func (t *SearchFilesTool) Execute(ctx context.Context, args map[string]any) *Too
 }
 
 type searchFilesOptions struct {
-	pattern    string
-	target     string
-	path       string
-	fileGlob   string
-	outputMode string
-	context    int
-	limit      int
+	pattern        string
+	target         string
+	path           string
+	fileGlob       string
+	outputMode     string
+	context        int
+	limit          int
+	includeIgnored bool
 }
 
 type contentMatch struct {
@@ -173,13 +178,14 @@ func parseSearchFilesOptions(args map[string]any) (searchFilesOptions, error) {
 
 	fileGlob, _ := args["file_glob"].(string)
 	return searchFilesOptions{
-		pattern:    pattern,
-		target:     target,
-		path:       path,
-		fileGlob:   strings.TrimSpace(fileGlob),
-		outputMode: outputMode,
-		context:    contextLines,
-		limit:      limit,
+		pattern:        pattern,
+		target:         target,
+		path:           path,
+		fileGlob:       strings.TrimSpace(fileGlob),
+		outputMode:     outputMode,
+		context:        contextLines,
+		limit:          limit,
+		includeIgnored: boolArg(args["include_ignored"], false),
 	}, nil
 }
 
@@ -196,11 +202,20 @@ func intArg(value any, fallback int) int {
 	}
 }
 
+func boolArg(value any, fallback bool) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	default:
+		return fallback
+	}
+}
+
 func (t *SearchFilesTool) searchFileNames(ctx context.Context, opts searchFilesOptions) *ToolResult {
 	var matches []string
 	truncated := false
 
-	err := walkSearchFiles(ctx, t.fs, opts.path, func(path string, entry os.DirEntry) error {
+	err := walkSearchFiles(ctx, t.fs, opts.path, opts.includeIgnored, func(path string, entry os.DirEntry) error {
 		if entry.IsDir() {
 			return nil
 		}
@@ -253,7 +268,7 @@ func (t *SearchFilesTool) searchContent(ctx context.Context, opts searchFilesOpt
 	filesScanned := 0
 	filesSkipped := 0
 
-	err = walkSearchFiles(ctx, t.fs, opts.path, func(path string, entry os.DirEntry) error {
+	err = walkSearchFiles(ctx, t.fs, opts.path, opts.includeIgnored, func(path string, entry os.DirEntry) error {
 		if entry.IsDir() {
 			return nil
 		}
@@ -420,14 +435,41 @@ func contextAfter(lines []string, idx int, count int) []numberedLine {
 
 var errSearchLimitReached = fmt.Errorf("search limit reached")
 
-func walkSearchFiles(ctx context.Context, sysFs fileSystem, root string, fn func(path string, entry os.DirEntry) error) error {
+func walkSearchFiles(
+	ctx context.Context,
+	sysFs fileSystem,
+	root string,
+	includeIgnored bool,
+	fn func(path string, entry os.DirEntry) error,
+) error {
+	return walkSearchFilesWithIgnore(ctx, sysFs, root, includeIgnored, gitIgnoreState{}, fn)
+}
+
+func walkSearchFilesWithIgnore(
+	ctx context.Context,
+	sysFs fileSystem,
+	root string,
+	includeIgnored bool,
+	ignoreState gitIgnoreState,
+	fn func(path string, entry os.DirEntry) error,
+) error {
 	entries, err := sysFs.ReadDir(root)
 	if err != nil {
 		data, readErr := sysFs.ReadFile(root)
 		if readErr != nil {
 			return fmt.Errorf("failed to search path: %w", err)
 		}
+		if !includeIgnored {
+			ignoreState = ignoreState.withGitIgnore(sysFs, filepath.Dir(root))
+		}
+		if !includeIgnored && ignoreState.ignored(root, false) {
+			return nil
+		}
 		return fn(root, fakeFileEntry{name: filepath.Base(root), size: int64(len(data))})
+	}
+
+	if !includeIgnored {
+		ignoreState = ignoreState.withGitIgnore(sysFs, root)
 	}
 
 	sort.Slice(entries, func(i, j int) bool {
@@ -438,16 +480,19 @@ func walkSearchFiles(ctx context.Context, sysFs fileSystem, root string, fn func
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if shouldSkipSearchEntry(entry) {
+		if shouldSkipSearchEntry(entry, includeIgnored) {
 			continue
 		}
 
 		path := joinSearchPath(root, entry.Name())
+		if !includeIgnored && ignoreState.ignored(path, entry.IsDir()) {
+			continue
+		}
 		if err := fn(path, entry); err != nil {
 			return err
 		}
 		if entry.IsDir() {
-			if err := walkSearchFiles(ctx, sysFs, path, fn); err != nil {
+			if err := walkSearchFilesWithIgnore(ctx, sysFs, path, includeIgnored, ignoreState, fn); err != nil {
 				return err
 			}
 		}
@@ -462,12 +507,144 @@ func joinSearchPath(root string, name string) string {
 	return filepath.Join(root, name)
 }
 
-func shouldSkipSearchEntry(entry os.DirEntry) bool {
+func shouldSkipSearchEntry(entry os.DirEntry, includeIgnored bool) bool {
 	name := entry.Name()
-	if name == ".git" || name == "node_modules" || name == ".cache" || name == "vendor" {
+	if name == ".git" {
+		return true
+	}
+	if !includeIgnored && (name == "node_modules" || name == ".cache" || name == "vendor") {
 		return true
 	}
 	return entry.Type()&os.ModeSymlink != 0
+}
+
+type gitIgnoreState struct {
+	rules []gitIgnoreRule
+}
+
+type gitIgnoreRule struct {
+	base     string
+	pattern  string
+	negated  bool
+	dirOnly  bool
+	anchored bool
+	hasSlash bool
+}
+
+func (s gitIgnoreState) withGitIgnore(sysFs fileSystem, dir string) gitIgnoreState {
+	data, err := sysFs.ReadFile(joinSearchPath(dir, ".gitignore"))
+	if err != nil || len(data) == 0 {
+		return s
+	}
+
+	next := gitIgnoreState{rules: append([]gitIgnoreRule(nil), s.rules...)}
+	base := cleanDisplayPath(dir)
+	for _, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		negated := strings.HasPrefix(line, "!")
+		if negated {
+			line = strings.TrimSpace(strings.TrimPrefix(line, "!"))
+			if line == "" {
+				continue
+			}
+		}
+		line = strings.TrimPrefix(line, "\\")
+
+		dirOnly := strings.HasSuffix(line, "/")
+		line = strings.TrimRight(line, "/")
+		anchored := strings.HasPrefix(line, "/")
+		line = strings.TrimLeft(line, "/")
+		if line == "" {
+			continue
+		}
+
+		pattern := filepath.ToSlash(filepath.Clean(line))
+		next.rules = append(next.rules, gitIgnoreRule{
+			base:     base,
+			pattern:  pattern,
+			negated:  negated,
+			dirOnly:  dirOnly,
+			anchored: anchored,
+			hasSlash: strings.Contains(pattern, "/"),
+		})
+	}
+	return next
+}
+
+func (s gitIgnoreState) ignored(path string, isDir bool) bool {
+	ignored := false
+	for _, rule := range s.rules {
+		if rule.matches(path, isDir) {
+			ignored = !rule.negated
+		}
+	}
+	return ignored
+}
+
+func (r gitIgnoreRule) matches(path string, isDir bool) bool {
+	if r.dirOnly && !isDir {
+		return false
+	}
+
+	rel := relativeToIgnoreBase(path, r.base)
+	if rel == "" || rel == "." || strings.HasPrefix(rel, "../") {
+		return false
+	}
+
+	if r.anchored || r.hasSlash {
+		return matchIgnorePattern(r.pattern, rel)
+	}
+
+	for _, part := range strings.Split(rel, "/") {
+		if matchIgnorePattern(r.pattern, part) {
+			return true
+		}
+	}
+	return false
+}
+
+func relativeToIgnoreBase(path string, base string) string {
+	cleanPath := cleanDisplayPath(path)
+	cleanBase := cleanDisplayPath(base)
+	if cleanBase == "." || cleanBase == "" {
+		return cleanPath
+	}
+	if cleanPath == cleanBase {
+		return "."
+	}
+	prefix := cleanBase + "/"
+	if strings.HasPrefix(cleanPath, prefix) {
+		return strings.TrimPrefix(cleanPath, prefix)
+	}
+	rel, err := filepath.Rel(filepath.FromSlash(cleanBase), filepath.FromSlash(cleanPath))
+	if err != nil {
+		return cleanPath
+	}
+	return filepath.ToSlash(rel)
+}
+
+func matchIgnorePattern(pattern string, value string) bool {
+	value = cleanDisplayPath(value)
+	pattern = filepath.ToSlash(pattern)
+
+	if ok, _ := filepath.Match(filepath.FromSlash(pattern), filepath.FromSlash(value)); ok {
+		return true
+	}
+	if strings.Contains(pattern, "**") {
+		simplified := strings.ReplaceAll(pattern, "**/", "")
+		if ok, _ := filepath.Match(filepath.FromSlash(simplified), filepath.FromSlash(value)); ok {
+			return true
+		}
+		if strings.HasSuffix(pattern, "/**") {
+			prefix := strings.TrimSuffix(pattern, "/**")
+			return value == prefix || strings.HasPrefix(value, prefix+"/")
+		}
+	}
+	return pattern == value
 }
 
 func matchFilePattern(pattern string, path string, name string) (bool, error) {
