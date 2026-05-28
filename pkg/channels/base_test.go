@@ -1,6 +1,7 @@
 package channels
 
 import (
+	"context"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -259,6 +260,61 @@ func TestIsAllowedSender(t *testing.T) {
 			ch := NewBaseChannel("test", nil, nil, tt.allowList)
 			if got := ch.IsAllowedSender(tt.sender); got != tt.want {
 				t.Fatalf("IsAllowedSender(%+v) = %v, want %v", tt.sender, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHandleInboundContext_PublishesNormalizedContext(t *testing.T) {
+	tests := []struct {
+		name       string
+		inbound    bus.InboundContext
+		wantChat   string
+		wantSender string
+	}{
+		{
+			name: "direct uses sender as peer",
+			inbound: bus.InboundContext{
+				Channel:   "test",
+				ChatID:    "chat-1",
+				ChatType:  "direct",
+				SenderID:  "user-1",
+				MessageID: "msg-1",
+			},
+			wantChat:   "chat-1",
+			wantSender: "user-1",
+		},
+		{
+			name: "group uses chat as peer",
+			inbound: bus.InboundContext{
+				Channel:   "test",
+				ChatID:    "group-1",
+				ChatType:  "group",
+				SenderID:  "user-2",
+				MessageID: "msg-2",
+			},
+			wantChat:   "group-1",
+			wantSender: "user-2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msgBus := bus.NewMessageBus()
+			defer msgBus.Close()
+
+			ch := NewBaseChannel("test", nil, msgBus, nil)
+			ch.HandleInboundContext(context.Background(), tt.inbound.ChatID, "hello", nil, tt.inbound)
+
+			msg := <-msgBus.InboundChan()
+			if msg.ChatID != tt.wantChat {
+				t.Fatalf("ChatID = %q, want %q", msg.ChatID, tt.wantChat)
+			}
+			if msg.SenderID != tt.wantSender {
+				t.Fatalf("SenderID = %q, want %q", msg.SenderID, tt.wantSender)
+			}
+			if msg.Context.ChatType != tt.inbound.ChatType {
+				t.Fatalf("ChatType = %q, want %q", msg.Context.ChatType, tt.inbound.ChatType)
 			}
 		})
 	}

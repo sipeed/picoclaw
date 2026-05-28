@@ -10,20 +10,34 @@ import (
 // FallbackChain orchestrates model fallback across multiple candidates.
 type FallbackChain struct {
 	cooldown *CooldownTracker
+	rl       *RateLimiterRegistry
 }
 
 // FallbackCandidate represents one model/provider to try.
 type FallbackCandidate struct {
-	Provider string
-	Model    string
+	Provider    string
+	Model       string
+	DisplayName string // optional configured alias/raw model label for persistence/UI
+	RPM         int    // requests per minute; 0 means unrestricted
+	IdentityKey string // optional stable config identity for cooldown/rate limiting
+}
+
+// StableKey returns the candidate's config-level identity when available,
+// otherwise it falls back to the runtime provider/model key.
+func (c FallbackCandidate) StableKey() string {
+	if key := strings.TrimSpace(c.IdentityKey); key != "" {
+		return key
+	}
+	return ModelKey(c.Provider, c.Model)
 }
 
 // FallbackResult contains the successful response and metadata about all attempts.
 type FallbackResult struct {
-	Response *LLMResponse
-	Provider string
-	Model    string
-	Attempts []FallbackAttempt
+	Response    *LLMResponse
+	Provider    string
+	Model       string
+	IdentityKey string
+	Attempts    []FallbackAttempt
 }
 
 // FallbackAttempt records one attempt in the fallback chain.
@@ -36,9 +50,10 @@ type FallbackAttempt struct {
 	Skipped  bool // true if skipped due to cooldown
 }
 
-// NewFallbackChain creates a new fallback chain with the given cooldown tracker.
-func NewFallbackChain(cooldown *CooldownTracker) *FallbackChain {
-	return &FallbackChain{cooldown: cooldown}
+// NewFallbackChain creates a new fallback chain with the given cooldown tracker
+// and rate limiter registry.
+func NewFallbackChain(cooldown *CooldownTracker, rl *RateLimiterRegistry) *FallbackChain {
+	return &FallbackChain{cooldown: cooldown, rl: rl}
 }
 
 // ResolveCandidates parses model config into a deduplicated candidate list.
@@ -72,8 +87,9 @@ func ResolveCandidatesWithLookup(
 		}
 		seen[key] = true
 		candidates = append(candidates, FallbackCandidate{
-			Provider: ref.Provider,
-			Model:    ref.Model,
+			Provider:    ref.Provider,
+			Model:       ref.Model,
+			DisplayName: candidateRaw,
 		})
 	}
 
@@ -103,6 +119,22 @@ func (fc *FallbackChain) Execute(
 	candidates []FallbackCandidate,
 	run func(ctx context.Context, provider, model string) (*LLMResponse, error),
 ) (*FallbackResult, error) {
+	return fc.ExecuteCandidate(
+		ctx,
+		candidates,
+		func(ctx context.Context, candidate FallbackCandidate) (*LLMResponse, error) {
+			return run(ctx, candidate.Provider, candidate.Model)
+		},
+	)
+}
+
+// ExecuteCandidate runs the fallback chain and passes the complete candidate
+// to the caller so model-list identity metadata remains available.
+func (fc *FallbackChain) ExecuteCandidate(
+	ctx context.Context,
+	candidates []FallbackCandidate,
+	run func(ctx context.Context, candidate FallbackCandidate) (*LLMResponse, error),
+) (*FallbackResult, error) {
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("fallback: no candidates configured")
 	}
@@ -117,34 +149,64 @@ func (fc *FallbackChain) Execute(
 			return nil, context.Canceled
 		}
 
-		// Check cooldown.
-		if !fc.cooldown.IsAvailable(candidate.Provider) {
-			remaining := fc.cooldown.CooldownRemaining(candidate.Provider)
+		// Check cooldown per stable candidate identity, not just provider/model.
+		// This allows aliases and multi-key configs to fail over independently.
+		cooldownKey := candidate.StableKey()
+		if !fc.cooldown.IsAvailable(cooldownKey) {
+			remaining := fc.cooldown.CooldownRemaining(cooldownKey)
 			result.Attempts = append(result.Attempts, FallbackAttempt{
 				Provider: candidate.Provider,
 				Model:    candidate.Model,
 				Skipped:  true,
 				Reason:   FailoverRateLimit,
 				Error: fmt.Errorf(
-					"provider %s in cooldown (%s remaining)",
-					candidate.Provider,
+					"%s in cooldown (%s remaining)",
+					cooldownKey,
 					remaining.Round(time.Second),
 				),
 			})
 			continue
 		}
 
+		// Enforce per-candidate rate limit before calling the provider.
+		// If this candidate is locally saturated, try other candidates first.
+		if fc.rl != nil {
+			if !fc.rl.TryAcquire(cooldownKey) {
+				if i < len(candidates)-1 {
+					result.Attempts = append(result.Attempts, FallbackAttempt{
+						Provider: candidate.Provider,
+						Model:    candidate.Model,
+						Skipped:  true,
+						Reason:   FailoverRateLimit,
+						Error:    fmt.Errorf("%s waiting for local rate limit token", cooldownKey),
+					})
+					continue
+				}
+				if waitErr := fc.rl.Wait(ctx, cooldownKey); waitErr != nil {
+					result.Attempts = append(result.Attempts, FallbackAttempt{
+						Provider: candidate.Provider,
+						Model:    candidate.Model,
+						Skipped:  true,
+						Reason:   FailoverRateLimit,
+						Error:    waitErr,
+					})
+					return nil, waitErr
+				}
+			}
+		}
+
 		// Execute the run function.
 		start := time.Now()
-		resp, err := run(ctx, candidate.Provider, candidate.Model)
+		resp, err := run(ctx, candidate)
 		elapsed := time.Since(start)
 
 		if err == nil {
 			// Success.
-			fc.cooldown.MarkSuccess(candidate.Provider)
+			fc.cooldown.MarkSuccess(cooldownKey)
 			result.Response = resp
 			result.Provider = candidate.Provider
 			result.Model = candidate.Model
+			result.IdentityKey = candidate.StableKey()
 			return result, nil
 		}
 
@@ -187,7 +249,7 @@ func (fc *FallbackChain) Execute(
 		}
 
 		// Retriable error: mark failure and continue to next candidate.
-		fc.cooldown.MarkFailure(candidate.Provider, failErr.Reason)
+		fc.cooldown.MarkFailure(cooldownKey, failErr.Reason)
 		result.Attempts = append(result.Attempts, FallbackAttempt{
 			Provider: candidate.Provider,
 			Model:    candidate.Model,
@@ -227,6 +289,34 @@ func (fc *FallbackChain) ExecuteImage(
 			return nil, context.Canceled
 		}
 
+		// Enforce per-candidate rate limit before calling the provider.
+		// If this candidate is locally saturated, try other candidates first.
+		imageKey := candidate.StableKey()
+		if fc.rl != nil {
+			if !fc.rl.TryAcquire(imageKey) {
+				if i < len(candidates)-1 {
+					result.Attempts = append(result.Attempts, FallbackAttempt{
+						Provider: candidate.Provider,
+						Model:    candidate.Model,
+						Skipped:  true,
+						Reason:   FailoverRateLimit,
+						Error:    fmt.Errorf("%s waiting for local rate limit token", imageKey),
+					})
+					continue
+				}
+				if waitErr := fc.rl.Wait(ctx, imageKey); waitErr != nil {
+					result.Attempts = append(result.Attempts, FallbackAttempt{
+						Provider: candidate.Provider,
+						Model:    candidate.Model,
+						Skipped:  true,
+						Reason:   FailoverRateLimit,
+						Error:    waitErr,
+					})
+					return nil, waitErr
+				}
+			}
+		}
+
 		start := time.Now()
 		resp, err := run(ctx, candidate.Provider, candidate.Model)
 		elapsed := time.Since(start)
@@ -235,6 +325,7 @@ func (fc *FallbackChain) ExecuteImage(
 			result.Response = resp
 			result.Provider = candidate.Provider
 			result.Model = candidate.Model
+			result.IdentityKey = candidate.StableKey()
 			return result, nil
 		}
 

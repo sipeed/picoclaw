@@ -25,6 +25,9 @@ build/
 # Secrets & Config (keep templates, ignore actual secrets)
 .env
 config/config.json
+.security.yml
+onboard
+
 
 # Test
 coverage.txt
@@ -38,12 +41,17 @@ ralph/
 .ralph/
 tasks/
 
+# Plans
+docs/plans/
+docs/superpowers/
+
 # Editors
 .vscode/
 .idea/
 
 # Added by goreleaser init:
 dist/
+*.vite/
 
 # Windows Application Icon/Resource
 *.syso

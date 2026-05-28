@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -23,6 +24,10 @@ type mockRegistry struct {
 }
 
 func (m *mockRegistry) Name() string { return m.name }
+
+func (m *mockRegistry) ResolveInstallDirName(target string) (string, error) { return target, nil }
+
+func (m *mockRegistry) SkillURL(slug, _ string) string { return "https://example.com/skills/" + slug }
 
 func (m *mockRegistry) Search(_ context.Context, _ string, _ int) ([]SearchResult, error) {
 	return m.searchResults, m.searchErr
@@ -170,6 +175,31 @@ func TestSortByScoreDesc(t *testing.T) {
 	assert.Equal(t, "c", results[2].Slug)
 }
 
+type mockProvider struct {
+	enabled  bool
+	registry SkillRegistry
+}
+
+func (m mockProvider) IsEnabled() bool {
+	return m.enabled
+}
+
+func (m mockProvider) BuildRegistry() SkillRegistry {
+	return m.registry
+}
+
+func TestNewRegistryManagerFromConfigProviders(t *testing.T) {
+	mgr := NewRegistryManagerFromConfig(RegistryConfig{
+		Providers: []RegistryProvider{
+			mockProvider{enabled: true, registry: &mockRegistry{name: "alpha"}},
+			mockProvider{enabled: false, registry: &mockRegistry{name: "beta"}},
+		},
+	})
+
+	assert.NotNil(t, mgr.GetRegistry("alpha"))
+	assert.Nil(t, mgr.GetRegistry("beta"))
+}
+
 func TestIsSafeSlug(t *testing.T) {
 	assert.NoError(t, utils.ValidateSkillIdentifier("github"))
 	assert.NoError(t, utils.ValidateSkillIdentifier("docker-compose"))
@@ -177,4 +207,51 @@ func TestIsSafeSlug(t *testing.T) {
 	assert.Error(t, utils.ValidateSkillIdentifier("../etc/passwd"))
 	assert.Error(t, utils.ValidateSkillIdentifier("path/traversal"))
 	assert.Error(t, utils.ValidateSkillIdentifier("path\\traversal"))
+}
+
+func TestLegacyGithubBaseURLOverridesDefaultRegistryBaseURL(t *testing.T) {
+	cfg := config.DefaultConfig().Tools.Skills
+	cfg.Github.BaseURL = "https://ghe.example.com/git"
+
+	registry := LookupRegistryFromToolsConfig(cfg, "github")
+	assert.NotNil(t, registry)
+
+	ghRegistry, ok := registry.(*GitHubRegistry)
+	assert.True(t, ok)
+	assert.Equal(t, "https://ghe.example.com/git", ghRegistry.webBase)
+}
+
+func TestExplicitGithubRegistryBaseURLBeatsLegacyCompat(t *testing.T) {
+	cfg := config.DefaultConfig().Tools.Skills
+	cfg.Github.BaseURL = "https://ghe-legacy.example.com/git"
+	cfg.Registries.Set("github", config.SkillRegistryConfig{
+		Name:    "github",
+		Enabled: true,
+		BaseURL: "https://ghe-explicit.example.com/scm",
+		Param:   map[string]any{},
+	})
+
+	registry := LookupRegistryFromToolsConfig(cfg, "github")
+	assert.NotNil(t, registry)
+
+	ghRegistry, ok := registry.(*GitHubRegistry)
+	assert.True(t, ok)
+	assert.Equal(t, "https://ghe-explicit.example.com/scm", ghRegistry.webBase)
+}
+
+func TestNormalizeInstallTargetForRegistryCanonicalizesGitHubURLs(t *testing.T) {
+	cfg := config.DefaultConfig().Tools.Skills
+	cfg.Registries.Set("github", config.SkillRegistryConfig{
+		Name:    "github",
+		Enabled: true,
+		BaseURL: "https://ghe.example.com/git",
+		Param:   map[string]any{},
+	})
+
+	got := NormalizeInstallTargetForRegistry(
+		cfg,
+		"github",
+		"https://ghe.example.com/git/org/repo/tree/dev/skills/pr-review",
+	)
+	assert.Equal(t, "org/repo/skills/pr-review", got)
 }

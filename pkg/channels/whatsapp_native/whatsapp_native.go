@@ -48,7 +48,7 @@ const (
 // WhatsAppNativeChannel implements the WhatsApp channel using whatsmeow (in-process, no external bridge).
 type WhatsAppNativeChannel struct {
 	*channels.BaseChannel
-	config       config.WhatsAppConfig
+	config       *config.WhatsAppSettings
 	storePath    string
 	client       *whatsmeow.Client
 	container    *sqlstore.Container
@@ -64,11 +64,13 @@ type WhatsAppNativeChannel struct {
 // NewWhatsAppNativeChannel creates a WhatsApp channel that uses whatsmeow for connection.
 // storePath is the directory for the SQLite session store (e.g. workspace/whatsapp).
 func NewWhatsAppNativeChannel(
-	cfg config.WhatsAppConfig,
+	bc *config.Channel,
+	name string,
+	cfg *config.WhatsAppSettings,
 	bus *bus.MessageBus,
 	storePath string,
 ) (channels.Channel, error) {
-	base := channels.NewBaseChannel("whatsapp_native", cfg, bus, cfg.AllowFrom, channels.WithMaxMessageLength(65536))
+	base := channels.NewBaseChannel(name, cfg, bus, bc.AllowFrom, channels.WithMaxMessageLength(65536))
 	if storePath == "" {
 		storePath = "whatsapp"
 	}
@@ -375,7 +377,6 @@ func (c *WhatsAppNativeChannel) handleIncoming(evt *events.Message) {
 	if evt.Info.Chat.Server == types.GroupServer {
 		peerKind = "group"
 	}
-	peer := bus.Peer{Kind: peerKind, ID: chatID}
 	messageID := evt.Info.ID
 	sender := bus.SenderInfo{
 		Platform:    "whatsapp",
@@ -393,16 +394,26 @@ func (c *WhatsAppNativeChannel) handleIncoming(evt *events.Message) {
 		"WhatsApp message received",
 		map[string]any{"sender_id": senderID, "content_preview": utils.Truncate(content, 50)},
 	)
-	c.HandleMessage(c.runCtx, peer, messageID, senderID, chatID, content, mediaPaths, metadata, sender)
+
+	inboundCtx := bus.InboundContext{
+		Channel:   "whatsapp",
+		ChatID:    chatID,
+		SenderID:  senderID,
+		MessageID: messageID,
+		ChatType:  peerKind,
+		Raw:       metadata,
+	}
+
+	c.HandleInboundContext(c.runCtx, chatID, content, mediaPaths, inboundCtx, sender)
 }
 
-func (c *WhatsAppNativeChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *WhatsAppNativeChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	default:
 	}
 
@@ -411,18 +422,18 @@ func (c *WhatsAppNativeChannel) Send(ctx context.Context, msg bus.OutboundMessag
 	c.mu.Unlock()
 
 	if client == nil || !client.IsConnected() {
-		return fmt.Errorf("whatsapp connection not established: %w", channels.ErrTemporary)
+		return nil, fmt.Errorf("whatsapp connection not established: %w", channels.ErrTemporary)
 	}
 
 	// Detect unpaired state: the client is connected (to WhatsApp servers)
 	// but has not completed QR-login yet, so sending would fail.
 	if client.Store.ID == nil {
-		return fmt.Errorf("whatsapp not yet paired (QR login pending): %w", channels.ErrTemporary)
+		return nil, fmt.Errorf("whatsapp not yet paired (QR login pending): %w", channels.ErrTemporary)
 	}
 
 	to, err := parseJID(msg.ChatID)
 	if err != nil {
-		return fmt.Errorf("invalid chat id %q: %w", msg.ChatID, err)
+		return nil, fmt.Errorf("invalid chat id %q: %w", msg.ChatID, err)
 	}
 
 	waMsg := &waE2E.Message{
@@ -430,9 +441,9 @@ func (c *WhatsAppNativeChannel) Send(ctx context.Context, msg bus.OutboundMessag
 	}
 
 	if _, err = client.SendMessage(ctx, to, waMsg); err != nil {
-		return fmt.Errorf("whatsapp send: %w", channels.ErrTemporary)
+		return nil, fmt.Errorf("whatsapp send: %w", channels.ErrTemporary)
 	}
-	return nil
+	return nil, nil
 }
 
 // parseJID converts a chat ID (phone number or JID string) to types.JID.

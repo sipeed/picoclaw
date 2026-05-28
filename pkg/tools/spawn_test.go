@@ -6,9 +6,35 @@ import (
 	"testing"
 )
 
+// mockSpawner implements SubTurnSpawner for testing.
+type mockSpawner struct {
+	lastConfig SubTurnConfig
+	done       chan struct{}
+}
+
+func (m *mockSpawner) SpawnSubTurn(ctx context.Context, cfg SubTurnConfig) (*ToolResult, error) {
+	m.lastConfig = cfg
+	if m.done != nil {
+		close(m.done)
+	}
+
+	// Extract task from system prompt for response
+	task := cfg.SystemPrompt
+	if strings.Contains(task, "Task: ") {
+		parts := strings.Split(task, "Task: ")
+		if len(parts) > 1 {
+			task = parts[1]
+		}
+	}
+	return &ToolResult{
+		ForLLM:  "Task completed: " + task,
+		ForUser: "Task completed",
+	}, nil
+}
+
 func TestSpawnTool_Execute_EmptyTask(t *testing.T) {
 	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
 	tool := NewSpawnTool(manager)
 
 	ctx := context.Background()
@@ -42,13 +68,16 @@ func TestSpawnTool_Execute_EmptyTask(t *testing.T) {
 
 func TestSpawnTool_Execute_ValidTask(t *testing.T) {
 	provider := &MockLLMProvider{}
-	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
 	tool := NewSpawnTool(manager)
+	spawner := &mockSpawner{done: make(chan struct{})}
+	tool.SetSpawner(spawner)
 
 	ctx := context.Background()
 	args := map[string]any{
-		"task":  "Write a haiku about coding",
-		"label": "haiku-task",
+		"task":     "Write a haiku about coding",
+		"label":    "haiku-task",
+		"agent_id": "research",
 	}
 
 	result := tool.Execute(ctx, args)
@@ -60,6 +89,13 @@ func TestSpawnTool_Execute_ValidTask(t *testing.T) {
 	}
 	if !result.Async {
 		t.Error("SpawnTool should return async result")
+	}
+	<-spawner.done
+	if spawner.lastConfig.TargetAgentID != "research" {
+		t.Errorf("TargetAgentID = %q, want research", spawner.lastConfig.TargetAgentID)
+	}
+	if !spawner.lastConfig.Critical {
+		t.Error("SpawnTool should mark background subturns as critical")
 	}
 }
 

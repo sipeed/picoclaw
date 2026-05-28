@@ -26,6 +26,7 @@ import (
 const (
 	minIntervalMinutes     = 5
 	defaultIntervalMinutes = 30
+	userTasksMarker        = "Add your heartbeat tasks below this line:"
 )
 
 // HeartbeatHandler is the function type for handling heartbeat.
@@ -232,7 +233,7 @@ func (hs *HeartbeatService) buildPrompt() string {
 	}
 
 	content := string(data)
-	if len(content) == 0 {
+	if !heartbeatHasUserTasks(content) {
 		return ""
 	}
 
@@ -284,6 +285,32 @@ Add your heartbeat tasks below this line:
 	}
 }
 
+func heartbeatHasUserTasks(content string) bool {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return false
+	}
+
+	markerIdx := strings.Index(content, userTasksMarker)
+	if markerIdx < 0 {
+		return true
+	}
+
+	tasksSection := content[markerIdx+len(userTasksMarker):]
+	for _, line := range strings.Split(tasksSection, "\n") {
+		trimmedLine := strings.TrimSpace(line)
+		if trimmedLine == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmedLine, "#") {
+			continue
+		}
+		return true
+	}
+
+	return false
+}
+
 // sendResponse sends the heartbeat response to the last channel
 func (hs *HeartbeatService) sendResponse(response string) {
 	hs.mu.RLock()
@@ -312,8 +339,7 @@ func (hs *HeartbeatService) sendResponse(response string) {
 	pubCtx, pubCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer pubCancel()
 	msgBus.PublishOutbound(pubCtx, bus.OutboundMessage{
-		Channel: platform,
-		ChatID:  userID,
+		Context: bus.NewOutboundContext(platform, userID, ""),
 		Content: response,
 	})
 

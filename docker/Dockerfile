@@ -41,8 +41,10 @@ RUN npx -y playwright@1.58.2 install chromium
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget -q --spider http://localhost:18790/health || exit 1
 
-# Copy binary
+# Copy binary and first-run entrypoint (same as release image).
 COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # Copy entrypoint scripts
 COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh

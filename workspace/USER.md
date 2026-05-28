@@ -1,6 +1,6 @@
 # User
 
-Information about user goes here.
+Information about the user goes here.
 
 ## Preferences
 

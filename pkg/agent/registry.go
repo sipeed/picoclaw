@@ -3,14 +3,17 @@ package agent
 import (
 	"sync"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
+	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
 // AgentRegistry manages multiple agent instances and routes messages to them.
 type AgentRegistry struct {
+	cfg      *config.Config
 	agents   map[string]*AgentInstance
 	resolver *routing.RouteResolver
 	mu       sync.RWMutex
@@ -22,6 +25,7 @@ func NewAgentRegistry(
 	provider providers.LLMProvider,
 ) *AgentRegistry {
 	registry := &AgentRegistry{
+		cfg:      cfg,
 		agents:   make(map[string]*AgentInstance),
 		resolver: routing.NewRouteResolver(cfg),
 	}
@@ -51,6 +55,12 @@ func NewAgentRegistry(
 		}
 	}
 
+	for _, instance := range registry.agents {
+		if instance.ContextBuilder != nil {
+			instance.ContextBuilder.WithAgentDiscovery(instance.ID, registry.ListSpawnableAgents)
+		}
+	}
+
 	return registry
 }
 
@@ -63,9 +73,9 @@ func (r *AgentRegistry) GetAgent(agentID string) (*AgentInstance, bool) {
 	return agent, ok
 }
 
-// ResolveRoute determines which agent handles the message.
-func (r *AgentRegistry) ResolveRoute(input routing.RouteInput) routing.ResolvedRoute {
-	return r.resolver.ResolveRoute(input)
+// ResolveRoute determines which agent handles the normalized inbound context.
+func (r *AgentRegistry) ResolveRoute(inbound bus.InboundContext) routing.ResolvedRoute {
+	return r.resolver.ResolveRoute(inbound)
 }
 
 // ListAgentIDs returns all registered agent IDs.
@@ -79,16 +89,43 @@ func (r *AgentRegistry) ListAgentIDs() []string {
 	return ids
 }
 
+func (r *AgentRegistry) allowedMCPServers() map[string]struct{} {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if len(r.agents) == 0 {
+		return nil
+	}
+
+	union := make(map[string]struct{})
+	for _, agent := range r.agents {
+		if agent == nil {
+			continue
+		}
+		if agent.MCPServerAllowlist == nil {
+			return nil
+		}
+		for serverName := range agent.MCPServerAllowlist {
+			union[serverName] = struct{}{}
+		}
+	}
+
+	return union
+}
+
 // CanSpawnSubagent checks if parentAgentID is allowed to spawn targetAgentID.
 func (r *AgentRegistry) CanSpawnSubagent(parentAgentID, targetAgentID string) bool {
 	parent, ok := r.GetAgent(parentAgentID)
 	if !ok {
 		return false
 	}
-	if parent.Subagents == nil || parent.Subagents.AllowAgents == nil {
+	return agentAllowsSubagent(parent, routing.NormalizeAgentID(targetAgentID))
+}
+
+func agentAllowsSubagent(parent *AgentInstance, targetNorm string) bool {
+	if parent == nil || parent.Subagents == nil || parent.Subagents.AllowAgents == nil {
 		return false
 	}
-	targetNorm := routing.NormalizeAgentID(targetAgentID)
 	for _, allowed := range parent.Subagents.AllowAgents {
 		if allowed == "*" {
 			return true
@@ -100,15 +137,50 @@ func (r *AgentRegistry) CanSpawnSubagent(parentAgentID, targetAgentID string) bo
 	return false
 }
 
+func agentHasSpawnTool(agent *AgentInstance) bool {
+	if agent == nil || agent.Tools == nil {
+		return false
+	}
+	_, ok := agent.Tools.Get("spawn")
+	return ok
+}
+
+// ForEachTool calls fn for every tool registered under the given name
+// across all agents. This is useful for propagating dependencies (e.g.
+// MediaStore) to tools after registry construction.
+func (r *AgentRegistry) ForEachTool(name string, fn func(tools.Tool)) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, agent := range r.agents {
+		if t, ok := agent.Tools.Get(name); ok {
+			fn(t)
+		}
+	}
+}
+
+// Close releases resources held by all registered agents.
+func (r *AgentRegistry) Close() {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, agent := range r.agents {
+		if err := agent.Close(); err != nil {
+			logger.WarnCF("agent", "Failed to close agent",
+				map[string]any{"agent_id": agent.ID, "error": err.Error()})
+		}
+	}
+}
+
 // GetDefaultAgent returns the default agent instance.
 func (r *AgentRegistry) GetDefaultAgent() *AgentInstance {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if agent, ok := r.agents["main"]; ok {
-		return agent
+	if id := r.defaultAgentIDLocked(); id != "" {
+		if agent, ok := r.agents[id]; ok {
+			return agent
+		}
 	}
-	for _, agent := range r.agents {
-		return agent
+	for id := range r.agents {
+		return r.agents[id]
 	}
 	return nil
 }

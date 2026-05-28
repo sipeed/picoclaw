@@ -1,0 +1,60 @@
+name: Create Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag name (required, e.g. v0.2.0)"
+        required: true
+        type: string
+      commit:
+        description: "Target commit SHA (leave empty for latest main)"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  create-tag:
+    name: Create Git Tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Validate commit exists
+        if: ${{ inputs.commit != '' }}
+        shell: bash
+        run: |
+          if ! git cat-file -t "${{ inputs.commit }}" &>/dev/null; then
+            echo "::error::Commit '${{ inputs.commit }}' does not exist."
+            exit 1
+          fi
+
+      - name: Check tag does not already exist
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh api "repos/${{ github.repository }}/git/ref/tags/${{ inputs.tag }}" --silent 2>/dev/null; then
+            echo "::error::Tag '${{ inputs.tag }}' already exists."
+            exit 1
+          fi
+
+      - name: Create and push tag
+        shell: bash
+        run: |
+          TARGET="${{ inputs.commit || 'HEAD' }}"
+          COMMIT_SHA=$(git rev-parse "$TARGET")
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ inputs.tag }}" "$COMMIT_SHA" -m "Release ${{ inputs.tag }}"
+          git push origin "${{ inputs.tag }}"
+          echo "### Tag Created" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Tag:** \`${{ inputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit:** \`${COMMIT_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Branch:** \`$(git branch -r --contains "$COMMIT_SHA" | head -1 | xargs)\`" >> "$GITHUB_STEP_SUMMARY"

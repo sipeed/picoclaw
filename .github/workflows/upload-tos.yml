@@ -1,0 +1,49 @@
+name: Upload to Volcengine TOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to download and upload (e.g. v0.2.0)"
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag to download and upload"
+        required: true
+        type: string
+
+jobs:
+  upload-tos:
+    name: Upload to Volcengine TOS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p artifacts
+          gh release download "${{ inputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --dir artifacts \
+            --pattern "*.tar.gz" \
+            --pattern "*.zip" \
+            --pattern "*.rpm" \
+            --pattern "*.deb"
+
+      - name: Upload to Volcengine TOS
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.VOLC_TOS_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.VOLC_TOS_SECRET_KEY }}
+          AWS_DEFAULT_REGION: cn-beijing
+        run: |
+          aws configure set default.s3.addressing_style virtual
+          TOS_ENDPOINT="https://tos-s3-cn-beijing.volces.com"
+          # Upload to versioned directory
+          aws s3 sync artifacts/ "s3://picoclaw-downloads/${{ inputs.tag }}/" \
+            --endpoint-url "$TOS_ENDPOINT"
+          # Upload to latest (overwrite)
+          aws s3 sync artifacts/ "s3://picoclaw-downloads/latest/" \
+            --endpoint-url "$TOS_ENDPOINT" \
+            --delete

@@ -24,6 +24,9 @@ func TestNewOnboardCommand(t *testing.T) {
 	assert.Nil(t, cmd.PersistentPreRun)
 	assert.Nil(t, cmd.PersistentPostRun)
 
-	assert.False(t, cmd.HasFlags())
+	assert.True(t, cmd.HasFlags())
+	encFlag := cmd.Flags().Lookup("enc")
+	require.NotNil(t, encFlag, "expected --enc flag to be registered")
+	assert.Equal(t, "false", encFlag.DefValue, "--enc should default to false")
 	assert.False(t, cmd.HasSubCommands())
 }

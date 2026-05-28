@@ -2,9 +2,20 @@ package providers
 
 import (
 	"context"
+	"errors"
+	"io"
+	"net"
 	"regexp"
 	"strings"
+	"syscall"
 )
+
+// Common patterns in Go HTTP error messages
+var httpStatusPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`status[:\s]+(\d{3})`),
+	regexp.MustCompile(`http[/\s]+\d*\.?\d*\s+(\d{3})`),
+	regexp.MustCompile(`\b([3-5]\d{2})\b`),
+}
 
 // errorPattern defines a single pattern (string or regex) for error classification.
 type errorPattern struct {
@@ -43,6 +54,30 @@ var (
 		substr("context deadline exceeded"),
 	}
 
+	networkPatterns = []errorPattern{
+		substr("connection reset"),
+		substr("reset by peer"),
+		substr("connection refused"),
+		substr("connection aborted"),
+		substr("broken pipe"),
+		substr("use of closed network connection"),
+		substr("network is unreachable"),
+		substr("host is unreachable"),
+		substr("no such host"),
+		substr("temporary failure in name resolution"),
+		substr("server misbehaving"),
+		substr("read tcp"),
+		substr("write tcp"),
+		substr("dial tcp"),
+		substr("tls:"),
+		substr("x509:"),
+		substr("certificate"),
+		substr("handshake"),
+		substr("unexpected eof"),
+		substr("read: eof"),
+		substr("write: eof"),
+	}
+
 	billingPatterns = []errorPattern{
 		rxp(`\b402\b`),
 		substr("payment required"),
@@ -76,6 +111,15 @@ var (
 		substr("tool_use_id"),
 		substr("messages.1.content.1.tool_use.id"),
 		substr("invalid request format"),
+	}
+	contextOverflowPatterns = []errorPattern{
+		rxp(`context[_ ]?length[_ ]?exceeded`),
+		rxp(`context[_ ]?window[_ ]?exceeded`),
+		substr("maximum context length"),
+		substr("token limit"),
+		substr("too many tokens"),
+		substr("prompt is too long"),
+		substr("request too large"),
 	}
 
 	imageDimensionPatterns = []errorPattern{
@@ -118,6 +162,17 @@ func ClassifyError(err error, provider, model string) *FailoverError {
 
 	msg := strings.ToLower(err.Error())
 
+	// Concrete transport errors should continue the fallback chain even when
+	// providers do not expose a structured HTTP status.
+	if reason := classifyByErrorType(err); reason != "" {
+		return &FailoverError{
+			Reason:   reason,
+			Provider: provider,
+			Model:    model,
+			Wrapped:  err,
+		}
+	}
+
 	// Image dimension/size errors: non-retriable, non-fallback.
 	if IsImageDimensionError(msg) || IsImageSizeError(msg) {
 		return &FailoverError{
@@ -154,6 +209,41 @@ func ClassifyError(err error, provider, model string) *FailoverError {
 	return nil
 }
 
+// classifyByErrorType maps concrete transport-layer error types to a retryable
+// fallback reason before message heuristics are applied.
+func classifyByErrorType(err error) FailoverReason {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return FailoverNetwork
+	}
+
+	for _, transportErr := range []error{
+		syscall.ECONNRESET,
+		syscall.ECONNABORTED,
+		syscall.ECONNREFUSED,
+		syscall.ETIMEDOUT,
+		syscall.EHOSTUNREACH,
+		syscall.ENETUNREACH,
+		syscall.EPIPE,
+	} {
+		if errors.Is(err, transportErr) {
+			if transportErr == syscall.ETIMEDOUT {
+				return FailoverTimeout
+			}
+			return FailoverNetwork
+		}
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		if netErr.Timeout() {
+			return FailoverTimeout
+		}
+		return FailoverNetwork
+	}
+
+	return ""
+}
+
 // classifyByStatus maps HTTP status codes to FailoverReason.
 func classifyByStatus(status int) FailoverReason {
 	switch {
@@ -188,30 +278,29 @@ func classifyByMessage(msg string) FailoverReason {
 	if matchesAny(msg, timeoutPatterns) {
 		return FailoverTimeout
 	}
+	if matchesAny(msg, networkPatterns) {
+		return FailoverNetwork
+	}
 	if matchesAny(msg, authPatterns) {
 		return FailoverAuth
 	}
 	if matchesAny(msg, formatPatterns) {
 		return FailoverFormat
 	}
+	if matchesAny(msg, contextOverflowPatterns) {
+		return FailoverContextOverflow
+	}
 	return ""
 }
 
 // extractHTTPStatus extracts an HTTP status code from an error message.
-// Looks for patterns like "status: 429", "status 429", "HTTP 429", or standalone "429".
+// Looks for patterns like "status: 429", "status 429", "http/1.1 429", "http 429", or standalone "429".
 func extractHTTPStatus(msg string) int {
-	// Common patterns in Go HTTP error messages
-	patterns := []*regexp.Regexp{
-		regexp.MustCompile(`status[:\s]+(\d{3})`),
-		regexp.MustCompile(`HTTP[/\s]+\d*\.?\d*\s+(\d{3})`),
-	}
-
-	for _, p := range patterns {
+	for _, p := range httpStatusPatterns {
 		if m := p.FindStringSubmatch(msg); len(m) > 1 {
 			return parseDigits(m[1])
 		}
 	}
-
 	return 0
 }
 

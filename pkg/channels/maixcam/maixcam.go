@@ -17,7 +17,7 @@ import (
 
 type MaixCamChannel struct {
 	*channels.BaseChannel
-	config     config.MaixCamConfig
+	config     *config.MaixCamSettings
 	listener   net.Listener
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -32,13 +32,17 @@ type MaixCamMessage struct {
 	Data      map[string]any `json:"data"`
 }
 
-func NewMaixCamChannel(cfg config.MaixCamConfig, bus *bus.MessageBus) (*MaixCamChannel, error) {
+func NewMaixCamChannel(
+	bc *config.Channel,
+	cfg *config.MaixCamSettings,
+	bus *bus.MessageBus,
+) (*MaixCamChannel, error) {
 	base := channels.NewBaseChannel(
 		"maixcam",
 		cfg,
 		bus,
-		cfg.AllowFrom,
-		channels.WithReasoningChannelID(cfg.ReasoningChannelID),
+		bc.AllowFrom,
+		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
 	return &MaixCamChannel{
@@ -196,17 +200,15 @@ func (c *MaixCamChannel) handlePersonDetection(msg MaixCamMessage) {
 		return
 	}
 
-	c.HandleMessage(
-		c.ctx,
-		bus.Peer{Kind: "channel", ID: "default"},
-		"",
-		senderID,
-		chatID,
-		content,
-		[]string{},
-		metadata,
-		sender,
-	)
+	inboundCtx := bus.InboundContext{
+		Channel:  "maixcam",
+		ChatID:   chatID,
+		ChatType: "channel",
+		SenderID: senderID,
+		Raw:      metadata,
+	}
+
+	c.HandleInboundContext(c.ctx, chatID, content, nil, inboundCtx, sender)
 }
 
 func (c *MaixCamChannel) handleStatusUpdate(msg MaixCamMessage) {
@@ -240,15 +242,15 @@ func (c *MaixCamChannel) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
 	if !c.IsRunning() {
-		return channels.ErrNotRunning
+		return nil, channels.ErrNotRunning
 	}
 
 	// Check ctx before entering write path
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	default:
 	}
 
@@ -257,7 +259,7 @@ func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 
 	if len(c.clients) == 0 {
 		logger.WarnC("maixcam", "No MaixCam devices connected")
-		return fmt.Errorf("no connected MaixCam devices")
+		return nil, fmt.Errorf("no connected MaixCam devices")
 	}
 
 	response := map[string]any{
@@ -269,7 +271,7 @@ func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 
 	data, err := json.Marshal(response)
 	if err != nil {
-		return fmt.Errorf("failed to marshal response: %w", err)
+		return nil, fmt.Errorf("failed to marshal response: %w", err)
 	}
 
 	var sendErr error
@@ -285,5 +287,5 @@ func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 		_ = conn.SetWriteDeadline(time.Time{})
 	}
 
-	return sendErr
+	return nil, sendErr
 }

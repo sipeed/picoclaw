@@ -1,0 +1,64 @@
+name: Close stale issues and PRs
+
+on:
+  schedule:
+    # Run daily at 03:00 JST (18:00 UTC)
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Mark and close stale issues and PRs
+        uses: actions/stale@v10
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # ── Issue: 7 days inactive → stale; 7 more days → close ──
+          days-before-issue-stale: 7
+          days-before-issue-close: 7
+          stale-issue-label: "stale"
+          stale-issue-message: >
+            This issue has had no activity for 7 days and has been marked as stale.
+            If it is still relevant, please reply or update; otherwise it will be
+            closed automatically in 7 days.
+          close-issue-message: >
+            This issue has been closed after 14 days of inactivity.
+            If it is still needed, feel free to reopen it anytime.
+          close-issue-reason: "not_planned"
+
+          # ── PR: 7 days inactive → stale; 7 more days → close ──
+          days-before-pr-stale: 7
+          days-before-pr-close: 7
+          stale-pr-label: "stale"
+          stale-pr-message: >
+            This PR has had no activity for 7 days and has been marked as stale.
+            If you are still working on it, please push an update or leave a comment;
+            otherwise it will be closed automatically in 7 days.
+          close-pr-message: >
+            This PR has been closed after 14 days of inactivity.
+            If you would like to continue, feel free to reopen it or submit a new PR.
+
+          # ── Protected labels (exempt from stale processing) ──
+          exempt-issue-labels: "pinned,keep-open,wip,do-not-close,type: roadmap"
+          exempt-pr-labels: "pinned,keep-open,wip,do-not-close,type: roadmap"
+
+          # ── Exempt draft PRs ──
+          exempt-draft-pr: true
+
+          # ── Remove stale label when activity resumes ──
+          remove-stale-when-updated: true
+          remove-issue-stale-when-updated: true
+          remove-pr-stale-when-updated: true
+
+          # ── Scan oldest items first so old stale items are not starved ──
+          ascending: true
+
+          # ── Throttle: max operations per run ──
+          operations-per-run: 500

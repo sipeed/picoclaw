@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
@@ -18,6 +20,35 @@ const (
 	defaultMaxZipSize      = 50 * 1024 * 1024 // 50 MB
 	defaultMaxResponseSize = 2 * 1024 * 1024  // 2 MB
 )
+
+func init() {
+	RegisterRegistryProviderBuilder("clawhub", func(_ string, cfg config.SkillRegistryConfig) RegistryProvider {
+		privateCfg := clawHubRegistryPrivateConfig{}
+		if err := cfg.DecodeParam(&privateCfg); err != nil {
+			slog.Warn("invalid clawhub private config", "error", err)
+		}
+		return ClawHubConfig{
+			Enabled:         cfg.Enabled,
+			BaseURL:         cfg.BaseURL,
+			AuthToken:       cfg.AuthToken.String(),
+			SearchPath:      privateCfg.SearchPath,
+			SkillsPath:      privateCfg.SkillsPath,
+			DownloadPath:    privateCfg.DownloadPath,
+			Timeout:         privateCfg.Timeout,
+			MaxZipSize:      privateCfg.MaxZipSize,
+			MaxResponseSize: privateCfg.MaxResponseSize,
+		}
+	})
+}
+
+type clawHubRegistryPrivateConfig struct {
+	SearchPath      string `json:"search_path"`
+	SkillsPath      string `json:"skills_path"`
+	DownloadPath    string `json:"download_path"`
+	Timeout         int    `json:"timeout"`
+	MaxZipSize      int    `json:"max_zip_size"`
+	MaxResponseSize int    `json:"max_response_size"`
+}
 
 // ClawHubRegistry implements SkillRegistry for the ClawHub platform.
 type ClawHubRegistry struct {
@@ -86,6 +117,28 @@ func NewClawHubRegistry(cfg ClawHubConfig) *ClawHubRegistry {
 
 func (c *ClawHubRegistry) Name() string {
 	return "clawhub"
+}
+
+func (c *ClawHubRegistry) ResolveInstallDirName(target string) (string, error) {
+	if err := utils.ValidateSkillIdentifier(target); err != nil {
+		return "", err
+	}
+	return target, nil
+}
+
+func (c *ClawHubRegistry) SkillURL(slug, _ string) string {
+	if slug == "" {
+		return ""
+	}
+	return c.baseURL + "/skills/" + url.PathEscape(slug)
+}
+
+func (c ClawHubConfig) IsEnabled() bool {
+	return c.Enabled
+}
+
+func (c ClawHubConfig) BuildRegistry() SkillRegistry {
+	return NewClawHubRegistry(c)
 }
 
 // --- Search ---
@@ -259,15 +312,7 @@ func (c *ClawHubRegistry) DownloadAndInstall(
 	}
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	if c.authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.authToken)
-	}
-
-	tmpPath, err := utils.DownloadToFile(ctx, c.client, req, int64(c.maxZipSize))
+	tmpPath, err := c.downloadToTempFileWithRetry(ctx, u.String())
 	if err != nil {
 		return nil, fmt.Errorf("download failed: %w", err)
 	}
@@ -284,17 +329,12 @@ func (c *ClawHubRegistry) DownloadAndInstall(
 // --- HTTP helper ---
 
 func (c *ClawHubRegistry) doGet(ctx context.Context, urlStr string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
+	req, err := c.newGetRequest(ctx, urlStr, "application/json")
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("Accept", "application/json")
-	if c.authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.authToken)
-	}
-
-	resp, err := c.client.Do(req)
+	resp, err := utils.DoRequestWithRetry(c.client, req)
 	if err != nil {
 		return nil, err
 	}
@@ -311,4 +351,65 @@ func (c *ClawHubRegistry) doGet(ctx context.Context, urlStr string) ([]byte, err
 	}
 
 	return body, nil
+}
+
+func (c *ClawHubRegistry) newGetRequest(ctx context.Context, urlStr, accept string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", accept)
+	if c.authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.authToken)
+	}
+	return req, nil
+}
+
+func (c *ClawHubRegistry) downloadToTempFileWithRetry(ctx context.Context, urlStr string) (string, error) {
+	req, err := c.newGetRequest(ctx, urlStr, "application/zip")
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := utils.DoRequestWithRetry(c.client, req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		errBody := make([]byte, 512)
+		n, _ := io.ReadFull(resp.Body, errBody)
+		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(errBody[:n]))
+	}
+
+	tmpFile, err := os.CreateTemp("", "picoclaw-dl-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+
+	cleanup := func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+	}
+
+	src := io.LimitReader(resp.Body, int64(c.maxZipSize)+1)
+	written, err := io.Copy(tmpFile, src)
+	if err != nil {
+		cleanup()
+		return "", fmt.Errorf("download write failed: %w", err)
+	}
+
+	if written > int64(c.maxZipSize) {
+		cleanup()
+		return "", fmt.Errorf("download too large: %d bytes (max %d)", written, c.maxZipSize)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	return tmpPath, nil
 }

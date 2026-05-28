@@ -118,64 +118,55 @@ func TestPlanWorkspaceMigration(t *testing.T) {
 	assert.GreaterOrEqual(t, len(actions), 1)
 }
 
-func TestPlanWorkspaceMigrationWithExistingDestination(t *testing.T) {
-	tmpDir := t.TempDir()
-	srcWorkspace := filepath.Join(tmpDir, "src", "workspace")
-	dstWorkspace := filepath.Join(tmpDir, "dst", "workspace")
+func TestPlanWorkspaceMigrationExistingFile(t *testing.T) {
+	tests := []struct {
+		name           string
+		force          bool
+		wantActionType ActionType
+	}{
+		{
+			name:           "backup when not forced",
+			force:          false,
+			wantActionType: ActionBackup,
+		},
+		{
+			name:           "copy when forced",
+			force:          true,
+			wantActionType: ActionCopy,
+		},
+	}
 
-	err := os.MkdirAll(srcWorkspace, 0o755)
-	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			srcWorkspace := filepath.Join(tmpDir, "src", "workspace")
+			dstWorkspace := filepath.Join(tmpDir, "dst", "workspace")
 
-	err = os.MkdirAll(dstWorkspace, 0o755)
-	require.NoError(t, err)
+			err := os.MkdirAll(srcWorkspace, 0o755)
+			require.NoError(t, err)
 
-	err = os.WriteFile(filepath.Join(srcWorkspace, "file1.txt"), []byte("source"), 0o644)
-	require.NoError(t, err)
+			err = os.MkdirAll(dstWorkspace, 0o755)
+			require.NoError(t, err)
 
-	err = os.WriteFile(filepath.Join(dstWorkspace, "file1.txt"), []byte("existing"), 0o644)
-	require.NoError(t, err)
+			err = os.WriteFile(filepath.Join(srcWorkspace, "file1.txt"), []byte("source"), 0o644)
+			require.NoError(t, err)
 
-	actions, err := PlanWorkspaceMigration(
-		srcWorkspace,
-		dstWorkspace,
-		[]string{"file1.txt"},
-		[]string{},
-		false,
-	)
-	require.NoError(t, err)
+			err = os.WriteFile(filepath.Join(dstWorkspace, "file1.txt"), []byte("existing"), 0o644)
+			require.NoError(t, err)
 
-	require.GreaterOrEqual(t, len(actions), 1)
-	assert.Equal(t, ActionBackup, actions[0].Type)
-}
+			actions, err := PlanWorkspaceMigration(
+				srcWorkspace,
+				dstWorkspace,
+				[]string{"file1.txt"},
+				[]string{},
+				tt.force,
+			)
+			require.NoError(t, err)
 
-func TestPlanWorkspaceMigrationForce(t *testing.T) {
-	tmpDir := t.TempDir()
-	srcWorkspace := filepath.Join(tmpDir, "src", "workspace")
-	dstWorkspace := filepath.Join(tmpDir, "dst", "workspace")
-
-	err := os.MkdirAll(srcWorkspace, 0o755)
-	require.NoError(t, err)
-
-	err = os.MkdirAll(dstWorkspace, 0o755)
-	require.NoError(t, err)
-
-	err = os.WriteFile(filepath.Join(srcWorkspace, "file1.txt"), []byte("source"), 0o644)
-	require.NoError(t, err)
-
-	err = os.WriteFile(filepath.Join(dstWorkspace, "file1.txt"), []byte("existing"), 0o644)
-	require.NoError(t, err)
-
-	actions, err := PlanWorkspaceMigration(
-		srcWorkspace,
-		dstWorkspace,
-		[]string{"file1.txt"},
-		[]string{},
-		true,
-	)
-	require.NoError(t, err)
-
-	require.GreaterOrEqual(t, len(actions), 1)
-	assert.Equal(t, ActionCopy, actions[0].Type)
+			require.GreaterOrEqual(t, len(actions), 1)
+			assert.Equal(t, tt.wantActionType, actions[0].Type)
+		})
+	}
 }
 
 func TestPlanWorkspaceMigrationNonExistentSource(t *testing.T) {

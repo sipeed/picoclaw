@@ -1,0 +1,65 @@
+# ============================================================
+# Stage 1: Build frontend assets (Node.js + pnpm)
+# ============================================================
+FROM node:24-alpine3.23 AS frontend
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /src/web/frontend
+
+# Cache frontend dependencies
+COPY web/frontend/package.json web/frontend/pnpm-lock.yaml ./
+RUN CI=true pnpm install --frozen-lockfile
+
+# Build frontend
+COPY web/frontend/ ./
+RUN pnpm build:backend
+
+# ============================================================
+# Stage 2: Build Go binaries (picoclaw + picoclaw-launcher)
+# ============================================================
+FROM golang:1.25-alpine AS builder
+
+RUN apk add --no-cache git make
+
+WORKDIR /src
+
+# Cache Go dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source
+COPY . .
+
+# Copy pre-built frontend assets into the backend embed directory
+COPY --from=frontend /src/web/backend/dist web/backend/dist
+
+# Build picoclaw binary (includes go generate)
+RUN make build
+
+# Build picoclaw-launcher binary (frontend already built in stage 1)
+# Mirror ldflags from web/Makefile to inject version metadata
+RUN CONFIG_PKG=github.com/sipeed/picoclaw/pkg/config && \
+    VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev) && \
+    GIT_COMMIT=$(git rev-parse --short=8 HEAD 2>/dev/null || echo dev) && \
+    BUILD_TIME=$(date +%FT%T%z) && \
+    GO_VERSION=$(go env GOVERSION) && \
+    CGO_ENABLED=0 go build -v -tags goolm,stdjson \
+      -ldflags "-X ${CONFIG_PKG}.Version=${VERSION} -X ${CONFIG_PKG}.GitCommit=${GIT_COMMIT} -X ${CONFIG_PKG}.BuildTime=${BUILD_TIME} -X ${CONFIG_PKG}.GoVersion=${GO_VERSION} -s -w" \
+      -o build/picoclaw-launcher ./web/backend/
+
+# ============================================================
+# Stage 3: Minimal runtime image
+# ============================================================
+FROM alpine:3.23
+
+RUN apk add --no-cache ca-certificates tzdata curl
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -q --spider http://localhost:18790/health || exit 1
+
+COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
+COPY --from=builder /src/build/picoclaw-launcher /usr/local/bin/picoclaw-launcher
+
+ENTRYPOINT ["picoclaw-launcher"]
+CMD ["-console", "-public", "-no-browser"]

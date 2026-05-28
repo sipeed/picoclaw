@@ -2,20 +2,25 @@ package health
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
-	"fmt"
 	"maps"
+	"net"
 	"net/http"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 )
 
 type Server struct {
-	server    *http.Server
-	mu        sync.RWMutex
-	ready     bool
-	checks    map[string]Check
-	startTime time.Time
+	server     *http.Server
+	mu         sync.RWMutex
+	ready      bool
+	checks     map[string]Check
+	startTime  time.Time
+	reloadFunc func() error
+	authToken  string // optional bearer token for protected endpoints
 }
 
 type Check struct {
@@ -28,21 +33,24 @@ type Check struct {
 type StatusResponse struct {
 	Status string           `json:"status"`
 	Uptime string           `json:"uptime"`
+	PID    int              `json:"pid,omitempty"`
 	Checks map[string]Check `json:"checks,omitempty"`
 }
 
-func NewServer(host string, port int) *Server {
+func NewServer(host string, port int, token string) *Server {
 	mux := http.NewServeMux()
 	s := &Server{
 		ready:     false,
 		checks:    make(map[string]Check),
 		startTime: time.Now(),
+		authToken: token,
 	}
 
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
+	mux.HandleFunc("/reload", s.reloadHandler)
 
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	s.server = &http.Server{
 		Addr:         addr,
 		Handler:      mux,
@@ -104,6 +112,59 @@ func (s *Server) RegisterCheck(name string, checkFn func() (bool, string)) {
 	}
 }
 
+// SetReloadFunc sets the callback function for config reload.
+func (s *Server) SetReloadFunc(fn func() error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reloadFunc = fn
+}
+
+func (s *Server) reloadHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed, use POST"})
+		return
+	}
+
+	// Token check
+	s.mu.RLock()
+	requiredToken := s.authToken
+	s.mu.RUnlock()
+
+	if requiredToken != "" {
+		given := extractBearerToken(r.Header.Get("Authorization"))
+		if given == "" || subtle.ConstantTimeCompare([]byte(given), []byte(requiredToken)) != 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+			return
+		}
+	}
+
+	s.mu.Lock()
+	reloadFunc := s.reloadFunc
+	s.mu.Unlock()
+
+	if reloadFunc == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{"error": "reload not configured"})
+		return
+	}
+
+	if err := reloadFunc(); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "reload triggered"})
+}
+
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -112,6 +173,7 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	resp := StatusResponse{
 		Status: "ok",
 		Uptime: uptime.String(),
+		PID:    os.Getpid(),
 	}
 
 	json.NewEncoder(w).Encode(resp)
@@ -155,11 +217,20 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RegisterOnMux registers /health and /ready handlers onto the given mux.
+// HandlerMux is the interface for registering HTTP handlers, used by
+// RegisterOnMux so that callers can pass any mux implementation
+// (e.g. *http.ServeMux or a custom dynamic mux).
+type HandlerMux interface {
+	Handle(pattern string, handler http.Handler)
+	HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request))
+}
+
+// RegisterOnMux registers /health, /ready and /reload handlers onto the given mux.
 // This allows the health endpoints to be served by a shared HTTP server.
-func (s *Server) RegisterOnMux(mux *http.ServeMux) {
+func (s *Server) RegisterOnMux(mux HandlerMux) {
 	mux.HandleFunc("/health", s.healthHandler)
 	mux.HandleFunc("/ready", s.readyHandler)
+	mux.HandleFunc("/reload", s.reloadHandler)
 }
 
 func statusString(ok bool) string {
@@ -167,4 +238,17 @@ func statusString(ok bool) string {
 		return "ok"
 	}
 	return "fail"
+}
+
+// extractBearerToken returns the token from an "Authorization: Bearer <t>" header,
+// or the empty string if the header is missing or malformed.
+func extractBearerToken(header string) string {
+	const prefix = "Bearer "
+	if len(header) < len(prefix) {
+		return ""
+	}
+	if header[:len(prefix)] != prefix {
+		return ""
+	}
+	return header[len(prefix):]
 }

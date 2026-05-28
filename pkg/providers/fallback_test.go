@@ -19,7 +19,7 @@ func successRun(content string) func(ctx context.Context, provider, model string
 
 func TestFallback_SingleCandidate_Success(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{makeCandidate("openai", "gpt-4")}
 	result, err := fc.Execute(context.Background(), candidates, successRun("hello"))
@@ -36,7 +36,7 @@ func TestFallback_SingleCandidate_Success(t *testing.T) {
 
 func TestFallback_SecondCandidateSuccess(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{
 		makeCandidate("openai", "gpt-4"),
@@ -69,7 +69,7 @@ func TestFallback_SecondCandidateSuccess(t *testing.T) {
 
 func TestFallback_AllFail(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{
 		makeCandidate("openai", "gpt-4"),
@@ -96,7 +96,7 @@ func TestFallback_AllFail(t *testing.T) {
 
 func TestFallback_ContextCanceled(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	candidates := []FallbackCandidate{
@@ -123,7 +123,7 @@ func TestFallback_ContextCanceled(t *testing.T) {
 
 func TestFallback_NonRetriableError(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{
 		makeCandidate("openai", "gpt-4"),
@@ -155,10 +155,10 @@ func TestFallback_NonRetriableError(t *testing.T) {
 func TestFallback_CooldownSkip(t *testing.T) {
 	now := time.Now()
 	ct, _ := newTestTracker(now)
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
-	// Put openai in cooldown
-	ct.MarkFailure("openai", FailoverRateLimit)
+	// Put openai/gpt-4 in cooldown (using ModelKey now)
+	ct.MarkFailure(ModelKey("openai", "gpt-4"), FailoverRateLimit)
 
 	candidates := []FallbackCandidate{
 		makeCandidate("openai", "gpt-4"),
@@ -193,11 +193,11 @@ func TestFallback_CooldownSkip(t *testing.T) {
 
 func TestFallback_AllInCooldown(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
-	// Put all providers in cooldown
-	ct.MarkFailure("openai", FailoverRateLimit)
-	ct.MarkFailure("anthropic", FailoverBilling)
+	// Put all models in cooldown (using ModelKey now)
+	ct.MarkFailure(ModelKey("openai", "gpt-4"), FailoverRateLimit)
+	ct.MarkFailure(ModelKey("anthropic", "claude"), FailoverBilling)
 
 	candidates := []FallbackCandidate{
 		makeCandidate("openai", "gpt-4"),
@@ -221,7 +221,7 @@ func TestFallback_AllInCooldown(t *testing.T) {
 
 func TestFallback_NoCandidates(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	_, err := fc.Execute(context.Background(), nil, successRun("ok"))
 	if err == nil {
@@ -232,7 +232,7 @@ func TestFallback_NoCandidates(t *testing.T) {
 func TestFallback_EmptyFallbacks(t *testing.T) {
 	// Single primary, no fallbacks: should work like direct call
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{makeCandidate("openai", "gpt-4")}
 	result, err := fc.Execute(context.Background(), candidates, successRun("ok"))
@@ -246,7 +246,7 @@ func TestFallback_EmptyFallbacks(t *testing.T) {
 
 func TestFallback_UnclassifiedError(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{
 		makeCandidate("openai", "gpt-4"),
@@ -268,17 +268,87 @@ func TestFallback_UnclassifiedError(t *testing.T) {
 	}
 }
 
-func TestFallback_SuccessResetsCooldown(t *testing.T) {
-	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+func assertFallbackErrorFallsBack(
+	t *testing.T,
+	primaryProvider string,
+	primaryModel string,
+	initialErr error,
+	successContent string,
+	expectedReason FailoverReason,
+) {
+	t.Helper()
 
-	candidates := []FallbackCandidate{makeCandidate("openai", "gpt-4")}
+	ct := NewCooldownTracker()
+	fc := NewFallbackChain(ct, nil)
+
+	candidates := []FallbackCandidate{
+		makeCandidate(primaryProvider, primaryModel),
+		makeCandidate("anthropic", "claude"),
+	}
 
 	attempt := 0
 	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
 		attempt++
 		if attempt == 1 {
-			ct.MarkFailure("openai", FailoverRateLimit) // simulate failure tracked elsewhere
+			return nil, initialErr
+		}
+		return &LLMResponse{Content: successContent, FinishReason: "stop"}, nil
+	}
+
+	result, err := fc.Execute(context.Background(), candidates, run)
+	if err != nil {
+		t.Fatalf("expected fallback success, got error: %v", err)
+	}
+	if attempt != 2 {
+		t.Fatalf("attempt = %d, want 2", attempt)
+	}
+	if result.Provider != "anthropic" || result.Model != "claude" {
+		t.Fatalf("result = %s/%s, want anthropic/claude", result.Provider, result.Model)
+	}
+	if len(result.Attempts) != 1 {
+		t.Fatalf("attempts = %d, want 1 failed attempt recorded", len(result.Attempts))
+	}
+	if result.Attempts[0].Reason != expectedReason {
+		t.Fatalf("attempt reason = %q, want %s", result.Attempts[0].Reason, expectedReason)
+	}
+}
+
+func TestFallback_NetworkErrorFallsBack(t *testing.T) {
+	assertFallbackErrorFallsBack(
+		t,
+		"minimax",
+		"minimax-m2.7",
+		errors.New(
+			`failed to send request: Post "https://opencode.ai/zen/go/v1/chat/completions": tls: bad record MAC`,
+		),
+		"fallback ok",
+		FailoverNetwork,
+	)
+}
+
+func TestFallback_TimeoutErrorFallsBack(t *testing.T) {
+	assertFallbackErrorFallsBack(
+		t,
+		"openai",
+		"gpt-4",
+		errors.New("failed to send request: Post \"https://example.com\": i/o timeout"),
+		"timeout fallback ok",
+		FailoverTimeout,
+	)
+}
+
+func TestFallback_SuccessResetsCooldown(t *testing.T) {
+	ct := NewCooldownTracker()
+	fc := NewFallbackChain(ct, nil)
+
+	candidates := []FallbackCandidate{makeCandidate("openai", "gpt-4")}
+	modelKey := ModelKey("openai", "gpt-4")
+
+	attempt := 0
+	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+		attempt++
+		if attempt == 1 {
+			ct.MarkFailure(modelKey, FailoverRateLimit) // simulate failure tracked elsewhere
 		}
 		return &LLMResponse{Content: "ok", FinishReason: "stop"}, nil
 	}
@@ -287,16 +357,83 @@ func TestFallback_SuccessResetsCooldown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !ct.IsAvailable("openai") {
+	if !ct.IsAvailable(modelKey) {
 		t.Error("success should reset cooldown")
 	}
+}
+
+func assertLocalRateLimitSkipsToHealthyFallback(
+	t *testing.T,
+	primaryKey string,
+	fallbackKey string,
+	fallbackProvider string,
+	fallbackModel string,
+	execute func(context.Context, *FallbackChain, []FallbackCandidate,
+		func(context.Context, string, string) (*LLMResponse, error),
+	) (*FallbackResult, error),
+	responseContent string,
+) {
+	t.Helper()
+
+	ct := NewCooldownTracker()
+	rl := NewRateLimiterRegistry()
+	rl.Register(primaryKey, 1)
+	if err := rl.Wait(context.Background(), primaryKey); err != nil {
+		t.Fatalf("failed to pre-drain primary limiter: %v", err)
+	}
+
+	fc := NewFallbackChain(ct, rl)
+	candidates := []FallbackCandidate{
+		{Provider: "openai", Model: "gpt-4o", IdentityKey: primaryKey},
+		{Provider: fallbackProvider, Model: fallbackModel, IdentityKey: fallbackKey},
+	}
+
+	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+		if provider != fallbackProvider || model != fallbackModel {
+			t.Fatalf("expected fallback candidate to run, got %s/%s", provider, model)
+		}
+		return &LLMResponse{Content: responseContent, FinishReason: "stop"}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+
+	result, err := execute(ctx, fc, candidates, run)
+	if err != nil {
+		t.Fatalf("expected fallback success, got error: %v", err)
+	}
+	if result.Provider != fallbackProvider || result.Model != fallbackModel {
+		t.Fatalf("result = %s/%s, want %s/%s", result.Provider, result.Model, fallbackProvider, fallbackModel)
+	}
+	if len(result.Attempts) != 1 || !result.Attempts[0].Skipped {
+		t.Fatalf("expected one skipped primary attempt, got %+v", result.Attempts)
+	}
+}
+
+func TestFallback_LocalRateLimitSkipsToHealthyFallback(t *testing.T) {
+	assertLocalRateLimitSkipsToHealthyFallback(
+		t,
+		"model_name:primary",
+		"model_name:fallback",
+		"anthropic",
+		"claude",
+		func(
+			ctx context.Context,
+			fc *FallbackChain,
+			candidates []FallbackCandidate,
+			run func(context.Context, string, string) (*LLMResponse, error),
+		) (*FallbackResult, error) {
+			return fc.Execute(ctx, candidates, run)
+		},
+		"fallback ok",
+	)
 }
 
 // --- Image Fallback Tests ---
 
 func TestImageFallback_Success(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{makeCandidate("openai", "gpt-4o")}
 	result, err := fc.ExecuteImage(context.Background(), candidates, successRun("image result"))
@@ -310,7 +447,7 @@ func TestImageFallback_Success(t *testing.T) {
 
 func TestImageFallback_DimensionError(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{
 		makeCandidate("openai", "gpt-4o"),
@@ -334,7 +471,7 @@ func TestImageFallback_DimensionError(t *testing.T) {
 
 func TestImageFallback_SizeError(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{
 		makeCandidate("openai", "gpt-4o"),
@@ -358,7 +495,7 @@ func TestImageFallback_SizeError(t *testing.T) {
 
 func TestImageFallback_RetryOnOtherErrors(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	candidates := []FallbackCandidate{
 		makeCandidate("openai", "gpt-4o"),
@@ -383,9 +520,28 @@ func TestImageFallback_RetryOnOtherErrors(t *testing.T) {
 	}
 }
 
+func TestImageFallback_LocalRateLimitSkipsToHealthyFallback(t *testing.T) {
+	assertLocalRateLimitSkipsToHealthyFallback(
+		t,
+		"model_name:primary-image",
+		"model_name:fallback-image",
+		"anthropic",
+		"claude-sonnet",
+		func(
+			ctx context.Context,
+			fc *FallbackChain,
+			candidates []FallbackCandidate,
+			run func(context.Context, string, string) (*LLMResponse, error),
+		) (*FallbackResult, error) {
+			return fc.ExecuteImage(ctx, candidates, run)
+		},
+		"image fallback ok",
+	)
+}
+
 func TestImageFallback_NoCandidates(t *testing.T) {
 	ct := NewCooldownTracker()
-	fc := NewFallbackChain(ct)
+	fc := NewFallbackChain(ct, nil)
 
 	_, err := fc.ExecuteImage(context.Background(), nil, successRun("ok"))
 	if err == nil {

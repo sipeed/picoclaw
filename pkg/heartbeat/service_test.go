@@ -3,6 +3,7 @@ package heartbeat
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,79 +48,63 @@ func TestExecuteHeartbeat_Async(t *testing.T) {
 	}
 }
 
-func TestExecuteHeartbeat_Error(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	hs := NewHeartbeatService(tmpDir, 30, true)
-	hs.stopChan = make(chan struct{}) // Enable for testing
-
-	hs.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
-		return &tools.ToolResult{
-			ForLLM:  "Heartbeat failed: connection error",
-			ForUser: "",
-			Silent:  false,
-			IsError: true,
-			Async:   false,
-		}
-	})
-
-	// Create HEARTBEAT.md
-	os.WriteFile(filepath.Join(tmpDir, "HEARTBEAT.md"), []byte("Test task"), 0o644)
-
-	hs.executeHeartbeat()
-
-	// Check log file for error message
-	logFile := filepath.Join(tmpDir, "heartbeat.log")
-	data, err := os.ReadFile(logFile)
-	if err != nil {
-		t.Fatalf("Failed to read log file: %v", err)
+func TestExecuteHeartbeat_ResultLogging(t *testing.T) {
+	tests := []struct {
+		name    string
+		result  *tools.ToolResult
+		wantLog string
+	}{
+		{
+			name: "error result",
+			result: &tools.ToolResult{
+				ForLLM:  "Heartbeat failed: connection error",
+				ForUser: "",
+				Silent:  false,
+				IsError: true,
+				Async:   false,
+			},
+			wantLog: "error message",
+		},
+		{
+			name: "silent result",
+			result: &tools.ToolResult{
+				ForLLM:  "Heartbeat completed successfully",
+				ForUser: "",
+				Silent:  true,
+				IsError: false,
+				Async:   false,
+			},
+			wantLog: "completion message",
+		},
 	}
 
-	logContent := string(data)
-	if logContent == "" {
-		t.Error("Expected log file to contain error message")
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
+			if err != nil {
+				t.Fatalf("Failed to create temp dir: %v", err)
+			}
+			defer os.RemoveAll(tmpDir)
 
-func TestExecuteHeartbeat_Silent(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+			hs := NewHeartbeatService(tmpDir, 30, true)
+			hs.stopChan = make(chan struct{}) // Enable for testing
 
-	hs := NewHeartbeatService(tmpDir, 30, true)
-	hs.stopChan = make(chan struct{}) // Enable for testing
+			hs.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
+				return tt.result
+			})
 
-	hs.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
-		return &tools.ToolResult{
-			ForLLM:  "Heartbeat completed successfully",
-			ForUser: "",
-			Silent:  true,
-			IsError: false,
-			Async:   false,
-		}
-	})
+			os.WriteFile(filepath.Join(tmpDir, "HEARTBEAT.md"), []byte("Test task"), 0o644)
+			hs.executeHeartbeat()
 
-	// Create HEARTBEAT.md
-	os.WriteFile(filepath.Join(tmpDir, "HEARTBEAT.md"), []byte("Test task"), 0o644)
-
-	hs.executeHeartbeat()
-
-	// Check log file for completion message
-	logFile := filepath.Join(tmpDir, "heartbeat.log")
-	data, err := os.ReadFile(logFile)
-	if err != nil {
-		t.Fatalf("Failed to read log file: %v", err)
-	}
-
-	logContent := string(data)
-	if logContent == "" {
-		t.Error("Expected log file to contain completion message")
+			logFile := filepath.Join(tmpDir, "heartbeat.log")
+			data, err := os.ReadFile(logFile)
+			if err != nil {
+				t.Fatalf("Failed to read log file: %v", err)
+			}
+			if string(data) == "" {
+				t.Errorf("Expected log file to contain %s", tt.wantLog)
+			}
+		})
 	}
 }
 
@@ -217,5 +202,49 @@ func TestHeartbeatFilePath(t *testing.T) {
 	expectedPath := filepath.Join(tmpDir, "HEARTBEAT.md")
 	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
 		t.Errorf("Expected HEARTBEAT.md at %s, but it doesn't exist", expectedPath)
+	}
+}
+
+func TestBuildPrompt_DefaultTemplateStaysIdle(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	hs := NewHeartbeatService(tmpDir, 30, true)
+	hs.createDefaultHeartbeatTemplate()
+
+	if prompt := hs.buildPrompt(); prompt != "" {
+		t.Fatalf("buildPrompt() = %q, want empty prompt for untouched default template", prompt)
+	}
+}
+
+func TestBuildPrompt_UserTasksAfterMarkerProducePrompt(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	hs := NewHeartbeatService(tmpDir, 30, true)
+	hs.createDefaultHeartbeatTemplate()
+
+	path := filepath.Join(tmpDir, "HEARTBEAT.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("Failed to read HEARTBEAT.md: %v", err)
+	}
+	updated := string(data) + "\n- Check unread Feishu messages\n"
+	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+		t.Fatalf("Failed to update HEARTBEAT.md: %v", err)
+	}
+
+	prompt := hs.buildPrompt()
+	if prompt == "" {
+		t.Fatal("buildPrompt() = empty, want non-empty prompt when user tasks are present")
+	}
+	if !strings.Contains(prompt, "Check unread Feishu messages") {
+		t.Fatalf("prompt = %q, want user task content", prompt)
 	}
 }

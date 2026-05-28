@@ -1,29 +1,11 @@
 services:
-  litellm:
-    image: ghcr.io/berriai/litellm:main-latest
-    container_name: litellm
-    restart: on-failure
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
-    environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_REGION_NAME=${AWS_REGION_NAME:-ap-southeast-1}
-    command: ["--model", "bedrock/global.anthropic.claude-sonnet-4-6", "--port", "4000"]
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-
   picoclaw-gateway:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+    image: docker.io/sipeed/picoclaw:latest
     container_name: picoclaw-gateway
-    restart: on-failure
+    restart: unless-stopped
     profiles:
       - gateway
     depends_on:
@@ -34,26 +16,28 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION_NAME=${AWS_REGION_NAME:-ap-southeast-1}
     volumes:
-      - ./data:/home/picoclaw/.picoclaw
-      - /Users/maxintent/Documents/Intent/Codes/monorepo/services/dashboard:/home/picoclaw/.picoclaw/workspace/context/dashboard:ro
-    shm_size: "1gb"
+      - ./data:/root/.picoclaw
 
-  picoclaw-agent:
+  # ─────────────────────────────────────────────
+  # PicoClaw Launcher (Web Console + Gateway)
+  #   docker compose -f docker/docker-compose.yml --profile launcher up
+  # ─────────────────────────────────────────────
+  picoclaw-launcher:
     build:
       context: ..
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/Dockerfile.launcher
+    image: docker.io/sipeed/picoclaw:launcher
+    container_name: picoclaw-launcher
+    restart: unless-stopped
     profiles:
-      - gateway
-    depends_on:
-      - picoclaw-gateway
+      - launcher
     environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_REGION_NAME=${AWS_REGION_NAME:-ap-southeast-1}
+      - PICOCLAW_GATEWAY_HOST=0.0.0.0
+      # Set a fixed dashboard token instead of a random one each restart.
+      # If not set, a random token is generated and printed to the console on startup.
+      #- PICOCLAW_LAUNCHER_TOKEN=your-secret-token-here
+    ports:
+      - "18800:18800"
+      - "18790:18790"
     volumes:
-      - ./data:/home/picoclaw/.picoclaw
-      - /Users/maxintent/Documents/Intent/Codes/monorepo/services/dashboard:/home/picoclaw/.picoclaw/workspace/context/dashboard:ro
-    entrypoint: ["picoclaw", "agent"]
-    stdin_open: true
-    tty: true
-    shm_size: "1gb"
+      - ./data:/root/.picoclaw

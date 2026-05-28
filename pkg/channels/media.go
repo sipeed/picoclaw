@@ -11,5 +11,5 @@ import (
 // Manager discovers channels implementing this interface via type
 // assertion and routes OutboundMediaMessage to them.
 type MediaSender interface {
-	SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error
+	SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) ([]string, error)
 }

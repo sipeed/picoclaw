@@ -3,6 +3,7 @@ package tools
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -37,6 +38,53 @@ func TestSilentResult(t *testing.T) {
 	}
 	if result.Async {
 		t.Error("Expected Async to be false")
+	}
+}
+
+func TestDiffResult(t *testing.T) {
+	result := DiffResult("pkg/tools/fs/edit.go", []byte("hello world\n"), []byte("hello universe\n"))
+
+	if result.Silent {
+		t.Error("Expected Silent to be false")
+	}
+	if result.IsError {
+		t.Error("Expected IsError to be false")
+	}
+	if result.Async {
+		t.Error("Expected Async to be false")
+	}
+	if result.ForLLM == result.ForUser {
+		t.Fatalf("Expected ForLLM to omit the full diff, got %q", result.ForLLM)
+	}
+	if len(result.ForLLM) >= len(result.ForUser) {
+		t.Fatalf("Expected ForLLM to stay smaller than ForUser, got %d vs %d", len(result.ForLLM), len(result.ForUser))
+	}
+
+	for _, want := range []string{
+		"File edited: pkg/tools/fs/edit.go",
+		"```diff",
+		"--- a/pkg/tools/fs/edit.go",
+		"+++ b/pkg/tools/fs/edit.go",
+		"-hello world",
+		"+hello universe",
+	} {
+		if !strings.Contains(result.ForUser, want) {
+			t.Fatalf("DiffResult output missing %q:\n%s", want, result.ForUser)
+		}
+	}
+}
+
+func TestDiffResult_NormalizesAbsolutePathsAndHandlesNoOpChanges(t *testing.T) {
+	result := DiffResult("/tmp/test.txt", []byte("same\n"), []byte("same\n"))
+
+	if !strings.Contains(result.ForUser, "File edited: /tmp/test.txt") {
+		t.Fatalf("Expected original path in output, got %q", result.ForUser)
+	}
+	if !strings.Contains(result.ForUser, "(no content change)") {
+		t.Fatalf("Expected no-content-change marker, got %q", result.ForUser)
+	}
+	if !strings.Contains(result.ForLLM, "(no content change)") {
+		t.Fatalf("Expected compact no-op summary in ForLLM, got %q", result.ForLLM)
 	}
 }
 
@@ -225,5 +273,43 @@ func TestToolResultJSONStructure(t *testing.T) {
 	}
 	if parsed["silent"] != false {
 		t.Errorf("Expected silent false, got %v", parsed["silent"])
+	}
+}
+
+func TestToolResultContentForLLM_AppendsHandledDeliveryNote(t *testing.T) {
+	result := MediaResult("Screenshot attached.", []string{"media://example"}).WithResponseHandled()
+
+	content := result.ContentForLLM()
+	if !strings.Contains(content, "Screenshot attached.") {
+		t.Fatalf("expected original content in ContentForLLM, got %q", content)
+	}
+	if !strings.Contains(content, handledToolLLMNote) {
+		t.Fatalf("expected handled delivery note in ContentForLLM, got %q", content)
+	}
+}
+
+func TestToolResultContentForLLM_UsesHandledDeliveryNoteWhenEmpty(t *testing.T) {
+	result := (&ToolResult{}).WithResponseHandled()
+
+	if got := result.ContentForLLM(); got != handledToolLLMNote {
+		t.Fatalf("ContentForLLM() = %q, want %q", got, handledToolLLMNote)
+	}
+}
+
+func TestToolResultContentForLLM_AppendsArtifactPaths(t *testing.T) {
+	result := &ToolResult{
+		ForLLM:       "Artifact created.",
+		ArtifactTags: []string{"[file:/tmp/example.png]"},
+	}
+
+	content := result.ContentForLLM()
+	if !strings.Contains(content, "Artifact created.") {
+		t.Fatalf("expected original content in ContentForLLM, got %q", content)
+	}
+	if !strings.Contains(content, "Local artifact paths: [file:/tmp/example.png]") {
+		t.Fatalf("expected artifact path note in ContentForLLM, got %q", content)
+	}
+	if !strings.Contains(content, artifactPathsLLMNote) {
+		t.Fatalf("expected artifact guidance note in ContentForLLM, got %q", content)
 	}
 }

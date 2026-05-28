@@ -1,0 +1,19 @@
+services:
+  integration-runner:
+    depends_on:
+      mcp-streamable-server:
+        condition: service_healthy
+    environment:
+      PICOCLAW_MCP_REAL_SERVER_JSON: >-
+        {"enabled":true,"type":"http","url":"http://mcp-streamable-server:8080/mcp"}
+      PICOCLAW_MCP_REAL_TOOL_NAME: echo
+      PICOCLAW_MCP_REAL_TOOL_ARGS_JSON: >-
+        {"message":"hello from docker integration suite"}
+      PICOCLAW_MCP_REAL_EXPECT_SUBSTRING: hello from docker integration suite
+
+  mcp-streamable-server:
+    build:
+      context: ${INTEGRATION_REPO_ROOT}
+      dockerfile: integration/fixtures/mcp-streamable-server/Dockerfile
+    environment:
+      STREAMABLE_JSON_RESPONSE: "true"

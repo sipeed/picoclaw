@@ -3,10 +3,10 @@ package skills
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/sipeed/picoclaw/pkg/skills"
+	"github.com/sipeed/picoclaw/cmd/picoclaw/internal"
 )
 
-func newRemoveCommand(installerFn func() (*skills.SkillInstaller, error)) *cobra.Command {
+func newRemoveCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "remove",
 		Aliases: []string{"rm", "uninstall"},
@@ -14,12 +14,11 @@ func newRemoveCommand(installerFn func() (*skills.SkillInstaller, error)) *cobra
 		Args:    cobra.ExactArgs(1),
 		Example: `picoclaw skills remove weather`,
 		RunE: func(_ *cobra.Command, args []string) error {
-			installer, err := installerFn()
+			cfg, err := internal.LoadConfig()
 			if err != nil {
 				return err
 			}
-			skillsRemoveCmd(installer, args[0])
-			return nil
+			return skillsRemoveFromWorkspace(cfg.WorkspacePath(), cfg.Tools.Skills, args[0])
 		},
 	}
 

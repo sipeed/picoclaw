@@ -17,45 +17,26 @@ func ParseModelRef(raw string, defaultProvider string) *ModelRef {
 		return nil
 	}
 
-	if idx := strings.Index(raw, "/"); idx > 0 {
-		provider := NormalizeProvider(raw[:idx])
-		model := strings.TrimSpace(raw[idx+1:])
-		if model == "" {
-			return nil
-		}
-		return &ModelRef{Provider: provider, Model: model}
+	provider, model := SplitModelProviderAndID(raw, defaultProvider)
+	if model == "" {
+		return nil
 	}
-
 	return &ModelRef{
-		Provider: NormalizeProvider(defaultProvider),
-		Model:    raw,
+		Provider: provider,
+		Model:    model,
 	}
 }
 
 // NormalizeProvider normalizes provider identifiers to canonical form.
 func NormalizeProvider(provider string) string {
-	p := strings.ToLower(strings.TrimSpace(provider))
-
-	switch p {
-	case "z.ai", "z-ai":
-		return "zai"
-	case "opencode-zen":
-		return "opencode"
-	case "qwen":
-		return "qwen-portal"
-	case "kimi-code":
-		return "kimi-coding"
-	case "gpt":
-		return "openai"
-	case "claude":
-		return "anthropic"
-	case "glm":
-		return "zhipu"
-	case "google":
-		return "gemini"
+	normalized := strings.ToLower(strings.TrimSpace(provider))
+	if normalized == "" {
+		return ""
 	}
-
-	return p
+	if canonical, ok := normalizedModelProviderAliasesByName[normalized]; ok {
+		return canonical
+	}
+	return normalized
 }
 
 // ModelKey returns a canonical "provider/model" key for deduplication.

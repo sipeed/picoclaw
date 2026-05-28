@@ -35,6 +35,8 @@ We are committed to maintaining a welcoming and respectful community. Be kind, c
 
 For substantial new features, please open an issue first to discuss the design before writing code. This prevents wasted effort and ensures alignment with the project's direction.
 
+For documentation contributions, prefer the layout and naming conventions in [`docs/README.md`](docs/README.md). Run `make lint-docs` after adding or moving Markdown files to catch common consistency issues early.
+
 ---
 
 ## Getting Started
@@ -64,16 +66,19 @@ For substantial new features, please open an issue first to discuss the design b
 ```bash
 make build       # Build binary (runs go generate first)
 make generate    # Run go generate only
-make check       # Full pre-commit check: deps + fmt + vet + test
+make check       # Full pre-commit check: deps + fmt + vet + test + docs consistency checks
 ```
 
 ### Running Tests
 
 ```bash
 make test                                    # Run all tests
+make integration-test                        # Run Docker-backed integration suites
 go test -run TestName -v ./pkg/session/      # Run a single test
 go test -bench=. -benchmem -run='^$' ./...  # Run benchmarks
 ```
+
+Docker-backed integration suites are auto-discovered from [`integration/suites/`](integration/suites/). See [`integration/README.md`](integration/README.md) for the suite layout and the conventions used by CI.
 
 ### Code Style
 
@@ -81,9 +86,10 @@ go test -bench=. -benchmem -run='^$' ./...  # Run benchmarks
 make fmt   # Format code
 make vet   # Static analysis
 make lint  # Full linter run
+make lint-docs  # Check common documentation layout and naming conventions
 ```
 
-All CI checks must pass before a PR can be merged. Run `make check` locally before pushing to catch issues early.
+All CI checks must pass before a PR can be merged. Run `make check` locally before pushing to catch issues early, including the common docs consistency checks from `make lint-docs`.
 
 ---
 
@@ -108,7 +114,7 @@ Use descriptive branch names, e.g. `fix/telegram-timeout`, `feat/ollama-provider
 - Reference the related issue when relevant: `Fix session leak (#123)`.
 - Keep commits focused. One logical change per commit is preferred.
 - For minor cleanups or typo fixes, squash them into a single commit before opening a PR.
-- Refer to https://www.conventionalcommits.org/zh-hans/v1.0.0/
+- Refer to [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
 
 ### Keeping Up to Date
 
@@ -269,8 +275,8 @@ Once your PR is submitted, you can reach out to the assigned reviewers listed in
 |Function| Reviewer|
 |---     |---      |
 |Provider|@yinwm   |
-|Channel |@yinwm   |
-|Agent   |@lxowalle|
+|Channel |@yinwm/@alexhoshina   |
+|Agent   |@lxowalle/@Zhaoyikaiii|
 |Tools   |@lxowalle|
 |SKill   ||
 |MCP     ||
