@@ -18,6 +18,15 @@
         "enabled": false,
         "max_args_length": 300,
         "separate_messages": false
+      },
+      "image_input": {
+        "attach_user_images": true,
+        "compression_level": "balanced",
+        "max_inline_bytes": 2097152,
+        "max_width": 1600,
+        "max_height": 1600,
+        "jpeg_quality": 82,
+        "target_format": "auto"
       }
     }
   },

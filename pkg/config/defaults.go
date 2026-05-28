@@ -39,6 +39,10 @@ func DefaultConfig() *Config {
 					MaxArgsLength:    300,
 					SeparateMessages: false,
 				},
+				ImageInput: ImageInputConfig{
+					AttachUserImages: true,
+					CompressionLevel: ImageCompressionBalanced,
+				},
 				SplitOnMarker:       false,
 				MaxLLMRetries:       2,
 				LLMRetryBackoffSecs: 2,

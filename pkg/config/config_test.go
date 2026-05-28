@@ -1306,6 +1306,65 @@ func TestDefaultConfig_ToolFeedbackDisabled(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_ImageInputDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if !cfg.Agents.Defaults.ImageInput.AttachUserImages {
+		t.Fatal("DefaultConfig().Agents.Defaults.ImageInput.AttachUserImages should be true")
+	}
+	if cfg.Agents.Defaults.ImageInput.CompressionLevel != ImageCompressionBalanced {
+		t.Fatalf(
+			"DefaultConfig().Agents.Defaults.ImageInput.CompressionLevel = %q, want %q",
+			cfg.Agents.Defaults.ImageInput.CompressionLevel,
+			ImageCompressionBalanced,
+		)
+	}
+
+	resolved := cfg.Agents.Defaults.ResolveImageInputConfig()
+	if resolved.MaxInlineBytes != DefaultImageInputMaxInlineBytes {
+		t.Fatalf("resolved.MaxInlineBytes = %d, want %d", resolved.MaxInlineBytes, DefaultImageInputMaxInlineBytes)
+	}
+	if resolved.MaxWidth != DefaultImageInputMaxWidth || resolved.MaxHeight != DefaultImageInputMaxHeight {
+		t.Fatalf(
+			"resolved dimensions = %dx%d, want %dx%d",
+			resolved.MaxWidth,
+			resolved.MaxHeight,
+			DefaultImageInputMaxWidth,
+			DefaultImageInputMaxHeight,
+		)
+	}
+}
+
+func TestConfigExample_ImageInputBalanced(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "config", "config.example.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(config.example.json) error: %v", err)
+	}
+
+	var cfg Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("Unmarshal(config.example.json) error: %v", err)
+	}
+
+	if !cfg.Agents.Defaults.ImageInput.AttachUserImages {
+		t.Fatal("config.example.json agents.defaults.image_input.attach_user_images should be true")
+	}
+	if cfg.Agents.Defaults.ImageInput.CompressionLevel != ImageCompressionBalanced {
+		t.Fatalf(
+			"config.example.json compression_level = %q, want %q",
+			cfg.Agents.Defaults.ImageInput.CompressionLevel,
+			ImageCompressionBalanced,
+		)
+	}
+	if cfg.Agents.Defaults.ImageInput.MaxInlineBytes != DefaultImageInputMaxInlineBytes {
+		t.Fatalf(
+			"config.example.json max_inline_bytes = %d, want %d",
+			cfg.Agents.Defaults.ImageInput.MaxInlineBytes,
+			DefaultImageInputMaxInlineBytes,
+		)
+	}
+}
+
 func TestLoadConfig_ToolFeedbackDefaultsFalseWhenUnset(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")

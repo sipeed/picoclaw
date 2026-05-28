@@ -375,6 +375,26 @@ type ToolFeedbackConfig struct {
 	SeparateMessages bool `json:"separate_messages" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_SEPARATE_MESSAGES"`
 }
 
+type ImageInputConfig struct {
+	AttachUserImages bool   `json:"attach_user_images,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_INPUT_ATTACH_USER_IMAGES"`
+	CompressionLevel string `json:"compression_level,omitempty"  env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_INPUT_COMPRESSION_LEVEL"`
+	MaxInlineBytes   int    `json:"max_inline_bytes,omitempty"   env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_INPUT_MAX_INLINE_BYTES"`
+	MaxWidth         int    `json:"max_width,omitempty"          env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_INPUT_MAX_WIDTH"`
+	MaxHeight        int    `json:"max_height,omitempty"         env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_INPUT_MAX_HEIGHT"`
+	JPEGQuality      int    `json:"jpeg_quality,omitempty"       env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_INPUT_JPEG_QUALITY"`
+	TargetFormat     string `json:"target_format,omitempty"      env:"PICOCLAW_AGENTS_DEFAULTS_IMAGE_INPUT_TARGET_FORMAT"`
+}
+
+type ResolvedImageInputConfig struct {
+	AttachUserImages bool
+	CompressionLevel string
+	MaxInlineBytes   int
+	MaxWidth         int
+	MaxHeight        int
+	JPEGQuality      int
+	TargetFormat     string
+}
+
 type AgentDefaults struct {
 	Workspace                 string             `json:"workspace"                        env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
 	RestrictToWorkspace       bool               `json:"restrict_to_workspace"            env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
@@ -396,6 +416,7 @@ type AgentDefaults struct {
 	MaxParallelTurns          int                `json:"max_parallel_turns,omitempty"     env:"PICOCLAW_AGENTS_DEFAULTS_MAX_PARALLEL_TURNS"` // Max concurrent turns (0 or 1 = sequential)
 	SubTurn                   SubTurnConfig      `json:"subturn"                                                                                      envPrefix:"PICOCLAW_AGENTS_DEFAULTS_SUBTURN_"`
 	ToolFeedback              ToolFeedbackConfig `json:"tool_feedback,omitempty"`
+	ImageInput                ImageInputConfig   `json:"image_input,omitempty"`
 	SplitOnMarker             bool               `json:"split_on_marker"                  env:"PICOCLAW_AGENTS_DEFAULTS_SPLIT_ON_MARKER"` // split messages on <|[SPLIT]|> marker
 	ContextManager            string             `json:"context_manager,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_MANAGER"`
 	ContextManagerConfig      json.RawMessage    `json:"context_manager_config,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_MANAGER_CONFIG"`
@@ -406,11 +427,104 @@ type AgentDefaults struct {
 
 const DefaultMaxMediaSize = 20 * 1024 * 1024 // 20 MB
 
+const (
+	ImageCompressionOff        = "off"
+	ImageCompressionLow        = "low"
+	ImageCompressionBalanced   = "balanced"
+	ImageCompressionAggressive = "aggressive"
+	ImageCompressionExtreme    = "extreme"
+
+	DefaultImageInputMaxInlineBytes = 2 * 1024 * 1024
+	DefaultImageInputMaxWidth       = 1600
+	DefaultImageInputMaxHeight      = 1600
+	DefaultImageInputJPEGQuality    = 82
+)
+
 func (d *AgentDefaults) GetMaxMediaSize() int {
 	if d.MaxMediaSize > 0 {
 		return d.MaxMediaSize
 	}
 	return DefaultMaxMediaSize
+}
+
+func (d *AgentDefaults) ResolveImageInputConfig() ResolvedImageInputConfig {
+	resolved := ResolvedImageInputConfig{
+		AttachUserImages: d.ImageInput.AttachUserImages,
+	}
+
+	switch strings.ToLower(strings.TrimSpace(d.ImageInput.CompressionLevel)) {
+	case ImageCompressionOff:
+		resolved.CompressionLevel = ImageCompressionOff
+		resolved.JPEGQuality = 92
+	case ImageCompressionLow:
+		resolved.CompressionLevel = ImageCompressionLow
+		resolved.MaxInlineBytes = 4 * 1024 * 1024
+		resolved.MaxWidth = 2048
+		resolved.MaxHeight = 2048
+		resolved.JPEGQuality = 90
+	case ImageCompressionAggressive:
+		resolved.CompressionLevel = ImageCompressionAggressive
+		resolved.MaxInlineBytes = 1 * 1024 * 1024
+		resolved.MaxWidth = 1280
+		resolved.MaxHeight = 1280
+		resolved.JPEGQuality = 70
+	case ImageCompressionExtreme:
+		resolved.CompressionLevel = ImageCompressionExtreme
+		resolved.MaxInlineBytes = 512 * 1024
+		resolved.MaxWidth = 1024
+		resolved.MaxHeight = 1024
+		resolved.JPEGQuality = 60
+	case "", ImageCompressionBalanced:
+		resolved.CompressionLevel = ImageCompressionBalanced
+		resolved.MaxInlineBytes = DefaultImageInputMaxInlineBytes
+		resolved.MaxWidth = DefaultImageInputMaxWidth
+		resolved.MaxHeight = DefaultImageInputMaxHeight
+		resolved.JPEGQuality = DefaultImageInputJPEGQuality
+	default:
+		resolved.CompressionLevel = ImageCompressionBalanced
+		resolved.MaxInlineBytes = DefaultImageInputMaxInlineBytes
+		resolved.MaxWidth = DefaultImageInputMaxWidth
+		resolved.MaxHeight = DefaultImageInputMaxHeight
+		resolved.JPEGQuality = DefaultImageInputJPEGQuality
+	}
+
+	if d.ImageInput.MaxInlineBytes > 0 {
+		resolved.MaxInlineBytes = d.ImageInput.MaxInlineBytes
+	}
+	if d.ImageInput.MaxWidth > 0 {
+		resolved.MaxWidth = d.ImageInput.MaxWidth
+	}
+	if d.ImageInput.MaxHeight > 0 {
+		resolved.MaxHeight = d.ImageInput.MaxHeight
+	}
+	if d.ImageInput.JPEGQuality > 0 {
+		resolved.JPEGQuality = d.ImageInput.JPEGQuality
+	}
+
+	resolved.JPEGQuality = clampInt(resolved.JPEGQuality, 40, 100)
+
+	switch strings.ToLower(strings.TrimSpace(d.ImageInput.TargetFormat)) {
+	case "", "auto":
+		resolved.TargetFormat = "auto"
+	case "jpeg", "jpg":
+		resolved.TargetFormat = "jpeg"
+	case "png":
+		resolved.TargetFormat = "png"
+	default:
+		resolved.TargetFormat = "auto"
+	}
+
+	return resolved
+}
+
+func clampInt(v, minValue, maxValue int) int {
+	if v < minValue {
+		return minValue
+	}
+	if v > maxValue {
+		return maxValue
+	}
+	return v
 }
 
 // GetToolFeedbackMaxArgsLength returns the max visible text length for tool argument previews.

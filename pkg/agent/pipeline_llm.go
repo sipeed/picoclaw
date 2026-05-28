@@ -27,11 +27,10 @@ func (p *Pipeline) CallLLM(
 	iteration int,
 ) (Control, error) {
 	al := p.al
-	maxMediaSize := p.Cfg.Agents.Defaults.GetMaxMediaSize()
 
 	// PreLLM: resolve media refs (except on iteration 1 where user media is already resolved)
 	if iteration > 1 {
-		exec.messages = resolveMediaRefs(exec.messages, p.MediaStore, maxMediaSize)
+		exec.messages = resolveMediaRefsWithAgentDefaults(exec.messages, p.MediaStore, p.Cfg.Agents.Defaults)
 	}
 
 	// PreLLM: graceful terminal handling

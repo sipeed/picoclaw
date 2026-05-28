@@ -15,7 +15,6 @@ import (
 // It replaces lines 56-145 of the original runTurn.
 func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution, error) {
 	cfg := p.Cfg
-	maxMediaSize := cfg.Agents.Defaults.GetMaxMediaSize()
 
 	var history []providers.Message
 	var summary string
@@ -40,7 +39,7 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 	initialPromptReq.ActiveSkills = append([]string(nil), contextualSkills...)
 	messages := ts.agent.ContextBuilder.BuildMessagesFromPrompt(initialPromptReq)
 
-	messages = resolveMediaRefs(messages, p.MediaStore, maxMediaSize)
+	messages = resolveMediaRefsWithAgentDefaults(messages, p.MediaStore, cfg.Agents.Defaults)
 
 	if !ts.opts.NoHistory {
 		toolDefs := filterToolsByTurnProfile(ts.agent.Tools.ToProviderDefs(), ts.profile)
@@ -81,7 +80,7 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 					)
 					rebuildPromptReq.ActiveSkills = append([]string(nil), contextualSkills...)
 					rebuilt := ts.agent.ContextBuilder.BuildMessagesFromPrompt(rebuildPromptReq)
-					return resolveMediaRefs(rebuilt, p.MediaStore, maxMediaSize)
+					return resolveMediaRefsWithAgentDefaults(rebuilt, p.MediaStore, cfg.Agents.Defaults)
 				},
 				ts.agent.ContextWindow,
 				toolDefs,

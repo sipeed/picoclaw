@@ -86,7 +86,6 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 	// Convenience references to exec fields used throughout the turn loop.
 	messages := exec.messages
 	pendingMessages := exec.pendingMessages
-	maxMediaSize := pipeline.Cfg.Agents.Defaults.GetMaxMediaSize()
 	finalContent := exec.finalContent
 
 	for ts.currentIteration() < ts.agent.MaxIterations || len(exec.pendingMessages) > 0 || func() bool {
@@ -150,7 +149,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 
 		// Inject pending steering messages
 		if len(pendingMessages) > 0 {
-			resolvedPending := resolveMediaRefs(pendingMessages, al.mediaStore, maxMediaSize)
+			resolvedPending := resolveMediaRefsWithAgentDefaults(pendingMessages, al.mediaStore, al.cfg.Agents.Defaults)
 			totalContentLen := 0
 			for i, pm := range pendingMessages {
 				messages = append(messages, resolvedPending[i])
@@ -430,8 +429,7 @@ func (al *AgentLoop) askSideQuestion(
 	promptReq.ToolUseFallback = false
 	messages := agent.ContextBuilder.BuildMessagesFromPrompt(promptReq)
 
-	maxMediaSize := al.GetConfig().Agents.Defaults.GetMaxMediaSize()
-	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
+	messages = resolveMediaRefsWithAgentDefaults(messages, al.mediaStore, al.cfg.Agents.Defaults)
 
 	activeCandidates, activeModel, usedLight := al.selectCandidates(agent, question, messages)
 	selectedModelName := sideQuestionModelName(agent, usedLight)

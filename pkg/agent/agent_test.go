@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"image/png"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -5689,24 +5693,78 @@ func TestRun_PicoToolFeedbackSuppressesDuplicateInterimAssistantContent(t *testi
 	}
 }
 
+func writeSolidPNG(t *testing.T, path string, width, height int) {
+	t.Helper()
+
+	img := image.NewNRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			img.SetNRGBA(x, y, color.NRGBA{
+				R: uint8((x * 17) % 255),
+				G: uint8((y * 29) % 255),
+				B: uint8((x + y*3) % 255),
+				A: 255,
+			})
+		}
+	}
+
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	if err := png.Encode(f, img); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeSolidJPEG(t *testing.T, path string, width, height int) {
+	t.Helper()
+
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			img.SetRGBA(x, y, color.RGBA{
+				R: uint8((x * 11) % 255),
+				G: uint8((y * 13) % 255),
+				B: uint8((x*7 + y*5) % 255),
+				A: 255,
+			})
+		}
+	}
+
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	if err := jpeg.Encode(f, img, &jpeg.Options{Quality: 92}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertSingleInlineImage(t *testing.T, mediaItems []string) {
+	t.Helper()
+	if len(mediaItems) != 1 {
+		t.Fatalf("expected 1 inline image, got %d", len(mediaItems))
+	}
+	if !strings.HasPrefix(mediaItems[0], "data:image/") {
+		end := 40
+		if len(mediaItems[0]) < end {
+			end = len(mediaItems[0])
+		}
+		t.Fatalf("expected data:image/ prefix, got %q", mediaItems[0][:end])
+	}
+}
+
 func TestResolveMediaRefs_ImageInjectsPathTag(t *testing.T) {
 	store := media.NewFileMediaStore()
 	dir := t.TempDir()
 
-	// Create a minimal valid PNG (8-byte header is enough for filetype detection)
 	pngPath := filepath.Join(dir, "test.png")
-	// PNG magic: 0x89 P N G \r \n 0x1A \n + minimal IHDR
-	pngHeader := []byte{
-		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
-		0x00, 0x00, 0x00, 0x0D, // IHDR length
-		0x49, 0x48, 0x44, 0x52, // "IHDR"
-		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, // 1x1 RGB
-		0x00, 0x00, 0x00, // no interlace
-		0x90, 0x77, 0x53, 0xDE, // CRC
-	}
-	if err := os.WriteFile(pngPath, pngHeader, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSolidPNG(t, pngPath, 32, 32)
 	ref, err := store.Store(pngPath, media.MediaMeta{}, "test")
 	if err != nil {
 		t.Fatal(err)
@@ -5717,9 +5775,7 @@ func TestResolveMediaRefs_ImageInjectsPathTag(t *testing.T) {
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
 
-	if len(result[0].Media) != 0 {
-		t.Fatalf("expected 0 media (images use path tags), got %d", len(result[0].Media))
-	}
+	assertSingleInlineImage(t, result[0].Media)
 	localPath, _, _ := store.ResolveWithMeta(ref)
 	expectedContent := "describe this [image:" + localPath + "]"
 	if result[0].Content != expectedContent {
@@ -5732,17 +5788,7 @@ func TestResolveMediaRefs_ToolRoleImageAppendedAsUserMessage(t *testing.T) {
 	dir := t.TempDir()
 
 	pngPath := filepath.Join(dir, "tool-result.png")
-	pngHeader := []byte{
-		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
-		0x00, 0x00, 0x00, 0x0D, // IHDR length
-		0x49, 0x48, 0x44, 0x52, // "IHDR"
-		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, // 1x1 RGB
-		0x00, 0x00, 0x00, // no interlace
-		0x90, 0x77, 0x53, 0xDE, // CRC
-	}
-	if err := os.WriteFile(pngPath, pngHeader, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSolidPNG(t, pngPath, 32, 32)
 	ref, _ := store.Store(pngPath, media.MediaMeta{}, "test")
 
 	messages := []providers.Message{
@@ -5766,12 +5812,7 @@ func TestResolveMediaRefs_ToolRoleImageAppendedAsUserMessage(t *testing.T) {
 	if result[1].Role != "user" {
 		t.Fatalf("expected synthetic message role=user, got %q", result[1].Role)
 	}
-	if len(result[1].Media) != 1 {
-		t.Fatalf("expected 1 base64 media in synthetic user message, got %d", len(result[1].Media))
-	}
-	if !strings.HasPrefix(result[1].Media[0], "data:image/png;base64,") {
-		t.Fatalf("expected data:image/png;base64, prefix, got %q", result[1].Media[0][:40])
-	}
+	assertSingleInlineImage(t, result[1].Media)
 }
 
 func TestResolveMediaRefs_MultiToolCallPreservesOrdering(t *testing.T) {
@@ -5780,13 +5821,7 @@ func TestResolveMediaRefs_MultiToolCallPreservesOrdering(t *testing.T) {
 
 	// Create image for tool #1
 	pngPath := filepath.Join(dir, "loaded.png")
-	pngHeader := []byte{
-		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
-		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR
-		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02,
-		0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE,
-	}
-	os.WriteFile(pngPath, pngHeader, 0o644)
+	writeSolidPNG(t, pngPath, 32, 32)
 	imgRef, _ := store.Store(pngPath, media.MediaMeta{}, "test")
 
 	// Simulate: assistant called load_image + read_file, two tool results follow
@@ -5815,9 +5850,7 @@ func TestResolveMediaRefs_MultiToolCallPreservesOrdering(t *testing.T) {
 	if result[3].Role != "user" {
 		t.Fatalf("result[3] expected user, got %q", result[3].Role)
 	}
-	if len(result[3].Media) != 1 || !strings.HasPrefix(result[3].Media[0], "data:image/png;base64,") {
-		t.Fatal("expected synthetic user message to contain base64 image")
-	}
+	assertSingleInlineImage(t, result[3].Media)
 }
 
 func TestResolveMediaRefs_OversizedImageSkipsBase64KeepsPathTag(t *testing.T) {
@@ -5888,13 +5921,7 @@ func TestResolveMediaRefs_DoesNotMutateOriginal(t *testing.T) {
 	store := media.NewFileMediaStore()
 	dir := t.TempDir()
 	pngPath := filepath.Join(dir, "test.png")
-	pngHeader := []byte{
-		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02,
-		0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE,
-	}
-	os.WriteFile(pngPath, pngHeader, 0o644)
+	writeSolidPNG(t, pngPath, 32, 32)
 	ref, _ := store.Store(pngPath, media.MediaMeta{}, "test")
 
 	original := []providers.Message{
@@ -5915,8 +5942,7 @@ func TestResolveMediaRefs_UsesMetaContentType(t *testing.T) {
 
 	// File with JPEG content but stored with explicit content type
 	jpegPath := filepath.Join(dir, "photo")
-	jpegHeader := []byte{0xFF, 0xD8, 0xFF, 0xE0} // JPEG magic bytes
-	os.WriteFile(jpegPath, jpegHeader, 0o644)
+	writeSolidJPEG(t, jpegPath, 48, 48)
 	ref, _ := store.Store(jpegPath, media.MediaMeta{ContentType: "image/jpeg"}, "test")
 
 	messages := []providers.Message{
@@ -5924,9 +5950,7 @@ func TestResolveMediaRefs_UsesMetaContentType(t *testing.T) {
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
 
-	if len(result[0].Media) != 0 {
-		t.Fatalf("expected 0 media (images use path tags), got %d", len(result[0].Media))
-	}
+	assertSingleInlineImage(t, result[0].Media)
 	localPath, _, _ := store.ResolveWithMeta(ref)
 	expectedContent := "hi [image:" + localPath + "]"
 	if result[0].Content != expectedContent {
@@ -6091,13 +6115,7 @@ func TestResolveMediaRefs_JSONContentPrependsPathTag(t *testing.T) {
 	dir := t.TempDir()
 
 	pngPath := filepath.Join(dir, "card_img.png")
-	pngHeader := []byte{
-		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02,
-		0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE,
-	}
-	os.WriteFile(pngPath, pngHeader, 0o644)
+	writeSolidPNG(t, pngPath, 32, 32)
 	ref, _ := store.Store(pngPath, media.MediaMeta{ContentType: "image/png"}, "test")
 
 	jsonContent := `{"schema":"2.0","body":{"elements":[{"tag":"img","img_key":"img_123"}]}}`
@@ -6110,6 +6128,7 @@ func TestResolveMediaRefs_JSONContentPrependsPathTag(t *testing.T) {
 	if result[0].Content != want {
 		t.Fatalf("expected path tag prepended to JSON content, got %q", result[0].Content)
 	}
+	assertSingleInlineImage(t, result[0].Media)
 }
 
 func TestResolveMediaRefs_EmptyContentGetsPathTag(t *testing.T) {
@@ -6137,13 +6156,7 @@ func TestResolveMediaRefs_MixedImageAndFile(t *testing.T) {
 	dir := t.TempDir()
 
 	pngPath := filepath.Join(dir, "photo.png")
-	pngHeader := []byte{
-		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02,
-		0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE,
-	}
-	os.WriteFile(pngPath, pngHeader, 0o644)
+	writeSolidPNG(t, pngPath, 32, 32)
 	imgRef, _ := store.Store(pngPath, media.MediaMeta{}, "test")
 
 	pdfPath := filepath.Join(dir, "report.pdf")
@@ -6155,14 +6168,64 @@ func TestResolveMediaRefs_MixedImageAndFile(t *testing.T) {
 	}
 	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
 
-	if len(result[0].Media) != 0 {
-		t.Fatalf("expected 0 media (all types use path tags), got %d", len(result[0].Media))
-	}
+	assertSingleInlineImage(t, result[0].Media)
 	imgLocalPath, _, _ := store.ResolveWithMeta(imgRef)
 	pdfLocalPath, _, _ := store.ResolveWithMeta(fileRef)
 	expectedContent := "check these [file:" + pdfLocalPath + "] [image:" + imgLocalPath + "]"
 	if result[0].Content != expectedContent {
 		t.Fatalf("expected content %q, got %q", expectedContent, result[0].Content)
+	}
+}
+
+func TestResolveMediaRefs_UserImagesCanBeLeftAsPathTagsOnly(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	pngPath := filepath.Join(dir, "path-only.png")
+	writeSolidPNG(t, pngPath, 32, 32)
+	ref, err := store.Store(pngPath, media.MediaMeta{}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defaults := config.DefaultConfig().Agents.Defaults
+	defaults.ImageInput.AttachUserImages = false
+
+	result := resolveMediaRefsWithAgentDefaults([]providers.Message{
+		{Role: "user", Content: "describe this", Media: []string{ref}},
+	}, store, defaults)
+
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected no inline media when attach_user_images is false, got %d", len(result[0].Media))
+	}
+	localPath, _, _ := store.ResolveWithMeta(ref)
+	if result[0].Content != "describe this [image:"+localPath+"]" {
+		t.Fatalf("unexpected content %q", result[0].Content)
+	}
+}
+
+func TestResolveMediaRefs_CompressesLargeUserImagesWithinConfiguredBudget(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	pngPath := filepath.Join(dir, "large.png")
+	writeSolidPNG(t, pngPath, 2400, 1800)
+	ref, err := store.Store(pngPath, media.MediaMeta{ContentType: "image/png"}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defaults := config.DefaultConfig().Agents.Defaults
+	defaults.ImageInput.CompressionLevel = config.ImageCompressionAggressive
+	defaults.ImageInput.MaxInlineBytes = 180 * 1024
+
+	result := resolveMediaRefsWithAgentDefaults([]providers.Message{
+		{Role: "user", Content: "compress this", Media: []string{ref}},
+	}, store, defaults)
+
+	assertSingleInlineImage(t, result[0].Media)
+	if got := len(result[0].Media[0]); got > 180*1024 {
+		t.Fatalf("expected inline payload <= 184320 bytes, got %d", got)
 	}
 }
 

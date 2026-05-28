@@ -7,15 +7,13 @@
 package agent
 
 import (
-	"bytes"
-	"encoding/base64"
-	"io"
 	"os"
 	"regexp"
 	"strings"
 
 	"github.com/h2non/filetype"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -38,9 +36,28 @@ var (
 // user message only after the contiguous tool-message block ends, so we don't
 // break the tool-results-must-immediately-follow-assistant constraint that
 // LLM APIs enforce.
+// User-role images can also be attached as compressed inline media according to
+// agents.defaults.image_input so providers with native vision receive a bounded
+// payload without losing the local file path tag.
 // Non-image files always get path tags regardless of role.
 // Returns a new slice; original messages are not mutated.
 func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxSize int) []providers.Message {
+	return resolveMediaRefsWithOptions(messages, store, defaultMediaResolveOptions(maxSize))
+}
+
+func resolveMediaRefsWithAgentDefaults(
+	messages []providers.Message,
+	store media.MediaStore,
+	defaults config.AgentDefaults,
+) []providers.Message {
+	return resolveMediaRefsWithOptions(messages, store, newMediaResolveOptions(defaults.GetMaxMediaSize(), defaults))
+}
+
+func resolveMediaRefsWithOptions(
+	messages []providers.Message,
+	store media.MediaStore,
+	opts mediaResolveOptions,
+) []providers.Message {
 	if store == nil {
 		return messages
 	}
@@ -104,11 +121,22 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxS
 			mime := detectMIME(localPath, meta)
 			pathTags = append(pathTags, buildPathTag(mime, localPath))
 
-			if m.Role == "tool" && strings.HasPrefix(mime, "image/") {
-				dataURL := encodeImageToDataURL(localPath, mime, info, maxSize)
-				if dataURL != "" {
-					pendingToolImages = append(pendingToolImages, dataURL)
+			if strings.HasPrefix(mime, "image/") && shouldInlineImageForRole(m.Role, opts.imageInput) {
+				dataURL, err := encodeImageToDataURL(localPath, mime, info, opts)
+				if err == nil && dataURL != "" {
+					if m.Role == "tool" {
+						pendingToolImages = append(pendingToolImages, dataURL)
+					} else {
+						resolved = append(resolved, dataURL)
+					}
+					continue
 				}
+				logger.WarnCF("agent", "Skipping inline image attachment", map[string]any{
+					"path":           localPath,
+					"role":           m.Role,
+					"max_media_size": opts.maxSourceBytes,
+					"error":          errString(err),
+				})
 			}
 		}
 
@@ -132,45 +160,11 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxS
 	return result
 }
 
-// encodeImageToDataURL base64-encodes an image file into a data URL.
-// Returns empty string if the file exceeds maxSize or encoding fails.
-func encodeImageToDataURL(localPath, mime string, info os.FileInfo, maxSize int) string {
-	if info.Size() > int64(maxSize) {
-		logger.WarnCF("agent", "Media file too large, skipping", map[string]any{
-			"path":     localPath,
-			"size":     info.Size(),
-			"max_size": maxSize,
-		})
+func errString(err error) string {
+	if err == nil {
 		return ""
 	}
-
-	f, err := os.Open(localPath)
-	if err != nil {
-		logger.WarnCF("agent", "Failed to open media file", map[string]any{
-			"path":  localPath,
-			"error": err.Error(),
-		})
-		return ""
-	}
-	defer f.Close()
-
-	prefix := "data:" + mime + ";base64,"
-	encodedLen := base64.StdEncoding.EncodedLen(int(info.Size()))
-	var buf bytes.Buffer
-	buf.Grow(len(prefix) + encodedLen)
-	buf.WriteString(prefix)
-
-	encoder := base64.NewEncoder(base64.StdEncoding, &buf)
-	if _, err := io.Copy(encoder, f); err != nil {
-		logger.WarnCF("agent", "Failed to encode media file", map[string]any{
-			"path":  localPath,
-			"error": err.Error(),
-		})
-		return ""
-	}
-	encoder.Close()
-
-	return buf.String()
+	return err.Error()
 }
 
 func buildArtifactTags(store media.MediaStore, refs []string) []string {
