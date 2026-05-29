@@ -5958,6 +5958,34 @@ func TestResolveMediaRefs_UsesMetaContentType(t *testing.T) {
 	}
 }
 
+func TestResolveMediaRefs_InvalidDeclaredImageSkipsInlineAndKeepsPathTag(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	brokenPath := filepath.Join(dir, "broken-image.bin")
+	if err := os.WriteFile(brokenPath, []byte("not really a png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ref, err := store.Store(brokenPath, media.MediaMeta{ContentType: "image/png"}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	messages := []providers.Message{
+		{Role: "user", Content: "hi", Media: []string{ref}},
+	}
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected invalid declared image to skip inline media, got %d entries", len(result[0].Media))
+	}
+	localPath, _, _ := store.ResolveWithMeta(ref)
+	expectedContent := "hi [image:" + localPath + "]"
+	if result[0].Content != expectedContent {
+		t.Fatalf("expected content %q, got %q", expectedContent, result[0].Content)
+	}
+}
+
 func TestResolveMediaRefs_PDFInjectsFilePath(t *testing.T) {
 	store := media.NewFileMediaStore()
 	dir := t.TempDir()

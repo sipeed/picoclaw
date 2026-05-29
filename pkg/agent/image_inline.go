@@ -13,6 +13,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/h2non/filetype"
+
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
@@ -86,7 +88,10 @@ func buildInlineImageCandidate(
 
 	img, err := decodeInlineImage(localPath)
 	if err != nil {
-		return readRawInlineImage(localPath, mime, policy.MaxInlineBytes)
+		if shouldAllowRawInlineFallback(localPath, mime) {
+			return readRawInlineImage(localPath, mime, policy.MaxInlineBytes)
+		}
+		return inlineImageCandidate{}, fmt.Errorf("decode inline image: %w", err)
 	}
 
 	return compressDecodedImage(img, mime, policy)
@@ -108,6 +113,27 @@ func decodeInlineImage(localPath string) (image.Image, error) {
 
 	img, _, err := image.Decode(f)
 	return img, err
+}
+
+func shouldAllowRawInlineFallback(localPath, mime string) bool {
+	// Raw passthrough after decode failure is intentionally narrow so
+	// mislabeled or truncated images do not reach providers as malformed
+	// data URLs. WebP is allowed because providers accept it and the Go
+	// stdlib decoder used here does not register WebP support by default.
+	switch strings.ToLower(strings.TrimSpace(mime)) {
+	case "image/webp":
+		return detectRawImageMIME(localPath) == "image/webp"
+	default:
+		return false
+	}
+}
+
+func detectRawImageMIME(localPath string) string {
+	kind, err := filetype.MatchFile(localPath)
+	if err != nil || kind == filetype.Unknown {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(kind.MIME.Value))
 }
 
 func readRawInlineImage(
