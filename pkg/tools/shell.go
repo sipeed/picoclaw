@@ -1155,6 +1155,21 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 				}
 			}
 
+			// Skip a "/path" match that is the path component of a scheme-less
+			// URL (e.g. "wttr.in/Beijing" — curl accepts URLs without an explicit
+			// http:// prefix), which is a URL token, not an absolute-path argument
+			// (issue #1042). We skip ONLY when the run of characters immediately
+			// before the "/" parses as a hostname/authority. This deliberately
+			// does NOT skip flag-glued absolute paths like "tar -xC/etc/cron.d"
+			// (preceding token "-xC" starts with "-") or "cat $x/etc/passwd"
+			// (token "x" has no dot), so genuine sandbox escapes stay blocked.
+			// A skipped match is always glued to its host with no separator, so
+			// the shell treats it as one token (a URL or relative path), never as
+			// a standalone absolute path. ".." traversal is caught earlier.
+			if hostLikeBeforeSlash(cmd, loc[0]) {
+				continue
+			}
+
 			p, err := filepath.Abs(raw)
 			if err != nil {
 				continue
@@ -1195,6 +1210,43 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	}
 
 	return ""
+}
+
+// hostLikeBeforeSlash reports whether the characters immediately preceding the
+// byte at index i (which the caller guarantees is a '/') form a hostname such
+// as "wttr.in" or "192.168.0.1". It lets the workspace guard recognise the path
+// component of a scheme-less URL and not mistake it for an absolute-path
+// argument (issue #1042).
+//
+// To avoid whitelisting real escapes the preceding token must:
+//   - consist solely of host-legal bytes [A-Za-z0-9.-]. ':' is deliberately
+//     excluded so a path-list / remote spec like "java -cp app.jar:/etc/passwd"
+//     or "scp host:/etc/passwd" is not mistaken for a host and stays blocked;
+//   - not start with '-' (that would be a command flag, e.g. "tar -xC/etc");
+//   - contain a '.' (a bare domain or IPv4 literal; excludes "/etc", "x/etc");
+//   - not start or end with '.' (host labels cannot).
+func hostLikeBeforeSlash(cmd string, i int) bool {
+	start := i
+	for start > 0 {
+		c := cmd[start-1]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') || c == '.' || c == '-' {
+			start--
+			continue
+		}
+		break
+	}
+	token := cmd[start:i]
+	if len(token) == 0 || token[0] == '-' {
+		return false
+	}
+	if !strings.Contains(token, ".") {
+		return false
+	}
+	if token[0] == '.' || token[len(token)-1] == '.' {
+		return false
+	}
+	return true
 }
 
 func (t *ExecTool) SetTimeout(timeout time.Duration) {

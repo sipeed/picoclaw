@@ -634,6 +634,52 @@ func TestShellTool_URLsNotBlocked(t *testing.T) {
 	}
 }
 
+// TestShellTool_SchemelessURLGuard verifies the workspace guard for issue #1042:
+// scheme-less URL path components (curl accepts URLs without an explicit
+// http:// prefix) are not mistaken for absolute paths, while flag-glued and
+// other genuine out-of-workspace absolute paths stay blocked. It calls
+// guardCommand directly so it exercises the guard deterministically without
+// running the command (no network).
+func TestShellTool_SchemelessURLGuard(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, true)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	// Scheme-less URLs: the "/path" belongs to the host token, not a real path.
+	allowed := []string{
+		`curl -s "wttr.in/Beijing?T"`,
+		"curl wttr.in/Beijing",
+		"curl -s wttr.in/Taipei?format=3",
+		"curl ifconfig.me/ip",
+		"curl 192.168.1.1/status",
+	}
+	for _, cmd := range allowed {
+		if got := tool.guardCommand(cmd, tmpDir); got != "" {
+			t.Errorf("scheme-less URL should not be blocked: %q\n  guard: %s", cmd, got)
+		}
+	}
+
+	// Genuine out-of-workspace absolute paths must stay blocked, including ones
+	// glued to a flag (-C) or a shell variable, which must not be whitelisted as
+	// hosts. Regression guard against the host-detection bypass class.
+	blocked := []string{
+		"tar -xC/etc/cron.d -f payload.tar", // flag-glued -C path
+		"git -C/etc/foo status",             // flag-glued -C path
+		"cat $x/etc/passwd",                 // var-prefixed; "x" has no dot
+		"cat /etc/passwd",                   // plain absolute path
+		"cp secret //etc/passwd",            // "//" not after a web scheme
+		"java -cp app.jar:/etc/passwd Main", // ':' path-list, not a host:port
+		"scp host:/etc/passwd dest",         // remote spec with absolute path
+	}
+	for _, cmd := range blocked {
+		if got := tool.guardCommand(cmd, tmpDir); got == "" {
+			t.Errorf("out-of-workspace path should be blocked: %q", cmd)
+		}
+	}
+}
+
 // TestShellTool_FileURISandboxing verifies that file:// URIs that escape the
 // workspace are still blocked, even though other URLs are allowed (issue #1254).
 func TestShellTool_FileURISandboxing(t *testing.T) {
