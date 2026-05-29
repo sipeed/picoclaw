@@ -6257,6 +6257,57 @@ func TestResolveMediaRefs_CompressesLargeUserImagesWithinConfiguredBudget(t *tes
 	}
 }
 
+func TestResolveMediaRefs_CompressesOversizedSourceImageWithinConfiguredBudget(t *testing.T) {
+	store := media.NewFileMediaStore()
+	dir := t.TempDir()
+
+	pngPath := filepath.Join(dir, "oversized-source.png")
+	writeSolidPNG(t, pngPath, 2400, 1800)
+
+	f, err := os.OpenFile(pngPath, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write(make([]byte, config.DefaultMaxMediaSize+1024)); err != nil {
+		_ = f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := os.Stat(pngPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() <= int64(config.DefaultMaxMediaSize) {
+		t.Fatalf("expected source image > %d bytes, got %d", config.DefaultMaxMediaSize, info.Size())
+	}
+
+	ref, err := store.Store(pngPath, media.MediaMeta{ContentType: "image/png"}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defaults := config.DefaultConfig().Agents.Defaults
+	defaults.ImageInput.CompressionLevel = config.ImageCompressionAggressive
+	defaults.ImageInput.MaxInlineBytes = 180 * 1024
+
+	result := resolveMediaRefsWithAgentDefaults([]providers.Message{
+		{Role: "user", Content: "compress this", Media: []string{ref}},
+	}, store, defaults)
+
+	assertSingleInlineImage(t, result[0].Media)
+	if got := len(result[0].Media[0]); got > 180*1024 {
+		t.Fatalf("expected inline payload <= 184320 bytes, got %d", got)
+	}
+	localPath, _, _ := store.ResolveWithMeta(ref)
+	expectedContent := "compress this [image:" + localPath + "]"
+	if result[0].Content != expectedContent {
+		t.Fatalf("expected content %q, got %q", expectedContent, result[0].Content)
+	}
+}
+
 // --- Native search helper tests ---
 
 type nativeSearchProvider struct {

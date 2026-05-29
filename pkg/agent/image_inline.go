@@ -28,6 +28,8 @@ type inlineImageCandidate struct {
 	data []byte
 }
 
+const maxInlineDecodedPixels = 40_000_000
+
 func defaultMediaResolveOptions(maxSourceBytes int) mediaResolveOptions {
 	defaults := config.AgentDefaults{
 		ImageInput: config.ImageInputConfig{
@@ -73,23 +75,26 @@ func buildInlineImageCandidate(
 	info os.FileInfo,
 	opts mediaResolveOptions,
 ) (inlineImageCandidate, error) {
-	if info.Size() > int64(opts.maxSourceBytes) {
-		return inlineImageCandidate{}, fmt.Errorf(
-			"source image exceeds max_media_size (%d > %d bytes)",
-			info.Size(),
-			opts.maxSourceBytes,
-		)
-	}
-
 	policy := opts.imageInput
 	if shouldKeepOriginalInline(localPath, mime, info, policy) {
-		return readRawInlineImage(localPath, mime, policy.MaxInlineBytes)
+		return buildRawInlineImageCandidate(localPath, mime, info, opts)
+	}
+
+	cfg, err := decodeInlineImageConfig(localPath)
+	if err != nil {
+		if shouldAllowRawInlineFallback(localPath, mime) {
+			return buildRawInlineImageCandidate(localPath, mime, info, opts)
+		}
+		return inlineImageCandidate{}, fmt.Errorf("decode inline image config: %w", err)
+	}
+	if err := validateInlineDecodeConfig(cfg); err != nil {
+		return inlineImageCandidate{}, err
 	}
 
 	img, err := decodeInlineImage(localPath)
 	if err != nil {
 		if shouldAllowRawInlineFallback(localPath, mime) {
-			return readRawInlineImage(localPath, mime, policy.MaxInlineBytes)
+			return buildRawInlineImageCandidate(localPath, mime, info, opts)
 		}
 		return inlineImageCandidate{}, fmt.Errorf("decode inline image: %w", err)
 	}
@@ -115,6 +120,9 @@ func shouldKeepOriginalInline(
 
 	cfg, err := decodeInlineImageConfig(localPath)
 	if err != nil {
+		return false
+	}
+	if err := validateInlineDecodeConfig(cfg); err != nil {
 		return false
 	}
 	width, height := fitWithin(cfg.Width, cfg.Height, policy.MaxWidth, policy.MaxHeight)
@@ -164,6 +172,25 @@ func detectRawImageMIME(localPath string) string {
 	return strings.ToLower(strings.TrimSpace(kind.MIME.Value))
 }
 
+func buildRawInlineImageCandidate(
+	localPath string,
+	mime string,
+	info os.FileInfo,
+	opts mediaResolveOptions,
+) (inlineImageCandidate, error) {
+	// max_media_size remains the guardrail for paths that need to read the
+	// original file bytes directly into memory. Decode+resize can handle
+	// larger source files safely via decoded-pixel validation below.
+	if info.Size() > int64(opts.maxSourceBytes) {
+		return inlineImageCandidate{}, fmt.Errorf(
+			"raw inline source exceeds max_media_size (%d > %d bytes)",
+			info.Size(),
+			opts.maxSourceBytes,
+		)
+	}
+	return readRawInlineImage(localPath, mime, opts.imageInput.MaxInlineBytes)
+}
+
 func readRawInlineImage(
 	localPath string,
 	mime string,
@@ -181,6 +208,21 @@ func readRawInlineImage(
 		)
 	}
 	return inlineImageCandidate{mime: mime, data: data}, nil
+}
+
+func validateInlineDecodeConfig(cfg image.Config) error {
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return fmt.Errorf("decoded image has invalid dimensions (%dx%d)", cfg.Width, cfg.Height)
+	}
+	pixels := int64(cfg.Width) * int64(cfg.Height)
+	if pixels > maxInlineDecodedPixels {
+		return fmt.Errorf(
+			"decoded image exceeds safety pixel limit (%d > %d pixels)",
+			pixels,
+			maxInlineDecodedPixels,
+		)
+	}
+	return nil
 }
 
 func compressDecodedImage(
