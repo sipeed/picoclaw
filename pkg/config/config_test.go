@@ -1362,6 +1362,34 @@ func TestDefaultConfig_ImageInputDefaults(t *testing.T) {
 	}
 }
 
+func TestResolveImageInputConfig_CompressionOffKeepsDefaultCaps(t *testing.T) {
+	defaults := AgentDefaults{
+		ImageInput: ImageInputConfig{
+			CompressionLevel: ImageCompressionOff,
+		},
+	}
+
+	resolved := defaults.ResolveImageInputConfig()
+	if resolved.CompressionLevel != ImageCompressionOff {
+		t.Fatalf("resolved.CompressionLevel = %q, want %q", resolved.CompressionLevel, ImageCompressionOff)
+	}
+	if resolved.MaxInlineBytes != DefaultImageInputMaxInlineBytes {
+		t.Fatalf("resolved.MaxInlineBytes = %d, want %d", resolved.MaxInlineBytes, DefaultImageInputMaxInlineBytes)
+	}
+	if resolved.MaxWidth != DefaultImageInputMaxWidth || resolved.MaxHeight != DefaultImageInputMaxHeight {
+		t.Fatalf(
+			"resolved dimensions = %dx%d, want %dx%d",
+			resolved.MaxWidth,
+			resolved.MaxHeight,
+			DefaultImageInputMaxWidth,
+			DefaultImageInputMaxHeight,
+		)
+	}
+	if resolved.JPEGQuality != 92 {
+		t.Fatalf("resolved.JPEGQuality = %d, want 92", resolved.JPEGQuality)
+	}
+}
+
 func TestConfigExample_ImageInputBalanced(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "config", "config.example.json"))
 	if err != nil {

@@ -82,7 +82,7 @@ func buildInlineImageCandidate(
 	}
 
 	policy := opts.imageInput
-	if shouldKeepOriginalInline(policy) {
+	if shouldKeepOriginalInline(localPath, mime, info, policy) {
 		return readRawInlineImage(localPath, mime, policy.MaxInlineBytes)
 	}
 
@@ -97,11 +97,28 @@ func buildInlineImageCandidate(
 	return compressDecodedImage(img, mime, policy)
 }
 
-func shouldKeepOriginalInline(policy config.ResolvedImageInputConfig) bool {
-	return policy.CompressionLevel == config.ImageCompressionOff &&
-		policy.MaxWidth <= 0 &&
-		policy.MaxHeight <= 0 &&
-		policy.TargetFormat == "auto"
+func shouldKeepOriginalInline(
+	localPath string,
+	mime string,
+	info os.FileInfo,
+	policy config.ResolvedImageInputConfig,
+) bool {
+	if policy.CompressionLevel != config.ImageCompressionOff || policy.TargetFormat != "auto" {
+		return false
+	}
+	if policy.MaxInlineBytes > 0 && inlinePayloadSize(mime, int(info.Size())) > policy.MaxInlineBytes {
+		return false
+	}
+	if policy.MaxWidth <= 0 && policy.MaxHeight <= 0 {
+		return true
+	}
+
+	cfg, err := decodeInlineImageConfig(localPath)
+	if err != nil {
+		return false
+	}
+	width, height := fitWithin(cfg.Width, cfg.Height, policy.MaxWidth, policy.MaxHeight)
+	return width == cfg.Width && height == cfg.Height
 }
 
 func decodeInlineImage(localPath string) (image.Image, error) {
@@ -113,6 +130,17 @@ func decodeInlineImage(localPath string) (image.Image, error) {
 
 	img, _, err := image.Decode(f)
 	return img, err
+}
+
+func decodeInlineImageConfig(localPath string) (image.Config, error) {
+	f, err := os.Open(localPath)
+	if err != nil {
+		return image.Config{}, err
+	}
+	defer f.Close()
+
+	cfg, _, err := image.DecodeConfig(f)
+	return cfg, err
 }
 
 func shouldAllowRawInlineFallback(localPath, mime string) bool {

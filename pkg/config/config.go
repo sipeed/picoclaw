@@ -455,6 +455,9 @@ func (d *AgentDefaults) ResolveImageInputConfig() ResolvedImageInputConfig {
 	switch strings.ToLower(strings.TrimSpace(d.ImageInput.CompressionLevel)) {
 	case ImageCompressionOff:
 		resolved.CompressionLevel = ImageCompressionOff
+		resolved.MaxInlineBytes = DefaultImageInputMaxInlineBytes
+		resolved.MaxWidth = DefaultImageInputMaxWidth
+		resolved.MaxHeight = DefaultImageInputMaxHeight
 		resolved.JPEGQuality = 92
 	case ImageCompressionLow:
 		resolved.CompressionLevel = ImageCompressionLow
