@@ -33,8 +33,10 @@ const maxInlineDecodedPixels = 40_000_000
 func defaultMediaResolveOptions(maxSourceBytes int) mediaResolveOptions {
 	defaults := config.AgentDefaults{
 		ImageInput: config.ImageInputConfig{
-			AttachUserImages: true,
-			CompressionLevel: config.ImageCompressionBalanced,
+			ImageInputFields: config.ImageInputFields{
+				AttachUserImages: true,
+				CompressionLevel: config.ImageCompressionBalanced,
+			},
 		},
 	}
 	return newMediaResolveOptions(maxSourceBytes, defaults)

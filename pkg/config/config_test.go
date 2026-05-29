@@ -1365,7 +1365,9 @@ func TestDefaultConfig_ImageInputDefaults(t *testing.T) {
 func TestResolveImageInputConfig_CompressionOffKeepsDefaultCaps(t *testing.T) {
 	defaults := AgentDefaults{
 		ImageInput: ImageInputConfig{
-			CompressionLevel: ImageCompressionOff,
+			ImageInputFields: ImageInputFields{
+				CompressionLevel: ImageCompressionOff,
+			},
 		},
 	}
 

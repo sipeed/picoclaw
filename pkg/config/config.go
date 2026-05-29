@@ -375,14 +375,18 @@ type ToolFeedbackConfig struct {
 	SeparateMessages bool `json:"separate_messages" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_SEPARATE_MESSAGES"`
 }
 
+type ImageInputFields struct {
+	AttachUserImages bool   `json:"attach_user_images"          env:"ATTACH_USER_IMAGES"`
+	CompressionLevel string `json:"compression_level,omitempty" env:"COMPRESSION_LEVEL"`
+	MaxInlineBytes   int    `json:"max_inline_bytes,omitempty"  env:"MAX_INLINE_BYTES"`
+	MaxWidth         int    `json:"max_width,omitempty"         env:"MAX_WIDTH"`
+	MaxHeight        int    `json:"max_height,omitempty"        env:"MAX_HEIGHT"`
+	JPEGQuality      int    `json:"jpeg_quality,omitempty"      env:"JPEG_QUALITY"`
+	TargetFormat     string `json:"target_format,omitempty"     env:"TARGET_FORMAT"`
+}
+
 type ImageInputConfig struct {
-	AttachUserImages bool   `json:"attach_user_images"          env:"IMAGE_INPUT_ATTACH_USER_IMAGES"`
-	CompressionLevel string `json:"compression_level,omitempty" env:"IMAGE_INPUT_COMPRESSION_LEVEL"`
-	MaxInlineBytes   int    `json:"max_inline_bytes,omitempty"  env:"IMAGE_INPUT_MAX_INLINE_BYTES"`
-	MaxWidth         int    `json:"max_width,omitempty"         env:"IMAGE_INPUT_MAX_WIDTH"`
-	MaxHeight        int    `json:"max_height,omitempty"        env:"IMAGE_INPUT_MAX_HEIGHT"`
-	JPEGQuality      int    `json:"jpeg_quality,omitempty"      env:"IMAGE_INPUT_JPEG_QUALITY"`
-	TargetFormat     string `json:"target_format,omitempty"     env:"IMAGE_INPUT_TARGET_FORMAT"`
+	ImageInputFields `envPrefix:"IMAGE_INPUT_"`
 }
 
 type ResolvedImageInputConfig struct {
@@ -416,7 +420,7 @@ type AgentDefaults struct {
 	MaxParallelTurns          int                `json:"max_parallel_turns,omitempty"     env:"PICOCLAW_AGENTS_DEFAULTS_MAX_PARALLEL_TURNS"` // Max concurrent turns (0 or 1 = sequential)
 	SubTurn                   SubTurnConfig      `json:"subturn"                                                                                      envPrefix:"PICOCLAW_AGENTS_DEFAULTS_SUBTURN_"`
 	ToolFeedback              ToolFeedbackConfig `json:"tool_feedback,omitempty"`
-	ImageInput                ImageInputConfig   `json:"image_input,omitempty"            envPrefix:"PICOCLAW_AGENTS_DEFAULTS_"`
+	ImageInput                ImageInputConfig   `json:"image_input,omitempty"`
 	SplitOnMarker             bool               `json:"split_on_marker"                  env:"PICOCLAW_AGENTS_DEFAULTS_SPLIT_ON_MARKER"` // split messages on <|[SPLIT]|> marker
 	ContextManager            string             `json:"context_manager,omitempty"        env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_MANAGER"`
 	ContextManagerConfig      json.RawMessage    `json:"context_manager_config,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_CONTEXT_MANAGER_CONFIG"`

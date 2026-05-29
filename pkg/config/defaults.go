@@ -40,8 +40,10 @@ func DefaultConfig() *Config {
 					SeparateMessages: false,
 				},
 				ImageInput: ImageInputConfig{
-					AttachUserImages: true,
-					CompressionLevel: ImageCompressionBalanced,
+					ImageInputFields: ImageInputFields{
+						AttachUserImages: true,
+						CompressionLevel: ImageCompressionBalanced,
+					},
 				},
 				SplitOnMarker:       false,
 				MaxLLMRetries:       2,
