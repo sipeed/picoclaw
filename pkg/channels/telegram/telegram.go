@@ -947,6 +947,9 @@ func (c *TelegramChannel) handleMessages(ctx context.Context, messages []*telego
 	isMentioned := false
 	if message.Chat.Type != "private" {
 		isMentioned = c.isBotMentioned(message)
+		if !isMentioned && message.ReplyToMessage != nil && c.isOwnBotUser(message.ReplyToMessage.From) {
+			isMentioned = true
+		}
 		if isMentioned {
 			content = c.stripBotMention(content)
 		}
