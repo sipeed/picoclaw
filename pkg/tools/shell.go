@@ -1214,7 +1214,7 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 
 // hostLikeBeforeSlash reports whether the characters immediately preceding the
 // byte at index i (which the caller guarantees is a '/') form a hostname such
-// as "wttr.in" or "192.168.0.1". It lets the workspace guard recognise the path
+// as "wttr.in" or "192.168.0.1". It lets the workspace guard recognize the path
 // component of a scheme-less URL and not mistake it for an absolute-path
 // argument (issue #1042).
 //
