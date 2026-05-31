@@ -39,7 +39,7 @@ export function UserMessage({
             <img
               key={`${attachment.url}-${index}`}
               src={attachment.url}
-              alt={attachment.filename || "Uploaded image"}
+              alt={attachment.filename || t("chat.uploadedImage")}
               className="max-h-72 max-w-full object-cover"
             />
           ))}

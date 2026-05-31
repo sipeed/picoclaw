@@ -1,5 +1,10 @@
 import { IconArrowUp, IconPhotoPlus, IconX } from "@tabler/icons-react"
-import { useRef, type KeyboardEvent as ReactKeyboardEvent } from "react"
+import {
+  type ClipboardEvent as ReactClipboardEvent,
+  type DragEvent as ReactDragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  useRef,
+} from "react"
 import { useTranslation } from "react-i18next"
 import TextareaAutosize from "react-textarea-autosize"
 
@@ -30,11 +35,17 @@ interface ChatComposerProps {
   attachments: ChatAttachment[]
   onInputChange: (value: string) => void
   onAddImages: () => void
+  onPaste: (event: ReactClipboardEvent<HTMLTextAreaElement>) => void
+  onDragEnter: (event: ReactDragEvent<HTMLDivElement>) => void
+  onDragLeave: (event: ReactDragEvent<HTMLDivElement>) => void
+  onDragOver: (event: ReactDragEvent<HTMLDivElement>) => void
+  onDrop: (event: ReactDragEvent<HTMLDivElement>) => void
   onRemoveAttachment: (index: number) => void
   onSend: () => void
   onContextDetail?: () => void
   inputDisabledReason: ChatInputDisabledReason | null
   canSend: boolean
+  isDragActive: boolean
   contextUsage?: ContextUsage
 }
 
@@ -43,11 +54,17 @@ export function ChatComposer({
   attachments,
   onInputChange,
   onAddImages,
+  onPaste,
+  onDragEnter,
+  onDragLeave,
+  onDragOver,
+  onDrop,
   onRemoveAttachment,
   onSend,
   onContextDetail,
   inputDisabledReason,
   canSend,
+  isDragActive,
   contextUsage,
 }: ChatComposerProps) {
   const { t } = useTranslation()
@@ -78,8 +95,25 @@ export function ChatComposer({
   }
 
   return (
-    <div className="before:bg-background pointer-events-none relative z-10 -mt-[24px] shrink-0 overflow-y-auto px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] [scrollbar-gutter:stable] before:pointer-events-none before:absolute before:inset-x-0 before:top-[24px] before:bottom-0 before:content-[''] md:px-8 md:pb-8 lg:px-24 xl:px-48">
-      <div className="bg-card border-border/60 pointer-events-auto relative mx-auto flex max-w-[1000px] flex-col rounded-2xl border p-3 shadow-sm">
+    <div className="before:bg-background pointer-events-none relative z-10 -mt-[24px] shrink-0 [scrollbar-gutter:stable] overflow-y-auto px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] before:pointer-events-none before:absolute before:inset-x-0 before:top-[24px] before:bottom-0 before:content-[''] md:px-8 md:pb-8 lg:px-24 xl:px-48">
+      <div
+        className={cn(
+          "bg-card border-border/60 pointer-events-auto relative mx-auto flex max-w-[1000px] flex-col rounded-2xl border p-3 shadow-sm transition-colors",
+          isDragActive && "border-violet-400/70 bg-violet-500/5",
+        )}
+        onDragEnter={onDragEnter}
+        onDragLeave={onDragLeave}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+      >
+        {isDragActive && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-violet-400/70 bg-violet-500/10">
+            <div className="bg-background/95 text-foreground rounded-full px-4 py-2 text-sm font-medium shadow-sm">
+              {t("chat.dropImagesActive")}
+            </div>
+          </div>
+        )}
+
         {attachments.length > 0 && (
           <div className="mb-3 flex flex-wrap gap-2 px-2">
             {attachments.map((attachment, index) => (
@@ -115,6 +149,7 @@ export function ChatComposer({
           onCompositionEnd={() => {
             composingRef.current = false
           }}
+          onPaste={onPaste}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={!canInput}
