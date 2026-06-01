@@ -541,6 +541,28 @@ func responseReasoningContent(response *providers.LLMResponse) string {
 	return ""
 }
 
+func responseHasReasoningDetailText(response *providers.LLMResponse) bool {
+	if response == nil {
+		return false
+	}
+	for _, detail := range response.ReasoningDetails {
+		if strings.TrimSpace(detail.Text) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func emptyLLMResponse(response *providers.LLMResponse) bool {
+	if response == nil {
+		return true
+	}
+	return strings.TrimSpace(response.Content) == "" &&
+		strings.TrimSpace(responseReasoningContent(response)) == "" &&
+		!responseHasReasoningDetailText(response) &&
+		len(response.ToolCalls) == 0
+}
+
 func shallowCloneLLMOptions(opts map[string]any) map[string]any {
 	clone := make(map[string]any, len(opts))
 	maps.Copy(clone, opts)

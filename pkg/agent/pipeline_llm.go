@@ -16,6 +16,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
+var errEmptyLLMResponse = errors.New("llm provider returned an empty response")
+
 // CallLLM performs an LLM call with fallback support, hook invocation, and retry logic.
 // It handles PreLLM setup, the actual LLM invocation with retry, and AfterLLM processing.
 // Returns Control indicating what the coordinator should do next.
@@ -238,6 +240,10 @@ func (p *Pipeline) CallLLM(
 	}
 	for retry := 0; retry <= maxRetries; retry++ {
 		exec.response, err = callLLM(exec.callMessages, exec.providerToolDefs)
+		if err == nil && emptyLLMResponse(exec.response) {
+			exec.response = nil
+			err = errEmptyLLMResponse
+		}
 		if err == nil {
 			break
 		}
@@ -280,6 +286,7 @@ func (p *Pipeline) CallLLM(
 		}
 
 		errMsg := strings.ToLower(err.Error())
+		isEmptyResponseError := errors.Is(err, errEmptyLLMResponse)
 		isTimeoutError := errors.Is(err, context.DeadlineExceeded) ||
 			strings.Contains(errMsg, "deadline exceeded") ||
 			strings.Contains(errMsg, "client.timeout") ||
@@ -305,6 +312,35 @@ func (p *Pipeline) CallLLM(
 			strings.Contains(errMsg, "invalidparameter") ||
 			strings.Contains(errMsg, "prompt is too long") ||
 			strings.Contains(errMsg, "request too large"))
+
+		if isEmptyResponseError && retry < maxRetries {
+			backoff := time.Duration(retry+1) * time.Duration(backoffSecs) * time.Second
+			al.emitEvent(
+				runtimeevents.KindAgentLLMRetry,
+				ts.eventMeta("runTurn", "turn.llm.retry"),
+				LLMRetryPayload{
+					Attempt:    retry + 1,
+					MaxRetries: maxRetries,
+					Reason:     "empty_response",
+					Error:      err.Error(),
+					Backoff:    backoff,
+				},
+			)
+			logger.WarnCF("agent", "Empty LLM response, retrying after backoff", map[string]any{
+				"error":   err.Error(),
+				"retry":   retry,
+				"backoff": backoff.String(),
+			})
+			if sleepErr := sleepWithContext(turnCtx, backoff); sleepErr != nil {
+				if ts.hardAbortRequested() {
+					_ = ts.requestHardAbort()
+					return ControlBreak, nil
+				}
+				err = sleepErr
+				break
+			}
+			continue
+		}
 
 		if isTimeoutError && retry < maxRetries {
 			backoff := time.Duration(retry+1) * time.Duration(backoffSecs) * time.Second
