@@ -493,6 +493,51 @@ func TestCodexProvider_ChatRoundTrip_ToolCallFromStreamItem(t *testing.T) {
 	}
 }
 
+func TestCodexProvider_ChatRoundTrip_OutputTextDeltaFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			http.Error(w, "not found: "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+
+		var reqBody map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if reqBody["stream"] != true {
+			http.Error(w, "stream must be true", http.StatusBadRequest)
+			return
+		}
+
+		resp := map[string]any{
+			"id":     "resp_test",
+			"object": "response",
+			"status": "completed",
+			"output": nil,
+		}
+		writeOutputTextDeltaSSE(w, "OK", resp)
+	}))
+	defer server.Close()
+
+	provider := NewCodexProvider("test-token", "acc-123")
+	provider.client = createOpenAITestClient(server.URL, "test-token", "acc-123")
+
+	resp, err := provider.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "Hello"}},
+		nil,
+		"gpt-4o",
+		map[string]any{},
+	)
+	if err != nil {
+		t.Fatalf("Chat() error: %v", err)
+	}
+	if resp.Content != "OK" {
+		t.Errorf("Content = %q, want %q", resp.Content, "OK")
+	}
+}
+
 func TestCodexProvider_ChatRoundTrip_WebSearchDisabled(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/responses" {
@@ -764,5 +809,26 @@ func writeCompletedSSE(w http.ResponseWriter, response map[string]any) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	fmt.Fprintf(w, "event: response.completed\n")
 	fmt.Fprintf(w, "data: %s\n\n", string(b))
+	fmt.Fprintf(w, "data: [DONE]\n\n")
+}
+
+func writeOutputTextDeltaSSE(w http.ResponseWriter, delta string, response map[string]any) {
+	deltaEvent := map[string]any{
+		"type":            "response.output_text.delta",
+		"sequence_number": 1,
+		"delta":           delta,
+	}
+	completedEvent := map[string]any{
+		"type":            "response.completed",
+		"sequence_number": 2,
+		"response":        response,
+	}
+	deltaBytes, _ := json.Marshal(deltaEvent)
+	completedBytes, _ := json.Marshal(completedEvent)
+	w.Header().Set("Content-Type", "text/event-stream")
+	fmt.Fprintf(w, "event: response.output_text.delta\n")
+	fmt.Fprintf(w, "data: %s\n\n", string(deltaBytes))
+	fmt.Fprintf(w, "event: response.completed\n")
+	fmt.Fprintf(w, "data: %s\n\n", string(completedBytes))
 	fmt.Fprintf(w, "data: [DONE]\n\n")
 }

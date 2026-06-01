@@ -870,8 +870,11 @@ func TestCreateProviderFromConfig_AzureMissingAPIKey(t *testing.T) {
 	}
 
 	_, _, err := CreateProviderFromConfig(cfg)
-	if err == nil {
-		t.Fatal("CreateProviderFromConfig() expected error for missing API key")
+	// Without api_key the factory falls back to identity auth, which in the
+	// default build is stubbed out and surfaces a build-tag error. With the
+	// azidentity tag, the call succeeds and is covered by a separate test.
+	if err != nil && !strings.Contains(err.Error(), "azidentity") {
+		t.Fatalf("CreateProviderFromConfig() unexpected error = %v", err)
 	}
 }
 

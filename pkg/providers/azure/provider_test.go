@@ -1,7 +1,9 @@
 package azure
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -413,5 +415,70 @@ func TestProviderChat_AzureNoNativeWebSearch(t *testing.T) {
 	tool, _ := toolsAny[0].(map[string]any)
 	if tool["type"] != "function" {
 		t.Errorf("tool type = %v, want %q", tool["type"], "function")
+	}
+}
+
+func TestProviderChat_AzureTokenSourceHeader(t *testing.T) {
+	var capturedAuth string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth = r.Header.Get("Authorization")
+		writeValidResponse(w)
+	}))
+	defer server.Close()
+
+	ts := func(ctx context.Context) (string, error) {
+		return "fake-entra-token", nil
+	}
+	p := NewProviderWithTokenSource(server.URL, "", "", ts)
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "deployment", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if capturedAuth != "Bearer fake-entra-token" {
+		t.Errorf("Authorization header = %q, want %q", capturedAuth, "Bearer fake-entra-token")
+	}
+}
+
+func TestProviderChat_AzureTokenSourceError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeValidResponse(w)
+	}))
+	defer server.Close()
+
+	wantErr := errors.New("creds gone")
+	ts := func(ctx context.Context) (string, error) {
+		return "", wantErr
+	}
+	p := NewProviderWithTokenSource(server.URL, "", "", ts)
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "deployment", nil)
+	if err == nil {
+		t.Fatal("expected error from token source")
+	}
+	if !strings.Contains(err.Error(), "creds gone") {
+		t.Errorf("error %q should wrap original token source error", err.Error())
+	}
+}
+
+func TestProviderChat_AzureTokenSourcePrecedence(t *testing.T) {
+	var capturedAuth string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedAuth = r.Header.Get("Authorization")
+		writeValidResponse(w)
+	}))
+	defer server.Close()
+
+	ts := func(ctx context.Context) (string, error) {
+		return "from-token-source", nil
+	}
+	// Provider with both an api_key AND a token source: token source must win.
+	p := NewProvider("static-api-key", server.URL, "", "", WithTokenSource(ts))
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "deployment", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if capturedAuth != "Bearer from-token-source" {
+		t.Errorf("Authorization header = %q, want token-source value", capturedAuth)
 	}
 }

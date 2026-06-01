@@ -97,15 +97,18 @@ func (p *CodexProvider) Chat(
 	defer stream.Close()
 
 	var resp *responses.Response
-	var streamText strings.Builder
+	var streamedText strings.Builder
 	var streamToolCalls []ToolCall
 	for stream.Next() {
 		evt := stream.Current()
+		if evt.Type == "response.output_text.delta" {
+			streamedText.WriteString(evt.Delta)
+		}
 		if evt.Type == "response.output_text.done" {
 			textDone := evt.AsResponseOutputTextDone()
 			if textDone.Text != "" {
-				streamText.Reset()
-				streamText.WriteString(textDone.Text)
+				streamedText.Reset()
+				streamedText.WriteString(textDone.Text)
 			}
 		}
 		if evt.Type == "response.output_item.done" {
@@ -162,8 +165,8 @@ func (p *CodexProvider) Chat(
 	}
 
 	parsed := orc.ParseResponseFromStruct(resp)
-	if parsed.Content == "" && len(parsed.ToolCalls) == 0 && streamText.Len() > 0 {
-		parsed.Content = streamText.String()
+	if parsed.Content == "" && len(parsed.ToolCalls) == 0 && streamedText.Len() > 0 {
+		parsed.Content = streamedText.String()
 	}
 	if len(parsed.ToolCalls) == 0 && len(streamToolCalls) > 0 {
 		parsed.ToolCalls = streamToolCalls

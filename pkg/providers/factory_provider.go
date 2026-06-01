@@ -137,23 +137,32 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return finalizeProviderFromConfig(provider, modelID, cfg)
 
 	case "azure":
-		// Azure OpenAI uses deployment-based URLs, api-key header auth,
-		// and always sends max_completion_tokens.
-		if cfg.APIKey() == "" {
-			return nil, "", fmt.Errorf("api_key is required for azure protocol")
-		}
+		// Azure OpenAI uses deployment-based URLs. Auth is Bearer token via api_key
+		// when set; otherwise falls back to Entra ID (DefaultAzureCredential).
 		if cfg.APIBase == "" {
 			return nil, "", fmt.Errorf(
 				"api_base is required for azure protocol (e.g., https://your-resource.openai.azure.com)",
 			)
 		}
-		return finalizeProviderFromConfig(azure.NewProviderWithTimeout(
-			cfg.APIKey(),
+		if cfg.APIKey() != "" {
+			return finalizeProviderFromConfig(azure.NewProviderWithTimeout(
+				cfg.APIKey(),
+				cfg.APIBase,
+				cfg.Proxy,
+				userAgent,
+				cfg.RequestTimeout,
+			), modelID, cfg)
+		}
+		provider, err := azure.NewProviderWithIdentityAndTimeout(
 			cfg.APIBase,
 			cfg.Proxy,
 			userAgent,
 			cfg.RequestTimeout,
-		), modelID, cfg)
+		)
+		if err != nil {
+			return nil, "", err
+		}
+		return finalizeProviderFromConfig(provider, modelID, cfg)
 
 	case "bedrock":
 		// AWS Bedrock uses AWS SDK credentials (env vars, profiles, IAM roles, etc.)

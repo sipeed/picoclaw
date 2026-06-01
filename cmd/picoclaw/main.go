@@ -9,6 +9,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -32,6 +34,49 @@ import (
 )
 
 var rootNoColor bool
+
+// initTermuxSSL detects Termux environment and sets SSL_CERT_FILE if not already set.
+// This fixes X509 certificate errors when running PicoClaw inside Termux or termux-chroot.
+// See: https://github.com/sipeed/picoclaw/issues/2944
+func initTermuxSSL() {
+	// Only applicable on Linux/Android
+	if runtime.GOOS != "linux" && runtime.GOOS != "android" {
+		return
+	}
+
+	// Skip if already set
+	if os.Getenv("SSL_CERT_FILE") != "" {
+		return
+	}
+
+	// Check for Termux prefix in PATH or HOME
+	home := os.Getenv("HOME")
+	path := os.Getenv("PATH")
+
+	isTermux := strings.Contains(home, "com.termux") ||
+		strings.Contains(path, "com.termux") ||
+		strings.Contains(home, "/data/data/com.termux")
+
+	if !isTermux {
+		return
+	}
+
+	// Check common CA bundle locations in Termux
+	caPaths := []string{
+		"$PREFIX/etc/tls/cert.pem",
+		os.Getenv("PREFIX") + "/etc/tls/cert.pem",
+		"/data/data/com.termux/files/usr/etc/tls/cert.pem",
+		"/usr/etc/tls/cert.pem",
+	}
+
+	for _, caPath := range caPaths {
+		expanded := os.ExpandEnv(caPath)
+		if _, err := os.Stat(expanded); err == nil {
+			os.Setenv("SSL_CERT_FILE", expanded)
+			return
+		}
+	}
+}
 
 func syncCliUIColor(root *cobra.Command) {
 	no, _ := root.PersistentFlags().GetBool("no-color")
@@ -123,6 +168,9 @@ const (
 )
 
 func main() {
+	// Initialize Termux SSL certificate detection before anything else
+	initTermuxSSL()
+
 	cliui.Init(earlyColorDisabled())
 
 	if earlyColorDisabled() {

@@ -1,8 +1,14 @@
 import { IconPlus } from "@tabler/icons-react"
 import { useAtom } from "jotai"
-import { type ChangeEvent, useEffect, useRef, useState } from "react"
+import {
+  type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react"
 import { useTranslation } from "react-i18next"
-import { toast } from "sonner"
 
 import { AssistantMessage } from "@/components/chat/assistant-message"
 import {
@@ -23,6 +29,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  CHAT_IMAGE_ACCEPT,
+  buildChatImageAttachments,
+  getTransferredFiles,
+  hasFileTransfer,
+} from "@/features/chat/image-input"
 import { useChatModels } from "@/hooks/use-chat-models"
 import { useGateway } from "@/hooks/use-gateway"
 import { usePicoChat } from "@/hooks/use-pico-chat"
@@ -35,32 +47,6 @@ import {
   shouldShowAssistantMessage,
 } from "@/store/chat"
 import type { GatewayState } from "@/store/gateway"
-
-const MAX_IMAGE_SIZE_BYTES = 7 * 1024 * 1024
-const MAX_IMAGE_SIZE_LABEL = "7 MB"
-const ALLOWED_IMAGE_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-  "image/bmp",
-])
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result)
-        return
-      }
-      reject(new Error("Failed to read file"))
-    }
-    reader.onerror = () =>
-      reject(reader.error || new Error("Failed to read file"))
-    reader.readAsDataURL(file)
-  })
-}
 
 function resolveChatInputDisabledReason({
   hasDefaultModel,
@@ -118,10 +104,12 @@ export function ChatPage() {
   const { t } = useTranslation()
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const dragDepthRef = useRef(0)
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [hasScrolled, setHasScrolled] = useState(false)
   const [input, setInput] = useState("")
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
+  const [isDragActive, setIsDragActive] = useState(false)
   const [assistantDetailVisibility, setAssistantDetailVisibility] = useAtom(
     assistantDetailVisibilityAtom,
   )
@@ -223,6 +211,19 @@ export function ChatPage() {
     setAttachments((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
   }
 
+  const appendImageFiles = async (files: readonly File[]) => {
+    if (!canInput || files.length === 0) {
+      return
+    }
+
+    const nextAttachments = await buildChatImageAttachments(files, t)
+    if (nextAttachments.length === 0) {
+      return
+    }
+
+    setAttachments((prev) => [...prev, ...nextAttachments])
+  }
+
   const handleImageSelection = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? [])
     event.target.value = ""
@@ -231,45 +232,77 @@ export function ChatPage() {
       return
     }
 
-    const nextAttachments: ChatAttachment[] = []
-    for (const file of files) {
-      if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
-        toast.error(
-          t("chat.invalidImage", {
-            name: file.name,
-          }),
-        )
-        continue
-      }
+    await appendImageFiles(files)
+  }
 
-      if (file.size > MAX_IMAGE_SIZE_BYTES) {
-        toast.error(
-          t("chat.imageTooLarge", {
-            name: file.name,
-            size: MAX_IMAGE_SIZE_LABEL,
-          }),
-        )
-        continue
-      }
+  const resetDragState = () => {
+    dragDepthRef.current = 0
+    setIsDragActive(false)
+  }
 
-      try {
-        nextAttachments.push({
-          type: "image",
-          filename: file.name,
-          url: await readFileAsDataUrl(file),
-        })
-      } catch {
-        toast.error(
-          t("chat.imageReadFailed", {
-            name: file.name,
-          }),
-        )
-      }
+  const handleComposerPaste = async (
+    event: ClipboardEvent<HTMLTextAreaElement>,
+  ) => {
+    const files = getTransferredFiles(event.clipboardData)
+    if (files.length === 0) {
+      return
     }
 
-    if (nextAttachments.length > 0) {
-      setAttachments(nextAttachments.slice(0, 1))
+    await appendImageFiles(files)
+  }
+
+  const handleComposerDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    if (!hasFileTransfer(event.dataTransfer)) {
+      return
     }
+
+    event.preventDefault()
+    if (!canInput) {
+      return
+    }
+    dragDepthRef.current += 1
+    setIsDragActive(true)
+  }
+
+  const handleComposerDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    if (!hasFileTransfer(event.dataTransfer)) {
+      return
+    }
+
+    event.preventDefault()
+    if (!canInput) {
+      resetDragState()
+      return
+    }
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) {
+      setIsDragActive(false)
+    }
+  }
+
+  const handleComposerDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!hasFileTransfer(event.dataTransfer)) {
+      return
+    }
+
+    event.preventDefault()
+    event.dataTransfer.dropEffect = canInput ? "copy" : "none"
+  }
+
+  const handleComposerDrop = async (event: DragEvent<HTMLDivElement>) => {
+    if (!hasFileTransfer(event.dataTransfer)) {
+      return
+    }
+
+    event.preventDefault()
+    const files = getTransferredFiles(event.dataTransfer)
+    resetDragState()
+
+    if (!canInput || files.length === 0) {
+      return
+    }
+
+    await appendImageFiles(files)
   }
 
   const canSubmit =
@@ -398,7 +431,8 @@ export function ChatPage() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/jpeg,image/png,image/gif,image/webp,image/bmp"
+        accept={CHAT_IMAGE_ACCEPT}
+        multiple
         className="hidden"
         onChange={handleImageSelection}
       />
@@ -408,6 +442,11 @@ export function ChatPage() {
         attachments={attachments}
         onInputChange={setInput}
         onAddImages={handleAddImages}
+        onPaste={handleComposerPaste}
+        onDragEnter={handleComposerDragEnter}
+        onDragLeave={handleComposerDragLeave}
+        onDragOver={handleComposerDragOver}
+        onDrop={handleComposerDrop}
         onRemoveAttachment={handleRemoveAttachment}
         onSend={handleSend}
         onContextDetail={() => {
@@ -417,6 +456,7 @@ export function ChatPage() {
         }}
         inputDisabledReason={inputDisabledReason}
         canSend={canSubmit}
+        isDragActive={isDragActive}
         contextUsage={contextUsage}
       />
     </div>
