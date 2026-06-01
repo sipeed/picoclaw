@@ -153,6 +153,55 @@ func TestToolResultContentForLLMIncludesCompletion(t *testing.T) {
 	if !strings.Contains(content, `"type":"video"`) {
 		t.Fatalf("expected completion media type JSON, got %q", content)
 	}
+	if result.Deliverable == nil {
+		t.Fatalf("expected completion to mirror into deliverable")
+	}
+	if len(result.Deliverable.Artifacts) != 1 || result.Deliverable.Artifacts[0].Ref != "media://video" {
+		t.Fatalf("unexpected deliverable: %+v", result.Deliverable)
+	}
+}
+
+func TestToolResultContentForLLMIncludesDeliverable(t *testing.T) {
+	result := NewToolResult("tool finished").WithDeliverable(&DeliverableResult{
+		Text: "saved recipe",
+		Artifacts: []DeliverableItem{
+			{
+				Ref:         "file:/tmp/recipe.md",
+				Kind:        "file",
+				Filename:    "recipe.md",
+				ContentType: "text/markdown",
+			},
+		},
+		Metadata: map[string]string{"source": "instagram"},
+	})
+
+	content := result.ContentForLLM()
+	for _, want := range []string{
+		"tool finished",
+		"Structured deliverable:",
+		`"text":"saved recipe"`,
+		`"ref":"file:/tmp/recipe.md"`,
+		`"kind":"file"`,
+		`"source":"instagram"`,
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected %q in content:\n%s", want, content)
+		}
+	}
+}
+
+func TestMediaResultCreatesDeliverable(t *testing.T) {
+	result := MediaResult("media ready", []string{"media://one", "media://two"})
+
+	if result.Deliverable == nil {
+		t.Fatal("expected media result to include deliverable")
+	}
+	if len(result.Deliverable.Artifacts) != 2 {
+		t.Fatalf("artifact count = %d, want 2", len(result.Deliverable.Artifacts))
+	}
+	if result.Deliverable.Artifacts[0].Kind != "media" {
+		t.Fatalf("artifact kind = %q, want media", result.Deliverable.Artifacts[0].Kind)
+	}
 }
 
 func TestErrorResult(t *testing.T) {

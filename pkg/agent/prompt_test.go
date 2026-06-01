@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -105,6 +106,58 @@ func TestBuildMessagesFromPrompt_IncludesSystemPromptOverlay(t *testing.T) {
 	}
 	if messages[1].Role != "user" || messages[1].Content != "do child task" {
 		t.Fatalf("messages[1] = %#v, want user task", messages[1])
+	}
+}
+
+func TestBuildMessagesFromPrompt_IncludesWorkspaceTmpPath(t *testing.T) {
+	t.Setenv("PICOCLAW_BUILTIN_SKILLS", t.TempDir())
+	workspace := t.TempDir()
+	cb := NewContextBuilder(workspace)
+
+	messages := cb.BuildMessagesFromPrompt(PromptBuildRequest{
+		CurrentMessage: "hello",
+	})
+	system := messages[0].Content
+	want := filepath.Join(workspace, "tmp")
+	if !strings.Contains(system, "- Temporary files: "+want) {
+		t.Fatalf("system prompt missing workspace tmp path %q:\n%s", want, system)
+	}
+}
+
+func TestBuildMessagesFromPrompt_IncludesTaskBoardGuidanceWhenToolsAvailable(t *testing.T) {
+	t.Setenv("PICOCLAW_BUILTIN_SKILLS", t.TempDir())
+	cb := NewContextBuilder(t.TempDir())
+
+	messages := cb.BuildMessagesFromPrompt(PromptBuildRequest{
+		CurrentMessage: "do composite work",
+	})
+	system := messages[0].Content
+	for _, want := range []string{
+		"**Task boards**",
+		"one stable board_id",
+		"task_board",
+		"delegate/spawn",
+		"stable step_id",
+		"task_board results",
+		"task_status with board_id",
+	} {
+		if !strings.Contains(system, want) {
+			t.Fatalf("system prompt missing task-board guidance %q:\n%s", want, system)
+		}
+	}
+}
+
+func TestBuildMessagesFromPrompt_OmitsTaskBoardGuidanceWhenToolsUnavailable(t *testing.T) {
+	t.Setenv("PICOCLAW_BUILTIN_SKILLS", t.TempDir())
+	cb := NewContextBuilder(t.TempDir())
+
+	messages := cb.BuildMessagesFromPrompt(PromptBuildRequest{
+		CurrentMessage:      "hello",
+		SuppressToolUseRule: true,
+	})
+	system := messages[0].Content
+	if strings.Contains(system, "**Task boards**") {
+		t.Fatalf("system prompt should omit task-board guidance when tools are unavailable:\n%s", system)
 	}
 }
 

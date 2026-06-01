@@ -8,8 +8,9 @@ const (
 	OrdinalStep = 100
 
 	// ContextThreshold is the compaction trigger for the context window.
-	ContextThreshold float64 = 0.75 // Compact at 75% of context window
-	FreshTailCount   int     = 32   // Recent messages protected from compaction
+	ContextThreshold   float64 = 0.75  // Compact at 75% of context window
+	FreshTailCount     int     = 32    // Recent messages protected from compaction
+	FreshTailMaxTokens int     = 24000 // Token cap for protected fresh tail; <0 disables
 
 	// LeafMinFanout is the fanout parameter.
 	LeafMinFanout          int = 8 // Min messages per leaf summary

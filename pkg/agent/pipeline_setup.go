@@ -49,28 +49,26 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 
 	if !ts.opts.NoHistory {
 		if isOverContextBudget(ts.agent.ContextWindow, messages, toolDefs, ts.agent.MaxTokens) {
-			logger.WarnCF("agent", "Proactive compression: context budget exceeded before LLM call",
-				map[string]any{"session_key": ts.sessionKey})
-			if err := p.ContextManager.Compact(ctx, &CompactRequest{
-				SessionKey: ts.sessionKey,
-				Reason:     ContextCompressReasonProactive,
-				Budget:     ts.agent.ContextWindow,
-			}); err != nil {
-				logger.WarnCF("agent", "Proactive compact failed", map[string]any{
-					"session_key": ts.sessionKey,
-					"error":       err.Error(),
+			compactBudget := effectiveHistoryBudget(
+				ts.agent.ContextWindow,
+				ts.agent.MaxTokens,
+				reserveTokens,
+			)
+			logger.WarnCF("agent", "Proactive context pressure: scheduling background compaction",
+				map[string]any{
+					"session_key":    ts.sessionKey,
+					"context_window": ts.agent.ContextWindow,
+					"max_tokens":     ts.agent.MaxTokens,
+					"reserve_tokens": reserveTokens,
+					"compact_budget": compactBudget,
 				})
-			}
-			ts.refreshRestorePointFromSession(ts.agent)
-			if resp, err := p.ContextManager.Assemble(ctx, &AssembleRequest{
-				SessionKey:    ts.sessionKey,
-				Budget:        ts.agent.ContextWindow,
-				MaxTokens:     ts.agent.MaxTokens,
-				ReserveTokens: reserveTokens,
-			}); err == nil && resp != nil {
-				history = resp.History
-				summary = resp.Summary
-			}
+			p.al.scheduleBackgroundCompaction(
+				ts.agent,
+				ts.sessionKey,
+				ContextCompressReasonProactive,
+				compactBudget,
+				"proactive_pressure",
+			)
 			originalHistoryCount := len(history)
 			var fit bool
 			history, messages, fit = trimHistoryToFitContextWindow(
@@ -161,6 +159,22 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 	exec.usedLight = usedLight
 
 	return exec, nil
+}
+
+func effectiveHistoryBudget(contextWindow, maxTokens, reserveTokens int) int {
+	budget := contextWindow - maxTokens - reserveTokens
+	if budget > 0 {
+		return budget
+	}
+	// Fall back to a conservative fraction so context managers still have a
+	// usable target when static prompt/tool schema estimates exceed the window.
+	if contextWindow > maxTokens {
+		return (contextWindow - maxTokens) / 2
+	}
+	if contextWindow > 0 {
+		return contextWindow / 2
+	}
+	return 0
 }
 
 func (p *Pipeline) estimateNonHistoryPromptReserve(

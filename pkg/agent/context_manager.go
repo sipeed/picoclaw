@@ -18,7 +18,8 @@ type ContextManager interface {
 	Assemble(ctx context.Context, req *AssembleRequest) (*AssembleResponse, error)
 
 	// Compact compresses conversation history.
-	// Called after turn completes (may be async internally) and on context overflow (sync).
+	// Called by background schedulers for routine/proactive pressure and
+	// synchronously only on emergency context-overflow retry.
 	Compact(ctx context.Context, req *CompactRequest) error
 
 	// Ingest records a message into the ContextManager's own storage.
@@ -48,7 +49,7 @@ type AssembleResponse struct {
 type CompactRequest struct {
 	SessionKey string                // session identifier
 	Reason     ContextCompressReason // proactive_budget | llm_retry | summarize
-	Budget     int                   // context window budget (used for retry aggressive compaction)
+	Budget     int                   // effective history budget for compact/overflow repair
 }
 
 // IngestRequest is the input to Ingest.

@@ -256,6 +256,69 @@ func TestAssemblerBudgetEvictsOldest(t *testing.T) {
 	}
 }
 
+func TestAssemblerFreshTailMaxTokensCapsProtectedTail(t *testing.T) {
+	s, convID := setupAssemblerStore(t)
+	ctx := context.Background()
+
+	var items []ContextItem
+	for i := 0; i < FreshTailCount; i++ {
+		msg, err := s.AddMessage(ctx, convID, "user", "fresh message", 10)
+		if err != nil {
+			t.Fatalf("AddMessage: %v", err)
+		}
+		items = append(items, ContextItem{
+			Ordinal:    (i + 1) * OrdinalStep,
+			ItemType:   "message",
+			MessageID:  msg.ID,
+			TokenCount: 10,
+		})
+	}
+	if err := s.UpsertContextItems(ctx, convID, items); err != nil {
+		t.Fatalf("UpsertContextItems: %v", err)
+	}
+
+	a := &Assembler{store: s, config: Config{FreshTailMaxTokens: 50}}
+	result, err := a.Assemble(ctx, convID, AssembleInput{Budget: 1000})
+	if err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+	if len(result.Messages) != 5 {
+		t.Fatalf("messages = %d, want 5 capped by freshTailMaxTokens", len(result.Messages))
+	}
+}
+
+func TestAssemblerFreshTailMaxTokensPreservesNewestMessageOverCap(t *testing.T) {
+	s, convID := setupAssemblerStore(t)
+	ctx := context.Background()
+
+	msg1, err := s.AddMessage(ctx, convID, "user", "small", 10)
+	if err != nil {
+		t.Fatalf("AddMessage small: %v", err)
+	}
+	msg2, err := s.AddMessage(ctx, convID, "user", strings.Repeat("huge ", 100), 100)
+	if err != nil {
+		t.Fatalf("AddMessage huge: %v", err)
+	}
+	if err := s.UpsertContextItems(ctx, convID, []ContextItem{
+		{Ordinal: 100, ItemType: "message", MessageID: msg1.ID, TokenCount: 10},
+		{Ordinal: 200, ItemType: "message", MessageID: msg2.ID, TokenCount: 100},
+	}); err != nil {
+		t.Fatalf("UpsertContextItems: %v", err)
+	}
+
+	a := &Assembler{store: s, config: Config{FreshTailMaxTokens: 50}}
+	result, err := a.Assemble(ctx, convID, AssembleInput{Budget: 1000})
+	if err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+	if len(result.Messages) != 1 {
+		t.Fatalf("messages = %d, want newest oversized message preserved", len(result.Messages))
+	}
+	if result.Messages[0].ID != msg2.ID {
+		t.Fatalf("preserved message id = %d, want %d", result.Messages[0].ID, msg2.ID)
+	}
+}
+
 func TestAssemblerBudgetPreservesLatestToolTurnWhenItExceedsBudget(t *testing.T) {
 	s, convID := setupAssemblerStore(t)
 	ctx := context.Background()

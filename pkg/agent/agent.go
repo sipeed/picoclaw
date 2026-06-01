@@ -643,16 +643,30 @@ func (al *AgentLoop) compactAfterFinalDelivery(
 	if sessionKey == "" {
 		return
 	}
+	al.scheduleBackgroundCompaction(agent, sessionKey, ContextCompressReasonSummarize, agent.ContextWindow, "final_reply")
+}
+
+func (al *AgentLoop) scheduleBackgroundCompaction(
+	agent *AgentInstance,
+	sessionKey string,
+	reason ContextCompressReason,
+	budget int,
+	messageKind string,
+) {
+	if al.contextManager == nil || agent == nil || sessionKey == "" {
+		return
+	}
 	key := agent.ID + ":" + sessionKey
 	if _, loaded := al.compactions.LoadOrStore(key, struct{}{}); loaded {
-		logger.DebugCF("agent", "Post-delivery context compaction already running", map[string]any{
-			"agent_id":    agent.ID,
-			"session_key": sessionKey,
+		logger.DebugCF("agent", "Background context compaction already running", map[string]any{
+			"agent_id":     agent.ID,
+			"session_key":  sessionKey,
+			"reason":       reason,
+			"message_kind": messageKind,
 		})
 		return
 	}
 
-	budget := agent.ContextWindow
 	go func() {
 		defer al.compactions.Delete(key)
 
@@ -660,32 +674,37 @@ func (al *AgentLoop) compactAfterFinalDelivery(
 		defer cancel()
 
 		startedAt := time.Now()
-		logger.DebugCF("agent", "Post-delivery context compaction started", map[string]any{
-			"agent_id":    agent.ID,
-			"session_key": sessionKey,
-			"budget":      budget,
+		logger.DebugCF("agent", "Background context compaction started", map[string]any{
+			"agent_id":     agent.ID,
+			"session_key":  sessionKey,
+			"reason":       reason,
+			"budget":       budget,
+			"message_kind": messageKind,
 		})
 		if err := al.contextManager.Compact(
 			compactCtx,
 			&CompactRequest{
 				SessionKey: sessionKey,
-				Reason:     ContextCompressReasonSummarize,
+				Reason:     reason,
 				Budget:     budget,
 			},
 		); err != nil {
-			logger.WarnCF("agent", "Post-delivery context compaction failed", map[string]any{
+			logger.WarnCF("agent", "Background context compaction failed", map[string]any{
 				"agent_id":     agent.ID,
 				"session_key":  sessionKey,
-				"message_kind": "final_reply",
+				"reason":       reason,
+				"message_kind": messageKind,
 				"duration_ms":  time.Since(startedAt).Milliseconds(),
 				"error":        err.Error(),
 			})
 			return
 		}
-		logger.InfoCF("agent", "Post-delivery context compaction completed", map[string]any{
-			"agent_id":    agent.ID,
-			"session_key": sessionKey,
-			"duration_ms": time.Since(startedAt).Milliseconds(),
+		logger.InfoCF("agent", "Background context compaction completed", map[string]any{
+			"agent_id":     agent.ID,
+			"session_key":  sessionKey,
+			"reason":       reason,
+			"message_kind": messageKind,
+			"duration_ms":  time.Since(startedAt).Milliseconds(),
 		})
 	}()
 }

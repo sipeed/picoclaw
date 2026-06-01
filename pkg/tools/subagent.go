@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,6 +14,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	taskregistry "github.com/sipeed/picoclaw/pkg/tasks"
 )
+
+var labeledArtifactPathRe = regexp.MustCompile(`(?im)(?:^|\n)\s*(?:[-*]\s*)?(?:sendable_file_path|file_path|artifact_path|local_path)\s*:\s*` + "`?" + `([^` + "`" + `\n]+)` + "`?")
 
 // SubTurnSpawner is an interface for spawning sub-turns.
 // This avoids circular dependency between tools and agent packages.
@@ -41,6 +46,13 @@ type SubagentTask struct {
 	Task          string
 	Label         string
 	AgentID       string
+	BoardID       string
+	ParentTaskID  string
+	StepID        string
+	StepTitle     string
+	Owner         string
+	DependsOn     []string
+	BlockedBy     []string
 	OriginChannel string
 	OriginChatID  string
 	Status        string
@@ -159,6 +171,7 @@ func (sm *SubagentManager) Spawn(
 	ctx context.Context,
 	task, label, agentID, originChannel, originChatID string,
 	callback AsyncCallback,
+	boardMeta ...TaskBoardMetadata,
 ) (string, error) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
@@ -175,6 +188,15 @@ func (sm *SubagentManager) Spawn(
 		OriginChatID:  originChatID,
 		Status:        "running",
 		Created:       time.Now().UnixMilli(),
+	}
+	if len(boardMeta) > 0 {
+		subagentTask.BoardID = boardMeta[0].BoardID
+		subagentTask.ParentTaskID = boardMeta[0].ParentTaskID
+		subagentTask.StepID = boardMeta[0].StepID
+		subagentTask.StepTitle = boardMeta[0].StepTitle
+		subagentTask.Owner = boardMeta[0].Owner
+		subagentTask.DependsOn = append([]string(nil), boardMeta[0].DependsOn...)
+		subagentTask.BlockedBy = append([]string(nil), boardMeta[0].BlockedBy...)
 	}
 	sm.tasks[taskID] = subagentTask
 	sm.recordTask(subagentTask, taskregistry.StatusRunning, taskregistry.DeliveryPending, "")
@@ -351,6 +373,13 @@ func subagentTaskFromRecord(rec taskregistry.Record) *SubagentTask {
 		Task:          rec.Task,
 		Label:         rec.Label,
 		AgentID:       rec.AgentID,
+		BoardID:       rec.BoardID,
+		ParentTaskID:  rec.ParentTaskID,
+		StepID:        rec.StepID,
+		StepTitle:     rec.StepTitle,
+		Owner:         rec.Owner,
+		DependsOn:     append([]string(nil), rec.DependsOn...),
+		BlockedBy:     append([]string(nil), rec.BlockedBy...),
 		OriginChannel: rec.Channel,
 		OriginChatID:  rec.ChatID,
 		Status:        status,
@@ -373,6 +402,13 @@ func (sm *SubagentManager) recordTask(
 		TaskID:         task.ID,
 		Runtime:        taskregistry.RuntimeSubagent,
 		TaskKind:       "spawn",
+		BoardID:        task.BoardID,
+		ParentTaskID:   task.ParentTaskID,
+		StepID:         task.StepID,
+		StepTitle:      task.StepTitle,
+		Owner:          task.Owner,
+		DependsOn:      append([]string(nil), task.DependsOn...),
+		BlockedBy:      append([]string(nil), task.BlockedBy...),
 		Channel:        task.OriginChannel,
 		ChatID:         task.OriginChatID,
 		AgentID:        task.AgentID,
@@ -414,10 +450,12 @@ func (sm *SubagentManager) recordTaskResult(task *SubagentTask, result *ToolResu
 		delivery = taskregistry.DeliveryNotApplicable
 	}
 	completion := completionPayloadForTaskRegistry(result)
+	deliverable := deliverablePayloadForTaskRegistry(result)
 	sm.recordTask(task, taskregistry.StatusSucceeded, delivery, summary)
-	if completion != nil {
+	if completion != nil || deliverable != nil {
 		_ = sm.taskRegistry.Update(task.ID, func(rec *taskregistry.Record) {
 			rec.Completion = completion
+			rec.Deliverable = deliverable
 			rec.LastEventAt = time.Now().UnixMilli()
 		})
 	}
@@ -440,6 +478,186 @@ func completionPayloadForTaskRegistry(result *ToolResult) *taskregistry.Completi
 		return nil
 	}
 	return payload
+}
+
+func deliverablePayloadForTaskRegistry(result *ToolResult) *taskregistry.DeliverablePayload {
+	if result == nil {
+		return nil
+	}
+	deliverable := result.Deliverable
+	if deliverable == nil && result.Completion != nil {
+		deliverable = &DeliverableResult{
+			Text: result.Completion.Text,
+		}
+		for _, item := range result.Completion.Media {
+			deliverable.Artifacts = append(deliverable.Artifacts, DeliverableItem{
+				Ref:         item.Ref,
+				Kind:        item.Type,
+				Filename:    item.Filename,
+				ContentType: item.ContentType,
+			})
+		}
+	}
+	if deliverable == nil {
+		return nil
+	}
+	if result.Completion != nil {
+		deliverable.Artifacts = appendMissingDeliverableArtifacts(
+			deliverable.Artifacts,
+			extractLabeledArtifactItems(result.Completion.Text),
+		)
+	}
+	payload := &taskregistry.DeliverablePayload{
+		Text:     deliverable.Text,
+		Metadata: copyDeliverableMetadata(deliverable.Metadata),
+	}
+	for _, item := range deliverable.Artifacts {
+		payload.Artifacts = append(payload.Artifacts, taskregistry.DeliverableItem{
+			Ref:         item.Ref,
+			Kind:        item.Kind,
+			Filename:    item.Filename,
+			ContentType: item.ContentType,
+			Delivered:   item.Delivered,
+		})
+	}
+	if payload.Text == "" && len(payload.Artifacts) == 0 && len(payload.Metadata) == 0 {
+		return nil
+	}
+	return payload
+}
+
+func appendMissingDeliverableArtifacts(existing, extra []DeliverableItem) []DeliverableItem {
+	if len(extra) == 0 {
+		return existing
+	}
+	seen := make(map[string]struct{}, len(existing)+len(extra))
+	for _, item := range existing {
+		if ref := strings.TrimSpace(item.Ref); ref != "" {
+			seen[ref] = struct{}{}
+		}
+	}
+	out := append([]DeliverableItem(nil), existing...)
+	for _, item := range extra {
+		ref := strings.TrimSpace(item.Ref)
+		if ref == "" {
+			continue
+		}
+		if _, ok := seen[ref]; ok {
+			continue
+		}
+		seen[ref] = struct{}{}
+		out = append(out, item)
+	}
+	return out
+}
+
+func extractLabeledArtifactItems(text string) []DeliverableItem {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+	matches := labeledArtifactPathRe.FindAllStringSubmatch(text, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(matches))
+	items := make([]DeliverableItem, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		path := normalizeCompletionArtifactPath(match[1])
+		if path == "" {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		items = append(items, DeliverableItem{
+			Ref:         "file:" + path,
+			Kind:        artifactKindForPath(path),
+			Filename:    filepath.Base(path),
+			ContentType: contentTypeForArtifactPath(path),
+		})
+	}
+	return items
+}
+
+func normalizeCompletionArtifactPath(raw string) string {
+	path := strings.TrimSpace(raw)
+	path = strings.Trim(path, "`'\"")
+	if idx := strings.IndexAny(path, " \t\r"); idx >= 0 {
+		path = path[:idx]
+	}
+	path = strings.TrimRight(path, ".,;)")
+	if !strings.HasPrefix(path, "/") {
+		return ""
+	}
+	return filepath.Clean(path)
+}
+
+func artifactKindForPath(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".mp4", ".mov", ".m4v", ".webm", ".mkv":
+		return "video"
+	case ".mp3", ".m4a", ".wav", ".ogg", ".flac":
+		return "audio"
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic":
+		return "image"
+	case ".md", ".txt", ".json", ".csv", ".pdf":
+		return "file"
+	default:
+		return "file"
+	}
+}
+
+func contentTypeForArtifactPath(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".mp4":
+		return "video/mp4"
+	case ".mov":
+		return "video/quicktime"
+	case ".webm":
+		return "video/webm"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".m4a":
+		return "audio/mp4"
+	case ".wav":
+		return "audio/wav"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	case ".md":
+		return "text/markdown"
+	case ".txt":
+		return "text/plain"
+	case ".json":
+		return "application/json"
+	case ".csv":
+		return "text/csv"
+	case ".pdf":
+		return "application/pdf"
+	default:
+		return ""
+	}
+}
+
+func copyDeliverableMetadata(src map[string]string) map[string]string {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string]string, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 func (sm *SubagentManager) GetTask(taskID string) (*SubagentTask, bool) {

@@ -23,7 +23,7 @@ type seahorseContextManager struct {
 }
 
 // newSeahorseContextManager creates a seahorse-backed ContextManager.
-func newSeahorseContextManager(_ json.RawMessage, al *AgentLoop) (ContextManager, error) {
+func newSeahorseContextManager(rawConfig json.RawMessage, al *AgentLoop) (ContextManager, error) {
 	if al == nil {
 		return nil, fmt.Errorf("seahorse: AgentLoop is required")
 	}
@@ -36,10 +36,20 @@ func newSeahorseContextManager(_ json.RawMessage, al *AgentLoop) (ContextManager
 	// Create CompleteFn from provider
 	completeFn := providerToCompleteFn(agent.Provider, agent.Model)
 
-	// Create engine
-	engine, err := seahorse.NewEngine(seahorse.Config{
+	seahorseConfig := seahorse.Config{
 		DBPath: dbPath,
-	}, completeFn)
+	}
+	if len(rawConfig) > 0 {
+		if err := json.Unmarshal(rawConfig, &seahorseConfig); err != nil {
+			return nil, fmt.Errorf("seahorse: parse config: %w", err)
+		}
+		if seahorseConfig.DBPath == "" {
+			seahorseConfig.DBPath = dbPath
+		}
+	}
+
+	// Create engine
+	engine, err := seahorse.NewEngine(seahorseConfig, completeFn)
 	if err != nil {
 		return nil, fmt.Errorf("seahorse: create engine: %w", err)
 	}
@@ -133,8 +143,11 @@ func (m *seahorseContextManager) Compact(ctx context.Context, req *CompactReques
 		return nil
 	}
 
-	// For retry (LLM overflow), use aggressive CompactUntilUnder to guarantee
-	// context shrinks below budget (spec lines ~1410).
+	// For model overflow retry, use aggressive CompactUntilUnder to guarantee
+	// the next LLM request has a smaller assembled history. Proactive pressure
+	// must stay latency-bounded for interactive turns; SetupTurn performs a
+	// cheap history trim after this normal compact pass if the prompt is still
+	// over budget.
 	if req.Reason == ContextCompressReasonRetry && req.Budget > 0 {
 		_, err := m.engine.CompactUntilUnder(ctx, req.SessionKey, req.Budget)
 		return err

@@ -136,6 +136,32 @@ func TestShellTool_WorkingDir(t *testing.T) {
 	}
 }
 
+func TestShellTool_ExposesWorkspaceTmp(t *testing.T) {
+	tmpDir := t.TempDir()
+	tool, err := NewExecTool(tmpDir, false)
+	if err != nil {
+		t.Fatalf("unable to configure exec tool: %s", err)
+	}
+
+	want := filepath.Join(tmpDir, "tmp")
+	if info, err := os.Stat(want); err != nil {
+		t.Fatalf("workspace tmp dir was not created: %v", err)
+	} else if !info.IsDir() {
+		t.Fatalf("workspace tmp path is not a directory: %s", want)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"action":  "run",
+		"command": `printf '%s' "$PICOCLAW_WORKSPACE_TMP"`,
+	})
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, want) {
+		t.Fatalf("ForLLM missing workspace tmp path %q:\n%s", want, result.ForLLM)
+	}
+}
+
 // TestShellTool_DangerousCommand verifies safety guard blocks dangerous commands
 func TestShellTool_DangerousCommand(t *testing.T) {
 	tool, err := NewExecTool("", false)

@@ -701,6 +701,14 @@ Respond HEARTBEAT_OK      Delivery coordinator routes result
 
 The subagent has access to its configured tools, but completion delivery is owned by the async task delivery path. A terminal background task usually uses user delivery. A compositional task can route the completion back to the parent so the parent can synthesize the final user-facing answer.
 
+For composite workflows, use `task_board` to create one shared `board_id`, add
+planned steps when useful, then pass that `board_id` plus stable `step_id` /
+`step_title` values to related `spawn` and `delegate` calls. Use `depends_on`
+for ordered steps and inspect the workflow with `task_board
+{"action":"list","board_id":"..."}` or `task_status {"board_id":"..."}`.
+Use `timeout_seconds` on synchronous `delegate` steps when a stalled child would
+block the parent workflow.
+
 **Configuration:**
 
 ```json

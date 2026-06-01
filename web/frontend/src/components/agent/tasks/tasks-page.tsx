@@ -58,6 +58,7 @@ function statusVariant(status: string): "default" | "secondary" | "destructive" 
       return "destructive"
     case "running":
     case "queued":
+    case "planned":
       return "secondary"
     default:
       return "outline"
@@ -74,8 +75,9 @@ function taskScope(task: TaskRecord) {
 
 function TaskCard({ task }: { task: TaskRecord }) {
   const result = task.error || task.terminal_summary || task.progress_summary
-  const completion = task.completion
-  const mediaCount = completion?.media?.length ?? 0
+  const deliverable = task.deliverable
+  const artifactCount = deliverable?.artifacts?.length ?? 0
+  const legacyCompletion = task.completion
 
   return (
     <Card size="sm" className="border-border/70 bg-card/70">
@@ -112,8 +114,11 @@ function TaskCard({ task }: { task: TaskRecord }) {
           <span>created {formatTaskTime(task.created_at)}</span>
           {task.ended_at ? <span>ended {formatTaskTime(task.ended_at)}</span> : null}
           <span>delivery {task.delivery_status}</span>
-          {completion?.text ? <span>completion text</span> : null}
-          {mediaCount > 0 ? <span>{mediaCount} media</span> : null}
+          {deliverable?.text ? <span>deliverable text</span> : null}
+          {artifactCount > 0 ? <span>{artifactCount} artifacts</span> : null}
+          {!deliverable && legacyCompletion?.text ? (
+            <span>legacy completion text</span>
+          ) : null}
         </div>
       </CardContent>
     </Card>
@@ -183,8 +188,8 @@ export function TasksPage() {
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-4">
-            {["running", "queued", "succeeded", "failed"].map((status) => (
+          <div className="grid gap-3 sm:grid-cols-5">
+            {["running", "queued", "planned", "succeeded", "failed"].map((status) => (
               <Card key={status} size="sm" className="bg-card/60">
                 <CardContent>
                   <div className="text-muted-foreground text-xs uppercase tracking-wide">

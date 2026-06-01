@@ -70,7 +70,15 @@ type ToolResult struct {
 	// Completion carries a structured child-run result for parent agents.
 	// It is populated by sub-turns/delegation/spawn handoffs so the parent can
 	// see both text and media refs without scraping prose.
+	// Deprecated for new consumers: use Deliverable for produced outputs and
+	// keep Completion only as a legacy child-run handoff adapter.
 	Completion *CompletionResult `json:"completion,omitempty"`
+
+	// Deliverable describes the actual artifact/result produced by the tool,
+	// independent from LLM context or user-facing phrasing. Use this for durable
+	// task state and follow-up ownership; Completion is kept as the legacy
+	// child-run handoff shape and is mirrored into Deliverable when possible.
+	Deliverable *DeliverableResult `json:"deliverable,omitempty"`
 
 	// Messages holds the ephemeral session history after execution.
 	// Only populated by SubTurn executions; used by evaluator_optimizer
@@ -106,6 +114,25 @@ type CompletionMedia struct {
 	ContentType string `json:"content_type,omitempty"`
 }
 
+// DeliverableResult is the generic output ownership payload for tools and
+// child runs. It represents what was produced, not how it should be worded to
+// the LLM or user.
+type DeliverableResult struct {
+	Text      string            `json:"text,omitempty"`
+	Artifacts []DeliverableItem `json:"artifacts,omitempty"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
+}
+
+// DeliverableItem describes a concrete produced artifact. Ref may be a
+// media:// ref, file path tag, external URL, or other stable runtime reference.
+type DeliverableItem struct {
+	Ref         string `json:"ref"`
+	Kind        string `json:"kind,omitempty"`
+	Filename    string `json:"filename,omitempty"`
+	ContentType string `json:"content_type,omitempty"`
+	Delivered   bool   `json:"delivered,omitempty"`
+}
+
 // ContentForLLM returns the normalized textual content to append to the
 // conversation after a tool call. Errors fall back to Err when ForLLM is empty.
 func (tr *ToolResult) ContentForLLM() string {
@@ -132,17 +159,25 @@ func (tr *ToolResult) ContentForLLM() string {
 			content += "\n" + artifactNote
 		}
 	}
-	if completionNote := tr.completionNoteForLLM(); completionNote != "" {
-		if content == "" {
-			content = completionNote
-		} else if !strings.Contains(content, completionNote) {
-			content += "\n" + completionNote
-		}
-	}
+	content = appendUniqueLLMNote(content, tr.completionNoteForLLM())
+	content = appendUniqueLLMNote(content, tr.deliverableNoteForLLM())
 	if content != "" {
 		return content
 	}
 	return ""
+}
+
+func appendUniqueLLMNote(content, note string) string {
+	if note == "" {
+		return content
+	}
+	if content == "" {
+		return note
+	}
+	if !strings.Contains(content, note) {
+		return content + "\n" + note
+	}
+	return content
 }
 
 func (tr *ToolResult) completionNoteForLLM() string {
@@ -165,6 +200,55 @@ func (tr *ToolResult) completionNoteForLLM() string {
 		return ""
 	}
 	return "Structured child completion: " + string(data)
+}
+
+func (tr *ToolResult) deliverableNoteForLLM() string {
+	if tr == nil || tr.Deliverable == nil {
+		return ""
+	}
+	if tr.Completion != nil {
+		// Completion already renders a child-handoff note. The mirrored
+		// deliverable is still available to registries, but adding both notes
+		// would duplicate the same payload in model context.
+		return ""
+	}
+	payload := tr.effectiveDeliverable()
+	if payload == nil {
+		return ""
+	}
+	if strings.TrimSpace(payload.Text) == "" && len(payload.Artifacts) == 0 && len(payload.Metadata) == 0 {
+		return ""
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	return "Structured deliverable: " + string(data)
+}
+
+func (tr *ToolResult) effectiveDeliverable() *DeliverableResult {
+	if tr == nil {
+		return nil
+	}
+	if tr.Deliverable != nil {
+		return tr.Deliverable
+	}
+	if tr.Completion == nil {
+		return nil
+	}
+	deliverable := &DeliverableResult{Text: tr.Completion.Text}
+	for _, item := range tr.Completion.Media {
+		deliverable.Artifacts = append(deliverable.Artifacts, DeliverableItem{
+			Ref:         item.Ref,
+			Kind:        item.Type,
+			Filename:    item.Filename,
+			ContentType: item.ContentType,
+		})
+	}
+	if strings.TrimSpace(deliverable.Text) == "" && len(deliverable.Artifacts) == 0 {
+		return nil
+	}
+	return deliverable
 }
 
 // NewToolResult creates a basic ToolResult with content for the LLM.
@@ -262,10 +346,20 @@ func UserResult(content string) *ToolResult {
 //
 //	result := MediaResult("Image generated successfully", []string{"media://abc123"})
 func MediaResult(forLLM string, mediaRefs []string) *ToolResult {
-	return &ToolResult{
+	result := &ToolResult{
 		ForLLM: forLLM,
 		Media:  mediaRefs,
 	}
+	if len(mediaRefs) > 0 {
+		result.Deliverable = &DeliverableResult{}
+		for _, ref := range mediaRefs {
+			result.Deliverable.Artifacts = append(result.Deliverable.Artifacts, DeliverableItem{
+				Ref:  ref,
+				Kind: "media",
+			})
+		}
+	}
+	return result
 }
 
 // MarshalJSON implements custom JSON serialization.
@@ -311,5 +405,14 @@ func (tr *ToolResult) WithAsyncTaskID(taskID string) *ToolResult {
 // WithCompletion attaches a structured completion payload to this result.
 func (tr *ToolResult) WithCompletion(completion *CompletionResult) *ToolResult {
 	tr.Completion = completion
+	if tr.Deliverable == nil && completion != nil {
+		tr.Deliverable = tr.effectiveDeliverable()
+	}
+	return tr
+}
+
+// WithDeliverable attaches a generic durable output payload to this result.
+func (tr *ToolResult) WithDeliverable(deliverable *DeliverableResult) *ToolResult {
+	tr.Deliverable = deliverable
 	return tr
 }

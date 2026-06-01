@@ -12,10 +12,31 @@ export interface TaskCompletion {
   media?: TaskCompletionMedia[]
 }
 
+export interface TaskDeliverableItem {
+  ref: string
+  kind?: string
+  filename?: string
+  content_type?: string
+  delivered?: boolean
+}
+
+export interface TaskDeliverable {
+  text?: string
+  artifacts?: TaskDeliverableItem[]
+  metadata?: Record<string, string>
+}
+
 export interface TaskRecord {
   task_id: string
   runtime: string
   task_kind?: string
+  board_id?: string
+  parent_task_id?: string
+  step_id?: string
+  step_title?: string
+  owner?: string
+  depends_on?: string[]
+  blocked_by?: string[]
   requester_session_key?: string
   owner_key?: string
   scope_kind?: string
@@ -38,6 +59,7 @@ export interface TaskRecord {
   progress_summary?: string
   terminal_summary?: string
   completion?: TaskCompletion
+  deliverable?: TaskDeliverable
 }
 
 export interface TasksResponse {

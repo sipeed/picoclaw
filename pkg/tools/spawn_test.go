@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	taskregistry "github.com/sipeed/picoclaw/pkg/tasks"
 )
 
 // mockSpawner implements SubTurnSpawner for testing.
@@ -97,6 +99,55 @@ func TestSpawnTool_Execute_ValidTask(t *testing.T) {
 	}
 	if !spawner.lastConfig.Critical {
 		t.Error("SpawnTool should mark background subturns as critical")
+	}
+}
+
+func TestSpawnTool_Execute_RecordsBoardMetadata(t *testing.T) {
+	registry := taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(t.TempDir()))
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManagerWithRegistry(provider, "test-model", t.TempDir(), registry)
+	tool := NewSpawnTool(manager)
+	spawner := &mockSpawner{done: make(chan struct{})}
+	tool.SetSpawner(spawner)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"task":           "download reel",
+		"label":          "download-media",
+		"agent_id":       "media",
+		"board_id":       "instagram-recipe-1",
+		"parent_task_id": "workflow-root-1",
+		"step_id":        "download-media",
+		"step_title":     "Download media",
+		"depends_on":     []any{"collect-url"},
+	})
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	<-spawner.done
+
+	var records []taskregistry.Record
+	for i := 0; i < 50; i++ {
+		records = registry.ListBoard("instagram-recipe-1")
+		if len(records) == 1 && records[0].Status == taskregistry.StatusSucceeded {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(records) != 1 {
+		t.Fatalf("ListBoard count = %d, want 1: %+v", len(records), records)
+	}
+	rec := records[0]
+	if rec.Runtime != taskregistry.RuntimeSubagent || rec.TaskKind != "spawn" {
+		t.Fatalf("spawn record runtime/kind = %+v", rec)
+	}
+	if rec.ParentTaskID != "workflow-root-1" || rec.StepID != "download-media" || rec.StepTitle != "Download media" {
+		t.Fatalf("spawn board metadata = %+v", rec)
+	}
+	if rec.Owner != "media" {
+		t.Fatalf("spawn owner = %q, want media", rec.Owner)
+	}
+	if len(rec.DependsOn) != 1 || rec.DependsOn[0] != "collect-url" {
+		t.Fatalf("spawn dependencies = %+v, want collect-url", rec.DependsOn)
 	}
 }
 

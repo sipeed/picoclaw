@@ -24,6 +24,8 @@ type (
 	AsyncExecutor          = toolshared.AsyncExecutor
 	CompletionMedia        = toolshared.CompletionMedia
 	CompletionResult       = toolshared.CompletionResult
+	DeliverableItem        = toolshared.DeliverableItem
+	DeliverableResult      = toolshared.DeliverableResult
 	PromptMetadata         = toolshared.PromptMetadata
 	PromptMetadataProvider = toolshared.PromptMetadataProvider
 	ToolResult             = toolshared.ToolResult

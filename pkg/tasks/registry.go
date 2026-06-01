@@ -26,6 +26,7 @@ const (
 type Status string
 
 const (
+	StatusPlanned   Status = "planned"
 	StatusQueued    Status = "queued"
 	StatusRunning   Status = "running"
 	StatusSucceeded Status = "succeeded"
@@ -71,35 +72,57 @@ type CompletionMedia struct {
 	ContentType string `json:"content_type,omitempty"`
 }
 
+type DeliverablePayload struct {
+	Text      string            `json:"text,omitempty"`
+	Artifacts []DeliverableItem `json:"artifacts,omitempty"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
+}
+
+type DeliverableItem struct {
+	Ref         string `json:"ref"`
+	Kind        string `json:"kind,omitempty"`
+	Filename    string `json:"filename,omitempty"`
+	ContentType string `json:"content_type,omitempty"`
+	Delivered   bool   `json:"delivered,omitempty"`
+}
+
 type Record struct {
-	TaskID              string             `json:"task_id"`
-	Runtime             Runtime            `json:"runtime"`
-	TaskKind            string             `json:"task_kind,omitempty"`
-	RequesterSessionKey string             `json:"requester_session_key,omitempty"`
-	OwnerKey            string             `json:"owner_key,omitempty"`
-	ScopeKind           string             `json:"scope_kind,omitempty"`
-	Channel             string             `json:"channel,omitempty"`
-	ChatID              string             `json:"chat_id,omitempty"`
-	TopicID             string             `json:"topic_id,omitempty"`
-	AgentID             string             `json:"agent_id,omitempty"`
-	Label               string             `json:"label,omitempty"`
-	Task                string             `json:"task"`
-	Status              Status             `json:"status"`
-	DeliveryStatus      DeliveryStatus     `json:"delivery_status"`
-	NotifyPolicy        NotifyPolicy       `json:"notify_policy"`
-	DeliveryMode        string             `json:"delivery_mode,omitempty"`
-	LastCompletionID    string             `json:"last_completion_id,omitempty"`
-	DeliveredAt         int64              `json:"delivered_at,omitempty"`
-	DeliveryError       string             `json:"delivery_error,omitempty"`
-	CreatedAt           int64              `json:"created_at"`
-	StartedAt           int64              `json:"started_at,omitempty"`
-	EndedAt             int64              `json:"ended_at,omitempty"`
-	LastEventAt         int64              `json:"last_event_at,omitempty"`
-	CleanupAfter        int64              `json:"cleanup_after,omitempty"`
-	Error               string             `json:"error,omitempty"`
-	ProgressSummary     string             `json:"progress_summary,omitempty"`
-	TerminalSummary     string             `json:"terminal_summary,omitempty"`
-	Completion          *CompletionPayload `json:"completion,omitempty"`
+	TaskID              string              `json:"task_id"`
+	Runtime             Runtime             `json:"runtime"`
+	TaskKind            string              `json:"task_kind,omitempty"`
+	BoardID             string              `json:"board_id,omitempty"`
+	ParentTaskID        string              `json:"parent_task_id,omitempty"`
+	StepID              string              `json:"step_id,omitempty"`
+	StepTitle           string              `json:"step_title,omitempty"`
+	Owner               string              `json:"owner,omitempty"`
+	DependsOn           []string            `json:"depends_on,omitempty"`
+	BlockedBy           []string            `json:"blocked_by,omitempty"`
+	RequesterSessionKey string              `json:"requester_session_key,omitempty"`
+	OwnerKey            string              `json:"owner_key,omitempty"`
+	ScopeKind           string              `json:"scope_kind,omitempty"`
+	Channel             string              `json:"channel,omitempty"`
+	ChatID              string              `json:"chat_id,omitempty"`
+	TopicID             string              `json:"topic_id,omitempty"`
+	AgentID             string              `json:"agent_id,omitempty"`
+	Label               string              `json:"label,omitempty"`
+	Task                string              `json:"task"`
+	Status              Status              `json:"status"`
+	DeliveryStatus      DeliveryStatus      `json:"delivery_status"`
+	NotifyPolicy        NotifyPolicy        `json:"notify_policy"`
+	DeliveryMode        string              `json:"delivery_mode,omitempty"`
+	LastCompletionID    string              `json:"last_completion_id,omitempty"`
+	DeliveredAt         int64               `json:"delivered_at,omitempty"`
+	DeliveryError       string              `json:"delivery_error,omitempty"`
+	CreatedAt           int64               `json:"created_at"`
+	StartedAt           int64               `json:"started_at,omitempty"`
+	EndedAt             int64               `json:"ended_at,omitempty"`
+	LastEventAt         int64               `json:"last_event_at,omitempty"`
+	CleanupAfter        int64               `json:"cleanup_after,omitempty"`
+	Error               string              `json:"error,omitempty"`
+	ProgressSummary     string              `json:"progress_summary,omitempty"`
+	TerminalSummary     string              `json:"terminal_summary,omitempty"`
+	Completion          *CompletionPayload  `json:"completion,omitempty"`
+	Deliverable         *DeliverablePayload `json:"deliverable,omitempty"`
 }
 
 type Options struct {
@@ -184,6 +207,19 @@ func (r *Registry) Upsert(rec Record) error {
 	if rec.Runtime == "" {
 		rec.Runtime = RuntimeTool
 	}
+	if rec.BoardID == "" {
+		if rec.ParentTaskID != "" {
+			rec.BoardID = rec.ParentTaskID
+		} else {
+			rec.BoardID = rec.TaskID
+		}
+	}
+	if rec.StepID == "" {
+		rec.StepID = rec.TaskID
+	}
+	if rec.Owner == "" {
+		rec.Owner = rec.AgentID
+	}
 	rec = r.normalizeRecord(rec, now)
 
 	r.mu.Lock()
@@ -243,6 +279,119 @@ func (r *Registry) List() []Record {
 		return out[i].TaskID < out[j].TaskID
 	})
 	return out
+}
+
+func (r *Registry) ListBoard(boardID string) []Record {
+	boardID = strings.TrimSpace(boardID)
+	if boardID == "" {
+		return nil
+	}
+	records := r.List()
+	out := make([]Record, 0)
+	for _, rec := range records {
+		if rec.BoardID == boardID {
+			out = append(out, rec)
+		}
+	}
+	return out
+}
+
+func (r *Registry) ListActive() []Record {
+	records := r.List()
+	out := make([]Record, 0)
+	for _, rec := range records {
+		if rec.Status == StatusQueued || rec.Status == StatusRunning {
+			out = append(out, rec)
+		}
+	}
+	return out
+}
+
+func (r *Registry) MarkStaleActiveLost(maxAge time.Duration, reason string) (int, error) {
+	if r == nil || maxAge <= 0 {
+		return 0, nil
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "active task did not report progress before stale timeout"
+	}
+	now := time.Now().UnixMilli()
+	staleBefore := now - int64(maxAge/time.Millisecond)
+	changed := 0
+
+	r.mu.Lock()
+	for id, rec := range r.records {
+		if rec.Status != StatusQueued && rec.Status != StatusRunning {
+			continue
+		}
+		ref := rec.LastEventAt
+		if ref == 0 {
+			ref = rec.StartedAt
+		}
+		if ref == 0 {
+			ref = rec.CreatedAt
+		}
+		if ref > 0 && ref > staleBefore {
+			continue
+		}
+		rec.Status = StatusLost
+		if !isFinalDeliveryStatus(rec.DeliveryStatus) {
+			rec.DeliveryStatus = DeliveryNotApplicable
+		}
+		rec.LastEventAt = now
+		rec.EndedAt = now
+		if strings.TrimSpace(rec.Error) == "" {
+			rec.Error = reason
+		}
+		rec = r.normalizeRecord(rec, now)
+		r.records[id] = rec
+		changed++
+	}
+	err := error(nil)
+	if changed > 0 {
+		r.pruneLocked(now)
+		err = r.saveLocked()
+	}
+	r.mu.Unlock()
+	return changed, err
+}
+
+func (r *Registry) MarkActiveLost(reason string) (int, error) {
+	if r == nil {
+		return 0, nil
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "active task owner is no longer alive"
+	}
+	now := time.Now().UnixMilli()
+	changed := 0
+
+	r.mu.Lock()
+	for id, rec := range r.records {
+		if rec.Status != StatusQueued && rec.Status != StatusRunning {
+			continue
+		}
+		rec.Status = StatusLost
+		if !isFinalDeliveryStatus(rec.DeliveryStatus) {
+			rec.DeliveryStatus = DeliveryNotApplicable
+		}
+		rec.LastEventAt = now
+		rec.EndedAt = now
+		if strings.TrimSpace(rec.Error) == "" {
+			rec.Error = reason
+		}
+		rec = r.normalizeRecord(rec, now)
+		r.records[id] = rec
+		changed++
+	}
+	err := error(nil)
+	if changed > 0 {
+		r.pruneLocked(now)
+		err = r.saveLocked()
+	}
+	r.mu.Unlock()
+	return changed, err
 }
 
 func (r *Registry) ListPendingTerminalDelivery() []Record {
@@ -335,6 +484,15 @@ func shouldPruneExpired(rec Record, now int64) bool {
 func isTerminalStatus(status Status) bool {
 	switch status {
 	case StatusSucceeded, StatusFailed, StatusTimedOut, StatusCancelled, StatusLost:
+		return true
+	default:
+		return false
+	}
+}
+
+func isFinalDeliveryStatus(status DeliveryStatus) bool {
+	switch status {
+	case DeliveryDelivered, DeliverySessionQueued, DeliveryFailed, DeliveryParentMissing, DeliveryNotApplicable:
 		return true
 	default:
 		return false

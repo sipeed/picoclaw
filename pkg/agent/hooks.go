@@ -910,6 +910,27 @@ func cloneToolResult(result *tools.ToolResult) *tools.ToolResult {
 	if len(result.ArtifactTags) > 0 {
 		cloned.ArtifactTags = append([]string(nil), result.ArtifactTags...)
 	}
+	if result.Completion != nil {
+		cloned.Completion = &tools.CompletionResult{
+			Text:  result.Completion.Text,
+			Media: append([]tools.CompletionMedia(nil), result.Completion.Media...),
+		}
+	}
+	if result.Deliverable != nil {
+		cloned.Deliverable = &tools.DeliverableResult{
+			Text: result.Deliverable.Text,
+			Artifacts: append(
+				[]tools.DeliverableItem(nil),
+				result.Deliverable.Artifacts...,
+			),
+		}
+		if len(result.Deliverable.Metadata) > 0 {
+			cloned.Deliverable.Metadata = make(map[string]string, len(result.Deliverable.Metadata))
+			for k, v := range result.Deliverable.Metadata {
+				cloned.Deliverable.Metadata[k] = v
+			}
+		}
+	}
 	if len(result.Messages) > 0 {
 		cloned.Messages = make([]providers.Message, len(result.Messages))
 		copy(cloned.Messages, result.Messages)

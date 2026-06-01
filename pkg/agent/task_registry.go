@@ -25,10 +25,12 @@ func (al *AgentLoop) taskRegistryForWorkspace(workspace string) *taskregistry.Re
 	actual, _ := al.taskRegistries.LoadOrStore(workspace, registry)
 	if stored, ok := actual.(*taskregistry.Registry); ok {
 		if stored == registry {
+			al.reconcileActiveTasksAfterRegistryRestore(workspace, stored)
 			al.reconcilePendingTerminalTaskDelivery(workspace, stored)
 		}
 		return stored
 	}
+	al.reconcileActiveTasksAfterRegistryRestore(workspace, registry)
 	al.reconcilePendingTerminalTaskDelivery(workspace, registry)
 	return registry
 }
@@ -122,4 +124,32 @@ func (al *AgentLoop) reconcilePendingTerminalTaskDelivery(workspace string, regi
 			"workspace": workspace,
 			"count":     len(pending),
 		})
+}
+
+func (al *AgentLoop) reconcileActiveTasksAfterRegistryRestore(workspace string, registry *taskregistry.Registry) {
+	if registry == nil {
+		return
+	}
+	active := registry.ListActive()
+	if len(active) == 0 {
+		return
+	}
+	reason := "task was still active when the runtime registry was restored; previous runtime owner is no longer alive"
+	count, err := registry.MarkActiveLost(reason)
+	if count == 0 {
+		return
+	}
+	logger.WarnCF("agent", "Reconciled active tasks from previous runtime as lost",
+		map[string]any{
+			"workspace": workspace,
+			"count":     count,
+			"error":     errString(err),
+		})
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

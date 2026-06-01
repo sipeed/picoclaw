@@ -19,6 +19,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/utils"
+	workspaceutil "github.com/sipeed/picoclaw/pkg/workspace"
 )
 
 type ContextBuilder struct {
@@ -140,6 +141,7 @@ func (cb *ContextBuilder) promptRegistryOrDefault() *PromptRegistry {
 
 func (cb *ContextBuilder) getIdentity(includeToolUseRule bool) string {
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
+	workspaceTmp := workspaceutil.TempDir(workspacePath)
 	version := config.FormatVersion()
 	rules := []string{}
 	if includeToolUseRule {
@@ -161,6 +163,7 @@ func (cb *ContextBuilder) getIdentity(includeToolUseRule bool) string {
 				"**Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md",
 				workspacePath,
 			),
+			"**Task boards** - For composite workflows that call multiple agents or run multiple child steps, use task_board to create one stable board_id and planned steps. Pass that board_id, stable step_id values, readable step_title values, and depends_on to every delegate/spawn call. For synchronous delegate steps that may stall, set timeout_seconds explicitly. Use task_board results or task_status with board_id to inspect the workflow.",
 		)
 	}
 	for i, rule := range rules {
@@ -177,6 +180,7 @@ Your workspace is at: %s
 - Memory: %s/memory/MEMORY.md
 - Daily Notes: %s/memory/YYYYMM/YYYYMMDD.md
 - Skills: %s/skills/{skill-name}/SKILL.md
+- Temporary files: %s
 
 ## Important Rules
 
@@ -187,6 +191,7 @@ Your workspace is at: %s
 		workspacePath,
 		workspacePath,
 		workspacePath,
+		workspaceTmp,
 		strings.Join(rules, "\n\n"),
 	)
 }

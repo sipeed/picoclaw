@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -51,32 +52,39 @@ func (t *DelegateTool) Description() string {
 	return "Delegate a task to another agent and wait for the result. " +
 		"Use this when another agent is better suited to handle a specific task " +
 		"based on their capabilities. The target agent runs with its own workspace, " +
-		"model, and tools."
+		"model, and tools. For multi-step workflows, create/inspect the workflow with task_board, " +
+		"then pass board_id and step metadata so related delegate/spawn runs appear together in task_board and task_status."
 }
 
 func (t *DelegateTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"agent_id": map[string]any{
-				"type":        "string",
-				"description": "The ID of the target agent to delegate the task to",
-			},
-			"task": map[string]any{
-				"type":        "string",
-				"description": "Clear description of the task to delegate",
-			},
-			"delivery_mode": map[string]any{
-				"type":        "string",
-				"description": "Optional sync result routing policy: parent_only, user_only, or user_and_parent. Defaults to parent_only.",
-				"enum": []string{
-					string(AsyncDeliveryParentOnly),
-					string(AsyncDeliveryUserOnly),
-					string(AsyncDeliveryUserAndParent),
-				},
+	props := map[string]any{
+		"agent_id": map[string]any{
+			"type":        "string",
+			"description": "The ID of the target agent to delegate the task to",
+		},
+		"task": map[string]any{
+			"type":        "string",
+			"description": "Clear description of the task to delegate",
+		},
+		"delivery_mode": map[string]any{
+			"type":        "string",
+			"description": "Optional sync result routing policy: parent_only, user_only, or user_and_parent. Defaults to parent_only.",
+			"enum": []string{
+				string(AsyncDeliveryParentOnly),
+				string(AsyncDeliveryUserOnly),
+				string(AsyncDeliveryUserAndParent),
 			},
 		},
-		"required": []string{"agent_id", "task"},
+		"timeout_seconds": map[string]any{
+			"type":        "number",
+			"description": "Optional maximum time to wait for this delegated child step. If omitted, the runtime subturn default is used.",
+		},
+	}
+	addTaskBoardMetadataParameters(props)
+	return map[string]any{
+		"type":       "object",
+		"properties": props,
+		"required":   []string{"agent_id", "task"},
 	}
 }
 
@@ -95,6 +103,14 @@ func (t *DelegateTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	if err != nil {
 		return ErrorResult(err.Error()).WithError(err)
 	}
+	boardMeta, err := parseTaskBoardMetadata(args)
+	if err != nil {
+		return ErrorResult(err.Error()).WithError(err)
+	}
+	timeout, err := parseOptionalTimeoutSeconds(args["timeout_seconds"])
+	if err != nil {
+		return ErrorResult(err.Error()).WithError(err)
+	}
 
 	if t.selfAgentID != "" && agentID == t.selfAgentID {
 		return ErrorResult("cannot delegate to self")
@@ -110,10 +126,11 @@ func (t *DelegateTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 
 	taskID := t.nextTaskID()
 	t.recordDelegateTask(
-		ctx, taskID, agentID, task, deliveryMode,
+		ctx, taskID, agentID, task, deliveryMode, boardMeta,
 		taskregistry.StatusRunning,
 		taskregistry.DeliveryPending,
 		"",
+		nil,
 		nil,
 	)
 	result, err := t.spawner.SpawnSubTurn(ctx, SubTurnConfig{
@@ -121,14 +138,20 @@ func (t *DelegateTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		SystemPrompt:  task,
 		Async:         false,
 		DeliveryMode:  deliveryMode,
+		Timeout:       timeout,
 	})
 	if err != nil {
 		msg := fmt.Sprintf("delegation to agent %q failed: %v", agentID, err)
+		status := taskregistry.StatusFailed
+		if errors.Is(err, context.DeadlineExceeded) {
+			status = taskregistry.StatusTimedOut
+		}
 		t.recordDelegateTask(
-			ctx, taskID, agentID, task, deliveryMode,
-			taskregistry.StatusFailed,
+			ctx, taskID, agentID, task, deliveryMode, boardMeta,
+			status,
 			taskregistry.DeliveryPending,
 			msg,
+			nil,
 			nil,
 		)
 		return ErrorResult(fmt.Sprintf("delegation to agent %q failed: %v", agentID, err)).WithError(err)
@@ -136,10 +159,11 @@ func (t *DelegateTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	if result == nil {
 		msg := fmt.Sprintf("delegation to agent %q returned no result", agentID)
 		t.recordDelegateTask(
-			ctx, taskID, agentID, task, deliveryMode,
+			ctx, taskID, agentID, task, deliveryMode, boardMeta,
 			taskregistry.StatusFailed,
 			taskregistry.DeliveryPending,
 			msg,
+			nil,
 			nil,
 		)
 		return ErrorResult(fmt.Sprintf("delegation to agent %q returned no result", agentID))
@@ -151,11 +175,12 @@ func (t *DelegateTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		result.ResponseHandled = true
 	}
 	t.recordDelegateTask(
-		ctx, taskID, agentID, task, deliveryMode,
+		ctx, taskID, agentID, task, deliveryMode, boardMeta,
 		taskregistry.StatusSucceeded,
 		delegateDeliveryStatus(result, deliveryMode),
 		result.ContentForLLM(),
 		completionPayloadForTaskRegistry(result),
+		deliverablePayloadForTaskRegistry(result),
 	)
 
 	return result
@@ -170,10 +195,12 @@ func (t *DelegateTool) recordDelegateTask(
 	ctx context.Context,
 	taskID, agentID, task string,
 	deliveryMode AsyncDeliveryMode,
+	boardMeta TaskBoardMetadata,
 	status taskregistry.Status,
 	delivery taskregistry.DeliveryStatus,
 	summary string,
 	completion *taskregistry.CompletionPayload,
+	deliverable *taskregistry.DeliverablePayload,
 ) {
 	if t == nil || t.taskRegistry == nil || taskID == "" {
 		return
@@ -198,7 +225,9 @@ func (t *DelegateTool) recordDelegateTask(
 		LastEventAt:         now,
 		TerminalSummary:     summary,
 		Completion:          completion,
+		Deliverable:         deliverable,
 	}
+	applyTaskBoardMetadata(&rec, boardMeta)
 	if status == taskregistry.StatusRunning {
 		rec.CreatedAt = now
 		rec.StartedAt = now
@@ -206,7 +235,7 @@ func (t *DelegateTool) recordDelegateTask(
 		rec.CreatedAt = existing.CreatedAt
 		rec.StartedAt = existing.StartedAt
 	}
-	if status == taskregistry.StatusFailed {
+	if status == taskregistry.StatusFailed || status == taskregistry.StatusTimedOut {
 		rec.Error = summary
 	}
 	_ = t.taskRegistry.Upsert(rec)
@@ -247,4 +276,27 @@ func parseDelegateDeliveryMode(raw any) (AsyncDeliveryMode, error) {
 	default:
 		return "", fmt.Errorf("delivery_mode must be one of: parent_only, user_only, user_and_parent")
 	}
+}
+
+func parseOptionalTimeoutSeconds(raw any) (time.Duration, error) {
+	if raw == nil {
+		return 0, nil
+	}
+	var seconds float64
+	switch v := raw.(type) {
+	case int:
+		seconds = float64(v)
+	case int64:
+		seconds = float64(v)
+	case float64:
+		seconds = v
+	case float32:
+		seconds = float64(v)
+	default:
+		return 0, fmt.Errorf("timeout_seconds must be a positive number")
+	}
+	if seconds <= 0 {
+		return 0, fmt.Errorf("timeout_seconds must be a positive number")
+	}
+	return time.Duration(seconds * float64(time.Second)), nil
 }

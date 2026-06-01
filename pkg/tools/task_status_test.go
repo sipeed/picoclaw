@@ -16,6 +16,13 @@ func TestTaskStatusTool_ListsVisibleRecords(t *testing.T) {
 		TaskID:         "delegate-1",
 		Runtime:        taskregistry.RuntimeDelegate,
 		TaskKind:       "delegate",
+		BoardID:        "board-1",
+		ParentTaskID:   "root-1",
+		StepID:         "download",
+		StepTitle:      "Download media",
+		Owner:          "media",
+		DependsOn:      []string{"root-1"},
+		BlockedBy:      []string{"caption"},
 		Channel:        "telegram",
 		ChatID:         "chat-1",
 		TopicID:        "topic-1",
@@ -27,6 +34,13 @@ func TestTaskStatusTool_ListsVisibleRecords(t *testing.T) {
 		CreatedAt:      now,
 		StartedAt:      now,
 		EndedAt:        now,
+		Deliverable: &taskregistry.DeliverablePayload{
+			Text: "video downloaded",
+			Artifacts: []taskregistry.DeliverableItem{{
+				Ref:  "media://video",
+				Kind: "video",
+			}},
+		},
 	}); err != nil {
 		t.Fatalf("Upsert(delegate) error = %v", err)
 	}
@@ -55,6 +69,11 @@ func TestTaskStatusTool_ListsVisibleRecords(t *testing.T) {
 		"delegate-1",
 		"delegate/delegate",
 		"Agent: media",
+		"Board: board_id=board-1 parent=root-1 owner=media",
+		"Step: Download media (download)",
+		"Depends on: root-1",
+		"Blocked by: caption",
+		"Deliverable: text=true artifacts=1",
 		"Scope: telegram/chat-1 topic=topic-1",
 	} {
 		if !strings.Contains(result.ForLLM, want) {
@@ -187,6 +206,47 @@ func TestTaskStatusTool_TaskKindFilter(t *testing.T) {
 	}
 	if strings.Contains(result.ForLLM, "subagent-1") {
 		t.Fatalf("spawn record leaked through delegate filter:\n%s", result.ForLLM)
+	}
+}
+
+func TestTaskStatusTool_BoardIDFilter(t *testing.T) {
+	registry := taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(t.TempDir()))
+	for _, rec := range []taskregistry.Record{
+		{
+			TaskID:         "board-a-step-1",
+			Runtime:        taskregistry.RuntimeDelegate,
+			TaskKind:       "delegate",
+			BoardID:        "board-a",
+			Task:           "step 1",
+			Status:         taskregistry.StatusSucceeded,
+			DeliveryStatus: taskregistry.DeliverySessionQueued,
+		},
+		{
+			TaskID:         "board-b-step-1",
+			Runtime:        taskregistry.RuntimeDelegate,
+			TaskKind:       "delegate",
+			BoardID:        "board-b",
+			Task:           "step 1",
+			Status:         taskregistry.StatusSucceeded,
+			DeliveryStatus: taskregistry.DeliverySessionQueued,
+		},
+	} {
+		if err := registry.Upsert(rec); err != nil {
+			t.Fatalf("Upsert(%s) error = %v", rec.TaskID, err)
+		}
+	}
+
+	tool := NewTaskStatusTool(registry)
+	result := tool.Execute(context.Background(), map[string]any{"board_id": "board-a"})
+
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "board-a-step-1") {
+		t.Fatalf("expected board-a record:\n%s", result.ForLLM)
+	}
+	if strings.Contains(result.ForLLM, "board-b-step-1") {
+		t.Fatalf("board-b record leaked through board filter:\n%s", result.ForLLM)
 	}
 }
 

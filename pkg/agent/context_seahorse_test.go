@@ -596,6 +596,53 @@ func TestSeahorseCompactRetryUsesCompactUntilUnder(t *testing.T) {
 	_ = result.Summary
 }
 
+func TestSeahorseCompactProactiveDoesNotForceCompactUntilUnder(t *testing.T) {
+	engine, err := seahorse.NewEngine(seahorse.Config{
+		DBPath: t.TempDir() + "/test.db",
+	}, func(ctx context.Context, prompt string, opts seahorse.CompleteOptions) (string, error) {
+		return "compact summary", nil
+	})
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	defer engine.Close()
+
+	mgr := &seahorseContextManager{engine: engine}
+	ctx := context.Background()
+
+	// Keep all source messages within the default protected fresh tail. A
+	// non-forced one-shot Compact would not summarize this session because only
+	// the oldest few messages are outside FreshTailCount, below LeafMinFanout.
+	for i := 0; i < seahorse.FreshTailCount+4; i++ {
+		_ = mgr.Ingest(ctx, &IngestRequest{
+			SessionKey: "proactive-compact-test",
+			Message: protocoltypes.Message{
+				Role:    "user",
+				Content: fmt.Sprintf("fresh tail message %d with enough text to matter", i),
+			},
+		})
+	}
+
+	if err := mgr.Compact(ctx, &CompactRequest{
+		SessionKey: "proactive-compact-test",
+		Reason:     ContextCompressReasonProactive,
+		Budget:     500,
+	}); err != nil {
+		t.Fatalf("Compact proactive: %v", err)
+	}
+
+	result, err := engine.Assemble(ctx, "proactive-compact-test", seahorse.AssembleInput{Budget: 50000})
+	if err != nil {
+		t.Fatalf("Assemble after proactive compact: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil assemble result")
+	}
+	if strings.Contains(result.Summary, "compact summary") {
+		t.Fatalf("proactive compact should not force fresh-tail summarization, got summary %q", result.Summary)
+	}
+}
+
 // TestSeahorseRealLoopNoDuplicateMessages tests the real-world scenario:
 // 1. Start AgentLoop with seahorse context manager
 // 2. Run a turn (user message -> LLM response)

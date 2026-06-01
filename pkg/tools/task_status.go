@@ -10,6 +10,8 @@ import (
 	taskregistry "github.com/sipeed/picoclaw/pkg/tasks"
 )
 
+const taskStatusActiveStaleAfter = 30 * time.Minute
+
 // TaskStatusTool reports durable runtime task/run records across spawn,
 // delegate, cron, and future background runtimes.
 type TaskStatusTool struct {
@@ -43,6 +45,10 @@ func (t *TaskStatusTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Optional task kind filter, e.g. spawn or delegate.",
 			},
+			"board_id": map[string]any{
+				"type":        "string",
+				"description": "Optional task board/workflow ID. Use this to inspect all steps belonging to one durable workflow.",
+			},
 		},
 		"required": []string{},
 	}
@@ -52,11 +58,21 @@ func (t *TaskStatusTool) Execute(ctx context.Context, args map[string]any) *Tool
 	if t == nil || t.registry == nil {
 		return ErrorResult("task registry not configured")
 	}
+	if _, err := t.registry.MarkStaleActiveLost(
+		taskStatusActiveStaleAfter,
+		"active task did not report progress before task_status stale timeout",
+	); err != nil {
+		return ErrorResult(fmt.Sprintf("failed to reconcile stale active tasks: %v", err)).WithError(err)
+	}
 	taskID, err := optionalTaskStatusStringArg(args, "task_id")
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
 	taskKind, err := optionalTaskStatusStringArg(args, "task_kind")
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	boardID, err := optionalTaskStatusStringArg(args, "board_id")
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
@@ -78,12 +94,18 @@ func (t *TaskStatusTool) Execute(ctx context.Context, args map[string]any) *Tool
 		if taskKind != "" && rec.TaskKind != taskKind {
 			continue
 		}
+		if boardID != "" && rec.BoardID != boardID {
+			continue
+		}
 		if !taskRecordVisibleToCaller(rec, callerChannel, callerChatID, callerTopicID) {
 			continue
 		}
 		filtered = append(filtered, rec)
 	}
 	if len(filtered) == 0 {
+		if boardID != "" {
+			return NewToolResult(fmt.Sprintf("No visible tasks found for board_id %q.", boardID))
+		}
 		if taskKind != "" {
 			return NewToolResult(fmt.Sprintf("No visible tasks found for task_kind %q.", taskKind))
 		}
@@ -105,6 +127,7 @@ func (t *TaskStatusTool) Execute(ctx context.Context, args map[string]any) *Tool
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Task status report (%d total):\n", len(filtered)))
 	for _, status := range []taskregistry.Status{
+		taskregistry.StatusPlanned,
 		taskregistry.StatusQueued,
 		taskregistry.StatusRunning,
 		taskregistry.StatusSucceeded,
@@ -162,6 +185,32 @@ func formatTaskRecord(rec taskregistry.Record) string {
 	if rec.AgentID != "" {
 		sb.WriteString(fmt.Sprintf("  Agent: %s\n", rec.AgentID))
 	}
+	if rec.BoardID != "" || rec.ParentTaskID != "" || rec.Owner != "" {
+		sb.WriteString("  Board:")
+		if rec.BoardID != "" {
+			sb.WriteString(fmt.Sprintf(" board_id=%s", rec.BoardID))
+		}
+		if rec.ParentTaskID != "" {
+			sb.WriteString(fmt.Sprintf(" parent=%s", rec.ParentTaskID))
+		}
+		if rec.Owner != "" {
+			sb.WriteString(fmt.Sprintf(" owner=%s", rec.Owner))
+		}
+		sb.WriteString("\n")
+	}
+	if rec.StepTitle != "" {
+		sb.WriteString(fmt.Sprintf("  Step: %s", rec.StepTitle))
+		if rec.StepID != "" && rec.StepID != rec.TaskID {
+			sb.WriteString(fmt.Sprintf(" (%s)", rec.StepID))
+		}
+		sb.WriteString("\n")
+	}
+	if len(rec.DependsOn) > 0 {
+		sb.WriteString(fmt.Sprintf("  Depends on: %s\n", strings.Join(rec.DependsOn, ", ")))
+	}
+	if len(rec.BlockedBy) > 0 {
+		sb.WriteString(fmt.Sprintf("  Blocked by: %s\n", strings.Join(rec.BlockedBy, ", ")))
+	}
 	if rec.Channel != "" || rec.ChatID != "" || rec.TopicID != "" {
 		sb.WriteString(fmt.Sprintf("  Scope: %s/%s", rec.Channel, rec.ChatID))
 		if rec.TopicID != "" {
@@ -184,8 +233,11 @@ func formatTaskRecord(rec taskregistry.Record) string {
 	if rec.Error != "" {
 		sb.WriteString(fmt.Sprintf("  Error: %s\n", truncateTaskText(rec.Error, 500)))
 	}
-	if rec.Completion != nil {
-		sb.WriteString(fmt.Sprintf("  Completion: text=%t media=%d\n", rec.Completion.Text != "", len(rec.Completion.Media)))
+	if rec.Deliverable != nil {
+		sb.WriteString(fmt.Sprintf("  Deliverable: text=%t artifacts=%d\n", rec.Deliverable.Text != "", len(rec.Deliverable.Artifacts)))
+	}
+	if rec.Completion != nil && rec.Deliverable == nil {
+		sb.WriteString(fmt.Sprintf("  Legacy completion: text=%t media=%d\n", rec.Completion.Text != "", len(rec.Completion.Media)))
 	}
 	return strings.TrimRight(sb.String(), "\n")
 }

@@ -9,9 +9,65 @@ PicoClaw background work now uses an explicit task/completion/delivery shape:
 5. Parent synthesis calls `processAsyncCompletion` directly. It must not publish a synthetic `system` inbound message.
 6. The task registry records delivery status, completion id, delivery timestamp, and delivery error if one occurs.
 
+## Deliverables
+
+`ToolResult` separates three output channels:
+
+- `ForLLM`: context for the model.
+- `ForUser`: text that may be sent directly to the user.
+- `Deliverable`: the actual produced result/artifacts.
+
+`Deliverable` is the ownership payload for durable task state. It should describe
+what was produced, for example a downloaded media ref, a generated file path, or
+extracted text. It must not depend on the wording of the final chat response.
+
+Legacy child-run `Completion` remains supported and is mirrored into
+`Deliverable` when possible.
+
+New status/API consumers should treat `Deliverable` as the source of truth for
+produced text and artifacts. `Completion` is a legacy child-run handoff payload
+and should not be extended with new artifact semantics.
+
+Migration TODO:
+
+- Stop showing `Completion` in user-facing status output when `Deliverable` is present.
+- Convert remaining child-run producers to write `Deliverable` directly.
+- Keep reading legacy `Completion` only as an adapter for old records.
+- Remove `Completion` from public API/storage after all producers and persisted
+  records have migrated.
+
+## Task Boards
+
+The task registry also carries lightweight task-board metadata:
+
+- `board_id`: workflow/group id for all related steps.
+- `parent_task_id`: parent/root task when a step belongs to a larger workflow.
+- `step_id` / `step_title`: stable step identity and readable title.
+- `owner`: agent/runtime responsible for the step.
+- `depends_on` / `blocked_by`: dependency and blocker ids.
+
+This is intentionally built on the existing durable registry rather than a
+separate planner store. The registry remains the low-level run ledger, while the
+board fields let agents inspect a composite workflow as one operational plan.
+
+`delegate` and `spawn` expose these board fields as optional parameters. For a
+composite workflow, the orchestrating agent should choose one `board_id` and
+create it with `task_board`, add planned child steps, then pass the shared
+`board_id` to each `delegate`/`spawn` child run with a stable `step_id`,
+readable `step_title`, and `depends_on` when ordering matters.
+
+Synchronous `delegate` steps also accept `timeout_seconds`. Use it for child
+steps that can block the parent workflow, especially when a later step depends
+on their result.
+
 ## Status Tools
 
 Use `task_status` for durable task history across spawn, delegate, cron executions, and future background runtimes. It is the source of truth for completed tasks and restart-persistent state.
+
+Use `task_board {"action":"list","board_id":"..."}` to inspect the planned and
+executed records for one workflow. Use `task_board {"action":"results",...}` to
+read durable deliverables produced by completed child runs. `task_status
+{"board_id":"..."}` remains the lower-level status view over the same records.
 
 `spawn_status` is kept as a compatibility/debug view for tasks started specifically by the `spawn` tool. It is backed by the same durable registry but intentionally remains spawn-only.
 

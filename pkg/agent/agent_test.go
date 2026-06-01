@@ -6648,6 +6648,38 @@ func TestResolveMediaRefs_PassesThroughNonMediaRefs(t *testing.T) {
 	}
 }
 
+func TestResolveMediaRefs_StaleMediaRefMarksPlaceholderUnavailable(t *testing.T) {
+	store := media.NewFileMediaStore()
+	messages := []providers.Message{
+		{Role: "user", Content: "look [image: photo 1]", Media: []string{"media://missing"}},
+	}
+
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected stale media ref to be dropped, got %v", result[0].Media)
+	}
+	if result[0].Content != "look [media unavailable]" {
+		t.Fatalf("content = %q, want unavailable placeholder", result[0].Content)
+	}
+}
+
+func TestResolveMediaRefs_StaleMediaRefWithoutPlaceholderOnlyDropsMedia(t *testing.T) {
+	store := media.NewFileMediaStore()
+	messages := []providers.Message{
+		{Role: "user", Content: "look at this", Media: []string{"media://missing"}},
+	}
+
+	result := resolveMediaRefs(messages, store, config.DefaultMaxMediaSize)
+
+	if len(result[0].Media) != 0 {
+		t.Fatalf("expected stale media ref to be dropped, got %v", result[0].Media)
+	}
+	if result[0].Content != "look at this" {
+		t.Fatalf("content = %q, want original content unchanged", result[0].Content)
+	}
+}
+
 func TestResolveMediaRefs_DoesNotMutateOriginal(t *testing.T) {
 	store := media.NewFileMediaStore()
 	dir := t.TempDir()

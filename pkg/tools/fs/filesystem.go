@@ -882,7 +882,7 @@ func (t *WriteFileTool) Name() string {
 }
 
 func (t *WriteFileTool) Description() string {
-	return "Write content to a file. Content is written byte-for-byte after argument decoding. Standard JSON escaping applies: \\n for newline and \\\\n for a literal backslash-n sequence. If the file already exists, you must set overwrite=true to replace it."
+	return "Write content to a file. Content is written byte-for-byte after argument decoding. Standard JSON escaping applies: \\n for newline and \\\\n for a literal backslash-n sequence. If the file already exists, you must set overwrite=true to replace it. For temporary scripts, drafts, and scratch files, write under the workspace tmp/ directory instead of creating tmp_* files in the workspace root."
 }
 
 func (t *WriteFileTool) Parameters() map[string]any {

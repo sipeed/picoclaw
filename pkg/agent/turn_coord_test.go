@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -246,6 +247,37 @@ func (s *saveFailingSessionStore) Save(_ string) error {
 	return s.err
 }
 
+type blockingCompactContextManager struct {
+	history        []providers.Message
+	compactStarted chan struct{}
+	releaseCompact chan struct{}
+	startOnce      sync.Once
+}
+
+func (m *blockingCompactContextManager) Assemble(_ context.Context, _ *AssembleRequest) (*AssembleResponse, error) {
+	return &AssembleResponse{History: append([]providers.Message(nil), m.history...)}, nil
+}
+
+func (m *blockingCompactContextManager) Compact(ctx context.Context, _ *CompactRequest) error {
+	m.startOnce.Do(func() {
+		close(m.compactStarted)
+	})
+	select {
+	case <-m.releaseCompact:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (m *blockingCompactContextManager) Ingest(_ context.Context, _ *IngestRequest) error {
+	return nil
+}
+
+func (m *blockingCompactContextManager) Clear(_ context.Context, _ string) error {
+	return nil
+}
+
 // =============================================================================
 // Pipeline Method Tests: SetupTurn
 // =============================================================================
@@ -272,6 +304,57 @@ func TestPipeline_SetupTurn_BasicInitialization(t *testing.T) {
 	}
 	if exec.iteration != 0 {
 		t.Errorf("expected iteration 0, got %d", exec.iteration)
+	}
+}
+
+func TestPipeline_SetupTurn_ProactiveCompactionDoesNotBlockResponsePath(t *testing.T) {
+	al, agent, cleanup := newTurnCoordTestLoop(t, &simpleConvProvider{})
+	defer cleanup()
+
+	agent.ContextWindow = 60000
+	agent.MaxTokens = 1
+
+	history := make([]providers.Message, 0, 80)
+	for i := 0; i < 80; i++ {
+		history = append(history, providers.Message{
+			Role:    "user",
+			Content: strings.Repeat("large history message ", 2000),
+		})
+	}
+	cm := &blockingCompactContextManager{
+		history:        history,
+		compactStarted: make(chan struct{}),
+		releaseCompact: make(chan struct{}),
+	}
+	al.contextManager = cm
+	defer close(cm.releaseCompact)
+
+	pipeline := NewPipeline(al)
+	opts := normalizeProcessOptions(makeTestProcessOpts("test-session-pressure"))
+	ts := newTurnState(agent, opts, turnEventScope{
+		turnID:  "turn-pressure",
+		context: newTurnContext(nil, nil, nil),
+	})
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := pipeline.SetupTurn(context.Background(), ts)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("SetupTurn failed: %v", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("SetupTurn blocked on proactive compaction")
+	}
+
+	select {
+	case <-cm.compactStarted:
+	case <-time.After(1 * time.Second):
+		t.Fatal("timed out waiting for proactive background compaction")
 	}
 }
 

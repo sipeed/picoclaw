@@ -16,6 +16,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
+const contextOverflowCompactTimeout = 45 * time.Second
+
 // CallLLM performs an LLM call with fallback support, hook invocation, and retry logic.
 // It handles PreLLM setup, the actual LLM invocation with retry, and AfterLLM processing.
 // Returns Control indicating what the coordinator should do next.
@@ -391,17 +393,6 @@ func (p *Pipeline) CallLLM(
 				))
 			}
 
-			if compactErr := p.ContextManager.Compact(ctx, &CompactRequest{
-				SessionKey: ts.sessionKey,
-				Reason:     ContextCompressReasonRetry,
-				Budget:     ts.agent.ContextWindow,
-			}); compactErr != nil {
-				logger.WarnCF("agent", "Context overflow compact failed", map[string]any{
-					"session_key": ts.sessionKey,
-					"error":       compactErr.Error(),
-				})
-			}
-			ts.refreshRestorePointFromSession(ts.agent)
 			contextualSkills := ts.activeSkills
 			if ts.agent.ContextBuilder != nil {
 				contextualSkills = ts.agent.ContextBuilder.ResolveActiveSkillsForContext(ts.activeSkills)
@@ -412,6 +403,25 @@ func (p *Pipeline) CallLLM(
 				exec.providerToolDefs,
 				p.Cfg.Agents.Defaults.GetMaxMediaSize(),
 			)
+			compactBudget := effectiveHistoryBudget(
+				ts.agent.ContextWindow,
+				ts.agent.MaxTokens,
+				reserveTokens,
+			)
+			compactCtx, compactCancel := context.WithTimeout(ctx, contextOverflowCompactTimeout)
+			if compactErr := p.ContextManager.Compact(compactCtx, &CompactRequest{
+				SessionKey: ts.sessionKey,
+				Reason:     ContextCompressReasonRetry,
+				Budget:     compactBudget,
+			}); compactErr != nil {
+				logger.WarnCF("agent", "Context overflow compact failed", map[string]any{
+					"session_key": ts.sessionKey,
+					"timeout_ms":  contextOverflowCompactTimeout.Milliseconds(),
+					"error":       compactErr.Error(),
+				})
+			}
+			compactCancel()
+			ts.refreshRestorePointFromSession(ts.agent)
 			if asmResp, asmErr := p.ContextManager.Assemble(ctx, &AssembleRequest{
 				SessionKey:    ts.sessionKey,
 				Budget:        ts.agent.ContextWindow,

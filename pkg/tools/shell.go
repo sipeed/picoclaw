@@ -22,6 +22,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/isolation"
+	workspaceutil "github.com/sipeed/picoclaw/pkg/workspace"
 )
 
 var (
@@ -45,6 +46,7 @@ type ExecTool struct {
 	restrictToWorkspace bool
 	allowRemote         bool
 	sessionManager      *SessionManager
+	workspaceTempDir    string
 }
 
 var (
@@ -257,6 +259,11 @@ func NewExecToolWithConfig(
 		timeout = time.Duration(cfg.Tools.Exec.TimeoutSeconds) * time.Second
 	}
 
+	workspaceTempDir, err := workspaceutil.EnsureTempDir(workingDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create workspace tmp directory: %w", err)
+	}
+
 	return &ExecTool{
 		workingDir:          workingDir,
 		timeout:             timeout,
@@ -267,6 +274,7 @@ func NewExecToolWithConfig(
 		restrictToWorkspace: restrict,
 		allowRemote:         allowRemote,
 		sessionManager:      getSessionManager(),
+		workspaceTempDir:    workspaceTempDir,
 	}, nil
 }
 
@@ -313,7 +321,7 @@ func (t *ExecTool) Parameters() map[string]any {
 			},
 			"cwd": map[string]any{
 				"type":        "string",
-				"description": "Working directory for the command",
+				"description": "Working directory for the command. For temporary scripts, drafts, and scratch files, prefer $PICOCLAW_WORKSPACE_TMP instead of creating tmp_* files in the workspace root.",
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
@@ -467,6 +475,7 @@ func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult
 		"PICOCLAW_TOOL_TOPIC_ID="+ToolTopicID(ctx),
 		"PICOCLAW_TOOL_MESSAGE_ID="+ToolMessageID(ctx),
 		"PICOCLAW_TOOL_REPLY_TO_MESSAGE_ID="+ToolReplyToMessageID(ctx),
+		"PICOCLAW_WORKSPACE_TMP="+t.workspaceTempDir,
 	)
 
 	prepareCommandForTermination(cmd)
@@ -630,6 +639,7 @@ func (t *ExecTool) runBackground(ctx context.Context, command, cwd string, ptyEn
 		"PICOCLAW_TOOL_TOPIC_ID="+ToolTopicID(ctx),
 		"PICOCLAW_TOOL_MESSAGE_ID="+ToolMessageID(ctx),
 		"PICOCLAW_TOOL_REPLY_TO_MESSAGE_ID="+ToolReplyToMessageID(ctx),
+		"PICOCLAW_WORKSPACE_TMP="+t.workspaceTempDir,
 	)
 
 	prepareCommandForTermination(cmd)

@@ -79,17 +79,25 @@ func (a *Assembler) Assemble(ctx context.Context, convID int64, input AssembleIn
 		freshTailTokens += r.tokenCount
 	}
 
+	freshTailBudget := input.Budget
+	if maxFreshTailTokens := a.freshTailMaxTokens(); maxFreshTailTokens > 0 &&
+		maxFreshTailTokens < freshTailBudget {
+		freshTailBudget = maxFreshTailTokens
+	}
+
 	// If the protected tail alone exceeds budget, trim from the oldest end at
 	// provider-safe boundaries. The rebuild path later sanitizes leading
 	// assistant(tool_calls)/tool messages, so splitting the active turn here can
 	// silently discard the very context we are trying to protect.
-	if freshTailTokens > input.Budget {
+	if freshTailTokens > freshTailBudget {
 		originalTailCount := len(freshTail)
 		originalFreshTailTokens := freshTailTokens
 		var preservedActiveTurn bool
-		freshTail, freshTailTokens, preservedActiveTurn = trimFreshTailToSafeBudget(freshTail, input.Budget)
+		freshTail, freshTailTokens, preservedActiveTurn = trimFreshTailToSafeBudget(freshTail, freshTailBudget)
 		logFields := map[string]any{
 			"budget":                input.Budget,
+			"fresh_tail_budget":     freshTailBudget,
+			"fresh_tail_max_tokens": a.freshTailMaxTokens(),
 			"fresh_tail_tokens":     freshTailTokens,
 			"fresh_tail_count":      len(freshTail),
 			"trimmed_fresh_items":   originalTailCount - len(freshTail),
@@ -352,6 +360,16 @@ func messageHasToolUse(msg *Message) bool {
 		}
 	}
 	return false
+}
+
+func (a *Assembler) freshTailMaxTokens() int {
+	if a == nil {
+		return FreshTailMaxTokens
+	}
+	if a.config.FreshTailMaxTokens != 0 {
+		return a.config.FreshTailMaxTokens
+	}
+	return FreshTailMaxTokens
 }
 
 // resolveItem loads the full message or summary for a context item.

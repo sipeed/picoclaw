@@ -21,6 +21,7 @@ type Config struct {
 	DBPath                   string   `json:"dbPath"`
 	IgnoreSessionPatterns    []string `json:"ignoreSessionPatterns,omitempty"`
 	StatelessSessionPatterns []string `json:"statelessSessionPatterns,omitempty"`
+	FreshTailMaxTokens       int      `json:"freshTailMaxTokens,omitempty"`
 }
 
 // CompleteFn is the LLM completion function type.

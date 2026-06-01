@@ -61,36 +61,38 @@ func (t *SpawnTool) Name() string {
 }
 
 func (t *SpawnTool) Description() string {
-	return "Spawn a subagent to handle a task in the background. Use this for complex or time-consuming tasks that can run independently. The subagent will complete the task and report back when done. Optional delivery_mode controls whether the final async result goes to the user, the parent agent, or both."
+	return "Spawn a subagent to handle a task in the background. Use this for complex or time-consuming tasks that can run independently. The subagent will complete the task and report back when done. Optional delivery_mode controls whether the final async result goes to the user, the parent agent, or both. For multi-step workflows, create/inspect the workflow with task_board, then pass board_id and step metadata so related delegate/spawn runs appear together in task_board and task_status."
 }
 
 func (t *SpawnTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"task": map[string]any{
-				"type":        "string",
-				"description": "The task for subagent to complete",
-			},
-			"label": map[string]any{
-				"type":        "string",
-				"description": "Optional short label for the task (for display)",
-			},
-			"agent_id": map[string]any{
-				"type":        "string",
-				"description": "Optional target agent ID to delegate the task to",
-			},
-			"delivery_mode": map[string]any{
-				"type":        "string",
-				"description": "Optional async result routing policy: user_only, parent_only, or user_and_parent. Defaults to user_only.",
-				"enum": []string{
-					string(AsyncDeliveryUserOnly),
-					string(AsyncDeliveryParentOnly),
-					string(AsyncDeliveryUserAndParent),
-				},
+	props := map[string]any{
+		"task": map[string]any{
+			"type":        "string",
+			"description": "The task for subagent to complete",
+		},
+		"label": map[string]any{
+			"type":        "string",
+			"description": "Optional short label for the task (for display)",
+		},
+		"agent_id": map[string]any{
+			"type":        "string",
+			"description": "Optional target agent ID to delegate the task to",
+		},
+		"delivery_mode": map[string]any{
+			"type":        "string",
+			"description": "Optional async result routing policy: user_only, parent_only, or user_and_parent. Defaults to user_only.",
+			"enum": []string{
+				string(AsyncDeliveryUserOnly),
+				string(AsyncDeliveryParentOnly),
+				string(AsyncDeliveryUserAndParent),
 			},
 		},
-		"required": []string{"task"},
+	}
+	addTaskBoardMetadataParameters(props)
+	return map[string]any{
+		"type":       "object",
+		"properties": props,
+		"required":   []string{"task"},
 	}
 }
 
@@ -129,6 +131,10 @@ func (t *SpawnTool) execute(
 	if err != nil {
 		return ErrorResult(err.Error()).WithError(err)
 	}
+	boardMeta, err := parseTaskBoardMetadata(args)
+	if err != nil {
+		return ErrorResult(err.Error()).WithError(err)
+	}
 
 	// Check allowlist if targeting a specific agent
 	if targetAgentID != "" && t.allowlistCheck != nil {
@@ -157,6 +163,7 @@ func (t *SpawnTool) execute(
 			ToolChannel(ctx),
 			ToolChatID(ctx),
 			wrappedCallback,
+			boardMeta,
 		)
 		if err != nil {
 			return ErrorResult(fmt.Sprintf("Spawn failed: %v", err)).WithError(err)

@@ -29,6 +29,7 @@ var (
 	audioPlaceholderRegex = regexp.MustCompile(`\[audio(:\s+[^\]]*)?\]`)
 	videoPlaceholderRegex = regexp.MustCompile(`\[video(:\s+[^\]]*)?\]`)
 	filePlaceholderRegex  = regexp.MustCompile(`\[file(:\s+[^\]]*)?\]`)
+	mediaPlaceholderRegex = regexp.MustCompile(`\[(image|audio|video|file)(:\s+[^\]]*)?\]`)
 )
 
 // resolveMediaRefs resolves media:// refs in messages.
@@ -76,6 +77,7 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxS
 		msg := m
 		resolved := make([]string, 0, len(m.Media))
 		var pathTags []string
+		unresolvedRefs := 0
 
 		for _, ref := range m.Media {
 			if !strings.HasPrefix(ref, "media://") {
@@ -85,7 +87,8 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxS
 
 			localPath, meta, err := store.ResolveWithMeta(ref)
 			if err != nil {
-				logger.WarnCF("agent", "Failed to resolve media ref", map[string]any{
+				unresolvedRefs++
+				logger.DebugCF("agent", "Dropping stale media ref", map[string]any{
 					"ref":   ref,
 					"error": err.Error(),
 				})
@@ -115,6 +118,8 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxS
 		msg.Media = resolved
 		if len(pathTags) > 0 {
 			msg.Content = injectPathTags(msg.Content, pathTags)
+		} else if unresolvedRefs > 0 {
+			msg.Content = markUnavailableMediaPlaceholders(msg.Content)
 		}
 		result = append(result, msg)
 
@@ -130,6 +135,10 @@ func resolveMediaRefs(messages []providers.Message, store media.MediaStore, maxS
 	}
 
 	return result
+}
+
+func markUnavailableMediaPlaceholders(content string) string {
+	return mediaPlaceholderRegex.ReplaceAllString(content, "[media unavailable]")
 }
 
 // encodeImageToDataURL base64-encodes an image file into a data URL.
