@@ -57,9 +57,15 @@ func computeContextUsage(agent *AgentInstance, sessionKey string) *bus.ContextUs
 		effectiveWindow = contextWindow
 	}
 
-	// compressAt = effectiveWindow: aligns with isOverContextBudget's
-	// proactive trigger (msgTokens + toolTokens + maxTokens > contextWindow).
-	compressAt := effectiveWindow
+	// compressAt = effectiveWindow * summarizeTokenPercent / 100
+	// This ensures compression triggers at the configured percentage of the context window.
+	// Fixes issue #2968 where CompressAtTokens was always showing 76800 (default effectiveWindow)
+	// regardless of the summarize_token_percent configuration.
+	summarizeTokenPercent := agent.SummarizeTokenPercent
+	if summarizeTokenPercent <= 0 {
+		summarizeTokenPercent = 75 // default fallback
+	}
+	compressAt := effectiveWindow * summarizeTokenPercent / 100
 
 	usedPercent := 0
 	if compressAt > 0 {
