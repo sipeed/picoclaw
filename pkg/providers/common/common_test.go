@@ -2,6 +2,7 @@ package common
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -276,6 +277,14 @@ func TestParseResponse_BasicContent(t *testing.T) {
 	}
 }
 
+func TestParseResponse_NullContentWithoutOtherOutputReturnsError(t *testing.T) {
+	body := `{"choices":[{"message":{"content":null},"finish_reason":"stop"}]}`
+	_, err := ParseResponse(strings.NewReader(body))
+	if !errors.Is(err, ErrNullAssistantContent) {
+		t.Fatalf("ParseResponse() error = %v, want %v", err, ErrNullAssistantContent)
+	}
+}
+
 func TestParseResponse_EmptyChoices(t *testing.T) {
 	body := `{"choices":[]}`
 	out, err := ParseResponse(strings.NewReader(body))
@@ -307,6 +316,20 @@ func TestParseResponse_WithToolCalls(t *testing.T) {
 	}
 }
 
+func TestParseResponse_NullContentWithToolCallsIsValid(t *testing.T) {
+	body := `{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"SF\"}"}}]},"finish_reason":"tool_calls"}]}`
+	out, err := ParseResponse(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("ParseResponse() error = %v", err)
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.Content != "" {
+		t.Errorf("Content = %q, want empty", out.Content)
+	}
+}
+
 func TestParseResponse_WithUsage(t *testing.T) {
 	body := `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`
 	out, err := ParseResponse(strings.NewReader(body))
@@ -329,6 +352,20 @@ func TestParseResponse_WithReasoningContent(t *testing.T) {
 	}
 	if out.ReasoningContent != "Let me think... 1+1=2" {
 		t.Errorf("ReasoningContent = %q, want %q", out.ReasoningContent, "Let me think... 1+1=2")
+	}
+}
+
+func TestParseResponse_NullContentWithReasoningIsValid(t *testing.T) {
+	body := `{"choices":[{"message":{"content":null,"reasoning":"Let me think..."},"finish_reason":"stop"}]}`
+	out, err := ParseResponse(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("ParseResponse() error = %v", err)
+	}
+	if out.Reasoning != "Let me think..." {
+		t.Errorf("Reasoning = %q, want %q", out.Reasoning, "Let me think...")
+	}
+	if out.Content != "" {
+		t.Errorf("Content = %q, want empty", out.Content)
 	}
 }
 

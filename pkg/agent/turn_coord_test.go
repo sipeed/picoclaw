@@ -9,7 +9,9 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
+	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	providerscommon "github.com/sipeed/picoclaw/pkg/providers/common"
 	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/session"
 )
@@ -642,6 +644,69 @@ func TestPipeline_CallLLM_NetworkErrorRetry(t *testing.T) {
 				t.Error("expected error after network error retries")
 			}
 		})
+	}
+}
+
+func TestPipeline_CallLLM_EmptyResponseRetry(t *testing.T) {
+	provider := &sequenceProvider{
+		errors: []error{
+			providerscommon.ErrNullAssistantContent,
+		},
+		responses: []*providers.LLMResponse{
+			nil,
+			{Content: "Recovered after retry", FinishReason: "stop"},
+		},
+	}
+	al, agent, cleanup := newTurnCoordTestLoop(t, provider)
+	defer cleanup()
+
+	al.cfg.Agents.Defaults.MaxLLMRetries = 1
+	al.cfg.Agents.Defaults.LLMRetryBackoffSecs = 1
+
+	runtimeCh, closeRuntimeEvents := subscribeRuntimeEventsForTest(
+		t,
+		al,
+		8,
+		runtimeevents.KindAgentLLMRetry,
+	)
+	defer closeRuntimeEvents()
+
+	pipeline := NewPipeline(al)
+	ts := newTurnState(agent, makeTestProcessOpts("test-session"), turnEventScope{
+		turnID:  "turn-1",
+		context: newTurnContext(nil, nil, nil),
+	})
+
+	exec, err := pipeline.SetupTurn(context.Background(), ts)
+	if err != nil {
+		t.Fatalf("SetupTurn failed: %v", err)
+	}
+
+	ctrl, err := pipeline.CallLLM(context.Background(), context.Background(), ts, exec, 1)
+	if err != nil {
+		t.Fatalf("CallLLM failed: %v", err)
+	}
+	if ctrl != ControlBreak {
+		t.Fatalf("expected ControlBreak, got %v", ctrl)
+	}
+	if exec.finalContent != "Recovered after retry" {
+		t.Fatalf("finalContent = %q, want %q", exec.finalContent, "Recovered after retry")
+	}
+	if provider.callCount != 2 {
+		t.Fatalf("expected 2 provider calls, got %d", provider.callCount)
+	}
+
+	events := collectRuntimeEventStream(runtimeCh)
+	retryEvt, ok := findRuntimeEvent(events, runtimeevents.KindAgentLLMRetry)
+	if !ok {
+		t.Fatal("expected llm retry event")
+	}
+	retryPayload, ok := retryEvt.Payload.(LLMRetryPayload)
+	if !ok {
+		t.Fatalf("expected LLMRetryPayload, got %T", retryEvt.Payload)
+	}
+	if retryPayload.Reason != "empty_response" {
+		t.Fatalf("retry reason = %q, want %q", retryPayload.Reason, "empty_response")
 	}
 }
 

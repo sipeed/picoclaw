@@ -14,6 +14,7 @@ import (
 	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
+	providerscommon "github.com/sipeed/picoclaw/pkg/providers/common"
 )
 
 // CallLLM performs an LLM call with fallback support, hook invocation, and retry logic.
@@ -280,6 +281,7 @@ func (p *Pipeline) CallLLM(
 		}
 
 		errMsg := strings.ToLower(err.Error())
+		isEmptyResponseError := errors.Is(err, providerscommon.ErrNullAssistantContent)
 		isTimeoutError := errors.Is(err, context.DeadlineExceeded) ||
 			strings.Contains(errMsg, "deadline exceeded") ||
 			strings.Contains(errMsg, "client.timeout") ||
@@ -305,6 +307,35 @@ func (p *Pipeline) CallLLM(
 			strings.Contains(errMsg, "invalidparameter") ||
 			strings.Contains(errMsg, "prompt is too long") ||
 			strings.Contains(errMsg, "request too large"))
+
+		if isEmptyResponseError && retry < maxRetries {
+			backoff := time.Duration(retry+1) * time.Duration(backoffSecs) * time.Second
+			al.emitEvent(
+				runtimeevents.KindAgentLLMRetry,
+				ts.eventMeta("runTurn", "turn.llm.retry"),
+				LLMRetryPayload{
+					Attempt:    retry + 1,
+					MaxRetries: maxRetries,
+					Reason:     "empty_response",
+					Error:      err.Error(),
+					Backoff:    backoff,
+				},
+			)
+			logger.WarnCF("agent", "Empty LLM response, retrying after backoff", map[string]any{
+				"error":   err.Error(),
+				"retry":   retry,
+				"backoff": backoff.String(),
+			})
+			if sleepErr := sleepWithContext(turnCtx, backoff); sleepErr != nil {
+				if ts.hardAbortRequested() {
+					_ = ts.requestHardAbort()
+					return ControlBreak, nil
+				}
+				err = sleepErr
+				break
+			}
+			continue
+		}
 
 		if isTimeoutError && retry < maxRetries {
 			backoff := time.Duration(retry+1) * time.Duration(backoffSecs) * time.Second

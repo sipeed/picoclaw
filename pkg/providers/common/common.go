@@ -11,6 +11,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -37,6 +38,8 @@ type (
 )
 
 const DefaultRequestTimeout = 120 * time.Second
+
+var ErrNullAssistantContent = errors.New("llm provider returned null assistant content")
 
 // NewHTTPClient creates an *http.Client with an optional proxy and the default timeout.
 func NewHTTPClient(proxy string) *http.Client {
@@ -233,7 +236,7 @@ func ParseResponse(body io.Reader) (*LLMResponse, error) {
 	var apiResponse struct {
 		Choices []struct {
 			Message struct {
-				Content          string            `json:"content"`
+				Content          *string           `json:"content"`
 				ReasoningContent string            `json:"reasoning_content"`
 				Reasoning        string            `json:"reasoning"`
 				ReasoningDetails []ReasoningDetail `json:"reasoning_details"`
@@ -270,6 +273,10 @@ func ParseResponse(body io.Reader) (*LLMResponse, error) {
 	}
 
 	choice := apiResponse.Choices[0]
+	content := ""
+	if choice.Message.Content != nil {
+		content = *choice.Message.Content
+	}
 	toolCalls := make([]ToolCall, 0, len(choice.Message.ToolCalls))
 	for _, tc := range choice.Message.ToolCalls {
 		arguments := make(map[string]any)
@@ -315,8 +322,16 @@ func ParseResponse(body io.Reader) (*LLMResponse, error) {
 		toolCalls = append(toolCalls, toolCall)
 	}
 
+	if choice.Message.Content == nil &&
+		strings.TrimSpace(choice.Message.ReasoningContent) == "" &&
+		strings.TrimSpace(choice.Message.Reasoning) == "" &&
+		!reasoningDetailsHaveText(choice.Message.ReasoningDetails) &&
+		len(toolCalls) == 0 {
+		return nil, ErrNullAssistantContent
+	}
+
 	return &LLMResponse{
-		Content:          choice.Message.Content,
+		Content:          content,
 		ReasoningContent: choice.Message.ReasoningContent,
 		Reasoning:        choice.Message.Reasoning,
 		ReasoningDetails: choice.Message.ReasoningDetails,
@@ -324,6 +339,15 @@ func ParseResponse(body io.Reader) (*LLMResponse, error) {
 		FinishReason:     normalizeFinishReason(choice.FinishReason),
 		Usage:            apiResponse.Usage,
 	}, nil
+}
+
+func reasoningDetailsHaveText(details []ReasoningDetail) bool {
+	for _, detail := range details {
+		if strings.TrimSpace(detail.Text) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeFinishReason normalizes finish_reason values across providers.
