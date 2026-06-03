@@ -5,15 +5,18 @@
 >
 > * **Image generation support:** provider-backed image generation tool and pluggable image generation provider wiring.
 > * **Local coding tools:** `apply_patch` for guarded file edits, `search_files` for workspace search with optional gitignore override, and `update_plan` for explicit task progress.
+> * **Diagramming workflow support:** Excalidraw MCP integration for architecture diagrams and coding-agent guidance for structured diagram generation.
+> * **Task-board workflow tracking:** durable `task_board` boards with explicit local/manual step updates, so composite workflows can keep truthful step status without pretending work is still queued.
 > * **Planning and search providers:** Gemini web search provider, related web-search UI/config support, and safer provider behavior around unsupported range filters.
 > * **Agent / subagent runtime fixes:** async follow-up origin preservation, direct async error surfacing, final-reply delivery after interim progress messages, improved `spawn` / `delegate` delivery semantics, and durable task status behavior.
 > * **Runtime delivery coordination:** typed async completion handling, legacy synthetic system-message adapter isolation, delivery-mode routing (`user_only`, `parent_only`, `user_and_parent`), duplicate/restart idempotency, and task-registry-backed `spawn_status` / `task_status`.
+> * **Unified tool delivery intents:** declarative `ToolResult` delivery intents and outbound payloads (`immediate_continue`, `final_handled`, `parent_only`, `silent`) so tools like `message` and generated-media tools share one delivery coordinator path.
 > * **Durable background task registry:** bounded persistent records for spawn, delegate, and cron executions, including delivery status, completion IDs, restart reconciliation, and user-visible `task_status` diagnostics.
 > * **Seahorse context hardening:** LCM-style summary-prefix pressure compaction, formatted-summary budgeting, non-history prompt/tool budget reservation, coverage-root assembly, capped summary output, less noisy XML text escaping, and fail-closed oversized-context behavior.
 > * **Agent capability policy:** frontmatter-based per-agent `tools` / `mcpServers` filtering, replacing the older config-level per-agent tool filter layer.
 > * **MCP transport safety:** fatal MCP transport / JSON-RPC framing errors fail fast instead of triggering speculative fallback tool calls after a broken MCP response.
 > * **Telegram / channel fixes:** forum topic preservation for final replies and message-tool sends, media-group album handling, topic-aware trigger overrides, typing / feedback cleanup, and real `MinEditInterval` throttling for tool-feedback edits.
-> * **Media/message delivery ownership:** message-tool media sending with explicit `media_enabled` configuration, cleaner forwardable media captions, and reduced duplicate “done” replies after file/media delivery.
+> * **Media/message delivery ownership:** message-tool media sending with explicit `media_enabled` configuration, generated-media continuation for multi-image tasks, cleaner forwardable media captions, and reduced duplicate “done” replies after file/media delivery.
 > * **Tooling and workflow fixes:** relative script paths allowed in the exec guard, head/tail truncation for oversized command output, session-scoped Seahorse retrieval tools, cron feedback suppression plus cron execution records, session reset command, and tool-feedback controls.
 > * **Provider auth support:** OpenAI OAuth support for Codex and transcription flows.
 >
