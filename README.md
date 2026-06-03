@@ -5,7 +5,6 @@
 >
 > * **Image generation support:** provider-backed image generation tool and pluggable image generation provider wiring.
 > * **Local coding tools:** `apply_patch` for guarded file edits, `search_files` for workspace search with optional gitignore override, and `update_plan` for explicit task progress.
-> * **Diagramming workflow support:** Excalidraw MCP integration for architecture diagrams and coding-agent guidance for structured diagram generation.
 > * **Task-board workflow tracking:** durable `task_board` boards with explicit local/manual step updates, so composite workflows can keep truthful step status without pretending work is still queued.
 > * **Planning and search providers:** Gemini web search provider, related web-search UI/config support, and safer provider behavior around unsupported range filters.
 > * **Agent / subagent runtime fixes:** async follow-up origin preservation, direct async error surfacing, final-reply delivery after interim progress messages, improved `spawn` / `delegate` delivery semantics, and durable task status behavior.
