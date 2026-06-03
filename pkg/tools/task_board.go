@@ -14,7 +14,8 @@ import (
 // TaskBoardTool records and inspects durable multi-step workflow boards.
 //
 // It is intentionally a metadata/results primitive, not a scheduler: agents
-// still execute work by calling delegate/spawn with the same board_id/step_id.
+// still execute work by calling delegate/spawn with the same board_id/step_id,
+// or by marking a local/manual step with action=update.
 type TaskBoardTool struct {
 	registry *taskregistry.Registry
 }
@@ -31,7 +32,7 @@ func (t *TaskBoardTool) Description() string {
 	return "Create and inspect durable task boards for composite workflows. " +
 		"Use this when a task has multiple child steps that should share one board_id. " +
 		"This tool records planned board steps and reads completed deliverables; it does not execute steps. " +
-		"Execute steps with delegate/spawn using the same board_id and step_id, then use task_board results or list."
+		"Execute steps with delegate/spawn using the same board_id and step_id, or update local/manual steps when finished, then use task_board results or list."
 }
 
 func (t *TaskBoardTool) Parameters() map[string]any {
@@ -40,8 +41,8 @@ func (t *TaskBoardTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"action": map[string]any{
 				"type":        "string",
-				"enum":        []string{"create", "add_step", "list", "results"},
-				"description": "Board operation. create returns a board_id; add_step records planned metadata; list/results inspect visible board records.",
+				"enum":        []string{"create", "add_step", "update", "list", "results"},
+				"description": "Board operation. create returns a board_id; add_step records planned metadata; update changes a planned/local step status; list/results inspect visible board records.",
 			},
 			"board_id": map[string]any{
 				"type":        "string",
@@ -85,6 +86,19 @@ func (t *TaskBoardTool) Parameters() map[string]any {
 					"type": "string",
 				},
 			},
+			"status": map[string]any{
+				"type":        "string",
+				"enum":        []string{"planned", "queued", "running", "succeeded", "failed", "timed_out", "cancelled", "lost"},
+				"description": "New status for action=update.",
+			},
+			"summary": map[string]any{
+				"type":        "string",
+				"description": "Optional progress or terminal summary for action=update.",
+			},
+			"error": map[string]any{
+				"type":        "string",
+				"description": "Optional error text for failed/timed_out/cancelled/lost updates.",
+			},
 		},
 		"required": []string{"action"},
 	}
@@ -103,12 +117,14 @@ func (t *TaskBoardTool) Execute(ctx context.Context, args map[string]any) *ToolR
 		return t.create(ctx, args)
 	case "add_step":
 		return t.addStep(ctx, args)
+	case "update":
+		return t.update(ctx, args)
 	case "list":
 		return t.list(ctx, args, false)
 	case "results":
 		return t.list(ctx, args, true)
 	default:
-		return ErrorResult(`action must be one of: create, add_step, list, results`)
+		return ErrorResult(`action must be one of: create, add_step, update, list, results`)
 	}
 }
 
@@ -226,6 +242,68 @@ func (t *TaskBoardTool) addStep(ctx context.Context, args map[string]any) *ToolR
 		"step_title": stepTitle,
 		"status":     string(rec.Status),
 		"depends_on": dependsOn,
+	})
+}
+
+func (t *TaskBoardTool) update(ctx context.Context, args map[string]any) *ToolResult {
+	boardID, err := requiredStringArg(args, "board_id", "board_id")
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	stepID, err := requiredStringArg(args, "step_id", "step_id")
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	statusArg, err := requiredStringArg(args, "status", "status")
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	status, err := parseTaskBoardStatus(statusArg)
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	summary, err := optionalStringArg(args, "summary")
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	errorText, err := optionalStringArg(args, "error")
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+
+	taskID := boardStepTaskID(boardID, stepID)
+	now := time.Now().UnixMilli()
+	if err := t.registry.Update(taskID, func(rec *taskregistry.Record) {
+		rec.Status = status
+		rec.LastEventAt = now
+		if rec.StartedAt == 0 && (status == taskregistry.StatusRunning || isTaskBoardTerminalStatus(status)) {
+			rec.StartedAt = now
+		}
+		if isTaskBoardTerminalStatus(status) {
+			rec.EndedAt = now
+			rec.DeliveryStatus = taskregistry.DeliveryNotApplicable
+			rec.TerminalSummary = summary
+		} else {
+			rec.ProgressSummary = summary
+		}
+		rec.Error = errorText
+		if len(args) > 0 {
+			if blockedBy, err := optionalStringListArg(args, "blocked_by"); err == nil {
+				rec.BlockedBy = blockedBy
+			}
+		}
+	}); err != nil {
+		return ErrorResult(fmt.Sprintf("failed to update task board step: %v", err)).WithError(err)
+	}
+
+	return taskBoardJSONResult(map[string]any{
+		"action":   "update",
+		"board_id": boardID,
+		"task_id":  taskID,
+		"step_id":  stepID,
+		"status":   string(status),
+		"summary":  summary,
+		"error":    errorText,
 	})
 }
 
@@ -375,4 +453,36 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func parseTaskBoardStatus(value string) (taskregistry.Status, error) {
+	switch taskregistry.Status(strings.TrimSpace(value)) {
+	case taskregistry.StatusPlanned:
+		return taskregistry.StatusPlanned, nil
+	case taskregistry.StatusQueued:
+		return taskregistry.StatusQueued, nil
+	case taskregistry.StatusRunning:
+		return taskregistry.StatusRunning, nil
+	case taskregistry.StatusSucceeded:
+		return taskregistry.StatusSucceeded, nil
+	case taskregistry.StatusFailed:
+		return taskregistry.StatusFailed, nil
+	case taskregistry.StatusTimedOut:
+		return taskregistry.StatusTimedOut, nil
+	case taskregistry.StatusCancelled:
+		return taskregistry.StatusCancelled, nil
+	case taskregistry.StatusLost:
+		return taskregistry.StatusLost, nil
+	default:
+		return "", fmt.Errorf("status must be one of: planned, queued, running, succeeded, failed, timed_out, cancelled, lost")
+	}
+}
+
+func isTaskBoardTerminalStatus(status taskregistry.Status) bool {
+	switch status {
+	case taskregistry.StatusSucceeded, taskregistry.StatusFailed, taskregistry.StatusTimedOut, taskregistry.StatusCancelled, taskregistry.StatusLost:
+		return true
+	default:
+		return false
+	}
 }

@@ -60,6 +60,9 @@ func TestImageGenerateToolCanUseInjectedProvider(t *testing.T) {
 	if len(result.Media) != 1 {
 		t.Fatalf("media refs = %d, want 1", len(result.Media))
 	}
+	if !result.ResponseHandled {
+		t.Fatal("expected default image generation result to be response-handled")
+	}
 }
 
 func TestImageGenerateToolUsesConfiguredOutputDir(t *testing.T) {
@@ -87,5 +90,42 @@ func TestImageGenerateToolUsesConfiguredOutputDir(t *testing.T) {
 	wantPrefix := "[file:" + filepath.Join(workspace, "tmp", "generated-images") + string(filepath.Separator)
 	if !strings.HasPrefix(result.ArtifactTags[0], wantPrefix) {
 		t.Fatalf("artifact path = %q, want prefix %q", result.ArtifactTags[0], wantPrefix)
+	}
+}
+
+func TestImageGenerateToolContinueAfterLeavesResponseUnhandled(t *testing.T) {
+	store := media.NewFileMediaStore()
+	provider := &fakeImageGenerationProvider{
+		id:           "test-provider",
+		defaultModel: "test-default-image-model",
+	}
+	tool := NewImageGenerateTool(
+		t.TempDir(),
+		"custom-image-model",
+		store,
+		WithImageGenerationProvider(provider),
+	)
+
+	result := tool.Execute(
+		WithToolContext(t.Context(), "telegram", "chat-1"),
+		map[string]any{
+			"prompt":         "make the first architecture diagram",
+			"continue_after": true,
+		},
+	)
+	if result.IsError {
+		t.Fatalf("Execute returned error: %s", result.ContentForLLM())
+	}
+	if result.ResponseHandled {
+		t.Fatal("expected continue_after image generation result to leave response unhandled")
+	}
+	if !result.ImmediateDelivery {
+		t.Fatal("expected continue_after image generation result to request immediate delivery")
+	}
+	if !result.Silent {
+		t.Fatal("expected continue_after image generation result to be silent")
+	}
+	if len(result.Media) != 1 {
+		t.Fatalf("media refs = %d, want 1", len(result.Media))
 	}
 }

@@ -83,7 +83,9 @@ func (t *ImageGenerateTool) Name() string { return "image_generate" }
 func (t *ImageGenerateTool) Description() string {
 	return `Generate an image from a prompt and send it to the current chat.
 
-Use this when the user asks to create an image, infographic, diagram, poster, visual summary, or other generated raster artwork. The active image backend is selected from the configured image model provider prefix.`
+Use this when the user asks to create an image, infographic, diagram, poster, visual summary, or other generated raster artwork. The active image backend is selected from the configured image model provider prefix.
+
+When generating multiple distinct images for one user request, call this tool once per image with count=1. Set continue_after=true on every non-final image so the assistant continues after delivering it, and omit continue_after on the final image.`
 }
 
 func (t *ImageGenerateTool) Parameters() map[string]any {
@@ -111,6 +113,10 @@ func (t *ImageGenerateTool) Parameters() map[string]any {
 			"count": map[string]any{
 				"type":        "integer",
 				"description": "Number of images to generate, 1-4. Defaults to 1.",
+			},
+			"continue_after": map[string]any{
+				"type":        "boolean",
+				"description": "Set true when this is a non-final image in a multi-image task and the assistant should continue after sending it. Defaults to false.",
 			},
 		},
 		"required": []string{"prompt"},
@@ -183,7 +189,12 @@ func (t *ImageGenerateTool) Execute(ctx context.Context, args map[string]any) *T
 	}
 
 	message := fmt.Sprintf("Generated %d image(s) with %s via %s.", len(refs), req.Model, t.provider.ImageGenerationProviderID())
-	result := MediaResult(message, refs).WithResponseHandled()
+	result := MediaResult(message, refs)
+	if readBoolDefault(args, "continue_after", false) {
+		result.WithImmediateDelivery()
+	} else {
+		result.WithResponseHandled()
+	}
 	result.ArtifactTags = make([]string, 0, len(paths))
 	for _, path := range paths {
 		result.ArtifactTags = append(result.ArtifactTags, "[file:"+path+"]")
@@ -268,4 +279,26 @@ func readImageCount(raw any) int {
 		return maxImageGenerationResults
 	}
 	return count
+}
+
+func readBoolDefault(args map[string]any, key string, fallback bool) bool {
+	raw, ok := args[key]
+	if !ok {
+		return fallback
+	}
+	switch v := raw.(type) {
+	case bool:
+		return v
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true", "1", "yes", "y":
+			return true
+		case "false", "0", "no", "n":
+			return false
+		default:
+			return fallback
+		}
+	default:
+		return fallback
+	}
 }

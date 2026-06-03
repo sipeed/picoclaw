@@ -94,6 +94,12 @@ type ToolResult struct {
 	// user's request at the channel/output level, so the agent loop can stop
 	// without a follow-up assistant response.
 	ResponseHandled bool `json:"response_handled,omitempty"`
+
+	// ImmediateDelivery asks the agent loop to deliver this tool result to the
+	// user immediately while still continuing the turn. This is the pipeline
+	// equivalent of the message tool's direct-send behavior for tools that
+	// produce MediaStore refs or other ToolResult outputs.
+	ImmediateDelivery bool `json:"immediate_delivery,omitempty"`
 }
 
 // CompletionResult is the structured handoff payload used when one agent run
@@ -387,6 +393,14 @@ func (tr *ToolResult) WithError(err error) *ToolResult {
 // WithResponseHandled marks the tool result as already delivered to the user.
 func (tr *ToolResult) WithResponseHandled() *ToolResult {
 	tr.ResponseHandled = true
+	return tr
+}
+
+// WithImmediateDelivery asks the agent loop to publish this result to the user
+// immediately without treating the whole turn as answered.
+func (tr *ToolResult) WithImmediateDelivery() *ToolResult {
+	tr.ImmediateDelivery = true
+	tr.Silent = true
 	return tr
 }
 

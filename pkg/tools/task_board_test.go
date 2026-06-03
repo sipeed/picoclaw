@@ -76,6 +76,69 @@ func TestTaskBoardTool_CreateAddStepAndList(t *testing.T) {
 	}
 }
 
+func TestTaskBoardTool_UpdateStepStatus(t *testing.T) {
+	registry := taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(t.TempDir()))
+	tool := NewTaskBoardTool(registry)
+	ctx := WithToolTopicID(WithToolContext(context.Background(), "telegram", "chat-1"), "topic-1")
+	ctx = WithToolSessionContext(ctx, "coding", "session-1", nil)
+
+	if result := tool.Execute(ctx, map[string]any{
+		"action":   "create",
+		"board_id": "workflow-1",
+		"title":    "Architecture diagrams",
+	}); result.IsError {
+		t.Fatalf("create failed: %s", result.ForLLM)
+	}
+	if result := tool.Execute(ctx, map[string]any{
+		"action":     "add_step",
+		"board_id":   "workflow-1",
+		"step_id":    "diagram-generation",
+		"step_title": "Generate diagrams",
+	}); result.IsError {
+		t.Fatalf("add_step failed: %s", result.ForLLM)
+	}
+
+	update := tool.Execute(ctx, map[string]any{
+		"action":   "update",
+		"board_id": "workflow-1",
+		"step_id":  "diagram-generation",
+		"status":   "succeeded",
+		"summary":  "Created 6 Excalidraw diagrams.",
+	})
+	if update.IsError {
+		t.Fatalf("update failed: %s", update.ForLLM)
+	}
+
+	rec, ok := registry.Get("board:workflow-1:step:diagram-generation")
+	if !ok {
+		t.Fatal("updated step missing from registry")
+	}
+	if rec.Status != taskregistry.StatusSucceeded {
+		t.Fatalf("status = %q, want succeeded", rec.Status)
+	}
+	if rec.DeliveryStatus != taskregistry.DeliveryNotApplicable {
+		t.Fatalf("delivery = %q, want not_applicable", rec.DeliveryStatus)
+	}
+	if rec.StartedAt == 0 || rec.EndedAt == 0 || rec.LastEventAt == 0 {
+		t.Fatalf("timestamps not populated: %+v", rec)
+	}
+	if rec.TerminalSummary != "Created 6 Excalidraw diagrams." {
+		t.Fatalf("terminal summary = %q", rec.TerminalSummary)
+	}
+
+	list := tool.Execute(ctx, map[string]any{
+		"action":   "list",
+		"board_id": "workflow-1",
+	})
+	if list.IsError {
+		t.Fatalf("list failed: %s", list.ForLLM)
+	}
+	if !strings.Contains(list.ForLLM, `"succeeded": 1`) ||
+		!strings.Contains(list.ForLLM, `"summary": "Created 6 Excalidraw diagrams."`) {
+		t.Fatalf("list did not show updated status/summary:\n%s", list.ForLLM)
+	}
+}
+
 func TestTaskBoardTool_ResultsReturnsDeliverablesForVisibleBoard(t *testing.T) {
 	registry := taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(t.TempDir()))
 	now := time.Now().UnixMilli()

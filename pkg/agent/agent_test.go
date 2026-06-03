@@ -2969,6 +2969,35 @@ func (m *messageToolMediaThenFinalProvider) GetDefaultModel() string {
 	return "message-tool-media-final-model"
 }
 
+type immediateMediaThenFinalProvider struct {
+	calls int
+}
+
+func (m *immediateMediaThenFinalProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	opts map[string]any,
+) (*providers.LLMResponse, error) {
+	m.calls++
+	if m.calls == 1 {
+		return &providers.LLMResponse{
+			ToolCalls: []providers.ToolCall{{
+				ID:        "call_immediate_media",
+				Type:      "function",
+				Name:      "immediate_media_tool",
+				Arguments: map[string]any{},
+			}},
+		}, nil
+	}
+	return &providers.LLMResponse{Content: "final answer after immediate media"}, nil
+}
+
+func (m *immediateMediaThenFinalProvider) GetDefaultModel() string {
+	return "immediate-media-final-model"
+}
+
 type reasoningVisibleToolProvider struct {
 	filePath string
 	calls    int
@@ -3606,6 +3635,35 @@ func (m *mediaArtifactTool) Execute(ctx context.Context, args map[string]any) *t
 		return tools.ErrorResult(err.Error()).WithError(err)
 	}
 	return tools.MediaResult("Artifact created.", []string{ref})
+}
+
+type immediateMediaTool struct {
+	store media.MediaStore
+	path  string
+}
+
+func (m *immediateMediaTool) Name() string { return "immediate_media_tool" }
+func (m *immediateMediaTool) Description() string {
+	return "Returns media that should be delivered immediately while the turn continues"
+}
+
+func (m *immediateMediaTool) Parameters() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	}
+}
+
+func (m *immediateMediaTool) Execute(ctx context.Context, args map[string]any) *tools.ToolResult {
+	ref, err := m.store.Store(m.path, media.MediaMeta{
+		Filename:    filepath.Base(m.path),
+		ContentType: "image/png",
+		Source:      "test:immediate_media_tool",
+	}, "test:immediate_media")
+	if err != nil {
+		return tools.ErrorResult(err.Error()).WithError(err)
+	}
+	return tools.MediaResult("Immediate attachment delivered by tool.", []string{ref}).WithImmediateDelivery()
 }
 
 type toolLimitTestTool struct{}
@@ -6186,6 +6244,67 @@ func TestRunAgentLoop_MessageToolMediaDeliveryBlocksBeforeFinalResponse(t *testi
 	}
 	if got := strings.TrimSpace(outbound.Context.Raw[metadataKeyMessageKind]); got != messageKindFinalReply {
 		t.Fatalf("final response message kind = %q, want %q", got, messageKindFinalReply)
+	}
+}
+
+func TestRunAgentLoop_ImmediateMediaDeliveryContinuesToFinalResponse(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Agents.Defaults.ModelName = "test-model"
+	cfg.Agents.Defaults.MaxTokens = 4096
+	cfg.Agents.Defaults.MaxToolIterations = 10
+	cfg.Agents.Defaults.ToolFeedback.Enabled = false
+	cfg.Session.Dimensions = []string{"chat"}
+
+	imagePath := filepath.Join(cfg.Agents.Defaults.Workspace, "diagram.png")
+	if err := os.WriteFile(imagePath, []byte("not really a png"), 0o600); err != nil {
+		t.Fatalf("write media fixture: %v", err)
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &immediateMediaThenFinalProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	store := media.NewFileMediaStore()
+	al.SetMediaStore(store)
+	mediaChannel := &fakeMediaChannel{}
+	al.SetChannelManager(newStartedTestChannelManager(t, msgBus, store, "telegram", mediaChannel))
+
+	agent := al.registry.GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent")
+	}
+	agent.Tools.Register(&immediateMediaTool{store: store, path: imagePath})
+
+	response, err := al.runAgentLoop(context.Background(), agent, processOptions{
+		Dispatch: DispatchRequest{
+			SessionKey:  "immediate-media-final-test",
+			UserMessage: "send an image then final answer",
+			InboundContext: &bus.InboundContext{
+				Channel:  "telegram",
+				ChatID:   "chat-1",
+				SenderID: "user-1",
+			},
+		},
+		DefaultResponse: defaultResponse,
+		SendResponse:    true,
+	})
+	if err != nil {
+		t.Fatalf("runAgentLoop() error = %v", err)
+	}
+	if response != "final answer after immediate media" {
+		t.Fatalf("response = %q, want final answer after immediate media", response)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want 2", provider.calls)
+	}
+	if len(mediaChannel.sentMedia) != 1 {
+		t.Fatalf("sent media count = %d, want 1", len(mediaChannel.sentMedia))
+	}
+	if len(mediaChannel.sentMessages) != 1 {
+		t.Fatalf("sent message count = %d, want 1", len(mediaChannel.sentMessages))
+	}
+	if mediaChannel.sentMessages[0].Content != "final answer after immediate media" {
+		t.Fatalf("final outbound content = %q, want final answer after immediate media", mediaChannel.sentMessages[0].Content)
 	}
 }
 

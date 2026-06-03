@@ -163,7 +163,7 @@ func (cb *ContextBuilder) getIdentity(includeToolUseRule bool) string {
 				"**Memory** - When interacting with me if something seems memorable, update %s/memory/MEMORY.md",
 				workspacePath,
 			),
-			"**Task boards** - For composite workflows that call multiple agents or run multiple child steps, use task_board to create one stable board_id and planned steps. Pass that board_id, stable step_id values, readable step_title values, and depends_on to every delegate/spawn call. For synchronous delegate steps that may stall, set timeout_seconds explicitly. Use task_board results or task_status with board_id to inspect the workflow.",
+			"**Task boards** - For composite workflows that call multiple agents or run multiple child steps, use task_board to create one stable board_id and planned steps. Pass that board_id, stable step_id values, readable step_title values, and depends_on to every delegate/spawn call. For synchronous delegate steps that may stall, set timeout_seconds explicitly. Use task_board results or task_status with board_id to inspect the workflow. Keep board state truthful: update local/manual/MCP-only steps when they finish, and never tell the user that work is still running or queued unless a real async handle exists (spawn, delegate, cron/job, async tool) or the next tool call will execute in the same turn.",
 		)
 	}
 	for i, rule := range rules {

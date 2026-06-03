@@ -320,6 +320,14 @@ toolLoop:
 
 					if ts.opts.SuppressToolUserDelivery {
 						hookResult.ResponseHandled = false
+						hookResult.ImmediateDelivery = false
+					}
+
+					if !ts.opts.SuppressToolUserDelivery && hookResult.ImmediateDelivery {
+						if _, _, err := al.deliverToolResultToUser(ctx, ts, hookResult, toolName); err != nil {
+							hookResult.IsError = true
+							hookResult.ForLLM = fmt.Sprintf("failed to deliver attachment: %v", err)
+						}
 					}
 
 					if !ts.opts.SuppressToolUserDelivery && hookResult.ResponseHandled {
@@ -358,7 +366,7 @@ toolLoop:
 						ToolCallID: tc.ID,
 					}
 
-					if len(hookResult.Media) > 0 && !hookResult.ResponseHandled {
+					if len(hookResult.Media) > 0 && !hookResult.ResponseHandled && !hookResult.ImmediateDelivery {
 						recordCompletionMedia(exec, al.mediaStore, hookResult.Media)
 						hookResult.ArtifactTags = buildArtifactTags(al.mediaStore, hookResult.Media)
 						contentForLLM = hookResult.ContentForLLM()
@@ -679,6 +687,13 @@ toolLoop:
 
 		if ts.opts.SuppressToolUserDelivery {
 			toolResult.ResponseHandled = false
+			toolResult.ImmediateDelivery = false
+		}
+
+		if !ts.opts.SuppressToolUserDelivery && toolResult.ImmediateDelivery {
+			if _, _, err := al.deliverToolResultToUser(ctx, ts, toolResult, toolName); err != nil {
+				toolResult = tools.ErrorResult(fmt.Sprintf("failed to deliver attachment: %v", err)).WithError(err)
+			}
 		}
 
 		if !ts.opts.SuppressToolUserDelivery && toolResult.ResponseHandled {
@@ -692,7 +707,7 @@ toolLoop:
 			}
 		}
 
-		if len(toolResult.Media) > 0 && !toolResult.ResponseHandled {
+		if len(toolResult.Media) > 0 && !toolResult.ResponseHandled && !toolResult.ImmediateDelivery {
 			recordCompletionMedia(exec, al.mediaStore, toolResult.Media)
 			toolResult.ArtifactTags = buildArtifactTags(al.mediaStore, toolResult.Media)
 		}
