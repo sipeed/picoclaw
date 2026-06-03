@@ -268,6 +268,30 @@ func TestFallback_UnclassifiedError(t *testing.T) {
 	}
 }
 
+func TestFallback_AuthErrorDoesNotFallback(t *testing.T) {
+	ct := NewCooldownTracker()
+	fc := NewFallbackChain(ct, nil)
+
+	candidates := []FallbackCandidate{
+		makeCandidate("openai", "gpt-5.4"),
+		makeCandidate("openrouter", "moonshotai/kimi-k2.6"),
+	}
+
+	attempt := 0
+	run := func(ctx context.Context, provider, model string) (*LLMResponse, error) {
+		attempt++
+		return nil, errors.New("401 unauthorized: token_invalidated")
+	}
+
+	_, err := fc.Execute(context.Background(), candidates, run)
+	if err == nil {
+		t.Fatal("expected auth error")
+	}
+	if attempt != 1 {
+		t.Fatalf("attempt = %d, want 1 (auth errors should not fallback)", attempt)
+	}
+}
+
 func assertFallbackErrorFallsBack(
 	t *testing.T,
 	primaryProvider string,

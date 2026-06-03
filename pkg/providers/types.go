@@ -128,9 +128,15 @@ func (e *FailoverError) Unwrap() error {
 }
 
 // IsRetriable returns true if this error should trigger fallback to next candidate.
-// Non-retriable: Format errors (bad request structure, image dimension/size).
+// Non-retriable:
+//   - Auth errors: the active credentials are invalid and should be surfaced
+//     directly so users can re-authenticate instead of silently switching models.
+//   - Format/context errors: retrying another provider with the same request is
+//     unlikely to succeed and can mask the real issue.
 func (e *FailoverError) IsRetriable() bool {
-	return e.Reason != FailoverFormat && e.Reason != FailoverContextOverflow
+	return e.Reason != FailoverAuth &&
+		e.Reason != FailoverFormat &&
+		e.Reason != FailoverContextOverflow
 }
 
 // ModelConfig holds primary model and fallback list.

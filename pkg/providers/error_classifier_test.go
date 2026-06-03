@@ -419,7 +419,7 @@ func TestFailoverError_IsRetriable(t *testing.T) {
 		reason    FailoverReason
 		retriable bool
 	}{
-		{FailoverAuth, true},
+		{FailoverAuth, false},
 		{FailoverRateLimit, true},
 		{FailoverBilling, true},
 		{FailoverNetwork, true},
