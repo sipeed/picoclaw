@@ -8,6 +8,7 @@ import (
 
 func TestSessionManager_AddGet(t *testing.T) {
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	session := &ProcessSession{
 		ID:        "test-1",
 		Command:   "echo hello",
@@ -24,6 +25,7 @@ func TestSessionManager_AddGet(t *testing.T) {
 
 func TestSessionManager_Remove(t *testing.T) {
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	session := &ProcessSession{
 		ID:        "test-1",
 		Command:   "echo hello",
@@ -39,6 +41,7 @@ func TestSessionManager_Remove(t *testing.T) {
 
 func TestSessionManager_List(t *testing.T) {
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	sm.Add(&ProcessSession{
 		ID:        "test-1",
 		Command:   "echo hello",

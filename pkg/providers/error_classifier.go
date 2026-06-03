@@ -111,6 +111,10 @@ var (
 		substr("tool_use_id"),
 		substr("messages.1.content.1.tool_use.id"),
 		substr("invalid request format"),
+		// Zhipu API error code 1210: parameter error (e.g., image format incompatible)
+		substr("error code: 1210"),
+		substr("error code 1210"),
+		substr("zhipu api error code: 1210"),
 	}
 	contextOverflowPatterns = []errorPattern{
 		rxp(`context[_ ]?length[_ ]?exceeded`),

@@ -1047,6 +1047,7 @@ func TestShellTool_List_Empty(t *testing.T) {
 	require.NoError(t, err)
 
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	tool.sessionManager = sm
 
 	ctx := context.Background()
@@ -1062,6 +1063,7 @@ func TestShellTool_RunBackground_List(t *testing.T) {
 	require.NoError(t, err)
 
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	tool.sessionManager = sm
 
 	ctx := WithToolContext(context.Background(), "cli", "test")
@@ -1101,6 +1103,7 @@ func TestShellTool_Read_Output(t *testing.T) {
 	require.NoError(t, err)
 
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	tool.sessionManager = sm
 
 	ctx := WithToolContext(context.Background(), "cli", "test")
@@ -1135,6 +1138,7 @@ func TestShellTool_Kill(t *testing.T) {
 	require.NoError(t, err)
 
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	tool.sessionManager = sm
 
 	ctx := WithToolContext(context.Background(), "cli", "test")
@@ -1174,6 +1178,7 @@ func TestShellTool_PTY_AllowedCommands(t *testing.T) {
 	require.NoError(t, err)
 
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	tool.sessionManager = sm
 
 	ctx := WithToolContext(context.Background(), "cli", "test")
@@ -1209,6 +1214,7 @@ func TestShellTool_PTY_WriteRead(t *testing.T) {
 	require.NoError(t, err)
 
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	tool.sessionManager = sm
 
 	ctx := WithToolContext(context.Background(), "cli", "test")
@@ -1268,6 +1274,7 @@ func TestShellTool_PTY_Poll(t *testing.T) {
 	require.NoError(t, err)
 
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	tool.sessionManager = sm
 
 	ctx := WithToolContext(context.Background(), "cli", "test")
@@ -1321,6 +1328,7 @@ func TestShellTool_PTY_Kill(t *testing.T) {
 	require.NoError(t, err)
 
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	tool.sessionManager = sm
 
 	ctx := WithToolContext(context.Background(), "cli", "test")
@@ -1366,6 +1374,7 @@ func TestShellTool_Write_Read_NonPTY(t *testing.T) {
 	require.NoError(t, err)
 
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	tool.sessionManager = sm
 
 	ctx := WithToolContext(context.Background(), "cli", "test")
@@ -1419,6 +1428,7 @@ func TestShellTool_Read_NonPTY_Running(t *testing.T) {
 	require.NoError(t, err)
 
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	tool.sessionManager = sm
 
 	ctx := WithToolContext(context.Background(), "cli", "test")
@@ -1487,6 +1497,7 @@ func TestShellTool_ProcessGroupKill(t *testing.T) {
 	require.NoError(t, err)
 
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	tool.sessionManager = sm
 
 	ctx := WithToolContext(context.Background(), "cli", "test")
@@ -1547,6 +1558,7 @@ func TestShellTool_PTY_ProcessGroupKill(t *testing.T) {
 	require.NoError(t, err)
 
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	tool.sessionManager = sm
 
 	ctx := WithToolContext(context.Background(), "cli", "test")
@@ -1599,6 +1611,7 @@ func TestShellTool_PTY_Background_Read(t *testing.T) {
 	require.NoError(t, err)
 
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	tool.sessionManager = sm
 
 	ctx := WithToolContext(context.Background(), "cli", "test")
@@ -1639,6 +1652,7 @@ func TestShellTool_PTY_Background_ReadNoBlock(t *testing.T) {
 	require.NoError(t, err)
 
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	tool.sessionManager = sm
 
 	ctx := WithToolContext(context.Background(), "cli", "test")
@@ -1683,6 +1697,7 @@ func TestShellTool_Poll_Status(t *testing.T) {
 	require.NoError(t, err)
 
 	sm := NewSessionManager()
+	t.Cleanup(sm.Stop)
 	tool.sessionManager = sm
 
 	ctx := WithToolContext(context.Background(), "cli", "test")

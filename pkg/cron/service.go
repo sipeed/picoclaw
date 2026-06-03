@@ -447,14 +447,37 @@ func (cs *CronService) AddJob(
 	return &job, nil
 }
 
+func (cs *CronService) GetJob(jobID string) (*CronJob, bool) {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+
+	for i := range cs.store.Jobs {
+		if cs.store.Jobs[i].ID == jobID {
+			jobCopy := cloneCronJob(cs.store.Jobs[i])
+			return &jobCopy, true
+		}
+	}
+	return nil, false
+}
+
 func (cs *CronService) UpdateJob(job *CronJob) error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
 	for i := range cs.store.Jobs {
 		if cs.store.Jobs[i].ID == job.ID {
-			cs.store.Jobs[i] = *job
-			cs.store.Jobs[i].UpdatedAtMS = time.Now().UnixMilli()
+			previous := cs.store.Jobs[i]
+			updated := cloneCronJob(*job)
+			now := time.Now().UnixMilli()
+			updated.UpdatedAtMS = now
+			if updated.Enabled {
+				if previous.Enabled != updated.Enabled || !sameSchedule(previous.Schedule, updated.Schedule) {
+					updated.State.NextRunAtMS = cs.computeNextRun(&updated.Schedule, now)
+				}
+			} else {
+				updated.State.NextRunAtMS = nil
+			}
+			cs.store.Jobs[i] = updated
 
 			cs.notify()
 
@@ -462,6 +485,42 @@ func (cs *CronService) UpdateJob(job *CronJob) error {
 		}
 	}
 	return fmt.Errorf("job not found")
+}
+
+func cloneCronJob(job CronJob) CronJob {
+	clone := job
+	if job.Schedule.AtMS != nil {
+		atMS := *job.Schedule.AtMS
+		clone.Schedule.AtMS = &atMS
+	}
+	if job.Schedule.EveryMS != nil {
+		everyMS := *job.Schedule.EveryMS
+		clone.Schedule.EveryMS = &everyMS
+	}
+	if job.State.NextRunAtMS != nil {
+		nextRunAtMS := *job.State.NextRunAtMS
+		clone.State.NextRunAtMS = &nextRunAtMS
+	}
+	if job.State.LastRunAtMS != nil {
+		lastRunAtMS := *job.State.LastRunAtMS
+		clone.State.LastRunAtMS = &lastRunAtMS
+	}
+	return clone
+}
+
+func sameSchedule(a, b CronSchedule) bool {
+	return a.Kind == b.Kind &&
+		sameInt64(a.AtMS, b.AtMS) &&
+		sameInt64(a.EveryMS, b.EveryMS) &&
+		a.Expr == b.Expr &&
+		a.TZ == b.TZ
+}
+
+func sameInt64(a, b *int64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func (cs *CronService) RemoveJob(jobID string) bool {

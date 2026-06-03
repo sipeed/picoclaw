@@ -875,3 +875,49 @@ func TestParseStreamResponse_StopReasons(t *testing.T) {
 		})
 	}
 }
+
+func TestModelDeprecatesTemperature(t *testing.T) {
+	tests := []struct {
+		name  string
+		model string
+		want  bool
+	}{
+		{"opus 4.8 bare id", "claude-opus-4-8-20260514-v1:0", true},
+		{"opus 4.8 inference profile", "us.anthropic.claude-opus-4-8-20260514-v1:0", true},
+		{"opus 4.8 mixed case", "US.Anthropic.Claude-Opus-4-8", true},
+		{"opus 4.7 unaffected", "us.anthropic.claude-opus-4-7-20250101-v1:0", false},
+		{"sonnet unaffected", "us.anthropic.claude-sonnet-4-6", false},
+		{"empty", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, modelDeprecatesTemperature(tt.model))
+		})
+	}
+}
+
+func TestBuildConverseParams_DropsTemperatureForDeprecatedModel(t *testing.T) {
+	options := map[string]any{
+		"temperature": 0.7,
+		"max_tokens":  1024,
+	}
+
+	params := buildConverseParams(nil, nil, "us.anthropic.claude-opus-4-8-20260514-v1:0", options)
+
+	require.NotNil(t, params.inferenceConfig, "max_tokens should still populate inference config")
+	assert.Nil(t, params.inferenceConfig.Temperature, "temperature must be omitted for opus 4.8")
+	require.NotNil(t, params.inferenceConfig.MaxTokens)
+	assert.Equal(t, int32(1024), *params.inferenceConfig.MaxTokens)
+}
+
+func TestBuildConverseParams_KeepsTemperatureForSupportedModel(t *testing.T) {
+	options := map[string]any{
+		"temperature": 0.7,
+	}
+
+	params := buildConverseParams(nil, nil, "us.anthropic.claude-opus-4-7-20250101-v1:0", options)
+
+	require.NotNil(t, params.inferenceConfig)
+	require.NotNil(t, params.inferenceConfig.Temperature)
+	assert.InDelta(t, 0.7, float64(*params.inferenceConfig.Temperature), 0.0001)
+}

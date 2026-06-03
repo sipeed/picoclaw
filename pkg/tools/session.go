@@ -171,23 +171,40 @@ func (s *ProcessSession) ToSessionInfo() SessionInfo {
 type SessionManager struct {
 	mu       sync.RWMutex
 	sessions map[string]*ProcessSession
+	stopCh   chan struct{}
+	stopOnce sync.Once
 }
 
 func NewSessionManager() *SessionManager {
 	sm := &SessionManager{
 		sessions: make(map[string]*ProcessSession),
+		stopCh:   make(chan struct{}),
 	}
 
 	// Start cleaner goroutine - runs every 5 minutes, cleans up sessions done for >30 minutes
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
-		for range ticker.C {
-			sm.cleanupOldSessions()
+		for {
+			select {
+			case <-sm.stopCh:
+				return
+			case <-ticker.C:
+				sm.cleanupOldSessions()
+			}
 		}
 	}()
 
 	return sm
+}
+
+// Stop shuts down the background cleanup goroutine. Safe to call multiple
+// times from concurrent goroutines. After Stop returns, the SessionManager
+// is still usable — only the cleanup goroutine is terminated.
+func (sm *SessionManager) Stop() {
+	sm.stopOnce.Do(func() {
+		close(sm.stopCh)
+	})
 }
 
 // cleanupOldSessions removes sessions that are done and older than 30 minutes

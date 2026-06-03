@@ -82,6 +82,136 @@ func TestCronService_CRUD(t *testing.T) {
 	}
 }
 
+func TestCronService_GetJobReturnsCopy(t *testing.T) {
+	cs, path := setupService(nil)
+	defer os.Remove(path)
+
+	everyMS := int64(60_000)
+	job, err := cs.AddJob("Task1", CronSchedule{Kind: "every", EveryMS: &everyMS}, "msg", "ch", "to")
+	if err != nil {
+		t.Fatalf("AddJob failed: %v", err)
+	}
+	if job.State.NextRunAtMS == nil {
+		t.Fatal("expected initial next run")
+	}
+	nextRun := *job.State.NextRunAtMS
+
+	got, ok := cs.GetJob(job.ID)
+	if !ok {
+		t.Fatal("GetJob should find job")
+	}
+	got.Name = "mutated"
+	got.Payload.Message = "changed"
+	if got.Schedule.EveryMS != nil {
+		*got.Schedule.EveryMS = 120_000
+	}
+	if got.State.NextRunAtMS != nil {
+		*got.State.NextRunAtMS = time.Now().Add(3 * time.Hour).UnixMilli()
+	}
+
+	again, ok := cs.GetJob(job.ID)
+	if !ok {
+		t.Fatal("GetJob should still find job")
+	}
+	if again.Name != "Task1" || again.Payload.Message != "msg" {
+		t.Fatalf("GetJob should return a copy, got %+v", again)
+	}
+	if again.Schedule.EveryMS == nil || *again.Schedule.EveryMS != everyMS {
+		t.Fatalf("GetJob should not alias schedule pointers, got %+v", again.Schedule)
+	}
+	if again.State.NextRunAtMS == nil || *again.State.NextRunAtMS != nextRun {
+		t.Fatalf("GetJob should not alias state pointers, got %+v", again.State)
+	}
+}
+
+func TestCronService_UpdateJobRecomputesNextRunOnScheduleOrEnabledChange(t *testing.T) {
+	cs, path := setupService(nil)
+	defer os.Remove(path)
+
+	at := time.Now().Add(time.Hour).UnixMilli()
+	job, err := cs.AddJob("Task1", CronSchedule{Kind: "at", AtMS: &at}, "msg", "ch", "to")
+	if err != nil {
+		t.Fatalf("AddJob failed: %v", err)
+	}
+	if job.State.NextRunAtMS == nil {
+		t.Fatal("expected initial next run")
+	}
+	initialNextRun := *job.State.NextRunAtMS
+
+	everyMS := int64(30_000)
+	job.Schedule = CronSchedule{Kind: "every", EveryMS: &everyMS}
+	if err := cs.UpdateJob(job); err != nil {
+		t.Fatalf("UpdateJob schedule failed: %v", err)
+	}
+	updated, ok := cs.GetJob(job.ID)
+	if !ok {
+		t.Fatal("updated job not found")
+	}
+	if updated.State.NextRunAtMS == nil {
+		t.Fatal("expected recomputed next run after schedule change")
+	}
+	if *updated.State.NextRunAtMS == initialNextRun {
+		t.Fatalf("next run should be recomputed, still %d", initialNextRun)
+	}
+
+	if disabled := cs.EnableJob(job.ID, false); disabled == nil {
+		t.Fatal("EnableJob(false) returned nil")
+	}
+	disabled, ok := cs.GetJob(job.ID)
+	if !ok {
+		t.Fatal("disabled job not found")
+	}
+	disabled.Enabled = true
+	if err := cs.UpdateJob(disabled); err != nil {
+		t.Fatalf("UpdateJob enabled failed: %v", err)
+	}
+	reenabled, ok := cs.GetJob(job.ID)
+	if !ok {
+		t.Fatal("reenabled job not found")
+	}
+	if !reenabled.Enabled || reenabled.State.NextRunAtMS == nil {
+		t.Fatalf("expected enabled job with next run, got %+v", reenabled)
+	}
+}
+
+func TestCronService_UpdateJobPreservesRunStateOnPayloadOnlyChange(t *testing.T) {
+	cs, path := setupService(nil)
+	defer os.Remove(path)
+
+	everyMS := int64(60_000)
+	job, err := cs.AddJob("Task1", CronSchedule{Kind: "every", EveryMS: &everyMS}, "msg", "ch", "to")
+	if err != nil {
+		t.Fatalf("AddJob failed: %v", err)
+	}
+	lastRun := time.Now().Add(-time.Minute).UnixMilli()
+	job.State.LastRunAtMS = &lastRun
+	job.State.LastStatus = "ok"
+	job.State.LastError = "previous"
+	if job.State.NextRunAtMS == nil {
+		t.Fatal("expected next run before update")
+	}
+	nextRun := *job.State.NextRunAtMS
+
+	job.Payload.Message = "updated msg"
+	if err := cs.UpdateJob(job); err != nil {
+		t.Fatalf("UpdateJob failed: %v", err)
+	}
+
+	updated, ok := cs.GetJob(job.ID)
+	if !ok {
+		t.Fatal("updated job not found")
+	}
+	if updated.State.LastRunAtMS == nil || *updated.State.LastRunAtMS != lastRun {
+		t.Fatalf("last run changed: %+v", updated.State)
+	}
+	if updated.State.LastStatus != "ok" || updated.State.LastError != "previous" {
+		t.Fatalf("last status changed: %+v", updated.State)
+	}
+	if updated.State.NextRunAtMS == nil || *updated.State.NextRunAtMS != nextRun {
+		t.Fatalf("next run should be preserved: before=%d after=%+v", nextRun, updated.State.NextRunAtMS)
+	}
+}
+
 // 2. Test Cron Expression Calculation Logic
 func TestCronService_ComputeNextRun(t *testing.T) {
 	cs, path := setupService(nil)

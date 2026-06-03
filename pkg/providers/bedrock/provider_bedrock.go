@@ -143,7 +143,22 @@ type converseParams struct {
 	toolConfig      *types.ToolConfiguration
 }
 
-func buildConverseParams(messages []Message, tools []ToolDefinition, options map[string]any) converseParams {
+// modelDeprecatesTemperature reports whether the given Bedrock model rejects the
+// temperature inference parameter. Newer Claude models (Opus 4.8 and later) treat
+// temperature as deprecated and return a ValidationException if it is supplied:
+//
+//	ValidationException: The model returned the following errors:
+//	temperature is deprecated for this model.
+//
+// The match is intentionally loose: Bedrock model IDs and inference-profile ARNs
+// embed the model name (e.g. "us.anthropic.claude-opus-4-8-20260514-v1:0"), so a
+// substring check covers both bare IDs and region-prefixed inference profiles.
+func modelDeprecatesTemperature(model string) bool {
+	m := strings.ToLower(model)
+	return strings.Contains(m, "claude-opus-4-8")
+}
+
+func buildConverseParams(messages []Message, tools []ToolDefinition, model string, options map[string]any) converseParams {
 	bedrockMessages, systemPrompts := convertMessages(messages)
 
 	var inferenceConfig *types.InferenceConfiguration
@@ -159,10 +174,14 @@ func buildConverseParams(messages []Message, tools []ToolDefinition, options map
 	}
 
 	if temp, ok := common.AsFloat(options["temperature"]); ok {
-		if inferenceConfig == nil {
-			inferenceConfig = &types.InferenceConfiguration{}
+		if modelDeprecatesTemperature(model) {
+			log.Printf("bedrock: temperature dropped because model %q no longer supports it", model)
+		} else {
+			if inferenceConfig == nil {
+				inferenceConfig = &types.InferenceConfiguration{}
+			}
+			inferenceConfig.Temperature = aws.Float32(float32(temp))
 		}
-		inferenceConfig.Temperature = aws.Float32(float32(temp))
 	}
 
 	var toolConfig *types.ToolConfiguration
@@ -199,7 +218,7 @@ func (p *Provider) Chat(
 		defer cancel()
 	}
 
-	params := buildConverseParams(messages, tools, options)
+	params := buildConverseParams(messages, tools, model, options)
 	input := &bedrockruntime.ConverseInput{
 		ModelId:         aws.String(model),
 		Messages:        params.messages,
@@ -242,7 +261,7 @@ func (p *Provider) ChatStream(
 		}
 	}
 
-	params := buildConverseParams(messages, tools, options)
+	params := buildConverseParams(messages, tools, model, options)
 	input := &bedrockruntime.ConverseStreamInput{
 		ModelId:         aws.String(model),
 		Messages:        params.messages,
