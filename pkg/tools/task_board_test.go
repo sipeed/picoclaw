@@ -754,3 +754,101 @@ func TestTaskBoardTool_ReadyResolvesDependencies(t *testing.T) {
 		)
 	}
 }
+
+func TestTaskBoardTool_NextReturnsDryRunExecutionPlan(t *testing.T) {
+	registry := taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(t.TempDir()))
+	tool := NewTaskBoardTool(registry)
+	ctx := WithToolContext(context.Background(), "telegram", "chat-1")
+	now := time.Now().UnixMilli()
+
+	records := []taskregistry.Record{
+		{
+			TaskID:         "board:workflow-1:step:media-extract",
+			Runtime:        taskregistry.RuntimeTool,
+			TaskKind:       "task_board_step",
+			BoardID:        "workflow-1",
+			StepID:         "media-extract",
+			StepTitle:      "Extract media",
+			Owner:          "media",
+			Channel:        "telegram",
+			ChatID:         "chat-1",
+			Status:         taskregistry.StatusPlanned,
+			DeliveryStatus: taskregistry.DeliveryNotApplicable,
+			Task:           "Download the reel and extract the caption.",
+			CreatedAt:      now,
+			LastEventAt:    now,
+		},
+		{
+			TaskID:         "board:workflow-1:step:local-summary",
+			Runtime:        taskregistry.RuntimeTool,
+			TaskKind:       "task_board_step",
+			BoardID:        "workflow-1",
+			StepID:         "local-summary",
+			StepTitle:      "Write final summary",
+			Channel:        "telegram",
+			ChatID:         "chat-1",
+			Status:         taskregistry.StatusPlanned,
+			DeliveryStatus: taskregistry.DeliveryNotApplicable,
+			Task:           "Write the final response in the parent conversation.",
+			CreatedAt:      now + 1,
+			LastEventAt:    now + 1,
+		},
+	}
+	for _, rec := range records {
+		if err := registry.Upsert(rec); err != nil {
+			t.Fatalf("Upsert(%s) error = %v", rec.TaskID, err)
+		}
+	}
+
+	result := tool.Execute(ctx, map[string]any{
+		"action":   "next",
+		"board_id": "workflow-1",
+	})
+	if result.IsError {
+		t.Fatalf("next failed: %s", result.ForLLM)
+	}
+
+	type planStep struct {
+		StepID          string         `json:"step_id"`
+		RecommendedTool string         `json:"recommended_tool"`
+		DelegateArgs    map[string]any `json:"delegate_args"`
+		SpawnArgs       map[string]any `json:"spawn_args"`
+		UpdateArgs      map[string]any `json:"update_args"`
+	}
+	var payload struct {
+		Action    string     `json:"action"`
+		CanRun    bool       `json:"can_run"`
+		PlanCount int        `json:"plan_count"`
+		Plan      []planStep `json:"plan"`
+	}
+	if err := json.Unmarshal([]byte(result.ForLLM), &payload); err != nil {
+		t.Fatalf("next JSON error = %v\n%s", err, result.ForLLM)
+	}
+	if payload.Action != "next" || !payload.CanRun || payload.PlanCount != 2 || len(payload.Plan) != 2 {
+		t.Fatalf("unexpected next payload: %+v\n%s", payload, result.ForLLM)
+	}
+
+	planByStep := make(map[string]planStep, len(payload.Plan))
+	for _, step := range payload.Plan {
+		planByStep[step.StepID] = step
+	}
+
+	media := planByStep["media-extract"]
+	if media.StepID != "media-extract" ||
+		media.RecommendedTool != "delegate" ||
+		media.DelegateArgs["agent_id"] != "media" ||
+		media.DelegateArgs["board_id"] != "workflow-1" ||
+		media.DelegateArgs["step_id"] != "media-extract" ||
+		media.SpawnArgs["agent_id"] != "media" {
+		t.Fatalf("unexpected media plan: %+v\n%s", media, result.ForLLM)
+	}
+
+	local := planByStep["local-summary"]
+	if local.StepID != "local-summary" ||
+		local.RecommendedTool != "task_board.update" ||
+		local.UpdateArgs["status"] != "running" ||
+		local.UpdateArgs["board_id"] != "workflow-1" ||
+		local.UpdateArgs["step_id"] != "local-summary" {
+		t.Fatalf("unexpected local plan: %+v\n%s", local, result.ForLLM)
+	}
+}

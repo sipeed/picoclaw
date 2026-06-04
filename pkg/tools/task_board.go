@@ -34,7 +34,7 @@ func (t *TaskBoardTool) Description() string {
 	return "Create and inspect durable task boards for composite workflows. " +
 		"Use this when a task has multiple child steps that should share one board_id. " +
 		"This tool records planned board steps and reads completed deliverables; it does not execute steps. " +
-		"Execute steps with delegate/spawn using the same board_id and step_id, or update local/manual steps when finished, then use task_board ready/results/list."
+		"Execute steps with delegate/spawn using the same board_id and step_id, or update local/manual steps when finished, then use task_board next/ready/results/list."
 }
 
 func (t *TaskBoardTool) Parameters() map[string]any {
@@ -43,12 +43,12 @@ func (t *TaskBoardTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"action": map[string]any{
 				"type":        "string",
-				"enum":        []string{"create", "add_step", "update", "list", "results", "ready"},
-				"description": "Board operation. create returns a board_id; add_step records planned metadata; update changes a planned/local step status; list/results inspect visible board records; ready resolves dependency state without executing steps.",
+				"enum":        []string{"create", "add_step", "update", "list", "results", "ready", "next"},
+				"description": "Board operation. create returns a board_id; add_step records planned metadata; update changes a planned/local step status; list/results inspect visible board records; ready resolves dependency state; next returns a dry-run execution plan. ready/next do not execute steps.",
 			},
 			"board_id": map[string]any{
 				"type":        "string",
-				"description": "Workflow/task-board ID. Optional for create; required for add_step/list/results/ready.",
+				"description": "Workflow/task-board ID. Optional for create; required for add_step/list/results/ready/next.",
 			},
 			"title": map[string]any{
 				"type":        "string",
@@ -185,8 +185,10 @@ func (t *TaskBoardTool) Execute(ctx context.Context, args map[string]any) *ToolR
 		return t.list(ctx, args, true)
 	case "ready":
 		return t.ready(ctx, args)
+	case "next":
+		return t.next(ctx, args)
 	default:
-		return ErrorResult(`action must be one of: create, add_step, update, list, results, ready`)
+		return ErrorResult(`action must be one of: create, add_step, update, list, results, ready, next`)
 	}
 }
 
@@ -440,6 +442,15 @@ func (t *TaskBoardTool) ready(ctx context.Context, args map[string]any) *ToolRes
 	return taskBoardJSONResult(buildTaskBoardReadyView(boardID, records, time.Now()))
 }
 
+func (t *TaskBoardTool) next(ctx context.Context, args map[string]any) *ToolResult {
+	boardID, err := requiredStringArg(args, "board_id", "board_id")
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	records := t.visibleBoardRecords(ctx, boardID)
+	return taskBoardJSONResult(buildTaskBoardNextView(boardID, records, time.Now()))
+}
+
 func (t *TaskBoardTool) visibleBoardRecords(ctx context.Context, boardID string) []taskregistry.Record {
 	channel := ToolChannel(ctx)
 	chatID := ToolChatID(ctx)
@@ -540,6 +551,29 @@ type taskBoardReadyStepView struct {
 	MissingDeps     []string `json:"missing_dependencies,omitempty"`
 	FailedDeps      []string `json:"failed_dependencies,omitempty"`
 	Reason          string   `json:"reason"`
+}
+
+type taskBoardNextView struct {
+	Action       string                   `json:"action"`
+	BoardID      string                   `json:"board_id"`
+	CanRun       bool                     `json:"can_run"`
+	PlanCount    int                      `json:"plan_count"`
+	Plan         []taskBoardNextStepView  `json:"plan"`
+	BlockedSteps []taskBoardReadyStepView `json:"blocked_steps,omitempty"`
+	WaitingSteps []taskBoardReadyStepView `json:"waiting_steps,omitempty"`
+	ActiveSteps  []taskBoardReadyStepView `json:"active_steps,omitempty"`
+}
+
+type taskBoardNextStepView struct {
+	StepID          string         `json:"step_id"`
+	StepTitle       string         `json:"step_title,omitempty"`
+	Owner           string         `json:"owner,omitempty"`
+	Task            string         `json:"task,omitempty"`
+	RecommendedTool string         `json:"recommended_tool"`
+	Reason          string         `json:"reason"`
+	DelegateArgs    map[string]any `json:"delegate_args,omitempty"`
+	SpawnArgs       map[string]any `json:"spawn_args,omitempty"`
+	UpdateArgs      map[string]any `json:"update_args,omitempty"`
 }
 
 func taskBoardView(rec taskregistry.Record, includePayloads bool) taskBoardRecordView {
@@ -671,6 +705,73 @@ func buildTaskBoardReadyView(boardID string, records []taskregistry.Record, now 
 		view.Counts[step.Reason]++
 	}
 	return view
+}
+
+func buildTaskBoardNextView(boardID string, records []taskregistry.Record, now time.Time) taskBoardNextView {
+	ready := buildTaskBoardReadyView(boardID, records, now)
+	byStep := taskBoardRecordsByStep(records, true)
+	metaByStep := make(map[string]taskregistry.Record, len(byStep))
+	for stepID, stepRecords := range byStep {
+		metaByStep[stepID] = latestTaskBoardStepMetadata(stepRecords)
+	}
+
+	view := taskBoardNextView{
+		Action:       "next",
+		BoardID:      boardID,
+		CanRun:       len(ready.ReadySteps) > 0,
+		BlockedSteps: ready.BlockedSteps,
+		WaitingSteps: ready.WaitingSteps,
+		ActiveSteps:  ready.ActiveSteps,
+	}
+	for _, step := range ready.ReadySteps {
+		view.Plan = append(view.Plan, taskBoardNextStep(boardID, step, metaByStep[step.StepID]))
+	}
+	view.PlanCount = len(view.Plan)
+	return view
+}
+
+func taskBoardNextStep(
+	boardID string,
+	step taskBoardReadyStepView,
+	meta taskregistry.Record,
+) taskBoardNextStepView {
+	owner := firstNonEmpty(step.Owner, meta.Owner, meta.AgentID)
+	task := firstNonEmpty(meta.Task, step.StepTitle, step.StepID)
+	out := taskBoardNextStepView{
+		StepID:    step.StepID,
+		StepTitle: step.StepTitle,
+		Owner:     owner,
+		Task:      task,
+		Reason:    "step dependencies are satisfied and no active run is recorded",
+	}
+	baseArgs := map[string]any{
+		"board_id":   boardID,
+		"step_id":    step.StepID,
+		"step_title": step.StepTitle,
+		"task":       task,
+	}
+	if owner != "" {
+		out.RecommendedTool = "delegate"
+		out.DelegateArgs = copyStringAnyMap(baseArgs)
+		out.DelegateArgs["agent_id"] = owner
+		out.SpawnArgs = copyStringAnyMap(baseArgs)
+		out.SpawnArgs["agent_id"] = owner
+		out.SpawnArgs["label"] = firstNonEmpty(step.StepTitle, step.StepID)
+		if len(step.DependsOn) > 0 {
+			out.DelegateArgs["depends_on"] = append([]string(nil), step.DependsOn...)
+			out.SpawnArgs["depends_on"] = append([]string(nil), step.DependsOn...)
+		}
+		return out
+	}
+	out.RecommendedTool = "task_board.update"
+	out.UpdateArgs = map[string]any{
+		"action":   "update",
+		"board_id": boardID,
+		"step_id":  step.StepID,
+		"status":   string(taskregistry.StatusRunning),
+		"summary":  "manual/local step started",
+	}
+	return out
 }
 
 func taskBoardReadyStep(
@@ -1027,6 +1128,14 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func copyStringAnyMap(values map[string]any) map[string]any {
+	out := make(map[string]any, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+	return out
 }
 
 func parseTaskBoardStatus(value string) (taskregistry.Status, error) {

@@ -97,6 +97,12 @@ with missing or failed dependencies is also reported as blocked/inconsistent so
 schedulers do not treat an invalid DAG as satisfied. This is the bridge toward
 future board execution, but it does not execute anything.
 
+`task_board next` is a dry-run executor plan built on the same readiness model.
+It returns runnable steps with suggested `delegate_args`, `spawn_args`, or
+manual `task_board.update` args, but still does not execute tools. This gives an
+LLM/orchestrator a deterministic next action without hiding execution policy,
+concurrency, retry, or delivery-mode choices inside the board primitive.
+
 `task_board list` also returns an effective board view derived from the raw
 records:
 
