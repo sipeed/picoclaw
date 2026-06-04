@@ -852,3 +852,76 @@ func TestTaskBoardTool_NextReturnsDryRunExecutionPlan(t *testing.T) {
 		t.Fatalf("unexpected local plan: %+v\n%s", local, result.ForLLM)
 	}
 }
+
+func TestTaskBoardTool_NextUsesExplicitExecutionHints(t *testing.T) {
+	registry := taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(t.TempDir()))
+	tool := NewTaskBoardTool(registry)
+	ctx := WithToolContext(context.Background(), "telegram", "chat-1")
+
+	add := tool.Execute(ctx, map[string]any{
+		"action":          "add_step",
+		"board_id":        "workflow-1",
+		"step_id":         "background-research",
+		"step_title":      "Background research",
+		"owner":           "research",
+		"task":            "Research the recipe context.",
+		"execution_tool":  "spawn",
+		"delivery_mode":   "parent_only",
+		"timeout_seconds": 45,
+	})
+	if add.IsError {
+		t.Fatalf("add_step failed: %s", add.ForLLM)
+	}
+
+	result := tool.Execute(ctx, map[string]any{
+		"action":   "next",
+		"board_id": "workflow-1",
+	})
+	if result.IsError {
+		t.Fatalf("next failed: %s", result.ForLLM)
+	}
+
+	var payload struct {
+		Plan []struct {
+			StepID          string         `json:"step_id"`
+			RecommendedTool string         `json:"recommended_tool"`
+			PolicySource    string         `json:"policy_source"`
+			DelegateArgs    map[string]any `json:"delegate_args"`
+			SpawnArgs       map[string]any `json:"spawn_args"`
+		} `json:"plan"`
+	}
+	if err := json.Unmarshal([]byte(result.ForLLM), &payload); err != nil {
+		t.Fatalf("next JSON error = %v\n%s", err, result.ForLLM)
+	}
+	if len(payload.Plan) != 1 {
+		t.Fatalf("plan = %+v\n%s", payload.Plan, result.ForLLM)
+	}
+	step := payload.Plan[0]
+	if step.StepID != "background-research" ||
+		step.RecommendedTool != "spawn" ||
+		step.PolicySource != "step.execution_tool" ||
+		step.SpawnArgs["agent_id"] != "research" ||
+		step.SpawnArgs["delivery_mode"] != "parent_only" ||
+		step.DelegateArgs["timeout_seconds"] != float64(45) {
+		t.Fatalf("unexpected hinted plan: %+v\n%s", step, result.ForLLM)
+	}
+}
+
+func TestTaskBoardTool_AddStepRejectsInvalidExecutionTool(t *testing.T) {
+	registry := taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(t.TempDir()))
+	tool := NewTaskBoardTool(registry)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"action":         "add_step",
+		"board_id":       "workflow-1",
+		"step_id":        "bad",
+		"step_title":     "Bad step",
+		"execution_tool": "magic",
+	})
+	if !result.IsError {
+		t.Fatalf("expected invalid execution_tool error, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "execution_tool must be one of") {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+}

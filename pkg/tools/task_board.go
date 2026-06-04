@@ -119,6 +119,20 @@ func (t *TaskBoardTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Optional logical owner or target agent for this planned step.",
 			},
+			"execution_tool": map[string]any{
+				"type":        "string",
+				"enum":        []string{"delegate", "spawn", "manual", "task_board.update"},
+				"description": "Optional execution hint for action=add_step and task_board next. delegate/spawn require owner/agent; manual/task_board.update means the parent should run or mark the step locally.",
+			},
+			"delivery_mode": map[string]any{
+				"type":        "string",
+				"enum":        []string{"parent_only", "user_only", "user_and_parent"},
+				"description": "Optional delivery mode hint to include in generated delegate/spawn args from action=next.",
+			},
+			"timeout_seconds": map[string]any{
+				"type":        "number",
+				"description": "Optional delegate timeout hint in seconds to include in generated delegate args from action=next.",
+			},
 			"task": map[string]any{
 				"type":        "string",
 				"description": "Optional task/instructions text for add_step.",
@@ -267,6 +281,18 @@ func (t *TaskBoardTool) addStep(ctx context.Context, args map[string]any) *ToolR
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
+	executionTool, err := parseTaskBoardExecutionTool(args["execution_tool"])
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	deliveryMode, err := parseTaskBoardDeliveryModeHint(args["delivery_mode"])
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	timeoutSeconds, err := parseTaskBoardTimeoutSeconds(args["timeout_seconds"])
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
 	dependsOn, err := optionalStringListArg(args, "depends_on")
 	if err != nil {
 		return ErrorResult(err.Error())
@@ -295,6 +321,9 @@ func (t *TaskBoardTool) addStep(ctx context.Context, args map[string]any) *ToolR
 		Status:         taskregistry.StatusPlanned,
 		DeliveryStatus: taskregistry.DeliveryNotApplicable,
 		NotifyPolicy:   taskregistry.NotifySilent,
+		ExecutionTool:  executionTool,
+		DeliveryMode:   deliveryMode,
+		TimeoutSeconds: timeoutSeconds,
 		CreatedAt:      now,
 		LastEventAt:    now,
 	}
@@ -476,6 +505,9 @@ type taskBoardRecordView struct {
 	StepTitle      string                           `json:"step_title,omitempty"`
 	DependsOn      []string                         `json:"depends_on,omitempty"`
 	BlockedBy      []string                         `json:"blocked_by,omitempty"`
+	ExecutionTool  string                           `json:"execution_tool,omitempty"`
+	DeliveryMode   string                           `json:"delivery_mode,omitempty"`
+	TimeoutSeconds int                              `json:"timeout_seconds,omitempty"`
 	Task           string                           `json:"task,omitempty"`
 	CreatedAt      string                           `json:"created_at,omitempty"`
 	EndedAt        string                           `json:"ended_at,omitempty"`
@@ -571,6 +603,7 @@ type taskBoardNextStepView struct {
 	Task            string         `json:"task,omitempty"`
 	RecommendedTool string         `json:"recommended_tool"`
 	Reason          string         `json:"reason"`
+	PolicySource    string         `json:"policy_source"`
 	DelegateArgs    map[string]any `json:"delegate_args,omitempty"`
 	SpawnArgs       map[string]any `json:"spawn_args,omitempty"`
 	UpdateArgs      map[string]any `json:"update_args,omitempty"`
@@ -588,6 +621,9 @@ func taskBoardView(rec taskregistry.Record, includePayloads bool) taskBoardRecor
 		StepTitle:      rec.StepTitle,
 		DependsOn:      rec.DependsOn,
 		BlockedBy:      rec.BlockedBy,
+		ExecutionTool:  rec.ExecutionTool,
+		DeliveryMode:   rec.DeliveryMode,
+		TimeoutSeconds: rec.TimeoutSeconds,
 		Task:           rec.Task,
 		Error:          rec.Error,
 		Summary:        rec.TerminalSummary,
@@ -738,11 +774,16 @@ func taskBoardNextStep(
 	owner := firstNonEmpty(step.Owner, meta.Owner, meta.AgentID)
 	task := firstNonEmpty(meta.Task, step.StepTitle, step.StepID)
 	out := taskBoardNextStepView{
-		StepID:    step.StepID,
-		StepTitle: step.StepTitle,
-		Owner:     owner,
-		Task:      task,
-		Reason:    "step dependencies are satisfied and no active run is recorded",
+		StepID:       step.StepID,
+		StepTitle:    step.StepTitle,
+		Owner:        owner,
+		Task:         task,
+		Reason:       "step dependencies are satisfied and no active run is recorded",
+		PolicySource: "heuristic",
+	}
+	executionTool := strings.TrimSpace(meta.ExecutionTool)
+	if executionTool != "" {
+		out.PolicySource = "step.execution_tool"
 	}
 	baseArgs := map[string]any{
 		"board_id":   boardID,
@@ -750,13 +791,29 @@ func taskBoardNextStep(
 		"step_title": step.StepTitle,
 		"task":       task,
 	}
+	if executionTool == "manual" || executionTool == "task_board.update" || (executionTool == "" && owner == "") {
+		out.RecommendedTool = "task_board.update"
+		out.UpdateArgs = map[string]any{
+			"action":   "update",
+			"board_id": boardID,
+			"step_id":  step.StepID,
+			"status":   string(taskregistry.StatusRunning),
+			"summary":  "manual/local step started",
+		}
+		return out
+	}
 	if owner != "" {
-		out.RecommendedTool = "delegate"
+		if executionTool == "spawn" {
+			out.RecommendedTool = "spawn"
+		} else {
+			out.RecommendedTool = "delegate"
+		}
 		out.DelegateArgs = copyStringAnyMap(baseArgs)
 		out.DelegateArgs["agent_id"] = owner
 		out.SpawnArgs = copyStringAnyMap(baseArgs)
 		out.SpawnArgs["agent_id"] = owner
 		out.SpawnArgs["label"] = firstNonEmpty(step.StepTitle, step.StepID)
+		applyTaskBoardExecutionHints(out.DelegateArgs, out.SpawnArgs, meta)
 		if len(step.DependsOn) > 0 {
 			out.DelegateArgs["depends_on"] = append([]string(nil), step.DependsOn...)
 			out.SpawnArgs["depends_on"] = append([]string(nil), step.DependsOn...)
@@ -764,6 +821,7 @@ func taskBoardNextStep(
 		return out
 	}
 	out.RecommendedTool = "task_board.update"
+	out.Reason = "execution hint requires an owner/agent, so the step must be handled manually"
 	out.UpdateArgs = map[string]any{
 		"action":   "update",
 		"board_id": boardID,
@@ -772,6 +830,16 @@ func taskBoardNextStep(
 		"summary":  "manual/local step started",
 	}
 	return out
+}
+
+func applyTaskBoardExecutionHints(delegateArgs, spawnArgs map[string]any, meta taskregistry.Record) {
+	if meta.DeliveryMode != "" {
+		delegateArgs["delivery_mode"] = meta.DeliveryMode
+		spawnArgs["delivery_mode"] = meta.DeliveryMode
+	}
+	if meta.TimeoutSeconds > 0 {
+		delegateArgs["timeout_seconds"] = meta.TimeoutSeconds
+	}
 }
 
 func taskBoardReadyStep(
@@ -1163,6 +1231,51 @@ func parseTaskBoardStatus(value string) (taskregistry.Status, error) {
 			"status must be one of: planned, queued, running, succeeded, failed, timed_out, canceled, lost",
 		)
 	}
+}
+
+func parseTaskBoardExecutionTool(raw any) (string, error) {
+	if raw == nil {
+		return "", nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("execution_tool must be a string")
+	}
+	value = strings.TrimSpace(value)
+	switch value {
+	case "", "delegate", "spawn", "manual", "task_board.update":
+		return value, nil
+	default:
+		return "", fmt.Errorf("execution_tool must be one of: delegate, spawn, manual, task_board.update")
+	}
+}
+
+func parseTaskBoardDeliveryModeHint(raw any) (string, error) {
+	if raw == nil {
+		return "", nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("delivery_mode must be a string")
+	}
+	value = strings.TrimSpace(value)
+	switch AsyncDeliveryMode(value) {
+	case "", AsyncDeliveryParentOnly, AsyncDeliveryUserOnly, AsyncDeliveryUserAndParent:
+		return value, nil
+	default:
+		return "", fmt.Errorf("delivery_mode must be one of: parent_only, user_only, user_and_parent")
+	}
+}
+
+func parseTaskBoardTimeoutSeconds(raw any) (int, error) {
+	if raw == nil {
+		return 0, nil
+	}
+	timeout, err := parseOptionalTimeoutSeconds(raw)
+	if err != nil {
+		return 0, err
+	}
+	return int(timeout / time.Second), nil
 }
 
 func isTaskBoardTerminalStatus(status taskregistry.Status) bool {
