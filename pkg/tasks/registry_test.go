@@ -51,6 +51,81 @@ func TestRegistryPersistsAndReloadsRecords(t *testing.T) {
 	}
 }
 
+func TestRegistryPersistsAndReloadsTaskEvents(t *testing.T) {
+	store := filepath.Join(t.TempDir(), "state", "task_registry.json")
+	registry := NewRegistry(store)
+
+	if err := registry.Upsert(Record{
+		TaskID:         "subagent-7",
+		Runtime:        RuntimeSubagent,
+		Task:           "download media",
+		Status:         StatusRunning,
+		DeliveryStatus: DeliveryPending,
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+	if err := registry.Update("subagent-7", func(rec *Record) {
+		rec.Status = StatusSucceeded
+		rec.DeliveryStatus = DeliveryDelivered
+		rec.ProgressSummary = "done"
+	}); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+
+	reloaded := NewRegistry(store)
+	events := reloaded.ListEvents("subagent-7")
+	if len(events) != 4 {
+		t.Fatalf("event count = %d, want 4: %+v", len(events), events)
+	}
+	wantTypes := []EventType{
+		EventTaskUpserted,
+		EventTaskStatusChanged,
+		EventTaskDeliveryChanged,
+		EventTaskProgress,
+	}
+	for i, want := range wantTypes {
+		if events[i].Type != want {
+			t.Fatalf("events[%d].Type = %q, want %q; events=%+v", i, events[i].Type, want, events)
+		}
+		if events[i].SchemaVersion != TaskEventSchemaVersion {
+			t.Fatalf("events[%d].SchemaVersion = %q, want %q", i, events[i].SchemaVersion, TaskEventSchemaVersion)
+		}
+		if events[i].Seq != int64(i+1) {
+			t.Fatalf("events[%d].Seq = %d, want %d", i, events[i].Seq, i+1)
+		}
+		if events[i].Fingerprint == "" {
+			t.Fatalf("events[%d].Fingerprint is empty", i)
+		}
+	}
+	if events[1].Payload["from"] != string(StatusRunning) || events[1].Payload["to"] != string(StatusSucceeded) {
+		t.Fatalf("status event payload = %+v", events[1].Payload)
+	}
+	if events[2].Payload["from"] != string(DeliveryPending) ||
+		events[2].Payload["to"] != string(DeliveryDelivered) {
+		t.Fatalf("delivery event payload = %+v", events[2].Payload)
+	}
+	if events[3].Payload["summary"] != "done" {
+		t.Fatalf("progress event payload = %+v", events[3].Payload)
+	}
+}
+
+func TestRegistryListEventsCanReturnAllTasks(t *testing.T) {
+	registry := NewRegistry("")
+	for _, id := range []string{"task-a", "task-b"} {
+		if err := registry.Upsert(Record{TaskID: id, Runtime: RuntimeTool, Task: id}); err != nil {
+			t.Fatalf("Upsert(%s) error = %v", id, err)
+		}
+	}
+
+	events := registry.ListEvents("")
+	if len(events) != 2 {
+		t.Fatalf("event count = %d, want 2: %+v", len(events), events)
+	}
+	if events[0].TaskID != "task-a" || events[1].TaskID != "task-b" {
+		t.Fatalf("events = %+v, want task-a then task-b", events)
+	}
+}
+
 func TestRegistryPersistsTaskBoardAndDeliverableFields(t *testing.T) {
 	store := filepath.Join(t.TempDir(), "state", "task_registry.json")
 	registry := NewRegistry(store)
@@ -104,6 +179,65 @@ func TestRegistryPersistsTaskBoardAndDeliverableFields(t *testing.T) {
 	}
 	if rec.Deliverable.Metadata["source"] != "instagram" {
 		t.Fatalf("metadata source = %q, want instagram", rec.Deliverable.Metadata["source"])
+	}
+	if rec.Deliverable.Report == nil {
+		t.Fatal("expected deliverable report projection")
+	}
+	if rec.Deliverable.Report.SchemaVersion != DeliverableReportV1 {
+		t.Fatalf(
+			"report schema = %q, want %q",
+			rec.Deliverable.Report.SchemaVersion,
+			DeliverableReportV1,
+		)
+	}
+	if rec.Deliverable.Report.Summary != "video downloaded" {
+		t.Fatalf("report summary = %q, want video downloaded", rec.Deliverable.Report.Summary)
+	}
+	if rec.Deliverable.Report.ContentHash == "" || rec.Deliverable.Report.ReportID == "" {
+		t.Fatalf("report identity not populated: %+v", rec.Deliverable.Report)
+	}
+	if len(rec.Deliverable.Report.Claims) != 1 || rec.Deliverable.Report.Claims[0].Kind != "fact" {
+		t.Fatalf("unexpected report claims: %+v", rec.Deliverable.Report.Claims)
+	}
+}
+
+func TestRegistryPreservesExplicitDeliverableReport(t *testing.T) {
+	registry := NewRegistry("")
+	if err := registry.Upsert(Record{
+		TaskID: "delegate-1",
+		Task:   "review code",
+		Deliverable: &DeliverablePayload{
+			Text: "reviewed",
+			Report: &DeliverableReport{
+				SchemaVersion: DeliverableReportV1,
+				ReportID:      "review-1",
+				ContentHash:   "abc123",
+				Summary:       "No findings",
+				Claims: []ReportClaim{{
+					Kind:       "negative_evidence",
+					Text:       "No high-confidence issues found",
+					Confidence: "high",
+				}},
+				Provenance: map[string]string{"producer": "reviewer"},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	rec, ok := registry.Get("delegate-1")
+	if !ok {
+		t.Fatal("expected task")
+	}
+	report := rec.Deliverable.Report
+	if report.ReportID != "review-1" || report.ContentHash != "abc123" {
+		t.Fatalf("explicit report identity changed: %+v", report)
+	}
+	if report.GeneratedAt == 0 {
+		t.Fatalf("expected GeneratedAt to be filled: %+v", report)
+	}
+	if report.Provenance["producer"] != "reviewer" {
+		t.Fatalf("explicit provenance lost: %+v", report.Provenance)
 	}
 }
 
@@ -483,5 +617,44 @@ func TestRegistryPlannedRecordsAreNotActiveOrLost(t *testing.T) {
 	}
 	if rec.Status != StatusPlanned {
 		t.Fatalf("planned status = %q, want %q", rec.Status, StatusPlanned)
+	}
+}
+
+func TestRegistryMarkActiveLostEmitsTransitionEvents(t *testing.T) {
+	registry := NewRegistry("")
+	if err := registry.Upsert(Record{
+		TaskID:         "running",
+		Runtime:        RuntimeSubagent,
+		Task:           "running task",
+		Status:         StatusRunning,
+		DeliveryStatus: DeliveryPending,
+	}); err != nil {
+		t.Fatalf("Upsert(running) error = %v", err)
+	}
+
+	changed, err := registry.MarkActiveLost("runtime restarted")
+	if err != nil {
+		t.Fatalf("MarkActiveLost error = %v", err)
+	}
+	if changed != 1 {
+		t.Fatalf("changed = %d, want 1", changed)
+	}
+	events := registry.ListEvents("running")
+	wantTypes := []EventType{
+		EventTaskUpserted,
+		EventTaskStatusChanged,
+		EventTaskDeliveryChanged,
+		EventTaskReconciled,
+	}
+	if len(events) != len(wantTypes) {
+		t.Fatalf("event count = %d, want %d: %+v", len(events), len(wantTypes), events)
+	}
+	for i, want := range wantTypes {
+		if events[i].Type != want {
+			t.Fatalf("events[%d].Type = %q, want %q: %+v", i, events[i].Type, want, events)
+		}
+	}
+	if events[3].Payload["reason"] != "runtime restarted" {
+		t.Fatalf("reconciled payload = %+v", events[3].Payload)
 	}
 }

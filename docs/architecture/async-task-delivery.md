@@ -21,6 +21,14 @@ PicoClaw background work now uses an explicit task/completion/delivery shape:
 what was produced, for example a downloaded media ref, a generated file path, or
 extracted text. It must not depend on the wording of the final chat response.
 
+Durable `DeliverablePayload` also carries an optional versioned
+`DeliverableReport`. When a producer only provides the legacy deliverable
+projection, the task registry derives a minimal report with schema version,
+stable content hash, report id, summary, fact claim, metadata, and provenance.
+New producers may provide a richer report directly. New consumers that need a
+machine contract should prefer `deliverable.report`; `text`, `artifacts`, and
+`metadata` remain the compatibility projection.
+
 Legacy child-run `Completion` remains supported and is mirrored into
 `Deliverable` when possible.
 
@@ -32,12 +40,66 @@ Migration status:
 
 - Done: hide `Completion` from user-facing status/board output when `Deliverable` is present.
 - Done: new delegate/spawn registry writes store `Deliverable` as the durable payload and keep `Completion` only when no deliverable is available.
+- Done: task registry projects legacy deliverables into `DeliverableReport`
+  automatically when producers do not supply one.
 
 Migration TODO:
 
 - Keep reading legacy `Completion` only as an adapter for old records.
+- Teach important producers to supply richer `DeliverableReport` payloads with
+  claims, negative evidence, field deltas, and provenance directly.
 - Remove `Completion` from public API/storage after all producers and persisted
   records have migrated.
+
+## Typed Task Events
+
+The task registry has two layers:
+
+- `Record`: the current-state projection for status tools, board views, and
+  existing integrations.
+- `TaskEvent`: the append-only canonical event stream for lifecycle and
+  delivery transitions.
+
+This follows the same principle as durable deliverables: structured state is
+canonical; chat, terminal text, and UI strings are projections. Producers should
+not require another agent to parse prose in order to decide whether a task
+started, completed, failed, delivered, or needs recovery.
+
+`TaskEvent` currently records:
+
+- schema version
+- task, board, parent, and step identity
+- runtime and producer
+- event type
+- task status and delivery status
+- per-task sequence number
+- emitted timestamp
+- fingerprint
+- small structured payload
+
+The initial event types are:
+
+- `task.upserted`
+- `task.status_changed`
+- `task.delivery_changed`
+- `task.progress`
+- `task.updated`
+- `task.reconciled`
+
+The event stream is persisted in the same `state/task_registry.json` snapshot
+as `tasks`. `Record` remains the compatibility API and is still what most tools
+read. New consumers that care about auditability, idempotency, or recovery
+should prefer events and treat records as a projection.
+
+Migration TODO:
+
+- Add a status/debug surface for task events once there is a concrete consumer.
+- Move async delivery reconciliation to emit explicit delivery events at every
+  coordinator decision point.
+- Introduce a versioned `DeliverableReport` shape for rich outputs with claims,
+  artifacts, field deltas, and provenance.
+- Render Telegram/GitHub/web summaries from structured reports instead of
+  freeform child-agent prose.
 
 ## Task Boards
 

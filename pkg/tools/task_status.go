@@ -49,6 +49,10 @@ func (t *TaskStatusTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Optional task board/workflow ID. Use this to inspect all steps belonging to one durable workflow.",
 			},
+			"include_events": map[string]any{
+				"type":        "boolean",
+				"description": "When task_id is provided, include the typed task event stream for that task.",
+			},
 		},
 		"required": []string{},
 	}
@@ -76,6 +80,10 @@ func (t *TaskStatusTool) Execute(ctx context.Context, args map[string]any) *Tool
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
+	includeEvents, err := optionalTaskStatusBoolArg(args, "include_events")
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
 	callerChannel := ToolChannel(ctx)
 	callerChatID := ToolChatID(ctx)
 	callerTopicID := ToolTopicID(ctx)
@@ -85,7 +93,11 @@ func (t *TaskStatusTool) Execute(ctx context.Context, args map[string]any) *Tool
 		if !ok || !taskRecordVisibleToCaller(rec, callerChannel, callerChatID, callerTopicID) {
 			return ErrorResult(fmt.Sprintf("No task found with task ID: %s", taskID))
 		}
-		return NewToolResult(formatTaskRecord(rec))
+		out := formatTaskRecord(rec)
+		if includeEvents {
+			out = out + "\n" + formatTaskEvents(t.registry.ListEvents(taskID))
+		}
+		return NewToolResult(out)
 	}
 
 	records := t.registry.List()
@@ -146,6 +158,18 @@ func (t *TaskStatusTool) Execute(ctx context.Context, args map[string]any) *Tool
 		sb.WriteString("\n")
 	}
 	return NewToolResult(strings.TrimSpace(sb.String()))
+}
+
+func optionalTaskStatusBoolArg(args map[string]any, key string) (bool, error) {
+	raw, ok := args[key]
+	if !ok || raw == nil {
+		return false, nil
+	}
+	value, ok := raw.(bool)
+	if !ok {
+		return false, fmt.Errorf("%s must be a boolean", key)
+	}
+	return value, nil
 }
 
 func optionalTaskStatusStringArg(args map[string]any, key string) (string, error) {
@@ -236,9 +260,10 @@ func formatTaskRecord(rec taskregistry.Record) string {
 	if rec.Deliverable != nil {
 		sb.WriteString(
 			fmt.Sprintf(
-				"  Deliverable: text=%t artifacts=%d\n",
+				"  Deliverable: text=%t artifacts=%d report=%t\n",
 				rec.Deliverable.Text != "",
 				len(rec.Deliverable.Artifacts),
+				rec.Deliverable.Report != nil,
 			),
 		)
 	}
@@ -252,6 +277,48 @@ func formatTaskRecord(rec taskregistry.Record) string {
 		)
 	}
 	return strings.TrimRight(sb.String(), "\n")
+}
+
+func formatTaskEvents(events []taskregistry.TaskEvent) string {
+	if len(events) == 0 {
+		return "Events: none"
+	}
+	var sb strings.Builder
+	sb.WriteString("Events:\n")
+	for _, evt := range events {
+		sb.WriteString(fmt.Sprintf(
+			"  #%d %s status=%s delivery=%s at=%s",
+			evt.Seq,
+			evt.Type,
+			evt.Status,
+			evt.DeliveryStatus,
+			formatTaskTime(evt.EmittedAt),
+		))
+		if evt.Fingerprint != "" {
+			sb.WriteString(fmt.Sprintf(" fingerprint=%s", truncateTaskText(evt.Fingerprint, 12)))
+		}
+		if len(evt.Payload) > 0 {
+			sb.WriteString(fmt.Sprintf(" payload=%s", formatTaskEventPayload(evt.Payload)))
+		}
+		sb.WriteString("\n")
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+func formatTaskEventPayload(payload map[string]string) string {
+	if len(payload) == 0 {
+		return "{}"
+	}
+	keys := make([]string, 0, len(payload))
+	for key := range payload {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%q", key, payload[key]))
+	}
+	return "{" + strings.Join(parts, ", ") + "}"
 }
 
 func formatTaskTime(ms int64) string {
