@@ -359,6 +359,58 @@ func TestRegistryMarkStaleActiveLost(t *testing.T) {
 	}
 }
 
+func TestRegistryHeartbeatUpdatesOnlyActiveTasks(t *testing.T) {
+	registry := NewRegistry("")
+	old := time.Now().Add(-time.Hour).UnixMilli()
+	for _, rec := range []Record{
+		{
+			TaskID:         "running",
+			Runtime:        RuntimeDelegate,
+			Task:           "running task",
+			Status:         StatusRunning,
+			DeliveryStatus: DeliveryPending,
+			CreatedAt:      old,
+			LastEventAt:    old,
+		},
+		{
+			TaskID:         "done",
+			Runtime:        RuntimeDelegate,
+			Task:           "done task",
+			Status:         StatusSucceeded,
+			DeliveryStatus: DeliveryDelivered,
+			CreatedAt:      old,
+			LastEventAt:    old,
+			EndedAt:        old,
+		},
+	} {
+		if err := registry.Upsert(rec); err != nil {
+			t.Fatalf("Upsert(%s) error = %v", rec.TaskID, err)
+		}
+	}
+
+	if err := registry.Heartbeat("running", "still working"); err != nil {
+		t.Fatalf("Heartbeat(running) error = %v", err)
+	}
+	if err := registry.Heartbeat("done", "should not change"); err != nil {
+		t.Fatalf("Heartbeat(done) error = %v", err)
+	}
+
+	running, _ := registry.Get("running")
+	if running.LastEventAt <= old {
+		t.Fatalf("running LastEventAt = %d, want > %d", running.LastEventAt, old)
+	}
+	if running.ProgressSummary != "still working" {
+		t.Fatalf("running ProgressSummary = %q, want still working", running.ProgressSummary)
+	}
+	done, _ := registry.Get("done")
+	if done.LastEventAt != old {
+		t.Fatalf("done LastEventAt = %d, want unchanged %d", done.LastEventAt, old)
+	}
+	if done.ProgressSummary != "" {
+		t.Fatalf("done ProgressSummary = %q, want empty", done.ProgressSummary)
+	}
+}
+
 func TestRegistryMarkActiveLost(t *testing.T) {
 	registry := NewRegistry("")
 	now := time.Now().UnixMilli()
