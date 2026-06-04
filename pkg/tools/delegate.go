@@ -208,6 +208,7 @@ func (t *DelegateTool) recordDelegateTask(
 	if t == nil || t.taskRegistry == nil || taskID == "" {
 		return
 	}
+	completion = completionPayloadForLegacyStorage(completion, deliverable)
 	now := time.Now().UnixMilli()
 	rec := taskregistry.Record{
 		TaskID:              taskID,

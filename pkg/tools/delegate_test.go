@@ -244,8 +244,8 @@ func TestDelegateTool_Execute_RecordsDeliverableFromCompletion(t *testing.T) {
 		t.Fatalf("registry records = %d, want 1: %#v", len(records), records)
 	}
 	rec := records[0]
-	if rec.Completion == nil || rec.Completion.Text != "recipe text" {
-		t.Fatalf("Completion = %+v, want recipe text", rec.Completion)
+	if rec.Completion != nil {
+		t.Fatalf("Completion = %+v, want nil when Deliverable is present", rec.Completion)
 	}
 	if rec.Deliverable == nil || rec.Deliverable.Text != "recipe text" {
 		t.Fatalf("Deliverable = %+v, want recipe text", rec.Deliverable)
@@ -300,6 +300,17 @@ func TestDelegateTool_Execute_RecordsDeliverableArtifactFromLabeledPath(t *testi
 	}
 	if artifact.ContentType != "video/mp4" {
 		t.Fatalf("artifact content type = %q, want video/mp4", artifact.ContentType)
+	}
+}
+
+func TestCompletionPayloadForLegacyStorageKeepsCompletionOnlyRecords(t *testing.T) {
+	completion := &taskregistry.CompletionPayload{Text: "legacy-only result"}
+	if got := completionPayloadForLegacyStorage(completion, nil); got != completion {
+		t.Fatalf("completion-only storage = %+v, want original completion", got)
+	}
+	deliverable := &taskregistry.DeliverablePayload{Text: "typed result"}
+	if got := completionPayloadForLegacyStorage(completion, deliverable); got != nil {
+		t.Fatalf("deliverable-backed storage completion = %+v, want nil", got)
 	}
 }
 

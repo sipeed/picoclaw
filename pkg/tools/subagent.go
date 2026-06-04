@@ -460,11 +460,21 @@ func (sm *SubagentManager) recordTaskResult(task *SubagentTask, result *ToolResu
 	sm.recordTask(task, taskregistry.StatusSucceeded, delivery, summary)
 	if completion != nil || deliverable != nil {
 		_ = sm.taskRegistry.Update(task.ID, func(rec *taskregistry.Record) {
-			rec.Completion = completion
+			rec.Completion = completionPayloadForLegacyStorage(completion, deliverable)
 			rec.Deliverable = deliverable
 			rec.LastEventAt = time.Now().UnixMilli()
 		})
 	}
+}
+
+func completionPayloadForLegacyStorage(
+	completion *taskregistry.CompletionPayload,
+	deliverable *taskregistry.DeliverablePayload,
+) *taskregistry.CompletionPayload {
+	if deliverable != nil {
+		return nil
+	}
+	return completion
 }
 
 func completionPayloadForTaskRegistry(result *ToolResult) *taskregistry.CompletionPayload {

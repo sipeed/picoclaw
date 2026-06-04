@@ -31,10 +31,10 @@ and should not be extended with new artifact semantics.
 Migration status:
 
 - Done: hide `Completion` from user-facing status/board output when `Deliverable` is present.
+- Done: new delegate/spawn registry writes store `Deliverable` as the durable payload and keep `Completion` only when no deliverable is available.
 
 Migration TODO:
 
-- Convert remaining child-run producers to write `Deliverable` directly.
 - Keep reading legacy `Completion` only as an adapter for old records.
 - Remove `Completion` from public API/storage after all producers and persisted
   records have migrated.
