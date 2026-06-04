@@ -105,6 +105,24 @@ func TestDecideAsyncToolResultDelivery(t *testing.T) {
 			},
 		},
 		{
+			name: "user only media publishes without user text",
+			in: (&tools.ToolResult{
+				ForLLM: "internal media result",
+				Completion: &tools.CompletionResult{
+					Media: []tools.CompletionMedia{{Ref: "media://completion-video"}},
+				},
+			}).WithAsyncDelivery(tools.AsyncDeliveryUserOnly),
+			want: AsyncDeliveryDecision{
+				DeliveryMode:  tools.AsyncDeliveryUserOnly,
+				PublishToUser: true,
+				QueueParent:   false,
+				ParentHandled: true,
+				ContentLen:    -1,
+				ForUserLen:    0,
+				MediaCount:    1,
+			},
+		},
+		{
 			name: "error is surfaced in decision",
 			in: (&tools.ToolResult{
 				ForLLM:  "failed",
@@ -289,6 +307,50 @@ func TestDeliverAsyncToolCompletion_SkipsDuplicateParentDeliveryAfterReload(t *t
 	assertTaskDeliveryStatusForTest(t, reloaded, workspace, taskID, taskregistry.DeliverySessionQueued)
 }
 
+func TestDeliverAsyncToolCompletion_SkipsDuplicateMediaAfterReload(t *testing.T) {
+	al, msgBus, ts, workspace := newDeliveryCoordinatorTestRuntime(t, "ok")
+	taskID := "coordinator-duplicate-media"
+	upsertAsyncTaskForTest(t, al, workspace, taskID)
+	result := (&tools.ToolResult{
+		ForLLM:      "internal media result",
+		AsyncTaskID: taskID,
+		Completion: &tools.CompletionResult{
+			Text: "https://example.com/reel",
+			Media: []tools.CompletionMedia{{
+				Ref:         "media://video-1",
+				Type:        "video",
+				Filename:    "source.mp4",
+				ContentType: "video/mp4",
+			}},
+		},
+	}).WithAsyncDelivery(tools.AsyncDeliveryUserOnly)
+	req := AsyncDeliveryRequest{
+		TurnState:    ts,
+		ToolName:     "spawn",
+		CompletionID: "same-media-completion",
+		Result:       result,
+		Decision:     decideAsyncToolResultDelivery(result),
+	}
+
+	al.deliverAsyncToolCompletion(req)
+	media := waitForOutboundMediaMessage(t, msgBus.OutboundMediaChan(), 2*time.Second)
+	if len(media.Parts) != 1 || media.Parts[0].Ref != "media://video-1" {
+		t.Fatalf("media parts = %+v, want media://video-1", media.Parts)
+	}
+	assertTaskDeliveryStatusForTest(t, al, workspace, taskID, taskregistry.DeliveryDelivered)
+
+	reloaded, reloadedBus, reloadedTS, _ := newDeliveryCoordinatorTestRuntimeWithWorkspace(
+		t,
+		workspace,
+		"duplicate should not synthesize",
+	)
+	req.TurnState = reloadedTS
+	reloaded.deliverAsyncToolCompletion(req)
+	assertNoOutboundMediaMessage(t, reloadedBus, "duplicate media delivery after reload")
+	assertNoOutboundMessage(t, reloadedBus, "duplicate media parent synthesis after reload")
+	assertTaskDeliveryStatusForTest(t, reloaded, workspace, taskID, taskregistry.DeliveryDelivered)
+}
+
 func newDeliveryCoordinatorTestRuntime(
 	t *testing.T,
 	response string,
@@ -349,6 +411,30 @@ func assertNoOutboundMessage(t *testing.T, msgBus *bus.MessageBus, context strin
 	select {
 	case msg := <-msgBus.OutboundChan():
 		t.Fatalf("unexpected outbound during %s: %+v", context, msg)
+	case <-time.After(150 * time.Millisecond):
+	}
+}
+
+func waitForOutboundMediaMessage(
+	t *testing.T,
+	ch <-chan bus.OutboundMediaMessage,
+	timeout time.Duration,
+) bus.OutboundMediaMessage {
+	t.Helper()
+	select {
+	case msg := <-ch:
+		return msg
+	case <-time.After(timeout):
+		t.Fatal("timeout waiting for outbound media message")
+	}
+	return bus.OutboundMediaMessage{}
+}
+
+func assertNoOutboundMediaMessage(t *testing.T, msgBus *bus.MessageBus, context string) {
+	t.Helper()
+	select {
+	case msg := <-msgBus.OutboundMediaChan():
+		t.Fatalf("unexpected outbound media during %s: %+v", context, msg)
 	case <-time.After(150 * time.Millisecond):
 	}
 }

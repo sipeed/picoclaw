@@ -121,6 +121,8 @@ func (al *AgentLoop) deliverAsyncToolCompletion(req AsyncDeliveryRequest) {
 					"chat_id": ts.chatID,
 					"error":   err.Error(),
 				})
+		} else if !delivered && delivery.MediaCount > 0 {
+			userDelivered = true
 		} else if !delivered && strings.TrimSpace(result.ForUser) != "" && !result.Silent {
 			if err := al.bus.PublishOutbound(outCtx, outboundMessageForTurn(ts, result.ForUser)); err != nil {
 				userDeliveryErr = err.Error()
@@ -270,7 +272,7 @@ func decideAsyncToolResultDelivery(result *tools.ToolResult) AsyncDeliveryDecisi
 	decision.IsError = result.IsError
 
 	if decision.DeliveryMode != tools.AsyncDeliveryParentOnly {
-		decision.PublishToUser = !result.Silent && result.ForUser != ""
+		decision.PublishToUser = !result.Silent && (result.ForUser != "" || decision.MediaCount > 0)
 	}
 	if decision.DeliveryMode != tools.AsyncDeliveryUserOnly {
 		decision.QueueParent = content != ""
