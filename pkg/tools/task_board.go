@@ -637,7 +637,9 @@ func taskBoardView(rec taskregistry.Record, includePayloads bool) taskBoardRecor
 	}
 	if includePayloads {
 		view.Deliverable = rec.Deliverable
-		view.Completion = rec.Completion
+		if rec.Deliverable == nil {
+			view.Completion = rec.Completion
+		}
 	}
 	return view
 }
@@ -682,7 +684,9 @@ func taskBoardStepResultFromRecords(stepID string, records []taskregistry.Record
 	}
 	if latest.Status == taskregistry.StatusSucceeded && recordHasDeliverable(latest) {
 		view.Deliverable = latest.Deliverable
-		view.LegacyCompletion = latest.Completion
+		if latest.Deliverable == nil {
+			view.LegacyCompletion = latest.Completion
+		}
 		view.TerminalSummary = latest.TerminalSummary
 		view.HasResult = true
 	}
@@ -703,7 +707,9 @@ func taskBoardStepResultFromRecords(stepID string, records []taskregistry.Record
 		view.LatestSuccessfulTaskID = rec.TaskID
 		view.LatestSuccessfulEndedAt = formatTaskBoardTime(rec.EndedAt)
 		view.LatestSuccessfulDeliverable = rec.Deliverable
-		view.LatestSuccessfulLegacyCompletion = rec.Completion
+		if rec.Deliverable == nil {
+			view.LatestSuccessfulLegacyCompletion = rec.Completion
+		}
 		view.LatestSuccessfulTerminalSummary = rec.TerminalSummary
 	}
 	return view
