@@ -145,7 +145,7 @@ func TestClassifyCommand(t *testing.T) {
 		{name: "write redirection", command: "echo hi > file.txt", want: CommandClassWrite},
 		{name: "sed in place", command: "sed -i s/a/b/ file.txt", want: CommandClassWrite},
 		{name: "git push destructive", command: "git push origin main", want: CommandClassDestructive},
-		{name: "git fetch write", command: "git fetch origin main", want: CommandClassWrite},
+		{name: "git fetch read only", command: "git fetch origin main", want: CommandClassReadOnly},
 		{name: "gh pr view read only", command: "gh pr view 17", want: CommandClassReadOnly},
 		{name: "gh pr comment write", command: "gh pr comment 17 --body hi", want: CommandClassWrite},
 		{name: "rm destructive", command: "rm -rf tmp", want: CommandClassDestructive},

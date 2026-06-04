@@ -140,11 +140,11 @@ func firstCommandName(command string) string {
 func classifyGitCommand(command string) string {
 	subcommand := secondCommandToken(command)
 	switch subcommand {
-	case "status", "diff", "log", "show", "rev-parse", "merge-base", "branch", "remote", "config", "ls-files":
+	case "status", "diff", "log", "show", "rev-parse", "merge-base", "branch", "remote", "config", "ls-files", "fetch":
 		return CommandClassReadOnly
 	case "push", "reset", "clean":
 		return CommandClassDestructive
-	case "add", "commit", "checkout", "switch", "merge", "rebase", "cherry-pick", "restore", "stash", "pull", "fetch":
+	case "add", "commit", "checkout", "switch", "merge", "rebase", "cherry-pick", "restore", "stash", "pull":
 		return CommandClassWrite
 	default:
 		return CommandClassUnknown
