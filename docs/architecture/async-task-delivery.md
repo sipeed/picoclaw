@@ -80,6 +80,19 @@ executed records for one workflow. Use `task_board {"action":"results",...}` to
 read durable deliverables produced by completed child runs. `task_status
 {"board_id":"..."}` remains the lower-level status view over the same records.
 
+`task_board list` also returns an effective board view derived from the raw
+records:
+
+- `overall_status`: computed workflow state.
+- `effective_counts`: counts by effective step status.
+- `effective_steps`: one computed row per `step_id`.
+- `freshness`: `healthy`, `stalled`, `finished`, `lost`, or `unknown`.
+- `latest_run_task_id`: latest non-placeholder run for the step, when present.
+
+The effective view does not mutate registry state. It lets agents and UIs tell
+whether a workflow is actually progressing, stalled, finished, or only planned
+without having to infer that from raw task records.
+
 `spawn_status` is kept as a compatibility/debug view for tasks started specifically by the `spawn` tool. It is backed by the same durable registry but intentionally remains spawn-only.
 
 ## Legacy System Messages

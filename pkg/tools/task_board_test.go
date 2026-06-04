@@ -326,3 +326,128 @@ func TestTaskBoardTool_ResultsReturnsDeliverablesForVisibleBoard(t *testing.T) {
 		t.Fatalf("results missing deliverable:\n%s", result.ForLLM)
 	}
 }
+
+func TestTaskBoardTool_ListIncludesEffectiveStatusAndFreshness(t *testing.T) {
+	registry := taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(t.TempDir()))
+	tool := NewTaskBoardTool(registry)
+	now := time.Now().UnixMilli()
+	old := time.Now().Add(-10 * time.Minute).UnixMilli()
+
+	records := []taskregistry.Record{
+		{
+			TaskID:         "board:workflow-1:step:media-extract",
+			Runtime:        taskregistry.RuntimeTool,
+			TaskKind:       "task_board_step",
+			BoardID:        "workflow-1",
+			StepID:         "media-extract",
+			StepTitle:      "Extract media",
+			Owner:          "media",
+			Task:           "planned media extract",
+			Status:         taskregistry.StatusPlanned,
+			DeliveryStatus: taskregistry.DeliveryNotApplicable,
+			CreatedAt:      now - 10,
+			LastEventAt:    now - 10,
+		},
+		{
+			TaskID:         "delegate-media-1",
+			Runtime:        taskregistry.RuntimeDelegate,
+			TaskKind:       "delegate",
+			BoardID:        "workflow-1",
+			StepID:         "media-extract",
+			StepTitle:      "Extract media",
+			AgentID:        "media",
+			Task:           "download reel",
+			Status:         taskregistry.StatusSucceeded,
+			DeliveryStatus: taskregistry.DeliverySessionQueued,
+			CreatedAt:      now - 9,
+			LastEventAt:    now - 8,
+			EndedAt:        now - 8,
+			Deliverable: &taskregistry.DeliverablePayload{
+				Text: "caption text",
+			},
+		},
+		{
+			TaskID:         "board:workflow-1:step:polish-translation",
+			Runtime:        taskregistry.RuntimeTool,
+			TaskKind:       "task_board_step",
+			BoardID:        "workflow-1",
+			StepID:         "polish-translation",
+			StepTitle:      "Polish translation",
+			Owner:          "research",
+			Task:           "planned polish",
+			Status:         taskregistry.StatusPlanned,
+			DeliveryStatus: taskregistry.DeliveryNotApplicable,
+			CreatedAt:      old - 10,
+			LastEventAt:    old - 10,
+		},
+		{
+			TaskID:         "delegate-polish-1",
+			Runtime:        taskregistry.RuntimeDelegate,
+			TaskKind:       "delegate",
+			BoardID:        "workflow-1",
+			StepID:         "polish-translation",
+			StepTitle:      "Polish translation",
+			AgentID:        "research",
+			Task:           "polish recipe",
+			Status:         taskregistry.StatusRunning,
+			DeliveryStatus: taskregistry.DeliveryPending,
+			CreatedAt:      old,
+			StartedAt:      old,
+			LastEventAt:    old,
+		},
+	}
+	for _, rec := range records {
+		if err := registry.Upsert(rec); err != nil {
+			t.Fatalf("Upsert(%s) error = %v", rec.TaskID, err)
+		}
+	}
+
+	result := tool.Execute(WithToolContext(context.Background(), "telegram", "chat-1"), map[string]any{
+		"action":   "list",
+		"board_id": "workflow-1",
+	})
+	if result.IsError {
+		t.Fatalf("list failed: %s", result.ForLLM)
+	}
+
+	var payload struct {
+		OverallStatus   string         `json:"overall_status"`
+		EffectiveCounts map[string]int `json:"effective_counts"`
+		EffectiveSteps  []struct {
+			StepID              string `json:"step_id"`
+			EffectiveStatus     string `json:"effective_status"`
+			Freshness           string `json:"freshness"`
+			LatestRunTaskID     string `json:"latest_run_task_id"`
+			LastEventAgeSeconds int64  `json:"last_event_age_seconds"`
+			Deliverable         bool   `json:"deliverable"`
+		} `json:"effective_steps"`
+	}
+	if err := json.Unmarshal([]byte(result.ForLLM), &payload); err != nil {
+		t.Fatalf("list JSON error = %v\n%s", err, result.ForLLM)
+	}
+	if payload.OverallStatus != "stalled" {
+		t.Fatalf("overall_status = %q, want stalled\n%s", payload.OverallStatus, result.ForLLM)
+	}
+	if payload.EffectiveCounts["succeeded"] != 1 || payload.EffectiveCounts["running"] != 1 {
+		t.Fatalf("effective counts = %#v", payload.EffectiveCounts)
+	}
+	if len(payload.EffectiveSteps) != 2 {
+		t.Fatalf("effective steps = %#v", payload.EffectiveSteps)
+	}
+	mediaStep := payload.EffectiveSteps[0]
+	if mediaStep.StepID != "media-extract" ||
+		mediaStep.EffectiveStatus != "succeeded" ||
+		mediaStep.Freshness != "finished" ||
+		mediaStep.LatestRunTaskID != "delegate-media-1" ||
+		!mediaStep.Deliverable {
+		t.Fatalf("unexpected media effective step: %#v\n%s", mediaStep, result.ForLLM)
+	}
+	polishStep := payload.EffectiveSteps[1]
+	if polishStep.StepID != "polish-translation" ||
+		polishStep.EffectiveStatus != "running" ||
+		polishStep.Freshness != "stalled" ||
+		polishStep.LatestRunTaskID != "delegate-polish-1" ||
+		polishStep.LastEventAgeSeconds < 300 {
+		t.Fatalf("unexpected polish effective step: %#v\n%s", polishStep, result.ForLLM)
+	}
+}

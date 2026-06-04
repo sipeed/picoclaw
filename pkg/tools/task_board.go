@@ -20,6 +20,8 @@ type TaskBoardTool struct {
 	registry *taskregistry.Registry
 }
 
+const taskBoardStalledAfter = 5 * time.Minute
+
 func NewTaskBoardTool(registry *taskregistry.Registry) *TaskBoardTool {
 	return &TaskBoardTool{registry: registry}
 }
@@ -408,14 +410,21 @@ func (t *TaskBoardTool) list(ctx context.Context, args map[string]any, resultsOn
 		counts[string(rec.Status)]++
 		steps = append(steps, taskBoardView(rec, resultsOnly))
 	}
-	return taskBoardJSONResult(map[string]any{
+	payload := map[string]any{
 		"action":       map[bool]string{true: "results", false: "list"}[resultsOnly],
 		"board_id":     boardID,
 		"count":        len(filtered),
 		"counts":       counts,
 		"results_only": resultsOnly,
 		"steps":        steps,
-	})
+	}
+	if !resultsOnly {
+		effective := buildTaskBoardEffectiveView(filtered, time.Now(), taskBoardStalledAfter)
+		payload["overall_status"] = effective.OverallStatus
+		payload["effective_counts"] = effective.Counts
+		payload["effective_steps"] = effective.Steps
+	}
+	return taskBoardJSONResult(payload)
 }
 
 type taskBoardRecordView struct {
@@ -437,6 +446,26 @@ type taskBoardRecordView struct {
 	Deliverable    *taskregistry.DeliverablePayload `json:"deliverable,omitempty"`
 	Completion     *taskregistry.CompletionPayload  `json:"legacy_completion,omitempty"`
 	TaskPacket     *taskregistry.TaskPacketPayload  `json:"task_packet,omitempty"`
+}
+
+type taskBoardEffectiveView struct {
+	OverallStatus string                       `json:"overall_status"`
+	Counts        map[string]int               `json:"effective_counts"`
+	Steps         []taskBoardEffectiveStepView `json:"effective_steps"`
+}
+
+type taskBoardEffectiveStepView struct {
+	StepID              string `json:"step_id"`
+	StepTitle           string `json:"step_title,omitempty"`
+	Owner               string `json:"owner,omitempty"`
+	EffectiveStatus     string `json:"effective_status"`
+	Freshness           string `json:"freshness"`
+	LatestTaskID        string `json:"latest_task_id,omitempty"`
+	LatestRunTaskID     string `json:"latest_run_task_id,omitempty"`
+	LatestRunStatus     string `json:"latest_run_status,omitempty"`
+	LastEventAgeSeconds int64  `json:"last_event_age_seconds,omitempty"`
+	Deliverable         bool   `json:"deliverable,omitempty"`
+	Blocked             bool   `json:"blocked,omitempty"`
 }
 
 func taskBoardView(rec taskregistry.Record, includePayloads bool) taskBoardRecordView {
@@ -467,6 +496,202 @@ func taskBoardView(rec taskregistry.Record, includePayloads bool) taskBoardRecor
 		view.Completion = rec.Completion
 	}
 	return view
+}
+
+func buildTaskBoardEffectiveView(
+	records []taskregistry.Record,
+	now time.Time,
+	stalledAfter time.Duration,
+) taskBoardEffectiveView {
+	byStep := make(map[string][]taskregistry.Record)
+	for _, rec := range records {
+		if rec.StepID == "" || rec.StepID == "board-root" || rec.TaskKind == "task_board" {
+			continue
+		}
+		byStep[rec.StepID] = append(byStep[rec.StepID], rec)
+	}
+
+	stepIDs := make([]string, 0, len(byStep))
+	for stepID := range byStep {
+		stepIDs = append(stepIDs, stepID)
+	}
+	sort.Strings(stepIDs)
+
+	counts := map[string]int{}
+	steps := make([]taskBoardEffectiveStepView, 0, len(stepIDs))
+	for _, stepID := range stepIDs {
+		step := effectiveStepFromRecords(stepID, byStep[stepID], now, stalledAfter)
+		counts[step.EffectiveStatus]++
+		steps = append(steps, step)
+	}
+
+	return taskBoardEffectiveView{
+		OverallStatus: effectiveBoardOverallStatus(steps),
+		Counts:        counts,
+		Steps:         steps,
+	}
+}
+
+func effectiveStepFromRecords(
+	stepID string,
+	records []taskregistry.Record,
+	now time.Time,
+	stalledAfter time.Duration,
+) taskBoardEffectiveStepView {
+	sort.Slice(records, func(i, j int) bool {
+		if taskBoardRecordEventTime(records[i]) != taskBoardRecordEventTime(records[j]) {
+			return taskBoardRecordEventTime(records[i]) < taskBoardRecordEventTime(records[j])
+		}
+		return records[i].TaskID < records[j].TaskID
+	})
+
+	latest := records[len(records)-1]
+	latestRun := latestNonBoardStepRecord(records)
+	statusSource := latest
+	if latestRun != nil {
+		statusSource = *latestRun
+	}
+
+	status := string(statusSource.Status)
+	freshness, ageSeconds := taskBoardFreshness(statusSource, now, stalledAfter)
+	view := taskBoardEffectiveStepView{
+		StepID:              stepID,
+		StepTitle:           firstNonEmpty(statusSource.StepTitle, latest.StepTitle),
+		Owner:               firstNonEmpty(statusSource.Owner, statusSource.AgentID, latest.Owner, latest.AgentID),
+		EffectiveStatus:     status,
+		Freshness:           freshness,
+		LatestTaskID:        latest.TaskID,
+		LastEventAgeSeconds: ageSeconds,
+		Deliverable:         recordHasDeliverable(statusSource),
+		Blocked:             len(statusSource.BlockedBy) > 0,
+	}
+	if latestRun != nil {
+		view.LatestRunTaskID = latestRun.TaskID
+		view.LatestRunStatus = string(latestRun.Status)
+	}
+	if view.Blocked && view.EffectiveStatus == string(taskregistry.StatusPlanned) {
+		view.EffectiveStatus = "blocked"
+	}
+	return view
+}
+
+func latestNonBoardStepRecord(records []taskregistry.Record) *taskregistry.Record {
+	for i := len(records) - 1; i >= 0; i-- {
+		if records[i].TaskKind != "task_board_step" {
+			return &records[i]
+		}
+	}
+	return nil
+}
+
+func taskBoardFreshness(
+	rec taskregistry.Record,
+	now time.Time,
+	stalledAfter time.Duration,
+) (string, int64) {
+	ref := taskBoardRecordEventTime(rec)
+	var ageSeconds int64
+	if ref > 0 {
+		ageSeconds = int64(now.Sub(time.UnixMilli(ref)).Seconds())
+		if ageSeconds < 0 {
+			ageSeconds = 0
+		}
+	}
+	switch rec.Status {
+	case taskregistry.StatusSucceeded,
+		taskregistry.StatusFailed,
+		taskregistry.StatusTimedOut,
+		taskregistry.StatusCancelled:
+		return "finished", ageSeconds
+	case taskregistry.StatusLost:
+		return "lost", ageSeconds
+	case taskregistry.StatusRunning:
+		if ref > 0 && now.Sub(time.UnixMilli(ref)) > stalledAfter {
+			return "stalled", ageSeconds
+		}
+		return "healthy", ageSeconds
+	case taskregistry.StatusQueued:
+		if ref > 0 && now.Sub(time.UnixMilli(ref)) > stalledAfter {
+			return "stalled", ageSeconds
+		}
+		return "healthy", ageSeconds
+	default:
+		return "unknown", ageSeconds
+	}
+}
+
+func effectiveBoardOverallStatus(steps []taskBoardEffectiveStepView) string {
+	if len(steps) == 0 {
+		return "empty"
+	}
+	allSucceeded := true
+	hasActive := false
+	hasPlanned := false
+	hasBlocked := false
+	hasStalled := false
+	for _, step := range steps {
+		switch step.EffectiveStatus {
+		case string(taskregistry.StatusFailed),
+			string(taskregistry.StatusTimedOut),
+			string(taskregistry.StatusCancelled),
+			string(taskregistry.StatusLost):
+			return step.EffectiveStatus
+		case "blocked":
+			hasBlocked = true
+			allSucceeded = false
+		case string(taskregistry.StatusRunning), string(taskregistry.StatusQueued):
+			hasActive = true
+			allSucceeded = false
+		case string(taskregistry.StatusPlanned):
+			hasPlanned = true
+			allSucceeded = false
+		case string(taskregistry.StatusSucceeded):
+		default:
+			allSucceeded = false
+		}
+		if step.Freshness == "stalled" {
+			hasStalled = true
+		}
+	}
+	if hasStalled {
+		return "stalled"
+	}
+	if hasBlocked {
+		return "blocked"
+	}
+	if hasActive {
+		return string(taskregistry.StatusRunning)
+	}
+	if allSucceeded {
+		return string(taskregistry.StatusSucceeded)
+	}
+	if hasPlanned {
+		return string(taskregistry.StatusPlanned)
+	}
+	return "unknown"
+}
+
+func taskBoardRecordEventTime(rec taskregistry.Record) int64 {
+	switch {
+	case rec.LastEventAt > 0:
+		return rec.LastEventAt
+	case rec.EndedAt > 0:
+		return rec.EndedAt
+	case rec.StartedAt > 0:
+		return rec.StartedAt
+	default:
+		return rec.CreatedAt
+	}
+}
+
+func recordHasDeliverable(rec taskregistry.Record) bool {
+	if rec.Deliverable != nil {
+		return strings.TrimSpace(rec.Deliverable.Text) != "" || len(rec.Deliverable.Artifacts) > 0
+	}
+	if rec.Completion != nil {
+		return strings.TrimSpace(rec.Completion.Text) != "" || len(rec.Completion.Media) > 0
+	}
+	return strings.TrimSpace(rec.TerminalSummary) != ""
 }
 
 func taskBoardJSONResult(value any) *ToolResult {
