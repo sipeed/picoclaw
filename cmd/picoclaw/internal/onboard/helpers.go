@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/term"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/sipeed/picoclaw/cmd/picoclaw/internal/cliui"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/credential"
+	workspacetemplates "github.com/sipeed/picoclaw/workspace"
 )
 
 func onboard(encrypt bool) {
@@ -151,8 +153,8 @@ func copyEmbeddedToTarget(targetDir string) error {
 		return fmt.Errorf("Failed to create target directory: %w", err)
 	}
 
-	// Walk through all files in embed.FS
-	err := fs.WalkDir(embeddedFiles, "workspace", func(path string, d fs.DirEntry, err error) error {
+	// Walk through all files in the embedded root workspace template.
+	err := fs.WalkDir(workspacetemplates.FS, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -163,14 +165,20 @@ func copyEmbeddedToTarget(targetDir string) error {
 		}
 
 		// Read embedded file
-		data, err := embeddedFiles.ReadFile(path)
+		data, err := workspacetemplates.FS.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("Failed to read embedded file %s: %w", path, err)
 		}
 
-		new_path, err := filepath.Rel("workspace", path)
-		if err != nil {
-			return fmt.Errorf("Failed to get relative path for %s: %v\n", path, err)
+		new_path := filepath.Clean(path)
+		if new_path == "." {
+			return nil
+		}
+		if strings.HasPrefix(new_path, "..") {
+			return fmt.Errorf("Failed to get relative path for %s", path)
+		}
+		if filepath.IsAbs(new_path) {
+			return fmt.Errorf("Unexpected absolute embedded path %s", path)
 		}
 		if new_path == "AGENTS.md" || new_path == "IDENTITY.md" {
 			return nil

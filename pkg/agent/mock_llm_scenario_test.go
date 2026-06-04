@@ -21,7 +21,8 @@ func TestMockLLMScenario_ProcessDirectExecutesToolAndReturnsFinalAnswer(t *testi
 				if err := llmscenario.RequireToolDefinition(toolName)(call); err != nil {
 					return err
 				}
-				if len(call.Messages) == 0 || !strings.Contains(call.Messages[len(call.Messages)-1].Content, "Instagram caption") {
+				if len(call.Messages) == 0 ||
+					!strings.Contains(call.Messages[len(call.Messages)-1].Content, "Instagram caption") {
 					return fmt.Errorf("first model call did not receive user prompt: %#v", call.Messages)
 				}
 				return nil

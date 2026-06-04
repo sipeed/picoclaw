@@ -1,14 +1,6 @@
 package onboard
 
-import (
-	"embed"
-
-	"github.com/spf13/cobra"
-)
-
-//go:generate go run ../../../../scripts/copydir.go ../../../../workspace ./workspace
-//go:embed workspace
-var embeddedFiles embed.FS
+import "github.com/spf13/cobra"
 
 func NewOnboardCommand() *cobra.Command {
 	var encrypt bool
