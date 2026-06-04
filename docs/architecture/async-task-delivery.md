@@ -50,6 +50,17 @@ This is intentionally built on the existing durable registry rather than a
 separate planner store. The registry remains the low-level run ledger, while the
 board fields let agents inspect a composite workflow as one operational plan.
 
+Task boards may also have an optional `task_packet` on the board-root record.
+The packet is the typed workflow contract: objective, scope, acceptance
+criteria, verification plan, resources, constraints, reporting, and recovery
+policy. It is generic by default and can carry domain-specific blocks such as
+`coding`, `media`, `research`, or `nutrition`. Code-specific fields like repo,
+worktree, branch policy, commit policy, and tests belong under `coding`, not at
+the top level.
+
+Use `task_packet` for serious/composite workflows where the success contract
+matters. Do not add it to simple one-step tasks just to satisfy ceremony.
+
 `delegate` and `spawn` expose these board fields as optional parameters. For a
 composite workflow, the orchestrating agent should choose one `board_id` and
 create it with `task_board`, add planned child steps, then pass the shared
