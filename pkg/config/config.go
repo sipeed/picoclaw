@@ -1100,6 +1100,8 @@ type ToolsConfig struct {
 	UpdatePlan      ToolConfig               `json:"update_plan"       yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_UPDATE_PLAN_"`
 	WebFetch        ToolConfig               `json:"web_fetch"         yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_WEB_FETCH_"`
 	WriteFile       ToolConfig               `json:"write_file"        yaml:"-"                                                       envPrefix:"PICOCLAW_TOOLS_WRITE_FILE_"`
+
+	TaskBoardExecuteNext ToolConfig `json:"task_board_execute_next" yaml:"-" envPrefix:"PICOCLAW_TOOLS_TASK_BOARD_EXECUTE_NEXT_"`
 }
 
 // IsFilterSensitiveDataEnabled returns true if sensitive data filtering is enabled
@@ -1859,6 +1861,8 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.SPI.Enabled
 	case "subagent":
 		return t.Subagent.Enabled
+	case "task_board_execute_next":
+		return t.TaskBoardExecuteNext.Enabled
 	case "update_plan":
 		return t.UpdatePlan.Enabled
 	case "web_fetch":

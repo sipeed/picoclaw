@@ -1725,6 +1725,16 @@ func TestDefaultConfig_UpdatePlanDisabled(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_TaskBoardExecuteNextDisabled(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Tools.TaskBoardExecuteNext.Enabled {
+		t.Fatal("DefaultConfig().Tools.TaskBoardExecuteNext.Enabled should be false")
+	}
+	if cfg.Tools.IsToolEnabled("task_board_execute_next") {
+		t.Fatal("DefaultConfig().Tools.IsToolEnabled(\"task_board_execute_next\") should be false")
+	}
+}
+
 func TestDefaultConfig_HooksDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if !cfg.Hooks.Enabled {

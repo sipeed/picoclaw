@@ -106,6 +106,13 @@ Planned steps can provide execution hints such as `execution_tool`,
 `delivery_mode`, and `timeout_seconds`; when present, `next` uses those hints
 instead of relying only on owner/manual heuristics.
 
+`task_board_execute_next` is the first intentionally conservative execution
+primitive. It is disabled by default and only executes one ready
+delegate-backed step from the `task_board next` plan. It does not auto-run
+`spawn` steps, because spawn has async callback and delivery ownership
+semantics, and it does not execute manual/local steps. For those cases, use
+`task_board next` to get the plan and then call the appropriate tool explicitly.
+
 `task_board list` also returns an effective board view derived from the raw
 records:
 
