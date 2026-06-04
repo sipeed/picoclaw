@@ -132,3 +132,42 @@ func TestValidator_DoesNotTreatURLPathAsWorkspaceEscape(t *testing.T) {
 		t.Fatalf("expected URL path component to be ignored: %s", decision.Reason)
 	}
 }
+
+func TestClassifyCommand(t *testing.T) {
+	tests := []struct {
+		name    string
+		command string
+		want    string
+	}{
+		{name: "read only cat", command: "cat README.md", want: CommandClassReadOnly},
+		{name: "read only full path", command: "/usr/bin/git status", want: CommandClassReadOnly},
+		{name: "env assignment", command: "FOO=bar rg needle .", want: CommandClassReadOnly},
+		{name: "write redirection", command: "echo hi > file.txt", want: CommandClassWrite},
+		{name: "sed in place", command: "sed -i s/a/b/ file.txt", want: CommandClassWrite},
+		{name: "git push destructive", command: "git push origin main", want: CommandClassDestructive},
+		{name: "git fetch write", command: "git fetch origin main", want: CommandClassWrite},
+		{name: "gh pr view read only", command: "gh pr view 17", want: CommandClassReadOnly},
+		{name: "gh pr comment write", command: "gh pr comment 17 --body hi", want: CommandClassWrite},
+		{name: "rm destructive", command: "rm -rf tmp", want: CommandClassDestructive},
+		{name: "unknown", command: "custom-tool --flag", want: CommandClassUnknown},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ClassifyCommand(tt.command); got != tt.want {
+				t.Fatalf("ClassifyCommand(%q) = %q, want %q", tt.command, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidatorDecisionIncludesCommandClass(t *testing.T) {
+	validator := New(Config{
+		DenyPatterns: []*regexp.Regexp{regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`)},
+	})
+
+	decision := validator.Validate("rm -rf tmp", "")
+	if decision.CommandClass != CommandClassDestructive {
+		t.Fatalf("CommandClass = %q, want %q", decision.CommandClass, CommandClassDestructive)
+	}
+}
