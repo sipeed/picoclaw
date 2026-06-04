@@ -14,8 +14,8 @@ assignees: ''
 ## 🛠 Potential Implementation (Optional)
 
 ## 🚦 Impact & Roadmap Alignment
-- [ ] This is a Core Feature
-- [ ] This is a Nice-to-Have / Enhancement
+- [ ] This improves the active ForgeClaw deployment
+- [ ] This is a low-conflict upstream-compatible improvement
 - [ ] This aligns with the current Roadmap
 
 ## 🔄 Alternatives Considered

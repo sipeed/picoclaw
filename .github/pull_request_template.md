@@ -41,3 +41,4 @@
 - [ ] My code/docs follow the style of this project.
 - [ ] I have performed a self-review of my own changes.
 - [ ] I have updated the documentation accordingly.
+- [ ] I considered whether this change increases future upstream merge conflicts.

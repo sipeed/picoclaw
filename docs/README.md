@@ -1,10 +1,16 @@
-# PicoClaw Documentation
+# ForgeClaw Documentation
 
-PicoClaw documentation is organized by document type first and language second.
+ForgeClaw documentation is organized by document type first and language second.
 
 This file describes the recommended documentation layout, how translated files should be named, and what `make lint-docs` currently checks locally.
 
 These conventions are intended as contributor guidance for new or moved docs. Existing docs may still have historical exceptions, and `make lint-docs` only checks a common subset of the patterns described here.
+
+ForgeClaw is a fork of PicoClaw. Many command names, paths, environment
+variables, and package references still intentionally use `picoclaw`, for
+example `picoclaw gateway` and `~/.picoclaw/config.json`. Treat those as
+runtime names, not stale branding. Project-level marketing, release news,
+hardware sales copy, and download links should be ForgeClaw-specific or omitted.
 
 ## Reader Navigation
 
@@ -30,7 +36,8 @@ For channel-specific setup, start with [Chat Apps Configuration](guides/chat-app
 ## Recommended Directories
 
 - `README.md`: English project entry document at the repository root.
-- `docs/project/`: translated project entry documents such as `README.zh.md` and `CONTRIBUTING.zh.md`.
+- `docs/project/`: translated project entry documents, only when those
+  translations are actively maintained for ForgeClaw.
 - `docs/guides/`: setup and usage guides.
 - `docs/reference/`: reference material and detailed configuration docs.
 - `docs/operations/`: debugging and troubleshooting docs.
@@ -69,7 +76,7 @@ For channel-specific setup, start with [Chat Apps Configuration](guides/chat-app
 ## Translation Placement
 
 - For docs under `docs/guides`, `docs/reference`, `docs/operations`, `docs/security`, `docs/architecture`, `docs/channels`, and `docs/migration`, keep translations beside the English source file.
-- For project entry translations, keep translated files in `docs/project/` and keep the English source in the repository root.
+- For project entry translations, keep translated files in `docs/project/` and keep the English source in the repository root. Do not keep stale upstream project translations after the English source has diverged.
 - In most cases, each translated file should have an English source document:
   - `docs/guides/configuration.zh.md` usually sits beside `docs/guides/configuration.md`
   - `docs/project/README.zh.md` usually corresponds to `README.md`
