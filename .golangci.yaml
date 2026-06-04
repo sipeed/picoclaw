@@ -15,11 +15,15 @@ linters:
     - gosmopolitan  # Project legitimately uses CJK text in tests (FTS5, token counting)
     - godot
     - intrange
+    - inamedparam
     - ireturn
+    - mirror
+    - musttag
     - nlreturn
     - noctx
     - noinlineerr
     - nonamedreturns
+    - predeclared
     - tagliatelle
     - testpackage
     - varnamelen
