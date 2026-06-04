@@ -351,6 +351,47 @@ func TestDeliverAsyncToolCompletion_SkipsDuplicateMediaAfterReload(t *testing.T)
 	assertTaskDeliveryStatusForTest(t, reloaded, workspace, taskID, taskregistry.DeliveryDelivered)
 }
 
+func TestDeliverAsyncToolCompletion_MediaDeliveryFailureRecordsFailed(t *testing.T) {
+	al, _, ts, workspace := newDeliveryCoordinatorTestRuntime(t, "ok")
+	taskID := "coordinator-media-failed"
+	upsertAsyncTaskForTest(t, al, workspace, taskID)
+	result := (&tools.ToolResult{
+		ForLLM:      "internal media result",
+		AsyncTaskID: taskID,
+		Completion: &tools.CompletionResult{
+			Media: []tools.CompletionMedia{{
+				Ref:         "media://video-fail",
+				Type:        "video",
+				Filename:    "source.mp4",
+				ContentType: "video/mp4",
+			}},
+		},
+	}).WithAsyncDelivery(tools.AsyncDeliveryUserOnly)
+
+	al.bus = failingMessageBus{}
+	al.deliverAsyncToolCompletion(AsyncDeliveryRequest{
+		TurnState:    ts,
+		ToolName:     "spawn",
+		CompletionID: "failed-media-completion",
+		Result:       result,
+		Decision:     decideAsyncToolResultDelivery(result),
+	})
+
+	rec, ok := al.taskRegistryForWorkspace(workspace).Get(taskID)
+	if !ok {
+		t.Fatal("expected task")
+	}
+	if rec.DeliveryStatus != taskregistry.DeliveryFailed {
+		t.Fatalf("DeliveryStatus = %q, want failed", rec.DeliveryStatus)
+	}
+	if rec.LastCompletionID != "failed-media-completion" {
+		t.Fatalf("LastCompletionID = %q, want failed-media-completion", rec.LastCompletionID)
+	}
+	if !strings.Contains(rec.DeliveryError, "publish failed") {
+		t.Fatalf("DeliveryError = %q, want publish failed", rec.DeliveryError)
+	}
+}
+
 func newDeliveryCoordinatorTestRuntime(
 	t *testing.T,
 	response string,
