@@ -288,6 +288,7 @@ func TestTaskBoardTool_ResultsReturnsDeliverablesForVisibleBoard(t *testing.T) {
 				Kind: "video",
 			}},
 		},
+		Completion: &taskregistry.CompletionPayload{Text: "legacy caption text"},
 	}); err != nil {
 		t.Fatalf("Upsert(delegate) error = %v", err)
 	}
@@ -357,6 +358,7 @@ func TestTaskBoardTool_ResultsReturnsDeliverablesForVisibleBoard(t *testing.T) {
 			HasResult              bool                             `json:"has_result"`
 			Deliverable            *taskregistry.DeliverablePayload `json:"deliverable"`
 			LatestSuccessful       *taskregistry.DeliverablePayload `json:"latest_successful_deliverable"`
+			LatestSuccessfulLegacy *taskregistry.CompletionPayload  `json:"latest_successful_legacy_completion"`
 			LegacyCompletion       *taskregistry.CompletionPayload  `json:"legacy_completion"`
 		} `json:"step_results"`
 	}
@@ -383,8 +385,43 @@ func TestTaskBoardTool_ResultsReturnsDeliverablesForVisibleBoard(t *testing.T) {
 		len(step.LatestSuccessful.Artifacts) != 1 {
 		t.Fatalf("unexpected latest successful deliverable: %+v\n%s", step.LatestSuccessful, result.ForLLM)
 	}
-	if step.LegacyCompletion != nil {
-		t.Fatalf("unexpected legacy completion: %+v", step.LegacyCompletion)
+	if step.LegacyCompletion != nil || step.LatestSuccessfulLegacy != nil ||
+		strings.Contains(result.ForLLM, "legacy caption text") {
+		t.Fatalf("deliverable-backed result should hide legacy completion: %+v\n%s", step, result.ForLLM)
+	}
+}
+
+func TestTaskBoardTool_ResultsKeepsLegacyCompletionWhenNoDeliverable(t *testing.T) {
+	registry := taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(t.TempDir()))
+	now := time.Now().UnixMilli()
+	if err := registry.Upsert(taskregistry.Record{
+		TaskID:         "delegate-legacy",
+		Runtime:        taskregistry.RuntimeDelegate,
+		TaskKind:       "delegate",
+		BoardID:        "workflow-legacy",
+		StepID:         "legacy-step",
+		Channel:        "telegram",
+		ChatID:         "chat-1",
+		Status:         taskregistry.StatusSucceeded,
+		DeliveryStatus: taskregistry.DeliverySessionQueued,
+		CreatedAt:      now,
+		EndedAt:        now + 1,
+		Completion:     &taskregistry.CompletionPayload{Text: "legacy-only result"},
+	}); err != nil {
+		t.Fatalf("Upsert(delegate legacy) error = %v", err)
+	}
+
+	tool := NewTaskBoardTool(registry)
+	result := tool.Execute(WithToolContext(context.Background(), "telegram", "chat-1"), map[string]any{
+		"action":   "results",
+		"board_id": "workflow-legacy",
+	})
+	if result.IsError {
+		t.Fatalf("results failed: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, `"legacy_completion"`) ||
+		!strings.Contains(result.ForLLM, "legacy-only result") {
+		t.Fatalf("completion-only legacy record should remain visible:\n%s", result.ForLLM)
 	}
 }
 

@@ -28,9 +28,12 @@ New status/API consumers should treat `Deliverable` as the source of truth for
 produced text and artifacts. `Completion` is a legacy child-run handoff payload
 and should not be extended with new artifact semantics.
 
+Migration status:
+
+- Done: hide `Completion` from user-facing status/board output when `Deliverable` is present.
+
 Migration TODO:
 
-- Stop showing `Completion` in user-facing status output when `Deliverable` is present.
 - Convert remaining child-run producers to write `Deliverable` directly.
 - Keep reading legacy `Completion` only as an adapter for old records.
 - Remove `Completion` from public API/storage after all producers and persisted
