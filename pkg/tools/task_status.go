@@ -260,9 +260,10 @@ func formatTaskRecord(rec taskregistry.Record) string {
 	if rec.Deliverable != nil {
 		sb.WriteString(
 			fmt.Sprintf(
-				"  Deliverable: text=%t artifacts=%d\n",
+				"  Deliverable: text=%t artifacts=%d report=%t\n",
 				rec.Deliverable.Text != "",
 				len(rec.Deliverable.Artifacts),
+				rec.Deliverable.Report != nil,
 			),
 		)
 	}

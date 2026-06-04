@@ -180,6 +180,65 @@ func TestRegistryPersistsTaskBoardAndDeliverableFields(t *testing.T) {
 	if rec.Deliverable.Metadata["source"] != "instagram" {
 		t.Fatalf("metadata source = %q, want instagram", rec.Deliverable.Metadata["source"])
 	}
+	if rec.Deliverable.Report == nil {
+		t.Fatal("expected deliverable report projection")
+	}
+	if rec.Deliverable.Report.SchemaVersion != DeliverableReportV1 {
+		t.Fatalf(
+			"report schema = %q, want %q",
+			rec.Deliverable.Report.SchemaVersion,
+			DeliverableReportV1,
+		)
+	}
+	if rec.Deliverable.Report.Summary != "video downloaded" {
+		t.Fatalf("report summary = %q, want video downloaded", rec.Deliverable.Report.Summary)
+	}
+	if rec.Deliverable.Report.ContentHash == "" || rec.Deliverable.Report.ReportID == "" {
+		t.Fatalf("report identity not populated: %+v", rec.Deliverable.Report)
+	}
+	if len(rec.Deliverable.Report.Claims) != 1 || rec.Deliverable.Report.Claims[0].Kind != "fact" {
+		t.Fatalf("unexpected report claims: %+v", rec.Deliverable.Report.Claims)
+	}
+}
+
+func TestRegistryPreservesExplicitDeliverableReport(t *testing.T) {
+	registry := NewRegistry("")
+	if err := registry.Upsert(Record{
+		TaskID: "delegate-1",
+		Task:   "review code",
+		Deliverable: &DeliverablePayload{
+			Text: "reviewed",
+			Report: &DeliverableReport{
+				SchemaVersion: DeliverableReportV1,
+				ReportID:      "review-1",
+				ContentHash:   "abc123",
+				Summary:       "No findings",
+				Claims: []ReportClaim{{
+					Kind:       "negative_evidence",
+					Text:       "No high-confidence issues found",
+					Confidence: "high",
+				}},
+				Provenance: map[string]string{"producer": "reviewer"},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	rec, ok := registry.Get("delegate-1")
+	if !ok {
+		t.Fatal("expected task")
+	}
+	report := rec.Deliverable.Report
+	if report.ReportID != "review-1" || report.ContentHash != "abc123" {
+		t.Fatalf("explicit report identity changed: %+v", report)
+	}
+	if report.GeneratedAt == 0 {
+		t.Fatalf("expected GeneratedAt to be filled: %+v", report)
+	}
+	if report.Provenance["producer"] != "reviewer" {
+		t.Fatalf("explicit provenance lost: %+v", report.Provenance)
+	}
 }
 
 func TestRegistryDefaultsBoardFields(t *testing.T) {

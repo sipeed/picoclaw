@@ -63,6 +63,7 @@ const (
 	DefaultMaxRecords        = 1000
 	DefaultMaxEvents         = 5000
 	TaskEventSchemaVersion   = "task_event.v1"
+	DeliverableReportV1      = "deliverable_report.v1"
 )
 
 type EventType string
@@ -89,9 +90,10 @@ type CompletionMedia struct {
 }
 
 type DeliverablePayload struct {
-	Text      string            `json:"text,omitempty"`
-	Artifacts []DeliverableItem `json:"artifacts,omitempty"`
-	Metadata  map[string]string `json:"metadata,omitempty"`
+	Text      string             `json:"text,omitempty"`
+	Artifacts []DeliverableItem  `json:"artifacts,omitempty"`
+	Metadata  map[string]string  `json:"metadata,omitempty"`
+	Report    *DeliverableReport `json:"report,omitempty"`
 }
 
 type DeliverableItem struct {
@@ -100,6 +102,36 @@ type DeliverableItem struct {
 	Filename    string `json:"filename,omitempty"`
 	ContentType string `json:"content_type,omitempty"`
 	Delivered   bool   `json:"delivered,omitempty"`
+}
+
+// DeliverableReport is a versioned canonical report for durable outputs. The
+// surrounding DeliverablePayload remains the compatibility projection for older
+// tools; Report is the schemaed contract new consumers should prefer.
+type DeliverableReport struct {
+	SchemaVersion string             `json:"schema_version"`
+	ReportID      string             `json:"report_id"`
+	ContentHash   string             `json:"content_hash"`
+	GeneratedAt   int64              `json:"generated_at"`
+	Summary       string             `json:"summary,omitempty"`
+	Claims        []ReportClaim      `json:"claims,omitempty"`
+	FieldDeltas   []ReportFieldDelta `json:"field_deltas,omitempty"`
+	Provenance    map[string]string  `json:"provenance,omitempty"`
+	Metadata      map[string]string  `json:"metadata,omitempty"`
+	Extra         map[string]any     `json:"extra,omitempty"`
+}
+
+type ReportClaim struct {
+	Kind       string            `json:"kind"`
+	Text       string            `json:"text"`
+	Confidence string            `json:"confidence,omitempty"`
+	SourceRefs []string          `json:"source_refs,omitempty"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+}
+
+type ReportFieldDelta struct {
+	Field string `json:"field"`
+	From  string `json:"from,omitempty"`
+	To    string `json:"to,omitempty"`
 }
 
 // TaskPacketPayload is the optional typed contract for a task board. It
@@ -570,6 +602,9 @@ func (r *Registry) normalizeRecord(rec Record, now int64) Record {
 		}
 		rec.CleanupAfter = base + int64(r.options.TerminalRetention/time.Millisecond)
 	}
+	if rec.Deliverable != nil {
+		rec.Deliverable = normalizeDeliverablePayload(rec.Deliverable, now)
+	}
 	return rec
 }
 
@@ -800,6 +835,77 @@ func taskEventFingerprint(evt TaskEvent) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func normalizeDeliverablePayload(payload *DeliverablePayload, generatedAt int64) *DeliverablePayload {
+	if payload == nil {
+		return nil
+	}
+	out := *payload
+	out.Artifacts = append([]DeliverableItem(nil), payload.Artifacts...)
+	out.Metadata = copyStringMap(payload.Metadata)
+	if payload.Report != nil {
+		report := *payload.Report
+		if report.SchemaVersion == "" {
+			report.SchemaVersion = DeliverableReportV1
+		}
+		if report.GeneratedAt == 0 {
+			report.GeneratedAt = generatedAt
+		}
+		report.Metadata = copyStringMap(report.Metadata)
+		report.Provenance = copyStringMap(report.Provenance)
+		if report.ContentHash == "" {
+			report.ContentHash = deliverableContentHash(&out)
+		}
+		if report.ReportID == "" {
+			report.ReportID = "deliverable:" + report.ContentHash
+		}
+		out.Report = &report
+		return &out
+	}
+	if strings.TrimSpace(out.Text) == "" && len(out.Artifacts) == 0 && len(out.Metadata) == 0 {
+		return &out
+	}
+	contentHash := deliverableContentHash(&out)
+	report := &DeliverableReport{
+		SchemaVersion: DeliverableReportV1,
+		ReportID:      "deliverable:" + contentHash,
+		ContentHash:   contentHash,
+		GeneratedAt:   generatedAt,
+		Summary:       strings.TrimSpace(out.Text),
+		Metadata:      copyStringMap(out.Metadata),
+		Provenance: map[string]string{
+			"source":     "task_registry_projection",
+			"projection": "deliverable_payload",
+		},
+	}
+	if summary := strings.TrimSpace(out.Text); summary != "" {
+		report.Claims = append(report.Claims, ReportClaim{
+			Kind:       "fact",
+			Text:       summary,
+			Confidence: "producer_reported",
+		})
+	}
+	out.Report = report
+	return &out
+}
+
+func deliverableContentHash(payload *DeliverablePayload) string {
+	if payload == nil {
+		return ""
+	}
+	type hashPayload struct {
+		Text      string            `json:"text,omitempty"`
+		Artifacts []DeliverableItem `json:"artifacts,omitempty"`
+		Metadata  map[string]string `json:"metadata,omitempty"`
+	}
+	data, _ := json.Marshal(hashPayload{
+		Text:      strings.TrimSpace(payload.Text),
+		Artifacts: append([]DeliverableItem(nil), payload.Artifacts...),
+		Metadata:  copyStringMap(payload.Metadata),
+	})
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
 func recordChanged(before, after Record) bool {
 	b, _ := json.Marshal(before)
 	a, _ := json.Marshal(after)
@@ -831,4 +937,15 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func copyStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
