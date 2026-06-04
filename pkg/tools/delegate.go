@@ -133,6 +133,9 @@ func (t *DelegateTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		nil,
 		nil,
 	)
+	stopHeartbeat := startTaskRegistryHeartbeat(ctx, t.taskRegistry, taskID, "delegate child turn is still running")
+	defer stopHeartbeat()
+
 	result, err := t.spawner.SpawnSubTurn(ctx, SubTurnConfig{
 		TargetAgentID: agentID,
 		SystemPrompt:  task,

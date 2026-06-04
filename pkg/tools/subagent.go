@@ -248,6 +248,8 @@ func (sm *SubagentManager) runTask(
 
 	var result *ToolResult
 	var err error
+	stopHeartbeat := startTaskRegistryHeartbeat(ctx, sm.taskRegistry, task.ID, "spawned subagent is still running")
+	defer stopHeartbeat()
 
 	if spawner != nil {
 		result, err = spawner(

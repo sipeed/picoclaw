@@ -93,6 +93,11 @@ The effective view does not mutate registry state. It lets agents and UIs tell
 whether a workflow is actually progressing, stalled, finished, or only planned
 without having to infer that from raw task records.
 
+Active delegate/spawn runs periodically heartbeat the task registry by updating
+`last_event_at` while their child turn is still running. `freshness=stalled`
+therefore means the active run has not reported liveness recently, not merely
+that it started a long time ago.
+
 `spawn_status` is kept as a compatibility/debug view for tasks started specifically by the `spawn` tool. It is backed by the same durable registry but intentionally remains spawn-only.
 
 ## Legacy System Messages

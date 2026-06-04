@@ -283,6 +283,19 @@ func (r *Registry) Update(taskID string, mutate func(*Record)) error {
 	return err
 }
 
+func (r *Registry) Heartbeat(taskID, progress string) error {
+	now := time.Now().UnixMilli()
+	return r.Update(taskID, func(rec *Record) {
+		if rec.Status != StatusQueued && rec.Status != StatusRunning {
+			return
+		}
+		rec.LastEventAt = now
+		if progress = strings.TrimSpace(progress); progress != "" {
+			rec.ProgressSummary = progress
+		}
+	})
+}
+
 func (r *Registry) Get(taskID string) (Record, bool) {
 	if r == nil {
 		return Record{}, false
