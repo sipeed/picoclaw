@@ -139,7 +139,9 @@ type Record struct {
 	Status              Status              `json:"status"`
 	DeliveryStatus      DeliveryStatus      `json:"delivery_status"`
 	NotifyPolicy        NotifyPolicy        `json:"notify_policy"`
+	ExecutionTool       string              `json:"execution_tool,omitempty"`
 	DeliveryMode        string              `json:"delivery_mode,omitempty"`
+	TimeoutSeconds      int                 `json:"timeout_seconds,omitempty"`
 	LastCompletionID    string              `json:"last_completion_id,omitempty"`
 	DeliveredAt         int64               `json:"delivered_at,omitempty"`
 	DeliveryError       string              `json:"delivery_error,omitempty"`

@@ -102,6 +102,9 @@ It returns runnable steps with suggested `delegate_args`, `spawn_args`, or
 manual `task_board.update` args, but still does not execute tools. This gives an
 LLM/orchestrator a deterministic next action without hiding execution policy,
 concurrency, retry, or delivery-mode choices inside the board primitive.
+Planned steps can provide execution hints such as `execution_tool`,
+`delivery_mode`, and `timeout_seconds`; when present, `next` uses those hints
+instead of relying only on owner/manual heuristics.
 
 `task_board list` also returns an effective board view derived from the raw
 records:
