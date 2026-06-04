@@ -34,7 +34,7 @@ func (t *TaskBoardTool) Description() string {
 	return "Create and inspect durable task boards for composite workflows. " +
 		"Use this when a task has multiple child steps that should share one board_id. " +
 		"This tool records planned board steps and reads completed deliverables; it does not execute steps. " +
-		"Execute steps with delegate/spawn using the same board_id and step_id, or update local/manual steps when finished, then use task_board results or list."
+		"Execute steps with delegate/spawn using the same board_id and step_id, or update local/manual steps when finished, then use task_board ready/results/list."
 }
 
 func (t *TaskBoardTool) Parameters() map[string]any {
@@ -43,12 +43,12 @@ func (t *TaskBoardTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"action": map[string]any{
 				"type":        "string",
-				"enum":        []string{"create", "add_step", "update", "list", "results"},
-				"description": "Board operation. create returns a board_id; add_step records planned metadata; update changes a planned/local step status; list/results inspect visible board records.",
+				"enum":        []string{"create", "add_step", "update", "list", "results", "ready"},
+				"description": "Board operation. create returns a board_id; add_step records planned metadata; update changes a planned/local step status; list/results inspect visible board records; ready resolves dependency state without executing steps.",
 			},
 			"board_id": map[string]any{
 				"type":        "string",
-				"description": "Workflow/task-board ID. Optional for create; required for add_step/list/results.",
+				"description": "Workflow/task-board ID. Optional for create; required for add_step/list/results/ready.",
 			},
 			"title": map[string]any{
 				"type":        "string",
@@ -183,8 +183,10 @@ func (t *TaskBoardTool) Execute(ctx context.Context, args map[string]any) *ToolR
 		return t.list(ctx, args, false)
 	case "results":
 		return t.list(ctx, args, true)
+	case "ready":
+		return t.ready(ctx, args)
 	default:
-		return ErrorResult(`action must be one of: create, add_step, update, list, results`)
+		return ErrorResult(`action must be one of: create, add_step, update, list, results, ready`)
 	}
 }
 
@@ -429,6 +431,29 @@ func (t *TaskBoardTool) list(ctx context.Context, args map[string]any, resultsOn
 	return taskBoardJSONResult(payload)
 }
 
+func (t *TaskBoardTool) ready(ctx context.Context, args map[string]any) *ToolResult {
+	boardID, err := requiredStringArg(args, "board_id", "board_id")
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
+	records := t.visibleBoardRecords(ctx, boardID)
+	return taskBoardJSONResult(buildTaskBoardReadyView(boardID, records, time.Now()))
+}
+
+func (t *TaskBoardTool) visibleBoardRecords(ctx context.Context, boardID string) []taskregistry.Record {
+	channel := ToolChannel(ctx)
+	chatID := ToolChatID(ctx)
+	topicID := ToolTopicID(ctx)
+	records := t.registry.ListBoard(boardID)
+	filtered := make([]taskregistry.Record, 0, len(records))
+	for _, rec := range records {
+		if taskRecordVisibleToCaller(rec, channel, chatID, topicID) {
+			filtered = append(filtered, rec)
+		}
+	}
+	return filtered
+}
+
 type taskBoardRecordView struct {
 	TaskID         string                           `json:"task_id"`
 	TaskKind       string                           `json:"task_kind,omitempty"`
@@ -488,6 +513,33 @@ type taskBoardStepResultView struct {
 	LegacyCompletion                 *taskregistry.CompletionPayload  `json:"legacy_completion,omitempty"`
 	TerminalSummary                  string                           `json:"terminal_summary,omitempty"`
 	HasResult                        bool                             `json:"has_result"`
+}
+
+type taskBoardReadyView struct {
+	Action       string                   `json:"action"`
+	BoardID      string                   `json:"board_id"`
+	Counts       map[string]int           `json:"counts"`
+	ReadySteps   []taskBoardReadyStepView `json:"ready_steps"`
+	WaitingSteps []taskBoardReadyStepView `json:"waiting_steps"`
+	ActiveSteps  []taskBoardReadyStepView `json:"active_steps"`
+	DoneSteps    []taskBoardReadyStepView `json:"done_steps"`
+	BlockedSteps []taskBoardReadyStepView `json:"blocked_steps"`
+}
+
+type taskBoardReadyStepView struct {
+	StepID          string   `json:"step_id"`
+	StepTitle       string   `json:"step_title,omitempty"`
+	Owner           string   `json:"owner,omitempty"`
+	Status          string   `json:"status"`
+	Freshness       string   `json:"freshness,omitempty"`
+	LatestTaskID    string   `json:"latest_task_id,omitempty"`
+	LatestRunTaskID string   `json:"latest_run_task_id,omitempty"`
+	DependsOn       []string `json:"depends_on,omitempty"`
+	BlockedBy       []string `json:"blocked_by,omitempty"`
+	WaitingOn       []string `json:"waiting_on,omitempty"`
+	MissingDeps     []string `json:"missing_dependencies,omitempty"`
+	FailedDeps      []string `json:"failed_dependencies,omitempty"`
+	Reason          string   `json:"reason"`
 }
 
 func taskBoardView(rec taskregistry.Record, includePayloads bool) taskBoardRecordView {
@@ -587,24 +639,117 @@ func taskBoardStepResultFromRecords(stepID string, records []taskregistry.Record
 	return view
 }
 
+func buildTaskBoardReadyView(boardID string, records []taskregistry.Record, now time.Time) taskBoardReadyView {
+	byStep := taskBoardRecordsByStep(records, true)
+	stepIDs := sortedTaskBoardStepIDs(byStep)
+	effectiveByStep := make(map[string]taskBoardEffectiveStepView, len(stepIDs))
+	metaByStep := make(map[string]taskregistry.Record, len(stepIDs))
+	for _, stepID := range stepIDs {
+		effectiveByStep[stepID] = effectiveStepFromRecords(stepID, byStep[stepID], now, taskBoardStalledAfter)
+		metaByStep[stepID] = latestTaskBoardStepMetadata(byStep[stepID])
+	}
+
+	view := taskBoardReadyView{
+		Action:  "ready",
+		BoardID: boardID,
+		Counts:  map[string]int{},
+	}
+	for _, stepID := range stepIDs {
+		step := taskBoardReadyStep(stepID, effectiveByStep, metaByStep)
+		switch step.Reason {
+		case "ready":
+			view.ReadySteps = append(view.ReadySteps, step)
+		case "done":
+			view.DoneSteps = append(view.DoneSteps, step)
+		case "active":
+			view.ActiveSteps = append(view.ActiveSteps, step)
+		case "blocked":
+			view.BlockedSteps = append(view.BlockedSteps, step)
+		default:
+			view.WaitingSteps = append(view.WaitingSteps, step)
+		}
+		view.Counts[step.Reason]++
+	}
+	return view
+}
+
+func taskBoardReadyStep(
+	stepID string,
+	effectiveByStep map[string]taskBoardEffectiveStepView,
+	metaByStep map[string]taskregistry.Record,
+) taskBoardReadyStepView {
+	effective := effectiveByStep[stepID]
+	meta := metaByStep[stepID]
+	step := taskBoardReadyStepView{
+		StepID:          stepID,
+		StepTitle:       firstNonEmpty(effective.StepTitle, meta.StepTitle),
+		Owner:           firstNonEmpty(effective.Owner, meta.Owner, meta.AgentID),
+		Status:          effective.EffectiveStatus,
+		Freshness:       effective.Freshness,
+		LatestTaskID:    effective.LatestTaskID,
+		LatestRunTaskID: effective.LatestRunTaskID,
+		DependsOn:       append([]string(nil), meta.DependsOn...),
+		BlockedBy:       append([]string(nil), meta.BlockedBy...),
+	}
+	for _, dep := range step.DependsOn {
+		depStep, ok := effectiveByStep[dep]
+		if !ok {
+			step.MissingDeps = append(step.MissingDeps, dep)
+			continue
+		}
+		switch depStep.EffectiveStatus {
+		case string(taskregistry.StatusSucceeded):
+		case string(taskregistry.StatusFailed),
+			string(taskregistry.StatusTimedOut),
+			string(taskregistry.StatusCancelled),
+			string(taskregistry.StatusLost),
+			"blocked":
+			step.FailedDeps = append(step.FailedDeps, dep)
+		default:
+			step.WaitingOn = append(step.WaitingOn, dep)
+		}
+	}
+	step.Reason = taskBoardReadyReason(step)
+	return step
+}
+
+func taskBoardReadyReason(step taskBoardReadyStepView) string {
+	if step.Status == string(taskregistry.StatusSucceeded) {
+		return "done"
+	}
+	if len(step.BlockedBy) > 0 || len(step.FailedDeps) > 0 ||
+		taskBoardReadyStatusIsFailure(step.Status) {
+		return "blocked"
+	}
+	if step.Status == string(taskregistry.StatusRunning) || step.Status == string(taskregistry.StatusQueued) {
+		return "active"
+	}
+	if len(step.WaitingOn) > 0 || len(step.MissingDeps) > 0 {
+		return "waiting"
+	}
+	return "ready"
+}
+
+func taskBoardReadyStatusIsFailure(status string) bool {
+	switch status {
+	case string(taskregistry.StatusFailed),
+		string(taskregistry.StatusTimedOut),
+		string(taskregistry.StatusCancelled),
+		string(taskregistry.StatusLost),
+		"blocked":
+		return true
+	default:
+		return false
+	}
+}
+
 func buildTaskBoardEffectiveView(
 	records []taskregistry.Record,
 	now time.Time,
 	stalledAfter time.Duration,
 ) taskBoardEffectiveView {
-	byStep := make(map[string][]taskregistry.Record)
-	for _, rec := range records {
-		if rec.StepID == "" || rec.StepID == "board-root" || rec.TaskKind == "task_board" {
-			continue
-		}
-		byStep[rec.StepID] = append(byStep[rec.StepID], rec)
-	}
-
-	stepIDs := make([]string, 0, len(byStep))
-	for stepID := range byStep {
-		stepIDs = append(stepIDs, stepID)
-	}
-	sort.Strings(stepIDs)
+	byStep := taskBoardRecordsByStep(records, false)
+	stepIDs := sortedTaskBoardStepIDs(byStep)
 
 	counts := map[string]int{}
 	steps := make([]taskBoardEffectiveStepView, 0, len(stepIDs))
@@ -619,6 +764,51 @@ func buildTaskBoardEffectiveView(
 		Counts:        counts,
 		Steps:         steps,
 	}
+}
+
+func taskBoardRecordsByStep(
+	records []taskregistry.Record,
+	includeOnlyPlannedStepsAndRuns bool,
+) map[string][]taskregistry.Record {
+	byStep := make(map[string][]taskregistry.Record)
+	for _, rec := range records {
+		if rec.StepID == "" || rec.StepID == "board-root" || rec.TaskKind == "task_board" {
+			continue
+		}
+		if includeOnlyPlannedStepsAndRuns && rec.TaskKind == "" {
+			continue
+		}
+		byStep[rec.StepID] = append(byStep[rec.StepID], rec)
+	}
+	return byStep
+}
+
+func sortedTaskBoardStepIDs(byStep map[string][]taskregistry.Record) []string {
+	stepIDs := make([]string, 0, len(byStep))
+	for stepID := range byStep {
+		stepIDs = append(stepIDs, stepID)
+	}
+	sort.Strings(stepIDs)
+	return stepIDs
+}
+
+func latestTaskBoardStepMetadata(records []taskregistry.Record) taskregistry.Record {
+	sorted := append([]taskregistry.Record(nil), records...)
+	sort.Slice(sorted, func(i, j int) bool {
+		if taskBoardRecordEventTime(sorted[i]) != taskBoardRecordEventTime(sorted[j]) {
+			return taskBoardRecordEventTime(sorted[i]) < taskBoardRecordEventTime(sorted[j])
+		}
+		return sorted[i].TaskID < sorted[j].TaskID
+	})
+	for i := len(sorted) - 1; i >= 0; i-- {
+		if sorted[i].TaskKind == "task_board_step" {
+			return sorted[i]
+		}
+	}
+	if len(sorted) == 0 {
+		return taskregistry.Record{}
+	}
+	return sorted[len(sorted)-1]
 }
 
 func effectiveStepFromRecords(

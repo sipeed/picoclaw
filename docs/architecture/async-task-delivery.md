@@ -88,6 +88,13 @@ whether to continue, retry, or report a failure. If the latest run failed,
 top-level `deliverable`/`has_result` remain empty/false; any older successful
 output is exposed only under explicit `latest_successful_*` fields.
 
+`task_board ready` is a read-only dependency resolver. It groups visible board
+steps into `ready_steps`, `waiting_steps`, `active_steps`, `done_steps`, and
+`blocked_steps`. A planned step is ready when every `depends_on` step has
+succeeded. Missing or not-yet-finished dependencies are waiting; failed/lost
+dependencies or explicit `blocked_by` markers are blocked. This is the bridge
+toward future board execution, but it does not execute anything.
+
 `task_board list` also returns an effective board view derived from the raw
 records:
 

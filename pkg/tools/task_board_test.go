@@ -512,3 +512,194 @@ func TestTaskBoardTool_ListIncludesEffectiveStatusAndFreshness(t *testing.T) {
 		t.Fatalf("unexpected polish effective step: %#v\n%s", polishStep, result.ForLLM)
 	}
 }
+
+func TestTaskBoardTool_ReadyResolvesDependencies(t *testing.T) {
+	registry := taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(t.TempDir()))
+	tool := NewTaskBoardTool(registry)
+	ctx := WithToolContext(context.Background(), "telegram", "chat-1")
+	now := time.Now().UnixMilli()
+
+	records := []taskregistry.Record{
+		{
+			TaskID:         "board:workflow-1:step:extract",
+			Runtime:        taskregistry.RuntimeTool,
+			TaskKind:       "task_board_step",
+			BoardID:        "workflow-1",
+			StepID:         "extract",
+			StepTitle:      "Extract media",
+			Owner:          "media",
+			Channel:        "telegram",
+			ChatID:         "chat-1",
+			Status:         taskregistry.StatusPlanned,
+			DeliveryStatus: taskregistry.DeliveryNotApplicable,
+			Task:           "extract",
+			CreatedAt:      now,
+		},
+		{
+			TaskID:         "board:workflow-1:step:polish",
+			Runtime:        taskregistry.RuntimeTool,
+			TaskKind:       "task_board_step",
+			BoardID:        "workflow-1",
+			StepID:         "polish",
+			StepTitle:      "Polish translation",
+			Owner:          "research",
+			DependsOn:      []string{"extract"},
+			Channel:        "telegram",
+			ChatID:         "chat-1",
+			Status:         taskregistry.StatusPlanned,
+			DeliveryStatus: taskregistry.DeliveryNotApplicable,
+			Task:           "polish",
+			CreatedAt:      now + 1,
+		},
+		{
+			TaskID:         "board:workflow-1:step:publish",
+			Runtime:        taskregistry.RuntimeTool,
+			TaskKind:       "task_board_step",
+			BoardID:        "workflow-1",
+			StepID:         "publish",
+			StepTitle:      "Publish final",
+			DependsOn:      []string{"polish"},
+			Channel:        "telegram",
+			ChatID:         "chat-1",
+			Status:         taskregistry.StatusPlanned,
+			DeliveryStatus: taskregistry.DeliveryNotApplicable,
+			Task:           "publish",
+			CreatedAt:      now + 2,
+		},
+		{
+			TaskID:         "board:workflow-1:step:notify",
+			Runtime:        taskregistry.RuntimeTool,
+			TaskKind:       "task_board_step",
+			BoardID:        "workflow-1",
+			StepID:         "notify",
+			StepTitle:      "Notify user",
+			BlockedBy:      []string{"manual-review"},
+			Channel:        "telegram",
+			ChatID:         "chat-1",
+			Status:         taskregistry.StatusPlanned,
+			DeliveryStatus: taskregistry.DeliveryNotApplicable,
+			Task:           "notify",
+			CreatedAt:      now + 3,
+		},
+		{
+			TaskID:         "board:workflow-1:step:archive",
+			Runtime:        taskregistry.RuntimeTool,
+			TaskKind:       "task_board_step",
+			BoardID:        "workflow-1",
+			StepID:         "archive",
+			StepTitle:      "Archive outputs",
+			DependsOn:      []string{"missing-step"},
+			Channel:        "telegram",
+			ChatID:         "chat-1",
+			Status:         taskregistry.StatusPlanned,
+			DeliveryStatus: taskregistry.DeliveryNotApplicable,
+			Task:           "archive",
+			CreatedAt:      now + 4,
+		},
+		{
+			TaskID:         "delegate-extract-1",
+			Runtime:        taskregistry.RuntimeDelegate,
+			TaskKind:       "delegate",
+			BoardID:        "workflow-1",
+			StepID:         "extract",
+			StepTitle:      "Extract media",
+			AgentID:        "media",
+			Channel:        "telegram",
+			ChatID:         "chat-1",
+			Status:         taskregistry.StatusSucceeded,
+			DeliveryStatus: taskregistry.DeliverySessionQueued,
+			Task:           "extract run",
+			CreatedAt:      now + 5,
+			EndedAt:        now + 6,
+			LastEventAt:    now + 6,
+		},
+		{
+			TaskID:         "delegate-publish-1",
+			Runtime:        taskregistry.RuntimeDelegate,
+			TaskKind:       "delegate",
+			BoardID:        "workflow-1",
+			StepID:         "publish",
+			StepTitle:      "Publish final",
+			AgentID:        "main",
+			Channel:        "telegram",
+			ChatID:         "chat-1",
+			Status:         taskregistry.StatusRunning,
+			DeliveryStatus: taskregistry.DeliveryPending,
+			Task:           "publish run",
+			CreatedAt:      now + 7,
+			StartedAt:      now + 7,
+			LastEventAt:    now + 7,
+		},
+	}
+	for _, rec := range records {
+		if err := registry.Upsert(rec); err != nil {
+			t.Fatalf("Upsert(%s) error = %v", rec.TaskID, err)
+		}
+	}
+
+	result := tool.Execute(ctx, map[string]any{
+		"action":   "ready",
+		"board_id": "workflow-1",
+	})
+	if result.IsError {
+		t.Fatalf("ready failed: %s", result.ForLLM)
+	}
+
+	var payload struct {
+		Counts     map[string]int `json:"counts"`
+		ReadySteps []struct {
+			StepID    string   `json:"step_id"`
+			Reason    string   `json:"reason"`
+			DependsOn []string `json:"depends_on"`
+		} `json:"ready_steps"`
+		WaitingSteps []struct {
+			StepID      string   `json:"step_id"`
+			MissingDeps []string `json:"missing_dependencies"`
+		} `json:"waiting_steps"`
+		ActiveSteps []struct {
+			StepID          string `json:"step_id"`
+			LatestRunTaskID string `json:"latest_run_task_id"`
+		} `json:"active_steps"`
+		DoneSteps []struct {
+			StepID string `json:"step_id"`
+		} `json:"done_steps"`
+		BlockedSteps []struct {
+			StepID    string   `json:"step_id"`
+			BlockedBy []string `json:"blocked_by"`
+		} `json:"blocked_steps"`
+	}
+	if err := json.Unmarshal([]byte(result.ForLLM), &payload); err != nil {
+		t.Fatalf("ready JSON error = %v\n%s", err, result.ForLLM)
+	}
+	if payload.Counts["ready"] != 1 ||
+		payload.Counts["waiting"] != 1 ||
+		payload.Counts["active"] != 1 ||
+		payload.Counts["done"] != 1 ||
+		payload.Counts["blocked"] != 1 {
+		t.Fatalf("unexpected counts: %#v\n%s", payload.Counts, result.ForLLM)
+	}
+	if len(payload.ReadySteps) != 1 ||
+		payload.ReadySteps[0].StepID != "polish" ||
+		payload.ReadySteps[0].Reason != "ready" ||
+		payload.ReadySteps[0].DependsOn[0] != "extract" {
+		t.Fatalf("unexpected ready steps: %#v\n%s", payload.ReadySteps, result.ForLLM)
+	}
+	if len(payload.WaitingSteps) != 1 ||
+		payload.WaitingSteps[0].StepID != "archive" ||
+		payload.WaitingSteps[0].MissingDeps[0] != "missing-step" {
+		t.Fatalf("unexpected waiting steps: %#v\n%s", payload.WaitingSteps, result.ForLLM)
+	}
+	if len(payload.ActiveSteps) != 1 ||
+		payload.ActiveSteps[0].StepID != "publish" ||
+		payload.ActiveSteps[0].LatestRunTaskID != "delegate-publish-1" {
+		t.Fatalf("unexpected active steps: %#v\n%s", payload.ActiveSteps, result.ForLLM)
+	}
+	if len(payload.DoneSteps) != 1 || payload.DoneSteps[0].StepID != "extract" {
+		t.Fatalf("unexpected done steps: %#v\n%s", payload.DoneSteps, result.ForLLM)
+	}
+	if len(payload.BlockedSteps) != 1 ||
+		payload.BlockedSteps[0].StepID != "notify" ||
+		payload.BlockedSteps[0].BlockedBy[0] != "manual-review" {
+		t.Fatalf("unexpected blocked steps: %#v\n%s", payload.BlockedSteps, result.ForLLM)
+	}
+}
