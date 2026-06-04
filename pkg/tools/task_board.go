@@ -714,12 +714,15 @@ func taskBoardReadyStep(
 }
 
 func taskBoardReadyReason(step taskBoardReadyStepView) string {
-	if step.Status == string(taskregistry.StatusSucceeded) {
-		return "done"
-	}
 	if len(step.BlockedBy) > 0 || len(step.FailedDeps) > 0 ||
 		taskBoardReadyStatusIsFailure(step.Status) {
 		return "blocked"
+	}
+	if step.Status == string(taskregistry.StatusSucceeded) {
+		if len(step.MissingDeps) > 0 || len(step.WaitingOn) > 0 {
+			return "blocked"
+		}
+		return "done"
 	}
 	if step.Status == string(taskregistry.StatusRunning) || step.Status == string(taskregistry.StatusQueued) {
 		return "active"

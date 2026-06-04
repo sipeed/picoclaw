@@ -597,6 +597,21 @@ func TestTaskBoardTool_ReadyResolvesDependencies(t *testing.T) {
 			CreatedAt:      now + 4,
 		},
 		{
+			TaskID:         "board:workflow-1:step:inconsistent-done",
+			Runtime:        taskregistry.RuntimeTool,
+			TaskKind:       "task_board_step",
+			BoardID:        "workflow-1",
+			StepID:         "inconsistent-done",
+			StepTitle:      "Inconsistent completed step",
+			DependsOn:      []string{"missing-required-step"},
+			Channel:        "telegram",
+			ChatID:         "chat-1",
+			Status:         taskregistry.StatusPlanned,
+			DeliveryStatus: taskregistry.DeliveryNotApplicable,
+			Task:           "inconsistent",
+			CreatedAt:      now + 5,
+		},
+		{
 			TaskID:         "delegate-extract-1",
 			Runtime:        taskregistry.RuntimeDelegate,
 			TaskKind:       "delegate",
@@ -609,9 +624,26 @@ func TestTaskBoardTool_ReadyResolvesDependencies(t *testing.T) {
 			Status:         taskregistry.StatusSucceeded,
 			DeliveryStatus: taskregistry.DeliverySessionQueued,
 			Task:           "extract run",
-			CreatedAt:      now + 5,
-			EndedAt:        now + 6,
-			LastEventAt:    now + 6,
+			CreatedAt:      now + 6,
+			EndedAt:        now + 7,
+			LastEventAt:    now + 7,
+		},
+		{
+			TaskID:         "delegate-inconsistent-1",
+			Runtime:        taskregistry.RuntimeDelegate,
+			TaskKind:       "delegate",
+			BoardID:        "workflow-1",
+			StepID:         "inconsistent-done",
+			StepTitle:      "Inconsistent completed step",
+			AgentID:        "main",
+			Channel:        "telegram",
+			ChatID:         "chat-1",
+			Status:         taskregistry.StatusSucceeded,
+			DeliveryStatus: taskregistry.DeliverySessionQueued,
+			Task:           "inconsistent run",
+			CreatedAt:      now + 8,
+			EndedAt:        now + 9,
+			LastEventAt:    now + 9,
 		},
 		{
 			TaskID:         "delegate-publish-1",
@@ -626,9 +658,9 @@ func TestTaskBoardTool_ReadyResolvesDependencies(t *testing.T) {
 			Status:         taskregistry.StatusRunning,
 			DeliveryStatus: taskregistry.DeliveryPending,
 			Task:           "publish run",
-			CreatedAt:      now + 7,
-			StartedAt:      now + 7,
-			LastEventAt:    now + 7,
+			CreatedAt:      now + 10,
+			StartedAt:      now + 10,
+			LastEventAt:    now + 10,
 		},
 	}
 	for _, rec := range records {
@@ -664,8 +696,9 @@ func TestTaskBoardTool_ReadyResolvesDependencies(t *testing.T) {
 			StepID string `json:"step_id"`
 		} `json:"done_steps"`
 		BlockedSteps []struct {
-			StepID    string   `json:"step_id"`
-			BlockedBy []string `json:"blocked_by"`
+			StepID      string   `json:"step_id"`
+			BlockedBy   []string `json:"blocked_by"`
+			MissingDeps []string `json:"missing_dependencies"`
 		} `json:"blocked_steps"`
 	}
 	if err := json.Unmarshal([]byte(result.ForLLM), &payload); err != nil {
@@ -675,7 +708,7 @@ func TestTaskBoardTool_ReadyResolvesDependencies(t *testing.T) {
 		payload.Counts["waiting"] != 1 ||
 		payload.Counts["active"] != 1 ||
 		payload.Counts["done"] != 1 ||
-		payload.Counts["blocked"] != 1 {
+		payload.Counts["blocked"] != 2 {
 		t.Fatalf("unexpected counts: %#v\n%s", payload.Counts, result.ForLLM)
 	}
 	if len(payload.ReadySteps) != 1 ||
@@ -697,9 +730,27 @@ func TestTaskBoardTool_ReadyResolvesDependencies(t *testing.T) {
 	if len(payload.DoneSteps) != 1 || payload.DoneSteps[0].StepID != "extract" {
 		t.Fatalf("unexpected done steps: %#v\n%s", payload.DoneSteps, result.ForLLM)
 	}
-	if len(payload.BlockedSteps) != 1 ||
-		payload.BlockedSteps[0].StepID != "notify" ||
-		payload.BlockedSteps[0].BlockedBy[0] != "manual-review" {
+	if len(payload.BlockedSteps) != 2 {
 		t.Fatalf("unexpected blocked steps: %#v\n%s", payload.BlockedSteps, result.ForLLM)
+	}
+	blockedByStep := map[string]struct {
+		BlockedBy   []string
+		MissingDeps []string
+	}{}
+	for _, step := range payload.BlockedSteps {
+		blockedByStep[step.StepID] = struct {
+			BlockedBy   []string
+			MissingDeps []string
+		}{BlockedBy: step.BlockedBy, MissingDeps: step.MissingDeps}
+	}
+	if blockedByStep["notify"].BlockedBy[0] != "manual-review" {
+		t.Fatalf("notify should be explicitly blocked: %#v\n%s", payload.BlockedSteps, result.ForLLM)
+	}
+	if blockedByStep["inconsistent-done"].MissingDeps[0] != "missing-required-step" {
+		t.Fatalf(
+			"succeeded step with missing dependency should be blocked: %#v\n%s",
+			payload.BlockedSteps,
+			result.ForLLM,
+		)
 	}
 }
