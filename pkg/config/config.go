@@ -475,6 +475,7 @@ func (d *AgentDefaults) GetModelName() string {
 
 // GroupTriggerConfig controls when the bot responds in group chats.
 type GroupTriggerConfig struct {
+	Disabled             bool                          `json:"disabled,omitempty"`
 	MentionOnly          bool                          `json:"mention_only,omitempty"`
 	IgnoreNonBotMentions *bool                         `json:"ignore_non_bot_mentions,omitempty"`
 	IgnoreNonBotReplies  *bool                         `json:"ignore_non_bot_replies,omitempty"`

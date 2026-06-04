@@ -80,6 +80,23 @@ active by default in a dedicated topic:
 You can find a topic ID in Telegram update logs or by inspecting
 `message_thread_id` from the Telegram Bot API update payload.
 
+To make a bot ignore one topic entirely while staying active elsewhere, set that
+topic override to `disabled`:
+
+```json
+{
+  "channel_list": {
+    "telegram": {
+      "group_trigger": {
+        "topics": {
+          "1771": { "disabled": true }
+        }
+      }
+    }
+  }
+}
+```
+
 ## Built-in Commands
 
 Telegram auto-registers PicoClaw's top-level bot commands at startup, including `/start`, `/help`, `/show`, `/list`, and `/use`.

@@ -150,6 +150,7 @@ func (c *BaseChannel) MaxMessageLength() int {
 //  3. Calling this method to get the group response decision
 //
 // Logic:
+//   - If disabled configured → ignore
 //   - If isMentioned → always respond
 //   - If mention_only configured and not mentioned → ignore
 //   - If prefixes configured → respond if content starts with any prefix (strip it)
@@ -202,6 +203,10 @@ func (c *BaseChannel) IgnoreNonBotRepliesForTopic(topicID string, fallback bool)
 }
 
 func shouldRespondInGroup(gt config.GroupTriggerConfig, isMentioned bool, content string) (bool, string) {
+	if gt.Disabled {
+		return false, content
+	}
+
 	// Mentioned → always respond
 	if isMentioned {
 		return true, strings.TrimSpace(content)

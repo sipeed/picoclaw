@@ -184,6 +184,7 @@ func TestShouldRespondInGroupForTopicOverride(t *testing.T) {
 		Topics: map[string]config.GroupTriggerConfig{
 			"1771": {MentionOnly: false},
 			"1772": {Prefixes: []string{"!bot"}},
+			"1773": {Disabled: true},
 		},
 	}))
 
@@ -211,6 +212,11 @@ func TestShouldRespondInGroupForTopicOverride(t *testing.T) {
 	respond, _ = ch.ShouldRespondInGroupForTopic(false, "hello", "1772")
 	if respond {
 		t.Fatal("topic override should replace the parent trigger, not merge it")
+	}
+
+	respond, _ = ch.ShouldRespondInGroupForTopic(true, "@test hello", "1773")
+	if respond {
+		t.Fatal("disabled topic override should suppress even mentioned messages")
 	}
 }
 
