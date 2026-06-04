@@ -87,6 +87,35 @@ type DeliverableItem struct {
 	Delivered   bool   `json:"delivered,omitempty"`
 }
 
+// TaskPacketPayload is the optional typed contract for a task board. It
+// describes what the workflow is supposed to accomplish; execution still lives
+// in task-board steps and child task records.
+type TaskPacketPayload struct {
+	Kind               string               `json:"kind,omitempty"`
+	Objective          string               `json:"objective"`
+	Scope              string               `json:"scope,omitempty"`
+	AcceptanceCriteria []string             `json:"acceptance_criteria,omitempty"`
+	VerificationPlan   []string             `json:"verification_plan,omitempty"`
+	Resources          []TaskPacketResource `json:"resources,omitempty"`
+	Constraints        []string             `json:"constraints,omitempty"`
+	Reporting          map[string]any       `json:"reporting,omitempty"`
+	Recovery           map[string]any       `json:"recovery,omitempty"`
+	Coding             map[string]any       `json:"coding,omitempty"`
+	Media              map[string]any       `json:"media,omitempty"`
+	Research           map[string]any       `json:"research,omitempty"`
+	Nutrition          map[string]any       `json:"nutrition,omitempty"`
+	Extra              map[string]any       `json:"extra,omitempty"`
+}
+
+// TaskPacketResource identifies an input or reference material used by a task
+// packet, such as a URL, repository, file, media artifact, or user note.
+type TaskPacketResource struct {
+	Type        string         `json:"type,omitempty"`
+	URI         string         `json:"uri,omitempty"`
+	Description string         `json:"description,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+}
+
 type Record struct {
 	TaskID              string              `json:"task_id"`
 	Runtime             Runtime             `json:"runtime"`
@@ -124,6 +153,7 @@ type Record struct {
 	TerminalSummary     string              `json:"terminal_summary,omitempty"`
 	Completion          *CompletionPayload  `json:"completion,omitempty"`
 	Deliverable         *DeliverablePayload `json:"deliverable,omitempty"`
+	TaskPacket          *TaskPacketPayload  `json:"task_packet,omitempty"`
 }
 
 type Options struct {

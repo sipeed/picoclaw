@@ -56,6 +56,55 @@ func (t *TaskBoardTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Optional board description for create.",
 			},
+			"task_packet": map[string]any{
+				"type":        "object",
+				"description": "Optional typed workflow contract for action=create. Use for serious/composite workflows. Requires objective when provided. Keep generic fields at top level and put domain-specific details under coding/media/research/nutrition.",
+				"properties": map[string]any{
+					"kind": map[string]any{
+						"type":        "string",
+						"description": "Workflow kind, for example generic, coding, media, research, nutrition.",
+					},
+					"objective": map[string]any{
+						"type":        "string",
+						"description": "Concise outcome this board must achieve.",
+					},
+					"scope": map[string]any{
+						"type":        "string",
+						"description": "Boundaries for the work.",
+					},
+					"acceptance_criteria": map[string]any{
+						"type":  "array",
+						"items": map[string]any{"type": "string"},
+					},
+					"verification_plan": map[string]any{
+						"type":  "array",
+						"items": map[string]any{"type": "string"},
+					},
+					"resources": map[string]any{
+						"type": "array",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"type":        map[string]any{"type": "string"},
+								"uri":         map[string]any{"type": "string"},
+								"description": map[string]any{"type": "string"},
+								"metadata":    map[string]any{"type": "object"},
+							},
+						},
+					},
+					"constraints": map[string]any{
+						"type":  "array",
+						"items": map[string]any{"type": "string"},
+					},
+					"reporting": map[string]any{"type": "object"},
+					"recovery":  map[string]any{"type": "object"},
+					"coding":    map[string]any{"type": "object"},
+					"media":     map[string]any{"type": "object"},
+					"research":  map[string]any{"type": "object"},
+					"nutrition": map[string]any{"type": "object"},
+					"extra":     map[string]any{"type": "object"},
+				},
+			},
 			"step_id": map[string]any{
 				"type":        "string",
 				"description": "Stable step ID for add_step, for example media-extract.",
@@ -153,6 +202,10 @@ func (t *TaskBoardTool) create(ctx context.Context, args map[string]any) *ToolRe
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
+	taskPacket, err := optionalTaskPacketArg(args, "task_packet")
+	if err != nil {
+		return ErrorResult(err.Error())
+	}
 	now := time.Now().UnixMilli()
 	rec := taskregistry.Record{
 		TaskID:         boardRootTaskID(boardID),
@@ -172,16 +225,18 @@ func (t *TaskBoardTool) create(ctx context.Context, args map[string]any) *ToolRe
 		NotifyPolicy:   taskregistry.NotifySilent,
 		CreatedAt:      now,
 		LastEventAt:    now,
+		TaskPacket:     taskPacket,
 	}
 	if err := t.registry.Upsert(rec); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to create task board: %v", err)).WithError(err)
 	}
 	return taskBoardJSONResult(map[string]any{
-		"action":   "create",
-		"board_id": boardID,
-		"task_id":  rec.TaskID,
-		"title":    title,
-		"status":   string(rec.Status),
+		"action":      "create",
+		"board_id":    boardID,
+		"task_id":     rec.TaskID,
+		"title":       title,
+		"status":      string(rec.Status),
+		"task_packet": taskPacket,
 	})
 }
 
@@ -381,6 +436,7 @@ type taskBoardRecordView struct {
 	Summary        string                           `json:"summary,omitempty"`
 	Deliverable    *taskregistry.DeliverablePayload `json:"deliverable,omitempty"`
 	Completion     *taskregistry.CompletionPayload  `json:"legacy_completion,omitempty"`
+	TaskPacket     *taskregistry.TaskPacketPayload  `json:"task_packet,omitempty"`
 }
 
 func taskBoardView(rec taskregistry.Record, includePayloads bool) taskBoardRecordView {
@@ -398,6 +454,7 @@ func taskBoardView(rec taskregistry.Record, includePayloads bool) taskBoardRecor
 		Task:           rec.Task,
 		Error:          rec.Error,
 		Summary:        rec.TerminalSummary,
+		TaskPacket:     rec.TaskPacket,
 	}
 	if rec.CreatedAt > 0 {
 		view.CreatedAt = time.UnixMilli(rec.CreatedAt).Format(time.RFC3339)
@@ -503,4 +560,47 @@ func isTaskBoardTerminalStatus(status taskregistry.Status) bool {
 	default:
 		return false
 	}
+}
+
+func optionalTaskPacketArg(args map[string]any, key string) (*taskregistry.TaskPacketPayload, error) {
+	raw, ok := args[key]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be an object: %w", key, err)
+	}
+	var packet taskregistry.TaskPacketPayload
+	if err := json.Unmarshal(data, &packet); err != nil {
+		return nil, fmt.Errorf("%s must match the task packet schema: %w", key, err)
+	}
+	packet.Kind = strings.TrimSpace(packet.Kind)
+	packet.Objective = strings.TrimSpace(packet.Objective)
+	packet.Scope = strings.TrimSpace(packet.Scope)
+	packet.AcceptanceCriteria = cleanStringList(packet.AcceptanceCriteria)
+	packet.VerificationPlan = cleanStringList(packet.VerificationPlan)
+	packet.Constraints = cleanStringList(packet.Constraints)
+	if packet.Objective == "" {
+		return nil, fmt.Errorf("%s.objective required when task_packet is provided", key)
+	}
+	packet.Resources = cleanTaskPacketResources(packet.Resources)
+	return &packet, nil
+}
+
+func cleanTaskPacketResources(resources []taskregistry.TaskPacketResource) []taskregistry.TaskPacketResource {
+	out := make([]taskregistry.TaskPacketResource, 0, len(resources))
+	for _, resource := range resources {
+		resource.Type = strings.TrimSpace(resource.Type)
+		resource.URI = strings.TrimSpace(resource.URI)
+		resource.Description = strings.TrimSpace(resource.Description)
+		if resource.Type == "" && resource.URI == "" && resource.Description == "" && len(resource.Metadata) == 0 {
+			continue
+		}
+		out = append(out, resource)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

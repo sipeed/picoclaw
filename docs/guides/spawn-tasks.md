@@ -56,6 +56,9 @@ steps, use `task_board` to create one durable board, then use the task-board
 fields on `spawn` and `delegate`:
 
 - Create one stable `board_id` for the whole workflow.
+- For serious workflows, include a `task_packet` on `task_board create` with
+  objective, scope, acceptance criteria, verification plan, resources,
+  reporting, and recovery policy.
 - Add planned steps with `task_board {"action":"add_step", ...}` when the
   workflow has known steps.
 - Pass the same `board_id` to every related `spawn` or `delegate` call.
@@ -74,7 +77,25 @@ Example:
 {
   "action": "create",
   "board_id": "instagram-recipe-20260527",
-  "title": "Instagram recipe workflow"
+  "title": "Instagram recipe workflow",
+  "task_packet": {
+    "kind": "media",
+    "objective": "Download the reel, extract the caption recipe, and provide a Russian translation.",
+    "scope": "One Instagram Reel URL.",
+    "acceptance_criteria": [
+      "video artifact is available for delivery",
+      "caption recipe is extracted",
+      "Russian recipe text is suitable for the user"
+    ],
+    "verification_plan": [
+      "check media step deliverable",
+      "check final recipe text"
+    ],
+    "media": {
+      "expected_artifacts": ["video", "caption"],
+      "send_media": true
+    }
+  }
 }
 ```
 

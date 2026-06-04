@@ -76,6 +76,114 @@ func TestTaskBoardTool_CreateAddStepAndList(t *testing.T) {
 	}
 }
 
+func TestTaskBoardTool_CreateWithTaskPacket(t *testing.T) {
+	registry := taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(t.TempDir()))
+	tool := NewTaskBoardTool(registry)
+	ctx := WithToolSessionContext(
+		WithToolContext(context.Background(), "telegram", "chat-1"),
+		"main",
+		"session-1",
+		nil,
+	)
+
+	create := tool.Execute(ctx, map[string]any{
+		"action":   "create",
+		"board_id": "workflow-media-1",
+		"title":    "Instagram recipe workflow",
+		"task_packet": map[string]any{
+			"kind":      "media",
+			"objective": "Download the reel and produce a Russian recipe.",
+			"scope":     "One Instagram Reel URL.",
+			"acceptance_criteria": []any{
+				"video artifact is available",
+				"recipe is translated to Russian",
+			},
+			"verification_plan": []any{
+				"inspect media deliverable",
+				"check final recipe text",
+			},
+			"resources": []any{
+				map[string]any{
+					"type":        "url",
+					"uri":         "https://example.test/reel",
+					"description": "source reel",
+				},
+			},
+			"reporting": map[string]any{
+				"audience": "user",
+				"format":   "short",
+			},
+			"recovery": map[string]any{
+				"retry_policy": "safe",
+				"escalation":   "ask_user",
+			},
+			"media": map[string]any{
+				"expected_artifacts": []any{"video", "caption"},
+				"send_media":         true,
+			},
+		},
+	})
+	if create.IsError {
+		t.Fatalf("create failed: %s", create.ForLLM)
+	}
+
+	rec, ok := registry.Get("board:workflow-media-1")
+	if !ok {
+		t.Fatal("board root missing")
+	}
+	if rec.TaskPacket == nil {
+		t.Fatal("task packet missing from registry record")
+	}
+	if rec.TaskPacket.Kind != "media" {
+		t.Fatalf("kind = %q, want media", rec.TaskPacket.Kind)
+	}
+	if rec.TaskPacket.Objective != "Download the reel and produce a Russian recipe." {
+		t.Fatalf("objective = %q", rec.TaskPacket.Objective)
+	}
+	if len(rec.TaskPacket.AcceptanceCriteria) != 2 ||
+		rec.TaskPacket.AcceptanceCriteria[0] != "video artifact is available" {
+		t.Fatalf("acceptance criteria = %#v", rec.TaskPacket.AcceptanceCriteria)
+	}
+	if len(rec.TaskPacket.Resources) != 1 || rec.TaskPacket.Resources[0].URI != "https://example.test/reel" {
+		t.Fatalf("resources = %#v", rec.TaskPacket.Resources)
+	}
+	if rec.TaskPacket.Media["send_media"] != true {
+		t.Fatalf("media block = %#v", rec.TaskPacket.Media)
+	}
+
+	list := tool.Execute(ctx, map[string]any{
+		"action":   "list",
+		"board_id": "workflow-media-1",
+	})
+	if list.IsError {
+		t.Fatalf("list failed: %s", list.ForLLM)
+	}
+	if !strings.Contains(list.ForLLM, `"task_packet"`) ||
+		!strings.Contains(list.ForLLM, `"objective": "Download the reel and produce a Russian recipe."`) {
+		t.Fatalf("list did not include task packet:\n%s", list.ForLLM)
+	}
+}
+
+func TestTaskBoardTool_CreateRejectsTaskPacketWithoutObjective(t *testing.T) {
+	registry := taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(t.TempDir()))
+	tool := NewTaskBoardTool(registry)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"action": "create",
+		"title":  "Broken workflow",
+		"task_packet": map[string]any{
+			"kind":  "media",
+			"scope": "missing objective",
+		},
+	})
+	if !result.IsError {
+		t.Fatalf("expected error, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "task_packet.objective required") {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+}
+
 func TestTaskBoardTool_UpdateStepStatus(t *testing.T) {
 	registry := taskregistry.NewRegistry(taskregistry.WorkspaceStorePath(t.TempDir()))
 	tool := NewTaskBoardTool(registry)
