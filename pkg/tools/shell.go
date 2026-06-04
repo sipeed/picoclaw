@@ -22,6 +22,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	"github.com/sipeed/picoclaw/pkg/isolation"
+	"github.com/sipeed/picoclaw/pkg/tools/shellguard"
 	workspaceutil "github.com/sipeed/picoclaw/pkg/workspace"
 )
 
@@ -119,85 +120,7 @@ var (
 		// Matches \uXXXX format used to represent characters like i = "i"
 		regexp.MustCompile(`\\u[0-9a-fA-F]{4}`),
 	}
-
-	// absolutePathPattern matches absolute file paths in commands (Unix and Windows).
-	absolutePathPattern = regexp.MustCompile(`[A-Za-z]:\\[^\\\"']+|/[^\s\"']+`)
-
-	// safePaths are kernel pseudo-devices that are always safe to reference in
-	// commands, regardless of workspace restriction. They contain no user data
-	// and cannot cause destructive writes.
-	safePaths = map[string]bool{
-		"/dev/null":    true,
-		"/dev/zero":    true,
-		"/dev/random":  true,
-		"/dev/urandom": true,
-		"/dev/stdin":   true,
-		"/dev/stdout":  true,
-		"/dev/stderr":  true,
-	}
-
-	quotedHeredocStartPattern = regexp.MustCompile(`<<-?\s*(?:'([^'\s]+)'|"([^"\s]+)")`)
 )
-
-func stripQuotedHeredocBodies(command string) string {
-	sanitized := command
-	searchFrom := 0
-
-	for {
-		loc := quotedHeredocStartPattern.FindStringSubmatchIndex(sanitized[searchFrom:])
-		if loc == nil {
-			return sanitized
-		}
-
-		matchStart := searchFrom + loc[0]
-		matchEnd := searchFrom + loc[1]
-		delimStart := searchFrom + loc[2]
-		delimEnd := searchFrom + loc[3]
-		if delimStart == searchFrom-1 || delimEnd == searchFrom-1 {
-			delimStart = searchFrom + loc[4]
-			delimEnd = searchFrom + loc[5]
-		}
-		delim := sanitized[delimStart:delimEnd]
-		allowTabs := strings.Contains(sanitized[matchStart:matchEnd], "<<-")
-
-		newlineRel := strings.IndexByte(sanitized[matchEnd:], '\n')
-		if newlineRel == -1 {
-			return sanitized
-		}
-		bodyStart := matchEnd + newlineRel + 1
-		lineStart := bodyStart
-		foundEnd := false
-
-		for lineStart <= len(sanitized) {
-			lineEnd := len(sanitized)
-			if nextNewline := strings.IndexByte(sanitized[lineStart:], '\n'); nextNewline >= 0 {
-				lineEnd = lineStart + nextNewline
-			}
-
-			line := sanitized[lineStart:lineEnd]
-			compare := strings.TrimSuffix(line, "\r")
-			if allowTabs {
-				compare = strings.TrimLeft(compare, "\t")
-			}
-			if compare == delim {
-				sanitized = sanitized[:bodyStart] + "[quoted heredoc omitted]\n" + sanitized[lineStart:]
-				searchFrom = bodyStart + len("[quoted heredoc omitted]\n")
-				foundEnd = true
-				break
-			}
-
-			if lineEnd == len(sanitized) {
-				lineStart = len(sanitized) + 1
-			} else {
-				lineStart = lineEnd + 1
-			}
-		}
-
-		if !foundEnd {
-			return sanitized
-		}
-	}
-}
 
 func NewExecTool(workingDir string, restrict bool, allowPaths ...[]*regexp.Regexp) (*ExecTool, error) {
 	return NewExecToolWithConfig(workingDir, restrict, nil, allowPaths...)
@@ -1198,171 +1121,18 @@ func (t *ExecTool) executeSendKeys(args map[string]any) *ToolResult {
 	}
 }
 
-// expandPowerShellEnvVars expands environment variable syntax used by both
-// PowerShell ($env:VAR) and CMD (%VAR%) to their actual values.
-func expandPowerShellEnvVars(cmd string) string {
-	// Handle PowerShell style: $env:VAR and ${env:VAR}
-	rePs := regexp.MustCompile(`\$\{?env:(\w+)\}?`)
-	cmd = rePs.ReplaceAllStringFunc(cmd, func(match string) string {
-		varName := rePs.FindStringSubmatch(match)[1]
-		if val := os.Getenv(varName); val != "" {
-			return val
-		}
-		return match
-	})
-
-	// Handle CMD style: %VAR%
-	reCmd := regexp.MustCompile(`%([^%]+)%`)
-	return reCmd.ReplaceAllStringFunc(cmd, func(match string) string {
-		varName := reCmd.FindStringSubmatch(match)[1]
-		if val := os.Getenv(varName); val != "" {
-			return val
-		}
-		return match
-	})
-}
-
 func (t *ExecTool) guardCommand(command, cwd string) string {
-	cmd := strings.TrimSpace(command)
-	lower := strings.ToLower(cmd)
-	sanitizedForGuards := stripQuotedHeredocBodies(cmd)
-	lowerForDeny := strings.ToLower(sanitizedForGuards)
-
-	// Custom allow patterns exempt a command from deny checks.
-	explicitlyAllowed := false
-	for _, pattern := range t.customAllowPatterns {
-		if pattern.MatchString(lower) {
-			explicitlyAllowed = true
-			break
-		}
+	decision := shellguard.New(shellguard.Config{
+		DenyPatterns:        t.denyPatterns,
+		AllowPatterns:       t.allowPatterns,
+		CustomAllowPatterns: t.customAllowPatterns,
+		AllowedPathPatterns: t.allowedPathPatterns,
+		RestrictToWorkspace: t.restrictToWorkspace,
+	}).Validate(command, cwd)
+	if decision.Allowed {
+		return ""
 	}
-
-	if !explicitlyAllowed {
-		for _, pattern := range t.denyPatterns {
-			if pattern.MatchString(lowerForDeny) {
-				return "Command blocked by safety guard (dangerous pattern detected)"
-			}
-		}
-	}
-
-	if len(t.allowPatterns) > 0 {
-		allowed := false
-		for _, pattern := range t.allowPatterns {
-			if pattern.MatchString(lower) {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			return "Command blocked by safety guard (not in allowlist)"
-		}
-	}
-
-	if t.restrictToWorkspace {
-		// Block path traversal patterns including .../.../ variants
-		if regexp.MustCompile(`\.\.(?:[\\/]\.\.)*[\\/]`).MatchString(sanitizedForGuards) {
-			return "Command blocked by safety guard (path traversal detected)"
-		}
-
-		cwdPath, err := filepath.Abs(cwd)
-		if err != nil {
-			return ""
-		}
-
-		// Web URL schemes whose path components (starting with //) should be exempt
-		// from workspace sandbox checks. file: is intentionally excluded so that
-		// file:// URIs are still validated against the workspace boundary.
-		webSchemes := []string{"http:", "https:", "ftp:", "ftps:", "sftp:", "ssh:", "git:"}
-
-		// On Windows, expand ~ and PowerShell environment variables ($env:VAR) before path checking
-		if runtime.GOOS == "windows" {
-			// Expand PowerShell environment variables ($env:VAR and ${env:VAR})
-			sanitizedForGuards = expandPowerShellEnvVars(sanitizedForGuards)
-			// Also expand ~ for completeness
-			if home, err := os.UserHomeDir(); err == nil {
-				sanitizedForGuards = strings.ReplaceAll(sanitizedForGuards, "~", filepath.FromSlash(home))
-			}
-		}
-
-		matchIndices := absolutePathPattern.FindAllStringIndex(sanitizedForGuards, -1)
-
-		for _, loc := range matchIndices {
-			raw := sanitizedForGuards[loc[0]:loc[1]]
-
-			// Skip slash-containing relative command segments like
-			// "scripts/foo.sh". The absolute-path regex matches the "/foo.sh"
-			// substring inside that token, but this is not an absolute path.
-			if strings.HasPrefix(raw, "/") && loc[0] > 0 {
-				prev := sanitizedForGuards[loc[0]-1]
-				if (prev >= 'a' && prev <= 'z') ||
-					(prev >= 'A' && prev <= 'Z') ||
-					(prev >= '0' && prev <= '9') ||
-					prev == '_' || prev == '.' || prev == '-' {
-					continue
-				}
-			}
-
-			// Skip URL path components that look like they're from web URLs.
-			// When a URL like "https://github.com" is parsed, the regex captures
-			// "//github.com" as a match (the path portion after "https:").
-			// Use the exact match position (loc[0]) so that duplicate //path substrings
-			// in the same command are each evaluated at their own position.
-			if strings.HasPrefix(raw, "//") && loc[0] > 0 {
-				before := sanitizedForGuards[:loc[0]]
-				isWebURL := false
-
-				for _, scheme := range webSchemes {
-					if strings.HasSuffix(before, scheme) {
-						isWebURL = true
-						break
-					}
-				}
-
-				if isWebURL {
-					continue
-				}
-			}
-
-			p, err := filepath.Abs(raw)
-			if err != nil {
-				continue
-			}
-
-			// Windows-specific: normalize paths to block ADS and extended-length paths
-			if runtime.GOOS == "windows" {
-				// Strip \\?\ prefix (extended-length path)
-				p = strings.TrimPrefix(p, `\\?\`)
-				// Strip NTFS alternate data streams (only if colon is not at position 1 = drive letter)
-				if idx := strings.Index(p, ":"); idx > 1 {
-					p = p[:idx]
-				}
-			}
-
-			// Check symlinks and junctions
-			resolved, err := filepath.EvalSymlinks(p)
-			if err == nil {
-				p = resolved
-			}
-
-			if safePaths[p] {
-				continue
-			}
-			if isAllowedPath(p, t.allowedPathPatterns) {
-				continue
-			}
-
-			rel, err := filepath.Rel(cwdPath, p)
-			if err != nil {
-				continue
-			}
-
-			if strings.HasPrefix(rel, "..") {
-				return "Command blocked by safety guard (path outside working dir)"
-			}
-		}
-	}
-
-	return ""
+	return decision.Reason
 }
 
 func (t *ExecTool) SetTimeout(timeout time.Duration) {
