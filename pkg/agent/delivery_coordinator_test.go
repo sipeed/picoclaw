@@ -523,6 +523,10 @@ func (failingMessageBus) ReleaseInbound(context.Context, bus.InboundMessage, err
 	return nil
 }
 
+func (failingMessageBus) PendingInboundSpool(context.Context) ([]bus.InboundMessage, error) {
+	return nil, nil
+}
+
 func (failingMessageBus) PublishObserved(context.Context, bus.ObservedMessage) error {
 	return errors.New("publish failed")
 }
