@@ -72,6 +72,6 @@ Add this to `config.json`:
 - Auto-join invited rooms (can be disabled)
 - End-to-end encryption (E2EE) support for encrypted messages
 
-## 4. TODO
+## 4. Known Limitation
 
-- Rich media metadata improvements (for example image/video size and thumbnails)
+- Rich media metadata is still minimal. Image and video size details or thumbnails may be absent depending on the upstream event payload.

@@ -11,5 +11,3 @@ Task-oriented guides for setup, configuration, and common PicoClaw workflows.
 - [Spawn & Async Tasks](spawn-tasks.md): background work, long-running tasks, and sub-agent orchestration.
 - [PicoClaw Hardware Compatibility List](hardware-compatibility.md): tested boards and platform notes.
 - [Using Antigravity Provider in PicoClaw](ANTIGRAVITY_USAGE.md): Google Cloud Code Assist setup and usage.
-
-Translations usually live beside the English source when available.

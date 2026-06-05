@@ -87,13 +87,3 @@ For `model_list` aliases that resolve to the same underlying provider/model, rat
 The bucket starts **full** (burst = RPM). For `rpm: 3`, the first 3 requests fire instantly; subsequent requests are spaced ~20 s apart.
 
 To reduce burstiness for strict APIs, set a lower `rpm` and rely on the steady-state refill.
-
-## Files changed
-
-| File | What |
-|---|---|
-| `pkg/providers/ratelimiter.go` | `RateLimiter` (token bucket) + `RateLimiterRegistry` |
-| `pkg/providers/ratelimiter_test.go` | Unit tests for limiter and registry |
-| `pkg/providers/fallback.go` | `FallbackCandidate.RPM` field; `FallbackChain.rl`; `Wait()` call in `Execute`/`ExecuteImage` |
-| `pkg/agent/model_resolution.go` | Resolves candidates from `model_list`, preserving stable config identity and propagating `RPM` into `FallbackCandidate` |
-| `pkg/agent/loop.go` | Build `RateLimiterRegistry`, register all agents' candidates, pass to `NewFallbackChain` |

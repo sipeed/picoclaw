@@ -6,7 +6,7 @@ PicoClaw supports **asynchronous task execution** via the `spawn` tool. This is 
 
 ## Heartbeat
 
-The heartbeat system periodically checks `workspace/HEARTBEAT.md` for scheduled tasks. On first run, a default template is auto-generated. You can customize it to define quick tasks (handled inline) and long tasks (delegated via `spawn`).
+The heartbeat system periodically checks `<workspace>/HEARTBEAT.md` for scheduled tasks. On first run, a default template is auto-generated. You can customize it to define quick tasks (handled inline) and long tasks (delegated via `spawn`).
 
 **Example `HEARTBEAT.md`:**
 

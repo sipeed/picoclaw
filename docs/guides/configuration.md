@@ -196,7 +196,7 @@ dammi le ultime news
 
 ### Unified Command Execution Policy
 
-- Generic slash commands are executed through a single path in `pkg/agent/loop.go` via `commands.Executor`.
+- Generic slash commands are executed through a single path in `pkg/agent/agent_command.go` via `commands.Executor`.
 - Channel adapters no longer consume generic commands locally; they forward inbound text to the bus/agent path. Telegram still auto-registers supported commands such as `/start`, `/help`, `/show`, `/list`, `/use`, and `/btw` at startup.
 - Unknown slash command (for example `/foo`) passes through to normal LLM processing.
 - Registered but unsupported command on the current channel (for example `/show` on WhatsApp) returns an explicit user-facing error and stops further processing.
@@ -1254,4 +1254,3 @@ Scheduled tasks persist across restarts and are stored in `~/.picoclaw/workspace
 | [Hook System](../architecture/hooks/README.md) | Event-driven hooks: observers, interceptors, approval hooks |
 | [Steering](../architecture/steering.md) | Inject messages into a running agent loop between tool calls |
 | [SubTurn](../architecture/subturn.md) | Subagent coordination, concurrency control, lifecycle |
-| [Context Management](../architecture/agent-refactor/context.md) | Context boundary detection, proactive budget check, compression |

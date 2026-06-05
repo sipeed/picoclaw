@@ -181,7 +181,7 @@ The following is a minimal logging hook for in-process use. It implements:
 
 It only records activity. It does not rewrite requests or reject tools.
 
-You can save it as your own Go file, for example `pkg/myhooks/example_logger.go`:
+You can save it as your own Go file in the package where you mount custom hooks:
 
 ```go
 package myhooks

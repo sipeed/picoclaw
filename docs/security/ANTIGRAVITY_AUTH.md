@@ -612,118 +612,32 @@ Auth profiles are stored in `~/.picoclaw/auth.json`:
 
 ---
 
-## Creating a New Provider in PicoClaw
-
-PicoClaw providers are implemented as Go packages under `pkg/providers/`. To add a new provider:
-
-### Step-by-Step Implementation
-
-#### 1. Create Provider File
-
-Create a new Go file in `pkg/providers/`:
-
-```
-pkg/providers/
-└── your_provider.go
-```
-
-#### 2. Implement the Provider Interface
-
-Your provider must implement the `Provider` interface defined in `pkg/providers/types.go`:
-
-```go
-package providers
-
-type YourProvider struct {
-    apiKey  string
-    apiBase string
-}
-
-func NewYourProvider(apiKey, apiBase, proxy string) *YourProvider {
-    if apiBase == "" {
-        apiBase = "https://api.your-provider.com/v1"
-    }
-    return &YourProvider{apiKey: apiKey, apiBase: apiBase}
-}
-
-func (p *YourProvider) Chat(ctx context.Context, messages []Message, tools []Tool, cb StreamCallback) error {
-    // Implement chat completion with streaming
-}
-```
-
-#### 3. Register in the Factory
-
-Add your provider to the protocol switch in `pkg/providers/factory.go`:
-
-```go
-case "your-provider":
-    return NewYourProvider(sel.apiKey, sel.apiBase, sel.proxy), nil
-```
-
-#### 4. Add Default Config (Optional)
-
-Add a default entry in `pkg/config/defaults.go`:
-
-```go
-{
-    ModelName: "your-model",
-    Model:     "your-provider/model-name",
-    APIKey:    "",
-},
-```
-
-#### 5. Add Auth Support (Optional)
-
-If your provider requires OAuth or special authentication, add a case to `cmd/picoclaw/internal/auth/helpers.go`:
-
-```go
-case "your-provider":
-    authLoginYourProvider()
-```
-
-#### 6. Configure via `config.json`
-
-```json
-{
-  "model_list": [
-    {
-      "model_name": "your-model",
-      "model": "your-provider/model-name",
-      "api_keys": ["your-api-key"],
-      "api_base": "https://api.your-provider.com/v1"
-    }
-  ]
-}
-```
-
----
-
-## Testing Your Implementation
+## Testing Antigravity
 
 ### CLI Commands
 
 ```bash
-# Authenticate with a provider
-picoclaw auth login --provider your-provider
+# Authenticate with Antigravity
+picoclaw auth login --provider antigravity
 
-# List models (for Antigravity)
+# List available models
 picoclaw auth models
 
 # Start the gateway
 picoclaw gateway
 
-# Run an agent with a specific model
-picoclaw agent -m "Hello" --model your-model
+# Run an agent with an Antigravity-backed model
+picoclaw agent -m "Hello" --model antigravity/gemini-3-flash
 ```
 
 ### Environment Variables for Testing
 
 ```bash
 # Override default model
-export PICOCLAW_AGENTS_DEFAULTS_MODEL=your-model
+export PICOCLAW_AGENTS_DEFAULTS_MODEL=antigravity/gemini-3-flash
 
-# Override provider settings
-export PICOCLAW_MODEL_LIST='[{"model_name":"your-model","model":"your-provider/model-name","api_keys":["..."]}]'
+# Override model_list with an Antigravity entry
+export PICOCLAW_MODEL_LIST='[{"model_name":"ag-flash","provider":"antigravity","model":"gemini-3-flash"}]'
 ```
 
 ---
@@ -731,7 +645,7 @@ export PICOCLAW_MODEL_LIST='[{"model_name":"your-model","model":"your-provider/m
 ## References
 
 - **Source Files:**
-  - `pkg/providers/antigravity_provider.go` - Antigravity provider implementation
+  - `pkg/providers/oauth/antigravity_provider.go` - Antigravity provider implementation
   - `pkg/auth/oauth.go` - OAuth flow implementation
   - `pkg/auth/store.go` - Auth credential storage (`~/.picoclaw/auth.json`)
   - `pkg/providers/factory.go` - Provider factory and protocol routing
@@ -739,7 +653,7 @@ export PICOCLAW_MODEL_LIST='[{"model_name":"your-model","model":"your-provider/m
   - `cmd/picoclaw/internal/auth/helpers.go` - Auth CLI commands
 
 - **Documentation:**
-  - `docs/ANTIGRAVITY_USAGE.md` - Antigravity usage guide
+  - `docs/guides/ANTIGRAVITY_USAGE.md` - Antigravity usage guide
   - `docs/migration/model-list-migration.md` - Migration guide
 
 ---
