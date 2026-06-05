@@ -17,7 +17,7 @@ func toChannelHashes(cfg *config.Config) map[string]string {
 	_ = json.Unmarshal(marshal, &channelConfig)
 
 	for key, value := range channelConfig {
-		if !value["enabled"].(bool) {
+		if enabled, ok := value["enabled"].(bool); !ok || !enabled {
 			continue
 		}
 		hiddenValues(key, value, ch.Get(key))
@@ -94,7 +94,15 @@ func hiddenValues(key string, value map[string]any, ch *config.Channel) {
 		vv := value["webhooks"]
 		webhooks := make(map[string]string)
 		if vv != nil {
-			webhooks = vv.(map[string]string)
+			if m, ok := vv.(map[string]string); ok {
+				webhooks = m
+			} else if m, ok := vv.(map[string]any); ok {
+				for k, w := range m {
+					if s, ok := w.(string); ok {
+						webhooks[k] = s
+					}
+				}
+			}
 		}
 		if settings, ok := v.(*config.TeamsWebhookSettings); ok {
 			for name, target := range settings.Webhooks {

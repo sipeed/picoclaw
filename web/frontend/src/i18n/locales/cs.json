@@ -94,6 +94,8 @@
     "sendHint": "Enter pro odeslání\nShift + Enter pro nový řádek",
     "contextTitle": "Kontext",
     "contextDetail": "Zobrazit detail",
+    "contextCompressAt": "Komprimovat při",
+    "contextSummarizeAt": "Shrnout při",
     "attachImage": "Přidat obrázky",
     "dropImagesActive": "Uvolněním přidáte obrázky",
     "removeImage": "Odebrat obrázek",

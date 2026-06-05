@@ -1401,10 +1401,12 @@ func setContextUsagePayload(payload map[string]any, u *bus.ContextUsage) {
 		return
 	}
 	payload["context_usage"] = map[string]any{
-		"used_tokens":        u.UsedTokens,
-		"total_tokens":       u.TotalTokens,
-		"compress_at_tokens": u.CompressAtTokens,
-		"used_percent":       u.UsedPercent,
+		"used_tokens":         u.UsedTokens,
+		"total_tokens":        u.TotalTokens,
+		"history_tokens":      u.HistoryTokens,
+		"compress_at_tokens":  u.CompressAtTokens,
+		"summarize_at_tokens": u.SummarizeAtTokens,
+		"used_percent":        u.UsedPercent,
 	}
 }
 

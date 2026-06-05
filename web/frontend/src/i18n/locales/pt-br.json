@@ -97,6 +97,8 @@
     "sendHint": "Pressione Enter para enviar\nShift + Enter para nova linha",
     "contextTitle": "Contexto",
     "contextDetail": "Ver Detalhes",
+    "contextCompressAt": "Comprimir em",
+    "contextSummarizeAt": "Resumir em",
     "attachImage": "Adicionar imagens",
     "dropImagesActive": "Solte para adicionar imagens",
     "removeImage": "Remover imagem",

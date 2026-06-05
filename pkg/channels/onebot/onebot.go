@@ -995,7 +995,6 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 
 	senderID := strconv.FormatInt(userID, 10)
 	var chatID string
-	var contextChatID string
 	var contextChatType string
 
 	metadata := map[string]string{}
@@ -1007,13 +1006,11 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 	switch raw.MessageType {
 	case "private":
 		chatID = "private:" + senderID
-		contextChatID = senderID
 		contextChatType = "direct"
 
 	case "group":
 		groupIDStr := strconv.FormatInt(groupID, 10)
 		chatID = "group:" + groupIDStr
-		contextChatID = groupIDStr
 		contextChatType = "group"
 		metadata["group_id"] = groupIDStr
 
@@ -1080,7 +1077,7 @@ func (c *OneBotChannel) handleMessage(raw *oneBotRawEvent) {
 
 	inboundCtx := bus.InboundContext{
 		Channel:          c.Name(),
-		ChatID:           contextChatID,
+		ChatID:           chatID,
 		ChatType:         contextChatType,
 		SenderID:         senderID,
 		MessageID:        messageID,

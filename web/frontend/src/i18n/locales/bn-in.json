@@ -96,6 +96,8 @@
     "sendHint": "পাঠাতে Enter চাপুন\nনতুন লাইনের জন্য Shift + Enter",
     "contextTitle": "প্রসঙ্গ",
     "contextDetail": "বিস্তারিত দেখুন",
+    "contextCompressAt": "Compress at",
+    "contextSummarizeAt": "Summarize at",
     "attachImage": "ছবি যোগ করুন",
     "removeImage": "ছবি সরান",
     "uploadedImage": "আপলোড করা ছবি",

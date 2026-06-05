@@ -602,10 +602,12 @@ func TestBeginStream_FinalizeIncludesContextUsage(t *testing.T) {
 		t.Fatal("streamer should support FinalizeWithContext")
 	}
 	if err := contextStreamer.FinalizeWithContext(context.Background(), "final", &bus.ContextUsage{
-		UsedTokens:       10,
-		TotalTokens:      100,
-		CompressAtTokens: 80,
-		UsedPercent:      10,
+		UsedTokens:        10,
+		TotalTokens:       100,
+		HistoryTokens:     5,
+		CompressAtTokens:  80,
+		SummarizeAtTokens: 60,
+		UsedPercent:       10,
 	}); err != nil {
 		t.Fatalf("FinalizeWithContext() error = %v", err)
 	}
@@ -626,6 +628,12 @@ func TestBeginStream_FinalizeIncludesContextUsage(t *testing.T) {
 	}
 	if got := rawUsage["used_tokens"]; got != float64(10) {
 		t.Fatalf("used_tokens = %#v, want 10", got)
+	}
+	if got := rawUsage["history_tokens"]; got != float64(5) {
+		t.Fatalf("history_tokens = %#v, want 5", got)
+	}
+	if got := rawUsage["summarize_at_tokens"]; got != float64(60) {
+		t.Fatalf("summarize_at_tokens = %#v, want 60", got)
 	}
 }
 

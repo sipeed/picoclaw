@@ -151,3 +151,57 @@ func TestToChannelHashes_RealWorldChannel(t *testing.T) {
 	assert.Equal(t, 1, len(h))
 	assert.Contains(t, h, "telegram")
 }
+
+func TestToChannelHashes_MissingEnabledKey(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Channels["test"] = &config.Channel{
+		Settings: config.RawNode(`{"key":"value"}`),
+	}
+
+	// Should not panic — the ok check safely handles the missing/false case
+	assert.NotPanics(t, func() {
+		_ = toChannelHashes(cfg)
+	})
+	h := toChannelHashes(cfg)
+	assert.Equal(t, 0, len(h), "channel with Enabled=false (default) skipped")
+}
+
+func TestToChannelHashes_EnabledNotBool(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Channels["test"] = &config.Channel{
+		Enabled:  false,
+		Settings: config.RawNode(`{"enabled":"yes","boolField":true}`),
+	}
+
+	// Should not panic — string "enabled" won't match bool assertion, ok=false
+	assert.NotPanics(t, func() {
+		_ = toChannelHashes(cfg)
+	})
+	h := toChannelHashes(cfg)
+	assert.Equal(t, 0, len(h), "string enabled not treated as true")
+}
+
+func TestToChannelHashes_TeamsWebhookWithWebhooks(t *testing.T) {
+	cfg := config.DefaultConfig()
+	// teams_webhook with configured webhooks — this is the real-world
+	// scenario where the map type from JSON unmarshal (map[string]any)
+	// would cause a panic on the old unchecked vv.(map[string]string)
+	settings, _ := json.Marshal(map[string]any{
+		"enabled": true,
+		"webhooks": map[string]any{
+			"hook1": "https://example.com/webhook",
+		},
+	})
+	cfg.Channels["teams_webhook"] = &config.Channel{
+		Enabled:  true,
+		Type:     config.ChannelTeamsWebHook,
+		Settings: config.RawNode(settings),
+	}
+
+	assert.NotPanics(t, func() {
+		_ = toChannelHashes(cfg)
+	})
+	h := toChannelHashes(cfg)
+	assert.Equal(t, 1, len(h))
+	assert.Contains(t, h, "teams_webhook")
+}

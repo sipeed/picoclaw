@@ -83,10 +83,12 @@ type OutboundScope struct {
 // ContextUsage describes how much of the model's context window the current
 // session consumes, and how far it is from triggering compression.
 type ContextUsage struct {
-	UsedTokens       int `json:"used_tokens"`
-	TotalTokens      int `json:"total_tokens"`       // model context window
-	CompressAtTokens int `json:"compress_at_tokens"` // threshold that triggers compression
-	UsedPercent      int `json:"used_percent"`       // 0-100
+	UsedTokens        int `json:"used_tokens"`
+	TotalTokens       int `json:"total_tokens"`        // model context window
+	HistoryTokens     int `json:"history_tokens"`      // history-message tokens only (what maybeSummarize checks)
+	CompressAtTokens  int `json:"compress_at_tokens"`  // hard budget compression threshold (contextWindow - maxTokens)
+	SummarizeAtTokens int `json:"summarize_at_tokens"` // soft summarization trigger (vs history tokens)
+	UsedPercent       int `json:"used_percent"`        // 0-100, relative to compressAt
 }
 
 type OutboundMessage struct {

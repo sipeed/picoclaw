@@ -1,6 +1,6 @@
 ---
 name: skill-creator
-description: Create or update AgentSkills. Use when designing, structuring, or packaging skills with scripts, references, and assets.
+description: Create, update, or review Picoclaw skills. Use when writing a new skill, modifying an existing SKILL.md, turning a repeated workflow into a reusable skill, or organizing scripts, references, and assets for a skill.
 ---
 
 # Skill Creator
@@ -204,9 +204,9 @@ Skill creation involves these steps:
 
 1. Understand the skill with concrete examples
 2. Plan reusable skill contents (scripts, references, assets)
-3. Initialize the skill (run init_skill.py)
+3. Create the skill directory manually
 4. Edit the skill (implement resources and write SKILL.md)
-5. Package the skill (run package_skill.py)
+5. Verify the skill structure
 6. Iterate based on real usage
 
 Follow these steps in order, skipping only if there is a clear reason why they are not applicable.
@@ -260,49 +260,50 @@ Example: When building a `big-query` skill to handle queries like "How many user
 
 To establish the skill's contents, analyze each concrete example to create a list of the reusable resources to include: scripts, references, and assets.
 
-### Step 3: Initializing the Skill
+### Step 3: Creating the Skill Directory
 
 At this point, it is time to actually create the skill.
 
-Skip this step only if the skill being developed already exists, and iteration or packaging is needed. In this case, continue to the next step.
+Skip this step only if the skill being developed already exists. In that case, continue to editing and verification.
 
-When creating a new skill from scratch, always run the `init_skill.py` script. The script conveniently generates a new template skill directory that automatically includes everything a skill requires, making the skill creation process much more efficient and reliable.
-
-Usage:
+Create user-installed Picoclaw skills under the workspace configured by Picoclaw: `<workspace>/skills/<skill-name>/`. If Picoclaw is configured to use a non-default workspace, set `WORKSPACE` to that path instead.
 
 ```bash
-scripts/init_skill.py <skill-name> --path <output-directory> [--resources scripts,references,assets] [--examples]
+WORKSPACE="$HOME/.picoclaw/workspace"
+mkdir -p "$WORKSPACE/skills/my-skill"
+cat > "$WORKSPACE/skills/my-skill/SKILL.md" <<'EOF'
+---
+name: my-skill
+description: Describe what this skill does and when Picoclaw should use it.
+---
+
+# My Skill
+
+Describe the workflow the agent should follow.
+EOF
 ```
 
-Examples:
+For a skill shipped with this repository, create it under:
 
-```bash
-scripts/init_skill.py my-skill --path skills/public
-scripts/init_skill.py my-skill --path skills/public --resources scripts,references
-scripts/init_skill.py my-skill --path skills/public --resources scripts --examples
+```text
+workspace/skills/<skill-name>/
 ```
 
-The script:
+Optional resource directories:
 
-- Creates the skill directory at the specified path
-- Generates a SKILL.md template with proper frontmatter and TODO placeholders
-- Optionally creates resource directories based on `--resources`
-- Optionally adds example files when `--examples` is set
+- `scripts/` for repeatable or fragile executable operations
+- `references/` for detailed docs loaded only when needed
+- `assets/` for templates or files used in outputs
 
-After initialization, customize the SKILL.md and add resources as needed. If you used `--examples`, replace or delete placeholder files.
+Create only the directories the skill actually needs. After creating the directory, customize `SKILL.md` and add resources as needed. Do not reference helper scripts unless they exist in the current repository or skill package.
 
 ### Step 4: Edit the Skill
 
 When editing the (newly-generated or existing) skill, remember that the skill is being created for another instance of the agent to use. Include information that would be beneficial and non-obvious to the agent. Consider what procedural knowledge, domain-specific details, or reusable assets would help another the agent instance execute these tasks more effectively.
 
-#### Learn Proven Design Patterns
+#### Use References When Needed
 
-Consult these helpful guides based on your skill's needs:
-
-- **Multi-step processes**: See references/workflows.md for sequential workflows and conditional logic
-- **Specific output formats or quality standards**: See references/output-patterns.md for template and example patterns
-
-These files contain established best practices for effective skill design.
+Create reference files for detailed guidance that should not live in `SKILL.md`. Link to a reference file only when that file exists in the skill.
 
 #### Start with Reusable Skill Contents
 
@@ -310,7 +311,7 @@ To begin implementation, start with the reusable resources identified above: `sc
 
 Added scripts must be tested by actually running them to ensure there are no bugs and that the output matches what is expected. If there are many similar scripts, only a representative sample needs to be tested to ensure confidence that they all work while balancing time to completion.
 
-If you used `--examples`, delete any placeholder files that are not needed for the skill. Only create resource directories that are actually required.
+Remove unused placeholder files if any are present. Only create resource directories that are actually required.
 
 #### Update SKILL.md
 
@@ -332,32 +333,18 @@ Do not include any other fields in YAML frontmatter.
 
 Write instructions for using the skill and its bundled resources.
 
-### Step 5: Packaging a Skill
+### Step 5: Verifying the Skill
 
-Once development of the skill is complete, it must be packaged into a distributable .skill file that gets shared with the user. The packaging process automatically validates the skill first to ensure it meets all requirements:
+Before considering the skill complete:
 
-```bash
-scripts/package_skill.py <path/to/skill-folder>
-```
+1. Confirm `SKILL.md` exists in the skill directory.
+2. Confirm the YAML frontmatter contains only `name` and `description`.
+3. Confirm the skill name uses lowercase letters, digits, and hyphens.
+4. Confirm all referenced files actually exist.
+5. Confirm optional `scripts/`, `references/`, or `assets/` directories are either used by the skill or omitted.
+6. Test any scripts or procedural instructions with a representative real task.
 
-Optional output directory specification:
-
-```bash
-scripts/package_skill.py <path/to/skill-folder> ./dist
-```
-
-The packaging script will:
-
-1. **Validate** the skill automatically, checking:
-
-   - YAML frontmatter format and required fields
-   - Skill naming conventions and directory structure
-   - Description completeness and quality
-   - File organization and resource references
-
-2. **Package** the skill if validation passes, creating a .skill file named after the skill (e.g., `my-skill.skill`) that includes all files and maintains the proper directory structure for distribution. The .skill file is a zip file with a .skill extension.
-
-If validation fails, the script will report the errors and exit without creating a package. Fix any validation errors and run the packaging command again.
+If Picoclaw documents a packaging or validation command in the future, use that documented command rather than assuming a helper script exists.
 
 ### Step 6: Iterate
 

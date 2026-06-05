@@ -552,7 +552,7 @@ func (v *Validator) validateWorkspacePaths(command, cwd string) Decision {
 
 	for _, loc := range absolutePathPattern.FindAllStringIndex(command, -1) {
 		raw := command[loc[0]:loc[1]]
-		if skipPathCandidate(command, raw, loc[0]) {
+		if skipPathCandidate(command, cwd, raw, loc[0]) {
 			continue
 		}
 
@@ -595,17 +595,7 @@ func (v *Validator) validateWorkspacePaths(command, cwd string) Decision {
 	return Decision{Allowed: true, Reason: "allowed", Category: "allowed", CommandClass: ClassifyCommand(command)}
 }
 
-func skipPathCandidate(command, raw string, start int) bool {
-	if strings.HasPrefix(raw, "/") && start > 0 {
-		prev := command[start-1]
-		if (prev >= 'a' && prev <= 'z') ||
-			(prev >= 'A' && prev <= 'Z') ||
-			(prev >= '0' && prev <= '9') ||
-			prev == '_' || prev == '.' || prev == '-' {
-			return true
-		}
-	}
-
+func skipPathCandidate(command, cwd, raw string, start int) bool {
 	if strings.HasPrefix(raw, "//") && start > 0 {
 		before := command[:start]
 		for _, scheme := range webSchemes {
@@ -615,7 +605,78 @@ func skipPathCandidate(command, raw string, start int) bool {
 		}
 	}
 
+	if strings.HasPrefix(raw, "/") && start > 0 {
+		j := start - 1
+		for j >= 0 && !isShellTokenBoundary(command[j]) {
+			j--
+		}
+		token := command[j+1 : start]
+		if token == "" {
+			return false
+		}
+		if !looksLikeDomain(token) {
+			return true
+		}
+		if !localPathExists(cwd, token) {
+			return true
+		}
+	}
+
 	return false
+}
+
+func isShellTokenBoundary(b byte) bool {
+	switch b {
+	case ' ', '\t', ':', ';', '|', '&', '<', '>', '\'', '"', '`', '\n', '\r':
+		return true
+	}
+	return false
+}
+
+func looksLikeDomain(s string) bool {
+	if len(s) < 3 || !strings.ContainsRune(s, '.') {
+		return false
+	}
+	first := s[0]
+	if !((first >= 'a' && first <= 'z') ||
+		(first >= 'A' && first <= 'Z') ||
+		(first >= '0' && first <= '9')) {
+		return false
+	}
+	if idx := strings.LastIndexByte(s, '.'); idx >= 0 {
+		ext := strings.ToLower(s[idx+1:])
+		if commonFileExtension(ext) {
+			return false
+		}
+	}
+	return true
+}
+
+func commonFileExtension(ext string) bool {
+	switch ext {
+	case "py", "js", "ts", "tsx", "jsx", "go", "rs", "rb", "php",
+		"java", "c", "cpp", "h", "hpp", "cs", "swift", "kt", "scala",
+		"sh", "bash", "zsh", "fish", "ps1", "bat", "cmd",
+		"txt", "md", "rst", "log", "json", "yaml", "yml", "toml",
+		"xml", "html", "css", "scss", "ini", "cfg", "conf", "env",
+		"exe", "dll", "so", "dylib", "lib", "a", "o", "obj",
+		"zip", "tar", "gz", "bz2", "xz", "7z", "rar",
+		"png", "jpg", "jpeg", "gif", "svg", "ico", "bmp", "webp",
+		"mp3", "mp4", "wav", "avi", "mov", "mkv", "flac",
+		"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+		"pub", "pem", "key", "crt", "cer", "p12", "pfx",
+		"bak", "tmp", "swp", "lock",
+		"ttf", "otf", "woff", "woff2", "eot",
+		"deb", "rpm", "apk", "msi", "dmg",
+		"sql", "sqlite", "db":
+		return true
+	}
+	return false
+}
+
+func localPathExists(cwd, token string) bool {
+	info, err := os.Lstat(filepath.Join(cwd, token))
+	return err == nil && info != nil
 }
 
 func isAllowedPath(path string, patterns []*regexp.Regexp) bool {
