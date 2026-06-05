@@ -29,6 +29,9 @@ merge upstream PicoClaw changes.
 - Retire duplicated status surfaces when they no longer add value.
 - Improve deterministic test coverage for tool loops, spawned work, and async
   completions.
+- Extract a shared path-scope validation package only if non-`exec` tools need
+  the same workspace/symlink/allowed-path rules currently enforced by
+  `shellguard`.
 
 ## 4. Provider And MCP Behavior
 
