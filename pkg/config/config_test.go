@@ -1314,6 +1314,9 @@ func TestConfig_Complete(t *testing.T) {
 	if !cfg.Tools.Exec.AllowRemote {
 		t.Error("Exec.AllowRemote should be true by default")
 	}
+	if cfg.Tools.Exec.PermissionMode != "" {
+		t.Errorf("Exec.PermissionMode = %q, want empty default", cfg.Tools.Exec.PermissionMode)
+	}
 }
 
 func TestDefaultConfig_WebPreferNativeEnabled(t *testing.T) {
@@ -1574,6 +1577,13 @@ func TestDefaultConfig_ExecAllowRemoteEnabled(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_ExecPermissionModeDefaultsEmpty(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Tools.Exec.PermissionMode != "" {
+		t.Fatalf("DefaultConfig().Tools.Exec.PermissionMode = %q, want empty", cfg.Tools.Exec.PermissionMode)
+	}
+}
+
 func TestDefaultConfig_FilterSensitiveDataEnabled(t *testing.T) {
 	cfg := DefaultConfig()
 	if !cfg.Tools.FilterSensitiveData {
@@ -1772,6 +1782,23 @@ func TestLoadConfig_ExecAllowRemoteDefaultsTrueWhenUnset(t *testing.T) {
 	}
 	if !cfg.Tools.Exec.AllowRemote {
 		t.Fatal("tools.exec.allow_remote should remain true when unset in config file")
+	}
+}
+
+func TestLoadConfig_ExecPermissionMode(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"version":1,"tools":{"exec":{"permission_mode":"read_only"}}}`),
+		0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if cfg.Tools.Exec.PermissionMode != "read_only" {
+		t.Fatalf("tools.exec.permission_mode = %q, want read_only", cfg.Tools.Exec.PermissionMode)
 	}
 }
 

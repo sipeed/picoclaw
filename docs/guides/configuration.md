@@ -574,10 +574,13 @@ Use `mode = lines` when:
 |------------|------|---------|-------------|
 | `tools.exec.allow_remote` | bool | `false` | Allow exec tool from remote channels (Telegram/Discord etc.) |
 | `tools.exec.enable_deny_patterns` | bool | `true` | Enable dangerous command interception |
+| `tools.exec.permission_mode` | string | `""` | Optional exec permission mode. Set to `read_only` to allow only commands classified as read-only. |
 | `tools.exec.custom_deny_patterns` | string[] | `[]` | Custom regex patterns to block |
 | `tools.exec.custom_allow_patterns` | string[] | `[]` | Custom regex patterns to allow |
 
 > **Security Note:** Symlink protection is enabled by default — all file paths are resolved through `filepath.EvalSymlinks` before whitelist matching, preventing symlink escape attacks.
+
+`permission_mode = "read_only"` is conservative: unknown commands are blocked because the validator cannot prove they are safe. The empty default preserves the existing behavior and still applies deny patterns, allowlists, channel restrictions, and workspace path checks.
 
 #### Known Limitation: Child Processes From Build Tools
 
