@@ -266,13 +266,124 @@ func firstCommandName(command string) string {
 }
 
 func classifyGitCommand(command string) string {
-	subcommand := secondCommandToken(command)
+	tokens := commandTokens(command)
+	if len(tokens) < 2 {
+		return CommandClassUnknown
+	}
+	subcommand := tokens[1]
 	switch subcommand {
-	case "status", "diff", "log", "show", "rev-parse", "merge-base", "branch", "remote", "config", "ls-files", "fetch":
+	case "status", "diff", "log", "show", "rev-parse", "merge-base", "ls-files", "fetch":
 		return CommandClassReadOnly
+	case "branch":
+		return classifyGitBranchCommand(tokens)
+	case "config":
+		return classifyGitConfigCommand(tokens)
+	case "remote":
+		return classifyGitRemoteCommand(tokens)
 	case "push", "reset", "clean":
 		return CommandClassDestructive
 	case "add", "commit", "checkout", "switch", "merge", "rebase", "cherry-pick", "restore", "stash", "pull":
+		return CommandClassWrite
+	default:
+		return CommandClassUnknown
+	}
+}
+
+func classifyGitBranchCommand(tokens []string) string {
+	if len(tokens) == 2 {
+		return CommandClassReadOnly
+	}
+	readOnlyFlagsNoArg := map[string]bool{
+		"-a":             true,
+		"-r":             true,
+		"-l":             true,
+		"-v":             true,
+		"-vv":            true,
+		"--all":          true,
+		"--remotes":      true,
+		"--list":         true,
+		"--show-current": true,
+	}
+	readOnlyFlagsWithValue := map[string]bool{
+		"--contains":  true,
+		"--merged":    true,
+		"--no-merged": true,
+		"--points-at": true,
+		"--format":    true,
+	}
+	for i := 2; i < len(tokens); i++ {
+		token := tokens[i]
+		if readOnlyFlagsNoArg[token] {
+			continue
+		}
+		if readOnlyFlagsWithValue[token] {
+			if i+1 < len(tokens) && !strings.HasPrefix(tokens[i+1], "-") {
+				i++
+			}
+			continue
+		}
+		if strings.HasPrefix(token, "--format=") ||
+			strings.HasPrefix(token, "--contains=") ||
+			strings.HasPrefix(token, "--merged=") ||
+			strings.HasPrefix(token, "--no-merged=") ||
+			strings.HasPrefix(token, "--points-at=") {
+			continue
+		}
+		return CommandClassWrite
+	}
+	return CommandClassReadOnly
+}
+
+func classifyGitConfigCommand(tokens []string) string {
+	if len(tokens) == 2 {
+		return CommandClassReadOnly
+	}
+	writeFlags := map[string]bool{
+		"--add":            true,
+		"--edit":           true,
+		"--remove-section": true,
+		"--rename-section": true,
+		"--replace-all":    true,
+		"--unset":          true,
+		"--unset-all":      true,
+		"-e":               true,
+	}
+	readOnlyFlags := map[string]bool{
+		"--get":          true,
+		"--get-all":      true,
+		"--get-regexp":   true,
+		"--get-urlmatch": true,
+		"--list":         true,
+		"--name-only":    true,
+		"-l":             true,
+	}
+	nonFlagArgs := 0
+	for _, token := range tokens[2:] {
+		if writeFlags[token] {
+			return CommandClassWrite
+		}
+		if readOnlyFlags[token] || strings.HasPrefix(token, "--get-color") {
+			continue
+		}
+		if strings.HasPrefix(token, "-") {
+			continue
+		}
+		nonFlagArgs++
+	}
+	if nonFlagArgs <= 1 {
+		return CommandClassReadOnly
+	}
+	return CommandClassWrite
+}
+
+func classifyGitRemoteCommand(tokens []string) string {
+	if len(tokens) == 2 {
+		return CommandClassReadOnly
+	}
+	switch tokens[2] {
+	case "show", "get-url":
+		return CommandClassReadOnly
+	case "add", "remove", "rm", "rename", "set-url", "prune", "update":
 		return CommandClassWrite
 	default:
 		return CommandClassUnknown
@@ -296,14 +407,6 @@ func classifyGitHubCommand(command string) string {
 		}
 	}
 	return CommandClassUnknown
-}
-
-func secondCommandToken(command string) string {
-	tokens := commandTokens(command)
-	if len(tokens) < 2 {
-		return ""
-	}
-	return tokens[1]
 }
 
 func commandTokens(command string) []string {
