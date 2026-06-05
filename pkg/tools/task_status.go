@@ -266,6 +266,9 @@ func formatTaskRecord(rec taskregistry.Record) string {
 				rec.Deliverable.Report != nil,
 			),
 		)
+		if rec.Deliverable.Report != nil {
+			sb.WriteString(formatDeliverableReport(rec.Deliverable.Report))
+		}
 	}
 	if rec.Completion != nil && rec.Deliverable == nil {
 		sb.WriteString(
@@ -277,6 +280,57 @@ func formatTaskRecord(rec taskregistry.Record) string {
 		)
 	}
 	return strings.TrimRight(sb.String(), "\n")
+}
+
+func formatDeliverableReport(report *taskregistry.DeliverableReport) string {
+	if report == nil {
+		return ""
+	}
+	var sb strings.Builder
+	schema := strings.TrimSpace(report.SchemaVersion)
+	if schema == "" {
+		schema = "unknown"
+	}
+	sb.WriteString(fmt.Sprintf("  Report: %s", schema))
+	if report.ReportID != "" {
+		sb.WriteString(fmt.Sprintf(" id=%s", truncateTaskText(report.ReportID, 96)))
+	}
+	if report.ContentHash != "" {
+		sb.WriteString(fmt.Sprintf(" hash=%s", truncateTaskText(report.ContentHash, 12)))
+	}
+	sb.WriteString("\n")
+	if report.Summary != "" {
+		sb.WriteString(fmt.Sprintf("    Summary: %s\n", truncateTaskText(report.Summary, 280)))
+	}
+	if status := report.Metadata["result_status"]; status != "" {
+		sb.WriteString(fmt.Sprintf("    Status: %s\n", status))
+	}
+	if len(report.Claims) > 0 {
+		sb.WriteString(fmt.Sprintf("    Claims: %d\n", len(report.Claims)))
+		for i, claim := range report.Claims {
+			if i >= 3 {
+				sb.WriteString(fmt.Sprintf("      ...and %d more\n", len(report.Claims)-i))
+				break
+			}
+			sb.WriteString(fmt.Sprintf("      - %s\n", formatReportClaim(claim)))
+		}
+	}
+	if len(report.FieldDeltas) > 0 {
+		sb.WriteString(fmt.Sprintf("    Field deltas: %d\n", len(report.FieldDeltas)))
+	}
+	return sb.String()
+}
+
+func formatReportClaim(claim taskregistry.ReportClaim) string {
+	kind := strings.TrimSpace(claim.Kind)
+	if kind == "" {
+		kind = "claim"
+	}
+	text := truncateTaskText(claim.Text, 220)
+	if claim.Confidence != "" {
+		return fmt.Sprintf("%s [%s]: %s", kind, claim.Confidence, text)
+	}
+	return fmt.Sprintf("%s: %s", kind, text)
 }
 
 func formatTaskEvents(events []taskregistry.TaskEvent) string {
