@@ -69,12 +69,13 @@ const (
 type EventType string
 
 const (
-	EventTaskUpserted        EventType = "task.upserted"
-	EventTaskStatusChanged   EventType = "task.status_changed"
-	EventTaskDeliveryChanged EventType = "task.delivery_changed"
-	EventTaskProgress        EventType = "task.progress"
-	EventTaskUpdated         EventType = "task.updated"
-	EventTaskReconciled      EventType = "task.reconciled"
+	EventTaskUpserted         EventType = "task.upserted"
+	EventTaskStatusChanged    EventType = "task.status_changed"
+	EventTaskDeliveryChanged  EventType = "task.delivery_changed"
+	EventTaskDeliveryDecision EventType = "task.delivery_decision"
+	EventTaskProgress         EventType = "task.progress"
+	EventTaskUpdated          EventType = "task.updated"
+	EventTaskReconciled       EventType = "task.reconciled"
 )
 
 type CompletionPayload struct {
@@ -363,6 +364,24 @@ func (r *Registry) Update(taskID string, mutate func(*Record)) error {
 	r.records[taskID] = rec
 	r.appendUpdateEventsLocked(before, rec, rec.LastEventAt)
 	r.pruneLocked(rec.LastEventAt)
+	err := r.saveLocked()
+	r.mu.Unlock()
+	return err
+}
+
+func (r *Registry) AppendEvent(taskID string, eventType EventType, payload map[string]string) error {
+	if r == nil || strings.TrimSpace(taskID) == "" || eventType == "" {
+		return nil
+	}
+	r.mu.Lock()
+	rec, ok := r.records[taskID]
+	if !ok {
+		r.mu.Unlock()
+		return fmt.Errorf("task %q not found", taskID)
+	}
+	now := time.Now().UnixMilli()
+	r.appendEventLocked(rec, eventType, now, payload)
+	r.pruneLocked(now)
 	err := r.saveLocked()
 	r.mu.Unlock()
 	return err

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,6 +73,34 @@ func (al *AgentLoop) updateAsyncTaskDeliveryStatus(
 				rec.Error = strings.TrimSpace(errorSummary)
 			}
 		}
+	})
+}
+
+func (al *AgentLoop) recordAsyncTaskDeliveryDecision(
+	workspace string,
+	decision AsyncDeliveryDecision,
+	completionID string,
+	sourceTool string,
+) {
+	taskID := strings.TrimSpace(decision.TaskID)
+	if taskID == "" {
+		return
+	}
+	registry := al.taskRegistryForWorkspace(workspace)
+	if registry == nil {
+		return
+	}
+	_ = registry.AppendEvent(taskID, taskregistry.EventTaskDeliveryDecision, map[string]string{
+		"completion_id":  completionID,
+		"source_tool":    sourceTool,
+		"mode":           string(decision.DeliveryMode),
+		"will_user":      boolString(decision.PublishToUser),
+		"will_parent":    boolString(decision.QueueParent),
+		"parent_handled": boolString(decision.ParentHandled),
+		"is_error":       boolString(decision.IsError),
+		"content_len":    strconv.Itoa(decision.ContentLen),
+		"for_user_len":   strconv.Itoa(decision.ForUserLen),
+		"media_count":    strconv.Itoa(decision.MediaCount),
 	})
 }
 
@@ -153,4 +182,11 @@ func errString(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+func boolString(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
 }

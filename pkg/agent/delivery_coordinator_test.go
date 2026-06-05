@@ -184,6 +184,14 @@ func TestDeliverAsyncToolCompletion_UserOnlyUpdatesDelivered(t *testing.T) {
 	if rec.DeliveredAt == 0 {
 		t.Fatal("DeliveredAt was not set")
 	}
+	events := al.taskRegistryForWorkspace(workspace).ListEvents(taskID)
+	assertTaskEventForTest(t, events, taskregistry.EventTaskDeliveryDecision, map[string]string{
+		"completion_id": "completion-user-only",
+		"source_tool":   "spawn",
+		"mode":          string(tools.AsyncDeliveryUserOnly),
+		"will_user":     "true",
+		"will_parent":   "false",
+	})
 }
 
 func TestDeliverAsyncToolCompletion_ParentOnlyUpdatesSessionQueued(t *testing.T) {
@@ -478,6 +486,27 @@ func assertNoOutboundMediaMessage(t *testing.T, msgBus *bus.MessageBus, context 
 		t.Fatalf("unexpected outbound media during %s: %+v", context, msg)
 	case <-time.After(150 * time.Millisecond):
 	}
+}
+
+func assertTaskEventForTest(
+	t *testing.T,
+	events []taskregistry.TaskEvent,
+	eventType taskregistry.EventType,
+	payload map[string]string,
+) {
+	t.Helper()
+	for _, evt := range events {
+		if evt.Type != eventType {
+			continue
+		}
+		for key, want := range payload {
+			if got := evt.Payload[key]; got != want {
+				t.Fatalf("event %s payload[%s] = %q, want %q; event=%+v", eventType, key, got, want, evt)
+			}
+		}
+		return
+	}
+	t.Fatalf("event %s not found in %+v", eventType, events)
 }
 
 type failingMessageBus struct{}

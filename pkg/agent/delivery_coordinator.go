@@ -63,6 +63,7 @@ func (al *AgentLoop) deliverAsyncToolCompletion(req AsyncDeliveryRequest) {
 			})
 		return
 	}
+	al.recordAsyncTaskDeliveryDecision(ts.workspace, delivery, completionID, asyncToolName)
 	if result.IsError {
 		content := strings.TrimSpace(result.ForUser)
 		if content == "" {

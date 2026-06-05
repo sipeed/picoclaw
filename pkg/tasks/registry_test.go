@@ -126,6 +126,39 @@ func TestRegistryListEventsCanReturnAllTasks(t *testing.T) {
 	}
 }
 
+func TestRegistryAppendEventPersistsSemanticPayload(t *testing.T) {
+	store := filepath.Join(t.TempDir(), "state", "task_registry.json")
+	registry := NewRegistry(store)
+	if err := registry.Upsert(Record{
+		TaskID:         "task-1",
+		Runtime:        RuntimeTool,
+		Task:           "deliver result",
+		Status:         StatusRunning,
+		DeliveryStatus: DeliveryPending,
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+	if err := registry.AppendEvent("task-1", EventTaskDeliveryDecision, map[string]string{
+		"mode":          "user_only",
+		"completion_id": "completion-1",
+	}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+
+	reloaded := NewRegistry(store)
+	events := reloaded.ListEvents("task-1")
+	if len(events) != 2 {
+		t.Fatalf("event count = %d, want 2: %+v", len(events), events)
+	}
+	if events[1].Type != EventTaskDeliveryDecision {
+		t.Fatalf("event type = %q, want %q", events[1].Type, EventTaskDeliveryDecision)
+	}
+	if events[1].Payload["mode"] != "user_only" ||
+		events[1].Payload["completion_id"] != "completion-1" {
+		t.Fatalf("event payload = %+v", events[1].Payload)
+	}
+}
+
 func TestRegistryPersistsTaskBoardAndDeliverableFields(t *testing.T) {
 	store := filepath.Join(t.TempDir(), "state", "task_registry.json")
 	registry := NewRegistry(store)

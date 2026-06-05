@@ -82,9 +82,17 @@ The initial event types are:
 - `task.upserted`
 - `task.status_changed`
 - `task.delivery_changed`
+- `task.delivery_decision`
 - `task.progress`
 - `task.updated`
 - `task.reconciled`
+
+`task.delivery_decision` is emitted by the async delivery coordinator before it
+attempts user delivery or parent synthesis. It records the completion id,
+source tool, delivery mode, whether user and/or parent delivery will run, and
+the result size hints. The later `task.delivery_changed` event records the
+durable delivery outcome. Keeping both events makes failed deliveries and
+restart recovery auditable without parsing chat text.
 
 The event stream is persisted in the same `state/task_registry.json` snapshot
 as `tasks`. `Record` remains the compatibility API and is still what most tools
@@ -94,8 +102,8 @@ should prefer events and treat records as a projection.
 Migration TODO:
 
 - Add a status/debug surface for task events once there is a concrete consumer.
-- Move async delivery reconciliation to emit explicit delivery events at every
-  coordinator decision point.
+- Emit explicit delivery events for additional coordinator/reconciliation
+  phases when a consumer needs finer-grained observability.
 - Introduce a versioned `DeliverableReport` shape for rich outputs with claims,
   artifacts, field deltas, and provenance.
 - Render Telegram/GitHub/web summaries from structured reports instead of
