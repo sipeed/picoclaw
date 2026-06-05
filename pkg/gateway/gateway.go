@@ -264,6 +264,12 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) (runEr
 		logger.InfoCF("gateway", "Replayed durable inbound messages",
 			map[string]any{"count": replayed})
 	}
+	go func() {
+		if recovered := agentLoop.RecoverUnansweredSessions(ctx); recovered > 0 {
+			logger.InfoCF("gateway", "Recovered unanswered sessions",
+				map[string]any{"count": recovered})
+		}
+	}()
 
 	var configReloadChan <-chan *config.Config
 	stopWatch := func() {}

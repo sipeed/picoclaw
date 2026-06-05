@@ -179,6 +179,14 @@ func (mb *MessageBus) ReplayInboundSpool(ctx context.Context) (int, error) {
 	return len(msgs), nil
 }
 
+func (mb *MessageBus) PendingInboundSpool(ctx context.Context) ([]InboundMessage, error) {
+	spool := mb.getInboundSpool()
+	if spool == nil {
+		return nil, nil
+	}
+	return spool.Pending(ctx, 0)
+}
+
 func (mb *MessageBus) getInboundSpool() *InboundSpool {
 	if spool, ok := mb.inboundSpool.Load().(*InboundSpool); ok {
 		return spool
