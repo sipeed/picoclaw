@@ -74,6 +74,9 @@ func TestTaskStatusTool_ListsVisibleRecords(t *testing.T) {
 		"Depends on: root-1",
 		"Blocked by: caption",
 		"Deliverable: text=true artifacts=1 report=true",
+		"Report: deliverable_report.v1",
+		"Summary: video downloaded",
+		"Claims: 1",
 		"Scope: telegram/chat-1 topic=topic-1",
 	} {
 		if !strings.Contains(result.ForLLM, want) {
