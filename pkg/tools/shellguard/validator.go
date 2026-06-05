@@ -129,6 +129,42 @@ func ClassifyCommand(command string) string {
 	if trimmed == "" {
 		return CommandClassUnknown
 	}
+	if hasWriteRedirection(strings.ToLower(trimmed)) {
+		return CommandClassWrite
+	}
+	return combineCommandClasses(splitShellCommands(trimmed))
+}
+
+func combineCommandClasses(commands []string) string {
+	sawReadOnly := false
+	sawUnknown := false
+	for _, command := range commands {
+		commandClass := classifySimpleCommand(command)
+		switch commandClass {
+		case CommandClassDestructive:
+			return CommandClassDestructive
+		case CommandClassWrite:
+			return CommandClassWrite
+		case CommandClassUnknown:
+			sawUnknown = true
+		case CommandClassReadOnly:
+			sawReadOnly = true
+		}
+	}
+	if sawUnknown {
+		return CommandClassUnknown
+	}
+	if sawReadOnly {
+		return CommandClassReadOnly
+	}
+	return CommandClassUnknown
+}
+
+func classifySimpleCommand(command string) string {
+	trimmed := strings.TrimSpace(command)
+	if trimmed == "" {
+		return CommandClassUnknown
+	}
 	lower := strings.ToLower(trimmed)
 	if hasWriteRedirection(lower) || strings.Contains(lower, " --in-place") || strings.Contains(lower, " -i ") {
 		return CommandClassWrite
@@ -154,6 +190,71 @@ func ClassifyCommand(command string) string {
 		return CommandClassReadOnly
 	}
 	return CommandClassUnknown
+}
+
+func splitShellCommands(command string) []string {
+	var commands []string
+	var current strings.Builder
+	inSingleQuote := false
+	inDoubleQuote := false
+	escaped := false
+
+	flush := func() {
+		if part := strings.TrimSpace(current.String()); part != "" {
+			commands = append(commands, part)
+		}
+		current.Reset()
+	}
+
+	for i := 0; i < len(command); i++ {
+		ch := command[i]
+		if escaped {
+			current.WriteByte(ch)
+			escaped = false
+			continue
+		}
+		if ch == '\\' {
+			current.WriteByte(ch)
+			escaped = true
+			continue
+		}
+		switch ch {
+		case '\'':
+			if !inDoubleQuote {
+				inSingleQuote = !inSingleQuote
+			}
+			current.WriteByte(ch)
+		case '"':
+			if !inSingleQuote {
+				inDoubleQuote = !inDoubleQuote
+			}
+			current.WriteByte(ch)
+		case ';', '|':
+			if inSingleQuote || inDoubleQuote {
+				current.WriteByte(ch)
+				continue
+			}
+			flush()
+			if ch == '|' && i+1 < len(command) && command[i+1] == '|' {
+				i++
+			}
+		case '&':
+			if inSingleQuote || inDoubleQuote {
+				current.WriteByte(ch)
+				continue
+			}
+			if i+1 < len(command) && command[i+1] == '&' {
+				flush()
+				i++
+				continue
+			}
+			flush()
+		default:
+			current.WriteByte(ch)
+		}
+	}
+	flush()
+	return commands
 }
 
 func firstCommandName(command string) string {

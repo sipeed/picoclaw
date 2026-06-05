@@ -150,6 +150,13 @@ func TestClassifyCommand(t *testing.T) {
 		{name: "gh pr view read only", command: "gh pr view 17", want: CommandClassReadOnly},
 		{name: "gh pr comment write", command: "gh pr comment 17 --body hi", want: CommandClassWrite},
 		{name: "rm destructive", command: "rm -rf tmp", want: CommandClassDestructive},
+		{name: "read only pipeline", command: "cat README.md | grep Pico", want: CommandClassReadOnly},
+		{name: "compound write", command: "git status && touch file.txt", want: CommandClassWrite},
+		{name: "background write", command: "git status & touch file.txt", want: CommandClassWrite},
+		{name: "compound destructive", command: "git status; rm -rf tmp", want: CommandClassDestructive},
+		{name: "compound unknown", command: "git status || custom-tool", want: CommandClassUnknown},
+		{name: "stderr and stdout redirection", command: "echo hi &> output.txt", want: CommandClassWrite},
+		{name: "quoted separator", command: "printf 'a;b|c' | wc -c", want: CommandClassReadOnly},
 		{name: "unknown", command: "custom-tool --flag", want: CommandClassUnknown},
 	}
 
@@ -193,6 +200,22 @@ func TestValidator_ReadOnlyPermissionMode(t *testing.T) {
 		{
 			name:          "blocks write commands",
 			command:       "touch file.txt",
+			allowed:       false,
+			commandClass:  CommandClassWrite,
+			wantCategory:  "permission_mode",
+			wantReasonSub: "read_only",
+		},
+		{
+			name:          "blocks compound write commands",
+			command:       "git status && touch file.txt",
+			allowed:       false,
+			commandClass:  CommandClassWrite,
+			wantCategory:  "permission_mode",
+			wantReasonSub: "read_only",
+		},
+		{
+			name:          "blocks background write commands",
+			command:       "git status & touch file.txt",
 			allowed:       false,
 			commandClass:  CommandClassWrite,
 			wantCategory:  "permission_mode",
