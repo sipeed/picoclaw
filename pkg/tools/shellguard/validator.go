@@ -23,6 +23,7 @@ type Config struct {
 	CustomAllowPatterns []*regexp.Regexp
 	AllowedPathPatterns []*regexp.Regexp
 	RestrictToWorkspace bool
+	PermissionMode      string
 }
 
 // Validator validates shell commands before execution.
@@ -71,6 +72,27 @@ func (v *Validator) Validate(command, cwd string) Decision {
 		}
 	}
 
+	mode := strings.TrimSpace(strings.ToLower(v.config.PermissionMode))
+	switch mode {
+	case PermissionModeDefault:
+	case PermissionModeReadOnly:
+		if commandClass != CommandClassReadOnly {
+			return Decision{
+				Allowed:      false,
+				Reason:       "Command blocked by safety guard (exec permission mode is read_only)",
+				Category:     "permission_mode",
+				CommandClass: commandClass,
+			}
+		}
+	default:
+		return Decision{
+			Allowed:      false,
+			Reason:       "Command blocked by safety guard (invalid exec permission mode)",
+			Category:     "invalid_permission_mode",
+			CommandClass: commandClass,
+		}
+	}
+
 	return Decision{Allowed: true, Reason: "allowed", Category: "allowed", CommandClass: commandClass}
 }
 
@@ -92,6 +114,11 @@ const (
 	CommandClassWrite       = "write"
 	CommandClassDestructive = "destructive"
 	CommandClassUnknown     = "unknown"
+)
+
+const (
+	PermissionModeDefault  = ""
+	PermissionModeReadOnly = "read_only"
 )
 
 // ClassifyCommand returns a conservative semantic class for a shell command.

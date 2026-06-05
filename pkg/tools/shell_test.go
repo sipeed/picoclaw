@@ -222,6 +222,39 @@ func TestShellTool_BackticksInsideQuotedHeredocAreAllowed(t *testing.T) {
 	}
 }
 
+func TestShellTool_ReadOnlyPermissionMode(t *testing.T) {
+	cfg := &config.Config{
+		Tools: config.ToolsConfig{
+			Exec: config.ExecConfig{
+				EnableDenyPatterns: true,
+				AllowRemote:        true,
+				PermissionMode:     "read_only",
+			},
+		},
+	}
+	tool, err := NewExecToolWithConfig("", false, cfg)
+	require.NoError(t, err)
+
+	if guardError := tool.guardCommand("git fetch origin main", ""); guardError != "" {
+		t.Fatalf("read-only command should be allowed: %s", guardError)
+	}
+	if guardError := tool.guardCommand("touch file.txt", ""); !strings.Contains(guardError, "read_only") {
+		t.Fatalf("write command should be blocked by read_only mode, got: %s", guardError)
+	}
+	if guardError := tool.guardCommand("custom-tool --maybe-mutates", ""); !strings.Contains(guardError, "read_only") {
+		t.Fatalf("unknown command should be blocked by read_only mode, got: %s", guardError)
+	}
+}
+
+func TestShellTool_DefaultPermissionModeDoesNotBlockWritesByClass(t *testing.T) {
+	tool, err := NewExecTool("", false)
+	require.NoError(t, err)
+
+	if guardError := tool.guardCommand("touch file.txt", ""); guardError != "" {
+		t.Fatalf("default mode should not block solely by command class, got: %s", guardError)
+	}
+}
+
 func TestShellTool_BackticksOutsideQuotedHeredocRemainBlocked(t *testing.T) {
 	tool, err := NewExecTool("", false)
 	require.NoError(t, err)

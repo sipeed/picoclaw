@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -169,5 +170,94 @@ func TestValidatorDecisionIncludesCommandClass(t *testing.T) {
 	decision := validator.Validate("rm -rf tmp", "")
 	if decision.CommandClass != CommandClassDestructive {
 		t.Fatalf("CommandClass = %q, want %q", decision.CommandClass, CommandClassDestructive)
+	}
+}
+
+func TestValidator_ReadOnlyPermissionMode(t *testing.T) {
+	validator := New(Config{PermissionMode: PermissionModeReadOnly})
+
+	tests := []struct {
+		name          string
+		command       string
+		allowed       bool
+		commandClass  string
+		wantCategory  string
+		wantReasonSub string
+	}{
+		{
+			name:         "allows read-only commands",
+			command:      "git fetch origin main",
+			allowed:      true,
+			commandClass: CommandClassReadOnly,
+		},
+		{
+			name:          "blocks write commands",
+			command:       "touch file.txt",
+			allowed:       false,
+			commandClass:  CommandClassWrite,
+			wantCategory:  "permission_mode",
+			wantReasonSub: "read_only",
+		},
+		{
+			name:          "blocks destructive commands",
+			command:       "git push origin main",
+			allowed:       false,
+			commandClass:  CommandClassDestructive,
+			wantCategory:  "permission_mode",
+			wantReasonSub: "read_only",
+		},
+		{
+			name:          "blocks unknown commands",
+			command:       "custom-tool --maybe-mutates",
+			allowed:       false,
+			commandClass:  CommandClassUnknown,
+			wantCategory:  "permission_mode",
+			wantReasonSub: "read_only",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decision := validator.Validate(tt.command, "")
+			if decision.Allowed != tt.allowed {
+				t.Fatalf("Allowed = %v, want %v: %s", decision.Allowed, tt.allowed, decision.Reason)
+			}
+			if decision.CommandClass != tt.commandClass {
+				t.Fatalf("CommandClass = %q, want %q", decision.CommandClass, tt.commandClass)
+			}
+			if tt.wantCategory != "" && decision.Category != tt.wantCategory {
+				t.Fatalf("Category = %q, want %q", decision.Category, tt.wantCategory)
+			}
+			if tt.wantReasonSub != "" && !strings.Contains(decision.Reason, tt.wantReasonSub) {
+				t.Fatalf("Reason = %q, want substring %q", decision.Reason, tt.wantReasonSub)
+			}
+		})
+	}
+}
+
+func TestValidator_ReadOnlyPermissionModeDoesNotBypassDangerousPattern(t *testing.T) {
+	validator := New(Config{
+		PermissionMode: PermissionModeReadOnly,
+		DenyPatterns:   []*regexp.Regexp{regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`)},
+	})
+
+	decision := validator.Validate("rm -rf tmp", "")
+	if decision.Allowed {
+		t.Fatal("expected dangerous command to be blocked")
+	}
+	if decision.Category != "dangerous_pattern" {
+		t.Fatalf("Category = %q, want dangerous_pattern", decision.Category)
+	}
+}
+
+func TestValidator_InvalidPermissionModeFailsClosed(t *testing.T) {
+	validator := New(Config{PermissionMode: "readonly"})
+
+	decision := validator.Validate("git status", "")
+	if decision.Allowed {
+		t.Fatal("expected invalid permission mode to block commands")
+	}
+	if decision.Category != "invalid_permission_mode" {
+		t.Fatalf("Category = %q, want invalid_permission_mode", decision.Category)
 	}
 }

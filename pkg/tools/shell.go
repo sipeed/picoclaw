@@ -46,6 +46,7 @@ type ExecTool struct {
 	allowedPathPatterns []*regexp.Regexp
 	restrictToWorkspace bool
 	allowRemote         bool
+	permissionMode      string
 	sessionManager      *SessionManager
 	workspaceTempDir    string
 }
@@ -136,6 +137,7 @@ func NewExecToolWithConfig(
 	customAllowPatterns := make([]*regexp.Regexp, 0)
 	var allowedPathPatterns []*regexp.Regexp
 	allowRemote := true
+	permissionMode := shellguard.PermissionModeDefault
 	if len(allowPaths) > 0 {
 		allowedPathPatterns = allowPaths[0]
 	}
@@ -144,6 +146,7 @@ func NewExecToolWithConfig(
 		execConfig := cfg.Tools.Exec
 		enableDenyPatterns := execConfig.EnableDenyPatterns
 		allowRemote = execConfig.AllowRemote
+		permissionMode = execConfig.PermissionMode
 		if enableDenyPatterns {
 			denyPatterns = append(denyPatterns, defaultDenyPatterns...)
 			if runtime.GOOS == "windows" {
@@ -196,6 +199,7 @@ func NewExecToolWithConfig(
 		allowedPathPatterns: allowedPathPatterns,
 		restrictToWorkspace: restrict,
 		allowRemote:         allowRemote,
+		permissionMode:      permissionMode,
 		sessionManager:      getSessionManager(),
 		workspaceTempDir:    workspaceTempDir,
 	}, nil
@@ -1128,6 +1132,7 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		CustomAllowPatterns: t.customAllowPatterns,
 		AllowedPathPatterns: t.allowedPathPatterns,
 		RestrictToWorkspace: t.restrictToWorkspace,
+		PermissionMode:      t.permissionMode,
 	}).Validate(command, cwd)
 	if decision.Allowed {
 		return ""

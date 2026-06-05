@@ -293,6 +293,7 @@ The exec tool is used to execute shell commands.
 |------------------------|-------|---------|--------------------------------------------|
 | `enabled`              | bool  | true    | Enable the exec tool                        |
 | `enable_deny_patterns` | bool  | true    | Enable default dangerous command blocking  |
+| `permission_mode`      | string | ""     | Optional mode. Use `read_only` to allow only commands classified as read-only |
 | `custom_deny_patterns` | array | []      | Custom deny patterns (regular expressions) |
 
 ### Disabling the Exec Tool
@@ -320,6 +321,7 @@ PICOCLAW_TOOLS_EXEC_ENABLED=false
 ### Functionality
 
 - **`enable_deny_patterns`**: Set to `false` to completely disable the default dangerous command blocking patterns
+- **`permission_mode`**: Set to `read_only` to block write, destructive, and unknown commands after deny/allow/path checks. Leave empty for the default behavior.
 - **`custom_deny_patterns`**: Add custom deny regex patterns; commands matching these will be blocked
 
 ### Default Blocked Command Patterns
