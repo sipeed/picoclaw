@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "include": [],
+  "exclude": [
+    "docs/**",
+    "**/*.md",
+    "**/*.txt",
+    "**/*.svg",
+    "**/*.png",
+    "**/*.jpg",
+    "**/*.jpeg",
+    "**/*.gif",
+    "**/*.webp",
+    "**/*.ico",
+    "**/*.lock",
+    "**/go.sum",
+    "third_party/**"
+  ],
+  "path_rules": [
+    {
+      "pattern": "pkg/agent/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check turn ownership, async continuation, final delivery, and duplicate-send behavior.",
+        "Look for restart/recovery regressions, state cleanup races, and changes in reply semantics."
+      ]
+    },
+    {
+      "pattern": "pkg/channels/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check routing, suppression rules, parse/format behavior, and per-channel delivery semantics.",
+        "Pay attention to replay, idempotency, and message-loss risk."
+      ]
+    },
+    {
+      "pattern": "pkg/gateway/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check startup wiring, ingress/recovery ordering, and durable spool/replay behavior."
+      ]
+    },
+    {
+      "pattern": "pkg/tools/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check tool result contracts, async delivery, task registry integration, and user-visible tool semantics."
+      ]
+    },
+    {
+      "pattern": "pkg/mcp/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check transport lifecycle, tool exposure rules, and failure handling."
+      ]
+    },
+    {
+      "pattern": "pkg/seahorse/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check compaction correctness, summary persistence, and context reconstruction behavior."
+      ]
+    },
+    {
+      "pattern": "pkg/tasks/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check durable task state transitions, terminal state semantics, and projection/reporting contracts."
+      ]
+    },
+    {
+      "pattern": "pkg/auth/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check token handling, refresh flows, secret exposure, and persistence of credentials."
+      ]
+    },
+    {
+      "pattern": "web/backend/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check externally reachable API changes, validation, auth boundaries, and migration compatibility."
+      ]
+    },
+    {
+      "pattern": "pkg/providers/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check provider fallback behavior, request/response parsing, and model/tool contract changes."
+      ]
+    },
+    {
+      "pattern": "pkg/config/**",
+      "risk": "elevated",
+      "codex": "auto",
+      "guidance": [
+        "Check env/config compatibility, default values, and upgrade risk for existing deployments."
+      ]
+    },
+    {
+      "pattern": "cmd/**",
+      "risk": "elevated",
+      "codex": "auto",
+      "guidance": [
+        "Check CLI compatibility and operational behavior changes."
+      ]
+    },
+    {
+      "pattern": ".github/**",
+      "risk": "elevated",
+      "codex": "auto",
+      "guidance": [
+        "Check CI behavior changes, branch protection expectations, and whether local reviewer guidance needs updating."
+      ]
+    },
+    {
+      "pattern": "**/*_test.go",
+      "risk": "normal",
+      "codex": "auto",
+      "guidance": [
+        "Verify tests actually cover the changed behavior and would fail before the change."
+      ]
+    }
+  ]
+}
