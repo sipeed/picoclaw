@@ -555,7 +555,11 @@ func isInvalidJSON(err error) bool {
 
 func lockStoreFile(path string) func() {
 	actual, _ := storeFileLocks.LoadOrStore(path, &sync.Mutex{})
-	mu := actual.(*sync.Mutex)
+	mu, ok := actual.(*sync.Mutex)
+	if !ok {
+		// Should never happen: storeFileLocks only stores *sync.Mutex
+		mu = &sync.Mutex{}
+	}
 	mu.Lock()
 	return mu.Unlock
 }

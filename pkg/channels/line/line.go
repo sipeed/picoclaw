@@ -475,7 +475,10 @@ func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 
 	// Try reply token first (free, valid for ~25 seconds)
 	if entry, ok := c.replyTokens.LoadAndDelete(msg.ChatID); ok {
-		tokenEntry := entry.(replyTokenEntry)
+		tokenEntry, ok := entry.(replyTokenEntry)
+		if !ok {
+			return nil, fmt.Errorf("%w: invalid reply token entry type", channels.ErrSendFailed)
+		}
 		if time.Since(tokenEntry.timestamp) < lineReplyTokenMaxAge {
 			resp, _, err := c.client.WithContext(ctx).ReplyMessageWithHttpInfo(&messaging_api.ReplyMessageRequest{
 				ReplyToken: tokenEntry.token,
