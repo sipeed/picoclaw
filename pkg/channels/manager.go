@@ -1885,7 +1885,7 @@ func (m *Manager) Reload(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 	// Only reset dispatch context when there are new channels to start.
-	// Cancelling the old dispatchTask without new channels would shut down
+	// Canceling the old dispatchTask without new channels would shut down
 	// the active service with no replacement workers.
 	var dispatchCtx context.Context
 	var cancel context.CancelFunc

@@ -265,10 +265,10 @@ func (p *Pipeline) configuredStreamingEligible(ts *turnState, exec *turnExecutio
 	}
 	if ts.agent == nil || strings.TrimSpace(ts.channel) == "" || strings.TrimSpace(ts.chatID) == "" {
 		logFields := map[string]any{
-			"channel":  ts.channel,
-			"chat_id":  ts.chatID,
-			"model":    exec.activeModel,
-			"reason":   "missing_channel_context",
+			"channel": ts.channel,
+			"chat_id": ts.chatID,
+			"model":   exec.activeModel,
+			"reason":  "missing_channel_context",
 		}
 		if ts.agent != nil {
 			logFields["agent_id"] = ts.agent.ID
