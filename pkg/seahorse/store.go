@@ -56,7 +56,10 @@ func (s *Store) GetOrCreateConversation(ctx context.Context, sessionKey string) 
 		}
 		return nil, fmt.Errorf("create conversation: %w", err)
 	}
-	id, _ := result.LastInsertId()
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("get last insert id: %w", err)
+	}
 	return &Conversation{
 		ConversationID: id,
 		SessionKey:     sessionKey,
@@ -193,7 +196,10 @@ func (s *Store) AddMessageWithReasoning(
 	if err != nil {
 		return nil, fmt.Errorf("add message: %w", err)
 	}
-	id, _ := result.LastInsertId()
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("get last insert id: %w", err)
+	}
 	return &Message{
 		ID:               id,
 		ConversationID:   convID,
@@ -282,7 +288,10 @@ func (s *Store) AddMessageWithPartsAndReasoning(
 	if err != nil {
 		return nil, fmt.Errorf("add message: %w", err)
 	}
-	msgID, _ := result.LastInsertId()
+	msgID, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("get last insert id: %w", err)
+	}
 
 	for i, p := range parts {
 		_, err = tx.ExecContext(

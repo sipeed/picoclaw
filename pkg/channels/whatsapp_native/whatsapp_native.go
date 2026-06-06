@@ -269,9 +269,9 @@ func (c *WhatsAppNativeChannel) Stop(ctx context.Context) error {
 }
 
 func (c *WhatsAppNativeChannel) eventHandler(evt any) {
-	switch evt.(type) {
+	switch v := evt.(type) {
 	case *events.Message:
-		c.handleIncoming(evt.(*events.Message))
+		c.handleIncoming(v)
 	case *events.Disconnected:
 		logger.InfoCF("whatsapp", "WhatsApp disconnected, will attempt reconnection", nil)
 		c.reconnectMu.Lock()

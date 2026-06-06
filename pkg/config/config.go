@@ -194,6 +194,9 @@ type ExposePath struct {
 // Uses strings.Replacer for O(n+m) performance (computed once per SecurityConfig).
 // Short content (below FilterMinLength) is returned unchanged for performance.
 func (c *Config) FilterSensitiveData(content string) string {
+	if c == nil {
+		return content
+	}
 	// Check if filtering is enabled (default: true)
 	if !c.Tools.IsFilterSensitiveDataEnabled() {
 		return content
