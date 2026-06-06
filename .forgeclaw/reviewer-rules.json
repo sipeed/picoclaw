@@ -3,7 +3,6 @@
   "include": [],
   "exclude": [
     "docs/**",
-    "**/*.md",
     "**/*.txt",
     "**/*.svg",
     "**/*.png",
@@ -18,12 +17,36 @@
   ],
   "path_rules": [
     {
+      "pattern": "docs/architecture/**",
+      "risk": "elevated",
+      "codex": "auto",
+      "guidance": [
+        "Check that architecture docs still match the real runtime behavior and rollout assumptions."
+      ]
+    },
+    {
       "pattern": "pkg/agent/**",
       "risk": "high",
       "codex": "required",
       "guidance": [
         "Check turn ownership, async continuation, final delivery, and duplicate-send behavior.",
         "Look for restart/recovery regressions, state cleanup races, and changes in reply semantics."
+      ]
+    },
+    {
+      "pattern": "pkg/channels/telegram/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check mention/topic routing, formatting, media grouping, replay, and message-loss risk."
+      ]
+    },
+    {
+      "pattern": "pkg/channels/slack/**",
+      "risk": "elevated",
+      "codex": "auto",
+      "guidance": [
+        "Check channel-specific formatting, webhook semantics, and compatibility with existing Slack behavior."
       ]
     },
     {
@@ -41,6 +64,30 @@
       "codex": "required",
       "guidance": [
         "Check startup wiring, ingress/recovery ordering, and durable spool/replay behavior."
+      ]
+    },
+    {
+      "pattern": "pkg/bus/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check inbound/outbound durability, ack/release semantics, and replay ordering."
+      ]
+    },
+    {
+      "pattern": "pkg/cron/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check scheduling semantics, duplicate execution risk, and silent/visible job behavior."
+      ]
+    },
+    {
+      "pattern": "pkg/credential/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check secret storage, redaction, and compatibility with existing credential loading."
       ]
     },
     {
@@ -68,6 +115,30 @@
       ]
     },
     {
+      "pattern": "pkg/session/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check session identity, reset semantics, persistence boundaries, and cross-channel aliasing behavior."
+      ]
+    },
+    {
+      "pattern": "pkg/state/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check persistent state layout, migration risk, and state ownership invariants."
+      ]
+    },
+    {
+      "pattern": "pkg/workspace/**",
+      "risk": "elevated",
+      "codex": "auto",
+      "guidance": [
+        "Check workspace isolation, path resolution, and cross-profile leakage risk."
+      ]
+    },
+    {
       "pattern": "pkg/tasks/**",
       "risk": "high",
       "codex": "required",
@@ -84,11 +155,67 @@
       ]
     },
     {
+      "pattern": "pkg/routing/**",
+      "risk": "elevated",
+      "codex": "auto",
+      "guidance": [
+        "Check routing precedence, session targeting, and compatibility with existing dispatch rules."
+      ]
+    },
+    {
+      "pattern": "pkg/evolution/**",
+      "risk": "elevated",
+      "codex": "auto",
+      "guidance": [
+        "Check lifecycle/state-machine behavior and whether draft/live transitions remain coherent."
+      ]
+    },
+    {
+      "pattern": "pkg/migrate/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check one-way migration safety, idempotency, and upgrade compatibility for existing installs."
+      ]
+    },
+    {
       "pattern": "web/backend/**",
       "risk": "high",
       "codex": "required",
       "guidance": [
         "Check externally reachable API changes, validation, auth boundaries, and migration compatibility."
+      ]
+    },
+    {
+      "pattern": "web/frontend/**",
+      "risk": "elevated",
+      "codex": "auto",
+      "guidance": [
+        "Check user-visible regressions, API contract drift with backend, and broken workflow affordances."
+      ]
+    },
+    {
+      "pattern": "pkg/providers/oauth/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check token lifecycle, refresh behavior, callback handling, and secret persistence."
+      ]
+    },
+    {
+      "pattern": "pkg/providers/openai_compat/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check provider protocol compatibility, request/response mapping, and tool/media contract behavior."
+      ]
+    },
+    {
+      "pattern": "pkg/providers/openai_responses_common/**",
+      "risk": "high",
+      "codex": "required",
+      "guidance": [
+        "Check OpenAI Responses API parsing, truncation, and compatibility across provider paths."
       ]
     },
     {
@@ -105,6 +232,14 @@
       "codex": "auto",
       "guidance": [
         "Check env/config compatibility, default values, and upgrade risk for existing deployments."
+      ]
+    },
+    {
+      "pattern": "pkg/commands/**",
+      "risk": "elevated",
+      "codex": "auto",
+      "guidance": [
+        "Check command-surface compatibility, behavior changes, and user-facing semantics."
       ]
     },
     {
