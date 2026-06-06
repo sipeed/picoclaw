@@ -1872,6 +1872,10 @@ func (m *Manager) Reload(ctx context.Context, cfg *config.Config) error {
 			m.UnregisterChannel(name)
 		})
 	}
+	if m.dispatchTask != nil {
+		m.dispatchTask.cancel()
+		m.dispatchTask = nil
+	}
 	dispatchCtx, cancel := context.WithCancel(ctx)
 	m.dispatchTask = &asyncTask{cancel: cancel}
 	cc, err := toChannelConfig(cfg, added)
