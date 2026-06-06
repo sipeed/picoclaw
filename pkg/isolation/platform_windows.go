@@ -62,7 +62,10 @@ func postStartPlatformIsolation(cmd *exec.Cmd, isolation config.IsolationConfig,
 	if !isolation.Enabled || cmd == nil || cmd.Process == nil {
 		return nil
 	}
-	resourcesAny, _ := windowsPendingResources.LoadAndDelete(cmd)
+	resourcesAny, loaded := windowsPendingResources.LoadAndDelete(cmd)
+	if !loaded {
+		return nil
+	}
 	resources, _ := resourcesAny.(windowsProcessResources)
 	// Job objects can only be attached after the process exists, so the Windows
 	// backend finishes isolation in this post-start hook.

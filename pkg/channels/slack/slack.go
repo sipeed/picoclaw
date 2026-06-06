@@ -154,7 +154,10 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]str
 	}
 
 	if ref, ok := c.pendingAcks.LoadAndDelete(deliveryChatID); ok {
-		msgRef := ref.(slackMessageRef)
+		msgRef, ok := ref.(slackMessageRef)
+		if !ok {
+			return []string{ts}, nil
+		}
 		c.api.AddReaction("white_check_mark", slack.ItemRef{
 			Channel:   msgRef.ChannelID,
 			Timestamp: msgRef.Timestamp,

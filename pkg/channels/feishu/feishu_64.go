@@ -746,8 +746,8 @@ func (c *FeishuChannel) isBotMentioned(message *larkim.EventMessage) bool {
 		return false
 	}
 
-	knownID, _ := c.botOpenID.Load().(string)
-	if knownID == "" {
+	knownID, ok := c.botOpenID.Load().(string)
+	if !ok || knownID == "" {
 		logger.DebugCF("feishu", "Bot open_id unknown, cannot detect @mention", nil)
 		return false
 	}
