@@ -264,13 +264,16 @@ func (p *Pipeline) configuredStreamingEligible(ts *turnState, exec *turnExecutio
 		return false
 	}
 	if ts.agent == nil || strings.TrimSpace(ts.channel) == "" || strings.TrimSpace(ts.chatID) == "" {
-		logger.DebugCF("agent", "configured streaming not used", map[string]any{
-			"agent_id": ts.agent.ID,
+		logFields := map[string]any{
 			"channel":  ts.channel,
 			"chat_id":  ts.chatID,
 			"model":    exec.activeModel,
 			"reason":   "missing_channel_context",
-		})
+		}
+		if ts.agent != nil {
+			logFields["agent_id"] = ts.agent.ID
+		}
+		logger.DebugCF("agent", "configured streaming not used", logFields)
 		return false
 	}
 	if !ts.opts.SendResponse && !ts.opts.AllowInterimPicoPublish {

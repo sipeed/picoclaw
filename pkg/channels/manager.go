@@ -1872,25 +1872,30 @@ func (m *Manager) Reload(ctx context.Context, cfg *config.Config) error {
 			m.UnregisterChannel(name)
 		})
 	}
-	if m.dispatchTask != nil {
-		m.dispatchTask.cancel()
-		m.dispatchTask = nil
-	}
-	dispatchCtx, cancel := context.WithCancel(ctx)
-	m.dispatchTask = &asyncTask{cancel: cancel}
 	cc, err := toChannelConfig(cfg, added)
 	if err != nil {
 		logger.ErrorC("channels", fmt.Sprintf("toChannelConfig error: %v", err))
 		m.config = oldConfig
-		cancel()
 		return err
 	}
 	err = m.initChannels(cc)
 	if err != nil {
 		logger.ErrorC("channels", fmt.Sprintf("initChannels error: %v", err))
 		m.config = oldConfig
-		cancel()
 		return err
+	}
+	// Only reset dispatch context when there are new channels to start.
+	// Cancelling the old dispatchTask without new channels would shut down
+	// the active service with no replacement workers.
+	var dispatchCtx context.Context
+	var cancel context.CancelFunc
+	if len(added) > 0 {
+		if m.dispatchTask != nil {
+			m.dispatchTask.cancel()
+			m.dispatchTask = nil
+		}
+		dispatchCtx, cancel = context.WithCancel(ctx)
+		m.dispatchTask = &asyncTask{cancel: cancel}
 	}
 	for _, name := range added {
 		channel := m.channels[name]
