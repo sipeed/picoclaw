@@ -170,6 +170,19 @@ func (h *Handler) readSessionMessages(path string, skip int) ([]providers.Messag
 }
 
 func (h *Handler) readJSONLSession(dir, sessionKey string) (sessionFile, error) {
+	return h.readJSONLSessionWithHistory(dir, sessionKey, false)
+}
+
+// readFullJSONLSession is for detail views; list views should keep using
+// readJSONLSession so archived JSONL lines remain skipped.
+func (h *Handler) readFullJSONLSession(dir, sessionKey string) (sessionFile, error) {
+	return h.readJSONLSessionWithHistory(dir, sessionKey, true)
+}
+
+func (h *Handler) readJSONLSessionWithHistory(
+	dir, sessionKey string,
+	fullHistory bool,
+) (sessionFile, error) {
 	base := filepath.Join(dir, sanitizeSessionKey(sessionKey))
 	jsonlPath := base + ".jsonl"
 	metaPath := base + ".meta.json"
@@ -179,7 +192,11 @@ func (h *Handler) readJSONLSession(dir, sessionKey string) (sessionFile, error) 
 		return sessionFile{}, err
 	}
 
-	messages, err := h.readSessionMessages(jsonlPath, meta.Skip)
+	skip := meta.Skip
+	if fullHistory {
+		skip = 0
+	}
+	messages, err := h.readSessionMessages(jsonlPath, skip)
 	if err != nil {
 		return sessionFile{}, err
 	}
@@ -914,7 +931,7 @@ func (h *Handler) handleGetSession(w http.ResponseWriter, r *http.Request) {
 	var sess sessionFile
 	err = refErr
 	if refErr == nil {
-		sess, err = h.readJSONLSession(dir, ref.Key)
+		sess, err = h.readFullJSONLSession(dir, ref.Key)
 	}
 	if err == nil && isEmptySession(sess) {
 		err = os.ErrNotExist
