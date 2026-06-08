@@ -277,7 +277,11 @@ func windowsCommandLine(exePath string, args []string) string {
 }
 
 func windowsRunKeyExists() (bool, error) {
-	cmd := exec.Command("reg", "query", `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, "/v", autoStartEntryName)
+	cmd := launcherExecCommand(
+		"reg", "query",
+		`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`,
+		"/v", autoStartEntryName,
+	)
 	if err := cmd.Run(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
@@ -292,11 +296,15 @@ func setWindowsAutoStart(enabled bool, exePath string, args []string) error {
 	key := `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
 	if enabled {
 		commandLine := windowsCommandLine(exePath, args)
-		cmd := exec.Command("reg", "add", key, "/v", autoStartEntryName, "/t", "REG_SZ", "/d", commandLine, "/f")
+		cmd := launcherExecCommand(
+			"reg", "add", key,
+			"/v", autoStartEntryName,
+			"/t", "REG_SZ", "/d", commandLine, "/f",
+		)
 		return cmd.Run()
 	}
 
-	cmd := exec.Command("reg", "delete", key, "/v", autoStartEntryName, "/f")
+	cmd := launcherExecCommand("reg", "delete", key, "/v", autoStartEntryName, "/f")
 	if err := cmd.Run(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
