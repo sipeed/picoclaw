@@ -599,6 +599,25 @@ type MatrixSettings struct {
 	CryptoPassphrase   string       `json:"crypto_passphrase,omitempty"    yaml:"-"`
 }
 
+// DeltaChatSettings configures the Delta Chat channel. Delta Chat is an
+// email-based, end-to-end encrypted messenger; PicoClaw talks to a local
+// `deltachat-rpc-server` process over JSON-RPC (stdio).
+//
+// Most email providers are auto-configured from the address and password
+// alone, so the IMAP/SMTP override fields are only needed for custom servers.
+type DeltaChatSettings struct {
+	Email         string       `json:"email"                     yaml:"-"                  env:"PICOCLAW_CHANNELS_DELTACHAT_EMAIL"`
+	Password      SecureString `json:"password,omitzero"         yaml:"password,omitempty" env:"PICOCLAW_CHANNELS_DELTACHAT_PASSWORD"`
+	DisplayName   string       `json:"display_name,omitempty"    yaml:"-"                  env:"PICOCLAW_CHANNELS_DELTACHAT_DISPLAY_NAME"`
+	DataDir       string       `json:"data_dir,omitempty"        yaml:"-"                  env:"PICOCLAW_CHANNELS_DELTACHAT_DATA_DIR"`
+	RPCServerPath string       `json:"rpc_server_path,omitempty" yaml:"-"                  env:"PICOCLAW_CHANNELS_DELTACHAT_RPC_SERVER_PATH"`
+	InviteLink    string       `json:"invite_link,omitempty"     yaml:"-"                  env:"PICOCLAW_CHANNELS_DELTACHAT_INVITE_LINK"`
+	IMAPServer    string       `json:"imap_server,omitempty"     yaml:"-"`
+	IMAPPort      int          `json:"imap_port,omitempty"       yaml:"-"`
+	SMTPServer    string       `json:"smtp_server,omitempty"     yaml:"-"`
+	SMTPPort      int          `json:"smtp_port,omitempty"       yaml:"-"`
+}
+
 type LINESettings struct {
 	ChannelSecret      SecureString `json:"channel_secret,omitzero"       yaml:"channel_secret,omitempty"       env:"PICOCLAW_CHANNELS_LINE_CHANNEL_SECRET"`
 	ChannelAccessToken SecureString `json:"channel_access_token,omitzero" yaml:"channel_access_token,omitempty" env:"PICOCLAW_CHANNELS_LINE_CHANNEL_ACCESS_TOKEN"`
