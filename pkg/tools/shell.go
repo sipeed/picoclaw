@@ -558,7 +558,7 @@ func (t *ExecTool) runBackground(ctx context.Context, command, cwd string, ptyEn
 	// with synchronous exec runs.
 	if err := isolation.Start(cmd); err != nil {
 		if session.ptyMaster != nil {
-			session.ptyMaster.Close()
+			_ = session.ptyMaster.Close()
 		}
 		return ErrorResult(fmt.Sprintf("failed to start command: %v", err))
 	}
@@ -657,7 +657,7 @@ func (t *ExecTool) runBackground(ctx context.Context, command, cwd string, ptyEn
 
 			// All pipes closed, get exit status
 			if stdinWriter != nil {
-				stdinWriter.Close()
+				_ = stdinWriter.Close()
 			}
 			cmd.Wait()
 
