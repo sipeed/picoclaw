@@ -465,7 +465,9 @@ func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 	// Load and consume quote token for this chat
 	var quoteToken string
 	if qt, ok := c.quoteTokens.LoadAndDelete(msg.ChatID); ok {
-		quoteToken = qt.(string)
+		if s, ok := qt.(string); ok {
+			quoteToken = s
+		}
 	}
 
 	textMsg := messaging_api.TextMessage{
@@ -475,8 +477,11 @@ func (c *LINEChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
 
 	// Try reply token first (free, valid for ~25 seconds)
 	if entry, ok := c.replyTokens.LoadAndDelete(msg.ChatID); ok {
-		tokenEntry := entry.(replyTokenEntry)
-		if time.Since(tokenEntry.timestamp) < lineReplyTokenMaxAge {
+		tokenEntry, ok := entry.(replyTokenEntry)
+		if !ok {
+			// Unexpected type; skip reply path and fall through to Push API.
+			// The push path does not depend on the reply token.
+		} else if time.Since(tokenEntry.timestamp) < lineReplyTokenMaxAge {
 			resp, _, err := c.client.WithContext(ctx).ReplyMessageWithHttpInfo(&messaging_api.ReplyMessageRequest{
 				ReplyToken: tokenEntry.token,
 				Messages:   []messaging_api.MessageInterface{&textMsg},
