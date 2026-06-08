@@ -90,43 +90,64 @@ func WithToolSessionContext(
 
 // ToolChannel extracts the channel from ctx, or "" if unset.
 func ToolChannel(ctx context.Context) string {
-	v, _ := ctx.Value(ctxKeyChannel).(string)
+	v, ok := ctx.Value(ctxKeyChannel).(string)
+	if !ok {
+		return ""
+	}
 	return v
 }
 
 // ToolChatID extracts the chatID from ctx, or "" if unset.
 func ToolChatID(ctx context.Context) string {
-	v, _ := ctx.Value(ctxKeyChatID).(string)
+	v, ok := ctx.Value(ctxKeyChatID).(string)
+	if !ok {
+		return ""
+	}
 	return v
 }
 
 // ToolMessageID extracts the current inbound message ID from ctx, or "" if unset.
 func ToolMessageID(ctx context.Context) string {
-	v, _ := ctx.Value(ctxKeyMessageID).(string)
+	v, ok := ctx.Value(ctxKeyMessageID).(string)
+	if !ok {
+		return ""
+	}
 	return v
 }
 
 // ToolReplyToMessageID extracts the current inbound reply target from ctx, or "" if unset.
 func ToolReplyToMessageID(ctx context.Context) string {
-	v, _ := ctx.Value(ctxKeyReplyToMessageID).(string)
+	v, ok := ctx.Value(ctxKeyReplyToMessageID).(string)
+	if !ok {
+		return ""
+	}
 	return v
 }
 
 // ToolAgentID extracts the active turn's agent ID from ctx, or "" if unset.
 func ToolAgentID(ctx context.Context) string {
-	v, _ := ctx.Value(ctxKeyAgentID).(string)
+	v, ok := ctx.Value(ctxKeyAgentID).(string)
+	if !ok {
+		return ""
+	}
 	return v
 }
 
 // ToolSessionKey extracts the active turn's session key from ctx, or "" if unset.
 func ToolSessionKey(ctx context.Context) string {
-	v, _ := ctx.Value(ctxKeySessionKey).(string)
+	v, ok := ctx.Value(ctxKeySessionKey).(string)
+	if !ok {
+		return ""
+	}
 	return v
 }
 
 // ToolSessionScope extracts the active turn's structured session scope from ctx.
 func ToolSessionScope(ctx context.Context) *session.SessionScope {
-	scope, _ := ctx.Value(ctxKeySessionScope).(*session.SessionScope)
+	scope, ok := ctx.Value(ctxKeySessionScope).(*session.SessionScope)
+	if !ok {
+		return nil
+	}
 	return session.CloneScope(scope)
 }
 
