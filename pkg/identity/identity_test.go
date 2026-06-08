@@ -223,6 +223,40 @@ func TestMatchAllowed(t *testing.T) {
 			allowed: "  123456  ",
 			want:    true,
 		},
+		// Matrix user IDs with colon (regression test for #3044)
+		{
+			name: "matrix user ID with colon matches PlatformID",
+			sender: bus.SenderInfo{
+				Platform:    "matrix",
+				PlatformID:  "@alice:example.com",
+				CanonicalID: "matrix:@alice:example.com",
+				Username:    "@alice:example.com",
+			},
+			allowed: "@alice:example.com",
+			want:    true,
+		},
+		{
+			name: "matrix user ID with colon matches canonical",
+			sender: bus.SenderInfo{
+				Platform:    "matrix",
+				PlatformID:  "@alice:example.com",
+				CanonicalID: "matrix:@alice:example.com",
+				Username:    "@alice:example.com",
+			},
+			allowed: "matrix:@alice:example.com",
+			want:    true,
+		},
+		{
+			name: "matrix user ID with colon wrong user",
+			sender: bus.SenderInfo{
+				Platform:    "matrix",
+				PlatformID:  "@alice:example.com",
+				CanonicalID: "matrix:@alice:example.com",
+				Username:    "@alice:example.com",
+			},
+			allowed: "@bob:example.com",
+			want:    false,
+		},
 	}
 
 	for _, tt := range tests {
