@@ -8,7 +8,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 )
 
-var execCommand = launcherExecCommand
+var execCommand = LauncherExecCommand
 
 func EnsureOnboarded(configPath string) error {
 	_, err := os.Stat(configPath)

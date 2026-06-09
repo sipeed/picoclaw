@@ -4,21 +4,14 @@ package api
 
 import (
 	"os/exec"
-	"syscall"
+
+	"github.com/sipeed/picoclaw/web/backend/utils"
 )
 
 func launcherExecCommand(name string, args ...string) *exec.Cmd {
-	cmd := exec.Command(name, args...)
-	applyLauncherProcAttrs(cmd)
-	return cmd
+	return utils.LauncherExecCommand(name, args...)
 }
 
 func applyLauncherProcAttrs(cmd *exec.Cmd) {
-	if cmd == nil {
-		return
-	}
-	if cmd.SysProcAttr == nil {
-		cmd.SysProcAttr = &syscall.SysProcAttr{}
-	}
-	cmd.SysProcAttr.HideWindow = true
+	utils.ApplyLauncherProcAttrs(cmd)
 }

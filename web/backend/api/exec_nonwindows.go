@@ -2,10 +2,16 @@
 
 package api
 
-import "os/exec"
+import (
+	"os/exec"
+
+	"github.com/sipeed/picoclaw/web/backend/utils"
+)
 
 func launcherExecCommand(name string, args ...string) *exec.Cmd {
-	return exec.Command(name, args...)
+	return utils.LauncherExecCommand(name, args...)
 }
 
-func applyLauncherProcAttrs(_ *exec.Cmd) {}
+func applyLauncherProcAttrs(cmd *exec.Cmd) {
+	utils.ApplyLauncherProcAttrs(cmd)
+}
