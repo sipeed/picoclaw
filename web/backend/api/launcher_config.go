@@ -9,9 +9,19 @@ import (
 )
 
 type launcherConfigPayload struct {
-	Port         int      `json:"port"`
-	Public       bool     `json:"public"`
-	AllowedCIDRs []string `json:"allowed_cidrs"`
+	Port                 int      `json:"port"`
+	Public               bool     `json:"public"`
+	AllowedCIDRs         []string `json:"allowed_cidrs"`
+	AllowLocalhostBypass bool     `json:"allow_localhost_bypass"`
+	TrustedProxyCIDRs    []string `json:"trusted_proxy_cidrs"`
+}
+
+type launcherConfigUpdatePayload struct {
+	Port                 int      `json:"port"`
+	Public               bool     `json:"public"`
+	AllowedCIDRs         []string `json:"allowed_cidrs"`
+	AllowLocalhostBypass *bool    `json:"allow_localhost_bypass"`
+	TrustedProxyCIDRs    []string `json:"trusted_proxy_cidrs"`
 }
 
 func (h *Handler) registerLauncherConfigRoutes(mux *http.ServeMux) {
@@ -29,9 +39,11 @@ func (h *Handler) launcherFallbackConfig() launcherconfig.Config {
 		port = launcherconfig.DefaultPort
 	}
 	return launcherconfig.Config{
-		Port:         port,
-		Public:       h.serverPublic,
-		AllowedCIDRs: append([]string(nil), h.serverCIDRs...),
+		Port:                 port,
+		Public:               h.serverPublic,
+		AllowedCIDRs:         append([]string(nil), h.serverCIDRs...),
+		AllowLocalhostBypass: h.serverAllowLocalhostBypass,
+		TrustedProxyCIDRs:    append([]string(nil), h.serverTrustedProxyCIDRs...),
 	}
 }
 
@@ -48,14 +60,16 @@ func (h *Handler) handleGetLauncherConfig(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(launcherConfigPayload{
-		Port:         cfg.Port,
-		Public:       cfg.Public,
-		AllowedCIDRs: append([]string(nil), cfg.AllowedCIDRs...),
+		Port:                 cfg.Port,
+		Public:               cfg.Public,
+		AllowedCIDRs:         append([]string(nil), cfg.AllowedCIDRs...),
+		AllowLocalhostBypass: cfg.AllowLocalhostBypass,
+		TrustedProxyCIDRs:    append([]string(nil), cfg.TrustedProxyCIDRs...),
 	})
 }
 
 func (h *Handler) handleUpdateLauncherConfig(w http.ResponseWriter, r *http.Request) {
-	var payload launcherConfigPayload
+	var payload launcherConfigUpdatePayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return
@@ -69,6 +83,10 @@ func (h *Handler) handleUpdateLauncherConfig(w http.ResponseWriter, r *http.Requ
 	cfg.Port = payload.Port
 	cfg.Public = payload.Public
 	cfg.AllowedCIDRs = append([]string(nil), payload.AllowedCIDRs...)
+	if payload.AllowLocalhostBypass != nil {
+		cfg.AllowLocalhostBypass = *payload.AllowLocalhostBypass
+	}
+	cfg.TrustedProxyCIDRs = append([]string(nil), payload.TrustedProxyCIDRs...)
 	cfg.LegacyLauncherToken = ""
 	if err := launcherconfig.Validate(cfg); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -82,8 +100,10 @@ func (h *Handler) handleUpdateLauncherConfig(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(launcherConfigPayload{
-		Port:         cfg.Port,
-		Public:       cfg.Public,
-		AllowedCIDRs: append([]string(nil), cfg.AllowedCIDRs...),
+		Port:                 cfg.Port,
+		Public:               cfg.Public,
+		AllowedCIDRs:         append([]string(nil), cfg.AllowedCIDRs...),
+		AllowLocalhostBypass: cfg.AllowLocalhostBypass,
+		TrustedProxyCIDRs:    append([]string(nil), cfg.TrustedProxyCIDRs...),
 	})
 }

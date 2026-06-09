@@ -1243,6 +1243,34 @@ export function LauncherSection({
           onChange={(e) => onFieldChange("allowedCIDRsText", e.target.value)}
         />
       </Field>
+
+      <SwitchCardField
+        label={t("pages.config.allow_localhost_bypass")}
+        hint={t("pages.config.allow_localhost_bypass_hint")}
+        layout="setting-row"
+        checked={launcherForm.allowLocalhostBypass}
+        disabled={disabled}
+        onCheckedChange={(checked) =>
+          onFieldChange("allowLocalhostBypass", checked)
+        }
+      />
+
+      <Field
+        label={t("pages.config.trusted_proxy_cidrs")}
+        hint={t("pages.config.trusted_proxy_cidrs_hint")}
+        layout="setting-row"
+        controlClassName="md:max-w-md"
+      >
+        <Textarea
+          value={launcherForm.trustedProxyCIDRsText}
+          disabled={disabled}
+          placeholder={t("pages.config.trusted_proxy_cidrs_placeholder")}
+          className="min-h-[88px]"
+          onChange={(e) =>
+            onFieldChange("trustedProxyCIDRsText", e.target.value)
+          }
+        />
+      </Field>
     </ConfigSectionCard>
   )
 }

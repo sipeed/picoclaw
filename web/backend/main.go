@@ -585,13 +585,21 @@ func main() {
 		logger.ErrorC("web", fmt.Sprintf("Warning: failed to ensure pico channel on startup: %v", err))
 	}
 	apiHandler.SetServerOptions(portNum, effectivePublic, explicitPublic, launcherCfg.AllowedCIDRs)
+	apiHandler.SetServerAccessOptions(
+		launcherCfg.AllowLocalhostBypass,
+		launcherCfg.TrustedProxyCIDRs,
+	)
 	apiHandler.SetServerBindHost(hostInput, hostOverrideActive)
 	apiHandler.RegisterRoutes(mux)
 
 	// Frontend Embedded Assets
 	registerEmbedRoutes(mux)
 
-	accessControlledMux, err := middleware.IPAllowlist(launcherCfg.AllowedCIDRs, mux)
+	accessControlledMux, err := middleware.IPAllowlist(middleware.IPAllowlistConfig{
+		AllowedCIDRs:         launcherCfg.AllowedCIDRs,
+		AllowLocalhostBypass: launcherCfg.AllowLocalhostBypass,
+		TrustedProxyCIDRs:    launcherCfg.TrustedProxyCIDRs,
+	}, mux)
 	if err != nil {
 		logger.Fatalf("Invalid allowed CIDR configuration: %v", err)
 	}

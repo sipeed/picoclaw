@@ -7,42 +7,77 @@ import (
 	"strings"
 )
 
+// IPAllowlistConfig controls launcher network access decisions.
+type IPAllowlistConfig struct {
+	AllowedCIDRs         []string
+	AllowLocalhostBypass bool
+	TrustedProxyCIDRs    []string
+}
+
 // IPAllowlist restricts access to requests from configured CIDR ranges.
-// Loopback addresses are always allowed for local administration.
+// Loopback addresses can optionally bypass CIDR checks for local administration.
+// X-Forwarded-For is only trusted when the immediate peer is in a trusted CIDR.
 // Empty CIDR list means no restriction.
-func IPAllowlist(allowedCIDRs []string, next http.Handler) (http.Handler, error) {
-	if len(allowedCIDRs) == 0 {
+func IPAllowlist(cfg IPAllowlistConfig, next http.Handler) (http.Handler, error) {
+	allowedNets, err := parseCIDRNets(cfg.AllowedCIDRs)
+	if err != nil {
+		return nil, err
+	}
+	trustedProxyNets, err := parseCIDRNets(cfg.TrustedProxyCIDRs)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(allowedNets) == 0 {
 		return next, nil
 	}
 
-	nets := make([]*net.IPNet, 0, len(allowedCIDRs))
-	for _, cidr := range allowedCIDRs {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		peerIP := clientIPFromRemoteAddr(r.RemoteAddr)
+		if peerIP == nil {
+			rejectByPolicy(w, r)
+			return
+		}
+
+		ip := peerIP
+		if containsIP(trustedProxyNets, peerIP) {
+			if forwardedIP := clientIPFromXForwardedFor(r.Header.Get("X-Forwarded-For")); forwardedIP != nil {
+				ip = forwardedIP
+			}
+		}
+
+		if cfg.AllowLocalhostBypass && ip.IsLoopback() {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if containsIP(allowedNets, ip) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		rejectByPolicy(w, r)
+	}), nil
+}
+
+func parseCIDRNets(cidrs []string) ([]*net.IPNet, error) {
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
 		_, ipNet, err := net.ParseCIDR(cidr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid CIDR %q: %w", cidr, err)
 		}
 		nets = append(nets, ipNet)
 	}
+	return nets, nil
+}
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := clientIPFromRemoteAddr(r.RemoteAddr)
-		if ip == nil {
-			rejectByPolicy(w, r)
-			return
+func containsIP(nets []*net.IPNet, ip net.IP) bool {
+	for _, ipNet := range nets {
+		if ipNet.Contains(ip) {
+			return true
 		}
-		if ip.IsLoopback() {
-			next.ServeHTTP(w, r)
-			return
-		}
-		for _, ipNet := range nets {
-			if ipNet.Contains(ip) {
-				next.ServeHTTP(w, r)
-				return
-			}
-		}
-
-		rejectByPolicy(w, r)
-	}), nil
+	}
+	return false
 }
 
 func clientIPFromRemoteAddr(remoteAddr string) net.IP {
@@ -51,6 +86,21 @@ func clientIPFromRemoteAddr(remoteAddr string) net.IP {
 		host = h
 	}
 	return net.ParseIP(host)
+}
+
+func clientIPFromXForwardedFor(header string) net.IP {
+	first, _, _ := strings.Cut(header, ",")
+	first = strings.Trim(strings.TrimSpace(first), `"`)
+	if first == "" {
+		return nil
+	}
+	if ip := net.ParseIP(first); ip != nil {
+		return ip
+	}
+	if host, _, err := net.SplitHostPort(first); err == nil {
+		return net.ParseIP(host)
+	}
+	return nil
 }
 
 func rejectByPolicy(w http.ResponseWriter, r *http.Request) {

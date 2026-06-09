@@ -9,7 +9,9 @@ import (
 
 func TestLoadReturnsFallbackWhenMissing(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "launcher-config.json")
-	fallback := Config{Port: 19999, Public: true}
+	fallback := Default()
+	fallback.Port = 19999
+	fallback.Public = true
 
 	got, err := Load(path, fallback)
 	if err != nil {
@@ -17,6 +19,9 @@ func TestLoadReturnsFallbackWhenMissing(t *testing.T) {
 	}
 	if got.Port != fallback.Port || got.Public != fallback.Public {
 		t.Fatalf("Load() = %+v, want %+v", got, fallback)
+	}
+	if !got.AllowLocalhostBypass {
+		t.Fatal("allow_localhost_bypass = false, want true")
 	}
 }
 
@@ -27,6 +32,8 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 		Port:                  18080,
 		Public:                true,
 		AllowedCIDRs:          []string{"192.168.1.0/24", "10.0.0.0/8"},
+		AllowLocalhostBypass:  false,
+		TrustedProxyCIDRs:     []string{"172.16.0.0/12"},
 		DashboardPasswordHash: "$2a$12$saved-dashboard-password-hash",
 		LegacyLauncherToken:   "legacy-token-should-not-persist",
 	}
@@ -41,6 +48,9 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	if got.Port != want.Port || got.Public != want.Public {
 		t.Fatalf("Load() = %+v, want %+v", got, want)
 	}
+	if got.AllowLocalhostBypass != want.AllowLocalhostBypass {
+		t.Fatalf("allow_localhost_bypass = %t, want %t", got.AllowLocalhostBypass, want.AllowLocalhostBypass)
+	}
 	if got.DashboardPasswordHash != want.DashboardPasswordHash {
 		t.Fatalf("dashboard_password_hash = %q, want %q", got.DashboardPasswordHash, want.DashboardPasswordHash)
 	}
@@ -53,6 +63,14 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	for i := range want.AllowedCIDRs {
 		if got.AllowedCIDRs[i] != want.AllowedCIDRs[i] {
 			t.Fatalf("allowed_cidrs[%d] = %q, want %q", i, got.AllowedCIDRs[i], want.AllowedCIDRs[i])
+		}
+	}
+	if len(got.TrustedProxyCIDRs) != len(want.TrustedProxyCIDRs) {
+		t.Fatalf("trusted_proxy_cidrs len = %d, want %d", len(got.TrustedProxyCIDRs), len(want.TrustedProxyCIDRs))
+	}
+	for i := range want.TrustedProxyCIDRs {
+		if got.TrustedProxyCIDRs[i] != want.TrustedProxyCIDRs[i] {
+			t.Fatalf("trusted_proxy_cidrs[%d] = %q, want %q", i, got.TrustedProxyCIDRs[i], want.TrustedProxyCIDRs[i])
 		}
 	}
 
@@ -80,6 +98,21 @@ func TestLoadReadsLegacyLauncherTokenForMigration(t *testing.T) {
 	}
 }
 
+func TestLoadDefaultsAllowLocalhostBypassForLegacyConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "launcher-config.json")
+	if err := os.WriteFile(path, []byte(`{"port":18800,"allowed_cidrs":["10.0.0.0/8"]}`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	got, err := Load(path, Default())
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !got.AllowLocalhostBypass {
+		t.Fatal("allow_localhost_bypass = false, want true for legacy config")
+	}
+}
+
 func TestValidateRejectsInvalidPort(t *testing.T) {
 	if err := Validate(Config{Port: 0, Public: false}); err == nil {
 		t.Fatal("Validate() expected error for port 0")
@@ -96,6 +129,16 @@ func TestValidateRejectsInvalidCIDR(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("Validate() expected error for invalid CIDR")
+	}
+}
+
+func TestValidateRejectsInvalidTrustedProxyCIDR(t *testing.T) {
+	err := Validate(Config{
+		Port:              18800,
+		TrustedProxyCIDRs: []string{"not-a-cidr"},
+	})
+	if err == nil {
+		t.Fatal("Validate() expected error for invalid trusted proxy CIDR")
 	}
 }
 

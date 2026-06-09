@@ -11,6 +11,8 @@ export interface LauncherConfig {
   port: number
   public: boolean
   allowed_cidrs: string[]
+  allow_localhost_bypass: boolean
+  trusted_proxy_cidrs: string[]
 }
 
 export interface SystemVersionInfo {

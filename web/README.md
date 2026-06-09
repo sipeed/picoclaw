@@ -81,6 +81,8 @@ That file currently stores:
 - `port`
 - `public`
 - `allowed_cidrs`
+- `allow_localhost_bypass`
+- `trusted_proxy_cidrs`
 
 If `-port` or `-public` are passed explicitly, the CLI flag wins for that run.
 If they are omitted, stored launcher settings are used.
@@ -152,6 +154,8 @@ When public access is enabled:
 
 - the launcher still protects the dashboard with password login
 - optional `allowed_cidrs` can restrict which client IP ranges may connect
+- `allow_localhost_bypass` defaults to `true`; set it to `false` when same-host proxies or tunnels should not bypass `allowed_cidrs`
+- optional `trusted_proxy_cidrs` can trust specific reverse proxies to supply the original client IP through headers such as `X-Forwarded-For`
 - the gateway host is overridden so remote clients can still use the launcher-managed proxy paths
 
 ## Build And Run
