@@ -94,6 +94,9 @@ function LauncherLoginPage() {
             <DropdownMenuItem onClick={() => i18n.changeLanguage("zh")}>
               简体中文
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => i18n.changeLanguage("zh-TW")}>
+              繁體中文
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <Button
