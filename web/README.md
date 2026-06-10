@@ -156,6 +156,7 @@ When public access is enabled:
 - optional `allowed_cidrs` can restrict which client IP ranges may connect
 - `allow_localhost_bypass` defaults to `true`; set it to `false` when same-host proxies or tunnels should not bypass `allowed_cidrs`
 - optional `trusted_proxy_cidrs` can trust specific reverse proxies to supply the original client IP through headers such as `X-Forwarded-For`
+- trusted proxy deployments should overwrite or sanitize forwarding headers such as `X-Forwarded-For` and `X-Real-IP` instead of passing through user-supplied values
 - the gateway host is overridden so remote clients can still use the launcher-managed proxy paths
 
 ## Build And Run

@@ -41,9 +41,7 @@ func IPAllowlist(cfg IPAllowlistConfig, next http.Handler) (http.Handler, error)
 
 		ip := peerIP
 		if containsIP(trustedProxyNets, peerIP) {
-			if forwardedIP := clientIPFromXForwardedFor(r.Header.Get("X-Forwarded-For")); forwardedIP != nil {
-				ip = forwardedIP
-			}
+			ip = clientIPFromXForwardedFor(r.Header.Get("X-Forwarded-For"), trustedProxyNets, peerIP)
 		}
 
 		if cfg.AllowLocalhostBypass && ip.IsLoopback() {
@@ -88,16 +86,34 @@ func clientIPFromRemoteAddr(remoteAddr string) net.IP {
 	return net.ParseIP(host)
 }
 
-func clientIPFromXForwardedFor(header string) net.IP {
-	first, _, _ := strings.Cut(header, ",")
-	first = strings.Trim(strings.TrimSpace(first), `"`)
-	if first == "" {
+func clientIPFromXForwardedFor(header string, trustedProxyNets []*net.IPNet, fallback net.IP) net.IP {
+	parts := strings.Split(header, ",")
+	ips := make([]net.IP, 0, len(parts))
+	for _, part := range parts {
+		if ip := parseIPToken(part); ip != nil {
+			ips = append(ips, ip)
+		}
+	}
+	if len(ips) == 0 {
+		return fallback
+	}
+	for i := len(ips) - 1; i >= 0; i-- {
+		if !containsIP(trustedProxyNets, ips[i]) {
+			return ips[i]
+		}
+	}
+	return ips[0]
+}
+
+func parseIPToken(raw string) net.IP {
+	token := strings.Trim(strings.TrimSpace(raw), `"`)
+	if token == "" {
 		return nil
 	}
-	if ip := net.ParseIP(first); ip != nil {
+	if ip := net.ParseIP(token); ip != nil {
 		return ip
 	}
-	if host, _, err := net.SplitHostPort(first); err == nil {
+	if host, _, err := net.SplitHostPort(token); err == nil {
 		return net.ParseIP(host)
 	}
 	return nil
