@@ -105,8 +105,14 @@ func (t *InstallSkillTool) Execute(ctx context.Context, args map[string]any) *To
 		return ErrorResult(fmt.Sprintf("invalid slug %q: error: %s", slug, err.Error()))
 	}
 
-	version, _ := args["version"].(string)
-	force, _ := args["force"].(bool)
+	version, ok := args["version"].(string)
+	if !ok {
+		version = ""
+	}
+	force, ok := args["force"].(bool)
+	if !ok {
+		force = false
+	}
 
 	// Check if already installed.
 	skillsDir := filepath.Join(t.workspace, "skills")
