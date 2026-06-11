@@ -288,7 +288,17 @@ func (al *AgentLoop) registerActiveTurn(ts *turnState) {
 }
 
 func (al *AgentLoop) clearActiveTurn(ts *turnState) {
-	al.activeTurnStates.Delete(ts.sessionKey)
+	al.releaseSessionTurnState(ts.sessionKey, ts)
+}
+
+func (al *AgentLoop) releaseSessionTurnState(sessionKey string, expected *turnState) {
+	if expected == nil {
+		al.activeTurnStates.Delete(sessionKey)
+		return
+	}
+	if actual, ok := al.activeTurnStates.Load(sessionKey); ok && actual == expected {
+		al.activeTurnStates.Delete(sessionKey)
+	}
 }
 
 func (al *AgentLoop) getActiveTurnState(sessionKey string) *turnState {

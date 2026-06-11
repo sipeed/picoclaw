@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	runtimeevents "github.com/sipeed/picoclaw/pkg/events"
+	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 func TestRuntimeEventLoggerFiltering(t *testing.T) {
@@ -189,6 +191,163 @@ func TestReloadProviderAndConfigRefreshesRuntimeEventLogger(t *testing.T) {
 	if eventLogger != nil || logSub != nil {
 		t.Fatal("expected runtime event logger to be disabled after reload")
 	}
+}
+
+type reloadBlockingProvider struct {
+	chatStarted chan struct{}
+	releaseChat chan struct{}
+	closeCalled chan struct{}
+}
+
+func (p *reloadBlockingProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	options map[string]any,
+) (*providers.LLMResponse, error) {
+	select {
+	case <-p.chatStarted:
+	default:
+		close(p.chatStarted)
+	}
+
+	select {
+	case <-p.releaseChat:
+		return &providers.LLMResponse{Content: "done"}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (p *reloadBlockingProvider) GetDefaultModel() string {
+	return "reload-blocking"
+}
+
+func (p *reloadBlockingProvider) Close() {
+	select {
+	case <-p.closeCalled:
+	default:
+		close(p.closeCalled)
+	}
+}
+
+func TestReloadProviderAndConfigWaitsForInFlightRequestsBeforeClosingOldProvider(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	oldProvider := &reloadBlockingProvider{
+		chatStarted: make(chan struct{}),
+		releaseChat: make(chan struct{}),
+		closeCalled: make(chan struct{}),
+	}
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), oldProvider)
+	defer al.Close()
+
+	msg := testInboundMessage(bus.InboundMessage{
+		Channel:  "test",
+		ChatID:   "reload-chat",
+		SenderID: "user-1",
+		Content:  "hold request open",
+	})
+
+	reqDone := make(chan error, 1)
+	go func() {
+		_, err := al.processMessage(context.Background(), msg)
+		reqDone <- err
+	}()
+
+	select {
+	case <-oldProvider.chatStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for in-flight provider request")
+	}
+
+	reloadDone := make(chan error, 1)
+	go func() {
+		reloaded := config.DefaultConfig()
+		reloaded.Agents.Defaults.Workspace = cfg.Agents.Defaults.Workspace
+		reloadDone <- al.ReloadProviderAndConfig(context.Background(), &mockProvider{}, reloaded)
+	}()
+
+	select {
+	case <-oldProvider.closeCalled:
+		t.Fatal("old provider closed before in-flight request completed")
+	case err := <-reloadDone:
+		t.Fatalf("reload returned early: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	close(oldProvider.releaseChat)
+
+	select {
+	case err := <-reqDone:
+		if err != nil {
+			t.Fatalf("processMessage() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for in-flight request to complete")
+	}
+
+	select {
+	case err := <-reloadDone:
+		if err != nil {
+			t.Fatalf("ReloadProviderAndConfig() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for reload to finish")
+	}
+
+	select {
+	case <-oldProvider.closeCalled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for old provider close")
+	}
+}
+
+func TestWaitForActiveRequestsHonorsContextCancellation(t *testing.T) {
+	al := &AgentLoop{}
+	al.activeRequests.Add(1)
+	defer al.activeRequests.Done()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if al.waitForActiveRequests(ctx, time.Second) {
+		t.Fatal("waitForActiveRequests() = true, want false on canceled context")
+	}
+}
+
+func TestReloadProviderAndConfigReturnsCanceledErrorWhenRegistryCreationPanics(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), &mockProvider{})
+	defer al.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := al.ReloadProviderAndConfig(ctx, &panicProviderForReloadTest{}, cfg)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("ReloadProviderAndConfig() error = %v, want context canceled", err)
+	}
+}
+
+type panicProviderForReloadTest struct{}
+
+func (p *panicProviderForReloadTest) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	options map[string]any,
+) (*providers.LLMResponse, error) {
+	return &providers.LLMResponse{Content: "unused"}, nil
+}
+
+func (p *panicProviderForReloadTest) GetDefaultModel() string {
+	panic("boom")
 }
 
 func TestCloseRuntimeEventLoggerSubscriptionWaitsForDrain(t *testing.T) {

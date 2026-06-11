@@ -13,6 +13,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/commands"
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -589,6 +590,55 @@ func closeProviderIfStateful(provider providers.LLMProvider) {
 	if stateful, ok := provider.(providers.StatefulProvider); ok {
 		stateful.Close()
 	}
+}
+
+func (al *AgentLoop) waitForActiveRequests(ctx context.Context, timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		al.activeRequests.Wait()
+		close(done)
+	}()
+
+	if timeout <= 0 {
+		select {
+		case <-done:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		return false
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (al *AgentLoop) closeReloadedProvider(ctx context.Context, provider providers.StatefulProvider) {
+	waitCtx := ctx
+	if waitCtx == nil {
+		waitCtx = context.Background()
+	}
+
+	drained := al.waitForActiveRequests(waitCtx, providerReloadGracePeriod)
+	if !drained {
+		fields := map[string]any{"grace_period": providerReloadGracePeriod.String()}
+		if err := waitCtx.Err(); err != nil {
+			fields["error"] = err.Error()
+			logger.WarnCF("agent", "Provider reload interrupted while waiting for in-flight requests", fields)
+		} else {
+			logger.WarnCF("agent", "Provider reload grace period expired with in-flight requests still running", fields)
+		}
+	}
+
+	provider.Close()
 }
 
 func makePendingTurnID(sessionKey string, seq uint64) string {

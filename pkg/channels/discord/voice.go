@@ -298,9 +298,11 @@ func (c *DiscordChannel) receiveVoice(vc *discordgo.VoiceConnection, guildID str
 				Data:       p.Opus,
 			}
 
-			ctx, cancel := context.WithTimeout(c.ctx, 100*time.Millisecond)
-			err := c.bus.PublishAudioChunk(ctx, chunk)
-			cancel()
+			// Pass the parent context directly; the bus applies its own
+			// audio drop budget internally.
+			// A 100ms caller-level timeout would fire before the bus's
+			// backpressure handling, masking drop counters and events.
+			err := c.bus.PublishAudioChunk(c.ctx, chunk)
 			if err != nil {
 				logger.ErrorCF("discord", "Failed to publish audio chunk", map[string]any{
 					"guild":     guildID,

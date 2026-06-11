@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -118,6 +119,31 @@ func newStartedTestChannelManager(
 type recordingProvider struct {
 	lastMessages []providers.Message
 	lastModel    string
+}
+
+type panicAfterStartProvider struct {
+	started chan struct{}
+	calls   atomic.Int32
+}
+
+func (p *panicAfterStartProvider) Chat(
+	ctx context.Context,
+	messages []providers.Message,
+	tools []providers.ToolDefinition,
+	model string,
+	options map[string]any,
+) (*providers.LLMResponse, error) {
+	p.calls.Add(1)
+	select {
+	case <-p.started:
+	default:
+		close(p.started)
+	}
+	panic("provider panic after turn registration")
+}
+
+func (p *panicAfterStartProvider) GetDefaultModel() string {
+	return "panic-after-start"
 }
 
 func (r *recordingProvider) Chat(
@@ -6621,4 +6647,84 @@ func (p *concurrentMockProvider) Chat(
 
 func (p *concurrentMockProvider) GetDefaultModel() string {
 	return "test-model"
+}
+
+func TestRunWorkerPanicReleasesSessionTurnState(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Agents.Defaults.MaxParallelTurns = 1
+
+	msgBus := bus.NewMessageBus()
+	provider := &panicAfterStartProvider{started: make(chan struct{})}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	defer al.Close()
+
+	runCtx, cancelRun := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() {
+		runDone <- al.Run(runCtx)
+	}()
+	defer func() {
+		cancelRun()
+		select {
+		case err := <-runDone:
+			if err != nil {
+				t.Fatalf("Run() error = %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for Run() to exit")
+		}
+	}()
+
+	msg := bus.InboundMessage{
+		Context: bus.InboundContext{
+			Channel:  "test",
+			ChatID:   "panic-chat",
+			ChatType: "direct",
+			SenderID: "user1",
+		},
+		Content:    "trigger panic",
+		SessionKey: "panic-session",
+	}
+	route, _, err := al.resolveMessageRoute(msg)
+	if err != nil {
+		t.Fatalf("resolveMessageRoute() error = %v", err)
+	}
+	scopeKey := resolveScopeKey(al.allocateRouteSession(route, msg).SessionKey, msg.SessionKey)
+
+	if err := msgBus.PublishInbound(context.Background(), msg); err != nil {
+		t.Fatalf("PublishInbound(first) error = %v", err)
+	}
+
+	select {
+	case <-provider.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for first turn to start")
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if al.getActiveTurnState(scopeKey) == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("session turn state remained stuck after worker panic")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if err := msgBus.PublishInbound(context.Background(), msg); err != nil {
+		t.Fatalf("PublishInbound(second) error = %v", err)
+	}
+
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		if provider.calls.Load() >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("second message did not start a new turn after panic cleanup")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }

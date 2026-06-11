@@ -68,6 +68,9 @@ const (
 
 	// KindBusPublishFailed is emitted when message bus publish fails.
 	KindBusPublishFailed Kind = "bus.publish.failed"
+	// KindBusMessageDropped is emitted when a message is dropped due to
+	// backpressure (channel full for longer than the drop budget).
+	KindBusMessageDropped Kind = "bus.message.dropped"
 	// KindBusCloseStarted is emitted when message bus close starts.
 	KindBusCloseStarted Kind = "bus.close.started"
 	// KindBusCloseCompleted is emitted when message bus close completes.
@@ -133,6 +136,7 @@ var knownKinds = []Kind{
 	KindChannelMessageOutboundFailed,
 	KindChannelRateLimited,
 	KindBusPublishFailed,
+	KindBusMessageDropped,
 	KindBusCloseStarted,
 	KindBusCloseCompleted,
 	KindBusCloseDrained,
