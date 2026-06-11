@@ -92,6 +92,7 @@
     },
     "sendMessage": "Odeslat zprávu",
     "sendHint": "Enter pro odeslání\nShift + Enter pro nový řádek",
+    "composeHint": "Enter pro odeslání, Shift + Enter pro nový řádek",
     "contextTitle": "Kontext",
     "contextDetail": "Zobrazit detail",
     "contextCompressAt": "Komprimovat při",

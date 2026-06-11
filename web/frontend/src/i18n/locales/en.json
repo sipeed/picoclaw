@@ -94,6 +94,7 @@
     },
     "sendMessage": "Send message",
     "sendHint": "Press Enter to send\nShift + Enter for a new line",
+    "composeHint": "Press Enter to send, Shift + Enter for a new line",
     "contextTitle": "Context",
     "contextDetail": "View Details",
     "contextCompressAt": "Compress at",
