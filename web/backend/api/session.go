@@ -179,7 +179,12 @@ func (h *Handler) readJSONLSession(dir, sessionKey string) (sessionFile, error) 
 		return sessionFile{}, err
 	}
 
-	messages, err := h.readSessionMessages(jsonlPath, meta.Skip)
+	// For Web UI session history display, read all messages (skip = 0)
+	// instead of skipping compressed messages. This ensures users can see
+	// their complete conversation history even when context compression
+	// has been applied for LLM token efficiency.
+	// Fixes issue #2796 where only the last user message was visible.
+	messages, err := h.readSessionMessages(jsonlPath, 0)
 	if err != nil {
 		return sessionFile{}, err
 	}
