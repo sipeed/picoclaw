@@ -20,6 +20,17 @@
 
 [中文](README.zh.md) | [日本語](README.ja.md) | **한국어** | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | [Bahasa Indonesia](README.id.md) | [Malay](README.ms.md) | [English](../../README.md)
 
+<p>
+  <a href="https://picopaw.ai">
+    <img src="../../assets/picopaw-banner-en.webp" alt="PicoPaw AI: Your AI Desktop Buddy" width="100%">
+  </a>
+</p>
+
+<p>
+  <strong>PicoPaw AI is now live at <a href="https://picopaw.ai">picopaw.ai</a>.</strong><br>
+  Create, preview, and share playful AI companions for the PicoClaw ecosystem.
+</p>
+
 </div>
 
 ---
@@ -55,6 +66,8 @@
 > * **참고:** PicoClaw는 최근 많은 PR을 병합했습니다. 최근 빌드는 10~20MB RAM을 사용할 수 있습니다. 기능이 안정화된 뒤 리소스 최적화를 진행할 예정입니다.
 
 ## 📢 뉴스
+
+2026-06-11 🐾 **PicoPaw AI is live!** Explore the new PicoPaw companion experience at [picopaw.ai](https://picopaw.ai), with animated AI pet previews and ecosystem updates for PicoClaw users.
 
 2026-05-11 🛒 **LicheeRV-Claw를 AliExpress에서 구매할 수 있습니다!** 이제 [AliExpress](https://www.aliexpress.com/item/1005006519668532.html)에서 LicheeRV-Claw를 구매해 소형 RISC-V 하드웨어에서 PicoClaw를 더 쉽게 사용해 볼 수 있습니다.
 

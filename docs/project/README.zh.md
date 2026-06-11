@@ -20,6 +20,17 @@
 
 **中文** | [日本語](README.ja.md) | [한국어](README.ko.md) | [Português](README.pt-br.md) | [Tiếng Việt](README.vi.md) | [Français](README.fr.md) | [Italiano](README.it.md) | [Bahasa Indonesia](README.id.md) | [Malay](README.ms.md) | [English](../../README.md)
 
+<p>
+  <a href="https://picopaw.ai/zh">
+    <img src="../../assets/picopaw-banner-zh.webp" alt="PicoPaw AI：你的 AI 桌面伙伴" width="100%">
+  </a>
+</p>
+
+<p>
+  <strong>PicoPaw AI 已在 <a href="https://picopaw.ai/zh">picopaw.ai/zh</a> 上线。</strong><br>
+  创建、预览并分享面向 PicoClaw 生态的 AI 桌面伙伴。
+</p>
+
 </div>
 
 ---
@@ -49,12 +60,14 @@
 > **🚨 安全声明**
 >
 > - **无加密货币 (NO CRYPTO):** PicoClaw **没有** 发行任何官方代币、Token 或虚拟货币。所有在 `pump.fun` 或其他交易平台上的相关声称均为 **诈骗**。
-> - **官方域名:** 唯一的官方网站是 **[picoclaw.io](https://picoclaw.io)**，公司官网是 **[sipeed.com](https://sipeed.com)**。
-> - **警惕:** 许多 `.ai/.org/.com/.net/...` 后缀的域名被第三方抢注，请勿轻信。
+> - **官方域名:** 唯一的 PicoClaw 官方网站是 **[picoclaw.io](https://picoclaw.io)**，公司官网是 **[sipeed.com](https://sipeed.com)**。
+> - **警惕:** 许多相似的 `.ai/.org/.com/.net/...` 后缀域名被第三方抢注。请只信任本 README 明确链接的域名。
 > - **注意:** PicoClaw 正在初期的快速功能开发阶段，可能有尚未修复的网络安全问题，在 1.0 正式版发布前，请不要将其部署到生产环境中。
 > - **注意:** PicoClaw 最近合并了大量 PR，近期版本可能内存占用较大 (10~20MB)，我们将在功能较为收敛后进行资源占用优化。
 
 ## 📢 新闻
+
+2026-06-11 🐾 **PicoPaw AI 上线！** 访问 [picopaw.ai/zh](https://picopaw.ai/zh)，体验全新的 PicoPaw 桌面伙伴，预览会动的 AI 宠物，并关注 PicoClaw 生态更新。
 
 2026-05-11 🛒 **LicheeRV-Claw 已上架淘宝！** 现在可以在 [淘宝](https://item.taobao.com/item.htm?abbucket=20&id=764939520376) 购买 LicheeRV-Claw，更方便地在小型 RISC-V 硬件上体验 PicoClaw。
 
