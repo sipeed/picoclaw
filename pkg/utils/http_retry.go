@@ -26,7 +26,7 @@ func DoRequestWithRetry(client *http.Client, req *http.Request) (*http.Response,
 
 	for i := range maxRetries {
 		if i > 0 && resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 
 		resp, err = client.Do(req)
@@ -42,7 +42,7 @@ func DoRequestWithRetry(client *http.Client, req *http.Request) (*http.Response,
 		if i < maxRetries-1 {
 			if err = sleepWithCtx(req.Context(), retryDelayForAttempt(resp, i)); err != nil {
 				if resp != nil {
-					resp.Body.Close()
+					_ = resp.Body.Close()
 				}
 				return nil, fmt.Errorf("failed to sleep: %w", err)
 			}
