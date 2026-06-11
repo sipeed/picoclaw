@@ -10,11 +10,6 @@ import TextareaAutosize from "react-textarea-autosize"
 
 import { ContextUsageRing } from "@/components/chat/context-usage-ring"
 import { Button } from "@/components/ui/button"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import type { ChatAttachment, ContextUsage } from "@/store/chat"
 
@@ -188,28 +183,18 @@ export function ChatComposer({
                 />
               )}
               {canInput ? (
-                <Tooltip delayDuration={700}>
-                  <TooltipTrigger asChild>
-                    <span tabIndex={!canSend ? 0 : undefined}>
-                      <Button
-                        type="button"
-                        size="icon"
-                        className="size-8 rounded-full bg-violet-500 text-white transition-transform hover:bg-violet-600 active:scale-95"
-                        onClick={onSend}
-                        disabled={!canSend}
-                        aria-label={t("chat.sendMessage")}
-                      >
-                        <IconArrowUp className="size-4" />
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    className="border-border/70 bg-muted text-foreground border text-center whitespace-pre-line shadow-lg shadow-black/10 dark:shadow-black/30"
-                    arrowClassName="bg-muted fill-muted"
+                <span tabIndex={!canSend ? 0 : undefined}>
+                  <Button
+                    type="button"
+                    size="icon"
+                    className="size-8 rounded-full bg-violet-500 text-white transition-transform hover:bg-violet-600 active:scale-95"
+                    onClick={onSend}
+                    disabled={!canSend}
+                    aria-label={t("chat.sendMessage")}
                   >
-                    {t("chat.sendHint")}
-                  </TooltipContent>
-                </Tooltip>
+                    <IconArrowUp className="size-4" />
+                  </Button>
+                </span>
               ) : null}
             </div>
           </div>
@@ -218,7 +203,7 @@ export function ChatComposer({
         <div
           aria-hidden={!hasInput}
           className={cn(
-            "border-border/70 bg-muted text-foreground mt-2 inline-flex items-center rounded-md border px-3 py-1.5 text-xs shadow-lg shadow-black/10 transition-all duration-200 dark:shadow-black/30",
+            "border-border/50 bg-muted/55 text-muted-foreground mt-2 inline-flex items-center rounded-md border px-3 py-1 text-[11px] shadow-sm transition-all duration-200 dark:bg-muted/45",
             hasInput
               ? "translate-y-0 opacity-100"
               : "pointer-events-none -translate-y-1 opacity-0",
