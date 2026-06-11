@@ -363,6 +363,10 @@ func (b *Channel) UnmarshalYAML(value *yaml.Node) error {
 		return nil
 	}
 
+	// Save the original Enabled state to preserve it if not explicitly set in YAML
+	originalEnabled := b.Enabled
+	hasOriginalValue := b != nil
+
 	type alias Channel
 	a := alias(*b)
 	err := value.Decode(&a)
@@ -373,11 +377,30 @@ func (b *Channel) UnmarshalYAML(value *yaml.Node) error {
 
 	*b = *(*Channel)(&a)
 
+	// Preserve the original Enabled state if YAML didn't explicitly set it
+	// This prevents security.yml from accidentally disabling channels configured in config.json
+	if hasOriginalValue && !isYAMLFieldPresent(value, "enabled") {
+		b.Enabled = originalEnabled
+	}
+
 	if len(b.Settings) > 0 {
 		b.extend = nil
 	}
 
 	return nil
+}
+
+// isYAMLFieldPresent checks if a specific field is present in the YAML node.
+func isYAMLFieldPresent(node *yaml.Node, fieldName string) bool {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return false
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		if i+1 < len(node.Content) && node.Content[i].Value == fieldName {
+			return true
+		}
+	}
+	return false
 }
 
 // SettingsIsEmpty returns true if Settings has not been populated.
