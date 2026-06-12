@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
@@ -28,6 +29,9 @@ func promptBuildRequestForTurn(
 		ActiveSkills:      activeSkillNames(ts.agent, ts.opts),
 		Overlays:          promptOverlaysForOptions(ts.opts),
 	}
+	req.ClientTransport, req.ClientKind, req.ClientName = clientPromptContextFromInbound(
+		ts.opts.Dispatch.InboundContext,
+	)
 	hasCallableTools := true
 	if ts.profile.Enabled {
 		hasCallableTools = turnProfileHasCallableTools(ts.profile, ts.agent.Tools.ToProviderDefs()) ||
@@ -91,6 +95,9 @@ func promptBuildRequestForProcessOptions(
 		ActiveSkills:      activeSkillNames(agent, opts),
 		Overlays:          promptOverlaysForOptions(opts),
 	}
+	req.ClientTransport, req.ClientKind, req.ClientName = clientPromptContextFromInbound(
+		opts.Dispatch.InboundContext,
+	)
 	profile := opts.TurnProfile
 	hasCallableTools := true
 	if profile.Enabled && agent != nil {
@@ -114,6 +121,15 @@ func promptBuildRequestForProcessOptions(
 		req.AllowedTools = append([]string(nil), profile.AllowedTools...)
 	}
 	return req
+}
+
+func clientPromptContextFromInbound(inbound *bus.InboundContext) (transport, kind, name string) {
+	if inbound == nil || len(inbound.Raw) == 0 {
+		return "", "", ""
+	}
+	return strings.TrimSpace(inbound.Raw["transport"]),
+		strings.TrimSpace(inbound.Raw["client_kind"]),
+		strings.TrimSpace(inbound.Raw["client_name"])
 }
 
 func promptOverlaysForOptions(opts processOptions) []PromptPart {
