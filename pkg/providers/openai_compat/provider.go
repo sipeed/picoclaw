@@ -154,7 +154,18 @@ func (p *Provider) buildRequestBody(
 	}
 
 	// When fallback uses a different provider (e.g. DeepSeek), that provider must not inject web_search_preview.
-	nativeSearch, _ := options["native_search"].(bool)
+	nativeSearch, ok := options["native_search"].(bool)
+	if !ok {
+		// If the option is present but not a bool, log a warning and
+		// treat it as false — web_search_preview must not be injected
+		// when the caller cannot express a well-typed intent.
+		if _, present := options["native_search"]; present {
+			log.Printf(
+				"[openai_compat] native_search option has unexpected type %T, ignoring",
+				options["native_search"],
+			)
+		}
+	}
 	nativeSearch = nativeSearch && isNativeSearchHost(p.apiBase)
 	if len(tools) > 0 || nativeSearch {
 		requestBody["tools"] = buildToolsList(tools, nativeSearch)
