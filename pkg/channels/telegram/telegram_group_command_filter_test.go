@@ -131,6 +131,93 @@ func TestHandleMessage_GroupMentionOnly_BotCommandEntity(t *testing.T) {
 	}
 }
 
+func TestHandleMessage_GroupMentionOnly_ReplyToBotMessage(t *testing.T) {
+	ch, messageBus := newGroupMentionOnlyChannel(t, "testbot")
+
+	msg := &telego.Message{
+		Text: "follow up",
+		MessageID: 43,
+		Chat: telego.Chat{
+			ID:   123,
+			Type: "group",
+		},
+		From: &telego.User{
+			ID:        7,
+			FirstName: "Alice",
+		},
+		ReplyToMessage: &telego.Message{
+			MessageID: 42,
+			Text:      "bot response",
+			From: &telego.User{
+				ID:       1,
+				IsBot:    true,
+				Username: "testbot",
+			},
+		},
+	}
+
+	if err := ch.handleMessage(context.Background(), msg); err != nil {
+		t.Fatalf("handleMessage error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	select {
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for message to be forwarded (reply to bot should trigger with mention_only)")
+	case inbound, ok := <-messageBus.InboundChan():
+		if !ok {
+			t.Fatal("expected inbound message")
+		}
+		if !inbound.Context.Mentioned {
+			t.Fatal("expected Mentioned=true for reply to bot message")
+		}
+		if inbound.Content != "[quoted assistant message from testbot]: bot response\n\nfollow up" {
+			t.Fatalf("content=%q", inbound.Content)
+		}
+	}
+}
+
+func TestHandleMessage_GroupMentionOnly_ReplyToOtherUser_NotForwarded(t *testing.T) {
+	ch, messageBus := newGroupMentionOnlyChannel(t, "testbot")
+
+	msg := &telego.Message{
+		Text: "follow up",
+		MessageID: 44,
+		Chat: telego.Chat{
+			ID:   123,
+			Type: "group",
+		},
+		From: &telego.User{
+			ID:        7,
+			FirstName: "Alice",
+		},
+		ReplyToMessage: &telego.Message{
+			MessageID: 41,
+			Text:      "some user message",
+			From: &telego.User{
+				ID:        99,
+				FirstName: "Bob",
+				IsBot:     false,
+			},
+		},
+	}
+
+	if err := ch.handleMessage(context.Background(), msg); err != nil {
+		t.Fatalf("handleMessage error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	select {
+	case <-ctx.Done():
+	case inbound, ok := <-messageBus.InboundChan():
+		if ok {
+			t.Fatalf("reply to other user should not be forwarded with mention_only, got content=%q", inbound.Content)
+		}
+	}
+}
+
 func TestIsBotMentioned_MentionEntityUnaffected(t *testing.T) {
 	ch, _ := newGroupMentionOnlyChannel(t, "testbot")
 
