@@ -20,6 +20,7 @@ type (
 	ExecResponse           = toolshared.ExecResponse
 	SessionInfo            = toolshared.SessionInfo
 	Tool                   = toolshared.Tool
+	InlineMediaProducer    = toolshared.InlineMediaProducer
 	AsyncCallback          = toolshared.AsyncCallback
 	AsyncExecutor          = toolshared.AsyncExecutor
 	PromptMetadata         = toolshared.PromptMetadata
