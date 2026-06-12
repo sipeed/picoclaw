@@ -105,6 +105,13 @@ func TestAgentConfig_FullParse(t *testing.T) {
 				},
 				"subagents": {
 					"allow_agents": ["sales"]
+				},
+				"communication": {
+					"allow_send_to": ["sales"],
+					"allow_receive_from": ["sales"],
+					"max_thread_turns": 8,
+					"max_message_chars": 12000,
+					"allow_artifacts": true
 				}
 			}
 			]
@@ -146,6 +153,24 @@ func TestAgentConfig_FullParse(t *testing.T) {
 	}
 	if support.Subagents == nil || len(support.Subagents.AllowAgents) != 1 {
 		t.Errorf("support.Subagents = %+v", support.Subagents)
+	}
+	if support.Communication == nil {
+		t.Fatal("support.Communication should be parsed")
+	}
+	if len(support.Communication.AllowSendTo) != 1 || support.Communication.AllowSendTo[0] != "sales" {
+		t.Errorf("support.Communication.AllowSendTo = %v", support.Communication.AllowSendTo)
+	}
+	if len(support.Communication.AllowReceiveFrom) != 1 || support.Communication.AllowReceiveFrom[0] != "sales" {
+		t.Errorf("support.Communication.AllowReceiveFrom = %v", support.Communication.AllowReceiveFrom)
+	}
+	if support.Communication.MaxThreadTurns != 8 {
+		t.Errorf("support.Communication.MaxThreadTurns = %d, want 8", support.Communication.MaxThreadTurns)
+	}
+	if support.Communication.MaxMessageChars != 12000 {
+		t.Errorf("support.Communication.MaxMessageChars = %d, want 12000", support.Communication.MaxMessageChars)
+	}
+	if !support.Communication.AllowArtifacts {
+		t.Error("support.Communication.AllowArtifacts should be true")
 	}
 
 	if len(cfg.Session.Dimensions) != 1 || cfg.Session.Dimensions[0] != "sender" {

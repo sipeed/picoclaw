@@ -163,6 +163,57 @@ func TestAgentRegistry_CanSpawnSubagent_Wildcard(t *testing.T) {
 	}
 }
 
+func TestAgentRegistry_CanCollaborate_RequiresSendAndReceive(t *testing.T) {
+	cfg := testCfg([]config.AgentConfig{
+		{
+			ID: "planner",
+			Subagents: &config.SubagentsConfig{
+				AllowAgents: []string{"research"},
+			},
+			Communication: &config.AgentCommunicationConfig{
+				AllowReceiveFrom: []string{"research"},
+			},
+		},
+		{
+			ID: "research",
+			Communication: &config.AgentCommunicationConfig{
+				AllowReceiveFrom: []string{"planner"},
+			},
+		},
+	})
+	registry := NewAgentRegistry(cfg, &mockRegistryProvider{})
+
+	if !registry.CanSendCollaboration("planner", "research") {
+		t.Fatal("planner should inherit allow_send_to from subagents.allow_agents")
+	}
+	if !registry.CanReceiveCollaboration("research", "planner") {
+		t.Fatal("research should explicitly allow inbound collaboration from planner")
+	}
+	if !registry.CanCollaborate("planner", "research") {
+		t.Fatal("planner should be allowed to collaborate with research")
+	}
+	if registry.CanCollaborate("research", "planner") {
+		t.Fatal("research should not be allowed to collaborate back without allow_send_to")
+	}
+}
+
+func TestAgentRegistry_CommunicationDefaults(t *testing.T) {
+	cfg := testCfg([]config.AgentConfig{
+		{ID: "planner"},
+	})
+	registry := NewAgentRegistry(cfg, &mockRegistryProvider{})
+
+	if got := registry.CommunicationMaxThreadTurns("planner"); got != defaultCommunicationMaxThreadTurns {
+		t.Fatalf("CommunicationMaxThreadTurns() = %d, want %d", got, defaultCommunicationMaxThreadTurns)
+	}
+	if got := registry.CommunicationMaxMessageChars("planner"); got != defaultCommunicationMaxMessageChars {
+		t.Fatalf("CommunicationMaxMessageChars() = %d, want %d", got, defaultCommunicationMaxMessageChars)
+	}
+	if registry.CommunicationAllowsArtifacts("planner") {
+		t.Fatal("artifacts should be disabled by default")
+	}
+}
+
 func TestAgentInstance_Model(t *testing.T) {
 	model := &config.AgentModelConfig{Primary: "claude-opus"}
 	cfg := testCfg([]config.AgentConfig{

@@ -17,16 +17,17 @@ func promptBuildRequestForTurn(
 	cfg *config.Config,
 ) PromptBuildRequest {
 	req := PromptBuildRequest{
-		History:           history,
-		Summary:           summary,
-		CurrentMessage:    currentMessage,
-		Media:             append([]string(nil), media...),
-		Channel:           ts.channel,
-		ChatID:            ts.chatID,
-		SenderID:          ts.opts.Dispatch.SenderID(),
-		SenderDisplayName: ts.opts.SenderDisplayName,
-		ActiveSkills:      activeSkillNames(ts.agent, ts.opts),
-		Overlays:          promptOverlaysForOptions(ts.opts),
+		History:              history,
+		Summary:              summary,
+		CurrentMessage:       currentMessage,
+		CurrentPromptMessage: clonePromptMessage(ts.rootPromptMessage),
+		Media:                append([]string(nil), media...),
+		Channel:              ts.channel,
+		ChatID:               ts.chatID,
+		SenderID:             ts.opts.Dispatch.SenderID(),
+		SenderDisplayName:    ts.opts.SenderDisplayName,
+		ActiveSkills:         activeSkillNames(ts.agent, ts.opts),
+		Overlays:             promptOverlaysForOptions(ts.opts),
 	}
 	hasCallableTools := true
 	if ts.profile.Enabled {
@@ -80,16 +81,17 @@ func promptBuildRequestForProcessOptions(
 	media []string,
 ) PromptBuildRequest {
 	req := PromptBuildRequest{
-		History:           history,
-		Summary:           summary,
-		CurrentMessage:    currentMessage,
-		Media:             append([]string(nil), media...),
-		Channel:           opts.Channel,
-		ChatID:            opts.ChatID,
-		SenderID:          opts.SenderID,
-		SenderDisplayName: opts.SenderDisplayName,
-		ActiveSkills:      activeSkillNames(agent, opts),
-		Overlays:          promptOverlaysForOptions(opts),
+		History:              history,
+		Summary:              summary,
+		CurrentMessage:       currentMessage,
+		CurrentPromptMessage: clonePromptMessage(opts.RootPromptMessage),
+		Media:                append([]string(nil), media...),
+		Channel:              opts.Channel,
+		ChatID:               opts.ChatID,
+		SenderID:             opts.SenderID,
+		SenderDisplayName:    opts.SenderDisplayName,
+		ActiveSkills:         activeSkillNames(agent, opts),
+		Overlays:             promptOverlaysForOptions(opts),
 	}
 	profile := opts.TurnProfile
 	hasCallableTools := true
@@ -192,6 +194,37 @@ func userPromptMessage(content string, media []string) providers.Message {
 		msg.Media = append([]string(nil), media...)
 	}
 	return promptMessageWithMetadata(msg, PromptLayerTurn, PromptSlotMessage, PromptSourceUserMessage)
+}
+
+func interAgentPromptMessage(content string, attachments []providers.Attachment) providers.Message {
+	msg := providers.Message{
+		Role:    "user",
+		Content: content,
+	}
+	if len(attachments) > 0 {
+		msg.Attachments = append([]providers.Attachment(nil), attachments...)
+	}
+	return promptMessageWithMetadata(msg, PromptLayerTurn, PromptSlotMessage, PromptSourceInterAgentMessage)
+}
+
+func clonePromptMessage(msg *providers.Message) *providers.Message {
+	if msg == nil {
+		return nil
+	}
+	cloned := *msg
+	if len(msg.Media) > 0 {
+		cloned.Media = append([]string(nil), msg.Media...)
+	}
+	if len(msg.Attachments) > 0 {
+		cloned.Attachments = append([]providers.Attachment(nil), msg.Attachments...)
+	}
+	if len(msg.SystemParts) > 0 {
+		cloned.SystemParts = append([]providers.ContentBlock(nil), msg.SystemParts...)
+	}
+	if len(msg.ToolCalls) > 0 {
+		cloned.ToolCalls = append([]providers.ToolCall(nil), msg.ToolCalls...)
+	}
+	return &cloned
 }
 
 func steeringPromptMessage(msg providers.Message) providers.Message {

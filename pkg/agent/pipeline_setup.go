@@ -108,15 +108,17 @@ func (p *Pipeline) SetupTurn(ctx context.Context, ts *turnState) (*turnExecution
 		}
 	}
 
-	if !ts.opts.NoHistory && (strings.TrimSpace(ts.userMessage) != "" || len(ts.media) > 0) {
-		rootMsg := userPromptMessage(ts.userMessage, ts.media)
-		if len(rootMsg.Media) > 0 {
-			ts.agent.Sessions.AddFullMessage(ts.sessionKey, rootMsg)
-		} else {
-			ts.agent.Sessions.AddMessage(ts.sessionKey, rootMsg.Role, rootMsg.Content)
+	if !ts.opts.NoHistory {
+		rootMsg := ts.rootPromptHistoryMessage()
+		if rootMsg != nil {
+			if len(rootMsg.Media) > 0 || len(rootMsg.Attachments) > 0 {
+				ts.agent.Sessions.AddFullMessage(ts.sessionKey, *rootMsg)
+			} else {
+				ts.agent.Sessions.AddMessage(ts.sessionKey, rootMsg.Role, rootMsg.Content)
+			}
+			ts.recordPersistedMessage(*rootMsg)
+			ts.ingestMessage(ctx, p.al, *rootMsg)
 		}
-		ts.recordPersistedMessage(rootMsg)
-		ts.ingestMessage(ctx, p.al, rootMsg)
 	}
 
 	activeCandidates, activeModel, usedLight := p.al.selectCandidates(ts.agent, ts.userMessage, messages)

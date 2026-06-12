@@ -43,7 +43,9 @@ func runtimeCorrelationFromHookMeta(meta HookMeta) runtimeevents.Correlation {
 
 func runtimeSeverityForAgentEvent(kind runtimeevents.Kind, payload any) runtimeevents.Severity {
 	switch kind {
-	case runtimeevents.KindAgentError, runtimeevents.KindAgentSubTurnOrphan:
+	case runtimeevents.KindAgentError,
+		runtimeevents.KindAgentSubTurnOrphan,
+		runtimeevents.KindAgentMessageBlocked:
 		return runtimeevents.SeverityError
 	case runtimeevents.KindAgentLLMRetry,
 		runtimeevents.KindAgentContextCompress,

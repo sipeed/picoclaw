@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sipeed/picoclaw/pkg/collab"
 	"github.com/sipeed/picoclaw/pkg/routing"
 )
 
@@ -13,9 +14,11 @@ import (
 // generic), delegate targets a named agent and runs the task using that
 // agent's own workspace, model, and tools.
 type DelegateTool struct {
-	spawner        SubTurnSpawner
-	allowlistCheck func(targetAgentID string) bool
-	selfAgentID    string
+	spawner                     SubTurnSpawner
+	runtime                     AgentCollaborationRuntime
+	allowlistCheck              func(targetAgentID string) bool
+	collaborationAllowlistCheck func(targetAgentID string) bool
+	selfAgentID                 string
 }
 
 func NewDelegateTool() *DelegateTool {
@@ -26,8 +29,16 @@ func (t *DelegateTool) SetSpawner(spawner SubTurnSpawner) {
 	t.spawner = spawner
 }
 
+func (t *DelegateTool) SetRuntime(runtime AgentCollaborationRuntime) {
+	t.runtime = runtime
+}
+
 func (t *DelegateTool) SetAllowlistChecker(check func(targetAgentID string) bool) {
 	t.allowlistCheck = check
+}
+
+func (t *DelegateTool) SetCollaborationAllowlistChecker(check func(targetAgentID string) bool) {
+	t.collaborationAllowlistCheck = check
 }
 
 func (t *DelegateTool) SetSelfAgentID(id string) {
@@ -78,27 +89,63 @@ func (t *DelegateTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		return ErrorResult("cannot delegate to self")
 	}
 
-	if t.allowlistCheck != nil && !t.allowlistCheck(agentID) {
-		return ErrorResult(fmt.Sprintf("not allowed to delegate to agent %q", agentID))
+	spawnAllowed := t.spawner != nil && t.pathAllowed(agentID, t.allowlistCheck)
+	collaborationCheck := t.collaborationAllowlistCheck
+	if collaborationCheck == nil {
+		collaborationCheck = t.allowlistCheck
 	}
+	collaborationAllowed := t.runtime != nil && t.pathAllowed(agentID, collaborationCheck)
 
-	if t.spawner == nil {
+	if !spawnAllowed && !collaborationAllowed && t.spawner == nil && t.runtime == nil {
 		return ErrorResult("delegate tool not configured")
 	}
 
-	result, err := t.spawner.SpawnSubTurn(ctx, SubTurnConfig{
-		TargetAgentID: agentID,
-		SystemPrompt:  task,
-		Async:         false,
-	})
-	if err != nil {
-		return ErrorResult(fmt.Sprintf("delegation to agent %q failed: %v", agentID, err)).WithError(err)
-	}
-	if result == nil {
-		return ErrorResult(fmt.Sprintf("delegation to agent %q returned no result", agentID))
+	if !spawnAllowed && !collaborationAllowed {
+		return ErrorResult(fmt.Sprintf("not allowed to delegate to agent %q", agentID))
 	}
 
-	result.ForLLM = fmt.Sprintf("[Response from agent %q]\n%s", agentID, result.ForLLM)
+	// Preserve legacy behavior by preferring the sub-turn path when it is allowed.
+	if spawnAllowed {
+		result, err := t.spawner.SpawnSubTurn(ctx, SubTurnConfig{
+			TargetAgentID: agentID,
+			SystemPrompt:  task,
+			Async:         false,
+		})
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("delegation to agent %q failed: %v", agentID, err)).WithError(err)
+		}
+		if result == nil {
+			return ErrorResult(fmt.Sprintf("delegation to agent %q returned no result", agentID))
+		}
 
-	return result
+		result.ForLLM = fmt.Sprintf("[Response from agent %q]\n%s", agentID, result.ForLLM)
+		return result
+	}
+
+	if collaborationAllowed {
+		reply, err := t.runtime.Request(ctx, AgentRequestParams{
+			ToAgentID:     agentID,
+			Content:       task,
+			ContextPolicy: collab.ContextPolicyTaskOnly,
+			Wait:          true,
+		})
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("delegation to agent %q failed: %v", agentID, err)).WithError(err)
+		}
+		result := &ToolResult{
+			ForLLM:  reply.Content,
+			ForUser: reply.Content,
+		}
+		result.ForLLM = fmt.Sprintf("[Response from agent %q]\n%s", agentID, result.ForLLM)
+		return result
+	}
+
+	return ErrorResult(fmt.Sprintf("not allowed to delegate to agent %q", agentID))
+}
+
+func (t *DelegateTool) pathAllowed(agentID string, check func(targetAgentID string) bool) bool {
+	if check == nil {
+		return true
+	}
+	return check(agentID)
 }

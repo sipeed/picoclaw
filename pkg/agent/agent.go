@@ -58,6 +58,7 @@ type AgentLoop struct {
 	evolution      *evolutionBridge
 	hookRuntime    hookRuntime
 	steering       *steeringQueue
+	collaboration  *AgentCollaborationBus
 	pendingSkills  sync.Map
 	pendingStops   sync.Map
 	mu             sync.RWMutex
@@ -92,6 +93,7 @@ type processOptions struct {
 	ForcedSkills            []string        // Skills explicitly requested for this message
 	TurnProfile             config.EffectiveTurnProfile
 	SystemPromptOverride    string                 // Override the default system prompt (Used by SubTurns)
+	RootPromptMessage       *providers.Message     // Optional pre-built root message (e.g. inter-agent request)
 	Media                   []string               // media:// refs from inbound message
 	InitialSteeringMessages []providers.Message    // Steering messages from refactor/agent
 	DefaultResponse         string                 // Response when LLM returns empty

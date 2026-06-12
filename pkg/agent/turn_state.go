@@ -195,11 +195,12 @@ type turnState struct {
 	toolExecutions    []ToolExecutionRecord
 	turnCtx           *TurnContext
 
-	channel     string
-	chatID      string
-	workspace   string
-	userMessage string
-	media       []string
+	channel           string
+	chatID            string
+	workspace         string
+	userMessage       string
+	rootPromptMessage *providers.Message
+	media             []string
 
 	phase        TurnPhase
 	iteration    int
@@ -253,22 +254,23 @@ type turnState struct {
 
 func newTurnState(agent *AgentInstance, opts processOptions, scope turnEventScope) *turnState {
 	ts := &turnState{
-		agent:        agent,
-		opts:         opts,
-		profile:      opts.TurnProfile,
-		scope:        scope,
-		turnID:       scope.turnID,
-		agentID:      agent.ID,
-		sessionKey:   opts.Dispatch.SessionKey,
-		activeSkills: activeSkillNames(agent, opts),
-		turnCtx:      cloneTurnContext(scope.context),
-		channel:      opts.Dispatch.Channel(),
-		chatID:       opts.Dispatch.ChatID(),
-		workspace:    agent.Workspace,
-		userMessage:  opts.Dispatch.UserMessage,
-		media:        append([]string(nil), opts.Dispatch.Media...),
-		phase:        TurnPhaseSetup,
-		startedAt:    time.Now(),
+		agent:             agent,
+		opts:              opts,
+		profile:           opts.TurnProfile,
+		scope:             scope,
+		turnID:            scope.turnID,
+		agentID:           agent.ID,
+		sessionKey:        opts.Dispatch.SessionKey,
+		activeSkills:      activeSkillNames(agent, opts),
+		turnCtx:           cloneTurnContext(scope.context),
+		channel:           opts.Dispatch.Channel(),
+		chatID:            opts.Dispatch.ChatID(),
+		workspace:         agent.Workspace,
+		userMessage:       opts.Dispatch.UserMessage,
+		rootPromptMessage: clonePromptMessage(opts.RootPromptMessage),
+		media:             append([]string(nil), opts.Dispatch.Media...),
+		phase:             TurnPhaseSetup,
+		startedAt:         time.Now(),
 	}
 
 	// Bind session store and capture initial history length for rollback logic
@@ -400,6 +402,20 @@ func (ts *turnState) finalContentSnapshot() string {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 	return ts.finalContent
+}
+
+func (ts *turnState) rootPromptHistoryMessage() *providers.Message {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+
+	if ts.rootPromptMessage != nil {
+		return clonePromptMessage(ts.rootPromptMessage)
+	}
+	if strings.TrimSpace(ts.userMessage) == "" && len(ts.media) == 0 {
+		return nil
+	}
+	msg := userPromptMessage(ts.userMessage, ts.media)
+	return &msg
 }
 
 func (ts *turnState) recordToolKind(tool string) {

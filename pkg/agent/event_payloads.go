@@ -191,6 +191,29 @@ type SubTurnOrphanPayload struct {
 	Reason       string
 }
 
+// AgentMessageEventPayload describes collaboration-bus message flow without logging raw content.
+type AgentMessageEventPayload struct {
+	ThreadID        string
+	MessageID       string
+	ParentMessageID string
+	FromAgentID     string
+	ToAgentID       string
+	Status          string
+	TraceID         string
+	ParentTurnID    string
+	Priority        string
+	Deadline        *time.Time
+	ArtifactCount   int
+}
+
+// AgentThreadClosedPayload describes closure of a collaboration thread.
+type AgentThreadClosedPayload struct {
+	ThreadID     string
+	Status       string
+	CloseReason  string
+	Participants []string
+}
+
 // ErrorPayload describes an execution error inside the agent loop.
 type ErrorPayload struct {
 	Stage   string

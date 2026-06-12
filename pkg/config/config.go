@@ -312,18 +312,27 @@ func (m AgentModelConfig) MarshalJSON() ([]byte, error) {
 }
 
 type AgentConfig struct {
-	ID        string            `json:"id"`
-	Default   bool              `json:"default,omitempty"`
-	Name      string            `json:"name,omitempty"`
-	Workspace string            `json:"workspace,omitempty"`
-	Model     *AgentModelConfig `json:"model,omitempty"`
-	Skills    []string          `json:"skills,omitempty"`
-	Subagents *SubagentsConfig  `json:"subagents,omitempty"`
+	ID            string                    `json:"id"`
+	Default       bool                      `json:"default,omitempty"`
+	Name          string                    `json:"name,omitempty"`
+	Workspace     string                    `json:"workspace,omitempty"`
+	Model         *AgentModelConfig         `json:"model,omitempty"`
+	Skills        []string                  `json:"skills,omitempty"`
+	Subagents     *SubagentsConfig          `json:"subagents,omitempty"`
+	Communication *AgentCommunicationConfig `json:"communication,omitempty"`
 }
 
 type SubagentsConfig struct {
 	AllowAgents []string          `json:"allow_agents,omitempty"`
 	Model       *AgentModelConfig `json:"model,omitempty"`
+}
+
+type AgentCommunicationConfig struct {
+	AllowSendTo      []string `json:"allow_send_to,omitempty"`
+	AllowReceiveFrom []string `json:"allow_receive_from,omitempty"`
+	MaxThreadTurns   int      `json:"max_thread_turns,omitempty"`
+	MaxMessageChars  int      `json:"max_message_chars,omitempty"`
+	AllowArtifacts   bool     `json:"allow_artifacts,omitempty"`
 }
 
 type DispatchConfig struct {

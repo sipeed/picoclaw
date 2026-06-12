@@ -1010,7 +1010,15 @@ func (cb *ContextBuilder) BuildMessagesFromPrompt(req PromptBuildRequest) []prov
 	// Add current user message. Media-only turns must still be preserved so
 	// multimodal providers receive the uploaded image even when the user sends
 	// no accompanying text.
-	if strings.TrimSpace(req.CurrentMessage) != "" || len(req.Media) > 0 {
+	if req.CurrentPromptMessage != nil {
+		msg := clonePromptMessage(req.CurrentPromptMessage)
+		messages = append(messages, promptMessageWithDefaultMetadata(
+			*msg,
+			PromptLayerTurn,
+			PromptSlotMessage,
+			PromptSourceUserMessage,
+		))
+	} else if strings.TrimSpace(req.CurrentMessage) != "" || len(req.Media) > 0 {
 		messages = append(messages, userPromptMessage(req.CurrentMessage, req.Media))
 	}
 	if len(messages) == 0 {

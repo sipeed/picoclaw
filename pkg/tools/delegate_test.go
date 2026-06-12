@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/collab"
 )
 
 // delegateMockSpawner records the config and returns a canned result.
@@ -12,9 +14,18 @@ type delegateMockSpawner struct {
 	lastCfg SubTurnConfig
 	result  *ToolResult
 	err     error
+	calls   int
+}
+
+type delegateMockCollaborationRuntime struct {
+	lastParams AgentRequestParams
+	response   *AgentRequestResponse
+	err        error
+	calls      int
 }
 
 func (m *delegateMockSpawner) SpawnSubTurn(_ context.Context, cfg SubTurnConfig) (*ToolResult, error) {
+	m.calls++
 	m.lastCfg = cfg
 	if m.err != nil {
 		return nil, m.err
@@ -26,6 +37,41 @@ func (m *delegateMockSpawner) SpawnSubTurn(_ context.Context, cfg SubTurnConfig)
 		ForLLM:  "completed: " + cfg.SystemPrompt,
 		ForUser: "completed",
 	}, nil
+}
+
+func (m *delegateMockCollaborationRuntime) Request(
+	_ context.Context,
+	params AgentRequestParams,
+) (*AgentRequestResponse, error) {
+	m.calls++
+	m.lastParams = params
+	if m.err != nil {
+		return nil, m.err
+	}
+	if m.response != nil {
+		return m.response, nil
+	}
+	return &AgentRequestResponse{
+		ThreadID:    "thread_1",
+		MessageID:   "msg_1",
+		FromAgentID: params.ToAgentID,
+		Content:     "completed: " + params.Content,
+		Status:      "replied",
+	}, nil
+}
+
+func (m *delegateMockCollaborationRuntime) Reply(
+	context.Context,
+	AgentReplyParams,
+) (*AgentReplyResponse, error) {
+	return nil, fmt.Errorf("unexpected Reply call")
+}
+
+func (m *delegateMockCollaborationRuntime) Inbox(
+	context.Context,
+	AgentInboxParams,
+) (*AgentInboxResponse, error) {
+	return nil, fmt.Errorf("unexpected Inbox call")
 }
 
 func TestDelegateTool_Name(t *testing.T) {
@@ -90,6 +136,94 @@ func TestDelegateTool_Execute_Success(t *testing.T) {
 	}
 	if spawner.lastCfg.SystemPrompt != "summarize the logs" {
 		t.Errorf("SystemPrompt = %q, want %q", spawner.lastCfg.SystemPrompt, "summarize the logs")
+	}
+}
+
+func TestDelegateTool_Execute_UsesCollaborationRuntimeWhenConfigured(t *testing.T) {
+	runtime := &delegateMockCollaborationRuntime{}
+	tool := NewDelegateTool()
+	tool.SetRuntime(runtime)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"agent_id": "researcher",
+		"task":     "summarize the logs",
+	})
+
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	if runtime.lastParams.ToAgentID != "researcher" {
+		t.Fatalf("ToAgentID = %q, want researcher", runtime.lastParams.ToAgentID)
+	}
+	if !runtime.lastParams.Wait {
+		t.Fatal("delegate should wait for collaboration reply")
+	}
+	if runtime.lastParams.ContextPolicy != collab.ContextPolicyTaskOnly {
+		t.Fatalf("ContextPolicy = %q, want task_only", runtime.lastParams.ContextPolicy)
+	}
+	if !strings.Contains(result.ForLLM, `[Response from agent "researcher"]`) {
+		t.Fatalf("result.ForLLM = %q", result.ForLLM)
+	}
+}
+
+func TestDelegateTool_Execute_PrefersSpawnerWhenBothPathsAreAllowed(t *testing.T) {
+	spawner := &delegateMockSpawner{}
+	runtime := &delegateMockCollaborationRuntime{}
+	tool := NewDelegateTool()
+	tool.SetSpawner(spawner)
+	tool.SetRuntime(runtime)
+	tool.SetAllowlistChecker(func(targetAgentID string) bool {
+		return targetAgentID == "researcher"
+	})
+	tool.SetCollaborationAllowlistChecker(func(targetAgentID string) bool {
+		return targetAgentID == "researcher"
+	})
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"agent_id": "researcher",
+		"task":     "summarize the logs",
+	})
+
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	if spawner.calls != 1 {
+		t.Fatalf("spawner.calls = %d, want 1", spawner.calls)
+	}
+	if runtime.calls != 0 {
+		t.Fatalf("runtime.calls = %d, want 0", runtime.calls)
+	}
+}
+
+func TestDelegateTool_Execute_FallsBackToCollaborationWhenSpawnNotAllowed(t *testing.T) {
+	spawner := &delegateMockSpawner{}
+	runtime := &delegateMockCollaborationRuntime{}
+	tool := NewDelegateTool()
+	tool.SetSpawner(spawner)
+	tool.SetRuntime(runtime)
+	tool.SetAllowlistChecker(func(targetAgentID string) bool {
+		return false
+	})
+	tool.SetCollaborationAllowlistChecker(func(targetAgentID string) bool {
+		return targetAgentID == "researcher"
+	})
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"agent_id": "researcher",
+		"task":     "summarize the logs",
+	})
+
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	if spawner.calls != 0 {
+		t.Fatalf("spawner.calls = %d, want 0", spawner.calls)
+	}
+	if runtime.calls != 1 {
+		t.Fatalf("runtime.calls = %d, want 1", runtime.calls)
+	}
+	if runtime.lastParams.ToAgentID != "researcher" {
+		t.Fatalf("ToAgentID = %q, want researcher", runtime.lastParams.ToAgentID)
 	}
 }
 

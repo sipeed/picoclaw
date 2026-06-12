@@ -44,23 +44,24 @@ const (
 type PromptSourceID string
 
 const (
-	PromptSourceKernel         PromptSourceID = "runtime.kernel"
-	PromptSourceHierarchy      PromptSourceID = "runtime.hierarchy"
-	PromptSourceWorkspace      PromptSourceID = "workspace.definition"
-	PromptSourceRuntime        PromptSourceID = "runtime.context"
-	PromptSourceSummary        PromptSourceID = "context.summary"
-	PromptSourceMemory         PromptSourceID = "memory:workspace"
-	PromptSourceSkillCatalog   PromptSourceID = "skill:index"
-	PromptSourceActiveSkills   PromptSourceID = "skill:active"
-	PromptSourceAgentDiscovery PromptSourceID = "agent:discovery"
-	PromptSourceToolRegistry   PromptSourceID = "tool_registry:native"
-	PromptSourceToolDiscovery  PromptSourceID = "tool_registry:discovery"
-	PromptSourceOutputPolicy   PromptSourceID = "runtime.output"
-	PromptSourceSubTurnProfile PromptSourceID = "subturn.profile"
-	PromptSourceUserMessage    PromptSourceID = "turn:user_message"
-	PromptSourceSteering       PromptSourceID = "turn:steering"
-	PromptSourceSubTurnResult  PromptSourceID = "turn:subturn_result"
-	PromptSourceInterrupt      PromptSourceID = "turn:interrupt"
+	PromptSourceKernel            PromptSourceID = "runtime.kernel"
+	PromptSourceHierarchy         PromptSourceID = "runtime.hierarchy"
+	PromptSourceWorkspace         PromptSourceID = "workspace.definition"
+	PromptSourceRuntime           PromptSourceID = "runtime.context"
+	PromptSourceSummary           PromptSourceID = "context.summary"
+	PromptSourceMemory            PromptSourceID = "memory:workspace"
+	PromptSourceSkillCatalog      PromptSourceID = "skill:index"
+	PromptSourceActiveSkills      PromptSourceID = "skill:active"
+	PromptSourceAgentDiscovery    PromptSourceID = "agent:discovery"
+	PromptSourceToolRegistry      PromptSourceID = "tool_registry:native"
+	PromptSourceToolDiscovery     PromptSourceID = "tool_registry:discovery"
+	PromptSourceOutputPolicy      PromptSourceID = "runtime.output"
+	PromptSourceSubTurnProfile    PromptSourceID = "subturn.profile"
+	PromptSourceUserMessage       PromptSourceID = "turn:user_message"
+	PromptSourceInterAgentMessage PromptSourceID = "turn:inter_agent_message"
+	PromptSourceSteering          PromptSourceID = "turn:steering"
+	PromptSourceSubTurnResult     PromptSourceID = "turn:subturn_result"
+	PromptSourceInterrupt         PromptSourceID = "turn:interrupt"
 )
 
 type PromptCachePolicy string
@@ -105,8 +106,9 @@ type PromptBuildRequest struct {
 	History []providers.Message
 	Summary string
 
-	CurrentMessage string
-	Media          []string
+	CurrentMessage       string
+	CurrentPromptMessage *providers.Message
+	Media                []string
 
 	Channel           string
 	ChatID            string
@@ -201,6 +203,13 @@ func builtinPromptSources() []PromptSourceDescriptor {
 			Owner:           "skills",
 			Description:     "Active skill instructions for the current request",
 			Allowed:         []PromptPlacement{{Layer: PromptLayerCapability, Slot: PromptSlotActiveSkill}},
+			StableByDefault: false,
+		},
+		{
+			ID:              PromptSourceInterAgentMessage,
+			Owner:           "agent",
+			Description:     "Internal collaboration message from another agent",
+			Allowed:         []PromptPlacement{{Layer: PromptLayerTurn, Slot: PromptSlotMessage}},
 			StableByDefault: false,
 		},
 		{

@@ -40,6 +40,7 @@ type AgentInstance struct {
 	Tools                     *tools.ToolRegistry
 	Definition                AgentContextDefinition
 	Subagents                 *config.SubagentsConfig
+	Communication             *config.AgentCommunicationConfig
 	SkillsFilter              []string
 	MCPServerAllowlist        map[string]struct{}
 	Candidates                []providers.FallbackCandidate
@@ -139,6 +140,7 @@ func NewAgentInstance(
 	agentID := routing.DefaultAgentID
 	agentName := ""
 	var subagents *config.SubagentsConfig
+	var communication *config.AgentCommunicationConfig
 	var skillsFilter []string
 
 	if agentCfg != nil {
@@ -148,6 +150,7 @@ func NewAgentInstance(
 			agentName = strings.TrimSpace(definition.Agent.Frontmatter.Name)
 		}
 		subagents = agentCfg.Subagents
+		communication = agentCfg.Communication
 		skillsFilter = resolveAgentSkillsFilter(agentCfg, definition)
 	}
 	provider = resolvePrimaryProviderForAgent(cfg, workspace, agentID, model, provider)
@@ -262,6 +265,7 @@ func NewAgentInstance(
 		Tools:                     toolsRegistry,
 		Definition:                definition,
 		Subagents:                 subagents,
+		Communication:             communication,
 		SkillsFilter:              skillsFilter,
 		MCPServerAllowlist:        agentMCPServerAllowlist,
 		Candidates:                candidates,

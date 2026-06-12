@@ -44,6 +44,18 @@ const (
 	KindAgentSubTurnOrphan Kind = "agent.subturn.orphan"
 	// KindAgentError is emitted when agent execution reports an error.
 	KindAgentError Kind = "agent.error"
+	// KindAgentMessageSent is emitted when an inter-agent message is created.
+	KindAgentMessageSent Kind = "agent.message.sent"
+	// KindAgentMessageDelivered is emitted when an inter-agent message is queued for delivery.
+	KindAgentMessageDelivered Kind = "agent.message.delivered"
+	// KindAgentMessageReceived is emitted when an inter-agent message starts processing.
+	KindAgentMessageReceived Kind = "agent.message.received"
+	// KindAgentMessageReply is emitted when an inter-agent reply is recorded.
+	KindAgentMessageReply Kind = "agent.message.reply"
+	// KindAgentMessageBlocked is emitted when policy blocks an inter-agent message.
+	KindAgentMessageBlocked Kind = "agent.message.blocked"
+	// KindAgentThreadClosed is emitted when a collaboration thread is closed.
+	KindAgentThreadClosed Kind = "agent.thread.closed"
 
 	// KindChannelLifecycleStarted is emitted when a channel starts.
 	KindChannelLifecycleStarted Kind = "channel.lifecycle.started"
@@ -122,6 +134,12 @@ var knownKinds = []Kind{
 	KindAgentSubTurnResultDelivered,
 	KindAgentSubTurnOrphan,
 	KindAgentError,
+	KindAgentMessageSent,
+	KindAgentMessageDelivered,
+	KindAgentMessageReceived,
+	KindAgentMessageReply,
+	KindAgentMessageBlocked,
+	KindAgentThreadClosed,
 	KindChannelLifecycleStarted,
 	KindChannelLifecycleInitialized,
 	KindChannelLifecycleStartFailed,

@@ -19,6 +19,11 @@ type AgentRegistry struct {
 	mu       sync.RWMutex
 }
 
+const (
+	defaultCommunicationMaxThreadTurns  = 8
+	defaultCommunicationMaxMessageChars = 12000
+)
+
 // NewAgentRegistry creates a registry from config, instantiating all agents.
 func NewAgentRegistry(
 	cfg *config.Config,
@@ -122,6 +127,65 @@ func (r *AgentRegistry) CanSpawnSubagent(parentAgentID, targetAgentID string) bo
 	return agentAllowsSubagent(parent, routing.NormalizeAgentID(targetAgentID))
 }
 
+func (r *AgentRegistry) CanSendCollaboration(parentAgentID, targetAgentID string) bool {
+	parent, ok := r.GetAgent(parentAgentID)
+	if !ok {
+		return false
+	}
+
+	targetNorm := routing.NormalizeAgentID(targetAgentID)
+	for _, allowed := range resolvedCommunicationSendTargets(parent) {
+		if allowed == "*" || routing.NormalizeAgentID(allowed) == targetNorm {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *AgentRegistry) CanReceiveCollaboration(targetAgentID, fromAgentID string) bool {
+	target, ok := r.GetAgent(targetAgentID)
+	if !ok {
+		return false
+	}
+
+	fromNorm := routing.NormalizeAgentID(fromAgentID)
+	for _, allowed := range resolvedCommunicationReceiveSources(target) {
+		if allowed == "*" || routing.NormalizeAgentID(allowed) == fromNorm {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *AgentRegistry) CanCollaborate(fromAgentID, targetAgentID string) bool {
+	return r.CanSendCollaboration(fromAgentID, targetAgentID) &&
+		r.CanReceiveCollaboration(targetAgentID, fromAgentID)
+}
+
+func (r *AgentRegistry) CommunicationMaxThreadTurns(agentID string) int {
+	agent, ok := r.GetAgent(agentID)
+	if !ok {
+		return defaultCommunicationMaxThreadTurns
+	}
+	return communicationMaxThreadTurns(agent)
+}
+
+func (r *AgentRegistry) CommunicationMaxMessageChars(agentID string) int {
+	agent, ok := r.GetAgent(agentID)
+	if !ok {
+		return defaultCommunicationMaxMessageChars
+	}
+	return communicationMaxMessageChars(agent)
+}
+
+func (r *AgentRegistry) CommunicationAllowsArtifacts(agentID string) bool {
+	agent, ok := r.GetAgent(agentID)
+	if !ok {
+		return false
+	}
+	return communicationAllowsArtifacts(agent)
+}
+
 func agentAllowsSubagent(parent *AgentInstance, targetNorm string) bool {
 	if parent == nil || parent.Subagents == nil || parent.Subagents.AllowAgents == nil {
 		return false
@@ -135,6 +199,55 @@ func agentAllowsSubagent(parent *AgentInstance, targetNorm string) bool {
 		}
 	}
 	return false
+}
+
+func resolvedCommunicationSendTargets(agent *AgentInstance) []string {
+	if agent == nil {
+		return nil
+	}
+	if agentCommunication := communicationConfig(agent); agentCommunication != nil &&
+		agentCommunication.AllowSendTo != nil {
+		return append([]string(nil), agentCommunication.AllowSendTo...)
+	}
+	if agent.Subagents != nil && agent.Subagents.AllowAgents != nil {
+		return append([]string(nil), agent.Subagents.AllowAgents...)
+	}
+	return nil
+}
+
+func resolvedCommunicationReceiveSources(agent *AgentInstance) []string {
+	if cfg := communicationConfig(agent); cfg != nil && cfg.AllowReceiveFrom != nil {
+		return append([]string(nil), cfg.AllowReceiveFrom...)
+	}
+	return nil
+}
+
+func communicationMaxThreadTurns(agent *AgentInstance) int {
+	cfg := communicationConfig(agent)
+	if cfg != nil && cfg.MaxThreadTurns > 0 {
+		return cfg.MaxThreadTurns
+	}
+	return defaultCommunicationMaxThreadTurns
+}
+
+func communicationMaxMessageChars(agent *AgentInstance) int {
+	cfg := communicationConfig(agent)
+	if cfg != nil && cfg.MaxMessageChars > 0 {
+		return cfg.MaxMessageChars
+	}
+	return defaultCommunicationMaxMessageChars
+}
+
+func communicationAllowsArtifacts(agent *AgentInstance) bool {
+	cfg := communicationConfig(agent)
+	return cfg != nil && cfg.AllowArtifacts
+}
+
+func communicationConfig(agent *AgentInstance) *config.AgentCommunicationConfig {
+	if agent == nil {
+		return nil
+	}
+	return agent.Communication
 }
 
 func agentHasSpawnTool(agent *AgentInstance) bool {
