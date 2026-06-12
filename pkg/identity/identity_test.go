@@ -223,6 +223,19 @@ func TestMatchAllowed(t *testing.T) {
 			allowed: "  123456  ",
 			want:    true,
 		},
+		// Canonical fallthrough regression (do not let "platform:id"
+		// fall through to legacy matching when the canonical match fails)
+		{
+			name: "canonical mismatch does not fallthrough to PlatformID",
+			sender: bus.SenderInfo{
+				Platform:    "matrix",
+				PlatformID:  "discord:98765432",
+				CanonicalID: "matrix:discord:98765432",
+				Username:    "@matrixuser:example.com",
+			},
+			allowed: "discord:98765432",
+			want:    false,
+		},
 		// Matrix user IDs with colon (regression test for #3044)
 		{
 			name: "matrix user ID with colon matches PlatformID",

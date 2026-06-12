@@ -60,14 +60,19 @@ func MatchAllowed(sender bus.SenderInfo, allowed string) bool {
 				sender.PlatformID == id {
 				return true
 			}
+			// This was a valid canonical "platform:id" entry that
+			// didn't match. Return false immediately — do NOT fall
+			// through to legacy matching. Otherwise an entry like
+			// "discord:98765432" could be satisfied by a sender with
+			// Platform="matrix" and PlatformID="discord:98765432".
+			return false
 		}
-		// Canonical match failed but we still parsed a colon separator.
-		// The input could be a Matrix-style ID ("@user:domain") where the
-		// colon is part of the ID, not a canonical separator. Fall through
-		// to let the remaining match strategies (PlatformID, Username) try.
-		// For Matrix, sender.PlatformID and sender.Username are both the
-		// full MXID ("@alice:example.com"), so we preserve the leading "@"
-		// in the legacy path.
+		// The colon is part of a Matrix-style user ID ("@user:domain")
+		// or a numeric compound ID. Fall through to let the remaining
+		// match strategies (PlatformID, Username) try. For Matrix,
+		// sender.PlatformID and sender.Username are both the full MXID
+		// ("@alice:example.com"), so we preserve the leading "@" in
+		// the legacy path.
 	}
 
 	// Keep track of explicit username format
