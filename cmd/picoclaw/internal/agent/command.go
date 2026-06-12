@@ -10,6 +10,8 @@ func NewAgentCommand() *cobra.Command {
 		sessionKey string
 		model      string
 		debug      bool
+		remoteURL  string
+		token      string
 	)
 
 	cmd := &cobra.Command{
@@ -17,6 +19,17 @@ func NewAgentCommand() *cobra.Command {
 		Short: "Interact with the agent directly",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if remoteURL != "" {
+				return remoteAgentCmd(
+					cmd.Context(),
+					remoteURL,
+					token,
+					message,
+					sessionKey,
+					cmd.InOrStdin(),
+					cmd.OutOrStdout(),
+				)
+			}
 			return agentCmd(message, sessionKey, model, debug)
 		},
 	}
@@ -25,6 +38,8 @@ func NewAgentCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&message, "message", "m", "", "Send a single message (non-interactive mode)")
 	cmd.Flags().StringVarP(&sessionKey, "session", "s", "cli:default", "Session key")
 	cmd.Flags().StringVarP(&model, "model", "", "", "Model to use")
+	cmd.Flags().StringVar(&remoteURL, "remote", "", "Connect to a remote Pico WebSocket URL")
+	cmd.Flags().StringVar(&token, "token", "", "Bearer token for remote Pico auth")
 
 	return cmd
 }
