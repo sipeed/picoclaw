@@ -48,22 +48,43 @@ func MatchAllowed(sender bus.SenderInfo, allowed string) bool {
 	if platform, id, ok := ParseCanonicalID(allowed); ok {
 		// Only treat as canonical if the platform portion looks like a known platform name
 		// (not a pure-numeric string, which could be a compound ID)
-		if !isNumeric(platform) {
+		if !isNumeric(platform) && !strings.HasPrefix(platform, "@") {
 			candidate := BuildCanonicalID(platform, id)
 			if candidate != "" && sender.CanonicalID != "" {
-				return strings.EqualFold(sender.CanonicalID, candidate)
+				if strings.EqualFold(sender.CanonicalID, candidate) {
+					return true
+				}
 			}
 			// If sender has no canonical ID, try matching platform + platformID
-			return strings.EqualFold(platform, sender.Platform) &&
-				sender.PlatformID == id
+			if strings.EqualFold(platform, sender.Platform) &&
+				sender.PlatformID == id {
+				return true
+			}
+			// This was a valid canonical "platform:id" entry that
+			// didn't match. Return false immediately — do NOT fall
+			// through to legacy matching. Otherwise an entry like
+			// "discord:98765432" could be satisfied by a sender with
+			// Platform="matrix" and PlatformID="discord:98765432".
+			return false
 		}
+		// The colon is part of a Matrix-style user ID ("@user:domain")
+		// or a numeric compound ID. Fall through to let the remaining
+		// match strategies (PlatformID, Username) try. For Matrix,
+		// sender.PlatformID and sender.Username are both the full MXID
+		// ("@alice:example.com"), so we preserve the leading "@" in
+		// the legacy path.
 	}
 
 	// Keep track of explicit username format
 	isAtUsername := strings.HasPrefix(allowed, "@")
 
-	// Strip leading "@" for username matching
-	trimmed := strings.TrimPrefix(allowed, "@")
+	// Strip leading "@" for username matching, but only when the
+	// remaining string does not contain a colon (otherwise the "@"
+	// is part of a Matrix-style user ID like "@alice:example.com").
+	trimmed := allowed
+	if isAtUsername && !strings.Contains(allowed, ":") {
+		trimmed = strings.TrimPrefix(allowed, "@")
+	}
 
 	// Split compound "id|username" format
 	allowedID := trimmed
