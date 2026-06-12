@@ -201,7 +201,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		return finalizeProviderFromConfig(provider, modelID, cfg)
 
 	case "litellm", "lmstudio", "gpt4free", "openrouter", "groq", "zhipu", "nvidia", "venice",
-		"ollama", "moonshot", "shengsuanyun", "siliconflow", "deepseek", "cerebras",
+		"nearai", "ollama", "moonshot", "shengsuanyun", "siliconflow", "deepseek", "cerebras",
 		"vivgrid", "volcengine", "vllm", "qwen-portal", "qwen-intl", "qwen-us", "mistral",
 		"avian", "longcat", "modelscope", "novita", "alibaba-coding", "zai", "mimo":
 		// All other OpenAI-compatible HTTP providers

@@ -68,6 +68,11 @@
       "api_keys": ["your-venice-api-key"]
     },
     {
+      "model_name": "nearai-glm",
+      "model": "nearai/zai-org/GLM-5.1-FP8",
+      "api_keys": ["your-nearai-api-key"]
+    },
+    {
       "model_name": "lmstudio-local",
       "model": "lmstudio/openai/gpt-oss-20b"
     },

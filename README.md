@@ -420,6 +420,7 @@ PicoClaw supports 30+ LLM providers through the `model_list` configuration. Use 
 | [Mistral](https://console.mistral.ai/api-keys) | `mistral/` | Required | Mistral Large, Codestral |
 | [NVIDIA NIM](https://build.nvidia.com/) | `nvidia/` | Required | NVIDIA hosted models |
 | [Cerebras](https://cloud.cerebras.ai/) | `cerebras/` | Required | Fast inference |
+| [NEAR AI Cloud](https://near.ai/) | `nearai/` | Required | TEE inference, OpenAI-compatible |
 | [Novita AI](https://novita.ai/) | `novita/` | Required | Various open models |
 | [Xiaomi MiMo](https://platform.xiaomimimo.com/) | `mimo/` | Required | MiMo models |
 | [Ollama](https://ollama.com/) | `ollama/` | Not needed | Local models, self-hosted |

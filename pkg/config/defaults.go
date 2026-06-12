@@ -108,6 +108,14 @@ func DefaultConfig() *Config {
 				APIBase:   "https://api.venice.ai/api/v1",
 			},
 
+			// NEAR AI Cloud TEE inference - https://near.ai
+			{
+				ModelName: "nearai-glm",
+				Provider:  "nearai",
+				Model:     "zai-org/GLM-5.1-FP8",
+				APIBase:   "https://cloud-api.near.ai/v1",
+			},
+
 			// Google Gemini - https://ai.google.dev/
 			{
 				ModelName: "gemini-2.0-flash",

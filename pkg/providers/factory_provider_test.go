@@ -223,6 +223,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 	}{
 		{"openai", "openai"},
 		{"venice", "venice"},
+		{"nearai", "nearai"},
 		{"groq", "groq"},
 		{"novita", "novita"},
 		{"openrouter", "openrouter"},
@@ -285,6 +286,15 @@ func TestGetDefaultAPIBase_GPT4Free(t *testing.T) {
 func TestGetDefaultAPIBase_Venice(t *testing.T) {
 	if got := getDefaultAPIBase("venice"); got != "https://api.venice.ai/api/v1" {
 		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "venice", got, "https://api.venice.ai/api/v1")
+	}
+}
+
+func TestGetDefaultAPIBase_NearAI(t *testing.T) {
+	if got := getDefaultAPIBase("nearai"); got != "https://cloud-api.near.ai/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "nearai", got, "https://cloud-api.near.ai/v1")
+	}
+	if got := getDefaultAPIBase("near-ai"); got != "https://cloud-api.near.ai/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "near-ai", got, "https://cloud-api.near.ai/v1")
 	}
 }
 
@@ -519,6 +529,28 @@ func TestCreateProviderFromConfig_Venice(t *testing.T) {
 	}
 	if modelID != "venice-uncensored" {
 		t.Errorf("modelID = %q, want %q", modelID, "venice-uncensored")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_NearAI(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-nearai",
+		Model:     "nearai/zai-org/GLM-5.1-FP8",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "zai-org/GLM-5.1-FP8" {
+		t.Errorf("modelID = %q, want %q", modelID, "zai-org/GLM-5.1-FP8")
 	}
 	if _, ok := provider.(*HTTPProvider); !ok {
 		t.Fatalf("expected *HTTPProvider, got %T", provider)
@@ -1075,6 +1107,22 @@ func TestModelProviderOptions(t *testing.T) {
 			option.DefaultAPIBase,
 			"https://api.siliconflow.cn/v1",
 		)
+	}
+	if option, ok := seen["nearai"]; !ok {
+		t.Fatal("nearai option missing")
+	} else {
+		if option.DisplayName != "NEAR AI Cloud" {
+			t.Fatalf("nearai display_name = %q, want %q", option.DisplayName, "NEAR AI Cloud")
+		}
+		if option.DefaultAPIBase != "https://cloud-api.near.ai/v1" {
+			t.Fatalf("nearai default_api_base = %q, want %q", option.DefaultAPIBase, "https://cloud-api.near.ai/v1")
+		}
+		if !option.SupportsFetch {
+			t.Fatal("nearai should support upstream model listing")
+		}
+		if len(option.CommonModels) == 0 {
+			t.Fatal("nearai common_models should not be empty")
+		}
 	}
 	if option, ok := seen["anthropic"]; !ok {
 		t.Fatal("anthropic option missing")

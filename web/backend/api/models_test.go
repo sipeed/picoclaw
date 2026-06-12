@@ -1961,6 +1961,13 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 			"https://api.siliconflow.cn/v1",
 		)
 	}
+	if option, ok := optionsByID["nearai"]; !ok {
+		t.Fatal("nearai provider option missing")
+	} else if option.DefaultAPIBase != "https://cloud-api.near.ai/v1" {
+		t.Fatalf("nearai default_api_base = %q, want %q", option.DefaultAPIBase, "https://cloud-api.near.ai/v1")
+	} else if !option.SupportsFetch {
+		t.Fatal("nearai provider option should report supports_fetch")
+	}
 	if option, ok := optionsByID["bedrock"]; !ok {
 		t.Fatal("bedrock provider option missing")
 	} else if !option.CreateAllowed {
@@ -2589,6 +2596,65 @@ func TestHandleFetchModels_SiliconFlowUsesOpenAICompatibleEndpoint(t *testing.T)
 	}
 	if resp.Models[0].ID != "deepseek-ai/DeepSeek-V3" {
 		t.Fatalf("model id = %q, want %q", resp.Models[0].ID, "deepseek-ai/DeepSeek-V3")
+	}
+}
+
+func TestHandleFetchModels_NearAIUsesPublicModelListEndpoint(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	var gotPath string
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"models":[`+
+			`{"modelId":"zai-org/GLM-5.1-FP8","metadata":{"ownedBy":"nearai"}},`+
+			`{"modelId":"openai/gpt-oss-120b","metadata":{"ownedBy":"nearai"}},`+
+			`{"modelId":""}]}`)
+	}))
+	defer srv.Close()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models/fetch", bytes.NewBufferString(fmt.Sprintf(`{
+		"provider":"nearai",
+		"api_key":"nearai-key",
+		"api_base":"%s"
+	}`, srv.URL)))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	if gotPath != "/model/list" {
+		t.Fatalf("path = %q, want %q", gotPath, "/model/list")
+	}
+	if gotAuth != "Bearer nearai-key" {
+		t.Fatalf("Authorization = %q, want %q", gotAuth, "Bearer nearai-key")
+	}
+
+	var resp struct {
+		Models []upstreamModel `json:"models"`
+		Total  int             `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if resp.Total != 2 || len(resp.Models) != 2 {
+		t.Fatalf("response = %+v, want two fetched models", resp)
+	}
+	if resp.Models[0].ID != "zai-org/GLM-5.1-FP8" || resp.Models[0].OwnedBy != "nearai" {
+		t.Fatalf("models[0] = %+v, want GLM model owned by nearai", resp.Models[0])
+	}
+	if resp.Models[1].ID != "openai/gpt-oss-120b" || resp.Models[1].OwnedBy != "nearai" {
+		t.Fatalf("models[1] = %+v, want GPT OSS model owned by nearai", resp.Models[1])
 	}
 }
 
