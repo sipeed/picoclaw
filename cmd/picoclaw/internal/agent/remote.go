@@ -27,9 +27,9 @@ import (
 )
 
 const (
-	defaultRemoteSessionID    = "cli:default"
-	remoteOneShotFirstTimeout = 30 * time.Second
-	remoteOneShotIdleTimeout  = 1500 * time.Millisecond
+	remoteGeneratedSessionPrefix = "cli:"
+	remoteOneShotFirstTimeout    = 30 * time.Second
+	remoteOneShotIdleTimeout     = 1500 * time.Millisecond
 )
 
 var errRemoteReadlineUnavailable = errors.New("remote readline unavailable")
@@ -146,7 +146,7 @@ func remoteAgentCmd(
 	out io.Writer,
 ) error {
 	if sessionID == "" {
-		sessionID = defaultRemoteSessionID
+		sessionID = newRemoteSessionID()
 	}
 	if token == "" {
 		token = os.Getenv("PICO_TOKEN")
@@ -178,6 +178,10 @@ func remoteAgentCmd(
 		return client.RunOneShot(ctx, sessionID, message)
 	}
 	return client.RunInteractive(ctx, sessionID, in)
+}
+
+func newRemoteSessionID() string {
+	return remoteGeneratedSessionPrefix + uuid.NewString()
 }
 
 func newRemoteClient(
