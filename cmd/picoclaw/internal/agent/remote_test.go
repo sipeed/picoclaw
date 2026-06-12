@@ -456,3 +456,72 @@ func TestRemoteCommandExecutesRemoteMode(t *testing.T) {
 		t.Fatalf("output = %q, want ok", out.String())
 	}
 }
+
+func TestRemoteCommandGeneratesSessionWhenOmitted(t *testing.T) {
+	gotSession := make(chan string, 1)
+	gotMessage := make(chan pico.PicoMessage, 1)
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotSession <- r.URL.Query().Get("session_id")
+
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("Upgrade() error = %v", err)
+			return
+		}
+		defer conn.Close()
+
+		var msg pico.PicoMessage
+		if err := conn.ReadJSON(&msg); err != nil {
+			t.Errorf("ReadJSON() error = %v", err)
+			return
+		}
+		gotMessage <- msg
+		_ = conn.WriteJSON(pico.PicoMessage{
+			Type:      pico.TypeMessageCreate,
+			SessionID: msg.SessionID,
+			Payload:   map[string]any{pico.PayloadKeyContent: "ok"},
+		})
+	}))
+	defer srv.Close()
+
+	cmd := NewAgentCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetIn(strings.NewReader(""))
+	cmd.SetArgs([]string{
+		"--remote", "ws" + strings.TrimPrefix(srv.URL, "http") + "/pico/ws",
+		"--message", "hello",
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := cmd.ExecuteContext(ctx); err != nil {
+		t.Fatalf("ExecuteContext() error = %v", err)
+	}
+
+	var connectedSession string
+	select {
+	case connectedSession = <-gotSession:
+	default:
+		t.Fatal("server did not receive generated session_id")
+	}
+	if connectedSession == "" {
+		t.Fatal("generated session_id is empty")
+	}
+	if connectedSession == "cli:default" {
+		t.Fatal("remote command used local default session cli:default")
+	}
+	if !strings.HasPrefix(connectedSession, remoteGeneratedSessionPrefix) {
+		t.Fatalf("generated session_id = %q, want %s prefix", connectedSession, remoteGeneratedSessionPrefix)
+	}
+
+	select {
+	case msg := <-gotMessage:
+		if msg.SessionID != connectedSession {
+			t.Fatalf("message session_id = %q, want %q", msg.SessionID, connectedSession)
+		}
+	default:
+		t.Fatal("server did not receive command message")
+	}
+}

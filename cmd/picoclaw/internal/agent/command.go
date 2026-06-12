@@ -20,12 +20,16 @@ func NewAgentCommand() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if remoteURL != "" {
+				remoteSessionKey := sessionKey
+				if !cmd.Flags().Changed("session") {
+					remoteSessionKey = ""
+				}
 				return remoteAgentCmd(
 					cmd.Context(),
 					remoteURL,
 					token,
 					message,
-					sessionKey,
+					remoteSessionKey,
 					cmd.InOrStdin(),
 					cmd.OutOrStdout(),
 				)
