@@ -114,6 +114,9 @@ type PromptBuildRequest struct {
 	ChatID            string
 	SenderID          string
 	SenderDisplayName string
+	ClientTransport   string
+	ClientKind        string
+	ClientName        string
 
 	ActiveSkills []string
 	Overlays     []PromptPart

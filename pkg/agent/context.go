@@ -801,6 +801,7 @@ func formatCurrentSenderLine(senderID, senderDisplayName string) string {
 
 func (cb *ContextBuilder) buildDynamicContext(
 	channel, chatID, senderID, senderDisplayName string,
+	clientTransport, clientKind, clientName string,
 ) string {
 	now := time.Now().Format("2006-01-02 15:04 (Monday)")
 	rt := fmt.Sprintf("%s %s, Go %s", runtime.GOOS, runtime.GOARCH, runtime.Version())
@@ -810,6 +811,21 @@ func (cb *ContextBuilder) buildDynamicContext(
 
 	if channel != "" && chatID != "" {
 		fmt.Fprintf(&sb, "\n\n## Current Session\nChannel: %s\nChat ID: %s", channel, chatID)
+		clientName = strings.TrimSpace(clientName)
+		clientKind = strings.TrimSpace(clientKind)
+		clientTransport = strings.TrimSpace(clientTransport)
+		if clientName != "" || clientKind != "" {
+			if clientName != "" && clientKind != "" {
+				fmt.Fprintf(&sb, "\nClient: %s (%s)", clientName, clientKind)
+			} else if clientName != "" {
+				fmt.Fprintf(&sb, "\nClient: %s", clientName)
+			} else {
+				fmt.Fprintf(&sb, "\nClient: %s", clientKind)
+			}
+		}
+		if clientTransport != "" {
+			fmt.Fprintf(&sb, "\nTransport: %s", clientTransport)
+		}
 	}
 	if senderLine := formatCurrentSenderLine(senderID, senderDisplayName); senderLine != "" {
 		fmt.Fprintf(&sb, "\n\n## Current Sender\n%s", senderLine)
@@ -915,6 +931,9 @@ func (cb *ContextBuilder) BuildMessagesFromPrompt(req PromptBuildRequest) []prov
 			req.ChatID,
 			req.SenderID,
 			req.SenderDisplayName,
+			req.ClientTransport,
+			req.ClientKind,
+			req.ClientName,
 		)
 		dynamicChars = len(dynamicCtx)
 		runtimePart := PromptPart{
