@@ -71,6 +71,15 @@ func (m *mockMediaStoreAwareTool) SetMediaStore(store media.MediaStore) {
 	m.store = store
 }
 
+type mockInlineMediaTool struct {
+	mockRegistryTool
+	produces bool
+}
+
+func (m *mockInlineMediaTool) ProducesInlineMedia() bool {
+	return m.produces
+}
+
 // --- helpers ---
 
 func newMockTool(name, desc string) *mockRegistryTool {
@@ -833,17 +842,133 @@ func TestToolRegistry_ExecuteWithContext_SanitizesLargeBase64Payload(t *testing.
 	}
 }
 
-func TestToolRegistry_ExecuteWithContext_ExtractsInlineMediaDataURL(t *testing.T) {
+func TestToolRegistry_ExecuteWithContext_GenericReadFileOutputDoesNotCreateMediaFromInvalidDataURL(t *testing.T) {
 	r := NewToolRegistry()
 	store := media.NewFileMediaStore()
 	r.SetMediaStore(store)
 
-	payload := "![screenshot](data:image/png;base64,aGVsbG8=)"
+	payload := "aGVsbG8=" // base64("hello"), not a PNG image.
+	dataURL := "data:" + "image/png;base64," + payload
+	source := `package demo
+
+const fixture = "` + dataURL + `"
+`
+
 	r.Register(&mockRegistryTool{
-		name:   "inline_media_tool",
-		desc:   "returns inline data url",
+		name:   "read_file",
+		desc:   "returns source text",
 		params: map[string]any{},
-		result: SilentResult(payload),
+		result: NewToolResult(source),
+	})
+
+	result := r.ExecuteWithContext(
+		context.Background(),
+		"read_file",
+		nil,
+		"telegram",
+		"chat-42",
+		nil,
+	)
+
+	if len(result.Media) != 0 {
+		t.Fatalf("generic read_file output created media from source-code data URL: %#v", result.Media)
+	}
+	if strings.Contains(result.ForLLM, "media://") {
+		t.Fatalf("generic read_file output should not contain media ref: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, dataURL) {
+		t.Fatalf("generic read_file output should preserve source text data URL, got %q", result.ForLLM)
+	}
+}
+
+func TestToolRegistry_ExecuteWithContext_GenericExecOutputDoesNotCreateMediaFromDataURL(t *testing.T) {
+	r := NewToolRegistry()
+	store := media.NewFileMediaStore()
+	r.SetMediaStore(store)
+
+	payload := "aGVsbG8="
+	dataURL := "data:" + "image/png;base64," + payload
+	output := "stdout:\n" + dataURL + "\n"
+
+	r.Register(&mockRegistryTool{
+		name:   "exec",
+		desc:   "returns shell output",
+		params: map[string]any{},
+		result: UserResult(output),
+	})
+
+	result := r.ExecuteWithContext(
+		context.Background(),
+		"exec",
+		nil,
+		"telegram",
+		"chat-42",
+		nil,
+	)
+
+	if len(result.Media) != 0 {
+		t.Fatalf("exec-like text output created media: %#v", result.Media)
+	}
+	if strings.Contains(result.ForLLM, "media://") {
+		t.Fatalf("exec-like text output should not contain media ref: %s", result.ForLLM)
+	}
+}
+
+func TestToolRegistry_ExecuteWithContext_GenericTextOutputDoesNotCreateMediaEvenForValidImageLiteral(t *testing.T) {
+	r := NewToolRegistry()
+	store := media.NewFileMediaStore()
+	r.SetMediaStore(store)
+
+	payload := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+	dataURL := "data:" + "image/png;base64," + payload
+	source := `package demo
+
+const validFixture = "` + dataURL + `"
+`
+
+	r.Register(&mockRegistryTool{
+		name:   "fixture_reader",
+		desc:   "returns source text",
+		params: map[string]any{},
+		result: NewToolResult(source),
+	})
+
+	result := r.ExecuteWithContext(
+		context.Background(),
+		"fixture_reader",
+		nil,
+		"telegram",
+		"chat-42",
+		nil,
+	)
+
+	if len(result.Media) != 0 {
+		t.Fatalf("generic text output created media from valid source-code fixture: %#v", result.Media)
+	}
+	if strings.Contains(result.ForLLM, "media://") {
+		t.Fatalf("generic text output should not contain media ref: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, dataURL) {
+		t.Fatalf("generic text output should preserve valid source fixture data URL, got %q", result.ForLLM)
+	}
+}
+
+func TestToolRegistry_ExecuteWithContext_OptInInlineMediaExtractionStillWorksForValidPNG(t *testing.T) {
+	r := NewToolRegistry()
+	store := media.NewFileMediaStore()
+	r.SetMediaStore(store)
+
+	payload := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+	dataURL := "data:" + "image/png;base64," + payload
+
+	r.Register(&mockInlineMediaTool{
+		mockRegistryTool: mockRegistryTool{
+			name:   "inline_media_tool",
+			desc:   "returns inline data url",
+			params: map[string]any{},
+			result: SilentResult("Here is an image: " + dataURL),
+		},
+		produces: true,
 	})
 
 	result := r.ExecuteWithContext(
@@ -856,18 +981,21 @@ func TestToolRegistry_ExecuteWithContext_ExtractsInlineMediaDataURL(t *testing.T
 	)
 
 	if len(result.Media) != 1 {
-		t.Fatalf("expected 1 media ref, got %d", len(result.Media))
+		t.Fatalf("expected one extracted media item, got %d", len(result.Media))
 	}
-	if strings.Contains(result.ForLLM, "data:image/png;base64") {
-		t.Fatalf("expected inline data URL to be stripped from ForLLM, got %q", result.ForLLM)
+	if strings.Contains(result.ForLLM, payload) {
+		t.Fatalf("ForLLM should not retain raw base64 payload: %q", result.ForLLM)
 	}
 	if !strings.Contains(result.ForLLM, "registered as a media attachment") {
-		t.Fatalf("expected delivery note in ForLLM, got %q", result.ForLLM)
+		t.Fatalf("expected registered media note, got %q", result.ForLLM)
 	}
 
-	path, err := store.Resolve(result.Media[0])
+	path, meta, err := store.ResolveWithMeta(result.Media[0])
 	if err != nil {
 		t.Fatalf("expected stored media ref to resolve: %v", err)
+	}
+	if meta.ContentType != "image/png" {
+		t.Fatalf("expected image/png content type, got %q", meta.ContentType)
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("expected stored media file to exist: %v", err)
@@ -877,30 +1005,40 @@ func TestToolRegistry_ExecuteWithContext_ExtractsInlineMediaDataURL(t *testing.T
 	}
 }
 
-func TestToolRegistry_ExecuteWithContext_SanitizesInlineMediaWithoutStore(t *testing.T) {
+func TestToolRegistry_ExecuteWithContext_OptInInlineMediaExtractionRejectsInvalidPNGBytes(t *testing.T) {
 	r := NewToolRegistry()
+	store := media.NewFileMediaStore()
+	r.SetMediaStore(store)
 
-	payload := "before ![img](data:image/png;base64,aGVsbG8=) after"
-	r.Register(&mockRegistryTool{
-		name:   "inline_media_no_store",
-		desc:   "returns inline data url without store",
-		params: map[string]any{},
-		result: SilentResult(payload),
+	payload := "aGVsbG8=" // base64("hello"), not a PNG image.
+	dataURL := "data:" + "image/png;base64," + payload
+
+	r.Register(&mockInlineMediaTool{
+		mockRegistryTool: mockRegistryTool{
+			name:   "inline_invalid_media_tool",
+			desc:   "returns invalid inline data url",
+			params: map[string]any{},
+			result: SilentResult("Here is an invalid image: " + dataURL),
+		},
+		produces: true,
 	})
 
 	result := r.ExecuteWithContext(
 		context.Background(),
-		"inline_media_no_store",
+		"inline_invalid_media_tool",
 		nil,
 		"telegram",
 		"chat-42",
 		nil,
 	)
 
-	if strings.Contains(result.ForLLM, "data:image/png;base64") {
-		t.Fatalf("expected inline data URL to be removed from ForLLM, got %q", result.ForLLM)
+	if len(result.Media) != 0 {
+		t.Fatalf("invalid PNG bytes should not be stored as media: %#v", result.Media)
 	}
-	if !strings.Contains(result.ForLLM, inlineMediaOmittedMessage) {
-		t.Fatalf("expected inline media omission note, got %q", result.ForLLM)
+	if strings.Contains(result.ForLLM, payload) {
+		t.Fatalf("ForLLM should not retain invalid raw base64 payload: %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "rejected") {
+		t.Fatalf("expected invalid image rejection note, got %q", result.ForLLM)
 	}
 }

@@ -331,7 +331,13 @@ func (r *ToolRegistry) ExecuteWithContext(
 		}
 	}
 
-	result = normalizeToolResult(result, name, r.mediaStore, channel, chatID)
+	allowInlineMediaExtraction := false
+	if producer, ok := tool.(InlineMediaProducer); ok {
+		allowInlineMediaExtraction = producer.ProducesInlineMedia()
+	}
+	result = normalizeToolResult(result, name, r.mediaStore, channel, chatID, NormalizeOptions{
+		AllowInlineMediaExtraction: allowInlineMediaExtraction,
+	})
 
 	duration := time.Since(start)
 
