@@ -1,8 +1,12 @@
 package tools
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
+	"image/gif"
+	"image/jpeg"
+	"image/png"
 	"mime"
 	"os"
 	"path/filepath"
@@ -18,6 +22,7 @@ const (
 	largeBase64OmittedMessage = "[Tool returned a large base64-like payload; omitted from model context.]"
 	inlineMediaOmittedMessage = "[Tool returned inline media content; omitted from model context.]"
 	inlineMediaStoredMessage  = "[Tool returned inline media content (%s); omitted from model context and registered as a media attachment.]"
+	inlineDataURLPayloadLimit = 1024
 )
 
 var (
@@ -25,12 +30,17 @@ var (
 	inlineRawDataURLRe      = regexp.MustCompile(`data:[^;\s]+;base64,[A-Za-z0-9+/=\r\n]+`)
 )
 
+type NormalizeOptions struct {
+	AllowInlineMediaExtraction bool
+}
+
 func normalizeToolResult(
 	result *ToolResult,
 	toolName string,
 	store media.MediaStore,
 	channel string,
 	chatID string,
+	opts NormalizeOptions,
 ) *ToolResult {
 	if result == nil {
 		return nil
@@ -39,7 +49,7 @@ func normalizeToolResult(
 	notes := make([]string, 0, 2)
 	seen := make(map[string]struct{})
 
-	if store != nil && channel != "" && chatID != "" {
+	if opts.AllowInlineMediaExtraction && store != nil && channel != "" && chatID != "" {
 		var refs []string
 		var extractedNotes []string
 
@@ -66,9 +76,13 @@ func normalizeToolResult(
 		notes = append(notes, extractedNotes...)
 	}
 
-	result.ForLLM = sanitizeToolLLMContent(result.ForLLM)
+	if opts.AllowInlineMediaExtraction {
+		result.ForLLM = sanitizeInlineDataURLsForLLM(result.ForLLM, true)
+	} else {
+		result.ForLLM = sanitizeToolLLMContent(result.ForLLM)
+	}
 
-	if len(result.Media) > 0 && len(notes) > 0 {
+	if len(notes) > 0 {
 		if strings.TrimSpace(result.ForLLM) == "" {
 			result.ForLLM = strings.Join(notes, "\n")
 		} else {
@@ -83,23 +97,65 @@ func normalizeToolResult(
 }
 
 func sanitizeToolLLMContent(text string) string {
+	if cleaned := sanitizeInlineDataURLsForLLM(text, false); cleaned != text {
+		return cleaned
+	}
+
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return text
-	}
-	if inlineMarkdownDataURLRe.MatchString(trimmed) || inlineRawDataURLRe.MatchString(trimmed) {
-		cleaned := inlineMarkdownDataURLRe.ReplaceAllString(trimmed, "")
-		cleaned = inlineRawDataURLRe.ReplaceAllString(cleaned, "")
-		cleaned = strings.TrimSpace(cleaned)
-		if cleaned == "" {
-			return inlineMediaOmittedMessage
-		}
-		return cleaned + "\n" + inlineMediaOmittedMessage
 	}
 	if looksLikeLargeBase64Payload(trimmed) {
 		return largeBase64OmittedMessage
 	}
 	return text
+}
+
+func sanitizeInlineDataURLsForLLM(text string, all bool) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return text
+	}
+
+	changed := false
+	cleaned := inlineMarkdownDataURLRe.ReplaceAllStringFunc(trimmed, func(match string) string {
+		groups := inlineMarkdownDataURLRe.FindStringSubmatch(match)
+		if len(groups) < 2 {
+			return match
+		}
+		if !all && !inlineDataURLShouldBeSanitized(groups[1]) {
+			return match
+		}
+		changed = true
+		return ""
+	})
+
+	cleaned = inlineRawDataURLRe.ReplaceAllStringFunc(cleaned, func(match string) string {
+		if !all && !inlineDataURLShouldBeSanitized(match) {
+			return match
+		}
+		changed = true
+		return ""
+	})
+
+	if !changed {
+		return text
+	}
+
+	cleaned = strings.TrimSpace(cleaned)
+	if cleaned == "" {
+		return inlineMediaOmittedMessage
+	}
+	return cleaned + "\n" + inlineMediaOmittedMessage
+}
+
+func inlineDataURLShouldBeSanitized(dataURL string) bool {
+	comma := strings.IndexByte(dataURL, ',')
+	if comma < 0 {
+		return false
+	}
+	payload := strings.NewReplacer("\n", "", "\r", "", "\t", "", " ", "").Replace(dataURL[comma+1:])
+	return len(payload) >= inlineDataURLPayloadLimit
 }
 
 func looksLikeLargeBase64Payload(text string) bool {
@@ -204,10 +260,11 @@ func storeInlineDataURL(
 		return "", "[Tool returned inline media content that was not base64-encoded.]"
 	}
 
-	mimeType := strings.TrimSpace(strings.TrimPrefix(metaPart, "data:"))
+	mimeType := strings.TrimSpace(metaPart[len("data:"):])
 	if semi := strings.IndexByte(mimeType, ';'); semi >= 0 {
 		mimeType = mimeType[:semi]
 	}
+	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
 	}
@@ -216,6 +273,9 @@ func storeInlineDataURL(
 	decoded, err := base64.StdEncoding.DecodeString(payload)
 	if err != nil {
 		return "", fmt.Sprintf("[Tool returned inline media content (%s) that could not be decoded.]", mimeType)
+	}
+	if err = validateInlineImagePayload(mimeType, decoded); err != nil {
+		return "", fmt.Sprintf("[Tool returned inline media content (%s) that was rejected: %v.]", mimeType, err)
 	}
 
 	dir := media.TempDir()
@@ -259,6 +319,86 @@ func storeInlineDataURL(
 	}
 
 	return ref, fmt.Sprintf(inlineMediaStoredMessage, mimeType)
+}
+
+func validateInlineImagePayload(mimeType string, decoded []byte) error {
+	if len(decoded) == 0 {
+		return fmt.Errorf("empty payload")
+	}
+
+	switch strings.ToLower(strings.TrimSpace(mimeType)) {
+	case "image/png":
+		if !looksLikePNG(decoded) {
+			return fmt.Errorf("payload does not match PNG magic bytes")
+		}
+		if _, err := png.DecodeConfig(bytes.NewReader(decoded)); err != nil {
+			return fmt.Errorf("invalid PNG image")
+		}
+	case "image/jpeg":
+		if !looksLikeJPEG(decoded) {
+			return fmt.Errorf("payload does not match JPEG magic bytes")
+		}
+		if _, err := jpeg.DecodeConfig(bytes.NewReader(decoded)); err != nil {
+			return fmt.Errorf("invalid JPEG image")
+		}
+	case "image/gif":
+		if !looksLikeGIF(decoded) {
+			return fmt.Errorf("payload does not match GIF magic bytes")
+		}
+		if _, err := gif.DecodeConfig(bytes.NewReader(decoded)); err != nil {
+			return fmt.Errorf("invalid GIF image")
+		}
+	case "image/webp":
+		if !looksLikeWebP(decoded) {
+			return fmt.Errorf("payload does not match WebP magic bytes")
+		}
+	default:
+		return fmt.Errorf("unsupported MIME type")
+	}
+
+	return nil
+}
+
+func looksLikePNG(b []byte) bool {
+	return len(b) >= 8 &&
+		b[0] == 0x89 &&
+		b[1] == 0x50 &&
+		b[2] == 0x4E &&
+		b[3] == 0x47 &&
+		b[4] == 0x0D &&
+		b[5] == 0x0A &&
+		b[6] == 0x1A &&
+		b[7] == 0x0A
+}
+
+func looksLikeJPEG(b []byte) bool {
+	return len(b) >= 3 &&
+		b[0] == 0xFF &&
+		b[1] == 0xD8 &&
+		b[2] == 0xFF
+}
+
+func looksLikeGIF(b []byte) bool {
+	return len(b) >= 6 &&
+		(string(b[:6]) == "GIF87a" || string(b[:6]) == "GIF89a")
+}
+
+func looksLikeWebP(b []byte) bool {
+	if len(b) < 20 ||
+		string(b[0:4]) != "RIFF" ||
+		string(b[8:12]) != "WEBP" {
+		return false
+	}
+	declaredSize := int(b[4]) | int(b[5])<<8 | int(b[6])<<16 | int(b[7])<<24
+	if declaredSize > len(b)-8 {
+		return false
+	}
+	switch string(b[12:16]) {
+	case "VP8 ", "VP8L", "VP8X":
+		return true
+	default:
+		return false
+	}
 }
 
 func extensionForMIMEType(mimeType string) string {

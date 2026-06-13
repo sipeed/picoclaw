@@ -14,6 +14,14 @@ type Tool interface {
 	Execute(ctx context.Context, args map[string]any) *ToolResult
 }
 
+// InlineMediaProducer marks tools whose textual result intentionally contains
+// inline data URLs that should be extracted into media refs. Generic text tools
+// must not implement this; source code, logs, and command output can contain
+// data URL literals that are only text.
+type InlineMediaProducer interface {
+	ProducesInlineMedia() bool
+}
+
 const (
 	ToolPromptLayerCapability = "capability"
 	ToolPromptSlotTooling     = "tooling"
