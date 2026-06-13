@@ -93,7 +93,7 @@
       "noModel": "Nenhum modelo padrão configurado. Vá para a página de Modelos para definir um."
     },
     "sendMessage": "Enviar mensagem",
-    "sendHint": "Pressione Enter para enviar\nShift + Enter para nova linha",
+    "composeHint": "Pressione Enter para enviar, Shift + Enter para nova linha",
     "contextTitle": "Contexto",
     "contextDetail": "Ver Detalhes",
     "contextCompressAt": "Comprimir em",

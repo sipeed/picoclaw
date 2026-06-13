@@ -93,7 +93,7 @@
       "noModel": "কোনো ডিফল্ট মডেল কনফিগার করা নেই। একটি সেট করতে মডেল পৃষ্ঠায় যান।"
     },
     "sendMessage": "বার্তা পাঠান",
-    "sendHint": "পাঠাতে Enter চাপুন\nনতুন লাইনের জন্য Shift + Enter",
+    "composeHint": "পাঠাতে Enter চাপুন, নতুন লাইনের জন্য Shift + Enter",
     "contextTitle": "প্রসঙ্গ",
     "contextDetail": "বিস্তারিত দেখুন",
     "contextCompressAt": "Compress at",
