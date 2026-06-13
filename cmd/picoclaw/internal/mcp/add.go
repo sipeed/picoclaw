@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 )
@@ -25,6 +26,10 @@ func newAddCommand() *cobra.Command {
 		Short:              "Add or update an MCP server",
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			args, err := stripInheritedFlagsBeforeTarget(cmd.InheritedFlags(), args)
+			if err != nil {
+				return err
+			}
 			opts, name, target, targetArgs, showHelp, err := parseAddArgs(args)
 			if showHelp {
 				return cmd.Help()
@@ -80,6 +85,108 @@ func newAddCommand() *cobra.Command {
 	flags.Bool("no-deferred", false, "Mark server as non-deferred (tools always active)")
 
 	return cmd
+}
+
+// With DisableFlagParsing enabled, inherited persistent flags can leak into this
+// command's raw args. Strip only the flags that appear before <name> and
+// <command-or-url> so server command args remain untouched.
+func stripInheritedFlagsBeforeTarget(flags *pflag.FlagSet, args []string) ([]string, error) {
+	if flags == nil || len(args) == 0 {
+		return append([]string(nil), args...), nil
+	}
+
+	filtered := make([]string, 0, len(args))
+	positionals := 0
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		if arg == "--" || positionals >= 2 {
+			filtered = append(filtered, args[i:]...)
+			break
+		}
+
+		if arg == "-" || !strings.HasPrefix(arg, "-") {
+			filtered = append(filtered, arg)
+			positionals++
+			continue
+		}
+
+		consumed, err := consumeInheritedFlag(flags, args[i:])
+		if err != nil {
+			return nil, err
+		}
+		if consumed > 0 {
+			i += consumed - 1
+			continue
+		}
+
+		filtered = append(filtered, arg)
+	}
+
+	return filtered, nil
+}
+
+func consumeInheritedFlag(flags *pflag.FlagSet, args []string) (int, error) {
+	if len(args) == 0 {
+		return 0, nil
+	}
+
+	arg := args[0]
+	if arg == "--help" || arg == "-h" {
+		return 0, nil
+	}
+
+	if strings.HasPrefix(arg, "--") {
+		name, value, hasValue := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
+		flag := flags.Lookup(name)
+		if flag == nil {
+			return 0, nil
+		}
+		if hasValue {
+			return 1, setInheritedFlag(flags, flag, value, arg)
+		}
+		if flag.NoOptDefVal != "" {
+			return 1, setInheritedFlag(flags, flag, flag.NoOptDefVal, arg)
+		}
+		if len(args) < 2 {
+			return 0, fmt.Errorf("missing value for %s", arg)
+		}
+		return 2, setInheritedFlag(flags, flag, args[1], arg)
+	}
+
+	if len(arg) < 2 || arg[0] != '-' || arg[1] == '-' {
+		return 0, nil
+	}
+
+	flag := flags.ShorthandLookup(string(arg[1]))
+	if flag == nil {
+		return 0, nil
+	}
+	if len(arg) == 2 {
+		if flag.NoOptDefVal != "" {
+			return 1, setInheritedFlag(flags, flag, flag.NoOptDefVal, arg)
+		}
+		if len(args) < 2 {
+			return 0, fmt.Errorf("missing value for %s", arg)
+		}
+		return 2, setInheritedFlag(flags, flag, args[1], arg)
+	}
+	if arg[2] == '=' {
+		return 1, setInheritedFlag(flags, flag, arg[3:], arg)
+	}
+	if flag.NoOptDefVal == "" {
+		return 1, setInheritedFlag(flags, flag, arg[2:], arg)
+	}
+
+	return 0, nil
+}
+
+func setInheritedFlag(flags *pflag.FlagSet, flag *pflag.Flag, value string, arg string) error {
+	if err := flags.Set(flag.Name, value); err != nil {
+		return fmt.Errorf("invalid value %q for %s: %w", value, arg, err)
+	}
+	return nil
 }
 
 func parseAddArgs(args []string) (addOptions, string, string, []string, bool, error) {
@@ -139,9 +246,11 @@ func parseAddArgs(args []string) (addOptions, string, string, []string, bool, er
 			opts.Headers = append(opts.Headers, args[i])
 		case strings.HasPrefix(arg, "--header="):
 			opts.Headers = append(opts.Headers, strings.TrimPrefix(arg, "--header="))
-		case strings.HasPrefix(arg, "-") && len(positional) >= 2:
+		case arg != "-" && strings.HasPrefix(arg, "-") && len(positional) >= 2:
 			serverArgs = append(serverArgs, args[i:]...)
 			i = len(args)
+		case arg != "-" && strings.HasPrefix(arg, "-"):
+			return addOptions{}, "", "", nil, false, fmt.Errorf("unknown flag %q for mcp add", arg)
 		default:
 			positional = append(positional, arg)
 		}

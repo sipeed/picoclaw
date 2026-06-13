@@ -113,6 +113,34 @@ func TestMCPAddSupportsTransportBeforeName(t *testing.T) {
 	assert.Equal(t, "https://api.fiscal.ai/mcp/sse", server.URL)
 }
 
+func TestMCPAddAllowsInheritedFlagBeforeSubcommandPositionals(t *testing.T) {
+	configPath := setupMCPConfigEnv(t)
+
+	root := &cobra.Command{Use: "picoclaw"}
+	var noColor bool
+	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colors")
+	root.AddCommand(NewMCPCommand())
+
+	output, err := executeCommand(root, []string{
+		"--no-color",
+		"mcp",
+		"add",
+		"-t",
+		"http",
+		"-f",
+		"deviantix",
+		"http://127.0.0.1:19090",
+	}, "")
+	require.NoError(t, err)
+	assert.True(t, noColor)
+	assert.Contains(t, output, `MCP server "deviantix" saved`)
+
+	cfg := readMCPConfig(t, configPath)
+	server := cfg.Tools.MCP.Servers["deviantix"]
+	assert.Equal(t, "http", server.Type)
+	assert.Equal(t, "http://127.0.0.1:19090", server.URL)
+}
+
 func TestMCPAddSupportsExplicitStdioCommandAfterSeparator(t *testing.T) {
 	configPath := setupMCPConfigEnv(t)
 
@@ -160,6 +188,21 @@ func TestMCPAddSupportsEnvFileForStdio(t *testing.T) {
 	assert.Equal(t, "npx", server.Command)
 	assert.Equal(t, []string{"-y", "@modelcontextprotocol/server-filesystem"}, server.Args)
 	assert.Equal(t, ".env.mcp", server.EnvFile)
+}
+
+func TestParseAddArgsRejectsUnknownFlagBeforePositionals(t *testing.T) {
+	opts, name, target, targetArgs, showHelp, err := parseAddArgs([]string{
+		"--bogus",
+		"context7",
+		"https://mcp.context7.com/mcp",
+	})
+	require.Error(t, err)
+	assert.Equal(t, addOptions{}, opts)
+	assert.Empty(t, name)
+	assert.Empty(t, target)
+	assert.Nil(t, targetArgs)
+	assert.False(t, showHelp)
+	assert.Equal(t, `unknown flag "--bogus" for mcp add`, err.Error())
 }
 
 func TestMCPAddRejectsEnvFileForHTTP(t *testing.T) {
