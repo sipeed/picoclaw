@@ -296,6 +296,115 @@ func TestHandleGetSession_JSONLStorage(t *testing.T) {
 	}
 }
 
+func TestHandleGetSession_JSONLStorageWithSkipReturnsFullHistory(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore() error = %v", err)
+	}
+
+	sessionKey := legacyPicoSessionPrefix + "detail-jsonl-skipped"
+	for _, msg := range []providers.Message{
+		{Role: "user", Content: "first user message"},
+		{Role: "assistant", Content: "first assistant reply"},
+		{Role: "user", Content: "second user message"},
+		{Role: "assistant", Content: "second assistant reply"},
+	} {
+		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+			t.Fatalf("AddFullMessage() error = %v", err)
+		}
+	}
+	if err := store.TruncateHistory(nil, sessionKey, 2); err != nil {
+		t.Fatalf("TruncateHistory() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/detail-jsonl-skipped", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(resp.Messages) != 4 {
+		t.Fatalf("len(resp.Messages) = %d, want 4", len(resp.Messages))
+	}
+	if resp.Messages[0].Role != "user" || resp.Messages[0].Content != "first user message" {
+		t.Fatalf("resp.Messages[0] = %#v, want first user message", resp.Messages[0])
+	}
+	if resp.Messages[2].Role != "user" || resp.Messages[2].Content != "second user message" {
+		t.Fatalf("resp.Messages[2] = %#v, want second user message", resp.Messages[2])
+	}
+}
+
+func TestHandleListSessions_JSONLStorageWithSkipUsesActiveTail(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	dir := sessionsTestDir(t, configPath)
+	store, err := memory.NewJSONLStore(dir)
+	if err != nil {
+		t.Fatalf("NewJSONLStore() error = %v", err)
+	}
+
+	sessionKey := legacyPicoSessionPrefix + "list-jsonl-skipped"
+	for _, msg := range []providers.Message{
+		{Role: "user", Content: "archived user message"},
+		{Role: "assistant", Content: "archived assistant reply"},
+		{Role: "user", Content: "active user message"},
+		{Role: "assistant", Content: "active assistant reply"},
+	} {
+		if err := store.AddFullMessage(nil, sessionKey, msg); err != nil {
+			t.Fatalf("AddFullMessage() error = %v", err)
+		}
+	}
+	if err := store.TruncateHistory(nil, sessionKey, 2); err != nil {
+		t.Fatalf("TruncateHistory() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var items []sessionListItem
+	if err := json.Unmarshal(rec.Body.Bytes(), &items); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len(items) = %d, want 1", len(items))
+	}
+	if items[0].MessageCount != 2 {
+		t.Fatalf("items[0].MessageCount = %d, want 2", items[0].MessageCount)
+	}
+	if items[0].Preview != "active user message" {
+		t.Fatalf("items[0].Preview = %q, want %q", items[0].Preview, "active user message")
+	}
+}
+
 func TestHandleGetSession_HidesHandledToolAttachmentsBackedByMediaRefs(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
