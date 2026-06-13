@@ -1196,10 +1196,12 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 	senderID := "pico-user"
 
 	metadata := map[string]string{
-		"platform":   "pico",
-		"session_id": sessionID,
-		"conn_id":    pc.id,
+		"platform":          "pico",
+		"session_id":        sessionID,
+		"conn_id":           pc.id,
+		PayloadKeyTransport: TransportWebSocket,
 	}
+	copyPicoClientMetadata(metadata, msg.Payload)
 
 	logger.DebugCF("pico", "Received message", map[string]any{
 		"session_id": sessionID,
@@ -1227,6 +1229,19 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 	}
 
 	c.HandleInboundContext(c.ctx, chatID, content, media, inboundCtx, sender)
+}
+
+func copyPicoClientMetadata(metadata map[string]string, payload map[string]any) {
+	for _, key := range []string{
+		PayloadKeyClientKind,
+		PayloadKeyClientName,
+	} {
+		value, _ := payload[key].(string)
+		value = strings.TrimSpace(value)
+		if value != "" {
+			metadata[key] = value
+		}
+	}
 }
 
 // truncate truncates a string to maxLen runes.

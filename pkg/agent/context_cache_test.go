@@ -188,6 +188,34 @@ func TestBuildMessages_CurrentSenderDynamicContext(t *testing.T) {
 	}
 }
 
+func TestBuildMessages_CurrentClientDynamicContext(t *testing.T) {
+	tmpDir := setupWorkspace(t, map[string]string{
+		"IDENTITY.md": "# Identity\nTest agent.",
+	})
+	defer os.RemoveAll(tmpDir)
+
+	cb := NewContextBuilder(tmpDir)
+	msgs := cb.BuildMessagesFromPrompt(PromptBuildRequest{
+		CurrentMessage:  "hello",
+		Channel:         "pico",
+		ChatID:          "pico:cli-default",
+		ClientTransport: "websocket",
+		ClientKind:      "remote_cli",
+		ClientName:      "picoclaw agent --remote",
+	})
+	sys := msgs[0].Content
+
+	if !strings.Contains(sys, "## Current Session\nChannel: pico\nChat ID: pico:cli-default") {
+		t.Fatalf("system prompt missing current session context:\n%s", sys)
+	}
+	if !strings.Contains(sys, "Client: picoclaw agent --remote (remote_cli)") {
+		t.Fatalf("system prompt missing client context:\n%s", sys)
+	}
+	if !strings.Contains(sys, "Transport: websocket") {
+		t.Fatalf("system prompt missing transport context:\n%s", sys)
+	}
+}
+
 // TestMtimeAutoInvalidation verifies that the cache detects source file changes
 // via mtime without requiring explicit InvalidateCache().
 // Fix: original implementation had no auto-invalidation — edits to bootstrap files,

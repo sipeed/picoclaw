@@ -52,7 +52,10 @@ func TestHandleMessageSend_ForwardsMessageMetadata(t *testing.T) {
 		ID:        "msg-1",
 		SessionID: "sess-1",
 		Payload: map[string]any{
-			PayloadKeyContent: "hello",
+			PayloadKeyContent:    "hello",
+			PayloadKeyClientKind: "remote_cli",
+			PayloadKeyClientName: "picoclaw agent --remote",
+			PayloadKeyTransport:  "not-authoritative",
 		},
 	})
 
@@ -63,6 +66,15 @@ func TestHandleMessageSend_ForwardsMessageMetadata(t *testing.T) {
 		}
 		if got := inbound.Context.Raw["session_id"]; got != "sess-1" {
 			t.Fatalf("session_id raw = %q, want sess-1", got)
+		}
+		if got := inbound.Context.Raw["transport"]; got != "websocket" {
+			t.Fatalf("transport raw = %q, want websocket", got)
+		}
+		if got := inbound.Context.Raw["client_kind"]; got != "remote_cli" {
+			t.Fatalf("client_kind raw = %q, want remote_cli", got)
+		}
+		if got := inbound.Context.Raw["client_name"]; got != "picoclaw agent --remote" {
+			t.Fatalf("client_name raw = %q, want picoclaw agent --remote", got)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("expected inbound pico message")

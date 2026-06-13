@@ -28,9 +28,15 @@ const (
 	PayloadKeyPlaceholder = "placeholder"
 	PayloadKeyToolCalls   = "tool_calls"
 	PayloadKeyModelName   = "model_name"
+	PayloadKeyClientKind  = "client_kind"
+	PayloadKeyClientName  = "client_name"
+	PayloadKeyTransport   = "transport"
 
 	MessageKindThought   = "thought"
 	MessageKindToolCalls = "tool_calls"
+
+	ClientKindRemoteCLI = "remote_cli"
+	TransportWebSocket  = "websocket"
 )
 
 // PicoMessage is the wire format for all Pico Protocol messages.
