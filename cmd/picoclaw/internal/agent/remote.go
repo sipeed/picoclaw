@@ -50,6 +50,10 @@ type remoteInputResult struct {
 	Err  error
 }
 
+type remotePrinter interface {
+	Printf(format string, args ...any)
+}
+
 type lockedWriter struct {
 	mu            sync.Mutex
 	w             io.Writer
@@ -559,7 +563,7 @@ func buildRemoteMessageSend(sessionID, text string) pico.PicoMessage {
 	}
 }
 
-func renderRemoteEvent(out interface{ Printf(string, ...any) }, msg pico.PicoMessage) bool {
+func renderRemoteEvent(out remotePrinter, msg pico.PicoMessage) bool {
 	switch msg.Type {
 	case pico.TypeMessageCreate, pico.TypeMessageUpdate:
 		return renderRemoteText(out, msg.Payload)
@@ -604,7 +608,7 @@ func renderRemoteEvent(out interface{ Printf(string, ...any) }, msg pico.PicoMes
 	}
 }
 
-func startRemoteTyping(out interface{ Printf(string, ...any) }) {
+func startRemoteTyping(out remotePrinter) {
 	if typingOut, ok := out.(interface{ StartTyping() }); ok {
 		typingOut.StartTyping()
 		return
@@ -612,13 +616,13 @@ func startRemoteTyping(out interface{ Printf(string, ...any) }) {
 	out.Printf("[typing]\n")
 }
 
-func stopRemoteTyping(out interface{ Printf(string, ...any) }) {
+func stopRemoteTyping(out remotePrinter) {
 	if typingOut, ok := out.(interface{ StopTyping() }); ok {
 		typingOut.StopTyping()
 	}
 }
 
-func renderRemoteText(out interface{ Printf(string, ...any) }, payload map[string]any) bool {
+func renderRemoteText(out remotePrinter, payload map[string]any) bool {
 	if isRemoteThoughtPayload(payload) {
 		return false
 	}
