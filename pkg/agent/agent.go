@@ -189,11 +189,16 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				msg = al.prepareInboundMessageForAgent(ctx, msg)
 
 				// Another turn is already active (or reserved) for this session — enqueue
-				if err := al.enqueueSteeringMessage(sessionKey, agentID, providers.Message{
-					Role:    "user",
-					Content: msg.Content,
-					Media:   append([]string(nil), msg.Media...),
-				}); err != nil {
+				if err := al.enqueueSteeringMessage(
+					sessionKey,
+					agentID,
+					providers.Message{
+						Role:    "user",
+						Content: msg.Content,
+						Media:   append([]string(nil), msg.Media...),
+					},
+					&msg.Context,
+				); err != nil {
 					logger.WarnCF("agent", "Failed to enqueue steering message",
 						map[string]any{
 							"error":       err.Error(),
@@ -235,6 +240,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 				defer func() {
 					if r := recover(); r != nil {
+						al.invokeTypingStop(m)
 						logger.RecoverPanicNoExit(r)
 						logger.ErrorCF("agent", "Worker goroutine panicked",
 							map[string]any{
@@ -247,12 +253,10 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				}()
 				defer func() { <-al.workerSem }() // Release slot
 
-				if al.channelManager != nil {
-					defer al.channelManager.InvokeTypingStop(m.Channel, m.ChatID)
-				}
-
 				if al.takePendingStop(sessionKey) {
 					al.activeTurnStates.Delete(sessionKey)
+					al.invokeTypingStop(m)
+					al.notifyTurnDone(ctx, m, turnDoneStatusCanceled)
 					target := &continuationTarget{
 						SessionKey: sessionKey,
 						Channel:    m.Channel,
@@ -534,11 +538,26 @@ func (al *AgentLoop) runAgentLoop(
 	agent *AgentInstance,
 	opts processOptions,
 ) (string, error) {
+	response, status, err := al.runAgentLoopWithStatus(ctx, agent, opts)
+	if err != nil {
+		return "", err
+	}
+	if status == TurnEndStatusAborted {
+		return "", nil
+	}
+	return response, nil
+}
+
+func (al *AgentLoop) runAgentLoopWithStatus(
+	ctx context.Context,
+	agent *AgentInstance,
+	opts processOptions,
+) (string, TurnEndStatus, error) {
 	opts = normalizeProcessOptions(opts)
 	var err error
 	opts, err = resolveTurnProfileOptions(al.GetConfig(), opts)
 	if err != nil {
-		return "", err
+		return "", TurnEndStatusError, err
 	}
 
 	// Record last channel for heartbeat notifications (skip internal channels and cli)
@@ -571,10 +590,7 @@ func (al *AgentLoop) runAgentLoop(
 	pipeline := NewPipeline(al)
 	result, err := al.runTurn(ctx, ts, pipeline)
 	if err != nil {
-		return "", err
-	}
-	if result.status == TurnEndStatusAborted {
-		return "", nil
+		return "", TurnEndStatusError, err
 	}
 
 	for _, followUp := range result.followUps {
@@ -627,7 +643,7 @@ func (al *AgentLoop) runAgentLoop(
 			})
 	}
 
-	return result.finalContent, nil
+	return result.finalContent, result.status, nil
 }
 
 // selectCandidates returns the model candidates and resolved model name to use

@@ -486,6 +486,15 @@ func (c *PicoChannel) StartTyping(ctx context.Context, chatID string) (func(), e
 	}, nil
 }
 
+// SendTurnDone emits an explicit terminal event for a completed user turn.
+func (c *PicoChannel) SendTurnDone(ctx context.Context, chatID, requestID, status string) error {
+	doneMsg := newMessage(TypeTurnDone, map[string]any{
+		"request_id": requestID,
+		"status":     status,
+	})
+	return c.broadcastToSession(chatID, doneMsg)
+}
+
 // SendPlaceholder implements channels.PlaceholderCapable.
 // It sends a placeholder message via the Pico Protocol that will later be
 // edited to the actual response via EditMessage (channels.MessageEditor).

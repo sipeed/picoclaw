@@ -288,6 +288,37 @@ func TestSend_ToolCallsMessageIncludesModelName(t *testing.T) {
 	}
 }
 
+func TestSendTurnDone_BroadcastsTerminalEvent(t *testing.T) {
+	ch := newTestPicoChannel(t)
+
+	if err := ch.Start(context.Background()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer ch.Stop(context.Background())
+
+	clientConn, received, cleanup := newTestPicoWebSocket(t)
+	defer cleanup()
+	ch.addConnForTest(&picoConn{id: "conn-1", conn: clientConn, sessionID: "sess-1"})
+
+	if err := ch.SendTurnDone(context.Background(), "pico:sess-1", "req-1", "ok"); err != nil {
+		t.Fatalf("SendTurnDone() error = %v", err)
+	}
+
+	msg := mustReceivePicoMessage(t, received)
+	if msg.Type != TypeTurnDone {
+		t.Fatalf("type = %q, want %q", msg.Type, TypeTurnDone)
+	}
+	if msg.SessionID != "sess-1" {
+		t.Fatalf("session_id = %q, want %q", msg.SessionID, "sess-1")
+	}
+	if got := msg.Payload["request_id"]; got != "req-1" {
+		t.Fatalf("request_id = %#v, want %q", got, "req-1")
+	}
+	if got := msg.Payload["status"]; got != "ok" {
+		t.Fatalf("status = %#v, want %q", got, "ok")
+	}
+}
+
 func TestSendPlaceholder_EmitsNormalMessageWithoutKind(t *testing.T) {
 	ch := newTestPicoChannel(t)
 	ch.bc.Placeholder.Enabled = true

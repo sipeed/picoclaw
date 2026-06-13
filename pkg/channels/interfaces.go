@@ -60,6 +60,12 @@ type StreamingCapable interface {
 	BeginStream(ctx context.Context, chatID string) (Streamer, error)
 }
 
+// TurnCompletionCapable emits an explicit terminal signal once a user turn is
+// fully complete and no more outbound updates are expected for that request.
+type TurnCompletionCapable interface {
+	SendTurnDone(ctx context.Context, chatID, requestID, status string) error
+}
+
 // Streamer is defined in pkg/bus to avoid circular imports.
 // This alias keeps channel implementations using channels.Streamer unchanged.
 type Streamer = bus.Streamer

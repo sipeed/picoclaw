@@ -49,3 +49,10 @@ func (a *channelManagerAdapter) DismissToolFeedback(
 ) {
 	a.inner.DismissToolFeedback(ctx, channel, chatID, outboundCtx)
 }
+
+func (a *channelManagerAdapter) NotifyTurnDone(
+	ctx context.Context,
+	channel, chatID, requestID, status string,
+) {
+	a.inner.NotifyTurnDone(ctx, channel, chatID, requestID, status)
+}

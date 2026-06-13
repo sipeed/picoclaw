@@ -54,4 +54,8 @@ type ChannelManager interface {
 	// outboundCtx carries topic/thread info needed for channels that use
 	// scoped tracker keys (e.g., Telegram forum topics); may be nil.
 	DismissToolFeedback(ctx context.Context, channel, chatID string, outboundCtx *bus.InboundContext)
+
+	// NotifyTurnDone emits a best-effort terminal signal for channels that
+	// support explicit per-request completion events (for example Pico).
+	NotifyTurnDone(ctx context.Context, channel, chatID, requestID, status string)
 }

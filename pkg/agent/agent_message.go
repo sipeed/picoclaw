@@ -121,6 +121,20 @@ func (al *AgentLoop) prepareInboundMessageForAgent(
 }
 
 func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+	response, turnStatus, err := al.processMessageWithStatus(ctx, msg)
+	if err != nil {
+		return "", err
+	}
+	if turnStatus == TurnEndStatusAborted {
+		return "", nil
+	}
+	return response, nil
+}
+
+func (al *AgentLoop) processMessageWithStatus(
+	ctx context.Context,
+	msg bus.InboundMessage,
+) (string, TurnEndStatus, error) {
 	msg = al.prepareInboundMessageForAgent(ctx, msg)
 
 	// Add message preview to log (show full content for error messages)
@@ -143,12 +157,13 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
-		return al.processSystemMessage(ctx, msg)
+		response, err := al.processSystemMessage(ctx, msg)
+		return response, TurnEndStatusCompleted, err
 	}
 
 	route, agent, routeErr := al.resolveMessageRoute(msg)
 	if routeErr != nil {
-		return "", routeErr
+		return "", TurnEndStatusError, routeErr
 	}
 
 	allocation := al.allocateRouteSession(route, msg)
@@ -196,13 +211,13 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	var err error
 	opts, err = resolveTurnProfileOptions(al.GetConfig(), opts)
 	if err != nil {
-		return "", err
+		return "", TurnEndStatusError, err
 	}
 
 	// context-dependent commands check their own Runtime fields and report
 	// "unavailable" when the required capability is nil.
 	if response, handled := al.handleCommand(ctx, msg, agent, &opts); handled {
-		return response, nil
+		return response, TurnEndStatusCompleted, nil
 	}
 
 	if pending := al.takePendingSkills(opts.Dispatch.SessionKey); len(pending) > 0 {
@@ -214,7 +229,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 			})
 	}
 
-	return al.runAgentLoop(ctx, agent, opts)
+	return al.runAgentLoopWithStatus(ctx, agent, opts)
 }
 
 func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {

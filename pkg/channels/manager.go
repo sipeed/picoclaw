@@ -43,6 +43,10 @@ const (
 	placeholderTTL  = 10 * time.Minute
 
 	streamAuxiliaryTombstoneTTL = 30 * time.Second
+
+	internalRawKeyTurnDone          = "_picoclaw_turn_done"
+	internalRawKeyTurnDoneRequestID = "_picoclaw_turn_done_request_id"
+	internalRawKeyTurnDoneStatus    = "_picoclaw_turn_done_status"
 )
 
 // typingEntry wraps a typing stop function with a creation timestamp for TTL eviction.
@@ -209,6 +213,24 @@ func outboundMessageEditPayload(msg bus.OutboundMessage, content string) map[str
 		payload["model_name"] = modelName
 	}
 	return payload
+}
+
+func turnDoneControlMessage(msg bus.OutboundMessage) (requestID, status string, ok bool) {
+	if len(msg.Context.Raw) == 0 {
+		return "", "", false
+	}
+	if !strings.EqualFold(strings.TrimSpace(msg.Context.Raw[internalRawKeyTurnDone]), "true") {
+		return "", "", false
+	}
+	requestID = strings.TrimSpace(msg.Context.Raw[internalRawKeyTurnDoneRequestID])
+	if requestID == "" {
+		return "", "", false
+	}
+	status = strings.TrimSpace(msg.Context.Raw[internalRawKeyTurnDoneStatus])
+	if status == "" {
+		status = "ok"
+	}
+	return requestID, status, true
 }
 
 func outboundMediaChannel(msg bus.OutboundMediaMessage) string {
@@ -1518,6 +1540,16 @@ func (m *Manager) sendWithRetry(
 		return nil, false
 	}
 
+	if requestID, status, ok := turnDoneControlMessage(msg); ok {
+		err := m.sendTurnDoneWithRetry(ctx, name, w, msg, requestID, status)
+		if err == nil {
+			m.publishOutboundSent(name, msg, nil)
+			return nil, true
+		}
+		m.publishOutboundFailed(name, msg, err, false)
+		return nil, false
+	}
+
 	// Pre-send: stop typing and try to edit placeholder
 	if msgIDs, handled := m.preSend(ctx, name, msg, w.ch); handled {
 		m.publishOutboundSent(name, msg, msgIDs)
@@ -1572,6 +1604,62 @@ func (m *Manager) sendWithRetry(
 	m.publishOutboundFailed(name, msg, lastErr, false)
 
 	return nil, false
+}
+
+func (m *Manager) sendTurnDoneWithRetry(
+	ctx context.Context,
+	name string,
+	w *channelWorker,
+	msg bus.OutboundMessage,
+	requestID string,
+	status string,
+) error {
+	sender, ok := w.ch.(TurnCompletionCapable)
+	if !ok {
+		return nil
+	}
+
+	chatID := outboundMessageChatID(msg)
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		lastErr = sender.SendTurnDone(ctx, chatID, requestID, status)
+		if lastErr == nil {
+			return nil
+		}
+
+		if errors.Is(lastErr, ErrNotRunning) || errors.Is(lastErr, ErrSendFailed) {
+			break
+		}
+		if attempt == maxRetries {
+			break
+		}
+
+		if errors.Is(lastErr, ErrRateLimit) {
+			select {
+			case <-time.After(rateLimitDelay):
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+
+		backoff := min(time.Duration(float64(baseBackoff)*math.Pow(2, float64(attempt))), maxBackoff)
+		select {
+		case <-time.After(backoff):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	logger.ErrorCF("channels", "SendTurnDone failed", map[string]any{
+		"channel":    name,
+		"chat_id":    chatID,
+		"request_id": requestID,
+		"status":     status,
+		"error":      lastErr.Error(),
+		"retries":    maxRetries,
+	})
+	return lastErr
 }
 
 func dispatchLoop[M any](
@@ -2036,6 +2124,51 @@ func (m *Manager) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) e
 
 	_, err := m.sendMediaWithRetry(ctx, channelName, w, msg)
 	return err
+}
+
+// NotifyTurnDone enqueues a best-effort terminal event for channels that
+// support explicit per-request completion signaling.
+func (m *Manager) NotifyTurnDone(ctx context.Context, channel, chatID, requestID, status string) {
+	if m == nil || m.bus == nil {
+		return
+	}
+	channel = strings.TrimSpace(channel)
+	chatID = strings.TrimSpace(chatID)
+	requestID = strings.TrimSpace(requestID)
+	status = strings.TrimSpace(status)
+	if channel == "" || chatID == "" || requestID == "" {
+		return
+	}
+
+	m.mu.RLock()
+	ch, exists := m.channels[channel]
+	m.mu.RUnlock()
+	if !exists {
+		return
+	}
+	if _, ok := ch.(TurnCompletionCapable); !ok {
+		return
+	}
+
+	if status == "" {
+		status = "ok"
+	}
+
+	pubCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	_ = m.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
+		Context: bus.InboundContext{
+			Channel:   channel,
+			ChatID:    chatID,
+			MessageID: requestID,
+			Raw: map[string]string{
+				internalRawKeyTurnDone:          "true",
+				internalRawKeyTurnDoneRequestID: requestID,
+				internalRawKeyTurnDoneStatus:    status,
+			},
+		},
+	})
 }
 
 func (m *Manager) SendToChannel(ctx context.Context, channelName, chatID, content string) error {

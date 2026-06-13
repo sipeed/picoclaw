@@ -278,7 +278,8 @@ func (al *AgentLoop) buildCommandsRuntime(
 		if opts == nil {
 			return commands.StopResult{}, fmt.Errorf("process options not available")
 		}
-		return al.stopActiveTurnForSession(opts.Dispatch.SessionKey)
+		result, _, err := al.stopActiveTurnForSession(opts.Dispatch.SessionKey)
+		return result, err
 	}
 	if agent != nil && agent.ContextBuilder != nil {
 		rt.ListSkillNames = agent.ContextBuilder.ListSkillNames

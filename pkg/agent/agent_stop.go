@@ -19,7 +19,7 @@ func (al *AgentLoop) tryHandleStopCommand(
 		return false
 	}
 
-	result, err := al.stopActiveTurnForSession(sessionKey)
+	result, canceledEntries, err := al.stopActiveTurnForSession(sessionKey)
 
 	// This function is only called when loaded=true (another turn already
 	// claimed this session). If stopActiveTurnForSession found a pending
@@ -46,23 +46,34 @@ func (al *AgentLoop) tryHandleStopCommand(
 	}
 	al.resetMessageToolRound(sessionKey)
 	al.PublishResponseIfNeeded(ctx, msg.Channel, msg.ChatID, sessionKey, reply)
+
+	stopStatus := turnDoneStatusOK
+	if err != nil {
+		stopStatus = turnDoneStatusError
+	} else if result.Stopped || len(canceledEntries) > 0 {
+		stopStatus = turnDoneStatusCanceled
+	}
+	al.notifyTurnDone(ctx, msg, stopStatus)
+	al.notifyTurnDoneForSteeringEntries(ctx, canceledEntries, turnDoneStatusCanceled)
 	return true
 }
 
-func (al *AgentLoop) stopActiveTurnForSession(sessionKey string) (commands.StopResult, error) {
+func (al *AgentLoop) stopActiveTurnForSession(
+	sessionKey string,
+) (commands.StopResult, []steeringQueueEntry, error) {
 	sessionKey = strings.TrimSpace(sessionKey)
 	if sessionKey == "" {
-		return commands.StopResult{}, fmt.Errorf("session key is required")
+		return commands.StopResult{}, nil, fmt.Errorf("session key is required")
 	}
 
 	result := commands.StopResult{}
-	cleared := al.clearSteeringMessagesForScope(sessionKey)
+	clearedEntries := al.clearSteeringQueueEntriesForScope(sessionKey)
 	al.clearPendingSkills(sessionKey)
 
 	ts := al.getActiveTurnState(sessionKey)
 	if ts == nil {
-		result.Stopped = cleared > 0
-		return result, nil
+		result.Stopped = len(clearedEntries) > 0
+		return result, clearedEntries, nil
 	}
 
 	snap := ts.snapshot()
@@ -74,19 +85,19 @@ func (al *AgentLoop) stopActiveTurnForSession(sessionKey string) (commands.StopR
 		// hasn't started yet. In both cases, we don't arm a pending stop here;
 		// the caller (tryHandleStopCommand) handles the "another message queued"
 		// case explicitly, since it knows loaded=true.
-		return result, nil
+		return result, clearedEntries, nil
 	}
 
 	if err := al.HardAbort(sessionKey); err != nil {
 		if al.getActiveTurnState(sessionKey) == nil {
-			result.Stopped = cleared > 0
-			return result, nil
+			result.Stopped = len(clearedEntries) > 0
+			return result, clearedEntries, nil
 		}
-		return commands.StopResult{}, err
+		return commands.StopResult{}, clearedEntries, err
 	}
 
 	result.Stopped = true
-	return result, nil
+	return result, clearedEntries, nil
 }
 
 func (al *AgentLoop) markPendingStop(sessionKey string) {

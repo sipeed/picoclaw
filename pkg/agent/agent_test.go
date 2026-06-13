@@ -59,7 +59,10 @@ func (f *fakeMediaChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaM
 }
 
 type recordingChannelManager struct {
+	mu        sync.Mutex
 	dismissed []string
+	turnDone  []string
+	order     []string
 }
 
 func (m *recordingChannelManager) GetChannel(name string) (channels.Channel, bool) {
@@ -70,7 +73,11 @@ func (m *recordingChannelManager) GetEnabledChannels() []string {
 	return nil
 }
 
-func (m *recordingChannelManager) InvokeTypingStop(channel, chatID string) {}
+func (m *recordingChannelManager) InvokeTypingStop(channel, chatID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.order = append(m.order, fmt.Sprintf("typing:%s:%s", channel, chatID))
+}
 
 func (m *recordingChannelManager) SendMessage(ctx context.Context, msg bus.OutboundMessage) error {
 	return nil
@@ -87,7 +94,25 @@ func (m *recordingChannelManager) SendPlaceholder(ctx context.Context, channel, 
 func (m *recordingChannelManager) DismissToolFeedback(
 	ctx context.Context, channel, chatID string, outboundCtx *bus.InboundContext,
 ) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.dismissed = append(m.dismissed, fmt.Sprintf("%s:%s", channel, chatID))
+}
+
+func (m *recordingChannelManager) NotifyTurnDone(
+	ctx context.Context,
+	channel, chatID, requestID, status string,
+) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.turnDone = append(m.turnDone, fmt.Sprintf("%s:%s:%s:%s", channel, chatID, requestID, status))
+	m.order = append(m.order, fmt.Sprintf("done:%s:%s:%s:%s", channel, chatID, requestID, status))
+}
+
+func (m *recordingChannelManager) snapshotOrder() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.order...)
 }
 
 func newStartedTestChannelManager(
@@ -424,6 +449,37 @@ func TestPublishResponseIfNeeded_MarksFinalOutbound(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("expected final outbound")
+	}
+}
+
+func TestProcessMessageSync_NotifiesTurnDone(t *testing.T) {
+	al, _, _, provider, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+	_ = provider
+
+	cm := &recordingChannelManager{}
+	al.channelManager = cm
+
+	msg := bus.NormalizeInboundMessage(bus.InboundMessage{
+		Context: bus.InboundContext{
+			Channel:   "pico",
+			ChatID:    "pico:sess-1",
+			ChatType:  "direct",
+			SenderID:  "pico-user",
+			MessageID: "req-1",
+		},
+		Content:    "hello",
+		SessionKey: "sess-1",
+	})
+	al.processMessageSync(context.Background(), msg)
+
+	if got := cm.turnDone; len(got) != 1 || got[0] != "pico:pico:sess-1:req-1:ok" {
+		t.Fatalf("turnDone = %v, want [pico:pico:sess-1:req-1:ok]", got)
+	}
+	if got := cm.snapshotOrder(); len(got) != 2 ||
+		got[0] != "typing:pico:pico:sess-1" ||
+		got[1] != "done:pico:pico:sess-1:req-1:ok" {
+		t.Fatalf("order = %v, want [typing:pico:pico:sess-1 done:pico:pico:sess-1:req-1:ok]", got)
 	}
 }
 

@@ -103,6 +103,39 @@ func (m *mockDeletingMediaChannel) DismissToolFeedbackMessage(_ context.Context,
 	m.dismissedChatID = chatID
 }
 
+type mockTurnDoneChannel struct {
+	mockChannel
+	mu         sync.Mutex
+	order      []string
+	lastTurnID string
+	lastStatus string
+}
+
+func (m *mockTurnDoneChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
+	m.mu.Lock()
+	m.order = append(m.order, "send:"+msg.Content)
+	m.mu.Unlock()
+	return m.mockChannel.Send(ctx, msg)
+}
+
+func (m *mockTurnDoneChannel) SendTurnDone(
+	_ context.Context,
+	chatID, requestID, status string,
+) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.order = append(m.order, "done:"+requestID+":"+status)
+	m.lastTurnID = requestID
+	m.lastStatus = status
+	return nil
+}
+
+func (m *mockTurnDoneChannel) snapshotOrder() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.order...)
+}
+
 type mockStreamer struct {
 	finalizeFn            func(context.Context, string) error
 	finalizeWithContextFn func(context.Context, string, *bus.ContextUsage) error
@@ -3344,6 +3377,52 @@ func TestSendMessage_PreservesOrdering(t *testing.T) {
 	}
 	if order[0] != "first" || order[1] != "second" {
 		t.Fatalf("expected [first, second], got %v", order)
+	}
+}
+
+func TestNotifyTurnDone_PreservesOutboundOrdering(t *testing.T) {
+	msgBus := bus.NewMessageBus()
+	mgr, err := NewManager(&config.Config{}, msgBus, nil)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+
+	ch := &mockTurnDoneChannel{}
+	mgr.RegisterChannel("pico", ch)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := mgr.StartAll(ctx); err != nil {
+		t.Fatalf("StartAll() error = %v", err)
+	}
+	defer func() {
+		if err := mgr.StopAll(context.Background()); err != nil {
+			t.Fatalf("StopAll() error = %v", err)
+		}
+	}()
+
+	if err := msgBus.PublishOutbound(context.Background(), testOutboundMessage(bus.OutboundMessage{
+		Context: bus.NewOutboundContext("pico", "pico:sess-1", ""),
+		Content: "final reply",
+	})); err != nil {
+		t.Fatalf("PublishOutbound() error = %v", err)
+	}
+
+	mgr.NotifyTurnDone(context.Background(), "pico", "pico:sess-1", "req-1", "ok")
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		order := ch.snapshotOrder()
+		if len(order) >= 2 {
+			if order[0] != "send:final reply" || order[1] != "done:req-1:ok" {
+				t.Fatalf("unexpected send order: %v", order)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for turn.done, order=%v", order)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

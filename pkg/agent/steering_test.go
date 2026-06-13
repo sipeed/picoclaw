@@ -851,6 +851,139 @@ func TestAgentLoop_Run_AutoContinuesLateSteeringMessage(t *testing.T) {
 	}
 }
 
+func TestAgentLoop_Run_QueuedPicoMessageReceivesTurnDone(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	provider := &lateSteeringProvider{
+		firstCallStarted: make(chan struct{}),
+		releaseFirstCall: make(chan struct{}),
+	}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	cm := &recordingChannelManager{}
+	al.channelManager = cm
+
+	runCtx, cancelRun := context.WithCancel(context.Background())
+	defer cancelRun()
+
+	runErrCh := make(chan error, 1)
+	go func() {
+		runErrCh <- al.Run(runCtx)
+	}()
+
+	first := testInboundMessage(bus.InboundMessage{
+		Context: bus.InboundContext{
+			Channel:   "pico",
+			ChatID:    "pico:sess-1",
+			ChatType:  "direct",
+			SenderID:  "user1",
+			MessageID: "req-1",
+		},
+		Content: "first message",
+	})
+	late := testInboundMessage(bus.InboundMessage{
+		Context: bus.InboundContext{
+			Channel:   "pico",
+			ChatID:    "pico:sess-1",
+			ChatType:  "direct",
+			SenderID:  "user1",
+			MessageID: "req-2",
+		},
+		Content: "late append",
+	})
+
+	sessionKey, _, ok := al.resolveSteeringTarget(first)
+	if !ok {
+		t.Fatal("expected pico inbound to resolve to a steering target")
+	}
+
+	pubCtx, pubCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer pubCancel()
+	if err := msgBus.PublishInbound(pubCtx, first); err != nil {
+		t.Fatalf("publish first inbound: %v", err)
+	}
+
+	select {
+	case <-provider.firstCallStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for first provider call to start")
+	}
+
+	if err := msgBus.PublishInbound(pubCtx, late); err != nil {
+		t.Fatalf("publish late inbound: %v", err)
+	}
+
+	close(provider.releaseFirstCall)
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Content != "continued response" {
+			t.Fatalf("expected continued response, got %q", outbound.Content)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("expected outbound response")
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if al.GetActiveTurnBySession(sessionKey) == nil &&
+			al.pendingSteeringCountForScope(sessionKey) == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timeout waiting for continuation turn to finish")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	cancelRun()
+	select {
+	case err := <-runErrCh:
+		if err != nil {
+			t.Fatalf("Run returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for Run to stop")
+	}
+
+	want := "pico:pico:sess-1:req-2:ok"
+	count := 0
+	for _, got := range cm.turnDone {
+		if got == want {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("turnDone = %v, want queued request %q exactly once", cm.turnDone, want)
+	}
+	order := cm.snapshotOrder()
+	doneIdx := -1
+	for i, got := range order {
+		if got == "done:"+want {
+			doneIdx = i
+			break
+		}
+	}
+	if doneIdx <= 0 || order[doneIdx-1] != "typing:pico:pico:sess-1" {
+		t.Fatalf("order = %v, want typing stop immediately before queued turn.done", order)
+	}
+}
+
 func TestAgentLoop_Run_QueuedVoiceMessageIsTranscribedBeforeSteering(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := &config.Config{
@@ -1605,6 +1738,8 @@ func TestAgentLoop_InterruptHard_RestoresSession(t *testing.T) {
 	al := NewAgentLoop(cfg, msgBus, provider)
 	started := make(chan struct{})
 	al.RegisterTool(&interruptibleTool{name: "cancel_tool", started: started})
+	cm := &recordingChannelManager{}
+	al.channelManager = cm
 	sessionKey := session.BuildMainSessionKey(routing.DefaultAgentID)
 
 	defaultAgent := al.registry.GetDefaultAgent()
@@ -1744,6 +1879,8 @@ func TestAgentLoop_StopCommand_AbortsActiveTurnAndClearsQueuedSteering(t *testin
 	al := NewAgentLoop(cfg, msgBus, provider)
 	started := make(chan struct{})
 	al.RegisterTool(&interruptibleTool{name: "cancel_tool", started: started})
+	cm := &recordingChannelManager{}
+	al.channelManager = cm
 	sessionKey := session.BuildMainSessionKey(routing.DefaultAgentID)
 
 	runCtx, cancelRun := context.WithCancel(context.Background())
@@ -1767,10 +1904,11 @@ func TestAgentLoop_StopCommand_AbortsActiveTurnAndClearsQueuedSteering(t *testin
 
 	baseMsg := testInboundMessage(bus.InboundMessage{
 		Context: bus.InboundContext{
-			Channel:  "test",
-			ChatID:   "chat1",
-			ChatType: "direct",
-			SenderID: "user1",
+			Channel:   "test",
+			ChatID:    "chat1",
+			ChatType:  "direct",
+			SenderID:  "user1",
+			MessageID: "req-1",
 		},
 		SessionKey: sessionKey,
 	})
@@ -1790,7 +1928,13 @@ func TestAgentLoop_StopCommand_AbortsActiveTurnAndClearsQueuedSteering(t *testin
 	}
 
 	if err := msgBus.PublishInbound(context.Background(), bus.InboundMessage{
-		Context:    baseMsg.Context,
+		Context: bus.InboundContext{
+			Channel:   baseMsg.Context.Channel,
+			ChatID:    baseMsg.Context.ChatID,
+			ChatType:  baseMsg.Context.ChatType,
+			SenderID:  baseMsg.Context.SenderID,
+			MessageID: "req-2",
+		},
 		Content:    "follow up after cancel",
 		SessionKey: sessionKey,
 	}); err != nil {
@@ -1806,7 +1950,13 @@ func TestAgentLoop_StopCommand_AbortsActiveTurnAndClearsQueuedSteering(t *testin
 	}
 
 	if err := msgBus.PublishInbound(context.Background(), bus.InboundMessage{
-		Context:    baseMsg.Context,
+		Context: bus.InboundContext{
+			Channel:   baseMsg.Context.Channel,
+			ChatID:    baseMsg.Context.ChatID,
+			ChatType:  baseMsg.Context.ChatType,
+			SenderID:  baseMsg.Context.SenderID,
+			MessageID: "req-3",
+		},
 		Content:    "/stop",
 		SessionKey: sessionKey,
 	}); err != nil {
@@ -1846,6 +1996,22 @@ func TestAgentLoop_StopCommand_AbortsActiveTurnAndClearsQueuedSteering(t *testin
 	provider.mu.Unlock()
 	if calls != 1 {
 		t.Fatalf("expected provider to stop before follow-up turn, got %d calls", calls)
+	}
+
+	expectedTurnDone := map[string]int{
+		"test:chat1:req-1:canceled": 0,
+		"test:chat1:req-2:canceled": 0,
+		"test:chat1:req-3:canceled": 0,
+	}
+	for _, got := range cm.turnDone {
+		if _, ok := expectedTurnDone[got]; ok {
+			expectedTurnDone[got]++
+		}
+	}
+	for want, count := range expectedTurnDone {
+		if count != 1 {
+			t.Fatalf("turnDone = %v, want %q exactly once", cm.turnDone, want)
+		}
 	}
 }
 
