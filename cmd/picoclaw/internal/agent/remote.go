@@ -128,6 +128,8 @@ func (w *lockedWriter) clearTypingLineLocked() {
 		return
 	}
 	if w.refreshPrompt != nil {
+		// Delete the transient "[typing]" line before redrawing the prompt.
+		// Terminals without Delete Line support may leave a harmless blank row.
 		fmt.Fprint(w.w, "\r\033[2K\033[1A\r\033[2K\033[1M")
 	}
 	w.typingVisible = false
