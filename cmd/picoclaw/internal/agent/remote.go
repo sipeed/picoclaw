@@ -28,7 +28,7 @@ import (
 const (
 	remoteGeneratedSessionPrefix = "cli:"
 	remoteOneShotFirstTimeout    = 30 * time.Second
-	remoteOneShotIdleTimeout     = 1500 * time.Millisecond
+	remoteOneShotIdleTimeout     = 5 * time.Second
 )
 
 type remoteClient struct {

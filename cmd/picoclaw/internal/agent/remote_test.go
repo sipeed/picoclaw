@@ -334,6 +334,65 @@ func TestRemoteOneShotWebSocket(t *testing.T) {
 	}
 }
 
+func TestRemoteOneShotWaitsThroughShortIdleGap(t *testing.T) {
+	const sessionID = "slow-session"
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("Upgrade() error = %v", err)
+			return
+		}
+		defer conn.Close()
+
+		var msg pico.PicoMessage
+		if err := conn.ReadJSON(&msg); err != nil {
+			t.Errorf("ReadJSON() error = %v", err)
+			return
+		}
+		if err := conn.WriteJSON(pico.PicoMessage{
+			Type:      pico.TypeMessageCreate,
+			SessionID: msg.SessionID,
+			Payload:   map[string]any{pico.PayloadKeyContent: "first chunk"},
+		}); err != nil {
+			t.Errorf("WriteJSON(first) error = %v", err)
+			return
+		}
+
+		time.Sleep(2 * time.Second)
+		if err := conn.WriteJSON(pico.PicoMessage{
+			Type:      pico.TypeMessageCreate,
+			SessionID: msg.SessionID,
+			Payload:   map[string]any{pico.PayloadKeyContent: "second chunk"},
+		}); err != nil {
+			t.Errorf("WriteJSON(second) error = %v", err)
+			return
+		}
+		_ = conn.WriteControl(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
+			time.Now().Add(time.Second),
+		)
+	}))
+	defer srv.Close()
+
+	remoteURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/pico/ws"
+	var out bytes.Buffer
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	if err := remoteAgentCmd(ctx, remoteURL, "", "hello", sessionID, strings.NewReader(""), &out); err != nil {
+		t.Fatalf("remoteAgentCmd() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "first chunk") {
+		t.Fatalf("output = %q, want first chunk", out.String())
+	}
+	if !strings.Contains(out.String(), "second chunk") {
+		t.Fatalf("output = %q, want second chunk", out.String())
+	}
+}
+
 func TestRemoteOneShotUsesPicoTokenEnvFallback(t *testing.T) {
 	const sessionID = "env-session"
 	const token = "env-token"
