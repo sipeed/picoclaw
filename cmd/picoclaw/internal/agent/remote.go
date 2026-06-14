@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -31,8 +30,6 @@ const (
 	remoteOneShotFirstTimeout    = 30 * time.Second
 	remoteOneShotIdleTimeout     = 1500 * time.Millisecond
 )
-
-var errRemoteReadlineUnavailable = errors.New("remote readline unavailable")
 
 type remoteClient struct {
 	conn      *websocket.Conn
@@ -321,14 +318,6 @@ func (c *remoteClient) RunOneShot(ctx context.Context, sessionID, message string
 }
 
 func (c *remoteClient) RunInteractive(ctx context.Context, sessionID string, in io.Reader) error {
-	err := c.runReadlineInteractive(ctx, sessionID, in)
-	if errors.Is(err, errRemoteReadlineUnavailable) {
-		return c.runScannerInteractive(ctx, sessionID, in)
-	}
-	return err
-}
-
-func (c *remoteClient) runReadlineInteractive(ctx context.Context, sessionID string, in io.Reader) error {
 	prompt := fmt.Sprintf("%s You: ", internal.Logo)
 	baseOut := c.out.Writer()
 	rl, err := readline.NewEx(&readline.Config{
@@ -342,7 +331,7 @@ func (c *remoteClient) runReadlineInteractive(ctx context.Context, sessionID str
 		Stderr:          baseOut,
 	})
 	if err != nil {
-		return fmt.Errorf("%w: %v", errRemoteReadlineUnavailable, err)
+		return fmt.Errorf("remote interactive mode requires readline input; use -m for one-shot mode: %w", err)
 	}
 	defer rl.Close()
 	defer c.out.SetWriter(baseOut)
@@ -402,56 +391,6 @@ func (c *remoteClient) runReadlineInteractive(ctx context.Context, sessionID str
 	}
 }
 
-func (c *remoteClient) runScannerInteractive(ctx context.Context, sessionID string, in io.Reader) error {
-	events := make(chan remoteEventResult, 8)
-	go c.readLoop(ctx, events)
-
-	lines := make(chan string)
-	readErrs := make(chan error, 1)
-	go scanInput(in, lines, readErrs)
-
-	prompt := fmt.Sprintf("%s You: ", internal.Logo)
-	c.out.Printf("%s Remote mode (Ctrl+C to exit)\n", internal.Logo)
-	c.out.Printf("Connected to remote Pico session %s\n\n", sessionID)
-	c.out.Printf("%s", prompt)
-	for {
-		select {
-		case <-ctx.Done():
-			c.out.Printf("\nGoodbye!\n")
-			return nil
-		case evt, ok := <-events:
-			if !ok {
-				return nil
-			}
-			if evt.Err != nil {
-				return evt.Err
-			}
-		case err := <-readErrs:
-			if err == nil {
-				return nil
-			}
-			return err
-		case line, ok := <-lines:
-			if !ok {
-				return nil
-			}
-			input := strings.TrimSpace(line)
-			if input == "" {
-				c.out.Printf("%s", prompt)
-				continue
-			}
-			if input == "exit" || input == "quit" {
-				c.out.Printf("Goodbye!\n")
-				return nil
-			}
-			if err := c.Send(sessionID, input); err != nil {
-				return err
-			}
-			c.out.Printf("%s", prompt)
-		}
-	}
-}
-
 func readRemoteLines(rl *readline.Instance, inputs chan<- remoteInputResult) {
 	defer close(inputs)
 	for {
@@ -496,16 +435,6 @@ func (c *remoteClient) readLoop(ctx context.Context, events chan<- remoteEventRe
 			return
 		}
 	}
-}
-
-func scanInput(in io.Reader, lines chan<- string, errs chan<- error) {
-	defer close(lines)
-
-	scanner := bufio.NewScanner(in)
-	for scanner.Scan() {
-		lines <- scanner.Text()
-	}
-	errs <- scanner.Err()
 }
 
 func resetTimer(timer *time.Timer, duration time.Duration) {
