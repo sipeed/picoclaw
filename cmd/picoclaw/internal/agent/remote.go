@@ -505,8 +505,6 @@ func buildRemoteMessageSend(sessionID, text string) pico.PicoMessage {
 			pico.PayloadKeyClientKind: pico.ClientKindRemoteCLI,
 			pico.PayloadKeyClientName: "picoclaw agent --remote",
 			pico.PayloadKeyTransport:  pico.TransportWebSocket,
-			"sender_id":               "picoclaw-cli",
-			"sender_name":             "PicoClaw CLI",
 		},
 	}
 }
