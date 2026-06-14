@@ -35,9 +35,11 @@ const (
 var errRemoteReadlineUnavailable = errors.New("remote readline unavailable")
 
 type remoteClient struct {
-	conn *websocket.Conn
-	out  *lockedWriter
-	mu   sync.Mutex
+	conn      *websocket.Conn
+	out       *lockedWriter
+	writeMu   sync.Mutex
+	closeOnce sync.Once
+	closed    chan struct{}
 }
 
 type remoteEventResult struct {
@@ -209,8 +211,9 @@ func newRemoteClient(
 	}
 
 	return &remoteClient{
-		conn: conn,
-		out:  &lockedWriter{w: out},
+		conn:   conn,
+		out:    &lockedWriter{w: out},
+		closed: make(chan struct{}),
 	}, nil
 }
 
@@ -245,27 +248,37 @@ func remoteResponseBodyIsText(contentType string) bool {
 }
 
 func (c *remoteClient) Close(code int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.conn == nil {
-		return
-	}
-	_ = c.conn.WriteControl(
-		websocket.CloseMessage,
-		websocket.FormatCloseMessage(code, ""),
-		time.Now().Add(time.Second),
-	)
-	_ = c.conn.Close()
-	c.conn = nil
+	c.closeOnce.Do(func() {
+		close(c.closed)
+		_ = c.conn.WriteControl(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(code, ""),
+			time.Now().Add(time.Second),
+		)
+		_ = c.conn.Close()
+	})
 }
 
 func (c *remoteClient) Send(sessionID, text string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.conn == nil {
+	if c.isClosed() {
+		return fmt.Errorf("remote connection is closed")
+	}
+
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	if c.isClosed() {
 		return fmt.Errorf("remote connection is closed")
 	}
 	return c.conn.WriteJSON(buildRemoteMessageSend(sessionID, text))
+}
+
+func (c *remoteClient) isClosed() bool {
+	select {
+	case <-c.closed:
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *remoteClient) RunOneShot(ctx context.Context, sessionID, message string) error {
@@ -457,25 +470,31 @@ func (c *remoteClient) readLoop(ctx context.Context, events chan<- remoteEventRe
 		select {
 		case <-ctx.Done():
 			return
+		case <-c.closed:
+			return
 		default:
 		}
 
-		c.mu.Lock()
-		conn := c.conn
-		c.mu.Unlock()
-		if conn == nil {
-			return
-		}
-
 		var msg pico.PicoMessage
-		if err := conn.ReadJSON(&msg); err != nil {
-			if ctx.Err() != nil {
+		if err := c.conn.ReadJSON(&msg); err != nil {
+			if ctx.Err() != nil || c.isClosed() {
 				return
 			}
-			events <- remoteEventResult{Err: err}
+			select {
+			case events <- remoteEventResult{Err: err}:
+			case <-ctx.Done():
+			case <-c.closed:
+			}
 			return
 		}
-		events <- remoteEventResult{Displayed: renderRemoteEvent(c.out, msg)}
+		displayed := renderRemoteEvent(c.out, msg)
+		select {
+		case events <- remoteEventResult{Displayed: displayed}:
+		case <-ctx.Done():
+			return
+		case <-c.closed:
+			return
+		}
 	}
 }
 

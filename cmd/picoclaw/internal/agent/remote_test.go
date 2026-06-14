@@ -396,6 +396,61 @@ func TestRemoteOneShotReportsHandshakeStatus(t *testing.T) {
 	}
 }
 
+func TestRemoteClientCloseUnblocksReadLoop(t *testing.T) {
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("Upgrade() error = %v", err)
+			return
+		}
+		defer conn.Close()
+
+		for {
+			if _, _, err := conn.NextReader(); err != nil {
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	remoteURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/pico/ws"
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	client, err := newRemoteClient(ctx, remoteURL, "", "close-session", &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("newRemoteClient() error = %v", err)
+	}
+
+	events := make(chan remoteEventResult, 1)
+	done := make(chan struct{})
+	go func() {
+		client.readLoop(ctx, events)
+		close(done)
+	}()
+
+	client.Close(websocket.CloseNormalClosure)
+	client.Close(websocket.CloseGoingAway)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("readLoop did not exit after Close")
+	}
+	select {
+	case evt, ok := <-events:
+		if ok {
+			t.Fatalf("readLoop event after Close = %#v", evt)
+		}
+	default:
+		t.Fatal("readLoop returned without closing events")
+	}
+	if err := client.Send("close-session", "hello"); err == nil {
+		t.Fatal("Send() after Close error = nil, want closed connection error")
+	}
+}
+
 func TestRemoteCommandExecutesRemoteMode(t *testing.T) {
 	const sessionID = "cmd-session"
 	gotMessage := make(chan pico.PicoMessage, 1)
