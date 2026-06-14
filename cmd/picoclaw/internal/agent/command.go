@@ -42,7 +42,12 @@ func NewAgentCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&message, "message", "m", "", "Send a single message (non-interactive mode)")
 	cmd.Flags().StringVarP(&sessionKey, "session", "s", "cli:default", "Session key")
 	cmd.Flags().StringVarP(&model, "model", "", "", "Model to use")
-	cmd.Flags().StringVar(&remoteURL, "remote", "", "Connect to a remote Pico WebSocket URL")
+	cmd.Flags().StringVar(
+		&remoteURL,
+		"remote",
+		"",
+		"Connect to a remote Pico WebSocket URL, e.g. ws://host:18790/pico/ws",
+	)
 	cmd.Flags().StringVar(&token, "token", "", "Bearer token for remote Pico auth")
 
 	return cmd
