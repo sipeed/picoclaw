@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -78,7 +79,11 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat() error = %v", err)
 	}
-	if perm := stat.Mode().Perm(); perm != 0o600 {
+	if perm := stat.Mode().Perm(); runtime.GOOS == "windows" {
+		if perm&0o200 == 0 {
+			t.Fatalf("file perm = %o, want owner-writable on Windows", perm)
+		}
+	} else if perm != 0o600 {
 		t.Fatalf("file perm = %o, want 600", perm)
 	}
 }
@@ -110,6 +115,63 @@ func TestLoadDefaultsAllowLocalhostBypassForLegacyConfig(t *testing.T) {
 	}
 	if !got.AllowLocalhostBypass {
 		t.Fatal("allow_localhost_bypass = false, want true for legacy config")
+	}
+	if got.AllowLocalhostBypassSource != BoolFieldAbsent {
+		t.Fatalf("allow_localhost_bypass source = %v, want %v", got.AllowLocalhostBypassSource, BoolFieldAbsent)
+	}
+}
+
+func TestLoadTracksAllowLocalhostBypassSource(t *testing.T) {
+	tests := []struct {
+		name       string
+		body       string
+		wantValue  bool
+		wantSource BoolFieldSource
+	}{
+		{
+			name:       "explicit true",
+			body:       `{"port":18800,"allow_localhost_bypass":true}`,
+			wantValue:  true,
+			wantSource: BoolFieldPresent,
+		},
+		{
+			name:       "explicit false",
+			body:       `{"port":18800,"allow_localhost_bypass":false}`,
+			wantValue:  false,
+			wantSource: BoolFieldPresent,
+		},
+		{
+			name:       "explicit null keeps fallback behavior",
+			body:       `{"port":18800,"allow_localhost_bypass":null}`,
+			wantValue:  true,
+			wantSource: BoolFieldNull,
+		},
+		{
+			name:       "omitted uses fallback",
+			body:       `{"port":18800}`,
+			wantValue:  true,
+			wantSource: BoolFieldAbsent,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "launcher-config.json")
+			if err := os.WriteFile(path, []byte(tt.body), 0o600); err != nil {
+				t.Fatalf("WriteFile() error = %v", err)
+			}
+
+			got, err := Load(path, Default())
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if got.AllowLocalhostBypass != tt.wantValue {
+				t.Fatalf("allow_localhost_bypass = %t, want %t", got.AllowLocalhostBypass, tt.wantValue)
+			}
+			if got.AllowLocalhostBypassSource != tt.wantSource {
+				t.Fatalf("allow_localhost_bypass source = %v, want %v", got.AllowLocalhostBypassSource, tt.wantSource)
+			}
+		})
 	}
 }
 

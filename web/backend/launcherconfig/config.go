@@ -20,16 +20,27 @@ const (
 
 // Config stores launch parameters for the web backend service.
 type Config struct {
-	Port                  int      `json:"port"`
-	Public                bool     `json:"public"`
-	AllowedCIDRs          []string `json:"allowed_cidrs,omitempty"`
-	AllowLocalhostBypass  bool     `json:"allow_localhost_bypass"`
-	TrustedProxyCIDRs     []string `json:"trusted_proxy_cidrs,omitempty"`
-	DashboardPasswordHash string   `json:"dashboard_password_hash,omitempty"`
+	Port                       int             `json:"port"`
+	Public                     bool            `json:"public"`
+	AllowedCIDRs               []string        `json:"allowed_cidrs,omitempty"`
+	AllowLocalhostBypass       bool            `json:"allow_localhost_bypass"`
+	AllowLocalhostBypassSource BoolFieldSource `json:"-"`
+	TrustedProxyCIDRs          []string        `json:"trusted_proxy_cidrs,omitempty"`
+	DashboardPasswordHash      string          `json:"dashboard_password_hash,omitempty"`
 	// LegacyLauncherToken is read only for one-time migration from the removed
 	// token login flow. Save always clears it so new configs do not persist it.
 	LegacyLauncherToken string `json:"launcher_token,omitempty"`
 }
+
+// BoolFieldSource tracks whether a JSON boolean field was omitted, explicitly
+// provided, or explicitly set to null. This is only used for diagnostics.
+type BoolFieldSource uint8
+
+const (
+	BoolFieldAbsent BoolFieldSource = iota
+	BoolFieldPresent
+	BoolFieldNull
+)
 
 // Default returns default launcher settings.
 func Default() Config {
@@ -98,6 +109,7 @@ func Load(path string, fallback Config) (Config, error) {
 	}
 
 	cfg := fallback
+	cfg.AllowLocalhostBypassSource = detectBoolFieldSource(data, "allow_localhost_bypass")
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return Config{}, err
 	}
@@ -109,6 +121,24 @@ func Load(path string, fallback Config) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func detectBoolFieldSource(data []byte, field string) BoolFieldSource {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return BoolFieldAbsent
+	}
+
+	value, ok := raw[field]
+	if !ok {
+		return BoolFieldAbsent
+	}
+
+	if string(value) == "null" {
+		return BoolFieldNull
+	}
+
+	return BoolFieldPresent
 }
 
 // Save writes launcher settings to disk.

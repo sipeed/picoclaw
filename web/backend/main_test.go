@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/netbind"
+	"github.com/sipeed/picoclaw/web/backend/launcherconfig"
 	"github.com/sipeed/picoclaw/web/backend/middleware"
 )
 
@@ -127,6 +129,185 @@ func TestResolveLauncherHostInput(t *testing.T) {
 			}
 			if gotActive != tt.wantActive {
 				t.Fatalf("resolveLauncherHostInput() active = %t, want %t", gotActive, tt.wantActive)
+			}
+		})
+	}
+}
+
+func TestLauncherAllowlistBypassLogPolicy(t *testing.T) {
+	tests := []struct {
+		name        string
+		hostInput   string
+		public      bool
+		cfg         launcherconfig.Config
+		wantEmit    bool
+		wantLevel   logger.LogLevel
+		wantMessage string
+	}{
+		{
+			name:   "explicit true logs info",
+			public: true,
+			cfg: launcherconfig.Config{
+				AllowedCIDRs:               []string{"192.168.1.0/24"},
+				AllowLocalhostBypass:       true,
+				AllowLocalhostBypassSource: launcherconfig.BoolFieldPresent,
+			},
+			wantEmit:    true,
+			wantLevel:   logger.INFO,
+			wantMessage: "Launcher public access uses allowed_cidrs with allow_localhost_bypass=true; same-host proxies or tunnels can bypass CIDR restrictions",
+		},
+		{
+			name:   "explicit null logs warn",
+			public: true,
+			cfg: launcherconfig.Config{
+				AllowedCIDRs:               []string{"192.168.1.0/24"},
+				AllowLocalhostBypass:       true,
+				AllowLocalhostBypassSource: launcherconfig.BoolFieldNull,
+			},
+			wantEmit:    true,
+			wantLevel:   logger.WARN,
+			wantMessage: "Launcher public access uses allowed_cidrs with allow_localhost_bypass=null; default localhost bypass remains enabled, so same-host proxies or tunnels can bypass CIDR restrictions",
+		},
+		{
+			name:   "omitted field does not log",
+			public: true,
+			cfg: launcherconfig.Config{
+				AllowedCIDRs:               []string{"192.168.1.0/24"},
+				AllowLocalhostBypass:       true,
+				AllowLocalhostBypassSource: launcherconfig.BoolFieldAbsent,
+			},
+			wantEmit: false,
+		},
+		{
+			name:   "not public does not log",
+			public: false,
+			cfg: launcherconfig.Config{
+				AllowedCIDRs:               []string{"192.168.1.0/24"},
+				AllowLocalhostBypass:       true,
+				AllowLocalhostBypassSource: launcherconfig.BoolFieldPresent,
+			},
+			wantEmit: false,
+		},
+		{
+			name:   "empty cidrs does not log",
+			public: true,
+			cfg: launcherconfig.Config{
+				AllowLocalhostBypass:       true,
+				AllowLocalhostBypassSource: launcherconfig.BoolFieldPresent,
+			},
+			wantEmit: false,
+		},
+		{
+			name:   "explicit false does not log",
+			public: true,
+			cfg: launcherconfig.Config{
+				AllowedCIDRs:               []string{"192.168.1.0/24"},
+				AllowLocalhostBypass:       false,
+				AllowLocalhostBypassSource: launcherconfig.BoolFieldPresent,
+			},
+			wantEmit: false,
+		},
+		{
+			name:      "explicit any-host override still logs",
+			hostInput: "0.0.0.0",
+			public:    false,
+			cfg: launcherconfig.Config{
+				AllowedCIDRs:               []string{"192.168.1.0/24"},
+				AllowLocalhostBypass:       true,
+				AllowLocalhostBypassSource: launcherconfig.BoolFieldPresent,
+			},
+			wantEmit:    true,
+			wantLevel:   logger.INFO,
+			wantMessage: "Launcher public access uses allowed_cidrs with allow_localhost_bypass=true; same-host proxies or tunnels can bypass CIDR restrictions",
+		},
+		{
+			name:      "explicit ipv6 any-host override still logs",
+			hostInput: "::",
+			public:    false,
+			cfg: launcherconfig.Config{
+				AllowedCIDRs:               []string{"192.168.1.0/24"},
+				AllowLocalhostBypass:       true,
+				AllowLocalhostBypassSource: launcherconfig.BoolFieldPresent,
+			},
+			wantEmit:    true,
+			wantLevel:   logger.INFO,
+			wantMessage: "Launcher public access uses allowed_cidrs with allow_localhost_bypass=true; same-host proxies or tunnels can bypass CIDR restrictions",
+		},
+		{
+			name:      "explicit hostname override logs",
+			hostInput: "example.com",
+			public:    false,
+			cfg: launcherconfig.Config{
+				AllowedCIDRs:               []string{"192.168.1.0/24"},
+				AllowLocalhostBypass:       true,
+				AllowLocalhostBypassSource: launcherconfig.BoolFieldPresent,
+			},
+			wantEmit:    true,
+			wantLevel:   logger.INFO,
+			wantMessage: "Launcher public access uses allowed_cidrs with allow_localhost_bypass=true; same-host proxies or tunnels can bypass CIDR restrictions",
+		},
+		{
+			name:      "explicit loopback override does not log",
+			hostInput: "127.0.0.1",
+			public:    false,
+			cfg: launcherconfig.Config{
+				AllowedCIDRs:               []string{"192.168.1.0/24"},
+				AllowLocalhostBypass:       true,
+				AllowLocalhostBypassSource: launcherconfig.BoolFieldPresent,
+			},
+			wantEmit: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := launcherAllowlistBypassLogPolicy(tt.hostInput, tt.public, tt.cfg)
+			if got.emit != tt.wantEmit {
+				t.Fatalf("emit = %t, want %t", got.emit, tt.wantEmit)
+			}
+			if !tt.wantEmit {
+				return
+			}
+			if got.level != tt.wantLevel {
+				t.Fatalf("level = %v, want %v", got.level, tt.wantLevel)
+			}
+			if got.message != tt.wantMessage {
+				t.Fatalf("message = %q, want %q", got.message, tt.wantMessage)
+			}
+		})
+	}
+}
+
+func TestLauncherBindMayExposeBeyondLoopback(t *testing.T) {
+	tests := []struct {
+		name      string
+		hostInput string
+		public    bool
+		want      bool
+	}{
+		{name: "default loopback bind", public: false, want: false},
+		{name: "default public bind", public: true, want: true},
+		{name: "localhost override", hostInput: "localhost", want: false},
+		{name: "ipv4 loopback override", hostInput: "127.0.0.1", want: false},
+		{name: "ipv6 loopback override", hostInput: "::1", want: false},
+		{name: "ipv4 wildcard override", hostInput: "0.0.0.0", want: true},
+		{name: "ipv6 wildcard override", hostInput: "::", want: true},
+		{name: "star override", hostInput: "*", want: true},
+		{name: "hostname override", hostInput: "example.com", want: true},
+		{name: "lan ip override", hostInput: "192.168.1.2", want: true},
+		{name: "mixed hosts with non-loopback", hostInput: "127.0.0.1,192.168.1.2", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := launcherBindMayExposeBeyondLoopback(tt.hostInput, tt.public); got != tt.want {
+				t.Fatalf(
+					"launcherBindMayExposeBeyondLoopback(%q, %t) = %t, want %t",
+					tt.hostInput,
+					tt.public,
+					got,
+					tt.want,
+				)
 			}
 		})
 	}

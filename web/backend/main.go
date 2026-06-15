@@ -339,6 +339,64 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+type launcherAllowlistBypassLogDecision struct {
+	level   logger.LogLevel
+	message string
+	emit    bool
+}
+
+func launcherBindMayExposeBeyondLoopback(hostInput string, public bool) bool {
+	normalizedHostInput := strings.TrimSpace(hostInput)
+	if normalizedHostInput == "" {
+		return public
+	}
+
+	for token := range strings.SplitSeq(normalizedHostInput, ",") {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			continue
+		}
+		if token == "*" || netbind.IsUnspecifiedHost(token) {
+			return true
+		}
+		if strings.EqualFold(token, "localhost") || netbind.IsLoopbackHost(token) {
+			continue
+		}
+		return true
+	}
+
+	return false
+}
+
+func launcherAllowlistBypassLogPolicy(
+	hostInput string,
+	public bool,
+	cfg launcherconfig.Config,
+) launcherAllowlistBypassLogDecision {
+	if !launcherBindMayExposeBeyondLoopback(hostInput, public) || len(cfg.AllowedCIDRs) == 0 {
+		return launcherAllowlistBypassLogDecision{}
+	}
+
+	switch cfg.AllowLocalhostBypassSource {
+	case launcherconfig.BoolFieldPresent:
+		if cfg.AllowLocalhostBypass {
+			return launcherAllowlistBypassLogDecision{
+				level:   logger.INFO,
+				emit:    true,
+				message: "Launcher public access uses allowed_cidrs with allow_localhost_bypass=true; same-host proxies or tunnels can bypass CIDR restrictions",
+			}
+		}
+	case launcherconfig.BoolFieldNull:
+		return launcherAllowlistBypassLogDecision{
+			level:   logger.WARN,
+			emit:    true,
+			message: "Launcher public access uses allowed_cidrs with allow_localhost_bypass=null; default localhost bypass remains enabled, so same-host proxies or tunnels can bypass CIDR restrictions",
+		}
+	}
+
+	return launcherAllowlistBypassLogDecision{}
+}
+
 func main() {
 	port := flag.String("port", "18800", "Port to listen on")
 	host := flag.String("host", "", "Host to listen on (overrides -public when set)")
@@ -489,6 +547,15 @@ func main() {
 
 	if hostOverrideActive && explicitPublic {
 		logger.InfoC("web", "Ignoring -public because launcher host was explicitly set")
+	}
+
+	if decision := launcherAllowlistBypassLogPolicy(hostInput, effectivePublic, launcherCfg); decision.emit {
+		switch decision.level {
+		case logger.WARN:
+			logger.WarnC("web", decision.message)
+		default:
+			logger.InfoC("web", decision.message)
+		}
 	}
 
 	portNum, err := strconv.Atoi(effectivePort)
