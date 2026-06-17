@@ -507,7 +507,9 @@ func spawnSubTurn(
 	} else {
 		result = &tools.ToolResult{
 			ForLLM:  turnRes.finalContent,
-			ForUser: turnRes.finalContent,
+			ForUser: "", // Clear ForUser to prevent direct push;
+			// the main agent controls delivery via the orchestration path,
+			// avoiding duplicate messages on async sub-agent completion.
 		}
 	}
 
