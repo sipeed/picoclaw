@@ -18,3 +18,11 @@ func WithRuntimeEvents(bus runtimeevents.Bus) AgentLoopOption {
 		al.ownsRuntimeEvents = false
 	}
 }
+
+// WithDisableBackgroundReview disables the live background review feature.
+func WithDisableBackgroundReview(disable bool) AgentLoopOption {
+	return func(al *AgentLoop) {
+		al.disableBgReview = disable
+	}
+}
+

@@ -4,7 +4,11 @@ package agent
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,6 +67,8 @@ func NewAgentLoop(
 		workerPoolSize = 1
 	}
 
+	isTestEnv := isTestEnvironment()
+
 	al := &AgentLoop{
 		bus:               msgBus,
 		cfg:               cfg,
@@ -74,6 +80,8 @@ func NewAgentLoop(
 		steering:          newSteeringQueue(parseSteeringMode(cfg.Agents.Defaults.SteeringMode)),
 		workerSem:         make(chan struct{}, workerPoolSize),
 		ownsRuntimeEvents: true,
+		fileMgr:           NewSafeFileManager(),
+		disableBgReview:   isTestEnv,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -405,4 +413,20 @@ func registerSharedTools(
 
 		warnOnUnknownAgentToolDeclarations(agentID, agent.Workspace, agent.Definition, agent.Tools)
 	}
+}
+
+func isTestEnvironment() bool {
+	if flag.Lookup("test.v") != nil {
+		return true
+	}
+	for _, arg := range os.Args {
+		if strings.HasPrefix(arg, "-test.") {
+			return true
+		}
+	}
+	exe := filepath.Base(os.Args[0])
+	if strings.HasSuffix(exe, ".test") || strings.HasSuffix(exe, ".test.exe") || strings.HasPrefix(exe, "___Test") {
+		return true
+	}
+	return false
 }

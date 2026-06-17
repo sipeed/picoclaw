@@ -81,6 +81,10 @@ type AgentLoop struct {
 	reloadFunc func() error
 
 	providerFactory func(*config.ModelConfig) (providers.LLMProvider, string, error)
+
+	fileMgr *SafeFileManager
+	bgReviewsWg sync.WaitGroup
+	disableBgReview bool
 }
 
 // processOptions configures how a message is processed
@@ -324,6 +328,9 @@ func (al *AgentLoop) Stop() {
 
 // Close releases resources held by agent session stores. Call after Stop.
 func (al *AgentLoop) Close() {
+	// Wait for any active background reviews to finish before releasing resources and directories
+	al.bgReviewsWg.Wait()
+
 	mcpManager := al.mcp.takeManager()
 
 	if mcpManager != nil {
@@ -621,6 +628,11 @@ func (al *AgentLoop) runAgentLoop(
 				"iterations":   ts.currentIteration(),
 				"final_length": len(result.finalContent),
 			})
+
+		// Trigger live background review to analyze user preferences and skills
+		if !al.disableBgReview {
+			StartBackgroundReview(agent, opts.Dispatch.SessionKey, al.fileMgr, &al.bgReviewsWg)
+		}
 	}
 
 	return result.finalContent, nil
