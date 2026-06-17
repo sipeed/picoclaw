@@ -1996,15 +1996,8 @@ type WebFetchTool struct {
 	client          *http.Client
 	format          string
 	fetchLimitBytes int64
-	whitelist       *privateHostWhitelist
+	whitelist       *utils.PrivateHostWhitelist
 }
-
-type privateHostWhitelist struct {
-	exact map[string]struct{}
-	cidrs []*net.IPNet
-}
-
-type webFetchAllowedFirstHopHostKey struct{}
 
 func NewWebFetchTool(maxChars int, format string, fetchLimitBytes int64) (*WebFetchTool, error) {
 	// createHTTPClient cannot fail with an empty proxy string.
@@ -2035,30 +2028,21 @@ func NewWebFetchToolWithConfig(
 	if maxChars <= 0 {
 		maxChars = defaultMaxChars
 	}
-	whitelist, err := newPrivateHostWhitelist(privateHostWhitelist)
+	whitelist, err := utils.NewPrivateHostWhitelist(privateHostWhitelist)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse web fetch private host whitelist: %w", err)
 	}
-	client, err := utils.CreateHTTPClient(proxy, fetchTimeout)
+	client, err := utils.CreateSafeHTTPClient(utils.SafeHTTPClientOptions{
+		ProxyURL:             proxy,
+		Timeout:              fetchTimeout,
+		PrivateHostWhitelist: privateHostWhitelist,
+		AllowPrivateHosts: func() bool {
+			return allowPrivateWebFetchHosts.Load()
+		},
+		MaxRedirects: maxRedirects,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP client for web fetch: %w", err)
-	}
-	if transport, ok := client.Transport.(*http.Transport); ok {
-		dialer := &net.Dialer{
-			Timeout:   15 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}
-		transport.DialContext = newSafeDialContext(dialer, whitelist)
-	}
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= maxRedirects {
-			return fmt.Errorf("stopped after %d redirects", maxRedirects)
-		}
-		if isObviousPrivateHost(req.URL.Hostname(), whitelist) {
-			return fmt.Errorf("redirect target is private or local network host")
-		}
-		allowConfiguredProxyFirstHop(req, client.Transport)
-		return nil
 	}
 	if fetchLimitBytes <= 0 {
 		fetchLimitBytes = 10 * 1024 * 1024 // Security Fallback
@@ -2121,7 +2105,9 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 	// Lightweight pre-flight: block obvious localhost/literal-IP without DNS resolution.
 	// The real SSRF guard is newSafeDialContext at connect time.
 	hostname := parsedURL.Hostname()
-	if isObviousPrivateHost(hostname, t.whitelist) {
+	if utils.IsObviousPrivateHost(hostname, t.whitelist, func() bool {
+		return allowPrivateWebFetchHosts.Load()
+	}) {
 		return ErrorResult("fetching private or local network hosts is not allowed")
 	}
 
@@ -2137,7 +2123,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]any) *ToolRe
 		if reqErr != nil {
 			return nil, nil, fmt.Errorf("failed to create request: %w", reqErr)
 		}
-		allowConfiguredProxyFirstHop(req, t.client.Transport)
+		utils.AllowConfiguredProxyFirstHop(req, t.client.Transport)
 		req.Header.Set("User-Agent", ua)
 		resp, doErr := t.client.Do(req)
 		if doErr != nil {
@@ -2325,247 +2311,29 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 	return strings.Join(cleanLines, "\n")
 }
 
-// newSafeDialContext re-resolves DNS at connect time to mitigate DNS rebinding (TOCTOU)
-// where a hostname resolves to a public IP during pre-flight but a private IP at connect time.
 func newSafeDialContext(
 	dialer *net.Dialer,
-	whitelist *privateHostWhitelist,
+	whitelist *utils.PrivateHostWhitelist,
 ) func(context.Context, string, string) (net.Conn, error) {
-	return func(ctx context.Context, network, address string) (net.Conn, error) {
-		if allowPrivateWebFetchHosts.Load() {
-			return dialer.DialContext(ctx, network, address)
-		}
+	return utils.NewSafeDialContext(dialer, whitelist, func() bool {
+		return allowPrivateWebFetchHosts.Load()
+	})
+}
 
-		host, port, err := net.SplitHostPort(address)
-		if err != nil {
-			return nil, fmt.Errorf("invalid target address %q: %w", address, err)
-		}
-		if host == "" {
-			return nil, fmt.Errorf("empty target host")
-		}
-		if isAllowedFirstHopHost(ctx, host) {
-			return dialer.DialContext(ctx, network, address)
-		}
+func newPrivateHostWhitelist(entries []string) (*utils.PrivateHostWhitelist, error) {
+	return utils.NewPrivateHostWhitelist(entries)
+}
 
-		if ip := net.ParseIP(host); ip != nil {
-			if shouldBlockPrivateIP(ip, whitelist) {
-				return nil, fmt.Errorf("blocked private or local target: %s", host)
-			}
-			return dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
-		}
+func isObviousPrivateHost(host string, whitelist *utils.PrivateHostWhitelist) bool {
+	return utils.IsObviousPrivateHost(host, whitelist, func() bool {
+		return allowPrivateWebFetchHosts.Load()
+	})
+}
 
-		ipAddrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve %s: %w", host, err)
-		}
-
-		attempted := 0
-		var lastErr error
-		for _, ipAddr := range ipAddrs {
-			if shouldBlockPrivateIP(ipAddr.IP, whitelist) {
-				continue
-			}
-			attempted++
-			conn, err := dialer.DialContext(
-				ctx,
-				network,
-				net.JoinHostPort(ipAddr.IP.String(), port),
-			)
-			if err == nil {
-				return conn, nil
-			}
-			lastErr = err
-		}
-
-		if attempted == 0 {
-			return nil, fmt.Errorf(
-				"all resolved addresses for %s are private, restricted, or not whitelisted",
-				host,
-			)
-		}
-		if lastErr != nil {
-			return nil, fmt.Errorf(
-				"failed connecting to public addresses for %s: %w",
-				host,
-				lastErr,
-			)
-		}
-		return nil, fmt.Errorf("failed connecting to public addresses for %s", host)
-	}
+func isPrivateOrRestrictedIP(ip net.IP) bool {
+	return utils.IsPrivateOrRestrictedIP(ip)
 }
 
 func allowConfiguredProxyFirstHop(req *http.Request, rt http.RoundTripper) {
-	if req == nil {
-		return
-	}
-
-	transport, ok := rt.(*http.Transport)
-	if !ok || transport.Proxy == nil {
-		return
-	}
-
-	proxyURL, err := transport.Proxy(req)
-	if err != nil || proxyURL == nil {
-		return
-	}
-
-	host := normalizeAllowedFirstHopHost(proxyURL.Hostname())
-	if host == "" {
-		return
-	}
-
-	*req = *req.WithContext(context.WithValue(
-		req.Context(),
-		webFetchAllowedFirstHopHostKey{},
-		host,
-	))
-}
-
-func isAllowedFirstHopHost(ctx context.Context, host string) bool {
-	allowed, ok := ctx.Value(webFetchAllowedFirstHopHostKey{}).(string)
-	if !ok || allowed == "" {
-		return false
-	}
-	return allowed == normalizeAllowedFirstHopHost(host)
-}
-
-func normalizeAllowedFirstHopHost(host string) string {
-	host = strings.ToLower(strings.TrimSpace(host))
-	return strings.TrimSuffix(host, ".")
-}
-
-func newPrivateHostWhitelist(entries []string) (*privateHostWhitelist, error) {
-	if len(entries) == 0 {
-		return nil, nil
-	}
-
-	whitelist := &privateHostWhitelist{
-		exact: make(map[string]struct{}),
-		cidrs: make([]*net.IPNet, 0, len(entries)),
-	}
-	for _, entry := range entries {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-		if ip := net.ParseIP(entry); ip != nil {
-			whitelist.exact[normalizeWhitelistIP(ip).String()] = struct{}{}
-			continue
-		}
-		_, network, err := net.ParseCIDR(entry)
-		if err != nil {
-			return nil, fmt.Errorf("invalid entry %q: expected IP or CIDR", entry)
-		}
-		whitelist.cidrs = append(whitelist.cidrs, network)
-	}
-
-	if len(whitelist.exact) == 0 && len(whitelist.cidrs) == 0 {
-		return nil, nil
-	}
-	return whitelist, nil
-}
-
-func (w *privateHostWhitelist) Contains(ip net.IP) bool {
-	if w == nil || ip == nil {
-		return false
-	}
-
-	normalized := normalizeWhitelistIP(ip)
-	if _, ok := w.exact[normalized.String()]; ok {
-		return true
-	}
-	for _, network := range w.cidrs {
-		if network.Contains(normalized) {
-			return true
-		}
-	}
-	return false
-}
-
-func normalizeWhitelistIP(ip net.IP) net.IP {
-	if ip == nil {
-		return nil
-	}
-	if ip4 := ip.To4(); ip4 != nil {
-		return ip4
-	}
-	return ip
-}
-
-func shouldBlockPrivateIP(ip net.IP, whitelist *privateHostWhitelist) bool {
-	return isPrivateOrRestrictedIP(ip) && !whitelist.Contains(ip)
-}
-
-// isObviousPrivateHost performs a lightweight, no-DNS check for obviously private hosts.
-// It catches localhost, literal private IPs, and empty hosts. It does NOT resolve DNS —
-// the real SSRF guard is newSafeDialContext which checks IPs at connect time.
-func isObviousPrivateHost(host string, whitelist *privateHostWhitelist) bool {
-	if allowPrivateWebFetchHosts.Load() {
-		return false
-	}
-
-	h := strings.ToLower(strings.TrimSpace(host))
-	h = strings.TrimSuffix(h, ".")
-	if h == "" {
-		return true
-	}
-
-	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
-		return true
-	}
-
-	if ip := net.ParseIP(h); ip != nil {
-		return shouldBlockPrivateIP(ip, whitelist)
-	}
-
-	return false
-}
-
-// isPrivateOrRestrictedIP returns true for IPs that should never be reached via web_fetch:
-// RFC 1918, loopback, link-local (incl. cloud metadata 169.254.x.x), carrier-grade NAT,
-// benchmark (198.18.0.0/15), IPv6 unique-local (fc00::/7), 6to4 (2002::/16), and
-// Teredo (2001:0000::/32).
-func isPrivateOrRestrictedIP(ip net.IP) bool {
-	if ip == nil {
-		return true
-	}
-
-	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsMulticast() || ip.IsUnspecified() {
-		return true
-	}
-
-	if ip4 := ip.To4(); ip4 != nil {
-		// IPv4 private, loopback, link-local, and carrier-grade NAT ranges.
-		if ip4[0] == 10 ||
-			ip4[0] == 127 ||
-			ip4[0] == 0 ||
-			(ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31) ||
-			(ip4[0] == 192 && ip4[1] == 168) ||
-			(ip4[0] == 169 && ip4[1] == 254) ||
-			(ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127) ||
-			(ip4[0] == 198 && ip4[1] >= 18 && ip4[1] <= 19) {
-			return true
-		}
-		return false
-	}
-
-	if len(ip) == net.IPv6len {
-		// IPv6 unique local addresses (fc00::/7)
-		if (ip[0] & 0xfe) == 0xfc {
-			return true
-		}
-		// 6to4 addresses (2002::/16): check the embedded IPv4 at bytes [2:6].
-		if ip[0] == 0x20 && ip[1] == 0x02 {
-			embedded := net.IPv4(ip[2], ip[3], ip[4], ip[5])
-			return isPrivateOrRestrictedIP(embedded)
-		}
-		// Teredo (2001:0000::/32): client IPv4 is at bytes [12:16], XOR-inverted.
-		if ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x00 && ip[3] == 0x00 {
-			client := net.IPv4(ip[12]^0xff, ip[13]^0xff, ip[14]^0xff, ip[15]^0xff)
-			return isPrivateOrRestrictedIP(client)
-		}
-	}
-
-	return false
+	utils.AllowConfiguredProxyFirstHop(req, rt)
 }

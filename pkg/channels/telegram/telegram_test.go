@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -211,6 +213,33 @@ func TestSendMedia_ImageFallbacksToDocumentOnInvalidDimensions(t *testing.T) {
 	assert.Equal(t, len(content), constructor.calls[0].FileSizes["photo"])
 	assert.Equal(t, len(content), constructor.calls[1].FileSizes["document"])
 	assert.Equal(t, "caption", constructor.calls[1].Parameters["caption"])
+}
+
+func TestDownloadFileWithInfo_AllowsLocalConfiguredBaseURL(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got, want := r.URL.Path, "/file/bot"+testToken+"/photos/image"; got != want {
+			t.Fatalf("request path = %q, want %q", got, want)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("telegram-local-bot-api"))
+	}))
+	defer server.Close()
+
+	ch, err := NewTelegramChannel(
+		&config.Channel{Type: config.ChannelTelegram, Enabled: true},
+		&config.TelegramSettings{
+			Token:   *config.NewSecureString(testToken),
+			BaseURL: server.URL,
+		},
+		nil,
+	)
+	require.NoError(t, err)
+
+	path := ch.downloadFileWithInfo(&telego.File{FilePath: "photos/image"}, "")
+	if path == "" {
+		t.Fatal("expected local base_url download to succeed")
+	}
+	defer os.Remove(path)
 }
 
 func TestSendMedia_ImageNonDimensionErrorDoesNotFallback(t *testing.T) {

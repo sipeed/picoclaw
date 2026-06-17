@@ -64,10 +64,11 @@ func SanitizeFilename(filename string) string {
 
 // DownloadOptions holds optional parameters for downloading files
 type DownloadOptions struct {
-	Timeout      time.Duration
-	ExtraHeaders map[string]string
-	LoggerPrefix string
-	ProxyURL     string
+	Timeout             time.Duration
+	ExtraHeaders        map[string]string
+	LoggerPrefix        string
+	ProxyURL            string
+	BlockPrivateTargets bool
 }
 
 // DownloadFile downloads a file from URL to a local temp directory.
@@ -93,8 +94,45 @@ func DownloadFile(urlStr, filename string, opts DownloadOptions) string {
 	safeName := SanitizeFilename(filename)
 	localPath := filepath.Join(mediaDir, uuid.New().String()[:8]+"_"+safeName)
 
-	// Create HTTP request
-	req, err := http.NewRequest("GET", urlStr, nil)
+	var client *http.Client
+	var err error
+	if opts.BlockPrivateTargets {
+		if err := ValidateSafeHTTPURL(urlStr, nil, nil); err != nil {
+			logger.ErrorCF(opts.LoggerPrefix, "Blocked unsafe download URL", map[string]any{
+				"error": err.Error(),
+				"url":   urlStr,
+			})
+			return ""
+		}
+		client, err = CreateSafeHTTPClient(SafeHTTPClientOptions{
+			ProxyURL:     opts.ProxyURL,
+			Timeout:      opts.Timeout,
+			MaxRedirects: 10,
+		})
+		if err != nil {
+			logger.ErrorCF(opts.LoggerPrefix, "Failed to create safe download client", map[string]any{
+				"error": err.Error(),
+			})
+			return ""
+		}
+	} else {
+		client = &http.Client{Timeout: opts.Timeout}
+		if opts.ProxyURL != "" {
+			proxyURL, parseErr := url.Parse(opts.ProxyURL)
+			if parseErr != nil {
+				logger.ErrorCF(opts.LoggerPrefix, "Invalid proxy URL for download", map[string]any{
+					"error": parseErr.Error(),
+					"proxy": opts.ProxyURL,
+				})
+				return ""
+			}
+			client.Transport = &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+			}
+		}
+	}
+
+	req, err := http.NewRequest(http.MethodGet, urlStr, nil)
 	if err != nil {
 		logger.ErrorCF(opts.LoggerPrefix, "Failed to create download request", map[string]any{
 			"error": err.Error(),
@@ -106,21 +144,10 @@ func DownloadFile(urlStr, filename string, opts DownloadOptions) string {
 	for key, value := range opts.ExtraHeaders {
 		req.Header.Set(key, value)
 	}
-
-	client := &http.Client{Timeout: opts.Timeout}
-	if opts.ProxyURL != "" {
-		proxyURL, parseErr := url.Parse(opts.ProxyURL)
-		if parseErr != nil {
-			logger.ErrorCF(opts.LoggerPrefix, "Invalid proxy URL for download", map[string]any{
-				"error": parseErr.Error(),
-				"proxy": opts.ProxyURL,
-			})
-			return ""
-		}
-		client.Transport = &http.Transport{
-			Proxy: http.ProxyURL(proxyURL),
-		}
+	if opts.BlockPrivateTargets {
+		AllowConfiguredProxyFirstHop(req, client.Transport)
 	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.ErrorCF(opts.LoggerPrefix, "Failed to download file", map[string]any{
