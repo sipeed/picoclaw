@@ -97,9 +97,10 @@ func DownloadFile(urlStr, filename string, opts DownloadOptions) string {
 	var client *http.Client
 	var err error
 	if opts.BlockPrivateTargets {
-		if err := ValidateSafeHTTPURL(urlStr, nil, nil); err != nil {
+		validateErr := ValidateSafeHTTPURL(urlStr, nil, nil)
+		if validateErr != nil {
 			logger.ErrorCF(opts.LoggerPrefix, "Blocked unsafe download URL", map[string]any{
-				"error": err.Error(),
+				"error": validateErr.Error(),
 				"url":   urlStr,
 			})
 			return ""

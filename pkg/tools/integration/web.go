@@ -2324,16 +2324,6 @@ func newPrivateHostWhitelist(entries []string) (*utils.PrivateHostWhitelist, err
 	return utils.NewPrivateHostWhitelist(entries)
 }
 
-func isObviousPrivateHost(host string, whitelist *utils.PrivateHostWhitelist) bool {
-	return utils.IsObviousPrivateHost(host, whitelist, func() bool {
-		return allowPrivateWebFetchHosts.Load()
-	})
-}
-
 func isPrivateOrRestrictedIP(ip net.IP) bool {
 	return utils.IsPrivateOrRestrictedIP(ip)
-}
-
-func allowConfiguredProxyFirstHop(req *http.Request, rt http.RoundTripper) {
-	utils.AllowConfiguredProxyFirstHop(req, rt)
 }
