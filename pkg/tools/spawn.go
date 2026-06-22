@@ -59,7 +59,7 @@ func (t *SpawnTool) Parameters() map[string]any {
 			},
 			"direct_reply": map[string]any{
 				"type":        "boolean",
-				"description": "When true (default), the subagent result is sent directly to the user AND embedded in the main agent context. When false, the result is returned to the main agent which will process and present it to the user — preventing duplicate messages.",
+				"description": "When true (default), the subagent's result is sent directly to the user and saved to conversation context — no follow-up LLM turn is triggered. When false, the result is returned to the main agent which will process and present it to the user.",
 			},
 		},
 		"required": []string{"task"},
@@ -106,9 +106,11 @@ func (t *SpawnTool) execute(
 
 	// direct_reply controls whether the subagent result is sent directly to
 	// the user (true, default) or returned to the main agent for processing.
-	// When false, ForUser is stripped from the result so the async callback
-	// does NOT push it directly — only the inbound message path remains,
-	// and the main agent will present the result in its own response.
+	// When true, SkipInboundTurn is set on the result so the async callback
+	// does not publish an inbound message — instead it saves the result to
+	// session history so it's available as context in the next user turn.
+	// When false, ForUser is stripped so only the inbound message path
+	// remains, and the main agent will present the result in its response.
 	directReply := true
 	if v, ok := args["direct_reply"].(bool); ok {
 		directReply = v
@@ -163,6 +165,15 @@ Task: %s`,
 			// path so the main agent can process and present the result.
 			if !directReply && result != nil {
 				result.ForUser = ""
+			}
+
+			// When direct_reply is true, set SkipInboundTurn so the async
+			// callback skips the inbound publish (no follow-up LLM turn)
+			// and instead saves the result to session history for context
+			// continuity. The ForUser push above already delivered the
+			// result directly to the user.
+			if directReply && result != nil {
+				result.SkipInboundTurn = true
 			}
 
 			// Call callback if provided

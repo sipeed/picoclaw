@@ -524,6 +524,28 @@ toolLoop:
 				return
 			}
 
+			// When SkipInboundTurn is set, the subagent's result was already
+			// delivered directly to the user via ForUser push above. Instead
+			// of publishing an inbound message (which triggers a follow-up
+			// LLM turn), save it to the session conversation history so it's
+			// available as context in the next user turn.
+			if result.SkipInboundTurn {
+				msg := providers.Message{
+					Role:    "assistant",
+					Content: content,
+				}
+				ts.agent.Sessions.AddFullMessage(ts.sessionKey, msg)
+				ts.ingestMessage(context.Background(), al, msg)
+				if err := ts.agent.Sessions.Save(ts.sessionKey); err != nil {
+					logger.WarnCF("agent", "Failed to save session after direct-reply context injection",
+						map[string]any{
+							"session_key": ts.sessionKey,
+							"error":       err.Error(),
+						})
+				}
+				return
+			}
+
 			content = al.cfg.FilterSensitiveData(content)
 
 			logger.InfoCF("agent", "Async tool completed, publishing result",

@@ -59,6 +59,14 @@ type ToolResult struct {
 	// user's request at the channel/output level, so the agent loop can stop
 	// without a follow-up assistant response.
 	ResponseHandled bool `json:"response_handled,omitempty"`
+
+	// SkipInboundTurn tells the async callback to skip publishing an inbound
+	// message (which triggers a follow-up LLM turn). When true, the result
+	// has already been delivered directly to the user via ForUser push, and
+	// the async callback should instead save it to the conversation session
+	// history so it's available as context in the next user turn.
+	// Used by spawn tool when direct_reply=true.
+	SkipInboundTurn bool `json:"skip_inbound_turn,omitempty"`
 }
 
 // ContentForLLM returns the normalized textual content to append to the
