@@ -149,6 +149,10 @@ func registerSharedTools(
 			}
 		}
 
+		if tools.AndroidToolEnabledFromEnv() {
+			agent.Tools.Register(tools.NewAndroidToolFromEnv())
+		}
+
 		// Hardware tools (I2C, SPI) - Linux only, returns error on other platforms
 		if cfg.Tools.IsToolEnabled("i2c") {
 			agent.Tools.Register(tools.NewI2CTool())
