@@ -233,12 +233,24 @@ func buildRequestBody(
 
 			// Add tool_use blocks
 			for _, tc := range msg.ToolCalls {
-				if strings.TrimSpace(tc.Name) == "" {
+				// Flat Name/Arguments carry json:"-" and are not persisted, so a
+				// tool-call message rehydrated from the session store has them
+				// empty. Fall back to the serialized Function field, otherwise the
+				// tool_use blocks get dropped and the following tool_result
+				// messages become orphaned (strict providers like DeepSeek 400).
+				name := tc.Name
+				input := tc.Arguments
+				if name == "" && tc.Function != nil {
+					name = tc.Function.Name
+					if input == nil && strings.TrimSpace(tc.Function.Arguments) != "" {
+						_ = json.Unmarshal([]byte(tc.Function.Arguments), &input)
+					}
+				}
+				if strings.TrimSpace(name) == "" {
 					continue
 				}
 
 				// Handle nil Arguments (GLM-4 may return null input)
-				input := tc.Arguments
 				if input == nil {
 					input = map[string]any{}
 				}
@@ -246,7 +258,7 @@ func buildRequestBody(
 				toolUse := map[string]any{
 					"type":  "tool_use",
 					"id":    tc.ID,
-					"name":  tc.Name,
+					"name":  name,
 					"input": input,
 				}
 				content = append(content, toolUse)
