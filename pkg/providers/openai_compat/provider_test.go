@@ -2196,3 +2196,222 @@ func TestSerializeMessages_StripsSystemParts(t *testing.T) {
 		t.Fatal("system_parts should not appear in serialized output")
 	}
 }
+
+// TestProviderChat_ExtractsSeedToolCallsFromContent verifies that when a provider
+// embeds <seed:tool_call> XML in message.content (instead of the standard
+// tool_calls field), we extract it, convert it to ToolCall structs, strip the
+// XML from the returned text, and change the finish_reason to "tool_calls".
+func TestProviderChat_ExtractsSeedToolCallsFromContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "Let me check that for you.\n<seed:tool_call>\n  <function name=\"exec\">\n    <parameter name=\"action\" string=\"true\">run</parameter>\n    <parameter name=\"command\" string=\"true\">ls -la /tmp</parameter>\n  </function>\n</seed:tool_call>",
+						"tool_calls": []any{}, // empty array, not nil
+					},
+					"finish_reason": "stop",
+				},
+			},
+			"usage": map[string]any{
+				"prompt_tokens":     10,
+				"completion_tokens": 20,
+				"total_tokens":      30,
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "list files"}}, nil, "volcengine/Doubao-Seed-2.0-pro", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "exec" {
+		t.Fatalf("ToolCalls[0].Name = %q, want %q", out.ToolCalls[0].Name, "exec")
+	}
+	if out.ToolCalls[0].Arguments["action"] != "run" {
+		t.Fatalf("ToolCalls[0].Arguments[action] = %v, want run", out.ToolCalls[0].Arguments["action"])
+	}
+	if out.ToolCalls[0].Arguments["command"] != "ls -la /tmp" {
+		t.Fatalf("ToolCalls[0].Arguments[command] = %v, want ls -la /tmp", out.ToolCalls[0].Arguments["command"])
+	}
+	if out.Content != "Let me check that for you." {
+		t.Fatalf("Content = %q, want %q", out.Content, "Let me check that for you.")
+	}
+	if out.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want tool_calls", out.FinishReason)
+	}
+}
+
+// TestProviderChatStream_ExtractsSeedToolCallsFromContent verifies that streaming
+// responses also recover <seed:tool_call> XML embedded in content text.
+func TestProviderChatStream_ExtractsSeedToolCallsFromContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected http.Flusher")
+		}
+
+		events := []string{
+			func() string {
+				d, _ := json.Marshal(map[string]any{
+					"choices": []map[string]any{
+						{"delta": map[string]any{"content": "Checking"}},
+					},
+				})
+				return "data: " + string(d) + "\n\n"
+			}(),
+			func() string {
+				d, _ := json.Marshal(map[string]any{
+					"choices": []map[string]any{
+						{"delta": map[string]any{"content": "...\n<seed:tool_call>\n  <function name=\"exec\">\n    <parameter name=\"action\" string=\"true\">run</parameter>\n    <parameter name=\"command\" string=\"true\">pwd</parameter>\n  </function>\n</seed:tool_call>"}},
+					},
+				})
+				return "data: " + string(d) + "\n\n"
+			}(),
+			func() string {
+				d, _ := json.Marshal(map[string]any{
+					"choices": []map[string]any{
+						{"delta": map[string]any{}, "finish_reason": "stop"},
+					},
+				})
+				return "data: " + string(d) + "\n\n"
+			}(),
+			"data: [DONE]\n\n",
+		}
+		for _, e := range events {
+			w.Write([]byte(e))
+			flusher.Flush()
+		}
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.ChatStream(t.Context(), []Message{{Role: "user", Content: "where am I"}}, nil, "volcengine/Doubao-Seed-2.0-pro", nil, nil)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "exec" {
+		t.Fatalf("ToolCalls[0].Name = %q, want %q", out.ToolCalls[0].Name, "exec")
+	}
+	if out.ToolCalls[0].Arguments["action"] != "run" {
+		t.Fatalf("ToolCalls[0].Arguments[action] = %v, want run", out.ToolCalls[0].Arguments["action"])
+	}
+	if out.ToolCalls[0].Arguments["command"] != "pwd" {
+		t.Fatalf("ToolCalls[0].Arguments[command] = %v, want pwd", out.ToolCalls[0].Arguments["command"])
+	}
+	if out.Content != "Checking..." {
+		t.Fatalf("Content = %q, want %q", out.Content, "Checking...")
+	}
+	if out.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want tool_calls", out.FinishReason)
+	}
+}
+
+// TestProviderChat_IgnoresStandardToolCallsWhenNotSeed verifies that normal
+// OpenAI-style tool_calls are left untouched and we do not touch content when
+// standard tool_calls are already present.
+func TestProviderChat_IgnoresStandardToolCallsWhenNotSeed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "ok",
+						"tool_calls": []map[string]any{
+							{
+								"id":   "call_1",
+								"type": "function",
+								"function": map[string]any{
+									"name":      "get_weather",
+									"arguments": "{\"city\":\"SF\"}",
+								},
+							},
+						},
+					},
+					"finish_reason": "tool_calls",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "weather"}}, nil, "gpt-4o", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "get_weather" {
+		t.Fatalf("ToolCalls[0].Name = %q, want get_weather", out.ToolCalls[0].Name)
+	}
+	if out.Content != "ok" {
+		t.Fatalf("Content = %q, want ok", out.Content)
+	}
+	if out.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want tool_calls", out.FinishReason)
+	}
+}
+
+// TestExtractSeedToolCallsFromText_MultipleCalls verifies extraction of multiple
+// <seed:tool_call> blocks in a single content string.
+func TestExtractSeedToolCallsFromText_MultipleCalls(t *testing.T) {
+	input := "Planning...\n<seed:tool_call>\n  <function name=\"read_file\">\n    <parameter name=\"path\" string=\"true\">/tmp/a.txt</parameter>\n  </function>\n</seed:tool_call>\n<seed:tool_call>\n  <function name=\"write_file\">\n    <parameter name=\"path\" string=\"true\">/tmp/b.txt</parameter>\n    <parameter name=\"content\" string=\"true\">hello</parameter>\n  </function>\n</seed:tool_call>\nDone."
+	tc, cleaned := extractSeedToolCallsFromText(input)
+	if len(tc) != 2 {
+		t.Fatalf("len(tc) = %d, want 2", len(tc))
+	}
+	if tc[0].Name != "read_file" {
+		t.Fatalf("tc[0].Name = %q, want read_file", tc[0].Name)
+	}
+	if tc[1].Name != "write_file" {
+		t.Fatalf("tc[1].Name = %q, want write_file", tc[1].Name)
+	}
+	if cleaned != "Planning...\nDone." {
+		t.Fatalf("cleaned = %q, want %q", cleaned, "Planning...\nDone.")
+	}
+}
+
+// TestExtractSeedToolCallsFromText_NoMatch verifies that plain text without XML
+// is returned untouched.
+func TestExtractSeedToolCallsFromText_NoMatch(t *testing.T) {
+	input := "This is just plain text."
+	tc, cleaned := extractSeedToolCallsFromText(input)
+	if len(tc) != 0 {
+		t.Fatalf("len(tc) = %d, want 0", len(tc))
+	}
+	if cleaned != input {
+		t.Fatalf("cleaned = %q, want %q", cleaned, input)
+	}
+}
+
+// TestExtractSeedToolCallsFromText_MalformedXML verifies that malformed blocks
+// are skipped without panicking.
+func TestExtractSeedToolCallsFromText_MalformedXML(t *testing.T) {
+	input := "<seed:tool_call>\n  <function>\n    <parameter name=\"x\">1</parameter>\n  </function>\n</seed:tool_call>\n"
+	tc, cleaned := extractSeedToolCallsFromText(input)
+	// function without name attribute is skipped
+	if len(tc) != 0 {
+		t.Fatalf("len(tc) = %d, want 0", len(tc))
+	}
+	if strings.Contains(cleaned, "seed:tool_call") {
+		t.Fatalf("cleaned should not contain seed:tool_call, got %q", cleaned)
+	}
+}
+

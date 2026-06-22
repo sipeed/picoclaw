@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"maps"
@@ -485,7 +486,25 @@ func (p *Provider) Chat(
 		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
 
-	return common.ReadAndParseResponse(resp, p.apiBase)
+	out, err := common.ReadAndParseResponse(resp, p.apiBase)
+	if err != nil {
+		return nil, err
+	}
+
+	// Some providers (e.g. Volcengine Doubao Seed) occasionally embed
+	// <seed:tool_call> XML inside message.content instead of using the
+	// standard tool_calls field. Detect and recover when that happens.
+	if len(out.ToolCalls) == 0 && strings.Contains(out.Content, "<seed:tool_call") {
+		tc, cleaned := extractSeedToolCallsFromText(out.Content)
+		if len(tc) > 0 {
+			out.ToolCalls = tc
+			out.Content = cleaned
+			if out.FinishReason == "stop" {
+				out.FinishReason = "tool_calls"
+			}
+		}
+	}
+	return out, nil
 }
 
 // ChatStream implements streaming via OpenAI-compatible SSE (stream: true).
@@ -787,8 +806,24 @@ func parseStreamResponse(
 		finishReason = "stop"
 	}
 
+	content := textContent.String()
+
+	// Some providers (e.g. Volcengine Doubao Seed) occasionally embed
+	// <seed:tool_call> XML inside message.content instead of using the
+	// standard tool_calls field. Detect and recover when that happens.
+	if len(toolCalls) == 0 && strings.Contains(content, "<seed:tool_call") {
+		tc, cleaned := extractSeedToolCallsFromText(content)
+		if len(tc) > 0 {
+			toolCalls = tc
+			content = cleaned
+			if finishReason == "stop" {
+				finishReason = "tool_calls"
+			}
+		}
+	}
+
 	return &LLMResponse{
-		Content:          textContent.String(),
+		Content:          content,
 		ReasoningContent: reasoningContent.String(),
 		Reasoning:        reasoning.String(),
 		ReasoningDetails: reasoningDetails,
@@ -856,3 +891,125 @@ func isNativeSearchHost(apiBase string) bool {
 func supportsPromptCacheKey(apiBase string) bool {
 	return isNativeOpenAIOrAzureEndpoint(apiBase)
 }
+
+// extractSeedToolCallsFromText detects and parses <seed:tool_call> XML blocks
+// that some providers (e.g. Volcengine Doubao Seed) embed in message.content
+// instead of returning standard tool_calls.  It returns the extracted ToolCall
+// slice and the cleaned text with the XML blocks removed.
+func extractSeedToolCallsFromText(text string) ([]ToolCall, string) {
+	if !strings.Contains(text, "<seed:tool_call") {
+		return nil, text
+	}
+
+	toolCalls, cleaned := []ToolCall{}, text
+	for {
+		start := strings.Index(cleaned, "<seed:tool_call")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(cleaned[start:], "</seed:tool_call>")
+		if end == -1 {
+			break
+		}
+		end += start + len("</seed:tool_call>")
+
+		block := cleaned[start:end]
+		tc := parseSeedToolCallBlock(block)
+		if tc != nil {
+			toolCalls = append(toolCalls, *tc)
+		}
+		// Remove the XML block and collapse adjacent newlines to avoid double blanks
+		before := cleaned[:start]
+		after := cleaned[end:]
+		if len(before) > 0 && (before[len(before)-1] == '\n' || before[len(before)-1] == '\r') {
+			for len(after) > 0 && (after[0] == '\n' || after[0] == '\r') {
+				after = after[1:]
+			}
+		}
+		cleaned = strings.TrimSpace(before + after)
+	}
+	return toolCalls, cleaned
+}
+
+// parseSeedToolCallBlock parses a single <seed:tool_call> XML block into a
+// ToolCall using encoding/xml so that the namespace prefix is handled
+// robustly.
+func parseSeedToolCallBlock(block string) *ToolCall {
+	decoder := xml.NewDecoder(strings.NewReader(block))
+	var currentFn *struct {
+		name       string
+		args       map[string]any
+		argsJSON   string
+		inParam    bool
+		paramName  string
+		paramValue strings.Builder
+	}
+	for {
+		tok, err := decoder.Token()
+		if err != nil {
+			break
+		}
+		switch se := tok.(type) {
+		case xml.StartElement:
+			if se.Name.Local == "function" {
+				fnName := ""
+				for _, attr := range se.Attr {
+					if attr.Name.Local == "name" {
+						fnName = attr.Value
+						break
+					}
+				}
+				currentFn = &struct {
+					name       string
+					args       map[string]any
+					argsJSON   string
+					inParam    bool
+					paramName  string
+					paramValue strings.Builder
+				}{
+					name: fnName,
+					args: make(map[string]any),
+				}
+			}
+			if se.Name.Local == "parameter" && currentFn != nil {
+				pName := ""
+				for _, attr := range se.Attr {
+					if attr.Name.Local == "name" {
+						pName = attr.Value
+						break
+					}
+				}
+				currentFn.inParam = true
+				currentFn.paramName = pName
+				currentFn.paramValue.Reset()
+			}
+		case xml.EndElement:
+			if se.Name.Local == "parameter" && currentFn != nil && currentFn.inParam {
+				currentFn.args[currentFn.paramName] = strings.TrimSpace(currentFn.paramValue.String())
+				currentFn.inParam = false
+			}
+			if se.Name.Local == "function" && currentFn != nil && currentFn.name != "" {
+				argsJSON, _ := json.Marshal(currentFn.args)
+				currentFn.argsJSON = string(argsJSON)
+			}
+		case xml.CharData:
+			if currentFn != nil && currentFn.inParam {
+				currentFn.paramValue.WriteString(string(se))
+			}
+		}
+	}
+	if currentFn == nil || currentFn.name == "" {
+		return nil
+	}
+	id := fmt.Sprintf("call_%s_%d", currentFn.name, time.Now().UnixNano())
+	return &ToolCall{
+		ID:        id,
+		Name:      currentFn.name,
+		Arguments: currentFn.args,
+		Function: &FunctionCall{
+			Name:      currentFn.name,
+			Arguments: currentFn.argsJSON,
+		},
+	}
+}
+
