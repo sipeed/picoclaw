@@ -519,6 +519,33 @@ toolLoop:
 				_ = al.bus.PublishOutbound(outCtx, outboundMessageForTurn(ts, result.ForUser))
 			}
 
+			// SkipInboundTurn: inject result into session history directly
+			// instead of publishing an inbound turn. This avoids triggering
+			// the main agent and creating duplicate messages (used by spawn's
+			// direct_reply mode).
+			if result.SkipInboundTurn {
+				content := result.ContentForLLM()
+				if content == "" {
+					return
+				}
+				content = al.cfg.FilterSensitiveData(content)
+				toolResultMsg := providers.Message{
+					Role:       "tool",
+					Content:    content,
+					ToolCallID: toolCallID,
+				}
+				ts.agent.Sessions.AddFullMessage(ts.sessionKey, toolResultMsg)
+				ts.ingestMessage(context.Background(), al, toolResultMsg)
+				if err := ts.agent.Sessions.Save(ts.sessionKey); err != nil {
+					logger.WarnCF("agent", "Failed to save session after SkipInboundTurn",
+						map[string]any{
+							"agent_id": ts.agent.ID,
+							"error":    err.Error(),
+						})
+				}
+				return
+			}
+
 			content := result.ContentForLLM()
 			if content == "" {
 				return

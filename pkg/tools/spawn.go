@@ -57,6 +57,10 @@ func (t *SpawnTool) Parameters() map[string]any {
 				"type":        "string",
 				"description": "Optional target agent ID to delegate the task to",
 			},
+			"direct_reply": map[string]any{
+				"type":        "boolean",
+				"description": "When true (default), the sub-agent's final response is delivered directly to the user and the main agent is not triggered to reply. When false, the result flows through the normal inbound path so the main agent can process and respond.",
+			},
 		},
 		"required": []string{"task"},
 	}
@@ -99,6 +103,12 @@ func (t *SpawnTool) execute(
 		agentID = ""
 	}
 	targetAgentID := strings.TrimSpace(agentID)
+
+	// direct_reply defaults to true
+	directReply := true
+	if dr, ok := args["direct_reply"].(bool); ok {
+		directReply = dr
+	}
 
 	// Check allowlist if targeting a specific agent
 	if targetAgentID != "" && t.allowlistCheck != nil {
@@ -143,8 +153,19 @@ Task: %s`,
 				result = ErrorResult(fmt.Sprintf("Spawn failed: %v", err)).WithError(err)
 			}
 
-			// Call callback if provided
+			// Apply direct_reply semantics before invoking callback
 			if cb != nil {
+				if directReply {
+					// Deliver sub-agent result directly to user without
+					// triggering the main agent to reply again.
+					if !result.IsError && result.ForUser == "" {
+						result.ForUser = result.ForLLM
+					}
+					result.SkipInboundTurn = true
+				} else {
+					// Strip ForUser so main agent processes the result.
+					result.ForUser = ""
+				}
 				cb(ctx, result)
 			}
 		}()

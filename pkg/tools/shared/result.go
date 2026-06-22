@@ -59,6 +59,12 @@ type ToolResult struct {
 	// user's request at the channel/output level, so the agent loop can stop
 	// without a follow-up assistant response.
 	ResponseHandled bool `json:"response_handled,omitempty"`
+
+	// SkipInboundTurn suppresses the automatic inbound turn publication that
+	// normally triggers the main agent to respond. Used by async callbacks
+	// (e.g. spawn's direct_reply) when the sub-agent's result should be
+	// delivered to the user without invoking the main agent.
+	SkipInboundTurn bool `json:"skip_inbound_turn,omitempty"`
 }
 
 // ContentForLLM returns the normalized textual content to append to the
