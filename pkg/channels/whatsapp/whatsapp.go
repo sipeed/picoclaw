@@ -17,6 +17,18 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+const (
+	// pongWait is how long the client will wait for a pong from the router
+	// before considering the connection stale. Must be > router's pingInterval (30s).
+	pongWait = 90 * time.Second
+
+	// writeTimeout is the deadline for sending a message to the router.
+	writeTimeout = 10 * time.Second
+
+	// maxReconnectAttempts is how many times to retry connecting before giving up.
+	maxReconnectAttempts = 3
+)
+
 type WhatsAppChannel struct {
 	*channels.BaseChannel
 	conn      *websocket.Conn
@@ -57,6 +69,22 @@ func (c *WhatsAppChannel) Start(ctx context.Context) error {
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
+	if err := c.dial(); err != nil {
+		c.cancel()
+		return err
+	}
+
+	c.SetRunning(true)
+	logger.InfoC("whatsapp", "WhatsApp channel connected")
+
+	go c.listen()
+
+	return nil
+}
+
+// dial establishes a WebSocket connection to the bridge router and
+// configures ping/pong keepalive and read deadlines.
+func (c *WhatsAppChannel) dial() error {
 	dialer := websocket.DefaultDialer
 	dialer.HandshakeTimeout = 10 * time.Second
 
@@ -65,21 +93,54 @@ func (c *WhatsAppChannel) Start(ctx context.Context) error {
 		resp.Body.Close()
 	}
 	if err != nil {
-		c.cancel()
 		return fmt.Errorf("failed to connect to WhatsApp bridge: %w", err)
 	}
+
+	// Pong handler: extend the read deadline every time the router
+	// responds to our ping with a pong (or sends its own).
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+
+	// Initial read deadline so a silent connection is detected promptly.
+	conn.SetReadDeadline(time.Now().Add(pongWait))
 
 	c.mu.Lock()
 	c.conn = conn
 	c.connected = true
 	c.mu.Unlock()
 
-	c.SetRunning(true)
-	logger.InfoC("whatsapp", "WhatsApp channel connected")
-
-	go c.listen()
-
 	return nil
+}
+
+// reconnect attempts to re-establish the WebSocket connection after a
+// disconnect. Uses exponential backoff between attempts.
+func (c *WhatsAppChannel) reconnect() error {
+	backoff := time.Second
+	for i := range maxReconnectAttempts {
+		logger.InfoCF("whatsapp", "Reconnect attempt %d/%d", map[string]any{
+			"attempt": i + 1,
+			"max":     maxReconnectAttempts,
+		})
+
+		if err := c.dial(); err != nil {
+			logger.ErrorCF("whatsapp", "Reconnect attempt failed", map[string]any{
+				"attempt": i + 1,
+				"error":   err.Error(),
+			})
+			if i < maxReconnectAttempts-1 {
+				time.Sleep(backoff)
+				backoff *= 2
+			}
+			continue
+		}
+
+		logger.InfoC("whatsapp", "Reconnected successfully")
+		return nil
+	}
+
+	return fmt.Errorf("all %d reconnect attempts failed", maxReconnectAttempts)
 }
 
 func (c *WhatsAppChannel) Stop(ctx context.Context) error {
@@ -138,56 +199,89 @@ func (c *WhatsAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 		return nil, fmt.Errorf("failed to marshal message: %w", err)
 	}
 
-	_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	if err := c.conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+		return nil, fmt.Errorf("whatsapp set write deadline: %w", channels.ErrTemporary)
+	}
 	if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
-		_ = c.conn.SetWriteDeadline(time.Time{})
+		c.conn.SetWriteDeadline(time.Time{})
 		return nil, fmt.Errorf("whatsapp send: %w", channels.ErrTemporary)
 	}
-	_ = c.conn.SetWriteDeadline(time.Time{})
+	c.conn.SetWriteDeadline(time.Time{})
 
 	return nil, nil
 }
 
+// listen is the main read loop. It keeps a single goroutine reading from
+// the WebSocket so that control frames (ping/pong) are processed promptly.
+// Each incoming message is dispatched to a separate goroutine so processing
+// never blocks the read loop.
 func (c *WhatsAppChannel) listen() {
+	defer logger.InfoC("whatsapp", "listen loop exited")
+
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
 		default:
+		}
+
+		c.mu.Lock()
+		conn := c.conn
+		c.mu.Unlock()
+
+		if conn == nil {
+			// Connection lost — attempt to reconnect
+			if err := c.reconnect(); err != nil {
+				logger.ErrorC("whatsapp", "permanent reconnect failure, will retry in 5s")
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			// Re-fetch the new conn for the read below
 			c.mu.Lock()
-			conn := c.conn
+			conn = c.conn
+			c.mu.Unlock()
+			if conn == nil {
+				continue
+			}
+		}
+
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			logger.ErrorCF("whatsapp", "WhatsApp read error", map[string]any{
+				"error": err.Error(),
+			})
+
+			// Tear down the dead connection
+			c.mu.Lock()
+			if c.conn != nil {
+				c.conn.Close()
+				c.conn = nil
+			}
+			c.connected = false
 			c.mu.Unlock()
 
-			if conn == nil {
-				time.Sleep(1 * time.Second)
-				continue
-			}
+			// Don't tight-loop — back off before reconnect attempt
+			time.Sleep(2 * time.Second)
+			continue
+		}
 
-			_, message, err := conn.ReadMessage()
-			if err != nil {
-				logger.ErrorCF("whatsapp", "WhatsApp read error", map[string]any{
-					"error": err.Error(),
-				})
-				time.Sleep(2 * time.Second)
-				continue
-			}
+		var msg map[string]any
+		if err := json.Unmarshal(message, &msg); err != nil {
+			logger.ErrorCF("whatsapp", "Failed to unmarshal WhatsApp message", map[string]any{
+				"error": err.Error(),
+			})
+			continue
+		}
 
-			var msg map[string]any
-			if err := json.Unmarshal(message, &msg); err != nil {
-				logger.ErrorCF("whatsapp", "Failed to unmarshal WhatsApp message", map[string]any{
-					"error": err.Error(),
-				})
-				continue
-			}
+		msgType, ok := msg["type"].(string)
+		if !ok {
+			continue
+		}
 
-			msgType, ok := msg["type"].(string)
-			if !ok {
-				continue
-			}
-
-			if msgType == "message" {
-				c.handleIncomingMessage(msg)
-			}
+		if msgType == "message" {
+			// Process message async so the read loop can continue
+			// processing control frames (ping/pong) without blocking.
+			go c.handleIncomingMessage(msg)
 		}
 	}
 }
