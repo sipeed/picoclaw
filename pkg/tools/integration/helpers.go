@@ -18,7 +18,6 @@ var (
 
 const (
 	largeBase64OmittedMessage = "[Tool returned a large base64-like payload; omitted from model context.]"
-	inlineMediaOmittedMessage = "[Tool returned inline media content; omitted from model context.]"
 )
 
 func sanitizeToolLLMContent(text string) string {
@@ -27,13 +26,7 @@ func sanitizeToolLLMContent(text string) string {
 		return text
 	}
 	if inlineMarkdownDataURLRe.MatchString(trimmed) || inlineRawDataURLRe.MatchString(trimmed) {
-		cleaned := inlineMarkdownDataURLRe.ReplaceAllString(trimmed, "")
-		cleaned = inlineRawDataURLRe.ReplaceAllString(cleaned, "")
-		cleaned = strings.TrimSpace(cleaned)
-		if cleaned == "" {
-			return inlineMediaOmittedMessage
-		}
-		return cleaned + "\n" + inlineMediaOmittedMessage
+		return text
 	}
 	if looksLikeLargeBase64Payload(trimmed) {
 		return largeBase64OmittedMessage

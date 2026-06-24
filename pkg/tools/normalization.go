@@ -22,7 +22,6 @@ const (
 	largeBase64OmittedMessage = "[Tool returned a large base64-like payload; omitted from model context.]"
 	inlineMediaOmittedMessage = "[Tool returned inline media content; omitted from model context.]"
 	inlineMediaStoredMessage  = "[Tool returned inline media content (%s); omitted from model context and registered as a media attachment.]"
-	inlineDataURLPayloadLimit = 1024
 )
 
 var (
@@ -77,7 +76,7 @@ func normalizeToolResult(
 	}
 
 	if opts.AllowInlineMediaExtraction {
-		result.ForLLM = sanitizeInlineDataURLsForLLM(result.ForLLM, true)
+		result.ForLLM = sanitizeInlineDataURLsForLLM(result.ForLLM)
 	} else {
 		result.ForLLM = sanitizeToolLLMContent(result.ForLLM)
 	}
@@ -97,12 +96,11 @@ func normalizeToolResult(
 }
 
 func sanitizeToolLLMContent(text string) string {
-	if cleaned := sanitizeInlineDataURLsForLLM(text, false); cleaned != text {
-		return cleaned
-	}
-
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
+		return text
+	}
+	if inlineMarkdownDataURLRe.MatchString(trimmed) || inlineRawDataURLRe.MatchString(trimmed) {
 		return text
 	}
 	if looksLikeLargeBase64Payload(trimmed) {
@@ -111,7 +109,7 @@ func sanitizeToolLLMContent(text string) string {
 	return text
 }
 
-func sanitizeInlineDataURLsForLLM(text string, all bool) string {
+func sanitizeInlineDataURLsForLLM(text string) string {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return text
@@ -119,21 +117,11 @@ func sanitizeInlineDataURLsForLLM(text string, all bool) string {
 
 	changed := false
 	cleaned := inlineMarkdownDataURLRe.ReplaceAllStringFunc(trimmed, func(match string) string {
-		groups := inlineMarkdownDataURLRe.FindStringSubmatch(match)
-		if len(groups) < 2 {
-			return match
-		}
-		if !all && !inlineDataURLShouldBeSanitized(groups[1]) {
-			return match
-		}
 		changed = true
 		return ""
 	})
 
 	cleaned = inlineRawDataURLRe.ReplaceAllStringFunc(cleaned, func(match string) string {
-		if !all && !inlineDataURLShouldBeSanitized(match) {
-			return match
-		}
 		changed = true
 		return ""
 	})
@@ -147,15 +135,6 @@ func sanitizeInlineDataURLsForLLM(text string, all bool) string {
 		return inlineMediaOmittedMessage
 	}
 	return cleaned + "\n" + inlineMediaOmittedMessage
-}
-
-func inlineDataURLShouldBeSanitized(dataURL string) bool {
-	comma := strings.IndexByte(dataURL, ',')
-	if comma < 0 {
-		return false
-	}
-	payload := strings.NewReplacer("\n", "", "\r", "", "\t", "", " ", "").Replace(dataURL[comma+1:])
-	return len(payload) >= inlineDataURLPayloadLimit
 }
 
 func looksLikeLargeBase64Payload(text string) bool {

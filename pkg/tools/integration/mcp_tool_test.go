@@ -725,6 +725,35 @@ func TestMCPTool_Execute_LargeBase64TextIsOmittedFromContext(t *testing.T) {
 	}
 }
 
+func TestMCPTool_Execute_LargeDataURLTextIsPreserved(t *testing.T) {
+	payload := strings.Repeat("A", 1024)
+	dataURL := "data:" + "image/png;base64," + payload
+	source := `const fixture = "` + dataURL + `"`
+	manager := &MockMCPManager{
+		callToolFunc: func(ctx context.Context, serverName, toolName string, arguments map[string]any) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: source},
+				},
+			}, nil
+		},
+	}
+
+	mcpTool := NewMCPTool(manager, "test_server", &mcp.Tool{Name: "read_fixture"})
+
+	result := mcpTool.Execute(context.Background(), nil)
+
+	if result.ForLLM == largeBase64OmittedMessage {
+		t.Fatalf("expected data URL source text, got sanitized base64 placeholder")
+	}
+	if !strings.Contains(result.ForLLM, dataURL) {
+		t.Fatalf("expected MCP text output to preserve large data URL, got %q", result.ForLLM)
+	}
+	if len(result.Media) != 0 {
+		t.Fatalf("MCP text output should not create media refs, got %#v", result.Media)
+	}
+}
+
 func TestMCPTool_Execute_LargeBase64TextArtifactPreservesRawPayload(t *testing.T) {
 	workspace := t.TempDir()
 	largeBase64 := strings.Repeat("QUJD", 400)

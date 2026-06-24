@@ -881,6 +881,45 @@ const fixture = "` + dataURL + `"
 	}
 }
 
+func TestToolRegistry_ExecuteWithContext_GenericReadFileOutputPreservesLargeDataURL(t *testing.T) {
+	r := NewToolRegistry()
+	store := media.NewFileMediaStore()
+	r.SetMediaStore(store)
+
+	payload := strings.Repeat("A", 1024)
+	dataURL := "data:" + "image/png;base64," + payload
+	source := `package demo
+
+const fixture = "` + dataURL + `"
+`
+
+	r.Register(&mockRegistryTool{
+		name:   "read_file",
+		desc:   "returns source text",
+		params: map[string]any{},
+		result: NewToolResult(source),
+	})
+
+	result := r.ExecuteWithContext(
+		context.Background(),
+		"read_file",
+		nil,
+		"telegram",
+		"chat-42",
+		nil,
+	)
+
+	if len(result.Media) != 0 {
+		t.Fatalf("generic read_file output created media from large source-code data URL: %#v", result.Media)
+	}
+	if strings.Contains(result.ForLLM, inlineMediaOmittedMessage) {
+		t.Fatalf("generic read_file output should not omit large source-code data URL, got %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, dataURL) {
+		t.Fatalf("generic read_file output should preserve large source text data URL, got %q", result.ForLLM)
+	}
+}
+
 func TestToolRegistry_ExecuteWithContext_GenericExecOutputDoesNotCreateMediaFromDataURL(t *testing.T) {
 	r := NewToolRegistry()
 	store := media.NewFileMediaStore()
