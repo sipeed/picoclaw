@@ -579,7 +579,11 @@ func (p *Provider) ChatStreamEvents(
 		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
 
-	result, err := parseStreamResponse(ctx, withStreamingReadIdleTimeout(resp.Body, defaultStreamingReadIdleTimeout), onChunk)
+	result, err := parseStreamResponse(
+		ctx,
+		withStreamingReadIdleTimeout(resp.Body, defaultStreamingReadIdleTimeout),
+		onChunk,
+	)
 	if err != nil {
 		return nil, err
 	}

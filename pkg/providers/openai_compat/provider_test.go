@@ -2400,7 +2400,13 @@ func TestProviderChat_SeedToolCallsExtractedFromContent(t *testing.T) {
 	defer server.Close()
 
 	p := NewProvider("key", server.URL, "")
-	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "What's the weather in Beijing?"}}, nil, "doubao-seed-1-6-250528", nil)
+	out, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "What's the weather in Beijing?"}},
+		nil,
+		"doubao-seed-1-6-250528",
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("Chat() error = %v", err)
 	}
