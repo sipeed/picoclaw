@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -2454,6 +2455,48 @@ func TestProviderChatStream_SeedToolCallsExtractedFromContent(t *testing.T) {
 	}
 	if out.FinishReason != "tool_calls" {
 		t.Fatalf("FinishReason = %q, want %q", out.FinishReason, "tool_calls")
+	}
+}
+
+func TestProviderChatStreamEvents_SeedToolCallsNotEmittedInChunks(t *testing.T) {
+	part1 := "Checking the weather.\n<seed:tool_call>\n<function name=\"get_weather\">\n<parameter name=\"city\" string=\"true\">"
+	part2 := "Shanghai</parameter>\n</function>\n</seed:tool_call>"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":%s}}]}\n\n", jsonStr(part1))
+		fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":%s},\"finish_reason\":\"stop\"}]}\n\n", jsonStr(part2))
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	var chunks []string
+	out, err := p.ChatStreamEvents(
+		t.Context(),
+		[]Message{{Role: "user", Content: "weather?"}},
+		nil,
+		"doubao-seed-1-6-250528",
+		nil,
+		func(chunk StreamChunk) {
+			if chunk.Content != "" {
+				chunks = append(chunks, chunk.Content)
+			}
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatStreamEvents() error = %v", err)
+	}
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	for _, chunk := range chunks {
+		if strings.Contains(chunk, "<seed:tool_call>") || strings.Contains(chunk, "</seed:tool_call>") {
+			t.Fatalf("stream chunk leaked seed tool call XML: %q", chunk)
+		}
+	}
+	if got, want := chunks, []string{"Checking the weather."}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("chunks = %#v, want %#v", got, want)
 	}
 }
 

@@ -631,6 +631,7 @@ func parseStreamResponse(
 	var reasoningDetails []ReasoningDetail
 	var finishReason string
 	var usage *UsageInfo
+	seedToolCallStreamingContent := false
 
 	// Tool call assembly: OpenAI streams tool calls as incremental deltas
 	type toolAccum struct {
@@ -703,7 +704,14 @@ func parseStreamResponse(
 		if choice.Delta.Content != "" {
 			textContent.WriteString(choice.Delta.Content)
 			if onChunk != nil {
-				onChunk(StreamChunk{Content: textContent.String()})
+				if visible, seedStarted := stripSeedToolCallStart(textContent.String()); !seedStarted {
+					onChunk(StreamChunk{Content: visible})
+				} else if !seedToolCallStreamingContent && strings.TrimSpace(visible) != "" {
+					onChunk(StreamChunk{Content: visible})
+					seedToolCallStreamingContent = true
+				} else {
+					seedToolCallStreamingContent = true
+				}
 			}
 		}
 
@@ -892,6 +900,14 @@ func parseSeedToolCallsFromContent(content string) ([]ToolCall, string) {
 	}
 
 	return toolCalls, strings.TrimSpace(sb.String())
+}
+
+func stripSeedToolCallStart(content string) (string, bool) {
+	start := strings.Index(content, "<seed")
+	if start < 0 {
+		return content, false
+	}
+	return strings.TrimSpace(content[:start]), true
 }
 
 // xmlSeedFunction mirrors the inner XML structure of a <seed:tool_call> block.
