@@ -2436,13 +2436,24 @@ func TestProviderChatStream_SeedToolCallsExtractedFromContent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":%s}}]}\n\n", jsonStr(part1))
-		fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":%s},\"finish_reason\":\"stop\"}]}\n\n", jsonStr(part2))
+		fmt.Fprintf(
+			w,
+			"data: {\"choices\":[{\"delta\":{\"content\":%s},\"finish_reason\":\"stop\"}]}\n\n",
+			jsonStr(part2),
+		)
 		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer server.Close()
 
 	p := NewProvider("key", server.URL, "")
-	out, err := p.ChatStream(t.Context(), []Message{{Role: "user", Content: "weather?"}}, nil, "doubao-seed-1-6-250528", nil, nil)
+	out, err := p.ChatStream(
+		t.Context(),
+		[]Message{{Role: "user", Content: "weather?"}},
+		nil,
+		"doubao-seed-1-6-250528",
+		nil,
+		nil,
+	)
 	if err != nil {
 		t.Fatalf("ChatStream() error = %v", err)
 	}
