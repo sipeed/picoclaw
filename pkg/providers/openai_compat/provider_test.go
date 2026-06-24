@@ -2482,7 +2482,11 @@ func TestProviderChatStreamEvents_SeedToolCallsNotEmittedInChunks(t *testing.T) 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":%s}}]}\n\n", jsonStr(part1))
-		fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":%s},\"finish_reason\":\"stop\"}]}\n\n", jsonStr(part2))
+		fmt.Fprintf(
+			w,
+			"data: {\"choices\":[{\"delta\":{\"content\":%s},\"finish_reason\":\"stop\"}]}\n\n",
+			jsonStr(part2),
+		)
 		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer server.Close()
