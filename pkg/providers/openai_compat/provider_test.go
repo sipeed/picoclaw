@@ -2196,3 +2196,269 @@ func TestSerializeMessages_StripsSystemParts(t *testing.T) {
 		t.Fatal("system_parts should not appear in serialized output")
 	}
 }
+
+// --- Volcengine Doubao Seed <seed:tool_call> XML extraction tests ---
+
+const seedToolCallSample = `<seed:tool_call>
+<function name="get_weather">
+<parameter name="city" string="true">Beijing</parameter>
+</function>
+</seed:tool_call>`
+
+func TestParseSeedToolCallsFromContent_BasicExtraction(t *testing.T) {
+	content := "I'll check the weather for you.\n" + seedToolCallSample
+	toolCalls, cleaned := parseSeedToolCallsFromContent(content)
+
+	if len(toolCalls) != 1 {
+		t.Fatalf("len(toolCalls) = %d, want 1", len(toolCalls))
+	}
+	tc := toolCalls[0]
+	if tc.Name != "get_weather" {
+		t.Fatalf("Name = %q, want %q", tc.Name, "get_weather")
+	}
+	if tc.Arguments["city"] != "Beijing" {
+		t.Fatalf("Arguments[city] = %v, want %q", tc.Arguments["city"], "Beijing")
+	}
+	if tc.ID != "seed_tc_0" {
+		t.Fatalf("ID = %q, want %q", tc.ID, "seed_tc_0")
+	}
+	if strings.Contains(cleaned, "<seed:tool_call>") {
+		t.Fatalf("cleaned content still contains seed:tool_call block: %q", cleaned)
+	}
+}
+
+func TestParseSeedToolCallsFromContent_ContentBeforeAndAfter(t *testing.T) {
+	content := "Calling weather API now.\n" + seedToolCallSample + "\nDone."
+	_, cleaned := parseSeedToolCallsFromContent(content)
+
+	if strings.Contains(cleaned, "<seed:tool_call>") {
+		t.Fatalf("cleaned content still contains seed:tool_call block: %q", cleaned)
+	}
+	if !strings.Contains(cleaned, "Calling weather API now.") {
+		t.Fatalf("cleaned content should contain prefix text, got: %q", cleaned)
+	}
+	if !strings.Contains(cleaned, "Done.") {
+		t.Fatalf("cleaned content should contain suffix text, got: %q", cleaned)
+	}
+}
+
+func TestParseSeedToolCallsFromContent_MultipleParameters(t *testing.T) {
+	content := `<seed:tool_call>
+<function name="search">
+<parameter name="query" string="true">golang XML</parameter>
+<parameter name="limit" string="true">10</parameter>
+</function>
+</seed:tool_call>`
+	toolCalls, cleaned := parseSeedToolCallsFromContent(content)
+
+	if len(toolCalls) != 1 {
+		t.Fatalf("len(toolCalls) = %d, want 1", len(toolCalls))
+	}
+	if toolCalls[0].Arguments["query"] != "golang XML" {
+		t.Fatalf("query = %v, want %q", toolCalls[0].Arguments["query"], "golang XML")
+	}
+	if toolCalls[0].Arguments["limit"] != "10" {
+		t.Fatalf("limit = %v, want %q", toolCalls[0].Arguments["limit"], "10")
+	}
+	if cleaned != "" {
+		t.Fatalf("cleaned = %q, want empty string", cleaned)
+	}
+}
+
+func TestParseSeedToolCallsFromContent_MultipleToolCalls(t *testing.T) {
+	content := `<seed:tool_call>
+<function name="get_weather">
+<parameter name="city" string="true">Shanghai</parameter>
+</function>
+</seed:tool_call>
+<seed:tool_call>
+<function name="get_time">
+<parameter name="timezone" string="true">Asia/Shanghai</parameter>
+</function>
+</seed:tool_call>`
+	toolCalls, _ := parseSeedToolCallsFromContent(content)
+
+	if len(toolCalls) != 2 {
+		t.Fatalf("len(toolCalls) = %d, want 2", len(toolCalls))
+	}
+	if toolCalls[0].Name != "get_weather" {
+		t.Fatalf("toolCalls[0].Name = %q, want %q", toolCalls[0].Name, "get_weather")
+	}
+	if toolCalls[1].Name != "get_time" {
+		t.Fatalf("toolCalls[1].Name = %q, want %q", toolCalls[1].Name, "get_time")
+	}
+	if toolCalls[0].ID != "seed_tc_0" {
+		t.Fatalf("toolCalls[0].ID = %q, want %q", toolCalls[0].ID, "seed_tc_0")
+	}
+	if toolCalls[1].ID != "seed_tc_1" {
+		t.Fatalf("toolCalls[1].ID = %q, want %q", toolCalls[1].ID, "seed_tc_1")
+	}
+}
+
+func TestParseSeedToolCallsFromContent_MalformedXMLKeptAsContent(t *testing.T) {
+	malformed := "<seed:tool_call><not-valid-xml</seed:tool_call>"
+	toolCalls, cleaned := parseSeedToolCallsFromContent(malformed)
+
+	if len(toolCalls) != 0 {
+		t.Fatalf("len(toolCalls) = %d, want 0 for malformed XML", len(toolCalls))
+	}
+	if !strings.Contains(cleaned, "<seed:tool_call>") {
+		t.Fatalf("malformed block should be kept in content, got: %q", cleaned)
+	}
+}
+
+func TestParseSeedToolCallsFromContent_MissingCloseTagKeptAsContent(t *testing.T) {
+	content := "text <seed:tool_call><function name=\"f\"></function>"
+	toolCalls, cleaned := parseSeedToolCallsFromContent(content)
+
+	if len(toolCalls) != 0 {
+		t.Fatalf("len(toolCalls) = %d, want 0 for missing close tag", len(toolCalls))
+	}
+	if !strings.Contains(cleaned, "<seed:tool_call>") {
+		t.Fatalf("content with missing close tag should be kept intact, got: %q", cleaned)
+	}
+}
+
+func TestParseSeedToolCallsFromContent_NoSeedTag(t *testing.T) {
+	content := "plain text response with no tool calls"
+	toolCalls, cleaned := parseSeedToolCallsFromContent(content)
+
+	if len(toolCalls) != 0 {
+		t.Fatalf("len(toolCalls) = %d, want 0", len(toolCalls))
+	}
+	if cleaned != content {
+		t.Fatalf("cleaned = %q, want unchanged %q", cleaned, content)
+	}
+}
+
+func TestExtractSeedToolCalls_NilSafe(t *testing.T) {
+	if got := extractSeedToolCalls(nil); got != nil {
+		t.Fatalf("extractSeedToolCalls(nil) = %v, want nil", got)
+	}
+}
+
+func TestExtractSeedToolCalls_SkipsWhenStandardToolCallsPresent(t *testing.T) {
+	resp := &LLMResponse{
+		Content: seedToolCallSample,
+		ToolCalls: []ToolCall{
+			{ID: "call_1", Name: "existing_tool", Arguments: map[string]any{"x": "y"}},
+		},
+		FinishReason: "tool_calls",
+	}
+	got := extractSeedToolCalls(resp)
+	if len(got.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1 (standard calls must not be replaced)", len(got.ToolCalls))
+	}
+	if got.ToolCalls[0].Name != "existing_tool" {
+		t.Fatalf("ToolCalls[0].Name = %q, want existing_tool", got.ToolCalls[0].Name)
+	}
+}
+
+func TestExtractSeedToolCalls_SetsFinishReason(t *testing.T) {
+	resp := &LLMResponse{
+		Content:      seedToolCallSample,
+		FinishReason: "stop",
+	}
+	got := extractSeedToolCalls(resp)
+	if got.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want %q", got.FinishReason, "tool_calls")
+	}
+}
+
+func TestExtractSeedToolCalls_PreservesNonStopFinishReason(t *testing.T) {
+	resp := &LLMResponse{
+		Content:      seedToolCallSample,
+		FinishReason: "truncated",
+	}
+	got := extractSeedToolCalls(resp)
+	// FinishReason other than "stop"/"" must not be overwritten.
+	if got.FinishReason != "truncated" {
+		t.Fatalf("FinishReason = %q, want %q (non-stop reason must be preserved)", got.FinishReason, "truncated")
+	}
+}
+
+func TestProviderChat_SeedToolCallsExtractedFromContent(t *testing.T) {
+	// Simulate a Volcengine Doubao Seed response where tool calls leak into
+	// the content field instead of using the standard tool_calls field.
+	sampleContent := "Checking the weather for you.\n" + seedToolCallSample
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": sampleContent,
+						// tool_calls deliberately absent — Seed leaks XML into content
+					},
+					"finish_reason": "stop",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "What's the weather in Beijing?"}}, nil, "doubao-seed-1-6-250528", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "get_weather" {
+		t.Fatalf("ToolCalls[0].Name = %q, want %q", out.ToolCalls[0].Name, "get_weather")
+	}
+	if out.ToolCalls[0].Arguments["city"] != "Beijing" {
+		t.Fatalf("ToolCalls[0].Arguments[city] = %v, want %q", out.ToolCalls[0].Arguments["city"], "Beijing")
+	}
+	if strings.Contains(out.Content, "<seed:tool_call>") {
+		t.Fatalf("Content must not contain raw <seed:tool_call> XML, got: %q", out.Content)
+	}
+	if out.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want %q", out.FinishReason, "tool_calls")
+	}
+}
+
+func TestProviderChatStream_SeedToolCallsExtractedFromContent(t *testing.T) {
+	// Same issue in the streaming path: Seed leaks XML across SSE chunks.
+	part1 := "Checking the weather.\n<seed:tool_call>\n<function name=\"get_weather\">\n<parameter name=\"city\" string=\"true\">"
+	part2 := "Shanghai</parameter>\n</function>\n</seed:tool_call>"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":%s}}]}\n\n", jsonStr(part1))
+		fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":%s},\"finish_reason\":\"stop\"}]}\n\n", jsonStr(part2))
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.ChatStream(t.Context(), []Message{{Role: "user", Content: "weather?"}}, nil, "doubao-seed-1-6-250528", nil, nil)
+	if err != nil {
+		t.Fatalf("ChatStream() error = %v", err)
+	}
+
+	if len(out.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(out.ToolCalls))
+	}
+	if out.ToolCalls[0].Name != "get_weather" {
+		t.Fatalf("ToolCalls[0].Name = %q, want %q", out.ToolCalls[0].Name, "get_weather")
+	}
+	if out.ToolCalls[0].Arguments["city"] != "Shanghai" {
+		t.Fatalf("ToolCalls[0].Arguments[city] = %v, want %q", out.ToolCalls[0].Arguments["city"], "Shanghai")
+	}
+	if strings.Contains(out.Content, "<seed:tool_call>") {
+		t.Fatalf("Content must not contain raw <seed:tool_call> XML, got: %q", out.Content)
+	}
+	if out.FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want %q", out.FinishReason, "tool_calls")
+	}
+}
+
+// jsonStr returns s as a JSON-quoted string literal (for inline SSE event construction).
+func jsonStr(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}

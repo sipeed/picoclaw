@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"maps"
@@ -160,9 +161,11 @@ func (p *Provider) buildRequestBody(
 		// treat it as false — web_search_preview must not be injected
 		// when the caller cannot express a well-typed intent.
 		if _, present := options["native_search"]; present {
-			log.Printf(
-				"[openai_compat] native_search option has unexpected type %T, ignoring",
-				options["native_search"],
+			logger.WarnCF("provider.openai_compat",
+				"native_search option has unexpected type, ignoring",
+				map[string]any{
+					"type": fmt.Sprintf("%T", options["native_search"]),
+				},
 			)
 		}
 	}
@@ -496,7 +499,11 @@ func (p *Provider) Chat(
 		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
 
-	return common.ReadAndParseResponse(resp, p.apiBase)
+	result, err := common.ReadAndParseResponse(resp, p.apiBase)
+	if err != nil {
+		return nil, err
+	}
+	return extractSeedToolCalls(result), nil
 }
 
 // ChatStream implements streaming via OpenAI-compatible SSE (stream: true).
@@ -572,7 +579,11 @@ func (p *Provider) ChatStreamEvents(
 		return nil, common.HandleErrorResponse(resp, p.apiBase)
 	}
 
-	return parseStreamResponse(ctx, withStreamingReadIdleTimeout(resp.Body, defaultStreamingReadIdleTimeout), onChunk)
+	result, err := parseStreamResponse(ctx, withStreamingReadIdleTimeout(resp.Body, defaultStreamingReadIdleTimeout), onChunk)
+	if err != nil {
+		return nil, err
+	}
+	return extractSeedToolCalls(result), nil
 }
 
 func withStreamingReadIdleTimeout(body io.ReadCloser, timeout time.Duration) io.ReadCloser {
@@ -807,6 +818,114 @@ func parseStreamResponse(
 		FinishReason:     finishReason,
 		Usage:            usage,
 	}, nil
+}
+
+// extractSeedToolCalls checks resp.Content for Volcengine Doubao Seed-style
+// <seed:tool_call>...</seed:tool_call> blocks that the model leaks into the
+// message content instead of using the standard OpenAI tool_calls field.
+// When standard tool_calls are absent and at least one seed block is found,
+// it strips the XML from Content, populates ToolCalls, and sets FinishReason
+// to "tool_calls". Malformed XML is left as normal content (no error returned).
+func extractSeedToolCalls(resp *LLMResponse) *LLMResponse {
+	if resp == nil || len(resp.ToolCalls) > 0 {
+		return resp
+	}
+	if !strings.Contains(resp.Content, "<seed:tool_call>") {
+		return resp
+	}
+	toolCalls, cleanContent := parseSeedToolCallsFromContent(resp.Content)
+	if len(toolCalls) == 0 {
+		return resp
+	}
+	clone := *resp
+	clone.Content = cleanContent
+	clone.ToolCalls = toolCalls
+	if clone.FinishReason == "" || clone.FinishReason == "stop" {
+		clone.FinishReason = "tool_calls"
+	}
+	return &clone
+}
+
+const (
+	seedOpenTag  = "<seed:tool_call>"
+	seedCloseTag = "</seed:tool_call>"
+)
+
+// parseSeedToolCallsFromContent extracts all <seed:tool_call> blocks from
+// content, parses them into ToolCalls, and returns the calls alongside a
+// version of the content with those blocks removed (surrounding whitespace
+// trimmed).  Unparseable blocks are kept as-is in the returned content.
+func parseSeedToolCallsFromContent(content string) ([]ToolCall, string) {
+	var toolCalls []ToolCall
+	var sb strings.Builder
+	remaining := content
+
+	for {
+		start := strings.Index(remaining, seedOpenTag)
+		if start < 0 {
+			sb.WriteString(remaining)
+			break
+		}
+		end := strings.Index(remaining[start:], seedCloseTag)
+		if end < 0 {
+			// No closing tag: treat everything from here as plain content.
+			sb.WriteString(remaining)
+			break
+		}
+		end += start // absolute index of "</seed:tool_call>" in remaining
+
+		// Append content before the block (trim trailing whitespace).
+		sb.WriteString(strings.TrimRight(remaining[:start], " \t\r\n"))
+
+		inner := remaining[start+len(seedOpenTag) : end]
+		remaining = remaining[end+len(seedCloseTag):]
+
+		tc, ok := parseSeedFunctionXML(inner, len(toolCalls))
+		if !ok {
+			// Malformed inner XML: keep original block intact.
+			sb.WriteString(seedOpenTag)
+			sb.WriteString(inner)
+			sb.WriteString(seedCloseTag)
+			continue
+		}
+		toolCalls = append(toolCalls, tc)
+	}
+
+	return toolCalls, strings.TrimSpace(sb.String())
+}
+
+// xmlSeedFunction mirrors the inner XML structure of a <seed:tool_call> block.
+type xmlSeedFunction struct {
+	XMLName    xml.Name       `xml:"function"`
+	Name       string         `xml:"name,attr"`
+	Parameters []xmlSeedParam `xml:"parameter"`
+}
+
+type xmlSeedParam struct {
+	Name  string `xml:"name,attr"`
+	Value string `xml:",chardata"`
+}
+
+// parseSeedFunctionXML parses the <function> element inside a <seed:tool_call>
+// block and returns a ToolCall.  idx is used to build a unique synthetic call ID.
+// Returns (zero, false) if the XML is malformed or missing a function name.
+func parseSeedFunctionXML(inner string, idx int) (ToolCall, bool) {
+	var fn xmlSeedFunction
+	if err := xml.Unmarshal([]byte(strings.TrimSpace(inner)), &fn); err != nil {
+		return ToolCall{}, false
+	}
+	if fn.Name == "" {
+		return ToolCall{}, false
+	}
+	args := make(map[string]any, len(fn.Parameters))
+	for _, p := range fn.Parameters {
+		args[p.Name] = strings.TrimSpace(p.Value)
+	}
+	return ToolCall{
+		ID:        fmt.Sprintf("seed_tc_%d", idx),
+		Name:      fn.Name,
+		Arguments: args,
+	}, true
 }
 
 func normalizeModel(model, apiBase string) string {
