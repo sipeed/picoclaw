@@ -28,7 +28,7 @@ import (
 const (
 	remoteGeneratedSessionPrefix = "cli:"
 	remoteOneShotFirstTimeout    = 30 * time.Second
-	remoteOneShotIdleTimeout     = 5 * time.Second
+	remoteOneShotIdleTimeout     = 30 * time.Second
 )
 
 type remoteClient struct {
@@ -41,6 +41,8 @@ type remoteClient struct {
 
 type remoteEventResult struct {
 	Displayed bool
+	Activity  bool
+	RemoteErr error
 	Err       error
 }
 
@@ -306,9 +308,18 @@ func (c *remoteClient) RunOneShot(ctx context.Context, sessionID, message string
 				}
 				return evt.Err
 			}
+			if evt.RemoteErr != nil {
+				return evt.RemoteErr
+			}
 			if evt.Displayed {
 				seenResponse = true
-				resetTimer(timer, remoteOneShotIdleTimeout)
+			}
+			if evt.Activity {
+				if seenResponse {
+					resetTimer(timer, remoteOneShotIdleTimeout)
+				} else {
+					resetTimer(timer, remoteOneShotFirstTimeout)
+				}
 			}
 		case <-timer.C:
 			if seenResponse {
@@ -430,7 +441,7 @@ func (c *remoteClient) readLoop(ctx context.Context, events chan<- remoteEventRe
 		}
 		displayed := renderRemoteEvent(c.out, msg)
 		select {
-		case events <- remoteEventResult{Displayed: displayed}:
+		case events <- remoteEventResult{Displayed: displayed, Activity: true, RemoteErr: remoteErrorFromMessage(msg)}:
 		case <-ctx.Done():
 			return
 		case <-c.closed:
@@ -553,6 +564,22 @@ func renderRemoteEvent(out remotePrinter, msg pico.PicoMessage) bool {
 	default:
 		out.Printf("[event %s] %s\n", msg.Type, payloadJSON(msg.Payload))
 		return false
+	}
+}
+
+func remoteErrorFromMessage(msg pico.PicoMessage) error {
+	if msg.Type != pico.TypeError {
+		return nil
+	}
+	code := payloadString(msg.Payload, "code")
+	message := payloadString(msg.Payload, "message")
+	switch {
+	case code != "" && message != "":
+		return fmt.Errorf("remote error[%s]: %s", code, message)
+	case message != "":
+		return fmt.Errorf("remote error: %s", message)
+	default:
+		return fmt.Errorf("remote error: %s", payloadJSON(msg.Payload))
 	}
 }
 

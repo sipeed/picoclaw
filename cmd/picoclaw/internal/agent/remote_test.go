@@ -334,7 +334,7 @@ func TestRemoteOneShotWebSocket(t *testing.T) {
 	}
 }
 
-func TestRemoteOneShotWaitsThroughShortIdleGap(t *testing.T) {
+func TestRemoteOneShotWaitsThroughVisibleSilence(t *testing.T) {
 	const sessionID = "slow-session"
 
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
@@ -360,7 +360,7 @@ func TestRemoteOneShotWaitsThroughShortIdleGap(t *testing.T) {
 			return
 		}
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(6 * time.Second)
 		if err := conn.WriteJSON(pico.PicoMessage{
 			Type:      pico.TypeMessageCreate,
 			SessionID: msg.SessionID,
@@ -379,7 +379,7 @@ func TestRemoteOneShotWaitsThroughShortIdleGap(t *testing.T) {
 
 	remoteURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/pico/ws"
 	var out bytes.Buffer
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := remoteAgentCmd(ctx, remoteURL, "", "hello", sessionID, strings.NewReader(""), &out); err != nil {
@@ -390,6 +390,53 @@ func TestRemoteOneShotWaitsThroughShortIdleGap(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "second chunk") {
 		t.Fatalf("output = %q, want second chunk", out.String())
+	}
+}
+
+func TestRemoteOneShotReturnsErrorForRemoteErrorEvent(t *testing.T) {
+	const sessionID = "error-session"
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("Upgrade() error = %v", err)
+			return
+		}
+		defer conn.Close()
+
+		var msg pico.PicoMessage
+		if err := conn.ReadJSON(&msg); err != nil {
+			t.Errorf("ReadJSON() error = %v", err)
+			return
+		}
+		if err := conn.WriteJSON(pico.PicoMessage{
+			Type:      pico.TypeError,
+			SessionID: msg.SessionID,
+			Payload: map[string]any{
+				"code":    "bad_request",
+				"message": "server rejected message",
+			},
+		}); err != nil {
+			t.Errorf("WriteJSON(error) error = %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	remoteURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/pico/ws"
+	var out bytes.Buffer
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := remoteAgentCmd(ctx, remoteURL, "", "hello", sessionID, strings.NewReader(""), &out)
+	if err == nil {
+		t.Fatal("remoteAgentCmd() error = nil, want remote error")
+	}
+	if got := err.Error(); !strings.Contains(got, "remote error[bad_request]: server rejected message") {
+		t.Fatalf("error = %q, want remote error details", got)
+	}
+	if !strings.Contains(out.String(), "error[bad_request]: server rejected message") {
+		t.Fatalf("output = %q, want rendered remote error", out.String())
 	}
 }
 
