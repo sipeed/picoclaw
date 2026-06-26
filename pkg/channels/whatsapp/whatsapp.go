@@ -17,6 +17,12 @@ import (
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
+const (
+	whatsAppReadTimeout    = 90 * time.Second
+	whatsAppWriteTimeout   = 10 * time.Second
+	whatsAppReconnectDelay = 2 * time.Second
+)
+
 type WhatsAppChannel struct {
 	*channels.BaseChannel
 	conn      *websocket.Conn
@@ -57,22 +63,10 @@ func (c *WhatsAppChannel) Start(ctx context.Context) error {
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	dialer := websocket.DefaultDialer
-	dialer.HandshakeTimeout = 10 * time.Second
-
-	conn, resp, err := dialer.Dial(c.url, nil)
-	if resp != nil {
-		resp.Body.Close()
-	}
-	if err != nil {
+	if err := c.connect(); err != nil {
 		c.cancel()
-		return fmt.Errorf("failed to connect to WhatsApp bridge: %w", err)
+		return err
 	}
-
-	c.mu.Lock()
-	c.conn = conn
-	c.connected = true
-	c.mu.Unlock()
 
 	c.SetRunning(true)
 	logger.InfoC("whatsapp", "WhatsApp channel connected")
@@ -80,6 +74,50 @@ func (c *WhatsAppChannel) Start(ctx context.Context) error {
 	go c.listen()
 
 	return nil
+}
+
+func (c *WhatsAppChannel) connect() error {
+	dialer := websocket.DefaultDialer
+	dialer.HandshakeTimeout = 10 * time.Second
+
+	conn, resp, err := dialer.Dial(c.url, nil)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		return fmt.Errorf("failed to connect to WhatsApp bridge: %w", err)
+	}
+
+	c.configureConn(conn)
+
+	c.mu.Lock()
+	oldConn := c.conn
+	c.conn = conn
+	c.connected = true
+	c.mu.Unlock()
+
+	if oldConn != nil && oldConn != conn {
+		_ = oldConn.Close()
+	}
+
+	return nil
+}
+
+func (c *WhatsAppChannel) configureConn(conn *websocket.Conn) {
+	_ = conn.SetReadDeadline(time.Now().Add(whatsAppReadTimeout))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(whatsAppReadTimeout))
+	})
+	conn.SetPingHandler(func(appData string) error {
+		if err := conn.SetReadDeadline(time.Now().Add(whatsAppReadTimeout)); err != nil {
+			return err
+		}
+		return conn.WriteControl(
+			websocket.PongMessage,
+			[]byte(appData),
+			time.Now().Add(whatsAppWriteTimeout),
+		)
+	})
 }
 
 func (c *WhatsAppChannel) Stop(ctx context.Context) error {
@@ -138,7 +176,7 @@ func (c *WhatsAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 		return nil, fmt.Errorf("failed to marshal message: %w", err)
 	}
 
-	_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	_ = c.conn.SetWriteDeadline(time.Now().Add(whatsAppWriteTimeout))
 	if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
 		_ = c.conn.SetWriteDeadline(time.Time{})
 		return nil, fmt.Errorf("whatsapp send: %w", channels.ErrTemporary)
@@ -154,41 +192,74 @@ func (c *WhatsAppChannel) listen() {
 		case <-c.ctx.Done():
 			return
 		default:
-			c.mu.Lock()
-			conn := c.conn
-			c.mu.Unlock()
-
-			if conn == nil {
-				time.Sleep(1 * time.Second)
-				continue
-			}
-
-			_, message, err := conn.ReadMessage()
-			if err != nil {
-				logger.ErrorCF("whatsapp", "WhatsApp read error", map[string]any{
-					"error": err.Error(),
-				})
-				time.Sleep(2 * time.Second)
-				continue
-			}
-
-			var msg map[string]any
-			if err := json.Unmarshal(message, &msg); err != nil {
-				logger.ErrorCF("whatsapp", "Failed to unmarshal WhatsApp message", map[string]any{
-					"error": err.Error(),
-				})
-				continue
-			}
-
-			msgType, ok := msg["type"].(string)
-			if !ok {
-				continue
-			}
-
-			if msgType == "message" {
-				c.handleIncomingMessage(msg)
-			}
 		}
+
+		conn := c.currentConn()
+		if conn == nil {
+			if err := c.connect(); err != nil {
+				logger.WarnCF("whatsapp", "WhatsApp reconnect failed", map[string]any{
+					"error": err.Error(),
+				})
+				if !c.waitBeforeReconnect() {
+					return
+				}
+				continue
+			}
+			logger.InfoC("whatsapp", "WhatsApp channel reconnected")
+			continue
+		}
+
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			logger.ErrorCF("whatsapp", "WhatsApp read error", map[string]any{
+				"error": err.Error(),
+			})
+			c.disconnectConn(conn)
+			continue
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(whatsAppReadTimeout))
+
+		var msg map[string]any
+		if err := json.Unmarshal(message, &msg); err != nil {
+			logger.ErrorCF("whatsapp", "Failed to unmarshal WhatsApp message", map[string]any{
+				"error": err.Error(),
+			})
+			continue
+		}
+
+		msgType, ok := msg["type"].(string)
+		if !ok {
+			continue
+		}
+
+		if msgType == "message" {
+			go c.handleIncomingMessage(msg)
+		}
+	}
+}
+
+func (c *WhatsAppChannel) currentConn() *websocket.Conn {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn
+}
+
+func (c *WhatsAppChannel) disconnectConn(conn *websocket.Conn) {
+	c.mu.Lock()
+	if c.conn == conn {
+		c.conn = nil
+		c.connected = false
+	}
+	c.mu.Unlock()
+	_ = conn.Close()
+}
+
+func (c *WhatsAppChannel) waitBeforeReconnect() bool {
+	select {
+	case <-c.ctx.Done():
+		return false
+	case <-time.After(whatsAppReconnectDelay):
+		return true
 	}
 }
 
