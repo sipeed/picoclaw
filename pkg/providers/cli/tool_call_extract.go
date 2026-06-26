@@ -39,7 +39,9 @@ func extractToolCallsFromText(text string) []ToolCall {
 	var result []ToolCall
 	for _, tc := range wrapper.ToolCalls {
 		var args map[string]any
-		json.Unmarshal([]byte(tc.Function.Arguments), &args)
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil || args == nil {
+			continue
+		}
 
 		result = append(result, ToolCall{
 			ID:        tc.ID,

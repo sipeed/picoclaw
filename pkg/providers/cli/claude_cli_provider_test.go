@@ -789,6 +789,32 @@ func TestExtractToolCalls_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestExtractToolCalls_InvalidArgumentsJSON(t *testing.T) {
+	p := NewClaudeCliProvider("/workspace")
+	text := `{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"read_file","arguments":"not-json"}}]}`
+
+	got := p.extractToolCalls(text)
+	if len(got) != 0 {
+		t.Fatalf("extractToolCalls() = %d, want 0", len(got))
+	}
+}
+
+func TestExtractToolCalls_SkipsInvalidArgumentsAndKeepsValidCalls(t *testing.T) {
+	p := NewClaudeCliProvider("/workspace")
+	text := `{"tool_calls":[{"id":"bad","type":"function","function":{"name":"read_file","arguments":"not-json"}},{"id":"good","type":"function","function":{"name":"write_file","arguments":"{\"path\":\"out.txt\",\"content\":\"ok\"}"}}]}`
+
+	got := p.extractToolCalls(text)
+	if len(got) != 1 {
+		t.Fatalf("extractToolCalls() = %d, want 1", len(got))
+	}
+	if got[0].ID != "good" {
+		t.Fatalf("kept tool call ID = %q, want good", got[0].ID)
+	}
+	if got[0].Arguments["content"] != "ok" {
+		t.Fatalf("content = %v, want ok", got[0].Arguments["content"])
+	}
+}
+
 func TestExtractToolCalls_MultipleToolCalls(t *testing.T) {
 	p := NewClaudeCliProvider("/workspace")
 	text := `{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"/tmp/test\"}"}},{"id":"call_2","type":"function","function":{"name":"write_file","arguments":"{\"path\":\"/tmp/out\",\"content\":\"hello\"}"}}]}`
