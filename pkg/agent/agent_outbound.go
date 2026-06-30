@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -21,7 +20,7 @@ func (al *AgentLoop) maybePublishError(ctx context.Context, channel, chatID, ses
 	if errors.Is(err, context.Canceled) {
 		return false
 	}
-	al.PublishResponseIfNeeded(ctx, channel, chatID, sessionKey, fmt.Sprintf("Error processing message: %v", err))
+	al.PublishResponseIfNeeded(ctx, channel, chatID, sessionKey, formatProcessingError(err))
 	return true
 }
 
