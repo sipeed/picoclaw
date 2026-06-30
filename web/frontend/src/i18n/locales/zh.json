@@ -253,6 +253,8 @@
     "action": {
       "edit": "编辑 API Key",
       "setDefault": "设为默认",
+      "addToFallback": "加入回退链",
+      "removeFromFallback": "移出回退链",
       "delete": "删除模型",
       "setDefaultDisabled": {
         "setting": "正在设为默认...",
@@ -261,9 +263,33 @@
         "isVirtual": "无法将虚拟模型设为默认",
         "unsupportedProvider": "该服务商不能设为默认聊天模型。"
       },
+      "addToFallbackDisabled": {
+        "isDefault": "默认模型不能加入回退链"
+      },
       "deleteDisabled": {
         "isDefault": "无法删除默认模型"
       }
+    },
+    "defaultChain": {
+      "button": "回退链",
+      "title": "默认模型与回退链",
+      "manage": "管理链路",
+      "summary": "{{model}}，{{count}} 个回退模型",
+      "summary_plural": "{{model}}，{{count}} 个回退模型",
+      "noDefault": "尚未选择默认模型。",
+      "fallbackCount": "个回退模型",
+      "dialogTitle": "编辑回退链",
+      "dialogDescription": "查看并调整默认模型失败后的回退顺序。",
+      "defaultModel": "默认模型",
+      "fallbackChain": "回退链",
+      "empty": "尚未添加回退模型。可在模型卡片中将模型加入回退链。",
+      "moveTop": "移到顶部",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "moveBottom": "移到底部",
+      "remove": "移出链路",
+      "saveSuccess": "默认模型链已保存。",
+      "unsaved": "默认模型或回退链已更改，保存后才会应用新的链路。"
     },
     "defaultOnSave": {
       "label": "默认模型",

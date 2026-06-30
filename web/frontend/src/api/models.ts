@@ -65,6 +65,11 @@ interface ModelActionResponse {
   default_model?: string
 }
 
+export interface DefaultChain {
+  default_model: string
+  fallback_chain: string[]
+}
+
 const BASE_URL = ""
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -119,6 +124,23 @@ export async function setDefaultModel(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model_name: modelName }),
+  })
+
+  await refreshGatewayState()
+  return response
+}
+
+export async function getDefaultChain(): Promise<DefaultChain> {
+  return request<DefaultChain>("/api/models/default-chain")
+}
+
+export async function updateDefaultChain(
+  payload: DefaultChain,
+): Promise<DefaultChain> {
+  const response = await request<DefaultChain>("/api/models/default-chain", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   })
 
   await refreshGatewayState()

@@ -2304,6 +2304,464 @@ func TestHandleSetDefaultModel_RejectsElevenLabsASRProvider(t *testing.T) {
 	}
 }
 
+func TestHandleGetDefaultChain(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{ModelName: "primary", Model: "openai/gpt-4o"},
+		{ModelName: "backup-a", Model: "anthropic/claude-sonnet-4.6"},
+		{ModelName: "backup-b", Model: "gemini/gemini-2.5-pro"},
+	}
+	cfg.Agents.Defaults.ModelName = "primary"
+	cfg.Agents.Defaults.ModelFallbacks = []string{"backup-a", "backup-b"}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/models/default-chain", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp defaultChainResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if resp.DefaultModel != "primary" {
+		t.Fatalf("default_model = %q, want %q", resp.DefaultModel, "primary")
+	}
+	if len(resp.FallbackChain) != 2 || resp.FallbackChain[0] != "backup-a" || resp.FallbackChain[1] != "backup-b" {
+		t.Fatalf("fallback_chain = %#v, want [backup-a backup-b]", resp.FallbackChain)
+	}
+}
+
+func TestHandleUpdateDefaultChain(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{ModelName: "primary", Model: "openai/gpt-4o"},
+		{ModelName: "backup-a", Model: "anthropic/claude-sonnet-4.6"},
+		{ModelName: "backup-b", Model: "gemini/gemini-2.5-pro"},
+	}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/models/default-chain", bytes.NewBufferString(`{
+		"default_model":"primary",
+		"fallback_chain":["backup-a","backup-b","backup-a"]
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp defaultChainResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if resp.DefaultModel != "primary" {
+		t.Fatalf("default_model = %q, want %q", resp.DefaultModel, "primary")
+	}
+	if len(resp.FallbackChain) != 2 || resp.FallbackChain[0] != "backup-a" || resp.FallbackChain[1] != "backup-b" {
+		t.Fatalf("fallback_chain = %#v, want [backup-a backup-b]", resp.FallbackChain)
+	}
+
+	updated, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if updated.Agents.Defaults.ModelName != "primary" {
+		t.Fatalf("saved default model = %q, want %q", updated.Agents.Defaults.ModelName, "primary")
+	}
+	if len(updated.Agents.Defaults.ModelFallbacks) != 2 ||
+		updated.Agents.Defaults.ModelFallbacks[0] != "backup-a" ||
+		updated.Agents.Defaults.ModelFallbacks[1] != "backup-b" {
+		t.Fatalf("saved fallback_chain = %#v, want [backup-a backup-b]", updated.Agents.Defaults.ModelFallbacks)
+	}
+}
+
+func TestHandleUpdateDefaultChain_RejectsUnsupportedFallbackModel(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{ModelName: "primary", Model: "openai/gpt-4o"},
+		{
+			ModelName: "audio-only",
+			Provider:  "elevenlabs",
+			Model:     "scribe_v1",
+			APIKeys:   config.SimpleSecureStrings("sk_elevenlabs_test"),
+		},
+	}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/models/default-chain", bytes.NewBufferString(`{
+		"default_model":"primary",
+		"fallback_chain":["audio-only"]
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "cannot be used in the fallback chain") {
+		t.Fatalf("body = %q, want fallback chain rejection", rec.Body.String())
+	}
+}
+
+func TestHandleUpdateDefaultChain_RejectsDuplicateAliasWithUnsupportedEntry(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "shared-alias",
+			Provider:  "openai",
+			Model:     "gpt-4o",
+			APIKeys:   config.SimpleSecureStrings("sk-openai"),
+		},
+		{
+			ModelName: "shared-alias",
+			Provider:  "elevenlabs",
+			Model:     "scribe_v1",
+			APIKeys:   config.SimpleSecureStrings("sk-elevenlabs"),
+		},
+	}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/models/default-chain", bytes.NewBufferString(`{
+		"default_model":"shared-alias",
+		"fallback_chain":[]
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "cannot be used as the default chat model") {
+		t.Fatalf("body = %q, want duplicated alias default rejection", rec.Body.String())
+	}
+}
+
+func TestHandleSetDefaultModel_RejectsDuplicateAliasWithUnsupportedEntry(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "shared-alias",
+			Provider:  "openai",
+			Model:     "gpt-4o",
+			APIKeys:   config.SimpleSecureStrings("sk-openai"),
+		},
+		{
+			ModelName: "shared-alias",
+			Provider:  "elevenlabs",
+			Model:     "scribe_v1",
+			APIKeys:   config.SimpleSecureStrings("sk-elevenlabs"),
+		},
+	}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/models/default", bytes.NewBufferString(`{
+		"model_name":"shared-alias"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "cannot be used as the default chat model") {
+		t.Fatalf("body = %q, want duplicated alias default rejection", rec.Body.String())
+	}
+}
+
+func TestHandleDeleteModel_RemovesDeletedModelFromDefaultChain(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{ModelName: "primary", Model: "openai/gpt-4o"},
+		{ModelName: "backup-a", Model: "anthropic/claude-sonnet-4.6"},
+		{ModelName: "backup-b", Model: "gemini/gemini-2.5-pro"},
+	}
+	cfg.Agents.Defaults.ModelName = "primary"
+	cfg.Agents.Defaults.ModelFallbacks = []string{"backup-a", "backup-b"}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/models/1", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updated, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if updated.Agents.Defaults.ModelName != "primary" {
+		t.Fatalf("saved default model = %q, want %q", updated.Agents.Defaults.ModelName, "primary")
+	}
+	if len(updated.Agents.Defaults.ModelFallbacks) != 1 || updated.Agents.Defaults.ModelFallbacks[0] != "backup-b" {
+		t.Fatalf("saved fallback_chain = %#v, want [backup-b]", updated.Agents.Defaults.ModelFallbacks)
+	}
+}
+
+func TestHandleUpdateModel_RenamesDefaultModelReference(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "primary",
+			Provider:  "openai",
+			Model:     "gpt-4o",
+			APIKeys:   config.SimpleSecureStrings("sk-primary"),
+		},
+		{
+			ModelName: "backup-a",
+			Provider:  "anthropic",
+			Model:     "claude-sonnet-4.6",
+			APIKeys:   config.SimpleSecureStrings("sk-backup-a"),
+		},
+	}
+	cfg.Agents.Defaults.ModelName = "primary"
+	cfg.Agents.Defaults.ModelFallbacks = []string{"backup-a"}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/models/0", bytes.NewBufferString(`{
+		"model_name":"primary-renamed",
+		"provider":"openai",
+		"model":"gpt-4o",
+		"api_key":"sk-primary"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updated, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if got := updated.Agents.Defaults.ModelName; got != "primary-renamed" {
+		t.Fatalf("default model = %q, want %q", got, "primary-renamed")
+	}
+	if len(updated.Agents.Defaults.ModelFallbacks) != 1 || updated.Agents.Defaults.ModelFallbacks[0] != "backup-a" {
+		t.Fatalf("fallback_chain = %#v, want [backup-a]", updated.Agents.Defaults.ModelFallbacks)
+	}
+}
+
+func TestHandleUpdateModel_RenamesFallbackModelReference(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "primary",
+			Provider:  "openai",
+			Model:     "gpt-4o",
+			APIKeys:   config.SimpleSecureStrings("sk-primary"),
+		},
+		{
+			ModelName: "backup-a",
+			Provider:  "anthropic",
+			Model:     "claude-sonnet-4.6",
+			APIKeys:   config.SimpleSecureStrings("sk-backup-a"),
+		},
+		{
+			ModelName: "backup-b",
+			Provider:  "gemini",
+			Model:     "gemini-2.5-pro",
+			APIKeys:   config.SimpleSecureStrings("sk-backup-b"),
+		},
+	}
+	cfg.Agents.Defaults.ModelName = "primary"
+	cfg.Agents.Defaults.ModelFallbacks = []string{"backup-a", "backup-b"}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/models/1", bytes.NewBufferString(`{
+		"model_name":"backup-a-renamed",
+		"provider":"anthropic",
+		"model":"claude-sonnet-4.6",
+		"api_key":"sk-backup-a"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updated, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if got := updated.Agents.Defaults.ModelName; got != "primary" {
+		t.Fatalf("default model = %q, want %q", got, "primary")
+	}
+	if len(updated.Agents.Defaults.ModelFallbacks) != 2 ||
+		updated.Agents.Defaults.ModelFallbacks[0] != "backup-a-renamed" ||
+		updated.Agents.Defaults.ModelFallbacks[1] != "backup-b" {
+		t.Fatalf("fallback_chain = %#v, want [backup-a-renamed backup-b]", updated.Agents.Defaults.ModelFallbacks)
+	}
+}
+
+func TestHandleUpdateModel_RemovesRenamedUnsupportedModelFromDefaultChain(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "primary",
+			Provider:  "openai",
+			Model:     "gpt-4o",
+			APIKeys:   config.SimpleSecureStrings("sk-primary"),
+		},
+		{
+			ModelName: "backup-a",
+			Provider:  "anthropic",
+			Model:     "claude-sonnet-4.6",
+			APIKeys:   config.SimpleSecureStrings("sk-backup-a"),
+		},
+	}
+	cfg.Agents.Defaults.ModelName = "primary"
+	cfg.Agents.Defaults.ModelFallbacks = []string{"backup-a"}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/models/1", bytes.NewBufferString(`{
+		"model_name":"audio-only",
+		"provider":"elevenlabs",
+		"model":"scribe_v1",
+		"api_key":"sk-elevenlabs"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updated, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if got := updated.Agents.Defaults.ModelName; got != "primary" {
+		t.Fatalf("default model = %q, want %q", got, "primary")
+	}
+	if len(updated.Agents.Defaults.ModelFallbacks) != 0 {
+		t.Fatalf("fallback_chain = %#v, want empty", updated.Agents.Defaults.ModelFallbacks)
+	}
+}
+
 func TestMaskAPIKey(t *testing.T) {
 	tests := []struct {
 		name string

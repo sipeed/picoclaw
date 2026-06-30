@@ -517,18 +517,17 @@ func computeModelStreamingSignatures(cfg *config.Config) []string {
 		names = append(names, agent.Model.Fallbacks...)
 	}
 
-	seenNames := make(map[string]bool)
 	seenEntries := make(map[string]bool)
 	signatures := make([]string, 0, len(names))
-	for _, name := range names {
+	for position, name := range names {
 		name = strings.TrimSpace(name)
-		if name == "" || seenNames[name] {
+		if name == "" {
 			continue
 		}
-		seenNames[name] = true
 		for _, match := range modelConfigsMatchingSignatureRef(cfg.ModelList, name, defaultProvider) {
 			mc := match.model
 			entry := strings.Join([]string{
+				strconv.Itoa(position),
 				name,
 				strconv.Itoa(match.index),
 				strings.TrimSpace(mc.Provider),

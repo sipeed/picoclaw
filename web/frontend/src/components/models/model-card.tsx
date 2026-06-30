@@ -1,4 +1,5 @@
 import {
+  IconArrowAutofitDown,
   IconEdit,
   IconKey,
   IconLoader2,
@@ -20,16 +21,22 @@ interface ModelCardProps {
   model: ModelInfo
   onEdit: (model: ModelInfo) => void
   onSetDefault: (model: ModelInfo) => void
+  onToggleFallback: (model: ModelInfo) => void
   onDelete: (model: ModelInfo) => void
   settingDefault: boolean
+  inFallbackChain: boolean
+  isDraftDefault: boolean
 }
 
 export function ModelCard({
   model,
   onEdit,
   onSetDefault,
+  onToggleFallback,
   onDelete,
   settingDefault,
+  inFallbackChain,
+  isDraftDefault,
 }: ModelCardProps) {
   const { t } = useTranslation()
   const isOAuth = model.auth_method === "oauth"
@@ -40,13 +47,17 @@ export function ModelCard({
     !model.is_default &&
     !model.is_virtual &&
     model.default_model_allowed !== false
+  const canUseInFallback =
+    model.available &&
+    !model.is_virtual &&
+    model.default_model_allowed !== false
 
   const setDefaultLabel = t("models.action.setDefault")
   const setDefaultDisabledReason = (() => {
     if (settingDefault) return t("models.action.setDefaultDisabled.setting")
     if (!model.available)
       return t("models.action.setDefaultDisabled.unavailable")
-    if (model.is_default) return t("models.action.setDefaultDisabled.isDefault")
+    if (isDraftDefault) return t("models.action.setDefaultDisabled.isDefault")
     if (model.is_virtual) return t("models.action.setDefaultDisabled.isVirtual")
     if (model.default_model_allowed === false) {
       return t("models.action.setDefaultDisabled.unsupportedProvider")
@@ -55,6 +66,20 @@ export function ModelCard({
   })()
 
   const editLabel = t("models.action.edit")
+  const toggleFallbackLabel = inFallbackChain
+    ? t("models.action.removeFromFallback")
+    : t("models.action.addToFallback")
+  const toggleFallbackDisabledReason = (() => {
+    if (!model.available)
+      return t("models.action.setDefaultDisabled.unavailable")
+    if (model.is_virtual) return t("models.action.setDefaultDisabled.isVirtual")
+    if (model.default_model_allowed === false) {
+      return t("models.action.setDefaultDisabled.unsupportedProvider")
+    }
+    if (isDraftDefault)
+      return t("models.action.addToFallbackDisabled.isDefault")
+    return toggleFallbackLabel
+  })()
   const deleteLabel = t("models.action.delete")
   const deleteDisabledReason = model.is_default
     ? t("models.action.deleteDisabled.isDefault")
@@ -162,6 +187,54 @@ export function ModelCard({
           >
             <IconEdit className="size-3.5" />
           </Button>
+
+          <Tooltip
+            delayDuration={canUseInFallback && !isDraftDefault ? 700 : 0}
+          >
+            <TooltipTrigger asChild>
+              <span
+                className={
+                  !canUseInFallback || isDraftDefault
+                    ? "cursor-not-allowed"
+                    : undefined
+                }
+                tabIndex={!canUseInFallback || isDraftDefault ? 0 : undefined}
+                role={
+                  !canUseInFallback || isDraftDefault ? "button" : undefined
+                }
+                aria-disabled={
+                  !canUseInFallback || isDraftDefault ? true : undefined
+                }
+                aria-label={
+                  !canUseInFallback || isDraftDefault
+                    ? toggleFallbackLabel
+                    : undefined
+                }
+                title={
+                  !canUseInFallback || isDraftDefault
+                    ? toggleFallbackLabel
+                    : undefined
+                }
+              >
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => onToggleFallback(model)}
+                  disabled={!canUseInFallback || isDraftDefault}
+                  aria-label={toggleFallbackLabel}
+                  title={toggleFallbackLabel}
+                >
+                  <IconArrowAutofitDown
+                    className={[
+                      "size-3.5",
+                      inFallbackChain ? "text-primary" : "",
+                    ].join(" ")}
+                  />
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{toggleFallbackDisabledReason}</TooltipContent>
+          </Tooltip>
 
           <Tooltip delayDuration={deleteDisabled ? 0 : 700}>
             <TooltipTrigger asChild>

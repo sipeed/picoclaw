@@ -253,6 +253,8 @@
     "action": {
       "edit": "Edit API key",
       "setDefault": "Set as default",
+      "addToFallback": "Add to fallback chain",
+      "removeFromFallback": "Remove from fallback chain",
       "delete": "Delete model",
       "setDefaultDisabled": {
         "setting": "Setting as default...",
@@ -261,9 +263,33 @@
         "isVirtual": "Cannot set virtual model as default",
         "unsupportedProvider": "This provider cannot be used as the default chat model."
       },
+      "addToFallbackDisabled": {
+        "isDefault": "Default model cannot be added to the fallback chain"
+      },
       "deleteDisabled": {
         "isDefault": "Cannot delete the default model"
       }
+    },
+    "defaultChain": {
+      "button": "Fallback Chain",
+      "title": "Default Model and Fallback Chain",
+      "manage": "Manage Chain",
+      "summary": "{{model}} with {{count}} fallback",
+      "summary_plural": "{{model}} with {{count}} fallbacks",
+      "noDefault": "No default model selected yet.",
+      "fallbackCount": "fallbacks",
+      "dialogTitle": "Edit Fallback Chain",
+      "dialogDescription": "Review and reorder the fallback models used after the default model fails.",
+      "defaultModel": "Default model",
+      "fallbackChain": "Fallback chain",
+      "empty": "No fallback models added yet. Use the model cards to add backups.",
+      "moveTop": "Move to top",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "moveBottom": "Move to bottom",
+      "remove": "Remove from chain",
+      "saveSuccess": "Default model chain saved.",
+      "unsaved": "The default model or fallback chain has changed. Save to apply the updated chain."
     },
     "defaultOnSave": {
       "label": "Default Model",

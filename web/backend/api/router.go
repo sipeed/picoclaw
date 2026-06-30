@@ -20,6 +20,7 @@ type Handler struct {
 	serverAllowLocalhostBypass bool
 	serverTrustedProxyCIDRs    []string
 	debug                      bool
+	configMu                   sync.Mutex
 	oauthMu                    sync.Mutex
 	oauthFlows                 map[string]*oauthFlow
 	oauthState                 map[string]string
