@@ -15,8 +15,8 @@ const (
 var (
 	validIDRe      = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 	invalidCharsRe = regexp.MustCompile(`[^a-z0-9_-]+`)
-	leadingDashRe  = regexp.MustCompile(`^-+`)
-	trailingDashRe = regexp.MustCompile(`-+$`)
+	leadingDashRe  = regexp.MustCompile(`^[-_]+`)
+	trailingDashRe = regexp.MustCompile(`[-_]+$`)
 )
 
 // NormalizeAgentID sanitizes an agent ID to [a-z0-9][a-z0-9_-]{0,63}.

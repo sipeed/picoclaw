@@ -45,6 +45,9 @@ func TestNormalizeAgentID_InvalidChars(t *testing.T) {
 		{"foo.bar.baz", "foo-bar-baz"},
 		{"--leading", "leading"},
 		{"--both--", "both"},
+		{"_leading", "leading"},
+		{"_both_", "both"},
+		{"__x", "x"},
 	}
 	for _, tt := range tests {
 		if got := NormalizeAgentID(tt.input); got != tt.want {
@@ -56,6 +59,11 @@ func TestNormalizeAgentID_InvalidChars(t *testing.T) {
 func TestNormalizeAgentID_AllInvalid(t *testing.T) {
 	if got := NormalizeAgentID("@@@"); got != DefaultAgentID {
 		t.Errorf("NormalizeAgentID('@@@') = %q, want %q", got, DefaultAgentID)
+	}
+	// An all-underscore ID has no [a-z0-9] to anchor on, so it must fall back
+	// to the default rather than returning a contract-violating "___".
+	if got := NormalizeAgentID("___"); got != DefaultAgentID {
+		t.Errorf("NormalizeAgentID('___') = %q, want %q", got, DefaultAgentID)
 	}
 }
 
