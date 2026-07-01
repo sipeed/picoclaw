@@ -64,6 +64,33 @@ func addModelAndLoadLatest(t *testing.T, configPath string, body string) *config
 	return cfg.ModelList[len(cfg.ModelList)-1]
 }
 
+func writeDuplicateAliasDefaultChainConfig(t *testing.T, configPath string) {
+	t.Helper()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "shared-alias",
+			Provider:  "openai",
+			Model:     "gpt-4o",
+			APIKeys:   config.SimpleSecureStrings("sk-openai"),
+		},
+		{
+			ModelName: "shared-alias",
+			Provider:  "elevenlabs",
+			Model:     "scribe_v1",
+			APIKeys:   config.SimpleSecureStrings("sk-elevenlabs"),
+		},
+	}
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+}
+
 func TestHandleListModels_AvailabilityUsesRuntimeProbesForLocalModels(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
@@ -297,11 +324,12 @@ func TestHandleListModels_AntigravityImplicitOAuthAvailability(t *testing.T) {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
-	if err := auth.SetCredential(oauthProviderGoogleAntigravity, &auth.AuthCredential{
+	err = auth.SetCredential(oauthProviderGoogleAntigravity, &auth.AuthCredential{
 		AccessToken: "antigravity-token",
 		Provider:    oauthProviderGoogleAntigravity,
 		AuthMethod:  "oauth",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("SetCredential() error = %v", err)
 	}
 
@@ -320,8 +348,9 @@ func TestHandleListModels_AntigravityImplicitOAuthAvailability(t *testing.T) {
 	var resp struct {
 		Models []modelResponse `json:"models"`
 	}
-	if unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &resp); unmarshalErr != nil {
-		t.Fatalf("Unmarshal() error = %v", unmarshalErr)
+	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
 	}
 	if len(resp.Models) != 1 {
 		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
@@ -346,8 +375,9 @@ func TestHandleListModels_BedrockUsesAmbientCredentialStatus(t *testing.T) {
 		Provider:  "bedrock",
 		Model:     "us.anthropic.claude-sonnet-4-20250514-v1:0",
 	}}
-	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
-		t.Fatalf("SaveConfig() error = %v", saveErr)
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
 	h := NewHandler(configPath)
@@ -365,8 +395,9 @@ func TestHandleListModels_BedrockUsesAmbientCredentialStatus(t *testing.T) {
 	var resp struct {
 		Models []modelResponse `json:"models"`
 	}
-	if unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &resp); unmarshalErr != nil {
-		t.Fatalf("Unmarshal() error = %v", unmarshalErr)
+	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
 	}
 	if len(resp.Models) != 1 {
 		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
@@ -412,8 +443,9 @@ func TestHandleListModels_CLIProvidersRequireInstalledCommands(t *testing.T) {
 			Model:     "codex-cli",
 		},
 	}
-	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
-		t.Fatalf("SaveConfig() error = %v", saveErr)
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
 	h := NewHandler(configPath)
@@ -432,8 +464,9 @@ func TestHandleListModels_CLIProvidersRequireInstalledCommands(t *testing.T) {
 		Models          []modelResponse                 `json:"models"`
 		ProviderOptions []providers.ModelProviderOption `json:"provider_options"`
 	}
-	if unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &resp); unmarshalErr != nil {
-		t.Fatalf("Unmarshal() error = %v", unmarshalErr)
+	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
 	modelsByName := make(map[string]modelResponse, len(resp.Models))
@@ -506,7 +539,8 @@ func TestHandleListModels_ProbesLocalModelsConcurrently(t *testing.T) {
 			APIBase:   "http://127.0.0.1:8001/v1",
 		},
 	}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -558,7 +592,9 @@ func TestHandleListModels_NormalizesWildcardLocalAPIBaseForProbe(t *testing.T) {
 		Model:     "vllm/custom-model",
 		APIBase:   "http://0.0.0.0:8000/v1",
 	}}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -577,8 +613,9 @@ func TestHandleListModels_NormalizesWildcardLocalAPIBaseForProbe(t *testing.T) {
 	var resp struct {
 		Models []modelResponse `json:"models"`
 	}
-	if unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &resp); unmarshalErr != nil {
-		t.Fatalf("Unmarshal() error = %v", unmarshalErr)
+	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
 	}
 	if len(resp.Models) != 1 {
 		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
@@ -1878,8 +1915,9 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 		Models          []modelResponse                 `json:"models"`
 		ProviderOptions []providers.ModelProviderOption `json:"provider_options"`
 	}
-	if unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &resp); unmarshalErr != nil {
-		t.Fatalf("Unmarshal() error = %v", unmarshalErr)
+	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
 	}
 	if len(resp.Models) != 1 {
 		t.Fatalf("len(models) = %d, want 1", len(resp.Models))
@@ -2117,8 +2155,9 @@ func TestHandleUpdateModel_AllowsExistingBedrockProvider(t *testing.T) {
 		Model:     "us.anthropic.claude-sonnet-4-20250514-v1:0",
 		APIBase:   "us-west-2",
 	}}
-	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
-		t.Fatalf("SaveConfig() error = %v", saveErr)
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
 	h := NewHandler(configPath)
@@ -2360,7 +2399,8 @@ func TestHandleUpdateDefaultChain(t *testing.T) {
 		{ModelName: "backup-a", Model: "anthropic/claude-sonnet-4.6"},
 		{ModelName: "backup-b", Model: "gemini/gemini-2.5-pro"},
 	}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -2381,7 +2421,8 @@ func TestHandleUpdateDefaultChain(t *testing.T) {
 	}
 
 	var resp defaultChainResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+	err = json.Unmarshal(rec.Body.Bytes(), &resp)
+	if err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 	if resp.DefaultModel != "primary" {
@@ -2449,28 +2490,7 @@ func TestHandleUpdateDefaultChain_RejectsUnsupportedFallbackModel(t *testing.T) 
 func TestHandleUpdateDefaultChain_RejectsDuplicateAliasWithUnsupportedEntry(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
-
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	cfg.ModelList = []*config.ModelConfig{
-		{
-			ModelName: "shared-alias",
-			Provider:  "openai",
-			Model:     "gpt-4o",
-			APIKeys:   config.SimpleSecureStrings("sk-openai"),
-		},
-		{
-			ModelName: "shared-alias",
-			Provider:  "elevenlabs",
-			Model:     "scribe_v1",
-			APIKeys:   config.SimpleSecureStrings("sk-elevenlabs"),
-		},
-	}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
-		t.Fatalf("SaveConfig() error = %v", err)
-	}
+	writeDuplicateAliasDefaultChainConfig(t, configPath)
 
 	h := NewHandler(configPath)
 	mux := http.NewServeMux()
@@ -2495,28 +2515,7 @@ func TestHandleUpdateDefaultChain_RejectsDuplicateAliasWithUnsupportedEntry(t *t
 func TestHandleSetDefaultModel_RejectsDuplicateAliasWithUnsupportedEntry(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
-
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-	cfg.ModelList = []*config.ModelConfig{
-		{
-			ModelName: "shared-alias",
-			Provider:  "openai",
-			Model:     "gpt-4o",
-			APIKeys:   config.SimpleSecureStrings("sk-openai"),
-		},
-		{
-			ModelName: "shared-alias",
-			Provider:  "elevenlabs",
-			Model:     "scribe_v1",
-			APIKeys:   config.SimpleSecureStrings("sk-elevenlabs"),
-		},
-	}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
-		t.Fatalf("SaveConfig() error = %v", err)
-	}
+	writeDuplicateAliasDefaultChainConfig(t, configPath)
 
 	h := NewHandler(configPath)
 	mux := http.NewServeMux()
@@ -2552,7 +2551,8 @@ func TestHandleDeleteModel_RemovesDeletedModelFromDefaultChain(t *testing.T) {
 	}
 	cfg.Agents.Defaults.ModelName = "primary"
 	cfg.Agents.Defaults.ModelFallbacks = []string{"backup-a", "backup-b"}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -2604,7 +2604,8 @@ func TestHandleUpdateModel_RenamesDefaultModelReference(t *testing.T) {
 	}
 	cfg.Agents.Defaults.ModelName = "primary"
 	cfg.Agents.Defaults.ModelFallbacks = []string{"backup-a"}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -2668,7 +2669,8 @@ func TestHandleUpdateModel_RenamesFallbackModelReference(t *testing.T) {
 	}
 	cfg.Agents.Defaults.ModelName = "primary"
 	cfg.Agents.Defaults.ModelFallbacks = []string{"backup-a", "backup-b"}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
@@ -2728,7 +2730,8 @@ func TestHandleUpdateModel_RemovesRenamedUnsupportedModelFromDefaultChain(t *tes
 	}
 	cfg.Agents.Defaults.ModelName = "primary"
 	cfg.Agents.Defaults.ModelFallbacks = []string{"backup-a"}
-	if err := config.SaveConfig(configPath, cfg); err != nil {
+	err = config.SaveConfig(configPath, cfg)
+	if err != nil {
 		t.Fatalf("SaveConfig() error = %v", err)
 	}
 
