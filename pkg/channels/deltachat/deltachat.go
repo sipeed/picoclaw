@@ -29,56 +29,15 @@ import (
 	"github.com/sipeed/picoclaw/pkg/media"
 )
 
-// chatTypeSingle is Delta Chat's Chattype::Single — a 1:1 direct chat.
-// The wire value is a string enum ("Single", "Group", "Mailinglist",
-// "OutBroadcast", "InBroadcast"); anything other than Single is a group.
-const chatTypeSingle = "Single"
-
 // configureTimeout bounds the (network-bound) account configuration step.
 const configureTimeout = 90 * time.Second
 
-type chatmailRelay struct {
-	Domain   string
-	Location string
-}
+// defaultChatmailRelay is the suggested example chatmail relay for DeltaChat
+const defaultChatmailRelay = "nine.testrun.org"
 
-// Keep this list in sync with Parla's CHATMAIL_RELAYS in ../parla/src/relay_picker.vala.
-var defaultChatmailRelays = []chatmailRelay{
-	{"nine.testrun.org", "Default"},
-	{"mehl.cloud", "German"},
-	{"mailchat.pl", "Poland"},
-	{"chatmail.woodpeckersnest.space", "Italy"},
-	{"chatmail.culturanerd.it", "Italy"},
-	{"chat.adminforge.de", "Falkenstein, Germany"},
-	{"chika.aangat.lahat.computer", "Santa Clara, USA"},
-	{"tarpit.fun", "Nuremberg, Germany"},
-	{"d.gaufr.es", "Roubaix, France"},
-	{"chtml.ca", "Quebec, Canada"},
-	{"chatmail.au", "Melbourne, Australia"},
-	{"e2ee.wang", "Johannesburg, South Africa"},
-	{"chat.privittytech.com", "Bangalore, India"},
-	{"e2ee.im", "Orastie, Romania"},
-	{"chatmail.email", "Warsaw, Poland"},
-	{"danneskjold.de", "Helsinki, Finland"},
-	{"chat.in-the.eu", "Falkenstein, Germany"},
-	{"chat.nuvon.app", "Prague, Czechia"},
-	{"nibblehole.com", "Zug, Switzerland"},
-	{"chat.zashm.org", "Lviv, Ukraine"},
-	{"chat.sus.fr", "Iceland/Japan/Kenya/South Africa"},
-	{"delta.thelab.uno", "Gravelines, France"},
-	{"chat.vim.wtf", "Frankfurt, Germany"},
-	{"uninterest.ing", "Elk Grove Village, USA"},
-	{"sweetfern.net", "Ashburn, USA"},
-	{"delta.disobey.net", "Roon, Netherlands"},
-}
-
-var managedAccountConfigKeys = []string{
-	"addr",
-	"mail_server",
-	"mail_port",
-	"send_server",
-	"send_port",
-}
+// chatmailRelaysURL is the official directory of public chatmail relays users
+// can pick from when choosing a server other than the default.
+const chatmailRelaysURL = "https://chatmail.at/relays"
 
 // dcAccount is one entry from get_all_accounts.
 type dcAccount struct {
@@ -133,6 +92,11 @@ type dcMessageData struct {
 	Viewtype string `json:"viewtype,omitempty"`
 }
 
+type dcProfileConfig struct {
+	DisplayName string `json:"displayname,omitempty"`
+	SelfAvatar  string `json:"selfavatar,omitempty"`
+}
+
 // Ensure DeltaChatChannel satisfies the optional capability interfaces so the
 // Manager routes media to it and the gateway advertises voice support.
 var (
@@ -161,9 +125,9 @@ func parseDeltaChatEmailSetting(value string) (string, bool, error) {
 	email := strings.TrimSpace(value)
 	if email == "" {
 		return "", false, fmt.Errorf(
-			"deltachat: email is required.\nNext step: choose one of the chatmail servers below and set channel_list.deltachat.settings.email to %q, or use the same @server form with another chatmail relay. Run `picoclaw g` again; PicoClaw will create the account, print the generated full email address, and stop so you can save that address in the config.\nAvailable chatmail servers:\n%s",
-			"@"+defaultChatmailRelays[0].Domain,
-			formatChatmailRelayList(),
+			"deltachat: email is required.\nNext step: set channel_list.deltachat.settings.email to %q (the default chatmail relay), or use the same @server form with another chatmail relay from %s. Run `picoclaw g` again; PicoClaw will create the account, print the generated full email address, and stop so you can save that address in the config",
+			"@"+defaultChatmailRelay,
+			chatmailRelaysURL,
 		)
 	}
 	if !strings.HasPrefix(email, "@") {
@@ -171,22 +135,18 @@ func parseDeltaChatEmailSetting(value string) (string, bool, error) {
 	}
 	domain := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(email, "@")))
 	if domain == "" {
-		return "", false, fmt.Errorf("deltachat: email %q is missing a chatmail server. Use %q or one of:\n%s",
-			email, "@"+defaultChatmailRelays[0].Domain, formatChatmailRelayList())
+		return "", false, fmt.Errorf(
+			"deltachat: email %q is missing a chatmail server. Use %q or another relay from %s",
+			email,
+			"@"+defaultChatmailRelay,
+			chatmailRelaysURL,
+		)
 	}
 	if strings.Contains(domain, "@") || strings.ContainsAny(domain, "/\\ \t\r\n") {
 		return "", false, fmt.Errorf("deltachat: invalid chatmail server marker %q; use settings.email like %q",
-			email, "@"+defaultChatmailRelays[0].Domain)
+			email, "@"+defaultChatmailRelay)
 	}
 	return domain, true, nil
-}
-
-func formatChatmailRelayList() string {
-	var b strings.Builder
-	for _, relay := range defaultChatmailRelays {
-		fmt.Fprintf(&b, "  @%-34s %s\n", relay.Domain, relay.Location)
-	}
-	return strings.TrimRight(b.String(), "\n")
 }
 
 func buildChatmailAccountQR(domain string) string {
@@ -267,7 +227,9 @@ func (c *DeltaChatChannel) Start(ctx context.Context) error {
 	// Print the bot's invite link + QR so users can add it. Delta Chat / chatmail
 	// require end-to-end encryption, so peers must obtain the bot's key via this
 	// invite (adding the bare email address will not work).
-	c.printInviteLink(c.ctx)
+	if c.config.ShowInviteLink {
+		c.printInviteLink(c.ctx)
+	}
 
 	return nil
 }
@@ -671,9 +633,6 @@ func (c *DeltaChatChannel) resolveAliasChatID(ctx context.Context, target string
 		if len(contacts) == 1 {
 			return c.chatIDForContact(ctx, contacts[0].ID)
 		}
-		if len(contacts) > 1 {
-			return 0, ambiguousRecipientError(target, contactRecipientLabels(contacts))
-		}
 
 		chats, err := c.findMatchingChats(ctx, query)
 		if err != nil {
@@ -682,8 +641,12 @@ func (c *DeltaChatChannel) resolveAliasChatID(ctx context.Context, target string
 		if len(chats) == 1 {
 			return chats[0].ID, nil
 		}
-		if len(chats) > 1 {
-			return 0, ambiguousRecipientError(target, chatRecipientLabels(chats))
+
+		if len(contacts) > 1 || len(chats) > 1 {
+			return 0, fmt.Errorf(
+				"ambiguous recipient %q: %w",
+				target, channels.ErrSendFailed,
+			)
 		}
 	}
 	return 0, nil
@@ -856,45 +819,6 @@ func (c *DeltaChatChannel) getFullChatByContext(ctx context.Context, chatID int6
 	return &chat, nil
 }
 
-func ambiguousRecipientError(target string, labels []string) error {
-	return fmt.Errorf(
-		"ambiguous recipient %q matches %s: %w",
-		target,
-		strings.Join(labels, ", "),
-		channels.ErrSendFailed,
-	)
-}
-
-func contactRecipientLabels(contacts []dcContact) []string {
-	labels := make([]string, 0, len(contacts))
-	for _, contact := range contacts {
-		name := strings.TrimSpace(contact.DisplayName)
-		if name == "" {
-			name = strings.TrimSpace(contact.Name)
-		}
-		if name != "" && contact.Address != "" {
-			labels = append(labels, fmt.Sprintf("%s <%s>", name, contact.Address))
-		} else if contact.Address != "" {
-			labels = append(labels, contact.Address)
-		} else {
-			labels = append(labels, strconv.FormatInt(contact.ID, 10))
-		}
-	}
-	return labels
-}
-
-func chatRecipientLabels(chats []dcChat) []string {
-	labels := make([]string, 0, len(chats))
-	for _, chat := range chats {
-		name := strings.TrimSpace(chat.Name)
-		if name == "" {
-			name = strconv.FormatInt(chat.ID, 10)
-		}
-		labels = append(labels, fmt.Sprintf("%s (chat %d)", name, chat.ID))
-	}
-	return labels
-}
-
 // deltaChatViewtype returns the explicit Delta Chat view type for an outbound
 // media part, or "" to let Delta Chat infer it from the file. Only voice replies
 // are forced (to Viewtype::Voice) so they render as playable voice bubbles;
@@ -977,17 +901,7 @@ func (c *DeltaChatChannel) ensureAccount(ctx context.Context) error {
 	}
 
 	if accountID == 0 {
-		if c.config.Password.String() == "" {
-			return c.passwordRequiredError("account not found")
-		}
-
-		raw, callErr := c.rpc.call(ctx, "add_account")
-		if callErr != nil {
-			return fmt.Errorf("deltachat add_account: %w", callErr)
-		}
-		if decErr := json.Unmarshal(raw, &accountID); decErr != nil {
-			return fmt.Errorf("deltachat add_account decode: %w", decErr)
-		}
+		return c.accountNotConfiguredError("account not found")
 	}
 
 	configured, err := c.isConfigured(ctx, accountID)
@@ -995,23 +909,7 @@ func (c *DeltaChatChannel) ensureAccount(ctx context.Context) error {
 		return err
 	}
 	if !configured {
-		if err := c.configureAccount(ctx, accountID); err != nil {
-			return err
-		}
-	} else if c.config.Password.String() != "" {
-		changed, err := c.accountConfigChanged(ctx, accountID)
-		if err != nil {
-			logger.WarnCF("deltachat", "Could not read account config; reconfiguring", map[string]any{
-				"email": c.config.Email,
-				"error": err.Error(),
-			})
-			changed = true
-		}
-		if changed {
-			if err := c.configureAccount(ctx, accountID); err != nil {
-				return err
-			}
-		}
+		return c.accountNotConfiguredError("account is not configured")
 	}
 
 	if _, err := c.rpc.call(ctx, "select_account", accountID); err != nil {
@@ -1115,15 +1013,20 @@ func (c *DeltaChatChannel) getAccountConfigString(ctx context.Context, accountID
 	return *value, nil
 }
 
-func (c *DeltaChatChannel) passwordRequiredError(reason string) error {
-	return fmt.Errorf("deltachat: account %s is not configured in data_dir %s (%s)",
-		c.config.Email, c.dataDir, reason)
+func (c *DeltaChatChannel) accountNotConfiguredError(reason string) error {
+	return fmt.Errorf(
+		"deltachat: account %s is not configured in data_dir %s (%s). Use settings.email like %q to create a chatmail account, or point data_dir at an existing deltachat-rpc-server account store",
+		c.config.Email,
+		c.dataDir,
+		reason,
+		"@"+defaultChatmailRelay,
+	)
 }
 
 func (c *DeltaChatChannel) applyProfileConfig(ctx context.Context, accountID int64) error {
-	cfgMap := map[string]*string{}
+	var profile dcProfileConfig
 	if name := strings.TrimSpace(c.config.DisplayName); name != "" {
-		cfgMap["displayname"] = accountConfigString(name)
+		profile.DisplayName = name
 	}
 	if avatar := strings.TrimSpace(c.config.AvatarImage); avatar != "" {
 		avatar = expandHome(avatar)
@@ -1132,103 +1035,16 @@ func (c *DeltaChatChannel) applyProfileConfig(ctx context.Context, accountID int
 				"avatar_image": avatar,
 			})
 		} else {
-			cfgMap["selfavatar"] = accountConfigString(avatar)
+			profile.SelfAvatar = avatar
 		}
 	}
-	if len(cfgMap) == 0 {
+	if profile.DisplayName == "" && profile.SelfAvatar == "" {
 		return nil
 	}
-	if _, err := c.rpc.call(ctx, "batch_set_config", accountID, cfgMap); err != nil {
+	if _, err := c.rpc.call(ctx, "batch_set_config", accountID, profile); err != nil {
 		return fmt.Errorf("deltachat set profile config: %w", err)
 	}
 	return nil
-}
-
-// configureAccount writes the managed account settings and runs the (network-bound)
-// provider auto-configuration.
-func (c *DeltaChatChannel) configureAccount(ctx context.Context, accountID int64) error {
-	if c.config.Password.String() == "" {
-		return c.passwordRequiredError("account is not configured")
-	}
-
-	cfgMap := accountConfigMap(c.config)
-	if _, err := c.rpc.call(ctx, "batch_set_config", accountID, cfgMap); err != nil {
-		return fmt.Errorf("deltachat set account config: %w", err)
-	}
-
-	logger.InfoCF("deltachat", "Configuring account (validating credentials)", map[string]any{
-		"email": c.config.Email,
-	})
-	confCtx, cancel := context.WithTimeout(ctx, configureTimeout)
-	defer cancel()
-	if _, err := c.rpc.call(confCtx, "configure", accountID); err != nil {
-		return fmt.Errorf("deltachat configure (check email/password/server): %w", err)
-	}
-	return nil
-}
-
-func (c *DeltaChatChannel) accountConfigChanged(ctx context.Context, accountID int64) (bool, error) {
-	want := accountConfigMap(c.config)
-	for _, key := range managedAccountConfigKeys {
-		raw, err := c.rpc.call(ctx, "get_config", accountID, key)
-		if err != nil {
-			return false, fmt.Errorf("deltachat get config %s: %w", key, err)
-		}
-		var got *string
-		if err := json.Unmarshal(raw, &got); err != nil {
-			return false, fmt.Errorf("deltachat get config %s decode: %w", key, err)
-		}
-		if !accountConfigValueEqual(got, want[key]) {
-			logger.InfoCF("deltachat", "Account config changed; reconfiguring", map[string]any{
-				"email": c.config.Email,
-				"key":   key,
-			})
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func accountConfigValueEqual(got, want *string) bool {
-	if want == nil {
-		return got == nil || *got == ""
-	}
-	if got == nil {
-		return *want == ""
-	}
-	return *got == *want
-}
-
-func accountConfigMap(cfg *config.DeltaChatSettings) map[string]*string {
-	cfgMap := map[string]*string{
-		"addr":        accountConfigString(cfg.Email),
-		"mail_server": accountConfigOptionalString(cfg.IMAPServer),
-		"mail_port":   accountConfigOptionalInt(cfg.IMAPPort),
-		"send_server": accountConfigOptionalString(cfg.SMTPServer),
-		"send_port":   accountConfigOptionalInt(cfg.SMTPPort),
-	}
-	if password := cfg.Password.String(); password != "" {
-		cfgMap["mail_pw"] = accountConfigString(password)
-	}
-	return cfgMap
-}
-
-func accountConfigString(value string) *string {
-	return &value
-}
-
-func accountConfigOptionalString(value string) *string {
-	if value == "" {
-		return nil
-	}
-	return accountConfigString(value)
-}
-
-func accountConfigOptionalInt(value int) *string {
-	if value <= 0 {
-		return nil
-	}
-	return accountConfigString(strconv.Itoa(value))
 }
 
 func (c *DeltaChatChannel) listAccounts(ctx context.Context) ([]dcAccount, error) {
@@ -1257,7 +1073,7 @@ func (c *DeltaChatChannel) isConfigured(ctx context.Context, accountID int64) (b
 
 // joinInviteLink optionally joins a chat via a configured invite/QR link.
 func (c *DeltaChatChannel) joinInviteLink(ctx context.Context) error {
-	link := strings.TrimSpace(c.config.InviteLink)
+	link := c.config.JoinInviteLink
 	if link == "" {
 		return nil
 	}
@@ -1307,6 +1123,7 @@ func resolveDataDir(configured, channelName string) string {
 	return filepath.Join(home, ".picoclaw", "deltachat", name)
 }
 
+// home expansion and relative paths must be standarized instead of locally handled in every file
 func expandHome(path string) string {
 	if path == "" || path[0] != '~' {
 		return path

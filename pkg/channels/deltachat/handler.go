@@ -93,7 +93,8 @@ func (c *DeltaChatChannel) handleMessage(messageID int64) {
 		logger.DebugCF("deltachat", "Drop: device message", map[string]any{"chat_id": msg.ChatID})
 		return
 	}
-	isGroup := chat.ChatType != chatTypeSingle
+	// Possible ChatTypes are: "Single", "Group", "Mailinglist", "OutBroadcast", "InBroadcast"
+	isGroup := chat.ChatType != "Single"
 
 	logger.DebugCF("deltachat", "Inbound message", map[string]any{
 		"message_id": messageID,

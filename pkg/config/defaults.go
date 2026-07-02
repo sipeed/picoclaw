@@ -552,8 +552,14 @@ func defaultChannels() ChannelsConfig {
 		"deltachat": map[string]any{
 			"group_trigger": map[string]any{"mention_only": true},
 			"settings": map[string]any{
-				"email":        "@nine.testrun.org",
-				"display_name": "PicoClaw Bot",
+				"email":            "@nine.testrun.org",
+				"display_name":     "PicoClaw Bot",
+				"avatar_image":     "",
+				"data_dir":         "",
+				"rpc_server_path":  "",
+				"join_invite_link": "",
+				"show_invite_link": true,
+				"allow_crosspost":  false,
 			},
 		},
 		"line": map[string]any{

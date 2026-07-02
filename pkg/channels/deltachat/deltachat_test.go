@@ -27,7 +27,7 @@ func TestNewDeltaChatChannel(t *testing.T) {
 
 	t.Run("missing email", func(t *testing.T) {
 		bc := &config.Channel{Type: config.ChannelDeltaChat, Enabled: true}
-		cfg := &config.DeltaChatSettings{Password: *config.NewSecureString("pw"), RPCServerPath: fakeServer}
+		cfg := &config.DeltaChatSettings{RPCServerPath: fakeServer}
 		_, err := NewDeltaChatChannel(bc, cfg, msgBus)
 		if err == nil {
 			t.Fatal("expected error for missing email")
@@ -48,19 +48,10 @@ func TestNewDeltaChatChannel(t *testing.T) {
 		}
 	})
 
-	t.Run("password optional for existing account reference", func(t *testing.T) {
-		bc := &config.Channel{Type: config.ChannelDeltaChat, Enabled: true}
-		cfg := &config.DeltaChatSettings{Email: "bot@example.org", RPCServerPath: fakeServer}
-		if _, err := NewDeltaChatChannel(bc, cfg, msgBus); err != nil {
-			t.Fatalf("unexpected error without password: %v", err)
-		}
-	})
-
 	t.Run("missing rpc server", func(t *testing.T) {
 		bc := &config.Channel{Type: config.ChannelDeltaChat, Enabled: true}
 		cfg := &config.DeltaChatSettings{
 			Email:         "bot@example.org",
-			Password:      *config.NewSecureString("pw"),
 			RPCServerPath: filepath.Join(t.TempDir(), "does-not-exist"),
 		}
 		if _, err := NewDeltaChatChannel(bc, cfg, msgBus); err == nil {
@@ -72,7 +63,6 @@ func TestNewDeltaChatChannel(t *testing.T) {
 		bc := &config.Channel{Type: config.ChannelDeltaChat, Enabled: true}
 		cfg := &config.DeltaChatSettings{
 			Email:         "bot@example.org",
-			Password:      *config.NewSecureString("pw"),
 			RPCServerPath: fakeServer,
 			DataDir:       t.TempDir(),
 		}
@@ -137,36 +127,6 @@ func TestMentionsBot(t *testing.T) {
 	}
 }
 
-func TestExpandHome(t *testing.T) {
-	home, _ := os.UserHomeDir()
-	tests := []struct {
-		in   string
-		want string
-	}{
-		{"", ""},
-		{"/abs/path", "/abs/path"},
-		{"~", home},
-		{"~/sub", filepath.Join(home, "sub")},
-		{"relative", "relative"},
-	}
-	for _, tt := range tests {
-		if got := expandHome(tt.in); got != tt.want {
-			t.Errorf("expandHome(%q) = %q, want %q", tt.in, got, tt.want)
-		}
-	}
-}
-
-func TestResolveDataDir(t *testing.T) {
-	if got := resolveDataDir("/explicit/dir", "x"); got != "/explicit/dir" {
-		t.Errorf("explicit data dir = %q, want /explicit/dir", got)
-	}
-	home, _ := os.UserHomeDir()
-	want := filepath.Join(home, ".picoclaw", "deltachat", "mychan")
-	if got := resolveDataDir("", "mychan"); got != want {
-		t.Errorf("default data dir = %q, want %q", got, want)
-	}
-}
-
 func TestHandleMessageMarksSeenOnlyAfterDispatch(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -175,9 +135,9 @@ func TestHandleMessageMarksSeenOnlyAfterDispatch(t *testing.T) {
 		closeBus    bool
 		wantSeen    bool
 	}{
-		{name: "successful dispatch", chatType: chatTypeSingle, wantSeen: true},
+		{name: "successful dispatch", chatType: "Single", wantSeen: true},
 		{name: "ignored group trigger", chatType: "Group", mentionOnly: true},
-		{name: "failed local publish", chatType: chatTypeSingle, closeBus: true},
+		{name: "failed local publish", chatType: "Single", closeBus: true},
 	}
 
 	for i, tt := range tests {
@@ -235,88 +195,15 @@ func TestHandleMessageMarksSeenOnlyAfterDispatch(t *testing.T) {
 	}
 }
 
-func TestDeltaChatSettingsDecode(t *testing.T) {
-	raw := []byte(`{
-		"enabled": true,
-		"type": "deltachat",
-		"allow_from": ["alice@example.org"],
-		"settings": {
-			"email": "bot@example.org",
-			"display_name": "PicoBot",
-			"avatar_image": "/tmp/picobot.png",
-			"allow_crosspost": true,
-			"imap_port": 993
-		}
-	}`)
-	var bc config.Channel
-	if err := json.Unmarshal(raw, &bc); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	bc.Type = config.ChannelDeltaChat
-	decoded, err := bc.GetDecoded()
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	cfg, ok := decoded.(*config.DeltaChatSettings)
-	if !ok {
-		t.Fatalf("decoded type = %T, want *config.DeltaChatSettings", decoded)
-	}
-	if cfg.Email != "bot@example.org" {
-		t.Errorf("email = %q, want bot@example.org", cfg.Email)
-	}
-	if cfg.DisplayName != "PicoBot" {
-		t.Errorf("display_name = %q, want PicoBot", cfg.DisplayName)
-	}
-	if cfg.AvatarImage != "/tmp/picobot.png" {
-		t.Errorf("avatar_image = %q, want /tmp/picobot.png", cfg.AvatarImage)
-	}
-	if cfg.IMAPPort != 993 {
-		t.Errorf("imap_port = %d, want 993", cfg.IMAPPort)
-	}
-	if !cfg.AllowCrosspost {
-		t.Error("allow_crosspost = false, want true")
-	}
-}
-
-func TestEnsureAccountReconfiguresConfiguredAccountWhenSettingsChange(t *testing.T) {
+func TestEnsureAccountRejectsUnconfiguredAccount(t *testing.T) {
 	ch := newTestChannel(t)
-	ch.config.DisplayName = "New Bot"
-	ch.config.IMAPServer = "imap.example.org"
-	ch.config.IMAPPort = 993
-	ch.config.SMTPServer = "smtp.example.org"
-	ch.config.SMTPPort = 587
-
-	configureCalls := 0
-	accountConfigCalls := 0
-	var capturedConfig map[string]any
 
 	rpc, cleanup := newMockRPC(t, func(req rpcRequest) string {
 		switch req.Method {
 		case "get_all_accounts":
 			return rpcResult(req, []dcAccount{{ID: 7, Kind: "Configured", Addr: "bot@example.org"}})
 		case "is_configured":
-			return rpcResult(req, true)
-		case "get_config":
-			key, _ := req.Params[1].(string)
-			current := map[string]*string{
-				"addr":        strPtr("bot@example.org"),
-				"mail_pw":     strPtr("old-pw"),
-				"displayname": strPtr("Old Bot"),
-			}
-			return rpcResult(req, current[key])
-		case "batch_set_config":
-			if cfg, ok := req.Params[1].(map[string]any); ok {
-				if _, ok := cfg["mail_pw"]; ok {
-					accountConfigCalls++
-					capturedConfig = cfg
-				}
-			}
-			return rpcResult(req, nil)
-		case "configure":
-			configureCalls++
-			return rpcResult(req, nil)
-		case "select_account", "start_io":
-			return rpcResult(req, nil)
+			return rpcResult(req, false)
 		default:
 			return rpcUnexpectedMethod(req)
 		}
@@ -324,94 +211,17 @@ func TestEnsureAccountReconfiguresConfiguredAccountWhenSettingsChange(t *testing
 	defer cleanup()
 	ch.rpc = rpc
 
-	if err := ch.ensureAccount(context.Background()); err != nil {
-		t.Fatalf("ensureAccount: %v", err)
+	err := ch.ensureAccount(context.Background())
+	if err == nil {
+		t.Fatal("expected not-configured error")
 	}
-	if configureCalls != 1 {
-		t.Fatalf("configure calls = %d, want 1", configureCalls)
-	}
-	if accountConfigCalls != 1 {
-		t.Fatalf("account batch_set_config calls = %d, want 1", accountConfigCalls)
-	}
-	if capturedConfig["mail_pw"] != "pw" {
-		t.Errorf("mail_pw = %v, want pw", capturedConfig["mail_pw"])
-	}
-	if capturedConfig["mail_server"] != "imap.example.org" {
-		t.Errorf("mail_server = %v, want imap.example.org", capturedConfig["mail_server"])
-	}
-	if capturedConfig["mail_port"] != "993" {
-		t.Errorf("mail_port = %v, want 993", capturedConfig["mail_port"])
-	}
-	if capturedConfig["send_server"] != "smtp.example.org" {
-		t.Errorf("send_server = %v, want smtp.example.org", capturedConfig["send_server"])
-	}
-	if capturedConfig["send_port"] != "587" {
-		t.Errorf("send_port = %v, want 587", capturedConfig["send_port"])
-	}
-}
-
-func TestEnsureAccountSkipsConfiguredAccountWhenSettingsMatch(t *testing.T) {
-	ch := newTestChannel(t)
-	ch.config.DisplayName = "Pico Bot"
-	ch.config.IMAPServer = "imap.example.org"
-	ch.config.IMAPPort = 993
-	ch.config.SMTPServer = "smtp.example.org"
-	ch.config.SMTPPort = 587
-
-	configureCalls := 0
-	accountConfigCalls := 0
-
-	rpc, cleanup := newMockRPC(t, func(req rpcRequest) string {
-		switch req.Method {
-		case "get_all_accounts":
-			return rpcResult(req, []dcAccount{{ID: 7, Kind: "Configured", Addr: "bot@example.org"}})
-		case "is_configured":
-			return rpcResult(req, true)
-		case "get_config":
-			key, _ := req.Params[1].(string)
-			current := map[string]*string{
-				"addr":        strPtr("bot@example.org"),
-				"mail_pw":     strPtr("pw"),
-				"displayname": strPtr("Pico Bot"),
-				"mail_server": strPtr("imap.example.org"),
-				"mail_port":   strPtr("993"),
-				"send_server": strPtr("smtp.example.org"),
-				"send_port":   strPtr("587"),
-			}
-			return rpcResult(req, current[key])
-		case "batch_set_config":
-			if cfg, ok := req.Params[1].(map[string]any); ok {
-				if _, ok := cfg["mail_pw"]; ok {
-					accountConfigCalls++
-				}
-			}
-			return rpcResult(req, nil)
-		case "configure":
-			configureCalls++
-			return rpcResult(req, nil)
-		case "select_account", "start_io":
-			return rpcResult(req, nil)
-		default:
-			return rpcUnexpectedMethod(req)
-		}
-	})
-	defer cleanup()
-	ch.rpc = rpc
-
-	if err := ch.ensureAccount(context.Background()); err != nil {
-		t.Fatalf("ensureAccount: %v", err)
-	}
-	if configureCalls != 0 {
-		t.Fatalf("configure calls = %d, want 0", configureCalls)
-	}
-	if accountConfigCalls != 0 {
-		t.Fatalf("account batch_set_config calls = %d, want 0", accountConfigCalls)
+	if !strings.Contains(err.Error(), "is not configured") {
+		t.Fatalf("error = %v, want not-configured error", err)
 	}
 }
 
 func TestEnsureAccountCreatesBootstrapAccountAndStops(t *testing.T) {
 	ch := newTestChannel(t)
-	ch.config.Password = config.SecureString{}
 	ch.config.Email = "@mehl.cloud"
 
 	rpc, cleanup := newMockRPC(t, func(req rpcRequest) string {
@@ -447,9 +257,40 @@ func TestEnsureAccountCreatesBootstrapAccountAndStops(t *testing.T) {
 	}
 }
 
-func TestEnsureAccountUsesConfiguredAccountWithoutPassword(t *testing.T) {
+func TestJoinInviteLinkUsesConfiguredJoinInviteLink(t *testing.T) {
 	ch := newTestChannel(t)
-	ch.config.Password = config.SecureString{}
+	ch.accountID = 7
+	ch.config.JoinInviteLink = "DCACCOUNT:https://example.org/new"
+
+	rpc, cleanup := newMockRPC(t, func(req rpcRequest) string {
+		switch req.Method {
+		case "secure_join":
+			if req.Params[0] != float64(7) {
+				t.Fatalf("account id = %v, want 7", req.Params[0])
+			}
+			if req.Params[1] != "DCACCOUNT:https://example.org/new" {
+				t.Fatalf("invite link = %v", req.Params[1])
+			}
+			return rpcResult(req, int64(42))
+		case "accept_chat":
+			if req.Params[0] != float64(7) || req.Params[1] != float64(42) {
+				t.Fatalf("accept_chat params = %#v, want account 7 chat 42", req.Params)
+			}
+			return rpcResult(req, nil)
+		default:
+			return rpcUnexpectedMethod(req)
+		}
+	})
+	defer cleanup()
+	ch.rpc = rpc
+
+	if err := ch.joinInviteLink(context.Background()); err != nil {
+		t.Fatalf("joinInviteLink: %v", err)
+	}
+}
+
+func TestEnsureAccountUsesConfiguredAccount(t *testing.T) {
+	ch := newTestChannel(t)
 	ch.config.DisplayName = "Local Bot"
 	avatar := filepath.Join(t.TempDir(), "avatar.png")
 	if err := os.WriteFile(avatar, []byte("png"), 0o644); err != nil {
@@ -499,7 +340,6 @@ func TestEnsureAccountUsesConfiguredAccountWithoutPassword(t *testing.T) {
 
 func TestEnsureAccountSkipsMissingAvatarImage(t *testing.T) {
 	ch := newTestChannel(t)
-	ch.config.Password = config.SecureString{}
 	ch.config.AvatarImage = filepath.Join(t.TempDir(), "missing.png")
 
 	profileConfigCalls := 0
@@ -532,9 +372,8 @@ func TestEnsureAccountSkipsMissingAvatarImage(t *testing.T) {
 	}
 }
 
-func TestEnsureAccountRequiresPasswordWhenAccountMissing(t *testing.T) {
+func TestEnsureAccountRequiresConfiguredAccountWhenAccountMissing(t *testing.T) {
 	ch := newTestChannel(t)
-	ch.config.Password = config.SecureString{}
 
 	rpc, cleanup := newMockRPC(t, func(req rpcRequest) string {
 		switch req.Method {
@@ -549,68 +388,10 @@ func TestEnsureAccountRequiresPasswordWhenAccountMissing(t *testing.T) {
 
 	err := ch.ensureAccount(context.Background())
 	if err == nil {
-		t.Fatal("expected password-required error")
+		t.Fatal("expected not-configured error")
 	}
 	if !strings.Contains(err.Error(), "is not configured") {
 		t.Fatalf("error = %v, want not-configured error", err)
-	}
-}
-
-func TestEnsureAccountClearsRemovedOptionalSettings(t *testing.T) {
-	ch := newTestChannel(t)
-
-	var capturedConfig map[string]any
-
-	rpc, cleanup := newMockRPC(t, func(req rpcRequest) string {
-		switch req.Method {
-		case "get_all_accounts":
-			return rpcResult(req, []dcAccount{{ID: 7, Kind: "Configured", Addr: "bot@example.org"}})
-		case "is_configured":
-			return rpcResult(req, true)
-		case "get_config":
-			key, _ := req.Params[1].(string)
-			current := map[string]*string{
-				"addr":        strPtr("bot@example.org"),
-				"mail_pw":     strPtr("pw"),
-				"displayname": strPtr("Old Bot"),
-				"mail_server": strPtr("imap.example.org"),
-				"mail_port":   strPtr("993"),
-				"send_server": strPtr("smtp.example.org"),
-				"send_port":   strPtr("587"),
-			}
-			return rpcResult(req, current[key])
-		case "batch_set_config":
-			if cfg, ok := req.Params[1].(map[string]any); ok {
-				if _, ok := cfg["mail_pw"]; ok {
-					capturedConfig = cfg
-				}
-			}
-			return rpcResult(req, nil)
-		case "configure", "select_account", "start_io":
-			return rpcResult(req, nil)
-		default:
-			return rpcUnexpectedMethod(req)
-		}
-	})
-	defer cleanup()
-	ch.rpc = rpc
-
-	if err := ch.ensureAccount(context.Background()); err != nil {
-		t.Fatalf("ensureAccount: %v", err)
-	}
-	if capturedConfig == nil {
-		t.Fatal("account batch_set_config was not called")
-	}
-	for _, key := range []string{"mail_server", "mail_port", "send_server", "send_port"} {
-		if value, ok := capturedConfig[key]; !ok || value != nil {
-			t.Errorf("%s = %v (present %v), want explicit null", key, value, ok)
-		}
-	}
-	if capturedConfig["addr"] != "bot@example.org" {
-		t.Errorf("addr = %v, want bot@example.org", capturedConfig["addr"])
-	}
-	if capturedConfig["mail_pw"] != "pw" {
-		t.Errorf("mail_pw = %v, want pw", capturedConfig["mail_pw"])
 	}
 }
 
@@ -686,7 +467,6 @@ func newTestChannelWithBus(t *testing.T, msgBus *bus.MessageBus, configure func(
 	}
 	cfg := &config.DeltaChatSettings{
 		Email:         "bot@example.org",
-		Password:      *config.NewSecureString("pw"),
 		RPCServerPath: fakeServer,
 		DataDir:       t.TempDir(),
 	}
@@ -730,10 +510,6 @@ func rpcResult(req rpcRequest, result any) string {
 
 func rpcUnexpectedMethod(req rpcRequest) string {
 	return `{"jsonrpc":"2.0","id":` + itoa(req.ID) + `,"error":{"code":-32601,"message":"unexpected method"}}`
-}
-
-func strPtr(value string) *string {
-	return &value
 }
 
 // TestMessageDataJSON pins the camelCase keys and omitempty behavior expected by
