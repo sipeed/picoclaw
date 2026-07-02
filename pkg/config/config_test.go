@@ -1043,11 +1043,87 @@ func TestDefaultConfig_DeltaChatExample(t *testing.T) {
 	if settings.Email != "@nine.testrun.org" {
 		t.Fatalf("DefaultConfig().deltachat.settings.email = %q, want @nine.testrun.org", settings.Email)
 	}
-	if settings.Password.String() != "" {
-		t.Fatal("DefaultConfig().deltachat.settings.password should be empty")
-	}
 	if settings.DisplayName == "" {
 		t.Fatal("DefaultConfig().deltachat.settings.display_name should be populated")
+	}
+	if !settings.ShowInviteLink {
+		t.Fatal("DefaultConfig().deltachat.settings.show_invite_link should default to true")
+	}
+	assertDeltaChatSettingsKeys(t, deltachat.Settings)
+}
+
+func TestConfigExample_DeltaChatExample(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "config", "config.example.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(config.example.json) error: %v", err)
+	}
+
+	var cfg Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("Unmarshal(config.example.json) error: %v", err)
+	}
+
+	deltachat := cfg.Channels.Get(ChannelDeltaChat)
+	if deltachat == nil {
+		t.Fatal("config.example.json missing deltachat channel")
+	}
+	if deltachat.Enabled {
+		t.Fatal("config.example.json deltachat channel should be disabled")
+	}
+	if deltachat.Type != ChannelDeltaChat {
+		t.Fatalf("config.example.json deltachat.type = %q, want %q", deltachat.Type, ChannelDeltaChat)
+	}
+	if !deltachat.GroupTrigger.MentionOnly {
+		t.Fatal("config.example.json deltachat should use mention-only group trigger")
+	}
+	assertDeltaChatSettingsKeys(t, deltachat.Settings)
+}
+
+func assertDeltaChatSettingsKeys(t *testing.T, raw RawNode) {
+	t.Helper()
+
+	var settings map[string]any
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		t.Fatalf("decode deltachat settings: %v", err)
+	}
+	for _, key := range []string{
+		"email",
+		"display_name",
+		"avatar_image",
+		"data_dir",
+		"rpc_server_path",
+		"join_invite_link",
+		"show_invite_link",
+		"allow_crosspost",
+	} {
+		if _, ok := settings[key]; !ok {
+			t.Fatalf("deltachat.settings missing %q", key)
+		}
+	}
+}
+
+func TestInitChannelListDeltaChatShowInviteLinkEnvOverride(t *testing.T) {
+	t.Setenv("PICOCLAW_CHANNELS_DELTACHAT_SHOW_INVITE_LINK", "false")
+
+	channels := ChannelsConfig{
+		ChannelDeltaChat: &Channel{
+			Type:     ChannelDeltaChat,
+			Settings: RawNode(`{"email":"bot@example.org","show_invite_link":true}`),
+		},
+	}
+	if err := InitChannelList(channels); err != nil {
+		t.Fatalf("InitChannelList: %v", err)
+	}
+	decoded, err := channels.Get(ChannelDeltaChat).GetDecoded()
+	if err != nil {
+		t.Fatalf("GetDecoded: %v", err)
+	}
+	settings, ok := decoded.(*DeltaChatSettings)
+	if !ok {
+		t.Fatalf("decoded settings type = %T, want *DeltaChatSettings", decoded)
+	}
+	if settings.ShowInviteLink {
+		t.Fatal("ShowInviteLink should honor env override false")
 	}
 }
 
