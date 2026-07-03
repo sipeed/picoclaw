@@ -288,10 +288,29 @@ func (c *MatrixChannel) Start(ctx context.Context) error {
 	go c.runRoomKindCacheJanitor(c.ctx)
 
 	go func() {
-		if err := c.client.SyncWithContext(c.ctx); err != nil && c.ctx.Err() == nil {
-			logger.ErrorCF("matrix", "Matrix sync stopped unexpectedly", map[string]any{
-				"error": err.Error(),
+		const maxBackoff = 60 * time.Second
+		backoff := 2 * time.Second
+		for {
+			if c.ctx.Err() != nil {
+				return
+			}
+			err := c.client.SyncWithContext(c.ctx)
+			if err == nil || c.ctx.Err() != nil {
+				return
+			}
+			logger.ErrorCF("matrix", "Matrix sync stopped unexpectedly, reconnecting", map[string]any{
+				"error":   err.Error(),
+				"backoff": backoff.String(),
 			})
+			select {
+			case <-time.After(backoff):
+			case <-c.ctx.Done():
+				return
+			}
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
 		}
 	}()
 
