@@ -3,6 +3,7 @@ package discord
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestHasAllowedRole(t *testing.T) {
@@ -64,5 +65,24 @@ func TestHasAllowedRole(t *testing.T) {
 					tt.memberRoles, tt.allowRoles, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRoleCacheEntryExpiry(t *testing.T) {
+	// Verify that a cache entry is considered expired after TTL.
+	entry := &roleCacheEntry{
+		roles:   []string{"111", "222"},
+		expires: time.Now().Add(-1 * time.Second), // already expired
+	}
+	if time.Now().Before(entry.expires) {
+		t.Fatalf("entry should be expired but is not")
+	}
+
+	fresh := &roleCacheEntry{
+		roles:   []string{"111"},
+		expires: time.Now().Add(roleCacheTTL),
+	}
+	if !time.Now().Before(fresh.expires) {
+		t.Fatalf("fresh entry should not be expired")
 	}
 }

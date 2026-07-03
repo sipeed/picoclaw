@@ -55,6 +55,11 @@ type DiscordChannel struct {
 	voiceMu    sync.RWMutex
 	voiceSSRC  map[string]map[uint32]string // guildID -> ssrc -> userID
 
+	// Role cache for allow_roles: (guildID+userID) → roles, with TTL.
+	// Avoids repeated GuildMember API calls for the same user.
+	roleCache   map[string]*roleCacheEntry
+	roleCacheMu sync.Mutex
+
 	// TTS interruption: cancel active playback when user speaks
 	ttsMu     sync.Mutex
 	cancelTTS context.CancelFunc
@@ -102,6 +107,7 @@ func NewDiscordChannel(
 		typingStop:  make(map[string]chan struct{}),
 		bus:         bus,
 		voiceSSRC:   make(map[string]map[uint32]string),
+		roleCache:   make(map[string]*roleCacheEntry),
 	}
 	ch.playTTSFn = ch.playTTS
 	ch.ttsVoiceFn = ch.voiceConnectionForTTS
@@ -566,16 +572,16 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 			})
 			return
 		}
-		member, err := s.GuildMember(m.GuildID, m.Author.ID)
+		roles, err := c.getMemberRoles(m.GuildID, m.Author.ID)
 		if err != nil {
 			logger.WarnCF("discord", "Failed to fetch guild member for role check", map[string]any{
-				"user_id": m.Author.ID,
+				"user_id":  m.Author.ID,
 				"guild_id": m.GuildID,
 				"error":    err.Error(),
 			})
 			return
 		}
-		if !hasAllowedRole(member.Roles, c.config.AllowRoles) {
+		if !hasAllowedRole(roles, c.config.AllowRoles) {
 			logger.DebugCF("discord", "Message rejected by role check", map[string]any{
 				"user_id": m.Author.ID,
 				"guild_id": m.GuildID,
@@ -1020,6 +1026,45 @@ func (c *DiscordChannel) playTTS(ctx context.Context, vc *discordgo.VoiceConnect
 // VoiceCapabilities returns the voice capabilities of the channel.
 func (c *DiscordChannel) VoiceCapabilities() channels.VoiceCapabilities {
 	return channels.VoiceCapabilities{ASR: true, TTS: true}
+}
+
+const roleCacheTTL = 5 * time.Minute
+
+type roleCacheEntry struct {
+	roles   []string
+	expires time.Time
+}
+
+// getMemberRoles fetches a member's roles, using a TTL cache to avoid
+// repeated GuildMember API calls for the same user within the cache window.
+func (c *DiscordChannel) getMemberRoles(guildID, userID string) ([]string, error) {
+	cacheKey := guildID + ":" + userID
+
+	c.roleCacheMu.Lock()
+	if entry, ok := c.roleCache[cacheKey]; ok && time.Now().Before(entry.expires) {
+		roles := entry.roles
+		c.roleCacheMu.Unlock()
+		return roles, nil
+	}
+	c.roleCacheMu.Unlock()
+
+	member, err := c.session.GuildMember(guildID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	roles := member.Roles
+	c.roleCacheMu.Lock()
+	if c.roleCache == nil {
+		c.roleCache = make(map[string]*roleCacheEntry)
+	}
+	c.roleCache[cacheKey] = &roleCacheEntry{
+		roles:   roles,
+		expires: time.Now().Add(roleCacheTTL),
+	}
+	c.roleCacheMu.Unlock()
+
+	return roles, nil
 }
 
 // hasAllowedRole checks whether the member has at least one of the allowed
