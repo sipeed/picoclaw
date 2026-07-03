@@ -148,7 +148,40 @@ func (c *WhatsAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
 	return nil, nil
 }
 
+func (c *WhatsAppChannel) reconnect(backoff time.Duration) error {
+	select {
+	case <-time.After(backoff):
+	case <-c.ctx.Done():
+		return c.ctx.Err()
+	}
+
+	dialer := websocket.DefaultDialer
+	dialer.HandshakeTimeout = 10 * time.Second
+
+	conn, resp, err := dialer.Dial(c.url, nil)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		logger.ErrorCF("whatsapp", "WhatsApp reconnect failed", map[string]any{
+			"error":   err.Error(),
+			"backoff": backoff.String(),
+		})
+		return err
+	}
+
+	c.mu.Lock()
+	c.conn = conn
+	c.connected = true
+	c.mu.Unlock()
+
+	logger.InfoC("whatsapp", "WhatsApp channel reconnected")
+	return nil
+}
+
 func (c *WhatsAppChannel) listen() {
+	const maxBackoff = 60 * time.Second
+	backoff := 2 * time.Second
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -159,16 +192,29 @@ func (c *WhatsAppChannel) listen() {
 			c.mu.Unlock()
 
 			if conn == nil {
-				time.Sleep(1 * time.Second)
+				if err := c.reconnect(backoff); err != nil {
+					backoff *= 2
+					if backoff > maxBackoff {
+						backoff = maxBackoff
+					}
+					continue
+				}
+				backoff = 2 * time.Second
 				continue
 			}
 
 			_, message, err := conn.ReadMessage()
 			if err != nil {
-				logger.ErrorCF("whatsapp", "WhatsApp read error", map[string]any{
+				logger.ErrorCF("whatsapp", "WhatsApp read error, reconnecting", map[string]any{
 					"error": err.Error(),
 				})
-				time.Sleep(2 * time.Second)
+				c.mu.Lock()
+				if c.conn != nil {
+					_ = c.conn.Close()
+					c.conn = nil
+					c.connected = false
+				}
+				c.mu.Unlock()
 				continue
 			}
 
