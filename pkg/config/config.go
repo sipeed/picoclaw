@@ -560,9 +560,10 @@ type FeishuSettings struct {
 }
 
 type DiscordSettings struct {
-	Token       SecureString `json:"token,omitzero" yaml:"token,omitempty" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
-	Proxy       string       `json:"proxy"          yaml:"-"               env:"PICOCLAW_CHANNELS_DISCORD_PROXY"`
-	MentionOnly bool         `json:"mention_only"   yaml:"-"               env:"PICOCLAW_CHANNELS_DISCORD_MENTION_ONLY"`
+	Token       SecureString        `json:"token,omitzero" yaml:"token,omitempty" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
+	Proxy       string              `json:"proxy"          yaml:"-"               env:"PICOCLAW_CHANNELS_DISCORD_PROXY"`
+	MentionOnly bool                `json:"mention_only"   yaml:"-"               env:"PICOCLAW_CHANNELS_DISCORD_MENTION_ONLY"`
+	AllowRoles  FlexibleStringSlice `json:"allow_roles,omitempty" yaml:"-" env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_ROLES"`
 }
 
 type MaixCamSettings struct {

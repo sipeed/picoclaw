@@ -22,6 +22,7 @@ Discord is a free voice, video, and text chat application designed for communiti
       "type": "discord",
       "token": "YOUR_BOT_TOKEN",
       "allow_from": ["YOUR_USER_ID"],
+      "allow_roles": ["ROLE_ID_1", "ROLE_ID_2"],
       "placeholder": {
         "enabled": true,
         "text": ["Thinking... 💭"]
@@ -40,6 +41,7 @@ Discord is a free voice, video, and text chat application designed for communiti
 | enabled              | bool   | Yes      | Whether to enable the Discord channel                                       |
 | token                | string | Yes      | Discord Bot Token                                                           |
 | allow_from           | array  | No       | Allowlist of user IDs; empty means all users are allowed                    |
+| allow_roles          | array  | No       | List of Discord role IDs allowed to interact with the bot. If set, users with any listed role can use the bot even if not in `allow_from`. Empty = no role filtering. Only works in guild channels (not DMs). |
 | placeholder          | object | No       | Placeholder message config shown while the agent is working                 |
 | group_trigger        | object | No       | Group trigger settings (example: { "mention_only": false })                 |
 | reasoning_channel_id | string | No       | Optional target channel ID for reasoning/thinking output                    |
