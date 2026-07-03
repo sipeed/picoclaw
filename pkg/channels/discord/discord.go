@@ -55,6 +55,11 @@ type DiscordChannel struct {
 	voiceMu    sync.RWMutex
 	voiceSSRC  map[string]map[uint32]string // guildID -> ssrc -> userID
 
+	// Role cache for allow_roles: (guildID+userID) → roles, with TTL.
+	// Avoids repeated GuildMember API calls for the same user.
+	roleCache   map[string]*roleCacheEntry
+	roleCacheMu sync.Mutex
+
 	// TTS interruption: cancel active playback when user speaks
 	ttsMu     sync.Mutex
 	cancelTTS context.CancelFunc
@@ -79,6 +84,11 @@ func NewDiscordChannel(
 		return nil, fmt.Errorf("failed to create discord session: %w", err)
 	}
 
+	// Set explicit intents for reliable message delivery.
+	// GUILD_MEMBERS is intentionally NOT requested to avoid the privileged
+	// intent requirement; role checks use session.GuildMember() on demand.
+	session.Identify.Intents = discordgo.IntentGuildMessages | discordgo.IntentDirectMessages
+
 	if err := applyDiscordProxy(session, cfg.Proxy); err != nil {
 		return nil, err
 	}
@@ -97,6 +107,7 @@ func NewDiscordChannel(
 		typingStop:  make(map[string]chan struct{}),
 		bus:         bus,
 		voiceSSRC:   make(map[string]map[uint32]string),
+		roleCache:   make(map[string]*roleCacheEntry),
 	}
 	ch.playTTSFn = ch.playTTS
 	ch.ttsVoiceFn = ch.voiceConnectionForTTS
@@ -545,10 +556,38 @@ func (c *DiscordChannel) handleMessage(s *discordgo.Session, m *discordgo.Messag
 	sender.DisplayName = displayName
 
 	if !c.IsAllowedSender(sender) {
-		logger.DebugCF("discord", "Message rejected by allowlist", map[string]any{
-			"user_id": m.Author.ID,
-		})
-		return
+		// If allow_roles is configured, check whether the sender has any
+		// allowed role in the guild. This enables role-based access control
+		// without manually listing every user ID in allow_from.
+		if len(c.config.AllowRoles) == 0 {
+			logger.DebugCF("discord", "Message rejected by allowlist", map[string]any{
+				"user_id": m.Author.ID,
+			})
+			return
+		}
+		// Role-based check requires a guild context; DMs can't be checked.
+		if m.GuildID == "" {
+			logger.DebugCF("discord", "DM rejected (not in allowlist, allow_roles only works in guilds)", map[string]any{
+				"user_id": m.Author.ID,
+			})
+			return
+		}
+		roles, err := c.getMemberRoles(m.GuildID, m.Author.ID)
+		if err != nil {
+			logger.WarnCF("discord", "Failed to fetch guild member for role check", map[string]any{
+				"user_id":  m.Author.ID,
+				"guild_id": m.GuildID,
+				"error":    err.Error(),
+			})
+			return
+		}
+		if !hasAllowedRole(roles, c.config.AllowRoles) {
+			logger.DebugCF("discord", "Message rejected by role check", map[string]any{
+				"user_id": m.Author.ID,
+				"guild_id": m.GuildID,
+			})
+			return
+		}
 	}
 
 	if c.handleVoiceCommand(s, m) {
@@ -987,4 +1026,61 @@ func (c *DiscordChannel) playTTS(ctx context.Context, vc *discordgo.VoiceConnect
 // VoiceCapabilities returns the voice capabilities of the channel.
 func (c *DiscordChannel) VoiceCapabilities() channels.VoiceCapabilities {
 	return channels.VoiceCapabilities{ASR: true, TTS: true}
+}
+
+const roleCacheTTL = 5 * time.Minute
+
+type roleCacheEntry struct {
+	roles   []string
+	expires time.Time
+}
+
+// getMemberRoles fetches a member's roles, using a TTL cache to avoid
+// repeated GuildMember API calls for the same user within the cache window.
+func (c *DiscordChannel) getMemberRoles(guildID, userID string) ([]string, error) {
+	cacheKey := guildID + ":" + userID
+
+	c.roleCacheMu.Lock()
+	if entry, ok := c.roleCache[cacheKey]; ok && time.Now().Before(entry.expires) {
+		roles := entry.roles
+		c.roleCacheMu.Unlock()
+		return roles, nil
+	}
+	c.roleCacheMu.Unlock()
+
+	member, err := c.session.GuildMember(guildID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	roles := member.Roles
+	c.roleCacheMu.Lock()
+	if c.roleCache == nil {
+		c.roleCache = make(map[string]*roleCacheEntry)
+	}
+	c.roleCache[cacheKey] = &roleCacheEntry{
+		roles:   roles,
+		expires: time.Now().Add(roleCacheTTL),
+	}
+	c.roleCacheMu.Unlock()
+
+	return roles, nil
+}
+
+// hasAllowedRole checks whether the member has at least one of the allowed
+// role IDs. Returns true if allowedRoles is empty (no role restriction).
+func hasAllowedRole(memberRoles []string, allowedRoles []string) bool {
+	if len(allowedRoles) == 0 {
+		return true
+	}
+	allowed := make(map[string]struct{}, len(allowedRoles))
+	for _, r := range allowedRoles {
+		allowed[r] = struct{}{}
+	}
+	for _, r := range memberRoles {
+		if _, ok := allowed[r]; ok {
+			return true
+		}
+	}
+	return false
 }
