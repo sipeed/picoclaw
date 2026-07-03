@@ -395,3 +395,34 @@ func TestMigrateV1ToV3_AlreadyNestedFormat(t *testing.T) {
 	// Should NOT have nested settings inside settings
 	require.NotContains(t, settings, "settings")
 }
+
+// TestValidateLegacyConfigDiagnostics_BuildInfo tests that a v2 config
+// containing build_info (written by SaveConfig in v0.2.5+) does not trigger
+// a false "unknown field" error during migration diagnostics.
+// See https://github.com/sipeed/picoclaw/issues/3206
+func TestValidateLegacyConfigDiagnostics_BuildInfo(t *testing.T) {
+	v2Config := `{
+		"version": 2,
+		"build_info": {
+			"version": "0.2.5",
+			"git_commit": "abc123",
+			"build_time": "2026-03-01T00:00:00Z",
+			"go_version": "go1.25.0"
+		},
+		"session": {
+			"dimensions": ["chat", "sender"],
+			"dm_scope": "dm"
+		},
+		"agents": {
+			"defaults": {
+				"model_name": "gpt-4",
+				"provider": "openai"
+			}
+		},
+		"channel_list": {},
+		"model_list": []
+	}`
+
+	err := validateLegacyConfigDiagnostics([]byte(v2Config))
+	require.NoError(t, err, "v2 config with build_info and dm_scope should pass diagnostics")
+}
