@@ -45,6 +45,46 @@ func TestNewAgentInstance_UsesDefaultsTemperatureAndMaxTokens(t *testing.T) {
 	}
 }
 
+func TestNewAgentInstance_UsesAgentOverrides(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:                 tmpDir,
+				ModelName:                 "default-model",
+				MaxTokens:                 8192,
+				MaxToolIterations:         5,
+				SummarizeMessageThreshold: 40,
+				SummarizeTokenPercent:     75,
+				SplitOnMarker:             true,
+			},
+		},
+	}
+
+	splitOnMarker := false
+	agent := NewAgentInstance(&config.AgentConfig{
+		ID:                        "rodolfo-rfreire",
+		Workspace:                 tmpDir,
+		MaxTokens:                 2048,
+		SummarizeMessageThreshold: 6,
+		SummarizeTokenPercent:     30,
+		SplitOnMarker:             &splitOnMarker,
+	}, &cfg.Agents.Defaults, cfg, &mockProvider{})
+
+	if agent.MaxTokens != 2048 {
+		t.Fatalf("MaxTokens = %d, want 2048", agent.MaxTokens)
+	}
+	if agent.SummarizeMessageThreshold != 6 {
+		t.Fatalf("SummarizeMessageThreshold = %d, want 6", agent.SummarizeMessageThreshold)
+	}
+	if agent.SummarizeTokenPercent != 30 {
+		t.Fatalf("SummarizeTokenPercent = %d, want 30", agent.SummarizeTokenPercent)
+	}
+	if agent.ContextBuilder.splitOnMarker {
+		t.Fatal("ContextBuilder.splitOnMarker = true, want false")
+	}
+}
+
 func TestNewAgentInstance_DefaultsTemperatureWhenZero(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-instance-test-*")
 	if err != nil {

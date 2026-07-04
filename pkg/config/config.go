@@ -312,13 +312,17 @@ func (m AgentModelConfig) MarshalJSON() ([]byte, error) {
 }
 
 type AgentConfig struct {
-	ID        string            `json:"id"`
-	Default   bool              `json:"default,omitempty"`
-	Name      string            `json:"name,omitempty"`
-	Workspace string            `json:"workspace,omitempty"`
-	Model     *AgentModelConfig `json:"model,omitempty"`
-	Skills    []string          `json:"skills,omitempty"`
-	Subagents *SubagentsConfig  `json:"subagents,omitempty"`
+	ID                        string            `json:"id"`
+	Default                   bool              `json:"default,omitempty"`
+	Name                      string            `json:"name,omitempty"`
+	Workspace                 string            `json:"workspace,omitempty"`
+	Model                     *AgentModelConfig `json:"model,omitempty"`
+	Skills                    []string          `json:"skills,omitempty"`
+	Subagents                 *SubagentsConfig  `json:"subagents,omitempty"`
+	MaxTokens                 int               `json:"max_tokens,omitempty"`
+	SummarizeMessageThreshold int               `json:"summarize_message_threshold,omitempty"`
+	SummarizeTokenPercent     int               `json:"summarize_token_percent,omitempty"`
+	SplitOnMarker             *bool             `json:"split_on_marker,omitempty"`
 }
 
 type SubagentsConfig struct {

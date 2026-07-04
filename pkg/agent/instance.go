@@ -130,12 +130,17 @@ func NewAgentInstance(
 	sessions := initSessionStore(sessionsDir)
 
 	mcpDiscoveryActive := agentHasDiscoverableMCPServers(cfg, agentMCPServerAllowlist)
+	splitOnMarker := defaults.SplitOnMarker
+	if agentCfg != nil && agentCfg.SplitOnMarker != nil {
+		splitOnMarker = *agentCfg.SplitOnMarker
+	}
+
 	contextBuilder := NewContextBuilder(workspace).
 		WithToolDiscovery(
 			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseBM25,
 			mcpDiscoveryActive && cfg.Tools.MCP.Discovery.UseRegex,
 		).
-		WithSplitOnMarker(cfg.Agents.Defaults.SplitOnMarker)
+		WithSplitOnMarker(splitOnMarker)
 
 	agentID := routing.DefaultAgentID
 	agentName := ""
@@ -160,6 +165,9 @@ func NewAgentInstance(
 	}
 
 	maxTokens := defaults.MaxTokens
+	if agentCfg != nil && agentCfg.MaxTokens > 0 {
+		maxTokens = agentCfg.MaxTokens
+	}
 	if maxTokens == 0 {
 		maxTokens = 8192
 	}
@@ -188,11 +196,17 @@ func NewAgentInstance(
 	thinkingLevelConfigured := isConfiguredThinkingLevel(thinkingLevelStr)
 
 	summarizeMessageThreshold := defaults.SummarizeMessageThreshold
+	if agentCfg != nil && agentCfg.SummarizeMessageThreshold > 0 {
+		summarizeMessageThreshold = agentCfg.SummarizeMessageThreshold
+	}
 	if summarizeMessageThreshold == 0 {
 		summarizeMessageThreshold = 20
 	}
 
 	summarizeTokenPercent := defaults.SummarizeTokenPercent
+	if agentCfg != nil && agentCfg.SummarizeTokenPercent > 0 {
+		summarizeTokenPercent = agentCfg.SummarizeTokenPercent
+	}
 	if summarizeTokenPercent == 0 {
 		summarizeTokenPercent = 75
 	}

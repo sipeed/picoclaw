@@ -105,7 +105,11 @@ func TestAgentConfig_FullParse(t *testing.T) {
 				},
 				"subagents": {
 					"allow_agents": ["sales"]
-				}
+				},
+				"max_tokens": 2048,
+				"summarize_message_threshold": 6,
+				"summarize_token_percent": 30,
+				"split_on_marker": false
 			}
 			]
 		},
@@ -146,6 +150,18 @@ func TestAgentConfig_FullParse(t *testing.T) {
 	}
 	if support.Subagents == nil || len(support.Subagents.AllowAgents) != 1 {
 		t.Errorf("support.Subagents = %+v", support.Subagents)
+	}
+	if support.MaxTokens != 2048 {
+		t.Errorf("support.MaxTokens = %d, want 2048", support.MaxTokens)
+	}
+	if support.SummarizeMessageThreshold != 6 {
+		t.Errorf("support.SummarizeMessageThreshold = %d, want 6", support.SummarizeMessageThreshold)
+	}
+	if support.SummarizeTokenPercent != 30 {
+		t.Errorf("support.SummarizeTokenPercent = %d, want 30", support.SummarizeTokenPercent)
+	}
+	if support.SplitOnMarker == nil || *support.SplitOnMarker {
+		t.Errorf("support.SplitOnMarker = %v, want false", support.SplitOnMarker)
 	}
 
 	if len(cfg.Session.Dimensions) != 1 || cfg.Session.Dimensions[0] != "sender" {
