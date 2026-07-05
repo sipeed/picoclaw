@@ -197,6 +197,131 @@ func TestBuildRequestBody(t *testing.T) {
 	}
 }
 
+// TestBuildRequestBody_SystemPartsBlocks verifies that a system message with
+// structured SystemParts is emitted as a system block array with per-block
+// cache_control, mirroring the SDK-based anthropic adapter (fixes #2191).
+func TestBuildRequestBody_SystemPartsBlocks(t *testing.T) {
+	tests := []struct {
+		name       string
+		messages   []Message
+		wantSystem any
+	}{
+		{
+			name: "system parts become block array with cache_control",
+			messages: []Message{
+				{
+					Role:    "system",
+					Content: "static block\n\n---\n\ndynamic block",
+					SystemParts: []ContentBlock{
+						{
+							Type:         "text",
+							Text:         "static block",
+							CacheControl: &CacheControl{Type: "ephemeral"},
+						},
+						{
+							Type: "text",
+							Text: "dynamic block",
+						},
+					},
+				},
+				{Role: "user", Content: "Hello"},
+			},
+			wantSystem: []any{
+				map[string]any{
+					"type":          "text",
+					"text":          "static block",
+					"cache_control": map[string]any{"type": "ephemeral"},
+				},
+				map[string]any{
+					"type": "text",
+					"text": "dynamic block",
+				},
+			},
+		},
+		{
+			name: "empty system parts fall back to flat string",
+			messages: []Message{
+				{Role: "system", Content: "plain system prompt"},
+				{Role: "user", Content: "Hello"},
+			},
+			wantSystem: "plain system prompt",
+		},
+		{
+			name: "multiple flat system messages preserve concat semantics",
+			messages: []Message{
+				{Role: "system", Content: "first"},
+				{Role: "system", Content: "second"},
+				{Role: "user", Content: "Hello"},
+			},
+			wantSystem: "first\n\nsecond",
+		},
+		{
+			name: "mixed flat and structured system messages keep order in block form",
+			messages: []Message{
+				{Role: "system", Content: "flat prefix"},
+				{
+					Role:    "system",
+					Content: "cached part",
+					SystemParts: []ContentBlock{
+						{
+							Type:         "text",
+							Text:         "cached part",
+							CacheControl: &CacheControl{Type: "ephemeral"},
+						},
+					},
+				},
+				{Role: "user", Content: "Hello"},
+			},
+			wantSystem: []any{
+				map[string]any{
+					"type": "text",
+					"text": "flat prefix",
+				},
+				map[string]any{
+					"type":          "text",
+					"text":          "cached part",
+					"cache_control": map[string]any{"type": "ephemeral"},
+				},
+			},
+		},
+		{
+			name: "empty-text system parts are skipped",
+			messages: []Message{
+				{
+					Role:    "system",
+					Content: "visible",
+					SystemParts: []ContentBlock{
+						{Type: "text", Text: ""},
+						{Type: "text", Text: "visible", CacheControl: &CacheControl{Type: "ephemeral"}},
+					},
+				},
+				{Role: "user", Content: "Hello"},
+			},
+			wantSystem: []any{
+				map[string]any{
+					"type":          "text",
+					"text":          "visible",
+					"cache_control": map[string]any{"type": "ephemeral"},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := buildRequestBody(tt.messages, nil, "test-model", map[string]any{"max_tokens": 8192})
+			if err != nil {
+				t.Fatalf("buildRequestBody() error: %v", err)
+			}
+			if !reflect.DeepEqual(got["system"], tt.wantSystem) {
+				gotJSON, _ := json.MarshalIndent(got["system"], "", "  ")
+				wantJSON, _ := json.MarshalIndent(tt.wantSystem, "", "  ")
+				t.Errorf("system mismatch:\ngot:\n%s\nwant:\n%s", gotJSON, wantJSON)
+			}
+		})
+	}
+}
+
 func TestParseResponseBody(t *testing.T) {
 	tests := []struct {
 		name    string

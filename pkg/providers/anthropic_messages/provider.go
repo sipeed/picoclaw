@@ -26,6 +26,8 @@ type (
 	LLMResponse            = protocoltypes.LLMResponse
 	UsageInfo              = protocoltypes.UsageInfo
 	Message                = protocoltypes.Message
+	ContentBlock           = protocoltypes.ContentBlock
+	CacheControl           = protocoltypes.CacheControl
 	ToolDefinition         = protocoltypes.ToolDefinition
 	ToolFunctionDefinition = protocoltypes.ToolFunctionDefinition
 )
@@ -180,16 +182,45 @@ func buildRequestBody(
 
 	// Process messages
 	var systemPrompt string
+	var systemBlocks []any
+	hasSystemParts := false
 	var apiMessages []any
 
 	for _, msg := range messages {
 		switch msg.Role {
 		case "system":
-			// Accumulate system messages
-			if systemPrompt != "" {
-				systemPrompt += "\n\n" + msg.Content
-			} else {
-				systemPrompt = msg.Content
+			// Accumulate system messages. Two representations are built in
+			// parallel: a flat string (legacy behavior) and structured blocks.
+			// When any system message carries SystemParts, the block form is
+			// sent so per-block cache_control survives (fixes #2191); otherwise
+			// the flat string preserves the existing concat semantics.
+			if len(msg.SystemParts) > 0 {
+				hasSystemParts = true
+				for _, part := range msg.SystemParts {
+					if part.Text == "" {
+						continue
+					}
+					block := map[string]any{
+						"type": "text",
+						"text": part.Text,
+					}
+					if part.CacheControl != nil && part.CacheControl.Type == "ephemeral" {
+						block["cache_control"] = map[string]any{"type": "ephemeral"}
+					}
+					systemBlocks = append(systemBlocks, block)
+				}
+			} else if msg.Content != "" {
+				systemBlocks = append(systemBlocks, map[string]any{
+					"type": "text",
+					"text": msg.Content,
+				})
+			}
+			if msg.Content != "" {
+				if systemPrompt != "" {
+					systemPrompt += "\n\n" + msg.Content
+				} else {
+					systemPrompt = msg.Content
+				}
 			}
 
 		case "user":
@@ -281,8 +312,12 @@ func buildRequestBody(
 
 	result["messages"] = apiMessages
 
-	// Set system prompt if present
-	if systemPrompt != "" {
+	// Set system prompt if present. Structured blocks are only sent when a
+	// system message actually provided SystemParts; the flat string keeps
+	// byte-identical behavior for callers that never populate them.
+	if hasSystemParts && len(systemBlocks) > 0 {
+		result["system"] = systemBlocks
+	} else if systemPrompt != "" {
 		result["system"] = systemPrompt
 	}
 
