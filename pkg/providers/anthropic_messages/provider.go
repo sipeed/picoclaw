@@ -355,9 +355,11 @@ func parseResponseBody(body []byte) (*LLMResponse, error) {
 		ToolCalls:    toolCalls,
 		FinishReason: finishReason,
 		Usage: &UsageInfo{
-			PromptTokens:     int(resp.Usage.InputTokens),
-			CompletionTokens: int(resp.Usage.OutputTokens),
-			TotalTokens:      int(resp.Usage.InputTokens + resp.Usage.OutputTokens),
+			PromptTokens:             int(resp.Usage.InputTokens),
+			CompletionTokens:         int(resp.Usage.OutputTokens),
+			TotalTokens:              int(resp.Usage.InputTokens + resp.Usage.OutputTokens),
+			CacheReadInputTokens:     int(resp.Usage.CacheReadInputTokens),
+			CacheCreationInputTokens: int(resp.Usage.CacheCreationInputTokens),
 		},
 	}, nil
 }
@@ -383,6 +385,8 @@ type contentBlock struct {
 }
 
 type usageInfo struct {
-	InputTokens  int64 `json:"input_tokens"`
-	OutputTokens int64 `json:"output_tokens"`
+	InputTokens              int64 `json:"input_tokens"`
+	OutputTokens             int64 `json:"output_tokens"`
+	CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
 }

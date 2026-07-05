@@ -289,6 +289,70 @@ func TestParseResponseBody(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "usage with cache fields",
+			body: []byte(`{
+				"id": "msg-cache",
+				"type": "message",
+				"role": "assistant",
+				"content": [
+					{"type": "text", "text": "Cached reply"}
+				],
+				"stop_reason": "end_turn",
+				"model": "test-model",
+				"usage": {
+					"input_tokens": 12,
+					"output_tokens": 7,
+					"cache_read_input_tokens": 2048,
+					"cache_creation_input_tokens": 512
+				}
+			}`),
+			want: &LLMResponse{
+				Content:      "Cached reply",
+				ToolCalls:    []ToolCall{},
+				FinishReason: "stop",
+				Usage: &UsageInfo{
+					PromptTokens:             12,
+					CompletionTokens:         7,
+					TotalTokens:              19,
+					CacheReadInputTokens:     2048,
+					CacheCreationInputTokens: 512,
+				},
+				Reasoning:        "",
+				ReasoningDetails: nil,
+			},
+			wantErr: false,
+		},
+		{
+			name: "usage without cache fields defaults to zero",
+			body: []byte(`{
+				"id": "msg-nocache",
+				"type": "message",
+				"role": "assistant",
+				"content": [
+					{"type": "text", "text": "Plain reply"}
+				],
+				"stop_reason": "end_turn",
+				"model": "test-model",
+				"usage": {
+					"input_tokens": 10,
+					"output_tokens": 5
+				}
+			}`),
+			want: &LLMResponse{
+				Content:      "Plain reply",
+				ToolCalls:    []ToolCall{},
+				FinishReason: "stop",
+				Usage: &UsageInfo{
+					PromptTokens:     10,
+					CompletionTokens: 5,
+					TotalTokens:      15,
+				},
+				Reasoning:        "",
+				ReasoningDetails: nil,
+			},
+			wantErr: false,
+		},
+		{
 			name: "max_tokens stop reason",
 			body: []byte(`{
 				"id": "msg-789",
@@ -352,6 +416,14 @@ func TestParseResponseBody(t *testing.T) {
 				}
 				if got.Usage.TotalTokens != tt.want.Usage.TotalTokens {
 					t.Errorf("Usage.TotalTokens = %d, want %d", got.Usage.TotalTokens, tt.want.Usage.TotalTokens)
+				}
+				if got.Usage.CacheReadInputTokens != tt.want.Usage.CacheReadInputTokens {
+					t.Errorf("Usage.CacheReadInputTokens = %d, want %d",
+						got.Usage.CacheReadInputTokens, tt.want.Usage.CacheReadInputTokens)
+				}
+				if got.Usage.CacheCreationInputTokens != tt.want.Usage.CacheCreationInputTokens {
+					t.Errorf("Usage.CacheCreationInputTokens = %d, want %d",
+						got.Usage.CacheCreationInputTokens, tt.want.Usage.CacheCreationInputTokens)
 				}
 			}
 			if len(got.ToolCalls) != len(tt.want.ToolCalls) {

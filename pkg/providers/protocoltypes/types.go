@@ -53,6 +53,14 @@ type UsageInfo struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
+
+	// Prompt-cache accounting (Anthropic prompt caching). Zero when the
+	// provider does not report cache usage. CacheReadInputTokens counts
+	// tokens served from cache; CacheCreationInputTokens counts tokens
+	// written to cache. Neither is included in PromptTokens by Anthropic:
+	// total prompt size = PromptTokens + CacheReadInputTokens + CacheCreationInputTokens.
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 }
 
 // CacheControl marks a content block for LLM-side prefix caching.
