@@ -367,17 +367,18 @@ and injected into the context for a configured number of turns (`ttl`).
 
 ### Per-Server Config
 
-| Config     | Type    | Required | Description                                                                                                                                                     |
-|------------|---------|----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `enabled`  | bool    | yes      | Enable this MCP server                                                                                                                                          |
-| `deferred` | bool    | no       | Override deferred mode for this server only. `true` = tools are hidden and discoverable via search; `false` = tools are always visible in context. When omitted, the global `discovery.enabled` value applies. |
-| `type`     | string  | no       | Transport type: `stdio`, `sse`, `http`                                                                                                                          |
-| `command`  | string  | stdio    | Executable command for stdio transport                                                                                                                          |
-| `args`     | array   | no       | Command arguments for stdio transport                                                                                                                           |
-| `env`      | object  | no       | Environment variables for stdio process                                                                                                                         |
-| `env_file` | string  | no       | Path to environment file for stdio process                                                                                                                      |
-| `url`      | string  | sse/http | Endpoint URL for `sse`/`http` transport                                                                                                                         |
-| `headers`  | object  | no       | HTTP headers for `sse`/`http` transport                                                                                                                         |
+| Config                    | Type    | Required | Description                                                                                                                                                     |
+|---------------------------|---------|----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `enabled`                 | bool    | yes      | Enable this MCP server                                                                                                                                          |
+| `deferred`                | bool    | no       | Override deferred mode for this server only. `true` = tools are hidden and discoverable via search; `false` = tools are always visible in context. When omitted, the global `discovery.enabled` value applies. |
+| `inline_media_extraction` | bool    | no       | Extract valid inline image/audio `data:*;base64,...` URLs from this server's text outputs into media attachments. Default is `false`; enable only for trusted servers whose text output intentionally contains inline media, such as screenshot tools. |
+| `type`                    | string  | no       | Transport type: `stdio`, `sse`, `http`                                                                                                                          |
+| `command`                 | string  | stdio    | Executable command for stdio transport                                                                                                                          |
+| `args`                    | array   | no       | Command arguments for stdio transport                                                                                                                           |
+| `env`                     | object  | no       | Environment variables for stdio process                                                                                                                         |
+| `env_file`                | string  | no       | Path to environment file for stdio process                                                                                                                      |
+| `url`                     | string  | sse/http | Endpoint URL for `sse`/`http` transport                                                                                                                         |
+| `headers`                 | object  | no       | HTTP headers for `sse`/`http` transport                                                                                                                         |
 
 ### Transport Behavior
 
@@ -399,6 +400,7 @@ and injected into the context for a configured number of turns (`ttl`).
       "servers": {
         "filesystem": {
           "enabled": true,
+          "inline_media_extraction": false,
           "command": "npx",
           "args": [
             "-y",

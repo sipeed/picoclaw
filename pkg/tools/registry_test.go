@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
@@ -78,6 +80,19 @@ type mockInlineMediaTool struct {
 
 func (m *mockInlineMediaTool) ProducesInlineMedia() bool {
 	return m.produces
+}
+
+type mockMCPManager struct {
+	result *mcp.CallToolResult
+}
+
+func (m *mockMCPManager) CallTool(
+	context.Context,
+	string,
+	string,
+	map[string]any,
+) (*mcp.CallToolResult, error) {
+	return m.result, nil
 }
 
 // --- helpers ---
@@ -1041,6 +1056,79 @@ func TestToolRegistry_ExecuteWithContext_OptInInlineMediaExtractionStillWorksFor
 	}
 	if filepath.Ext(path) != ".png" {
 		t.Fatalf("expected stored inline media to use png extension, got %q", path)
+	}
+}
+
+func TestToolRegistry_ExecuteWithContext_MCPToolPreservesInlineMediaDataURLText(t *testing.T) {
+	r := NewToolRegistry()
+	store := media.NewFileMediaStore()
+	r.SetMediaStore(store)
+
+	payload := strings.Repeat("A", 1024)
+	dataURL := "data:" + "image/png;base64," + payload
+	mcpTool := NewMCPTool(&mockMCPManager{
+		result: &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: `const fixture = "` + dataURL + `"`},
+			},
+		},
+	}, "filesystem", &mcp.Tool{Name: "read_file"})
+	r.Register(mcpTool)
+
+	result := r.ExecuteWithContext(
+		context.Background(),
+		mcpTool.Name(),
+		nil,
+		"telegram",
+		"chat-42",
+		nil,
+	)
+
+	if len(result.Media) != 0 {
+		t.Fatalf("generic MCP text output created media from source-code data URL: %#v", result.Media)
+	}
+	if strings.Contains(result.ForLLM, inlineMediaOmittedMessage) {
+		t.Fatalf("generic MCP text output should not omit source-code data URL, got %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, dataURL) {
+		t.Fatalf("generic MCP text output should preserve source data URL, got %q", result.ForLLM)
+	}
+}
+
+func TestToolRegistry_ExecuteWithContext_ConfiguredMCPToolExtractsInlineMediaDataURL(t *testing.T) {
+	r := NewToolRegistry()
+	store := media.NewFileMediaStore()
+	r.SetMediaStore(store)
+
+	payload := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+	dataURL := "data:" + "image/png;base64," + payload
+	mcpTool := NewMCPTool(&mockMCPManager{
+		result: &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: "Here is the screenshot: " + dataURL},
+			},
+		},
+	}, "screenshots", &mcp.Tool{Name: "take_screenshot"})
+	mcpTool.SetInlineMediaExtraction(true)
+	r.Register(mcpTool)
+
+	result := r.ExecuteWithContext(
+		context.Background(),
+		mcpTool.Name(),
+		nil,
+		"telegram",
+		"chat-42",
+		nil,
+	)
+
+	if len(result.Media) != 1 {
+		t.Fatalf("expected one extracted media item, got %d", len(result.Media))
+	}
+	if strings.Contains(result.ForLLM, payload) {
+		t.Fatalf("ForLLM should not retain raw base64 payload: %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "registered as a media attachment") {
+		t.Fatalf("expected registered media note, got %q", result.ForLLM)
 	}
 }
 

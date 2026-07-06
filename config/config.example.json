@@ -409,6 +409,7 @@
         },
         "filesystem": {
           "enabled": false,
+          "inline_media_extraction": false,
           "command": "npx",
           "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
         },

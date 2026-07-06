@@ -37,6 +37,7 @@ type MCPTool struct {
 	mediaStore         media.MediaStore
 	workspace          string
 	maxInlineTextRunes int
+	inlineMedia        bool
 	runtimeEvents      runtimeevents.Bus
 }
 
@@ -71,6 +72,14 @@ func (t *MCPTool) SetMaxInlineTextRunes(limit int) {
 	if limit > 0 {
 		t.maxInlineTextRunes = limit
 	}
+}
+
+func (t *MCPTool) SetInlineMediaExtraction(enabled bool) {
+	t.inlineMedia = enabled
+}
+
+func (t *MCPTool) ProducesInlineMedia() bool {
+	return t.inlineMedia
 }
 
 // SetEventPublisher injects the runtime event bus used for MCP tool observations.

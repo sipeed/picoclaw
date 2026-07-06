@@ -630,6 +630,37 @@ func TestLoadConfig_MCPMaxInlineTextChars(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_MCPServerInlineMediaExtraction(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	raw := `{
+		"tools": {
+			"mcp": {
+				"enabled": true,
+				"servers": {
+					"screenshots": {
+						"enabled": true,
+						"inline_media_extraction": true,
+						"command": "screenshots-mcp"
+					}
+				}
+			}
+		}
+	}`
+	if err := os.WriteFile(configPath, []byte(raw), 0o644); err != nil {
+		t.Fatalf("WriteFile(configPath): %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	serverCfg := cfg.Tools.MCP.Servers["screenshots"]
+	if !serverCfg.InlineMediaExtraction {
+		t.Fatal("expected MCP server inline_media_extraction to be enabled")
+	}
+}
+
 func TestConfig_BackwardCompat_NoAgentsList(t *testing.T) {
 	jsonData := `{
 		"agents": {
