@@ -15,6 +15,8 @@ import (
 	"time"
 	"unicode"
 
+	"golang.org/x/image/webp"
+
 	"github.com/sipeed/picoclaw/pkg/media"
 )
 
@@ -330,6 +332,9 @@ func validateInlineImagePayload(mimeType string, decoded []byte) error {
 	case "image/webp":
 		if !looksLikeWebP(decoded) {
 			return fmt.Errorf("payload does not match WebP magic bytes")
+		}
+		if _, err := webp.DecodeConfig(bytes.NewReader(decoded)); err != nil {
+			return fmt.Errorf("invalid WebP image")
 		}
 	default:
 		return fmt.Errorf("unsupported MIME type")

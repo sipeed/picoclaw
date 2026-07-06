@@ -1169,3 +1169,10 @@ func TestToolRegistry_ExecuteWithContext_OptInInlineMediaExtractionRejectsInvali
 		t.Fatalf("expected invalid image rejection note, got %q", result.ForLLM)
 	}
 }
+
+func TestValidateInlineImagePayloadRejectsHeaderOnlyWebP(t *testing.T) {
+	payload := []byte("RIFF\x0c\x00\x00\x00WEBPVP8 ")
+	if err := validateInlineImagePayload("image/webp", payload); err == nil {
+		t.Fatal("expected header-only WebP payload to be rejected")
+	}
+}
