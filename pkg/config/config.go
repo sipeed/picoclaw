@@ -605,10 +605,44 @@ type DeltaChatSettings struct {
 	AvatarImage    string `json:"avatar_image,omitempty"     yaml:"-" env:"PICOCLAW_CHANNELS_DELTACHAT_AVATAR_IMAGE"`
 	DataDir        string `json:"data_dir,omitempty"         yaml:"-" env:"PICOCLAW_CHANNELS_DELTACHAT_DATA_DIR"`
 	RPCServerPath  string `json:"rpc_server_path,omitempty"  yaml:"-" env:"PICOCLAW_CHANNELS_DELTACHAT_RPC_SERVER_PATH"`
+	// JoinInviteLink is the new field name for invite links
 	JoinInviteLink string `json:"join_invite_link,omitempty" yaml:"-" env:"PICOCLAW_CHANNELS_DELTACHAT_JOIN_INVITE_LINK"`
+	// InviteLink is the deprecated field name, kept for backward compatibility
+	// Will be migrated to JoinInviteLink on load
+	InviteLink     string `json:"invite_link,omitempty"      yaml:"-"`
 	ShowInviteLink bool   `json:"show_invite_link"           yaml:"-" env:"PICOCLAW_CHANNELS_DELTACHAT_SHOW_INVITE_LINK"`
 	AllowCrosspost bool   `json:"allow_crosspost,omitempty"  yaml:"-" env:"PICOCLAW_CHANNELS_DELTACHAT_ALLOW_CROSSPOST"`
+	
+	// Deprecated: Password-based auth is deprecated. Use JSONRPC with secure storage.
+	// These fields are kept for backward compatibility and will be migrated.
+	Password       SecureString `json:"password,omitzero"         yaml:"password,omitempty"`
+	IMAPServer     string       `json:"imap_server,omitempty"     yaml:"-"`
+	IMAPPort       int          `json:"imap_port,omitempty"       yaml:"-"`
+	IMAPUser       string       `json:"imap_user,omitempty"       yaml:"-"`
+	IMAPPassword   SecureString `json:"imap_password,omitzero"    yaml:"imap_password,omitempty"`
+	SMTPServer     string       `json:"smtp_server,omitempty"     yaml:"-"`
+	SMTPPort       int          `json:"smtp_port,omitempty"       yaml:"-"`
+	SMTPUser       string       `json:"smtp_user,omitempty"       yaml:"-"`
+	SMTPPassword   SecureString `json:"smtp_password,omitzero"    yaml:"smtp_password,omitempty"`
 }
+
+// MigrateLegacyFields handles backward compatibility for deprecated DeltaChat configuration.
+// It should be called after config loading to migrate old field names and formats.
+func (s *DeltaChatSettings) MigrateLegacyFields() {
+	// Migrate invite_link -> join_invite_link
+	if s.InviteLink != "" && s.JoinInviteLink == "" {
+		s.JoinInviteLink = s.InviteLink
+		logger.Warn("DeltaChat: migrated deprecated 'invite_link' to 'join_invite_link'. Please update your config.")
+	}
+	
+	// Migrate legacy password-based auth to JSONRPC warning
+	hasLegacyAuth := s.Password != "" || s.IMAPServer != "" || s.SMTPServer != ""
+	if hasLegacyAuth {
+		logger.Warn("DeltaChat: password-based authentication is deprecated. " +
+			"Please migrate to JSONRPC authentication. See docs/channels/deltachat/README.md for migration guide.")
+	}
+}
+
 
 type LINESettings struct {
 	ChannelSecret      SecureString `json:"channel_secret,omitzero"       yaml:"channel_secret,omitempty"       env:"PICOCLAW_CHANNELS_LINE_CHANNEL_SECRET"`
@@ -1505,6 +1539,13 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 	applySkillsRegistryEnvCompat(cfg)
+
+	// Migrate legacy DeltaChat configuration fields for backward compatibility
+	if deltachatChannel := cfg.Channels.Get(ChannelDeltaChat); deltachatChannel != nil {
+		if settings, ok := deltachatChannel.Settings.(*DeltaChatSettings); ok {
+			settings.MigrateLegacyFields()
+		}
+	}
 
 	if err = InitChannelList(cfg.Channels); err != nil {
 		return nil, err
