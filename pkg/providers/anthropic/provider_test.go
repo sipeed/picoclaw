@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sync/atomic"
 	"testing"
 
@@ -74,6 +75,124 @@ func TestBuildParams_ToolCallMessage(t *testing.T) {
 	}
 	if len(params.Messages) != 3 {
 		t.Fatalf("len(Messages) = %d, want 3", len(params.Messages))
+	}
+}
+
+// TestBuildParams_ToolCallFunctionFallback verifies that tool calls whose
+// runtime-only fields were lost in a JSON round-trip through the session store
+// (ToolCall.Name/Arguments are json:"-"; only ToolCall.Function survives) fall
+// back to Function.Name / Function.Arguments, so the tool_use block is still
+// emitted and its tool_result pair stays intact. Without the fallback the
+// tool_use is skipped and the orphaned tool_result 400s at the API
+// ("unexpected tool_use_id found in tool_result blocks").
+func TestBuildParams_ToolCallFunctionFallback(t *testing.T) {
+	tests := []struct {
+		name         string
+		toolCall     ToolCall
+		wantSkipped  bool
+		wantToolName string
+		wantInput    map[string]any
+	}{
+		{
+			name: "deserialized history shape falls back to Function fields",
+			toolCall: ToolCall{
+				ID:        "toolu-fallback-1",
+				Name:      "",
+				Arguments: nil,
+				Function:  &FunctionCall{Name: "x", Arguments: `{"a":1}`},
+			},
+			wantToolName: "x",
+			wantInput:    map[string]any{"a": float64(1)},
+		},
+		{
+			name: "runtime shape with Name set and Function nil still works",
+			toolCall: ToolCall{
+				ID:        "toolu-runtime-1",
+				Name:      "y",
+				Arguments: map[string]any{"b": 2},
+			},
+			wantToolName: "y",
+			wantInput:    map[string]any{"b": 2},
+		},
+		{
+			name: "both Name and Function.Name empty is skipped",
+			toolCall: ToolCall{
+				ID:       "toolu-empty-1",
+				Name:     "",
+				Function: &FunctionCall{Name: "", Arguments: `{"c":3}`},
+			},
+			wantSkipped: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			messages := []Message{
+				{Role: "user", Content: "run the tool"},
+				{Role: "assistant", Content: "", ToolCalls: []ToolCall{tt.toolCall}},
+				{Role: "tool", ToolCallID: tt.toolCall.ID, Content: "result"},
+			}
+
+			params, err := buildParams(messages, nil, "claude-sonnet-4.6", map[string]any{})
+			if err != nil {
+				t.Fatalf("buildParams() error: %v", err)
+			}
+			if len(params.Messages) != 3 {
+				t.Fatalf("len(Messages) = %d, want 3", len(params.Messages))
+			}
+
+			assistantMsg := params.Messages[1]
+			var toolUses []*anthropic.ToolUseBlockParam
+			for _, block := range assistantMsg.Content {
+				if block.OfToolUse != nil {
+					toolUses = append(toolUses, block.OfToolUse)
+				}
+			}
+
+			// The tool_result in the following user message always carries the
+			// original ID; look it up once for both branches.
+			toolResultMsg := params.Messages[2]
+			if len(toolResultMsg.Content) != 1 || toolResultMsg.Content[0].OfToolResult == nil {
+				t.Fatalf("message after assistant = %+v, want single tool_result block", toolResultMsg.Content)
+			}
+			toolResult := toolResultMsg.Content[0].OfToolResult
+
+			if tt.wantSkipped {
+				if len(toolUses) != 0 {
+					t.Fatalf("tool_use blocks = %d, want 0 (tool call skipped)", len(toolUses))
+				}
+				// Note: matching current behavior, the orphaned tool_result is
+				// still emitted even though its tool_use block was skipped.
+				if toolResult.ToolUseID != tt.toolCall.ID {
+					t.Fatalf("orphaned tool_result ToolUseID = %q, want %q",
+						toolResult.ToolUseID, tt.toolCall.ID)
+				}
+				return
+			}
+
+			// (a) tool_use block emitted with resolved name, id, and parsed input.
+			if len(toolUses) != 1 {
+				t.Fatalf("tool_use blocks = %d, want 1", len(toolUses))
+			}
+			toolUse := toolUses[0]
+			if toolUse.Name != tt.wantToolName {
+				t.Errorf("tool_use Name = %q, want %q", toolUse.Name, tt.wantToolName)
+			}
+			if toolUse.ID != tt.toolCall.ID {
+				t.Errorf("tool_use ID = %q, want %q", toolUse.ID, tt.toolCall.ID)
+			}
+			gotInput, ok := toolUse.Input.(map[string]any)
+			if !ok || !reflect.DeepEqual(gotInput, tt.wantInput) {
+				t.Errorf("tool_use Input = %#v, want %#v", toolUse.Input, tt.wantInput)
+			}
+
+			// (b) the following user message's tool_result references the same
+			// id as the tool_use block — the pair is intact.
+			if toolResult.ToolUseID != toolUse.ID {
+				t.Errorf("tool_result ToolUseID = %q, want %q (paired with tool_use)",
+					toolResult.ToolUseID, toolUse.ID)
+			}
+		})
 	}
 }
 

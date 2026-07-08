@@ -494,6 +494,7 @@ Talk to your PicoClaw through 19+ messaging platforms:
 | **QQ** | Easy (AppID + AppSecret) | WebSocket | [Guide](docs/channels/qq/README.md) |
 | **Slack** | Easy (bot + app token) | Socket Mode | [Guide](docs/channels/slack/README.md) |
 | **Matrix** | Medium (homeserver + token) | Sync API | [Guide](docs/channels/matrix/README.md) |
+| **Delta Chat** | Easy (account script or email/password) | JSON-RPC (email/E2EE) | [Guide](docs/channels/deltachat/README.md) |
 | **DingTalk** | Medium (client credentials) | Stream | [Guide](docs/channels/dingtalk/README.md) |
 | **Feishu / Lark** | Medium (App ID + Secret) | WebSocket/SDK | [Guide](docs/channels/feishu/README.md) |
 | **LINE** | Medium (credentials + webhook) | Webhook | [Guide](docs/channels/line/README.md) |

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -658,6 +659,91 @@ func TestIngestCalledDuringTurn(t *testing.T) {
 	}
 }
 
+func TestClearCommandRoutedAgentCallsContextManagerClear(t *testing.T) {
+	cleanup := resetCMRegistry()
+	defer cleanup()
+
+	mock := &trackingContextManager{}
+	factory := func(cfg json.RawMessage, al *AgentLoop) (ContextManager, error) {
+		return mock, nil
+	}
+	if err := RegisterContextManager("clear_track_cm", factory); err != nil {
+		t.Fatalf("register failed: %v", err)
+	}
+
+	workspace := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         filepath.Join(workspace, "default"),
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+				ContextManager:    "clear_track_cm",
+			},
+			List: []config.AgentConfig{
+				{
+					ID:        "main",
+					Default:   true,
+					Workspace: filepath.Join(workspace, "main"),
+				},
+				{
+					ID:        "support",
+					Workspace: filepath.Join(workspace, "support"),
+				},
+			},
+			Dispatch: &config.DispatchConfig{
+				Rules: []config.DispatchRule{
+					{
+						Name:  "support-dingtalk",
+						Agent: "support",
+						When: config.DispatchSelector{
+							Channel: "dingtalk",
+						},
+					},
+				},
+			},
+		},
+		Session: config.SessionConfig{
+			Dimensions: []string{"chat"},
+		},
+	}
+
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), &simpleMockProvider{response: "done"})
+	if al.contextManager != mock {
+		t.Fatalf("expected mock context manager, got %T", al.contextManager)
+	}
+
+	msg := testInboundMessage(bus.InboundMessage{
+		Context: bus.InboundContext{
+			Channel:  "dingtalk",
+			ChatID:   "chat1",
+			ChatType: "direct",
+			SenderID: "user1",
+		},
+		Content: "/clear",
+	})
+	route, _, err := al.resolveMessageRoute(msg)
+	if err != nil {
+		t.Fatalf("resolveMessageRoute() error = %v", err)
+	}
+	sessionKey := al.allocateRouteSession(route, msg).SessionKey
+
+	if _, err := al.processMessage(context.Background(), msg); err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+
+	if got := mock.clearCalls.Load(); got != 1 {
+		t.Fatalf("Clear calls = %d, want 1", got)
+	}
+	mock.mu.Lock()
+	gotKey := mock.lastClearKey
+	mock.mu.Unlock()
+	if gotKey != sessionKey {
+		t.Fatalf("Clear session key = %q, want %q", gotKey, sessionKey)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // forceCompression edge cases (via legacy Compact)
 // ---------------------------------------------------------------------------
@@ -712,10 +798,12 @@ type trackingContextManager struct {
 	assembleCalls atomic.Int64
 	compactCalls  atomic.Int64
 	ingestCalls   atomic.Int64
+	clearCalls    atomic.Int64
 	mu            sync.Mutex
 	lastAssemble  *AssembleRequest
 	lastCompact   *CompactRequest
 	lastIngest    *IngestRequest
+	lastClearKey  string
 }
 
 func (m *trackingContextManager) Assemble(_ context.Context, req *AssembleRequest) (*AssembleResponse, error) {
@@ -742,7 +830,13 @@ func (m *trackingContextManager) Ingest(_ context.Context, req *IngestRequest) e
 	return nil
 }
 
-func (m *trackingContextManager) Clear(_ context.Context, _ string) error { return nil }
+func (m *trackingContextManager) Clear(_ context.Context, sessionKey string) error {
+	m.clearCalls.Add(1)
+	m.mu.Lock()
+	m.lastClearKey = sessionKey
+	m.mu.Unlock()
+	return nil
+}
 
 // resetCMRegistry clears the global factory registry and returns a cleanup
 // function that restores the original state after the test.

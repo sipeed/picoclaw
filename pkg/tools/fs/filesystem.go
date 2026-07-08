@@ -1064,8 +1064,8 @@ func (r *sandboxFs) execute(path string, fn func(root *os.Root, relPath string) 
 		return err
 	}
 
-	// os.Root api on windows only accept forward slashes (/)
-	relPath = filepath.ToSlash(relPath)
+	// os.Root API on Windows only accepts forward slashes (/).
+	relPath = normalizeRootRelPath(relPath)
 
 	return fn(root, relPath)
 }
@@ -1228,6 +1228,17 @@ func buildFs(workspace string, restrict bool, patterns []*regexp.Regexp) fileSys
 		return &whitelistFs{sandbox: sandbox, patterns: patterns}
 	}
 	return sandbox
+}
+
+func normalizeRootRelPath(relPath string) string {
+	return normalizeRootRelPathForSeparator(relPath, os.PathSeparator)
+}
+
+func normalizeRootRelPathForSeparator(relPath string, sep rune) string {
+	if sep == '\\' {
+		return strings.ReplaceAll(relPath, `\`, `/`)
+	}
+	return relPath
 }
 
 // Helper to get a safe relative path for os.Root usage

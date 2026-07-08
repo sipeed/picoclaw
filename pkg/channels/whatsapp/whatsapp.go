@@ -62,7 +62,7 @@ func (c *WhatsAppChannel) Start(ctx context.Context) error {
 
 	conn, resp, err := dialer.Dial(c.url, nil)
 	if resp != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	if err != nil {
 		c.cancel()

@@ -19,6 +19,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/audio/tts"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
+	_ "github.com/sipeed/picoclaw/pkg/channels/deltachat"
 	_ "github.com/sipeed/picoclaw/pkg/channels/dingtalk"
 	_ "github.com/sipeed/picoclaw/pkg/channels/discord"
 	_ "github.com/sipeed/picoclaw/pkg/channels/feishu"
@@ -205,18 +206,11 @@ func Run(debug bool, homePath, configPath string, allowEmptyStartup bool) (runEr
 	publishGatewayEvent(agentLoop, runtimeevents.KindGatewayStart, startedAt, nil)
 
 	fmt.Println("\n📦 Agent Status:")
-	startupInfo := agentLoop.GetStartupInfo()
-	toolsInfo := startupInfo["tools"].(map[string]any)
-	skillsInfo := startupInfo["skills"].(map[string]any)
-	fmt.Printf("  • Tools: %d loaded\n", toolsInfo["count"])
-	fmt.Printf("  • Skills: %d/%d available\n", skillsInfo["available"], skillsInfo["total"])
+	startupStatus := collectGatewayStartupStatus(agentLoop.GetStartupInfo())
+	fmt.Printf("  • Tools: %d loaded\n", startupStatus.toolsCount)
+	fmt.Printf("  • Skills: %d/%d available\n", startupStatus.skillsAvailable, startupStatus.skillsTotal)
 
-	logger.InfoCF("agent", "Agent initialized",
-		map[string]any{
-			"tools_count":      toolsInfo["count"],
-			"skills_total":     skillsInfo["total"],
-			"skills_available": skillsInfo["available"],
-		})
+	logger.InfoCF("agent", "Agent initialized", startupStatus.logFields)
 
 	runningServices, err := setupAndStartServices(cfg, agentLoop, msgBus, pidData.Token, listenResult)
 	if err != nil {
@@ -313,6 +307,54 @@ func preCheckConfig(cfg *config.Config) error {
 		return fmt.Errorf("invalid gateway port: %d, port must be between 1 and 65535", cfg.Gateway.Port)
 	}
 	return nil
+}
+
+type gatewayStartupStatus struct {
+	toolsCount      int
+	skillsAvailable int
+	skillsTotal     int
+	logFields       map[string]any
+}
+
+func collectGatewayStartupStatus(startupInfo map[string]any) gatewayStartupStatus {
+	status := gatewayStartupStatus{logFields: map[string]any{}}
+
+	if toolsInfo, ok := startupInfo["tools"].(map[string]any); ok {
+		if count, ok := startupInfoInt(toolsInfo["count"]); ok {
+			status.toolsCount = count
+			status.logFields["tools_count"] = count
+		}
+	}
+
+	if skillsInfo, ok := startupInfo["skills"].(map[string]any); ok {
+		if total, ok := startupInfoInt(skillsInfo["total"]); ok {
+			status.skillsTotal = total
+			status.logFields["skills_total"] = total
+		}
+		if available, ok := startupInfoInt(skillsInfo["available"]); ok {
+			status.skillsAvailable = available
+			status.logFields["skills_available"] = available
+		}
+	}
+
+	return status
+}
+
+func startupInfoInt(value any) (int, bool) {
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case int32:
+		return int(v), true
+	case int64:
+		return int(v), true
+	case float32:
+		return int(v), true
+	case float64:
+		return int(v), true
+	default:
+		return 0, false
+	}
 }
 
 func executeReload(

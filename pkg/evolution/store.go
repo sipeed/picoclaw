@@ -558,10 +558,20 @@ func isInvalidJSON(err error) bool {
 }
 
 func lockStoreFile(path string) func() {
-	actual, _ := storeFileLocks.LoadOrStore(path, &sync.Mutex{})
-	mu := actual.(*sync.Mutex)
-	mu.Lock()
-	return mu.Unlock
+	for {
+		actual, _ := storeFileLocks.LoadOrStore(path, &sync.Mutex{})
+		mu, ok := actual.(*sync.Mutex)
+		if !ok || mu == nil {
+			// Corrupted entry (wrong type or nil *sync.Mutex).
+			// Atomically swap in a fresh mutex via CompareAndSwap.
+			// If CAS fails, another goroutine already replaced it —
+			// just retry the loop to pick up the valid entry.
+			storeFileLocks.CompareAndSwap(path, actual, &sync.Mutex{})
+			continue
+		}
+		mu.Lock()
+		return mu.Unlock
+	}
 }
 
 func (s *Store) profilePath(workspaceID, skillName string) (string, error) {

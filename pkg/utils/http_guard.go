@@ -285,6 +285,13 @@ func IsPrivateOrRestrictedIP(ip net.IP) bool {
 			client := net.IPv4(ip[12]^0xff, ip[13]^0xff, ip[14]^0xff, ip[15]^0xff)
 			return IsPrivateOrRestrictedIP(client)
 		}
+		// ISATAP interface identifiers embed an IPv4 address behind either
+		// 00:00:5e:fe or 02:00:5e:fe.
+		if ((ip[8] == 0x00 && ip[9] == 0x00) || (ip[8] == 0x02 && ip[9] == 0x00)) &&
+			ip[10] == 0x5e && ip[11] == 0xfe {
+			embedded := net.IPv4(ip[12], ip[13], ip[14], ip[15])
+			return IsPrivateOrRestrictedIP(embedded)
+		}
 	}
 
 	return false

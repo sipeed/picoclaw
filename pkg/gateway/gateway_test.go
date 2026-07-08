@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -111,6 +112,93 @@ func TestGatewayRunStartupFailureHelper(t *testing.T) {
 
 	fmt.Fprintln(os.Stdout, err.Error())
 	os.Exit(0)
+}
+
+func TestCollectGatewayStartupStatusHandlesMalformedInfo(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                string
+		startupInfo         map[string]any
+		wantToolsCount      int
+		wantSkillsAvailable int
+		wantSkillsTotal     int
+		wantLogFields       map[string]any
+	}{
+		{
+			name:          "missing info",
+			startupInfo:   map[string]any{},
+			wantLogFields: map[string]any{},
+		},
+		{
+			name: "wrong map shapes",
+			startupInfo: map[string]any{
+				"tools":  "unexpected",
+				"skills": []any{"unexpected"},
+			},
+			wantLogFields: map[string]any{},
+		},
+		{
+			name: "valid startup info",
+			startupInfo: map[string]any{
+				"tools": map[string]any{
+					"count": 3,
+				},
+				"skills": map[string]any{
+					"available": 2,
+					"total":     5,
+				},
+			},
+			wantToolsCount:      3,
+			wantSkillsAvailable: 2,
+			wantSkillsTotal:     5,
+			wantLogFields: map[string]any{
+				"tools_count":      3,
+				"skills_available": 2,
+				"skills_total":     5,
+			},
+		},
+		{
+			name: "json number startup info",
+			startupInfo: map[string]any{
+				"tools": map[string]any{
+					"count": float64(4),
+				},
+				"skills": map[string]any{
+					"available": float64(1),
+					"total":     float64(6),
+				},
+			},
+			wantToolsCount:      4,
+			wantSkillsAvailable: 1,
+			wantSkillsTotal:     6,
+			wantLogFields: map[string]any{
+				"tools_count":      4,
+				"skills_available": 1,
+				"skills_total":     6,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := collectGatewayStartupStatus(tt.startupInfo)
+			if got.toolsCount != tt.wantToolsCount {
+				t.Fatalf("toolsCount = %d, want %d", got.toolsCount, tt.wantToolsCount)
+			}
+			if got.skillsAvailable != tt.wantSkillsAvailable {
+				t.Fatalf("skillsAvailable = %d, want %d", got.skillsAvailable, tt.wantSkillsAvailable)
+			}
+			if got.skillsTotal != tt.wantSkillsTotal {
+				t.Fatalf("skillsTotal = %d, want %d", got.skillsTotal, tt.wantSkillsTotal)
+			}
+			if !reflect.DeepEqual(got.logFields, tt.wantLogFields) {
+				t.Fatalf("logFields = %#v, want %#v", got.logFields, tt.wantLogFields)
+			}
+		})
+	}
 }
 
 func TestPublishGatewayEvent(t *testing.T) {

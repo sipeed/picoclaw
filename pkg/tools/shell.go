@@ -569,7 +569,7 @@ func (t *ExecTool) runBackground(ctx context.Context, command, cwd string, ptyEn
 	// with synchronous exec runs.
 	if err := isolation.Start(cmd); err != nil {
 		if session.ptyMaster != nil {
-			session.ptyMaster.Close()
+			_ = session.ptyMaster.Close()
 		}
 		return ErrorResult(fmt.Sprintf("failed to start command: %v", err))
 	}
@@ -698,7 +698,7 @@ func (t *ExecTool) runBackground(ctx context.Context, command, cwd string, ptyEn
 
 			// All pipes closed, get exit status
 			if stdinWriter != nil {
-				stdinWriter.Close()
+				_ = stdinWriter.Close()
 			}
 			cmd.Wait()
 
@@ -1135,36 +1135,35 @@ func expandPowerShellEnvVars(cmd string) string {
 	})
 }
 
+func (t *ExecTool) commandMatchesAllowPattern(lower string) bool {
+	for _, pattern := range t.allowPatterns {
+		if pattern.MatchString(lower) {
+			return true
+		}
+	}
+	for _, pattern := range t.customAllowPatterns {
+		if pattern.MatchString(lower) {
+			return true
+		}
+	}
+	return false
+}
+
 func (t *ExecTool) guardCommand(command, cwd string) string {
 	cmd := strings.TrimSpace(command)
 	lower := strings.ToLower(cmd)
 
-	// Custom allow patterns exempt a command from deny checks.
-	explicitlyAllowed := false
-	for _, pattern := range t.customAllowPatterns {
+	// Deny patterns always apply, even when a command matches a custom allow rule.
+	// Custom allow rules can permit a command, but must not disable secret-safety
+	// deny rules such as jq env access checks (#3079).
+	for _, pattern := range t.denyPatterns {
 		if pattern.MatchString(lower) {
-			explicitlyAllowed = true
-			break
-		}
-	}
-
-	if !explicitlyAllowed {
-		for _, pattern := range t.denyPatterns {
-			if pattern.MatchString(lower) {
-				return "Command blocked by safety guard (dangerous pattern detected)"
-			}
+			return "Command blocked by safety guard (dangerous pattern detected)"
 		}
 	}
 
 	if len(t.allowPatterns) > 0 {
-		allowed := false
-		for _, pattern := range t.allowPatterns {
-			if pattern.MatchString(lower) {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
+		if !t.commandMatchesAllowPattern(lower) {
 			return "Command blocked by safety guard (not in allowlist)"
 		}
 	}

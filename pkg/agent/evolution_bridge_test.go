@@ -513,6 +513,31 @@ func TestEvolutionBridge_DraftModeAutomaticallyRunsColdPathAndCreatesDraftFile(t
 	waitForDrafts(t, filepath.Join(tmpDir, "state", "evolution", "skill-drafts.json"), 1)
 }
 
+func TestEvolutionBridge_DraftModeDoesNotRunColdPathForHeartbeat(t *testing.T) {
+	tmpDir := t.TempDir()
+	seedReadyRule(t, tmpDir)
+
+	al := newEvolutionTestLoop(t, tmpDir, config.EvolutionConfig{
+		Enabled: true,
+		Mode:    "draft",
+	}, &simpleMockProvider{
+		response: `{"target_skill_name":"weather","draft_type":"shortcut","change_kind":"append","human_summary":"unexpected heartbeat draft","body_or_patch":"## Unexpected"}`,
+	})
+	defer al.Close()
+
+	resp, err := al.ProcessHeartbeat(context.Background(), "check heartbeat tasks", "telegram", "chat-1")
+	if err != nil {
+		t.Fatalf("ProcessHeartbeat failed: %v", err)
+	}
+	if resp == "" {
+		t.Fatal("expected non-empty heartbeat response")
+	}
+
+	time.Sleep(150 * time.Millisecond)
+	assertNotExists(t, filepath.Join(tmpDir, "state", "evolution", "task-records.jsonl"))
+	assertNotExists(t, filepath.Join(tmpDir, "state", "evolution", "skill-drafts.json"))
+}
+
 func TestEvolutionBridge_ScheduledModeDoesNotRunColdPathAfterTurn(t *testing.T) {
 	tmpDir := t.TempDir()
 	seedReadyRule(t, tmpDir)

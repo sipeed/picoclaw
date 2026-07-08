@@ -845,6 +845,25 @@ func TestWebFetch_Blocks6to4WithPrivateEmbed(t *testing.T) {
 	}
 }
 
+// TestWebFetch_BlocksISATAPWithPrivateEmbed verifies ISATAP with private embedded IPv4 is blocked
+func TestWebFetch_BlocksISATAPWithPrivateEmbed(t *testing.T) {
+	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
+	if err != nil {
+		t.Fatalf("Failed to create web fetch tool: %v", err)
+	}
+	// 2001:db8:1234::5efe:127.0.0.1 embeds 127.0.0.1
+	result := tool.Execute(context.Background(), map[string]any{
+		"url": "http://[2001:db8:1234::5efe:127.0.0.1]:0",
+	})
+
+	if !result.IsError {
+		t.Error("expected error for ISATAP with private embedded IPv4, got success")
+	}
+	if !strings.Contains(result.ForLLM, "private or local network hosts is not allowed") {
+		t.Fatalf("expected private-host guard rejection, got %q", result.ForLLM)
+	}
+}
+
 // TestWebFetch_Allows6to4WithPublicEmbed verifies 6to4 with public embedded IPv4 is NOT blocked
 func TestWebFetch_Allows6to4WithPublicEmbed(t *testing.T) {
 	tool, err := NewWebFetchTool(50000, format, testFetchLimit)
@@ -981,6 +1000,12 @@ func TestIsPrivateOrRestrictedIP_Table(t *testing.T) {
 		{"2002:7f00:0001::1", true, "6to4 with embedded 127.x (private)"},
 		{"2002:0a00:0001::1", true, "6to4 with embedded 10.0.0.1 (private)"},
 		{"2002:0801:0101::1", false, "6to4 with embedded 8.1.1.1 (public)"},
+		{"2001:db8:1234::5efe:127.0.0.1", true, "ISATAP with embedded 127.0.0.1 (private)"},
+		{"2001:db8:1234::5efe:10.0.0.1", true, "ISATAP with embedded 10.0.0.1 (private)"},
+		{"2001:db8:1234::5efe:8.8.8.8", false, "ISATAP with embedded 8.8.8.8 (public)"},
+		{"2001:db8:1234:0:0200:5efe:127.0.0.1", true, "ISATAP 0200 with embedded 127.0.0.1 (private)"},
+		{"2001:db8:1234:0:0200:5efe:10.0.0.1", true, "ISATAP 0200 with embedded 10.0.0.1 (private)"},
+		{"2001:db8:1234:0:0200:5efe:8.8.8.8", false, "ISATAP 0200 with embedded 8.8.8.8 (public)"},
 		{"2001:0000:4136:e378:8000:63bf:f5ff:fffe", true, "Teredo with client 10.0.0.1 (private)"},
 		{"2001:0000:4136:e378:8000:63bf:f7f6:fefe", false, "Teredo with client 8.9.1.1 (public)"},
 		{"2607:f8b0:4004:800::200e", false, "public IPv6 (Google)"},

@@ -88,7 +88,7 @@ func (c *PicoClientChannel) dial() error {
 
 	ws, resp, err := websocket.DefaultDialer.DialContext(c.ctx, c.config.URL, header)
 	if resp != nil && resp.Body != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	if err != nil {
 		return err

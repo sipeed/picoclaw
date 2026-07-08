@@ -371,6 +371,36 @@ func DecodeToolCallArguments(raw json.RawMessage, name string) map[string]any {
 
 // --- HTTP response helpers ---
 
+// HTTPError captures structured details for non-OK provider HTTP responses.
+// Error preserves the previous user/log-facing text format for compatibility.
+type HTTPError struct {
+	StatusCode  int
+	BodyPreview string
+	ContentType string
+	APIBase     string
+	IsHTML      bool
+}
+
+func (e *HTTPError) Error() string {
+	if e == nil {
+		return "API request failed"
+	}
+	if e.IsHTML {
+		return fmt.Sprintf(
+			"API request failed: %s returned HTML instead of JSON (content-type: %s); check api_base or proxy configuration.\n  Status: %d\n  Body:   %s",
+			e.APIBase,
+			e.ContentType,
+			e.StatusCode,
+			e.BodyPreview,
+		)
+	}
+	return fmt.Sprintf(
+		"API request failed:\n  Status: %d\n  Body:   %s",
+		e.StatusCode,
+		e.BodyPreview,
+	)
+}
+
 // HandleErrorResponse reads a non-200 response body and returns an appropriate error.
 func HandleErrorResponse(resp *http.Response, apiBase string) error {
 	contentType := resp.Header.Get("Content-Type")
@@ -381,11 +411,12 @@ func HandleErrorResponse(resp *http.Response, apiBase string) error {
 	if LooksLikeHTML(body, contentType) {
 		return WrapHTMLResponseError(resp.StatusCode, body, contentType, apiBase)
 	}
-	return fmt.Errorf(
-		"API request failed:\n  Status: %d\n  Body:   %s",
-		resp.StatusCode,
-		ResponsePreview(body, 128),
-	)
+	return &HTTPError{
+		StatusCode:  resp.StatusCode,
+		BodyPreview: ResponsePreview(body, 128),
+		ContentType: contentType,
+		APIBase:     apiBase,
+	}
 }
 
 // ReadAndParseResponse peeks at the response body to detect HTML errors,
@@ -422,14 +453,13 @@ func LooksLikeHTML(body []byte, contentType string) bool {
 
 // WrapHTMLResponseError creates a descriptive error for HTML responses.
 func WrapHTMLResponseError(statusCode int, body []byte, contentType, apiBase string) error {
-	respPreview := ResponsePreview(body, 128)
-	return fmt.Errorf(
-		"API request failed: %s returned HTML instead of JSON (content-type: %s); check api_base or proxy configuration.\n  Status: %d\n  Body:   %s",
-		apiBase,
-		contentType,
-		statusCode,
-		respPreview,
-	)
+	return &HTTPError{
+		StatusCode:  statusCode,
+		BodyPreview: ResponsePreview(body, 128),
+		ContentType: contentType,
+		APIBase:     apiBase,
+		IsHTML:      true,
+	}
 }
 
 // ResponsePreview returns a truncated preview of response body for error messages.

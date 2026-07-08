@@ -20,6 +20,7 @@ import (
 type seahorseContextManager struct {
 	engine   *seahorse.Engine
 	sessions session.SessionStore // for startup bootstrap
+	al       *AgentLoop           // for resolving the agent that owns a session
 }
 
 // newSeahorseContextManager creates a seahorse-backed ContextManager.
@@ -47,6 +48,7 @@ func newSeahorseContextManager(_ json.RawMessage, al *AgentLoop) (ContextManager
 	mgr := &seahorseContextManager{
 		engine:   engine,
 		sessions: agent.Sessions,
+		al:       al,
 	}
 
 	// Register seahorse tools with the agent's tool registry
@@ -160,10 +162,18 @@ func (m *seahorseContextManager) Clear(ctx context.Context, sessionKey string) e
 	if err := m.engine.ClearSession(ctx, sessionKey); err != nil {
 		return err
 	}
-	if m.sessions != nil {
-		m.sessions.SetHistory(sessionKey, []providers.Message{})
-		m.sessions.SetSummary(sessionKey, "")
-		return m.sessions.Save(sessionKey)
+	// The session may belong to a routed (non-default) agent whose JSONL
+	// store differs from the bootstrap store, so clear the owner's store.
+	sessions := m.sessions
+	if m.al != nil {
+		if agent := m.al.agentForSession(sessionKey); agent != nil && agent.Sessions != nil {
+			sessions = agent.Sessions
+		}
+	}
+	if sessions != nil {
+		sessions.SetHistory(sessionKey, []providers.Message{})
+		sessions.SetSummary(sessionKey, "")
+		return sessions.Save(sessionKey)
 	}
 	return nil
 }

@@ -176,7 +176,7 @@ func DownloadFile(urlStr, filename string, opts DownloadOptions) string {
 	}
 
 	if _, err := io.Copy(out, resp.Body); err != nil {
-		out.Close()
+		_ = out.Close()
 		os.Remove(localPath)
 		logger.ErrorCF(opts.LoggerPrefix, "Failed to write file", map[string]any{
 			"error": err.Error(),

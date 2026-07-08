@@ -62,7 +62,7 @@ func TestCreateSafeHTTPClient_BlocksPrivateRedirect(t *testing.T) {
 	allowPrivateHosts = false
 	resp, err := client.Get(server.URL)
 	if resp != nil && resp.Body != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	if err == nil {
 		t.Fatal("expected redirect to private host to fail")
@@ -178,6 +178,12 @@ func TestIsPrivateOrRestrictedIP_Table(t *testing.T) {
 		{"fc00::1", true},
 		{"2002:7f00:0001::1", true},
 		{"2002:0801:0101::1", false},
+		{"2001:db8:1234::5efe:127.0.0.1", true},
+		{"2001:db8:1234::5efe:10.0.0.1", true},
+		{"2001:db8:1234::5efe:8.8.8.8", false},
+		{"2001:db8:1234:0:0200:5efe:127.0.0.1", true},
+		{"2001:db8:1234:0:0200:5efe:10.0.0.1", true},
+		{"2001:db8:1234:0:0200:5efe:8.8.8.8", false},
 		{"2001:0000:4136:e378:8000:63bf:f5ff:fffe", true},
 		{"2607:f8b0:4004:800::200e", false},
 	}

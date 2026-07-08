@@ -302,6 +302,11 @@ func skillsSearchCmd(query string) {
 		if result.Version != "" {
 			fmt.Printf("     Version: %s\n", result.Version)
 		}
+		if result.RegistryName == "github" {
+			fmt.Printf("     Install: picoclaw skills install %s\n", result.Slug)
+		} else {
+			fmt.Printf("     Install: picoclaw skills install --registry=%s %s\n", result.RegistryName, result.Slug)
+		}
 		fmt.Println()
 	}
 }

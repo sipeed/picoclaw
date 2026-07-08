@@ -315,7 +315,7 @@ func (p *BraveSearchProvider) Search(
 		}
 
 		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if err != nil {
 			lastErr = fmt.Errorf("failed to read response: %w", err)
@@ -448,7 +448,7 @@ func (p *TavilySearchProvider) Search(
 		}
 
 		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if err != nil {
 			lastErr = fmt.Errorf("failed to read response: %w", err)
@@ -906,7 +906,7 @@ func (p *SogouSearchProvider) Search(
 		}
 
 		body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil {
 			return "", fmt.Errorf("failed to read response: %w", err)
 		}
@@ -1147,7 +1147,7 @@ func (p *PerplexitySearchProvider) Search(
 		}
 
 		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if err != nil {
 			lastErr = fmt.Errorf("failed to read response: %w", err)

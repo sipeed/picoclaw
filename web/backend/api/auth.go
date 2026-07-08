@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/sipeed/picoclaw/web/backend/middleware"
@@ -87,6 +88,60 @@ func (h *launcherAuthHandlers) isStoreInitialized(ctx context.Context) (bool, er
 		return false, fmt.Errorf("password store not configured")
 	}
 	return h.store.IsInitialized(ctx)
+}
+
+func launcherSetupCrossSite(r *http.Request) bool {
+	fetchSite := strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site")))
+	if fetchSite == "cross-site" {
+		return true
+	}
+
+	if origin := strings.TrimSpace(r.Header.Get("Origin")); origin != "" {
+		return !sameLauncherRequestOrigin(r, origin)
+	}
+
+	if referer := strings.TrimSpace(r.Header.Get("Referer")); referer != "" {
+		return !sameLauncherRequestOrigin(r, referer)
+	}
+
+	return false
+}
+
+func sameLauncherRequestOrigin(r *http.Request, raw string) bool {
+	if strings.ContainsAny(raw, " \t\r\n") {
+		return false
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return false
+	}
+
+	wantScheme := launcherRequestScheme(r)
+	wantHost := r.Host
+	if wantHost == "" {
+		wantHost = r.URL.Host
+	}
+	return strings.EqualFold(u.Scheme, wantScheme) && strings.EqualFold(u.Host, wantHost)
+}
+
+func launcherRequestScheme(r *http.Request) string {
+	if proto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); proto != "" {
+		if i := strings.IndexByte(proto, ','); i >= 0 {
+			proto = proto[:i]
+		}
+		proto = strings.ToLower(strings.TrimSpace(proto))
+		if proto == "http" || proto == "https" {
+			return proto
+		}
+	}
+	if r.TLS != nil {
+		return "https"
+	}
+	if r.URL != nil && r.URL.Scheme != "" {
+		return r.URL.Scheme
+	}
+	return "http"
 }
 
 func (h *launcherAuthHandlers) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -197,6 +252,12 @@ func (h *launcherAuthHandlers) handleStatus(w http.ResponseWriter, r *http.Reque
 //   - If a password is already set, the caller must hold a valid session cookie.
 func (h *launcherAuthHandlers) handleSetup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
+	if launcherSetupCrossSite(r) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":"cross-site setup request rejected"}`))
+		return
+	}
 
 	if h.store == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -66,6 +67,21 @@ func TestFetchOpenAIModels_HTTPError(t *testing.T) {
 	_, err := fetchOpenAIModels(srv.URL, "bad")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HTTP 401")
+}
+
+func TestFetchOpenAIModels_HTTPErrorReadFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		body := "short"
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)+1))
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	_, err := fetchOpenAIModels(srv.URL, "bad")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read error response")
+	assert.Contains(t, err.Error(), "unexpected EOF")
 }
 
 func TestFetchOpenAIModels_EmptyDataEnvelope(t *testing.T) {

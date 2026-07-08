@@ -195,7 +195,7 @@ func (c *OneBotChannel) connect() error {
 
 	conn, resp, err := dialer.Dial(c.config.WSUrl, header)
 	if resp != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	if err != nil {
 		return err

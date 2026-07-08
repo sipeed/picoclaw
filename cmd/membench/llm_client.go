@@ -155,7 +155,7 @@ func (c *LLMClient) Complete(ctx context.Context, systemPrompt, userPrompt strin
 		}
 
 		respBody, lastErr = io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if lastErr != nil {
 			continue
 		}

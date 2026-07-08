@@ -202,6 +202,9 @@ func (b *evolutionBridge) handleTurnEndAsync(meta EventMeta, payload TurnEndPayl
 		FinalSuccessfulPath:   append([]string(nil), payload.FinalSuccessfulPath...),
 		SkillContextSnapshots: toEvolutionSkillContextSnapshots(payload.SkillContextSnapshots),
 	}
+	if isEvolutionHeartbeatInput(input) {
+		return false
+	}
 	b.rememberScheduledColdPathWorkspace(input.Workspace)
 
 	b.closeMu.Lock()
@@ -226,6 +229,10 @@ func (b *evolutionBridge) handleTurnEndAsync(meta EventMeta, payload TurnEndPayl
 		}
 	}()
 	return true
+}
+
+func isEvolutionHeartbeatInput(input evolution.TurnCaseInput) bool {
+	return strings.EqualFold(strings.TrimSpace(input.SessionKey), "heartbeat")
 }
 
 func (b *evolutionBridge) subscribeRuntimeEvents(ch runtimeevents.EventChannel) error {

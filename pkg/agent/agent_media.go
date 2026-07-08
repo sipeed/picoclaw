@@ -100,10 +100,15 @@ func resolveMediaRefs(
 
 			localPath, meta, err := store.ResolveWithMeta(ref)
 			if err != nil {
-				logger.WarnCF("agent", "Failed to resolve media ref", map[string]any{
+				fields := map[string]any{
 					"ref":   ref,
 					"error": err.Error(),
-				})
+				}
+				if idx < currentTurnStart {
+					logger.DebugCF("agent", "Skipped stale historical media ref", fields)
+				} else {
+					logger.WarnCF("agent", "Failed to resolve media ref", fields)
+				}
 				continue
 			}
 
@@ -172,14 +177,22 @@ func encodeImageToDataURL(localPath, mime string, info os.FileInfo, maxSize int)
 	buf.WriteString(prefix)
 
 	encoder := base64.NewEncoder(base64.StdEncoding, &buf)
-	if _, err := io.Copy(encoder, f); err != nil {
+	_, copyErr := io.Copy(encoder, f)
+	closeErr := encoder.Close()
+	if copyErr != nil {
 		logger.WarnCF("agent", "Failed to encode media file", map[string]any{
 			"path":  localPath,
-			"error": err.Error(),
+			"error": copyErr.Error(),
 		})
 		return ""
 	}
-	encoder.Close()
+	if closeErr != nil {
+		logger.WarnCF("agent", "Failed to close base64 encoder", map[string]any{
+			"path":  localPath,
+			"error": closeErr.Error(),
+		})
+		return ""
+	}
 
 	return buf.String()
 }

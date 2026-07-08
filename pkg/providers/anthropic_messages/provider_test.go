@@ -614,6 +614,126 @@ func TestBuildRequestBody_UserToolResultsMerged(t *testing.T) {
 	}
 }
 
+// TestBuildRequestBody_ToolCallFunctionFallback verifies that tool calls whose
+// runtime-only fields were lost in a JSON round-trip through the session store
+// (ToolCall.Name/Arguments are json:"-"; only ToolCall.Function survives) fall
+// back to Function.Name / Function.Arguments, so the tool_use block is still
+// emitted and its tool_result pair stays intact. Without the fallback the
+// tool_use is skipped and the orphaned tool_result 400s at the API
+// ("unexpected tool_use_id found in tool_result blocks").
+func TestBuildRequestBody_ToolCallFunctionFallback(t *testing.T) {
+	tests := []struct {
+		name         string
+		toolCall     ToolCall
+		wantSkipped  bool
+		wantToolName string
+		wantInput    map[string]any
+	}{
+		{
+			name: "deserialized history shape falls back to Function fields",
+			toolCall: ToolCall{
+				ID:        "toolu-fallback-1",
+				Name:      "",
+				Arguments: nil,
+				Function:  &FunctionCall{Name: "x", Arguments: `{"a":1}`},
+			},
+			wantToolName: "x",
+			wantInput:    map[string]any{"a": float64(1)},
+		},
+		{
+			name: "runtime shape with Name set and Function nil still works",
+			toolCall: ToolCall{
+				ID:        "toolu-runtime-1",
+				Name:      "y",
+				Arguments: map[string]any{"b": 2},
+			},
+			wantToolName: "y",
+			wantInput:    map[string]any{"b": 2},
+		},
+		{
+			name: "both Name and Function.Name empty is skipped",
+			toolCall: ToolCall{
+				ID:       "toolu-empty-1",
+				Name:     "",
+				Function: &FunctionCall{Name: "", Arguments: `{"c":3}`},
+			},
+			wantSkipped: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			messages := []Message{
+				{Role: "user", Content: "run the tool"},
+				{Role: "assistant", Content: "", ToolCalls: []ToolCall{tt.toolCall}},
+				{Role: "tool", ToolCallID: tt.toolCall.ID, Content: "result"},
+			}
+
+			got, err := buildRequestBody(messages, nil, "test-model", map[string]any{"max_tokens": 8192})
+			if err != nil {
+				t.Fatalf("buildRequestBody() error: %v", err)
+			}
+
+			apiMessages := got["messages"].([]any)
+			if len(apiMessages) != 3 {
+				t.Fatalf("expected 3 API messages, got %d", len(apiMessages))
+			}
+
+			assistantMsg := apiMessages[1].(map[string]any)
+			content := assistantMsg["content"].([]any)
+
+			if tt.wantSkipped {
+				if len(content) != 0 {
+					t.Fatalf("assistant content = %#v, want empty (tool call skipped)", content)
+				}
+				// Note: matching current behavior, the orphaned tool_result is
+				// still emitted in the following user message even though its
+				// tool_use block was skipped.
+				toolResultMsg := apiMessages[2].(map[string]any)
+				blocks := toolResultMsg["content"].([]map[string]any)
+				if len(blocks) != 1 || blocks[0]["tool_use_id"] != tt.toolCall.ID {
+					t.Fatalf("orphaned tool_result = %#v, want single block with tool_use_id %q",
+						blocks, tt.toolCall.ID)
+				}
+				return
+			}
+
+			// (a) tool_use block emitted with resolved name, id, and parsed input.
+			if len(content) != 1 {
+				t.Fatalf("assistant content length = %d, want 1 tool_use block", len(content))
+			}
+			toolUse := content[0].(map[string]any)
+			if toolUse["type"] != "tool_use" {
+				t.Fatalf("block type = %v, want tool_use", toolUse["type"])
+			}
+			if toolUse["name"] != tt.wantToolName {
+				t.Errorf("tool_use name = %v, want %q", toolUse["name"], tt.wantToolName)
+			}
+			if toolUse["id"] != tt.toolCall.ID {
+				t.Errorf("tool_use id = %v, want %q", toolUse["id"], tt.toolCall.ID)
+			}
+			if !reflect.DeepEqual(toolUse["input"], tt.wantInput) {
+				t.Errorf("tool_use input = %#v, want %#v", toolUse["input"], tt.wantInput)
+			}
+
+			// (b) the following user message's tool_result references the same
+			// id as the tool_use block — the pair is intact.
+			toolResultMsg := apiMessages[2].(map[string]any)
+			if toolResultMsg["role"] != "user" {
+				t.Fatalf("message after assistant role = %v, want user", toolResultMsg["role"])
+			}
+			blocks := toolResultMsg["content"].([]map[string]any)
+			if len(blocks) != 1 {
+				t.Fatalf("tool_result blocks = %d, want 1", len(blocks))
+			}
+			if blocks[0]["tool_use_id"] != toolUse["id"] {
+				t.Errorf("tool_result tool_use_id = %v, want %v (paired with tool_use)",
+					blocks[0]["tool_use_id"], toolUse["id"])
+			}
+		})
+	}
+}
+
 // TestParseResponseBodyEdgeCases tests edge cases for parseResponseBody.
 func TestParseResponseBodyEdgeCases(t *testing.T) {
 	tests := []struct {

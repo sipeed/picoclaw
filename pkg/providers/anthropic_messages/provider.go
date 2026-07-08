@@ -250,6 +250,14 @@ func buildRequestBody(
 					continue
 				}
 
+				// Resolve arguments: prefer tc.Arguments, fallback to parsing
+				// tc.Function.Arguments
+				input := tc.Arguments
+				if input == nil && tc.Function != nil && tc.Function.Arguments != "" {
+					if err := json.Unmarshal([]byte(tc.Function.Arguments), &input); err != nil {
+						input = map[string]any{}
+					}
+				}
 				// Handle nil Arguments (GLM-4 may return null input)
 				if input == nil {
 					input = map[string]any{}

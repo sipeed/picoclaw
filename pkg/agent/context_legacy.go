@@ -63,7 +63,9 @@ func (m *legacyContextManager) Ingest(_ context.Context, _ *IngestRequest) error
 }
 
 func (m *legacyContextManager) Clear(_ context.Context, sessionKey string) error {
-	agent := m.al.registry.GetDefaultAgent()
+	// Routed (non-default) agents keep history in their own session store,
+	// so resolve the owning agent instead of assuming the default one.
+	agent := m.al.agentForSession(sessionKey)
 	if agent == nil || agent.Sessions == nil {
 		return fmt.Errorf("sessions not initialized")
 	}

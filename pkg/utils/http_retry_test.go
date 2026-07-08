@@ -68,11 +68,11 @@ func TestDoRequestWithRetry(t *testing.T) {
 				require.NoError(t, err)
 				require.NotNil(t, resp)
 				assert.Equal(t, http.StatusOK, resp.StatusCode)
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			} else {
 				require.NotNil(t, resp)
 				assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			}
 
 			assert.Equal(t, tc.wantAttempts, attempts)
@@ -111,7 +111,7 @@ func TestDoRequestWithRetry_RetryAfter429Honored(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	require.Equal(t, 2, attempts)
 
 	assert.GreaterOrEqual(t, secondAttemptAt.Sub(firstAttemptAt), 900*time.Millisecond)
@@ -148,7 +148,7 @@ func TestDoRequestWithRetry_RetryAfter429InvalidFallsBack(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	require.Equal(t, 2, attempts)
 
 	assert.GreaterOrEqual(t, secondAttemptAt.Sub(firstAttemptAt), 45*time.Millisecond)
@@ -200,7 +200,7 @@ func TestDoRequestWithRetry_ContextCancel(t *testing.T) {
 
 	resp, err := DoRequestWithRetry(client, req)
 	if resp != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	require.Error(t, err, "expected error from context cancellation")
 	assert.Nil(t, resp, "expected nil response when context is canceled")
@@ -275,7 +275,7 @@ func TestDoRequestWithRetry_Delay(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	assert.GreaterOrEqual(t, delays[2], time.Millisecond)
 }

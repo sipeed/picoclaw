@@ -352,7 +352,7 @@ func findAssetInfo(releaseURL, platform, arch string) (string, string, error) {
 					continue
 				}
 				bs, err := io.ReadAll(resp2.Body)
-				resp2.Body.Close()
+				_ = resp2.Body.Close()
 				if err != nil {
 					continue
 				}
@@ -576,16 +576,16 @@ func extractZip(archivePath, destDir string) error {
 		}
 		out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, f.FileInfo().Mode())
 		if err != nil {
-			rc.Close()
+			_ = rc.Close()
 			return err
 		}
 		if _, err := io.Copy(out, rc); err != nil {
-			rc.Close()
-			out.Close()
+			_ = rc.Close()
+			_ = out.Close()
 			return err
 		}
 		if err := rc.Close(); err != nil {
-			out.Close()
+			_ = out.Close()
 			return fmt.Errorf("close zip entry reader: %w", err)
 		}
 		if err := out.Close(); err != nil {
