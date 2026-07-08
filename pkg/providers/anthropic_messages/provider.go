@@ -212,6 +212,15 @@ func buildRequestBody(
 					"role":    "user",
 					"content": []map[string]any{toolResultBlock},
 				})
+			} else if blocks := buildUserImageBlocks(msg.Content, msg.Media); blocks != nil {
+				// User message carrying image media (e.g. the synthetic
+				// follow-up emitted after load_image). Convert data:image/...
+				// URLs into Anthropic image blocks so the model actually sees
+				// the picture instead of only the placeholder text.
+				apiMessages = append(apiMessages, map[string]any{
+					"role":    "user",
+					"content": blocks,
+				})
 			} else {
 				// Regular user message
 				apiMessages = append(apiMessages, map[string]any{
@@ -250,14 +259,6 @@ func buildRequestBody(
 					continue
 				}
 
-				// Resolve arguments: prefer tc.Arguments, fallback to parsing
-				// tc.Function.Arguments
-				input := tc.Arguments
-				if input == nil && tc.Function != nil && tc.Function.Arguments != "" {
-					if err := json.Unmarshal([]byte(tc.Function.Arguments), &input); err != nil {
-						input = map[string]any{}
-					}
-				}
 				// Handle nil Arguments (GLM-4 may return null input)
 				if input == nil {
 					input = map[string]any{}
@@ -312,6 +313,61 @@ func buildRequestBody(
 	}
 
 	return result, nil
+}
+
+// buildUserImageBlocks converts a user message that carries image media into
+// Anthropic multipart content blocks (text + image). It returns nil when there
+// is no usable image so the caller can fall back to a plain string content.
+func buildUserImageBlocks(text string, media []string) []any {
+	imageBlocks := make([]any, 0, len(media))
+	for _, m := range media {
+		mediaType, data, ok := parseImageDataURL(m)
+		if !ok {
+			continue
+		}
+		imageBlocks = append(imageBlocks, map[string]any{
+			"type": "image",
+			"source": map[string]any{
+				"type":       "base64",
+				"media_type": mediaType,
+				"data":       data,
+			},
+		})
+	}
+	if len(imageBlocks) == 0 {
+		return nil
+	}
+
+	blocks := make([]any, 0, 1+len(imageBlocks))
+	if text != "" {
+		blocks = append(blocks, map[string]any{
+			"type": "text",
+			"text": text,
+		})
+	}
+	blocks = append(blocks, imageBlocks...)
+	return blocks
+}
+
+// parseImageDataURL splits a data:image/...;base64,<data> URL into its media
+// type ("image/jpeg") and the raw base64 payload. It returns ok=false for any
+// value that is not a base64-encoded image data URL.
+func parseImageDataURL(s string) (mediaType, data string, ok bool) {
+	if !strings.HasPrefix(s, "data:image/") {
+		return "", "", false
+	}
+	meta, payload, found := strings.Cut(strings.TrimPrefix(s, "data:"), ",")
+	if !found {
+		return "", "", false
+	}
+	// meta looks like "image/jpeg;base64"
+	mediaType, _, _ = strings.Cut(meta, ";")
+	mediaType = strings.TrimSpace(mediaType)
+	data = strings.TrimSpace(payload)
+	if !strings.Contains(meta, "base64") || mediaType == "" || data == "" {
+		return "", "", false
+	}
+	return mediaType, data, true
 }
 
 // buildTools converts tool definitions to Anthropic format.

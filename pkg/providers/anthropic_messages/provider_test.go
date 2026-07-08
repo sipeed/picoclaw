@@ -837,3 +837,68 @@ func TestProviderChatErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildRequestBody_UserImageMedia verifies that a user message carrying an
+// image data URL (as emitted by the load_image follow-up) is converted into an
+// Anthropic image content block rather than dropping the picture.
+func TestBuildRequestBody_UserImageMedia(t *testing.T) {
+	const b64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA=="
+	messages := []Message{
+		{
+			Role:    "user",
+			Content: "[Loaded image from tool result above]",
+			Media:   []string{"data:image/jpeg;base64," + b64},
+		},
+	}
+
+	got, err := buildRequestBody(messages, nil, "test-model", map[string]any{"max_tokens": 8192})
+	if err != nil {
+		t.Fatalf("buildRequestBody() error: %v", err)
+	}
+
+	apiMessages := got["messages"].([]any)
+	if len(apiMessages) != 1 {
+		t.Fatalf("expected 1 API message, got %d", len(apiMessages))
+	}
+
+	userMsg := apiMessages[0].(map[string]any)
+	blocks, ok := userMsg["content"].([]any)
+	if !ok {
+		t.Fatalf("expected multipart content blocks, got %T (%v)", userMsg["content"], userMsg["content"])
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("expected text+image blocks, got %d: %v", len(blocks), blocks)
+	}
+
+	textBlock := blocks[0].(map[string]any)
+	if textBlock["type"] != "text" || textBlock["text"] != "[Loaded image from tool result above]" {
+		t.Errorf("unexpected text block: %v", textBlock)
+	}
+
+	imageBlock := blocks[1].(map[string]any)
+	if imageBlock["type"] != "image" {
+		t.Fatalf("expected image block, got %v", imageBlock)
+	}
+	source := imageBlock["source"].(map[string]any)
+	if source["type"] != "base64" || source["media_type"] != "image/jpeg" || source["data"] != b64 {
+		t.Errorf("unexpected image source: %v", source)
+	}
+}
+
+// TestBuildRequestBody_UserNonImageMediaStaysString ensures messages without a
+// usable image data URL keep the plain string content path.
+func TestBuildRequestBody_UserNonImageMediaStaysString(t *testing.T) {
+	messages := []Message{
+		{Role: "user", Content: "hello", Media: []string{"media://not-resolved"}},
+	}
+
+	got, err := buildRequestBody(messages, nil, "test-model", map[string]any{"max_tokens": 8192})
+	if err != nil {
+		t.Fatalf("buildRequestBody() error: %v", err)
+	}
+
+	userMsg := got["messages"].([]any)[0].(map[string]any)
+	if _, isString := userMsg["content"].(string); !isString {
+		t.Fatalf("expected plain string content, got %T", userMsg["content"])
+	}
+}
