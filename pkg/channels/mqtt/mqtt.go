@@ -80,7 +80,9 @@ func (c *MQTTChannel) Start(ctx context.Context) error {
 	opts.SetAutoReconnect(true)
 	opts.SetConnectRetry(true)
 	opts.SetConnectRetryInterval(5 * time.Second)
-	opts.SetTLSConfig(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec
+	opts.SetTLSConfig(&tls.Config{
+		InsecureSkipVerify: c.cfg.TLSInsecureSkipVerify, //nolint:gosec // opt-in via config, default verifies
+	})
 
 	if c.cfg.Username.String() != "" {
 		opts.SetUsername(c.cfg.Username.String())

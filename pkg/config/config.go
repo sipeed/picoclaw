@@ -736,6 +736,10 @@ type MQTTSettings struct {
 	ClientID    string       `json:"client_id,omitempty"    yaml:"-"                  env:"PICOCLAW_CHANNELS_MQTT_CLIENT_ID"`
 	KeepAlive   int          `json:"keep_alive,omitempty"   yaml:"-"                  env:"PICOCLAW_CHANNELS_MQTT_KEEP_ALIVE"`
 	QoS         int          `json:"qos,omitempty"          yaml:"-"                  env:"PICOCLAW_CHANNELS_MQTT_QOS"`
+	// TLSInsecureSkipVerify disables TLS certificate verification when
+	// connecting to the broker. Only enable for brokers with self-signed
+	// certificates on trusted networks.
+	TLSInsecureSkipVerify bool `json:"tls_insecure_skip_verify,omitempty" yaml:"-" env:"PICOCLAW_CHANNELS_MQTT_TLS_INSECURE_SKIP_VERIFY"`
 }
 
 // SlackWebhookSettings configures the output-only Slack webhook channel.
