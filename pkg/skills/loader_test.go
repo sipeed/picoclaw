@@ -3,6 +3,7 @@ package skills
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -416,4 +417,33 @@ func TestGetSkillMetadata_IgnoresHTMLCommentBlocks(t *testing.T) {
 	require.NotNil(t, meta)
 	assert.Equal(t, "biomed-skill", meta.Name)
 	assert.Equal(t, "Summarize biomedical papers.", meta.Description)
+}
+
+// TestEscapeXMLGolden pins escapeXML's output. It escapes only &, < and > (the
+// characters that break the skills summary markup); " and ' are left as-is.
+// The single-pass strings.NewReplacer matches the previous sequential
+// strings.ReplaceAll chain byte for byte, including not re-escaping the '&'
+// introduced by < and > replacements.
+func TestEscapeXMLGolden(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", ""},
+		{"plain", "plain"},
+		{"a & b", "a &amp; b"},
+		{"<tag>", "&lt;tag&gt;"},
+		{"a<b>c&d", "a&lt;b&gt;c&amp;d"},
+		{"already &amp; escaped", "already &amp;amp; escaped"},
+		{`"quotes" and 'apos'`, `"quotes" and 'apos'`}, // only & < > are escaped
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, escapeXML(c.in), "escapeXML(%q)", c.in)
+	}
+}
+
+func BenchmarkEscapeXML(b *testing.B) {
+	s := strings.Repeat("skill <name> & \"desc\" ", 32)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = escapeXML(s)
+	}
 }
