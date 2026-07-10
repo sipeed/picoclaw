@@ -3,12 +3,14 @@ package auth
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func makeJWTForClaims(t *testing.T, claims map[string]any) string {
@@ -86,6 +88,9 @@ func TestBuildAuthorizeURLOpenAIExtras(t *testing.T) {
 	}
 	if q.Get("originator") != "codex_cli_rs" {
 		t.Errorf("originator = %q, want codex_cli_rs", q.Get("originator"))
+	}
+	if q.Get("prompt") != "login" {
+		t.Errorf("prompt = %q, want login", q.Get("prompt"))
 	}
 }
 
@@ -488,4 +493,153 @@ func newMockOAuthTokenServer() *httptest.Server {
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	}))
+}
+
+func TestRefreshAccessTokenOmitsScopeForGoogle(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm() error: %v", err)
+		}
+		if got := r.FormValue("scope"); got != "" {
+			t.Fatalf("scope = %q, want empty", got)
+		}
+		if got := r.FormValue("client_secret"); got != "google-secret" {
+			t.Fatalf("client_secret = %q, want %q", got, "google-secret")
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "google-access-token",
+			"expires_in":   3600,
+		})
+	}))
+	defer server.Close()
+
+	cred := &AuthCredential{
+		AccessToken:  "expired-access-token",
+		RefreshToken: "google-refresh-token",
+		Provider:     "google-antigravity",
+		AuthMethod:   "oauth",
+	}
+	cfg := OAuthProviderConfig{
+		Issuer:       "https://accounts.google.com/o/oauth2/v2",
+		TokenURL:     server.URL,
+		ClientID:     "google-client",
+		ClientSecret: "google-secret",
+	}
+
+	refreshed, err := RefreshAccessToken(cred, cfg)
+	if err != nil {
+		t.Fatalf("RefreshAccessToken() error: %v", err)
+	}
+	if refreshed.AccessToken != "google-access-token" {
+		t.Fatalf("AccessToken = %q, want %q", refreshed.AccessToken, "google-access-token")
+	}
+	if refreshed.RefreshToken != cred.RefreshToken {
+		t.Fatalf("RefreshToken = %q, want %q", refreshed.RefreshToken, cred.RefreshToken)
+	}
+}
+
+func TestRefreshAccessTokenOmitsScopeForOpenAI(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Content-Type"); got != "application/json" {
+			t.Fatalf("Content-Type = %q, want application/json", got)
+		}
+		var body map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("Decode() error: %v", err)
+		}
+		if got := body["scope"]; got != "" {
+			t.Fatalf("scope = %q, want empty", got)
+		}
+		if got := body["refresh_token"]; got != "openai-refresh-token" {
+			t.Fatalf("refresh_token = %q", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "openai-access-token",
+			"expires_in":   3600,
+		})
+	}))
+	defer server.Close()
+
+	cred := &AuthCredential{
+		RefreshToken: "openai-refresh-token",
+		Provider:     "openai",
+		AuthMethod:   "oauth",
+	}
+	cfg := OAuthProviderConfig{Issuer: server.URL, ClientID: "openai-client"}
+	cfg.Issuer = "https://auth.openai.com"
+	cfg.TokenURL = server.URL
+
+	refreshed, err := RefreshAccessToken(cred, cfg)
+	if err != nil {
+		t.Fatalf("RefreshAccessToken() error: %v", err)
+	}
+	if refreshed.AccessToken != "openai-access-token" {
+		t.Fatalf("AccessToken = %q, want %q", refreshed.AccessToken, "openai-access-token")
+	}
+}
+
+func TestRefreshAccessTokenDeduplicatesConcurrentRequests(t *testing.T) {
+	const callers = 8
+	requests := make(chan struct{}, callers)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- struct{}{}
+		time.Sleep(100 * time.Millisecond)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "shared-access-token",
+			"expires_in":   3600,
+		})
+	}))
+	defer server.Close()
+
+	cred := &AuthCredential{
+		AccessToken:  "expired-access-token",
+		RefreshToken: "shared-refresh-token",
+		Provider:     "openai",
+		AuthMethod:   "oauth",
+	}
+	cfg := OAuthProviderConfig{Issuer: server.URL, ClientID: "shared-client"}
+	start := make(chan struct{})
+	results := make(chan error, callers)
+	for range callers {
+		go func() {
+			<-start
+			refreshed, err := RefreshAccessToken(cred, cfg)
+			if err == nil && refreshed.AccessToken != "shared-access-token" {
+				err = fmt.Errorf("AccessToken = %q", refreshed.AccessToken)
+			}
+			results <- err
+		}()
+	}
+	close(start)
+
+	for range callers {
+		if err := <-results; err != nil {
+			t.Fatalf("RefreshAccessToken() error: %v", err)
+		}
+	}
+	if got := len(requests); got != 1 {
+		t.Fatalf("refresh requests = %d, want 1", got)
+	}
+}
+
+func TestRefreshAccessTokenTimeout(t *testing.T) {
+	originalClient := oauthRefreshHTTPClient
+	oauthRefreshHTTPClient = &http.Client{Timeout: 50 * time.Millisecond}
+	t.Cleanup(func() { oauthRefreshHTTPClient = originalClient })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+	}))
+	defer server.Close()
+
+	cred := &AuthCredential{
+		RefreshToken: "timeout-refresh-token",
+		Provider:     "openai",
+		AuthMethod:   "oauth",
+	}
+	cfg := OAuthProviderConfig{Issuer: server.URL, ClientID: "timeout-client"}
+
+	if _, err := RefreshAccessToken(cred, cfg); err == nil {
+		t.Fatal("expected refresh timeout error")
+	}
 }
