@@ -603,3 +603,35 @@ func TestFormatSummaryXMLNoTimestampsWhenNil(t *testing.T) {
 		t.Errorf("should not have latest_at when nil, got: %s", xml)
 	}
 }
+
+// --- escapeXML ---
+
+// TestEscapeXMLGolden pins the exact output, including the single-pass property:
+// a '&' introduced while escaping <, >, " and ' is not itself re-escaped. This
+// matches the previous sequential strings.ReplaceAll implementation byte for byte.
+func TestEscapeXMLGolden(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", ""},
+		{"plain text", "plain text"},
+		{"a & b", "a &amp; b"},
+		{"<tag>", "&lt;tag&gt;"},
+		{`"q" & 'a'`, "&quot;q&quot; &amp; &apos;a&apos;"},
+		{"already &amp; escaped", "already &amp;amp; escaped"},
+		{"a<b>c&d\"e'f", "a&lt;b&gt;c&amp;d&quot;e&apos;f"},
+	}
+	for _, c := range cases {
+		if got := escapeXML(c.in); got != c.want {
+			t.Errorf("escapeXML(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func BenchmarkEscapeXML(b *testing.B) {
+	// Representative summary text: some specials, mostly plain.
+	s := strings.Repeat("The <quick> brown & \"lazy\" fox's tag. ", 64)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = escapeXML(s)
+	}
+}

@@ -9,14 +9,22 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
+// xmlContentEscaper replaces the five XML special characters in a single pass.
+// It is equivalent to the previous sequential strings.ReplaceAll chain: neither
+// approach rescans replacement output, so the '&' characters introduced when
+// escaping <, >, " and ' are not themselves re-escaped. Built once and safe for
+// concurrent use.
+var xmlContentEscaper = strings.NewReplacer(
+	"&", "&amp;",
+	"<", "&lt;",
+	">", "&gt;",
+	"\"", "&quot;",
+	"'", "&apos;",
+)
+
 // escapeXML escapes special characters for safe inclusion in XML content.
 func escapeXML(s string) string {
-	s = strings.ReplaceAll(s, "&", "&amp;")
-	s = strings.ReplaceAll(s, "<", "&lt;")
-	s = strings.ReplaceAll(s, ">", "&gt;")
-	s = strings.ReplaceAll(s, "\"", "&quot;")
-	s = strings.ReplaceAll(s, "'", "&apos;")
-	return s
+	return xmlContentEscaper.Replace(s)
 }
 
 // resolvedItem is a context item resolved to its full content with token count.
@@ -330,12 +338,13 @@ func FormatSummaryXML(s *Summary, parentIDs []string) string {
 
 	var parentsSection string
 	if s.Kind == SummaryKindCondensed && len(parentIDs) > 0 {
-		parents := "<parents>\n"
+		var parents strings.Builder
+		parents.WriteString("<parents>\n")
 		for _, pid := range parentIDs {
-			parents += fmt.Sprintf("    <summary_ref id=\"%s\" />\n", pid)
+			fmt.Fprintf(&parents, "    <summary_ref id=\"%s\" />\n", pid)
 		}
-		parents += "  </parents>\n"
-		parentsSection = parents
+		parents.WriteString("  </parents>\n")
+		parentsSection = parents.String()
 	}
 	return fmt.Sprintf(
 		"<summary id=\"%s\" kind=\"%s\" depth=\"%d\" descendant_count=\"%d\"%s>\n  <content>\n    %s\n  </content>\n%s</summary>",
