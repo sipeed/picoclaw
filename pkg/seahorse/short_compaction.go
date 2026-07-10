@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -744,20 +745,20 @@ func (e *CompactionEngine) runCondensedLoop(ctx context.Context, convID int64) {
 // --- Helper functions ---
 
 func formatMessagesForSummary(messages []Message) string {
-	var result string
+	var b strings.Builder
 	for _, m := range messages {
 		ts := m.CreatedAt.Format("2006-01-02 15:04 MST")
 		content := m.Content
 		if content == "" && len(m.Parts) > 0 {
 			content = partsToReadableContent(m.Parts)
 		}
-		result += fmt.Sprintf("[%s]\n%s\n\n", ts, content)
+		fmt.Fprintf(&b, "[%s]\n%s\n\n", ts, content)
 	}
-	return result
+	return b.String()
 }
 
 func formatSummariesForCondensation(summaries []Summary) string {
-	var result string
+	var b strings.Builder
 	for _, s := range summaries {
 		earliest := ""
 		if s.EarliestAt != nil {
@@ -767,9 +768,9 @@ func formatSummariesForCondensation(summaries []Summary) string {
 		if s.LatestAt != nil {
 			latest = s.LatestAt.Format("2006-01-02")
 		}
-		result += fmt.Sprintf("[%s - %s]\n%s\n\n", earliest, latest, s.Content)
+		fmt.Fprintf(&b, "[%s - %s]\n%s\n\n", earliest, latest, s.Content)
 	}
-	return result
+	return b.String()
 }
 
 func buildLeafSummaryPrompt(sourceText, previousSummary string, targetTokens int) string {
@@ -847,14 +848,16 @@ Output requirements:
 }
 
 func truncateSummary(messages []Message) string {
-	content := ""
+	var b strings.Builder
 	for _, m := range messages {
 		c := m.Content
 		if c == "" && len(m.Parts) > 0 {
 			c = partsToReadableContent(m.Parts)
 		}
-		content += c + "\n"
+		b.WriteString(c)
+		b.WriteByte('\n')
 	}
+	content := b.String()
 	if len(content) > 2048 {
 		content = content[:2048]
 	}
@@ -863,10 +866,12 @@ func truncateSummary(messages []Message) string {
 }
 
 func truncateCondensedSummaries(summaries []Summary) string {
-	content := ""
+	var b strings.Builder
 	for _, s := range summaries {
-		content += s.Content + "\n"
+		b.WriteString(s.Content)
+		b.WriteByte('\n')
 	}
+	content := b.String()
 	if len(content) > 2048 {
 		content = content[:2048]
 	}

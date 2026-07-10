@@ -334,3 +334,37 @@ func BenchmarkBootstrap_500Messages(b *testing.B) {
 		}
 	}
 }
+
+// --- Compaction formatting benchmarks ---
+
+func benchSummaryMessages(n int) []Message {
+	msgs := make([]Message, n)
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := range msgs {
+		msgs[i] = Message{
+			Role:       "user",
+			Content:    fmt.Sprintf("Conversation message %d with enough content to summarize.", i),
+			CreatedAt:  base.Add(time.Duration(i) * time.Minute),
+			TokenCount: 15,
+		}
+	}
+	return msgs
+}
+
+func BenchmarkFormatMessagesForSummary(b *testing.B) {
+	msgs := benchSummaryMessages(200)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = formatMessagesForSummary(msgs)
+	}
+}
+
+func BenchmarkTruncateSummary(b *testing.B) {
+	msgs := benchSummaryMessages(200)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = truncateSummary(msgs)
+	}
+}
