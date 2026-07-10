@@ -37,6 +37,10 @@ const (
 
 	defaultMaxChars = 50000
 	maxRedirects    = 5
+
+	// maxSearchResponseBytes caps search API response reads so an oversized
+	// or malicious response cannot exhaust memory.
+	maxSearchResponseBytes = 2 << 20
 )
 
 // Pre-compiled regexes for HTML text extraction
@@ -314,7 +318,7 @@ func (p *BraveSearchProvider) Search(
 			continue
 		}
 
-		body, err := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(io.LimitReader(resp.Body, maxSearchResponseBytes))
 		_ = resp.Body.Close()
 
 		if err != nil {
@@ -447,7 +451,7 @@ func (p *TavilySearchProvider) Search(
 			continue
 		}
 
-		body, err := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(io.LimitReader(resp.Body, maxSearchResponseBytes))
 		_ = resp.Body.Close()
 
 		if err != nil {
@@ -998,7 +1002,7 @@ func (p *DuckDuckGoSearchProvider) Search(
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSearchResponseBytes))
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
@@ -1146,7 +1150,7 @@ func (p *PerplexitySearchProvider) Search(
 			continue
 		}
 
-		body, err := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(io.LimitReader(resp.Body, maxSearchResponseBytes))
 		_ = resp.Body.Close()
 
 		if err != nil {
