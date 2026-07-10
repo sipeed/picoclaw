@@ -43,7 +43,20 @@ const (
 	reconnectInitial    = 5 * time.Second
 	reconnectMax        = 5 * time.Minute
 	reconnectMultiplier = 2.0
+
+	whatsappTypingStopTimeout = 5 * time.Second
 )
+
+var whatsappTypingRefreshInterval = 10 * time.Second
+
+var sendWhatsAppChatPresence = func(
+	ctx context.Context,
+	client *whatsmeow.Client,
+	jid types.JID,
+	state types.ChatPresence,
+) error {
+	return client.SendChatPresence(ctx, jid, state, types.ChatPresenceMediaText)
+}
 
 // WhatsAppNativeChannel implements the WhatsApp channel using whatsmeow (in-process, no external bridge).
 type WhatsAppNativeChannel struct {
@@ -405,6 +418,79 @@ func (c *WhatsAppNativeChannel) handleIncoming(evt *events.Message) {
 	}
 
 	c.HandleInboundContext(c.runCtx, chatID, content, mediaPaths, inboundCtx, sender)
+}
+
+// StartTyping implements channels.TypingCapable using WhatsApp's native composing presence.
+func (c *WhatsAppNativeChannel) StartTyping(ctx context.Context, chatID string) (func(), error) {
+	if !c.IsRunning() {
+		return func() {}, nil
+	}
+
+	jid, err := parseJID(chatID)
+	if err != nil {
+		return func() {}, fmt.Errorf("invalid chat id %q: %w", chatID, err)
+	}
+
+	c.mu.Lock()
+	client := c.client
+	c.mu.Unlock()
+	if client == nil {
+		return func() {}, fmt.Errorf("whatsapp connection not established: %w", channels.ErrTemporary)
+	}
+
+	typingCtx, cancel := context.WithCancel(ctx)
+	if err = sendWhatsAppChatPresence(typingCtx, client, jid, types.ChatPresenceComposing); err != nil {
+		cancel()
+		return func() {}, fmt.Errorf("whatsapp start typing: %w", err)
+	}
+
+	ticker := time.NewTicker(whatsappTypingRefreshInterval)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-typingCtx.Done():
+				return
+			case <-ticker.C:
+				c.mu.Lock()
+				currentClient := c.client
+				c.mu.Unlock()
+				if currentClient == nil {
+					continue
+				}
+				if refreshErr := sendWhatsAppChatPresence(typingCtx, currentClient, jid, types.ChatPresenceComposing); refreshErr != nil {
+					logger.DebugCF("whatsapp", "Failed to refresh typing indicator", map[string]any{
+						"chat_id": chatID,
+						"error":   refreshErr.Error(),
+					})
+				}
+			}
+		}
+	}()
+
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			cancel()
+			stopCtx, stopCancel := context.WithTimeout(context.Background(), whatsappTypingStopTimeout)
+			defer stopCancel()
+
+			c.mu.Lock()
+			currentClient := c.client
+			c.mu.Unlock()
+			if currentClient == nil {
+				return
+			}
+			if stopErr := sendWhatsAppChatPresence(stopCtx, currentClient, jid, types.ChatPresencePaused); stopErr != nil {
+				logger.DebugCF("whatsapp", "Failed to stop typing indicator", map[string]any{
+					"chat_id": chatID,
+					"error":   stopErr.Error(),
+				})
+			}
+		})
+	}
+
+	return stop, nil
 }
 
 func (c *WhatsAppNativeChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
