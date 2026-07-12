@@ -392,6 +392,8 @@ func parseResponse(resp *anthropic.Message) *LLMResponse {
 			PromptTokens:     int(resp.Usage.InputTokens),
 			CompletionTokens: int(resp.Usage.OutputTokens),
 			TotalTokens:      int(resp.Usage.InputTokens + resp.Usage.OutputTokens),
+			CacheReadInputTokens:    int(resp.Usage.CacheReadInputTokens),
+			CacheCreationInputTokens: int(resp.Usage.CacheCreationInputTokens), 
 		},
 	}
 }
