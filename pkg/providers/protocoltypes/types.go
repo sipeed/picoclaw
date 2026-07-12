@@ -53,6 +53,9 @@ type UsageInfo struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
+	CacheReadInputTokens    int `json:"cache_read_input_tokens"`   
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+
 }
 
 // CacheControl marks a content block for LLM-side prefix caching.
