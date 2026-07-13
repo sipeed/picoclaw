@@ -56,6 +56,57 @@ func TestResolvedCandidateModelName_UsesCandidateDisplayName(t *testing.T) {
 	}
 }
 
+func TestLookupModelConfigByRef_PrefersVerbatimModelOverAliasSplit(t *testing.T) {
+	cfg := &config.Config{
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "gemini-direct",
+				Provider:  "gemini",
+				Model:     "gemini-3.1-flash-lite-preview",
+			},
+			{
+				ModelName: "openrouter-gemini",
+				Provider:  "openrouter",
+				Model:     "google/gemini-3.1-flash-lite-preview",
+			},
+		},
+	}
+
+	got := lookupModelConfigByRef(cfg, "google/gemini-3.1-flash-lite-preview", "openai")
+
+	if got == nil {
+		t.Fatal("lookupModelConfigByRef() = nil, want model config")
+	}
+	if got.ModelName != "openrouter-gemini" {
+		t.Fatalf(
+			"model_name = %q, want %q (verbatim model match must beat provider-alias split)",
+			got.ModelName,
+			"openrouter-gemini",
+		)
+	}
+}
+
+func TestLookupModelConfigByRef_AliasSplitStillResolvesConfiguredEntry(t *testing.T) {
+	cfg := &config.Config{
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "gemini-direct",
+				Provider:  "gemini",
+				Model:     "gemini-3.1-flash-lite-preview",
+			},
+		},
+	}
+
+	got := lookupModelConfigByRef(cfg, "google/gemini-3.1-flash-lite-preview", "openai")
+
+	if got == nil {
+		t.Fatal("lookupModelConfigByRef() = nil, want model config")
+	}
+	if got.ModelName != "gemini-direct" {
+		t.Fatalf("model_name = %q, want %q", got.ModelName, "gemini-direct")
+	}
+}
+
 func TestResolveActiveModelConfig_PrefersCandidateIdentityKey(t *testing.T) {
 	cfg := &config.Config{
 		ModelList: []*config.ModelConfig{

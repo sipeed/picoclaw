@@ -101,6 +101,12 @@ func lookupModelConfigByRef(cfg *config.Config, raw string, defaultProvider ...s
 	if len(defaultProvider) > 0 {
 		fallbackProvider = effectiveDefaultProvider(defaultProvider[0])
 	}
+
+	// Match tiers, strongest first: a verbatim configured model string always
+	// wins over split-based interpretations, so model IDs that embed a known
+	// provider alias (e.g. OpenRouter's "google/gemini-...") resolve to their
+	// configured entry instead of the alias provider (#3252).
+	var bareMatch, keyMatch *config.ModelConfig
 	for i := range cfg.ModelList {
 		mc := cfg.ModelList[i]
 		if mc == nil {
@@ -110,21 +116,23 @@ func lookupModelConfigByRef(cfg *config.Config, raw string, defaultProvider ...s
 		if fullModel == "" {
 			continue
 		}
-		protocol, modelID := modelProviderAndIDForResolution(fallbackProvider, mc)
 		if fullModel == raw {
 			return mc
 		}
-		if modelID == raw {
+		protocol, modelID := modelProviderAndIDForResolution(fallbackProvider, mc)
+		if bareMatch == nil && modelID == raw {
 			if fallbackProvider == "" || providers.NormalizeProvider(protocol) == fallbackProvider {
-				return mc
+				bareMatch = mc
 			}
 		}
-		if rawKey != "" && providers.ModelKey(protocol, modelID) == rawKey {
-			return mc
+		if keyMatch == nil && rawKey != "" && providers.ModelKey(protocol, modelID) == rawKey {
+			keyMatch = mc
 		}
 	}
-
-	return nil
+	if bareMatch != nil {
+		return bareMatch
+	}
+	return keyMatch
 }
 
 func resolveModelCandidate(
