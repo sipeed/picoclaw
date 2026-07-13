@@ -436,9 +436,11 @@ func TestParseResponseBody(t *testing.T) {
 				ToolCalls:    []ToolCall{},
 				FinishReason: "stop",
 				Usage: &UsageInfo{
-					PromptTokens:             12,
+					// PromptTokens/TotalTokens include cache tokens:
+					// 12 + 512 + 2048 = 2572 prompt; + 7 output = 2579 total.
+					PromptTokens:             2572,
 					CompletionTokens:         7,
-					TotalTokens:              19,
+					TotalTokens:              2579,
 					CacheReadInputTokens:     2048,
 					CacheCreationInputTokens: 512,
 				},

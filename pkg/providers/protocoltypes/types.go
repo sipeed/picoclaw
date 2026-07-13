@@ -54,11 +54,13 @@ type UsageInfo struct {
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
 
-	// Prompt-cache accounting (Anthropic prompt caching). Zero when the
-	// provider does not report cache usage. CacheReadInputTokens counts
-	// tokens served from cache; CacheCreationInputTokens counts tokens
-	// written to cache. Neither is included in PromptTokens by Anthropic:
-	// total prompt size = PromptTokens + CacheReadInputTokens + CacheCreationInputTokens.
+	// Prompt-cache accounting (Anthropic prompt caching). PromptTokens and
+	// TotalTokens include cache read/creation tokens uniformly across
+	// providers: PromptTokens is the full prompt size, and
+	// CacheReadInputTokens/CacheCreationInputTokens are a breakdown (a
+	// subset) of it. CacheReadInputTokens counts tokens served from cache;
+	// CacheCreationInputTokens counts tokens written to cache. Both are
+	// zero when the provider does not report cache usage.
 	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 }

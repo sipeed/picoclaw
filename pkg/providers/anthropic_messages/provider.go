@@ -390,9 +390,12 @@ func parseResponseBody(body []byte) (*LLMResponse, error) {
 		ToolCalls:    toolCalls,
 		FinishReason: finishReason,
 		Usage: &UsageInfo{
-			PromptTokens:             int(resp.Usage.InputTokens),
+			// Anthropic's input_tokens excludes cache-read/creation tokens;
+			// fold them into the headline counters so PromptTokens reflects
+			// the full prompt size (see UsageInfo docs).
+			PromptTokens:             int(resp.Usage.InputTokens + resp.Usage.CacheCreationInputTokens + resp.Usage.CacheReadInputTokens),
 			CompletionTokens:         int(resp.Usage.OutputTokens),
-			TotalTokens:              int(resp.Usage.InputTokens + resp.Usage.OutputTokens),
+			TotalTokens:              int(resp.Usage.InputTokens + resp.Usage.CacheCreationInputTokens + resp.Usage.CacheReadInputTokens + resp.Usage.OutputTokens),
 			CacheReadInputTokens:     int(resp.Usage.CacheReadInputTokens),
 			CacheCreationInputTokens: int(resp.Usage.CacheCreationInputTokens),
 		},

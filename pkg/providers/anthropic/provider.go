@@ -382,9 +382,16 @@ func parseResponse(resp *anthropic.Message) *LLMResponse {
 		ToolCalls:    toolCalls,
 		FinishReason: finishReason,
 		Usage: &UsageInfo{
-			PromptTokens:     int(resp.Usage.InputTokens),
-			CompletionTokens: int(resp.Usage.OutputTokens),
-			TotalTokens:      int(resp.Usage.InputTokens + resp.Usage.OutputTokens),
+			// Anthropic's input_tokens excludes cache-read/creation tokens;
+			// fold them into the headline counters so PromptTokens reflects
+			// the full prompt size (see UsageInfo docs). The streaming path
+			// funnels through here too: Message.Accumulate copies usage from
+			// message_start and updates cache fields from message_delta.
+			PromptTokens:             int(resp.Usage.InputTokens + resp.Usage.CacheCreationInputTokens + resp.Usage.CacheReadInputTokens),
+			CompletionTokens:         int(resp.Usage.OutputTokens),
+			TotalTokens:              int(resp.Usage.InputTokens + resp.Usage.CacheCreationInputTokens + resp.Usage.CacheReadInputTokens + resp.Usage.OutputTokens),
+			CacheReadInputTokens:     int(resp.Usage.CacheReadInputTokens),
+			CacheCreationInputTokens: int(resp.Usage.CacheCreationInputTokens),
 		},
 	}
 }

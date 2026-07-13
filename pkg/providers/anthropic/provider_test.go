@@ -167,8 +167,10 @@ func TestProvider_ChatRoundTrip(t *testing.T) {
 				{"type": "text", "text": "Hello! How can I help you?"},
 			},
 			"usage": map[string]any{
-				"input_tokens":  15,
-				"output_tokens": 8,
+				"input_tokens":                15,
+				"output_tokens":               8,
+				"cache_read_input_tokens":     40,
+				"cache_creation_input_tokens": 25,
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -188,8 +190,19 @@ func TestProvider_ChatRoundTrip(t *testing.T) {
 	if resp.FinishReason != "stop" {
 		t.Errorf("FinishReason = %q, want %q", resp.FinishReason, "stop")
 	}
-	if resp.Usage.PromptTokens != 15 {
-		t.Errorf("PromptTokens = %d, want 15", resp.Usage.PromptTokens)
+	// PromptTokens/TotalTokens include cache tokens: 15 + 25 + 40 = 80 prompt;
+	// + 8 output = 88 total. Cache fields are the breakdown.
+	if resp.Usage.PromptTokens != 80 {
+		t.Errorf("PromptTokens = %d, want 80", resp.Usage.PromptTokens)
+	}
+	if resp.Usage.TotalTokens != 88 {
+		t.Errorf("TotalTokens = %d, want 88", resp.Usage.TotalTokens)
+	}
+	if resp.Usage.CacheReadInputTokens != 40 {
+		t.Errorf("CacheReadInputTokens = %d, want 40", resp.Usage.CacheReadInputTokens)
+	}
+	if resp.Usage.CacheCreationInputTokens != 25 {
+		t.Errorf("CacheCreationInputTokens = %d, want 25", resp.Usage.CacheCreationInputTokens)
 	}
 }
 
@@ -279,7 +292,7 @@ func TestProvider_ChatStreamingRoundTrip(t *testing.T) {
 		flusher, _ := w.(http.Flusher)
 
 		events := []string{
-			"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_stream\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"usage\":{\"input_tokens\":12,\"output_tokens\":0}}}\n\n",
+			"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_stream\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"usage\":{\"input_tokens\":12,\"output_tokens\":0,\"cache_read_input_tokens\":100,\"cache_creation_input_tokens\":30}}}\n\n",
 			"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
 			"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\n",
 			"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" world\"}}\n\n",
@@ -318,6 +331,20 @@ func TestProvider_ChatStreamingRoundTrip(t *testing.T) {
 	}
 	if resp.Usage.CompletionTokens != 5 {
 		t.Errorf("CompletionTokens = %d, want 5", resp.Usage.CompletionTokens)
+	}
+	// Cache tokens from message_start survive stream accumulation and are
+	// folded into the headline counters: 12 + 30 + 100 = 142 prompt; + 5 = 147.
+	if resp.Usage.PromptTokens != 142 {
+		t.Errorf("PromptTokens = %d, want 142", resp.Usage.PromptTokens)
+	}
+	if resp.Usage.TotalTokens != 147 {
+		t.Errorf("TotalTokens = %d, want 147", resp.Usage.TotalTokens)
+	}
+	if resp.Usage.CacheReadInputTokens != 100 {
+		t.Errorf("CacheReadInputTokens = %d, want 100", resp.Usage.CacheReadInputTokens)
+	}
+	if resp.Usage.CacheCreationInputTokens != 30 {
+		t.Errorf("CacheCreationInputTokens = %d, want 30", resp.Usage.CacheCreationInputTokens)
 	}
 }
 
