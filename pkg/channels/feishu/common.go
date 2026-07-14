@@ -42,6 +42,17 @@ func buildMarkdownCard(content string) (string, error) {
 	return string(data), nil
 }
 
+func feishuMediaMessageType(partType string) string {
+	switch partType {
+	case "audio":
+		return larkim.MsgTypeAudio
+	case "video":
+		return larkim.MsgTypeMedia
+	default:
+		return larkim.MsgTypeFile
+	}
+}
+
 // extractJSONStringField unmarshals content as JSON and returns the value of the given string field.
 // Returns "" if the content is invalid JSON or the field is missing/empty.
 func extractJSONStringField(content, field string) string {

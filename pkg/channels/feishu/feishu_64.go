@@ -1214,13 +1214,13 @@ func (c *FeishuChannel) sendFile(ctx context.Context, chatID string, file *os.Fi
 
 	fileKey := *uploadResp.Data.FileKey
 
-	// Send file message
+	// Use Feishu's native message type so audio and video get an inline player.
 	content, _ := json.Marshal(map[string]string{"file_key": fileKey})
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(larkim.CreateMessageV1ReceiveIDTypeChatId).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
 			ReceiveId(chatID).
-			MsgType(larkim.MsgTypeFile).
+			MsgType(feishuMediaMessageType(fileType)).
 			Content(string(content)).
 			Build()).
 		Build()

@@ -227,6 +227,26 @@ func TestBuildMarkdownCard(t *testing.T) {
 	}
 }
 
+func TestFeishuMediaMessageType(t *testing.T) {
+	tests := []struct {
+		name     string
+		partType string
+		want     string
+	}{
+		{name: "audio uses native player", partType: "audio", want: larkim.MsgTypeAudio},
+		{name: "video uses native player", partType: "video", want: larkim.MsgTypeMedia},
+		{name: "generic file stays a file", partType: "file", want: larkim.MsgTypeFile},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := feishuMediaMessageType(tt.partType); got != tt.want {
+				t.Errorf("feishuMediaMessageType(%q) = %q, want %q", tt.partType, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestStripMentionPlaceholders(t *testing.T) {
 	strPtr := func(s string) *string { return &s }
 
