@@ -287,6 +287,24 @@ const CHANNELS_WITHOUT_DOCS = new Set([
   "mqtt",
 ])
 
+const ZH_TW_CHANNELS_WITH_DOCS = new Set([
+  "deltachat",
+  "dingtalk",
+  "discord",
+  "feishu",
+  "line",
+  "maixcam",
+  "matrix",
+  "mqtt",
+  "onebot",
+  "qq",
+  "slack",
+  "telegram",
+  "vk",
+  "wecom",
+  "weixin",
+])
+
 export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
   const { t, i18n } = useTranslation()
   const { state: gatewayState } = useGateway()
@@ -399,15 +417,20 @@ export function ChannelConfigPage({ channelName }: ChannelConfigPageProps) {
 
   const docsUrl = useMemo(() => {
     if (!channel) return ""
-    if (CHANNELS_WITHOUT_DOCS.has(channel.name)) return ""
     const language = (
       i18n.resolvedLanguage ??
       i18n.language ??
       ""
     ).toLowerCase()
-    const base = language.startsWith("zh")
-      ? "https://docs.picoclaw.io/zh-Hans/docs/channels"
-      : "https://docs.picoclaw.io/docs/channels"
+    if (language === "zh-tw") {
+      if (!ZH_TW_CHANNELS_WITH_DOCS.has(channel.name)) return ""
+      return `https://docs.picoclaw.io/zh-TW/docs/channels/${getChannelDocSlug(channel.name)}`
+    }
+    if (CHANNELS_WITHOUT_DOCS.has(channel.name)) return ""
+    const base =
+      language === "zh"
+        ? "https://docs.picoclaw.io/zh-Hans/docs/channels"
+        : "https://docs.picoclaw.io/docs/channels"
     return `${base}/${getChannelDocSlug(channel.name)}`
   }, [channel, i18n.language, i18n.resolvedLanguage])
 

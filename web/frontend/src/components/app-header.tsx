@@ -45,6 +45,10 @@ import { useTheme } from "@/hooks/use-theme.ts"
 export function AppHeader() {
   const { i18n, t } = useTranslation()
   const { theme, toggleTheme } = useTheme()
+  const docsUrl =
+    (i18n.resolvedLanguage ?? i18n.language ?? "").toLowerCase() === "zh-tw"
+      ? "https://docs.picoclaw.io/zh-TW/"
+      : "https://docs.picoclaw.io"
   const {
     state: gwState,
     loading: gwLoading,
@@ -272,7 +276,7 @@ export function AppHeader() {
           data-tour="docs-button"
           asChild
         >
-          <a href="https://docs.picoclaw.io" target="_blank" rel="noreferrer">
+          <a href={docsUrl} target="_blank" rel="noreferrer">
             <IconBook className="size-4.5" />
           </a>
         </Button>
@@ -296,6 +300,9 @@ export function AppHeader() {
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => i18n.changeLanguage("zh")}>
               简体中文
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => i18n.changeLanguage("zh-TW")}>
+              繁體中文 (台灣)
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => i18n.changeLanguage("cs")}>
               Čeština

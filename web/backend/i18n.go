@@ -10,8 +10,9 @@ import (
 type Language string
 
 const (
-	LanguageEnglish Language = "en"
-	LanguageChinese Language = "zh"
+	LanguageEnglish            Language = "en"
+	LanguageChinese            Language = "zh"
+	LanguageTraditionalChinese Language = "zh-TW"
 )
 
 // current language (default: English)
@@ -77,11 +78,37 @@ var translations = map[Language]map[TranslationKey]string{
 		Exiting:            "正在退出 PicoClaw...",
 		DocUrl:             "https://docs.picoclaw.io/zh-Hans/docs/",
 	},
+	LanguageTraditionalChinese: {
+		AppTooltip:         "%s - Web 主控台",
+		MenuOpen:           "開啟主控台",
+		MenuOpenTooltip:    "在瀏覽器中開啟 PicoClaw 主控台",
+		MenuAbout:          "關於",
+		MenuAboutTooltip:   "關於 PicoClaw",
+		MenuVersion:        "版本 : %s",
+		MenuVersionTooltip: "目前的版本號碼",
+		MenuGitHub:         "GitHub",
+		MenuDocs:           "說明文件",
+		MenuRestart:        "重新啟動服務",
+		MenuRestartTooltip: "重新啟動閘道服務",
+		MenuQuit:           "結束",
+		MenuQuitTooltip:    "結束 PicoClaw",
+		Exiting:            "正在結束 PicoClaw...",
+		DocUrl:             "https://docs.picoclaw.io/zh-TW/docs/",
+	},
 }
 
 // SetLanguage sets the current language
 func SetLanguage(lang string) {
 	lang = strings.ToLower(strings.TrimSpace(lang))
+
+	locale := lang
+	if idx := strings.IndexByte(locale, '.'); idx > 0 {
+		locale = locale[:idx]
+	}
+	if locale == "zh-tw" || locale == "zh_tw" {
+		currentLang = LanguageTraditionalChinese
+		return
+	}
 
 	// Extract language code before first underscore or dot
 	// e.g., "en_US.UTF-8" -> "en", "zh_CN" -> "zh"

@@ -4,6 +4,7 @@ import "dayjs/locale/cs"
 import "dayjs/locale/en"
 import "dayjs/locale/pt-br"
 import "dayjs/locale/zh-cn"
+import "dayjs/locale/zh-tw"
 import localizedFormat from "dayjs/plugin/localizedFormat"
 import relativeTime from "dayjs/plugin/relativeTime"
 import i18n from "i18next"
@@ -14,6 +15,7 @@ import en from "./locales/en.json"
 import ptBr from "./locales/pt-br.json"
 import bnIn from "./locales/bn-in.json"
 import zh from "./locales/zh.json"
+import zhTw from "./locales/zh-tw.json"
 import cs from "./locales/cs.json"
 
 dayjs.extend(relativeTime)
@@ -41,6 +43,9 @@ i18n
       zh: {
         translation: zh,
       },
+      "zh-TW": {
+        translation: zhTw,
+      },
       cs: {
         translation: cs,
       },
@@ -54,7 +59,9 @@ i18n
   })
 
 i18n.on("languageChanged", (lng) => {
-  if (lng.startsWith("zh")) {
+  if (lng.toLowerCase() === "zh-tw") {
+    dayjs.locale("zh-tw")
+  } else if (lng.startsWith("zh")) {
     dayjs.locale("zh-cn")
   } else if (lng.startsWith("pt")) {
     dayjs.locale("pt-br")
