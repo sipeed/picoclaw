@@ -27,6 +27,7 @@ const (
 	ChannelDingTalk       = "dingtalk"
 	ChannelSlack          = "slack"
 	ChannelMatrix         = "matrix"
+	ChannelDeltaChat      = "deltachat"
 	ChannelLINE           = "line"
 	ChannelOneBot         = "onebot"
 	ChannelQQ             = "qq"
@@ -669,6 +670,7 @@ var channelSettingsFactory = map[string]any{
 	ChannelDingTalk:       (DingTalkSettings{}),
 	ChannelSlack:          (SlackSettings{}),
 	ChannelMatrix:         (MatrixSettings{}),
+	ChannelDeltaChat:      (DeltaChatSettings{}),
 	ChannelLINE:           (LINESettings{}),
 	ChannelOneBot:         (OneBotSettings{}),
 	ChannelQQ:             (QQSettings{}),

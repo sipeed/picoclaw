@@ -250,8 +250,81 @@ func TestFilesystemTool_WriteFile_OverwriteDefaultBlocked(t *testing.T) {
 	assert.True(t, result.IsError, "expected error when overwriting without overwrite=true")
 	assert.Contains(t, result.ForLLM, "already exists")
 	assert.Contains(t, result.ForLLM, "overwrite=true")
+	// The guard must steer toward non-destructive tools rather than only coaching overwrite.
+	assert.Contains(t, result.ForLLM, "append_file")
+	assert.Contains(t, result.ForLLM, "edit_file")
 
 	// Original content must be untouched
+	data, err := os.ReadFile(testFile)
+	assert.NoError(t, err)
+	assert.Equal(t, "original", string(data))
+}
+
+// Copy (description, overwrite param, guard) only names available alternatives.
+func TestFilesystemTool_WriteFile_AltToolsConditionalCopy(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "existing.txt")
+	os.WriteFile(testFile, []byte("original"), 0o644)
+
+	overwriteParamDesc := func(tool *WriteFileTool) string {
+		props := tool.Parameters()["properties"].(map[string]any)
+		return props["overwrite"].(map[string]any)["description"].(string)
+	}
+
+	t.Run("no alternatives available", func(t *testing.T) {
+		tool := NewWriteFileTool("", false)
+		tool.SetAlternativeTools(nil)
+
+		assert.NotContains(t, tool.Description(), "append_file")
+		assert.NotContains(t, tool.Description(), "edit_file")
+		assert.NotContains(t, overwriteParamDesc(tool), "append_file")
+		assert.NotContains(t, overwriteParamDesc(tool), "edit_file")
+
+		result := tool.Execute(context.Background(), map[string]any{
+			"path":    testFile,
+			"content": "new content",
+		})
+		assert.True(t, result.IsError, "expected overwrite guard to still block")
+		assert.Contains(t, result.ForLLM, "already exists")
+		assert.Contains(t, result.ForLLM, "overwrite=true")
+		assert.NotContains(t, result.ForLLM, "append_file")
+		assert.NotContains(t, result.ForLLM, "edit_file")
+	})
+
+	t.Run("only append_file available", func(t *testing.T) {
+		tool := NewWriteFileTool("", false)
+		tool.SetAlternativeTools([]string{"append_file"})
+
+		assert.Contains(t, tool.Description(), "append_file")
+		assert.NotContains(t, tool.Description(), "edit_file")
+		assert.Contains(t, overwriteParamDesc(tool), "append_file")
+		assert.NotContains(t, overwriteParamDesc(tool), "edit_file")
+
+		result := tool.Execute(context.Background(), map[string]any{
+			"path":    testFile,
+			"content": "new content",
+		})
+		assert.True(t, result.IsError)
+		assert.Contains(t, result.ForLLM, "append_file")
+		assert.NotContains(t, result.ForLLM, "edit_file")
+	})
+
+	t.Run("both available uses canonical order", func(t *testing.T) {
+		tool := NewWriteFileTool("", false)
+		// Reversed input to confirm the order is normalized.
+		tool.SetAlternativeTools([]string{"edit_file", "append_file"})
+
+		assert.Contains(t, tool.Description(), "append_file or edit_file")
+
+		result := tool.Execute(context.Background(), map[string]any{
+			"path":    testFile,
+			"content": "new content",
+		})
+		assert.True(t, result.IsError)
+		assert.Contains(t, result.ForLLM, "append_file or edit_file")
+	})
+
+	// Blocked writes must leave the original untouched.
 	data, err := os.ReadFile(testFile)
 	assert.NoError(t, err)
 	assert.Equal(t, "original", string(data))

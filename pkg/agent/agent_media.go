@@ -100,10 +100,15 @@ func resolveMediaRefs(
 
 			localPath, meta, err := store.ResolveWithMeta(ref)
 			if err != nil {
-				logger.WarnCF("agent", "Failed to resolve media ref", map[string]any{
+				fields := map[string]any{
 					"ref":   ref,
 					"error": err.Error(),
-				})
+				}
+				if idx < currentTurnStart {
+					logger.DebugCF("agent", "Skipped stale historical media ref", fields)
+				} else {
+					logger.WarnCF("agent", "Failed to resolve media ref", fields)
+				}
 				continue
 			}
 

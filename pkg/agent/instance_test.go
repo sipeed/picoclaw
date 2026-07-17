@@ -584,6 +584,102 @@ func TestNewAgentInstance_ReadFileModeSelectsSchema(t *testing.T) {
 	}
 }
 
+// write_file copy names append_file/edit_file only when they are registered.
+func TestNewAgentInstance_WriteFileCopyReflectsAvailableAltTools(t *testing.T) {
+	newCfg := func(editEnabled, appendEnabled bool) *config.Config {
+		return &config.Config{
+			Agents: config.AgentsConfig{
+				Defaults: config.AgentDefaults{
+					Workspace: t.TempDir(),
+					ModelName: "test-model",
+				},
+			},
+			Tools: config.ToolsConfig{
+				WriteFile:  config.ToolConfig{Enabled: true},
+				EditFile:   config.ToolConfig{Enabled: editEnabled},
+				AppendFile: config.ToolConfig{Enabled: appendEnabled},
+			},
+		}
+	}
+
+	writeToolDesc := func(cfg *config.Config) string {
+		agent := NewAgentInstance(nil, &cfg.Agents.Defaults, cfg, &mockProvider{})
+		writeTool, ok := agent.Tools.Get("write_file")
+		if !ok {
+			t.Fatal("write_file tool not registered")
+		}
+		return writeTool.Description()
+	}
+
+	t.Run("only write_file exposed", func(t *testing.T) {
+		desc := writeToolDesc(newCfg(false, false))
+		if strings.Contains(desc, "append_file") || strings.Contains(desc, "edit_file") {
+			t.Fatalf("write_file must not reference unavailable tools, got: %q", desc)
+		}
+	})
+
+	t.Run("only append_file exposed", func(t *testing.T) {
+		desc := writeToolDesc(newCfg(false, true))
+		if !strings.Contains(desc, "append_file") {
+			t.Fatalf("expected write_file to reference append_file, got: %q", desc)
+		}
+		if strings.Contains(desc, "edit_file") {
+			t.Fatalf("write_file must not reference disabled edit_file, got: %q", desc)
+		}
+	})
+
+	t.Run("both exposed", func(t *testing.T) {
+		desc := writeToolDesc(newCfg(true, true))
+		if !strings.Contains(desc, "append_file") || !strings.Contains(desc, "edit_file") {
+			t.Fatalf("expected write_file to reference both alternatives, got: %q", desc)
+		}
+	})
+}
+
+// Availability follows the per-agent allowlist, not just the enable flag:
+// editors enabled globally but hidden by frontmatter must not be named.
+func TestNewAgentInstance_WriteFileCopyExcludesAllowlistHiddenAltTools(t *testing.T) {
+	workspace := setupWorkspace(t, map[string]string{
+		"AGENT.md": "---\ntools: [write_file]\n---\n# Agent\n",
+	})
+	defer cleanupWorkspace(t, workspace)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace: workspace,
+				ModelName: "test-model",
+			},
+		},
+		Tools: config.ToolsConfig{
+			WriteFile:  config.ToolConfig{Enabled: true},
+			EditFile:   config.ToolConfig{Enabled: true},
+			AppendFile: config.ToolConfig{Enabled: true},
+		},
+	}
+
+	agent := NewAgentInstance(&config.AgentConfig{
+		ID:        "restricted",
+		Workspace: workspace,
+	}, &cfg.Agents.Defaults, cfg, &mockProvider{})
+
+	if _, ok := agent.Tools.Get("edit_file"); ok {
+		t.Fatal("edit_file should be blocked by the allowlist")
+	}
+	if _, ok := agent.Tools.Get("append_file"); ok {
+		t.Fatal("append_file should be blocked by the allowlist")
+	}
+
+	writeTool, ok := agent.Tools.Get("write_file")
+	if !ok {
+		t.Fatal("write_file tool not registered")
+	}
+	if desc := writeTool.Description(); strings.Contains(desc, "append_file") ||
+		strings.Contains(desc, "edit_file") {
+		t.Fatalf("write_file must not name allowlist-hidden tools, got: %q", desc)
+	}
+}
+
 func TestNewAgentInstance_InvalidExecConfigDoesNotExit(t *testing.T) {
 	workspace := t.TempDir()
 

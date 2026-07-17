@@ -862,7 +862,8 @@ func getInt64Arg(args map[string]any, key string, defaultVal int64) (int64, erro
 }
 
 type WriteFileTool struct {
-	fs fileSystem
+	fs       fileSystem
+	altTools []string
 }
 
 func NewWriteFileTool(
@@ -874,7 +875,32 @@ func NewWriteFileTool(
 	if len(allowPaths) > 0 {
 		patterns = allowPaths[0]
 	}
-	return &WriteFileTool{fs: buildFs(workspace, restrict, patterns)}
+	// Default to both alternatives so standalone callers keep the full guidance;
+	// the agent wiring narrows this to the tools actually registered.
+	return &WriteFileTool{
+		fs:       buildFs(workspace, restrict, patterns),
+		altTools: []string{"append_file", "edit_file"},
+	}
+}
+
+// SetAlternativeTools limits which alternatives the copy names, so it never
+// directs the model to tools that are not available.
+func (t *WriteFileTool) SetAlternativeTools(names []string) {
+	present := make(map[string]bool, len(names))
+	for _, name := range names {
+		present[name] = true
+	}
+	ordered := make([]string, 0, 2)
+	for _, name := range []string{"append_file", "edit_file"} {
+		if present[name] {
+			ordered = append(ordered, name)
+		}
+	}
+	t.altTools = ordered
+}
+
+func (t *WriteFileTool) altToolsPhrase() string {
+	return strings.Join(t.altTools, " or ")
 }
 
 func (t *WriteFileTool) Name() string {
@@ -882,10 +908,24 @@ func (t *WriteFileTool) Name() string {
 }
 
 func (t *WriteFileTool) Description() string {
-	return "Write content to a file. Content is written byte-for-byte after argument decoding. Standard JSON escaping applies: \\n for newline and \\\\n for a literal backslash-n sequence. If the file already exists, you must set overwrite=true to replace it."
+	desc := "Write content to a file, replacing any existing content. Content is written byte-for-byte after argument decoding. Standard JSON escaping applies: \\n for newline and \\\\n for a literal backslash-n sequence. If the file already exists you must set overwrite=true, which replaces the ENTIRE file."
+	if phrase := t.altToolsPhrase(); phrase != "" {
+		desc += fmt.Sprintf(
+			" To add to or change part of an existing file without losing its current contents, use %s instead.",
+			phrase,
+		)
+	}
+	return desc
 }
 
 func (t *WriteFileTool) Parameters() map[string]any {
+	overwriteDesc := "Set to true to replace an existing file in full. This discards the file's current contents."
+	if phrase := t.altToolsPhrase(); phrase != "" {
+		overwriteDesc = fmt.Sprintf(
+			"Set to true to replace an existing file in full. This discards the file's current contents — to preserve them, use %s instead of write_file.",
+			phrase,
+		)
+	}
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -899,7 +939,7 @@ func (t *WriteFileTool) Parameters() map[string]any {
 			},
 			"overwrite": map[string]any{
 				"type":        "boolean",
-				"description": "Must be set to true to overwrite an existing file.",
+				"description": overwriteDesc,
 				"default":     false,
 			},
 		},
@@ -922,8 +962,20 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]any) *ToolR
 
 	if !overwrite {
 		if _, err := t.fs.Open(path); err == nil {
+			if phrase := t.altToolsPhrase(); phrase != "" {
+				return ErrorResult(
+					fmt.Sprintf(
+						"file: %s already exists. To add to it or change part of it without losing the current contents, use %s. Only set overwrite=true if you intend to replace the entire file.",
+						path,
+						phrase,
+					),
+				)
+			}
 			return ErrorResult(
-				fmt.Sprintf("file: %s already exists. Set overwrite=true to replace.", path),
+				fmt.Sprintf(
+					"file: %s already exists. Set overwrite=true only if you intend to replace the entire file, which discards its current contents.",
+					path,
+				),
 			)
 		}
 	}
@@ -1064,8 +1116,8 @@ func (r *sandboxFs) execute(path string, fn func(root *os.Root, relPath string) 
 		return err
 	}
 
-	// os.Root api on windows only accept forward slashes (/)
-	relPath = filepath.ToSlash(relPath)
+	// os.Root API on Windows only accepts forward slashes (/).
+	relPath = normalizeRootRelPath(relPath)
 
 	return fn(root, relPath)
 }
@@ -1228,6 +1280,17 @@ func buildFs(workspace string, restrict bool, patterns []*regexp.Regexp) fileSys
 		return &whitelistFs{sandbox: sandbox, patterns: patterns}
 	}
 	return sandbox
+}
+
+func normalizeRootRelPath(relPath string) string {
+	return normalizeRootRelPathForSeparator(relPath, os.PathSeparator)
+}
+
+func normalizeRootRelPathForSeparator(relPath string, sep rune) string {
+	if sep == '\\' {
+		return strings.ReplaceAll(relPath, `\`, `/`)
+	}
+	return relPath
 }
 
 // Helper to get a safe relative path for os.Root usage

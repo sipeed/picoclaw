@@ -1936,3 +1936,54 @@ func TestShellTool_SchemelessURLDetection(t *testing.T) {
 		}
 	}
 }
+
+func TestShellTool_CustomAllowDoesNotBypassDenyPatterns(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Tools.Exec.EnableDenyPatterns = true
+	cfg.Tools.Exec.CustomAllowPatterns = []string{`^jq\b`}
+	cfg.Tools.Exec.CustomDenyPatterns = []string{`\$env\b`, `(^|[^.$a-z0-9_])env([^a-z0-9_]|$)`}
+
+	tool, err := NewExecToolWithConfig(t.TempDir(), false, cfg)
+	if err != nil {
+		t.Fatalf("NewExecToolWithConfig() error: %v", err)
+	}
+
+	got := tool.guardCommand(`jq -n '$ENV.PICOCLAW_VARIANT_CANARY'`, t.TempDir())
+	if !strings.Contains(got, "dangerous pattern detected") {
+		t.Fatalf("custom allow should not bypass deny patterns, got: %q", got)
+	}
+}
+
+func TestShellTool_CustomAllowStillPermitsSafeMatch(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Tools.Exec.EnableDenyPatterns = true
+	cfg.Tools.Exec.CustomAllowPatterns = []string{`^jq\b`}
+	cfg.Tools.Exec.CustomDenyPatterns = []string{`\$env\b`, `(^|[^.$a-z0-9_])env([^a-z0-9_]|$)`}
+
+	tool, err := NewExecToolWithConfig(t.TempDir(), false, cfg)
+	if err != nil {
+		t.Fatalf("NewExecToolWithConfig() error: %v", err)
+	}
+
+	got := tool.guardCommand(`jq -n '"ok"'`, t.TempDir())
+	if got != "" {
+		t.Fatalf("safe custom-allowed command should pass guard, got: %q", got)
+	}
+}
+
+func TestShellTool_CustomAllowDoesNotBecomeStrictAllowlist(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Tools.Exec.EnableDenyPatterns = true
+	cfg.Tools.Exec.CustomAllowPatterns = []string{`^jq\b`}
+	cfg.Tools.Exec.CustomDenyPatterns = []string{`\$env\b`, `(^|[^.$a-z0-9_])env([^a-z0-9_]|$)`}
+
+	tool, err := NewExecToolWithConfig(t.TempDir(), false, cfg)
+	if err != nil {
+		t.Fatalf("NewExecToolWithConfig() error: %v", err)
+	}
+
+	got := tool.guardCommand("ls", t.TempDir())
+	if got != "" {
+		t.Fatalf("custom allow patterns should not become a strict allowlist, got: %q", got)
+	}
+}

@@ -233,12 +233,26 @@ func buildRequestBody(
 
 			// Add tool_use blocks
 			for _, tc := range msg.ToolCalls {
-				if strings.TrimSpace(tc.Name) == "" {
+				// Resolve tool name: prefer tc.Name, fallback to tc.Function.Name
+				// (tc.Name/tc.Arguments are json:"-" and may be empty when
+				// history is reloaded from the session store)
+				toolName := tc.Name
+				if toolName == "" && tc.Function != nil {
+					toolName = tc.Function.Name
+				}
+				if strings.TrimSpace(toolName) == "" {
 					continue
 				}
 
-				// Handle nil Arguments (GLM-4 may return null input)
+				// Resolve arguments: prefer tc.Arguments, fallback to parsing
+				// tc.Function.Arguments
 				input := tc.Arguments
+				if input == nil && tc.Function != nil && tc.Function.Arguments != "" {
+					if err := json.Unmarshal([]byte(tc.Function.Arguments), &input); err != nil {
+						input = map[string]any{}
+					}
+				}
+				// Handle nil Arguments (GLM-4 may return null input)
 				if input == nil {
 					input = map[string]any{}
 				}
@@ -246,7 +260,7 @@ func buildRequestBody(
 				toolUse := map[string]any{
 					"type":  "tool_use",
 					"id":    tc.ID,
-					"name":  tc.Name,
+					"name":  toolName,
 					"input": input,
 				}
 				content = append(content, toolUse)
