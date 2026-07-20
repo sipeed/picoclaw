@@ -446,6 +446,67 @@ func selectInboundMediaItem(msg WeixinMessage) *MessageItem {
 	return nil
 }
 
+// tryTranscodeAudioToSilk converts an audio file (OGG/MP3/WAV/etc) to SILK format
+// suitable for WeChat voice messages. Uses ffmpeg to decode to PCM, then silk_encoder
+// with -tencent flag to produce WeChat-compatible SILK.
+func tryTranscodeAudioToSilk(ctx context.Context, audioPath string) ([]byte, error) {
+	transcodeCtx, cancel := context.WithTimeout(ctx, weixinVoiceTranscodeTimeout)
+	defer cancel()
+
+	tmpDir := media.TempDir()
+	pcmPath := filepath.Join(tmpDir, "weixin-voice-"+uuid.New().String()+".pcm")
+	silkPath := filepath.Join(tmpDir, "weixin-voice-"+uuid.New().String()+".silk")
+	defer os.Remove(pcmPath)
+	defer os.Remove(silkPath)
+
+	// Step 1: Decode audio to 24kHz 16-bit mono PCM via ffmpeg
+	ffmpegBin, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		return nil, fmt.Errorf("ffmpeg not found: %w", err)
+	}
+	ffCmd := exec.CommandContext(transcodeCtx, ffmpegBin,
+		"-y", "-i", audioPath,
+		"-f", "s16le", "-acodec", "pcm_s16le",
+		"-ar", "24000", "-ac", "1",
+		pcmPath,
+	)
+	ffOut, ffErr := ffCmd.CombinedOutput()
+	if ffErr != nil {
+		return nil, fmt.Errorf("ffmpeg decode failed: %w (output: %s)", ffErr, strings.TrimSpace(string(ffOut)))
+	}
+
+	// Step 2: Encode PCM to Tencent SILK
+	encoderBin := "/vol1/picoclaw/bin/silk_encoder"
+	if _, err := os.Stat(encoderBin); err != nil {
+		// Fallback: search PATH
+		if found, lookErr := exec.LookPath("silk_encoder"); lookErr == nil {
+			encoderBin = found
+		} else {
+			return nil, fmt.Errorf("silk_encoder not found at %s", encoderBin)
+		}
+	}
+	silkCmd := exec.CommandContext(transcodeCtx, encoderBin,
+		pcmPath, silkPath,
+		"-tencent",
+		"-Fs_API", "24000",
+		"-rate", "25000",
+		"-quiet",
+	)
+	silkOut, silkErr := silkCmd.CombinedOutput()
+	if silkErr != nil {
+		return nil, fmt.Errorf("silk encode failed: %w (output: %s)", silkErr, strings.TrimSpace(string(silkOut)))
+	}
+
+	silk, err := os.ReadFile(silkPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read SILK output: %w", err)
+	}
+	if len(silk) == 0 {
+		return nil, fmt.Errorf("silk_encoder produced empty output")
+	}
+	return silk, nil
+}
+
 func tryTranscodeSilkToWAV(ctx context.Context, silk []byte) ([]byte, error) {
 	decoders := []struct {
 		name string
@@ -610,6 +671,8 @@ func outboundMediaKind(partType, filename, contentType string) int {
 		return UploadMediaTypeImage
 	case "video":
 		return UploadMediaTypeVideo
+	case "voice", "audio":
+		return UploadMediaTypeVoice
 	}
 
 	ct := strings.ToLower(contentType)
@@ -618,7 +681,16 @@ func outboundMediaKind(partType, filename, contentType string) int {
 		return UploadMediaTypeImage
 	case strings.HasPrefix(ct, "video/"):
 		return UploadMediaTypeVideo
+	// WeChat iLink bots cannot send native voice bubbles to users.
+	// Audio is always sent as a file attachment instead.
+	case strings.HasPrefix(ct, "audio/"):
+		return UploadMediaTypeFile
 	default:
+		ext := strings.ToLower(filepath.Ext(filename))
+		switch ext {
+		case ".ogg", ".mp3", ".wav", ".opus", ".aac", ".flac", ".m4a":
+			return UploadMediaTypeFile
+		}
 		return UploadMediaTypeFile
 	}
 }
@@ -993,6 +1065,17 @@ func (c *WeixinChannel) sendUploadedMedia(
 			},
 		})
 
+	case UploadMediaTypeVoice:
+		return c.sendMessageItem(ctx, toUserID, contextToken, MessageItem{
+			Type: MessageItemTypeVoice,
+			VoiceItem: &VoiceItem{
+				Media:         mediaRef,
+				EncodeType:    1, // SILK
+				BitsPerSample: 16,
+				SampleRate:    24000,
+			},
+		})
+
 	default:
 		return c.sendMessageItem(ctx, toUserID, contextToken, MessageItem{
 			Type: MessageItemTypeFile,
@@ -1133,6 +1216,7 @@ func (c *WeixinChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMess
 			}
 
 			kind := outboundMediaKind(part.Type, filename, contentType)
+
 			uploaded, uploadErr := c.uploadLocalFile(ctx, localPath, filename, msg.ChatID, kind)
 			if uploadErr != nil {
 				err = uploadErr

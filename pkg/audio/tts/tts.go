@@ -36,6 +36,18 @@ func providerFromModelConfig(mc *config.ModelConfig) TTSProvider {
 	switch protocol {
 	case "mimo":
 		return NewMimoTTSProvider(mc.APIKey(), providers.ResolveAPIBase(mc), modelID, mc.Proxy)
+	case "dashscope":
+		voice := ""
+		if mc.ExtraBody != nil {
+			if v, ok := mc.ExtraBody["voice"].(string); ok {
+				voice = strings.TrimSpace(v)
+			}
+		}
+		workspace := extractWorkspaceFromBaseURL(mc.APIBase)
+		if workspace == "" {
+			workspace = extractWorkspaceFromBaseURL(providers.ResolveAPIBase(mc))
+		}
+		return NewDashScopeTTSProvider(mc.APIKey(), workspace, modelID, voice)
 	default:
 		return NewOpenAITTSProviderWithOptions(
 			mc.APIKey(),
