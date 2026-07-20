@@ -294,6 +294,9 @@ export function AppHeader() {
             <DropdownMenuItem onClick={() => i18n.changeLanguage("bn-IN")}>
               বাংলা
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => i18n.changeLanguage("ja")}>
+              日本語
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => i18n.changeLanguage("zh")}>
               简体中文
             </DropdownMenuItem>

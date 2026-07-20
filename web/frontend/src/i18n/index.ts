@@ -2,6 +2,7 @@ import dayjs from "dayjs"
 import "dayjs/locale/bn"
 import "dayjs/locale/cs"
 import "dayjs/locale/en"
+import "dayjs/locale/ja"
 import "dayjs/locale/pt-br"
 import "dayjs/locale/zh-cn"
 import localizedFormat from "dayjs/plugin/localizedFormat"
@@ -13,6 +14,7 @@ import { initReactI18next } from "react-i18next"
 import en from "./locales/en.json"
 import ptBr from "./locales/pt-br.json"
 import bnIn from "./locales/bn-in.json"
+import ja from "./locales/ja.json"
 import zh from "./locales/zh.json"
 import cs from "./locales/cs.json"
 
@@ -38,6 +40,9 @@ i18n
       "bn-IN": {
         translation: bnIn,
       },
+      ja: {
+        translation: ja,
+      },
       zh: {
         translation: zh,
       },
@@ -54,7 +59,9 @@ i18n
   })
 
 i18n.on("languageChanged", (lng) => {
-  if (lng.startsWith("zh")) {
+  if (lng.startsWith("ja")) {
+    dayjs.locale("ja")
+  } else if (lng.startsWith("zh")) {
     dayjs.locale("zh-cn")
   } else if (lng.startsWith("pt")) {
     dayjs.locale("pt-br")
