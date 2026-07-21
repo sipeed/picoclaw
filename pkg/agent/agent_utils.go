@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -69,8 +70,17 @@ func outboundTurnMetadata(
 	return agentID, sessionKey, outboundScopeFromSessionScope(scope)
 }
 
+// stripToolUseText removes [tool_use: ...] patterns that LLMs may regurgitate
+// after seeing them in seahorse FTS5 / summary contexts.
+func stripToolUseText(content string) string {
+	// Match "[tool_use: name, args: {...}]" variants
+	re := regexp.MustCompile(`\[tool_use:\s*\w+,\s*args:\s*\{[^}]*}\]?\]?\s*`)
+	return strings.TrimSpace(re.ReplaceAllString(content, ""))
+}
+
 func outboundMessageForTurn(ts *turnState, content string) bus.OutboundMessage {
 	agentID, sessionKey, scope := outboundTurnMetadata(ts.agent.ID, ts.sessionKey, ts.opts.Dispatch.SessionScope)
+	content = stripToolUseText(content)
 	return bus.OutboundMessage{
 		Channel: ts.channel,
 		ChatID:  ts.chatID,
