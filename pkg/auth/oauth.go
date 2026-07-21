@@ -105,7 +105,7 @@ func LoginBrowserWithOptions(cfg OAuthProviderConfig, opts LoginBrowserOptions) 
 
 	if !opts.NoBrowser {
 		callbackResultCh := make(chan callbackResult, 1)
-		listener, actualPort, err := listenOAuthCallback(cfg.Port)
+		listeners, actualPort, err := listenOAuthCallback(cfg.Port)
 		if err != nil {
 			return nil, fmt.Errorf("starting callback server on port %d: %w", cfg.Port, err)
 		}
@@ -114,10 +114,14 @@ func LoginBrowserWithOptions(cfg OAuthProviderConfig, opts LoginBrowserOptions) 
 		callbackPort = actualPort
 		resultCh = callbackResultCh
 
+		// Serve on every bound address (IPv4 and IPv6 loopback) so the callback
+		// works regardless of how the browser resolves "localhost".
 		server := &http.Server{Handler: oauthCallbackHandler(state, callbackResultCh)}
-		go func() {
-			_ = server.Serve(listener)
-		}()
+		for _, l := range listeners {
+			go func(l net.Listener) {
+				_ = server.Serve(l)
+			}(l)
+		}
 		defer func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
@@ -151,6 +155,13 @@ func LoginBrowserWithOptions(cfg OAuthProviderConfig, opts LoginBrowserOptions) 
 	go func() {
 		reader := bufio.NewReader(browserLoginInput)
 		input, _ := reader.ReadString('\n')
+		// When stdin is not a terminal (systemd unit, piped command, `nohup`),
+		// the read returns EOF immediately. Treating that as "canceled" used to
+		// kill the browser flow before the user could even open the URL, so an
+		// empty read is ignored and the callback server keeps waiting.
+		if strings.TrimSpace(input) == "" {
+			return
+		}
 		select {
 		case manualCh <- strings.TrimSpace(input):
 		case <-manualDone:
@@ -179,9 +190,22 @@ func LoginBrowserWithOptions(cfg OAuthProviderConfig, opts LoginBrowserOptions) 
 			return nil, fmt.Errorf("could not find authorization code in input")
 		}
 		return ExchangeCodeForTokens(cfg, code, pkce.CodeVerifier, redirectURI)
-	case <-time.After(5 * time.Minute):
-		return nil, fmt.Errorf("authentication timed out after 5 minutes")
+	case <-time.After(browserLoginTimeout()):
+		return nil, fmt.Errorf("authentication timed out after %s", browserLoginTimeout())
 	}
+}
+
+// browserLoginTimeout returns how long to wait for the OAuth callback.
+// Headless setups need time to move the URL to another machine and set up a
+// tunnel, so the default is generous; PICOCLAW_OAUTH_TIMEOUT overrides it
+// (any duration Go can parse, e.g. "5m", "30m").
+func browserLoginTimeout() time.Duration {
+	if raw := os.Getenv("PICOCLAW_OAUTH_TIMEOUT"); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			return d
+		}
+	}
+	return 15 * time.Minute
 }
 
 func oauthCallbackRedirectURI(port int) string {
@@ -191,9 +215,11 @@ func oauthCallbackRedirectURI(port int) string {
 func oauthCallbackHandler(state string, resultCh chan<- callbackResult) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/auth/callback", func(w http.ResponseWriter, r *http.Request) {
+		// A stale browser tab replaying an older callback, a prefetch, or any other
+		// unrelated request must not abort the login that is currently in flight.
+		// Reject it locally and keep waiting for the real callback.
 		if r.URL.Query().Get("state") != state {
-			resultCh <- callbackResult{err: fmt.Errorf("state mismatch")}
-			http.Error(w, "State mismatch", http.StatusBadRequest)
+			http.Error(w, "State mismatch (stale or unrelated callback ignored)", http.StatusBadRequest)
 			return
 		}
 
@@ -212,19 +238,30 @@ func oauthCallbackHandler(state string, resultCh chan<- callbackResult) http.Han
 	return mux
 }
 
-func listenOAuthCallback(port int) (net.Listener, int, error) {
-	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+// listenOAuthCallback binds the callback port on both IPv4 and IPv6 loopback.
+// Browsers differ in how they resolve "localhost" (macOS Safari prefers ::1),
+// and an IPv4-only listener makes the callback fail with "cannot connect to
+// server" even though the login itself succeeded. IPv6 is best-effort: hosts
+// without it still get a working IPv4 listener.
+func listenOAuthCallback(port int) ([]net.Listener, int, error) {
+	v4, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		return nil, 0, err
 	}
 
-	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	tcpAddr, ok := v4.Addr().(*net.TCPAddr)
 	if !ok {
-		_ = listener.Close()
-		return nil, 0, fmt.Errorf("unexpected listener address type %T", listener.Addr())
+		_ = v4.Close()
+		return nil, 0, fmt.Errorf("unexpected listener address type %T", v4.Addr())
+	}
+	actualPort := tcpAddr.Port
+
+	listeners := []net.Listener{v4}
+	if v6, err := net.Listen("tcp6", fmt.Sprintf("[::1]:%d", actualPort)); err == nil {
+		listeners = append(listeners, v6)
 	}
 
-	return listener, tcpAddr.Port, nil
+	return listeners, actualPort, nil
 }
 
 type callbackResult struct {
