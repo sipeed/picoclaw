@@ -1,8 +1,13 @@
 package channels
 
 import (
+	"context"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
+	"unicode/utf8"
 )
 
 func TestSplitMessage(t *testing.T) {
@@ -144,6 +149,77 @@ func TestSplitMessage(t *testing.T) {
 				tc.checkContent(t, got)
 			}
 		})
+	}
+}
+
+func TestSplitMessage_OversizedFenceHeader(t *testing.T) {
+	const (
+		helperEnv = "PICOCLAW_SPLITMESSAGE_HANG_HELPER"
+		maxLen    = 400
+	)
+
+	exactIssueContent := "```" + strings.Repeat("a", 500) + "\nbody\n```"
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{
+			name:    "exact issue 3264 reproducer",
+			content: exactIssueContent,
+		},
+		{
+			name:    "split point equals body start",
+			content: "```" + strings.Repeat("a", 391) + "\nbody\n```",
+		},
+		{
+			name:    "multibyte oversized header",
+			content: "```" + strings.Repeat("\u754c", 500) + "\nbody\n```",
+		},
+	}
+
+	if os.Getenv(helperEnv) == "1" {
+		for _, tc := range tests {
+			SplitMessage(tc.content, maxLen)
+		}
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestSplitMessage_OversizedFenceHeader$")
+	cmd.Env = append(os.Environ(), helperEnv+"=1")
+	output, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		t.Fatalf("SplitMessage helper timed out; oversized fence header did not terminate\n%s", output)
+	}
+	if err != nil {
+		t.Fatalf("SplitMessage helper failed: %v\n%s", err, output)
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assertRawSplitPreserved(t, tc.content, maxLen, SplitMessage(tc.content, maxLen))
+		})
+	}
+}
+
+func assertRawSplitPreserved(t *testing.T, content string, maxLen int, chunks []string) {
+	t.Helper()
+
+	if len(chunks) < 2 {
+		t.Fatalf("expected multiple chunks, got %d: %q", len(chunks), chunks)
+	}
+	for i, chunk := range chunks {
+		if !utf8.ValidString(chunk) {
+			t.Errorf("chunk %d is not valid UTF-8: %q", i, chunk)
+		}
+		if got := len([]rune(chunk)); got > maxLen {
+			t.Errorf("chunk %d has %d runes, exceeds maxLen %d", i, got, maxLen)
+		}
+	}
+	if got := strings.Join(chunks, ""); got != content {
+		t.Errorf("joined chunks differ from source: got %q, want %q", got, content)
 	}
 }
 

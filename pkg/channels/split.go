@@ -111,6 +111,13 @@ func SplitMessage(content string, maxLen int) []string {
 							msgEnd = unclosedIdx
 						} else {
 							splitAt := min(start+maxLen-5, totalLen)
+							// Close/reopen reconstruction must consume at least one body rune beyond the reinserted header newline.
+							if splitAt <= headerEndIdx+1 {
+								rawEnd := min(start+maxLen, totalLen)
+								messages = append(messages, string(runes[start:rawEnd]))
+								start = rawEnd
+								continue
+							}
 							chunk := strings.TrimRight(string(runes[start:splitAt]), " \t\n\r") + "\n```"
 							messages = append(messages, chunk)
 							remaining := strings.TrimSpace(header + "\n" + string(runes[splitAt:totalLen]))
