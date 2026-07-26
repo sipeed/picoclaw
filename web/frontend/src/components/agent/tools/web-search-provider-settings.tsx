@@ -30,6 +30,7 @@ const baseUrlProviders = new Set([
 const apiKeyProviders = new Set([
   "brave",
   "tavily",
+  "exa",
   "kagi",
   "perplexity",
   "gemini",

@@ -334,6 +334,12 @@
         "base_url": "",
         "max_results": 0
       },
+      "exa": {
+        "enabled": false,
+        "api_key": "",
+        "api_keys": ["YOUR_EXA_API_KEY"],
+        "max_results": 5
+      },
       "kagi": {
         "enabled": false,
         "api_key": "",

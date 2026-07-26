@@ -51,7 +51,7 @@ channels:
 	  token: "your-discord-bot-token"
 
 # Web Tool Keys
-# Brave, Tavily, Perplexity, Kagi: Use 'api_keys' array
+# Brave, Tavily, Perplexity, Kagi, Exa: Use 'api_keys' array
 # GLMSearch, BaiduSearch: Use 'api_key' single string
 web:
 
@@ -68,6 +68,9 @@ web:
 	kagi:
 	  api_keys:
 	    - "your-kagi-api-key"  # Single key in array format
+	exa:
+	  api_keys:
+	    - "your-exa-api-key"  # Single key in array format
 	glm_search:
 	  api_key: "your-glm-search-api-key"  # Single key (not array)
 	baidu_search:
@@ -242,7 +245,7 @@ channels:
 
 ## Web Tool API Keys
 
-**Brave, Tavily, Perplexity, Kagi:**
+**Brave, Tavily, Perplexity, Kagi, Exa:**
 ```yaml
 web:
 
@@ -259,6 +262,9 @@ web:
 	kagi:
 	  api_keys:
 	    - "kagi-key"
+	exa:
+	  api_keys:
+	    - "exa-key"
 
 ```
 Use `api_keys` (plural) array format.
@@ -449,7 +455,7 @@ web:
 
 ## Single Key Format
 
-**Models, Brave, Tavily, Perplexity, Kagi:**
+**Models, Brave, Tavily, Perplexity, Kagi, Exa:**
 ```yaml
 model_list:
 
@@ -571,7 +577,7 @@ and .security.yml values.
 ## Multiple API Keys Not Working
 - Ensure you're using `api_keys` (plural) in .security.yml for models and web tools (except GLMSearch/BaiduSearch)
 - Check that the array format is correct in YAML (proper indentation with dashes)
-- Remember: Models, Brave, Tavily, Perplexity, Kagi MUST use `api_keys` (array format)
+- Remember: Models, Brave, Tavily, Perplexity, Kagi, Exa MUST use `api_keys` (array format)
 - GLMSearch and BaiduSearch MUST use `api_key` (single string format)
 
 ## Keys Not Being Applied

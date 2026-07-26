@@ -470,6 +470,13 @@ func (h *Handler) handleUpdateWebSearchConfig(w http.ResponseWriter, r *http.Req
 			cfg.Tools.Web.Tavily.SetAPIKeys(keys)
 		}
 	}
+	if settings, ok := req.Settings["exa"]; ok {
+		cfg.Tools.Web.Exa.Enabled = settings.Enabled
+		cfg.Tools.Web.Exa.MaxResults = settings.MaxResults
+		if keys, ok := normalizeWebSearchAPIKeys(settings.APIKeys, settings.APIKey); ok {
+			cfg.Tools.Web.Exa.SetAPIKeys(keys)
+		}
+	}
 	if settings, ok := req.Settings["kagi"]; ok {
 		cfg.Tools.Web.Kagi.Enabled = settings.Enabled
 		cfg.Tools.Web.Kagi.MaxResults = settings.MaxResults
@@ -525,6 +532,7 @@ func normalizeWebSearchProvider(provider string) string {
 	case "sogou",
 		"brave",
 		"tavily",
+		"exa",
 		"kagi",
 		"duckduckgo",
 		"gemini",
@@ -591,6 +599,11 @@ func buildWebSearchConfigResponse(cfg *config.Config) webSearchConfigResponse {
 			MaxResults: cfg.Tools.Web.Tavily.MaxResults,
 			BaseURL:    cfg.Tools.Web.Tavily.BaseURL,
 			APIKeySet:  len(cfg.Tools.Web.Tavily.APIKeys.Values()) > 0,
+		},
+		"exa": {
+			Enabled:    cfg.Tools.Web.Exa.Enabled,
+			MaxResults: cfg.Tools.Web.Exa.MaxResults,
+			APIKeySet:  len(cfg.Tools.Web.Exa.APIKeys.Values()) > 0,
 		},
 		"kagi": {
 			Enabled:    cfg.Tools.Web.Kagi.Enabled,
@@ -661,6 +674,13 @@ func buildWebSearchConfigResponse(cfg *config.Config) webSearchConfigResponse {
 			Label:        "Tavily",
 			Configured:   picotools.WebSearchProviderReady(opts, "tavily"),
 			Current:      current == "tavily",
+			RequiresAuth: true,
+		},
+		{
+			ID:           "exa",
+			Label:        "Exa",
+			Configured:   picotools.WebSearchProviderReady(opts, "exa"),
+			Current:      current == "exa",
 			RequiresAuth: true,
 		},
 		{

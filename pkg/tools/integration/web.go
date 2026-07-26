@@ -31,7 +31,7 @@ const (
 	userAgentHonest = "picoclaw/%s (+https://github.com/sipeed/picoclaw; AI assistant bot)"
 
 	// HTTP client timeouts for web tool providers.
-	searchTimeout     = 10 * time.Second // Brave, Tavily, DuckDuckGo
+	searchTimeout     = 10 * time.Second // Brave, Tavily, Exa, DuckDuckGo
 	perplexityTimeout = 30 * time.Second // Perplexity (LLM-based, slower)
 	fetchTimeout      = 60 * time.Second // WebFetchTool
 
@@ -175,6 +175,25 @@ func mapTavilyTimeRange(rangeCode string) string {
 	default:
 		return ""
 	}
+}
+
+// mapExaStartPublishedDate converts a range code into an Exa
+// startPublishedDate filter, relative to now.
+func mapExaStartPublishedDate(rangeCode string, now time.Time) string {
+	var start time.Time
+	switch rangeCode {
+	case "d":
+		start = now.AddDate(0, 0, -1)
+	case "w":
+		start = now.AddDate(0, 0, -7)
+	case "m":
+		start = now.AddDate(0, -1, 0)
+	case "y":
+		start = now.AddDate(-1, 0, 0)
+	default:
+		return ""
+	}
+	return start.UTC().Format(time.RFC3339)
 }
 
 func mapPerplexityRecencyFilter(rangeCode string) string {
@@ -492,6 +511,119 @@ func (p *TavilySearchProvider) Search(
 			lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.URL))
 			if item.Content != "" {
 				lines = append(lines, fmt.Sprintf("   %s", item.Content))
+			}
+		}
+
+		return strings.Join(lines, "\n"), nil
+	}
+
+	return "", fmt.Errorf("all api keys failed, last error: %w", lastErr)
+}
+
+type ExaSearchProvider struct {
+	keyPool *APIKeyPool
+	proxy   string
+	client  *http.Client
+}
+
+func (p *ExaSearchProvider) Search(
+	ctx context.Context,
+	query string,
+	count int,
+	rangeCode string,
+) (string, error) {
+	if p.keyPool == nil || len(p.keyPool.keys) == 0 {
+		return "", errors.New("no API key provided")
+	}
+
+	searchURL := "https://api.exa.ai/search"
+
+	var lastErr error
+	iter := p.keyPool.NewIterator()
+
+	for {
+		apiKey, ok := iter.Next()
+		if !ok {
+			break
+		}
+
+		payload := map[string]any{
+			"query":      query,
+			"type":       "auto",
+			"numResults": count,
+			"contents": map[string]any{
+				"highlights": true,
+			},
+		}
+		if startDate := mapExaStartPublishedDate(rangeCode, time.Now()); startDate != "" {
+			payload["startPublishedDate"] = startDate
+		}
+
+		bodyBytes, err := json.Marshal(payload)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal payload: %w", err)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewBuffer(bodyBytes))
+		if err != nil {
+			return "", fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Api-Key", apiKey)
+
+		resp, err := p.client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("request failed: %w", err)
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+
+		if err != nil {
+			lastErr = fmt.Errorf("failed to read response: %w", err)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("exa api error (status %d): %s", resp.StatusCode, string(body))
+			if resp.StatusCode == http.StatusTooManyRequests ||
+				resp.StatusCode == http.StatusUnauthorized ||
+				resp.StatusCode == http.StatusForbidden ||
+				resp.StatusCode >= 500 {
+				continue
+			}
+			return "", lastErr
+		}
+
+		var searchResp struct {
+			Results []struct {
+				Title      string   `json:"title"`
+				URL        string   `json:"url"`
+				Highlights []string `json:"highlights"`
+			} `json:"results"`
+		}
+
+		if err := json.Unmarshal(body, &searchResp); err != nil {
+			return "", fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		results := searchResp.Results
+		if len(results) == 0 {
+			return fmt.Sprintf("No results for: %s", query), nil
+		}
+
+		var lines []string
+		lines = append(lines, fmt.Sprintf("Results for: %s (via Exa)", query))
+		for i, item := range results {
+			if i >= count {
+				break
+			}
+			lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.URL))
+			// Highlights are multi-line page excerpts; flatten them into one line.
+			if snippet := strings.Join(strings.Fields(strings.Join(item.Highlights, " ... ")), " "); snippet != "" {
+				lines = append(lines, fmt.Sprintf("   %s", snippet))
 			}
 		}
 
@@ -1472,6 +1604,9 @@ type WebSearchToolOptions struct {
 	TavilyBaseURL         string
 	TavilyMaxResults      int
 	TavilyEnabled         bool
+	ExaAPIKeys            []string
+	ExaMaxResults         int
+	ExaEnabled            bool
 	KagiAPIKeys           []string
 	KagiBaseURL           string
 	KagiMaxResults        int
@@ -1512,6 +1647,9 @@ func WebSearchToolOptionsFromConfig(cfg *config.Config) WebSearchToolOptions {
 		TavilyBaseURL:         cfg.Tools.Web.Tavily.BaseURL,
 		TavilyMaxResults:      cfg.Tools.Web.Tavily.MaxResults,
 		TavilyEnabled:         cfg.Tools.Web.Tavily.Enabled,
+		ExaAPIKeys:            cfg.Tools.Web.Exa.APIKeys.Values(),
+		ExaMaxResults:         cfg.Tools.Web.Exa.MaxResults,
+		ExaEnabled:            cfg.Tools.Web.Exa.Enabled,
 		KagiAPIKeys:           cfg.Tools.Web.Kagi.APIKeys.Values(),
 		KagiBaseURL:           cfg.Tools.Web.Kagi.BaseURL,
 		KagiMaxResults:        cfg.Tools.Web.Kagi.MaxResults,
@@ -1558,13 +1696,16 @@ var (
 		"gemini",
 		"brave",
 		"tavily",
+		"exa",
 		"kagi",
 		"perplexity",
 		"searxng",
 		"glm_search",
 		"baidu_search",
 	}
-	autoPrimaryWebSearchProviders  = []string{"perplexity", "brave", "kagi", "searxng", "tavily", "gemini"}
+	autoPrimaryWebSearchProviders = []string{
+		"exa", "perplexity", "brave", "kagi", "searxng", "tavily", "gemini",
+	}
 	autoFallbackWebSearchProviders = []string{"baidu_search", "glm_search"}
 )
 
@@ -1590,6 +1731,8 @@ func (opts WebSearchToolOptions) providerReady(name string) bool {
 		return opts.BraveEnabled && len(opts.BraveAPIKeys) > 0
 	case "tavily":
 		return opts.TavilyEnabled && len(opts.TavilyAPIKeys) > 0
+	case "exa":
+		return opts.ExaEnabled && len(opts.ExaAPIKeys) > 0
 	case "kagi":
 		return opts.KagiEnabled && len(opts.KagiAPIKeys) > 0
 	case "perplexity":
@@ -1756,6 +1899,23 @@ func (opts WebSearchToolOptions) providerByName(name string) (SearchProvider, in
 		return &TavilySearchProvider{
 			keyPool: NewAPIKeyPool(opts.TavilyAPIKeys),
 			baseURL: opts.TavilyBaseURL,
+			proxy:   opts.Proxy,
+			client:  client,
+		}, maxResults, nil
+	case "exa":
+		if !opts.providerReady("exa") {
+			return nil, 0, nil
+		}
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create HTTP client for Exa: %w", err)
+		}
+		maxResults := 10
+		if opts.ExaMaxResults > 0 {
+			maxResults = min(opts.ExaMaxResults, 10)
+		}
+		return &ExaSearchProvider{
+			keyPool: NewAPIKeyPool(opts.ExaAPIKeys),
 			proxy:   opts.Proxy,
 			client:  client,
 		}, maxResults, nil

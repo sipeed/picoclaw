@@ -470,6 +470,13 @@ func TestSearchRangeMappings(t *testing.T) {
 	if got := mapTavilyTimeRange("w"); got != "week" {
 		t.Fatalf("mapTavilyTimeRange(w) = %q, want week", got)
 	}
+	if got := mapExaStartPublishedDate("w", time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)); got !=
+		"2026-03-08T00:00:00Z" {
+		t.Fatalf("mapExaStartPublishedDate(w) = %q, want 2026-03-08T00:00:00Z", got)
+	}
+	if got := mapExaStartPublishedDate("", time.Now()); got != "" {
+		t.Fatalf("mapExaStartPublishedDate() = %q, want empty", got)
+	}
 	if got := mapPerplexityRecencyFilter("m"); got != "month" {
 		t.Fatalf("mapPerplexityRecencyFilter(m) = %q, want month", got)
 	}

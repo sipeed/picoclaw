@@ -248,7 +248,7 @@ channel_list:
 
 ### Web Tools
 
-**Brave, Tavily, Perplexity, Kagi:**
+**Brave, Tavily, Perplexity, Kagi, Exa:**
 ```yaml
 web:
   brave:
@@ -258,6 +258,9 @@ web:
   kagi:
     api_keys:
       - "your-kagi-api-key"
+  exa:
+    api_keys:
+      - "your-exa-api-key"
 ```
 - Use `api_keys` (plural) array format
 
@@ -318,7 +321,7 @@ model_list:
 - **Rate limit management**: Distribute usage across multiple keys
 - **High availability**: Reduce downtime during API provider issues
 
-### Web Tools (Brave/Tavily/Perplexity/Kagi) - Single key
+### Web Tools (Brave/Tavily/Perplexity/Kagi/Exa) - Single key
 
 ```yaml
 web:
@@ -328,9 +331,12 @@ web:
   kagi:
     api_keys:
       - "your-kagi-api-key"
+  exa:
+    api_keys:
+      - "your-exa-api-key"
 ```
 
-### Web Tools (Brave/Tavily/Perplexity/Kagi) - Multiple keys
+### Web Tools (Brave/Tavily/Perplexity/Kagi/Exa) - Multiple keys
 
 ```yaml
 web:
@@ -342,6 +348,10 @@ web:
     api_keys:
       - "kagi-key-1"
       - "kagi-key-2"
+  exa:
+    api_keys:
+      - "exa-key-1"
+      - "exa-key-2"
 ```
 
 ### Web Tool (GLMSearch/BaiduSearch) - Single key only
@@ -568,7 +578,7 @@ go test ./pkg/config -run TestSecurityConfig
 
 - Ensure you're using `api_keys` (plural) in `.security.yml` for models and web tools (except GLMSearch/BaiduSearch)
 - Check that the array format is correct in YAML (proper indentation with dashes)
-- Remember: Models, Brave, Tavily, Perplexity, Kagi MUST use `api_keys` (array format)
+- Remember: Models, Brave, Tavily, Perplexity, Kagi, Exa MUST use `api_keys` (array format)
 - GLMSearch and BaiduSearch MUST use `api_key` (single string format)
 
 ### Load Balancing/Failover Issues

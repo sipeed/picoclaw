@@ -173,6 +173,43 @@ Kagi API usage may be billed or limited separately from a normal Kagi subscripti
 | `base_url`    | string | -       | Custom Tavily API base URL |
 | `max_results` | int    | 5       | Maximum number of results |
 
+### Exa
+
+[Exa](https://exa.ai) is a semantic web search API. PicoClaw calls `POST /search` with `type: "auto"` and requests
+`contents.highlights`, so each result carries a relevant excerpt of the page.
+
+| Config        | Type     | Default | Description                                    |
+|---------------|----------|---------|------------------------------------------------|
+| `enabled`     | bool     | false   | Enable Exa search                              |
+| `api_key`     | string   | -       | Exa API key                                    |
+| `api_keys`    | string[] | -       | Multiple API keys for rotation (takes priority over `api_key`) |
+| `max_results` | int      | 5       | Maximum number of results                      |
+
+```json
+{
+  "tools": {
+    "web": {
+      "provider": "exa",
+      "exa": {
+        "enabled": true,
+        "max_results": 5
+      }
+    }
+  }
+}
+```
+
+Store Exa API keys in `.security.yml`:
+
+```yaml
+web:
+  exa:
+    api_keys:
+      - "YOUR_EXA_API_KEY"
+```
+
+For Exa, `d`, `w`, `m`, and `y` map to a `startPublishedDate` filter relative to the current time.
+
 ### SearXNG
 
 | Config        | Type   | Default                 | Description               |

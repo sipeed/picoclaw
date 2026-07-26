@@ -341,6 +341,10 @@ func DefaultConfig() *Config {
 					Enabled:    false,
 					MaxResults: 5,
 				},
+				Exa: ExaConfig{
+					Enabled:    false,
+					MaxResults: 5,
+				},
 				Kagi: KagiConfig{
 					Enabled:    false,
 					BaseURL:    "https://kagi.com/api/v1/search",
