@@ -42,6 +42,58 @@ interface ProviderGroup {
   availableCount: number
 }
 
+function sortModelList(models: ModelInfo[], defaultModelName: string) {
+  return [...models].sort((a, b) => {
+    const aDefault = a.model_name === defaultModelName
+    const bDefault = b.model_name === defaultModelName
+    if (aDefault && !bDefault) return -1
+    if (!aDefault && bDefault) return 1
+    if (a.available && !b.available) return -1
+    if (!a.available && b.available) return 1
+    return a.model_name.localeCompare(b.model_name)
+  })
+}
+
+function modelNameAllowedInDefaultChain(
+  modelName: string,
+  models: ModelInfo[],
+) {
+  const matchingModels = models.filter(
+    (model) => model.model_name === modelName,
+  )
+  return (
+    matchingModels.length > 0 &&
+    matchingModels.every(
+      (model) => !model.is_virtual && model.default_model_allowed !== false,
+    )
+  )
+}
+
+function reconcileDefaultChainDraft(
+  defaultModelName: string,
+  fallbackChain: string[],
+  models: ModelInfo[],
+) {
+  const nextDefaultModel = modelNameAllowedInDefaultChain(
+    defaultModelName,
+    models,
+  )
+    ? defaultModelName
+    : ""
+  if (!nextDefaultModel) {
+    return { defaultModelName: "", fallbackChain: [] }
+  }
+
+  return {
+    defaultModelName: nextDefaultModel,
+    fallbackChain: fallbackChain.filter(
+      (modelName) =>
+        modelName !== nextDefaultModel &&
+        modelNameAllowedInDefaultChain(modelName, models),
+    ),
+  }
+}
+
 export function ModelsPage() {
   const { t } = useTranslation()
   const [models, setModels] = useState<ModelInfo[]>([])
@@ -56,9 +108,6 @@ export function ModelsPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [catalogOpen, setCatalogOpen] = useState(false)
   const [defaultChainOpen, setDefaultChainOpen] = useState(false)
-  const [settingDefaultIndex, setSettingDefaultIndex] = useState<number | null>(
-    null,
-  )
   const [defaultModelDraft, setDefaultModelDraft] = useState("")
   const [defaultModelBaseline, setDefaultModelBaseline] = useState("")
   const [fallbackChainDraft, setFallbackChainDraft] = useState<string[]>([])
@@ -67,22 +116,19 @@ export function ModelsPage() {
   )
   const [savingChain, setSavingChain] = useState(false)
   const providerMap = getProviderCatalogMap(providerOptions)
+  const chainDirty =
+    defaultModelDraft !== defaultModelBaseline ||
+    JSON.stringify(fallbackChainDraft) !== JSON.stringify(fallbackChainBaseline)
 
   const fetchModels = useCallback(async () => {
     setLoading(true)
     try {
       const [data, chain] = await Promise.all([getModels(), getDefaultChain()])
-      const sorted = [...data.models].sort((a, b) => {
-        if (a.is_default && !b.is_default) return -1
-        if (!a.is_default && b.is_default) return 1
-        if (a.available && !b.available) return -1
-        if (!a.available && b.available) return 1
-        return a.model_name.localeCompare(b.model_name)
-      })
-      setModels(sorted)
+      const defaultModelName = chain.default_model || ""
+      setModels(sortModelList(data.models, defaultModelName))
       setProviderOptions(data.provider_options || [])
-      setDefaultModelDraft(chain.default_model || "")
-      setDefaultModelBaseline(chain.default_model || "")
+      setDefaultModelDraft(defaultModelName)
+      setDefaultModelBaseline(defaultModelName)
       setFallbackChainDraft(chain.fallback_chain || [])
       setFallbackChainBaseline(chain.fallback_chain || [])
       setFetchError("")
@@ -97,22 +143,72 @@ export function ModelsPage() {
     fetchModels()
   }, [fetchModels])
 
-  const handleSetDefault = async (model: ModelInfo) => {
+  const refreshModels = useCallback(
+    async (
+      defaultModelName = defaultModelDraft,
+      fallbackChain = fallbackChainDraft,
+    ) => {
+      try {
+        const data = await getModels()
+        const reconciled = reconcileDefaultChainDraft(
+          defaultModelName,
+          fallbackChain,
+          data.models,
+        )
+        setModels(sortModelList(data.models, reconciled.defaultModelName))
+        setProviderOptions(data.provider_options || [])
+        setDefaultModelDraft(reconciled.defaultModelName)
+        setFallbackChainDraft(reconciled.fallbackChain)
+        setFetchError("")
+      } catch (e) {
+        setFetchError(e instanceof Error ? e.message : t("models.loadError"))
+      }
+    },
+    [defaultModelDraft, fallbackChainDraft, t],
+  )
+
+  const refreshAfterModelChange = useCallback(async () => {
+    if (chainDirty) {
+      await refreshModels()
+      return
+    }
+
+    try {
+      const [data, chain] = await Promise.all([getModels(), getDefaultChain()])
+      const defaultModelName = chain.default_model || ""
+      setModels(sortModelList(data.models, defaultModelName))
+      setProviderOptions(data.provider_options || [])
+      setDefaultModelDraft(defaultModelName)
+      setDefaultModelBaseline(defaultModelName)
+      setFallbackChainDraft(chain.fallback_chain || [])
+      setFallbackChainBaseline(chain.fallback_chain || [])
+      setFetchError("")
+    } catch (e) {
+      setFetchError(e instanceof Error ? e.message : t("models.loadError"))
+    }
+  }, [chainDirty, refreshModels, t])
+
+  const handleSetDefault = (model: ModelInfo) => {
+    if (
+      !model.available ||
+      !modelNameAllowedInDefaultChain(model.model_name, models)
+    ) {
+      return
+    }
     if (defaultModelDraft === model.model_name) return
-    setSettingDefaultIndex(model.index)
     setDefaultModelDraft(model.model_name)
+    setModels((prev) => sortModelList(prev, model.model_name))
     setFallbackChainDraft((prev) =>
       prev.filter((item) => item !== model.model_name),
     )
-    setTimeout(() => {
-      setSettingDefaultIndex((current) =>
-        current === model.index ? null : current,
-      )
-    }, 150)
   }
 
   const handleToggleFallback = (model: ModelInfo) => {
-    if (model.model_name === defaultModelDraft) {
+    if (
+      model.model_name === defaultModelDraft ||
+      !model.available ||
+      !modelNameAllowedInDefaultChain(model.model_name, models)
+    ) {
       return
     }
     setFallbackChainDraft((prev) =>
@@ -144,8 +240,10 @@ export function ModelsPage() {
         fallback_chain: fallbackChainDraft,
       })
       setDefaultModelBaseline(saved.default_model || "")
+      setDefaultModelDraft(saved.default_model || "")
       setFallbackChainBaseline(saved.fallback_chain || [])
-      await fetchModels()
+      setFallbackChainDraft(saved.fallback_chain || [])
+      await refreshModels(saved.default_model || "", saved.fallback_chain || [])
       const gateway = await refreshGatewayState({ force: true })
       showSaveSuccessOrRestartToast(
         t,
@@ -162,6 +260,7 @@ export function ModelsPage() {
 
   const handleResetChain = () => {
     setDefaultModelDraft(defaultModelBaseline)
+    setModels((prev) => sortModelList(prev, defaultModelBaseline))
     setFallbackChainDraft(fallbackChainBaseline)
   }
 
@@ -201,7 +300,9 @@ export function ModelsPage() {
         key,
         provider: group.provider,
         models: group.models,
-        hasDefault: group.models.some((model) => model.is_default),
+        hasDefault: group.models.some(
+          (model) => model.model_name === defaultModelDraft,
+        ),
         availableCount,
       }
     })
@@ -228,10 +329,13 @@ export function ModelsPage() {
   const fallbackModels = fallbackChainDraft
     .map((modelName) => models.find((model) => model.model_name === modelName))
     .filter((model): model is ModelInfo => model != null)
-  const chainDirty =
-    defaultModelDraft !== defaultModelBaseline ||
-    JSON.stringify(fallbackChainDraft) !== JSON.stringify(fallbackChainBaseline)
-
+  const defaultChainAllowedModelNames = new Set(
+    models
+      .filter((model) =>
+        modelNameAllowedInDefaultChain(model.model_name, models),
+      )
+      .map((model) => model.model_name),
+  )
   return (
     <div className="flex h-full flex-col">
       <PageHeader title={t("navigation.models")}>
@@ -346,9 +450,9 @@ export function ModelsPage() {
                 onSetDefault={handleSetDefault}
                 onToggleFallback={handleToggleFallback}
                 onDelete={setDeletingModel}
-                settingDefaultIndex={settingDefaultIndex}
                 fallbackChain={fallbackChainDraft}
                 defaultModelName={defaultModelDraft}
+                defaultChainAllowedModelNames={defaultChainAllowedModelNames}
               />
             ))}
           </div>
@@ -359,28 +463,54 @@ export function ModelsPage() {
         model={editingModel}
         open={editingModel !== null}
         onClose={() => setEditingModel(null)}
-        onSaved={fetchModels}
+        onSaved={() => {
+          void refreshAfterModelChange()
+        }}
         providerOptions={providerOptions}
       />
 
       <AddModelSheet
         open={addOpen}
         onClose={() => setAddOpen(false)}
-        onSaved={fetchModels}
+        onSaved={() => {
+          void refreshAfterModelChange()
+        }}
         existingModelNames={models.map((model) => model.model_name)}
         providerOptions={providerOptions}
       />
 
       <DeleteModelDialog
         model={deletingModel}
+        isDefaultModel={deletingModel?.model_name === defaultModelDraft}
         onClose={() => setDeletingModel(null)}
-        onDeleted={fetchModels}
+        onDeleted={() => {
+          if (!chainDirty) {
+            void refreshAfterModelChange()
+            return
+          }
+
+          const deletedModelName = deletingModel?.model_name
+          const defaultModelName =
+            deletedModelName && defaultModelDraft === deletedModelName
+              ? ""
+              : defaultModelDraft
+          const fallbackChain = deletedModelName
+            ? fallbackChainDraft.filter((item) => item !== deletedModelName)
+            : fallbackChainDraft
+          if (deletedModelName) {
+            setDefaultModelDraft(defaultModelName)
+            setFallbackChainDraft(fallbackChain)
+          }
+          void refreshModels(defaultModelName, fallbackChain)
+        }}
       />
 
       <CatalogDialog
         open={catalogOpen}
         onClose={() => setCatalogOpen(false)}
-        onModelAdded={fetchModels}
+        onModelAdded={() => {
+          void refreshAfterModelChange()
+        }}
         providerOptions={providerOptions}
       />
 

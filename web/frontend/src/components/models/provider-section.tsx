@@ -14,9 +14,9 @@ interface ProviderSectionProps {
   onSetDefault: (model: ModelInfo) => void
   onToggleFallback: (model: ModelInfo) => void
   onDelete: (model: ModelInfo) => void
-  settingDefaultIndex: number | null
   fallbackChain: string[]
   defaultModelName: string
+  defaultChainAllowedModelNames: Set<string>
 }
 
 export function ProviderSection({
@@ -26,9 +26,9 @@ export function ProviderSection({
   onSetDefault,
   onToggleFallback,
   onDelete,
-  settingDefaultIndex,
   fallbackChain,
   defaultModelName,
+  defaultChainAllowedModelNames,
 }: ProviderSectionProps) {
   const [open, setOpen] = useState(true)
 
@@ -68,9 +68,11 @@ export function ProviderSection({
               onSetDefault={onSetDefault}
               onToggleFallback={onToggleFallback}
               onDelete={onDelete}
-              settingDefault={settingDefaultIndex === model.index}
               inFallbackChain={fallbackChain.includes(model.model_name)}
-              isDraftDefault={defaultModelName === model.model_name}
+              isDefault={defaultModelName === model.model_name}
+              defaultChainAllowed={defaultChainAllowedModelNames.has(
+                model.model_name,
+              )}
             />
           ))}
         </div>

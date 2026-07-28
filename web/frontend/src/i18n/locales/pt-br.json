@@ -253,6 +253,8 @@
     "action": {
       "edit": "Editar API Key",
       "setDefault": "Definir como padrão",
+      "addToFallback": "Adicionar à cadeia de fallback",
+      "removeFromFallback": "Remover da cadeia de fallback",
       "delete": "Excluir modelo",
       "setDefaultDisabled": {
         "setting": "Definindo como padrão...",
@@ -261,9 +263,32 @@
         "isVirtual": "Não é possível definir um modelo virtual como padrão",
         "unsupportedProvider": "Este provedor não pode ser usado como modelo de chat padrão."
       },
+      "addToFallbackDisabled": {
+        "isDefault": "O modelo padrão não pode ser adicionado à cadeia de fallback"
+      },
       "deleteDisabled": {
         "isDefault": "Não é possível excluir o modelo padrão"
       }
+    },
+    "defaultChain": {
+      "button": "Cadeia de Fallback",
+      "title": "Modelo padrão e cadeia de fallback",
+      "manage": "Gerenciar cadeia",
+      "summary_one": "{{model}} com {{count}} fallback",
+      "summary_other": "{{model}} com {{count}} fallbacks",
+      "noDefault": "Nenhum modelo padrão selecionado ainda.",
+      "dialogTitle": "Editar cadeia de fallback",
+      "dialogDescription": "Revise e reordene os modelos de fallback usados após falha do modelo padrão.",
+      "defaultModel": "Modelo padrão",
+      "fallbackChain": "Cadeia de fallback",
+      "empty": "Nenhum modelo de fallback adicionado ainda. Use os cartões de modelo para adicionar backups.",
+      "moveTop": "Mover para o topo",
+      "moveUp": "Mover para cima",
+      "moveDown": "Mover para baixo",
+      "moveBottom": "Mover para o fim",
+      "remove": "Remover da cadeia",
+      "saveSuccess": "Cadeia de modelo padrão salva.",
+      "unsaved": "O modelo padrão ou a cadeia de fallback foi alterado. Salve para aplicar a cadeia atualizada."
     },
     "defaultOnSave": {
       "label": "Modelo Padrão",

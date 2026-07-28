@@ -504,31 +504,55 @@ func computeModelStreamingSignatures(cfg *config.Config) []string {
 	if defaultProvider == "" {
 		defaultProvider = "openai"
 	}
-	names := []string{strings.TrimSpace(cfg.Agents.Defaults.GetModelName())}
-	names = append(names, cfg.Agents.Defaults.ModelFallbacks...)
-	if cfg.Agents.Defaults.Routing != nil {
-		names = append(names, cfg.Agents.Defaults.Routing.LightModel)
+	type streamingRef struct {
+		scope string
+		name  string
 	}
-	for _, agent := range cfg.Agents.List {
+
+	refs := []streamingRef{{
+		scope: "defaults.primary",
+		name:  strings.TrimSpace(cfg.Agents.Defaults.GetModelName()),
+	}}
+	for i, name := range cfg.Agents.Defaults.ModelFallbacks {
+		refs = append(refs, streamingRef{
+			scope: "defaults.fallback:" + strconv.Itoa(i),
+			name:  name,
+		})
+	}
+	if cfg.Agents.Defaults.Routing != nil {
+		refs = append(refs, streamingRef{
+			scope: "defaults.routing.light",
+			name:  cfg.Agents.Defaults.Routing.LightModel,
+		})
+	}
+	for agentIndex, agent := range cfg.Agents.List {
 		if agent.Model == nil {
 			continue
 		}
-		names = append(names, agent.Model.Primary)
-		names = append(names, agent.Model.Fallbacks...)
+		refs = append(refs, streamingRef{
+			scope: "agent:" + strconv.Itoa(agentIndex) + ".primary",
+			name:  agent.Model.Primary,
+		})
+		for i, name := range agent.Model.Fallbacks {
+			refs = append(refs, streamingRef{
+				scope: "agent:" + strconv.Itoa(agentIndex) + ".fallback:" + strconv.Itoa(i),
+				name:  name,
+			})
+		}
 	}
 
 	seenEntries := make(map[string]bool)
-	signatures := make([]string, 0, len(names))
-	for position, name := range names {
-		name = strings.TrimSpace(name)
-		if name == "" {
+	signatures := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		ref.name = strings.TrimSpace(ref.name)
+		if ref.name == "" {
 			continue
 		}
-		for _, match := range modelConfigsMatchingSignatureRef(cfg.ModelList, name, defaultProvider) {
+		for _, match := range modelConfigsMatchingSignatureRef(cfg.ModelList, ref.name, defaultProvider) {
 			mc := match.model
 			entry := strings.Join([]string{
-				strconv.Itoa(position),
-				name,
+				ref.scope,
+				ref.name,
 				strconv.Itoa(match.index),
 				strings.TrimSpace(mc.Provider),
 				strings.TrimSpace(mc.Model),

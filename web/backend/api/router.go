@@ -20,14 +20,16 @@ type Handler struct {
 	serverAllowLocalhostBypass bool
 	serverTrustedProxyCIDRs    []string
 	debug                      bool
-	configMu                   sync.Mutex
-	oauthMu                    sync.Mutex
-	oauthFlows                 map[string]*oauthFlow
-	oauthState                 map[string]string
-	weixinMu                   sync.Mutex
-	weixinFlows                map[string]*weixinFlow
-	wecomMu                    sync.Mutex
-	wecomFlows                 map[string]*wecomFlow
+	// Serializes model-related config writes. Other config endpoints still
+	// coordinate their own load-modify-save cycles.
+	configMu    sync.Mutex
+	oauthMu     sync.Mutex
+	oauthFlows  map[string]*oauthFlow
+	oauthState  map[string]string
+	weixinMu    sync.Mutex
+	weixinFlows map[string]*weixinFlow
+	wecomMu     sync.Mutex
+	wecomFlows  map[string]*wecomFlow
 }
 
 // NewHandler creates an instance of the API handler.

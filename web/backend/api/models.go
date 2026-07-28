@@ -70,6 +70,11 @@ type defaultChainResponse struct {
 	FallbackChain []string `json:"fallback_chain"`
 }
 
+type defaultChainRequest struct {
+	DefaultModel  string   `json:"default_model"`
+	FallbackChain []string `json:"fallback_chain"`
+}
+
 func normalizeStoredModelConfig(mc *config.ModelConfig) bool {
 	if mc == nil {
 		return false
@@ -285,6 +290,27 @@ func modelConfigsByName(cfg *config.Config) map[string][]*config.ModelConfig {
 	return models
 }
 
+func modelConfigsByNameExceptIndex(
+	cfg *config.Config,
+	modelName string,
+	exceptIndex int,
+) []*config.ModelConfig {
+	modelName = strings.TrimSpace(modelName)
+	if cfg == nil || modelName == "" {
+		return nil
+	}
+	models := make([]*config.ModelConfig, 0, 1)
+	for i, model := range cfg.ModelList {
+		if i == exceptIndex || model == nil {
+			continue
+		}
+		if strings.TrimSpace(model.ModelName) == modelName {
+			models = append(models, model)
+		}
+	}
+	return models
+}
+
 func validateDefaultChainModelSet(
 	modelName string,
 	models []*config.ModelConfig,
@@ -347,6 +373,41 @@ func validateDefaultModelChain(
 	}
 
 	return validated, nil
+}
+
+func normalizeDefaultChainReferences(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+
+	defaultModel := strings.TrimSpace(cfg.Agents.Defaults.ModelName)
+	fallbacks := dedupeModelNameList(trimModelNameList(cfg.Agents.Defaults.ModelFallbacks))
+	modelsByName := modelConfigsByName(cfg)
+
+	if defaultModel != "" {
+		if err := validateDefaultChainModelSet(defaultModel, modelsByName[defaultModel], true); err != nil {
+			defaultModel = ""
+		}
+	}
+	if defaultModel == "" {
+		cfg.Agents.Defaults.ModelName = ""
+		cfg.Agents.Defaults.ModelFallbacks = nil
+		return
+	}
+
+	validated := make([]string, 0, len(fallbacks))
+	for _, fallback := range fallbacks {
+		if fallback == defaultModel {
+			continue
+		}
+		if err := validateDefaultChainModelSet(fallback, modelsByName[fallback], false); err != nil {
+			continue
+		}
+		validated = append(validated, fallback)
+	}
+
+	cfg.Agents.Defaults.ModelName = defaultModel
+	cfg.Agents.Defaults.ModelFallbacks = validated
 }
 
 // handleListModels returns all model_list entries with masked API keys.
@@ -610,33 +671,23 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	}
 	newModelName := strings.TrimSpace(mc.ModelConfig.ModelName)
 	if oldModelName != "" && newModelName != "" && oldModelName != newModelName {
+		remainingOldNameModels := modelConfigsByNameExceptIndex(cfg, oldModelName, idx)
 		if strings.TrimSpace(cfg.Agents.Defaults.ModelName) == oldModelName {
-			cfg.Agents.Defaults.ModelName = newModelName
+			if err := validateDefaultChainModelSet(oldModelName, remainingOldNameModels, true); err != nil {
+				cfg.Agents.Defaults.ModelName = newModelName
+			}
 		}
-		cfg.Agents.Defaults.ModelFallbacks = replaceModelName(
-			cfg.Agents.Defaults.ModelFallbacks,
-			oldModelName,
-			newModelName,
-		)
+		if err := validateDefaultChainModelSet(oldModelName, remainingOldNameModels, false); err != nil {
+			cfg.Agents.Defaults.ModelFallbacks = replaceModelName(
+				cfg.Agents.Defaults.ModelFallbacks,
+				oldModelName,
+				newModelName,
+			)
+		}
 	}
-	if strings.TrimSpace(cfg.Agents.Defaults.ModelName) == newModelName &&
-		!defaultModelAllowedForModelConfig(&mc.ModelConfig) {
-		// Allow users to recover from legacy/invalid defaults by saving the model
-		// and clearing the default chat model reference in the same write.
-		cfg.Agents.Defaults.ModelName = ""
-	}
-	if !defaultModelAllowedForModelConfig(&mc.ModelConfig) || mc.ModelConfig.IsVirtual() {
-		cfg.Agents.Defaults.ModelFallbacks = removeModelName(
-			cfg.Agents.Defaults.ModelFallbacks,
-			newModelName,
-		)
-	}
-	cfg.Agents.Defaults.ModelFallbacks = dedupeModelNameList(trimModelNameList(
-		cfg.Agents.Defaults.ModelFallbacks,
-	))
-
 	cfg.ModelList[idx] = &mc.ModelConfig
 	normalizeStoredModelProviders(cfg)
+	normalizeDefaultChainReferences(cfg)
 
 	logger.Debugf("update model config: %#v", mc.ModelConfig)
 
@@ -673,18 +724,24 @@ func (h *Handler) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deletedModelName := cfg.ModelList[idx].ModelName
+	deletedModelName := strings.TrimSpace(cfg.ModelList[idx].ModelName)
 
 	cfg.ModelList = append(cfg.ModelList[:idx], cfg.ModelList[idx+1:]...)
 
-	// If the deleted model was the default, clear it.
-	if cfg.Agents.Defaults.ModelName == deletedModelName {
-		cfg.Agents.Defaults.ModelName = ""
+	if deletedModelName != "" {
+		remainingModels := modelConfigsByName(cfg)[deletedModelName]
+		if strings.TrimSpace(cfg.Agents.Defaults.ModelName) == deletedModelName {
+			if err := validateDefaultChainModelSet(deletedModelName, remainingModels, true); err != nil {
+				cfg.Agents.Defaults.ModelName = ""
+			}
+		}
+		if err := validateDefaultChainModelSet(deletedModelName, remainingModels, false); err != nil {
+			cfg.Agents.Defaults.ModelFallbacks = removeModelName(
+				cfg.Agents.Defaults.ModelFallbacks,
+				deletedModelName,
+			)
+		}
 	}
-	cfg.Agents.Defaults.ModelFallbacks = removeModelName(
-		cfg.Agents.Defaults.ModelFallbacks,
-		deletedModelName,
-	)
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
@@ -746,7 +803,8 @@ func (h *Handler) handleSetDefaultModel(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if req.ModelName == "" {
+	modelName := strings.TrimSpace(req.ModelName)
+	if modelName == "" {
 		http.Error(w, "model_name is required", http.StatusBadRequest)
 		return
 	}
@@ -762,8 +820,8 @@ func (h *Handler) handleSetDefaultModel(w http.ResponseWriter, r *http.Request) 
 
 	// Verify the model_name exists in model_list and is not a virtual model
 	if err := validateDefaultChainModelSet(
-		req.ModelName,
-		modelConfigsByName(cfg)[req.ModelName],
+		modelName,
+		modelConfigsByName(cfg)[modelName],
 		true,
 	); err != nil {
 		status := http.StatusBadRequest
@@ -774,7 +832,8 @@ func (h *Handler) handleSetDefaultModel(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	cfg.Agents.Defaults.ModelName = req.ModelName
+	cfg.Agents.Defaults.ModelName = modelName
+	cfg.Agents.Defaults.ModelFallbacks = removeModelName(cfg.Agents.Defaults.ModelFallbacks, modelName)
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
@@ -784,7 +843,7 @@ func (h *Handler) handleSetDefaultModel(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":        "ok",
-		"default_model": req.ModelName,
+		"default_model": modelName,
 	})
 }
 
@@ -799,7 +858,7 @@ func (h *Handler) handleUpdateDefaultChain(w http.ResponseWriter, r *http.Reques
 	}
 	defer r.Body.Close()
 
-	var req defaultChainResponse
+	var req defaultChainRequest
 	if err = json.Unmarshal(body, &req); err != nil {
 		http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
 		return

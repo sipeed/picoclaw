@@ -16,12 +16,14 @@ import {
 
 interface DeleteModelDialogProps {
   model: ModelInfo | null
+  isDefaultModel: boolean
   onClose: () => void
   onDeleted: () => void
 }
 
 export function DeleteModelDialog({
   model,
+  isDefaultModel,
   onClose,
   onDeleted,
 }: DeleteModelDialogProps) {
@@ -30,7 +32,7 @@ export function DeleteModelDialog({
 
   const handleConfirm = async () => {
     if (!model) return
-    if (model.is_default) {
+    if (isDefaultModel) {
       onClose()
       return
     }
@@ -62,7 +64,7 @@ export function DeleteModelDialog({
           <AlertDialogAction
             variant="destructive"
             onClick={handleConfirm}
-            disabled={deleting}
+            disabled={deleting || isDefaultModel}
           >
             {deleting && <IconLoader2 className="size-4 animate-spin" />}
             {t("models.delete.confirm")}

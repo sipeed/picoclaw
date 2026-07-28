@@ -251,6 +251,8 @@
     "action": {
       "edit": "Upravit API klíč",
       "setDefault": "Nastavit jako výchozí",
+      "addToFallback": "Přidat do fallback řetězce",
+      "removeFromFallback": "Odebrat z fallback řetězce",
       "delete": "Smazat model",
       "setDefaultDisabled": {
         "setting": "Nastavuji jako výchozí...",
@@ -259,9 +261,32 @@
         "isVirtual": "Virtuální model nelze nastavit jako výchozí",
         "unsupportedProvider": "Tento poskytovatel podporuje pouze ASR a nemůže být výchozím modelem chatu."
       },
+      "addToFallbackDisabled": {
+        "isDefault": "Výchozí model nelze přidat do fallback řetězce"
+      },
       "deleteDisabled": {
         "isDefault": "Výchozí model nelze smazat"
       }
+    },
+    "defaultChain": {
+      "button": "Fallback řetězec",
+      "title": "Výchozí model a fallback řetězec",
+      "manage": "Spravovat řetězec",
+      "summary_one": "{{model}} s {{count}} fallbackem",
+      "summary_other": "{{model}} s {{count}} fallbacky",
+      "noDefault": "Zatím není vybrán žádný výchozí model.",
+      "dialogTitle": "Upravit fallback řetězec",
+      "dialogDescription": "Zkontrolujte a změňte pořadí fallback modelů použitých po selhání výchozího modelu.",
+      "defaultModel": "Výchozí model",
+      "fallbackChain": "Fallback řetězec",
+      "empty": "Zatím nebyly přidány žádné fallback modely. Záložní modely přidejte z karet modelů.",
+      "moveTop": "Přesunout nahoru",
+      "moveUp": "Posunout výš",
+      "moveDown": "Posunout níž",
+      "moveBottom": "Přesunout dolů",
+      "remove": "Odebrat z řetězce",
+      "saveSuccess": "Řetězec výchozího modelu uložen.",
+      "unsaved": "Výchozí model nebo fallback řetězec se změnil. Uložte změny pro použití aktualizovaného řetězce."
     },
     "defaultOnSave": {
       "label": "Výchozí model",
