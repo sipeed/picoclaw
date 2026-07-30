@@ -2,6 +2,7 @@ package seahorse
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -140,5 +141,30 @@ func TestSearchMessagesFindsPartBasedMessages(t *testing.T) {
 	}
 	if len(results2) == 0 {
 		t.Error("SearchMessages: 'TODO fix' not found — tool_result messages are invisible to search")
+	}
+}
+
+func TestPartsToReadableContentAvoidsInternalToolProtocol(t *testing.T) {
+	content := partsToReadableContent([]MessagePart{
+		{
+			Type:      "tool_use",
+			Name:      "exec",
+			Arguments: `{"command":"find /var -name '*.log'"}`,
+		},
+		{
+			Type: "tool_result",
+			Text: "scan complete",
+		},
+	})
+
+	for _, marker := range []string{"[tool_use", "[tool_user", "[tool_result"} {
+		if strings.Contains(strings.ToLower(content), marker) {
+			t.Fatalf("partsToReadableContent() leaked internal marker %q in %q", marker, content)
+		}
+	}
+	for _, want := range []string{"exec", "find /var", "scan complete"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("partsToReadableContent() = %q, want searchable text %q", content, want)
+		}
 	}
 }

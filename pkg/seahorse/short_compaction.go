@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
@@ -747,16 +746,11 @@ func (e *CompactionEngine) runCondensedLoop(ctx context.Context, convID int64) {
 func formatMessagesForSummary(messages []Message) string {
 	var result string
 	for _, m := range messages {
-		// Skip tool-only messages: tool calls and tool results are mechanical,
-		// not conversational content. Including them (even via partsToReadableContent)
-		// causes LLMs to mimic the format in their own output, leaking mock tool-call
-		// text to users. Only user/assistant messages with actual text content belong
-		// in summaries.
-		content := strings.TrimSpace(m.Content)
-		if content == "" {
-			continue
-		}
 		ts := m.CreatedAt.Format("2006-01-02 15:04 MST")
+		content := m.Content
+		if content == "" && len(m.Parts) > 0 {
+			content = partsToReadableContent(m.Parts)
+		}
 		result += fmt.Sprintf("[%s]\n%s\n\n", ts, content)
 	}
 	return result
@@ -855,9 +849,9 @@ Output requirements:
 func truncateSummary(messages []Message) string {
 	content := ""
 	for _, m := range messages {
-		c := strings.TrimSpace(m.Content)
-		if c == "" {
-			continue // skip tool-only messages; see formatMessagesForSummary
+		c := m.Content
+		if c == "" && len(m.Parts) > 0 {
+			c = partsToReadableContent(m.Parts)
 		}
 		content += c + "\n"
 	}

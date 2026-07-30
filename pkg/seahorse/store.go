@@ -224,9 +224,9 @@ func partsToReadableContent(parts []MessagePart) string {
 		case "text":
 			b.WriteString(p.Text)
 		case "tool_use":
-			fmt.Fprintf(&b, "🔧 %s", p.Name)
+			fmt.Fprintf(&b, "Tool call: %s\nArguments: %s", p.Name, p.Arguments)
 		case "tool_result":
-			fmt.Fprintf(&b, "📋 %s", p.Text)
+			fmt.Fprintf(&b, "Tool result: %s", p.Text)
 		case "media":
 			fmt.Fprintf(&b, "[media: %s (%s)]", p.MediaURI, p.MimeType)
 		default:
