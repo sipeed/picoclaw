@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -70,12 +69,119 @@ func outboundTurnMetadata(
 	return agentID, sessionKey, outboundScopeFromSessionScope(scope)
 }
 
-// stripToolUseText removes [tool_use: ...] patterns that LLMs may regurgitate
-// after seeing them in seahorse FTS5 / summary contexts.
+var toolProtocolMarkers = [...]string{
+	"[tool_use",
+	"[tool_user",
+	"[tool_result",
+}
+
+// findToolProtocolMarker returns the next internal tool-protocol marker.
+// Providers occasionally duplicate a native tool call in assistant content as
+// text. Searching explicitly keeps ordinary square-bracketed text untouched.
+func findToolProtocolMarker(content string) int {
+	lower := strings.ToLower(content)
+	next := -1
+	for _, marker := range toolProtocolMarkers {
+		if idx := strings.Index(lower, marker); idx >= 0 && (next < 0 || idx < next) {
+			next = idx
+		}
+	}
+	return next
+}
+
+// toolProtocolBlockEnd finds the closing bracket for an internal tool block.
+// It understands quoted strings and nested arrays, so JSON arguments containing
+// braces, brackets, or escaped quotes cannot prematurely terminate the scan.
+func toolProtocolBlockEnd(content string) int {
+	if content == "" || content[0] != '[' {
+		return -1
+	}
+
+	depth := 0
+	inString := false
+	escaped := false
+	for i := 0; i < len(content); i++ {
+		ch := content[i]
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			switch ch {
+			case '\\':
+				escaped = true
+			case '"':
+				inString = false
+			}
+			continue
+		}
+
+		switch ch {
+		case '"':
+			inString = true
+		case '[':
+			depth++
+		case ']':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return -1
+}
+
+// stripToolUseText removes internal tool protocol syntax that must never reach
+// users or conversation history. It accepts complete blocks, nested JSON, old
+// tool_user variants, tool results, and truncated blocks.
 func stripToolUseText(content string) string {
-	// Match "[tool_use: name, args: {...}]" variants
-	re := regexp.MustCompile(`\[tool_use:\s*\w+,\s*args:\s*\{[^}]*}\]?\]?\s*`)
-	return strings.TrimSpace(re.ReplaceAllString(content, ""))
+	var cleaned strings.Builder
+	remaining := content
+
+	for {
+		start := findToolProtocolMarker(remaining)
+		if start < 0 {
+			cleaned.WriteString(remaining)
+			break
+		}
+		cleaned.WriteString(remaining[:start])
+
+		end := toolProtocolBlockEnd(remaining[start:])
+		if end >= 0 {
+			remaining = remaining[start+end:]
+			continue
+		}
+
+		// A truncated provider response has no closing bracket. Drop the rest
+		// of that line, but preserve any subsequent human-readable answer.
+		if newline := strings.IndexByte(remaining[start:], '\n'); newline >= 0 {
+			remaining = remaining[start+newline+1:]
+			continue
+		}
+		break
+	}
+
+	return strings.TrimSpace(cleaned.String())
+}
+
+// sanitizeLLMResponseToolProtocol removes textual copies of native tool calls
+// at the provider boundary, before they can be published, persisted, compacted,
+// or reused as tool feedback.
+func sanitizeLLMResponseToolProtocol(response *providers.LLMResponse) {
+	if response == nil {
+		return
+	}
+	response.Content = stripToolUseText(response.Content)
+	response.Reasoning = stripToolUseText(response.Reasoning)
+	response.ReasoningContent = stripToolUseText(response.ReasoningContent)
+	for i := range response.ToolCalls {
+		if response.ToolCalls[i].ExtraContent == nil {
+			continue
+		}
+		response.ToolCalls[i].ExtraContent.ToolFeedbackExplanation = stripToolUseText(
+			response.ToolCalls[i].ExtraContent.ToolFeedbackExplanation,
+		)
+	}
 }
 
 func outboundMessageForTurn(ts *turnState, content string) bus.OutboundMessage {
