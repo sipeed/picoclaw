@@ -257,7 +257,6 @@
       "removeFromFallback": "Remover da cadeia de fallback",
       "delete": "Excluir modelo",
       "setDefaultDisabled": {
-        "setting": "Definindo como padrão...",
         "unavailable": "Não é possível definir um modelo indisponível como padrão",
         "isDefault": "Já é o modelo padrão",
         "isVirtual": "Não é possível definir um modelo virtual como padrão",

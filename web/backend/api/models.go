@@ -540,6 +540,7 @@ func (h *Handler) handleAddModel(w http.ResponseWriter, r *http.Request) {
 
 	cfg.ModelList = append(cfg.ModelList, &mc.ModelConfig)
 	normalizeStoredModelProviders(cfg)
+	normalizeDefaultChainReferences(cfg)
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
@@ -742,6 +743,7 @@ func (h *Handler) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
 			)
 		}
 	}
+	normalizeDefaultChainReferences(cfg)
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
@@ -834,6 +836,7 @@ func (h *Handler) handleSetDefaultModel(w http.ResponseWriter, r *http.Request) 
 
 	cfg.Agents.Defaults.ModelName = modelName
 	cfg.Agents.Defaults.ModelFallbacks = removeModelName(cfg.Agents.Defaults.ModelFallbacks, modelName)
+	normalizeDefaultChainReferences(cfg)
 
 	if err := config.SaveConfig(h.configPath, cfg); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)

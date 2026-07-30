@@ -145,6 +145,50 @@ func updateModelAndLoadConfig(
 	return cfg
 }
 
+func deleteModelAndLoadConfig(t *testing.T, configPath string, index int) *config.Config {
+	t.Helper()
+
+	h := NewHandler(configPath)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/models/%d", index), nil)
+	req.SetPathValue("index", fmt.Sprintf("%d", index))
+	h.handleDeleteModel(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	return cfg
+}
+
+func setDefaultModelAndLoadConfig(t *testing.T, configPath string, modelName string) *config.Config {
+	t.Helper()
+
+	h := NewHandler(configPath)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/models/default",
+		bytes.NewBufferString(fmt.Sprintf(`{"model_name":%q}`, modelName)),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	h.handleSetDefaultModel(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	return cfg
+}
+
 func assertDefaultChain(
 	t *testing.T,
 	cfg *config.Config,
@@ -905,6 +949,29 @@ func TestHandleAddModel_PersistsProvider(t *testing.T) {
 	if added.Model != "z-ai/glm-5.1" {
 		t.Fatalf("model = %q, want %q", added.Model, "z-ai/glm-5.1")
 	}
+}
+
+func TestHandleAddModel_NormalizesDefaultChainWhenDuplicateAliasUnsupported(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	writeModelChainConfig(t, configPath, []*config.ModelConfig{
+		openAIModelConfig("primary"),
+		geminiModelConfig("backup-b"),
+	}, "primary", []string{"backup-b"})
+
+	addModelAndLoadLatest(t, configPath, `{
+		"model_name":"primary",
+		"provider":"elevenlabs",
+		"model":"scribe_v1",
+		"api_key":"sk-elevenlabs"
+	}`)
+
+	updated, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	assertDefaultChain(t, updated, "", nil)
 }
 
 func TestHandleListModels_ReturnsStreamingConfig(t *testing.T) {
@@ -2495,6 +2562,21 @@ func TestHandleSetDefaultModel_RemovesDefaultFromFallbackChain(t *testing.T) {
 	}
 }
 
+func TestHandleSetDefaultModel_NormalizesExistingFallbackChain(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	writeModelChainConfig(t, configPath, []*config.ModelConfig{
+		openAIModelConfig("primary"),
+		geminiModelConfig("backup-b"),
+		elevenLabsModelConfig("audio-only"),
+	}, "primary", []string{"missing", "audio-only", "backup-b", "primary"})
+
+	updated := setDefaultModelAndLoadConfig(t, configPath, "backup-b")
+
+	assertDefaultChain(t, updated, "backup-b", []string{"primary"})
+}
+
 func TestHandleGetDefaultChain(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()
@@ -2730,6 +2812,20 @@ func TestHandleDeleteModel_RemovesDeletedModelFromDefaultChain(t *testing.T) {
 	if len(updated.Agents.Defaults.ModelFallbacks) != 1 || updated.Agents.Defaults.ModelFallbacks[0] != "backup-b" {
 		t.Fatalf("saved fallback_chain = %#v, want [backup-b]", updated.Agents.Defaults.ModelFallbacks)
 	}
+}
+
+func TestHandleDeleteModel_ClearsFallbackChainWhenDefaultDeleted(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	writeModelChainConfig(t, configPath, []*config.ModelConfig{
+		openAIModelConfig("primary"),
+		anthropicModelConfig("backup-a"),
+	}, "primary", []string{"backup-a"})
+
+	updated := deleteModelAndLoadConfig(t, configPath, 0)
+
+	assertDefaultChain(t, updated, "", nil)
 }
 
 func TestHandleDeleteModel_PreservesDefaultChainReferenceWhenAliasStillExists(t *testing.T) {

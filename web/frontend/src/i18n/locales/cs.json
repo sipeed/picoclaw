@@ -255,7 +255,6 @@
       "removeFromFallback": "Odebrat z fallback řetězce",
       "delete": "Smazat model",
       "setDefaultDisabled": {
-        "setting": "Nastavuji jako výchozí...",
         "unavailable": "Nedostupný model nelze nastavit jako výchozí",
         "isDefault": "Již je výchozím modelem",
         "isVirtual": "Virtuální model nelze nastavit jako výchozí",

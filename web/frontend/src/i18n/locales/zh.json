@@ -257,7 +257,6 @@
       "removeFromFallback": "移出回退链",
       "delete": "删除模型",
       "setDefaultDisabled": {
-        "setting": "正在设为默认...",
         "unavailable": "无法将不可用的模型设为默认",
         "isDefault": "该模型已是默认模型",
         "isVirtual": "无法将虚拟模型设为默认",

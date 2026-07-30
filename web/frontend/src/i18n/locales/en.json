@@ -257,7 +257,6 @@
       "removeFromFallback": "Remove from fallback chain",
       "delete": "Delete model",
       "setDefaultDisabled": {
-        "setting": "Setting as default...",
         "unavailable": "Cannot set unavailable model as default",
         "isDefault": "Already the default model",
         "isVirtual": "Cannot set virtual model as default",
