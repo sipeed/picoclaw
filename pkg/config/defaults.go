@@ -162,6 +162,20 @@ func DefaultConfig() *Config {
 				APIBase:   "https://openrouter.ai/api/v1",
 			},
 
+			// OrcaRouter - https://www.orcarouter.ai
+			{
+				ModelName: "orcarouter-auto",
+				Provider:  "orcarouter",
+				Model:     "orcarouter/auto",
+				APIBase:   "https://api.orcarouter.ai/v1",
+			},
+			{
+				ModelName: "orcarouter-gpt-5.4",
+				Provider:  "orcarouter",
+				Model:     "openai/gpt-5.4",
+				APIBase:   "https://api.orcarouter.ai/v1",
+			},
+
 			// NVIDIA - https://build.nvidia.com/
 			{
 				ModelName: "nemotron-4-340b",

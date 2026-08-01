@@ -818,7 +818,11 @@ func normalizeModel(model, apiBase string) string {
 		return model
 	}
 
-	if strings.Contains(strings.ToLower(apiBase), "openrouter.ai") {
+	// Router hosts address upstream models as `vendor/model`, so the segment
+	// before the slash is part of the model id and must not be stripped.
+	lowerAPIBase := strings.ToLower(apiBase)
+	if strings.Contains(lowerAPIBase, "openrouter.ai") ||
+		strings.Contains(lowerAPIBase, "orcarouter.ai") {
 		return model
 	}
 
