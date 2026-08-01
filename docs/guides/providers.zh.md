@@ -13,6 +13,7 @@
 | `zhipu`              | LLM (智谱直连)               | [bigmodel.cn](https://bigmodel.cn)                                   |
 | `volcengine`         | LLM (火山引擎直连)           | [volcengine.com](https://www.volcengine.com/activity/codingplan?utm_campaign=PicoClaw&utm_content=PicoClaw&utm_medium=devrel&utm_source=OWO&utm_term=PicoClaw) |
 | `openrouter`         | LLM (推荐，可访问所有模型)   | [openrouter.ai](https://openrouter.ai)                               |
+| `orcarouter`         | LLM (多厂商路由)             | [orcarouter.ai](https://www.orcarouter.ai)                           |
 | `anthropic`          | LLM (Claude 直连)            | [console.anthropic.com](https://console.anthropic.com)               |
 | `openai`             | LLM (GPT 直连)               | [platform.openai.com](https://platform.openai.com)                   |
 | `venice`             | LLM (Venice AI 直连)         | [venice.ai](https://venice.ai)                                       |
@@ -60,6 +61,7 @@
 | **Ollama**          | `ollama`          | `http://localhost:11434/v1`                         | OpenAI    | 本地（无需密钥）                                                  |
 | **LM Studio**       | `lmstudio`        | `http://localhost:1234/v1`                          | OpenAI    | 可选（本地默认无需密钥）                                          |
 | **OpenRouter**      | `openrouter`      | `https://openrouter.ai/api/v1`                      | OpenAI    | [获取密钥](https://openrouter.ai/keys)                            |
+| **OrcaRouter**      | `orcarouter`      | `https://api.orcarouter.ai/v1`                      | OpenAI    | [获取密钥](https://www.orcarouter.ai)                             |
 | **LiteLLM Proxy**   | `litellm`         | `http://localhost:4000/v1`                          | OpenAI    | 你的 LiteLLM 代理密钥                                             |
 | **VLLM**            | `vllm`            | `http://localhost:8000/v1`                          | OpenAI    | 本地                                                              |
 | **Cerebras**        | `cerebras`        | `https://api.cerebras.ai/v1`                        | OpenAI    | [获取密钥](https://cerebras.ai)                                   |
@@ -149,6 +151,7 @@ PicoClaw 按下面的规则解析 `provider` 和最终发给上游的模型 ID�
 | `"model": "openai/gpt-5.4"` | `openai` | `gpt-5.4` |
 | `"provider": "openrouter", "model": "openai/gpt-5.4"` | `openrouter` | `openai/gpt-5.4` |
 | `"model": "openrouter/openai/gpt-5.4"` | `openrouter` | `openai/gpt-5.4` |
+| `"provider": "orcarouter", "model": "openai/gpt-5.4"` | `orcarouter` | `openai/gpt-5.4` |
 
 #### 语音转录
 

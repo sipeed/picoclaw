@@ -1246,6 +1246,21 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	if got := normalizeModel("openrouter/auto", "https://openrouter.ai/api/v1"); got != "openrouter/auto" {
 		t.Fatalf("normalizeModel(openrouter) = %q, want %q", got, "openrouter/auto")
 	}
+	// OrcaRouter is a router: `vendor/model` ids stay intact, and so do its own
+	// `orcarouter/*` aliases, which are real upstream model ids rather than a
+	// protocol prefix to strip.
+	if got := normalizeModel(
+		"openai/gpt-5.4",
+		"https://api.orcarouter.ai/v1",
+	); got != "openai/gpt-5.4" {
+		t.Fatalf("normalizeModel(orcarouter) = %q, want %q", got, "openai/gpt-5.4")
+	}
+	if got := normalizeModel(
+		"orcarouter/auto",
+		"https://api.orcarouter.ai/v1",
+	); got != "orcarouter/auto" {
+		t.Fatalf("normalizeModel(orcarouter auto) = %q, want %q", got, "orcarouter/auto")
+	}
 	if got := normalizeModel("vivgrid/managed", "https://api.vivgrid.com/v1"); got != "managed" {
 		t.Fatalf("normalizeModel(vivgrid) = %q, want %q", got, "managed")
 	}

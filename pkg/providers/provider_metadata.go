@@ -427,6 +427,23 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		Priority:            44,
 		httpAPI:             true,
 	},
+	"orcarouter": {
+		ID:                  "orcarouter",
+		DisplayName:         "OrcaRouter",
+		Domain:              "orcarouter.ai",
+		DefaultAPIBase:      "https://api.orcarouter.ai/v1",
+		CreateAllowed:       true,
+		DefaultModelAllowed: true,
+		SupportsFetch:       true,
+		Priority:            43.75,
+		CommonModels: []string{
+			"openai/gpt-5.4",
+			"anthropic/claude-opus-4.8",
+			"google/gemini-3.1-pro-preview",
+			"deepseek/deepseek-v4-pro",
+		},
+		httpAPI: true,
+	},
 	"siliconflow": {
 		ID:                  "siliconflow",
 		DisplayName:         "SiliconFlow",

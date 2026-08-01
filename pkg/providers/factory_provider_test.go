@@ -227,6 +227,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"groq", "groq"},
 		{"novita", "novita"},
 		{"openrouter", "openrouter"},
+		{"orcarouter", "orcarouter"},
 		{"cerebras", "cerebras"},
 		{"vivgrid", "vivgrid"},
 		{"siliconflow", "siliconflow"},
@@ -301,6 +302,12 @@ func TestGetDefaultAPIBase_NearAI(t *testing.T) {
 func TestGetDefaultAPIBase_SiliconFlow(t *testing.T) {
 	if got := getDefaultAPIBase("siliconflow"); got != "https://api.siliconflow.cn/v1" {
 		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "siliconflow", got, "https://api.siliconflow.cn/v1")
+	}
+}
+
+func TestGetDefaultAPIBase_OrcaRouter(t *testing.T) {
+	if got := getDefaultAPIBase("orcarouter"); got != "https://api.orcarouter.ai/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "orcarouter", got, "https://api.orcarouter.ai/v1")
 	}
 }
 
@@ -1107,6 +1114,20 @@ func TestModelProviderOptions(t *testing.T) {
 			option.DefaultAPIBase,
 			"https://api.siliconflow.cn/v1",
 		)
+	}
+	if option, ok := seen["orcarouter"]; !ok {
+		t.Fatal("orcarouter option missing")
+	} else {
+		if option.DefaultAPIBase != "https://api.orcarouter.ai/v1" {
+			t.Fatalf(
+				"orcarouter default_api_base = %q, want %q",
+				option.DefaultAPIBase,
+				"https://api.orcarouter.ai/v1",
+			)
+		}
+		if !option.SupportsFetch {
+			t.Fatal("orcarouter should support upstream model listing")
+		}
 	}
 	if option, ok := seen["nearai"]; !ok {
 		t.Fatal("nearai option missing")
