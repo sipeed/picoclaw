@@ -232,6 +232,27 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 				// Re-read exec.messages since ExecuteTools may have updated it
 				// (added tool results/skipped messages) before returning ControlContinue
 				messages = exec.messages
+
+				// Circuit breaker: if the same tool failed with the same error
+				// repeatedly, stop early with a helpful message instead of
+				// spinning silently to max_tool_iterations.
+				if count, tool, errorSummary := ts.repeatedFailureSnapshot(); count >= repeatedFailureThreshold {
+					logger.InfoCF("agent", "Stopping turn: repeated identical tool failure",
+						map[string]any{
+							"agent_id":   ts.agentID,
+							"turn_id":    ts.turnID,
+							"iteration":  iteration,
+							"tool":       tool,
+							"failures":   count,
+							"error":      errorSummary,
+						})
+					finalContent = fmt.Sprintf(repeatedFailureResponse, tool, count, errorSummary)
+					result, finalizeErr := pipeline.Finalize(ctx, turnCtx, ts, exec, turnStatus, finalContent)
+					if finalizeErr != nil {
+						turnStatus = TurnEndStatusError
+					}
+					return result, finalizeErr
+				}
 				continue
 			case ToolControlBreak:
 				// Hard abort: delegate to abortTurn (sets TurnEndStatusAborted)

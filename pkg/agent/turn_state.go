@@ -197,6 +197,13 @@ type turnState struct {
 	toolExecutions    []ToolExecutionRecord
 	turnCtx           *TurnContext
 
+	// Repeated identical failure tracking (circuit breaker). When the same
+	// tool fails with the same error N consecutive times, the loop stops early
+	// instead of spinning to max_tool_iterations with no user feedback.
+	lastFailureTool    string
+	lastFailureError   string
+	consecutiveFailures int
+
 	channel     string
 	chatID      string
 	workspace   string
@@ -453,6 +460,31 @@ func (ts *turnState) recordToolExecution(tool string, success bool, errorSummary
 		ErrorSummary: strings.TrimSpace(errorSummary),
 		SkillNames:   append([]string(nil), skillNames...),
 	})
+
+	// Track consecutive identical failures. Any success (or a different
+	// tool/error) resets the counter.
+	errorSummary = strings.TrimSpace(errorSummary)
+	if !success && errorSummary != "" {
+		if tool == ts.lastFailureTool && errorSummary == ts.lastFailureError {
+			ts.consecutiveFailures++
+		} else {
+			ts.lastFailureTool = tool
+			ts.lastFailureError = errorSummary
+			ts.consecutiveFailures = 1
+		}
+	} else {
+		ts.lastFailureTool = ""
+		ts.lastFailureError = ""
+		ts.consecutiveFailures = 0
+	}
+}
+
+// repeatedFailureSnapshot returns the current consecutive identical failure
+// count along with the tool name and error that produced it.
+func (ts *turnState) repeatedFailureSnapshot() (count int, tool string, errorSummary string) {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+	return ts.consecutiveFailures, ts.lastFailureTool, ts.lastFailureError
 }
 
 func (ts *turnState) toolExecutionsSnapshot() []ToolExecutionRecord {

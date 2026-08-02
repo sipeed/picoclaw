@@ -121,7 +121,13 @@ type continuationTarget struct {
 const (
 	defaultResponse            = "The model returned an empty response. This may indicate a provider error or token limit."
 	toolLimitResponse          = "I've reached `max_tool_iterations` without a final response. Increase `max_tool_iterations` in config.json if this task needs more tool steps."
-	handledToolResponseSummary = "Requested output delivered via tool attachment."
+	// repeatedFailureThreshold is the number of consecutive identical
+	// tool+error failures after which the turn is stopped early with a
+	// user-visible explanation instead of spinning silently to
+	// max_tool_iterations (see issue: unanswered messages).
+	repeatedFailureThreshold     = 3
+	repeatedFailureResponse      = "I kept hitting the same error while using the `%s` tool (%d times in a row):\n\n%s\n\nStopping here instead of retrying the same failing call. If the task needs this tool, fix the underlying problem and try again."
+	handledToolResponseSummary   = "Requested output delivered via tool attachment."
 	sessionKeyAgentPrefix      = "agent:"
 	pendingTurnPrefix          = "pending-"
 	providerReloadGracePeriod  = 30 * time.Second
