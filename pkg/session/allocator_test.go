@@ -119,6 +119,39 @@ func TestAllocateRouteSession_TelegramForumTopicsRemainIsolatedByDefault(t *test
 	}
 }
 
+func TestAllocateRouteSession_TelegramPrivateTopicsRemainIsolatedByDefault(t *testing.T) {
+	first := AllocateRouteSession(AllocationInput{
+		AgentID: "main",
+		Context: bus.InboundContext{
+			Channel:  "telegram",
+			ChatID:   "123456789/42",
+			ChatType: "direct",
+			TopicID:  "42",
+			SenderID: "7",
+		},
+		SessionPolicy: routing.SessionPolicy{
+			Dimensions: []string{"chat"},
+		},
+	})
+	second := AllocateRouteSession(AllocationInput{
+		AgentID: "main",
+		Context: bus.InboundContext{
+			Channel:  "telegram",
+			ChatID:   "123456789/99",
+			ChatType: "direct",
+			TopicID:  "99",
+			SenderID: "7",
+		},
+		SessionPolicy: routing.SessionPolicy{
+			Dimensions: []string{"chat"},
+		},
+	})
+
+	if first.SessionKey == second.SessionKey {
+		t.Fatalf("private topics should not share default session key: %q", first.SessionKey)
+	}
+}
+
 func TestAllocateRouteSession_PicoDirectAliasesIncludeLegacyChatKey(t *testing.T) {
 	allocation := AllocateRouteSession(AllocationInput{
 		AgentID: "main",

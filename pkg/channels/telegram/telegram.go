@@ -1153,13 +1153,10 @@ func (c *TelegramChannel) handleMessages(ctx context.Context, messages []*telego
 		content = c.prependTelegramQuotedReply(content, message.ReplyToMessage)
 	}
 
-	// For forum topics, embed the thread ID as "chatID/threadID" so replies
-	// route to the correct topic and each topic gets its own session.
-	// Only forum groups (IsForum) are handled; regular group reply threads
-	// must share one session per group.
 	compositeChatID := fmt.Sprintf("%d", chatID)
 	threadID := message.MessageThreadID
-	if message.Chat.IsForum && threadID != 0 {
+	isTopic := threadID != 0 && (message.Chat.IsForum || message.IsTopicMessage)
+	if isTopic {
 		compositeChatID = fmt.Sprintf("%d/%d", chatID, threadID)
 	}
 
@@ -1192,7 +1189,7 @@ func (c *TelegramChannel) handleMessages(ctx context.Context, messages []*telego
 		Mentioned: isMentioned,
 		Raw:       metadata,
 	}
-	if message.Chat.IsForum && threadID != 0 {
+	if isTopic {
 		inboundCtx.TopicID = fmt.Sprintf("%d", threadID)
 	}
 	if message.ReplyToMessage != nil {

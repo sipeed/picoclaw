@@ -1014,6 +1014,33 @@ func TestSend_WithForumThreadID(t *testing.T) {
 	assert.Len(t, caller.calls, 1)
 }
 
+func TestSend_WithPrivateTopicThreadID(t *testing.T) {
+	caller := &stubCaller{
+		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
+			return successResponse(t), nil
+		},
+	}
+	ch := newTestChannel(t, caller)
+
+	_, err := ch.Send(context.Background(), bus.OutboundMessage{
+		ChatID:  "123456789/42",
+		Content: "Hello from private topic",
+	})
+
+	require.NoError(t, err)
+	require.Len(t, caller.calls, 1)
+
+	var params struct {
+		ChatID          int64  `json:"chat_id"`
+		MessageThreadID int    `json:"message_thread_id"`
+		Text            string `json:"text"`
+	}
+	require.NoError(t, json.Unmarshal(caller.calls[0].Data.BodyRaw, &params))
+	assert.Equal(t, int64(123456789), params.ChatID)
+	assert.Equal(t, 42, params.MessageThreadID)
+	assert.Equal(t, "Hello from private topic", params.Text)
+}
+
 func TestSend_UsesContextTopicIDWhenChatIDDoesNotIncludeThread(t *testing.T) {
 	caller := &stubCaller{
 		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
@@ -1246,6 +1273,70 @@ func TestHandleMessage_ForumTopic_SetsMetadata(t *testing.T) {
 	assert.Equal(t, "-1001234567890/42", inbound.ChatID)
 	assert.Equal(t, "group", inbound.Context.ChatType)
 	assert.Equal(t, "42", inbound.Context.TopicID)
+}
+
+func TestHandleMessage_PrivateTopic_SetsMetadata(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	ch := &TelegramChannel{
+		BaseChannel: channels.NewBaseChannel("telegram", nil, messageBus, nil),
+		chatIDs:     make(map[string]int64),
+		ctx:         context.Background(),
+	}
+
+	msg := &telego.Message{
+		Text:            "hello from private topic",
+		MessageID:       12,
+		MessageThreadID: 42,
+		IsTopicMessage:  true,
+		Chat: telego.Chat{
+			ID:   123456789,
+			Type: "private",
+		},
+		From: &telego.User{
+			ID:        7,
+			FirstName: "Alice",
+		},
+	}
+
+	err := ch.handleMessage(context.Background(), msg)
+	require.NoError(t, err)
+
+	inbound, ok := <-messageBus.InboundChan()
+	require.True(t, ok)
+	assert.Equal(t, "123456789/42", inbound.ChatID)
+	assert.Equal(t, "direct", inbound.Context.ChatType)
+	assert.Equal(t, "42", inbound.Context.TopicID)
+}
+
+func TestHandleMessage_PrivateChat_NoTopicMetadata(t *testing.T) {
+	messageBus := bus.NewMessageBus()
+	ch := &TelegramChannel{
+		BaseChannel: channels.NewBaseChannel("telegram", nil, messageBus, nil),
+		chatIDs:     make(map[string]int64),
+		ctx:         context.Background(),
+	}
+
+	msg := &telego.Message{
+		Text:      "hello from private chat",
+		MessageID: 13,
+		Chat: telego.Chat{
+			ID:   123456789,
+			Type: "private",
+		},
+		From: &telego.User{
+			ID:        7,
+			FirstName: "Alice",
+		},
+	}
+
+	err := ch.handleMessage(context.Background(), msg)
+	require.NoError(t, err)
+
+	inbound, ok := <-messageBus.InboundChan()
+	require.True(t, ok)
+	assert.Equal(t, "123456789", inbound.ChatID)
+	assert.Equal(t, "direct", inbound.Context.ChatType)
+	assert.Empty(t, inbound.Context.TopicID)
 }
 
 func TestHandleMessage_NoForum_NoThreadMetadata(t *testing.T) {
