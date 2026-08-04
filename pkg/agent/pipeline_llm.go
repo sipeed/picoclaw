@@ -495,11 +495,16 @@ func (p *Pipeline) CallLLM(
 		}
 	}
 
-	// Save finishReason to turnState for SubTurn truncation detection
-	if innerTS := turnStateFromContext(ctx); innerTS != nil {
-		innerTS.SetLastFinishReason(exec.response.FinishReason)
+	// Save finishReason and usage on the turn state. Use ts directly (the
+	// authoritative turn state for this call) rather than a context lookup:
+	// the raw ctx passed to CallLLM is not seeded with turnState (only turnCtx
+	// is), so turnStateFromContext(ctx) returns nil here and silently dropped
+	// both the finish reason and the per-turn token usage. ts is also exactly
+	// what the streaming publisher reads via GetLastUsage at finalize.
+	if ts != nil {
+		ts.SetLastFinishReason(exec.response.FinishReason)
 		if exec.response.Usage != nil {
-			innerTS.SetLastUsage(exec.response.Usage)
+			ts.SetLastUsage(exec.response.Usage)
 		}
 	}
 
