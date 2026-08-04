@@ -29,6 +29,11 @@ type ContextBuilder struct {
 	agentDiscovery func(agentID string) []AgentDescriptor
 	promptRegistry *PromptRegistry
 
+	// dynamicContext controls the precision and placement of the per-request
+	// dynamic block (time / runtime / session / sender). The zero value resolves
+	// to config.DefaultDynamicContext() (minute precision, tail placement).
+	dynamicContext config.EffectiveDynamicContext
+
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
 	// The cache auto-invalidates when workspace source files change (mtime check).
@@ -69,6 +74,24 @@ func (cb *ContextBuilder) WithToolDiscovery(useBM25, useRegex bool) *ContextBuil
 func (cb *ContextBuilder) WithSplitOnMarker(enabled bool) *ContextBuilder {
 	cb.splitOnMarker = enabled
 	return cb
+}
+
+// WithDynamicContext sets the resolved agents.defaults.dynamic_context options.
+func (cb *ContextBuilder) WithDynamicContext(
+	opts config.EffectiveDynamicContext,
+) *ContextBuilder {
+	cb.dynamicContext = opts
+	return cb
+}
+
+// dynamicContextOptions returns the effective dynamic context settings,
+// filling in defaults for a zero-valued (never configured) builder so that
+// directly constructed ContextBuilders behave like configured ones.
+func (cb *ContextBuilder) dynamicContextOptions() config.EffectiveDynamicContext {
+	return config.EffectiveDynamicContext{
+		Time:     cb.dynamicContext.Time.Effective(),
+		Position: cb.dynamicContext.Position.Effective(),
+	}
 }
 
 func (cb *ContextBuilder) WithAgentDiscovery(
@@ -484,6 +507,9 @@ func (cb *ContextBuilder) EstimateSystemTokens(summary string, activeSkills []st
 
 	// Dynamic context is small and varies per request; use a representative estimate.
 	// Actual buildDynamicContext produces ~200-400 chars of time/runtime/session info.
+	// Counted regardless of placement: with position "tail" the block rides on the
+	// current user message instead of the system message, but the tokens are still
+	// sent and still consume the context window.
 	const dynamicContextChars = 300
 
 	totalChars := utf8.RuneCountInString(staticPrompt) + dynamicContextChars
@@ -781,6 +807,12 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 //   - Anthropic: per-block cache_control (ephemeral) on the static SystemParts block
 //   - OpenAI / Codex: prompt_cache_key for prefix-based caching
 //
+// Neither of those mechanisms exists for a local llama.cpp/Ollama backend, where
+// the only caching is byte-prefix matching. Because prefix caching is positional,
+// keeping this block ahead of the history re-prefills the entire conversation once
+// per minute. agents.defaults.dynamic_context.position therefore defaults to
+// "tail", which moves the block after the history — see dynamic_context.go.
+//
 // See: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
 // See: https://platform.openai.com/docs/guides/prompt-caching
 func formatCurrentSenderLine(senderID, senderDisplayName string) string {
@@ -799,14 +831,38 @@ func formatCurrentSenderLine(senderID, senderDisplayName string) string {
 	}
 }
 
+// formatCurrentTime renders the clock at the configured precision. Returns ""
+// when the time section is disabled.
+func formatCurrentTime(now time.Time, precision config.DynamicContextTime) string {
+	switch precision.Effective() {
+	case config.DynamicContextTimeOff:
+		return ""
+	case config.DynamicContextTimeHour:
+		// Literal "00" minutes: the value is stable for a whole hour, so the
+		// rendered block (and every token after it) stays byte-identical.
+		return now.Format("2006-01-02 15:00 (Monday)")
+	default:
+		return now.Format("2006-01-02 15:04 (Monday)")
+	}
+}
+
+// buildDynamicContext emits the per-request block ordered strictly by
+// volatility — least volatile first — so that when the block is kept inside the
+// system prompt (position "system") a clock tick only invalidates the tail of
+// the block rather than the session and sender lines above it.
+//
+//	## Runtime         static for the life of the process
+//	## Current Session per session
+//	## Current Sender  per sender
+//	## Current Time    per minute (or per hour, or omitted)
 func (cb *ContextBuilder) buildDynamicContext(
 	channel, chatID, senderID, senderDisplayName string,
 ) string {
-	now := time.Now().Format("2006-01-02 15:04 (Monday)")
+	opts := cb.dynamicContextOptions()
 	rt := fmt.Sprintf("%s %s, Go %s", runtime.GOOS, runtime.GOARCH, runtime.Version())
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "## Current Time\n%s\n\n## Runtime\n%s", now, rt)
+	fmt.Fprintf(&sb, "## Runtime\n%s", rt)
 
 	if channel != "" && chatID != "" {
 		fmt.Fprintf(&sb, "\n\n## Current Session\nChannel: %s\nChat ID: %s", channel, chatID)
@@ -814,8 +870,31 @@ func (cb *ContextBuilder) buildDynamicContext(
 	if senderLine := formatCurrentSenderLine(senderID, senderDisplayName); senderLine != "" {
 		fmt.Fprintf(&sb, "\n\n## Current Sender\n%s", senderLine)
 	}
+	if now := formatCurrentTime(time.Now(), opts.Time); now != "" {
+		fmt.Fprintf(&sb, "\n\n## Current Time\n%s", now)
+	}
 
 	return sb.String()
+}
+
+// runtimeContextTag wraps the dynamic block when it is placed at the tail, so
+// the model does not read the runtime metadata as part of the user's own text.
+const (
+	runtimeContextOpenTag  = "<runtime_context>"
+	runtimeContextCloseTag = "</runtime_context>"
+)
+
+// wrapTailDynamicContext renders the dynamic block as a tagged preamble to the
+// current user message.
+func wrapTailDynamicContext(dynamicCtx, userMessage string) string {
+	if strings.TrimSpace(dynamicCtx) == "" {
+		return userMessage
+	}
+	wrapped := runtimeContextOpenTag + "\n" + dynamicCtx + "\n" + runtimeContextCloseTag
+	if strings.TrimSpace(userMessage) == "" {
+		return wrapped
+	}
+	return wrapped + "\n\n" + userMessage
 }
 
 func (cb *ContextBuilder) BuildMessages(
@@ -845,9 +924,11 @@ func (cb *ContextBuilder) BuildMessagesFromPrompt(req PromptBuildRequest) []prov
 	// The default static part (identity, bootstrap, skills, memory) is cached
 	// locally to avoid repeated file I/O and string building on every call
 	// (fixes issue #607). Profile-customized static prompts are built on demand.
-	// Dynamic parts (time, session, summary) are appended per request unless the
-	// profile suppresses PicoClaw system context.
-	// Everything is sent as a single system message for provider compatibility:
+	// Dynamic parts (summary, and — when position is "system" — the runtime
+	// block) are appended per request unless the profile suppresses PicoClaw
+	// system context.
+	// All system content is sent as a single system message for provider
+	// compatibility:
 	// - Anthropic adapter extracts messages[0] (Role=="system") and maps its content
 	//   to the top-level "system" parameter in the Messages API request. A single
 	//   contiguous system block makes this extraction straightforward.
@@ -855,7 +936,9 @@ func (cb *ContextBuilder) BuildMessagesFromPrompt(req PromptBuildRequest) []prov
 	// - OpenAI-compat passes messages through as-is.
 	staticPrompt, contentBlocks := cb.buildSystemPromptForRequest(req)
 
-	// Compose a single system message: static (cached) + dynamic + optional summary.
+	// Compose a single system message: static (cached) + optional summary +
+	// optionally the dynamic block (only when position is "system"; by default
+	// it is carried on the current user message instead — see buildDynamicContext).
 	// Keeping all system content in one message ensures every provider adapter can
 	// extract it correctly (Anthropic adapter -> top-level system param,
 	// Codex -> instructions field).
@@ -908,8 +991,10 @@ func (cb *ContextBuilder) BuildMessagesFromPrompt(req PromptBuildRequest) []prov
 	}
 
 	dynamicChars := 0
+	tailDynamicCtx := ""
 	if !req.SuppressDefaultSystemPrompt {
-		// Build short dynamic context (time, runtime, session) — changes per request
+		// Build short dynamic context (runtime, session, sender, time) — changes
+		// per request.
 		dynamicCtx := cb.buildDynamicContext(
 			req.Channel,
 			req.ChatID,
@@ -917,19 +1002,11 @@ func (cb *ContextBuilder) BuildMessagesFromPrompt(req PromptBuildRequest) []prov
 			req.SenderDisplayName,
 		)
 		dynamicChars = len(dynamicCtx)
-		runtimePart := PromptPart{
-			ID:      "context.runtime",
-			Layer:   PromptLayerContext,
-			Slot:    PromptSlotRuntime,
-			Source:  PromptSource{ID: PromptSourceRuntime, Name: "runtime"},
-			Title:   "runtime context",
-			Content: dynamicCtx,
-			Stable:  false,
-			Cache:   PromptCacheNone,
-		}
-		stringParts = append(stringParts, dynamicCtx)
-		contentBlocks = append(contentBlocks, promptContentBlock(runtimePart, nil))
 
+		// The summary is emitted BEFORE the dynamic block. It only changes when
+		// the session is re-summarized, whereas the dynamic block changes every
+		// request; putting the stabler content first keeps the invalidated
+		// suffix as short as possible when position is "system".
 		if req.Summary != "" {
 			summaryPart := PromptPart{
 				ID:     "context.summary",
@@ -947,6 +1024,32 @@ func (cb *ContextBuilder) BuildMessagesFromPrompt(req PromptBuildRequest) []prov
 			}
 			stringParts = append(stringParts, summaryPart.Content)
 			contentBlocks = append(contentBlocks, promptContentBlock(summaryPart, nil))
+		}
+
+		// Placement. With position "tail" the block is carried on the current
+		// user message instead of the system message, so the static prompt,
+		// summary and full history all stay byte-identical between turns and
+		// backends that only do byte-prefix matching keep their KV cache.
+		//
+		// The block must NOT be emitted as a trailing system message: provider
+		// adapters hoist every system message to the front (Anthropic, Bedrock,
+		// Gemini, the CLI providers), and openai_responses / antigravity keep
+		// only the last one, which would silently discard the static prompt.
+		if cb.dynamicContextOptions().Position == config.DynamicContextPositionTail {
+			tailDynamicCtx = dynamicCtx
+		} else {
+			runtimePart := PromptPart{
+				ID:      "context.runtime",
+				Layer:   PromptLayerContext,
+				Slot:    PromptSlotRuntime,
+				Source:  PromptSource{ID: PromptSourceRuntime, Name: "runtime"},
+				Title:   "runtime context",
+				Content: dynamicCtx,
+				Stable:  false,
+				Cache:   PromptCacheNone,
+			}
+			stringParts = append(stringParts, dynamicCtx)
+			contentBlocks = append(contentBlocks, promptContentBlock(runtimePart, nil))
 		}
 	}
 
@@ -1010,10 +1113,25 @@ func (cb *ContextBuilder) BuildMessagesFromPrompt(req PromptBuildRequest) []prov
 	// Add current user message. Media-only turns must still be preserved so
 	// multimodal providers receive the uploaded image even when the user sends
 	// no accompanying text.
-	if strings.TrimSpace(req.CurrentMessage) != "" || len(req.Media) > 0 {
-		messages = append(messages, userPromptMessage(req.CurrentMessage, req.Media))
-	}
-	if len(messages) == 0 {
+	//
+	// When the dynamic context is tail-placed it rides on this message rather
+	// than becoming a message of its own, which keeps the message count — and
+	// therefore every len(messages)-1 "current turn starts here" calculation in
+	// the pipeline — unchanged.
+	switch {
+	case strings.TrimSpace(req.CurrentMessage) != "" || len(req.Media) > 0:
+		messages = append(messages, userPromptMessage(
+			wrapTailDynamicContext(tailDynamicCtx, req.CurrentMessage),
+			req.Media,
+		))
+	case strings.TrimSpace(tailDynamicCtx) != "":
+		// No current user message (e.g. a scheduled or tool-driven turn):
+		// carry the block on its own trailing user message.
+		messages = append(messages, userPromptMessage(
+			wrapTailDynamicContext(tailDynamicCtx, ""),
+			nil,
+		))
+	case len(messages) == 0:
 		messages = append(messages, userPromptMessage("", nil))
 	}
 

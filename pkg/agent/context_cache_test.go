@@ -100,13 +100,18 @@ func TestSingleSystemMessage(t *testing.T) {
 				t.Errorf("last message should be user, got %s", msgs[len(msgs)-1].Role)
 			}
 
-			// System message must contain identity (static) and time (dynamic)
+			// System message must contain identity (static). The dynamic time
+			// context is tail-placed by default, so it rides on the last
+			// (user) message rather than the system message.
 			sys := msgs[0].Content
 			if !strings.Contains(sys, "picoclaw") {
 				t.Error("system message missing identity")
 			}
-			if !strings.Contains(sys, "Current Time") {
-				t.Error("system message missing dynamic time context")
+			if strings.Contains(sys, "Current Time") {
+				t.Error("system message must not carry tail-placed time context")
+			}
+			if !strings.Contains(msgs[len(msgs)-1].Content, "Current Time") {
+				t.Error("last message missing dynamic time context")
 			}
 
 			// Summary handling
@@ -169,20 +174,21 @@ func TestBuildMessages_CurrentSenderDynamicContext(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			msgs := cb.BuildMessages(nil, "", "hello", nil, "discord", "chat1", tt.senderID, tt.senderDisplayName)
-			sys := msgs[0].Content
+			// Sender info lives in the tail-placed runtime context block.
+			dyn := runtimeContextBlock(msgs[len(msgs)-1].Content)
 
 			if tt.wantSection {
-				if !strings.Contains(sys, "## Current Sender") {
-					t.Fatalf("system prompt missing Current Sender section:\n%s", sys)
+				if !strings.Contains(dyn, "## Current Sender") {
+					t.Fatalf("runtime context missing Current Sender section:\n%s", dyn)
 				}
-				if !strings.Contains(sys, tt.wantLine) {
-					t.Fatalf("system prompt missing sender line %q:\n%s", tt.wantLine, sys)
+				if !strings.Contains(dyn, tt.wantLine) {
+					t.Fatalf("runtime context missing sender line %q:\n%s", tt.wantLine, dyn)
 				}
 				return
 			}
 
-			if strings.Contains(sys, "## Current Sender") {
-				t.Fatalf("system prompt should omit Current Sender section:\n%s", sys)
+			if strings.Contains(dyn, "## Current Sender") {
+				t.Fatalf("runtime context should omit Current Sender section:\n%s", dyn)
 			}
 		})
 	}
@@ -731,8 +737,8 @@ func TestBuildMessages_IncludesMediaOnlyCurrentMessage(t *testing.T) {
 	if userMsg.Role != "user" {
 		t.Fatalf("userMsg.Role = %q, want %q", userMsg.Role, "user")
 	}
-	if userMsg.Content != "" {
-		t.Fatalf("userMsg.Content = %q, want empty string", userMsg.Content)
+	if got := stripRuntimeContext(userMsg.Content); got != "" {
+		t.Fatalf("userMsg text = %q, want empty string", got)
 	}
 	if len(userMsg.Media) != 1 || userMsg.Media[0] != "data:image/png;base64,abc123" {
 		t.Fatalf("userMsg.Media = %#v, want image payload", userMsg.Media)

@@ -39,6 +39,10 @@ func DefaultConfig() *Config {
 					MaxArgsLength:    300,
 					SeparateMessages: false,
 				},
+				DynamicContext: DynamicContextConfig{
+					Time:     DynamicContextTimeMinute,
+					Position: DynamicContextPositionTail,
+				},
 				SplitOnMarker:       false,
 				MaxLLMRetries:       2,
 				LLMRetryBackoffSecs: 2,

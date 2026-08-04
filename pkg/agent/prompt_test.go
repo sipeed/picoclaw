@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 func TestPromptRegistry_RejectsRegisteredSourceWrongPlacement(t *testing.T) {
@@ -103,14 +105,19 @@ func TestBuildMessagesFromPrompt_IncludesSystemPromptOverlay(t *testing.T) {
 	if !strings.Contains(messages[0].Content, "Use child-only system instructions.") {
 		t.Fatalf("system prompt missing overlay: %q", messages[0].Content)
 	}
-	if messages[1].Role != "user" || messages[1].Content != "do child task" {
+	if messages[1].Role != "user" || stripRuntimeContext(messages[1].Content) != "do child task" {
 		t.Fatalf("messages[1] = %#v, want user task", messages[1])
 	}
 }
 
 func TestBuildMessagesFromPrompt_AttachesInternalPromptMetadata(t *testing.T) {
 	t.Setenv("PICOCLAW_BUILTIN_SKILLS", t.TempDir())
-	cb := NewContextBuilder(t.TempDir())
+	// Pin system placement: the runtime block only appears in SystemParts when
+	// it is not tail-placed, and this test covers its prompt metadata.
+	cb := NewContextBuilder(t.TempDir()).WithDynamicContext(config.EffectiveDynamicContext{
+		Time:     config.DynamicContextTimeMinute,
+		Position: config.DynamicContextPositionSystem,
+	})
 
 	messages := cb.BuildMessagesFromPrompt(PromptBuildRequest{
 		CurrentMessage: "hello",

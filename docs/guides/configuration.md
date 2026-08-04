@@ -143,6 +143,38 @@ Example clean web policy:
 }
 ```
 
+### Dynamic Context Placement
+
+`agents.defaults.dynamic_context` controls the per-request context block — `## Runtime`, `## Current Session`, `## Current Sender` and `## Current Time`.
+
+| Key | Values | Default | Meaning |
+| --- | --- | --- | --- |
+| `position` | `tail`, `system` | `tail` | Where the block is placed. `tail` puts it after the conversation history, carried on the current user message inside a `<runtime_context>` tag. `system` keeps it inside the system prompt (the previous layout). |
+| `time` | `minute`, `hour`, `off` | `minute` | Precision of `## Current Time`. `hour` reports the clock rounded down to the hour; `off` omits the time entirely. |
+
+**Why `tail` is the default.** Prefix caching is positional: changing any token invalidates every token after it. With the block in the system prompt, a minute-precision clock changes something *before* the entire conversation, so the whole history is re-prefilled once per minute. On a host where a turn takes longer than a minute, that cost is paid every single turn — roughly 2.2 ms per history token, so a 6,000-token history burns about 13 s of pure re-prefill per turn.
+
+Moving the block after the history makes the static system prompt and the full history byte-identical from turn to turn, so a backend that only does byte-prefix matching keeps its KV cache. It also makes the static prompt identical across *all* users, sessions and cron runs, letting them share one cached prefix instead of each paying a cold prefill.
+
+This matters most for local backends — llama.cpp, Ollama, and any other OpenAI-compatible endpoint without a native caching mechanism. Anthropic (per-block `cache_control`) and OpenAI (`prompt_cache_key`) have their own mechanisms, which are unaffected either way.
+
+Set `position` to `system` only if you need the previous prompt layout. Note the block is never emitted as a trailing *system* message: provider adapters hoist system messages to the front, and some keep only the last one, which would discard the static prompt.
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "dynamic_context": {
+        "time": "minute",
+        "position": "tail"
+      }
+    }
+  }
+}
+```
+
+Operators who don't need wall-clock awareness at all can widen the reuse window further with `"time": "hour"` or drop it with `"time": "off"`.
+
 ### Web launcher dashboard
 
 **picoclaw-launcher** serves a browser UI that requires password sign-in first. On first run, open `/launcher-setup` to create the dashboard password. Later manual sign-ins use `/launcher-login`.
