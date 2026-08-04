@@ -53,6 +53,19 @@ type UsageInfo struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
+
+	// Cache metadata (optional). DeepSeek reports prompt_cache_hit_tokens /
+	// prompt_cache_miss_tokens; OpenAI-compatible endpoints may report
+	// prompt_tokens_details.cached_tokens. Pointers distinguish "not reported"
+	// (nil) from a real zero.
+	PromptCacheHitTokens  *int                 `json:"prompt_cache_hit_tokens"`
+	PromptCacheMissTokens *int                 `json:"prompt_cache_miss_tokens"`
+	PromptTokensDetails   *PromptTokensDetails `json:"prompt_tokens_details"`
+}
+
+// PromptTokensDetails carries OpenAI-style prompt token breakdowns.
+type PromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
 }
 
 // CacheControl marks a content block for LLM-side prefix caching.
