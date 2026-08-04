@@ -495,16 +495,11 @@ func (p *Pipeline) CallLLM(
 		}
 	}
 
-	// Save finishReason and usage on the turn state. Use ts directly (the
-	// authoritative turn state for this call) rather than a context lookup:
-	// the raw ctx passed to CallLLM is not seeded with turnState (only turnCtx
-	// is), so turnStateFromContext(ctx) returns nil here and silently dropped
-	// both the finish reason and the per-turn token usage. ts is also exactly
-	// what the streaming publisher reads via GetLastUsage at finalize.
-	if ts != nil {
-		ts.SetLastFinishReason(exec.response.FinishReason)
+	// Save finishReason to turnState for SubTurn truncation detection
+	if innerTS := turnStateFromContext(ctx); innerTS != nil {
+		innerTS.SetLastFinishReason(exec.response.FinishReason)
 		if exec.response.Usage != nil {
-			ts.SetLastUsage(exec.response.Usage)
+			innerTS.SetLastUsage(exec.response.Usage)
 		}
 	}
 
@@ -564,6 +559,15 @@ func (p *Pipeline) CallLLM(
 		llmResponseFields["prompt_tokens"] = exec.response.Usage.PromptTokens
 		llmResponseFields["completion_tokens"] = exec.response.Usage.CompletionTokens
 		llmResponseFields["total_tokens"] = exec.response.Usage.TotalTokens
+		if exec.response.Usage.PromptCacheHitTokens != nil {
+			llmResponseFields["prompt_cache_hit_tokens"] = *exec.response.Usage.PromptCacheHitTokens
+		}
+		if exec.response.Usage.PromptCacheMissTokens != nil {
+			llmResponseFields["prompt_cache_miss_tokens"] = *exec.response.Usage.PromptCacheMissTokens
+		}
+		if exec.response.Usage.PromptTokensDetails != nil {
+			llmResponseFields["cached_tokens"] = exec.response.Usage.PromptTokensDetails.CachedTokens
+		}
 	}
 	logger.DebugCF("agent", "LLM response", llmResponseFields)
 
