@@ -111,6 +111,39 @@ Exemplo de contexto limpo com ferramentas web:
 }
 ```
 
+### Posicionamento do contexto dinâmico
+
+`agents.defaults.dynamic_context` controla o bloco de contexto de cada requisição — `## Runtime`, `## Current Session`, `## Current Sender` e `## Current Time`.
+
+| Chave | Valores | Padrão | Significado |
+| --- | --- | --- | --- |
+| `position` | `tail`, `system` | `tail` | Onde o bloco fica. `tail` o coloca depois do histórico da conversa, carregado na mensagem de usuário atual dentro de uma tag `<runtime_context>`. `system` o mantém dentro do prompt de sistema (o layout anterior). |
+| `time` | `minute`, `hour`, `off` | `minute` | Precisão de `## Current Time`. `hour` arredonda o relógio para baixo até a hora; `off` omite o horário por completo. |
+
+**Por que `tail` é o padrão.** O cache de prefixo é posicional: alterar qualquer token invalida todos os tokens seguintes. Com o bloco no prompt de sistema, um relógio com precisão de minuto mudava algo *antes* de toda a conversa, então o histórico inteiro era re-preenchido uma vez por minuto. Em um host onde um turno passa de um minuto, esse custo é pago em todo turno: cerca de 2,2 ms por token de histórico, ou seja, aproximadamente 13 s de re-prefill puro por turno em um histórico de 6.000 tokens.
+
+Mover o bloco para depois do histórico deixa o prompt de sistema estático e todo o histórico idênticos byte a byte entre turnos, de modo que backends que só fazem correspondência de prefixo de bytes (llama.cpp, Ollama e outros endpoints compatíveis com OpenAI sem mecanismo de cache nativo) acertam o cache KV a cada turno em vez de errar a cada minuto. Isso também torna o prompt estático idêntico para todos os usuários, sessões e execuções de cron, que passam a compartilhar um único prefixo em cache em vez de cada um pagar um prefill frio.
+
+Anthropic (`cache_control`) e OpenAI (`prompt_cache_key`) não são afetados — seus mecanismos nativos continuam valendo.
+
+Defina `position` como `system` apenas se precisar do layout de prompt anterior. Note que o bloco nunca é emitido como uma mensagem de sistema final: os adaptadores de provider movem mensagens de sistema para o início, e alguns mantêm apenas a última, o que descartaria o prompt estático.
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "dynamic_context": {
+        "time": "minute",
+        "position": "tail"
+      }
+    }
+  }
+}
+```
+
+- `position`: `tail` (padrão) ou `system` para restaurar o layout antigo.
+- `time`: `minute` (padrão), `hour` para ampliar ainda mais a janela de reuso, ou `off` para remover o relógio.
+
 ### Fontes de Skills
 
 Por padrão, as skills são carregadas de:

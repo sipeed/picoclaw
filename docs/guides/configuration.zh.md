@@ -141,6 +141,39 @@ PicoClaw 将数据存储在您配置的工作区中（默认：`~/.picoclaw/work
 }
 ```
 
+### 动态上下文位置
+
+`agents.defaults.dynamic_context` 用来控制每次请求都会变化的上下文块 —— `## Runtime`、`## Current Session`、`## Current Sender` 和 `## Current Time`。
+
+| 键 | 取值 | 默认值 | 含义 |
+| --- | --- | --- | --- |
+| `position` | `tail`、`system` | `tail` | 该块的位置。`tail` 把它放在对话历史之后，包在 `<runtime_context>` 标签内随当前用户消息一起发送；`system` 保留在 system prompt 内部（此前的布局）。 |
+| `time` | `minute`、`hour`、`off` | `minute` | `## Current Time` 的精度。`hour` 只报到小时（分钟向下取整），`off` 完全不输出时间。 |
+
+**为什么默认是 `tail`。** 前缀缓存是按位置生效的：改动任意一个 token，其后的全部 token 都会失效。该块原本位于 system prompt 中，分钟级时间戳每分钟变一次，而它排在整段对话之前，于是整个历史每分钟就要重新 prefill 一遍。在单轮耗时超过一分钟的机器上，这个代价每轮都要付：约每个历史 token 2.2 ms，6000 token 的历史相当于每轮约 13 秒的纯 prefill。
+
+把该块移到历史之后，静态 system prompt 和整段历史在相邻回合之间即可保持逐字节一致，只做字节前缀匹配的后端（llama.cpp、Ollama，以及其他没有原生缓存机制的 OpenAI 兼容端点）每轮都能命中 KV 缓存，而不是每分钟失效一次。同时静态提示词在所有用户、所有会话和所有定时任务之间也完全一致，可以共用同一段缓存前缀，而不必各自承担一次冷 prefill。
+
+Anthropic（`cache_control`）和 OpenAI（`prompt_cache_key`）不受影响，它们的原生机制照常生效。
+
+只有在需要恢复此前的提示词布局时，才把 `position` 设为 `system`。注意该块不会作为末尾的 system 消息发送：各 provider 适配器会把 system 消息前移，其中一部分只保留最后一条，那样会把静态提示词整个丢掉。
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "dynamic_context": {
+        "time": "minute",
+        "position": "tail"
+      }
+    }
+  }
+}
+```
+
+- `position`：`tail`（默认）或 `system`（恢复旧布局）。
+- `time`：`minute`（默认）、`hour`（进一步扩大复用窗口）或 `off`（完全不带时间）。
+
 ### Web 启动器控制台
 
 用 **picoclaw-launcher** 打开浏览器控制台前需要先使用密码登录。首次启动时打开 `/launcher-setup` 创建 dashboard 登录密码；后续手动登录使用 `/launcher-login`。

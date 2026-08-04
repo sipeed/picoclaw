@@ -111,6 +111,39 @@ Ví dụ ngữ cảnh sạch chỉ giữ tool web:
 }
 ```
 
+### Vị trí ngữ cảnh động
+
+`agents.defaults.dynamic_context` kiểm soát block ngữ cảnh thay đổi theo từng request — `## Runtime`, `## Current Session`, `## Current Sender` và `## Current Time`.
+
+| Key | Giá trị | Mặc định | Ý nghĩa |
+| --- | --- | --- | --- |
+| `position` | `tail`, `system` | `tail` | Vị trí đặt block. `tail` đặt sau lịch sử hội thoại, gắn vào tin nhắn user hiện tại bên trong thẻ `<runtime_context>`. `system` giữ nó trong system prompt (bố cục trước đây). |
+| `time` | `minute`, `hour`, `off` | `minute` | Độ chính xác của `## Current Time`. `hour` làm tròn xuống theo giờ; `off` bỏ hẳn phần thời gian. |
+
+**Vì sao `tail` là mặc định.** Prefix cache phụ thuộc vị trí: thay đổi một token sẽ vô hiệu hóa toàn bộ token phía sau. Khi block nằm trong system prompt, đồng hồ chính xác đến phút thay đổi ở *trước* toàn bộ hội thoại, nên cả lịch sử phải prefill lại mỗi phút một lần. Trên máy mà mỗi turn kéo dài hơn một phút, chi phí này phải trả ở mọi turn: khoảng 2,2 ms cho mỗi token lịch sử, tức khoảng 13 giây prefill thuần mỗi turn với lịch sử 6.000 token.
+
+Chuyển block ra sau lịch sử giúp system prompt tĩnh và toàn bộ lịch sử giống nhau từng byte giữa các turn, nhờ đó các backend chỉ so khớp prefix theo byte (llama.cpp, Ollama và các endpoint tương thích OpenAI khác không có cơ chế cache riêng) trúng KV cache ở mọi turn thay vì trượt mỗi phút. Điều này cũng làm prompt tĩnh giống hệt nhau giữa tất cả người dùng, tất cả session và mọi lần chạy cron, để chúng dùng chung một prefix đã cache thay vì mỗi bên phải chịu một lần prefill nguội.
+
+Anthropic (`cache_control`) và OpenAI (`prompt_cache_key`) không bị ảnh hưởng — cơ chế riêng của chúng vẫn hoạt động.
+
+Chỉ đặt `position` thành `system` nếu bạn cần bố cục prompt trước đây. Lưu ý block không bao giờ được gửi dưới dạng system message ở cuối: các adapter provider sẽ đẩy system message lên đầu, và một số chỉ giữ lại cái cuối cùng, khiến prompt tĩnh bị mất.
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "dynamic_context": {
+        "time": "minute",
+        "position": "tail"
+      }
+    }
+  }
+}
+```
+
+- `position`: `tail` (mặc định) hoặc `system` để khôi phục bố cục cũ.
+- `time`: `minute` (mặc định), `hour` để mở rộng thêm cửa sổ tái sử dụng, hoặc `off` để bỏ hẳn đồng hồ.
+
 ### Nguồn Skill
 
 Mặc định, skill được tải từ:

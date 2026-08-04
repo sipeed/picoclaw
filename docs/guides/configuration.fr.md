@@ -110,6 +110,39 @@ Exemple de contexte propre avec outils web :
 }
 ```
 
+### Placement du contexte dynamique
+
+`agents.defaults.dynamic_context` contrôle le bloc de contexte propre à chaque requête — `## Runtime`, `## Current Session`, `## Current Sender` et `## Current Time`.
+
+| Clé | Valeurs | Défaut | Signification |
+| --- | --- | --- | --- |
+| `position` | `tail`, `system` | `tail` | Emplacement du bloc. `tail` le place après l'historique de conversation, porté par le message utilisateur courant dans une balise `<runtime_context>`. `system` le garde dans le prompt système (la disposition précédente). |
+| `time` | `minute`, `hour`, `off` | `minute` | Précision de `## Current Time`. `hour` arrondit l'horloge à l'heure inférieure ; `off` omet complètement l'heure. |
+
+**Pourquoi `tail` est la valeur par défaut.** La mise en cache de préfixe est positionnelle : modifier un token invalide tous les tokens suivants. Avec le bloc dans le prompt système, une horloge à la minute changeait quelque chose *avant* toute la conversation, si bien que l'historique entier était re-préchargé une fois par minute. Sur un hôte où un tour dépasse la minute, ce coût est payé à chaque tour : environ 2,2 ms par token d'historique, soit près de 13 s de re-préchargement pur par tour pour un historique de 6 000 tokens.
+
+Déplacer le bloc après l'historique rend le prompt système statique et l'historique complet identiques octet pour octet d'un tour à l'autre : les backends qui ne font que de la correspondance de préfixe d'octets (llama.cpp, Ollama et les autres endpoints compatibles OpenAI sans mécanisme de cache natif) touchent leur cache KV à chaque tour au lieu de le manquer chaque minute. Cela rend aussi le prompt statique identique pour tous les utilisateurs, toutes les sessions et toutes les exécutions cron, qui partagent alors un seul préfixe mis en cache au lieu de payer chacun un préchargement à froid.
+
+Anthropic (`cache_control`) et OpenAI (`prompt_cache_key`) ne sont pas concernés : leurs mécanismes natifs s'appliquent toujours.
+
+Ne mettez `position` à `system` que si vous avez besoin de la disposition précédente. Notez que le bloc n'est jamais émis comme message système final : les adaptateurs de providers remontent les messages système en tête, et certains ne gardent que le dernier, ce qui écraserait le prompt statique.
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "dynamic_context": {
+        "time": "minute",
+        "position": "tail"
+      }
+    }
+  }
+}
+```
+
+- `position` : `tail` (par défaut) ou `system` pour rétablir l'ancienne disposition.
+- `time` : `minute` (par défaut), `hour` pour élargir encore la fenêtre de réutilisation, ou `off` pour supprimer l'horloge.
+
 ### Sources de Compétences
 
 Par défaut, les compétences sont chargées depuis :
