@@ -9,23 +9,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-// stripRuntimeContext removes the tail-placed <runtime_context> block from a
-// user message, returning the user's own text. Tests that care about the user
-// text (not the placement) use this so they stay agnostic to the configured
-// dynamic context position.
-func stripRuntimeContext(content string) string {
-	start := strings.Index(content, runtimeContextOpenTag)
-	if start < 0 {
-		return content
-	}
-	end := strings.Index(content, runtimeContextCloseTag)
-	if end < 0 {
-		return content
-	}
-	end += len(runtimeContextCloseTag)
-	return strings.TrimSpace(content[:start] + content[end:])
-}
-
 // runtimeContextBlock returns the contents of the tail-placed <runtime_context>
 // block, or "" when the message carries none.
 func runtimeContextBlock(content string) string {
@@ -38,6 +21,61 @@ func runtimeContextBlock(content string) string {
 		return ""
 	}
 	return strings.TrimSpace(content[start+len(runtimeContextOpenTag) : end])
+}
+
+func TestStripRuntimeContext(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{"no block passes through", "just text", "just text"},
+		{"empty stays empty", "", ""},
+		{
+			"block is removed, user text kept",
+			"<runtime_context>\n## Runtime\nlinux arm64\n</runtime_context>\n\nhousekeeping time",
+			"housekeeping time",
+		},
+		{
+			"block only leaves nothing",
+			"<runtime_context>\n## Runtime\nlinux arm64\n</runtime_context>",
+			"",
+		},
+		{
+			"unterminated block is left alone rather than truncating the message",
+			"<runtime_context>\n## Runtime\nlinux arm64\n\nhousekeeping time",
+			"<runtime_context>\n## Runtime\nlinux arm64\n\nhousekeeping time",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := stripRuntimeContext(tt.content); got != tt.want {
+				t.Fatalf("stripRuntimeContext(%q) = %q, want %q", tt.content, got, tt.want)
+			}
+		})
+	}
+}
+
+// Tool feedback is shown verbatim in chat, so it must never leak the runtime
+// preamble that tail placement prepends to the wire message.
+func TestToolFeedbackExplanation_StripsRuntimeContext(t *testing.T) {
+	messages := []providers.Message{
+		{Role: "user", Content: wrapTailDynamicContext(
+			"## Runtime\nlinux arm64, Go go1.26.5\n\n## Current Time\n2026-08-04 19:13 (Tuesday)",
+			"trigger a sonarr search",
+		)},
+	}
+
+	got := toolFeedbackExplanationFromMessages(messages)
+	want := "Continuing the current task.: trigger a sonarr search"
+
+	if got != want {
+		t.Fatalf("tool feedback explanation = %q, want %q", got, want)
+	}
+	if strings.Contains(got, runtimeContextOpenTag) {
+		t.Fatalf("tool feedback leaked the runtime context block: %q", got)
+	}
 }
 
 func TestBuildMessages_TailPlacementKeepsSystemPromptStatic(t *testing.T) {

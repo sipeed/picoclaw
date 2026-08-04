@@ -884,6 +884,24 @@ const (
 	runtimeContextCloseTag = "</runtime_context>"
 )
 
+// stripRuntimeContext removes a tail-placed <runtime_context> block from a
+// message, returning the user's own text. Anything that surfaces message
+// content to a human — tool feedback explanations, previews, logs — must go
+// through this, because with position "tail" the wire message carries the
+// runtime block as a preamble that the user never typed.
+func stripRuntimeContext(content string) string {
+	start := strings.Index(content, runtimeContextOpenTag)
+	if start < 0 {
+		return content
+	}
+	end := strings.Index(content, runtimeContextCloseTag)
+	if end < start {
+		return content
+	}
+	end += len(runtimeContextCloseTag)
+	return strings.TrimSpace(content[:start] + content[end:])
+}
+
 // wrapTailDynamicContext renders the dynamic block as a tagged preamble to the
 // current user message.
 func wrapTailDynamicContext(dynamicCtx, userMessage string) string {

@@ -146,7 +146,10 @@ func latestUserContent(messages []providers.Message) string {
 		if msg.Role != "user" {
 			continue
 		}
-		if content := strings.TrimSpace(msg.Content); content != "" {
+		// Strip the tail-placed runtime context: this value is shown to the
+		// user in tool feedback, and the block is machine preamble they never
+		// typed.
+		if content := strings.TrimSpace(stripRuntimeContext(msg.Content)); content != "" {
 			return content
 		}
 	}
