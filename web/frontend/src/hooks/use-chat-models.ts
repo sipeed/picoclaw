@@ -25,24 +25,24 @@ export function useChatModels({ isConnected }: UseChatModelsOptions) {
   const { t } = useTranslation()
   const [modelList, setModelList] = useState<ModelInfo[]>([])
   const [defaultModelName, setDefaultModelName] = useState("")
+  const [settingDefault, setSettingDefault] = useState(false)
   const setDefaultRequestIdRef = useRef(0)
+  const loadModelsRequestIdRef = useRef(0)
+  const setDefaultQueueRef = useRef<Promise<void>>(Promise.resolve())
 
-  const syncDefaultModelName = useCallback(
-    (models: ModelInfo[], defaultModel: string) => {
-      if (models.some((m) => m.model_name === defaultModel)) {
-        setDefaultModelName(defaultModel)
-        return
-      }
-      setDefaultModelName("")
-    },
-    [],
-  )
+  const syncDefaultModelName = useCallback((defaultModel: string) => {
+    setDefaultModelName(defaultModel.trim())
+  }, [])
 
   const loadModels = useCallback(async () => {
     try {
+      const requestId = ++loadModelsRequestIdRef.current
+      await setDefaultQueueRef.current.catch(() => {})
+      if (requestId !== loadModelsRequestIdRef.current) return
       const data = await getModels()
+      if (requestId !== loadModelsRequestIdRef.current) return
       setModelList(data.models)
-      syncDefaultModelName(data.models, data.default_model)
+      syncDefaultModelName(data.default_model)
     } catch {
       // silently fail
     }
@@ -60,38 +60,63 @@ export function useChatModels({ isConnected }: UseChatModelsOptions) {
     async (modelName: string) => {
       if (modelName === defaultModelName) return
       const requestId = ++setDefaultRequestIdRef.current
+      ++loadModelsRequestIdRef.current
+      setSettingDefault(true)
 
+      const request = setDefaultQueueRef.current
+        .catch(() => {})
+        .then(async () => {
+          if (requestId !== setDefaultRequestIdRef.current) return
+          await setDefaultModel(modelName)
+          if (requestId !== setDefaultRequestIdRef.current) return
+          const data = await getModels()
+          if (requestId !== setDefaultRequestIdRef.current) return
+
+          setModelList(data.models)
+          syncDefaultModelName(data.default_model)
+          const gateway = await refreshGatewayState({ force: true })
+          if (requestId !== setDefaultRequestIdRef.current) return
+          showSaveSuccessOrRestartToast(
+            t,
+            t("models.defaultChangeSuccess"),
+            modelName,
+            gateway?.restartRequired === true,
+          )
+        })
+      setDefaultQueueRef.current = request
       try {
-        await setDefaultModel(modelName)
-        const data = await getModels()
-        if (requestId !== setDefaultRequestIdRef.current) {
-          return
-        }
-
-        setModelList(data.models)
-        syncDefaultModelName(data.models, data.default_model)
-        const gateway = await refreshGatewayState({ force: true })
-        showSaveSuccessOrRestartToast(
-          t,
-          t("models.defaultChangeSuccess"),
-          modelName,
-          gateway?.restartRequired === true,
-        )
+        await request
       } catch (err) {
+        if (requestId !== setDefaultRequestIdRef.current) return
         console.error("Failed to set default model:", err)
         toast.error(err instanceof Error ? err.message : t("models.loadError"))
+      } finally {
+        if (requestId === setDefaultRequestIdRef.current) {
+          setSettingDefault(false)
+        }
       }
     },
     [defaultModelName, syncDefaultModelName, t],
   )
 
-  const defaultSelectableModels = useMemo(
-    () =>
-      modelList.filter(
-        (m) => m.default_model_allowed !== false && m.is_virtual !== true,
-      ),
-    [modelList],
-  )
+  const defaultSelectableModels = useMemo(() => {
+    const modelsByAlias = new Map<string, ModelInfo[]>()
+    for (const model of modelList) {
+      const entries = modelsByAlias.get(model.model_name) ?? []
+      entries.push(model)
+      modelsByAlias.set(model.model_name, entries)
+    }
+    return [...modelsByAlias.values()].flatMap((entries) =>
+      entries.every(
+        (model) =>
+          model.default_model_allowed !== false &&
+          model.is_virtual !== true &&
+          model.status !== "unconfigured",
+      )
+        ? [entries.find((model) => model.available) ?? entries[0]]
+        : [],
+    )
+  }, [modelList])
 
   const hasAvailableModels = useMemo(
     () => defaultSelectableModels.some((m) => m.available),
@@ -125,6 +150,7 @@ export function useChatModels({ isConnected }: UseChatModelsOptions) {
     apiKeyModels,
     oauthModels,
     localModels,
+    settingDefault,
     handleSetDefault,
   }
 }

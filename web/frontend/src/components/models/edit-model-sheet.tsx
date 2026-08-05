@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next"
 import {
   type ModelInfo,
   type ModelProviderOption,
+  type ModelReferenceRename,
   getCatalogs,
   setDefaultModel,
   updateModel,
@@ -78,7 +79,10 @@ interface EditModelSheetProps {
   model: ModelInfo | null
   open: boolean
   onClose: () => void
-  onSaved: () => void
+  onUpdated: (referenceRename?: ModelReferenceRename) => void
+  onSaved: (referenceRename?: ModelReferenceRename) => void
+  onUpdateStarted: () => void
+  onUpdateSettled: () => void
   providerOptions?: ModelProviderOption[]
 }
 
@@ -111,7 +115,10 @@ export function EditModelSheet({
   model,
   open,
   onClose,
+  onUpdated,
   onSaved,
+  onUpdateStarted,
+  onUpdateSettled,
   providerOptions,
 }: EditModelSheetProps) {
   const { t } = useTranslation()
@@ -356,6 +363,7 @@ export function EditModelSheet({
       return
     }
 
+    onUpdateStarted()
     setSaving(true)
     setError("")
     try {
@@ -365,7 +373,7 @@ export function EditModelSheet({
         model.streaming?.enabled === true || form.streamingEnabled
           ? { enabled: form.streamingEnabled }
           : undefined
-      await updateModel(model.index, {
+      const response = await updateModel(model.index, {
         model_name: model.model_name,
         provider: provider,
         model: modelId,
@@ -388,6 +396,7 @@ export function EditModelSheet({
         extra_body: extraBody,
         custom_headers: customHeaders,
       })
+      onUpdated(response.reference_rename)
       if (setAsDefault && !model.is_default) {
         await setDefaultModel(model.model_name)
       }
@@ -403,6 +412,7 @@ export function EditModelSheet({
     } catch (e) {
       setError(e instanceof Error ? e.message : t("models.edit.saveError"))
     } finally {
+      onUpdateSettled()
       setSaving(false)
     }
   }

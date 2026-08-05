@@ -56,13 +56,23 @@ interface ModelsListResponse {
   models: ModelInfo[]
   total: number
   default_model: string
+  default_provider: string
+  fallback_chain: string[]
   provider_options: ModelProviderOption[]
 }
 
-interface ModelActionResponse {
+export interface ModelReferenceRename {
+  from: string
+  to: string
+  default: boolean
+  fallback: boolean
+}
+
+export interface ModelActionResponse {
   status: string
   index?: number
   default_model?: string
+  reference_rename?: ModelReferenceRename
 }
 
 export interface DefaultChain {
@@ -137,14 +147,11 @@ export async function getDefaultChain(): Promise<DefaultChain> {
 export async function updateDefaultChain(
   payload: DefaultChain,
 ): Promise<DefaultChain> {
-  const response = await request<DefaultChain>("/api/models/default-chain", {
+  return request<DefaultChain>("/api/models/default-chain", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   })
-
-  await refreshGatewayState()
-  return response
 }
 
 export interface TestModelResponse {
@@ -242,4 +249,4 @@ export async function deleteCatalog(id: string): Promise<void> {
   )
 }
 
-export type { ModelsListResponse, ModelActionResponse }
+export type { ModelsListResponse }

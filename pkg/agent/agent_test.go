@@ -284,6 +284,24 @@ type modelRewriteHook struct {
 	model string
 }
 
+type clearOptionsHook struct{}
+
+func (clearOptionsHook) BeforeLLM(
+	ctx context.Context,
+	req *LLMHookRequest,
+) (*LLMHookRequest, HookDecision, error) {
+	next := req.Clone()
+	next.Options = nil
+	return next, HookDecision{Action: HookActionModify}, nil
+}
+
+func (clearOptionsHook) AfterLLM(
+	ctx context.Context,
+	resp *LLMHookResponse,
+) (*LLMHookResponse, HookDecision, error) {
+	return resp.Clone(), HookDecision{Action: HookActionContinue}, nil
+}
+
 func (h modelRewriteHook) BeforeLLM(
 	ctx context.Context,
 	req *LLMHookRequest,
@@ -3693,6 +3711,12 @@ func TestProcessMessage_SwitchModelRoutesSubsequentRequestsToSelectedProvider(t 
 				APIBase:   remoteServer.URL,
 				APIKeys:   config.SimpleSecureStrings("remote-key"),
 			},
+			{
+				ModelName: "deepseek",
+				Model:     "openrouter/deepseek/deepseek-v3.2",
+				APIBase:   remoteServer.URL,
+				APIKeys:   config.SimpleSecureStrings("remote-key-secondary"),
+			},
 		},
 	}
 
@@ -3731,6 +3755,12 @@ func TestProcessMessage_SwitchModelRoutesSubsequentRequestsToSelectedProvider(t 
 	})
 	if !strings.Contains(switchResp, "Switched model from local to deepseek") {
 		t.Fatalf("unexpected /switch reply: %q", switchResp)
+	}
+	agent := al.registry.GetDefaultAgent()
+	for _, candidate := range agent.Candidates[1:] {
+		if agent.CandidateProviders[candidateProviderKey(candidate)] == nil {
+			t.Fatalf("candidate provider %q was not initialized after model switch", candidate.DisplayName)
+		}
 	}
 
 	secondResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
@@ -7169,12 +7199,14 @@ func TestResolveMediaRefs_MixedImageAndFile(t *testing.T) {
 
 type nativeSearchProvider struct {
 	supported bool
+	lastOpts  map[string]any
 }
 
 func (p *nativeSearchProvider) Chat(
 	ctx context.Context, msgs []providers.Message, tools []providers.ToolDefinition,
 	model string, opts map[string]any,
 ) (*providers.LLMResponse, error) {
+	p.lastOpts = shallowCloneLLMOptions(opts)
 	return &providers.LLMResponse{Content: "ok"}, nil
 }
 
@@ -7192,6 +7224,40 @@ func (p *plainProvider) Chat(
 }
 
 func (p *plainProvider) GetDefaultModel() string { return "test-model" }
+
+func TestProcessMessage_NativeSearchHandlesHookClearingOptions(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Agents.Defaults.ModelName = "test-model"
+	cfg.Agents.Defaults.MaxToolIterations = 2
+	cfg.Tools.Web.Enabled = true
+	cfg.Tools.Web.PreferNative = true
+
+	provider := &nativeSearchProvider{supported: true}
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
+	defer al.Close()
+	agent := al.registry.GetDefaultAgent()
+	agent.Provider = provider
+	agent.Candidates = nil
+	if err := al.MountHook(NamedHook("clear-options", clearOptionsHook{})); err != nil {
+		t.Fatalf("MountHook() error = %v", err)
+	}
+
+	response, err := al.processMessage(context.Background(), bus.InboundMessage{
+		Channel: "pico",
+		ChatID:  "native-search-hook",
+		Content: "search",
+	})
+	if err != nil {
+		t.Fatalf("processMessage() error = %v", err)
+	}
+	if response != "ok" {
+		t.Fatalf("response = %q, want ok", response)
+	}
+	if got := provider.lastOpts["native_search"]; got != true {
+		t.Fatalf("native_search option = %#v, want true", got)
+	}
+}
 
 func TestIsNativeSearchProvider_Supported(t *testing.T) {
 	if !isNativeSearchProvider(&nativeSearchProvider{supported: true}) {

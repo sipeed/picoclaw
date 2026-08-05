@@ -20,11 +20,19 @@ type FallbackCandidate struct {
 	DisplayName string // optional configured alias/raw model label for persistence/UI
 	RPM         int    // requests per minute; 0 means unrestricted
 	IdentityKey string // optional stable config identity for cooldown/rate limiting
+	ConfigIndex int    // optional 1-based model_list index selected during resolution
+	ConfigKey   string // optional hashed model_list identity, stable across reordering
 }
 
 // StableKey returns the candidate's config-level identity when available,
 // otherwise it falls back to the runtime provider/model key.
 func (c FallbackCandidate) StableKey() string {
+	if configKey := strings.TrimSpace(c.ConfigKey); configKey != "" {
+		if identityKey := strings.TrimSpace(c.IdentityKey); identityKey != "" {
+			return identityKey + "|" + configKey
+		}
+		return configKey
+	}
 	if key := strings.TrimSpace(c.IdentityKey); key != "" {
 		return key
 	}
@@ -276,6 +284,22 @@ func (fc *FallbackChain) ExecuteImage(
 	candidates []FallbackCandidate,
 	run func(ctx context.Context, provider, model string) (*LLMResponse, error),
 ) (*FallbackResult, error) {
+	return fc.ExecuteImageCandidate(
+		ctx,
+		candidates,
+		func(ctx context.Context, candidate FallbackCandidate) (*LLMResponse, error) {
+			return run(ctx, candidate.Provider, candidate.Model)
+		},
+	)
+}
+
+// ExecuteImageCandidate preserves model-list identity metadata for each image
+// fallback attempt.
+func (fc *FallbackChain) ExecuteImageCandidate(
+	ctx context.Context,
+	candidates []FallbackCandidate,
+	run func(ctx context.Context, candidate FallbackCandidate) (*LLMResponse, error),
+) (*FallbackResult, error) {
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("image fallback: no candidates configured")
 	}
@@ -318,7 +342,7 @@ func (fc *FallbackChain) ExecuteImage(
 		}
 
 		start := time.Now()
-		resp, err := run(ctx, candidate.Provider, candidate.Model)
+		resp, err := run(ctx, candidate)
 		elapsed := time.Since(start)
 
 		if err == nil {

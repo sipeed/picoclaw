@@ -157,6 +157,16 @@ func ClassifyError(err error, provider, model string) *FailoverError {
 	if err == context.Canceled {
 		return nil
 	}
+	var classified *FailoverError
+	if errors.As(err, &classified) {
+		if classified.Provider == "" {
+			classified.Provider = provider
+		}
+		if classified.Model == "" {
+			classified.Model = model
+		}
+		return classified
+	}
 
 	// Context deadline exceeded: treat as timeout, always fallback.
 	if err == context.DeadlineExceeded {

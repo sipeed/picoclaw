@@ -45,10 +45,17 @@ export function DefaultChainDialog({
   onRemove,
 }: DefaultChainDialogProps) {
   const { t } = useTranslation()
-  const modelsByName = new Map(models.map((model) => [model.model_name, model]))
-  const defaultModel = defaultModelName
-    ? modelsByName.get(defaultModelName)
-    : undefined
+  const modelsByName = new Map<string, ModelInfo[]>()
+  for (const model of models) {
+    const matches = modelsByName.get(model.model_name) || []
+    matches.push(model)
+    modelsByName.set(model.model_name, matches)
+  }
+  const defaultMatches = defaultModelName
+    ? modelsByName.get(defaultModelName) || []
+    : []
+  const defaultModel =
+    defaultMatches.length === 1 ? defaultMatches[0] : undefined
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -66,14 +73,14 @@ export function DefaultChainDialog({
               {t("models.defaultChain.defaultModel")}
             </p>
             <div className="bg-muted/40 rounded-lg border px-4 py-3">
-              {defaultModel ? (
+              {defaultModelName ? (
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">
-                      {defaultModel.model_name}
+                      {defaultModel?.model_name ?? defaultModelName}
                     </p>
                     <p className="text-muted-foreground truncate font-mono text-xs">
-                      {defaultModel.model}
+                      {defaultModel?.model ?? defaultModelName}
                     </p>
                   </div>
                   <span className="bg-primary/10 text-primary shrink-0 rounded px-2 py-1 text-[11px] font-medium">
@@ -99,7 +106,8 @@ export function DefaultChainDialog({
             ) : (
               <div className="space-y-2">
                 {fallbackChain.map((modelName, index) => {
-                  const model = modelsByName.get(modelName)
+                  const matches = modelsByName.get(modelName) || []
+                  const model = matches.length === 1 ? matches[0] : undefined
                   const isFirst = index === 0
                   const isLast = index === fallbackChain.length - 1
 

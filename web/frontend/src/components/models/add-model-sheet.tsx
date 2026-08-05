@@ -98,6 +98,8 @@ interface AddModelSheetProps {
   open: boolean
   onClose: () => void
   onSaved: () => void
+  onMutationStarted?: () => void
+  onMutationSettled?: () => void
   existingModelNames: string[]
   providerOptions?: ModelProviderOption[]
 }
@@ -106,6 +108,8 @@ export function AddModelSheet({
   open,
   onClose,
   onSaved,
+  onMutationStarted,
+  onMutationSettled,
   existingModelNames,
   providerOptions,
 }: AddModelSheetProps) {
@@ -376,6 +380,7 @@ export function AddModelSheet({
       return
     }
 
+    onMutationStarted?.()
     setSaving(true)
     setServerError("")
     try {
@@ -421,12 +426,13 @@ export function AddModelSheet({
       setServerError(e instanceof Error ? e.message : t("models.add.saveError"))
     } finally {
       setSaving(false)
+      onMutationSettled?.()
     }
   }
 
   return (
     <>
-      <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
+      <Sheet open={open} onOpenChange={(v) => !v && !saving && onClose()}>
         <SheetContent
           side="right"
           className="flex flex-col gap-0 p-0 data-[side=right]:!w-full data-[side=right]:sm:!w-[560px] data-[side=right]:sm:!max-w-[560px]"

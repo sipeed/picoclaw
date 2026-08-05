@@ -43,7 +43,7 @@ func (p *Pipeline) CallLLM(
 	webSearchEnabled := al.cfg.Tools.IsToolEnabled("web") && turnProfileToolAllowed(ts.profile, "web_search")
 	exec.useNativeSearch = webSearchEnabled && al.cfg.Tools.Web.PreferNative &&
 		func() bool {
-			if ns, ok := ts.agent.Provider.(providers.NativeSearchCapable); ok {
+			if ns, ok := exec.activeProvider.(providers.NativeSearchCapable); ok {
 				return ns.SupportsNativeSearch()
 			}
 			return false
@@ -79,6 +79,7 @@ func (p *Pipeline) CallLLM(
 	applyTurnThinkingOptions(exec, ts.agent, exec.activeProvider, true)
 
 	exec.llmModel = exec.activeModel
+	nativeSearchBeforeHook := exec.useNativeSearch
 
 	// BeforeLLM hook
 	if p.Hooks != nil {
@@ -99,13 +100,10 @@ func (p *Pipeline) CallLLM(
 				exec.callMessages = llmReq.Messages
 				exec.providerToolDefs = filterToolsByTurnProfile(llmReq.Tools, ts.profile)
 				exec.llmOpts = llmReq.Options
-				nativeSearchAllowed := exec.useNativeSearch &&
-					turnProfileToolAllowed(ts.profile, "web_search")
-				if !nativeSearchAllowed {
-					delete(exec.llmOpts, "native_search")
-				}
 				if strings.TrimSpace(exec.llmModel) != "" && exec.llmModel != prevModel {
-					p.applyBeforeLLMModelRewrite(ts, exec)
+					if err := p.applyBeforeLLMModelRewrite(ts, exec); err != nil {
+						return ControlBreak, err
+					}
 					applyTurnThinkingOptions(exec, ts.agent, exec.activeProvider, true)
 				}
 			}
@@ -119,6 +117,29 @@ func (p *Pipeline) CallLLM(
 			exec.abortedByHardAbort = true
 			return ControlBreak, nil
 		}
+	}
+	exec.useNativeSearch = webSearchEnabled && al.cfg.Tools.Web.PreferNative &&
+		func() bool {
+			if ns, ok := exec.activeProvider.(providers.NativeSearchCapable); ok {
+				return ns.SupportsNativeSearch()
+			}
+			return false
+		}()
+	if nativeSearchBeforeHook && !exec.useNativeSearch {
+		exec.providerToolDefs = restoreToolDefinition(
+			exec.providerToolDefs,
+			filterToolsByTurnProfile(ts.agent.Tools.ToProviderDefs(), ts.profile),
+			"web_search",
+		)
+	}
+	if exec.useNativeSearch {
+		exec.providerToolDefs = filterClientWebSearch(exec.providerToolDefs)
+		if exec.llmOpts == nil {
+			exec.llmOpts = make(map[string]any)
+		}
+		exec.llmOpts["native_search"] = true
+	} else {
+		delete(exec.llmOpts, "native_search")
 	}
 
 	al.emitEvent(
@@ -181,14 +202,34 @@ func (p *Pipeline) CallLLM(
 				ts.agent,
 				exec.activeProvider,
 				exec.activeCandidates,
-				candidate.Provider,
-				candidate.Model,
+				candidate,
 			)
 			if err != nil {
 				return nil, err
 			}
 			callOpts := shallowCloneLLMOptions(exec.llmOpts)
 			delete(callOpts, "thinking_level")
+			candidateTools := toolDefsForCall
+			candidateNativeSearch := webSearchEnabled && al.cfg.Tools.Web.PreferNative &&
+				func() bool {
+					if ns, ok := candidateProvider.(providers.NativeSearchCapable); ok {
+						return ns.SupportsNativeSearch()
+					}
+					return false
+				}()
+			if candidateNativeSearch {
+				candidateTools = filterClientWebSearch(candidateTools)
+				callOpts["native_search"] = true
+			} else {
+				delete(callOpts, "native_search")
+				if exec.useNativeSearch {
+					candidateTools = restoreToolDefinition(
+						candidateTools,
+						filterToolsByTurnProfile(ts.agent.Tools.ToProviderDefs(), ts.profile),
+						"web_search",
+					)
+				}
+			}
 			candidateCfg := resolveActiveModelConfig(
 				p.Cfg,
 				ts.agent.Workspace,
@@ -199,7 +240,7 @@ func (p *Pipeline) CallLLM(
 			candidateThinking := thinkingSettingsFromModelConfig(candidateCfg)
 			applyThinkingOption(callOpts, candidateProvider, candidateThinking, true, ts.agent.ID)
 			exec.suppressReasoning = shouldSuppressReasoningFor(candidateThinking)
-			return candidateProvider.Chat(ctx, messagesForCall, toolDefsForCall, candidate.Model, callOpts)
+			return candidateProvider.Chat(ctx, messagesForCall, candidateTools, candidate.Model, callOpts)
 		}
 
 		if len(exec.activeCandidates) > 1 && p.Fallback != nil {
@@ -208,17 +249,10 @@ func (p *Pipeline) CallLLM(
 				fbErr    error
 			)
 			if hasMediaRefs(messagesForCall) {
-				fbResult, fbErr = p.Fallback.ExecuteImage(
+				fbResult, fbErr = p.Fallback.ExecuteImageCandidate(
 					providerCtx,
 					exec.activeCandidates,
-					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						candidate := providers.FallbackCandidate{Provider: provider, Model: model}
-						for _, configured := range exec.activeCandidates {
-							if configured.Provider == provider && configured.Model == model {
-								candidate = configured
-								break
-							}
-						}
+					func(ctx context.Context, candidate providers.FallbackCandidate) (*providers.LLMResponse, error) {
 						return runCandidate(ctx, candidate)
 					},
 				)
@@ -672,13 +706,31 @@ func (p *Pipeline) CallLLM(
 	return ControlToolLoop, nil
 }
 
-func (p *Pipeline) applyBeforeLLMModelRewrite(ts *turnState, exec *turnExecution) {
+func restoreToolDefinition(
+	current,
+	available []providers.ToolDefinition,
+	name string,
+) []providers.ToolDefinition {
+	for _, tool := range current {
+		if strings.EqualFold(tool.Function.Name, name) {
+			return current
+		}
+	}
+	for _, tool := range available {
+		if strings.EqualFold(tool.Function.Name, name) {
+			return append(current, tool)
+		}
+	}
+	return current
+}
+
+func (p *Pipeline) applyBeforeLLMModelRewrite(ts *turnState, exec *turnExecution) error {
 	if p == nil || ts == nil || ts.agent == nil || exec == nil {
-		return
+		return nil
 	}
 	rawModel := strings.TrimSpace(exec.llmModel)
 	if rawModel == "" {
-		return
+		return nil
 	}
 
 	defaultProvider := "openai"
@@ -689,26 +741,55 @@ func (p *Pipeline) applyBeforeLLMModelRewrite(ts *turnState, exec *turnExecution
 	}
 	defaultProvider = effectiveDefaultProvider(defaultProvider)
 	candidates := resolveModelCandidates(p.Cfg, defaultProvider, rawModel, nil)
+	if len(candidates) == 0 {
+		return fmt.Errorf("hook-selected model %q could not be resolved", rawModel)
+	}
+	candidate := candidates[0]
+	provider := ts.agent.CandidateProviders[candidateProviderKey(candidate)]
+	if provider == nil {
+		modelCfg, err := resolvedCandidateModelConfig(p.Cfg, candidate, ts.agent.Workspace)
+		if err != nil {
+			return fmt.Errorf("resolve hook-selected model %q: %w", rawModel, err)
+		}
+		provider, _, err = providers.CreateProviderFromConfig(modelCfg)
+		if err != nil {
+			return fmt.Errorf("initialize hook-selected model %q: %w", rawModel, err)
+		}
+		exec.ownedProviders = append(exec.ownedProviders, provider)
+	}
 	exec.activeCandidates = candidates
+	exec.activeProvider = provider
 	exec.activeModel = resolvedCandidateModel(candidates, rawModel)
 	exec.llmModel = exec.activeModel
 	exec.activeModelConfig = resolveActiveModelConfig(p.Cfg, ts.agent.Workspace, candidates, rawModel, defaultProvider)
+	return nil
 }
 
 func providerForFallbackCandidate(
 	agent *AgentInstance,
 	activeProvider providers.LLMProvider,
 	activeCandidates []providers.FallbackCandidate,
-	provider string,
-	model string,
+	candidate providers.FallbackCandidate,
 ) (providers.LLMProvider, error) {
 	if agent != nil {
-		if cp, ok := agent.CandidateProviders[providers.ModelKey(provider, model)]; ok && cp != nil {
+		if cp, ok := agent.CandidateProviders[candidateProviderKey(candidate)]; ok && cp != nil {
 			return cp, nil
 		}
 	}
+	if len(activeCandidates) > 0 &&
+		activeCandidates[0].StableKey() == candidate.StableKey() &&
+		activeProvider != nil {
+		return activeProvider, nil
+	}
+	if candidate.ConfigKey != "" || candidate.ConfigIndex > 0 {
+		return nil, fmt.Errorf("fallback model %q has no initialized configured provider", candidate.Model)
+	}
+	if len(activeCandidates) > 0 &&
+		providers.NormalizeProvider(activeCandidates[0].Provider) != providers.NormalizeProvider(candidate.Provider) {
+		return nil, fmt.Errorf("fallback model %q has no configured provider %q", candidate.Model, candidate.Provider)
+	}
 	if activeProvider == nil {
-		return nil, fmt.Errorf("fallback model %q has no active provider", model)
+		return nil, fmt.Errorf("fallback model %q has no active provider", candidate.Model)
 	}
 	return activeProvider, nil
 }

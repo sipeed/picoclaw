@@ -147,6 +147,7 @@ type turnExecution struct {
 	llmOpts             map[string]any
 	gracefulTerminal    bool
 	useNativeSearch     bool
+	ownedProviders      []providers.LLMProvider
 
 	// Phase tracking
 	phase LLMPhase
@@ -154,6 +155,14 @@ type turnExecution struct {
 	// Abort signaling for coordinator (set by Pipeline methods)
 	abortedByHardAbort bool // true when hard abort triggered during LLM/tools
 	abortedByHook      bool // true when HookActionAbortTurn triggered
+}
+
+func (exec *turnExecution) closeOwnedProviders() {
+	if exec == nil {
+		return
+	}
+	closeUniqueStatefulProviders(exec.ownedProviders...)
+	exec.ownedProviders = nil
 }
 
 // newTurnExecution creates a turnExecution initialized from turnState and options.

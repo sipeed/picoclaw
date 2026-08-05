@@ -16,7 +16,9 @@ interface ProviderSectionProps {
   onDelete: (model: ModelInfo) => void
   fallbackChain: string[]
   defaultModelName: string
+  defaultModelEntryCount: number
   defaultChainAllowedModelNames: Set<string>
+  fallbackDefaultConflictModelNames: Set<string>
 }
 
 export function ProviderSection({
@@ -28,7 +30,9 @@ export function ProviderSection({
   onDelete,
   fallbackChain,
   defaultModelName,
+  defaultModelEntryCount,
   defaultChainAllowedModelNames,
+  fallbackDefaultConflictModelNames,
 }: ProviderSectionProps) {
   const [open, setOpen] = useState(true)
 
@@ -62,7 +66,7 @@ export function ProviderSection({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {models.map((model) => (
             <ModelCard
-              key={model.model_name}
+              key={model.index}
               model={model}
               onEdit={onEdit}
               onSetDefault={onSetDefault}
@@ -70,7 +74,14 @@ export function ProviderSection({
               onDelete={onDelete}
               inFallbackChain={fallbackChain.includes(model.model_name)}
               isDefault={defaultModelName === model.model_name}
+              deleteDisabled={
+                defaultModelName === model.model_name &&
+                defaultModelEntryCount <= 1
+              }
               defaultChainAllowed={defaultChainAllowedModelNames.has(
+                model.model_name,
+              )}
+              fallbackDefaultConflict={fallbackDefaultConflictModelNames.has(
                 model.model_name,
               )}
             />

@@ -536,6 +536,65 @@ func TestGatewayStartReady_ValidDefaultModel(t *testing.T) {
 	}
 }
 
+func TestGatewayStartReady_RejectsInvalidDuplicateAliasEntry(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.ModelName = "shared"
+	cfg.ModelList = []*config.ModelConfig{
+		{
+			ModelName: "shared",
+			Provider:  "openai",
+			Model:     "gpt-4o",
+			APIKeys:   config.SimpleSecureStrings("test-key"),
+		},
+		{
+			ModelName: "shared",
+			Provider:  "elevenlabs",
+			Model:     "scribe_v1",
+			APIKeys:   config.SimpleSecureStrings("audio-key"),
+		},
+	}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	ready, reason, err := h.gatewayStartReady()
+	if err != nil {
+		t.Fatalf("gatewayStartReady() error = %v", err)
+	}
+	if ready {
+		t.Fatal("gatewayStartReady() ready = true, want false")
+	}
+	if !strings.Contains(reason, "cannot be used as the default chat model") {
+		t.Fatalf("gatewayStartReady() reason = %q, want duplicate alias rejection", reason)
+	}
+}
+
+func TestGatewayStartReady_RawDefaultModelUsesProviderTemplate(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.ModelName = "openrouter/deepseek/deepseek-v3.2"
+	cfg.ModelList = []*config.ModelConfig{{
+		ModelName: "openrouter-template",
+		Model:     "openrouter/auto",
+		APIBase:   "https://openrouter.ai/api/v1",
+	}}
+	cfg.ModelList[0].SetAPIKey("test-key")
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	ready, reason, err := h.gatewayStartReady()
+	if err != nil {
+		t.Fatalf("gatewayStartReady() error = %v", err)
+	}
+	if !ready {
+		t.Fatalf("gatewayStartReady() ready = false, want true (reason=%q)", reason)
+	}
+}
+
 func TestGatewayStartReady_DefaultModelWithoutCredential(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	cfg := config.DefaultConfig()
@@ -1220,6 +1279,27 @@ func TestGatewayStatusRequiresRestartAfterFallbackOrderChange(t *testing.T) {
 	}
 }
 
+func TestModelStreamingSignaturesIncludeRawFallbackOrder(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ModelList = []*config.ModelConfig{openAIModelConfig("primary")}
+	cfg.Agents.Defaults.ModelName = "primary"
+	cfg.Agents.Defaults.ModelFallbacks = []string{
+		"openrouter/fallback-a",
+		"anthropic/fallback-b",
+	}
+
+	before := strings.Join(computeModelStreamingSignatures(cfg), "\n")
+	cfg.Agents.Defaults.ModelFallbacks = []string{
+		"anthropic/fallback-b",
+		"openrouter/fallback-a",
+	}
+	after := strings.Join(computeModelStreamingSignatures(cfg), "\n")
+
+	if before == after {
+		t.Fatalf("raw fallback reorder did not change signatures:\n%s", before)
+	}
+}
+
 func TestGatewayStatusRequiresRestartAfterToolChange(t *testing.T) {
 	resetGatewayTestState(t)
 
@@ -1836,7 +1916,7 @@ func TestConfigSignatureIncludesDefaultProviderPrefixedRefWithSplitConfig(t *tes
 	}
 }
 
-func TestConfigSignatureBareModelRefUsesExactModelBeforeDefaultProviderModelID(t *testing.T) {
+func TestConfigSignatureBareModelRefUsesDefaultProviderModelID(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ModelList = []*config.ModelConfig{
 		{
@@ -1859,15 +1939,29 @@ func TestConfigSignatureBareModelRefUsesExactModelBeforeDefaultProviderModelID(t
 	cfg.ModelList[0].Streaming = config.ModelStreamingConfig{Enabled: true}
 	afterExactModelChange := computeConfigSignature(cfg)
 
-	if before == afterExactModelChange {
-		t.Fatal("config signature should change when the exact bare model entry changes streaming")
+	if before != afterExactModelChange {
+		t.Fatal("config signature should not change for a bare model entry on another provider")
 	}
 
 	cfg.ModelList[1].Streaming = config.ModelStreamingConfig{Enabled: true}
 	afterDefaultProviderModelChange := computeConfigSignature(cfg)
 
-	if afterExactModelChange != afterDefaultProviderModelChange {
-		t.Fatal("config signature should not change when a shadowed default-provider model id changes streaming")
+	if afterExactModelChange == afterDefaultProviderModelChange {
+		t.Fatal("config signature should change when the default-provider model id changes streaming")
+	}
+}
+
+func TestConfigSignatureChangesWithDefaultProvider(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Provider = "openai"
+	cfg.Agents.Defaults.ModelName = "gpt-4o"
+	cfg.ModelList = []*config.ModelConfig{{ModelName: "legacy", Model: "gpt-4o"}}
+	before := computeConfigSignature(cfg)
+
+	cfg.Agents.Defaults.Provider = "openrouter"
+	after := computeConfigSignature(cfg)
+	if before == after {
+		t.Fatal("config signature should change when the effective default provider changes")
 	}
 }
 
@@ -2463,5 +2557,38 @@ func TestFindPicoclawBinary_EnvOverride_InvalidPath(t *testing.T) {
 	// Should not return the invalid path; falls back to "picoclaw" or another found path
 	if got == "/nonexistent/picoclaw-binary" {
 		t.Errorf("FindPicoclawBinary() returned invalid env path %q, expected fallback", got)
+	}
+}
+
+func TestModelConfigsMatchingSignatureRef_BareUsesDefaultProvider(t *testing.T) {
+	models := []*config.ModelConfig{
+		{ModelName: "openrouter-model", Provider: "openrouter", Model: "gpt-4o"},
+		{ModelName: "openai-model", Provider: "openai", Model: "gpt-4o"},
+	}
+
+	matches := modelConfigsMatchingSignatureRef(models, "gpt-4o", "openai")
+	if len(matches) != 1 || matches[0].model.ModelName != "openai-model" {
+		t.Fatalf("matches = %#v, want openai-model", matches)
+	}
+}
+
+func TestModelConfigsMatchingSignatureRefUsesResolverScore(t *testing.T) {
+	models := []*config.ModelConfig{
+		{
+			ModelName: "disabled",
+			Provider:  "openrouter",
+			Model:     "target",
+		},
+		{
+			ModelName: "enabled",
+			Provider:  "openrouter",
+			Model:     "target",
+			Enabled:   true,
+		},
+	}
+
+	matches := modelConfigsMatchingSignatureRef(models, "openrouter/target", "openai")
+	if len(matches) != 1 || matches[0].index != 1 {
+		t.Fatalf("matches = %#v, want resolver-selected index 1", matches)
 	}
 }

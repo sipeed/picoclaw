@@ -549,6 +549,43 @@ func TestImageFallback_NoCandidates(t *testing.T) {
 	}
 }
 
+func TestImageFallbackCandidate_PreservesConfigIdentity(t *testing.T) {
+	fc := NewFallbackChain(NewCooldownTracker(), nil)
+	candidates := []FallbackCandidate{
+		{Provider: "openai", Model: "vision", IdentityKey: "model_name:first", ConfigKey: "config:first"},
+		{Provider: "openai", Model: "vision", IdentityKey: "model_name:second", ConfigKey: "config:second"},
+	}
+	var seen []string
+	result, err := fc.ExecuteImageCandidate(
+		context.Background(),
+		candidates,
+		func(_ context.Context, candidate FallbackCandidate) (*LLMResponse, error) {
+			seen = append(seen, candidate.ConfigKey)
+			if candidate.ConfigKey == "config:first" {
+				return nil, errors.New("retry")
+			}
+			return &LLMResponse{Content: "ok"}, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("ExecuteImageCandidate() error = %v", err)
+	}
+	if len(seen) != 2 || seen[0] != "config:first" || seen[1] != "config:second" {
+		t.Fatalf("candidate identities = %v, want [config:first config:second]", seen)
+	}
+	if result.IdentityKey != candidates[1].StableKey() {
+		t.Fatalf("IdentityKey = %q, want %q", result.IdentityKey, candidates[1].StableKey())
+	}
+}
+
+func TestFallbackCandidateStableKeyIncludesConfigIdentity(t *testing.T) {
+	first := FallbackCandidate{IdentityKey: "model_name:shared", ConfigKey: "config:first"}
+	second := FallbackCandidate{IdentityKey: "model_name:shared", ConfigKey: "config:second"}
+	if first.StableKey() == second.StableKey() {
+		t.Fatalf("StableKey() = %q for distinct configurations", first.StableKey())
+	}
+}
+
 // --- ResolveCandidates Tests ---
 
 func TestResolveCandidates_Simple(t *testing.T) {

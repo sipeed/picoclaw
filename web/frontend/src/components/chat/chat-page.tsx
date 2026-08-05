@@ -147,6 +147,7 @@ export function ChatPage() {
     apiKeyModels,
     oauthModels,
     localModels,
+    settingDefault,
     handleSetDefault,
   } = useChatModels({ isConnected: isGatewayRunning })
   const hasDefaultModel = Boolean(defaultModelName)
@@ -322,6 +323,7 @@ export function ChatPage() {
               apiKeyModels={apiKeyModels}
               oauthModels={oauthModels}
               localModels={localModels}
+              disabled={settingDefault}
               onValueChange={handleSetDefault}
             />
           )

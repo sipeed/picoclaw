@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -29,6 +31,51 @@ func modelConfigIdentityKey(mc *config.ModelConfig) string {
 	return ""
 }
 
+func modelConfigResolutionKey(defaultProvider string, mc *config.ModelConfig) string {
+	if mc == nil {
+		return ""
+	}
+	provider, modelID := modelProviderAndIDForResolution(defaultProvider, mc)
+	apiKeys := make([]string, len(mc.APIKeys))
+	for i := range mc.APIKeys {
+		apiKeys[i] = mc.APIKeys[i].String()
+	}
+	payload, err := json.Marshal(struct {
+		ModelName           string
+		Provider            string
+		Model               string
+		APIBase             string
+		Proxy               string
+		AuthMethod          string
+		ConnectMode         string
+		Workspace           string
+		APIKeys             []string
+		Enabled             bool
+		UserAgent           string
+		RPM                 int
+		RequestTimeout      int
+		MaxTokensField      string
+		ThinkingLevel       string
+		ToolSchemaTransform string
+		Streaming           config.ModelStreamingConfig
+		ExtraBody           map[string]any
+		CustomHeaders       map[string]string
+	}{
+		ModelName: mc.ModelName, Provider: provider, Model: modelID,
+		APIBase: mc.APIBase, Proxy: mc.Proxy, AuthMethod: mc.AuthMethod,
+		ConnectMode: mc.ConnectMode, Workspace: mc.Workspace, APIKeys: apiKeys,
+		Enabled: mc.Enabled, UserAgent: mc.UserAgent, RPM: mc.RPM,
+		RequestTimeout: mc.RequestTimeout, MaxTokensField: mc.MaxTokensField,
+		ThinkingLevel: mc.ThinkingLevel, ToolSchemaTransform: mc.ToolSchemaTransform,
+		Streaming: mc.Streaming, ExtraBody: mc.ExtraBody, CustomHeaders: mc.CustomHeaders,
+	})
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(payload)
+	return fmt.Sprintf("config:%x", sum)
+}
+
 func effectiveDefaultProvider(defaultProvider string) string {
 	defaultProvider = strings.TrimSpace(defaultProvider)
 	if defaultProvider == "" {
@@ -41,7 +88,10 @@ func modelProviderAndIDForResolution(defaultProvider string, mc *config.ModelCon
 	if mc == nil {
 		return "", ""
 	}
-	return providers.ExtractProtocol(mc)
+	if strings.TrimSpace(mc.Provider) != "" {
+		return providers.ExtractProtocol(mc)
+	}
+	return providers.SplitModelProviderAndID(mc.Model, effectiveDefaultProvider(defaultProvider))
 }
 
 func cloneModelConfigForResolution(
@@ -78,6 +128,7 @@ func candidateFromModelConfig(
 		DisplayName: strings.TrimSpace(mc.ModelName),
 		RPM:         mc.RPM,
 		IdentityKey: modelConfigIdentityKey(mc),
+		ConfigKey:   modelConfigResolutionKey(defaultProvider, mc),
 	}, true
 }
 
@@ -91,40 +142,39 @@ func lookupModelConfigByRef(cfg *config.Config, raw string, defaultProvider ...s
 		return mc
 	}
 
-	rawRef := providers.ParseModelRef(raw, "")
-	rawKey := ""
-	if rawRef != nil && strings.TrimSpace(rawRef.Provider) != "" && strings.TrimSpace(rawRef.Model) != "" {
-		rawKey = providers.ModelKey(rawRef.Provider, rawRef.Model)
+	resolved, err := providers.ResolveModelConfig(cfg, raw)
+	if err != nil {
+		return nil
 	}
-
-	fallbackProvider := ""
-	if len(defaultProvider) > 0 {
-		fallbackProvider = effectiveDefaultProvider(defaultProvider[0])
-	}
-	for i := range cfg.ModelList {
-		mc := cfg.ModelList[i]
-		if mc == nil {
-			continue
-		}
-		fullModel := strings.TrimSpace(mc.Model)
-		if fullModel == "" {
-			continue
-		}
-		protocol, modelID := modelProviderAndIDForResolution(fallbackProvider, mc)
-		if fullModel == raw {
-			return mc
-		}
-		if modelID == raw {
-			if fallbackProvider == "" || providers.NormalizeProvider(protocol) == fallbackProvider {
-				return mc
-			}
-		}
-		if rawKey != "" && providers.ModelKey(protocol, modelID) == rawKey {
-			return mc
+	for _, modelCfg := range cfg.ModelList {
+		if modelConfigsResolveToSameEntry(
+			modelCfg,
+			resolved,
+			cfg.Agents.Defaults.Provider,
+		) {
+			return resolved
 		}
 	}
-
 	return nil
+}
+
+func modelConfigsResolveToSameEntry(
+	left,
+	right *config.ModelConfig,
+	defaultProvider string,
+) bool {
+	if left == nil || right == nil || left.IsVirtual() {
+		return false
+	}
+	leftProvider, leftModel := modelProviderAndIDForResolution(defaultProvider, left)
+	rightProvider, rightModel := providers.ExtractProtocol(right)
+	return left.ModelName == right.ModelName &&
+		providers.ModelKey(leftProvider, leftModel) == providers.ModelKey(rightProvider, rightModel) &&
+		left.APIBase == right.APIBase &&
+		left.APIKey() == right.APIKey() &&
+		left.Enabled == right.Enabled &&
+		left.AuthMethod == right.AuthMethod &&
+		left.ConnectMode == right.ConnectMode
 }
 
 func resolveModelCandidate(
@@ -139,7 +189,18 @@ func resolveModelCandidate(
 	defaultProvider = effectiveDefaultProvider(defaultProvider)
 
 	if mc := lookupModelConfigByRef(cfg, raw, defaultProvider); mc != nil {
-		return candidateFromModelConfig(defaultProvider, mc)
+		candidate, ok := candidateFromModelConfig(defaultProvider, mc)
+		if !ok {
+			return providers.FallbackCandidate{}, false
+		}
+		for index, modelCfg := range cfg.ModelList {
+			if modelCfg == mc || modelConfigsResolveToSameEntry(modelCfg, mc, defaultProvider) {
+				candidate.ConfigIndex = index + 1
+				candidate.ConfigKey = modelConfigResolutionKey(defaultProvider, modelCfg)
+				break
+			}
+		}
+		return candidate, true
 	}
 
 	ref := providers.ParseModelRef(raw, defaultProvider)
@@ -229,6 +290,21 @@ func resolvedModelConfig(cfg *config.Config, modelName, workspace string) (*conf
 	return &clone, nil
 }
 
+func resolvedRuntimeModelConfig(cfg *config.Config, modelName, workspace string) (*config.ModelConfig, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config is nil")
+	}
+
+	modelCfg, err := providers.ResolveModelConfig(cfg, strings.TrimSpace(modelName))
+	if err != nil {
+		return nil, err
+	}
+	if modelCfg.Workspace == "" {
+		modelCfg.Workspace = workspace
+	}
+	return modelCfg, nil
+}
+
 func resolveActiveModelConfig(
 	cfg *config.Config,
 	workspace string,
@@ -243,6 +319,9 @@ func resolveActiveModelConfig(
 
 	if len(candidates) > 0 {
 		candidate := candidates[0]
+		if modelCfg, err := resolvedCandidateModelConfig(cfg, candidate, workspace); err == nil {
+			return modelCfg
+		}
 		identityKey := strings.TrimSpace(candidate.IdentityKey)
 		if identityKey != "" {
 			for _, mc := range cfg.ModelList {

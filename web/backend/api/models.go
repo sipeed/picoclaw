@@ -75,12 +75,17 @@ type defaultChainRequest struct {
 	FallbackChain []string `json:"fallback_chain"`
 }
 
-func normalizeStoredModelConfig(mc *config.ModelConfig) bool {
+func normalizeStoredModelConfig(mc *config.ModelConfig, defaultProvider string) bool {
 	if mc == nil {
 		return false
 	}
 
 	changed := false
+	modelName := strings.TrimSpace(mc.ModelName)
+	if modelName != mc.ModelName {
+		mc.ModelName = modelName
+		changed = true
+	}
 	model := strings.TrimSpace(mc.Model)
 	if model != mc.Model {
 		mc.Model = model
@@ -123,7 +128,7 @@ func normalizeStoredModelConfig(mc *config.ModelConfig) bool {
 		return changed
 	}
 
-	effectiveProvider, modelID := providers.SplitModelProviderAndID(model, "openai")
+	effectiveProvider, modelID := providers.SplitModelProviderAndID(model, defaultProvider)
 	if effectiveProvider == "" {
 		return changed
 	}
@@ -138,16 +143,17 @@ func normalizeStoredModelConfig(mc *config.ModelConfig) bool {
 	return changed
 }
 
-func normalizeIncomingModelConfig(mc *config.ModelConfig) {
+func normalizeIncomingModelConfig(mc *config.ModelConfig, defaultProvider string) {
 	if mc == nil {
 		return
 	}
 
+	mc.ModelName = strings.TrimSpace(mc.ModelName)
 	mc.Model = strings.TrimSpace(mc.Model)
 	mc.Provider = strings.TrimSpace(mc.Provider)
 	mc.AuthMethod = strings.ToLower(strings.TrimSpace(mc.AuthMethod))
 	if mc.Provider == "" {
-		mc.Provider, mc.Model = providers.SplitModelProviderAndID(mc.Model, "openai")
+		mc.Provider, mc.Model = providers.SplitModelProviderAndID(mc.Model, defaultProvider)
 	} else {
 		mc.Provider = providers.NormalizeProvider(mc.Provider)
 		if mc.Provider == "elevenlabs" {
@@ -200,8 +206,8 @@ func modelProviderOptionsForResponse() []providers.ModelProviderOption {
 	return options
 }
 
-func defaultModelAllowedForModelConfig(mc *config.ModelConfig) bool {
-	provider, _ := providers.ExtractProtocol(mc)
+func defaultModelAllowedForModelConfig(mc *config.ModelConfig, defaultProvider string) bool {
+	provider, _ := modelConfigProviderAndID(mc, defaultProvider)
 	return providers.IsDefaultModelProvider(provider)
 }
 
@@ -239,8 +245,27 @@ func normalizeStoredModelProviders(cfg *config.Config) bool {
 	}
 
 	changed := false
+	defaultProvider := defaultChainProvider(cfg)
 	for _, model := range cfg.ModelList {
-		if normalizeStoredModelConfig(model) {
+		if normalizeStoredModelConfig(model, defaultProvider) {
+			changed = true
+		}
+	}
+	return changed
+}
+
+func normalizeStoredModelNames(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	changed := false
+	for _, model := range cfg.ModelList {
+		if model == nil {
+			continue
+		}
+		modelName := strings.TrimSpace(model.ModelName)
+		if modelName != model.ModelName {
+			model.ModelName = modelName
 			changed = true
 		}
 	}
@@ -315,6 +340,7 @@ func validateDefaultChainModelSet(
 	modelName string,
 	models []*config.ModelConfig,
 	defaultContext bool,
+	defaultProvider string,
 ) error {
 	if len(models) == 0 {
 		if defaultContext {
@@ -329,14 +355,123 @@ func validateDefaultChainModelSet(
 			}
 			return fmt.Errorf("cannot add virtual model %q to fallback_chain", modelName)
 		}
-		if !defaultModelAllowedForModelConfig(modelCfg) {
+		if !defaultModelAllowedForModelConfig(modelCfg, defaultProvider) {
 			if defaultContext {
 				return fmt.Errorf("model %q cannot be used as the default chat model", modelName)
 			}
 			return fmt.Errorf("model %q cannot be used in the fallback chain", modelName)
 		}
+		effectiveModelCfg := modelCfg
+		if strings.TrimSpace(modelCfg.Provider) == "" {
+			clone := *modelCfg
+			normalizeStoredModelConfig(&clone, defaultProvider)
+			effectiveModelCfg = &clone
+		}
+		if !hasModelConfiguration(effectiveModelCfg) {
+			return rawModelConfigurationError(modelName, defaultContext)
+		}
 	}
 	return nil
+}
+
+func validateDefaultChainReference(
+	cfg *config.Config,
+	modelName string,
+	models []*config.ModelConfig,
+	defaultContext bool,
+) error {
+	if len(models) > 0 {
+		return validateDefaultChainModelSet(
+			modelName,
+			models,
+			defaultContext,
+			defaultChainProvider(cfg),
+		)
+	}
+
+	resolved, err := providers.ResolveModelConfig(cfg, modelName)
+	if err != nil || resolved == nil {
+		ref := providers.ParseModelRef(modelName, defaultChainProvider(cfg))
+		if ref != nil &&
+			strings.TrimSpace(ref.Provider) != "" &&
+			strings.TrimSpace(ref.Model) != "" &&
+			!providers.IsDefaultModelProvider(ref.Provider) {
+			if defaultContext {
+				return fmt.Errorf("model %q cannot be used as the default chat model", modelName)
+			}
+			return fmt.Errorf("model %q cannot be used in the fallback chain", modelName)
+		}
+		if ref != nil &&
+			strings.TrimSpace(ref.Provider) != "" &&
+			strings.TrimSpace(ref.Model) != "" &&
+			providers.IsDefaultModelProvider(ref.Provider) {
+			return rawModelConfigurationError(modelName, defaultContext)
+		}
+		return validateDefaultChainModelSet(
+			modelName,
+			nil,
+			defaultContext,
+			defaultChainProvider(cfg),
+		)
+	}
+	if err := validateDefaultChainModelSet(
+		modelName,
+		[]*config.ModelConfig{resolved},
+		defaultContext,
+		defaultChainProvider(cfg),
+	); err != nil {
+		return err
+	}
+	if !rawTemplateHasConfiguration(resolved) {
+		return rawModelConfigurationError(modelName, defaultContext)
+	}
+	return nil
+}
+
+func rawTemplateHasConfiguration(modelCfg *config.ModelConfig) bool {
+	return hasModelConfiguration(modelCfg)
+}
+
+func rawModelConfigurationError(modelName string, defaultContext bool) error {
+	if defaultContext {
+		return fmt.Errorf("default model %q has no configured provider", modelName)
+	}
+	return fmt.Errorf("fallback model %q has no configured provider", modelName)
+}
+
+func defaultChainProvider(cfg *config.Config) string {
+	if cfg != nil && strings.TrimSpace(cfg.Agents.Defaults.Provider) != "" {
+		return providers.NormalizeProvider(cfg.Agents.Defaults.Provider)
+	}
+	return "openai"
+}
+
+func defaultChainReferenceIdentity(cfg *config.Config, modelName string) string {
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
+		return ""
+	}
+
+	defaultProvider := defaultChainProvider(cfg)
+	var modelList []*config.ModelConfig
+	if cfg != nil {
+		modelList = cfg.ModelList
+	}
+	matches := modelConfigsMatchingSignatureRef(modelList, modelName, defaultProvider)
+	if len(matches) > 0 {
+		modelCfg := matches[0].model
+		if alias := strings.TrimSpace(modelCfg.ModelName); alias != "" {
+			return "model_name:" + alias
+		}
+		provider, modelID := providers.ExtractProtocol(modelCfg)
+		return providers.ModelKey(provider, modelID)
+	}
+
+	ref := providers.ParseModelRef(modelName, defaultProvider)
+	if ref == nil {
+		return ""
+	}
+	return providers.ModelKey(ref.Provider, ref.Model)
 }
 
 func validateDefaultModelChain(
@@ -355,19 +490,41 @@ func validateDefaultModelChain(
 	}
 
 	modelsByName := modelConfigsByName(cfg)
+	defaultIdentity := ""
 	if defaultModel != "" {
-		if err := validateDefaultChainModelSet(defaultModel, modelsByName[defaultModel], true); err != nil {
+		if err := validateDefaultChainReference(
+			cfg,
+			defaultModel,
+			modelsByName[defaultModel],
+			true,
+		); err != nil {
 			return nil, err
 		}
+		defaultIdentity = defaultChainReferenceIdentity(cfg, defaultModel)
 	}
 
+	seenIdentities := make(map[string]struct{}, len(fallbacks))
 	validated := make([]string, 0, len(fallbacks))
 	for _, fallback := range fallbacks {
 		if fallback == defaultModel {
 			return nil, fmt.Errorf("default model %q cannot also appear in fallback_chain", defaultModel)
 		}
-		if err := validateDefaultChainModelSet(fallback, modelsByName[fallback], false); err != nil {
+		if err := validateDefaultChainReference(cfg, fallback, modelsByName[fallback], false); err != nil {
 			return nil, err
+		}
+		identity := defaultChainReferenceIdentity(cfg, fallback)
+		if identity != "" && identity == defaultIdentity {
+			return nil, fmt.Errorf(
+				"fallback model %q resolves to the same runtime model as default model %q",
+				fallback,
+				defaultModel,
+			)
+		}
+		if _, exists := seenIdentities[identity]; identity != "" && exists {
+			continue
+		}
+		if identity != "" {
+			seenIdentities[identity] = struct{}{}
 		}
 		validated = append(validated, fallback)
 	}
@@ -383,11 +540,18 @@ func normalizeDefaultChainReferences(cfg *config.Config) {
 	defaultModel := strings.TrimSpace(cfg.Agents.Defaults.ModelName)
 	fallbacks := dedupeModelNameList(trimModelNameList(cfg.Agents.Defaults.ModelFallbacks))
 	modelsByName := modelConfigsByName(cfg)
+	defaultIdentity := ""
 
 	if defaultModel != "" {
-		if err := validateDefaultChainModelSet(defaultModel, modelsByName[defaultModel], true); err != nil {
+		if err := validateDefaultChainReference(
+			cfg,
+			defaultModel,
+			modelsByName[defaultModel],
+			true,
+		); err != nil {
 			defaultModel = ""
 		}
+		defaultIdentity = defaultChainReferenceIdentity(cfg, defaultModel)
 	}
 	if defaultModel == "" {
 		cfg.Agents.Defaults.ModelName = ""
@@ -395,13 +559,24 @@ func normalizeDefaultChainReferences(cfg *config.Config) {
 		return
 	}
 
+	seenIdentities := make(map[string]struct{}, len(fallbacks))
 	validated := make([]string, 0, len(fallbacks))
 	for _, fallback := range fallbacks {
 		if fallback == defaultModel {
 			continue
 		}
-		if err := validateDefaultChainModelSet(fallback, modelsByName[fallback], false); err != nil {
+		if err := validateDefaultChainReference(cfg, fallback, modelsByName[fallback], false); err != nil {
 			continue
+		}
+		identity := defaultChainReferenceIdentity(cfg, fallback)
+		if identity != "" && identity == defaultIdentity {
+			continue
+		}
+		if _, exists := seenIdentities[identity]; identity != "" && exists {
+			continue
+		}
+		if identity != "" {
+			seenIdentities[identity] = struct{}{}
 		}
 		validated = append(validated, fallback)
 	}
@@ -423,8 +598,10 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 	// Normalize legacy provider/model storage in memory so GET can round-trip
 	// through the current API shape without mutating the on-disk config.
 	normalizeStoredModelProviders(cfg)
+	normalizeDefaultChainReferences(cfg)
 
 	defaultModel := cfg.Agents.Defaults.GetModelName()
+	fallbackChain := cfg.Agents.Defaults.ModelFallbacks
 	modelStatuses := make([]modelConfigurationSummary, len(cfg.ModelList))
 
 	var wg sync.WaitGroup
@@ -464,7 +641,7 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 			Status:              modelStatuses[i].Status,
 			IsDefault:           m.ModelName == defaultModel,
 			IsVirtual:           m.IsVirtual(),
-			DefaultModelAllowed: defaultModelAllowedForModelConfig(m),
+			DefaultModelAllowed: defaultModelAllowedForModelConfig(m, defaultChainProvider(cfg)),
 		})
 	}
 
@@ -473,6 +650,8 @@ func (h *Handler) handleListModels(w http.ResponseWriter, r *http.Request) {
 		"models":           models,
 		"total":            len(models),
 		"default_model":    defaultModel,
+		"default_provider": defaultChainProvider(cfg),
+		"fallback_chain":   fallbackChain,
 		"provider_options": modelProviderOptionsForResponse(),
 	})
 }
@@ -486,6 +665,8 @@ func (h *Handler) handleGetDefaultChain(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
 		return
 	}
+	normalizeStoredModelProviders(cfg)
+	normalizeDefaultChainReferences(cfg)
 
 	resp := defaultChainResponse{
 		DefaultModel:  strings.TrimSpace(cfg.Agents.Defaults.GetModelName()),
@@ -518,13 +699,6 @@ func (h *Handler) handleAddModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	normalizeIncomingModelConfig(&mc.ModelConfig)
-
-	if err = validateIncomingModelConfig(&mc.ModelConfig, nil); err != nil {
-		http.Error(w, fmt.Sprintf("Validation error: %v", err), http.StatusBadRequest)
-		return
-	}
-
 	if mc.APIKey != "" {
 		mc.ModelConfig.SetAPIKey(mc.APIKey)
 	}
@@ -535,6 +709,11 @@ func (h *Handler) handleAddModel(w http.ResponseWriter, r *http.Request) {
 	cfg, err := config.LoadConfig(h.configPath)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
+		return
+	}
+	normalizeIncomingModelConfig(&mc.ModelConfig, defaultChainProvider(cfg))
+	if err = validateIncomingModelConfig(&mc.ModelConfig, nil); err != nil {
+		http.Error(w, fmt.Sprintf("Validation error: %v", err), http.StatusBadRequest)
 		return
 	}
 
@@ -599,6 +778,7 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
 		return
 	}
+	normalizeStoredModelProviders(cfg)
 
 	if idx < 0 || idx >= len(cfg.ModelList) {
 		http.Error(w, fmt.Sprintf("Index %d out of range (0-%d)", idx, len(cfg.ModelList)-1), http.StatusNotFound)
@@ -665,20 +845,24 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	normalizeIncomingModelConfig(&mc.ModelConfig)
+	normalizeIncomingModelConfig(&mc.ModelConfig, defaultChainProvider(cfg))
 	if err = validateIncomingModelConfig(&mc.ModelConfig, cfg.ModelList[idx]); err != nil {
 		http.Error(w, fmt.Sprintf("Validation error: %v", err), http.StatusBadRequest)
 		return
 	}
 	newModelName := strings.TrimSpace(mc.ModelConfig.ModelName)
+	defaultReferenceRenamed := false
+	fallbackReferenceRenamed := false
 	if oldModelName != "" && newModelName != "" && oldModelName != newModelName {
 		remainingOldNameModels := modelConfigsByNameExceptIndex(cfg, oldModelName, idx)
-		if strings.TrimSpace(cfg.Agents.Defaults.ModelName) == oldModelName {
-			if err := validateDefaultChainModelSet(oldModelName, remainingOldNameModels, true); err != nil {
+		if err := validateDefaultChainModelSet(oldModelName, remainingOldNameModels, true, defaultChainProvider(cfg)); err != nil {
+			defaultReferenceRenamed = true
+			if strings.TrimSpace(cfg.Agents.Defaults.ModelName) == oldModelName {
 				cfg.Agents.Defaults.ModelName = newModelName
 			}
 		}
-		if err := validateDefaultChainModelSet(oldModelName, remainingOldNameModels, false); err != nil {
+		if err := validateDefaultChainModelSet(oldModelName, remainingOldNameModels, false, defaultChainProvider(cfg)); err != nil {
+			fallbackReferenceRenamed = true
 			cfg.Agents.Defaults.ModelFallbacks = replaceModelName(
 				cfg.Agents.Defaults.ModelFallbacks,
 				oldModelName,
@@ -698,7 +882,16 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	response := map[string]any{"status": "ok"}
+	if oldModelName != "" && newModelName != "" && oldModelName != newModelName {
+		response["reference_rename"] = map[string]any{
+			"from":     oldModelName,
+			"to":       newModelName,
+			"default":  defaultReferenceRenamed,
+			"fallback": fallbackReferenceRenamed,
+		}
+	}
+	json.NewEncoder(w).Encode(response)
 }
 
 // handleDeleteModel removes a model configuration entry at the given index.
@@ -719,6 +912,7 @@ func (h *Handler) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
 		return
 	}
+	normalizeStoredModelNames(cfg)
 
 	if idx < 0 || idx >= len(cfg.ModelList) {
 		http.Error(w, fmt.Sprintf("Index %d out of range (0-%d)", idx, len(cfg.ModelList)-1), http.StatusNotFound)
@@ -732,11 +926,11 @@ func (h *Handler) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
 	if deletedModelName != "" {
 		remainingModels := modelConfigsByName(cfg)[deletedModelName]
 		if strings.TrimSpace(cfg.Agents.Defaults.ModelName) == deletedModelName {
-			if err := validateDefaultChainModelSet(deletedModelName, remainingModels, true); err != nil {
+			if err := validateDefaultChainModelSet(deletedModelName, remainingModels, true, defaultChainProvider(cfg)); err != nil {
 				cfg.Agents.Defaults.ModelName = ""
 			}
 		}
-		if err := validateDefaultChainModelSet(deletedModelName, remainingModels, false); err != nil {
+		if err := validateDefaultChainModelSet(deletedModelName, remainingModels, false, defaultChainProvider(cfg)); err != nil {
 			cfg.Agents.Defaults.ModelFallbacks = removeModelName(
 				cfg.Agents.Defaults.ModelFallbacks,
 				deletedModelName,
@@ -819,12 +1013,15 @@ func (h *Handler) handleSetDefaultModel(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
 		return
 	}
+	normalizeStoredModelNames(cfg)
 
-	// Verify the model_name exists in model_list and is not a virtual model
+	// Keep this legacy endpoint alias-only. Raw references are managed by the
+	// default-chain endpoint and may already exist in persisted configuration.
 	if err := validateDefaultChainModelSet(
 		modelName,
 		modelConfigsByName(cfg)[modelName],
 		true,
+		defaultChainProvider(cfg),
 	); err != nil {
 		status := http.StatusBadRequest
 		if strings.Contains(err.Error(), "not found in model_list") {
@@ -875,6 +1072,7 @@ func (h *Handler) handleUpdateDefaultChain(w http.ResponseWriter, r *http.Reques
 		http.Error(w, fmt.Sprintf("Failed to load config: %v", err), http.StatusInternalServerError)
 		return
 	}
+	normalizeStoredModelNames(cfg)
 
 	defaultModel := strings.TrimSpace(req.DefaultModel)
 	fallbacks, err := validateDefaultModelChain(cfg, defaultModel, req.FallbackChain)

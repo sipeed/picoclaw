@@ -25,6 +25,8 @@ interface ModelCardProps {
   inFallbackChain: boolean
   isDefault: boolean
   defaultChainAllowed: boolean
+  fallbackDefaultConflict: boolean
+  deleteDisabled: boolean
 }
 
 export function ModelCard({
@@ -36,13 +38,19 @@ export function ModelCard({
   inFallbackChain,
   isDefault,
   defaultChainAllowed,
+  fallbackDefaultConflict,
+  deleteDisabled,
 }: ModelCardProps) {
   const { t } = useTranslation()
   const isOAuth = model.auth_method === "oauth"
   const status = model.status
   const statusLabel = t(`models.status.${status}`)
   const canSetDefault = model.available && !isDefault && defaultChainAllowed
-  const canUseInFallback = model.available && !isDefault && defaultChainAllowed
+  const canUseInFallback =
+    model.available &&
+    !isDefault &&
+    !fallbackDefaultConflict &&
+    defaultChainAllowed
 
   const setDefaultLabel = t("models.action.setDefault")
   const setDefaultDisabledReason = (() => {
@@ -67,14 +75,14 @@ export function ModelCard({
     if (!defaultChainAllowed) {
       return t("models.action.setDefaultDisabled.unsupportedProvider")
     }
-    if (isDefault) return t("models.action.addToFallbackDisabled.isDefault")
+    if (isDefault || fallbackDefaultConflict)
+      return t("models.action.addToFallbackDisabled.isDefault")
     return toggleFallbackLabel
   })()
   const deleteLabel = t("models.action.delete")
-  const deleteDisabledReason = isDefault
+  const deleteDisabledReason = deleteDisabled
     ? t("models.action.deleteDisabled.isDefault")
     : deleteLabel
-  const deleteDisabled = isDefault
 
   return (
     <div

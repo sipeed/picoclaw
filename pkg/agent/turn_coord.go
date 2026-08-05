@@ -15,6 +15,11 @@ import (
 )
 
 func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipeline) (turnResult, error) {
+	if ts != nil && ts.agent != nil {
+		modelMu := ts.agent.modelStateMutex()
+		modelMu.RLock()
+		defer modelMu.RUnlock()
+	}
 	turnCtx, turnCancel := context.WithCancel(ctx)
 	defer turnCancel()
 	ts.setTurnCancel(turnCancel)
@@ -82,6 +87,7 @@ func (al *AgentLoop) runTurn(ctx context.Context, ts *turnState, pipeline *Pipel
 	if err != nil {
 		return turnResult{}, err
 	}
+	defer exec.closeOwnedProviders()
 
 	// Convenience references to exec fields used throughout the turn loop.
 	messages := exec.messages
@@ -365,6 +371,9 @@ func (al *AgentLoop) askSideQuestion(
 	if agent == nil {
 		return "", fmt.Errorf("askSideQuestion: no agent available for /btw")
 	}
+	modelMu := agent.modelStateMutex()
+	modelMu.RLock()
+	defer modelMu.RUnlock()
 
 	question = strings.TrimSpace(question)
 	if question == "" {
@@ -659,9 +668,18 @@ func (al *AgentLoop) sideQuestionModelConfig(
 	if agent == nil {
 		return nil, fmt.Errorf("sideQuestionModelConfig: no agent available for /btw")
 	}
+	if candidate.ConfigIndex > 0 {
+		if modelCfg, err := resolvedCandidateModelConfig(
+			al.GetConfig(),
+			candidate,
+			agent.Workspace,
+		); err == nil {
+			return modelCfg, nil
+		}
+	}
 
 	if name := modelAliasFromCandidateIdentityKey(candidate.IdentityKey); name != "" {
-		modelCfg, err := resolvedModelConfig(al.GetConfig(), name, agent.Workspace)
+		modelCfg, err := resolvedRuntimeModelConfig(al.GetConfig(), name, agent.Workspace)
 		if err == nil {
 			return modelCfg, nil
 		}
@@ -670,7 +688,7 @@ func (al *AgentLoop) sideQuestionModelConfig(
 
 	// Older identity keys used provider/model; keep resolving those by model.
 	if name := modelNameFromIdentityKey(candidate.IdentityKey); name != "" {
-		modelCfg, err := resolvedModelConfig(al.GetConfig(), name, agent.Workspace)
+		modelCfg, err := resolvedRuntimeModelConfig(al.GetConfig(), name, agent.Workspace)
 		if err == nil {
 			return modelCfg, nil
 		}
@@ -679,7 +697,7 @@ func (al *AgentLoop) sideQuestionModelConfig(
 
 	if candidate.Provider != "" && candidate.Model != "" {
 		candidateRef := providers.NormalizeProvider(candidate.Provider) + "/" + candidate.Model
-		if modelCfg, err := resolvedModelConfig(al.GetConfig(), candidateRef, agent.Workspace); err == nil {
+		if modelCfg, err := resolvedRuntimeModelConfig(al.GetConfig(), candidateRef, agent.Workspace); err == nil {
 			return modelCfg, nil
 		}
 		return &config.ModelConfig{
@@ -691,7 +709,7 @@ func (al *AgentLoop) sideQuestionModelConfig(
 
 	// Otherwise, clean up the base model name and use it
 	baseModelName = strings.TrimSpace(baseModelName)
-	modelCfg, err := resolvedModelConfig(al.GetConfig(), baseModelName, agent.Workspace)
+	modelCfg, err := resolvedRuntimeModelConfig(al.GetConfig(), baseModelName, agent.Workspace)
 	if err != nil {
 		// Fallback: create a minimal config for test scenarios
 		model := strings.TrimSpace(baseModelName)

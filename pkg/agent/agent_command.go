@@ -294,38 +294,68 @@ func (al *AgentLoop) buildCommandsRuntime(
 			rt.ListSkillNames = agent.ContextBuilder.ListSkillNames
 		}
 		rt.GetModelInfo = func() (string, string) {
+			modelMu := agent.modelStateMutex()
+			modelMu.RLock()
+			defer modelMu.RUnlock()
 			return agent.Model, resolvedCandidateProvider(agent.Candidates, cfg.Agents.Defaults.Provider)
 		}
 		rt.SwitchModel = func(value string) (string, error) {
 			value = strings.TrimSpace(value)
-			modelCfg, err := resolvedModelConfig(cfg, value, agent.Workspace)
-			if err != nil {
-				return "", err
-			}
-
-			nextProvider, _, err := providers.CreateProviderFromConfig(modelCfg)
-			if err != nil {
-				return "", fmt.Errorf("failed to initialize model %q: %w", value, err)
-			}
+			modelMu := agent.modelStateMutex()
+			modelMu.Lock()
+			defer modelMu.Unlock()
 
 			nextCandidates := resolveModelCandidates(cfg, cfg.Agents.Defaults.Provider, value, agent.Fallbacks)
 			if len(nextCandidates) == 0 {
 				return "", fmt.Errorf("model %q did not resolve to any provider candidates", value)
 			}
+			modelCfg, err := resolvedCandidateModelConfig(cfg, nextCandidates[0], agent.Workspace)
+			if err != nil {
+				return "", err
+			}
+			nextProvider, _, err := providers.CreateProviderFromConfig(modelCfg)
+			if err != nil {
+				return "", fmt.Errorf("failed to initialize model %q: %w", value, err)
+			}
+			nextCandidateProviders := make(map[string]providers.LLMProvider)
+			copyInitializedCandidateProviders(
+				agent.CandidateProviders,
+				nextCandidateProviders,
+				agent.ImageCandidates,
+			)
+			copyInitializedCandidateProviders(
+				agent.CandidateProviders,
+				nextCandidateProviders,
+				agent.LightCandidates,
+			)
+			populateCandidateProvidersFromCandidates(
+				cfg,
+				agent.Workspace,
+				nextCandidates[1:],
+				nextCandidateProviders,
+			)
 
 			oldModel := agent.Model
 			oldProvider := agent.Provider
+			oldCandidateProviders := agent.CandidateProviders
+			previousProviders := make(map[string]providers.LLMProvider, len(oldCandidateProviders)+1)
+			for key, provider := range oldCandidateProviders {
+				previousProviders[key] = provider
+			}
+			previousProviders["previous-primary"] = oldProvider
 			agent.Model = value
 			agent.Provider = nextProvider
 			agent.Candidates = nextCandidates
+			agent.CandidateProviders = nextCandidateProviders
 			agent.ThinkingLevel = parseThinkingLevel(modelCfg.ThinkingLevel)
 			agent.ThinkingLevelConfigured = isConfiguredThinkingLevel(modelCfg.ThinkingLevel)
 
-			if oldProvider != nil && oldProvider != nextProvider {
-				if stateful, ok := oldProvider.(providers.StatefulProvider); ok {
-					stateful.Close()
-				}
-			}
+			closeUnreferencedStatefulProviders(
+				previousProviders,
+				nextCandidateProviders,
+				nextProvider,
+				agent.LightProvider,
+			)
 			return oldModel, nil
 		}
 

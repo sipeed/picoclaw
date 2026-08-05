@@ -37,6 +37,8 @@ interface CatalogDialogProps {
   open: boolean
   onClose: () => void
   onModelAdded: () => void
+  onMutationStarted?: () => void
+  onMutationSettled?: () => void
   providerOptions?: ModelProviderOption[]
 }
 
@@ -44,6 +46,8 @@ export function CatalogDialog({
   open,
   onClose,
   onModelAdded,
+  onMutationStarted,
+  onMutationSettled,
   providerOptions,
 }: CatalogDialogProps) {
   const { t } = useTranslation()
@@ -110,6 +114,8 @@ export function CatalogDialog({
   }
 
   const handleDelete = async (id: string) => {
+    onMutationStarted?.()
+    setAdding(true)
     try {
       await deleteCatalog(id)
       setEntries((prev) => prev.filter((e) => e.id !== id))
@@ -121,6 +127,9 @@ export function CatalogDialog({
       if (expandedId === id) setExpandedId(null)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to delete catalog")
+    } finally {
+      setAdding(false)
+      onMutationSettled?.()
     }
   }
 
@@ -128,6 +137,7 @@ export function CatalogDialog({
     const catalogSelected = selected.get(entry.id) || new Set()
     if (catalogSelected.size === 0) return
 
+    onMutationStarted?.()
     setAdding(true)
     try {
       const modelsToAdd = entry.models.filter((m) => catalogSelected.has(m.id))
@@ -148,6 +158,7 @@ export function CatalogDialog({
       toast.error(e instanceof Error ? e.message : "Failed to add models")
     } finally {
       setAdding(false)
+      onMutationSettled?.()
     }
   }
 
@@ -157,7 +168,7 @@ export function CatalogDialog({
       : models
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+    <Dialog open={open} onOpenChange={(v) => !v && !adding && onClose()}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t("models.catalog.title")}</DialogTitle>
@@ -301,8 +312,7 @@ export function CatalogDialog({
                       </div>
                       {entrySelected.size > 0 && (
                         <div className="mt-2 space-y-2">
-                          {providerDef?.requiresApiKey !==
-                            false && (
+                          {providerDef?.requiresApiKey !== false && (
                             <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-2 text-xs text-yellow-700 dark:text-yellow-400">
                               {t("models.catalog.needApiKey")}
                             </div>
