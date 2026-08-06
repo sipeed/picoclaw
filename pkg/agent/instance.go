@@ -441,7 +441,6 @@ func resolvedCandidateModelConfigClone(
 	clone := *modelCfg
 	if strings.TrimSpace(clone.Provider) == "" {
 		clone.Provider = candidate.Provider
-		clone.Model = candidate.Model
 	}
 	if clone.Workspace == "" {
 		clone.Workspace = workspace
