@@ -41,25 +41,25 @@ func modelConfigResolutionKey(defaultProvider string, mc *config.ModelConfig) st
 		apiKeys[i] = mc.APIKeys[i].String()
 	}
 	payload, err := json.Marshal(struct {
-		ModelName           string
-		Provider            string
-		Model               string
-		APIBase             string
-		Proxy               string
-		AuthMethod          string
-		ConnectMode         string
-		Workspace           string
-		APIKeys             []string
-		Enabled             bool
-		UserAgent           string
-		RPM                 int
-		RequestTimeout      int
-		MaxTokensField      string
-		ThinkingLevel       string
-		ToolSchemaTransform string
-		Streaming           config.ModelStreamingConfig
-		ExtraBody           map[string]any
-		CustomHeaders       map[string]string
+		ModelName           string                      `json:"model_name"`
+		Provider            string                      `json:"provider"`
+		Model               string                      `json:"model"`
+		APIBase             string                      `json:"api_base"`
+		Proxy               string                      `json:"proxy"`
+		AuthMethod          string                      `json:"auth_method"`
+		ConnectMode         string                      `json:"connect_mode"`
+		Workspace           string                      `json:"workspace"`
+		APIKeys             []string                    `json:"api_keys"`
+		Enabled             bool                        `json:"enabled"`
+		UserAgent           string                      `json:"user_agent"`
+		RPM                 int                         `json:"rpm"`
+		RequestTimeout      int                         `json:"request_timeout"`
+		MaxTokensField      string                      `json:"max_tokens_field"`
+		ThinkingLevel       string                      `json:"thinking_level"`
+		ToolSchemaTransform string                      `json:"tool_schema_transform"`
+		Streaming           config.ModelStreamingConfig `json:"streaming"`
+		ExtraBody           map[string]any              `json:"extra_body"`
+		CustomHeaders       map[string]string           `json:"custom_headers"`
 	}{
 		ModelName: mc.ModelName, Provider: provider, Model: modelID,
 		APIBase: mc.APIBase, Proxy: mc.Proxy, AuthMethod: mc.AuthMethod,
@@ -270,24 +270,6 @@ func resolvedCandidateModelName(candidates []providers.FallbackCandidate, fallba
 		}
 	}
 	return strings.TrimSpace(fallback)
-}
-
-func resolvedModelConfig(cfg *config.Config, modelName, workspace string) (*config.ModelConfig, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("config is nil")
-	}
-
-	modelCfg, err := cfg.GetModelConfig(strings.TrimSpace(modelName))
-	if err != nil {
-		return nil, err
-	}
-
-	clone := *modelCfg
-	if clone.Workspace == "" {
-		clone.Workspace = workspace
-	}
-
-	return &clone, nil
 }
 
 func resolvedRuntimeModelConfig(cfg *config.Config, modelName, workspace string) (*config.ModelConfig, error) {

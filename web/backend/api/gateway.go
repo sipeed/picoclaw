@@ -386,6 +386,8 @@ func (h *Handler) gatewayStartReady() (bool, string, error) {
 			true,
 			defaultChainProvider(cfg),
 		); err != nil {
+			// Validation failures are readiness reasons, not handler errors.
+			//nolint:nilerr
 			return false, err.Error(), nil
 		}
 	}
@@ -645,53 +647,6 @@ func modelConfigsMatchResolvedEntry(
 		left.Enabled == right.Enabled &&
 		left.AuthMethod == right.AuthMethod &&
 		left.ConnectMode == right.ConnectMode
-}
-
-func hasUnambiguousProviderPrefix(raw string) bool {
-	provider, _, found := strings.Cut(strings.TrimSpace(raw), "/")
-	if !found {
-		return false
-	}
-	provider = strings.ToLower(strings.TrimSpace(provider))
-	if provider == "" {
-		return false
-	}
-	normalizedProvider := providers.NormalizeProvider(provider)
-	if !providers.IsSupportedModelProvider(normalizedProvider) {
-		return false
-	}
-	return true
-}
-
-func modelConfigMatchesProviderRef(mc *config.ModelConfig, raw string) bool {
-	if mc == nil {
-		return false
-	}
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return false
-	}
-	rawRef := providers.ParseModelRef(raw, "")
-	if rawRef == nil || strings.TrimSpace(rawRef.Provider) == "" || strings.TrimSpace(rawRef.Model) == "" {
-		return false
-	}
-	protocol, modelID := providers.ExtractProtocol(mc)
-	return providers.ModelKey(protocol, modelID) == providers.ModelKey(rawRef.Provider, rawRef.Model)
-}
-
-func modelConfigMatchesBareRef(mc *config.ModelConfig, raw string, defaultProvider string) bool {
-	if mc == nil {
-		return false
-	}
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return false
-	}
-	protocol, modelID := modelConfigProviderAndID(mc, defaultProvider)
-	if strings.TrimSpace(modelID) != raw {
-		return false
-	}
-	return providers.NormalizeProvider(protocol) == providers.NormalizeProvider(defaultProvider)
 }
 
 func modelConfigProviderAndID(mc *config.ModelConfig, defaultProvider string) (string, string) {

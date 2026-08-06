@@ -496,6 +496,9 @@ func resolvePrimaryProviderForCandidate(
 	candidate providers.FallbackCandidate,
 	fallback providers.LLMProvider,
 ) providers.LLMProvider {
+	if candidate.ConfigKey == "" && candidate.ConfigIndex == 0 {
+		return fallback
+	}
 	modelCfg, err := resolvedCandidateModelConfig(cfg, candidate, workspace)
 	if err != nil {
 		return &unavailableLLMProvider{model: candidate.Model, err: err}
@@ -617,7 +620,8 @@ func (a *AgentInstance) Close() error {
 	modelMu := a.modelStateMutex()
 	modelMu.Lock()
 	defer modelMu.Unlock()
-	providerList := []providers.LLMProvider{a.Provider, a.LightProvider}
+	providerList := make([]providers.LLMProvider, 0, 2+len(a.CandidateProviders))
+	providerList = append(providerList, a.Provider, a.LightProvider)
 	for _, provider := range a.CandidateProviders {
 		providerList = append(providerList, provider)
 	}

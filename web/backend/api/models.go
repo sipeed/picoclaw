@@ -855,7 +855,12 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 	fallbackReferenceRenamed := false
 	if oldModelName != "" && newModelName != "" && oldModelName != newModelName {
 		remainingOldNameModels := modelConfigsByNameExceptIndex(cfg, oldModelName, idx)
-		if err := validateDefaultChainModelSet(oldModelName, remainingOldNameModels, true, defaultChainProvider(cfg)); err != nil {
+		if err := validateDefaultChainModelSet(
+			oldModelName,
+			remainingOldNameModels,
+			true,
+			defaultChainProvider(cfg),
+		); err != nil {
 			defaultReferenceRenamed = true
 			if strings.TrimSpace(cfg.Agents.Defaults.ModelName) == oldModelName {
 				cfg.Agents.Defaults.ModelName = newModelName

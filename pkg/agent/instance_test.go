@@ -530,6 +530,22 @@ func TestResolvePrimaryProviderForCandidateDoesNotReuseFallbackOnInitFailure(t *
 	}
 }
 
+func TestResolvePrimaryProviderForCandidatePreservesInjectedProviderForRawModel(t *testing.T) {
+	injected := &mockProvider{}
+	candidate := providers.FallbackCandidate{Provider: "openai", Model: "test-model"}
+
+	resolved := resolvePrimaryProviderForCandidate(
+		&config.Config{},
+		t.TempDir(),
+		"main",
+		candidate,
+		injected,
+	)
+	if resolved != injected {
+		t.Fatal("raw primary model replaced the injected provider")
+	}
+}
+
 func TestProviderForFallbackCandidateRejectsMissingCrossProvider(t *testing.T) {
 	agent := &AgentInstance{CandidateProviders: map[string]providers.LLMProvider{}}
 	activeProvider := &mockProvider{}
