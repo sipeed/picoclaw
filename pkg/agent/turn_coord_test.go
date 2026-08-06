@@ -429,6 +429,7 @@ func TestPipeline_CallLLM_UsesSuccessfulFallbackDisplayNameWithoutAlias(t *testi
 		{Provider: "openai", Model: "gpt-5.4", IdentityKey: "model_name:primary", DisplayName: "primary-model"},
 		{Provider: "anthropic", Model: "claude-sonnet", DisplayName: "anthropic/claude-sonnet"},
 	}
+	agent.CandidateProviders[candidateProviderKey(agent.Candidates[1])] = provider
 	al.fallback = providers.NewFallbackChain(providers.NewCooldownTracker(), nil)
 
 	pipeline := NewPipeline(al)

@@ -173,7 +173,10 @@ func (p *Pipeline) CallLLM(
 		})
 
 	// LLM call closure with fallback support
-	callLLM := func(messagesForCall []providers.Message, toolDefsForCall []providers.ToolDefinition) (*providers.LLMResponse, error) {
+	callLLM := func(
+		messagesForCall []providers.Message,
+		toolDefsForCall []providers.ToolDefinition,
+	) (*providers.LLMResponse, error) {
 		providerCtx, providerCancel := context.WithCancel(turnCtx)
 		ts.setProviderCancel(providerCancel)
 		defer func() {
@@ -747,15 +750,36 @@ func (p *Pipeline) applyBeforeLLMModelRewrite(ts *turnState, exec *turnExecution
 	candidate := candidates[0]
 	provider := ts.agent.CandidateProviders[candidateProviderKey(candidate)]
 	if provider == nil {
-		modelCfg, err := resolvedCandidateModelConfig(p.Cfg, candidate, ts.agent.Workspace)
-		if err != nil {
-			return fmt.Errorf("resolve hook-selected model %q: %w", rawModel, err)
+		if candidate.ConfigKey == "" && candidate.ConfigIndex == 0 {
+			if len(exec.activeCandidates) > 0 &&
+				providers.NormalizeProvider(exec.activeCandidates[0].Provider) !=
+					providers.NormalizeProvider(candidate.Provider) {
+				return fmt.Errorf("hook-selected model %q has no configured provider %q", rawModel, candidate.Provider)
+			}
+			provider = exec.activeProvider
+		} else if len(exec.activeCandidates) > 0 &&
+			providers.NormalizeProvider(exec.activeCandidates[0].Provider) ==
+				providers.NormalizeProvider(candidate.Provider) &&
+			candidateCanInheritProvider(p.Cfg, ts.agent.Workspace, candidate) {
+			provider = exec.activeProvider
+		} else {
+			modelCfg, err := resolvedCandidateModelConfig(p.Cfg, candidate, ts.agent.Workspace)
+			if err != nil {
+				return fmt.Errorf("resolve hook-selected model %q: %w", rawModel, err)
+			}
+			factory := providers.CreateProviderFromConfig
+			if p.al != nil && p.al.providerFactory != nil {
+				factory = p.al.providerFactory
+			}
+			provider, _, err = factory(modelCfg)
+			if err != nil {
+				return fmt.Errorf("initialize hook-selected model %q: %w", rawModel, err)
+			}
+			exec.ownedProviders = append(exec.ownedProviders, provider)
 		}
-		provider, _, err = providers.CreateProviderFromConfig(modelCfg)
-		if err != nil {
-			return fmt.Errorf("initialize hook-selected model %q: %w", rawModel, err)
-		}
-		exec.ownedProviders = append(exec.ownedProviders, provider)
+	}
+	if provider == nil {
+		return fmt.Errorf("hook-selected model %q has no active provider", rawModel)
 	}
 	exec.activeCandidates = candidates
 	exec.activeProvider = provider

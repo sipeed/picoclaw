@@ -866,7 +866,12 @@ func (h *Handler) handleUpdateModel(w http.ResponseWriter, r *http.Request) {
 				cfg.Agents.Defaults.ModelName = newModelName
 			}
 		}
-		if err := validateDefaultChainModelSet(oldModelName, remainingOldNameModels, false, defaultChainProvider(cfg)); err != nil {
+		if err := validateDefaultChainModelSet(
+			oldModelName,
+			remainingOldNameModels,
+			false,
+			defaultChainProvider(cfg),
+		); err != nil {
 			fallbackReferenceRenamed = true
 			cfg.Agents.Defaults.ModelFallbacks = replaceModelName(
 				cfg.Agents.Defaults.ModelFallbacks,
@@ -931,11 +936,21 @@ func (h *Handler) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
 	if deletedModelName != "" {
 		remainingModels := modelConfigsByName(cfg)[deletedModelName]
 		if strings.TrimSpace(cfg.Agents.Defaults.ModelName) == deletedModelName {
-			if err := validateDefaultChainModelSet(deletedModelName, remainingModels, true, defaultChainProvider(cfg)); err != nil {
+			if err := validateDefaultChainModelSet(
+				deletedModelName,
+				remainingModels,
+				true,
+				defaultChainProvider(cfg),
+			); err != nil {
 				cfg.Agents.Defaults.ModelName = ""
 			}
 		}
-		if err := validateDefaultChainModelSet(deletedModelName, remainingModels, false, defaultChainProvider(cfg)); err != nil {
+		if err := validateDefaultChainModelSet(
+			deletedModelName,
+			remainingModels,
+			false,
+			defaultChainProvider(cfg),
+		); err != nil {
 			cfg.Agents.Defaults.ModelFallbacks = removeModelName(
 				cfg.Agents.Defaults.ModelFallbacks,
 				deletedModelName,

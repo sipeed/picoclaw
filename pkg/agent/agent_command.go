@@ -304,6 +304,16 @@ func (al *AgentLoop) buildCommandsRuntime(
 			modelMu := agent.modelStateMutex()
 			modelMu.Lock()
 			defer modelMu.Unlock()
+			modelFound := false
+			for _, modelCfg := range cfg.ModelList {
+				if modelCfg != nil && modelCfg.ModelName == value {
+					modelFound = true
+					break
+				}
+			}
+			if !modelFound {
+				return "", fmt.Errorf("model %q not found in model_list or providers", value)
+			}
 
 			nextCandidates := resolveModelCandidates(cfg, cfg.Agents.Defaults.Provider, value, agent.Fallbacks)
 			if len(nextCandidates) == 0 {

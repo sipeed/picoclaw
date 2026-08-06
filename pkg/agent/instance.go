@@ -234,7 +234,9 @@ func NewAgentInstance(
 
 	// Resolve fallback candidates
 	candidates := resolveModelCandidates(cfg, defaults.Provider, model, fallbacks)
-	if len(candidates) > 0 {
+	usesInjectedPrimary := provider != nil &&
+		strings.TrimSpace(model) == strings.TrimSpace(defaults.GetModelName())
+	if !usesInjectedPrimary && len(candidates) > 0 {
 		provider = resolvePrimaryProviderForCandidate(
 			cfg,
 			workspace,
@@ -242,7 +244,7 @@ func NewAgentInstance(
 			candidates[0],
 			provider,
 		)
-	} else {
+	} else if !usesInjectedPrimary {
 		provider = resolvePrimaryProviderForAgent(cfg, workspace, agentID, model, provider)
 	}
 	imageCandidates := resolveModelCandidates(
@@ -254,9 +256,27 @@ func NewAgentInstance(
 
 	candidateProviders := make(map[string]providers.LLMProvider)
 	if len(candidates) > 1 {
+		inheritPrimaryProviderForCandidates(
+			cfg,
+			workspace,
+			candidates[0],
+			candidates[1:],
+			provider,
+			candidateProviders,
+		)
 		populateCandidateProvidersFromCandidates(cfg, workspace, candidates[1:], candidateProviders)
 	}
 	if strings.TrimSpace(defaults.ImageModel) != "" {
+		if len(candidates) > 0 {
+			inheritPrimaryProviderForCandidates(
+				cfg,
+				workspace,
+				candidates[0],
+				imageCandidates,
+				provider,
+				candidateProviders,
+			)
+		}
 		populateCandidateProvidersFromCandidates(cfg, workspace, imageCandidates, candidateProviders)
 	}
 
@@ -395,6 +415,47 @@ func candidateProviderKey(candidate providers.FallbackCandidate) string {
 	return providers.ModelKey(candidate.Provider, candidate.Model)
 }
 
+func inheritPrimaryProviderForCandidates(
+	cfg *config.Config,
+	workspace string,
+	primaryCandidate providers.FallbackCandidate,
+	candidates []providers.FallbackCandidate,
+	primaryProvider providers.LLMProvider,
+	out map[string]providers.LLMProvider,
+) {
+	if primaryProvider == nil {
+		return
+	}
+	primaryProtocol := providers.NormalizeProvider(primaryCandidate.Provider)
+	for _, candidate := range candidates {
+		key := candidateProviderKey(candidate)
+		if out[key] != nil || providers.NormalizeProvider(candidate.Provider) != primaryProtocol {
+			continue
+		}
+		if !candidateCanInheritProvider(cfg, workspace, candidate) {
+			continue
+		}
+		out[key] = primaryProvider
+		runtimeKey := providers.ModelKey(candidate.Provider, candidate.Model)
+		if out[runtimeKey] == nil {
+			out[runtimeKey] = primaryProvider
+		}
+	}
+}
+
+func candidateCanInheritProvider(
+	cfg *config.Config,
+	workspace string,
+	candidate providers.FallbackCandidate,
+) bool {
+	modelCfg, err := resolvedCandidateModelConfig(cfg, candidate, workspace)
+	return err == nil &&
+		strings.TrimSpace(modelCfg.APIBase) == "" &&
+		modelCfg.APIKey() == "" &&
+		strings.TrimSpace(modelCfg.AuthMethod) == "" &&
+		strings.TrimSpace(modelCfg.ConnectMode) == ""
+}
+
 func resolvedCandidateModelConfig(
 	cfg *config.Config,
 	candidate providers.FallbackCandidate,
@@ -403,7 +464,8 @@ func resolvedCandidateModelConfig(
 	if candidate.ConfigIndex > 0 && candidate.ConfigIndex <= len(cfg.ModelList) {
 		modelCfg := cfg.ModelList[candidate.ConfigIndex-1]
 		if modelCfg != nil && !modelCfg.IsVirtual() &&
-			(candidate.ConfigKey == "" || modelConfigResolutionKey(cfg.Agents.Defaults.Provider, modelCfg) == candidate.ConfigKey) {
+			(candidate.ConfigKey == "" ||
+				modelConfigResolutionKey(cfg.Agents.Defaults.Provider, modelCfg) == candidate.ConfigKey) {
 			return resolvedCandidateModelConfigClone(modelCfg, candidate, workspace), nil
 		}
 	}
@@ -440,7 +502,10 @@ func resolvedCandidateModelConfigClone(
 ) *config.ModelConfig {
 	clone := *modelCfg
 	if strings.TrimSpace(clone.Provider) == "" {
-		clone.Provider = candidate.Provider
+		inferredProvider, _ := providers.SplitModelProviderAndID(clone.Model, "")
+		if inferredProvider == "" {
+			clone.Provider = candidate.Provider
+		}
 	}
 	if clone.Workspace == "" {
 		clone.Workspace = workspace

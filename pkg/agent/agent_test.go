@@ -4912,7 +4912,7 @@ func TestAgentLoop_UserAttachmentRoutesToImageModelAfterMediaResolution(t *testi
 	}
 
 	visionProvider := &resolvedImagePathVisionProvider{expectedPath: pngPath}
-	agent.CandidateProviders[providers.ModelKey("openai", "vision-model")] = visionProvider
+	agent.CandidateProviders[candidateProviderKey(agent.ImageCandidates[0])] = visionProvider
 
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), responseTimeout)
 	defer cancel()
@@ -4998,7 +4998,7 @@ func TestAgentLoop_TextFollowUpAfterUserAttachmentStaysOnTextModel(t *testing.T)
 	}
 
 	visionProvider := &resolvedImagePathVisionProvider{expectedPath: pngPath}
-	agent.CandidateProviders[providers.ModelKey("openai", "vision-model")] = visionProvider
+	agent.CandidateProviders[candidateProviderKey(agent.ImageCandidates[0])] = visionProvider
 
 	sessionKey := "agent:main:telegram:direct:user1"
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), responseTimeout)
@@ -5080,7 +5080,7 @@ func TestAgentLoop_GenericImagePlaceholderDoesNotRouteToImageModel(t *testing.T)
 	}
 
 	visionProvider := &unexpectedVisionProvider{}
-	agent.CandidateProviders[providers.ModelKey("openai", "vision-model")] = visionProvider
+	agent.CandidateProviders[candidateProviderKey(agent.ImageCandidates[0])] = visionProvider
 
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), responseTimeout)
 	defer cancel()
@@ -5156,7 +5156,7 @@ func TestAgentLoop_TextFollowUpAfterLoadImageStaysOnTextModel(t *testing.T) {
 	}
 
 	visionProvider := &visionAnswerProvider{}
-	agent.CandidateProviders[providers.ModelKey("openai", "vision-model")] = visionProvider
+	agent.CandidateProviders[candidateProviderKey(agent.ImageCandidates[0])] = visionProvider
 
 	sessionKey := "agent:main:telegram:direct:user1"
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), responseTimeout)
@@ -5263,7 +5263,7 @@ func TestAgentLoop_LoadImageFollowUpRoutesToImageModel(t *testing.T) {
 	}
 
 	visionProvider := &visionAnswerProvider{}
-	agent.CandidateProviders[providers.ModelKey("openai", "vision-model")] = visionProvider
+	agent.CandidateProviders[candidateProviderKey(agent.ImageCandidates[0])] = visionProvider
 
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), responseTimeout)
 	defer cancel()
@@ -7315,7 +7315,13 @@ func TestFilterClientWebSearch_EmptyInput(t *testing.T) {
 type overflowProvider struct {
 	calls        int
 	lastMessages []providers.Message
-	chatFunc     func(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]any) (*providers.LLMResponse, error)
+	chatFunc     func(
+		ctx context.Context,
+		messages []providers.Message,
+		tools []providers.ToolDefinition,
+		model string,
+		opts map[string]any,
+	) (*providers.LLMResponse, error)
 }
 
 func (p *overflowProvider) Chat(
