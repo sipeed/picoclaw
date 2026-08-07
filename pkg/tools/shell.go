@@ -216,7 +216,7 @@ func (t *ExecTool) Name() string {
 }
 
 func (t *ExecTool) Description() string {
-	return `Execute shell commands. Use background=true for long-running commands (returns sessionId). Use pty=true for interactive commands (can combine with background=true). Use poll/read/write/send-keys/kill with sessionId to manage background sessions. Sessions auto-cleanup 30 minutes after process exits; use kill to terminate early. Output buffer limit: 1MB.`
+	return `Execute shell commands. Use background=true for commands that may outlast the default timeout; it returns a sessionId immediately. Check background work with poll/read instead of running sleep in a synchronous command. Use pty=true for interactive commands (can combine with background=true). Use poll/read/write/send-keys/kill with sessionId to manage background sessions. The timeout argument overrides the configured timeout for one synchronous run. Sessions auto-cleanup 30 minutes after process exits; use kill to terminate early. Output buffer limit: 1MB.`
 }
 
 //nolint:dupl // Tool parameter schemas intentionally use similar JSON-schema map literals.
@@ -246,11 +246,11 @@ func (t *ExecTool) Parameters() map[string]any {
 				"description": "Data to write to stdin (required for write)",
 			},
 			"background": map[string]any{
-				"type":        "string",
+				"type":        "boolean",
 				"description": "Run in background immediately",
 			},
 			"pty": map[string]any{
-				"type":        "string",
+				"type":        "boolean",
 				"description": "Run in a pseudo-terminal (PTY) when available",
 			},
 			"cwd": map[string]any{
@@ -380,15 +380,38 @@ func (t *ExecTool) executeRun(ctx context.Context, args map[string]any) *ToolRes
 		return t.runBackground(ctx, command, cwd, isPty)
 	}
 
-	return t.runSync(ctx, command, cwd)
+	timeout := t.timeout
+	if rawTimeout, ok := args["timeout"]; ok {
+		var seconds int64
+		switch value := rawTimeout.(type) {
+		case int:
+			seconds = int64(value)
+		case int64:
+			seconds = value
+		case float64:
+			seconds = int64(value)
+		default:
+			return ErrorResult("timeout must be an integer number of seconds")
+		}
+		if seconds < 0 {
+			return ErrorResult("timeout must be greater than or equal to 0")
+		}
+		const maxTimeoutSeconds = int64((1<<63 - 1) / int64(time.Second))
+		if seconds > maxTimeoutSeconds {
+			return ErrorResult("timeout is too large")
+		}
+		timeout = time.Duration(seconds) * time.Second
+	}
+
+	return t.runSync(ctx, command, cwd, timeout)
 }
 
-func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult {
+func (t *ExecTool) runSync(ctx context.Context, command, cwd string, timeout time.Duration) *ToolResult {
 	// timeout == 0 means no timeout
 	var cmdCtx context.Context
 	var cancel context.CancelFunc
-	if t.timeout > 0 {
-		cmdCtx, cancel = context.WithTimeout(ctx, t.timeout)
+	if timeout > 0 {
+		cmdCtx, cancel = context.WithTimeout(ctx, timeout)
 	} else {
 		cmdCtx, cancel = context.WithCancel(ctx)
 	}
@@ -453,7 +476,7 @@ func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult
 
 	if err != nil {
 		if errors.Is(cmdCtx.Err(), context.DeadlineExceeded) {
-			msg := fmt.Sprintf("Command timed out after %v", t.timeout)
+			msg := fmt.Sprintf("Command timed out after %v. For long-running work, rerun it with background=true and use poll/read with the returned sessionId instead of sleeping in a synchronous command.", timeout)
 			if output != "" {
 				msg += "\n\nPartial output before timeout:\n" + output
 			}

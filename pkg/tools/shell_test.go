@@ -105,6 +105,49 @@ func TestShellTool_Timeout(t *testing.T) {
 	}
 }
 
+func TestShellTool_ParametersUseBooleanBackgroundFlags(t *testing.T) {
+	tool, err := NewExecTool("", false)
+	require.NoError(t, err)
+
+	properties := tool.Parameters()["properties"].(map[string]any)
+	require.Equal(t, "boolean", properties["background"].(map[string]any)["type"])
+	require.Equal(t, "boolean", properties["pty"].(map[string]any)["type"])
+}
+
+func TestShellTool_PerCallTimeoutOverridesConfiguredTimeout(t *testing.T) {
+	tool, err := NewExecTool("", false)
+	require.NoError(t, err)
+	tool.SetTimeout(10 * time.Second)
+
+	start := time.Now()
+	result := tool.Execute(context.Background(), map[string]any{
+		"action":  "run",
+		"command": "sleep 5",
+		"timeout": 1,
+	})
+	elapsed := time.Since(start)
+
+	require.True(t, result.IsError)
+	require.Less(t, elapsed, 3*time.Second)
+	require.Contains(t, result.ForLLM, "timed out after 1s")
+	require.Contains(t, result.ForLLM, "background=true")
+}
+
+func TestShellTool_PerCallTimeoutCanExtendConfiguredTimeout(t *testing.T) {
+	tool, err := NewExecTool("", false)
+	require.NoError(t, err)
+	tool.SetTimeout(100 * time.Millisecond)
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"action":  "run",
+		"command": "sleep 0.2; printf done",
+		"timeout": 1,
+	})
+
+	require.False(t, result.IsError, result.ForLLM)
+	require.Contains(t, result.ForLLM, "done")
+}
+
 // TestShellTool_WorkingDir verifies custom working directory
 func TestShellTool_WorkingDir(t *testing.T) {
 	// Create temp directory
