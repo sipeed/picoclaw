@@ -18,6 +18,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 const (
@@ -124,6 +125,13 @@ func NewChannel(bc *config.Channel, cfg *config.WeComSettings, messageBus *bus.M
 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
 	)
 
+	mediaClient, err := utils.CreateSafeHTTPClient(utils.SafeHTTPClientOptions{
+		Timeout: wecomMediaTimeout,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create wecom media http client: %w", err)
+	}
+
 	ch := &WeComChannel{
 		BaseChannel: base,
 		config:      cfg,
@@ -131,7 +139,7 @@ func NewChannel(bc *config.Channel, cfg *config.WeComSettings, messageBus *bus.M
 		turns:       make(map[string][]wecomTurn),
 		recent:      newRecentMessageSet(wecomRecentMessageMax),
 		routes:      newReqIDStore(""),
-		mediaClient: &http.Client{Timeout: wecomMediaTimeout},
+		mediaClient: mediaClient,
 	}
 	ch.SetOwner(ch)
 	return ch, nil

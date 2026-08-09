@@ -22,6 +22,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 const (
@@ -281,6 +282,9 @@ func (c *WeComChannel) storeRemoteMedia(
 		return "", fmt.Errorf("no media store available")
 	}
 
+	if err := utils.ValidateSafeHTTPURL(resourceURL, nil, nil); err != nil {
+		return "", fmt.Errorf("download media: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, resourceURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
@@ -418,6 +422,9 @@ func (c *WeComChannel) downloadRemoteMediaToTemp(
 	ctx context.Context,
 	resourceURL, fallbackName string,
 ) (string, string, string, error) {
+	if err := utils.ValidateSafeHTTPURL(resourceURL, nil, nil); err != nil {
+		return "", "", "", fmt.Errorf("download media: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, resourceURL, nil)
 	if err != nil {
 		return "", "", "", fmt.Errorf("create request: %w", err)
