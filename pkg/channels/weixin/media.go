@@ -28,7 +28,16 @@ import (
 	basechannels "github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
+
+func (c *WeixinChannel) mediaHTTP() *http.Client {
+	if c.mediaClient != nil {
+		return c.mediaClient
+	}
+	// Tests construct channels with a stub api.HttpClient only.
+	return c.api.HttpClient
+}
 
 const (
 	weixinMediaMaxBytes         = 100 << 20
@@ -194,11 +203,14 @@ func uniqCDNURLs(urls []string) []string {
 }
 
 func (c *WeixinChannel) downloadCDNBufferOnce(ctx context.Context, downloadURL string) ([]byte, int, error) {
+	if err := utils.ValidateSafeHTTPURL(downloadURL, nil, nil); err != nil {
+		return nil, 0, fmt.Errorf("cdn download: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
 		return nil, 0, err
 	}
-	resp, err := c.api.HttpClient.Do(req)
+	resp, err := c.mediaHTTP().Do(req)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -656,11 +668,14 @@ func (c *WeixinChannel) downloadRemoteMediaToTemp(
 	rawURL,
 	fallbackName string,
 ) (string, string, string, error) {
+	if err := utils.ValidateSafeHTTPURL(rawURL, nil, nil); err != nil {
+		return "", "", "", fmt.Errorf("remote media: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return "", "", "", err
 	}
-	resp, err := c.api.HttpClient.Do(req)
+	resp, err := c.mediaHTTP().Do(req)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -851,6 +866,9 @@ func (c *WeixinChannel) uploadBufferToCDN(
 		}
 		uploadURL = buildCDNUploadURL(c.cdnBaseURL(), uploadParam, filekey)
 	}
+	if err := utils.ValidateSafeHTTPURL(uploadURL, nil, nil); err != nil {
+		return "", fmt.Errorf("cdn upload: %w", err)
+	}
 	var lastErr error
 
 	for attempt := 1; attempt <= weixinUploadRetryMax; attempt++ {
@@ -860,7 +878,7 @@ func (c *WeixinChannel) uploadBufferToCDN(
 		}
 		req.Header.Set("Content-Type", "application/octet-stream")
 
-		resp, doErr := c.api.HttpClient.Do(req)
+		resp, doErr := c.mediaHTTP().Do(req)
 		if doErr != nil {
 			lastErr = doErr
 		} else {

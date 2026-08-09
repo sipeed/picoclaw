@@ -3,6 +3,7 @@ package weixin
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -14,16 +15,20 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/identity"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/utils"
 )
+
+const weixinMediaHTTPTimeout = 30 * time.Second
 
 // WeixinChannel is the Weixin channel implementation over Tencent iLink REST API.
 type WeixinChannel struct {
 	*channels.BaseChannel
-	api    *ApiClient
-	config *config.WeixinSettings
-	ctx    context.Context
-	cancel context.CancelFunc
-	bus    *bus.MessageBus
+	api         *ApiClient
+	mediaClient *http.Client
+	config      *config.WeixinSettings
+	ctx         context.Context
+	cancel      context.CancelFunc
+	bus         *bus.MessageBus
 	// contextTokens stores the last context_token per user (from_user_id → context_token).
 	// This is required by the iLink API to associate replies with the right chat session.
 	contextTokens     sync.Map
@@ -71,6 +76,14 @@ func NewWeixinChannel(
 		return nil, fmt.Errorf("weixin: failed to create API client: %w", err)
 	}
 
+	mediaClient, err := utils.CreateSafeHTTPClient(utils.SafeHTTPClientOptions{
+		ProxyURL: cfg.Proxy,
+		Timeout:  weixinMediaHTTPTimeout,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("weixin: failed to create media http client: %w", err)
+	}
+
 	base := channels.NewBaseChannel(
 		bc.Name(),
 		cfg,
@@ -83,6 +96,7 @@ func NewWeixinChannel(
 	return &WeixinChannel{
 		BaseChannel:       base,
 		api:               api,
+		mediaClient:       mediaClient,
 		config:            cfg,
 		bus:               messageBus,
 		typingCache:       make(map[string]typingTicketCacheEntry),
