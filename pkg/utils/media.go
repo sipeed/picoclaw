@@ -67,7 +67,10 @@ type DownloadOptions struct {
 	Timeout             time.Duration
 	ExtraHeaders        map[string]string
 	LoggerPrefix        string
-	ProxyURL            string
+	ProxyURL string
+	// BlockPrivateTargets enables SSRF hardening (scheme/host checks + safe dial
+	// + redirect re-check). Inbound channel attachment downloads should set this
+	// so a crafted media URL cannot reach loopback/link-local/RFC1918.
 	BlockPrivateTargets bool
 }
 

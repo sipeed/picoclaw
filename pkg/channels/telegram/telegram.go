@@ -1424,7 +1424,8 @@ func (c *TelegramChannel) downloadFileWithInfo(file *telego.File, ext string) st
 	// Use FilePath as filename for better identification
 	filename := file.FilePath + ext
 	return utils.DownloadFile(url, filename, utils.DownloadOptions{
-		LoggerPrefix: "telegram",
+		LoggerPrefix:        "telegram",
+		BlockPrivateTargets: true,
 	})
 }
 

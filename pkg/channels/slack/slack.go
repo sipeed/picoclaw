@@ -584,6 +584,7 @@ func (c *SlackChannel) downloadSlackFile(file slack.File) string {
 		ExtraHeaders: map[string]string{
 			"Authorization": "Bearer " + c.config.BotToken.String(),
 		},
+		BlockPrivateTargets: true,
 	})
 }
 

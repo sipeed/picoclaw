@@ -739,8 +739,9 @@ func (c *DiscordChannel) StartTyping(ctx context.Context, chatID string) (func()
 
 func (c *DiscordChannel) downloadAttachment(url, filename string) string {
 	return utils.DownloadFile(url, filename, utils.DownloadOptions{
-		LoggerPrefix: "discord",
-		ProxyURL:     c.config.Proxy,
+		LoggerPrefix:        "discord",
+		ProxyURL:            c.config.Proxy,
+		BlockPrivateTargets: true,
 	})
 }
 

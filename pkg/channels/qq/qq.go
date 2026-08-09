@@ -808,8 +808,9 @@ func (c *QQChannel) downloadAttachment(urlStr, filename string) string {
 	}
 
 	return utils.DownloadFile(urlStr, filename, utils.DownloadOptions{
-		LoggerPrefix: "qq",
-		ExtraHeaders: c.downloadHeaders(),
+		LoggerPrefix:        "qq",
+		ExtraHeaders:        c.downloadHeaders(),
+		BlockPrivateTargets: true,
 	})
 }
 

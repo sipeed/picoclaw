@@ -618,6 +618,7 @@ func (c *LINEChannel) downloadContent(messageID, filename string) string {
 		ExtraHeaders: map[string]string{
 			"Authorization": "Bearer " + c.config.ChannelAccessToken.String(),
 		},
+		BlockPrivateTargets: true,
 	})
 }
 
