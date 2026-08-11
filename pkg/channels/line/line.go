@@ -62,11 +62,15 @@ func NewLINEChannel(
 	}
 
 	if keys := inertBindKeys(cfg); len(keys) > 0 {
-		logger.WarnCF("line", "Ignoring LINE webhook bind settings: the webhook is served by the shared gateway HTTP server", map[string]any{
-			"ignored":      strings.Join(keys, ", "),
-			"use_instead":  "gateway.host / gateway.port",
-			"webhook_path": webhookPath(cfg),
-		})
+		logger.WarnCF(
+			"line",
+			"Ignoring LINE webhook bind settings: the webhook is served by the shared gateway server",
+			map[string]any{
+				"ignored":      strings.Join(keys, ", "),
+				"use_instead":  "gateway.host / gateway.port",
+				"webhook_path": webhookPath(cfg),
+			},
+		)
 	}
 
 	client, err := messaging_api.NewMessagingApiAPI(
