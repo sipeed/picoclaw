@@ -1104,3 +1104,50 @@ func TestChannel_EncryptedToken_NoPassphrase(t *testing.T) {
 func mustParseRawNode(s string) RawNode {
 	return RawNode(s)
 }
+
+// The LINE webhook is served by the shared gateway HTTP server, so
+// webhook_host / webhook_port bind nothing. They must stay parseable — a config
+// file carrying them would otherwise fail to load as an unknown field — but
+// they must not be seeded into fresh configs, where an inert 18791 next to the
+// real gateway port 18790 reads as the port the webhook is served on.
+func TestDefaultChannels_LINEOmitsInertWebhookBindKeys(t *testing.T) {
+	line, ok := defaultChannels()[ChannelLINE]
+	require.True(t, ok, "line channel missing from defaults")
+
+	var settings map[string]any
+	require.NoError(t, line.Settings.Decode(&settings))
+
+	assert.NotContains(t, settings, "webhook_host")
+	assert.NotContains(t, settings, "webhook_port")
+	assert.Equal(t, "/webhook/line", settings["webhook_path"])
+}
+
+func TestLINESettings_InertWebhookBindKeysRemainLoadable(t *testing.T) {
+	ch := &Channel{Type: ChannelLINE}
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"enabled": true,
+		"settings": {
+			"webhook_host": "0.0.0.0",
+			"webhook_port": 18791,
+			"webhook_path": "/webhook/line"
+		}
+	}`), ch))
+
+	var settings LINESettings
+	require.NoError(t, ch.Decode(&settings))
+
+	assert.Equal(t, "0.0.0.0", settings.WebhookHost)
+	assert.Equal(t, 18791, settings.WebhookPort)
+	assert.Equal(t, "/webhook/line", settings.WebhookPath)
+}
+
+func TestLINESettings_InertWebhookBindKeysNotSerializedWhenUnset(t *testing.T) {
+	data, err := json.Marshal(LINESettings{WebhookPath: "/webhook/line"})
+	require.NoError(t, err)
+
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(data, &raw))
+
+	assert.NotContains(t, raw, "webhook_host")
+	assert.NotContains(t, raw, "webhook_port")
+}

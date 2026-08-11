@@ -627,9 +627,15 @@ type DeltaChatSettings struct {
 type LINESettings struct {
 	ChannelSecret      SecureString `json:"channel_secret,omitzero"       yaml:"channel_secret,omitempty"       env:"PICOCLAW_CHANNELS_LINE_CHANNEL_SECRET"`
 	ChannelAccessToken SecureString `json:"channel_access_token,omitzero" yaml:"channel_access_token,omitempty" env:"PICOCLAW_CHANNELS_LINE_CHANNEL_ACCESS_TOKEN"`
-	WebhookHost        string       `json:"webhook_host"                  yaml:"-"                              env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_HOST"`
-	WebhookPort        int          `json:"webhook_port"                  yaml:"-"                              env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PORT"`
 	WebhookPath        string       `json:"webhook_path"                  yaml:"-"                              env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PATH"`
+
+	// Deprecated: the LINE webhook is served by the shared gateway HTTP server,
+	// so the channel has no listener of its own and these bind nothing. Use
+	// gateway.host / gateway.port instead. They are still parsed so that config
+	// files carrying them keep loading (unknown JSON fields are a hard error);
+	// setting them logs a warning at channel startup.
+	WebhookHost string `json:"webhook_host,omitempty" yaml:"-" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_HOST"`
+	WebhookPort int    `json:"webhook_port,omitempty" yaml:"-" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PORT"`
 }
 
 type OneBotSettings struct {

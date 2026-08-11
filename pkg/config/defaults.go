@@ -558,9 +558,9 @@ func defaultChannels() ChannelsConfig {
 		},
 		"line": map[string]any{
 			"group_trigger": map[string]any{"mention_only": true},
+			// The webhook is served by the shared gateway HTTP server, so the
+			// channel has no listener of its own: only the path is configurable.
 			"settings": map[string]any{
-				"webhook_host": "0.0.0.0",
-				"webhook_port": 18791,
 				"webhook_path": "/webhook/line",
 			},
 		},

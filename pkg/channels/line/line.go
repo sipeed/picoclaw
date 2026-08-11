@@ -61,6 +61,14 @@ func NewLINEChannel(
 		return nil, fmt.Errorf("line channel_secret and channel_access_token are required")
 	}
 
+	if keys := inertBindKeys(cfg); len(keys) > 0 {
+		logger.WarnCF("line", "Ignoring LINE webhook bind settings: the webhook is served by the shared gateway HTTP server", map[string]any{
+			"ignored":      strings.Join(keys, ", "),
+			"use_instead":  "gateway.host / gateway.port",
+			"webhook_path": webhookPath(cfg),
+		})
+	}
+
 	client, err := messaging_api.NewMessagingApiAPI(
 		cfg.ChannelAccessToken.String(),
 		messaging_api.WithHTTPClient(&http.Client{Timeout: 30 * time.Second}),
@@ -126,10 +134,29 @@ func (c *LINEChannel) Stop(ctx context.Context) error {
 
 // WebhookPath returns the path for registering on the shared HTTP server.
 func (c *LINEChannel) WebhookPath() string {
-	if c.config.WebhookPath != "" {
-		return c.config.WebhookPath
+	return webhookPath(c.config)
+}
+
+func webhookPath(cfg *config.LINESettings) string {
+	if cfg.WebhookPath != "" {
+		return cfg.WebhookPath
 	}
 	return "/webhook/line"
+}
+
+// inertBindKeys reports which webhook bind settings are set but unused. The
+// LINE channel is mounted as a handler on the shared gateway HTTP server and
+// has no listener of its own, so webhook_host and webhook_port never bind
+// anything. They are still parsed so that existing config files keep loading.
+func inertBindKeys(cfg *config.LINESettings) []string {
+	var keys []string
+	if cfg.WebhookHost != "" {
+		keys = append(keys, "webhook_host")
+	}
+	if cfg.WebhookPort != 0 {
+		keys = append(keys, "webhook_port")
+	}
+	return keys
 }
 
 // ServeHTTP implements http.Handler for the shared HTTP server.
