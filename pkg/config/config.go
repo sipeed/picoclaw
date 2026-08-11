@@ -631,9 +631,9 @@ type LINESettings struct {
 
 	// Deprecated: the LINE webhook is served by the shared gateway HTTP server,
 	// so the channel has no listener of its own and these bind nothing. Use
-	// gateway.host / gateway.port instead. They are still parsed so that config
-	// files carrying them keep loading (unknown JSON fields are a hard error);
-	// setting them logs a warning at channel startup.
+	// gateway.host / gateway.port instead. They are kept as fields so that a
+	// config still carrying them can be detected and warned about at channel
+	// startup; omitempty keeps them out of configs that do not set them.
 	WebhookHost string `json:"webhook_host,omitempty" yaml:"-" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_HOST"`
 	WebhookPort int    `json:"webhook_port,omitempty" yaml:"-" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PORT"`
 }

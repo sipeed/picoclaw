@@ -147,7 +147,8 @@ func webhookPath(cfg *config.LINESettings) string {
 // inertBindKeys reports which webhook bind settings are set but unused. The
 // LINE channel is mounted as a handler on the shared gateway HTTP server and
 // has no listener of its own, so webhook_host and webhook_port never bind
-// anything. They are still parsed so that existing config files keep loading.
+// anything. They remain in the settings struct so a config still carrying
+// them can be warned about instead of silently ignored.
 func inertBindKeys(cfg *config.LINESettings) []string {
 	var keys []string
 	if cfg.WebhookHost != "" {

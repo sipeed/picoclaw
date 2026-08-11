@@ -1106,10 +1106,10 @@ func mustParseRawNode(s string) RawNode {
 }
 
 // The LINE webhook is served by the shared gateway HTTP server, so
-// webhook_host / webhook_port bind nothing. They must stay parseable — a config
-// file carrying them would otherwise fail to load as an unknown field — but
-// they must not be seeded into fresh configs, where an inert 18791 next to the
-// real gateway port 18790 reads as the port the webhook is served on.
+// webhook_host / webhook_port bind nothing. They must stay parseable so a
+// config carrying them can be warned about, but they must not be seeded into
+// fresh configs, where an inert 18791 next to the real gateway port 18790
+// reads as the port the webhook is served on.
 func TestDefaultChannels_LINEOmitsInertWebhookBindKeys(t *testing.T) {
 	line, ok := defaultChannels()[ChannelLINE]
 	require.True(t, ok, "line channel missing from defaults")

@@ -1122,9 +1122,18 @@ func (c ChannelsConfig) ToStandardChannels() config.ChannelsConfig {
 	setChannel(channels, "line", func() map[string]any {
 		m := map[string]any{
 			"enabled":      c.LINE.Enabled,
-			"webhook_host": c.LINE.WebhookHost,
-			"webhook_port": c.LINE.WebhookPort,
 			"webhook_path": c.LINE.WebhookPath,
+		}
+		// webhook_host / webhook_port bind nothing: the LINE webhook is served
+		// by the shared gateway HTTP server. Carry them over only when the
+		// source config actually set them, so the channel can warn about them
+		// at startup, rather than writing an inert "": 0 pair into every
+		// migrated config.
+		if c.LINE.WebhookHost != "" {
+			m["webhook_host"] = c.LINE.WebhookHost
+		}
+		if c.LINE.WebhookPort != 0 {
+			m["webhook_port"] = c.LINE.WebhookPort
 		}
 		if c.LINE.ChannelSecret != "" {
 			m["channel_secret"] = config.NewSecureString(c.LINE.ChannelSecret)

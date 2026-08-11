@@ -827,3 +827,64 @@ func strPtr(s string) *string {
 func boolPtr(b bool) *bool {
 	return &b
 }
+
+// The LINE webhook is served by PicoClaw's shared gateway HTTP server, so
+// webhook_host / webhook_port bind nothing. Migrating them unconditionally
+// wrote an inert `"webhook_host": "", "webhook_port": 0` pair into every
+// migrated config; they should survive migration only when actually set, so
+// the channel can warn about them at startup.
+func TestToStandardConfig_LINEOmitsUnsetWebhookBindKeys(t *testing.T) {
+	picoCfg := &PicoClawConfig{}
+	picoCfg.Channels.LINE = LINEConfig{
+		Enabled:            true,
+		ChannelSecret:      "sec",
+		ChannelAccessToken: "tok",
+	}
+
+	settings := marshalLINESettings(t, picoCfg)
+
+	if _, ok := settings["webhook_host"]; ok {
+		t.Errorf("webhook_host should not be migrated when unset: %#v", settings)
+	}
+	if _, ok := settings["webhook_port"]; ok {
+		t.Errorf("webhook_port should not be migrated when unset: %#v", settings)
+	}
+}
+
+func TestToStandardConfig_LINEKeepsSetWebhookBindKeys(t *testing.T) {
+	picoCfg := &PicoClawConfig{}
+	picoCfg.Channels.LINE = LINEConfig{
+		Enabled:     true,
+		WebhookHost: "127.0.0.1",
+		WebhookPort: 18791,
+	}
+
+	settings := marshalLINESettings(t, picoCfg)
+
+	if got := settings["webhook_host"]; got != "127.0.0.1" {
+		t.Errorf("webhook_host = %v, want %q", got, "127.0.0.1")
+	}
+	if got := settings["webhook_port"]; got != float64(18791) {
+		t.Errorf("webhook_port = %v, want %d", got, 18791)
+	}
+}
+
+// marshalLINESettings round-trips the migrated LINE channel through JSON, which
+// is what actually lands in config.json.
+func marshalLINESettings(t *testing.T, picoCfg *PicoClawConfig) map[string]any {
+	t.Helper()
+
+	stdCfg := picoCfg.ToStandardConfig()
+	data, err := json.Marshal(stdCfg.Channels["line"])
+	if err != nil {
+		t.Fatalf("Marshal() error: %v", err)
+	}
+
+	var out struct {
+		Settings map[string]any `json:"settings"`
+	}
+	if err := json.Unmarshal(data, &out); err != nil {
+		t.Fatalf("Unmarshal() error: %v", err)
+	}
+	return out.Settings
+}
