@@ -11,7 +11,9 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/mcp"
 	agenttools "github.com/sipeed/picoclaw/pkg/tools"
@@ -311,5 +313,76 @@ func TestEnsureMCPInitialized_LoadFailureSetsInitErr(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "failed to load MCP servers") {
 		t.Fatalf("second ensureMCPInitialized() error = %q, want wrapped load failure", err.Error())
+	}
+}
+
+func TestAgentLoopRun_DoesNotExitOnMCPInitFailure(t *testing.T) {
+	al, cfg, msgBus, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+	defer al.Close()
+
+	cfg.Tools = config.ToolsConfig{
+		MCP: config.MCPConfig{
+			ToolConfig: config.ToolConfig{Enabled: true},
+			Servers: map[string]config.MCPServerConfig{
+				"broken": {
+					Enabled: true,
+					Command: "picoclaw-command-that-does-not-exist-for-mcp-tests",
+				},
+			},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- al.Run(ctx)
+	}()
+
+	// MCP initialization fails (broken server), but the loop must keep running
+	// instead of returning the error and hanging the chat.
+	select {
+	case err := <-runErr:
+		t.Fatalf("Run() returned before context cancel: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	// The loop must still reply to messages even though MCP is unavailable.
+	msg := bus.InboundMessage{
+		Context: bus.InboundContext{
+			Channel:  "telegram",
+			ChatID:   "chat1",
+			ChatType: "direct",
+			SenderID: "user1",
+		},
+		Channel:  "telegram",
+		ChatID:   "chat1",
+		SenderID: "user1",
+		Content:  "hello",
+	}
+	if err := msgBus.PublishInbound(context.Background(), msg); err != nil {
+		t.Fatalf("PublishInbound failed: %v", err)
+	}
+
+	select {
+	case outbound := <-msgBus.OutboundChan():
+		if outbound.Content == "" {
+			t.Fatal("empty response published after MCP init failure")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for agent reply after MCP init failure")
+	}
+
+	// Cancelling the context must stop the loop cleanly.
+	cancel()
+	select {
+	case err := <-runErr:
+		if err != nil {
+			t.Fatalf("Run() error after cancel = %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for Run() to return after cancel")
 	}
 }

@@ -146,10 +146,12 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 	al.running.Store(true)
 
 	if err := al.ensureHooksInitialized(ctx); err != nil {
-		return err
+		logger.WarnCF("agent", "Hooks failed to initialize, continuing without hooks",
+			map[string]any{"error": err.Error()})
 	}
 	if err := al.ensureMCPInitialized(ctx); err != nil {
-		return err
+		logger.WarnCF("agent", "MCP initialization failed, continuing without MCP tools",
+			map[string]any{"error": err.Error()})
 	}
 
 	idleTicker := time.NewTicker(100 * time.Millisecond)
