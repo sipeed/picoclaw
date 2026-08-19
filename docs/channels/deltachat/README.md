@@ -2,16 +2,16 @@
 
 # Delta Chat Channel
 
-PicoClaw can run as a Delta Chat bot by launching a local
-`deltachat-rpc-server` process and talking to it over JSON-RPC. The RPC server
-handles the email account, IMAP/SMTP connection, message store, and encryption
-keys.
+PicoClaw can run as a Delta Chat bot.
+
+DeltaChat is a distributed chatmail messaging system built on top of a jsonrpc
+server that manages all the encryption, storage, proxy and account management.
+
+You can read more about the project in [https://delta.chat](https://delta.chat)
 
 ## Install
 
-Install the Delta Chat RPC server. If `deltachat-rpc-server` is on `PATH`,
-PicoClaw can find it automatically; otherwise set `rpc_server_path` to the
-exact binary path.
+Download or install the Delta Chat RPC server from the GitHub releases or Pip:
 
 ```bash
 pip install deltachat-rpc-server
@@ -19,13 +19,17 @@ which deltachat-rpc-server
 ```
 
 Prebuilt binaries are also available from the
-[Delta Chat core releases](https://github.com/deltachat/deltachat-core-rust/releases).
+[Delta Chat core releases](https://github.com/chatmail/core/releases)
+
+The JSONRPC protocol is somehow stable and the picoclaw implementation will
+always try to keep up with latest releases of deltachat core. The deltachat
+channel for PicoClaw is known to work with chatmail core v2.53.
 
 ## Configure
 
 The easiest setup is to let PicoClaw create a chatmail account in Delta
-Chat's local account store. Put a relay marker in `email` using an empty local
-part, for example `@nine.testrun.org`:
+Chat's local account store. Put a relay marker in `email` using an empty
+user part, for example `@nine.testrun.org`:
 
 ```json
 {
@@ -40,7 +44,8 @@ part, for example `@nine.testrun.org`:
       "settings": {
         "email": "@nine.testrun.org",
         "display_name": "PicoClaw Bot",
-        "avatar_image": "/home/me/bot-avatar.png"
+        "avatar_image": "/home/me/bot-avatar.png",
+        "show_invite_link": true
       }
     }
   }
@@ -59,17 +64,8 @@ marker with that full email address and run PicoClaw again:
 }
 ```
 
-If `email` is missing, the startup error lists the built-in relay choices copied
-from Parla. You can use one of those relay markers, or a custom chatmail relay
-with the same `@server.name` form.
-
-`password` is not needed for PicoClaw-created chatmail accounts. Omit it when
-`email` points to an already configured account in `data_dir`; the JSON-RPC
-server owns the mailbox password. The legacy password-based path remains only
-for classic email accounts that PicoClaw must configure itself. In that mode,
-`password` is a secure field; on first config load it is moved to
-`~/.picoclaw/.security.yml`, and it can also be set with
-`PICOCLAW_CHANNELS_DELTACHAT_PASSWORD`.
+If `email` is missing, the startup error points at the default chatmail relay
+(`nine.testrun.org`) and the official relay directory at <https://chatmail.at/relays>.
 
 `display_name` and `avatar_image` are optional profile settings. When present,
 PicoClaw applies them on every startup, so changing the avatar path in config is
@@ -79,33 +75,29 @@ enough to update the bot profile.
 |-------|----------|-------------|
 | `email` | Yes | Full bot mailbox address, or first-run relay marker such as `@nine.testrun.org` |
 | `rpc_server_path` | No | Path to `deltachat-rpc-server`; only needed when it is not on `PATH` |
-| `password` | No | Legacy only; required when PicoClaw must configure/reconfigure a classic mailbox itself |
 | `display_name` | No | Startup-applied profile name shown to contacts and used for group mention detection |
 | `avatar_image` | No | Startup-applied profile avatar image path; `~` is expanded. Missing files are warned and ignored |
 | `data_dir` | No | Account database directory. Default: `~/.picoclaw/deltachat/<channel-name>` |
-| `invite_link` | No | Delta Chat invite link to join on startup |
+| `join_invite_link` | No | Delta Chat invite link for the bot account to join on startup |
+| `show_invite_link` | No | When `true`, prints the bot account's own invite link and QR code on startup so peers can add it. Omitted or `false` suppresses the startup printout |
 | `allow_crosspost` | No | Default `false`. When `true`, senders allowed by `allow_from` may use `message` tool targets outside the current chat, or resolve recipients by email/contact/chat name |
-| `imap_server`, `imap_port` | No | Manual IMAP override for password-based configuration |
-| `smtp_server`, `smtp_port` | No | Manual SMTP override for password-based configuration |
 
 Standard channel fields such as `allow_from`, `group_trigger`, and
 `reasoning_channel_id` also apply.
 
 ## First Run
 
-With `email` set to `@server`, PicoClaw creates the chatmail account, prints
-the generated full email in the startup error, and exits. Update `email` to that
-full address and run PicoClaw again. On later runs, PicoClaw selects the
-configured account by `email`, applies optional profile settings, marks it as a
-bot, and starts IO.
+Running `picoclaw setup reset` will generate a blank `~/.picoclaw/config.json`
+file with the default values.
 
-With a new `data_dir` plus legacy `password`, PicoClaw can still configure a
-classic email account and validate the mailbox credentials; after that, the
-account is reused from the local data directory.
+With `email` set to `@server` (without the username defined), PicoClaw creates
+the chatmail account, and stops with an startup error displaying the autogenerated
+full email that needs to be replaced manually in the configuration file.
 
-Delta Chat requires peers to learn the bot's encryption key before messaging
-it. On startup PicoClaw prints the bot invite link and QR code. Add the bot from
-Delta Chat with that invite, not by typing the bare email address.
+Starting up the gateway again will use `show_invite_link` to display the invite link
+and QR code to let your user to comunicate with it.
+
+Omit the field or set it to `false` to suppress the startup printout.
 
 ## Behavior
 
@@ -114,7 +106,11 @@ Delta Chat with that invite, not by typing the bare email address.
   handled.
 - Messages from the bot itself, device chats, and info/system messages are
   ignored.
-- Accepted inbound messages are marked seen after the allow-list check.
+- Accepted inbound messages are marked seen after successful dispatch to the
+  agent, with Delta Chat read receipts enabled so peer clients can show the
+  double-check seen state; dispatch failures leave the message unseen.
+- Accepted contact-request chats are accepted before the seen mark, because
+  Delta Chat does not send read receipts while a chat is still a contact request.
 - Incoming attachments (images, audio, video, documents) are registered with
   the media store and handed to the agent, so it can view images or operate on
   the files directly. If no media store is available, the path is appended
@@ -138,11 +134,68 @@ Delta Chat with that invite, not by typing the bare email address.
 | Symptom | Fix |
 |---------|-----|
 | `deltachat-rpc-server not found on PATH` or `rpc_server_path ... not found` | Install the RPC server on PATH, or set `rpc_server_path` to an absolute path |
-| `email is required` | Choose one listed chatmail server, set `email` to a first-run marker such as `@nine.testrun.org`, run `picoclaw g`, then replace it with the generated full email |
+| `email is required` | Set `email` to a first-run marker such as `@nine.testrun.org`, run `picoclaw g`, then replace it with the generated full email. Other chatmail relays are listed at <https://chatmail.at/relays> |
 | `created chatmail account ...` | Replace the `@server` marker in `email` with the generated full email and run PicoClaw again |
 | `account ... is not configured in data_dir` | Point `data_dir` at the existing JSON-RPC account store, or use `email="@server"` to create one |
-| `configure (check email/password/server)` | Check credentials, app password requirements, or IMAP/SMTP overrides |
 | Bot does not answer in a group | Check `group_trigger`; mention `display_name` or use a configured prefix |
 | Bot ignores a sender | Add the sender email to `allow_from`, or use `["*"]` for open access |
 | Sender cannot message the bot | Re-add the bot with the startup QR/invite so Delta Chat can establish encryption |
 | Agent cannot send to an email/name/other chat ID | Enable `settings.allow_crosspost` and allow the controlling sender in `allow_from`; this capability is disabled by default for privacy |
+
+## Transition From Legacy Options
+
+The Delta Chat channel does not keep backward-compatible aliases for the old
+configuration options. Update existing configs before starting the new binary:
+unknown legacy keys are ignored by the current settings decoder, so leaving them
+in place can make the channel start with missing behavior instead of migrating
+automatically.
+
+Use this mapping when updating `channel_list.<name>.settings`:
+
+| Old option | New option or action |
+|------------|----------------------|
+| `invite_link` | Rename to `join_invite_link` |
+| Always printing the bot invite | Add `show_invite_link: true` when you want the startup invite link and QR code |
+| `password` | Remove. PicoClaw no longer configures mailbox passwords; the selected account must already be configured in the Delta Chat JSON-RPC account store, or be created through the `@relay` chatmail bootstrap flow |
+| `imap_server`, `imap_port` | Remove. Manual IMAP setup is no longer handled by PicoClaw |
+| `smtp_server`, `smtp_port` | Remove. Manual SMTP setup is no longer handled by PicoClaw |
+| `PICOCLAW_CHANNELS_DELTACHAT_INVITE_LINK` | Rename to `PICOCLAW_CHANNELS_DELTACHAT_JOIN_INVITE_LINK` |
+| `PICOCLAW_CHANNELS_DELTACHAT_PASSWORD` | Remove |
+
+For an existing configured account, keep the account database and point the new
+config at it:
+
+```json
+{
+  "channel_list": {
+    "deltachat": {
+      "enabled": true,
+      "type": "deltachat",
+      "allow_from": ["friend@example.org"],
+      "group_trigger": {
+        "mention_only": true
+      },
+      "settings": {
+        "email": "bot@example.org",
+        "data_dir": "~/.picoclaw/deltachat/deltachat",
+        "join_invite_link": "DCJOIN:...",
+        "show_invite_link": true,
+        "allow_crosspost": false
+      }
+    }
+  }
+}
+```
+
+If the old setup depended on `password` plus IMAP/SMTP fields to configure a
+classic mailbox, use this plan:
+
+1. Configure that mailbox in a Delta Chat JSON-RPC account store outside
+   PicoClaw, or switch to a chatmail account by setting `email` to a relay marker
+   such as `@nine.testrun.org`.
+2. Remove the legacy password and server fields from `config.json`,
+   `~/.picoclaw/.security.yml`, and the environment, then set `email` and
+   `data_dir` to the configured account.
+3. Start PicoClaw. If it reports `account ... is not configured in data_dir`,
+   the `email` does not match an account in that `data_dir`; fix one of those
+   values or use the `@relay` bootstrap flow to create a new chatmail account.

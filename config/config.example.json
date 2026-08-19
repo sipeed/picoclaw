@@ -226,6 +226,25 @@
         "crypto_passphrase": "YOUR_MATRIX_CRYPTO_PICKLE_KEY"
       }
     },
+    "deltachat": {
+      "enabled": false,
+      "type": "deltachat",
+      "allow_from": [],
+      "group_trigger": {
+        "mention_only": true
+      },
+      "reasoning_channel_id": "",
+      "settings": {
+        "email": "@nine.testrun.org",
+        "display_name": "PicoClaw Bot",
+        "avatar_image": "",
+        "data_dir": "",
+        "rpc_server_path": "",
+        "join_invite_link": "",
+        "show_invite_link": true,
+        "allow_crosspost": false
+      }
+    },
     "line": {
       "enabled": false,
       "type": "line",

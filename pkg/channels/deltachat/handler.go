@@ -93,7 +93,8 @@ func (c *DeltaChatChannel) handleMessage(messageID int64) {
 		logger.DebugCF("deltachat", "Drop: device message", map[string]any{"chat_id": msg.ChatID})
 		return
 	}
-	isGroup := chat.ChatType != chatTypeSingle
+	// Possible ChatTypes are: "Single", "Group", "Mailinglist", "OutBroadcast", "InBroadcast"
+	isGroup := chat.ChatType != "Single"
 
 	logger.DebugCF("deltachat", "Inbound message", map[string]any{
 		"message_id": messageID,
@@ -227,10 +228,28 @@ func (c *DeltaChatChannel) handleMessage(messageID int64) {
 		})
 		return
 	}
+	c.markProcessedMessageSeen(messageID, chat)
+}
+
+func (c *DeltaChatChannel) markProcessedMessageSeen(messageID int64, chat *dcChat) {
+	if chat.IsContactRequest {
+		if _, err := c.rpc.call(c.ctx, "accept_chat", c.accountID, chat.ID); err != nil {
+			logger.WarnCF("deltachat", "Failed to accept contact request before marking message seen", map[string]any{
+				"message_id": messageID,
+				"chat_id":    chat.ID,
+				"error":      err.Error(),
+			})
+			return
+		}
+		logger.DebugCF("deltachat", "Accepted contact request before marking message seen", map[string]any{
+			"message_id": messageID,
+			"chat_id":    chat.ID,
+		})
+	}
 	if _, err := c.rpc.call(c.ctx, "markseen_msgs", c.accountID, []int64{messageID}); err != nil {
 		logger.WarnCF("deltachat", "Failed to mark message seen", map[string]any{
 			"message_id": messageID,
-			"chat_id":    chatID,
+			"chat_id":    chat.ID,
 			"error":      err.Error(),
 		})
 	}
