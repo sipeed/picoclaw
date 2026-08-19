@@ -3787,6 +3787,71 @@ func TestProcessMessage_SwitchModelRoutesSubsequentRequestsToSelectedProvider(t 
 	}
 }
 
+func TestProcessMessage_SwitchModelPreservesPrimaryProviderFallbackInheritance(t *testing.T) {
+	workspace := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         workspace,
+				Provider:          "openai",
+				ModelName:         "first",
+				ModelFallbacks:    []string{"fallback"},
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+		ModelList: []*config.ModelConfig{
+			{
+				ModelName: "first",
+				Provider:  "openai",
+				Model:     "first",
+				APIKeys:   config.SimpleSecureStrings("sk-first"),
+			},
+			{
+				ModelName: "second",
+				Provider:  "openai",
+				Model:     "second",
+				APIKeys:   config.SimpleSecureStrings("sk-second"),
+			},
+			{
+				ModelName: "fallback",
+				Provider:  "openai",
+				Model:     "fallback",
+			},
+		},
+	}
+
+	provider, _, err := providers.CreateProvider(cfg)
+	if err != nil {
+		t.Fatalf("CreateProvider() error = %v", err)
+	}
+	al := NewAgentLoop(cfg, bus.NewMessageBus(), provider)
+	helper := testHelper{al: al}
+
+	switchResp := helper.executeAndGetResponse(t, context.Background(), bus.InboundMessage{
+		Channel:  "telegram",
+		SenderID: "user1",
+		ChatID:   "chat1",
+		Content:  "/switch model to second",
+	})
+	if !strings.Contains(switchResp, "Switched model from first to second") {
+		t.Fatalf("unexpected /switch reply: %q", switchResp)
+	}
+
+	agent := al.registry.GetDefaultAgent()
+	if len(agent.Candidates) != 2 {
+		t.Fatalf("len(agent.Candidates) = %d, want 2", len(agent.Candidates))
+	}
+	fallbackProvider := agent.CandidateProviders[candidateProviderKey(agent.Candidates[1])]
+	if fallbackProvider != agent.Provider {
+		t.Fatalf(
+			"fallback provider = %T, want switched primary provider %T",
+			fallbackProvider,
+			agent.Provider,
+		)
+	}
+}
+
 func TestProcessMessage_ModelRoutingUsesLightProvider(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {

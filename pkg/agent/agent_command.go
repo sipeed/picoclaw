@@ -338,6 +338,14 @@ func (al *AgentLoop) buildCommandsRuntime(
 				nextCandidateProviders,
 				agent.LightCandidates,
 			)
+			inheritPrimaryProviderForCandidates(
+				cfg,
+				agent.Workspace,
+				nextCandidates[0],
+				nextCandidates[1:],
+				nextProvider,
+				nextCandidateProviders,
+			)
 			populateCandidateProvidersFromCandidates(
 				cfg,
 				agent.Workspace,
