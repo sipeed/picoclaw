@@ -357,7 +357,43 @@ For advanced cases:
 2. Run `picoclaw mcp edit` to fill in fields that are not exposed as CLI flags.
 3. Run `picoclaw mcp show <name>` to confirm the final configuration and tool list.
 
+## Example: Build Remote Agent (`gbr`)
+
+[Build Remote Agent](https://grokbuildremote.com/) is a pairing device: a phone
+app spectates (and can inject into) this PicoClaw host through free MIT
+`gbr-agent`. Protocol `gbr/1`. Independent product by Linespotting AB. Not
+affiliated with xAI or SpaceX.
+
+Run `gbr-agent` on the **host** (not as a PicoClaw channel). PicoClaw
+chat-app pairing stays PicoClaw's. Attach only loopback Bot API
+`http://127.0.0.1:8788` or stdio `gbr-mcp`. Phone is spectator + veto. Never
+put mailbox keys in `config.json`.
+
+```bash
+# 1. Host pair + run (need gbr-agent v0.6.0+)
+curl -fsSL https://grokbuildremote.com/install.sh | bash
+gbr-agent version
+gbr-agent pair && gbr-agent run
+
+# 2. Clone MCP stdio adapter
+git clone https://github.com/LinespottingOrg/GrokBuildRemote-Agents.git
+cd GrokBuildRemote-Agents/mcp/gbr-mcp && npm install
+node bin/gbr-mcp.js --diagnose
+
+# 3. Register with PicoClaw (absolute path to gbr-mcp.js)
+picoclaw mcp add gbr -- node /absolute/path/to/GrokBuildRemote-Agents/mcp/gbr-mcp/bin/gbr-mcp.js
+picoclaw mcp show gbr
+```
+
+HTTP attach without MCP, after `gbr-agent run`:
+
+```bash
+curl -sS http://127.0.0.1:8788/health
+curl -sS http://127.0.0.1:8788/v1/sessions
+```
+
 ## Related Docs
 
 - [Tools Configuration](tools_configuration.md#mcp-tool): MCP config structure, transports, discovery, and examples
 - [README](../README.md): high-level overview
+- Build Remote Agent Bot API: https://github.com/LinespottingOrg/GrokBuildRemote-Agents/blob/main/docs/BOT-API.md
