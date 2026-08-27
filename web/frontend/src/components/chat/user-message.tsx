@@ -1,4 +1,5 @@
 import { IconCheck, IconCopy } from "@tabler/icons-react"
+import { memo } from "react"
 import { useTranslation } from "react-i18next"
 
 import { Button } from "@/components/ui/button"
@@ -13,7 +14,7 @@ interface UserMessageProps {
   timestamp?: string | number
 }
 
-export function UserMessage({
+function UserMessageBase({
   content,
   attachments = [],
   timestamp = "",
@@ -98,3 +99,5 @@ export function UserMessage({
     </div>
   )
 }
+
+export const UserMessage = memo(UserMessageBase)
