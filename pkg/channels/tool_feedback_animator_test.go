@@ -3,7 +3,9 @@ package channels
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestFormatAnimatedToolFeedbackContent(t *testing.T) {
@@ -117,5 +119,68 @@ func TestToolFeedbackAnimator_UpdateFailureRestoresTracking(t *testing.T) {
 	}
 	if currentID, ok := animator.Current("chat-1"); !ok || currentID != "msg-1" {
 		t.Fatalf("Current() after failed Update = (%q, %v), want (msg-1, true)", currentID, ok)
+	}
+}
+
+func TestToolFeedbackAnimator_StopsAfterMaximumDuration(t *testing.T) {
+	var edits atomic.Int32
+	animator := NewToolFeedbackAnimator(func(context.Context, string, string, string) error {
+		edits.Add(1)
+		return nil
+	})
+	animator.animationInterval = 5 * time.Millisecond
+	animator.maxDuration = 30 * time.Millisecond
+	defer animator.StopAll()
+
+	animator.Record("chat-1", "msg-1", "🔧 `read_file`\nChecking config")
+	waitForToolFeedbackAnimation(t, animator, "chat-1")
+
+	editsAtStop := edits.Load()
+	if editsAtStop == 0 {
+		t.Fatal("animation stopped before making any edits")
+	}
+	time.Sleep(2 * animator.animationInterval)
+	if got := edits.Load(); got != editsAtStop {
+		t.Fatalf("animation made %d edits after maximum duration, want 0", got-editsAtStop)
+	}
+	if currentID, ok := animator.Current("chat-1"); !ok || currentID != "msg-1" {
+		t.Fatalf("Current() after animation expiry = (%q, %v), want (msg-1, true)", currentID, ok)
+	}
+}
+
+func TestToolFeedbackAnimator_StopsAfterEditFailure(t *testing.T) {
+	var edits atomic.Int32
+	animator := NewToolFeedbackAnimator(func(context.Context, string, string, string) error {
+		edits.Add(1)
+		return errors.New("edit failed")
+	})
+	animator.animationInterval = 5 * time.Millisecond
+	animator.maxDuration = time.Second
+	defer animator.StopAll()
+
+	animator.Record("chat-1", "msg-1", "🔧 `read_file`\nChecking config")
+	waitForToolFeedbackAnimation(t, animator, "chat-1")
+
+	if got := edits.Load(); got != 1 {
+		t.Fatalf("edit attempts after first failure = %d, want 1", got)
+	}
+	if currentID, ok := animator.Current("chat-1"); !ok || currentID != "msg-1" {
+		t.Fatalf("Current() after edit failure = (%q, %v), want (msg-1, true)", currentID, ok)
+	}
+}
+
+func waitForToolFeedbackAnimation(t *testing.T, animator *ToolFeedbackAnimator, chatID string) {
+	t.Helper()
+	animator.mu.Lock()
+	entry := animator.entries[chatID]
+	animator.mu.Unlock()
+	if entry == nil {
+		t.Fatal("tool feedback animation was not recorded")
+	}
+
+	select {
+	case <-entry.done:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for tool feedback animation to stop")
 	}
 }
