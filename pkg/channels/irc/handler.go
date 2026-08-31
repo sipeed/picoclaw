@@ -14,6 +14,11 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
+const (
+	multilineBatchType = "draft/multiline"
+	multilineConcatTag = "draft/multiline-concat"
+)
+
 // onConnect is called after a successful connection (and on reconnect).
 func (c *IRCChannel) onConnect(conn *ircevent.Connection) {
 	// NickServ auth (only if SASL is not configured)
@@ -28,6 +33,113 @@ func (c *IRCChannel) onConnect(conn *ircevent.Connection) {
 			"channel": ch,
 		})
 	}
+}
+
+// onMultilineBatch combines a completed IRCv3 multiline batch and sends it
+// through the normal message path exactly once. If an outer batch contains a
+// multiline child, it is flattened here so nested multiline batches still pass
+// through this callback instead of being naively reduced to individual lines.
+func (c *IRCChannel) onMultilineBatch(conn *ircevent.Connection, batch *ircevent.Batch) bool {
+	msg, ok := assembleMultilineBatch(batch)
+	if ok {
+		conn.HandleMessage(msg)
+		return true
+	}
+	if !containsMultilineBatch(batch) {
+		return false
+	}
+	handleBatchItems(conn, batch.Items)
+	return true
+}
+
+func containsMultilineBatch(batch *ircevent.Batch) bool {
+	if batch == nil {
+		return false
+	}
+	stack := append([]*ircevent.Batch(nil), batch.Items...)
+	for len(stack) > 0 {
+		item := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if item == nil {
+			continue
+		}
+		if item.Command == "BATCH" && len(item.Params) >= 2 && item.Params[1] == multilineBatchType {
+			return true
+		}
+		stack = append(stack, item.Items...)
+	}
+	return false
+}
+
+func handleBatchItems(conn *ircevent.Connection, items []*ircevent.Batch) {
+	stack := make([]*ircevent.Batch, 0, len(items))
+	for i := len(items) - 1; i >= 0; i-- {
+		stack = append(stack, items[i])
+	}
+	for len(stack) > 0 {
+		item := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if item == nil {
+			continue
+		}
+		if item.Command != "BATCH" {
+			conn.HandleMessage(item.Message)
+			continue
+		}
+		if msg, ok := assembleMultilineBatch(item); ok {
+			conn.HandleMessage(msg)
+			continue
+		}
+		for i := len(item.Items) - 1; i >= 0; i-- {
+			stack = append(stack, item.Items[i])
+		}
+	}
+}
+
+func assembleMultilineBatch(batch *ircevent.Batch) (ircmsg.Message, bool) {
+	if batch == nil || batch.Command != "BATCH" || len(batch.Params) < 3 {
+		return ircmsg.Message{}, false
+	}
+	if batch.Params[1] != multilineBatchType {
+		return ircmsg.Message{}, false
+	}
+
+	target := batch.Params[2]
+	if target == "" || len(batch.Items) == 0 {
+		return ircmsg.Message{}, false
+	}
+
+	var combined strings.Builder
+	result := batch.Message
+	source := batch.Source
+	for i, item := range batch.Items {
+		if item == nil || item.Command != "PRIVMSG" || len(item.Params) < 2 || item.Params[0] != target {
+			return ircmsg.Message{}, false
+		}
+		if i == 0 {
+			if source == "" {
+				source = item.Source
+			}
+			for name, value := range item.AllTags() {
+				if name != "batch" && name != multilineConcatTag && !result.HasTag(name) {
+					result.SetTag(name, value)
+				}
+			}
+		} else if !item.HasTag(multilineConcatTag) {
+			combined.WriteByte('\n')
+		}
+		if source != "" && item.Source != "" && item.Source != source {
+			return ircmsg.Message{}, false
+		}
+		combined.WriteString(item.Params[1])
+	}
+
+	result.Source = source
+	result.Command = "PRIVMSG"
+	result.Params = []string{target, combined.String()}
+	result.DeleteTag("batch")
+	result.DeleteTag(multilineConcatTag)
+	return result, true
 }
 
 // onPrivmsg handles incoming PRIVMSG events.
