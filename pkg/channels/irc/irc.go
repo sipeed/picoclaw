@@ -25,6 +25,34 @@ type IRCChannel struct {
 	cancel context.CancelFunc
 }
 
+func requestedCapabilities(configured []string) []string {
+	if len(configured) == 0 {
+		return []string{"server-time", "message-tags", "batch", multilineBatchType}
+	}
+
+	caps := make([]string, 0, len(configured)+2)
+	seen := make(map[string]struct{}, len(configured)+2)
+	for _, capability := range configured {
+		if _, exists := seen[capability]; exists {
+			continue
+		}
+		seen[capability] = struct{}{}
+		caps = append(caps, capability)
+	}
+	if _, enabled := seen[multilineBatchType]; !enabled {
+		return caps
+	}
+
+	for _, required := range []string{"message-tags", "batch"} {
+		if _, exists := seen[required]; exists {
+			continue
+		}
+		seen[required] = struct{}{}
+		caps = append(caps, required)
+	}
+	return caps
+}
+
 // NewIRCChannel creates a new IRC channel.
 func NewIRCChannel(bc *config.Channel, cfg *config.IRCSettings, messageBus *bus.MessageBus) (*IRCChannel, error) {
 	if cfg.Server == "" {
@@ -60,10 +88,7 @@ func (c *IRCChannel) Start(ctx context.Context) error {
 	if realName == "" {
 		realName = c.config.Nick
 	}
-	caps := []string(c.config.RequestCaps)
-	if len(caps) == 0 {
-		caps = []string{"server-time", "message-tags"}
-	}
+	caps := requestedCapabilities(c.config.RequestCaps)
 
 	conn := &ircevent.Connection{
 		Server:      c.config.Server,
@@ -96,6 +121,9 @@ func (c *IRCChannel) Start(ctx context.Context) error {
 	})
 	conn.AddCallback("PRIVMSG", func(e ircmsg.Message) {
 		c.onPrivmsg(conn, e)
+	})
+	conn.AddBatchCallback(func(batch *ircevent.Batch) bool {
+		return c.onMultilineBatch(conn, batch)
 	})
 
 	if err := conn.Connect(); err != nil {
