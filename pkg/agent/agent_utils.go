@@ -37,6 +37,11 @@ func outboundContextFromInbound(
 	if outboundCtx.ReplyToMessageID == "" {
 		outboundCtx.ReplyToMessageID = replyToMessageID
 	}
+	if outboundCtx.ReplyToMessageID == "" && outboundCtx.MessageID != "" {
+		// Thread the response to the message that triggered the turn so the
+		// answer stays attached to the originating question in the chat.
+		outboundCtx.ReplyToMessageID = outboundCtx.MessageID
+	}
 	return outboundCtx
 }
 
