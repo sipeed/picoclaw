@@ -1495,6 +1495,36 @@ func TestQuotedTelegramMediaRefs_ResolvesQuotedAudioInOrder(t *testing.T) {
 	assert.Equal(t, []string{"ref://voice.ogg", "ref://audio.mp3"}, refs)
 }
 
+func TestQuotedTelegramMediaRefs_ResolvesQuotedDocument(t *testing.T) {
+	msg := &telego.Message{
+		Document: &telego.Document{
+			FileID:   "doc-file",
+			FileName: "log.txt",
+		},
+	}
+
+	var calls []string
+	refs := quotedTelegramMediaRefs(msg, func(fileID, ext, filename string) string {
+		calls = append(calls, fileID+"|"+ext+"|"+filename)
+		return "ref://" + filename
+	})
+
+	assert.Equal(t, []string{"doc-file||log.txt"}, calls)
+	assert.Equal(t, []string{"ref://log.txt"}, refs)
+}
+
+func TestQuotedTelegramMediaRefs_QuotedDocumentWithoutFilename(t *testing.T) {
+	msg := &telego.Message{
+		Document: &telego.Document{FileID: "doc-file"},
+	}
+
+	refs := quotedTelegramMediaRefs(msg, func(fileID, ext, filename string) string {
+		return "ref://" + filename
+	})
+
+	assert.Equal(t, []string{"ref://document"}, refs)
+}
+
 func TestHandleMessage_EmptyContent_Ignored(t *testing.T) {
 	messageBus := bus.NewMessageBus()
 	ch := &TelegramChannel{
