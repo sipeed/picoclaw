@@ -1398,6 +1398,15 @@ func quotedTelegramMediaRefs(
 			refs = append(refs, ref)
 		}
 	}
+	if message.Document != nil {
+		filename := strings.TrimSpace(message.Document.FileName)
+		if filename == "" {
+			filename = indexedMediaFilename("document", "", 0, 1)
+		}
+		if ref := resolve(message.Document.FileID, "", filename); ref != "" {
+			refs = append(refs, ref)
+		}
+	}
 	return refs
 }
 
