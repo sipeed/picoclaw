@@ -15,7 +15,7 @@ func (al *AgentLoop) processMessageSync(ctx context.Context, msg bus.InboundMess
 	}
 
 	response, err := al.processMessage(ctx, msg)
-	al.publishResponseOrError(ctx, msg.Channel, msg.ChatID, msg.SessionKey, response, err)
+	al.publishResponseOrError(ctx, &msg.Context, msg.Channel, msg.ChatID, msg.SessionKey, response, err)
 }
 
 func (al *AgentLoop) runTurnWithSteering(ctx context.Context, initialMsg bus.InboundMessage) {
@@ -56,9 +56,9 @@ func (al *AgentLoop) runTurnWithSteering(ctx context.Context, initialMsg bus.Inb
 		finalResponse = continued
 	}
 
-	// Publish final response
+	// Publish final response, threaded to the originating message
 	if finalResponse != "" {
-		al.PublishResponseIfNeeded(ctx, target.Channel, target.ChatID, target.SessionKey, finalResponse)
+		al.PublishResponseForInbound(ctx, &initialMsg.Context, target.Channel, target.ChatID, target.SessionKey, finalResponse)
 	}
 }
 

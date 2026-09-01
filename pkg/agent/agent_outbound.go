@@ -26,6 +26,7 @@ func (al *AgentLoop) maybePublishError(ctx context.Context, channel, chatID, ses
 
 func (al *AgentLoop) publishResponseOrError(
 	ctx context.Context,
+	inbound *bus.InboundContext,
 	channel, chatID, sessionKey string,
 	response string,
 	err error,
@@ -36,10 +37,18 @@ func (al *AgentLoop) publishResponseOrError(
 		}
 		response = ""
 	}
-	al.PublishResponseIfNeeded(ctx, channel, chatID, sessionKey, response)
+	al.PublishResponseForInbound(ctx, inbound, channel, chatID, sessionKey, response)
 }
 
+// PublishResponseIfNeeded publishes the response for turns that have no
+// inbound message context (cron, CLI). The reply target is lost for those.
 func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatID, sessionKey, response string) {
+	al.PublishResponseForInbound(ctx, nil, channel, chatID, sessionKey, response)
+}
+
+// PublishResponseForInbound publishes the turn response, threading it to the
+// originating message when the inbound context provides one.
+func (al *AgentLoop) PublishResponseForInbound(ctx context.Context, inbound *bus.InboundContext, channel, chatID, sessionKey, response string) {
 	if response == "" {
 		return
 	}
@@ -74,7 +83,7 @@ func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatI
 	}
 
 	msg := bus.OutboundMessage{
-		Context:    bus.NewOutboundContext(channel, chatID, ""),
+		Context:    outboundContextFromInbound(inbound, channel, chatID, ""),
 		SessionKey: sessionKey,
 		Content:    response,
 	}
