@@ -6744,6 +6744,20 @@ async function mockRepositoryReviewAutomationRequest(
     can_edit: true,
     can_delete: true,
     can_regenerate: true,
+    can_purge_history: true,
+    can_remove_repository: true,
+    purge_blockers: [],
+    purge_summary: {
+      repository_version: state.summary.version,
+      ledger_fence: "rplf_ui_smoke",
+      raw_findings: state.rawFindings.length,
+      deduplicated_findings: state.findings.length,
+      repository_findings: state.repositoryFindings.length,
+      issue_previews: state.issues.length,
+      external_issue_associations: state.repositoryFindings.filter((finding) =>
+        Boolean(finding.issue.url),
+      ).length,
+    },
   }
   const findFinding = (findingID: string) =>
     state.findings.find((finding) => finding.id === findingID)
@@ -7763,7 +7777,11 @@ async function mockRepositoryReviewAutomationRequest(
   }
 
   if (path === automationRoot && method === "GET") {
-    return json(route, state.automation)
+    return json(route, {
+      automation: state.automation,
+      repository: state.summary,
+      capabilities,
+    })
   }
 
   return json(
@@ -7788,6 +7806,33 @@ for (const routePath of smokeRoutes) {
     expect(errors).toEqual([])
   })
 }
+
+test("repository review history deletion requires exact typed confirmation", async ({
+  page,
+}) => {
+  const errors = collectPageErrors(page)
+  await gotoMockedRoute(
+    page,
+    `/repository-reviews/repositories/${repositoryReviewAutomationID}`,
+    { repositoryReviewTerminal: true },
+  )
+
+  await page.getByRole("button", { name: "Purge review history" }).click()
+  const dialog = page.getByRole("alertdialog")
+  const confirmation = dialog.getByLabel("Type octo/repo to confirm")
+  const purge = dialog.getByRole("button", { name: "Purge review history" })
+  await expect(dialog).toContainText(
+    "Existing GitHub issues are not changed or deleted",
+  )
+  await expect(purge).toBeDisabled()
+  await confirmation.fill("Octo/repo")
+  await expect(purge).toBeDisabled()
+  await confirmation.fill("octo/repo")
+  await expect(purge).toBeEnabled()
+  await expectNoHorizontalOverflow(page)
+  await expectNoSeriousA11yViolations(page)
+  expect(errors).toEqual([])
+})
 
 for (const collection of [
   {

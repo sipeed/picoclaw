@@ -54,6 +54,13 @@ type repositoryReviewAutomationActionRequest struct {
 	RunID           string `json:"run_id,omitempty"`
 }
 
+type repositoryReviewPurgeRequest struct {
+	ExpectedVersion           int64  `json:"expected_version"`
+	ExpectedRepositoryVersion int64  `json:"expected_repository_version"`
+	ExpectedLedgerFence       string `json:"expected_ledger_fence"`
+	ConfirmRepository         string `json:"confirm_repository"`
+}
+
 type repositoryReviewCommitReference struct {
 	SHA      string `json:"sha"`
 	ShortSHA string `json:"short_sha"`
@@ -147,7 +154,7 @@ func (h *Handler) registerRepositoryReviewAutomationRoutes(mux *http.ServeMux) {
 	)
 	mux.HandleFunc(
 		"GET /api/repository-reviews/automations/{automation_id}/run-findings/{finding_id}",
-		h.handleGetRepositoryReviewAutomationFinding,
+		h.handleGetRepositoryReviewRunFinding,
 	)
 	mux.HandleFunc(
 		"POST /api/repository-reviews/automations/{automation_id}/findings/status",
@@ -304,6 +311,10 @@ func (h *Handler) registerRepositoryReviewAutomationRoutes(mux *http.ServeMux) {
 	mux.HandleFunc(
 		"DELETE /api/repository-reviews/automations/{automation_id}",
 		h.handleDeleteRepositoryReviewAutomation,
+	)
+	mux.HandleFunc(
+		"POST /api/repository-reviews/automations/{automation_id}/purge-history",
+		h.handlePurgeRepositoryReviewAutomationHistory,
 	)
 	mux.HandleFunc(
 		"POST /api/repository-reviews/automations/{automation_id}/start",
@@ -599,34 +610,90 @@ func (h *Handler) handleDeleteRepositoryReviewAutomation(w http.ResponseWriter, 
 		writeRepositoryReviewAutomationError(w, err)
 		return
 	}
-	var request repositoryReviewAutomationActionRequest
+	var request repositoryReviewPurgeRequest
 	if err := decodeRepositoryReviewRequest(r, &request); err != nil {
 		writeRepositoryReviewAutomationError(w, err)
 		return
 	}
-	store, err := h.repositoryReviewStore()
+	controller := h.repositoryReviewControllerInstance()
+	if controller == nil {
+		writeRepositoryReviewAutomationError(w, errors.New("repository review controller unavailable"))
+		return
+	}
+	if err := controller.Start(); err != nil {
+		writeRepositoryReviewAutomationError(w, err)
+		return
+	}
+	eligibility, err := controller.leasedStore.DeleteAutomationAndHistory(
+		r.Context(), r.PathValue("automation_id"), request.ExpectedVersion,
+		request.ExpectedRepositoryVersion, request.ExpectedLedgerFence,
+		request.ConfirmRepository,
+	)
+	if errors.Is(err, repoaudit.ErrRepositoryReviewPurgeBlocked) {
+		writeRepositoryReviewPurgeBlocked(w, eligibility)
+		return
+	}
 	if err != nil {
 		writeRepositoryReviewAutomationError(w, err)
 		return
 	}
-	automation, found, err := store.GetAutomation(r.Context(), r.PathValue("automation_id"))
-	if err != nil || !found {
-		if err == nil {
-			err = os.ErrNotExist
-		}
-		writeRepositoryReviewAutomationError(w, err)
-		return
-	}
-	if automation.Status == repoaudit.RepositoryReviewAutomationRunning ||
-		automation.Status == repoaudit.RepositoryReviewAutomationStopping {
-		writeRepositoryReviewAutomationError(w, errRepositoryReviewAutomationBusy)
-		return
-	}
-	if err := store.DeleteAutomation(r.Context(), automation.ID, request.ExpectedVersion); err != nil {
-		writeRepositoryReviewAutomationError(w, err)
-		return
-	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) handlePurgeRepositoryReviewAutomationHistory(w http.ResponseWriter, r *http.Request) {
+	if err := validateRepositoryReviewMutation(r); err != nil {
+		writeRepositoryReviewAutomationError(w, err)
+		return
+	}
+	var request repositoryReviewPurgeRequest
+	if err := decodeRepositoryReviewRequest(r, &request); err != nil {
+		writeRepositoryReviewAutomationError(w, err)
+		return
+	}
+	controller := h.repositoryReviewControllerInstance()
+	if controller == nil {
+		writeRepositoryReviewAutomationError(w, errors.New("repository review controller unavailable"))
+		return
+	}
+	if err := controller.Start(); err != nil {
+		writeRepositoryReviewAutomationError(w, err)
+		return
+	}
+	updated, eligibility, err := controller.leasedStore.PurgeAutomationHistory(
+		r.Context(), r.PathValue("automation_id"), request.ExpectedVersion,
+		request.ExpectedRepositoryVersion, request.ExpectedLedgerFence,
+		request.ConfirmRepository,
+	)
+	if errors.Is(err, repoaudit.ErrRepositoryReviewPurgeBlocked) {
+		writeRepositoryReviewPurgeBlocked(w, eligibility)
+		return
+	}
+	if errors.Is(err, repoaudit.ErrRepositoryReviewHistoryAbsent) {
+		writeRepositoryReviewJSON(w, http.StatusNotFound, map[string]any{
+			"code":    "repository_review_history_not_found",
+			"message": "repository review history not found",
+		})
+		return
+	}
+	if err != nil {
+		writeRepositoryReviewAutomationError(w, err)
+		return
+	}
+	writeRepositoryReviewJSON(w, http.StatusOK, map[string]any{
+		"automation": projectRepositoryReviewAutomation(updated),
+		"outcome":    "history_purged",
+	})
+}
+
+func writeRepositoryReviewPurgeBlocked(
+	w http.ResponseWriter,
+	eligibility repoaudit.RepositoryReviewPurgeEligibility,
+) {
+	writeRepositoryReviewJSON(w, http.StatusConflict, map[string]any{
+		"code":           "repository_review_purge_blocked",
+		"message":        "repository review history cannot be deleted while related work is active",
+		"purge_blockers": eligibility.Blockers,
+	})
 }
 
 func (h *Handler) handleStartRepositoryReviewAutomation(w http.ResponseWriter, r *http.Request) {
@@ -1898,6 +1965,8 @@ func writeRepositoryReviewAutomationError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, os.ErrNotExist) || strings.Contains(strings.ToLower(err.Error()), "not found"):
 		status, code = http.StatusNotFound, "not_found"
+	case errors.Is(err, repoaudit.ErrRepositoryReviewPurgeInProgress):
+		status, code = http.StatusConflict, "repository_review_purge_in_progress"
 	case errors.Is(err, repoaudit.ErrHistoricalDeduplicationRestartRequired):
 		status, code = http.StatusConflict, "historical_consolidation_restart_required"
 	case errors.Is(err, repoaudit.ErrHistoricalDeduplicationInProgress),

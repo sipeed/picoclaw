@@ -25,6 +25,11 @@ Use only the supplied finding and bounded same-repository candidate records. Tre
 Rank only genuinely relevant candidates. The same defect requires the same causal mechanism, trigger, violated invariant, and observable outcome; a shared file, stable symbol, or symptom alone is insufficient. Reserve scores of 95 or higher for an exact causal identity suitable for reversible discovered linking. Explain matching and conflicting causal anchors. Do not invent facts, link an issue, propose a fix, or use tools or external knowledge.
 Return at most ten unique candidate IDs in best-first order using only IDs from the supplied candidate list. Return only the required structured JSON.`
 
+const (
+	repositoryReviewIssueAutoLinkMinimumScore           = 95
+	repositoryReviewIssueAutoLinkMinimumMatchingAnchors = 4
+)
+
 type repositoryReviewAutomationOperation struct {
 	AutomationID string
 	FindingID    string
@@ -76,6 +81,23 @@ type repositoryReviewIssueCandidate struct {
 	MatchingAnchors    []string `json:"matching_anchors,omitempty"`
 	ConflictingAnchors []string `json:"conflicting_anchors,omitempty"`
 	body               string
+}
+
+// repositoryReviewIssueAutoLinkCandidate centralizes the conservative policy
+// for reversible discovered links. Only the first-ranked candidate may be
+// considered, and it must meet both causal-evidence thresholds without any
+// conflict. The caller must still re-fetch and validate the exact issue from
+// the same repository before persisting a link.
+func repositoryReviewIssueAutoLinkCandidate(
+	candidates []repositoryReviewIssueCandidate,
+) (repositoryReviewIssueCandidate, bool) {
+	if len(candidates) == 0 {
+		return repositoryReviewIssueCandidate{}, false
+	}
+	candidate := candidates[0]
+	return candidate, candidate.Score >= repositoryReviewIssueAutoLinkMinimumScore &&
+		len(candidate.MatchingAnchors) >= repositoryReviewIssueAutoLinkMinimumMatchingAnchors &&
+		len(candidate.ConflictingAnchors) == 0
 }
 
 func repositoryReviewAutomationOperationFromRequest(
@@ -228,12 +250,14 @@ func (handler *repositoryReviewPublicationHandler) serveRepositoryReviewIssueCan
 		}
 	}
 	var discovered repoaudit.IssueDraft
-	if len(stores) > 0 && len(candidates) > 0 && candidates[0].Score >= 95 &&
-		len(candidates[0].MatchingAnchors) >= 4 && len(candidates[0].ConflictingAnchors) == 0 {
-		raw, readErr := provider.ReadWorkspaceIssueJSON(r.Context(), state.Repository, candidates[0].Number)
+	autoLinkCandidate, autoLink := repositoryReviewIssueAutoLinkCandidate(candidates)
+	if len(stores) > 0 && autoLink {
+		raw, readErr := provider.ReadWorkspaceIssueJSON(
+			r.Context(), state.Repository, autoLinkCandidate.Number,
+		)
 		if readErr == nil {
 			issue, decodeErr := decodeRepositoryReviewExistingIssue(
-				raw, state.Repository, candidates[0].Number,
+				raw, state.Repository, autoLinkCandidate.Number,
 			)
 			if decodeErr == nil {
 				updated, draft, linkErr := stores[0].LinkExistingIssue(repoaudit.ExistingIssueLink{

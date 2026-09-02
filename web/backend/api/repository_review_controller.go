@@ -236,6 +236,15 @@ func (c *repositoryReviewController) Start() error {
 		}
 		c.leasedStore = store
 		c.leasedConfig = cfg
+		if _, err = store.ReconcilePurgeIntents(c.ctx); err != nil {
+			c.startErr = fmt.Errorf("reconcile repository review purges: %w", err)
+			if c.releaseLease != nil {
+				c.releaseLease()
+				c.releaseLease = nil
+			}
+			c.cancel()
+			return
+		}
 		if _, err = store.ReconcileJobs(c.ctx); err != nil {
 			c.startErr = fmt.Errorf("reconcile repository finding jobs: %w", err)
 			if c.releaseLease != nil {

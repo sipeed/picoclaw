@@ -11,7 +11,8 @@ Task-oriented guides for setup, configuration, and common PicoClaw workflows.
   brief into a draft PR, pick up an existing PR, inspect code, steer AI, and
   handle mobile attention notifications.
 - [Repository Bug Finder](repository-bug-finder.md): run incremental,
-  multi-model repository review and act on durable findings.
+  exact-commit repository review, recover durable evidence, manage canonical
+  findings, and purge retained review history explicitly.
 - [Repository Model Evaluations](repository-model-evaluations.md): build a
   language- and region-diverse corpus and compare configured model aliases.
 - [Chat Apps Configuration](chat-apps.md): supported chat platforms and channel-specific setup paths.

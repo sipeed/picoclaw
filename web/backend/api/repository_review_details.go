@@ -43,18 +43,22 @@ type repositoryReviewAutomationLedger struct {
 }
 
 type repositoryReviewCapabilities struct {
-	GitHub          bool                                `json:"github"`
-	CanGenerate     bool                                `json:"can_generate"`
-	CanPublish      bool                                `json:"can_publish"`
-	PublishBlockers []repoaudit.IssuePublicationBlocker `json:"publish_blockers"`
-	CanSearchIssues bool                                `json:"can_search_issues"`
-	CanLinkIssue    bool                                `json:"can_link_issue"`
-	CanUnlinkIssue  bool                                `json:"can_unlink_issue"`
-	CanReplaceIssue bool                                `json:"can_replace_issue"`
-	CanEdit         bool                                `json:"can_edit"`
-	CanDelete       bool                                `json:"can_delete"`
-	CanRegenerate   bool                                `json:"can_regenerate"`
-	ReadOnlyReason  string                              `json:"read_only_reason,omitempty"`
+	GitHub              bool                                     `json:"github"`
+	CanGenerate         bool                                     `json:"can_generate"`
+	CanPublish          bool                                     `json:"can_publish"`
+	PublishBlockers     []repoaudit.IssuePublicationBlocker      `json:"publish_blockers"`
+	CanSearchIssues     bool                                     `json:"can_search_issues"`
+	CanLinkIssue        bool                                     `json:"can_link_issue"`
+	CanUnlinkIssue      bool                                     `json:"can_unlink_issue"`
+	CanReplaceIssue     bool                                     `json:"can_replace_issue"`
+	CanEdit             bool                                     `json:"can_edit"`
+	CanDelete           bool                                     `json:"can_delete"`
+	CanRegenerate       bool                                     `json:"can_regenerate"`
+	CanPurgeHistory     bool                                     `json:"can_purge_history"`
+	CanRemoveRepository bool                                     `json:"can_remove_repository"`
+	PurgeBlockers       []repoaudit.RepositoryReviewPurgeBlocker `json:"purge_blockers"`
+	PurgeSummary        *repoaudit.RepositoryReviewPurgeSummary  `json:"purge_summary,omitempty"`
+	ReadOnlyReason      string                                   `json:"read_only_reason,omitempty"`
 }
 
 type repositoryReviewRunFindingStatus string
@@ -455,6 +459,31 @@ func (h *Handler) handleGetRepositoryReviewAutomationFinding(w http.ResponseWrit
 		return
 	}
 	writeRepositoryReviewAutomationError(w, os.ErrNotExist)
+}
+
+func (h *Handler) handleGetRepositoryReviewRunFinding(w http.ResponseWriter, r *http.Request) {
+	ledger, err := h.repositoryReviewAutomationLedger(r.Context(), r.PathValue("automation_id"))
+	if err != nil {
+		writeRepositoryReviewAutomationError(w, err)
+		return
+	}
+	findingID := strings.TrimSpace(r.PathValue("finding_id"))
+	if !strings.HasPrefix(findingID, "rfn_") {
+		writeRepositoryReviewAutomationError(w, os.ErrNotExist)
+		return
+	}
+	if raw, found := repositoryReviewRawFindingByAlias(ledger.State.RawFindings, findingID); found {
+		writeRepositoryReviewJSON(w, http.StatusOK, repositoryReviewProcessingSourceDetail(ledger, raw))
+		return
+	}
+	if _, found := repositoryReviewFindingByID(
+		ledger.State,
+		findingID,
+	); !found {
+		writeRepositoryReviewAutomationError(w, os.ErrNotExist)
+		return
+	}
+	h.handleGetRepositoryReviewAutomationFinding(w, r)
 }
 
 func (h *Handler) handleGetRepositoryReviewAutomationRepositoryFinding(
@@ -1515,10 +1544,21 @@ func repositoryReviewGlobalCapabilities(
 	ledger repositoryReviewAutomationLedger,
 ) repositoryReviewCapabilities {
 	github := ledger.Found && validRepositoryReviewGitHubIdentityAPI(ledger.State.Repository)
+	purge, purgeErr := ledger.Store.RepositoryReviewPurgeEligibilityForAutomation(ledger.Automation)
+	if purgeErr != nil {
+		purge = repoaudit.RepositoryReviewPurgeEligibility{
+			Blockers: []repoaudit.RepositoryReviewPurgeBlocker{{
+				Code: "retention_unavailable", Count: 1,
+				Message: "History deletion status is unavailable.",
+			}},
+		}
+	}
 	return repositoryReviewCapabilities{
 		GitHub: github, CanGenerate: ledger.Found, CanPublish: github,
 		PublishBlockers: []repoaudit.IssuePublicationBlocker{},
 		CanSearchIssues: github, CanLinkIssue: github,
+		CanPurgeHistory: purge.CanPurge, CanRemoveRepository: purge.CanRemove,
+		PurgeBlockers: purge.Blockers, PurgeSummary: &purge.Summary,
 	}
 }
 
@@ -1553,6 +1593,7 @@ func repositoryReviewFindingCapabilities(
 	capabilities := repositoryReviewCapabilities{
 		GitHub: github, CanGenerate: unassociated,
 		CanSearchIssues: github && unassociated, CanLinkIssue: github && unassociated,
+		PurgeBlockers: []repoaudit.RepositoryReviewPurgeBlocker{},
 	}
 	issue, found := repositoryReviewIssueByID(state, finding.IssueDraftID)
 	if !found && aggregateIssueFound {
@@ -1600,6 +1641,7 @@ func repositoryReviewIssueCapabilities(
 	capabilities := repositoryReviewCapabilities{
 		GitHub: github, CanPublish: eligibility.CanPublish,
 		PublishBlockers: eligibility.PublishBlockers,
+		PurgeBlockers:   []repoaudit.RepositoryReviewPurgeBlocker{},
 	}
 	if !draft.Canonical {
 		capabilities.ReadOnlyReason = "This legacy issue record is not the finding's canonical issue."

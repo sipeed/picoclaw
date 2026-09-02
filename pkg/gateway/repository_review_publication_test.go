@@ -178,6 +178,66 @@ func TestRepositoryReviewExistingIssueRequiresExactConfirmedNumber(t *testing.T)
 	}
 }
 
+func TestRepositoryReviewIssueAutoLinkPolicyBoundaries(t *testing.T) {
+	eligible := repositoryReviewIssueCandidate{
+		ID: "eligible", Score: repositoryReviewIssueAutoLinkMinimumScore,
+		MatchingAnchors: []string{"mechanism", "trigger", "invariant", "outcome"},
+	}
+	for _, test := range []struct {
+		name       string
+		candidates []repositoryReviewIssueCandidate
+		want       bool
+	}{
+		{name: "no candidates"},
+		{
+			name: "score below threshold",
+			candidates: []repositoryReviewIssueCandidate{{
+				ID: "low-score", Score: repositoryReviewIssueAutoLinkMinimumScore - 1,
+				MatchingAnchors: eligible.MatchingAnchors,
+			}},
+		},
+		{
+			name: "three matching anchors",
+			candidates: []repositoryReviewIssueCandidate{{
+				ID: "few-anchors", Score: repositoryReviewIssueAutoLinkMinimumScore,
+				MatchingAnchors: eligible.MatchingAnchors[:3],
+			}},
+		},
+		{
+			name: "one conflicting anchor",
+			candidates: []repositoryReviewIssueCandidate{{
+				ID: "conflict", Score: repositoryReviewIssueAutoLinkMinimumScore,
+				MatchingAnchors: eligible.MatchingAnchors, ConflictingAnchors: []string{"different trigger"},
+			}},
+		},
+		{
+			name: "eligible candidate is not first",
+			candidates: []repositoryReviewIssueCandidate{
+				{ID: "first", Score: repositoryReviewIssueAutoLinkMinimumScore - 1}, eligible,
+			},
+		},
+		{name: "exact thresholds", candidates: []repositoryReviewIssueCandidate{eligible}, want: true},
+		{
+			name: "above thresholds",
+			candidates: []repositoryReviewIssueCandidate{{
+				ID: "above", Score: 100,
+				MatchingAnchors: append(append([]string(nil), eligible.MatchingAnchors...), "location"),
+			}},
+			want: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			candidate, ok := repositoryReviewIssueAutoLinkCandidate(test.candidates)
+			if ok != test.want {
+				t.Fatalf("candidate=%#v eligible=%v, want %v", candidate, ok, test.want)
+			}
+			if len(test.candidates) > 0 && candidate.ID != test.candidates[0].ID {
+				t.Fatalf("selected candidate=%q, want first-ranked %q", candidate.ID, test.candidates[0].ID)
+			}
+		})
+	}
+}
+
 func TestRepositoryReviewIssueCandidateRankerRequestUsesSnapshotAndPrivateBoundary(t *testing.T) {
 	request, err := repositoryReviewIssueCandidateAgentRequest(
 		repoaudit.RepositoryReviewAutomation{IssueWriterModel: "writer-snapshot"},

@@ -29,6 +29,14 @@ export type RepositoryReviewPublishBlockerCode =
   | "issue_association_conflict"
   | "historical_merge_in_progress"
   | "finding_not_publishable"
+export type RepositoryReviewPurgeBlockerCode =
+  | "review_active"
+  | "finding_processing_active"
+  | "resolution_check_active"
+  | "issue_generation_active"
+  | "publication_active"
+  | "historical_consolidation_active"
+  | "retention_unavailable"
 export type RepositoryReviewIssueInstructionsMode = "default" | "custom"
 export type RepositoryReviewFindingsScope = "current" | "all"
 /** @deprecated Use RepositoryReviewFindingsScope. */
@@ -456,6 +464,22 @@ export interface RepositoryReviewPublishBlocker {
   message: string
 }
 
+export interface RepositoryReviewPurgeBlocker {
+  code: RepositoryReviewPurgeBlockerCode
+  count: number
+  message: string
+}
+
+export interface RepositoryReviewPurgeSummary {
+  repository_version: number
+  ledger_fence: string
+  raw_findings: number
+  deduplicated_findings: number
+  repository_findings: number
+  issue_previews: number
+  external_issue_associations: number
+}
+
 export interface RepositoryReviewCapabilities {
   github?: boolean
   can_generate?: boolean
@@ -469,6 +493,10 @@ export interface RepositoryReviewCapabilities {
   can_regenerate?: boolean
   read_only_reason?: string
   publish_blockers?: RepositoryReviewPublishBlocker[]
+  can_purge_history?: boolean
+  can_remove_repository?: boolean
+  purge_blockers?: RepositoryReviewPurgeBlocker[]
+  purge_summary?: RepositoryReviewPurgeSummary
 }
 
 export interface RepositoryReviewFindingDetail {
@@ -1108,6 +1136,24 @@ export interface RepositoryReviewAutomationPage extends CollectionPageMetadata {
   automations: RepositoryReviewAutomation[]
 }
 
+export interface RepositoryReviewAutomationDetail {
+  automation: RepositoryReviewAutomation
+  repository?: RepositoryReviewSummary
+  capabilities: RepositoryReviewCapabilities
+}
+
+export interface RepositoryReviewHistoryMutationInput {
+  expected_version: number
+  expected_repository_version: number
+  expected_ledger_fence: string
+  confirm_repository: string
+}
+
+export interface RepositoryReviewPurgeHistoryResponse {
+  automation: RepositoryReviewAutomation
+  outcome: "history_purged"
+}
+
 export interface RepositoryReviewFileAttributionPage extends CollectionPageMetadata {
   automation: RepositoryReviewAutomation
   repository?: RepositoryReviewSummary
@@ -1334,7 +1380,7 @@ export async function updateRepositoryReviewAutomation(
 
 export async function deleteRepositoryReviewAutomation(
   automationID: string,
-  input: { expected_version: number },
+  input: RepositoryReviewHistoryMutationInput,
   signal?: AbortSignal,
 ): Promise<void> {
   await requestVoid(
@@ -1342,6 +1388,22 @@ export async function deleteRepositoryReviewAutomation(
     jsonMutation("DELETE", input),
     signal,
   )
+}
+
+export async function purgeRepositoryReviewAutomationHistory(
+  automationID: string,
+  input: RepositoryReviewHistoryMutationInput,
+  signal?: AbortSignal,
+): Promise<RepositoryReviewPurgeHistoryResponse> {
+  const value = await requestJSON<RepositoryReviewPurgeHistoryResponse>(
+    `${automationPath(automationID)}/purge-history`,
+    jsonMutation("POST", input),
+    signal,
+  )
+  return {
+    automation: normalizeAutomation(value.automation),
+    outcome: value.outcome,
+  }
 }
 
 export async function startRepositoryReviewAutomation(
@@ -1384,6 +1446,24 @@ export async function getRepositoryReviewAutomation(
     RepositoryReviewAutomation | AutomationMutationResult
   >(automationPath(automationID), undefined, signal)
   return automationFromMutation(value)
+}
+
+export async function getRepositoryReviewAutomationDetail(
+  automationID: string,
+  signal?: AbortSignal,
+): Promise<RepositoryReviewAutomationDetail> {
+  const value = await requestJSON<RepositoryReviewAutomationDetail>(
+    automationPath(automationID),
+    undefined,
+    signal,
+  )
+  return {
+    automation: normalizeAutomation(value.automation),
+    repository: value.repository
+      ? normalizeRepositoryReviewSummary(value.repository)
+      : undefined,
+    capabilities: normalizeCapabilities(value.capabilities) ?? {},
+  }
 }
 
 export async function listRepositoryReviewAutomationFileAttributionsPage(
@@ -1672,6 +1752,24 @@ export async function getRepositoryReviewAutomationFinding(
       draft?: RepositoryReviewIssueDraft
     }
   >(automationFindingPath(automationID, findingID), undefined, signal)
+  return normalizeFindingDetail(value)
+}
+
+/** @deprecated Use only to resolve legacy rfn_* occurrence bookmarks. */
+export async function getRepositoryReviewAutomationRunFinding(
+  automationID: string,
+  findingID: string,
+  signal?: AbortSignal,
+): Promise<RepositoryReviewFindingDetail> {
+  const value = await requestJSON<
+    Partial<RepositoryReviewFindingDetail> & {
+      draft?: RepositoryReviewIssueDraft
+    }
+  >(
+    `${automationPath(automationID)}/run-findings/${encodeURIComponent(findingID)}`,
+    undefined,
+    signal,
+  )
   return normalizeFindingDetail(value)
 }
 
@@ -2894,7 +2992,33 @@ function normalizeCapabilities(
   return {
     ...capabilities,
     publish_blockers: normalizePublishBlockers(capabilities.publish_blockers),
+    purge_blockers: normalizePurgeBlockers(capabilities.purge_blockers),
+    purge_summary: capabilities.purge_summary
+      ? {
+          repository_version:
+            capabilities.purge_summary.repository_version ?? 0,
+          ledger_fence: capabilities.purge_summary.ledger_fence ?? "",
+          raw_findings: capabilities.purge_summary.raw_findings ?? 0,
+          deduplicated_findings:
+            capabilities.purge_summary.deduplicated_findings ?? 0,
+          repository_findings:
+            capabilities.purge_summary.repository_findings ?? 0,
+          issue_previews: capabilities.purge_summary.issue_previews ?? 0,
+          external_issue_associations:
+            capabilities.purge_summary.external_issue_associations ?? 0,
+        }
+      : undefined,
   }
+}
+
+function normalizePurgeBlockers(
+  blockers: RepositoryReviewPurgeBlocker[] | null | undefined,
+): RepositoryReviewPurgeBlocker[] {
+  return (blockers ?? []).map((blocker) => ({
+    code: blocker.code,
+    count: blocker.count ?? 0,
+    message: blocker.message ?? "",
+  }))
 }
 
 function normalizePublishBlockers(

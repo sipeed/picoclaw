@@ -76,9 +76,11 @@ func (h *Handler) handleLegacyRepositoryReviewAction(w http.ResponseWriter, r *h
 }
 
 func (h *Handler) handlePublishRepositoryReviewIssue(w http.ResponseWriter, r *http.Request) {
-	if r == nil || r.URL == nil || r.URL.RawQuery != "" || r.Body == nil ||
-		r.ContentLength > 16<<10 || prWorkspaceMutationCrossSite(r) ||
-		validateEventReplayHeaders(r.Header) != nil {
+	if err := validateRepositoryReviewMutation(r); err != nil {
+		writeRepositoryReviewError(w, err)
+		return
+	}
+	if r.Body == nil || r.ContentLength > 16<<10 {
 		writeRepositoryReviewError(w, errors.New("invalid repository review request"))
 		return
 	}
@@ -129,14 +131,35 @@ func (h *Handler) handleGetRepositoryReview(w http.ResponseWriter, r *http.Reque
 	writeRepositoryReviewJSON(w, http.StatusOK, projectRepositoryReviewDetail(state, page))
 }
 
+// repositoryReviewDetailResponse is the bounded legacy repository projection.
+// Keep this allowlist explicit: embedding RepositoryState would make every new
+// durable ledger or controller-authority field public by default.
 type repositoryReviewDetailResponse struct {
-	repoaudit.RepositoryState
-	FindingOffset     int  `json:"finding_offset"`
-	FindingTotal      int  `json:"finding_total"`
-	NextFindingOffset *int `json:"next_finding_offset,omitempty"`
-	DraftOffset       int  `json:"draft_offset"`
-	DraftTotal        int  `json:"draft_total"`
-	NextDraftOffset   *int `json:"next_draft_offset,omitempty"`
+	SchemaVersion          int                                  `json:"schema_version"`
+	ID                     string                               `json:"id"`
+	Repository             string                               `json:"repository"`
+	Version                int64                                `json:"version"`
+	ReviewVersion          int64                                `json:"review_version"`
+	LastCommitSHA          string                               `json:"last_commit_sha,omitempty"`
+	FindingCount           int                                  `json:"finding_count"`
+	RepositoryFindingCount int                                  `json:"repository_finding_count"`
+	OpenFindingCount       int                                  `json:"open_finding_count"`
+	IssueDraftCount        int                                  `json:"issue_draft_count"`
+	UnsupportedCount       int                                  `json:"unsupported_count"`
+	ReviewedFileCount      int                                  `json:"reviewed_file_count"`
+	ExcludedFileCount      int                                  `json:"excluded_file_count"`
+	UpdatedAt              time.Time                            `json:"updated_at"`
+	Unsupported            map[string]repoaudit.UnsupportedFile `json:"unsupported,omitempty"`
+	Findings               []repoaudit.Finding                  `json:"findings"`
+	Contexts               []repoaudit.FindingContext           `json:"contexts"`
+	Runs                   []repoaudit.ReviewRun                `json:"runs"`
+	IssueDrafts            []repoaudit.IssueDraft               `json:"issue_drafts"`
+	FindingOffset          int                                  `json:"finding_offset"`
+	FindingTotal           int                                  `json:"finding_total"`
+	NextFindingOffset      *int                                 `json:"next_finding_offset,omitempty"`
+	DraftOffset            int                                  `json:"draft_offset"`
+	DraftTotal             int                                  `json:"draft_total"`
+	NextDraftOffset        *int                                 `json:"next_draft_offset,omitempty"`
 }
 
 type repositoryReviewPageRequest struct {
@@ -203,12 +226,12 @@ func projectRepositoryReviewDetail(
 		page.FindingOffset = total
 	}
 	end := min(total, page.FindingOffset+page.FindingLimit)
-	state.Findings = append([]repoaudit.Finding(nil), state.Findings[page.FindingOffset:end]...)
-	for index := range state.Findings {
-		state.Findings[index].CampaignID = ""
+	findings := append([]repoaudit.Finding(nil), state.Findings[page.FindingOffset:end]...)
+	for index := range findings {
+		findings[index].CampaignID = ""
 	}
 	contextIDs := make(map[string]struct{})
-	for _, finding := range state.Findings {
+	for _, finding := range findings {
 		for _, contextID := range finding.ContextIDs {
 			contextIDs[contextID] = struct{}{}
 		}
@@ -220,16 +243,6 @@ func projectRepositoryReviewDetail(
 			contexts = append(contexts, contextRecord)
 		}
 	}
-	state.Contexts = contexts
-	state.Files = map[string]repoaudit.ReviewedFile{}
-	state.ReviewAttempts = nil
-	state.ReviewAttemptIdentities = nil
-	state.ActiveForceCampaignID = ""
-	state.ActiveForceProfileHash = ""
-	state.ActiveForceCommitSHA = ""
-	state.CurrentCampaign = nil
-	state.CampaignHistory = nil
-	state.ActiveReviewRun = nil
 	unsupportedPaths := make([]string, 0, len(state.Unsupported))
 	for pathValue := range state.Unsupported {
 		unsupportedPaths = append(unsupportedPaths, pathValue)
@@ -237,27 +250,36 @@ func projectRepositoryReviewDetail(
 	slices.Sort(unsupportedPaths)
 	projectedUnsupported := make(map[string]repoaudit.UnsupportedFile, min(200, len(unsupportedPaths)))
 	for _, pathValue := range unsupportedPaths[:min(200, len(unsupportedPaths))] {
-		projectedUnsupported[pathValue] = state.Unsupported[pathValue]
+		unsupported := state.Unsupported[pathValue]
+		unsupported.ForceCampaignID = ""
+		projectedUnsupported[pathValue] = unsupported
 	}
-	state.Unsupported = projectedUnsupported
-	state.Runs = append([]repoaudit.ReviewRun(nil), state.Runs...)
-	if len(state.Runs) > 50 {
-		state.Runs = state.Runs[len(state.Runs)-50:]
+	runs := append([]repoaudit.ReviewRun(nil), state.Runs...)
+	if len(runs) > 50 {
+		runs = runs[len(runs)-50:]
 	}
-	for index := range state.Runs {
-		state.Runs[index].CampaignID = ""
-	}
-	for index := range state.Runs {
-		state.Runs[index].CheckpointDigests = nil
-		state.Runs[index].CheckpointScopes = nil
+	for index := range runs {
+		runs[index].CampaignID = ""
+		runs[index].CheckpointDigests = nil
+		runs[index].CheckpointScopes = nil
 	}
 	draftTotal := len(state.IssueDrafts)
 	page.DraftOffset = min(page.DraftOffset, draftTotal)
 	draftEnd := draftTotal - page.DraftOffset
 	draftStart := max(0, draftEnd-page.DraftLimit)
-	state.IssueDrafts = append([]repoaudit.IssueDraft(nil), state.IssueDrafts[draftStart:draftEnd]...)
+	issueDrafts := append([]repoaudit.IssueDraft(nil), state.IssueDrafts[draftStart:draftEnd]...)
+	summary := repoaudit.Summarize(state)
 	response := repositoryReviewDetailResponse{
-		RepositoryState: state, FindingOffset: page.FindingOffset, FindingTotal: total,
+		SchemaVersion: summary.SchemaVersion, ID: summary.ID, Repository: summary.Repository,
+		Version: summary.Version, ReviewVersion: summary.ReviewVersion,
+		LastCommitSHA: summary.LastCommitSHA, FindingCount: summary.FindingCount,
+		RepositoryFindingCount: summary.RepositoryFindingCount,
+		OpenFindingCount:       summary.OpenFindingCount, IssueDraftCount: summary.IssueDraftCount,
+		UnsupportedCount: summary.UnsupportedCount, ReviewedFileCount: summary.ReviewedFileCount,
+		ExcludedFileCount: summary.ExcludedFileCount, UpdatedAt: summary.UpdatedAt,
+		Unsupported: projectedUnsupported, Findings: findings, Contexts: contexts,
+		Runs: runs, IssueDrafts: issueDrafts,
+		FindingOffset: page.FindingOffset, FindingTotal: total,
 		DraftOffset: page.DraftOffset, DraftTotal: draftTotal,
 	}
 	if end < total {
@@ -265,7 +287,7 @@ func projectRepositoryReviewDetail(
 		response.NextFindingOffset = &next
 	}
 	if draftStart > 0 {
-		next := page.DraftOffset + len(state.IssueDrafts)
+		next := page.DraftOffset + len(issueDrafts)
 		response.NextDraftOffset = &next
 	}
 	return response
@@ -406,7 +428,8 @@ func decodeRepositoryReviewRequest(r *http.Request, target any) error {
 }
 
 func validateRepositoryReviewMutation(r *http.Request) error {
-	if r == nil || prWorkspaceMutationCrossSite(r) || validateEventReplayHeaders(r.Header) != nil {
+	if r == nil || r.URL == nil || r.URL.RawQuery != "" || prWorkspaceMutationCrossSite(r) ||
+		validateEventReplayHeaders(r.Header) != nil {
 		return errors.New("invalid repository review request")
 	}
 	return nil
@@ -417,6 +440,8 @@ func writeRepositoryReviewError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		status, code = http.StatusNotFound, "not_found"
+	case errors.Is(err, repoaudit.ErrRepositoryReviewPurgeInProgress):
+		status, code = http.StatusConflict, "repository_review_purge_in_progress"
 	case errors.Is(err, repoaudit.ErrHistoricalDeduplicationInProgress):
 		status, code = http.StatusConflict, "historical_deduplication_in_progress"
 	case errors.Is(err, repoaudit.ErrConflict):

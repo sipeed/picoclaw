@@ -179,8 +179,14 @@ func TestRepositoryReviewDeduplicatedFindingAndRawProcessingRoutes(t *testing.T)
 	mux.ServeHTTP(runFindings, httptest.NewRequest(
 		http.MethodGet, base+"/run-findings?query=ALL", nil,
 	))
-	if runFindings.Code != http.StatusOK ||
-		!strings.Contains(runFindings.Body.String(), `"run_finding_status"`) {
+	var legacyPage struct {
+		Findings []repositoryReviewRunFindingSummary `json:"findings"`
+		Total    int                                 `json:"total"`
+	}
+	if err := json.Unmarshal(runFindings.Body.Bytes(), &legacyPage); err != nil {
+		t.Fatal(err)
+	}
+	if runFindings.Code != http.StatusOK || legacyPage.Total != 0 || len(legacyPage.Findings) != 0 {
 		t.Fatalf("run findings status=%d body=%s", runFindings.Code, runFindings.Body.String())
 	}
 
@@ -192,6 +198,15 @@ func TestRepositoryReviewDeduplicatedFindingAndRawProcessingRoutes(t *testing.T)
 		!strings.Contains(detail.Body.String(), `"raw_source_total":1`) ||
 		!strings.Contains(detail.Body.String(), state.DeduplicatedFindings[0].Evidence) {
 		t.Fatalf("deduplicated detail status=%d body=%s", detail.Code, detail.Body.String())
+	}
+	if len(state.RepositoryFindings) > 0 {
+		strict := httptest.NewRecorder()
+		mux.ServeHTTP(strict, httptest.NewRequest(
+			http.MethodGet, base+"/findings/"+state.RepositoryFindings[0].ID, nil,
+		))
+		if strict.Code != http.StatusNotFound {
+			t.Fatalf("rdf-only detail accepted repository finding: status=%d body=%s", strict.Code, strict.Body.String())
+		}
 	}
 
 	sources := httptest.NewRecorder()

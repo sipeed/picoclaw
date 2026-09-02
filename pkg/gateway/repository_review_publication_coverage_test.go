@@ -1831,6 +1831,7 @@ func TestRepositoryReviewPublicationHelpersCoverBoundaryResponses(t *testing.T) 
 		{err: nil, found: false, status: http.StatusNotFound},
 		{err: os.ErrNotExist, found: true, status: http.StatusNotFound},
 		{err: repoaudit.ErrConflict, found: true, status: http.StatusConflict},
+		{err: repoaudit.ErrRepositoryReviewPurgeInProgress, found: true, status: http.StatusConflict},
 		{
 			err: repoaudit.ErrHistoricalDeduplicationInProgress, found: true,
 			status: http.StatusConflict,

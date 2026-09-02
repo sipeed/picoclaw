@@ -72,6 +72,7 @@ func TestRepositoryReviewRoutesSelectDiscussAndIssueData(t *testing.T) {
 
 func TestRepositoryReviewDetailPaginationProjectsOnlyReferencedContext(t *testing.T) {
 	canary := repoaudit.NewRepositoryReviewCampaignID()
+	internalCanary := "internal-authority-canary"
 	firstContext := repoaudit.FindingContext{ID: "context-first", CampaignID: canary}
 	secondContext := repoaudit.FindingContext{ID: "context-second", CampaignID: canary}
 	drafts := make([]repoaudit.IssueDraft, 12)
@@ -79,27 +80,68 @@ func TestRepositoryReviewDetailPaginationProjectsOnlyReferencedContext(t *testin
 		drafts[index].ID = fmt.Sprintf("draft-%02d", index)
 	}
 	state := repoaudit.RepositoryState{
+		SchemaVersion:           repoaudit.SchemaVersion,
+		ID:                      "rrp_compatibility_projection",
+		Repository:              "owner/repository",
+		Version:                 7,
+		ReviewVersion:           9,
+		LastCommitSHA:           strings.Repeat("b", 40),
+		UpdatedAt:               time.Unix(123, 0).UTC(),
+		LastExcludedFiles:       3,
 		Files:                   map[string]repoaudit.ReviewedFile{"first.go": {}},
-		ReviewAttempts:          map[string]int{"retry.go": 2},
-		ReviewAttemptIdentities: map[string]string{"retry.go": "rat_internal"},
+		ReviewAttempts:          map[string]int{internalCanary: 2},
+		ReviewAttemptIdentities: map[string]string{internalCanary: "rat_internal"},
 		Unsupported: map[string]repoaudit.UnsupportedFile{
-			"large.go": {FileRef: repoaudit.FileRef{Path: "large.go"}, Reason: "file_too_large"},
+			"large.go": {
+				FileRef: repoaudit.FileRef{Path: "large.go"}, Reason: "file_too_large",
+				ForceCampaignID: canary,
+			},
 		},
 		Findings: []repoaudit.Finding{
-			{ID: "finding-first", CampaignID: canary, ContextIDs: []string{firstContext.ID}},
-			{ID: "finding-second", CampaignID: canary, ContextIDs: []string{secondContext.ID}},
+			{
+				ID: "finding-first", CampaignID: canary, ContextIDs: []string{firstContext.ID},
+				Status: repoaudit.FindingOpen,
+			},
+			{
+				ID: "finding-second", CampaignID: canary, ContextIDs: []string{secondContext.ID},
+				Status: repoaudit.FindingDismissed,
+			},
 		},
-		Contexts:    []repoaudit.FindingContext{firstContext, secondContext},
-		Runs:        make([]repoaudit.ReviewRun, 51),
-		IssueDrafts: drafts,
+		RawFindings: []repoaudit.RawReviewFinding{{ID: internalCanary}},
+		DeduplicatedFindings: []repoaudit.DeduplicatedReviewFinding{{
+			ID: internalCanary, Status: repoaudit.FindingOpen,
+		}},
+		DeduplicationJobs:        []repoaudit.DeduplicationJob{{ID: internalCanary}},
+		NextDeduplicationOrdinal: 23,
+		FindingsProcessing:       repoaudit.FindingsProcessingCounters{RawTotal: 1},
+		Contexts:                 []repoaudit.FindingContext{firstContext, secondContext},
+		Runs:                     make([]repoaudit.ReviewRun, 51),
+		FileAttributions: []repoaudit.RepositoryReviewFileAttribution{{
+			ID: internalCanary,
+		}},
+		IssueDrafts:        drafts,
+		RepositoryFindings: []repoaudit.RepositoryFinding{{ID: internalCanary}},
+		MappingJobs:        []repoaudit.RepositoryMappingJob{{ID: internalCanary}},
+		ValidationJobs:     []repoaudit.RepositoryValidationJob{{ID: internalCanary}},
 		CurrentCampaign: &repoaudit.RepositoryReviewCampaignCoverage{
 			ID: canary, CommitSHA: strings.Repeat("a", 40),
 			Paths: map[string]repoaudit.RepositoryReviewCampaignPathCoverage{},
 		},
-		CampaignHistory: map[string]string{canary: strings.Repeat("a", 40)},
+		ActiveReviewRun: &repoaudit.RepositoryReviewActiveRun{
+			ID: internalCanary, CampaignID: canary,
+		},
+		CampaignHistory:         map[string]string{canary: strings.Repeat("a", 40)},
+		ActiveForceCampaignID:   internalCanary,
+		ActiveForceProfileHash:  internalCanary,
+		ActiveForceCommitSHA:    internalCanary,
+		HistoricalDeduplication: repoaudit.HistoricalDeduplicationReplay{Required: true, Error: internalCanary},
 	}
 	for index := range state.Runs {
 		state.Runs[index].CampaignID = canary
+		state.Runs[index].CheckpointDigests = map[string]string{internalCanary: internalCanary}
+		state.Runs[index].CheckpointScopes = map[string][]repoaudit.FileRef{
+			internalCanary: {{Path: internalCanary}},
+		}
 	}
 
 	projected := projectRepositoryReviewDetail(state, repositoryReviewPageRequest{
@@ -108,24 +150,49 @@ func TestRepositoryReviewDetailPaginationProjectsOnlyReferencedContext(t *testin
 	if projected.FindingOffset != 1 || projected.FindingTotal != 2 ||
 		projected.NextFindingOffset != nil || len(projected.Findings) != 1 ||
 		projected.Findings[0].ID != "finding-second" || len(projected.Contexts) != 1 ||
-		projected.Contexts[0].ID != secondContext.ID || len(projected.Files) != 0 ||
-		projected.ReviewAttempts != nil || projected.ReviewAttemptIdentities != nil ||
+		projected.Contexts[0].ID != secondContext.ID ||
 		len(projected.Runs) != 50 || projected.DraftTotal != 12 ||
 		projected.NextDraftOffset == nil || *projected.NextDraftOffset != 10 ||
 		len(projected.IssueDrafts) != 10 || projected.IssueDrafts[0].ID != "draft-02" ||
-		projected.IssueDrafts[9].ID != "draft-11" {
+		projected.IssueDrafts[9].ID != "draft-11" || projected.FindingCount != 1 ||
+		projected.RepositoryFindingCount != 1 || projected.OpenFindingCount != 1 ||
+		projected.IssueDraftCount != 12 || projected.UnsupportedCount != 1 ||
+		projected.ReviewedFileCount != 1 || projected.ExcludedFileCount != 3 {
 		t.Fatalf("projected detail=%#v", projected)
 	}
 	encoded, err := json.Marshal(projected)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), canary) || strings.Contains(string(encoded), "current_campaign") ||
-		strings.Contains(string(encoded), "campaign_history") {
+	if strings.Contains(string(encoded), canary) || strings.Contains(string(encoded), internalCanary) {
 		t.Fatalf("projected detail exposed campaign authority: %s", encoded)
 	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &object); err != nil {
+		t.Fatal(err)
+	}
+	wantKeys := map[string]struct{}{
+		"schema_version": {}, "id": {}, "repository": {}, "version": {}, "review_version": {},
+		"last_commit_sha": {}, "finding_count": {}, "repository_finding_count": {},
+		"open_finding_count": {}, "issue_draft_count": {}, "unsupported_count": {},
+		"reviewed_file_count": {}, "excluded_file_count": {}, "updated_at": {},
+		"unsupported": {}, "findings": {}, "contexts": {}, "runs": {}, "issue_drafts": {},
+		"finding_offset": {}, "finding_total": {}, "draft_offset": {}, "draft_total": {},
+		"next_draft_offset": {},
+	}
+	if len(object) != len(wantKeys) {
+		t.Fatalf("projected detail keys=%v, want=%v", object, wantKeys)
+	}
+	for key := range object {
+		if _, allowed := wantKeys[key]; !allowed {
+			t.Fatalf("projected detail exposed non-compatibility field %q: %s", key, encoded)
+		}
+	}
 	if state.Findings[1].CampaignID != canary || state.Contexts[1].CampaignID != canary ||
-		state.Runs[1].CampaignID != canary || state.CurrentCampaign == nil || len(state.CampaignHistory) != 1 {
+		state.Runs[1].CampaignID != canary || state.Runs[1].CheckpointDigests == nil ||
+		state.CurrentCampaign == nil || len(state.CampaignHistory) != 1 ||
+		len(state.RawFindings) != 1 || len(state.RepositoryFindings) != 1 ||
+		state.Unsupported["large.go"].ForceCampaignID != canary {
 		t.Fatal("detail projection mutated source campaign authority")
 	}
 }

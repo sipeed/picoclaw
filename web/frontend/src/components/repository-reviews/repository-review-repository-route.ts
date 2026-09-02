@@ -1,4 +1,4 @@
-import { getRepositoryReviewAutomationFinding } from "@/api/repository-reviews"
+import { getRepositoryReviewAutomationRunFinding } from "@/api/repository-reviews"
 
 export async function resolveRepositoryFindingRouteID(
   automationID: string,
@@ -6,7 +6,7 @@ export async function resolveRepositoryFindingRouteID(
 ): Promise<string | undefined> {
   if (!findingID.startsWith("rfn_")) return findingID
   try {
-    const detail = await getRepositoryReviewAutomationFinding(
+    const detail = await getRepositoryReviewAutomationRunFinding(
       automationID,
       findingID,
     )

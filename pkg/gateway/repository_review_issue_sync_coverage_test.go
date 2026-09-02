@@ -409,6 +409,53 @@ func TestRepositoryReviewIssueDiscoveryAutoLinksOnlyRefetchedGroundedIssue(t *te
 	}
 }
 
+func TestRepositoryReviewIssueDiscoveryDoesNotLinkFailedRefetch(t *testing.T) {
+	ranking := &repositoryReviewRankingProvider{responses: []string{
+		`{"rankings":[{"id":"99","score":95,"explanation":"Exact causal identity.",` +
+			`"matching_anchors":["operation","trigger","invariant","outcome"],` +
+			`"conflicting_anchors":[]}]}`,
+	}}
+	loop := repositoryReviewRankingTestLoop(t, ranking)
+	manager := &repositoryReviewIssueSyncMCPManager{responses: map[string]string{
+		reviews.GitHubSearchIssuesTool: `{"items":[{
+			"id":99,"number":12,"title":"Existing waiter issue","body":"same causal path",
+			"state":"open","html_url":"https://github.com/owner/repo/issues/12"
+		}]}`,
+		// The exact issue re-fetch is authoritative. A mismatched issue number
+		// must leave the ranked candidate visible without creating a link.
+		reviews.GitHubIssueReadTool: `{
+			"id":99,"number":13,"title":"Different issue","body":"different causal path",
+			"state":"open","html_url":"https://github.com/owner/repo/issues/13"
+		}`,
+	}}
+	for _, tool := range []string{reviews.GitHubSearchIssuesTool, reviews.GitHubIssueReadTool} {
+		loop.RegisterTool(tools.NewMCPTool(manager, reviews.DefaultGitHubMCPServer, &sdkmcp.Tool{
+			Name: tool, InputSchema: map[string]any{"type": "object", "additionalProperties": true},
+		}))
+	}
+	store, state, finding, automation := repositoryReviewIssueLinkTestFixture(
+		t, loop.GetConfig().WorkspacePath(), "owner/repo",
+	)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		repositoryReviewPublicationRoute+"automations/"+automation.ID+"/findings/"+
+			finding.ID+"/issue-link/candidates",
+		strings.NewReader(`{"expected_version":`+strconv.FormatInt(finding.Version, 10)+`}`),
+	)
+	response := httptest.NewRecorder()
+	newRepositoryReviewPublicationHandler(loop).ServeHTTP(response, request)
+	if response.Code != http.StatusOK ||
+		!strings.Contains(response.Body.String(), `"candidates"`) ||
+		strings.Contains(response.Body.String(), `"discovered_issue"`) {
+		t.Fatalf("discovery response=%d %s", response.Code, response.Body.String())
+	}
+	persisted, found, err := store.Get(state.Repository)
+	if err != nil || !found || len(persisted.IssueDrafts) != 0 ||
+		len(persisted.Findings) != 1 || persisted.Findings[0].IssueDraftID != "" {
+		t.Fatalf("persisted=%#v found=%v err=%v", persisted, found, err)
+	}
+}
+
 func TestRepositoryReviewIssueLinkRemainingPureBranches(t *testing.T) {
 	for _, request := range []*http.Request{
 		httptest.NewRequest(http.MethodGet,

@@ -151,6 +151,33 @@ func TestRepositoryReviewRawCollectionNewRouteErrorCoverage(t *testing.T) {
 	}
 }
 
+func TestRepositoryReviewLegacyRunFindingAliasResolvesCanonicalRawSource(t *testing.T) {
+	handler, mux, workspace := newRepositoryReviewAutomationTestHandler(t)
+	t.Cleanup(handler.Shutdown)
+	state := seedRepositoryReviewAPIState(t, workspace)
+	state = completeRepositoryReviewAPIMappingJobs(t, workspace, state)
+	legacyID := "rfn_pruned_legacy_alias"
+	state.RawFindings[0].LegacyFindingID = legacyID
+	state.RawFindings[0].DiagnosisDigest = repoaudit.RawReviewFindingDiagnosisDigest(state.RawFindings[0])
+	state.DeduplicatedFindings[0].DiagnosisDigest = state.RawFindings[0].DiagnosisDigest
+	persistRepositoryReviewAdditionalCoverageState(t, workspace, state)
+	if _, found := repositoryReviewFindingByID(state, legacyID); found {
+		t.Fatalf("legacy projection %q was not pruned", legacyID)
+	}
+	automation := seedRepositoryReviewDetailAutomation(t, handler, state.Repository, state.Runs[0].ID)
+
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, httptest.NewRequest(
+		http.MethodGet,
+		"/api/repository-reviews/automations/"+automation.ID+"/run-findings/"+legacyID,
+		nil,
+	))
+	if response.Code != http.StatusOK ||
+		!strings.Contains(response.Body.String(), `"source":{"id":"`+state.RawFindings[0].ID+`"`) {
+		t.Fatalf("legacy alias status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestRepositoryReviewHistoricalRecoveryNewHelperCoverage(t *testing.T) {
 	started := time.Date(2026, 8, 30, 20, 0, 0, 0, time.UTC)
 	commitSHA := strings.Repeat("a", 40)

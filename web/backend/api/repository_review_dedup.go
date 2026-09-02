@@ -348,12 +348,6 @@ func (h *Handler) handleGetRepositoryReviewDeduplicatedFinding(
 		}
 	}
 	if !found {
-		if _, aggregateFound := repositoryReviewRepositoryFindingByID(
-			ledger.State, findingID,
-		); aggregateFound {
-			h.handleGetRepositoryReviewAutomationFinding(w, r)
-			return
-		}
 		writeRepositoryReviewAutomationError(w, os.ErrNotExist)
 		return
 	}

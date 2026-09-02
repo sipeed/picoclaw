@@ -247,7 +247,7 @@ func TestRepositoryReviewRunFindingStatusRetryRoute(t *testing.T) {
 	aggregateDetail := httptest.NewRecorder()
 	mux.ServeHTTP(aggregateDetail, httptest.NewRequest(
 		http.MethodGet,
-		base+"/findings/"+associated.RepositoryFindings[0].ID,
+		base+"/repository-findings/"+associated.RepositoryFindings[0].ID,
 		nil,
 	))
 	if aggregateDetail.Code != http.StatusOK ||
@@ -433,7 +433,7 @@ func TestRepositoryReviewAggregateDetailSkipsUnassociatedOccurrenceBeforeLinkedI
 	response := httptest.NewRecorder()
 	mux.ServeHTTP(response, httptest.NewRequest(
 		http.MethodGet,
-		"/api/repository-reviews/automations/"+automation.ID+"/findings/"+aggregate.ID,
+		"/api/repository-reviews/automations/"+automation.ID+"/repository-findings/"+aggregate.ID,
 		nil,
 	))
 	if response.Code != http.StatusOK ||
@@ -462,26 +462,24 @@ func TestRepositoryReviewAutomationCapabilitiesAreExplicitForUnavailableActions(
 		automation := seedRepositoryReviewDetailAutomation(
 			t, handler, state.Repository, state.Runs[0].ID,
 		)
-		response := httptest.NewRecorder()
-		mux.ServeHTTP(response, httptest.NewRequest(
+		legacyResponse := httptest.NewRecorder()
+		mux.ServeHTTP(legacyResponse, httptest.NewRequest(
 			http.MethodGet,
-			"/api/repository-reviews/automations/"+automation.ID+"/findings/"+
+			"/api/repository-reviews/automations/"+automation.ID+"/run-findings/"+
 				linkedState.Findings[0].ID,
 			nil,
 		))
-		body := response.Body.String()
-		for _, capability := range []string{
-			`"can_link_issue":false`, `"can_search_issues":false`,
-			`"can_unlink_issue":true`, `"can_replace_issue":true`,
-		} {
-			if response.Code != http.StatusOK || !strings.Contains(body, capability) {
-				t.Fatalf("linked finding capability %s status=%d body=%s", capability, response.Code, body)
-			}
+		if legacyResponse.Code != http.StatusNotFound {
+			t.Fatalf(
+				"modern finding exposed as legacy occurrence status=%d body=%s",
+				legacyResponse.Code,
+				legacyResponse.Body.String(),
+			)
 		}
 		aggregateResponse := httptest.NewRecorder()
 		mux.ServeHTTP(aggregateResponse, httptest.NewRequest(
 			http.MethodGet,
-			"/api/repository-reviews/automations/"+automation.ID+"/findings/"+
+			"/api/repository-reviews/automations/"+automation.ID+"/repository-findings/"+
 				linkedState.Findings[0].RepositoryFindingID,
 			nil,
 		))

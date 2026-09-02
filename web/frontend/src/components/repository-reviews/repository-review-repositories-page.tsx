@@ -3,6 +3,7 @@ import {
   IconEdit,
   IconListDetails,
   IconPlus,
+  IconRefresh,
   IconTrash,
 } from "@tabler/icons-react"
 import {
@@ -16,13 +17,17 @@ import { type FormEvent, useMemo, useState } from "react"
 import {
   RepositoryReviewAPIError,
   type RepositoryReviewAutomation,
+  type RepositoryReviewAutomationDetail,
   type RepositoryReviewProfile,
+  type RepositoryReviewPurgeSummary,
   createRepositoryReviewAutomation,
   deleteRepositoryReviewAutomation,
   getRepositoryReviewAutomation,
+  getRepositoryReviewAutomationDetail,
   listRepositoryReviewAutomations,
   listRepositoryReviewAutomationsPage,
   listRepositoryReviewProfiles,
+  purgeRepositoryReviewAutomationHistory,
   updateRepositoryReviewAutomation,
 } from "@/api/repository-reviews"
 import {
@@ -58,6 +63,8 @@ import {
 const repositoriesKey = ["repository-review-automations"] as const
 const repositoryDetailKey = (automationID: string) =>
   ["repository-review-automation", automationID] as const
+const repositoryCompoundDetailKey = (automationID: string) =>
+  ["repository-review-automation-detail", automationID] as const
 const editorContextKey = [
   "repository-review-repository-editor-context",
 ] as const
@@ -238,33 +245,83 @@ export function RepositoryReviewRepositoryDetailPage({
 }) {
   const queryClient = useQueryClient()
   const [actionError, setActionError] = useState("")
+  const [actionNotice, setActionNotice] = useState("")
   const query = useQuery({
-    queryKey: repositoryDetailKey(automationID),
+    queryKey: repositoryCompoundDetailKey(automationID),
     queryFn: ({ signal }) =>
-      getRepositoryReviewAutomation(automationID, signal),
+      getRepositoryReviewAutomationDetail(automationID, signal),
     retry: false,
   })
-  const automation = query.data
+  const detail = query.data
+  const automation = detail?.automation
+  const capabilities = detail?.capabilities
+  const purgeSummary = capabilities?.purge_summary
+  const purgeBlockers = capabilities?.purge_blockers ?? []
   const notFound =
     query.error instanceof RepositoryReviewAPIError &&
     query.error.status === 404
+  const handleMutationError = (error: unknown) => {
+    const conflict =
+      error instanceof RepositoryReviewAPIError && error.status === 409
+    setActionNotice("")
+    setActionError(
+      conflict
+        ? `${errorMessage(error)} Latest repository details have been reloaded.`
+        : errorMessage(error),
+    )
+    if (conflict) void query.refetch()
+  }
+  const purgeMutation = useMutation({
+    mutationFn: async () => {
+      if (!detail) throw new Error("Repository is unavailable.")
+      const input = historyMutationInput(detail)
+      return purgeRepositoryReviewAutomationHistory(detail.automation.id, input)
+    },
+    onMutate: () => {
+      setActionError("")
+      setActionNotice("")
+    },
+    onSuccess: async (result) => {
+      queryClient.setQueryData(
+        repositoryDetailKey(result.automation.id),
+        result.automation,
+      )
+      await queryClient.invalidateQueries({ queryKey: repositoriesKey })
+      setActionNotice(
+        "Review history was purged. Existing GitHub issues were not changed.",
+      )
+      await query.refetch()
+    },
+    onError: handleMutationError,
+  })
   const removeMutation = useMutation({
     mutationFn: async () => {
-      if (!automation) throw new Error("Repository is unavailable.")
-      await deleteRepositoryReviewAutomation(automation.id, {
-        expected_version: automation.version,
-      })
+      if (!detail) throw new Error("Repository is unavailable.")
+      const input = historyMutationInput(detail)
+      await deleteRepositoryReviewAutomation(detail.automation.id, input)
+    },
+    onMutate: () => {
+      setActionError("")
+      setActionNotice("")
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: repositoriesKey })
       onDeleted()
     },
-    onError: (error) => {
-      setActionError(errorMessage(error))
-      void query.refetch()
-    },
+    onError: handleMutationError,
   })
   const busy = automation ? repositoryConfigurationBusy(automation) : false
+  const destructiveActionPending =
+    purgeMutation.isPending || removeMutation.isPending
+  const destructiveActionUnavailableMessage =
+    purgeBlockers[0]?.message ||
+    (!purgeSummary
+      ? "History deletion details are unavailable. Refresh and try again."
+      : "This action is not available for the repository's current state.")
+  const canPurgeHistory =
+    capabilities?.can_purge_history === true && Boolean(purgeSummary)
+  const canRemoveRepository =
+    capabilities?.can_remove_repository === true && Boolean(purgeSummary)
 
   return (
     <CollectionDetailShell
@@ -296,35 +353,26 @@ export function RepositoryReviewRepositoryDetailPage({
             >
               <IconEdit /> Edit
             </Button>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={busy || removeMutation.isPending}
-                >
-                  <IconTrash /> Remove
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>
-                    Remove {automation.repository}?
-                  </AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This removes its repository configuration and run controls.
-                    Existing review history remains in the repository ledger.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => removeMutation.mutate()}>
-                    Remove repository
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            <RepositoryHistoryDestructiveDialog
+              action="purge"
+              repository={automation.repository}
+              summary={purgeSummary}
+              disabled={busy || !canPurgeHistory || destructiveActionPending}
+              disabledReason={destructiveActionUnavailableMessage}
+              pending={purgeMutation.isPending}
+              onConfirm={() => purgeMutation.mutate()}
+            />
+            <RepositoryHistoryDestructiveDialog
+              action="remove"
+              repository={automation.repository}
+              summary={purgeSummary}
+              disabled={
+                busy || !canRemoveRepository || destructiveActionPending
+              }
+              disabledReason={destructiveActionUnavailableMessage}
+              pending={removeMutation.isPending}
+              onConfirm={() => removeMutation.mutate()}
+            />
           </>
         ) : undefined
       }
@@ -337,6 +385,14 @@ export function RepositoryReviewRepositoryDetailPage({
               className="text-destructive flex items-center gap-2 text-sm"
             >
               <IconAlertTriangle className="size-4" /> {actionError}
+            </div>
+          )}
+          {actionNotice && (
+            <div
+              role="status"
+              className="border-border bg-muted/30 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+            >
+              <IconRefresh className="size-4" /> {actionNotice}
             </div>
           )}
           <section aria-labelledby="repository-configuration-heading">
@@ -370,10 +426,181 @@ export function RepositoryReviewRepositoryDetailPage({
               />
             </dl>
           </section>
+          <section aria-labelledby="repository-history-heading">
+            <h2
+              id="repository-history-heading"
+              className="mb-2 text-sm font-semibold"
+            >
+              Local review history
+            </h2>
+            <p className="text-muted-foreground mb-3 text-sm">
+              These records are deleted by Purge review history or Remove.
+              Existing GitHub issues are never changed or deleted.
+            </p>
+            {purgeSummary ? (
+              <HistoryDeletionCounts summary={purgeSummary} />
+            ) : (
+              <div
+                role="status"
+                className="border-border text-muted-foreground rounded-lg border border-dashed px-3 py-4 text-sm"
+              >
+                History deletion counts are unavailable. Refresh the repository
+                details before deleting history.
+              </div>
+            )}
+            {purgeBlockers.length > 0 && (
+              <div
+                role="status"
+                className="border-border bg-muted/30 mt-3 rounded-lg border px-3 py-2 text-sm"
+              >
+                <p className="font-medium">Review history status</p>
+                <ul className="text-muted-foreground mt-1 list-disc space-y-1 pl-5">
+                  {purgeBlockers.map((blocker) => (
+                    <li key={blocker.code}>
+                      {blocker.message}
+                      {blocker.count > 1
+                        ? ` (${blocker.count.toLocaleString()})`
+                        : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </section>
         </div>
       )}
     </CollectionDetailShell>
   )
+}
+
+function RepositoryHistoryDestructiveDialog({
+  action,
+  repository,
+  summary,
+  disabled,
+  disabledReason,
+  pending,
+  onConfirm,
+}: {
+  action: "purge" | "remove"
+  repository: string
+  summary?: RepositoryReviewPurgeSummary
+  disabled: boolean
+  disabledReason: string
+  pending: boolean
+  onConfirm: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [confirmation, setConfirmation] = useState("")
+  const purge = action === "purge"
+  const inputID = `repository-history-${action}-confirmation`
+  const triggerLabel = purge ? "Purge review history" : "Remove"
+  const actionLabel = purge ? "Purge review history" : "Remove repository"
+  const pendingLabel = purge ? "Purging…" : "Removing…"
+
+  const updateOpen = (nextOpen: boolean) => {
+    setOpen(nextOpen)
+    if (!nextOpen) setConfirmation("")
+  }
+
+  return (
+    <AlertDialog open={open} onOpenChange={updateOpen}>
+      <AlertDialogTrigger asChild>
+        <Button
+          type="button"
+          size="sm"
+          variant={purge ? "outline" : "destructive"}
+          disabled={disabled}
+          title={disabled ? disabledReason : undefined}
+        >
+          <IconTrash /> {triggerLabel}
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {purge
+              ? `Purge review history for ${repository}?`
+              : `Remove ${repository}?`}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {purge
+              ? "This permanently deletes the repository-review ledger while keeping the repository configuration and run controls. Existing GitHub issues are not changed or deleted. Discussion threads and generic workflow records remain under their own retention policies."
+              : "This permanently deletes the repository configuration, run controls, and repository-review ledger. Existing GitHub issues are not changed or deleted. Discussion threads and generic workflow records remain under their own retention policies."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {summary && <HistoryDeletionCounts summary={summary} />}
+        <div className="space-y-2">
+          <Label htmlFor={inputID}>
+            Type <span className="font-mono">{repository}</span> to confirm
+          </Label>
+          <Input
+            id={inputID}
+            value={confirmation}
+            autoComplete="off"
+            spellCheck={false}
+            aria-invalid={
+              confirmation.length > 0 && confirmation !== repository
+            }
+            onChange={(event) => setConfirmation(event.target.value)}
+          />
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={pending || confirmation !== repository}
+            onClick={onConfirm}
+          >
+            {pending ? pendingLabel : actionLabel}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
+function HistoryDeletionCounts({
+  summary,
+}: {
+  summary: RepositoryReviewPurgeSummary
+}) {
+  const counts = [
+    ["Raw findings", summary.raw_findings],
+    ["Deduplicated findings", summary.deduplicated_findings],
+    ["Repository findings", summary.repository_findings],
+    ["Issue previews", summary.issue_previews],
+    ["External issue associations", summary.external_issue_associations],
+  ] as const
+
+  return (
+    <dl className="border-border divide-border divide-y rounded-lg border text-sm">
+      {counts.map(([label, value]) => (
+        <div
+          key={label}
+          className="flex items-center justify-between gap-4 px-3 py-2"
+        >
+          <dt className="text-muted-foreground">{label}</dt>
+          <dd className="font-mono tabular-nums">{value.toLocaleString()}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function historyMutationInput(
+  detail: RepositoryReviewAutomationDetail | undefined,
+) {
+  if (!detail?.capabilities.purge_summary) {
+    throw new Error("History deletion details are unavailable.")
+  }
+  return {
+    expected_version: detail.automation.version,
+    expected_repository_version:
+      detail.capabilities.purge_summary.repository_version,
+    expected_ledger_fence: detail.capabilities.purge_summary.ledger_fence,
+    confirm_repository: detail.automation.repository,
+  }
 }
 
 export function RepositoryReviewRepositoryEditorPage({

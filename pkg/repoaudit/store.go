@@ -1077,6 +1077,11 @@ func (s Store) listSummaries(maximum int) ([]RepositorySummary, error) {
 		if summaryErr != nil {
 			return nil, summaryErr
 		}
+		if _, purging, purgeErr := s.loadPurgeFence(summary.Repository); purgeErr != nil {
+			return nil, purgeErr
+		} else if purging {
+			return nil, ErrRepositoryReviewPurgeInProgress
+		}
 		if summary.SchemaVersion != SchemaVersion {
 			state, found, migrationErr := s.Get(summary.Repository)
 			if migrationErr != nil {
@@ -1465,6 +1470,10 @@ func (s Store) ClaimIssueDraftPublication(
 }
 
 func (s Store) List() ([]RepositoryState, error) {
+	return s.listStates(true)
+}
+
+func (s Store) listStates(enforcePurgeFence bool) ([]RepositoryState, error) {
 	if err := s.requireSafeRoot(true); err != nil {
 		return nil, err
 	}
@@ -1486,6 +1495,13 @@ func (s Store) List() ([]RepositoryState, error) {
 		state, stateErr := repositoryReviewStateFromEntry(s.root, entry)
 		if stateErr != nil {
 			return nil, stateErr
+		}
+		if enforcePurgeFence {
+			if _, purging, purgeErr := s.loadPurgeFence(state.Repository); purgeErr != nil {
+				return nil, purgeErr
+			} else if purging {
+				return nil, ErrRepositoryReviewPurgeInProgress
+			}
 		}
 		states = append(states, state)
 	}
@@ -1520,6 +1536,15 @@ func repositoryReviewStateFromEntry(root string, entry os.DirEntry) (RepositoryS
 }
 
 func (s Store) load(repository string) (RepositoryState, error) {
+	if _, purging, err := s.loadPurgeFence(repository); err != nil {
+		return RepositoryState{}, err
+	} else if purging {
+		return RepositoryState{}, ErrRepositoryReviewPurgeInProgress
+	}
+	return s.loadIgnoringPurge(repository)
+}
+
+func (s Store) loadIgnoringPurge(repository string) (RepositoryState, error) {
 	if s.loadForTest != nil {
 		return s.loadForTest(repository)
 	}

@@ -110,10 +110,123 @@ func TestRepositoryReviewAutomationRoutesCreateUpdateListAndDelete(t *testing.T)
 	}
 	deleted := repositoryReviewAutomationMutation(t, mux, http.MethodDelete,
 		"/api/repository-reviews/automations/"+created.Automation.ID,
-		map[string]any{"expected_version": changed.Automation.Version})
+		map[string]any{
+			"expected_version":            changed.Automation.Version,
+			"expected_repository_version": 0,
+			"expected_ledger_fence":       repositoryReviewPurgeFenceForTest(t, workspace, changed.Automation),
+			"confirm_repository":          changed.Automation.Repository,
+		})
 	if deleted.Code != http.StatusNoContent {
 		t.Fatalf("delete status=%d body=%s", deleted.Code, deleted.Body.String())
 	}
+}
+
+func TestRepositoryReviewAutomationHistoryPurgeContract(t *testing.T) {
+	handler, mux, workspace := newRepositoryReviewAutomationTestHandler(t)
+	t.Cleanup(handler.Shutdown)
+	state := completeRepositoryReviewAPIMappingJobs(
+		t, workspace, seedRepositoryReviewAPIState(t, workspace),
+	)
+	store := repoaudit.NewStore(workspace)
+	automationInput := testRepositoryReviewAutomation()
+	automationInput.Repository = state.Repository
+	automation, err := store.CreateAutomation(t.Context(), automationInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	detail := httptest.NewRecorder()
+	mux.ServeHTTP(detail, httptest.NewRequest(
+		http.MethodGet,
+		"/api/repository-reviews/automations/"+automation.ID,
+		nil,
+	))
+	if detail.Code != http.StatusOK {
+		t.Fatalf("detail status=%d body=%s", detail.Code, detail.Body.String())
+	}
+	if !strings.Contains(detail.Body.String(), `"can_purge_history":true`) ||
+		!strings.Contains(detail.Body.String(), `"can_remove_repository":true`) ||
+		!strings.Contains(detail.Body.String(), `"purge_blockers":[]`) {
+		t.Fatalf("detail omitted authoritative purge capabilities: %s", detail.Body.String())
+	}
+	var projected struct {
+		Repository   repoaudit.RepositorySummary `json:"repository"`
+		Capabilities struct {
+			CanPurgeHistory     bool                                     `json:"can_purge_history"`
+			CanRemoveRepository bool                                     `json:"can_remove_repository"`
+			PurgeBlockers       []repoaudit.RepositoryReviewPurgeBlocker `json:"purge_blockers"`
+			PurgeSummary        repoaudit.RepositoryReviewPurgeSummary   `json:"purge_summary"`
+		} `json:"capabilities"`
+	}
+	if err := json.Unmarshal(detail.Body.Bytes(), &projected); err != nil {
+		t.Fatal(err)
+	}
+	if projected.Repository.Version != state.Version ||
+		!projected.Capabilities.CanPurgeHistory || !projected.Capabilities.CanRemoveRepository ||
+		len(projected.Capabilities.PurgeBlockers) != 0 ||
+		projected.Capabilities.PurgeSummary.RepositoryVersion != state.Version {
+		t.Fatalf("purge detail = %#v", projected)
+	}
+
+	stale := repositoryReviewAutomationMutation(
+		t, mux, http.MethodPost,
+		"/api/repository-reviews/automations/"+automation.ID+"/purge-history",
+		map[string]any{
+			"expected_version":            automation.Version,
+			"expected_repository_version": state.Version + 1,
+			"expected_ledger_fence":       projected.Capabilities.PurgeSummary.LedgerFence,
+			"confirm_repository":          automation.Repository,
+		},
+	)
+	if stale.Code != http.StatusConflict || !strings.Contains(stale.Body.String(), "stale_repository_review_automation") {
+		t.Fatalf("stale purge status=%d body=%s", stale.Code, stale.Body.String())
+	}
+
+	purged := repositoryReviewAutomationMutation(
+		t, mux, http.MethodPost,
+		"/api/repository-reviews/automations/"+automation.ID+"/purge-history",
+		map[string]any{
+			"expected_version":            automation.Version,
+			"expected_repository_version": state.Version,
+			"expected_ledger_fence":       projected.Capabilities.PurgeSummary.LedgerFence,
+			"confirm_repository":          automation.Repository,
+		},
+	)
+	if purged.Code != http.StatusOK || !strings.Contains(purged.Body.String(), `"outcome":"history_purged"`) {
+		t.Fatalf("purge status=%d body=%s", purged.Code, purged.Body.String())
+	}
+	if _, found, getErr := store.Get(state.Repository); getErr != nil || found {
+		t.Fatalf("purged ledger found=%v err=%v", found, getErr)
+	}
+	reset, found, getErr := store.GetAutomation(t.Context(), automation.ID)
+	if getErr != nil || !found || reset.Status != repoaudit.RepositoryReviewAutomationIdle ||
+		len(reset.RunIDs) != 0 || reset.Progress.Findings != 0 || reset.Version != automation.Version+1 {
+		t.Fatalf("reset automation=%#v found=%v err=%v", reset, found, getErr)
+	}
+	after := httptest.NewRecorder()
+	mux.ServeHTTP(after, httptest.NewRequest(
+		http.MethodGet, "/api/repository-reviews/automations/"+automation.ID, nil,
+	))
+	if after.Code != http.StatusOK ||
+		!strings.Contains(after.Body.String(), `"can_purge_history":false`) ||
+		!strings.Contains(after.Body.String(), `"can_remove_repository":true`) ||
+		!strings.Contains(after.Body.String(), `"purge_blockers":[]`) ||
+		!strings.Contains(after.Body.String(), `"repository_version":0`) {
+		t.Fatalf("post-purge capabilities status=%d body=%s", after.Code, after.Body.String())
+	}
+}
+
+func repositoryReviewPurgeFenceForTest(
+	t *testing.T,
+	workspace string,
+	automation repoaudit.RepositoryReviewAutomation,
+) string {
+	t.Helper()
+	eligibility, err := repoaudit.NewStore(workspace).RepositoryReviewPurgeEligibilityForAutomation(automation)
+	if err != nil || eligibility.Summary.LedgerFence == "" {
+		t.Fatalf("purge eligibility=%#v err=%v", eligibility, err)
+	}
+	return eligibility.Summary.LedgerFence
 }
 
 func TestRepositoryReviewEffectiveWorkflowTimeout(t *testing.T) {

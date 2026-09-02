@@ -52,7 +52,7 @@ func TestRepositoryReviewCoverageDetailAndDraftUpdateHandlers(t *testing.T) {
 		t.Fatal(err)
 	}
 	if projected.ID != state.ID || projected.FindingTotal != 1 || len(projected.Findings) != 1 ||
-		len(projected.Contexts) != 1 || len(projected.Files) != 0 {
+		len(projected.Contexts) != 1 {
 		t.Fatalf("detail projection=%#v", projected)
 	}
 
@@ -302,11 +302,22 @@ func TestRepositoryReviewCoverageAutomationMutationBranches(t *testing.T) {
 	controller.active[running.ID] = &repositoryReviewActiveRun{runID: running.ActiveRunID, store: store}
 	controller.mu.Unlock()
 	handler.StartRepositoryReviewController()
+	purgeEligibility, purgeErr := store.RepositoryReviewPurgeEligibilityForAutomation(running)
+	if purgeErr != nil {
+		t.Fatal(purgeErr)
+	}
 
 	deleteActive := repositoryReviewAutomationMutation(t, mux, http.MethodDelete,
 		"/api/repository-reviews/automations/"+running.ID,
-		map[string]any{"expected_version": running.Version})
-	if deleteActive.Code != http.StatusConflict {
+		map[string]any{
+			"expected_version":            running.Version,
+			"expected_repository_version": 0,
+			"expected_ledger_fence":       purgeEligibility.Summary.LedgerFence,
+			"confirm_repository":          running.Repository,
+		})
+	if deleteActive.Code != http.StatusConflict ||
+		!strings.Contains(deleteActive.Body.String(), "repository_review_purge_blocked") ||
+		!strings.Contains(deleteActive.Body.String(), "review_active") {
 		t.Fatalf("delete active status=%d body=%s", deleteActive.Code, deleteActive.Body.String())
 	}
 
@@ -329,7 +340,12 @@ func TestRepositoryReviewCoverageAutomationMutationBranches(t *testing.T) {
 
 	missingDelete := repositoryReviewAutomationMutation(t, mux, http.MethodDelete,
 		"/api/repository-reviews/automations/rra_missing",
-		map[string]any{"expected_version": 1})
+		map[string]any{
+			"expected_version":            1,
+			"expected_repository_version": 0,
+			"expected_ledger_fence":       "rplf_missing",
+			"confirm_repository":          "owner/missing",
+		})
 	if missingDelete.Code != http.StatusNotFound {
 		t.Fatalf("missing delete status=%d body=%s", missingDelete.Code, missingDelete.Body.String())
 	}
@@ -1215,7 +1231,7 @@ func TestRepositoryReviewCoveragePagingProjectionAndDecodeBoundaries(t *testing.
 	projected := projectRepositoryReviewDetail(state, repositoryReviewPageRequest{
 		FindingOffset: 0, FindingLimit: 1, DraftOffset: 0, DraftLimit: 1,
 	})
-	if len(projected.Findings) != 1 || len(projected.Contexts) != 1 || len(projected.Files) != 0 ||
+	if len(projected.Findings) != 1 || len(projected.Contexts) != 1 ||
 		len(projected.Unsupported) != 200 || len(projected.Runs) != 50 || len(projected.IssueDrafts) != 1 ||
 		projected.NextFindingOffset == nil || projected.NextDraftOffset == nil {
 		t.Fatalf("projected detail=%#v", projected)
@@ -1245,6 +1261,7 @@ func TestRepositoryReviewCoverageErrorProjection(t *testing.T) {
 		status int
 	}{
 		{err: os.ErrNotExist, status: http.StatusNotFound},
+		{err: repoaudit.ErrRepositoryReviewPurgeInProgress, status: http.StatusConflict},
 		{err: repoaudit.ErrConflict, status: http.StatusConflict},
 		{err: repoaudit.ErrInvalidPlan, status: http.StatusBadRequest},
 		{err: errors.New("duplicate input"), status: http.StatusBadRequest},
@@ -1261,6 +1278,8 @@ func TestRepositoryReviewCoverageErrorProjection(t *testing.T) {
 		status int
 	}{
 		{err: os.ErrNotExist, status: http.StatusNotFound},
+		{err: repoaudit.ErrRepositoryReviewPurgeInProgress, status: http.StatusConflict},
+		{err: repoaudit.ErrHistoricalDeduplicationRestartRequired, status: http.StatusConflict},
 		{err: errRepositoryReviewAutomationBusy, status: http.StatusConflict},
 		{err: repoaudit.ErrInvalidAutomation, status: http.StatusBadRequest},
 		{err: io.ErrUnexpectedEOF, status: http.StatusBadRequest},
@@ -1334,7 +1353,14 @@ func TestRepositoryReviewCoverageAutomationTransitionsAndUtilities(t *testing.T)
 		mux,
 		http.MethodDelete,
 		"/api/repository-reviews/automations/"+idle.ID,
-		map[string]any{"expected_version": idle.Version + 10},
+		map[string]any{
+			"expected_version":            idle.Version + 10,
+			"expected_repository_version": 0,
+			"expected_ledger_fence": repositoryReviewPurgeFenceForTest(
+				t, workspace, quotaResult.Automation,
+			),
+			"confirm_repository": idle.Repository,
+		},
 	)
 	if staleDelete.Code != http.StatusConflict {
 		t.Fatalf("stale delete = %d %s", staleDelete.Code, staleDelete.Body.String())
@@ -1455,6 +1481,22 @@ func TestRepositoryReviewCoveragePublishAndCorruptStoreFailures(t *testing.T) {
 	handler.handlePublishRepositoryReviewIssue(invalid, nil)
 	if invalid.Code != http.StatusBadRequest {
 		t.Fatalf("nil publish = %d %s", invalid.Code, invalid.Body.String())
+	}
+	wrongMediaRequest := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"expected_version":1}`))
+	setRepositoryReviewMutationHeaders(wrongMediaRequest)
+	wrongMediaRequest.Header.Set("Content-Type", "text/plain")
+	wrongMedia := httptest.NewRecorder()
+	handler.handlePublishRepositoryReviewIssue(wrongMedia, wrongMediaRequest)
+	if wrongMedia.Code != http.StatusBadRequest {
+		t.Fatalf("wrong-media publish = %d %s", wrongMedia.Code, wrongMedia.Body.String())
+	}
+	nilBodyRequest := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{}`))
+	setRepositoryReviewMutationHeaders(nilBodyRequest)
+	nilBodyRequest.Body = nil
+	nilBody := httptest.NewRecorder()
+	handler.handlePublishRepositoryReviewIssue(nilBody, nilBodyRequest)
+	if nilBody.Code != http.StatusBadRequest {
+		t.Fatalf("nil-body publish = %d %s", nilBody.Code, nilBody.Body.String())
 	}
 	emptyRequest := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
 	emptyRequest.SetPathValue("repository_id", state.ID)
@@ -3926,6 +3968,57 @@ func TestRepositoryReviewCoverageReconcileBranches(t *testing.T) {
 	badController.leasedConfig = cfg
 	badController.leasedStore = repoaudit.NewStore(badWorkspace)
 	badController.reconcile()
+}
+
+func TestRepositoryReviewCompatibilityFindingDispatchCoverage(t *testing.T) {
+	handler, mux, workspace := newRepositoryReviewAutomationTestHandler(t)
+	t.Cleanup(handler.Shutdown)
+	state := seedRepositoryReviewAPIState(t, workspace)
+	state = completeRepositoryReviewAPIMappingJobs(t, workspace, state)
+	automation := seedRepositoryReviewDetailAutomation(
+		t, handler, state.Repository, state.Runs[0].ID,
+	)
+
+	direct := func(automationID, findingID string) *httptest.ResponseRecorder {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodGet, "/", nil)
+		request.SetPathValue("automation_id", automationID)
+		request.SetPathValue("finding_id", findingID)
+		response := httptest.NewRecorder()
+		handler.handleGetRepositoryReviewAutomationFinding(response, request)
+		return response
+	}
+	if response := direct("rra_missing", "rfn_missing"); response.Code != http.StatusNotFound {
+		t.Fatalf("missing compatibility automation=%d %s", response.Code, response.Body.String())
+	}
+	if response := direct(automation.ID, state.DeduplicatedFindings[0].ID); response.Code != http.StatusOK {
+		t.Fatalf("deduplicated compatibility detail=%d %s", response.Code, response.Body.String())
+	}
+	if response := direct(automation.ID, "unknown_finding"); response.Code != http.StatusNotFound {
+		t.Fatalf("unknown compatibility finding=%d %s", response.Code, response.Body.String())
+	}
+
+	missingAlias := httptest.NewRecorder()
+	mux.ServeHTTP(missingAlias, httptest.NewRequest(
+		http.MethodGet,
+		"/api/repository-reviews/automations/"+automation.ID+"/run-findings/rfn_missing",
+		nil,
+	))
+	if missingAlias.Code != http.StatusNotFound {
+		t.Fatalf("missing legacy alias=%d %s", missingAlias.Code, missingAlias.Body.String())
+	}
+
+	canonical := httptest.NewRecorder()
+	mux.ServeHTTP(canonical, httptest.NewRequest(
+		http.MethodGet,
+		"/api/repository-reviews/automations/"+automation.ID+"/findings/"+
+			state.DeduplicatedFindings[0].ID,
+		nil,
+	))
+	if canonical.Code != http.StatusOK ||
+		!strings.Contains(canonical.Body.String(), `"repository_finding"`) {
+		t.Fatalf("mapped deduplicated detail=%d %s", canonical.Code, canonical.Body.String())
+	}
 }
 
 func TestRepositoryReviewCoverageControllerLifecycleBoundaries(t *testing.T) {

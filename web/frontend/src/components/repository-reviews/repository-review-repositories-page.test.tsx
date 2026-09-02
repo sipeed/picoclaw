@@ -1,20 +1,31 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
+  RepositoryReviewAPIError,
   type RepositoryReviewAutomation,
+  type RepositoryReviewAutomationDetail,
   createRepositoryReviewAutomation,
   deleteRepositoryReviewAutomation,
   getRepositoryReviewAutomation,
+  getRepositoryReviewAutomationDetail,
   listRepositoryReviewAutomations,
   listRepositoryReviewAutomationsPage,
   listRepositoryReviewProfiles,
+  purgeRepositoryReviewAutomationHistory,
   updateRepositoryReviewAutomation,
 } from "@/api/repository-reviews"
 import {
   RepositoryReviewRepositoriesPage,
+  RepositoryReviewRepositoryDetailPage,
   RepositoryReviewRepositoryEditorPage,
 } from "@/components/repository-reviews/repository-review-repositories-page"
 
@@ -45,9 +56,11 @@ vi.mock("@/api/repository-reviews", () => ({
   createRepositoryReviewAutomation: vi.fn(),
   deleteRepositoryReviewAutomation: vi.fn(),
   getRepositoryReviewAutomation: vi.fn(),
+  getRepositoryReviewAutomationDetail: vi.fn(),
   listRepositoryReviewAutomations: vi.fn(),
   listRepositoryReviewAutomationsPage: vi.fn(),
   listRepositoryReviewProfiles: vi.fn(),
+  purgeRepositoryReviewAutomationHistory: vi.fn(),
   updateRepositoryReviewAutomation: vi.fn(),
 }))
 
@@ -158,6 +171,32 @@ const repository = {
   updated_at: "2026-08-23T00:00:00Z",
 }
 
+const repositoryDetail = {
+  automation: repository,
+  repository: {
+    schema_version: 1,
+    id: "repo_1",
+    repository: repository.repository,
+    version: 7,
+    review_version: 4,
+    updated_at: repository.updated_at,
+  },
+  capabilities: {
+    can_purge_history: true,
+    can_remove_repository: true,
+    purge_blockers: [],
+    purge_summary: {
+      repository_version: 7,
+      ledger_fence: "rplf_repository",
+      raw_findings: 12,
+      deduplicated_findings: 8,
+      repository_findings: 5,
+      issue_previews: 3,
+      external_issue_associations: 2,
+    },
+  },
+} satisfies RepositoryReviewAutomationDetail
+
 describe("RepositoryReviewRepositoriesPage", () => {
   beforeEach(() => {
     vi.mocked(listRepositoryReviewAutomations).mockResolvedValue({
@@ -173,10 +212,20 @@ describe("RepositoryReviewRepositoriesPage", () => {
       canonical_query: "ORDER BY repository ASC",
       query_schema: { fields: [] },
     })
+    vi.mocked(getRepositoryReviewAutomation).mockReset()
     vi.mocked(getRepositoryReviewAutomation).mockResolvedValue(repository)
+    vi.mocked(getRepositoryReviewAutomationDetail).mockReset()
+    vi.mocked(getRepositoryReviewAutomationDetail).mockResolvedValue(
+      repositoryDetail,
+    )
     vi.mocked(createRepositoryReviewAutomation).mockReset()
     vi.mocked(updateRepositoryReviewAutomation).mockReset()
     vi.mocked(deleteRepositoryReviewAutomation).mockReset()
+    vi.mocked(purgeRepositoryReviewAutomationHistory).mockReset()
+    vi.mocked(purgeRepositoryReviewAutomationHistory).mockResolvedValue({
+      automation: { ...repository, version: 2 },
+      outcome: "history_purged",
+    })
   })
 
   it("uses the standard collection and exposes repository findings on each item", async () => {
@@ -338,6 +387,140 @@ describe("RepositoryReviewRepositoriesPage", () => {
     expect(alert).toHaveTextContent("already assigned")
   })
 
+  it("shows deletion counts and requires the exact repository before purging history", async () => {
+    const user = userEvent.setup()
+    renderDetail()
+
+    const history = await screen.findByRole("region", {
+      name: "Local review history",
+    })
+    expect(within(history).getByText("12")).toBeVisible()
+    expect(within(history).getByText("8")).toBeVisible()
+    expect(within(history).getByText("5")).toBeVisible()
+    expect(within(history).getByText("3")).toBeVisible()
+    expect(within(history).getByText("2")).toBeVisible()
+
+    await user.click(
+      screen.getByRole("button", { name: "Purge review history" }),
+    )
+    const dialog = screen.getByRole("alertdialog")
+    const confirmation = within(dialog).getByLabelText(
+      "Type owner/repo to confirm",
+    )
+    const confirm = within(dialog).getByRole("button", {
+      name: "Purge review history",
+    })
+    expect(confirm).toBeDisabled()
+    await user.type(confirmation, "Owner/repo")
+    expect(confirm).toBeDisabled()
+    await user.clear(confirmation)
+    await user.type(confirmation, "owner/repo")
+    expect(confirm).toBeEnabled()
+    await user.click(confirm)
+
+    await waitFor(() =>
+      expect(purgeRepositoryReviewAutomationHistory).toHaveBeenCalledWith(
+        "auto_1",
+        {
+          expected_version: 1,
+          expected_repository_version: 7,
+          expected_ledger_fence: "rplf_repository",
+          confirm_repository: "owner/repo",
+        },
+      ),
+    )
+    await waitFor(() =>
+      expect(getRepositoryReviewAutomationDetail).toHaveBeenCalledTimes(2),
+    )
+    expect(await screen.findByText(/Review history was purged/i)).toBeVisible()
+  })
+
+  it("requires typed confirmation before removing configuration and all local history", async () => {
+    const user = userEvent.setup()
+    const onDeleted = vi.fn()
+    renderDetail({ onDeleted })
+
+    await user.click(await screen.findByRole("button", { name: "Remove" }))
+    const dialog = screen.getByRole("alertdialog")
+    expect(dialog).toHaveTextContent(
+      "repository configuration, run controls, and repository-review ledger",
+    )
+    expect(dialog).toHaveTextContent(
+      "Existing GitHub issues are not changed or deleted",
+    )
+    await user.type(
+      within(dialog).getByLabelText("Type owner/repo to confirm"),
+      "owner/repo",
+    )
+    await user.click(
+      within(dialog).getByRole("button", { name: "Remove repository" }),
+    )
+
+    await waitFor(() =>
+      expect(deleteRepositoryReviewAutomation).toHaveBeenCalledWith("auto_1", {
+        expected_version: 1,
+        expected_repository_version: 7,
+        expected_ledger_fence: "rplf_repository",
+        confirm_repository: "owner/repo",
+      }),
+    )
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledOnce())
+  })
+
+  it("fails destructive actions closed and shows backend blockers", async () => {
+    vi.mocked(getRepositoryReviewAutomationDetail).mockResolvedValue({
+      ...repositoryDetail,
+      capabilities: {
+        ...repositoryDetail.capabilities,
+        can_purge_history: false,
+        can_remove_repository: false,
+        purge_blockers: [
+          {
+            code: "review_active",
+            count: 1,
+            message: "Stop the active repository review first.",
+          },
+        ],
+      },
+    })
+    renderDetail()
+
+    expect(
+      await screen.findByText("Stop the active repository review first."),
+    ).toBeVisible()
+    expect(
+      screen.getByRole("button", { name: "Purge review history" }),
+    ).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled()
+  })
+
+  it("refetches compound detail after a destructive-action conflict", async () => {
+    vi.mocked(purgeRepositoryReviewAutomationHistory).mockRejectedValueOnce(
+      new RepositoryReviewAPIError(409, "Repository history changed."),
+    )
+    const user = userEvent.setup()
+    renderDetail()
+
+    await user.click(
+      await screen.findByRole("button", { name: "Purge review history" }),
+    )
+    const dialog = screen.getByRole("alertdialog")
+    await user.type(
+      within(dialog).getByLabelText("Type owner/repo to confirm"),
+      "owner/repo",
+    )
+    await user.click(
+      within(dialog).getByRole("button", { name: "Purge review history" }),
+    )
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Latest repository details have been reloaded",
+    )
+    await waitFor(() =>
+      expect(getRepositoryReviewAutomationDetail).toHaveBeenCalledTimes(2),
+    )
+  })
+
   it("retries a transient new-editor context error without loading an empty repository ID", async () => {
     vi.mocked(listRepositoryReviewProfiles)
       .mockRejectedValueOnce(new Error("Temporary profile load failure."))
@@ -366,6 +549,28 @@ function renderEditor() {
       <RepositoryReviewRepositoryEditorPage
         onBack={vi.fn()}
         onSaved={vi.fn()}
+      />
+    </QueryClientProvider>,
+  )
+}
+
+function renderDetail({
+  onDeleted = vi.fn(),
+}: {
+  onDeleted?: () => void
+} = {}) {
+  return render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <RepositoryReviewRepositoryDetailPage
+        automationID="auto_1"
+        onBack={vi.fn()}
+        onEdit={vi.fn()}
+        onFindings={vi.fn()}
+        onDeleted={onDeleted}
       />
     </QueryClientProvider>,
   )

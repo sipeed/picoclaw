@@ -7,3 +7,5 @@ Reference docs for precise configuration, runtime behavior, and tool semantics.
 - [Scheduled Tasks and Cron Jobs](cron.md): schedule types, delivery modes, command gates, and storage.
 - [Config Schema Versioning Guide](config-versioning.md): config schema migration and compatibility notes.
 - [Dynamic Rate Limiting](rate-limiting.md): request throttling behavior for LLM providers.
+- [Repository Reviews API](repository-reviews-api.md): authenticated routes,
+  schemas, pagination, lifecycle mutations, retention controls, and safe errors.

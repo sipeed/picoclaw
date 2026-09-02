@@ -2131,6 +2131,20 @@ const repositoryReviewCapabilities = {
   can_edit: true,
   can_delete: true,
   can_regenerate: true,
+  can_purge_history: true,
+  can_remove_repository: true,
+  purge_blockers: [],
+  purge_summary: {
+    repository_version: repositoryReviewSummary.version,
+    ledger_fence: "rplf_collection_fixture",
+    raw_findings: repositoryReviewRawFindings.length,
+    deduplicated_findings: repositoryReviewFindings.length,
+    repository_findings: repositoryFindings.length,
+    issue_previews: repositoryReviewIssues.length,
+    external_issue_associations: repositoryFindings.filter((finding) =>
+      Boolean(finding.issue.url),
+    ).length,
+  },
 }
 
 export async function installCollectionVisualMocks(
@@ -2582,7 +2596,11 @@ export async function installCollectionVisualMocks(
       }
 
       if (path === reviewRoot) {
-        return json(route, repositoryReviewAutomation)
+        return json(route, {
+          automation: repositoryReviewAutomation,
+          repository: repositoryReviewSummary,
+          capabilities: repositoryReviewCapabilities,
+        })
       }
       if (path === `${reviewRoot}/finding-health`) {
         if (state === "empty") {

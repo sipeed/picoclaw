@@ -193,6 +193,9 @@ func (h *Handler) handleListRepositoryReviewRunFindingsCollection(w http.Respons
 	statusIndex := newRepositoryReviewRunFindingStatusIndex(ledger.State)
 	summaries := make([]repositoryReviewRunFindingSummary, 0, len(findings))
 	for _, finding := range findings {
+		if !strings.HasPrefix(finding.ID, "rfn_") {
+			continue
+		}
 		summaries = append(summaries, projectRepositoryReviewRunFindingSummary(finding, statusIndex.status(finding)))
 	}
 	contextID := repositoryReviewCollectionCursorContext("run-findings", ledger.Automation.ID, "current")

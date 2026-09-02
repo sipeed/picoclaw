@@ -12,11 +12,13 @@ import {
   generateRepositoryReviewIssues,
   getRepositoryReview,
   getRepositoryReviewAutomation,
+  getRepositoryReviewAutomationDetail,
   getRepositoryReviewAutomationFinding,
   getRepositoryReviewAutomationFindings,
   getRepositoryReviewAutomationIssue,
   getRepositoryReviewAutomationOptions,
   getRepositoryReviewAutomationRepositoryFinding,
+  getRepositoryReviewAutomationRunFinding,
   getRepositoryReviewCommitOptions,
   getRepositoryReviewFindingHealth,
   getRepositoryReviewFindingsProcessingSource,
@@ -37,6 +39,7 @@ import {
   listRepositoryReviews,
   pauseRepositoryReviewAutomation,
   publishRepositoryReviewIssueDraft,
+  purgeRepositoryReviewAutomationHistory,
   repositoryReviewDefaultIssuePrompt,
   restartRepositoryReviewAutomation,
   restartRepositoryReviewHistoricalDeduplication,
@@ -60,6 +63,24 @@ const mockedLauncherFetch = vi.mocked(launcherFetch)
 
 describe("repository review API", () => {
   beforeEach(() => mockedLauncherFetch.mockReset())
+
+  it("loads legacy occurrence bookmarks from the deprecated run-findings resource", async () => {
+    mockedLauncherFetch.mockResolvedValueOnce(
+      jsonResponse({
+        automation: { id: "auto/slash", repository: "owner/repo" },
+        finding: { id: "rfn/legacy", context_ids: [] },
+        contexts: [],
+      }),
+    )
+
+    await expect(
+      getRepositoryReviewAutomationRunFinding("auto/slash", "rfn/legacy"),
+    ).resolves.toMatchObject({ finding: { id: "rfn/legacy" } })
+    expect(mockedLauncherFetch).toHaveBeenCalledWith(
+      "/api/repository-reviews/automations/auto%2Fslash/run-findings/rfn%2Flegacy",
+      { signal: undefined },
+    )
+  })
 
   it("lists and loads repository review state", async () => {
     mockedLauncherFetch
@@ -668,6 +689,9 @@ describe("repository review API", () => {
     })
     await deleteRepositoryReviewAutomation("auto/slash", {
       expected_version: 5,
+      expected_repository_version: 8,
+      expected_ledger_fence: "rplf_delete",
+      confirm_repository: "owner/repo",
     })
     await startRepositoryReviewAutomation("auto/slash", {
       expected_version: 6,
@@ -701,7 +725,12 @@ describe("repository review API", () => {
       "/api/repository-reviews/automations/auto%2Fslash",
       expect.objectContaining({
         method: "DELETE",
-        body: JSON.stringify({ expected_version: 5 }),
+        body: JSON.stringify({
+          expected_version: 5,
+          expected_repository_version: 8,
+          expected_ledger_fence: "rplf_delete",
+          confirm_repository: "owner/repo",
+        }),
       }),
     )
     expect(mockedLauncherFetch).toHaveBeenNthCalledWith(
@@ -730,6 +759,104 @@ describe("repository review API", () => {
       "/api/repository-reviews/automations/auto%2Fslash/restart",
       expect.objectContaining({
         body: JSON.stringify({ expected_version: 9 }),
+      }),
+    )
+  })
+
+  it("loads compound retention detail and purges history with both version fences", async () => {
+    const automation = {
+      id: "auto/slash",
+      version: 4,
+      repository: "owner/repo",
+      reviewer_models: [],
+      run_ids: [],
+      model_prices: {},
+      budget: {},
+      usage: {},
+      progress: {},
+      model_stats: [],
+      account_limits: [],
+    }
+    const summary = {
+      repository_version: 9,
+      ledger_fence: "rplf_purge",
+      raw_findings: 12,
+      deduplicated_findings: 8,
+      repository_findings: 5,
+      issue_previews: 3,
+      external_issue_associations: 2,
+    }
+    mockedLauncherFetch
+      .mockResolvedValueOnce(
+        jsonResponse({
+          automation,
+          repository: {
+            id: "repo_1",
+            repository: "owner/repo",
+            version: 9,
+          },
+          capabilities: {
+            can_purge_history: false,
+            can_remove_repository: false,
+            purge_blockers: [
+              { code: "review_active", message: "Stop the review first." },
+            ],
+            purge_summary: summary,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          automation: { ...automation, version: 5 },
+          outcome: "history_purged",
+        }),
+      )
+
+    await expect(
+      getRepositoryReviewAutomationDetail("auto/slash"),
+    ).resolves.toMatchObject({
+      automation: { id: "auto/slash", repository: "owner/repo" },
+      repository: { id: "repo_1", review_version: 0 },
+      capabilities: {
+        can_purge_history: false,
+        purge_blockers: [
+          {
+            code: "review_active",
+            count: 0,
+            message: "Stop the review first.",
+          },
+        ],
+        purge_summary: summary,
+      },
+    })
+    await expect(
+      purgeRepositoryReviewAutomationHistory("auto/slash", {
+        expected_version: 4,
+        expected_repository_version: 9,
+        expected_ledger_fence: "rplf_purge",
+        confirm_repository: "owner/repo",
+      }),
+    ).resolves.toMatchObject({
+      automation: { id: "auto/slash", version: 5 },
+      outcome: "history_purged",
+    })
+
+    expect(mockedLauncherFetch).toHaveBeenNthCalledWith(
+      1,
+      "/api/repository-reviews/automations/auto%2Fslash",
+      { signal: undefined },
+    )
+    expect(mockedLauncherFetch).toHaveBeenNthCalledWith(
+      2,
+      "/api/repository-reviews/automations/auto%2Fslash/purge-history",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          expected_version: 4,
+          expected_repository_version: 9,
+          expected_ledger_fence: "rplf_purge",
+          confirm_repository: "owner/repo",
+        }),
       }),
     )
   })

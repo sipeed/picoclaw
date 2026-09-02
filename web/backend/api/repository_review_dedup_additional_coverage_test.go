@@ -585,8 +585,8 @@ func TestRepositoryReviewDedupAdditionalLegacyAndSourcePagingCoverage(t *testing
 		mux.ServeHTTP(forwarded, httptest.NewRequest(
 			http.MethodGet, base+"/run-findings/"+state.DeduplicatedFindings[0].ID, nil,
 		))
-		if forwarded.Code != http.StatusOK {
-			t.Fatalf("deduplicated generic detail status=%d body=%s", forwarded.Code, forwarded.Body.String())
+		if forwarded.Code != http.StatusNotFound {
+			t.Fatalf("strict legacy occurrence detail status=%d body=%s", forwarded.Code, forwarded.Body.String())
 		}
 		sources := httptest.NewRecorder()
 		mux.ServeHTTP(sources, httptest.NewRequest(

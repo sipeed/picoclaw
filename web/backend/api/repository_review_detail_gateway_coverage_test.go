@@ -116,7 +116,7 @@ func TestRepositoryReviewAggregateFindingDetailProjectsOccurrencesAndDuplicates(
 		response := httptest.NewRecorder()
 		mux.ServeHTTP(response, httptest.NewRequest(
 			http.MethodGet,
-			"/api/repository-reviews/automations/"+automation.ID+"/findings/"+id,
+			"/api/repository-reviews/automations/"+automation.ID+"/repository-findings/"+id,
 			nil,
 		))
 		return response

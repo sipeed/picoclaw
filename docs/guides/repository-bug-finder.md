@@ -23,7 +23,10 @@ types:
    guidance that may narrow but never expand the structured boundary.
 3. In **Advanced**, set bounded files per batch, content bytes per provider
    request, parallel review workers, automatic continuation, and an optional
-   task-admission guard expression. Profiles default to eight review workers.
+   task-admission guard expression. You may also select a passive deduplication
+   alias (blank means the reviewer), a similarity threshold (default 90), and a
+   candidate limit (default 4; zero promotes each raw finding separately).
+   Profiles default to eight review workers.
 4. In **Repositories**, assign that profile to one repository and optionally a
    branch. Blank follows the acquired repository's advertised default branch.
 
@@ -35,9 +38,13 @@ tags, full refs, revision expressions, URLs, and query or fragment forms.
 The execution account appears before reviewer and issue-writer selection
 because it constrains both model lists. Blank account follows the runtime
 default when a campaign starts. PicoClaw snapshots review execution policy into
-the campaign. Each later Draft, Post, or issue-candidate action resolves the
-currently assigned profile and snapshots that action's prompt, writer, account,
-profile ID, and version, so completed attempt provenance cannot be rewritten.
+the campaign, and every review call uses that frozen account. Each later Draft,
+direct Post generation, issue-candidate ranking, or regeneration resolves the
+currently assigned profile/account once for that attempt. Generated or
+regenerated previews durably store prompt, writer, account, profile ID, and
+version; ranking returns the selected generator model/account but remains
+read-only unless a qualifying discovered link is stored. Publishing an existing
+preview uses its already frozen payload and provenance.
 
 ## Run And Observe
 
@@ -52,18 +59,20 @@ From review detail you can:
   progress, actual token usage, estimated cost, pause reason, and run history;
 - choose the remembered, latest, or a custom full commit SHA when a paused or
   failed campaign's branch has moved; and
-- open **Findings** or **Issue previews** at any time, including before the first
-  batch finishes.
+- open **Findings**, **Raw findings**, **Findings processing**, or **Issue
+  previews** at any time, including before the first batch finishes.
 
 Start resolves the configured branch or remote default to one canonical full
 commit SHA and persists it with the workflow run ID before a worker starts.
 Automatic batches stay on that commit. **Stop safely** prevents another batch
 while allowing already admitted work to checkpoint. **Continue review**
 re-enters a paused or failed campaign through the same task guard, preserving
-its durable checkpoints, progress, usage, and run history when the assigned
-profile has not changed. Choose the remembered commit to retry unfinished work
-against the exact source revision used before the failure. **Run again** instead
-begins a new campaign and resets its campaign progress and accounting; the
+its durable checkpoints, progress, usage, and run history only when both the
+assigned profile snapshot and chosen exact commit are unchanged. Choose the
+remembered commit to retry unfinished work against the exact source revision
+used before the failure. Choosing latest/custom after the branch moves starts a
+new campaign, as does a changed profile. **Run again** always begins a new
+campaign and resets its campaign progress and accounting; the
 repository ledger may still skip matching blob and profile checkpoints unless
 the profile uses force mode.
 
@@ -77,34 +86,63 @@ target filter, reacquires only the pinned commit, and validates the plan
 natively against opaque candidate IDs and folder/type boundaries. AI cannot
 invent a path, re-include an excluded folder, or select an unchosen code type.
 
+## Purge Or Remove Review Data
+
+Repository-review history is kept indefinitely unless you explicitly remove
+it. On an inactive repository detail page, **Purge review history** deletes the
+review ledger and resets campaign/runtime state to a fresh idle configuration;
+the repository, branch, and assigned profile remain configured. **Remove
+repository** always deletes both the assignment and every resolved review
+ledger.
+
+Both dialogs show aggregate deletion counts and require typing the exact
+displayed normalized repository identity. PicoClaw also checks the current
+configuration version, primary ledger version, and opaque composite ledger
+fence at confirmation time. If inventory cannot be read, deletion fails closed
+with a `retention_unavailable` blocker. If review, deduplication, mapping, a
+Resolution check, issue generation/publication, or historical consolidation is
+active, the action is blocked with a server-owned reason. Refresh after a
+stale-version conflict and review the counts again.
+
+These actions delete PicoClaw Repository Review data only. They do not delete or
+modify GitHub issues, do not remove profiles or discussion threads, and do not
+delete generic workflow run records; thread- and workflow-owned retention still
+applies to those resources. An interrupted purge/removal is completed safely
+before repository-review workers start after the next launcher restart.
+
 ## Use Live Findings
 
-**Findings** is always available and shows review-finding checkpoints while a
-review is active. Before the first finding checkpoint it displays an empty
-in-progress Findings state rather than hiding the route.
+Repository review has three diagnosis layers:
 
-The Findings route contains only run findings attributable to the selected
-automation's recorded run IDs and campaign start. It uses the shared typed query
-and cursor-paging controls, supports List, Table, and Grid, and polls for new
-checkpoints while the review remains active.
+- **Raw findings** (`rrw_*`) are immutable diagnoses from individual successful
+  assignments. They retain the exact commit/blob/context, configured alias,
+  concrete model/account, and processing state.
+- **Findings** (`rdf_*`) are completed current-campaign diagnoses after raw
+  sources have been deduplicated. One finding may represent several ordered raw
+  sources while keeping their evidence independently inspectable.
+- **Repository findings** (`rrf_*`) join the same causal defect across commits
+  and own lifecycle, issue association, and Resolution checks.
 
-The Findings page shows compact finding summaries. Open a finding for its complete
-evidence, validation, model observations, commit and primary blob provenance,
-opaque contexts, and every context path/blob/size reference. Each occurrence
-keeps each raw source diagnosis separate and attributes new diagnoses to the
-successful concrete model, configured model alias, and concrete routed account;
-older records leave unavailable alias/account fields unreported. Each occurrence
-shows **Run finding status** as Pending, Processing, Failed, Created repository
-finding, Added to existing repository finding, or Needs review. Associated
-occurrences link directly to their canonical repository finding. Failed status
-work can be retried explicitly without changing the immutable evidence.
+**Findings** is always available. Before the first completed deduplication
+checkpoint it displays an empty in-progress state rather than substituting raw
+or pending evidence. Its typed query/cursor collection supports List, Table,
+and Grid and polls only while review or processing work remains active. Open a
+finding for its sealed representative diagnosis, raw-source count, commit/blob
+provenance, and paged source links.
 
-Choose **View repository findings** from Run findings, or **Open repository
-finding** on an associated occurrence, to inspect canonical cross-commit
-aggregates. Both actions leave the run surface and open repository-owned routes
-below `/repository-reviews/repositories`. That list and detail flow owns issue
-drafting, publication, existing-issue association, duplicate decisions,
-validation, and dismiss/reopen lifecycle controls.
+Open **Raw findings** for current-campaign pending, processing, failed, and
+completed `rrw_*` records. Open **Findings processing** for the repository-wide
+processing view, including failures from older campaigns. Only failed rows can
+be retried; bulk retry accepts 1–200 explicit unique sources and reports ordered
+successes plus safe per-source failures without changing immutable diagnosis
+content.
+
+Choose **View repository findings** or follow a mapped finding link to inspect
+canonical cross-commit aggregates below `/repository-reviews/repositories`.
+That list/detail flow owns issue drafting, publication, existing-issue
+association, duplicate decisions, Resolution checks, and dismiss/reopen
+lifecycle controls. Deprecated Run findings URLs remain compatibility surfaces,
+not a separate canonical diagnosis layer.
 
 New review findings also retain causal `match_hints` (component, operation,
 failure mode, trigger, violated invariant, outcome, related symbols, source
@@ -122,12 +160,13 @@ Discussion creates a separate reviewing thread seeded with the exact
 finding and context provenance. Returning from chat does not generate, link,
 or publish an issue; each of those effects still requires an explicit action.
 
-Each run-finding, repository-finding, and issue-preview collection preserves its
-own query, view, explicit selection, loaded cursor pages, and in-memory scroll
-through detail and action routes. Browser Back restores that state without
-overwriting the parent collection's query. Legacy `scope` links still reach the
-correct run or repository collection; legacy offsets normalize to the first
-canonical cursor page. The former **Results** sidebar destination is gone; old
+Each Findings, Raw findings, Findings processing, repository-finding, and
+issue-preview collection preserves its own query, view, explicit selection,
+loaded cursor pages, and in-memory scroll through detail and action routes.
+Browser Back restores that state without overwriting the parent collection's
+query. Legacy `scope` links still reach the correct campaign or repository
+collection; legacy offsets normalize to the first canonical cursor page. The
+former **Results** sidebar destination is gone; old
 `/repository-reviews/results` links return to the review collection.
 
 ## Draft Issue Previews
@@ -210,10 +249,12 @@ Candidate discovery derives bounded GitHub searches from causal hints, stable
 symbols, source anchors, path history, and title. The server merges and
 deduplicates at most 50 open or closed issues from the same repository. The
 current assigned profile's issue-writer model, without tools, ranks and explains
-at most 10 candidates. A score reserved for exact causal identity may create a
-reversible `discovered` association, but only after PicoClaw re-fetches the
-issue and verifies the exact repository. Lower-confidence candidates remain
-available for manual selection.
+at most 10 candidates. PicoClaw may automatically create a reversible
+`discovered` association only for the first-ranked candidate when its score is
+at least 95, it has at least four matching causal anchors, and it has no
+conflicting anchors. It then re-fetches that exact issue and verifies the exact
+repository. A score of 94, three matching anchors, any conflict, or a failed
+re-fetch remains available for manual selection without creating a link.
 
 After you select and confirm one issue, PicoClaw re-fetches it and validates
 the canonical URL and repository before storing a linked association. A
@@ -222,22 +263,23 @@ existing issue may be linked to more than one finding. Unlike issues created by
 PicoClaw, a manually linked issue may be unlinked or replaced after explicit
 confirmation. A discovered association is reversible in the same way.
 
-## Validate Resolution
+## Run A Resolution Check
 
 Issue and code state are shown independently. A closed GitHub issue moves a
 repository finding to `resolution_pending`; it does not prove the defect is
-fixed. Issue snapshots refresh after 15 minutes when the finding or validation
-view opens, before validation, or when you choose **Sync GitHub**. Reopening the
-issue returns the finding to `open`.
+fixed. Issue snapshots refresh after 15 minutes when the finding or Resolution
+check view opens, before a check, or when you choose **Sync GitHub**. Reopening
+the issue returns the finding to `open`.
 
-Choose **Validate resolution** for one finding or select up to 50 repository
-findings and choose **Validate resolutions**. The restart-safe queue runs at
-most four validators across launcher processes. PicoClaw considers at most 200
-reachable default-branch commits touching known paths or symbols, BM25-ranks
-them, and gives the isolated validator at most eight bounded diffs/current-source
-records. The validator can select only those commits, and the server verifies
-default-branch ancestry. A confirmed result records the fix commit and date,
-validation time, and first chronological semantic-version tag containing it.
+Choose **Check for fix** for one finding or select up to 50 repository findings
+and choose the corresponding Resolution check action. The restart-safe queue
+runs at most four validators across launcher processes. PicoClaw considers at
+most 200 reachable default-branch commits touching known paths or symbols,
+BM25-ranks them, and gives the isolated validator at most eight bounded
+diffs/current-source records. The checker can select only those commits, and the
+server verifies default-branch ancestry. A confirmed result records the fix
+commit and date, check time, and first chronological semantic-version tag
+containing it.
 Later observation of the same causal defect marks the finding `regressed`
 without erasing its earlier resolution history.
 
