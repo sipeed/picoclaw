@@ -36,6 +36,16 @@ Add a stdio server via `npx`:
 picoclaw mcp add filesystem -- npx -y @modelcontextprotocol/server-filesystem /tmp
 ```
 
+Add Pilot Protocol for specialist discovery and agent-to-agent messaging:
+
+```bash
+npx -y pilotprotocol-mcp setup --picoclaw
+picoclaw mcp test pilot
+```
+
+The setup command preserves the existing PicoClaw configuration and adds an
+enabled `pilot` stdio server. Pilot runs locally and does not require an API key.
+
 Add a stdio server with environment variables saved in config:
 
 ```bash
