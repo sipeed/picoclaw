@@ -91,6 +91,25 @@ Open the raw config for advanced editing:
 picoclaw mcp edit
 ```
 
+## Example: Parallel Search
+
+[Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) provides public web search and page extraction without a Parallel account or API key. Free access is rate limited.
+
+```bash
+picoclaw mcp add parallel --transport http https://search.parallel.ai/mcp
+picoclaw mcp show parallel
+```
+
+The `http` transport uses Streamable HTTP. The server exposes `web_search` and `web_fetch`; no auth headers are needed for this anonymous connection.
+
+Adding the server enables MCP. Start a new agent session or restart the gateway to load the updated configuration. Once loaded, the agent can invoke these tools during its work, sending queries, requested URLs, and any supplied objectives or context to Parallel. This adds MCP tools alongside the built-in web tools; it does not change the built-in search provider.
+
+To remove the connection, run the following command and start a new agent session or restart the gateway:
+
+```bash
+picoclaw mcp remove parallel
+```
+
 ## Command Summary
 
 | Command | Purpose |
