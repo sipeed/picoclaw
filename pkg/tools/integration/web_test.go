@@ -2415,3 +2415,331 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return fn(req)
 }
+
+func TestMapKeenablePublishedAfter(t *testing.T) {
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		rangeCode string
+		want      string
+	}{
+		{rangeCode: "", want: ""},
+		{rangeCode: "d", want: "2026-03-14"},
+		{rangeCode: "w", want: "2026-03-08"},
+		{rangeCode: "m", want: "2026-02-15"},
+		{rangeCode: "y", want: "2025-03-15"},
+	}
+	for _, tt := range tests {
+		if got := mapKeenablePublishedAfter(tt.rangeCode, now); got != tt.want {
+			t.Errorf("mapKeenablePublishedAfter(%q) = %q, want %q", tt.rangeCode, got, tt.want)
+		}
+	}
+}
+
+func TestWebTool_KeenableSearch_ReadyWithoutKey(t *testing.T) {
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		KeenableEnabled:    true,
+		KeenableMaxResults: 3,
+		Proxy:              "http://127.0.0.1:7890",
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+	if tool == nil {
+		t.Fatal("expected a tool when Keenable is enabled without a key")
+	}
+	p, ok := tool.provider.(*KeenableSearchProvider)
+	if !ok {
+		t.Fatalf("provider type = %T, want *KeenableSearchProvider", tool.provider)
+	}
+	if p.proxy != "http://127.0.0.1:7890" {
+		t.Fatalf("provider proxy = %q, want %q", p.proxy, "http://127.0.0.1:7890")
+	}
+	if tool.maxResults != 3 {
+		t.Fatalf("maxResults = %d, want 3", tool.maxResults)
+	}
+}
+
+func TestWebTool_KeenableSearch_AutoOrder(t *testing.T) {
+	// Enabled without a key, Keenable is picked before the built-in scrapers.
+	name, err := ResolveWebSearchProviderName(WebSearchToolOptions{
+		KeenableEnabled:      true,
+		SogouEnabled:         true,
+		DuckDuckGoEnabled:    true,
+		DuckDuckGoMaxResults: 5,
+	}, "best robotics companies")
+	if err != nil {
+		t.Fatalf("ResolveWebSearchProviderName() error: %v", err)
+	}
+	if name != "keenable" {
+		t.Fatalf("provider = %q, want keenable", name)
+	}
+
+	// A configured keyed provider still wins over Keenable.
+	name, err = ResolveWebSearchProviderName(WebSearchToolOptions{
+		KeenableEnabled: true,
+		TavilyEnabled:   true,
+		TavilyAPIKeys:   []string{"tvly-key"},
+	}, "best robotics companies")
+	if err != nil {
+		t.Fatalf("ResolveWebSearchProviderName() error: %v", err)
+	}
+	if name != "tavily" {
+		t.Fatalf("provider = %q, want tavily", name)
+	}
+}
+
+func TestWebTool_KeenableSearch_Endpoints(t *testing.T) {
+	tests := []struct {
+		name      string
+		apiKeys   []string
+		wantPath  string
+		wantKey   string
+		wantTitle string
+	}{
+		{
+			name:      "keyless uses public endpoint and title header",
+			apiKeys:   nil,
+			wantPath:  "/v1/search/public",
+			wantKey:   "",
+			wantTitle: "picoclaw",
+		},
+		{
+			name:      "keyed uses X-API-Key on the keyed endpoint",
+			apiKeys:   []string{"kn-test-key"},
+			wantPath:  "/v1/search",
+			wantKey:   "kn-test-key",
+			wantTitle: "picoclaw",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost {
+					t.Errorf("method = %s, want POST", r.Method)
+				}
+				if r.URL.Path != tt.wantPath {
+					t.Errorf("path = %s, want %s", r.URL.Path, tt.wantPath)
+				}
+				if got := r.Header.Get("X-API-Key"); got != tt.wantKey {
+					t.Errorf("X-API-Key = %q, want %q", got, tt.wantKey)
+				}
+				if got := r.Header.Get("X-Keenable-Title"); got != tt.wantTitle {
+					t.Errorf("X-Keenable-Title = %q, want %q", got, tt.wantTitle)
+				}
+				if got := r.Header.Get("Content-Type"); got != "application/json" {
+					t.Errorf("Content-Type = %q, want application/json", got)
+				}
+
+				var payload map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Errorf("decode payload: %v", err)
+				}
+				if payload["query"] != "test query" {
+					t.Errorf("query = %v, want 'test query'", payload["query"])
+				}
+				if payload["max_results"] != float64(5) {
+					t.Errorf("max_results = %v, want 5", payload["max_results"])
+				}
+				if payload["snippet_max_length"] != float64(500) {
+					t.Errorf("snippet_max_length = %v, want 500", payload["snippet_max_length"])
+				}
+				if _, ok := payload["published_after"]; ok {
+					t.Errorf("published_after should be absent without a range")
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]any{
+					"results": []map[string]any{
+						{
+							"title":       "Test Result 1",
+							"url":         "https://example.com/1",
+							"snippet":     "Snippet for result 1",
+							"description": "",
+						},
+						{
+							"title":       "Test Result 2",
+							"url":         "https://example.com/2",
+							"snippet":     "",
+							"description": "Description for result 2",
+						},
+						{
+							"title":   "Test Result 3",
+							"url":     "https://example.com/3",
+							"snippet": "First passage.\n\nSecond   passage.",
+						},
+					},
+				})
+			}))
+			defer server.Close()
+
+			tool, err := NewWebSearchTool(WebSearchToolOptions{
+				KeenableEnabled:    true,
+				KeenableAPIKeys:    tt.apiKeys,
+				KeenableBaseURL:    server.URL,
+				KeenableMaxResults: 5,
+			})
+			if err != nil {
+				t.Fatalf("NewWebSearchTool() error: %v", err)
+			}
+
+			result := tool.Execute(context.Background(), map[string]any{"query": "test query"})
+			if result.IsError {
+				t.Fatalf("expected success, got error: %s", result.ForLLM)
+			}
+			for _, want := range []string{
+				"via Keenable",
+				"Test Result 1",
+				"https://example.com/1",
+				"Snippet for result 1",
+				"Test Result 2",
+				"Description for result 2",
+				"3. Test Result 3\n   https://example.com/3\n   First passage. Second passage.",
+			} {
+				if !strings.Contains(result.ForUser, want) {
+					t.Errorf("output missing %q:\n%s", want, result.ForUser)
+				}
+			}
+		})
+	}
+}
+
+func TestWebTool_KeenableSearch_RangeMapping(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode payload: %v", err)
+		}
+		got, _ := payload["published_after"].(string)
+		want := mapKeenablePublishedAfter("w", time.Now())
+		if got != want {
+			t.Errorf("published_after = %q, want %q", got, want)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"results": []any{}})
+	}))
+	defer server.Close()
+
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		KeenableEnabled:    true,
+		KeenableBaseURL:    server.URL,
+		KeenableMaxResults: 5,
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+	result := tool.Execute(context.Background(), map[string]any{"query": "test query", "range": "w"})
+	if result.IsError {
+		t.Fatalf("expected success, got error: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForUser, "No results for: test query") {
+		t.Fatalf("unexpected output: %s", result.ForUser)
+	}
+}
+
+func TestWebTool_KeenableSearch_Errors(t *testing.T) {
+	tests := []struct {
+		name       string
+		apiKeys    []string
+		statusCode int
+		body       string
+		wantErr    []string
+	}{
+		{
+			name:       "keyless rate limit surfaces as an error",
+			apiKeys:    nil,
+			statusCode: http.StatusTooManyRequests,
+			body:       `{"error":"rate limit exceeded"}`,
+			wantErr:    []string{"status 429", "configure an API key"},
+		},
+		{
+			name:       "keyed rate limit reports the status",
+			apiKeys:    []string{"kn-test-key"},
+			statusCode: http.StatusTooManyRequests,
+			body:       `{"error":"rate limit exceeded"}`,
+			wantErr:    []string{"all api keys failed", "status 429"},
+		},
+		{
+			name:       "bad request does not retry",
+			apiKeys:    nil,
+			statusCode: http.StatusBadRequest,
+			body:       `{"error":"query is required"}`,
+			wantErr:    []string{"status 400", "query is required"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				calls++
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.statusCode)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			tool, err := NewWebSearchTool(WebSearchToolOptions{
+				KeenableEnabled:    true,
+				KeenableAPIKeys:    tt.apiKeys,
+				KeenableBaseURL:    server.URL,
+				KeenableMaxResults: 5,
+			})
+			if err != nil {
+				t.Fatalf("NewWebSearchTool() error: %v", err)
+			}
+
+			result := tool.Execute(context.Background(), map[string]any{"query": "test query"})
+			if !result.IsError {
+				t.Fatalf("expected an error result, got: %s", result.ForUser)
+			}
+			for _, want := range tt.wantErr {
+				if !strings.Contains(result.ForLLM, want) {
+					t.Errorf("error %q missing %q", result.ForLLM, want)
+				}
+			}
+			if calls != 1 {
+				t.Errorf("calls = %d, want 1", calls)
+			}
+		})
+	}
+}
+
+func TestWebTool_KeenableSearch_KeyFailover(t *testing.T) {
+	var seen []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := r.Header.Get("X-API-Key")
+		seen = append(seen, key)
+		w.Header().Set("Content-Type", "application/json")
+		if key == "key1" {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":"rate limit exceeded"}`))
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"results": []map[string]any{
+				{"title": "Result", "url": "https://example.com/1", "snippet": "Snippet"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	tool, err := NewWebSearchTool(WebSearchToolOptions{
+		KeenableEnabled:    true,
+		KeenableAPIKeys:    []string{"key1", "key2"},
+		KeenableBaseURL:    server.URL,
+		KeenableMaxResults: 5,
+	})
+	if err != nil {
+		t.Fatalf("NewWebSearchTool() error: %v", err)
+	}
+
+	result := tool.Execute(context.Background(), map[string]any{"query": "test query"})
+	if result.IsError {
+		t.Fatalf("expected success after failover, got: %s", result.ForLLM)
+	}
+	if len(seen) != 2 || seen[0] != "key1" || seen[1] != "key2" {
+		t.Fatalf("keys tried = %v, want [key1 key2]", seen)
+	}
+	if !strings.Contains(result.ForUser, "https://example.com/1") {
+		t.Fatalf("unexpected output: %s", result.ForUser)
+	}
+}

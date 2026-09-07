@@ -248,7 +248,7 @@ channel_list:
 
 ### Web Tools
 
-**Brave, Tavily, Perplexity, Kagi:**
+**Brave, Tavily, Perplexity, Kagi, Keenable:**
 ```yaml
 web:
   brave:
@@ -318,7 +318,7 @@ model_list:
 - **Rate limit management**: Distribute usage across multiple keys
 - **High availability**: Reduce downtime during API provider issues
 
-### Web Tools (Brave/Tavily/Perplexity/Kagi) - Single key
+### Web Tools (Brave/Tavily/Perplexity/Kagi/Keenable) - Single key
 
 ```yaml
 web:
@@ -330,7 +330,7 @@ web:
       - "your-kagi-api-key"
 ```
 
-### Web Tools (Brave/Tavily/Perplexity/Kagi) - Multiple keys
+### Web Tools (Brave/Tavily/Perplexity/Kagi/Keenable) - Multiple keys
 
 ```yaml
 web:
@@ -568,7 +568,7 @@ go test ./pkg/config -run TestSecurityConfig
 
 - Ensure you're using `api_keys` (plural) in `.security.yml` for models and web tools (except GLMSearch/BaiduSearch)
 - Check that the array format is correct in YAML (proper indentation with dashes)
-- Remember: Models, Brave, Tavily, Perplexity, Kagi MUST use `api_keys` (array format)
+- Remember: Models, Brave, Tavily, Perplexity, Kagi, Keenable MUST use `api_keys` (array format)
 - GLMSearch and BaiduSearch MUST use `api_key` (single string format)
 
 ### Load Balancing/Failover Issues

@@ -37,6 +37,14 @@ const (
 
 	defaultMaxChars = 50000
 	maxRedirects    = 5
+
+	keenableDefaultBaseURL = "https://api.keenable.ai"
+	// keenableAppTitle identifies PicoClaw to Keenable's public (keyless)
+	// endpoint, which rejects requests without an X-Keenable-Title header.
+	keenableAppTitle = "picoclaw"
+	// keenableSnippetMaxLength asks the API for snippets of roughly this many
+	// characters, in line with what the other providers return per result.
+	keenableSnippetMaxLength = 500
 )
 
 // Pre-compiled regexes for HTML text extraction
@@ -250,6 +258,23 @@ func mapBaiduRecencyFilter(rangeCode string) string {
 	default:
 		return ""
 	}
+}
+
+func mapKeenablePublishedAfter(rangeCode string, now time.Time) string {
+	var since time.Time
+	switch rangeCode {
+	case "d":
+		since = now.AddDate(0, 0, -1)
+	case "w":
+		since = now.AddDate(0, 0, -7)
+	case "m":
+		since = now.AddDate(0, -1, 0)
+	case "y":
+		since = now.AddDate(-1, 0, 0)
+	default:
+		return ""
+	}
+	return since.UTC().Format(time.DateOnly)
 }
 
 func mapKagiLensTimeFilter(rangeCode string, now time.Time) *kagiopenapi.SearchRequestLens {
@@ -574,6 +599,151 @@ func (p *KagiSearchProvider) Search(
 		return formatKagiSearchResults(query, results), nil
 	}
 
+	return "", fmt.Errorf("all api keys failed, last error: %w", lastErr)
+}
+
+// KeenableSearchProvider searches the web through the Keenable API.
+// It needs no API key: without one it calls the public endpoint, which is
+// rate limited per IP. Configured keys switch to the keyed endpoint and are
+// rotated like the other key-pool providers.
+type KeenableSearchProvider struct {
+	keyPool *APIKeyPool
+	baseURL string
+	proxy   string
+	client  *http.Client
+}
+
+func (p *KeenableSearchProvider) Search(
+	ctx context.Context,
+	query string,
+	count int,
+	rangeCode string,
+) (string, error) {
+	baseURL := strings.TrimSuffix(p.baseURL, "/")
+	if baseURL == "" {
+		baseURL = keenableDefaultBaseURL
+	}
+
+	payload := map[string]any{
+		"query":              query,
+		"max_results":        count,
+		"snippet_max_length": keenableSnippetMaxLength,
+	}
+	if publishedAfter := mapKeenablePublishedAfter(rangeCode, time.Now()); publishedAfter != "" {
+		payload["published_after"] = publishedAfter
+	}
+
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	// Collect the attempts up front: every configured key, or a single
+	// keyless request when none is configured.
+	var apiKeys []string
+	if p.keyPool != nil {
+		iter := p.keyPool.NewIterator()
+		for {
+			apiKey, ok := iter.Next()
+			if !ok {
+				break
+			}
+			apiKeys = append(apiKeys, apiKey)
+		}
+	}
+	keyless := len(apiKeys) == 0
+	if keyless {
+		apiKeys = []string{""}
+	}
+
+	var lastErr error
+	for _, apiKey := range apiKeys {
+		searchURL := baseURL + "/v1/search"
+		if apiKey == "" {
+			searchURL = baseURL + "/v1/search/public"
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, searchURL, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return "", fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Keenable-Title", keenableAppTitle)
+		if apiKey != "" {
+			req.Header.Set("X-API-Key", apiKey)
+		}
+
+		resp, err := p.client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("request failed: %w", err)
+			continue
+		}
+
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		_ = resp.Body.Close()
+		if err != nil {
+			lastErr = fmt.Errorf("failed to read response: %w", err)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("keenable api error (status %d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
+			if resp.StatusCode == http.StatusTooManyRequests && keyless {
+				lastErr = fmt.Errorf(
+					"keenable api error (status %d): public rate limit reached, retry later or configure an API key",
+					resp.StatusCode,
+				)
+			}
+			if resp.StatusCode == http.StatusTooManyRequests ||
+				resp.StatusCode == http.StatusUnauthorized ||
+				resp.StatusCode == http.StatusForbidden ||
+				resp.StatusCode >= 500 {
+				continue
+			}
+			return "", lastErr
+		}
+
+		var searchResp struct {
+			Results []struct {
+				Title       string `json:"title"`
+				URL         string `json:"url"`
+				Snippet     string `json:"snippet"`
+				Description string `json:"description"`
+			} `json:"results"`
+		}
+		if err := json.Unmarshal(body, &searchResp); err != nil {
+			return "", fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		results := searchResp.Results
+		if len(results) == 0 {
+			return fmt.Sprintf("No results for: %s", query), nil
+		}
+
+		var lines []string
+		lines = append(lines, fmt.Sprintf("Results for: %s (via Keenable)", query))
+		for i, item := range results {
+			if i >= count {
+				break
+			}
+			lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, item.Title, item.URL))
+			content := item.Snippet
+			if content == "" {
+				content = item.Description
+			}
+			// Snippets can span several passages; keep one line per result.
+			content = strings.Join(strings.Fields(content), " ")
+			if content != "" {
+				lines = append(lines, fmt.Sprintf("   %s", content))
+			}
+		}
+
+		return strings.Join(lines, "\n"), nil
+	}
+
+	if keyless {
+		return "", lastErr
+	}
 	return "", fmt.Errorf("all api keys failed, last error: %w", lastErr)
 }
 
@@ -1476,6 +1646,10 @@ type WebSearchToolOptions struct {
 	KagiBaseURL           string
 	KagiMaxResults        int
 	KagiEnabled           bool
+	KeenableAPIKeys       []string
+	KeenableBaseURL       string
+	KeenableMaxResults    int
+	KeenableEnabled       bool
 	SogouMaxResults       int
 	SogouEnabled          bool
 	DuckDuckGoMaxResults  int
@@ -1516,6 +1690,10 @@ func WebSearchToolOptionsFromConfig(cfg *config.Config) WebSearchToolOptions {
 		KagiBaseURL:           cfg.Tools.Web.Kagi.BaseURL,
 		KagiMaxResults:        cfg.Tools.Web.Kagi.MaxResults,
 		KagiEnabled:           cfg.Tools.Web.Kagi.Enabled,
+		KeenableAPIKeys:       cfg.Tools.Web.Keenable.APIKeys.Values(),
+		KeenableBaseURL:       cfg.Tools.Web.Keenable.BaseURL,
+		KeenableMaxResults:    cfg.Tools.Web.Keenable.MaxResults,
+		KeenableEnabled:       cfg.Tools.Web.Keenable.Enabled,
 		SogouMaxResults:       cfg.Tools.Web.Sogou.MaxResults,
 		SogouEnabled:          cfg.Tools.Web.Sogou.Enabled,
 		DuckDuckGoMaxResults:  cfg.Tools.Web.DuckDuckGo.MaxResults,
@@ -1559,12 +1737,13 @@ var (
 		"brave",
 		"tavily",
 		"kagi",
+		"keenable",
 		"perplexity",
 		"searxng",
 		"glm_search",
 		"baidu_search",
 	}
-	autoPrimaryWebSearchProviders  = []string{"perplexity", "brave", "kagi", "searxng", "tavily", "gemini"}
+	autoPrimaryWebSearchProviders  = []string{"perplexity", "brave", "kagi", "searxng", "tavily", "gemini", "keenable"}
 	autoFallbackWebSearchProviders = []string{"baidu_search", "glm_search"}
 )
 
@@ -1592,6 +1771,9 @@ func (opts WebSearchToolOptions) providerReady(name string) bool {
 		return opts.TavilyEnabled && len(opts.TavilyAPIKeys) > 0
 	case "kagi":
 		return opts.KagiEnabled && len(opts.KagiAPIKeys) > 0
+	case "keenable":
+		// No key needed: the public endpoint is used when none is configured.
+		return opts.KeenableEnabled
 	case "perplexity":
 		return opts.PerplexityEnabled && len(opts.PerplexityAPIKeys) > 0
 	case "searxng":
@@ -1774,6 +1956,24 @@ func (opts WebSearchToolOptions) providerByName(name string) (SearchProvider, in
 		return &KagiSearchProvider{
 			keyPool: NewAPIKeyPool(opts.KagiAPIKeys),
 			baseURL: opts.KagiBaseURL,
+			proxy:   opts.Proxy,
+			client:  client,
+		}, maxResults, nil
+	case "keenable":
+		if !opts.providerReady("keenable") {
+			return nil, 0, nil
+		}
+		client, err := utils.CreateHTTPClient(opts.Proxy, searchTimeout)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to create HTTP client for Keenable: %w", err)
+		}
+		maxResults := 10
+		if opts.KeenableMaxResults > 0 {
+			maxResults = min(opts.KeenableMaxResults, 10)
+		}
+		return &KeenableSearchProvider{
+			keyPool: NewAPIKeyPool(opts.KeenableAPIKeys),
+			baseURL: opts.KeenableBaseURL,
 			proxy:   opts.Proxy,
 			client:  client,
 		}, maxResults, nil

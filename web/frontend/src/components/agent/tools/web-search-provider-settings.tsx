@@ -22,6 +22,7 @@ interface WebSearchProviderSettingsProps {
 const baseUrlProviders = new Set([
   "tavily",
   "kagi",
+  "keenable",
   "searxng",
   "glm_search",
   "baidu_search",
@@ -31,6 +32,7 @@ const apiKeyProviders = new Set([
   "brave",
   "tavily",
   "kagi",
+  "keenable",
   "perplexity",
   "gemini",
   "glm_search",
