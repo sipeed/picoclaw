@@ -341,6 +341,12 @@
         "base_url": "https://kagi.com/api/v1/search",
         "max_results": 5
       },
+      "keenable": {
+        "enabled": false,
+        "api_keys": [],
+        "base_url": "https://api.keenable.ai",
+        "max_results": 5
+      },
       "provider": "auto",
       "sogou": {
         "enabled": true,

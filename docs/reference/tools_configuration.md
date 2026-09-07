@@ -164,6 +164,42 @@ web:
 
 Kagi API usage may be billed or limited separately from a normal Kagi subscription, depending on your account and API setup.
 
+### Keenable
+
+Keenable works without an API key. With no key configured, requests go to the public endpoint (`POST /v1/search/public`), which is rate limited per IP (10 requests/second, 1000 per hour). Setting a key switches to `POST /v1/search` and lifts those limits; nothing else changes.
+
+| Config        | Type     | Default                   | Description                                                    |
+|---------------|----------|---------------------------|----------------------------------------------------------------|
+| `enabled`     | bool     | false                     | Enable Keenable search                                         |
+| `api_keys`    | string[] | -                         | Optional API keys; rotated like other providers                |
+| `base_url`    | string   | `https://api.keenable.ai` | Keenable API base URL                                          |
+| `max_results` | int      | 5                         | Maximum number of results                                      |
+
+```json
+{
+  "tools": {
+    "web": {
+      "provider": "keenable",
+      "keenable": {
+        "enabled": true,
+        "max_results": 5
+      }
+    }
+  }
+}
+```
+
+To lift the keyless rate limits, store a key in `.security.yml`:
+
+```yaml
+web:
+  keenable:
+    api_keys:
+      - "YOUR_KEENABLE_API_KEY"
+```
+
+The `range` parameter maps to `published_after` (`d`, `w`, `m`, `y` become a date 1 day, 7 days, 1 month, or 1 year before today).
+
 ### Tavily
 
 | Config        | Type   | Default | Description               |

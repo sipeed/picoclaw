@@ -478,6 +478,14 @@ func (h *Handler) handleUpdateWebSearchConfig(w http.ResponseWriter, r *http.Req
 			cfg.Tools.Web.Kagi.SetAPIKeys(keys)
 		}
 	}
+	if settings, ok := req.Settings["keenable"]; ok {
+		cfg.Tools.Web.Keenable.Enabled = settings.Enabled
+		cfg.Tools.Web.Keenable.MaxResults = settings.MaxResults
+		cfg.Tools.Web.Keenable.BaseURL = strings.TrimSpace(settings.BaseURL)
+		if keys, ok := normalizeWebSearchAPIKeys(settings.APIKeys, settings.APIKey); ok {
+			cfg.Tools.Web.Keenable.SetAPIKeys(keys)
+		}
+	}
 	if settings, ok := req.Settings["perplexity"]; ok {
 		cfg.Tools.Web.Perplexity.Enabled = settings.Enabled
 		cfg.Tools.Web.Perplexity.MaxResults = settings.MaxResults
@@ -526,6 +534,7 @@ func normalizeWebSearchProvider(provider string) string {
 		"brave",
 		"tavily",
 		"kagi",
+		"keenable",
 		"duckduckgo",
 		"gemini",
 		"perplexity",
@@ -598,6 +607,12 @@ func buildWebSearchConfigResponse(cfg *config.Config) webSearchConfigResponse {
 			BaseURL:    cfg.Tools.Web.Kagi.BaseURL,
 			APIKeySet:  len(cfg.Tools.Web.Kagi.APIKeys.Values()) > 0,
 		},
+		"keenable": {
+			Enabled:    cfg.Tools.Web.Keenable.Enabled,
+			MaxResults: cfg.Tools.Web.Keenable.MaxResults,
+			BaseURL:    cfg.Tools.Web.Keenable.BaseURL,
+			APIKeySet:  len(cfg.Tools.Web.Keenable.APIKeys.Values()) > 0,
+		},
 		"perplexity": {
 			Enabled:    cfg.Tools.Web.Perplexity.Enabled,
 			MaxResults: cfg.Tools.Web.Perplexity.MaxResults,
@@ -669,6 +684,12 @@ func buildWebSearchConfigResponse(cfg *config.Config) webSearchConfigResponse {
 			Configured:   picotools.WebSearchProviderReady(opts, "kagi"),
 			Current:      current == "kagi",
 			RequiresAuth: true,
+		},
+		{
+			ID:         "keenable",
+			Label:      "Keenable",
+			Configured: picotools.WebSearchProviderReady(opts, "keenable"),
+			Current:    current == "keenable",
 		},
 		{
 			ID:           "perplexity",

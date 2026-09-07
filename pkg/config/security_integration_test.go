@@ -195,6 +195,10 @@ func TestAllSecurityKeysAccessible(t *testing.T) {
 		err = os.WriteFile(kagiAPIKeyFile, []byte("kagi-from-file-33333"), 0o600)
 		require.NoError(t, err)
 
+		keenableAPIKeyFile := filepath.Join(tmpDir, "keenable_api_key.txt")
+		err = os.WriteFile(keenableAPIKeyFile, []byte("keenable-from-file-44444"), 0o600)
+		require.NoError(t, err)
+
 		githubTokenFile := filepath.Join(tmpDir, "github_token.txt")
 		err = os.WriteFile(githubTokenFile, []byte("ghp-github-from-file-abc123"), 0o600)
 		require.NoError(t, err)
@@ -277,6 +281,9 @@ func TestAllSecurityKeysAccessible(t *testing.T) {
       "kagi": {
         "enabled": true
       },
+      "keenable": {
+        "enabled": true
+      },
       "glm_search": {
         "enabled": true
       }
@@ -341,6 +348,9 @@ web:
   kagi:
     api_keys:
       - "file://kagi_api_key.txt"
+  keenable:
+    api_keys:
+      - "file://keenable_api_key.txt"
   glm_search:
     api_key: "glm-test-glm-search-key"
 
@@ -468,6 +478,9 @@ skills:
 
 		assert.Equal(t, "kagi-from-file-33333", cfg.Tools.Web.Kagi.APIKey())
 		t.Logf("Kagi APIKey(): %s", cfg.Tools.Web.Kagi.APIKey())
+
+		assert.Equal(t, "keenable-from-file-44444", cfg.Tools.Web.Keenable.APIKey())
+		t.Logf("Keenable APIKey(): %s", cfg.Tools.Web.Keenable.APIKey())
 
 		// GLM Search - Note: GLM uses SetAPIKey (lowercase) internally
 		t.Logf("GLMSearch APIKey(): %s", cfg.Tools.Web.GLMSearch.APIKey.String())

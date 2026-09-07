@@ -346,6 +346,11 @@ func DefaultConfig() *Config {
 					BaseURL:    "https://kagi.com/api/v1/search",
 					MaxResults: 5,
 				},
+				Keenable: KeenableConfig{
+					Enabled:    false,
+					BaseURL:    "https://api.keenable.ai",
+					MaxResults: 5,
+				},
 				Sogou: SogouConfig{
 					Enabled:    true,
 					MaxResults: 5,

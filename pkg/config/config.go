@@ -966,6 +966,34 @@ func (c *KagiConfig) SetAPIKeys(keys []string) {
 	c.APIKeys = SimpleSecureStrings(keys...)
 }
 
+// KeenableConfig configures the Keenable web search provider. An API key is
+// optional: without one, requests go to Keenable's public endpoint, which is
+// rate limited per IP. A key only lifts those limits.
+type KeenableConfig struct {
+	Enabled    bool          `json:"enabled"           yaml:"-"                  env:"PICOCLAW_TOOLS_WEB_KEENABLE_ENABLED"`
+	APIKeys    SecureStrings `json:"api_keys,omitzero" yaml:"api_keys,omitempty" env:"PICOCLAW_TOOLS_WEB_KEENABLE_API_KEYS"`
+	BaseURL    string        `json:"base_url"          yaml:"-"                  env:"PICOCLAW_TOOLS_WEB_KEENABLE_BASE_URL"`
+	MaxResults int           `json:"max_results"       yaml:"-"                  env:"PICOCLAW_TOOLS_WEB_KEENABLE_MAX_RESULTS"`
+}
+
+// APIKey returns the Keenable API key
+func (c *KeenableConfig) APIKey() string {
+	if len(c.APIKeys) == 0 {
+		return ""
+	}
+	return c.APIKeys[0].String()
+}
+
+// SetAPIKey sets the Keenable API key
+func (c *KeenableConfig) SetAPIKey(key string) {
+	c.APIKeys = SimpleSecureStrings(key)
+}
+
+// SetAPIKeys sets the Keenable API keys
+func (c *KeenableConfig) SetAPIKeys(keys []string) {
+	c.APIKeys = SimpleSecureStrings(keys...)
+}
+
 type DuckDuckGoConfig struct {
 	Enabled    bool `json:"enabled"     env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_ENABLED"`
 	MaxResults int  `json:"max_results" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
@@ -1030,6 +1058,7 @@ type WebToolsConfig struct {
 	Brave       BraveConfig        `yaml:"brave,omitempty"                                        json:"brave"`
 	Tavily      TavilyConfig       `yaml:"tavily,omitempty"                                       json:"tavily"`
 	Kagi        KagiConfig         `yaml:"kagi,omitempty"                                         json:"kagi"`
+	Keenable    KeenableConfig     `yaml:"keenable,omitempty"                                     json:"keenable"`
 	Sogou       SogouConfig        `yaml:"-"                                                      json:"sogou"`
 	DuckDuckGo  DuckDuckGoConfig   `yaml:"-"                                                      json:"duckduckgo"`
 	Gemini      GeminiSearchConfig `yaml:"gemini,omitempty"                                       json:"gemini"`
