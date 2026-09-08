@@ -38,6 +38,40 @@ type (
 
 const DefaultRequestTimeout = 120 * time.Second
 
+// SessionOptionKey is the llmOpts key carrying the stable conversation session
+// key from the agent loop. Providers that need a per-conversation session
+// header (e.g. OpenCode Go's x-opencode-session) read it from options.
+const SessionOptionKey = "session_key"
+
+// SessionKeyFromOptions extracts the trimmed session key from provider options.
+// Returns "" when absent or empty.
+func SessionKeyFromOptions(options map[string]any) string {
+	if options == nil {
+		return ""
+	}
+	sessionKey, ok := options[SessionOptionKey].(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(sessionKey)
+}
+
+// ApplySessionHeader sets headerName to the session key from options when the
+// session key is non-empty and the header is not already set. Existing values
+// (e.g. explicit custom_headers) always win.
+func ApplySessionHeader(header http.Header, options map[string]any, headerName string) {
+	headerName = strings.TrimSpace(headerName)
+	if headerName == "" || header == nil {
+		return
+	}
+	if strings.TrimSpace(header.Get(headerName)) != "" {
+		return
+	}
+	if sessionKey := SessionKeyFromOptions(options); sessionKey != "" {
+		header.Set(headerName, sessionKey)
+	}
+}
+
 // NewHTTPClient creates an *http.Client with an optional proxy and the default timeout.
 func NewHTTPClient(proxy string) *http.Client {
 	client := &http.Client{

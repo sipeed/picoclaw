@@ -16,7 +16,56 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers/azure"
 	"github.com/sipeed/picoclaw/pkg/providers/bedrock"
 	"github.com/sipeed/picoclaw/pkg/providers/common"
+	openairesponses "github.com/sipeed/picoclaw/pkg/providers/openai_responses"
 )
+
+// OpenCode Go (https://opencode.ai/docs/go/) exposes three endpoint families
+// under https://opencode.ai/zen/go/v1:
+//
+//   - /responses, OpenAI Responses API (e.g. grok-4.6, gpt-5.6-luna, muse-spark-*)
+//   - /chat/completions, OpenAI-compatible (default for the remaining models)
+//   - /messages, Anthropic Messages API (e.g. minimax-*, qwen3.*)
+//
+// All families share the Go API key (Bearer) and require a stable
+// x-opencode-session header per conversation.
+const (
+	opencodeGoDefaultAPIBase = "https://opencode.ai/zen/go/v1"
+	opencodeGoSessionHeader  = "x-opencode-session"
+)
+
+// opencodeGoResponsesModels routes to the Responses API endpoint.
+var opencodeGoResponsesModels = map[string]struct{}{
+	"grok-4.6":                   {},
+	"gpt-5.6-luna":               {},
+	"muse-spark-1.3-contributor": {},
+	"muse-spark-1.2-contributor": {},
+	"muse-spark-1.3":             {},
+	"muse-spark-1.2":             {},
+}
+
+// opencodeGoMessagesModels routes to the Anthropic Messages API endpoint.
+var opencodeGoMessagesModels = map[string]struct{}{
+	"minimax-m3":    {},
+	"minimax-m2.7":  {},
+	"minimax-m2.5":  {},
+	"qwen3.8-max":   {},
+	"qwen3.8-flash": {},
+	"qwen3.7-max":   {},
+	"qwen3.7-plus":  {},
+	"qwen3.6-plus":  {},
+}
+
+// OpenCodeGoEndpointFamily classifies an OpenCode Go model into its endpoint family.
+func OpenCodeGoEndpointFamily(modelID string) string {
+	normalized := strings.ToLower(strings.TrimSpace(modelID))
+	if _, ok := opencodeGoResponsesModels[normalized]; ok {
+		return "responses"
+	}
+	if _, ok := opencodeGoMessagesModels[normalized]; ok {
+		return "messages"
+	}
+	return "chat"
+}
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
 func createClaudeAuthProvider() (LLMProvider, error) {
@@ -224,6 +273,54 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 		)
 		provider.SetProviderName(protocol)
 		return finalizeProviderFromConfig(provider, modelID, cfg)
+
+	case "opencode-go":
+		// OpenCode Go routes each model to one of three endpoint families:
+		// /responses, /chat/completions (default), or /messages.
+		if cfg.APIKey() == "" && cfg.APIBase == "" {
+			return nil, "", fmt.Errorf("api_key is required for opencode-go protocol (model: %s)", cfg.Model)
+		}
+		apiBase := cfg.APIBase
+		if apiBase == "" {
+			apiBase = getDefaultAPIBase(protocol)
+		}
+		switch OpenCodeGoEndpointFamily(modelID) {
+		case "responses":
+			provider := openairesponses.NewProviderWithTimeout(
+				cfg.APIKey(),
+				strings.TrimRight(apiBase, "/"),
+				cfg.Proxy,
+				userAgent,
+				cfg.RequestTimeout,
+				openairesponses.WithCustomHeaders(cfg.CustomHeaders),
+				openairesponses.WithSessionHeaderName(opencodeGoSessionHeader),
+			)
+			return finalizeProviderFromConfig(provider, modelID, cfg)
+		case "messages":
+			provider := anthropicmessages.NewProviderWithOptions(
+				cfg.APIKey(),
+				strings.TrimRight(apiBase, "/"),
+				userAgent,
+				cfg.RequestTimeout,
+				anthropicmessages.WithCustomHeaders(cfg.CustomHeaders),
+				anthropicmessages.WithSessionHeaderName(opencodeGoSessionHeader),
+			)
+			return finalizeProviderFromConfig(provider, modelID, cfg)
+		default:
+			provider := NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
+				cfg.APIKey(),
+				strings.TrimRight(apiBase, "/"),
+				cfg.Proxy,
+				cfg.MaxTokensField,
+				userAgent,
+				cfg.RequestTimeout,
+				cfg.ExtraBody,
+				cfg.CustomHeaders,
+			)
+			provider.SetProviderName(protocol)
+			provider.SetSessionHeaderName(opencodeGoSessionHeader)
+			return finalizeProviderFromConfig(provider, modelID, cfg)
+		}
 
 	case "gemini":
 		if cfg.APIKey() == "" && cfg.APIBase == "" {

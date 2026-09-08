@@ -63,6 +63,24 @@
       "api_keys": ["sk-your-deepseek-key"]
     },
     {
+      "_comment": "OpenCode Go - chat/completions family (api_base optional, defaults to https://opencode.ai/zen/go/v1)",
+      "model_name": "go-kimi",
+      "model": "opencode-go/kimi-k3",
+      "api_keys": ["your-opencode-go-api-key"]
+    },
+    {
+      "_comment": "OpenCode Go - Responses family (grok-4.6, gpt-5.6-luna, muse-spark-*) routes to /responses automatically",
+      "model_name": "go-grok",
+      "model": "opencode-go/grok-4.6",
+      "api_keys": ["your-opencode-go-api-key"]
+    },
+    {
+      "_comment": "OpenCode Go - Messages family (minimax-*, qwen3.*) routes to /messages automatically",
+      "model_name": "go-qwen",
+      "model": "opencode-go/qwen3.7-plus",
+      "api_keys": ["your-opencode-go-api-key"]
+    },
+    {
       "model_name": "venice-uncensored",
       "model": "venice/venice-uncensored",
       "api_keys": ["your-venice-api-key"]
