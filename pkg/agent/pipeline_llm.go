@@ -72,6 +72,7 @@ func (p *Pipeline) CallLLM(
 		"max_tokens":       ts.agent.MaxTokens,
 		"temperature":      ts.agent.Temperature,
 		"prompt_cache_key": ts.agent.ID,
+		"session_key":      ts.sessionKey,
 	}
 	if exec.useNativeSearch {
 		exec.llmOpts["native_search"] = true

@@ -454,6 +454,9 @@ func (al *AgentLoop) askSideQuestion(
 		"temperature":      agent.Temperature,
 		"prompt_cache_key": agent.ID + ":btw",
 	}
+	if opts != nil {
+		llmOpts["session_key"] = opts.SessionKey
+	}
 
 	hookModelChanged := false
 	sideSuppressReasoning := false

@@ -77,6 +77,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **Azure OpenAI**    | `azure`           | `https://{resource}.openai.azure.com`               | Azure     | [Get Key](https://portal.azure.com)                              |
 | **Antigravity**     | `antigravity`     | Google Cloud                                        | Custom    | OAuth only                                                       |
 | **GitHub Copilot**  | `github-copilot`  | `localhost:4321`                                    | gRPC      | -                                                                |
+| **OpenCode Go**     | `opencode-go`     | `https://opencode.ai/zen/go/v1`                     | Multi     | [Get Key](https://opencode.ai/docs/go/)                          |
 
 #### Basic Configuration
 
@@ -347,6 +348,29 @@ For direct Anthropic API access or custom endpoints that only support Anthropic'
 > - The existing `anthropic` protocol returns 404 errors (indicating the endpoint doesn't support OpenAI-compatible format)
 >
 > **Note:** The `anthropic` protocol uses OpenAI-compatible format (`/v1/chat/completions`), while `anthropic-messages` uses Anthropic's native format (`/v1/messages`). Choose based on your endpoint's supported format.
+
+**OpenCode Go**
+
+OpenCode Go exposes three endpoint families and PicoClaw routes each model
+to the correct one automatically based on the model ID:
+
+- `/responses` for `grok-4.6`, `gpt-5.6-luna`, `claude-opus-4-6` and `muse-spark-*` models
+- `/messages` for `minimax-*` and `qwen3.*` models
+- `/chat/completions` for everything else
+
+```json
+{
+  "model_name": "go-kimi",
+  "provider": "opencode-go",
+  "model": "kimi-k3",
+  "api_keys": ["your-opencode-go-key"]
+}
+```
+
+> `api_base` is optional and defaults to `https://opencode.ai/zen/go/v1`.
+> PicoClaw sends the `x-opencode-session` header automatically, set to the
+> active conversation session key. An explicit `custom_headers` entry for
+> that header always takes precedence.
 
 **Ollama (local)**
 

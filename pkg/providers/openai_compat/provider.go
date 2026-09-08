@@ -34,14 +34,15 @@ type (
 )
 
 type Provider struct {
-	apiKey         string
-	apiBase        string
-	providerName   string
-	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
-	httpClient     *http.Client
-	extraBody      map[string]any // Additional fields to inject into request body
-	customHeaders  map[string]string
-	userAgent      string
+	apiKey            string
+	apiBase           string
+	providerName      string
+	maxTokensField    string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
+	httpClient        *http.Client
+	extraBody         map[string]any // Additional fields to inject into request body
+	customHeaders     map[string]string
+	sessionHeaderName string // Optional per-conversation session header (e.g. x-opencode-session)
+	userAgent         string
 }
 
 type Option func(*Provider)
@@ -106,6 +107,14 @@ func WithCustomHeaders(customHeaders map[string]string) Option {
 func WithProviderName(providerName string) Option {
 	return func(p *Provider) {
 		p.providerName = strings.ToLower(strings.TrimSpace(providerName))
+	}
+}
+
+// WithSessionHeaderName enables a per-conversation session header whose value
+// comes from options["session_key"]. An explicit custom_headers value wins.
+func WithSessionHeaderName(headerName string) Option {
+	return func(p *Provider) {
+		p.sessionHeaderName = strings.TrimSpace(headerName)
 	}
 }
 
@@ -332,8 +341,23 @@ func (p *Provider) applyCustomHeaders(req *http.Request) {
 	}
 }
 
+// applySessionHeader injects the per-conversation session header (if configured)
+// from options["session_key"]. Explicit custom_headers values win.
+func (p *Provider) applySessionHeader(req *http.Request, options map[string]any) {
+	if p.sessionHeaderName == "" {
+		return
+	}
+	common.ApplySessionHeader(req.Header, options, p.sessionHeaderName)
+}
+
 func (p *Provider) SetProviderName(providerName string) {
 	p.providerName = strings.ToLower(strings.TrimSpace(providerName))
+}
+
+// SetSessionHeaderName enables the per-conversation session header whose value
+// comes from options["session_key"].
+func (p *Provider) SetSessionHeaderName(headerName string) {
+	p.sessionHeaderName = strings.TrimSpace(headerName)
 }
 
 func (p *Provider) SupportsThinking() bool {
@@ -488,6 +512,7 @@ func (p *Provider) Chat(
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
 	p.applyCustomHeaders(req)
+	p.applySessionHeader(req, options)
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
@@ -560,6 +585,7 @@ func (p *Provider) ChatStreamEvents(
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	}
 	p.applyCustomHeaders(req)
+	p.applySessionHeader(req, options)
 
 	// Use a client without Timeout for streaming — the http.Client.Timeout covers
 	// the entire request lifecycle including body reads, which would kill long streams.

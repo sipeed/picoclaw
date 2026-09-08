@@ -580,6 +580,22 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		Aliases:             []string{"dashscope-us"},
 		httpAPI:             true,
 	},
+	"opencode-go": {
+		ID:                  "opencode-go",
+		DisplayName:         "OpenCode Go",
+		IconSlug:            "opencode",
+		Domain:              "opencode.ai",
+		DefaultAPIBase:      "https://opencode.ai/zen/go/v1",
+		CreateAllowed:       true,
+		DefaultModelAllowed: true,
+		SupportsFetch:       true,
+		Priority:            33,
+		CommonModels: []string{
+			"kimi-k3", "grok-4.6", "glm-5.3",
+			"qwen3.7-plus", "minimax-m3", "mimo-v2.5",
+		},
+		httpAPI: true,
+	},
 }
 
 var normalizedModelProviderAliasesByName = buildModelProviderAliasMap()

@@ -102,3 +102,12 @@ func (p *HTTPProvider) SetProviderName(providerName string) {
 	}
 	p.delegate.SetProviderName(providerName)
 }
+
+// SetSessionHeaderName enables a per-conversation session header whose value
+// comes from options["session_key"].
+func (p *HTTPProvider) SetSessionHeaderName(headerName string) {
+	if p == nil || p.delegate == nil {
+		return
+	}
+	p.delegate.SetSessionHeaderName(headerName)
+}
