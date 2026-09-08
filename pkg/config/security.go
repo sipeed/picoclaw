@@ -209,22 +209,35 @@ type SensitiveDataCache struct {
 	once     sync.Once
 }
 
+// sensitiveCacheMu guards the lazy creation of Config.sensitiveCache. It is a
+// package-level lock rather than a Config field because Config is shallow-copied
+// by value (cmd/picoclaw/internal/mcp/helpers.go), which a lock field would make
+// invalid. It is only held while the pointer is created; building the replacer
+// happens outside it, inside sync.Once.
+var sensitiveCacheMu sync.Mutex
+
 // SensitiveDataReplacer returns the strings.Replacer for filtering sensitive data.
 // It is computed once on first access via sync.Once.
 func (sec *Config) SensitiveDataReplacer() *strings.Replacer {
-	sec.initSensitiveCache()
-	return sec.sensitiveCache.replacer
+	return sec.initSensitiveCache().replacer
 }
 
-// initSensitiveCache initializes the sensitive data cache if not already done.
-func (sec *Config) initSensitiveCache() {
-	if sec.sensitiveCache == nil {
-		sec.sensitiveCache = &SensitiveDataCache{}
+// initSensitiveCache initializes the sensitive data cache if not already done
+// and returns it. The caller must use the returned cache rather than re-reading
+// sec.sensitiveCache, so that it always observes the cache its sync.Once ran on.
+func (sec *Config) initSensitiveCache() *SensitiveDataCache {
+	sensitiveCacheMu.Lock()
+	cache := sec.sensitiveCache
+	if cache == nil {
+		cache = &SensitiveDataCache{}
+		sec.sensitiveCache = cache
 	}
-	sec.sensitiveCache.once.Do(func() {
+	sensitiveCacheMu.Unlock()
+
+	cache.once.Do(func() {
 		values := sec.collectSensitiveValues()
 		if len(values) == 0 {
-			sec.sensitiveCache.replacer = strings.NewReplacer()
+			cache.replacer = strings.NewReplacer()
 			return
 		}
 
@@ -236,11 +249,12 @@ func (sec *Config) initSensitiveCache() {
 			}
 		}
 		if len(pairs) == 0 {
-			sec.sensitiveCache.replacer = strings.NewReplacer()
+			cache.replacer = strings.NewReplacer()
 			return
 		}
-		sec.sensitiveCache.replacer = strings.NewReplacer(pairs...)
+		cache.replacer = strings.NewReplacer(pairs...)
 	})
+	return cache
 }
 
 // collectSensitiveValues collects all sensitive strings from SecurityConfig using reflection.
