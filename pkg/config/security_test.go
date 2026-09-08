@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/caarlos0/env/v11"
@@ -269,4 +271,82 @@ skills:
 		assert.Equal(t, "brave_key_env", envCfg.Tools.Web.Brave.APIKeys[0].raw)
 		assert.Equal(t, "abc", envCfg.Tools.Web.Brave.APIKeys[1].raw)
 	})
+}
+
+// TestSensitiveDataReplacer_ConcurrentFirstUse covers the lazy initialization of
+// the sensitive-data cache from several goroutines at once, which happens as soon
+// as more than one turn filters tool output through the same *Config.
+// A caller must never observe a nil replacer. Run with -race.
+func TestSensitiveDataReplacer_ConcurrentFirstUse(t *testing.T) {
+	const goroutines = 8
+
+	// A fresh *Config per iteration: the cache is initialized once per Config,
+	// so the only interesting window is the first concurrent use.
+	for i := 0; i < 200; i++ {
+		cfg := &Config{
+			ModelList: SecureModelList{
+				&ModelConfig{
+					ModelName: "m",
+					Model:     "openai/m",
+					APIKeys:   SimpleSecureStrings("sk-long-key-12345"),
+				},
+			},
+		}
+
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		got := make([]*strings.Replacer, goroutines)
+		for g := 0; g < goroutines; g++ {
+			wg.Add(1)
+			go func(g int) {
+				defer wg.Done()
+				<-start
+				got[g] = cfg.SensitiveDataReplacer()
+			}(g)
+		}
+		close(start)
+		wg.Wait()
+
+		for g, r := range got {
+			require.NotNil(t, r, "iteration %d, goroutine %d: nil replacer", i, g)
+		}
+	}
+}
+
+// TestFilterSensitiveData_ConcurrentFirstUse is the same race seen through the
+// public entry point used by the agent pipeline. Run with -race.
+func TestFilterSensitiveData_ConcurrentFirstUse(t *testing.T) {
+	const goroutines = 8
+
+	for i := 0; i < 200; i++ {
+		cfg := &Config{
+			Tools: ToolsConfig{FilterSensitiveData: true},
+			ModelList: SecureModelList{
+				&ModelConfig{
+					ModelName: "m",
+					Model:     "openai/m",
+					APIKeys:   SimpleSecureStrings("sk-long-key-12345"),
+				},
+			},
+		}
+
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		got := make([]string, goroutines)
+		for g := 0; g < goroutines; g++ {
+			wg.Add(1)
+			go func(g int) {
+				defer wg.Done()
+				<-start
+				got[g] = cfg.FilterSensitiveData("key is sk-long-key-12345 here")
+			}(g)
+		}
+		close(start)
+		wg.Wait()
+
+		for g, s := range got {
+			assert.Equal(t, "key is [FILTERED] here", s,
+				"iteration %d, goroutine %d", i, g)
+		}
+	}
 }
