@@ -624,6 +624,14 @@ type DeltaChatSettings struct {
 	SMTPPort       int          `json:"smtp_port,omitempty"       yaml:"-"`
 }
 
+// SendblueSettings configures the direct-message iMessage/SMS text transport.
+type SendblueSettings struct {
+	APIKey        SecureString `json:"api_key,omitzero"        yaml:"api_key,omitempty"        env:"PICOCLAW_CHANNELS_SENDBLUE_API_KEY"`
+	APISecret     SecureString `json:"api_secret,omitzero"     yaml:"api_secret,omitempty"     env:"PICOCLAW_CHANNELS_SENDBLUE_API_SECRET"`
+	FromNumber    string       `json:"from_number"             yaml:"-"                        env:"PICOCLAW_CHANNELS_SENDBLUE_FROM_NUMBER"`
+	WebhookSecret SecureString `json:"webhook_secret,omitzero" yaml:"webhook_secret,omitempty" env:"PICOCLAW_CHANNELS_SENDBLUE_WEBHOOK_SECRET"`
+}
+
 type LINESettings struct {
 	ChannelSecret      SecureString `json:"channel_secret,omitzero"       yaml:"channel_secret,omitempty"       env:"PICOCLAW_CHANNELS_LINE_CHANNEL_SECRET"`
 	ChannelAccessToken SecureString `json:"channel_access_token,omitzero" yaml:"channel_access_token,omitempty" env:"PICOCLAW_CHANNELS_LINE_CHANNEL_ACCESS_TOKEN"`

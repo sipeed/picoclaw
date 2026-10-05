@@ -17,6 +17,7 @@ import (
 
 // Channel type constants — single source of truth for all channel type names.
 const (
+	ChannelSendblue       = "sendblue"
 	ChannelPico           = "pico"
 	ChannelPicoClient     = "pico_client"
 	ChannelTelegram       = "telegram"
@@ -660,6 +661,7 @@ func filterSecureFields(r RawNode, secureFields map[string]struct{}) RawNode {
 var channelSettingsMu sync.RWMutex
 
 var channelSettingsFactory = map[string]any{
+	ChannelSendblue:       (SendblueSettings{}),
 	ChannelPico:           (PicoSettings{}),
 	ChannelPicoClient:     (PicoClientSettings{}),
 	ChannelTelegram:       (TelegramSettings{}),
