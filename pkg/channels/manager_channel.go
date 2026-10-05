@@ -45,6 +45,12 @@ func hiddenValues(key string, value map[string]any, ch *config.Channel) {
 	if err != nil {
 		return
 	}
+	// Sendblue supports named instances; include redacted secrets in reload hashes.
+	if settings, ok := v.(*config.SendblueSettings); ok {
+		value["api_key"] = settings.APIKey.String()
+		value["api_secret"] = settings.APISecret.String()
+		value["webhook_secret"] = settings.WebhookSecret.String()
+	}
 	switch key {
 	case "pico":
 		if settings, ok := v.(*config.PicoSettings); ok {

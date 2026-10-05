@@ -484,6 +484,7 @@ Talk to your PicoClaw through 19+ messaging platforms:
 | **Delta Chat** | Easy (account script or email/password) | JSON-RPC (email/E2EE) | [Guide](docs/channels/deltachat/README.md) |
 | **DingTalk** | Medium (client credentials) | Stream | [Guide](docs/channels/dingtalk/README.md) |
 | **Feishu / Lark** | Medium (App ID + Secret) | WebSocket/SDK | [Guide](docs/channels/feishu/README.md) |
+| **Sendblue (iMessage / SMS)** | Medium (verified account + webhook) | Webhook | [Guide](docs/channels/sendblue/README.md) |
 | **LINE** | Medium (credentials + webhook) | Webhook | [Guide](docs/channels/line/README.md) |
 | **WeCom** | Easy (QR login or manual) | WebSocket | [Guide](docs/channels/wecom/README.md) |
 | **VK** | Easy (group token) | Long Poll | [Guide](docs/channels/vk/README.md) |
