@@ -858,8 +858,9 @@ func setupCronTool(
 
 	if cronTool != nil {
 		cronService.SetOnJob(func(job *cron.CronJob) (string, error) {
-			result := cronTool.ExecuteJob(context.Background(), job)
-			return result, nil
+			// Propagate the failure so the job state records lastStatus=error
+			// instead of reporting a broken run as "ok".
+			return cronTool.ExecuteJob(context.Background(), job)
 		})
 	}
 
