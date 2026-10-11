@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -81,6 +82,37 @@ type telegramMessageParts struct {
 	mediaPaths []string
 }
 
+// Telegram long polling keeps one getUpdates request open for the whole poll
+// timeout, so the HTTP client must not set an overall Timeout. The response
+// header timeout is what bounds a request that hangs on a dead connection (for
+// example a half-open SOCKS tunnel): without it the poller waits forever, telego
+// never retries, and the bot silently stops receiving messages.
+const (
+	// telegramLongPollTimeoutSeconds is the getUpdates long-poll timeout.
+	telegramLongPollTimeoutSeconds = 30
+	// telegramResponseHeaderTimeout must stay above the long-poll timeout because
+	// Telegram sends no response headers until the poll finishes.
+	telegramResponseHeaderTimeout = (telegramLongPollTimeoutSeconds + 30) * time.Second
+	telegramDialTimeout           = 15 * time.Second
+	telegramIdleConnTimeout       = 90 * time.Second
+)
+
+func newTelegramHTTPClient(proxy func(*http.Request) (*url.URL, error)) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			Proxy: proxy,
+			DialContext: (&net.Dialer{
+				Timeout:   telegramDialTimeout,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   telegramDialTimeout,
+			ResponseHeaderTimeout: telegramResponseHeaderTimeout,
+			IdleConnTimeout:       telegramIdleConnTimeout,
+			ExpectContinueTimeout: time.Second,
+		},
+	}
+}
+
 func NewTelegramChannel(
 	bc *config.Channel,
 	telegramCfg *config.TelegramSettings,
@@ -89,24 +121,20 @@ func NewTelegramChannel(
 	channelName := bc.Name()
 	var opts []telego.BotOption
 
+	// A client with bounded timeouts is always installed: a long-poll request
+	// stuck on a dead connection never returns on its own.
+	var proxyFn func(*http.Request) (*url.URL, error)
 	if telegramCfg.Proxy != "" {
 		proxyURL, parseErr := url.Parse(telegramCfg.Proxy)
 		if parseErr != nil {
 			return nil, fmt.Errorf("invalid proxy URL %q: %w", telegramCfg.Proxy, parseErr)
 		}
-		opts = append(opts, telego.WithHTTPClient(&http.Client{
-			Transport: &http.Transport{
-				Proxy: http.ProxyURL(proxyURL),
-			},
-		}))
+		proxyFn = http.ProxyURL(proxyURL)
 	} else if os.Getenv("HTTP_PROXY") != "" || os.Getenv("HTTPS_PROXY") != "" {
 		// Use environment proxy if configured
-		opts = append(opts, telego.WithHTTPClient(&http.Client{
-			Transport: &http.Transport{
-				Proxy: http.ProxyFromEnvironment,
-			},
-		}))
+		proxyFn = http.ProxyFromEnvironment
 	}
+	opts = append(opts, telego.WithHTTPClient(newTelegramHTTPClient(proxyFn)))
 
 	if baseURL := strings.TrimRight(strings.TrimSpace(telegramCfg.BaseURL), "/"); baseURL != "" {
 		opts = append(opts, telego.WithAPIServer(baseURL))
@@ -155,7 +183,7 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
 	updates, err := c.bot.UpdatesViaLongPolling(c.ctx, &telego.GetUpdatesParams{
-		Timeout: 30,
+		Timeout: telegramLongPollTimeoutSeconds,
 	})
 	if err != nil {
 		c.cancel()
