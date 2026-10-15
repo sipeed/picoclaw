@@ -10,9 +10,11 @@
 //   - Auth uses Access Token (the legacy Bot Token is deprecated):
 //     POST https://bots.qq.com/app/getAppAccessToken {appId, clientSecret}
 //     then every openapi call sends  Authorization: QQBot <access_token>
-//   - Messages are sent to  POST /v2/users/{user_openid}/messages  as *passive
-//     replies* (msg_id + incrementing msg_seq). QQ removed proactive push on
-//     2025-04-21, so the channel is answer-oriented by design.
+//   - Messages are sent to  POST /v2/users/{user_openid}/messages .
+//     With a msg_id it is a *passive reply* (60 min window, max 4 replies per
+//     inbound message); without msg_id/event_id it is an *active (proactive)
+//     message*, rate-limited per bot and per relation, and blocked when the
+//     user turned the client's "允许主动消息" switch off (error 40054013).
 //   - Streaming uses POST /v2/users/{user_openid}/stream_messages.
 package qqc2c
 
@@ -233,6 +235,22 @@ func isNoPermissionErr(err error) bool {
 		return false
 	}
 	for _, needle := range []string{"40034105", "无权限"} {
+		if bytes.Contains([]byte(ae.Body), []byte(needle)) {
+			return true
+		}
+	}
+	return false
+}
+
+// isRateLimitedErr matches QQ rate-limit errors: 40034100 (主动消息发送超过频控
+// 限制) and the legacy 22009 / "msg limit exceed". These are RETRYABLE, so they
+// must not be treated as permanent failures.
+func isRateLimitedErr(err error) bool {
+	ae, ok := err.(*apiError)
+	if !ok {
+		return false
+	}
+	for _, needle := range []string{"40034100", "22009", "msg limit exceed", "频控", "rate limit"} {
 		if bytes.Contains([]byte(ae.Body), []byte(needle)) {
 			return true
 		}

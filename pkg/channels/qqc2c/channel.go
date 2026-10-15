@@ -296,6 +296,9 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, 
 			return nil, fmt.Errorf("qq_c2c: user rejected messages (40054013): %w", channels.ErrSendFailed)
 		case isNoPermissionErr(err):
 			return nil, fmt.Errorf("qq_c2c: no permission for active message (40034105): %w", channels.ErrSendFailed)
+		case isRateLimitedErr(err):
+			// Retryable: platform rate limit (40034100 / 22009 / msg limit exceed).
+			return nil, fmt.Errorf("qq_c2c: rate limited: %w", channels.ErrTemporary)
 		case isNotFoundErr(err):
 			return nil, fmt.Errorf("qq_c2c: %w", channels.ErrSendFailed)
 		}
