@@ -156,6 +156,18 @@ export function AgentDefaultsSection({
 
       {form.toolFeedbackEnabled && (
         <SwitchCardField
+          label={t("pages.config.tool_feedback_hide_args")}
+          hint={t("pages.config.tool_feedback_hide_args_hint")}
+          layout="setting-row"
+          checked={form.toolFeedbackHideArgs}
+          onCheckedChange={(checked) =>
+            onFieldChange("toolFeedbackHideArgs", checked)
+          }
+        />
+      )}
+
+      {form.toolFeedbackEnabled && (
+        <SwitchCardField
           label={t("pages.config.tool_feedback_separate_messages")}
           hint={t("pages.config.tool_feedback_separate_messages_hint")}
           layout="setting-row"

@@ -5,6 +5,7 @@ export interface CoreConfigForm {
   restrictToWorkspace: boolean
   splitOnMarker: boolean
   toolFeedbackEnabled: boolean
+  toolFeedbackHideArgs: boolean
   toolFeedbackMaxArgsLength: string
   toolFeedbackSeparateMessages: boolean
   execEnabled: boolean
@@ -116,6 +117,7 @@ export const EMPTY_FORM: CoreConfigForm = {
   restrictToWorkspace: true,
   splitOnMarker: false,
   toolFeedbackEnabled: false,
+  toolFeedbackHideArgs: false,
   toolFeedbackMaxArgsLength: "300",
   toolFeedbackSeparateMessages: false,
   execEnabled: true,
@@ -317,6 +319,10 @@ export function buildFormFromConfig(config: unknown): CoreConfigForm {
       toolFeedback.enabled === undefined
         ? EMPTY_FORM.toolFeedbackEnabled
         : asBool(toolFeedback.enabled),
+    toolFeedbackHideArgs:
+      toolFeedback.hide_args === undefined
+        ? EMPTY_FORM.toolFeedbackHideArgs
+        : asBool(toolFeedback.hide_args),
     toolFeedbackMaxArgsLength: asNumberString(
       toolFeedback.max_args_length,
       EMPTY_FORM.toolFeedbackMaxArgsLength,

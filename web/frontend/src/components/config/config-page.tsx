@@ -584,6 +584,7 @@ export function ConfigPage() {
               split_on_marker: form.splitOnMarker,
               tool_feedback: {
                 enabled: form.toolFeedbackEnabled,
+                hide_args: form.toolFeedbackHideArgs,
                 max_args_length: toolFeedbackMaxArgsLength,
                 separate_messages: form.toolFeedbackSeparateMessages,
               },
