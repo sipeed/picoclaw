@@ -444,6 +444,7 @@
       "dingtalk": "DingTalk",
       "line": "LINE",
       "qq": "QQ",
+  "qq_c2c": "QQ C2C (direct chat)",
       "onebot": "OneBot",
       "wecom": "WeCom",
       "whatsapp": "WhatsApp",

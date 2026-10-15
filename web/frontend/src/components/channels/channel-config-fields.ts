@@ -29,6 +29,7 @@ const CHANNEL_SECRET_FIELDS: Record<string, string[]> = {
   dingtalk: ["client_secret"],
   line: ["channel_secret", "channel_access_token"],
   qq: ["app_secret"],
+  qq_c2c: ["app_secret"],
   onebot: ["access_token"],
   wecom: ["secret"],
   pico: ["token"],
