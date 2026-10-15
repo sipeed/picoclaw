@@ -30,13 +30,24 @@ func (h *Handler) effectiveLauncherPublic() bool {
 }
 
 func (h *Handler) gatewayHostOverride() string {
+	host := ""
 	if h.serverHostExplicit {
-		return strings.TrimSpace(h.serverHostInput)
+		host = strings.TrimSpace(h.serverHostInput)
+	} else if h.effectiveLauncherPublic() {
+		host = "*"
 	}
-	if h.effectiveLauncherPublic() {
-		return "*"
+
+	// A wildcard console bind must not be forwarded to the gateway: letting the
+	// console listen on every interface (the default `-public` setup) would
+	// otherwise silently expose the gateway's port to the whole network as well.
+	// With no override the gateway falls back to its own gateway.host (a
+	// localhost default), which is what an operator exposing only the console
+	// expects. Explicit, non-wildcard -host values keep overriding as before.
+	switch host {
+	case "", "*", "0.0.0.0", "::", "[::]":
+		return ""
 	}
-	return ""
+	return host
 }
 
 func (h *Handler) effectiveGatewayBindHost(cfg *config.Config) string {
