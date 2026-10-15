@@ -73,6 +73,11 @@
       "api_keys": ["your-nearai-api-key"]
     },
     {
+      "model_name": "standardcompute",
+      "model": "standardcompute/standardcompute",
+      "api_keys": ["your-standardcompute-api-key"]
+    },
+    {
       "model_name": "lmstudio-local",
       "model": "lmstudio/openai/gpt-oss-20b"
     },

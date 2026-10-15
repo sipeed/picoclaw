@@ -2278,6 +2278,13 @@ func TestHandleListModels_ReturnsProviderOptionsWithoutPersistingLegacyMigration
 	} else if !option.SupportsFetch {
 		t.Fatal("nearai provider option should report supports_fetch")
 	}
+	if option, ok := optionsByID["standardcompute"]; !ok {
+		t.Fatal("standardcompute provider option missing")
+	} else if option.DefaultAPIBase != "https://api.stdcmpt.com/v1" {
+		t.Fatalf("standardcompute default_api_base = %q, want %q", option.DefaultAPIBase, "https://api.stdcmpt.com/v1")
+	} else if !option.SupportsFetch {
+		t.Fatal("standardcompute provider option should report supports_fetch")
+	}
 	if option, ok := optionsByID["bedrock"]; !ok {
 		t.Fatal("bedrock provider option missing")
 	} else if !option.CreateAllowed {

@@ -230,6 +230,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"cerebras", "cerebras"},
 		{"vivgrid", "vivgrid"},
 		{"siliconflow", "siliconflow"},
+		{"standardcompute", "standardcompute"},
 		{"qwen", "qwen"},
 		{"vllm", "vllm"},
 		{"deepseek", "deepseek"},
@@ -301,6 +302,15 @@ func TestGetDefaultAPIBase_NearAI(t *testing.T) {
 func TestGetDefaultAPIBase_SiliconFlow(t *testing.T) {
 	if got := getDefaultAPIBase("siliconflow"); got != "https://api.siliconflow.cn/v1" {
 		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "siliconflow", got, "https://api.siliconflow.cn/v1")
+	}
+}
+
+func TestGetDefaultAPIBase_StandardCompute(t *testing.T) {
+	if got := getDefaultAPIBase("standardcompute"); got != "https://api.stdcmpt.com/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "standardcompute", got, "https://api.stdcmpt.com/v1")
+	}
+	if got := getDefaultAPIBase("standard-compute"); got != "https://api.stdcmpt.com/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "standard-compute", got, "https://api.stdcmpt.com/v1")
 	}
 }
 
@@ -551,6 +561,28 @@ func TestCreateProviderFromConfig_NearAI(t *testing.T) {
 	}
 	if modelID != "zai-org/GLM-5.1-FP8" {
 		t.Errorf("modelID = %q, want %q", modelID, "zai-org/GLM-5.1-FP8")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_StandardCompute(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-standardcompute",
+		Model:     "standardcompute/anthropic/claude-sonnet-5.5",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "anthropic/claude-sonnet-5.5" {
+		t.Errorf("modelID = %q, want %q", modelID, "anthropic/claude-sonnet-5.5")
 	}
 	if _, ok := provider.(*HTTPProvider); !ok {
 		t.Fatalf("expected *HTTPProvider, got %T", provider)
@@ -1122,6 +1154,26 @@ func TestModelProviderOptions(t *testing.T) {
 		}
 		if len(option.CommonModels) == 0 {
 			t.Fatal("nearai common_models should not be empty")
+		}
+	}
+	if option, ok := seen["standardcompute"]; !ok {
+		t.Fatal("standardcompute option missing")
+	} else {
+		if option.DisplayName != "Standard Compute" {
+			t.Fatalf("standardcompute display_name = %q, want %q", option.DisplayName, "Standard Compute")
+		}
+		if option.DefaultAPIBase != "https://api.stdcmpt.com/v1" {
+			t.Fatalf(
+				"standardcompute default_api_base = %q, want %q",
+				option.DefaultAPIBase,
+				"https://api.stdcmpt.com/v1",
+			)
+		}
+		if !option.SupportsFetch {
+			t.Fatal("standardcompute should support upstream model listing")
+		}
+		if len(option.CommonModels) == 0 {
+			t.Fatal("standardcompute common_models should not be empty")
 		}
 	}
 	if option, ok := seen["anthropic"]; !ok {

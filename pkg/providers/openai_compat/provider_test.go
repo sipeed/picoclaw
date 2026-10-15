@@ -1143,6 +1143,11 @@ func TestProviderChat_StripsKnownProviderPrefixes(t *testing.T) {
 			wantModel: "deepseek-ai/DeepSeek-V3",
 		},
 		{
+			name:      "strips standardcompute prefix and keeps nested model",
+			input:     "standardcompute/anthropic/claude-sonnet-5.5",
+			wantModel: "anthropic/claude-sonnet-5.5",
+		},
+		{
 			name:      "strips novita prefix deepseek model",
 			input:     "novita/deepseek/deepseek-v3.2",
 			wantModel: "deepseek/deepseek-v3.2",

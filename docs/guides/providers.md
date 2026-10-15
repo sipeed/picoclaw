@@ -18,6 +18,7 @@
 | `openai`     | LLM (GPT direct)                        | [platform.openai.com](https://platform.openai.com)           |
 | `venice`     | LLM (Venice AI direct)                  | [venice.ai](https://venice.ai)                               |
 | `nearai`     | LLM (NEAR AI Cloud TEE inference)       | [near.ai](https://near.ai)                                   |
+| `standardcompute` | LLM (Standard Compute gateway)     | [standardcompute.com](https://www.standardcompute.com)       |
 | `deepseek`   | LLM (DeepSeek direct)                   | [platform.deepseek.com](https://platform.deepseek.com)       |
 | `qwen`       | LLM (Qwen direct)                       | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | `groq`       | LLM + **Voice transcription** (Whisper) | [console.groq.com](https://console.groq.com)                 |
@@ -52,6 +53,7 @@ This design also enables **multi-agent support** with flexible provider selectio
 | **OpenAI**          | `openai`          | `https://api.openai.com/v1`                         | OpenAI    | [Get Key](https://platform.openai.com)                           |
 | **Venice AI**       | `venice`          | `https://api.venice.ai/api/v1`                      | OpenAI    | [Get Key](https://venice.ai)                                     |
 | **NEAR AI Cloud**   | `nearai`          | `https://cloud-api.near.ai/v1`                      | OpenAI    | [Get Key](https://near.ai)                                       |
+| **Standard Compute** | `standardcompute` | `https://api.stdcmpt.com/v1`                       | OpenAI    | [Get Key](https://www.standardcompute.com)                       |
 | **Anthropic**       | `anthropic`       | `https://api.anthropic.com/v1`                      | Anthropic | [Get Key](https://console.anthropic.com)                         |
 | **智谱 AI (GLM)**   | `zhipu`           | `https://open.bigmodel.cn/api/paas/v4`              | OpenAI    | [Get Key](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) |
 | **Z.AI Coding Plan** | `openai`         | `https://api.z.ai/api/coding/paas/v4`               | OpenAI    | [Get Key](https://z.ai/manage-apikey/apikey-list)                |
@@ -268,6 +270,19 @@ Notes that matter:
   "api_keys": ["your-nearai-api-key"]
 }
 ```
+
+**Standard Compute**
+
+```json
+{
+  "model_name": "standardcompute",
+  "provider": "standardcompute",
+  "model": "standardcompute",
+  "api_keys": ["your-standardcompute-api-key"]
+}
+```
+
+`standardcompute` routes each request to one of the models enabled in the account. Use an exact model ID such as `anthropic/claude-sonnet-5.5` to pin a single model.
 
 **VolcEngine (Doubao)**
 
