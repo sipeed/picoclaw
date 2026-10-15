@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 
@@ -33,6 +34,8 @@ type CronTool struct {
 	allowCommand          bool
 	execEnabled           bool
 	commandAllowedRemotes []string
+	// silentWhenEmpty mirrors tools.cron.silent_when_empty (default false).
+	silentWhenEmpty bool
 }
 
 // NewCronTool creates a new CronTool
@@ -43,11 +46,13 @@ func NewCronTool(
 ) (*CronTool, error) {
 	allowCommand := true
 	execEnabled := true
+	silentWhenEmpty := false
 	var commandAllowedRemotes []string
 	if config != nil {
 		allowCommand = config.Tools.Cron.AllowCommand
 		execEnabled = config.Tools.Exec.Enabled
 		commandAllowedRemotes = config.Tools.Cron.CommandAllowedRemotes
+		silentWhenEmpty = config.Tools.Cron.SilentWhenEmpty
 	}
 
 	var execTool *ExecTool
@@ -70,6 +75,7 @@ func NewCronTool(
 		allowCommand:          allowCommand,
 		execEnabled:           execEnabled,
 		commandAllowedRemotes: commandAllowedRemotes,
+		silentWhenEmpty:       silentWhenEmpty,
 	}, nil
 }
 
@@ -590,6 +596,43 @@ func (t *CronTool) enableJob(ctx context.Context, args map[string]any, enable bo
 	return SilentResult(fmt.Sprintf("Cron job '%s' %s", updatedJob.Name, status))
 }
 
+// cronSilenceSentinels are the phrasings a scheduled job uses to say "nothing to
+// report". The exec tool renders an empty stdout as exactly "(no output)", and a
+// model told to stay silent tends to echo that sentinel (optionally with a short
+// Chinese suffix), so both the raw tool output and the model answer are matched.
+var cronSilenceSentinels = []string{
+	"(no output)",
+	"no output",
+	"no_output",
+	"nooutput",
+	"silent",
+	"none",
+	"无输出",
+	"无需推送",
+	"静默结束",
+}
+
+// isSilentCronResponse reports whether a scheduled job produced nothing worth
+// delivering: empty text, or nothing but the empty-output sentinel and its
+// decoration (whitespace, punctuation, dashes). Any residual word or digit keeps
+// the content publishable, so real reports are never swallowed.
+func isSilentCronResponse(s string) bool {
+	rest := strings.ToLower(strings.TrimSpace(s))
+	if rest == "" {
+		return true
+	}
+	for _, sentinel := range cronSilenceSentinels {
+		rest = strings.ReplaceAll(rest, sentinel, "")
+	}
+	rest = strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r) {
+			return -1
+		}
+		return r
+	}, rest)
+	return rest == ""
+}
+
 // ExecuteJob executes a cron job through the agent
 func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 	// Get channel/chatID from job payload
@@ -628,6 +671,10 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		var output string
 		if result.IsError {
 			output = fmt.Sprintf("Error executing scheduled command: %s", result.ForLLM)
+		} else if t.silentWhenEmpty && isSilentCronResponse(result.ForLLM) {
+			// tools.cron.silent_when_empty: empty stdout means "nothing to report",
+			// so skip the "Scheduled command '<cmd>' executed: (no output)" notice.
+			return "ok"
 		} else {
 			output = fmt.Sprintf("Scheduled command '%s' executed:\n%s", job.Payload.Command, result.ForLLM)
 		}
@@ -655,7 +702,7 @@ func (t *CronTool) ExecuteJob(ctx context.Context, job *cron.CronJob) string {
 		return fmt.Sprintf("Error: %v", err)
 	}
 
-	if response != "" {
+	if response != "" && (!t.silentWhenEmpty || !isSilentCronResponse(response)) {
 		t.executor.PublishResponseIfNeeded(ctx, channel, chatID, sessionKey, response)
 	}
 	return "ok"

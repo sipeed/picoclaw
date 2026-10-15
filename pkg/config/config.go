@@ -1075,6 +1075,15 @@ type CronToolsConfig struct {
 	ExecTimeoutMinutes    int      `json:"exec_timeout_minutes"    env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"`
 	AllowCommand          bool     `json:"allow_command"           env:"PICOCLAW_TOOLS_CRON_ALLOW_COMMAND"`
 	CommandAllowedRemotes []string `json:"command_allowed_remotes" env:"PICOCLAW_TOOLS_CRON_COMMAND_ALLOWED_REMOTES"`
+	// SilentWhenEmpty keeps a scheduled job quiet when it has nothing to report:
+	// the command wrapper text is not delivered when the command produced no
+	// output (or only the "(no output)" placeholder), and an agent turn whose
+	// answer carries no substance is not delivered either.
+	//
+	// Disabled by default on purpose — the upstream behaviour is to always
+	// deliver the wrapper text, and scripts that want to stay quiet should
+	// opt in here instead of relying on it.
+	SilentWhenEmpty bool `json:"silent_when_empty" env:"PICOCLAW_TOOLS_CRON_SILENT_WHEN_EMPTY"`
 }
 
 type ExecConfig struct {
