@@ -107,10 +107,9 @@ type c2cMessageData struct {
 		UnionOpenID string `json:"union_openid"`
 	} `json:"author"`
 	MessageScene struct {
-		Ext []struct {
-			MsgIdx    string `json:"msg_idx"`
-			RefMsgIdx string `json:"ref_msg_idx"`
-		} `json:"ext"`
+		// Per the official v2 docs this is a list of "key=value" strings, e.g.
+		// "disable_net_search=1" — NOT an array of objects.
+		Ext []string `json:"ext"`
 	} `json:"message_scene"`
 }
 
