@@ -578,6 +578,23 @@ type QQSettings struct {
 	SendMarkdown         bool         `json:"send_markdown"            yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_SEND_MARKDOWN"`
 }
 
+// QQC2CSettings configures the first-party QQ single-chat (C2C) channel
+// (pkg/channels/qqc2c). No botgo options apply here.
+type QQC2CSettings struct {
+	AppID                string       `json:"app_id"                   yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_APP_ID"`
+	AppSecret            SecureString `json:"app_secret,omitzero"      yaml:"app_secret,omitempty" env:"PICOCLAW_CHANNELS_QQ_C2C_APP_SECRET"`
+	MaxMessageLength     int          `json:"max_message_length"       yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_MAX_MESSAGE_LENGTH"`
+	Markdown             bool         `json:"markdown"                 yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_MARKDOWN"`
+	Streaming            bool         `json:"streaming"                yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_STREAMING"`
+	StreamIntervalMS     int          `json:"stream_interval_ms"       yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_STREAM_INTERVAL_MS"`
+	CommandPanel         bool         `json:"command_panel"            yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_COMMAND_PANEL"`
+	Typing               bool         `json:"typing"                   yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_TYPING"`
+	ReplyWindowMinutes   int          `json:"reply_window_minutes"     yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_REPLY_WINDOW_MINUTES"`
+	MaxRepliesPerMessage int          `json:"max_replies_per_message"  yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_MAX_REPLIES_PER_MESSAGE"`
+	APIBase              string       `json:"api_base"                 yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_API_BASE"`
+	Intents              int          `json:"intents"                  yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_INTENTS"`
+}
+
 type DingTalkSettings struct {
 	ClientID     string       `json:"client_id"              yaml:"-"                       env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
 	ClientSecret SecureString `json:"client_secret,omitzero" yaml:"client_secret,omitempty" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_SECRET"`

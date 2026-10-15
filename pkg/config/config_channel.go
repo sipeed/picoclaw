@@ -31,6 +31,9 @@ const (
 	ChannelLINE           = "line"
 	ChannelOneBot         = "onebot"
 	ChannelQQ             = "qq"
+	// ChannelQQC2C is a first-party QQ single-chat (C2C) channel that does not
+	// depend on tencent-connect/botgo (see pkg/channels/qqc2c).
+	ChannelQQC2C          = "qq_c2c"
 	ChannelIRC            = "irc"
 	ChannelVK             = "vk"
 	ChannelMaixCam        = "maixcam"
