@@ -37,6 +37,11 @@ type Channel struct {
 	streams      sync.Map // openid -> *streamSession
 	interactions sync.Map // interaction id -> chan string
 	seen         sync.Map // message id -> struct{} (dedup)
+
+	// pushAllowedState tracks the QQ client switch "允许主动消息" per user
+	// (C2C_MSG_RECEIVE = enabled, C2C_MSG_REJECT = disabled). Unknown users
+	// default to allowed, matching the platform default.
+	pushAllowedState sync.Map // openid -> bool
 }
 
 var _ channels.Channel = (*Channel)(nil)
@@ -128,7 +133,25 @@ func (c *Channel) handleEvent(t string, d json.RawMessage) {
 			return
 		}
 		c.onInteraction(&data)
-	case "FRIEND_ADD", "C2C_MSG_RECEIVE":
+	case "C2C_MSG_RECEIVE":
+		// The user turned the QQ "allow proactive messages" switch ON.
+		var ev struct {
+			OpenID string `json:"openid"`
+		}
+		if err := json.Unmarshal(d, &ev); err == nil && ev.OpenID != "" {
+			c.setPushAllowed(ev.OpenID, true)
+			logger.InfoCF("qq_c2c", "user enabled proactive messages", map[string]any{"chat_id": ev.OpenID})
+		}
+	case "C2C_MSG_REJECT":
+		// The user turned it OFF: proactive sends to them will now fail.
+		var ev struct {
+			OpenID string `json:"openid"`
+		}
+		if err := json.Unmarshal(d, &ev); err == nil && ev.OpenID != "" {
+			c.setPushAllowed(ev.OpenID, false)
+			logger.WarnCF("qq_c2c", "user disabled proactive messages", map[string]any{"chat_id": ev.OpenID})
+		}
+	case "FRIEND_ADD":
 		// Informational; the user becoming reachable is enough.
 	default:
 		logger.DebugCF("qq_c2c", "unhandled event", map[string]any{"event": t})
@@ -225,13 +248,14 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, 
 	if msg.ReplyToMessageID != "" {
 		msgID = msg.ReplyToMessageID
 	}
-	if msgID == "" {
-		return nil, fmt.Errorf("qq_c2c: no inbound msg_id for %s (QQ only allows passive replies; the user must talk to the bot first)", openID)
-	}
+	// QQ distinguishes two kinds of C2C sends on the same endpoint:
+	//   * passive reply  — carries msg_id (60 min window, max 4 per inbound msg)
+	//   * ACTIVE message — carries neither msg_id nor event_id; allowed unless the
+	//     user turned the "允许主动消息" switch off in the QQ client
+	//     (platform errors 40054013 = 用户拒收消息, 40034105 = 无权限)
+	active := msgID == ""
 
-	seq := c.nextSeq(openID)
-
-	body := &MessageToCreate{MsgID: msgID, MsgSeq: seq}
+	body := &MessageToCreate{}
 	if c.config.Markdown {
 		body.MsgType = 2
 		body.Markdown = &Markdown{Content: msg.Content}
@@ -240,18 +264,39 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, 
 		body.Content = msg.Content
 	}
 
+	if active {
+		if !c.pushAllowed(openID) {
+			return nil, fmt.Errorf("qq_c2c: user %s disabled active messages (C2C_MSG_REJECT)", openID)
+		}
+		body.MsgSeq = 0 // active messages do not use msg_seq
+		logger.InfoCF("qq_c2c", "sending ACTIVE (proactive) message", map[string]any{
+			"chat_id": openID,
+		})
+	} else {
+		body.MsgID = msgID
+		body.MsgSeq = c.nextSeq(openID)
+	}
+
 	sent, err := c.api.PostC2C(ctx, openID, body)
-	if err != nil && isMsgSeqErr(err) {
+	if err != nil && !active && isMsgSeqErr(err) {
 		body.MsgSeq = c.nextSeq(openID)
 		sent, err = c.api.PostC2C(ctx, openID, body)
 	}
 	if err != nil {
 		logger.ErrorCF("qq_c2c", "send failed", map[string]any{
 			"chat_id": openID,
+			"active":  active,
 			"msg_seq": body.MsgSeq,
 			"error":   err.Error(),
 		})
-		if isNotFoundErr(err) {
+		switch {
+		case isUserRejectedErr(err):
+			// Permanent: the user disabled proactive messages in the QQ client.
+			c.setPushAllowed(openID, false)
+			return nil, fmt.Errorf("qq_c2c: user rejected messages (40054013): %w", channels.ErrSendFailed)
+		case isNoPermissionErr(err):
+			return nil, fmt.Errorf("qq_c2c: no permission for active message (40034105): %w", channels.ErrSendFailed)
+		case isNotFoundErr(err):
 			return nil, fmt.Errorf("qq_c2c: %w", channels.ErrSendFailed)
 		}
 		return nil, fmt.Errorf("qq_c2c send: %w", channels.ErrTemporary)
@@ -265,6 +310,57 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, 
 		"msg_seq": body.MsgSeq,
 	})
 	return []string{sent.ID}, nil
+}
+
+// setPushAllowed records whether proactive messages may be sent to a user.
+func (c *Channel) setPushAllowed(openID string, allowed bool) {
+	c.pushAllowedState.Store(openID, allowed)
+}
+
+// pushAllowed reports whether proactive (active) messages may be sent to this
+// user. QQ lets users turn "允许主动消息" off in the client; when they do, we get a
+// C2C_MSG_REJECT event. Users we never heard from default to allowed.
+func (c *Channel) pushAllowed(openID string) bool {
+	v, ok := c.pushAllowedState.Load(openID)
+	if !ok {
+		return true
+	}
+	b, _ := v.(bool)
+	return b
+}
+
+// SendActive sends a proactive (active) message: no msg_id, no event_id.
+// QQ allows this unless the user disabled proactive messages in the client.
+func (c *Channel) SendActive(ctx context.Context, openID, content string) (string, error) {
+	ids, err := c.Send(ctx, bus.OutboundMessage{Channel: c.Name(), ChatID: openID, Content: content})
+	if err != nil {
+		return "", err
+	}
+	if len(ids) == 0 {
+		return "", nil
+	}
+	return ids[0], nil
+}
+
+// SendWakeup sends an interaction-recall message (is_wakeup): allowed once per
+// period within 30 days of the user's last interaction.
+func (c *Channel) SendWakeup(ctx context.Context, openID, content string) (string, error) {
+	body := &MessageToCreate{IsWakeup: true}
+	if c.config.Markdown {
+		body.MsgType = 2
+		body.Markdown = &Markdown{Content: content}
+	} else {
+		body.MsgType = 0
+		body.Content = content
+	}
+	sent, err := c.api.PostC2C(ctx, openID, body)
+	if err != nil {
+		return "", err
+	}
+	if sent == nil {
+		return "", nil
+	}
+	return sent.ID, nil
 }
 
 func (c *Channel) nextSeq(openID string) int {

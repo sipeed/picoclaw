@@ -210,6 +210,36 @@ func isMsgSeqErr(err error) bool {
 	return false
 }
 
+// isUserRejectedErr matches QQ error 40054013 (用户拒收消息): the user turned the
+// "允许主动消息" switch off, so proactive messages to them keep failing.
+func isUserRejectedErr(err error) bool {
+	ae, ok := err.(*apiError)
+	if !ok {
+		return false
+	}
+	for _, needle := range []string{"40054013", "用户拒收"} {
+		if bytes.Contains([]byte(ae.Body), []byte(needle)) {
+			return true
+		}
+	}
+	return false
+}
+
+// isNoPermissionErr matches QQ error 40034105 (主动消息发送失败，无权限): the bot
+// itself lacks the permission/quota for active messages.
+func isNoPermissionErr(err error) bool {
+	ae, ok := err.(*apiError)
+	if !ok {
+		return false
+	}
+	for _, needle := range []string{"40034105", "无权限"} {
+		if bytes.Contains([]byte(ae.Body), []byte(needle)) {
+			return true
+		}
+	}
+	return false
+}
+
 // ---------------------------------------------------------------------------
 // token manager
 // ---------------------------------------------------------------------------
