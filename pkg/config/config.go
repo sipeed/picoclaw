@@ -416,6 +416,7 @@ type SubTurnConfig struct {
 
 type ToolFeedbackConfig struct {
 	Enabled          bool `json:"enabled"           env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_ENABLED"`
+	HideArgs         bool `json:"hide_args"          env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_HIDE_ARGS"`
 	MaxArgsLength    int  `json:"max_args_length"   env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_MAX_ARGS_LENGTH"`
 	SeparateMessages bool `json:"separate_messages" env:"PICOCLAW_AGENTS_DEFAULTS_TOOL_FEEDBACK_SEPARATE_MESSAGES"`
 }
@@ -469,6 +470,12 @@ func (d *AgentDefaults) GetToolFeedbackMaxArgsLength() int {
 // IsToolFeedbackEnabled returns true when tool feedback messages should be sent to the chat.
 func (d *AgentDefaults) IsToolFeedbackEnabled() bool {
 	return d.ToolFeedback.Enabled
+}
+
+// IsToolFeedbackHideArgsEnabled returns true when serialized tool arguments
+// should be omitted from visible tool feedback messages.
+func (d *AgentDefaults) IsToolFeedbackHideArgsEnabled() bool {
+	return d.ToolFeedback.HideArgs
 }
 
 // IsToolFeedbackSeparateMessagesEnabled returns true when each tool feedback

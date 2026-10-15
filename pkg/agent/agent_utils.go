@@ -211,7 +211,10 @@ func toolFeedbackExplanationFromMessages(messages []providers.Message) string {
 	return ""
 }
 
-func toolFeedbackArgsPreview(args map[string]any, maxLen int) string {
+func toolFeedbackArgsPreview(args map[string]any, maxLen int, hideArgs bool) string {
+	if hideArgs {
+		return ""
+	}
 	argsJSON := utils.FormatArgsJSON(args, true, false)
 	return utils.Truncate(argsJSON, maxLen)
 }

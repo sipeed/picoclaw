@@ -36,6 +36,7 @@ func DefaultConfig() *Config {
 				SteeringMode:              "one-at-a-time",
 				ToolFeedback: ToolFeedbackConfig{
 					Enabled:          false,
+					HideArgs:         false,
 					MaxArgsLength:    300,
 					SeparateMessages: false,
 				},

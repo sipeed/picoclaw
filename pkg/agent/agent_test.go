@@ -2810,10 +2810,17 @@ func TestToolFeedbackArgsPreview_UsesJSONAndTruncates(t *testing.T) {
 	got := toolFeedbackArgsPreview(map[string]any{
 		"path":  "README.md",
 		"limit": 42,
-	}, 128)
+	}, 128, false)
 	want := "{\n  \"limit\": 42,\n  \"path\": \"README.md\"\n}"
 	if got != want {
 		t.Fatalf("toolFeedbackArgsPreview() = %q, want %q", got, want)
+	}
+}
+
+func TestToolFeedbackArgsPreview_HidesArgs(t *testing.T) {
+	got := toolFeedbackArgsPreview(map[string]any{"path": "README.md"}, 128, true)
+	if got != "" {
+		t.Fatalf("toolFeedbackArgsPreview() with hideArgs = %q, want empty", got)
 	}
 }
 

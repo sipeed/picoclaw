@@ -16,6 +16,7 @@
       "llm_retry_backoff_secs": 2,
       "tool_feedback": {
         "enabled": false,
+        "hide_args": false,
         "max_args_length": 300,
         "separate_messages": false
       }
