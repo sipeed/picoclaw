@@ -1,8 +1,8 @@
 // Package qqc2c implements a first-party QQ single-chat (C2C) channel for PicoClaw.
 //
 // It deliberately does NOT depend on github.com/tencent-connect/botgo: the whole
-// protocol (Access Token, WebSocket gateway, C2C send, streaming, keyboard and
-// interaction callbacks) is implemented here against the public QQ Bot API v2:
+// protocol (Access Token, WebSocket gateway and C2C send) is implemented here
+// against the public QQ Bot API v2:
 //
 //	https://bot.q.qq.com/wiki/develop/api-v2/
 //
@@ -15,7 +15,6 @@
 //     inbound message); without msg_id/event_id it is an *active (proactive)
 //     message*, rate-limited per bot and per relation, and blocked when the
 //     user turned the client's "允许主动消息" switch off (error 40054013).
-//   - Streaming uses POST /v2/users/{user_openid}/stream_messages.
 package qqc2c
 
 import (
@@ -113,27 +112,11 @@ type c2cMessageData struct {
 	} `json:"message_scene"`
 }
 
-// InteractionData is the `d` of an INTERACTION_CREATE event.
-type interactionData struct {
-	ID       string `json:"id"`
-	Type     int    `json:"type"` // 11 = message button, 12 = single-chat quick menu
-	Scene    string `json:"scene"`
-	ChatType int    `json:"chat_type"` // 2 = c2c
-	UserOpenID string `json:"user_openid"`
-	Data     struct {
-		Resolved struct {
-			ButtonData string `json:"button_data"`
-			ButtonID   string `json:"button_id"`
-		} `json:"resolved"`
-	} `json:"data"`
-}
-
 // MessageToCreate is the body of a C2C send.
 type MessageToCreate struct {
 	MsgType   int             `json:"msg_type,omitempty"` // 0 text, 2 markdown, 6 input notify, 7 media
 	Content   string          `json:"content,omitempty"`
 	Markdown  *Markdown       `json:"markdown,omitempty"`
-	Keyboard  *Keyboard       `json:"keyboard,omitempty"`
 	Media     *Media          `json:"media,omitempty"`
 	InputNotify *InputNotify  `json:"input_notify,omitempty"`
 	MsgID     string          `json:"msg_id,omitempty"`
@@ -155,24 +138,10 @@ type Media struct {
 	FileInfo string `json:"file_info"`
 }
 
-// StreamRequest is the body of a streaming C2C send.
-type StreamRequest struct {
-	InputMode   string `json:"input_mode,omitempty"`   // append | replace
-	InputState  int    `json:"input_state,omitempty"`  // 1 generating, 10 finished
-	Index       int    `json:"index"`                  // starts at 0
-	ContentType string `json:"content_type,omitempty"` // text | markdown
-	ContentRaw  string `json:"content_raw,omitempty"`
-	MsgID       string `json:"msg_id,omitempty"`
-	EventID     string `json:"event_id,omitempty"`
-	StreamMsgID string `json:"stream_msg_id,omitempty"`
-	MsgSeq      int    `json:"msg_seq,omitempty"`
-}
-
-// SentMessage is the common response of send/stream calls.
+// SentMessage is the common response of a C2C send.
 type SentMessage struct {
 	ID        string `json:"id"`
 	Timestamp string `json:"timestamp"`
-	RemainMsgLen int `json:"remain_msg_len,omitempty"`
 }
 
 // apiError carries the platform error payload so callers can classify it.
@@ -403,20 +372,4 @@ func (a *apiClient) PostC2C(ctx context.Context, openID string, body *MessageToC
 		return nil, err
 	}
 	return &out, nil
-}
-
-// StreamC2C sends one streaming chunk.
-func (a *apiClient) StreamC2C(ctx context.Context, openID string, body *StreamRequest) (*SentMessage, error) {
-	var out SentMessage
-	err := a.do(ctx, http.MethodPost, "/v2/users/"+openID+"/stream_messages", body, &out)
-	if err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
-// PutInteraction acknowledges a button interaction (must happen within 3s).
-func (a *apiClient) PutInteraction(ctx context.Context, interactionID string, code int) error {
-	body := map[string]int{"code": code}
-	return a.do(ctx, http.MethodPut, "/interactions/"+interactionID, body, nil)
 }

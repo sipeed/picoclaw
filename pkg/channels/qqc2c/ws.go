@@ -15,14 +15,14 @@ import (
 // intents we subscribe to (QQ Bot API v2):
 //
 //	1<<25 = GROUP_AND_C2C_EVENT  (C2C_MESSAGE_CREATE ...)
-//	1<<26 = INTERACTION          (message button / quick-menu callbacks)
-const defaultIntents = (1 << 25) | (1 << 26)
+const defaultIntents = 1 << 25
 
 // wsEventFunc receives a single dispatched event (t = event name, d = raw data).
 type wsEventFunc func(t string, d json.RawMessage)
 
 // wsClient is a minimal, self-contained QQ Bot WebSocket client.
-// It owns reconnect/backoff and heartbeat; event handling is delegated upstream.
+// It owns reconnect/backoff and heartbeat; event handling is delegated to the
+// onEvent callback.
 type wsClient struct {
 	api     *apiClient
 	intents int

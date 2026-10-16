@@ -539,7 +539,7 @@ func defaultChannels() ChannelsConfig {
 		"qq": map[string]any{
 			"settings": map[string]any{"max_message_length": 2000},
 		"qq_c2c": map[string]any{
-			"settings": map[string]any{"max_message_length": 2000, "markdown": true, "streaming": true, "typing": true, "stream_interval_ms": 300},
+			"settings": map[string]any{"max_message_length": 2000, "markdown": true, "typing": true},
 		},
 		},
 		"dingtalk": map[string]any{},

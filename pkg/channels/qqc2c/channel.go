@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -18,7 +17,7 @@ import (
 // Channel is the QQ single-chat (C2C) channel.
 //
 // It implements channels.Channel plus the optional capability interfaces:
-// TypingCapable, StreamingCapable, MessageLengthProvider, CommandRegistrarCapable.
+// TypingCapable and MessageLengthProvider.
 type Channel struct {
 	*channels.BaseChannel
 
@@ -32,11 +31,9 @@ type Channel struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	msgSeq       sync.Map // openid -> *atomic.Int64
-	lastMsgID    sync.Map // openid -> string
-	streams      sync.Map // openid -> *streamSession
-	interactions sync.Map // interaction id -> chan string
-	seen         sync.Map // message id -> struct{} (dedup)
+	msgSeq    sync.Map // openid -> *atomic.Int64
+	lastMsgID sync.Map // openid -> string
+	seen      sync.Map // message id -> struct{} (dedup)
 
 	// pushAllowedState tracks the QQ client switch "允许主动消息" per user
 	// (C2C_MSG_RECEIVE = enabled, C2C_MSG_REJECT = disabled). Unknown users
@@ -91,9 +88,8 @@ func (c *Channel) Start(ctx context.Context) error {
 
 	c.SetRunning(true)
 	logger.InfoCF("qq_c2c", "QQ C2C channel started", map[string]any{
-		"app_id":    c.config.AppID,
-		"streaming":            c.config.Streaming.Enabled,
-		"markdown":  c.config.Markdown,
+		"app_id":   c.config.AppID,
+		"markdown": c.config.Markdown,
 	})
 	return nil
 }
@@ -127,12 +123,6 @@ func (c *Channel) handleEvent(t string, d json.RawMessage) {
 		if err := c.onC2CMessage(&data); err != nil {
 			logger.ErrorCF("qq_c2c", "handle C2C message failed", map[string]any{"error": err.Error()})
 		}
-	case "INTERACTION_CREATE":
-		var data interactionData
-		if err := json.Unmarshal(d, &data); err != nil {
-			return
-		}
-		c.onInteraction(&data)
 	case "C2C_MSG_RECEIVE":
 		// The user turned the QQ "allow proactive messages" switch ON.
 		var ev struct {
@@ -203,26 +193,6 @@ func (c *Channel) onC2CMessage(data *c2cMessageData) error {
 		"length": len(content),
 	})
 	return c.HandleInboundContext(c.ctx, openID, content, nil, inboundCtx, sender)
-}
-
-func (c *Channel) onInteraction(data *interactionData) {
-	// Always acknowledge within 3 seconds, even if nobody is waiting.
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	_ = c.api.PutInteraction(ctx, data.ID, 0)
-
-	if ch, ok := c.interactions.LoadAndDelete(data.ID); ok {
-		if waiter, ok := ch.(chan string); ok {
-			select {
-			case waiter <- data.Data.Resolved.ButtonData:
-			default:
-			}
-		}
-	}
-	logger.InfoCF("qq_c2c", "interaction received", map[string]any{
-		"type": data.Type,
-		"data": data.Data.Resolved.ButtonData,
-	})
 }
 
 // ---------------------------------------------------------------------------
@@ -405,68 +375,4 @@ func (c *Channel) StartTyping(ctx context.Context, chatID string) (func(), error
 		logger.DebugCF("qq_c2c", "typing notify failed", map[string]any{"error": err.Error()})
 	}
 	return func() {}, nil
-}
-
-// BeginStream implements channels.StreamingCapable.
-func (c *Channel) BeginStream(ctx context.Context, chatID string) (channels.Streamer, error) {
-	if !c.config.Streaming.Enabled {
-		return nil, fmt.Errorf("qq_c2c: streaming disabled in settings")
-	}
-	msgID := ""
-	if v, ok := c.lastMsgID.Load(chatID); ok {
-		msgID, _ = v.(string)
-	}
-	if msgID == "" {
-		return nil, fmt.Errorf("qq_c2c: no inbound msg_id for streaming")
-	}
-	s := &streamSession{
-		api:      c.api,
-		openID:   chatID,
-		msgID:    msgID,
-		msgSeq:   c.nextSeq(chatID),
-		interval: time.Duration(max(c.config.StreamIntervalMS, 100)) * time.Millisecond,
-		lastSent: time.Now().Add(-time.Hour),
-	}
-	c.streams.Store(chatID, s)
-	return s, nil
-}
-
-// AskWithButtons sends a question with a keyboard and waits for the chosen value.
-func (c *Channel) AskWithButtons(ctx context.Context, chatID, question string, options []Button, timeout time.Duration) (string, error) {
-	if len(options) == 0 {
-		return "", fmt.Errorf("qq_c2c: no options")
-	}
-	msgID := ""
-	if v, ok := c.lastMsgID.Load(chatID); ok {
-		msgID, _ = v.(string)
-	}
-	body := &MessageToCreate{
-		MsgType: 2,
-		Markdown: &Markdown{Content: question},
-		Keyboard: BuildKeyboard([][]Button{options}),
-		MsgID:    msgID,
-		MsgSeq:   c.nextSeq(chatID),
-	}
-	if _, err := c.api.PostC2C(ctx, chatID, body); err != nil {
-		return "", err
-	}
-	// Note: interactions are matched by id, so we register a broadcast waiter.
-	ch := make(chan string, 1)
-	c.interactions.Store("pending:"+chatID, ch)
-	defer c.interactions.Delete("pending:" + chatID)
-	select {
-	case v := <-ch:
-		return v, nil
-	case <-time.After(timeout):
-		return "", fmt.Errorf("qq_c2c: interaction timeout")
-	case <-ctx.Done():
-		return "", ctx.Err()
-	}
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

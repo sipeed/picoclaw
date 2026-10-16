@@ -38,16 +38,13 @@ channel_list:
 | `app_secret` | secret | — | AppSecret（必填，建议走 `.security.yml`/env） |
 | `max_message_length` | int | `0` | 出站分片阈值（0=不限） |
 | `markdown` | bool | `false` | 用 `msg_type=2` 发 Markdown（单聊**支持发**） |
-| `streaming` | bool | `false` | 启用流式输出（`/stream_messages`） |
-| `stream_interval_ms` | int | `0` | 流式增量合并节流（建议 `300`；平台限 50 QPS） |
 | `typing` | bool | `false` | 发 `msg_type=6` 输入中状态 |
-| `command_panel` | bool | `false` | 允许渲染 Markdown 指令面板标签 |
 | `reply_window_minutes` | int | `60` | 平台限制：被动回复窗口 |
 | `max_replies_per_message` | int | `4` | 平台限制：每条入站消息最多回几次 |
 | `api_base` | string | 官方 | 覆盖 OpenAPI 域名（调试用） |
-| `intents` | int | `(1<<25)\|(1<<26)` | 覆盖 WS 订阅位（默认：单聊事件 + 互动） |
+| `intents` | int | `1<<25` | 覆盖 WS 订阅位（默认：单聊事件） |
 
-环境变量形式：`PICOCLAW_CHANNELS_QQ_C2C_APP_ID` / `..._APP_SECRET` / `..._MARKDOWN` / `..._STREAMING` 等。
+环境变量形式：`PICOCLAW_CHANNELS_QQ_C2C_APP_ID` / `..._APP_SECRET` / `..._MARKDOWN` 等。
 
 ## 3. 两种发消息方式（同一个接口）
 
@@ -72,8 +69,6 @@ channel_list:
 | 图片 · 视频 · 语音 · 文件 | 收发 ✅（需先上传拿 `file_info`） |
 | 结构化卡片 | 发 ❌ / 收 ✅ |
 | 引用消息 | 收 ✅ |
-| 消息按钮（keyboard） | 发 ✅（单聊已开放自定义按钮）；点击回调 `INTERACTION_CREATE` |
-| 指令面板（`<qqbot-cmd-enter>` / `<qqbot-cmd-input>`） | ✅（仅 Markdown 消息内） |
 
 ## 5. 从旧 `qq` 通道迁移
 
@@ -91,7 +86,7 @@ channel_list:
 ### 为什么建议淘汰旧 `qq` 通道
 
 - 协议压在 `tencent-connect/botgo` 里，SDK 出问题只能等（例如 `Authorization: QQBot <token>` scheme 丢失导致 401）
-- 没有单聊**主动消息**、**流式**、**按钮**、**指令面板**
+- 没有单聊**主动消息**
 - 未知 chat id 一律按「群」处理，出站专用目标（cron/通知）会走错接口
 
 ## 6. 常见问题
@@ -106,7 +101,7 @@ A: 用户在 QQ 客户端关掉了「允许主动发送」开关。通道会自�
 A: 成功路径是 `info` 级；把 `gateway.log_level` 调成 `info` 才能看到（默认 `warn` 只留错误）。
 
 **Q: 用户群里/频道里发的消息收不到？**
-A: 本通道只订阅 **单聊**（`C2C_MESSAGE_CREATE`）与 **互动**（`INTERACTION_CREATE`），不处理群/QQ 频道事件。
+A: 本通道只订阅 **单聊**（`C2C_MESSAGE_CREATE`），不处理群/QQ 频道事件。
 
 **Q: 不填 `allow_from` 会怎样？**
 A: 通道会打 `SECURITY: Channel allows EVERYONE` 告警，任何人都能私聊机器人 —— 生产环境建议填上自己的 openid。
@@ -115,5 +110,5 @@ A: 通道会打 `SECURITY: Channel allows EVERYONE` 告警，任何人都能私�
 
 ## 7. Launcher 配置界面
 
-`picoclaw-launcher` 面板已规划对应的「QQ C2C Channel」配置卡片（AppID / AppSecret / Markdown / 流式 / 指令面板 / 白名单 / 节流毫秒）。
+`picoclaw-launcher` 面板已规划对应的「QQ C2C Channel」配置卡片（AppID / AppSecret / Markdown / 白名单）。
 后端（本 PR）先落地配置结构，前端界面随后跟进。
