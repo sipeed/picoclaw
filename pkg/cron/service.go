@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -320,7 +321,17 @@ func (cs *CronService) computeNextRun(schedule *CronSchedule, nowMS int64) *int6
 
 		// Use gronx to calculate next run time
 		now := time.UnixMilli(nowMS)
-		nextTime, err := gronx.NextTickAfter(schedule.Expr, now, false)
+		loc := time.Local
+		if tz := strings.TrimSpace(schedule.TZ); tz != "" {
+			loaded, err := time.LoadLocation(tz)
+			if err != nil {
+				log.Printf("[cron] unknown tz %q for expr %q: %v", tz, schedule.Expr, err)
+			} else {
+				loc = loaded
+			}
+		}
+
+		nextTime, err := gronx.NextTickAfter(schedule.Expr, now.In(loc), false)
 		if err != nil {
 			log.Printf("[cron] failed to compute next run for expr '%s': %v", schedule.Expr, err)
 			return nil
