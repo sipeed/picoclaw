@@ -677,6 +677,7 @@ var channelSettingsFactory = map[string]any{
 	ChannelLINE:           (LINESettings{}),
 	ChannelOneBot:         (OneBotSettings{}),
 	ChannelQQ:             (QQSettings{}),
+	ChannelQQC2C:          (QQC2CSettings{}),
 	ChannelIRC:            (IRCSettings{}),
 	ChannelVK:             (VKSettings{}),
 	ChannelMaixCam:        (MaixCamSettings{}),
