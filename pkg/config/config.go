@@ -578,14 +578,55 @@ type QQSettings struct {
 	SendMarkdown         bool         `json:"send_markdown"            yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_SEND_MARKDOWN"`
 }
 
+// QQC2CStreaming holds the QQ C2C streaming setting. The console writes it as an
+// object ({"enabled":true,"throttle_seconds":1}) while older configs and the
+// env var used a bare boolean, so both shapes are accepted here; a config round
+// trip always writes the object back.
+type QQC2CStreaming struct {
+	Enabled         bool `json:"enabled"`
+	ThrottleSeconds int  `json:"throttle_seconds,omitempty"`
+}
+
+func (s *QQC2CStreaming) UnmarshalJSON(b []byte) error {
+	if len(b) == 0 {
+		return nil
+	}
+	// Skip leading whitespace without pulling in another import.
+	i := 0
+	for i < len(b) && (b[i] == ' ' || b[i] == '\t' || b[i] == '\n' || b[i] == '\r') {
+		i++
+	}
+	if i >= len(b) || string(b[i:]) == "null" {
+		return nil
+	}
+	if b[i] == 't' || b[i] == 'f' {
+		var v bool
+		if err := json.Unmarshal(b, &v); err != nil {
+			return err
+		}
+		s.Enabled = v
+		return nil
+	}
+	var obj struct {
+		Enabled         bool `json:"enabled"`
+		ThrottleSeconds int  `json:"throttle_seconds"`
+	}
+	if err := json.Unmarshal(b, &obj); err != nil {
+		return err
+	}
+	s.Enabled = obj.Enabled
+	s.ThrottleSeconds = obj.ThrottleSeconds
+	return nil
+}
+
 // QQC2CSettings configures the first-party QQ single-chat (C2C) channel
 // (pkg/channels/qqc2c). No botgo options apply here.
 type QQC2CSettings struct {
-	AppID                string       `json:"app_id"                   yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_APP_ID"`
-	AppSecret            SecureString `json:"app_secret,omitzero"      yaml:"app_secret,omitempty" env:"PICOCLAW_CHANNELS_QQ_C2C_APP_SECRET"`
-	MaxMessageLength     int          `json:"max_message_length"       yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_MAX_MESSAGE_LENGTH"`
-	Markdown             bool         `json:"markdown"                 yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_MARKDOWN"`
-	Streaming            bool         `json:"streaming"                yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_STREAMING"`
+	AppID                string         `json:"app_id"                   yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_APP_ID"`
+	AppSecret            SecureString   `json:"app_secret,omitzero"      yaml:"app_secret,omitempty" env:"PICOCLAW_CHANNELS_QQ_C2C_APP_SECRET"`
+	MaxMessageLength     int            `json:"max_message_length"       yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_MAX_MESSAGE_LENGTH"`
+	Markdown             bool           `json:"markdown"                 yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_MARKDOWN"`
+	Streaming            QQC2CStreaming `json:"streaming"                yaml:"-"`
 	StreamIntervalMS     int          `json:"stream_interval_ms"       yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_STREAM_INTERVAL_MS"`
 	CommandPanel         bool         `json:"command_panel"            yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_COMMAND_PANEL"`
 	Typing               bool         `json:"typing"                   yaml:"-"                    env:"PICOCLAW_CHANNELS_QQ_C2C_TYPING"`

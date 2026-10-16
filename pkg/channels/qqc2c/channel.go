@@ -92,7 +92,7 @@ func (c *Channel) Start(ctx context.Context) error {
 	c.SetRunning(true)
 	logger.InfoCF("qq_c2c", "QQ C2C channel started", map[string]any{
 		"app_id":    c.config.AppID,
-		"streaming": c.config.Streaming,
+		"streaming":            c.config.Streaming.Enabled,
 		"markdown":  c.config.Markdown,
 	})
 	return nil
@@ -409,7 +409,7 @@ func (c *Channel) StartTyping(ctx context.Context, chatID string) (func(), error
 
 // BeginStream implements channels.StreamingCapable.
 func (c *Channel) BeginStream(ctx context.Context, chatID string) (channels.Streamer, error) {
-	if !c.config.Streaming {
+	if !c.config.Streaming.Enabled {
 		return nil, fmt.Errorf("qq_c2c: streaming disabled in settings")
 	}
 	msgID := ""
