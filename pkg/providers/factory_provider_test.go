@@ -226,6 +226,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"nearai", "nearai"},
 		{"groq", "groq"},
 		{"novita", "novita"},
+		{"runcrate", "runcrate"},
 		{"openrouter", "openrouter"},
 		{"cerebras", "cerebras"},
 		{"vivgrid", "vivgrid"},
@@ -481,6 +482,28 @@ func TestCreateProviderFromConfig_Novita(t *testing.T) {
 	}
 	if _, ok := provider.(*HTTPProvider); !ok {
 		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_Runcrate(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-runcrate",
+		Model:     "runcrate/deepseek-ai/DeepSeek-V4.1-Flash",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if modelID != "deepseek-ai/DeepSeek-V4.1-Flash" {
+		t.Errorf("modelID = %q, want %q", modelID, "deepseek-ai/DeepSeek-V4.1-Flash")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+	if got := getDefaultAPIBase("runcrate"); got != "https://api.runcrate.ai/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "runcrate", got, "https://api.runcrate.ai/v1")
 	}
 }
 

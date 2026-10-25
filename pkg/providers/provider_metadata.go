@@ -556,6 +556,23 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		Priority:            36,
 		httpAPI:             true,
 	},
+	"runcrate": {
+		ID:                  "runcrate",
+		DisplayName:         "Runcrate",
+		Domain:              "runcrate.ai",
+		DefaultAPIBase:      "https://api.runcrate.ai/v1",
+		CreateAllowed:       true,
+		DefaultModelAllowed: true,
+		Priority:            35.9,
+		CommonModels: []string{
+			"deepseek-ai/DeepSeek-V4.1-Flash",
+			"zai-org/GLM-5.3",
+			"zai-org/GLM-5.3-Flash",
+			"Qwen/Qwen3.8-Flash",
+			"openai/gpt-oss-120b",
+		},
+		httpAPI: true,
+	},
 	"litellm": {
 		ID:                  "litellm",
 		DisplayName:         "LiteLLM",

@@ -68,6 +68,7 @@ var stripModelPrefixProviders = map[string]struct{}{
 	"vivgrid":     {},
 	"minimax":     {},
 	"novita":      {},
+	"runcrate":    {},
 	"lmstudio":    {},
 }
 

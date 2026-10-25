@@ -1157,6 +1157,11 @@ func TestProviderChat_StripsKnownProviderPrefixes(t *testing.T) {
 			input:     "novita/minimax/minimax-m2.5",
 			wantModel: "minimax/minimax-m2.5",
 		},
+		{
+			name:      "strips runcrate prefix and keeps nested model",
+			input:     "runcrate/deepseek-ai/DeepSeek-V4.1-Flash",
+			wantModel: "deepseek-ai/DeepSeek-V4.1-Flash",
+		},
 	}
 
 	for _, tt := range tests {
