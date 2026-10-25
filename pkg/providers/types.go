@@ -92,7 +92,13 @@ const (
 	FailoverFormat          FailoverReason = "format"
 	FailoverContextOverflow FailoverReason = "context_overflow"
 	FailoverOverloaded      FailoverReason = "overloaded"
-	FailoverUnknown         FailoverReason = "unknown"
+	// FailoverModelUnavailable: the provider is up but the requested model is not
+	// loaded / still loading (local proxy answers HTTP 409 "model ID is not loaded"
+	// or HTTP 400 "This model is not ready."). Retriable, so the fallback chain
+	// switches to the next candidate instead of aborting on the generic 400 ->
+	// format mapping.
+	FailoverModelUnavailable FailoverReason = "model_unavailable"
+	FailoverUnknown          FailoverReason = "unknown"
 )
 
 // FailoverError wraps an LLM provider error with classification metadata.

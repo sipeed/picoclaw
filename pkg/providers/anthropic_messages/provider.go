@@ -181,6 +181,8 @@ func buildRequestBody(
 	// Process messages
 	var systemPrompt string
 	var apiMessages []any
+	// tool_use IDs actually emitted, so orphaned tool results can be dropped
+	toolUseIDs := map[string]bool{}
 
 	for _, msg := range messages {
 		switch msg.Role {
@@ -194,6 +196,11 @@ func buildRequestBody(
 
 		case "user":
 			if msg.ToolCallID != "" {
+				// Orphan tool result (tool_use came from another provider's
+				// segment or was skipped) -> API 400. Drop it.
+				if !toolUseIDs[msg.ToolCallID] {
+					continue
+				}
 				// Tool result message — merge into previous user message if it contains tool_results
 				toolResultBlock := map[string]any{
 					"type":        "tool_result",
@@ -240,7 +247,7 @@ func buildRequestBody(
 				if toolName == "" && tc.Function != nil {
 					toolName = tc.Function.Name
 				}
-				if strings.TrimSpace(toolName) == "" {
+				if strings.TrimSpace(toolName) == "" || tc.ID == "" {
 					continue
 				}
 
@@ -264,15 +271,31 @@ func buildRequestBody(
 					"input": input,
 				}
 				content = append(content, toolUse)
+				if tc.ID != "" {
+					toolUseIDs[tc.ID] = true
+				}
 			}
 
+			// Assistant messages whose blocks all got skipped (dead tool
+			// calls from truncated/malformed upstream streams, or older
+			// session stores that persisted them without a function
+			// object) would send an empty content array -> API 400. Drop
+			// them; their tool results become orphans and are skipped
+			// below.
+			if len(content) == 0 {
+				continue
+			}
 			apiMessages = append(apiMessages, map[string]any{
 				"role":    "assistant",
 				"content": content,
 			})
 
 		case "tool":
-			// Tool result (alternative format) — merge into previous user message if it contains tool_results
+			// Tool result (alternative format) — orphan check first, then
+			// merge into previous user message if it contains tool_results
+			if msg.ToolCallID == "" || !toolUseIDs[msg.ToolCallID] {
+				continue
+			}
 			toolResultBlock := map[string]any{
 				"type":        "tool_result",
 				"tool_use_id": msg.ToolCallID,

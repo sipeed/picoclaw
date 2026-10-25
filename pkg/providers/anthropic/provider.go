@@ -138,6 +138,18 @@ func (p *Provider) BaseURL() string {
 	return p.baseURL
 }
 
+// modelRejectsTemperature reports models that have thinking enabled by
+// default and reject an explicit temperature parameter (API 400).
+func modelRejectsTemperature(model string) bool {
+	m := strings.ToLower(strings.TrimSpace(model))
+	for _, fam := range []string{"-haiku-5", "-sonnet-5", "-opus-5", "-opus-4-5", "-sonnet-4-5"} {
+		if strings.Contains(m, fam) {
+			return true
+		}
+	}
+	return false
+}
+
 func buildParams(
 	messages []Message,
 	tools []ToolDefinition,
@@ -146,6 +158,8 @@ func buildParams(
 ) (anthropic.MessageNewParams, error) {
 	var system []anthropic.TextBlockParam
 	var anthropicMessages []anthropic.MessageParam
+	// tool_use IDs actually emitted, so orphaned tool results can be dropped
+	toolUseIDs := map[string]bool{}
 
 	for _, msg := range messages {
 		switch msg.Role {
@@ -166,6 +180,11 @@ func buildParams(
 			}
 		case "user":
 			if msg.ToolCallID != "" {
+				// Orphan tool result (tool_use came from another provider's
+				// segment or was skipped) -> Anthropic 400. Drop it.
+				if !toolUseIDs[msg.ToolCallID] {
+					continue
+				}
 				anthropicMessages = append(anthropicMessages,
 					anthropic.NewUserMessage(anthropic.NewToolResultBlock(msg.ToolCallID, msg.Content, false)),
 				)
@@ -188,8 +207,9 @@ func buildParams(
 					if toolName == "" && tc.Function != nil {
 						toolName = tc.Function.Name
 					}
-					// Skip tool calls with empty names to avoid API errors
-					if toolName == "" {
+					// Skip tool calls with empty names or IDs to avoid API
+					// errors (Anthropic requires id+name on tool_use)
+					if toolName == "" || tc.ID == "" {
 						continue
 					}
 					args := tc.Arguments
@@ -202,14 +222,37 @@ func buildParams(
 						args = map[string]any{}
 					}
 					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, args, toolName))
+					if tc.ID != "" {
+						toolUseIDs[tc.ID] = true
+					}
+				}
+				// Assistant messages whose tool calls were all skipped
+				// (dead tool calls from truncated/malformed upstream
+				// streams, or older session stores that persisted them
+				// without a function object) would marshal with zero
+				// blocks -> 400 "content: Field required". Drop the empty
+				// message; its tool results become orphans and are
+				// skipped below.
+				if len(blocks) == 0 {
+					continue
 				}
 				anthropicMessages = append(anthropicMessages, anthropic.NewAssistantMessage(blocks...))
 			} else {
+				if msg.Content == "" {
+					// Empty assistant turn (e.g. reasoning-only from another
+					// provider) — Anthropic rejects content-less messages.
+					continue
+				}
 				anthropicMessages = append(anthropicMessages,
 					anthropic.NewAssistantMessage(anthropic.NewTextBlock(msg.Content)),
 				)
 			}
 		case "tool":
+			// Orphan tool results (their tool_use was skipped above or belongs
+			// to another provider's segment) make Anthropic 400 as well.
+			if msg.ToolCallID == "" || !toolUseIDs[msg.ToolCallID] {
+				continue
+			}
 			anthropicMessages = append(anthropicMessages,
 				anthropic.NewUserMessage(anthropic.NewToolResultBlock(msg.ToolCallID, msg.Content, false)),
 			)
@@ -235,7 +278,9 @@ func buildParams(
 		params.System = system
 	}
 
-	if temp, ok := options["temperature"].(float64); ok {
+	// Thinking-always-on models (Claude 5 family, Opus 4.5+) reject any
+	// explicit temperature with 400 "temperature is deprecated".
+	if temp, ok := options["temperature"].(float64); ok && !modelRejectsTemperature(apiModel) {
 		params.Temperature = anthropic.Float(temp)
 	}
 

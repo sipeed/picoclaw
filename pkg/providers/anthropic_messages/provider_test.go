@@ -675,28 +675,24 @@ func TestBuildRequestBody_ToolCallFunctionFallback(t *testing.T) {
 			}
 
 			apiMessages := got["messages"].([]any)
+
+			if tt.wantSkipped {
+				// Entire exchange must vanish: an assistant message with
+				// zero blocks and its orphaned tool_result both make the
+				// Anthropic API return 400 ("content: Field required" /
+				// tool_result without tool_use). Only the user turn remains.
+				if len(apiMessages) != 1 {
+					t.Fatalf("expected 1 API message (skipped tool exchange), got %d: %#v", len(apiMessages), apiMessages)
+				}
+				return
+			}
+
 			if len(apiMessages) != 3 {
 				t.Fatalf("expected 3 API messages, got %d", len(apiMessages))
 			}
 
 			assistantMsg := apiMessages[1].(map[string]any)
 			content := assistantMsg["content"].([]any)
-
-			if tt.wantSkipped {
-				if len(content) != 0 {
-					t.Fatalf("assistant content = %#v, want empty (tool call skipped)", content)
-				}
-				// Note: matching current behavior, the orphaned tool_result is
-				// still emitted in the following user message even though its
-				// tool_use block was skipped.
-				toolResultMsg := apiMessages[2].(map[string]any)
-				blocks := toolResultMsg["content"].([]map[string]any)
-				if len(blocks) != 1 || blocks[0]["tool_use_id"] != tt.toolCall.ID {
-					t.Fatalf("orphaned tool_result = %#v, want single block with tool_use_id %q",
-						blocks, tt.toolCall.ID)
-				}
-				return
-			}
 
 			// (a) tool_use block emitted with resolved name, id, and parsed input.
 			if len(content) != 1 {

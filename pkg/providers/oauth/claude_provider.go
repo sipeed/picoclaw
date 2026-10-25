@@ -56,6 +56,13 @@ func (p *ClaudeProvider) GetDefaultModel() string {
 	return p.delegate.GetDefaultModel()
 }
 
+// SupportsThinking implements providers.ThinkingCapable by delegating to the
+// underlying Anthropic SDK provider, so thinking_level is honored for
+// token/OAuth credentials as well.
+func (p *ClaudeProvider) SupportsThinking() bool {
+	return p.delegate.SupportsThinking()
+}
+
 func CreateClaudeTokenSource(getCredential func(string) (*auth.AuthCredential, error)) func() (string, error) {
 	return func() (string, error) {
 		cred, err := getCredential("anthropic")

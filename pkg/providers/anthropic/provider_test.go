@@ -137,6 +137,18 @@ func TestBuildParams_ToolCallFunctionFallback(t *testing.T) {
 			if err != nil {
 				t.Fatalf("buildParams() error: %v", err)
 			}
+
+			if tt.wantSkipped {
+				// Entire exchange must vanish: an assistant message with
+				// zero blocks and its orphaned tool_result both make the
+				// API 400 ("content: Field required" / tool_result without
+				// tool_use). Only the user turn remains.
+				if len(params.Messages) != 1 {
+					t.Fatalf("len(Messages) = %d, want 1 (skipped tool exchange)", len(params.Messages))
+				}
+				return
+			}
+
 			if len(params.Messages) != 3 {
 				t.Fatalf("len(Messages) = %d, want 3", len(params.Messages))
 			}
@@ -156,19 +168,6 @@ func TestBuildParams_ToolCallFunctionFallback(t *testing.T) {
 				t.Fatalf("message after assistant = %+v, want single tool_result block", toolResultMsg.Content)
 			}
 			toolResult := toolResultMsg.Content[0].OfToolResult
-
-			if tt.wantSkipped {
-				if len(toolUses) != 0 {
-					t.Fatalf("tool_use blocks = %d, want 0 (tool call skipped)", len(toolUses))
-				}
-				// Note: matching current behavior, the orphaned tool_result is
-				// still emitted even though its tool_use block was skipped.
-				if toolResult.ToolUseID != tt.toolCall.ID {
-					t.Fatalf("orphaned tool_result ToolUseID = %q, want %q",
-						toolResult.ToolUseID, tt.toolCall.ID)
-				}
-				return
-			}
 
 			// (a) tool_use block emitted with resolved name, id, and parsed input.
 			if len(toolUses) != 1 {

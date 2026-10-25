@@ -834,6 +834,13 @@ func transientLLMRetryReason(err error) (string, bool) {
 			return "network", true
 		case providers.FailoverRateLimit, providers.FailoverOverloaded:
 			return "rate_limit", true
+		case providers.FailoverModelUnavailable:
+			// Primary's model is not loaded / still loading. The fallback chain already
+			// ran inside callLLM (model_unavailable is retriable there and switches
+			// candidates), so re-running the whole chain with 75s/150s backoff would
+			// only hang the turn. Fail fast; the next turn retries the primary once its
+			// cooldown expires.
+			return "", false
 		}
 	}
 

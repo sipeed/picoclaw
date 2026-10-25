@@ -120,6 +120,27 @@ var (
 		substr("error code 1210"),
 		substr("zhipu api error code: 1210"),
 	}
+	// modelUnavailablePatterns: provider-side model availability answers from a local
+	// model proxy that is running but has not loaded the requested model yet.
+	// Measured live (gateway.log 2026-10-25 19:57/19:58 UTC, Strata app proxy, plus a
+	// direct probe against the same proxy):
+	//   HTTP 409  {"error":"That model ID is not loaded. Choose one from /v1/models."}  (no model loaded)
+	//   HTTP 400  {"error":{"message":"This model is not ready.","type":"invalid_request_error"}}  (still loading)
+	//   HTTP 400  {"error":{"message":"Choose a loaded model ID.","type":"invalid_request_error"}} (requested id not loaded)
+	// All must be retriable: 400 would otherwise map to FailoverFormat (non-retriable)
+	// and 409 stays unclassified, so in both cases the fallback chain aborts before the
+	// next candidate is tried.
+	modelUnavailablePatterns = []errorPattern{
+		substr("this model is not ready"),
+		substr("model is not ready"),
+		substr("model id is not loaded"),
+		substr("model is not loaded"),
+		substr("model not loaded"),
+		substr("choose one from /v1/models"),
+		substr("choose a loaded model id"),
+		substr("no loaded model"),
+	}
+
 	contextOverflowPatterns = []errorPattern{
 		rxp(`context[_ ]?length[_ ]?exceeded`),
 		rxp(`context[_ ]?window[_ ]?exceeded`),
@@ -195,6 +216,20 @@ func ClassifyError(err error, provider, model string) *FailoverError {
 	if IsImageDimensionError(msg) || IsImageSizeError(msg) {
 		return &FailoverError{
 			Reason:   FailoverFormat,
+			Provider: provider,
+			Model:    model,
+			Wrapped:  err,
+		}
+	}
+
+	// Model-availability answers must classify BEFORE the HTTP status mapping: the same
+	// "model not loaded / still loading" condition arrives as HTTP 400 (which the
+	// generic mapping turns into non-retriable FailoverFormat) and as HTTP 409 (which
+	// has no status case at all and stays unclassified). Both abort the fallback chain,
+	// so the configured fallback candidate would never be tried.
+	if matchesAny(msg, modelUnavailablePatterns) {
+		return &FailoverError{
+			Reason:   FailoverModelUnavailable,
 			Provider: provider,
 			Model:    model,
 			Wrapped:  err,

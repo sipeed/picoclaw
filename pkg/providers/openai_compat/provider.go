@@ -10,6 +10,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -772,11 +773,28 @@ func parseStreamResponse(
 		}
 	}
 
-	// Assemble tool calls from accumulated deltas
+	// Assemble tool calls from accumulated deltas. Iterate by sorted index
+	// key: upstreams may number tool calls non-zero-based (e.g. starting at
+	// 1); a len()-based loop would silently drop the last one.
+	indexes := make([]int, 0, len(activeTools))
+	for i := range activeTools {
+		indexes = append(indexes, i)
+	}
+	sort.Ints(indexes)
 	var toolCalls []ToolCall
-	for i := 0; i < len(activeTools); i++ {
-		acc, ok := activeTools[i]
-		if !ok {
+	for _, i := range indexes {
+		acc := activeTools[i]
+		// Guard: a truncated or malformed upstream stream can end a tool
+		// call without ever sending its name or id. Such ToolCalls are dead
+		// payload — the executor cannot run them and strict providers
+		// (Anthropic) reject their replay with 400s. Drop them here so they
+		// never enter history or the session store.
+		if strings.TrimSpace(acc.name) == "" || acc.id == "" {
+			logger.WarnCF("openai_compat", "stream: dropping tool call without name or id", map[string]any{
+				"index": i,
+				"id":    acc.id,
+				"name":  acc.name,
+			})
 			continue
 		}
 		args := make(map[string]any)

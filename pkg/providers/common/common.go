@@ -288,6 +288,16 @@ func ParseResponse(body io.Reader) (*LLMResponse, error) {
 			arguments = DecodeToolCallArguments(tc.Function.Arguments, name)
 		}
 
+		// Guard: malformed or truncated upstream responses can contain tool
+		// calls without a name or id. The executor cannot run them, they
+		// persist into the session store without a function object, and
+		// replaying them to strict providers (Anthropic) yields 400s. Drop
+		// them at the source instead of poisoning history.
+		if strings.TrimSpace(name) == "" || strings.TrimSpace(tc.ID) == "" {
+			log.Printf("common: dropping tool call without name or id (id=%q name=%q)", tc.ID, name)
+			continue
+		}
+
 		toolCall := ToolCall{
 			ID:               tc.ID,
 			Name:             name,
