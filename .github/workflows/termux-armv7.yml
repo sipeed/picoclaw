@@ -1,0 +1,46 @@
+name: Termux ARMv7 compatibility
+
+on:
+  pull_request:
+    paths:
+      - "pkg/tools/**"
+      - "pkg/providers/openai_compat/**"
+      - ".github/workflows/termux-armv7.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  armv7:
+    name: Linux ARMv7 build and targeted tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Test provider and shell packages
+        run: go test -tags goolm,stdjson ./pkg/providers/openai_compat ./pkg/tools
+
+      - name: Cross-compile for 32-bit ARMv7
+        env:
+          GOOS: linux
+          GOARCH: arm
+          GOARM: "7"
+          CGO_ENABLED: "0"
+        run: go build -tags goolm,stdjson -o /tmp/picoclaw-linux-armv7 ./cmd/picoclaw
+
+      - name: Verify binary architecture
+        run: file /tmp/picoclaw-linux-armv7
+
+      - name: Upload ARMv7 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: picoclaw-linux-armv7
+          path: /tmp/picoclaw-linux-armv7
+          if-no-files-found: error

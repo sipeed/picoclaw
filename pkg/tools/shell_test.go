@@ -16,6 +16,26 @@ import (
 )
 
 // TestShellTool_Success verifies successful command execution
+func TestFindShellExecutableReturnsAbsoluteExecutable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix shell lookup is not used on Windows")
+	}
+	path, err := findShellExecutable()
+	if err != nil {
+		t.Fatalf("findShellExecutable() error = %v", err)
+	}
+	if !filepath.IsAbs(path) {
+		t.Fatalf("shell path %q is not absolute", path)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat shell path: %v", err)
+	}
+	if info.IsDir() || info.Mode()&0o111 == 0 {
+		t.Fatalf("shell path %q is not an executable file", path)
+	}
+}
+
 func TestShellTool_Success(t *testing.T) {
 	tool, err := NewExecTool("", false)
 	if err != nil {
