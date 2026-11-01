@@ -56,7 +56,6 @@ var stripModelPrefixProviders = map[string]struct{}{
 	"nearai":      {},
 	"venice":      {},
 	"moonshot":    {},
-	"nvidia":      {},
 	"groq":        {},
 	"ollama":      {},
 	"deepseek":    {},

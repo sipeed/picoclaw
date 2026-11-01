@@ -30,6 +30,24 @@ var (
 	sessionManagerMu     sync.RWMutex
 )
 
+func findShellExecutable() (string, error) {
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		if dir == "" {
+			dir = "."
+		}
+		candidate := filepath.Join(dir, "sh")
+		info, err := os.Stat(candidate)
+		if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+			continue
+		}
+		absolute, err := filepath.Abs(candidate)
+		if err == nil {
+			return absolute, nil
+		}
+	}
+	return "", fmt.Errorf("could not find executable sh in PATH")
+}
+
 func getSessionManager() *SessionManager {
 	sessionManagerMu.RLock()
 	defer sessionManagerMu.RUnlock()
@@ -398,7 +416,11 @@ func (t *ExecTool) runSync(ctx context.Context, command, cwd string) *ToolResult
 	if runtime.GOOS == "windows" {
 		cmd = exec.CommandContext(cmdCtx, "powershell", "-NoProfile", "-NonInteractive", "-Command", command)
 	} else {
-		cmd = exec.CommandContext(cmdCtx, "sh", "-c", command)
+		shellPath, err := findShellExecutable()
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("failed to locate shell: %v", err))
+		}
+		cmd = exec.CommandContext(cmdCtx, shellPath, "-c", command)
 	}
 	if cwd != "" {
 		cmd.Dir = cwd
@@ -520,7 +542,11 @@ func (t *ExecTool) runBackground(ctx context.Context, command, cwd string, ptyEn
 	if runtime.GOOS == "windows" {
 		cmd = exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", command)
 	} else {
-		cmd = exec.Command("sh", "-c", command)
+		shellPath, err := findShellExecutable()
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("failed to locate shell: %v", err))
+		}
+		cmd = exec.Command(shellPath, "-c", command)
 	}
 	if cwd != "" {
 		cmd.Dir = cwd

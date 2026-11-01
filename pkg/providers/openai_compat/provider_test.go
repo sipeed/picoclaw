@@ -1270,6 +1270,41 @@ func TestNormalizeModel_UsesAPIBase(t *testing.T) {
 	}
 }
 
+func TestProviderChat_NVIDIAPreservesNamespacedModelID(t *testing.T) {
+	const modelID = "nvidia/nemotron-3.5-super-vl-120b-a12b"
+	var requestBody map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.Error(w, "unexpected path", http.StatusNotFound)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	p.SetProviderName("nvidia")
+	if _, err := p.Chat(
+		t.Context(),
+		[]Message{{Role: "user", Content: "hi"}},
+		nil,
+		modelID,
+		map[string]any{"max_tokens": 16},
+	); err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+
+	if got, _ := requestBody["model"].(string); got != modelID {
+		t.Fatalf("request model = %q, want %q", got, modelID)
+	}
+}
+
 func TestProvider_RequestTimeoutDefault(t *testing.T) {
 	p := NewProviderWithMaxTokensFieldAndTimeout("key", "https://example.com/v1", "", "", 0)
 	if p.httpClient.Timeout != defaultRequestTimeout {
