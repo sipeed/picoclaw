@@ -37,3 +37,10 @@ jobs:
 
       - name: Verify binary architecture
         run: file /tmp/picoclaw-linux-armv7
+
+      - name: Upload ARMv7 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: picoclaw-linux-armv7
+          path: /tmp/picoclaw-linux-armv7
+          if-no-files-found: error
