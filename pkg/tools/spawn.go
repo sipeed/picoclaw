@@ -12,6 +12,7 @@ type SpawnTool struct {
 	maxTokens      int
 	temperature    float64
 	allowlistCheck func(targetAgentID string) bool
+	tools          *ToolRegistry
 }
 
 // Compile-time check: SpawnTool implements AsyncExecutor.
@@ -25,6 +26,7 @@ func NewSpawnTool(manager *SubagentManager) *SpawnTool {
 		defaultModel: manager.defaultModel,
 		maxTokens:    manager.maxTokens,
 		temperature:  manager.temperature,
+		tools:        manager.tools,
 	}
 }
 
@@ -61,6 +63,10 @@ func (t *SpawnTool) Parameters() map[string]any {
 				"type":        "boolean",
 				"description": "When true (default), the subagent's result is sent directly to the user and saved to conversation context — no follow-up LLM turn is triggered. When false, the result is returned to the main agent which will process and present it to the user.",
 			},
+			"allow_direct_message": map[string]any{
+				"type":        "boolean",
+				"description": "When true (default), the spawned subagent is allowed to use the message tool to send messages directly to the user during execution. When false, the message tool is removed from the subagent's toolset, so it cannot directly message the user; results must be returned to the main agent.",
+			},
 		},
 		"required": []string{"task"},
 	}
@@ -68,6 +74,12 @@ func (t *SpawnTool) Parameters() map[string]any {
 
 func (t *SpawnTool) SetAllowlistChecker(check func(targetAgentID string) bool) {
 	t.allowlistCheck = check
+}
+
+// SetTools sets the tool registry for spawned subagents. When allow_direct_message
+// is false, the message tool will be filtered out from the subagent's toolset.
+func (t *SpawnTool) SetTools(tools *ToolRegistry) {
+	t.tools = tools
 }
 
 func (t *SpawnTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
@@ -116,6 +128,28 @@ func (t *SpawnTool) execute(
 		directReply = v
 	}
 
+	// allow_direct_message controls whether the spawned subagent can use the
+	// message tool to send messages directly to the user during execution.
+	// Defaults to true (preserves existing behavior).
+	allowDirectMessage := true
+	if v, ok := args["allow_direct_message"].(bool); ok {
+		allowDirectMessage = v
+	}
+
+	// Build the toolset for the subagent. When allow_direct_message is false,
+	// filter out the message tool so the subagent cannot directly message users.
+	var subTools []Tool
+	if t.tools != nil {
+		for _, name := range t.tools.List() {
+			if !allowDirectMessage && name == "message" {
+				continue
+			}
+			if tool, ok := t.tools.Get(name); ok {
+				subTools = append(subTools, tool)
+			}
+		}
+	}
+
 	// Check allowlist if targeting a specific agent
 	if targetAgentID != "" && t.allowlistCheck != nil {
 		if !t.allowlistCheck(targetAgentID) {
@@ -147,7 +181,7 @@ Task: %s`,
 		go func() {
 			result, err := t.spawner.SpawnSubTurn(ctx, SubTurnConfig{
 				Model:         t.defaultModel,
-				Tools:         nil, // Will inherit from parent via context
+				Tools:         subTools,
 				SystemPrompt:  systemPrompt,
 				MaxTokens:     t.maxTokens,
 				Temperature:   t.temperature,

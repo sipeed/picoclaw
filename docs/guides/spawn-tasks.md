@@ -30,6 +30,26 @@ The heartbeat system periodically checks `workspace/HEARTBEAT.md` for scheduled 
 | **message tool**        | Subagent communicates with user directly via message tool |
 | **Non-blocking**        | After spawning, heartbeat continues to next task          |
 
+### `allow_direct_message` parameter
+
+The `spawn` tool accepts an optional `allow_direct_message` boolean parameter (default: `true`) to control whether the spawned subagent can use the `message` tool to send messages directly to the user during execution:
+
+| Value | Behavior |
+|-------|----------|
+| `true` (default) | Subagent can directly `message` the user during execution (existing behavior) |
+| `false` | The `message` tool is removed from the subagent's toolset; it cannot directly message users. Results must be returned to the main agent for presentation. |
+
+**Example:**
+
+```json
+{
+  "task": "Search for AI news and summarize",
+  "allow_direct_message": false
+}
+```
+
+Use `false` when you want to keep conversation flow centralized and have the main agent present all results to the user.
+
 #### How Subagent Communication Works
 
 ```

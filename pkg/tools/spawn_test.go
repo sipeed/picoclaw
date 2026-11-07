@@ -32,6 +32,20 @@ func (m *mockSpawner) SpawnSubTurn(ctx context.Context, cfg SubTurnConfig) (*Too
 	}, nil
 }
 
+// mockTool implements Tool for testing tool filtering.
+type mockTool struct {
+	name string
+}
+
+func (m *mockTool) Name() string            { return m.name }
+func (m *mockTool) Description() string     { return "mock tool: " + m.name }
+func (m *mockTool) Parameters() map[string]any {
+	return map[string]any{"type": "object", "properties": map[string]any{}}
+}
+func (m *mockTool) Execute(_ context.Context, _ map[string]any) *ToolResult {
+	return &ToolResult{ForLLM: "mock result"}
+}
+
 func TestSpawnTool_Execute_EmptyTask(t *testing.T) {
 	provider := &MockLLMProvider{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
@@ -111,5 +125,141 @@ func TestSpawnTool_Execute_NilManager(t *testing.T) {
 	}
 	if !strings.Contains(result.ForLLM, "Subagent manager not configured") {
 		t.Errorf("Error message should mention manager not configured, got: %s", result.ForLLM)
+	}
+}
+
+func TestSpawnTool_AllowDirectMessage_False_FiltersMessageTool(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+
+	// Register a mock message tool and a regular tool
+	manager.RegisterTool(&mockTool{name: "message"})
+	manager.RegisterTool(&mockTool{name: "web_search"})
+
+	tool := NewSpawnTool(manager)
+	spawner := &mockSpawner{done: make(chan struct{})}
+	tool.SetSpawner(spawner)
+
+	ctx := context.Background()
+	args := map[string]any{
+		"task":                 "Search for news",
+		"allow_direct_message": false,
+	}
+
+	result := tool.Execute(ctx, args)
+	if result == nil {
+		t.Fatal("Result should not be nil")
+	}
+	if result.IsError {
+		t.Errorf("Expected success for valid task, got error: %s", result.ForLLM)
+	}
+	if !result.Async {
+		t.Error("SpawnTool should return async result")
+	}
+	<-spawner.done
+
+	// Verify message tool is filtered out
+	hasMessage := false
+	hasWebSearch := false
+	for _, t := range spawner.lastConfig.Tools {
+		if t.Name() == "message" {
+			hasMessage = true
+		}
+		if t.Name() == "web_search" {
+			hasWebSearch = true
+		}
+	}
+	if hasMessage {
+		t.Error("message tool should be filtered out when allow_direct_message=false")
+	}
+	if !hasWebSearch {
+		t.Error("web_search tool should still be present when allow_direct_message=false")
+	}
+}
+
+func TestSpawnTool_AllowDirectMessage_True_KeepsMessageTool(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+
+	manager.RegisterTool(&mockTool{name: "message"})
+	manager.RegisterTool(&mockTool{name: "web_search"})
+
+	tool := NewSpawnTool(manager)
+	spawner := &mockSpawner{done: make(chan struct{})}
+	tool.SetSpawner(spawner)
+
+	ctx := context.Background()
+	args := map[string]any{
+		"task":                 "Search for news",
+		"allow_direct_message": true,
+	}
+
+	result := tool.Execute(ctx, args)
+	if result == nil {
+		t.Fatal("Result should not be nil")
+	}
+	if result.IsError {
+		t.Errorf("Expected success for valid task, got error: %s", result.ForLLM)
+	}
+	if !result.Async {
+		t.Error("SpawnTool should return async result")
+	}
+	<-spawner.done
+
+	hasMessage := false
+	hasWebSearch := false
+	for _, t := range spawner.lastConfig.Tools {
+		if t.Name() == "message" {
+			hasMessage = true
+		}
+		if t.Name() == "web_search" {
+			hasWebSearch = true
+		}
+	}
+	if !hasMessage {
+		t.Error("message tool should be present when allow_direct_message=true")
+	}
+	if !hasWebSearch {
+		t.Error("web_search tool should be present when allow_direct_message=true")
+	}
+}
+
+func TestSpawnTool_AllowDirectMessage_Default_True_KeepsMessageTool(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+
+	manager.RegisterTool(&mockTool{name: "message"})
+	manager.RegisterTool(&mockTool{name: "web_search"})
+
+	tool := NewSpawnTool(manager)
+	spawner := &mockSpawner{done: make(chan struct{})}
+	tool.SetSpawner(spawner)
+
+	ctx := context.Background()
+	args := map[string]any{
+		"task": "Search for news",
+		// allow_direct_message not specified, should default to true
+	}
+
+	result := tool.Execute(ctx, args)
+	if result == nil {
+		t.Fatal("Result should not be nil")
+	}
+	if result.IsError {
+		t.Errorf("Expected success for valid task, got error: %s", result.ForLLM)
+	}
+	if !result.Async {
+		t.Error("SpawnTool should return async result")
+	}
+	<-spawner.done
+
+	hasMessage := false
+	for _, t := range spawner.lastConfig.Tools {
+		if t.Name() == "message" {
+			hasMessage = true
+		}
+	}
+	if !hasMessage {
+		t.Error("message tool should be present by default (allow_direct_message defaults to true)")
 	}
 }
