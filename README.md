@@ -422,6 +422,7 @@ PicoClaw supports 30+ LLM providers through the `model_list` configuration. Use 
 | [Cerebras](https://cloud.cerebras.ai/) | `cerebras/` | Required | Fast inference |
 | [NEAR AI Cloud](https://near.ai/) | `nearai/` | Required | TEE inference, OpenAI-compatible |
 | [Novita AI](https://novita.ai/) | `novita/` | Required | Various open models |
+| [CloudGPU](https://cloudgpu.app/) | `cloudgpu/` | Required | DeepSeek, Kimi, GLM, MiniMax, Qwen, OpenAI-compatible |
 | [Xiaomi MiMo](https://platform.xiaomimimo.com/) | `mimo/` | Required | MiMo models |
 | [Ollama](https://ollama.com/) | `ollama/` | Not needed | Local models, self-hosted |
 | [vLLM](https://docs.vllm.ai/) | `vllm/` | Not needed | Local deployment, OpenAI-compatible |
