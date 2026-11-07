@@ -226,6 +226,7 @@ func TestCreateProviderFromConfig_DefaultAPIBase(t *testing.T) {
 		{"nearai", "nearai"},
 		{"groq", "groq"},
 		{"novita", "novita"},
+		{"cloudgpu", "cloudgpu"},
 		{"openrouter", "openrouter"},
 		{"cerebras", "cerebras"},
 		{"vivgrid", "vivgrid"},
@@ -481,6 +482,28 @@ func TestCreateProviderFromConfig_Novita(t *testing.T) {
 	}
 	if _, ok := provider.(*HTTPProvider); !ok {
 		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+}
+
+func TestCreateProviderFromConfig_CloudGPU(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "test-cloudgpu",
+		Model:     "cloudgpu/deepseek-v4-flash",
+	}
+	cfg.SetAPIKey("test-key")
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if modelID != "deepseek-v4-flash" {
+		t.Errorf("modelID = %q, want %q", modelID, "deepseek-v4-flash")
+	}
+	if _, ok := provider.(*HTTPProvider); !ok {
+		t.Fatalf("expected *HTTPProvider, got %T", provider)
+	}
+	if got := getDefaultAPIBase("cloudgpu"); got != "https://cloudgpu.app/v1" {
+		t.Fatalf("getDefaultAPIBase(%q) = %q, want %q", "cloudgpu", got, "https://cloudgpu.app/v1")
 	}
 }
 

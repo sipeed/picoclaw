@@ -1157,6 +1157,11 @@ func TestProviderChat_StripsKnownProviderPrefixes(t *testing.T) {
 			input:     "novita/minimax/minimax-m2.5",
 			wantModel: "minimax/minimax-m2.5",
 		},
+		{
+			name:      "strips cloudgpu prefix",
+			input:     "cloudgpu/deepseek-v4-flash",
+			wantModel: "deepseek-v4-flash",
+		},
 	}
 
 	for _, tt := range tests {
