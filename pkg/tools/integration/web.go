@@ -1139,6 +1139,7 @@ func (p *PerplexitySearchProvider) Search(
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 		req.Header.Set("User-Agent", userAgent)
+		req.Header.Set("X-Pplx-Integration", "picoclaw")
 
 		resp, err := p.client.Do(req)
 		if err != nil {

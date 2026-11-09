@@ -1989,6 +1989,34 @@ func TestWebTool_SogouSearch_Success(t *testing.T) {
 	}
 }
 
+func TestWebTool_PerplexitySearch_SetsIntegrationHeader(t *testing.T) {
+	var gotReq *http.Request
+	provider := &PerplexitySearchProvider{
+		keyPool: NewAPIKeyPool([]string{"test-key"}),
+		client: &http.Client{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				gotReq = req
+				rec := httptest.NewRecorder()
+				fmt.Fprint(rec, `{"choices":[{"message":{"content":"1. Result A"}}]}`)
+				return rec.Result(), nil
+			}),
+		},
+	}
+
+	if _, err := provider.Search(context.Background(), "test query", 1, ""); err != nil {
+		t.Fatalf("Search() error: %v", err)
+	}
+	if gotReq == nil {
+		t.Fatal("expected a Perplexity request")
+	}
+	if gotReq.URL.Host != "api.perplexity.ai" {
+		t.Fatalf("request host = %q, want api.perplexity.ai", gotReq.URL.Host)
+	}
+	if got := gotReq.Header.Values("X-Pplx-Integration"); len(got) != 1 || got[0] != "picoclaw" {
+		t.Fatalf("X-Pplx-Integration = %v, want [picoclaw]", got)
+	}
+}
+
 func TestApplySogouRangeHint(t *testing.T) {
 	tests := []struct {
 		name      string
