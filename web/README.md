@@ -59,7 +59,7 @@ The current frontend exposes these major pages and flows:
 - `/logs`
   - View the in-memory gateway log buffer and clear it.
 
-The UI currently supports English and Simplified Chinese, plus light and dark themes.
+The UI currently supports English, French, Portuguese (Brazil), Bengali (India), Simplified Chinese, and Czech, plus light and dark themes.
 
 ## Runtime Behavior
 
