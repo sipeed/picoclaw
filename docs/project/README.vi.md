@@ -394,6 +394,7 @@ PicoClaw hỗ trợ 30+ Provider LLM thông qua cấu hình `model_list`. Sử d
 | [Anthropic](https://console.anthropic.com/settings/keys) | `anthropic/` | Bắt buộc | Claude Opus 4.6, Sonnet 4.6, v.v. |
 | [Google Gemini](https://aistudio.google.com/apikey) | `gemini/` | Bắt buộc | Gemini 3 Flash, 2.5 Pro, v.v. |
 | [OpenRouter](https://openrouter.ai/keys) | `openrouter/` | Bắt buộc | 200+ mô hình, API thống nhất |
+| [LLMTR](https://llmtr.com) | `llmtr/` | Bắt buộc | Cổng OpenAI-compatible |
 | [Zhipu (GLM)](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) | `zhipu/` | Bắt buộc | GLM-4.7, GLM-5, v.v. |
 | [DeepSeek](https://platform.deepseek.com/api_keys) | `deepseek/` | Bắt buộc | DeepSeek-V3, DeepSeek-R1 |
 | [Volcengine](https://console.volcengine.com) | `volcengine/` | Bắt buộc | Doubao, Ark models |

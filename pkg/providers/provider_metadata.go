@@ -108,6 +108,17 @@ var modelProviderOptionsByName = map[string]ModelProviderOption{
 		},
 		httpAPI: true,
 	},
+	"llmtr": {
+		ID:                  "llmtr",
+		DisplayName:         "LLMTR",
+		Domain:              "llmtr.com",
+		DefaultAPIBase:      "https://llmtr.com/v1",
+		CreateAllowed:       true,
+		DefaultModelAllowed: true,
+		SupportsFetch:       true,
+		Priority:            79,
+		httpAPI:             true,
+	},
 	"qwen-portal": {
 		ID:                  "qwen-portal",
 		DisplayName:         "Qwen",
